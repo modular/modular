@@ -27,9 +27,10 @@ import traceback
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterable, AsyncIterator, Callable, Iterable
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, TypeVar
 
 import aiohttp
+from pydantic import BaseModel
 from tqdm.asyncio import tqdm
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
@@ -433,8 +434,8 @@ class TRTLLMRequestDriver(RequestDriver):
                                 "data:"
                             )
 
-                            data = json.loads(chunk)
-                            chunk_text = data["text_output"]
+                            data = _TRTLLMChunk.model_validate_json(chunk)
+                            chunk_text = data.text_output
                             output.generated_text += chunk_text
                             timestamp = time.perf_counter()
                             # First token
@@ -552,13 +553,56 @@ async def _iter_sse_payloads(
         yield payload
 
 
+class _PromptTokensDetails(BaseModel):
+    cached_tokens: int = 0
+
+
+class _UsageChunk(BaseModel):
+    prompt_tokens: int | None = None
+    completion_tokens: int | None = None
+    total_tokens: int | None = None
+    prompt_tokens_details: _PromptTokensDetails | None = None
+
+
+class _ChatDelta(BaseModel):
+    reasoning: str | None = None
+    reasoning_content: str | None = None
+    content: str | None = None
+
+
+class _ChatChoice(BaseModel):
+    delta: _ChatDelta
+
+
+class _CompletionChoice(BaseModel):
+    text: str
+
+
+class _ChatCompletionChunk(BaseModel):
+    usage: _UsageChunk | None = None
+    choices: list[_ChatChoice] = []
+
+
+class _CompletionChunk(BaseModel):
+    usage: _UsageChunk | None = None
+    choices: list[_CompletionChoice] = []
+
+
+class _TRTLLMChunk(BaseModel):
+    text_output: str
+
+
+_ChunkT = TypeVar("_ChunkT", _ChatCompletionChunk, _CompletionChunk)
+
+
 async def _run_openai_stream_request(
     *,
     api_url: str,
     payload: dict[str, Any],
     headers: dict[str, str],
     prompt_len: int,
-    content_extractor: Callable[[dict[str, Any]], str],
+    chunk_type: type[_ChunkT],
+    content_extractor: Callable[[_ChunkT], str],
     tokenizer: PreTrainedTokenizerBase | None = None,
 ) -> RequestFuncOutput:
     output = RequestFuncOutput()
@@ -583,27 +627,23 @@ async def _run_openai_stream_request(
                         if chunk == "[DONE]":
                             continue
 
-                        data = json.loads(chunk)
+                        data = chunk_type.model_validate_json(chunk)
 
                         # Parse usage from any chunk that reports it.
-                        usage = data.get("usage")
-                        if usage:
-                            details = usage.get("prompt_tokens_details")
+                        if data.usage:
                             output.server_token_stats = ServerTokenStats(
-                                prompt_tokens=usage.get("prompt_tokens"),
-                                completion_tokens=usage.get(
-                                    "completion_tokens"
-                                ),
-                                total_tokens=usage.get("total_tokens"),
+                                prompt_tokens=data.usage.prompt_tokens,
+                                completion_tokens=data.usage.completion_tokens,
+                                total_tokens=data.usage.total_tokens,
                                 cached_tokens=(
-                                    details.get("cached_tokens", 0)
-                                    if details
+                                    data.usage.prompt_tokens_details.cached_tokens
+                                    if data.usage.prompt_tokens_details
                                     else 0
                                 ),
                             )
 
                         # Skip content processing for chunks with no choices.
-                        if not data.get("choices"):
+                        if not data.choices:
                             continue
 
                         # Any valid response chunk counts as having received content
@@ -693,7 +733,8 @@ class OpenAICompletionsRequestDriver(RequestDriver):
             payload=payload,
             headers=headers,
             prompt_len=request_func_input.prompt_len,
-            content_extractor=lambda data: data["choices"][0]["text"],
+            chunk_type=_CompletionChunk,
+            content_extractor=lambda data: data.choices[0].text,
             tokenizer=self.tokenizer,
         )
 
@@ -767,10 +808,11 @@ class OpenAIChatCompletionsRequestDriver(RequestDriver):
             # fields may also be None in some chunks.
             #
             # We merge them here to preserve all streamed text.
+            chunk_type=_ChatCompletionChunk,
             content_extractor=lambda data: (
-                (data["choices"][0]["delta"].get("reasoning") or "")
-                + (data["choices"][0]["delta"].get("reasoning_content") or "")
-                + (data["choices"][0]["delta"].get("content") or "")
+                (data.choices[0].delta.reasoning or "")
+                + (data.choices[0].delta.reasoning_content or "")
+                + (data.choices[0].delta.content or "")
             ),
             tokenizer=self.tokenizer,
         )
