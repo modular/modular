@@ -218,7 +218,7 @@ def make_point(out result: Point) -> Point:  # Error: function cannot have
 
 `raises` and `where` also have fixed meaning in signatures. `raises`
 declares that a function can raise errors. `where` introduces a constraint
-clause on parameters:
+clause at the end of a declaration:
 
 ```mojo
 def validate(value: Int) raises:

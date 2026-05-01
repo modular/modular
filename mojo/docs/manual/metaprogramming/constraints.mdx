@@ -12,16 +12,16 @@ A constraint, defined with the `where` keyword, represents a precondition for
 calling a function or instantiating a struct:
 
 ```mojo
-def fib[x: Int where x >= 0]() -> Int:
+def pow2[n: Int]() -> Int where n >= 0:
     ...
 ```
 
-Here the `fib()` function requires its `x` parameter to be greater than or equal
-to 0. The expression `x >= 0` is called a *proposition*. With the exception
-of very simple expressions, Mojo doesn't evaluate these propositions literally.
-Instead, it analyzes them symbolically, tracking a list of propositions that are
-known to be true in the current scope. Understanding this system of symbolic
-propositions is key to using constraints effectively.
+Here the `pow2()` function requires its `n` parameter to be greater than or
+equal to 0. The expression `n >= 0` is called a *proposition*. With the
+exception of very simple expressions, Mojo doesn't evaluate these propositions
+literally. Instead, it analyzes them symbolically, tracking a list of
+propositions that are known to be true in the current scope. Understanding this
+system of symbolic propositions is key to using constraints effectively.
 
 Mojo also supports *compile-time assertions*, which test a proposition at
 compile time—if the assertion evaluates to false, compilation fails:
@@ -34,18 +34,17 @@ comptime assert x >= 0, "x must be greater than or equal to 0."
 
 You can use constraints in the following contexts:
 
-- In the parameter list of a function or struct, to constrain the values that
-  you can bind to one or more parameters.
+- At the end of a function, method, or in the parameters of struct
+  declaration, to constrain the values that you can bind to one or more
+  parameters.
 
-  `def fib[x: Int where x >= 0]() -> Int:`
+  `def pow2[n: Int]() -> Int where n >= 0:`
 
-  A constraint can involve multiple parameters, as long as the `where` clause
-  comes after the parameters:
+  A single `where` clause can constrain multiple parameters:
 
-  `def subspan[start: Int, end: Int where end > start](self) -> Self:`
+  `def subspan[start: Int, end: Int](self) -> Self where end > start:`
 
-- In a method declaration, to constrain the availability of the method
-  based on parameters of the parent struct.
+  Methods can gate their availability on parameters of the parent struct:
 
   `def sort() where conforms_to(Self.T, Comparable):`
 
@@ -63,7 +62,7 @@ You can use constraints in the following contexts:
 The constraint system works with *symbolic* propositions.
 
 ```mojo
-def first[size: Int where size > 0](array: InlineArray[_, size]) -> array.T:
+def first[size: Int](array: InlineArray[_, size]) -> array.T where size > 0:
   ...
 ```
 
@@ -102,10 +101,6 @@ There are four ways to introduce knowledge to the system:
   holds:
 
     ```mojo
-    def create_list[size: Int where size >= 0]() -> List[size]:
-      # Knowledge base:
-      # - `size >= 0`
-
     def create_list[size: Int]() -> List[size] where size >= 0:
       # Knowledge base:
       # - `size >= 0`
@@ -155,13 +150,13 @@ your behalf. Instead, it treats these propositions as opaque and only uses
 knowledge you've explicitly introduced in the calling scope.
 
 ```mojo
-# We have a function that wants a non-empty list.
-def print_first[size: Int where size >= 1](l: InlineArray[Int, size]):
+# A function that wants a non-empty list.
+def print_first[size: Int](l: InlineArray[Int, size]) where size >= 1:
     ...
 
 
 # A wrapper that wants a size >= 2 list.
-def print_first_two[size: Int where size >= 2](l: InlineArray[Int, size]):
+def print_first_two[size: Int](l: InlineArray[Int, size]) where size >= 2:
      # Error: invalid call to 'print_first': lacking evidence to prove
      # correctness
     print_first[size](l)
@@ -213,11 +208,22 @@ itself (or `B` by itself), even though symbolically they aren't identical
 propositions.
 
 ```mojo
-def create_even_list[
-  size: Int where size >= 0 and size.is_even()
-]() -> List[size]:
-  # No need to individually assert that `size >= 0`.
-  return create_list[size]
+def create_list[T: Copyable, size: Int]() -> List[T] where size >= 0:
+    return List[T](capacity = size)
+
+def create_even_list[T: Copyable, size: Int]() -> List[T] where (
+    size >= 0 and (size / 2) * 2 == size
+):
+    # No need to individually prove `size >= 0` — it's part of the
+    # `and` above, so the call to `create_list` type-checks.
+    return create_list[T, size=size]()
+
+def main():
+    var l1 = create_even_list[Int, 4]()
+    print(len(l1) % 2) 
+    # Prints 0, since the list has an even number of elements.
+
+    # var l2 = create_even_list[Int, 5]()  # Won't compile: 5 isn't even.
 ```
 
 Similarly, `A` implies `A or B` for any `B`.
@@ -242,16 +248,16 @@ identical function calls are the same.
 def is_even(x: Int) -> Bool:
   return x % 2 == 0
 
-def needs_even[x: Int where is_even(x)]():
+def needs_even[x: Int]() where is_even(x):
   pass
 
-def forward_even_bad[x: Int where x % 2 == 0]():
+def forward_even_bad[x: Int]() where x % 2 == 0:
   # ERROR: Needs evidence for `is_even(x)`.
-  needs_even[x]
+  needs_even[x]()
 
-def forward_even_good[x: Int where is_even(x)]():
+def forward_even_good[x: Int]() where is_even(x):
   # SUCCESS
-  needs_even[x]
+  needs_even[x]()
 ```
 
 :::note Builtin functions
@@ -395,7 +401,7 @@ This tends to be the right choice when:
 Example:
 
 ```mojo
-def take_prefix[n: Int, len: Int where 0 <= n <= len](...) -> ...:
+def take_prefix[n: Int, len: Int](...) -> ... where 0 <= n <= len:
   ...
 ```
 
@@ -464,13 +470,13 @@ function.
 For example, to propagate the constraint to your callers:
 
 ```mojo
-def create_list[size: Int where size >= 0]() -> List[size]:
-  ...
+def create_list[T: Copyable, size: Int]() -> List[T] where size >= 0:
+  return List[T](capacity = size)
 
 # This function is also only meaningful when size >= 0.
 # Make that part of the contract too.
-def create_list_and_fill[size: Int where size >= 0]():
-  comptime xs = create_list[size]()
+def create_list_and_process[T: Copyable, size: Int](value: T) where size >= 0:
+  comptime xs = create_list[T, size=size]()
   ...
 ```
 

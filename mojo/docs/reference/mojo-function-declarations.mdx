@@ -57,6 +57,10 @@ def name[parameter-list](argument-list) -> ReturnType:
 def name(argument-list) raises -> ReturnType:
     body
 
+def name[parameter-list](argument-list)
+    -> ReturnType where constraint:
+    body
+
 def name[parameter-list](argument-list) raises
     -> ReturnType where constraint:
     body
@@ -232,29 +236,8 @@ Parameters also support defaults.
 ## Function constraints
 
 A `where` clause constrains compile-time parameters. It
-appears after the return type (or after the argument list if
-there's no return type):
-
-```mojo
-def process[
-    n: Int,
-](data: SIMD[DType.float32, n]) -> Float32 where (
-    n == 1 or n == 2 or n == 4
-    or n == 8 or n == 16 or n == 32
-):
-    var sum: Float32 = 0.0
-    for i in range(n):
-        sum += data[i]
-    return sum
-
-def main():
-    var data = SIMD[DType.float32, 16](255.0)
-    var sum = process[n=16](data)
-    print(t"Sum: {sum}")  # Sum: 4080.0
-```
-
-`where` can also refine parameters with trait conformances, enabling use of
-methods and other items from that trait:
+appears at the end of the declaration, after the return type
+(or after the argument list if there's no return type):
 
 ```mojo
 comptime LESS_THAN: Int32 = -1
@@ -274,7 +257,41 @@ def compare[T: AnyType](
 def main():
     print(compare(5, 10))  # -1 (LESS_THAN)
     print(compare(7, 7))   # 0 (EQUAL)
-    print(compare("Z", "A")) # 1 (GREATER_THAN),
+    print(compare("Z", "A")) # 1 (GREATER_THAN)
+```
+
+`where` clauses can express complex constraints, such as limiting
+SIMD vector sizes to certain powers of 2:
+
+```mojo
+def process[
+    n: Int,
+](data: SIMD[DType.float32, n]) -> Float32 where (
+    n == 1 or n == 2 or n == 4 or n == 8 or n == 16 or n == 32
+):
+    var sum: Float32 = 0.0
+    for i in range(n):
+        sum += data[i]
+    return sum
+
+
+def main():
+    var data = SIMD[DType.float32, 16](255.0)
+    var sum = process[n=16](data)
+    print(t"Sum: {sum}")  # Sum: 4080.0
+```
+
+`where` clauses are only valid at the end of a declaration.
+They're not valid inside parameter or argument lists:
+
+```mojo
+# Error: where clauses are not valid in parameter lists
+def bad[n: Int where n > 0]():
+    pass
+
+# Error: where clauses are not valid in argument lists
+def bad(x: Int where x > 0):
+    pass
 ```
 
 ## Argument conventions
@@ -443,11 +460,11 @@ def bad(out *results: Int):
     pass
 ```
 
-## Effects
+## Function effects
 
 Effects appear after the closing parenthesis and before `->`.
 
-### `raises`
+### `raises` {#raises}
 
 Declares that the function can raise an error. An optional
 error type can follow `raises`:
@@ -461,6 +478,70 @@ def parse_strict(text: String) raises ValueError -> Int:
 ```
 
 A function can specify at most one error type after `raises`.
+
+### `thin` {#thin}
+
+Declares that a function type does not capture values from its defining
+scope. A thin function is a function pointer and not a closure.
+
+```mojo
+def map[
+    T: Copyable, U: Copyable
+](f: def(T) thin -> U, input: List[T]) -> List[U]:
+    var result: List[U] = []
+    for item in input:
+        result.append(f(item))
+    return result^
+
+# `square` does not capture any values, so it is `thin`
+def square(x: Int) -> Int:
+    return x * x
+
+def main():
+    var nums: List[Int] = [1, 2, 3]
+    var squares = map(square, nums)
+    print(squares)  # Output: [1, 4, 9]
+```
+
+### `abi("C")` {#abi-c}
+
+Declares that a function uses the C calling convention. Because C has no
+closure mechanism, `abi("C")` always appears together with `thin`:
+
+```mojo
+from std.ffi import OwnedDLHandle
+
+def main() raises:
+    # On Linux. On macOS, use "libSystem.dylib", and so forth
+    var lib = OwnedDLHandle("libm.so")
+    var sqrt = lib.get_function[def(Float64) thin abi("C") -> Float64](
+        "sqrt"
+    )
+    print(sqrt(4.0))  # 2.0
+```
+
+### `register_passable` {#register-passable}
+
+Declares that a function value can be passed through registers rather
+than by reference. A register-passable function has no heap captures
+and no captures that require a stable memory address, making it
+suitable for high-performance contexts like parallel execution and
+GPU kernels.
+
+```mojo
+def apply[F: def(Int) register_passable -> Int](f: F, x: Int) -> Int:
+    return f(x)
+
+def double(x: Int) register_passable -> Int:
+    return x * 2
+
+def main():
+    print(apply(double, 21))  # 42
+```
+
+The type constraint
+`def(Int) register_passable -> Int` on `F` enforces that callers can only
+pass `register_passable` callables.
 
 ## Return type
 
