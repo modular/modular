@@ -92,6 +92,9 @@ def heuristic_and_outliers_dispatch[
         or scaling_kind == UMMAKind.KIND_MXF4
     )
 
+    comptime MMA_K = 32
+    comptime BK = (TensorMapSwizzle.SWIZZLE_128B.bytes() // size_of[a_type]())
+    comptime num_k_iters = ceildiv(a.static_shape[1], BK)
     comptime static_N = c.static_shape[1]
     comptime static_K = a.static_shape[1] * 2 if is_fp4 else a.static_shape[1]
 
@@ -128,9 +131,6 @@ def heuristic_and_outliers_dispatch[
     comptime assert (
         a_scales.static_shape[4] == b_scales.static_shape[4] == SF_ATOM_K
     ), ""
-
-    comptime MMA_K = 32
-    comptime BK = (TensorMapSwizzle.SWIZZLE_128B.bytes() // size_of[a_type]())
 
     comptime outliers = Table(
         _get_tuning_list_sm100_nvfp4(), "nvfp4_heuristic_outliers"
@@ -194,7 +194,7 @@ def heuristic_and_outliers_dispatch[
             cluster_shape=Index(1, 1, 1),
             block_swizzle_size=8,
             num_accum_pipeline_stages=1,
-            k_group_size=2,
+            k_group_size=2 if num_k_iters % 2 == 0 else 1,
             num_clc_pipeline_stages=0,
             AB_swapped=True,
             is_small_bn=True,

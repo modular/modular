@@ -1273,6 +1273,8 @@ def choose_block_scaled_config[
         sfa_dtype == sfb_dtype
     ), "sfa_dtype and sfb_dtype must be the same"
 
+    comptime is_fp4 = a_type == DType.uint8
+
     comptime num_SMs = B200.sm_count
     # Nvidia mma instruction process 32B in K.
     comptime Kbytes_per_mma = 32
@@ -1341,10 +1343,11 @@ def choose_block_scaled_config[
 
     # For small mmas, we group multiple tiles per tma-mma synchronization.
     var output_block_size = (mma_mn[0] // cta_group) * mma_mn[1]
-    if output_block_size <= 64 * 96 and ceildiv(K, BK) % 2 == 0:
+    var num_k_iters = ceildiv(K // 2, BK) if is_fp4 else ceildiv(K, BK)
+    if output_block_size <= 64 * 96 and num_k_iters % 2 == 0:
         k_group_size = 2
     # For very small mmas we can group more aggressively.
-    if output_block_size <= 64 * 16 and ceildiv(K, BK) % 4 == 0:
+    if output_block_size <= 64 * 16 and num_k_iters % 4 == 0:
         k_group_size = 4
 
     var min_load_volume = Int.MAX

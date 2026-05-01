@@ -1790,31 +1790,6 @@ def block_scaled_matmul[
         else:
             raise Error("Heuristic and outliers dispatch failed")
 
-    comptime DeepSeek_NK = [
-        Index(7168, 16384),
-        # Index(4096, 7168),
-        # Index(7168, 2048),
-    ]
-
-    comptime Llama_NK_256 = [
-        Index(16384, 2048),
-    ]
-
-    comptime Llama_405B_NK = [
-        Index(2304, 16384),
-        Index(16384, 2048),
-        Index(6656, 16384),
-        Index(13312, 16384),
-        Index(16384, 6656),
-    ]
-
-    comptime Kimi_NK = [
-        Index(7168, 8192),
-        Index(7168, 2048),
-        Index(7168, 18432),
-        Index(4096, 7168),
-    ]
-
     @always_inline
     @parameter
     def description_fn() -> String:
@@ -1846,88 +1821,24 @@ def block_scaled_matmul[
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
         task_id=get_safe_task_id(ctx),
     ):
-        comptime if static_NK in DeepSeek_NK:
-            if m == 1:
-                var status = heuristic_and_outliers_dispatch[
-                    SF_VECTOR_SIZE=SF_VECTOR_SIZE,
-                    transpose_b=transpose_b,
-                    elementwise_lambda_fn=elementwise_lambda_fn,
-                    elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                    pdl_level=pdl_level,
-                ](
-                    c_device,
-                    a_device,
-                    b_device,
-                    a_scales,
-                    b_scales,
-                    tensor_sf,
-                    ctx,
-                )
-
-                if status == DISPATCH_HIT:
-                    return
-
-        comptime if static_NK in Llama_NK_256:
-            if m > 1 and m <= 256:
-                var status = heuristic_and_outliers_dispatch[
-                    SF_VECTOR_SIZE=SF_VECTOR_SIZE,
-                    transpose_b=transpose_b,
-                    elementwise_lambda_fn=elementwise_lambda_fn,
-                    elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                    pdl_level=pdl_level,
-                ](
-                    c_device,
-                    a_device,
-                    b_device,
-                    a_scales,
-                    b_scales,
-                    tensor_sf,
-                    ctx,
-                )
-
-                if status == DISPATCH_HIT:
-                    return
-
-        comptime if static_NK in Llama_405B_NK:
-            if m == 1:
-                var status = heuristic_and_outliers_dispatch[
-                    SF_VECTOR_SIZE=SF_VECTOR_SIZE,
-                    transpose_b=transpose_b,
-                    elementwise_lambda_fn=elementwise_lambda_fn,
-                    elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                    pdl_level=pdl_level,
-                ](
-                    c_device,
-                    a_device,
-                    b_device,
-                    a_scales,
-                    b_scales,
-                    tensor_sf,
-                    ctx,
-                )
-
-                if status == DISPATCH_HIT:
-                    return
-
-        comptime if static_NK in Kimi_NK:
-            if m <= 128:
-                var status = heuristic_and_outliers_dispatch[
-                    SF_VECTOR_SIZE=SF_VECTOR_SIZE,
-                    transpose_b=transpose_b,
-                    elementwise_lambda_fn=elementwise_lambda_fn,
-                    elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                    pdl_level=pdl_level,
-                ](
-                    c_device,
-                    a_device,
-                    b_device,
-                    a_scales,
-                    b_scales,
-                    tensor_sf,
-                    ctx,
-                )
-                if status == DISPATCH_HIT:
-                    return
+        if m <= 128:
+            var status = heuristic_and_outliers_dispatch[
+                SF_VECTOR_SIZE=SF_VECTOR_SIZE,
+                transpose_b=transpose_b,
+                elementwise_lambda_fn=elementwise_lambda_fn,
+                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+                pdl_level=pdl_level,
+            ](
+                c_device,
+                a_device,
+                b_device,
+                a_scales,
+                b_scales,
+                tensor_sf,
+                ctx,
+            )
+            if status == DISPATCH_HIT:
+                return
 
         # vendor matmul only supports epilogue lambda, so we wrap it around an epilogue lambda instead.
         block_scaled_matmul_with_epilogue[
