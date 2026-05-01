@@ -41,6 +41,21 @@
   owned_in_mem
 >} : () -> ()
 
+// CHECK-LABEL: "pogs.with_pre_constraints"
+// CHECK-SAME: {pogs = #lit.pog_list<[<"a", pos, not_vararg>]{{.*}}<1, #{{loc[0-9]+}}>, <1, #{{loc[0-9]+}}>}>}
+"pogs.with_pre_constraints"() {pogs = #lit.pog_list<
+  [<"a", pos, not_vararg>]
+  {<1, loc("pre.mojo":1:1)>, <1, loc("pre.mojo":1:2)>}
+>} : () -> ()
+
+// CHECK-LABEL: "pogs.variadic_and_pre"
+// CHECK-SAME: {pogs = #lit.pog_list<[<"a", pos, not_vararg>, <"b", pos_or_kw, pack_vararg>]{{.*}}<1, #{{loc[0-9]+}}>, <1, #{{loc[0-9]+}}>}{{.*}}owned_in_mem>}
+"pogs.variadic_and_pre"() {pogs = #lit.pog_list<
+  [<"a", pos, not_vararg>, <"b", pos_or_kw, pack_vararg>]
+  {<1, loc("pre.mojo":2:1)>, <1, loc("pre.mojo":2:2)>},
+  owned_in_mem
+>} : () -> ()
+
 // CHECK-LABEL: "empty.pogs"
 // CHECK-SAME: {pogs = #lit.pog_list<[]>}
 "empty.pogs"() {pogs = #lit.pog_list<[]>} : () -> ()

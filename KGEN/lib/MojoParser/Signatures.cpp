@@ -1284,7 +1284,7 @@ PogListAttr TypeCheckedParamList::getParamListAttr() const {
 
   return PogListAttr::get(shared.getContext(), names, passingKinds,
                           variadicKinds, defaults, origVariadicConvention,
-                          allParamConstraints);
+                          /*preConstraints=*/{}, allParamConstraints);
 }
 
 //===----------------------------------------------------------------------===//
@@ -2819,7 +2819,8 @@ FnTypeGeneratorType TypeCheckedFnSignature::getFnTypeGeneratorType() const {
 
   PogListAttr paramListAttr = paramList.getParamListAttr();
   auto metadata = FnMetadataAttr::get(
-      PogListAttr::get(ctx, argPogs, argVariadicOrigConvention),
+      PogListAttr::get(ctx, argPogs, paramListAttr.getPreConstraints(),
+                       argVariadicOrigConvention),
       implicitOriginDecls.size(),
       getOriginsAccessibleByParams(paramListAttr, paramList.paramDeclAttrs,
                                    paramList.shared, captureOrigins),

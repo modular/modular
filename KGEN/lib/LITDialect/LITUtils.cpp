@@ -217,7 +217,24 @@ static ParseResult parseVariadicness(AsmParser &p, VariadicKind &variadic,
 /// parameter-decl   ::= identifier (`[` identifier `]`)?
 ///                        (`:` type (`=` expression)? )?
 /// parameter-list   ::= parameter-decl (`,` parameter-decl)* | `(` `)`
-/// parameter-spec   ::= `<` parameter-list (`->` parameter-list)? `>`
+/// parameter-spec   ::= `<` (`{` constraint-list `}`
+///                           (`,` parameter-list)?)?
+///                        parameter-list? (`->` parameter-list)? `>`
+static ParseResult
+parseConstraintsListContents(AsmParser &p,
+                             SmallVectorImpl<ConstraintAttr> &constraints) {
+  do {
+    auto constraint =
+        llvm::cast_if_present<ConstraintAttr>(ConstraintAttr::parse(p, {}));
+    if (!constraint)
+      return failure();
+    constraints.push_back(cast<ConstraintAttr>(constraint));
+  } while (succeeded(p.parseOptionalComma()));
+  if (p.parseRBrace())
+    return failure();
+  return success();
+}
+
 ParseResult LIT::parseOptionalParameterSpec(AsmParser &p,
                                             ParamDeclArrayAttr &inputParamDecls,
                                             PogListAttr &paramListAttr) {
@@ -228,12 +245,21 @@ ParseResult LIT::parseOptionalParameterSpec(AsmParser &p,
   SmallVector<VariadicKind> argsVariadic;
   std::optional<ArgConvention> origVariadicConvention;
   SmallVector<SmallVector<ConstraintAttr>> constraints;
+  SmallVector<ConstraintAttr> preConstraints;
 
   llvm::SMLoc startLoc = p.getCurrentLocation();
   PassingKindParser passingKindParser(p);
   size_t idx = 0;
   auto parseWithDefault =
       [&](SmallVectorImpl<ParamDeclAttr> &decls) -> ParseResult {
+    if (idx == 0 && preConstraints.empty() &&
+        succeeded(p.parseOptionalLBrace())) {
+      if (failed(parseConstraintsListContents(p, preConstraints)))
+        return failure();
+      if (failed(p.parseOptionalComma()))
+        return success();
+    }
+
     if (OptionalParseResult res = passingKindParser.parseOptionalStarSlash();
         res.has_value())
       return res.value();
@@ -288,9 +314,9 @@ ParseResult LIT::parseOptionalParameterSpec(AsmParser &p,
 
   passingKindParser.populatePassingKinds(paramPassingKinds);
 
-  paramListAttr =
-      PogListAttr::get(ctx, paramNames, paramPassingKinds, argsVariadic,
-                       defaultParams, origVariadicConvention, constraints);
+  paramListAttr = PogListAttr::get(
+      ctx, paramNames, paramPassingKinds, argsVariadic, defaultParams,
+      origVariadicConvention, preConstraints, constraints);
   return success();
 }
 
@@ -298,16 +324,18 @@ ParseResult LIT::parseOptionalConstraintsList(
     AsmParser &p, SmallVectorImpl<ConstraintAttr> &constraints) {
   if (p.parseOptionalLBrace())
     return success();
-  do {
-    auto constraint =
-        llvm::cast_if_present<ConstraintAttr>(ConstraintAttr::parse(p, {}));
-    if (!constraint)
-      return failure();
-    constraints.push_back(cast<ConstraintAttr>(constraint));
-  } while (succeeded(p.parseOptionalComma()));
-  if (p.parseRBrace())
-    return failure();
-  return success();
+  return parseConstraintsListContents(p, constraints);
+}
+
+static void printConstraintsListContents(AsmPrinter &p,
+                                         ArrayRef<ConstraintAttr> constraints,
+                                         ParameterEvaluator *evaluator) {
+  llvm::interleaveComma(constraints, p, [&](ConstraintAttr constraint) {
+    if (evaluator)
+      constraint =
+          cast<ConstraintAttr>(evaluator->getReboundAttribute(constraint));
+    constraint.print(p);
+  });
 }
 
 void LIT::printOptionalConstraintsList(AsmPrinter &p,
@@ -316,12 +344,7 @@ void LIT::printOptionalConstraintsList(AsmPrinter &p,
   if (constraints.empty())
     return;
   p << " {";
-  llvm::interleaveComma(constraints, p, [&](ConstraintAttr constraint) {
-    if (evaluator)
-      constraint =
-          cast<ConstraintAttr>(evaluator->getReboundAttribute(constraint));
-    constraint.print(p);
-  });
+  printConstraintsListContents(p, constraints, evaluator);
   p << "}";
 }
 
@@ -410,7 +433,20 @@ void LIT::printOptionalParameterSpec(AsmPrinter &p,
   size_t idx = 0;
   PassingKindPrinter passingKindPrinter(p, paramListAttr, '|');
   ArrayRef<PogMetadataAttr> pogs = paramListAttr.getPogs();
+  ArrayRef<ConstraintAttr> preConstraints = paramListAttr.getPreConstraints();
+  if (!preConstraints.empty() && paramDecls.empty()) {
+    p << "<{";
+    printConstraintsListContents(p, preConstraints, &evaluator);
+    p << "}>";
+    return;
+  }
   auto printWithDefault = [&](ParamDeclAttr decl) {
+    if (idx == 0 && !preConstraints.empty()) {
+      p << '{';
+      printConstraintsListContents(p, preConstraints, &evaluator);
+      p << "}, ";
+    }
+
     passingKindPrinter.printOptionalStarSlash(idx);
 
     StringAttr name = paramListAttr.getName(idx);
@@ -445,11 +481,20 @@ ParseResult LIT::parseOptionalParamSignature(
   SmallVector<VariadicKind> argVariadics;
   std::optional<ArgConvention> origVariadicConvention;
   SmallVector<SmallVector<ConstraintAttr>> constraints;
+  SmallVector<ConstraintAttr> preConstraints;
 
   // Parse the input parameter types and optional default values.
   PassingKindParser passingKindParser(p);
   size_t idx = 0;
   auto parseInputParam = [&](SmallVectorImpl<Type> &inputs) -> ParseResult {
+    if (idx == 0 && preConstraints.empty() &&
+        succeeded(p.parseOptionalLBrace())) {
+      if (failed(parseConstraintsListContents(p, preConstraints)))
+        return failure();
+      if (failed(p.parseOptionalComma()))
+        return success();
+    }
+
     if (OptionalParseResult res = passingKindParser.parseOptionalStarSlash();
         res.has_value())
       return res.value();
@@ -493,7 +538,7 @@ ParseResult LIT::parseOptionalParamSignature(
 
   paramListAttr = PogListAttr::get(
       p.getContext(), paramNames, paramPassingKinds, argVariadics,
-      defaultParams, origVariadicConvention, constraints);
+      defaultParams, origVariadicConvention, preConstraints, constraints);
   return success();
 }
 
@@ -502,7 +547,20 @@ void LIT::printOptionalParamSignature(AsmPrinter &p,
                                       PogListAttr paramListAttr) {
   size_t idx = 0;
   PassingKindPrinter passingKindPrinter(p, paramListAttr, '|');
+  ArrayRef<ConstraintAttr> preConstraints = paramListAttr.getPreConstraints();
+  if (!preConstraints.empty() && inputParamTypes.empty()) {
+    p << "<{";
+    printConstraintsListContents(p, preConstraints, /*evaluator=*/nullptr);
+    p << "}>";
+    return;
+  }
   auto printWithDefault = [&](Type type) {
+    if (idx == 0 && !preConstraints.empty()) {
+      p << '{';
+      printConstraintsListContents(p, preConstraints, /*evaluator=*/nullptr);
+      p << "}, ";
+    }
+
     passingKindPrinter.printOptionalStarSlash(idx);
 
     if (StringAttr name = paramListAttr.getName(idx); !name.empty()) {
@@ -632,6 +690,10 @@ void LIT::printFnType(AsmPrinter &p, FnType signature) {
   printSignatureValues(p, printElt, signature.getValues(),
                        signature.getArgConventions(), signature.getFnEffects(),
                        /*optionalResultList=*/false);
+  assert(argListAttr.getPreConstraints().empty());
+  assert(llvm::all_of(argListAttr.getPogs(), [](PogMetadataAttr pog) {
+    return pog.getConstraints().empty();
+  }));
   printOptionalWhereClauses(p, metadata.getConstraints());
 }
 

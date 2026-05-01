@@ -41,7 +41,8 @@ void LITDialect::registerAttributes() {
 //===----------------------------------------------------------------------===//
 
 PogListAttr PogListAttr::get(MLIRContext *context) {
-  return PogListAttr::get(context, {}, ArgConvention::ByRefError);
+  return PogListAttr::get(context, /*pogs=*/{}, /*preConstraints=*/{},
+                          ArgConvention::ByRefError);
 }
 
 PogListAttr PogListAttr::get(MLIRContext *context, size_t numPogs) {
@@ -53,7 +54,8 @@ PogListAttr PogListAttr::get(MLIRContext *context, size_t numPogs) {
 
 PogListAttr PogListAttr::get(MLIRContext *context,
                              ArrayRef<PogMetadataAttr> pogs) {
-  return PogListAttr::get(context, pogs, ArgConvention::ByRefError);
+  return PogListAttr::get(context, pogs, /*preConstraints=*/{},
+                          ArgConvention::ByRefError);
 }
 
 PogListAttr PogListAttr::get(MLIRContext *context, ArrayRef<StringAttr> names,
@@ -71,14 +73,17 @@ PogListAttr::get(MLIRContext *context, ArrayRef<StringAttr> names,
                  ArrayRef<VariadicKind> argVariadics,
                  ArrayRef<TypedAttr> defaults,
                  std::optional<ArgConvention> origVariadicConvention,
+                 ArrayRef<ConstraintAttr> preConstraints,
                  ArrayRef<SmallVector<ConstraintAttr>> constraints) {
   return PogListAttr::get(
       context, toPogs(names, passingKinds, argVariadics, defaults, constraints),
+      preConstraints,
       origVariadicConvention.value_or(ArgConvention::ByRefError));
 }
 
 LogicalResult PogListAttr::verify(function_ref<InFlightDiagnostic()> emitError,
                                   ArrayRef<PogMetadataAttr> pogs,
+                                  ArrayRef<ConstraintAttr> preConstraints,
                                   ArgConvention origVariadicConvention) {
   size_t numEl = pogs.size();
   for (PogMetadataAttr pogAttr : pogs)
@@ -132,7 +137,8 @@ LogicalResult PogListAttr::verify(function_ref<InFlightDiagnostic()> emitError,
 }
 
 PogListAttr PogListAttr::cloneWith(ArrayRef<PogMetadataAttr> pogs) const {
-  return PogListAttr::get(getContext(), pogs, getOrigVariadicConvention());
+  return PogListAttr::get(getContext(), pogs, getPreConstraints(),
+                          getOrigVariadicConvention());
 }
 
 VariadicKind PogListAttr::getVariadicKind(size_t idx) const {
@@ -265,11 +271,15 @@ GeneratorMetadataAttrInterface PogListAttr::getSpecializedMetadata(
   if (!hasAnyVarArg)
     varargsConvention = ArgConvention::ByRefError;
 
-  return PogListAttr::get(getContext(), newPogs, varargsConvention);
+  // No need to rebind the pre-constraints. They do not reference any
+  // parameters.
+  return PogListAttr::get(getContext(), newPogs, getPreConstraints(),
+                          varargsConvention);
 }
 
 /// Get a new metadata attribute for a generator with the given number of
 /// positional input parameters prepended to the generator.
+/// TODO: Also prepend constraints and handle pre-constraints the right way.
 PogListAttr
 PogListAttr::prependAsInferredParams(ArrayRef<StringAttr> names,
                                      ArrayRef<TypedAttr> defaults) const {
@@ -289,7 +299,8 @@ PogListAttr::prependAsInferredParams(ArrayRef<StringAttr> names,
                                            /*constraints=*/{}));
   }
   newPogs.append(getPogs().begin(), getPogs().end());
-  return PogListAttr::get(getContext(), newPogs, getOrigVariadicConvention());
+  return PogListAttr::get(getContext(), newPogs, getPreConstraints(),
+                          getOrigVariadicConvention());
 }
 
 GeneratorMetadataAttrInterface
@@ -366,8 +377,9 @@ FnMetadataAttr::getWithBoundPosArgs(size_t numBound) const {
   ArrayRef<PogMetadataAttr> newPogs =
       argListAttrs.getPogs().drop_front(numBound);
 
-  auto newArgListAttrs = PogListAttr::get(
-      getContext(), newPogs, argListAttrs.getOrigVariadicConvention());
+  auto newArgListAttrs =
+      PogListAttr::get(getContext(), newPogs, argListAttrs.getPreConstraints(),
+                       argListAttrs.getOrigVariadicConvention());
   return get(newArgListAttrs, getNumImplicitOriginDecls(), getCaptureOrigins(),
              getIsNestedOriginExclusivityCheckingDisabled(), getConstraints());
 }
