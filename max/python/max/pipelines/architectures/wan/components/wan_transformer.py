@@ -22,11 +22,11 @@ from typing import Any
 from max.driver import Buffer, Device, load_devices
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import DeviceRef, Graph, TensorType
+from max.graph import DeviceRef, Graph, Module, TensorType
 from max.graph.weights import load_weights
 from max.pipelines.lib.compiled_component import CompiledComponent
 from max.pipelines.lib.model_manifest import ModelManifest
-from max.profiler import traced
+from max.profiler import Tracer, traced
 
 from ..model import (
     BlockLevelModel,
@@ -81,9 +81,13 @@ class WanTransformer(CompiledComponent):
         self._model_2: BlockLevelModel | None = None
         # Graph IR is built once on the primary compile and reused by the
         # MoE secondary compile so we skip rebuilding 40 layers of
-        # transformer-block Python-side IR on the second pass. The
-        # cfg_unpack graph has no expert-specific weights, so its loaded
-        # Model is shared across experts too.
+        # transformer-block Python-side IR on the second pass. The pre,
+        # blocks, and post graphs share one MLIR module so a single
+        # ``session.load_all`` call compiles them together — the graph
+        # compiler parallelizes and dedupes across the module's GraphOps.
+        # cfg_unpack has no expert-specific weights and is a separate
+        # one-graph module loaded once.
+        self._graphs_module: Module | None = None
         self._pre_graph: Graph | None = None
         self._blocks_graph: Graph | None = None
         self._post_graph: Graph | None = None
@@ -124,6 +128,7 @@ class WanTransformer(CompiledComponent):
 
         return state_dict_2
 
+    @traced(message="WanTransformer._compile_model")
     def _compile_model(
         self,
         *,
@@ -158,51 +163,55 @@ class WanTransformer(CompiledComponent):
             # creates fresh module instances so primary and secondary
             # experts hold distinct weight buffers — ``session.load`` takes
             # shared DLPack refs to the tensors in ``weights_registry``.
-            pre_module = WanTransformerPreProcess(
-                self.config, dtype=dtype, device=dev_ref
-            )
-            pre_module.load_state_dict(
-                pre_weights, weight_alignment=1, strict=True
-            )
-
-            all_blocks = [
-                WanTransformerBlock(
-                    dim=dim,
-                    ffn_dim=self.config.ffn_dim,
-                    num_heads=self.config.num_attention_heads,
-                    head_dim=self.config.attention_head_dim,
-                    text_dim=dim,
-                    cross_attn_norm=self.config.cross_attn_norm,
-                    eps=self.config.eps,
-                    added_kv_proj_dim=self.config.added_kv_proj_dim,
-                    dtype=dtype,
-                    device=dev_ref,
+            with Tracer("dit_build_modules"):
+                pre_module = WanTransformerPreProcess(
+                    self.config, dtype=dtype, device=dev_ref
                 )
-                for _ in range(self.config.num_layers)
-            ]
-            block_sequence = WanTransformerBlockSequence(all_blocks)
-            # Load per-block weights with LayerList prefix.
-            combined_block_weights: dict[str, Any] = {}
-            for i, block_weights in enumerate(block_weights_list):
-                for k, v in block_weights.items():
-                    combined_block_weights[f"blocks.{i}.{k}"] = v
-            block_sequence.load_state_dict(
-                combined_block_weights, weight_alignment=1, strict=True
-            )
+                pre_module.load_state_dict(
+                    pre_weights, weight_alignment=1, strict=True
+                )
 
-            post_module = WanTransformerPostProcess(
-                self.config, dtype=dtype, device=dev_ref
-            )
-            post_module.load_state_dict(
-                post_weights, weight_alignment=1, strict=True
-            )
+                all_blocks = [
+                    WanTransformerBlock(
+                        dim=dim,
+                        ffn_dim=self.config.ffn_dim,
+                        num_heads=self.config.num_attention_heads,
+                        head_dim=self.config.attention_head_dim,
+                        text_dim=dim,
+                        cross_attn_norm=self.config.cross_attn_norm,
+                        eps=self.config.eps,
+                        added_kv_proj_dim=self.config.added_kv_proj_dim,
+                        dtype=dtype,
+                        device=dev_ref,
+                    )
+                    for _ in range(self.config.num_layers)
+                ]
+                block_sequence = WanTransformerBlockSequence(all_blocks)
+                # Load per-block weights with LayerList prefix.
+                combined_block_weights: dict[str, Any] = {}
+                for i, block_weights in enumerate(block_weights_list):
+                    for k, v in block_weights.items():
+                        combined_block_weights[f"blocks.{i}.{k}"] = v
+                block_sequence.load_state_dict(
+                    combined_block_weights, weight_alignment=1, strict=True
+                )
 
-            # Build graphs only on the first compile. ``session.load``
-            # below still recompiles MLIR for each Model (no in-process
-            # MEF cache today), but reusing the Graph IR skips the
-            # Python-side traversal — a meaningful chunk of work for the
-            # 40-layer combined block graph.
+                post_module = WanTransformerPostProcess(
+                    self.config, dtype=dtype, device=dev_ref
+                )
+                post_module.load_state_dict(
+                    post_weights, weight_alignment=1, strict=True
+                )
+
+            # Build graphs only on the first compile. The pre, blocks,
+            # and post graphs go into one shared MLIR module so the
+            # follow-up ``session.load_all`` compiles all three together —
+            # the graph compiler parallelizes across the module's GraphOps
+            # and dedupes shared IR. Reusing the Graph IR across the MoE
+            # primary/secondary compiles also skips the Python-side
+            # traversal of the 40-layer combined block graph.
             if self._pre_graph is None:
+                self._graphs_module = Graph.empty_module()
                 # Pre-processor graph. Latents and timestep are pinned to
                 # B=1 (the executor enforces single-prompt batches) so
                 # that the pre module can ``ops.broadcast_to`` them up to
@@ -230,7 +239,11 @@ class WanTransformer(CompiledComponent):
                         device=dev,
                     ),
                 ]
-                with Graph("wan_pre", input_types=pre_input_types) as pre_graph:
+                with Graph(
+                    "wan_pre",
+                    input_types=pre_input_types,
+                    module=self._graphs_module,
+                ) as pre_graph:
                     outs = pre_module(*(v.tensor for v in pre_graph.inputs))
                     pre_graph.output(*outs)
                 self._pre_graph = pre_graph
@@ -267,7 +280,9 @@ class WanTransformer(CompiledComponent):
                     ),
                 ]
                 with Graph(
-                    "wan_blocks_combined", input_types=block_input_types
+                    "wan_blocks_combined",
+                    input_types=block_input_types,
+                    module=self._graphs_module,
                 ) as blocks_graph:
                     block_out = block_sequence(
                         *(v.tensor for v in blocks_graph.inputs)
@@ -290,7 +305,9 @@ class WanTransformer(CompiledComponent):
                     TensorType(DType.int8, ["ppf", "pph", "ppw"], device=dev),
                 ]
                 with Graph(
-                    "wan_post", input_types=post_input_types
+                    "wan_post",
+                    input_types=post_input_types,
+                    module=self._graphs_module,
                 ) as post_graph:
                     post_out = post_module(
                         *(v.tensor for v in post_graph.inputs)
@@ -326,25 +343,27 @@ class WanTransformer(CompiledComponent):
                     noise_cond = noise_b2[0:1, :, :, :, :]
                     noise_uncond = noise_b2[1:2, :, :, :, :]
                     cfg_unpack_graph.output(noise_cond, noise_uncond)
-                self._cfg_unpack_model = self._session.load(cfg_unpack_graph)
+                with Tracer("dit_compile_cfg_unpack"):
+                    self._cfg_unpack_model = self._session.load(
+                        cfg_unpack_graph
+                    )
 
-            # Load each Model with this expert's weights. For the
-            # secondary compile, this is the only work session.load has
-            # to do beyond walking the cached IR.
+            # Load all three weight-bearing Models in one parallel
+            # compile pass. The combined registry covers every GraphOp in
+            # the shared module; ``load_all`` returns one Model per
+            # GraphOp in MEF (insertion) order.
+            combined_registry: dict[str, Any] = {
+                **pre_module.state_dict(),
+                **block_sequence.state_dict(),
+                **post_module.state_dict(),
+            }
             assert self._pre_graph is not None
-            assert self._blocks_graph is not None
-            assert self._post_graph is not None
-            pre_model = self._session.load(
-                self._pre_graph, weights_registry=pre_module.state_dict()
-            )
-            combined_blocks_model = self._session.load(
-                self._blocks_graph,
-                weights_registry=block_sequence.state_dict(),
-            )
-            post_model = self._session.load(
-                self._post_graph,
-                weights_registry=post_module.state_dict(),
-            )
+            with Tracer("dit_compile_load_all"):
+                pre_model, combined_blocks_model, post_model = (
+                    self._session.load_all(
+                        self._pre_graph, weights_registry=combined_registry
+                    )
+                )
             self._model = BlockLevelModel(
                 pre_model,
                 post_model,
@@ -543,6 +562,7 @@ class WanTransformer(CompiledComponent):
 
         return pre_weights, block_weights_list, post_weights
 
+    @traced(message="WanTransformer._compile_secondary_transformer")
     def _compile_secondary_transformer(
         self, state_dict: dict[str, Any], seq_len: int
     ) -> None:
