@@ -2916,6 +2916,13 @@ LogicalResult ClosureEmitter::checkStructCompatibility(ASTType structType,
   }
   StringRef name = "__call__";
   auto callDecls = structDecl.lookupInCurrentScope(name);
+  // Resolve signatures for all __call__ declarations before creating the
+  // OverloadSet, which requires DeclResolvedness::signature.
+  for (ASTDecl *callDecl : callDecls) {
+    if (failed(shared.declResolver->resolveSignature(*callDecl,
+                                                     structDecl.getLoc())))
+      return failure();
+  }
   FnOp callFunction = getFnOpNamed(traitDeclOp, name);
   // get the call function in terms of the struct wrapper
   SyntheticNode syntheticNode(structDecl.getLoc());
