@@ -161,15 +161,21 @@ def LIT_PogListAttr : LITAttr<"PogList", "pog_list",
 
     The `origVariadicConvention` indicates whether the original argument
     convention of a VariadicList or VariadicPack, e.g. "mut *args: Int".
+
+    Optional `preConstraints` holds constraints that must hold for the list to
+    be usable; they may only reference contextual parameters (not any name in
+    this list).
   }];
 
   let parameters = (ins
     OptionalArrayRefParameter<"PogMetadataAttr">:$pogs,
+    OptionalArrayRefParameter<"ConstraintAttr">:$preConstraints,
     LIT_OptionalConventionParameter:$origVariadicConvention
   );
 
   let assemblyFormat = [{
     `<` `[` (`]`) : ($pogs^ `]`)?
+        (`{` $preConstraints^ `}`)?
         (`,` custom<ArgConvention>($origVariadicConvention)^)?
     `>`
   }];
@@ -185,6 +191,7 @@ def LIT_PogListAttr : LITAttr<"PogList", "pog_list",
                      "ArrayRef<VariadicKind>":$variadics,
                      "ArrayRef<TypedAttr>":$defaults,
                      "std::optional<ArgConvention>":$origVariadicConvention,
+                     "ArrayRef<ConstraintAttr>":$preConstraints,
                      "ArrayRef<SmallVector<ConstraintAttr>>":$constraints)>
   ];
 

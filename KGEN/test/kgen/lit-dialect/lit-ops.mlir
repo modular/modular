@@ -627,3 +627,15 @@ lit.fn @has_pogs_requires<
   lit.return %none : !kgen.none
   lit.end_fn
 }
+
+// CHECK-LABEL: lit.fn @has_param_list_pre_constraint
+// CHECK-SAME: <{<1, #loc>, <1, #loc1>}, x, y {<lt(y, 10), #loc1>}>
+lit.fn @has_param_list_pre_constraint<
+  {<1, #loc>, <1, #loc1>},
+  x: index,
+  y: index {<lt(y, 10), #loc1>}
+>() -> !kgen.none {
+  %none = kgen.param.constant: none = <#kgen.none>
+  lit.return %none : !kgen.none
+  lit.end_fn
+}

@@ -96,8 +96,11 @@ TypeSignatureType TypeSignatureType::remapToSignature(
       });
 
   MLIRContext *ctx = paramDecls.getContext();
+  // No need to rebind the pre-constraints. They do not reference any
+  // parameters.
   paramListAttrs =
       PogListAttr::get(ctx, remapper.replace(paramListAttrs.getPogs()),
+                       paramListAttrs.getPreConstraints(),
                        paramListAttrs.getOrigVariadicConvention());
   return TypeSignatureType::getChecked(emitError, ctx, inputParamTypes,
                                        paramListAttrs);
@@ -144,8 +147,11 @@ TypeSignatureType TypeSignatureType::bind(ArrayRef<TypedAttr> values) const {
       hasVarArg ? paramListAttr.getOrigVariadicConvention()
                 : ArgConvention::ByRefError;
 
+  // No need to rebind the pre-constraints. They do not reference any
+  // parameters.
   auto paramListAttrs =
-      PogListAttr::get(getContext(), newPogs, origVariadicConvention);
+      PogListAttr::get(getContext(), newPogs, paramListAttr.getPreConstraints(),
+                       origVariadicConvention);
   return TypeSignatureType::get(getContext(), newParamTypes, paramListAttrs);
 }
 
@@ -1351,7 +1357,7 @@ static OptionalParseResult parseOptionalLITFuncType(AsmParser &p,
   auto metadata = FnMetadataAttr::get(
       PogListAttr::get(ctx, argNames, argPassingKinds, argVariadics,
                        defaultValues, origVariadicConvention,
-                       /*constraints=*/{}),
+                       /*preConstraints=*/{}, /*constraints=*/{}),
       numOriginDecls, captureOrigins, isNestedOriginExclusivityCheckingDisabled,
       constraints);
   signature =

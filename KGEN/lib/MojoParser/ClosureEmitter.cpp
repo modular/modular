@@ -1522,7 +1522,8 @@ ASTDecl *ClosureEmitter::createClosureTrait(
     }
     llvm::append_range(extendedPogs, sig.getParamListAttrs().getPogs());
     PogListAttr extendedParamListAttrs = PogListAttr::get(
-        ctx, extendedPogs, sig.getParamListAttrs().getOrigVariadicConvention());
+        ctx, extendedPogs, sig.getParamListAttrs().getPreConstraints(),
+        sig.getParamListAttrs().getOrigVariadicConvention());
     auto callName = StringAttr::get(ctx, "__call__");
     // Calculate the argument types and result types in terms of the named
     // parameters. Also replace GetWitnessAttr references to aliases with
