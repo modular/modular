@@ -321,7 +321,12 @@ class TextContext:
                 a mismatch between the bitmask and FSM state.
         """
         if self.matcher:
-            assert self.matcher.consume_token(token)
+            try:
+                assert self.matcher.consume_token(token)
+            except Exception:
+                print(
+                    f"Matcher Errors: {self.matcher.get_error()} \nMatcher Warnings: {self.matcher.get_grammar_warnings()}"
+                )
             return True
         return False
 

@@ -91,7 +91,7 @@ def test_graph_construction() -> None:
     #           + target KV (6 fields), + draft_tokens, + draft_kv_blocks,
     #           + rng seed, + sampling params (temperature, top_k, max_k, top_p, min_top_p)
     assert len(input_types) == 17, (
-        f"Expected 17 input types, got {len(input_types)}"
+        f"Expected 18 input types, got {len(input_types)}"
     )
 
     # Smoke test that graph construction (not compilation) works

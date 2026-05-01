@@ -34,6 +34,7 @@ from max.interfaces import (
     TextGenerationOutput,
 )
 from max.pipelines.lib.utils import upper_bounded_default
+from max.profiler import traced
 from transformers import (
     AutoConfig,
     PreTrainedTokenizerBase,
@@ -158,6 +159,7 @@ def build_response(
     return res
 
 
+@traced
 def update_context_and_prepare_responses(
     generated_tokens_host: npt.NDArray[np.int32],
     flat_batch: list[TextGenerationContextType],
@@ -232,6 +234,7 @@ def update_context_and_prepare_responses(
     return res
 
 
+@traced
 def update_spec_decode_context_and_prepare_responses(
     draft_tokens: npt.NDArray[np.int32],
     next_draft_tokens: npt.NDArray[np.int32],
@@ -285,6 +288,10 @@ def update_spec_decode_context_and_prepare_responses(
             # update_context_and_prepare_responses with overwrite_future).
             if i == 0:
                 ctx.realize_future_token(token)
+                # For structured output, advance FSM with the realized token.
+                # realize_future_token only updates the token buffer, not the FSM.
+                if ctx.matcher is not None:
+                    ctx.advance_fsm(token)
             elif ctx.is_done:
                 break
             else:
@@ -495,3 +502,118 @@ class StructuredOutputHelper:
             llguidance.numpy.fill_next_token_bitmask(
                 context.matcher, bitmask, index=index
             )
+
+    @traced
+    def compute_speculative_bitmasks(
+        self,
+        context_batch: list[TextGenerationContextType],
+        draft_tokens: npt.NDArray[np.int64],
+        num_positions: int,
+    ) -> npt.NDArray[np.bool_]:
+        """Compute speculative bitmasks for structured output in spec decode.
+
+        For each draft position i, the bitmask at position i contains valid
+        tokens given the FSM state after consuming draft[0:i-1]. The last
+        position (num_positions - 1) is for the bonus token.
+
+        This method speculatively advances the FSM through draft tokens to
+        compute bitmasks, then rolls back to restore the original state.
+
+        Args:
+            context_batch: List of generation contexts.
+            draft_tokens: Draft tokens to verify, shape [batch, K].
+            num_positions: Number of bitmask positions (K + 1, including bonus).
+
+        Returns:
+            Boolean bitmask array of shape [batch_size, num_positions, vocab_size].
+        """
+        if self.vocab_size is None:
+            raise ValueError("vocab_size must be set for speculative bitmasks")
+
+        batch_size = len(context_batch)
+        num_draft_tokens_to_verify = (
+            draft_tokens.shape[1] if draft_tokens.size else 0
+        )
+
+        # Check if any context has structured output
+        has_structured_output = any(
+            ctx.json_schema is not None or ctx.matcher is not None
+            for ctx in context_batch
+        )
+
+        if not has_structured_output:
+            # Fast path: all unconstrained, return all-True bitmask
+            return np.ones(
+                (batch_size, num_positions, self.vocab_size), dtype=np.bool_
+            )
+
+        # Allocate packed bitmask (int32) for llguidance
+        packed_bitmask = llguidance.numpy.allocate_token_bitmask(
+            batch_size * num_positions, self.vocab_size
+        )
+        packed_vocab_size = packed_bitmask.shape[1]
+        packed_bitmask = packed_bitmask.reshape(
+            batch_size, num_positions, packed_vocab_size
+        )
+
+        # Initialize matchers for contexts with json_schema
+        for ctx in context_batch:
+            if ctx.json_schema and ctx.matcher is None:
+                self.update_context(
+                    ctx,
+                    packed_bitmask[0, 0, :].reshape(
+                        1, -1
+                    ),  # Dummy, will be overwritten
+                    index=0,
+                )
+
+        # Fill bitmasks for each context and each draft position.
+        # The packed_bitmask is initialized to -1 (all bits set = all tokens valid),
+        # so we only need to call fill_next_token_bitmask for constrained contexts.
+        for ctx_idx, ctx in enumerate(context_batch):
+            if not ctx.matcher:
+                continue  # Unconstrained: leave at initial -1 (all tokens valid)
+
+            # Position 0: valid tokens at current FSM state
+            llguidance.numpy.fill_next_token_bitmask(
+                ctx.matcher,
+                packed_bitmask[ctx_idx, 0, :].reshape(1, -1),
+                index=0,
+            )
+
+            # Positions 1..num_positions-1: advance FSM through draft tokens
+            # Position num_positions-1 is for the bonus token (after all drafts)
+            tokens_consumed = 0
+            for i in range(num_draft_tokens_to_verify):
+                draft_token = int(draft_tokens[ctx_idx, i])
+                # Skip invalid/placeholder tokens (negative or out of vocab range)
+                # These positions stay at -1 (unconstrained)
+                if draft_token < 0 or draft_token >= self.vocab_size:
+                    raise ValueError(
+                        f"Invalid draft token not in vocabulary: {draft_token}."
+                    )
+                # Check if the FSM accepts this token. If not, don't advance
+                # and leave position at -1 (unconstrained).
+                if ctx.matcher.try_consume_tokens([draft_token]) == 1:
+                    tokens_consumed += 1
+                    llguidance.numpy.fill_next_token_bitmask(
+                        ctx.matcher,
+                        packed_bitmask[ctx_idx, i + 1, :].reshape(1, -1),
+                        index=0,
+                    )
+                else:
+                    # FSM rejected this token. Don't try consuming any of
+                    # the remaining draft tokens. Leave remaining
+                    # positions at -1 (unconstrained).
+                    break
+
+            # Rollback FSM to original state
+            if tokens_consumed > 0:
+                ctx.matcher.rollback(tokens_consumed)
+        # Unpack packed int32 bitmask to bool using vectorized bitwise ops.
+        bits = 2 ** np.arange(32, dtype=np.int32)
+        # Shape: [batch, num_positions, packed_vocab, 32]
+        unpacked = (packed_bitmask[..., np.newaxis] & bits) != 0
+        # Reshape to [batch, num_positions, packed_vocab * 32] and slice
+        unpacked = unpacked.reshape(batch_size, num_positions, -1)
+        return unpacked[:, :, : self.vocab_size].astype(np.bool_)

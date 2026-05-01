@@ -522,7 +522,12 @@ def stochastic_acceptance_sampler(
 
     # Apply grammar mask if provided
     if token_bitmasks is not None:
-        target_logits_3d = apply_grammar_mask(target_logits_3d, token_bitmasks)
+        # Rebind bitmask to match logits shape (num_steps + 1)
+        bitmask_rebound = ops.rebind(
+            token_bitmasks,
+            shape=[Dim("batch_size"), Dim("num_steps") + 1, Dim("vocab_size")],
+        )
+        target_logits_3d = apply_grammar_mask(target_logits_3d, bitmask_rebound)
 
     draft_verification_logits = target_logits_3d[:, :-1]
     bonus_logits = ops.rebind(

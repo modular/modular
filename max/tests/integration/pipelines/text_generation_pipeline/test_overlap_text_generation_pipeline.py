@@ -324,12 +324,17 @@ class TestSyncAndProcessOutputsStructuredOutput:
         # Create mock event
         mock_event = MagicMock()
 
+        # Create mock structured output helper (required for FSM advancement)
+        mock_structured_output = MagicMock()
+        mock_structured_output.enabled = True
+
         # Create AsyncBatch
         async_batch: AsyncBatch[TextContext] = AsyncBatch(
             inputs=mock_inputs,
             generated_tokens_device=MagicMock(),
             generated_tokens_host=mock_host_buffer,
             copy_event=mock_event,
+            structured_output=mock_structured_output,
         )
 
         # Patch update_context_and_prepare_responses

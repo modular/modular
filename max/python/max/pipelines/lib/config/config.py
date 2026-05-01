@@ -1176,11 +1176,6 @@ class PipelineConfig(ConfigFileModel):
                 "enable_echo not currently supported with speculative decoding enabled"
             )
 
-        if self.sampling.enable_structured_output:
-            raise ValueError(
-                "structured outputs not currently supported with speculative decoding enabled"
-            )
-
     def _validate_and_resolve_architecture(
         self, model_config: MAXModelConfig
     ) -> SupportedArchitecture:
