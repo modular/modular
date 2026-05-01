@@ -25,7 +25,8 @@ from std.reflection import reflect
 from std.runtime.asyncrt import DeviceContextPtr
 from std.sys import has_accelerator, simd_width_of
 
-from layout import Layout, LayoutTensor
+from layout import TileTensor
+from layout.tile_layout import Layout, row_major
 from tensor import InputTensor, OutputTensor
 
 
@@ -33,17 +34,18 @@ comptime float_dtype = DType.float32
 
 comptime size = 8
 
-comptime layout = Layout.row_major(size)
+comptime layout = row_major[size]()
 
 # GPU programming example
 
 
 def vector_add(
-    result: LayoutTensor[float_dtype, layout, MutAnyOrigin],
-    a: LayoutTensor[float_dtype, layout, MutAnyOrigin],
-    b: LayoutTensor[float_dtype, layout, MutAnyOrigin],
+    a: TileTensor[float_dtype, type_of(layout), MutAnyOrigin],
+    b: TileTensor[float_dtype, type_of(layout), MutAnyOrigin],
+    result: TileTensor[float_dtype, type_of(layout), MutAnyOrigin],
+    size: Int,
 ):
-    i = global_idx.x
+    var i = global_idx.x
     if i < size:
         result[i] = a[i] + b[i]
 
@@ -66,21 +68,21 @@ def run_gpu_programming_example() raises:
 
     # Map input buffers to host to fill with values from CPU
     with a_buffer.map_to_host() as host_buffer:
-        var a_tensor = LayoutTensor[float_dtype, layout](host_buffer)
+        var a_tensor = TileTensor(host_buffer, layout)
         for i in range(size):
             a_tensor[i] = Float32(i)
         print("a vector:", a_tensor)
 
     with b_buffer.map_to_host() as host_buffer:
-        var b_tensor = LayoutTensor[float_dtype, layout](host_buffer)
+        var b_tensor = TileTensor(host_buffer, layout)
         for i in range(size):
             b_tensor[i] = Float32(i)
         print("b vector:", b_tensor)
 
     # Wrap device buffers in `LayoutTensor`
-    var a_tensor = LayoutTensor[float_dtype, layout](a_buffer)
-    var b_tensor = LayoutTensor[float_dtype, layout](b_buffer)
-    var result_tensor = LayoutTensor[float_dtype, layout](result_buffer)
+    var a_tensor = TileTensor(a_buffer, layout)
+    var b_tensor = TileTensor(b_buffer, layout)
+    var result_tensor = TileTensor(result_buffer, layout)
 
     # The grid is divided up into blocks, making sure there's an extra
     # full block for any remainder. This hasn't been tuned for any specific
@@ -92,16 +94,17 @@ def run_gpu_programming_example() raises:
     # first, followed by all function arguments. The last two named parameters
     # are the dimensions of the grid in blocks, and the block dimensions.
     ctx.enqueue_function[vector_add, vector_add](
-        result_tensor,
         a_tensor,
         b_tensor,
+        result_tensor,
+        size,
         grid_dim=(num_blocks),
         block_dim=(BLOCK_SIZE),
     )
 
     # Move the output tensor back onto the CPU so that we can read the results.
     with result_buffer.map_to_host() as host_buffer:
-        var host_tensor = LayoutTensor[float_dtype, layout](host_buffer)
+        var host_tensor = TileTensor(host_buffer, layout)
         print("Resulting vector:", host_tensor)
 
 

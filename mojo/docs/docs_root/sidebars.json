@@ -105,6 +105,17 @@
     },
     {
       "type": "category",
+      "label": "TileTensor",
+      "className": "sidebar-heading",
+      "collapsed": false,
+      "items" : [
+        "docs/manual/tile-tensor/index",
+        "docs/manual/tile-tensor/layouts",
+        "docs/manual/tile-tensor/tensors"
+      ]
+    },
+    {
+      "type": "category",
       "label": "Layouts and LayoutTensor",
       "className": "sidebar-heading",
       "collapsed": false,
