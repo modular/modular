@@ -82,6 +82,12 @@ modular_py_test(
         "MODULAR_TELEMETRY_ENABLED": "true",
     },
     env_inherit = ["HF_TOKEN"],
+    # Removed in PR #85020 once `_class_name` population is fixed and these
+    # deps become load-bearing at runtime.
+    ignore_extra_deps = [
+        "//max/python/max/pipelines/architectures",
+        requirement("jinja2"),
+    ],
     tags = [
         "manual",
         "no-sandbox",
@@ -89,7 +95,9 @@ modular_py_test(
     ],
     deps = [
         "//max/python/max/interfaces",
+        "//max/python/max/pipelines/architectures",
         "//max/python/max/pipelines/lib",
+        requirement("jinja2"),
         requirement("numpy"),
         requirement("pytest-asyncio"),
     ],
