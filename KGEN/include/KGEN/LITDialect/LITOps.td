@@ -514,7 +514,8 @@ def LIT_StructFieldOp : LITOp<"struct.field", [
   let extraClassDeclaration = [{
     /// Given a struct base value type that may have bound parameters,
     /// substitute those bound parameters into our type and return the result.
-    Type getReboundType(StructType structSelfType);
+    Type getReboundType(StructType structSelfType,
+                        ParameterEvaluationContext *ctx = nullptr);
   }];
 }
 
@@ -583,11 +584,6 @@ def LIT_StructExtractOp : LITOp<"struct.extract", [Pure,
     $container `[` custom<KeywordAsString>($field) `]` attr-dict `:`
     type($value) `from` qualified(type($container))
   }];
-
-  let builders = [
-    // Infer the result type based on the result of lookup.
-    OpBuilder<(ins "Value":$structBase, "StructFieldOp":$field)>
-  ];
 
   let hasFolder = 1;
 }
@@ -1807,7 +1803,8 @@ def LIT_RefStructGEROp : LITOp<"ref.struct.ger", [Pure,
     /// Given a reference to a struct, return the reference type to the
     /// specified field, maintaining origin and mutability, and rebinding any
     /// generics from the base type through the field type.
-    static RefType getFieldType(RefType structRefTy, StructFieldOp field);
+    static RefType getFieldType(RefType structRefTy, StructFieldOp field,
+                               ParameterEvaluationContext *ctx = nullptr);
 
     /// Given a reference to a struct, return the reference type to the
     /// specified field, maintaining origin and mutability, assuming the type

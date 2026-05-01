@@ -1220,11 +1220,13 @@ static void printKeywordAsString(OpAsmPrinter &p, Operation *op,
   p << name.getValue();
 }
 
-Type StructFieldOp::getReboundType(StructType structSelfType) {
+Type StructFieldOp::getReboundType(StructType structSelfType,
+                                   ParameterEvaluationContext *ctx) {
   if (structSelfType.getParamValues().empty())
     return getType();
   ParameterEvaluator evaluator(getParentOp().getParams(),
                                structSelfType.getParamValues());
+  evaluator.setEvaluationContext(ctx);
   return evaluator.getReboundType(getType());
 }
 
@@ -1264,6 +1266,11 @@ StructInsertOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
       lookupStructDecl(symbolTable, *this, getType());
   if (!structDecl)
     return emitOpError("expected to find a struct decl for ") << getType();
+
+  auto module = getOperation()->getParentOfType<ModuleOp>();
+  mlir::LockedSymbolTableCollection lockedSymtab(symbolTable);
+  LITSymTabEvaluationContext evalCtx(module, lockedSymtab);
+  evaluator.setEvaluationContext(&evalCtx);
 
   for (StructFieldOp fieldDecl : structDecl.getFieldDecls()) {
     if (fieldDecl.getName() != getFieldAttr())
@@ -1306,6 +1313,11 @@ verifyStructFieldAndType(SymbolTableCollection &symbolTable, Operation *op,
   if (!structDecl)
     return op->emitOpError("struct ") << ref.getSymbol() << " cannot be found";
 
+  auto module = op->getParentOfType<ModuleOp>();
+  mlir::LockedSymbolTableCollection lockedSymtab(symbolTable);
+  LITSymTabEvaluationContext evalCtx(module, lockedSymtab);
+  evaluator.setEvaluationContext(&evalCtx);
+
   for (StructFieldOp fieldDecl : structDecl.getFieldDecls()) {
     if (fieldDecl.getName() != fieldName)
       continue;
@@ -1325,13 +1337,6 @@ LogicalResult
 LIT::StructExtractOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
   return verifyStructFieldAndType(symbolTable, *this, getContainer().getType(),
                                   getFieldAttr(), getValue().getType());
-}
-
-void LIT::StructExtractOp::build(OpBuilder &builder, OperationState &result,
-                                 Value structBase, StructFieldOp field) {
-  auto structType = cast<StructType>(structBase.getType());
-  build(builder, result, field.getReboundType(structType), structBase,
-        field.getNameAttr());
 }
 
 OpFoldResult LIT::StructExtractOp::fold(FoldAdaptor adaptor) {
@@ -1383,10 +1388,11 @@ RefType RefStructGEROp::getReboundFieldType(RefType structRefTy,
   return RefType::get(reboundType, fieldOrigin, structRefTy.getAddressSpace());
 }
 
-RefType RefStructGEROp::getFieldType(RefType structRefTy, StructFieldOp field) {
+RefType RefStructGEROp::getFieldType(RefType structRefTy, StructFieldOp field,
+                                     ParameterEvaluationContext *ctx) {
   auto structTy = sugarCast<StructType>(structRefTy.getElementType());
   return getReboundFieldType(structRefTy, field.getNameAttr(),
-                             field.getReboundType(structTy));
+                             field.getReboundType(structTy, ctx));
 }
 
 LogicalResult

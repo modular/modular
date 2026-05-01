@@ -1496,8 +1496,11 @@ CValue AttributeRefNode::emitStoredFieldRef(ASTExprAnd<CValue> base,
     // sugar if present.
     baseVal = emitter.emitRebindOpIfNeeded(
         baseVal, SugarAttr::strip(baseVal.getType()), expr->getLoc());
-    auto extractVal =
-        StructExtractOp::create(*emitter.builder, mlirLoc, baseVal, fieldOp);
+    auto structType = cast<StructType>(baseVal.getType());
+    auto fieldType = fieldOp.getReboundType(
+        structType, &emitter.shared.getEvaluationContext());
+    auto extractVal = StructExtractOp::create(
+        *emitter.builder, mlirLoc, fieldType, baseVal, fieldOp.getNameAttr());
     return emitter.emitCResult(SBValue(extractVal), expr, dest);
   }
 
@@ -1514,9 +1517,11 @@ CValue AttributeRefNode::emitStoredFieldRef(ASTExprAnd<CValue> base,
         baseBVal, baseRefType.getWithElement(newEltType), expr->getLoc());
   }
 
-  auto fieldRef =
-      Value(RefStructGEROp::create(*emitter.builder, mlirLoc, baseBVal, fieldOp)
-                .getResult());
+  auto fieldRefType =
+      RefStructGEROp::getFieldType(cast<RefType>(baseBVal.getType()), fieldOp,
+                                   &emitter.shared.getEvaluationContext());
+  Value fieldRef = RefStructGEROp::create(
+      *emitter.builder, mlirLoc, fieldRefType, fieldOp.getNameAttr(), baseBVal);
 
   // Apply type refinement to struct field accesses whose element type is a
   // parametric type with comptime assumptions (e.g., Self.T in a struct
@@ -2340,7 +2345,8 @@ auto AttributeRefNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
     if (DLValue baseLV = baseVal.getIfDLValue()) {
       // The base is a known StructType because we got the ASTDecl from it.
       ASTType elementType = fieldOp.getReboundType(
-          sugarCast<LIT::StructType>(baseRVType.mlirType));
+          sugarCast<LIT::StructType>(baseRVType.mlirType),
+          &emitter.shared.getEvaluationContext());
       DLValue result(RCRef<StoredAttributeRefDLValue>::create(
           ASTExprAnd<DLValue>{baseLV, base}, fieldOp, elementType, this));
       return emitter.emitResult(result, this, dest);

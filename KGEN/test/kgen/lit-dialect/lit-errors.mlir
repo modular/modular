@@ -99,6 +99,37 @@ lit.fn @twoStar(%a: index, *, *, %b: index) {
 
 // -----
 
+// Regression test: when a struct field's declared type contains get_witness,
+// the verifier should fold it to a concrete type and still reject a wrong
+// result type. This ensures get_witness folding works during verification
+// and that genuine type mismatches are not silently accepted.
+
+!HasOutput = !lit.trait<@HasOutput>
+
+lit.trait.decl @HasOutput<?, SELF: !HasOutput> {
+  lit.alias.decl Output: type
+}
+
+#inner_type = #kgen.type<!lit.struct<@Inner>> : !HasOutput
+
+lit.struct.decl @Inner {
+  kgen.conformance @HasOutput {
+    kgen.witness "Output" : type = index
+  }
+}
+
+lit.struct.decl @Wrap<T: !HasOutput> {
+  lit.struct.field value : !kgen.param<#kgen.get_witness<:!HasOutput T, "HasOutput", "Output">>
+}
+
+kgen.generator @access_wrong_type(%wrap: !lit.struct<@Wrap<:!HasOutput #inner_type>>) {
+  // expected-error @below {{cannot extract value of type 'i32' from struct field "value" which has type 'index'}}
+  %0 = lit.struct.extract %wrap[value] : i32 from !lit.struct<@Wrap<:!HasOutput #inner_type>>
+  kgen.return
+}
+
+// -----
+
 // expected-error @below {{'*' cannot precede '|' in signature}}
 lit.fn @slashAfterStar(%a: index, *, |, %b: index) {
   kgen.return
