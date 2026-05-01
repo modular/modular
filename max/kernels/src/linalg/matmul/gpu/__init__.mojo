@@ -39,6 +39,8 @@ from layout import (
     Coord,
     Idx,
     LayoutTensor,
+    RowMajorLayout,
+    RuntimeInt,
     RuntimeLayout,
     TensorLayout,
     TileTensor,
@@ -413,11 +415,19 @@ def _matmul_gpu[
         elementwise_compute_lambda_type
     ] = None,
     pdl_level: PDLLevel = PDLLevel(),
+    has_epilogue_tensor: Bool = False,
 ](
     c: TileTensor[mut=True, ...],
     a: TileTensor[mut=False, ...],
     b: TileTensor[mut=False, ...],
     ctx: DeviceContext,
+    epilogue_tensor: OptionalReg[
+        TileTensor[
+            c.dtype,
+            RowMajorLayout[RuntimeInt[DType.int64], RuntimeInt[DType.int64]],
+            ImmutAnyOrigin,
+        ]
+    ] = None,
 ) raises:
     """GPU matmul dispatch entry point. Routes to the appropriate kernel
     based on hardware capabilities and tensor properties.
@@ -548,10 +558,6 @@ def _matmul_gpu[
             elementwise_lambda_fn=elementwise_lambda_wrapper,
         ](c, a, b, ctx)
 
-    comptime use_experimental_kernels = Bool(
-        get_defined_int["USE_EXPERIMENTAL_KERNELS", 0]()
-    )
-
     comptime bf16_or_fp16 = (DType.bfloat16, DType.float16)
     comptime bf16_or_fp16_fp32 = (DType.bfloat16, DType.float16, DType.float32)
 
@@ -562,7 +568,8 @@ def _matmul_gpu[
             elementwise_lambda_wrapper=elementwise_lambda_wrapper,
             elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
             pdl_level=PDLLevel(1),
-        ](c, a, b, ctx)
+            has_epilogue_tensor=has_epilogue_tensor,
+        ](c, a, b, ctx, epilogue_tensor=epilogue_tensor)
 
     comptime if ctx.default_device_info == H100:
         var status = matmul_dispatch_sm90[

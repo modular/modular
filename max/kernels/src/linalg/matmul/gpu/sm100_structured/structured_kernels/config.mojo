@@ -245,15 +245,36 @@ def _compute_swizzle_modes(
     return (a_swizzle, b_swizzle, c_swizzle)
 
 
+def _compute_epi_load_swizzle[
+    c_type: DType,
+](contiguous_elems: Int) -> TensorMapSwizzle:
+    """Compute epilogue tensor TMA swizzle mode from the contiguous dimension size.
+
+    Picks the largest swizzle whose byte width evenly divides the row size.
+    """
+    var row_bytes = contiguous_elems * size_of[c_type]()
+    if row_bytes % 128 == 0:
+        return TensorMapSwizzle.SWIZZLE_128B
+    if row_bytes % 64 == 0:
+        return TensorMapSwizzle.SWIZZLE_64B
+    if row_bytes % 32 == 0:
+        return TensorMapSwizzle.SWIZZLE_32B
+    return TensorMapSwizzle.SWIZZLE_NONE
+
+
 def _maximize_pipeline_stages[
     a_type: DType, b_type: DType, c_type: DType
 ](
     block_tile_shape: IndexList[3],
+    mma_shape: IndexList[3],
     output_tile_shape: IndexList[2],
     num_output_stages: Int,
     num_clc_pipeline_stages: Int,
     num_accum_pipeline_stages: Int,
     extra_smem_per_stage: Int = 0,
+    use_tma_epilogue_load: Bool = False,
+    num_tma_epilogue_pipeline_stages: Int = 2,
+    AB_swapped: Bool = False,
 ) -> Int:
     """Calculate max pipeline stages based on shared memory budget."""
     comptime b200_smem = B200.shared_memory_per_multiprocessor - 1024
@@ -266,6 +287,24 @@ def _maximize_pipeline_stages[
     )
     # Add tmem addr (4 bytes) and tmem dealloc mbar (8 bytes).
     var output_smem_bytes = c_smem_bytes + 12
+
+    var epi_load_smem_bytes = 0
+    if use_tma_epilogue_load:
+        # AB_swapped: full MMA_N×BM tile per stage, num_accum_pipeline_stages stages.
+        # non-AB_swapped: BM×stageN per stage (decoupled), num_tma_epilogue_pipeline_stages stages.
+        var num_epi_stages = (
+            num_accum_pipeline_stages if AB_swapped else num_tma_epilogue_pipeline_stages
+        )
+        var epi_tile_rows = mma_shape[1] if AB_swapped else block_tile_shape[0]
+        var epi_tile_cols = block_tile_shape[
+            0
+        ] if AB_swapped else output_tile_shape[1]
+        epi_load_smem_bytes = (
+            epi_tile_rows * epi_tile_cols * num_epi_stages * size_of[c_type]()
+        )
+        # Add epi_load barrier pairs × 16 bytes
+        epi_load_smem_bytes += num_epi_stages * 16
+
     # Response 128B, clc mbar 16B, clc-load pipeline mbar 16B.
     var clc_smem_bytes = 160 * num_clc_pipeline_stages
     # Usage by mma-output-pipeline.
@@ -286,7 +325,11 @@ def _maximize_pipeline_stages[
     )
 
     return (
-        b200_smem - output_smem_bytes - clc_smem_bytes - mma_output_smem_bytes
+        b200_smem
+        - output_smem_bytes
+        - clc_smem_bytes
+        - mma_output_smem_bytes
+        - epi_load_smem_bytes
     ) // AB_smem_per_stage
 
 
@@ -314,6 +357,8 @@ def _write_common_config[
     raster_order: RasterOrder,
     num_split_k: Int,
     register_based_epilogue: Bool,
+    use_tma_epilogue_load: Bool,
+    num_tma_epilogue_pipeline_stages: Int,
 ):
     """Write common config fields to string."""
     writer.write(a_type, "_")
@@ -345,6 +390,13 @@ def _write_common_config[
     writer.write(
         "rbe_" if register_based_epilogue else "sbe_"
     )  # (rbe) register based epilogue or (sbe) shared memory based epilogue
+    writer.write(
+        "epi"
+        + String(
+            num_tma_epilogue_pipeline_stages
+        ) if use_tma_epilogue_load else "",
+        "_",
+    )
 
 
 def _get_dtype_name(dtype: DType) -> String:
@@ -380,6 +432,7 @@ def _get_common_config_string[
     raster_order: RasterOrder,
     num_split_k: Int,
     register_based_epilogue: Bool,
+    use_tma_epilogue_load: Bool,
 ) -> String:
     """Get common config string."""
     return String(
@@ -433,7 +486,30 @@ def _get_common_config_string[
         + "_"
         + ((String(num_split_k) + "splitk_") if num_split_k > 1 else "")
         + ("rbe_" if register_based_epilogue else "sbe_")
+        + ("with_tma_epilogue_" if use_tma_epilogue_load else "")
     )
+
+
+def _maximize_tma_epi_pipeline_stages[
+    a_type: DType, b_type: DType, c_type: DType
+](
+    block_tile_shape: IndexList[3],
+    mma_shape: IndexList[3],
+    output_tile_shape: IndexList[2],
+    num_output_stages: Int,
+    num_clc_pipeline_stages: Int,
+    num_accum_pipeline_stages: Int,
+    max_num_pipeline_stages_wo_tma_epi: Int,
+    AB_swapped: Bool,
+) -> Int:
+    """Calculate max tma epilogue pipeline stages based on smem budget."""
+
+    if mma_shape[0] == mma_shape[1] == 256:
+        return 1
+    elif max_num_pipeline_stages_wo_tma_epi >= 8:
+        return 4
+    else:
+        return 2
 
 
 @fieldwise_init
@@ -467,11 +543,15 @@ struct MatmulConfig[
     var a_swizzle: TensorMapSwizzle
     var b_swizzle: TensorMapSwizzle
     var c_swizzle: TensorMapSwizzle
+    var epi_load_swizzle: TensorMapSwizzle
 
     var k_group_size: Int
     var prefetch_tiles_n: Int
 
     var gemm_kind: GEMMKind
+
+    var use_tma_epilogue_load: Bool
+    var num_tma_epilogue_pipeline_stages: Int
 
     def __init__(
         out self,
@@ -491,6 +571,8 @@ struct MatmulConfig[
         register_based_epilogue: Bool = True,
         extra_smem_per_stage: Int = 0,
         gemm_kind: GEMMKind = GEMMKind.GEMM,
+        use_tma_epilogue_load: Bool = False,
+        num_tma_epilogue_pipeline_stages: Optional[Int] = None,
     ):
         comptime assert Self.a_type == Self.b_type
 
@@ -504,6 +586,7 @@ struct MatmulConfig[
         self.prefetch_tiles_n = prefetch_tiles_n
         self.register_based_epilogue = register_based_epilogue
         self.gemm_kind = gemm_kind
+        self.use_tma_epilogue_load = use_tma_epilogue_load
 
         self.block_tile_shape = _compute_block_tile_shape[Self.a_type](
             mma_shape, cta_group
@@ -523,16 +606,64 @@ struct MatmulConfig[
         self.a_swizzle = swizzles[0]
         self.b_swizzle = swizzles[1]
         self.c_swizzle = swizzles[2]
+        # For non-AB_swapped: each epilogue stage loads BM×stageN (= output_tile_shape[1]).
+        # For AB_swapped: tile is MMA_N×BM, contiguous dim is BM.
+        var epi_load_contiguous = self.block_tile_shape[
+            0
+        ] if AB_swapped else self.output_tile_shape[1]
+        self.epi_load_swizzle = _compute_epi_load_swizzle[Self.c_type](
+            epi_load_contiguous
+        )
 
-        var max_num_pipeline_stages = _maximize_pipeline_stages[
+        # Calculate max pipeline stages without tma epilogue load.
+        var max_num_pipeline_stages_wo_tma_epi = _maximize_pipeline_stages[
             Self.a_type, Self.b_type, Self.c_type
         ](
             self.block_tile_shape,
+            self.mma_shape,
             self.output_tile_shape,
             self.num_output_stages,
             self.num_clc_pipeline_stages,
             self.num_accum_pipeline_stages,
             extra_smem_per_stage,
+            AB_swapped=AB_swapped,
+        )
+
+        var max_num_tma_epi_pipeline_stages = _maximize_tma_epi_pipeline_stages[
+            Self.a_type, Self.b_type, Self.c_type
+        ](
+            self.block_tile_shape,
+            self.mma_shape,
+            self.output_tile_shape,
+            self.num_output_stages,
+            self.num_clc_pipeline_stages,
+            self.num_accum_pipeline_stages,
+            max_num_pipeline_stages_wo_tma_epi,
+            AB_swapped,
+        )
+
+        if num_tma_epilogue_pipeline_stages:
+            self.num_tma_epilogue_pipeline_stages = (
+                num_tma_epilogue_pipeline_stages.value()
+            )
+        else:
+            self.num_tma_epilogue_pipeline_stages = (
+                max_num_tma_epi_pipeline_stages
+            )
+
+        var max_num_pipeline_stages = _maximize_pipeline_stages[
+            Self.a_type, Self.b_type, Self.c_type
+        ](
+            self.block_tile_shape,
+            self.mma_shape,
+            self.output_tile_shape,
+            self.num_output_stages,
+            self.num_clc_pipeline_stages,
+            self.num_accum_pipeline_stages,
+            extra_smem_per_stage,
+            use_tma_epilogue_load=self.use_tma_epilogue_load,
+            num_tma_epilogue_pipeline_stages=self.num_tma_epilogue_pipeline_stages,
+            AB_swapped=AB_swapped,
         )
 
         if num_pipeline_stages:
@@ -568,6 +699,8 @@ struct MatmulConfig[
             num_split_k=self.num_split_k,
             register_based_epilogue=self.register_based_epilogue,
             gemm_kind=self.gemm_kind,
+            use_tma_epilogue_load=self.use_tma_epilogue_load,
+            num_tma_epilogue_pipeline_stages=self.num_tma_epilogue_pipeline_stages,
         )
 
     def write_to[W: Writer](self, mut writer: W):
@@ -591,6 +724,8 @@ struct MatmulConfig[
             self.raster_order,
             self.num_split_k,
             self.register_based_epilogue,
+            self.use_tma_epilogue_load,
+            self.num_tma_epilogue_pipeline_stages,
         )
 
     def write_repr_to(self, mut writer: Some[Writer]):
@@ -621,6 +756,7 @@ struct MatmulConfig[
                 self.raster_order,
                 self.num_split_k,
                 self.register_based_epilogue,
+                self.use_tma_epilogue_load,
             )
         )
 
@@ -631,6 +767,7 @@ def choose_config[
     c_type: DType,
     transpose_b: Bool = True,
     gemm_kind: GEMMKind = GEMMKind.GEMM,
+    has_epilogue_tensor: Bool = False,
 ](M: Int, N: Int, K: Int, B: Int) -> MatmulConfig[
     a_type, b_type, c_type, transpose_b
 ]:
@@ -774,6 +911,7 @@ def choose_config[
         num_clc_pipeline_stages=num_clc_pipeline_stages,
         k_group_size=k_group_size,
         gemm_kind=gemm_kind,
+        use_tma_epilogue_load=has_epilogue_tensor,
     )
 
 
@@ -784,18 +922,31 @@ def build_sm100_matmul_configs[
     N: Int,
     K: Int,
     transpose_b: Bool = True,
+    has_epilogue_tensor: Bool = False,
 ]() -> Set[MatmulConfig[a_type, b_type, c_type, transpose_b]]:
     comptime config_t = MatmulConfig[a_type, b_type, c_type, transpose_b]
 
     var set = Set[config_t]()
 
     for m in range(8, 256, 8):  # [8, 256)
-        config = choose_config[a_type, b_type, c_type, transpose_b](m, N, K, 1)
+        config = choose_config[
+            a_type,
+            b_type,
+            c_type,
+            transpose_b,
+            has_epilogue_tensor=has_epilogue_tensor,
+        ](m, N, K, 1)
         if config not in set:
             set.add(config)
 
     for m in range(256, 8192 + 1, 64):  # [256, 8192]
-        config = choose_config[a_type, b_type, c_type, transpose_b](m, N, K, 1)
+        config = choose_config[
+            a_type,
+            b_type,
+            c_type,
+            transpose_b,
+            has_epilogue_tensor=has_epilogue_tensor,
+        ](m, N, K, 1)
         if config not in set:
             set.add(config)
 
@@ -978,6 +1129,7 @@ struct BlockScaledMatmulConfig[
             Self.a_type, Self.b_type, Self.c_type
         ](
             self.block_tile_shape,
+            self.mma_shape,
             self.output_tile_shape,
             self.num_output_stages,
             self.num_clc_pipeline_stages,
@@ -1064,6 +1216,8 @@ struct BlockScaledMatmulConfig[
             self.raster_order,
             self.num_split_k,
             self.register_based_epilogue,
+            False,
+            0,
         )
 
     def write_repr_to(self, mut writer: Some[Writer]):
@@ -1092,6 +1246,7 @@ struct BlockScaledMatmulConfig[
             self.raster_order,
             self.num_split_k,
             self.register_based_epilogue,
+            False,
         )
         name += String("A_vec") + String(self.vec_sf_size) + "_"
         name += String(_get_dtype_name(Self.sfa_dtype)) + "_"
@@ -1298,6 +1453,7 @@ def default_matmul_config_bf16_fp8[
     transpose_b: Bool = True,
     cta_group: Int = 2,
     gemm_kind: GEMMKind = GEMMKind.GEMM,
+    has_epilogue_tensor: Bool = False,
 ]() -> MatmulConfig[a_type, b_type, c_type, transpose_b]:
     # Nvidia mma instruction process 32B in K.
     comptime Kbytes_per_mma = 32
@@ -1322,4 +1478,5 @@ def default_matmul_config_bf16_fp8[
         num_clc_pipeline_stages=2,
         k_group_size=1,
         gemm_kind=gemm_kind,
+        use_tma_epilogue_load=has_epilogue_tensor,
     )

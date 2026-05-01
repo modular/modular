@@ -41,7 +41,7 @@ from layout.layout_tensor import upcast
 from layout.runtime_tuple import crd2idx as rt_crd2idx
 from layout.swizzle import make_swizzle
 from layout.tma_async import TMATensorTile
-
+from std.gpu.compute.mma import ld_matrix
 from linalg.utils import elementwise_compute_lambda_type
 
 from std.utils.index import IndexList
@@ -64,6 +64,7 @@ from .epilogue_components import (
     TMEMToSMemWriter,
     tma_wait_pipelined,
 )
+from structured_kernels.pipeline import ProducerConsumerPipeline
 from .tmem import TmemArrayType
 
 
@@ -458,6 +459,128 @@ struct TileWriter[
 
             WarpGroupBarrier[Self.num_output_warps * WARP_SIZE].sync()
 
+    # ========== Shared Output Helpers ==========
+
+    @always_inline
+    def _cast_frags_and_write_to_smem[
+        c_tile_layout: TensorLayout,
+    ](
+        self,
+        upper_frag_casted: InlineArray[
+            Scalar[Self.epilogue_dtype], Self.rep_frag_size
+        ],
+        lower_frag_casted: InlineArray[
+            Scalar[Self.epilogue_dtype], Self.rep_frag_size
+        ],
+        c_smem_tile: TileTensor[
+            Self.c_type,
+            c_tile_layout,
+            MutAnyOrigin,
+            address_space=AddressSpace.SHARED,
+        ],
+        warp_id: UInt32,
+        lane: UInt32,
+    ):
+        """Cast fragments from epilogue dtype to c_type and write to SMEM."""
+        comptime SMEMWriter = TMEMToSMemWriter[
+            Self.c_type,
+            Self.accum_type,
+            Self.c_smem_dim0,
+            Self.c_smem_dim1,
+            Self.epc,
+            Self.num_output_warps,
+            Self.c_swizzle,
+        ]
+        var smem_writer = SMEMWriter(warp_id, lane)
+
+        comptime expected_size = Self.epc.fragment_size * Self.rep
+        var upper_c = InlineArray[Scalar[Self.c_type], expected_size](
+            uninitialized=True
+        )
+        var lower_c = InlineArray[Scalar[Self.c_type], expected_size](
+            uninitialized=True
+        )
+
+        comptime cast_width_c = (4 // size_of[Scalar[Self.c_type]]())
+        comptime for _chunk in range(Self.rep_frag_size // cast_width_c):
+            comptime offset = _chunk * cast_width_c
+            var src_u = SIMD[Self.epilogue_dtype, cast_width_c]()
+            var src_l = SIMD[Self.epilogue_dtype, cast_width_c]()
+            comptime for _j in range(cast_width_c):
+                src_u[_j] = upper_frag_casted[offset + _j]
+                src_l[_j] = lower_frag_casted[offset + _j]
+            var dst_u = src_u.cast[Self.c_type]()
+            var dst_l = src_l.cast[Self.c_type]()
+            comptime for _j in range(cast_width_c):
+                upper_c[offset + _j] = dst_u[_j]
+                lower_c[offset + _j] = dst_l[_j]
+        smem_writer.write_fragments[Self.rep](
+            rebind[InlineArray[Scalar[Self.c_type], expected_size]](upper_c),
+            rebind[InlineArray[Scalar[Self.c_type], expected_size]](lower_c),
+            c_smem_tile,
+        )
+        WarpGroupBarrier[Self.num_output_warps * WARP_SIZE].sync()
+
+    @always_inline
+    def _tma_store_to_gmem[
+        stage: Int,
+        c_tile_layout: TensorLayout,
+    ](
+        self,
+        c_smem_tile: TileTensor[
+            Self.c_type,
+            c_tile_layout,
+            MutAnyOrigin,
+            address_space=AddressSpace.SHARED,
+        ],
+        c_coord: Tuple[UInt32, UInt32],
+        batch_idx: UInt32,
+        warp_id: UInt32,
+        lane: UInt32,
+    ):
+        """TMA store from SMEM to GMEM with pipelined wait and barrier sync."""
+        comptime StoreExecutor = TMAStoreExecutor[
+            Self.c_type,
+            Self.c_smem_dim0,
+            Self.c_smem_dim1,
+            Self.epc,
+            Self.stage_contiguous_size,
+            Self.c_swizzle,
+            batched=Self.batched,
+        ]
+
+        comptime StoreCoords = TMAStoreCoords[
+            Self.epc,
+            Self.c_smem_dim0,
+            stage,
+            batched=Self.batched,
+        ]
+
+        var store_coords = StoreCoords(
+            (c_coord[0], c_coord[1], batch_idx if Self.batched else 0),
+            warp_id,
+        )
+        StoreExecutor.execute[
+            Self.c_rank, Self.c_tile_shape, Self.c_desc_shape
+        ](
+            c_smem_tile,
+            store_coords,
+            self.c_tma_op[],
+            warp_id,
+            lane,
+        )
+
+        tma_wait_pipelined[
+            Self.c_type,
+            Self.c_rank,
+            Self.c_tile_shape,
+            Self.c_desc_shape,
+            stage == Self.num_stages - 1,
+        ](self.c_tma_op[])
+
+        comptime if stage > 0 or stage == Self.num_stages - 1:
+            WarpGroupBarrier[Self.num_output_warps * WARP_SIZE].sync()
+
     @always_inline
     def _copy_to_gmem_impl(
         self,
@@ -601,41 +724,13 @@ struct TileWriter[
                 Self.register_based_epilogue
                 or not Self.elementwise_compute_lambda_fn
             ):
-                comptime expected_size = Self.epc.fragment_size * Self.rep
-                # Cast from epilogue_dtype to c_type in SIMD chunks
-                # of at least 4 bytes.
-                var upper_c = InlineArray[Scalar[Self.c_type], expected_size](
-                    uninitialized=True
-                )
-                var lower_c = InlineArray[Scalar[Self.c_type], expected_size](
-                    uninitialized=True
-                )
-
-                comptime cast_width_c = (4 // size_of[Scalar[Self.c_type]]())
-                comptime for _chunk in range(
-                    Self.rep_frag_size // cast_width_c
-                ):
-                    comptime offset = _chunk * cast_width_c
-                    var src_u = SIMD[Self.epilogue_dtype, cast_width_c]()
-                    var src_l = SIMD[Self.epilogue_dtype, cast_width_c]()
-                    comptime for _j in range(cast_width_c):
-                        src_u[_j] = upper_frag_casted[offset + _j]
-                        src_l[_j] = lower_frag_casted[offset + _j]
-                    var dst_u = src_u.cast[Self.c_type]()
-                    var dst_l = src_l.cast[Self.c_type]()
-                    comptime for _j in range(cast_width_c):
-                        upper_c[offset + _j] = dst_u[_j]
-                        lower_c[offset + _j] = dst_l[_j]
-                smem_writer.write_fragments[Self.rep](
-                    rebind[InlineArray[Scalar[Self.c_type], expected_size]](
-                        upper_c
-                    ),
-                    rebind[InlineArray[Scalar[Self.c_type], expected_size]](
-                        lower_c
-                    ),
+                self._cast_frags_and_write_to_smem(
+                    upper_frag_casted,
+                    lower_frag_casted,
                     c_smem_tile,
+                    UInt32(warp_id),
+                    UInt32(lane),
                 )
-                WarpGroupBarrier[Self.num_output_warps * WARP_SIZE].sync()
             else:
                 var writer = SMemEpilogueWriter[
                     Self.c_smem_dim0,
@@ -653,38 +748,13 @@ struct TileWriter[
                     AccumTile(upper_frag_casted, lower_frag_casted)
                 )
 
-            # TMA store: construct coordinates (2D or 3D based on batched flag)
-            comptime StoreCoords = TMAStoreCoords[
-                Self.epc,
-                Self.c_smem_dim0,
-                stage,
-                batched=Self.batched,
-            ]
-
-            var store_coords = StoreCoords(
-                (c_coord[0], c_coord[1], batch_idx if Self.batched else 0),
-                UInt32(warp_id),
-            )
-            StoreExecutor.execute[
-                Self.c_rank, Self.c_tile_shape, Self.c_desc_shape
-            ](
+            self._tma_store_to_gmem[stage](
                 c_smem_tile,
-                store_coords,
-                self.c_tma_op[],
+                (c_coord[0], c_coord[1]),
+                batch_idx,
                 UInt32(warp_id),
                 UInt32(lane),
             )
-
-            tma_wait_pipelined[
-                Self.c_type,
-                Self.c_rank,
-                Self.c_tile_shape,
-                Self.c_desc_shape,
-                stage == Self.num_stages - 1,
-            ](self.c_tma_op[])
-
-            comptime if stage > 0 or stage == Self.num_stages - 1:
-                WarpGroupBarrier[Self.num_output_warps * WARP_SIZE].sync()
 
     @always_inline
     def _write_absolute_with_bounds_check[
@@ -1338,44 +1408,13 @@ struct TileWriter[
                 Self.register_based_epilogue
                 or not Self.elementwise_compute_lambda_fn
             ):
-                comptime expected_size = Self.epc.fragment_size * Self.rep
-                comptime assert (
-                    Self.rep_frag_size == expected_size
-                ), "Fragment sizes must match"
-                # Cast from epilogue_dtype to c_type in SIMD chunks
-                # of at least 4 bytes.
-                var upper_c3 = InlineArray[Scalar[Self.c_type], expected_size](
-                    uninitialized=True
-                )
-                var lower_c3 = InlineArray[Scalar[Self.c_type], expected_size](
-                    uninitialized=True
-                )
-
-                comptime cast_width_c3 = (4 // size_of[Scalar[Self.c_type]]())
-                comptime for _chunk in range(
-                    Self.rep_frag_size // cast_width_c3
-                ):
-                    comptime offset = _chunk * cast_width_c3
-                    var src_u = SIMD[Self.epilogue_dtype, cast_width_c3]()
-                    var src_l = SIMD[Self.epilogue_dtype, cast_width_c3]()
-                    comptime for _j in range(cast_width_c3):
-                        src_u[_j] = upper_frag_casted[offset + _j]
-                        src_l[_j] = lower_frag_casted[offset + _j]
-                    var dst_u = src_u.cast[Self.c_type]()
-                    var dst_l = src_l.cast[Self.c_type]()
-                    comptime for _j in range(cast_width_c3):
-                        upper_c3[offset + _j] = dst_u[_j]
-                        lower_c3[offset + _j] = dst_l[_j]
-                smem_writer.write_fragments[Self.rep](
-                    rebind[InlineArray[Scalar[Self.c_type], expected_size]](
-                        upper_c3
-                    ),
-                    rebind[InlineArray[Scalar[Self.c_type], expected_size]](
-                        lower_c3
-                    ),
+                self._cast_frags_and_write_to_smem(
+                    upper_frag_casted,
+                    lower_frag_casted,
                     c_smem_tile,
+                    UInt32(warp_id),
+                    UInt32(lane),
                 )
-                WarpGroupBarrier[Self.num_output_warps * WARP_SIZE].sync()
             else:
                 var writer = SMemEpilogueWriter[
                     Self.c_smem_dim0,
@@ -1393,30 +1432,481 @@ struct TileWriter[
                     AccumTile(upper_frag_casted, lower_frag_casted)
                 )
 
-            # 5. TMA store to GMEM
-            comptime StoreCoords = TMAStoreCoords[
-                Self.epc,
-                Self.c_smem_dim0,
-                stage,
-                batched=Self.batched,
-            ]
-            var store_coords = StoreCoords(c_coord, UInt32(warp_id))
-            StoreExecutor.execute[
-                Self.c_rank, Self.c_tile_shape, Self.c_desc_shape
-            ](
+            self._tma_store_to_gmem[stage](
                 c_smem_tile,
-                store_coords,
-                self.c_tma_op[],
+                c_coord,
+                UInt32(0),
                 UInt32(warp_id),
                 UInt32(lane),
             )
-            tma_wait_pipelined[
-                Self.c_type,
-                Self.c_rank,
-                Self.c_tile_shape,
-                Self.c_desc_shape,
-                stage == Self.num_stages - 1,
-            ](self.c_tma_op[])
 
-            comptime if stage > 0 or stage == Self.num_stages - 1:
-                WarpGroupBarrier[Self.num_output_warps * WARP_SIZE].sync()
+    @always_inline
+    def write_batched_with_tma_epilogue_load[
+        epi_load_swizzle: TensorMapSwizzle,
+        epilogue_layout: TensorLayout,
+    ](
+        self,
+        c_tiles: Self.CTileArray,
+        output_stage: Self.Stage,
+        epilogue_tile: TileTensor[
+            Self.c_type,
+            epilogue_layout,
+            MutAnyOrigin,
+            address_space=AddressSpace.SHARED,
+        ],
+        tile_coord: Tuple[UInt32, UInt32, UInt32],
+        c_shape: Tuple[UInt32, UInt32],
+    ):
+        """Write accumulated results with epilogue tensor addition to global memory.
+
+        Pipeline: TMEM → Registers → (+epilogue from SMEM) → SMEM → GMEM (TMA).
+        """
+        var c_coord = (tile_coord[0], tile_coord[1])
+        var batch_idx = tile_coord[2]
+
+        var accum_tiles = Self.AccumTmemArray(output_stage.tmem.offset())
+
+        var warp_id = get_warp_id()
+        var lane = lane_id()
+
+        comptime SMEMWriter = TMEMToSMemWriter[
+            Self.c_type,
+            Self.accum_type,
+            Self.c_smem_dim0,
+            Self.c_smem_dim1,
+            Self.epc,
+            Self.num_output_warps,
+            Self.c_swizzle,
+        ]
+        var smem_writer = SMEMWriter(UInt32(warp_id), UInt32(lane))
+
+        comptime StoreExecutor = TMAStoreExecutor[
+            Self.c_type,
+            Self.c_smem_dim0,
+            Self.c_smem_dim1,
+            Self.epc,
+            Self.stage_contiguous_size,
+            Self.c_swizzle,
+            batched=Self.batched,
+        ]
+
+        comptime EpilogueApplierType = EpilogueApplier[
+            Self.MMA_M,
+            Self.stageN,
+            Self.num_stages,
+            Self.rep,
+            Self.cta_group,
+            Self.transpose_c,
+        ]
+        var epilogue_applier = EpilogueApplierType(
+            UInt32(warp_id),
+            UInt32(lane),
+            c_shape,
+        )
+
+        comptime sub_tile_n = epi_load_swizzle.bytes() // size_of[Self.c_type]()
+        comptime epi_rows = Self.MMA_N if Self.transpose_c else Self.BM
+        comptime sub_tile_elems = epi_rows * sub_tile_n
+        var epi_load_sw = make_swizzle[Self.c_type, epi_load_swizzle]()
+
+        var upper_frag_partial: InlineArray[
+            Scalar[Self.accum_type], Self.rep_frag_size
+        ]
+        var lower_frag_partial = InlineArray[
+            Scalar[Self.accum_type], Self.rep_frag_size
+        ](uninitialized=True)
+        var upper_frag_casted = InlineArray[
+            Scalar[Self.epilogue_dtype], Self.rep_frag_size
+        ](uninitialized=True)
+        var lower_frag_casted = InlineArray[
+            Scalar[Self.epilogue_dtype], Self.rep_frag_size
+        ](uninitialized=True)
+
+        comptime for stage in range(Self.num_stages):
+            # 1. Load fragments from TMEM
+            var frags = accum_tiles[stage].load_fragments[Self.rep]()
+            Self.AccumTmemArray.Tile.wait_load()
+
+            comptime PartialType = InlineArray[
+                Scalar[Self.accum_type], Self.rep_frag_size
+            ]
+            upper_frag_partial = rebind[PartialType](frags.upper).copy()
+
+            comptime if Self.is_lower_frag_required:
+                lower_frag_partial = rebind[PartialType](frags.lower).copy()
+
+            comptime if stage == Self.num_stages - 1:
+                AccumBarrier[Self.cta_group].arrive(
+                    output_stage.pipeline, output_stage.index
+                )
+
+            # 2. Cast to epilogue dtype
+            comptime cast_width = (4 // size_of[Scalar[Self.epilogue_dtype]]())
+
+            comptime for _chunk in range(Self.rep_frag_size // cast_width):
+                comptime offset = _chunk * cast_width
+                var src = SIMD[Self.accum_type, cast_width]()
+                comptime for _j in range(cast_width):
+                    src[_j] = upper_frag_partial[offset + _j]
+                var dst = src.cast[Self.epilogue_dtype]()
+                comptime for _j in range(cast_width):
+                    upper_frag_casted[offset + _j] = dst[_j]
+
+            comptime if Self.is_lower_frag_required:
+                comptime for _chunk in range(Self.rep_frag_size // cast_width):
+                    comptime offset = _chunk * cast_width
+                    var src = SIMD[Self.accum_type, cast_width]()
+                    comptime for _j in range(cast_width):
+                        src[_j] = lower_frag_partial[offset + _j]
+                    var dst = src.cast[Self.epilogue_dtype]()
+                    comptime for _j in range(cast_width):
+                        lower_frag_casted[offset + _j] = dst[_j]
+
+            # 3. Add epilogue tensor from swizzled SMEM.
+            # Epilogue SMEM is row-major [M, N] with swizzle. Fragment coords
+            # from compute_staged_coords are in TMEM space:
+            #   non-transpose: row→M, col→N
+            #   transpose:     row→N, col→M
+            # So for transpose we swap which TMEM dim maps to epilogue row/col.
+            var local_row, local_col = epilogue_applier.compute_staged_coords(
+                UInt32(stage), 0, 0
+            )
+            comptime for rep in range(Self.rep):
+                comptime inc = rep * 8
+                comptime frag_offset = rep * 4
+
+                comptime if Self.transpose_c:
+                    # N position: lanes 0-7 → N, lanes 8-15 → N+8
+                    var n_pos = local_row + UInt32(lane & 8)
+                    var ldm_tidx = n_pos // UInt32(sub_tile_n)
+                    var ldm_nloc = n_pos % UInt32(sub_tile_n)
+                    var ldm_tile_base = ldm_tidx * UInt32(sub_tile_elems)
+
+                    var ldm_m_row = local_col + UInt32(inc) + UInt32(lane & 7)
+
+                    # Top + bottom via ldmatrix.trans .x2
+                    var ldm_off = ldm_tile_base + epi_load_sw(
+                        ldm_m_row * UInt32(sub_tile_n) + ldm_nloc
+                    )
+                    var epi_vals = ld_matrix[simd_width=4, transpose=True](
+                        epilogue_tile.ptr + Int(ldm_off)
+                    )
+
+                    upper_frag_casted[frag_offset] += epi_vals[0].cast[
+                        Self.epilogue_dtype
+                    ]()
+                    upper_frag_casted[frag_offset + 1] += epi_vals[1].cast[
+                        Self.epilogue_dtype
+                    ]()
+                    upper_frag_casted[frag_offset + 2] += epi_vals[2].cast[
+                        Self.epilogue_dtype
+                    ]()
+                    upper_frag_casted[frag_offset + 3] += epi_vals[3].cast[
+                        Self.epilogue_dtype
+                    ]()
+
+                else:
+                    var col_base = local_col + UInt32(inc)
+                    var ldm_tidx = col_base // UInt32(sub_tile_n)
+                    var ldm_nloc = col_base % UInt32(sub_tile_n)
+                    var ldm_tile_base = ldm_tidx * UInt32(sub_tile_elems)
+
+                    # Rows 0-15 via ldmatrix .x2
+                    var ldm_row = local_row + UInt32(lane & 15)
+                    var ldm_off = ldm_tile_base + epi_load_sw(
+                        ldm_row * UInt32(sub_tile_n) + ldm_nloc
+                    )
+                    var epi_vals = ld_matrix[simd_width=4](
+                        epilogue_tile.ptr + Int(ldm_off)
+                    )
+
+                    upper_frag_casted[frag_offset] += epi_vals[0].cast[
+                        Self.epilogue_dtype
+                    ]()
+                    upper_frag_casted[frag_offset + 1] += epi_vals[1].cast[
+                        Self.epilogue_dtype
+                    ]()
+                    upper_frag_casted[frag_offset + 2] += epi_vals[2].cast[
+                        Self.epilogue_dtype
+                    ]()
+                    upper_frag_casted[frag_offset + 3] += epi_vals[3].cast[
+                        Self.epilogue_dtype
+                    ]()
+
+            comptime if Self.is_lower_frag_required:
+                comptime for rep in range(Self.rep):
+                    comptime inc = rep * 8
+                    comptime frag_offset = rep * 4
+
+                    comptime if Self.transpose_c:
+                        # N position: lanes 0-7 → N+16, lanes 8-15 → N+24
+                        var n_pos_l = local_row + 16 + UInt32(lane & 8)
+                        var ldm_tidx_l = n_pos_l // UInt32(sub_tile_n)
+                        var ldm_nloc_l = n_pos_l % UInt32(sub_tile_n)
+                        var ldm_tile_base_l = ldm_tidx_l * UInt32(
+                            sub_tile_elems
+                        )
+
+                        var ldm_m_row_l = (
+                            local_col + UInt32(inc) + UInt32(lane & 7)
+                        )
+
+                        # Rows 16-31 via ldmatrix.trans .x2
+                        var ldm_off_l = ldm_tile_base_l + epi_load_sw(
+                            ldm_m_row_l * UInt32(sub_tile_n) + ldm_nloc_l
+                        )
+                        var epi_vals_l = ld_matrix[
+                            simd_width=4, transpose=True
+                        ](epilogue_tile.ptr + Int(ldm_off_l))
+
+                        lower_frag_casted[frag_offset] += epi_vals_l[0].cast[
+                            Self.epilogue_dtype
+                        ]()
+                        lower_frag_casted[frag_offset + 1] += epi_vals_l[
+                            1
+                        ].cast[Self.epilogue_dtype]()
+                        lower_frag_casted[frag_offset + 2] += epi_vals_l[
+                            2
+                        ].cast[Self.epilogue_dtype]()
+                        lower_frag_casted[frag_offset + 3] += epi_vals_l[
+                            3
+                        ].cast[Self.epilogue_dtype]()
+                    else:
+                        var col_base_l = local_col + UInt32(inc)
+                        var ldm_tidx_l = col_base_l // UInt32(sub_tile_n)
+                        var ldm_nloc_l = col_base_l % UInt32(sub_tile_n)
+                        var ldm_tile_base_l = ldm_tidx_l * UInt32(
+                            sub_tile_elems
+                        )
+
+                        # Rows 16-31 via ldmatrix .x2
+                        var ldm_row_l = local_row + 16 + UInt32(lane & 15)
+                        var ldm_off_l = ldm_tile_base_l + epi_load_sw(
+                            ldm_row_l * UInt32(sub_tile_n) + ldm_nloc_l
+                        )
+                        var epi_vals_l = ld_matrix[simd_width=4](
+                            epilogue_tile.ptr + Int(ldm_off_l)
+                        )
+
+                        lower_frag_casted[frag_offset] += epi_vals_l[0].cast[
+                            Self.epilogue_dtype
+                        ]()
+                        lower_frag_casted[frag_offset + 1] += epi_vals_l[
+                            1
+                        ].cast[Self.epilogue_dtype]()
+                        lower_frag_casted[frag_offset + 2] += epi_vals_l[
+                            2
+                        ].cast[Self.epilogue_dtype]()
+                        lower_frag_casted[frag_offset + 3] += epi_vals_l[
+                            3
+                        ].cast[Self.epilogue_dtype]()
+
+            # 4. Cast to c_type, write to output SMEM, and TMA store to GMEM
+            var c_smem_tile = c_tiles[stage % 2]
+            self._cast_frags_and_write_to_smem(
+                upper_frag_casted,
+                lower_frag_casted,
+                c_smem_tile,
+                UInt32(warp_id),
+                UInt32(lane),
+            )
+            self._tma_store_to_gmem[stage](
+                c_smem_tile,
+                c_coord,
+                batch_idx,
+                UInt32(warp_id),
+                UInt32(lane),
+            )
+
+    @always_inline
+    def write_batched_with_tma_epilogue_load_strips[
+        epi_load_swizzle: TensorMapSwizzle,
+        num_epi_stages: Int,
+    ](
+        self,
+        c_tiles: Self.CTileArray,
+        output_stage: Self.Stage,
+        mut epilogue_pipeline: ProducerConsumerPipeline[num_epi_stages],
+        epilogue_tiles_base: UnsafePointer[
+            Scalar[Self.c_type], MutAnyOrigin, address_space=AddressSpace.SHARED
+        ],
+        epilogue_tile_elems: Int,
+        tile_coord: Tuple[UInt32, UInt32, UInt32],
+        c_shape: Tuple[UInt32, UInt32],
+    ):
+        """Write accumulated results with BM×stageN pipelined epilogue addition.
+
+        For non-AB_swapped configs. Each epilogue pipeline stage is one BM×stageN tile.
+        Producer sends tiles in stage-outer / col_wg-inner order; consumer mirrors that
+        structure so each TMEM stage is fully processed (load → add epilogue → write)
+        before advancing to the next.
+        """
+        var c_coord = (tile_coord[0], tile_coord[1])
+        var batch_idx = tile_coord[2]
+
+        var accum_tiles = Self.AccumTmemArray(output_stage.tmem.offset())
+        var warp_id = get_warp_id()
+        var lane = lane_id()
+
+        comptime EpilogueApplierType = EpilogueApplier[
+            Self.MMA_M,
+            Self.stageN,
+            Self.num_stages,
+            Self.rep,
+            Self.cta_group,
+            Self.transpose_c,
+        ]
+        var epilogue_applier = EpilogueApplierType(
+            UInt32(warp_id), UInt32(lane), c_shape
+        )
+
+        # Each epilogue SMEM stage is BM×stageN.  sub_tile_n equals stageN in all modes:
+        #   SWIZZLE_NONE  (stageN= 8): sub_tile_n= 8
+        #   SWIZZLE_32B   (stageN=16): sub_tile_n=16  (32 bytes / 2 bytes per bf16)
+        #   SWIZZLE_64B   (stageN=32): sub_tile_n=32
+        #   SWIZZLE_128B  (stageN=64): sub_tile_n=64
+        comptime sub_tile_n = Self.stageN
+        var epi_load_sw = make_swizzle[Self.c_type, epi_load_swizzle]()
+
+        comptime cast_width = (4 // size_of[Scalar[Self.epilogue_dtype]]())
+        comptime num_col_warp_groups = Self.MMA_N // (
+            Self.num_stages * Self.stageN
+        )
+
+        var upper_frag_casted = InlineArray[
+            Scalar[Self.epilogue_dtype], Self.rep_frag_size
+        ](uninitialized=True)
+        var lower_frag_casted = InlineArray[
+            Scalar[Self.epilogue_dtype], Self.rep_frag_size
+        ](uninitialized=True)
+
+        comptime for stage in range(Self.num_stages):
+            # 1. Load fragments from TMEM
+            var frags = accum_tiles[stage].load_fragments[Self.rep]()
+            Self.AccumTmemArray.Tile.wait_load()
+
+            comptime PartialType = InlineArray[
+                Scalar[Self.accum_type], Self.rep_frag_size
+            ]
+            var upper_partial = rebind[PartialType](frags.upper).copy()
+
+            comptime if stage == Self.num_stages - 1:
+                AccumBarrier[Self.cta_group].arrive(
+                    output_stage.pipeline, output_stage.index
+                )
+
+            # 2. Cast upper (and lower) accumulator fragments to epilogue dtype
+            comptime for _chunk in range(Self.rep_frag_size // cast_width):
+                comptime off = _chunk * cast_width
+                var src_u = SIMD[Self.accum_type, cast_width]()
+                comptime for _j in range(cast_width):
+                    src_u[_j] = upper_partial[off + _j]
+                var dst_u = src_u.cast[Self.epilogue_dtype]()
+                comptime for _j in range(cast_width):
+                    upper_frag_casted[off + _j] = dst_u[_j]
+
+            comptime if Self.is_lower_frag_required:
+                var lower_partial = rebind[PartialType](frags.lower).copy()
+                comptime for _chunk in range(Self.rep_frag_size // cast_width):
+                    comptime off = _chunk * cast_width
+                    var src_l = SIMD[Self.accum_type, cast_width]()
+                    comptime for _j in range(cast_width):
+                        src_l[_j] = lower_partial[off + _j]
+                    var dst_l = src_l.cast[Self.epilogue_dtype]()
+                    comptime for _j in range(cast_width):
+                        lower_frag_casted[off + _j] = dst_l[_j]
+
+            # 3. Consume epilogue pipeline stages and add to register fragments.
+            # Producer sends tiles in stage-outer / col_wg-inner order so the
+            # (stage, col_wg)-th tile covers N columns
+            #   [col_wg*num_stages*stageN + stage*stageN,
+            #    col_wg*num_stages*stageN + (stage+1)*stageN).
+            # For cta_group=2/MMA_M=128 (num_col_warp_groups=2): warps 0+1 own
+            # col_wg=0 columns, warps 2+3 own col_wg=1 columns.  All warps
+            # participate in every pipeline step for correct barrier counts; only
+            # the matching warp group adds the loaded values.
+            var local_row, local_col = epilogue_applier.compute_staged_coords(
+                UInt32(stage), 0, 0
+            )
+
+            comptime for col_wg in range(num_col_warp_groups):
+                epilogue_pipeline.wait_producer()
+                var epi_stage_idx = Int(epilogue_pipeline.consumer_stage())
+                var tile_ptr = (
+                    epilogue_tiles_base + epi_stage_idx * epilogue_tile_elems
+                )
+
+                comptime expected_col = (
+                    col_wg * Self.num_stages * Self.stageN + stage * Self.stageN
+                )
+                var is_my_col_group = local_col == UInt32(expected_col)
+
+                comptime for rep in range(Self.rep):
+                    # In-tile column = rep*8 (always < stageN, so ldm_tidx = 0)
+                    comptime col_in_tile = rep * 8
+                    var ldm_row = local_row + UInt32(lane & 15)
+                    var ldm_off = epi_load_sw(
+                        ldm_row * UInt32(sub_tile_n) + UInt32(col_in_tile)
+                    )
+                    var epi_vals = ld_matrix[simd_width=4](
+                        tile_ptr + Int(ldm_off)
+                    )
+
+                    if is_my_col_group:
+                        upper_frag_casted[rep * 4] += epi_vals[0].cast[
+                            Self.epilogue_dtype
+                        ]()
+                        upper_frag_casted[rep * 4 + 1] += epi_vals[1].cast[
+                            Self.epilogue_dtype
+                        ]()
+                        upper_frag_casted[rep * 4 + 2] += epi_vals[2].cast[
+                            Self.epilogue_dtype
+                        ]()
+                        upper_frag_casted[rep * 4 + 3] += epi_vals[3].cast[
+                            Self.epilogue_dtype
+                        ]()
+
+                    comptime if Self.is_lower_frag_required:
+                        var ldm_row_l = local_row + 16 + UInt32(lane & 15)
+                        var ldm_off_l = epi_load_sw(
+                            ldm_row_l * UInt32(sub_tile_n) + UInt32(col_in_tile)
+                        )
+                        var epi_vals_l = ld_matrix[simd_width=4](
+                            tile_ptr + Int(ldm_off_l)
+                        )
+
+                        if is_my_col_group:
+                            lower_frag_casted[rep * 4] += epi_vals_l[0].cast[
+                                Self.epilogue_dtype
+                            ]()
+                            lower_frag_casted[rep * 4 + 1] += epi_vals_l[
+                                1
+                            ].cast[Self.epilogue_dtype]()
+                            lower_frag_casted[rep * 4 + 2] += epi_vals_l[
+                                2
+                            ].cast[Self.epilogue_dtype]()
+                            lower_frag_casted[rep * 4 + 3] += epi_vals_l[
+                                3
+                            ].cast[Self.epilogue_dtype]()
+
+                _ = epilogue_pipeline.consumer_mbar(UInt32(epi_stage_idx))[
+                    0
+                ].arrive()
+                epilogue_pipeline.consumer_step()
+
+            # 4. Write to output SMEM and TMA store to GMEM
+            var c_smem_tile = c_tiles[stage % 2]
+            self._cast_frags_and_write_to_smem(
+                upper_frag_casted,
+                lower_frag_casted,
+                c_smem_tile,
+                UInt32(warp_id),
+                UInt32(lane),
+            )
+            self._tma_store_to_gmem[stage](
+                c_smem_tile,
+                c_coord,
+                batch_idx,
+                UInt32(warp_id),
+                UInt32(lane),
+            )

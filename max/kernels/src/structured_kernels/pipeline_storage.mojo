@@ -821,19 +821,21 @@ struct SmemPipelineBundle[
     num_accum_pipeline_stages: Int,
     num_clc_pipeline_stages: Int,
     Payload: TilePayload,
+    num_epilogue_load_stages: Int = 0,
 ]:
     """Composed pipeline storage with unified barrier accessors.
 
     Bundles InputPipelineStorage, OutputPipelineStorage, ClcPipelineStorage,
-    and TmemDeallocStorage into a single composed struct, eliminating ~60 lines
-    of duplicated pipeline declarations, barrier type aliases, and barrier
-    accessor methods from each SMEM struct.
+    TmemDeallocStorage, and optionally EpiLoadPipelineStorage into a single
+    composed struct, eliminating ~60 lines of duplicated pipeline declarations,
+    barrier type aliases, and barrier accessor methods from each SMEM struct.
 
     Parameters:
         num_group_pipeline_stages: Number of grouped pipeline stages for input.
         num_accum_pipeline_stages: Number of accumulator pipeline stages.
         num_clc_pipeline_stages: Number of CLC scheduler pipeline stages.
         Payload: Tile payload type (e.g. StandardTilePayload, BlockScaledTilePayload).
+        num_epilogue_load_stages: Number of epilogue load stages (0 = disabled).
     """
 
     # ========== Pipeline Storage Types ==========
@@ -845,6 +847,9 @@ struct SmemPipelineBundle[
     ]
     comptime ClcPipeline = ClcPipelineStorage[Self.num_clc_pipeline_stages]
     comptime TmemDeallocPipeline = TmemDeallocStorage
+    comptime EpiLoadPipeline = EpiLoadPipelineStorage[
+        Self.num_epilogue_load_stages
+    ]
 
     # ========== Barrier Type Aliases ==========
     comptime InputBarriers = Self.InputPipeline.BarrierArray
@@ -854,12 +859,14 @@ struct SmemPipelineBundle[
     comptime ClcResponse = Self.ClcPipeline.ResponseArray
     comptime TmemDealloc = Self.TmemDeallocPipeline.BarrierArray
     comptime TmemAddr = Self.TmemDeallocPipeline.AddrArray
+    comptime EpiLoadBarriers = Self.EpiLoadPipeline.BarrierArray
 
     # ========== Storage Fields ==========
     var input_pipeline: Self.InputPipeline
     var output_pipeline: Self.OutputPipeline
     var clc_pipeline: Self.ClcPipeline
     var tmem_dealloc_pipeline: Self.TmemDeallocPipeline
+    var epi_load_pipeline: Self.EpiLoadPipeline
 
     # ========== Barrier Accessors ==========
     @always_inline
@@ -901,6 +908,18 @@ struct SmemPipelineBundle[
     def tmem_addr(ref[AddressSpace.SHARED] self) -> Self.TmemAddr:
         """Returns TMEM address storage."""
         return self.tmem_dealloc_pipeline.addr()
+
+    @always_inline
+    def epilogue_load_barriers(
+        ref[AddressSpace.SHARED] self,
+    ) -> Self.EpiLoadBarriers:
+        """Returns epilogue load pipeline barriers."""
+        return self.epi_load_pipeline.barriers.barriers()
+
+    @always_inline
+    def epilogue_load_barrier_ptr(ref[AddressSpace.SHARED] self) -> MbarPtr:
+        """Returns epilogue load pipeline barrier pointer."""
+        return self.epi_load_pipeline.barrier_ptr()
 
 
 # =============================================================================
