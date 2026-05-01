@@ -269,7 +269,6 @@ class WanTransformer(CompiledComponent):
             )
             self._model = BlockLevelModel(
                 pre_model,
-                [],
                 post_model,
                 combined_blocks=combined_blocks_model,
             )
