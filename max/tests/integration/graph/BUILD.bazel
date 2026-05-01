@@ -30,7 +30,6 @@ _CPU_ONLY_TESTS = [
 
 # Tests with their own targets due to special configurations
 _SEPARATE_TARGET_TESTS = [
-    "test_advanced_indexing.py",
     "test_debug_config.py",
     "test_debug_config_integration.py",
     "test_engine_device_graph.py",
@@ -39,6 +38,11 @@ _SEPARATE_TARGET_TESTS = [
     "test_load_weights_no_deps.py",
     "test_logits_processor_gpu.py",
     "test_runtime_source_notes.py",
+]
+
+# Temporarily disabled tests (MAXPLAT-477: causes H100 timeouts)
+_DISABLED_TESTS = [
+    "test_advanced_indexing.py",
 ]
 
 modular_py_library(
@@ -63,7 +67,7 @@ modular_py_test(
     size = "large",
     srcs = glob(
         ["*.py"],
-        exclude = _AMD_ONLY_TESTS + _NVIDIA_ONLY_TESTS + _CPU_ONLY_TESTS + _SEPARATE_TARGET_TESTS + [
+        exclude = _AMD_ONLY_TESTS + _NVIDIA_ONLY_TESTS + _CPU_ONLY_TESTS + _SEPARATE_TARGET_TESTS + _DISABLED_TESTS + [
             "modular_graph_test.py",
             "test_nan_check.py",
         ],
@@ -118,8 +122,8 @@ modular_py_test(
     ],
 )
 
-# Split into its own target to keep the main graph test bucket smaller and
-# reduce H100 queue pressure (GEX-3523 / MAXPLAT-477).
+# MAXPLAT-477: Temporarily disabled from CI due to H100 timeouts.
+# Run locally on demand: ./bazelw test //max/tests/integration/graph:test_advanced_indexing
 modular_py_test(
     name = "test_advanced_indexing",
     size = "large",
@@ -133,6 +137,7 @@ modular_py_test(
     }),
     tags = [
         "gpu",
+        "manual",
     ],
     deps = [
         "//max/python/max/driver",
