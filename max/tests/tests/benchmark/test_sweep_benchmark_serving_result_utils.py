@@ -22,6 +22,7 @@ import pytest
 from max.benchmark.benchmark_shared.metrics import (
     BenchmarkMetrics,
     PixelGenerationBenchmarkMetrics,
+    RatePercentileMetrics,
     StandardPercentileMetrics,
     ThroughputMetrics,
 )
@@ -149,8 +150,8 @@ def _make_llm_metrics() -> BenchmarkMetrics:
         max_output=200,
         max_total=300,
         global_cached_token_rate=0.35,
-        per_turn_cached_token_rate=StandardPercentileMetrics(
-            per_turn_cache_rates, scale_factor=100.0, unit="%"
+        per_turn_cached_token_rate=RatePercentileMetrics(
+            per_turn_cache_rates, as_percent=True
         ),
         peak_gpu_memory_mib=[8000.0],
         available_gpu_memory_mib=[2000.0],

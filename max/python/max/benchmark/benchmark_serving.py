@@ -100,6 +100,7 @@ from max.benchmark.benchmark_shared.metrics import (
     LoRAMetrics,
     PixelGenerationBenchmarkMetrics,
     PixelGenerationBenchmarkResult,
+    RatePercentileMetrics,
     SpecDecodeMetrics,
     SpecDecodeStats,
     StandardPercentileMetrics,
@@ -1103,10 +1104,8 @@ def calculate_metrics(
     global_cached_token_rate: float = (
         total_server_cached_tokens / total_input if total_input > 0 else 0.0
     )
-    per_turn_cached_token_rate: StandardPercentileMetrics | None = (
-        StandardPercentileMetrics(
-            per_turn_cached_token_rates, scale_factor=100.0, unit="%"
-        )
+    per_turn_cached_token_rate: RatePercentileMetrics | None = (
+        RatePercentileMetrics(per_turn_cached_token_rates, as_percent=True)
         if len(per_turn_cached_token_rates) > 0
         else None
     )

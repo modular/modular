@@ -20,6 +20,7 @@ from unittest.mock import patch
 import pytest
 from max.benchmark.benchmark_shared.metrics import (
     BenchmarkMetrics,
+    RatePercentileMetrics,
     StandardPercentileMetrics,
     ThroughputMetrics,
 )
@@ -91,8 +92,8 @@ def _make_metrics(
         max_output=50,
         max_total=150,
         global_cached_token_rate=0.35,
-        per_turn_cached_token_rate=StandardPercentileMetrics(
-            [0.35], scale_factor=100.0, unit="%"
+        per_turn_cached_token_rate=RatePercentileMetrics(
+            [0.35], as_percent=True
         ),
         peak_gpu_memory_mib=[],
         available_gpu_memory_mib=[],

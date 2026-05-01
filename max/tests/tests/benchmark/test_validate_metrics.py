@@ -18,6 +18,7 @@ from __future__ import annotations
 from max.benchmark.benchmark_shared.metrics import (
     BenchmarkMetrics,
     PercentileMetrics,
+    RatePercentileMetrics,
     StandardPercentileMetrics,
     ThroughputMetrics,
     _compute_confidence_info,
@@ -126,6 +127,47 @@ def test_standard_percentile_metrics_nan() -> None:
 
 
 # ---------------------------------------------------------------------------
+# RatePercentileMetrics.validate_metrics()
+# ---------------------------------------------------------------------------
+
+
+def test_rate_percentile_metrics_in_range_passes() -> None:
+    """Mean inside [0, 100] (percent mode) passes validation."""
+    rpm = RatePercentileMetrics([0.2, 0.5, 0.8], as_percent=True)
+    ok, errors = rpm.validate_metrics()
+    assert ok is True
+    assert errors == []
+
+
+def test_rate_percentile_metrics_above_upper_bound_flagged() -> None:
+    """Mean above scale_factor (e.g. cached > prompt bug) is flagged."""
+    rpm = RatePercentileMetrics([1.5], as_percent=True)
+    ok, errors = rpm.validate_metrics()
+    assert ok is False
+    assert any("outside [0, 100" in e for e in errors)
+
+
+def test_rate_percentile_metrics_negative_flagged() -> None:
+    """Negative mean is flagged."""
+    rpm = RatePercentileMetrics([-0.1], as_percent=True)
+    ok, _ = rpm.validate_metrics()
+    assert ok is False
+
+
+def test_rate_percentile_metrics_fraction_mode_bound() -> None:
+    """as_percent=False enforces [0, 1] bound."""
+    rpm = RatePercentileMetrics([0.95], as_percent=False)
+    ok, errors = rpm.validate_metrics()
+    assert ok is True
+    assert errors == []
+
+    rpm_oob = RatePercentileMetrics([1.5], as_percent=False)
+    ok, errors = rpm_oob.validate_metrics()
+    assert ok is False
+    assert any("outside [0, 1" in e for e in errors)
+
+
+# ---------------------------------------------------------------------------
 # BenchmarkMetrics.validate_metrics()
 # ---------------------------------------------------------------------------
 
@@ -178,8 +220,8 @@ def _make_metrics(
         max_output=50,
         max_total=150,
         global_cached_token_rate=0.35,
-        per_turn_cached_token_rate=StandardPercentileMetrics(
-            [0.35], scale_factor=100.0, unit="%"
+        per_turn_cached_token_rate=RatePercentileMetrics(
+            [0.35], as_percent=True
         ),
         peak_gpu_memory_mib=[],
         available_gpu_memory_mib=[],
@@ -220,6 +262,17 @@ def test_zero_request_throughput_detected() -> None:
     ok, errors = _make_metrics(request_throughput=0.0).validate_metrics()
     assert ok is False
     assert any("request_throughput" in e for e in errors)
+
+
+def test_zero_cache_rate_passes() -> None:
+    """A 0% per-turn cache hit rate is valid (cold cache, not a benchmark error)."""
+    metrics = _make_metrics()
+    metrics.per_turn_cached_token_rate = RatePercentileMetrics(
+        [0.0, 0.0, 0.0], as_percent=True
+    )
+    ok, errors = metrics.validate_metrics()
+    assert ok is True
+    assert errors == []
 
 
 def test_nan_request_throughput_detected() -> None:

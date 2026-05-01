@@ -333,6 +333,35 @@ class StandardPercentileMetrics(Metrics):
         return self._metrics.validate_metrics()
 
 
+class RatePercentileMetrics(StandardPercentileMetrics):
+    """Bounded ratio in [0, 1]; mean of per-item ratios.
+
+    Stored and displayed either as a fraction in [0, 1] (``as_percent=False``)
+    or a percentage in [0, 100] (``as_percent=True``). Validation enforces the
+    corresponding upper bound, which catches both negative values and values
+    above the representation's maximum (e.g. ``cached_tokens > prompt_tokens``).
+    """
+
+    def __init__(
+        self,
+        data: list[float],
+        *,
+        as_percent: bool = True,
+    ) -> None:
+        scale_factor = 100.0 if as_percent else 1.0
+        unit = "%" if as_percent else None
+        super().__init__(data, scale_factor=scale_factor, unit=unit)
+        self._upper_bound = scale_factor
+
+    def validate_metrics(self) -> tuple[bool, list[str]]:
+        m = self._metrics.mean
+        if not math.isfinite(m):
+            return False, [f"Invalid mean: {m}"]
+        if m < 0 or m > self._upper_bound:
+            return False, [f"Mean {m} outside [0, {self._upper_bound}]"]
+        return True, []
+
+
 @dataclass
 class LoRAMetrics:
     """Metrics specific to LoRA operations."""
@@ -473,7 +502,7 @@ class BenchmarkMetrics(BaseBenchmarkMetrics):
     # Global: SUM(cached_tokens) / SUM(prompt_tokens).
     global_cached_token_rate: float
     # Per-turn cached_tokens / prompt_tokens; None when usage data is unavailable.
-    per_turn_cached_token_rate: StandardPercentileMetrics | None
+    per_turn_cached_token_rate: RatePercentileMetrics | None
 
     # Per-request raw data, preserved for archival and post-processing.
     # N.B.: skip_first_n_requests and skip_last_n_requests are inputs and
