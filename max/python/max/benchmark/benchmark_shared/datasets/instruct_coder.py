@@ -296,16 +296,9 @@ class InstructCoderBenchmarkDataset(HuggingFaceBenchmarkDataset):
         min_output_len: int,
     ) -> ChatSamples:
         """Build multiturn sessions with sampled lengths (see ``gen_multiturn_sessions``)."""
-        user_texts: list[str] = []
-        for prompt, completion in pairs:
-            p_len = estimate_num_tokens(tokenizer, prompt)
-            o_len = estimate_num_tokens(tokenizer, completion)
-            if p_len < 4 or o_len < 4:
-                continue
-            user_texts.append(prompt)
         return build_chat_samples_from_user_text_pool(
             tokenizer=tokenizer,
-            user_text_pool=user_texts,
+            user_text_pool=[p for p, _ in pairs],
             num_sessions=num_sessions,
             num_turns=num_turns,
             input_len=input_len,
