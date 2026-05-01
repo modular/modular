@@ -169,8 +169,10 @@ def test_defaults_return() raises:
 
 
 def process[
-    n: Int where n == 1 or n == 2 or n == 4 or n == 8 or n == 16 or n == 32,
-](data: SIMD[DType.float32, n]) -> Float32:
+    n: Int
+](data: SIMD[DType.float32, n]) -> Float32 where (
+    n == 1 or n == 2 or n == 4 or n == 8 or n == 16 or n == 32
+):
     var sum: Float32 = 0.0
     for i in range(n):
         sum += data[i]
@@ -193,9 +195,7 @@ comptime GREATER_THAN: Int32 = 1
 
 def compare[
     T: AnyType
-](a: T, b: T,) -> Int32 where conforms_to(T, Comparable):
-    var x = trait_downcast[Comparable & ImplicitlyCopyable](a)
-    var y = trait_downcast[Comparable & ImplicitlyCopyable](b)
+](x: T, y: T,) -> Int32 where conforms_to(T, Comparable):
     if x < y:
         return LESS_THAN
     elif x > y:

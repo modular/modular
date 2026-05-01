@@ -237,11 +237,11 @@ there's no return type):
 
 ```mojo
 def process[
-    n: Int where (
-        n == 1 or n == 2 or n == 4
-        or n == 8 or n == 16 or n == 32
-    ),
-](data: SIMD[DType.float32, n]) -> Float32:
+    n: Int,
+](data: SIMD[DType.float32, n]) -> Float32 where (
+    n == 1 or n == 2 or n == 4
+    or n == 8 or n == 16 or n == 32
+):
     var sum: Float32 = 0.0
     for i in range(n):
         sum += data[i]
@@ -253,7 +253,8 @@ def main():
     print(t"Sum: {sum}")  # Sum: 4080.0
 ```
 
-`where` can also appear at the end of the full declaration:
+`where` can also refine parameters with trait conformances, enabling use of
+methods and other items from that trait:
 
 ```mojo
 comptime LESS_THAN: Int32 = -1
@@ -261,14 +262,8 @@ comptime EQUAL: Int32 = 0
 comptime GREATER_THAN: Int32 = 1
 
 def compare[T: AnyType](
-    a: T, b: T,
+    x: T, y: T,
 ) -> Int32 where conforms_to(T, Comparable):
-    var x = trait_downcast[
-        Comparable & ImplicitlyCopyable
-    ](a)
-    var y = trait_downcast[
-        Comparable & ImplicitlyCopyable
-    ](b)
     if x < y:
         return LESS_THAN
     elif x > y:
@@ -280,14 +275,6 @@ def main():
     print(compare(5, 10))  # -1 (LESS_THAN)
     print(compare(7, 7))   # 0 (EQUAL)
     print(compare("Z", "A")) # 1 (GREATER_THAN),
-```
-
-`where` clauses aren't valid on runtime arguments:
-
-```mojo
-# Error: where clauses can only be used for compile time parameters
-def bad(x: Int where x > 0):
-    pass
 ```
 
 ## Argument conventions

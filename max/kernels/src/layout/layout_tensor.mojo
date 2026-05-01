@@ -2898,7 +2898,7 @@ struct LayoutTensor[
 
     @always_inline
     @staticmethod
-    def stride[idx: Int where idx != UNKNOWN_VALUE]() -> Int:
+    def stride[idx: Int]() -> Int where idx != UNKNOWN_VALUE:
         """Returns the memory stride of the tensor along the specified
         dimension.
 

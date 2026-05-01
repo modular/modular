@@ -977,9 +977,10 @@ struct ParameterList[type: AnyType, //, values: _MLIR.KGENParamListType[type]](
             Self._AllSatisfiesReducer[predicate, ...],
         ]
 
+    # FIXME(MOCO-3855): Add decl-where `where conforms_to(Self.type, Equatable)`
     comptime _ContainsValuePredicate[
         search_value: Self.type,
-        element_value: Self.type where conforms_to(Self.type, Equatable),
+        element_value: Self.type,
     ] = trait_downcast[Equatable](search_value) == trait_downcast[Equatable](
         element_value
     )

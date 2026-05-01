@@ -52,19 +52,26 @@ def gemm_kernel[
     b_dtype: DType,
     BLayoutType: TensorLayout,
     NUM_THREADS: Int,
-    BM: Int where BM > -1,
-    BN: Int where BN > -1,
-    BK: Int where BK > -1,
-    WM: Int where WM > -1,
-    WN: Int where WN > -1,
-    TM: Int where TM > -1,
-    TN: Int where TN > -1,
+    BM: Int,
+    BN: Int,
+    BK: Int,
+    WM: Int,
+    WN: Int,
+    TM: Int,
+    TN: Int,
 ](
     mat_c: TileTensor[c_dtype, CLayoutType, MutExternalOrigin],
     mat_a: TileTensor[a_dtype, ALayoutType, ImmutExternalOrigin],
     mat_b: TileTensor[b_dtype, BLayoutType, ImmutExternalOrigin],
 ) where (
-    mat_a.rank == 2
+    BM > -1
+    and BN > -1
+    and BK > -1
+    and WM > -1
+    and WN > -1
+    and TM > -1
+    and TN > -1
+    and mat_a.rank == 2
     and mat_b.rank == 2
     and mat_c.rank == 2
     and mat_a.all_dims_known
