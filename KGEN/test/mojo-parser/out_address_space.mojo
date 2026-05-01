@@ -34,3 +34,25 @@ struct InitAnyOutAddressSpace(Movable):
     # CHECK-SAME: %self: !lit.ref<!InitAnyOutAddressSpace, mut {{.*}}, {{.*}}self.address_space{{.*}}> byref_result
     fn __init__(out[_] self):
         self.value = 0
+
+
+struct RefGenericAddressSpace(Movable):
+    var value: Int
+
+    # CHECK-LABEL: lit.fn @"use_ref
+    # CHECK-SAME: AddressSpace
+    # CHECK-SAME: %value: !lit.ref<!RefGenericAddressSpace, mut {{.*}}, #lit.struct.extract<
+    @staticmethod
+    fn use_ref[
+        origin: Origin[mut=True], address_space: AddressSpace
+    ](ref[origin, address_space] value: Self):
+        pass
+
+    # CHECK-LABEL: lit.fn @"use_any_ref
+    # CHECK-SAME: value.address_space
+    # CHECK-SAME: %value: !lit.ref<!RefGenericAddressSpace, mut {{.*}}, {{.*}}value.address_space{{.*}}>
+    @staticmethod
+    fn use_any_ref[origin: Origin[mut=True]](
+        ref[origin, _] value: Self
+    ):
+        pass
