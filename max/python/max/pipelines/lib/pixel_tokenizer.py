@@ -975,18 +975,22 @@ class PixelGenerationTokenizer(
                 "This should not happen as defaults are applied at request creation."
             )
 
-        if (
-            image_options.guidance_scale < 1.0
-            or image_options.true_cfg_scale < 1.0
-        ):
+        video_options = request.body.provider_options.video
+        guidance_scale = (
+            video_options.guidance_scale
+            if video_options is not None
+            and video_options.guidance_scale is not None
+            else image_options.guidance_scale
+        )
+
+        if guidance_scale < 1.0 or image_options.true_cfg_scale < 1.0:
             logger.warning(
-                f"Guidance scales < 1.0 detected (guidance_scale={image_options.guidance_scale}, "
+                f"Guidance scales < 1.0 detected (guidance_scale={guidance_scale}, "
                 f"true_cfg_scale={image_options.true_cfg_scale}). This is mathematically possible"
                 " but may produce lower quality or unexpected results."
             )
 
         # Resolve negative_prompt: prefer video options for video pipelines.
-        video_options = request.body.provider_options.video
         negative_prompt_resolved = (
             video_options.negative_prompt
             if video_options and video_options.negative_prompt
@@ -1005,7 +1009,7 @@ class PixelGenerationTokenizer(
 
         do_zimage_cfg = (
             self._pipeline_class_name == PipelineClassName.ZIMAGE
-            and image_options.guidance_scale > 0.0
+            and guidance_scale > 0.0
         )
         if self._pipeline_class_name == PipelineClassName.FLUX2_KLEIN:
             is_distilled_klein = bool(
@@ -1013,9 +1017,7 @@ class PixelGenerationTokenizer(
             )
             # for non-distilled models, CFG is enabled
             # whenever guidance_scale > 1.0; negative prompt defaults to "".
-            do_true_cfg = (
-                image_options.guidance_scale > 1.0 and not is_distilled_klein
-            )
+            do_true_cfg = guidance_scale > 1.0 and not is_distilled_klein
         elif self._pipeline_class_name in (
             PipelineClassName.WAN,
             PipelineClassName.WAN_I2V,
@@ -1023,7 +1025,7 @@ class PixelGenerationTokenizer(
             # Wan uses classical CFG: diffusers enables it whenever
             # guidance_scale > 1.0, with an empty-string negative prompt as
             # the standard "unconditional" conditioning.
-            do_true_cfg = image_options.guidance_scale > 1.0
+            do_true_cfg = guidance_scale > 1.0
             if do_true_cfg and negative_prompt_resolved is None:
                 negative_prompt_resolved = ""
         else:
@@ -1208,7 +1210,7 @@ class PixelGenerationTokenizer(
             height=height,
             width=width,
             num_inference_steps=num_inference_steps,
-            guidance_scale=image_options.guidance_scale,
+            guidance_scale=guidance_scale,
             num_images_per_prompt=image_options.num_images,
             true_cfg_scale=image_options.true_cfg_scale,
             strength=image_options.strength,

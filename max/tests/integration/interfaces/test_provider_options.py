@@ -19,6 +19,7 @@ from max.interfaces.provider_options import (
     ImageProviderOptions,
     MaxProviderOptions,
     ProviderOptions,
+    VideoProviderOptions,
 )
 from pydantic import ValidationError
 
@@ -73,6 +74,21 @@ def test_image_provider_options_frozen() -> None:
 
     with pytest.raises(ValidationError):
         opts.width = 1024  # type: ignore[misc]
+
+
+def test_video_provider_options_guidance_scale() -> None:
+    """VideoProviderOptions exposes optional primary CFG guidance_scale."""
+    # Defaults to None (caller falls back to image options).
+    opts = VideoProviderOptions()
+    assert opts.guidance_scale is None
+
+    # Accepts explicit values.
+    opts = VideoProviderOptions(guidance_scale=5.0)
+    assert opts.guidance_scale == 5.0
+
+    # Negative values are rejected (ge=0.0).
+    with pytest.raises(ValidationError):
+        VideoProviderOptions(guidance_scale=-1.0)
 
 
 def test_provider_options_empty() -> None:

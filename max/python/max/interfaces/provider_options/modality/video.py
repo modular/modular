@@ -51,6 +51,17 @@ class VideoProviderOptions(BaseModel):
         gt=0,
     )
 
+    guidance_scale: float | None = Field(
+        None,
+        description=(
+            "Guidance scale for classifier-free guidance. "
+            "Higher values make the generation follow the prompt more closely. "
+            "Set to 1.0 to disable CFG. When unset, falls back to the value "
+            "from the image provider options."
+        ),
+        ge=0.0,
+    )
+
     frames_per_second: int | None = Field(
         None,
         description=(
