@@ -52,9 +52,7 @@ class TestPixelGenerationTokenizer:
     def flux_pipeline_config(self, flux_model_path: str) -> PipelineConfig:
         """Pipeline config for Flux model."""
         return PipelineConfig(
-            models=ModelManifest(
-                {"main": MAXModelConfig(model_path=flux_model_path)}
-            ),
+            models=ModelManifest.from_model_path(flux_model_path),
             runtime=PipelineRuntimeConfig(defer_resolve=True),
         )
 
@@ -67,9 +65,7 @@ class TestPixelGenerationTokenizer:
     def zimage_pipeline_config(self, zimage_model_path: str) -> PipelineConfig:
         """Pipeline config for Z-Image model."""
         return PipelineConfig(
-            models=ModelManifest(
-                {"main": MAXModelConfig(model_path=zimage_model_path)}
-            ),
+            models=ModelManifest.from_model_path(zimage_model_path),
             runtime=PipelineRuntimeConfig(defer_resolve=True),
         )
 
