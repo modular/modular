@@ -18,6 +18,9 @@ comptime wrongType[x: Int]: String = x
 
 comptime myIntAdd[x: Int, y: Int] = x + y
 
+# expected-warning @below {{'where' clauses inside parameter lists are deprecated}}
+comptime deprecatedInlineWhere[x: Int where x > 0] = x
+
 comptime myCurriedIntAdd[x: Int] = myIntAdd[x, ...]
 
 # expected-error @below {{unknown keyword parameter: 'y'}}

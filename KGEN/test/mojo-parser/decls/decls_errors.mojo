@@ -414,18 +414,28 @@ def test_constraints():
   # expected-error @below {{invalid call to 'failing_constraint_with_depth': violated constraint}}
   failing_constraint_with_depth[1,2,3]()
 
-# expected-note @below {{constraint declared here evaluated to False, expected '(x > 1)'}}
 # expected-note @below {{function declared here}}
-def unprovable_param_constraints[x: Int where x > 1]():
+def unprovable_param_constraints[
+  # expected-warning @below {{'where' clauses inside parameter lists are deprecated}}
+  # expected-note @below {{use a trailing 'where' clause after the signature instead}}
+  # expected-note @below {{constraint declared here evaluated to False, expected '(x > 1)'}}
+  x: Int where x > 1
+]():
   pass
 
 def test_param_constraints():
   # expected-error @below {{invalid call to 'unprovable_param_constraints': violated constraint}}
   unprovable_param_constraints[0]()
 
+# expected-warning @below {{'where' clauses inside parameter lists are deprecated}}
+# expected-note @below {{use a trailing 'where' clause after the signature instead}}
+def deprecated_inline_where_warning[x: Int where x > 0]():
+  pass
+
 # expected-note @below {{'ConstraintStruct' declared here}}
 # expected-note @below {{cannot prove constraint}}
 struct ConstraintStruct[
+  # expected-warning @below {{'where' clauses inside parameter lists are deprecated}}
   # expected-note @below {{constraint declared here needs evidence for '(x > 0)'}}
   # expected-note @below {{constraint declared here evaluated to False, expected '(a > 0)'}}
   a: Int where a > 0
@@ -440,13 +450,22 @@ def use_constraint_struct[x: Int, cs: ConstraintStruct[x]]():
 def violate_constraint_struct[cs: ConstraintStruct[0]]():
     pass
 
-# expected-error @below {{default value violated constraint}}
-# expected-note @below {{constraint declared here evaluated to False, expected '(x > 3)'}}
-def violated_default_constraint[x: Int where x > 3 = 1]():
+def violated_default_constraint[
+  # expected-warning @below {{'where' clauses inside parameter lists are deprecated}}
+  # expected-note @below {{use a trailing 'where' clause after the signature instead}}
+  # expected-error @below {{default value violated constraint}}
+  # expected-note @below {{constraint declared here evaluated to False, expected '(x > 3)'}}
+  x: Int where x > 3 = 1
+]():
     pass
 
-# There should NOT be any errors / warnings here.
-def unprovable_default_constraint[x: Int = 3, y: Int where x + y > 3 = 1]():
+# There should NOT be any errors here.
+def unprovable_default_constraint[
+  x: Int = 3,
+  # expected-warning @below {{'where' clauses inside parameter lists are deprecated}}
+  # expected-note @below {{use a trailing 'where' clause after the signature instead}}
+  y: Int where x + y > 3 = 1
+]():
     pass
 
 ##===----------------------------------------------------------------------===##

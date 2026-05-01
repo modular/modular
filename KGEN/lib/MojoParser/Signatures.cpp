@@ -287,7 +287,8 @@ processOutAddressSpaceSpecifier(StringRef valueName,
 //===----------------------------------------------------------------------===//
 
 ParseResult ParsedArgument::parse(ParserBase &p, KWArgMarkerInfo &markerInfo,
-                                  ArgListKind kind) {
+                                  ArgListKind kind,
+                                  InlineWhereNote inlineWhereNote) {
   loc = p.getToken().getLoc();
   cursor = p.getLexer().getCursor();
 
@@ -428,12 +429,24 @@ ParseResult ParsedArgument::parse(ParserBase &p, KWArgMarkerInfo &markerInfo,
     name = StringAttr::get(p.getContext());
 
   // Parse optional where clauses.
-  while (p.consumeIfSoftIdentifier("where")) {
+  while (p.getToken().isIdentifier() && p.getToken().getSpelling() == "where") {
+    SMLoc whereLoc = p.consumeIdentifier().getLoc();
     if (kind == ArgListKind::kArgList) {
       p.emitError(loc,
                   "'where' clauses must be used with parameters and cannot "
                   "be used with arguments");
       return failure();
+    }
+    if (kind == ArgListKind::kParamList ||
+        kind == ArgListKind::kFnTypeParamList) {
+      auto diag = p.emitWarning(
+          whereLoc, "'where' clauses inside parameter lists are deprecated");
+      // FIXME(MOCO-3855): Broaden this note to struct and comptime
+      // parameter lists once they support trailing 'where' clauses.
+      if (inlineWhereNote == InlineWhereNote::kTrailingWhere) {
+        diag.attachNote(whereLoc)
+            << "use a trailing 'where' clause after the signature instead";
+      }
     }
     ParsedConstraint constraint;
     if (constraint.parse(p))
@@ -497,7 +510,8 @@ PassingKind ParsedArgument::getKWArgHandlingAsPassingKind() const {
 /// arguments.
 static ParseResult
 parseArgOrParamList(ParserBase &p, SmallVectorImpl<ParsedArgument> &parsedArgs,
-                    ParsedArgument *resultArg, ArgListKind kind) {
+                    ParsedArgument *resultArg, ArgListKind kind,
+                    InlineWhereNote inlineWhereNote = InlineWhereNote::kNone) {
   // Figure out where to stop scanning.
   SmallVector<Token::Kind, 2> stopTokens;
   switch (kind) {
@@ -617,7 +631,7 @@ parseArgOrParamList(ParserBase &p, SmallVectorImpl<ParsedArgument> &parsedArgs,
     auto marker = KWArgMarkerInfo::kNotMarker;
     ParsedArgument arg;
     arg.kwArgHandling = defaultKWArgHandling;
-    if (arg.parse(p, marker, kind))
+    if (arg.parse(p, marker, kind, inlineWhereNote))
       return failure();
 
     // If we have a **arg then it must be the last argument.
@@ -1294,14 +1308,16 @@ ParseResult ParsedConstraint::parse(ParserBase &p) {
 /// param_signature    ::= "[" param_list ("->" param_result_types)? "]"
 /// param_list   ::= argument_list | "(" ")"
 /// param_result_types ::= expression ("," expression)*
-ParseResult ParsedParamList::parseParametersIfPresent(ParserBase &p,
-                                                      ArgListKind kind) {
+ParseResult
+ParsedParamList::parseParametersIfPresent(ParserBase &p, ArgListKind kind,
+                                          InlineWhereNote inlineWhereNote) {
   // Check to see if a parameter signature exists at all.
   if (!p.consumeIf(Token::l_square) || p.consumeIf(Token::r_square))
     return success();
 
   // Parse an actual parameter list.
-  if (parseArgOrParamList(p, params, /*resultArg=*/nullptr, kind))
+  if (parseArgOrParamList(p, params, /*resultArg=*/nullptr, kind,
+                          inlineWhereNote))
     return failure();
 
   return p.parseToken(Token::r_square, "expected ']' for parameter list");

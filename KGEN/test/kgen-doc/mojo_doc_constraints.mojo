@@ -8,9 +8,8 @@
 
 # RUN: kgen-doc %s | FileCheck %s
 
-# Check that no diagnostics are output:
-# RUN: kgen-doc %s 2>&1 | FileCheck %s --allow-empty --check-prefix CHECK-DIAG
-# CHECK-DIAG-NOT: warning
+# Check inline-where deprecation diagnostics alongside emitting declarations.
+# RUN: kgen-doc %s 2>&1 | FileCheck %s --allow-empty --check-prefix CHECK-DIAG --implicit-check-not=warning
 
 ##===----------------------------------------------------------------------===##
 # Helper predicates for constraint testing
@@ -96,6 +95,8 @@ def fn_with_where_and_return[N: Int]() -> Int where is_positive(N):
 # CHECK: "constraints": " where is_positive(N)"
 # CHECK: "name": "N",
 # CHECK: "signature": "fn_with_parameter_constraint[N: Int where is_positive(N)]()"
+# CHECK-DIAG: warning: 'where' clauses inside parameter lists are deprecated
+# CHECK-DIAG: note: use a trailing 'where' clause after the signature instead
 def fn_with_parameter_constraint[N: Int where is_positive(N)]():
     """Function with parameter-level constraint.
 
@@ -112,7 +113,12 @@ def fn_with_parameter_constraint[N: Int where is_positive(N)]():
 # CHECK: "name": "B",
 # CHECK: "signature": "fn_with_multiple_param_constraints[A: Int where is_positive(A), B: Int where is_even(B)]()"
 def fn_with_multiple_param_constraints[
-    A: Int where is_positive(A), B: Int where is_even(B)
+    # CHECK-DIAG: warning: 'where' clauses inside parameter lists are deprecated
+    # CHECK-DIAG: note: use a trailing 'where' clause after the signature instead
+    # CHECK-DIAG: warning: 'where' clauses inside parameter lists are deprecated
+    # CHECK-DIAG: note: use a trailing 'where' clause after the signature instead
+    A: Int where is_positive(A),
+    B: Int where is_even(B),
 ]():
     """Function with multiple parameter-level constraints.
 
@@ -212,6 +218,8 @@ def fn_with_default_and_constraint[N: Int = 10]() where is_positive(N):
 # CHECK: "default": "4",
 # CHECK: "name": "M",
 # CHECK: "signature": "fn_with_default_and_param_constraint[M: Int where is_even(M) = 4]()"
+# CHECK-DIAG: warning: 'where' clauses inside parameter lists are deprecated
+# CHECK-DIAG: note: use a trailing 'where' clause after the signature instead
 def fn_with_default_and_param_constraint[M: Int where is_even(M) = 4]():
     """Function with default value and parameter-level constraint.
 
@@ -298,7 +306,10 @@ def fn_with_neg_constraint[N: Int]() where -N == 1:
 # CHECK: "name": "X",
 # CHECK: "signature": "fn_with_both_constraint_types[X: Int where is_positive(X), Y: Int]() where is_even(Y)"
 def fn_with_both_constraint_types[
-    X: Int where is_positive(X), Y: Int
+    # CHECK-DIAG: warning: 'where' clauses inside parameter lists are deprecated
+    # CHECK-DIAG: note: use a trailing 'where' clause after the signature instead
+    X: Int where is_positive(X),
+    Y: Int,
 ]() where is_even(Y):
     """Function with both parameter-level and function-level constraints.
 
@@ -359,7 +370,11 @@ def fn_no_false_positive_different_struct(
 # CHECK: "name": "C",
 # CHECK: "signature": "fn_with_cond_where[A: Int, B: Int, C: Int where (C <= B) if (A <= B) else (C <= 0)]()"
 def fn_with_cond_where[
-    A: Int, B: Int, C: Int where (C <= B) if (A <= B) else (C <= 0)
+    # CHECK-DIAG: warning: 'where' clauses inside parameter lists are deprecated
+    # CHECK-DIAG: note: use a trailing 'where' clause after the signature instead
+    A: Int,
+    B: Int,
+    C: Int where (C <= B) if (A <= B) else (C <= 0),
 ]():
     """Function with a conditional inline constraint.
 
@@ -422,6 +437,8 @@ def fn_with_compound_trait_conformance[
 # CHECK-LABEL: "name": "fn_with_param_trait_constraint",
 # CHECK: "signature": "fn_with_param_trait_constraint[T: Serializable & Printable]()"
 def fn_with_param_trait_constraint[
+    # CHECK-DIAG: warning: 'where' clauses inside parameter lists are deprecated
+    # CHECK-DIAG: note: use a trailing 'where' clause after the signature instead
     T: Serializable where conforms_to(T, Printable)
 ]():
     """Function with parameter-level trait conformance constraint.
@@ -433,45 +450,10 @@ def fn_with_param_trait_constraint[
 
 
 ##===----------------------------------------------------------------------===##
-# Struct with method-level constraints
-# Note: In JSON output, struct fields are alphabetical, so 'functions' comes
-# before 'name' and 'signature'.
-##===----------------------------------------------------------------------===##
-
-
-# CHECK-LABEL: "structs":
-# CHECK: "functions":
-# CHECK: "name": "method_with_where",
-# CHECK: "signature": "method_with_where[M: Int](self) where is_positive(M)"
-# CHECK: "name": "method_with_param_constraint",
-# CHECK: "constraints": " where is_even(K)"
-# CHECK: "signature": "method_with_param_constraint[K: Int where is_even(K)](self)"
-# CHECK: "name": "MethodConstraints"
-# CHECK: "signature": "struct MethodConstraints"
-@fieldwise_init
-struct MethodConstraints:
-    """A struct to test method-level constraints."""
-
-    def method_with_where[M: Int](self) where is_positive(M):
-        """Method with a where clause.
-
-        Parameters:
-            M: A positive integer parameter.
-        """
-        pass
-
-    def method_with_param_constraint[K: Int where is_even(K)](self):
-        """Method with parameter-level constraint.
-
-        Parameters:
-            K: An even integer parameter.
-        """
-        pass
-
-
-##===----------------------------------------------------------------------===##
 # Struct with parameter constraints
 ##===----------------------------------------------------------------------===##
+
+# CHECK-LABEL: "structs":
 
 
 # CHECK: "name": "StructWithParamConstraint",
@@ -479,6 +461,7 @@ struct MethodConstraints:
 # CHECK: "name": "N",
 # CHECK: "signature": "struct StructWithParamConstraint[N: Int where is_positive(N)]"
 @fieldwise_init
+# CHECK-DIAG: warning: 'where' clauses inside parameter lists are deprecated
 struct StructWithParamConstraint[N: Int where is_positive(N)]:
     """A struct with a parameter-level constraint.
 
@@ -501,6 +484,7 @@ struct StructWithParamConstraint[N: Int where is_positive(N)]:
 # CHECK: "name": "M",
 # CHECK: "signature": "struct StructWithDependentParamConstraint[N: Int, M: Int where is_positive(N)]"
 @fieldwise_init
+# CHECK-DIAG: warning: 'where' clauses inside parameter lists are deprecated
 struct StructWithDependentParamConstraint[N: Int, M: Int where is_positive(N)]:
     """A struct where a later parameter's constraint references an earlier one.
 
@@ -518,7 +502,9 @@ struct StructWithDependentParamConstraint[N: Int, M: Int where is_positive(N)]:
 # CHECK: "signature": "struct StructWithMultiParamPredConstraint[N: Int, M: Int where complex_pred(N, M)]"
 @fieldwise_init
 struct StructWithMultiParamPredConstraint[
-    N: Int, M: Int where complex_pred(N, M)
+    # CHECK-DIAG: warning: 'where' clauses inside parameter lists are deprecated
+    N: Int,
+    M: Int where complex_pred(N, M),
 ]:
     """A struct where a parameter's constraint uses multiple sibling parameters.
 
@@ -528,6 +514,44 @@ struct StructWithMultiParamPredConstraint[
     """
 
     pass
+
+
+##===----------------------------------------------------------------------===##
+# Struct with method-level constraints
+# Note: In JSON output, struct fields are alphabetical, so 'functions' comes
+# before 'name' and 'signature'.
+##===----------------------------------------------------------------------===##
+
+
+# CHECK: "functions":
+# CHECK: "name": "method_with_where",
+# CHECK: "signature": "method_with_where[M: Int](self) where is_positive(M)"
+# CHECK: "name": "method_with_param_constraint",
+# CHECK: "constraints": " where is_even(K)"
+# CHECK: "signature": "method_with_param_constraint[K: Int where is_even(K)](self)"
+# CHECK: "name": "MethodConstraints"
+# CHECK: "signature": "struct MethodConstraints"
+@fieldwise_init
+struct MethodConstraints:
+    """A struct to test method-level constraints."""
+
+    def method_with_where[M: Int](self) where is_positive(M):
+        """Method with a where clause.
+
+        Parameters:
+            M: A positive integer parameter.
+        """
+        pass
+
+    # CHECK-DIAG: warning: 'where' clauses inside parameter lists are deprecated
+    # CHECK-DIAG: note: use a trailing 'where' clause after the signature instead
+    def method_with_param_constraint[K: Int where is_even(K)](self):
+        """Method with parameter-level constraint.
+
+        Parameters:
+            K: An even integer parameter.
+        """
+        pass
 
 
 ##===----------------------------------------------------------------------===##
