@@ -62,6 +62,14 @@ class UnifiedEagleLlama3Values:
     max_k: TensorValue
     top_p: TensorValue
     min_top_p: TensorValue
+    token_bitmasks: TensorValue | None = None
+    """Grammar constraint bitmask for structured output.
+
+    Shape: [batch_size, num_speculative_tokens + 1, vocab_size].
+    Position i contains valid token mask given FSM state after consuming
+    draft[0:i-1]. Position num_speculative_tokens is for the bonus token.
+    None when structured output is not enabled (graph compiled without bitmask).
+    """
 
 
 class UnifiedEagleLlama3(Module):
@@ -91,30 +99,36 @@ class UnifiedEagleLlama3(Module):
         self,
         inputs: Sequence[Value[Any]],
     ) -> UnifiedEagleLlama3Values:
-        (
-            tokens,
-            input_row_offsets,
-            return_n_logits,
-            # target model kvcache inputs
-            target_kv_blocks,
-            cache_lengths,
-            lookup_table,
-            max_lengths,
-            dispatch_metadata,
-            draft_dispatch_metadata,
-            # draft model inputs
-            draft_tokens,
-            # draft kvcache
-            draft_kv_blocks,
-            # stochastic acceptance seed (scalar int64 on CPU)
-            seed,
-            # sampling params for stochastic acceptance
-            temperature,
-            top_k,
-            max_k,
-            top_p,
-            min_top_p,
-        ) = inputs
+        # Use an iterator to consume inputs sequentially, avoiding a hardcoded
+        # count that would break if the kv cache structure changes.
+        it = iter(inputs)
+
+        tokens = next(it)
+        input_row_offsets = next(it)
+        return_n_logits = next(it)
+        # target model kvcache inputs
+        target_kv_blocks = next(it)
+        cache_lengths = next(it)
+        lookup_table = next(it)
+        max_lengths = next(it)
+        dispatch_metadata = next(it)
+        draft_dispatch_metadata = next(it)
+        # draft model inputs
+        draft_tokens = next(it)
+        # draft kvcache
+        draft_kv_blocks = next(it)
+        # stochastic acceptance seed (scalar int64 on CPU)
+        seed = next(it)
+        # sampling params for stochastic acceptance
+        temperature = next(it)
+        top_k = next(it)
+        max_k = next(it)
+        top_p = next(it)
+        min_top_p = next(it)
+        # Optional structured output bitmask (appended when enabled)
+        token_bitmask = (
+            next(it) if self.config.enable_structured_output else None
+        )
 
         target_kv_collection = PagedCacheValues(
             kv_blocks=target_kv_blocks.buffer,
@@ -138,6 +152,7 @@ class UnifiedEagleLlama3(Module):
             max_k=max_k.tensor,
             top_p=top_p.tensor,
             min_top_p=min_top_p.tensor,
+            token_bitmasks=token_bitmask.tensor if token_bitmask else None,
         )
 
     def input_types(self) -> tuple[TensorType | BufferType, ...]:
@@ -145,7 +160,10 @@ class UnifiedEagleLlama3(Module):
 
         Order: tokens, input_row_offsets, return_n_logits, target_kv_cache,
                draft_tokens, draft_kv_blocks, seed, temperature, top_k,
-               max_k, top_p, min_top_p.
+               max_k, top_p, min_top_p[, token_bitmasks].
+
+        The token_bitmasks input is only included when structured output is
+        enabled via config.enable_structured_output.
         """
         device_ref = self.config.target.devices[0]
 
@@ -184,7 +202,8 @@ class UnifiedEagleLlama3(Module):
             DType.float32, shape=[], device=DeviceRef.CPU()
         )
 
-        return (
+        # Mandatory inputs (must match order in _unflatten_graph_inputs)
+        result: tuple[TensorType | BufferType, ...] = (
             tokens_type,
             input_row_offsets_type,
             return_n_logits_type,
@@ -198,6 +217,20 @@ class UnifiedEagleLlama3(Module):
             top_p_type,
             min_top_p_type,
         )
+
+        # Optional bitmask input for structured output
+        if self.config.enable_structured_output:
+            # num_bitmask_positions = num_speculative_tokens + 1
+            # Position i contains valid tokens given FSM state after draft[0:i-1]
+            # Position num_speculative_tokens is for the bonus token
+            token_bitmasks_type = TensorType(
+                DType.bool,
+                shape=["batch_size", "num_bitmask_positions", "vocab_size"],
+                device=device_ref,
+            )
+            result = result + (token_bitmasks_type,)
+
+        return result
 
     def __call__(
         self,
@@ -261,6 +294,7 @@ class UnifiedEagleLlama3(Module):
             max_k=inputs.max_k,
             top_p=inputs.top_p,
             min_top_p=inputs.min_top_p,
+            token_bitmasks=inputs.token_bitmasks,
         )
 
         # target_tokens: [B, K+1]

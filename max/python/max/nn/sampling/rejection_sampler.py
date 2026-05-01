@@ -18,6 +18,33 @@ from max.graph import DeviceRef, Dim, TensorType, TensorValue, ops
 from max.nn.kernels import topk_fused_sampling
 from max.nn.layer import Module
 
+# Constant for masking invalid tokens in logits.
+# Using -10000 to match the existing sampling code pattern.
+_MASKED_LOGIT_VALUE = -10000.0
+
+
+def apply_grammar_mask(
+    logits: TensorValue,
+    bitmask: TensorValue,
+) -> TensorValue:
+    """Apply a grammar constraint bitmask to logits.
+
+    Masks invalid tokens to a large negative value so they have
+    ~zero probability after softmax.
+
+    Args:
+        logits: Logits tensor of shape [batch, num_positions, vocab_size].
+        bitmask: Boolean mask of shape [batch, num_positions, vocab_size].
+            True means the token is valid, False means it should be masked.
+
+    Returns:
+        Masked logits with invalid positions set to _MASKED_LOGIT_VALUE.
+    """
+    mask_value = ops.constant(
+        _MASKED_LOGIT_VALUE, dtype=logits.dtype, device=logits.device
+    )
+    return ops.where(bitmask, logits, mask_value)
+
 
 def _multinomial(
     probs: TensorValue, residual_rand: TensorValue | None = None
@@ -386,6 +413,7 @@ class AcceptanceSampler:
         top_p: TensorValue | None = None,
         min_top_p: TensorValue | None = None,
         in_thinking_phase: TensorValue | None = None,
+        token_bitmasks: TensorValue | None = None,
     ) -> tuple[TensorValue, TensorValue, TensorValue]:
         """Returns ``(first_rejected_idx, recovered_tokens, bonus_tokens)``.
 
@@ -404,6 +432,9 @@ class AcceptanceSampler:
                 ``relaxed_topk`` / ``relaxed_delta``; rows where this is
                 True use the relaxed acceptance rule, others use the
                 strict stochastic rule.
+            token_bitmasks: Optional grammar constraint bitmask
+                ``[batch, num_steps+1, vocab_size]``. Only used in
+                stochastic mode (not in synthetic and greedy modes).
         """
         if self._base_rate is not None:
             return synthetic_acceptance_sampler(
@@ -431,6 +462,7 @@ class AcceptanceSampler:
                 in_thinking_phase=in_thinking_phase,
                 relaxed_topk=self._relaxed_topk,
                 relaxed_delta=self._relaxed_delta,
+                token_bitmasks=token_bitmasks,
             )
         return greedy_acceptance_sampler(draft_tokens, target_logits)
 
@@ -447,13 +479,13 @@ def stochastic_acceptance_sampler(
     in_thinking_phase: TensorValue | None = None,
     relaxed_topk: int | None = None,
     relaxed_delta: float | None = None,
+    token_bitmasks: TensorValue | None = None,
 ) -> tuple[TensorValue, TensorValue, TensorValue]:
     """Target-only rejection sampler for speculative decoding.
 
-    - **Stochastic** (``greedy=False``): accepts a draft token with
-    probability ``p_target(draft_token)`` after applying temperature
-    scaling and softmax.  Recovered tokens are sampled from the
-    target distribution; the bonus token is sampled via
+    Accepts a draft token with probability ``p_target(draft_token)`` after
+    applying temperature scaling and softmax. Recovered tokens are sampled
+    from the target distribution; the bonus token is sampled via
     ``topk_fused_sampling``.
 
     When ``in_thinking_phase``, ``relaxed_topk``, and ``relaxed_delta``
@@ -463,7 +495,16 @@ def stochastic_acceptance_sampler(
     Recovered tokens for accepted-but-rejected positions in relaxed
     mode fall back to the target's top-1 argmax.
 
-    Returns ``(first_rejected_idx, recovered_tokens, bonus_tokens)``
+    When ``token_bitmasks`` is provided, grammar constraints are applied
+    to mask invalid tokens before computing probabilities. This ensures
+    rejected drafts are replaced with grammar-compliant recovered tokens,
+    and bonus tokens are always grammar-compliant.
+
+    Returns:
+        Tuple of ``(first_rejected_idx, recovered_tokens, bonus_tokens)``:
+        - first_rejected_idx: Index of first rejected draft position ``[batch]``
+        - recovered_tokens: Tokens sampled from target distribution ``[batch, num_steps]``
+        - bonus_tokens: Bonus token from final position ``[batch, 1]``
     """
     if seed is None:
         ops.random.set_seed(42)
@@ -478,6 +519,10 @@ def stochastic_acceptance_sampler(
     )
 
     target_logits_3d = _reshape_target_logits(target_logits)
+
+    # Apply grammar mask if provided
+    if token_bitmasks is not None:
+        target_logits_3d = apply_grammar_mask(target_logits_3d, token_bitmasks)
 
     draft_verification_logits = target_logits_3d[:, :-1]
     bonus_logits = ops.rebind(

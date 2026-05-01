@@ -34,6 +34,8 @@ class UnifiedEagleLlama3Config(ArchConfigWithKVCache):
     target: Llama3Config
     draft: Llama3Config
     speculative_config: SpeculativeConfig
+    enable_structured_output: bool = False
+    """When True, the graph accepts a bitmask input for grammar-constrained decoding."""
 
     def __post_init__(self) -> None:
         self.target.return_logits = ReturnLogits.VARIABLE
