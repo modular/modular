@@ -34,8 +34,31 @@ from transformers import AutoConfig, AutoTokenizer
 
 
 def test_sampling_top_k() -> None:
-    with pytest.raises(ValueError):
-        SamplingParams(top_k=257)
+    """Test that SamplingParams accepts large top_k values.
+
+    The arbitrary limit of 255 for top_k has been removed to support models
+    like Kimi 2.5 that may request larger top_k values. The underlying Mojo
+    kernel's ternary search algorithm supports arbitrary k values.
+    """
+    # Large top_k values should be accepted (previously raised ValueError)
+    params = SamplingParams(top_k=257)
+    assert params.top_k == 257
+
+    # Very large top_k values should also be accepted
+    params = SamplingParams(top_k=1000)
+    assert params.top_k == 1000
+
+    # top_k=0 should be converted to -1 (sample all tokens)
+    params = SamplingParams(top_k=0)
+    assert params.top_k == -1
+
+    # top_k=-1 (sample all tokens) should still work
+    params = SamplingParams(top_k=-1)
+    assert params.top_k == -1
+
+    # top_k < -1 should still be rejected
+    with pytest.raises(ValueError, match="top_k must be -1 or greater than 0"):
+        SamplingParams(top_k=-2)
 
 
 def test_temperature_zero_sets_top_k_to_one() -> None:

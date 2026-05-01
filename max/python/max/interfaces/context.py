@@ -357,9 +357,9 @@ class SamplingParams:
 
         if self.top_k == 0:
             self.top_k = -1
-        if self.top_k < -1 or self.top_k > 255:
+        if self.top_k < -1:
             raise ValueError(
-                f"top_k must be -1 or greater than 0 and less than or equal to 255, was {self.top_k}."
+                f"top_k must be -1 or greater than 0, was {self.top_k}."
             )
 
         if self.top_p < 0.0 or self.top_p > 1.0:

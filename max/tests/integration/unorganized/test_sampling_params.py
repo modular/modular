@@ -205,3 +205,30 @@ def test_sampling_params_user_stop_token_ids_override_eos_token_id() -> None:
         sampling_params_defaults=defaults,
     )
     assert params.stop_token_ids == [100, 200]
+
+
+def test_sampling_params_large_top_k_validation() -> None:
+    """Test that SamplingParams accepts large top_k values (> 255).
+
+    The arbitrary limit of 255 for top_k has been removed to support models
+    like Kimi 2.5 that may request larger top_k values. The underlying Mojo
+    kernel's ternary search algorithm supports arbitrary k values.
+    """
+    import pytest
+
+    # Large top_k values should be accepted
+    for top_k in [300, 500, 1000, 2000]:
+        params = SamplingParams(top_k=top_k)
+        assert params.top_k == top_k
+
+    # top_k=0 should be converted to -1 (sample all tokens)
+    params = SamplingParams(top_k=0)
+    assert params.top_k == -1
+
+    # top_k=-1 (sample all tokens) should still work
+    params = SamplingParams(top_k=-1)
+    assert params.top_k == -1
+
+    # top_k < -1 should still be rejected
+    with pytest.raises(ValueError, match="top_k must be -1 or greater than 0"):
+        SamplingParams(top_k=-2)
