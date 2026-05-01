@@ -517,6 +517,25 @@ def test_list_count() raises:
     assert_equal(0, Int(list2.count(1)))
 
 
+def test_index() raises:
+    var l = LinkedList[Int](1, 2, 3, 2, 5)
+    assert_equal(l.index(1), 0)
+    assert_equal(l.index(2), 1)
+    assert_equal(l.index(5), 4)
+
+    # Returns first occurrence
+    assert_equal(l.index(2), 1)
+
+    # Not found raises
+    with assert_raises():
+        _ = l.index(99)
+
+    # Empty list raises
+    var empty = LinkedList[Int]()
+    with assert_raises():
+        _ = empty.index(1)
+
+
 def test_list_contains() raises:
     var x = LinkedList[Int](1, 2, 3)
     assert_false(0 in x)

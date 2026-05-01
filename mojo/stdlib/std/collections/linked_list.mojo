@@ -640,6 +640,33 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
 
         return UInt(count)
 
+    def index(
+        self,
+        value: Self.ElementType,
+    ) raises -> Int where conforms_to(Self.ElementType, Equatable):
+        """Returns the index of the first occurrence of a value in the list.
+
+        Args:
+            value: The value to search for.
+
+        Returns:
+            The index of the first occurrence of the value in the list.
+
+        Raises:
+            ValueError: If the value is not found in the list.
+
+        Notes:
+            Unlike Python's `list.index()`, this method does not accept
+            `start`/`stop` parameters.
+
+            Time Complexity: O(n) in len(self).
+        """
+        for i, ref elem in enumerate(self):
+            if elem == value:
+                return i
+
+        raise "ValueError: Given element is not in linked list"
+
     def __contains__(
         self, value: Self.ElementType
     ) -> Bool where conforms_to(Self.ElementType, Equatable):
