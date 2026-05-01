@@ -19,6 +19,7 @@
 #include "Support/LLVMForwardDecls.h"
 #include "Support/Profiling/TimeProfiler.h"
 #include "Support/Threading/Atomics.h"
+#include "Support/Threading/HWInfo.h"
 #include "llvm/ADT/FunctionExtras.h"
 #include "llvm/ADT/StringRef.h"
 
@@ -173,6 +174,14 @@ public:
   /// they should break themselves into.
   virtual size_t getParallelismLevel() const = 0;
 
+  /// Returns the CPU IDs this work queue is partitioned to, or an empty
+  /// range if the queue is not partitioned.
+  virtual ArrayRef<size_t> getCpuIds() const { return {}; }
+
+  /// Returns the NUMA node this work queue is partitioned to, or
+  /// `kAnyNumaNode` if the queue is not partitioned.
+  virtual int getNumaNode() const { return kAnyNumaNode; }
+
   /// Returns true when the caller is already executing on the worker thread
   /// implied by `taskId`, allowing immediate execution instead of enqueuing.
   /// Implementations should keep this lightweight.
@@ -224,6 +233,12 @@ createSingleThreadWorkQueue(CompactRuntimePtr runtimePtr);
 std::unique_ptr<WorkQueue> createThreadPoolWorkQueue(
     CompactRuntimePtr runtimePtr, size_t numThreads, size_t maxThreads,
     bool mainWillDonate, bool withAffinity,
+    std::chrono::microseconds threadBusyWaitTime, std::string_view poolName);
+
+/// Creates a partitioned thread pool WorkQueue whose worker threads are
+/// restricted to the CPU cores of a single NUMA node.
+std::unique_ptr<WorkQueue> createPartitionedThreadPoolWorkQueue(
+    CompactRuntimePtr runtimePtr, int numaNode,
     std::chrono::microseconds threadBusyWaitTime, std::string_view poolName);
 
 } // namespace M::MLRT

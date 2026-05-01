@@ -14,6 +14,7 @@
 
 #include "Support/AlignedAlloc.h"
 #include "Support/Profiling/TimeProfiler.h"
+#include "Support/Threading/HWInfo.h"
 
 #include <memory>
 
@@ -34,9 +35,6 @@ using MemAllocFreeProfilerEntry =
 ///
 class Allocator {
 public:
-  /// Sentinel NUMA placement value meaning no NUMA affinity.
-  static constexpr int kAnyNumaNode = -1;
-
   virtual ~Allocator() = default;
 
   /// Allocate the specified number of bytes with the specified alignment.

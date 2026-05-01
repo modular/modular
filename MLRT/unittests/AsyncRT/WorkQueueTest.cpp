@@ -9,8 +9,11 @@
 #include "MLRT/AsyncRT/Runtime/AsyncValueRef.h"
 #include "MLRT/AsyncRT/Runtime/Runtime.h"
 #include "MLRT/AsyncRT/Runtime/RuntimeManager.h"
+#include "Support/Threading/HWInfo.h"
 #include "gtest/gtest.h"
+#include <algorithm>
 #include <atomic>
+#include <climits>
 #include <future>
 #include <memory>
 #include <mutex>
@@ -18,6 +21,10 @@
 #include <thread>
 #include <unordered_map>
 #include <vector>
+
+#if defined(__linux__)
+#include <sched.h>
+#endif
 
 using namespace M;
 using namespace M::MLRT;
@@ -292,6 +299,149 @@ TEST(WorkQueueTest, ShouldRunInlineSingleThreadedAlwaysTrue) {
   EXPECT_TRUE(inlineCheck.get());
 
   EXPECT_TRUE(workQueue.shouldRunInlineForTask(kDefaultTaskId));
+}
+
+//===----------------------------------------------------------------------===//
+// Partitioned (NUMA-aware) WorkQueue tests
+//===----------------------------------------------------------------------===//
+
+namespace {
+
+/// Returns a NUMA node id with a non-empty CPU list, or an empty optional if
+/// the host has no usable NUMA topology (e.g. running in a container that
+/// doesn't expose /sys/devices/system/node/).
+std::optional<int> firstUsableNumaNode() {
+  const ErrorOr<NUMATopology> &topologyOr = NUMATopology::get();
+  if (topologyOr.isError())
+    return std::nullopt;
+  for (int node : topologyOr->getNumaNodes()) {
+    if (!topologyOr->getCpuIdsForNumaNode(node).empty())
+      return node;
+  }
+  return std::nullopt;
+}
+
+/// Constructs a Runtime and returns its CompactRuntimePtr for use with the
+/// partitioned WorkQueue factory. Holds the RuntimeRef alive for the caller.
+struct PartitionedHarness {
+  RuntimeRef runtime;
+  CompactRuntimePtr runtimePtr;
+  std::unique_ptr<WorkQueue> workQueue;
+
+  ~PartitionedHarness() {
+    if (workQueue)
+      workQueue->shutdown();
+  }
+};
+
+PartitionedHarness makeHarness(int numaNode) {
+  RuntimeOptions options;
+  options.withSingleThreaded(); // Minimal "host" runtime just to supply ptr.
+  RuntimeRef runtime = getOrCreateRuntime(RuntimeSource::Test, options);
+  CompactRuntimePtr ptr = runtime->getCompactPtr();
+  std::unique_ptr<WorkQueue> wq = createPartitionedThreadPoolWorkQueue(
+      ptr, numaNode, std::chrono::microseconds(200), "🔥 NumaTest");
+  return {std::move(runtime), ptr, std::move(wq)};
+}
+
+} // namespace
+
+TEST(WorkQueueTest, PartitionedReportsPartition) {
+  std::optional<int> nodeOr = firstUsableNumaNode();
+  if (!nodeOr)
+    GTEST_SKIP() << "host has no NUMA topology available";
+  int node = *nodeOr;
+
+  PartitionedHarness h = makeHarness(node);
+  EXPECT_EQ(h.workQueue->getNumaNode(), node);
+
+  std::vector<size_t> expected =
+      NUMATopology::get()->getCpuIdsForNumaNode(node);
+  ArrayRef<size_t> reported = h.workQueue->getCpuIds();
+  EXPECT_EQ(reported.size(), expected.size());
+  EXPECT_TRUE(std::equal(reported.begin(), reported.end(), expected.begin()));
+}
+
+TEST(WorkQueueTest, PartitionedParallelismMatchesCpuIds) {
+  std::optional<int> nodeOr = firstUsableNumaNode();
+  if (!nodeOr)
+    GTEST_SKIP() << "host has no NUMA topology available";
+
+  PartitionedHarness h = makeHarness(*nodeOr);
+  EXPECT_EQ(h.workQueue->getParallelismLevel(),
+            h.workQueue->getCpuIds().size());
+}
+
+#if defined(__linux__)
+TEST(WorkQueueTest, PartitionedRunsOnlyOnSelectedCpus) {
+  std::optional<int> nodeOr = firstUsableNumaNode();
+  if (!nodeOr)
+    GTEST_SKIP() << "host has no NUMA topology available";
+
+  PartitionedHarness h = makeHarness(*nodeOr);
+  ArrayRef<size_t> cpuIds = h.workQueue->getCpuIds();
+  ASSERT_FALSE(cpuIds.empty());
+  std::set<size_t> allowedCpus(cpuIds.begin(), cpuIds.end());
+
+  // Dispatch one task per worker with a positive taskId, forcing each task
+  // onto its pinned worker. Each task records sched_getcpu() so we can check
+  // that every observation lands in the NUMA node's CPU set.
+  const size_t numWorkers = cpuIds.size();
+  std::vector<AsyncValueRef<int>> observed;
+  observed.reserve(numWorkers);
+  for (size_t workerID = 0; workerID < numWorkers; ++workerID) {
+    observed.emplace_back(AsyncValueRef<int>::allocate(*h.runtime));
+    AsyncValueRef<int> &slot = observed.back();
+    WorkItem probe([slot = slot.copy()]() mutable {
+      // sched_getcpu may return -1 on failure; store as int for inspection.
+      slot.copy().emplace(::sched_getcpu());
+    });
+    h.workQueue->addTask(std::move(probe), static_cast<int>(workerID));
+  }
+
+  for (AsyncValueRef<int> &slot : observed)
+    await(slot);
+
+  for (size_t i = 0; i < observed.size(); ++i) {
+    int cpu = observed[i].get();
+    ASSERT_GE(cpu, 0) << "sched_getcpu failed for worker " << i;
+    EXPECT_NE(allowedCpus.find(static_cast<size_t>(cpu)), allowedCpus.end())
+        << "worker " << i << " ran on CPU " << cpu
+        << " which is not in the NUMA partition";
+  }
+}
+#endif // defined(__linux__)
+
+TEST(WorkQueueTest, UnpartitionedReportsNoPartition) {
+  RuntimeOptions options;
+  options.numThreads = 2;
+  options.mainWillDonate = false;
+  RuntimeRef runtime = getOrCreateRuntime(RuntimeSource::Test, options);
+  WorkQueue *workQueue = runtime->getWorkQueue();
+
+  EXPECT_EQ(workQueue->getCpuIds().size(), 2u);
+  EXPECT_EQ(workQueue->getNumaNode(), M::kAnyNumaNode);
+}
+
+TEST(WorkQueueTest, PartitionedRejectsUnknownNumaNode) {
+  const ErrorOr<NUMATopology> &topologyOr = NUMATopology::get();
+  if (topologyOr.isError())
+    GTEST_SKIP() << "host has no NUMA topology available";
+
+  RuntimeOptions options;
+  options.withSingleThreaded();
+  RuntimeRef runtime = getOrCreateRuntime(RuntimeSource::Test, options);
+  CompactRuntimePtr ptr = runtime->getCompactPtr();
+
+  // Pick a NUMA node id that definitely doesn't exist on this host.
+  EXPECT_DEATH_IF_SUPPORTED(
+      {
+        auto wq = createPartitionedThreadPoolWorkQueue(
+            ptr, /*numaNode=*/INT_MAX, std::chrono::microseconds(200),
+            "NumaTest");
+        (void)wq;
+      },
+      "no CPUs for requested NUMA node");
 }
 
 } // namespace

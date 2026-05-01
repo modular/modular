@@ -21,6 +21,7 @@
 #include "Support/Profiling/TimeProfiler.h"
 #include "Support/Profiling/Tracy.h"
 #include "Support/Threading/Atomics.h"
+#include "Support/Threading/HWInfo.h"
 #include "Support/Threading/SpinWaiter.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/Support/Compiler.h"
@@ -795,7 +796,7 @@ public:
   ThreadPoolWorkQueue(CompactRuntimePtr runtimePtr, ArrayRef<size_t> cpuIDs,
                       size_t taskListCapacity, bool mainWillDonate,
                       std::chrono::microseconds threadBusyWaitTime,
-                      std::string_view poolName);
+                      std::string_view poolName, int numaNode = kAnyNumaNode);
 
   ~ThreadPoolWorkQueue() override;
 
@@ -814,6 +815,10 @@ public:
     // TODO(#1903): This is a poor heuristic for subdividing work.
     return numWorkers;
   }
+
+  ArrayRef<size_t> getCpuIds() const final override { return partitionCpuIds; }
+
+  int getNumaNode() const final override { return numaNode; }
 
   /// Returns true when we're already on the correct worker for the given
   /// taskId, allowing inline execution instead of enqueuing.
@@ -862,6 +867,13 @@ private:
   const size_t numWorkers;
   WorkQueueThread *workers = nullptr;
 
+  /// NUMA node this queue is partitioned to, or kAnyNumaNode if this queue
+  /// is not partitioned.
+  const int numaNode;
+
+  /// CPU IDs assigned to this queue.
+  const SmallVector<size_t> partitionCpuIds;
+
   // Base synchronization state is held in this class, each thread holds a
   // reference to this structure.
   SharedThreadState sharedState;
@@ -888,8 +900,9 @@ private:
 ThreadPoolWorkQueue::ThreadPoolWorkQueue(
     CompactRuntimePtr runtimePtr, ArrayRef<size_t> cpuIDs,
     size_t taskListCapacity, bool mainWillDonate,
-    std::chrono::microseconds threadBusyWaitTime, std::string_view poolName)
-    : numWorkers(cpuIDs.size()),
+    std::chrono::microseconds threadBusyWaitTime, std::string_view poolName,
+    int numaNode)
+    : numWorkers(cpuIDs.size()), numaNode(numaNode), partitionCpuIds(cpuIDs),
       sharedState(runtimePtr, mainWillDonate, numWorkers),
       taskList(taskListCapacity), poolName(poolName) {
   assert(numWorkers <= kMaxWorkers && "too many workers for bitvec width");
@@ -1205,4 +1218,33 @@ std::unique_ptr<WorkQueue> M::MLRT::createThreadPoolWorkQueue(
   return std::make_unique<ThreadPoolWorkQueue>(runtimePtr, cpuIDs,
                                                taskListCapacity, mainWillDonate,
                                                threadBusyWaitTime, poolName);
+}
+
+std::unique_ptr<WorkQueue> M::MLRT::createPartitionedThreadPoolWorkQueue(
+    CompactRuntimePtr runtimePtr, int numaNode,
+    std::chrono::microseconds threadBusyWaitTime, std::string_view poolName) {
+  assert(numaNode != kAnyNumaNode &&
+         "partitioned WorkQueue requires a specific NUMA node");
+
+  const ErrorOr<NUMATopology> &topologyOr = NUMATopology::get();
+  if (topologyOr.isError())
+    llvm::report_fatal_error(topologyOr.getError());
+
+  std::vector<size_t> cpuIDs = topologyOr->getCpuIdsForNumaNode(numaNode);
+  if (cpuIDs.empty())
+    llvm::report_fatal_error(
+        "createPartitionedThreadPoolWorkQueue: no CPUs for requested NUMA "
+        "node");
+  assert(cpuIDs.size() <= kMaxWorkers &&
+         "too many workers for partitioned WorkQueue");
+
+  const size_t taskListCapacity = cpuIDs.size() * kTaskListSlotsPerThread;
+  LLVM_DEBUG(llvm::dbgs() << "createPartitionedThreadPoolWorkQueue: NUMA node "
+                          << numaNode << ", " << cpuIDs.size()
+                          << " workers, task list capacity " << taskListCapacity
+                          << ".\n");
+
+  return std::make_unique<ThreadPoolWorkQueue>(
+      runtimePtr, cpuIDs, taskListCapacity, /*mainWillDonate=*/false,
+      threadBusyWaitTime, poolName, numaNode);
 }
