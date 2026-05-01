@@ -1,3 +1,4 @@
+load("@rules_multirun//:defs.bzl", "multirun")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("//bazel:api.bzl", "install_docs", "modular_py_binary", "pkg_filegroup", "pkg_files", "strip_prefix")
 
@@ -5,12 +6,25 @@ load("//bazel:api.bzl", "install_docs", "modular_py_binary", "pkg_filegroup", "p
 
 package(default_visibility = ["//oss/modular/docs:__subpackages__"])
 
-# The genrule directory `mojosite_docs` is a Bazel action staging tree only (not a path in modular-fe).
-# mojodocs.tar is unpacked under modular-fe/mojosite/docs/.
-# releases.tar is unpacked under modular-fe/mojosite/releases/ (blog plugin).
+# -----------------------------------------------------------------------------
+# Targets cheat sheet
+#
+# CI / artifacts:
+#   ./bazelw build --config=ci -- //oss/modular/mojo/docs:mojodocs
+#   ./bazelw build --config=ci -- //oss/modular/mojo/docs:releases
+# Outputs under bazel-bin/.../mojodocs.tar and releases.tar.
+# Other workflows must unpack those tars into modular-fe (e.g. mojosite/docs/, mojosite/releases/).
+#
+# Local dev (requires modular-fe cloned under .derived/modular-fe/; rsyncs from those tars):
+#   ./bazelw run //oss/modular/mojo/docs:install
+# Outputs under .derived/modular-fe/mojosite/docs/ and .derived/modular-fe/mojosite/releases/.
+# Or generate the docs/ and releases/ separately:
+#   ./bazelw run //oss/modular/mojo/docs:install-docs
+#   ./bazelw run //oss/modular/mojo/docs:install-releases
+# -----------------------------------------------------------------------------
 
 install_docs(
-    name = "install",
+    name = "install-docs",
     dest_subdir = "mojosite/docs",
     tags = ["manual"],
     target = ":mojodocs",
@@ -21,6 +35,17 @@ install_docs(
     dest_subdir = "mojosite/releases",
     tags = ["manual"],
     target = ":releases",
+)
+
+multirun(
+    name = "install",
+    buffer_output = True,
+    commands = [
+        ":install-docs",
+        ":install-releases",
+    ],
+    jobs = 1,
+    tags = ["manual"],
 )
 
 genrule(
@@ -60,6 +85,26 @@ genrule(
     tools = [":post-process-mojodocs"],
 )
 
+# releases.tar = static pages under releases/ (stripped prefix) plus generated nightly.md.
+# rules_pkg needs a genrule for the script output, then pkg_files (strip/renames differ
+# from the glob), then pkg_tar — this is the minimal composition for mixed sources.
+genrule(
+    name = "nightly_md",
+    outs = ["nightly.md"],
+    cmd = "$(location :write-nightly-release) $@",
+    tags = ["manual"],
+    tools = [":write-nightly-release"],
+)
+
+pkg_files(
+    name = "releases_nightly_md",
+    srcs = [":nightly_md"],
+    renames = {
+        "//oss/modular/mojo/docs:nightly_md": "nightly.md",
+    },
+    tags = ["manual"],
+)
+
 pkg_files(
     name = "releases_pack",
     srcs = glob(["releases/**"]),
@@ -69,7 +114,10 @@ pkg_files(
 
 pkg_tar(
     name = "releases",
-    srcs = [":releases_pack"],
+    srcs = [
+        ":releases_nightly_md",
+        ":releases_pack",
+    ],
     allow_duplicates_with_different_content = False,
     tags = ["manual"],
 )
@@ -98,6 +146,7 @@ pkg_files(
             "code/**",
             "docs_root/**",
             "post-process-mojodocs.py",
+            "write-nightly-release.py",
             "releases/**",
         ],
     ),
@@ -170,5 +219,14 @@ modular_py_binary(
     srcs = [
         ":post-process-mojodocs.py",
     ],
+    tags = ["manual"],
+)
+
+modular_py_binary(
+    name = "write-nightly-release",
+    srcs = [
+        ":write-nightly-release.py",
+    ],
+    data = ["nightly-changelog.md"],
     tags = ["manual"],
 )

@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Post-processing for mojo-only docs (mojosite build)."""
+"""Post-processing for mojo-only docs (mojodocs tarball build)."""
 
 import os
 import re
