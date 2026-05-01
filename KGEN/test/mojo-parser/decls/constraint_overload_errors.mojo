@@ -29,6 +29,8 @@ def is_square(x: Int) -> Bool:
 # expected-note @below {{cannot prove constraint}}
 def single_param_constraint[
     # expected-note-re @below {{constraint declared here needs evidence for 'is_prime({{[0-9]+}})'}}
+    # expected-warning @below {{'where' clauses inside parameter lists are deprecated}}
+    # expected-note @below {{use a trailing 'where' clause after the signature instead}}
     x: Int where is_prime(x),
 ]():
     pass
@@ -50,11 +52,15 @@ def is_natural_number(x: Int) -> Bool:
 # expected-note @below {{cannot prove constraint for candidate}}
 def multi_param_one_inconclusive[
     # expected-note @below {{constraint declared here}}
+    # expected-warning @below {{'where' clauses inside parameter lists are deprecated}}
+    # expected-note @below {{use a trailing 'where' clause after the signature instead}}
     x: Int where is_prime(x),
 ](a: UInt32):
     pass
 
 def multi_param_one_inconclusive[
+    # expected-warning @below {{'where' clauses inside parameter lists are deprecated}}
+    # expected-note @below {{use a trailing 'where' clause after the signature instead}}
     x: Int where is_natural_number(x),
 ](a: Int32):
     pass
@@ -72,6 +78,8 @@ def test_multi_param_one_inconclusive():
 # expected-note @below {{cannot prove constraint for candidate}}
 def multi_param_multi_inconclusive[
     # expected-note @below {{constraint declared here}}
+    # expected-warning @below {{'where' clauses inside parameter lists are deprecated}}
+    # expected-note @below {{use a trailing 'where' clause after the signature instead}}
     x: Int where is_prime(x),
 ](a: Int32):
     pass
@@ -79,6 +87,8 @@ def multi_param_multi_inconclusive[
 # expected-note @below {{cannot prove constraint for candidate}}
 def multi_param_multi_inconclusive[
     # expected-note @below {{constraint declared here}}
+    # expected-warning @below {{'where' clauses inside parameter lists are deprecated}}
+    # expected-note @below {{use a trailing 'where' clause after the signature instead}}
     x: Int where is_square(x),
 ](a: UInt32):
     pass
@@ -203,6 +213,8 @@ def test_multi_fn_best_fitness_inconclusive():
 # expected-note @below {{cannot prove constraint for candidate}}
 def mixed_constraints[
     # expected-note @below {{constraint declared here}}
+    # expected-warning @below {{'where' clauses inside parameter lists are deprecated}}
+    # expected-note @below {{use a trailing 'where' clause after the signature instead}}
     x: Int where is_prime(x),
     y: Int
 ]()
@@ -211,6 +223,8 @@ def mixed_constraints[
     pass
 
 def mixed_constraints[
+    # expected-warning @below {{'where' clauses inside parameter lists are deprecated}}
+    # expected-note @below {{use a trailing 'where' clause after the signature instead}}
     x: Int where x >= 0,
     y: Int
 ]()
@@ -230,11 +244,15 @@ def test_mixed_constraints():
 # expected-note @below {{cannot prove constraint for candidate}}
 def ref_to_overload[
     # expected-note @below {{constraint declared here}}
+    # expected-warning @below {{'where' clauses inside parameter lists are deprecated}}
+    # expected-note @below {{use a trailing 'where' clause after the signature instead}}
     x: Int where is_prime(x),
 ](a: Int32):
     pass
 
 def ref_to_overload[
+    # expected-warning @below {{'where' clauses inside parameter lists are deprecated}}
+    # expected-note @below {{use a trailing 'where' clause after the signature instead}}
     x: Int where x >= 0
 ](a: UInt32):
     pass
@@ -252,7 +270,11 @@ def test_ref_to_overload():
 # expected-note @below {{cannot prove constraint}}
 def multiple_inconclusive_same[
     # expected-note @below {{constraint declared here}}
+    # expected-warning @below {{'where' clauses inside parameter lists are deprecated}}
+    # expected-note @below {{use a trailing 'where' clause after the signature instead}}
     x: Int where is_prime(x),
+    # expected-warning @below {{'where' clauses inside parameter lists are deprecated}}
+    # expected-note @below {{use a trailing 'where' clause after the signature instead}}
     y: Int where is_square(y),
 ]():
     pass
@@ -269,13 +291,19 @@ def test_multiple_inconclusive_same():
 
 # expected-note @below {{cannot prove constraint}}
 def provable_and_inconclusive[
+    # expected-warning @below {{'where' clauses inside parameter lists are deprecated}}
+    # expected-note @below {{use a trailing 'where' clause after the signature instead}}
     x: Int where x > 0,  # This is provable with literal 2
     # expected-note @below {{constraint declared here}}
+    # expected-warning @below {{'where' clauses inside parameter lists are deprecated}}
+    # expected-note @below {{use a trailing 'where' clause after the signature instead}}
     y: Int where is_prime(y),  # This is not provable
 ](a: Int32):
     pass
 
 def provable_and_inconclusive[
+    # expected-warning @below {{'where' clauses inside parameter lists are deprecated}}
+    # expected-note @below {{use a trailing 'where' clause after the signature instead}}
     x: Int where x < 0,
 ](a: UInt32):
     pass
@@ -292,6 +320,8 @@ def test_provable_and_inconclusive():
 
 # This candidate has a violated constraint (should be rejected)
 def violated_vs_inconclusive[
+    # expected-warning @below {{'where' clauses inside parameter lists are deprecated}}
+    # expected-note @below {{use a trailing 'where' clause after the signature instead}}
     x: Int where x > 10,  # Violated by x=2
 ](a: Int32):
     pass
@@ -300,6 +330,8 @@ def violated_vs_inconclusive[
 # expected-note @below {{cannot prove constraint}}
 def violated_vs_inconclusive[
     # expected-note @below {{constraint declared here}}
+    # expected-warning @below {{'where' clauses inside parameter lists are deprecated}}
+    # expected-note @below {{use a trailing 'where' clause after the signature instead}}
     x: Int where is_prime(x),  # Inconclusive for x=2
 ](a: UInt32):
     pass

@@ -1609,7 +1609,8 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
   // signature list resolve to enclosing scopes, and we add them before the
   // value signature list so the types and parameters can resolve to the bound
   // values.
-  if (parsedParamList.parseParametersIfPresent(p, ArgListKind::kParamList))
+  if (parsedParamList.parseParametersIfPresent(p, ArgListKind::kParamList,
+                                               InlineWhereNote::kTrailingWhere))
     return failure();
 
   if (!parsedParamList.params.empty() && baseName == "__call__" &&
