@@ -132,23 +132,24 @@ ExecutionEngine::create(ExecutionEngineOptions options,
   // ExecutorProcessControl that we need to use.
   std::unique_ptr<llvm::orc::ExecutorProcessControl> epc =
       std::move(options.epc);
+
+  // The JIT-link memory manager is owned by the ObjectLinkingLayer so build it
+  // up front.
+  size_t slabSize = 1024 * 1024 * 1024;
+  auto managerOr =
+      toModularErrorOr(llvm::orc::MapperJITLinkMemoryManager::CreateWithMapper<
+                       llvm::orc::InProcessMemoryMapper>(slabSize));
+  if (managerOr.isError())
+    return managerOr.takeError();
+
   if (!epc) {
     auto pageSize = toModularErrorOr(llvm::sys::Process::getPageSize());
     if (pageSize.isError())
       return pageSize.takeError();
 
-    size_t slabSize = 1024 * 1024 * 1024;
-
-    auto managerOr = toModularErrorOr(
-        llvm::orc::MapperJITLinkMemoryManager::CreateWithMapper<
-            llvm::orc::InProcessMemoryMapper>(slabSize));
-    if (managerOr.isError())
-      return managerOr.takeError();
-
     epc = std::make_unique<llvm::orc::SelfExecutorProcessControl>(
         std::make_shared<llvm::orc::SymbolStringPool>(),
-        std::make_unique<llvm::orc::InPlaceTaskDispatcher>(), tt, *pageSize,
-        /*MemMgr=*/std::move(*managerOr));
+        std::make_unique<llvm::orc::InPlaceTaskDispatcher>(), tt, *pageSize);
   }
   auto sessionPtr =
       std::make_unique<llvm::orc::ExecutionSession>(std::move(epc));
@@ -170,9 +171,9 @@ ExecutionEngine::create(ExecutionEngineOptions options,
     return cfgOr.takeError();
   MojoConfig cfg = std::move(*cfgOr);
 
-  // Construct the object linking layer.
-  ee->objectLayer =
-      std::make_unique<llvm::orc::ObjectLinkingLayer>(*ee->executionSession);
+  // Construct the object linking layer; it takes ownership of the manager.
+  ee->objectLayer = std::make_unique<llvm::orc::ObjectLinkingLayer>(
+      *ee->executionSession, std::move(*managerOr));
 
   // Construct the platform stdlib - this way we don't have to worry about
   // whether or not we have it later on.
