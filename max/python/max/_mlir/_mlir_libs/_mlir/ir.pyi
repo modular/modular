@@ -266,27 +266,14 @@ class Location:
     """Gets the Location bound to the current thread or raises ValueError."""
 
     @staticmethod
-    def unknown(context: _mlir.ir.Context | None = None) -> Location:
-        """Gets a Location representing an unknown location."""
+    def from_attr(
+        attribute: Attribute, context: _mlir.ir.Context | None = None
+    ) -> Location:
+        """Gets a Location from a `LocationAttr`."""
 
     @staticmethod
-    def callsite(
-        callee: Location,
-        frames: Sequence[Location],
-        context: _mlir.ir.Context | None = None,
-    ) -> Location:
-        """Gets a Location representing a caller and callsite."""
-
-    def is_a_callsite(self) -> bool:
-        """Returns True if this location is a CallSiteLoc."""
-
-    @property
-    def callee(self) -> Location:
-        """Gets the callee location from a CallSiteLoc."""
-
-    @property
-    def caller(self) -> Location:
-        """Gets the caller location from a CallSiteLoc."""
+    def unknown(context: _mlir.ir.Context | None = None) -> UnknownLoc:
+        """Alias for `UnknownLoc.get()`."""
 
     @overload
     @staticmethod
@@ -295,8 +282,8 @@ class Location:
         line: int,
         col: int,
         context: _mlir.ir.Context | None = None,
-    ) -> Location:
-        """Gets a Location representing a file, line and column."""
+    ) -> FileLineColLoc:
+        """Alias for `FileLineColLoc.get()`."""
 
     @overload
     @staticmethod
@@ -307,15 +294,106 @@ class Location:
         end_line: int,
         end_col: int,
         context: _mlir.ir.Context | None = None,
-    ) -> Location:
-        """Gets a Location representing a file, line and column range."""
+    ) -> FileLineColLoc:
+        """Alias for `FileLineColLoc.get()` over a range."""
 
-    def is_a_file(self) -> bool:
-        """Returns True if this location is a FileLineColLoc."""
+    @staticmethod
+    def name(
+        name: str,
+        childLoc: Location | None = None,
+        context: _mlir.ir.Context | None = None,
+    ) -> NameLoc:
+        """Alias for `NameLoc.get()`."""
+
+    @staticmethod
+    def callsite(
+        callee: Location,
+        frames: Sequence[Location],
+        context: _mlir.ir.Context | None = None,
+    ) -> CallSiteLoc:
+        """Alias for `CallSiteLoc.get()`."""
+
+    @staticmethod
+    def fused(
+        locations: Sequence[Location],
+        metadata: Attribute | None = None,
+        context: _mlir.ir.Context | None = None,
+    ) -> Location:
+        """Alias for `FusedLoc.get()` (may collapse to a non-fused location)."""
+
+    @property
+    def context(self) -> Context:
+        """Context that owns the `Location`."""
+
+    @property
+    def attr(self) -> Attribute:
+        """Get the underlying `LocationAttr`."""
+
+    @property
+    def typeid(self) -> TypeID:
+        """Gets the `TypeID` of the underlying LocationAttr."""
+
+    def emit_error(self, message: str) -> None:
+        """
+        Emits an error diagnostic at this location.
+
+        Args:
+          message: The error message to emit.
+        """
+
+    def __str__(self) -> str:
+        """Returns the assembly form of the Location."""
+
+    def __repr__(self) -> str:
+        """Returns the assembly representation of the location."""
+
+class UnknownLoc(Location):
+    def __init__(self, cast_from_loc: Location) -> None: ...
+
+    static_typeid: max._mlir._mlir_libs._mlir.ir.TypeID = ...
+    """
+    (arg: object, /) -> mlir::python::MLIR_BINDINGS_PYTHON_DOMAIN::PyTypeID
+    """
+
+    def __repr__(self) -> str: ...
+    @staticmethod
+    def get(context: _mlir.ir.Context | None = None) -> UnknownLoc:
+        """Gets a Location representing an unknown location."""
+
+class FileLineColLoc(Location):
+    def __init__(self, cast_from_loc: Location) -> None: ...
+
+    static_typeid: max._mlir._mlir_libs._mlir.ir.TypeID = ...
+    """
+    (arg: object, /) -> mlir::python::MLIR_BINDINGS_PYTHON_DOMAIN::PyTypeID
+    """
+
+    def __repr__(self) -> str: ...
+    @overload
+    @staticmethod
+    def get(
+        filename: str,
+        line: int,
+        col: int,
+        context: _mlir.ir.Context | None = None,
+    ) -> FileLineColLoc:
+        """Gets a FileLineColLoc for a file, line, and column."""
+
+    @overload
+    @staticmethod
+    def get(
+        filename: str,
+        start_line: int,
+        start_col: int,
+        end_line: int,
+        end_col: int,
+        context: _mlir.ir.Context | None = None,
+    ) -> FileLineColLoc:
+        """Gets a FileLineColLoc spanning a file and line/column range."""
 
     @property
     def filename(self) -> str:
-        """Gets the filename from a FileLineColLoc."""
+        """Gets the filename from a `FileLineColLoc`."""
 
     @property
     def start_line(self) -> int:
@@ -333,33 +411,22 @@ class Location:
     def end_col(self) -> int:
         """Gets the end column number from a `FileLineColLoc`."""
 
+class NameLoc(Location):
+    def __init__(self, cast_from_loc: Location) -> None: ...
+
+    static_typeid: max._mlir._mlir_libs._mlir.ir.TypeID = ...
+    """
+    (arg: object, /) -> mlir::python::MLIR_BINDINGS_PYTHON_DOMAIN::PyTypeID
+    """
+
+    def __repr__(self) -> str: ...
     @staticmethod
-    def fused(
-        locations: Sequence[Location],
-        metadata: Attribute | None = None,
-        context: _mlir.ir.Context | None = None,
-    ) -> Location:
-        """Gets a Location representing a fused location with optional metadata."""
-
-    def is_a_fused(self) -> bool:
-        """Returns True if this location is a `FusedLoc`."""
-
-    @property
-    def locations(self) -> list[Location]:
-        """Gets the list of locations from a `FusedLoc`."""
-
-    @staticmethod
-    def name(
+    def get(
         name: str,
-        childLoc: Location | None = None,
+        child_loc: Location | None = None,
         context: _mlir.ir.Context | None = None,
-    ) -> Location:
-        """
-        Gets a Location representing a named location with optional child location.
-        """
-
-    def is_a_name(self) -> bool:
-        """Returns True if this location is a `NameLoc`."""
+    ) -> NameLoc:
+        """Gets a NameLoc with an optional child location."""
 
     @property
     def name_str(self) -> str:
@@ -369,30 +436,57 @@ class Location:
     def child_loc(self) -> Location:
         """Gets the child location from a `NameLoc`."""
 
+class CallSiteLoc(Location):
+    def __init__(self, cast_from_loc: Location) -> None: ...
+
+    static_typeid: max._mlir._mlir_libs._mlir.ir.TypeID = ...
+    """
+    (arg: object, /) -> mlir::python::MLIR_BINDINGS_PYTHON_DOMAIN::PyTypeID
+    """
+
+    def __repr__(self) -> str: ...
     @staticmethod
-    def from_attr(
-        attribute: Attribute, context: _mlir.ir.Context | None = None
-    ) -> Location:
-        """Gets a Location from a `LocationAttr`."""
+    def get(
+        callee: Location,
+        frames: Sequence[Location],
+        context: _mlir.ir.Context | None = None,
+    ) -> CallSiteLoc:
+        """Gets a CallSiteLoc chaining a callee and one or more caller frames."""
 
     @property
-    def context(self) -> Context:
-        """Context that owns the `Location`."""
+    def callee(self) -> Location:
+        """Gets the callee location from a `CallSiteLoc`."""
 
     @property
-    def attr(self) -> Attribute:
-        """Get the underlying `LocationAttr`."""
+    def caller(self) -> Location:
+        """Gets the caller location from a `CallSiteLoc`."""
 
-    def emit_error(self, message: str) -> None:
+class FusedLoc(Location):
+    def __init__(self, cast_from_loc: Location) -> None: ...
+
+    static_typeid: max._mlir._mlir_libs._mlir.ir.TypeID = ...
+    """
+    (arg: object, /) -> mlir::python::MLIR_BINDINGS_PYTHON_DOMAIN::PyTypeID
+    """
+
+    def __repr__(self) -> str: ...
+    @staticmethod
+    def get(
+        locations: Sequence[Location],
+        metadata: Attribute | None = None,
+        context: _mlir.ir.Context | None = None,
+    ) -> FusedLoc:
         """
-        Emits an error diagnostic at this location.
-
-        Args:
-          message: The error message to emit.
+        Gets a FusedLoc from an array of locations and optional metadata. Raises if the fuse would collapse to a non-fused location; use `Location.fused(...)` for the permissive variant.
         """
 
-    def __repr__(self) -> str:
-        """Returns the assembly representation of the location."""
+    @property
+    def locations(self) -> list[object]:
+        """Gets the list of locations from a `FusedLoc`."""
+
+    @property
+    def metadata(self) -> Attribute | None:
+        """Gets the metadata attribute from a `FusedLoc`, or None if absent."""
 
 class Module:
     @overload
