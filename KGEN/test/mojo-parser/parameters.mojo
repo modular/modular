@@ -326,7 +326,7 @@ def function_autoparam[f: def () capturing [_] -> None, g: def () capturing [_] 
 
 
 # CHECK-LABEL: lit.fn @"nonprop_capture_set
-# CHECK-SAME: ()"<f: !lit.generator<<"g.__origins__`": origin.set, +, "g": !lit.generator<:*(1,0):() capturing -> !kgen.none>>:*(0,0):() -> !kgen.none>>()
+# CHECK-SAME: ()"<f: !lit.generator<<"g.__origins__`2x": origin.set, +, "g": !lit.generator<:*(1,0):() capturing -> !kgen.none>>:*(0,0):() -> !kgen.none>>()
 def nonprop_capture_set[f: def[g: def () capturing [_] -> None] () thin -> None]():
     pass
 

@@ -4348,6 +4348,8 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
   ASTDecl &dummyScope = emitter.getDeclResolver().addFullyResolvedDecl(
       nullptr, StringAttr(), getLoc(), &emitter.declScope);
 
+  dummyScope.setExplicitParamScope();
+
   // Type check any parameters we have.
   ParsedParamList parsedParamList;
   parsedParamList.params = llvm::to_vector(parsedParams);
