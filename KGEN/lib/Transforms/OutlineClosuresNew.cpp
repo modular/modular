@@ -189,6 +189,7 @@ struct ClosureLifter {
   /// so that the closure types can be replaced.
   DenseMap<ClosureType, Type> closureTypeToStructTypes;
   DenseMap<ClosureType, Type> closureTypeToStructInstTypes;
+  DenseMap<ClosureType, StructGeneratorOp> closureTypeToStructGen;
 
   /// True if built with debug metadata.
   bool debugBuild;
@@ -1113,14 +1114,32 @@ liftClosureInit(ModuleOp theModule, ClosureLifter &lifter,
 
   ClosureType closureType = getClosureType(closureInit);
   StringAttr symbol = getFullName(closureType);
-  if (StructGeneratorOp structGeneratorOp =
-          lifter.symtab.lookup<StructGeneratorOp>(symbol))
-    return lifter.liftClosureInit(closureInit, parent, structGeneratorOp,
-                                  *uses);
+  StructGeneratorOp structGeneratorOp =
+      lifter.symtab.lookup<StructGeneratorOp>(symbol);
+  if (!structGeneratorOp) {
+    mlir::emitError(theModule.getLoc())
+        << "missing struct generator op for closure " << closureType.getName();
+    return failure();
+  }
+  if (failed(lifter.liftClosureInit(closureInit, parent, structGeneratorOp,
+                                    *uses)))
+    return failure();
 
-  mlir::emitError(theModule.getLoc())
-      << "missing struct generator op for closure " << closureType.getName();
-  return failure();
+  ClosureLifter::ClosureParentKey key{closureType.getParentSymbol(),
+                                      closureType.getName()};
+  auto captures = lifter.paramCaptureToStructAttr.find(key);
+  assert(captures != lifter.paramCaptureToStructAttr.end() &&
+         "lifting must populate captured parameter set");
+  SmallVector<ParamDeclAttr> inputParams;
+  llvm::append_range(inputParams, captures->second);
+  structGeneratorOp.setInputParams(inputParams);
+
+  auto instTypeIt = lifter.closureTypeToStructInstTypes.find(closureType);
+  if (instTypeIt != lifter.closureTypeToStructInstTypes.end()) {
+    structGeneratorOp.setValueDomainType(instTypeIt->second);
+    lifter.closureTypeToStructGen.insert({closureType, structGeneratorOp});
+  }
+  return success();
 }
 
 // lift closures and replace closure.init
@@ -1130,6 +1149,8 @@ void OutlineClosuresNewPass::runOnOperation() {
       getAnalysis<mlir::SymbolTableAnalysis>().getTopLevelSymbolTable();
   auto &paramCache = getAnalysis<ParameterCollector::Analysis>();
   ClosureLifter lifter(symtab, paramCache, debugBuild);
+  // Lift every closure init in the module. Each successful lift also lowers
+  // the matching struct generator.
   for (auto generator : theModule.getOps<GeneratorOp>()) {
     std::optional<ParameterUseDefGraph> uses;
     SmallVector<ClosureInitOp> closuresToLift;
@@ -1142,27 +1163,6 @@ void OutlineClosuresNewPass::runOnOperation() {
     }
   }
 
-  DenseMap<ClosureType, StructGeneratorOp> closureTypeToStructGen;
-  for (auto structGeneratorOp : theModule.getOps<StructGeneratorOp>()) {
-    // replace the parameters of the struct with the captures
-    if (ClosureType closureType =
-            dyn_cast<ClosureType>(structGeneratorOp.getValueDomainType())) {
-      ClosureLifter::ClosureParentKey key{closureType.getParentSymbol(),
-                                          closureType.getName()};
-      auto captures = lifter.paramCaptureToStructAttr.find(key);
-      SmallVector<ParamDeclAttr> inputParams;
-      llvm::append_range(inputParams, captures->second);
-      structGeneratorOp.setInputParams(inputParams);
-
-      auto it = lifter.closureTypeToStructInstTypes.find(closureType);
-      if (it != lifter.closureTypeToStructInstTypes.end()) {
-        structGeneratorOp.setValueDomainType(it->second);
-        closureTypeToStructGen.insert({closureType, structGeneratorOp});
-      }
-    }
-  }
-
-  // nested operations appear first.
   mlir::AttrTypeReplacer closureTypeReplacer;
   closureTypeReplacer.addReplacement([&](ClosureType closureType) -> Type {
     auto it = lifter.closureTypeToStructTypes.find(closureType);
@@ -1176,8 +1176,8 @@ void OutlineClosuresNewPass::runOnOperation() {
   closureTypeReplacer.addReplacement([&](TypeParamAttr attr) -> Attribute {
     if (auto closureType = dyn_cast<ClosureType>(attr.getTypeValue())) {
       auto it = lifter.closureTypeToStructTypes.find(closureType);
-      auto genIt = closureTypeToStructGen.find(closureType);
-      if (genIt != closureTypeToStructGen.end() &&
+      auto genIt = lifter.closureTypeToStructGen.find(closureType);
+      if (genIt != lifter.closureTypeToStructGen.end() &&
           it != lifter.closureTypeToStructTypes.end()) {
         auto genref = TypeGeneratorRefAttr::get(
             SymbolRefAttr::get(genIt->second.getSymNameAttr()),
@@ -1234,13 +1234,9 @@ void OutlineClosuresNewPass::runOnOperation() {
                                      typeValueType.getType());
   });
 
-  theModule.walk<mlir::WalkOrder::PreOrder>([&](Operation *operation) {
-    if (isa<ModuleOp>(operation))
-      return WalkResult::advance();
-    if (isa<GeneratorOp, StructGeneratorOp>(operation)) {
-      closureTypeReplacer.recursivelyReplaceElementsIn(operation, true, true,
+  for (Operation &operation : *theModule.getBody()) {
+    if (isa<GeneratorOp, StructGeneratorOp>(operation))
+      closureTypeReplacer.recursivelyReplaceElementsIn(&operation, true, true,
                                                        true);
-    }
-    return WalkResult::skip();
-  });
+  }
 }
