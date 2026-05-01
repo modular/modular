@@ -111,6 +111,14 @@ struct _DeviceContextScopeCpp:
     pass
 
 
+struct _DeviceGraphBuilderCpp:
+    pass
+
+
+struct _DeviceGraphCpp:
+    pass
+
+
 comptime _DeviceContextPtr[
     mut: Bool,
     //,
@@ -158,6 +166,18 @@ comptime _DeviceContextScopePtr[
     //,
     origin: Origin[mut=mut] = ExternalOrigin[mut=mut],
 ] = _CPointer[_DeviceContextScopeCpp, origin]
+
+comptime _DeviceGraphBuilderPtr[
+    mut: Bool,
+    //,
+    origin: Origin[mut=mut] = ExternalOrigin[mut=mut],
+] = _CPointer[_DeviceGraphBuilderCpp, origin]
+
+comptime _DeviceGraphPtr[
+    mut: Bool,
+    //,
+    origin: Origin[mut=mut] = ExternalOrigin[mut=mut],
+] = _CPointer[_DeviceGraphCpp, origin]
 
 comptime _CString[
     origin: Origin[mut=False] = ExternalOrigin[mut=False]
@@ -3010,6 +3030,342 @@ struct DeviceExternalFunction:
             )
         )
         return Int(result)
+
+
+struct DeviceGraph(ImplicitlyCopyable):
+    """Represents an instantiated device graph that can be replayed.
+
+    A `DeviceGraph` captures a sequence of GPU operations (such as kernel
+    launches) as a reusable graph. Once instantiated from a
+    `DeviceGraphBuilder`, the graph can be replayed multiple times at a
+    lower overhead than re-enqueueing each operation individually.
+
+    To obtain a `DeviceGraph`, use
+    [`DeviceGraphBuilder.instantiate()`](/mojo/std/gpu/host/device_context/DeviceGraphBuilder#instantiate).
+    """
+
+    var _handle: _DeviceGraphPtr[mut=True]
+
+    @doc_hidden
+    def __init__(out self, handle: _DeviceGraphPtr[mut=True]):
+        self._handle = handle
+
+    def __init__(out self, *, copy: Self):
+        """Creates a copy of an existing device graph by incrementing its
+        reference count.
+
+        Args:
+            copy: The device graph to copy.
+        """
+        # void AsyncRT_DeviceGraph_retain(DeviceGraph *graph)
+        external_call[
+            "AsyncRT_DeviceGraph_retain", NoneType, _DeviceGraphPtr[mut=True]
+        ](copy._handle)
+        self._handle = copy._handle
+
+    def __del__(deinit self):
+        """Releases resources associated with this device graph."""
+        # void AsyncRT_DeviceGraph_release(DeviceGraph *graph)
+        external_call[
+            "AsyncRT_DeviceGraph_release", NoneType, _DeviceGraphPtr[mut=True]
+        ](self._handle)
+
+    def replay(self) raises:
+        """Replays the captured sequence of GPU operations.
+
+        Submits the pre-captured sequence of operations for execution on the
+        device. This is more efficient than re-enqueueing each operation
+        individually because the graph has already been compiled and
+        instantiated by the driver.
+
+        Raises:
+            If replay fails.
+
+        Example:
+
+        ```mojo
+        from std.gpu.host import DeviceContext
+
+        def kernel():
+            print("replaying")
+
+        with DeviceContext() as ctx:
+            var compiled_fn = ctx.compile_function[kernel, kernel]()
+            var builder = ctx.create_graph_builder()
+            builder.add_function(compiled_fn, grid_dim=1, block_dim=1)
+            var graph = builder.instantiate()
+            graph.replay()
+            graph.replay()  # replay as many times as needed
+            ctx.synchronize()
+        ```
+        """
+        # const char *AsyncRT_DeviceGraph_replay(DeviceGraph *graph)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceGraph_replay",
+                _CString[],
+                _DeviceGraphPtr[mut=True],
+            ](self._handle)
+        )
+
+
+struct DeviceGraphBuilder(Movable, _FunctionEnqueuer):
+    """Builder for explicit device graph construction.
+
+    A `DeviceGraphBuilder` is obtained from
+    [`DeviceContext.create_graph_builder()`](/mojo/std/gpu/host/device_context/DeviceContext#create_graph_builder).
+    Callers add kernel nodes via `add_function()` and then call
+    `instantiate()` to produce a reusable `DeviceGraph`.
+
+    Example:
+
+    ```mojo
+    from std.gpu.host import DeviceContext
+
+    def kernel(x: Int):
+        print("Value:", x)
+
+    with DeviceContext() as ctx:
+        var compiled_fn = ctx.compile_function[kernel, kernel]()
+        var builder = ctx.create_graph_builder()
+        builder.add_function(compiled_fn, 42, grid_dim=1, block_dim=1)
+        var graph = builder^.instantiate()
+        graph.replay()
+        ctx.synchronize()
+    ```
+    """
+
+    comptime enqueue_fn_name: StaticString = (
+        "AsyncRT_DeviceGraphBuilder_addFunctionDirect"
+    )
+    """C runtime function name used by `_FunctionEnqueuer` to add a kernel node."""
+
+    var _handle: _DeviceGraphBuilderPtr[mut=True]
+    var _ctx: DeviceContext
+
+    @always_inline
+    def handle(self) -> UnsafePointer[NoneType, MutExternalOrigin]:
+        """Gets the underlying C builder handle.
+
+        Returns:
+            The underlying C builder handle as an opaque pointer.
+        """
+        return self._handle.value().bitcast[NoneType]()
+
+    @doc_hidden
+    def __init__(
+        out self,
+        handle: _DeviceGraphBuilderPtr[mut=True],
+        ctx: DeviceContext,
+    ):
+        self._handle = handle
+        self._ctx = ctx
+
+    def __init__(out self, *, copy: Self):
+        """Creates a copy of an existing graph builder by incrementing its
+        reference count.
+
+        Args:
+            copy: The graph builder to copy.
+        """
+        # void AsyncRT_DeviceGraphBuilder_retain(DeviceGraphBuilder *builder)
+        external_call[
+            "AsyncRT_DeviceGraphBuilder_retain",
+            NoneType,
+            _DeviceGraphBuilderPtr[mut=True],
+        ](copy._handle)
+        self._handle = copy._handle
+        self._ctx = copy._ctx
+
+    def __del__(deinit self):
+        """Releases resources associated with this graph builder."""
+        # void AsyncRT_DeviceGraphBuilder_release(DeviceGraphBuilder *builder)
+        external_call[
+            "AsyncRT_DeviceGraphBuilder_release",
+            NoneType,
+            _DeviceGraphBuilderPtr[mut=True],
+        ](self._handle)
+
+    @parameter
+    @always_inline
+    def add_function[
+        *Ts: DevicePassable
+    ](
+        self,
+        f: DeviceFunction,
+        *args: *Ts,
+        grid_dim: Dim,
+        block_dim: Dim,
+        cluster_dim: OptionalReg[Dim] = None,
+        shared_mem_bytes: OptionalReg[Int] = None,
+        var attributes: List[LaunchAttribute] = [],
+        var constant_memory: List[ConstantMemoryMapping] = [],
+    ) raises:
+        """Adds a type-checked compiled kernel function as a node in this graph.
+
+        Parameters:
+            Ts: Argument types (must be `DevicePassable`).
+
+        Args:
+            f: The type-checked compiled function to add. Must have been
+                compiled via `DeviceContext.compile_function()`.
+            args: Arguments to pass to the kernel.
+            grid_dim: Dimensions of the compute grid.
+            block_dim: Dimensions of each thread block.
+            cluster_dim: Cluster dimensions (optional).
+            shared_mem_bytes: Amount of dynamic shared memory per block.
+            attributes: Launch attributes.
+            constant_memory: Constant memory mappings.
+
+        Raises:
+            If adding the node fails.
+        """
+        _check_dim["DeviceGraphBuilder.add_function", "grid_dim"](
+            grid_dim, location=call_location()
+        )
+        _check_dim["DeviceGraphBuilder.add_function", "block_dim"](
+            block_dim, location=call_location()
+        )
+        comptime assert Bool(
+            f.declared_arg_types
+        ), "Calling a non-checked DeviceFunction; use the unchecked overload."
+        f._call_with_pack_checked(
+            self,
+            *args,
+            grid_dim=grid_dim,
+            block_dim=block_dim,
+            cluster_dim=cluster_dim,
+            shared_mem_bytes=shared_mem_bytes,
+            attributes=attributes^,
+            constant_memory=constant_memory^,
+            location=call_location(),
+        )
+
+    @always_inline
+    def add_function[
+        FuncType: def() register_passable -> None,
+        //,
+        dump_asm: _DumpPath = False,
+        dump_llvm: _DumpPath = False,
+        _dump_sass: _DumpPath = False,
+        _ptxas_info_verbose: Bool = False,
+    ](
+        self,
+        func: FuncType,
+        grid_dim: Dim,
+        block_dim: Dim,
+        cluster_dim: OptionalReg[Dim] = None,
+        shared_mem_bytes: OptionalReg[Int] = None,
+        var attributes: List[LaunchAttribute] = [],
+        var constant_memory: List[ConstantMemoryMapping] = [],
+    ) raises:
+        """Compiles and adds a capturing kernel closure as a node in this graph.
+
+        This overload is for kernels that capture variables from their
+        enclosing scope using the `{var}` capture syntax. Compilation is
+        performed automatically using the `DeviceContext` that created this
+        builder, so no separate compile step is needed.
+
+        Parameters:
+            FuncType: The type of the closure function (usually inferred).
+            dump_asm: To dump the compiled assembly, pass `True`, or a file
+                path to dump to, or a function returning a file path.
+            dump_llvm: To dump the generated LLVM code, pass `True`, or a file
+                path to dump to, or a function returning a file path.
+            _dump_sass: Only runs on NVIDIA targets, and requires CUDA Toolkit
+                to be installed. Pass `True`, or a file path to dump to, or a
+                function returning a file path.
+            _ptxas_info_verbose: Only runs on NVIDIA targets, and requires CUDA
+                Toolkit to be installed. Changes `dump_asm` to output verbose
+                PTX assembly (default `False`).
+
+        Args:
+            func: The capturing kernel closure to compile and add as a graph
+                node.
+            grid_dim: Dimensions of the compute grid.
+            block_dim: Dimensions of each thread block.
+            cluster_dim: Cluster dimensions (optional).
+            shared_mem_bytes: Amount of dynamic shared memory per block.
+            attributes: Launch attributes.
+            constant_memory: Constant memory mappings.
+
+        Raises:
+            If adding the node fails.
+
+        Example:
+
+        ```mojo
+        from std.gpu import global_idx
+        from std.gpu.host import DeviceContext
+
+        with DeviceContext() as ctx:
+            var scale: Float32 = 2.0
+            var buf = ctx.enqueue_create_buffer[DType.float32](256)
+            var ptr = buf.unsafe_ptr()
+
+            def scale_kernel() {var}:
+                var i = global_idx.x
+                ptr[i] = Float32(i) * scale
+
+            var builder = ctx.create_graph_builder()
+            builder.add_function(scale_kernel, grid_dim=1, block_dim=256)
+            var graph = builder^.instantiate()
+            graph.replay()
+            ctx.synchronize()
+        ```
+        """
+        _check_dim["DeviceGraphBuilder.add_function", "grid_dim"](
+            grid_dim, location=call_location()
+        )
+        _check_dim["DeviceGraphBuilder.add_function", "block_dim"](
+            block_dim, location=call_location()
+        )
+        var compiled = self._ctx.compile_function_unchecked[
+            FuncType.__call__,
+            dump_asm=dump_asm,
+            dump_llvm=dump_llvm,
+            _dump_sass=_dump_sass,
+            _ptxas_info_verbose=_ptxas_info_verbose,
+        ]()
+        compiled._call_with_pack(
+            self,
+            func,
+            grid_dim=grid_dim,
+            block_dim=block_dim,
+            cluster_dim=cluster_dim,
+            shared_mem_bytes=shared_mem_bytes,
+            attributes=attributes^,
+            constant_memory=constant_memory^,
+            location=call_location(),
+        )
+
+    def instantiate(var self) raises -> DeviceGraph:
+        """Instantiates the constructed graph into an executable device graph.
+
+        Finalizes the graph construction and produces a `DeviceGraph` that
+        can be replayed multiple times.
+
+        Returns:
+            The instantiated device graph.
+
+        Raises:
+            If instantiation fails.
+        """
+        var result: _DeviceGraphPtr[mut=True] = {}
+        # const char *AsyncRT_DeviceGraphBuilder_instantiate(
+        #     DeviceGraph **result, DeviceGraphBuilder *builder)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceGraphBuilder_instantiate",
+                _CString[],
+                UnsafePointer[_DeviceGraphPtr[mut=True], origin_of(result)],
+                _DeviceGraphBuilderPtr[mut=True],
+            ](
+                UnsafePointer(to=result),
+                self._handle,
+            )
+        )
+        return DeviceGraph(result)
 
 
 struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
@@ -6793,6 +7149,53 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
             location=call_location(),
         )
         return result
+
+    def create_graph_builder(self) raises -> DeviceGraphBuilder:
+        """Creates a graph builder for explicit device graph construction.
+
+        Returns a `DeviceGraphBuilder` that can be used to add kernel nodes
+        and then instantiate a reusable `DeviceGraph`.
+
+        Returns:
+            A new `DeviceGraphBuilder` associated with this device context.
+
+        Raises:
+            If graph builder creation fails or is not supported on this device.
+
+        Example:
+
+        ```mojo
+        from std.gpu.host import DeviceContext
+
+        def kernel(x: Int):
+            print("Value:", x)
+
+        with DeviceContext() as ctx:
+            var compiled_fn = ctx.compile_function[kernel, kernel]()
+            var builder = ctx.create_graph_builder()
+            builder.add_function(compiled_fn, 42, grid_dim=1, block_dim=1)
+            var graph = builder.instantiate()
+            graph.replay()
+            ctx.synchronize()
+        ```
+        """
+        var result: _DeviceGraphBuilderPtr[mut=True] = {}
+        # const char *AsyncRT_DeviceContext_createGraphBuilder(
+        #     DeviceGraphBuilder **result, DeviceContext *ctx)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceContext_createGraphBuilder",
+                _CString[],
+                UnsafePointer[
+                    _DeviceGraphBuilderPtr[mut=True], origin_of(result)
+                ],
+                _DeviceContextPtr[mut=True],
+            ](
+                UnsafePointer(to=result),
+                self._handle,
+            )
+        )
+        return DeviceGraphBuilder(result, self)
 
 
 struct DeviceMulticastBuffer[dtype: DType]:
