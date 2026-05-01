@@ -36,4 +36,4 @@ This version is still a work in progress.
 
 For all the updates to the Mojo language, standard library, and tools,
 including all GPU programming and `Layout`/`LayoutTensor` changes, see the [Mojo
-changelog](https://www.mojolang.org/docs/changelog)
+changelog](https://www.mojolang.org/releases)

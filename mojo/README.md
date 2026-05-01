@@ -8,7 +8,7 @@
 [Get started]: https://docs.modular.com/mojo/manual/get-started/
 [API docs]: https://docs.modular.com/mojo/lib
 [Contributing]: ./CONTRIBUTING.md
-[Changelog]: https://docs.modular.com/mojo/changelog
+[Changelog]: https://www.mojolang.org/releases
 
 # Mojo language 🔥
 

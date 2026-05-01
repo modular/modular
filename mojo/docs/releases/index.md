@@ -1,6 +1,6 @@
 ---
-title: Mojo changelog
-sidebar_label: Changelog
+title: Mojo releases
+sidebar_label: Releases
 description: A history of significant Mojo changes.
 toc_max_heading_level: 2
 ---

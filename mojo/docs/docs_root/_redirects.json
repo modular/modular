@@ -3,5 +3,15 @@
     "source": "/docs/manual/install/",
     "dest": "/install/",
     "status": 301
+  },
+  {
+    "source": "/docs/changelog",
+    "dest": "/releases",
+    "status": 301
+  },
+  {
+    "source": "/docs/changelog/",
+    "dest": "/releases/",
+    "status": 301
   }
 ]
