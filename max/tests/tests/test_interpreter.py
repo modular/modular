@@ -483,11 +483,11 @@ class TestInterpreterMaxOps:
     """Tests for the MAX_INTERPRETER_MAX_OPS threshold."""
 
     def test_default_max_ops(self, monkeypatch: Any) -> None:
-        """Test that the default max_ops is 30."""
+        """Test that the default max_ops is 1024."""
         monkeypatch.delenv("MAX_INTERPRETER_MAX_OPS", raising=False)
         from max.experimental.realization_context import _interpreter_max_ops
 
-        assert _interpreter_max_ops() == 30
+        assert _interpreter_max_ops() == 1024
 
     def test_env_var_overrides_max_ops(self, monkeypatch: Any) -> None:
         """Test that MAX_INTERPRETER_MAX_OPS env var overrides the default."""
@@ -508,7 +508,7 @@ class TestInterpreterMaxOps:
         monkeypatch.setenv("MAX_INTERPRETER_MAX_OPS", "abc")
         from max.experimental.realization_context import _interpreter_max_ops
 
-        assert _interpreter_max_ops() == 30
+        assert _interpreter_max_ops() == 1024
 
 
 class TestConstantScalarOp:

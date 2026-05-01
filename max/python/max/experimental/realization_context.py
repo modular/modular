@@ -109,10 +109,13 @@ _USE_INTERPRETER_ENV_VAR = "MAX_USE_EAGER_INTERPRETER"
 # Graphs with more ops than this threshold are compiled so the graph
 # compiler can apply fusion.
 # Benchmarks (CPU & A10G GPU, [64,64] f32 tensors) show the interpreter
-# is 7-10x faster than the compiler for up to 10 user-visible ops.
-# 30 dispatchable IR ops covers ~5 user-visible ops.
+# is 7-10x faster than the compiler for up to 10 user-visible ops
+# (~30 dispatchable IR ops). Distributed dispatch and shape-heavy ops
+# routinely produce well beyond 30 IR nodes per single user-visible op,
+# so the threshold is set high enough to keep eager paths on the
+# interpreter rather than falling back to a full compile.
 _INTERPRETER_MAX_OPS_ENV_VAR = "MAX_INTERPRETER_MAX_OPS"
-_DEFAULT_INTERPRETER_MAX_OPS = 30
+_DEFAULT_INTERPRETER_MAX_OPS = 1024
 
 
 def _default_use_interpreter() -> bool:
