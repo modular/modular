@@ -3024,8 +3024,9 @@ struct EPCombineKernel[
         # Once all the tokens have been received, set flags for other SMs to
         # copy the tokens to the output tensor.
         if thread_idx.x < Self.n_reduce_sms:
-            atomic_counter.store(
-                Self.n_wait_sms + thread_idx.x, DATA_READY_FLAG
+            _counter_atomic.store[ordering=Ordering.RELEASE](
+                atomic_counter + Self.n_wait_sms + thread_idx.x,
+                Int32(DATA_READY_FLAG),
             )
 
     @staticmethod
