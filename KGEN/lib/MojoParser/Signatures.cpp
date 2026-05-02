@@ -73,12 +73,14 @@ TypedAttr IREmitter::extractOriginOf(const ExprNode *expr, CValue value) {
   return {};
 }
 
-/// Process the origin expression in a `ref [...] T` reference specifier.
-/// T is specified as 'type' and this returns the result !lit.ref type.
+enum class RefSpecifierKind { kRefArgument, kOutArgument, kRefResult };
+
+/// Process the origin expression in a `ref [...] T` or 'out [...] T' reference
+/// specifier. This returns the result !lit.ref type.
 static RefType processRefOriginSpecifier(const ExprNode *origExpr, ASTType type,
                                          StringRef valueName,
                                          TypeCheckedParamList &paramList,
-                                         bool isResult) {
+                                         RefSpecifierKind refKind) {
   SharedState &shared = paramList.shared;
 
   // For errors, return "RefType(TypeCheckErrorType)" to maintain the invariant
@@ -188,15 +190,23 @@ static RefType processRefOriginSpecifier(const ExprNode *origExpr, ASTType type,
       return ParamDeclRefAttr::get(paramDecl);
     };
 
-    if (isResult) {
+    TypedAttr isMut;
+    switch (refKind) {
+    case RefSpecifierKind::kRefArgument:
+      // "ref [_] arg" infers mutability from the argument.
+      isMut = addParam(valueName + "_is_mut",
+                       IntegerType::get(shared.getContext(), 1));
+      break;
+    case RefSpecifierKind::kOutArgument:
+      // "out [_] arg" infers the origin but is always mutable.
+      isMut = BoolAttr::get(shared.getContext(), true);
+      break;
+    case RefSpecifierKind::kRefResult:
       emitter.emitError(origExpr->getLoc())
           << "cannot infer origin for a function result"
           << origExpr->getRange();
       return hadError();
     }
-
-    auto isMut = addParam(valueName + "_is_mut",
-                          IntegerType::get(shared.getContext(), 1));
     origin = addParam(valueName + "_is_origin", OriginType::get(isMut));
   }
   if (!origin)
@@ -241,11 +251,13 @@ ParseResult ParsedArgument::parse(ParserBase &p, KWArgMarkerInfo &markerInfo,
   // Any var/read/mut/ref keyword sets convention.
   if (p.consumeIf(Token::kw_var)) {
     convention = kConventionVar;
-  } else if (p.getToken().is(Token::kw_ref)) {
-    (void)p.parseRefSpecifier(refOriginExpr, /*isOriginRequired*/ false);
+  } else if (p.consumeIf(Token::kw_ref)) {
+    (void)p.parseRefSpecifier(refOriginExpr);
     convention = kConventionRef;
   } else if (p.consumeIfSoftIdentifier("out")) {
     handleContextualArgConvention("out", kConventionOut);
+    if (convention == kConventionOut)
+      (void)p.parseRefSpecifier(refOriginExpr);
   } else if (p.consumeIfSoftIdentifier("mut")) {
     handleContextualArgConvention("mut", kConventionMut);
   } else if (p.consumeIfSoftIdentifier("read")) {
@@ -1507,9 +1519,15 @@ void ParsedArgumentList::parseResultIfPresent(
   resultArg.loc = p.getToken().getLoc();
 
   // Parse a result reference if present.
-  if (p.getToken().is(Token::kw_ref)) {
-    (void)p.parseRefSpecifier(resultArg.refOriginExpr,
-                              /*originRequired*/ true);
+  bool isRefResult = false;
+  if (p.consumeIf(Token::kw_ref)) {
+    if (succeeded(p.parseRefSpecifier(resultArg.refOriginExpr))) {
+      if (resultArg.refOriginExpr) {
+        isRefResult = true;
+      } else {
+        p.emitError(resultArg.loc, "'ref' result requires an origin specifier");
+      }
+    }
   }
 
   // Parse the result type expression.
@@ -1533,8 +1551,9 @@ void ParsedArgumentList::parseResultIfPresent(
     }
   }
 
-  // Indicate a present result by setting its convention to 'out'.
-  resultArg.convention = ParsedArgument::kConventionOut;
+  // Indicate a present result by setting its convention to 'out' or 'ref'.
+  resultArg.convention = isRefResult ? ParsedArgument::kConventionRef
+                                     : ParsedArgument::kConventionOut;
 }
 
 ParseResult ParsedArgumentList::parseConstraintsIfPresent(ParserBase &p) {
@@ -1874,9 +1893,9 @@ static void typeCheckOneArgument(size_t idx, ASTDecl *fnDecl,
           arg.loc, "TODO: variadic isn't supported with 'ref' convention yet");
       arg.variadicKind = VariadicKind::None;
     }
-    auto refType =
-        processRefOriginSpecifier(arg.refOriginExpr, type, arg.name,
-                                  tcSignature.paramList, /*isResult=*/false);
+    auto refType = processRefOriginSpecifier(arg.refOriginExpr, type, arg.name,
+                                             tcSignature.paramList,
+                                             RefSpecifierKind::kRefArgument);
     type = refType;
     if (refType.isMutableKnown(true))
       arg.kgenConvention = ArgConvention::MutRef;
@@ -2069,7 +2088,7 @@ static void typeCheckResult(ParsedArgument resultArg, ASTDecl *fnDecl,
 
   // If a result origin is specified with `ref [life] Ty`, then form a ref
   // result.
-  if (resultArg.refOriginExpr) {
+  if (resultArg.convention == ParsedArgument::kConventionRef) {
     if (tcSignature.argList.effects.isAsync()) {
       // TODO(MOCO-787): Async functions don't support ref results yet. We need
       // to define a `CoroutineRef` or support perfect forwarding in generic
@@ -2081,7 +2100,7 @@ static void typeCheckResult(ParsedArgument resultArg, ASTDecl *fnDecl,
       resultType = processRefOriginSpecifier(
           resultArg.refOriginExpr, resultType,
           // TODO: Use the name of the return slot if present.
-          "__result__", tcSignature.paramList, /*isResult*/ true);
+          "__result__", tcSignature.paramList, RefSpecifierKind::kRefResult);
       tcSignature.argList.effects.setRefResult(isa<RefType>(resultType));
     }
   }
@@ -2207,22 +2226,37 @@ static void typeCheckResult(ParsedArgument resultArg, ASTDecl *fnDecl,
   if (tcSignature.argList.effects.isAsync())
     rp = TypeConvention::MemoryOnly;
 
+  // "out" arguments with specified origins or address spaces use a result slot.
+  if (resultArg.refOriginExpr &&
+      resultArg.convention == ParsedArgument::kConventionOut)
+    rp = TypeConvention::MemoryOnly;
+
   // If it is memory-only, pass it indirectly as the last argument to the
   // function by-reference.
   if (rp == TypeConvention::MemoryOnly) {
     // Synthesize a ByRefResult argument for the result.
     if (!resultArg.name)
       resultArg.name = StringAttr::get(shared.getContext(), "__result__");
+
+    // Compute the RefType for this new argument with an implicit origin or
+    // from the specified ref specification if present.
+    RefType refType;
+    if (resultArg.refOriginExpr &&
+        resultArg.convention == ParsedArgument::kConventionOut) {
+      refType = processRefOriginSpecifier(
+          resultArg.refOriginExpr, resultType, resultArg.name.strref(),
+          tcSignature.paramList, RefSpecifierKind::kOutArgument);
+    } else {
+      refType = makeImplicitRefTypeForArg(resultArg, 0, resultType,
+                                          /*isMutable*/ true, tcSignature);
+    }
+
     resultArg.convention = ParsedArgument::kConventionByRefResult;
     resultArg.kgenConvention = ArgConvention::ByRefResult;
     resultArg.kwArgHandling = KWArgHandling::kKeywordOnly;
     tcSignature.argList.parsedArgs.push_back(resultArg);
     tcSignature.argTypes.push_back(resultType);
     tcSignature.defaults.push_back(TypedAttr());
-
-    // Compute the RefType for this new argument with an implicit origin.
-    RefType refType = makeImplicitRefTypeForArg(
-        resultArg, 0, resultType, /*isMutable*/ true, tcSignature);
     tcSignature.fullArgTypes.push_back(refType);
 
     // If this is for a lit.fn declaration (as opposed to a function type),

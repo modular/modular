@@ -296,7 +296,7 @@ public:
   /// Parse a 'ref [exprlist]' production into expr, with the expression set to
   /// the exprlist if specified, otherwise set to null if absent.  This returns
   /// failure on a parse error.
-  ParseResult parseRefSpecifier(ExprNode *&expr, bool isOriginRequired);
+  ParseResult parseRefSpecifier(ExprNode *&expr);
 
 public:
   Lexer &lexer;
