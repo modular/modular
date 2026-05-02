@@ -110,7 +110,7 @@ struct ParsedArgument {
     kConventionVar = 2,         // var x
     kConventionRead = 3,        // read x
     kConventionRef = 4,         // ref [origin, addrspace] x
-    kConventionOut = 5,         // out x
+    kConventionOut = 5,         // out [addrspace] x
     kConventionDeinit = 6,      // deinit self
     kConventionByRefResult = 7, // No syntax: result slot
   } convention = kConventionUnspec;
@@ -213,9 +213,12 @@ class ParsedArgumentList {
 public:
   /// Any arguments specified.
   SmallVector<ParsedArgument> parsedArgs;
-  /// The result specifier if present.
+  /// The result specifier if present. This is usually something like "Int" for
+  /// () -> Int.  It can also be "out [o] Int" with convention=kConventionOut,
+  /// and can also be "() -> ref [o] Int" with kConventionRef.
   ParsedArgument resultArg;
   FnEffects effects;
+
   /// Tracks the Mojo-only `thin` effect on function types.
   bool isThin = false;
   /// True if an explicit `abi(...)` effect was written on this function.

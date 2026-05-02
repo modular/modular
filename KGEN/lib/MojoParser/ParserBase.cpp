@@ -193,36 +193,17 @@ void ParserBase::skipUntilIndentation(
   }
 }
 
-/// Skip tokens that compose a function signature. This is used as a helper for
-/// determining whether a trait method provides an implementation or not.
-///
-/// The actual implementation is exceedingly straightforward and will just
-/// consume tokens up to and including the first ':' token as long as it's not
-/// nested inside of any parens or square brackets.
-///
-/// While this does technically allow syntactically invalid forms like:
-/// def foo()[]:, def []()foo:, def foo[](): and others we don't care for the
-/// purposes of marking a trait method as defaulted or not since later parsing
-/// of the signature will result in a parser failure anyways and the simple
-/// logic that is provided is capable of handling valid syntactic forms.
-
-/// Parse a 'ref [exprlist]' production into expr, with the expression set to
+/// Parse a ref '[exprlist]' production into expr, with the expression set to
 /// the exprlist if specified, otherwise set to null if absent.  This returns
 /// failure on a parse error.
-ParseResult ParserBase::parseRefSpecifier(ExprNode *&expr,
-                                          bool isOriginRequired) {
+ParseResult ParserBase::parseRefSpecifier(ExprNode *&expr) {
   expr = nullptr;
-  SMLoc loc;
-  if (parseToken(Token::kw_ref, "expected 'ref' in ref specifier", &loc))
-    return failure();
 
   // Parse the [a, b, c] specification if present.
   if (consumeIf(Token::l_square)) {
     if (parseExpressionList(expr, /*stmtIndent=*/{}, Token::r_square) ||
         parseToken(Token::r_square, "expected ']' in ref specifier"))
       return failure();
-  } else if (isOriginRequired) {
-    emitError(loc, "'ref' result requires an origin specifier");
   }
 
   return success();
