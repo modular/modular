@@ -166,6 +166,7 @@ _B200_TESTS = [
     "test_blockwise_fp8_1d2d_structured.mojo",
     "test_batched_matmul_sm100_scaled.mojo",
     "test_matmul_sm100_epilogue.mojo",
+    "test_matmul_sm100_partial_n_tile_epilogue.mojo",
     "test_matmul_sm100_swapAB_epilogue.mojo",
     "test_matmul_sm100_2sm_bf16.mojo",
     "test_matmul_sm100_1sm_bf16.mojo",

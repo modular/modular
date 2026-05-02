@@ -744,7 +744,16 @@ struct EpilogueApplier[
         staged_col: UInt32,
         is_upper: Bool,
     ):
-        """Apply epilogue lambda to fragment elements with global coords."""
+        """Apply epilogue lambda to fragment elements with global coords.
+
+        Skips OOB lane positions: TMA masks the write, but the lambda may
+        dereference operands at the supplied (row, col).
+
+        transpose_c=True: per-position — top.row/bot.row in a (top, bot)
+        pair are 8 apart (upper +0/+8 or lower +16/+24) and can straddle
+        ``self.N``. transpose_c=False: early return on top_col is safe
+        (``top.col == bot.col`` and ``self.N`` is alignment-bound).
+        """
         var top = self.coords.top_upper if is_upper else self.coords.top_lower
         var bot = (
             self.coords.bottom_upper if is_upper else self.coords.bottom_lower
@@ -765,37 +774,54 @@ struct EpilogueApplier[
             var elem3 = frag[offset + 3]
 
             comptime if Self.transpose_c:
-                frag[offset] = compute_lambda_fn[epilogue_dtype, 1](
-                    IndexList[2](Int(top_col), Int(top_row)), elem0
-                )
-                frag[offset + 1] = compute_lambda_fn[epilogue_dtype, 1](
-                    IndexList[2](Int(top_col + 1), Int(top_row)), elem1
-                )
-                frag[offset + 2] = compute_lambda_fn[epilogue_dtype, 1](
-                    IndexList[2](Int(bot_col), Int(bot_row)), elem2
-                )
-                frag[offset + 3] = compute_lambda_fn[epilogue_dtype, 1](
-                    IndexList[2](Int(bot_col + 1), Int(bot_row)), elem3
-                )
+                var valid_top_row = top_row < self.N
+                var valid_bot_row = bot_row < self.N
+
+                if valid_top_row and top_col < self.M:
+                    frag[offset] = compute_lambda_fn[epilogue_dtype, 1](
+                        IndexList[2](Int(top_col), Int(top_row)), elem0
+                    )
+                if valid_bot_row and top_col < self.M:
+                    frag[offset + 2] = compute_lambda_fn[epilogue_dtype, 1](
+                        IndexList[2](Int(bot_col), Int(bot_row)), elem2
+                    )
+
+                if valid_top_row and (top_col + 1) < self.M:
+                    frag[offset + 1] = compute_lambda_fn[epilogue_dtype, 1](
+                        IndexList[2](Int(top_col + 1), Int(top_row)), elem1
+                    )
+                if valid_bot_row and (top_col + 1) < self.M:
+                    frag[offset + 3] = compute_lambda_fn[epilogue_dtype, 1](
+                        IndexList[2](Int(bot_col + 1), Int(bot_row)), elem3
+                    )
             else:
-                elem01 = compute_lambda_fn[epilogue_dtype, 2](
-                    IndexList[2](Int(top_row), Int(top_col)),
-                    SIMD[epilogue_dtype, 2](
-                        rebind[Scalar[epilogue_dtype]](elem0),
-                        rebind[Scalar[epilogue_dtype]](elem1),
-                    ),
-                )
-                elem23 = compute_lambda_fn[epilogue_dtype, 2](
-                    IndexList[2](Int(bot_row), Int(bot_col)),
-                    SIMD[epilogue_dtype, 2](
-                        rebind[Scalar[epilogue_dtype]](elem2),
-                        rebind[Scalar[epilogue_dtype]](elem3),
-                    ),
-                )
-                frag[offset] = elem01[0]
-                frag[offset + 1] = elem01[1]
-                frag[offset + 2] = elem23[0]
-                frag[offset + 3] = elem23[1]
+                if top_col >= self.N:
+                    return
+
+                var valid_top_row = top_row < self.M
+                var valid_bot_row = bot_row < self.M
+
+                if valid_top_row:
+                    elem01 = compute_lambda_fn[epilogue_dtype, 2](
+                        IndexList[2](Int(top_row), Int(top_col)),
+                        SIMD[epilogue_dtype, 2](
+                            rebind[Scalar[epilogue_dtype]](elem0),
+                            rebind[Scalar[epilogue_dtype]](elem1),
+                        ),
+                    )
+                    frag[offset] = elem01[0]
+                    frag[offset + 1] = elem01[1]
+
+                if valid_bot_row:
+                    elem23 = compute_lambda_fn[epilogue_dtype, 2](
+                        IndexList[2](Int(bot_row), Int(bot_col)),
+                        SIMD[epilogue_dtype, 2](
+                            rebind[Scalar[epilogue_dtype]](elem2),
+                            rebind[Scalar[epilogue_dtype]](elem3),
+                        ),
+                    )
+                    frag[offset + 2] = elem23[0]
+                    frag[offset + 3] = elem23[1]
 
     @always_inline
     def apply_to_both_fragments[
