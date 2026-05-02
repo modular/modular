@@ -128,11 +128,10 @@ static ParseResult parseRefSpecifierExprs(const ExprNode *expr,
     elts = tuple->exprs;
   else if (expr)
     elts = expr;
-  for (auto [idx, elt] : llvm::enumerate(elts)) {
-    // Ignore `_` in origin position. In address-space position, `_` means the
-    // reference accepts whatever address space the caller provides.
+
+  for (const ExprNode *elt : elts) {
     if (elt->kind == ExprNode::kDiscardLiteral) {
-      if (!acceptOrigins || idx > 0) {
+      if (!acceptOrigins) {
         if (addrSpace) {
           emitter.emitError(elt->getLoc())
               << "multiple specification of address space isn't valid"
