@@ -41,9 +41,7 @@ from pathlib import Path
 from pprint import pformat
 
 import click
-from inference_server_harness import start_server
-from requests.structures import CaseInsensitiveDict
-from smoke_tests.eval_runner import (
+from eval_runner import (
     TEXT_TASK,
     VISION_TASK,
     build_eval_summary,
@@ -57,6 +55,8 @@ from smoke_tests.eval_runner import (
     write_github_output,
     write_results,
 )
+from inference_server_harness import start_server
+from requests.structures import CaseInsensitiveDict
 
 URL = "http://127.0.0.1:8000/v1/chat/completions"
 

@@ -31,8 +31,7 @@ from pprint import pformat
 import click
 import requests
 import yaml
-from inference_server_harness import start_server
-from smoke_tests.eval_runner import (
+from eval_runner import (
     TEXT_TASK,
     build_eval_summary,
     call_eval,
@@ -43,6 +42,7 @@ from smoke_tests.eval_runner import (
     write_github_output,
     write_results,
 )
+from inference_server_harness import start_server
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
