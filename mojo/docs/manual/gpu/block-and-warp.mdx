@@ -45,25 +45,14 @@ This guide covers Mojo's low-level primitives for managing coordination at the
 thread block and warp levels. For foundational GPU architecture concepts and
 detailed explanations of the GPU execution model, see
 [Intro to GPUs](/docs/manual/gpu/architecture). For a discussion of basic kernel
-creation and device management, see [GPU programming
-fundamentals](/docs/manual/gpu/fundamentals).
-
-The tiled matrix multiplication example later in this chapter uses
+creation and device management, see
+[GPU programming fundamentals](/docs/manual/gpu/fundamentals). The tiled matrix
+multiplication example later in this chapter uses
 [`TileTensor`](/docs/layout/tile_tensor/TileTensor/) and
 [`stack_allocation()`](/docs/layout/tile_tensor/stack_allocation/) to allocate
-shared memory tiles.
-
-{/* TODO(DOCS-1656/DOCS-1658/PR#82292): once Arthur's tile-tensor manual
-    section merges, uncomment the sentence below. Pick the final URL/anchor
-    based on what Arthur ships — most likely
-    /docs/manual/tile-tensor/tensors (general background) or
-    /docs/manual/tile-tensor/tensors#creating-a-tiletensor-in-shared-or-local-memory
-    (the specific pattern used in the example below). */}
-{/*
-For an introduction to `TileTensor` itself—including how to create one in
-global, shared, or local memory—see
-[Using TileTensor](/docs/manual/tile-tensor/tensors).
-*/}
+shared memory tiles. For an introduction to `TileTensor` itself—including how to
+create one in global, shared, or local memory—see
+[Using `TileTensor`](/docs/manual/tile-tensor/tensors#creating-a-tiletensor-in-shared-or-local-memory).
 
 We'll explore Mojo's synchronization and collective communication primitives
 for coordinating parallel work on the GPU. Key topics include:
