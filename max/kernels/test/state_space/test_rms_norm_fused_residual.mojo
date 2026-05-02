@@ -208,7 +208,6 @@ def run_rms_norm_fused_residual_cpu[
                 gamma_ptr[c] + weight_offset
             )
             assert_almost_equal(expected_norm, output_ptr[idx], rtol=rtol)
-        _ = sum_ptr^
 
 
 def test_rms_norm_fused_residual_float32_2d() raises:

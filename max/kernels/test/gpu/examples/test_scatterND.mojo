@@ -188,7 +188,10 @@ def scatter_nd[
 
     # Buffer below will store both input_strides and data dimensions.
     # (combine both in one to reduce number of memcpy from H->D).
-    var ptr = List(length=last_shape_of_indices * 2, fill=Int64(0))
+    var ptr = ctx.enqueue_create_host_buffer[DType.int64](
+        last_shape_of_indices * 2
+    )
+    ctx.synchronize()
 
     # input_strides
     # e.g., for a shape of 2, 3, 4, 5
@@ -249,7 +252,6 @@ def scatter_nd[
     _ = element_counts_and_input_dims_device
     _ = updates_device
     _ = indices_device
-    _ = ptr^
 
 
 def linear_fill[

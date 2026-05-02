@@ -454,16 +454,18 @@ def test_repack_Q4_0_for_sm8x[
     var repacked_b_size = N * ((K // group_size) * group_bytes)
     var dequan_size = K * N
 
-    var gguf_b_host_ptr = List(length=gguf_b_size, fill=Scalar[DType.uint8](0))
-    var repacked_b_host_ptr = List(
-        length=repacked_b_size, fill=Scalar[DType.uint8](0)
+    var gguf_b_host_ptr = ctx.enqueue_create_host_buffer[DType.uint8](
+        gguf_b_size
     )
-    var gguf_dequan_ref_host_ptr = List(
-        length=dequan_size, fill=Scalar[DType.bfloat16](0)
+    var repacked_b_host_ptr = ctx.enqueue_create_host_buffer[DType.uint8](
+        repacked_b_size
     )
-    var repacked_dequan_host_ptr = List(
-        length=dequan_size, fill=Scalar[DType.bfloat16](0)
-    )
+    var gguf_dequan_ref_host_ptr = ctx.enqueue_create_host_buffer[
+        DType.bfloat16
+    ](dequan_size)
+    var repacked_dequan_host_ptr = ctx.enqueue_create_host_buffer[
+        DType.bfloat16
+    ](dequan_size)
 
     comptime gguf_b_host_layout = Layout.row_major(_gguf_b_dim0, _gguf_b_dim1)
     var gguf_b_host_lt = LayoutTensor[DType.uint8, gguf_b_host_layout, _](
@@ -603,10 +605,6 @@ def test_repack_Q4_0_for_sm8x[
     _ = gguf_b_device^
     _ = repacked_b_device^
     _ = repacked_dequan_device^
-    _ = repacked_dequan_host_ptr^
-    _ = gguf_dequan_ref_host_ptr^
-    _ = repacked_b_host_ptr^
-    _ = gguf_b_host_ptr^
 
 
 def test_quantized[
@@ -647,12 +645,12 @@ def test_quantized[
     var b_ref_size = N * K
     var c_size = M * N
 
-    var a_host_ptr = List(length=a_size, fill=Scalar[a_type](0))
-    var b_host_ptr = List(length=b_size, fill=Scalar[dtype](0))
-    var c_host_ptr = List(length=c_size, fill=Scalar[a_type](0))
-    var c_host_ref_ptr = List(length=c_size, fill=Scalar[a_type](0))
+    var a_host_ptr = ctx.enqueue_create_host_buffer[a_type](a_size)
+    var b_host_ptr = ctx.enqueue_create_host_buffer[dtype](b_size)
+    var c_host_ptr = ctx.enqueue_create_host_buffer[a_type](c_size)
+    var c_host_ref_ptr = ctx.enqueue_create_host_buffer[a_type](c_size)
 
-    rand(a_host_ptr)
+    rand(a_host_ptr.unsafe_ptr(), a_size)
 
     var b_scales_ptr = (b_host_ptr.unsafe_ptr() + N * K // 2).bitcast[
         Scalar[a_type]
@@ -833,10 +831,6 @@ def test_quantized[
     _ = c_device_ref^
 
     _ = b_tensor
-    _ = c_host_ref_ptr^
-    _ = c_host_ptr^
-    _ = b_host_ptr^
-    _ = a_host_ptr^
 
 
 def main() raises:

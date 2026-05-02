@@ -60,15 +60,15 @@ def run_rms_norm_fused_residual_gpu[
     var rows = shape.flattened_length() // cols
 
     # Allocate host memory
-    var input_h = List(length=rows * cols, fill=Scalar[dtype](0))
-    var residual_h = List(length=rows * cols, fill=Scalar[dtype](0))
-    var output_h = List(length=rows * cols, fill=Scalar[dtype](0))
-    var residual_output_h = List(length=rows * cols, fill=Scalar[dtype](0))
-    var gamma_h = List(length=cols, fill=Scalar[dtype](0))
+    var input_h = ctx.enqueue_create_host_buffer[dtype](rows * cols)
+    var residual_h = ctx.enqueue_create_host_buffer[dtype](rows * cols)
+    var output_h = ctx.enqueue_create_host_buffer[dtype](rows * cols)
+    var residual_output_h = ctx.enqueue_create_host_buffer[dtype](rows * cols)
+    var gamma_h = ctx.enqueue_create_host_buffer[dtype](cols)
 
     # Initialize input data
-    rand(input_h)
-    rand(residual_h)
+    rand[dtype](input_h.unsafe_ptr(), rows * cols)
+    rand[dtype](residual_h.unsafe_ptr(), rows * cols)
 
     # Scale inputs to reasonable range
     for i in range(rows * cols):
@@ -187,7 +187,7 @@ def run_rms_norm_fused_residual_gpu[
     # Verify results
     for r in range(rows):
         # Compute expected residual output: dropout(input) + residual
-        var sum_ptr = List(length=cols, fill=Scalar[dtype](0))
+        var sum_ptr = ctx.enqueue_create_host_buffer[dtype](cols)
         for c in range(cols):
             var idx = r * cols + c
             var input_val = input_h[idx]
@@ -221,12 +221,6 @@ def run_rms_norm_fused_residual_gpu[
                 gamma_h[c] + weight_offset
             )
             assert_almost_equal(expected_norm, output_h[idx], rtol=rtol)
-        _ = sum_ptr^
-    _ = gamma_h^
-    _ = residual_output_h^
-    _ = output_h^
-    _ = residual_h^
-    _ = input_h^
 
 
 # =============================================================================

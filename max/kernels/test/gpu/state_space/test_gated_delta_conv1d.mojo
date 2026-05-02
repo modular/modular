@@ -62,8 +62,8 @@ def run_gated_delta_conv1d_gpu[
 
     # ── Allocate host tensors ──────────────────────────────────────────────────
     # qkv_input_ragged: [total_seq_len, conv_dim]
-    var qkv_input_heap = List(
-        length=total_seq_len * conv_dim, fill=Scalar[dtype](0)
+    var qkv_input_heap = ctx.enqueue_create_host_buffer[dtype](
+        total_seq_len * conv_dim
     )
     var qkv_input_h = LayoutTensor[dtype, layout_2d, _](
         qkv_input_heap,
@@ -71,8 +71,8 @@ def run_gated_delta_conv1d_gpu[
     )
 
     # conv_weight: [conv_dim, KERNEL_SIZE]
-    var conv_weight_heap = List(
-        length=conv_dim * KERNEL_SIZE, fill=Scalar[dtype](0)
+    var conv_weight_heap = ctx.enqueue_create_host_buffer[dtype](
+        conv_dim * KERNEL_SIZE
     )
     var conv_weight_h = LayoutTensor[dtype, layout_2d, _](
         conv_weight_heap,
@@ -80,8 +80,8 @@ def run_gated_delta_conv1d_gpu[
     )
 
     # conv_state_in: [batch_size, conv_dim, state_len], zeroed
-    var conv_state_in_heap = List(
-        length=batch_size * conv_dim * state_len, fill=Scalar[dtype](0)
+    var conv_state_in_heap = ctx.enqueue_create_host_buffer[dtype](
+        batch_size * conv_dim * state_len
     )
     var conv_state_in_h = LayoutTensor[dtype, layout_3d, _](
         conv_state_in_heap,
@@ -89,10 +89,14 @@ def run_gated_delta_conv1d_gpu[
             Index(batch_size, conv_dim, state_len)
         ),
     )
+    # conv_state_in is read as initial state by both GPU and CPU paths,
+    # so it must be explicitly zeroed.
+    for i in range(conv_state_in_h.size()):
+        conv_state_in_h.ptr.store(i, Scalar[dtype](0))
 
     # input_row_offsets: [batch_size + 1]
-    var input_row_offsets_heap = List(
-        length=batch_size + 1, fill=Scalar[DType.uint32](0)
+    var input_row_offsets_heap = ctx.enqueue_create_host_buffer[DType.uint32](
+        batch_size + 1
     )
     var input_row_offsets_h = LayoutTensor[DType.uint32, layout_1d, _](
         input_row_offsets_heap,
@@ -105,8 +109,8 @@ def run_gated_delta_conv1d_gpu[
         input_row_offsets_h.ptr.store(b + 1, Scalar[DType.uint32](cumsum))
 
     # conv_output_gpu: [total_seq_len, conv_dim] — receives GPU results
-    var conv_output_gpu_heap = List(
-        length=total_seq_len * conv_dim, fill=Scalar[dtype](0)
+    var conv_output_gpu_heap = ctx.enqueue_create_host_buffer[dtype](
+        total_seq_len * conv_dim
     )
     var conv_output_gpu_h = LayoutTensor[dtype, layout_2d, _](
         conv_output_gpu_heap,
@@ -114,8 +118,8 @@ def run_gated_delta_conv1d_gpu[
     )
 
     # conv_state_out_gpu: [batch_size, conv_dim, state_len] — receives GPU state
-    var conv_state_out_gpu_heap = List(
-        length=batch_size * conv_dim * state_len, fill=Scalar[dtype](0)
+    var conv_state_out_gpu_heap = ctx.enqueue_create_host_buffer[dtype](
+        batch_size * conv_dim * state_len
     )
     var conv_state_out_gpu_h = LayoutTensor[dtype, layout_3d, _](
         conv_state_out_gpu_heap,
@@ -125,16 +129,16 @@ def run_gated_delta_conv1d_gpu[
     )
 
     # conv_output_cpu / conv_state_out_cpu: for CPU reference
-    var conv_output_cpu_heap = List(
-        length=total_seq_len * conv_dim, fill=Scalar[dtype](0)
+    var conv_output_cpu_heap = ctx.enqueue_create_host_buffer[dtype](
+        total_seq_len * conv_dim
     )
     var conv_output_cpu_h = LayoutTensor[dtype, layout_2d, _](
         conv_output_cpu_heap,
         RuntimeLayout[layout_2d].row_major(Index(total_seq_len, conv_dim)),
     )
 
-    var conv_state_out_cpu_heap = List(
-        length=batch_size * conv_dim * state_len, fill=Scalar[dtype](0)
+    var conv_state_out_cpu_heap = ctx.enqueue_create_host_buffer[dtype](
+        batch_size * conv_dim * state_len
     )
     var conv_state_out_cpu_h = LayoutTensor[dtype, layout_3d, _](
         conv_state_out_cpu_heap,
@@ -356,14 +360,6 @@ def run_gated_delta_conv1d_gpu[
             conv_state_out_cpu_h.ptr[i],
             rtol=rtol,
         )
-    _ = conv_state_out_cpu_heap^
-    _ = conv_output_cpu_heap^
-    _ = conv_state_out_gpu_heap^
-    _ = conv_output_gpu_heap^
-    _ = input_row_offsets_heap^
-    _ = conv_state_in_heap^
-    _ = conv_weight_heap^
-    _ = qkv_input_heap^
 
 
 # =============================================================================

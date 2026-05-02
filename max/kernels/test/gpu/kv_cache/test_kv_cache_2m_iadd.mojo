@@ -266,13 +266,14 @@ def test_kv_cache_2m_iadd_gpu[
         batch_size * max_full_context_length * 2, page_size
     )
 
-    var lora_end_idx_host_ptr = List(length=1, fill=Scalar[DType.int64](0))
+    var lora_end_idx_host_ptr = ctx.enqueue_create_host_buffer[DType.int64](1)
+    var batch_seq_len_host_ptr = ctx.enqueue_create_host_buffer[DType.int64](1)
+    ctx.synchronize()
     var lora_end_idx_host = TileTensor(
         lora_end_idx_host_ptr, row_major(Idx(Int(1)))
     )
     lora_end_idx_host[0] = Int64(total_slice_length)
 
-    var batch_seq_len_host_ptr = List(length=1, fill=Scalar[DType.int64](0))
     var batch_seq_len_host = TileTensor(
         batch_seq_len_host_ptr, row_major(Idx(Int(1)))
     )
@@ -389,8 +390,6 @@ def test_kv_cache_2m_iadd_gpu[
         max_full_context_length,
         layer_idx,
     )
-    _ = batch_seq_len_host_ptr^
-    _ = lora_end_idx_host_ptr^
 
 
 def test_kv_cache_2m_iadd_cpu[
@@ -603,14 +602,6 @@ def test_kv_cache_2m_iadd_cpu[
         max_full_context_length,
         layer_idx,
     )
-    _ = a_host_ptr^
-    _ = paged_lut_host_ptr^
-    _ = kv_block_paged_host_ptr^
-    _ = batch_seq_len_host_ptr^
-    _ = lora_end_idx_host_ptr^
-    _ = input_row_offsets_slice_host_ptr^
-    _ = cache_lengths_host_ptr^
-    _ = input_row_offsets_host_ptr^
 
 
 def main() raises:

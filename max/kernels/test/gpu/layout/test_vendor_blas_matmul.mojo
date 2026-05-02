@@ -29,13 +29,13 @@ def test_matmul[
 ](ctx: DeviceContext) raises:
     print("== test_vendor_blas", input_type, "x", M, "x", N, "x", K)
 
-    var a_host_ptr = List(length=M * K, fill=Scalar[input_type](0))
-    var b_host_ptr = List(length=N * K, fill=Scalar[input_type](0))
-    var c_host_ptr = List(length=M * N, fill=Scalar[DType.float32](0))
-    var c_host_ref_ptr = List(length=M * N, fill=Scalar[DType.float32](0))
+    var a_host_ptr = ctx.enqueue_create_host_buffer[input_type](M * K)
+    var b_host_ptr = ctx.enqueue_create_host_buffer[input_type](N * K)
+    var c_host_ptr = ctx.enqueue_create_host_buffer[DType.float32](M * N)
+    var c_host_ref_ptr = ctx.enqueue_create_host_buffer[DType.float32](M * N)
 
-    rand(a_host_ptr)
-    rand(b_host_ptr)
+    rand(a_host_ptr.unsafe_ptr(), M * K)
+    rand(b_host_ptr.unsafe_ptr(), N * K)
 
     var a_device = ctx.enqueue_create_buffer[input_type](M * K)
     var b_device = ctx.enqueue_create_buffer[input_type](N * K)
@@ -126,10 +126,6 @@ def test_matmul[
     _ = b_device^
     _ = c_device^
     _ = c_device_ref^
-    _ = c_host_ref_ptr^
-    _ = c_host_ptr^
-    _ = b_host_ptr^
-    _ = a_host_ptr^
 
 
 def test_matmul[input_types: List[DType]]() raises:

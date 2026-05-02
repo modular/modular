@@ -324,10 +324,11 @@ def test(ctx: DeviceContext) raises:
     comptime b_layout = Layout(IntTuple(K, N), IntTuple(N, 1))
     comptime c_layout = Layout(IntTuple(M, N), IntTuple(N, 1))
 
-    var a_host = List(length=M * K, fill=Float32(0))
-    var b_host = List(length=K * N, fill=Float32(0))
-    var c_host = List(length=M * N, fill=Float32(0))
-    var c_host_ref = List(length=M * N, fill=Float32(0))
+    var a_host = ctx.enqueue_create_host_buffer[DType.float32](M * K)
+    var b_host = ctx.enqueue_create_host_buffer[DType.float32](K * N)
+    var c_host = ctx.enqueue_create_host_buffer[DType.float32](M * N)
+    var c_host_ref = ctx.enqueue_create_host_buffer[DType.float32](M * N)
+    ctx.synchronize()
 
     for i in range(M * K):
         a_host[i] = Float32(i)
@@ -455,10 +456,6 @@ def test(ctx: DeviceContext) raises:
     _ = c_device_ref
     _ = a_device
     _ = b_device
-    _ = b_host^
-    _ = a_host^
-    _ = c_host_ref^
-    _ = c_host^
 
 
 def main() raises:

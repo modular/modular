@@ -40,13 +40,15 @@ def test_basic(ctx: DeviceContext) raises:
     comptime length = 1024
 
     # Host memory buffers for input and output data
-    var in0_host = List(length=length, fill=Float32(0))
-    var in1_host = List(length=length, fill=Float32(2))
-    var out_host = List(length=length, fill=Float32(0))
+    var in0_host = ctx.enqueue_create_host_buffer[DType.float32](length)
+    var in1_host = ctx.enqueue_create_host_buffer[DType.float32](length)
+    var out_host = ctx.enqueue_create_host_buffer[DType.float32](length)
+    ctx.synchronize()
 
     # Initialize inputs
     for i in range(length):
         in0_host[i] = Float32(i)
+        in1_host[i] = Float32(2)
 
     # Device memory buffers for the kernel input and output
     var in0_device = ctx.enqueue_create_buffer[DType.float32](length)
@@ -93,9 +95,6 @@ def test_basic(ctx: DeviceContext) raises:
     for i in range(10):
         print("at index", i, "the value is", out_host[i])
         assert_equal(out_host[i], expected[i])
-    _ = out_host^
-    _ = in1_host^
-    _ = in0_host^
 
 
 def test_move(ctx: DeviceContext) raises:
@@ -147,13 +146,15 @@ def test_enqueue_unified(ctx: DeviceContext) raises:
     comptime length = 1024
 
     # Host memory buffers for input and output data
-    var in0_host = List(length=length, fill=Float32(0))
-    var in1_host = List(length=length, fill=Float32(2))
-    var out_host = List(length=length, fill=Float32(0))
+    var in0_host = ctx.enqueue_create_host_buffer[DType.float32](length)
+    var in1_host = ctx.enqueue_create_host_buffer[DType.float32](length)
+    var out_host = ctx.enqueue_create_host_buffer[DType.float32](length)
+    ctx.synchronize()
 
     # Initialize inputs
     for i in range(length):
         in0_host[i] = Float32(i)
+        in1_host[i] = Float32(2)
 
     # Device memory buffers for the kernel input and output
     var in0_device = ctx.enqueue_create_buffer[DType.float32](length)
@@ -208,9 +209,6 @@ def test_enqueue_unified(ctx: DeviceContext) raises:
     for i in range(10):
         print("at index", i, "the value is", out_host[i])
         assert_equal(out_host[i], expected[i])
-    _ = out_host^
-    _ = in1_host^
-    _ = in0_host^
 
 
 def test_enqueue_copy_from_span(ctx: DeviceContext) raises:
@@ -221,13 +219,12 @@ def test_enqueue_copy_from_span(ctx: DeviceContext) raises:
     var dev_buf = ctx.enqueue_create_buffer[DType.float32](length)
     ctx.enqueue_copy(dev_buf, Span(src_list))
 
-    var out_host = List(length=length, fill=Float32(0))
+    var out_host = ctx.enqueue_create_host_buffer[DType.float32](length)
     ctx.enqueue_copy(out_host, dev_buf)
     ctx.synchronize()
 
     for i in range(length):
         assert_equal(out_host[i], Float32(i + 1))
-    _ = out_host^
 
 
 def test_enqueue_copy_to_span(ctx: DeviceContext) raises:

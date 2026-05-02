@@ -30,6 +30,7 @@ from std.gpu.host import (
     DeviceContext,
     DeviceMulticastBuffer,
     get_gpu_target,
+    HostBuffer,
 )
 from std.testing import assert_almost_equal, assert_true
 from std.utils import StaticTuple
@@ -129,7 +130,7 @@ def reducescatter_test[
     # Allocate and initialize buffers (shared across all axis values).
     var in_bufs_list = List[DeviceBuffer[dtype]](capacity=ngpus)
     var out_bufs_list = List[DeviceBuffer[dtype]](capacity=ngpus)
-    var host_in = List[List[Scalar[dtype]]](capacity=ngpus)
+    var host_in = List[HostBuffer[dtype]](capacity=ngpus)
 
     var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
     var rank_sigs = InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
@@ -147,7 +148,9 @@ def reducescatter_test[
             )
         )
 
-        var h = List[Scalar[dtype]](unsafe_uninit_length=num_elements)
+        var h = list_of_ctx[gpu_idx].enqueue_create_host_buffer[dtype](
+            num_elements
+        )
         for j in range(num_elements):
             h[j] = test_value_for_gpu_element[dtype](gpu_idx, j)
 
@@ -270,7 +273,9 @@ def reducescatter_test[
 
         for gpu_idx in range(ngpus):
             var out_len = config.rank_num_elements(gpu_idx)
-            var result_host = List(length=out_len, fill=Scalar[dtype](0))
+            var result_host = list_of_ctx[gpu_idx].enqueue_create_host_buffer[
+                dtype
+            ](out_len)
             list_of_ctx[gpu_idx].enqueue_copy(
                 result_host, out_bufs_list[gpu_idx]
             )
@@ -301,14 +306,15 @@ def reducescatter_test[
                         ") mismatch",
                     ),
                 )
-            _ = result_host^
 
     elif rank == 2:
         # --- 2D axis-aware case ---
 
         for gpu_idx in range(ngpus):
             var out_size = config.rank_num_elements(gpu_idx)
-            var result_host = List(length=out_size, fill=Scalar[dtype](0))
+            var result_host = list_of_ctx[gpu_idx].enqueue_create_host_buffer[
+                dtype
+            ](out_size)
             list_of_ctx[gpu_idx].enqueue_copy(
                 result_host, out_bufs_list[gpu_idx]
             )
@@ -380,7 +386,6 @@ def reducescatter_test[
                                 ") mismatch",
                             ),
                         )
-            _ = result_host^
 
     _ = host_in^
 

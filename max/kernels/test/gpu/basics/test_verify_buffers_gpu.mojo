@@ -136,7 +136,9 @@ def run_verify_kernel[
         block_dim=BLOCK_SIZE,
     )
 
-    var result_host = List(length=NUM_BLOCKS * 5, fill=Scalar[DType.float32](0))
+    var result_host = ctx.enqueue_create_host_buffer[DType.float32](
+        NUM_BLOCKS * 5
+    )
     ctx.enqueue_copy(result_host, result_device)
     ctx.synchronize()
 
@@ -153,8 +155,6 @@ def run_verify_kernel[
         worst_violation = max(worst_violation, result_host[base + 2])
         any_out_nz = max(any_out_nz, result_host[base + 3])
         any_ref_nz = max(any_ref_nz, result_host[base + 4])
-
-    _ = result_host^
 
     return VerifyMetrics(
         total_abs_diff,

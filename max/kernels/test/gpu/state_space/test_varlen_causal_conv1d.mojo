@@ -73,26 +73,26 @@ def run_varlen_causal_conv1d_fwd_gpu[
     comptime layout_1d = Layout(UNKNOWN_VALUE)
 
     # x: (dim, total_seqlen) for varlen - sequences concatenated
-    var x_heap = List(length=dim * total_seqlen, fill=Scalar[dtype](0))
+    var x_heap = ctx.enqueue_create_host_buffer[dtype](dim * total_seqlen)
     var x_h = LayoutTensor[dtype, layout_2d, _](
         x_heap, RuntimeLayout[layout_2d].row_major(Index(dim, total_seqlen))
     )
 
     # weight: (dim, width)
-    var weight_heap = List(length=dim * width, fill=Scalar[dtype](0))
+    var weight_heap = ctx.enqueue_create_host_buffer[dtype](dim * width)
     var weight_h = LayoutTensor[dtype, layout_2d, _](
         weight_heap, RuntimeLayout[layout_2d].row_major(Index(dim, width))
     )
 
     # bias: (dim,)
-    var bias_heap = List(length=dim, fill=Scalar[dtype](0))
+    var bias_heap = ctx.enqueue_create_host_buffer[dtype](dim)
     var bias_h = LayoutTensor[dtype, layout_1d, _](
         bias_heap, RuntimeLayout[layout_1d].row_major(Index(dim))
     )
 
     # query_start_loc: (batch + 1,) - cumulative sequence lengths
-    var query_start_loc_heap = List(
-        length=batch + 1, fill=Scalar[DType.int32](0)
+    var query_start_loc_heap = ctx.enqueue_create_host_buffer[DType.int32](
+        batch + 1
     )
     var query_start_loc_h = LayoutTensor[DType.int32, layout_1d, _](
         query_start_loc_heap,
@@ -105,7 +105,7 @@ def run_varlen_causal_conv1d_fwd_gpu[
         query_start_loc_h.ptr.store(i + 1, Scalar[DType.int32](cumsum))
 
     # cache_indices: (batch,) - identity mapping
-    var cache_indices_heap = List(length=batch, fill=Scalar[DType.int32](0))
+    var cache_indices_heap = ctx.enqueue_create_host_buffer[DType.int32](batch)
     var cache_indices_h = LayoutTensor[DType.int32, layout_1d, _](
         cache_indices_heap, RuntimeLayout[layout_1d].row_major(Index(batch))
     )
@@ -113,31 +113,39 @@ def run_varlen_causal_conv1d_fwd_gpu[
         cache_indices_h.ptr.store(i, Scalar[DType.int32](i))
 
     # has_initial_state: (batch,) - all False
-    var has_initial_state_heap = List(
-        length=batch, fill=Scalar[DType.bool](False)
+    var has_initial_state_heap = ctx.enqueue_create_host_buffer[DType.bool](
+        batch
     )
     var has_initial_state_h = LayoutTensor[DType.bool, layout_1d, _](
         has_initial_state_heap, RuntimeLayout[layout_1d].row_major(Index(batch))
     )
+    for i in range(batch):
+        has_initial_state_h.ptr.store(i, Scalar[DType.bool](False))
 
     # conv_states: (batch, dim, width - 1)
     var state_len = width - 1
-    var conv_states_heap = List(
-        length=batch * dim * state_len, fill=Scalar[dtype](0)
+    var conv_states_heap = ctx.enqueue_create_host_buffer[dtype](
+        batch * dim * state_len
     )
     var conv_states_h = LayoutTensor[dtype, layout_3d, _](
         conv_states_heap,
         RuntimeLayout[layout_3d].row_major(Index(batch, dim, state_len)),
     )
+    for i in range(batch * dim * state_len):
+        conv_states_h.ptr.store(i, Scalar[dtype](0))
 
     # output: (dim, total_seqlen)
-    var output_gpu_heap = List(length=dim * total_seqlen, fill=Scalar[dtype](0))
+    var output_gpu_heap = ctx.enqueue_create_host_buffer[dtype](
+        dim * total_seqlen
+    )
     var output_gpu_h = LayoutTensor[dtype, layout_2d, _](
         output_gpu_heap,
         RuntimeLayout[layout_2d].row_major(Index(dim, total_seqlen)),
     )
 
-    var output_cpu_heap = List(length=dim * total_seqlen, fill=Scalar[dtype](0))
+    var output_cpu_heap = ctx.enqueue_create_host_buffer[dtype](
+        dim * total_seqlen
+    )
     var output_cpu_h = LayoutTensor[dtype, layout_2d, _](
         output_cpu_heap,
         RuntimeLayout[layout_2d].row_major(Index(dim, total_seqlen)),
@@ -691,15 +699,6 @@ def run_varlen_causal_conv1d_fwd_gpu[
             output_cpu_h.ptr[i],
             rtol=rtol,
         )
-    _ = output_cpu_heap^
-    _ = output_gpu_heap^
-    _ = conv_states_heap^
-    _ = has_initial_state_heap^
-    _ = cache_indices_heap^
-    _ = query_start_loc_heap^
-    _ = bias_heap^
-    _ = weight_heap^
-    _ = x_heap^
 
 
 def run_varlen_causal_conv1d_update_gpu[
@@ -721,26 +720,26 @@ def run_varlen_causal_conv1d_update_gpu[
     comptime layout_1d = Layout(UNKNOWN_VALUE)
 
     # x: (batch, dim, seqlen)
-    var x_heap = List(length=batch * dim * seqlen, fill=Scalar[dtype](0))
+    var x_heap = ctx.enqueue_create_host_buffer[dtype](batch * dim * seqlen)
     var x_h = LayoutTensor[dtype, layout_3d, _](
         x_heap, RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen))
     )
 
     # weight: (dim, width)
-    var weight_heap = List(length=dim * width, fill=Scalar[dtype](0))
+    var weight_heap = ctx.enqueue_create_host_buffer[dtype](dim * width)
     var weight_h = LayoutTensor[dtype, layout_2d, _](
         weight_heap, RuntimeLayout[layout_2d].row_major(Index(dim, width))
     )
 
     # bias: (dim,)
-    var bias_heap = List(length=dim, fill=Scalar[dtype](0))
+    var bias_heap = ctx.enqueue_create_host_buffer[dtype](dim)
     var bias_h = LayoutTensor[dtype, layout_1d, _](
         bias_heap, RuntimeLayout[layout_1d].row_major(Index(dim))
     )
 
     # conv_state: (batch, dim, state_len)
-    var conv_state_heap = List(
-        length=batch * dim * state_len, fill=Scalar[dtype](0)
+    var conv_state_heap = ctx.enqueue_create_host_buffer[dtype](
+        batch * dim * state_len
     )
     var conv_state_h = LayoutTensor[dtype, layout_3d, _](
         conv_state_heap,
@@ -748,14 +747,16 @@ def run_varlen_causal_conv1d_update_gpu[
     )
 
     # cache_seqlens: (batch,) - all zeros
-    var cache_seqlens_heap = List(length=batch, fill=Scalar[DType.int32](0))
+    var cache_seqlens_heap = ctx.enqueue_create_host_buffer[DType.int32](batch)
     var cache_seqlens_h = LayoutTensor[DType.int32, layout_1d, _](
         cache_seqlens_heap, RuntimeLayout[layout_1d].row_major(Index(batch))
     )
+    for i in range(batch):
+        cache_seqlens_h.ptr.store(i, Scalar[DType.int32](0))
 
     # conv_state_indices: (batch,) - identity mapping
-    var conv_state_indices_heap = List(
-        length=batch, fill=Scalar[DType.int32](0)
+    var conv_state_indices_heap = ctx.enqueue_create_host_buffer[DType.int32](
+        batch
     )
     var conv_state_indices_h = LayoutTensor[DType.int32, layout_1d, _](
         conv_state_indices_heap,
@@ -765,16 +766,16 @@ def run_varlen_causal_conv1d_update_gpu[
         conv_state_indices_h.ptr.store(i, Scalar[DType.int32](i))
 
     # output: (batch, dim, seqlen)
-    var output_gpu_heap = List(
-        length=batch * dim * seqlen, fill=Scalar[dtype](0)
+    var output_gpu_heap = ctx.enqueue_create_host_buffer[dtype](
+        batch * dim * seqlen
     )
     var output_gpu_h = LayoutTensor[dtype, layout_3d, _](
         output_gpu_heap,
         RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen)),
     )
 
-    var output_cpu_heap = List(
-        length=batch * dim * seqlen, fill=Scalar[dtype](0)
+    var output_cpu_heap = ctx.enqueue_create_host_buffer[dtype](
+        batch * dim * seqlen
     )
     var output_cpu_h = LayoutTensor[dtype, layout_3d, _](
         output_cpu_heap,
@@ -782,16 +783,16 @@ def run_varlen_causal_conv1d_update_gpu[
     )
 
     # Copy of conv_state for CPU and GPU
-    var conv_state_cpu_heap = List(
-        length=batch * dim * state_len, fill=Scalar[dtype](0)
+    var conv_state_cpu_heap = ctx.enqueue_create_host_buffer[dtype](
+        batch * dim * state_len
     )
     var conv_state_cpu_h = LayoutTensor[dtype, layout_3d, _](
         conv_state_cpu_heap,
         RuntimeLayout[layout_3d].row_major(Index(batch, dim, state_len)),
     )
 
-    var conv_state_gpu_heap = List(
-        length=batch * dim * state_len, fill=Scalar[dtype](0)
+    var conv_state_gpu_heap = ctx.enqueue_create_host_buffer[dtype](
+        batch * dim * state_len
     )
     var conv_state_gpu_h = LayoutTensor[dtype, layout_3d, _](
         conv_state_gpu_heap,
@@ -1323,16 +1324,6 @@ def run_varlen_causal_conv1d_update_gpu[
             conv_state_cpu_h.ptr[i],
             rtol=rtol,
         )
-    _ = output_cpu_heap^
-    _ = output_gpu_heap^
-    _ = conv_state_indices_heap^
-    _ = cache_seqlens_heap^
-    _ = conv_state_gpu_heap^
-    _ = conv_state_cpu_heap^
-    _ = conv_state_heap^
-    _ = bias_heap^
-    _ = weight_heap^
-    _ = x_heap^
 
 
 # =============================================================================

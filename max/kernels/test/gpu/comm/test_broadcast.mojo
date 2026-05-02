@@ -90,7 +90,7 @@ def broadcast_test[
     var root_ctx = list_of_ctxs[root]
 
     # Create input buffer on root GPU
-    var host_input_ptr = List(length=length, fill=Scalar[dtype](0))
+    var host_input_ptr = root_ctx.enqueue_create_host_buffer[dtype](length)
     for j in range(length):
         host_input_ptr[j] = _input_value[dtype](root, j)
     var input_dev = root_ctx.enqueue_create_buffer[dtype](length)
@@ -179,8 +179,6 @@ def broadcast_test[
                     "expected:",
                     expected,
                 )
-    _ = host_output^
-    _ = host_input_ptr^
 
 
 @parameter

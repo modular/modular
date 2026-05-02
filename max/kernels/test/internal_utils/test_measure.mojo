@@ -31,8 +31,6 @@ def test_assert_with_custom_measure() raises:
         return 0
 
     assert_with_measure[always_zero](t0.unsafe_ptr(), t1.unsafe_ptr(), 100)
-    _ = t1^
-    _ = t0^
 
 
 def test_correlation() raises:
@@ -75,9 +73,6 @@ def test_correlation() raises:
             v.unsafe_ptr(), x.unsafe_ptr(), len
         ),
     )
-    _ = x^
-    _ = v^
-    _ = u^
 
 
 def test_kl_div() raises:

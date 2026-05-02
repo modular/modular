@@ -75,7 +75,7 @@ def _test_pull[
 
     # Allocate input chunks on GPU 0.
     var input_devbufs = List[DeviceBuffer[dtype]]()
-    var host_buf = List(length=max_chunk_size, fill=Scalar[dtype](0))
+    var host_buf = ctxs[0].enqueue_create_host_buffer[dtype](max_chunk_size)
 
     comptime InputTileType = TileTensor[
         dtype, type_of(row_major(Idx(Int(0)))), ImmutAnyOrigin
@@ -160,7 +160,6 @@ def _test_pull[
     _ = signal_bufs^
     _ = output_devbufs^
     _ = input_devbufs^
-    _ = host_out^
     _ = host_buf^
 
 

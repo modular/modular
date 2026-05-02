@@ -33,8 +33,9 @@ def test(ctx: DeviceContext) raises:
     comptime length = 1024
 
     # Allocate the input buffers as sub buffers of a bigger one
-    var in_host = List(length=2 * length, fill=Float32(0))
-    var out_host = List(length=length, fill=Float32(0))
+    var in_host = ctx.enqueue_create_host_buffer[DType.float32](2 * length)
+    var out_host = ctx.enqueue_create_host_buffer[DType.float32](length)
+    ctx.synchronize()
 
     for i in range(length):
         in_host[i] = Float32(i)
@@ -83,8 +84,6 @@ def test(ctx: DeviceContext) raises:
     for i in range(10):
         print("at index", i, "the value is", out_host[i])
         assert_equal(out_host[i], expected[i])
-    _ = out_host^
-    _ = in_host^
 
 
 def main() raises:

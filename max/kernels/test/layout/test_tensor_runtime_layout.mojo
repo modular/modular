@@ -55,7 +55,6 @@ def test_fill_and_print() raises:
     # CHECK: 16.0 17.0 18.0 19.0 20.0 21.0 22.0 23.0
     # CHECK: 24.0 25.0 26.0 27.0 28.0 29.0 30.0 31.0
     print(tensor)
-    _ = storage^
 
 
 #  CHECK-LABEL: test_set_and_get_items
@@ -89,7 +88,6 @@ def test_set_and_get_items() raises:
     # CHECK: 10.0 11.0 12.0 13.0
     # CHECK: 14.0 15.0 16.0 17.0
     print(tensor)
-    _ = storage^
 
 
 #  CHECK-LABEL: test_tile
@@ -139,7 +137,6 @@ def test_tile() raises:
             print("----tile-data[", tile_i, ",", tile_j, "]----")
             var tile_2x2 = tensor.tile[2, 2](tile_i, tile_j)
             print(tile_2x2)
-    _ = storage^
 
 
 def test_tile_and_distribute():
@@ -240,7 +237,6 @@ def test_tile_and_distribute():
                 var tile_2x2 = tile_4x4.distribute[Layout.row_major(2, 2)](th_i)
                 print("----fragments-data[", th_i, "]----")
                 print(tile_2x2)
-    _ = storage^
 
 
 # CHECK-LABEL: test_tile_and_vectorize
@@ -461,7 +457,6 @@ def test_tile_and_vectorize():
             var tensor_v_8x2 = tensor_8x8.vectorize[1, 4]()
             print("----vectorized-matrix----")
             print(tensor_v_8x2)
-    _ = storage^
 
 
 # CHECK-LABEL: test_copy_from
@@ -705,8 +700,6 @@ def test_iterator():
     # CHECK: 16.0 17.0
     # CHECK: 24.0 25.0
     print(tensor_slice2[])
-    _ = ptr1^
-    _ = ptr^
 
 
 # CHECK-LABEL: test_split
@@ -831,7 +824,6 @@ def test_split():
     # CHECK: 12.0 13.0
     # CHECK: 14.0 15.0
     print(tensor_8x2_split2)
-    _ = ptr^
 
 
 def main() raises:

@@ -69,7 +69,7 @@ def _shuffle_idx_launch_helper[
     comptime block_size = WARP_SIZE
     comptime buffer_size = block_size * simd_width
     comptime constant_add: Scalar[dtype] = 42
-    var host_ptr = List(length=buffer_size, fill=Scalar[dtype](0))
+    var host_ptr = ctx.enqueue_create_host_buffer[dtype](buffer_size)
 
     for i in range(buffer_size):
         host_ptr[i] = Scalar[dtype](i) + constant_add
@@ -88,7 +88,6 @@ def _shuffle_idx_launch_helper[
             assert_equal(
                 host_ptr[i * simd_width + j], Scalar[dtype](j) + constant_add
             )
-    _ = host_ptr^
 
 
 def test_shuffle_idx_fp32(ctx: DeviceContext) raises:
@@ -123,7 +122,7 @@ def _shuffle_up_launch_helper[
     comptime constant_add: Scalar[dtype] = 42
     comptime offset = WARP_SIZE // 2
 
-    var host_ptr = List(length=buffer_size, fill=Scalar[dtype](0))
+    var host_ptr = ctx.enqueue_create_host_buffer[dtype](buffer_size)
 
     for i in range(buffer_size):
         host_ptr[i] = Scalar[dtype](i) + constant_add
@@ -151,7 +150,6 @@ def _shuffle_up_launch_helper[
                     + constant_add
                     - Scalar[dtype]((offset * simd_width)),
                 )
-    _ = host_ptr^
 
 
 def test_shuffle_up_fp32(ctx: DeviceContext) raises:
@@ -186,7 +184,7 @@ def _shuffle_down_launch_helper[
     comptime constant_add: Scalar[dtype] = 42
     comptime offset = WARP_SIZE // 2
 
-    var host_ptr = List(length=buffer_size, fill=Scalar[dtype](0))
+    var host_ptr = ctx.enqueue_create_host_buffer[dtype](buffer_size)
 
     for i in range(buffer_size):
         host_ptr[i] = Scalar[dtype](i) + constant_add
@@ -214,7 +212,6 @@ def _shuffle_down_launch_helper[
                     host_ptr[idx],
                     Scalar[dtype](idx) + constant_add,
                 )
-    _ = host_ptr^
 
 
 def test_shuffle_down_fp32(ctx: DeviceContext) raises:
@@ -249,7 +246,7 @@ def _shuffle_xor_launch_helper[
     comptime constant_add: Scalar[dtype] = 42
     comptime offset = WARP_SIZE // 2
 
-    var host_ptr = List(length=buffer_size, fill=Scalar[dtype](0))
+    var host_ptr = ctx.enqueue_create_host_buffer[dtype](buffer_size)
 
     for i in range(buffer_size):
         host_ptr[i] = Scalar[dtype](i) + constant_add
@@ -271,7 +268,6 @@ def _shuffle_xor_launch_helper[
                 + constant_add
             )
             assert_equal(host_ptr[i * simd_width + j], val)
-    _ = host_ptr^
 
 
 def test_shuffle_xor_fp32(ctx: DeviceContext) raises:
@@ -306,7 +302,7 @@ def _warp_reduce_launch_helper[
     comptime buffer_size = block_size * simd_width
     comptime offset = 1
 
-    var host_ptr = List(length=buffer_size, fill=Scalar[dtype](0))
+    var host_ptr = ctx.enqueue_create_host_buffer[dtype](buffer_size)
     for i in range(buffer_size):
         host_ptr[i] = 1
 
@@ -327,7 +323,6 @@ def _warp_reduce_launch_helper[
 
     for i in range(simd_width):
         assert_equal(host_ptr[i], Scalar[dtype](block_size))
-    _ = host_ptr^
 
 
 def test_warp_reduce_fp32(ctx: DeviceContext) raises:
@@ -354,7 +349,7 @@ def _warp_sum_launch_helper[
     dtype: DType,
 ](ctx: DeviceContext) raises:
     comptime block_size = WARP_SIZE
-    var host_ptr = List(length=block_size, fill=Scalar[dtype](0))
+    var host_ptr = ctx.enqueue_create_host_buffer[dtype](block_size)
     for i in range(block_size):
         host_ptr[i] = Scalar[dtype](i)
 
@@ -372,7 +367,6 @@ def _warp_sum_launch_helper[
             host_ptr[i],
             Scalar[dtype](WARP_SIZE * (WARP_SIZE - 1) // 2),
         )
-    _ = host_ptr^
 
 
 def test_warp_sum(ctx: DeviceContext) raises:
@@ -391,7 +385,7 @@ def _lane_group_sum_broadcast_stride1_helper[
     comptime block_size = WARP_SIZE
     comptime buffer_size = block_size * simd_width
 
-    var host_ptr = List(length=buffer_size, fill=Scalar[dtype](0))
+    var host_ptr = ctx.enqueue_create_host_buffer[dtype](buffer_size)
     for i in range(buffer_size):
         host_ptr[i] = Scalar[dtype](i // simd_width)
 
@@ -415,7 +409,6 @@ def _lane_group_sum_broadcast_stride1_helper[
         )
         for i in range(simd_width):
             assert_equal(host_ptr[t * simd_width + i], expected)
-    _ = host_ptr^
 
 
 def test_lane_group_sum_stride1(ctx: DeviceContext) raises:
@@ -452,7 +445,7 @@ def _lane_group_max_broadcast_stride1_helper[
     comptime block_size = WARP_SIZE
     comptime buffer_size = block_size * simd_width
 
-    var host_ptr = List(length=buffer_size, fill=Scalar[dtype](0))
+    var host_ptr = ctx.enqueue_create_host_buffer[dtype](buffer_size)
     for i in range(buffer_size):
         host_ptr[i] = Scalar[dtype](i // simd_width)
 
@@ -472,7 +465,6 @@ def _lane_group_max_broadcast_stride1_helper[
         var expected = Scalar[dtype](group_base + num_lanes - 1)
         for i in range(simd_width):
             assert_equal(host_ptr[t * simd_width + i], expected)
-    _ = host_ptr^
 
 
 def test_lane_group_max(ctx: DeviceContext) raises:
@@ -505,7 +497,7 @@ def _lane_group_reduce_launch_helper[
     comptime block_size = WARP_SIZE
     comptime buffer_size = block_size * simd_width
 
-    var host_ptr = List(length=buffer_size, fill=Scalar[dtype](0))
+    var host_ptr = ctx.enqueue_create_host_buffer[dtype](buffer_size)
     for i in range(buffer_size):
         host_ptr[i] = Scalar[dtype](i // simd_width)
 
@@ -540,7 +532,6 @@ def _lane_group_reduce_launch_helper[
                     (num_lanes // 2) * (2 * lane_ + (num_lanes - 1) * stride)
                 ),
             )
-    _ = host_ptr^
 
 
 def test_lane_group_reduce_fp32(ctx: DeviceContext) raises:
@@ -584,7 +575,7 @@ def _lane_group_min_broadcast_helper[
     comptime block_size = WARP_SIZE
     comptime buffer_size = block_size * simd_width
 
-    var host_ptr = List(length=buffer_size, fill=Scalar[dtype](0))
+    var host_ptr = ctx.enqueue_create_host_buffer[dtype](buffer_size)
     for i in range(buffer_size):
         host_ptr[i] = Scalar[dtype](i // simd_width)
 
@@ -615,7 +606,6 @@ def _lane_group_min_broadcast_helper[
             var expected = Scalar[dtype](group_base)
             for i in range(simd_width):
                 assert_equal(host_ptr[t * simd_width + i], expected)
-    _ = host_ptr^
 
 
 def test_lane_group_min(ctx: DeviceContext) raises:

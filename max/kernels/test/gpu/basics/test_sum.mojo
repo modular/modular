@@ -40,8 +40,9 @@ def test_warp_sum(ctx: DeviceContext) raises:
     comptime BLOCK_SIZE = WARP_SIZE
 
     # Allocate and initialize host memory
-    var in_host = List(range(UInt64(0), UInt64(size)))
-    var out_host = List(length=size, fill=Scalar[dtype](0))
+    var in_host = ctx.enqueue_create_host_buffer[dtype](size)
+    std.math.iota(in_host.as_span())
+    var out_host = ctx.enqueue_create_host_buffer[dtype](size)
 
     # Create device buffers and copy input data
     var in_device = ctx.enqueue_create_buffer[dtype](size)
@@ -71,7 +72,6 @@ def test_warp_sum(ctx: DeviceContext) raises:
             expected,
             msg=String(t"out_host[{i}] = {out_host[i]} expected = {expected}"),
         )
-    _ = out_host^
     _ = in_host^
 
 
@@ -96,8 +96,9 @@ def test_block_sum(ctx: DeviceContext) raises:
     comptime size = BLOCK_SIZE
 
     # Allocate and initialize host memory
-    var in_host = List(range(UInt64(0), UInt64(size)))
-    var out_host = List(length=size, fill=Scalar[dtype](0))
+    var in_host = ctx.enqueue_create_host_buffer[dtype](size)
+    std.math.iota(in_host.as_span())
+    var out_host = ctx.enqueue_create_host_buffer[dtype](size)
 
     # Create device buffers and copy input data
     var in_device = ctx.enqueue_create_buffer[dtype](size)
@@ -127,8 +128,6 @@ def test_block_sum(ctx: DeviceContext) raises:
             expected,
             msg=String(t"out_host[{i}] = {out_host[i]} expected = {expected}"),
         )
-    _ = out_host^
-    _ = in_host^
 
 
 def main() raises:

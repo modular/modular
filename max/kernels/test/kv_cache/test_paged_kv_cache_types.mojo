@@ -127,9 +127,6 @@ def do_test[
 
     var cache = collection.get_key_cache(1)
     _ = cache.block_paged_ptr[layout_block_size](1, layout_block_size, 0)
-    _ = lookup_table_ptr^
-    _ = cache_lengths_ptr^
-    _ = blocks_ptr^
 
 
 def test_paged_kv_cache_stride_is_unknown() raises:
@@ -319,9 +316,6 @@ def test_paged_kv_cache_offset_correctness() raises:
         + String(expected_6d_offset)
         + "). This indicates stride[0] is using incorrect compile-time value.",
     )
-    _ = lookup_table_ptr^
-    _ = cache_lengths_ptr^
-    _ = blocks_ptr^
 
 
 def test_paged_kv_cache_quantization() raises:

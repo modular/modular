@@ -70,46 +70,46 @@ def run_mamba_split_conv1d_scan_combined_gpu[
     # Allocate host memory
     var zxbcdt_channels = 2 * dim + 2 * ngroups * dstate + nheads
     var zxbcdt_size = batch * seqlen * zxbcdt_channels
-    var zxbcdt_h = List(length=zxbcdt_size, fill=Scalar[dtype](0))
+    var zxbcdt_h = ctx.enqueue_create_host_buffer[dtype](zxbcdt_size)
     var conv_weight_channels = dim + 2 * ngroups * dstate
     var conv_weight_size = conv_weight_channels * width
-    var conv_weight_h = List(length=conv_weight_size, fill=Scalar[dtype](0))
+    var conv_weight_h = ctx.enqueue_create_host_buffer[dtype](conv_weight_size)
     var conv_bias_size = conv_weight_channels
-    var conv_bias_h = List(length=conv_bias_size, fill=Scalar[dtype](0))
+    var conv_bias_h = ctx.enqueue_create_host_buffer[dtype](conv_bias_size)
     var dt_bias_size = nheads
-    var dt_bias_h = List(length=dt_bias_size, fill=Scalar[dtype](0))
+    var dt_bias_h = ctx.enqueue_create_host_buffer[dtype](dt_bias_size)
     var A_size = nheads
-    var A_h = List(length=A_size, fill=Scalar[dtype](0))
+    var A_h = ctx.enqueue_create_host_buffer[dtype](A_size)
     var D_size = nheads * headdim if has_D else 0
-    var D_h = List(length=max(D_size, 1), fill=Scalar[dtype](0))
+    var D_h = ctx.enqueue_create_host_buffer[dtype](max(D_size, 1))
     var x_size = batch * dim * n_chunks * 2 * dstate
-    var x_h = List(length=x_size, fill=Scalar[dtype](0))
+    var x_h = ctx.enqueue_create_host_buffer[dtype](x_size)
     var out_z_size = batch * dim * seqlen
-    var out_z_h = List(length=out_z_size, fill=Scalar[dtype](0))
+    var out_z_h = ctx.enqueue_create_host_buffer[dtype](out_z_size)
     var dt_size = batch * nheads * seqlen
-    var dt_h = List(length=dt_size, fill=Scalar[dtype](0))
+    var dt_h = ctx.enqueue_create_host_buffer[dtype](dt_size)
     var B_size = batch * ngroups * dstate * seqlen
-    var B_h = List(length=B_size, fill=Scalar[dtype](0))
+    var B_h = ctx.enqueue_create_host_buffer[dtype](B_size)
     var C_size = batch * ngroups * dstate * seqlen
-    var C_h = List(length=C_size, fill=Scalar[dtype](0))
+    var C_h = ctx.enqueue_create_host_buffer[dtype](C_size)
     var z_size = batch * dim * seqlen
-    var z_h = List(length=z_size, fill=Scalar[dtype](0))
+    var z_h = ctx.enqueue_create_host_buffer[dtype](z_size)
     var rmsnorm_weight_size = dim if has_rmsnorm else 0
-    var rmsnorm_weight_h = List(
-        length=max(rmsnorm_weight_size, 1), fill=Scalar[dtype](0)
+    var rmsnorm_weight_h = ctx.enqueue_create_host_buffer[dtype](
+        max(rmsnorm_weight_size, 1)
     )
     var out_dim = dim
     var outproj_weight_size = out_dim * dim if has_outproj else 0
-    var outproj_weight_h = List(
-        length=max(outproj_weight_size, 1), fill=Scalar[dtype](0)
+    var outproj_weight_h = ctx.enqueue_create_host_buffer[dtype](
+        max(outproj_weight_size, 1)
     )
     var outproj_bias_size = out_dim if has_outproj else 0
-    var outproj_bias_h = List(
-        length=max(outproj_bias_size, 1), fill=Scalar[dtype](0)
+    var outproj_bias_h = ctx.enqueue_create_host_buffer[dtype](
+        max(outproj_bias_size, 1)
     )
     var output_size = batch * seqlen * (out_dim if has_outproj else dim)
-    var output_cpu_h = List(length=output_size, fill=Scalar[dtype](0))
-    var output_gpu_h = List(length=output_size, fill=Scalar[dtype](0))
+    var output_cpu_h = ctx.enqueue_create_host_buffer[dtype](output_size)
+    var output_gpu_h = ctx.enqueue_create_host_buffer[dtype](output_size)
 
     # Create LayoutTensors for initialization
     comptime layout_3d = Layout.row_major[3]()
@@ -531,7 +531,7 @@ def run_mamba_split_conv1d_scan_combined_gpu[
     # 4. Gating with z (optional RMSNorm)
     # 5. Store output (no outproj in current tests)
     var flattened_size = batch * seqlen * dim
-    var output_ref_h = List(length=flattened_size, fill=Scalar[dtype](0))
+    var output_ref_h = ctx.enqueue_create_host_buffer[dtype](flattened_size)
 
     # Channel offsets within zxbcdt
     var z_start = 0
@@ -694,24 +694,6 @@ def run_mamba_split_conv1d_scan_combined_gpu[
     _ = outproj_weight_d^
     _ = outproj_bias_d^
     _ = output_gpu_d^
-    _ = output_gpu_h^
-    _ = output_cpu_h^
-    _ = outproj_bias_h^
-    _ = outproj_weight_h^
-    _ = rmsnorm_weight_h^
-    _ = z_h^
-    _ = C_h^
-    _ = B_h^
-    _ = dt_h^
-    _ = out_z_h^
-    _ = x_h^
-    _ = D_h^
-    _ = A_h^
-    _ = dt_bias_h^
-    _ = conv_bias_h^
-    _ = conv_weight_h^
-    _ = zxbcdt_h^
-    _ = output_ref_h^
 
 
 def test_mamba_combined_gpu_basic() raises:

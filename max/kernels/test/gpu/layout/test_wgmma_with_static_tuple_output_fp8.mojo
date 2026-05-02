@@ -139,12 +139,12 @@ def wgmma_e4m3_e4m3_f32[
     ]()
     comptime c_shape = row_major[M, N]()
 
-    var a_host_ptr = List(length=M * K, fill=Scalar[DType.float8_e4m3fn](0))
+    var a_host_ptr = ctx.enqueue_create_host_buffer[DType.float8_e4m3fn](M * K)
     var b_size = N * K if transpose_b else K * N
-    var b_host_ptr = List(length=b_size, fill=Scalar[DType.float8_e4m3fn](0))
-    var c_host_ptr = List(length=M * N, fill=Scalar[c_type](0))
+    var b_host_ptr = ctx.enqueue_create_host_buffer[DType.float8_e4m3fn](b_size)
+    var c_host_ptr = ctx.enqueue_create_host_buffer[c_type](M * N)
     var c_host = TileTensor(c_host_ptr, c_shape)
-    var c_host_ref_ptr = List(length=M * N, fill=Scalar[c_type](0))
+    var c_host_ref_ptr = ctx.enqueue_create_host_buffer[c_type](M * N)
     var c_host_ref = TileTensor(c_host_ref_ptr, c_shape)
 
     var a_device = ctx.enqueue_create_buffer[DType.float8_e4m3fn](M * K)
@@ -157,14 +157,12 @@ def wgmma_e4m3_e4m3_f32[
     var c_device_ref_tt = TileTensor(c_device_ref, c_shape)
 
     # Initialize matmul operands
-    rand(a_host_ptr)
-    rand(b_host_ptr)
+    rand(a_host_ptr.unsafe_ptr(), M * K)
+    rand(b_host_ptr.unsafe_ptr(), b_size)
+    # c buffers don't need init — overwritten by copy from device.
 
     ctx.enqueue_copy(a_device, a_host_ptr)
     ctx.enqueue_copy(b_device, b_host_ptr)
-
-    ctx.enqueue_copy(c_device, c_host_ptr)
-    ctx.enqueue_copy(c_device_ref, c_host_ref_ptr)
 
     var c_tensor = c_device_tt.to_layout_tensor()
     var a_tensor = a_device_tt.to_layout_tensor()
@@ -218,9 +216,9 @@ def wgmma_e4m3_e4m3_f32[
 
     else:
         # TODO: Matrix B should always be in col-major layout for cublasLt to work
-        var b_host_col_major_ptr = List(
-            length=N * K, fill=Scalar[DType.float8_e4m3fn](0)
-        )
+        var b_host_col_major_ptr = ctx.enqueue_create_host_buffer[
+            DType.float8_e4m3fn
+        ](N * K)
 
         for i in range(N):
             for j in range(K):
@@ -244,17 +242,12 @@ def wgmma_e4m3_e4m3_f32[
         )
 
         _ = b_device_col_major^
-        _ = b_host_col_major_ptr^
 
     ctx.enqueue_copy(c_host_ref_ptr, c_device_ref)
 
     ctx.synchronize()
 
     assert_equal(c_host.ptr, c_host_ref.ptr, c_host.num_elements())
-    _ = c_host_ref_ptr^
-    _ = c_host_ptr^
-    _ = b_host_ptr^
-    _ = a_host_ptr^
 
 
 def main() raises:

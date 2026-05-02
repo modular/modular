@@ -70,15 +70,15 @@ def run_causal_conv1d_update_gpu[
     comptime layout_1d = Layout(UNKNOWN_VALUE)
 
     # Input x: (B, C, L)
-    var input_heap = List(length=batch * dim * seqlen, fill=Scalar[dtype](0))
+    var input_heap = ctx.enqueue_create_host_buffer[dtype](batch * dim * seqlen)
     var input_h = LayoutTensor[dtype, layout_3d, _](
         input_heap,
         RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen)),
     )
 
     # Conv state: (B, C, S)
-    var conv_state_heap = List(
-        length=batch * dim * state_len, fill=Scalar[dtype](0)
+    var conv_state_heap = ctx.enqueue_create_host_buffer[dtype](
+        batch * dim * state_len
     )
     var conv_state_h = LayoutTensor[dtype, layout_3d, _](
         conv_state_heap,
@@ -86,28 +86,28 @@ def run_causal_conv1d_update_gpu[
     )
 
     # Weight: (C, W)
-    var weight_heap = List(length=dim * width, fill=Scalar[dtype](0))
+    var weight_heap = ctx.enqueue_create_host_buffer[dtype](dim * width)
     var weight_h = LayoutTensor[dtype, layout_2d, _](
         weight_heap, RuntimeLayout[layout_2d].row_major(Index(dim, width))
     )
 
     # Bias: (C,)
-    var bias_heap = List(length=dim, fill=Scalar[dtype](0))
+    var bias_heap = ctx.enqueue_create_host_buffer[dtype](dim)
     var bias_h = LayoutTensor[dtype, layout_1d, _](
         bias_heap, RuntimeLayout[layout_1d].row_major(Index(dim))
     )
 
     # Output: (B, C, L)
-    var result_gpu_heap = List(
-        length=batch * dim * seqlen, fill=Scalar[dtype](0)
+    var result_gpu_heap = ctx.enqueue_create_host_buffer[dtype](
+        batch * dim * seqlen
     )
     var result_gpu_h = LayoutTensor[dtype, layout_3d, _](
         result_gpu_heap,
         RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen)),
     )
 
-    var result_cpu_heap = List(
-        length=batch * dim * seqlen, fill=Scalar[dtype](0)
+    var result_cpu_heap = ctx.enqueue_create_host_buffer[dtype](
+        batch * dim * seqlen
     )
     var result_cpu_h = LayoutTensor[dtype, layout_3d, _](
         result_cpu_heap,
@@ -115,8 +115,8 @@ def run_causal_conv1d_update_gpu[
     )
 
     # Copy of conv_state for CPU reference
-    var conv_state_cpu_heap = List(
-        length=batch * dim * state_len, fill=Scalar[dtype](0)
+    var conv_state_cpu_heap = ctx.enqueue_create_host_buffer[dtype](
+        batch * dim * state_len
     )
     var conv_state_cpu_h = LayoutTensor[dtype, layout_3d, _](
         conv_state_cpu_heap,
@@ -124,8 +124,8 @@ def run_causal_conv1d_update_gpu[
     )
 
     # Copy of conv_state for GPU
-    var conv_state_gpu_heap = List(
-        length=batch * dim * state_len, fill=Scalar[dtype](0)
+    var conv_state_gpu_heap = ctx.enqueue_create_host_buffer[dtype](
+        batch * dim * state_len
     )
     var conv_state_gpu_h = LayoutTensor[dtype, layout_3d, _](
         conv_state_gpu_heap,
@@ -347,6 +347,7 @@ def run_causal_conv1d_update_gpu[
     with ctx.push_context():
         ctx.enqueue_copy(result_gpu_buf.ptr, output_device)
         ctx.enqueue_copy(conv_state_gpu_buf.ptr, conv_state_device)
+    ctx.synchronize()
 
     # Create TileTensors for CPU reference
     var input_tt = TileTensor(
@@ -446,14 +447,6 @@ def run_causal_conv1d_update_gpu[
             conv_state_cpu_h.ptr[i],
             rtol=rtol,
         )
-    _ = result_cpu_heap^
-    _ = result_gpu_heap^
-    _ = bias_heap^
-    _ = weight_heap^
-    _ = conv_state_gpu_heap^
-    _ = conv_state_cpu_heap^
-    _ = conv_state_heap^
-    _ = input_heap^
 
 
 def test_gpu_causal_conv1d_update_basic() raises:
