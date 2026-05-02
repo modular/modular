@@ -25,7 +25,7 @@ from max._core.driver import is_virtual_device_mode
 from max.driver import Buffer
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import Graph, Value
+from max.graph import Graph, TensorValue, Value
 from max.graph.weights import WeightData, load_weights
 from max.nn.comm.ep import EPCommInitializer
 from max.nn.kv_cache import KVCacheInputs, KVCacheParams, PagedCacheValues
@@ -76,6 +76,16 @@ class Eagle3KimiK25Inputs(KimiK2_5ModelInputs):
     """Per-batch ``bool`` flag marking rows currently inside a
     ``<think>...</think>`` block; consumed by relaxed acceptance."""
 
+    token_bitmasks: Buffer | None = None
+    """Grammar constraint bitmask for structured output.
+
+    Shape: [batch_size, num_speculative_tokens + 1, vocab_size].
+    Position i contains valid token mask given FSM state after consuming
+    draft[0:i-1]. Position num_speculative_tokens is for the bonus token.
+    None when structured output is not enabled (in this case an all-True
+    bitmask is passed to the graph).
+    """
+
     @property
     def buffers(self) -> tuple[Buffer, ...]:
         buffers = (
@@ -117,6 +127,11 @@ class Eagle3KimiK25Inputs(KimiK2_5ModelInputs):
                 self.min_top_p,
                 self.in_thinking_phase,
             )
+        # token_bitmasks is only included when structured output is enabled.
+        # The graph is compiled with or without this input based on the
+        # enable_structured_output config flag.
+        if self.token_bitmasks is not None:
+            buffers += (self.token_bitmasks,)
         return buffers
 
 
@@ -235,6 +250,7 @@ class Eagle3KimiK25Model(KimiK2_5Model):
             config,
             draft_config,
             speculative_config=self.pipeline_config.speculative,
+            enable_structured_output=self.pipeline_config.sampling.enable_structured_output,
         )
 
         # Share embed_tokens before loading so the graph sees a single
@@ -395,6 +411,12 @@ class Eagle3KimiK25Model(KimiK2_5Model):
                 min_top_p = next(variadic_args_iter).tensor
                 in_thinking_phase = next(variadic_args_iter).tensor
 
+                # Optional bitmask input — present only when structured output
+                # is enabled (matches the conditional in input_types()).
+                token_bitmasks_graph: TensorValue | None = None
+                if nn_model.enable_structured_output:
+                    token_bitmasks_graph = next(variadic_args_iter).tensor
+
                 outputs = nn_model(
                     tokens=tokens.tensor,
                     input_row_offsets=devices_input_row_offsets.tensor,
@@ -414,6 +436,7 @@ class Eagle3KimiK25Model(KimiK2_5Model):
                     in_thinking_phase=in_thinking_phase,
                     ep_inputs=target_ep_inputs,
                     draft_kv_collections=draft_kv_collections,
+                    token_bitmasks=token_bitmasks_graph,
                 )
                 graph.output(*outputs)
 

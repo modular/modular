@@ -71,9 +71,11 @@ class Eagle3KimiK25Unified(Module):
         config: DeepseekV3Config,
         draft_config: DeepseekV3Config | None = None,
         speculative_config: SpeculativeConfig | None = None,
+        enable_structured_output: bool = False,
     ) -> None:
         super().__init__()
         self.config = config
+        self.enable_structured_output = enable_structured_output
         self.num_draft_steps = (
             speculative_config.num_speculative_tokens
             if speculative_config
@@ -125,6 +127,7 @@ class Eagle3KimiK25Unified(Module):
         in_thinking_phase: TensorValue,
         ep_inputs: list[Value[Any]] | None = None,
         draft_kv_collections: list[PagedCacheValues] | None = None,
+        token_bitmasks: TensorValue | None = None,
     ) -> tuple[TensorValue, ...]:
         merged_tokens, merged_offsets = self.merger(
             tokens, input_row_offsets, draft_tokens
@@ -166,6 +169,7 @@ class Eagle3KimiK25Unified(Module):
             top_p=top_p,
             min_top_p=min_top_p,
             in_thinking_phase=in_thinking_phase,
+            token_bitmasks=token_bitmasks,
         )
 
         # Compute next_tokens: target argmax at the first rejected position.
@@ -489,5 +493,33 @@ class Eagle3KimiK25Unified(Module):
                 in_thinking_phase_type,
             ]
         )
+
+        # Optional bitmask input for structured output. Appended last so the
+        # mandatory input count is stable - graph callers can detect presence
+        # by checking self.enable_structured_output.
+        if self.enable_structured_output:
+            # num_bitmask_positions = num_speculative_tokens + 1
+            # Position i contains valid tokens given FSM state after draft[0:i-1]
+            # Position num_speculative_tokens is for the bonus token
+            token_bitmasks_type = TensorType(
+                DType.bool,
+                shape=["batch_size", "num_bitmask_positions", "vocab_size"],
+                device=device_ref,
+            )
+            all_input_types.append(token_bitmasks_type)
+
+        # Optional bitmask input for structured output. Appended last so the
+        # mandatory input count is stable - graph callers can detect presence
+        # by checking self.enable_structured_output.
+        if self.enable_structured_output:
+            # num_bitmask_positions = num_speculative_tokens + 1
+            # Position i contains valid tokens given FSM state after draft[0:i-1]
+            # Position num_speculative_tokens is for the bonus token
+            token_bitmasks_type = TensorType(
+                DType.bool,
+                shape=["batch_size", "num_bitmask_positions", "vocab_size"],
+                device=device_ref,
+            )
+            all_input_types.append(token_bitmasks_type)
 
         return tuple(all_input_types)
