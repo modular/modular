@@ -38,8 +38,20 @@ SMEM→register MMA-fragment loader (expert object, static methods):
                        load patterns (attention's QK / PV matmuls).
 
 DRAM↔register loaders:
-    RegTileLoader - AMD buffer-resource load from DRAM to registers.
-    RegTileWriter - AMD buffer-resource store from registers to DRAM.
+    RegTileLoader   - AMD buffer-resource load from DRAM to registers.
+    RegTileWriter   - AMD buffer-resource store from registers to DRAM.
+                      Buffer-resource OOB clamping handles the M
+                      boundary cleanly but cannot distinguish row/col
+                      straddle, so use this only when N is BN-aligned
+                      and no fused lambda is needed.
+    RegTileEpilogue - Per-lane epilogue writer with optional fused
+                      elementwise lambda. Caller passes
+                      (m_global, n_global) per call; the writer
+                      handles the fully-in-bounds chunk store, the
+                      partial-chunk-straddling-N per-element fallback,
+                      and the lambda dispatch. Use this for any kernel
+                      that needs to support N-misaligned shapes or a
+                      fused epilogue.
 
 Register→LDS writer (expert object, static methods):
     RegTileWriterLDS - Sibling to `RegTileLoader` / `RegTileWriter`.
@@ -52,7 +64,7 @@ SMEM layout helpers:
         SMEM navigation (TileTensor views + offset math).
 """
 
-from std.sys import simd_width_of, size_of
+from std.sys import align_of, simd_width_of, size_of
 from std.gpu import lane_id, thread_idx, WARP_SIZE
 from std.gpu.intrinsics import ds_read_tr8_b64
 from std.gpu._utils import to_i32, to_i64
@@ -68,6 +80,20 @@ from layout._utils import make_amd_buffer_resource
 from layout.tile_layout import Layout, row_major, col_major
 from layout.swizzle import Swizzle
 from std.itertools import product
+
+
+comptime elementwise_epilogue_type = def[
+    dtype: DType, width: SIMDSize, *, alignment: Int = 1
+](IndexList[2], SIMD[dtype, width]) capturing -> None
+"""Type alias for a fused elementwise epilogue lambda.
+
+Local re-declaration of `linalg.utils.elementwise_epilogue_type`.
+`structured_kernels` is a *dependency* of `linalg`, so we cannot
+import the canonical definition without creating a cyclic bazel dep.
+Mojo function-pointer types are structural, so this duplicate alias
+is interchangeable with the canonical one at every call site that
+hands a lambda across the package boundary.
+"""
 
 
 comptime _alias_scope_attr = __mlir_attr.`[#llvm.alias_scope<id= "amdgpu.AsyncCopies", domain=#llvm.alias_scope_domain<id = "amdgpu.AsyncOps">>]`
@@ -1274,8 +1300,9 @@ struct RegTileWriter[
     """AMD buffer-resource store for writing register tiles to DRAM.
 
     Pre-builds the AMDBufferResource from the full DRAM output tile once.
-    Each store call writes a warp sub-tile's worth of register data
-    to DRAM via the pre-built descriptor.
+    Each `store()` call writes a warp sub-tile's worth of register data
+    to DRAM via the pre-built descriptor; OOB lanes (past the recorded
+    byte bound) are silently dropped by the hardware clamp.
 
     Pure TileTensor implementation — uses TileTensor distribute_with_offset
     directly (no LayoutTensor conversion). The distribute operation divides
@@ -1287,6 +1314,13 @@ struct RegTileWriter[
       (any MMA shape).
     - mfma32=True: 32×32 MFMA path with hardware-specific register
       permutation (`src[4*n + 16*m]` → fragment position `4*m + n`).
+
+    The buffer-resource OOB clamp bounds the store by the destination
+    tensor's TOTAL byte extent, not by a per-row column extent — so a
+    SIMD chunk that straddles an N boundary (last column block when
+    `N % BN != 0`) will spill into the next row of the same buffer
+    instead of being clipped. Use `RegTileEpilogue` instead for kernels
+    that need to support N-misaligned shapes (or a fused lambda).
 
     Parameters:
         dtype: Element data type for DRAM destination.
@@ -1352,9 +1386,10 @@ struct RegTileWriter[
             Self.thread_layout
         ](lane_id())
         var dst_dist = dist_result[0]
-        var base_offset = Int32(
-            (Int(dst_dist.ptr) - self.base_ptr_as_int) // size_of[Self.dtype]()
-        )
+        var lane_offset = (Int(dst_dist.ptr) - self.base_ptr_as_int) // size_of[
+            Self.dtype
+        ]()
+        var base_offset = Int32(lane_offset)
 
         comptime dst_shape1 = type_of(dst_dist).static_shape[1]
         comptime dst_stride0 = type_of(dst_dist).static_stride[0]
@@ -1392,6 +1427,147 @@ struct RegTileWriter[
                     base_offset + Int32(dst_elem_offset),
                     data.cast[Self.dtype](),
                 )
+
+
+# ===----------------------------------------------------------------------=== #
+# RegTileEpilogue
+# ===----------------------------------------------------------------------=== #
+
+
+struct RegTileEpilogue[
+    c_type: DType,
+    chunk_width: Int,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+](TrivialRegisterPassable):
+    """Per-lane MFMA epilogue writer with optional fused elementwise lambda.
+
+    Encapsulates the per-lane `(m_global, n_global) → store / lambda`
+    handoff at the end of an AMD matmul kernel. Each `store()` call
+    writes one SIMD chunk of `chunk_width` columns at a single row —
+    the natural shape of an AMD MFMA output fragment for one lane.
+
+    Per-lane bound handling:
+    - In-bounds chunk (`n + chunk_width <= n_total`): one SIMD store
+      or one lambda call.
+    - Partial chunk (`n < n_total < n + chunk_width`): per-element
+      fallback. The SIMD-of-`chunk_width` store would otherwise spill
+      into the next row of the buffer (where stride==N), so we degrade
+      to up to `chunk_width` scalar stores or scalar lambda calls,
+      each gated on `col < n_total`. This is what makes the writer
+      correct for N-misaligned outputs.
+    - Fully OOB column (`n >= n_total`): skip silently.
+
+    The caller is responsible for the M bound check before calling
+    `store()` — a split-K matmul kernel passes a workspace row that
+    differs from the logical output row, so the writer cannot derive
+    a single M bound that applies to both DRAM and lambda modes.
+
+    With `elementwise_lambda_fn=None` writes go to DRAM at
+    `c_ptr + m * row_stride + n` directly (no buffer-resource clamp;
+    the partial-chunk fallback gates by `n_total` explicitly). With a
+    lambda set the lambda receives global `(m, n)` and the SIMD chunk;
+    DRAM is left untouched. Lambda mode therefore requires the caller
+    to pass `m` as the LOGICAL output row — incompatible with a
+    per-split workspace write. Kernels that use both split-K and a
+    fused lambda should not set the lambda on the per-split matmul
+    kernel; instead run a non-fused split-K and apply the lambda in
+    the reduce kernel that consumes the partials.
+
+    Parameters:
+        c_type: Output element type.
+        chunk_width: Number of contiguous columns per lane per call.
+            For 16x16x* MFMA on AMD this is `MMA_M * MMA_N // WARP_SIZE
+            = 4`. For 32x32x* MFMA the natural per-lane fragment is 16
+            elements but they are spread across non-contiguous columns,
+            so callers should fan out into per-element calls
+            (`chunk_width = 1`) instead.
+        elementwise_lambda_fn: Optional fused epilogue.
+    """
+
+    var c_ptr_as_int: Int
+    """Integer address of the destination's base pointer. Stored as
+    Int rather than `UnsafePointer` because the dst tile's origin
+    may be any mutable origin and the writer is reused across
+    kernels with different origin types."""
+
+    var row_stride: Int
+    """Element stride between consecutive rows of dst."""
+
+    var n_total: Int
+    """N dimension of the output, used for the chunk-boundary
+    detection and the per-element OOB gate."""
+
+    @always_inline
+    def __init__(out self, dst: TileTensor[mut=True, Self.c_type, ...]):
+        """Build from the (mutable) destination DRAM tile.
+
+        For non-split-K: `dst` is the logical output tensor; `m` in
+        subsequent `store()` calls is the logical output row, which
+        is also the DRAM row.
+
+        For split-K matmul kernels: `dst` is the
+        `(num_splits * M, N)` workspace; `m` in `store()` is the
+        workspace row (`split_id * M + pid_m * BM + ...`). Callers
+        must keep `elementwise_lambda_fn` unset in that case — see
+        the struct doc.
+
+        Args:
+            dst: Destination DRAM tile (must be mutable).
+        """
+        self.c_ptr_as_int = Int(dst.ptr)
+        self.row_stride = Int(dst.layout.stride[0]().value())
+        self.n_total = Int(dst.dim[1]())
+
+    @always_inline
+    def _ptr(self) -> UnsafePointer[Scalar[Self.c_type], MutAnyOrigin]:
+        return UnsafePointer[Scalar[Self.c_type], MutAnyOrigin](
+            unsafe_from_address=self.c_ptr_as_int
+        )
+
+    @always_inline
+    def store(
+        self,
+        v: SIMD[Self.c_type, Self.chunk_width],
+        *,
+        m: Int,
+        n: Int,
+    ):
+        """Write a SIMD chunk at `(m, n)` of dst.
+
+        The caller has already checked the M bound. If the chunk
+        straddles `n_total` (a partial block at the column boundary)
+        the writer falls back to per-element stores or lambda calls.
+
+        Args:
+            v: SIMD value to write (already cast to `Self.c_type`).
+            m: Destination row (DRAM row for split-K workspace, or
+                logical output row for non-split-K / reduce-kernel
+                lambda mode).
+            n: Destination starting column. Caller has typically
+                offset by `lane_group * chunk_width` already.
+        """
+        if n + Self.chunk_width <= self.n_total:
+            comptime if Bool(Self.elementwise_lambda_fn):
+                comptime epilogue_fn = Self.elementwise_lambda_fn.value()
+                epilogue_fn[
+                    alignment=align_of[SIMD[Self.c_type, Self.chunk_width]]()
+                ](IndexList[2](m, n), v)
+            else:
+                self._ptr().store[
+                    alignment=align_of[SIMD[Self.c_type, Self.chunk_width]]()
+                ](m * self.row_stride + n, v)
+        elif n < self.n_total:
+            for e in range(Self.chunk_width):
+                var col = n + e
+                if col < self.n_total:
+                    comptime if Bool(Self.elementwise_lambda_fn):
+                        comptime epilogue_fn = Self.elementwise_lambda_fn.value()
+                        epilogue_fn[alignment=align_of[Scalar[Self.c_type]]()](
+                            IndexList[2](m, col),
+                            SIMD[Self.c_type, 1](v[e]),
+                        )
+                    else:
+                        self._ptr()[m * self.row_stride + col] = v[e]
 
 
 @always_inline

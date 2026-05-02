@@ -120,6 +120,14 @@ _EXTRA_CONSTRAINTS = {
     "test_cublaslt_scaled_mxfp8_matmul.mojo": ["//:b200_gpu"],
     "test_cublaslt_scaled_nvfp4_matmul.mojo": ["//:b200_gpu"],
     "test_hipblaslt_scaled_mxfp4_matmul.mojo": ["//:mi355_gpu"],
+    # 4-wave FP8 matmul kernels are MI355X-specific (CDNA4 16x16x128
+    # FP8 MFMA + HK chiplet/L2 swizzle); other AMD parts and all
+    # NVIDIA / Apple parts can't compile or run them.
+    "test_4wave.mojo": ["//:mi355_gpu"],
+    "test_4wave_scheduled.mojo": ["//:mi355_gpu"],
+    "test_4wave_split_k.mojo": ["//:mi355_gpu"],
+    "test_4wave_epilogue.mojo": ["//:mi355_gpu"],
+    "test_4wave_split_k_epilogue.mojo": ["//:mi355_gpu"],
     "test_gemm_mma_cpasync.mojo": ["//:b200_gpu"],
 } | {
     # Grouped GEMM infra tests - work on any NVIDIA GPU with 32-thread warps

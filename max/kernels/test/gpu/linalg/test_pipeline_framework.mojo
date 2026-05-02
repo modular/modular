@@ -89,7 +89,7 @@ def _simple_config() -> PipelineConfig:
         frag_order=FragOrder(b_before_a=False),
         m_mmas=1,
         n_mmas=1,
-        num_halves=1,
+        num_partitions=1,
         mma_serial=False,
         mma_latency=16,
         vm_per_load_a=1,

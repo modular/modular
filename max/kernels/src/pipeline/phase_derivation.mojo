@@ -27,7 +27,7 @@ Contains:
 
 from std.collections import List
 
-from .config import PipelineConfig
+from .config import PipelineConfig, ScheduleConfig
 from .pipeline_dsl import Pipe, ScheduleEntry
 from .program import MMABlockSpec, PipelineProgram
 from .types import (
@@ -307,15 +307,15 @@ def _strip_drain_fuse_blocks(
       4. Fuse adjacent blocks when the second has no pre-ops or loads
       5. Drop drain on the final output block (redundant)
     """
-    var blocks_per_half = config.blocks_per_half()
+    var blocks_per_partition = config.blocks_per_partition()
     var out = List[MMABlockSpec]()
 
-    for half in range(config.num_halves):
-        var base = half * blocks_per_half
+    for half in range(config.num_partitions):
+        var base = half * blocks_per_partition
 
         # Find drain start: first block with any prefetch load.
-        var drain_start = blocks_per_half  # sentinel: no drain
-        for i in range(blocks_per_half):
+        var drain_start = blocks_per_partition  # sentinel: no drain
+        for i in range(blocks_per_partition):
             var bi = blocks[base + i]
             if bi.global_load_prefetch or bi.global_load_1_prefetch:
                 drain_start = i
@@ -323,7 +323,7 @@ def _strip_drain_fuse_blocks(
 
         # Build stripped blocks with drain and fusing.
         var i = 0
-        while i < blocks_per_half:
+        while i < blocks_per_partition:
             var b = blocks[base + i]
             var block = MMABlockSpec(
                 mma=b.mma,
@@ -335,6 +335,17 @@ def _strip_drain_fuse_blocks(
                 global_load_1=(
                     b.global_load_1 if not b.global_load_1_prefetch else OpDesc.none()
                 ),
+                # Carry minimal_barriers / omit_mma_set_prio flags forward
+                # from the source block so the epilogue inherits the same
+                # barrier+setprio layout as the main loop. Without this,
+                # the epilogue blows up with one full barrier+setprio pair
+                # per MMA (~5 sync ops/MMA × 8 MMAs = 40 sync ops vs
+                # ~12 in the hand-tuned epilogue).
+                pre_mma_barrier=b.pre_mma_barrier,
+                pre_mma_set_prio=b.pre_mma_set_prio,
+                post_mma_barrier=b.post_mma_barrier,
+                post_mma_set_prio=b.post_mma_set_prio,
+                post_barrier_lgkm=b.post_barrier_lgkm,
             )
 
             # Add drain in the active zone.
@@ -342,7 +353,7 @@ def _strip_drain_fuse_blocks(
                 block.pre_sync = OpDesc.wait_vm[0]()
 
             # Check if next block can be fused (no pre-ops, no loads).
-            if i + 1 < blocks_per_half:
+            if i + 1 < blocks_per_partition:
                 var nx = blocks[base + i + 1]
                 var nx_has_ops = nx.pre_op_0.is_present()
                 var nx_has_load = (
@@ -771,6 +782,132 @@ def derive_edges_from_ops(
     return apply_edge_rules(body, config, double_buffer_edge_rules())
 
 
+def derive_cross_stage_rotation_edges(body: List[OpDesc]) -> List[DepEdge]:
+    """Returns cross-partition FRAG→MMA + same-partition MMA→FRAG ANTI
+    edges for cross-stage rotation patterns.
+
+    The default `Phase 1` edge rule is `same_half=True` — it models
+    only same-partition frag→MMA flows. For schedules that use cross-
+    stage rotation (the body's sub=0 frag-loads read from the *other*
+    K-partition's SMEM stage to preload that partition's leading
+    quadrants), two extra edge classes are needed:
+
+    1. **Cross-partition FLOW** (frag → MMA across partitions) so
+       wait derivation and CSP scheduling see the register hand-off:
+         - Partition 0 frag(ch, sub=0) → Partition 1 MMA,
+           `loop_distance=0` (same outer iter).
+         - Partition 1 frag(ch, sub=0) → Partition 0 MMA,
+           `loop_distance=1` (loop-carried for next outer iter).
+
+    2. **Same-partition ANTI** (MMA → FRAG within the producer's
+       partition) so CSP scheduling never moves the cross-stage frag
+       *before* the same-partition MMAs that still read the register
+       it's about to overwrite.
+
+    Config match key for FLOW (sub=0 only):
+      - ch=0 (A): frag.subtile matches MMA.stage (m_quad).
+      - ch=1 (B): frag.subtile matches MMA.subtile (n_quad).
+
+    A frag is "cross-stage" iff `frag.stage != frag's partition index`
+    (= reads from the other partition's stage).
+
+    Args:
+        body: Loop body op list to analyze.
+
+    Returns:
+        Cross-partition FLOW + same-partition ANTI edges for the
+        rotation pattern.
+    """
+    var n = len(body)
+    var partition_size = n // 2
+    var edges = List[DepEdge]()
+
+    for i in range(n):
+        var f = body[i]
+        if f.role != OpRole.FRAGMENT_LOAD or f.subtile != 0:
+            continue
+        var f_part = 0 if i < partition_size else 1
+        # Cross-stage frag has stage != its own partition.
+        if f.stage == f_part:
+            continue
+
+        for j in range(n):
+            var m = body[j]
+            if m.role != OpRole.COMPUTE:
+                continue
+            var m_part = 0 if j < partition_size else 1
+            # config match: ch=0 → frag.sub matches MMA.stage; ch=1 →
+            # frag.sub matches MMA.subtile. Both at sub=0 here, so
+            # ch=0 matches MMA.stage==0; ch=1 matches MMA.subtile==0.
+            var matches = (
+                f.channel == 0
+                and m.stage == 0
+                or f.channel == 1
+                and m.subtile == 0
+            )
+            if not matches:
+                continue
+
+            if m_part != f_part:
+                # Cross-partition FLOW (forward d=0 / loop-carried d=1).
+                var dist = 0 if f_part == 0 else 1
+                edges.append(DepEdge.flow(i, j, dist))
+            else:
+                # Same-partition ANTI: cross-stage FRAG must fire
+                # *after* the same-partition MMA that reads the
+                # register the FRAG is about to overwrite.
+                edges.append(DepEdge.anti(j, i, 0))
+
+    return edges^
+
+
+def filter_spurious_cross_stage_flow(
+    raw_edges: List[DepEdge], body: List[OpDesc]
+) -> List[DepEdge]:
+    """Drops spurious same-partition FLOW edges that the default Phase 1
+    rule emits for cross-stage frags.
+
+    Default Phase 1 (`same_half=True`, `use_config_match=True`) says
+    "same-partition MMA depends on cross-stage FRAG", but in the
+    rotation pattern that same-partition MMA actually consumes the
+    *previous iter's* cross-stage frag (via the loop-carried d=1
+    cross-partition FLOW from `derive_cross_stage_rotation_edges`),
+    not this iter's. The bogus FLOW edge combined with the same-
+    partition ANTI edge creates a circular dep that deadlocks
+    greedy/CSP. Drop it.
+
+    Pairs with `derive_cross_stage_rotation_edges` — schedules that
+    use cross-stage rotation should run their default-derived edges
+    through this filter, then append the cross-stage edges.
+
+    Args:
+        raw_edges: Default-derived edges to filter.
+        body: Loop body op list, used to look up roles and stages.
+
+    Returns:
+        `raw_edges` with the spurious cross-stage FLOW edges removed.
+    """
+    var n = len(body)
+    var partition_size = n // 2
+    var edges = List[DepEdge]()
+    for e in range(len(raw_edges)):
+        var edge = raw_edges[e]
+        if edge.dep_kind == DepKind.FLOW:
+            var p = body[edge.producer_idx]
+            var c = body[edge.consumer_idx]
+            if (
+                p.role == OpRole.FRAGMENT_LOAD
+                and p.subtile == 0
+                and c.role == OpRole.COMPUTE
+            ):
+                var p_part = 0 if edge.producer_idx < partition_size else 1
+                var c_part = 0 if edge.consumer_idx < partition_size else 1
+                if p_part == c_part and p.stage != p_part:
+                    continue  # spurious — drop
+        edges.append(edge)
+    return edges^
+
+
 def default_warp_stagger(prologue_len: Int) -> Int:
     """Default warp stagger: right after prologue."""
     return prologue_len + 1
@@ -794,12 +931,26 @@ def default_warp_stagger_double_buffer(body: List[OpDesc]) -> Int:
 def derive_prologue_from_program(
     program: PipelineProgram,
     config: PipelineConfig,
+    sched: ScheduleConfig = ScheduleConfig(),
+    bootstrap: List[OpDesc] = List[OpDesc](),
 ) -> List[ScheduleEntry]:
     """Derive prologue from a finalized PipelineProgram.
 
     Extracts global loads from the program's first-half blocks, groups them
     by buffer stage (0 vs 1), and emits the standard prologue sequence:
       stage-0 loads at K0 → wait_vm(0) → barrier → stage-1 loads at K1 → wait_vm(0)
+
+    When `sched.partial_prologue_drain` is True, the inter-stage
+    `wait_vm(0)` + barrier and the trailing `wait_vm(0)` are skipped —
+    all prefetches issue continuously, and the framework instead
+    appends the schedule's `bootstrap_frags()` paired with partial
+    `wait_vm(N) + barrier` drains so each bootstrap frag-load fires
+    after exactly the prefetch it depends on has completed (the rest
+    stay in flight for the first main-loop iter).
+
+    Per-frag wait values are derived from cumulative prefetch
+    `vm_cost`: the i-th bootstrap frag drains down to leave
+    `total_vm - sum(prefetch_vm_costs[:i+1])` outstanding.
 
     This replaces default_prologue_double_buffer() for schedules that build
     a PipelineProgram. The advantage is that the prologue is always consistent
@@ -864,11 +1015,11 @@ def derive_prologue_from_program(
         if b.global_load_1_prefetch and b.global_load_1.stage == 0:
             _emit_load(result, b.global_load_1, KOffsetKind.K0, config, slot)
 
-    # Drain stage 0: wait for ALL stage-0 loads to land in LDS.
-    _emit(result, OpDesc.wait_vm_n(0), slot)
-
-    # Barrier (kernel inserts warp stagger before this).
-    _emit(result, OpDesc.barrier(), slot)
+    if not sched.partial_prologue_drain:
+        # Drain stage 0: wait for ALL stage-0 loads to land in LDS.
+        _emit(result, OpDesc.wait_vm_n(0), slot)
+        # Barrier (kernel inserts warp stagger before this).
+        _emit(result, OpDesc.barrier(), slot)
 
     # Stage 1: collect prefetch loads with stage == 1 from ALL blocks.
     for bi in range(num_blocks):
@@ -878,7 +1029,33 @@ def derive_prologue_from_program(
         if b.global_load_1_prefetch and b.global_load_1.stage == 1:
             _emit_load(result, b.global_load_1, KOffsetKind.K1, config, slot)
 
-    # Drain all outstanding loads before the kernel body begins.
-    _emit(result, OpDesc.wait_vm_n(0), slot)
+    if not sched.partial_prologue_drain:
+        # Drain all outstanding loads before the kernel body begins.
+        _emit(result, OpDesc.wait_vm_n(0), slot)
+    elif len(bootstrap) > 0:
+        # Bootstrap frags + partial drains: walk the prefetches in the
+        # order they were emitted above, draining one's worth of vmcnt
+        # before each bootstrap frag-load. The 1st bootstrap frag
+        # depends on the 1st prefetch's data, the 2nd on the 2nd, etc.
+        # Barriers carry the implicit lgkm-fence so no separate
+        # wait_lgkm is needed.
+        var prefetch_vm_costs = List[Int]()
+        for i in range(len(result)):
+            if result[i].op.role == OpRole.GLOBAL_LOAD:
+                prefetch_vm_costs.append(result[i].op.vm_cost)
+        var total_vm = 0
+        for i in range(len(prefetch_vm_costs)):
+            total_vm += prefetch_vm_costs[i]
+        var n_bootstrap = len(bootstrap)
+        debug_assert(
+            n_bootstrap <= len(prefetch_vm_costs),
+            "more bootstrap frags than prefetches",
+        )
+        var vm_remaining = total_vm
+        for i in range(n_bootstrap):
+            vm_remaining -= prefetch_vm_costs[i]
+            _emit(result, OpDesc.wait_vm_n(vm_remaining), slot)
+            _emit(result, OpDesc.barrier(), slot)
+            _emit(result, bootstrap[i], slot)
 
     return result^

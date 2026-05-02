@@ -1,0 +1,114 @@
+##===----------------------------------------------------------------------===##
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+##===----------------------------------------------------------------------===##
+#
+# kbench autotune sweep for FP8 matmul on AMD MI355X (CDNA4).
+#
+# Two sections:
+#   - "in-gate" shapes (1024 <= N <= 8192, K >= 4096, K % 1024 == 0):
+#     drives the 4-wave kernel family via TUNE_4WAVE_KERNEL +
+#     TUNE_4WAVE_BM / BN / SWIZZLE (set when AUTOTUNING_MODE=True and
+#     TUNE_4WAVE_KERNEL > 0; bypasses the closed-form M cutoffs).
+#   - "out-of-gate" shapes: drives the multistage path via the
+#     existing TUNE_BM / BN / BK / NUM_K_PARTITIONS knobs.
+#
+# Run: `python kbench.py tuning_table_mi355_fp8.yaml`. The output CSV
+# is consumed by kdiff to pick the per-(N, K, M) winner; the winners
+# are then baked into a `dispatch_table_mi355_fp8.mojo` lookup that
+# the dispatcher consults before falling through to the closed-form
+# heuristic.
+
+name: bench_matmul
+file: $KERNEL_BENCHMARKS_ROOT/gpu/linalg/bench_matmul.mojo
+
+# Pruning rules:
+#   - in-gate kernels need symmetric tiles: BN must equal BM.
+#   - split-K(N) requires K / N to be a multiple of 256 (BK*2). The
+#     two in-gate shapes pass at all num_splits in {1, 2, 4} so we
+#     don't need a dedicated rule.
+#   - multistage NUM_K_PARTITIONS only > 1 when K is large enough
+#     to amortize the reduce; pin BK=128 for FP8 (the kernel's
+#     `_bk_base` for FP8 is 128).
+rules:
+  - "TUNE_4WAVE_BM == TUNE_4WAVE_BN"
+
+common: &common
+  - name: bench_matmul
+    AUTOTUNING_MODE: True
+    dtype: DType.float8_e4m3fn
+
+params:
+
+# === In-gate shapes (4-wave kernel knobs) ===
+
+# Hippo Attn QKV — Llama-3.1-405B TP=8, skinny-N
+- <<: *common
+  N: 2304
+  K: 16384
+  $M: [1, 16, 64, 128, 256, 512, 1024, 2048, 4096, 8192]
+  TUNE_4WAVE_KERNEL: [1, 2, 3]   # 1=split_k_4, 2=split_k_2, 3=non-split
+  TUNE_4WAVE_BM: [64, 128]
+  TUNE_4WAVE_BN: [64, 128]
+  TUNE_4WAVE_SWIZZLE: [True]
+
+# Kimi K2.5 Attn output — wide-N, the regression cell that motivated
+# the wide-N split in the closed-form heuristic. Worth re-tuning.
+- <<: *common
+  N: 7168
+  K: 8192
+  $M: [1, 16, 64, 128, 256, 512, 1024, 2048, 4096, 8192]
+  TUNE_4WAVE_KERNEL: [1, 2, 3]
+  TUNE_4WAVE_BM: [64, 128]
+  TUNE_4WAVE_BN: [64, 128]
+  TUNE_4WAVE_SWIZZLE: [True]
+
+# === Out-of-gate shapes (multistage knobs) ===
+
+# Hippo MLP Up — Llama-3.1-405B TP=8, very wide N
+- <<: *common
+  N: 16384
+  K: 13312
+  $M: [1, 16, 64, 128, 256, 512, 1024, 2048, 4096, 8192]
+  TUNE_BM: [64, 128]
+  TUNE_BN: [64, 128, 256]
+  TUNE_BK: [128]
+  TUNE_NUM_K_PARTITIONS: [1, 2]
+
+# Kimi K2.5 Attn Q up — short K, large N
+- <<: *common
+  N: 12288
+  K: 1536
+  $M: [1, 16, 64, 128, 256, 512, 1024, 2048, 4096, 8192]
+  TUNE_BM: [64, 128]
+  TUNE_BN: [64, 128, 256]
+  TUNE_BK: [128]
+  TUNE_NUM_K_PARTITIONS: [1]
+
+# Kimi K2.5 LM head shard — very wide N, long K
+- <<: *common
+  N: 20480
+  K: 7168
+  $M: [1, 16, 64, 128, 256, 512, 1024, 2048, 4096, 8192]
+  TUNE_BM: [64, 128]
+  TUNE_BN: [64, 128, 256]
+  TUNE_BK: [128]
+  TUNE_NUM_K_PARTITIONS: [1, 2]
+
+# Kimi K2.5 MoE router — narrow N
+- <<: *common
+  N: 384
+  K: 7168
+  $M: [1, 16, 64, 128, 256, 512, 1024, 2048, 4096, 8192]
+  TUNE_BM: [64, 128]
+  TUNE_BN: [64, 128]   # BN=256 doesn't divide 384 cleanly
+  TUNE_BK: [128]
+  TUNE_NUM_K_PARTITIONS: [1, 2]

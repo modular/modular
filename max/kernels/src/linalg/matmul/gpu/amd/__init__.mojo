@@ -22,3 +22,8 @@ from .amd_ping_pong_matmul import (
     KernelConfig,
     structured_ping_pong_matmul,
 )
+from .amd_4wave_matmul import amd_4wave_matmul
+from .amd_4wave_split_k_matmul import (
+    amd_4wave_split_k_matmul,
+    SplitKWorkspace,
+)

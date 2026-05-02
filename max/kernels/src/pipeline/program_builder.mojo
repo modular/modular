@@ -39,6 +39,35 @@ from .schedulers import (
 from .types import DepEdge, OpDesc, OpRole, _Ops, _is_prefetch
 
 
+def _derive_main_wait_vm(
+    body: LoopBody, order: List[Int], config: PipelineConfig
+) -> Int:
+    """Drain target for the top-of-half / first-cross-stage `entry_wait`.
+
+    Walks the body's prefetch loads, sums their per-channel vm_cost,
+    then returns `total - per_half` — i.e. drain to leave one half's
+    worth of prefetches in flight. The semantic: when this wait fires,
+    the previous iter's writes targeting *this* half have committed,
+    while future iters' prefetches can stay outstanding.
+
+    For 2-half ping-pong / 4-wave (8 prefetches × VMCNT, 4 per half):
+    `(8 - 4) * VMCNT = 4 * VMCNT` — same value as the hardcoded
+    `4 * config.vm_per_load_a` constant we previously used.
+    Generalises correctly for kernels with non-uniform per-half
+    prefetch counts and for `num_partitions != 2`.
+    """
+    var num_ops = len(body.ops)
+    var total_vm = 0
+    for i in range(num_ops):
+        var op = body.ops[order[i]].op
+        if op.role == OpRole.GLOBAL_LOAD and _is_prefetch(op):
+            total_vm += config.vm_per_channel(op.channel)
+    var halves = config.num_partitions
+    if halves <= 0:
+        return total_vm
+    return total_vm - (total_vm // halves)
+
+
 def _construct_mma_blocks(
     body: LoopBody,
     order: List[Int],
@@ -53,10 +82,15 @@ def _construct_mma_blocks(
     """
     var num_ops = len(body.ops)
     var num_blocks = config.total_blocks()
-    var bph = config.blocks_per_half()
+    var bph = config.blocks_per_partition()
     var p = PipelineProgram(num_blocks, trailing_barrier=False)
     var block_idx = 0
     var op_idx = 0
+    # Auto-derive the MAIN_WAIT drain target from the body's prefetch
+    # distribution. Replaces the previous hardcoded `4 * vm_per_load_a`
+    # constant — that "4" was a magic number matching hand-tuned 4-wave
+    # but didn't generalise to other prefetch counts.
+    var main_wait_vm = _derive_main_wait_vm(body, order, config)
 
     for _block in range(num_blocks):
         var pre_ops = List[OpDesc]()
@@ -75,7 +109,8 @@ def _construct_mma_blocks(
                 global_loads.append(op)
             op_idx += 1
 
-        var pos_in_half = block_idx % bph
+        var pos_in_partition = block_idx % bph
+        var partition_idx = block_idx // bph
         var pre_op_0 = pre_ops[0] if len(pre_ops) >= 1 else OpDesc.none()
         var pre_op_1 = pre_ops[1] if len(pre_ops) >= 2 else OpDesc.none()
         var gl0 = global_loads[0] if len(global_loads) >= 1 else OpDesc.none()
@@ -85,11 +120,127 @@ def _construct_mma_blocks(
         var post_barrier_lgkm = True
         var trailing_sched = (sched.sched_barrier_mask >> block_idx) & 1 == 1
 
-        if pos_in_half == 0 and sched.wait_lgkm_first < 255:
-            pre_sync = OpDesc.wait_lgkm_n(sched.wait_lgkm_first)
-        elif pos_in_half == bph - 1:
+        # Cross-stage frag detection: a fragment-load whose `stage` field
+        # doesn't equal its block's half is reading from the cross SMEM
+        # stage (the stage the *other* half consumes). Such reads need an
+        # explicit vm drain so the cross stage's last writer (this iter's
+        # other half, or the previous iter) has finished before this
+        # block's LDS read. Without this drain the framework's per-half
+        # `wait_vm_last` (only at the last block of the half) fires too
+        # late and the cross-stage frag races against in-flight loads.
+        var pre_op_0_cross = (
+            pre_op_0.is_present()
+            and pre_op_0.role == OpRole.FRAGMENT_LOAD
+            and pre_op_0.stage != partition_idx
+        )
+        var pre_op_1_cross = (
+            pre_op_1.is_present()
+            and pre_op_1.role == OpRole.FRAGMENT_LOAD
+            and pre_op_1.stage != partition_idx
+        )
+        var pre_op_is_cross = pre_op_0_cross or pre_op_1_cross
+
+        # Only emit the mid-half drain at the FIRST cross-stage block in
+        # each half — subsequent cross-stage blocks are already covered by
+        # the same drain.
+        var seen_cross_in_partition = False
+        var partition_start = partition_idx * bph
+        for prior_b in range(partition_start, block_idx):
+            var prior = p.blocks[prior_b]
+            if (
+                prior.pre_op_0.is_present()
+                and prior.pre_op_0.role == OpRole.FRAGMENT_LOAD
+                and prior.pre_op_0.stage != partition_idx
+            ):
+                seen_cross_in_partition = True
+                break
+            if (
+                prior.pre_op_1.is_present()
+                and prior.pre_op_1.role == OpRole.FRAGMENT_LOAD
+                and prior.pre_op_1.stage != partition_idx
+            ):
+                seen_cross_in_partition = True
+                break
+        var first_cross_in_partition = (
+            pre_op_is_cross and not seen_cross_in_partition
+        )
+
+        # Entry wait: vm drain that fires BEFORE pre_op_0 (= before any
+        # frag-load this block issues). Two situations need it:
+        #
+        #  - **Top-of-half** (pos_in_partition == 0) when this half contains
+        #    any cross-stage frag: drain to "4 newest in flight" so the
+        #    half's first same-stage frag-load sees committed LDS from
+        #    the previous half's tail loads. Mirrors inline's TOP
+        #    `vmcnt(MAIN_WAIT)`.
+        #
+        #  - **First cross-stage block in this half**: drain so the
+        #    cross-stage frag-load reads valid LDS (the cross stage's
+        #    last writer, in the *other* half or the previous iter,
+        #    must have committed). Mirrors inline's MID
+        #    `vmcnt(MAIN_WAIT)`.
+        #
+        # The `pre_sync` slot is after globals, used for end-of-half
+        # drain — different position, different purpose, kept as-is.
+
+        # For pos_in_partition == 0, look ahead in the body to detect whether
+        # this half contains cross-stage frags in remaining blocks.
+        var top_drain_needed = False
+        if pos_in_partition == 0:
+            top_drain_needed = pre_op_is_cross
+            if not top_drain_needed:
+                var scan_idx = op_idx
+                var scanned_mmas = 0
+                while scan_idx < num_ops and scanned_mmas < bph - 1:
+                    var sop = body.ops[order[scan_idx]].op
+                    if sop.role == OpRole.COMPUTE:
+                        scanned_mmas += 1
+                    elif (
+                        sop.role == OpRole.FRAGMENT_LOAD
+                        and sop.stage != partition_idx
+                    ):
+                        top_drain_needed = True
+                        break
+                    scan_idx += 1
+
+        var entry_wait = OpDesc.none()
+        var entry_wait_lgkm = OpDesc.none()
+        if first_cross_in_partition or top_drain_needed:
+            # Drain target derived from the body's prefetch distribution
+            # (`_derive_main_wait_vm`): leave one half's worth of
+            # prefetches in flight. For 4-wave (8 prefetches × VMCNT,
+            # 4 per half) this works out to `4 * VMCNT`, matching the
+            # hand-tuned `MAIN_WAIT` constant.
+            entry_wait = OpDesc.wait_vm_n(main_wait_vm)
+
+        if pos_in_partition == 0 and sched.wait_lgkm_first < 255:
+            # When entry_wait (vm drain) is set on this same block, pair
+            # the lgkm drain with it back-to-back so LLVM's waitcnt-merge
+            # pass can coalesce them into one `vmcnt(N) lgkmcnt(M)`.
+            # Otherwise keep it as `pre_sync` (after globals, before
+            # barrier) for the original semantics.
+            if entry_wait.is_present() and sched.minimal_barriers:
+                entry_wait_lgkm = OpDesc.wait_lgkm_n(sched.wait_lgkm_first)
+            else:
+                pre_sync = OpDesc.wait_lgkm_n(sched.wait_lgkm_first)
+        elif first_cross_in_partition:
+            # MID barrier point: pair `entry_wait`'s vm drain with a
+            # full lgkm drain so the cross-stage frag's pre-MMA register
+            # state matches what inline's hand-written MID emits
+            # (`s_waitcnt vmcnt + lgkmcnt(0) + s_barrier`).
+            if entry_wait.is_present() and sched.minimal_barriers:
+                entry_wait_lgkm = OpDesc.wait_lgkm_n(0)
+            else:
+                pre_sync = OpDesc.wait_lgkm_n(0)
+        elif pos_in_partition == bph - 1:
             pre_sync = OpDesc.wait_vm_n(sched.wait_vm_last)
             post_barrier_lgkm = sched.lgkm_after_last
+        elif sched.inter_block_lgkm_drain:
+            # Interior block (not top, not first cross-stage, not last)
+            # — inject `wait_lgkm(0)` at block entry so the previous
+            # block's frag/load LDS ops drain before this block's
+            # frag-load reads (avoids LDS port contention).
+            entry_wait_lgkm = OpDesc.wait_lgkm_n(0)
 
         # Drain LDS reads before DRAM→LDS writes to avoid LDS port
         # contention.  Only useful when a block has both fragment loads
@@ -99,18 +250,64 @@ def _construct_mma_blocks(
         var drain_bit = (sched.drain_lgkm_mask >> block_idx) & 1 == 1
         var drain = drain_bit and has_frag and has_dram
 
+        # Barrier strategy: when `sched.minimal_barriers` is set, emit
+        # the pre-MMA barrier ONLY where a real sync is needed
+        # (top-of-half and the first cross-stage block, both of which
+        # also carry an `entry_wait` vm drain), and never emit the
+        # post-MMA barrier or `set_prio[0]`. This matches the hand-tuned
+        # 4-wave inline pattern (4 s_barriers per outer iter instead of
+        # 16). For non-minimal kernels (ping-pong, simple), keep the
+        # full pre-MMA + post-MMA layout.
+        var is_top_of_half = pos_in_partition == 0
+        var emit_pre_mma_barrier = True
+        var emit_pre_mma_set_prio = True
+        var emit_post_mma_barrier = True
+        var emit_post_mma_set_prio = True
+        var emit_post_barrier_lgkm = post_barrier_lgkm
+        if sched.minimal_barriers:
+            emit_pre_mma_barrier = is_top_of_half or first_cross_in_partition
+            # `set_prio[1]` is an LLVM scheduling barrier that blocks
+            # register-allocator reuse across it (observed: dropping it
+            # entirely cuts VGPR pressure 102 → 86). But it's also a
+            # warp-scheduler priority hint that can be load-bearing for
+            # MMA throughput in some pipelines (e.g. the original
+            # 8-warp ping-pong). For schedules that opt into
+            # `minimal_barriers` AND `omit_mma_set_prio` we drop it
+            # entirely and rely on `rocdl.waves_per_eu=1` for priority.
+            # Without `omit_mma_set_prio` we keep it at TOP + MID
+            # boundaries (4 per iter) as the safer default.
+            emit_pre_mma_set_prio = (
+                False if sched.omit_mma_set_prio else emit_pre_mma_barrier
+            )
+            emit_post_mma_barrier = False
+            emit_post_mma_set_prio = False
+            # Without a pre-MMA barrier the framework's
+            # post_barrier_lgkm wouldn't fire either; the schedule (or
+            # body) is expected to control lgkm via entry_wait or per-op
+            # waits.
+            emit_post_barrier_lgkm = False
+
         p.blocks[block_idx] = MMABlockSpec(
             mma=mma_op,
             pre_op_0=pre_op_0,
             pre_op_1=pre_op_1,
             global_load=gl0,
             global_load_1=gl1,
+            entry_wait=entry_wait,
+            entry_wait_lgkm=entry_wait_lgkm,
             pre_sync=pre_sync,
-            post_barrier_lgkm=post_barrier_lgkm,
+            pre_mma_barrier=emit_pre_mma_barrier,
+            pre_mma_set_prio=emit_pre_mma_set_prio,
+            post_mma_barrier=emit_post_mma_barrier,
+            post_mma_set_prio=emit_post_mma_set_prio,
+            post_barrier_lgkm=emit_post_barrier_lgkm,
             trailing_sched_barrier=trailing_sched,
             global_load_prefetch=_is_prefetch(gl0),
             global_load_1_prefetch=_is_prefetch(gl1),
             drain_lgkm_before_loads=drain,
+            global_before_frag=sched.global_before_frag,
+            barrier_before_pre_ops=sched.barrier_before_pre_ops,
+            wrap_waits_with_sched_barrier=(sched.wrap_waits_with_sched_barrier),
         )
         block_idx += 1
 
@@ -203,8 +400,8 @@ def build_double_buffer_program(
 def derive_waits_from_blocks(
     program: PipelineProgram,
     config: PipelineConfig,
-    lgkm_per_a: Int,
-    lgkm_per_b: Int,
+    lgkm_per_a: Int = 0,
+    lgkm_per_b: Int = 0,
 ) -> Tuple[Int, Int]:
     """Derive wait counts from the finalized block structure.
 
@@ -212,6 +409,12 @@ def derive_waits_from_blocks(
     ordering before block construction), this works on the final
     PipelineProgram after CSP ordering AND post-construction redistribution.
     The counts always reflect the actual block layout.
+
+    Per-channel lgkm cost is read from the config first
+    (`config.lgkm_per_channel(channel)`); the legacy `lgkm_per_a/b`
+    parameters are only consulted when the config has them unset
+    (= 0), preserving backward compat for callers that still thread
+    them through `ScheduleConfig`.
 
     wait_lgkm_first: lgkm ops in block 0's pre_ops (fragment loads issued
         before the first barrier/MMA). Ensures fragment loads complete
@@ -233,27 +436,34 @@ def derive_waits_from_blocks(
 
     Returns (wait_lgkm_first, wait_vm_last).
     """
-    var bph = config.blocks_per_half()
-    var num_halves = config.num_halves
+    var bph = config.blocks_per_partition()
+    var num_partitions = config.num_partitions
     var best_lgkm = 0
     var best_vm = 255  # Start high, take min (strictest wait wins).
 
-    for half in range(num_halves):
-        var half_start = half * bph
+    # Per-channel lgkm: prefer the config (auto-derived from
+    # KernelGeometry); fall back to the explicit params if unset.
+    var ch0_lgkm = config.lgkm_per_channel(0)
+    if ch0_lgkm == 0:
+        ch0_lgkm = lgkm_per_a
+    var ch1_lgkm = config.lgkm_per_channel(1)
+    if ch1_lgkm == 0:
+        ch1_lgkm = lgkm_per_b
+
+    for half in range(num_partitions):
+        var partition_start = half * bph
 
         # wait_lgkm_first: the pre_sync goes after global loads and before
         # the barrier. At that point, frag lgkm + global lgkm are in flight.
         # We want frag loads to complete, so wait until only global lgkm
         # remains outstanding: lgkmcnt = global_lgkm_in_block0.
-        var block0 = program.blocks[half_start]
+        var block0 = program.blocks[partition_start]
         var gl_lgkm = 0
         if block0.global_load.is_present():
-            gl_lgkm += (
-                lgkm_per_a if block0.global_load.channel == 0 else lgkm_per_b
-            )
+            gl_lgkm += ch0_lgkm if block0.global_load.channel == 0 else ch1_lgkm
         if block0.global_load_1.is_present():
             gl_lgkm += (
-                lgkm_per_a if block0.global_load_1.channel == 0 else lgkm_per_b
+                ch0_lgkm if block0.global_load_1.channel == 0 else ch1_lgkm
             )
         best_lgkm = max(best_lgkm, gl_lgkm)
 
@@ -266,7 +476,7 @@ def derive_waits_from_blocks(
         var total_vm = 0
         var completion_vm = 0
         for b in range(bph):
-            var block = program.blocks[half_start + b]
+            var block = program.blocks[partition_start + b]
             if block.global_load.is_present():
                 var vm = config.vm_per_channel(block.global_load.channel)
                 total_vm += vm
@@ -324,8 +534,8 @@ def derive_drain_mask(
     its global loads.
     """
     var mask = 0
-    var bph = config.blocks_per_half()
-    var num_blocks = bph * config.num_halves
+    var bph = config.blocks_per_partition()
+    var num_blocks = bph * config.num_partitions
 
     for i in range(num_blocks):
         var b = program.blocks[i]
@@ -360,9 +570,9 @@ def dump_program_blocks(program: PipelineProgram, config: PipelineConfig):
     annotations. Useful for debugging schedule construction and verifying that
     prefetch loads don't land in unsafe positions relative to fragment loads.
     """
-    var bph = config.blocks_per_half()
+    var bph = config.blocks_per_partition()
 
-    for half in range(config.num_halves):
+    for half in range(config.num_partitions):
         print("=== Half", half, "===")
         for b in range(bph):
             var idx = half * bph + b
@@ -448,8 +658,8 @@ def _verify_wait_count_bounds(
     wait_vm_last: Int,
 ):
     """Wait counts must be non-negative and bounded by actual lgkm costs."""
-    var bph = config.blocks_per_half()
-    var num_halves = config.num_halves
+    var bph = config.blocks_per_partition()
+    var num_partitions = config.num_partitions
 
     if wait_lgkm_first < 255:
         debug_assert(
@@ -460,7 +670,7 @@ def _verify_wait_count_bounds(
         # globals (it represents outstanding lgkm when frags must be done).
         # Only check when lgkm costs are known (auto_waits provides them).
         if lgkm_per_a > 0 or lgkm_per_b > 0:
-            for half in range(num_halves):
+            for half in range(num_partitions):
                 var b0 = program.blocks[half * bph]
                 var gl_lgkm = 0
                 if b0.global_load.is_present():
@@ -523,14 +733,23 @@ def _verify_distribution_invariant(
 
 
 def _verify_stage_consistency(program: PipelineProgram, config: PipelineConfig):
-    """Fragment loads in half h should use stage h (depth=2 double buffer)."""
-    if config.depth != 2:
+    """Fragment loads in half h should use stage h (depth=2 double buffer).
+
+    Skipped when `config.cross_stage_rotation` is set: schedules that
+    intentionally pre-load the next K-partition's leading-quadrant
+    fragments from the cross stage (4-wave's mini-3/4 rotation) have
+    `frag.stage != partition_index` *by design*, and a separate
+    correctness path (`derive_cross_stage_rotation_edges` +
+    `filter_spurious_cross_stage_flow` in `phase_derivation`) handles
+    the dependency edges those frags introduce.
+    """
+    if config.depth != 2 or config.cross_stage_rotation:
         return
 
-    var bph = config.blocks_per_half()
-    var num_halves = config.num_halves
+    var bph = config.blocks_per_partition()
+    var num_partitions = config.num_partitions
 
-    for half in range(num_halves):
+    for half in range(num_partitions):
         var expected_stage = half
         for b in range(bph):
             var block = program.blocks[half * bph + b]
@@ -579,14 +798,20 @@ def _verify_completion_coverage(
 
     Without this, the other half's fragment loads would read stale LDS
     because wait_vm at the half boundary would drain nothing.
+
+    Skipped when `config.cross_stage_rotation` is set: 4-wave's
+    rotation doesn't rely on a cross-stage *global* load for drain
+    (its cross-stage *fragment* loads + per-mini `s_waitcnt vmcnt(N)`
+    handle the dependency directly), so the absence of a stage-h+1
+    global load in half h is intentional.
     """
-    if config.depth != 2:
+    if config.depth != 2 or config.cross_stage_rotation:
         return
 
-    var bph = config.blocks_per_half()
-    var num_halves = config.num_halves
+    var bph = config.blocks_per_partition()
+    var num_partitions = config.num_partitions
 
-    for half in range(num_halves):
+    for half in range(num_partitions):
         var has_completion = False
         for b in range(bph):
             var block = program.blocks[half * bph + b]
@@ -646,9 +871,9 @@ def _verify_warp_stagger_lds_safety(
     # boundaries (first/last blocks of each half). Verify no mid-half
     # block has prefetch loads targeting the same stage as the next
     # block's fragment loads.
-    var bph = config.blocks_per_half()
+    var bph = config.blocks_per_partition()
 
-    for half in range(config.num_halves):
+    for half in range(config.num_partitions):
         var base = half * bph
         for i in range(1, bph - 1):
             var block = program.blocks[base + i]
@@ -712,7 +937,7 @@ def verify_schedule(
     optimal_schedule) which only places ops whose d=0 predecessors are
     already scheduled.
     """
-    var num_blocks = config.blocks_per_half() * config.num_halves
+    var num_blocks = config.blocks_per_partition() * config.num_partitions
     var max_g = config.block_sizing.max_globals
 
     debug_assert(
@@ -743,6 +968,7 @@ def build_kernel_program(
     body: List[OpDesc],
     config: PipelineConfig,
     sched: ScheduleConfig = ScheduleConfig(),
+    edges: List[DepEdge] = List[DepEdge](),
 ) -> PipelineProgram:
     """Build the finalized PipelineProgram for a double-buffer kernel.
 
@@ -752,13 +978,29 @@ def build_kernel_program(
 
     Used by ScheduleCompiler.compile() for double-buffer kernel derivation
     and by derive_prologue_from_program() for prologue extraction.
+
+    Args:
+        body: Loop body op list (typically `PipelineSchedule.build_body()`).
+        config: Pipeline configuration (depth, MMA grid, etc.).
+        sched: Scheduling configuration (CSP knobs, wait overrides).
+        edges: Optional dependency edges to drive scheduling. If empty
+            (default), falls back to `derive_edges_from_ops(body, config)`
+            (preserves existing behavior for callers that don't override
+            `PipelineSchedule.derive_edges`). Schedules that need extra
+            edges (e.g., cross-half FRAG→MMA for cross-stage rotation)
+            should override `derive_edges` and pass them through here.
+
+    Returns:
+        Finalized `PipelineProgram` before expansion to entries.
     """
-    # Build LDG from body ops + auto-derived edges.
-    var edges = derive_edges_from_ops(body, config)
+    # Build LDG from body ops + (caller-provided or auto-derived) edges.
     var ldg = LoopBody()
     for i in range(len(body)):
         ldg.ops.append(OpNode(op=body[i]))
-    ldg.edges = edges^
+    if len(edges) > 0:
+        ldg.edges = edges.copy()
+    else:
+        ldg.edges = derive_edges_from_ops(body, config)
 
     # Schedule.
     var order = List[Int]()
@@ -767,6 +1009,7 @@ def build_kernel_program(
             ldg,
             max_globals_per_block=config.block_sizing.max_globals,
             lds_contention_penalty=sched.lds_contention_penalty,
+            max_vgpr=sched.max_vgpr,
         )
     elif sched.scheduling == SchedulingStrategy.GREEDY:
         order = greedy_schedule(ldg)
@@ -797,7 +1040,9 @@ def build_kernel_program(
         # Auto-derive per-block drain mask from channel analysis (opt-in).
         if sched.auto_drain:
             var auto_mask = derive_drain_mask(program, config)
-            var num_blocks = config.blocks_per_half() * config.num_halves
+            var num_blocks = (
+                config.blocks_per_partition() * config.num_partitions
+            )
             for i in range(num_blocks):
                 var b = program.blocks[i]
                 var has_frag = (
@@ -811,14 +1056,28 @@ def build_kernel_program(
                 )
                 program.blocks[i] = b
 
-        var bph = config.blocks_per_half()
-        for half in range(config.num_halves):
+        var bph = config.blocks_per_partition()
+        for half in range(config.num_partitions):
             var b0 = half * bph
             var bN = b0 + bph - 1
             # Patch block 0: wait_lgkm.
+            # When `minimal_barriers` AND block 0 already has an
+            # `entry_wait` (vm drain), put the lgkm drain in
+            # `entry_wait_lgkm` so the two waits are emitted back-to-back
+            # and LLVM merges them into one `vmcnt(N) lgkmcnt(M)` instr.
             if waits[0] < 255:
                 var blk = program.blocks[b0]
-                blk.pre_sync = OpDesc.wait_lgkm_n(waits[0])
+                # Under barrier_before_pre_ops the wait fires BEFORE
+                # any of this block's frags/globals issue, so it must
+                # drain all prior LDS ops (lgkmcnt=0). Otherwise the
+                # wait fires after this block's frag+load issued, and
+                # only frags need draining (waits[0] = block0.global_lgkm).
+                var lgkm_val = 0 if sched.barrier_before_pre_ops else waits[0]
+                if sched.minimal_barriers and blk.entry_wait.is_present():
+                    blk.entry_wait_lgkm = OpDesc.wait_lgkm_n(lgkm_val)
+                    blk.pre_sync = OpDesc.none()
+                else:
+                    blk.pre_sync = OpDesc.wait_lgkm_n(lgkm_val)
                 program.blocks[b0] = blk
             # Patch last block: wait_vm.
             var blk = program.blocks[bN]
@@ -846,10 +1105,10 @@ def default_kernel_deps_double_buffer(
 
     For each half: barrier→MMA[0], wait_lgkm→MMA[0], MMA chain.
     """
-    var half = len(kernel) // config.num_halves
+    var half = len(kernel) // config.num_partitions
     var result = List[DepEdge]()
 
-    for h in range(config.num_halves):
+    for h in range(config.num_partitions):
         var offset = h * half
         var mma_positions = List[Int]()
         var block_starts = List[Int]()
@@ -1270,14 +1529,14 @@ def double_buffer_reorder(
     This function splits at the midpoint, applies mma_block_interleave to
     each half independently, and concatenates the results.
     """
-    var half_size = len(logical) // 2
+    var partition_size = len(logical) // 2
     var result = List[OpDesc]()
 
     # Split into halves.
     var half0 = List[OpDesc]()
     var half1 = List[OpDesc]()
     for i in range(len(logical)):
-        if i < half_size:
+        if i < partition_size:
             half0.append(logical[i])
         else:
             half1.append(logical[i])
