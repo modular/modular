@@ -110,7 +110,7 @@ struct ParsedArgument {
     kConventionVar = 2,         // var x
     kConventionRead = 3,        // read x
     kConventionRef = 4,         // ref [origin, addrspace] x
-    kConventionOut = 5,         // out [addrspace] x
+    kConventionOut = 5,         // out x
     kConventionDeinit = 6,      // deinit self
     kConventionByRefResult = 7, // No syntax: result slot
   } convention = kConventionUnspec;
@@ -128,8 +128,6 @@ struct ParsedArgument {
   ExprNode *initExpr = nullptr;
   // If this is a ref convention, this specifies the origin expression.
   ExprNode *refOriginExpr = nullptr;
-  // If this is an out convention, this specifies the result address space.
-  ExprNode *outAddressSpaceExpr = nullptr;
 
   /// Constraints specified with 'where' clauses on this parameter.
   SmallVector<ParsedConstraint> constraints;
