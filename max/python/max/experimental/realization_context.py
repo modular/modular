@@ -58,6 +58,7 @@ from typing import TYPE_CHECKING, Any, TypeVar, cast
 
 from max import _core, driver, engine
 from max._core.dialects import builtin, rmo
+from max._mlir_context import in_default_mlir_context
 from max.dtype import DType
 from max.experimental import _passes
 from max.experimental import functional as F
@@ -422,6 +423,8 @@ class EagerRealizationContext(RealizationContext):
         _passes.remove_unused_arguments(self.graph)
         return outputs, self.graph
 
+    # Lazy realize fires after the surrounding `with` exits — re-enter on bg threads.
+    @in_default_mlir_context
     async def realize_all(self) -> list[Tensor]:
         """Compiles and executes the computation graph, realizing all tensors.
 

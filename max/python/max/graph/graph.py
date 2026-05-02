@@ -37,7 +37,11 @@ from max._core.dialects import builtin, kgen
 from max._core.dialects import kgen as _kgen
 from max._core.dialects import mo as _mo
 from max._core.engine import InferenceSession as _InferenceSession
-from max._mlir_context import default_mlir_context
+from max._mlir_context import (
+    default_mlir_context,
+    ensure_default_mlir_context,
+    in_default_mlir_context,
+)
 from max.mlir.dialects import mo
 from mojo.paths import (
     _build_mojo_source_package,
@@ -461,6 +465,8 @@ class Graph:
 
     _subgraphs: dict[str, Graph] = {}
 
+    # Ensure the default MLIR context for bg-thread Graph construction.
+    @in_default_mlir_context
     def __init__(
         self,
         name: str,
@@ -786,11 +792,13 @@ class Graph:
 
     @contextlib.contextmanager
     def _enter(self) -> Generator[Graph]:
-        token = CURRENT_GRAPH.set(self)
-        try:
-            yield self
-        finally:
-            CURRENT_GRAPH.reset(token)
+        # Body of ``with graph:`` creates MLIR ops; ensure context on bg threads.
+        with ensure_default_mlir_context():
+            token = CURRENT_GRAPH.set(self)
+            try:
+                yield self
+            finally:
+                CURRENT_GRAPH.reset(token)
 
     @contextlib.contextmanager
     def _local_weights_and_chain(self):  # noqa: ANN202
