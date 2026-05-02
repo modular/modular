@@ -206,36 +206,24 @@ void ParserBase::skipUntilIndentation(
 /// of the signature will result in a parser failure anyways and the simple
 /// logic that is provided is capable of handling valid syntactic forms.
 
-/// Parse the optional '[exprlist]' production used by specifiers like
-/// 'ref [...]' or 'out [...]'.
-ParseResult
-ParserBase::parseOptionalSpecifierExprList(ExprNode *&expr,
-                                           StringRef specifierName) {
-  expr = nullptr;
-  if (!consumeIf(Token::l_square))
-    return success();
-
-  if (parseExpressionList(expr, /*stmtIndent=*/{}, Token::r_square) ||
-      parseToken(Token::r_square,
-                 "expected ']' in " + specifierName + " specifier"))
-    return failure();
-  return success();
-}
-
 /// Parse a 'ref [exprlist]' production into expr, with the expression set to
 /// the exprlist if specified, otherwise set to null if absent.  This returns
 /// failure on a parse error.
 ParseResult ParserBase::parseRefSpecifier(ExprNode *&expr,
                                           bool isOriginRequired) {
+  expr = nullptr;
   SMLoc loc;
   if (parseToken(Token::kw_ref, "expected 'ref' in ref specifier", &loc))
     return failure();
 
-  if (parseOptionalSpecifierExprList(expr, "ref"))
-    return failure();
-
-  if (!expr && isOriginRequired)
+  // Parse the [a, b, c] specification if present.
+  if (consumeIf(Token::l_square)) {
+    if (parseExpressionList(expr, /*stmtIndent=*/{}, Token::r_square) ||
+        parseToken(Token::r_square, "expected ']' in ref specifier"))
+      return failure();
+  } else if (isOriginRequired) {
     emitError(loc, "'ref' result requires an origin specifier");
+  }
 
   return success();
 }
