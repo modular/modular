@@ -102,12 +102,12 @@ def test[
     )
 
     # Allocate memory for all variables.
-    var q_ptr = List(length=q_size, fill=Scalar[qkv_type](0))
-    var k_ptr = List(length=k_size, fill=Scalar[qkv_type](0))
-    var v_ptr = List(length=v_size, fill=Scalar[qkv_type](0))
-    var mask_ptr = List(length=mask_size, fill=Scalar[mask_type](0))
-    var output_ptr = List(length=o_size, fill=Scalar[qkv_type](0))
-    var flash_output_ptr = List(length=o_size, fill=Scalar[qkv_type](0))
+    var q_ptr = ctx.enqueue_create_host_buffer[qkv_type](q_size)
+    var k_ptr = ctx.enqueue_create_host_buffer[qkv_type](k_size)
+    var v_ptr = ctx.enqueue_create_host_buffer[qkv_type](v_size)
+    var mask_ptr = ctx.enqueue_create_host_buffer[mask_type](mask_size)
+    var output_ptr = ctx.enqueue_create_host_buffer[qkv_type](o_size)
+    var flash_output_ptr = ctx.enqueue_create_host_buffer[qkv_type](o_size)
 
     # Q, K, V are randomly initialized.
     if use_adversarial_softmax_input:
@@ -154,11 +154,14 @@ def test[
                     ](i * depth + j)
 
     else:
-        rand(q_ptr)
-        rand(k_ptr)
-        rand(v_ptr)
+        rand(q_ptr.as_span())
+        rand(k_ptr.as_span())
+        rand(v_ptr.as_span())
 
-    # mask_ptr is already zero-initialized by List constructor.
+    # Zero-initialize mask_ptr (HostBuffer is uninitialized).
+    for i in range(mask_size):
+        mask_ptr[i] = Scalar[mask_type](0)
+
     # Construct buffers.
     comptime layout_4d = Layout.row_major[4]()
     var q = LayoutTensor[qkv_type, layout_4d](
@@ -359,6 +362,8 @@ def test[
         ctx.enqueue_copy(output_ptr, output_ref_device_ptr)
         _ = output_ref_device_ptr
 
+    ctx.synchronize()
+
     # This is useful for debugging.
 
     var rtol = 2e-2
@@ -378,12 +383,6 @@ def test[
     _ = v_device_ptr
     _ = mask_device_ptr
     _ = output_device_ptr
-    _ = flash_output_ptr^
-    _ = output_ptr^
-    _ = mask_ptr^
-    _ = v_ptr^
-    _ = k_ptr^
-    _ = q_ptr^
 
 
 def test_context_encoding[

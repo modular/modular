@@ -88,27 +88,28 @@ def test[
     var o_size = q_size
 
     # Allocate memory for all variables.
-    var q_ptr = List(length=q_size, fill=Scalar[qkv_type](0))
-    # K and V are filled with uniform constants for this test instead of being
-    # randomly initialized.
-    var k_ptr = List(length=k_size, fill=Scalar[qkv_type](0.25))
-    var v_ptr = List(length=v_size, fill=Scalar[qkv_type](0.5))
-    var output_ptr = List(length=o_size, fill=Scalar[qkv_type](0))
-    var flash_output_ptr = List(length=o_size, fill=Scalar[qkv_type](0))
-
+    var q_ptr = ctx.enqueue_create_host_buffer[qkv_type](q_size)
     # Q is randomly initialized.
-    rand(q_ptr)
+    rand(q_ptr.as_span())
+
+    var output_ptr = ctx.enqueue_create_host_buffer[qkv_type](o_size)
+    var flash_output_ptr = ctx.enqueue_create_host_buffer[qkv_type](o_size)
 
     # Device pointers
     var q_device_ptr = ctx.enqueue_create_buffer[qkv_type](q_size)
+
+    # K and V are filled with uniform constants for this test instead of being
+    # randomly initialized.
     var k_device_ptr = ctx.enqueue_create_buffer[qkv_type](k_size)
+    k_device_ptr.enqueue_fill(Scalar[qkv_type](0.25))
+
     var v_device_ptr = ctx.enqueue_create_buffer[qkv_type](v_size)
+    v_device_ptr.enqueue_fill(Scalar[qkv_type](0.5))
+
     var output_device_ptr = ctx.enqueue_create_buffer[qkv_type](o_size)
 
     # Copy from host to device
     ctx.enqueue_copy(q_device_ptr, q_ptr)
-    ctx.enqueue_copy(k_device_ptr, k_ptr)
-    ctx.enqueue_copy(v_device_ptr, v_ptr)
 
     # Construct device buffers.
     var q_device = TileTensor(
@@ -171,8 +172,6 @@ def test[
     ctx.enqueue_copy(flash_output_ptr, output_device_ptr)
 
     var output_ref_device_ptr = ctx.enqueue_create_buffer[qkv_type](o_size)
-    ctx.enqueue_copy(output_ref_device_ptr, output_ptr)
-
     var output_device_ref = TileTensor(
         output_ref_device_ptr,
         row_major(
@@ -198,6 +197,7 @@ def test[
 
     ctx.synchronize()
     ctx.enqueue_copy(output_ptr, output_ref_device_ptr)
+    ctx.synchronize()
 
     var rtol = 1e-2
     for s in range(seq_len):
@@ -268,11 +268,6 @@ def test[
     _ = v_device_ptr
     _ = output_device_ptr
     _ = output_ref_device_ptr
-    _ = flash_output_ptr^
-    _ = output_ptr^
-    _ = v_ptr^
-    _ = k_ptr^
-    _ = q_ptr^
 
 
 def main() raises:

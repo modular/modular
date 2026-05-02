@@ -74,13 +74,13 @@ def test_grouped_conv2d[
     )
 
     # Host memory
-    var input_host = List(length=in_size, fill=Scalar[dtype](0))
-    var filter_host = List(length=filter_size, fill=Scalar[dtype](0))
-    var out_gpu_host = List(length=out_size, fill=Scalar[dtype](0))
-    var out_ref_host = List(length=out_size, fill=Scalar[dtype](0))
+    var input_host = ctx.enqueue_create_host_buffer[dtype](in_size)
+    var filter_host = ctx.enqueue_create_host_buffer[dtype](filter_size)
+    var out_gpu_host = ctx.enqueue_create_host_buffer[dtype](out_size)
+    var out_ref_host = ctx.enqueue_create_host_buffer[dtype](out_size)
 
-    rand(input_host)
-    rand(filter_host)
+    rand(input_host.as_span())
+    rand(filter_host.as_span())
 
     # CPU reference (Naive2dConvolution takes 5D NDHWC shapes with D=1)
     Naive2dConvolution[dtype, dtype, dtype].run(
@@ -163,10 +163,6 @@ def test_grouped_conv2d[
     _ = input_dev^
     _ = filter_dev^
     _ = out_dev^
-    _ = out_ref_host^
-    _ = out_gpu_host^
-    _ = filter_host^
-    _ = input_host^
 
 
 def main() raises:

@@ -82,12 +82,15 @@ def test[
     var mask_size = num_heads * seq_len * num_keys
 
     # Allocate memory for all variables.
-    var q_ptr = List(length=q_size, fill=Scalar[qkv_type](0))
-    var k_ptr = List(length=k_size, fill=Scalar[qkv_type](0))
-    var v_ptr = List(length=v_size, fill=Scalar[qkv_type](0))
-    var mask_ptr = List(length=mask_size, fill=Scalar[mask_type](0))
-    var output_ptr = List(length=o_size, fill=Scalar[output_type](0))
-    var flash_output_ptr = List(length=o_size, fill=Scalar[output_type](0))
+    var q_ptr = ctx.enqueue_create_host_buffer[qkv_type](q_size)
+    var k_ptr = ctx.enqueue_create_host_buffer[qkv_type](k_size)
+    var v_ptr = ctx.enqueue_create_host_buffer[qkv_type](v_size)
+    var mask_ptr = ctx.enqueue_create_host_buffer[mask_type](mask_size)
+    var output_ptr = ctx.enqueue_create_host_buffer[output_type](o_size)
+    var flash_output_ptr = ctx.enqueue_create_host_buffer[output_type](o_size)
+
+    for i in range(o_size):
+        output_ptr[i] = Scalar[output_type](0)
 
     # Construct mask buffer for causal mask initialization.
     comptime layout_4d = Layout.row_major[4]()
@@ -100,12 +103,12 @@ def test[
 
     # Initialize Q, K, V in bf16, then roundtrip through qkv_type so the
     # naive bf16 reference sees identical values (matters for fp8).
-    var q_bf16_ptr = List(length=q_size, fill=BFloat16(0))
-    var k_bf16_ptr = List(length=k_size, fill=BFloat16(0))
-    var v_bf16_ptr = List(length=v_size, fill=BFloat16(0))
-    rand(q_bf16_ptr)
-    rand(k_bf16_ptr)
-    rand(v_bf16_ptr)
+    var q_bf16_ptr = ctx.enqueue_create_host_buffer[DType.bfloat16](q_size)
+    var k_bf16_ptr = ctx.enqueue_create_host_buffer[DType.bfloat16](k_size)
+    var v_bf16_ptr = ctx.enqueue_create_host_buffer[DType.bfloat16](v_size)
+    rand(q_bf16_ptr.as_span())
+    rand(k_bf16_ptr.as_span())
+    rand(v_bf16_ptr.as_span())
     for i in range(q_size):
         var val = q_bf16_ptr[i].cast[qkv_type]()
         q_ptr[i] = val
@@ -262,6 +265,7 @@ def test[
 
     ctx.synchronize()
     ctx.enqueue_copy(output_ptr, output_ref_device_ptr)
+    ctx.synchronize()
     _ = output_ref_device_ptr
     _ = q_ref_device_ptr
     _ = k_ref_device_ptr
@@ -288,15 +292,6 @@ def test[
     _ = v_device_ptr
     _ = mask_device_ptr
     _ = output_device_ptr
-    _ = v_bf16_ptr^
-    _ = k_bf16_ptr^
-    _ = q_bf16_ptr^
-    _ = flash_output_ptr^
-    _ = output_ptr^
-    _ = mask_ptr^
-    _ = v_ptr^
-    _ = k_ptr^
-    _ = q_ptr^
 
 
 comptime USE_FP8 = get_defined_bool["USE_FP8", False]()

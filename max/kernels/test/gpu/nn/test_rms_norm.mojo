@@ -48,11 +48,11 @@ def run_rms_norm_gpu[
     var cols = shape[rank - 1]
     var rows = shape.flattened_length() // cols
 
-    var data_h = List(length=rows * cols, fill=Scalar[dtype](0))
-    var res = List(length=rows * cols, fill=Scalar[dtype](0))
-    var gamma_h = List(length=cols, fill=Scalar[dtype](0))
+    var data_h = ctx.enqueue_create_host_buffer[dtype](rows * cols)
+    var res = ctx.enqueue_create_host_buffer[dtype](rows * cols)
+    var gamma_h = ctx.enqueue_create_host_buffer[dtype](cols)
 
-    rand[dtype](data_h)
+    rand[dtype](data_h.as_span())
 
     for i in range(cols):
         gamma_h[i] = (Float64(i + cols) / Float64(cols)).cast[dtype]()
@@ -107,9 +107,6 @@ def run_rms_norm_gpu[
 
     _ = data_d
     _ = gamma_d
-    _ = gamma_h^
-    _ = res^
-    _ = data_h^
 
 
 def main() raises:

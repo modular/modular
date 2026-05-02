@@ -34,7 +34,7 @@ def test_argsort[
     ascending: Bool = True,
 ](ctx: DeviceContext, N: Int) raises:
     # Allocate host memory
-    var input_host_ptr = List(length=N, fill=Scalar[dtype](0))
+    var input_host_ptr = ctx.enqueue_create_host_buffer[dtype](N)
     var input_host = TileTensor(
         input_host_ptr,
         row_major(Idx(N)),
@@ -63,12 +63,12 @@ def test_argsort[
     )
 
     # Copy results back
-    var indices_host_ptr = List(length=N, fill=Scalar[DType.int64](0))
+    var indices_host_ptr = ctx.enqueue_create_host_buffer[DType.int64](N)
     ctx.enqueue_copy(indices_host_ptr, device_indices)
     ctx.synchronize()
 
     # Test for correctness against CPU reference
-    var expected_indices_ptr = List(length=N, fill=Scalar[DType.int64](0))
+    var expected_indices_ptr = ctx.enqueue_create_host_buffer[DType.int64](N)
     var expected_indices = TileTensor(
         expected_indices_ptr,
         row_major(Idx(N)),
@@ -89,9 +89,6 @@ def test_argsort[
     # Cleanup device buffers
     _ = device_indices^
     _ = device_input^
-    _ = expected_indices_ptr^
-    _ = indices_host_ptr^
-    _ = input_host_ptr^
 
 
 def test_argsort_helper[

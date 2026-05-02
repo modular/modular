@@ -110,20 +110,22 @@ def test_mla_index_fp8_paged_variable_lengths[
 
     # Q tensor: [total_seq_len, num_heads, depth]
     var q_size = total_seq_len * num_heads * depth
-    var q_ptr = List(length=q_size, fill=Scalar[DType.float8_e4m3fn](0))
-    rand(q_ptr)
+    var q_ptr = ctx.enqueue_create_host_buffer[DType.float8_e4m3fn](q_size)
+    rand(q_ptr.as_span())
     var q_device = ctx.enqueue_create_buffer[DType.float8_e4m3fn](q_size)
     ctx.enqueue_copy(q_device, q_ptr)
 
     # Q scales: [total_seq_len, num_heads]
     var qs_size = total_seq_len * num_heads
-    var qs_ptr = List(length=qs_size, fill=Scalar[DType.float32](0))
-    rand(qs_ptr)
+    var qs_ptr = ctx.enqueue_create_host_buffer[DType.float32](qs_size)
+    rand(qs_ptr.as_span())
     var qs_device = ctx.enqueue_create_buffer[DType.float32](qs_size)
     ctx.enqueue_copy(qs_device, qs_ptr)
 
     # Input row offsets: [batch_size + 1] for ragged indexing (variable lengths)
-    var input_row_offsets_ptr = List(length=batch_size + 1, fill=UInt32(0))
+    var input_row_offsets_ptr = ctx.enqueue_create_host_buffer[DType.uint32](
+        batch_size + 1
+    )
     input_row_offsets_ptr[0] = UInt32(0)
     for i in range(batch_size):
         input_row_offsets_ptr[i + 1] = input_row_offsets_ptr[i] + UInt32(
@@ -135,7 +137,9 @@ def test_mla_index_fp8_paged_variable_lengths[
     ctx.enqueue_copy(input_row_offsets_device, input_row_offsets_ptr)
 
     # Cache lengths: [batch_size] - variable cached tokens per sequence
-    var cache_lengths_ptr = List(length=batch_size, fill=UInt32(0))
+    var cache_lengths_ptr = ctx.enqueue_create_host_buffer[DType.uint32](
+        batch_size
+    )
     for i in range(batch_size):
         cache_lengths_ptr[i] = UInt32(cache_lens[i])
     var cache_lengths_device = ctx.enqueue_create_buffer[DType.uint32](
@@ -231,7 +235,7 @@ def test_mla_index_fp8_paged_variable_lengths[
     # Dense output: [total_seq_len, top_k]
     var total_output_size = total_seq_len * top_k
 
-    var o_ptr = List(length=total_output_size, fill=Scalar[DType.int32](0))
+    var o_ptr = ctx.enqueue_create_host_buffer[DType.int32](total_output_size)
     var o_device = ctx.enqueue_create_buffer[DType.int32](total_output_size)
 
     var q_tile = TileTensor(
@@ -344,11 +348,6 @@ def test_mla_index_fp8_paged_variable_lengths[
     _ = qs_device
     _ = input_row_offsets_device
     _ = o_device
-    _ = o_ptr^
-    _ = cache_lengths_ptr^
-    _ = input_row_offsets_ptr^
-    _ = qs_ptr^
-    _ = q_ptr^
 
 
 def main() raises:

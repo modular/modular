@@ -84,14 +84,16 @@ def test_flux_conv_layer[
     )
 
     # Host memory
-    var input_host_ptr = List(length=in_size, fill=Scalar[dtype](0))
-    var filter_host_ptr = List(length=filter_size, fill=Scalar[dtype](0))
-    var filter_nchw_host_ptr = List(length=filter_size, fill=Scalar[dtype](0))
-    var out_sm100_host_ptr = List(length=out_size, fill=Scalar[dtype](0))
-    var out_cudnn_host_ptr = List(length=out_size, fill=Scalar[dtype](0))
+    var input_host_ptr = ctx.enqueue_create_host_buffer[dtype](in_size)
+    var filter_host_ptr = ctx.enqueue_create_host_buffer[dtype](filter_size)
+    var filter_nchw_host_ptr = ctx.enqueue_create_host_buffer[dtype](
+        filter_size
+    )
+    var out_sm100_host_ptr = ctx.enqueue_create_host_buffer[dtype](out_size)
+    var out_cudnn_host_ptr = ctx.enqueue_create_host_buffer[dtype](out_size)
 
-    rand(input_host_ptr)
-    rand(filter_host_ptr)
+    rand(input_host_ptr.as_span())
+    rand(filter_host_ptr.as_span())
 
     # Transpose filter RSCF -> FCRS for cuDNN reference
     for r in range(R):
@@ -197,11 +199,6 @@ def test_flux_conv_layer[
     _ = filter_fcrs_dev^
     _ = out_sm100_dev^
     _ = out_cudnn_dev^
-    _ = out_cudnn_host_ptr^
-    _ = out_sm100_host_ptr^
-    _ = filter_nchw_host_ptr^
-    _ = filter_host_ptr^
-    _ = input_host_ptr^
 
 
 def main() raises:

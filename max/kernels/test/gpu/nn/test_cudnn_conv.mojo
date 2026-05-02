@@ -82,20 +82,20 @@ def test_conv_cudnn[
     )
 
     # Allocate host memory
-    var input_host_ptr = List(
-        length=input_dim_flattened, fill=Scalar[input_type](0)
+    var input_host_ptr = ctx.enqueue_create_host_buffer[input_type](
+        input_dim_flattened
     )
-    var filter_host_ptr = List(
-        length=filter_dim_flattened, fill=Scalar[filter_type](0)
+    var filter_host_ptr = ctx.enqueue_create_host_buffer[filter_type](
+        filter_dim_flattened
     )
-    var filter_nchw_host_ptr = List(
-        length=filter_dim_flattened, fill=Scalar[filter_type](0)
+    var filter_nchw_host_ptr = ctx.enqueue_create_host_buffer[filter_type](
+        filter_dim_flattened
     )
-    var output_ref_host_ptr = List(
-        length=output_dim_flattened, fill=Scalar[output_type](0)
+    var output_ref_host_ptr = ctx.enqueue_create_host_buffer[output_type](
+        output_dim_flattened
     )
-    var output_host_ptr = List(
-        length=output_dim_flattened, fill=Scalar[output_type](0)
+    var output_host_ptr = ctx.enqueue_create_host_buffer[output_type](
+        output_dim_flattened
     )
 
     # Create host TileTensors
@@ -216,11 +216,6 @@ def test_conv_cudnn[
     _ = filter_nchw_dev^
     _ = output_dev^
     _ = output_ref_dev^
-    _ = output_host_ptr^
-    _ = output_ref_host_ptr^
-    _ = filter_nchw_host_ptr^
-    _ = filter_host_ptr^
-    _ = input_host_ptr^
 
 
 def main() raises:

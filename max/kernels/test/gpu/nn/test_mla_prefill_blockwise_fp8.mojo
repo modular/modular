@@ -95,23 +95,27 @@ def test_prefill[
         * (cache_depth // scale_block_size)
     )
 
-    var q_ptr = List(length=q_size, fill=Scalar[qkv_type](0))
-    var k_ptr = List(length=k_size, fill=Scalar[qkv_type](0))
-    var v_ptr = List(length=v_size, fill=Scalar[qkv_type](0))
-    var o_ptr = List(length=o_size, fill=Scalar[qkv_type](0))
-    var cache_ptr = List(length=cache_size, fill=Scalar[k_rope_type](0))
-    var cache_sf_ptr = List(length=cache_sf_size, fill=Scalar[sf_dtype](0))
+    var q_ptr = ctx.enqueue_create_host_buffer[qkv_type](q_size)
+    var k_ptr = ctx.enqueue_create_host_buffer[qkv_type](k_size)
+    var v_ptr = ctx.enqueue_create_host_buffer[qkv_type](v_size)
+    var o_ptr = ctx.enqueue_create_host_buffer[qkv_type](o_size)
+    var cache_ptr = ctx.enqueue_create_host_buffer[k_rope_type](cache_size)
+    var cache_sf_ptr = ctx.enqueue_create_host_buffer[sf_dtype](cache_sf_size)
 
     # Q, K, V, cache are randomly initialized.
-    randn(q_ptr)
-    randn(k_ptr)
-    randn(v_ptr)
-    randn(cache_ptr)
-    randn(cache_sf_ptr)
+    randn(q_ptr.as_span())
+    randn(k_ptr.as_span())
+    randn(v_ptr.as_span())
+    randn(cache_ptr.as_span())
+    randn(cache_sf_ptr.as_span())
 
     # input row offsets and cache row offsets
-    var input_row_offsets = List(length=batch_size + 1, fill=UInt32(0))
-    var cache_row_offsets = List(length=batch_size + 1, fill=UInt32(0))
+    var input_row_offsets = ctx.enqueue_create_host_buffer[DType.uint32](
+        batch_size + 1
+    )
+    var cache_row_offsets = ctx.enqueue_create_host_buffer[DType.uint32](
+        batch_size + 1
+    )
     for i in range(batch_size):
         input_row_offsets[i] = UInt32(i * seq_len)
         cache_row_offsets[i] = UInt32(i * num_keys)
@@ -258,17 +262,14 @@ def test_prefill[
     ctx.synchronize()
     ctx.enqueue_copy(o_ptr, output_device_ptr)
 
-    var k_ref_ptr = List(
-        length=batch_size * num_keys * num_heads * depth,
-        fill=Scalar[qkv_type](0),
+    var k_ref_ptr = ctx.enqueue_create_host_buffer[qkv_type](
+        batch_size * num_keys * num_heads * depth
     )
-    var v_ref_ptr = List(
-        length=batch_size * num_keys * num_heads * depth,
-        fill=Scalar[qkv_type](0),
+    var v_ref_ptr = ctx.enqueue_create_host_buffer[qkv_type](
+        batch_size * num_keys * num_heads * depth
     )
-    var output_ref_ptr = List(
-        length=batch_size * seq_len * num_heads * depth,
-        fill=Scalar[qkv_type](0),
+    var output_ref_ptr = ctx.enqueue_create_host_buffer[qkv_type](
+        batch_size * seq_len * num_heads * depth
     )
 
     # create reference K and V
@@ -470,17 +471,6 @@ def test_prefill[
     _ = k_ref_device_ptr
     _ = v_ref_device_ptr
     _ = output_ref_device_ptr
-    _ = output_ref_ptr^
-    _ = v_ref_ptr^
-    _ = k_ref_ptr^
-    _ = cache_row_offsets^
-    _ = input_row_offsets^
-    _ = o_ptr^
-    _ = cache_sf_ptr^
-    _ = cache_ptr^
-    _ = v_ptr^
-    _ = k_ptr^
-    _ = q_ptr^
 
 
 def test_mla_prefill[

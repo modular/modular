@@ -80,14 +80,14 @@ def test_case_batched[
     var out_vals_shape = IndexList[2](batch_size, K)
     var out_idxs_shape = IndexList[2](batch_size, out_idx_len)
 
-    var in_host_ptr = List(
-        length=in_shape.flattened_length(), fill=Scalar[dtype](0)
+    var in_host_ptr = ctx.enqueue_create_host_buffer[dtype](
+        in_shape.flattened_length()
     )
-    var topk_vals_host_ptr = List(
-        length=out_vals_shape.flattened_length(), fill=Scalar[dtype](0)
+    var topk_vals_host_ptr = ctx.enqueue_create_host_buffer[dtype](
+        out_vals_shape.flattened_length()
     )
-    var topk_idxs_host_ptr = List(
-        length=out_idxs_shape.flattened_length(), fill=Scalar[out_idx_type](0)
+    var topk_idxs_host_ptr = ctx.enqueue_create_host_buffer[out_idx_type](
+        out_idxs_shape.flattened_length()
     )
 
     # Create LayoutTensor for fill_fn (required by function signature)
@@ -125,7 +125,9 @@ def test_case_batched[
     var K_device_buffer = ctx.enqueue_create_buffer[DType.int64](
         K_shape.flattened_length()
     )
-    var K_host_ptr = List(length=K_shape.flattened_length(), fill=Int64(0))
+    var K_host_ptr = ctx.enqueue_create_host_buffer[DType.int64](
+        K_shape.flattened_length()
+    )
     for i in range(batch_size):
         K_host_ptr[i] = Int64(K)
 
@@ -214,11 +216,11 @@ def test_case_batched[
 
     # ASSERT equality with CPU topk kernel reference
     comptime if not sampling:
-        var topk_vals_cpu_ptr = List(
-            length=out_vals_shape.flattened_length(), fill=Scalar[dtype](0)
+        var topk_vals_cpu_ptr = ctx.enqueue_create_host_buffer[dtype](
+            out_vals_shape.flattened_length()
         )
-        var topk_idxs_cpu_ptr = List(
-            length=out_vals_shape.flattened_length(), fill=Int64(0)
+        var topk_idxs_cpu_ptr = ctx.enqueue_create_host_buffer[DType.int64](
+            out_vals_shape.flattened_length()
         )
 
         # Create tile tensors for CPU reference
@@ -275,8 +277,6 @@ def test_case_batched[
                     topk_idxs_host_ptr[i],
                     topk_idxs_cpu_ptr[i].cast[out_idx_type](),
                 )
-        _ = topk_idxs_cpu_ptr^
-        _ = topk_vals_cpu_ptr^
 
     # Free device buffers
     _ = device_in^
@@ -288,10 +288,6 @@ def test_case_batched[
 
     comptime if DEBUG_BENCH:
         m.dump_report()
-    _ = K_host_ptr^
-    _ = topk_idxs_host_ptr^
-    _ = topk_vals_host_ptr^
-    _ = in_host_ptr^
 
 
 def test_case_multi_rank[
@@ -317,14 +313,14 @@ def test_case_multi_rank[
     out_idxs_shape[rank - 1] = out_idx_len
 
     # Allocate host memory
-    var in_host_ptr = List(
-        length=input_shape.flattened_length(), fill=Scalar[dtype](0)
+    var in_host_ptr = ctx.enqueue_create_host_buffer[dtype](
+        input_shape.flattened_length()
     )
-    var topk_vals_host_ptr = List(
-        length=out_vals_shape.flattened_length(), fill=Scalar[dtype](0)
+    var topk_vals_host_ptr = ctx.enqueue_create_host_buffer[dtype](
+        out_vals_shape.flattened_length()
     )
-    var topk_idxs_host_ptr = List(
-        length=out_idxs_shape.flattened_length(), fill=Scalar[out_idx_type](0)
+    var topk_idxs_host_ptr = ctx.enqueue_create_host_buffer[out_idx_type](
+        out_idxs_shape.flattened_length()
     )
 
     # Create LayoutTensor for fill_fn (required by function signature)
@@ -357,7 +353,9 @@ def test_case_multi_rank[
 
     # Create K buffers
     var K_shape = IndexList[1](batch_size)
-    var K_host_ptr = List(length=K_shape.flattened_length(), fill=Int64(0))
+    var K_host_ptr = ctx.enqueue_create_host_buffer[DType.int64](
+        K_shape.flattened_length()
+    )
     for i in range(batch_size):
         K_host_ptr[i] = Int64(K)
 
@@ -405,11 +403,11 @@ def test_case_multi_rank[
 
     # ASSERT equality with CPU topk kernel reference
     comptime if not sampling:
-        var topk_vals_cpu_ptr = List(
-            length=out_vals_shape.flattened_length(), fill=Scalar[dtype](0)
+        var topk_vals_cpu_ptr = ctx.enqueue_create_host_buffer[dtype](
+            out_vals_shape.flattened_length()
         )
-        var topk_idxs_cpu_ptr = List(
-            length=out_idxs_shape.flattened_length(), fill=Int64(0)
+        var topk_idxs_cpu_ptr = ctx.enqueue_create_host_buffer[DType.int64](
+            out_idxs_shape.flattened_length()
         )
 
         # Create tile tensors for CPU reference
@@ -444,18 +442,12 @@ def test_case_multi_rank[
                     topk_idxs_host_ptr[i],
                     topk_idxs_cpu_ptr[i].cast[out_idx_type](),
                 )
-        _ = topk_idxs_cpu_ptr^
-        _ = topk_vals_cpu_ptr^
 
     # Free device buffers
     _ = device_in^
     _ = device_out_vals^
     _ = device_out_idxs^
     _ = K_device_buffer^
-    _ = K_host_ptr^
-    _ = topk_idxs_host_ptr^
-    _ = topk_vals_host_ptr^
-    _ = in_host_ptr^
 
 
 @parameter

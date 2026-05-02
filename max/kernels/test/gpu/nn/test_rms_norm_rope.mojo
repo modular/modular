@@ -71,7 +71,6 @@ def compute_rms_norm_rope_ref[
             output_ref[r * cols + c] = (
                 normed_val * cos_val + rotated * sin_val
             ).cast[dtype]()
-        _ = normed^
 
 
 def run_rms_norm_rope_gpu[
@@ -82,12 +81,12 @@ def run_rms_norm_rope_gpu[
     var cols = shape[rank - 1]
     var rows = shape.flattened_length() // cols
 
-    var data_h = List(length=rows * cols, fill=Scalar[dtype](0))
-    var gamma_h = List(length=cols, fill=Scalar[dtype](0))
-    var cos_h = List(length=rows * cols, fill=Scalar[cos_sin_dtype](0))
-    var sin_h = List(length=rows * cols, fill=Scalar[cos_sin_dtype](0))
-    var result_gpu = List(length=rows * cols, fill=Scalar[dtype](0))
-    var result_ref = List(length=rows * cols, fill=Scalar[dtype](0))
+    var data_h = ctx.enqueue_create_host_buffer[dtype](rows * cols)
+    var gamma_h = ctx.enqueue_create_host_buffer[dtype](cols)
+    var cos_h = ctx.enqueue_create_host_buffer[cos_sin_dtype](rows * cols)
+    var sin_h = ctx.enqueue_create_host_buffer[cos_sin_dtype](rows * cols)
+    var result_gpu = ctx.enqueue_create_host_buffer[dtype](rows * cols)
+    var result_ref = ctx.enqueue_create_host_buffer[dtype](rows * cols)
 
     # Initialize with diverse deterministic values.
     for i in range(rows * cols):
@@ -184,12 +183,6 @@ def run_rms_norm_rope_gpu[
     _ = cos_d
     _ = sin_d
     _ = output_d
-    _ = result_ref^
-    _ = result_gpu^
-    _ = sin_h^
-    _ = cos_h^
-    _ = gamma_h^
-    _ = data_h^
 
 
 def main() raises:

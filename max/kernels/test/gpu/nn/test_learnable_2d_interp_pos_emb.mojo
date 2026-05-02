@@ -38,11 +38,11 @@ def test_no_interp_no_temporal[dtype: DType](ctx: DeviceContext) raises:
     comptime num_frames = 4
 
     # Allocate host buffers.
-    var x_ptr = List(length=L * dim, fill=Scalar[dtype](0))
-    var w_ptr = List(length=H * W * dim, fill=Scalar[dtype](0))
-    var g_ptr = List(length=N * 3, fill=Scalar[DType.int64](0))
-    var tw_ptr = List(length=num_frames * dim, fill=Scalar[DType.float32](0))
-    var out_ptr = List(length=L * dim, fill=Scalar[dtype](0))
+    var x_ptr = ctx.enqueue_create_host_buffer[dtype](L * dim)
+    var w_ptr = ctx.enqueue_create_host_buffer[dtype](H * W * dim)
+    var g_ptr = ctx.enqueue_create_host_buffer[DType.int64](N * 3)
+    var tw_ptr = ctx.enqueue_create_host_buffer[DType.float32](num_frames * dim)
+    var out_ptr = ctx.enqueue_create_host_buffer[dtype](L * dim)
 
     # Fill via TileTensors.
     var x_tt = TileTensor(x_ptr, row_major[L, dim]())
@@ -110,11 +110,6 @@ def test_no_interp_no_temporal[dtype: DType](ctx: DeviceContext) raises:
                     atol=1e-5,
                     msg="no_interp pos=" + String(pos) + " d=" + String(d),
                 )
-    _ = out_ptr^
-    _ = tw_ptr^
-    _ = g_ptr^
-    _ = w_ptr^
-    _ = x_ptr^
 
 
 def test_no_interp_with_temporal[dtype: DType](ctx: DeviceContext) raises:
@@ -127,11 +122,16 @@ def test_no_interp_with_temporal[dtype: DType](ctx: DeviceContext) raises:
     comptime L = t_val * H * W
     comptime num_frames = 4
 
-    var x_ptr = List(length=L * dim, fill=Scalar[dtype](0))
-    var w_ptr = List(length=H * W * dim, fill=Scalar[dtype](0))
-    var g_ptr = List(length=N * 3, fill=Scalar[DType.int64](0))
-    var tw_ptr = List(length=num_frames * dim, fill=Scalar[DType.float32](0))
-    var out_ptr = List(length=L * dim, fill=Scalar[dtype](0))
+    var x_ptr = ctx.enqueue_create_host_buffer[dtype](L * dim)
+    var w_ptr = ctx.enqueue_create_host_buffer[dtype](H * W * dim)
+    var g_ptr = ctx.enqueue_create_host_buffer[DType.int64](N * 3)
+    var tw_ptr = ctx.enqueue_create_host_buffer[DType.float32](num_frames * dim)
+    var out_ptr = ctx.enqueue_create_host_buffer[dtype](L * dim)
+
+    # x_ptr is consumed by the kernel as input; zero-init since the test
+    # doesn't fill it explicitly.
+    for i in range(L * dim):
+        x_ptr[i] = Scalar[dtype](0)
 
     # var x_tt = TileTensor(x_ptr, row_major[L, dim]())
     var w_tt = TileTensor(w_ptr, row_major[H, W, dim]())
@@ -200,11 +200,6 @@ def test_no_interp_with_temporal[dtype: DType](ctx: DeviceContext) raises:
                         + " d="
                         + String(d),
                     )
-    _ = out_ptr^
-    _ = tw_ptr^
-    _ = g_ptr^
-    _ = w_ptr^
-    _ = x_ptr^
 
 
 def test_bicubic_constant_field[dtype: DType](ctx: DeviceContext) raises:
@@ -218,11 +213,16 @@ def test_bicubic_constant_field[dtype: DType](ctx: DeviceContext) raises:
     comptime L = h_out * w_out
     comptime num_frames = 4
 
-    var x_ptr = List(length=L * dim, fill=Scalar[dtype](0))
-    var w_ptr = List(length=H * W * dim, fill=Scalar[dtype](0))
-    var g_ptr = List(length=N * 3, fill=Scalar[DType.int64](0))
-    var tw_ptr = List(length=num_frames * dim, fill=Scalar[DType.float32](0))
-    var out_ptr = List(length=L * dim, fill=Scalar[dtype](0))
+    var x_ptr = ctx.enqueue_create_host_buffer[dtype](L * dim)
+    var w_ptr = ctx.enqueue_create_host_buffer[dtype](H * W * dim)
+    var g_ptr = ctx.enqueue_create_host_buffer[DType.int64](N * 3)
+    var tw_ptr = ctx.enqueue_create_host_buffer[DType.float32](num_frames * dim)
+    var out_ptr = ctx.enqueue_create_host_buffer[dtype](L * dim)
+
+    # x_ptr is consumed by the kernel as input; zero-init since the test
+    # doesn't fill it explicitly.
+    for i in range(L * dim):
+        x_ptr[i] = Scalar[dtype](0)
 
     # var x_tt = TileTensor(x_ptr, row_major[L, dim]())
     var w_tt = TileTensor(w_ptr, row_major[H, W, dim]())
@@ -279,11 +279,6 @@ def test_bicubic_constant_field[dtype: DType](ctx: DeviceContext) raises:
                 atol=1e-4,
                 msg="bicubic constant pos=" + String(pos) + " d=" + String(d),
             )
-    _ = out_ptr^
-    _ = tw_ptr^
-    _ = g_ptr^
-    _ = w_ptr^
-    _ = x_ptr^
 
 
 @always_inline
@@ -313,12 +308,12 @@ def test_multi_video[dtype: DType](ctx: DeviceContext) raises:
     # Video 2: t=1, h=3, w=5  -> 15  (interp)
     comptime L = 16 + 96 + 15
 
-    var x_ptr = List(length=L * dim, fill=Scalar[dtype](0))
-    var w_ptr = List(length=H * W * dim, fill=Scalar[dtype](0))
-    var g_ptr = List(length=N * 3, fill=Scalar[DType.int64](0))
-    var tw_ptr = List(length=num_frames * dim, fill=Scalar[DType.float32](0))
-    var out_ptr = List(length=L * dim, fill=Scalar[dtype](0))
-    var exp_ptr = List(length=L * dim, fill=Scalar[dtype](0))
+    var x_ptr = ctx.enqueue_create_host_buffer[dtype](L * dim)
+    var w_ptr = ctx.enqueue_create_host_buffer[dtype](H * W * dim)
+    var g_ptr = ctx.enqueue_create_host_buffer[DType.int64](N * 3)
+    var tw_ptr = ctx.enqueue_create_host_buffer[DType.float32](num_frames * dim)
+    var out_ptr = ctx.enqueue_create_host_buffer[dtype](L * dim)
+    var exp_ptr = ctx.enqueue_create_host_buffer[dtype](L * dim)
 
     var x_tt = TileTensor(x_ptr, row_major[L, dim]())
     var w_tt = TileTensor(w_ptr, row_major[H, W, dim]())
@@ -440,19 +435,13 @@ def test_multi_video[dtype: DType](ctx: DeviceContext) raises:
                 + " d="
                 + String(d),
             )
-    _ = exp_ptr^
-    _ = out_ptr^
-    _ = tw_ptr^
-    _ = g_ptr^
-    _ = w_ptr^
-    _ = x_ptr^
 
 
 def test_sincos_embed(ctx: DeviceContext) raises:
     """Verify sincos positional embedding values."""
     comptime dim = 4
     comptime num_frames = 2
-    var tw_ptr = List(length=num_frames * dim, fill=Scalar[DType.float32](0))
+    var tw_ptr = ctx.enqueue_create_host_buffer[DType.float32](num_frames * dim)
     var tw_tt = TileTensor(tw_ptr, row_major[num_frames, dim]())
 
     var half = dim // 2
@@ -482,7 +471,6 @@ def test_sincos_embed(ctx: DeviceContext) raises:
     assert_almost_equal(
         tw_tt[1, 3], cos(Float32(0.01)), atol=1e-6, msg="cos(omega_1)"
     )
-    _ = tw_ptr^
 
 
 def main() raises:

@@ -162,16 +162,16 @@ def test[
     var o_size = batch_size * num_heads * seq_len * v_depth
 
     # Allocate memory: BF16 reference Q and K, then quantize to FP8.
-    var q_bf16_ptr = List(length=q_size, fill=Scalar[output_type](0))
-    var q_fp8_ptr = List(length=q_size, fill=Scalar[q_type](0))
-    var q_bf16_dequant_ptr = List(length=q_size, fill=Scalar[output_type](0))
-    var k_fp8_ptr = List(length=k_size, fill=Scalar[kv_type](0))
-    var k_bf16_ptr = List(length=k_size, fill=Scalar[output_type](0))
-    var output_ptr = List(length=o_size, fill=Scalar[output_type](0))
-    var flash_output_ptr = List(length=o_size, fill=Scalar[output_type](0))
+    var q_bf16_ptr = ctx.enqueue_create_host_buffer[output_type](q_size)
+    var q_fp8_ptr = ctx.enqueue_create_host_buffer[q_type](q_size)
+    var q_bf16_dequant_ptr = ctx.enqueue_create_host_buffer[output_type](q_size)
+    var k_fp8_ptr = ctx.enqueue_create_host_buffer[kv_type](k_size)
+    var k_bf16_ptr = ctx.enqueue_create_host_buffer[output_type](k_size)
+    var output_ptr = ctx.enqueue_create_host_buffer[output_type](o_size)
+    var flash_output_ptr = ctx.enqueue_create_host_buffer[output_type](o_size)
 
     # Q: create as BF16, quantize to FP8, dequant back for reference
-    randn(q_bf16_ptr)
+    randn(q_bf16_ptr.as_span())
     host_quantize_bf16_to_fp8[bf16_t=output_type, fp8_t=q_type](
         q_bf16_ptr.unsafe_ptr(), q_fp8_ptr.unsafe_ptr(), q_size
     )
@@ -180,7 +180,7 @@ def test[
     )
 
     # K: create as FP8, dequant to BF16 for reference
-    randn(k_fp8_ptr)
+    randn(k_fp8_ptr.as_span())
     host_cast_fp8_to_bf16[fp8_t=kv_type, bf16_t=output_type](
         k_fp8_ptr.unsafe_ptr(), k_bf16_ptr.unsafe_ptr(), k_size
     )
@@ -402,8 +402,8 @@ def test[
     print("  Reference completed.")
 
     # Copy reference output to host
-    var ref_full_output_ptr = List(
-        length=ref_full_o_size, fill=Scalar[output_type](0)
+    var ref_full_output_ptr = ctx.enqueue_create_host_buffer[output_type](
+        ref_full_o_size
     )
     ctx.enqueue_copy(ref_full_output_ptr, output_ref_full_device_ptr)
     ctx.synchronize()
@@ -457,14 +457,6 @@ def test[
     _ = output_device_ptr
     _ = output_ref_device_ptr
     _ = output_ref_full_device_ptr
-    _ = ref_full_output_ptr^
-    _ = flash_output_ptr^
-    _ = output_ptr^
-    _ = k_bf16_ptr^
-    _ = k_fp8_ptr^
-    _ = q_bf16_dequant_ptr^
-    _ = q_fp8_ptr^
-    _ = q_bf16_ptr^
 
 
 def bench[
@@ -487,15 +479,15 @@ def bench[
     var o_size = batch_size * num_heads * seq_len * v_depth
 
     # Allocate and fill FP8 Q and K
-    var q_bf16_ptr = List(length=q_size, fill=Scalar[output_type](0))
-    var q_fp8_ptr = List(length=q_size, fill=Scalar[q_type](0))
-    var k_fp8_ptr = List(length=k_size, fill=Scalar[kv_type](0))
+    var q_bf16_ptr = ctx.enqueue_create_host_buffer[output_type](q_size)
+    var q_fp8_ptr = ctx.enqueue_create_host_buffer[q_type](q_size)
+    var k_fp8_ptr = ctx.enqueue_create_host_buffer[kv_type](k_size)
 
-    randn(q_bf16_ptr)
+    randn(q_bf16_ptr.as_span())
     host_quantize_bf16_to_fp8[bf16_t=output_type, fp8_t=q_type](
         q_bf16_ptr.unsafe_ptr(), q_fp8_ptr.unsafe_ptr(), q_size
     )
-    randn(k_fp8_ptr)
+    randn(k_fp8_ptr.as_span())
 
     # Device buffers
     var q_fp8_device_ptr = ctx.enqueue_create_buffer[q_type](q_size)
@@ -593,9 +585,6 @@ def bench[
     _ = q_fp8_device_ptr
     _ = k_fp8_device_ptr
     _ = output_device_ptr
-    _ = k_fp8_ptr^
-    _ = q_fp8_ptr^
-    _ = q_bf16_ptr^
 
 
 def test_decoding[

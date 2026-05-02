@@ -98,12 +98,15 @@ def test_attention[
     var mask_size = batch_size * num_heads * seq_len * num_keys
 
     # Allocate memory for all variables.
-    var q_ptr = List(length=q_size, fill=Scalar[qkv_type](0))
-    var k_ptr = List(length=k_size, fill=Scalar[qkv_type](0))
-    var v_ptr = List(length=v_size, fill=Scalar[qkv_type](0))
-    var mask_ptr = List(length=mask_size, fill=Scalar[mask_type](0))
-    var output_ptr = List(length=o_size, fill=Scalar[qkv_type](0))
-    var flash_output_ptr = List(length=o_size, fill=Scalar[qkv_type](0))
+    var q_ptr = ctx.enqueue_create_host_buffer[qkv_type](q_size)
+    var k_ptr = ctx.enqueue_create_host_buffer[qkv_type](k_size)
+    var v_ptr = ctx.enqueue_create_host_buffer[qkv_type](v_size)
+    var mask_ptr = ctx.enqueue_create_host_buffer[mask_type](mask_size)
+    var output_ptr = ctx.enqueue_create_host_buffer[qkv_type](o_size)
+    var flash_output_ptr = ctx.enqueue_create_host_buffer[qkv_type](o_size)
+
+    for i in range(o_size):
+        output_ptr[i] = Scalar[qkv_type](0)
 
     # Construct host mask buffer for initialization.
     comptime layout_4d = Layout.row_major[4]()
@@ -115,9 +118,9 @@ def test_attention[
     )
 
     # Q, K, V are randomly initialized.
-    rand(q_ptr)
-    rand(k_ptr)
-    rand(v_ptr)
+    rand(q_ptr.as_span())
+    rand(k_ptr.as_span())
+    rand(v_ptr.as_span())
 
     # Initialize causal mask.
     build_ChunkedCausalMask[local_window_size](
@@ -264,12 +267,6 @@ def test_attention[
     _ = v_device_ptr
     _ = mask_device_ptr
     _ = output_device_ptr
-    _ = flash_output_ptr^
-    _ = output_ptr^
-    _ = mask_ptr^
-    _ = v_ptr^
-    _ = k_ptr^
-    _ = q_ptr^
 
 
 def test_attention_suite(ctx: DeviceContext) raises:

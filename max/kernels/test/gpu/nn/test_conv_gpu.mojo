@@ -83,22 +83,22 @@ def test_conv3d_gpu[
     var output_size = comptime (output_layout.size())
 
     # allocate host memory and initialize with random data
-    var input_host = List(length=input_size, fill=Scalar[dtype](0))
-    var filter_host = List(length=filter_size, fill=Scalar[dtype](0))
-    var output_gpu_host = List(length=output_size, fill=Scalar[dtype](0))
-    var output_ref_host = List(length=output_size, fill=Scalar[dtype](0))
+    var input_host = ctx.enqueue_create_host_buffer[dtype](input_size)
+    var filter_host = ctx.enqueue_create_host_buffer[dtype](filter_size)
+    var output_gpu_host = ctx.enqueue_create_host_buffer[dtype](output_size)
+    var output_ref_host = ctx.enqueue_create_host_buffer[dtype](output_size)
 
     # initialize with random data
-    rand(input_host)
-    rand(filter_host)
+    rand(input_host.as_span())
+    rand(filter_host.as_span())
 
     # Run the CPU reference at the same precision the GPU kernel uses for
     # its accumulator (fp32 for bf16 inputs), then narrow back to `dtype`.
     # Without this, a bf16 reference reduction drifts far outside any
     # reasonable tolerance for non-trivial channel counts.
     comptime accum_dtype = DType.float32 if dtype == DType.bfloat16 else dtype
-    var output_ref_accum_host = List(
-        length=output_size, fill=Scalar[accum_dtype](0)
+    var output_ref_accum_host = ctx.enqueue_create_host_buffer[accum_dtype](
+        output_size
     )
     Naive2dConvolution[accum_dtype, dtype, dtype].run(
         output_ref_accum_host.unsafe_ptr(),
@@ -165,6 +165,7 @@ def test_conv3d_gpu[
     # copy result back to host, bringing it home
     ctx.synchronize()
     ctx.enqueue_copy(output_gpu_host, output_dev)
+    ctx.synchronize()
 
     # Verify results using assert_almost_equal
     try:
@@ -177,11 +178,6 @@ def test_conv3d_gpu[
         print("RESULT: FAIL - Elements do not match")
     finally:
         pass
-    _ = output_ref_host^
-    _ = output_gpu_host^
-    _ = filter_host^
-    _ = input_host^
-    _ = output_ref_accum_host^
 
 
 def test_conv3d_gpu_dispatch[
@@ -232,18 +228,18 @@ def test_conv3d_gpu_dispatch[
     var filter_size = comptime (filter_layout.size())
     var output_size = comptime (output_layout.size())
 
-    var input_host = List(length=input_size, fill=Scalar[dtype](0))
-    var filter_host = List(length=filter_size, fill=Scalar[dtype](0))
-    var output_gpu_host = List(length=output_size, fill=Scalar[dtype](0))
-    var output_ref_host = List(length=output_size, fill=Scalar[dtype](0))
+    var input_host = ctx.enqueue_create_host_buffer[dtype](input_size)
+    var filter_host = ctx.enqueue_create_host_buffer[dtype](filter_size)
+    var output_gpu_host = ctx.enqueue_create_host_buffer[dtype](output_size)
+    var output_ref_host = ctx.enqueue_create_host_buffer[dtype](output_size)
 
-    rand(input_host)
-    rand(filter_host)
+    rand(input_host.as_span())
+    rand(filter_host.as_span())
 
     # CPU reference at fp32 accumulator then narrow back (matches GPU).
     comptime accum_dtype = DType.float32 if dtype == DType.bfloat16 else dtype
-    var output_ref_accum_host = List(
-        length=output_size, fill=Scalar[accum_dtype](0)
+    var output_ref_accum_host = ctx.enqueue_create_host_buffer[accum_dtype](
+        output_size
     )
     Naive2dConvolution[accum_dtype, dtype, dtype].run(
         output_ref_accum_host.unsafe_ptr(),
@@ -325,11 +321,6 @@ def test_conv3d_gpu_dispatch[
         _ = input_dev^
         _ = filter_dev^
         _ = output_dev^
-    _ = output_ref_host^
-    _ = output_gpu_host^
-    _ = filter_host^
-    _ = input_host^
-    _ = output_ref_accum_host^
 
 
 def test_conv3d_im2col_multi_tile[
@@ -387,17 +378,17 @@ def test_conv3d_im2col_multi_tile[
         Layout.row_major(N, D_out, H_out, W_out, F).size()
     )
 
-    var input_host = List(length=input_size, fill=Scalar[dtype](0))
-    var filter_host = List(length=filter_size, fill=Scalar[dtype](0))
-    var output_gpu_host = List(length=output_size, fill=Scalar[dtype](0))
-    var output_ref_host = List(length=output_size, fill=Scalar[dtype](0))
+    var input_host = ctx.enqueue_create_host_buffer[dtype](input_size)
+    var filter_host = ctx.enqueue_create_host_buffer[dtype](filter_size)
+    var output_gpu_host = ctx.enqueue_create_host_buffer[dtype](output_size)
+    var output_ref_host = ctx.enqueue_create_host_buffer[dtype](output_size)
 
-    rand(input_host)
-    rand(filter_host)
+    rand(input_host.as_span())
+    rand(filter_host.as_span())
 
     comptime accum_dtype = DType.float32 if dtype == DType.bfloat16 else dtype
-    var output_ref_accum_host = List(
-        length=output_size, fill=Scalar[accum_dtype](0)
+    var output_ref_accum_host = ctx.enqueue_create_host_buffer[accum_dtype](
+        output_size
     )
     Naive2dConvolution[accum_dtype, dtype, dtype].run(
         output_ref_accum_host.unsafe_ptr(),
@@ -514,11 +505,6 @@ def test_conv3d_im2col_multi_tile[
         _ = input_dev^
         _ = filter_dev^
         _ = output_dev^
-    _ = output_ref_host^
-    _ = output_gpu_host^
-    _ = filter_host^
-    _ = input_host^
-    _ = output_ref_accum_host^
 
 
 def test_conv2d_im2col_multi_tile[
@@ -569,18 +555,18 @@ def test_conv2d_im2col_multi_tile[
     var filter_size = comptime (filter_layout.size())
     var output_size = comptime (Layout.row_major(N, H_out, W_out, F).size())
 
-    var input_host = List(length=input_size, fill=Scalar[dtype](0))
-    var filter_host = List(length=filter_size, fill=Scalar[dtype](0))
-    var output_gpu_host = List(length=output_size, fill=Scalar[dtype](0))
-    var output_ref_host = List(length=output_size, fill=Scalar[dtype](0))
+    var input_host = ctx.enqueue_create_host_buffer[dtype](input_size)
+    var filter_host = ctx.enqueue_create_host_buffer[dtype](filter_size)
+    var output_gpu_host = ctx.enqueue_create_host_buffer[dtype](output_size)
+    var output_ref_host = ctx.enqueue_create_host_buffer[dtype](output_size)
 
-    rand(input_host)
-    rand(filter_host)
+    rand(input_host.as_span())
+    rand(filter_host.as_span())
 
     # Naive2dConvolution internally uses 5-D NDHWC shapes with D=Q=1 for 2-D.
     comptime accum_dtype = DType.float32 if dtype == DType.bfloat16 else dtype
-    var output_ref_accum_host = List(
-        length=output_size, fill=Scalar[accum_dtype](0)
+    var output_ref_accum_host = ctx.enqueue_create_host_buffer[accum_dtype](
+        output_size
     )
     Naive2dConvolution[accum_dtype, dtype, dtype].run(
         output_ref_accum_host.unsafe_ptr(),
@@ -693,11 +679,6 @@ def test_conv2d_im2col_multi_tile[
         _ = input_dev^
         _ = filter_dev^
         _ = output_dev^
-    _ = output_ref_accum_host^
-    _ = output_ref_host^
-    _ = output_gpu_host^
-    _ = filter_host^
-    _ = input_host^
 
 
 def test_conv3d_1x1x1_matmul_direct[
@@ -738,17 +719,17 @@ def test_conv3d_1x1x1_matmul_direct[
     comptime output_layout_ = Layout.row_major(N, D, H, W, F)
     comptime output_size = output_layout_.size()
 
-    var input_host = List(length=input_size, fill=Scalar[dtype](0))
-    var filter_host = List(length=filter_size, fill=Scalar[dtype](0))
-    var output_gpu_host = List(length=output_size, fill=Scalar[dtype](0))
-    var output_ref_host = List(length=output_size, fill=Scalar[dtype](0))
+    var input_host = ctx.enqueue_create_host_buffer[dtype](input_size)
+    var filter_host = ctx.enqueue_create_host_buffer[dtype](filter_size)
+    var output_gpu_host = ctx.enqueue_create_host_buffer[dtype](output_size)
+    var output_ref_host = ctx.enqueue_create_host_buffer[dtype](output_size)
 
-    rand(input_host)
-    rand(filter_host)
+    rand(input_host.as_span())
+    rand(filter_host.as_span())
 
     comptime accum_dtype = DType.float32 if dtype == DType.bfloat16 else dtype
-    var output_ref_accum_host = List(
-        length=output_size, fill=Scalar[accum_dtype](0)
+    var output_ref_accum_host = ctx.enqueue_create_host_buffer[accum_dtype](
+        output_size
     )
     Naive2dConvolution[accum_dtype, dtype, dtype].run(
         output_ref_accum_host.unsafe_ptr(),
@@ -862,11 +843,6 @@ def test_conv3d_1x1x1_matmul_direct[
         _ = input_dev^
         _ = filter_dev^
         _ = output_dev^
-    _ = output_ref_accum_host^
-    _ = output_ref_host^
-    _ = output_gpu_host^
-    _ = filter_host^
-    _ = input_host^
 
 
 def main() raises:

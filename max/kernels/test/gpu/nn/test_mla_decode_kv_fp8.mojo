@@ -142,15 +142,15 @@ def test[
     var o_size = q_size
 
     # Allocate memory for all variables.
-    var q_ptr = List(length=q_size, fill=Scalar[q_type](0))
-    var k_ptr = List(length=k_size, fill=Scalar[kv_type](0))  # fp8 host
-    var k_bf16_ptr = List(length=k_size, fill=Scalar[q_type](0))
-    var output_ptr = List(length=o_size, fill=Scalar[q_type](0))
-    var flash_output_ptr = List(length=o_size, fill=Scalar[q_type](0))
+    var q_ptr = ctx.enqueue_create_host_buffer[q_type](q_size)
+    var k_ptr = ctx.enqueue_create_host_buffer[kv_type](k_size)  # fp8 host
+    var k_bf16_ptr = ctx.enqueue_create_host_buffer[q_type](k_size)
+    var output_ptr = ctx.enqueue_create_host_buffer[q_type](o_size)
+    var flash_output_ptr = ctx.enqueue_create_host_buffer[q_type](o_size)
 
     # Q, K, V are randomly initialized.
-    randn(q_ptr)
-    randn(k_ptr)
+    randn(q_ptr.as_span())
+    randn(k_ptr.as_span())
 
     host_cast_k_fp8_to_bf16[kv_fp8_t=kv_type, k_bf16_t=q_type](
         k_ptr.unsafe_ptr(),
@@ -332,6 +332,8 @@ def test[
         ctx.enqueue_copy(output_ptr, output_ref_device_ptr)
         _ = output_ref_device_ptr
 
+    ctx.synchronize()
+
     if o_size == 0:
         return
 
@@ -365,10 +367,6 @@ def test[
     _ = q_device_ptr
     _ = k_device_ptr
     _ = output_device_ptr
-    _ = flash_output_ptr^
-    _ = output_ptr^
-    _ = k_ptr^
-    _ = q_ptr^
 
 
 def test_decoding[

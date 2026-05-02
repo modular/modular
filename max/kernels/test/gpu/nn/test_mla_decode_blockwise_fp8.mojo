@@ -168,13 +168,13 @@ def run_test_blockwise_fp8[
         * kv_params.head_size
     )
 
-    var blocks_host = List(length=block_elems, fill=Scalar[kv_type](0))
+    var blocks_host = ctx.enqueue_create_host_buffer[kv_type](block_elems)
 
     # Generate FP8 data: generate bf16 first, then cast to fp8.
     # Use small stddev to keep values in FP8 range.
-    var blocks_bf16 = List(length=block_elems, fill=Scalar[q_type](0))
+    var blocks_bf16 = ctx.enqueue_create_host_buffer[q_type](block_elems)
     randn(
-        blocks_bf16,
+        blocks_bf16.as_span(),
         mean=0.0,
         standard_deviation=0.3,
     )
@@ -203,7 +203,9 @@ def run_test_blockwise_fp8[
         * head_dim_gran
     )
 
-    var scales_host = List(length=scales_elems, fill=Scalar[DType.float32](0))
+    var scales_host = ctx.enqueue_create_host_buffer[DType.float32](
+        scales_elems
+    )
 
     # Assign non-uniform per-block, per-token scales.
     # scale(token_global, block_idx) = palette[(token_global * 7 + block_idx) % 9]
@@ -251,14 +253,21 @@ def run_test_blockwise_fp8[
     # Step 1c: Build lookup table and zero out unused token slots
     # -----------------------------------------------------------------------
 
-    var cache_lengths_host = List(length=batch_size, fill=UInt32(0))
+    var cache_lengths_host = ctx.enqueue_create_host_buffer[DType.uint32](
+        batch_size
+    )
     for i in range(batch_size):
         cache_lengths_host[i] = UInt32(cache_lengths[i])
 
     # Match production: max_pages_per_batch covers cache_len + 1 tokens.
     var max_pages_per_batch = ceildiv(max_cache_len + q_max_seq_len, page_size)
     var lut_size = batch_size * max_pages_per_batch
-    var lookup_table_host = List(length=lut_size, fill=UInt32(0))
+    var lookup_table_host = ctx.enqueue_create_host_buffer[DType.uint32](
+        lut_size
+    )
+    # Zero-init: unused per-batch slots must be 0.
+    for i in range(lut_size):
+        lookup_table_host[i] = UInt32(0)
 
     var page_offset = 0
     for i in range(batch_size):
@@ -302,13 +311,15 @@ def run_test_blockwise_fp8[
     # Step 2: Q tensor (ragged: [total_q_tokens, num_heads, DEPTH])
     # -----------------------------------------------------------------------
     var q_size = total_q_tokens * num_heads * DEPTH
-    var q_host = List(length=q_size, fill=Scalar[q_type](0))
-    randn(q_host, mean=0.0, standard_deviation=0.5)
+    var q_host = ctx.enqueue_create_host_buffer[q_type](q_size)
+    randn(q_host.as_span(), mean=0.0, standard_deviation=0.5)
 
     # -----------------------------------------------------------------------
     # Step 3: input_row_offsets (batch_size + 1 elements)
     # -----------------------------------------------------------------------
-    var row_offsets_host = List(length=batch_size + 1, fill=UInt32(0))
+    var row_offsets_host = ctx.enqueue_create_host_buffer[DType.uint32](
+        batch_size + 1
+    )
     row_offsets_host[0] = UInt32(0)
     for i in range(batch_size):
         row_offsets_host[i + 1] = row_offsets_host[i] + UInt32(1)
@@ -317,7 +328,7 @@ def run_test_blockwise_fp8[
     # Step 4: Output tensor
     # -----------------------------------------------------------------------
     var out_size = total_q_tokens * num_heads * V_DEPTH
-    var out_host = List(length=out_size, fill=Scalar[q_type](0))
+    var out_host = ctx.enqueue_create_host_buffer[q_type](out_size)
 
     # -----------------------------------------------------------------------
     # Step 5: Copy everything to device
@@ -497,7 +508,7 @@ def run_test_blockwise_fp8[
 
         # Extract dequantized K for this batch from paged blocks + scales.
         var k_b_size = ref_num_keys * KV_NUM_HEADS * DEPTH
-        var k_b_host = List(length=k_b_size, fill=Scalar[q_type](0))
+        var k_b_host = ctx.enqueue_create_host_buffer[q_type](k_b_size)
 
         var page_base_b = 0
         for bi in range(b):
@@ -540,13 +551,13 @@ def run_test_blockwise_fp8[
 
         # Q for this batch: [1, 1, num_heads, depth]
         var q_b_size = 1 * num_heads * DEPTH
-        var q_b_host = List(length=q_b_size, fill=Scalar[q_type](0))
+        var q_b_host = ctx.enqueue_create_host_buffer[q_type](q_b_size)
         for i in range(q_b_size):
             q_b_host[i] = q_host[b * num_heads * DEPTH + i]
 
         # Reference output: [1, 1, num_heads, depth] (full depth)
         var ref_b_size = 1 * num_heads * DEPTH
-        var ref_b_host = List(length=ref_b_size, fill=Scalar[q_type](0))
+        var ref_b_host = ctx.enqueue_create_host_buffer[q_type](ref_b_size)
 
         # Copy to device
         var k_b_device = ctx.enqueue_create_buffer[q_type](k_b_size)
@@ -620,9 +631,6 @@ def run_test_blockwise_fp8[
         _ = k_b_device
         _ = q_b_device
         _ = ref_b_device
-        _ = ref_b_host^
-        _ = q_b_host^
-        _ = k_b_host^
 
     print(
         "  Verified:",
@@ -640,14 +648,6 @@ def run_test_blockwise_fp8[
     _ = q_device
     _ = row_offsets_device
     _ = out_device
-    _ = row_offsets_host^
-    _ = lookup_table_host^
-    _ = cache_lengths_host^
-    _ = scales_host^
-    _ = blocks_host^
-    _ = out_host^
-    _ = q_host^
-    _ = blocks_bf16^
 
 
 # ===-----------------------------------------------------------------------===#
@@ -713,10 +713,10 @@ def run_bench_blockwise_fp8[
         * kv_params.head_size
     )
 
-    var blocks_host = List(length=block_elems, fill=Scalar[kv_type](0))
-    var blocks_bf16 = List(length=block_elems, fill=Scalar[q_type](0))
+    var blocks_host = ctx.enqueue_create_host_buffer[kv_type](block_elems)
+    var blocks_bf16 = ctx.enqueue_create_host_buffer[q_type](block_elems)
     randn(
-        blocks_bf16,
+        blocks_bf16.as_span(),
         mean=0.0,
         standard_deviation=0.3,
     )
@@ -741,7 +741,10 @@ def run_bench_blockwise_fp8[
         * head_dim_gran
     )
     # Use uniform scale=1.0 for benchmark (perf is scale-value independent)
-    var scales_host = List(length=scales_elems, fill=Scalar[DType.float32](1.0))
+    var scales_host = ctx.enqueue_create_host_buffer[DType.float32](
+        scales_elems
+    )
+    scales_host.enqueue_fill(Float32(1.0))
 
     var _tok_stride = kv_params.num_heads * kv_params.head_size
     var _page_stride = (
@@ -752,13 +755,20 @@ def run_bench_blockwise_fp8[
         * kv_params.head_size
     )
 
-    var cache_lengths_host = List(length=batch_size, fill=UInt32(0))
+    var cache_lengths_host = ctx.enqueue_create_host_buffer[DType.uint32](
+        batch_size
+    )
     for i in range(batch_size):
         cache_lengths_host[i] = UInt32(cache_lengths[i])
 
     var max_pages_per_batch = ceildiv(max_cache_len + q_max_seq_len, page_size)
     var lut_size = batch_size * max_pages_per_batch
-    var lookup_table_host = List(length=lut_size, fill=UInt32(0))
+    var lookup_table_host = ctx.enqueue_create_host_buffer[DType.uint32](
+        lut_size
+    )
+    # Zero-init: unused per-batch slots must be 0.
+    for i in range(lut_size):
+        lookup_table_host[i] = UInt32(0)
 
     var page_offset = 0
     for i in range(batch_size):
@@ -786,18 +796,20 @@ def run_bench_blockwise_fp8[
 
     # Step 2: Q tensor
     var q_size = total_q_tokens * num_heads * DEPTH
-    var q_host = List(length=q_size, fill=Scalar[q_type](0))
-    randn(q_host, mean=0.0, standard_deviation=0.5)
+    var q_host = ctx.enqueue_create_host_buffer[q_type](q_size)
+    randn(q_host.as_span(), mean=0.0, standard_deviation=0.5)
 
     # Step 3: input_row_offsets
-    var row_offsets_host = List(length=batch_size + 1, fill=UInt32(0))
+    var row_offsets_host = ctx.enqueue_create_host_buffer[DType.uint32](
+        batch_size + 1
+    )
     row_offsets_host[0] = UInt32(0)
     for i in range(batch_size):
         row_offsets_host[i + 1] = row_offsets_host[i] + UInt32(1)
 
     # Step 4: Output tensor
     var out_size = total_q_tokens * num_heads * V_DEPTH
-    var out_host = List(length=out_size, fill=Scalar[q_type](0))
+    var out_host = ctx.enqueue_create_host_buffer[q_type](out_size)
 
     # Step 5: Copy to device
     var blocks_device = ctx.enqueue_create_buffer[kv_type](block_elems)
@@ -962,14 +974,6 @@ def run_bench_blockwise_fp8[
     _ = q_device
     _ = row_offsets_device
     _ = out_device
-    _ = row_offsets_host^
-    _ = lookup_table_host^
-    _ = cache_lengths_host^
-    _ = scales_host^
-    _ = blocks_host^
-    _ = out_host^
-    _ = q_host^
-    _ = blocks_bf16^
 
 
 # ===-----------------------------------------------------------------------===#

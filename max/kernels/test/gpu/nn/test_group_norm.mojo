@@ -62,10 +62,10 @@ def run_group_norm_gpu[
     var rows = N * num_groups
     var cols = group_size
 
-    var data_h = List(length=rows * cols, fill=Scalar[dtype](0))
-    var res = List(length=rows * cols, fill=Scalar[dtype](0))
-    var gamma_h = List(length=C, fill=Scalar[dtype](0))
-    var beta_h = List(length=C, fill=Scalar[dtype](0))
+    var data_h = ctx.enqueue_create_host_buffer[dtype](rows * cols)
+    var res = ctx.enqueue_create_host_buffer[dtype](rows * cols)
+    var gamma_h = ctx.enqueue_create_host_buffer[dtype](C)
+    var beta_h = ctx.enqueue_create_host_buffer[dtype](C)
 
     for i in range(rows * cols):
         data_h[i] = Scalar[dtype](i % 256)  # bounded range to avoid overflow
@@ -145,10 +145,6 @@ def run_group_norm_gpu[
     _ = data_d^
     _ = gamma_d^
     _ = beta_d^
-    _ = beta_h^
-    _ = gamma_h^
-    _ = res^
-    _ = data_h^
 
 
 def main() raises:

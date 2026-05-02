@@ -72,25 +72,27 @@ def test_prefill[
     var o_size = batch_size * seq_len * num_heads * kv_depth
     var cache_size = batch_size * num_keys * cache_num_heads * cache_depth
 
-    var q_scale_ptr = List(length=q_scale_size, fill=Scalar[scale_type](0))
-    var q_nope_ptr = List(length=q_nope_size, fill=Scalar[qkv_type](0))
-    var q_rope_ptr = List(length=q_rope_size, fill=Scalar[rope_type](0))
+    var q_scale_ptr = ctx.enqueue_create_host_buffer[scale_type](q_scale_size)
+    var q_nope_ptr = ctx.enqueue_create_host_buffer[qkv_type](q_nope_size)
+    var q_rope_ptr = ctx.enqueue_create_host_buffer[rope_type](q_rope_size)
 
-    var k_ptr = List(length=k_size, fill=Scalar[qkv_type](0))
-    var k_scale_ptr = List(length=k_scale_size, fill=Scalar[scale_type](0))
-    var v_ptr = List(length=v_size, fill=Scalar[qkv_type](0))
-    var cache_ptr = List(length=cache_size, fill=Scalar[rope_type](0))
-    var output_ptr = List(length=o_size, fill=Scalar[output_type](0))
+    var k_ptr = ctx.enqueue_create_host_buffer[qkv_type](k_size)
+    var k_scale_ptr = ctx.enqueue_create_host_buffer[scale_type](k_scale_size)
+    var v_ptr = ctx.enqueue_create_host_buffer[qkv_type](v_size)
+    var cache_ptr = ctx.enqueue_create_host_buffer[rope_type](cache_size)
+    var output_ptr = ctx.enqueue_create_host_buffer[output_type](o_size)
 
-    var q_bf16_ptr = List(length=q_size, fill=BFloat16(0))
-    var k_bf16_ptr = List(length=k_size, fill=BFloat16(0))
-    var v_bf16_ptr = List(length=v_size, fill=BFloat16(0))
-    var cache_bf16_ptr = List(length=cache_size, fill=BFloat16(0))
+    var q_bf16_ptr = ctx.enqueue_create_host_buffer[DType.bfloat16](q_size)
+    var k_bf16_ptr = ctx.enqueue_create_host_buffer[DType.bfloat16](k_size)
+    var v_bf16_ptr = ctx.enqueue_create_host_buffer[DType.bfloat16](v_size)
+    var cache_bf16_ptr = ctx.enqueue_create_host_buffer[DType.bfloat16](
+        cache_size
+    )
 
-    randn(q_bf16_ptr)
-    randn(k_bf16_ptr)
-    randn(v_bf16_ptr)
-    randn(cache_bf16_ptr)
+    randn(q_bf16_ptr.as_span())
+    randn(k_bf16_ptr.as_span())
+    randn(v_bf16_ptr.as_span())
+    randn(cache_bf16_ptr.as_span())
 
     # scale down the value to make it easier to verify
     var scale_factor = BFloat16(0.125)
@@ -105,8 +107,12 @@ def test_prefill[
         cache_bf16_ptr[i] *= scale_factor
 
     # input row offsets and cache row offsets
-    var input_row_offsets = List(length=batch_size + 1, fill=UInt32(0))
-    var cache_row_offsets = List(length=batch_size + 1, fill=UInt32(0))
+    var input_row_offsets = ctx.enqueue_create_host_buffer[DType.uint32](
+        batch_size + 1
+    )
+    var cache_row_offsets = ctx.enqueue_create_host_buffer[DType.uint32](
+        batch_size + 1
+    )
     for i in range(batch_size):
         input_row_offsets[i] = UInt32(i * seq_len)
         cache_row_offsets[i] = UInt32(i * num_keys)
@@ -426,17 +432,14 @@ def test_prefill[
         row_major(Coord(Idx(0))),
     )
 
-    var k_ref_host_ptr = List(
-        length=batch_size * num_keys * num_heads * depth,
-        fill=BFloat16(0),
+    var k_ref_host_ptr = ctx.enqueue_create_host_buffer[DType.bfloat16](
+        batch_size * num_keys * num_heads * depth
     )
-    var v_ref_host_ptr = List(
-        length=batch_size * num_keys * num_heads * depth,
-        fill=BFloat16(0),
+    var v_ref_host_ptr = ctx.enqueue_create_host_buffer[DType.bfloat16](
+        batch_size * num_keys * num_heads * depth
     )
-    var output_ref_host_ptr = List(
-        length=batch_size * seq_len * num_heads * depth,
-        fill=Scalar[output_type](0),
+    var output_ref_host_ptr = ctx.enqueue_create_host_buffer[output_type](
+        batch_size * seq_len * num_heads * depth
     )
 
     var k_ref_host = TileTensor(
@@ -465,9 +468,8 @@ def test_prefill[
     # Build a faithful reference using the SAME quantized data the kernel
     # receives, dequantized back to BF16. This tests the kernel's per-token
     # scaling logic rather than FP8 approximation quality.
-    var q_ref_host_ptr = List(
-        length=batch_size * seq_len * num_heads * depth,
-        fill=BFloat16(0),
+    var q_ref_host_ptr = ctx.enqueue_create_host_buffer[DType.bfloat16](
+        batch_size * seq_len * num_heads * depth
     )
     var q_ref_host = TileTensor(
         q_ref_host_ptr.unsafe_ptr(),
@@ -672,24 +674,6 @@ def test_prefill[
     _ = output_ref_device_ptr
     _ = input_row_offsets_device_ptr
     _ = cache_row_offsets_device_ptr
-    _ = cache_row_offsets^
-    _ = input_row_offsets^
-    _ = v_ref_host_ptr^
-    _ = k_ref_host_ptr^
-    _ = q_ref_host_ptr^
-    _ = output_ref_host_ptr^
-    _ = output_ptr^
-    _ = cache_bf16_ptr^
-    _ = cache_ptr^
-    _ = v_bf16_ptr^
-    _ = v_ptr^
-    _ = k_bf16_ptr^
-    _ = k_scale_ptr^
-    _ = k_ptr^
-    _ = q_bf16_ptr^
-    _ = q_scale_ptr^
-    _ = q_rope_ptr^
-    _ = q_nope_ptr^
 
 
 def test_mla_prefill_qkv_fp8[

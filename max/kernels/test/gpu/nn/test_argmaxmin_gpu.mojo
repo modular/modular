@@ -56,12 +56,14 @@ def test_argmaxmin_gpu[
         out_size *= out_shape[i]
 
     # Allocate host memory
-    var in_host_ptr = List(length=in_size, fill=Scalar[dtype](0))
+    var in_host_ptr = ctx.enqueue_create_host_buffer[dtype](in_size)
     var in_host = TileTensor(
         in_host_ptr,
         row_major(Coord(in_shape)),
     )
-    var out_idxs_host_ptr = List(length=out_size, fill=Scalar[output_type](0))
+    var out_idxs_host_ptr = ctx.enqueue_create_host_buffer[output_type](
+        out_size
+    )
     var _out_idxs_host = TileTensor(
         out_idxs_host_ptr,
         row_major(Coord(out_shape)),
@@ -103,7 +105,7 @@ def test_argmaxmin_gpu[
     ctx.synchronize()
 
     # Test for correctness against CPU reference
-    var out_idxs_cpu_ptr = List(length=out_size, fill=Scalar[DType.int64](0))
+    var out_idxs_cpu_ptr = ctx.enqueue_create_host_buffer[DType.int64](out_size)
     var out_idxs_cpu = TileTensor(
         out_idxs_cpu_ptr,
         row_major(Coord(out_shape)),
@@ -131,9 +133,6 @@ def test_argmaxmin_gpu[
     # Cleanup device buffers
     _ = device_in^
     _ = device_out_idxs^
-    _ = out_idxs_cpu_ptr^
-    _ = out_idxs_host_ptr^
-    _ = in_host_ptr^
 
 
 def _test_argmaxmin_gpu_helper_2[

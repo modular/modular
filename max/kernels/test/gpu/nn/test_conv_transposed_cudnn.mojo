@@ -83,9 +83,9 @@ def test_conv_transposed_cudnn[
     ]()
 
     # Allocate host memory for NHWC tensors
-    var input_host_ptr = List(length=input_size, fill=Scalar[dtype](0))
-    var filter_host_ptr = List(length=filter_size, fill=Scalar[dtype](0))
-    var output_ref_host_ptr = List(length=output_size, fill=Scalar[dtype](0))
+    var input_host_ptr = ctx.enqueue_create_host_buffer[dtype](input_size)
+    var filter_host_ptr = ctx.enqueue_create_host_buffer[dtype](filter_size)
+    var output_ref_host_ptr = ctx.enqueue_create_host_buffer[dtype](output_size)
 
     # Create host TileTensors for NHWC
     var input_host = TileTensor(input_host_ptr, input_layout)
@@ -130,14 +130,14 @@ def test_conv_transposed_cudnn[
     # -------------------------------------------------------------
 
     # Allocate host memory for NCHW tensors (for cuDNN)
-    var input_nchw_host_ptr = List(
-        length=input_nchw_size, fill=Scalar[dtype](0)
+    var input_nchw_host_ptr = ctx.enqueue_create_host_buffer[dtype](
+        input_nchw_size
     )
-    var filter_nchw_host_ptr = List(
-        length=filter_nchw_size, fill=Scalar[dtype](0)
+    var filter_nchw_host_ptr = ctx.enqueue_create_host_buffer[dtype](
+        filter_nchw_size
     )
-    var output_nchw_host_ptr = List(
-        length=output_nchw_size, fill=Scalar[dtype](0)
+    var output_nchw_host_ptr = ctx.enqueue_create_host_buffer[dtype](
+        output_nchw_size
     )
 
     # Create host TileTensors for NCHW
@@ -213,12 +213,6 @@ def test_conv_transposed_cudnn[
     _ = d_input^
     _ = d_filter^
     _ = d_output^
-    _ = output_nchw_host_ptr^
-    _ = filter_nchw_host_ptr^
-    _ = input_nchw_host_ptr^
-    _ = output_ref_host_ptr^
-    _ = filter_host_ptr^
-    _ = input_host_ptr^
 
 
 def main() raises:

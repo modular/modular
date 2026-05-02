@@ -101,10 +101,13 @@ def test[
     var o_size = q_size
 
     # Allocate memory for all variables.
-    var q_ptr = List(length=q_size, fill=Scalar[qkv_type](0))
-    var k_ptr = List(length=k_size, fill=Scalar[qkv_type](0))
-    var output_ptr = List(length=o_size, fill=Scalar[output_type](0))
-    var flash_output_ptr = List(length=o_size, fill=Scalar[output_type](0))
+    var q_ptr = ctx.enqueue_create_host_buffer[qkv_type](q_size)
+    var k_ptr = ctx.enqueue_create_host_buffer[qkv_type](k_size)
+    var output_ptr = ctx.enqueue_create_host_buffer[output_type](o_size)
+    var flash_output_ptr = ctx.enqueue_create_host_buffer[output_type](o_size)
+
+    for i in range(o_size):
+        output_ptr[i] = Scalar[output_type](0)
 
     # Q, K, V are randomly initialized.
     if use_index_input:
@@ -123,8 +126,8 @@ def test[
                     ](i * depth + j).cast[qkv_type]()
 
     else:
-        randn(q_ptr)
-        randn(k_ptr)
+        randn(q_ptr.as_span())
+        randn(k_ptr.as_span())
 
     # Device pointers
     var q_device_ptr = ctx.enqueue_create_buffer[qkv_type](q_size)
@@ -256,6 +259,8 @@ def test[
         ctx.enqueue_copy(output_ptr, output_ref_device_ptr)
         _ = output_ref_device_ptr
 
+    ctx.synchronize()
+
     if o_size == 0:
         return
 
@@ -288,10 +293,6 @@ def test[
     _ = q_device_ptr
     _ = k_device_ptr
     _ = output_device_ptr
-    _ = flash_output_ptr^
-    _ = output_ptr^
-    _ = k_ptr^
-    _ = q_ptr^
 
 
 def test_prefill[
@@ -338,21 +339,25 @@ def test_prefill[
     var o_size = batch_size * seq_len * num_heads * kv_depth
     var cache_size = batch_size * num_keys * cache_num_heads * cache_depth
 
-    var q_ptr = List(length=q_size, fill=Scalar[qkv_type](0))
-    var k_ptr = List(length=k_size, fill=Scalar[qkv_type](0))
-    var v_ptr = List(length=v_size, fill=Scalar[qkv_type](0))
-    var cache_ptr = List(length=cache_size, fill=Scalar[k_rope_type](0))
-    var output_ptr = List(length=o_size, fill=Scalar[output_type](0))
+    var q_ptr = ctx.enqueue_create_host_buffer[qkv_type](q_size)
+    var k_ptr = ctx.enqueue_create_host_buffer[qkv_type](k_size)
+    var v_ptr = ctx.enqueue_create_host_buffer[qkv_type](v_size)
+    var cache_ptr = ctx.enqueue_create_host_buffer[k_rope_type](cache_size)
+    var output_ptr = ctx.enqueue_create_host_buffer[output_type](o_size)
 
     # Q, K, V, cache are randomly initialized.
-    randn(q_ptr)
-    randn(k_ptr)
-    randn(v_ptr)
-    randn(cache_ptr)
+    randn(q_ptr.as_span())
+    randn(k_ptr.as_span())
+    randn(v_ptr.as_span())
+    randn(cache_ptr.as_span())
 
     # input row offsets and cache row offsets
-    var input_row_offsets = List(length=batch_size + 1, fill=UInt32(0))
-    var cache_row_offsets = List(length=batch_size + 1, fill=UInt32(0))
+    var input_row_offsets = ctx.enqueue_create_host_buffer[DType.uint32](
+        batch_size + 1
+    )
+    var cache_row_offsets = ctx.enqueue_create_host_buffer[DType.uint32](
+        batch_size + 1
+    )
     for i in range(batch_size):
         input_row_offsets[i] = UInt32(i * seq_len)
         cache_row_offsets[i] = UInt32(i * num_keys)
@@ -515,17 +520,14 @@ def test_prefill[
 
     # create reference K and V
     # unlike flare_mla_prefill, K_ref and V_ref each head is of size depth (not kv_depth)
-    var k_ref_ptr = List(
-        length=batch_size * num_keys * num_heads * depth,
-        fill=Scalar[qkv_type](0),
+    var k_ref_ptr = ctx.enqueue_create_host_buffer[qkv_type](
+        batch_size * num_keys * num_heads * depth
     )
-    var v_ref_ptr = List(
-        length=batch_size * num_keys * num_heads * depth,
-        fill=Scalar[qkv_type](0),
+    var v_ref_ptr = ctx.enqueue_create_host_buffer[qkv_type](
+        batch_size * num_keys * num_heads * depth
     )
-    var output_ref_ptr = List(
-        length=batch_size * seq_len * num_heads * depth,
-        fill=Scalar[output_type](0),
+    var output_ref_ptr = ctx.enqueue_create_host_buffer[output_type](
+        batch_size * seq_len * num_heads * depth
     )
 
     # create reference K and V
@@ -680,14 +682,6 @@ def test_prefill[
     _ = k_ref_device_ptr
     _ = v_ref_device_ptr
     _ = output_ref_device_ptr
-    _ = output_ref_ptr^
-    _ = v_ref_ptr^
-    _ = k_ref_ptr^
-    _ = output_ptr^
-    _ = cache_ptr^
-    _ = v_ptr^
-    _ = k_ptr^
-    _ = q_ptr^
 
 
 def test_decoding[

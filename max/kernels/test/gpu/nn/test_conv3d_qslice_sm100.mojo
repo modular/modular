@@ -91,17 +91,17 @@ def test_conv3d_qslice_direct[
     comptime output_layout_ = Layout.row_major(N, D_out, H_out, W_out, F)
     comptime output_size = output_layout_.size()
 
-    var input_host = List(length=input_size, fill=Scalar[dtype](0))
-    var filter_host = List(length=filter_size, fill=Scalar[dtype](0))
-    var output_gpu_host = List(length=output_size, fill=Scalar[dtype](0))
-    var output_ref_host = List(length=output_size, fill=Scalar[dtype](0))
+    var input_host = ctx.enqueue_create_host_buffer[dtype](input_size)
+    var filter_host = ctx.enqueue_create_host_buffer[dtype](filter_size)
+    var output_gpu_host = ctx.enqueue_create_host_buffer[dtype](output_size)
+    var output_ref_host = ctx.enqueue_create_host_buffer[dtype](output_size)
 
-    rand(input_host)
-    rand(filter_host)
+    rand(input_host.as_span())
+    rand(filter_host.as_span())
 
     comptime accum_dtype = DType.float32 if dtype == DType.bfloat16 else dtype
-    var output_ref_accum_host = List(
-        length=output_size, fill=Scalar[accum_dtype](0)
+    var output_ref_accum_host = ctx.enqueue_create_host_buffer[accum_dtype](
+        output_size
     )
     Naive2dConvolution[accum_dtype, dtype, dtype].run(
         output_ref_accum_host.unsafe_ptr(),
@@ -215,11 +215,6 @@ def test_conv3d_qslice_direct[
         _ = input_dev^
         _ = filter_dev^
         _ = output_dev^
-    _ = output_ref_host^
-    _ = output_gpu_host^
-    _ = filter_host^
-    _ = input_host^
-    _ = output_ref_accum_host^
 
 
 def main() raises:

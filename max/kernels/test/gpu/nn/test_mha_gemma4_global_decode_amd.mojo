@@ -57,12 +57,12 @@ def test_gemma4_global_decode(ctx: DeviceContext) raises:
     var output_size = q_size
     var mask_size = batch_size * num_heads * seq_len * num_keys
 
-    var q_ptr = List(length=q_size, fill=Scalar[dtype](0))
-    var k_ptr = List(length=kv_size, fill=Scalar[dtype](0))
-    var v_ptr = List(length=kv_size, fill=Scalar[dtype](0))
-    var mask_ptr = List(length=mask_size, fill=Scalar[mask_type](0))
-    var actual_ptr = List(length=output_size, fill=Scalar[dtype](0))
-    var expect_ptr = List(length=output_size, fill=Scalar[dtype](0))
+    var q_ptr = ctx.enqueue_create_host_buffer[dtype](q_size)
+    var k_ptr = ctx.enqueue_create_host_buffer[dtype](kv_size)
+    var v_ptr = ctx.enqueue_create_host_buffer[dtype](kv_size)
+    var mask_ptr = ctx.enqueue_create_host_buffer[mask_type](mask_size)
+    var actual_ptr = ctx.enqueue_create_host_buffer[dtype](output_size)
+    var expect_ptr = ctx.enqueue_create_host_buffer[dtype](output_size)
 
     for i in range(seq_len):
         for h in range(num_heads):
@@ -187,12 +187,6 @@ def test_gemma4_global_decode(ctx: DeviceContext) raises:
     _ = mask_device_ptr
     _ = actual_device_ptr
     _ = expect_device_ptr
-    _ = expect_ptr^
-    _ = actual_ptr^
-    _ = mask_ptr^
-    _ = v_ptr^
-    _ = k_ptr^
-    _ = q_ptr^
 
 
 def main() raises:

@@ -44,12 +44,14 @@ def test_bicubic_kernel[
     var input_dim_flattened = input_dim.static_product
     var output_dim_flattened = output_dim.static_product
 
-    var input_host_ptr = List(length=input_dim_flattened, fill=Scalar[dtype](0))
-    var output_host_ptr = List(
-        length=output_dim_flattened, fill=Scalar[dtype](0)
+    var input_host_ptr = ctx.enqueue_create_host_buffer[dtype](
+        input_dim_flattened
     )
-    var output_ref_host_ptr = List(
-        length=output_dim_flattened, fill=Scalar[dtype](0)
+    var output_host_ptr = ctx.enqueue_create_host_buffer[dtype](
+        output_dim_flattened
+    )
+    var output_ref_host_ptr = ctx.enqueue_create_host_buffer[dtype](
+        output_dim_flattened
     )
 
     var input_host = TileTensor(input_host_ptr, row_major(input_dim))
@@ -627,9 +629,6 @@ def test_bicubic_kernel[
     print(
         "--------------------------------asserted!!!--------------------------------"
     )
-    _ = output_ref_host_ptr^
-    _ = output_host_ptr^
-    _ = input_host_ptr^
 
 
 def test_large_image_gpu_launch[dtype: DType](ctx: DeviceContext) raises:
@@ -641,12 +640,14 @@ def test_large_image_gpu_launch[dtype: DType](ctx: DeviceContext) raises:
     comptime input_dim_flattened = input_dim.product()
     comptime output_dim_flattened = output_dim.product()
 
-    var input_host_ptr = List(length=input_dim_flattened, fill=Scalar[dtype](0))
-    var output_host_ptr = List(
-        length=output_dim_flattened, fill=Scalar[dtype](0)
+    var input_host_ptr = ctx.enqueue_create_host_buffer[dtype](
+        input_dim_flattened
     )
-    var output_gpu_host_ptr = List(
-        length=output_dim_flattened, fill=Scalar[dtype](0)
+    var output_host_ptr = ctx.enqueue_create_host_buffer[dtype](
+        output_dim_flattened
+    )
+    var output_gpu_host_ptr = ctx.enqueue_create_host_buffer[dtype](
+        output_dim_flattened
     )
 
     var input_host = TileTensor(input_host_ptr, input_dim)
@@ -713,9 +714,6 @@ def test_large_image_gpu_launch[dtype: DType](ctx: DeviceContext) raises:
 
     _ = input_dev^
     _ = output_dev^
-    _ = output_gpu_host_ptr^
-    _ = output_host_ptr^
-    _ = input_host_ptr^
 
 
 def main() raises:

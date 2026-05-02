@@ -124,7 +124,6 @@ def compute_reference_dynamic_scaling[
             var quantized = scaled_val * scale_factor_recip
             quantized = max(fp8_min, min(fp8_max, quantized))
             output_data[row * cols + col] = quantized.cast[out_dtype]()
-    _ = temp_storage^
 
 
 def test_dynamic[
@@ -144,12 +143,14 @@ def test_dynamic[
     var rows = input_size // cols
 
     # Allocate and initialize host memory
-    var in_host = List(length=input_size, fill=Scalar[in_dtype](0))
-    var out_host = List(length=input_size, fill=Scalar[out_dtype](0))
-    var gamma_host = List(length=cols, fill=Scalar[in_dtype](0))
-    var scales_host = List(length=rows, fill=Scalar[scales_dtype](0))
-    var expected_host = List(length=input_size, fill=Scalar[out_dtype](0))
-    var expected_scales_host = List(length=rows, fill=Scalar[scales_dtype](0))
+    var in_host = ctx.enqueue_create_host_buffer[in_dtype](input_size)
+    var out_host = ctx.enqueue_create_host_buffer[out_dtype](input_size)
+    var gamma_host = ctx.enqueue_create_host_buffer[in_dtype](cols)
+    var scales_host = ctx.enqueue_create_host_buffer[scales_dtype](rows)
+    var expected_host = ctx.enqueue_create_host_buffer[out_dtype](input_size)
+    var expected_scales_host = ctx.enqueue_create_host_buffer[scales_dtype](
+        rows
+    )
 
     # Initialize with diverse values to avoid FP8 saturation
     initialize_test_data(in_host.unsafe_ptr(), input_size)
@@ -253,12 +254,6 @@ def test_dynamic[
         ") ",
         shape,
     )
-    _ = expected_scales_host^
-    _ = expected_host^
-    _ = scales_host^
-    _ = gamma_host^
-    _ = out_host^
-    _ = in_host^
 
 
 def main() raises:

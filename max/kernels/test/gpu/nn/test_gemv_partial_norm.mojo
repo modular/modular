@@ -93,17 +93,21 @@ def test_gemv_partial_norm[
     var unnormed_shape = row_major(Coord(Idx(1), Idx(N_UNNORMED)))
     comptime gamma_shape = row_major(Idx[NNormedType.static_value]())
 
-    var a_host_ptr = List(length=M * K, fill=Scalar[a_type](0))
-    var b_host_ptr = List(length=N * K, fill=Scalar[a_type](0))
-    var gamma_host_ptr = List(length=N_NORMED, fill=Scalar[a_type](0))
-    var y_ref_host_ptr = List(length=M * N, fill=Scalar[c_type](0))
-    var normed_ref_ptr = List(length=M * N_NORMED, fill=Scalar[c_type](0))
-    var unnormed_ref_ptr = List(length=M * N_UNNORMED, fill=Scalar[c_type](0))
-    var normed_ours_ptr = List(length=M * N_NORMED, fill=Scalar[c_type](0))
-    var unnormed_ours_ptr = List(length=M * N_UNNORMED, fill=Scalar[c_type](0))
+    var a_host_ptr = ctx.enqueue_create_host_buffer[a_type](M * K)
+    var b_host_ptr = ctx.enqueue_create_host_buffer[a_type](N * K)
+    var gamma_host_ptr = ctx.enqueue_create_host_buffer[a_type](N_NORMED)
+    var y_ref_host_ptr = ctx.enqueue_create_host_buffer[c_type](M * N)
+    var normed_ref_ptr = ctx.enqueue_create_host_buffer[c_type](M * N_NORMED)
+    var unnormed_ref_ptr = ctx.enqueue_create_host_buffer[c_type](
+        M * N_UNNORMED
+    )
+    var normed_ours_ptr = ctx.enqueue_create_host_buffer[c_type](M * N_NORMED)
+    var unnormed_ours_ptr = ctx.enqueue_create_host_buffer[c_type](
+        M * N_UNNORMED
+    )
 
-    rand(a_host_ptr)
-    rand(b_host_ptr)
+    rand(a_host_ptr.as_span())
+    rand(b_host_ptr.as_span())
     for i in range(N_NORMED):
         gamma_host_ptr[i] = (
             Float64(0.75) + Float64(i) / Float64(N_NORMED) * Float64(0.5)
@@ -193,14 +197,6 @@ def test_gemv_partial_norm[
     _ = y_ref_dev^
     _ = normed_dev^
     _ = unnormed_dev^
-    _ = unnormed_ours_ptr^
-    _ = normed_ours_ptr^
-    _ = unnormed_ref_ptr^
-    _ = normed_ref_ptr^
-    _ = y_ref_host_ptr^
-    _ = gamma_host_ptr^
-    _ = b_host_ptr^
-    _ = a_host_ptr^
 
 
 def main() raises:

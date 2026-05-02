@@ -96,8 +96,8 @@ def merge[
     var right_size = end - mid
 
     # Create temporary arrays
-    var left_ptr = List(length=left_size, fill=Scalar[dtype](0))
-    var right_ptr = List(length=right_size, fill=Scalar[dtype](0))
+    var left_ptr = List[Scalar[dtype]](unsafe_uninit_length=left_size)
+    var right_ptr = List[Scalar[dtype]](unsafe_uninit_length=right_size)
 
     # Copy data to temporary arrays
     for i in range(left_size):
@@ -129,8 +129,6 @@ def merge[
         buf.raw_store(k, right_ptr[j])
         j += 1
         k += 1
-    _ = right_ptr^
-    _ = left_ptr^
 
 
 def merge_sort_recursive[
@@ -240,19 +238,19 @@ def test_case_sampling[
         _m = Bench()
 
     # Create input tensors
-    var in_logits_ptr = List(
-        length=batch_size * vocab_size, fill=Scalar[dtype](0)
+    var in_logits_ptr = ctx.enqueue_create_host_buffer[dtype](
+        batch_size * vocab_size
     )
     var in_logits = TileTensor(
         in_logits_ptr, row_major(Coord(Idx(batch_size), Idx(vocab_size)))
     )
-    var token_ids_ptr = List(
-        length=batch_size * 1, fill=Scalar[out_idx_type](0)
+    var token_ids_ptr = ctx.enqueue_create_host_buffer[out_idx_type](
+        batch_size * 1
     )
     var token_ids = TileTensor(
         token_ids_ptr, row_major(Coord(Idx(batch_size), Idx(Int(1))))
     )
-    var p_thresholds_ptr = List(length=batch_size, fill=Scalar[dtype](0))
+    var p_thresholds_ptr = ctx.enqueue_create_host_buffer[dtype](batch_size)
     var p_thresholds = TileTensor(
         p_thresholds_ptr, row_major(Coord(Idx(batch_size)))
     )
@@ -276,11 +274,11 @@ def test_case_sampling[
     ctx.enqueue_copy(device_p_thresholds_buf, p_thresholds.ptr)
 
     # Copy to CPU and perform softmax & sort for correctness testing
-    var in_logits_cpu_test_ptr = List(
-        length=batch_size * vocab_size, fill=Scalar[dtype](0)
+    var in_logits_cpu_test_ptr = ctx.enqueue_create_host_buffer[dtype](
+        batch_size * vocab_size
     )
-    var probs_cpu_test_ptr = List(
-        length=batch_size * vocab_size, fill=Scalar[dtype](0)
+    var probs_cpu_test_ptr = ctx.enqueue_create_host_buffer[dtype](
+        batch_size * vocab_size
     )
     var in_logits_cpu_test = TileTensor(
         in_logits_cpu_test_ptr,
@@ -392,11 +390,6 @@ def test_case_sampling[
 
     comptime if DEBUG_BENCH:
         _m.dump_report()
-    _ = probs_cpu_test_ptr^
-    _ = p_thresholds_ptr^
-    _ = token_ids_ptr^
-    _ = in_logits_ptr^
-    _ = in_logits_cpu_test_ptr^
 
 
 def test_toppminp_gpu[

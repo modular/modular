@@ -132,10 +132,12 @@ def test_conv2d_implicit_im2col[
     var out_size = batch * out_h * out_w * out_c
 
     # Host allocations
-    var act_host_ptr = List(length=act_size, fill=Scalar[act_type](0))
-    var filter_host_ptr = List(length=filter_size, fill=Scalar[filter_type](0))
-    var out_host_ptr = List(length=out_size, fill=Scalar[out_type](0))
-    var out_host_ref_ptr = List(length=out_size, fill=Scalar[out_type](0))
+    var act_host_ptr = ctx.enqueue_create_host_buffer[act_type](act_size)
+    var filter_host_ptr = ctx.enqueue_create_host_buffer[filter_type](
+        filter_size
+    )
+    var out_host_ptr = ctx.enqueue_create_host_buffer[out_type](out_size)
+    var out_host_ref_ptr = ctx.enqueue_create_host_buffer[out_type](out_size)
 
     # TileTensor shapes with dynamic dimensions
     var act_shape = row_major(
@@ -155,7 +157,7 @@ def test_conv2d_implicit_im2col[
         )
     )
 
-    var act_host = TileTensor(act_host_ptr.unsafe_ptr(), act_shape)
+    var act_host = TileTensor(act_host_ptr, act_shape)
 
     # Device allocations
     var act_device = ctx.enqueue_create_buffer[act_type](act_size)
@@ -169,8 +171,8 @@ def test_conv2d_implicit_im2col[
     var out_device_ref = ctx.enqueue_create_buffer[out_type](out_size)
 
     # Initialize with random data
-    rand(act_host_ptr)
-    rand(filter_host_ptr)
+    rand(act_host_ptr.as_span())
+    rand(filter_host_ptr.as_span())
 
     # Copy to device
     ctx.enqueue_copy(act_device, act_host_ptr)
@@ -191,9 +193,9 @@ def test_conv2d_implicit_im2col[
     var im2col_device = ctx.enqueue_create_buffer[act_type](im2col_size)
 
     # Perform im2col on host
-    var im2col_host_ptr = List(length=im2col_size, fill=Scalar[act_type](0))
+    var im2col_host_ptr = ctx.enqueue_create_host_buffer[act_type](im2col_size)
     var im2col_host = TileTensor(
-        im2col_host_ptr.unsafe_ptr(), row_major(Coord(Idx(Int(M)), Idx(Int(K))))
+        im2col_host_ptr, row_major(Coord(Idx(Int(M)), Idx(Int(K))))
     )
     im2col(im2col_host, act_host, problem)
     ctx.enqueue_copy(im2col_device, im2col_host_ptr)
@@ -231,13 +233,6 @@ def test_conv2d_implicit_im2col[
         rtol=rtol,
     )
     print("  PASSED\n")
-
-    # Clean up
-    _ = im2col_host_ptr^
-    _ = out_host_ref_ptr^
-    _ = out_host_ptr^
-    _ = filter_host_ptr^
-    _ = act_host_ptr^
 
 
 def test_conv2d_1sm[
@@ -335,10 +330,12 @@ def test_conv2d_1sm[
     var out_size = batch * out_h * out_w * out_c
 
     # Host allocations
-    var act_host_ptr = List(length=act_size, fill=Scalar[act_type](0))
-    var filter_host_ptr = List(length=filter_size, fill=Scalar[filter_type](0))
-    var out_host_ptr = List(length=out_size, fill=Scalar[out_type](0))
-    var out_host_ref_ptr = List(length=out_size, fill=Scalar[out_type](0))
+    var act_host_ptr = ctx.enqueue_create_host_buffer[act_type](act_size)
+    var filter_host_ptr = ctx.enqueue_create_host_buffer[filter_type](
+        filter_size
+    )
+    var out_host_ptr = ctx.enqueue_create_host_buffer[out_type](out_size)
+    var out_host_ref_ptr = ctx.enqueue_create_host_buffer[out_type](out_size)
 
     # TileTensor shapes with dynamic dimensions
     var act_shape = row_major(
@@ -358,7 +355,7 @@ def test_conv2d_1sm[
         )
     )
 
-    var act_host = TileTensor(act_host_ptr.unsafe_ptr(), act_shape)
+    var act_host = TileTensor(act_host_ptr, act_shape)
 
     # Device allocations
     var act_device = ctx.enqueue_create_buffer[act_type](act_size)
@@ -372,8 +369,8 @@ def test_conv2d_1sm[
     var out_device_ref = ctx.enqueue_create_buffer[out_type](out_size)
 
     # Initialize with random data
-    rand(act_host_ptr)
-    rand(filter_host_ptr)
+    rand(act_host_ptr.as_span())
+    rand(filter_host_ptr.as_span())
 
     # Copy to device
     ctx.enqueue_copy(act_device, act_host_ptr)
@@ -392,9 +389,9 @@ def test_conv2d_1sm[
     var im2col_size = M * K
     var im2col_device = ctx.enqueue_create_buffer[act_type](im2col_size)
 
-    var im2col_host_ptr = List(length=im2col_size, fill=Scalar[act_type](0))
+    var im2col_host_ptr = ctx.enqueue_create_host_buffer[act_type](im2col_size)
     var im2col_host = TileTensor(
-        im2col_host_ptr.unsafe_ptr(), row_major(Coord(Idx(Int(M)), Idx(Int(K))))
+        im2col_host_ptr, row_major(Coord(Idx(Int(M)), Idx(Int(K))))
     )
     im2col(im2col_host, act_host, problem)
     ctx.enqueue_copy(im2col_device, im2col_host_ptr)
@@ -435,13 +432,6 @@ def test_conv2d_1sm[
         rtol=rtol,
     )
     print("  PASSED\n")
-
-    # Clean up
-    _ = im2col_host_ptr^
-    _ = out_host_ref_ptr^
-    _ = out_host_ptr^
-    _ = filter_host_ptr^
-    _ = act_host_ptr^
 
 
 def test_conv2d_epilogue_lambda[
@@ -521,11 +511,13 @@ def test_conv2d_epilogue_lambda[
     var bias_size = out_c
 
     # Host allocations
-    var act_host_ptr = List(length=act_size, fill=Scalar[act_type](0))
-    var filter_host_ptr = List(length=filter_size, fill=Scalar[filter_type](0))
-    var out_host_ptr = List(length=out_size, fill=Scalar[out_type](0))
-    var out_host_ref_ptr = List(length=out_size, fill=Scalar[out_type](0))
-    var bias_host_ptr = List(length=bias_size, fill=Scalar[out_type](0))
+    var act_host_ptr = ctx.enqueue_create_host_buffer[act_type](act_size)
+    var filter_host_ptr = ctx.enqueue_create_host_buffer[filter_type](
+        filter_size
+    )
+    var out_host_ptr = ctx.enqueue_create_host_buffer[out_type](out_size)
+    var out_host_ref_ptr = ctx.enqueue_create_host_buffer[out_type](out_size)
+    var bias_host_ptr = ctx.enqueue_create_host_buffer[out_type](bias_size)
 
     # TileTensor shapes with dynamic dimensions
     var act_shape = row_major(
@@ -545,7 +537,7 @@ def test_conv2d_epilogue_lambda[
         )
     )
 
-    var act_host = TileTensor(act_host_ptr.unsafe_ptr(), act_shape)
+    var act_host = TileTensor(act_host_ptr, act_shape)
 
     # Device allocations
     var act_device = ctx.enqueue_create_buffer[act_type](act_size)
@@ -560,9 +552,9 @@ def test_conv2d_epilogue_lambda[
     var out_device_ref = ctx.enqueue_create_buffer[out_type](out_size)
 
     # Initialize with random data
-    rand(act_host_ptr)
-    rand(filter_host_ptr)
-    rand(bias_host_ptr)
+    rand(act_host_ptr.as_span())
+    rand(filter_host_ptr.as_span())
+    rand(bias_host_ptr.as_span())
 
     # Copy to device
     ctx.enqueue_copy(act_device, act_host_ptr)
@@ -616,9 +608,9 @@ def test_conv2d_epilogue_lambda[
     var im2col_size = M * K
     var im2col_device = ctx.enqueue_create_buffer[act_type](im2col_size)
 
-    var im2col_host_ptr = List(length=im2col_size, fill=Scalar[act_type](0))
+    var im2col_host_ptr = ctx.enqueue_create_host_buffer[act_type](im2col_size)
     var im2col_host = TileTensor(
-        im2col_host_ptr.unsafe_ptr(), row_major(Coord(Idx(Int(M)), Idx(Int(K))))
+        im2col_host_ptr, row_major(Coord(Idx(Int(M)), Idx(Int(K))))
     )
     im2col(im2col_host, act_host, problem)
     ctx.enqueue_copy(im2col_device, im2col_host_ptr)
@@ -663,14 +655,6 @@ def test_conv2d_epilogue_lambda[
         rtol=rtol,
     )
     print("  PASSED\n")
-
-    # Clean up
-    _ = im2col_host_ptr^
-    _ = bias_host_ptr^
-    _ = out_host_ref_ptr^
-    _ = out_host_ptr^
-    _ = filter_host_ptr^
-    _ = act_host_ptr^
 
 
 def test_conv2d_bias_fusion[
@@ -743,15 +727,15 @@ def test_conv2d_bias_fusion[
     var filter_size = out_c * filter_h * filter_w * in_c
     var out_size = batch * out_h * out_w * out_c
 
-    var act_host = List(length=act_size, fill=Scalar[dtype](0))
-    var filter_host = List(length=filter_size, fill=Scalar[dtype](0))
-    var bias_host = List(length=out_c, fill=Scalar[dtype](0))
-    var out_host = List(length=out_size, fill=Scalar[dtype](0))
-    var out_ref_host = List(length=out_size, fill=Scalar[dtype](0))
+    var act_host = ctx.enqueue_create_host_buffer[dtype](act_size)
+    var filter_host = ctx.enqueue_create_host_buffer[dtype](filter_size)
+    var bias_host = ctx.enqueue_create_host_buffer[dtype](out_c)
+    var out_host = ctx.enqueue_create_host_buffer[dtype](out_size)
+    var out_ref_host = ctx.enqueue_create_host_buffer[dtype](out_size)
 
-    rand(act_host)
-    rand(filter_host)
-    rand(bias_host)
+    rand(act_host.as_span())
+    rand(filter_host.as_span())
+    rand(bias_host.as_span())
 
     var act_dev = ctx.enqueue_create_buffer[dtype](act_size)
     var filter_dev = ctx.enqueue_create_buffer[dtype](filter_size)
@@ -831,11 +815,10 @@ def test_conv2d_bias_fusion[
         )
 
     # Reference: im2col + GEMM + bias (CPU bias add)
-    var act_host_nd = TileTensor(act_host.unsafe_ptr(), act_shape)
-    var im2col_host = List(length=M * K, fill=Scalar[dtype](0))
+    var act_host_nd = TileTensor(act_host, act_shape)
+    var im2col_host = ctx.enqueue_create_host_buffer[dtype](M * K)
     var im2col_host_nd = TileTensor(
-        im2col_host.unsafe_ptr(),
-        row_major(Coord(Idx(Int(M)), Idx(Int(K)))),
+        im2col_host, row_major(Coord(Idx(Int(M)), Idx(Int(K))))
     )
     im2col(im2col_host_nd, act_host_nd, problem)
     ctx.enqueue_copy(im2col_dev, im2col_host)
@@ -879,12 +862,6 @@ def test_conv2d_bias_fusion[
     _ = out_dev^
     _ = out_ref_dev^
     _ = im2col_dev^
-    _ = im2col_host^
-    _ = out_ref_host^
-    _ = out_host^
-    _ = bias_host^
-    _ = filter_host^
-    _ = act_host^
 
 
 def test_conv2d_residual_api[
@@ -961,11 +938,11 @@ def test_conv2d_residual_api[
     var out_size = batch * out_h * out_w * out_c
 
     # Host allocations
-    var act_host_ptr = List(length=act_size, fill=Scalar[dtype](0))
-    var filter_host_ptr = List(length=filter_size, fill=Scalar[dtype](0))
-    var out_host_ptr = List(length=out_size, fill=Scalar[dtype](0))
-    var out_host_ref_ptr = List(length=out_size, fill=Scalar[dtype](0))
-    var source_host_ptr = List(length=out_size, fill=Scalar[dtype](0))
+    var act_host_ptr = ctx.enqueue_create_host_buffer[dtype](act_size)
+    var filter_host_ptr = ctx.enqueue_create_host_buffer[dtype](filter_size)
+    var out_host_ptr = ctx.enqueue_create_host_buffer[dtype](out_size)
+    var out_host_ref_ptr = ctx.enqueue_create_host_buffer[dtype](out_size)
+    var source_host_ptr = ctx.enqueue_create_host_buffer[dtype](out_size)
 
     # TileTensor shapes with dynamic dimensions
     var act_shape = row_major(
@@ -985,7 +962,7 @@ def test_conv2d_residual_api[
         )
     )
 
-    var act_host = TileTensor(act_host_ptr.unsafe_ptr(), act_shape)
+    var act_host = TileTensor(act_host_ptr, act_shape)
 
     # Device allocations
     var act_device = ctx.enqueue_create_buffer[dtype](act_size)
@@ -1001,9 +978,9 @@ def test_conv2d_residual_api[
     var out_device_ref = ctx.enqueue_create_buffer[dtype](out_size)
 
     # Initialize with random data
-    rand(act_host_ptr)
-    rand(filter_host_ptr)
-    rand(source_host_ptr)
+    rand(act_host_ptr.as_span())
+    rand(filter_host_ptr.as_span())
+    rand(source_host_ptr.as_span())
 
     # Copy to device
     ctx.enqueue_copy(act_device, act_host_ptr)
@@ -1052,10 +1029,9 @@ def test_conv2d_residual_api[
     var im2col_size = M * K
     var im2col_device = ctx.enqueue_create_buffer[dtype](im2col_size)
 
-    var im2col_host_ptr = List(length=im2col_size, fill=Scalar[dtype](0))
+    var im2col_host_ptr = ctx.enqueue_create_host_buffer[dtype](im2col_size)
     var im2col_host = TileTensor(
-        im2col_host_ptr.unsafe_ptr(),
-        row_major(Coord(Idx(Int(M)), Idx(Int(K)))),
+        im2col_host_ptr, row_major(Coord(Idx(Int(M)), Idx(Int(K))))
     )
     im2col(im2col_host, act_host, problem)
     ctx.enqueue_copy(im2col_device, im2col_host_ptr)
@@ -1100,14 +1076,6 @@ def test_conv2d_residual_api[
         rtol=rtol,
     )
     print("  PASSED\n")
-
-    # Clean up
-    _ = im2col_host_ptr^
-    _ = source_host_ptr^
-    _ = out_host_ref_ptr^
-    _ = out_host_ptr^
-    _ = filter_host_ptr^
-    _ = act_host_ptr^
 
 
 def test_conv2d_problem_shape():
@@ -1220,13 +1188,13 @@ def test_conv_gpu_scale_epilogue[
 
     print("  ", name, sep="")
 
-    var input_host = List(length=in_size, fill=Scalar[dtype](0))
-    var filter_host = List(length=filter_size, fill=Scalar[dtype](0))
-    var out_epilogue_host = List(length=out_size, fill=Scalar[dtype](0))
-    var out_ref_host = List(length=out_size, fill=Scalar[dtype](0))
+    var input_host = ctx.enqueue_create_host_buffer[dtype](in_size)
+    var filter_host = ctx.enqueue_create_host_buffer[dtype](filter_size)
+    var out_epilogue_host = ctx.enqueue_create_host_buffer[dtype](out_size)
+    var out_ref_host = ctx.enqueue_create_host_buffer[dtype](out_size)
 
-    rand(input_host)
-    rand(filter_host)
+    rand(input_host.as_span())
+    rand(filter_host.as_span())
 
     var input_dev = ctx.enqueue_create_buffer[dtype](in_size)
     var filter_dev = ctx.enqueue_create_buffer[dtype](filter_size)
@@ -1318,10 +1286,6 @@ def test_conv_gpu_scale_epilogue[
     _ = filter_dev^
     _ = out_epilogue_dev^
     _ = out_ref_dev^
-    _ = out_ref_host^
-    _ = out_epilogue_host^
-    _ = filter_host^
-    _ = input_host^
 
 
 def test_conv_gpu_additive_epilogue[
@@ -1345,14 +1309,16 @@ def test_conv_gpu_additive_epilogue[
 
     print("  ", name, sep="")
 
-    var input_host = List(length=in_size, fill=Scalar[dtype](0))
-    var filter_host = List(length=filter_size, fill=Scalar[dtype](0))
-    var out_epilogue_host = List(length=out_size, fill=Scalar[dtype](0))
-    var out_ref_host = List(length=out_size, fill=Scalar[dtype](0))
-    var bias_host = List(length=out_size, fill=Scalar[dtype](1.0))
+    var input_host = ctx.enqueue_create_host_buffer[dtype](in_size)
+    var filter_host = ctx.enqueue_create_host_buffer[dtype](filter_size)
+    var out_epilogue_host = ctx.enqueue_create_host_buffer[dtype](out_size)
+    var out_ref_host = ctx.enqueue_create_host_buffer[dtype](out_size)
+    var bias_host = ctx.enqueue_create_host_buffer[dtype](out_size)
+    for i in range(out_size):
+        bias_host[i] = Scalar[dtype](1.0)
 
-    rand(input_host)
-    rand(filter_host)
+    rand(input_host.as_span())
+    rand(filter_host.as_span())
 
     var input_dev = ctx.enqueue_create_buffer[dtype](in_size)
     var filter_dev = ctx.enqueue_create_buffer[dtype](filter_size)
@@ -1448,11 +1414,6 @@ def test_conv_gpu_additive_epilogue[
     _ = filter_dev^
     _ = out_epilogue_dev^
     _ = out_ref_dev^
-    _ = bias_host^
-    _ = out_ref_host^
-    _ = out_epilogue_host^
-    _ = filter_host^
-    _ = input_host^
 
 
 def test_conv_gpu_residual[
@@ -1476,15 +1437,15 @@ def test_conv_gpu_residual[
 
     print("  ", name, sep="")
 
-    var input_host = List(length=in_size, fill=Scalar[dtype](0))
-    var filter_host = List(length=filter_size, fill=Scalar[dtype](0))
-    var source_host = List(length=out_size, fill=Scalar[dtype](0))
-    var out_residual_host = List(length=out_size, fill=Scalar[dtype](0))
-    var out_ref_host = List(length=out_size, fill=Scalar[dtype](0))
+    var input_host = ctx.enqueue_create_host_buffer[dtype](in_size)
+    var filter_host = ctx.enqueue_create_host_buffer[dtype](filter_size)
+    var source_host = ctx.enqueue_create_host_buffer[dtype](out_size)
+    var out_residual_host = ctx.enqueue_create_host_buffer[dtype](out_size)
+    var out_ref_host = ctx.enqueue_create_host_buffer[dtype](out_size)
 
-    rand(input_host)
-    rand(filter_host)
-    rand(source_host)
+    rand(input_host.as_span())
+    rand(filter_host.as_span())
+    rand(source_host.as_span())
 
     var input_dev = ctx.enqueue_create_buffer[dtype](in_size)
     var filter_dev = ctx.enqueue_create_buffer[dtype](filter_size)
@@ -1568,11 +1529,6 @@ def test_conv_gpu_residual[
     _ = source_dev^
     _ = out_residual_dev^
     _ = out_ref_dev^
-    _ = out_ref_host^
-    _ = out_residual_host^
-    _ = source_host^
-    _ = filter_host^
-    _ = input_host^
 
 
 def main() raises:

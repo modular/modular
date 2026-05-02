@@ -31,10 +31,10 @@ def run_layer_norm_block[
 ](ctx: DeviceContext, rows: Int, cols: Int, rtol: Float64 = 0.01) raises:
     print("== run_layer_norm_gpu block kernel")
 
-    var data_h = List(length=rows * cols, fill=Scalar[dtype](0))
-    var res = List(length=rows * cols, fill=Scalar[dtype](0))
-    var gamma_h = List(length=cols, fill=Scalar[dtype](0))
-    var beta_h = List(length=cols, fill=Scalar[dtype](0))
+    var data_h = ctx.enqueue_create_host_buffer[dtype](rows * cols)
+    var res = ctx.enqueue_create_host_buffer[dtype](rows * cols)
+    var gamma_h = ctx.enqueue_create_host_buffer[dtype](cols)
+    var beta_h = ctx.enqueue_create_host_buffer[dtype](cols)
 
     for i in range(rows * cols):
         var val = Scalar[dtype](i)
@@ -138,10 +138,6 @@ def run_layer_norm_block[
     _ = data_d
     _ = gamma_d
     _ = beta_d
-    _ = beta_h^
-    _ = gamma_h^
-    _ = res^
-    _ = data_h^
 
 
 def run_layer_norm_gpu[
@@ -152,10 +148,10 @@ def run_layer_norm_gpu[
     var cols = shape[rank - 1]
     var rows = shape.flattened_length() // cols
 
-    var data_h = List(length=rows * cols, fill=Scalar[dtype](0))
-    var res = List(length=rows * cols, fill=Scalar[dtype](0))
-    var gamma_h = List(length=cols, fill=Scalar[dtype](0))
-    var beta_h = List(length=cols, fill=Scalar[dtype](0))
+    var data_h = ctx.enqueue_create_host_buffer[dtype](rows * cols)
+    var res = ctx.enqueue_create_host_buffer[dtype](rows * cols)
+    var gamma_h = ctx.enqueue_create_host_buffer[dtype](cols)
+    var beta_h = ctx.enqueue_create_host_buffer[dtype](cols)
 
     for i in range(rows * cols):
         var val = Scalar[dtype](i)
@@ -232,10 +228,6 @@ def run_layer_norm_gpu[
     _ = data_d
     _ = gamma_d
     _ = beta_d
-    _ = beta_h^
-    _ = gamma_h^
-    _ = res^
-    _ = data_h^
 
 
 def run_layer_norm_warp_tiling[
@@ -245,10 +237,10 @@ def run_layer_norm_warp_tiling[
 ](ctx: DeviceContext, rows: Int, cols: Int, rtol: Float64 = 0.01) raises:
     print("== run_layer_norm_gpu warp tiling kernel")
 
-    var data_h = List(length=rows * cols, fill=Scalar[dtype](0))
-    var res = List(length=rows * cols, fill=Scalar[dtype](0))
-    var gamma_h = List(length=cols, fill=Scalar[dtype](0))
-    var beta_h = List(length=cols, fill=Scalar[dtype](0))
+    var data_h = ctx.enqueue_create_host_buffer[dtype](rows * cols)
+    var res = ctx.enqueue_create_host_buffer[dtype](rows * cols)
+    var gamma_h = ctx.enqueue_create_host_buffer[dtype](cols)
+    var beta_h = ctx.enqueue_create_host_buffer[dtype](cols)
 
     for i in range(rows * cols):
         var val = Scalar[dtype](i)
@@ -352,10 +344,6 @@ def run_layer_norm_warp_tiling[
     _ = data_d
     _ = gamma_d
     _ = beta_d
-    _ = beta_h^
-    _ = gamma_h^
-    _ = res^
-    _ = data_h^
 
 
 def main() raises:

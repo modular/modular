@@ -223,7 +223,6 @@ def host_reference[
                             * k_bf16_ptr[k_base + d].cast[DType.float64]()
                         )
                     output_ptr[o_base + d] = acc.cast[q_type]()
-                _ = s_buf^
 
 
 # ===-----------------------------------------------------------------------===#
