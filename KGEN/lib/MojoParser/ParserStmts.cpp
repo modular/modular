@@ -365,6 +365,19 @@ struct StmtParser : public ParserBase {
   // (first token in the function body is not '...').
   void maybeMarkDefaultedTraitMethod(FnOp fnOp);
 
+  /// Check if we're inside a struct or trait body (where control flow
+  /// statements are not allowed). Returns true if we are, false otherwise.
+  bool isInTypeBody() const;
+
+  /// Check if we're at module/file scope (where control flow statements are
+  /// not allowed). Returns true if we are, false otherwise.
+  bool isInModuleScope() const;
+
+  /// Emit an error for a control flow statement that must be contained in a
+  /// function. \p stmtName is the name of the statement (e.g., "if", "for",
+  /// "comptime if"). \p loc is the location for the diagnostic.
+  void emitControlFlowNotInFunctionError(SMLoc loc, StringRef stmtName);
+
 private:
   /// This is parent declaration / scope that we're parsing into.
   ASTDecl &parentDecl;
@@ -389,6 +402,21 @@ void StmtParser::pushLocalScope(DebugInfo::DIBuilder::ScopeGuard &scopeGuard) {
   scopeGuard = shared.diBuilder->pushNestedLexicalBlock(
       shared.diBuilder->createFile(loc.getFilename()), loc.getLine(),
       loc.getColumn());
+}
+
+bool StmtParser::isInTypeBody() const {
+  Operation *parent = parentDecl.getIfOperation();
+  return parent && isa<StructDeclOp, TraitDeclOp, ExtensionDeclOp>(parent);
+}
+
+bool StmtParser::isInModuleScope() const {
+  Operation *parent = parentDecl.getIfOperation();
+  return isa_and_nonnull<LIT::FileModuleOp>(parent);
+}
+
+void StmtParser::emitControlFlowNotInFunctionError(SMLoc loc,
+                                                   StringRef stmtName) {
+  emitError(loc) << "'" << stmtName << "' must be contained in a function";
 }
 
 /// Parse a suite, which is either a series of comma separated simple_stmt's on
@@ -630,14 +658,17 @@ ParseResult StmtParser::parseStmt(bool onlySimpleStmt, bool &parsedCompound,
                      << "' statement must be on its own line";
   };
 
-  auto emitTopLevelViolationError = [&]() {
-    Operation *parent = parentDecl.getIfOperation();
-    if (!parent)
-      return;
-    if (isa<LIT::FileModuleOp>(parent))
-      emitTokenError() << "'" << getToken().getSpelling()
-                       << "' must be contained in a function but is contained "
-                          "in a file scope.";
+  // Check if we're in a non-function scope (type body or module scope) where
+  // control flow statements are not allowed. Emits an error and recovers.
+  auto rejectInNonFunctionScope = [&]() -> bool {
+    if (!isInTypeBody() && !isInModuleScope())
+      return false;
+    emitControlFlowNotInFunctionError(getToken().getLoc(),
+                                      getToken().getSpelling());
+    // Consume the keyword token first so skipUntilIndentation makes progress.
+    consumeToken();
+    skipUntilIndentation(stmtIndent);
+    return true;
   };
 
   // Skip over any decorators that are present.  These will be reparsed during
@@ -695,22 +726,31 @@ ParseResult StmtParser::parseStmt(bool onlySimpleStmt, bool &parsedCompound,
     //===------------------------------------------------------------------===//
   case Token::kw_if:
     rejectSimpleStmt(); // Not a simple_stmt.
+    if (rejectInNonFunctionScope())
+      return success();
     return parseIfStmt(startCursor, stmtIndent);
   case Token::kw_for:
     rejectSimpleStmt(); // Not a simple_stmt.
+    if (rejectInNonFunctionScope())
+      return success();
     return parseForStmt(startCursor, stmtIndent);
   case Token::kw_while:
     rejectDecorator();  // Decorators not allowed.
     rejectSimpleStmt(); // Not a simple_stmt.
+    if (rejectInNonFunctionScope())
+      return success();
     return parseWhileStmt(stmtIndent);
   case Token::kw_try:
     rejectDecorator(); // Decorators not allowed.
     rejectSimpleStmt();
-    emitTopLevelViolationError();
+    if (rejectInNonFunctionScope())
+      return success();
     return parseTryStmt(stmtIndent);
   case Token::kw_with:
     rejectDecorator(); // Decorators not allowed.
     rejectSimpleStmt();
+    if (rejectInNonFunctionScope())
+      return success();
     return parseWithStmt(stmtIndent);
   case Token::kw_async:
   case Token::kw_def:
@@ -899,6 +939,20 @@ ParseResult StmtParser::parseComptimeCompoundStmt(LexerCursor startCursor,
     }
   };
 
+  // Check if we're in a non-function scope (type body or module scope) where
+  // comptime control flow statements are not allowed. Emits an error and
+  // recovers.
+  auto rejectInNonFunctionScope = [&](StringRef stmtKind) -> bool {
+    if (!isInTypeBody() && !isInModuleScope())
+      return false;
+    std::string stmtName = ("comptime " + stmtKind).str();
+    emitControlFlowNotInFunctionError(kwLoc, stmtName);
+    // Consume the keyword token first so skipUntilIndentation makes progress.
+    consumeToken();
+    skipUntilIndentation(curIndent);
+    return true;
+  };
+
   // Dispatch based on the current keyword (after 'comptime').
   switch (getToken().getKind()) {
   case Token::kw_assert:
@@ -907,9 +961,13 @@ ParseResult StmtParser::parseComptimeCompoundStmt(LexerCursor startCursor,
     return parseComptimeAssertStmtBody(startCursor, curIndent, kwLoc);
   case Token::kw_if:
     rejectDecorator();
+    if (rejectInNonFunctionScope("if"))
+      return success();
     return parseComptimeIfStmt(startCursor, curIndent);
   case Token::kw_for:
     rejectDecorator();
+    if (rejectInNonFunctionScope("for"))
+      return success();
     return parseComptimeForStmt(startCursor, curIndent);
   default:
     break;
