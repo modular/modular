@@ -1189,12 +1189,8 @@ def use_error(e: Error):
 # expected-error @below {{expressions are not allowed at global scope; move this into a function body}}
 _ = top_level_func()
 
-# expected-error @below {{'try' must be contained in a function}}
-try:
-    pass
-except e:
-    # expected-error @below {{expressions are not allowed at global scope; move this into a function body}}
-    use_error(e)
+# NOTE: try/except at module scope is tested in module_scope_try_error.mojo
+# Removing inline test here because parser error recovery skips subsequent code
 
 
 def top_level_func_param[p: Int]():
