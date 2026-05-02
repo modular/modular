@@ -14,7 +14,7 @@
 UnicodeData.txt and SpecialCasing.txt files, which can be found at
 https://www.unicode.org/Public/16.0.0/"""
 
-comptime has_uppercase_mapping: List[UInt32] = [
+comptime has_uppercase_mapping: InlineArray[UInt32, 1450] = [
     0x0061,  # LATIN SMALL LETTER A a
     0x0062,  # LATIN SMALL LETTER B b
     0x0063,  # LATIN SMALL LETTER C c
@@ -1466,7 +1466,7 @@ comptime has_uppercase_mapping: List[UInt32] = [
     0x1E942,  # ADLAM SMALL LETTER KPO 𞥂
     0x1E943,  # ADLAM SMALL LETTER SHA 𞥃
 ]
-comptime has_lowercase_mapping: List[UInt32] = [
+comptime has_lowercase_mapping: InlineArray[UInt32, 1433] = [
     0x0041,  # LATIN CAPITAL LETTER A A
     0x0042,  # LATIN CAPITAL LETTER B B
     0x0043,  # LATIN CAPITAL LETTER C C
@@ -2901,7 +2901,7 @@ comptime has_lowercase_mapping: List[UInt32] = [
     0x1E920,  # ADLAM CAPITAL LETTER KPO 𞤠
     0x1E921,  # ADLAM CAPITAL LETTER SHA 𞤡
 ]
-comptime uppercase_mapping: List[UInt32] = [
+comptime uppercase_mapping: InlineArray[UInt32, 1450] = [
     0x0041,  # a -> A
     0x0042,  # b -> B
     0x0043,  # c -> C
@@ -4353,7 +4353,7 @@ comptime uppercase_mapping: List[UInt32] = [
     0x1E920,  # 𞥂 -> 𞤠
     0x1E921,  # 𞥃 -> 𞤡
 ]
-comptime lowercase_mapping: List[UInt32] = [
+comptime lowercase_mapping: InlineArray[UInt32, 1433] = [
     0x0061,  # A -> a
     0x0062,  # B -> b
     0x0063,  # C -> c
@@ -5788,89 +5788,89 @@ comptime lowercase_mapping: List[UInt32] = [
     0x1E942,  # 𞤠 -> 𞥂
     0x1E943,  # 𞤡 -> 𞥃
 ]
-comptime has_uppercase_mapping2: List[UInt32] = [
-    0xDF,  #  # LATIN SMALL LETTER SHARP S ß
-    0x149,  #  # LATIN SMALL LETTER N PRECEDED BY APOSTROPHE ŉ
-    0x1F0,  #  # LATIN SMALL LETTER J WITH CARON ǰ
-    0x587,  #  # ARMENIAN SMALL LIGATURE ECH YIWN և
-    0x1E96,  #  # LATIN SMALL LETTER H WITH LINE BELOW ẖ
-    0x1E97,  #  # LATIN SMALL LETTER T WITH DIAERESIS ẗ
-    0x1E98,  #  # LATIN SMALL LETTER W WITH RING ABOVE ẘ
-    0x1E99,  #  # LATIN SMALL LETTER Y WITH RING ABOVE ẙ
-    0x1E9A,  #  # LATIN SMALL LETTER A WITH RIGHT HALF RING ẚ
-    0x1F50,  #  # GREEK SMALL LETTER UPSILON WITH PSILI ὐ
-    0x1FB6,  #  # GREEK SMALL LETTER ALPHA WITH PERISPOMENI ᾶ
-    0x1FC6,  #  # GREEK SMALL LETTER ETA WITH PERISPOMENI ῆ
-    0x1FD6,  #  # GREEK SMALL LETTER IOTA WITH PERISPOMENI ῖ
-    0x1FE4,  #  # GREEK SMALL LETTER RHO WITH PSILI ῤ
-    0x1FE6,  #  # GREEK SMALL LETTER UPSILON WITH PERISPOMENI ῦ
-    0x1FF6,  #  # GREEK SMALL LETTER OMEGA WITH PERISPOMENI ῶ
-    0xFB00,  #  # LATIN SMALL LIGATURE FF ﬀ
-    0xFB01,  #  # LATIN SMALL LIGATURE FI ﬁ
-    0xFB02,  #  # LATIN SMALL LIGATURE FL ﬂ
-    0xFB05,  #  # LATIN SMALL LIGATURE LONG S T ﬅ
-    0xFB06,  #  # LATIN SMALL LIGATURE ST ﬆ
-    0xFB13,  #  # ARMENIAN SMALL LIGATURE MEN NOW ﬓ
-    0xFB14,  #  # ARMENIAN SMALL LIGATURE MEN ECH ﬔ
-    0xFB15,  #  # ARMENIAN SMALL LIGATURE MEN INI ﬕ
-    0xFB16,  #  # ARMENIAN SMALL LIGATURE VEW NOW ﬖ
-    0xFB17,  #  # ARMENIAN SMALL LIGATURE MEN XEH ﬗ
+comptime has_uppercase_mapping2: InlineArray[UInt32, 26] = [
+    0xDF,  # LATIN SMALL LETTER SHARP S ß
+    0x149,  # LATIN SMALL LETTER N PRECEDED BY APOSTROPHE ŉ
+    0x1F0,  # LATIN SMALL LETTER J WITH CARON ǰ
+    0x587,  # ARMENIAN SMALL LIGATURE ECH YIWN և
+    0x1E96,  # LATIN SMALL LETTER H WITH LINE BELOW ẖ
+    0x1E97,  # LATIN SMALL LETTER T WITH DIAERESIS ẗ
+    0x1E98,  # LATIN SMALL LETTER W WITH RING ABOVE ẘ
+    0x1E99,  # LATIN SMALL LETTER Y WITH RING ABOVE ẙ
+    0x1E9A,  # LATIN SMALL LETTER A WITH RIGHT HALF RING ẚ
+    0x1F50,  # GREEK SMALL LETTER UPSILON WITH PSILI ὐ
+    0x1FB6,  # GREEK SMALL LETTER ALPHA WITH PERISPOMENI ᾶ
+    0x1FC6,  # GREEK SMALL LETTER ETA WITH PERISPOMENI ῆ
+    0x1FD6,  # GREEK SMALL LETTER IOTA WITH PERISPOMENI ῖ
+    0x1FE4,  # GREEK SMALL LETTER RHO WITH PSILI ῤ
+    0x1FE6,  # GREEK SMALL LETTER UPSILON WITH PERISPOMENI ῦ
+    0x1FF6,  # GREEK SMALL LETTER OMEGA WITH PERISPOMENI ῶ
+    0xFB00,  # LATIN SMALL LIGATURE FF ﬀ
+    0xFB01,  # LATIN SMALL LIGATURE FI ﬁ
+    0xFB02,  # LATIN SMALL LIGATURE FL ﬂ
+    0xFB05,  # LATIN SMALL LIGATURE LONG S T ﬅ
+    0xFB06,  # LATIN SMALL LIGATURE ST ﬆ
+    0xFB13,  # ARMENIAN SMALL LIGATURE MEN NOW ﬓ
+    0xFB14,  # ARMENIAN SMALL LIGATURE MEN ECH ﬔ
+    0xFB15,  # ARMENIAN SMALL LIGATURE MEN INI ﬕ
+    0xFB16,  # ARMENIAN SMALL LIGATURE VEW NOW ﬖ
+    0xFB17,  # ARMENIAN SMALL LIGATURE MEN XEH ﬗ
 ]
-comptime uppercase_mapping2: List[SIMD[DType.uint32, 2]] = [
-    SIMD[DType.uint32, 2](0x0053, 0x0053),  #  ß -> SS
-    SIMD[DType.uint32, 2](0x02BC, 0x004E),  #  ŉ -> ʼN
-    SIMD[DType.uint32, 2](0x004A, 0x030C),  #  ǰ -> J̌
-    SIMD[DType.uint32, 2](0x0535, 0x0552),  #  և -> ԵՒ
-    SIMD[DType.uint32, 2](0x0048, 0x0331),  #  ẖ -> H̱
-    SIMD[DType.uint32, 2](0x0054, 0x0308),  #  ẗ -> T̈
-    SIMD[DType.uint32, 2](0x0057, 0x030A),  #  ẘ -> W̊
-    SIMD[DType.uint32, 2](0x0059, 0x030A),  #  ẙ -> Y̊
-    SIMD[DType.uint32, 2](0x0041, 0x02BE),  #  ẚ -> Aʾ
-    SIMD[DType.uint32, 2](0x03A5, 0x0313),  #  ὐ -> Υ̓
-    SIMD[DType.uint32, 2](0x0391, 0x0342),  #  ᾶ -> Α͂
-    SIMD[DType.uint32, 2](0x0397, 0x0342),  #  ῆ -> Η͂
-    SIMD[DType.uint32, 2](0x0399, 0x0342),  #  ῖ -> Ι͂
-    SIMD[DType.uint32, 2](0x03A1, 0x0313),  #  ῤ -> Ρ̓
-    SIMD[DType.uint32, 2](0x03A5, 0x0342),  #  ῦ -> Υ͂
-    SIMD[DType.uint32, 2](0x03A9, 0x0342),  #  ῶ -> Ω͂
-    SIMD[DType.uint32, 2](0x0046, 0x0046),  #  ﬀ -> FF
-    SIMD[DType.uint32, 2](0x0046, 0x0049),  #  ﬁ -> FI
-    SIMD[DType.uint32, 2](0x0046, 0x004C),  #  ﬂ -> FL
-    SIMD[DType.uint32, 2](0x0053, 0x0054),  #  ﬅ -> ST
-    SIMD[DType.uint32, 2](0x0053, 0x0054),  #  ﬆ -> ST
-    SIMD[DType.uint32, 2](0x0544, 0x0546),  #  ﬓ -> ՄՆ
-    SIMD[DType.uint32, 2](0x0544, 0x0535),  #  ﬔ -> ՄԵ
-    SIMD[DType.uint32, 2](0x0544, 0x053B),  #  ﬕ -> ՄԻ
-    SIMD[DType.uint32, 2](0x054E, 0x0546),  #  ﬖ -> ՎՆ
-    SIMD[DType.uint32, 2](0x0544, 0x053D),  #  ﬗ -> ՄԽ
+comptime uppercase_mapping2: InlineArray[SIMD[DType.uint32, 2], 26] = [
+    {0x0053, 0x0053},  #  ß -> SS
+    {0x02BC, 0x004E},  #  ŉ -> ʼN
+    {0x004A, 0x030C},  #  ǰ -> J̌
+    {0x0535, 0x0552},  #  և -> ԵՒ
+    {0x0048, 0x0331},  #  ẖ -> H̱
+    {0x0054, 0x0308},  #  ẗ -> T̈
+    {0x0057, 0x030A},  #  ẘ -> W̊
+    {0x0059, 0x030A},  #  ẙ -> Y̊
+    {0x0041, 0x02BE},  #  ẚ -> Aʾ
+    {0x03A5, 0x0313},  #  ὐ -> Υ̓
+    {0x0391, 0x0342},  #  ᾶ -> Α͂
+    {0x0397, 0x0342},  #  ῆ -> Η͂
+    {0x0399, 0x0342},  #  ῖ -> Ι͂
+    {0x03A1, 0x0313},  #  ῤ -> Ρ̓
+    {0x03A5, 0x0342},  #  ῦ -> Υ͂
+    {0x03A9, 0x0342},  #  ῶ -> Ω͂
+    {0x0046, 0x0046},  #  ﬀ -> FF
+    {0x0046, 0x0049},  #  ﬁ -> FI
+    {0x0046, 0x004C},  #  ﬂ -> FL
+    {0x0053, 0x0054},  #  ﬅ -> ST
+    {0x0053, 0x0054},  #  ﬆ -> ST
+    {0x0544, 0x0546},  #  ﬓ -> ՄՆ
+    {0x0544, 0x0535},  #  ﬔ -> ՄԵ
+    {0x0544, 0x053B},  #  ﬕ -> ՄԻ
+    {0x054E, 0x0546},  #  ﬖ -> ՎՆ
+    {0x0544, 0x053D},  #  ﬗ -> ՄԽ
 ]
-comptime has_uppercase_mapping3: List[UInt32] = [
-    0x390,  #  # GREEK SMALL LETTER IOTA WITH DIALYTIKA AND TONOS ΐ
-    0x3B0,  #  # GREEK SMALL LETTER UPSILON WITH DIALYTIKA AND TONOS ΰ
-    0x1F52,  #  # GREEK SMALL LETTER UPSILON WITH PSILI AND VARIA ὒ
-    0x1F54,  #  # GREEK SMALL LETTER UPSILON WITH PSILI AND OXIA ὔ
-    0x1F56,  #  # GREEK SMALL LETTER UPSILON WITH PSILI AND PERISPOMENI ὖ
-    0x1FD2,  #  # GREEK SMALL LETTER IOTA WITH DIALYTIKA AND VARIA ῒ
-    0x1FD3,  #  # GREEK SMALL LETTER IOTA WITH DIALYTIKA AND OXIA ΐ
-    0x1FD7,  #  # GREEK SMALL LETTER IOTA WITH DIALYTIKA AND PERISPOMENI ῗ
-    0x1FE2,  #  # GREEK SMALL LETTER UPSILON WITH DIALYTIKA AND VARIA ῢ
-    0x1FE3,  #  # GREEK SMALL LETTER UPSILON WITH DIALYTIKA AND OXIA ΰ
-    0x1FE7,  #  # GREEK SMALL LETTER UPSILON WITH DIALYTIKA AND PERISPOMENI ῧ
-    0xFB03,  #  # LATIN SMALL LIGATURE FFI ﬃ
-    0xFB04,  #  # LATIN SMALL LIGATURE FFL ﬄ
+comptime has_uppercase_mapping3: InlineArray[UInt32, 13] = [
+    0x390,  # GREEK SMALL LETTER IOTA WITH DIALYTIKA AND TONOS ΐ
+    0x3B0,  # GREEK SMALL LETTER UPSILON WITH DIALYTIKA AND TONOS ΰ
+    0x1F52,  # GREEK SMALL LETTER UPSILON WITH PSILI AND VARIA ὒ
+    0x1F54,  # GREEK SMALL LETTER UPSILON WITH PSILI AND OXIA ὔ
+    0x1F56,  # GREEK SMALL LETTER UPSILON WITH PSILI AND PERISPOMENI ὖ
+    0x1FD2,  # GREEK SMALL LETTER IOTA WITH DIALYTIKA AND VARIA ῒ
+    0x1FD3,  # GREEK SMALL LETTER IOTA WITH DIALYTIKA AND OXIA ΐ
+    0x1FD7,  # GREEK SMALL LETTER IOTA WITH DIALYTIKA AND PERISPOMENI ῗ
+    0x1FE2,  # GREEK SMALL LETTER UPSILON WITH DIALYTIKA AND VARIA ῢ
+    0x1FE3,  # GREEK SMALL LETTER UPSILON WITH DIALYTIKA AND OXIA ΰ
+    0x1FE7,  # GREEK SMALL LETTER UPSILON WITH DIALYTIKA AND PERISPOMENI ῧ
+    0xFB03,  # LATIN SMALL LIGATURE FFI ﬃ
+    0xFB04,  # LATIN SMALL LIGATURE FFL ﬄ
 ]
-comptime uppercase_mapping3: List[SIMD[DType.uint32, 4]] = [
-    SIMD[DType.uint32, 4](0x0399, 0x0308, 0x0301, 0),  #  ΐ -> Ϊ́
-    SIMD[DType.uint32, 4](0x03A5, 0x0308, 0x0301, 0),  #  ΰ -> Ϋ́
-    SIMD[DType.uint32, 4](0x03A5, 0x0313, 0x0300, 0),  #  ὒ -> Υ̓̀
-    SIMD[DType.uint32, 4](0x03A5, 0x0313, 0x0301, 0),  #  ὔ -> Υ̓́
-    SIMD[DType.uint32, 4](0x03A5, 0x0313, 0x0342, 0),  #  ὖ -> Υ̓͂
-    SIMD[DType.uint32, 4](0x0399, 0x0308, 0x0300, 0),  #  ῒ -> Ϊ̀
-    SIMD[DType.uint32, 4](0x0399, 0x0308, 0x0301, 0),  #  ΐ -> Ϊ́
-    SIMD[DType.uint32, 4](0x0399, 0x0308, 0x0342, 0),  #  ῗ -> Ϊ͂
-    SIMD[DType.uint32, 4](0x03A5, 0x0308, 0x0300, 0),  #  ῢ -> Ϋ̀
-    SIMD[DType.uint32, 4](0x03A5, 0x0308, 0x0301, 0),  #  ΰ -> Ϋ́
-    SIMD[DType.uint32, 4](0x03A5, 0x0308, 0x0342, 0),  #  ῧ -> Ϋ͂
-    SIMD[DType.uint32, 4](0x0046, 0x0046, 0x0049, 0),  #  ﬃ -> FFI
-    SIMD[DType.uint32, 4](0x0046, 0x0046, 0x004C, 0),  #  ﬄ -> FFL
+comptime uppercase_mapping3: InlineArray[SIMD[DType.uint32, 4], 13] = [
+    {0x0399, 0x0308, 0x0301, 0},  #  ΐ -> Ϊ́
+    {0x03A5, 0x0308, 0x0301, 0},  #  ΰ -> Ϋ́
+    {0x03A5, 0x0313, 0x0300, 0},  #  ὒ -> Υ̓̀
+    {0x03A5, 0x0313, 0x0301, 0},  #  ὔ -> Υ̓́
+    {0x03A5, 0x0313, 0x0342, 0},  #  ὖ -> Υ̓͂
+    {0x0399, 0x0308, 0x0300, 0},  #  ῒ -> Ϊ̀
+    {0x0399, 0x0308, 0x0301, 0},  #  ΐ -> Ϊ́
+    {0x0399, 0x0308, 0x0342, 0},  #  ῗ -> Ϊ͂
+    {0x03A5, 0x0308, 0x0300, 0},  #  ῢ -> Ϋ̀
+    {0x03A5, 0x0308, 0x0301, 0},  #  ΰ -> Ϋ́
+    {0x03A5, 0x0308, 0x0342, 0},  #  ῧ -> Ϋ͂
+    {0x0046, 0x0046, 0x0049, 0},  #  ﬃ -> FFI
+    {0x0046, 0x0046, 0x004C, 0},  #  ﬄ -> FFL
 ]
