@@ -101,6 +101,7 @@ modular_py_test(
             "test_model_config_encoding_resolution.py",
             "test_model_config_subfolder.py",
             "test_pipeline_config_resolve.py",
+            "test_structured_output_spec_decode_gpu.py",
             "test_model_manifest.py",
             "test_model_manifest_hf.py",
         ],
@@ -226,6 +227,7 @@ modular_py_test(
         exclude = [
             "test_attention_dispatch_resolver_gpu.py",
             "test_mla_probe_strategy_gpu.py",
+            "test_structured_output_spec_decode_gpu.py",
         ],
     ),
     exec_properties = {
@@ -255,5 +257,36 @@ modular_py_test(
         "//max/tests/integration/test_common:registry",
         requirement("numpy"),
         requirement("pytest-asyncio"),
+    ],
+)
+
+modular_py_test(
+    name = "structured_output",
+    size = "large",
+    srcs = ["test_structured_output_spec_decode_gpu.py"],
+    env_inherit = ["HF_TOKEN"],
+    exec_properties = {
+        "test.resources:gpu-memory": "23",
+    },
+    gpu_constraints = ["//:has_gpu"],
+    ignore_extra_deps = [
+        # Used as a pytest plugin
+        "//max/tests/integration/test_common:registry",
+    ],
+    tags = [
+        "gpu",
+        "manual",
+        "no-sandbox",
+        "requires-network",
+    ],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/interfaces",
+        "//max/python/max/pipelines",
+        "//max/python/max/pipelines/core",
+        "//max/python/max/pipelines/lib",
+        "//max/tests/integration:hf_repo_lock",
+        "//max/tests/integration/test_common:registry",
+        requirement("numpy"),
     ],
 )
