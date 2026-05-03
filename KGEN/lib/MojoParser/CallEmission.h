@@ -68,6 +68,7 @@ public:
   OverloadSet(StringRef baseName, ArrayRef<ASTDecl *> fnDecls,
               ParamBindings &&paramBindings, CallSyntax syntax,
               bool erroneous = false);
+  OverloadSet(OverloadSet &&other) = default;
 
   /// Form an OverloadSet with a lookup of a named method on the specified type,
   /// but without the candidate set filtered with operands.   If successful,

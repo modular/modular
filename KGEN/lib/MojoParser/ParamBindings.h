@@ -65,7 +65,8 @@ public:
   /// Initialize ParamBindings with a declscope to perform lookups against
   /// and a notion of shared context.
   ParamBindings(ASTDecl &declScope, const ExprNode *expr);
-  ParamBindings(const ParamBindings &) = default;
+  ParamBindings(const ParamBindings &) = delete;
+  ParamBindings(ParamBindings &&other) = default;
 
   /// Replace our bindings with another set.
   void operator=(ParamBindings &&other);

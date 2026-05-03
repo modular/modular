@@ -85,7 +85,7 @@ getTraitFunctionSignature(IREmitter &emitter, FnOp traitFn,
       params, &emitter.getDeclScope().getShared().getEvaluationContext());
 
   newSignature = traitAliasReplacer.replace(newSignature);
-  return {newSignature, bindings};
+  return {newSignature, std::move(bindings)};
 }
 
 /// Used to determine if this particular child def op of a struct.decl op is one
