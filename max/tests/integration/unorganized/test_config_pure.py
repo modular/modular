@@ -1797,3 +1797,92 @@ def test_auto_device_graph_capture_eagle_gating(
     config._validate_and_resolve_overlap_scheduler()
 
     assert config.runtime.device_graph_capture is expected_device_graph_capture
+
+
+@prepare_registry
+@mock_pipeline_config_resolve
+def test_resolve_default_reasoning_parser__applies_arch_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When the user did not set runtime.reasoning_parser and the resolved
+    architecture declares a default, the default is applied."""
+    arch = SimpleNamespace(
+        name="KimiK25ForConditionalGeneration",
+        reasoning_parser="kimik2_5",
+    )
+    monkeypatch.setattr(
+        PIPELINE_REGISTRY,
+        "retrieve_architecture",
+        Mock(return_value=arch),
+    )
+
+    config = PipelineConfig(
+        models=ModelManifest({"main": MAXModelConfig(model_path="test/model")}),
+        runtime=PipelineRuntimeConfig(),
+    )
+    assert config.runtime.reasoning_parser is None
+
+    config._resolve_default_reasoning_parser()
+
+    assert config.runtime.reasoning_parser == "kimik2_5"
+
+
+@prepare_registry
+@mock_pipeline_config_resolve
+def test_resolve_default_reasoning_parser__user_value_preserved(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An explicit runtime.reasoning_parser value is never overwritten,
+    even when the architecture declares a different default."""
+    arch = SimpleNamespace(
+        name="KimiK25ForConditionalGeneration",
+        reasoning_parser="kimik2_5",
+    )
+    retrieve_mock = Mock(return_value=arch)
+    monkeypatch.setattr(
+        PIPELINE_REGISTRY, "retrieve_architecture", retrieve_mock
+    )
+
+    config = PipelineConfig(
+        models=ModelManifest({"main": MAXModelConfig(model_path="test/model")}),
+        runtime=PipelineRuntimeConfig(reasoning_parser="user_choice"),
+    )
+
+    config._resolve_default_reasoning_parser()
+
+    assert config.runtime.reasoning_parser == "user_choice"
+    retrieve_mock.assert_not_called()
+
+
+@prepare_registry
+@mock_pipeline_config_resolve
+def test_resolve_default_reasoning_parser__no_arch_default_is_noop(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """If the architecture does not declare a default reasoning parser
+    (or no architecture is found), runtime.reasoning_parser stays None."""
+    arch_without_default = SimpleNamespace(
+        name="LlamaForCausalLM",
+        reasoning_parser=None,
+    )
+    monkeypatch.setattr(
+        PIPELINE_REGISTRY,
+        "retrieve_architecture",
+        Mock(return_value=arch_without_default),
+    )
+
+    config = PipelineConfig(
+        models=ModelManifest({"main": MAXModelConfig(model_path="test/model")}),
+        runtime=PipelineRuntimeConfig(),
+    )
+
+    config._resolve_default_reasoning_parser()
+    assert config.runtime.reasoning_parser is None
+
+    monkeypatch.setattr(
+        PIPELINE_REGISTRY,
+        "retrieve_architecture",
+        Mock(return_value=None),
+    )
+    config._resolve_default_reasoning_parser()
+    assert config.runtime.reasoning_parser is None

@@ -351,6 +351,21 @@ class SupportedArchitecture:
     If None, the default LlamaToolParser will be used.
     """
 
+    reasoning_parser: str | None = None
+    """Optional default reasoning parser name for this architecture.
+
+    The name must correspond to a parser registered via
+    :func:`max.pipelines.lib.reasoning.register`. When set, the pipeline
+    config will fall back to this value for ``runtime.reasoning_parser`` if
+    the user did not explicitly configure one. Different model architectures
+    emit reasoning content in different formats (e.g., Kimi K2.5 wraps
+    reasoning in ``<think>...</think>``), so the appropriate default is
+    architecture-specific.
+
+    If None, no reasoning parser is enabled by default and the user must
+    opt in by setting ``runtime.reasoning_parser`` explicitly.
+    """
+
     @property
     def tokenizer_cls(self) -> type[PipelineTokenizer[Any, Any, Any]]:
         """Returns the tokenizer class for this architecture."""

@@ -65,6 +65,7 @@ kimik2_5_arch = SupportedArchitecture(
     requires_max_batch_context_length=True,
     config=KimiK2_5Config,
     tool_parser=KimiToolParser,
+    reasoning_parser="kimik2_5",
 )
 
 kimivl_arch = SupportedArchitecture(
@@ -92,6 +93,7 @@ kimivl_arch = SupportedArchitecture(
     requires_max_batch_context_length=True,
     config=KimiK2_5Config,
     tool_parser=KimiToolParser,
+    reasoning_parser="kimik2_5",
 )
 
 eagle3_kimik25_arch = SupportedArchitecture(
@@ -116,4 +118,5 @@ eagle3_kimik25_arch = SupportedArchitecture(
     requires_max_batch_context_length=True,
     config=KimiK2_5TextConfig,
     tool_parser=KimiToolParser,
+    reasoning_parser="kimik2_5",
 )

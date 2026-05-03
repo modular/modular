@@ -930,6 +930,33 @@ class PipelineConfig(ConfigFileModel):
 
         self._validate_and_resolve_overlap_scheduler()
 
+        self._resolve_default_reasoning_parser()
+
+    def _resolve_default_reasoning_parser(self) -> None:
+        """Apply the architecture's default reasoning parser when unset.
+
+        If the user did not configure ``runtime.reasoning_parser`` and the
+        resolved ``SupportedArchitecture`` declares a default
+        ``reasoning_parser``, use it. Explicit user configuration always wins.
+        """
+        if self.runtime.reasoning_parser is not None:
+            return
+
+        arch = PIPELINE_REGISTRY.retrieve_architecture(
+            architecture_name=self.models.main_architecture_name,
+            prefer_module_v3=self.runtime.prefer_module_v3,
+        )
+        if arch is None or arch.reasoning_parser is None:
+            return
+
+        self.runtime.reasoning_parser = arch.reasoning_parser
+        logger.info(
+            "Defaulting reasoning parser to %r for architecture %s. "
+            "Override with --reasoning-parser.",
+            arch.reasoning_parser,
+            arch.name,
+        )
+
     def _validate_kv_connector_config(self) -> None:
         """Validates KV connector configuration and applies defaults."""
         kv = self.model.kv_cache
