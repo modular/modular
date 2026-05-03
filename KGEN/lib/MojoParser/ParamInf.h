@@ -7,8 +7,8 @@
 #ifndef KGEN_MOJOPARSER_PARAMETERINFERENCE_H
 #define KGEN_MOJOPARSER_PARAMETERINFERENCE_H
 
-#include "CallEmission.h"
 #include "InferenceState.h"
+#include "OverloadSet.h"
 
 namespace M::KGEN::LIT {
 

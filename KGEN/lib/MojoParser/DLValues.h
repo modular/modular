@@ -11,7 +11,7 @@
 #ifndef KGEN_MOJOPARSER_DLVALUES_H
 #define KGEN_MOJOPARSER_DLVALUES_H
 
-#include "CallEmission.h"
+#include "OverloadSet.h"
 
 namespace M::KGEN::LIT {
 

@@ -9,7 +9,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "CallEmission.h"
 #include "ClosureEmitter.h"
 #include "DLValues.h"
 #include "IREmitter.h"
@@ -18,6 +17,7 @@
 #include "KGEN/MojoParser/DeclResolver.h"
 #include "KGEN/MojoParser/Lexer.h"
 #include "KGEN/MojoParser/SharedState.h"
+#include "OverloadSet.h"
 #include "ParamInf.h"
 #include "ParserEvaluationContext.h"
 #include "StabilityMarkers.h"

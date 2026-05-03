@@ -9,11 +9,11 @@
 //===----------------------------------------------------------------------===//
 
 #include "OverloadFitness.h"
-#include "CallEmission.h"
 #include "ClosureEmitter.h"
 #include "ExprNodes.h"
 #include "IREmitter.h"
 #include "MojoUtils.h"
+#include "OverloadSet.h"
 #include "ParamInf.h"
 
 #include "KGEN/MojoParser/ASTDecl.h"
