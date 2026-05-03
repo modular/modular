@@ -39,6 +39,9 @@ struct ListInitializable[T: AnyType](ImplicitlyCopyable):
 struct RHSInferenceStruct:
     var field: ListInitializable[Int]
 
+    def __getitem__(self) -> ListInitializable[Int]:
+        pass
+
     def __setitem__(self, value: ListInitializable[Int]):
         pass
 

@@ -1020,27 +1020,27 @@ def function_types():
 
   # CHECK: lit.var.decl "float2"{{.*}}(!lit.ref<!RegType, mut *[0,0]> owned_in_mem, |) -> !RegType
   var float2: def(var RegType) thin -> RegType
- 
+
   # CHECK: lit.var.decl "float3"{{.*}}(!lit.ref<!MemoryType, mut *[0,0]> owned_in_mem, |) -> !kgen.none
   var float3: def(var MemoryType) thin -> None
- 
+
   # CHECK: lit.var.decl "float4"{{.*}}(!lit.ref<!Int, mut *[0,0]> mut, |) -> !kgen.none
   var float4: def(mut Int) thin -> None
- 
+
   # CHECK: lit.var.decl "float5"{{.*}}(!Int, |, ?, "__error__": !lit.ref<!Error, mut *[0,0]> byref_error, "__result__": !lit.ref<none, mut *[0,1]> byref_result) throws -> i1
   var float5: def(Int) thin raises -> None
 
   # CHECK: lit.var.decl "float6"{{.*}}(!Int, |, ?, "__result__": !lit.ref<none, mut *[0,0]> byref_result) async|capturing -> !kgen.none
   var float6: async def(Int) capturing thin -> None
- 
+
   # FIXME: Allow origin parameters on dynamic values.
   # HECK: lit.var.decl "float7"{{.*}}(!lit.ref<!lit.struct<#VariadicList{{.*}}> read_mem|pos_vararg, ?, {{.*}}) throws -> i1
   # var float7: def(*Int) thin raises -> None
- 
+
   # CHECK: lit.var.decl "float12"{{.*}}<(!Int = {10}, {{.*}}StringLiteral <:string "foo">
   # CHECK-SAME: , |) -> !kgen.none>
   var float12: def(Int = 10, StaticString = "foo") thin -> None
- 
+
   # CHECK: lit.var.decl "named"{{.*}}<[1]("x": !lit.ref<!MemoryType, imm {{.*}}> read_mem) -> !Int>
   var named: def(x: MemoryType) thin -> Int
 
@@ -1117,6 +1117,9 @@ struct IndexList[size: Int](TrivialRegisterPassable):
     @implicit
     def __init__(out self, *elements: Int):
         pass
+
+    def __getitem__(self) -> Int:
+      pass
 
     def __setitem__(mut self, val: Int):
         pass

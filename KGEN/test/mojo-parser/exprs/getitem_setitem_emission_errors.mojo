@@ -25,11 +25,6 @@ def test_getitem(var a: WeirdArray, f: float, x: Int):
     a[x] = x
 
 
-struct Settable:
-    def __setitem__(self, x: Int, y: Int):
-        pass
-
-
 struct NotSettable:
     def __getitem__(self) -> Int:
         pass
@@ -39,30 +34,9 @@ struct NotSettable:
         pass
 
 
-def test_setitem_kwargs(c: Settable, ns: NotSettable, x: Int):
-    # Issue #22580: Allow keyword arguments in __setitem__ calls
-    # weird but ok, value is passed as 'y'.
-    c[x=x] = x
-    # expected-error @+1 {{keyword argument 'y' may not be specified in the index list, it is needed for the new value}}
-    c[y=x] = x
+def test_setitem_kwargs(ns: NotSettable, x: Int):
     # expected-note @+1 {{used in an expression here}}
     ns[] = x
-
-
-struct MultiSetItem:
-    # expected-note @+1 {{candidate declared here}}
-    def __setitem__(self, x: Int, y: Int):
-        pass
-
-    # expected-note @+1 {{candidate declared here}}
-    def __setitem__(self, x: Int, y: float):
-        pass
-
-
-def test_setitem_overload(b: MultiSetItem, x: Int):
-    # expected-error @+1 {{'MultiSetItem' has overloaded __setitem__ implementations, which isn't supported}}
-    b[x] = x
-
 
 @fieldwise_init
 struct VariadicIndexList:

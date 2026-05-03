@@ -1807,6 +1807,15 @@ AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
     return {};
   }
 
+  if (!getterSet) {
+    auto diag = emitter.emitError(node->getLoc())
+                << baseType << " has '" << setterName << "' but no '"
+                << getterName << "' method" << node->getRange();
+    diag.attachNote(node->getLoc())
+        << "used in an expression here" << node->getRange();
+    return {};
+  }
+
   // Ok, we'll be calling the getter and/or setter, passing the indices as
   // dynamic arguments.
   CallOperands operands(CallSyntax::kMethodCall, node);
@@ -1824,80 +1833,32 @@ AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
     }
   }
 
-  // If we /just/ have a getter, emit this as a call to the getter, allowing
-  // us to get nice tuned diagnostics.  We also do this in a comptime context,
-  // because the setter will never be called, and we want PValues here, not
-  // DLValues.
-  if (!setterSet || !emitter.builder)
+  // If we /just/ have a getter, or we already know we're assigning this into
+  // some destination, emit this as a call to the getter. This gives us nice
+  // tuned diagnostics.  We also do this in a comptime context, because the
+  // setter will never be called, and we want PValues here, not DLValues.
+  if (!setterSet || !emitter.builder || dest.isSpecified())
     return getterSet.emitCall(std::move(operands), dest, emitter);
 
-  // Okay, we definitely have a setter, and we might have a getter.  The problem
+  // Okay, we definitely have both a setter and a getter.  The problem
   // is that we don't know in which context this expression will be used - it
   // could be loaded from, stored to, or both (with a mut argument), and it
   // might even have computed contextual parameters.
 
-  // If we have a getter, resolve it and get the element type from it.
-  ASTType elementType;
-  PValue getter;
-  if (getterSet) {
-    getter =
-        getterSet.filterOverloadSet(operands,
-                                    /*emitDiagnosticOnFailure*/ true, emitter);
-    if (!getter) // Error already emitted.
-      return {};
-    // ElementType is the result of the getter, processing by-ref results and
-    // ignoring the variant for raising functions.
-    elementType = getter.getType().getSignatureUserResultType();
+  // Resolve the getter to discover the element type.
+  PValue getter =
+      getterSet.filterOverloadSet(operands,
+                                  /*emitDiagnosticOnFailure*/ true, emitter);
+  if (!getter) // Error already emitted.
+    return {};
 
-    // Also look through ref results.
-    if (FnOrFnLiteralTypeGeneratorType::get(getter.getType()).isRefResult())
-      elementType = sugarCast<RefType>(elementType).getElementType();
-  }
+  // ElementType is the result of the getter, processing by-ref results and
+  // ignoring the variant for raising functions.
+  ASTType elementType = getter.getType().getSignatureUserResultType();
 
-  // We need to figure out which setter to use, but can't just filter the set
-  // unless we know the element type from the getter.  If not, do something
-  // grotty to figure it out.
-  if (!elementType) {
-    // Cannot support overloaded setter with no getters.
-    if (setterSet.fnDecls.size() != 1) {
-      auto diag = emitter.emitError(node->getLoc())
-                  << baseType << " has overloaded " << setterName
-                  << " implementations, which isn't supported"
-                  << node->getRange();
-      for (auto candidate : setterSet.fnDecls)
-        diag.attachNote(candidate->getLoc()) << "candidate declared here";
-      return {};
-    }
-
-    // TODO: This won't handle parameterized setters right, inferring the
-    // parameter types.  We should use something like
-    // `filterOverloadSetForValueType` or use a dummy value to filter the
-    // overload set.
-    // Hard code the parameter bindings for 'self' since we aren't using type
-    // inference properly.
-    setterSet.paramBindings = ParamBindings::getForDeclaredType(
-        emitter.getDeclScope(), baseType, node);
-    auto directSymbolAttr = setterSet.getBoundConstantAttr();
-    if (!directSymbolAttr) {
-      lookupError();
-      return {}; // Getter invalid.
-    }
-    auto sigType =
-        FnOrFnLiteralTypeGeneratorType::get(directSymbolAttr.getType());
-    // Check basic sanity.
-    size_t setValueIdx = operands.getNumPositional();
-    if (sigType.getNumArguments() <= setValueIdx) {
-      auto diag = emitter.emitError(node->getLoc())
-                  << setterName << " has too few arguments";
-      diag.attachNote(setterSet.fnDecls[0]->getLoc())
-          << setterName << " declared here";
-      return {};
-    }
-    elementType = sigType.getArgument(setValueIdx);
-    auto setValueConvention = sigType.getArgConvention(setValueIdx);
-    if (setValueConvention != ArgConvention::ReadReg)
-      elementType = elementType.getReferenceElementType();
-  }
+  // Also look through ref results.
+  if (FnOrFnLiteralTypeGeneratorType::get(getter.getType()).isRefResult())
+    elementType = sugarCast<RefType>(elementType).getElementType();
 
   // Ok, now that we know the elementType, we can look up any setter that we
   // need to use.
