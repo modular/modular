@@ -44,7 +44,7 @@ void DiscardDLValue::print(raw_ostream &os) const {
   os << "discard pattern, type=" << elementType;
 }
 
-CValue DiscardDLValue::emitLoad(ValueDest &dest, IREmitter &emitter) const {
+CValue DiscardDLValue::emitLoad(ExprDest &dest, IREmitter &emitter) const {
   emitter.emitError(expr->getLoc(), "cannot read from discard pattern '_'")
       << expr->getRange();
   return {};
@@ -89,10 +89,10 @@ void StoredAttributeRefDLValue::print(raw_ostream &os) const {
   baseVal.ir->print(os);
 }
 
-CValue StoredAttributeRefDLValue::emitLoad(ValueDest &dest,
+CValue StoredAttributeRefDLValue::emitLoad(ExprDest &dest,
                                            IREmitter &emitter) const {
   // To load x.y, we load x, then then load y out of it.
-  ValueDest baseDest(dest.getContext());
+  ExprDest baseDest(dest.getContext());
   auto base = baseVal.ir->emitLoad(baseDest, emitter);
   if (!base)
     return {};
@@ -112,7 +112,7 @@ CValue StoredAttributeRefDLValue::emitStore(ASTExprAnd<CValue> value,
   auto loc = expr->getLocation(emitter);
 
   // To store to "base().x" we need to first emit a load of the base LValue.
-  ValueDest tmpValueDest(EC_AttributeRefBase);
+  ExprDest tmpValueDest(EC_AttributeRefBase);
   auto loadVal = baseVal.ir->emitLoad(tmpValueDest, emitter);
   if (!loadVal)
     return CValue();
@@ -169,7 +169,7 @@ void SubscriptDLValue::print(raw_ostream &os) const {
      << " ";
 }
 
-CValue SubscriptDLValue::emitLoad(ValueDest &dest, IREmitter &emitter) const {
+CValue SubscriptDLValue::emitLoad(ExprDest &dest, IREmitter &emitter) const {
   // We got an elementType, so we know it has at least a getter or a setter.
   if (!getter) {
     emitter.emitError(operands.callExpr->getLoc(),
@@ -188,7 +188,7 @@ CValue SubscriptDLValue::emitStore(ASTExprAnd<CValue> value,
   CallOperands operandsWithValue(operands);
   operandsWithValue.addKeyword(setterValueName, value);
 
-  ValueDest storeDest(EC_Assignment);
+  ExprDest storeDest(EC_Assignment);
 
   // We got an elementType, so we know it has at least a setter, so if we
   // couldn't resolve a setter, emit it to the named method so we can balk
@@ -216,7 +216,7 @@ void TupleDLValue::print(raw_ostream &os) const {
 }
 
 /// Loading a tuple RValue loads all the elements and returns a tuple instance.
-CValue TupleDLValue::emitLoad(ValueDest &dest, IREmitter &emitter) const {
+CValue TupleDLValue::emitLoad(ExprDest &dest, IREmitter &emitter) const {
   // Emit a call to the tuple type constructor as an explicit construction.
   return emitter.emitConstructorCall(
       elementType, CallOperands(CallSyntax::kTypeCall, expr, eltLValues), dest);
@@ -224,7 +224,7 @@ CValue TupleDLValue::emitLoad(ValueDest &dest, IREmitter &emitter) const {
 
 // TODO: Move this somewhere common like IREmitter
 AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
-                                ArrayRef<Operand> exprOperands, ValueDest &dest,
+                                ArrayRef<Operand> exprOperands, ExprDest &dest,
                                 IREmitter &emitter);
 
 /// Storing to a tuple LValue extracts the elements out of the provided value
@@ -292,7 +292,7 @@ CValue TupleDLValue::emitStore(ASTExprAnd<CValue> value,
     // Get the item from the tuple into the corresponding LValue.
     LValue lv = lvalue.ir.getIfLValue();
     assert(lv && "Each dest is known to be an lvalue");
-    ValueDest eltDest(lv, EC_TupleElement);
+    ExprDest eltDest(lv, EC_TupleElement);
 
     // Bind the i parameters.  Int explicitly constructs from index type now.
     TypedAttr indexAttr =

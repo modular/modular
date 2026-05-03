@@ -618,7 +618,7 @@ def test_typed_raises_fn4() raises Float32:
     # CHECK-NEXT: lit.try %__call_error_tmp__
     # CHECK-NEXT:   lit.call {{.*}}test_typed_raises_fn2(){{.*}}(%__call_error_tmp__, %anonymous2A)
 
-    # Make sure to emit ValueDest outside the try block.
+    # Make sure to emit ExprDest outside the try block.
     # CHECK: %str = lit.var.decl
     # CHECK-NEXT: lit.call {{.*}}String::@"__init__{{.*}}"{{.*}}(%anonymous2A, %str){{.*}}*, "take"
     var str = test_typed_raises_fn2()
@@ -627,7 +627,7 @@ def test_typed_raises_fn4() raises Float32:
 # CHECK-LABEL: lit.fn @"test_typed_raises_fn5
 def test_typed_raises_fn5() raises Float32:
 
-    # Make sure to emit ValueDest outside the try block.
+    # Make sure to emit ExprDest outside the try block.
     # CHECK: %anonymous2A = lit.var.decl
     # CHECK-NEXT: %__call_error_tmp__
     # CHECK-NEXT: lit.try
@@ -640,7 +640,7 @@ def test_typed_raises_fn3(x: String) raises Int -> ref [x] String:
 # CHECK-LABEL: lit.fn @"test_typed_raises_fn6
 def test_typed_raises_fn6(x: String) raises Float32:
 
-    # Make sure to emit ValueDest outside the try block.
+    # Make sure to emit ExprDest outside the try block.
     # CHECK: %__ref_result_tmp__ = lit.var.decl
     # CHECK-NEXT: %__call_error_tmp__
     # CHECK-NEXT: lit.try

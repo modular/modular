@@ -572,7 +572,7 @@ InitializerUValue::getOperandsForInferredType(ASTType type,
 
 /// Emit this as a CValue if it can be resolved, otherwise emit an ambiguity
 /// error and return null.
-CValue InitializerUValue::emitAsCValue(IREmitter &emitter, ValueDest &dest) {
+CValue InitializerUValue::emitAsCValue(IREmitter &emitter, ExprDest &dest) {
 
   // If we have the inferred contextual type, we can emit the constructor call.
   if (ASTType expectedType = dest.getExpectedTypeIfSpecified()) {

@@ -172,7 +172,7 @@ PValue IREmitter::emitErrorForDynamicValueInParameter(Location loc,
 //===----------------------------------------------------------------------===//
 // Emission helpers for various value classifications.
 
-CValue IREmitter::emitRValue(ASTExprAnd<AnyValue> value, ValueDest &dest) {
+CValue IREmitter::emitRValue(ASTExprAnd<AnyValue> value, ExprDest &dest) {
   if (!value) // Already diagnosed error.
     return {};
 
@@ -205,7 +205,7 @@ CValue IREmitter::emitRValue(ASTExprAnd<AnyValue> value, ValueDest &dest) {
 
 RValue IREmitter::emitRValue(ASTExprAnd<AnyValue> value, ExprContext context,
                              ASTType resultType) {
-  ValueDest dest(resultType, context);
+  ExprDest dest(resultType, context);
   CValue result = emitRValue(value, dest);
   while (true) {
     if (!result) {
@@ -218,21 +218,21 @@ RValue IREmitter::emitRValue(ASTExprAnd<AnyValue> value, ExprContext context,
 
     // It may return a BValue though (e.g. when accessing subfields with
     // computed lvalue bases), in which case we'll emit a copy of it.
-    ValueDest copyDest(context);
+    ExprDest copyDest(context);
     result = emitCopyOfValue({result, value.expr}, copyDest);
   }
 }
 
 CValue IREmitter::emitCValue(ASTExprAnd<AnyValue> value, ExprContext context,
                              ASTType resultType) {
-  ValueDest dest(resultType, context);
+  ExprDest dest(resultType, context);
   if (auto c = emitCValue(value, dest))
     return c;
   dest.resetForError(*this);
   return {};
 }
 
-CValue IREmitter::emitCValue(ASTExprAnd<AnyValue> value, ValueDest &dest) {
+CValue IREmitter::emitCValue(ASTExprAnd<AnyValue> value, ExprDest &dest) {
   if (!value) // Already diagnosed error.
     return {};
   // If this is already an CValue, then we are done.
@@ -258,7 +258,7 @@ CValue IREmitter::emitCValue(ASTExprAnd<AnyValue> value, ValueDest &dest) {
 }
 
 /// Emit an expression providing an immutable borrowed reference to a value.
-BValue IREmitter::emitBValue(ASTExprAnd<AnyValue> value, ValueDest &dest) {
+BValue IREmitter::emitBValue(ASTExprAnd<AnyValue> value, ExprDest &dest) {
   if (!value)
     return {};
 
@@ -316,14 +316,14 @@ BValue IREmitter::emitBValue(ASTExprAnd<AnyValue> value, ValueDest &dest) {
 
 BValue IREmitter::emitBValue(ASTExprAnd<AnyValue> value, ExprContext context,
                              ASTType resultType) {
-  ValueDest dest(resultType, context);
+  ExprDest dest(resultType, context);
   if (auto result = emitBValue(value, dest))
     return result;
   dest.resetForError(*this);
   return {};
 }
 
-LValue IREmitter::emitLValue(ASTExprAnd<AnyValue> value, ValueDest &dest) {
+LValue IREmitter::emitLValue(ASTExprAnd<AnyValue> value, ExprDest &dest) {
   if (!value) {
     dest.resetForError(*this);
     return {};
@@ -518,7 +518,7 @@ MRValue IREmitter::emitMRValue(ASTExprAnd<AnyValue> value, ExprContext context,
                                   VarDeclKind::Synthesized);
     if (!varOp)
       return {};
-    ValueDest dest(MLValue(varOp), context);
+    ExprDest dest(MLValue(varOp), context);
     if (!emitRValue({rVal, value.expr}, dest))
       dest.resetForError(*this);
     return MRValue(varOp);
@@ -582,7 +582,7 @@ PValue IREmitter::emitPValue(ASTExprAnd<AnyValue> value, ExprContext context,
   // If this is a DLValue, see if it can be emitted as a PValue. PValues are
   // immutable, so try to load the DLValue in a parameter context.
   if (auto dl = value.ir.getIfDLValue()) {
-    ValueDest dest(context);
+    ExprDest dest(context);
     value.ir = dl->emitLoad(dest, *this);
     if (!value.ir) {
       dest.resetForError(*this);
@@ -608,7 +608,7 @@ Value IREmitter::emitRefValue(ASTExprAnd<AnyValue> value, ExprContext context) {
   // A DLValue can be a ref when its "load" operation returns a ref.  This can
   // happen when a computed getter returns a ref - e.g. for Dict.
   if (auto dlValue = value.ir.getIfDLValue()) {
-    ValueDest dest(context);
+    ExprDest dest(context);
     value.ir = dlValue->emitLoad(dest, *this);
     if (!value.ir) {
       dest.resetForError(*this);
@@ -696,7 +696,7 @@ CValue IREmitter::rebindValue(ASTExprAnd<CValue> value, Type destType) {
 /// into the destination slot, so the input may be memory-only and result be
 /// register-passable (and visa-versa).
 AnyValue IREmitter::emitResult(AnyValue value, const ExprNode *expr,
-                               ValueDest &dest) {
+                               ExprDest &dest) {
   if (!value) {
     dest.resetForError(*this);
     return {};
@@ -752,14 +752,14 @@ AnyValue IREmitter::emitResult(AnyValue value, const ExprNode *expr,
   // If the destination is just a required type, then we now know it must agree
   // and therefore don't need to do anything more.
   if (isa<ASTType>(dest.representation)) {
-    dest.representation = NullRepresentation(); // Resolved the ValueDest;
+    dest.representation = NullRepresentation(); // Resolved the ExprDest;
     return cValue;
   }
 
   // If this destination was an LValue whose buffer was already taken to be
   // filled in by a client, then this is just completing the transaction.
   if (isa<LValueBufferTaken>(dest.representation)) {
-    dest.representation = NullRepresentation(); // Resolved the ValueDest;
+    dest.representation = NullRepresentation(); // Resolved the ExprDest;
 
     // The client directly filled in an LValue we provided which is great, but
     // that LValue we provided took ownership of the value, so we need to return
@@ -778,16 +778,16 @@ AnyValue IREmitter::emitResult(AnyValue value, const ExprNode *expr,
     return {};
   }
 
-  // This will have completely resolved all the ValueDest possibilities.
+  // This will have completely resolved all the ExprDest possibilities.
   assert(!dest.isSpecified() || isa<LValueBufferTaken>(dest.representation));
-  dest.representation = NullRepresentation(); // Resolved the ValueDest;
+  dest.representation = NullRepresentation(); // Resolved the ExprDest;
 
   // Finally, store the value into the lvalue.
   return emitStoreToLValue({cValue, expr}, destLV, context);
 }
 
 CValue IREmitter::emitCResult(CValue value, const ExprNode *expr,
-                              ValueDest &dest) {
+                              ExprDest &dest) {
   // Emitting a CValue always produces a CValue.
   auto result = emitResult(value, expr, dest);
   assert((!result || result.getIfCValue()) &&
@@ -805,7 +805,7 @@ LogicalResult IREmitter::emitDestructuringPValue(PValue value,
 }
 
 /// Emit the specified expression into the specified destination.
-AnyValue IREmitter::emitExpr(const ExprNode *expr, ValueDest &dest) {
+AnyValue IREmitter::emitExpr(const ExprNode *expr, ExprDest &dest) {
   assert(expr && "cannot emit a null node");
   if (auto result = expr->emitIR(dest, *this))
     return result;
@@ -815,7 +815,7 @@ AnyValue IREmitter::emitExpr(const ExprNode *expr, ValueDest &dest) {
 
 AnyValue IREmitter::emitExpr(const ExprNode *expr, ExprContext context,
                              ASTType resultType) {
-  ValueDest dest(resultType, context);
+  ExprDest dest(resultType, context);
   return emitExpr(expr, dest);
 }
 
@@ -847,7 +847,7 @@ PValue IREmitter::emitExprPValue(const ExprNode *expr, ExprContext context,
   return emitPValue({rep, expr}, context);
 }
 
-LValue IREmitter::emitExprLValue(const ExprNode *expr, ValueDest &dest) {
+LValue IREmitter::emitExprLValue(const ExprNode *expr, ExprDest &dest) {
   AnyValue anyValue = expr->emitIR(dest, *this);
   if (!anyValue) {
     dest.resetForError(*this);
@@ -859,7 +859,7 @@ LValue IREmitter::emitExprLValue(const ExprNode *expr, ValueDest &dest) {
 /// Emit a copy of the specified value, producing a new owned instance of the
 /// value in the specified destination.  This returns an RValue if
 /// there is no consuming dest, otherwise a BValue.
-CValue IREmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ValueDest &dest) {
+CValue IREmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ExprDest &dest) {
   ASTType valueType = value.ir.getRValueType();
   SMLoc exprLoc = value.expr->getLoc();
   if (!value.ir)
@@ -928,7 +928,7 @@ CValue IREmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ValueDest &dest) {
   }
 
   // Memory-only copy ctor will take the destination as address space zero, so
-  // we need to reject ValueDest's expecting it in GPU memory.
+  // we need to reject ExprDest's expecting it in GPU memory.
   if (isNonDefaultAddressSpace) {
     emitError(exprLoc, "value of type ")
         << valueType << " cannot be copied into a non-default address space"
@@ -1031,7 +1031,7 @@ CValue IREmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
       // If the destination is an MLValue with a matching type, then just
       // materialize directly into it and return instead of allocating a
       // temporary if the conversion constructor requires one.
-      ValueDest nmConversionDest(destLV, context);
+      ExprDest nmConversionDest(destLV, context);
       return emitConstructorCall(
           nmTarget, CallOperands(CallSyntax::kTypeCall, value.expr, {value}),
           nmConversionDest);
@@ -1069,7 +1069,7 @@ CValue IREmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
         maybeApplyTypeRefinement(refOp, declScope, *builder);
 
         // Now we store the value into the var decl.
-        ValueDest bindDest(MLValue(refOp), context);
+        ExprDest bindDest(MLValue(refOp), context);
         emitBValue({value.ir, value.expr}, bindDest);
         return MBValue(refOp);
       }
@@ -1137,7 +1137,7 @@ CValue IREmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
   // into the destination.
   if (!value.ir.getIfRValue() || value.ir.getIfPValue() ||
       (!isDefaultAS && !isRegisterPassable)) {
-    ValueDest dest(destLV, context);
+    ExprDest dest(destLV, context);
     auto result = emitCopyOfValue(value, dest);
     if (!result)
       dest.resetForError(*this);
@@ -1174,7 +1174,7 @@ CValue IREmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
   // to use move ctor if present.
   if (valueType.isMovable(exprLoc, shared)) {
     // Invoke `T(*, deinit take: Self)`.
-    ValueDest moveDest(destRef, context);
+    ExprDest moveDest(destRef, context);
     CallOperands operands(CallSyntax::kImplicitMoveCtor, value.expr);
     operands.addKeyword(StringAttr::get(shared.getContext(), "take"), value);
     if (!emitConstructorCall(valueType, std::move(operands), moveDest))
@@ -1344,7 +1344,7 @@ RValue IREmitter::emitI1(ASTExprAnd<CValue> value, ExprContext context) {
                             value.expr->getLoc())) {
     // Use the __bool__ method to convert the user defined type to
     // something that is a Bool or other type that implements __mlir_i1__.
-    ValueDest boolDest(context);
+    ExprDest boolDest(context);
     value.ir = emitNamedMethodCall("__bool__",
                                    CallOperands{CallSyntax::kMethodCall,
                                                 value.expr,
@@ -1366,7 +1366,7 @@ RValue IREmitter::emitI1(ASTExprAnd<CValue> value, ExprContext context) {
   }
 
   // For other types that implement __mlir_i1__, call the method.
-  ValueDest boolDest(context);
+  ExprDest boolDest(context);
   CValue litBoolCall = emitNamedMethodCall(
       "__mlir_i1__",
       CallOperands{
@@ -1394,7 +1394,7 @@ CValue IREmitter::emitIndex(ASTExprAnd<AnyValue> value, ExprContext context) {
     if (isa<IndexType>(cvalue.getRValueType().mlirType))
       return cvalue;
 
-  ValueDest dest(context);
+  ExprDest dest(context);
   auto result = emitNamedMethodCall(
       "__mlir_index__",
       CallOperands{CallSyntax::kMethodCall, value.expr, {value}}, dest);
@@ -1414,7 +1414,7 @@ CValue IREmitter::emitIndex(const ExprNode *expr, ExprContext context) {
   return emitIndex({emitExprCValue(expr, context), expr}, context);
 }
 
-CValue IREmitter::emitBool(ASTExprAnd<PValue> value, ValueDest &dest) {
+CValue IREmitter::emitBool(ASTExprAnd<PValue> value, ExprDest &dest) {
   ASTType boolType =
       shared.lookupBuiltinType("Bool", declScope, value.expr->getLoc());
   return emitConstructorCall(
@@ -1423,11 +1423,11 @@ CValue IREmitter::emitBool(ASTExprAnd<PValue> value, ValueDest &dest) {
 }
 
 CValue IREmitter::emitBool(ASTExprAnd<PValue> value, ExprContext context) {
-  ValueDest dest(context);
+  ExprDest dest(context);
   return emitBool(value, dest);
 }
 
-CValue IREmitter::emitInt(ASTExprAnd<AnyValue> indexValue, ValueDest &dest) {
+CValue IREmitter::emitInt(ASTExprAnd<AnyValue> indexValue, ExprDest &dest) {
   ASTType intType = shared.lookupBuiltinType("Int", getDeclScope(),
                                              indexValue.expr->getLoc());
 
@@ -1440,7 +1440,7 @@ CValue IREmitter::emitInt(ASTExprAnd<AnyValue> indexValue, ValueDest &dest) {
 
 CValue IREmitter::emitInt(ASTExprAnd<AnyValue> indexValue,
                           ExprContext context) {
-  ValueDest dest(context);
+  ExprDest dest(context);
   return emitInt(indexValue, dest);
 }
 

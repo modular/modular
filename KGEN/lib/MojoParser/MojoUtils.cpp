@@ -108,7 +108,7 @@ CValue LIT::materializeAsyncCallAsCoroutine(IREmitter &emitter,
                                             AsyncCallOp call,
                                             const ExprNode *expr,
                                             FnTypeGeneratorType sig,
-                                            ValueDest &dest) {
+                                            ExprDest &dest) {
   ASTType coroutineType = getBoundCoroutineType(
       emitter.getDeclScope(), expr, sig,
       computeArgumentsOrigin(call, emitter.shared.cachedOriginFinder));

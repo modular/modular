@@ -4,7 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This file implements the ExprContext enum and the ValueDest class.
+// This file implements the ExprContext enum and the ExprDest class.
 //
 //===----------------------------------------------------------------------===//
 
@@ -140,17 +140,17 @@ const char *LIT::getContextMessage(ExprContext context) {
 }
 
 //===----------------------------------------------------------------------===//
-// ValueDest
+// ExprDest
 //===----------------------------------------------------------------------===//
 
-ValueDest::ValueDest(VarDeclOp dest, ExprContext context)
+ExprDest::ExprDest(VarDeclOp dest, ExprContext context)
     : representation(dest.getOperation()), context(context) {}
 
-void ValueDest::dump() const { llvm::errs() << *this; }
+void ExprDest::dump() const { llvm::errs() << *this; }
 
 [[maybe_unused]] raw_ostream &LIT::operator<<(raw_ostream &os,
-                                              const ValueDest &value) {
-  os << "ValueDest context=" << (int)value.context << " destination = ";
+                                              const ExprDest &value) {
+  os << "ExprDest context=" << (int)value.context << " destination = ";
 
   auto &representation = value.representation;
   if (isa<NullRepresentation>(representation)) {
@@ -195,7 +195,7 @@ void ValueDest::dump() const { llvm::errs() << *this; }
 }
 
 /// If this indicates an explicit expected RValue type, return that type.
-ASTType ValueDest::getExpectedTypeIfSpecified() const {
+ASTType ExprDest::getExpectedTypeIfSpecified() const {
   // These have no implied type.
   if (isa<NullRepresentation, LValueBufferTaken, Operation *, const ExprNode *>(
           representation))
@@ -210,9 +210,9 @@ ASTType ValueDest::getExpectedTypeIfSpecified() const {
 }
 
 /// When an error is emitted instead of generating IR, this method resets the
-/// ValueDest so it doesn't complain when emission is done.
-void ValueDest::resetForError(IREmitter &emitter) {
-  // We generally just abandon this ValueDest, but if this was set up to
+/// ExprDest so it doesn't complain when emission is done.
+void ExprDest::resetForError(IREmitter &emitter) {
+  // We generally just abandon this ExprDest, but if this was set up to
   // initialize something that could infer types, we need to infer them to
   // TypeCheckErrorType to avoid downstream errors using whatever we failed to
   // initialize.
@@ -230,16 +230,15 @@ void ValueDest::resetForError(IREmitter &emitter) {
     // downstream errors.
     //     var x = <bad>
     //     use(x)  # Don't warn here.
-    ValueDest dest(
-        LValueInitializerType{emitter.shared.getTypeCheckErrorType()},
-        getContext());
+    ExprDest dest(LValueInitializerType{emitter.shared.getTypeCheckErrorType()},
+                  getContext());
     (void)emitter.emitExprLValue(target, dest);
   }
 
   representation = NullRepresentation();
 }
 
-/// Inspect the ValueDest to see if it implies a specific type for the value
+/// Inspect the ExprDest to see if it implies a specific type for the value
 /// being computed, emitting ExprNode targets if present to get their implied
 /// type if present.  This returns null if there is no implied type.
 ///
@@ -248,10 +247,10 @@ void ValueDest::resetForError(IREmitter &emitter) {
 /// cases where this is being used to resolve a type (in which case it will be
 /// null).
 ///
-/// Note that this will mutate the ValueDest if it is an ExprNode, turning it
+/// Note that this will mutate the ExprDest if it is an ExprNode, turning it
 /// into an LValue to store to.
-ASTType ValueDest::resolveImpliedType(SMLoc loc, Type existingValueType,
-                                      IREmitter &emitter) {
+ASTType ExprDest::resolveImpliedType(SMLoc loc, Type existingValueType,
+                                     IREmitter &emitter) {
   // These have no implied type.
   if (isa<NullRepresentation, LValueBufferTaken, Operation *>(representation))
     return {};
@@ -275,7 +274,7 @@ ASTType ValueDest::resolveImpliedType(SMLoc loc, Type existingValueType,
       existingValueType = nmTarget;
 
     // Propagate var/ref context (if any) into the generated declarations.
-    ValueDest dest(LValueInitializerType{existingValueType}, context);
+    ExprDest dest(LValueInitializerType{existingValueType}, context);
     dest.patternDeclKind = patternDeclKind;
 
     // Emit the target as an LValue to understand what we're assigning into.
@@ -304,13 +303,13 @@ ASTType ValueDest::resolveImpliedType(SMLoc loc, Type existingValueType,
   return lvalue.getRValueType();
 }
 
-/// If this ValueDest specifies an MLValue that will be returned by
+/// If this ExprDest specifies an MLValue that will be returned by
 /// getMLValueForResult with the specified type, return it. Otherwise return
 /// null.
 ///
 /// NOTE: This needs to be kept in sync with getLValueForResult.
-MLValue ValueDest::getDefinedMLValueIfExists(ASTType resultType,
-                                             IREmitter &emitter) {
+MLValue ExprDest::getDefinedMLValueIfExists(ASTType resultType,
+                                            IREmitter &emitter) {
   // Handle inference of a 'var' declaration's type.
   if (auto *opDest = dyn_cast<Operation *>(representation)) {
     // If the result type has a nonmaterializable type, then we infer the var
@@ -330,7 +329,7 @@ MLValue ValueDest::getDefinedMLValueIfExists(ASTType resultType,
 
   // If we have an uncollapsed expression, emit it to learn more about it.
   if (const ExprNode *target = dyn_cast<const ExprNode *>(representation)) {
-    ValueDest dest(LValueInitializerType{resultType}, getContext());
+    ExprDest dest(LValueInitializerType{resultType}, getContext());
     dest.patternDeclKind = patternDeclKind;
     if (LValue lValue = emitter.emitExprLValue(target, dest)) {
       representation = lValue;
@@ -370,7 +369,7 @@ MLValue ValueDest::getDefinedMLValueIfExists(ASTType resultType,
   return {};
 }
 
-/// Project a ValueDest into an lvalue with the specified underlying (RValue)
+/// Project a ExprDest into an lvalue with the specified underlying (RValue)
 /// type.
 ///
 /// When `allowIncompatibleTypes` is true, the method is allowed to return an
@@ -381,13 +380,13 @@ MLValue ValueDest::getDefinedMLValueIfExists(ASTType resultType,
 ///
 /// When `allowIncompatibleTypes` is false, this always returns an LValue of
 /// the requested type, which may return a temporary buffer.  In this case it
-/// will not consume the ValueDest, so any user should reemit the ultimate
+/// will not consume the ExprDest, so any user should reemit the ultimate
 /// value through it with emitResult.
 ///
 /// NOTE: This needs to be kept in sync with getDefinedMLValueIfExists.
-LValue ValueDest::getLValueForResult(SMLoc loc, ASTType resultType,
-                                     bool allowIncompatibleTypes,
-                                     bool requireMLValue, IREmitter &emitter) {
+LValue ExprDest::getLValueForResult(SMLoc loc, ASTType resultType,
+                                    bool allowIncompatibleTypes,
+                                    bool requireMLValue, IREmitter &emitter) {
   // Handle inference of a 'var' declaration's type.
   if (auto *opDest = dyn_cast<Operation *>(representation)) {
     // If the result type has a nonmaterializable type, then we infer the var
@@ -485,8 +484,8 @@ LValue ValueDest::getLValueForResult(SMLoc loc, ASTType resultType,
 /// Return an MLValue for this destination of the specified type that we can
 /// initialize. This uses and consumes the destination if it matches the type
 /// of the value dest.
-MLValue ValueDest::getMLValueForResult(SMLoc loc, ASTType resultType,
-                                       IREmitter &emitter) {
+MLValue ExprDest::getMLValueForResult(SMLoc loc, ASTType resultType,
+                                      IREmitter &emitter) {
   LValue lv =
       getLValueForResult(loc, resultType, /*allowIncompatibleTypes=*/false,
                          /*requireMLValue=*/true, emitter);
@@ -499,7 +498,7 @@ MLValue ValueDest::getMLValueForResult(SMLoc loc, ASTType resultType,
 
 /// Return true if this is an MLValue that could be in a non-default address
 /// space.
-bool ValueDest::isNonDefaultAddressSpace() const {
+bool ExprDest::isNonDefaultAddressSpace() const {
   if (LValue lValue = dyn_cast<LValue>(representation))
     if (MLValue refValue = lValue.getIfMLValue())
       if (!lValue.getMValueType().isDefaultAddrSpace())

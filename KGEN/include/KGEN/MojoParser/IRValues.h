@@ -40,7 +40,7 @@
 // different value kinds without inserting lots of casts everywhere.  In
 // particular, MBValue can be a reference with arbitrary mutability because
 // IREmitter::emitResult needs to return a borrow to a value emitted to a
-// ValueDest, but often the result is ignored.  We wouldn't want the parser to
+// ExprDest, but often the result is ignored.  We wouldn't want the parser to
 // insert tons of dead "imm cast" ops into the IR.
 //
 //===----------------------------------------------------------------------===//
@@ -60,7 +60,7 @@ class ExprNode;
 class IREmitter;
 class OverloadSet;
 class FnOp;
-class ValueDest;
+class ExprDest;
 class StructFieldOp;
 class CallOperands;
 class AnyValue;
@@ -454,7 +454,7 @@ public:
 
   /// Emit this as a CValue if it can be resolved, otherwise emit an ambiguity
   /// error and return null.
-  CValue emitAsCValue(IREmitter &emitter, ValueDest &dest);
+  CValue emitAsCValue(IREmitter &emitter, ExprDest &dest);
 
   /// If we are binding the literal to a parametric type, we cannot use the
   /// argument type to find the constructor. Instead, default to the type
@@ -892,7 +892,7 @@ public:
   virtual ~BaseDLValue();
   virtual void print(raw_ostream &os) const = 0;
 
-  virtual CValue emitLoad(ValueDest &dest, IREmitter &emitter) const = 0;
+  virtual CValue emitLoad(ExprDest &dest, IREmitter &emitter) const = 0;
   virtual CValue emitStore(ASTExprAnd<CValue> value,
                            IREmitter &emitter) const = 0;
 };

@@ -39,7 +39,7 @@ using namespace M::KGEN::LIT;
 /// constructor and returns the result value.
 static CValue emitVariadicCtor(ASTType variadicType, CValue variadicList,
                                const ExprNode *expr, IREmitter &emitter) {
-  ValueDest callDest(ExprContext::EC_CallArgValue);
+  ExprDest callDest(ExprContext::EC_CallArgValue);
   return emitter.emitConstructorCall(
       variadicType,
       CallOperands(CallSyntax::kTypeCall, expr, {{variadicList, expr}}),
@@ -53,7 +53,7 @@ static CValue emitVariadicCtor(ASTType variadicType, CValue variadicList,
 class CallEmitter {
 public:
   CallEmitter(RValue callee, const ExprNode *callExpr, IREmitter &emitter,
-              ValueDest &dest);
+              ExprDest &dest);
 
   /// Emit IR for a single argument, according to its convention.
   AnyValue emitOneArgVal(ASTExprAnd<AnyValue> operand, unsigned argIdx,
@@ -115,7 +115,7 @@ public:
   /// The mlir location of the call expression above, stored for convenience.
   Location loc;
   /// The destination context we're emitting into.
-  ValueDest &dest;
+  ExprDest &dest;
   /// The signature type of the callee, stored for convenience.
   FnTypeGeneratorType calleeSig;
 
@@ -125,9 +125,9 @@ private:
   struct AfterCallActions {
     CallEmitter &callEmitter;
 
-    // The first entry of this is a ValueDest for a DLValue that we can invoke
+    // The first entry of this is a ExprDest for a DLValue that we can invoke
     // for the setter.
-    SmallVector<std::pair<ValueDest, MLValue>> lvalueWritebacks;
+    SmallVector<std::pair<ExprDest, MLValue>> lvalueWritebacks;
 
     AfterCallActions(CallEmitter &callEmitter) : callEmitter(callEmitter) {}
 
@@ -152,7 +152,7 @@ private:
 };
 
 CallEmitter::CallEmitter(RValue calleeVal, const ExprNode *callExpr,
-                         IREmitter &emitter, ValueDest &dest)
+                         IREmitter &emitter, ExprDest &dest)
     : emitter(emitter), callee(calleeVal), callExpr(callExpr),
       loc(emitter.translateLocation(callExpr->getLoc())), dest(dest),
       calleeSig(sugarDynCast<FnTypeGeneratorType>(calleeVal.getRValueType())),
@@ -183,10 +183,10 @@ CallEmitter::CallEmitter(RValue calleeVal, const ExprNode *callExpr,
 void CallEmitter::AfterCallActions::emit() {
   IREmitter &emitter = callEmitter.emitter;
 
-  // Emit the elements and clear the writebacks so the ValueDest's get
+  // Emit the elements and clear the writebacks so the ExprDest's get
   // destroyed when they are emitted into.
   while (!lvalueWritebacks.empty()) {
-    // Get 'dest' (the computed LValue as a ValueDest) and 'lValue' (the memory
+    // Get 'dest' (the computed LValue as a ExprDest) and 'lValue' (the memory
     // temporary we're working with) so we can do a writeback.
     auto [dest, lValue] = lvalueWritebacks.pop_back_val();
 
@@ -608,7 +608,7 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
     if (calleeSig.isKwVarArg(argIdx)) {
       assert(!kwargsDict && "multiple **kwargs not supported yet");
       // If this is a variadic keyword argument, we initialize a dictionary.
-      ValueDest dictDest(ExprContext::EC_KWArgsArgument);
+      ExprDest dictDest(ExprContext::EC_KWArgsArgument);
       auto dict = emitter.emitConstructorCall(
           sugarCast<RefType>(expectedType).getElementType(),
           CallOperands(CallSyntax::kTypeCall, callExpr), dictDest);
@@ -646,7 +646,7 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
          "typechecking confirmed that we would use up all positional operands");
 
   // Fill the **kwargs dict with values that we didn't bind to an argument.
-  ValueDest kwargsDest(EC_KWArgsArgument);
+  ExprDest kwargsDest(EC_KWArgsArgument);
   for (auto &operand : operands.values) {
     if (!operand.keyword || passedByKw.contains(operand.keyword))
       continue;
@@ -685,7 +685,7 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
 bool CallEmitter::isSafeToUseValueDestForDirectResult(
     ASTType destRValueType, ArrayRef<Value> argValues) {
 
-  // We don't handle a "ref result" ValueDest initializing a pattern yet.
+  // We don't handle a "ref result" ExprDest initializing a pattern yet.
   if (calleeSig.isRefResult() && !dest.isOperation())
     return false;
 
@@ -1034,7 +1034,7 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
     // address space.  In general we need to do a load from the LValue into
     // a temporary slot and then a writeback when we're done.  Start by loading
     // the LValue, which for a DLValue will call the getter.
-    ValueDest tmpValueDest(lv.getRValueType(), EC_CallArgValue);
+    ExprDest tmpValueDest(lv.getRValueType(), EC_CallArgValue);
     CValue loadVal;
     if (DLValue dlv = lv.getIfDLValue()) {
       // If the getter return as mutable reference, we don't want to force an
@@ -1077,7 +1077,7 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
 
     // After the call, write the updated value in loadMR back to the lvalue.
     afterCallActions.lvalueWritebacks.push_back(
-        {ValueDest(lv, ctx), MLValue(loadMR)});
+        {ExprDest(lv, ctx), MLValue(loadMR)});
     // Use the address of the temporary for the call.
     return checkMValueAddrSpace(loadMR);
   }
@@ -1700,7 +1700,7 @@ static bool shouldEmitParameterCall(RValue callee,
 
 CValue IREmitter::emitCallUnchecked(RValue callee,
                                     const CallOperands &callOperands,
-                                    ValueDest &dest) {
+                                    ExprDest &dest) {
   const ExprNode *callExpr = callOperands.callExpr;
   CallEmitter callEmitter(callee, callExpr, *this, dest);
   auto calleeSig = callEmitter.calleeSig;
@@ -1737,7 +1737,7 @@ CValue IREmitter::emitCallUnchecked(RValue callee,
           callee, CallOperands(callOperands), dest, [&](VarDeclOp errDecl) {
             // Move the error out of the temporary and into the overall error
             // slot, performing the implicit conversion.
-            ValueDest moveDest(errSlot, EC_RaiseValue);
+            ExprDest moveDest(errSlot, EC_RaiseValue);
             (void)emitResult(MRValue(errDecl), callExpr, moveDest);
             auto loc = translateLocation(callExpr->getLoc());
             RaiseOp::create(*builder, loc);
@@ -1996,7 +1996,7 @@ CValue IREmitter::emitCallUnchecked(RValue callee,
   callEmitter.emitAfterCallActions();
 
   // If there is a memory result slot, the value we filled in is our MRValue
-  // result and we've already handled the ValueDest by emitting into it.
+  // result and we've already handled the ExprDest by emitting into it.
   if (calleeSig.hasMemoryOnlyResult() && !calleeSig.isAsync()) {
     callResult = MRValue(callArgs.back());
   }
@@ -2032,6 +2032,6 @@ CValue IREmitter::emitCallUnchecked(RValue callee,
     callResult = maybeEmitRefinementRebind({callResult, callExpr}, *this);
 
   // Otherwise, register-passable results are the call result which may need to
-  // be emitted into a ValueDest.
+  // be emitted into a ExprDest.
   return emitCResult(callResult, callExpr, dest);
 }

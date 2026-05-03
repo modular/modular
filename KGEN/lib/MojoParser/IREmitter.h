@@ -155,16 +155,16 @@ public:
   /// This transfers ownership to the destination, and it will return a
   /// reference if the destination consumes the RValue or the RValue itself if
   /// not. This method will also emit a copy if required to obtain and RValue.
-  CValue emitRValue(ASTExprAnd<AnyValue> value, ValueDest &dest);
+  CValue emitRValue(ASTExprAnd<AnyValue> value, ExprDest &dest);
   RValue emitRValue(ASTExprAnd<AnyValue> value, ExprContext context,
                     ASTType resultType = {});
   CValue emitCValue(ASTExprAnd<AnyValue> value, ExprContext context,
                     ASTType resultType = {});
-  CValue emitCValue(ASTExprAnd<AnyValue> value, ValueDest &dest);
-  BValue emitBValue(ASTExprAnd<AnyValue> value, ValueDest &dest);
+  CValue emitCValue(ASTExprAnd<AnyValue> value, ExprDest &dest);
+  BValue emitBValue(ASTExprAnd<AnyValue> value, ExprDest &dest);
   BValue emitBValue(ASTExprAnd<AnyValue> value, ExprContext context,
                     ASTType resultType = {});
-  LValue emitLValue(ASTExprAnd<AnyValue> value, ValueDest &dest);
+  LValue emitLValue(ASTExprAnd<AnyValue> value, ExprDest &dest);
 
   /// Emit a register passable PValue to an SRValue.
   SRValue emitPValueToSRValue(ASTExprAnd<PValue> value, ExprContext context);
@@ -206,16 +206,16 @@ public:
   /// then generating the call logic.  This emits an error and returns null on
   /// failure.
   CValue emitIndirectCall(CValue callee, CallOperands &&operands,
-                          ValueDest &dest);
+                          ExprDest &dest);
 
   /// Emit an indirect call to a resolved value in a try block, invoking a
   /// callback to generate logic in the 'catch' block that is wrapped around the
-  /// call. This ensures that the ValueDest is updated and live after the try
+  /// call. This ensures that the ExprDest is updated and live after the try
   /// block, which only works if the "catch" logic doesn't fall through.
   ///
   /// This emits an error and returns null on failure.
   CValue emitIndirectCallInTryBlock(
-      CValue callee, CallOperands &&operands, ValueDest &dest,
+      CValue callee, CallOperands &&operands, ExprDest &dest,
       std::function<void(VarDeclOp errDecl)> emitCatchLogic);
 
   /// This helper emits a named method call with the provided `operands`,
@@ -228,13 +228,13 @@ public:
   /// fed into an implicit conversion.  This should only be used for location
   /// information.
   CValue emitNamedMethodCall(StringRef methodName, CallOperands &&operands,
-                             ValueDest &dest);
+                             ExprDest &dest);
 
   /// Emit a call to __new__ or __init__, returning an instance of the specified
   /// type.  If `allowImplicitConversion` is true, the provided args are allowed
   /// to implicitly convert to the expectations of the constructor signatures.
   CValue emitConstructorCall(ASTType type, CallOperands &&operands,
-                             ValueDest &dest);
+                             ExprDest &dest);
 
   /// Convert a CValue string expression into a DataToStr-wrapped parameter
   /// attribute. Handles t-string -> String conversion, StringSlice conversion,
@@ -266,8 +266,8 @@ public:
   /// Note that the `value` provided here may require an implicit conversion
   /// into the destination slot, so the input may be memory-only and result be
   /// register-passable (and visa-versa).
-  AnyValue emitResult(AnyValue value, const ExprNode *expr, ValueDest &dest);
-  CValue emitCResult(CValue value, const ExprNode *expr, ValueDest &dest);
+  AnyValue emitResult(AnyValue value, const ExprNode *expr, ExprDest &dest);
+  CValue emitCResult(CValue value, const ExprNode *expr, ExprDest &dest);
 
   /// Destructing the specific PValue against the provided target expr
   /// (which specifies the pattern).
@@ -285,10 +285,10 @@ public:
   /// differ, including emitting any implicit constructor calls as well as
   /// implicit promotions like origin conversions.
   CValue emitImplicitConversionToType(ASTExprAnd<CValue> value,
-                                      ASTType requiredType, ValueDest &dest);
+                                      ASTType requiredType, ExprDest &dest);
 
   /// Emit the specified expression into the specified destination.
-  AnyValue emitExpr(const ExprNode *expr, ValueDest &dest);
+  AnyValue emitExpr(const ExprNode *expr, ExprDest &dest);
 
   /// Emit the specified node with the indicated expression context and an
   /// optional contextual type.
@@ -318,20 +318,20 @@ public:
                         ASTType resultType = {});
 
   /// Emit the specified expression as an LValue which can be loaded and stored.
-  /// The ValueDest may specify an inferred type for the LValue.
+  /// The ExprDest may specify an inferred type for the LValue.
   ///
   /// This diagnoses the expression with the specified message if it isn't a
   /// valid LValue.
-  LValue emitExprLValue(const ExprNode *expr, ValueDest &dest);
+  LValue emitExprLValue(const ExprNode *expr, ExprDest &dest);
   LValue emitExprLValue(const ExprNode *expr, ExprContext context) {
-    ValueDest dest(context);
+    ExprDest dest(context);
     return emitExprLValue(expr, dest);
   }
 
   /// Emit a copy of the specified value, producing a new owned instance of the
   /// value in the specified destination.  This returns an RValue if
   /// there is no consuming dest, otherwise a BValue.
-  CValue emitCopyOfValue(ASTExprAnd<CValue> value, ValueDest &dest);
+  CValue emitCopyOfValue(ASTExprAnd<CValue> value, ExprDest &dest);
 
   /// Given a value with a known type, emit a store to the specified LValue.
   /// This returns an borrowed reference to the value after it is done.
@@ -383,11 +383,11 @@ public:
   CValue emitIndex(const ExprNode *expr, ExprContext context);
 
   /// Emit a `Bool`-typed value from an `i1` value.
-  CValue emitBool(ASTExprAnd<PValue> value, ValueDest &dest);
+  CValue emitBool(ASTExprAnd<PValue> value, ExprDest &dest);
   CValue emitBool(ASTExprAnd<PValue> value, ExprContext context);
 
   /// Emit a `Int`-typed value from an `index` value.
-  CValue emitInt(ASTExprAnd<AnyValue> indexValue, ValueDest &dest);
+  CValue emitInt(ASTExprAnd<AnyValue> indexValue, ExprDest &dest);
   CValue emitInt(ASTExprAnd<AnyValue> indexValue, ExprContext context);
 
   /// Given an expression that can be used in `origin_of` or a ref expression,
@@ -432,7 +432,7 @@ public:
   /// In case customOpName is provided, emit a custom MLIR operation instead
   /// with the given name for the given custom op definition struct type.
   CValue emitCallUnchecked(RValue callee, const CallOperands &operands,
-                           ValueDest &dest);
+                           ExprDest &dest);
 };
 
 //===----------------------------------------------------------------------===//
