@@ -178,24 +178,22 @@ CValue SubscriptDLValue::emitLoad(ExprDest &dest, IREmitter &emitter) const {
     return {};
   }
 
-  return emitter.emitIndirectCall(getter, CallOperands(operands, dest), dest);
+  return emitter.emitIndirectCall(getter,
+                                  CallOperands(operands, std::move(dest)));
 }
 
 CValue SubscriptDLValue::emitStore(ASTExprAnd<CValue> value,
                                    IREmitter &emitter) const {
   // Add the set value to the keyword arguments list.  Semantic analysis already
   // checked that there can't be a duplicate.
-  ExprDest storeDest(EC_Assignment);
-  CallOperands operandsWithValue(operands, storeDest);
+  CallOperands operandsWithValue(operands, EC_Assignment);
   operandsWithValue.addKeyword(setterValueName, value);
 
   // We got an elementType, so we know it has at least a setter, so if we
   // couldn't resolve a setter, emit it to the named method so we can balk
   // with something more specific.
-  // if (!setter) {
   StringRef setterName = isSubscript() ? "__setitem__" : "__setattr__";
-  return emitter.emitNamedMethodCall(setterName, std::move(operandsWithValue),
-                                     storeDest);
+  return emitter.emitNamedMethodCall(setterName, std::move(operandsWithValue));
 }
 
 //===----------------------------------------------------------------------===//
@@ -218,7 +216,8 @@ void TupleDLValue::print(raw_ostream &os) const {
 CValue TupleDLValue::emitLoad(ExprDest &dest, IREmitter &emitter) const {
   // Emit a call to the tuple type constructor as an explicit construction.
   return emitter.emitConstructorCall(
-      elementType, CallOperands(CallSyntax::kTypeCall, expr, eltLValues), dest);
+      elementType,
+      CallOperands(CallSyntax::kTypeCall, expr, std::move(dest), eltLValues));
 }
 
 // TODO: Move this somewhere common like IREmitter

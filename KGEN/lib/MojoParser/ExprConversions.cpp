@@ -319,7 +319,7 @@ static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl,
 
   // Construct the call operands from the function block arguments.
   SyntheticNode node(useLoc);
-  CallOperands operands(CallSyntax::kMethodCall, &node);
+  CallOperands operands(CallSyntax::kMethodCall, &node, EC_ConversionThunk);
 
   std::optional<size_t> thunkVariadicArgIndexOpt =
       thunkSignature.findPackVarArgIndex();
@@ -451,25 +451,26 @@ static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl,
     needsExplicitCopyOut = true;
   }
 
+  operands.dest = std::move(dest);
   CValue callResult =
-      emitter.emitIndirectCall(PValue(calleeParam), std::move(operands), dest);
+      emitter.emitIndirectCall(PValue(calleeParam), std::move(operands));
   // If we need an explicit copy out, emit a call to T(copy=) on the result into
   // the ultimate dest.
   if (needsExplicitCopyOut) {
-    CallOperands operands(CallSyntax::kImplicitCopyCtor, node);
+    CallOperands operands(CallSyntax::kImplicitCopyCtor, node,
+                          std::move(explicitCopyOutDest));
     operands.addKeyword(StringAttr::get(shared.getContext(), "copy"),
                         {callResult, node});
-    callResult = emitter.emitConstructorCall(
-        callResult.getRValueType(), std::move(operands), explicitCopyOutDest);
+    callResult = emitter.emitConstructorCall(callResult.getRValueType(),
+                                             std::move(operands));
   }
 
   // If the callee is async, we got a coroutine. Now await it into the result.
   if (thunkSignature.isAsync()) {
     ExprDest dest(MLValue(thunk.getArguments().back()), EC_ConversionThunk);
     if (!emitter.emitNamedMethodCall(
-            "__await__",
-            CallOperands(CallSyntax::kMethodCall, &node, {{callResult, node}}),
-            dest))
+            "__await__", CallOperands(CallSyntax::kMethodCall, &node,
+                                      std::move(dest), {{callResult, node}})))
       return {};
   }
 
@@ -1023,7 +1024,8 @@ findCommonType(ASTExprAnd<CValue> val1, ASTExprAnd<CValue> val2,
                             srcValue.expr, CallSyntax::kMethodCall);
     os.paramBindings.add(srcValue.expr, PValue(otherType),
                          StringAttr::get(emitter.getContext(), "other_type"));
-    CallOperands operands(CallSyntax::kMethodCall, srcValue.expr, {srcValue});
+    CallOperands operands(CallSyntax::kMethodCall, srcValue.expr, EC_MergeWith,
+                          {srcValue});
     auto res = os.filterOverloadSet(
         operands, /*emitDiagnosticsOnFailure=*/false, emitter);
     if (!res)
@@ -1185,17 +1187,15 @@ ParseResult IREmitter::coerceTypesToEachOther(
   // __merge_with__ methods first.
   if (lhsMWPV) {
     configEmitter(/*isLHS*/ true);
-    ExprDest dest(EC_MergeWith);
-    lhs = emitIndirectCall(
-        lhsMWPV,
-        CallOperands(CallSyntax::kMethodCall, lhsExpr, {{lhs, lhsExpr}}), dest);
+    lhs =
+        emitIndirectCall(lhsMWPV, CallOperands(CallSyntax::kMethodCall, lhsExpr,
+                                               EC_MergeWith, {{lhs, lhsExpr}}));
   }
   if (rhsMWPV) {
     configEmitter(/*isLHS*/ false);
-    ExprDest dest(EC_MergeWith);
-    rhs = emitIndirectCall(
-        rhsMWPV,
-        CallOperands(CallSyntax::kMethodCall, rhsExpr, {{rhs, rhsExpr}}), dest);
+    rhs =
+        emitIndirectCall(rhsMWPV, CallOperands(CallSyntax::kMethodCall, rhsExpr,
+                                               EC_MergeWith, {{rhs, rhsExpr}}));
   }
 
   // Next apply any implicit conversions that may be needed.
@@ -1600,7 +1600,8 @@ bool IREmitter::canImplicitlyConvertToType(ASTExprAnd<CValue> value,
   // `ASTExprAnd<CValue> value` into a `ASTType actualType` in the signature
   // (such that we can ensure type conversion not looking at the value itself
   // for future changes to guarantee referential transparency).
-  CallOperands operands(CallSyntax::kImplicitConvert, value.expr, {value});
+  CallOperands operands(CallSyntax::kImplicitConvert, value.expr,
+                        EC_OverloadResolution, {value});
   FailureOr<PValue> result =
       OverloadSet::canConstructType(requiredType, operands, declScope);
   bool isConvertible = succeeded(result) && result.value();
@@ -1751,7 +1752,8 @@ CValue IREmitter::emitImplicitConversionToType(ASTExprAnd<CValue> valueExpr,
         target = PValue(fnLiteral.getSymbolConstantAttr());
       if (isClosureWrapperStruct(shared, target, structTy)) {
         return emitConstructorCall(
-            structTy, CallOperands(CallSyntax::kTypeCall, expr, {}), dest);
+            structTy,
+            CallOperands(CallSyntax::kTypeCall, expr, std::move(dest), {}));
       }
     }
   }
@@ -1816,9 +1818,9 @@ CValue IREmitter::emitImplicitConversionToType(ASTExprAnd<CValue> valueExpr,
 
   // We disable implicit conversions to prevent converting T -> S -> U in
   // one step, and to avoid infinite conversion cycles.
-  return emitConstructorCall(
-      requiredType,
-      CallOperands(CallSyntax::kImplicitConvert, expr, {valueExpr}), dest);
+  return emitConstructorCall(requiredType,
+                             CallOperands(CallSyntax::kImplicitConvert, expr,
+                                          std::move(dest), {valueExpr}));
 }
 
 TypedAttr IREmitter::emitStringExprAsDataToStr(CValue val, ExprNode *expr,
@@ -1833,10 +1835,9 @@ TypedAttr IREmitter::emitStringExprAsDataToStr(CValue val, ExprNode *expr,
     auto stringType = shared.lookupBuiltinType("String", declScope, loc)
                           .getWithoutParameters(shared);
     if (val.getType().getDecl(shared) != stringType.getDecl(shared)) {
-      ExprDest dest(context);
       val = emitConstructorCall(
-          stringType, CallOperands(CallSyntax::kTypeCall, expr, {{val, expr}}),
-          dest);
+          stringType,
+          CallOperands(CallSyntax::kTypeCall, expr, context, {{val, expr}}));
       if (!val)
         return {};
     }
@@ -1852,10 +1853,9 @@ TypedAttr IREmitter::emitStringExprAsDataToStr(CValue val, ExprNode *expr,
       return {};
     }
 
-    ExprDest dest(context);
     val = emitConstructorCall(
         stringSliceType,
-        CallOperands(CallSyntax::kTypeCall, expr, {{val, expr}}), dest);
+        CallOperands(CallSyntax::kTypeCall, expr, context, {{val, expr}}));
     if (!val)
       return {};
   }

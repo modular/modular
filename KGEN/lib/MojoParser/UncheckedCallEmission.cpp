@@ -39,21 +39,26 @@ using namespace M::KGEN::LIT;
 /// constructor and returns the result value.
 static CValue emitVariadicCtor(ASTType variadicType, CValue variadicList,
                                const ExprNode *expr, IREmitter &emitter) {
-  ExprDest callDest(ExprContext::EC_CallArgValue);
   return emitter.emitConstructorCall(
-      variadicType,
-      CallOperands(CallSyntax::kTypeCall, expr, {{variadicList, expr}}),
-      callDest);
+      variadicType, CallOperands(CallSyntax::kTypeCall, expr, EC_CallArgValue,
+                                 {{variadicList, expr}}));
 }
 
 //===----------------------------------------------------------------------===//
 // CallEmitter (implementation detail)
 //===----------------------------------------------------------------------===//
 
+namespace {
 class CallEmitter {
 public:
   CallEmitter(RValue callee, const ExprNode *callExpr, IREmitter &emitter,
               ExprDest &dest);
+
+  ~CallEmitter() {
+    // If we tear this down without emitting to the destination, then an error
+    // must have happened.
+    dest.resetForError(emitter);
+  }
 
   /// Emit IR for a single argument, according to its convention.
   AnyValue emitOneArgVal(ASTExprAnd<AnyValue> operand, unsigned argIdx,
@@ -150,6 +155,7 @@ private:
       ArgConvention convention, Type expectedType,
       SmallVectorImpl<ASTExprAnd<AnyValue>> &argumentValues);
 };
+} // end anonymous namespace.
 
 CallEmitter::CallEmitter(RValue calleeVal, const ExprNode *callExpr,
                          IREmitter &emitter, ExprDest &dest)
@@ -608,10 +614,9 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
     if (calleeSig.isKwVarArg(argIdx)) {
       assert(!kwargsDict && "multiple **kwargs not supported yet");
       // If this is a variadic keyword argument, we initialize a dictionary.
-      ExprDest dictDest(ExprContext::EC_KWArgsArgument);
       auto dict = emitter.emitConstructorCall(
           sugarCast<RefType>(expectedType).getElementType(),
-          CallOperands(CallSyntax::kTypeCall, callExpr), dictDest);
+          CallOperands(CallSyntax::kTypeCall, callExpr, EC_KWArgsArgument));
       kwargsDict = emitter.emitMRValue({dict, callExpr}, EC_CallArgValue);
       argumentValues.push_back({kwargsDict, callExpr});
       continue;
@@ -646,7 +651,6 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
          "typechecking confirmed that we would use up all positional operands");
 
   // Fill the **kwargs dict with values that we didn't bind to an argument.
-  ExprDest kwargsDest(EC_KWArgsArgument);
   for (auto &operand : operands.values) {
     if (!operand.keyword || passedByKw.contains(operand.keyword))
       continue;
@@ -656,6 +660,7 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
     SMLoc loc = operand.expr->getLoc();
 
     SyntheticNode tmpNode(loc);
+    ExprDest kwargsDest(EC_KWArgsArgument);
     CValue literalKey = StringLiteralNode::emitCtorCall(
         operand.keyword.strref(), &tmpNode, kwargsDest, emitter);
     if (!literalKey)
@@ -663,10 +668,9 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
 
     // Then we set the element with the given key and the operand as value.
     CallOperands insertOperands(
-        CallSyntax::kMethodCall, callExpr,
+        CallSyntax::kMethodCall, callExpr, EC_KWArgsArgument,
         {{MLValue(kwargsDict), callExpr}, {literalKey, operand.expr}, operand});
-    emitter.emitNamedMethodCall("_insert", std::move(insertOperands),
-                                kwargsDest);
+    emitter.emitNamedMethodCall("_insert", std::move(insertOperands));
   }
 
   return std::make_pair(std::move(argumentValues), std::move(isDefaultMask));
@@ -1699,10 +1703,9 @@ static bool shouldEmitParameterCall(RValue callee,
 }
 
 CValue IREmitter::emitCallUnchecked(RValue callee,
-                                    const CallOperands &callOperands,
-                                    ExprDest &dest) {
+                                    CallOperands &&callOperands) {
   const ExprNode *callExpr = callOperands.callExpr;
-  CallEmitter callEmitter(callee, callExpr, *this, dest);
+  CallEmitter callEmitter(callee, callExpr, *this, callOperands.dest);
   auto calleeSig = callEmitter.calleeSig;
   // Function literals might have been converted.
   callee = callEmitter.callee;
@@ -1734,8 +1737,7 @@ CValue IREmitter::emitCallUnchecked(RValue callee,
                                    errSlot.getRValueType(), getDeclScope())) {
 
       return emitIndirectCallInTryBlock(
-          callee, CallOperands(callOperands, dest), dest,
-          [&](VarDeclOp errDecl) {
+          callee, std::move(callOperands), [&](VarDeclOp errDecl) {
             // Move the error out of the temporary and into the overall error
             // slot, performing the implicit conversion.
             ExprDest moveDest(errSlot, EC_RaiseValue);
@@ -1783,10 +1785,9 @@ CValue IREmitter::emitCallUnchecked(RValue callee,
 
   // We first emit all the arguments.
   auto argumentValuesOr = callEmitter.emitArgValues(callOperands);
-  if (failed(argumentValuesOr)) {
-    dest.resetForError(*this);
+  if (failed(argumentValuesOr))
     return {};
-  }
+
   ArrayRef<ASTExprAnd<AnyValue>> argumentValues = (*argumentValuesOr).first;
   const llvm::BitVector &isDefaultMask = (*argumentValuesOr).second;
 
@@ -1794,9 +1795,10 @@ CValue IREmitter::emitCallUnchecked(RValue callee,
     TypedAttr paramCallResult;
     {
       llvm::SaveAndRestore savedBuilder(builder, {});
-      assert(dest.getContext() != EC_InvalidContext &&
+      assert(callOperands.dest.getContext() != EC_InvalidContext &&
              "parametric emitCallUnchecked must include an ExprContext");
-      llvm::SaveAndRestore savedContext(paramContext, dest.getContext());
+      llvm::SaveAndRestore savedContext(paramContext,
+                                        callOperands.dest.getContext());
       argumentValues = dropResultSlots(argumentValues, calleeSig);
       paramCallResult = callEmitter.emitCallInParamContext(argumentValues);
     }
@@ -1813,10 +1815,7 @@ CValue IREmitter::emitCallUnchecked(RValue callee,
     // restoring the builder so that it is NOT forced to be in the parameter
     // context.  In particular, dest may cause a call to set the paramCallResult
     // into a DLValue.
-    CValue result = emitCResult(paramCallResult, callExpr, dest);
-    if (!result)
-      dest.resetForError(*this);
-    return result;
+    return emitCResult(paramCallResult, callExpr, callOperands.dest);
   }
 
   // Ok, we're going to emit this expression as a dynamic call.  If all of the
@@ -1846,7 +1845,6 @@ CValue IREmitter::emitCallUnchecked(RValue callee,
           << FixIt::insertBeforeToken(callExpr->getRangeStart(), "comptime(")
           << FixIt::insertAfterToken(callExpr->getRangeEnd(), ")",
                                      shared.diags);
-      dest.resetForError(*this);
       return {};
     }
   }
@@ -1899,10 +1897,8 @@ CValue IREmitter::emitCallUnchecked(RValue callee,
     bool isDefaultArgVal = isDefaultMask.test(argIdx);
     Value arg = callEmitter.emitPreemittedArgumentAsDynamicValue(
         argValAndExpr, isDefaultArgVal, convention, declaredArgType, callArgs);
-    if (!arg) {
-      dest.resetForError(*this);
+    if (!arg)
       return {};
-    }
 
     // See if we have an implicit origin bound for this argument.
     if (hasImplicitOrigin(convention))
@@ -1952,12 +1948,10 @@ CValue IREmitter::emitCallUnchecked(RValue callee,
                                       implicitOrigins, callArgs);
       // Emit the implicit conversion to Coroutine[T]. We emit into the call's
       // destination to avoid an extra copy/move of the Coroutine object.
-      callResult = materializeAsyncCallAsCoroutine(*this, call, callExpr,
-                                                   calleeSig, dest);
-      if (!callResult) {
-        dest.resetForError(*this);
+      callResult = materializeAsyncCallAsCoroutine(
+          *this, call, callExpr, calleeSig, callOperands.dest);
+      if (!callResult)
         return {};
-      }
     } else {
       auto call = CallOp::create(*builder, loc, resultType, target.get(),
                                  implicitOrigins, callArgs);
@@ -2006,10 +2000,8 @@ CValue IREmitter::emitCallUnchecked(RValue callee,
   // the SRValue we've got.
   if (calleeSig.isRefResult()) {
     auto resultVal = emitSRValue({callResult, callExpr}, EC_CallCalleeValue);
-    if (!resultVal) {
-      dest.resetForError(*this);
+    if (!resultVal)
       return {};
-    }
 
     // Use the appropriate classification for the value based on its mutability.
     callResult = CValue::getMValueForRef(resultVal);
@@ -2034,5 +2026,5 @@ CValue IREmitter::emitCallUnchecked(RValue callee,
 
   // Otherwise, register-passable results are the call result which may need to
   // be emitted into a ExprDest.
-  return emitCResult(callResult, callExpr, dest);
+  return emitCResult(callResult, callExpr, callOperands.dest);
 }

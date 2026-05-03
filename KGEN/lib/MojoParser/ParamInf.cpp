@@ -181,9 +181,8 @@ static Type inferInitializerType(ASTDecl &declScope, InitializerUValue &init,
   ASTType inferredType =
       defaultType.getWithUnknownParametersReplaced(declScope.getShared());
 
-  ExprDest dest(EC_CallArgValue);
   CallOperands operands =
-      init.getOperandsForInferredType(inferredType, dest, emitter);
+      init.getOperandsForInferredType(inferredType, EC_CallArgValue, emitter);
 
   // We expect the initializer to return the constructed type.
   // Infer the parameters of this overload candidate against the computed
@@ -668,7 +667,7 @@ LogicalResult ParamInf::inferFromRVType(ASTExprAnd<AnyValue> operand,
     auto nonParamType =
         expectedType.getWithUnknownParametersReplaced(getShared());
     CallOperands ctorOperands(CallSyntax::kImplicitConvert, operand.expr,
-                              {{argVal, operand.expr}});
+                              EC_TypeParamValue, {{argVal, operand.expr}});
     FailureOr<PValue> pValue = OverloadSet::canConstructType(
         nonParamType, ctorOperands, getDeclScope());
     if (failed(pValue)) {

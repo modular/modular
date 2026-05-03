@@ -1357,8 +1357,7 @@ static LogicalResult injectDebuggerRaiseHookCall(SharedState &shared,
   ParamBindings bindings(declContext, node);
   OverloadSet call("__mojo_debugger_raise_hook", raiseHookFns,
                    std::move(bindings), CallSyntax::kDirectCall);
-  ExprDest raiseHookDest(EC_RaiseValue);
-  call.emitCall(CallOperands{CallSyntax::kDirectCall, node, {}}, raiseHookDest,
+  call.emitCall(CallOperands{CallSyntax::kDirectCall, node, EC_RaiseValue, {}},
                 emitter);
 
   // Emit a LineTableLocOp after the call to ensure the instruction after the
@@ -1493,7 +1492,7 @@ ParseResult StmtParser::parseAssertStmt(size_t assertIndent) {
     return success();
 
   // Build the call operands: debug_assert(cond[, msg]).
-  CallOperands operands(CallSyntax::kDirectCall, condExpr);
+  CallOperands operands(CallSyntax::kDirectCall, condExpr, EC_TopLevelStmt);
   operands.add({condVal, condExpr});
   if (messageExpr) {
     AnyValue msgVal = emitter.emitExpr(messageExpr, EC_TopLevelStmt);
@@ -1506,8 +1505,7 @@ ParseResult StmtParser::parseAssertStmt(size_t assertIndent) {
   ParamBindings bindings(getDeclScope(), condExpr);
   OverloadSet call("debug_assert", debugAssertFns, std::move(bindings),
                    CallSyntax::kDirectCall);
-  ExprDest dest(EC_TopLevelStmt);
-  call.emitCall(std::move(operands), dest, emitter);
+  call.emitCall(std::move(operands), emitter);
   return success();
 }
 
@@ -1708,14 +1706,21 @@ LoopResult StmtParser::emitForStmt(SMLoc forLoc, ExprNode *targetExpr,
                                 forLocation, VarDeclKind::Synthesized);
   ExprDest rangeDest(iterVar, EC_ForIterator);
   if (!prefixEmitter.emitNamedMethodCall(
-          "__iter__",
-          CallOperands(CallSyntax::kMethodCall, seqExpr, {loadedSeq}),
-          rangeDest))
+          "__iter__", CallOperands(CallSyntax::kMethodCall, seqExpr,
+                                   std::move(rangeDest), {{loadedSeq}})))
     return LoopResult(LoopResult::ErrorKind::inLoopStmt);
+
+  // Emit the call to __next__ with the target as the destination to assign
+  // into.  This will synthesize the VarDeclOp from the inferred result type,
+  // which will be in scope for the body that we will parse.
+  ExprDest indvarDest(targetExpr, EC_ForIterator);
+  // Lexically scope the indvarDest as a 'bind' pattern like a 'read' arg.
+  indvarDest.setPatternDeclKind(PatternDeclKind::kBind);
 
   // Now that we have the iterator (and its type), find the  __next__ method to
   // know what we're dealing with.
   CallOperands nextOperands(CallSyntax::kMethodCall, seqExpr,
+                            std::move(indvarDest),
                             {{MLValue(iterVar), seqExpr}});
   ASTType iterType = iterVar.getType().getElementType();
 
@@ -1730,6 +1735,7 @@ LoopResult StmtParser::emitForStmt(SMLoc forLoc, ExprNode *targetExpr,
     diag.attachNote(seqExpr->getLoc())
         << "to conform to 'Iterable', add it to the struct declaration: "
            "'struct Foo(Iterable):'";
+    nextOperands.dest.resetForError(prefixEmitter);
     return LoopResult(LoopResult::ErrorKind::inLoopStmt);
   }
 
@@ -1756,18 +1762,10 @@ LoopResult StmtParser::emitForStmt(SMLoc forLoc, ExprNode *targetExpr,
   pushChildScope(scopeGuard, keepDecl);
   auto emitter = getEmitter();
 
-  // Emit the call to __next__ with the target as the destination to assign
-  // into.  This will synthesize the VarDeclOp from the inferred result type,
-  // which will be in scope for the body that we will parse.
-  ExprDest indvarDest(targetExpr, EC_ForIterator);
-  // Lexically scope the indvarDest as a 'bind' pattern like a 'read' arg.
-  indvarDest.setPatternDeclKind(PatternDeclKind::kBind);
-
   if (isThrowsCase) {
     // Call __next__.  If it throws then break to the else block.
     if (!emitter.emitIndirectCallInTryBlock(
-            nextFn, std::move(nextOperands), indvarDest,
-            [&](VarDeclOp errDecl) {
+            nextFn, std::move(nextOperands), [&](VarDeclOp errDecl) {
               // Just break on error.  We ignore the actual error value.
               LoopBreakElseOp::create(*emitter.builder, loopOp.getLoc());
             })) {
@@ -1775,12 +1773,10 @@ LoopResult StmtParser::emitForStmt(SMLoc forLoc, ExprNode *targetExpr,
       return LoopResult(LoopResult::ErrorKind::inLoopStmt);
     }
   } else {
-    ExprDest lengthDest(EC_ForIterator);
     CValue hasNextBool = emitter.emitNamedMethodCall(
         "__has_next__",
-        CallOperands(CallSyntax::kMethodCall, seqExpr,
-                     {{MLValue(iterVar), seqExpr}}),
-        lengthDest);
+        CallOperands(CallSyntax::kMethodCall, seqExpr, EC_ForIterator,
+                     {{MLValue(iterVar), seqExpr}}));
     CValue hasNext = emitter.emitI1({hasNextBool, seqExpr}, EC_ForIterator);
     SRValue shouldContinue =
         emitter.emitSRValue({hasNext, seqExpr}, EC_ForIterator);
@@ -1800,8 +1796,7 @@ LoopResult StmtParser::emitForStmt(SMLoc forLoc, ExprNode *targetExpr,
     emitter.builder = builder;
 
     // Emit the call to __next__ now that we know there is an element.
-    if (!emitter.emitIndirectCall(nextFn, std::move(nextOperands),
-                                  indvarDest)) {
+    if (!emitter.emitIndirectCall(nextFn, std::move(nextOperands))) {
       indvarDest.resetForError(emitter);
       return LoopResult(LoopResult::ErrorKind::inLoopStmt);
     }
@@ -1878,12 +1873,10 @@ ParseResult StmtParser::parseParamFor(size_t curIndent, SMLoc forLoc,
   AnyValue seqValue = emitter.emitExprCValue(seqExpr, EC_ComptimeForSeq);
   if (!seqValue)
     return failure();
-  ExprDest rangeDest(EC_ForIterator);
   PValue initialIterVal = emitter.emitPValue(
-      {emitter.emitNamedMethodCall("__iter__",
-                                   CallOperands(CallSyntax::kMethodCall,
-                                                seqExpr, {{seqValue, seqExpr}}),
-                                   rangeDest),
+      {emitter.emitNamedMethodCall(
+           "__iter__", CallOperands(CallSyntax::kMethodCall, seqExpr,
+                                    EC_ForIterator, {{seqValue, seqExpr}})),
        seqExpr},
       EC_ForIterator);
   if (!initialIterVal)
@@ -1938,11 +1931,9 @@ ParseResult StmtParser::parseParamFor(size_t curIndent, SMLoc forLoc,
   //  comptime if !iter.has_next(). Emit the condition as a parameter
   // expression.
   auto iterValue = PValue(ParamDeclRefAttr::get(iterDecl));
-  ExprDest hasNextDest(EC_ForIterator);
   CValue hasNextRes = emitter.emitIndirectCall(
-      hasNext,
-      CallOperands(CallSyntax::kMethodCall, seqExpr, {{iterValue, seqExpr}}),
-      hasNextDest);
+      hasNext, CallOperands(CallSyntax::kMethodCall, seqExpr, EC_ForIterator,
+                            {{iterValue, seqExpr}}));
   auto hasNextI1 = emitter.emitI1({hasNextRes, seqExpr}, EC_ForIterator);
   if (!hasNextI1)
     return failure();
@@ -1963,11 +1954,9 @@ ParseResult StmtParser::parseParamFor(size_t curIndent, SMLoc forLoc,
 
   // After the check for too-few elements, we extract the next element and bind
   // to the target by calling the paramfor_next_iter "next_value" function.
-  ExprDest getNextValueDest(EC_ForIterator);
   auto nextValue = emitter.emitIndirectCall(
-      getNextValue,
-      CallOperands(CallSyntax::kDirectCall, seqExpr, {{iterValue, seqExpr}}),
-      getNextValueDest);
+      getNextValue, CallOperands(CallSyntax::kDirectCall, seqExpr,
+                                 EC_ForIterator, {{iterValue, seqExpr}}));
   if (!nextValue)
     return failure();
   assert(nextValue.getIfPValue() && "expected PValue in param context");
@@ -2352,10 +2341,20 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
   // advanced use cases with unique context managers).
   AnyValue contextVal = MLValue(contextMgrDecl);
 
+  // If there is an explicit target specified, use it.
+  ExprDest enterDest(EC_WithContextMgr);
+  if (targetExpr) {
+    // Initialize the target expression with the result of the __enter__ call.
+    enterDest = ExprDest(targetExpr, EC_WithContextMgr);
+    // Bind a mutable target variable.
+    enterDest.setPatternDeclKind(PatternDeclKind::kVar);
+  }
+
   // Interrogate the caller to see what convention the first argument to the
   // __enter__ method is.  Be careful about invalid cases - the errors will get
   // diagnosed when emitting the method call.
-  CallOperands enterOperands(CallSyntax::kMethodCall, contextExp);
+  CallOperands enterOperands(CallSyntax::kMethodCall, contextExp,
+                             std::move(enterDest));
   enterOperands.addSelf({contextVal, contextExp});
   auto enterEmitter = getEmitter();
   if (PValue enterMethod = OverloadSet::lookupAndResolve(
@@ -2398,19 +2397,10 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
   llvm::SaveAndRestore<ASTDecl *> keepDecl(curDeclScope);
   pushChildScope(scopeGuard, keepDecl);
 
-  // If there is an explicit target specified, use it.
-  ExprDest enterDest(EC_WithContextMgr);
-  if (targetExpr) {
-    // Initialize the target expression with the result of the __enter__ call.
-    enterDest = ExprDest(targetExpr, EC_WithContextMgr);
-    // Bind a mutable target variable.
-    enterDest.setPatternDeclKind(PatternDeclKind::kVar);
-  }
-
   // Emit the call to __enter__ and (if 'as TARGET' was specified), bind to
   // result to a named TARGET vardecl, inferring its type.
-  CValue enterResult = getEmitter().emitNamedMethodCall(
-      "__enter__", std::move(enterOperands), enterDest);
+  CValue enterResult =
+      getEmitter().emitNamedMethodCall("__enter__", std::move(enterOperands));
 
   // Create the temporary error decl for any value thrown out of this scope.
   VarDeclOp errDecl = getEmitter().emitVarDecl(
@@ -2454,7 +2444,8 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
   TryOp nestedTryOp;
   VarDeclOp nestedErrDecl;
   if (inExceptRegion && hasExitMethod) {
-    CallOperands exitCallOperands(CallSyntax::kMethodCall, contextExp);
+    CallOperands exitCallOperands(CallSyntax::kMethodCall, contextExp,
+                                  EC_WithExitResult);
     exitCallOperands.addSelf({contextVal, contextExp});
     // We allow any error type for this lookup so we use
     // NameLookupArgWildcardType.
@@ -2574,7 +2565,8 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
     // pass in an RValue for it so it can consume the context manager.
     AnyValue contextVal = MLValue(contextMgrDecl);
     auto exitEmitter = getEmitter();
-    CallOperands operands(CallSyntax::kMethodCall, contextExp);
+    CallOperands operands(CallSyntax::kMethodCall, contextExp,
+                          EC_WithExitResult);
     operands.addSelf({contextVal, contextExp});
     if (PValue exitMethod = OverloadSet::lookupAndResolve(
             contextRVType, "__exit__", operands, exitEmitter)) {
@@ -2589,12 +2581,10 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
     }
 
     // Ok, emit the call the __exit__.
-    ExprDest exitDest(EC_WithExitResult);
     (void)getEmitter().emitNamedMethodCall(
         "__exit__",
-        CallOperands(CallSyntax::kMethodCall, contextExp,
-                     {{contextVal, contextExp}}),
-        exitDest);
+        CallOperands(CallSyntax::kMethodCall, contextExp, EC_WithExitResult,
+                     {{contextVal, contextExp}}));
   };
 
   // If the body of this try can throw, then the "except" block in it needs to
@@ -2667,12 +2657,12 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
     // TODO: this isn't using the same convention that Python does.  We support
     // overloading though and this is going to be way better for anything real
     // that wants to implement this. We can support both styles when we need to.
-    ExprDest exitResultDest(EC_WithExitResult);
     CallOperands exitOperandList(CallSyntax::kMethodCall, contextExp,
+                                 EC_WithExitResult,
                                  {{MLValue(contextMgrDecl), contextExp},
                                   {MBValue(nestedErrDecl), contextExp}});
     CValue exitResult = getEmitter().emitNamedMethodCall(
-        "__exit__", std::move(exitOperandList), exitResultDest);
+        "__exit__", std::move(exitOperandList));
     RValue exitI1RVal =
         getEmitter().emitI1({exitResult, contextExp}, EC_WithExitResult);
     SRValue exitI1Val =
@@ -4151,25 +4141,24 @@ static AnyValue emitComprehension(const ComprehensionNode *node, ExprDest &dest,
     }
 
     // Okay we know the collection has a type, emit the insertion method call.
-    ExprDest dest(EC_CollectionCompElt);
-
     // Use dict.__setitem__(key, value) for dict comprehensions.
     if (node->kind == ExprNode::kDictComprehension) {
       CallOperands operands(CallSyntax::kMethodCall, &exprNode,
+                            EC_CollectionCompElt,
                             {{collectionMLValue, &exprNode},
                              {elementExpr, &exprNode},
                              {valueExpr, &exprNode}});
       operands.hasSelfOperand = true;
-      emitter.emitNamedMethodCall("__setitem__", std::move(operands), dest);
+      emitter.emitNamedMethodCall("__setitem__", std::move(operands));
     } else {
       // Use list.append(elt) or set.add(elt) for list and set comprehensions.
       CallOperands operands(
-          CallSyntax::kMethodCall, &exprNode,
+          CallSyntax::kMethodCall, &exprNode, EC_CollectionCompElt,
           {{collectionMLValue, &exprNode}, {elementExpr, &exprNode}});
       operands.hasSelfOperand = true;
       const char *name =
           node->kind == ExprNode::kListComprehension ? "append" : "add";
-      emitter.emitNamedMethodCall(name, std::move(operands), dest);
+      emitter.emitNamedMethodCall(name, std::move(operands));
     }
 
     return success();
@@ -4186,7 +4175,7 @@ static AnyValue emitComprehension(const ComprehensionNode *node, ExprDest &dest,
   ExprDest ctorDest(collectionMLValue, EC_CollectionCompElt);
   cursorEmitter.emitConstructorCall(
       collectionMLValue.getRValueType(),
-      CallOperands(CallSyntax::kTypeCall, &exprNode), ctorDest);
+      CallOperands(CallSyntax::kTypeCall, &exprNode, std::move(ctorDest)));
 
   // Finally, we can nuke the cursor.
   cursor->erase();

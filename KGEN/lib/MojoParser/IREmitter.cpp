@@ -194,8 +194,8 @@ CValue IREmitter::emitRValue(ASTExprAnd<AnyValue> value, ExprDest &dest) {
   if (auto knownDestType = dest.getExpectedTypeIfSpecified()) {
     if (!cValue.getRValueType().isEqualCanon(knownDestType)) {
       return emitConstructorCall(
-          knownDestType,
-          CallOperands(CallSyntax::kImplicitConvert, value.expr, value), dest);
+          knownDestType, CallOperands(CallSyntax::kImplicitConvert, value.expr,
+                                      std::move(dest), value));
     }
   }
 
@@ -1013,9 +1013,10 @@ CValue IREmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ExprDest &dest) {
   }
 
   // Invoke `T(*, copy: Self)`.
-  CallOperands operands(CallSyntax::kImplicitCopyCtor, value.expr);
+  CallOperands operands(CallSyntax::kImplicitCopyCtor, value.expr,
+                        std::move(dest));
   operands.addKeyword(StringAttr::get(shared.getContext(), "copy"), value);
-  return emitConstructorCall(valueType, std::move(operands), dest);
+  return emitConstructorCall(valueType, std::move(operands));
 }
 
 CValue IREmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
@@ -1029,8 +1030,8 @@ CValue IREmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
       // temporary if the conversion constructor requires one.
       ExprDest nmConversionDest(destLV, context);
       return emitConstructorCall(
-          nmTarget, CallOperands(CallSyntax::kTypeCall, value.expr, {value}),
-          nmConversionDest);
+          nmTarget, CallOperands(CallSyntax::kTypeCall, value.expr,
+                                 std::move(nmConversionDest), {value}));
     }
   }
 
@@ -1171,9 +1172,10 @@ CValue IREmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
   if (valueType.isMovable(exprLoc, shared)) {
     // Invoke `T(*, deinit take: Self)`.
     ExprDest moveDest(destRef, context);
-    CallOperands operands(CallSyntax::kImplicitMoveCtor, value.expr);
+    CallOperands operands(CallSyntax::kImplicitMoveCtor, value.expr,
+                          std::move(moveDest));
     operands.addKeyword(StringAttr::get(shared.getContext(), "take"), value);
-    if (!emitConstructorCall(valueType, std::move(operands), moveDest))
+    if (!emitConstructorCall(valueType, std::move(operands)))
       return {};
     applyRefinementIfVarDecl();
     return MBValue(destRef);
@@ -1340,12 +1342,11 @@ RValue IREmitter::emitI1(ASTExprAnd<CValue> value, ExprContext context) {
                             value.expr->getLoc())) {
     // Use the __bool__ method to convert the user defined type to
     // something that is a Bool or other type that implements __mlir_i1__.
-    ExprDest boolDest(context);
-    value.ir = emitNamedMethodCall("__bool__",
-                                   CallOperands{CallSyntax::kMethodCall,
-                                                value.expr,
-                                                {{value.ir, value.expr}}},
-                                   boolDest);
+    value.ir =
+        emitNamedMethodCall("__bool__", CallOperands{CallSyntax::kMethodCall,
+                                                     value.expr,
+                                                     context,
+                                                     {{value.ir, value.expr}}});
   }
 
   // For stdlib Bool, directly extract the _mlir_value field instead of calling
@@ -1362,12 +1363,11 @@ RValue IREmitter::emitI1(ASTExprAnd<CValue> value, ExprContext context) {
   }
 
   // For other types that implement __mlir_i1__, call the method.
-  ExprDest boolDest(context);
   CValue litBoolCall = emitNamedMethodCall(
-      "__mlir_i1__",
-      CallOperands{
-          CallSyntax::kMethodCall, value.expr, {{value.ir, value.expr}}},
-      boolDest);
+      "__mlir_i1__", CallOperands{CallSyntax::kMethodCall,
+                                  value.expr,
+                                  context,
+                                  {{value.ir, value.expr}}});
 
   // If we got back a sugared PValue call to the method, then drop the sugar.
   // This reduces the size of the printed IR, making it easier to read, and the
@@ -1390,10 +1390,9 @@ CValue IREmitter::emitIndex(ASTExprAnd<AnyValue> value, ExprContext context) {
     if (isa<IndexType>(cvalue.getRValueType().mlirType))
       return cvalue;
 
-  ExprDest dest(context);
   auto result = emitNamedMethodCall(
       "__mlir_index__",
-      CallOperands{CallSyntax::kMethodCall, value.expr, {value}}, dest);
+      CallOperands{CallSyntax::kMethodCall, value.expr, context, {value}});
 
   // If we got back a sugared PValue call to the method, then drop the sugar.
   // This reduces the size of the printed IR, making it easier to read, and the
@@ -1413,9 +1412,10 @@ CValue IREmitter::emitIndex(const ExprNode *expr, ExprContext context) {
 CValue IREmitter::emitBool(ASTExprAnd<PValue> value, ExprDest &dest) {
   ASTType boolType =
       shared.lookupBuiltinType("Bool", declScope, value.expr->getLoc());
-  return emitConstructorCall(
-      boolType, CallOperands(CallSyntax::kImplicitConvert, value.expr, {value}),
-      dest);
+
+  CallOperands operands(CallSyntax::kImplicitConvert, value.expr,
+                        std::move(dest), {value});
+  return emitConstructorCall(boolType, std::move(operands));
 }
 
 CValue IREmitter::emitBool(ASTExprAnd<PValue> value, ExprContext context) {
@@ -1428,10 +1428,11 @@ CValue IREmitter::emitInt(ASTExprAnd<AnyValue> indexValue, ExprDest &dest) {
                                              indexValue.expr->getLoc());
 
   // Build Int from __mlir_type.index explicitly: Int.__init__(*, mlir_value=…)
-  CallOperands intCtorOperands(CallSyntax::kTypeCall, indexValue.expr);
+  CallOperands intCtorOperands(CallSyntax::kTypeCall, indexValue.expr,
+                               std::move(dest));
   intCtorOperands.addKeyword(StringAttr::get(getContext(), "mlir_value"),
                              indexValue);
-  return emitConstructorCall(intType, std::move(intCtorOperands), dest);
+  return emitConstructorCall(intType, std::move(intCtorOperands));
 }
 
 CValue IREmitter::emitInt(ASTExprAnd<AnyValue> indexValue,

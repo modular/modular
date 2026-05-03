@@ -97,8 +97,13 @@ static LogicalResult emitForwardingCall(ImplicitLocOpBuilder &builder,
         declScope.getShared().diBuilder->pushScopeGuard(fnOp.getLocScope());
   }
 
+  ExprDest dest(EC_ReturnValue);
+  if (!calleeSig.isAsync() && calleeSig.hasMemoryOnlyResult())
+    dest = ExprDest(MLValue(arguments.back()), EC_ReturnValue);
+
   SyntheticNode syntheticExpr(declScope.getLoc());
-  CallOperands callOperands(CallSyntax::kMethodCall, &syntheticExpr);
+  CallOperands callOperands(CallSyntax::kMethodCall, &syntheticExpr,
+                            std::move(dest));
   for (auto [bbArg, convention, pog] :
        llvm::zip_equal(arguments, calleeSig.getArgConventions(),
                        calleeSig.getArgListAttrs().getPogs())) {
@@ -124,11 +129,8 @@ static LogicalResult emitForwardingCall(ImplicitLocOpBuilder &builder,
       callOperands.add({argValue, &syntheticExpr});
   }
 
-  ExprDest dest(EC_ReturnValue);
-  if (!calleeSig.isAsync() && calleeSig.hasMemoryOnlyResult())
-    dest = ExprDest(MLValue(arguments.back()), EC_ReturnValue);
-
-  CValue callResult = emitter.emitCallUnchecked(callee, callOperands, dest);
+  CValue callResult =
+      emitter.emitCallUnchecked(callee, std::move(callOperands));
   assert(callResult && "call should have succeeded");
   if (!calleeSig.isAsync()) {
     auto regRet = callResult.getIfSRValue();
@@ -144,8 +146,7 @@ static LogicalResult emitForwardingCall(ImplicitLocOpBuilder &builder,
   if (!emitter.emitNamedMethodCall(
           "__await__",
           CallOperands(CallSyntax::kMethodCallSynthetic, &syntheticExpr,
-                       {{callResult, &syntheticExpr}}),
-          awaitDest))
+                       std::move(awaitDest), {{callResult, &syntheticExpr}})))
     return failure();
 
   IREmitter::emitNormalReturn(builder);
@@ -3187,20 +3188,19 @@ void ClosureEmitter::addConformanceToDevicePassable(
         auto strLitDecl =
             cast<StructDeclOp>(strLitType.getDecl(shared)->getIfOperation());
         Type boundStrLitType = strLitDecl.bindReference({closureStr});
-        ExprDest litDest(EC_CallArgValue);
         CValue literalValue = emitter.emitConstructorCall(
-            ASTType(boundStrLitType), CallOperands(CallSyntax::kTypeCall, &loc),
-            litDest);
+            ASTType(boundStrLitType),
+            CallOperands(CallSyntax::kTypeCall, &loc, EC_CallArgValue));
 
-        // Call String.__init__(literal) into the byref result slot.
+        // Call String.__init__(literal) into the result slot.
         ASTType stringType =
             shared.lookupBuiltinType("String", structDecl, structDecl.getLoc());
         ExprDest resultDest(MLValue(block.getArguments().back()),
                             EC_ReturnValue);
-        CallOperands ctorOperands(CallSyntax::kTypeCall, &loc);
+        CallOperands ctorOperands(CallSyntax::kTypeCall, &loc,
+                                  std::move(resultDest));
         ctorOperands.add(ASTExprAnd<CValue>{literalValue, &loc});
-        emitter.emitConstructorCall(stringType, std::move(ctorOperands),
-                                    resultDest);
+        emitter.emitConstructorCall(stringType, std::move(ctorOperands));
         auto noneAttr = KGEN::ParamConstantOp::create(
             b, KGEN::NoneAttr::get(b.getContext()));
         IREmitter::emitNormalReturn(b, noneAttr);

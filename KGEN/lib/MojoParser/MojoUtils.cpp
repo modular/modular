@@ -117,13 +117,9 @@ CValue LIT::materializeAsyncCallAsCoroutine(IREmitter &emitter,
     return {};
   }
 
-  CValue coroutine = emitter.emitConstructorCall(
-      coroutineType,
-      CallOperands(CallSyntax::kImplicitConvert, expr, {{SRValue(call), expr}}),
-      dest);
-  if (!coroutine)
-    dest.resetForError(emitter);
-  return coroutine;
+  return emitter.emitConstructorCall(
+      coroutineType, CallOperands(CallSyntax::kImplicitConvert, expr,
+                                  std::move(dest), {{SRValue(call), expr}}));
 }
 
 void LIT::markRegionUnreachable(Region *deadRegion, Location unreachableLoc) {
