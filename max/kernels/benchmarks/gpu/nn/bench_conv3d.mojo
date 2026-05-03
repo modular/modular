@@ -241,7 +241,11 @@ def bench_conv3d[
         input_dev,
         row_major(
             Coord(
-                IndexList[5](batch, in_depth, in_height, in_width, in_channels)
+                Idx(batch),
+                Idx(in_depth),
+                Idx(in_height),
+                Idx(in_width),
+                Idx[in_channels](),
             )
         ),
     )
@@ -249,16 +253,24 @@ def bench_conv3d[
         filter_qrscf_dev,
         row_major(
             Coord(
-                IndexList[5](
-                    filter_q, filter_r, filter_s, in_channels, out_channels
-                )
+                Idx[filter_q](),
+                Idx[filter_r](),
+                Idx[filter_s](),
+                Idx[in_channels](),
+                Idx[out_channels](),
             )
         ),
     )
     var output_tt = TileTensor(
         output_dev,
         row_major(
-            Coord(IndexList[5](batch, d_out, h_out, w_out, out_channels))
+            Coord(
+                Idx(batch),
+                Idx(d_out),
+                Idx(h_out),
+                Idx(w_out),
+                Idx[out_channels](),
+            )
         ),
     )
 

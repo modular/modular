@@ -22,14 +22,14 @@ bf16, so this path gives the native 3D conv access to tensor cores
 without touching the TMA im2col descriptor layer.
 """
 
-from std.math import ceildiv
+from std.math import ceildiv, gcd
 from std.math.uutils import udivmod
-from std.sys.info import size_of
+from std.sys import simd_width_of, size_of
 from std.gpu import block_dim, block_idx, global_idx, thread_idx
 from std.gpu.host import DeviceContext
-from layout import Coord, Idx, TileTensor, row_major
+from layout import Coord, Idx, TensorLayout, TileTensor, row_major
 from linalg.matmul.gpu import _matmul_gpu
-from std.utils.index import IndexList
+from std.utils import IndexList
 from linalg.utils import elementwise_epilogue_type
 from nn.conv.conv_utils import elementwise_simd_epilogue_type
 
@@ -39,23 +39,20 @@ from nn.conv.conv_utils import elementwise_simd_epilogue_type
 # =========================================================================
 
 
-@__name(t"conv3d_im2col_ndhwc_{dtype}", mangle=True)
+@__name(t"conv3d_im2col_ndhwc_{input_dtype}", mangle=True)
 def _im2col_ndhwc_kernel[
-    dtype: DType,
+    input_dtype: DType,
+    filter_dtype: DType,
+    output_dtype: DType,
+    input_layout_type: TensorLayout,
+    filter_layout_type: TensorLayout,
+    output_layout_type: TensorLayout,
+    filter_is_fcrs: Bool,
 ](
-    output_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    input_ptr: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    batch_size: Int,
-    D: Int,
-    H: Int,
-    W: Int,
-    C: Int,
-    Q: Int,
-    R: Int,
-    S: Int,
-    D_out: Int,
-    H_out: Int,
-    W_out: Int,
+    im2col_ptr: UnsafePointer[Scalar[input_dtype], MutAnyOrigin],
+    input: TileTensor[input_dtype, input_layout_type, ImmutAnyOrigin],
+    filter: TileTensor[filter_dtype, filter_layout_type, ImmutAnyOrigin],
+    output: TileTensor[output_dtype, output_layout_type, ImmutAnyOrigin],
     pad_d: Int,
     pad_h: Int,
     pad_w: Int,
@@ -82,6 +79,27 @@ def _im2col_ndhwc_kernel[
     if local_m >= m_count:
         return
 
+    var batch_size = Int(input.dim[0]())
+    var D = Int(input.dim[1]())
+    var H = Int(input.dim[2]())
+    var W = Int(input.dim[3]())
+
+    # The filter and output are passed to this kernel to provide static shape
+    # information.
+    comptime assert filter.shape_known, "filter shape must be static"
+
+    comptime Q = filter.static_shape[2 if filter_is_fcrs else 0]
+    comptime R = filter.static_shape[3 if filter_is_fcrs else 1]
+    comptime S = filter.static_shape[4 if filter_is_fcrs else 2]
+    comptime C = filter.static_shape[1 if filter_is_fcrs else 3]
+    comptime F = filter.static_shape[0 if filter_is_fcrs else 4]
+
+    comptime simd_width = gcd(simd_width_of[input_dtype](), C)
+
+    var D_out = Int(output.dim[1]())
+    var H_out = Int(output.dim[2]())
+    var W_out = Int(output.dim[3]())
+
     var K = Q * R * S * C
     var m = m_offset + local_m
 
@@ -106,7 +124,7 @@ def _im2col_ndhwc_kernel[
     var SC = S * C
 
     var row_base = local_m * K
-    var k = thread_idx.x
+    var k = thread_idx.x * simd_width
     while k < K:
         var q, rsc = udivmod(k, RSC)
         var r, sc = udivmod(rsc, SC)
@@ -116,7 +134,7 @@ def _im2col_ndhwc_kernel[
         var h_in = h_in_base + r
         var w_in = w_in_base + s
 
-        var val = Scalar[dtype](0)
+        var val = SIMD[input_dtype, simd_width](0)
         if 0 <= d_in < D and 0 <= h_in < H and 0 <= w_in < W:
             var in_idx = (
                 batch_base
@@ -125,72 +143,80 @@ def _im2col_ndhwc_kernel[
                 + w_in * w_stride
                 + c
             )
-            val = input_ptr[in_idx]
+            val = input.ptr.load[width=simd_width](in_idx)
 
-        output_ptr.store(row_base + k, val)
-        k += block_dim.x
+        im2col_ptr.store(row_base + k, val)
+        k += block_dim.x * simd_width
 
 
 @__name(t"conv3d_transpose_qrscf_to_nk_{dtype}", mangle=True)
 def _transpose_qrscf_to_nk[
     dtype: DType,
+    filter_layout_type: TensorLayout,
 ](
-    src_ptr: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
+    filter: TileTensor[dtype, filter_layout_type, ImmutAnyOrigin],
     dst_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    Q: Int,
-    R: Int,
-    S: Int,
-    C: Int,
-    F: Int,
 ):
     """QRSCF [Q,R,S,C,F] -> [F, Q*R*S*C] row-major for matmul transpose_b."""
-    var K = Q * R * S * C
-    var total = F * K
+    comptime assert filter.shape_known, "filter shape must be static"
+
+    comptime Q = filter.static_shape[0]
+    comptime R = filter.static_shape[1]
+    comptime S = filter.static_shape[2]
+    comptime C = filter.static_shape[3]
+    comptime F = filter.static_shape[4]
+
+    comptime K = Q * R * S * C
+    comptime total = F * K
     var tid = global_idx.x
     if tid >= total:
         return
 
     var f, k = udivmod(tid, K)
 
-    var RSC = R * S * C
-    var SC = S * C
+    comptime RSC = R * S * C
+    comptime SC = S * C
     var q, rsc = udivmod(k, RSC)
     var r, sc = udivmod(rsc, SC)
     var s, c = udivmod(sc, C)
 
     var src_idx = ((q * R + r) * S + s) * C * F + c * F + f
-    dst_ptr.store(tid, src_ptr.load(src_idx))
+    dst_ptr.store(tid, filter.ptr.load(src_idx))
 
 
 @__name(t"conv3d_transpose_fcqrs_to_nk_{dtype}", mangle=True)
 def _transpose_fcqrs_to_nk[
     dtype: DType,
+    filter_layout_type: TensorLayout,
 ](
-    src_ptr: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
+    filter: TileTensor[dtype, filter_layout_type, ImmutAnyOrigin],
     dst_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    F: Int,
-    C: Int,
-    Q: Int,
-    R: Int,
-    S: Int,
 ):
     """FCQRS [F,C,Q,R,S] -> [F, Q*R*S*C] row-major for matmul transpose_b."""
-    var K = Q * R * S * C
-    var total = F * K
+    comptime assert filter.shape_known, "filter shape must be static"
+
+    comptime F = filter.static_shape[0]
+    comptime C = filter.static_shape[1]
+    comptime Q = filter.static_shape[2]
+    comptime R = filter.static_shape[3]
+    comptime S = filter.static_shape[4]
+
+    comptime K = Q * R * S * C
+    comptime total = F * K
     var tid = global_idx.x
     if tid >= total:
         return
 
     var f, k = udivmod(tid, K)
 
-    var RSC = R * S * C
-    var SC = S * C
+    comptime RSC = R * S * C
+    comptime SC = S * C
     var q, rsc = udivmod(k, RSC)
     var r, sc = udivmod(rsc, SC)
     var s, c = udivmod(sc, C)
 
     var src_idx = f * C * Q * R * S + c * Q * R * S + q * R * S + r * S + s
-    dst_ptr.store(tid, src_ptr.load(src_idx))
+    dst_ptr.store(tid, filter.ptr.load(src_idx))
 
 
 # =========================================================================
@@ -233,6 +259,8 @@ def dispatch_im2col_matmul_conv3d[
 
     comptime if input_type != DType.bfloat16:
         return False
+    comptime if not filter.shape_known:
+        return False
 
     if num_groups != 1:
         return False
@@ -243,24 +271,16 @@ def dispatch_im2col_matmul_conv3d[
     var D = Int(input.dim[1]())
     var H = Int(input.dim[2]())
     var W = Int(input.dim[3]())
-    var C_in = Int(input.dim[4]())
 
     var D_out = Int(output.dim[1]())
     var H_out = Int(output.dim[2]())
     var W_out = Int(output.dim[3]())
-    var C_out = Int(output.dim[4]())
 
-    var Q: Int
-    var R: Int
-    var S: Int
-    comptime if filter_is_fcrs:
-        Q = Int(filter.dim[2]())
-        R = Int(filter.dim[3]())
-        S = Int(filter.dim[4]())
-    else:
-        Q = Int(filter.dim[0]())
-        R = Int(filter.dim[1]())
-        S = Int(filter.dim[2]())
+    comptime Q = filter.static_shape[2 if filter_is_fcrs else 0]
+    comptime R = filter.static_shape[3 if filter_is_fcrs else 1]
+    comptime S = filter.static_shape[4 if filter_is_fcrs else 2]
+    comptime C = filter.static_shape[1 if filter_is_fcrs else 3]
+    comptime F = filter.static_shape[0 if filter_is_fcrs else 4]
 
     # Bail on 1x1x1: the vectorized naive kernel already beats cuDNN there,
     # and K is too small to amortize the matmul launch overhead.
@@ -268,8 +288,8 @@ def dispatch_im2col_matmul_conv3d[
         return False
 
     var full_M = batch * D_out * H_out * W_out
-    var K = Q * R * S * C_in
-    var N = C_out
+    comptime K = Q * R * S * C
+    comptime N = F
 
     # Minimum sane K. _matmul_gpu's SM100 path handles small K fine, but
     # K < 16 is below MMA_K even for bf16 and not worth the scratch.
@@ -279,38 +299,27 @@ def dispatch_im2col_matmul_conv3d[
     # --- Transpose filter to [N, K] once, before the M-tile loop. ---
     var filter_size = filter.num_elements()
     var filter_nk_buf = ctx.enqueue_create_buffer[filter_type](filter_size)
-    var filter_nk_ptr = filter_nk_buf.unsafe_ptr()
 
     comptime transpose_block = 256
     var transpose_grid = ceildiv(filter_size, transpose_block)
 
     comptime if filter_is_fcrs:
         ctx.enqueue_function[
-            _transpose_fcqrs_to_nk[filter_type],
-            _transpose_fcqrs_to_nk[filter_type],
+            _transpose_fcqrs_to_nk[filter_type, filter.LayoutType],
+            _transpose_fcqrs_to_nk[filter_type, filter.LayoutType],
         ](
-            filter.ptr,
-            filter_nk_ptr,
-            Int(filter.dim[0]()),
-            Int(filter.dim[1]()),
-            Int(filter.dim[2]()),
-            Int(filter.dim[3]()),
-            Int(filter.dim[4]()),
+            filter.as_immut(),
+            filter_nk_buf,
             grid_dim=transpose_grid,
             block_dim=transpose_block,
         )
     else:
         ctx.enqueue_function[
-            _transpose_qrscf_to_nk[filter_type],
-            _transpose_qrscf_to_nk[filter_type],
+            _transpose_qrscf_to_nk[filter_type, filter.LayoutType],
+            _transpose_qrscf_to_nk[filter_type, filter.LayoutType],
         ](
-            filter.ptr,
-            filter_nk_ptr,
-            Int(filter.dim[0]()),
-            Int(filter.dim[1]()),
-            Int(filter.dim[2]()),
-            Int(filter.dim[3]()),
-            Int(filter.dim[4]()),
+            filter.as_immut(),
+            filter_nk_buf,
             grid_dim=transpose_grid,
             block_dim=transpose_block,
         )
@@ -334,7 +343,6 @@ def dispatch_im2col_matmul_conv3d[
         m_tile = ceildiv(full_M, num_tiles)
 
     var im2col_buf = ctx.enqueue_create_buffer[input_type](m_tile * K)
-    var im2col_ptr = im2col_buf.unsafe_ptr()
 
     var DHW_out = D_out * H_out * W_out
     var HW_out = H_out * W_out
@@ -347,23 +355,20 @@ def dispatch_im2col_matmul_conv3d[
 
         # Block-per-row: one block per output voxel, threads cooperate on K.
         comptime im2col_block = 256
-        ctx.enqueue_function[
-            _im2col_ndhwc_kernel[input_type],
-            _im2col_ndhwc_kernel[input_type],
-        ](
-            im2col_ptr,
-            input.ptr,
-            batch,
-            D,
-            H,
-            W,
-            C_in,
-            Q,
-            R,
-            S,
-            D_out,
-            H_out,
-            W_out,
+        comptime im2col_kernel = _im2col_ndhwc_kernel[
+            input_type,
+            filter_type,
+            output_type,
+            input.LayoutType,
+            filter.LayoutType,
+            output.LayoutType,
+            filter_is_fcrs,
+        ]
+        ctx.enqueue_function[im2col_kernel, im2col_kernel](
+            im2col_buf,
+            input.as_immut(),
+            filter.as_immut(),
+            output.as_immut(),
             symmetric_padding[0],
             symmetric_padding[1],
             symmetric_padding[2],
@@ -377,9 +382,9 @@ def dispatch_im2col_matmul_conv3d[
         )
 
         var a_tt = TileTensor(
-            im2col_ptr, row_major(Coord(Idx(m_count), Idx(K)))
+            im2col_buf, row_major(Coord(Idx(m_count), Idx(K)))
         )
-        var b_tt = TileTensor(filter_nk_ptr, row_major(Coord(Idx(N), Idx(K))))
+        var b_tt = TileTensor(filter_nk_buf, row_major(Coord(Idx(N), Idx(K))))
         # Output is NDHWC = [batch, D_out, H_out, W_out, C_out]; rows in the
         # flattened [M, N] layout are contiguous, so we advance by m_offset * N.
         var c_ptr = output.ptr + m_offset * N
@@ -425,9 +430,4 @@ def dispatch_im2col_matmul_conv3d[
 
         m_offset += m_count
 
-    # Synchronize so scratch stays alive until kernels finish.
-    # TODO: stream-callback lifetime management would allow pipelining.
-    ctx.synchronize()
-    _ = filter_nk_buf^
-    _ = im2col_buf^
     return True
