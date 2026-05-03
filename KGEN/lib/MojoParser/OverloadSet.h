@@ -165,8 +165,7 @@ public:
   /// etc) that results in the call, or potentially a random value that is being
   /// fed into an implicit conversion.  This should only be used for location
   /// information.
-  CValue emitCall(CallOperands &&callOperands, ExprDest &dest,
-                  IREmitter &emitter);
+  CValue emitCall(CallOperands &&callOperands, IREmitter &emitter);
 
   /// Filter down and complete this overload set based on knowledge that we need
   /// to produce a function pointer with the specified type.  This returns a

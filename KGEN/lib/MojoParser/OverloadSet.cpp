@@ -573,7 +573,8 @@ PValue OverloadSet::filterOverloadSet(CallOperands &operands,
   // itself an implicit conversion.  We don't want to allow A->B->C conversions.
   bool allowImplicitConversions = syntax != CallSyntax::kImplicitConvert;
 
-  CallOperands scratchOperands(operands.syntax, operands.callExpr);
+  std::optional<OperandValue> savedSelfOperand;
+
   // Evaluate the fitness of each candidate in our overload set.
   SmallVector<std::pair<ASTDecl *, OverloadFitness>> evaluations;
   bool allInvalid = true;
@@ -586,24 +587,29 @@ PValue OverloadSet::filterOverloadSet(CallOperands &operands,
 
     // If we are dealing with a static method, we check if the operands include
     // a self operand and remove it, otherwise the signature might not match.
-    const CallOperands *operandsToUse = &operands;
     if (operands.hasSelfOperand && func.getIsStatic()) {
-      scratchOperands = CallOperands(operands, operands.dest);
-      scratchOperands.values.erase(scratchOperands.values.begin());
-      scratchOperands.hasSelfOperand = false;
-      operandsToUse = &scratchOperands;
+      savedSelfOperand = operands[0];
+      operands.values.erase(operands.values.begin());
+      operands.hasSelfOperand = false;
     }
 
     auto desiredSignature = func.getFullSignature();
     evaluations.emplace_back(
         candidate,
-        OverloadFitness::evaluate(desiredSignature, candidate, *this,
-                                  *operandsToUse, allowImplicitConversions));
+        OverloadFitness::evaluate(desiredSignature, candidate, *this, operands,
+                                  allowImplicitConversions));
     OverloadFitness::Validity validity =
         evaluations.back().second.getValidity();
     allInvalid &= validity == OverloadFitness::Validity::kInvalid;
     anyParamConstraintInconclusive |=
         validity == OverloadFitness::Validity::kParamConstraintInconclusive;
+
+    // Restore 'self' if we moved it out of the way.
+    if (savedSelfOperand.has_value()) {
+      operands.values.insert(operands.values.begin(), savedSelfOperand.value());
+      operands.hasSelfOperand = true;
+      savedSelfOperand = {};
+    }
   }
 
   // Check for param constraint inconclusiveness - if ANY candidate has this,
@@ -1255,9 +1261,9 @@ CValue OverloadSet::emitAsCValue(IREmitter &emitter, ExprDest &dest) {
 ///
 /// This emits an error and returns null on failure.
 CValue IREmitter::emitIndirectCallInTryBlock(
-    CValue callee, CallOperands &&operands, ExprDest &dest,
+    CValue callee, CallOperands &&operands,
     std::function<void(VarDeclOp errDecl)> emitCatchLogic) {
-  ExprDest callDest(dest.getContext());
+  ExprDest finalDest(operands.dest.getContext());
 
   auto calleeSig = FnOrFnLiteralTypeGeneratorType::get(callee.getRValueType());
   auto callExpr = operands.callExpr;
@@ -1276,14 +1282,15 @@ CValue IREmitter::emitIndirectCallInTryBlock(
     auto varDecl =
         emitVarDecl("__ref_result_tmp__", UnresolvedType::get(getContext()),
                     loc, VarDeclKind::Bind);
-    callDest = ExprDest(varDecl, dest.getContext());
-  } else if (dest.hasExistingMemoryDest()) {
+    finalDest = std::move(operands.dest);
+    operands.dest = ExprDest(varDecl, finalDest.getContext());
+  } else if (operands.dest.hasExistingMemoryDest()) {
     // Emit the call result directly into the existing destination.
-    callDest = std::move(dest);
   } else {
     tmpResult = emitVarDecl("anonymous*", UnresolvedType::get(getContext()),
                             loc, VarDeclKind::Synthesized);
-    callDest = ExprDest(tmpResult, dest.getContext());
+    finalDest = std::move(operands.dest);
+    operands.dest = ExprDest(tmpResult, finalDest.getContext());
   }
 
   VarDeclOp errDecl =
@@ -1303,11 +1310,9 @@ CValue IREmitter::emitIndirectCallInTryBlock(
   // Emit this call into the try region.
   builder->createBlock(&tryOp.getTryRegion());
 
-  CValue result = emitIndirectCall(callee, std::move(operands), callDest);
-  if (!result) {
-    callDest.resetForError(*this);
-    dest.resetForError(*this);
-  }
+  CValue result = emitIndirectCall(callee, std::move(operands));
+  if (!result)
+    finalDest.resetForError(*this);
   TryYieldOp::create(*builder, tryOp.getLoc());
 
   // Emit the except block now that we're good to go.
@@ -1344,13 +1349,12 @@ CValue IREmitter::emitIndirectCallInTryBlock(
 
   // Emit the result into the "dest" ExprDest outside of the try block.
   builder = savedBuilder;
-  return emitCResult(result, callExpr, dest);
+  return emitCResult(result, callExpr, finalDest);
 }
 
 /// Emit a function call to the specified callee with the specified operand
 /// values.  This emits an error and returns null on failure.
-CValue OverloadSet::emitCall(CallOperands &&operands, ExprDest &dest,
-                             IREmitter &emitter) {
+CValue OverloadSet::emitCall(CallOperands &&operands, IREmitter &emitter) {
   // If we have a bound self, add it to the operand list to simplify the logic
   // below.
   if (baseValue)
@@ -1361,21 +1365,20 @@ CValue OverloadSet::emitCall(CallOperands &&operands, ExprDest &dest,
   PValue callee = filterOverloadSet(operands,
                                     /*emitDiagnosticOnFailure=*/true, emitter);
   if (!callee) {
-    dest.resetForError(emitter);
+    operands.dest.resetForError(emitter);
     return {};
   }
 
-  return emitter.emitCallUnchecked(callee, operands, dest);
+  return emitter.emitCallUnchecked(callee, std::move(operands));
 }
 
-CValue IREmitter::emitIndirectCall(CValue callee, CallOperands &&operands,
-                                   ExprDest &dest) {
+CValue IREmitter::emitIndirectCall(CValue callee, CallOperands &&operands) {
   if (auto calleeSig =
           sugarDynCast<FuncLiteralTypeGeneratorType>(callee.getRValueType())) {
     // An indirect call to a function literal typed candidate becomes a direct
     // call to the literal itself.
     auto target = calleeSig.getSymbolConstantAttr();
-    return emitIndirectCall(target, std::move(operands), dest);
+    return emitIndirectCall(target, std::move(operands));
   }
 
   auto callExpr = operands.callExpr;
@@ -1384,13 +1387,13 @@ CValue IREmitter::emitIndirectCall(CValue callee, CallOperands &&operands,
     // If we are invoking something other than a FuncTypeGeneratorType, try to
     // invoke its `__call__` method.
     operands.addSelf({callee, callExpr});
-    return emitNamedMethodCall("__call__", std::move(operands), dest);
+    return emitNamedMethodCall("__call__", std::move(operands));
   }
 
   // If we have a function pointer, resolve it to an RValue.
   RValue calleeRV = emitRValue({callee, callExpr}, EC_CallCalleeValue);
   if (!calleeRV) {
-    dest.resetForError(*this);
+    operands.dest.resetForError(*this);
     return {};
   }
 
@@ -1411,12 +1414,12 @@ CValue IREmitter::emitIndirectCall(CValue callee, CallOperands &&operands,
           /*isParamConstraint=*/fitness.getValidity() ==
               OverloadFitness::Validity::kParamConstraintInconclusive,
           bestCandidates);
-      dest.resetForError(*this);
+      operands.dest.resetForError(*this);
       return {};
     }
     emitError(callExpr->getLoc(), "invalid indirect call: ")
         << fitness.takeDiag();
-    dest.resetForError(*this);
+    operands.dest.resetForError(*this);
     return {};
   }
 
@@ -1429,7 +1432,7 @@ CValue IREmitter::emitIndirectCall(CValue callee, CallOperands &&operands,
       emitError(callExpr->getLoc(),
                 "cannot call dynamic function with parameterized type ")
           << calleeRV.getRValueType();
-      dest.resetForError(*this);
+      operands.dest.resetForError(*this);
       return {};
     }
     boundCalleeRV = PValue(
@@ -1446,21 +1449,21 @@ CValue IREmitter::emitIndirectCall(CValue callee, CallOperands &&operands,
             fitness.getOperandsNeedingOrigins(),
             cast<FnTypeGeneratorType>(boundCalleeRV.getType()), operands,
             *this))) {
-      dest.resetForError(*this);
+      operands.dest.resetForError(*this);
       return {};
     }
     // Now that we mutated the operand list by introducing some new memory
     // types to provide origins, try again.  This will re-evaluate parameter
     // bindings and either succeed or fail based on the new information.
-    return emitIndirectCall(calleeRV, std::move(operands), dest);
+    return emitIndirectCall(calleeRV, std::move(operands));
   }
 
   // Otherwise, we resolved the callee correctly, emit the call.
-  return emitCallUnchecked(boundCalleeRV, operands, dest);
+  return emitCallUnchecked(boundCalleeRV, std::move(operands));
 }
 
 CValue IREmitter::emitNamedMethodCall(StringRef methodName,
-                                      CallOperands &&operands, ExprDest &dest) {
+                                      CallOperands &&operands) {
   assert(!operands.values.empty() &&
          "Cannot emit a method call without a receiver!");
 
@@ -1470,7 +1473,7 @@ CValue IREmitter::emitNamedMethodCall(StringRef methodName,
   if (!selfVal) {
     selfVal = emitCValue(operands[0], EC_CallArgValue);
     if (!selfVal) {
-      dest.resetForError(*this);
+      operands.dest.resetForError(*this);
       return {};
     }
     operands[0].ir = selfVal;
@@ -1501,21 +1504,21 @@ CValue IREmitter::emitNamedMethodCall(StringRef methodName,
   PValue callee = OverloadSet::lookupAndResolve(type, methodName, operands,
                                                 emitNoMethodError, true, *this);
   if (!callee) {
-    dest.resetForError(*this);
+    operands.dest.resetForError(*this);
     return {};
   }
 
-  return emitIndirectCall(callee, std::move(operands), dest);
+  return emitIndirectCall(callee, std::move(operands));
 }
 
 /// Emit a call to __init__, returning an instance of the specified type.  If
 /// `allowImplicitConversion` is true, the provided args are allowed to
 /// implicitly convert to the expectations of the constructor signatures.
-CValue IREmitter::emitConstructorCall(ASTType type, CallOperands &&callOperands,
-                                      ExprDest &dest) {
+CValue IREmitter::emitConstructorCall(ASTType type,
+                                      CallOperands &&callOperands) {
   // If the dest type is invalid, then an error has already been reported.
   if (type.isTypeCheckErrorType()) {
-    dest.resetForError(*this);
+    callOperands.dest.resetForError(*this);
     return {};
   }
 
@@ -1526,7 +1529,7 @@ CValue IREmitter::emitConstructorCall(ASTType type, CallOperands &&callOperands,
   shared.notifyListenerOnCall(callee.fnDecls, expr->getRangeEnd(),
                               callOperands.syntax, callOperands);
   if (callee.isErroneous()) {
-    dest.resetForError(*this);
+    callOperands.dest.resetForError(*this);
     return {};
   }
 
@@ -1538,6 +1541,7 @@ CValue IREmitter::emitConstructorCall(ASTType type, CallOperands &&callOperands,
           << "MLIR type " << type
           << " must be created with an MLIR operation, not constructor "
              "syntax";
+      callOperands.dest.resetForError(*this);
       return {};
     }
 
@@ -1553,14 +1557,15 @@ CValue IREmitter::emitConstructorCall(ASTType type, CallOperands &&callOperands,
       if (sugarIsa<StructType>(type)) {
         diag << "invalid implicit conversion to " << type
              << ": no constructors found";
-        dest.resetForError(*this);
+        callOperands.dest.resetForError(*this);
         return {};
       }
 
       // This is true if passing Int type to Int instead of Int() to Int.
       bool isConvertingTypeValue = type.extractMetaType() == singleOperandType;
-      bool isImplConvert = dest.getContext() != EC_CallParamValue &&
-                           dest.getContext() != EC_CallArgValue;
+      bool isImplConvert =
+          callOperands.dest.getContext() != EC_CallParamValue &&
+          callOperands.dest.getContext() != EC_CallArgValue;
       diag << "cannot " << (isImplConvert ? "implicitly convert " : "pass ");
 
       if (isConvertingTypeValue)
@@ -1569,12 +1574,12 @@ CValue IREmitter::emitConstructorCall(ASTType type, CallOperands &&callOperands,
         diag << singleOperandType << " ";
       diag << "value" << (isImplConvert ? " to " : ", expected ");
       diag << (isConvertingTypeValue ? "an instance of " : "") << type
-           << getContextMessage(dest.getContext());
+           << getContextMessage(callOperands.dest.getContext());
 
       if (isConvertingTypeValue)
         diag << "; did you mean to instantiate " << type << "?";
       diag << expr->getRange();
-      dest.resetForError(*this);
+      callOperands.dest.resetForError(*this);
       return {};
     }
   }
@@ -1584,7 +1589,7 @@ CValue IREmitter::emitConstructorCall(ASTType type, CallOperands &&callOperands,
   callee.paramBindings =
       ParamBindings::getForDeclaredType(getDeclScope(), type, expr);
   callee.selfResultType = type;
-  return callee.emitCall(std::move(callOperands), dest, *this);
+  return callee.emitCall(std::move(callOperands), *this);
 }
 
 //===----------------------------------------------------------------------===//

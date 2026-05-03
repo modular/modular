@@ -77,19 +77,17 @@ public:
   /// Initialize with the call. The syntax and an expression node are required
   /// this constructor supports an optional list of positional operands as a
   /// convenience, but those can be added later as well.
-  /// TODO: This will start requiring an explicit ExprDest soon.
-  CallOperands(CallSyntax syntax, const ExprNode *callExpr,
+  CallOperands(CallSyntax syntax, const ExprNode *callExpr, ExprDest &&dest,
                ArrayRef<ASTExprAnd<AnyValue>> posOperands = {})
-      : syntax(syntax), callExpr(callExpr), dest(EC_Type) {
+      : syntax(syntax), callExpr(callExpr), dest(std::move(dest)) {
     for (const auto &operand : posOperands)
       values.emplace_back(StringAttr(), operand);
   }
 
   // Initialize with an existing CallOperands and a new destination.
-  CallOperands(const CallOperands &existing, ExprDest &dest)
+  CallOperands(const CallOperands &existing, ExprDest &&dest)
       : syntax(existing.syntax), callExpr(existing.callExpr),
-        // TODO: Actually capture 'dest'.
-        dest(ExprDest(EC_Type)), values(existing.values),
+        dest(std::move(dest)), values(existing.values),
         hasSelfOperand(existing.hasSelfOperand) {}
 
   CallOperands(CallOperands &&) = default;

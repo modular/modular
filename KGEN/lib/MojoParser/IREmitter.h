@@ -205,8 +205,7 @@ public:
   /// Emit an indirect call to a resolved value, checking for compatibility and
   /// then generating the call logic.  This emits an error and returns null on
   /// failure.
-  CValue emitIndirectCall(CValue callee, CallOperands &&operands,
-                          ExprDest &dest);
+  CValue emitIndirectCall(CValue callee, CallOperands &&operands);
 
   /// Emit an indirect call to a resolved value in a try block, invoking a
   /// callback to generate logic in the 'catch' block that is wrapped around the
@@ -215,7 +214,7 @@ public:
   ///
   /// This emits an error and returns null on failure.
   CValue emitIndirectCallInTryBlock(
-      CValue callee, CallOperands &&operands, ExprDest &dest,
+      CValue callee, CallOperands &&operands,
       std::function<void(VarDeclOp errDecl)> emitCatchLogic);
 
   /// This helper emits a named method call with the provided `operands`,
@@ -227,14 +226,12 @@ public:
   /// etc) that results in the call, or potentially a random value that is being
   /// fed into an implicit conversion.  This should only be used for location
   /// information.
-  CValue emitNamedMethodCall(StringRef methodName, CallOperands &&operands,
-                             ExprDest &dest);
+  CValue emitNamedMethodCall(StringRef methodName, CallOperands &&operands);
 
   /// Emit a call to __new__ or __init__, returning an instance of the specified
   /// type.  If `allowImplicitConversion` is true, the provided args are allowed
   /// to implicitly convert to the expectations of the constructor signatures.
-  CValue emitConstructorCall(ASTType type, CallOperands &&operands,
-                             ExprDest &dest);
+  CValue emitConstructorCall(ASTType type, CallOperands &&operands);
 
   /// Convert a CValue string expression into a DataToStr-wrapped parameter
   /// attribute. Handles t-string -> String conversion, StringSlice conversion,
@@ -431,8 +428,7 @@ public:
   /// or higher level wrappers instead.
   /// In case customOpName is provided, emit a custom MLIR operation instead
   /// with the given name for the given custom op definition struct type.
-  CValue emitCallUnchecked(RValue callee, const CallOperands &operands,
-                           ExprDest &dest);
+  CValue emitCallUnchecked(RValue callee, CallOperands &&operands);
 };
 
 //===----------------------------------------------------------------------===//

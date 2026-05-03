@@ -1127,7 +1127,7 @@ LogicalResult ParamMatcher::matchSingleEltStruct(TypedAttr actualOrig,
       auto nonParamDRT =
           ASTType(expDRT).getWithUnknownParametersReplaced(shared);
       CallOperands ctorOperands(CallSyntax::kImplicitConvert, expr,
-                                {{actual, expr}});
+                                EC_TypeParamValue, {{actual, expr}});
       FailureOr<PValue> pValue = OverloadSet::canConstructType(
           nonParamDRT, ctorOperands, state.declScope);
       if (failed(pValue) || !pValue.value())

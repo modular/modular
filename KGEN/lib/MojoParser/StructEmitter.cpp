@@ -931,11 +931,11 @@ LogicalResult StructEmitter::populateMoveCopy(ASTDecl &fnDecl, bool isMove) {
         SyntheticNode expr(location);
         ASTType refinedFieldType(
             cast<RefType>(reboundTarget.getType()).getElementType());
-        CallOperands operands(CallSyntax::kImplicitCopyCtor, &expr);
+        CallOperands operands(CallSyntax::kImplicitCopyCtor, &expr,
+                              std::move(dest));
         operands.addKeyword(StringAttr::get(shared.getContext(), "copy"),
                             {reboundCopySrc, &expr});
-        emitter.emitConstructorCall(refinedFieldType, std::move(operands),
-                                    dest);
+        emitter.emitConstructorCall(refinedFieldType, std::move(operands));
       }
       continue;
     }
@@ -956,10 +956,11 @@ LogicalResult StructEmitter::populateMoveCopy(ASTDecl &fnDecl, bool isMove) {
         ExprDest dest(MLValue(targetFieldOp), EC_SynthesizedMethod);
         SyntheticNode expr(location);
 
-        CallOperands operands(CallSyntax::kImplicitCopyCtor, &expr);
+        CallOperands operands(CallSyntax::kImplicitCopyCtor, &expr,
+                              std::move(dest));
         operands.addKeyword(StringAttr::get(shared.getContext(), "copy"),
                             {src, &expr});
-        (void)emitter.emitConstructorCall(fieldType, std::move(operands), dest);
+        (void)emitter.emitConstructorCall(fieldType, std::move(operands));
         continue;
       }
     }
@@ -1122,9 +1123,8 @@ TypedAttr StructEmitter::populateSpecialFnIsTrivial(SpecialFunctionKind kind) {
 
     ExprDest dest(EC_OperatorOperandValue);
     return emitter.emitNamedMethodCall(
-        "__and__",
-        CallOperands(CallSyntax::kOperator, &node, {{lhs, node}, {rhs, node}}),
-        dest);
+        "__and__", CallOperands(CallSyntax::kOperator, &node, std::move(dest),
+                                {{lhs, node}, {rhs, node}}));
   };
 
   ASTDecl *traitDecl =

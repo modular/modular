@@ -108,7 +108,7 @@ FnTypeGeneratorType LIT::substituteTraitAliasesIntoSignature(
 
 ParamBindings::ParamBindings(ASTDecl &declScope, const ExprNode *expr)
     : declScope(declScope), shared(declScope.getShared()),
-      parameters(CallSyntax::kParamBindings, expr) {}
+      parameters(CallSyntax::kParamBindings, expr, EC_InvalidContext) {}
 
 /// Replace our bindings with another set.  This can't be done with operator=
 /// because we have
