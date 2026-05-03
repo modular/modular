@@ -32,15 +32,87 @@ from std.reflection.traits import (
     AllRegisterPassable,
     AllWritable,
 )
-from std.sys.intrinsics import _type_is_eq
+from std.sys.intrinsics import _type_is_eq, _type_is_eq_parse_time
 
 from std.reflection.type_info import _unqualified_type_name
-
 from std.utils._visualizers import lldb_formatter_wrapping_type
 
 # ===-----------------------------------------------------------------------===#
 # Tuple
 # ===-----------------------------------------------------------------------===#
+
+comptime _all_same_type_condition[
+    T0: Movable, T: Movable
+] = _type_is_eq_parse_time[T, T0]()
+
+comptime _all_same_type[*Ts: Movable]: Bool = Ts.all_satisfies[
+    _all_same_type_condition[Ts[0], _]
+]()
+
+
+struct _TupleIterOwned[*element_types: Movable](
+    IterableOwned, Iterator, Movable
+):
+    """An owning iterator for a homogeneous `Tuple`.
+
+    Parameters:
+        element_types: The elements types.
+    """
+
+    comptime Element = Self.element_types[0]
+    comptime IteratorOwnedType = Self
+
+    var _tuple: Tuple[*Self.element_types]
+    var _index: Int
+
+    def __init__(
+        var tup: Tuple, out self: _TupleIterOwned[*tup.element_types]
+    ) where _all_same_type[*tup.element_types]:
+        """Consume an tuple and create an iterator over its elements.
+
+        Args:
+            tup: The tuple to consume.
+        """
+        self._tuple = tup^
+        self._index = 0
+
+    @always_inline
+    def __del__(deinit self):
+        # Move fields out of self so we can manage their lifetimes.
+        var idx = self._index
+        var tup = self._tuple^
+
+        _constrained_conforms_to[
+            conforms_to(Self.Element, ImplicitlyDestructible),
+            Parent=Self,
+            Element=Self.Element,
+            ParentConformsTo="ImplicitlyDestructible",
+        ]()
+        # Destroy the remaining elements that have not yet been
+        # iterated over.
+        for i in range(idx, Self.element_types.size):
+            _ = (UnsafePointer(to=tup) + i).take_pointee()
+
+        # Mark the tuple as destroyed so Tuple.__del__ doesn't
+        # double-destroy the elements we already handled.
+        __mlir_op.`lit.ownership.mark_destroyed`(__get_mvalue_as_litref(tup))
+
+    @always_inline
+    def __iter__(var self) -> Self.IteratorOwnedType:
+        return self^
+
+    def __next__(mut self) raises StopIteration -> Self.Element:
+        if self._index >= Self.element_types.size:
+            raise StopIteration()
+        self._index += 1
+        return rebind_var[Self.Element](
+            (UnsafePointer(to=self._tuple) + self._index - 1).take_pointee()
+        )
+
+    @always_inline
+    def bounds(self) -> Tuple[Int, Optional[Int]]:
+        var remaining = Self.element_types.size - self._index
+        return (remaining, {remaining})
 
 
 @lldb_formatter_wrapping_type
@@ -59,6 +131,7 @@ struct Tuple[*element_types: Movable](
     # ImplicitlyDestructible and Movable are listed explicitly because
     # conditional conformances require all conformances to be stated.
     ImplicitlyDestructible,
+    IterableOwned where _all_same_type[*element_types],
     Movable,
     RegisterPassable where AllRegisterPassable[*element_types],
     Sized,
@@ -69,8 +142,11 @@ struct Tuple[*element_types: Movable](
     A tuple consists of zero or more values, separated by commas.
 
     Parameters:
-        element_types: The elements type.
+        element_types: The elements types.
     """
+
+    comptime IteratorOwnedType = _TupleIterOwned[*Self.element_types]
+    """The owned iterator type for this tuple."""
 
     comptime _mlir_type = __mlir_type[
         `!kgen.struct<:`,
@@ -522,3 +598,15 @@ struct Tuple[*element_types: Movable](
                     ]
                 ](UnsafePointer(to=other[i]))
             )
+
+    def __iter__(
+        var self,
+    ) -> _TupleIterOwned[*Self.element_types] where _all_same_type[
+        *Self.element_types
+    ]:
+        """Iterate over the homogeneous tuple.
+
+        Returns:
+            The homogeneous iterator over the tuple elements.
+        """
+        return {self^}
