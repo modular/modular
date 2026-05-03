@@ -40,7 +40,7 @@ def _assert_equal_error(
 
 struct PrintChecker(Movable):
     var tmp: NamedTemporaryFile
-    var cursor: UInt64
+    var cursor: Int64
     var call_location: SourceLocation
 
     @always_inline
@@ -63,7 +63,7 @@ struct PrintChecker(Movable):
             raise _assert_equal_error(
                 String(result), expected, msg, self.call_location
             )
-        self.cursor += UInt64(result.byte_length() + 1)
+        self.cursor += Int64(len(result) + 1)
 
     def check_line_starts_with(
         mut self, prefix: String, msg: String = ""
@@ -81,7 +81,7 @@ struct PrintChecker(Movable):
                 msg,
                 self.call_location,
             )
-        self.cursor += UInt64(result.byte_length() + 1)
+        self.cursor += Int64(len(result) + 1)
 
 
 def test_print() raises:
