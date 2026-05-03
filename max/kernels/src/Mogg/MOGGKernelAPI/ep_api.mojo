@@ -1308,23 +1308,6 @@ struct DistributedEPCombine:
         var gpu_ctxs = DeviceContextPtrList[num_devices](gpu_ctxs_tuple)
 
         @always_inline
-        @parameter
-        def output_lambda[
-            output_index: Int,
-            _dtype: DType,
-            _width: Int,
-            *,
-            _alignment: Int,
-        ](coords: Coord, val: SIMD[_dtype, _width]) -> None:
-            output_tokens[output_index]._lambda_store[
-                width=_width,
-                element_alignment=_alignment,
-            ](
-                rebind[IndexList[2]](coord_to_index_list(coords)),
-                rebind[SIMD[combine_dtype, _width]](val),
-            )
-
-        @always_inline
         def launch_combine[
             index: Int
         ]() raises {
