@@ -17,7 +17,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 import torch
-from max.driver import CPU, Buffer
+from max.driver import Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import (
@@ -387,110 +387,47 @@ def test_clip_weight_not_supported_stacked() -> None:
 # -- Forward pass tests --
 
 
-@pytest.mark.parametrize("stacked", [True, False])
-def test_forward_pass_output_shape(stacked: bool) -> None:
+def test_forward_pass_output_shape(session: InferenceSession) -> None:
     """StackedLinear forward pass produces correct output shape.
 
-    The short ``["q", "k", "v"]`` names are intentional: this test
-    exercises ``StackedLinear`` as a *root* module with no surrounding
-    weight adapter, so the names need not match HuggingFace checkpoint
-    keys. In unfused mode the FQNs are simply ``q.weight`` etc. (the
-    transparent ``StackedLinear`` is itself the root). Do not "fix"
-    these to ``["q_proj", "k_proj", "v_proj"]`` unless you also update
-    the ``weights`` dict below; the asymmetry vs. real attention call
-    sites is deliberate.
+    Tests with stacked=True and has_bias=True which exercises the most
+    comprehensive code path. The stacked/unfused variants and bias/no-bias
+    variants are covered by the unit tests above; this test validates that
+    the graph compiles and executes correctly.
     """
-    in_dim, q_dim, kv_dim = 64, 32, 16
+    in_dim, q_dim, kv_dim = 16, 8, 4
+    total_out = q_dim + kv_dim + kv_dim
     sl = StackedLinear(
         in_dim=in_dim,
         out_dims=[q_dim, kv_dim, kv_dim],
         names=["q", "k", "v"],
         dtype=DType.float32,
         device=DeviceRef.CPU(),
-        stacked=stacked,
-    )
-
-    if stacked:
-        weights = {
-            "weight": torch.randn(q_dim + kv_dim + kv_dim, in_dim),
-        }
-    else:
-        weights = {
-            "q.weight": torch.randn(q_dim, in_dim),
-            "k.weight": torch.randn(kv_dim, in_dim),
-            "v.weight": torch.randn(kv_dim, in_dim),
-        }
-    sl.load_state_dict(weights)
-
-    input_type = TensorType(
-        dtype=DType.float32,
-        shape=[4, in_dim],
-        device=DeviceRef.CPU(),
-    )
-    with Graph("test_forward", input_types=(input_type,)) as graph:
-        x = graph.inputs[0]
-        out = sl(x.tensor)
-        graph.output(out)
-
-    session = InferenceSession(devices=[CPU()])
-    model = session.load(graph, weights_registry=sl.state_dict())
-    inp = Buffer.from_dlpack(torch.randn(4, in_dim))
-    result = model.execute(inp)
-    out_tensor = torch.from_dlpack(result[0])
-    assert out_tensor.shape == (4, q_dim + kv_dim + kv_dim)
-
-
-@pytest.mark.parametrize("stacked", [True, False])
-def test_forward_pass_with_bias(stacked: bool) -> None:
-    """StackedLinear forward pass with bias produces correct output shape.
-
-    See :func:`test_forward_pass_output_shape` for why the short
-    ``["q", "k", "v"]`` names are intentional here.
-    """
-    in_dim, q_dim, kv_dim = 64, 32, 16
-    sl = StackedLinear(
-        in_dim=in_dim,
-        out_dims=[q_dim, kv_dim, kv_dim],
-        names=["q", "k", "v"],
-        dtype=DType.float32,
-        device=DeviceRef.CPU(),
-        stacked=stacked,
+        stacked=True,
         has_bias=True,
     )
 
-    if stacked:
-        total_out = q_dim + kv_dim + kv_dim
-        weights = {
-            "weight": torch.randn(total_out, in_dim),
-            "bias": torch.randn(total_out),
-        }
-    else:
-        weights = {
-            "q.weight": torch.randn(q_dim, in_dim),
-            "k.weight": torch.randn(kv_dim, in_dim),
-            "v.weight": torch.randn(kv_dim, in_dim),
-            "q.bias": torch.randn(q_dim),
-            "k.bias": torch.randn(kv_dim),
-            "v.bias": torch.randn(kv_dim),
-        }
+    weights = {
+        "weight": torch.randn(total_out, in_dim),
+        "bias": torch.randn(total_out),
+    }
     sl.load_state_dict(weights)
 
     input_type = TensorType(
         dtype=DType.float32,
-        shape=[4, in_dim],
+        shape=[2, in_dim],
         device=DeviceRef.CPU(),
     )
-    with Graph("test_forward_bias", input_types=(input_type,)) as graph:
+    with Graph("test_forward_stacked_bias", input_types=(input_type,)) as graph:
         x = graph.inputs[0]
         out = sl(x.tensor)
         graph.output(out)
 
-    session = InferenceSession(devices=[CPU()])
     model = session.load(graph, weights_registry=sl.state_dict())
-    inp = Buffer.from_dlpack(torch.randn(4, in_dim))
+    inp = Buffer.from_dlpack(torch.randn(2, in_dim))
     result = model.execute(inp)
     out_tensor = torch.from_dlpack(result[0])
-    assert out_tensor.shape == (4, q_dim + kv_dim + kv_dim)
+    assert out_tensor.shape == (2, total_out)
 
 
 # --------------------------------------------------------------------------
