@@ -124,9 +124,9 @@ static LogicalResult emitForwardingCall(ImplicitLocOpBuilder &builder,
       callOperands.add({argValue, &syntheticExpr});
   }
 
-  ValueDest dest(EC_ReturnValue);
+  ExprDest dest(EC_ReturnValue);
   if (!calleeSig.isAsync() && calleeSig.hasMemoryOnlyResult())
-    dest = ValueDest(MLValue(arguments.back()), EC_ReturnValue);
+    dest = ExprDest(MLValue(arguments.back()), EC_ReturnValue);
 
   CValue callResult = emitter.emitCallUnchecked(callee, callOperands, dest);
   assert(callResult && "call should have succeeded");
@@ -140,7 +140,7 @@ static LogicalResult emitForwardingCall(ImplicitLocOpBuilder &builder,
   }
 
   // Handle async calls.
-  ValueDest awaitDest(MLValue(arguments.back()), EC_SynthesizedMethod);
+  ExprDest awaitDest(MLValue(arguments.back()), EC_SynthesizedMethod);
   if (!emitter.emitNamedMethodCall(
           "__await__",
           CallOperands(CallSyntax::kMethodCallSynthetic, &syntheticExpr,
@@ -2060,7 +2060,7 @@ Value ClosureEmitter::emitClosureOp(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
     captureValues.push_back(value);
 
     SyntheticNode synthNode(nestedFnDecl.getLoc());
-    ValueDest dest(anyType, EC_Type);
+    ExprDest dest(anyType, EC_Type);
     PValue captureTypeValue =
         emitter
             .emitImplicitConversionToType({value.getType(), synthNode}, anyType,
@@ -2459,7 +2459,7 @@ ASTDecl *ClosureEmitter::addCaptureValue(ASTDecl &closure, SMLoc location,
       // the reference.
       if (isa<RefType>(valueInParent.getType())) {
         SyntheticNode node(result->getLoc());
-        ValueDest dest(EC_Capture);
+        ExprDest dest(EC_Capture);
         captureValue = emitter.emitRValue(
             {MLValue(valueInParent.getMlirValue()), node}, dest);
       } else {
@@ -2478,7 +2478,7 @@ ASTDecl *ClosureEmitter::addCaptureValue(ASTDecl &closure, SMLoc location,
           captureValue = MBValue(refImmutOp->getResult(0));
         }
       }
-      ValueDest dest(EC_Capture);
+      ExprDest dest(EC_Capture);
       SyntheticNode node(result->getLoc());
       ASTExprAnd<CValue> valueInParentExpr{valueInParent, node};
       LValue copiedOrMovedValue =
@@ -3187,7 +3187,7 @@ void ClosureEmitter::addConformanceToDevicePassable(
         auto strLitDecl =
             cast<StructDeclOp>(strLitType.getDecl(shared)->getIfOperation());
         Type boundStrLitType = strLitDecl.bindReference({closureStr});
-        ValueDest litDest(EC_CallArgValue);
+        ExprDest litDest(EC_CallArgValue);
         CValue literalValue = emitter.emitConstructorCall(
             ASTType(boundStrLitType), CallOperands(CallSyntax::kTypeCall, &loc),
             litDest);
@@ -3195,8 +3195,8 @@ void ClosureEmitter::addConformanceToDevicePassable(
         // Call String.__init__(literal) into the byref result slot.
         ASTType stringType =
             shared.lookupBuiltinType("String", structDecl, structDecl.getLoc());
-        ValueDest resultDest(MLValue(block.getArguments().back()),
-                             EC_ReturnValue);
+        ExprDest resultDest(MLValue(block.getArguments().back()),
+                            EC_ReturnValue);
         CallOperands ctorOperands(CallSyntax::kTypeCall, &loc);
         ctorOperands.add(ASTExprAnd<CValue>{literalValue, &loc});
         emitter.emitConstructorCall(stringType, std::move(ctorOperands),

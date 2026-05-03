@@ -156,7 +156,7 @@ public:
 
   /// Emit this as a CValue if it can be resolved, otherwise emit an ambiguity
   /// error and return null.
-  CValue emitAsCValue(IREmitter &emitter, ValueDest &dest);
+  CValue emitAsCValue(IREmitter &emitter, ExprDest &dest);
 
   /// Emit a function call to the specified callee with the specified operand
   /// values.  This emits an error and returns null on failure.
@@ -165,7 +165,7 @@ public:
   /// etc) that results in the call, or potentially a random value that is being
   /// fed into an implicit conversion.  This should only be used for location
   /// information.
-  CValue emitCall(CallOperands &&callOperands, ValueDest &dest,
+  CValue emitCall(CallOperands &&callOperands, ExprDest &dest,
                   IREmitter &emitter);
 
   /// Filter down and complete this overload set based on knowledge that we need

@@ -29,7 +29,7 @@ using llvm::SMLoc;
 class AnyValue;
 class ASTType;
 class IREmitter;
-class ValueDest;
+class ExprDest;
 
 //===----------------------------------------------------------------------===//
 // ExprNode
@@ -192,10 +192,10 @@ public:
                                                       IREmitter &emitter) const;
 
   /// Emit this expression to MLIR, returning a (possibly null!) AnyValue.  The
-  /// ValueDest indicates information about where to emit the expression result
+  /// ExprDest indicates information about where to emit the expression result
   /// into, e.g. the a/b target in `def f(): (a,b) = (1,2)`.  On success, the
-  /// ValueDest /must/ be emitted into.
-  virtual AnyValue emitIR(ValueDest &dest, IREmitter &emitter) const = 0;
+  /// ExprDest /must/ be emitted into.
+  virtual AnyValue emitIR(ExprDest &dest, IREmitter &emitter) const = 0;
 
   /// emitLValueIfImplicitlyTyped can return one of three things:
   ///   1) A CValue if it is inherently typed.
@@ -263,9 +263,9 @@ public:
   // A default implementation is provided for these that forward to emitIR.
   ELVIITResult emitLValueIfImplicitlyTyped(IREmitter &emitter,
                                            PatternDeclKind kind) const override;
-  AnyValue emitIR(ValueDest &dest, IREmitter &emitter) const override;
+  AnyValue emitIR(ExprDest &dest, IREmitter &emitter) const override;
 
-  virtual ELVIITResult emitLCVIR(ValueDest &dest, IREmitter &emitter,
+  virtual ELVIITResult emitLCVIR(ExprDest &dest, IREmitter &emitter,
                                  bool isSpeculative) const = 0;
 };
 

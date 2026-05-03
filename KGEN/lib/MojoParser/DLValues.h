@@ -24,7 +24,7 @@ public:
   DiscardDLValue(ASTType elementType, const ExprNode *expr);
 
   void print(raw_ostream &os) const override;
-  CValue emitLoad(ValueDest &dest, IREmitter &emitter) const override;
+  CValue emitLoad(ExprDest &dest, IREmitter &emitter) const override;
   CValue emitStore(ASTExprAnd<CValue> value, IREmitter &emitter) const override;
 };
 
@@ -42,7 +42,7 @@ public:
   StructFieldOp getField() const;
 
   void print(raw_ostream &os) const override;
-  CValue emitLoad(ValueDest &dest, IREmitter &emitter) const override;
+  CValue emitLoad(ExprDest &dest, IREmitter &emitter) const override;
   CValue emitStore(ASTExprAnd<CValue> value, IREmitter &emitter) const override;
 };
 
@@ -68,7 +68,7 @@ public:
                    CallOperands &&operands, ASTType elementType);
 
   void print(raw_ostream &os) const override;
-  CValue emitLoad(ValueDest &dest, IREmitter &emitter) const override;
+  CValue emitLoad(ExprDest &dest, IREmitter &emitter) const override;
   CValue emitStore(ASTExprAnd<CValue> value, IREmitter &emitter) const override;
 };
 
@@ -83,7 +83,7 @@ public:
                const ExprNode *expr);
 
   void print(raw_ostream &os) const override;
-  CValue emitLoad(ValueDest &dest, IREmitter &emitter) const override;
+  CValue emitLoad(ExprDest &dest, IREmitter &emitter) const override;
   CValue emitStore(ASTExprAnd<CValue> value, IREmitter &emitter) const override;
 };
 

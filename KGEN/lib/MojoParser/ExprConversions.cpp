@@ -403,12 +403,12 @@ static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl,
 
   // Allocate the value dest for the call. Set the value dest to the result
   // slot, if there is one, otherwise provide the expected rvalue type.
-  ValueDest dest(EC_ConversionThunk);
+  ExprDest dest(EC_ConversionThunk);
   bool hasRegisterResult = false;
   if (thunkSignature.isAsync()) {
     // An async call returns a coroutine we have to await.
   } else if (thunkSignature.hasMemoryOnlyResult()) {
-    dest = ValueDest(MLValue(thunk.getArguments().back()), EC_ConversionThunk);
+    dest = ExprDest(MLValue(thunk.getArguments().back()), EC_ConversionThunk);
   } else {
     hasRegisterResult = true;
   }
@@ -445,7 +445,7 @@ static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl,
   // stronger ref result and corresponding iterator traits.  This isn't
   // something we want to support in general.
   bool needsExplicitCopyOut = false;
-  ValueDest explicitCopyOutDest(dest.getContext());
+  ExprDest explicitCopyOutDest(dest.getContext());
   if (actualSignature.isRefResult() && !thunkSignature.isRefResult()) {
     explicitCopyOutDest = std::move(dest);
     needsExplicitCopyOut = true;
@@ -465,7 +465,7 @@ static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl,
 
   // If the callee is async, we got a coroutine. Now await it into the result.
   if (thunkSignature.isAsync()) {
-    ValueDest dest(MLValue(thunk.getArguments().back()), EC_ConversionThunk);
+    ExprDest dest(MLValue(thunk.getArguments().back()), EC_ConversionThunk);
     if (!emitter.emitNamedMethodCall(
             "__await__",
             CallOperands(CallSyntax::kMethodCall, &node, {{callResult, node}}),
@@ -486,7 +486,7 @@ static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl,
 static CValue convertFunctionGeneratorValue(CValue value, const ExprNode *expr,
                                             FnTypeGeneratorType expected,
                                             IREmitter &emitter,
-                                            ValueDest &dest) {
+                                            ExprDest &dest) {
   PValue callee = value.getIfPValue();
   if (!callee) {
     emitter.emitError(
@@ -683,7 +683,7 @@ static CValue convertFunctionGeneratorValue(CValue value, const ExprNode *expr,
 
 static CValue convertGeneratorValue(CValue value, const ExprNode *expr,
                                     GeneratorType expected, IREmitter &emitter,
-                                    ValueDest &dest) {
+                                    ExprDest &dest) {
   // If this is a function generator value, defer to function conversion.
   if (auto expectedFnType = sugarDynCast<FnTypeGeneratorType>(expected)) {
     return convertFunctionGeneratorValue(value, expr, expectedFnType, emitter,
@@ -703,7 +703,7 @@ static CValue convertGeneratorValue(CValue value, const ExprNode *expr,
   // This must be a concrete generator attr, and it should have been ensured by
   // `canConvertGeneratorTypes`
   auto concreteGenAttr = sugarCast<GeneratorAttr>(genAttr.get());
-  ValueDest tmpDest(dest.getContext());
+  ExprDest tmpDest(dest.getContext());
   CValue convBody = emitter.emitImplicitConversionToType(
       {concreteGenAttr.getBody(), expr}, expected.getBody(), tmpDest);
 
@@ -1185,14 +1185,14 @@ ParseResult IREmitter::coerceTypesToEachOther(
   // __merge_with__ methods first.
   if (lhsMWPV) {
     configEmitter(/*isLHS*/ true);
-    ValueDest dest(EC_MergeWith);
+    ExprDest dest(EC_MergeWith);
     lhs = emitIndirectCall(
         lhsMWPV,
         CallOperands(CallSyntax::kMethodCall, lhsExpr, {{lhs, lhsExpr}}), dest);
   }
   if (rhsMWPV) {
     configEmitter(/*isLHS*/ false);
-    ValueDest dest(EC_MergeWith);
+    ExprDest dest(EC_MergeWith);
     rhs = emitIndirectCall(
         rhsMWPV,
         CallOperands(CallSyntax::kMethodCall, rhsExpr, {{rhs, rhsExpr}}), dest);
@@ -1618,7 +1618,7 @@ bool IREmitter::canImplicitlyConvertToType(ASTExprAnd<CValue> value,
 /// CAUTION: This method must line up with `canImplicitlyConvertToType`!!!
 CValue IREmitter::emitImplicitConversionToType(ASTExprAnd<CValue> valueExpr,
                                                ASTType requiredType,
-                                               ValueDest &dest) {
+                                               ExprDest &dest) {
   CValue value = valueExpr.ir;
   const ExprNode *expr = valueExpr.expr;
 
@@ -1834,7 +1834,7 @@ TypedAttr IREmitter::emitStringExprAsDataToStr(CValue val, ExprNode *expr,
     auto stringType = shared.lookupBuiltinType("String", declScope, loc)
                           .getWithoutParameters(shared);
     if (val.getType().getDecl(shared) != stringType.getDecl(shared)) {
-      ValueDest dest(context);
+      ExprDest dest(context);
       val = emitConstructorCall(
           stringType, CallOperands(CallSyntax::kTypeCall, expr, {{val, expr}}),
           dest);
@@ -1853,7 +1853,7 @@ TypedAttr IREmitter::emitStringExprAsDataToStr(CValue val, ExprNode *expr,
       return {};
     }
 
-    ValueDest dest(context);
+    ExprDest dest(context);
     val = emitConstructorCall(
         stringSliceType,
         CallOperands(CallSyntax::kTypeCall, expr, {{val, expr}}), dest);

@@ -927,7 +927,7 @@ LogicalResult StructEmitter::populateMoveCopy(ASTDecl &fnDecl, bool isMove) {
                                   MLValue(reboundTarget), EC_SynthesizedMethod);
       } else {
         CValue reboundCopySrc = CValue(MBValue(reboundSrc));
-        ValueDest dest(MLValue(reboundTarget), EC_SynthesizedMethod);
+        ExprDest dest(MLValue(reboundTarget), EC_SynthesizedMethod);
         SyntheticNode expr(location);
         ASTType refinedFieldType(
             cast<RefType>(reboundTarget.getType()).getElementType());
@@ -953,7 +953,7 @@ LogicalResult StructEmitter::populateMoveCopy(ASTDecl &fnDecl, bool isMove) {
           !fieldType.isImplicitlyCopyable(fieldASTDecl.getLoc(), shared,
                                           &fnDecl)) {
         // Invoke `T(*, copy: Self)`.
-        ValueDest dest(MLValue(targetFieldOp), EC_SynthesizedMethod);
+        ExprDest dest(MLValue(targetFieldOp), EC_SynthesizedMethod);
         SyntheticNode expr(location);
 
         CallOperands operands(CallSyntax::kImplicitCopyCtor, &expr);
@@ -1120,7 +1120,7 @@ TypedAttr StructEmitter::populateSpecialFnIsTrivial(SpecialFunctionKind kind) {
       return rhs;
     }
 
-    ValueDest dest(EC_OperatorOperandValue);
+    ExprDest dest(EC_OperatorOperandValue);
     return emitter.emitNamedMethodCall(
         "__and__",
         CallOperands(CallSyntax::kOperator, &node, {{lhs, node}, {rhs, node}}),

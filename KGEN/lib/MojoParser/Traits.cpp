@@ -809,7 +809,7 @@ LIT::verifyAndBuildConformance(ASTDecl &structDecl, SymbolRefAttr parent,
       // TODO(MOCO-1993): Make sure this is consistently followed other places
       // we do trait substitution, and maybe centralize this arcana to
       // somewhere.
-      ValueDest dest(traitAliasType, EC_AliasValue);
+      ExprDest dest(traitAliasType, EC_AliasValue);
       CValue convertedValue = emitter.emitImplicitConversionToType(
           {initializerExpr, synthNode}, traitAliasType, dest);
 

@@ -33,7 +33,7 @@ class ASTType;
 class OriginSetAttr;
 class PogListAttr;
 class SharedState;
-class ValueDest;
+class ExprDest;
 enum class SpecialFunctionKind : uint8_t;
 
 /// Given a number, return one string if the number is 1, otherwise return the
@@ -76,8 +76,7 @@ TypedAttr computeArgumentsOrigin(AsyncCallOp call,
 /// or `RaisingCoroutine[...]` value.
 CValue materializeAsyncCallAsCoroutine(IREmitter &emitter, AsyncCallOp call,
                                        const ExprNode *expr,
-                                       FnTypeGeneratorType sig,
-                                       ValueDest &dest);
+                                       FnTypeGeneratorType sig, ExprDest &dest);
 
 /// Helper to delete code in a region and mark it as unreachable when it's
 /// determined to be dead code.

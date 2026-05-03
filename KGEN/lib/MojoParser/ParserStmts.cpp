@@ -1196,10 +1196,10 @@ ParseResult StmtParser::parseReturnStmt(size_t returnIndent) {
   // Figure out where to emit the value. If the result is memory-only, return
   // into the result slot, otherwise just ensure the right SRValue type.
   ASTType userResultType = func.getUserResultType();
-  ValueDest resultDest(userResultType, EC_ReturnValue);
+  ExprDest resultDest(userResultType, EC_ReturnValue);
 
   if (declSig.hasMemoryOnlyResult())
-    resultDest = ValueDest(MLValue(func.getArguments().back()), EC_ReturnValue);
+    resultDest = ExprDest(MLValue(func.getArguments().back()), EC_ReturnValue);
 
   if (!declSig.isRefResult()) {
     // Convert the returned value to the returned type of the function.
@@ -1260,7 +1260,7 @@ ParseResult StmtParser::parseReturnStmt(size_t returnIndent) {
     }
 
     // We're returning the reference itself, so switch to SRValue and emit to
-    // the ValueDest. This does implicit conversions to the expected type (e.g.
+    // the ExprDest. This does implicit conversions to the expected type (e.g.
     // to a more general origin).
     resultValue =
         emitter.emitRValue({SRValue(refValue), operandExpr}, resultDest);
@@ -1357,7 +1357,7 @@ static LogicalResult injectDebuggerRaiseHookCall(SharedState &shared,
   ParamBindings bindings(declContext, node);
   OverloadSet call("__mojo_debugger_raise_hook", raiseHookFns,
                    std::move(bindings), CallSyntax::kDirectCall);
-  ValueDest raiseHookDest(EC_RaiseValue);
+  ExprDest raiseHookDest(EC_RaiseValue);
   call.emitCall(CallOperands{CallSyntax::kDirectCall, node, {}}, raiseHookDest,
                 emitter);
 
@@ -1408,13 +1408,13 @@ ParseResult StmtParser::parseRaiseStmt(size_t raiseIndent) {
     return success();
   }
 
-  ValueDest dest(errSlot, EC_RaiseValue);
+  ExprDest dest(errSlot, EC_RaiseValue);
   // If the contextual caught type is unresolved, then we're the first raise
   // in a try block.  Resolve the error type to whatever type we are raising.
   bool inferringErrorType = isa<UnresolvedType>(errSlot.getRValueType());
   if (inferringErrorType) {
     auto errorVar = cast<VarDeclOp>(errSlot.getDefiningOp());
-    dest = ValueDest(errorVar, EC_RaiseValue);
+    dest = ExprDest(errorVar, EC_RaiseValue);
   }
 
   if (errorExpr) {
@@ -1506,7 +1506,7 @@ ParseResult StmtParser::parseAssertStmt(size_t assertIndent) {
   ParamBindings bindings(getDeclScope(), condExpr);
   OverloadSet call("debug_assert", debugAssertFns, std::move(bindings),
                    CallSyntax::kDirectCall);
-  ValueDest dest(EC_TopLevelStmt);
+  ExprDest dest(EC_TopLevelStmt);
   call.emitCall(std::move(operands), dest, emitter);
   return success();
 }
@@ -1706,7 +1706,7 @@ LoopResult StmtParser::emitForStmt(SMLoc forLoc, ExprNode *targetExpr,
   VarDeclOp iterVar =
       prefixEmitter.emitVarDecl("$ITER", UnresolvedType::get(getContext()),
                                 forLocation, VarDeclKind::Synthesized);
-  ValueDest rangeDest(iterVar, EC_ForIterator);
+  ExprDest rangeDest(iterVar, EC_ForIterator);
   if (!prefixEmitter.emitNamedMethodCall(
           "__iter__",
           CallOperands(CallSyntax::kMethodCall, seqExpr, {loadedSeq}),
@@ -1759,7 +1759,7 @@ LoopResult StmtParser::emitForStmt(SMLoc forLoc, ExprNode *targetExpr,
   // Emit the call to __next__ with the target as the destination to assign
   // into.  This will synthesize the VarDeclOp from the inferred result type,
   // which will be in scope for the body that we will parse.
-  ValueDest indvarDest(targetExpr, EC_ForIterator);
+  ExprDest indvarDest(targetExpr, EC_ForIterator);
   // Lexically scope the indvarDest as a 'bind' pattern like a 'read' arg.
   indvarDest.setPatternDeclKind(PatternDeclKind::kBind);
 
@@ -1775,7 +1775,7 @@ LoopResult StmtParser::emitForStmt(SMLoc forLoc, ExprNode *targetExpr,
       return LoopResult(LoopResult::ErrorKind::inLoopStmt);
     }
   } else {
-    ValueDest lengthDest(EC_ForIterator);
+    ExprDest lengthDest(EC_ForIterator);
     CValue hasNextBool = emitter.emitNamedMethodCall(
         "__has_next__",
         CallOperands(CallSyntax::kMethodCall, seqExpr,
@@ -1878,7 +1878,7 @@ ParseResult StmtParser::parseParamFor(size_t curIndent, SMLoc forLoc,
   AnyValue seqValue = emitter.emitExprCValue(seqExpr, EC_ComptimeForSeq);
   if (!seqValue)
     return failure();
-  ValueDest rangeDest(EC_ForIterator);
+  ExprDest rangeDest(EC_ForIterator);
   PValue initialIterVal = emitter.emitPValue(
       {emitter.emitNamedMethodCall("__iter__",
                                    CallOperands(CallSyntax::kMethodCall,
@@ -1938,7 +1938,7 @@ ParseResult StmtParser::parseParamFor(size_t curIndent, SMLoc forLoc,
   //  comptime if !iter.has_next(). Emit the condition as a parameter
   // expression.
   auto iterValue = PValue(ParamDeclRefAttr::get(iterDecl));
-  ValueDest hasNextDest(EC_ForIterator);
+  ExprDest hasNextDest(EC_ForIterator);
   CValue hasNextRes = emitter.emitIndirectCall(
       hasNext,
       CallOperands(CallSyntax::kMethodCall, seqExpr, {{iterValue, seqExpr}}),
@@ -1963,7 +1963,7 @@ ParseResult StmtParser::parseParamFor(size_t curIndent, SMLoc forLoc,
 
   // After the check for too-few elements, we extract the next element and bind
   // to the target by calling the paramfor_next_iter "next_value" function.
-  ValueDest getNextValueDest(EC_ForIterator);
+  ExprDest getNextValueDest(EC_ForIterator);
   auto nextValue = emitter.emitIndirectCall(
       getNextValue,
       CallOperands(CallSyntax::kDirectCall, seqExpr, {{iterValue, seqExpr}}),
@@ -2082,10 +2082,10 @@ ParseResult StmtParser::handleRaisingFinallyRegion(
   if (isa<UnresolvedType>(errDecl.getType().getElementType())) {
     UnreachableOp::create(builder, tryOp.getLoc());
   } else {
-    ValueDest moveDest(errSlot, EC_RaiseValue);
+    ExprDest moveDest(errSlot, EC_RaiseValue);
     if (isa<UnresolvedType>(errSlot.getRValueType())) {
       auto errorVar = cast<VarDeclOp>(errSlot.getDefiningOp());
-      moveDest = ValueDest(errorVar, EC_RaiseValue);
+      moveDest = ExprDest(errorVar, EC_RaiseValue);
     }
     getEmitter().emitResult(MRValue(errDecl), SyntheticNode(loc), moveDest);
     if (inferringErrorType)
@@ -2218,13 +2218,13 @@ ParseResult StmtParser::parseTryStmt(size_t curIndent) {
     if (inExceptRegion) {
       builder.createBlock(&tryOp.getExceptRegion());
       MLValue errSlot = getEmitter().findNearestErrorSlot();
-      ValueDest dest(errSlot, EC_RaiseValue);
+      ExprDest dest(errSlot, EC_RaiseValue);
 
       // If the contextual caught type is unresolved, then we're the first raise
       // in a try block.  Resolve the error type to whatever we are raising.
       if (isa<UnresolvedType>(errSlot.getRValueType())) {
         auto errorVar = cast<VarDeclOp>(errSlot.getDefiningOp());
-        dest = ValueDest(errorVar, EC_RaiseValue);
+        dest = ExprDest(errorVar, EC_RaiseValue);
         getEmitter().checkInferredErrorType(errDecl.getType().getElementType(),
                                             finallyLoc);
       }
@@ -2309,7 +2309,7 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
   VarDeclOp contextMgrDecl = getEmitter().emitVarDecl(
       "$CONTEXTMGR", UnresolvedType::get(getContext()),
       shared.translateLocation(contextExp->getLoc()), VarDeclKind::Synthesized);
-  ValueDest contextMgrDest(contextMgrDecl, EC_WithContextMgr);
+  ExprDest contextMgrDest(contextMgrDecl, EC_WithContextMgr);
   if (!getEmitter().emitExpr(contextExp, contextMgrDest))
     return failure();
 
@@ -2399,10 +2399,10 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
   pushChildScope(scopeGuard, keepDecl);
 
   // If there is an explicit target specified, use it.
-  ValueDest enterDest(EC_WithContextMgr);
+  ExprDest enterDest(EC_WithContextMgr);
   if (targetExpr) {
     // Initialize the target expression with the result of the __enter__ call.
-    enterDest = ValueDest(targetExpr, EC_WithContextMgr);
+    enterDest = ExprDest(targetExpr, EC_WithContextMgr);
     // Bind a mutable target variable.
     enterDest.setPatternDeclKind(PatternDeclKind::kVar);
   }
@@ -2589,7 +2589,7 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
     }
 
     // Ok, emit the call the __exit__.
-    ValueDest exitDest(EC_WithExitResult);
+    ExprDest exitDest(EC_WithExitResult);
     (void)getEmitter().emitNamedMethodCall(
         "__exit__",
         CallOperands(CallSyntax::kMethodCall, contextExp,
@@ -2608,13 +2608,13 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
       if (isa<UnresolvedType>(errDecl.getType().getElementType())) {
         UnreachableOp::create(builder, loc);
       } else {
-        ValueDest dest(errSlot, EC_RaiseValue);
+        ExprDest dest(errSlot, EC_RaiseValue);
         // If the contextual caught type is unresolved, then we're the first
         // raise in a try block.  Resolve the error type to whatever we are
         // raising.
         if (isa<UnresolvedType>(errSlot.getRValueType())) {
           auto errorVar = cast<VarDeclOp>(errSlot.getDefiningOp());
-          dest = ValueDest(errorVar, EC_RaiseValue);
+          dest = ExprDest(errorVar, EC_RaiseValue);
           getEmitter().checkInferredErrorType(
               errDecl.getType().getElementType(), smLoc);
         }
@@ -2667,7 +2667,7 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
     // TODO: this isn't using the same convention that Python does.  We support
     // overloading though and this is going to be way better for anything real
     // that wants to implement this. We can support both styles when we need to.
-    ValueDest exitResultDest(EC_WithExitResult);
+    ExprDest exitResultDest(EC_WithExitResult);
     CallOperands exitOperandList(CallSyntax::kMethodCall, contextExp,
                                  {{MLValue(contextMgrDecl), contextExp},
                                   {MBValue(nestedErrDecl), contextExp}});
@@ -2690,10 +2690,10 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
 
     // On false, we re-raise the error.
     builder.createBlock(&ifOp.getElseRegion());
-    ValueDest dest(MLValue(errDecl), EC_RaiseValue);
+    ExprDest dest(MLValue(errDecl), EC_RaiseValue);
     // If the error type is unresolved, resolve it to whatever we propagate.
     if (isa<UnresolvedType>(errDecl.getType().getElementType()))
-      dest = ValueDest(errDecl, EC_RaiseValue);
+      dest = ExprDest(errDecl, EC_RaiseValue);
     getEmitter().emitResult(MRValue(nestedErrDecl), contextExp, dest);
     LIT::RaiseOp::create(builder, loc);
     HLCF::YieldOp::create(builder, loc);
@@ -3591,15 +3591,15 @@ ParseResult StmtParser::parseVarStmt(LexerCursor startCursor,
   if (initExpr) {
     // If we have a type, then emit directly into the LValue.  Otherwise emit
     // into the varOp to infer its type.
-    ValueDest dest(EC_VarInit);
+    ExprDest dest(EC_VarInit);
     ExprContext exprContext = EC_VarInit;
     if (parsedType) {
       varOp.changeElementType(parsedType);
-      dest = ValueDest(MLValue(varOp), exprContext);
+      dest = ExprDest(MLValue(varOp), exprContext);
     } else {
       // If we don't, we emit into the varOp itself, because this will infer the
       // type of the varOp from the initializer expression.
-      dest = ValueDest(varOp, exprContext);
+      dest = ExprDest(varOp, exprContext);
     }
 
     if (!emitter.emitExpr(initExpr, dest))
@@ -4031,8 +4031,8 @@ emitComprehensionsAnd(StmtParser &stmtEmitter,
 
 /// Emit a comprehension expression into the specified emitter.  If a
 /// contextual type is known, 'expectedType' is non-null.
-static AnyValue emitComprehension(const ComprehensionNode *node,
-                                  ValueDest &dest, IREmitter &emitter) {
+static AnyValue emitComprehension(const ComprehensionNode *node, ExprDest &dest,
+                                  IREmitter &emitter) {
   auto &shared = emitter.shared;
   auto loc = node->getLoc();
   auto location = shared.translateLocation(loc);
@@ -4151,7 +4151,7 @@ static AnyValue emitComprehension(const ComprehensionNode *node,
     }
 
     // Okay we know the collection has a type, emit the insertion method call.
-    ValueDest dest(EC_CollectionCompElt);
+    ExprDest dest(EC_CollectionCompElt);
 
     // Use dict.__setitem__(key, value) for dict comprehensions.
     if (node->kind == ExprNode::kDictComprehension) {
@@ -4183,7 +4183,7 @@ static AnyValue emitComprehension(const ComprehensionNode *node,
 
   // Now that we know we have the collection type, emit the call to the
   // initializer at the cursor.
-  ValueDest ctorDest(collectionMLValue, EC_CollectionCompElt);
+  ExprDest ctorDest(collectionMLValue, EC_CollectionCompElt);
   cursorEmitter.emitConstructorCall(
       collectionMLValue.getRValueType(),
       CallOperands(CallSyntax::kTypeCall, &exprNode), ctorDest);
@@ -4195,7 +4195,7 @@ static AnyValue emitComprehension(const ComprehensionNode *node,
   return MRValue(collectionMLValue);
 }
 
-AnyValue ComprehensionNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
+AnyValue ComprehensionNode::emitIR(ExprDest &dest, IREmitter &emitter) const {
   // emitComprehension is defined in the statement emission file.
   AnyValue result = emitComprehension(this, dest, emitter);
   return emitter.emitResult(result, this, dest);

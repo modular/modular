@@ -4,9 +4,9 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This file defines the ExprContext enum and the ValueDest class.  ExprContext
+// This file defines the ExprContext enum and the ExprDest class.  ExprContext
 // is used to indicate the context in which an expression is being emitted.
-// ValueDest indicates the location an expression is being emitted into
+// ExprDest indicates the location an expression is being emitted into
 // (including the ExprContext).
 //
 //===----------------------------------------------------------------------===//
@@ -89,17 +89,17 @@ enum ExprContext {
 const char *getContextMessage(ExprContext context);
 
 //===----------------------------------------------------------------------===//
-// ValueDest
+// ExprDest
 //===----------------------------------------------------------------------===//
 
-/// This is used in ValueDest when emitting an LValue expression whose type may
+/// This is used in ExprDest when emitting an LValue expression whose type may
 /// be inferred from the RHS value in an assignment.  This allows implicitly
 /// declared variables and discard patterns to infer their type in `_ = foo()`.
 struct LValueInitializerType {
   ASTType type;
 };
 
-/// This is a marker type to indicate when a ValueDest has had its internal
+/// This is a marker type to indicate when a ExprDest has had its internal
 /// LValue taken by getLValueForResult, but which hasn't had an emitResult to
 /// write it back yet.
 struct LValueBufferTaken {};
@@ -119,7 +119,7 @@ struct LValueBufferTaken {};
 ///          3) tuples and lists thereof, e.g. `(a, _) = foo()`
 ///       In this case, the ExprNode type often conforms to the expression. This
 ///       is used in "x = ..." and "for x in ..." etc. For target emission,
-///       the ValueDest tracks contextual information about whether the dest is
+///       the ExprDest tracks contextual information about whether the dest is
 ///       wrapped by a `var` or `ref` context.
 ///   - an RValue type:
 ///       This indicates that the result may be treated in any way (e.g. dumping
@@ -132,36 +132,36 @@ struct LValueBufferTaken {};
 /// Any expression may also have no proscribed result (as in the case of
 /// `someExpr()` with an ignored result), in which case emission will create
 /// storage when needed on demand.
-class ValueDest {
+class ExprDest {
 public:
   /*implicit*/
-  ValueDest(ExprContext context)
+  ExprDest(ExprContext context)
       : representation(NullRepresentation()), context(context) {}
 
   // The destination is some unemitted expression.
-  ValueDest(const ExprNode *expr, ExprContext context)
+  ExprDest(const ExprNode *expr, ExprContext context)
       : representation(expr), context(context) {
     assert(expr && "Cannot init with null ExprNode*");
   }
 
-  ValueDest(LValue dest, ExprContext context)
+  ExprDest(LValue dest, ExprContext context)
       : representation(dest), context(context) {}
-  ValueDest(VarDeclOp dest, ExprContext context);
-  ValueDest(ASTType requiredType, ExprContext context)
+  ExprDest(VarDeclOp dest, ExprContext context);
+  ExprDest(ASTType requiredType, ExprContext context)
       : representation(requiredType), context(context) {
     if (!requiredType || isa<TypeCheckErrorType>(requiredType))
       representation = NullRepresentation();
   }
-  ValueDest(LValueInitializerType type, ExprContext context)
+  ExprDest(LValueInitializerType type, ExprContext context)
       : representation(type), context(context) {}
 
-  ValueDest(ValueDest &&rhs)
+  ExprDest(ExprDest &&rhs)
       : representation(std::move(rhs.representation)), context(rhs.context),
         patternDeclKind(rhs.patternDeclKind) {
     rhs.representation = NullRepresentation();
     rhs.patternDeclKind = PatternDeclKind::kNone;
   }
-  ValueDest &operator=(ValueDest &&rhs) {
+  ExprDest &operator=(ExprDest &&rhs) {
     representation = std::move(rhs.representation);
     patternDeclKind = rhs.patternDeclKind;
     context = rhs.context;
@@ -170,11 +170,11 @@ public:
     return *this;
   }
 
-  ValueDest(const ValueDest &) = delete;
-  ValueDest &operator=(const ValueDest &) = delete;
+  ExprDest(const ExprDest &) = delete;
+  ExprDest &operator=(const ExprDest &) = delete;
 
-  ~ValueDest() {
-    assert(!isSpecified() && "ValueDest destroyed without being emitted into");
+  ~ExprDest() {
+    assert(!isSpecified() && "ExprDest destroyed without being emitted into");
   }
 
   /// This returns the context the expression is getting emitted into (for
@@ -188,9 +188,9 @@ public:
   bool isSpecified() const { return !isa<NullRepresentation>(representation); }
   bool isOperation() const { return isa<Operation *>(representation); }
 
-  /// Return true if this ValueDest has an already assigned memory location, or
+  /// Return true if this ExprDest has an already assigned memory location, or
   /// false if none is specified.  False means that emitting to this destination
-  /// will produce an anonymous temporary whenever the ValueDest is ultimately
+  /// will produce an anonymous temporary whenever the ExprDest is ultimately
   /// assigned to.
   bool hasExistingMemoryDest() const {
     // These will not produce a temporary when assigned to.
@@ -209,7 +209,7 @@ public:
   /// If this indicates an explicit expected RValue type, return that type.
   ASTType getExpectedTypeIfSpecified() const;
 
-  /// Inspect the ValueDest to see if it implies a specific type for the value
+  /// Inspect the ExprDest to see if it implies a specific type for the value
   /// being computed, emitting ExprNode targets if present to get their implied
   /// type if present.  This returns null if there is no implied type.
   ///
@@ -218,12 +218,12 @@ public:
   /// cases where this is being used to resolve a type (in which case it will be
   /// null).
   ///
-  /// Note that this will mutate the ValueDest if it is an ExprNode, turning it
+  /// Note that this will mutate the ExprDest if it is an ExprNode, turning it
   /// into an LValue to store to.
   ASTType resolveImpliedType(SMLoc loc, Type existingValueType,
                              IREmitter &emitter);
 
-  /// Project a ValueDest into an lvalue with the specified underlying (RValue)
+  /// Project a ExprDest into an lvalue with the specified underlying (RValue)
   /// type.
   ///
   /// When `allowIncompatibleTypes` is true, the method is allowed to return an
@@ -234,7 +234,7 @@ public:
   ///
   /// When `allowIncompatibleTypes` is false, this always returns an LValue of
   /// the requested type, which may return a temporary buffer.  In this case it
-  /// will not consume the ValueDest, so any user should reemit the ultimate
+  /// will not consume the ExprDest, so any user should reemit the ultimate
   /// value through it with emitResult.
   LValue getLValueForResult(SMLoc loc, ASTType resultType,
                             bool allowIncompatibleTypes, bool requireMLValue,
@@ -246,7 +246,7 @@ public:
   MLValue getMLValueForResult(SMLoc loc, ASTType resultType,
                               IREmitter &emitter);
 
-  /// If this ValueDest specifies an MLValue that will be returned by
+  /// If this ExprDest specifies an MLValue that will be returned by
   /// getMLValueForResult with the specified type, return it. Otherwise return
   /// null.
   MLValue getDefinedMLValueIfExists(ASTType resultType, IREmitter &emitter);
@@ -256,7 +256,7 @@ public:
   bool isNonDefaultAddressSpace() const;
 
   /// When an error is emitted instead of generating IR, this method resets the
-  /// ValueDest so it doesn't complain when emission is done.
+  /// ExprDest so it doesn't complain when emission is done.
   void resetForError(IREmitter &emitter);
 
   void dump() const;
@@ -273,7 +273,7 @@ private:
   /// var or ref wrapper.  This affects the behavior of a synthesized VarDecl:
   PatternDeclKind patternDeclKind = PatternDeclKind::kNone;
 
-  friend raw_ostream &operator<<(raw_ostream &os, const ValueDest &value);
+  friend raw_ostream &operator<<(raw_ostream &os, const ExprDest &value);
 };
 
 } // namespace M::KGEN::LIT

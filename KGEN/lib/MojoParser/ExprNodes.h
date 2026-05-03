@@ -51,7 +51,7 @@ struct SyntheticNode final : public ExprNode {
   static bool classof(const ExprNode *node) { return node->kind == kSynthetic; }
   SMLoc getLoc() const override { return location; }
   SourceRange getRange() const override { return {getLoc(), getLoc()}; }
-  AnyValue emitIR(ValueDest &dest, IREmitter &emitter) const override;
+  AnyValue emitIR(ExprDest &dest, IREmitter &emitter) const override;
   void print(mlir::raw_indented_ostream &os) const override;
 
   operator ExprNode *() { return this; }
@@ -75,7 +75,7 @@ struct IntLiteralNode final : public ExprNode {
   SMLoc getLoc() const override { return getSMLocFromStringRef(spelling); }
   SourceRange getRange() const override { return {getLoc(), getLoc()}; }
 
-  AnyValue emitIR(ValueDest &dest, IREmitter &emitter) const override;
+  AnyValue emitIR(ExprDest &dest, IREmitter &emitter) const override;
   void print(mlir::raw_indented_ostream &os) const override;
 };
 
@@ -90,7 +90,7 @@ struct FloatLiteralNode final : public ExprNode {
   }
   SMLoc getLoc() const override { return getSMLocFromStringRef(spelling); }
   SourceRange getRange() const override { return {getLoc(), getLoc()}; }
-  AnyValue emitIR(ValueDest &dest, IREmitter &emitter) const override;
+  AnyValue emitIR(ExprDest &dest, IREmitter &emitter) const override;
   void print(mlir::raw_indented_ostream &os) const override;
 };
 
@@ -107,7 +107,7 @@ struct BoolLiteralNode final : public ExprNode {
 
   SMLoc getLoc() const override { return loc; }
   SourceRange getRange() const override { return {getLoc(), getLoc()}; }
-  AnyValue emitIR(ValueDest &dest, IREmitter &emitter) const override;
+  AnyValue emitIR(ExprDest &dest, IREmitter &emitter) const override;
   void print(mlir::raw_indented_ostream &os) const override;
 };
 
@@ -128,7 +128,7 @@ struct SimpleLiteralNode final : public ExprNode {
 
   SMLoc getLoc() const override { return loc; }
   SourceRange getRange() const override { return {getLoc(), getLoc()}; }
-  AnyValue emitIR(ValueDest &dest, IREmitter &emitter) const override;
+  AnyValue emitIR(ExprDest &dest, IREmitter &emitter) const override;
   LogicalResult emitDestructuringPValue(PValue value,
                                         IREmitter &emitter) const override;
   void print(mlir::raw_indented_ostream &os) const override;
@@ -150,7 +150,7 @@ struct StringLiteralNode final : public ExprNode {
   /// does not include enclosing quotes.  The specified expression specifies the
   /// location but need not by a StringLiteral.
   static CValue emitCtorCall(StringRef bytes, const ExprNode *expr,
-                             ValueDest &dest, IREmitter &emitter);
+                             ExprDest &dest, IREmitter &emitter);
 
   static bool classof(const ExprNode *node) {
     return node->kind == kStringLiteral;
@@ -161,7 +161,7 @@ struct StringLiteralNode final : public ExprNode {
   SourceRange getRange() const override {
     return {getLoc(), getSMLocFromStringRef(spellings.back())};
   }
-  AnyValue emitIR(ValueDest &dest, IREmitter &emitter) const override;
+  AnyValue emitIR(ExprDest &dest, IREmitter &emitter) const override;
   void print(mlir::raw_indented_ostream &os) const override;
 };
 
@@ -193,7 +193,7 @@ struct TStringExprNode final : public ExprNode {
 
   SMLoc getLoc() const override { return startLoc; }
   SourceRange getRange() const override;
-  AnyValue emitIR(ValueDest &dest, IREmitter &emitter) const override;
+  AnyValue emitIR(ExprDest &dest, IREmitter &emitter) const override;
   void print(mlir::raw_indented_ostream &os) const override;
 };
 
@@ -234,11 +234,11 @@ struct DeclRefNode final : public LValueCapableExprNode, Identifier {
   /// refactored out from emitLCVIR because we use it for qualified lookup `x.y`
   /// when `x` is a package.
   static ELVIITResult emitUnqualLookup(StringRef spelling, const ExprNode *expr,
-                                       ASTDecl &lookupScope, ValueDest &dest,
+                                       ASTDecl &lookupScope, ExprDest &dest,
                                        IREmitter &emitter, bool isSpeculative);
   LogicalResult emitDestructuringPValue(PValue value,
                                         IREmitter &emitter) const override;
-  ELVIITResult emitLCVIR(ValueDest &dest, IREmitter &emitter,
+  ELVIITResult emitLCVIR(ExprDest &dest, IREmitter &emitter,
                          bool isSpeculative) const override;
   void print(mlir::raw_indented_ostream &os) const override;
 };
@@ -260,7 +260,7 @@ struct AttributeRefNode final : public LValueCapableExprNode, Identifier {
   SourceRange getRange() const override {
     return {base->getRangeStart(), getIdentifierLoc()};
   }
-  ELVIITResult emitLCVIR(ValueDest &dest, IREmitter &emitter,
+  ELVIITResult emitLCVIR(ExprDest &dest, IREmitter &emitter,
                          bool isSpeculative) const override;
   void print(mlir::raw_indented_ostream &os) const override;
 
@@ -268,7 +268,7 @@ struct AttributeRefNode final : public LValueCapableExprNode, Identifier {
   /// dynamic lvalue.
   static CValue emitStoredFieldRef(ASTExprAnd<CValue> base,
                                    StructFieldOp fieldOp, const ExprNode *expr,
-                                   ValueDest &dest, IREmitter &emitter);
+                                   ExprDest &dest, IREmitter &emitter);
 };
 
 /// Struct to represent an expression passed as a parameter or argument operand,
@@ -348,7 +348,7 @@ struct CallNode final : public ExprNode {
     return {callee->getRangeStart(), rparenLoc};
   }
   SourceRange getParenRange() const { return {lparenLoc, rparenLoc}; }
-  AnyValue emitIR(ValueDest &dest, IREmitter &emitter) const override;
+  AnyValue emitIR(ExprDest &dest, IREmitter &emitter) const override;
   void print(mlir::raw_indented_ostream &os) const override;
 };
 
@@ -373,7 +373,7 @@ struct SubscriptNode final : public LValueCapableExprNode {
   /// Return a source range from '[' to ']'.
   SourceRange getIndexRange() const { return {lsquareLoc, rsquareLoc}; }
 
-  ELVIITResult emitLCVIR(ValueDest &dest, IREmitter &emitter,
+  ELVIITResult emitLCVIR(ExprDest &dest, IREmitter &emitter,
                          bool isSpeculative) const override;
   void print(mlir::raw_indented_ostream &os) const override;
 };
@@ -412,7 +412,7 @@ struct SliceLiteralNode final : public ExprNode {
     return {startLoc, colon1Loc};
   }
 
-  AnyValue emitIR(ValueDest &dest, IREmitter &emitter) const override;
+  AnyValue emitIR(ExprDest &dest, IREmitter &emitter) const override;
   void print(mlir::raw_indented_ostream &os) const override;
 };
 
@@ -428,7 +428,7 @@ struct ParenNode final : public ExprNode {
   static bool classof(const ExprNode *node) { return node->kind == kParen; }
   SMLoc getLoc() const override { return lparenLoc; }
   SourceRange getRange() const override { return {lparenLoc, rparenLoc}; }
-  AnyValue emitIR(ValueDest &dest, IREmitter &emitter) const override;
+  AnyValue emitIR(ExprDest &dest, IREmitter &emitter) const override;
   LogicalResult emitDestructuringPValue(PValue value,
                                         IREmitter &emitter) const override;
   ELVIITResult
@@ -460,7 +460,7 @@ struct TupleNode final : public LValueCapableExprNode {
       return {firstCommaLoc, firstCommaLoc};
     return {exprs.front()->getRangeStart(), exprs.back()->getRangeEnd()};
   }
-  ELVIITResult emitLCVIR(ValueDest &dest, IREmitter &emitter,
+  ELVIITResult emitLCVIR(ExprDest &dest, IREmitter &emitter,
                          bool isSpeculative) const override;
   LogicalResult emitDestructuringPValue(PValue value,
                                         IREmitter &emitter) const override;
@@ -483,7 +483,7 @@ struct ListLiteralNode final : public ExprNode {
   }
   SMLoc getLoc() const override { return lsquareLoc; }
   SourceRange getRange() const override { return {lsquareLoc, rsquareLoc}; }
-  AnyValue emitIR(ValueDest &dest, IREmitter &emitter) const override;
+  AnyValue emitIR(ExprDest &dest, IREmitter &emitter) const override;
   void print(mlir::raw_indented_ostream &os) const override;
 };
 
@@ -525,7 +525,7 @@ struct ComprehensionNode final : public ExprNode {
   }
   SMLoc getLoc() const override { return lsquareLoc; }
   SourceRange getRange() const override { return {lsquareLoc, rsquareLoc}; }
-  AnyValue emitIR(ValueDest &dest, IREmitter &emitter) const override;
+  AnyValue emitIR(ExprDest &dest, IREmitter &emitter) const override;
   void print(mlir::raw_indented_ostream &os) const override;
 };
 
@@ -549,7 +549,7 @@ struct DictLiteralNode final : public ExprNode {
   SMLoc getLoc() const override { return lbraceLoc; }
   SourceRange getRange() const override { return {lbraceLoc, rbraceLoc}; }
 
-  AnyValue emitIR(ValueDest &dest, IREmitter &emitter) const override;
+  AnyValue emitIR(ExprDest &dest, IREmitter &emitter) const override;
   void print(mlir::raw_indented_ostream &os) const override;
 };
 
@@ -572,7 +572,7 @@ struct SetInitLiteralNode final : public ExprNode {
   SMLoc getLoc() const override { return lbraceLoc; }
   SourceRange getRange() const override { return {lbraceLoc, rbraceLoc}; }
 
-  AnyValue emitIR(ValueDest &dest, IREmitter &emitter) const override;
+  AnyValue emitIR(ExprDest &dest, IREmitter &emitter) const override;
   void print(mlir::raw_indented_ostream &os) const override;
 };
 
@@ -595,7 +595,7 @@ struct IfElseOpNode final : public ExprNode {
   SourceRange getRange() const override {
     return {trueExpr->getRangeStart(), falseExpr->getRangeEnd()};
   }
-  AnyValue emitIR(ValueDest &dest, IREmitter &emitter) const override;
+  AnyValue emitIR(ExprDest &dest, IREmitter &emitter) const override;
   void print(mlir::raw_indented_ostream &os) const override;
 };
 
@@ -622,13 +622,13 @@ struct BinOpNode final : public ExprNode {
   }
   ELVIITResult emitLValueIfImplicitlyTyped(IREmitter &emitter,
                                            PatternDeclKind kind) const override;
-  AnyValue emitIR(ValueDest &dest, IREmitter &emitter) const override;
+  AnyValue emitIR(ExprDest &dest, IREmitter &emitter) const override;
   void print(mlir::raw_indented_ostream &os) const override;
 
 private:
-  AnyValue emitAndOr(ValueDest &dest, IREmitter &emitter) const;
-  AnyValue emitAssign(ValueDest &dest, IREmitter &emitter) const;
-  AnyValue emitInplace(ValueDest &dest, IREmitter &emitter) const;
+  AnyValue emitAndOr(ExprDest &dest, IREmitter &emitter) const;
+  AnyValue emitAssign(ExprDest &dest, IREmitter &emitter) const;
+  AnyValue emitInplace(ExprDest &dest, IREmitter &emitter) const;
 };
 
 struct UnaryOpNode final : public ExprNode {
@@ -647,17 +647,17 @@ struct UnaryOpNode final : public ExprNode {
     return isPostfix() ? SourceRange(subExpr->getRangeStart(), opLoc)
                        : SourceRange(opLoc, subExpr->getRangeEnd());
   }
-  AnyValue emitIR(ValueDest &dest, IREmitter &emitter) const override;
+  AnyValue emitIR(ExprDest &dest, IREmitter &emitter) const override;
   ELVIITResult emitLValueIfImplicitlyTyped(IREmitter &emitter,
                                            PatternDeclKind kind) const override;
   void print(mlir::raw_indented_ostream &os) const override;
-  AnyValue emitTransfer(AnyValue argValue, ValueDest &dest,
+  AnyValue emitTransfer(AnyValue argValue, ExprDest &dest,
                         IREmitter &emitter) const;
-  AnyValue emitComptime(ValueDest &dest, IREmitter &emitter) const;
+  AnyValue emitComptime(ExprDest &dest, IREmitter &emitter) const;
 
   /// Emit a unary arithmetic operation.
   static AnyValue emitArith(Kind kind, const ExprNode *expr,
-                            ASTExprAnd<AnyValue> value, ValueDest &dest,
+                            ASTExprAnd<AnyValue> value, ExprDest &dest,
                             IREmitter &emitter);
 };
 
@@ -682,11 +682,10 @@ struct ChainedCmpOpNode final : public ExprNode {
     return {exprs.front()->getRangeStart(), exprs.back()->getRangeEnd()};
   }
 
-  AnyValue emitIR(ValueDest &dest, IREmitter &emitter) const override;
+  AnyValue emitIR(ExprDest &dest, IREmitter &emitter) const override;
   void print(mlir::raw_indented_ostream &os) const override;
   RValue emitNextCmp(IREmitter &emitter, size_t opIdx, RValue lastCmp,
-                     AnyValue lastExpr, bool hasPrevIfOp,
-                     ValueDest &dest) const;
+                     AnyValue lastExpr, bool hasPrevIfOp, ExprDest &dest) const;
 };
 
 struct FunctionTypeNode final : public ExprNode {
@@ -715,7 +714,7 @@ struct FunctionTypeNode final : public ExprNode {
   }
   SMLoc getLoc() const override { return baseLoc; }
   SourceRange getRange() const override { return {baseLoc, endLoc}; }
-  AnyValue emitIR(ValueDest &dest, IREmitter &emitter) const override;
+  AnyValue emitIR(ExprDest &dest, IREmitter &emitter) const override;
   void print(mlir::raw_indented_ostream &os) const override;
 };
 
@@ -741,17 +740,16 @@ struct MagicFunctionNode final : public ExprNode {
   }
   SMLoc getLoc() const override { return baseLoc; }
   SourceRange getRange() const override { return {baseLoc, rparenLoc}; }
-  AnyValue emitIR(ValueDest &dest, IREmitter &emitter) const override;
+  AnyValue emitIR(ExprDest &dest, IREmitter &emitter) const override;
   void print(mlir::raw_indented_ostream &os) const override;
 
-  AnyValue emitOriginOf(ValueDest &dest, IREmitter &emitter) const;
-  AnyValue emitTypeOf(ValueDest &dest, IREmitter &emitter) const;
-  AnyValue emitFunctionsInModule(ValueDest &dest, IREmitter &emitter) const;
-  AnyValue emitConformsTo(ValueDest &dest, IREmitter &emitter) const;
-  AnyValue emitGetCurrentFunctionName(ValueDest &dest,
-                                      IREmitter &emitter) const;
-  AnyValue emitStructFieldRef(ValueDest &dest, IREmitter &emitter) const;
-  AnyValue emitIsRunInComptimeInterpreter(ValueDest &dest,
+  AnyValue emitOriginOf(ExprDest &dest, IREmitter &emitter) const;
+  AnyValue emitTypeOf(ExprDest &dest, IREmitter &emitter) const;
+  AnyValue emitFunctionsInModule(ExprDest &dest, IREmitter &emitter) const;
+  AnyValue emitConformsTo(ExprDest &dest, IREmitter &emitter) const;
+  AnyValue emitGetCurrentFunctionName(ExprDest &dest, IREmitter &emitter) const;
+  AnyValue emitStructFieldRef(ExprDest &dest, IREmitter &emitter) const;
+  AnyValue emitIsRunInComptimeInterpreter(ExprDest &dest,
                                           IREmitter &emitter) const;
 
 private:

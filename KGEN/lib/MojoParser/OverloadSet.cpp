@@ -481,7 +481,7 @@ static LogicalResult emitOperandsNeedingOriginsToMemory(
     // bind to a mutable ref returned by getitem.
     // We should generalize "needsRValue" to a full ArgConvention.
     if (auto lv = operands[operandIdx].ir.getIfDLValue()) {
-      ValueDest loadDest(EC_RefBinding);
+      ExprDest loadDest(EC_RefBinding);
       auto newVal = lv->emitLoad(loadDest, emitter);
       if (!newVal)
         return failure(); // Failed to emit the PValue/SValue to an MRValue.
@@ -1202,7 +1202,7 @@ PValue OverloadSet::getIfPValue() const {
 
 /// Emit this as a RValue if it can be resolved, otherwise emit an ambiguity
 /// error and return null.
-CValue OverloadSet::emitAsCValue(IREmitter &emitter, ValueDest &dest) {
+CValue OverloadSet::emitAsCValue(IREmitter &emitter, ExprDest &dest) {
   // If we have an overload set with multiple possibilities, we'll fail to emit
   // this as a RValue.  Try to resolve it based on the destination's type.
   ASTType expectedType;
@@ -1250,20 +1250,20 @@ CValue OverloadSet::emitAsCValue(IREmitter &emitter, ValueDest &dest) {
 
 /// Emit an indirect call to a resolved value in a try block, invoking a
 /// callback to generate logic in the 'catch' block that is wrapped around the
-/// call. This ensures that the ValueDest is updated and live after the try
+/// call. This ensures that the ExprDest is updated and live after the try
 /// block, which only works if the "catch" logic doesn't fall through.
 ///
 /// This emits an error and returns null on failure.
 CValue IREmitter::emitIndirectCallInTryBlock(
-    CValue callee, CallOperands &&operands, ValueDest &dest,
+    CValue callee, CallOperands &&operands, ExprDest &dest,
     std::function<void(VarDeclOp errDecl)> emitCatchLogic) {
-  ValueDest callDest(dest.getContext());
+  ExprDest callDest(dest.getContext());
 
   auto calleeSig = FnOrFnLiteralTypeGeneratorType::get(callee.getRValueType());
   auto callExpr = operands.callExpr;
   auto loc = translateLocation(callExpr->getLoc());
 
-  // If the ValueDest is a lazy materialized vardecl, we need to materialize
+  // If the ExprDest is a lazy materialized vardecl, we need to materialize
   // it outside the try block. Note that we still don't know the result type
   // that we're binding to - the signature of the callee might have implicit
   // origins or other things substituted through it that can only be determined
@@ -1276,14 +1276,14 @@ CValue IREmitter::emitIndirectCallInTryBlock(
     auto varDecl =
         emitVarDecl("__ref_result_tmp__", UnresolvedType::get(getContext()),
                     loc, VarDeclKind::Bind);
-    callDest = ValueDest(varDecl, dest.getContext());
+    callDest = ExprDest(varDecl, dest.getContext());
   } else if (dest.hasExistingMemoryDest()) {
     // Emit the call result directly into the existing destination.
     callDest = std::move(dest);
   } else {
     tmpResult = emitVarDecl("anonymous*", UnresolvedType::get(getContext()),
                             loc, VarDeclKind::Synthesized);
-    callDest = ValueDest(tmpResult, dest.getContext());
+    callDest = ExprDest(tmpResult, dest.getContext());
   }
 
   VarDeclOp errDecl =
@@ -1342,14 +1342,14 @@ CValue IREmitter::emitIndirectCallInTryBlock(
     result = MRValue(tmpResult);
   }
 
-  // Emit the result into the "dest" ValueDest outside of the try block.
+  // Emit the result into the "dest" ExprDest outside of the try block.
   builder = savedBuilder;
   return emitCResult(result, callExpr, dest);
 }
 
 /// Emit a function call to the specified callee with the specified operand
 /// values.  This emits an error and returns null on failure.
-CValue OverloadSet::emitCall(CallOperands &&operands, ValueDest &dest,
+CValue OverloadSet::emitCall(CallOperands &&operands, ExprDest &dest,
                              IREmitter &emitter) {
   // If we have a bound self, add it to the operand list to simplify the logic
   // below.
@@ -1369,7 +1369,7 @@ CValue OverloadSet::emitCall(CallOperands &&operands, ValueDest &dest,
 }
 
 CValue IREmitter::emitIndirectCall(CValue callee, CallOperands &&operands,
-                                   ValueDest &dest) {
+                                   ExprDest &dest) {
   if (auto calleeSig =
           sugarDynCast<FuncLiteralTypeGeneratorType>(callee.getRValueType())) {
     // An indirect call to a function literal typed candidate becomes a direct
@@ -1460,8 +1460,7 @@ CValue IREmitter::emitIndirectCall(CValue callee, CallOperands &&operands,
 }
 
 CValue IREmitter::emitNamedMethodCall(StringRef methodName,
-                                      CallOperands &&operands,
-                                      ValueDest &dest) {
+                                      CallOperands &&operands, ExprDest &dest) {
   assert(!operands.values.empty() &&
          "Cannot emit a method call without a receiver!");
 
@@ -1513,7 +1512,7 @@ CValue IREmitter::emitNamedMethodCall(StringRef methodName,
 /// `allowImplicitConversion` is true, the provided args are allowed to
 /// implicitly convert to the expectations of the constructor signatures.
 CValue IREmitter::emitConstructorCall(ASTType type, CallOperands &&callOperands,
-                                      ValueDest &dest) {
+                                      ExprDest &dest) {
   // If the dest type is invalid, then an error has already been reported.
   if (type.isTypeCheckErrorType()) {
     dest.resetForError(*this);
