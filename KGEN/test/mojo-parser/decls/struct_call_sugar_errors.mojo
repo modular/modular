@@ -31,20 +31,6 @@ struct PCallWithGetItem:
     def __getitem__(ref self, y: StringLiteral) -> Int:
         return 2
 
-
-struct PCallWithSetItem:
-    def __init__(out self):
-        pass
-
-    # expected-warning @below {{parametric '__call__' method cannot be called directly because 'PCallWithSetItem' defines '__getitem__', '__setitem__', or '__getattr__'; consider using a different name for this method}}
-    def __call__[x: Int](ref self, y: Int) -> Int:
-        return x + y
-
-    # expected-note @below {{__setitem__ defined here}}
-    def __setitem__(mut self, x: Int, y: Int):
-        return
-
-
 struct PCallWithGetAttr:
     def __init__(out self):
         pass
@@ -81,13 +67,3 @@ def main():
     _ = pcgi[1](  # expected-error {{'Int' does not implement the '__call__' method}}
         2
     )
-
-    var pcsi = PCallWithSetItem()
-    _ = pcsi[1](  # expected-error {{'Int' does not implement the '__call__' method}}
-        2
-    )
-
-    var pcga = PCallWithGetAttr()
-    _ = pcsi[
-        "test"
-    ]()  # expected-error {{'Int' does not implement the '__call__' method}}

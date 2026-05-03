@@ -1467,10 +1467,10 @@ def testOverloadKwArgs():
     # CHECK-NEXT: %13 = lit.call {{.*}}@OverloadedKwArgs::@"__setitem__{{.*}}"idx2"
     x[idx2=1] = 42
 
-    # CHECK-NEXT: %y = lit.var.decl
     # CHECK-NEXT: %14 = lit.ref.immut %x : <!OverloadedKwArgs, mut *"x`">
     # CHECK-NEXT: %15 = kgen.param.constant: !Int = <{1}>
     # CHECK-NEXT: %16 = lit.call {{.*}}@OverloadedKwArgs::@"__getitem__{{.*}}idx
+    # CHECK-NEXT: %y = lit.var.decl
     # CHECK-NEXT: lit.ref.store %16, %y : <!Int, mut *"y`1">
     # CHECK-NEXT: %17 = lit.ref.immut %x : <!OverloadedKwArgs, mut *"x`">
     var y = x[1]
