@@ -31,15 +31,6 @@ class ASTType;
 class IREmitter;
 class ValueDest;
 
-/// This enum value keeps track of whether a "target" is being emitted in a
-/// var or ref wrapper.  This affects the behavior of a synthesized VarDecl:
-enum class PatternDeclKind {
-  kNone, // Reuse or synthesize or function-scope variable like Python.
-  kVar,  // Make a scoped vardecl in this context. "var x = ..."
-  kRef,  // Bind a scoped reference in this context. "ref x = ..."
-  kBind, // Bind a scoped variable in this context like a 'read' arg convention.
-};
-
 //===----------------------------------------------------------------------===//
 // ExprNode
 //===----------------------------------------------------------------------===//

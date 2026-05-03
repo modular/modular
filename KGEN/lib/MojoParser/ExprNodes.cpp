@@ -3315,7 +3315,13 @@ AnyValue BinOpNode::emitAssign(ValueDest &dest, IREmitter &emitter) const {
   // The RHS will be assigned into either the expression returned (resolving
   // it from the type of the RHS) or from the LValue returned (allowing the
   // RHS to infer from it) based on the lhsResult.
-  ValueDest assignDest(lhsResult, assignDestKind);
+  ValueDest assignDest(assignDestKind);
+  assert(!lhsResult.isFailure() && "Failures should be handled");
+  if (AnyValue av = lhsResult.getIfValue()) {
+    assignDest = ValueDest(av.getIfLValue(), assignDestKind);
+  } else {
+    assignDest = ValueDest(lhsResult.getIfExprNode(), assignDestKind);
+  }
 
   // Emit the RHS into the context of the LHS.  If we got an LValue, then we can
   // infer the type of the RHS from the LHS LValue.  If we got an unresolved
