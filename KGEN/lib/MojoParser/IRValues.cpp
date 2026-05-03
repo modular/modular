@@ -547,25 +547,24 @@ InitializerUValue::getOperandsForInferredType(ASTType type, ExprDest &dest,
       dictOperands.add({getEmptyList(), operands.callExpr});
       dictOperands.add({getEmptyList(), operands.callExpr});
       addNoneLiteralMarker(dictOperands, "__dict_literal__", emitter);
-      CallOperands dictCopy(dictOperands, operands.dest);
-      FailureOr<PValue> pValue = OverloadSet::canConstructType(
-          type, std::move(dictOperands), emitter.declScope);
+      FailureOr<PValue> pValue =
+          OverloadSet::canConstructType(type, dictOperands, emitter.declScope);
       if (succeeded(pValue) && pValue.value())
-        return dictCopy;
+        return dictOperands;
     }
 
     // Otherwise, check to see if we can emit this as a set literal. It will
     // take precedent over initializer list emission, because (e.g.)
     // PythonObject's set literal ctor takes a required keyword argument.
-    CallOperands setOperands(CallSyntax::kTypeCall, operands.callExpr);
+    CallOperands setOperands(operands, operands.dest);
     addNoneLiteralMarker(setOperands, "__set_literal__", emitter);
-    FailureOr<PValue> pValue = OverloadSet::canConstructType(
-        type, std::move(setOperands), emitter.declScope);
-    if (succeeded(pValue) && pValue.value()) {
-      addNoneLiteralMarker(operands, "__set_literal__", emitter);
-      break;
-    }
+    FailureOr<PValue> pValue =
+        OverloadSet::canConstructType(type, setOperands, emitter.declScope);
+    if (succeeded(pValue) && pValue.value())
+      return setOperands;
+
     // Otherwise, leave it alone as an initializer list.
+    operands.dest = std::move(setOperands.dest);
     break;
   }
   return operands;

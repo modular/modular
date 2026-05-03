@@ -719,7 +719,7 @@ AnyValue TStringExprNode::emitIR(ExprDest &dest, IREmitter &emitter) const {
   SmallVector<ASTExprAnd<AnyValue>> interpolatedValues;
   ExprDest exprDest(EC_OperatorOperandValue);
   for (const ExprNode *expr : interpolatedExprs) {
-    AnyValue exprValue = expr->emitIR(exprDest, emitter);
+    AnyValue exprValue = emitter.emitExpr(expr, exprDest);
     if (!exprValue)
       return {};
     interpolatedValues.push_back({std::move(exprValue), expr});
@@ -747,12 +747,7 @@ AnyValue TStringExprNode::emitIR(ExprDest &dest, IREmitter &emitter) const {
     operands.add(interpolated);
 
   // Resolve the overload and emit the call.
-  auto callee = os.filterOverloadSet(
-      operands, /*emitDiagnosticsOnFailure=*/true, emitter);
-  if (!callee)
-    return {};
-
-  return emitter.emitCallUnchecked(callee, operands, dest);
+  return os.emitCall(std::move(operands), dest, emitter);
 }
 
 bool Operand::isPositionalStringLiteral(StringRef str) const {
@@ -3747,7 +3742,7 @@ AnyValue UnaryOpNode::emitIR(ExprDest &dest, IREmitter &emitter) const {
   if (kind == kVarPat || kind == kRefPat) {
     dest.setPatternDeclKind(kind == kVarPat ? PatternDeclKind::kVar
                                             : PatternDeclKind::kRef);
-    auto result = subExpr->emitIR(dest, emitter);
+    auto result = emitter.emitExpr(subExpr, dest);
 
     if (result && !result.getIfLValue()) {
       emitter.emitError(getLoc())
