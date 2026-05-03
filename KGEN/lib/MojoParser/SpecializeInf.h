@@ -11,8 +11,8 @@
 #ifndef KGEN_MOJOPARSER_SPECIALIZEINFERENCE_H
 #define KGEN_MOJOPARSER_SPECIALIZEINFERENCE_H
 
-#include "CallEmission.h"
 #include "InferenceState.h"
+#include "OverloadSet.h"
 
 namespace M::KGEN::LIT {
 

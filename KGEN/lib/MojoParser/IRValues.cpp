@@ -9,9 +9,9 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/MojoParser/IRValues.h"
-#include "CallEmission.h"
 #include "ExprNodes.h"
 #include "IREmitter.h"
+#include "OverloadSet.h"
 
 #include "KGEN/Interpreter/InterpreterAttrs.h"
 #include "KGEN/KGENDialect/KGENTypes.h"

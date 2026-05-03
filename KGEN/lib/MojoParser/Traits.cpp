@@ -10,9 +10,9 @@
 //===----------------------------------------------------------------------===//
 
 #include "Traits.h"
-#include "CallEmission.h"
 #include "ExprNodes.h"
 #include "IREmitter.h"
+#include "OverloadSet.h"
 
 #include "MojoUtils.h"
 #include "ParserEvaluationContext.h"

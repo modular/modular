@@ -5,11 +5,11 @@
 //===----------------------------------------------------------------------===//
 
 #include "ParamInf.h"
-#include "CallEmission.h"
 #include "ClosureEmitter.h"
 #include "ExprNodes.h"
 #include "IREmitter.h"
 #include "MojoUtils.h"
+#include "OverloadSet.h"
 #include "ParamBindings.h"
 #include "ParamMatcher.h"
 

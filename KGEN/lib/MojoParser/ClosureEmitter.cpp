@@ -9,11 +9,11 @@
 //===----------------------------------------------------------------------===//
 
 #include "ClosureEmitter.h"
-#include "CallEmission.h"
 #include "IREmitter.h"
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/DeclResolver.h"
 #include "MojoUtils.h"
+#include "OverloadSet.h"
 #include "ParamBindings.h"
 #include "ParserEvaluationContext.h"
 #include "Signatures.h"

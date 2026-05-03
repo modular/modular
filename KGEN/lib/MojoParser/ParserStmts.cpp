@@ -8,7 +8,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "CallEmission.h"
 #include "ExprNodes.h"
 #include "IREmitter.h"
 #include "KGEN/MojoParser/ASTDecl.h"
@@ -16,6 +15,7 @@
 #include "KGEN/MojoParser/DeclResolver.h"
 #include "KGEN/MojoParser/Lexer.h"
 #include "MojoUtils.h"
+#include "OverloadSet.h"
 #include "ParserBase.h"
 #include "Support/Compiler/OperationUtils.h"
 
