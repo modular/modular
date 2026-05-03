@@ -175,13 +175,15 @@ LogicalResult ParamInf::inferSelfFromInitResult(FnTypeGeneratorType signature) {
 static Type inferInitializerType(ASTDecl &declScope, InitializerUValue &init,
                                  ASTExprAnd<AnyValue> operand,
                                  ASTType defaultType) {
-  IREmitter emitter(declScope, ExprContext::EC_CallArgValue);
+  IREmitter emitter(declScope, EC_CallArgValue);
   if (!defaultType)
     return {};
   ASTType inferredType =
       defaultType.getWithUnknownParametersReplaced(declScope.getShared());
+
+  ExprDest dest(EC_CallArgValue);
   CallOperands operands =
-      init.getOperandsForInferredType(inferredType, emitter);
+      init.getOperandsForInferredType(inferredType, dest, emitter);
 
   // We expect the initializer to return the constructed type.
   // Infer the parameters of this overload candidate against the computed

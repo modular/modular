@@ -11,7 +11,7 @@
 #ifndef KGEN_MOJOPARSER_EXPREMITTER_H
 #define KGEN_MOJOPARSER_EXPREMITTER_H
 
-#include "ExprDest.h"
+#include "KGEN/MojoParser/ExprDest.h"
 
 #include "KGEN/LITDialect/LITAttrs.h"
 #include "KGEN/MojoParser/IRValues.h"
