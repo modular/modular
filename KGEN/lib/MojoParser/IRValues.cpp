@@ -507,9 +507,10 @@ ASTType InitializerUValue::getDefaultType(SharedState &shared) const {
 /// Given an inferred type for this initializer list, return the operands that
 /// we should use to try to construct it.  This returns failure if invalid.
 CallOperands
-InitializerUValue::getOperandsForInferredType(ASTType type,
+InitializerUValue::getOperandsForInferredType(ASTType type, ExprDest &dest,
                                               IREmitter &emitter) const {
-  CallOperands operands(get());
+  // FIXME: need the correct ExprDest here.
+  CallOperands operands(get(), dest);
   switch (syntax) {
   case Syntax::kSliceLiteral:
     addNoneLiteralMarker(operands, "__slice_literal__", emitter);
@@ -546,7 +547,7 @@ InitializerUValue::getOperandsForInferredType(ASTType type,
       dictOperands.add({getEmptyList(), operands.callExpr});
       dictOperands.add({getEmptyList(), operands.callExpr});
       addNoneLiteralMarker(dictOperands, "__dict_literal__", emitter);
-      CallOperands dictCopy(dictOperands);
+      CallOperands dictCopy(dictOperands, operands.dest);
       FailureOr<PValue> pValue = OverloadSet::canConstructType(
           type, std::move(dictOperands), emitter.declScope);
       if (succeeded(pValue) && pValue.value())
@@ -576,7 +577,8 @@ CValue InitializerUValue::emitAsCValue(IREmitter &emitter, ExprDest &dest) {
 
   // If we have the inferred contextual type, we can emit the constructor call.
   if (ASTType expectedType = dest.getExpectedTypeIfSpecified()) {
-    CallOperands operands = getOperandsForInferredType(expectedType, emitter);
+    CallOperands operands =
+        getOperandsForInferredType(expectedType, dest, emitter);
     return emitter.emitConstructorCall(expectedType, std::move(operands), dest);
   }
 
@@ -657,7 +659,7 @@ CValue InitializerUValue::emitAsCValue(IREmitter &emitter, ExprDest &dest) {
         get().callExpr->getLoc(), "Dict");
     if (!dictType)
       return {};
-    CallOperands operands(get());
+    CallOperands operands(get(), dest);
     addNoneLiteralMarker(operands, "__dict_literal__", emitter);
     return emitter.emitConstructorCall(dictType, std::move(operands), dest);
   }

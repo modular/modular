@@ -11,8 +11,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef KGEN_MOJOPARSER_IREMITTERCONTEXT_H
-#define KGEN_MOJOPARSER_IREMITTERCONTEXT_H
+#ifndef KGEN_MOJOPARSER_EXPRESTDEST_H
+#define KGEN_MOJOPARSER_EXPRESTDEST_H
 
 #include "KGEN/MojoParser/IRValues.h"
 
@@ -278,4 +278,4 @@ private:
 
 } // namespace M::KGEN::LIT
 
-#endif // KGEN_MOJOPARSER_IREMITTERCONTEXT_H
+#endif // KGEN_MOJOPARSER_EXPRESTDEST_H

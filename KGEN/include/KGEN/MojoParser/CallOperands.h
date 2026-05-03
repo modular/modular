@@ -8,10 +8,10 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef KGEN_MOJOPARSER_OPERANDCONTAINER_H
-#define KGEN_MOJOPARSER_OPERANDCONTAINER_H
+#ifndef KGEN_MOJOPARSER_CALLOPERANDS_H
+#define KGEN_MOJOPARSER_CALLOPERANDS_H
 
-#include "KGEN/MojoParser/IRValues.h"
+#include "KGEN/MojoParser/ExprDest.h"
 
 namespace M::KGEN::LIT {
 class PogListAttr;
@@ -69,23 +69,30 @@ struct OperandValue : public ASTExprAnd<AnyValue> {
 
 using OperandValueList = SmallVector<OperandValue, 4>;
 
-/// Struct that carries both positional and keyword operands for a call or
-/// parameter binding. This does not own any values, only references pointers
-/// to their containers.
+/// Struct that carries information necessary to look up and emit functions and
+/// method calls. This includes the destination to emit into, the operands (both
+/// positional and keyword), and the syntax of the call.
 class CallOperands {
 public:
-  /// Initialize with some positional arguments.
+  /// Initialize with the call. The syntax and an expression node are required
+  /// this constructor supports an optional list of positional operands as a
+  /// convenience, but those can be added later as well.
+  /// TODO: This will start requiring an explicit ExprDest soon.
   CallOperands(CallSyntax syntax, const ExprNode *callExpr,
-               ArrayRef<ASTExprAnd<AnyValue>> posOperands)
-      : syntax(syntax), callExpr(callExpr) {
+               ArrayRef<ASTExprAnd<AnyValue>> posOperands = {})
+      : syntax(syntax), callExpr(callExpr), dest(EC_Type) {
     for (const auto &operand : posOperands)
       values.emplace_back(StringAttr(), operand);
   }
 
-  CallOperands(CallSyntax syntax, const ExprNode *callExpr)
-      : syntax(syntax), callExpr(callExpr) {}
+  // Initialize with an existing CallOperands and a new destination.
+  CallOperands(const CallOperands &existing, ExprDest &dest)
+      : syntax(existing.syntax), callExpr(existing.callExpr),
+        // TODO: Actually capture 'dest'.
+        dest(ExprDest(EC_Type)), values(existing.values),
+        hasSelfOperand(existing.hasSelfOperand) {}
+
   CallOperands(CallOperands &&) = default;
-  explicit CallOperands(const CallOperands &) = default;
   CallOperands &operator=(CallOperands &&) = default;
 
   /// Return a keyword argument value if present, or null otherwise.
@@ -119,14 +126,17 @@ public:
   const ExprNode *getExpr() const { return callExpr; }
   llvm::SMLoc getExprLoc() const;
 
+  /// This is the location the call is going to be emitted into.  This can
+  /// include information about the expected result type, the origin of the
+  /// destination etc.
+  ExprDest dest;
+
   /// The values passed in.  The keyword field will be null for positional
   /// arguments and present for keyword operands.
   OperandValueList values;
 
   /// Indicates if the positional operands include a self operand.
   bool hasSelfOperand = false;
-
-  void dump() const;
 
   //===--------------------------------------------------------------------===//
   // Element Accessors
@@ -170,6 +180,8 @@ public:
   //===--------------------------------------------------------------------===//
   // Diagnostic helpers.
   //===--------------------------------------------------------------------===//
+
+  void dump() const;
 
   /// Designates the kind of keyword-operand errors.
   enum class KwDiagResult {
@@ -221,4 +233,4 @@ using OperandsNeedingOriginsList = std::vector<OperandNeedingOrigin>;
 
 } // namespace M::KGEN::LIT
 
-#endif // KGEN_MOJOPARSER_OPERANDCONTAINER_H
+#endif // KGEN_MOJOPARSER_CALLOPERANDS_H

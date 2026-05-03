@@ -11,9 +11,10 @@
 #ifndef KGEN_MOJOPARSER_OVERLOADFITNESS_H
 #define KGEN_MOJOPARSER_OVERLOADFITNESS_H
 
+#include "KGEN/MojoParser/CallOperands.h"
+
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENEnums.h"
-#include "KGEN/MojoParser/CallOperands.h"
 #include "KGEN/MojoParser/MojoDiags.h"
 
 namespace M::KGEN::LIT {

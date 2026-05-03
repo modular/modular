@@ -588,7 +588,7 @@ PValue OverloadSet::filterOverloadSet(CallOperands &operands,
     // a self operand and remove it, otherwise the signature might not match.
     const CallOperands *operandsToUse = &operands;
     if (operands.hasSelfOperand && func.getIsStatic()) {
-      scratchOperands = CallOperands(operands);
+      scratchOperands = CallOperands(operands, operands.dest);
       scratchOperands.values.erase(scratchOperands.values.begin());
       scratchOperands.hasSelfOperand = false;
       operandsToUse = &scratchOperands;

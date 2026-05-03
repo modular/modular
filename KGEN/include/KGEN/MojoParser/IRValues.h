@@ -449,7 +449,7 @@ public:
 
   /// Given an inferred type for this initializer list, return the operands that
   /// we should use to try to construct it.
-  CallOperands getOperandsForInferredType(ASTType type,
+  CallOperands getOperandsForInferredType(ASTType type, ExprDest &dest,
                                           IREmitter &emitter) const;
 
   /// Emit this as a CValue if it can be resolved, otherwise emit an ambiguity

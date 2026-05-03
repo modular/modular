@@ -178,17 +178,16 @@ CValue SubscriptDLValue::emitLoad(ExprDest &dest, IREmitter &emitter) const {
     return {};
   }
 
-  return emitter.emitIndirectCall(getter, CallOperands(operands), dest);
+  return emitter.emitIndirectCall(getter, CallOperands(operands, dest), dest);
 }
 
 CValue SubscriptDLValue::emitStore(ASTExprAnd<CValue> value,
                                    IREmitter &emitter) const {
   // Add the set value to the keyword arguments list.  Semantic analysis already
   // checked that there can't be a duplicate.
-  CallOperands operandsWithValue(operands);
-  operandsWithValue.addKeyword(setterValueName, value);
-
   ExprDest storeDest(EC_Assignment);
+  CallOperands operandsWithValue(operands, storeDest);
+  operandsWithValue.addKeyword(setterValueName, value);
 
   // We got an elementType, so we know it has at least a setter, so if we
   // couldn't resolve a setter, emit it to the named method so we can balk

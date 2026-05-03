@@ -1734,7 +1734,8 @@ CValue IREmitter::emitCallUnchecked(RValue callee,
                                    errSlot.getRValueType(), getDeclScope())) {
 
       return emitIndirectCallInTryBlock(
-          callee, CallOperands(callOperands), dest, [&](VarDeclOp errDecl) {
+          callee, CallOperands(callOperands, dest), dest,
+          [&](VarDeclOp errDecl) {
             // Move the error out of the temporary and into the overall error
             // slot, performing the implicit conversion.
             ExprDest moveDest(errSlot, EC_RaiseValue);

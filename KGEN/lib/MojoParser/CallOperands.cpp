@@ -10,8 +10,9 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/MojoParser/CallOperands.h"
-#include "KGEN/MojoParser/ExprNode.h"
 #include "MojoUtils.h"
+
+#include "KGEN/MojoParser/ExprNode.h"
 
 #include "KGEN/LITDialect/LITAttrs.h"
 #include "KGEN/LITDialect/LITUtils.h"
