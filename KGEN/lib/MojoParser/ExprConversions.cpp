@@ -1600,10 +1600,9 @@ bool IREmitter::canImplicitlyConvertToType(ASTExprAnd<CValue> value,
   // `ASTExprAnd<CValue> value` into a `ASTType actualType` in the signature
   // (such that we can ensure type conversion not looking at the value itself
   // for future changes to guarantee referential transparency).
-  FailureOr<PValue> result = OverloadSet::canConstructType(
-      requiredType,
-      CallOperands{CallSyntax::kImplicitConvert, value.expr, {value}},
-      declScope);
+  CallOperands operands(CallSyntax::kImplicitConvert, value.expr, {value});
+  FailureOr<PValue> result =
+      OverloadSet::canConstructType(requiredType, operands, declScope);
   bool isConvertible = succeeded(result) && result.value();
   // Must cache the overall value type, not just its stripped down rvType.
   shared.cacheImplicitConvertibility(value.ir.getType(), requiredType,

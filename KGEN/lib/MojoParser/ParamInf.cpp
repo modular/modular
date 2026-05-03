@@ -188,8 +188,8 @@ static Type inferInitializerType(ASTDecl &declScope, InitializerUValue &init,
   // We expect the initializer to return the constructed type.
   // Infer the parameters of this overload candidate against the computed
   // result type of the initializer.
-  FailureOr<PValue> initFn = OverloadSet::canConstructType(
-      inferredType, std::move(operands), declScope);
+  FailureOr<PValue> initFn =
+      OverloadSet::canConstructType(inferredType, operands, declScope);
   if (failed(initFn) || !initFn.value())
     return {};
   return FnOrFnLiteralTypeGeneratorType::get(initFn.value().getType())
@@ -667,11 +667,10 @@ LogicalResult ParamInf::inferFromRVType(ASTExprAnd<AnyValue> operand,
     // can find them.
     auto nonParamType =
         expectedType.getWithUnknownParametersReplaced(getShared());
+    CallOperands ctorOperands(CallSyntax::kImplicitConvert, operand.expr,
+                              {{argVal, operand.expr}});
     FailureOr<PValue> pValue = OverloadSet::canConstructType(
-        nonParamType,
-        CallOperands(CallSyntax::kImplicitConvert, operand.expr,
-                     {{argVal, operand.expr}}),
-        getDeclScope());
+        nonParamType, ctorOperands, getDeclScope());
     if (failed(pValue)) {
       auto &diag = getMojoDiag(operand.expr->getLoc());
       diag << "cannot convert to type with a previously diagnosed error";

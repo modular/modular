@@ -848,11 +848,7 @@ PValue IREmitter::emitExprPValue(const ExprNode *expr, ExprContext context,
 }
 
 LValue IREmitter::emitExprLValue(const ExprNode *expr, ExprDest &dest) {
-  AnyValue anyValue = expr->emitIR(dest, *this);
-  if (!anyValue) {
-    dest.resetForError(*this);
-    return {}; // Error already diagnosed.
-  }
+  AnyValue anyValue = emitExpr(expr, dest);
   return emitLValue({anyValue, expr}, dest);
 }
 

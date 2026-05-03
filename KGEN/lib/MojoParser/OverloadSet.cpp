@@ -1599,7 +1599,7 @@ CValue IREmitter::emitConstructorCall(ASTType type, CallOperands &&callOperands,
 /// constructor that likely would have applied, which should be considered in
 /// any error reporting. This does not generate any IR.
 FailureOr<PValue> OverloadSet::canConstructType(ASTType requiredType,
-                                                CallOperands &&operands,
+                                                CallOperands &operands,
                                                 ASTDecl &declScope) {
   // Check to see if we can do an implicit conversion by invoking a `__init__`
   // method on the expected type.

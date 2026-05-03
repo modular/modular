@@ -1126,10 +1126,10 @@ LogicalResult ParamMatcher::matchSingleEltStruct(TypedAttr actualOrig,
       // Convert Origin[*(0, 0)] to Origin[?] so we can infer the parameter(s).
       auto nonParamDRT =
           ASTType(expDRT).getWithUnknownParametersReplaced(shared);
+      CallOperands ctorOperands(CallSyntax::kImplicitConvert, expr,
+                                {{actual, expr}});
       FailureOr<PValue> pValue = OverloadSet::canConstructType(
-          nonParamDRT,
-          CallOperands(CallSyntax::kImplicitConvert, expr, {{actual, expr}}),
-          state.declScope);
+          nonParamDRT, ctorOperands, state.declScope);
       if (failed(pValue) || !pValue.value())
         return error(MatchFailure::Unclassified{});
 

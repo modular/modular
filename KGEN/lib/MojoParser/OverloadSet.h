@@ -188,7 +188,7 @@ public:
   /// This allows implicit conversions of operands so long as "operands" doesn't
   /// indicate that this is itself an implicit conversion.
   static FailureOr<PValue> canConstructType(ASTType requiredType,
-                                            CallOperands &&operands,
+                                            CallOperands &operands,
                                             ASTDecl &declScope);
 
   LLVM_DUMP_METHOD void dump() const;

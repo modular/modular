@@ -245,8 +245,10 @@ def test_set_literal():
     var a = {1, 2, 3}
 
     # MOCO-1974 - Param inference isn't substituting full type
+    # CHECK: lit.call {{.*}}@"param_infer_equal
     param_infer_equal(a, {})
 
+    # CHECK: %b = lit.var.decl
     # CHECK: lit.var.decl "__passed_varargs__"
     # CHECK-NEXT: {{%.*}} = pop.array.create
     # CHECK: [[NONE_MARKER:%.*]] = kgen.param.constant: !NoneType
