@@ -3,11 +3,11 @@
 // CHECK-LABEL: lit.struct.decl @FooStruct
 // CHECK-SAME: <size, dtype: dtype, ty: type> {
 // CHECK-NEXT: a : index
-// CHECK-NEXT: b : !pop.scalar<dtype>
+// CHECK-NEXT: b : !kgen.scalar<dtype>
 // CHECK-NEXT: c : !kgen.param<ty>
 lit.struct.decl @FooStruct<size, dtype: dtype, ty: type> {
   lit.struct.field a : index
-  lit.struct.field b : !pop.scalar<dtype>
+  lit.struct.field b : !kgen.scalar<dtype>
   lit.struct.field c : !kgen.param<ty>
 }
 

@@ -12,6 +12,7 @@
 #define KGEN_KGENDIALECT_KGENTYPES_H
 
 #include "KGEN/Interpreter/InterpreterInterface.h"
+#include "KGEN/KGENDialect/KGENDType.h"
 #include "KGEN/KGENDialect/KGENDialect.h"
 #include "KGEN/KGENDialect/KGENEnums.h"
 #include "KGEN/KGENDialect/KGENTypeInterfaces.h"

@@ -245,6 +245,8 @@ mlir_nanobind(
         "DeclRefAttrInterface",
         "StructTypeInterface",
         "KGEN_BindParamsAttr",
+        # SIMDAttr uses a internally defined DTypeValue.
+        "KGEN_SIMDAttr",
     ],
     output_dir = "include/KGEN/KGENDialect/Nanobind",
     deps = [

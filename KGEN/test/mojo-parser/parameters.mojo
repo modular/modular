@@ -830,24 +830,24 @@ def form_reference_to_overloaded():
 ##===----------------------------------------------------------------------===##
 
 struct StaticVec[size: Int](TrivialRegisterPassable):
-  def __init__[type: __mlir_type.`!kgen.dtype`](out self, v: __mlir_type[`!pop.simd<`, Self.size._mlir_value, `, `, type, `>`]):
+  def __init__[type: __mlir_type.`!kgen.dtype`](out self, v: __mlir_type[`!kgen.simd<`, Self.size._mlir_value, `, `, type, `>`]):
       pass
 
   @staticmethod
-  def thing[type: __mlir_type.`!kgen.dtype`](v: __mlir_type[`!pop.simd<`, Self.size._mlir_value, `, `, type, `>`]):
+  def thing[type: __mlir_type.`!kgen.dtype`](v: __mlir_type[`!kgen.simd<`, Self.size._mlir_value, `, `, type, `>`]):
       return
 
 def callee1[size: Int](v: StaticVec[size]): pass
 def callee2[T: TrivialRegisterPassable](v: T): pass
 def callee3[size: Int, type: __mlir_type.`!kgen.dtype`]
-   (v:  __mlir_type[`!pop.simd<`, size._mlir_value, `, `, type, `>`]): pass
+   (v:  __mlir_type[`!kgen.simd<`, size._mlir_value, `, `, type, `>`]): pass
 def callee4[T: __mlir_type.`!kgen.non_struct_type`]
    (v:  __mlir_type[`!kgen.pointer<`, T, `>`]): pass
 
 # CHECK-LABEL: lit.fn @"testParamInference{{.*}}"<size: !Int>(
 def testParamInference[size: Int](a: StaticVec[4], b: StaticVec[size],
                                  b2: StaticVec[size+2],
-                                 c: __mlir_type.`!pop.simd<17, f32>`,
+                                 c: __mlir_type.`!kgen.simd<17, f32>`,
                                  d: __mlir_type.`!kgen.pointer<f32>`):
   # CHECK-NEXT: lit.call {{.*}}callee1{{.*}}<{{.*}}4{{.*}}>(%a)
   callee1(a)

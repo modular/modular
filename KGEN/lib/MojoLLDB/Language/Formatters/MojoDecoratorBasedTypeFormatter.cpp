@@ -21,11 +21,11 @@ using namespace M::KGEN::Mojo;
 
 namespace {
 /// Returns true for multi-element, non-bool SIMD vector types
-/// (e.g. `!pop.simd<4, si32>`), excluding scalars (`!pop.simd<1, …>`)
-/// and bool vectors (`!pop.simd<N, bool>`).
+/// (e.g. `!kgen.simd<4, si32>`), excluding scalars (`!kgen.simd<1, …>`)
+/// and bool vectors (`!kgen.simd<N, bool>`).
 static bool isMultiElementNonBoolSIMD(llvm::StringRef typeName) {
-  return typeName.starts_with("!pop.simd<") &&
-         !typeName.starts_with("!pop.simd<1,") &&
+  return typeName.starts_with("!kgen.simd<") &&
+         !typeName.starts_with("!kgen.simd<1,") &&
          !typeName.ends_with(", bool>");
 }
 

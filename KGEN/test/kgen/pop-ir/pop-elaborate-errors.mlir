@@ -192,13 +192,13 @@ module attributes {M.target = #M.target<triple="", arch="", features="", data_la
 // expected-note @below {{failed to interpret function @invalid_simd,dtype=invalid,size=4}}
 kgen.generator @invalid_simd<dtype: dtype, size>() -> index {
   %0 = kgen.param.constant: index = <42>
-  %1 = pop.cast_from_builtin %0 : index to !pop.scalar<index>
+  %1 = pop.cast_from_builtin %0 : index to !kgen.scalar<index>
   // expected-note @below {{failed to interpret operation pop.cast}}
   // expected-note @below {{simd type cannot be DType.invalid}}
-  %2 = pop.cast %1 : !pop.scalar<index> to !pop.scalar<dtype>
+  %2 = pop.cast %1 : !kgen.scalar<index> to !kgen.scalar<dtype>
   // expected-note @below {{failed to interpret operation pop.simd.splat}}
   // expected-note @below {{simd width must be a power of 2}}
-  %3 = pop.simd.splat %2 : !pop.simd<size, dtype>
+  %3 = pop.simd.splat %2 : !kgen.simd<size, dtype>
 
   kgen.return %0 : index
 }
@@ -234,11 +234,11 @@ kgen.generator export @use_it_simd_invalid() {
 module attributes {M.target = #M.target<triple="", arch="", features="", data_layout="p:64:64", simd_bit_width=128>} {
 
 // expected-note @below {{failed to interpret function @invalid_simd_reduce_or}}
-kgen.generator @invalid_simd_reduce_or() -> !pop.scalar<f32> {
+kgen.generator @invalid_simd_reduce_or() -> !kgen.scalar<f32> {
   %0 = kgen.param.constant: simd<4, f32> = <<"1.0", "0.0", "1.5", "2.0">>
 // expected-note @below {{failed to fold operation pop.simd.reduce_or}}
-  %1 = pop.simd.reduce_or %0 : !pop.simd<4, f32>
-  kgen.return %1 : !pop.scalar<f32>
+  %1 = pop.simd.reduce_or %0 : !kgen.simd<4, f32>
+  kgen.return %1 : !kgen.scalar<f32>
 }
 
 // expected-error @below {{function instantiation failed}}
@@ -256,11 +256,11 @@ kgen.generator export @use_it_simd_invalid_reduce_or() {
 module attributes {M.target = #M.target<triple="", arch="", features="", data_layout="p:64:64", simd_bit_width=128>} {
 
 // expected-note @below {{failed to interpret function @invalid_simd_reduce_and}}
-kgen.generator @invalid_simd_reduce_and() -> !pop.scalar<f32> {
+kgen.generator @invalid_simd_reduce_and() -> !kgen.scalar<f32> {
   %0 = kgen.param.constant: simd<4, f32> = <<"1.0", "0.0", "1.5", "2.0">>
 // expected-note @below {{failed to fold operation pop.simd.reduce_and}}
-  %1 = pop.simd.reduce_and %0 : !pop.simd<4, f32>
-  kgen.return %1 : !pop.scalar<f32>
+  %1 = pop.simd.reduce_and %0 : !kgen.simd<4, f32>
+  kgen.return %1 : !kgen.scalar<f32>
 }
 
 // expected-error @below {{function instantiation failed}}

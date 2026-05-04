@@ -196,8 +196,8 @@ struct IfYieldSelect : public OpRewritePattern<HLCF::IfOp> {
   }
 };
 
-/// Canonicalize `!pop.scalar<index>` and `!pop.scalar<uindex>` computations to
-/// `index` operations.
+/// Canonicalize `!kgen.scalar<index>` and `!kgen.scalar<uindex>` computations
+/// to `index` operations.
 class IndexifyComparison : public OpRewritePattern<POP::CastToBuiltinOp> {
 public:
   using OpRewritePattern::OpRewritePattern;
@@ -222,7 +222,7 @@ public:
       return b.notifyMatchFailure(op.getLoc(),
                                   "LHS isn't index or uindex dtype");
 
-    POP::SIMDAttr rhs;
+    KGEN::SIMDAttr rhs;
     if (!mlir::matchPattern(cmp.getRhs(), mlir::m_Constant(&rhs)))
       return b.notifyMatchFailure(op.getLoc(), "RHS isn't constant");
 
@@ -290,7 +290,7 @@ public:
     if (!notOp)
       return b.notifyMatchFailure(op.getLoc(), "parent isn't xor");
 
-    POP::SIMDAttr zeroAttr;
+    KGEN::SIMDAttr zeroAttr;
     if (!mlir::matchPattern(notOp.getRhs(), mlir::m_Constant(&zeroAttr)) ||
         zeroAttr.getValues().front().getBoolVal() != true)
       return b.notifyMatchFailure(notOp.getLoc(), "not xor with true");

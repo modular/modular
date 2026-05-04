@@ -127,10 +127,10 @@ kgen.generator @unused_param_declare() {
 // -----
 
 // expected-error @below {{function instantiation failed}}
-kgen.generator @invalid_rebind(%arg0: !pop.scalar<si32>) {
+kgen.generator @invalid_rebind(%arg0: !kgen.scalar<si32>) {
   kgen.param.declare dt: dtype = <ui32>
-  // expected-note @below {{error: rebind input type '!pop.scalar<si32>' does not match result type '!pop.scalar<ui32>'}}
-  %0 = kgen.rebind %arg0 : !pop.scalar<si32> to !pop.scalar<dt>
+  // expected-note @below {{error: rebind input type '!kgen.scalar<si32>' does not match result type '!kgen.scalar<ui32>'}}
+  %0 = kgen.rebind %arg0 : !kgen.scalar<si32> to !kgen.scalar<dt>
   kgen.return
 }
 

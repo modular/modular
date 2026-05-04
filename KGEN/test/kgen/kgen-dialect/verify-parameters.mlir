@@ -23,7 +23,7 @@ kgen.generator @parameterIsolatedRegions<A>() {
 
 // CHECK-LABEL: kgen.generator @struct_of_simd
 // CHECK-SAME: -> !kgen.struct<(simd<size, type>)>
-kgen.generator @struct_of_simd<size, type: dtype>(%arg0: !pop.simd<size, type>) -> !kgen.struct<(simd<size, type>)> {
+kgen.generator @struct_of_simd<size, type: dtype>(%arg0: !kgen.simd<size, type>) -> !kgen.struct<(simd<size, type>)> {
   %1 = kgen.struct.create(%arg0) : !kgen.struct<(simd<size, type>)>
   kgen.return %1 : !kgen.struct<(simd<size, type>)>
 }
@@ -31,10 +31,10 @@ kgen.generator @struct_of_simd<size, type: dtype>(%arg0: !pop.simd<size, type>) 
 // CHECK-LABEL: kgen.generator @call_it
 kgen.generator @call_it<size, type: dtype, target: dtype>(%arg0: !kgen.struct<(simd<size, type>)>) -> !kgen.struct<(simd<size, target>)> {
   %1 = kgen.struct.extract %arg0[0] : !kgen.struct<(simd<size, type>)>
-  %3 = pop.cast %1 : !pop.simd<size, type> to !pop.simd<size, target>
+  %3 = pop.cast %1 : !kgen.simd<size, type> to !kgen.simd<size, target>
   // CHECK: kgen.call @struct_of_simd<size, :dtype target>
-  // CHECK-SAME: (!pop.simd<size, target>) -> !kgen.struct<(simd<size, target>)>
-  %4 = kgen.call @struct_of_simd<size, :dtype target>(%3) : (!pop.simd<size, target>) -> !kgen.struct<(simd<size, target>)>
+  // CHECK-SAME: (!kgen.simd<size, target>) -> !kgen.struct<(simd<size, target>)>
+  %4 = kgen.call @struct_of_simd<size, :dtype target>(%3) : (!kgen.simd<size, target>) -> !kgen.struct<(simd<size, target>)>
   kgen.return %4 : !kgen.struct<(simd<size, target>)>
 }
 
@@ -107,13 +107,13 @@ kgen.generator @use() {
   // COM: Construct a scenario where a signature with an escaped index reference
   // COM: is being passed as a type parameter to a function that references it
   // COM: in its result.
-  // CHECK: rebind(:() -> !pop.simd<*(1,0), si8> apply(:() -> !kgen.generator<() -> !pop.simd<*(2,0), si8>> @pass_type<:type () -> !pop.simd<*(1,0), si8>>)
+  // CHECK: rebind(:() -> !kgen.simd<*(1,0), si8> apply(:() -> !kgen.generator<() -> !kgen.simd<*(2,0), si8>> @pass_type<:type () -> !kgen.simd<*(1,0), si8>>)
   kgen.param.declare use: <
     index,
-    !kgen.param<rebind(:() -> !pop.simd<*(1,0), si8>
+    !kgen.param<rebind(:() -> !kgen.simd<*(1,0), si8>
       apply(
-        :() -> !kgen.generator<() -> !pop.simd<*(2,0), si8>>
-          @pass_type<:type () -> !pop.simd<*(1,0), si8>>))>
+        :() -> !kgen.generator<() -> !kgen.simd<*(2,0), si8>>
+          @pass_type<:type () -> !kgen.simd<*(1,0), si8>>))>
   >() -> () = <?>
   kgen.return
 }

@@ -25,41 +25,41 @@ kgen.func @none_type() -> !kgen.none {
 // CHECK-SAME: %{{.*}}: vector<4xf32>
 
 kgen.func @convert_pop_types(
-    %arg0: !pop.simd<1, f32>,
+    %arg0: !kgen.simd<1, f32>,
     %arg1: !kgen.pointer<simd<1, f32>>,
-    %arg2: !pop.simd<4, f32>) {
+    %arg2: !kgen.simd<4, f32>) {
   kgen.return
 }
 
-kgen.func @trivial_simd(%arg0: !pop.simd<1, f32>) -> !pop.simd<1, f32> {
-  kgen.return %arg0 : !pop.simd<1, f32>
+kgen.func @trivial_simd(%arg0: !kgen.simd<1, f32>) -> !kgen.simd<1, f32> {
+  kgen.return %arg0 : !kgen.simd<1, f32>
 }
 
-kgen.func @no_result(%arg0: !pop.simd<1, f32>) {
+kgen.func @no_result(%arg0: !kgen.simd<1, f32>) {
   kgen.return
 }
 
-kgen.func @two_results(%arg0: !pop.simd<1, f32>) -> (!pop.simd<1, f32>, !pop.simd<1, f32>) {
-  kgen.return %arg0, %arg0 : !pop.simd<1, f32>, !pop.simd<1, f32>
+kgen.func @two_results(%arg0: !kgen.simd<1, f32>) -> (!kgen.simd<1, f32>, !kgen.simd<1, f32>) {
+  kgen.return %arg0, %arg0 : !kgen.simd<1, f32>, !kgen.simd<1, f32>
 }
 
 // CHECK-LABEL: llvm.func internal @convert_call
 // CHECK-SAME: %[[ARG0:.*]]: f32
-kgen.func @convert_call(%arg0: !pop.simd<1, f32>) {
+kgen.func @convert_call(%arg0: !kgen.simd<1, f32>) {
   // CHECK: llvm.call @trivial_simd(%[[ARG0]]) {fastmathFlags = #llvm.fastmath<contract>} : (f32) -> f32
-  %0 = kgen.call @trivial_simd(%arg0) : (!pop.simd<1, f32>) -> !pop.simd<1, f32>
+  %0 = kgen.call @trivial_simd(%arg0) : (!kgen.simd<1, f32>) -> !kgen.simd<1, f32>
   // CHECK: llvm.call @no_result(%[[ARG0]]) : (f32) -> ()
-  kgen.call @no_result(%arg0) : (!pop.simd<1, f32>) -> ()
+  kgen.call @no_result(%arg0) : (!kgen.simd<1, f32>) -> ()
   // CHECK: %[[PACK:.*]] = llvm.call @two_results(%[[ARG0]]) {fastmathFlags = #llvm.fastmath<contract>} : (f32) -> !llvm.struct<(f32, f32)>
-  %1:2 = kgen.call @two_results(%arg0) : (!pop.simd<1, f32>) -> (!pop.simd<1, f32>, !pop.simd<1, f32>)
+  %1:2 = kgen.call @two_results(%arg0) : (!kgen.simd<1, f32>) -> (!kgen.simd<1, f32>, !kgen.simd<1, f32>)
   // CHECK: llvm.extractvalue %[[PACK]][0]
   // CHECK: llvm.extractvalue %[[PACK]][1]
 
   // CHECK: llvm.call tail @trivial_simd(%[[ARG0]]) {fastmathFlags = #llvm.fastmath<contract>} : (f32) -> f32
-  kgen.call tail @trivial_simd(%arg0) : (!pop.simd<1, f32>) -> !pop.simd<1, f32>
+  kgen.call tail @trivial_simd(%arg0) : (!kgen.simd<1, f32>) -> !kgen.simd<1, f32>
 
   // CHECK: llvm.call musttail @trivial_simd(%[[ARG0]]) {fastmathFlags = #llvm.fastmath<contract>} : (f32) -> f32
-  kgen.call musttail @trivial_simd(%arg0) : (!pop.simd<1, f32>) -> !pop.simd<1, f32>
+  kgen.call musttail @trivial_simd(%arg0) : (!kgen.simd<1, f32>) -> !kgen.simd<1, f32>
 
   kgen.return
 }
@@ -81,7 +81,7 @@ kgen.func @reference_me(%a: i64) -> i64 {
 // CHECK-LABEL: @address_dtype
 // CHECK-SAME: %[[ARG0:.*]]: !llvm.ptr
 // CHECK-SAME: %[[ARG1:.*]]: vector<4x!llvm.ptr>
-kgen.func @address_dtype(%arg0 : !pop.simd<1, address>, %arg1 : !pop.simd<4, address>) {
+kgen.func @address_dtype(%arg0 : !kgen.simd<1, address>, %arg1 : !kgen.simd<4, address>) {
   kgen.return
 }
 
@@ -124,17 +124,17 @@ kgen.func @empty_str() -> !kgen.string {
 }
 
 // CHECK-LABEL: @test_unreachable
-kgen.func @test_unreachable() -> !pop.simd<1, f32> {
+kgen.func @test_unreachable() -> !kgen.simd<1, f32> {
   // CHECK-NEXT: llvm.trap
   // CHECK-NEXT: llvm.unreachable
   kgen.unreachable
 }
 
 // CHECK-LABEL: @address_of
-kgen.func @address_of() -> !kgen.generator<() -> !pop.scalar<f32>> {
+kgen.func @address_of() -> !kgen.generator<() -> !kgen.scalar<f32>> {
   // CHECK: llvm.mlir.addressof @test_unreachable : !llvm.ptr
-  %0 = kgen.param.constant: () -> !pop.scalar<f32> = <@test_unreachable>
-  kgen.return %0 : !kgen.generator<() -> !pop.scalar<f32>>
+  %0 = kgen.param.constant: () -> !kgen.scalar<f32> = <@test_unreachable>
+  kgen.return %0 : !kgen.generator<() -> !kgen.scalar<f32>>
 }
 
 // CHECK: llvm.func internal @used_internally_c_wrapped
@@ -265,9 +265,9 @@ module attributes {M.target_info = #M.target<triple = "nvptx64-nvidia-cuda", arc
 
 // CHECK-LABEL: kgen_fp8_args
 // CHECK-SAME: %[[ARG0:.+]]: vector<16xi8>
-kgen.func @kgen_fp8_args(%arg0: !pop.simd<16,f8e5m2>) -> !pop.simd<16,f8e5m2> {
+kgen.func @kgen_fp8_args(%arg0: !kgen.simd<16,f8e5m2>) -> !kgen.simd<16,f8e5m2> {
   // CHECK: llvm.return %[[ARG0]] : vector<16xi8>
-  kgen.return %arg0: !pop.simd<16,f8e5m2>
+  kgen.return %arg0: !kgen.simd<16,f8e5m2>
 }
 }
 
@@ -276,10 +276,10 @@ kgen.func @kgen_fp8_args(%arg0: !pop.simd<16,f8e5m2>) -> !pop.simd<16,f8e5m2> {
 module attributes {M.target_info = #M.target<triple = "nvptx64-nvidia-cuda", arch = "sm_90", data_layout = "e-i64:64-i128:128-i256:256-v16:16-v32:32-n16:32:64", simd_bit_width = 128>} {
 
 // CHECK-LABEL: kgen_fp8_ptr_arg
-kgen.func @kgen_fp8_ptr_arg(%arg0: !kgen.pointer<scalar<f8e5m2>>) -> !pop.scalar<f8e5m2>{
+kgen.func @kgen_fp8_ptr_arg(%arg0: !kgen.pointer<scalar<f8e5m2>>) -> !kgen.scalar<f8e5m2>{
   %0 = pop.load %arg0 : !kgen.pointer<scalar<f8e5m2>>
   // CHECK: llvm.return %2 : i8
-  kgen.return %0 : !pop.scalar<f8e5m2>
+  kgen.return %0 : !kgen.scalar<f8e5m2>
 }
 
 }

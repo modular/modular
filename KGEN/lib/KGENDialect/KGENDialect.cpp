@@ -136,6 +136,34 @@ static void writeKGENDType(DialectBytecodeWriter &writer, KGENDType dtype) {
   writer.writeAPIntWithKnownWidth(APInt(8, dtype.getValue()));
 }
 
+static LogicalResult readDTypeValues(DialectBytecodeReader &reader,
+                                     SmallVectorImpl<DTypeValue> &values) {
+  uint64_t size;
+  if (failed(reader.readVarInt(size)))
+    return failure();
+  values.reserve(size);
+  for (unsigned i = 0; i < size; ++i) {
+    uint64_t kind, width;
+    if (failed(reader.readVarInt(kind)) || failed(reader.readVarInt(width)))
+      return failure();
+    FailureOr<APInt> value = reader.readAPIntWithKnownWidth(width);
+    if (failed(value))
+      return failure();
+    values.emplace_back(std::move(*value), static_cast<KGENDType>(kind));
+  }
+  return success();
+}
+
+static void writeDTypeValues(DialectBytecodeWriter &writer,
+                             ArrayRef<DTypeValue> values) {
+  writer.writeVarInt(values.size());
+  for (const DTypeValue &value : values) {
+    writer.writeVarInt(value.getDType().getValue());
+    writer.writeVarInt(value.getData().getBitWidth());
+    writer.writeAPIntWithKnownWidth(value.getData());
+  }
+}
+
 #include "KGEN/KGENDialect/KGENDialectBytecode.cpp.inc"
 
 struct KGENDialectBytecodeInterface : public mlir::BytecodeDialectInterface {

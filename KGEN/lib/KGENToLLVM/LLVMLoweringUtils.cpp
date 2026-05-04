@@ -328,7 +328,7 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(TargetInfoAttr target)
   });
 
   // Convert SIMD types to vector types.
-  addConversion([this](POP::SIMDType simd) -> std::optional<Type> {
+  addConversion([this](SIMDType simd) -> std::optional<Type> {
     std::optional<KGENDType> dtype = simd.getResolvedDType();
     std::optional<uint64_t> size = simd.getResolvedSize();
     if (!dtype || !size)
@@ -920,7 +920,7 @@ InterpreterMemoryConverter::MaterializationScope::getOrMaterialize(
 /// Convert a SIMD vector constant.
 static Value convertSIMDAttr(ImplicitLocOpBuilder &b,
                              const mlir::LLVMTypeConverter &tc,
-                             POP::SIMDAttr simd) {
+                             KGEN::SIMDAttr simd) {
   KGENDType dtype = *simd.getType().getResolvedDType();
   auto asConst = [&](TypedAttr value) {
     return LLVM::ConstantOp::create(b, value);
@@ -928,7 +928,7 @@ static Value convertSIMDAttr(ImplicitLocOpBuilder &b,
 
   // Handle scalar constants.
   if (simd.getValues().size() == 1) {
-    const POP::DTypeValue &value = simd.getValues().front();
+    const KGEN::DTypeValue &value = simd.getValues().front();
     if (dtype.isBool())
       return asConst(b.getBoolAttr(value.getBoolVal()));
     if (dtype.isInt())
@@ -954,14 +954,14 @@ static Value convertSIMDAttr(ImplicitLocOpBuilder &b,
   // Handle vector constants.
   if (dtype.isBool()) {
     SmallVector<APInt> values;
-    for (const POP::DTypeValue &value : simd.getValues())
+    for (const KGEN::DTypeValue &value : simd.getValues())
       values.emplace_back(1, value.getBoolVal());
     return asConst(cast<TypedAttr>(IntArrayElementsAttr::get(
         VectorType::get(values.size(), b.getI1Type()), values)));
   }
   if (dtype.isInt()) {
     SmallVector<APInt> values;
-    for (const POP::DTypeValue &value : simd.getValues())
+    for (const KGEN::DTypeValue &value : simd.getValues())
       values.push_back(value.getIntVal());
     return asConst(cast<TypedAttr>(IntArrayElementsAttr::get(
         VectorType::get(values.size(),
@@ -971,7 +971,7 @@ static Value convertSIMDAttr(ImplicitLocOpBuilder &b,
   if (dtype.isIndex() || dtype.isUIndex() || dtype.isAddress()) {
     SmallVector<APInt> values;
     auto indexType = cast<IntegerType>(tc.getIndexType());
-    for (const POP::DTypeValue &value : simd.getValues())
+    for (const KGEN::DTypeValue &value : simd.getValues())
       values.push_back(APInt(indexType.getWidth(), value.getIndexVal()));
     Value addr = asConst(cast<TypedAttr>(IntArrayElementsAttr::get(
         VectorType::get(values.size(), indexType), values)));
@@ -984,7 +984,7 @@ static Value convertSIMDAttr(ImplicitLocOpBuilder &b,
         addr);
   }
   SmallVector<APFloat> values;
-  for (const POP::DTypeValue &value : simd.getValues())
+  for (const KGEN::DTypeValue &value : simd.getValues())
     values.push_back(value.getFloatVal());
 
   auto fpType = getEquivalentFloatType(b.getContext(), dtype);
@@ -1162,7 +1162,7 @@ ErrorOr<Value> KGEN::convertParameterToLLVM(
   // POP
 
   // Convert SIMD constants to an array of integer or float constants.
-  if (auto simd = dyn_cast<POP::SIMDAttr>(attr))
+  if (auto simd = dyn_cast<KGEN::SIMDAttr>(attr))
     return convertSIMDAttr(b, tc, simd);
 
   // Convert array constants to LLVM array constants.

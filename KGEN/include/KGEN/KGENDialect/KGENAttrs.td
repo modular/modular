@@ -2556,4 +2556,124 @@ def KGEN_SugarAttr : KGENAttr<"Sugar", "sugar",
   }];
 }
 
+//===----------------------------------------------------------------------===//
+// CastFromBuiltin
+//===----------------------------------------------------------------------===//
+
+def KGEN_CastFromBuiltinAttr : KGEN_ExprAttr<"CastFromBuiltin",
+                                             "cast_from_builtin"> {
+  let summary = "Convert a builtin MLIR type to a POP type.";
+  let description = [{
+    The `#kgen.cast_from_builtin` attribute converts a builtin MLIR type to a
+    POP type.
+  }];
+
+  let parameters = (ins "TypedAttr":$arg,
+                        AttributeSelfTypeParameter<"", "SIMDType">:$type);
+
+  let assemblyFormat = " `<` $arg `>` ";
+
+  let genVerifyDecl = 1;
+  let skipDefaultBuilders = 1;
+  let builders = [
+    // Override the default builder used by the generated parser because this
+    // may not return an CastFromBuiltinAttr.
+    AttrBuilder<(ins "TypedAttr":$arg, "SIMDType":$type), "", "TypedAttr">,
+
+    AttrBuilderWithInferredContext<(ins "TypedAttr":$arg,
+                                        "SIMDType":$type), [{
+      return get(arg.getContext(), arg, type);
+    }], "TypedAttr">
+  ];
+}
+
+//===----------------------------------------------------------------------===//
+// CastToBuiltin
+//===----------------------------------------------------------------------===//
+
+def KGEN_CastToBuiltinAttr : KGEN_ExprAttr<"CastToBuiltin", "cast_to_builtin"> {
+  let summary = "Convert to a POP type to a builtin MLIR type.";
+  let description = [{
+    The `#kgen.cast_to_builtin` attribute converts a POP type to a builtin MLIR
+    type.
+  }];
+
+  let parameters = (ins "TypedAttr":$arg,
+                        AttributeSelfTypeParameter<"", "Type">:$type);
+
+  let assemblyFormat = " `<` $arg `>` ";
+
+  let genVerifyDecl = 1;
+  let skipDefaultBuilders = 1;
+  let builders = [
+    // Override the default builder used by the generated parser because this
+    // may not return an CastToBuiltinAttr.
+    AttrBuilder<(ins "TypedAttr":$arg, "Type":$type), "", "TypedAttr">,
+
+    AttrBuilderWithInferredContext<(ins "TypedAttr":$arg, "Type":$type), [{
+      return get(arg.getContext(), arg, type);
+    }], "TypedAttr">
+  ];
+}
+
+//===----------------------------------------------------------------------===//
+// SIMDAttr
+//===----------------------------------------------------------------------===//
+
+def KGEN_SIMDAttr : KGEN_ExprAttr<"SIMD", "simd"> {
+  let summary = "A SIMD vector attribute.";
+  let description = [{
+    The `#kgen.simd` attribute represents a constant SIMD vector value. It
+    contains `N` values of a particular dtype. Only integer, floating point, and
+    bool dtypes are supported.
+
+    Example:
+
+    ```mlir
+    #kgen.simd<1, 2> : !kgen.simd<2, si32>
+    #kgen.simd<1.5, 2.5> : !kgen.simd<2, f64>
+    #kgen.simd<true, false> : !kgen.simd<2, bool>
+    ```
+
+    When all values of the SIMD vector are equal, the attribute has a special
+    splat syntax:
+
+    ```mlir
+    #kgen<simd 0> : !kgen.simd<4, si32>
+    #kgen<simd "1.5"> : !kgen.simd<4, f32>
+    #kgen<simd false> : !kgen.simd<4, bool>
+    ```
+  }];
+
+  let parameters = (ins OptionalArrayRefParameter<"DTypeValue">:$values,
+                        AttributeSelfTypeParameter<"", "SIMDType">:$type);
+  let assemblyFormat = "`` custom<SIMDValues>($values, ref($type))";
+
+  let builders = [
+    AttrBuilderWithInferredContext<(ins "ArrayRef<DTypeValue>":$values,
+                                        "SIMDType":$type), [{
+      return get(type.getContext(), values, type);
+    }]>,
+    AttrBuilderWithInferredContext<(ins "DTypeValue":$value,
+                                        "SIMDType":$type), [{
+      return get(ArrayRef(value), type);
+    }]>,
+    AttrBuilderWithInferredContext<(ins "uint64_t":$intVal, "SIMDType":$type)>
+  ];
+
+
+  let extraClassDeclaration = [{
+    /// Create a "zero" value initialized to 0, 0.0, false, etc.  NOTE: This can
+    /// return null if the SIMD type is parametric or we don't know how to make
+    /// a zero value of the specified dtype.
+    static SIMDAttr getZeroValue(SIMDType type);
+  }];
+
+  let genVerifyDecl = 1;
+
+  /// Note: DTypeValue is not POD since APInt will allocate if its data exceeds
+  /// 64 bits. Use a custom storage class to own the memory.
+  let genStorageClass = 0;
+}
+
 #endif // KGEN_KGENDIALECT_KGENATTRS_TD

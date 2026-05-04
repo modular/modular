@@ -62,15 +62,15 @@ class POP_ArithmeticOrBoolUnaryOp<string mnemonic, list<Trait> traits = []> :
 def POP_NegOp : POP_ArithmeticUnaryOp<"neg"> {
   let summary = "negation";
   let description = [{
-    The `pop.neg` operation takes a `!pop.simd` value and returns its negated
+    The `pop.neg` operation takes a `!kgen.simd` value and returns its negated
     value. The operand and result types are the same. The operand type must be
     an index, signed integer, or float dtype.
 
     Example:
 
     ```mlir
-    %b = pop.neg %a : !pop.scalar<type>
-    %b = pop.neg %a : !pop.simd<size, type>
+    %b = pop.neg %a : !kgen.scalar<type>
+    %b = pop.neg %a : !kgen.simd<size, type>
     ```
   }];
 }
@@ -82,7 +82,7 @@ def POP_NegOp : POP_ArithmeticUnaryOp<"neg"> {
 def POP_FloorOp : POP_ArithmeticOrBoolUnaryOp<"floor"> {
   let summary = "floor";
   let description = [{
-    The `pop.floor` operation takes a `!pop.simd` value and returns the element
+    The `pop.floor` operation takes a `!kgen.simd` value and returns the element
     wise floor of its values. The operand and result types are the same and
     must be index-like, arithmetic, or boolean dtypes. Integer, index, and
     boolean values are returned unchanged.
@@ -90,7 +90,7 @@ def POP_FloorOp : POP_ArithmeticOrBoolUnaryOp<"floor"> {
     Example:
 
     ```mlir
-    %b = pop.floor %a : !pop.simd<size, f32>
+    %b = pop.floor %a : !kgen.simd<size, f32>
     ```
   }];
 }
@@ -102,7 +102,7 @@ def POP_FloorOp : POP_ArithmeticOrBoolUnaryOp<"floor"> {
 def POP_CeilOp : POP_ArithmeticOrBoolUnaryOp<"ceil"> {
   let summary = "ceil";
   let description = [{
-    The `pop.ceil` operation takes a `!pop.simd` value and returns the element
+    The `pop.ceil` operation takes a `!kgen.simd` value and returns the element
     wise ceiling of its values. The operand and result types are the same and
     must be index-like, arithmetic, or boolean dtypes. Integer, index, and
     boolean values are returned unchanged.
@@ -110,7 +110,7 @@ def POP_CeilOp : POP_ArithmeticOrBoolUnaryOp<"ceil"> {
     Example:
 
     ```mlir
-    %b = pop.ceil %a : !pop.simd<size, f32>
+    %b = pop.ceil %a : !kgen.simd<size, f32>
     ```
   }];
 }
@@ -122,7 +122,7 @@ def POP_CeilOp : POP_ArithmeticOrBoolUnaryOp<"ceil"> {
 def POP_TruncOp : POP_ArithmeticOrBoolUnaryOp<"trunc"> {
   let summary = "trunc";
   let description = [{
-    The `pop.trunc` operation takes a `!pop.simd` value and returns the element
+    The `pop.trunc` operation takes a `!kgen.simd` value and returns the element
     wise truncation of its values (rounding toward zero). The operand and result
     types are the same and must be index-like, arithmetic, or boolean dtypes.
     Integer, index, and boolean values are returned unchanged.
@@ -130,7 +130,7 @@ def POP_TruncOp : POP_ArithmeticOrBoolUnaryOp<"trunc"> {
     Example:
 
     ```mlir
-    %b = pop.trunc %a : !pop.simd<size, f32>
+    %b = pop.trunc %a : !kgen.simd<size, f32>
     ```
   }];
 }
@@ -143,7 +143,7 @@ def POP_RoundOp : POP_ArithmeticOrBoolUnaryOp<"round", [NoMemoryEffect,
                   DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
   let summary = "round";
   let description = [{
-    The `pop.round` operation takes a `!pop.simd` value and returns the element
+    The `pop.round` operation takes a `!kgen.simd` value and returns the element
     wise rounding of its values to the nearest integer, with ties rounding
     toward the nearest even. The operand and result types are the same and must
     be index-like, arithmetic, or boolean dtypes. Integer, index, and boolean
@@ -152,7 +152,7 @@ def POP_RoundOp : POP_ArithmeticOrBoolUnaryOp<"round", [NoMemoryEffect,
     Example:
 
     ```mlir
-    %b = pop.round %a : !pop.simd<size, f32>
+    %b = pop.round %a : !kgen.simd<size, f32>
     ```
   }];
 }
@@ -166,7 +166,7 @@ def POP_AbsOp : POP_ArithmeticOrBoolUnaryOp<"abs", [NoMemoryEffect,
   let hasFolder = 0;
   let summary = "abs";
   let description = [{
-    The `pop.abs` operation takes a `!pop.simd` value and returns the absolute
+    The `pop.abs` operation takes a `!kgen.simd` value and returns the absolute
     value of it. The operand and result types are the same and must be
     index-like, arithmetic, or boolean dtypes. Unsigned integer, uindex, and
     boolean values are returned unchanged. For signed integers, the absolute
@@ -175,8 +175,8 @@ def POP_AbsOp : POP_ArithmeticOrBoolUnaryOp<"abs", [NoMemoryEffect,
     Example:
 
     ```mlir
-    %r = pop.abs %x : !pop.simd<size, f32>
-    %r = pop.abs %x : !pop.simd<size, si32>
+    %r = pop.abs %x : !kgen.simd<size, f32>
+    %r = pop.abs %x : !kgen.simd<size, si32>
     ```
   }];
 }
@@ -204,15 +204,15 @@ def POP_AddOp : POP_ArithmeticBinaryOp<"add", [Commutative, Pure,
                 DeclareOpInterfaceMethods<ComputeOpInterface>]>, Addition {
   let summary = "addition";
   let description = [{
-    The `pop.add` operation takes two `!pop.simd` values and returns their sum.
+    The `pop.add` operation takes two `!kgen.simd` values and returns their sum.
     The operand and result types must be the same. This operation is only valid
     on integer, index, and floating point dtypes.
 
     Example:
 
     ```mlir
-    %c = pop.add %a, %b : !pop.scalar<type>
-    %c = pop.add %a, %b : !pop.simd<size, type>
+    %c = pop.add %a, %b : !kgen.scalar<type>
+    %c = pop.add %a, %b : !kgen.simd<size, type>
     ```
   }];
 }
@@ -225,15 +225,15 @@ def POP_SubOp : POP_ArithmeticBinaryOp<"sub", [Pure,
                 DeclareOpInterfaceMethods<ComputeOpInterface>]>, Addition {
   let summary = "subtraction";
   let description = [{
-    The `pop.sub` operation takes two `!pop.simd` values and returns their
+    The `pop.sub` operation takes two `!kgen.simd` values and returns their
     difference. The operand and result types must be the same. This operation is
     only valid on integer, index, and floating point dtypes.
 
     Example:
 
     ```mlir
-    %c = pop.sub %a, %b : !pop.scalar<type>
-    %c = pop.sub %a, %b : !pop.simd<size, type>
+    %c = pop.sub %a, %b : !kgen.scalar<type>
+    %c = pop.sub %a, %b : !kgen.simd<size, type>
     ```
   }];
 }
@@ -247,7 +247,7 @@ def POP_MulOp : POP_ArithmeticBinaryOp<"mul", [Commutative, Pure,
                 Multiplication {
   let summary = "multiplication";
   let description = [{
-    The `pop.mul` operation takes two `!pop.simd` values and returns their
+    The `pop.mul` operation takes two `!kgen.simd` values and returns their
     product. The operand and result types must be the same. This operation is
     only valid on integer, index, and floating point dtypes.
     Request [fastmath policies](https://llvm.org/docs/LangRef.html#fast-math-flags)
@@ -258,9 +258,9 @@ def POP_MulOp : POP_ArithmeticBinaryOp<"mul", [Commutative, Pure,
     Example:
 
     ```mlir
-    %c = pop.mul %a, %b : !pop.scalar<type>
-    %c = pop.mul %a, %b : !pop.simd<size, type>
-    %c = pop.mul %a, %b {fastmathFlags = #pop<fmf fast>} : !pop.simd<size, type>
+    %c = pop.mul %a, %b : !kgen.scalar<type>
+    %c = pop.mul %a, %b : !kgen.simd<size, type>
+    %c = pop.mul %a, %b {fastmathFlags = #pop<fmf fast>} : !kgen.simd<size, type>
     ```
   }];
   let arguments = (ins UnboundOrIndexOrArithmeticSIMD:$lhs,
@@ -283,7 +283,7 @@ def POP_DivOp : POP_ArithmeticBinaryOp<"div", [NoMemoryEffect,
   let hasFolder = 0;
   let summary = "divide";
   let description = [{
-    The `pop.div` operation takes two `!pop.simd` values and divides them. The
+    The `pop.div` operation takes two `!kgen.simd` values and divides them. The
     operand and result types must be the same. This operation is only valid on
     integer, index, and floating point dtypes. The signedness of integer
     division is determined by the dtype. Index is always treated as signed.
@@ -292,8 +292,8 @@ def POP_DivOp : POP_ArithmeticBinaryOp<"div", [NoMemoryEffect,
     Example:
 
     ```mlir
-    %c = pop.div %a, %b : !pop.scalar<type>
-    %c = pop.div %a, %b : !pop.simd<size, type>
+    %c = pop.div %a, %b : !kgen.scalar<type>
+    %c = pop.div %a, %b : !kgen.simd<size, type>
     ```
   }];
   let hasCanonicalizeMethod = 1;
@@ -308,7 +308,7 @@ def POP_RemOp : POP_ArithmeticBinaryOp<"rem", [NoMemoryEffect,
                 DeclareOpInterfaceMethods<ComputeOpInterface>]>, Division {
   let summary = "remainder";
   let description = [{
-    The `pop.rem` operation takes two `!pop.simd` values and returns their
+    The `pop.rem` operation takes two `!kgen.simd` values and returns their
     remainder. The operand and result types must be the same. This operation is
     only valid on integer, index, and floating point dtypes. The signedness of
     integer remainder is determined by the dtype. Index is always treated as
@@ -317,8 +317,8 @@ def POP_RemOp : POP_ArithmeticBinaryOp<"rem", [NoMemoryEffect,
     Example:
 
     ```mlir
-    %c = pop.rem %a, %b : !pop.scalar<type>
-    %c = pop.rem %a, %b : !pop.simd<size, type>
+    %c = pop.rem %a, %b : !kgen.scalar<type>
+    %c = pop.rem %a, %b : !kgen.simd<size, type>
     ```
   }];
 }
@@ -333,7 +333,7 @@ def POP_FloorDivOp : POP_ArithmeticBinaryOp<"floordiv", [NoMemoryEffect,
   let hasFolder = 0;
   let summary = "floor divide";
   let description = [{
-    The `pop.floordiv` operation takes two `!pop.simd` values and divides them,
+    The `pop.floordiv` operation takes two `!kgen.simd` values and divides them,
     rounding towards negative infinity. The operand and result types must be
     the same. This operation is only valid on integer, index, and floating
     point dtypes. The signedness of integer division is determined by the
@@ -343,8 +343,8 @@ def POP_FloorDivOp : POP_ArithmeticBinaryOp<"floordiv", [NoMemoryEffect,
     Example:
 
     ```mlir
-    %c = pop.floordiv %a, %b : !pop.scalar<type>
-    %c = pop.floordiv %a, %b : !pop.simd<size, type>
+    %c = pop.floordiv %a, %b : !kgen.scalar<type>
+    %c = pop.floordiv %a, %b : !kgen.simd<size, type>
     ```
   }];
 }
@@ -356,7 +356,7 @@ def POP_FloorDivOp : POP_ArithmeticBinaryOp<"floordiv", [NoMemoryEffect,
 def POP_MaxOp : POPOp<"max", [Commutative, Pure, SameOperandsAndResultType]> {
   let summary = "max";
   let description = [{
-    The `pop.max` operation takes two `!pop.simd` values and returns their
+    The `pop.max` operation takes two `!kgen.simd` values and returns their
     elementwise max. The operand and result types must be the same. This
     operation is only valid on integer, index, and floating point dtypes. The
     signedness of the integer maximum is determined by the dtype. Index is
@@ -365,8 +365,8 @@ def POP_MaxOp : POPOp<"max", [Commutative, Pure, SameOperandsAndResultType]> {
     Example:
 
     ```mlir
-    %c = pop.max %a, %b : !pop.scalar<type>
-    %c = pop.max %a, %b : !pop.simd<size, type>
+    %c = pop.max %a, %b : !kgen.scalar<type>
+    %c = pop.max %a, %b : !kgen.simd<size, type>
     ```
   }];
   let arguments = (ins UnboundOrBoolOrIndexOrArithmeticSIMD:$lhs,
@@ -384,7 +384,7 @@ def POP_MaxOp : POPOp<"max", [Commutative, Pure, SameOperandsAndResultType]> {
 def POP_MinOp : POPOp<"min", [Commutative, Pure, SameOperandsAndResultType]> {
   let summary = "min";
   let description = [{
-    The `pop.min` operation takes two `!pop.simd` values and returns their
+    The `pop.min` operation takes two `!kgen.simd` values and returns their
     elementwise min. The operand and result types must be the same. This
     operation is only valid on integer, index, and floating point dtypes. The
     signedness of the integer minimum is determined by the dtype. Index is
@@ -393,8 +393,8 @@ def POP_MinOp : POPOp<"min", [Commutative, Pure, SameOperandsAndResultType]> {
     Example:
 
     ```mlir
-    %c = pop.min %a, %b : !pop.scalar<type>
-    %c = pop.min %a, %b : !pop.simd<size, type>
+    %c = pop.min %a, %b : !kgen.scalar<type>
+    %c = pop.min %a, %b : !kgen.simd<size, type>
     ```
   }];
   let arguments = (ins UnboundOrBoolOrIndexOrArithmeticSIMD:$lhs,
@@ -424,8 +424,8 @@ def POP_ShlOp : POP_ArithmeticBinaryOp<"shl", [Pure,
     Example:
 
     ```mlir
-    %0 = pop.shl %val, %shft: !pop.scalar<type>
-    %0 = pop.shl %val, %shft: !pop.simd<size, type>
+    %0 = pop.shl %val, %shft: !kgen.scalar<type>
+    %0 = pop.shl %val, %shft: !kgen.simd<size, type>
     ```
   }];
   let arguments = (ins UnboundOrIndexOrIntegerSIMD:$lhs,
@@ -459,8 +459,8 @@ def POP_ShrOp : POP_ArithmeticBinaryOp<"shr", [Pure,
     `rhs`.
 
     ```mlir
-    %0 = pop.shr %val, %shft: !pop.scalar<type>
-    %0 = pop.shr %val, %shft: !pop.simd<size, type>
+    %0 = pop.shr %val, %shft: !kgen.scalar<type>
+    %0 = pop.shr %val, %shft: !kgen.simd<size, type>
     ```
   }];
   let arguments = (ins UnboundOrIndexOrIntegerSIMD:$lhs,
@@ -495,7 +495,7 @@ def POP_FMAOp : POP_ArithmeticTernaryOp<"fma",
                 [DeclareOpInterfaceMethods<ComputeOpInterface>]>, MultiplyAdd {
   let summary = "fused-multiply add";
   let description = [{
-    The `pop.fma` operation takes three `!pop.simd` values (`a`, `b`, and `c`)
+    The `pop.fma` operation takes three `!kgen.simd` values (`a`, `b`, and `c`)
     and computes the fma operation `a * b + c`. The operand and result types
     must be the same. This operation is only valid on integer, index, and
     floating point dtypes.
@@ -503,7 +503,7 @@ def POP_FMAOp : POP_ArithmeticTernaryOp<"fma",
     Example:
 
     ```mlir
-    %d = pop.fma %a, %b, %c : !pop.simd<size, type>
+    %d = pop.fma %a, %b, %c : !kgen.simd<size, type>
     ```
   }];
 }
@@ -518,8 +518,8 @@ def POP_CmpOp : POPOp<"cmp", [Pure, SameTypeOperands, InferTypeOpAdaptor,
   let hasFolder = 0;
   let summary = "comparison";
   let description = [{
-    The `pop.cmp` operation takes a comparison predicate and two `!pop.scalar`
-    or `!pop.simd` types (`lhs` and `rhs`) and computes the resulting comparison
+    The `pop.cmp` operation takes a comparison predicate and two `!kgen.scalar`
+    or `!kgen.simd` types (`lhs` and `rhs`) and computes the resulting comparison
     elementwise.
 
     The comparison semantics between floating point dtypes is the same as in C.
@@ -527,8 +527,8 @@ def POP_CmpOp : POPOp<"cmp", [Pure, SameTypeOperands, InferTypeOpAdaptor,
     Example:
 
     ```mlir
-    %b0 = pop.cmp lt(%a, %b) : !pop.scalar<type>
-    %b1 = pop.cmp ge(%c, %d) : !pop.simd<?, type>
+    %b0 = pop.cmp lt(%a, %b) : !kgen.scalar<type>
+    %b1 = pop.cmp ge(%c, %d) : !kgen.simd<?, type>
     ```
   }];
 
@@ -578,8 +578,8 @@ def POP_SIMDAndOp : POP_BitwiseOp<"simd.and", [Idempotent]> {
     Example:
 
     ```mlir
-    %c = pop.simd.and %a, %b : !pop.scalar<type>
-    %c = pop.simd.and %a, %b : !pop.simd<size, type>
+    %c = pop.simd.and %a, %b : !kgen.scalar<type>
+    %c = pop.simd.and %a, %b : !kgen.simd<size, type>
     ```
   }];
 }
@@ -598,8 +598,8 @@ def POP_SIMDOrOp : POP_BitwiseOp<"simd.or", [Idempotent]> {
     Example:
 
     ```mlir
-    %c = pop.simd.or %a, %b : !pop.scalar<type>
-    %c = pop.simd.or %a, %b : !pop.simd<size, type>
+    %c = pop.simd.or %a, %b : !kgen.scalar<type>
+    %c = pop.simd.or %a, %b : !kgen.simd<size, type>
     ```
   }];
 }
@@ -618,16 +618,16 @@ def POP_SIMDXOrOp : POP_BitwiseOp<"simd.xor"> {
     Example:
 
     ```mlir
-    %c = pop.simd.xor %a, %b : !pop.scalar<type>
-    %c = pop.simd.xor %a, %b : !pop.simd<size, type>
+    %c = pop.simd.xor %a, %b : !kgen.scalar<type>
+    %c = pop.simd.xor %a, %b : !kgen.simd<size, type>
     ```
 
     The XOr is used to implement the `not` operation. For example:
 
     ```mlir
     %neg_one_si64 = kgen.param.constant: scalar<si64> = <<-1>>
-    %neg_one = pop.cast %neg_one_si64 : !pop.scalar<si64> to !pop.scalar<type>
-    %not = pop.simd.xor %val, %neg_one : !pop.scalar<type> // returns ~(%val)
+    %neg_one = pop.cast %neg_one_si64 : !kgen.scalar<si64> to !kgen.scalar<type>
+    %not = pop.simd.xor %val, %neg_one : !kgen.scalar<type> // returns ~(%val)
     ```
   }];
 }
@@ -648,10 +648,10 @@ def POP_BitcastOp : POPOp<"bitcast", [Pure,
     Example:
 
     ```mlir
-    %0 = pop.bitcast %a : !pop.scalar<si32> to !pop.scalar<f32>
-    %1 = pop.bitcast %b : !pop.scalar<ui64> to !pop.scalar<si64>
-    %2 = pop.bitcast %c : !pop.simd<4, f64> to !pop.simd<4, si64>
-    %3 = pop.bitcast %d : !pop.simd<2, f64> to !pop.simd<4, f32>
+    %0 = pop.bitcast %a : !kgen.scalar<si32> to !kgen.scalar<f32>
+    %1 = pop.bitcast %b : !kgen.scalar<ui64> to !kgen.scalar<si64>
+    %2 = pop.bitcast %c : !kgen.simd<4, f64> to !kgen.simd<4, si64>
+    %3 = pop.bitcast %d : !kgen.simd<2, f64> to !kgen.simd<4, f32>
     ```
   }];
 
@@ -725,10 +725,10 @@ def POP_CastOp : POPOp<"cast", [Pure,
     Example:
 
     ```mlir
-    %0 = pop.cast %a : !pop.scalar<si32> to !pop.scalar<f32>
-    %1 = pop.cast %b : !pop.scalar<ui64> to !pop.scalar<si32>
-    %2 = pop.cast %c : !pop.simd<4, f64> to !pop.simd<4, ui32>
-    %3 = pop.cast fast %c : !pop.scalar<f32> to !pop.scalar<bf16>
+    %0 = pop.cast %a : !kgen.scalar<si32> to !kgen.scalar<f32>
+    %1 = pop.cast %b : !kgen.scalar<ui64> to !kgen.scalar<si32>
+    %2 = pop.cast %c : !kgen.simd<4, f64> to !kgen.simd<4, ui32>
+    %3 = pop.cast fast %c : !kgen.scalar<f32> to !kgen.scalar<bf16>
     ```
   }];
 
@@ -753,7 +753,7 @@ def POP_SIMDExtractElementOp : POPOp<"simd.extractelement", [Pure,
     SIMDSizeOneOfSameDType<"vector", "result">]> {
   let summary = "extractelement operation";
   let description = [{
-    Takes a SIMD vector and an index position and extracts the `!pop.scalar` at
+    Takes a SIMD vector and an index position and extracts the `!kgen.scalar` at
     that position. The position must be of type index.
 
     If the position is out-of-bounds, the result is a poison value.
@@ -761,11 +761,11 @@ def POP_SIMDExtractElementOp : POPOp<"simd.extractelement", [Pure,
     Example:
 
     ```mlir
-    %0 = pop.simd.extractelement %0[%position]: !pop.simd<16, f32>
+    %0 = pop.simd.extractelement %0[%position]: !kgen.simd<16, f32>
     ```
   }];
 
-  let arguments = (ins POP_SIMDType:$vector, Index:$position);
+  let arguments = (ins KGEN_SIMDType:$vector, Index:$position);
   let results = (outs ScalarType:$result);
 
   let assemblyFormat = [{
@@ -794,13 +794,13 @@ def POP_SIMDInsertElementOp : POPOp<"simd.insertelement", [Pure,
     Example:
 
     ```mlir
-    %0 = pop.simd.extractelement %val, %vec[%position]: !pop.simd<16, f32>
+    %0 = pop.simd.extractelement %val, %vec[%position]: !kgen.simd<16, f32>
     ```
   }];
 
-  let arguments = (ins POP_SIMDType:$vector, ScalarType:$value,
+  let arguments = (ins KGEN_SIMDType:$vector, ScalarType:$value,
                        Index:$position);
-  let results = (outs POP_SIMDType:$result);
+  let results = (outs KGEN_SIMDType:$result);
 
   let assemblyFormat = [{
     $value `,` $vector `[` $position `]` attr-dict `:` qualified(type($vector))
@@ -829,9 +829,9 @@ def POP_SIMDShuffleOp : POPOp<"simd.shuffle", [Pure,
     ```
   }];
 
-  let arguments = (ins POP_SIMDType:$lhs, POP_SIMDType:$rhs,
+  let arguments = (ins KGEN_SIMDType:$lhs, KGEN_SIMDType:$rhs,
                        AttrOfType<POP_ArrayType>:$mask);
-  let results = (outs POP_SIMDType:$result);
+  let results = (outs KGEN_SIMDType:$result);
 
   let assemblyFormat = [{
     type($lhs) $lhs `,` $rhs `->` type($result)
@@ -853,7 +853,7 @@ def POP_SIMDSelectOp : POPOp<"simd.select", [Pure,
   let summary = "SIMD select";
   let description = [{
     The `pop.simd.select` operation takes a SIMD condition predicate and two
-    `!pop.scalar` or `!pop.simd` types (`then` and `else`) and chooses one value
+    `!kgen.scalar` or `!kgen.simd` types (`then` and `else`) and chooses one value
     based on a condition, without IR-level branching.
 
     When the condition is a SIMD vector, then the result is a SIMD vector
@@ -863,14 +863,14 @@ def POP_SIMDSelectOp : POPOp<"simd.select", [Pure,
     Example:
 
     ```mlir
-    %a = pop.simd.select %cond, %trueVal, %falseVal : !pop.scalar<type>
-    %b = pop.simd.select %cond, %trueVal, %falseVal : !pop.simd<size, type>
+    %a = pop.simd.select %cond, %trueVal, %falseVal : !kgen.scalar<type>
+    %b = pop.simd.select %cond, %trueVal, %falseVal : !kgen.simd<size, type>
     ```
   }];
 
-  let arguments = (ins BoolSIMD:$condition, POP_SIMDType:$trueValue,
-                       POP_SIMDType:$falseValue);
-  let results = (outs POP_SIMDType:$result);
+  let arguments = (ins BoolSIMD:$condition, KGEN_SIMDType:$trueValue,
+                       KGEN_SIMDType:$falseValue);
+  let results = (outs KGEN_SIMDType:$result);
 
   let assemblyFormat = "operands attr-dict `:` type($result)";
   let hasFolder = 1;
@@ -891,15 +891,15 @@ def POP_SIMDSplatOp : POPOp<"simd.splat", [Pure,
     `vector<4xi32>` will produce a vector valued as `[%a, %a, %a, %a]`.
 
     ```mlir
-    %v = pop.simd.splat %arg0 : !pop.simd<4, f32>
+    %v = pop.simd.splat %arg0 : !kgen.simd<4, f32>
 
-    %u = pop.neg %arg1 : !pop.simd<1, type>
-    %w = pop.simd.splat %u : !pop.simd<size, type>
+    %u = pop.neg %arg1 : !kgen.simd<1, type>
+    %w = pop.simd.splat %u : !kgen.simd<size, type>
     ```
   }];
 
   let arguments = (ins ScalarType:$scalar);
-  let results = (outs POP_SIMDType:$result);
+  let results = (outs KGEN_SIMDType:$result);
 
   let assemblyFormat = "$scalar attr-dict `:` qualified(type($result))";
   let hasFolder = 1;
@@ -1399,10 +1399,10 @@ def POP_StackAllocationOp : POPOp<"stack_allocation", [BytecodeOpInterface]> {
     Example:
 
     ```mlir
-    %0 = pop.stack_allocation count x !pop.simd<4, f32>
-    %1 = pop.stack_allocation count x !pop.scalar<ui64>
-    %2 = pop.stack_allocation count x !pop.scalar<ui64> align 8
-    %3 = pop.stack_allocation count x !pop.scalar<ui64> align 8 address_space 5
+    %0 = pop.stack_allocation count x !kgen.simd<4, f32>
+    %1 = pop.stack_allocation count x !kgen.scalar<ui64>
+    %2 = pop.stack_allocation count x !kgen.scalar<ui64> align 8
+    %3 = pop.stack_allocation count x !kgen.scalar<ui64> align 8 address_space 5
     ```
 
     The allocated memory is automatically released when control transfers back
@@ -1639,7 +1639,7 @@ def POP_ExternalCallOp : POPOp<"external_call", [
     Example:
 
     ```mlir
-    %0 = pop.external_call @sqrt(%arg) : (!pop.scalar<f64>) -> !pop.scalar<f64>
+    %0 = pop.external_call @sqrt(%arg) : (!kgen.scalar<f64>) -> !kgen.scalar<f64>
     ```
 
     Variadic functions are those with trailing function arguments. A variadic
@@ -1648,7 +1648,7 @@ def POP_ExternalCallOp : POPOp<"external_call", [
 
     ```mlir
     pop.external_call @printf(%fmt, %v0, %v1) (!kgen.pointer<scalar<si8>>) -> ()
-      : (!kgen.pointer<scalar<si8>>, !pop.scalar<f32>, !pop.scalar<ui32>) -> ()
+      : (!kgen.pointer<scalar<si8>>, !kgen.scalar<f32>, !kgen.scalar<ui32>) -> ()
     ```
 
     The `funcAttrs` attribute specifies LLVM function attributes on the external
@@ -1739,8 +1739,8 @@ def POP_GlobalAllocOp : POPOp<"global_alloc", [Pure,
     Example:
 
     ```mlir
-    %ptr = pop.global_alloc "name" 2 x !pop.scalar<si32> align 32 address_space 3
-    %init = pop.global_alloc "val" 1 x !pop.scalar<si32> = <42>
+    %ptr = pop.global_alloc "name" 2 x !kgen.scalar<si32> align 32 address_space 3
+    %init = pop.global_alloc "val" 1 x !kgen.scalar<si32> = <42>
     ```
   }];
 
@@ -1830,7 +1830,7 @@ def POP_CompilerGlobalLoadOp : POPOp<"compiler.global_load", [Pure,
     Example:
 
     ```mlir
-    %0 = pop.compiler.global_load "foo" : !pop.scalar<ui32>
+    %0 = pop.compiler.global_load "foo" : !kgen.scalar<ui32>
     ```
   }];
 
@@ -1855,8 +1855,8 @@ def POP_CompilerGlobalStoreOp : POPOp<"compiler.global_store", [
     Example:
 
     ```mlir
-    %0 = pop.constant(0) : !pop.scalar<ui32>
-    pop.compiler.global_store "foo", %0 : !pop.scalar<ui32>
+    %0 = pop.constant(0) : !kgen.scalar<ui32>
+    pop.compiler.global_store "foo", %0 : !kgen.scalar<ui32>
     ```
   }];
 
@@ -1903,22 +1903,22 @@ def POP_CastToBuiltinOp : POPOp<"cast_to_builtin", [Pure]> {
     The `pop.cast_to_builtin` operation casts a POP type to an MLIR builtin
     type. If the types have the same underlying implementation, then this
     operation is a no-op adaptor between two type systems. It can, for example,
-    cast a `!pop.scalar` to an MLIR builtin integer or float type, or a
+    cast a `!kgen.scalar` to an MLIR builtin integer or float type, or a
     `pop.simd` to a `vector.
 
     Example:
 
     ```mlir
-    kgen.func @llvm_ops(%arg0: !pop.scalar<f32>) -> !pop.scalar<f32> {
-      %0 = pop.cast_to_builtin %arg0 : !pop.scalar<f32> to f32
+    kgen.func @llvm_ops(%arg0: !kgen.scalar<f32>) -> !kgen.scalar<f32> {
+      %0 = pop.cast_to_builtin %arg0 : !kgen.scalar<f32> to f32
       %1 = llvm.fadd %0, %0 : f32
-      %2 = pop.cast_from_builtin %1 : f32 to !pop.scalar<f32>
-      kgen.return %2 : !pop.scalar<f32>
+      %2 = pop.cast_from_builtin %1 : f32 to !kgen.scalar<f32>
+      kgen.return %2 : !kgen.scalar<f32>
     }
     ```
   }];
 
-  let arguments = (ins POP_SIMDType:$input);
+  let arguments = (ins KGEN_SIMDType:$input);
   let results = (outs AnyType:$output);
   let assemblyFormat = [{
     $input attr-dict `:` qualified(type($input)) `to` type($output)
@@ -1939,17 +1939,17 @@ def POP_CastFromBuiltinOp : POPOp<"cast_from_builtin", [Pure,
     The `pop.cast_from_builtin` operation casts an MLIR builtin type to a POP
     type. If the types have the same underlying implementation, then this
     operation is a no-op adaptor between two type systems. It can, for example,
-    cast an MLIR builtin integer or float type to a `!pop.scalar`, or a 1-D
-    vector to `!pop.simd`.
+    cast an MLIR builtin integer or float type to a `!kgen.scalar`, or a 1-D
+    vector to `!kgen.simd`.
 
     Example:
 
     ```mlir
-    kgen.func @llvm_ops(%arg0: !pop.scalar<f32>) -> !pop.scalar<f32> {
-      %0 = pop.cast_to_builtin %arg0 : !pop.scalar<f32> to f32
+    kgen.func @llvm_ops(%arg0: !kgen.scalar<f32>) -> !kgen.scalar<f32> {
+      %0 = pop.cast_to_builtin %arg0 : !kgen.scalar<f32> to f32
       %1 = llvm.fadd %0, %0 : f32
-      %2 = pop.cast_from_builtin %1 : f32 to !pop.scalar<f32>
-      kgen.return %2 : !pop.scalar<f32>
+      %2 = pop.cast_from_builtin %1 : f32 to !kgen.scalar<f32>
+      kgen.return %2 : !kgen.scalar<f32>
     }
     ```
 
@@ -1959,18 +1959,18 @@ def POP_CastFromBuiltinOp : POPOp<"cast_from_builtin", [Pure,
     Example:
 
     ```mlir
-    kgen.generator @addN<N: si32>(%arg0: !pop.scalar<si32>)
-        -> !pop.scalar<si32> {
+    kgen.generator @addN<N: si32>(%arg0: !kgen.scalar<si32>)
+        -> !kgen.scalar<si32> {
       %N = kgen.param.constant: si32 = <N>
-      %rhs = pop.cast_from_builtin %N : si32 to !pop.scalar<si32>
-      %result = pop.add %arg0, %rhs : !pop.scalar<f32>
-      kgen.return %result : !pop.scalar<f32>
+      %rhs = pop.cast_from_builtin %N : si32 to !kgen.scalar<si32>
+      %result = pop.add %arg0, %rhs : !kgen.scalar<f32>
+      kgen.return %result : !kgen.scalar<f32>
     }
     ```
   }];
 
   let arguments = (ins AnyType:$input);
-  let results = (outs POP_SIMDType:$output);
+  let results = (outs KGEN_SIMDType:$output);
   let assemblyFormat = [{
     $input attr-dict `:` type($input) `to` qualified(type($output))
   }];
@@ -1996,7 +1996,7 @@ def POP_CallLLVMIntrinsicOp : POPOp<"call_llvm_intrinsic",[
 
     ```mlir
       %0 = pop.call_llvm_intrinsic "llvm.round", (%arg0) :
-        !pop.scalar<f32> -> !pop.scalar<f32>
+        !kgen.scalar<f32> -> !kgen.scalar<f32>
     ```
   }];
   let arguments = (ins
@@ -2361,7 +2361,7 @@ def POP_VariantDiscrGEPOp : POPOp<"variant.discr_gep", [Pure,
     The `pop.variant.discr_gep` operation takes a pointer to a variant type and
     returns a pointer to the discriminant field inside the variant. This
     operation should be used to modify the discriminant of a variant. The
-    operation returns a pointer to an unsigned integer `!pop.scalar` whose dtype
+    operation returns a pointer to an unsigned integer `!kgen.scalar` whose dtype
     is just large enough to represent the number of variant types.
 
     The reason `!kgen.variant` combines both a union and a discriminant is
@@ -2492,12 +2492,12 @@ class POP_SIMDIntReduceOp<string name> : POPOp<"simd.reduce_" # !tolower(name),
     "underlying boolean or integral dtype.\n",
     "\n",
     "```mlir\n",
-    "%arg = ... : !pop.simd<4, i32>\n",
-    "%x = pop.simd.reduce_" # !tolower(name) # " %arg : !pop.scalar<i32>\n",
+    "%arg = ... : !kgen.simd<4, i32>\n",
+    "%x = pop.simd.reduce_" # !tolower(name) # " %arg : !kgen.scalar<i32>\n",
     "```"
   );
 
-  let arguments = (ins POP_SIMDType:$vector);
+  let arguments = (ins KGEN_SIMDType:$vector);
   let results = (outs ScalarType:$result);
 
   let assemblyFormat = "$vector attr-dict `:` qualified(type($vector))";

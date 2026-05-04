@@ -39,7 +39,7 @@ struct VariantInfo {
 /// Navigates `_storage._impl` where `_impl` is `!kgen.variant<T0, T1, ...>`.
 /// After KGEN's LLVM lowering this is a struct with two fields:
 ///   [0] = `!pop.union<T0, T1, ...>` (members named `v0`, `v1`, ...)
-///   [1] = `!pop.scalar<ui8>`        (discriminant; its first child is the
+///   [1] = `!kgen.scalar<ui8>`        (discriminant; its first child is the
 ///                                    raw u8)
 /// The active payload is `union->GetChildAtIndex(discriminant)`.
 ///
@@ -83,8 +83,8 @@ static std::optional<VariantInfo> parseVariantInfo(ValueObjectSP valobj) {
   if (numChildren < 2)
     return {};
 
-  // Discriminant is the last child: `!pop.scalar<ui8>`.
-  // `!pop.scalar<ui8>` is not a raw scalar in LLDB — its first child IS.
+  // Discriminant is the last child: `!kgen.scalar<ui8>`.
+  // `!kgen.scalar<ui8>` is not a raw scalar in LLDB — its first child IS.
   ValueObjectSP discrScalar = impl->GetChildAtIndex(numChildren - 1);
   if (!discrScalar || !discrScalar->GetError().Success())
     return {};

@@ -65,8 +65,8 @@ kgen.generator @param_expr<p1, p2, int1: i1, int2: i1, type: dtype, type2: dtype
   // CHECK: <index>i1 = <#kgen.gen<eq(:type simd<*(0,0), f32>, simd<2, f32>)>>
   kgen.param.constant: !kgen.generator<<index>i1> = <
     #kgen.gen<eq(:type
-      #kgen.type<!pop.simd<*(0,0), f32>>,
-      #kgen.type<!pop.simd<2, f32>>
+      #kgen.type<!kgen.simd<*(0,0), f32>>,
+      #kgen.type<!kgen.simd<2, f32>>
     )>>
 
   // CHECK: = kgen.param.constant: i1 = <in(:dtype f32, [type, f64])>
@@ -205,7 +205,7 @@ kgen.generator @param_expr<p1, p2, int1: i1, int2: i1, type: dtype, type2: dtype
   kgen.param.constant = <cond(eq(p1, 1), cond(eq(p2, 2), cond(int1, cond(not(int2), 0, 1), 1), 1), 1)>
 
   // CHECK: constant: scalar<index> = <cond(int1, 1, 2)>
-  kgen.param.constant: scalar<index> = <cond(int1, #pop.simd<1>, #pop.simd<2>)>
+  kgen.param.constant: scalar<index> = <cond(int1, #kgen.simd<1>, #kgen.simd<2>)>
 
   // CHECK: declare env_test: i1 = <get_env("NDEBUG")>
   kgen.param.declare env_test: i1 = <get_env("NDEBUG")>
@@ -224,12 +224,12 @@ kgen.generator @param_expr<p1, p2, int1: i1, int2: i1, type: dtype, type2: dtype
 }
 
 // CHECK-LABEL: @uindex_print_parse
-kgen.generator @uindex_print_parse() -> (!pop.scalar<uindex>, !pop.scalar<uindex>) {
+kgen.generator @uindex_print_parse() -> (!kgen.scalar<uindex>, !kgen.scalar<uindex>) {
   // CHECK-DAG: scalar<uindex> = <18446744073709551615>
   %0 = kgen.param.constant: scalar<uindex> = <18446744073709551615>
   // CHECK-DAG: scalar<uindex> = <18446744073709551614>
   %1 = kgen.param.constant: scalar<uindex> = <-2>
-  kgen.return %0, %1 : !pop.scalar<uindex>, !pop.scalar<uindex>
+  kgen.return %0, %1 : !kgen.scalar<uindex>, !kgen.scalar<uindex>
 }
 
 lit.struct.decl @StructType0<a: index, b: index> {}
@@ -603,7 +603,7 @@ kgen.generator @datalayout_operators() {
   kgen.param.constant: index = <get_alignof(!kgen.generator<() -> ()>, #target)>
 
   // CHECK-NEXT: <1>
-  kgen.param.constant: index = <get_alignof(!pop.simd<0, f32>, #target)>
+  kgen.param.constant: index = <get_alignof(!kgen.simd<0, f32>, #target)>
 
   kgen.return
 }
@@ -632,7 +632,7 @@ kgen.generator @dtype_params<dt: dtype, f32: dtype, ui32: dtype>() {
 // CHECK-LABEL: kgen.generator @type_params<dt: dtype, typeParam: type>()
 kgen.generator @type_params<dt: dtype, typeParam: type>() {
   // CHECK: assert <eq(:type typeParam, scalar<f32>)>, "f32 scalarzzz"
-  kgen.param.assert <eq(:type typeParam, !pop.scalar<f32>)>, "f32 scalarzzz"
+  kgen.param.assert <eq(:type typeParam, !kgen.scalar<f32>)>, "f32 scalarzzz"
   // CHECK: kgen.param.declare ty1: type = <scalar<f32>>
   kgen.param.declare ty1: type = <scalar<f32>>
 
@@ -644,8 +644,8 @@ kgen.generator @type_params<dt: dtype, typeParam: type>() {
   "test.someop"() : () -> !kgen.param<ty2>
 
   // kgen.paramref auto-folds non-parameterized types on construction.
-  // CHECK: "test.someop"() : () -> !pop.scalar<f32>
-  "test.someop"() : () -> !kgen.param<!pop.scalar<f32>>
+  // CHECK: "test.someop"() : () -> !kgen.scalar<f32>
+  "test.someop"() : () -> !kgen.param<!kgen.scalar<f32>>
 
   kgen.return
 }
@@ -726,27 +726,27 @@ kgen.generator @region_params
   // CHECK-SAME: r1: (si32) -> si32,
   <r1: <>(si32) -> si32,
    // This uses a different parameter.
-   // CHECK-SAME: r3: <dtype>() -> !pop.scalar<*(0,0)>
-   r3: <dtype>() -> !pop.scalar<*(0,0)>
+   // CHECK-SAME: r3: <dtype>() -> !kgen.scalar<*(0,0)>
+   r3: <dtype>() -> !kgen.scalar<*(0,0)>
    >() {
   // use unaryFn
   kgen.return
 }
 
-kgen.generator @takeUnary<unaryFn: (!pop.scalar<si32>) -> !pop.scalar<si32>>() {
+kgen.generator @takeUnary<unaryFn: (!kgen.scalar<si32>) -> !kgen.scalar<si32>>() {
   // use unaryFn
   kgen.return
 }
 
-kgen.func @doubleExample(%arg0: !pop.scalar<si32>) -> !pop.scalar<si32> {
-  %0 = pop.add %arg0, %arg0: !pop.scalar<si32>
-  kgen.return %0 : !pop.scalar<si32>
+kgen.func @doubleExample(%arg0: !kgen.scalar<si32>) -> !kgen.scalar<si32> {
+  %0 = pop.add %arg0, %arg0: !kgen.scalar<si32>
+  kgen.return %0 : !kgen.scalar<si32>
 }
 
 kgen.generator @test_region() {
-  // CHECK: kgen.call @takeUnary<:(!pop.scalar<si32>) -> !pop.scalar<si32> @doubleExample>()
+  // CHECK: kgen.call @takeUnary<:(!kgen.scalar<si32>) -> !kgen.scalar<si32> @doubleExample>()
   kgen.call @takeUnary<
-     :(!pop.scalar<si32>) -> !pop.scalar<si32> @doubleExample>() : () -> ()
+     :(!kgen.scalar<si32>) -> !kgen.scalar<si32> @doubleExample>() : () -> ()
 
   kgen.return
 }

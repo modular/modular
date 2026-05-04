@@ -134,8 +134,8 @@ lit.fn @expect_field_names_lit<T: !kgen.type>(%arg: !lit.struct<@VariadicWrapper
 }
 
 // CHECK-LABEL: lit.fn @expect_field_index_by_name_lit
-// CHECK-SAME:    (%arg: !pop.simd<#kgen.struct_field_index_by_name<T, "second">, si32>)
-lit.fn @expect_field_index_by_name_lit<T: !kgen.type>(%arg: !pop.simd<#kgen.struct_field_index_by_name<T, "second">, si32>) -> !kgen.none {
+// CHECK-SAME:    (%arg: !kgen.simd<#kgen.struct_field_index_by_name<T, "second">, si32>)
+lit.fn @expect_field_index_by_name_lit<T: !kgen.type>(%arg: !kgen.simd<#kgen.struct_field_index_by_name<T, "second">, si32>) -> !kgen.none {
   %none = kgen.param.constant: none = <#kgen.none>
   lit.return %none : !kgen.none
   lit.end_fn
@@ -153,7 +153,7 @@ lit.fn @expect_field_type_by_name_lit<T: !kgen.type>(%arg: !kgen.param<#kgen.str
 
 !StructFieldTypesExpected = !lit.struct<@VariadicWrapper<:type !kgen.type, :!kgen.param_list<!kgen.type> #kgen.param_list<index, i32>>>
 !StructFieldNamesExpected = !lit.struct<@VariadicWrapper<:type !kgen.string, :!kgen.param_list<!kgen.string> #kgen.param_list<"first", "second">>>
-!StructFieldIndexByNameExpected = !pop.simd<1, si32>
+!StructFieldIndexByNameExpected = !kgen.simd<1, si32>
 !StructFieldTypeByNameExpected = index
 
 // CHECK-LABEL: lit.fn @use_struct_reflection_lit
@@ -162,7 +162,7 @@ lit.fn @use_struct_reflection_lit(%arg0: !StructFieldTypesExpected, %arg1: !Stru
   %none0 = lit.call @expect_field_types_lit<:!kgen.type #mypair_index_i32>(%arg0) : !lit.generator<("arg": !StructFieldTypesExpected) -> !kgen.none>
   // CHECK-NEXT: lit.call @expect_field_names_lit<:type !lit.struct<@MyPair<:type index, :type i32>>>(%arg1) : !lit.generator<("arg": !lit.struct<@VariadicWrapper<:type string, :param_list<string> ["first", "second"]>>) -> !kgen.none>
   %none1 = lit.call @expect_field_names_lit<:!kgen.type #mypair_index_i32>(%arg1) : !lit.generator<("arg": !StructFieldNamesExpected) -> !kgen.none>
-  // CHECK-NEXT: lit.call @expect_field_index_by_name_lit<:type !lit.struct<@MyPair<:type index, :type i32>>>(%arg2) : !lit.generator<("arg": !pop.scalar<si32>) -> !kgen.none>
+  // CHECK-NEXT: lit.call @expect_field_index_by_name_lit<:type !lit.struct<@MyPair<:type index, :type i32>>>(%arg2) : !lit.generator<("arg": !kgen.scalar<si32>) -> !kgen.none>
   %none2 = lit.call @expect_field_index_by_name_lit<:!kgen.type #mypair_index_i32>(%arg2) : !lit.generator<("arg": !StructFieldIndexByNameExpected) -> !kgen.none>
   // CHECK-NEXT: lit.call @expect_field_type_by_name_lit<:type !lit.struct<@MyPair<:type index, :type i32>>>(%arg3) : !lit.generator<("arg": index) -> !kgen.none>
   %none3 = lit.call @expect_field_type_by_name_lit<:!kgen.type #mypair_index_i32>(%arg3) : !lit.generator<("arg": !StructFieldTypeByNameExpected) -> !kgen.none>
@@ -201,8 +201,8 @@ kgen.generator @expect_field_names_kgen<T: !kgen.type>(%arg: !kgen.param<#kgen.g
 }
 
 // CHECK-LABEL: kgen.generator @expect_field_index_by_name_kgen
-// CHECK-SAME:    (%arg0: !pop.simd<#kgen.struct_field_index_by_name<T, "second">, si32>)
-kgen.generator @expect_field_index_by_name_kgen<T: !kgen.type>(%arg: !pop.simd<#kgen.struct_field_index_by_name<T, "second">, si32>) -> !kgen.none {
+// CHECK-SAME:    (%arg0: !kgen.simd<#kgen.struct_field_index_by_name<T, "second">, si32>)
+kgen.generator @expect_field_index_by_name_kgen<T: !kgen.type>(%arg: !kgen.simd<#kgen.struct_field_index_by_name<T, "second">, si32>) -> !kgen.none {
   %none = kgen.param.constant: none = <#kgen.none>
   kgen.return %none : !kgen.none
 }
@@ -218,7 +218,7 @@ kgen.generator @expect_field_type_by_name_kgen<T: !kgen.type>(%arg: !kgen.param<
 
 !StructFieldTypesExpected = !kgen.type
 !StructFieldNamesExpected = !kgen.string
-!StructFieldIndexByNameExpected = !pop.simd<1, si32>
+!StructFieldIndexByNameExpected = !kgen.simd<1, si32>
 !StructFieldTypeByNameExpected = index
 
 // CHECK-LABEL: kgen.generator @use_struct_reflection_kgen
@@ -227,7 +227,7 @@ kgen.generator @use_struct_reflection_kgen(%arg0: !StructFieldTypesExpected, %ar
   %none0 = kgen.call @expect_field_types_kgen<:!kgen.type #mypair_index_i32>(%arg0) : !kgen.generator<(!StructFieldTypesExpected) -> !kgen.none>
   // CHECK-NEXT: kgen.call @expect_field_names_kgen<:type [typevalue<#kgen.genref<@MyPair<:type index, :type i32>>>, struct<(index, i32)>]>(%arg1) : (!kgen.string) -> !kgen.none
   %none1 = kgen.call @expect_field_names_kgen<:!kgen.type #mypair_index_i32>(%arg1) : !kgen.generator<(!StructFieldNamesExpected) -> !kgen.none>
-  // CHECK-NEXT: kgen.call @expect_field_index_by_name_kgen<:type [typevalue<#kgen.genref<@MyPair<:type index, :type i32>>>, struct<(index, i32)>]>(%arg2) : (!pop.scalar<si32>) -> !kgen.none
+  // CHECK-NEXT: kgen.call @expect_field_index_by_name_kgen<:type [typevalue<#kgen.genref<@MyPair<:type index, :type i32>>>, struct<(index, i32)>]>(%arg2) : (!kgen.scalar<si32>) -> !kgen.none
   %none2 = kgen.call @expect_field_index_by_name_kgen<:!kgen.type #mypair_index_i32>(%arg2) : !kgen.generator<(!StructFieldIndexByNameExpected) -> !kgen.none>
   // CHECK-NEXT: kgen.call @expect_field_type_by_name_kgen<:type [typevalue<#kgen.genref<@MyPair<:type index, :type i32>>>, struct<(index, i32)>]>(%arg3) : (index) -> !kgen.none
   %none3 = kgen.call @expect_field_type_by_name_kgen<:!kgen.type #mypair_index_i32>(%arg3) : !kgen.generator<(!StructFieldTypeByNameExpected) -> !kgen.none>

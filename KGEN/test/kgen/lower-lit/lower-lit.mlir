@@ -555,17 +555,17 @@ lit.fn @callLifetimes[mut lt](%arg0[*""]: !lit.ref<index, mut lt>) -> !lit.ref<i
 
 // CHECK-LABEL: kgen.generator @takes_life_explicit<ismut: i1, size, val: simd<size, f32>>
 // CHECK-SAME: (%arg0: !kgen.pointer<struct<() memoryOnly>> byref_result)
-lit.fn @takes_life_explicit<ismut: i1, life: !lit.origin<ismut>, size: index, val: !pop.simd<size, f32>>
+lit.fn @takes_life_explicit<ismut: i1, life: !lit.origin<ismut>, size: index, val: !kgen.simd<size, f32>>
                     (%ref: !lit.ref<!Mem, mut=ismut, life> byref_result, |) {
   kgen.return
 }
 
 // CHECK-LABEL: kgen.generator @call_takes_life_explicit
 // CHECK-SAME: <val: simd<4, f32>>(%arg0: !kgen.pointer<struct<() memoryOnly>> byref_result)
-lit.fn @call_takes_life_explicit<val: !pop.simd<4, f32>>[mut lt](%__result__: !lit.ref<!Mem, mut lt> byref_result, |) {
+lit.fn @call_takes_life_explicit<val: !kgen.simd<4, f32>>[mut lt](%__result__: !lit.ref<!Mem, mut lt> byref_result, |) {
   // CHECK-NEXT: kgen.call @takes_life_explicit<:i1 1, 4, :simd<4, f32> val>(%arg0)
   // CHECK-SAME: : (!kgen.pointer<struct<() memoryOnly>> byref_result) -> ()
-  lit.call @takes_life_explicit<:i1 1, :!lit.origin<1> lt, :index 4, :!pop.simd<4, f32> val>(%__result__)
+  lit.call @takes_life_explicit<:i1 1, :!lit.origin<1> lt, :index 4, :!kgen.simd<4, f32> val>(%__result__)
       : !lit.generator<("ref": !lit.ref<!Mem, mut lt> byref_result, |) -> ()>
   kgen.return
 }

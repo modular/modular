@@ -545,13 +545,13 @@ IR is ready for aggressive optimization.
 
 ### KGEN to LLVM Type Mapping
 
-| KGEN/POP Type       | LLVM Type                        |
-|---------------------|----------------------------------|
-| `!pop.scalar<f32>`  | `f32`                            |
-| `!pop.simd<4, f32>` | `<4 x f32>`                      |
-| `!kgen.pointer<T>`  | `ptr` (opaque pointer, LLVM 15+) |
-| `!pop.array<4, T>`  | `[4 x T]`                        |
-| Struct types        | LLVM struct types                |
+| KGEN/POP Type        | LLVM Type                        |
+|----------------------|----------------------------------|
+| `!kgen.scalar<f32>`  | `f32`                            |
+| `!kgen.simd<4, f32>` | `<4 x f32>`                      |
+| `!kgen.pointer<T>`   | `ptr` (opaque pointer, LLVM 15+) |
+| `!pop.array<4, T>`   | `[4 x T]`                        |
+| Struct types         | LLVM struct types                |
 
 ### LLVM to Machine Code
 

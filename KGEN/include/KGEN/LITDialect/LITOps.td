@@ -493,7 +493,7 @@ def LIT_StructFieldOp : LITOp<"struct.field", [
 
     ```mlir
     // Declare a field named "foo".
-    lit.struct.field foo : !pop.scalar<f32>
+    lit.struct.field foo : !kgen.scalar<f32>
     ```
   }];
 
@@ -536,11 +536,11 @@ def LIT_StructInsertOp : LITOp<"struct.insert", [Pure,
 
     ```mlir
     lit.struct.decl @MyStruct<T: dtype> {
-      lit.struct.field a : !pop.scalar<T>
+      lit.struct.field a : !kgen.scalar<T>
     }
 
     %0 = lit.struct.insert %fieldVal, %struct[a]
-      : !pop.scalar<f64> into !lit.struct<@MyStruct<T: dtype = f64>>
+      : !kgen.scalar<f64> into !lit.struct<@MyStruct<T: dtype = f64>>
     ```
   }];
 
@@ -570,11 +570,11 @@ def LIT_StructExtractOp : LITOp<"struct.extract", [Pure,
 
     ```mlir
     lit.struct.decl @MyStruct<T: dtype> {
-      lit.struct.field a : !pop.scalar<T>
+      lit.struct.field a : !kgen.scalar<T>
     }
 
     %0 = lit.struct.extract %struct[a]
-      : !pop.scalar<f64> from !lit.struct<@MyStruct<T: dtype = f64>>
+      : !kgen.scalar<f64> from !lit.struct<@MyStruct<T: dtype = f64>>
     ```
   }];
 

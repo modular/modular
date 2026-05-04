@@ -49,8 +49,8 @@ kgen.generator @foo() {
 // -----
 
 #subprogram = #debuginfo.subprogram<sourceName = <"test_stencil_avg_pool">> : !debuginfo.subroutine<() -> (): DW_CC_normal>
-#subprogram1 = #debuginfo.subprogram<sourceName = <"map_fn">> : !debuginfo.subroutine<(!pop.simd<rank, f32>) -> (): DW_CC_normal>
-// CHECK: [[SR_TYPE:!.*]] = !debuginfo.subroutine<(!pop.simd<2, f32>) -> (): DW_CC_normal>
+#subprogram1 = #debuginfo.subprogram<sourceName = <"map_fn">> : !debuginfo.subroutine<(!kgen.simd<rank, f32>) -> (): DW_CC_normal>
+// CHECK: [[SR_TYPE:!.*]] = !debuginfo.subroutine<(!kgen.simd<2, f32>) -> (): DW_CC_normal>
 // CHECK: [[SP:#.*]] = #debuginfo.subprogram<{{.*}}> : [[SR_TYPE]]
 // CHECK: [[BREAK_LOC:#.*]] = loc(fused<[[SP]]>
 #loc3 = loc(fused<#subprogram>["a":0:0])

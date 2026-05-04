@@ -89,26 +89,26 @@ kgen.generator @nodebug_inline_me<T: type>(%arg0: !kgen.param<T>) always_inline_
 
 // CHECK-LABEL: kgen.generator @foo
 kgen.generator @foo() {
-  // CHECK: kgen.param.declare.region SomeClosure = <DT: dtype, N>(%[[ARG:.*]]: !pop.simd<N, DT>
+  // CHECK: kgen.param.declare.region SomeClosure = <DT: dtype, N>(%[[ARG:.*]]: !kgen.simd<N, DT>
   // CHECK-NEXT: kgen.param.declare A = <1> loc(#[[LOC:.*]])
   // CHECK-NEXT: kgen.return %[[ARG]]
   kgen.call @bar() : () -> ()
-  // CHECK: kgen.param.declare.region SomeClosure0[SomeClosure] = <DT0: dtype, N0>(%[[ARG0:.*]]: !pop.simd<N0, DT0>
+  // CHECK: kgen.param.declare.region SomeClosure0[SomeClosure] = <DT0: dtype, N0>(%[[ARG0:.*]]: !kgen.simd<N0, DT0>
   // CHECK-NEXT: kgen.param.declare A0 = <1> loc(#[[LOC0:.*]])
-  // CHECK-NEXT: kgen.return %[[ARG0]] : !pop.simd<N0, DT0> loc(#[[LOC0]])
+  // CHECK-NEXT: kgen.return %[[ARG0]] : !kgen.simd<N0, DT0> loc(#[[LOC0]])
   kgen.call @bar() : () -> ()
   kgen.return
 }
 kgen.generator @bar() always_inline {
-  kgen.param.declare.region SomeClosure = <DT: dtype, N>(%arg0: !pop.simd<N, DT>) capturing -> !pop.simd<N, DT> {
+  kgen.param.declare.region SomeClosure = <DT: dtype, N>(%arg0: !kgen.simd<N, DT>) capturing -> !kgen.simd<N, DT> {
     kgen.param.declare A = <1> loc(#loc)
-    kgen.return %arg0 : !pop.simd<N, DT> loc(#loc)
+    kgen.return %arg0 : !kgen.simd<N, DT> loc(#loc)
   } loc(#loc)
   kgen.return
 }
 
-// CHECK-DAG: ![[M:.*]] = !debuginfo.member<value: !pop.simd<N, DT>>
-// CHECK-DAG: ![[M0:.*]] = !debuginfo.member<value: !pop.simd<N0, DT0>>
+// CHECK-DAG: ![[M:.*]] = !debuginfo.member<value: !kgen.simd<N, DT>>
+// CHECK-DAG: ![[M0:.*]] = !debuginfo.member<value: !kgen.simd<N0, DT0>>
 // CHECK-DAG: ![[STR:.*]] = !debuginfo.struct<"builtin::$simd::SIMD"(![[M]])>
 // CHECK-DAG: ![[STR0:.*]] = !debuginfo.struct<"builtin::$simd::SIMD"(![[M0]])>
 // CHECK-DAG: ![[SR:.*]] = !debuginfo.subroutine<(![[STR]]) -> (![[STR]]): DW_CC_normal>
@@ -116,7 +116,7 @@ kgen.generator @bar() always_inline {
 // CHECK-DAG: #[[SP:.*]] = #debuginfo.subprogram<{{.*}}, sourceName = <"SomeClosure">, linkageName = "SomeClosure", file = #file, line = 1314, scopeLine = 1314, subprogramFlags = "Definition|Optimized"> : ![[SR]]
 // CHECK-DAG: #[[SP0:.*]] = #debuginfo.subprogram<{{.*}}, sourceName = <"SomeClosure">, linkageName = "SomeClosure", file = #file, line = 1314, scopeLine = 1314, subprogramFlags = "Definition|Optimized"> : ![[SR0]]
 
-!struct = !debuginfo.struct<"builtin::$simd::SIMD"(!debuginfo.member<value: !pop.simd<N, DT>>)>
+!struct = !debuginfo.struct<"builtin::$simd::SIMD"(!debuginfo.member<value: !kgen.simd<N, DT>>)>
 #file = #debuginfo.file<"foo.mlir" in "/">
 #compile_unit = #debuginfo.compile_unit<sourceLanguage = DW_LANG_Mojo, file = #file, producer = "Mojo", isOptimized = true, emissionKind = Full>
 #subprogram2 = #debuginfo.subprogram<compileUnit = #compile_unit, scope = #file, sourceName = <"SomeClosure">, linkageName = "SomeClosure", file = #file, line = 1314, scopeLine = 1314, subprogramFlags = "Definition|Optimized"> : !debuginfo.subroutine<(!struct) -> (!struct): DW_CC_normal>
@@ -150,8 +150,8 @@ kgen.generator @has_debuginfo() {
 
 // -----
 
-// CHECK-DAG: ![[M:.*]] = !debuginfo.member<value: !pop.simd<N, DT>>
-// CHECK-DAG: ![[M0:.*]] = !debuginfo.member<value: !pop.simd<N, DT0>>
+// CHECK-DAG: ![[M:.*]] = !debuginfo.member<value: !kgen.simd<N, DT>>
+// CHECK-DAG: ![[M0:.*]] = !debuginfo.member<value: !kgen.simd<N, DT0>>
 // CHECK-DAG: ![[STR:.*]] = !debuginfo.struct<"builtin::$simd::SIMD"(![[M]])>
 // CHECK-DAG: ![[STR0:.*]] = !debuginfo.struct<"builtin::$simd::SIMD"(![[M0]])>
 // CHECK-DAG: ![[SR:.*]] = !debuginfo.subroutine<(![[STR]]) -> (![[STR]]): DW_CC_normal>
@@ -159,7 +159,7 @@ kgen.generator @has_debuginfo() {
 // CHECK-DAG: #[[SP:.*]] = #debuginfo.subprogram<{{.*}}, sourceName = <"SomeClosure">, linkageName = "SomeClosure", file = #file, line = 1314, scopeLine = 1314, subprogramFlags = "Definition|Optimized"> : ![[SR]]
 // CHECK-DAG: #[[SP0:.*]] = #debuginfo.subprogram<{{.*}}, sourceName = <"SomeClosure">, linkageName = "SomeClosure", file = #file, line = 1314, scopeLine = 1314, subprogramFlags = "Definition|Optimized"> : ![[SR0]]
 
-!struct = !debuginfo.struct<"builtin::$simd::SIMD"(!debuginfo.member<value: !pop.simd<N, DT>>)>
+!struct = !debuginfo.struct<"builtin::$simd::SIMD"(!debuginfo.member<value: !kgen.simd<N, DT>>)>
 #file = #debuginfo.file<"foo.mlir" in "/">
 #compile_unit = #debuginfo.compile_unit<sourceLanguage = DW_LANG_Mojo, file = #file, producer = "Mojo", isOptimized = true, emissionKind = Full>
 #subprogram2 = #debuginfo.subprogram<compileUnit = #compile_unit, scope = #file, sourceName = <"SomeClosure">, linkageName = "SomeClosure", file = #file, line = 1314, scopeLine = 1314, subprogramFlags = "Definition|Optimized"> : !debuginfo.subroutine<(!struct) -> (!struct): DW_CC_normal>
@@ -176,14 +176,14 @@ kgen.generator @foo<DT>() {
   // CHECK:        kgen.param.for
   // CHECK-NEXT: has_next
   // CHECK-NEXT: get_next_iter
-  // CHECK-SAME:     (%arg1 loc(fused<#[[SP0]]>[#[[LOC_ORI]]]) = %arg0 : !pop.simd<N, DT0>) -> !pop.simd<N, DT0>
-  // CHECK:        } else (%arg1: !pop.simd<N, DT0> loc(fused<#[[SP0]]>[#[[LOC_ORI]]]))
+  // CHECK-SAME:     (%arg1 loc(fused<#[[SP0]]>[#[[LOC_ORI]]]) = %arg0 : !kgen.simd<N, DT0>) -> !kgen.simd<N, DT0>
+  // CHECK:        } else (%arg1: !kgen.simd<N, DT0> loc(fused<#[[SP0]]>[#[[LOC_ORI]]]))
   kgen.call @bar() : () -> ()
   kgen.return
 }
 
 kgen.generator @bar() always_inline {
-  kgen.param.declare.region SomeClosure = <DT: dtype, N>(%arg0: !pop.simd<N, DT>) capturing -> !pop.simd<N, DT> {
+  kgen.param.declare.region SomeClosure = <DT: dtype, N>(%arg0: !kgen.simd<N, DT>) capturing -> !kgen.simd<N, DT> {
     hlcf.loop {
       kgen.param.declare A = <1> loc(#loc)
       hlcf.break loc(#loc)
@@ -192,13 +192,13 @@ kgen.generator @bar() always_inline {
     %0 = kgen.param.for I in ?
       has_next :() -> i1 ?
       get_next_iter :() -> () ?
-    (%arg1 loc(#loc) = %arg0 : !pop.simd<N, DT>) -> !pop.simd<N, DT> {
-      kgen.param.yield %arg1 : !pop.simd<N, DT> loc(#loc)
-    } else (%arg1 : !pop.simd<N, DT> loc(#loc)) {
-      kgen.param.yield %arg1 : !pop.simd<N, DT> loc(#loc)
+    (%arg1 loc(#loc) = %arg0 : !kgen.simd<N, DT>) -> !kgen.simd<N, DT> {
+      kgen.param.yield %arg1 : !kgen.simd<N, DT> loc(#loc)
+    } else (%arg1 : !kgen.simd<N, DT> loc(#loc)) {
+      kgen.param.yield %arg1 : !kgen.simd<N, DT> loc(#loc)
     } loc(#loc)
 
-    kgen.return %0 : !pop.simd<N, DT> loc(#loc)
+    kgen.return %0 : !kgen.simd<N, DT> loc(#loc)
   } loc(#loc)
   kgen.return
 }

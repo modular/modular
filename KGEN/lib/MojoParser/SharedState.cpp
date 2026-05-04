@@ -2722,7 +2722,7 @@ FailureOr<TypedAttr> BuiltinFunctionFolder::fold(Operation &op) {
   if (auto splatOp = dyn_cast<POP::SIMDSplatOp>(op)) {
     auto type = evaluator.getReboundType(splatOp.getType());
     if (auto op = findValue(splatOp.getScalar()))
-      return POP::SIMDSplatAttr::get(op, cast<POP::SIMDType>(type));
+      return POP::SIMDSplatAttr::get(op, cast<SIMDType>(type));
   }
 
   // Handle a simple binary operation that folds to a POC binary op.
@@ -2795,11 +2795,11 @@ FailureOr<TypedAttr> BuiltinFunctionFolder::fold(Operation &op) {
 
   if (auto castOp = dyn_cast<POP::CastFromBuiltinOp>(op))
     if (auto input = findValue(castOp.getOperand()))
-      return POP::CastFromBuiltinAttr::get(input, castOp.getType());
+      return CastFromBuiltinAttr::get(input, castOp.getType());
 
   if (auto castOp = dyn_cast<POP::CastToBuiltinOp>(op))
     if (auto input = findValue(castOp.getOperand()))
-      return POP::CastToBuiltinAttr::get(input, castOp.getType());
+      return CastToBuiltinAttr::get(input, castOp.getType());
 
   if (auto selectOp = dyn_cast<POP::SelectOp>(op))
     return foldSelectOp(selectOp);
@@ -2863,20 +2863,20 @@ FailureOr<TypedAttr> BuiltinFunctionFolder::fold(Operation &op) {
           break;
         }
         auto resultType =
-            cast<POP::SIMDType>(evaluator.getReboundType(cmpOp.getType()));
+            cast<SIMDType>(evaluator.getReboundType(cmpOp.getType()));
         auto cmp = POP::SIMDCmpAttr::get(cc, lhs, rhs, resultType);
 
         // For NE comparisons, negate the EQ result with an XOR
         if (cmpOp.getPred() == POP::CmpPredicate::NE) {
           // Splat a boolean 'true' value to the same width as the comparison.
           // This avoids us having to introspect the return type.
-          POP::SIMDAttr oneVal = POP::SIMDAttr::get(
-              POP::DTypeValue(true, DType::kBool),
-              POP::SIMDType::get(
+          KGEN::SIMDAttr oneVal = KGEN::SIMDAttr::get(
+              KGEN::DTypeValue(true, DType::kBool),
+              SIMDType::get(
                   /*size=*/1,
                   DTypeConstantAttr::get(cmpOp.getContext(), DType::kBool)));
           auto oneVecVal =
-              POP::SIMDSplatAttr::get(oneVal, cast<POP::SIMDType>(resultType));
+              POP::SIMDSplatAttr::get(oneVal, cast<SIMDType>(resultType));
           cmp = POP::SIMDXorAttr::get(cmp, oneVecVal);
         }
 
@@ -2928,16 +2928,14 @@ FailureOr<TypedAttr> BuiltinFunctionFolder::fold(Operation &op) {
   if (auto reduceOrOp = dyn_cast<POP::SIMDReduceOrOp>(op)) {
     if (auto lhs = findValue(op.getOperand(0))) {
       return POP::SIMDReduceOrAttr::get(
-          lhs,
-          cast<POP::SIMDType>(evaluator.getReboundType(reduceOrOp.getType())));
+          lhs, cast<SIMDType>(evaluator.getReboundType(reduceOrOp.getType())));
     }
   }
 
   if (auto reduceAndOp = dyn_cast<POP::SIMDReduceAndOp>(op)) {
     if (auto lhs = findValue(op.getOperand(0))) {
       return POP::SIMDReduceAndAttr::get(
-          lhs,
-          cast<POP::SIMDType>(evaluator.getReboundType(reduceAndOp.getType())));
+          lhs, cast<SIMDType>(evaluator.getReboundType(reduceAndOp.getType())));
     }
   }
 
@@ -2991,8 +2989,7 @@ FailureOr<TypedAttr> BuiltinFunctionFolder::fold(Operation &op) {
   if (auto varDecl = dyn_cast<VarDeclOp>(op)) {
     auto eltType = evaluator.getReboundType(varDecl.getType().getElementType());
     // Permit vardecls of certain types we know about.
-    if (eltType.isIntOrIndexOrFloat() ||
-        isa<POP::SIMDType, DTypeType>(eltType)) {
+    if (eltType.isIntOrIndexOrFloat() || isa<SIMDType, DTypeType>(eltType)) {
       varDeclSoFar[varDecl] = UnknownAttr::get(eltType);
       return TypedAttr();
     }
@@ -3105,9 +3102,9 @@ FailureOr<TypedAttr> BuiltinFunctionFolder::fold(Operation &op) {
           LIT::MojoVersionPatchOp>(op)) {
     const ProjectVersion version = M::getMojoVersion();
     auto foldVersionOp = [&](int64_t number) -> TypedAttr {
-      return POP::SIMDAttr::get(
-          POP::DTypeValue(number, KGENDType::index),
-          POP::SIMDType::get(
+      return KGEN::SIMDAttr::get(
+          KGEN::DTypeValue(number, KGENDType::index),
+          SIMDType::get(
               /*size=*/1,
               DTypeConstantAttr::get(op.getContext(), KGENDType::index)));
     };

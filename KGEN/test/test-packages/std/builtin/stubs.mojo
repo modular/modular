@@ -8,7 +8,7 @@
 # ancient relics of Mojo bringup. These should be removed from stubs.mojo and
 # the dependent tests should be migrated off of them.
 comptime string = __mlir_type.`!kgen.string`
-comptime float = __mlir_type.`!pop.scalar<f64>`
+comptime float = __mlir_type.`!kgen.scalar<f64>`
 
 
 struct _MLIR:
@@ -345,18 +345,20 @@ struct FloatLiteral[value: __mlir_type.`!pop.float_literal`](
 
 
 struct FloatDyn(TrivialRegisterPassable):
-    var _mlir_value: __mlir_type.`!pop.scalar<f64>`
+    var _mlir_value: __mlir_type.`!kgen.scalar<f64>`
 
     @always_inline("builtin")
     @implicit
-    def __init__(out self, value: __mlir_type.`!pop.scalar<f64>`):
+    def __init__(out self, value: __mlir_type.`!kgen.scalar<f64>`):
         self._mlir_value = value
 
     @always_inline("builtin")
     @implicit
     def __init__(out self, value: FloatLiteral):
         self = __mlir_attr[
-            `#pop<float_literal_convert<`, +value.value, `>> : !pop.scalar<f64>`
+            `#pop<float_literal_convert<`,
+            +value.value,
+            `>> : !kgen.scalar<f64>`,
         ]
 
     @always_inline("builtin")
@@ -386,9 +388,9 @@ struct Int(Intable, Stringable, TrivialRegisterPassable):
     @implicit
     def __init__(out self, value: IntLiteral[_]):
         self._mlir_value = __mlir_attr[
-            `#pop.cast_to_builtin<#pop.int_literal_convert<`,
+            `#kgen.cast_to_builtin<#pop.int_literal_convert<`,
             +value.value,
-            `> : !pop.scalar<index>> : index`,
+            `> : !kgen.scalar<index>> : index`,
         ]
 
     @always_inline("builtin")
@@ -1722,7 +1724,7 @@ comptime UInt32 = SIMD[DType.uint32, 1]
 
 struct SIMD[dtype: DType, size: Int](TrivialRegisterPassable):
     comptime _mlir_type = __mlir_type[
-        `!pop.simd<`, Self.size._mlir_value, `, `, Self.dtype._mlir_value, `>`
+        `!kgen.simd<`, Self.size._mlir_value, `, `, Self.dtype._mlir_value, `>`
     ]
 
     var _mlir_value: Self._mlir_type
@@ -1741,7 +1743,7 @@ struct SIMD[dtype: DType, size: Int](TrivialRegisterPassable):
     @always_inline
     def __init__(out self, value: Int, /):
         var index = __mlir_op.`pop.cast_from_builtin`[
-            _type=__mlir_type.`!pop.scalar<index>`
+            _type=__mlir_type.`!kgen.scalar<index>`
         ](value._mlir_value)
         var s = __mlir_op.`pop.cast`[_type=SIMD[Self.dtype, 1]._mlir_type](
             index

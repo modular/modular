@@ -109,7 +109,7 @@ void KGEN::collectParameterReferences(
 }
 
 /// Return true if the specified type contains parameter references, e.g.
-/// `!pop.scalar<dt>` returns true, but `!pop.scalar<f32>` returns false.
+/// `!kgen.scalar<dt>` returns true, but `!kgen.scalar<f32>` returns false.
 ///
 /// TODO: This isn't an efficient method, it walks the entire type graph without
 /// caching.

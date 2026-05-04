@@ -30,4 +30,4 @@ def main():
 # CHECK: ![[FUNCTION_TYPE]] = !{!{{[0-9]+}}, ![[ARG_TYPE:[0-9]+]]}
 
 # The function arg type should have been concretized into the actual dtype.
-# CHECK: ![[ARG_TYPE]] = !DICompositeType(tag: DW_TAG_array_type, name: "!pop.simd<4, ui32>"
+# CHECK: ![[ARG_TYPE]] = !DICompositeType(tag: DW_TAG_array_type, name: "!kgen.simd<4, ui32>"

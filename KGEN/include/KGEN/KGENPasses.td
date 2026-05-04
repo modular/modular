@@ -314,16 +314,16 @@ def LegalizePOPOperations : Pass<"legalize-pop-operations"> {
     For example:
 
     ```mlir
-    %res = pop.add %a, %b : !pop.scalar<f8e4m3fn>
+    %res = pop.add %a, %b : !kgen.scalar<f8e4m3fn>
     ```
 
     will be legalized to:
 
     ```mlir
-    %a_f32 = pop.cast %a : !pop.scalar<f8e4m3fn> to !pop.scalar<f32>
-    %b_f32 = pop.cast %b : !pop.scalar<f8e4m3fn> to !pop.scalar<f32>
-    %res_f32 = pop.add %a_f32, %b_f32 : !pop.scalar<f32>
-    %res = pop.cast %res_f32 : !pop.scalar<f32> to !pop.scalar<f8e4m3fn>
+    %a_f32 = pop.cast %a : !kgen.scalar<f8e4m3fn> to !kgen.scalar<f32>
+    %b_f32 = pop.cast %b : !kgen.scalar<f8e4m3fn> to !kgen.scalar<f32>
+    %res_f32 = pop.add %a_f32, %b_f32 : !kgen.scalar<f32>
+    %res = pop.cast %res_f32 : !kgen.scalar<f32> to !kgen.scalar<f8e4m3fn>
     ```
   }];
 

@@ -2,7 +2,7 @@
 
 // COM: simple local dead argument.
 // CHECK-LABEL: kgen.func @simple(%arg0: index) -> index
-kgen.func @simple(%dead_arg: !pop.scalar<f32> , %live_arg: index) -> index {
+kgen.func @simple(%dead_arg: !kgen.scalar<f32> , %live_arg: index) -> index {
   kgen.return %live_arg: index
 }
 
@@ -17,15 +17,15 @@ kgen.func export @simple_ret_use(%arg: index) -> index {
 
 // COM: simple dead argument due to callee's argument being dead.
 // CHECK-LABEL: kgen.func @f_dead_arg(%arg0: index) -> index
-kgen.func @f_dead_arg(%dead_arg: !pop.scalar<f32>, %live_arg: index) -> index {
+kgen.func @f_dead_arg(%dead_arg: !kgen.scalar<f32>, %live_arg: index) -> index {
   // CHEKC: [[V0:%.*]] = kgen.call @g_dead_arg(): () -> index
-  %0 = kgen.call @g_dead_arg(%dead_arg): (!pop.scalar<f32>) -> index
+  %0 = kgen.call @g_dead_arg(%dead_arg): (!kgen.scalar<f32>) -> index
   %1 = index.add %0, %live_arg
   kgen.return %1: index
 }
 
 // CHECK-LABEL: kgen.func @g_dead_arg() -> index {
-kgen.func @g_dead_arg(%dead_arg: !pop.scalar<f32>) -> index {
+kgen.func @g_dead_arg(%dead_arg: !kgen.scalar<f32>) -> index {
   %0 = index.constant 0
   kgen.return %0: index
 }
@@ -97,21 +97,21 @@ kgen.func @f_reference() {
 // -----
 
 // CHECK-LABEL: kgen.func @test_correctly_handle_pure_ops_callee(%arg0: !pop.array<2, scalar<index>>)
-kgen.func @test_correctly_handle_pure_ops_callee(%arg0: !pop.array<2, scalar<index>>, %arg1: !pop.scalar<index>, %arg2: index) {
+kgen.func @test_correctly_handle_pure_ops_callee(%arg0: !pop.array<2, scalar<index>>, %arg1: !kgen.scalar<index>, %arg2: index) {
   %0 = pop.array.get %arg0[1] : !pop.array<2, scalar<index>>
-  %1 = pop.cast_to_builtin %0 : !pop.scalar<index> to index
+  %1 = pop.cast_to_builtin %0 : !kgen.scalar<index> to index
   %stack = pop.stack_allocation 1 x index marked
   pop.store %1, %stack : !kgen.pointer<index>
   kgen.return
 }
 
-// CHECK-LABEL: kgen.func @test_correctly_handle_pure_ops(%arg0: index, %arg1: !pop.scalar<index>) {
-kgen.func @test_correctly_handle_pure_ops(%arg0: index, %arg1: !pop.scalar<index>) {
+// CHECK-LABEL: kgen.func @test_correctly_handle_pure_ops(%arg0: index, %arg1: !kgen.scalar<index>) {
+kgen.func @test_correctly_handle_pure_ops(%arg0: index, %arg1: !kgen.scalar<index>) {
   %0 = index.add %arg0, %arg0
   %1 = index.add %0, %arg0
-  %3 = pop.cast_from_builtin %1 : index to !pop.scalar<index>
+  %3 = pop.cast_from_builtin %1 : index to !kgen.scalar<index>
   %2 = index.add %1, %0
   %4 = pop.array.create [%3, %arg1] : !pop.array<2, scalar<index>>
-  kgen.call @test_correctly_handle_pure_ops_callee(%4, %arg1, %2) : (!pop.array<2, scalar<index>>, !pop.scalar<index>, index) -> ()
+  kgen.call @test_correctly_handle_pure_ops_callee(%4, %arg1, %2) : (!pop.array<2, scalar<index>>, !kgen.scalar<index>, index) -> ()
   kgen.return
 }

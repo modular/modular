@@ -142,14 +142,14 @@ Python identifier syntax:
 
 ```python
 def takeMLIRTypes(a: __mlir_type.f32,
-                 b: __mlir_type.`!kgen.pointer<!pop.scalar<ui32>>`): pass
+                 b: __mlir_type.`!kgen.pointer<!kgen.scalar<ui32>>`): pass
 
 struct Bool:
   var value : __mlir_type.i1
 struct Int:
   var value : __mlir_type.index
 struct F32:
-  var value : __mlir_type.`!pop.scalar<f32>`
+  var value : __mlir_type.`!kgen.scalar<f32>`
 ```
 
 The "takeMLIRTypes" function doesn't take values of user defined struct type, it
@@ -227,7 +227,7 @@ comparison condition code. I used:
 
 ```sh
 $ kgen-opt  --mlir-print-op-generic KGEN/test/pop-ir/pop-ops.mlir | grep pop.cmp
-    %0 = "pop.cmp"(%arg0, %arg1) {pred = #pop<cmp_pred ge>} : (!pop.scalar<f32>, !pop.scalar<f32>) -> !pop.scalar<bool>
+    %0 = "pop.cmp"(%arg0, %arg1) {pred = #pop<cmp_pred ge>} : (!kgen.scalar<f32>, !kgen.scalar<f32>) -> !kgen.scalar<bool>
 ...
 ```
 
@@ -235,8 +235,8 @@ which told me how to spell a comparison. This is accessible in Mojo like
 this:
 
 ```Python
-def cmp(lhs: __mlir_type.`!pop.scalar<f32>`,
-       rhs: __mlir_type.`!pop.scalar<bool>`) -> __mlir_type.`!pop.scalar<bool>`:
+def cmp(lhs: __mlir_type.`!kgen.scalar<f32>`,
+       rhs: __mlir_type.`!kgen.scalar<bool>`) -> __mlir_type.`!kgen.scalar<bool>`:
   return _mlir_op.`pop.cmp`[pred: __mlir_attr.`#pop<cmp_pred ge>`](lhs, rhs)
 ```
 

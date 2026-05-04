@@ -29,7 +29,7 @@ inline lldb::ValueObjectSP nonSyntheticChild(lldb_private::ValueObject &parent,
 /// Walk through Mojo's single-field LIT/KGEN wrapper types
 /// (`_mlir_value`, `value`, `address`, `_value`, `_storage`) until we land on
 /// a plain pointer or scalar ValueObject. Also descends through a
-/// `!pop.simd<1, ...>` wrapper (as used by `Scalar[T]`) into its single
+/// `!kgen.simd<1, ...>` wrapper (as used by `Scalar[T]`) into its single
 /// element to reach the underlying integer/float scalar that LLDB doesn't
 /// recognize as scalar directly. Leaves the input unchanged if it already
 /// is a scalar/pointer, or if none of the known wrappers apply.
@@ -65,7 +65,7 @@ inline lldb::ValueObjectSP unwrapToScalarOrPointer(lldb::ValueObjectSP field) {
     //
     // We check the type name explicitly to avoid descending into arbitrary
     // 1-child wrappers that happen to lack a named member field.
-    if (llvm::StringRef(field->GetTypeName()).starts_with("!pop.simd<1,")) {
+    if (llvm::StringRef(field->GetTypeName()).starts_with("!kgen.simd<1,")) {
       if (auto inner = field->GetChildAtIndex(0)) {
         field = inner;
         continue;

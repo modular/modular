@@ -307,7 +307,7 @@ void ParameterCollector::collectUsesFromTypesImpl(
   size_t nestedRequiredDepth = 0;
 
   // Recursively check for any nested types, e.g. the input/outputs of a
-  // function type, types like !pop.scalar<ty> etc.
+  // function type, types like !kgen.scalar<ty> etc.
   type.walkImmediateSubElements(
       [&](Attribute attr) {
         collectUsesFromAttr(attr, uses, hasNestedConstExpr, nestedRequiredDepth,

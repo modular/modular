@@ -20,7 +20,7 @@ def main():
     # sum = (1+2+...+12) = 78, plus count (12) = 90
     var result = __mlir_op.`pop.external_call`[
         func="c_func_variadic_many_floats".value,
-        fnType=__mlir_attr[`(!pop.scalar<si64>) -> !pop.scalar<f64>`,],
+        fnType=__mlir_attr[`(!kgen.scalar<si64>) -> !kgen.scalar<f64>`,],
         _type=Float64,
     ](
         Int(12),

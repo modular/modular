@@ -84,7 +84,7 @@ static LogicalResult getCTypeForType(FuncOp func, Type t,
     return success();
   }
 
-  if (auto simd = dyn_cast<POP::SIMDType>(t)) {
+  if (auto simd = dyn_cast<SIMDType>(t)) {
     // Since the vector_size attribute only works on GNU and CLANG compilers,
     // we pass in an array.
     if (failed(getCTypeForDType(func, *simd.getResolvedDType(), types)))

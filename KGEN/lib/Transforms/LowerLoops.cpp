@@ -77,7 +77,7 @@ LogicalResult LowerLoops::lowerForLoop(ForOp forLoop) {
       return v;
     mlir::Location loc = forLoop->getLoc();
     auto popIndexTy =
-        POP::SIMDType::get(v.getContext(), 1, KGENDType(KGENDType::index));
+        SIMDType::get(v.getContext(), 1, KGENDType(KGENDType::index));
     Value asPopIndex = POP::CastOp::create(rewriter, loc, popIndexTy, v);
     return POP::CastToBuiltinOp::create(rewriter, loc, rewriter.getIndexType(),
                                         asPopIndex);

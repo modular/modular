@@ -18,7 +18,7 @@ kgen.generator @impl(
     %i: index,
     %p0: !kgen.pointer<simd<4, f32>>,
     %p1: !kgen.pointer<scalar<si32>>) {
-  kgen.call @generic_offset_load_store<:type !pop.simd<4, f32>>(%i, %p0) : (index, !kgen.pointer<simd<4, f32>>) -> ()
-  kgen.call @generic_offset_load_store<:type !pop.scalar<si32>>(%i, %p1) : (index, !kgen.pointer<scalar<si32>>) -> ()
+  kgen.call @generic_offset_load_store<:type !kgen.simd<4, f32>>(%i, %p0) : (index, !kgen.pointer<simd<4, f32>>) -> ()
+  kgen.call @generic_offset_load_store<:type !kgen.scalar<si32>>(%i, %p1) : (index, !kgen.pointer<scalar<si32>>) -> ()
   kgen.return
 }

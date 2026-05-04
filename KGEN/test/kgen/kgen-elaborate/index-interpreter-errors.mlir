@@ -34,23 +34,23 @@ kgen.generator export @callIt() -> index {
 module attributes {M.target_info = #M.target<triple = "", arch = "", features = "", data_layout = "",  simd_bit_width = 128, index_bit_width = 32>, kgen.env = #kgen.env<{}>} {
 
 // expected-note @below {{failed to interpret function @shr_index}}
-kgen.generator @shr_index(%arg0 : !pop.scalar<index>, %arg1 : !pop.scalar<index>) -> !pop.scalar<index> {
-// expected-note @below {{failed to interpret operation pop.shr(#pop<simd 3> : !pop.scalar<index>, #pop<simd 63> : !pop.scalar<index>)}}
+kgen.generator @shr_index(%arg0 : !kgen.scalar<index>, %arg1 : !kgen.scalar<index>) -> !kgen.scalar<index> {
+// expected-note @below {{failed to interpret operation pop.shr(#kgen<simd 3> : !kgen.scalar<index>, #kgen<simd 63> : !kgen.scalar<index>)}}
 // expected-note @below {{failed to interpret pop.shr}}
-  %0 = pop.shr %arg0, %arg1 : !pop.scalar<index>
-  kgen.return %0 : !pop.scalar<index>
+  %0 = pop.shr %arg0, %arg1 : !kgen.scalar<index>
+  kgen.return %0 : !kgen.scalar<index>
 }
 
 // CHECK-LABEL: kgen.func export @testShr
 // expected-error @below {{function instantiation failed}}
-kgen.generator export @testShr() -> !pop.scalar<index> {
+kgen.generator export @testShr() -> !kgen.scalar<index> {
   kgen.param.declare S0: scalar<index> = <3>
   kgen.param.declare S1: scalar<index> = <63>
   // expected-note @below {{failed to compile-time evaluate function call}}
-  kgen.param.declare S2: scalar<index> = <apply(:(!pop.scalar<index>, !pop.scalar<index>) -> !pop.scalar<index> @shr_index, S0, S1)>
+  kgen.param.declare S2: scalar<index> = <apply(:(!kgen.scalar<index>, !kgen.scalar<index>) -> !kgen.scalar<index> @shr_index, S0, S1)>
   // CHECK: = <0>
-  %0 = kgen.param.constant: !pop.scalar<index> = <S2>
-  kgen.return %0 : !pop.scalar<index>
+  %0 = kgen.param.constant: !kgen.scalar<index> = <S2>
+  kgen.return %0 : !kgen.scalar<index>
 }
 
 }
@@ -62,23 +62,23 @@ kgen.generator export @testShr() -> !pop.scalar<index> {
 module attributes {M.target_info = #M.target<triple = "", arch = "", features = "", data_layout = "",  simd_bit_width = 128, index_bit_width = 64>, kgen.env = #kgen.env<{}>} {
 
 // expected-note @below {{failed to interpret function @shl_index}}
-kgen.generator @shl_index(%arg0 : !pop.scalar<index>, %arg1 : !pop.scalar<index>) -> !pop.scalar<index> {
-// expected-note @below {{failed to interpret operation pop.shl(#pop<simd 3> : !pop.scalar<index>, #pop<simd 65> : !pop.scalar<index>)}}
+kgen.generator @shl_index(%arg0 : !kgen.scalar<index>, %arg1 : !kgen.scalar<index>) -> !kgen.scalar<index> {
+// expected-note @below {{failed to interpret operation pop.shl(#kgen<simd 3> : !kgen.scalar<index>, #kgen<simd 65> : !kgen.scalar<index>)}}
 // expected-note @below {{failed to interpret pop.shl}}
-  %0 = pop.shl %arg0, %arg1 : !pop.scalar<index>
-  kgen.return %0 : !pop.scalar<index>
+  %0 = pop.shl %arg0, %arg1 : !kgen.scalar<index>
+  kgen.return %0 : !kgen.scalar<index>
 }
 
 // CHECK-LABEL: kgen.func export @testShl
 // expected-error @below {{function instantiation failed}}
-kgen.generator export @testShl() -> !pop.scalar<index> {
+kgen.generator export @testShl() -> !kgen.scalar<index> {
   kgen.param.declare S0: scalar<index> = <3>
   kgen.param.declare S1: scalar<index> = <65>
   // expected-note @below {{failed to compile-time evaluate function call}}
-  kgen.param.declare S2: scalar<index> = <apply(:(!pop.scalar<index>, !pop.scalar<index>) -> !pop.scalar<index> @shl_index, S0, S1)>
+  kgen.param.declare S2: scalar<index> = <apply(:(!kgen.scalar<index>, !kgen.scalar<index>) -> !kgen.scalar<index> @shl_index, S0, S1)>
   // CHECK: = <0>
-  %0 = kgen.param.constant: !pop.scalar<index> = <S2>
-  kgen.return %0 : !pop.scalar<index>
+  %0 = kgen.param.constant: !kgen.scalar<index> = <S2>
+  kgen.return %0 : !kgen.scalar<index>
 }
 
 }

@@ -68,7 +68,7 @@ static StructType lowerPackStructType(StructType type) {
                          type.getIsMemoryOnly(), type.getMinAlignment(), false);
 }
 
-/// Lower `!kgen.variant` to a pair of `!pop.union` and a `!pop.scalar`.
+/// Lower `!kgen.variant` to a pair of `!pop.union` and a `!kgen.scalar`.
 static StructType lowerVariantType(VariantType type) {
   SmallVector<Type> types = llvm::to_vector(type.getTypes());
   auto unionType = POP::UnionType::get(type.getContext(), types);
@@ -78,8 +78,7 @@ static StructType lowerVariantType(VariantType type) {
   assert(succeeded(discrType) && "expected to get a discriminant dtype");
 
   return StructType::get(
-      {unionType,
-       POP::SIMDType::get(type.getContext(), /*size=*/1, *discrType)});
+      {unionType, SIMDType::get(type.getContext(), /*size=*/1, *discrType)});
 }
 
 /// Lower `#kgen.variant` to a struct attribute.
@@ -90,8 +89,8 @@ static StructAttr lowerVariantAttr(VariantAttr attr) {
   auto unionType = cast<POP::UnionType>(elementTypes.front());
   auto unionAttr = POP::UnionAttr::get(attr.getValue(), unionType);
 
-  auto scalarType = cast<POP::SIMDType>(elementTypes.back());
-  auto discrAttr = POP::SIMDAttr::get(attr.getIndex(), scalarType);
+  auto scalarType = cast<SIMDType>(elementTypes.back());
+  auto discrAttr = KGEN::SIMDAttr::get(attr.getIndex(), scalarType);
 
   return StructAttr::get({unionAttr, discrAttr}, structType);
 }
@@ -251,11 +250,11 @@ static void rewriteFn(Operation *op, mlir::AttrTypeReplacer &replacer) {
     auto structType = cast<StructType>(create->getResultTypes().front());
     auto elementTypes = *structType.getElementTypes();
     auto unionType = cast<POP::UnionType>(elementTypes.front());
-    auto discrType = cast<POP::SIMDType>(elementTypes.back());
+    auto discrType = cast<SIMDType>(elementTypes.back());
     Value unionVal = POP::UnionWrapOp::create(b, op->getLoc(), unionType,
                                               create.getOperand());
     Value discrVal = ParamConstantOp::create(
-        b, op->getLoc(), POP::SIMDAttr::get(create.getIndex(), discrType));
+        b, op->getLoc(), KGEN::SIMDAttr::get(create.getIndex(), discrType));
     b.replaceOpWithNewOp<StructCreateOp>(op, structType,
                                          ValueRange{unionVal, discrVal});
     return;
@@ -263,12 +262,11 @@ static void rewriteFn(Operation *op, mlir::AttrTypeReplacer &replacer) {
   if (auto is = dyn_cast<VariantIsOp>(op)) {
     Value variantVal = is->getOperand(0);
     auto structType = cast<StructType>(variantVal.getType());
-    auto discrType =
-        cast<POP::SIMDType>((*structType.getElementTypes()).back());
+    auto discrType = cast<SIMDType>((*structType.getElementTypes()).back());
     Value discrVal =
         StructExtractOp::create(b, op->getLoc(), variantVal, b.getIndexAttr(1));
     Value discrCst = ParamConstantOp::create(
-        b, op->getLoc(), POP::SIMDAttr::get(is.getIndex(), discrType));
+        b, op->getLoc(), KGEN::SIMDAttr::get(is.getIndex(), discrType));
     Value isEq = POP::CmpOp::create(b, op->getLoc(), POP::CmpPredicate::EQ,
                                     discrVal, discrCst);
     b.replaceOpWithNewOp<POP::CastToBuiltinOp>(op, b.getI1Type(), isEq);

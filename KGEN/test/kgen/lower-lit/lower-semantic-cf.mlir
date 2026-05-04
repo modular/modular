@@ -697,13 +697,13 @@ lit.fn @try_in_loop(%arg0: i1) {
 }
 
 // CHECK-LABEL: lit.fn @recurse
-// CHECK-SAME (%x: !pop.scalar<index>) -> !pop.scalar<index> {
-// CHECK-NEXT: %0 = kgen.call @recurse(%x) : !lit.generator<("x": !pop.scalar<index>) -> !pop.scalar<index>>
-// CHECK-NEXT: kgen.return %0 : !pop.scalar<index>
+// CHECK-SAME (%x: !kgen.scalar<index>) -> !kgen.scalar<index> {
+// CHECK-NEXT: %0 = kgen.call @recurse(%x) : !lit.generator<("x": !kgen.scalar<index>) -> !kgen.scalar<index>>
+// CHECK-NEXT: kgen.return %0 : !kgen.scalar<index>
 // CHECK-NEXT:}
-lit.fn @recurse(%x: !pop.scalar<index>) -> !pop.scalar<index> {
-  %0 = kgen.call @recurse(%x) : !lit.generator<("x": !pop.scalar<index>) -> !pop.scalar<index>>
-  lit.return %0 : !pop.scalar<index>
+lit.fn @recurse(%x: !kgen.scalar<index>) -> !kgen.scalar<index> {
+  %0 = kgen.call @recurse(%x) : !lit.generator<("x": !kgen.scalar<index>) -> !kgen.scalar<index>>
+  lit.return %0 : !kgen.scalar<index>
   lit.end_fn
 }
 

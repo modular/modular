@@ -425,12 +425,12 @@ kgen.func @lower_args_with_arg_metadata(
 //===----------------------------------------------------------------------===//
 
 // CHECK-LABEL: @external_call_pack_expand
-kgen.func @external_call_pack_expand(%a: !pop.scalar<si32>, %b: !pop.scalar<f32>) {
+kgen.func @external_call_pack_expand(%a: !kgen.scalar<si32>, %b: !kgen.scalar<f32>) {
   // CHECK: [[PACK:%.*]] = kgen.struct.create
   %pack = kgen.struct.create(%a, %b) : !kgen.struct<(scalar<si32>, scalar<f32>) isParamPack>
   // CHECK: [[V0:%.*]] = kgen.struct.extract [[PACK]][0]
   // CHECK: [[V1:%.*]] = kgen.struct.extract [[PACK]][1]
-  // CHECK: pop.external_call @my_extern([[V0]], [[V1]]) : (!pop.scalar<si32>, !pop.scalar<f32>) -> ()
+  // CHECK: pop.external_call @my_extern([[V0]], [[V1]]) : (!kgen.scalar<si32>, !kgen.scalar<f32>) -> ()
   pop.external_call @my_extern(%pack)
     : (!kgen.struct<(scalar<si32>, scalar<f32>) isParamPack>) -> ()
   kgen.return
@@ -440,7 +440,7 @@ kgen.func @external_call_pack_expand(%a: !pop.scalar<si32>, %b: !pop.scalar<f32>
 // variadic args are forwarded to a C variadic function (e.g. fcntl(fd, cmd, *args)).
 // CHECK-LABEL: @external_call_nested_pack
 kgen.func @external_call_nested_pack(
-    %a: !pop.scalar<si32>, %b: !pop.scalar<f32>, %c: !pop.scalar<f64>) {
+    %a: !kgen.scalar<si32>, %b: !kgen.scalar<f32>, %c: !kgen.scalar<f64>) {
   %inner = kgen.struct.create(%a, %b) : !kgen.struct<(scalar<si32>, scalar<f32>) isParamPack>
   %outer = kgen.struct.create(%inner, %c)
     : !kgen.struct<(struct<(scalar<si32>, scalar<f32>) isParamPack>, scalar<f64>) isParamPack>
@@ -451,7 +451,7 @@ kgen.func @external_call_nested_pack(
   // CHECK: [[B:%.*]] = kgen.struct.extract [[INNER]][1]
   // CHECK: [[C:%.*]] = kgen.struct.extract %{{.*}}[1]
   // CHECK: pop.external_call @my_extern([[A]], [[B]], [[C]])
-  // CHECK-SAME: (!pop.scalar<si32>, !pop.scalar<f32>, !pop.scalar<f64>) -> ()
+  // CHECK-SAME: (!kgen.scalar<si32>, !kgen.scalar<f32>, !kgen.scalar<f64>) -> ()
   pop.external_call @my_extern(%outer)
     : (!kgen.struct<(struct<(scalar<si32>, scalar<f32>) isParamPack>, scalar<f64>) isParamPack>) -> ()
   kgen.return

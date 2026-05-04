@@ -1009,4 +1009,163 @@ def KGEN_NeverType : KGENType<"Never", "never"> {
   let assemblyFormat = "";
 }
 
+//===----------------------------------------------------------------------===//
+// SIMDType
+//===----------------------------------------------------------------------===//
+
+def KGEN_SIMDType : KGENType<"SIMD", "simd", [
+    DeclareTypeInterfaceMethods<DataLayoutInterface>,
+    DeclareTypeInterfaceMethods<MemoryableTypeInterface>,
+    DeclareTypeInterfaceMethods<ParameterTypeInterface>]> {
+  let summary = "parameterized SIMD vector type";
+  let description = [{
+    This type is parameterized with a size and a !kgen.dtype type.
+  }];
+
+  let parameters = (ins "TypedAttr":$size, "TypedAttr":$dType);
+  let assemblyFormat = [{
+    `<` custom<IndexParamValue>($size) `,` ` `
+        custom<DTypeParamValue>($dType) `>`
+  }];
+  let genVerifyDecl = 1;
+
+  let builders = [
+    TypeBuilderWithInferredContext<(ins "TypedAttr":$size, "TypedAttr":$dtype)>,
+    TypeBuilderWithInferredContext<(ins "int64_t":$size, "TypedAttr":$dtype)>,
+    TypeBuilder<(ins "int64_t":$size, "KGENDType":$dtype)>
+  ];
+
+  let extraClassDeclaration = [{
+    /// Try to narrow the dtype expression of the SIMD type to a value.
+    std::optional<KGENDType> getResolvedDType() const;
+    /// Try to narrow the size expression of the SIMD type to an integer.
+    std::optional<int64_t> getResolvedSize() const;
+    /// Returns true if this is known to be a scalar type.
+    bool isScalar() const { return getResolvedSize() == 1; }
+  }];
+}
+
+//===----------------------------------------------------------------------===//
+// SIMD type constraints
+//===----------------------------------------------------------------------===//
+
+/// A DType constraint.
+class DTypeConstraint<string value> {
+  string pred = value;
+}
+
+class AndDType<list<DTypeConstraint> preds> :
+    DTypeConstraint<"(" # !interleave(!foreach(p, preds, p.pred), " && ") # ")">;
+class OrDType<list<DTypeConstraint> preds> :
+    DTypeConstraint<"(" # !interleave(!foreach(p, preds, p.pred), " || ") # ")">;
+
+def BoundDType : DTypeConstraint<"$_self">;
+def UnboundDType : DTypeConstraint<"!$_self">;
+def BoolDType : DTypeConstraint<"$_self->isBool()">;
+def IndexDType : DTypeConstraint<"$_self->isIndex()">;
+def UIndexDType : DTypeConstraint<"$_self->isUIndex()">;
+def IntDType : DTypeConstraint<"$_self->isInt()">;
+def SIntDType : DTypeConstraint<"$_self->isSInt()">;
+def UIntDType : DTypeConstraint<"$_self->isUInt()">;
+def FloatDType : DTypeConstraint<"$_self->isFloat()">;
+def UI8DType : DTypeConstraint<"*$_self == KGENDType::ui8">;
+def SI8DType : DTypeConstraint<"*$_self == KGENDType::si8">;
+def AddressDType : DTypeConstraint<"$_self->isAddress()">;
+def ArithmeticDType : DTypeConstraint<"$_self->isArithmetic()">;
+
+class BoundAnd<DTypeConstraint pred> : AndDType<[BoundDType, pred]>;
+class UnboundOr<DTypeConstraint pred> : OrDType<[UnboundDType, pred]>;
+
+/// A SIMD type whose dtype conforms to a constraint.
+class SIMDOfDType<DTypeConstraint constraint, string desc> :
+  ConfinedType<KGEN_SIMDType,
+    [CPred<!subst("$_self", "llvm::cast<KGEN::SIMDType>($_self).getResolvedDType()",
+                 constraint.pred)>], desc> {
+  let cppType = "::M::KGEN::SIMDType";
+}
+
+def BoolSIMD : SIMDOfDType<BoundAnd<BoolDType>, "!kgen.simd<N, bool>">;
+def UnboundSIMD : SIMDOfDType<UnboundDType, "!kgen.simd<N, invalid>">;
+def IndexSIMD : SIMDOfDType<BoundAnd<IndexDType>, "!kgen.simd<N, index>">;
+def UIndexSIMD : SIMDOfDType<BoundAnd<UIndexDType>, "!kgen.simd<N, uindex>">;
+def IntegerSIMD : SIMDOfDType<BoundAnd<IntDType>, "!kgen.simd<N, integral>">;
+def FloatSIMD : SIMDOfDType<BoundAnd<FloatDType>, "!kgen.simd<N, float>">;
+def AddressSIMD : SIMDOfDType<BoundAnd<AddressDType>, "!kgen.simd<N, address>">;
+
+def UnboundOrIndexOrIntegerSIMD : SIMDOfDType<
+    UnboundOr<OrDType<[IndexDType, UIndexDType, IntDType]>>,
+    "SIMD type whose element type is either unbound, index, uindex, or integral dtype">;
+def UnboundOrIndexOrArithmeticSIMD : SIMDOfDType<
+    UnboundOr<OrDType<[IndexDType, UIndexDType, ArithmeticDType]>>,
+    "SIMD type whose element type is either unbound, index, uindex, integer or float dtype">;
+
+// TODO: the following two should be unified, but may be subtly different in the
+// current implementation.
+def UnboundOrBoolOrArithmeticSIMD : SIMDOfDType<
+    UnboundOr<OrDType<[BoolDType, ArithmeticDType]>>,
+    "SIMD type whose element type is either unbound, boolean, integral, or float dtype">;
+def UnboundOrBoolOrIndexOrArithmeticSIMD : SIMDOfDType<
+    UnboundOr<OrDType<[BoolDType, IndexDType, UIndexDType, IntDType, FloatDType]>>,
+    "SIMD type whose element type is either unbound, boolean, index, uindex, integral, or float dtype">;
+
+/// A "scalar" type is a SIMD of size 1.
+def ScalarType : ConfinedType<KGEN_SIMDType,
+    [CPred<"llvm::cast<KGEN::SIMDType>($_self).getResolvedSize() && "
+           "*llvm::cast<KGEN::SIMDType>($_self).getResolvedSize() == 1">],
+    "SIMD with size 1">;
+
+/// A scalar type whose dtype conforms to a constraint.
+class ScalarOfDType<DTypeConstraint constraint, string desc> :
+  AllOfType<[SIMDOfDType<constraint, desc>, ScalarType], desc>;
+
+def BoolScalar : ScalarOfDType<BoundAnd<BoolDType>, "!kgen.scalar<bool>">,
+    BuildableType<"KGEN::SIMDType::get(1, DTypeConstantAttr::get("
+                                  "$_builder.getContext(), KGENDType::bool))">;
+def UnboundOrArithmeticScalar : ScalarOfDType<UnboundOr<ArithmeticDType>,
+    "whose type is an arithmetic dtype">;
+
+def UI8Scalar : ScalarOfDType<BoundAnd<UI8DType>, "!kgen.scalar<ui8>">,
+    BuildableType<"KGEN::SIMDType::get(1, DTypeConstantAttr::get("
+                                   "$_builder.getContext(), KGENDType::ui8))">;
+def SI8Scalar : ScalarOfDType<BoundAnd<SI8DType>, "!kgen.scalar<si8>">,
+    BuildableType<"KGEN::SIMDType::get(1, DTypeConstantAttr::get("
+                                   "$_builder.getContext(), KGENDType::si8))">;
+
+def UIndexScalar : ScalarOfDType<BoundAnd<UIndexDType>, "!kgen.scalar<uindex>">,
+    BuildableType<"KGEN::SIMDType::get(1, DTypeConstantAttr::get("
+                                   "$_builder.getContext(), KGENDType::uindex))">;
+
+def IndexScalar : ScalarOfDType<BoundAnd<IndexDType>, "!kgen.scalar<index>">,
+    BuildableType<"KGEN::SIMDType::get(1, DTypeConstantAttr::get("
+                                   "$_builder.getContext(), KGENDType::index))">;
+
+def UnboundOrIndexOrInt : AnyTypeOf<[
+    ScalarOfDType<UnboundOr<OrDType<[IndexDType, UIndexDType, IntDType]>>,
+                  "whose type is unbound, index, or integral dtype">]>;
+
+//===----------------------------------------------------------------------===//
+// SIMD Type Constraint Traits
+//===----------------------------------------------------------------------===//
+
+// Matches if Value has size=1 and same dtype as Operand
+class SIMDSizeOneOfSameDType<string operand, string value> : TypesMatchWith<
+    value # " type matches dtype of the " # operand # " operand", operand,
+    value, "KGEN::SIMDType::get(1, llvm::cast<SIMDType>($_self).getDType())">;
+
+class SIMDSize<string name> :
+    StrFunc<"$" # name # ".getType().cast<KGEN::SIMDType>().getResolvedSize()">;
+
+class SIMDOfSameSize<string lhs, string rhs> :
+  AllMatchSameOperatorTrait<[lhs, rhs], SIMDSize<"_self">.result, "size">;
+
+class AddressSIMDOfSameSize<string operand, string value> : TypesMatchWith<
+    value # " type matches simd type of the " # operand # " operand", operand,
+    value, "KGEN::SIMDType::get(llvm::cast<SIMDType>($_self).getSize(), "
+    "DTypeConstantAttr::get($_self.getContext(), KGENDType::address))">;
+
+class BoolSIMDOfSameSize<string operand, string value> : TypesMatchWith<
+    value # " type matches simd type of the " # operand # " operand", operand,
+    value, "KGEN::SIMDType::get(llvm::cast<SIMDType>($_self).getSize(), "
+    "DTypeConstantAttr::get($_self.getContext(), KGENDType::kBool))">;
+
 #endif // KGEN_KGENDIALECT_KGENTYPES_TD

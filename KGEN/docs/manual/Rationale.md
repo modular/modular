@@ -129,8 +129,8 @@ kgen.generator @algo(%dest: !zap.buffer<?, ?>) {
 }
 ```
 
-Note that we do *not* support dynamic shapes or dtypes for the `!pop.scalar` or
-`!pop.simd` types. These may be *parameterized* with arithmetic that determines
+Note that we do *not* support dynamic shapes or dtypes for the `!kgen.scalar` or
+`!kgen.simd` types. These may be *parameterized* with arithmetic that determines
 the vector length or element, but it may not be dynamic (that is, there is no
 `?` allowed) - parameters are always resolved to static values as part of the
 code generation process. This is because these are register-equivalent types,
@@ -144,10 +144,10 @@ an integer constant in the IR or a parameter expression. You can materialize
 either of these into an SSA value with `kgen.param.constant`:
 
 ```mlir
-kgen.generator @algo<veclen, dt: dtype>(%src: !pop.simd<mul(veclen,veclen), dt>) {
+kgen.generator @algo<veclen, dt: dtype>(%src: !kgen.simd<mul(veclen,veclen), dt>) {
   // These do not need to exist!
-  %dtypeSSAValue = pop.simd.dtype %src: !pop.simd<mul(veclen,veclen), dt>
-  %veclenSSAValue = pop.simd.size %src: !pop.simd<mul(veclen,veclen), dt>
+  %dtypeSSAValue = pop.simd.dtype %src: !kgen.simd<mul(veclen,veclen), dt>
+  %veclenSSAValue = pop.simd.size %src: !kgen.simd<mul(veclen,veclen), dt>
 
   // Use this instead:
   %dtypeSSAValue = kgen.param.constant: dtype = <dt>
@@ -267,13 +267,13 @@ meta parameter binding has the following syntax:
 For example,
 
 ```mlir
-  ty : type = !pop.simd<8, f32>
+  ty : type = !kgen.simd<8, f32>
 ```
 
 or
 
 ```mlir
-  fn : (!pop.simd<4, si32>) -> !pop.simd<4, f32> = @my_function
+  fn : (!kgen.simd<4, si32>) -> !kgen.simd<4, f32> = @my_function
 ```
 
 The type can be omitted, in which case it will default to `index`.
@@ -288,7 +288,7 @@ Function signature specifies types of arguments and the return value and has
 the following syntax:
 
 ```mlir
-  (!pop.simd<4, si32>) -> !pop.simd<4, f32>
+  (!kgen.simd<4, si32>) -> !kgen.simd<4, f32>
 ```
 
 ### Regions
@@ -303,9 +303,9 @@ functions, except:
 For example, a region might look like the following:
 
 ```mlir
-    fn(%arg0: !pop.simd<4, si32>) {
+    fn(%arg0: !kgen.simd<4, si32>) {
       ...
-      kgen.return %res : !pop.simd<4, si32>
+      kgen.return %res : !kgen.simd<4, si32>
     }
 ```
 
@@ -316,10 +316,10 @@ like the following:
 
 ```mlir
 kgen.generator @foo
-    <size, dt: dtype, fn: <size, dt: dtype>(!pop.simd<size, dt>) -> !pop.simd<size, dt>>
-    (%arg: !pop.simd<size, dt>) -> !pop.simd<size, dt> {
-  %x = kgen.call_param[<size, dt: dtype>(!pop.simd<size, dt>) -> !pop.simd<size, dt>: fn]<size = size, dt: dtype = dt>(%arg)
-  kgen.return %x : !pop.simd<size, dt>
+    <size, dt: dtype, fn: <size, dt: dtype>(!kgen.simd<size, dt>) -> !kgen.simd<size, dt>>
+    (%arg: !kgen.simd<size, dt>) -> !kgen.simd<size, dt> {
+  %x = kgen.call_param[<size, dt: dtype>(!kgen.simd<size, dt>) -> !kgen.simd<size, dt>: fn]<size = size, dt: dtype = dt>(%arg)
+  kgen.return %x : !kgen.simd<size, dt>
 }
 
 kgen.generator @bar() {
@@ -328,15 +328,15 @@ kgen.generator @bar() {
   // Call example 1
   kgen.call @foo
     // Parameters:
-    <size = 4, dt : dtype = f32, fn : <size, dt: dtype>(!pop.simd<size, dt>) -> !pop.simd<size, dt> = region>
+    <size = 4, dt : dtype = f32, fn : <size, dt: dtype>(!kgen.simd<size, dt>) -> !kgen.simd<size, dt> = region>
     // Input arguments:
     (%a) :
     // Function signature:
-    (!pop.simd<4, f32>) -> !pop.simd<4, f32>
+    (!kgen.simd<4, f32>) -> !kgen.simd<4, f32>
     // Regions:
-    fn<size, dt: dtype>(%arg: !pop.simd<size, dt>) {
-      %res = pop.mul %arg, %arg : !pop.simd<size, dt>
-      kgen.return %res : !pop.simd<size, dt>
+    fn<size, dt: dtype>(%arg: !kgen.simd<size, dt>) {
+      %res = pop.mul %arg, %arg : !kgen.simd<size, dt>
+      kgen.return %res : !kgen.simd<size, dt>
     }
 
   %b = kgen.param.constant: simd<8, si32> = <<3, 3, ...>>
@@ -344,15 +344,15 @@ kgen.generator @bar() {
   // Call example 2
   kgen.call @foo
     // Parameters:
-    <size = 8, dt : dtype = si32, fn : <size, dt: dtype>(!pop.simd<size, dt>) -> !pop.simd<size, dt> = region>
+    <size = 8, dt : dtype = si32, fn : <size, dt: dtype>(!kgen.simd<size, dt>) -> !kgen.simd<size, dt> = region>
     // Input arguments:
     (%b) :
     // Function signature:
-    (!pop.simd<8, si32>) -> !pop.simd<8, si32>
+    (!kgen.simd<8, si32>) -> !kgen.simd<8, si32>
     // Regions:
-    fn<size, dt: dtype>(%arg: !pop.simd<size, dt>) {
-      %res = pop.add %arg, %arg : !pop.simd<size, dt>
-      kgen.return %res : !pop.simd<size, dt>
+    fn<size, dt: dtype>(%arg: !kgen.simd<size, dt>) {
+      %res = pop.add %arg, %arg : !kgen.simd<size, dt>
+      kgen.return %res : !kgen.simd<size, dt>
     }
   kgen.return
 }
@@ -366,19 +366,19 @@ kgen-opt test.mlir -elaborate-generators="search-path=/Path/to/kgen-elaborate"
 
 ```mlir
 module {
-  kgen.func @"foo,size=4,dt=f32,fn=bar_concrete_region_0"(%arg0: !pop.simd<4, f32>) -> !pop.simd<4, f32> {
-    %0 = pop.mul %arg0, %arg0 : !pop.simd<4, f32>
-    kgen.return %0 : !pop.simd<4, f32>
+  kgen.func @"foo,size=4,dt=f32,fn=bar_concrete_region_0"(%arg0: !kgen.simd<4, f32>) -> !kgen.simd<4, f32> {
+    %0 = pop.mul %arg0, %arg0 : !kgen.simd<4, f32>
+    kgen.return %0 : !kgen.simd<4, f32>
   }
-  kgen.func @"foo,size=8,dt=si32,fn=bar_concrete_region_1"(%arg0: !pop.simd<8, si32>) -> !pop.simd<8, si32> {
-    %0 = pop.add %arg0, %arg0 : !pop.simd<8, si32>
-    kgen.return %0 : !pop.simd<8, si32>
+  kgen.func @"foo,size=8,dt=si32,fn=bar_concrete_region_1"(%arg0: !kgen.simd<8, si32>) -> !kgen.simd<8, si32> {
+    %0 = pop.add %arg0, %arg0 : !kgen.simd<8, si32>
+    kgen.return %0 : !kgen.simd<8, si32>
   }
   kgen.func @bar() {
     %cst = kgen.param.constant: simd<4, f32> = <<"2.0", "2.0", ...>>
-    %0 = kgen.call @"foo,size=4,dt=f32,fn=bar_concrete_region_0"(%cst) : (!pop.simd<4, f32>) -> !pop.simd<4, f32>
+    %0 = kgen.call @"foo,size=4,dt=f32,fn=bar_concrete_region_0"(%cst) : (!kgen.simd<4, f32>) -> !kgen.simd<4, f32>
     %cst_0 = kgen.param.constant: simd<8, si32> = <<3, 3, ...>>
-    %1 = kgen.call @"foo,size=8,dt=si32,fn=bar_concrete_region_1"(%cst_0) : (!pop.simd<8, si32>) -> !pop.simd<8, si32>
+    %1 = kgen.call @"foo,size=8,dt=si32,fn=bar_concrete_region_1"(%cst_0) : (!kgen.simd<8, si32>) -> !kgen.simd<8, si32>
     kgen.return
   }
 }

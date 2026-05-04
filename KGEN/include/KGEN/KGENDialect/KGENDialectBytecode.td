@@ -106,6 +106,13 @@ def MLIRDeferredType : DialectType<(type
 
 def NeverType : DialectType<(type)>;
 
+def SIMDType : DialectType<(type
+  TypedAttr:$size,
+  TypedAttr:$dType
+)> {
+  let cBuilder = "get<$_resultType>(context, $_args)";
+}
+
 def KGENDialectTypes : DialectTypes<"kgen"> {
   let elems = [
     WrappedParamRefType,
@@ -130,6 +137,7 @@ def KGENDialectTypes : DialectTypes<"kgen"> {
     DeferredType,
     MLIRDeferredType,
     NeverType,
+    SIMDType,
   ];
 }
 
@@ -502,6 +510,25 @@ def ToStringDeferredAttr : DialectAttribute<(attr
   ConcreteOptionalAttribute<"UnitAttr">:$needElideType
 )>;
 
+def CastFromBuiltinAttr : DialectAttribute<(attr
+  TypedAttr:$arg, ConcreteType<"SIMDType">:$type
+)>;
+def CastToBuiltinAttr : DialectAttribute<(attr
+  TypedAttr:$arg, Type:$type
+)>;
+
+def DTypeValues :
+  WithParser<"succeeded(readDTypeValues($_reader, $_var))",
+  WithPrinter<"writeDTypeValues($_writer, $_getter)",
+  WithType<"SmallVector<DTypeValue>">>>;
+
+def SIMDAttr : DialectAttribute<(attr
+  DTypeValues:$values,
+  ConcreteType<"SIMDType">:$type
+)> {
+  let cBuilder = "get<$_resultType>(context, $_args)";
+}
+
 def KGENDialectAttributes : DialectAttributes<"kgen"> {
   let elems = [
     ConstraintAttr,
@@ -568,7 +595,10 @@ def KGENDialectAttributes : DialectAttributes<"kgen"> {
     GetBaseTypeNameAttr,
     DeferredAttr,
     AttrCtorDeferredAttr,
-    ToStringDeferredAttr
+    ToStringDeferredAttr,
+    CastFromBuiltinAttr,
+    CastToBuiltinAttr,
+    SIMDAttr
   ];
 }
 

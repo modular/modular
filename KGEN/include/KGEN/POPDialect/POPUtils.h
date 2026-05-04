@@ -24,20 +24,6 @@ namespace M::KGEN::POP {
 /// After it's done, we should remove the IntegerAttr case.
 ErrorOr<int64_t> getScalarIndexValue(TypedAttr value);
 
-/// Verify a conversion between a SIMD type and an MLIR builtin type.
-/// Conversions are assumed to be bi-directional. In error messages, the
-/// direction of the conversion is controlled by the `fromSimd` parameter.
-LogicalResult
-verifyConversionCast(function_ref<InFlightDiagnostic(StringRef)> emitError,
-                     SIMDType simd, Type builtinType, bool fromSimd);
-
-// Fold a CastToBuiltin operation/attribute from a SIMD-typed value to a MLIR
-// builtin type.
-OpFoldResult foldCastToBuiltin(TypedAttr input, Type resultType);
-
-/// Fold a conversion from a MLIR builtin type to a SIMD type.
-OpFoldResult foldCastFromBuiltin(TypedAttr input, SIMDType resultType);
-
 /// Fold a cast between two SIMD types.
 OpFoldResult foldCast(TypedAttr operand, SIMDType resultType,
                       SIMDType inputType, SIMDType outputType,

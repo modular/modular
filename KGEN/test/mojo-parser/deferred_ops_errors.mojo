@@ -17,6 +17,6 @@ struct DType:
     var value: Self.type
 
 
-def test3(x: __mlir_type.`!kgen.struct<(!pop.scalar<f32>)>`):
+def test3(x: __mlir_type.`!kgen.struct<(!kgen.scalar<f32>)>`):
     # expected-error @+1 {{element index 1 out of bounds (>=1)}}
-    _ = __mlir_op.`kgen.struct.extract`[_type = __mlir_type.`!pop.scalar<f32>`, index=__mlir_attr.`1:index`](x)
+    _ = __mlir_op.`kgen.struct.extract`[_type = __mlir_type.`!kgen.scalar<f32>`, index=__mlir_attr.`1:index`](x)

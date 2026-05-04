@@ -286,11 +286,11 @@ kgen.generator @unknown_region_op() {
 }
 
 // CHECK-LABEL: @for_variant
-kgen.func @for_variant(%arg0: index, %arg1: index, %arg2: index, %arg4: !pop.scalar<f32>, %arg5: !pop.scalar<f32>) -> (index, index, index, !pop.scalar<f32>) {
+kgen.func @for_variant(%arg0: index, %arg1: index, %arg2: index, %arg4: !kgen.scalar<f32>, %arg5: !kgen.scalar<f32>) -> (index, index, index, !kgen.scalar<f32>) {
   %var0 = pop.stack_allocation 1 x index
   %var1 = pop.stack_allocation 1 x index
   %var2 = pop.stack_allocation 1 x index
-  %var3 = pop.stack_allocation 1 x !pop.scalar<f32>
+  %var3 = pop.stack_allocation 1 x !kgen.scalar<f32>
 
   // COM: var var0 = arg0
   // COM: var var1 = arg1
@@ -298,7 +298,7 @@ kgen.func @for_variant(%arg0: index, %arg1: index, %arg2: index, %arg4: !pop.sca
   pop.store %arg0, %var0 : !kgen.pointer<index>
   pop.store %arg1, %var1 : !kgen.pointer<index>
   pop.store %arg2, %var2: !kgen.pointer<index>
-  pop.store %arg4, %var3: !kgen.pointer<!pop.scalar<f32>>
+  pop.store %arg4, %var3: !kgen.pointer<!kgen.scalar<f32>>
 
   %idx0 = index.constant 0
   %idx1 = index.constant 1
@@ -311,10 +311,10 @@ kgen.func @for_variant(%arg0: index, %arg1: index, %arg2: index, %arg4: !pop.sca
   // COM: for i in range(2)
   // CHECK: %[[V0:.*]]:4 = hlcf.for [%idx2 to %idx0 step %idx1 sgt sub]
   // CHECK-SAME: (%arg5 = %idx2 : index,
-  // CHECK-SAME   %arg6 = %arg0 : index, %arg7 = %arg1 : index, %arg8 = %arg2 : index, %arg9 = %arg3 : !pop.scalar<f32>,
-  // CHECK-SAME   %arg10 = %arg4 : !pop.scalar<f32>, %arg11 = %arg0 : index, %arg12 = %arg1 : index, %arg13 = %arg2 : index, %arg14 = %arg3 : !pop.scalar<f32>)
-  // CHECK-SAME: -> (index, index, index, !pop.scalar<f32>)
-  hlcf.for [%idx2 to %idx0 step %idx1 sgt sub] (%arg3 = %idx2 : index, %arg6 = %arg5: !pop.scalar<f32>) {
+  // CHECK-SAME   %arg6 = %arg0 : index, %arg7 = %arg1 : index, %arg8 = %arg2 : index, %arg9 = %arg3 : !kgen.scalar<f32>,
+  // CHECK-SAME   %arg10 = %arg4 : !kgen.scalar<f32>, %arg11 = %arg0 : index, %arg12 = %arg1 : index, %arg13 = %arg2 : index, %arg14 = %arg3 : !kgen.scalar<f32>)
+  // CHECK-SAME: -> (index, index, index, !kgen.scalar<f32>)
+  hlcf.for [%idx2 to %idx0 step %idx1 sgt sub] (%arg3 = %idx2 : index, %arg6 = %arg5: !kgen.scalar<f32>) {
     // CHECK-NEXT: %[[V1:.*]] = index.sub %arg5, %[[IDX1]]
     %0 = index.sub %arg3, %idx1
     %v00 = pop.load %var0 : !kgen.pointer<index>
@@ -326,13 +326,13 @@ kgen.func @for_variant(%arg0: index, %arg1: index, %arg2: index, %arg4: !pop.sca
     // COM: var0 + var1 + var2
     // CHECK-NEXT: %[[V3:.*]] = index.add %[[V2]], %arg11
     %v04 = index.add %v03, %v00
-    %v05 = pop.load %var3 : !kgen.pointer<!pop.scalar<f32>>
+    %v05 = pop.load %var3 : !kgen.pointer<!kgen.scalar<f32>>
 
     // COM: var3 + %arg6
     // CHECK-NEXT: %[[V6:.*]] = pop.add %arg14, %arg10
-    %v07 = pop.add %v05, %arg6: !pop.scalar<f32>
+    %v07 = pop.add %v05, %arg6: !kgen.scalar<f32>
 
-    pop.store %v07, %var3: !kgen.pointer<!pop.scalar<f32>>
+    pop.store %v07, %var3: !kgen.pointer<!kgen.scalar<f32>>
 
     // COM: var0 = var0 + var1 + var2
     pop.store %v04, %var0 : !kgen.pointer<index>
@@ -354,18 +354,18 @@ kgen.func @for_variant(%arg0: index, %arg1: index, %arg2: index, %arg4: !pop.sca
 
     // CHECK-DAG: hlcf.for.yield
     // CHECK-SAME: [induction_var (%[[V1]] : index)]
-    // CHECK-SAME: [retvals (%[[V3]], %[[V4]], %[[V5]], %[[V6]] : index, index, index, !pop.scalar<f32>)]
-    // CHECK-SAME: [iterargs (%[[V6]], %[[V3]], %[[V4]], %[[V5]], %[[V6]] : !pop.scalar<f32>, index, index, index, !pop.scalar<f32>)]
-    hlcf.for.yield [induction_var (%0 : index)] [retvals ()] [iterargs (%v07: !pop.scalar<f32>)]
+    // CHECK-SAME: [retvals (%[[V3]], %[[V4]], %[[V5]], %[[V6]] : index, index, index, !kgen.scalar<f32>)]
+    // CHECK-SAME: [iterargs (%[[V6]], %[[V3]], %[[V4]], %[[V5]], %[[V6]] : !kgen.scalar<f32>, index, index, index, !kgen.scalar<f32>)]
+    hlcf.for.yield [induction_var (%0 : index)] [retvals ()] [iterargs (%v07: !kgen.scalar<f32>)]
   } {unrollLevel = #hlcf<unroll_level full>}
 
   %r0 = pop.load %var0 : !kgen.pointer<index>
   %r1 = pop.load %var1 : !kgen.pointer<index>
   %r2 = pop.load %var2 : !kgen.pointer<index>
-  %r3 = pop.load %var3 : !kgen.pointer<!pop.scalar<f32>>
+  %r3 = pop.load %var3 : !kgen.pointer<!kgen.scalar<f32>>
 
-  // CHECK-DAG: kgen.return %[[V0]]#0, %[[V0]]#1, %[[V0]]#2, %[[V0]]#3 : index, index, index, !pop.scalar<f32>
-  kgen.return %r0, %r1, %r2, %r3 : index, index, index, !pop.scalar<f32>
+  // CHECK-DAG: kgen.return %[[V0]]#0, %[[V0]]#1, %[[V0]]#2, %[[V0]]#3 : index, index, index, !kgen.scalar<f32>
+  kgen.return %r0, %r1, %r2, %r3 : index, index, index, !kgen.scalar<f32>
 }
 
 

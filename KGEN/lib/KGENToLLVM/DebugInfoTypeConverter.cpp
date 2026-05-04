@@ -273,7 +273,7 @@ DIType KGEN::DebugInfoTypeConverter::buildDebugType(PointerType type) {
                           type.getAddrSpaceOrZero());
 }
 
-DIType KGEN::DebugInfoTypeConverter::buildDebugType(POP::SIMDType type) {
+DIType KGEN::DebugInfoTypeConverter::buildDebugType(SIMDType type) {
   int64_t size = *type.getResolvedSize();
 
   DIType baseType;
@@ -355,7 +355,7 @@ KGEN::DebugInfoTypeConverter::DebugInfoTypeConverter(POPToLLVMTypeConverter &tc,
   addConversion([&](POP::ArrayType type) { return buildDebugType(type); });
   addConversion([&](CO::CoroutineType type) { return buildDebugType(type); });
   addConversion([&](PointerType type) { return buildDebugType(type); });
-  addConversion([&](POP::SIMDType type) { return buildDebugType(type); });
+  addConversion([&](SIMDType type) { return buildDebugType(type); });
   addConversion([&](StructType type) { return buildDebugType(type); });
   addConversion([&](StructInstanceType type) { return buildDebugType(type); });
   addConversion([&](TypeValueType type) { return buildDebugType(type); });

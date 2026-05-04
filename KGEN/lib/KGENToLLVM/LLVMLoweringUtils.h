@@ -39,10 +39,10 @@ class StructInstanceType;
 class TypeParamAttr;
 class TypeInstanceRefAttr;
 class TypeValueType;
+class SIMDType;
 
 namespace POP {
 class ArrayType;
-class SIMDType;
 class UnionType;
 } // namespace POP
 
@@ -373,7 +373,7 @@ private:
   DebugInfo::DIType buildDebugType(POP::ArrayType type);
   DebugInfo::DIType buildDebugType(CO::CoroutineType type);
   DebugInfo::DIType buildDebugType(PointerType type);
-  DebugInfo::DIType buildDebugType(POP::SIMDType type);
+  DebugInfo::DIType buildDebugType(SIMDType type);
   DebugInfo::DIType buildDebugType(StructType type);
   DebugInfo::DIType buildDebugType(StructInstanceType type);
   DebugInfo::DIType buildDebugType(TypeValueType type);

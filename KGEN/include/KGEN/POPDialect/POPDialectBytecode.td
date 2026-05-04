@@ -26,13 +26,6 @@ def UnionType : DialectType<(type
   let cBuilder = "get<$_resultType>(context, $_args)";
 }
 
-def SIMDType : DialectType<(type
-  TypedAttr:$size,
-  TypedAttr:$dType
-)> {
-  let cBuilder = "get<$_resultType>(context, $_args)";
-}
-
 def IntLiteralType : DialectType<(type)>;
 
 def FloatLiteralType : DialectType<(type)>;
@@ -41,7 +34,6 @@ def POPDialectTypes : DialectTypes<"pop"> {
   let elems = [
     ArrayType,
     UnionType,
-    SIMDType,
     IntLiteralType,
     FloatLiteralType
   ];
@@ -71,18 +63,6 @@ def UnionAttr : DialectAttribute<(attr
   TypedAttr:$value,
   ConcreteType<"UnionType">:$type
 )>;
-
-def DTypeValues :
-  WithParser<"succeeded(readDTypeValues($_reader, $_var))",
-  WithPrinter<"writeDTypeValues($_writer, $_getter)",
-  WithType<"SmallVector<DTypeValue>">>>;
-
-def SIMDAttr : DialectAttribute<(attr
-  DTypeValues:$values,
-  ConcreteType<"SIMDType">:$type
-)> {
-  let cBuilder = "get<$_resultType>(context, $_args)";
-}
 
 def ArrayAttr : DialectAttribute<(attr
   TypedAttrArray:$values,
@@ -193,13 +173,6 @@ def CastAttr : DialectAttribute<(attr
 def DTypeToUI8Attr : DialectAttribute<(attr TypedAttr:$value)>;
 def DTypeFromUI8Attr : DialectAttribute<(attr TypedAttr:$value)>;
 
-def CastFromBuiltinAttr : DialectAttribute<(attr
-  TypedAttr:$arg, ConcreteType<"SIMDType">:$type
-)>;
-def CastToBuiltinAttr : DialectAttribute<(attr
-  TypedAttr:$arg, Type:$type
-)>;
-
 def SIMDSplatAttr : DialectAttribute<(attr
   TypedAttr:$arg, ConcreteType<"SIMDType">:$type
 )>;
@@ -229,7 +202,6 @@ def POPDialectAttributes : DialectAttributes<"pop"> {
     AtomicBinOpAttr,
     FastmathFlagsAttr,
     UnionAttr,
-    SIMDAttr,
     ArrayAttr,
 
     IntLiteralCmpPredAttr,
@@ -256,8 +228,6 @@ def POPDialectAttributes : DialectAttributes<"pop"> {
     CastAttr,
     DTypeToUI8Attr,
     DTypeFromUI8Attr,
-    CastFromBuiltinAttr,
-    CastToBuiltinAttr,
     SIMDSplatAttr,
 
     SIMDNegAttr,

@@ -7,6 +7,7 @@
 #include "KGEN/Interpreter/ParametricInterpreterState.h"
 #include "KGEN/Interpreter/Utils.h"
 #include "KGEN/KGENDialect/KGENOps.h"
+#include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/POPDialect/POPAttrs.h"
 #include "KGEN/POPDialect/POPDialect.h"
 #include "KGEN/POPDialect/POPEnums.h"
@@ -1626,18 +1627,18 @@ namespace {
 ///   %cond: i1
 ///   %true  = kgen.param.constant: scalar<bool> = <true>
 ///   %false = kgen.param.constant: scalar<bool> = <false>
-///   %res   = pop.select %cond, %true, %false : !pop.scalar<bool>
+///   %res   = pop.select %cond, %true, %false : !kgen.scalar<bool>
 /// Into
-///   %res   = pop.cast_from_builtin %cond i1 to !pop.scalar<bool>
+///   %res   = pop.cast_from_builtin %cond i1 to !kgen.scalar<bool>
 struct SelectTrueFalseScalarBool : OpRewritePattern<SelectOp> {
   using OpRewritePattern::OpRewritePattern;
 
   LogicalResult matchAndRewrite(SelectOp op,
                                 PatternRewriter &b) const override {
-    auto simdTy = dyn_cast<POP::SIMDType>(op.getType());
+    auto simdTy = dyn_cast<SIMDType>(op.getType());
     if (!simdTy || !simdTy.isScalar() ||
         simdTy.getResolvedDType() != KGENDType::kBool) {
-      return b.notifyMatchFailure(op, "result type isn't !pop.scalar<bool>");
+      return b.notifyMatchFailure(op, "result type isn't !kgen.scalar<bool>");
     }
 
     SIMDAttr trueVal, falseVal;
@@ -2360,7 +2361,7 @@ OpFoldResult CastToBuiltinOp::fold(FoldAdaptor adaptor) {
     return {};
   }
 
-  return POP::foldCastToBuiltin(simd, getType());
+  return KGEN::foldCastToBuiltin(simd, getType());
 }
 
 //===----------------------------------------------------------------------===//
@@ -2377,7 +2378,7 @@ OpFoldResult CastFromBuiltinOp::fold(FoldAdaptor adaptor) {
     return {};
   }
 
-  return POP::foldCastFromBuiltin(val, getType());
+  return KGEN::foldCastFromBuiltin(val, getType());
 }
 
 ErrorTreeOrSuccess CastFromBuiltinOp::interpret(ArrayRef<Attribute> operands,
@@ -2785,7 +2786,7 @@ static ErrorTreeOrSuccess interpreterWrite(ExternalCallOp op,
     return ErrorTree(op.getLoc(), "unable to interpret call to 'write', "
                                   "expected 3 operands and 1 results");
   Type resultType = op.getResultTypes().front();
-  if (!resultType.isIntOrIndex() && !isa<POP::SIMDType>(resultType))
+  if (!resultType.isIntOrIndex() && !isa<SIMDType>(resultType))
     return ErrorTree(op.getLoc(), "unable to interpret call to 'write', "
                                   "expected integer result type");
   IntegerAttr fileDescriptor = dyn_cast<IntegerAttr>(operands[0]);
@@ -2810,7 +2811,7 @@ static ErrorTreeOrSuccess interpreterWrite(ExternalCallOp op,
   int size = nbytes.getValue().getZExtValue();
   int numWritten =
       write(fileDescriptor.getValue().getZExtValue(), (const void *)*mem, size);
-  if (auto simdType = dyn_cast<POP::SIMDType>(resultType)) {
+  if (auto simdType = dyn_cast<SIMDType>(resultType)) {
     auto simdAttr = SIMDAttr::get(numWritten, simdType);
     state.mapResults(simdAttr);
   } else {

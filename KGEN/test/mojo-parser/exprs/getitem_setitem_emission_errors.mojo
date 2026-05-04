@@ -15,7 +15,7 @@ struct WeirdArray:
 
 def test_getitem(var a: WeirdArray, f: float, x: Int):
     # expected-error @+2 {{invalid call to '__getitem__': value passed to 'x' cannot be converted from 'float' to 'Int'}}
-    # expected-note @+1 {{'float' is aka '__mlir_type.`!pop.scalar<f64>`'}}
+    # expected-note @+1 {{'float' is aka '__mlir_type.`!kgen.scalar<f64>`'}}
     _ = a[f]
 
     # expected-error @+1 {{invalid call to '__getitem__': expected at most 2 positional arguments, got 3}}

@@ -163,14 +163,14 @@ kgen.func @regtype__moveinit__(%arg0: index owned) -> index {
   kgen.return %arg0 : index
 }
 
-kgen.func @mixtypes_fun(%arg0: !kgen.pointer<struct<(index) memoryOnly>> read_mem, %arg1: !kgen.pointer<none> read, %arg2: !pop.scalar<si16> read) -> index {
+kgen.func @mixtypes_fun(%arg0: !kgen.pointer<struct<(index) memoryOnly>> read_mem, %arg1: !kgen.pointer<none> read, %arg2: !kgen.scalar<si16> read) -> index {
   %0 = kgen.param.constant = <1>
   kgen.return %0 : index
 }
 
-kgen.func @byrefresult_fun(%arg0: index, %arg1: !kgen.pointer<none>) -> !pop.scalar<si32> {
+kgen.func @byrefresult_fun(%arg0: index, %arg1: !kgen.pointer<none>) -> !kgen.scalar<si32> {
   %0 = kgen.param.constant: scalar<si32> = <42>
-  kgen.return %0 : !pop.scalar<si32>
+  kgen.return %0 : !kgen.scalar<si32>
 }
 // CHECK-LABEL: kgen.func @byrefresult_create_reg_stub
 kgen.func @byrefresult_create_reg_stub() -> !kgen.generator<(!kgen.pointer<struct<(index) memoryOnly>> read_mem, !kgen.pointer<none>, !kgen.pointer<struct<(scalar<si32>) memoryOnly>> byref_result) -> !kgen.none> {
@@ -178,10 +178,10 @@ kgen.func @byrefresult_create_reg_stub() -> !kgen.generator<(!kgen.pointer<struc
   // CHECK-NEXT: [[V1:%.*]] = pop.pointer.bitcast [[ARG0]] : !kgen.pointer<struct<(index) memoryOnly>> to !kgen.pointer<index>
   // CHECK-NEXT: [[V2:%.*]] = pop.load [[V1]] : !kgen.pointer<index>
   // CHECK-NEXT: [[V3:%.*]] = pop.pointer.bitcast [[ARG2]] : !kgen.pointer<struct<(scalar<si32>) memoryOnly>> to !kgen.pointer<scalar<si32>>
-  // CHECK-NEXT: [[V4:%.*]] = kgen.call @byrefresult_fun([[V2]], [[ARG1]]) : (index, !kgen.pointer<none>) -> !pop.scalar<si32>
+  // CHECK-NEXT: [[V4:%.*]] = kgen.call @byrefresult_fun([[V2]], [[ARG1]]) : (index, !kgen.pointer<none>) -> !kgen.scalar<si32>
   // CHECK-NEXT: pop.store [[V4]], [[V3]] : !kgen.pointer<scalar<si32>>
   // CHECK-NEXT: kgen.return
-  %0 = kgen.create_reg_stub [(index, !kgen.pointer<none>) -> !pop.scalar<si32>: @byrefresult_fun] : <(!kgen.pointer<struct<(index) memoryOnly>> read_mem, !kgen.pointer<none>, !kgen.pointer<struct<(scalar<si32>) memoryOnly>> byref_result) -> !kgen.none>
+  %0 = kgen.create_reg_stub [(index, !kgen.pointer<none>) -> !kgen.scalar<si32>: @byrefresult_fun] : <(!kgen.pointer<struct<(index) memoryOnly>> read_mem, !kgen.pointer<none>, !kgen.pointer<struct<(scalar<si32>) memoryOnly>> byref_result) -> !kgen.none>
   kgen.return %0 : !kgen.generator<(!kgen.pointer<struct<(index) memoryOnly>> read_mem, !kgen.pointer<none>, !kgen.pointer<struct<(scalar<si32>) memoryOnly>> byref_result) -> !kgen.none>
 }
 
@@ -209,7 +209,7 @@ kgen.func @lower_variants(%arg0: i64) {
   // CHECK-NEXT: [[DISCR:%.*]] = kgen.struct.extract [[VARIANT]][1]
   // CHECK-NEXT: [[ZERO:%.*]] = kgen.param.constant: scalar<ui8> = <0>
   // CHECK-NEXT: [[EQ:%.*]] = pop.cmp eq([[DISCR]], [[ZERO]])
-  // CHECK-NEXT: pop.cast_to_builtin [[EQ]] : !pop.scalar<bool> to i1
+  // CHECK-NEXT: pop.cast_to_builtin [[EQ]] : !kgen.scalar<bool> to i1
   %1 = kgen.variant.is %0, 0 : <i32, i64>
 
   // CHECK-NEXT: [[UNION:%.*]] = kgen.struct.extract [[VARIANT]][0]

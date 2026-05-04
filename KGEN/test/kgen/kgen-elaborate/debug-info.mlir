@@ -93,17 +93,17 @@ kgen.generator @entry() {
   file = #file,
   sourceName = <"kernel">,
   subprogramFlags = Definition
-> : !debuginfo.subroutine<(!pop.simd<4, dtype>) -> (!pop.simd<4, dtype>): DW_CC_normal>
+> : !debuginfo.subroutine<(!kgen.simd<4, dtype>) -> (!kgen.simd<4, dtype>): DW_CC_normal>
 #locKernel = loc(fused<#kernelSP>["test.mlir":0:0])
 
-kgen.generator @kernel<dtype: dtype>(%arg0: !pop.simd<4, dtype>) -> !pop.simd<4, dtype> {
-  kgen.return %arg0 : !pop.simd<4, dtype> loc(#locKernel)
+kgen.generator @kernel<dtype: dtype>(%arg0: !kgen.simd<4, dtype>) -> !kgen.simd<4, dtype> {
+  kgen.return %arg0 : !kgen.simd<4, dtype> loc(#locKernel)
 } loc(#locKernel)
 
 // CHECK-LABEL: kgen.func export @top
 kgen.generator export @top() {
-  // CHECK-NEXT: kgen.param.constant{{.*}}!DICompositeType(tag: DW_TAG_array_type, name: \22!pop.simd<4, ui32>\22
-  kgen.param.constant: !kgen.struct<(string, index, (!kgen.pointer<none>) capturing -> !kgen.none)> = <#kgen.compile_assembly<current_target(), =llvm, "", false, :(!pop.simd<4, ui32>) -> (!pop.simd<4, ui32>) @kernel<:dtype ui32>>>
+  // CHECK-NEXT: kgen.param.constant{{.*}}!DICompositeType(tag: DW_TAG_array_type, name: \22!kgen.simd<4, ui32>\22
+  kgen.param.constant: !kgen.struct<(string, index, (!kgen.pointer<none>) capturing -> !kgen.none)> = <#kgen.compile_assembly<current_target(), =llvm, "", false, :(!kgen.simd<4, ui32>) -> (!kgen.simd<4, ui32>) @kernel<:dtype ui32>>>
   kgen.return
 }
 
