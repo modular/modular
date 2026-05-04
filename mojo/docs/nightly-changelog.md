@@ -19,6 +19,9 @@ This version is still a work in progress.
 
 ## Library changes
 
+- Added `InlineArray.fill(value)` to set all elements to a given value.
+- Added `InlineArray.fill(value)` to set all elements to a given value.
+
 ## Tooling changes
 
 ## GPU programming
