@@ -1,7 +1,7 @@
 # Code examples and tests for @doc_hidden decorator
 
 This directory contains code examples for the
-[@doc_hidden](../../../../../docs/manual/decorators/doc-hidden.mdx)
+[@doc_hidden](/docs/manual/decorators/doc-hidden)
 section of the Mojo Manual.
 
 Contents:

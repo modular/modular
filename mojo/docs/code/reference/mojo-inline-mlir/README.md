@@ -1,7 +1,7 @@
 # Code examples and tests for inline MLIR
 
 This directory contains Code examples and tests for the
-[inline MLIR](../../../../docs/reference/mojo-inline-mlir.mdx) section of
+[inline MLIR](/docs/reference/mojo-inline-mlir) section of
 the Mojo Manual.
 
 Contents:

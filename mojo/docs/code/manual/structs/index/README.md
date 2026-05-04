@@ -1,7 +1,7 @@
 # Code examples and tests for structs
 
 This directory contains Code examples and tests for the
-[Structs](../../../../manual/structs/index.mdx)
+[Structs](/docs/manual/structs/index)
 section of the Mojo Manual.
 
 Contents:

@@ -1,7 +1,7 @@
 # Code examples and tests for generics
 
 This directory contains Code examples and tests for the
-[Generics](../../../manual/generics/generics.mdx) section of the Mojo
+[Generics](/docs/manual/generics) section of the Mojo
 Manual.
 
 Contents:

@@ -2,7 +2,7 @@
 
 This directory contains Code examples and tests for the
 [Function declarations
-reference](../../../../docs/reference/mojo-function-declarations.mdx)
+reference](/docs/reference/mojo-function-declarations)
 section of the Mojo Manual.
 
 Contents:

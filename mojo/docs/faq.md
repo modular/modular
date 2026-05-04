@@ -175,12 +175,11 @@ currently isn't possible with any other language.
 
 ### Is Mojo only for AI or can it be used for other stuff?
 
-Mojo's initial focus is to solve AI programmability challenges. However, our
-goal is to grow Mojo into a general purpose programming language. We use Mojo
-at Modular to develop AI algorithms and [GPU
-kernels](/max/tutorials/custom-ops-matmul), but you can use it for other things
-like HPC, data transformations, writing pre/post processing operations, and
-much more.
+Mojo's initial focus is to solve AI programmability challenges. However,
+our goal is to grow Mojo into a general purpose programming language. We
+use Mojo at Modular to develop AI algorithms and GPU kernels, but you can
+use it for other things like HPC, data transformations, writing pre/post
+processing operations, and much more.
 
 ### Is Mojo interpreted or compiled?
 
@@ -206,7 +205,7 @@ Not alone. Mojo is one component of the Modular Platform, which
 makes it easier for you to author highly performant, portable CPU and GPU graph
 operations, but you’ll also need a runtime (or "OS") that supports graph level
 transformations and heterogeneous compute, which is provided by
-[MAX](/max/intro#components).
+[MAX](https://docs.modular.com/max/intro).
 
 ### How do I convert Python programs or libraries to Mojo?
 
@@ -262,7 +261,7 @@ The `mojo` package gives you everything you need for Mojo development.
 It includes:
 
 - [`mojo` CLI](/docs/cli) (includes the Mojo compiler)
-- [Mojo standard library](/docs/lib)
+- [Mojo standard library](/docs/std)
 - [`mojo` Python
   package](https://github.com/modular/modular/tree/main/mojo/python/mojo)
 - Mojo language server (LSP) for IDE/editor integration
@@ -278,7 +277,7 @@ package](/docs/manual/python/mojo-from-python)—situations where you don't need
 the LSP and debugger tools. It includes:
 
 - [`mojo` CLI](/docs/cli) (includes the Mojo compiler)
-- [Mojo standard library](/docs/lib)
+- [Mojo standard library](/docs/sdk)
 - [`mojo` Python
   package](https://github.com/modular/modular/tree/main/mojo/python/mojo)
 
@@ -362,8 +361,8 @@ Mojo development is moving fast and we are regularly releasing updates,
 including nightly builds almost every day.
 
 Join the [Mojo Discord channel](http://discord.gg/modular) for notifications
-and [sign up for our newsletter](https://www.modular.com/modverse#signup) for
-more coarse-grain updates.
+and [sign up for our newsletter](https://www.modular.com/blog) (scroll to
+the bottom of the page) for more coarse-grain updates.
 
 ## Open Source
 

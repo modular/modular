@@ -1,7 +1,7 @@
 # TileTensor examples
 
 This directory contains examples to accompany
-[Using TileTensor](../../../../../docs/manual/tile-tensor/tensors.mdx).
+[Using TileTensor](/docs/manual/tile-tensor/tensors).
 
 If you have [Pixi](https://pixi.sh/latest/) installed, you can
 execute the examples by running the following commands:

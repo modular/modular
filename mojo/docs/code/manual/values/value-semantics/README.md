@@ -1,7 +1,7 @@
 # Code examples and tests for value semantics
 
 This directory contains Code examples and tests for the
-[Value semantics](../../../../../docs/manual/values/value-semantics.mdx) section
+[Value semantics](/docs/manual/values/value-semantics) section
 of the Mojo Manual.
 
 Contents:

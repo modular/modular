@@ -1,7 +1,7 @@
 # Code examples and tests for self-referential structs
 
 This directory contains Code examples and tests for the [self-referential
-structs](../../../../manual/structs/reference.mdx) section of the Mojo
+structs](/docs/manual/structs/reference) section of the Mojo
 Manual.
 
 Contents:

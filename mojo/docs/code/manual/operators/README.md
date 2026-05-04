@@ -1,7 +1,7 @@
 # Code examples and tests for operators and expressions
 
 This directory contains Code examples and tests for the
-[Operators and expressions](../../../../docs/manual/operators.mdx) section of
+[Operators and expressions](/docs/manual/operators) section of
 the Mojo Manual.
 
 Contents:

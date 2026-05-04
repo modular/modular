@@ -1,7 +1,7 @@
 # Layouts examples
 
 This directory contains examples to accompany
-[TileTensor layouts](../../../../../docs/manual/tile-tensor/layouts.mdx).
+[TileTensor layouts](/docs/manual/tile-tensor/layouts).
 
 If you have [Pixi](https://pixi.sh/latest/) installed, you can
 execute the examples by running the following commands:

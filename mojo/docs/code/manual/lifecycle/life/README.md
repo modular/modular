@@ -1,7 +1,7 @@
 # Code examples and tests for life of a value
 
 This directory contains Code examples and tests for the
-[Life of a value](../../../../../docs/manual/lifecycle/life.mdx) section of the
+[Life of a value](/docs/manual/lifecycle/life) section of the
 Mojo Manual.
 
 Contents:

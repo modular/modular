@@ -1,7 +1,7 @@
 # Code examples and tests for the implicit decorator
 
 This directory contains Code examples and tests for the
-[@implicit decorator](../../../../../docs/manual/gpu/fundamentals.mdx)
+[@implicit decorator](/docs/manual/gpu/fundamentals)
 reference page.
 
 Contents:

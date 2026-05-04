@@ -1,7 +1,7 @@
 # Code examples and tests for tips for Python devs
 
 This directory contains Code examples and tests for the
-[Tips for Python devs](../../../../docs/manual/python-to-mojo)
+[Tips for Python devs](/docs/manual/python-to-mojo)
 section of the Mojo Manual.
 
 The `BUILD.bazel` file defines:

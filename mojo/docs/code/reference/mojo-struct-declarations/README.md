@@ -2,7 +2,7 @@
 
 This directory contains Code examples and tests for the
 [Mojo struct declarations
-reference](../../../../docs/reference/mojo-struct-declarations.mdx) section
+reference](/docs/reference/mojo-struct-declarations) section
 of the Mojo Manual.
 
 Contents:
