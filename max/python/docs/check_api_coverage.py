@@ -1,0 +1,703 @@
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+"""Public-API documentation coverage check for max.
+
+For a PR-scoped diff between BASE_REF and HEAD_REF, identifies:
+
+* MISSING: symbols added to a public module's ``__all__`` that have no
+  corresponding entry in any RST under ``max/python/docs/``.
+* STALE:   symbols removed from ``__all__`` that are still referenced by
+  an RST file.
+
+Public scoping rules (mirroring the docs build's filtering in
+``max/python/docs/conf.py.in``):
+
+* A module is public iff no segment of its dotted path starts with ``_``.
+* A symbol is public iff it is listed in its module's ``__all__`` and does
+  not start with ``_``.
+* A symbol re-exported by a parent ``__init__.py`` is canonicalized to
+  that parent (e.g. ``max.nn.linear.Linear`` -> ``max.nn.Linear`` when
+  ``max.nn`` re-exports ``Linear`` from ``.linear``).
+
+The script intentionally has no third-party dependencies so it can run in
+a minimal CI image without installing the project.
+"""
+
+from __future__ import annotations
+
+import argparse
+import ast
+import json
+import re
+import subprocess
+import sys
+from dataclasses import dataclass, field
+from pathlib import Path
+
+PACKAGE_ROOT = Path("max/python/max")
+DOCS_ROOT = Path("max/python/docs")
+
+
+# -----------------------------------------------------------------------------
+# AST helpers
+# -----------------------------------------------------------------------------
+
+
+def _module_path_for(file_path: Path) -> str | None:
+    """Return ``max.foo.bar`` for a ``.py``/``.pyi`` under ``PACKAGE_ROOT``.
+
+    Returns ``None`` if the file is private (any segment starts with ``_``,
+    other than ``__init__``).
+    """
+    try:
+        rel = file_path.relative_to(PACKAGE_ROOT)
+    except ValueError:
+        return None
+    parts = list(rel.with_suffix("").parts)
+    if parts and parts[-1] == "__init__":
+        parts.pop()
+    if any(p.startswith("_") for p in parts):
+        return None
+    return ".".join(["max", *parts])
+
+
+def _parse_all(source: str) -> list[str] | None:
+    """Extract ``__all__`` from a module's source via AST.
+
+    Returns ``None`` if no ``__all__`` is declared. Returns ``[]`` if it
+    is declared but empty or unparseable.
+    """
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return None
+
+    def _flatten(node: ast.AST) -> list[str] | None:
+        if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
+            out: list[str] = []
+            for elt in node.elts:
+                if isinstance(elt, ast.Constant) and isinstance(elt.value, str):
+                    out.append(elt.value)
+                else:
+                    return None
+            return out
+        return None
+
+    declared: list[str] | None = None
+    for node in tree.body:
+        targets: list[ast.expr] = []
+        value: ast.expr | None = None
+        if isinstance(node, ast.Assign):
+            targets = node.targets
+            value = node.value
+        elif isinstance(node, ast.AugAssign) and isinstance(node.op, ast.Add):
+            targets = [node.target]
+            value = node.value
+
+        for t in targets:
+            if (
+                isinstance(t, ast.Name)
+                and t.id == "__all__"
+                and value is not None
+            ):
+                names = _flatten(value)
+                if names is None:
+                    continue
+                if isinstance(node, ast.AugAssign):
+                    declared = (declared or []) + names
+                else:
+                    declared = list(names)
+    return declared
+
+
+@dataclass
+class _ReExport:
+    """One imported name in an ``__init__.py``."""
+
+    source_module: str
+    source_name: str
+    explicit: bool  # ``from X import Y as Y`` (PEP 484 explicit re-export)
+
+
+def _parse_reexports(source: str, package: str) -> dict[str, _ReExport]:
+    """For an ``__init__.py``, return ``{local_name: _ReExport}``.
+
+    ``from .foo import Bar`` in package ``max.nn`` records
+    ``Bar -> max.nn.foo`` (implicit). ``from .foo import Bar as Bar``
+    is flagged ``explicit=True`` (PEP 484 re-export). Star imports are
+    skipped.
+    """
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return {}
+    out: dict[str, _ReExport] = {}
+    for node in tree.body:
+        if not isinstance(node, ast.ImportFrom) or node.level == 0:
+            continue
+        base_parts = package.split(".")[: -node.level + 1] or package.split(".")
+        base = (
+            ".".join([*base_parts, node.module])
+            if node.module
+            else ".".join(base_parts)
+        )
+        for alias in node.names:
+            if alias.name == "*":
+                continue
+            local = alias.asname or alias.name
+            explicit = alias.asname is not None and alias.asname == alias.name
+            out[local] = _ReExport(
+                source_module=base, source_name=alias.name, explicit=explicit
+            )
+    return out
+
+
+def _derive_public_names(
+    source: str, reexports: dict[str, _ReExport]
+) -> list[str]:
+    """Approximate ``__all__`` for an ``__init__.py`` without one.
+
+    Includes:
+    * Explicit re-exports (``from X import Y as Y``).
+    * Top-level ``def``/``class`` with non-underscore names.
+
+    Plain ``from X import Y`` (no ``as``) is NOT included, matching
+    pyright/mypy's strict re-export rules.
+    """
+    names: list[str] = [
+        n for n, r in reexports.items() if r.explicit and not n.startswith("_")
+    ]
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return names
+    for node in tree.body:
+        if isinstance(
+            node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
+        ):
+            if not node.name.startswith("_"):
+                names.append(node.name)
+    # Dedupe, preserve order.
+    seen: set[str] = set()
+    out: list[str] = []
+    for n in names:
+        if n not in seen:
+            seen.add(n)
+            out.append(n)
+    return out
+
+
+# -----------------------------------------------------------------------------
+# Snapshot at a git ref
+# -----------------------------------------------------------------------------
+
+
+@dataclass
+class ApiSnapshot:
+    """Frozen view of the public surface at a particular git ref.
+
+    ``symbols`` maps fully-qualified canonical name -> defining module.
+    ``module_alls`` maps module dotted path -> list of names in __all__.
+    ``unexported_imports`` maps ``__init__.py`` module dotted path -> list
+    of names imported there but not surfaced as public (not in ``__all__``,
+    or no ``__all__`` exists and the import isn't an explicit ``as X``
+    re-export). These are candidates for "did you forget to export?"
+    flagging — DOCS-1117 / the DeviceStream pattern.
+    """
+
+    symbols: dict[str, str] = field(default_factory=dict)
+    module_alls: dict[str, list[str]] = field(default_factory=dict)
+    unexported_imports: dict[str, list[str]] = field(default_factory=dict)
+
+
+def _git_ls_tree(ref: str, prefix: str) -> list[str]:
+    """List files at ``ref`` under ``prefix`` (recursive)."""
+    result = subprocess.run(
+        ["git", "ls-tree", "-r", "--name-only", ref, prefix],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return [line for line in result.stdout.splitlines() if line]
+
+
+def _git_show_batch(ref: str, paths: list[str]) -> dict[str, str]:
+    """Fetch contents of many paths at one ref via ``git cat-file --batch``.
+
+    A single subprocess streams all queries and responses, replacing what
+    would otherwise be one ``git show`` invocation per file. Missing
+    objects are omitted from the returned dict.
+    """
+    if not paths:
+        return {}
+    proc = subprocess.Popen(
+        ["git", "cat-file", "--batch"],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+    )
+    assert proc.stdin and proc.stdout
+    proc.stdin.write(("\n".join(f"{ref}:{p}" for p in paths) + "\n").encode())
+    proc.stdin.close()
+
+    out: dict[str, str] = {}
+    for path in paths:
+        header = proc.stdout.readline().decode().rstrip("\n")
+        if header.endswith(" missing"):
+            continue
+        size = int(header.split()[2])
+        body = proc.stdout.read(size)
+        proc.stdout.read(1)  # trailing newline
+        out[path] = body.decode("utf-8", errors="replace")
+    proc.wait()
+    return out
+
+
+def snapshot_at(ref: str) -> ApiSnapshot:
+    """Build a public-API snapshot at the given git ref."""
+    snap = ApiSnapshot()
+
+    paths_by_module: dict[str, str] = {}
+    for path in _git_ls_tree(ref, str(PACKAGE_ROOT)):
+        if not (path.endswith(".py") or path.endswith(".pyi")):
+            continue
+        mod = _module_path_for(Path(path))
+        if mod is None:
+            continue
+        paths_by_module[mod] = path
+
+    sources = _git_show_batch(ref, list(paths_by_module.values()))
+
+    module_reexports: dict[str, dict[str, _ReExport]] = {}
+    for mod, path in paths_by_module.items():
+        src = sources.get(path)
+        if src is None:
+            continue
+        is_init = path.endswith("__init__.py") or path.endswith("__init__.pyi")
+        reexports = _parse_reexports(src, mod) if is_init else {}
+        module_reexports[mod] = reexports
+
+        declared = _parse_all(src)
+        if declared is not None:
+            public_names = [n for n in declared if not n.startswith("_")]
+        elif is_init:
+            public_names = _derive_public_names(src, reexports)
+        else:
+            continue
+        snap.module_alls[mod] = public_names
+
+        # Record imports in __init__.py that aren't surfaced as public.
+        # With __all__: every imported name not listed is suspect. Without
+        # __all__: only implicit imports are suspect (PEP 484 ``as X`` is
+        # already counted public).
+        if is_init:
+            public_set = set(public_names)
+            unexported = [
+                name
+                for name, info in reexports.items()
+                if not name.startswith("_")
+                and name not in public_set
+                and not (declared is None and info.explicit)
+            ]
+            if unexported:
+                snap.unexported_imports[mod] = unexported
+
+    # Walk shallowest modules first so re-exported names get canonicalized
+    # to the parent rather than the child that defined them.
+    sorted_modules = sorted(snap.module_alls.keys(), key=lambda m: m.count("."))
+    canonical: dict[str, str] = {}
+    for mod in sorted_modules:
+        for name in snap.module_alls[mod]:
+            re = module_reexports.get(mod, {}).get(name)
+            origin = re.source_module if re else None
+            if origin and name in snap.module_alls.get(origin, []):
+                canonical[f"{origin}.{name}"] = mod
+            canonical.setdefault(f"{mod}.{name}", mod)
+
+    for mod, names in snap.module_alls.items():
+        for name in names:
+            owner = canonical.get(f"{mod}.{name}", mod)
+            snap.symbols[f"{owner}.{name}"] = owner
+
+    return snap
+
+
+# -----------------------------------------------------------------------------
+# RST parsing
+# -----------------------------------------------------------------------------
+
+_DIRECTIVE_RE = re.compile(r"^(\s*)\.\.\s+(\w+)\s*::\s*(.*?)\s*$")
+_OPTION_RE = re.compile(r"^(\s*):([\w-]+):\s*(.*?)\s*$")
+
+
+@dataclass
+class _RstDoc:
+    automodule_full: set[str] = field(default_factory=set)
+    automodule_stub: set[str] = field(default_factory=set)
+    autosummary_entries: set[str] = field(default_factory=set)
+
+
+def _parse_rst(text: str) -> _RstDoc:
+    """Extract documented symbols from a single RST file.
+
+    * ``automodule_full``: modules documented with ``:members:`` (no
+      ``:no-members:``). Every symbol in their ``__all__`` is implicitly
+      documented.
+    * ``automodule_stub``: modules referenced with ``:no-members:`` (the
+      module page exists but defers symbol listing to ``autosummary``).
+    * ``autosummary_entries``: explicit fully-qualified symbol names. Bare
+      names are resolved against the most recent ``currentmodule``/
+      ``automodule``.
+    """
+    doc = _RstDoc()
+    lines = text.splitlines()
+    i = 0
+    current_module: str | None = None
+
+    while i < len(lines):
+        line = lines[i]
+        m = _DIRECTIVE_RE.match(line)
+        if not m:
+            i += 1
+            continue
+        indent, directive, argument = m.groups()
+        # Collect indented option block.
+        options: dict[str, str] = {}
+        j = i + 1
+        while j < len(lines):
+            nxt = lines[j]
+            if not nxt.strip():
+                j += 1
+                continue
+            opt = _OPTION_RE.match(nxt)
+            if not opt or len(opt.group(1)) <= len(indent):
+                break
+            options[opt.group(2)] = opt.group(3)
+            j += 1
+
+        if directive in ("automodule", "currentmodule") and argument:
+            current_module = argument.strip()
+            if directive == "automodule":
+                if "members" in options and "no-members" not in options:
+                    doc.automodule_full.add(argument.strip())
+                else:
+                    doc.automodule_stub.add(argument.strip())
+            i = j
+            continue
+
+        if directive == "autosummary":
+            k = j
+            while k < len(lines) and not lines[k].strip():
+                k += 1
+            content_indent = None
+            while k < len(lines):
+                row = lines[k]
+                if not row.strip():
+                    k += 1
+                    continue
+                row_indent = len(row) - len(row.lstrip())
+                if content_indent is None:
+                    if row_indent <= len(indent):
+                        break
+                    content_indent = row_indent
+                if row_indent < content_indent:
+                    break
+                entry = row.strip()
+                if entry.startswith(":") or entry.startswith(".."):
+                    k += 1
+                    continue
+                # Strip trailing parens (function form) and links.
+                entry = entry.split()[0]
+                if "." in entry:
+                    doc.autosummary_entries.add(entry)
+                elif current_module:
+                    doc.autosummary_entries.add(f"{current_module}.{entry}")
+                k += 1
+            i = k
+            continue
+
+        i = j
+
+    return doc
+
+
+def documented_symbols_at(
+    ref: str, snap: ApiSnapshot
+) -> tuple[set[str], set[str]]:
+    """Return (documented_symbols, documented_modules) at the given ref.
+
+    ``documented_symbols`` is the set of fully-qualified names that have
+    explicit RST coverage (autosummary entry or ``automodule :members:``
+    expansion against ``__all__``).
+
+    ``documented_modules`` is the set of modules that have any RST page
+    devoted to them (either ``automodule`` form).
+    """
+    excluded = (f"{DOCS_ROOT}/cli/", f"{DOCS_ROOT}/_templates/")
+    paths = [
+        p
+        for p in _git_ls_tree(ref, str(DOCS_ROOT))
+        if p.endswith(".rst") and not p.startswith(excluded)
+    ]
+    documented: set[str] = set()
+    modules: set[str] = set()
+    for src in _git_show_batch(ref, paths).values():
+        parsed = _parse_rst(src)
+        documented.update(parsed.autosummary_entries)
+        modules.update(parsed.automodule_full)
+        modules.update(parsed.automodule_stub)
+        for mod in parsed.automodule_full:
+            for name in snap.module_alls.get(mod, []):
+                documented.add(f"{mod}.{name}")
+    return documented, modules
+
+
+# -----------------------------------------------------------------------------
+# Diff
+# -----------------------------------------------------------------------------
+
+
+@dataclass
+class CoverageReport:
+    missing: list[tuple[str, str]] = field(default_factory=list)
+    stale: list[tuple[str, str]] = field(default_factory=list)
+    new_modules: list[str] = field(default_factory=list)
+    suspicious: list[tuple[str, str]] = field(default_factory=list)
+
+    def is_empty(self) -> bool:
+        return not (
+            self.missing or self.stale or self.new_modules or self.suspicious
+        )
+
+
+def _candidate_rst(module: str) -> str:
+    suffix = module.removeprefix("max.")
+    if not suffix or suffix == "max":
+        return f"{DOCS_ROOT}/index.rst"
+    return f"{DOCS_ROOT}/{suffix}.rst"
+
+
+def _canonical_name(snap: ApiSnapshot, module: str, name: str) -> str:
+    """Resolve ``module.name`` through re-exports to its canonical entry."""
+    candidate = f"{module}.{name}"
+    if candidate in snap.symbols:
+        return candidate
+    # Walk parents: if a parent re-exports this name, the canonical name
+    # uses the parent.
+    parts = module.split(".")
+    for i in range(len(parts) - 1, 0, -1):
+        parent = ".".join(parts[:i])
+        if name in snap.module_alls.get(parent, []):
+            return f"{parent}.{name}"
+    return candidate
+
+
+def diff_snapshots(
+    base: ApiSnapshot,
+    head: ApiSnapshot,
+    documented_head: set[str],
+    documented_modules_head: set[str],
+) -> CoverageReport:
+    report = CoverageReport()
+
+    base_pairs: set[tuple[str, str]] = {
+        (mod, name) for mod, names in base.module_alls.items() for name in names
+    }
+    head_pairs: set[tuple[str, str]] = {
+        (mod, name) for mod, names in head.module_alls.items() for name in names
+    }
+
+    added = head_pairs - base_pairs
+    removed = base_pairs - head_pairs
+
+    head_modules = set(head.module_alls)
+    seen_modules: set[str] = set()
+    for module, name in sorted(added):
+        # Skip submodule-as-symbol entries (e.g. ``__all__ = ["cpu", "gpu"]``
+        # in a parent package's ``__init__.py``). The submodule itself will
+        # be reported separately via its own ``__all__``.
+        if f"{module}.{name}" in head_modules:
+            continue
+        canonical = _canonical_name(head, module, name)
+        owner_module = canonical.rsplit(".", 1)[0]
+        if canonical in documented_head:
+            continue
+        if (
+            owner_module not in documented_modules_head
+            and owner_module not in seen_modules
+        ):
+            report.new_modules.append(owner_module)
+            seen_modules.add(owner_module)
+        report.missing.append((canonical, _candidate_rst(owner_module)))
+
+    base_modules = set(base.module_alls)
+    for module, name in sorted(removed):
+        if f"{module}.{name}" in base_modules:
+            continue
+        canonical = _canonical_name(base, module, name)
+        if canonical in documented_head:
+            owner_module = canonical.rsplit(".", 1)[0]
+            report.stale.append((canonical, _candidate_rst(owner_module)))
+
+    # Possibly-missed __all__ entries: names newly imported in an
+    # __init__.py that aren't exported. DOCS-1117 / DeviceStream pattern.
+    for module, names in head.unexported_imports.items():
+        base_unexported = set(base.unexported_imports.get(module, []))
+        for name in sorted(names):
+            if name in base_unexported:
+                continue
+            init_rel = module.replace(".", "/") + "/__init__.py"
+            init_path = init_rel.replace("max/", str(PACKAGE_ROOT) + "/", 1)
+            report.suspicious.append((f"{module}.{name}", init_path))
+
+    # Dedupe missing list (same canonical may surface from multiple modules
+    # in the re-export case).
+    seen: set[str] = set()
+    deduped: list[tuple[str, str]] = []
+    for sym, where in report.missing:
+        if sym in seen:
+            continue
+        seen.add(sym)
+        deduped.append((sym, where))
+    report.missing = deduped
+    return report
+
+
+# -----------------------------------------------------------------------------
+# Reporting
+# -----------------------------------------------------------------------------
+
+COMMENT_MARKER = "<!-- docs-coverage-bot:max-python-api -->"
+DOCS_TEAM = "@modularml/docs"
+
+
+def render_markdown(report: CoverageReport) -> str:
+    if report.is_empty():
+        return ""
+    lines: list[str] = [
+        COMMENT_MARKER,
+        "## MAX Python API documentation coverage",
+        "",
+        "This PR changes the public surface of `max/python/max/`. The"
+        f" following items may need follow-up by {DOCS_TEAM}:",
+        "",
+    ]
+    if report.missing:
+        lines.append("### New public symbols missing from `max/python/docs/`")
+        lines.append("")
+        for sym, where in report.missing:
+            note = ""
+            if any(sym.startswith(f"{m}.") for m in report.new_modules):
+                note = " _(new module — RST does not yet exist)_"
+            lines.append(f"- `{sym}` -> `{where}`{note}")
+        lines.append("")
+    if report.stale:
+        lines.append(
+            "### Symbols removed from `__all__` but still referenced in RST"
+        )
+        lines.append("")
+        for sym, where in report.stale:
+            lines.append(f"- `{sym}` -> remove from `{where}`")
+        lines.append("")
+    if report.suspicious:
+        lines.append(
+            "### Newly imported but not in `__all__` (possibly missed export)"
+        )
+        lines.append("")
+        lines.append(
+            "These names were added to an `__init__.py`'s imports but aren't"
+            " listed in `__all__`. If they're meant to be public, add them"
+            " to `__all__` so the docs build picks them up. If they're"
+            " internal, ignore — or rename to underscore-prefixed to make the"
+            " intent explicit."
+        )
+        lines.append("")
+        for sym, where in report.suspicious:
+            lines.append(f"- `{sym}` -> imported in `{where}`")
+        lines.append("")
+    lines.extend(
+        [
+            "<details><summary>How to resolve</summary>",
+            "",
+            "See `max/python/docs/CLAUDE.md` for the doc-build conventions.",
+            "Add new symbols to the appropriate `autosummary` block in the"
+            " candidate RST, or create a new RST page (don't forget to"
+            " register it in `index.rst` and `oss/modular/docs/sidebars.json`).",
+            "",
+            "This check is advisory and does not block merge. The comment is"
+            " regenerated on every push.",
+            "</details>",
+        ]
+    )
+    return "\n".join(lines) + "\n"
+
+
+# -----------------------------------------------------------------------------
+# CLI
+# -----------------------------------------------------------------------------
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--base-ref",
+        default="origin/main",
+        help="Git ref to diff against (default: origin/main).",
+    )
+    parser.add_argument(
+        "--head-ref",
+        default="HEAD",
+        help="Git ref representing the proposed change (default: HEAD).",
+    )
+    parser.add_argument(
+        "--format",
+        choices=("markdown", "json"),
+        default="markdown",
+    )
+    parser.add_argument(
+        "--output",
+        type=Path,
+        help="Write report to this path instead of stdout.",
+    )
+    args = parser.parse_args(argv)
+
+    base = snapshot_at(args.base_ref)
+    head = snapshot_at(args.head_ref)
+    documented, documented_modules = documented_symbols_at(args.head_ref, head)
+    report = diff_snapshots(base, head, documented, documented_modules)
+
+    if args.format == "markdown":
+        text = render_markdown(report)
+    else:
+        text = json.dumps(
+            {
+                "missing": [
+                    {"symbol": s, "candidate": w} for s, w in report.missing
+                ],
+                "stale": [
+                    {"symbol": s, "candidate": w} for s, w in report.stale
+                ],
+                "new_modules": report.new_modules,
+            },
+            indent=2,
+        )
+
+    if args.output:
+        args.output.write_text(text)
+    elif text:
+        print(text)
+
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
