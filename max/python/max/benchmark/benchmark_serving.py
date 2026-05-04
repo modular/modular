@@ -3008,8 +3008,7 @@ def validate_task_and_endpoint(
 
 
 def _apply_workload_to_config(
-    config: ServingBenchmarkConfig,
-    workload: dict[str, Any],
+    config: ServingBenchmarkConfig, workload: Mapping[str, object]
 ) -> None:
     """Set workload YAML values as fields on *config*.
 
