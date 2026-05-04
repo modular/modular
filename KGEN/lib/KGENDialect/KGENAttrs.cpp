@@ -3725,15 +3725,15 @@ ErrorOr<Type> inferParamOperatorResultType(POC opcode,
     resultType = operandsIn[1].getType();
   else if (opcode != POC::GetSizeOf && opcode != POC::GetAlignOf)
     resultType = operandsIn.front().getType();
-  return resultType;
-  if (!llvm::is_contained({POC::Apply, POC::ApplyResultSlot,
+  // Raise error if operands do not have the same type for certain POCs.
+  if (!llvm::is_contained({POC::Apply, POC::ApplyResultSlot, POC::DataToStr,
                            POC::TargetHasFeature, POC::TargetGetField,
                            POC::AcceleratorArch, POC::GetSizeOf,
                            POC::GetAlignOf, POC::GetEnv, POC::VariadicPtrMap,
                            POC::VariadicPtrRemoveMap, POC::StringAddress},
                           opcode) &&
       !llvm::all_of(operandsIn.drop_front(),
-                    [&](auto op) { return op.getType() == resultType; }))
+                    [&](auto op) { return op.getType() == resultType; })) {
     return Error(llvm::formatv(
         "POC opcode {}: Operands must have same type, got [{}]", opcode,
         llvm::join(llvm::map_range(operandsIn,
@@ -3741,6 +3741,7 @@ ErrorOr<Type> inferParamOperatorResultType(POC opcode,
                                      return llvm::formatv("{}", attr);
                                    }),
                    ", ")));
+  }
   return resultType;
 }
 
