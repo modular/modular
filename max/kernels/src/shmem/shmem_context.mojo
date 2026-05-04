@@ -110,7 +110,7 @@ def _shmem_launch_mpi[func: def(ctx: SHMEMContext) thin raises]() raises:
     # Enable any exceptions inside the closure passed to abort with the original
     # error and device ID in the message, as `parallelize` can't run on raising
     # functions.
-    def shmem_error_wrapper(device_id_node: Int) capturing:
+    def shmem_error_wrapper(device_id_node: Int):
         try:
             var ctx = DeviceContext(device_id=device_id_node)
             with SHMEMContext(ctx) as shmem_ctx:
@@ -128,7 +128,7 @@ def _shmem_launch_mpi[func: def(ctx: SHMEMContext) thin raises]() raises:
     var npes_node = DeviceContext.number_of_devices()
 
     # Same number of tasks as worker threads
-    parallelize[shmem_error_wrapper](npes_node, npes_node)
+    parallelize(shmem_error_wrapper, npes_node, npes_node)
 
     # Cleanup MPI resources
     MPI_Finalize()
@@ -138,7 +138,7 @@ def _shmem_launch_tcp[func: def(ctx: SHMEMContext) thin raises]() raises:
     # Enable any exceptions inside the closure passed to abort with the original
     # error and device ID in the message, as `parallelize` can't run on raising
     # functions.
-    def shmem_error_wrapper(device_id_node: Int) capturing:
+    def shmem_error_wrapper(device_id_node: Int):
         try:
             var ctx = DeviceContext(device_id=device_id_node)
             with SHMEMContext[tcp=True](ctx) as shmem_ctx:
@@ -156,7 +156,7 @@ def _shmem_launch_tcp[func: def(ctx: SHMEMContext) thin raises]() raises:
     var npes_node = DeviceContext.number_of_devices()
 
     # Same number of tasks as worker threads
-    parallelize[shmem_error_wrapper](npes_node, npes_node)
+    parallelize(shmem_error_wrapper, npes_node, npes_node)
 
 
 struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
