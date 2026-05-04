@@ -112,7 +112,114 @@ def test_closure_node(ctx: DeviceContext) raises:
             assert_equal(out_host[i], Float32(length) * scale)
 
 
+def test_add_copy_to_device(ctx: DeviceContext) raises:
+    print("Test capturing a host-to-device memcpy node.")
+    comptime length = 1024
+
+    var host_src = ctx.enqueue_create_host_buffer[DType.float32](length)
+    for i in range(length):
+        host_src[i] = Float32(i) * 3.0
+    var dev_buf = ctx.enqueue_create_buffer[DType.float32](length)
+
+    var builder = ctx.create_graph_builder()
+    builder.add_copy(dev_buf, host_src)
+    var graph = builder^.instantiate()
+    graph.replay()
+    ctx.synchronize()
+
+    with dev_buf.map_to_host() as host_view:
+        for i in range(length):
+            assert_equal(host_view[i], Float32(i) * 3.0)
+
+
+def test_add_copy_from_device(ctx: DeviceContext) raises:
+    print("Test capturing a device-to-host memcpy node.")
+    comptime length = 1024
+
+    var dev_buf = ctx.enqueue_create_buffer[DType.float32](length)
+    with dev_buf.map_to_host() as host_view:
+        for i in range(length):
+            host_view[i] = Float32(2 * i + 1)
+
+    # Zero the host destination so we can detect that the graph wrote to it.
+    var host_dst = ctx.enqueue_create_host_buffer[DType.float32](length)
+    for i in range(length):
+        host_dst[i] = 0.0
+
+    var builder = ctx.create_graph_builder()
+    builder.add_copy(host_dst, dev_buf)
+    var graph = builder^.instantiate()
+    graph.replay()
+    ctx.synchronize()
+
+    for i in range(length):
+        assert_equal(host_dst[i], Float32(2 * i + 1))
+
+
+def test_add_copy_device_to_device(ctx: DeviceContext) raises:
+    print("Test capturing a device-to-device memcpy node.")
+    comptime length = 1024
+
+    var src_dev = ctx.enqueue_create_buffer[DType.float32](length)
+    var dst_dev = ctx.enqueue_create_buffer[DType.float32](length)
+
+    with src_dev.map_to_host() as src_host:
+        for i in range(length):
+            src_host[i] = Float32(i * i)
+
+    var builder = ctx.create_graph_builder()
+    builder.add_copy(dst_dev, src_dev)
+    var graph = builder^.instantiate()
+    graph.replay()
+    ctx.synchronize()
+
+    with dst_dev.map_to_host() as dst_host:
+        for i in range(length):
+            assert_equal(dst_host[i], Float32(i * i))
+
+
+def test_add_memset(ctx: DeviceContext) raises:
+    print("Test capturing memset nodes for 8/16/32/64-bit dtypes.")
+    comptime length = 64
+
+    var buf_u8 = ctx.enqueue_create_buffer[DType.uint8](length)
+    var buf_u16 = ctx.enqueue_create_buffer[DType.uint16](length)
+    var buf_u32 = ctx.enqueue_create_buffer[DType.uint32](length)
+    var buf_u64 = ctx.enqueue_create_buffer[DType.uint64](length)
+
+    var builder = ctx.create_graph_builder()
+    builder.add_memset(buf_u8, UInt8(123))
+    builder.add_memset(buf_u16, UInt16(0xBEEF))
+    builder.add_memset(buf_u32, UInt32(0xDEADBEEF))
+    # Symmetric high/low halves so the graph builder can express it as a
+    # single node.
+    builder.add_memset(buf_u64, UInt64(0x0101010101010101))
+    var graph = builder^.instantiate()
+    graph.replay()
+    ctx.synchronize()
+
+    with buf_u8.map_to_host() as host_u8:
+        for i in range(length):
+            assert_equal(host_u8[i], UInt8(123))
+
+    with buf_u16.map_to_host() as host_u16:
+        for i in range(length):
+            assert_equal(host_u16[i], UInt16(0xBEEF))
+
+    with buf_u32.map_to_host() as host_u32:
+        for i in range(length):
+            assert_equal(host_u32[i], UInt32(0xDEADBEEF))
+
+    with buf_u64.map_to_host() as host_u64:
+        for i in range(length):
+            assert_equal(host_u64[i], UInt64(0x0101010101010101))
+
+
 def main() raises:
     with DeviceContext() as ctx:
         test_vec_add_kernel_node(ctx)
         test_closure_node(ctx)
+        test_add_copy_to_device(ctx)
+        test_add_copy_from_device(ctx)
+        test_add_copy_device_to_device(ctx)
+        test_add_memset(ctx)

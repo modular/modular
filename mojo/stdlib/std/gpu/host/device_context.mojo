@@ -3339,6 +3339,172 @@ struct DeviceGraphBuilder(Movable, _FunctionEnqueuer):
             location=call_location(),
         )
 
+    @always_inline
+    def add_copy[
+        dtype: DType
+    ](
+        self,
+        dst_buf: DeviceBuffer[dtype, ...],
+        src_buf: HostBuffer[dtype, ...],
+    ) raises:
+        """Adds a host-to-device memcpy node to the graph.
+
+        The number of bytes copied is determined by the size of the device
+        buffer.
+
+        Parameters:
+            dtype: Type of the data being copied.
+
+        Args:
+            dst_buf: Device buffer to copy to.
+            src_buf: Host buffer to copy from.
+
+        Raises:
+            If adding the node fails.
+        """
+        # const char *AsyncRT_DeviceGraphBuilder_addCopyHostToDevice(
+        #     DeviceGraphBuilder *builder, DeviceBuffer *dst, const void *src)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceGraphBuilder_addCopyHostToDevice",
+                _CString[],
+            ](
+                self._handle,
+                dst_buf._handle,
+                src_buf._host_ptr,
+            )
+        )
+
+    @always_inline
+    def add_copy[
+        dtype: DType
+    ](
+        self,
+        dst_buf: HostBuffer[dtype, ...],
+        src_buf: DeviceBuffer[dtype, ...],
+    ) raises:
+        """Adds a device-to-host memcpy node to the graph.
+
+        The number of bytes copied is determined by the size of the device
+        buffer.
+
+        Parameters:
+            dtype: Type of the data being copied.
+
+        Args:
+            dst_buf: Host buffer to copy to.
+            src_buf: Device buffer to copy from.
+
+        Raises:
+            If adding the node fails.
+        """
+        # const char *AsyncRT_DeviceGraphBuilder_addCopyDeviceToHost(
+        #     DeviceGraphBuilder *builder, void *dst, DeviceBuffer *src)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceGraphBuilder_addCopyDeviceToHost",
+                _CString[],
+            ](
+                self._handle,
+                dst_buf._host_ptr,
+                src_buf._handle,
+            )
+        )
+
+    @always_inline
+    def add_copy[
+        dtype: DType
+    ](
+        self,
+        dst_buf: DeviceBuffer[dtype, ...],
+        src_buf: DeviceBuffer[dtype, ...],
+    ) raises:
+        """Adds a device-to-device memcpy node to the graph.
+
+        Both buffers must belong to the same context as this builder;
+        cross-context copies are not supported in graphs. The number of bytes
+        copied is determined by the size of the source buffer.
+
+        Parameters:
+            dtype: Type of the data being copied.
+
+        Args:
+            dst_buf: Device buffer to copy to.
+            src_buf: Device buffer to copy from. Must be the same size as
+                `dst_buf`.
+
+        Raises:
+            If adding the node fails.
+        """
+        # const char *AsyncRT_DeviceGraphBuilder_addCopyDeviceToDevice(
+        #     DeviceGraphBuilder *builder, DeviceBuffer *dst, DeviceBuffer *src)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceGraphBuilder_addCopyDeviceToDevice",
+                _CString[],
+                _DeviceGraphBuilderPtr[mut=True],
+                _DeviceBufferPtr[mut=True],
+                _DeviceBufferPtr[mut=True],
+            ](
+                self._handle,
+                dst_buf._handle,
+                src_buf._handle,
+            )
+        )
+
+    @always_inline
+    def add_memset[
+        dtype: DType
+    ](self, dst: DeviceBuffer[dtype, ...], val: Scalar[dtype]) raises:
+        """Adds a memset node to the graph that sets all elements of `dst` to
+        `val`.
+
+        Parameters:
+            dtype: Type of the data stored in the buffer.
+
+        Args:
+            dst: Destination buffer.
+            val: Value to set all elements of `dst` to.
+
+        Raises:
+            If adding the node fails. The underlying graph APIs cannot express
+            an 8-byte memset whose high and low 32-bit halves differ as a
+            single node, so such patterns will return an error.
+        """
+        comptime bitwidth = bit_width_of[dtype]()
+        comptime assert (
+            bitwidth == 8 or bitwidth == 16 or bitwidth == 32 or bitwidth == 64
+        ), "bitwidth of memset dtype must be one of [8,16,32,64]"
+        var value: UInt64
+
+        comptime if bitwidth == 8:
+            value = UInt64(Int(bitcast[DType.uint8, 1](val)))
+        elif bitwidth == 16:
+            value = UInt64(Int(bitcast[DType.uint16, 1](val)))
+        elif bitwidth == 32:
+            value = UInt64(bitcast[DType.uint32, 1](val))
+        else:
+            value = bitcast[DType.uint64, 1](val)
+
+        # const char *AsyncRT_DeviceGraphBuilder_addSetMemory(
+        #     DeviceGraphBuilder *builder, DeviceBuffer *dst, uint64_t val,
+        #     size_t valSize)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceGraphBuilder_addSetMemory",
+                _CString[],
+                _DeviceGraphBuilderPtr[mut=True],
+                _DeviceBufferPtr[mut=True],
+                UInt64,
+                c_size_t,
+            ](
+                self._handle,
+                dst._handle,
+                value,
+                c_size_t(size_of[dtype]()),
+            )
+        )
+
     def instantiate(var self) raises -> DeviceGraph:
         """Instantiates the constructed graph into an executable device graph.
 
