@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
+from typing import Any
 
 from max.dtype import DType
 from max.graph import (
@@ -23,6 +24,7 @@ from max.graph import (
     Dim,
     ShardingStrategy,
     TensorValue,
+    Value,
     ops,
 )
 from max.nn.comm import Allreduce
@@ -31,6 +33,7 @@ from max.nn.kernels import spatial_merge
 from max.nn.layer import LayerList, Module, Shardable
 from max.nn.linear import Linear
 from max.nn.norm import LayerNorm
+from max.nn.transformer.transformer import forward_sequential_layers
 
 from ...qwen2_5vl.nn.vision_attention import DistributedVisionWindowAttention
 from ..model_config import VisionConfig
@@ -493,7 +496,8 @@ class VisionBlock(Module):
     def __call__(
         self,
         xs: Sequence[TensorValue],
-        position_embeddings: list[tuple[TensorValue, TensorValue]],
+        cos_embs: Sequence[TensorValue],
+        sin_embs: Sequence[TensorValue],
         input_row_offsets: Sequence[TensorValue],
         max_seqlen: Sequence[TensorValue],
         signal_buffers: list[BufferValue],
@@ -507,14 +511,15 @@ class VisionBlock(Module):
         attn_outs = [
             attn(
                 norm_out,
-                position_embeddings=pos_embs,
+                position_embeddings=(cos, sin),
                 input_row_offsets=row_offsets,
                 max_seqlen=mx,
             )
-            for attn, norm_out, pos_embs, row_offsets, mx in zip(
+            for attn, norm_out, cos, sin, row_offsets, mx in zip(
                 self.attn_shards,
                 norm1_outs,
-                position_embeddings,
+                cos_embs,
+                sin_embs,
                 input_row_offsets,
                 max_seqlen,
                 strict=True,
@@ -867,24 +872,20 @@ class VisionTransformer(Module):
                 seq_len=seq_len,
             )
         )
-        rotary_position_embeddings = [
-            (
-                rotary_position_embeddings_host[0].to(device),
-                rotary_position_embeddings_host[1].to(device),
-            )
+        cos_embs = [
+            rotary_position_embeddings_host[0].to(device)
+            for device in self.devices
+        ]
+        sin_embs = [
+            rotary_position_embeddings_host[1].to(device)
             for device in self.devices
         ]
 
-        deepstack_feature_lists = []
-        # Pass patch and positional embeddings though Window Attention Blocks to get hidden states for each patch.
-        for layer_num, blk in enumerate(self.blocks):
-            hs = blk(
-                hs,
-                position_embeddings=rotary_position_embeddings,
-                input_row_offsets=cu_seqlens,
-                max_seqlen=max_seqlen,
-                signal_buffers=signal_buffers,
-            )
+        deepstack_feature_lists: list[list[TensorValue]] = []
+
+        def on_layer_output(
+            layer_num: int, layer_hs: list[TensorValue]
+        ) -> None:
             if layer_num in self.deepstack_visual_indexes:
                 deepstack_merger_idx = self.deepstack_visual_indexes.index(
                     layer_num
@@ -898,16 +899,36 @@ class VisionTransformer(Module):
                 deepstack_merger_outs = [
                     deepstack_merger(h)
                     for h, deepstack_merger in zip(
-                        hs, deepstack_merger_shards, strict=True
+                        layer_hs, deepstack_merger_shards, strict=True
                     )
                 ]
                 deepstack_feature = deepstack_merger_allreduce(
-                    deepstack_merger_outs, signal_buffers
+                    deepstack_merger_outs, list(signal_buffers)
                 )
-
-                # Append the list of features (one tensor per device) for this layer.
-                # Each device's feature tensor shape = (seq_len // (spatial_merge_size^2), out_hidden_size) = (seq_len//4, 2048).
                 deepstack_feature_lists.append(deepstack_feature)
+
+        def inputs_for_layer(
+            _idx: int, h: list[TensorValue]
+        ) -> list[Value[Any] | Sequence[Value[Any]]]:
+            return [
+                h,
+                cos_embs,
+                sin_embs,
+                list(cu_seqlens),
+                list(max_seqlen),
+                list(signal_buffers),
+            ]
+
+        # All blocks share a single compiled subgraph, reducing compile time from O(N) to O(1).
+        hs = forward_sequential_layers(
+            list(self.blocks),
+            inputs_for_layer=inputs_for_layer,
+            initial_hidden_states=hs,
+            weight_prefix_for_layer=lambda i: f"vision_encoder.blocks.{i}.",
+            subgraph_layer_groups=[list(range(len(self.blocks)))],
+            name_for_subgraph=lambda _: "vision_block",
+            on_layer_output=on_layer_output,
+        )
 
         # The merged features are projected via a linear layer to align with the language model's embedding space.
         # Apply per-device merger, then concatenate back in original order
