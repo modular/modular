@@ -89,7 +89,7 @@ MessageSource = Literal["user", "assistant"]
 
 
 @dataclass
-class ChatMessage:
+class SessionMessage:
     source: MessageSource
     content: str
     num_tokens: int
@@ -99,7 +99,7 @@ class ChatMessage:
 @dataclass
 class ChatSession:
     id: int | None
-    messages: Sequence[ChatMessage]
+    messages: Sequence[SessionMessage]
     prefix_turns: int = 0
 
     @property
@@ -133,8 +133,8 @@ def build_chat_message(
     tokenizer: PreTrainedTokenizerBase,
     num_tokens: int | None = None,
     delay_until_next_message: float | None = None,
-) -> ChatMessage:
-    return ChatMessage(
+) -> SessionMessage:
+    return SessionMessage(
         source,
         prompt,
         num_tokens or estimate_num_tokens(tokenizer, prompt),

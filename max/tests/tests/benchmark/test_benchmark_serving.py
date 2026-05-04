@@ -37,8 +37,8 @@ from max.benchmark.benchmark_serving import (
 )
 from max.benchmark.benchmark_shared.datasets import SampledRequest
 from max.benchmark.benchmark_shared.datasets.types import (
-    ChatMessage,
     ChatSession,
+    SessionMessage,
 )
 from max.benchmark.benchmark_shared.metrics import (
     PercentileMetrics,
@@ -729,8 +729,10 @@ def test_chat_session_driver_forwards_sampling_params() -> None:
         chat_session = ChatSession(
             id=0,
             messages=[
-                ChatMessage(source="user", content="Hi", num_tokens=5),
-                ChatMessage(source="assistant", content="Hello", num_tokens=5),
+                SessionMessage(source="user", content="Hi", num_tokens=5),
+                SessionMessage(
+                    source="assistant", content="Hello", num_tokens=5
+                ),
             ],
         )
         request_counter = RequestCounter(max_requests=10, total_sent_requests=0)
@@ -778,10 +780,12 @@ def test_chat_session_driver_run_prefix_prepends_first_turn() -> None:
         chat_session = ChatSession(
             id=0,
             messages=[
-                ChatMessage(source="user", content="Hi", num_tokens=5),
-                ChatMessage(source="assistant", content="Hello", num_tokens=5),
-                ChatMessage(source="user", content="Again", num_tokens=5),
-                ChatMessage(source="assistant", content="Hi", num_tokens=5),
+                SessionMessage(source="user", content="Hi", num_tokens=5),
+                SessionMessage(
+                    source="assistant", content="Hello", num_tokens=5
+                ),
+                SessionMessage(source="user", content="Again", num_tokens=5),
+                SessionMessage(source="assistant", content="Hi", num_tokens=5),
             ],
         )
         request_counter = RequestCounter(max_requests=10, total_sent_requests=0)
@@ -820,29 +824,29 @@ def _make_4turn_session(
     return ChatSession(
         id=0,
         messages=[
-            ChatMessage(source="user", content="Turn 1", num_tokens=5),
-            ChatMessage(
+            SessionMessage(source="user", content="Turn 1", num_tokens=5),
+            SessionMessage(
                 source="assistant",
                 content="",
                 num_tokens=5,
                 delay_until_next_message=delay_ms,
             ),
-            ChatMessage(source="user", content="Turn 2", num_tokens=5),
-            ChatMessage(
+            SessionMessage(source="user", content="Turn 2", num_tokens=5),
+            SessionMessage(
                 source="assistant",
                 content="",
                 num_tokens=5,
                 delay_until_next_message=delay_ms,
             ),
-            ChatMessage(source="user", content="Turn 3", num_tokens=5),
-            ChatMessage(
+            SessionMessage(source="user", content="Turn 3", num_tokens=5),
+            SessionMessage(
                 source="assistant",
                 content="",
                 num_tokens=5,
                 delay_until_next_message=delay_ms,
             ),
-            ChatMessage(source="user", content="Turn 4", num_tokens=5),
-            ChatMessage(
+            SessionMessage(source="user", content="Turn 4", num_tokens=5),
+            SessionMessage(
                 source="assistant",
                 content="",
                 num_tokens=5,
@@ -1365,10 +1369,12 @@ def test_compute_steady_state_result_detected() -> None:
 
 
 def _fake_session(session_id: int, num_turns: int) -> ChatSession:
-    msgs: list[ChatMessage] = []
+    msgs: list[SessionMessage] = []
     for _ in range(num_turns):
-        msgs.append(ChatMessage(source="user", content="u", num_tokens=1))
-        msgs.append(ChatMessage(source="assistant", content="a", num_tokens=1))
+        msgs.append(SessionMessage(source="user", content="u", num_tokens=1))
+        msgs.append(
+            SessionMessage(source="assistant", content="a", num_tokens=1)
+        )
     return ChatSession(id=session_id, messages=msgs)
 
 

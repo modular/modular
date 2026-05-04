@@ -25,11 +25,11 @@ from .distribution import DistributionParameter
 from .huggingface import HuggingFaceBenchmarkDataset
 from .multiturn_distribution_fit import build_chat_samples_from_user_text_pool
 from .types import (
-    ChatMessage,
     ChatSamples,
     ChatSession,
     RequestSamples,
     SampledRequest,
+    SessionMessage,
     estimate_num_tokens,
 )
 
@@ -244,7 +244,7 @@ class InstructCoderBenchmarkDataset(HuggingFaceBenchmarkDataset):
             if idx >= len(tokenized):
                 break
 
-            messages: list[ChatMessage] = []
+            messages: list[SessionMessage] = []
             for _ in range(turns_per_session):
                 if idx >= len(tokenized):
                     break
@@ -253,14 +253,14 @@ class InstructCoderBenchmarkDataset(HuggingFaceBenchmarkDataset):
                 idx += 1
 
                 messages.append(
-                    ChatMessage(
+                    SessionMessage(
                         source="user",
                         content=prompt,
                         num_tokens=prompt_len,
                     )
                 )
                 messages.append(
-                    ChatMessage(
+                    SessionMessage(
                         source="assistant",
                         content="",
                         num_tokens=output_len,

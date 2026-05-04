@@ -28,9 +28,9 @@ from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
 from .distribution import BaseDistribution, DistributionParameter
 from .types import (
-    ChatMessage,
     ChatSamples,
     ChatSession,
+    SessionMessage,
     estimate_num_tokens,
 )
 
@@ -278,7 +278,7 @@ def build_chat_samples_from_user_text_pool(
             break
 
         n_turns = num_turns_per_session[session_id]
-        messages: list[ChatMessage] = []
+        messages: list[SessionMessage] = []
         context_tokens = 0
 
         for turn_i in range(n_turns):
@@ -329,14 +329,14 @@ def build_chat_samples_from_user_text_pool(
             )
 
             messages.append(
-                ChatMessage(
+                SessionMessage(
                     source="user",
                     content=user_text,
                     num_tokens=user_tokens,
                 )
             )
             messages.append(
-                ChatMessage(
+                SessionMessage(
                     source="assistant",
                     content="",
                     num_tokens=target_out,

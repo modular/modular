@@ -26,11 +26,11 @@ from .distribution import DistributionParameter
 from .huggingface import HuggingFaceBenchmarkDataset
 from .multiturn_distribution_fit import build_chat_samples_from_user_text_pool
 from .types import (
-    ChatMessage,
     ChatSamples,
     ChatSession,
     RequestSamples,
     SampledRequest,
+    SessionMessage,
 )
 
 logger = logging.getLogger(__name__)
@@ -289,9 +289,9 @@ class AgenticCodeBenchmarkDataset(HuggingFaceBenchmarkDataset):
             data = msgspec.json.decode(f.read(), type=AgenticCodeData)
 
         # Build all valid sessions, then shuffle and slice.
-        all_messages: list[list[ChatMessage]] = []
+        all_messages: list[list[SessionMessage]] = []
         for session in data.sessions:
-            messages: list[ChatMessage] = []
+            messages: list[SessionMessage] = []
             turns_added = 0
             for turn in session.turns:
                 if (
@@ -338,14 +338,14 @@ class AgenticCodeBenchmarkDataset(HuggingFaceBenchmarkDataset):
                     continue
 
                 messages.append(
-                    ChatMessage(
+                    SessionMessage(
                         source="user",
                         content=user_text,
                         num_tokens=input_tokens,
                     )
                 )
                 messages.append(
-                    ChatMessage(
+                    SessionMessage(
                         source="assistant",
                         content="",  # filled by live model response
                         num_tokens=output_tokens,
