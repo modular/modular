@@ -29,6 +29,7 @@ from dataclasses import dataclass, field
 from typing import Any, TypeVar
 
 import aiohttp
+from openai.types.chat.completion_create_params import ResponseFormat
 from pydantic import BaseModel
 from tqdm.asyncio import tqdm
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
@@ -103,7 +104,7 @@ class RequestFuncInput(BaseRequestFuncInput):
     prompt_len: int
     max_tokens: int | None
     ignore_eos: bool
-    response_format: dict[str, Any] | None = None
+    response_format: ResponseFormat | None = None
 
     def get_output_type(self) -> type[BaseRequestFuncOutput]:
         return RequestFuncOutput
@@ -711,7 +712,11 @@ class OpenAIChatCompletionsRequestDriver(RequestDriver):
         if request_func_input.top_p is not None:
             payload["top_p"] = request_func_input.top_p
         if request_func_input.response_format is not None:
-            payload["response_format"] = request_func_input.response_format
+            # Convert TypedDict to plain dict so mypy accepts the assignment into
+            # payload (since a TypedDict is stricter than a dict[str, Any]).
+            payload["response_format"] = dict(
+                request_func_input.response_format
+            )
         for img in request_func_input.images:
             # TODO: Remove this type ignore
             # (error: Value of type "object" is not indexable)

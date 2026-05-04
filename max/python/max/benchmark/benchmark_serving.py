@@ -128,6 +128,8 @@ from max.diagnostics.cpu import (
     collect_pids_for_port,
 )
 from max.diagnostics.gpu import GPUDiagContext
+from openai.types.chat.completion_create_params import ResponseFormat
+from pydantic import TypeAdapter, ValidationError
 
 BENCHMARK_SERVING_ARGPARSER_DESCRIPTION = (
     "This command runs comprehensive benchmark tests on a model server to"
@@ -204,44 +206,40 @@ def _prepend_run_prefix_to_formatted_prompt(
     return [new_msg, *prompt[1:]]
 
 
-def parse_response_format(
-    response_format_arg: str | None,
-) -> dict[str, Any] | None:
+def parse_response_format(arg: str) -> ResponseFormat:
     """Parse response format from CLI arg (inline JSON or @filepath).
 
     Args:
-        response_format_arg: Either a JSON string or '@path/to/schema.json' to load
-            from file. If None, returns None.
+        arg: Either a JSON string or '@path/to/schema.json' to load from file.
 
     Returns:
-        Parsed response format dictionary, or None if input is None.
+        Validated ResponseFormat.
 
     Raises:
-        ValueError: If the JSON is invalid or the file cannot be read.
+        ValueError: If the JSON is invalid, the file cannot be read, or the
+            value does not match a recognised OpenAI response format.
     """
-    if response_format_arg is None:
-        return None
-
-    if response_format_arg.startswith("@"):
+    if arg.startswith("@"):
         # Load from file
-        file_path = response_format_arg[1:]
+        file_path = Path(arg[1:])
         try:
-            with open(file_path) as f:
-                return json.load(f)
+            raw = file_path.read_text()
         except FileNotFoundError as e:
             raise ValueError(
                 f"Response format file not found: {file_path}"
             ) from e
-        except json.JSONDecodeError as e:
+        try:
+            return TypeAdapter(ResponseFormat).validate_json(raw)
+        except (json.JSONDecodeError, ValidationError) as e:
             raise ValueError(
-                f"Invalid JSON in response format file {file_path}: {e}"
+                f"Invalid response format in file {file_path}: {e}"
             ) from e
 
     # Parse inline JSON
     try:
-        return json.loads(response_format_arg)
-    except json.JSONDecodeError as e:
-        raise ValueError(f"Invalid JSON in response format: {e}") from e
+        return TypeAdapter(ResponseFormat).validate_json(arg)
+    except (json.JSONDecodeError, ValidationError) as e:
+        raise ValueError(f"Invalid response format: {e}") from e
 
 
 def get_default_trace_path() -> str:
@@ -3492,7 +3490,7 @@ def main_with_parsed_args(
     )
 
     # Inject response_format into all sampled requests if specified
-    if args.response_format:
+    if args.response_format is not None:
         response_format = parse_response_format(args.response_format)
         if isinstance(samples, RequestSamples):
             for request in samples.requests:

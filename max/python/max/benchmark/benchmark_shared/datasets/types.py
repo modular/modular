@@ -20,6 +20,7 @@ from dataclasses import dataclass, field
 from io import BytesIO
 from typing import Any, Literal
 
+from openai.types.chat.completion_create_params import ResponseFormat
 from PIL import Image
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 from typing_extensions import TypedDict
@@ -56,7 +57,7 @@ class SampledRequest:
     output_len: int | None
     encoded_images: list[OpenAIImage]
     ignore_eos: bool
-    response_format: dict[str, Any] | None = None
+    response_format: ResponseFormat | None = None
 
 
 @dataclass

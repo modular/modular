@@ -25,6 +25,8 @@ modular_py_library(
         requirement("cyclopts"),
         requirement("jinja2"),
         requirement("numpy"),
+        requirement("openai"),
+        requirement("pydantic"),
         requirement("pyyaml"),
         requirement("tqdm"),
         requirement("tiktoken"),
