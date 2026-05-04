@@ -12,55 +12,19 @@
 # ===----------------------------------------------------------------------=== #
 """Video generation modality provider options."""
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import Field
 
-from .common import GeneratedMediaResponseFormat
+from .common import GeneratedMediaResponseFormat, PixelProviderOptionsBase
 
 
-class VideoProviderOptions(BaseModel):
-    """Options specific to video generation pipelines."""
+class VideoProviderOptions(PixelProviderOptionsBase):
+    """Options specific to video generation pipelines.
 
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    negative_prompt: str | None = Field(
-        None,
-        description=(
-            "A text description of what to exclude from the generated video. "
-            "Used to guide the generation away from unwanted elements."
-        ),
-    )
-
-    width: int | None = Field(
-        None,
-        description="The width of the generated video in pixels.",
-        gt=0,
-    )
-
-    height: int | None = Field(
-        None,
-        description="The height of the generated video in pixels.",
-        gt=0,
-    )
-
-    steps: int | None = Field(
-        None,
-        description=(
-            "The number of denoising steps. More steps generally produce higher quality "
-            "results but take longer to generate."
-        ),
-        gt=0,
-    )
-
-    guidance_scale: float | None = Field(
-        None,
-        description=(
-            "Guidance scale for classifier-free guidance. "
-            "Higher values make the generation follow the prompt more closely. "
-            "Set to 1.0 to disable CFG. When unset, falls back to the value "
-            "from the image provider options."
-        ),
-        ge=0.0,
-    )
+    Inherits all generation options shared with other pixel modalities from
+    :class:`PixelProviderOptionsBase`; adds video-specific fields
+    (``frames_per_second``, ``num_frames``, ``guidance_scale_2``) and
+    overrides the default response format.
+    """
 
     frames_per_second: int | None = Field(
         None,

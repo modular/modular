@@ -18,6 +18,7 @@ from .max import MaxProviderOptions
 from .modality import (
     GeneratedMediaResponseFormat,
     ImageProviderOptions,
+    PixelProviderOptionsBase,
     VideoProviderOptions,
 )
 
@@ -61,6 +62,7 @@ __all__ = [
     "GeneratedMediaResponseFormat",
     "ImageProviderOptions",
     "MaxProviderOptions",
+    "PixelProviderOptionsBase",
     "ProviderOptions",
     "VideoProviderOptions",
 ]

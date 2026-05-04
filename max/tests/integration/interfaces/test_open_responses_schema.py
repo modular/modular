@@ -391,7 +391,7 @@ def test_create_response_body_without_provider_options() -> None:
     assert request.provider_options.image is not None
     assert request.provider_options.image.guidance_scale == 3.5
     assert request.provider_options.image.true_cfg_scale == 1.0
-    assert request.provider_options.image.steps == 50
+    assert request.provider_options.image.steps is None
     assert request.provider_options.image.num_images == 1
     assert request.provider_options.video is None
 

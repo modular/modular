@@ -77,10 +77,10 @@ def test_image_provider_options_frozen() -> None:
 
 
 def test_video_provider_options_guidance_scale() -> None:
-    """VideoProviderOptions exposes optional primary CFG guidance_scale."""
-    # Defaults to None (caller falls back to image options).
+    """VideoProviderOptions exposes guidance_scale inherited from the base."""
+    # Inherits the modality-shared default (3.5) from PixelProviderOptionsBase.
     opts = VideoProviderOptions()
-    assert opts.guidance_scale is None
+    assert opts.guidance_scale == 3.5
 
     # Accepts explicit values.
     opts = VideoProviderOptions(guidance_scale=5.0)

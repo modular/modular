@@ -32,6 +32,10 @@ from max.interfaces import (
     TokenBuffer,
 )
 from max.interfaces.generation import GenerationOutput
+from max.interfaces.provider_options import (
+    ImageProviderOptions,
+    PixelProviderOptionsBase,
+)
 from max.interfaces.request import OpenResponsesRequest
 from max.interfaces.request.open_responses import (
     InputImageContent,
@@ -967,42 +971,35 @@ class PixelGenerationTokenizer(
         # Extract input image from request content (takes precedence over input_image parameter)
         input_image = self._retrieve_image(request) or input_image
 
-        # Extract image provider options (always available via defaults)
+        # Resolve generation options. Shared (modality-agnostic) fields are
+        # read from whichever modality block the request carries; image-only
+        # fields (e.g., secondary_prompt, num_images) come from the image
+        # block when present and fall back to defaults otherwise. This keeps
+        # pure-video requests from needing a stub image block.
         image_options = request.body.provider_options.image
-        if image_options is None:
-            raise ValueError(
-                "Image provider options are required for pixel generation. "
-                "This should not happen as defaults are applied at request creation."
-            )
-
         video_options = request.body.provider_options.video
-        guidance_scale = (
-            video_options.guidance_scale
-            if video_options is not None
-            and video_options.guidance_scale is not None
-            else image_options.guidance_scale
+        pixel_options: PixelProviderOptionsBase = (
+            video_options or image_options or ImageProviderOptions()
         )
+        image_specific = image_options or ImageProviderOptions()
 
-        if guidance_scale < 1.0 or image_options.true_cfg_scale < 1.0:
+        guidance_scale = pixel_options.guidance_scale
+
+        if guidance_scale < 1.0 or pixel_options.true_cfg_scale < 1.0:
             logger.warning(
                 f"Guidance scales < 1.0 detected (guidance_scale={guidance_scale}, "
-                f"true_cfg_scale={image_options.true_cfg_scale}). This is mathematically possible"
+                f"true_cfg_scale={pixel_options.true_cfg_scale}). This is mathematically possible"
                 " but may produce lower quality or unexpected results."
             )
 
-        # Resolve negative_prompt: prefer video options for video pipelines.
-        negative_prompt_resolved = (
-            video_options.negative_prompt
-            if video_options and video_options.negative_prompt
-            else None
-        ) or image_options.negative_prompt
+        negative_prompt_resolved = pixel_options.negative_prompt
 
         if (
-            image_options.true_cfg_scale > 1.0
+            pixel_options.true_cfg_scale > 1.0
             and negative_prompt_resolved is None
         ):
             logger.warning(
-                f"true_cfg_scale={image_options.true_cfg_scale} is set, but no negative_prompt "
+                f"true_cfg_scale={pixel_options.true_cfg_scale} is set, but no negative_prompt "
                 "is provided. True classifier-free guidance requires a negative prompt; "
                 "falling back to standard generation."
             )
@@ -1030,7 +1027,7 @@ class PixelGenerationTokenizer(
                 negative_prompt_resolved = ""
         else:
             do_true_cfg = (
-                image_options.true_cfg_scale > 1.0
+                pixel_options.true_cfg_scale > 1.0
                 and negative_prompt_resolved is not None
             )
 
@@ -1055,9 +1052,9 @@ class PixelGenerationTokenizer(
             negative_token_ids_2,
         ) = await self._generate_tokens_ids(
             prompt,
-            image_options.secondary_prompt,
+            image_specific.secondary_prompt,
             negative_prompt_resolved,
-            image_options.secondary_negative_prompt,
+            image_specific.secondary_negative_prompt,
             do_true_cfg or do_zimage_cfg,
             images=images_for_tokenization,
         )
@@ -1098,21 +1095,21 @@ class PixelGenerationTokenizer(
                 # input image to the output shape and defeat aspect preservation.
                 target_height=None
                 if _preserve_aspect
-                else image_options.height,
-                target_width=None if _preserve_aspect else image_options.width,
+                else pixel_options.height,
+                target_width=None if _preserve_aspect else pixel_options.width,
                 preserve_aspect_ratio=_preserve_aspect,
             )
-            height = image_options.height or preprocessed_image.height
-            width = image_options.width or preprocessed_image.width
+            height = pixel_options.height or preprocessed_image.height
+            width = pixel_options.width or preprocessed_image.width
             preprocessed_image_array = np.array(
                 preprocessed_image, dtype=np.uint8
             ).copy()
         else:
             height = (
-                image_options.height or default_sample_size * vae_scale_factor
+                pixel_options.height or default_sample_size * vae_scale_factor
             )
             width = (
-                image_options.width or default_sample_size * vae_scale_factor
+                pixel_options.width or default_sample_size * vae_scale_factor
             )
 
         # 3. Resolve image dimensions using cached static values
@@ -1121,8 +1118,8 @@ class PixelGenerationTokenizer(
         image_seq_len = (latent_height // 2) * (latent_width // 2)
 
         num_inference_steps = (
-            image_options.steps
-            if "steps" in image_options.model_fields_set
+            pixel_options.steps
+            if pixel_options.steps is not None
             else self._default_num_inference_steps
         )
         sigma_min = (
@@ -1154,7 +1151,7 @@ class PixelGenerationTokenizer(
             and input_image is not None
         ):
             init_timestep = min(
-                num_inference_steps * image_options.strength,
+                num_inference_steps * image_specific.strength,
                 float(num_inference_steps),
             )
             t_start = int(max(num_inference_steps - init_timestep, 0.0))
@@ -1167,7 +1164,7 @@ class PixelGenerationTokenizer(
         )
 
         latents, latent_image_ids = self._prepare_latents(
-            image_options.num_images,
+            image_specific.num_images,
             self._num_channels_latents,
             latent_height,
             latent_width,
@@ -1182,12 +1179,12 @@ class PixelGenerationTokenizer(
             PipelineClassName.FLUX2_KLEIN,
         ):
             text_ids = self._build_text_ids(
-                image_options.num_images,
+                image_specific.num_images,
                 int(token_buffer.array.shape[0]),
             )
             if negative_token_buffer is not None:
                 negative_text_ids = self._build_text_ids(
-                    image_options.num_images,
+                    image_specific.num_images,
                     int(negative_token_buffer.array.shape[0]),
                 )
 
@@ -1200,7 +1197,7 @@ class PixelGenerationTokenizer(
             negative_tokens=negative_token_buffer,
             negative_mask=negative_attn_mask,
             negative_tokens_2=negative_token_buffer_2,
-            explicit_negative_prompt=image_options.negative_prompt is not None,
+            explicit_negative_prompt=pixel_options.negative_prompt is not None,
             timesteps=timesteps,
             sigmas=sigmas,
             latents=latents,
@@ -1211,16 +1208,16 @@ class PixelGenerationTokenizer(
             width=width,
             num_inference_steps=num_inference_steps,
             guidance_scale=guidance_scale,
-            num_images_per_prompt=image_options.num_images,
-            true_cfg_scale=image_options.true_cfg_scale,
-            strength=image_options.strength,
-            cfg_normalization=image_options.cfg_normalization,
-            cfg_truncation=image_options.cfg_truncation,
+            num_images_per_prompt=image_specific.num_images,
+            true_cfg_scale=pixel_options.true_cfg_scale,
+            strength=image_specific.strength,
+            cfg_normalization=pixel_options.cfg_normalization,
+            cfg_truncation=pixel_options.cfg_truncation,
             num_warmup_steps=num_warmup_steps,
             model_name=request.body.model,
             input_image=preprocessed_image_array,  # Pass numpy array instead of PIL.Image
-            output_format=image_options.output_format,
-            residual_threshold=image_options.residual_threshold,
+            output_format=image_specific.output_format,
+            residual_threshold=pixel_options.residual_threshold,
         )
 
         return context
