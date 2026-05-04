@@ -19,6 +19,10 @@ This version is still a work in progress.
 
 ## Library changes
 
+- `String.as_bytes_mut()` has been renamed to `String.unsafe_as_bytes_mut()`, to
+  reflect that writing invalid UTF-8 to the resulting `Span[Byte]` can lead to
+  later issues like out of bounds access.
+
 ## Tooling changes
 
 ## GPU programming

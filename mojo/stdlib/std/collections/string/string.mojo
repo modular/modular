@@ -1317,13 +1317,17 @@ struct String(
             ptr=self.unsafe_ptr(), length=self.byte_length()
         )
 
-    def as_bytes_mut(mut self) -> Span[Byte, origin_of(self)]:
+    def unsafe_as_bytes_mut(mut self) -> Span[Byte, origin_of(self)]:
         """Returns a mutable contiguous slice of the bytes owned by this string.
         This name has a _mut suffix so the as_bytes() method doesn't have to
         guarantee mutability.
 
         Returns:
             A contiguous slice pointing to the bytes owned by this string.
+
+        Safety:
+            - Any mutation of the byte slice must uphold UTF-8 validity of the
+              overall string.
         """
         return Span[Byte, origin_of(self)](
             ptr=self.unsafe_ptr_mut(), length=self.byte_length()

@@ -84,6 +84,26 @@ def test_constructors() raises:
     some_func_mut(StringSlice(a))
 
 
+def test_string_slice_from_string_static_repr() raises:
+    """Tests special case of StringSlice from String pointing to static data."""
+
+    def is_static_string(s: String) -> Bool:
+        return not s._is_inline() and not s._is_ref_counted()
+
+    var s1 = String("foo")
+    assert_true(is_static_string(s1))
+
+    # Borrowing as immutable doesn't change `s1`
+    var str1 = StringSlice[mut=False, ...](s1)
+    assert_equal(str1, "foo")
+    assert_true(is_static_string(s1))
+
+    # Borrowing as mutable changes `s1` to a different representation
+    var str2 = StringSlice[mut=True, ...](s1)
+    assert_equal(str2, "foo")
+    assert_false(is_static_string(s1))
+
+
 def test_string_literal_byte_span() raises:
     comptime slc = "Hello".as_bytes()
 
@@ -97,7 +117,7 @@ def test_string_literal_byte_span() raises:
 
 def test_string_byte_span() raises:
     var string = "Hello"
-    var str_slice = string.as_bytes_mut()
+    var str_slice = string.unsafe_as_bytes_mut()
 
     assert_equal(len(str_slice), 5)
     assert_equal(str_slice[0], Byte(ord("H")))

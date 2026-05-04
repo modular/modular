@@ -347,12 +347,22 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         Args:
             value: The string value.
         """
-        self._slice = Span[Byte, Self.origin](
-            ptr=value.unsafe_ptr()
-            .unsafe_mut_cast[Self.origin.mut]()
-            .unsafe_origin_cast[Self.origin](),
-            length=value.byte_length(),
-        )
+        comptime if Self.origin.mut:
+            # FIXME(MOCO-3906): Needs `unsafe_mut_cast()` because type refinment
+            #   based on the `if origin.mut` knowledge is not supported.
+            ref value_mut = UnsafePointer(to=value).unsafe_mut_cast[True]()[]
+
+            # Note: unsafe_as_bytes_mut() reallocates the `String` data if it
+            #   was originally constructed from a read-only static string.
+            # SAFETY:
+            #   This is safe because the resulting UTF-8 byte slice is
+            #   accessible only through the APIs of StringSlice, which
+            #   either guarantee UTF-8 validity, or are unsafe themselves.
+            self._slice = rebind[type_of(self._slice)](
+                value_mut.unsafe_as_bytes_mut()
+            )
+        else:
+            self._slice = rebind[type_of(self._slice)](value.as_bytes())
 
     # ===------------------------------------------------------------------===#
     # Trait implementations

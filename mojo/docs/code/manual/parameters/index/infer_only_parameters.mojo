@@ -26,6 +26,6 @@ def mutate_span(span: Span[mut=True, Byte, ...]) raises:
 def main() raises:
     dependent_type[Float64(2.2)]()
     s = String("Robinson Crusoe surfed the interwebs.")
-    span = s.as_bytes_mut()
+    span = s.unsafe_as_bytes_mut()
     mutate_span(span)
     print(s)
