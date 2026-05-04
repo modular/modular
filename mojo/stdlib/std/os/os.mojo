@@ -20,6 +20,7 @@ from std.os import listdir
 ```
 """
 
+from std._plugin import CurrentPlugin
 from std.collections import InlineArray, List
 from std.collections.string.string_slice import _unsafe_strlen
 from std.format.tstring import TString
@@ -237,6 +238,10 @@ def abort() -> Never:
     """Terminates execution, using a target dependent trap instruction if
     available.
     """
+
+    # Plugin hook may longjmp
+    # if so, the trap below is dead.
+    CurrentPlugin.abort_fn()
 
     __mlir_op.`llvm.intr.trap`()
 

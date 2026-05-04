@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from std.reflection.location import SourceLocation
 from std.sys.info import _TargetType, _current_target
 from std.io import FileDescriptor
 from std.ffi import CStringSlice
@@ -21,9 +22,15 @@ from std.utils.index import Index, IndexList, StaticTuple
 trait PluginHooks:
     """Compile-time hook interface for pluggable stdlib behavior.
 
-    Each hook is a `comptime Optional[Callable]` field. Call sites invoke
+    Most hooks are `comptime Optional[Callable]` fields; call sites invoke
     `comptime if CurrentPlugin.xxx_fn: return comptime(CurrentPlugin.xxx_fn.value())(...)`,
     so implementors that leave a hook at `None` add zero cost.
+
+    A few hooks (`abort_fn`, `debug_assert_emit_fn`) are required
+    `@staticmethod` trait methods rather than `Optional` fields, because
+    their dispatch sites lie on `Optional.value()`'s own instantiation
+    path — an `Optional` field would re-enter that template via its own
+    `debug_assert` and deadlock comptime instantiation.
     """
 
     comptime exp_fn: Optional[
@@ -63,6 +70,37 @@ trait PluginHooks:
     comptime reduce_generator_fn[target: StaticString]: Optional[
         ReduceGeneratorFnType
     ]
+
+    @staticmethod
+    def abort_fn():
+        """`abort()` override, called before the default trap. If the hook
+        doesn't return (e.g. via `longjmp`), the trap is dead code."""
+        ...
+
+    @staticmethod
+    def debug_assert_emit_fn[
+        O: Origin
+    ](message: UnsafePointer[Byte, O], length: Int, loc: SourceLocation):
+        """Assertion-message emitter for targets without a usable `_printf`.
+
+        Parameters:
+            O: The origin of the message pointer.
+
+        Args:
+            message: Pointer to the nul-terminated message bytes.
+            length: Length in bytes (excluding the trailing nul).
+            loc: Source location of the failing assertion.
+
+        Only invoked when `_handles_debug_assert` is `True`.
+        """
+        ...
+
+    comptime _handles_debug_assert: Bool
+    """If `True`, `_debug_assert_msg` dispatches to `debug_assert_emit_fn`
+    and comptime-elides its `_printf` fallback. Required because the
+    fallback's transitive `Optional.value()` → `debug_assert` recurses
+    back through `_debug_assert_msg` and deadlocks instantiation when
+    assertions are enabled."""
 
 
 # FIXME(MOCO-3871): Alias is to workaround function type comparision bug.
@@ -124,3 +162,15 @@ struct DefaultPlugin(PluginHooks):
     comptime reduce_generator_fn[target: StaticString]: Optional[
         ReduceGeneratorFnType
     ] = None
+
+    @staticmethod
+    def abort_fn():
+        pass
+
+    @staticmethod
+    def debug_assert_emit_fn[
+        O: Origin
+    ](message: UnsafePointer[Byte, O], length: Int, loc: SourceLocation):
+        pass
+
+    comptime _handles_debug_assert: Bool = False

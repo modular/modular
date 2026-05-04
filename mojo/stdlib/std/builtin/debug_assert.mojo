@@ -15,6 +15,7 @@
 These are Mojo built-ins, so you don't need to import them.
 """
 
+from std._plugin import CurrentPlugin
 from std.format._utils import _WriteBufferHeap
 from std.io.io import _printf
 from std.os import abort
@@ -461,65 +462,80 @@ def _debug_assert_msg(
     abort's implementation could use debug_assert)
     """
 
-    if __is_run_in_comptime_interpreter:
-        print("At: ", loc, ": Assert Error: ", message, sep="")
-
+    # The `else` branch is required (not just for clarity): its `_printf`
+    # paths recurse via `Optional.value()` → `debug_assert`. `comptime if
+    # X: return` does not elide unconditional post-return code, so the
+    # fallback must live in `else:` to be comptime-elided when a plugin
+    # owns emission.
+    comptime if CurrentPlugin._handles_debug_assert:
+        CurrentPlugin.debug_assert_emit_fn(message, length, loc)
         comptime if ASSERT_MODE != "warn":
             abort()
         return
-
-    comptime fmt = (
-        "At: %s:%llu:%llu: block: [%llu,%llu,%llu] thread: [%llu,%llu,%llu]"
-        " Assert Error: %s\n"
-    )
-
-    comptime if is_nvidia_gpu():
-        from std.gpu.primitives.id import block_idx, thread_idx
-
-        _printf[fmt](
-            loc.file_name().unsafe_ptr(),
-            loc.line(),
-            loc.column(),
-            UInt(block_idx.x),
-            UInt(block_idx.y),
-            UInt(block_idx.z),
-            UInt(thread_idx.x),
-            UInt(thread_idx.y),
-            UInt(thread_idx.z),
-            message,
-        )
-    # TODO(MSTDL-1783): fix `_printf` not working on AMDGPU with %s args
-    elif is_amd_gpu():
-        from std.gpu.primitives.id import block_idx, thread_idx
-
-        var fd = printf_begin()
-        _ = printf_append_string_n(fd, fmt.as_bytes(), False)
-        # Runtime %s types must be passed as separate append_string calls
-        _ = printf_append_string_n(fd, loc.file_name().as_bytes(), False)
-        # Can only pass 7 args at a time
-        _ = printf_append_args(
-            fd,
-            7,
-            UInt64(loc.line()),
-            UInt64(loc.column()),
-            UInt64(block_idx.x),
-            UInt64(block_idx.y),
-            UInt64(block_idx.z),
-            UInt64(thread_idx.x),
-            UInt64(thread_idx.y),
-            0,
-        )
-        # Pass last arg
-        _ = printf_append_args(fd, 1, UInt64(thread_idx.z), 0, 0, 0, 0, 0, 0, 0)
-        # Append message and finalize
-        _ = printf_append_string_n(fd, Span(ptr=message, length=length), True)
     else:
-        _printf["At: %s:%llu:%llu: Assert Error: %s\n"](
-            loc.file_name().unsafe_ptr(),
-            loc.line(),
-            loc.column(),
-            message,
+        if __is_run_in_comptime_interpreter:
+            print("At: ", loc, ": Assert Error: ", message, sep="")
+
+            comptime if ASSERT_MODE != "warn":
+                abort()
+            return
+
+        comptime fmt = (
+            "At: %s:%llu:%llu: block: [%llu,%llu,%llu] thread: [%llu,%llu,%llu]"
+            " Assert Error: %s\n"
         )
 
-    comptime if ASSERT_MODE != "warn":
-        abort()
+        comptime if is_nvidia_gpu():
+            from std.gpu.primitives.id import block_idx, thread_idx
+
+            _printf[fmt](
+                loc.file_name().unsafe_ptr(),
+                loc.line(),
+                loc.column(),
+                UInt(block_idx.x),
+                UInt(block_idx.y),
+                UInt(block_idx.z),
+                UInt(thread_idx.x),
+                UInt(thread_idx.y),
+                UInt(thread_idx.z),
+                message,
+            )
+        # TODO(MSTDL-1783): fix `_printf` not working on AMDGPU with %s args
+        elif is_amd_gpu():
+            from std.gpu.primitives.id import block_idx, thread_idx
+
+            var fd = printf_begin()
+            _ = printf_append_string_n(fd, fmt.as_bytes(), False)
+            # Runtime %s types must be passed as separate append_string calls
+            _ = printf_append_string_n(fd, loc.file_name().as_bytes(), False)
+            # Can only pass 7 args at a time
+            _ = printf_append_args(
+                fd,
+                7,
+                UInt64(loc.line()),
+                UInt64(loc.column()),
+                UInt64(block_idx.x),
+                UInt64(block_idx.y),
+                UInt64(block_idx.z),
+                UInt64(thread_idx.x),
+                UInt64(thread_idx.y),
+                0,
+            )
+            # Pass last arg
+            _ = printf_append_args(
+                fd, 1, UInt64(thread_idx.z), 0, 0, 0, 0, 0, 0, 0
+            )
+            # Append message and finalize
+            _ = printf_append_string_n(
+                fd, Span(ptr=message, length=length), True
+            )
+        else:
+            _printf["At: %s:%llu:%llu: Assert Error: %s\n"](
+                loc.file_name().unsafe_ptr(),
+                loc.line(),
+                loc.column(),
+                message,
+            )
+
+        comptime if ASSERT_MODE != "warn":
+            abort()
