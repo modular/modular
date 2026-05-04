@@ -1171,7 +1171,7 @@ def __exit__[ErrType: AnyType](self, err: ErrType) -> Bool
 
 This method receives the typed error directly, preserving its full type
 information. You can use
-[reflection](/docs/manual/reflection/) to inspect the error
+[reflection](/docs/manual/metaprogramming/reflection/) to inspect the error
 type at compile time. For example, you can:
 
 - `reflect[ErrType]().name()` — Get the error type's name as a string.

@@ -254,7 +254,7 @@ This function accepts any type, because its only limit is `AnyType`.
 `AnyType` is the root of the trait hierarchy. It's the baseline
 that all types extend. Using `AnyType` means the value has no guaranteed
 destructor or lifetime management. Outside of
-[_reflection_](/docs/manual/reflection) (type introspection),
+[_reflection_](/docs/manual/metaprogramming/reflection) (type introspection),
 this function is effectively useless.
 
 ## Generic types
@@ -373,7 +373,7 @@ a bound (for example, `T: Writable`) instead of downcasting.
 
 Use this pattern when you can't express the requirement as a bound.
 It's common in reflection-style code that handles values based on
-their traits. See [reflection](/docs/manual/reflection).
+their traits. See [reflection](/docs/manual/metaprogramming/reflection).
 
 ## Type generics and explicit destruction
 
