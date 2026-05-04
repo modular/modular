@@ -490,10 +490,16 @@ class BenchmarkMetrics(BaseBenchmarkMetrics):
     max_concurrent_conversations: int | None = None
 
     input_throughput: ThroughputMetrics
-    output_throughput: ThroughputMetrics
+    output_throughput: ThroughputMetrics = Field(
+        json_schema_extra={"phase": "decode"}
+    )
     ttft_ms: StandardPercentileMetrics
-    tpot_ms: StandardPercentileMetrics
-    itl_ms: StandardPercentileMetrics
+    tpot_ms: StandardPercentileMetrics = Field(
+        json_schema_extra={"phase": "decode"}
+    )
+    itl_ms: StandardPercentileMetrics = Field(
+        json_schema_extra={"phase": "decode"}
+    )
 
     max_input: int
     max_output: int
@@ -567,6 +573,21 @@ class BenchmarkMetrics(BaseBenchmarkMetrics):
             errors.append(
                 f"No output tokens generated (total_output={self.total_output})"
             )
+
+        # Prefill-only workloads (max 1 output token per request) produce no
+        # decode data, so decode-phase metrics are expected to be degenerate.
+        if self.max_output <= 1:
+            decode_fields = {
+                name
+                for name, info in type(self).model_fields.items()
+                if isinstance(info.json_schema_extra, dict)
+                and info.json_schema_extra.get("phase") == "decode"
+            }
+            errors = [
+                e
+                for e in errors
+                if not any(e.startswith(f"{name}:") for name in decode_fields)
+            ]
 
         return len(errors) == 0, errors
 

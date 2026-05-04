@@ -178,8 +178,11 @@ def _make_metrics(
     failures: int = 0,
     total_input: int = 500,
     total_output: int = 200,
+    max_output: int = 50,
     request_throughput: float = 5.0,
     output_throughput_values: list[float] | None = None,
+    tpot_values: list[float] | None = None,
+    itl_values: list[float] | None = None,
     ttft_values: list[float] | None = None,
     latency_values: list[float] | None = None,
 ) -> BenchmarkMetrics:
@@ -188,6 +191,8 @@ def _make_metrics(
     Individual fields can be overridden to inject specific degenerate values.
     """
     output_throughput_values = output_throughput_values or [50.0]
+    tpot_values = tpot_values or [0.01]
+    itl_values = itl_values or [0.01]
     ttft_values = ttft_values or [0.05]
     latency_values = latency_values or [0.5]
 
@@ -208,16 +213,16 @@ def _make_metrics(
             ttft_values, scale_factor=1000.0, unit="ms"
         ),
         tpot_ms=StandardPercentileMetrics(
-            [0.01], scale_factor=1000.0, unit="ms"
+            tpot_values, scale_factor=1000.0, unit="ms"
         ),
         itl_ms=StandardPercentileMetrics(
-            [0.01], scale_factor=1000.0, unit="ms"
+            itl_values, scale_factor=1000.0, unit="ms"
         ),
         latency_ms=StandardPercentileMetrics(
             latency_values, scale_factor=1000.0, unit="ms"
         ),
         max_input=100,
-        max_output=50,
+        max_output=max_output,
         max_total=150,
         global_cached_token_rate=0.35,
         per_turn_cached_token_rate=RatePercentileMetrics(
@@ -352,6 +357,33 @@ def test_sub_metric_errors_prefixed() -> None:
     ).validate_metrics()
     assert ok is False
     assert any(e.startswith("output_throughput: ") for e in errors)
+
+
+def test_prefill_only_skips_decode_phase_metrics() -> None:
+    """Prefill-only workloads (max_output<=1) tolerate degenerate decode-phase metrics."""
+    ok, errors = _make_metrics(
+        total_output=40,
+        max_output=1,
+        output_throughput_values=[0.0],
+        tpot_values=[float("nan")],
+        itl_values=[float("nan")],
+    ).validate_metrics()
+    assert ok is True
+    assert errors == []
+
+
+def test_prefill_only_still_validates_non_decode_metrics() -> None:
+    """Prefill-only skips decode-phase metrics but still catches other failures."""
+    ok, errors = _make_metrics(
+        max_output=1,
+        output_throughput_values=[0.0],
+        tpot_values=[float("nan")],
+        itl_values=[float("nan")],
+        request_throughput=0.0,
+    ).validate_metrics()
+    assert ok is False
+    assert any("request_throughput" in e for e in errors)
+    assert not any("output_throughput" in e for e in errors)
 
 
 # ---------------------------------------------------------------------------
