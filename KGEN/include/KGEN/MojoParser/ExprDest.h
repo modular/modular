@@ -251,6 +251,14 @@ public:
   /// null.
   MLValue getDefinedMLValueIfExists(ASTType resultType, IREmitter &emitter);
 
+  /// If this destination is already a concrete `MLValue` (for example
+  /// assignment into an existing `ref` binding), or a VarDecl that is getting
+  /// inferred return it.
+  ///
+  /// BEWARE: in a situation like "var x = foo()" this will return the MLValue
+  /// for the VarDecl, which will have an UnresolvedType element type.
+  MLValue getDirectMLValueIfPresent() const;
+
   /// Return true if this is an MLValue that could be in a non-default address
   /// space.
   bool isNonDefaultAddressSpace() const;
