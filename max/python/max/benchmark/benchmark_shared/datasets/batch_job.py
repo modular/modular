@@ -21,13 +21,21 @@ import tarfile
 import tempfile
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Annotated, Any, Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
 from .local import LocalBenchmarkDataset
-from .types import RequestSamples, SampledRequest, encode_image_from_file_path
+from .types import (
+    ChatMessage,
+    ImageContentBlock,
+    ImageURLDetail,
+    RequestSamples,
+    SampledRequest,
+    TextContentBlock,
+    encode_image_from_file_path,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -128,7 +136,7 @@ class BatchJobBenchmarkDataset(LocalBenchmarkDataset):
         self,
         image_dir: str | None,
         image_url: str,
-        processed_content: list[dict[str, Any]],
+        processed_content: list[TextContentBlock | ImageContentBlock],
     ) -> None:
         # Handle file: references
         if image_url.startswith("file:"):
@@ -145,25 +153,27 @@ class BatchJobBenchmarkDataset(LocalBenchmarkDataset):
 
                 # Keep file reference (server will load from image_dir)
                 processed_content.append(
-                    {
-                        "type": "image_url",
-                        "image_url": {"url": f"file:{dest_image}"},
-                    }
+                    ImageContentBlock(
+                        image_url=ImageURLDetail(url=f"file:{dest_image}")
+                    )
                 )
             else:
                 # Embedded mode: encode image as base64
                 if os.path.exists(source_image):
                     encoded_img = encode_image_from_file_path(source_image)
-                    processed_content.append(dict(encoded_img))
+                    processed_content.append(
+                        ImageContentBlock(
+                            image_url=ImageURLDetail(
+                                url=encoded_img["image_url"]["url"]
+                            )
+                        )
+                    )
                 else:
                     logger.warning(f"Image not found: {source_image}")
         else:
             # Pass through URLs that are already data: or http:
             processed_content.append(
-                {
-                    "type": "image_url",
-                    "image_url": {"url": image_url},
-                }
+                ImageContentBlock(image_url=ImageURLDetail(url=image_url))
             )
 
     def sample_requests(
@@ -218,15 +228,24 @@ class BatchJobBenchmarkDataset(LocalBenchmarkDataset):
             job = batch_jobs[i]
 
             # Process the messages to handle images
-            processed_messages: list[dict[str, Any]] = []
+            processed_messages: list[ChatMessage] = []
 
             for message in job.body.messages:
-                processed_content: list[dict[str, Any]] | str
+                processed_content: (
+                    list[TextContentBlock | ImageContentBlock] | str
+                )
                 if isinstance(message.content, list):
-                    content_list: list[dict[str, Any]] = []
+                    content_list: list[
+                        TextContentBlock | ImageContentBlock
+                    ] = []
                     for content_item in message.content:
                         if isinstance(content_item, _BatchJobTextContent):
-                            content_list.append(content_item.model_dump())
+                            content_list.append(
+                                TextContentBlock(
+                                    type=content_item.type,
+                                    text=content_item.text,
+                                )
+                            )
                         else:
                             self._process_image_content(
                                 image_dir,
@@ -238,18 +257,18 @@ class BatchJobBenchmarkDataset(LocalBenchmarkDataset):
                     processed_content = message.content
 
                 processed_messages.append(
-                    {"role": message.role, "content": processed_content}
+                    ChatMessage(role=message.role, content=processed_content)
                 )
 
             # Compute prompt length (tokenize just the text content)
             text_content = ""
             for msg in processed_messages:
-                if isinstance(msg["content"], str):
-                    text_content += msg["content"] + " "
-                elif isinstance(msg["content"], list):
-                    for item in msg["content"]:
-                        if item.get("type") == "text":
-                            text_content += item["text"] + " "
+                if isinstance(msg.content, str):
+                    text_content += msg.content + " "
+                elif isinstance(msg.content, list):
+                    for block in msg.content:
+                        if isinstance(block, TextContentBlock):
+                            text_content += block.text + " "
 
             # TODO: This should also include the image token count.
             prompt_len = len(

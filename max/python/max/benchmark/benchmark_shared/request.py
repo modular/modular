@@ -36,6 +36,7 @@ from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
 from .config import PIXEL_GENERATION_TASKS, BenchmarkTask
 from .datasets.types import (
+    ChatMessage,
     OpenAIImage,
     PixelGenerationImageOptions,
 )
@@ -98,7 +99,7 @@ class RequestFuncInput(BaseRequestFuncInput):
     temperature: float | None
     top_p: float | None
     top_k: int | None
-    prompt: str | list[dict[str, Any]]
+    prompt: str | list[ChatMessage]
     images: list[OpenAIImage]
     api_url: str
     prompt_len: int
@@ -399,9 +400,7 @@ class TRTLLMRequestDriver(RequestDriver):
         assert api_url.endswith("generate_stream")
 
         async with aiohttp.ClientSession(timeout=AIOHTTP_TIMEOUT) as session:
-            payload: dict[
-                str, bool | str | int | float | list[dict[str, Any]]
-            ] = {
+            payload: dict[str, bool | str | int | float | list[ChatMessage]] = {
                 "text_input": request_func_input.prompt,
                 "ignore_eos": request_func_input.ignore_eos,
                 "stream": True,
@@ -636,7 +635,7 @@ class OpenAICompletionsRequestDriver(RequestDriver):
             "OpenAI Completions API URL must end with 'completions' or 'profile'."
         )
 
-        payload: dict[str, bool | str | int | float | list[dict[str, Any]]] = {
+        payload: dict[str, bool | str | int | float | list[ChatMessage]] = {
             "model": request_func_input.model,
             "prompt": request_func_input.prompt,
             "best_of": 1,
@@ -690,7 +689,9 @@ class OpenAIChatCompletionsRequestDriver(RequestDriver):
                 {"role": "user", "content": content},
             ]
         else:  # conversation
-            messages_data = request_func_input.prompt
+            messages_data = [
+                msg.model_dump() for msg in request_func_input.prompt
+            ]
 
         payload: dict[
             str,

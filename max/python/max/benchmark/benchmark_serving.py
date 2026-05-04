@@ -75,6 +75,7 @@ from max.benchmark.benchmark_shared.datasets.types import (
     PixelGenerationSampledRequest,
     RequestSamples,
     Samples,
+    TextContentBlock,
 )
 from max.benchmark.benchmark_shared.lora_benchmark_manager import (
     LoRABenchmarkManager,
@@ -96,6 +97,7 @@ from max.benchmark.benchmark_shared.metrics import (
 from max.benchmark.benchmark_shared.request import (
     BaseRequestFuncInput,
     BaseRequestFuncOutput,
+    ChatMessage,
     PixelGenerationRequestFuncInput,
     PixelGenerationRequestFuncOutput,
     ProgressBarRequestDriver,
@@ -160,9 +162,8 @@ def compute_output_len(
 
 
 def _prepend_run_prefix_to_formatted_prompt(
-    prompt: str | list[dict[str, Any]],
-    run_prefix: str,
-) -> str | list[dict[str, Any]]:
+    prompt: str | list[ChatMessage], run_prefix: str
+) -> str | list[ChatMessage]:
     """Return a new prompt with `run_prefix` prepended to the first message."""
     if isinstance(prompt, str):
         return run_prefix + prompt
@@ -172,15 +173,15 @@ def _prepend_run_prefix_to_formatted_prompt(
     if not prompt:
         raise ValueError("run_prefix: empty prompt list")
     msg = prompt[0]
-    content = msg.get("content")
+    content = msg.content
     if isinstance(content, str):
-        new_msg: dict[str, Any] = {**msg, "content": run_prefix + content}
+        new_msg = ChatMessage(role=msg.role, content=run_prefix + content)
     elif isinstance(content, list):
         text_block_idx = next(
             (
                 idx
                 for idx, block in enumerate(content)
-                if isinstance(block, dict) and block.get("type") == "text"
+                if isinstance(block, TextContentBlock)
             ),
             None,
         )
@@ -189,16 +190,15 @@ def _prepend_run_prefix_to_formatted_prompt(
                 "run_prefix: no text block found in content list; cannot"
                 " prepend run prefix"
             )
-        new_block = {
-            **content[text_block_idx],
-            "text": run_prefix + str(content[text_block_idx].get("text", "")),
-        }
-        new_content: list[Any] = [
+        text_block = content[text_block_idx]
+        assert isinstance(text_block, TextContentBlock)
+        new_block = TextContentBlock(text=run_prefix + text_block.text)
+        new_content = [
             *content[:text_block_idx],
             new_block,
             *content[text_block_idx + 1 :],
         ]
-        new_msg = {**msg, "content": new_content}
+        new_msg = ChatMessage(role=msg.role, content=new_content)
     else:
         raise ValueError(
             "run_prefix: unsupported prompt shape for first message"
@@ -1256,7 +1256,7 @@ async def chat_session_driver(
     content_idx = 0  # Assume user initiates the conversation
 
     session_outputs: list[RequestFuncOutput] = []
-    message_history: list[dict[str, Any]] = []
+    message_history: list[ChatMessage] = []
     chat_len = 0
 
     messages = chat_session.messages
@@ -1277,20 +1277,20 @@ async def chat_session_driver(
 
         user_prompt = messages[content_idx].content
         message_history.append(
-            {
-                "role": "user",
-                "content": [{"type": "text", "text": user_prompt}],
-            }
+            ChatMessage(
+                role="user",
+                content=[TextContentBlock(text=user_prompt)],
+            )
         )
         # Synthetic placeholder for the assistant response.
         assistant_content = messages[content_idx + 1].content
         if not assistant_content:
             assistant_content = " ".join(["token"] * max(output_len, 1))
         message_history.append(
-            {
-                "role": "assistant",
-                "content": [{"type": "text", "text": assistant_content}],
-            }
+            ChatMessage(
+                role="assistant",
+                content=[TextContentBlock(text=assistant_content)],
+            )
         )
         chat_len += output_len
         content_idx += 2
@@ -1318,10 +1318,10 @@ async def chat_session_driver(
         if content_idx == 0 and run_prefix:
             user_prompt = run_prefix + user_prompt
         message_history.append(
-            {
-                "role": "user",
-                "content": [{"type": "text", "text": user_prompt}],
-            }
+            ChatMessage(
+                role="user",
+                content=[TextContentBlock(text=user_prompt)],
+            )
         )
         request_func_input.prompt = message_history
         request_func_input.prompt_len = chat_len
@@ -1361,10 +1361,10 @@ async def chat_session_driver(
             break
 
         message_history.append(
-            {
-                "role": "assistant",
-                "content": [{"type": "text", "text": response.generated_text}],
-            }
+            ChatMessage(
+                role="assistant",
+                content=[TextContentBlock(text=response.generated_text)],
+            )
         )
         chat_len += output_len
 
@@ -1487,7 +1487,7 @@ async def prime_prefix_turns(
     async def _prime_session(session: ChatSession) -> None:
         messages = session.messages
         prefix_end_idx = session.prefix_turns * 2
-        message_history: list[dict[str, Any]] = []
+        message_history: list[ChatMessage] = []
         chat_len = 0
         content_idx = 0
         while content_idx < prefix_end_idx and content_idx + 1 < len(messages):
@@ -1496,24 +1496,21 @@ async def prime_prefix_turns(
             if chat_len + output_len > max_chat_len:
                 break
             message_history.append(
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": messages[content_idx].content,
-                        }
+                ChatMessage(
+                    role="user",
+                    content=[
+                        TextContentBlock(text=messages[content_idx].content)
                     ],
-                }
+                )
             )
             assistant_content = messages[content_idx + 1].content
             if not assistant_content:
                 assistant_content = " ".join(["token"] * max(output_len, 1))
             message_history.append(
-                {
-                    "role": "assistant",
-                    "content": [{"type": "text", "text": assistant_content}],
-                }
+                ChatMessage(
+                    role="assistant",
+                    content=[TextContentBlock(text=assistant_content)],
+                )
             )
             chat_len += output_len
             content_idx += 2
@@ -2166,12 +2163,10 @@ async def run_single_test_prompt(
         test_answer = samples.chat_sessions[0].messages[1]
         test_request = SampledRequest(
             prompt_formatted=[
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": test_question.content}
-                    ],
-                }
+                ChatMessage(
+                    role="user",
+                    content=[TextContentBlock(text=test_question.content)],
+                )
             ],
             prompt_len=test_question.num_tokens,
             output_len=test_answer.num_tokens,
@@ -2420,13 +2415,13 @@ async def prime_shared_contexts(
     is_chat = isinstance(samples, ChatSamples)
     warmup_inputs: list[RequestFuncInput] = []
     for entry in warmup_entries:
-        warmup_prompt: str | list[dict[str, Any]]
+        warmup_prompt: str | list[ChatMessage]
         if is_chat:
             warmup_prompt = [
-                {
-                    "role": "user",
-                    "content": [{"type": "text", "text": entry.text}],
-                }
+                ChatMessage(
+                    role="user",
+                    content=[TextContentBlock(text=entry.text)],
+                )
             ]
         else:
             warmup_prompt = entry.text

@@ -39,6 +39,7 @@ from max.benchmark.benchmark_shared.datasets import SampledRequest
 from max.benchmark.benchmark_shared.datasets.types import (
     ChatSession,
     SessionMessage,
+    TextContentBlock,
 )
 from max.benchmark.benchmark_shared.metrics import (
     PercentileMetrics,
@@ -808,11 +809,15 @@ def test_chat_session_driver_run_prefix_prepends_first_turn() -> None:
 
     assert len(captured) == 2
     assert isinstance(captured[0].prompt, list)
-    first_user_text = captured[0].prompt[0]["content"][0]["text"]
+    first_user_content_block = captured[0].prompt[0].content[0]
+    assert isinstance(first_user_content_block, TextContentBlock)
+    first_user_text = first_user_content_block.text
     assert first_user_text.endswith("Hi")
     assert first_user_text != "Hi"
     assert isinstance(captured[1].prompt, list)
-    second_user_text = captured[1].prompt[2]["content"][0]["text"]
+    second_user_content_block = captured[1].prompt[2].content[0]
+    assert isinstance(second_user_content_block, TextContentBlock)
+    second_user_text = second_user_content_block.text
     assert second_user_text == "Again"
 
 

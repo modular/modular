@@ -16,7 +16,7 @@ from __future__ import annotations
 import logging
 import random
 from collections.abc import Sequence
-from typing import Any
+from typing import Any, Literal
 
 import msgspec
 from huggingface_hub import hf_hub_download
@@ -26,18 +26,20 @@ from .distribution import DistributionParameter
 from .huggingface import HuggingFaceBenchmarkDataset
 from .multiturn_distribution_fit import build_chat_samples_from_user_text_pool
 from .types import (
+    ChatMessage,
     ChatSamples,
     ChatSession,
     RequestSamples,
     SampledRequest,
     SessionMessage,
+    TextContentBlock,
 )
 
 logger = logging.getLogger(__name__)
 
 
 class MessageContentPart(msgspec.Struct):
-    type: str
+    type: Literal["text"]
     text: str = ""
 
 
@@ -60,6 +62,36 @@ class Session(msgspec.Struct):
 
 class AgenticCodeData(msgspec.Struct):
     sessions: list[Session]
+
+
+def _to_chat_messages(messages: list[Message]) -> list[ChatMessage]:
+    """Converts a list of dataset ``Message`` objects to ``ChatMessage`` objects.
+
+    Flattens list-of-parts content into a list of ``TextContentBlock`` values;
+    plain string content is passed through as-is (defaulting to ``""`` when
+    ``None``).
+
+    Args:
+        messages: Raw messages decoded from the agentic-code dataset.
+
+    Returns:
+        A list of ``ChatMessage`` objects suitable for use in a
+        ``SampledRequest``.
+    """
+    return [
+        ChatMessage(
+            role=msg.role,
+            content=(
+                [
+                    TextContentBlock(type=part.type, text=part.text)
+                    for part in msg.content
+                ]
+                if isinstance(msg.content, list)
+                else (msg.content or "")
+            ),
+        )
+        for msg in messages
+    ]
 
 
 class AgenticCodeBenchmarkDataset(HuggingFaceBenchmarkDataset):
@@ -141,7 +173,7 @@ class AgenticCodeBenchmarkDataset(HuggingFaceBenchmarkDataset):
             )
             sampled.append(
                 SampledRequest(
-                    prompt_formatted=msgspec.to_builtins(messages),
+                    prompt_formatted=_to_chat_messages(messages),
                     prompt_len=input_tokens,
                     output_len=out_len,
                     encoded_images=[],

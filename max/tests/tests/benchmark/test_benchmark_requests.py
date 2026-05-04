@@ -21,7 +21,9 @@ from typing import Any
 import pytest
 from max.benchmark.benchmark_serving import validate_task_and_endpoint
 from max.benchmark.benchmark_shared.datasets.types import (
+    ChatMessage,
     PixelGenerationImageOptions,
+    TextContentBlock,
 )
 from max.benchmark.benchmark_shared.request import (
     OpenAIChatCompletionsRequestDriver,
@@ -43,12 +45,6 @@ from max.benchmark.benchmark_shared.request import (
 )
 from pytest_mock import MockerFixture
 from tqdm.asyncio import tqdm
-
-
-async def _bytes_async_iter(chunks: list[bytes]) -> AsyncIterator[bytes]:
-    """Yield byte chunks for mocked streaming responses."""
-    for chunk in chunks:
-        yield chunk
 
 
 @pytest.fixture
@@ -138,11 +134,14 @@ class TestRequestFuncInput:
     def test_request_func_input_with_chat_messages(self) -> None:
         """Test creating a RequestFuncInput with chat messages."""
         messages = [
-            {"role": "user", "content": [{"type": "text", "text": "Hello"}]},
-            {
-                "role": "assistant",
-                "content": [{"type": "text", "text": "Hi there!"}],
-            },
+            ChatMessage(
+                role="user",
+                content=[TextContentBlock(type="text", text="Hello")],
+            ),
+            ChatMessage(
+                role="assistant",
+                content=[TextContentBlock(type="text", text="Hi there!")],
+            ),
         ]
 
         request_input = RequestFuncInput(
