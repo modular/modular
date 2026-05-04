@@ -41,7 +41,7 @@ from collections.abc import (
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated, Any, TypeGuard
+from typing import TYPE_CHECKING, Annotated, TypeGuard
 from urllib.parse import urlparse
 from uuid import uuid4
 

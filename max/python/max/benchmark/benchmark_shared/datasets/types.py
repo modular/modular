@@ -18,7 +18,7 @@ import os
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from io import BytesIO
-from typing import Any, Literal
+from typing import Literal
 
 from openai.types.chat.completion_create_params import ResponseFormat
 from PIL import Image
