@@ -37,8 +37,6 @@ from max.benchmark.benchmark_shared.request import (
     VllmOmniPixelGenerationRequestDriver,
     _build_sglang_pixel_generation_payload,
     _build_vllm_omni_pixel_generation_payload,
-    _extract_sse_payload,
-    _iter_sse_payloads,
     async_request_lora_load,
     async_request_lora_unload,
     get_request_driver_class,
@@ -360,10 +358,10 @@ class TestRequestDriver:
 
         # Mock response data
         mock_response_data = [
-            b'data: {"choices": [{"text": "Hello"}]}',
-            b'data: {"choices": [{"text": " world"}]}',
-            b'data: {"choices": [{"text": "!"}]}',
-            b"data: [DONE]",
+            b'data: {"choices": [{"text": "Hello"}]}\n\n',
+            b'data: {"choices": [{"text": " world"}]}\n\n',
+            b'data: {"choices": [{"text": "!"}]}\n\n',
+            b"data: [DONE]\n\n",
         ]
 
         # Create async iterator for response.content
@@ -409,10 +407,10 @@ class TestRequestDriver:
 
         # Mock response data
         mock_response_data = [
-            b'data: {"choices": [{"delta": {"content": "Hello"}}]}',
-            b'data: {"choices": [{"delta": {"content": " world"}}]}',
-            b'data: {"choices": [{"delta": {"content": "!"}}]}',
-            b"data: [DONE]",
+            b'data: {"choices": [{"delta": {"content": "Hello"}}]}\n\n',
+            b'data: {"choices": [{"delta": {"content": " world"}}]}\n\n',
+            b'data: {"choices": [{"delta": {"content": "!"}}]}\n\n',
+            b"data: [DONE]\n\n",
         ]
 
         # Create async iterator for response.content
@@ -432,181 +430,6 @@ class TestRequestDriver:
 
         assert result.success is True
         assert result.generated_text == "Hello world!"
-        assert result.prompt_len == 10
-
-    @pytest.mark.asyncio
-    async def test_openai_chat_completions_request_driver_ignores_sse_comment_lines(
-        self,
-        mock_aiohttp_session: Any,
-        mock_openai_env: None,
-        mocker: MockerFixture,
-    ) -> None:
-        """Test that SSE comment/prelude lines are ignored."""
-        request_input = RequestFuncInput(
-            model="test-model",
-            session_id=None,
-            temperature=None,
-            top_p=None,
-            top_k=None,
-            prompt="Test prompt",
-            images=[],
-            api_url="http://localhost:8000/chat/completions",
-            prompt_len=10,
-            max_tokens=100,
-            ignore_eos=False,
-        )
-
-        mock_response_data = [
-            b":",
-            b"\n\n",
-            b'data: {"choices": [{"delta": {"content": "Hello"}}]}\n\n',
-            b'data: {"choices": [{"delta": {"content": " world"}}]}\n\n',
-            b"data: [DONE]\n\n",
-        ]
-
-        mock_response = mocker.AsyncMock()
-        mock_response.status = 200
-        mock_response.content = _bytes_async_iter(mock_response_data)
-
-        mock_aiohttp_session.setup_post_response(mock_response)
-
-        driver = OpenAIChatCompletionsRequestDriver()
-        result = await driver.request(request_input)
-
-        assert result.success is True
-        assert result.generated_text == "Hello world"
-        assert result.prompt_len == 10
-
-    @pytest.mark.asyncio
-    async def test_openai_completions_request_driver_handles_split_sse_chunks(
-        self,
-        mock_aiohttp_session: Any,
-        mock_openai_env: None,
-        mocker: MockerFixture,
-    ) -> None:
-        """Test that SSE payloads split across transport chunks are reassembled."""
-        request_input = RequestFuncInput(
-            model="test-model",
-            session_id=None,
-            temperature=None,
-            top_p=None,
-            top_k=None,
-            prompt="Test prompt",
-            images=[],
-            api_url="http://localhost:8000/completions",
-            prompt_len=10,
-            max_tokens=100,
-            ignore_eos=False,
-        )
-
-        mock_response_data = [
-            b'data: {"choices": [{"text": "Hel',
-            b'lo"}]}\n\n',
-            b'data: {"choices": [{"text": " world"}]}\n',
-            b"\n",
-            b"data: [DONE]\n\n",
-        ]
-
-        mock_response = mocker.AsyncMock()
-        mock_response.status = 200
-        mock_response.content = _bytes_async_iter(mock_response_data)
-
-        mock_aiohttp_session.setup_post_response(mock_response)
-
-        driver = OpenAICompletionsRequestDriver()
-        result = await driver.request(request_input)
-
-        assert result.success is True
-        assert result.generated_text == "Hello world"
-        assert result.prompt_len == 10
-
-    @pytest.mark.asyncio
-    async def test_openai_chat_completions_request_driver_handles_split_sse_chunks(
-        self,
-        mock_aiohttp_session: Any,
-        mock_openai_env: None,
-        mocker: MockerFixture,
-    ) -> None:
-        """Test split SSE payloads on the chat/completions path."""
-        request_input = RequestFuncInput(
-            model="test-model",
-            session_id=None,
-            temperature=None,
-            top_p=None,
-            top_k=None,
-            prompt="Test prompt",
-            images=[],
-            api_url="http://localhost:8000/chat/completions",
-            prompt_len=10,
-            max_tokens=100,
-            ignore_eos=False,
-        )
-
-        mock_response_data = [
-            b'data: {"choices": [{"delta": {"content": "Hel',
-            b'lo"}}]}\n\n',
-            b'data: {"choices": [{"delta": {"content": " world"}}]}\n',
-            b"\n",
-            b"data: [DONE]\n\n",
-        ]
-
-        mock_response = mocker.AsyncMock()
-        mock_response.status = 200
-        mock_response.content = _bytes_async_iter(mock_response_data)
-
-        mock_aiohttp_session.setup_post_response(mock_response)
-
-        driver = OpenAIChatCompletionsRequestDriver()
-        result = await driver.request(request_input)
-
-        assert result.success is True
-        assert result.generated_text == "Hello world"
-        assert result.prompt_len == 10
-
-    @pytest.mark.asyncio
-    async def test_openai_chat_completions_request_driver_handles_mixed_sse_stream(
-        self,
-        mock_aiohttp_session: Any,
-        mock_openai_env: None,
-        mocker: MockerFixture,
-    ) -> None:
-        """Test mixed SSE comment/control lines and CRLF-delimited chunks."""
-        request_input = RequestFuncInput(
-            model="test-model",
-            session_id=None,
-            temperature=None,
-            top_p=None,
-            top_k=None,
-            prompt="Test prompt",
-            images=[],
-            api_url="http://localhost:8000/chat/completions",
-            prompt_len=10,
-            max_tokens=100,
-            ignore_eos=False,
-        )
-
-        mock_response_data = [
-            b": keep-alive\r\n",
-            b"event: message\r\n",
-            b"id: request-123\r\n",
-            b'data: {"choices": [{"delta": {"content": "Hel',
-            b'lo"}}]}\r\n',
-            b"\r\n",
-            b'data: {"choices": [{"delta": {"content": " world"}}]}\r\n\r\n',
-            b"data: [DONE]\r\n\r\n",
-        ]
-
-        mock_response = mocker.AsyncMock()
-        mock_response.status = 200
-        mock_response.content = _bytes_async_iter(mock_response_data)
-
-        mock_aiohttp_session.setup_post_response(mock_response)
-
-        driver = OpenAIChatCompletionsRequestDriver()
-        result = await driver.request(request_input)
-
-        assert result.success is True
-        assert result.generated_text == "Hello world"
         assert result.prompt_len == 10
 
     @pytest.mark.asyncio
@@ -638,9 +461,9 @@ class TestRequestDriver:
                 b'"content": " The answer is 42.", '
                 b'"reasoning": "Let me think.", '
                 b'"reasoning_content": " chain-of-thought."'
-                b"}}]}"
+                b"}}]}\n\n"
             ),
-            b"data: [DONE]",
+            b"data: [DONE]\n\n",
         ]
 
         async def async_iter() -> AsyncIterator[bytes]:
@@ -686,11 +509,11 @@ class TestRequestDriver:
 
         # Chunks with only some keys present or None; no "reasoning" or "reasoning_content"
         mock_response_data = [
-            b'data: {"choices": [{"delta": {"reasoning": "Let me "}}]}',
-            b'data: {"choices": [{"delta": {"reasoning": "think.", "content": " The"}}]}',
-            b'data: {"choices": [{"delta": {"reasoning": null, "content": " answer"}}]}',
-            b'data: {"choices": [{"delta": {"content": " is 42."}}]}',
-            b"data: [DONE]",
+            b'data: {"choices": [{"delta": {"reasoning": "Let me "}}]}\n\n',
+            b'data: {"choices": [{"delta": {"reasoning": "think.", "content": " The"}}]}\n\n',
+            b'data: {"choices": [{"delta": {"reasoning": null, "content": " answer"}}]}\n\n',
+            b'data: {"choices": [{"delta": {"content": " is 42."}}]}\n\n',
+            b"data: [DONE]\n\n",
         ]
 
         async def async_iter() -> AsyncIterator[bytes]:
@@ -734,7 +557,7 @@ class TestRequestDriver:
         )
 
         mock_response_data = [
-            b"data: [DONE]",
+            b"data: [DONE]\n\n",
         ]
 
         async def async_iter() -> AsyncIterator[bytes]:
@@ -777,7 +600,7 @@ class TestRequestDriver:
 
         # Create async iterator for response.content
         async def async_iter() -> AsyncIterator[bytes]:
-            yield b'data:{"text_output": "Hello"}'
+            yield b'data: {"text_output": "Hello"}\n\n'
 
         # Setup the response object
         mock_response = mocker.AsyncMock()
@@ -815,7 +638,7 @@ class TestRequestDriver:
 
         # Create async iterator for response.content
         async def async_iter() -> AsyncIterator[bytes]:
-            yield b'data:{"text_output": "Hello"}'
+            yield b'data: {"text_output": "Hello"}\n\n'
 
         # Setup the response object
         mock_response = mocker.AsyncMock()
@@ -862,44 +685,6 @@ class TestRequestDriverSelection:
     def test_get_request_driver_class_invalid_url(self) -> None:
         with pytest.raises(ValueError, match="Unsupported API URL"):
             get_request_driver_class("http://localhost:8000/unsupported")
-
-
-class TestSSEParserHelpers:
-    """Test cases for SSE parsing helpers."""
-
-    def test_extract_sse_payload_handles_comment_control_and_data_lines(
-        self,
-    ) -> None:
-        assert _extract_sse_payload("") is None
-        assert _extract_sse_payload(": keep-alive") is None
-        assert _extract_sse_payload("event: message") is None
-        assert _extract_sse_payload("id: request-123") is None
-        assert _extract_sse_payload("data:") is None
-        assert _extract_sse_payload("data:   ") is None
-        assert _extract_sse_payload('data: {"a": 1}') == '{"a": 1}'
-        assert _extract_sse_payload('{"a": 1}') == '{"a": 1}'
-
-    @pytest.mark.asyncio
-    async def test_iter_sse_payloads_handles_crlf_comments_and_partial_payloads(
-        self,
-    ) -> None:
-        chunks = [
-            b": keep-alive\r\n",
-            b"event: message\r\n",
-            b"id: request-123\r\n",
-            b'data: {"a": "Hel',
-            b'lo"}\r\n',
-            b"\r\n",
-            b'data: {"a": " world"}\r\n\r\n',
-            b'{"a": "!"}\n',
-        ]
-
-        payloads = [
-            payload
-            async for payload in _iter_sse_payloads(_bytes_async_iter(chunks))
-        ]
-
-        assert payloads == ['{"a": "Hello"}', '{"a": " world"}', '{"a": "!"}']
 
     # Pixel generation driver selection tests
 
