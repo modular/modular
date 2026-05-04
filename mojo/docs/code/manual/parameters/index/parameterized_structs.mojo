@@ -35,7 +35,9 @@ struct GenericArray[ElementType: Copyable & ImplicitlyDestructible]:
 
 
 def main() raises:
+    # start-generic-array-usage
     var array = GenericArray(1, 2, 3)
     for i in range(array.size):
         end = ", " if i < array.size - 1 else "\n"
         print(array[i], end=end)
+    # end-generic-array-usage

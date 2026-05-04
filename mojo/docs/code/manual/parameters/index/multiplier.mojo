@@ -12,12 +12,13 @@
 # ===----------------------------------------------------------------------=== #
 
 
-def repeat[MsgType: Writable, //, count: Int](msg: MsgType):
-    comptime for i in range(count):
-        print(msg)
+# start-multiplier-example
+def multiplier[factor: Int](x: Int) -> Int:
+    return x * factor
 
 
 def main():
-    # MsgType is always inferred, so first positional keyword `2` is
-    # passed to `count`
-    repeat[2](42)
+    comptime times_ten = multiplier[10]
+    x10 = times_ten(3)
+    _ = x10
+    # end-multiplier-example

@@ -14,8 +14,12 @@
 from std.math import sqrt
 
 
+# start-rsqrt-def
 def rsqrt[dt: DType](x: Scalar[dt]) -> Scalar[dt]:
     return 1 / sqrt(x)
+
+
+# end-rsqrt-def
 
 
 # start-infer-struct-param
@@ -27,8 +31,8 @@ struct One[Type: Writable & Copyable & ImplicitlyDestructible]:
 
 
 def use_one():
-    s1 = One(123)
-    s2 = One("Hello")
+    s1 = One(123)  # equivalent to One[Int](123)
+    s2 = One("Hello")  # equivalent to One[String]("Hello")
     # end-infer-struct-param
     _ = s1^
     _ = s2^
@@ -58,8 +62,10 @@ def use_two():
 
 
 def main():
-    var v = Scalar[DType.float16](33)
+    # start-rsqrt-usage
+    var v = Scalar[DType.float16](42)
     print(rsqrt(v))
+    # end-rsqrt-usage
 
     # second example
     use_one()

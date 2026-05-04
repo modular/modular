@@ -12,9 +12,22 @@
 # ===----------------------------------------------------------------------=== #
 
 
+# start-dependent-type-basic
+def dependent_type_basic[dtype: DType, value: Scalar[dtype]]():
+    print("Value: ", value)
+    print("Value is floating-point: ", dtype.is_floating_point())
+
+
+# end-dependent-type-basic
+
+
+# start-dependent-type-infer-only
 def dependent_type[dtype: DType, //, value: Scalar[dtype]]():
     print("Value: ", value)
-    print("DType: ", dtype)
+    print("Value is floating-point: ", dtype.is_floating_point())
+
+
+# end-dependent-type-infer-only
 
 
 def mutate_span(span: Span[mut=True, Byte, ...]) raises:
@@ -24,7 +37,12 @@ def mutate_span(span: Span[mut=True, Byte, ...]) raises:
 
 
 def main() raises:
+    # start-dependent-type-basic-call
+    dependent_type_basic[DType.float64, Float64(2.2)]()
+    # end-dependent-type-basic-call
+    # start-dependent-type-infer-only-call
     dependent_type[Float64(2.2)]()
+    # end-dependent-type-infer-only-call
     s = String("Robinson Crusoe surfed the interwebs.")
     span = s.unsafe_as_bytes_mut()
     mutate_span(span)

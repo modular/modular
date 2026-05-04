@@ -11,13 +11,17 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-
-def repeat[MsgType: Writable, //, count: Int](msg: MsgType):
-    comptime for i in range(count):
-        print(msg)
+# start-rsqrt-example
+from std.math import sqrt
 
 
-def main():
-    # MsgType is always inferred, so first positional keyword `2` is
-    # passed to `count`
-    repeat[2](42)
+def rsqrt[dt: DType](x: Scalar[dt]) -> Scalar[dt]:
+    return 1 / sqrt(x)
+
+
+def main() raises:
+    var v = Scalar[DType.float16](42)
+    print(rsqrt(v))
+
+
+# end-rsqrt-example
