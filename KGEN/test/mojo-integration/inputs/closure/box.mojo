@@ -4,6 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from .foo import printIt, defineIt
-from .bar import emitLoad
-from .box import Box
+
+struct Box(Copyable):
+    def __init__(out self):
+        pass

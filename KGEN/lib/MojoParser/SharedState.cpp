@@ -138,6 +138,14 @@ public:
       walk(type);
   }
 
+  LogicalResult resolveBytecodeSymbolSignature(SymbolRefAttr symbol,
+                                               SMLoc loc) {
+    auto savedContextLoc = saveResolutionContextLoc(loc);
+    if (!resolveBytecodeReferenceSignature(shared, symbol))
+      return failure();
+    return success();
+  }
+
 private:
   /// Given a symbol reference, fully resolve the parents of the symbol assuming
   /// that the parent references do not contain any mangling.
@@ -1741,6 +1749,12 @@ LogicalResult SharedState::resolveDeclReferencesIn(SMLoc loc, Type type) {
   auto &refWalker = getImpl().bytecodeRefResolutionWalker;
   auto savedContextLoc = refWalker.saveResolutionContextLoc(loc);
   return success(!refWalker.walk(type).wasInterrupted());
+}
+
+LogicalResult SharedState::resolveDeclReferencesIn(SMLoc loc,
+                                                   SymbolConstantAttr sym) {
+  return getImpl().bytecodeRefResolutionWalker.resolveBytecodeSymbolSignature(
+      sym.getSymbol(), loc);
 }
 
 LogicalResult
