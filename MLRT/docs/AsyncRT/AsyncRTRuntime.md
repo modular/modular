@@ -146,3 +146,32 @@ every tiny linked list node go through it.
 
 Focus on large scale allocations that can matter to the memory bandwidth of your
 workload.
+
+### Tracing allocations with `MODULAR_ALLOC_LOGGING`
+
+The `TCMallocAllocator` and the Mojo heap allocator
+(`KGEN_CompilerRT_AlignedAlloc/Free`) support optional `DEBUG`-level logging of
+every allocation and free. Because these functions are in hot paths, the logging
+is compiled out by default and must be opted in at build time:
+
+```bash
+./bazelw run //your:target --//MLRT:alloc_logging=true
+```
+
+Then enable the `DEBUG` log level at runtime:
+
+```bash
+MODULAR_LOG_LEVEL=DEBUG ./your_program
+```
+
+Example output:
+
+```text
+[13:41:13] [ DBG] tcmalloc alloc: ptr=0x7f1234560000 size=128 alignment=8
+[13:41:13] [ DBG] tcmalloc free: ptr=0x7f1234560000 size=128
+[13:41:13] [ DBG] mojo alloc: ptr=0x112f3fc00000 size=12582912 alignment=1
+[13:41:13] [ DBG] mojo free: ptr=0x112f3fc00000
+```
+
+The compile-time guard ensures zero overhead in normal builds — no level check,
+no branch.

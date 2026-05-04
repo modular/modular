@@ -6,6 +6,7 @@
 
 #include "MLRT/AsyncRT/Runtime/Allocator.h"
 #include "MLRT/AsyncRT/Runtime/Globals/Globals.h"
+#include "Support/Log.h"
 
 namespace M::MLRT {
 
@@ -25,13 +26,21 @@ private:
                                                            (uint64_t)size));
     // TODO: honor getNumaPlacement() at allocation time; today the
     // node is stored on the allocator but tc_new itself is not yet NUMA-aware.
-    return TCMallocGlobals::tc_new(alignment, size);
+    void *ptr = TCMallocGlobals::tc_new(alignment, size);
+#if MODULAR_ALLOC_LOGGING
+    MLOG_DEBUG("tcmalloc alloc: ptr={} size={} alignment={}", ptr, size,
+               alignment);
+#endif
+    return ptr;
   }
 
   /// Deallocate the specified pointer that has the specified size.
   void deallocateBytes(void *ptr, size_t size) override {
     TimeTraceScope scope(
         MemAllocFreeProfilerEntry::create("mem.free.tcmalloc", (uint64_t)size));
+#if MODULAR_ALLOC_LOGGING
+    MLOG_DEBUG("tcmalloc free: ptr={} size={}", ptr, size);
+#endif
     return TCMallocGlobals::tc_delete(ptr);
   }
 };
