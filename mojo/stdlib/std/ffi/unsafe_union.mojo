@@ -258,14 +258,20 @@ struct UnsafeUnion[*Ts: AnyType](ImplicitlyCopyable, Movable, Writable):
     # ===-------------------------------------------------------------------===#
 
     @always_inline("nodebug")
-    def _get_ptr[T: AnyType](ref[_] self) -> UnsafePointer[T, origin_of(self)]:
+    def _get_ptr[
+        origin: Origin, address_space: AddressSpace, //, T: AnyType
+    ](ref[origin, address_space] self) -> UnsafePointer[
+        T, origin, address_space=address_space
+    ]:
         """Get a pointer to the storage interpreted as type T."""
         comptime assert Self._is_element[
             T
         ](), "type is not a union element type"
         var ptr = UnsafePointer(to=self._storage).address
         var typed_ptr = __mlir_op.`pop.union.bitcast`[
-            _type=UnsafePointer[T, origin_of(self)]._mlir_type,
+            _type=UnsafePointer[
+                T, origin, address_space=address_space
+            ]._mlir_type,
         ](ptr)
         return typed_ptr
 
@@ -274,7 +280,9 @@ struct UnsafeUnion[*Ts: AnyType](ImplicitlyCopyable, Movable, Writable):
     # ===-------------------------------------------------------------------===#
 
     @always_inline("nodebug")
-    def unsafe_get[T: AnyType](ref self) -> ref[self] T:
+    def unsafe_get[
+        origin: Origin, address_space: AddressSpace, //, T: AnyType
+    ](ref[origin, address_space] self) -> ref[origin, address_space] T:
         """Get a reference to the stored value as type T.
 
         Parameters:
@@ -401,8 +409,10 @@ struct UnsafeUnion[*Ts: AnyType](ImplicitlyCopyable, Movable, Writable):
 
     @always_inline("nodebug")
     def unsafe_ptr[
-        T: AnyType
-    ](ref[_] self) -> UnsafePointer[T, origin_of(self)]:
+        origin: Origin, address_space: AddressSpace, //, T: AnyType
+    ](ref[origin, address_space] self) -> UnsafePointer[
+        T, origin, address_space=address_space
+    ]:
         """Get a pointer to the storage interpreted as type T.
 
         This allows direct manipulation of the union's storage. Useful for
