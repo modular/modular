@@ -79,7 +79,7 @@ kgen.generator @struct_gep_load(%arg0: !kgen.struct<(i8, i16, i32)>) -> i32 {
 }
 
 kgen.generator @bitcast_offset() -> !kgen.struct<(scalar<ui8>, scalar<ui8>)>{
-  %x = pop.stack_allocation 1 x !pop.scalar<si64>
+  %x = pop.stack_allocation 1 x !kgen.scalar<si64>
   %0 = kgen.param.constant: scalar<si64> = <5>
   pop.store %0, %x : !kgen.pointer<scalar<si64>>
   %1 = pop.pointer.bitcast %x : !kgen.pointer<scalar<si64>> to !kgen.pointer<scalar<ui8>>
@@ -206,64 +206,64 @@ kgen.generator @global_alloc() -> !kgen.pointer<i8, 2> {
   kgen.return %0 : !kgen.pointer<i8, 2>
 }
 
-kgen.generator @simd_xor_fold_0() -> !pop.scalar<uindex> {
+kgen.generator @simd_xor_fold_0() -> !kgen.scalar<uindex> {
   %0 = kgen.param.constant: scalar<uindex> = <0>
   %2 = kgen.param.constant: scalar<index> = <-1>
-  %3 = pop.cast %2 : !pop.scalar<index> to !pop.scalar<uindex>
-  %4 = pop.simd.xor %3, %0 : !pop.scalar<uindex>
-  kgen.return %4: !pop.scalar<uindex>
+  %3 = pop.cast %2 : !kgen.scalar<index> to !kgen.scalar<uindex>
+  %4 = pop.simd.xor %3, %0 : !kgen.scalar<uindex>
+  kgen.return %4: !kgen.scalar<uindex>
 }
 
-kgen.generator @simd_xor_fold_1() -> !pop.scalar<bool> {
+kgen.generator @simd_xor_fold_1() -> !kgen.scalar<bool> {
   %0 = kgen.param.constant: scalar<bool> = <true>
   %1 = kgen.param.constant: scalar<index> = <1>
-  %x = pop.cast %1 : !pop.scalar<index> to !pop.scalar<bool>
-  %2 = pop.simd.xor %x, %0 : !pop.scalar<bool>
-  %3 = pop.simd.xor %2, %0 : !pop.scalar<bool>
-  kgen.return %3: !pop.scalar<bool>
+  %x = pop.cast %1 : !kgen.scalar<index> to !kgen.scalar<bool>
+  %2 = pop.simd.xor %x, %0 : !kgen.scalar<bool>
+  %3 = pop.simd.xor %2, %0 : !kgen.scalar<bool>
+  kgen.return %3: !kgen.scalar<bool>
 }
 
-kgen.generator @simd_reduce_or_fold_0() -> !pop.scalar<si32> {
+kgen.generator @simd_reduce_or_fold_0() -> !kgen.scalar<si32> {
   %0 = kgen.param.constant: simd<4, si32> = <<0, 1, 2, 16>>
-  %1 = pop.simd.reduce_or %0 : !pop.simd<4, si32>
-  kgen.return %1 : !pop.scalar<si32>
+  %1 = pop.simd.reduce_or %0 : !kgen.simd<4, si32>
+  kgen.return %1 : !kgen.scalar<si32>
 }
 
-kgen.generator @simd_reduce_or_fold_1() -> !pop.scalar<bool> {
+kgen.generator @simd_reduce_or_fold_1() -> !kgen.scalar<bool> {
   %0 = kgen.param.constant: simd<4, bool> = <<true, false, false, true>>
-  %1 = pop.simd.reduce_or %0 : !pop.simd<4, bool>
-  kgen.return %1 : !pop.scalar<bool>
+  %1 = pop.simd.reduce_or %0 : !kgen.simd<4, bool>
+  kgen.return %1 : !kgen.scalar<bool>
 }
 
-kgen.generator @simd_reduce_or_fold_2() -> !pop.scalar<index> {
+kgen.generator @simd_reduce_or_fold_2() -> !kgen.scalar<index> {
   %0 = kgen.param.constant: simd<4, index> = <<64, 8, 2, 1>>
-  %1 = pop.simd.reduce_or %0 : !pop.simd<4, index>
-  kgen.return %1 : !pop.scalar<index>
+  %1 = pop.simd.reduce_or %0 : !kgen.simd<4, index>
+  kgen.return %1 : !kgen.scalar<index>
 }
 
-kgen.generator @simd_reduce_and_fold_0() -> !pop.scalar<si32> {
+kgen.generator @simd_reduce_and_fold_0() -> !kgen.scalar<si32> {
   %0 = kgen.param.constant: simd<4, si32> = <<1, 3, 5, 19>>
-  %1 = pop.simd.reduce_and %0 : !pop.simd<4, si32>
-  kgen.return %1 : !pop.scalar<si32>
+  %1 = pop.simd.reduce_and %0 : !kgen.simd<4, si32>
+  kgen.return %1 : !kgen.scalar<si32>
 }
 
-kgen.generator @simd_reduce_and_fold_1() -> !pop.scalar<bool> {
+kgen.generator @simd_reduce_and_fold_1() -> !kgen.scalar<bool> {
   %0 = kgen.param.constant: simd<4, bool> = <<true, false, false, true>>
-  %1 = pop.simd.reduce_and %0 : !pop.simd<4, bool>
-  kgen.return %1 : !pop.scalar<bool>
+  %1 = pop.simd.reduce_and %0 : !kgen.simd<4, bool>
+  kgen.return %1 : !kgen.scalar<bool>
 }
 
-kgen.generator @simd_reduce_and_fold_2() -> !pop.scalar<index> {
+kgen.generator @simd_reduce_and_fold_2() -> !kgen.scalar<index> {
   %0 = kgen.param.constant: simd<4, index> = <<1, 3, 5, 19>>
-  %1 = pop.simd.reduce_and %0 : !pop.simd<4, index>
-  kgen.return %1 : !pop.scalar<index>
+  %1 = pop.simd.reduce_and %0 : !kgen.simd<4, index>
+  kgen.return %1 : !kgen.scalar<index>
 }
 
-kgen.generator @pop_cmp() -> !pop.scalar<bool> {
-  %0 = kgen.param.constant: !pop.scalar<index> = <3000000000>
-  %1 = kgen.param.constant: !pop.scalar<index> = <0>
-  %2 = pop.cmp lt(%0 , %1) : !pop.scalar<index>
-  kgen.return %2 : !pop.scalar<bool>
+kgen.generator @pop_cmp() -> !kgen.scalar<bool> {
+  %0 = kgen.param.constant: !kgen.scalar<index> = <3000000000>
+  %1 = kgen.param.constant: !kgen.scalar<index> = <0>
+  %2 = pop.cmp lt(%0 , %1) : !kgen.scalar<index>
+  kgen.return %2 : !kgen.scalar<bool>
 }
 
 // CHECK-LABEL: kgen.func export @do_it
@@ -278,19 +278,19 @@ kgen.generator export @do_it() {
     [123, 456])>
   // CHECK-NEXT: <"1.25", "2.25">
   kgen.param.constant: simd<2, f32> = <apply(
-    :(!pop.simd<2, f32>) -> !pop.simd<2, f32> @store_load<:type !pop.simd<2, f32>>,
+    :(!kgen.simd<2, f32>) -> !kgen.simd<2, f32> @store_load<:type !kgen.simd<2, f32>>,
     <"1.25", "2.25">)>
   // CHECK-NEXT: <-7, 7>
   kgen.param.constant: simd<2, si4> = <apply(
-    :(!pop.simd<2, si4>) -> !pop.simd<2, si4> @store_load<:type !pop.simd<2, si4>>,
+    :(!kgen.simd<2, si4>) -> !kgen.simd<2, si4> @store_load<:type !kgen.simd<2, si4>>,
     <-7, 7>)>
   // CHECK-NEXT: <0, 1, 2, 3, 3, 2>
   kgen.param.constant: simd<6, ui2> = <apply(
-    :(!pop.simd<6, ui2>) -> !pop.simd<6, ui2> @store_load<:type !pop.simd<6, ui2>>,
+    :(!kgen.simd<6, ui2>) -> !kgen.simd<6, ui2> @store_load<:type !kgen.simd<6, ui2>>,
     <0, 1, 2, 3, 3, 2>)>
   // CHECK-NEXT: <-5>
   kgen.param.constant: scalar<index> = <apply(
-    :(!pop.scalar<index>) -> !pop.scalar<index> @store_load<:type !pop.scalar<index>>,
+    :(!kgen.scalar<index>) -> !kgen.scalar<index> @store_load<:type !kgen.scalar<index>>,
     <-5>)>
   // CHECK-NEXT: { 120, 32112, 1.125{{0+}}e+00 }
   kgen.param.constant: struct<(i8, i16, f64)> = <apply(
@@ -311,11 +311,11 @@ kgen.generator export @do_it() {
     { 24, 16, 2 })>
   // CHECK-NEXT: <1026>
   kgen.param.constant: i16 = <apply(
-    :(!pop.simd<2, si8>) -> i16 @bitcast<:type !pop.simd<2, si8>, :type i16>,
+    :(!kgen.simd<2, si8>) -> i16 @bitcast<:type !kgen.simd<2, si8>, :type i16>,
     <2, 4>)>
   // CHECK-NEXT: <229>
   kgen.param.constant: ui8 = <apply(
-    :(!pop.simd<4, ui2>) -> ui8 @bitcast<:type !pop.simd<4, ui2>, :type ui8>,
+    :(!kgen.simd<4, ui2>) -> ui8 @bitcast<:type !kgen.simd<4, ui2>, :type ui8>,
     <1, 1, 2, 3>)>
 
   // CHECK-NEXT: <0>
@@ -426,31 +426,31 @@ kgen.generator export @do_it() {
   kgen.param.constant: pointer<i8, 2> = <apply(:() -> !kgen.pointer<i8, 2> @global_alloc)>
 
   // CHECK-NEXT: constant: scalar<uindex> = <18446744073709551615>
-  kgen.param.constant: scalar<uindex> = <apply(:() -> !pop.scalar<uindex> @simd_xor_fold_0)>
+  kgen.param.constant: scalar<uindex> = <apply(:() -> !kgen.scalar<uindex> @simd_xor_fold_0)>
 
   // CHECK-NEXT: constant: scalar<bool> = <true>
-  kgen.param.constant: scalar<bool> = <apply(:() -> !pop.scalar<bool> @simd_xor_fold_1)>
+  kgen.param.constant: scalar<bool> = <apply(:() -> !kgen.scalar<bool> @simd_xor_fold_1)>
 
   // CHECK-NEXT: constant: scalar<si32> = <19>
-  kgen.param.constant: scalar<si32> = <apply(:() -> !pop.scalar<si32> @simd_reduce_or_fold_0)>
+  kgen.param.constant: scalar<si32> = <apply(:() -> !kgen.scalar<si32> @simd_reduce_or_fold_0)>
 
   // CHECK-NEXT: constant: scalar<bool> = <true>
-  kgen.param.constant: scalar<bool> = <apply(:() -> !pop.scalar<bool> @simd_reduce_or_fold_1)>
+  kgen.param.constant: scalar<bool> = <apply(:() -> !kgen.scalar<bool> @simd_reduce_or_fold_1)>
 
   // CHECK-NEXT: constant: scalar<index> = <75>
-  kgen.param.constant: scalar<index> = <apply(:() -> !pop.scalar<index> @simd_reduce_or_fold_2)>
+  kgen.param.constant: scalar<index> = <apply(:() -> !kgen.scalar<index> @simd_reduce_or_fold_2)>
 
   // CHECK-NEXT: constant: scalar<si32> = <1>
-  kgen.param.constant: scalar<si32> = <apply(:() -> !pop.scalar<si32> @simd_reduce_and_fold_0)>
+  kgen.param.constant: scalar<si32> = <apply(:() -> !kgen.scalar<si32> @simd_reduce_and_fold_0)>
 
   // CHECK-NEXT: constant: scalar<bool> = <false>
-  kgen.param.constant: scalar<bool> = <apply(:() -> !pop.scalar<bool> @simd_reduce_and_fold_1)>
+  kgen.param.constant: scalar<bool> = <apply(:() -> !kgen.scalar<bool> @simd_reduce_and_fold_1)>
 
   // CHECK-NEXT: constant: scalar<index> = <1>
-  kgen.param.constant: scalar<index> = <apply(:() -> !pop.scalar<index> @simd_reduce_and_fold_2)>
+  kgen.param.constant: scalar<index> = <apply(:() -> !kgen.scalar<index> @simd_reduce_and_fold_2)>
 
   // CHECK-NEXT: constant: scalar<bool> = <false>
-  kgen.param.constant: scalar<bool> = <apply(:() -> !pop.scalar<bool> @pop_cmp)>
+  kgen.param.constant: scalar<bool> = <apply(:() -> !kgen.scalar<bool> @pop_cmp)>
 
   kgen.return
 }

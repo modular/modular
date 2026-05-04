@@ -124,12 +124,12 @@ def left_to_right_implicit_conversion(
 
 
 # expected-note @below {{function declared here}}
-def badReboundType[type: DType, val: __mlir_type[`!pop.scalar<`, type, `>`]]():
+def badReboundType[type: DType, val: __mlir_type[`!kgen.scalar<`, type, `>`]]():
     pass
 
 
-def badCallReboundType[val: __mlir_type.`!pop.scalar<f32>`]():
-    # expected-error @+1 {{invalid call to 'badReboundType': 'badReboundType' parameter 'val' has '__mlir_type.`!pop.scalar<f64>`' type, but value has type '__mlir_type.`!pop.scalar<f32>`'}}
+def badCallReboundType[val: __mlir_type.`!kgen.scalar<f32>`]():
+    # expected-error @+1 {{invalid call to 'badReboundType': 'badReboundType' parameter 'val' has '__mlir_type.`!kgen.scalar<f64>`' type, but value has type '__mlir_type.`!kgen.scalar<f32>`'}}
     badReboundType[__mlir_attr.`#kgen.dtype.constant<f64> : !kgen.dtype`, val]()
 
 

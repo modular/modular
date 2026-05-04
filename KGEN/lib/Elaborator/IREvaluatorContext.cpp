@@ -572,10 +572,10 @@ void IREvaluatorContext::printParamValue(raw_ostream &os, ParamDeclAttr decl,
 
         os << "<unprintable>";
       })
-      .Case<POP::SIMDAttr>([&](auto simdAttr) {
-        ArrayRef<POP::DTypeValue> values = simdAttr.getValues();
+      .Case<KGEN::SIMDAttr>([&](auto simdAttr) {
+        ArrayRef<KGEN::DTypeValue> values = simdAttr.getValues();
         KGENDType dType = *simdAttr.getType().getResolvedDType();
-        POP::printDTypeValues(os, values, dType);
+        KGEN::printDTypeValues(os, values, dType);
         os << " : ";
         if (qualifiedBuiltins)
           os << "std.builtin.simd.";

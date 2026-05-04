@@ -8,12 +8,12 @@
 // Related: MOCO-3651.
 
 kgen.struct.generator @SIMDParamStruct<
-    i: !pop.scalar<si32>,
-    f: !pop.scalar<f32>,
-    b: !pop.scalar<bool>,
-    x: !pop.scalar<index>,
-    u: !pop.scalar<uindex>,
-    v: !pop.simd<4, si32>
+    i: !kgen.scalar<si32>,
+    f: !kgen.scalar<f32>,
+    b: !kgen.scalar<bool>,
+    x: !kgen.scalar<index>,
+    u: !kgen.scalar<uindex>,
+    v: !kgen.simd<4, si32>
 > = struct_inst<"SIMDParamStruct"> {}
 
 // CHECK-LABEL: kgen.func export @test_simd_param_printing
@@ -21,12 +21,12 @@ kgen.generator export @test_simd_param_printing() {
   // CHECK-NEXT: constant: string = <"SIMDParamStruct[42 : SIMD[DType.int32, 1], 1.5 : SIMD[DType.float32, 1], True : SIMD[DType.bool, 1], 7 : SIMD[DType.int, 1], 8 : SIMD[DType.uint, 1], [1, 2, 3, 4] : SIMD[DType.int32, 4]]">
   kgen.param.constant: string = <#kgen.get_type_name<
     #kgen.genref<@SIMDParamStruct<
-      :!pop.scalar<si32> #pop<simd 42>,
-      :!pop.scalar<f32> #pop<simd "1.5">,
-      :!pop.scalar<bool> #pop<simd true>,
-      :!pop.scalar<index> #pop<simd 7>,
-      :!pop.scalar<uindex> #pop<simd 8>,
-      :!pop.simd<4, si32> #pop<simd<1, 2, 3, 4>>>>,
+      :!kgen.scalar<si32> #kgen<simd 42>,
+      :!kgen.scalar<f32> #kgen<simd "1.5">,
+      :!kgen.scalar<bool> #kgen<simd true>,
+      :!kgen.scalar<index> #kgen<simd 7>,
+      :!kgen.scalar<uindex> #kgen<simd 8>,
+      :!kgen.simd<4, si32> #kgen<simd<1, 2, 3, 4>>>>,
     false>>
   kgen.return
 }

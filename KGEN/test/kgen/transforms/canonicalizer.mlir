@@ -69,20 +69,20 @@ kgen.func @negative_fold_if_single_div_then(%cond: i1, %arg0 : index, %arg1: ind
 }
 
 // CHECK-LABEL: @negative_fold_if_single_div_then_pop_type
-kgen.func @negative_fold_if_single_div_then_pop_type(%cond: i1, %arg0 : !pop.scalar<index>, %arg1: !pop.scalar<index>) -> !pop.scalar<index> {
-  // CHECK: %0 = hlcf.if %arg0 -> !pop.scalar<index> {
-  // CHECK:   %1 = pop.div %arg2, %arg1 : !pop.scalar<index>
-  // CHECK:   hlcf.yield %1 : !pop.scalar<index>
+kgen.func @negative_fold_if_single_div_then_pop_type(%cond: i1, %arg0 : !kgen.scalar<index>, %arg1: !kgen.scalar<index>) -> !kgen.scalar<index> {
+  // CHECK: %0 = hlcf.if %arg0 -> !kgen.scalar<index> {
+  // CHECK:   %1 = pop.div %arg2, %arg1 : !kgen.scalar<index>
+  // CHECK:   hlcf.yield %1 : !kgen.scalar<index>
   // CHECK: } else {
-  // CHECK:   hlcf.yield %arg2 : !pop.scalar<index>
+  // CHECK:   hlcf.yield %arg2 : !kgen.scalar<index>
   // CHECK: }
-  %if_res = hlcf.if %cond -> !pop.scalar<index> {
-    %add = pop.div %arg1, %arg0 : !pop.scalar<index>
-    hlcf.yield %add: !pop.scalar<index>
+  %if_res = hlcf.if %cond -> !kgen.scalar<index> {
+    %add = pop.div %arg1, %arg0 : !kgen.scalar<index>
+    hlcf.yield %add: !kgen.scalar<index>
   } else {
-    hlcf.yield %arg1: !pop.scalar<index>
+    hlcf.yield %arg1: !kgen.scalar<index>
   }
-  kgen.return %if_res: !pop.scalar<index>
+  kgen.return %if_res: !kgen.scalar<index>
 }
 
 // CHECK-LABEL: @fold_if_single_add_else
@@ -121,9 +121,9 @@ kgen.func @fold_if_single_add_then_sub_else(%cond: i1, %arg0 : index, %arg1: ind
 kgen.func @indexify_comparison(%arg0: index) -> i1 {
   // CHECK: %0 = index.cmp sgt(%arg0, %idx1)
   %simd = kgen.param.constant: scalar<index> = <1>
-  %0 = pop.cast_from_builtin %arg0 : index to !pop.scalar<index>
-  %1 = pop.cmp gt(%0, %simd) : !pop.scalar<index>
-  %2 = pop.cast_to_builtin %1 : !pop.scalar<bool> to i1
+  %0 = pop.cast_from_builtin %arg0 : index to !kgen.scalar<index>
+  %1 = pop.cmp gt(%0, %simd) : !kgen.scalar<index>
+  %2 = pop.cast_to_builtin %1 : !kgen.scalar<bool> to i1
   // CHECK: return %0
   kgen.return %2 : i1
 }
@@ -179,9 +179,9 @@ kgen.func @not_cmp(%arg0: index, %arg1: index) -> i1 {
   %simd_0 = kgen.param.constant: scalar<bool> = <true>
   // CHECK-NEXT: %0 = index.cmp ugt(%arg0, %arg1)
   %0 = index.cmp ule(%arg0, %arg1)
-  %1 = pop.cast_from_builtin %0 : i1 to !pop.scalar<bool>
+  %1 = pop.cast_from_builtin %0 : i1 to !kgen.scalar<bool>
   %2 = pop.simd.xor %1, %simd_0 : <1, bool>
-  %3 = pop.cast_to_builtin %2 : !pop.scalar<bool> to i1
+  %3 = pop.cast_to_builtin %2 : !kgen.scalar<bool> to i1
   // CHECK-NEXT: return %0
   kgen.return %3 : i1
 }

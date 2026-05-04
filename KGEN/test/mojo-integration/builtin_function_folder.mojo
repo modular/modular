@@ -50,10 +50,10 @@ def fold_select_op[B: Int = 4, C: Int = 3]() -> IntT[B]:
 # CHECK-LABEL: lit.fn @"fold_bool_init
 def fold_bool_init() -> BoolT[True]:
     comptime T = Bool(
-        mlir_value=__mlir_attr.`#pop.simd<true> : !pop.scalar<bool>`
+        mlir_value=__mlir_attr.`#kgen.simd<true> : !kgen.scalar<bool>`
     )
     comptime F = Bool(
-        mlir_value=__mlir_attr.`#pop.simd<false> : !pop.scalar<bool>`
+        mlir_value=__mlir_attr.`#kgen.simd<false> : !kgen.scalar<bool>`
     )
     # CHECK: %a = lit.var.decl "a" var : !lit.ref<!lit.struct<#BoolT <:!Bool {:i1 1}>>, mut *"a`3">
     var a = BoolT[T]()
@@ -75,7 +75,7 @@ struct UInt8T[x: UInt8._mlir_type](ImplicitlyCopyable):
         pass
 
 
-comptime UI8_139 = __mlir_attr.`#pop.simd<139> : !pop.scalar<ui8>`
+comptime UI8_139 = __mlir_attr.`#kgen.simd<139> : !kgen.scalar<ui8>`
 
 
 # CHECK-LABEL: lit.fn @"fold_dtype_as_ui8

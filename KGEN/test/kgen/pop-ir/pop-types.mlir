@@ -38,8 +38,8 @@ kgen.generator @struct<size, dtype: dtype, ty: type>(
     !kgen.pointer<simd<4, si8>>,
     !pop.array<24, scalar<si64>>,
     !kgen.struct<(
-      !pop.scalar<f32>,
-      !pop.scalar<f64>
+      !kgen.scalar<f32>,
+      !kgen.scalar<f64>
     )>
   )>,
   // CHECK: !kgen.struct<(ty, array<size, scalar<dtype>>)>
@@ -51,7 +51,7 @@ kgen.generator @struct<size, dtype: dtype, ty: type>(
 // CHECK-LABEL: @variadic
 kgen.generator @variadic<ty: type>(
   // CHECK-SAME: !kgen.param_list<scalar<f32>>
-  %arg0: !kgen.param_list<!pop.scalar<f32>>,
+  %arg0: !kgen.param_list<!kgen.scalar<f32>>,
   // CHECK-SAME: !kgen.param_list<ty>
   %arg1: !kgen.param_list<ty>
 ) {

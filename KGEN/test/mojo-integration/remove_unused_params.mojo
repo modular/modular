@@ -9,9 +9,9 @@
 # Test for MOCO-956
 # https://linear.app/modularml/issue/MOCO-956/[bug]-segfault-on-struct-recursive-methods
 
-# CHECK: kgen.generator @{{.*}}::FactorialComputer::compute_method{{.*}}_REMOVED_ARG"(%arg0: !pop.scalar<ui8>) -> !pop.scalar<ui8>
-# CHECK: kgen.generator @{{.*}}::compute_unusedPost{{.*}}_REMOVED_ARG"(%arg0: !pop.scalar<ui8>) -> !pop.scalar<ui8>
-# CHECK: kgen.generator @{{.*}}::compute_unusedPre{{.*}}_REMOVED_ARG"(%arg0: !pop.scalar<ui8>) -> !pop.scalar<ui8>
+# CHECK: kgen.generator @{{.*}}::FactorialComputer::compute_method{{.*}}_REMOVED_ARG"(%arg0: !kgen.scalar<ui8>) -> !kgen.scalar<ui8>
+# CHECK: kgen.generator @{{.*}}::compute_unusedPost{{.*}}_REMOVED_ARG"(%arg0: !kgen.scalar<ui8>) -> !kgen.scalar<ui8>
+# CHECK: kgen.generator @{{.*}}::compute_unusedPre{{.*}}_REMOVED_ARG"(%arg0: !kgen.scalar<ui8>) -> !kgen.scalar<ui8>
 
 
 def main():

@@ -23,7 +23,7 @@ def test_variadic_float_4byte():
     var s = FloatStruct4(10.5)
     var result = __mlir_op.`pop.external_call`[
         func="c_func_variadic_float_4byte".value,
-        fnType=__mlir_attr[`(!pop.scalar<si64>) -> !pop.scalar<si64>`,],
+        fnType=__mlir_attr[`(!kgen.scalar<si64>) -> !kgen.scalar<si64>`,],
         _type=FloatStruct4,
     ](Int(999), s)
     print("variadic_float_4byte:", result.a)
@@ -41,7 +41,7 @@ def test_variadic_float_8byte():
     var s = FloatStruct8(10.5, 20.5)
     var result = __mlir_op.`pop.external_call`[
         func="c_func_variadic_float_8byte".value,
-        fnType=__mlir_attr[`(!pop.scalar<si64>) -> !pop.scalar<si64>`,],
+        fnType=__mlir_attr[`(!kgen.scalar<si64>) -> !kgen.scalar<si64>`,],
         _type=FloatStruct8,
     ](Int(999), s)
     print("variadic_float_8byte:", result.a, result.b)
@@ -58,7 +58,7 @@ def test_variadic_double_8byte():
     var s = DoubleStruct8(100.5)
     var result = __mlir_op.`pop.external_call`[
         func="c_func_variadic_double_8byte".value,
-        fnType=__mlir_attr[`(!pop.scalar<si64>) -> !pop.scalar<si64>`,],
+        fnType=__mlir_attr[`(!kgen.scalar<si64>) -> !kgen.scalar<si64>`,],
         _type=DoubleStruct8,
     ](Int(999), s)
     print("variadic_double_8byte:", result.a)
@@ -78,7 +78,7 @@ def test_variadic_float_16byte():
     var s = FloatStruct16(10.5, 20.5, 30.5, 40.5)
     var result = __mlir_op.`pop.external_call`[
         func="c_func_variadic_float_16byte".value,
-        fnType=__mlir_attr[`(!pop.scalar<si64>) -> !pop.scalar<si64>`,],
+        fnType=__mlir_attr[`(!kgen.scalar<si64>) -> !kgen.scalar<si64>`,],
         _type=FloatStruct16,
     ](Int(999), s)
     print("variadic_float_16byte:", result.a, result.b, result.c, result.d)
@@ -96,7 +96,7 @@ def test_variadic_double_16byte():
     var s = DoubleStruct16(100.5, 200.5)
     var result = __mlir_op.`pop.external_call`[
         func="c_func_variadic_double_16byte".value,
-        fnType=__mlir_attr[`(!pop.scalar<si64>) -> !pop.scalar<si64>`,],
+        fnType=__mlir_attr[`(!kgen.scalar<si64>) -> !kgen.scalar<si64>`,],
         _type=DoubleStruct16,
     ](Int(999), s)
     print("variadic_double_16byte:", result.a, result.b)
@@ -117,7 +117,7 @@ def test_variadic_float_17byte():
     var s = FloatStruct17(10.5, 20.5, 30.5, 40.5, 5)
     var result = __mlir_op.`pop.external_call`[
         func="c_func_variadic_float_17byte".value,
-        fnType=__mlir_attr[`(!pop.scalar<si64>) -> !pop.scalar<si64>`,],
+        fnType=__mlir_attr[`(!kgen.scalar<si64>) -> !kgen.scalar<si64>`,],
         _type=FloatStruct17,
     ](Int(999), s)
     print(

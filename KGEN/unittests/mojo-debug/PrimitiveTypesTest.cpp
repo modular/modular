@@ -144,7 +144,7 @@ TEST(PrimitiveTypesTest, testTupleAndSIMD) {
   EXPECT_TRUE(StringRef(result.output)
                   .contains("tuple = ([0] = 1, [1] = 2, [2] = 3, [3] = 4)"));
   EXPECT_TRUE(
-      StringRef(result.output).contains("__mlir_type.`!pop.simd<4, si16>`"));
+      StringRef(result.output).contains("__mlir_type.`!kgen.simd<4, si16>`"));
   EXPECT_TRUE(StringRef(result.output)
                   .contains("simd = ([0] = 1, [1] = 2, [2] = 3, [3] = 4)"));
 }
@@ -188,11 +188,11 @@ TEST(PrimitiveTypesTest, testBuiltinTypes) {
   EXPECT_EQ(ctx.runCommand("v an_int").output,
             "(__mlir_type.index) an_int = 123\n");
   EXPECT_EQ(ctx.runCommand("v a_literal_float").output,
-            "(__mlir_type.`!pop.scalar<f64>`) a_literal_float = 3.125\n");
+            "(__mlir_type.`!kgen.scalar<f64>`) a_literal_float = 3.125\n");
   EXPECT_EQ(ctx.runCommand("v a_float").output,
-            "(__mlir_type.`!pop.scalar<f32>`) a_float = 3.125\n");
+            "(__mlir_type.`!kgen.scalar<f32>`) a_float = 3.125\n");
   EXPECT_EQ(ctx.runCommand("v another_float").output,
-            "(__mlir_type.`!pop.scalar<f32>`) another_float = 4.125\n");
+            "(__mlir_type.`!kgen.scalar<f32>`) another_float = 4.125\n");
   EXPECT_STREQ(ctx.frame.FindVariable("^ uncommon name").GetValue(), "1123123");
   EXPECT_EQ(ctx.runCommand("v a_string").output,
             "(String) a_string = \"fofofo\"\n");
@@ -203,11 +203,11 @@ TEST(PrimitiveTypesTest, testBuiltinTypes) {
   //   [2] = 3
   // }
   EXPECT_EQ(ctx.runCommand("v a_simd").output,
-            "(__mlir_type.`!pop.simd<4, f16>`) a_simd = ([0] = 1.125, [1] = "
+            "(__mlir_type.`!kgen.simd<4, f16>`) a_simd = ([0] = 1.125, [1] = "
             "2.5, [2] = 0, [3] = "
             "-3.7246)\n");
   EXPECT_EQ(ctx.runCommand("v b_simd --show-all-children").output,
-            R"((__mlir_type.`!pop.simd<32, si64>`) b_simd = {
+            R"((__mlir_type.`!kgen.simd<32, si64>`) b_simd = {
   [0] = 1
   [1] = 2
   [2] = 3
@@ -244,19 +244,19 @@ TEST(PrimitiveTypesTest, testBuiltinTypes) {
 )");
   EXPECT_EQ(
       ctx.runCommand("v c_simd").output,
-      "(__mlir_type.`!pop.simd<2, index>`) c_simd = ([0] = 5, [1] = 6)\n");
+      "(__mlir_type.`!kgen.simd<2, index>`) c_simd = ([0] = 5, [1] = 6)\n");
   // Unsigned types must display as unsigned decimal (not signed). Without the
   // GetFormat fix these would show as -1 instead of their true unsigned values.
   EXPECT_EQ(ctx.runCommand("v u8_max").output,
-            "(__mlir_type.`!pop.scalar<ui8>`) u8_max = 255\n");
+            "(__mlir_type.`!kgen.scalar<ui8>`) u8_max = 255\n");
   EXPECT_EQ(ctx.runCommand("v u64_max").output,
-            "(__mlir_type.`!pop.scalar<ui64>`) u64_max = "
+            "(__mlir_type.`!kgen.scalar<ui64>`) u64_max = "
             "18446744073709551615\n");
 }
 
 TEST(PrimitiveTypesTest, testScalarMembers) {
   // Test that struct members typed as SIMD[T, 1] (Scalar[T]) display
-  // correctly.  This exercises the !pop.simd<1, ...> fallback in
+  // correctly.  This exercises the !kgen.simd<1, ...> fallback in
   // unwrapToScalarOrPointer, which is critical for the upcoming Int = SIMD[1]
   // unification.
 

@@ -27,18 +27,18 @@ kgen.func export C @someNDBufferKernel(%a: !kgen.struct<(pointer<simd<1, invalid
 }
 // NDBUFFER: extern ssize_t someNDBufferKernel(void *, ssize_t, ssize_t[5], uint8_t);
 
-kgen.func export C @someMetaScalarKernel(%arg0: !pop.simd<1, f32>) -> !pop.simd<1, f32> {
-  kgen.return %arg0 : !pop.simd<1, f32>
+kgen.func export C @someMetaScalarKernel(%arg0: !kgen.simd<1, f32>) -> !kgen.simd<1, f32> {
+  kgen.return %arg0 : !kgen.simd<1, f32>
 }
 // SCALARMETA: extern float someMetaScalarKernel(float);
 
 lit.struct.decl @Foo<DT:dtype> {
-  lit.struct.field value : !pop.scalar<DT>
+  lit.struct.field value : !kgen.scalar<DT>
 }
 
 lit.struct.decl @Bar {
   lit.struct.field a : !lit.struct<@Foo<:dtype f32>>
-  lit.struct.field b : !pop.scalar<f64>
+  lit.struct.field b : !kgen.scalar<f64>
 }
 
 kgen.func export C @nestedParametricStruct(%a: !lit.struct<@Bar>) {

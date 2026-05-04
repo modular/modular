@@ -54,14 +54,14 @@ kgen.generator @foo() {
 
 // expected-error @+2 {{attribute type different than expected: expected '!kgen.dtype', but got 'index'}}
 kgen.generator @scalar_params_verbose<n>(%x :
-           !pop.scalar<#kgen.param.decl.ref<"n"> : index>) {
+           !kgen.scalar<#kgen.param.decl.ref<"n"> : index>) {
   kgen.return
 }
 
 // -----
 
 // expected-error @+1 {{invalid use of parameter with no declaration "abc"}}
-kgen.generator @scalar_params_verbose(%x : !pop.scalar<abc>) {
+kgen.generator @scalar_params_verbose(%x : !kgen.scalar<abc>) {
   kgen.return
 }
 
@@ -69,7 +69,7 @@ kgen.generator @scalar_params_verbose(%x : !pop.scalar<abc>) {
 
 kgen.generator @dtype_params() {
   // expected-error @+1 {{invalid use of parameter with no declaration "T"}}
-  %y = "someop" () {} : () -> !pop.scalar<T>
+  %y = "someop" () {} : () -> !kgen.scalar<T>
   kgen.return
 }
 
@@ -239,21 +239,21 @@ kgen.generator @region_cycle() {
 // -----
 
 // expected-error @below {{'kgen.generator' op invalid use of parameter with no declaration "ty2"}}
-kgen.generator @badTypes<ty1 : dtype>(%a : !pop.scalar<ty2>) {
+kgen.generator @badTypes<ty1 : dtype>(%a : !kgen.scalar<ty2>) {
   kgen.return
 }
 
 // -----
 
 // expected-note @below {{@callee declared here}}
-kgen.generator @callee<DT: dtype>(%x: !pop.scalar<DT>) {
+kgen.generator @callee<DT: dtype>(%x: !kgen.scalar<DT>) {
   kgen.return
 }
 
-kgen.generator @caller<DT: dtype>(%arg0: !pop.scalar<DT>) {
+kgen.generator @caller<DT: dtype>(%arg0: !kgen.scalar<DT>) {
   // expected-error @below {{invalid symbol use within this operator}}
-  // expected-error @below {{symbol use argument #0 has type '!pop.scalar<DT>' but @callee expected type '!pop.scalar<f64>'}}
-  kgen.call @callee<:dtype f64>(%arg0) : (!pop.scalar<DT>) -> ()
+  // expected-error @below {{symbol use argument #0 has type '!kgen.scalar<DT>' but @callee expected type '!kgen.scalar<f64>'}}
+  kgen.call @callee<:dtype f64>(%arg0) : (!kgen.scalar<DT>) -> ()
   kgen.return
 }
 
@@ -276,26 +276,26 @@ kgen.func @test() {  // expected-note {{within 'kgen.func' @test}}
 // -----
 
 // expected-error @below {{invalid use of parameter with no declaration "dt"}}
-kgen.generator @region_params<r3: () -> !pop.scalar<dt>>() {
+kgen.generator @region_params<r3: () -> !kgen.scalar<dt>>() {
   kgen.return
 }
 
 // -----
 
 kgen.generator @takeUnary
-  <unaryFn: <dtype>(!pop.scalar<*(0,0)>) -> !pop.scalar<*(0,0)>>() {
+  <unaryFn: <dtype>(!kgen.scalar<*(0,0)>) -> !kgen.scalar<*(0,0)>>() {
   kgen.return
 }
 
-kgen.func @doubleExample(%arg0: !pop.scalar<si32>) -> !pop.scalar<si32> {
-  %0 = pop.add %arg0, %arg0: !pop.scalar<si32>
-  kgen.return %0 : !pop.scalar<si32>
+kgen.func @doubleExample(%arg0: !kgen.scalar<si32>) -> !kgen.scalar<si32> {
+  %0 = pop.add %arg0, %arg0: !kgen.scalar<si32>
+  kgen.return %0 : !kgen.scalar<si32>
 }
 
 kgen.generator @test_region() {
   // expected-error @below {{invalid symbol use within this operator}}
   // expected-error @+1 {{caller input parameter #0 has type}}
-  kgen.call @takeUnary<:(!pop.scalar<si32>) -> !pop.scalar<si32> @doubleExample>() : () -> ()
+  kgen.call @takeUnary<:(!kgen.scalar<si32>) -> !kgen.scalar<si32> @doubleExample>() : () -> ()
   kgen.return
 }
 
@@ -314,38 +314,38 @@ kgen.generator @test() {
 // -----
 
 kgen.generator @takeUnary
-  <unaryFn: (!pop.scalar<si32>) -> !pop.scalar<si32>>() {
+  <unaryFn: (!kgen.scalar<si32>) -> !kgen.scalar<si32>>() {
   kgen.return
 }
 
 // expected-note @below {{@unary declared here}}
-kgen.func @unary(%arg0: !pop.scalar<f32>) -> !pop.scalar<f32> {
-  kgen.return %arg0 : !pop.scalar<f32>
+kgen.func @unary(%arg0: !kgen.scalar<f32>) -> !kgen.scalar<f32> {
+  kgen.return %arg0 : !kgen.scalar<f32>
 }
 
 kgen.generator @test1() {
   // expected-error @below {{invalid symbol use within this operator}}
-  // expected-error @below {{symbol use argument #0 has type '!pop.scalar<si32>' but @unary expected type '!pop.scalar<f32>'}}
-  kgen.call @takeUnary<:(!pop.scalar<si32>) -> !pop.scalar<si32> @unary>() : () -> ()
+  // expected-error @below {{symbol use argument #0 has type '!kgen.scalar<si32>' but @unary expected type '!kgen.scalar<f32>'}}
+  kgen.call @takeUnary<:(!kgen.scalar<si32>) -> !kgen.scalar<si32> @unary>() : () -> ()
   kgen.return
 }
 
 // -----
 
 kgen.generator @takeUnary
-  <unaryFn: (!pop.scalar<si32>) -> !pop.scalar<si32>>() {
+  <unaryFn: (!kgen.scalar<si32>) -> !kgen.scalar<si32>>() {
   kgen.return
 }
 
 // expected-note @below {{@unary2 declared here}}
-kgen.generator @unary2<dt: dtype>(%arg0: !pop.scalar<si32>) -> !pop.scalar<si32> {
-  kgen.return %arg0 : !pop.scalar<si32>
+kgen.generator @unary2<dt: dtype>(%arg0: !kgen.scalar<si32>) -> !kgen.scalar<si32> {
+  kgen.return %arg0 : !kgen.scalar<si32>
 }
 
 kgen.generator @test2() {
   // expected-error @below {{invalid symbol use within this operator}}
   // expected-error @below {{symbol use has 0 input parameters but @unary2 expects 1}}
-  kgen.call @takeUnary<:(!pop.scalar<si32>) -> !pop.scalar<si32> @unary2>() : () -> ()
+  kgen.call @takeUnary<:(!kgen.scalar<si32>) -> !kgen.scalar<si32> @unary2>() : () -> ()
   kgen.return
 }
 
@@ -700,69 +700,69 @@ kgen.generator @closure_types(%arg0 : index) {
 
 // expected-error @+2 {{cannot convert to scalar dtype si32 from 'vector<2xsi32>'}}
 "some.op"() {
-  a = #pop.cast_from_builtin< #M.dense_array<2, 5> : vector<2xsi32>> : !pop.scalar<si32>
+  a = #kgen.cast_from_builtin< #M.dense_array<2, 5> : vector<2xsi32>> : !kgen.scalar<si32>
 } : () -> ()
 
 // -----
 
 // expected-error @+2 {{cannot convert to scalar dtype f32 from 'bf16'}}
 "some.op"() {
-  a = #pop.cast_from_builtin< 0.0 : bf16> : !pop.scalar<f32>
+  a = #kgen.cast_from_builtin< 0.0 : bf16> : !kgen.scalar<f32>
 } : () -> ()
 
 // -----
 
 // expected-error @+3 {{expected non-function type}}
-// expected-error @+2 {{failed to parse POP_CastFromBuiltinAttr parameter 'arg' which is to be a `TypedAttr`}}
+// expected-error @+2 {{failed to parse KGEN_CastFromBuiltinAttr parameter 'arg' which is to be a `TypedAttr`}}
 "some.op"() {
-  a = #pop.cast_from_builtin< 0.0 : woof> : !pop.scalar<si32>
+  a = #kgen.cast_from_builtin< 0.0 : woof> : !kgen.scalar<si32>
 } : () -> ()
 
 // -----
 
 // expected-error @+2 {{cannot convert from scalar dtype si32 to 'ui32'}}
 "some.op"() {
-  a = #pop.cast_to_builtin< #pop<simd 1> : !pop.simd<1, si32>> : ui32
+  a = #kgen.cast_to_builtin< #kgen<simd 1> : !kgen.simd<1, si32>> : ui32
 } : () -> ()
 
 // -----
 
 // expected-error @+2 {{expected vector<4xT>}}
 "some.op"() {
-  a = #pop.cast_to_builtin< #pop<simd 1> : !pop.simd<4, si32>> : vector<2xsi32>
+  a = #kgen.cast_to_builtin< #kgen<simd 1> : !kgen.simd<4, si32>> : vector<2xsi32>
 } : () -> ()
 
 // -----
 
 // expected-error @+2 {{mismatch between value type 'si32' and splat element type 'f16'}}
 "some.op"() {
-  a = #pop.simd_splat< #pop<simd 1> : !pop.scalar<si32>> : !pop.simd<3, f16>
+  a = #pop.simd_splat< #kgen<simd 1> : !kgen.scalar<si32>> : !kgen.simd<3, f16>
 } : () -> ()
 
 // -----
 
 // expected-error @+2 {{requires two equally-typed SIMD operands}}
 "some.op"() {
-  a = #pop.simd_and< #pop<simd 1> : !pop.scalar<si32>, #pop<simd 2> : !pop.scalar<ui32>> : !pop.scalar<si32>
+  a = #pop.simd_and< #kgen<simd 1> : !kgen.scalar<si32>, #kgen<simd 2> : !kgen.scalar<ui32>> : !kgen.scalar<si32>
 } : () -> ()
 
 // -----
 
 // expected-error @+2 {{requires two equally-typed SIMD operands}}
 "some.op"() {
-  a = #pop.simd_xor< #pop<simd 1> : !pop.scalar<si32>, #pop<simd 2> : !pop.scalar<ui32>> : !pop.scalar<si32>
+  a = #pop.simd_xor< #kgen<simd 1> : !kgen.scalar<si32>, #kgen<simd 2> : !kgen.scalar<ui32>> : !kgen.scalar<si32>
 } : () -> ()
 
 // -----
 
 // expected-error @+2 {{requires two equally-typed SIMD operands}}
 "some.op"() {
-  b = #pop.simd_cmp<eq, #pop<simd "1.0"> : !pop.scalar<f64>, #pop<simd "2.0"> : !pop.scalar<f32>> : !pop.scalar<bool>
+  b = #pop.simd_cmp<eq, #kgen<simd "1.0"> : !kgen.scalar<f64>, #kgen<simd "2.0"> : !kgen.scalar<f32>> : !kgen.scalar<bool>
 } : () -> ()
 
 // -----
 
 // expected-error @+2 {{mismatched size between operands and result}}
 "some.op"() {
-  b = #pop.simd_cmp<eq, #pop<simd 1> : !pop.scalar<ui8>, #pop<simd 2> : !pop.scalar<ui8>> : !pop.simd<3, ui8>
+  b = #pop.simd_cmp<eq, #kgen<simd 1> : !kgen.scalar<ui8>, #kgen<simd 2> : !kgen.scalar<ui8>> : !kgen.simd<3, ui8>
 } : () -> ()

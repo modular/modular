@@ -53,16 +53,16 @@ def mlirMagicTest(
 # CHECK-LABEL: lit.fn @"mlirTypesAndAttrs{{.*}}()"<dtype: dtype>()
 def mlirTypesAndAttrs[dtype: __mlir_type.`!kgen.dtype`]():
     # CHECK: %a = lit.var.decl "a" var : !lit.ref<scalar<dtype>, mut
-    var a: __mlir_type[`!pop.scalar<`, dtype, `>`]
+    var a: __mlir_type[`!kgen.scalar<`, dtype, `>`]
     # CHECK: %b = lit.var.decl "b" var : !lit.ref<simd<4, dtype>,
-    var b: __mlir_type[`!pop.simd<4, `, dtype, `>`]
+    var b: __mlir_type[`!kgen.simd<4, `, dtype, `>`]
 
 
 # Issue #6282: [Lit] Placeholder substitution does not work on nested types
 # CHECK-LABEL: lit.struct.decl @ComplexSubstitution<T: dtype>
 struct ComplexSubstitution[T: __mlir_type.`!kgen.dtype`]:
     # CHECK: lit.struct.field pointer : !kgen.pointer<scalar<T>>
-    var pointer: __mlir_type[`!kgen.pointer<!pop.scalar<`, Self.T, `>>`]
+    var pointer: __mlir_type[`!kgen.pointer<!kgen.scalar<`, Self.T, `>>`]
 
 
 # Issue #6374: [Lit] Add support for type placeholder

@@ -193,7 +193,7 @@ simdBoolVectorSummaryProvider(ValueObject &valobj, Stream &stream,
   return true;
 }
 
-/// Summary provider for single-element scalar types (!pop.scalar<*>).
+/// Summary provider for single-element scalar types (!kgen.scalar<*>).
 /// Instead of displaying `([0] = 12)`, shows just `12`.
 static bool scalarSummaryProvider(ValueObject &valobj, Stream &stream,
                                   const TypeSummaryOptions &summaryOptions) {
@@ -256,13 +256,13 @@ public:
     // Guard: only elide when _mlir_value has more than one child. This
     // prevents applying elision to types like Int, where GetChildMemberWithName
     // finds _mlir_value recursively through an intermediate "value" field
-    // (Int.value → Scalar._mlir_value = !pop.simd<1, index>, 1 child).
+    // (Int.value → Scalar._mlir_value = !kgen.simd<1, index>, 1 child).
     // For those types, elision would hide the scalar value rather than
     // simplifying display.
     //
     // Safety: this synthetic is registered on `^!lit\.struct<.*>` with the
     // lowest priority.  Other !lit.struct types that have a multi-child
-    // _mlir_value (SIMD[T, N>1] with !pop.simd, StaticTuple with !pop.array)
+    // _mlir_value (SIMD[T, N>1] with !kgen.simd, StaticTuple with !pop.array)
     // are decorated with @lldb_formatter_wrapping_type, so the higher-priority
     // wrapping-type synthetic takes precedence and this elision never fires
     // for them.  _RegisterPackType has !kgen.struct (like Tuple) and is
@@ -539,11 +539,11 @@ LoadLibMojoFormatters(const lldb::TypeCategoryImplSP &mojoCategorySP) {
                 /*regex=*/false);
 
   AddCXXSummary(mojoCategorySP, simdBoolVectorSummaryProvider,
-                "SIMD bool vector summary provider", "!pop.simd<[0-9]+, bool>",
+                "SIMD bool vector summary provider", "!kgen.simd<[0-9]+, bool>",
                 summaryFlags, /*regex=*/true);
 
   AddCXXSummary(mojoCategorySP, scalarSummaryProvider,
-                "scalar summary provider", R"(!pop\.scalar<[^>]+>)",
+                "scalar summary provider", R"(!kgen\.scalar<[^>]+>)",
                 summaryFlags, /*regex=*/true);
 
   AddCXXSummary(mojoCategorySP, boolSummaryProvider, "bool summary provider",

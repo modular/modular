@@ -43,18 +43,18 @@ class HLCFTerminatorOp<string mnemonic, list<Trait> traits = []> :
 // ForOp / ForControlVariableType constraint
 //===----------------------------------------------------------------------===//
 
-/// Match `!pop.scalar<si8|si16|si32|si64|index>` or `index` type.
+/// Match `!kgen.scalar<si8|si16|si32|si64|index>` or `index` type.
 /// Used to type-constrain hlcf.for bounds, step and the induction variable in
 /// `hlcf.for.yield`.
 def ForControlVariableType : AnyTypeOf<[
     Index,
     ConfinedType<AnyType,
-        [CPred<"llvm::isa<::M::KGEN::POP::SIMDType>($_self) && "
-               "llvm::cast<::M::KGEN::POP::SIMDType>($_self).isScalar() && "
-               "llvm::cast<::M::KGEN::POP::SIMDType>($_self).getResolvedDType().has_value() && "
-               "llvm::cast<::M::KGEN::POP::SIMDType>($_self).getResolvedDType()->isSInt()">],
-        "!pop.scalar<signed integer> type">
-], "index or !pop.scalar<signed integer> type">;
+        [CPred<"llvm::isa<::M::KGEN::SIMDType>($_self) && "
+               "llvm::cast<::M::KGEN::SIMDType>($_self).isScalar() && "
+               "llvm::cast<::M::KGEN::SIMDType>($_self).getResolvedDType().has_value() && "
+               "llvm::cast<::M::KGEN::SIMDType>($_self).getResolvedDType()->isSInt()">],
+        "!kgen.scalar<signed integer> type">
+], "index or !kgen.scalar<signed integer> type">;
 
 //===----------------------------------------------------------------------===//
 // ForOp

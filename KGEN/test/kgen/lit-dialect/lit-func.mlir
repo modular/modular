@@ -151,24 +151,24 @@ lit.fn @star_slash_params<a: dtype, |, b: dtype = f32, *, w: scalar<si32> = 1>(%
   kgen.return
 }
 
-lit.fn @create_simd<x>() -> !pop.simd<x, si8> {
+lit.fn @create_simd<x>() -> !kgen.simd<x, si8> {
   kgen.unreachable
 }
 
 // CHECK-LABEL: lit.fn @parametric_default_arg
-// CHECK-SAME: <x>(%y: !pop.simd<x, si8> =
-// CHECK-SAME: apply(:!lit.generator<() -> !pop.simd<x, si8>> @create_simd<x>))
-lit.fn @parametric_default_arg<x>(%y: !pop.simd<x, si8> =
-    apply(:!lit.generator<() -> !pop.simd<x, si8>> @create_simd<x>)) {
+// CHECK-SAME: <x>(%y: !kgen.simd<x, si8> =
+// CHECK-SAME: apply(:!lit.generator<() -> !kgen.simd<x, si8>> @create_simd<x>))
+lit.fn @parametric_default_arg<x>(%y: !kgen.simd<x, si8> =
+    apply(:!lit.generator<() -> !kgen.simd<x, si8>> @create_simd<x>)) {
   kgen.return
 }
 
 // CHECK-LABEL: lit.fn @call_parametric_default_arg
-lit.fn @call_parametric_default_arg(%x: !pop.simd<4, si8>) {
-  // CHECK: call @parametric_default_arg<4>(%x) : !lit.generator<("y": !pop.simd<4, si8> =
-  // CHECK-SAME: apply(:!lit.generator<() -> !pop.simd<4, si8>> @create_simd<4>)) -> ()>
-  kgen.call @parametric_default_arg<4>(%x) : !lit.generator<("y": !pop.simd<4, si8> =
-    apply(:!lit.generator<() -> !pop.simd<4, si8>> @create_simd<4>)) -> ()>
+lit.fn @call_parametric_default_arg(%x: !kgen.simd<4, si8>) {
+  // CHECK: call @parametric_default_arg<4>(%x) : !lit.generator<("y": !kgen.simd<4, si8> =
+  // CHECK-SAME: apply(:!lit.generator<() -> !kgen.simd<4, si8>> @create_simd<4>)) -> ()>
+  kgen.call @parametric_default_arg<4>(%x) : !lit.generator<("y": !kgen.simd<4, si8> =
+    apply(:!lit.generator<() -> !kgen.simd<4, si8>> @create_simd<4>)) -> ()>
   kgen.return
 }
 

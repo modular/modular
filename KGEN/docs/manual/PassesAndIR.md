@@ -125,7 +125,7 @@ types, and operations to represent the whole program.
 for “parametric operations”, are parameterized,
 target-independent dialect used to represent more algorithm level operations,
 attributes and types,
-such as `pop.variadic.xxx`, `!pop.array`, `!pop.simd`, etc.
+such as `pop.variadic.xxx`, `!pop.array`, `!kgen.simd`, etc.
 
 [`hlcf`](../../../KGEN/include/KGEN/HLCFDialect) is the dialect to describe
 higher-level control flow in the form of IR instead of something the compiler

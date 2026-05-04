@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 # Test that struct members typed as SIMD[T, 1] (i.e. Scalar[T]) display
-# correctly in the debugger.  This exercises the !pop.simd<1, ...> fallback
+# correctly in the debugger.  This exercises the !kgen.simd<1, ...> fallback
 # in unwrapToScalarOrPointer.
 
 

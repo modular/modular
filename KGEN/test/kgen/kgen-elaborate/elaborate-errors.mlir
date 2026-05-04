@@ -131,10 +131,10 @@ kgen.generator @unused_param_declare() {
 // -----
 
 // expected-error @below {{function instantiation failed}}
-kgen.generator @invalid_rebind(%arg0: !pop.scalar<si32>) {
+kgen.generator @invalid_rebind(%arg0: !kgen.scalar<si32>) {
   kgen.param.declare dt: dtype = <ui32>
-  // expected-note @below {{error: rebind input type '!pop.scalar<si32>' does not match result type '!pop.scalar<ui32>'}}
-  %0 = kgen.rebind %arg0 : !pop.scalar<si32> to !pop.scalar<dt>
+  // expected-note @below {{error: rebind input type '!kgen.scalar<si32>' does not match result type '!kgen.scalar<ui32>'}}
+  %0 = kgen.rebind %arg0 : !kgen.scalar<si32> to !kgen.scalar<dt>
   kgen.return
 }
 
@@ -505,14 +505,14 @@ kgen.generator export @use_negative_alloc_size() {
 // messages (MOCO-3651).
 
 // expected-note @below {{function instantiation failed}}
-kgen.generator @simd_param_inner<a: !pop.scalar<si32>>() {
+kgen.generator @simd_param_inner<a: !kgen.scalar<si32>>() {
   // expected-note @below {{constraint failed: always fails}}
   kgen.param.assert <0>, "always fails"
   kgen.return
 }
 
 // expected-note @below {{function instantiation failed}}
-kgen.generator @simd_param_outer<a: !pop.scalar<si32>>() {
+kgen.generator @simd_param_outer<a: !kgen.scalar<si32>>() {
   // expected-note @below {{call expansion failed with parameter value(s): ("a": 42)}}
   kgen.call @simd_param_inner<a>() : () -> ()
   kgen.return
@@ -521,6 +521,6 @@ kgen.generator @simd_param_outer<a: !pop.scalar<si32>>() {
 // expected-error @below {{function instantiation failed}}
 kgen.generator export @simd_param_main() {
   // expected-note @below {{call expansion failed with parameter value(s): ("a": 42)}}
-  kgen.call @simd_param_outer<:!pop.scalar<si32> #pop<simd 42>>() : () -> ()
+  kgen.call @simd_param_outer<:!kgen.scalar<si32> #kgen<simd 42>>() : () -> ()
   kgen.return
 }

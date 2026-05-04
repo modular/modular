@@ -14,13 +14,13 @@
 // Example 0: Negating an f8e5m2 value on NVPTX
 //
 //   Before (illegal):
-//     %res = pop.neg %input : !pop.scalar<f8e5m2>
+//     %res = pop.neg %input : !kgen.scalar<f8e5m2>
 //
 //   After (legal):
-//     %0 = pop.cast %input : !pop.scalar<f8e5m2> to !pop.scalar<f16>
-//     %1 = pop.neg %0 : !pop.scalar<f16>
-//     %2 = pop.cast %1 : !pop.scalar<f16> to !pop.scalar<f32>
-//     %res = pop.cast %2 : !pop.scalar<f32> to !pop.scalar<f8e5m2>
+//     %0 = pop.cast %input : !kgen.scalar<f8e5m2> to !kgen.scalar<f16>
+//     %1 = pop.neg %0 : !kgen.scalar<f16>
+//     %2 = pop.cast %1 : !kgen.scalar<f16> to !kgen.scalar<f32>
+//     %res = pop.cast %2 : !kgen.scalar<f32> to !kgen.scalar<f8e5m2>
 //
 // For this example NVPTX target has no direct conversion from f16 to
 // f8e5m2, but POP->LLVM implements f32->f8e5m2 conversion by using special PTX
@@ -29,12 +29,12 @@
 //
 // Example 1: Converting f8e5m2 to bf16 on NVPTX
 //    Before (illegal):
-//      %res = pop.cast %input : !pop.scalar<f8e5m2> to !pop.scalar<bf16>
+//      %res = pop.cast %input : !kgen.scalar<f8e5m2> to !kgen.scalar<bf16>
 //
 //    After (legal):
-//      %0 = pop.cast %input : !pop.scalar<f8e5m2> to !pop.scalar<f16>
-//      %1 = pop.cast %0 : !pop.scalar<f16> to !pop.scalar<f32>
-//      %res = pop.cast %1 : !pop.scalar<f32> to !pop.scalar<bf16>
+//      %0 = pop.cast %input : !kgen.scalar<f8e5m2> to !kgen.scalar<f16>
+//      %1 = pop.cast %0 : !kgen.scalar<f16> to !kgen.scalar<f32>
+//      %res = pop.cast %1 : !kgen.scalar<f32> to !kgen.scalar<bf16>
 //
 // In this example, there's no direct conversion from f8e5m2 to bf16, but it can
 // be done with a sequence of conversions f8e5m2->f16->f32->bf16

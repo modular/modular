@@ -946,9 +946,9 @@ static Value lowerOp(RefPackFromPointerPackOp op,
 static Value lowerVersionOp(Operation *op, int64_t number, LITTypeLowerer &b) {
   return ParamConstantOp::create(
       b, op->getLoc(),
-      POP::SIMDAttr::get(
-          POP::DTypeValue(number, KGENDType::index),
-          POP::SIMDType::get(
+      KGEN::SIMDAttr::get(
+          KGEN::DTypeValue(number, KGENDType::index),
+          SIMDType::get(
               /*size=*/1,
               DTypeConstantAttr::get(op->getContext(), KGENDType::index))));
 }

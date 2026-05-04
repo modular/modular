@@ -23,13 +23,18 @@ def KGENDialect : Dialect {
   }];
 
   let cppNamespace = "::M::KGEN";
-  let useDefaultTypePrinterParser = 1;
   let useDefaultAttributePrinterParser = 1;
   let hasConstantMaterializer = 1;
 
   let dependentDialects = ["MDialect", "InterpreterDialect"];
 
   let extraClassDeclaration = [{
+    /// Parse a type registered to this dialect.
+    Type parseType(DialectAsmParser &parser) const override;
+
+    /// Print a type registered to this dialect.
+    void printType(Type type, DialectAsmPrinter &os) const override;
+
     /// Register all KGEN attributes.
     void registerAttributes();
     /// Register all KGEN types.

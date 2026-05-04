@@ -250,7 +250,7 @@ kgen.func @float_literal_binop_uniques() ->
 
 // CHECK-LABEL: @float_literal_convert
 kgen.func @float_literal_convert()
-  -> (!pop.scalar<f64>, !pop.scalar<f64>, !pop.scalar<f64>, !pop.scalar<f64>, !pop.scalar<f64>, !pop.scalar<f64>, !pop.scalar<f64>, !pop.scalar<f64>) {
+  -> (!kgen.scalar<f64>, !kgen.scalar<f64>, !kgen.scalar<f64>, !kgen.scalar<f64>, !kgen.scalar<f64>, !kgen.scalar<f64>, !kgen.scalar<f64>, !kgen.scalar<f64>) {
   // CHECK: kgen.param.constant: scalar<f64> = <"1.666666{{.*}}">
   %r1 = kgen.param.constant: scalar<f64> = <#pop<float_literal_convert<#pop.float_literal<5|3>>>>
   // CHECK: kgen.param.constant: scalar<f64> = <"-1.666666{{.*}}">
@@ -264,16 +264,16 @@ kgen.func @float_literal_convert()
   // CHECK: kgen.param.constant: scalar<f64> = <"-Inf">
   %r6 = kgen.param.constant: scalar<f64> = <#pop<float_literal_convert<#pop.float_literal<neg_inf>>>>
   // CHECK: kgen.param.constant: scalar<f64> = <"NaN">
-  %r7 = kgen.param.constant: !pop.scalar<f64> = <#pop<float_literal_convert<#pop.float_literal<nan>>>>
+  %r7 = kgen.param.constant: !kgen.scalar<f64> = <#pop<float_literal_convert<#pop.float_literal<nan>>>>
   // sugar_alias wraps a dummy float literal over 5/3; convert should use the expanded literal.
-  %r8 = kgen.param.constant: !pop.scalar<f64> = <#pop<float_literal_convert<sugar_alias(#pop.float_literal<99|1>, #pop.float_literal<5|3>)>>>
+  %r8 = kgen.param.constant: !kgen.scalar<f64> = <#pop<float_literal_convert<sugar_alias(#pop.float_literal<99|1>, #pop.float_literal<5|3>)>>>
   kgen.return %r1, %r2, %r3, %r4, %r5, %r6, %r7, %r8
-    : !pop.scalar<f64>, !pop.scalar<f64>, !pop.scalar<f64>, !pop.scalar<f64>, !pop.scalar<f64>, !pop.scalar<f64>, !pop.scalar<f64>, !pop.scalar<f64>
+    : !kgen.scalar<f64>, !kgen.scalar<f64>, !kgen.scalar<f64>, !kgen.scalar<f64>, !kgen.scalar<f64>, !kgen.scalar<f64>, !kgen.scalar<f64>, !kgen.scalar<f64>
 }
 
 // CHECK-LABEL: @float_e4m3_literal_convert
 kgen.func @float_e4m3_literal_convert()
-  -> (!pop.scalar<f8e4m3fn>, !pop.scalar<f8e4m3fn>, !pop.scalar<f8e4m3fn>) {
+  -> (!kgen.scalar<f8e4m3fn>, !kgen.scalar<f8e4m3fn>, !kgen.scalar<f8e4m3fn>) {
   // CHECK: kgen.param.constant: scalar<f8e4m3fn> = <"0.75">
   %r1 = kgen.param.constant: scalar<f8e4m3fn> = <#pop<float_literal_convert<#pop.float_literal<3|4>>>>
   // CHECK: kgen.param.constant: scalar<f8e4m3fn> = <"1">
@@ -281,7 +281,7 @@ kgen.func @float_e4m3_literal_convert()
   // CHECK: kgen.param.constant: scalar<f8e4m3fn> = <"0.00195">
   %r3 = kgen.param.constant: scalar<f8e4m3fn> = <#pop<float_literal_convert<#pop.float_literal<1|512>>>>
   kgen.return %r1, %r2, %r3
-    : !pop.scalar<f8e4m3fn>, !pop.scalar<f8e4m3fn>, !pop.scalar<f8e4m3fn>
+    : !kgen.scalar<f8e4m3fn>, !kgen.scalar<f8e4m3fn>, !kgen.scalar<f8e4m3fn>
 }
 
 // CHECK-LABEL: @float_literal_to_int_literal
@@ -327,29 +327,29 @@ kgen.func @int_literal_cmp_sugar() -> i1 {
 kgen.func @cast_to_builtin_sugar_identity() -> f32 {
   // sugarDynCastIfPresent peels SugarAttr so cast_to_builtin folds through cast_from_builtin.
   // Use #kgen<sugar ...> (not sugar_alias(...)) so parsing stays valid inside cast_to_builtin<...>.
-  %r = kgen.param.constant: f32 = <#pop.cast_to_builtin<#kgen<sugar alias, !pop.scalar<f32>, *?, #pop.cast_from_builtin<2.5 : f32>>>>
+  %r = kgen.param.constant: f32 = <#kgen.cast_to_builtin<#kgen<sugar alias, !kgen.scalar<f32>, *?, #kgen.cast_from_builtin<2.5 : f32>>>>
   // CHECK: kgen.param.constant: f32 = <2.500000e+00>
   kgen.return %r : f32
 }
 
 // CHECK-LABEL: @cast_from_builtin_sugar_identity
-kgen.generator @cast_from_builtin_sugar_identity<simd_param: !pop.scalar<si32>>() -> !pop.scalar<si32> {
-  %r = kgen.param.constant: !pop.scalar<si32> = <#pop.cast_from_builtin<#kgen<sugar alias, si32, *?, #pop.cast_to_builtin< #kgen.param.decl.ref<"simd_param"> : !pop.scalar<si32> >>>>
+kgen.generator @cast_from_builtin_sugar_identity<simd_param: !kgen.scalar<si32>>() -> !kgen.scalar<si32> {
+  %r = kgen.param.constant: !kgen.scalar<si32> = <#kgen.cast_from_builtin<#kgen<sugar alias, si32, *?, #kgen.cast_to_builtin< #kgen.param.decl.ref<"simd_param"> : !kgen.scalar<si32> >>>>
   // CHECK: kgen.param.constant: scalar<si32> = <simd_param>
-  kgen.return %r : !pop.scalar<si32>
+  kgen.return %r : !kgen.scalar<si32>
 }
 
 // CHECK-LABEL: @simd_cast_sugar_fold
-kgen.func @simd_cast_sugar_fold() -> !pop.scalar<ui32> {
+kgen.func @simd_cast_sugar_fold() -> !kgen.scalar<ui32> {
   // sugarDynCastIfPresent sees the inner scalar SIMD for #pop.cast folding.
-  %r = kgen.param.constant: !pop.scalar<ui32> = <#pop.cast<#kgen<sugar alias, !pop.scalar<si32>, *?, #pop<simd 1>>>>
+  %r = kgen.param.constant: !kgen.scalar<ui32> = <#pop.cast<#kgen<sugar alias, !kgen.scalar<si32>, *?, #kgen<simd 1>>>>
   // CHECK: kgen.param.constant: scalar<ui32> = <1>
-  kgen.return %r : !pop.scalar<ui32>
+  kgen.return %r : !kgen.scalar<ui32>
 }
 
 // CHECK-LABEL: @simd_splat_sugar_fold
-kgen.func @simd_splat_sugar_fold() -> !pop.simd<3, f16> {
-  %r = kgen.param.constant: !pop.simd<3, f16> = <#pop.simd_splat<#kgen<sugar alias, !pop.scalar<f16>, *?, #pop<simd "1.0">>>>
+kgen.func @simd_splat_sugar_fold() -> !kgen.simd<3, f16> {
+  %r = kgen.param.constant: !kgen.simd<3, f16> = <#pop.simd_splat<#kgen<sugar alias, !kgen.scalar<f16>, *?, #kgen<simd "1.0">>>>
   // CHECK: kgen.param.constant: simd<3, f16> = <"1">
-  kgen.return %r : !pop.simd<3, f16>
+  kgen.return %r : !kgen.simd<3, f16>
 }

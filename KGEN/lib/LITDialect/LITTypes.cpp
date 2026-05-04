@@ -498,7 +498,7 @@ LIT::StructType::canElideSugarFor(TypedAttr attr) const {
         return SugarKind::AlwaysInlineBuiltin;
 
     if (typeName == "SIMD")
-      if (isa<POP::SIMDAttr>(elt))
+      if (isa<KGEN::SIMDAttr>(elt))
         return SugarKind::AlwaysInlineBuiltin;
 
     if (typeName == "Bool" || typeName == "DType") {

@@ -50,7 +50,7 @@ def take_kw_param_infer[B: TrivialRegisterPassable](a: MyInt, b: B):
 
 # CHECK-LABEL: lit.fn @"test_kw_args_param_infer
 def test_kw_args_param_infer(
-    x: Int, f: __mlir_type.`!pop.scalar<f64>`, s: MyInt
+    x: Int, f: __mlir_type.`!kgen.scalar<f64>`, s: MyInt
 ):
     # CHECK: call {{.*}}@"take_kw_param_infer[::TrivialRegisterPassable,::TrivialRegisterPassable]{{.*}}"<:{{.*}}!Int, {{.*}}[[SCALARF64]]>(%x, %f)
     take_kw_param_infer(x, b=f)
@@ -59,7 +59,7 @@ def test_kw_args_param_infer(
     take_kw_param_infer[Int](b=f, a=x)
 
     # CHECK: call {{.*}}@"take_kw_param_infer[::TrivialRegisterPassable,::TrivialRegisterPassable]{{.*}}"<:{{.*}}!Int, {{.*}}[[SCALARF64]]>(%x, %f)
-    take_kw_param_infer[Int, __mlir_type.`!pop.scalar<f64>`](b=f, a=x)
+    take_kw_param_infer[Int, __mlir_type.`!kgen.scalar<f64>`](b=f, a=x)
 
     # CHECK: call {{.*}}@"take_kw_param_infer[::TrivialRegisterPassable]{{.*}}<:{{.*}}!Int>(%s, %x)
     take_kw_param_infer(s, b=x)

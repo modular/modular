@@ -526,8 +526,8 @@ LogicalResult ParamMatcher::matchTypes(Type actualType, Type expectedType) {
   }
 
   // Handle various common POP types for convenience, starting with SIMDType.
-  if (auto actual = dyn_cast<POP::SIMDType>(actualType))
-    if (auto expected = dyn_cast<POP::SIMDType>(expectedType)) {
+  if (auto actual = dyn_cast<SIMDType>(actualType))
+    if (auto expected = dyn_cast<SIMDType>(expectedType)) {
       PROP(matchParams(actual.getSize(), expected.getSize()));
       return matchParams(actual.getDType(), expected.getDType());
     }

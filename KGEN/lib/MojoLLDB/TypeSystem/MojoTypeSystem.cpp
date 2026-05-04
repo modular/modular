@@ -392,7 +392,7 @@ MojoTypeSystem::GetTypeClass(lldb::opaque_compiler_type_t type) {
   if (auto ptrType = dyn_cast<PointerType>(astType))
     return lldb::eTypeClassPointer;
 
-  if (isa<POP::SIMDType>(astType))
+  if (isa<SIMDType>(astType))
     return lldb::eTypeClassVector;
 
   if (isa<POP::ArrayType>(astType))
@@ -437,7 +437,7 @@ uint32_t MojoTypeSystem::GetTypeInfo(
   if (isa<FloatType>(astType))
     return lldb::eTypeIsFloat | lldb::eTypeHasValue | lldb::eTypeIsScalar;
 
-  if (auto simdTy = dyn_cast<POP::SIMDType>(astType)) {
+  if (auto simdTy = dyn_cast<SIMDType>(astType)) {
     uint32_t flags = lldb::eTypeHasChildren | lldb::eTypeIsVector;
     // Scalar SIMD (size == 1) holds a single numeric value. Without
     // eTypeHasValue, ValueObjectChild::UpdateValue() skips loading m_data but
@@ -636,7 +636,7 @@ MojoTypeSystem::GetNumChildren(lldb::opaque_compiler_type_t type,
     return 1;
   }
 
-  if (auto simdTy = dyn_cast<POP::SIMDType>(astType)) {
+  if (auto simdTy = dyn_cast<SIMDType>(astType)) {
     if (simdTy.isScalar())
       return 1;
     return simdTy.getResolvedSize().value_or(0);
@@ -724,7 +724,7 @@ MojoTypeSystem::GetChildCompilerTypeAtIndex(
     return lldb_private::CompilerType();
   }
 
-  if (auto simdType = dyn_cast<POP::SIMDType>(astType)) {
+  if (auto simdType = dyn_cast<SIMDType>(astType)) {
     if (std::optional<KGENDType> kgenDTypeOpt = simdType.getResolvedDType()) {
       if (kgenDTypeOpt.has_value()) {
         std::optional<mlir::Type> eltMlirType = getMLIRTypeForDType(
@@ -857,7 +857,7 @@ size_t MojoTypeSystem::GetIndexOfChildMemberWithName(
   }
 
   // Check if the name is an index of a SIMD which is 0-indexed.
-  if (isa<StructType, POP::SIMDType, POP::ArrayType>(astType)) {
+  if (isa<StructType, SIMDType, POP::ArrayType>(astType)) {
     unsigned long index;
     if (name.consume_front("[") && !name.consumeInteger(10, index) &&
         name.consume_front("]") && name.empty()) {
@@ -969,7 +969,7 @@ lldb_private::CompilerType MojoTypeSystem::createSIMDType(StringRef dtype,
   if (failed(dTypeOr))
     return {};
   return createCompilerType(
-      KGEN::POP::SIMDType::get(getMLIRContext(), numElements, *dTypeOr));
+      KGEN::SIMDType::get(getMLIRContext(), numElements, *dTypeOr));
 }
 
 lldb_private::CompilerType

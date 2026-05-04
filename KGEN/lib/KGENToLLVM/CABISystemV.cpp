@@ -194,7 +194,7 @@ SystemVABIInfo::classifyEightbyte(mlir::LLVM::LLVMStructType structType,
       if (isa<mlir::FloatType>(fieldType)) {
         fieldClass = EightbyteClass::SSE;
       } else if (auto vecType = dyn_cast<mlir::VectorType>(fieldType)) {
-        // Vector types with float elements (converted from POP::SIMDType)
+        // Vector types with float elements (converted from SIMDType)
         if (isa<mlir::FloatType>(vecType.getElementType())) {
           fieldClass = EightbyteClass::SSE;
         }

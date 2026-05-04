@@ -491,10 +491,10 @@ We could solve this by adding a “parametric operations” (pop) dialect that
 allows things like this:
 
 ```mlir
-kgen.generator @fadd<dt: dtype>(%lhs: !pop.scalar<dt>,
-                                %rhs: !pop.scalar<dt>) -> !pop.scalar<dt>
+kgen.generator @fadd<dt: dtype>(%lhs: !kgen.scalar<dt>,
+                                %rhs: !kgen.scalar<dt>) -> !kgen.scalar<dt>
  constraints type = f32, f64 {
-  %res = pop.add %lhs, %rhs : !pop.scalar<dt>
+  %res = pop.add %lhs, %rhs : !kgen.scalar<dt>
   kgen.return %res
 }
 ```

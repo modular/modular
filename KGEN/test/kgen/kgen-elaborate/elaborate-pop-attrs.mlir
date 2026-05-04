@@ -6,12 +6,12 @@
 
 module attributes {M.target_info = #M.target<triple = "", arch = "", features = "", data_layout = "", simd_bit_width = 128, index_bit_width = 32>, kgen.env = #kgen.env<{}>} {
 // CHECK-LABEL: kgen.func export @test_simd_cmp_index_32
-kgen.generator export @test_simd_cmp_index_32() -> !pop.scalar<bool> {
-  kgen.param.declare value : !pop.scalar<bool> = <#pop.simd_cmp<lt, #pop<simd 3000000000> : !pop.scalar<index>, #pop<simd 0> : !pop.scalar<index>> : !pop.scalar<bool>>
+kgen.generator export @test_simd_cmp_index_32() -> !kgen.scalar<bool> {
+  kgen.param.declare value : !kgen.scalar<bool> = <#pop.simd_cmp<lt, #kgen<simd 3000000000> : !kgen.scalar<index>, #kgen<simd 0> : !kgen.scalar<index>> : !kgen.scalar<bool>>
   // CHECK-NEXT: [[V0:%.*]] = kgen.param.constant: scalar<bool> = <true>
-  %0 = kgen.param.constant: !pop.scalar<bool> = <value>
-  // CHECK-NEXT: kgen.return [[V0]] : !pop.scalar<bool>
-  kgen.return %0 : !pop.scalar<bool>
+  %0 = kgen.param.constant: !kgen.scalar<bool> = <value>
+  // CHECK-NEXT: kgen.return [[V0]] : !kgen.scalar<bool>
+  kgen.return %0 : !kgen.scalar<bool>
 }
 }
 
@@ -22,12 +22,12 @@ kgen.generator export @test_simd_cmp_index_32() -> !pop.scalar<bool> {
 
 module attributes {M.target_info = #M.target<triple = "", arch = "", features = "", data_layout = "", simd_bit_width = 128, index_bit_width = 64>, kgen.env = #kgen.env<{}>} {
 // CHECK-LABEL: kgen.func export @test_simd_cmp_index_64
-kgen.generator export @test_simd_cmp_index_64() -> !pop.scalar<bool> {
-  kgen.param.declare value : !pop.scalar<bool> = <#pop.simd_cmp<lt, #pop<simd 3000000000> : !pop.scalar<index>, #pop<simd 0> : !pop.scalar<index>> : !pop.scalar<bool>>
+kgen.generator export @test_simd_cmp_index_64() -> !kgen.scalar<bool> {
+  kgen.param.declare value : !kgen.scalar<bool> = <#pop.simd_cmp<lt, #kgen<simd 3000000000> : !kgen.scalar<index>, #kgen<simd 0> : !kgen.scalar<index>> : !kgen.scalar<bool>>
   // CHECK-NEXT: [[V0:%.*]] = kgen.param.constant: scalar<bool> = <false>
-  %0 = kgen.param.constant: !pop.scalar<bool> = <value>
-  // CHECK-NEXT: kgen.return [[V0]] : !pop.scalar<bool>
-  kgen.return %0 : !pop.scalar<bool>
+  %0 = kgen.param.constant: !kgen.scalar<bool> = <value>
+  // CHECK-NEXT: kgen.return [[V0]] : !kgen.scalar<bool>
+  kgen.return %0 : !kgen.scalar<bool>
 }
 }
 
@@ -39,12 +39,12 @@ kgen.generator export @test_simd_cmp_index_64() -> !pop.scalar<bool> {
 
 module attributes {M.target_info = #M.target<triple = "", arch = "", features = "", data_layout = "", simd_bit_width = 128, index_bit_width = 64>, kgen.env = #kgen.env<{}>} {
 // CHECK-LABEL: kgen.func export @test_simd_shl_index_64
-kgen.generator export @test_simd_shl_index_64() -> !pop.scalar<index> {
-  kgen.param.declare value : !pop.scalar<index> = <#pop.simd_shl<#pop<simd 1> : !pop.scalar<index>, #pop<simd 33> : !pop.scalar<index>>>
+kgen.generator export @test_simd_shl_index_64() -> !kgen.scalar<index> {
+  kgen.param.declare value : !kgen.scalar<index> = <#pop.simd_shl<#kgen<simd 1> : !kgen.scalar<index>, #kgen<simd 33> : !kgen.scalar<index>>>
   // CHECK-NEXT: [[V0:%.*]] = kgen.param.constant: scalar<index> = <8589934592>
-  %0 = kgen.param.constant: !pop.scalar<index> = <value>
-  // CHECK-NEXT: kgen.return [[V0]] : !pop.scalar<index>
-  kgen.return %0 : !pop.scalar<index>
+  %0 = kgen.param.constant: !kgen.scalar<index> = <value>
+  // CHECK-NEXT: kgen.return [[V0]] : !kgen.scalar<index>
+  kgen.return %0 : !kgen.scalar<index>
 }
 }
 
@@ -55,12 +55,12 @@ kgen.generator export @test_simd_shl_index_64() -> !pop.scalar<index> {
 
 module attributes {M.target_info = #M.target<triple = "", arch = "", features = "", data_layout = "", simd_bit_width = 128, index_bit_width = 32>, kgen.env = #kgen.env<{}>} {
 // CHECK-LABEL: kgen.func export @test_simd_shr_index_32
-kgen.generator export @test_simd_shr_index_32() -> !pop.scalar<index> {
-  kgen.param.declare value : !pop.scalar<index> = <#pop.simd_shr<#pop<simd 3000000000> : !pop.scalar<index>, #pop<simd 1> : !pop.scalar<index>>>
+kgen.generator export @test_simd_shr_index_32() -> !kgen.scalar<index> {
+  kgen.param.declare value : !kgen.scalar<index> = <#pop.simd_shr<#kgen<simd 3000000000> : !kgen.scalar<index>, #kgen<simd 1> : !kgen.scalar<index>>>
   // CHECK-NEXT: [[V0:%.*]] = kgen.param.constant: scalar<index> = <-647483648>
-  %0 = kgen.param.constant: !pop.scalar<index> = <value>
-  // CHECK-NEXT: kgen.return [[V0]] : !pop.scalar<index>
-  kgen.return %0 : !pop.scalar<index>
+  %0 = kgen.param.constant: !kgen.scalar<index> = <value>
+  // CHECK-NEXT: kgen.return [[V0]] : !kgen.scalar<index>
+  kgen.return %0 : !kgen.scalar<index>
 }
 }
 
@@ -71,12 +71,12 @@ kgen.generator export @test_simd_shr_index_32() -> !pop.scalar<index> {
 
 module attributes {M.target_info = #M.target<triple = "", arch = "", features = "", data_layout = "", simd_bit_width = 128, index_bit_width = 64>, kgen.env = #kgen.env<{}>} {
 // CHECK-LABEL: kgen.func export @test_simd_shr_index_64
-kgen.generator export @test_simd_shr_index_64() -> !pop.scalar<index> {
-  kgen.param.declare value : !pop.scalar<index> = <#pop.simd_shr<#pop<simd 3000000000> : !pop.scalar<index>, #pop<simd 1> : !pop.scalar<index>>>
+kgen.generator export @test_simd_shr_index_64() -> !kgen.scalar<index> {
+  kgen.param.declare value : !kgen.scalar<index> = <#pop.simd_shr<#kgen<simd 3000000000> : !kgen.scalar<index>, #kgen<simd 1> : !kgen.scalar<index>>>
   // CHECK-NEXT: [[V0:%.*]] = kgen.param.constant: scalar<index> = <1500000000>
-  %0 = kgen.param.constant: !pop.scalar<index> = <value>
-  // CHECK-NEXT: kgen.return [[V0]] : !pop.scalar<index>
-  kgen.return %0 : !pop.scalar<index>
+  %0 = kgen.param.constant: !kgen.scalar<index> = <value>
+  // CHECK-NEXT: kgen.return [[V0]] : !kgen.scalar<index>
+  kgen.return %0 : !kgen.scalar<index>
 }
 }
 
@@ -87,12 +87,12 @@ kgen.generator export @test_simd_shr_index_64() -> !pop.scalar<index> {
 
 module attributes {M.target_info = #M.target<triple = "", arch = "", features = "", data_layout = "", simd_bit_width = 128, index_bit_width = 32>, kgen.env = #kgen.env<{}>} {
 // CHECK-LABEL: kgen.func export @test_simd_abs_index_32
-kgen.generator export @test_simd_abs_index_32() -> !pop.scalar<index> {
-  kgen.param.declare value : !pop.scalar<index> = <#pop.simd_abs<#pop<simd 3000000000> : !pop.scalar<index>>>
+kgen.generator export @test_simd_abs_index_32() -> !kgen.scalar<index> {
+  kgen.param.declare value : !kgen.scalar<index> = <#pop.simd_abs<#kgen<simd 3000000000> : !kgen.scalar<index>>>
   // CHECK-NEXT: [[V0:%.*]] = kgen.param.constant: scalar<index> = <1294967296>
-  %0 = kgen.param.constant: !pop.scalar<index> = <value>
-  // CHECK-NEXT: kgen.return [[V0]] : !pop.scalar<index>
-  kgen.return %0 : !pop.scalar<index>
+  %0 = kgen.param.constant: !kgen.scalar<index> = <value>
+  // CHECK-NEXT: kgen.return [[V0]] : !kgen.scalar<index>
+  kgen.return %0 : !kgen.scalar<index>
 }
 }
 
@@ -103,12 +103,12 @@ kgen.generator export @test_simd_abs_index_32() -> !pop.scalar<index> {
 
 module attributes {M.target_info = #M.target<triple = "", arch = "", features = "", data_layout = "", simd_bit_width = 128, index_bit_width = 64>, kgen.env = #kgen.env<{}>} {
 // CHECK-LABEL: kgen.func export @test_simd_abs_index_64
-kgen.generator export @test_simd_abs_index_64() -> !pop.scalar<index> {
-  kgen.param.declare value : !pop.scalar<index> = <#pop.simd_abs<#pop<simd 3000000000> : !pop.scalar<index>>>
+kgen.generator export @test_simd_abs_index_64() -> !kgen.scalar<index> {
+  kgen.param.declare value : !kgen.scalar<index> = <#pop.simd_abs<#kgen<simd 3000000000> : !kgen.scalar<index>>>
   // CHECK-NEXT: [[V0:%.*]] = kgen.param.constant: scalar<index> = <3000000000>
-  %0 = kgen.param.constant: !pop.scalar<index> = <value>
-  // CHECK-NEXT: kgen.return [[V0]] : !pop.scalar<index>
-  kgen.return %0 : !pop.scalar<index>
+  %0 = kgen.param.constant: !kgen.scalar<index> = <value>
+  // CHECK-NEXT: kgen.return [[V0]] : !kgen.scalar<index>
+  kgen.return %0 : !kgen.scalar<index>
 }
 }
 
@@ -120,12 +120,12 @@ kgen.generator export @test_simd_abs_index_64() -> !pop.scalar<index> {
 
 module attributes {M.target_info = #M.target<triple = "", arch = "", features = "", data_layout = "", simd_bit_width = 128, index_bit_width = 32>, kgen.env = #kgen.env<{}>} {
 // CHECK-LABEL: kgen.func export @test_simd_div_index_32
-kgen.generator export @test_simd_div_index_32() -> !pop.scalar<index> {
-  kgen.param.declare value : !pop.scalar<index> = <#pop.simd_div<#pop<simd 3000000000> : !pop.scalar<index>, #pop<simd 2> : !pop.scalar<index>>>
+kgen.generator export @test_simd_div_index_32() -> !kgen.scalar<index> {
+  kgen.param.declare value : !kgen.scalar<index> = <#pop.simd_div<#kgen<simd 3000000000> : !kgen.scalar<index>, #kgen<simd 2> : !kgen.scalar<index>>>
   // CHECK-NEXT: [[V0:%.*]] = kgen.param.constant: scalar<index> = <-647483648>
-  %0 = kgen.param.constant: !pop.scalar<index> = <value>
-  // CHECK-NEXT: kgen.return [[V0]] : !pop.scalar<index>
-  kgen.return %0 : !pop.scalar<index>
+  %0 = kgen.param.constant: !kgen.scalar<index> = <value>
+  // CHECK-NEXT: kgen.return [[V0]] : !kgen.scalar<index>
+  kgen.return %0 : !kgen.scalar<index>
 }
 }
 
@@ -136,12 +136,12 @@ kgen.generator export @test_simd_div_index_32() -> !pop.scalar<index> {
 
 module attributes {M.target_info = #M.target<triple = "", arch = "", features = "", data_layout = "", simd_bit_width = 128, index_bit_width = 64>, kgen.env = #kgen.env<{}>} {
 // CHECK-LABEL: kgen.func export @test_simd_div_index_64
-kgen.generator export @test_simd_div_index_64() -> !pop.scalar<index> {
-  kgen.param.declare value : !pop.scalar<index> = <#pop.simd_div<#pop<simd 3000000000> : !pop.scalar<index>, #pop<simd 2> : !pop.scalar<index>>>
+kgen.generator export @test_simd_div_index_64() -> !kgen.scalar<index> {
+  kgen.param.declare value : !kgen.scalar<index> = <#pop.simd_div<#kgen<simd 3000000000> : !kgen.scalar<index>, #kgen<simd 2> : !kgen.scalar<index>>>
   // CHECK-NEXT: [[V0:%.*]] = kgen.param.constant: scalar<index> = <1500000000>
-  %0 = kgen.param.constant: !pop.scalar<index> = <value>
-  // CHECK-NEXT: kgen.return [[V0]] : !pop.scalar<index>
-  kgen.return %0 : !pop.scalar<index>
+  %0 = kgen.param.constant: !kgen.scalar<index> = <value>
+  // CHECK-NEXT: kgen.return [[V0]] : !kgen.scalar<index>
+  kgen.return %0 : !kgen.scalar<index>
 }
 }
 
@@ -153,12 +153,12 @@ kgen.generator export @test_simd_div_index_64() -> !pop.scalar<index> {
 
 module attributes {M.target_info = #M.target<triple = "", arch = "", features = "", data_layout = "", simd_bit_width = 128, index_bit_width = 32>, kgen.env = #kgen.env<{}>} {
 // CHECK-LABEL: kgen.func export @test_simd_floordiv_index_32
-kgen.generator export @test_simd_floordiv_index_32() -> !pop.scalar<index> {
-  kgen.param.declare value : !pop.scalar<index> = <#pop.simd_floordiv<#pop<simd 3000000000> : !pop.scalar<index>, #pop<simd 2> : !pop.scalar<index>>>
+kgen.generator export @test_simd_floordiv_index_32() -> !kgen.scalar<index> {
+  kgen.param.declare value : !kgen.scalar<index> = <#pop.simd_floordiv<#kgen<simd 3000000000> : !kgen.scalar<index>, #kgen<simd 2> : !kgen.scalar<index>>>
   // CHECK-NEXT: [[V0:%.*]] = kgen.param.constant: scalar<index> = <-647483648>
-  %0 = kgen.param.constant: !pop.scalar<index> = <value>
-  // CHECK-NEXT: kgen.return [[V0]] : !pop.scalar<index>
-  kgen.return %0 : !pop.scalar<index>
+  %0 = kgen.param.constant: !kgen.scalar<index> = <value>
+  // CHECK-NEXT: kgen.return [[V0]] : !kgen.scalar<index>
+  kgen.return %0 : !kgen.scalar<index>
 }
 }
 
@@ -169,11 +169,11 @@ kgen.generator export @test_simd_floordiv_index_32() -> !pop.scalar<index> {
 
 module attributes {M.target_info = #M.target<triple = "", arch = "", features = "", data_layout = "", simd_bit_width = 128, index_bit_width = 64>, kgen.env = #kgen.env<{}>} {
 // CHECK-LABEL: kgen.func export @test_simd_floordiv_index_64
-kgen.generator export @test_simd_floordiv_index_64() -> !pop.scalar<index> {
-  kgen.param.declare value : !pop.scalar<index> = <#pop.simd_floordiv<#pop<simd 3000000000> : !pop.scalar<index>, #pop<simd 2> : !pop.scalar<index>>>
+kgen.generator export @test_simd_floordiv_index_64() -> !kgen.scalar<index> {
+  kgen.param.declare value : !kgen.scalar<index> = <#pop.simd_floordiv<#kgen<simd 3000000000> : !kgen.scalar<index>, #kgen<simd 2> : !kgen.scalar<index>>>
   // CHECK-NEXT: [[V0:%.*]] = kgen.param.constant: scalar<index> = <1500000000>
-  %0 = kgen.param.constant: !pop.scalar<index> = <value>
-  // CHECK-NEXT: kgen.return [[V0]] : !pop.scalar<index>
-  kgen.return %0 : !pop.scalar<index>
+  %0 = kgen.param.constant: !kgen.scalar<index> = <value>
+  // CHECK-NEXT: kgen.return [[V0]] : !kgen.scalar<index>
+  kgen.return %0 : !kgen.scalar<index>
 }
 }

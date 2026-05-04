@@ -995,7 +995,7 @@ trait C(B):
 # trait TraitWithStaticMethodUsingAlias:
 #     # HECK-NEXT: lit.alias.decl N = <?>
 #     alias N: ZInt
-#     # HECK-LABEL: lit.fn @foo(%x: !pop.simd<N, f32>) { // #kgen.param.decl.ref<"N"> : index
+#     # HECK-LABEL: lit.fn @foo(%x: !kgen.simd<N, f32>) { // #kgen.param.decl.ref<"N"> : index
 #     @staticmethod
 #     def foo(x: StructWithParam[N]):
 #         pass

@@ -1203,8 +1203,8 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
     case POP::FloatLiteralSpecialValues::Normal:
       // Convert to f64 to print out the value.
       auto ctx = fpLit.getContext();
-      auto f64Type = POP::SIMDType::get(ctx, 1, DType::f64);
-      auto simdVal = cast<POP::SIMDAttr>(
+      auto f64Type = SIMDType::get(ctx, 1, DType::f64);
+      auto simdVal = cast<KGEN::SIMDAttr>(
           POP::FloatLiteralConvertAttr::get(ctx, f64Type, fpLit));
       os << simdVal.getValues()[0].getFloatVal();
       return;

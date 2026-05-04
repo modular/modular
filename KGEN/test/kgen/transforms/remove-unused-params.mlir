@@ -1,22 +1,22 @@
 
 // RUN: kgen-opt --split-input-file --remove-unused-params --eliminate-dead-symbols %s  | FileCheck %s
 
-kgen.generator @basic_arg_remove_1<T: dtype>(%arg0: index, %arg1: !kgen.pointer<index>,%arg2: !pop.scalar<T>) -> index{
+kgen.generator @basic_arg_remove_1<T: dtype>(%arg0: index, %arg1: !kgen.pointer<index>,%arg2: !kgen.scalar<T>) -> index{
   %l = pop.load %arg1 : !kgen.pointer<index>
   kgen.return %l : index
 }
 
-kgen.generator @basic_arg_remove_2<T: dtype>(%arg0: index, %arg1: !kgen.pointer<index>, %arg2: !pop.scalar<T>) -> index{
-  %0 = kgen.call @basic_arg_remove_1<:dtype T>(%arg0, %arg1,%arg2) : (index, !kgen.pointer<index>, !pop.scalar<T>) -> (index)
+kgen.generator @basic_arg_remove_2<T: dtype>(%arg0: index, %arg1: !kgen.pointer<index>, %arg2: !kgen.scalar<T>) -> index{
+  %0 = kgen.call @basic_arg_remove_1<:dtype T>(%arg0, %arg1,%arg2) : (index, !kgen.pointer<index>, !kgen.scalar<T>) -> (index)
   kgen.return %0 : index
 }
 
-kgen.generator export @basic_arg_export<T: dtype>(%arg0: index, %arg1: !kgen.pointer<index>, %arg2: !pop.scalar<T>) {
-  %0 = kgen.call @basic_arg_remove_2<:dtype T>(%arg0, %arg1, %arg2) : (index, !kgen.pointer<index>, !pop.scalar<T>) -> (index)
+kgen.generator export @basic_arg_export<T: dtype>(%arg0: index, %arg1: !kgen.pointer<index>, %arg2: !kgen.scalar<T>) {
+  %0 = kgen.call @basic_arg_remove_2<:dtype T>(%arg0, %arg1, %arg2) : (index, !kgen.pointer<index>, !kgen.scalar<T>) -> (index)
   kgen.return
 }
 
-// CHECK-LABEL: kgen.generator  export @basic_arg_export<T: dtype>(%arg0: index, %arg1: !kgen.pointer<index>, %arg2: !pop.scalar<T>) {
+// CHECK-LABEL: kgen.generator  export @basic_arg_export<T: dtype>(%arg0: index, %arg1: !kgen.pointer<index>, %arg2: !kgen.scalar<T>) {
 // CHECK-NEXT: kgen.call @basic_arg_remove_2_REMOVED_ARG(%arg1) : (!kgen.pointer<index>) -> index
 
 // CHECK-LABEL:  kgen.generator  @basic_arg_remove_1_REMOVED_ARG(%arg0: !kgen.pointer<index>) -> index
@@ -30,17 +30,17 @@ kgen.generator export @basic_arg_export<T: dtype>(%arg0: index, %arg1: !kgen.poi
 
 // -----
 
-kgen.generator @recursive_test<T: dtype>(%arg0: index, %arg1: !kgen.pointer<index>, %arg2: !pop.scalar<T>) -> index{
-  %0 = kgen.call @recursive_test<:dtype T>(%arg0, %arg1, %arg2) : (index, !kgen.pointer<index>, !pop.scalar<T>) -> (index)
+kgen.generator @recursive_test<T: dtype>(%arg0: index, %arg1: !kgen.pointer<index>, %arg2: !kgen.scalar<T>) -> index{
+  %0 = kgen.call @recursive_test<:dtype T>(%arg0, %arg1, %arg2) : (index, !kgen.pointer<index>, !kgen.scalar<T>) -> (index)
   kgen.return %0 : index
 }
 
-kgen.generator export @recursive_test_entry<T: dtype>(%arg0: index, %arg1: !kgen.pointer<index>, %arg2: !pop.scalar<T>) {
-  %0 = kgen.call @recursive_test<:dtype T>(%arg0, %arg1, %arg2) : (index, !kgen.pointer<index>, !pop.scalar<T>) -> (index)
+kgen.generator export @recursive_test_entry<T: dtype>(%arg0: index, %arg1: !kgen.pointer<index>, %arg2: !kgen.scalar<T>) {
+  %0 = kgen.call @recursive_test<:dtype T>(%arg0, %arg1, %arg2) : (index, !kgen.pointer<index>, !kgen.scalar<T>) -> (index)
   kgen.return
 }
 
-// CHECK-LABEL: kgen.generator  export @recursive_test_entry<T: dtype>(%arg0: index, %arg1: !kgen.pointer<index>, %arg2: !pop.scalar<T>)
+// CHECK-LABEL: kgen.generator  export @recursive_test_entry<T: dtype>(%arg0: index, %arg1: !kgen.pointer<index>, %arg2: !kgen.scalar<T>)
 // CHECK-NEXT: kgen.call @recursive_test_REMOVED_ARG() : () -> index
 // CHECK-NEXT: kgen.return
 
@@ -76,12 +76,12 @@ kgen.generator export @recursive_test_2_entry<X: index, Y: index, Z: index>() {
 // -----
 
 
-kgen.generator @test_argument_captured_in_attr<T: dtype>(%arg0: index, %arg1: !kgen.pointer<index>, %arg2: !pop.scalar<T>) attributes {some_metadata = [#kgen.param.decl.ref<"T"> : !kgen.dtype]} {
+kgen.generator @test_argument_captured_in_attr<T: dtype>(%arg0: index, %arg1: !kgen.pointer<index>, %arg2: !kgen.scalar<T>) attributes {some_metadata = [#kgen.param.decl.ref<"T"> : !kgen.dtype]} {
   kgen.return
 }
 
-kgen.generator export @test_argument_captured_in_attr_entry<T: dtype>(%arg0: index, %arg1: !kgen.pointer<index>, %arg2: !pop.scalar<T>) {
-  kgen.call @test_argument_captured_in_attr<:dtype T>(%arg0, %arg1, %arg2) : (index, !kgen.pointer<index>, !pop.scalar<T>) -> ()
+kgen.generator export @test_argument_captured_in_attr_entry<T: dtype>(%arg0: index, %arg1: !kgen.pointer<index>, %arg2: !kgen.scalar<T>) {
+  kgen.call @test_argument_captured_in_attr<:dtype T>(%arg0, %arg1, %arg2) : (index, !kgen.pointer<index>, !kgen.scalar<T>) -> ()
   kgen.return
 }
 
@@ -127,13 +127,13 @@ kgen.generator @with_cycle_2(%arg0: index) -> index{
   kgen.return %0 : index
 }
 
-kgen.generator @with_cycle_1<T: dtype>(%arg0: index, %arg1: !kgen.pointer<index>, %arg2: !pop.scalar<T>) -> index{
+kgen.generator @with_cycle_1<T: dtype>(%arg0: index, %arg1: !kgen.pointer<index>, %arg2: !kgen.scalar<T>) -> index{
   %0 = kgen.call @with_cycle_2(%arg0) : (index) -> (index)
   kgen.return %0 : index
 }
 
-kgen.generator export @with_cycle<T: dtype>(%arg0: index, %arg1: !kgen.pointer<index>, %arg2: !pop.scalar<T>) {
-  %0 = kgen.call @with_cycle_1<:dtype T>(%arg0, %arg1, %arg2) : (index, !kgen.pointer<index>, !pop.scalar<T>) -> (index)
+kgen.generator export @with_cycle<T: dtype>(%arg0: index, %arg1: !kgen.pointer<index>, %arg2: !kgen.scalar<T>) {
+  %0 = kgen.call @with_cycle_1<:dtype T>(%arg0, %arg1, %arg2) : (index, !kgen.pointer<index>, !kgen.scalar<T>) -> (index)
   kgen.return
 }
 
@@ -145,22 +145,22 @@ kgen.generator export @with_cycle<T: dtype>(%arg0: index, %arg1: !kgen.pointer<i
 
 // -----
 
-kgen.generator @hanoi<T: dtype>(%arg0: !pop.scalar<si8>, %arg1: !pop.scalar<si16>, %arg2: !pop.scalar<si32>) -> (!pop.scalar<si8>, !pop.scalar<si32>) {
-  %si8 = pop.cast %arg2 : !pop.scalar<si32> to !pop.scalar<si8>
-  %si32 = pop.cast %arg0 : !pop.scalar<si8> to !pop.scalar<si32>
-  %0:2 = kgen.call @hanoi<:dtype T>(%si8, %arg1, %si32) : (!pop.scalar<si8>, !pop.scalar<si16>, !pop.scalar<si32>) -> (!pop.scalar<si8>, !pop.scalar<si32>)
-  kgen.return %0, %si32 : !pop.scalar<si8>, !pop.scalar<si32>
+kgen.generator @hanoi<T: dtype>(%arg0: !kgen.scalar<si8>, %arg1: !kgen.scalar<si16>, %arg2: !kgen.scalar<si32>) -> (!kgen.scalar<si8>, !kgen.scalar<si32>) {
+  %si8 = pop.cast %arg2 : !kgen.scalar<si32> to !kgen.scalar<si8>
+  %si32 = pop.cast %arg0 : !kgen.scalar<si8> to !kgen.scalar<si32>
+  %0:2 = kgen.call @hanoi<:dtype T>(%si8, %arg1, %si32) : (!kgen.scalar<si8>, !kgen.scalar<si16>, !kgen.scalar<si32>) -> (!kgen.scalar<si8>, !kgen.scalar<si32>)
+  kgen.return %0, %si32 : !kgen.scalar<si8>, !kgen.scalar<si32>
 }
 
-kgen.generator export @hanoi_entry<T: dtype>(%arg0: !pop.scalar<si8>, %arg1: !pop.scalar<si16>, %arg2: !pop.scalar<si32>){
-  %0:2 = kgen.call @hanoi<:dtype T>(%arg0, %arg1, %arg2) : (!pop.scalar<si8>, !pop.scalar<si16>, !pop.scalar<si32>) -> (!pop.scalar<si8>, !pop.scalar<si32>)
+kgen.generator export @hanoi_entry<T: dtype>(%arg0: !kgen.scalar<si8>, %arg1: !kgen.scalar<si16>, %arg2: !kgen.scalar<si32>){
+  %0:2 = kgen.call @hanoi<:dtype T>(%arg0, %arg1, %arg2) : (!kgen.scalar<si8>, !kgen.scalar<si16>, !kgen.scalar<si32>) -> (!kgen.scalar<si8>, !kgen.scalar<si32>)
   kgen.return
 }
 
-// CHECK-LABEL: kgen.generator export @hanoi_entry<T: dtype>(%arg0: !pop.scalar<si8>, %arg1: !pop.scalar<si16>, %arg2: !pop.scalar<si32>)
+// CHECK-LABEL: kgen.generator export @hanoi_entry<T: dtype>(%arg0: !kgen.scalar<si8>, %arg1: !kgen.scalar<si16>, %arg2: !kgen.scalar<si32>)
 // CHECK-NEXT: kgen.call @hanoi_REMOVED_ARG(%arg0, %arg2)
 
-// CHECK-LABEL: kgen.generator @hanoi_REMOVED_ARG(%arg0: !pop.scalar<si8>, %arg1: !pop.scalar<si32>)
+// CHECK-LABEL: kgen.generator @hanoi_REMOVED_ARG(%arg0: !kgen.scalar<si8>, %arg1: !kgen.scalar<si32>)
 // CHECK-NEXT:  %[[NEW_OP0:.*]] = pop.cast %arg1
 // CHECK-NEXT:  %[[NEW_OP1:.*]] = pop.cast %arg0
 // CHECK-NEXT:  %2:2 = kgen.call @hanoi_REMOVED_ARG(%[[NEW_OP0]], %[[NEW_OP1]])

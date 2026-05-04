@@ -7,14 +7,14 @@ kgen.func @stack_allocation(%cond: i1) {
   // CHECK-NEXT: %[[C16:.*]] = llvm.mlir.constant(16 : i64) : i64
   // CHECK-NEXT: %[[PTR0:.*]] = llvm.alloca %[[C16]] x f32 {alignment = 4 : i64}
   // CHECK-NEXT: llvm.intr.lifetime.start %[[PTR0]]
-  %0 = pop.stack_allocation 16 x !pop.simd<1, f32>
+  %0 = pop.stack_allocation 16 x !kgen.simd<1, f32>
   // CHECK: hlcf.if
   hlcf.if %cond {
     // CHECK-NEXT: %[[C4:.*]] = llvm.mlir.constant(4 : i64) : i64
     // CHECK-NEXT: %[[PTR1:.*]] = llvm.alloca %[[C4]] x vector<4xf32> {alignment = 16 : i64}
     // CHECK-NEXT: llvm.intr.lifetime.start %[[PTR1]]
     // CHECK-NEXT: llvm.intr.lifetime.end %[[PTR1]]
-    %1 = pop.stack_allocation 4 x !pop.simd<4, f32>
+    %1 = pop.stack_allocation 4 x !kgen.simd<4, f32>
     // CHECK: }
     hlcf.yield
   } else {
@@ -30,7 +30,7 @@ kgen.func @stack_allocation_with_alignment() {
   // CHECK-DAG: %[[C16:.*]] = llvm.mlir.constant(16 : i64) : i64
   // CHECK-DAG: %[[PTR0:.*]] = llvm.alloca %[[C16]] x f32 {alignment = 8 : i64}
   // CHECK: llvm.intr.lifetime.start %[[PTR0]]
-  %0 = pop.stack_allocation 16 x !pop.simd<1, f32> align 8
+  %0 = pop.stack_allocation 16 x !kgen.simd<1, f32> align 8
   // CHECK-NEXT: llvm.intr.lifetime.end %[[PTR0]]
   // CHECK-NEXT: return
   kgen.return
@@ -41,7 +41,7 @@ kgen.func @stack_allocation_with_addressspace() {
   // CHECK-DAG: %[[C16:.*]] = llvm.mlir.constant(16 : i64) : i64
   // CHECK-DAG: %[[PTR0:.*]] = llvm.alloca %[[C16]] x i32 {alignment = 4 : i64} : (i64) -> !llvm.ptr<5>
   // CHECK: llvm.intr.lifetime.start %[[PTR0]]
-  %0 = pop.stack_allocation 16 x !pop.simd<1, si32> address_space 5
+  %0 = pop.stack_allocation 16 x !kgen.simd<1, si32> address_space 5
   // CHECK-NEXT: llvm.intr.lifetime.end %[[PTR0]]
   // CHECK-NEXT: return
   kgen.return
@@ -52,19 +52,19 @@ kgen.func @stack_allocation_with_align_and_addressspace() {
   // CHECK-DAG: %[[C16:.*]] = llvm.mlir.constant(16 : i64) : i64
   // CHECK-DAG: %[[PTR0:.*]] = llvm.alloca %[[C16]] x f32 {alignment = 8 : i64} : (i64) -> !llvm.ptr<3>
   // CHECK: llvm.intr.lifetime.start %[[PTR0]]
-  %0 = pop.stack_allocation 16 x !pop.simd<1, f32> address_space 3 align 8
+  %0 = pop.stack_allocation 16 x !kgen.simd<1, f32> address_space 3 align 8
   // CHECK-NEXT: llvm.intr.lifetime.end %[[PTR0]]
   // CHECK-NEXT: return
   kgen.return
 }
 
 // CHECK-LABEL: @stack_allocation_insertion
-kgen.func @stack_allocation_insertion(%v: !pop.simd<1, si32>) {
+kgen.func @stack_allocation_insertion(%v: !kgen.simd<1, si32>) {
   // CHECK: hlcf.loop
   hlcf.loop {
     // CHECK: llvm.alloca
     // CHECK: llvm.intr.lifetime.start
-    %2 = pop.stack_allocation 1 x !pop.simd<1, si32>
+    %2 = pop.stack_allocation 1 x !kgen.simd<1, si32>
     // CHECK: llvm.intr.lifetime.end
     // CHECK: hlcf.break
     hlcf.break

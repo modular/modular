@@ -776,8 +776,8 @@ struct WrongSelfType[a: Int]:
 struct BadInit[size: __mlir_type.index]:
   @implicit
   def __init__(out self, elem: BadInit[Int(1)._mlir_value]) raises:
-    var x : __mlir_type[`!pop.simd<`, Self.size, `, FloatDyn>`]
-    # expected-error @+1 {{cannot implicitly convert '__mlir_type.`!pop.simd<size, FloatDyn>`' value to 'BadInit[size]'}}
+    var x : __mlir_type[`!kgen.simd<`, Self.size, `, FloatDyn>`]
+    # expected-error @+1 {{cannot implicitly convert '__mlir_type.`!kgen.simd<size, FloatDyn>`' value to 'BadInit[size]'}}
     self = x
 
 struct MLIRAttrWithinStruct:

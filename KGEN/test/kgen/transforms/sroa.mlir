@@ -5,7 +5,7 @@
 
 // CHECK-LABEL: @simple_struct
 // MEM2REG-LABEL: @simple_struct
-kgen.func @simple_struct(%arg1: !kgen.struct<(index, index)>) -> !pop.scalar<index> {
+kgen.func @simple_struct(%arg1: !kgen.struct<(index, index)>) -> !kgen.scalar<index> {
   %array = pop.stack_allocation 1 x !kgen.struct<(index, index)>
   pop.store %arg1, %array : !kgen.pointer<struct<(index, index)>>
 
@@ -27,23 +27,23 @@ kgen.func @simple_struct(%arg1: !kgen.struct<(index, index)>) -> !pop.scalar<ind
   // When running with mem2reg check we get rid of the allocs.
   // MEM2REG-NEXT: %[[SCALAR1:.*]] = kgen.struct.extract %[[ARG0:.*]][0] : <(index, index)>
   // MEM2REG-NEXT: %[[SCALAR2:.*]] =  kgen.struct.extract %[[ARG0]][1] : <(index, index)>
-  // MEM2REG-NEXT: pop.cast_from_builtin %[[SCALAR1]] : index to !pop.scalar<index>
-  // MEM2REG-NEXT: pop.cast_from_builtin %[[SCALAR2]] : index to !pop.scalar<index>
+  // MEM2REG-NEXT: pop.cast_from_builtin %[[SCALAR1]] : index to !kgen.scalar<index>
+  // MEM2REG-NEXT: pop.cast_from_builtin %[[SCALAR2]] : index to !kgen.scalar<index>
 
   %gep1 = kgen.struct.gep %array[0] : <struct<(index, index)>>
   %gep2 = kgen.struct.gep %array[1] : <struct<(index, index)>>
 
   %load1 = pop.load %gep1 : !kgen.pointer<index>
   %load2 = pop.load %gep2 : !kgen.pointer<index>
-  %scalar1 = pop.cast_from_builtin %load1 : index to !pop.scalar<index>
-  %scalar2 = pop.cast_from_builtin %load2 : index to !pop.scalar<index>
-  %out = pop.add %scalar1, %scalar2 : !pop.scalar<index>
-  kgen.return %out : !pop.scalar<index>
+  %scalar1 = pop.cast_from_builtin %load1 : index to !kgen.scalar<index>
+  %scalar2 = pop.cast_from_builtin %load2 : index to !kgen.scalar<index>
+  %out = pop.add %scalar1, %scalar2 : !kgen.scalar<index>
+  kgen.return %out : !kgen.scalar<index>
 }
 
 // CHECK-LABEL: @simple_array
 // MEM2REG-LABEL: @simple_array
-kgen.func @simple_array(%arg1: !pop.array<2, index>) -> !pop.scalar<index> {
+kgen.func @simple_array(%arg1: !pop.array<2, index>) -> !kgen.scalar<index> {
    %0 = kgen.param.constant = <0>
    %1 = kgen.param.constant = <1>
 
@@ -63,10 +63,10 @@ kgen.func @simple_array(%arg1: !pop.array<2, index>) -> !pop.scalar<index> {
 
   // MEM2REG: %[[OP1:.*]] = pop.array.get %[[ARG0:.*]][0] : !pop.array<2, index>
   // MEM2REG-NEXT: %[[OP2:.*]] = pop.array.get %[[ARG0]][1] : !pop.array<2, index>
-  // MEM2REG-NEXT: %[[CONVERT1:.*]] = pop.cast_from_builtin %[[OP1]] : index to !pop.scalar<index>
-  // MEM2REG-NEXT: %[[CONVERT2:.*]] = pop.cast_from_builtin %[[OP2]] : index to !pop.scalar<index>
-  // MEM2REG-NEXT: %[[ADD:.*]] = pop.add %[[CONVERT1]], %[[CONVERT2]] : !pop.scalar<index>
-  // MEM2REG-NEXT: kgen.return %[[ADD]] : !pop.scalar<index>
+  // MEM2REG-NEXT: %[[CONVERT1:.*]] = pop.cast_from_builtin %[[OP1]] : index to !kgen.scalar<index>
+  // MEM2REG-NEXT: %[[CONVERT2:.*]] = pop.cast_from_builtin %[[OP2]] : index to !kgen.scalar<index>
+  // MEM2REG-NEXT: %[[ADD:.*]] = pop.add %[[CONVERT1]], %[[CONVERT2]] : !kgen.scalar<index>
+  // MEM2REG-NEXT: kgen.return %[[ADD]] : !kgen.scalar<index>
 
    %array = pop.stack_allocation 1 x !pop.array<2, index>
    pop.store %arg1, %array : !kgen.pointer<array<2, index>>
@@ -76,10 +76,10 @@ kgen.func @simple_array(%arg1: !pop.array<2, index>) -> !pop.scalar<index> {
 
    %load1 = pop.load %gep1 : !kgen.pointer<index>
    %load2 = pop.load %gep2 : !kgen.pointer<index>
-   %scalar1 = pop.cast_from_builtin %load1 : index to !pop.scalar<index>
-   %scalar2 = pop.cast_from_builtin %load2 : index to !pop.scalar<index>
-   %out = pop.add %scalar1, %scalar2 : !pop.scalar<index>
-   kgen.return %out : !pop.scalar<index>
+   %scalar1 = pop.cast_from_builtin %load1 : index to !kgen.scalar<index>
+   %scalar2 = pop.cast_from_builtin %load2 : index to !kgen.scalar<index>
+   %out = pop.add %scalar1, %scalar2 : !kgen.scalar<index>
+   kgen.return %out : !kgen.scalar<index>
  }
 
 // CHECK-LABEL: @struct_of_structs
@@ -97,7 +97,7 @@ kgen.func @struct_of_structs(%arg1: !kgen.struct<(struct<(scalar<index>)>, struc
       %newLoad = pop.load %gep : !kgen.pointer<struct<(scalar<index>)>>
       %getElem3 = kgen.struct.extract %newLoad[0] : !kgen.struct<(scalar<index>)>
 
-      %out = pop.div %getElem3, %getElem2 : !pop.scalar<index>
+      %out = pop.div %getElem3, %getElem2 : !kgen.scalar<index>
       hlcf.break
     }
     hlcf.break
@@ -120,7 +120,7 @@ kgen.func @struct_of_structs(%arg1: !kgen.struct<(struct<(scalar<index>)>, struc
   // MEM2REG-DAG: %[[OP5:.*]] = kgen.struct.extract %[[OP4]][0] : <(scalar<index>)>
   // MEM2REG-DAG:  hlcf.loop {
   // MEM2REG-DAG:    hlcf.loop "inlined_cf_scope" {
-  // MEM2REG-DAG:       pop.div %[[OP1]], %[[OP5]] : !pop.scalar<index>
+  // MEM2REG-DAG:       pop.div %[[OP1]], %[[OP5]] : !kgen.scalar<index>
 
   kgen.return
 }

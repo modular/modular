@@ -94,7 +94,7 @@ def bad_signature_type[func: __mlir_type[`!kgen.func<(index mut) -> !kgen.none>`
 
 def mlir_magic_keyword_param():
     # expected-error @below {{only positional operands allowed in mlir magic}}
-    comptime a = __mlir_type[a=`!pop.scalar<bool>`]
+    comptime a = __mlir_type[a=`!kgen.scalar<bool>`]
 
 
 def mlir_properties(arg0: __mlir_type.i64, arg1: __mlir_type.i64):

@@ -591,38 +591,38 @@ kgen.generator @callee() always_inline {
 // -----
 
 // CHECK-LABEL: kgen.generator @rebind_call_operands
-kgen.generator @rebind_call_operands(%arg0: !pop.scalar<f32>) {
+kgen.generator @rebind_call_operands(%arg0: !kgen.scalar<f32>) {
   // CHECK: kgen.param.declare DT: dtype = <f32>
-  // CHECK-NEXT: %0 = kgen.rebind %arg0 : !pop.scalar<f32> to !pop.scalar<DT>
-  // CHECK: pop.simd.extractelement %0[%idx0] : !pop.scalar<DT>
-  kgen.call @callee<:dtype f32>(%arg0) : (!pop.scalar<f32>) -> ()
+  // CHECK-NEXT: %0 = kgen.rebind %arg0 : !kgen.scalar<f32> to !kgen.scalar<DT>
+  // CHECK: pop.simd.extractelement %0[%idx0] : !kgen.scalar<DT>
+  kgen.call @callee<:dtype f32>(%arg0) : (!kgen.scalar<f32>) -> ()
   kgen.return
 }
 
 // CHECK-LABEL: kgen.generator @callee
-kgen.generator @callee<DT: dtype>(%arg0: !pop.scalar<DT>) always_inline {
+kgen.generator @callee<DT: dtype>(%arg0: !kgen.scalar<DT>) always_inline {
   %idx0 = index.constant 0
-  %0 = pop.simd.extractelement %arg0[%idx0] : !pop.scalar<DT>
+  %0 = pop.simd.extractelement %arg0[%idx0] : !kgen.scalar<DT>
   kgen.return
 }
 
 // -----
 
 // CHECK-LABEL: kgen.generator @rebind_mangled_types
-kgen.generator @rebind_mangled_types<DT: dtype>(%arg0: !pop.scalar<DT>) {
+kgen.generator @rebind_mangled_types<DT: dtype>(%arg0: !kgen.scalar<DT>) {
   // CHECK: kgen.param.declare DT0: dtype = <DT>
-  // CHECK-NEXT: %0 = kgen.rebind %arg0 : !pop.scalar<DT> to !pop.scalar<DT0>
-  // CHECK: %1 = pop.simd.extractelement %0[%idx0] : !pop.scalar<DT0>
-  // CHECK: %2 = kgen.rebind %1 : !pop.scalar<DT0> to !pop.scalar<DT>
-  %0 = kgen.call @callee<:dtype DT>(%arg0) : (!pop.scalar<DT>) -> !pop.scalar<DT>
+  // CHECK-NEXT: %0 = kgen.rebind %arg0 : !kgen.scalar<DT> to !kgen.scalar<DT0>
+  // CHECK: %1 = pop.simd.extractelement %0[%idx0] : !kgen.scalar<DT0>
+  // CHECK: %2 = kgen.rebind %1 : !kgen.scalar<DT0> to !kgen.scalar<DT>
+  %0 = kgen.call @callee<:dtype DT>(%arg0) : (!kgen.scalar<DT>) -> !kgen.scalar<DT>
   kgen.return
 }
 
 // CHECK-LABEL: kgen.generator @callee
-kgen.generator @callee<DT: dtype>(%arg0: !pop.scalar<DT>) -> !pop.scalar<DT> always_inline {
+kgen.generator @callee<DT: dtype>(%arg0: !kgen.scalar<DT>) -> !kgen.scalar<DT> always_inline {
   %idx0 = index.constant 0
-  %0 = pop.simd.extractelement %arg0[%idx0] : !pop.scalar<DT>
-  kgen.return %0 : !pop.scalar<DT>
+  %0 = pop.simd.extractelement %arg0[%idx0] : !kgen.scalar<DT>
+  kgen.return %0 : !kgen.scalar<DT>
 }
 
 // -----
@@ -630,23 +630,23 @@ kgen.generator @callee<DT: dtype>(%arg0: !pop.scalar<DT>) -> !pop.scalar<DT> alw
 // CHECK-LABEL: kgen.generator @replace_in_signature_with_shadow
 kgen.generator @replace_in_signature_with_shadow<width>() {
   // CHECK: kgen.param.declare width0 = <width>
-  // CHECK-NEXT: kgen.param.declare fn: <index>(!pop.simd<*(0,0), bool>) -> () = <@param_arg>
-  // CHECK-NEXT: kgen.param.declare bound: (!pop.simd<width0, bool>) -> ()
-  // CHECK-SAME: = <bind_params(:<index>(!pop.simd<*(0,0), bool>) -> () fn, width0)>
+  // CHECK-NEXT: kgen.param.declare fn: <index>(!kgen.simd<*(0,0), bool>) -> () = <@param_arg>
+  // CHECK-NEXT: kgen.param.declare bound: (!kgen.simd<width0, bool>) -> ()
+  // CHECK-SAME: = <bind_params(:<index>(!kgen.simd<*(0,0), bool>) -> () fn, width0)>
   kgen.call @callee<width>() : () -> ()
   kgen.return
 }
 
 // CHECK-LABEL: kgen.generator @param_arg
-kgen.generator @param_arg<width>(%arg0: !pop.simd<width, bool>) {
+kgen.generator @param_arg<width>(%arg0: !kgen.simd<width, bool>) {
   kgen.return
 }
 
 // CHECK-LABEL: kgen.generator @callee
 kgen.generator @callee<width>() always_inline {
-  kgen.param.declare fn: <index>(!pop.simd<*(0,0), bool>) -> () = <@param_arg>
-  kgen.param.declare bound: (!pop.simd<width, bool>) -> () =
-    <bind_params(:<index>(!pop.simd<*(0,0), bool>) -> () fn, width)>
+  kgen.param.declare fn: <index>(!kgen.simd<*(0,0), bool>) -> () = <@param_arg>
+  kgen.param.declare bound: (!kgen.simd<width, bool>) -> () =
+    <bind_params(:<index>(!kgen.simd<*(0,0), bool>) -> () fn, width)>
   kgen.return
 }
 

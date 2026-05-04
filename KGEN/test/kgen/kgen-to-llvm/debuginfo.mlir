@@ -69,8 +69,8 @@
   !debuginfo.unresolved<!kgen.none>,
   !debuginfo.unresolved<!typeValuePairTest>,
   !debuginfo.unresolved<!typeValueRecursionTest>,
-  !debuginfo.unresolved<!pop.scalar<index>>,
-  !debuginfo.unresolved<!pop.scalar<uindex>>
+  !debuginfo.unresolved<!kgen.scalar<index>>,
+  !debuginfo.unresolved<!kgen.scalar<uindex>>
 ) -> (): DW_CC_normal>
 
 #subprogram = #debuginfo.subprogram<sourceName = <"foo">> : !test

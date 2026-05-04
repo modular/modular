@@ -98,6 +98,30 @@ void KGENDialect::registerTypes() {
   registerMnemonicType<StructInstanceType>();
   registerMnemonicType<TypeValueType>();
   registerMnemonicType<VariantType>();
+
+  // Register the SIMD type with custom parser/printer that sugars
+  // `!kgen.simd<1, dtype>` to `!kgen.scalar<dtype>`.
+  registerPrettyType(
+      "simd", &SIMDType::parse, mlir::TypeID::get<SIMDType>(),
+      +[](AsmPrinter &p, Type type) {
+        auto simd = cast<SIMDType>(type);
+        if (simd.isScalar()) {
+          p << "scalar<";
+          printDTypeParamValue(p, simd.getDType());
+          p << ">";
+        } else {
+          p << "simd";
+          simd.print(p);
+        }
+      });
+  registerKeywordParser("scalar", [](AsmParser &p) -> Type {
+    TypedAttr resultDType;
+    // Parse literal '<' + dtype + literal '>'
+    if (p.parseLess() || failed(parseDTypeParamValue(p, resultDType)) ||
+        p.parseGreater())
+      return {};
+    return SIMDType::get(1, resultDType);
+  });
 }
 
 //===----------------------------------------------------------------------===//
@@ -2120,12 +2144,232 @@ MLIRDeferredType::getTypeAlign(TargetInfoAttr target) const {
 }
 
 //===----------------------------------------------------------------------===//
+// SIMDType
+//===----------------------------------------------------------------------===//
+
+LogicalResult SIMDType::verify(function_ref<InFlightDiagnostic()> emitError,
+                               TypedAttr size, TypedAttr dtype) {
+  if (!size || !dtype)
+    return emitError() << "simd type requires size and dtype";
+  if (!size.getType().isIndex())
+    return emitError() << "size parameter for simd must have type `index`";
+  if (!llvm::isa<DTypeType>(dtype.getType()))
+    return emitError() << "type parameter for simd must be a !kgen.dtype";
+  return success();
+}
+
+std::optional<KGENDType> SIMDType::getResolvedDType() const {
+  if (auto dtypeAttr = llvm::dyn_cast<DTypeConstantAttr>(getDType()))
+    return dtypeAttr.getDType();
+  return {};
+}
+
+std::optional<int64_t> SIMDType::getResolvedSize() const {
+  if (auto intAttr = llvm::dyn_cast<IntegerAttr>(getSize()))
+    return intAttr.getInt();
+  return {};
+}
+
+SIMDType SIMDType::get(TypedAttr size, TypedAttr dtype) {
+  return get(size.getContext(), size, dtype);
+}
+
+SIMDType SIMDType::getChecked(function_ref<InFlightDiagnostic()> emitError,
+                              TypedAttr size, TypedAttr dtype) {
+  return getChecked(emitError, size.getContext(), size, dtype);
+}
+
+SIMDType SIMDType::get(int64_t size, TypedAttr dtype) {
+  return get(Builder(dtype.getContext()).getIndexAttr(size), dtype);
+}
+
+SIMDType SIMDType::getChecked(function_ref<InFlightDiagnostic()> emitError,
+                              int64_t size, TypedAttr dtype) {
+  return getChecked(emitError, Builder(dtype.getContext()).getIndexAttr(size),
+                    dtype);
+}
+
+SIMDType SIMDType::get(MLIRContext *ctx, int64_t size, KGENDType dtype) {
+  return get(size, DTypeConstantAttr::get(ctx, dtype));
+}
+
+SIMDType SIMDType::getChecked(function_ref<InFlightDiagnostic()> emitError,
+                              MLIRContext *ctx, int64_t size, KGENDType dtype) {
+  return getChecked(emitError, size, DTypeConstantAttr::get(ctx, dtype));
+}
+
+std::optional<int64_t> SIMDType::getTypeSize(TargetInfoAttr target) const {
+  std::optional<KGENDType> dtype = getResolvedDType();
+  std::optional<int64_t> size = getResolvedSize();
+  if (!dtype || !size)
+    return {};
+
+  switch (dtype->getValue()) {
+  case KGENDType::address:
+    return llvm::divideCeil(target.getDataLayout().getPointerBitWidth() * *size,
+                            CHAR_BIT);
+  case KGENDType::index:
+  case KGENDType::uindex:
+    return llvm::divideCeil(target.resolveIndexBitWidth() * *size, CHAR_BIT);
+  default:
+    break;
+  }
+  ssize_t result = dtype->getSizeInBytes(*size);
+  // Return zero size for invalid/nonmaterializable dtypes.
+  if (result == -1)
+    return 0;
+  return result;
+}
+
+std::optional<int64_t> SIMDType::getTypeAlign(TargetInfoAttr target) const {
+  // FIXME: this is inconsistent with the alignment after lowering to LLVM.
+  // e.g., Scalar<Int256> will have 32 byte alignment, but i256 in llvm has 16
+  // bytes alignment, this seems fine as the KGEN alignment is larger, but we
+  // could end up allocating a larger-than-necessary heap memory. Besides, it
+  // also cause value mismatch between `sizeof[T]()` and
+  // `unsafe_pointer[T] + 1 - unsafe_pointer[T]`.
+  if (std::optional<int64_t> size = getTypeSize(target))
+    return std::max((int64_t)llvm::PowerOf2Ceil(*size), (int64_t)1);
+  return {};
+}
+
+ErrorOrSuccess SIMDType::writeTo(TypedAttr value, int64_t addr,
+                                 InterpreterState &state) const {
+  KGENDType dtype = *getResolvedDType();
+  int64_t vecSize = *getTypeSize(state.getTarget());
+  ErrorOr<void *> mem = state.getWritableMemory(addr, vecSize);
+  if (mem.isError())
+    return mem.takeError();
+  auto *data = reinterpret_cast<uint8_t *>(*mem);
+
+  auto sv = dyn_cast_if_present<SIMDAttr>(value);
+  if (!sv) {
+    return Error("SIMD not a writeable type, got " + mlir::debugString(value) +
+                 " instead");
+  }
+
+  ArrayRef<DTypeValue> values = sv.getValues();
+
+  // Integer dtypes s/ui1/2/4 are densely packed. Handle them here.
+  if (dtype.isInt()) {
+    unsigned bitWidth = dtype.getIntegerWidthInBits();
+    if (bitWidth < CHAR_BIT) {
+      assert(CHAR_BIT % bitWidth == 0);
+      for (unsigned i = 0, e = values.size(); i != e;) {
+        APInt value(CHAR_BIT, 0);
+        for (unsigned j = 0; j != CHAR_BIT && i != e; j += bitWidth, ++i)
+          value |= values[i].getIntVal().zext(CHAR_BIT).shl(j);
+        llvm::StoreIntToMemory(value, data++, 1);
+      }
+      return success();
+    }
+  }
+
+  // Other dtypes are multiples of bytes.
+  int64_t byteSize = vecSize / *getResolvedSize();
+  for (const DTypeValue &value : values) {
+    llvm::StoreIntToMemory(value.getData(), data, byteSize);
+    data += byteSize;
+  }
+  return success();
+}
+
+ErrorOr<TypedAttr> SIMDType::readFrom(int64_t addr,
+                                      InterpreterState &state) const {
+  KGENDType dtype = *getResolvedDType();
+  int64_t vecSize = *getTypeSize(state.getTarget());
+  ErrorOr<const void *> mem = state.getReadableMemory(addr, vecSize);
+  if (mem.isError())
+    return mem.takeError();
+  auto *data = reinterpret_cast<const uint8_t *>(*mem);
+  int64_t count = *getResolvedSize();
+
+  // Integer dtypes s/ui1/2/4 are densely packed. Handle them here.
+  if (dtype.isInt()) {
+    unsigned bitWidth = dtype.getIntegerWidthInBits();
+    if (bitWidth < CHAR_BIT) {
+      assert(CHAR_BIT % bitWidth == 0);
+      SmallVector<DTypeValue> values;
+      for (unsigned i = 0; i != count;) {
+        APInt value(CHAR_BIT, 0);
+        llvm::LoadIntFromMemory(value, data++, 1);
+        for (unsigned j = 0; j != CHAR_BIT && i != count; j += bitWidth, ++i)
+          values.emplace_back(value.lshr(j).trunc(bitWidth), dtype);
+      }
+      return SIMDAttr::get(values, *this);
+    }
+  }
+
+  // Other dtypes are multiples of bytes in memory.
+  int64_t bitWidth = dtype.getWidthInBits(state.getTarget());
+  int64_t byteSize = vecSize / *getResolvedSize();
+  int64_t shiftBits = byteSize * CHAR_BIT - bitWidth;
+  // Use consistent internal storage width for pointer-sized types to avoid
+  // bit width mismatches when cross-compiling to targets with different
+  // pointer sizes.
+  int64_t storageBitWidth =
+      (dtype.isIndex() || dtype.isUIndex() || dtype.isAddress())
+          ? IndexType::kInternalStorageBitWidth
+          : bitWidth;
+
+  SmallVector<DTypeValue> values;
+  APInt value(byteSize * CHAR_BIT, 0);
+  for (unsigned i = 0; i != count; ++i) {
+    llvm::LoadIntFromMemory(value, data + i * byteSize, byteSize);
+    if (bitWidth == -1) {
+      // dtype width unknown (e.g. address, index).
+      values.emplace_back(value, dtype);
+    } else {
+      // For FloatTF32, right Shift 32 bit data by 13 bits and trunc to 19 bits;
+      // other types, lshr and trunc are no ops.
+      values.emplace_back(
+          value.lshr(shiftBits).trunc(bitWidth).sextOrTrunc(storageBitWidth),
+          dtype);
+    }
+  }
+  return SIMDAttr::get(values, *this);
+}
+
+//===----------------------------------------------------------------------===//
 // ODS-Generated Definitions
 //===----------------------------------------------------------------------===//
 
 // Pull in the dialect definition.
 #define GET_TYPEDEF_CLASSES
 #include "KGEN/KGENDialect/KGENTypes.cpp.inc"
+
+/// Parse a type registered to this dialect.
+/// For most cases we rely on the default `generatedTypeParser`, but we have a
+/// special handling for "scalar<t>", which is a syntactic sugar for
+/// "simd<1, t>".
+Type KGENDialect::parseType(DialectAsmParser &p) const {
+  StringRef mnemonic;
+  Type genType;
+  mlir::OptionalParseResult parseResult =
+      generatedTypeParser(p, &mnemonic, genType);
+  if (parseResult.has_value())
+    return genType;
+
+  // Check for sugared keyword parsers (e.g. "scalar").
+  if (auto it = typeParseFns.find(mnemonic); it != typeParseFns.end())
+    return it->second(p);
+
+  p.emitError(p.getCurrentLocation())
+      << "unknown type `" << mnemonic << "` in dialect `" << getNamespace()
+      << "`";
+  return {};
+}
+
+/// Print a type registered to this dialect.
+/// For most cases we rely on the default `generatedTypePrinter`, but the
+/// printer for "simd<1, t>" sugars it to "scalar<t>".
+void KGENDialect::printType(Type type, DialectAsmPrinter &p) const {
+  if (auto it = typePrintFns.find(type.getTypeID()); it != typePrintFns.end()) {
+    it->second(p, type);
+    return;
+  }
+  (void)generatedTypePrinter(type, p);
+}
 
 ClosureType ClosureType::get(MLIRContext *context, SymbolRefAttr parentSymbol,
                              StringAttr name,

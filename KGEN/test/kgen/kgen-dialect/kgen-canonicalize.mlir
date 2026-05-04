@@ -27,37 +27,37 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
 
 // CHECK-LABEL: @rebind_folds
 kgen.generator @rebind_folds<dtype: dtype, type: type>(
-  %a: i32, %b: !pop.scalar<f32>, %c: !pop.scalar<dtype>, %d: !kgen.param<type>
+  %a: i32, %b: !kgen.scalar<f32>, %c: !kgen.scalar<dtype>, %d: !kgen.param<type>
 ) -> (
-  i32, !pop.scalar<f32>, !pop.scalar<dtype>, !kgen.param<type>
+  i32, !kgen.scalar<f32>, !kgen.scalar<dtype>, !kgen.param<type>
 ) {
   // CHECK-NOT: kgen.rebind
   %0 = kgen.rebind %a : i32 to i32
-  %1 = kgen.rebind %b : !pop.scalar<f32> to !pop.scalar<f32>
-  %2 = kgen.rebind %c : !pop.scalar<dtype> to !pop.scalar<dtype>
+  %1 = kgen.rebind %b : !kgen.scalar<f32> to !kgen.scalar<f32>
+  %2 = kgen.rebind %c : !kgen.scalar<dtype> to !kgen.scalar<dtype>
   %3 = kgen.rebind %d : !kgen.param<type> to !kgen.param<type>
-  kgen.return %0, %1, %2, %3 : i32, !pop.scalar<f32>, !pop.scalar<dtype>, !kgen.param<type>
+  kgen.return %0, %1, %2, %3 : i32, !kgen.scalar<f32>, !kgen.scalar<dtype>, !kgen.param<type>
 }
 
 // CHECK-LABEL: @rebind_canonicalize
-kgen.generator @rebind_canonicalize<dt1: dtype, dt2: dtype, dt3: dtype>(%arg0: !pop.scalar<dt1>) -> !pop.scalar<si32> {
-  // CHECK-NEXT: %0 = kgen.rebind %arg0 : !pop.scalar<dt1> to !pop.scalar<si32>
-  %0 = kgen.rebind %arg0 : !pop.scalar<dt1> to !pop.scalar<dt2>
-  %1 = kgen.rebind %0 : !pop.scalar<dt2> to !pop.scalar<dt3>
-  %2 = kgen.rebind %1 : !pop.scalar<dt3> to !pop.scalar<si32>
+kgen.generator @rebind_canonicalize<dt1: dtype, dt2: dtype, dt3: dtype>(%arg0: !kgen.scalar<dt1>) -> !kgen.scalar<si32> {
+  // CHECK-NEXT: %0 = kgen.rebind %arg0 : !kgen.scalar<dt1> to !kgen.scalar<si32>
+  %0 = kgen.rebind %arg0 : !kgen.scalar<dt1> to !kgen.scalar<dt2>
+  %1 = kgen.rebind %0 : !kgen.scalar<dt2> to !kgen.scalar<dt3>
+  %2 = kgen.rebind %1 : !kgen.scalar<dt3> to !kgen.scalar<si32>
   // CHECK-NEXT: return %0
-  kgen.return %2 : !pop.scalar<si32>
+  kgen.return %2 : !kgen.scalar<si32>
 }
 
 // CHECK-LABEL: @rebind_across_scopes
-kgen.generator @rebind_across_scopes<dt: dtype>(%arg0: !pop.scalar<dt>) {
+kgen.generator @rebind_across_scopes<dt: dtype>(%arg0: !kgen.scalar<dt>) {
   kgen.param.declare dt1: dtype = <dt>
-  %0 = kgen.rebind %arg0 : !pop.scalar<dt> to !pop.scalar<dt1>
+  %0 = kgen.rebind %arg0 : !kgen.scalar<dt> to !kgen.scalar<dt1>
   // CHECK: param.declare.region
-  kgen.param.declare.region F = <dt2: dtype>() -> !pop.scalar<dt2> {
-    // CHECK: rebind %arg0 : !pop.scalar<dt> to !pop.scalar<dt2>
-    %1 = kgen.rebind %0 : !pop.scalar<dt1> to !pop.scalar<dt2>
-    kgen.return %1 : !pop.scalar<dt2>
+  kgen.param.declare.region F = <dt2: dtype>() -> !kgen.scalar<dt2> {
+    // CHECK: rebind %arg0 : !kgen.scalar<dt> to !kgen.scalar<dt2>
+    %1 = kgen.rebind %0 : !kgen.scalar<dt1> to !kgen.scalar<dt2>
+    kgen.return %1 : !kgen.scalar<dt2>
   }
   kgen.return
 }
@@ -74,15 +74,15 @@ kgen.generator @param_materialize() -> (i32, !kgen.pointer<i32>) {
 }
 
 // CHECK-LABEL: kgen.func @cast_from_folds
-// CHECK-SAME: (%[[ARG0:.*]]: !pop.scalar<f32> loc({{.*}})) -> !pop.scalar<f32> {
-kgen.func @cast_from_folds(%arg0: !pop.scalar<f32>) -> !pop.scalar<f32> {
+// CHECK-SAME: (%[[ARG0:.*]]: !kgen.scalar<f32> loc({{.*}})) -> !kgen.scalar<f32> {
+kgen.func @cast_from_folds(%arg0: !kgen.scalar<f32>) -> !kgen.scalar<f32> {
 
   // A-B-A cast.
-  %1 = pop.cast_to_builtin %arg0 : !pop.scalar<f32> to f32
-  %2 = pop.cast_from_builtin %1 : f32 to !pop.scalar<f32>
+  %1 = pop.cast_to_builtin %arg0 : !kgen.scalar<f32> to f32
+  %2 = pop.cast_from_builtin %1 : f32 to !kgen.scalar<f32>
 
   // CHECK: kgen.return %[[ARG0]]
-  kgen.return %2 : !pop.scalar<f32>
+  kgen.return %2 : !kgen.scalar<f32>
 }
 
 // CHECK-LABEL: kgen.func @cast_to_folds
@@ -90,8 +90,8 @@ kgen.func @cast_from_folds(%arg0: !pop.scalar<f32>) -> !pop.scalar<f32> {
 kgen.func @cast_to_folds(%arg0: f32) -> f32 {
 
   // A-B-A cast.
-  %1 = pop.cast_from_builtin %arg0 : f32 to !pop.scalar<f32>
-  %2 = pop.cast_to_builtin %1 : !pop.scalar<f32> to f32
+  %1 = pop.cast_from_builtin %arg0 : f32 to !kgen.scalar<f32>
+  %2 = pop.cast_to_builtin %1 : !kgen.scalar<f32> to f32
 
   // CHECK: kgen.return %[[ARG0]]
   kgen.return %2 : f32

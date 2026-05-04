@@ -175,18 +175,18 @@ kgen.generator @call_it() {
 }
 
 // CHECK-MAIN-LABEL: kgen.func @"rebind_value,dtype=ui8"
-kgen.generator @rebind_value<dtype: dtype>(%a: !pop.scalar<ui8>) -> !pop.scalar<dtype> {
-  // CHECK-MAIN-NEXT: return %arg0 : !pop.scalar<ui8>
-  %result = kgen.rebind %a : !pop.scalar<ui8> to !pop.scalar<dtype>
-  kgen.return %result : !pop.scalar<dtype>
+kgen.generator @rebind_value<dtype: dtype>(%a: !kgen.scalar<ui8>) -> !kgen.scalar<dtype> {
+  // CHECK-MAIN-NEXT: return %arg0 : !kgen.scalar<ui8>
+  %result = kgen.rebind %a : !kgen.scalar<ui8> to !kgen.scalar<dtype>
+  kgen.return %result : !kgen.scalar<dtype>
 }
 
 // CHECK-LABEL: kgen.func @rebind_it
 kgen.generator @rebind_it() {
   // CHECK-NEXT: constant: scalar<ui8> = <4>
-  kgen.param.declare Fn: (!pop.scalar<ui8>) -> !pop.scalar<ui8> =
-    <bind_params(:<dtype>(!pop.scalar<ui8>) -> !pop.scalar<*(0,0)> @rebind_value, :dtype ui8)>
-  kgen.param.constant: scalar<ui8> = <apply(:(!pop.scalar<ui8>) -> !pop.scalar<ui8> Fn, <4>)>
+  kgen.param.declare Fn: (!kgen.scalar<ui8>) -> !kgen.scalar<ui8> =
+    <bind_params(:<dtype>(!kgen.scalar<ui8>) -> !kgen.scalar<*(0,0)> @rebind_value, :dtype ui8)>
+  kgen.param.constant: scalar<ui8> = <apply(:(!kgen.scalar<ui8>) -> !kgen.scalar<ui8> Fn, <4>)>
   kgen.return
 }
 
@@ -817,50 +817,50 @@ kgen.generator export @top() -> () {
 
 // COM: Check integer bitcasting when sizes do not match.
 
-kgen.generator @check128to64(%arg0: !pop.simd<1, ui128>) -> !pop.simd<2, ui64> {
-  %0 = pop.bitcast %arg0 : !pop.simd<1, ui128> to !pop.simd<2, ui64>
-  kgen.return %0 : !pop.simd<2, ui64>
+kgen.generator @check128to64(%arg0: !kgen.simd<1, ui128>) -> !kgen.simd<2, ui64> {
+  %0 = pop.bitcast %arg0 : !kgen.simd<1, ui128> to !kgen.simd<2, ui64>
+  kgen.return %0 : !kgen.simd<2, ui64>
 }
 
-kgen.generator @check64to128(%arg0: !pop.simd<2, ui64>) -> !pop.simd<1, ui128> {
-  %0 = pop.bitcast %arg0 : !pop.simd<2, ui64> to !pop.simd<1, ui128>
-  kgen.return %0 : !pop.simd<1, ui128>
+kgen.generator @check64to128(%arg0: !kgen.simd<2, ui64>) -> !kgen.simd<1, ui128> {
+  %0 = pop.bitcast %arg0 : !kgen.simd<2, ui64> to !kgen.simd<1, ui128>
+  kgen.return %0 : !kgen.simd<1, ui128>
 }
 
-kgen.generator @callIt() -> !pop.simd<1, ui128> {
+kgen.generator @callIt() -> !kgen.simd<1, ui128> {
   kgen.param.declare X: simd<1, ui128> = <<16622636600618719503991588326398409450>>
-  kgen.param.declare Y: simd<2, ui64> = <apply(:(!pop.simd<1, ui128>) -> !pop.simd<2, ui64> @check128to64, X)>
+  kgen.param.declare Y: simd<2, ui64> = <apply(:(!kgen.simd<1, ui128>) -> !kgen.simd<2, ui64> @check128to64, X)>
   // CHECK: <<4225598797516028650, 901114935741393800>>
-  %0 = kgen.param.constant: !pop.simd<2, ui64> = <Y>
+  %0 = kgen.param.constant: !kgen.simd<2, ui64> = <Y>
   // CHECK: <16622636600618719503991588326398409450>
-  kgen.param.declare Z: simd<1, ui128> = <apply(:(!pop.simd<2, ui64>) -> !pop.simd<1, ui128> @check64to128, Y)>
-  %1 = kgen.param.constant: !pop.simd<1, ui128> = <Z>
-  kgen.return %1 : !pop.simd<1, ui128>
+  kgen.param.declare Z: simd<1, ui128> = <apply(:(!kgen.simd<2, ui64>) -> !kgen.simd<1, ui128> @check64to128, Y)>
+  %1 = kgen.param.constant: !kgen.simd<1, ui128> = <Z>
+  kgen.return %1 : !kgen.simd<1, ui128>
 }
 
 // -----
 
 // COM: Check float bitcasting when sizes do not match.
 
-kgen.generator @check64to32(%arg0: !pop.simd<1, f64>) -> !pop.simd<2, f32> {
-  %0 = pop.bitcast %arg0 : !pop.simd<1, f64> to !pop.simd<2, f32>
-  kgen.return %0 : !pop.simd<2, f32>
+kgen.generator @check64to32(%arg0: !kgen.simd<1, f64>) -> !kgen.simd<2, f32> {
+  %0 = pop.bitcast %arg0 : !kgen.simd<1, f64> to !kgen.simd<2, f32>
+  kgen.return %0 : !kgen.simd<2, f32>
 }
 
-kgen.generator @check32to64(%arg0: !pop.simd<2, f32>) -> !pop.simd<1, f64> {
-  %0 = pop.bitcast %arg0 : !pop.simd<2, f32> to !pop.simd<1, f64>
-  kgen.return %0 : !pop.simd<1, f64>
+kgen.generator @check32to64(%arg0: !kgen.simd<2, f32>) -> !kgen.simd<1, f64> {
+  %0 = pop.bitcast %arg0 : !kgen.simd<2, f32> to !kgen.simd<1, f64>
+  kgen.return %0 : !kgen.simd<1, f64>
 }
 
-kgen.generator @callFloatBitcast() -> !pop.simd<2, f32> {
+kgen.generator @callFloatBitcast() -> !kgen.simd<2, f32> {
   kgen.param.declare X: simd<1, f64> = <<"3.1415926535897931">>
-  kgen.param.declare Y: simd<2, f32> = <apply(:(!pop.simd<1, f64>) -> !pop.simd<2, f32> @check64to32, X)>
+  kgen.param.declare Y: simd<2, f32> = <apply(:(!kgen.simd<1, f64>) -> !kgen.simd<2, f32> @check64to32, X)>
   // CHECK: <<"3.37028055E+12", "2.142699">>
-  %0 = kgen.param.constant: !pop.simd<2, f32> = <Y>
+  %0 = kgen.param.constant: !kgen.simd<2, f32> = <Y>
   // CHECK: <"3.1415926535897931">
-  kgen.param.declare Z: simd<1, f64> = <apply(:(!pop.simd<2, f32>) -> !pop.simd<1, f64> @check32to64, Y)>
-  %1 = kgen.param.constant: !pop.simd<1, f64> = <Z>
-  kgen.return %0 : !pop.simd<2, f32>
+  kgen.param.declare Z: simd<1, f64> = <apply(:(!kgen.simd<2, f32>) -> !kgen.simd<1, f64> @check32to64, Y)>
+  %1 = kgen.param.constant: !kgen.simd<1, f64> = <Z>
+  kgen.return %0 : !kgen.simd<2, f32>
 }
 
 // -----
@@ -869,25 +869,25 @@ kgen.generator @callFloatBitcast() -> !pop.simd<2, f32> {
 
 module attributes {M.target_info = #M.target<triple ="", arch = "", features = "", data_layout = "E-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-n32:64-S128-Fn32", simd_bit_width = 128, index_bit_width = 64>, kgen.env = #kgen.env<{}>} {
 
-kgen.generator @check128to64(%arg0: !pop.simd<1, ui128>) -> !pop.simd<2, ui64> {
-  %0 = pop.bitcast %arg0 : !pop.simd<1, ui128> to !pop.simd<2, ui64>
-  kgen.return %0 : !pop.simd<2, ui64>
+kgen.generator @check128to64(%arg0: !kgen.simd<1, ui128>) -> !kgen.simd<2, ui64> {
+  %0 = pop.bitcast %arg0 : !kgen.simd<1, ui128> to !kgen.simd<2, ui64>
+  kgen.return %0 : !kgen.simd<2, ui64>
 }
 
-kgen.generator @check64to128(%arg0: !pop.simd<2, ui64>) -> !pop.simd<1, ui128> {
-  %0 = pop.bitcast %arg0 : !pop.simd<2, ui64> to !pop.simd<1, ui128>
-  kgen.return %0 : !pop.simd<1, ui128>
+kgen.generator @check64to128(%arg0: !kgen.simd<2, ui64>) -> !kgen.simd<1, ui128> {
+  %0 = pop.bitcast %arg0 : !kgen.simd<2, ui64> to !kgen.simd<1, ui128>
+  kgen.return %0 : !kgen.simd<1, ui128>
 }
 
-kgen.generator @callIt() -> !pop.simd<2, ui64> {
+kgen.generator @callIt() -> !kgen.simd<2, ui64> {
   kgen.param.declare X: simd<1, ui128> = <<16622636600618719503991588326398409450>>
-  kgen.param.declare Y: simd<2, ui64> = <apply(:(!pop.simd<1, ui128>) -> !pop.simd<2, ui64> @check128to64, X)>
+  kgen.param.declare Y: simd<2, ui64> = <apply(:(!kgen.simd<1, ui128>) -> !kgen.simd<2, ui64> @check128to64, X)>
   // CHECK: <<901114935741393800, 4225598797516028650>>
-  %0 = kgen.param.constant: !pop.simd<2, ui64> = <Y>
+  %0 = kgen.param.constant: !kgen.simd<2, ui64> = <Y>
   // CHECK: <16622636600618719503991588326398409450>
-  kgen.param.declare Z: simd<1, ui128> = <apply(:(!pop.simd<2, ui64>) -> !pop.simd<1, ui128> @check64to128, Y)>
-  %1 = kgen.param.constant: !pop.simd<1, ui128> = <Z>
-  kgen.return %0 : !pop.simd<2, ui64>
+  kgen.param.declare Z: simd<1, ui128> = <apply(:(!kgen.simd<2, ui64>) -> !kgen.simd<1, ui128> @check64to128, Y)>
+  %1 = kgen.param.constant: !kgen.simd<1, ui128> = <Z>
+  kgen.return %0 : !kgen.simd<2, ui64>
 }
 }
 
@@ -961,159 +961,159 @@ kgen.generator @constexpr_memcpy() {
 
 // COM: Check abs
 
-kgen.generator @abs_f32(%arg0: !pop.simd<4, f32>) -> !pop.simd<4, f32> {
-  %0 = pop.abs %arg0 : !pop.simd<4, f32>
-  kgen.return %0 : !pop.simd<4, f32>
+kgen.generator @abs_f32(%arg0: !kgen.simd<4, f32>) -> !kgen.simd<4, f32> {
+  %0 = pop.abs %arg0 : !kgen.simd<4, f32>
+  kgen.return %0 : !kgen.simd<4, f32>
 }
 
-kgen.generator @abs_si32(%arg0: !pop.simd<4, si32>) -> !pop.simd<4, si32> {
-  %0 = pop.abs %arg0 : !pop.simd<4, si32>
-  kgen.return %0 : !pop.simd<4, si32>
+kgen.generator @abs_si32(%arg0: !kgen.simd<4, si32>) -> !kgen.simd<4, si32> {
+  %0 = pop.abs %arg0 : !kgen.simd<4, si32>
+  kgen.return %0 : !kgen.simd<4, si32>
 }
 
-kgen.generator @abs_ui32(%arg0: !pop.simd<4, ui32>) -> !pop.simd<4, ui32> {
-  %0 = pop.abs %arg0 : !pop.simd<4, ui32>
-  kgen.return %0 : !pop.simd<4, ui32>
+kgen.generator @abs_ui32(%arg0: !kgen.simd<4, ui32>) -> !kgen.simd<4, ui32> {
+  %0 = pop.abs %arg0 : !kgen.simd<4, ui32>
+  kgen.return %0 : !kgen.simd<4, ui32>
 }
 
-kgen.generator @abs_bool(%arg0: !pop.simd<2, bool>) -> !pop.simd<2, bool> {
-  %0 = pop.abs %arg0 : !pop.simd<2, bool>
-  kgen.return %0 : !pop.simd<2, bool>
+kgen.generator @abs_bool(%arg0: !kgen.simd<2, bool>) -> !kgen.simd<2, bool> {
+  %0 = pop.abs %arg0 : !kgen.simd<2, bool>
+  kgen.return %0 : !kgen.simd<2, bool>
 }
 
-kgen.generator @abs_index(%arg0: !pop.simd<4, index>) -> !pop.simd<4, index> {
-  %0 = pop.abs %arg0 : !pop.simd<4, index>
-  kgen.return %0 : !pop.simd<4, index>
+kgen.generator @abs_index(%arg0: !kgen.simd<4, index>) -> !kgen.simd<4, index> {
+  %0 = pop.abs %arg0 : !kgen.simd<4, index>
+  kgen.return %0 : !kgen.simd<4, index>
 }
 
-kgen.generator @callAbs() -> !pop.simd<4, f32> {
+kgen.generator @callAbs() -> !kgen.simd<4, f32> {
   kgen.param.declare F0: simd<4, f32> = <<"7.0", "-7.0", "-NaN", "-inf">>
-  kgen.param.declare F1: simd<4, f32> = <apply(:(!pop.simd<4, f32>) -> !pop.simd<4, f32> @abs_f32, F0)>
+  kgen.param.declare F1: simd<4, f32> = <apply(:(!kgen.simd<4, f32>) -> !kgen.simd<4, f32> @abs_f32, F0)>
   // CHECK: <<"7", "7", "NaN", "+Inf">>
-  %0 = kgen.param.constant: !pop.simd<4, f32> = <F1>
+  %0 = kgen.param.constant: !kgen.simd<4, f32> = <F1>
 
   // COM: abs(INT_MIN) -> INT_MIN
   kgen.param.declare S0: simd<4, si32> = <<7, 7, 0, -2147483648>>
-  kgen.param.declare S1: simd<4, si32> = <apply(:(!pop.simd<4, si32>) -> !pop.simd<4, si32> @abs_si32, S0)>
+  kgen.param.declare S1: simd<4, si32> = <apply(:(!kgen.simd<4, si32>) -> !kgen.simd<4, si32> @abs_si32, S0)>
   // CHECK: <<7, 7, 0, -2147483648>>
-  %1 = kgen.param.constant: !pop.simd<4, si32> = <S1>
+  %1 = kgen.param.constant: !kgen.simd<4, si32> = <S1>
 
   kgen.param.declare U0: simd<4, ui32> = <<7, 7, 0, 1>>
-  kgen.param.declare U1: simd<4, ui32> = <apply(:(!pop.simd<4, ui32>) -> !pop.simd<4, ui32> @abs_ui32, U0)>
+  kgen.param.declare U1: simd<4, ui32> = <apply(:(!kgen.simd<4, ui32>) -> !kgen.simd<4, ui32> @abs_ui32, U0)>
   // CHECK: <<7, 7, 0, 1>>
-  %2 = kgen.param.constant: !pop.simd<4, ui32> = <U1>
+  %2 = kgen.param.constant: !kgen.simd<4, ui32> = <U1>
 
   kgen.param.declare B0: simd<2, bool> = <<true, false>>
-  kgen.param.declare B1: simd<2, bool> = <apply(:(!pop.simd<2, bool>) -> !pop.simd<2, bool> @abs_bool, B0)>
+  kgen.param.declare B1: simd<2, bool> = <apply(:(!kgen.simd<2, bool>) -> !kgen.simd<2, bool> @abs_bool, B0)>
   // CHECK: <<true, false>>
-  %3 = kgen.param.constant: !pop.simd<2, bool> = <B1>
+  %3 = kgen.param.constant: !kgen.simd<2, bool> = <B1>
 
   kgen.param.declare I0: simd<4, index> = <<-1, -8, 9223090564025548800, -9223372036854775808>>
-  kgen.param.declare I1: simd<4, index> = <apply(:(!pop.simd<4, index>) -> !pop.simd<4, index> @abs_index, I0)>
+  kgen.param.declare I1: simd<4, index> = <apply(:(!kgen.simd<4, index>) -> !kgen.simd<4, index> @abs_index, I0)>
   // COM: Even if we don't know the target index width, we can take the
   // absolute value of something like -1 at it returns the same thing no
   // matter whether it's 32 or 64-bit.
   // CHECK: <<1, 8, 9223090564025548800, -9223372036854775808>>
-  %4 = kgen.param.constant: !pop.simd<4, index> = <I1>
+  %4 = kgen.param.constant: !kgen.simd<4, index> = <I1>
 
-  kgen.return %0 : !pop.simd<4, f32>
+  kgen.return %0 : !kgen.simd<4, f32>
 }
 
 // -----
 
 // COM: Check round
 
-kgen.generator @round_f32(%arg0: !pop.simd<8, f32>) -> !pop.simd<8, f32> {
-  %0 = pop.round %arg0 : !pop.simd<8, f32>
-  kgen.return %0 : !pop.simd<8, f32>
+kgen.generator @round_f32(%arg0: !kgen.simd<8, f32>) -> !kgen.simd<8, f32> {
+  %0 = pop.round %arg0 : !kgen.simd<8, f32>
+  kgen.return %0 : !kgen.simd<8, f32>
 }
 
-kgen.generator @round_si32(%arg0: !pop.simd<4, si32>) -> !pop.simd<4, si32> {
-  %0 = pop.round %arg0 : !pop.simd<4, si32>
-  kgen.return %0 : !pop.simd<4, si32>
+kgen.generator @round_si32(%arg0: !kgen.simd<4, si32>) -> !kgen.simd<4, si32> {
+  %0 = pop.round %arg0 : !kgen.simd<4, si32>
+  kgen.return %0 : !kgen.simd<4, si32>
 }
 
-kgen.generator @round_ui32(%arg0: !pop.simd<4, ui32>) -> !pop.simd<4, ui32> {
-  %0 = pop.round %arg0 : !pop.simd<4, ui32>
-  kgen.return %0 : !pop.simd<4, ui32>
+kgen.generator @round_ui32(%arg0: !kgen.simd<4, ui32>) -> !kgen.simd<4, ui32> {
+  %0 = pop.round %arg0 : !kgen.simd<4, ui32>
+  kgen.return %0 : !kgen.simd<4, ui32>
 }
 
-kgen.generator @round_bool(%arg0: !pop.simd<2, bool>) -> !pop.simd<2, bool> {
-  %0 = pop.round %arg0 : !pop.simd<2, bool>
-  kgen.return %0 : !pop.simd<2, bool>
+kgen.generator @round_bool(%arg0: !kgen.simd<2, bool>) -> !kgen.simd<2, bool> {
+  %0 = pop.round %arg0 : !kgen.simd<2, bool>
+  kgen.return %0 : !kgen.simd<2, bool>
 }
 
-kgen.generator @round_index(%arg0: !pop.simd<4, index>) -> !pop.simd<4, index> {
-  %0 = pop.round %arg0 : !pop.simd<4, index>
-  kgen.return %0 : !pop.simd<4, index>
+kgen.generator @round_index(%arg0: !kgen.simd<4, index>) -> !kgen.simd<4, index> {
+  %0 = pop.round %arg0 : !kgen.simd<4, index>
+  kgen.return %0 : !kgen.simd<4, index>
 }
 
-kgen.generator @callRound() -> !pop.simd<8, f32> {
+kgen.generator @callRound() -> !kgen.simd<8, f32> {
   kgen.param.declare F0: simd<8, f32> = <<"7.0", "-7.0", "1.5", "1.1", "1.7", "-1.2", "-1.7", "-inf">>
-  kgen.param.declare F1: simd<8, f32> = <apply(:(!pop.simd<8, f32>) -> !pop.simd<8, f32> @round_f32, F0)>
+  kgen.param.declare F1: simd<8, f32> = <apply(:(!kgen.simd<8, f32>) -> !kgen.simd<8, f32> @round_f32, F0)>
   // CHECK: <<"7", "-7", "2", "1", "2", "-1", "-2", "-Inf">>
-  %0 = kgen.param.constant: !pop.simd<8, f32> = <F1>
+  %0 = kgen.param.constant: !kgen.simd<8, f32> = <F1>
 
   kgen.param.declare S0: simd<4, si32> = <<7, 7, 0, -2147483648>>
-  kgen.param.declare S1: simd<4, si32> = <apply(:(!pop.simd<4, si32>) -> !pop.simd<4, si32> @round_si32, S0)>
+  kgen.param.declare S1: simd<4, si32> = <apply(:(!kgen.simd<4, si32>) -> !kgen.simd<4, si32> @round_si32, S0)>
   // CHECK: <<7, 7, 0, -2147483648>>
-  %1 = kgen.param.constant: !pop.simd<4, si32> = <S1>
+  %1 = kgen.param.constant: !kgen.simd<4, si32> = <S1>
 
   kgen.param.declare U0: simd<4, ui32> = <<7, 7, 0, 1>>
-  kgen.param.declare U1: simd<4, ui32> = <apply(:(!pop.simd<4, ui32>) -> !pop.simd<4, ui32> @round_ui32, U0)>
+  kgen.param.declare U1: simd<4, ui32> = <apply(:(!kgen.simd<4, ui32>) -> !kgen.simd<4, ui32> @round_ui32, U0)>
   // CHECK: <<7, 7, 0, 1>>
-  %2 = kgen.param.constant: !pop.simd<4, ui32> = <U1>
+  %2 = kgen.param.constant: !kgen.simd<4, ui32> = <U1>
 
   kgen.param.declare B0: simd<2, bool> = <<true, false>>
-  kgen.param.declare B1: simd<2, bool> = <apply(:(!pop.simd<2, bool>) -> !pop.simd<2, bool> @round_bool, B0)>
+  kgen.param.declare B1: simd<2, bool> = <apply(:(!kgen.simd<2, bool>) -> !kgen.simd<2, bool> @round_bool, B0)>
   // CHECK: <<true, false>>
-  %3 = kgen.param.constant: !pop.simd<2, bool> = <B1>
+  %3 = kgen.param.constant: !kgen.simd<2, bool> = <B1>
 
   kgen.param.declare I0: simd<4, index> = <<-1, -8, 9223090564025548800, -9223372036854775808>>
-  kgen.param.declare I1: simd<4, index> = <apply(:(!pop.simd<4, index>) -> !pop.simd<4, index> @round_index, I0)>
+  kgen.param.declare I1: simd<4, index> = <apply(:(!kgen.simd<4, index>) -> !kgen.simd<4, index> @round_index, I0)>
   // CHECK: <<-1, -8, 9223090564025548800, -9223372036854775808>>
-  %4 = kgen.param.constant: !pop.simd<4, index> = <I1>
+  %4 = kgen.param.constant: !kgen.simd<4, index> = <I1>
 
-  kgen.return %0 : !pop.simd<8, f32>
+  kgen.return %0 : !kgen.simd<8, f32>
 }
 
 // COM: Check floordiv
 
-kgen.generator @floordiv_f32(%arg0: !pop.simd<2, f32>, %arg1: !pop.simd<2, f32>) -> !pop.simd<2, f32> {
-  %0 = pop.floordiv %arg0, %arg1 : !pop.simd<2, f32>
-  kgen.return %0 : !pop.simd<2, f32>
+kgen.generator @floordiv_f32(%arg0: !kgen.simd<2, f32>, %arg1: !kgen.simd<2, f32>) -> !kgen.simd<2, f32> {
+  %0 = pop.floordiv %arg0, %arg1 : !kgen.simd<2, f32>
+  kgen.return %0 : !kgen.simd<2, f32>
 }
 
-kgen.generator @floordiv_si32(%arg0: !pop.simd<2, si32>, %arg1: !pop.simd<2, si32>) -> !pop.simd<2, si32> {
-  %0 = pop.floordiv %arg0, %arg1 : !pop.simd<2, si32>
-  kgen.return %0 : !pop.simd<2, si32>
+kgen.generator @floordiv_si32(%arg0: !kgen.simd<2, si32>, %arg1: !kgen.simd<2, si32>) -> !kgen.simd<2, si32> {
+  %0 = pop.floordiv %arg0, %arg1 : !kgen.simd<2, si32>
+  kgen.return %0 : !kgen.simd<2, si32>
 }
 
-kgen.generator @floordiv_ui32(%arg0: !pop.simd<2, ui32>, %arg1: !pop.simd<2, ui32>) -> !pop.simd<2, ui32> {
-  %0 = pop.floordiv %arg0, %arg1 : !pop.simd<2, ui32>
-  kgen.return %0 : !pop.simd<2, ui32>
+kgen.generator @floordiv_ui32(%arg0: !kgen.simd<2, ui32>, %arg1: !kgen.simd<2, ui32>) -> !kgen.simd<2, ui32> {
+  %0 = pop.floordiv %arg0, %arg1 : !kgen.simd<2, ui32>
+  kgen.return %0 : !kgen.simd<2, ui32>
 }
 
-kgen.generator @callFloordiv() -> !pop.simd<2, f32> {
+kgen.generator @callFloordiv() -> !kgen.simd<2, f32> {
   kgen.param.declare F0: simd<2, f32> = <<"7.0", "7.0">>
   kgen.param.declare F1: simd<2, f32> = <<"3.0", "-3.0">>
-  kgen.param.declare F2: simd<2, f32> = <apply(:(!pop.simd<2, f32>, !pop.simd<2, f32>) -> !pop.simd<2, f32> @floordiv_f32, F0, F1)>
+  kgen.param.declare F2: simd<2, f32> = <apply(:(!kgen.simd<2, f32>, !kgen.simd<2, f32>) -> !kgen.simd<2, f32> @floordiv_f32, F0, F1)>
   // CHECK: <<"2", "-3">>
-  %0 = kgen.param.constant: !pop.simd<2, f32> = <F2>
+  %0 = kgen.param.constant: !kgen.simd<2, f32> = <F2>
 
   kgen.param.declare S0: simd<2, si32> = <<7, 7>>
   kgen.param.declare S1: simd<2, si32> = <<3, -3>>
-  kgen.param.declare S2: simd<2, si32> = <apply(:(!pop.simd<2, si32>, !pop.simd<2, si32>) -> !pop.simd<2, si32> @floordiv_si32, S0, S1)>
+  kgen.param.declare S2: simd<2, si32> = <apply(:(!kgen.simd<2, si32>, !kgen.simd<2, si32>) -> !kgen.simd<2, si32> @floordiv_si32, S0, S1)>
   // CHECK: <<2, -3>>
-  %1 = kgen.param.constant: !pop.simd<2, si32> = <S2>
+  %1 = kgen.param.constant: !kgen.simd<2, si32> = <S2>
 
   kgen.param.declare U0: simd<2, ui32> = <<7, 7>>
   kgen.param.declare U1: simd<2, ui32> = <<3, 7>>
-  kgen.param.declare U2: simd<2, ui32> = <apply(:(!pop.simd<2, ui32>, !pop.simd<2, ui32>) -> !pop.simd<2, ui32> @floordiv_ui32, U0, U1)>
+  kgen.param.declare U2: simd<2, ui32> = <apply(:(!kgen.simd<2, ui32>, !kgen.simd<2, ui32>) -> !kgen.simd<2, ui32> @floordiv_ui32, U0, U1)>
   // CHECK: <<2, 1>>
-  %2 = kgen.param.constant: !pop.simd<2, ui32> = <U2>
+  %2 = kgen.param.constant: !kgen.simd<2, ui32> = <U2>
 
-  kgen.return %0 : !pop.simd<2, f32>
+  kgen.return %0 : !kgen.simd<2, f32>
 }
 
 // -----

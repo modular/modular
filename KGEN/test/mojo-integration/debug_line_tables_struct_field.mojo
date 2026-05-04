@@ -11,7 +11,7 @@
 # Scalar[_c_long_long_dtype()]`. When a function returns a concrete
 # UnsafePointer to a struct that (transitively) has a c_long_long field,
 # the debug info for that function's return type embeds the un-concretized
-# type !pop.scalar<*apply(@_c_long_long_dtype)>. If the returned pointer is
+# type !kgen.scalar<*apply(@_c_long_long_dtype)>. If the returned pointer is
 # assigned to a local variable whose contents are never accessed, the only
 # reference to @_c_long_long_dtype is in that debug info. LiftAndFoldApply
 # then lifts the apply from the location into a kgen.param.apply op, and the

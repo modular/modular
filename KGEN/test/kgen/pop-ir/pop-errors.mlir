@@ -2,71 +2,71 @@
 
 kgen.func @pop_select_simd(
     // expected-note @below {{prior use here}}
-    %arg0: !pop.scalar<bool>,
-    %arg1: !pop.simd<4, si32>,
-    %arg2: !pop.simd<4, si32>
-  ) -> !pop.simd<4, si32> {
-  // expected-error @below {{use of value '%arg0' expects different type than prior uses: '!pop.simd<4, bool>' vs '!pop.scalar<bool>'}}
-  %0 = pop.simd.select %arg0, %arg1, %arg2 : !pop.simd<4, si32>
-  kgen.return %0 : !pop.simd<4, si32>
+    %arg0: !kgen.scalar<bool>,
+    %arg1: !kgen.simd<4, si32>,
+    %arg2: !kgen.simd<4, si32>
+  ) -> !kgen.simd<4, si32> {
+  // expected-error @below {{use of value '%arg0' expects different type than prior uses: '!kgen.simd<4, bool>' vs '!kgen.scalar<bool>'}}
+  %0 = pop.simd.select %arg0, %arg1, %arg2 : !kgen.simd<4, si32>
+  kgen.return %0 : !kgen.simd<4, si32>
 }
 
 // -----
 
 kgen.func @pop_select_simd(
     // expected-note @below {{prior use here}}
-    %arg0: !pop.simd<8, bool>,
-    %arg1: !pop.simd<4, si32>,
-    %arg2: !pop.simd<4, si32>
-  ) -> !pop.simd<4, si32> {
-  // expected-error @below {{use of value '%arg0' expects different type than prior uses: '!pop.simd<4, bool>' vs '!pop.simd<8, bool>'}}
-  %0 = pop.simd.select %arg0, %arg1, %arg2 : !pop.simd<4, si32>
-  kgen.return %0 : !pop.simd<4, si32>
+    %arg0: !kgen.simd<8, bool>,
+    %arg1: !kgen.simd<4, si32>,
+    %arg2: !kgen.simd<4, si32>
+  ) -> !kgen.simd<4, si32> {
+  // expected-error @below {{use of value '%arg0' expects different type than prior uses: '!kgen.simd<4, bool>' vs '!kgen.simd<8, bool>'}}
+  %0 = pop.simd.select %arg0, %arg1, %arg2 : !kgen.simd<4, si32>
+  kgen.return %0 : !kgen.simd<4, si32>
 }
 
 // -----
 
-kgen.generator @bitcast_scalar(%a: !pop.scalar<f32>) {
-  // expected-error @below {{'pop.bitcast' op input type '!pop.scalar<f32>' and result type '!pop.scalar<si8>' are cast incompatible}}
-  %0 = pop.bitcast %a : !pop.scalar<f32> to !pop.scalar<si8>
+kgen.generator @bitcast_scalar(%a: !kgen.scalar<f32>) {
+  // expected-error @below {{'pop.bitcast' op input type '!kgen.scalar<f32>' and result type '!kgen.scalar<si8>' are cast incompatible}}
+  %0 = pop.bitcast %a : !kgen.scalar<f32> to !kgen.scalar<si8>
   kgen.return
 }
 
 // -----
 
-kgen.generator @bitcast_simd(%a: !pop.simd<4, f32>) {
-  // expected-error @below {{'pop.bitcast' op input type '!pop.simd<4, f32>' and result type '!pop.simd<8, f32>' are cast incompatible}}
-  %0 = pop.bitcast %a : !pop.simd<4, f32> to !pop.simd<8, f32>
+kgen.generator @bitcast_simd(%a: !kgen.simd<4, f32>) {
+  // expected-error @below {{'pop.bitcast' op input type '!kgen.simd<4, f32>' and result type '!kgen.simd<8, f32>' are cast incompatible}}
+  %0 = pop.bitcast %a : !kgen.simd<4, f32> to !kgen.simd<8, f32>
   kgen.return
 }
 
 // -----
 
-kgen.generator @bitcast_simd(%a: !pop.simd<4, f32>) {
-  // expected-error @below {{'pop.bitcast' op input type '!pop.simd<4, f32>' and result type '!pop.simd<4, f64>' are cast incompatible}}
-  %0 = pop.bitcast %a : !pop.simd<4, f32> to !pop.simd<4, f64>
+kgen.generator @bitcast_simd(%a: !kgen.simd<4, f32>) {
+  // expected-error @below {{'pop.bitcast' op input type '!kgen.simd<4, f32>' and result type '!kgen.simd<4, f64>' are cast incompatible}}
+  %0 = pop.bitcast %a : !kgen.simd<4, f32> to !kgen.simd<4, f64>
   kgen.return
 }
 
 // -----
 
-kgen.generator @cast_simd_size<type: dtype>(%a: !pop.simd<2, type>) {
+kgen.generator @cast_simd_size<type: dtype>(%a: !kgen.simd<2, type>) {
   // expected-error @below {{are cast incompatible}}
-  %0 = pop.cast %a : !pop.simd<2, type> to !pop.simd<4, type>
+  %0 = pop.cast %a : !kgen.simd<2, type> to !kgen.simd<4, type>
   kgen.return
 }
 
 // -----
 
-kgen.generator @cast_simd_size<size, type: dtype>(%a: !pop.simd<size, type>) {
+kgen.generator @cast_simd_size<size, type: dtype>(%a: !kgen.simd<size, type>) {
   // expected-error @below {{are cast incompatible}}
-  %0 = pop.cast %a : !pop.simd<size, type> to !pop.simd<add(size, 1), type>
+  %0 = pop.cast %a : !kgen.simd<size, type> to !kgen.simd<add(size, 1), type>
   kgen.return
 }
 
 // -----
 
-kgen.generator @simd_shuffle(%a: !pop.simd<2, f32>) {
+kgen.generator @simd_shuffle(%a: !kgen.simd<2, f32>) {
   // expected-error @below {{expected result dtype to match operand dtypes}}
   %0 = pop.simd.shuffle <2, f32> %a, %a -> <1, f64> :array<1, index> [1]
   kgen.return
@@ -74,7 +74,7 @@ kgen.generator @simd_shuffle(%a: !pop.simd<2, f32>) {
 
 // -----
 
-kgen.generator @simd_shuffle<type: dtype>(%a: !pop.simd<2, f32>) {
+kgen.generator @simd_shuffle<type: dtype>(%a: !kgen.simd<2, f32>) {
   // expected-error @below {{expected result dtype to match operand dtypes}}
   %0 = pop.simd.shuffle <2, f32> %a, %a -> <1, type> :array<1, index> [1]
   kgen.return
@@ -82,7 +82,7 @@ kgen.generator @simd_shuffle<type: dtype>(%a: !pop.simd<2, f32>) {
 
 // -----
 
-kgen.generator @simd_shuffle<size>(%a: !pop.simd<2, f32>) {
+kgen.generator @simd_shuffle<size>(%a: !kgen.simd<2, f32>) {
   // expected-error @below {{mask element 4 is out of bounds}}
   %0 = pop.simd.shuffle <2, f32> %a, %a -> <1, f32> :array<1, index> [4]
   kgen.return
@@ -92,7 +92,7 @@ kgen.generator @simd_shuffle<size>(%a: !pop.simd<2, f32>) {
 
 kgen.func @cast_from_builtin_type(%arg0: si32) {
   // expected-error @below {{cannot convert to scalar dtype ui32 from 'si32'}}
-  %0 = pop.cast_from_builtin %arg0 : si32 to !pop.scalar<ui32>
+  %0 = pop.cast_from_builtin %arg0 : si32 to !kgen.scalar<ui32>
   kgen.return
 }
 
@@ -100,46 +100,46 @@ kgen.func @cast_from_builtin_type(%arg0: si32) {
 
 kgen.func @cast_from_simd_to_vector(%arg0: vector<4xsi32>) {
   // expected-error @below {{'pop.cast_from_builtin' op cannot convert to SIMD dtype f32 from vector element 'si32'}}
-  %0 = pop.cast_from_builtin %arg0 : vector<4xsi32> to !pop.simd<4, f32>
+  %0 = pop.cast_from_builtin %arg0 : vector<4xsi32> to !kgen.simd<4, f32>
   kgen.return
 }
 
 // -----
 
-kgen.func @cast_simd_to_vector(%arg0: !pop.simd<4, f32>) {
+kgen.func @cast_simd_to_vector(%arg0: !kgen.simd<4, f32>) {
   // expected-error @below {{expected a rank 1 non-scalable vector}}
-  %0 = pop.cast_to_builtin %arg0 : !pop.simd<4, f32> to f32
+  %0 = pop.cast_to_builtin %arg0 : !kgen.simd<4, f32> to f32
   kgen.return
 }
 
 // -----
 
-kgen.func @cast_simd_to_vector_elt_type(%arg0: !pop.simd<4, f32>) {
+kgen.func @cast_simd_to_vector_elt_type(%arg0: !kgen.simd<4, f32>) {
   // expected-error @below {{'pop.cast_to_builtin' op cannot convert from SIMD dtype f32 to vector element 'si32'}}
-  %0 = pop.cast_to_builtin %arg0 : !pop.simd<4, f32> to vector<4xsi32>
+  %0 = pop.cast_to_builtin %arg0 : !kgen.simd<4, f32> to vector<4xsi32>
   kgen.return
 }
 
 // -----
 
-kgen.generator @cast_simd_to_vector<size>(%arg0: !pop.simd<size, f32>) {
-  // expected-error @below {{cannot convert   %0 = pop.cast_to_builtin %arg0 : !pop.simd<size, f32> to vector<4xi32>
+kgen.generator @cast_simd_to_vector<size>(%arg0: !kgen.simd<size, f32>) {
+  // expected-error @below {{cannot convert   %0 = pop.cast_to_builtin %arg0 : !kgen.simd<size, f32> to vector<4xi32>
   kgen.return
 }
 
 // -----
 
-kgen.func @cast_simd_to_vector(%arg0: !pop.simd<4, f32>) {
+kgen.func @cast_simd_to_vector(%arg0: !kgen.simd<4, f32>) {
   // expected-error @below {{expected vector<4xT>}}
-  %0 = pop.cast_to_builtin %arg0 : !pop.simd<4, f32> to vector<8xf32>
+  %0 = pop.cast_to_builtin %arg0 : !kgen.simd<4, f32> to vector<8xf32>
   kgen.return
 }
 
 // -----
 
-kgen.func @simd_splat(%arg0: !pop.scalar<f32>) {
+kgen.func @simd_splat(%arg0: !kgen.scalar<f32>) {
   // expected-error @below {{'pop.simd.splat' op requires a non-negative size}}
-  %0 = pop.simd.splat %arg0 : !pop.simd<-1, f32>
+  %0 = pop.simd.splat %arg0 : !kgen.simd<-1, f32>
   kgen.return
 }
 
@@ -217,7 +217,7 @@ kgen.func @load_non_atomic_syncscope(%p: !kgen.pointer<scalar<f32>>) {
 
 // -----
 
-kgen.func @store_atomic_invalid_ordering(%p: !kgen.pointer<scalar<f32>>, %v: !pop.scalar<f32>) {
+kgen.func @store_atomic_invalid_ordering(%p: !kgen.pointer<scalar<f32>>, %v: !kgen.scalar<f32>) {
   // expected-error @below {{invalid atomic ordering 'acquire' for store operation}}
   pop.store atomic acquire %v, %p : !kgen.pointer<scalar<f32>>
   kgen.return
@@ -225,7 +225,7 @@ kgen.func @store_atomic_invalid_ordering(%p: !kgen.pointer<scalar<f32>>, %v: !po
 
 // -----
 
-kgen.func @store_volatile_atomic(%p: !kgen.pointer<scalar<f32>>, %v: !pop.scalar<f32>) {
+kgen.func @store_volatile_atomic(%p: !kgen.pointer<scalar<f32>>, %v: !kgen.scalar<f32>) {
   // expected-error @below {{volatile stores cannot be atomic}}
   pop.store volatile<1> atomic release %v, %p : !kgen.pointer<scalar<f32>>
   kgen.return
@@ -233,7 +233,7 @@ kgen.func @store_volatile_atomic(%p: !kgen.pointer<scalar<f32>>, %v: !pop.scalar
 
 // -----
 
-kgen.func @store_non_atomic_syncscope(%p: !kgen.pointer<scalar<f32>>, %v: !pop.scalar<f32>) {
+kgen.func @store_non_atomic_syncscope(%p: !kgen.pointer<scalar<f32>>, %v: !kgen.scalar<f32>) {
   // expected-error @below {{cannot specify syncscope without an atomic store}}
   pop.store atomic syncscope("singlethread") not_atomic %v, %p : !kgen.pointer<scalar<f32>>
   kgen.return
@@ -340,7 +340,7 @@ kgen.func @invalid_simd_reduce_and(%arg0: i32) {
 
 kgen.func @invalid_memcpy(%dst: !kgen.pointer<scalar<f32>, 3>, %src: !kgen.pointer<scalar<i32>>) {
   %0 = kgen.param.constant: index = <4>
-  // expected-error @below {{'pop.memcpy' op source and destination must have same element type, got '!pop.scalar<i32>' and '!pop.scalar<f32>'}}
+  // expected-error @below {{'pop.memcpy' op source and destination must have same element type, got '!kgen.scalar<i32>' and '!kgen.scalar<f32>'}}
   pop.memcpy %dst, %src, %0 : !kgen.pointer<scalar<i32>> -> !kgen.pointer<scalar<f32>, 3>
   kgen.return
 }
@@ -349,6 +349,6 @@ kgen.func @invalid_memcpy(%dst: !kgen.pointer<scalar<f32>, 3>, %src: !kgen.point
 
 kgen.generator @global_alloc_initializer_count_not_1() {
   // expected-error @below {{'pop.global_alloc' op with an initializer requires count to be 1, but got 4}}
-  %0 = pop.global_alloc "bad" 4 x !pop.scalar<si32> = <42>
+  %0 = pop.global_alloc "bad" 4 x !kgen.scalar<si32> = <42>
   kgen.return
 }

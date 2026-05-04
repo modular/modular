@@ -5,7 +5,7 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
   // expected-note @below {{try running it before lower-control-flow}}
   kgen.func @stack_allocation(%cond: i1) {
     hlcf.if %cond {
-      %0 = pop.stack_allocation 4 x !pop.simd<4, f32>
+      %0 = pop.stack_allocation 4 x !kgen.simd<4, f32>
       hlcf.yield
     } else {
       hlcf.yield

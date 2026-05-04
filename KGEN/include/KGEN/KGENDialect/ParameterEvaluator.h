@@ -51,7 +51,7 @@ void collectParameterReferences(Type type,
                                 size_t &requiredSignatureDepth);
 
 /// Return true if the specified type contains parameter references, e.g.
-/// `!pop.scalar<dt>` returns true, but `!pop.scalar<f32>` returns false.
+/// `!kgen.scalar<dt>` returns true, but `!kgen.scalar<f32>` returns false.
 bool isParameterizedType(Type type);
 
 class ParameterEvaluationContext;

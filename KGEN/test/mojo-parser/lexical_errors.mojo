@@ -24,10 +24,10 @@ def issue_6291(
     return val
 
 def testIndentation6291[index: __mlir_type.index](
-    ptr: __mlir_type.`!kgen.pointer<!pop.scalar<index>>`):
+    ptr: __mlir_type.`!kgen.pointer<!kgen.scalar<index>>`):
   var result = __mlir_op.`pop.load`[
             alignment=__mlir_attr.`1: index`,
-            _type=__mlir_type.`!pop.scalar<index>`
+            _type=__mlir_type.`!kgen.scalar<index>`
 ](ptr)
 
 # This file contains parsing related bugs.

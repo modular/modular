@@ -58,7 +58,7 @@ static Attribute arrayAttrToDenseArrayAttr(Builder builder,
       llvm::map_to_vector(array.getValues(), [](Attribute attr) -> T {
         if (auto integerAttr = ::dyn_cast<IntegerAttr>(attr))
           return static_cast<T>(integerAttr.getInt());
-        return static_cast<T>(::cast<POP::SIMDAttr>(attr)
+        return static_cast<T>(::cast<KGEN::SIMDAttr>(attr)
                                   .getValues()
                                   .front()
                                   .getIntVal()
@@ -77,7 +77,7 @@ static Attribute arrayAttrToDenseArrayAttr(Builder builder,
 static ErrorOrSuccess addArrayAttrToDict(Builder builder, NamedAttrList &attrs,
                                          StringRef name, POP::ArrayAttr array,
                                          Type elementType) {
-  if (auto type = dyn_cast<POP::SIMDType>(elementType)) {
+  if (auto type = dyn_cast<SIMDType>(elementType)) {
     if (type.getResolvedSize().value_or(-1) != 1)
       return Error("ArrayAttr elements must be a scalar");
 
@@ -124,7 +124,7 @@ getWorkGroupSizeRangeHelper(AttrT attr) {
         llvm::map_to_vector(attr.getValues(), [](Attribute attr) -> int64_t {
           if (auto integerAttr = ::dyn_cast<IntegerAttr>(attr))
             return static_cast<int64_t>(integerAttr.getInt());
-          return static_cast<int64_t>(::cast<POP::SIMDAttr>(attr)
+          return static_cast<int64_t>(::cast<KGEN::SIMDAttr>(attr)
                                           .getValues()
                                           .front()
                                           .getIntVal()

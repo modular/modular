@@ -822,7 +822,7 @@ static bool scanForOrigins(TypeOrAttr typeOrAttr,
 
   if (!handled) {
     // Recursively check for any nested types, e.g. the input/outputs of a
-    // function type, types like !pop.scalar<ty> etc.
+    // function type, types like !kgen.scalar<ty> etc.
     typeOrAttr.walkImmediateSubElements(
         [&](Attribute attr) {
           hasOrigin |= scanForOrigins(attr, typesAndAttrsWithoutOrigins,

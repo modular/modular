@@ -264,7 +264,7 @@ def KGEN_ExternGeneratorOp : KGENOp<"extern.generator", [
     Example:
 
     ```mlir
-    kgen.extern.generator @kernel<simd_width>(!pop.simd<simd_width, f32>)
+    kgen.extern.generator @kernel<simd_width>(!kgen.simd<simd_width, f32>)
     ```
   }];
 
@@ -405,7 +405,7 @@ def KGEN_ConformanceOp : KGENOp<"conformance", [
     ```mlir
     kgen.struct.generator @SIMD<type: dtype, size> = ... {
       kgen.conformance @Boolable {
-        kgen.witness @"__bool__" : (!pop.simd<size, type>) -> i1
+        kgen.witness @"__bool__" : (!kgen.simd<size, type>) -> i1
           = @"SIMD::__bool__(::SIMD[$0, $1])"<:dtype type, size>
       }
       ...
@@ -485,7 +485,7 @@ def KGEN_WitnessOp : KGENOp<"witness", [
     ```mlir
     kgen.struct.generator @SIMD<type: dtype, size> = ... {
       kgen.conformance @Boolable {
-        kgen.witness @"__bool__" : (!pop.simd<size, type>) -> i1
+        kgen.witness @"__bool__" : (!kgen.simd<size, type>) -> i1
           = @"SIMD::__bool__(::SIMD[$0, $1])"<:dtype type, size>
       }
       ...
@@ -894,7 +894,7 @@ def KGEN_ParamApplyOp : KGENOp<"param.apply",
 
     ```mlir
     kgen.param.declare sw: i1 = <1>
-    kgen.param.apply A = [(i1) -> !pop.simd<8, f32>: callee](sw)
+    kgen.param.apply A = [(i1) -> !kgen.simd<8, f32>: callee](sw)
     ```
   }];
 
@@ -1289,16 +1289,16 @@ def KGEN_RebindOp : KGENOp<"rebind", [Pure,
 
     ```mlir
     // Rebind a parameterized type to a concrete type.
-    %0 = kgen.rebind %arg0 : !kgen.param<type> to !pop.scalar<f32>
+    %0 = kgen.rebind %arg0 : !kgen.param<type> to !kgen.scalar<f32>
 
     // Rebind between parameter domains.
-    %1 = kgen.rebind %arg1 : !kgen.param<type> to !pop.simd<size, dtype>
+    %1 = kgen.rebind %arg1 : !kgen.param<type> to !kgen.simd<size, dtype>
 
     // Unbind a concrete type to one with a parameter.
-    %2 = kgen.rebind %arg2 : !pop.scalar<f32> to !pop.scalar<dtype>
+    %2 = kgen.rebind %arg2 : !kgen.scalar<f32> to !kgen.scalar<dtype>
 
     // ERROR: Cannot rebind between different concrete types.
-    %3 = kgen.rebind %arg2 : !pop.scalar<f32> to !pop.scalar<si32>
+    %3 = kgen.rebind %arg2 : !kgen.scalar<f32> to !kgen.scalar<si32>
     ```
   }];
 
@@ -1480,9 +1480,9 @@ def KGEN_CreateRegStubOp : KGENOp<"create_reg_stub", [Pure,
     ```mlir
     kgen.create_reg_stub [
       (!kgen.pointer<struct<(index) memoryOnly>> owned_in_mem,
-      !pop.scalar<si16> borrow) -> !kgen.none: @foo] :
+      !kgen.scalar<si16> borrow) -> !kgen.none: @foo] :
       <(!kgen.pointer<struct<(index) memoryOnly>> owned_in_mem,
-      !pop.scalar<si16> borrow) -> !kgen.none>
+      !kgen.scalar<si16> borrow) -> !kgen.none>
     ```
   }];
 
@@ -1597,11 +1597,11 @@ def KGEN_StructExtractOp : KGENOp<"struct.extract", [Pure,
     Example:
 
     ```mlir
-    // Extract the !pop.scalar<f32> at index 0.
+    // Extract the !kgen.scalar<f32> at index 0.
     %0 = kgen.struct.extract %struct[0]
       : !kgen.struct<(scalar<f32>, scalar<f64>)>
 
-    // Extract the !pop.scalar<f64> at index 1.
+    // Extract the !kgen.scalar<f64> at index 1.
     %1 = kgen.struct.extract %struct[1]
       : !kgen.struct<(scalar<f32>, scalar<f64>)>
 
@@ -1644,11 +1644,11 @@ def KGEN_StructReplaceOp : KGENOp<"struct.replace", [Pure,
     Example:
 
     ```mlir
-    // Insert the !pop.scalar<f32> at index 0.
+    // Insert the !kgen.scalar<f32> at index 0.
     %0 = kgen.struct.replace %f32, %struct[0]
       : !kgen.struct<(scalar<f32>, scalar<f64>)>
 
-    // Insert the !pop.scalar<f64> at index 1.
+    // Insert the !kgen.scalar<f64> at index 1.
     %1 = kgen.struct.replace %f64, %struct[1]
       : !kgen.struct<(scalar<f32>, scalar<f64>)>
     ```
@@ -1768,7 +1768,7 @@ def KGEN_VariantCreateOp : KGENOp<"variant.create", [Pure,
 
     // Create a variant of either a scalar float or integer.
     %1 = kgen.param.constant: scalar<f64> = <<"0.0">>
-    %2 = kgen.variant.create %1, 1 : !pop.scalar<f64>
+    %2 = kgen.variant.create %1, 1 : !kgen.scalar<f64>
         -> !kgen.variant<scalar<i64>, scalar<f64>>
     ```
   }];

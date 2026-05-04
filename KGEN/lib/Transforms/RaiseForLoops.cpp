@@ -284,10 +284,10 @@ inferLoopCount(LoopOp loop, ContinueOp continueOp, BreakOp breakOp,
                  ifCond.getDefiningOp())) {
     // Because hlcf.if expectes `i1` type, also check if there's a sequence
     // `pop.cast_to_builtin(pop.cmp)`. That's a special case, because `pop.cmp`
-    // produces `!pop.scalar<bool>`, i.e. IR looks like
+    // produces `!kgen.scalar<bool>`, i.e. IR looks like
     //
     //  %prd = pop.cmp gt(%arg1, %simd_1) : <1, si64>
-    //  %i1 = pop.cast_to_builtin %1 : !pop.scalar<bool> to i1
+    //  %i1 = pop.cast_to_builtin %1 : !kgen.scalar<bool> to i1
     //  hlcf.if %i1 ...
     auto cmp = castOp.getInput().getDefiningOp<POP::CmpOp>();
     if (!cmp)
@@ -296,7 +296,7 @@ inferLoopCount(LoopOp loop, ContinueOp continueOp, BreakOp breakOp,
     POP::CmpPredicate pred = cmp.getPred();
     if (pred != POP::CmpPredicate::LT && pred != POP::CmpPredicate::GT)
       return {};
-    auto simdTy = dyn_cast<POP::SIMDType>(cmp.getLhs().getType());
+    auto simdTy = dyn_cast<SIMDType>(cmp.getLhs().getType());
     auto dtype = simdTy ? simdTy.getResolvedDType() : std::nullopt;
 
     // For now allow signed integers only, which is aligned to code above that
@@ -539,12 +539,11 @@ LogicalResult RaiseForLoops::raiseForLoops(LoopOp loop,
   IRRewriter rewriter{OpBuilder(loop)};
 
   // hlcf.for requires bounds, step, and induction variable to be MLIR `index`
-  // type. If they come from a pop.cmp branch they may be !pop.scalar<si64>;
+  // type. If they come from a pop.cmp branch they may be !kgen.scalar<si64>;
   // insert casts.
   mlir::IndexType indexTy = rewriter.getIndexType();
   auto *ctx = loop->getContext();
-  POP::SIMDType popIndexTy =
-      POP::SIMDType::get(ctx, 1, KGENDType(KGENDType::index));
+  SIMDType popIndexTy = SIMDType::get(ctx, 1, KGENDType(KGENDType::index));
 
   auto castToIndex = [&](Value v) -> Value {
     if (v.getType() == indexTy)
@@ -601,7 +600,7 @@ LogicalResult RaiseForLoops::raiseForLoops(LoopOp loop,
       reorderValues(body.getArguments(), returnValueArgNumbers,
                     loopInfo->inductionVarArgNumber);
 
-  // When the induction variable is not index-typed (e.g. !pop.scalar<si64>),
+  // When the induction variable is not index-typed (e.g. !kgen.scalar<si64>),
   // hlcf.for still requires an index block arg. After adding it, insert casts
   // at the start of the block to convert index back to the original type, and
   // replace all uses of the original block arg with the cast result.

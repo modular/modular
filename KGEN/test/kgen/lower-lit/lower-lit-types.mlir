@@ -9,8 +9,8 @@ lit.struct.decl @SmallVector<N, T: type> register_passable {
   lit.struct.field data: !pop.array<N, T>
 }
 
-!size2 = !lit.struct<@SmallVector<2, :type !pop.simd<4, f32>>>
-!size4 = !lit.struct<@SmallVector<4, :type !pop.simd<1, f64>>>
+!size2 = !lit.struct<@SmallVector<2, :type !kgen.simd<4, f32>>>
+!size4 = !lit.struct<@SmallVector<4, :type !kgen.simd<1, f64>>>
 
 
 // CHECK-NOT: lit.struct.decl
@@ -47,19 +47,19 @@ lit.struct.decl @NestedA<T: type> register_passable {
   lit.struct.field v: !kgen.param<T>
 }
 lit.struct.decl @NestedB<t: dtype> register_passable {
-  lit.struct.field a: !lit.struct<@NestedA<:type !pop.simd<1, t>>>
+  lit.struct.field a: !lit.struct<@NestedA<:type !kgen.simd<1, t>>>
 }
 lit.struct.decl @NestedC register_passable {
   lit.struct.field b: !lit.struct<@NestedB<:dtype f32>>
 }
 
-// CHECK-LABEL: @use_nested(%arg0: !pop.scalar<f32>)
+// CHECK-LABEL: @use_nested(%arg0: !kgen.scalar<f32>)
 kgen.func @use_nested(%a: !lit.struct<@NestedC>) {
   kgen.return
 }
 
 // CHECK-LABEL: @struct_element(%arg0: !kgen.pointer<simd<2, f32>>
-kgen.func @struct_element(%a: !kgen.pointer<!lit.struct<@NestedA<:type !pop.simd<2, f32>>>>) {
+kgen.func @struct_element(%a: !kgen.pointer<!lit.struct<@NestedA<:type !kgen.simd<2, f32>>>>) {
   kgen.return
 }
 
@@ -359,7 +359,7 @@ lit.fn @parameterized_declref_type() {
 }
 
 lit.struct.decl @SIMD<size: @Int, type: dtype> register_passable {
-  lit.struct.field value : !pop.simd<apply(:(!lit.struct<@Int>) -> index @unbox, size), type>
+  lit.struct.field value : !kgen.simd<apply(:(!lit.struct<@Int>) -> index @unbox, size), type>
 }
 
 lit.struct.decl @Int register_passable {}
@@ -371,7 +371,7 @@ lit.struct.decl @StaticTuple<size, ty: type> register_passable {
 // -----
 
 // CHECK-LABEL: kgen.generator @nested_declref_type
-// CHECK-SAME: !kgen.generator<(!pop.simd<apply(:(index) -> index @pass, 1), si32>
+// CHECK-SAME: !kgen.generator<(!kgen.simd<apply(:(index) -> index @pass, 1), si32>
 lit.fn @nested_declref_type(
     %arg1: !lit.struct<@UnaryClosure<:type !lit.struct<@SIMD<1>>>>) {
   kgen.return
@@ -382,7 +382,7 @@ lit.fn @pass(%arg0: index) -> index {
 }
 
 lit.struct.decl @SIMD<size> register_passable {
-  lit.struct.field value : !pop.simd<apply(:(index) -> index @pass, size), si32>
+  lit.struct.field value : !kgen.simd<apply(:(index) -> index @pass, size), si32>
 }
 
 lit.struct.decl @UnaryClosure<input_type: type> register_passable {
