@@ -28,6 +28,7 @@ class NoneAttr;
 class ParamDeclAttr;
 class ParamDeclRefAttr;
 class FuncTypeGeneratorType;
+class SymbolConstantAttr;
 } // namespace M::KGEN
 
 namespace M::KGEN::LIT {
@@ -299,6 +300,9 @@ public:
   /// to make sure that the decl is at least signature resolved. This function
   /// takes a type and ensures that any referenced decls are resolved.
   LogicalResult resolveDeclReferencesIn(SMLoc loc, Type type);
+
+  /// Resolve the signature of the decl referenced by a `SymbolConstantAttr`.
+  LogicalResult resolveDeclReferencesIn(SMLoc loc, SymbolConstantAttr sym);
 
   /// Finalize any imported bytecode modules. This should be called after all
   /// decls have been resolved, as this will erase bytecode operations attached

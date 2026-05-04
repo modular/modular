@@ -1911,6 +1911,15 @@ ClosureEmitter::buildStructCaptureInfo(StructType structType,
       return sym;
     ASTDecl *fnDecl =
         shared.declResolver->getDeclForFuncSymbol(sym.getSymbol());
+    if (!fnDecl) {
+      // Demand-resolve the signature so the declForFuncSymbol map is populated
+      // when the referenced fn lives in a bytecode-loaded module.
+      if (failed(shared.resolveDeclReferencesIn(nestedFnDecl.getLoc(), sym)))
+        return {};
+      fnDecl = shared.declResolver->getDeclForFuncSymbol(sym.getSymbol());
+    }
+    if (!fnDecl)
+      return {};
     auto fnOp = cast<FnOp>(fnDecl->getIfOperation());
     return fnOp.getBoundSymbolRef(shared.getEvaluationContext(), paramArray);
   };
