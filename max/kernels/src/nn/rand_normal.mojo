@@ -31,7 +31,7 @@ def random_normal[
     shape: IndexList[rank],
     mean: Float32,
     stddev: Float32,
-    seed_value: UInt64,
+    seed_ptr: UnsafePointer[Scalar[DType.uint64], ImmutAnyOrigin],
     ctx: DeviceContextPtr,
 ) raises:
     """Call `output_fn` with values generated from a normal distribution with
@@ -47,7 +47,8 @@ def random_normal[
         shape: The shape of the output being stored into by output_fn.
         mean: The mean of the normal distribution.
         stddev: The standard deviation of the normal distribution.
-        seed_value: Seed value used to initialize the random number generator.
+        seed_ptr: Pointer to a single uint64 in device memory containing
+            the Philox seed.
         ctx: The device context.
     """
 
@@ -58,13 +59,15 @@ def random_normal[
 
     @parameter
     @always_inline
-    @__copy_capture(strides)
+    @__copy_capture(strides, seed_ptr)
     def generate[
         width: Int, _rank: Int, alignment: Int = 1
     ](idx: IndexList[_rank],):
         comptime assert width <= 8  # NormalRandom generates 8 values at a time
 
         var offset = _dot_prod(rebind[type_of(strides)](idx), strides)
+
+        var seed_value = seed_ptr[0]
 
         var generator = NormalRandom(seed=seed_value, offset=UInt64(offset))
 

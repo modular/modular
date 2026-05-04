@@ -465,7 +465,7 @@ class Eagle3KimiK25Unified(Module):
                 assert isinstance(sym, KVCacheInputsPerDevice)
                 all_input_types.append(sym.kv_blocks)
 
-        all_input_types.append(ops.random.SeedType)
+        all_input_types.append(ops.random.SeedType(device_ref))
 
         temperature_type = TensorType(
             DType.float32, shape=["batch_size"], device=device_ref

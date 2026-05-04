@@ -149,21 +149,13 @@ def _interpreter_max_ops() -> int:
 
 
 def seed() -> Tensor:
-    """Gets the global random seed tensor.
-
-    Returns the global seed tensor used for random number generation in eager
-    execution mode. Creates the seed tensor on first access, initialized with
-    the dtype, shape, and device specified by :obj:`max.graph.ops.random.SeedType`.
-
-    Returns:
-        Tensor: The global seed tensor for random number generation.
-    """
+    """Gets the global random seed tensor used in eager execution mode."""
     global _SEED
     if _SEED is None:
-        SeedType = ops.random.SeedType
-        shape = [int(d) for d in SeedType.shape]
+        seed_type = ops.random.SeedType(DeviceRef.CPU())
+        shape = [int(d) for d in seed_type.shape]
         seed_data = driver.Buffer(
-            SeedType.dtype, shape, SeedType.device.to_device()
+            seed_type.dtype, shape, seed_type.device.to_device()
         )
         _SEED = Tensor(storage=seed_data)
     return _SEED

@@ -59,8 +59,6 @@ class UnifiedEagleLlama3Inputs(ModelInputs):
     draft_tokens: Buffer | None = None
     draft_kv_blocks: list[Buffer] | None = None
     seed: Buffer | None = None
-    """Per-execute int64 scalar seed consumed by the stochastic acceptance
-    sampler (and, when enabled, the synthetic benchmarking sampler)."""
 
     temperature: Buffer | None = None
     top_k: Buffer | None = None
@@ -178,9 +176,10 @@ class UnifiedEagleLlama3Model(PipelineModelWithKVCache[TextContext]):
         self._seed_counter = 0
 
     def _next_seed(self) -> Buffer:
-        """Monotonically advancing int64 scalar seed, fresh per execute."""
         self._seed_counter += 1
-        return Buffer.from_numpy(np.array(self._seed_counter, dtype=np.int64))
+        return Buffer.from_numpy(
+            np.array([self._seed_counter], dtype=np.uint64)
+        ).to(self.devices[0])
 
     @classmethod
     def get_kv_params(

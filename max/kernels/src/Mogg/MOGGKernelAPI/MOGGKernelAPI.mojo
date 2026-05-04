@@ -4367,7 +4367,7 @@ struct RandomNormal:
         shape: InputTensor[rank=1, ...],
         mean: Float32,
         variance: Float32,
-        seed_value: Scalar,
+        seed_value: InputTensor[dtype=DType.uint64, rank=1, ...],
         ctx: DeviceContextPtr,
     ) capturing raises:
         @parameter
@@ -4382,7 +4382,11 @@ struct RandomNormal:
             )
 
         random_normal[output_fn, target=target](
-            output.shape(), mean, variance, UInt64(seed_value), ctx
+            output.shape(),
+            mean,
+            variance,
+            seed_value.unsafe_ptr[DType.uint64](),
+            ctx,
         )
 
     @staticmethod
@@ -4392,7 +4396,7 @@ struct RandomNormal:
         shape: InputTensor[rank=1, ...],
         mean: Scalar,
         variance: Scalar,
-        seed_value: Scalar,
+        seed_value: InputTensor[dtype=DType.uint64, rank=1, ...],
     ) -> IndexList[output_rank]:
         var unrolled_shape = IndexList[output_rank]()
         for i in range(output_rank):
@@ -4412,7 +4416,7 @@ struct RandomUniform:
         shape: InputTensor[rank=1, ...],
         lower_bound: Scalar[dtype],
         upper_bound: Scalar[dtype],
-        seed_value: Scalar,
+        seed_value: InputTensor[dtype=DType.uint64, rank=1, ...],
         ctx: DeviceContextPtr,
     ) capturing raises:
         @parameter
@@ -4427,7 +4431,11 @@ struct RandomUniform:
             )
 
         random_uniform[output_fn, target=target](
-            output.shape(), lower_bound, upper_bound, UInt64(seed_value), ctx
+            output.shape(),
+            lower_bound,
+            upper_bound,
+            seed_value.unsafe_ptr[DType.uint64](),
+            ctx,
         )
 
     @staticmethod
@@ -4437,7 +4445,7 @@ struct RandomUniform:
         shape: InputTensor[rank=1, ...],
         mean: Scalar,
         variance: Scalar,
-        seed_value: Scalar,
+        seed_value: InputTensor[dtype=DType.uint64, rank=1, ...],
     ) -> IndexList[output_rank]:
         assert shape.dim_size[0]() == output_rank
 

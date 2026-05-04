@@ -595,7 +595,7 @@ def build_synthetic_acceptance_sampler_graph(
         TensorType(
             DType.float32, ["total_output_len", "vocab_size"], device=device
         ),
-        ops.random.SeedType,
+        ops.random.SeedType(device),
     ]
     with Graph(
         "synthetic_acceptance_sampler", input_types=graph_inputs
@@ -875,12 +875,13 @@ class SyntheticRunner(RejectionRunner):
                 num_draft_steps=num_speculative_tokens,
             )
         )
+        self._device = device_ref.to_device()
         self._seed_counter = 0
 
     def _next_seed(self) -> Buffer:
         self._seed_counter += 1
-        seed_np = np.array(self._seed_counter, dtype=np.int64)
-        return Buffer.from_numpy(seed_np)
+        seed_np = np.array([self._seed_counter], dtype=np.uint64)
+        return Buffer.from_numpy(seed_np).to(self._device)
 
     def run(
         self,

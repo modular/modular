@@ -36,9 +36,11 @@ from max.pipelines.lib.sampling import (
 )
 
 
-def _seed_buffer(value: int) -> Buffer:
-    """Constructs a CPU int64 scalar Buffer matching ``ops.random.SeedType``."""
-    return Buffer.from_numpy(np.array(value, dtype=np.int64))
+def _seed_buffer(value: int, device: Device | None = None) -> Buffer:
+    buf = Buffer.from_numpy(np.array([value], dtype=np.uint64))
+    if device is not None:
+        buf = buf.to(device)
+    return buf
 
 
 # NOTE THAT ONLY RANK 2 TENSORS
@@ -262,7 +264,7 @@ def test_synthetic_acceptance_sampler_degenerate(
     first_rejected, _, _ = model.execute(
         Buffer.from_numpy(draft_tokens_np).to(device),
         Buffer.from_numpy(target_logits).to(device),
-        _seed_buffer(1),
+        _seed_buffer(1, device),
     )
     first_rejected_np = cast(Buffer, first_rejected).to_numpy()
     expected = num_steps if expected_first_rejected == "num_steps" else 0
@@ -291,7 +293,7 @@ def test_synthetic_acceptance_sampler_zero_draft_tokens(
     first_rejected, _, _ = model.execute(
         Buffer.from_numpy(draft_tokens_np).to(device),
         Buffer.from_numpy(target_logits).to(device),
-        _seed_buffer(1),
+        _seed_buffer(1, device),
     )
     first_rejected_np = cast(Buffer, first_rejected).to_numpy()
     np.testing.assert_array_equal(first_rejected_np, [0] * batch_size)
@@ -337,7 +339,7 @@ def test_synthetic_acceptance_sampler_mean_rate(
         first_rejected, _, _ = model.execute(
             Buffer.from_numpy(draft_tokens_np).to(device),
             Buffer.from_numpy(target_logits).to(device),
-            _seed_buffer(run_idx + 1),
+            _seed_buffer(run_idx + 1, device),
         )
         accepted = cast(Buffer, first_rejected).to_numpy()
         total_accepted += accepted.sum()

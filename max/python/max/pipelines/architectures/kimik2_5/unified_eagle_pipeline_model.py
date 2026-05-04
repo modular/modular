@@ -153,9 +153,10 @@ class Eagle3KimiK25Model(KimiK2_5Model):
         self._seed_counter = 0
 
     def _next_seed(self) -> Buffer:
-        """Monotonically advancing int64 scalar seed, fresh per execute."""
         self._seed_counter += 1
-        return Buffer.from_numpy(np.array(self._seed_counter, dtype=np.int64))
+        return Buffer.from_numpy(
+            np.array([self._seed_counter], dtype=np.uint64)
+        ).to(self.devices[0])
 
     @override
     def load_model(self, session: InferenceSession) -> tuple[Model, Model]:

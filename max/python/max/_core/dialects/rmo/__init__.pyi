@@ -3109,9 +3109,9 @@ class MoPowOp(max._core.Operation):
 
 class MoRandomNormalOp(max._core.Operation):
     """
-    Returns a tensor with shape `shape` populated with random
-      values from a normal distribution, with the mean of the distribution equal
-      to `mean` and the standard deviation equal to `variance`.
+    Returns a tensor with shape `shape` populated with random values from a
+      normal distribution, with the mean of the distribution equal to `mean`
+      and the standard deviation equal to `variance`.
 
     Example:
       ```mlir
@@ -3122,10 +3122,10 @@ class MoRandomNormalOp(max._core.Operation):
         %variance = mo.constant {
           value = #M.dense_array<0.5> : tensor<1xf32> } : !mo.tensor<[], f32>
         %seed = mo.constant {
-          value = #M.dense_array<1> : tensor<1xsi64> } : !mo.tensor<[], si64>
+          value = #M.dense_array<1> : tensor<1xui64> } : !mo.tensor<[1], ui64>
         %res = rmo.mo.random.normal(%size, %mean, %variance, %seed) :
               (!mo.tensor<[4], si64>, !mo.tensor<[], f32>, !mo.tensor<[], f32>,
-              !mo.tensor<[], si64>) -> !mo.tensor<[1, 1, 7, 8], f32>
+              !mo.tensor<[1], ui64>) -> !mo.tensor<[1, 1, 7, 8], f32>
       ```
     """
 
@@ -3168,9 +3168,8 @@ class MoRandomNormalOp(max._core.Operation):
 
 class MoRandomUniformOp(max._core.Operation):
     """
-    Returns a tensor with shape `shape` populated with random
-    values from a normal distribution, with the mean of the distribution equal
-    to `mean` and the standard deviation equal to `variance`.
+    Returns a tensor with shape `shape` populated with random values from a
+    uniform distribution on the half-open interval [lowerBound, upperBound).
 
     Example:
     ```mlir
@@ -3181,10 +3180,10 @@ class MoRandomUniformOp(max._core.Operation):
     %upperBound = mo.constant {
       value = #M.dense_array<0.5> : tensor<1xf32> } : !mo.tensor<[], f32>
     %seed = mo.constant {
-      value = #M.dense_array<1> : tensor<1xsi64> } : !mo.tensor<[], si64>
+      value = #M.dense_array<1> : tensor<1xui64> } : !mo.tensor<[1], ui64>
     %res = rmo.mo.random.uniform(%size, %lowerBound, %upperBound, %seed) :
           (!mo.tensor<[4], si64>, !mo.tensor<[], f32>, !mo.tensor<[], f32>,
-          !mo.tensor<[], si64>) -> !mo.tensor<[1, 1, 7, 8], f32>
+          !mo.tensor<[1], ui64>) -> !mo.tensor<[1, 1, 7, 8], f32>
     ```
     """
 

@@ -210,7 +210,7 @@ class UnifiedEagleLlama3(Module):
             *target_kv_flat,
             draft_tokens_type,
             draft_kv_blocks,
-            ops.random.SeedType,
+            ops.random.SeedType(device_ref),
             temperature_type,
             top_k_type,
             max_k_type,
