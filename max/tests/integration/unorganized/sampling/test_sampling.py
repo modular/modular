@@ -284,6 +284,7 @@ def test_rejection_sampler(session: InferenceSession) -> None:
         Buffer.from_dlpack(draft_logits).to(device),
         Buffer.from_dlpack(target_logits).to(device),
         Buffer.from_dlpack(target_logit_offsets).to(device),
+        Buffer.from_numpy(np.array([0], dtype=np.uint64)).to(device),
     )
     assert isinstance(first_rejected_token, Buffer)
     assert isinstance(sampled_tokens, Buffer)
@@ -1387,6 +1388,7 @@ def test_rejection_sampler_with_residuals(session: InferenceSession) -> None:
         Buffer.from_dlpack(target_logits_tensor).to(device),
         Buffer.from_dlpack(target_logit_offsets).to(device),
         Buffer.from_dlpack(draft_logits_tensor).to(device),
+        Buffer.from_numpy(np.array([0], dtype=np.uint64)).to(device),
         Buffer.from_dlpack(rejection_rand).to(device),
         Buffer.from_dlpack(
             residual_rand.reshape(batch_size, num_steps, vocab_size)

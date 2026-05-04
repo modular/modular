@@ -408,21 +408,21 @@ class TokenSampler:
 
 def rejection_sampler(
     device: DeviceRef,
-    *,
-    seed: int = 0,
 ) -> Graph:
     """Builds a graph that implements speculative decoding rejection sampling.
 
     Accepts or rejects draft tokens using target vs draft probabilities and
     resamples from the target distribution when rejected.
 
+    The sampling RNG seed is bound as a graph input — callers refresh it
+    per execution so RNG varies across calls.
+
     Args:
         device: Device for the graph.
-        seed: Random seed for sampling.
 
     Returns:
-        A graph that takes draft tokens, draft logits, and target logits and
-        outputs accepted tokens and metadata.
+        A graph that takes draft tokens, draft logits, target logits, and a
+        per-execute seed and outputs accepted tokens and metadata.
     """
     graph_inputs = [
         TensorType(DType.int64, ["batch_size", "num_steps"], device=device),
@@ -431,6 +431,7 @@ def rejection_sampler(
             DType.float32, ["total_output_len", "vocab_size"], device=device
         ),
         TensorType(DType.int64, ["logit_offsets_len"], device=device),
+        ops.random.SeedType(device),
     ]
     with Graph("rejection_sampler", input_types=graph_inputs) as graph:
         (
@@ -438,14 +439,16 @@ def rejection_sampler(
             draft_logits_for_sampled_tokens,
             target_logits,
             target_logit_offsets,
+            seed,
         ) = graph.inputs
 
-        sampler = RejectionSampler(device=device, seed=seed)
+        sampler = RejectionSampler(device=device)
         first_rejected_token, sampled_target_tokens = sampler(
             draft_tokens.tensor,
             draft_logits_for_sampled_tokens.tensor,
             target_logits.tensor,
             target_logit_offsets.tensor,
+            seed.tensor,
         )
         graph.output(first_rejected_token, sampled_target_tokens)
 
@@ -455,7 +458,6 @@ def rejection_sampler(
 def rejection_sampler_with_residuals(
     device: DeviceRef,
     *,
-    seed: int = 0,
     debug: bool = False,
 ) -> Graph:
     """Builds a rejection sampler with residual sampling for speculative decoding.
@@ -463,6 +465,9 @@ def rejection_sampler_with_residuals(
     Computes acceptance ratios for draft tokens, finds first rejection,
     samples from residual distribution (target - draft), and generates bonus
     tokens.
+
+    The sampling RNG seed is bound as a graph input — callers refresh it
+    per execution so RNG varies across calls.
     """
     graph_inputs = [
         TensorType(DType.int64, ["batch_size", "num_steps"], device=device),
@@ -479,6 +484,7 @@ def rejection_sampler_with_residuals(
             ["num_steps", "batch_size", "vocab_size"],
             device=device,
         ),
+        ops.random.SeedType(device),
     ]
     if debug:
         graph_inputs.append(
@@ -503,6 +509,7 @@ def rejection_sampler_with_residuals(
                 target_logits,
                 target_logit_offsets,
                 full_draft_logits,
+                seed,
                 rejection_rand,
                 residual_rand,
             ) = graph.inputs
@@ -513,11 +520,11 @@ def rejection_sampler_with_residuals(
                 target_logits,
                 target_logit_offsets,
                 full_draft_logits,
+                seed,
             ) = graph.inputs
 
-        sampler = RejectionSamplerWithResiduals(
-            device=device, seed=seed, debug=debug
-        )
+        ops.random.set_seed(seed.tensor)
+        sampler = RejectionSamplerWithResiduals(device=device, debug=debug)
         first_rejected_token_idx, sampled_target_tokens, bonus_token_ids = (
             sampler(
                 draft_tokens.tensor,
@@ -618,8 +625,6 @@ def build_synthetic_acceptance_sampler_graph(
 
 def build_stochastic_acceptance_sampler_graph(
     device: DeviceRef,
-    *,
-    seed: int = 0,
 ) -> Graph:
     """Builds a target-only stochastic rejection sampler for speculative decoding.
 
@@ -627,14 +632,16 @@ def build_stochastic_acceptance_sampler_graph(
     p_target is computed after applying temperature, top-k, and top-p
     filtering.  No draft probabilities are needed.
 
+    The sampling RNG seed is bound as a graph input — callers refresh it
+    per execution so RNG varies across calls.
+
     Args:
         device: Device for the graph.
-        seed: Random seed for sampling.
 
     Returns:
         A graph that takes draft tokens, target logits, target logit
-        offsets, and sampling parameters, and outputs the first rejected
-        index, recovered tokens, and a bonus token.
+        offsets, sampling parameters, and a per-execute seed, and outputs
+        the first rejected index, recovered tokens, and a bonus token.
     """
     graph_inputs = [
         TensorType(DType.int64, ["batch_size", "num_steps"], device=device),
@@ -646,6 +653,7 @@ def build_stochastic_acceptance_sampler_graph(
         TensorType(DType.int64, [], device=DeviceRef.CPU()),
         TensorType(DType.float32, ["batch_size"], device=device),
         TensorType(DType.float32, [], device=DeviceRef.CPU()),
+        ops.random.SeedType(device),
     ]
     with Graph("typical_acceptance_sampler", input_types=graph_inputs) as graph:
         (
@@ -656,6 +664,7 @@ def build_stochastic_acceptance_sampler_graph(
             max_k,
             top_p,
             min_top_p,
+            seed,
         ) = graph.inputs
 
         first_rejected_idx, recovered_tokens, bonus_tokens = (
@@ -667,7 +676,7 @@ def build_stochastic_acceptance_sampler_graph(
                 max_k=max_k.tensor,
                 top_p=top_p.tensor,
                 min_top_p=min_top_p.tensor,
-                seed=seed,
+                seed=seed.tensor,
             )
         )
         graph.output(first_rejected_idx, recovered_tokens, bonus_tokens)
@@ -708,6 +717,12 @@ class _TypicalAcceptanceRunner(RejectionRunner):
             build_stochastic_acceptance_sampler_graph(device=device_ref)
         )
         self._device = device_ref.to_device()
+        self._seed_counter = 0
+
+    def _next_seed(self) -> Buffer:
+        self._seed_counter += 1
+        seed_np = np.array([self._seed_counter], dtype=np.uint64)
+        return Buffer.from_numpy(seed_np).to(self._device)
 
     def run(
         self,
@@ -744,6 +759,7 @@ class _TypicalAcceptanceRunner(RejectionRunner):
                 Buffer.from_numpy(np.array(np.max(top_k_np), dtype=np.int64)),
                 Buffer.from_numpy(top_p_np).to(self._device),
                 Buffer.from_numpy(np.array(np.min(top_p_np), dtype=np.float32)),
+                self._next_seed(),
             )
         assert isinstance(a, Buffer)
         assert isinstance(b, Buffer)
@@ -787,6 +803,13 @@ class _LogitComparisonRunner(RejectionRunner):
         self, session: InferenceSession, device_ref: DeviceRef
     ) -> None:
         self._model = session.load(rejection_sampler(device=device_ref))
+        self._device = device_ref.to_device()
+        self._seed_counter = 0
+
+    def _next_seed(self) -> Buffer:
+        self._seed_counter += 1
+        seed_np = np.array([self._seed_counter], dtype=np.uint64)
+        return Buffer.from_numpy(seed_np).to(self._device)
 
     def run(
         self,
@@ -804,6 +827,7 @@ class _LogitComparisonRunner(RejectionRunner):
             draft_logits,
             target_logits,
             target_logit_offsets,
+            self._next_seed(),
         )
         assert isinstance(a, Buffer)
         assert isinstance(b, Buffer)
@@ -819,6 +843,13 @@ class _ResidualRunner(RejectionRunner):
         self._model = session.load(
             rejection_sampler_with_residuals(device=device_ref)
         )
+        self._device = device_ref.to_device()
+        self._seed_counter = 0
+
+    def _next_seed(self) -> Buffer:
+        self._seed_counter += 1
+        seed_np = np.array([self._seed_counter], dtype=np.uint64)
+        return Buffer.from_numpy(seed_np).to(self._device)
 
     def run(
         self,
@@ -837,6 +868,7 @@ class _ResidualRunner(RejectionRunner):
             target_logits,
             target_logit_offsets,
             all_draft_logits,
+            self._next_seed(),
         )
         assert isinstance(a, Buffer)
         assert isinstance(b, Buffer)
