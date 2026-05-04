@@ -19,6 +19,9 @@ This version is still a work in progress.
 
 ## Library changes
 
+- `Set.difference_update()` now uses `discard()` instead of a try/except
+  `remove()` pattern, avoiding exception overhead for missing elements.
+
 ## Tooling changes
 
 ## GPU programming
