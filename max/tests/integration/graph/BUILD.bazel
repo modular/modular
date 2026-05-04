@@ -30,6 +30,7 @@ _CPU_ONLY_TESTS = [
 
 # Tests with their own targets due to special configurations
 _SEPARATE_TARGET_TESTS = [
+    "test_advanced_indexing.py",
     "test_debug_config.py",
     "test_debug_config_integration.py",
     "test_engine_device_graph.py",
@@ -38,11 +39,6 @@ _SEPARATE_TARGET_TESTS = [
     "test_load_weights_no_deps.py",
     "test_logits_processor_gpu.py",
     "test_runtime_source_notes.py",
-]
-
-# Temporarily disabled tests (MAXPLAT-477: causes H100 timeouts)
-_DISABLED_TESTS = [
-    "test_advanced_indexing.py",
 ]
 
 modular_py_library(
@@ -67,7 +63,7 @@ modular_py_test(
     size = "large",
     srcs = glob(
         ["*.py"],
-        exclude = _AMD_ONLY_TESTS + _NVIDIA_ONLY_TESTS + _CPU_ONLY_TESTS + _SEPARATE_TARGET_TESTS + _DISABLED_TESTS + [
+        exclude = _AMD_ONLY_TESTS + _NVIDIA_ONLY_TESTS + _CPU_ONLY_TESTS + _SEPARATE_TARGET_TESTS + [
             "modular_graph_test.py",
             "test_nan_check.py",
         ],
@@ -122,8 +118,19 @@ modular_py_test(
     ],
 )
 
-# MAXPLAT-477: Temporarily disabled from CI due to H100 timeouts.
-# Run locally on demand: ./bazelw test //max/tests/integration/graph:test_advanced_indexing
+# GEX-3523 / MAXPLAT-477: this test was originally disabled because its 16
+# GPU parametrizations exceeded the bulk graph target's timebox on H100.
+# Re-enabled as a dedicated, sharded target so each shard fits comfortably
+# under the 600s `ci-persistent --test_timeout=-1,-1,600,600` clamp.
+#
+# Per-case wall-clock (the `set_item*` cases are skipped on accelerators):
+#   H100: median 31.4s, p99 42.6s, max 60.9s (from a 16 000-case stress run).
+#   B200: median ~33s, max ~50s (from a smoke run with 16 GPU cases).
+#
+# Unsharded the B200 wall is ~640-650s, which trips the 600s ci-persistent
+# clamp (observed `TIMEOUT in 610.0s` on postsubmit b200, build 6395).
+# `shard_count = 4` splits the 16 cases roughly 4-per-shard, giving
+# ~150-200s per shard with ~3x headroom.
 modular_py_test(
     name = "test_advanced_indexing",
     size = "large",
@@ -135,9 +142,9 @@ modular_py_test(
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
+    shard_count = 4,
     tags = [
         "gpu",
-        "manual",
     ],
     deps = [
         "//max/python/max/driver",
