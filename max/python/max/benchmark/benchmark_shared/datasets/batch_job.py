@@ -13,7 +13,6 @@
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 import random
@@ -22,14 +21,49 @@ import tarfile
 import tempfile
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, cast
+from typing import Annotated, Any, Literal
 
+from pydantic import BaseModel, Field
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
 from .local import LocalBenchmarkDataset
 from .types import RequestSamples, SampledRequest, encode_image_from_file_path
 
 logger = logging.getLogger(__name__)
+
+
+class _BatchJobImageURL(BaseModel):
+    url: str
+
+
+class _BatchJobTextContent(BaseModel):
+    type: Literal["text"]
+    text: str
+
+
+class _BatchJobImageContent(BaseModel):
+    type: Literal["image_url"]
+    image_url: _BatchJobImageURL
+
+
+_BatchJobContentItem = Annotated[
+    _BatchJobTextContent | _BatchJobImageContent,
+    Field(discriminator="type"),
+]
+
+
+class _BatchJobMessage(BaseModel):
+    role: str
+    content: str | list[_BatchJobContentItem]
+
+
+class _BatchJobBody(BaseModel):
+    messages: list[_BatchJobMessage]
+    max_tokens: int | None = None
+
+
+class _BatchJob(BaseModel):
+    body: _BatchJobBody
 
 
 class BatchJobBenchmarkDataset(LocalBenchmarkDataset):
@@ -120,7 +154,7 @@ class BatchJobBenchmarkDataset(LocalBenchmarkDataset):
                 # Embedded mode: encode image as base64
                 if os.path.exists(source_image):
                     encoded_img = encode_image_from_file_path(source_image)
-                    processed_content.append(cast(dict[str, Any], encoded_img))
+                    processed_content.append(dict(encoded_img))
                 else:
                     logger.warning(f"Image not found: {source_image}")
         else:
@@ -156,10 +190,10 @@ class BatchJobBenchmarkDataset(LocalBenchmarkDataset):
         self._extract_dataset()
 
         # Load all batch job entries
-        batch_jobs = []
+        batch_jobs: list[_BatchJob] = []
         with open(self._jobs_file) as f:
             for line in f:
-                batch_jobs.append(json.loads(line))
+                batch_jobs.append(_BatchJob.model_validate_json(line))
 
         # Shuffle if requested
         if shuffle:
@@ -183,35 +217,28 @@ class BatchJobBenchmarkDataset(LocalBenchmarkDataset):
         for i in range(min(num_requests, len(batch_jobs))):
             job = batch_jobs[i]
 
-            # Extract the chat messages
-            messages = job["body"]["messages"]
-
             # Process the messages to handle images
-            processed_messages = []
+            processed_messages: list[dict[str, Any]] = []
 
-            for message in messages:
-                processed_content = []
-                if isinstance(message["content"], list):
-                    for content_item in message["content"]:
-                        if content_item["type"] == "text":
-                            processed_content.append(content_item)
-                        elif content_item["type"] == "image_url":
-                            image_url = content_item["image_url"]["url"]
+            for message in job.body.messages:
+                processed_content: list[dict[str, Any]] | str
+                if isinstance(message.content, list):
+                    content_list: list[dict[str, Any]] = []
+                    for content_item in message.content:
+                        if isinstance(content_item, _BatchJobTextContent):
+                            content_list.append(content_item.model_dump())
+                        else:
                             self._process_image_content(
                                 image_dir,
-                                image_url,
-                                processed_content,
+                                content_item.image_url.url,
+                                content_list,
                             )
-                        else:
-                            raise ValueError(
-                                f"Unknown content type in batch file: {content_item['type']}"
-                            )
+                    processed_content = content_list
                 else:
-                    # Text-only content
-                    processed_content = message["content"]
+                    processed_content = message.content
 
                 processed_messages.append(
-                    {"role": message["role"], "content": processed_content}
+                    {"role": message.role, "content": processed_content}
                 )
 
             # Compute prompt length (tokenize just the text content)
@@ -230,12 +257,13 @@ class BatchJobBenchmarkDataset(LocalBenchmarkDataset):
             )
 
             # Get output length from the batch job's max_tokens
+            output_len: int | None
             if output_lengths is not None:
                 output_len = output_lengths[i]
                 ignore_eos = True
             else:
                 # Use max_tokens from the prompt if available
-                output_len = job["body"].get("max_tokens", None)
+                output_len = job.body.max_tokens
                 ignore_eos = False
 
             sampled_requests.append(
