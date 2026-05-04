@@ -824,9 +824,9 @@ shared_counter[0] += my_value  # Multiple threads modify same location
 This leads to "lost updates" because the read-modify-write sequence isn't
 atomic. To prevent this, you must use synchronization primitives like
 `barrier()` to coordinate access or use
-[`Atomic`](/docs/std/os/atomic/Atomic/) operations for simple updates. For
+[`Atomic`](/docs/std/atomic/atomic/Atomic/) operations for simple updates. For
 example, you could use the
-[`Atomic.fetch_add()`](/docs/std/os/atomic/Atomic/#fetch_add) method to
+[`Atomic.fetch_add()`](/docs/std/atomic/atomic/Atomic/#fetch_add) method to
 atomically increment the counter:
 
 ```mojo

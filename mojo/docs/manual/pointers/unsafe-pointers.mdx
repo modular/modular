@@ -404,7 +404,7 @@ When you need a non-null sentinel for deferred initialization, use
 ```
 
 For a practical example of optional pointers in a data structure, see
-[Self-referential structs](/docs/manual/pointers/reference).
+[Self-referential structs](/docs/manual/structs/reference).
 
 ## Working with foreign pointers
 
@@ -486,7 +486,7 @@ attribute to access the raw pointer to the underlying storage
 ### Working with C/C++ pointers
 
 If you call a C/C++ function that returns a pointer using the
-[`external_call`](/docs/std/sys/ffi/external_call) function, you can specify
+[`external_call`](/docs/std/ffi/external_call) function, you can specify
 the return type as an `UnsafePointer`, and Mojo will handle the type conversion
 for you.
 

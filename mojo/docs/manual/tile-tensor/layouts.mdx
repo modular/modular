@@ -170,8 +170,8 @@ function to generate a compile-time or run-time integer.
 ```mojo
 comptime comptime_int = Idx[columns]()  # Compile-time int from parameter value
 comptime comptime_int2 = Idx(4)  # Compile-time int from Int literal
-var runtime_int = Idx(rows)  # Run-time int from dynamic value 
-var mixed_shape = Coord((Idx(rows), Idx[columns]())) 
+var runtime_int = Idx(rows)  # Run-time int from dynamic value
+var mixed_shape = Coord((Idx(rows), Idx[columns]()))
 var mixed_layout = row_major((Idx(rows), Idx[columns]()))
 ```
 

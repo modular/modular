@@ -255,7 +255,7 @@ that you *must* implement listed as *required methods*, and methods that have
 default implementations listed as *provided methods*.
 
 The
-[`Equatable`](/docs/std/builtin/equality_comparable/Equatable/)
+[`Equatable`](/docs/std/builtin/comparable/Equatable/)
 trait is a good example of the use case for default implementations. The trait
 includes two methods: `__eq__()` (corresponding to the `==` operator) and
 `__ne__()` (corresponding to the `!=` operator). Every type that conforms to
@@ -474,7 +474,7 @@ The Mojo standard library includes many traits. They're implemented
 by a number of standard library types, and you can also implement these on your
 own types. These standard library traits include:
 
-- [`Absable`](/docs/std/builtin/math/Absable)
+- [`Absable`](/docs/std/math/math/Absable)
 - [`AnyType`](/docs/std/builtin/anytype/AnyType)
 - [`Boolable`](/docs/std/builtin/bool/Boolable)
 - [`Comparable`](/docs/std/builtin/comparable/Comparable)
@@ -488,9 +488,9 @@ own types. These standard library traits include:
 - [`KeyElement`](/docs/std/collections/dict/#keyelement)
 - [`Movable`](/docs/std/builtin/value/Movable)
 - [`PathLike`](/docs/std/os/pathlike/PathLike)
-- [`Powable`](/docs/std/builtin/math/Powable)
+- [`Powable`](/docs/std/math/math/Powable)
 - [`Sized`](/docs/std/builtin/len/Sized)
-- [`Roundable`](/docs/std/builtin/math/Roundable)
+- [`Roundable`](/docs/std/math/math/Roundable)
 - [`Writable`](/docs/std/format/Writable)
 - [`Writer`](/docs/std/format/Writer)
 
@@ -562,7 +562,7 @@ print your type:
 struct SomeType(Writable):
 ```
 
-[`print()`](/docs/std/builtin/io/print) requires its arguments to
+[`print()`](/docs/std/io/io/print) requires its arguments to
 conform to `Writable`. This uses stream-based writing and avoids
 unnecessary `String` allocations.
 

@@ -254,7 +254,7 @@ def main():
 ```
 
 Note: The reference count is stored using an
-[`Atomic`](/docs/std/os/atomic/Atomic)
+[`Atomic`](/docs/std/atomic/atomic/Atomic/)
 value to ensure that updates to the reference count are thread-safe. However,
 Mojo doesn't currently enforce exclusive access across thread boundaries, so
 it's possible to form race conditions.

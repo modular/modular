@@ -55,7 +55,7 @@ You can use constraints in the following contexts:
 
   You'll use this form, called *conditional trait conformance*, when defining
   generic types. For details, see the section on
-  [conditional trait conformances](/docs/manual/generics/generics/#conditional-trait-conformance).
+  [conditional trait conformances](/docs/manual/generics#conditional-trait-conformance).
 
 ## Symbolic propositions
 
@@ -220,7 +220,7 @@ def create_even_list[T: Copyable, size: Int]() -> List[T] where (
 
 def main():
     var l1 = create_even_list[Int, 4]()
-    print(len(l1) % 2) 
+    print(len(l1) % 2)
     # Prints 0, since the list has an even number of elements.
 
     # var l2 = create_even_list[Int, 5]()  # Won't compile: 5 isn't even.

@@ -437,9 +437,9 @@ Two other things to note from the copy constructor:
   best practice to avoid any mistakes when referring to the current struct name.
 
 - The `copy` argument is immutable because the default [argument
-   convention](/docs/manual/values/ownership#argument-conventions) is
-   `read`—this is a good thing because this function should not modify the
-   contents of the value being copied.
+  convention](/docs/manual/values/ownership#argument-conventions) is
+  `read`—this is a good thing because this function should not modify the
+  contents of the value being copied.
 
 :::note
 
@@ -633,7 +633,7 @@ example of a move-only type: because it is designed to provide clear single
 ownership of a stored value, the `OwnedPointer` can be moved, but not copied.
 
 In some (rare) cases, you may not want a type to be copyable *or* movable. The
-[`Atomic`](/docs/std/os/atomic/Atomic/) type is an example of a type that's
+[`Atomic`](/docs/std/atomic/atomic/Atomic/) type is an example of a type that's
 neither copyable nor movable.
 
 :::note Trivial types
