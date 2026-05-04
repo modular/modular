@@ -10,12 +10,12 @@ that describes how logical tensor coordinates are mapped to memory
 locations. This section describes how to create and work with layouts
 for `TileTensor`. In particular, it discusses the following types:
 
-- The [`tile_layout.Layout`](/mojo/layout/tile_layout/Layout) struct
+- The [`tile_layout.Layout`](/docs/layout/tile_layout/Layout) struct
   describes an arrangement of data in memory. A *layout* is a function that maps
   a set of logical coordinates (like (*x*, *y*) in a two-dimensional array) to a
   linear index value. Layouts can also describe more complex organizations, like
   a matrix subdivided into tiles.
-- [`Coord`](/mojo/layout/coord/Coord/) is a tuple-like container for
+- [`Coord`](/docs/layout/coord/Coord/) is a tuple-like container for
   storing integer coordinates that supports both compile-time and run-time
   values. It's used for defining logical coordinates and layout shapes, among
   other things.
@@ -78,7 +78,7 @@ sub-layouts or *modes*: a row mode and a column mode: 3 rows with a stride of 4
 (3:4, the first numbers from each tuple) and 4 columns with a stride of 1 (4:1,
 the second numbers from each tuple).
 
-The [`print_layout()`](/mojo/layout/layout/print_layout) function
+The [`print_layout()`](/docs/layout/layout/print_layout) function
 generates an ASCII diagram of any 2D layout, showing the coordinates on the
 outside and the corresponding index values in the grid.
 
@@ -125,7 +125,7 @@ coordinates at index 7: (1, 3)
 
 As this example shows, the layout is a function that takes a set of integer
 coordinates and returns a single integer (the linear index). The `Layout` struct
-also provides an [`idx2crd()`](/mojo/layout/tile_layout/Layout#idx2crd)
+also provides an [`idx2crd()`](/docs/layout/tile_layout/Layout#idx2crd)
 method that transforms a linear index into a set of logical coordinates.
 
 When you use a `TileTensor`, you'll use the layout to define how the data is
@@ -151,12 +151,12 @@ representation of the layout in the form of a (*shape*:*stride*) pair.
 ### `Coord` and `Idx`: representing multidimensional coordinates {#coord-and-idx}
 
 Logical coordinates—and a layout's shape and size—are represented using the
-[`Coord`](/mojo/layout/coord/Coord) type, a tuple-like structure that
+[`Coord`](/docs/layout/coord/Coord) type, a tuple-like structure that
 can hold both compile-time and run-time integer values. Each element of a
 `Coord` is either an integer value or a nested tuple.
 
 You can create a simple `Coord` with all compile-time values or all run-time
-values using the [`coord()`](/mojo/layout/coord/coord/) function:
+values using the [`coord()`](/docs/layout/coord/coord/) function:
 
 ```mojo
 var comptime_coords = coord[4, 4]()
@@ -164,7 +164,7 @@ var runtime_coords = coord[DType.int32]((a, b, c))
 ```
 
 When you need to mix compile-time and run-time values, you can use the
-[`Idx()`](/mojo/layout/coord/Idx/)
+[`Idx()`](/docs/layout/coord/Idx/)
 function to generate a compile-time or run-time integer.
 
 ```mojo
@@ -190,7 +190,7 @@ print(shape3)
 ((6, 8), ((2, 2), (3, 4)))
 ```
 
-The [`coord`](/mojo/layout/coord/) package provides a number of
+The [`coord`](/docs/layout/coord/) package provides a number of
 functions for working with `Coords`.
 
 ### Modes
@@ -306,8 +306,8 @@ columns:
 ## Making layouts
 
 There are multiple ways to create layouts. The
-[`row_major()`](/mojo/layout/tile_layout/row_major/) and
-[`col_major()`](/mojo/layout/tile_layout/col_major/) functions are
+[`row_major()`](/docs/layout/tile_layout/row_major/) and
+[`col_major()`](/docs/layout/tile_layout/col_major/) functions are
 probably the simplest ways to create a layout. The `row_major()` function
 creates a generalized row-major layout: that is, the rightmost coordinate varies
 the fastest. The `col_major()` function creates a generalized column-major
@@ -391,7 +391,7 @@ using the `Layout` constructor. But calculating the strides for a complicated
 layout is far from intuitive.
 
 An easier way to generate this type of tiled layout is the
-[`blocked_product()`](/mojo/layout/tile_layout/blocked_product)
+[`blocked_product()`](/docs/layout/tile_layout/blocked_product)
 function. `blocked_product()` takes two layouts: a *tile* layout and a *tiler*
 layout: essentially, every element in the tiler layout is replaced by a tile.
 The following example generates the same tiled layout using `blocked_product()`.
@@ -461,7 +461,7 @@ more complex one.
 
 The layout produced by `blocked_product()` places items in the same tile
 consecutively in memory. But addressing individual tiles is inconvenient.
-The [`zipped_divide()`](/mojo/layout/tile_layout/zipped_divide/)
+The [`zipped_divide()`](/docs/layout/tile_layout/zipped_divide/)
 function, by contrast, tiles a 2D tensor such that
 each column represents a tile worth of data.
 
