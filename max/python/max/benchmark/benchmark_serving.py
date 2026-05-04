@@ -25,12 +25,19 @@ import math
 import os
 import random
 import re
+import shlex
 import statistics
 import subprocess
 import sys
 import time
 import warnings
-from collections.abc import AsyncGenerator, Iterator, Mapping, Sequence
+from collections.abc import (
+    AsyncGenerator,
+    Generator,
+    Iterator,
+    Mapping,
+    Sequence,
+)
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -265,22 +272,23 @@ def assert_nvidia_gpu() -> None:
             )
 
 
-def start_trace(output_path: str, session_name: str | None = None) -> None:
-    """Start nsys profiling session."""
-    cmd = ["nsys", "start", "-o", output_path, "--force-overwrite", "true"]
+@contextlib.contextmanager
+def under_nsys_tracing(
+    output_path: str, session_name: str | None = None
+) -> Generator[None, None, None]:
+    """Run some code under nsys tracing."""
+    start_cmd = ["nsys", "start", "-o", output_path, "--force-overwrite=true"]
+    stop_cmd = ["nsys", "stop"]
     if session_name:
-        cmd.extend(["--session", session_name])
-    logger.info(f"Starting nsys trace: {' '.join(cmd)}")
-    subprocess.run(cmd, check=True)
-
-
-def stop_trace(session_name: str | None = None) -> None:
-    """Stop nsys profiling session."""
-    cmd = ["nsys", "stop"]
-    if session_name:
-        cmd.extend(["--session", session_name])
-    logger.info(f"Stopping nsys trace: {' '.join(cmd)}")
-    subprocess.run(cmd, check=True)
+        start_cmd.extend(["--session", session_name])
+        stop_cmd.extend(["--session", session_name])
+    logger.info(f"Starting nsys trace: {shlex.join(start_cmd)}")
+    subprocess.run(start_cmd, check=True)
+    try:
+        yield
+    finally:
+        logger.info(f"Stopping nsys trace: {shlex.join(stop_cmd)}")
+        subprocess.run(stop_cmd, check=True)
 
 
 async def get_request(
@@ -2654,8 +2662,10 @@ async def benchmark(
                 )
 
         # Start nsys trace if enabled (before timing to exclude trace overhead)
-        if trace_path:
-            start_trace(trace_path, trace_session)
+        if trace_path is not None:
+            benchmark_stack.enter_context(
+                under_nsys_tracing(trace_path, trace_session)
+            )
 
         # Create pbar for actual benchmark runs
         pbar = create_benchmark_pbar(disable_tqdm=disable_tqdm, samples=samples)
@@ -2728,121 +2738,116 @@ async def benchmark(
                 max_benchmark_duration_s * 1e9
             )
 
-        try:
-            all_outputs: Sequence[BaseRequestFuncOutput]
-            outputs_by_session: dict[str, list[RequestFuncOutput]] | None = None
-            if isinstance(samples, RequestSamples):
-                if max_concurrent_conversations is not None:
-                    raise ValueError(
-                        "--max-concurrent-conversations is only valid for "
-                        "multi-turn workloads. Set --num-chat-sessions to "
-                        "enable multi-turn mode."
-                    )
-                # single-turn chat scenario
-                all_outputs = await run_single_turn_benchmark(
-                    input_requests=samples.requests,
-                    benchmark_task=benchmark_task,
-                    request_rate=request_rate,
-                    burstiness=burstiness,
-                    timing_data=timing_data,
-                    semaphore=semaphore,
-                    benchmark_should_end_time=benchmark_should_end_time,
-                    request_driver=request_driver,
-                    model_id=model_id,
-                    api_url=api_url,
-                    max_output_len=max_output_len,
-                    temperature=temperature,
-                    top_p=top_p,
-                    top_k=top_k,
-                    lora_manager=lora_manager,
-                    run_prefix=run_prefix,
-                    run_prefix_len=run_prefix_len,
+        all_outputs: Sequence[BaseRequestFuncOutput]
+        outputs_by_session: dict[str, list[RequestFuncOutput]] | None = None
+        if isinstance(samples, RequestSamples):
+            if max_concurrent_conversations is not None:
+                raise ValueError(
+                    "--max-concurrent-conversations is only valid for "
+                    "multi-turn workloads. Set --num-chat-sessions to "
+                    "enable multi-turn mode."
                 )
-            elif max_concurrent_conversations is not None:
-                # KV-cache stress benchmark: two independent concurrency knobs.
-                # max_concurrent_conversations caps active session workers;
-                # max_concurrency (semaphore) caps in-flight turns globally.
-                if (
-                    max_concurrency is not None
-                    and max_concurrency > max_concurrent_conversations
-                ):
-                    raise ValueError(
-                        f"--max-concurrency ({max_concurrency}) must be <= "
-                        f"--max-concurrent-conversations "
-                        f"({max_concurrent_conversations}): to stress the "
-                        "server's KV-cache, more sessions must be open than "
-                        "turns in-flight."
-                    )
-                assert tokenizer is not None
-                assert isinstance(max_concurrent_conversations, int)
-                outputs_by_session = await run_kv_cache_stress_benchmark(
-                    chat_sessions=samples.chat_sessions,
-                    max_requests=max_requests,
-                    max_concurrent_conversations=max_concurrent_conversations,
-                    semaphore=semaphore,
-                    benchmark_should_end_time=benchmark_should_end_time,
-                    request_driver=request_driver,
-                    model_id=model_id,
-                    api_url=api_url,
-                    tokenizer=tokenizer,
-                    ignore_first_turn_stats=ignore_first_turn_stats,
-                    lora_manager=lora_manager,
-                    warmup_delay_ms=warmup_delay_ms,
-                    temperature=temperature,
-                    top_p=top_p,
-                    top_k=top_k,
-                    randomize_session_start=randomize_session_start,
-                    warmup_to_steady_state=warmup_to_steady_state,
-                    warmup_oversample_factor=warmup_oversample_factor,
-                    num_chat_sessions=num_chat_sessions,
-                    seed=seed,
-                    run_prefix=run_prefix,
-                    run_prefix_len=run_prefix_len,
+            # single-turn chat scenario
+            all_outputs = await run_single_turn_benchmark(
+                input_requests=samples.requests,
+                benchmark_task=benchmark_task,
+                request_rate=request_rate,
+                burstiness=burstiness,
+                timing_data=timing_data,
+                semaphore=semaphore,
+                benchmark_should_end_time=benchmark_should_end_time,
+                request_driver=request_driver,
+                model_id=model_id,
+                api_url=api_url,
+                max_output_len=max_output_len,
+                temperature=temperature,
+                top_p=top_p,
+                top_k=top_k,
+                lora_manager=lora_manager,
+                run_prefix=run_prefix,
+                run_prefix_len=run_prefix_len,
+            )
+        elif max_concurrent_conversations is not None:
+            # KV-cache stress benchmark: two independent concurrency knobs.
+            # max_concurrent_conversations caps active session workers;
+            # max_concurrency (semaphore) caps in-flight turns globally.
+            if (
+                max_concurrency is not None
+                and max_concurrency > max_concurrent_conversations
+            ):
+                raise ValueError(
+                    f"--max-concurrency ({max_concurrency}) must be <= "
+                    f"--max-concurrent-conversations "
+                    f"({max_concurrent_conversations}): to stress the "
+                    "server's KV-cache, more sessions must be open than "
+                    "turns in-flight."
                 )
-                all_outputs = [
-                    out for outs in outputs_by_session.values() for out in outs
-                ]
-            else:
-                # multi-turn chat scenario
-                outputs_by_session = await run_multiturn_benchmark(
-                    chat_sessions=samples.chat_sessions,
-                    max_requests=max_requests,
-                    semaphore=semaphore,
-                    benchmark_should_end_time=benchmark_should_end_time,
-                    request_driver=request_driver,
-                    model_id=model_id,
-                    api_url=api_url,
-                    tokenizer=tokenizer,
-                    ignore_first_turn_stats=ignore_first_turn_stats,
-                    lora_manager=lora_manager,
-                    warmup_delay_ms=warmup_delay_ms,
-                    max_concurrency=max_concurrency,
-                    temperature=temperature,
-                    top_p=top_p,
-                    top_k=top_k,
-                    randomize_session_start=randomize_session_start,
-                    warmup_to_steady_state=warmup_to_steady_state,
-                    warmup_oversample_factor=warmup_oversample_factor,
-                    num_chat_sessions=num_chat_sessions,
-                    seed=seed,
-                    run_prefix=run_prefix,
-                    run_prefix_len=run_prefix_len,
-                )
-                all_outputs = [
-                    out for outs in outputs_by_session.values() for out in outs
-                ]
+            assert tokenizer is not None
+            assert isinstance(max_concurrent_conversations, int)
+            outputs_by_session = await run_kv_cache_stress_benchmark(
+                chat_sessions=samples.chat_sessions,
+                max_requests=max_requests,
+                max_concurrent_conversations=max_concurrent_conversations,
+                semaphore=semaphore,
+                benchmark_should_end_time=benchmark_should_end_time,
+                request_driver=request_driver,
+                model_id=model_id,
+                api_url=api_url,
+                tokenizer=tokenizer,
+                ignore_first_turn_stats=ignore_first_turn_stats,
+                lora_manager=lora_manager,
+                warmup_delay_ms=warmup_delay_ms,
+                temperature=temperature,
+                top_p=top_p,
+                top_k=top_k,
+                randomize_session_start=randomize_session_start,
+                warmup_to_steady_state=warmup_to_steady_state,
+                warmup_oversample_factor=warmup_oversample_factor,
+                num_chat_sessions=num_chat_sessions,
+                seed=seed,
+                run_prefix=run_prefix,
+                run_prefix_len=run_prefix_len,
+            )
+            all_outputs = [
+                out for outs in outputs_by_session.values() for out in outs
+            ]
+        else:
+            # multi-turn chat scenario
+            outputs_by_session = await run_multiturn_benchmark(
+                chat_sessions=samples.chat_sessions,
+                max_requests=max_requests,
+                semaphore=semaphore,
+                benchmark_should_end_time=benchmark_should_end_time,
+                request_driver=request_driver,
+                model_id=model_id,
+                api_url=api_url,
+                tokenizer=tokenizer,
+                ignore_first_turn_stats=ignore_first_turn_stats,
+                lora_manager=lora_manager,
+                warmup_delay_ms=warmup_delay_ms,
+                max_concurrency=max_concurrency,
+                temperature=temperature,
+                top_p=top_p,
+                top_k=top_k,
+                randomize_session_start=randomize_session_start,
+                warmup_to_steady_state=warmup_to_steady_state,
+                warmup_oversample_factor=warmup_oversample_factor,
+                num_chat_sessions=num_chat_sessions,
+                seed=seed,
+                run_prefix=run_prefix,
+                run_prefix_len=run_prefix_len,
+            )
+            all_outputs = [
+                out for outs in outputs_by_session.values() for out in outs
+            ]
 
-            # Close pbar if it was created
-            if pbar is not None:
-                pbar.close()
+        # Close pbar if it was created
+        if pbar is not None:
+            pbar.close()
 
-            benchmark_duration = (
-                time.perf_counter_ns() - benchmark_start_time
-            ) / 1e9
-        finally:
-            # Stop nsys trace if enabled (after timing to exclude trace overhead)
-            if trace_path:
-                stop_trace(trace_session)
+        benchmark_duration = (
+            time.perf_counter_ns() - benchmark_start_time
+        ) / 1e9
 
     if benchmark_task == "text-generation":
         spec_decode_metrics_after = fetch_spec_decode_metrics(backend, base_url)
