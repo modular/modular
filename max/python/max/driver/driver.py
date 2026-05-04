@@ -150,7 +150,11 @@ def calculate_virtual_device_count_from_cli(
             or lists of integers like ``[0, 1, 2]``.
 
     Returns:
-        The minimum number of virtual devices needed (max GPU ID + 1), or 1 if no GPUs.
+        ``max(1, max_gpu_id + 1)``: the slot count implied by the highest GPU index in the
+        raw inputs, with a floor of ``1``. In particular, ``gpu:all`` when
+        ``accelerator_count()`` is ``0`` leaves ``max_gpu_id == -1`` and still returns
+        ``1`` (same as no GPU IDs in the CLI). That floor is for virtual-device setup;
+        actual ``gpu:all`` with zero GPUs still fails later when device specs are built.
     """
     max_gpu_id = -1
     for device_input in device_inputs:
@@ -161,6 +165,20 @@ def calculate_virtual_device_count_from_cli(
         elif device_input in ("gpu", "default"):
             # Handle "gpu" or "default" which means GPU 0
             max_gpu_id = max(max_gpu_id, 0)
-        # Other string formats (like "gpu:0,1,2") are handled by the DevicesOptionType parser
+        elif (
+            isinstance(device_input, str) and device_input.lower() == "gpu:all"
+        ):
+            # Every visible GPU: need slots 0 .. N-1. If N==0, max_gpu_id stays -1 and the
+            # final max(1, ...) enforces the same minimum as other no-GPU CLI paths.
+            max_gpu_id = max(max_gpu_id, accelerator_count() - 1)
+        elif isinstance(device_input, str) and device_input.lower().startswith(
+            "gpu:"
+        ):
+            suffix = device_input.split(":", 1)[1]
+            for part in suffix.split(","):
+                part_stripped = part.strip()
+                if not part_stripped or part_stripped.lower() == "all":
+                    continue
+                max_gpu_id = max(max_gpu_id, int(part_stripped))
 
     return max(1, max_gpu_id + 1)

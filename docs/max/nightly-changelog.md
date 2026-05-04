@@ -16,6 +16,8 @@ This version is still a work in progress.
 
 ### `max` CLI
 
+- Added `--devices=gpu:all` to use every visible GPU (including MAX Serve).
+
 ### Python API
 
 ## Breaking changes

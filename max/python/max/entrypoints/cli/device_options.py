@@ -53,6 +53,7 @@ class DevicesOptionType(click.ParamType):
                 Valid arguments:
                 - "cpu"   → use the CPU,
                 - "gpu"   → default to GPU 0, or,
+                - "gpu:all" → use every visible GPU, or,
                 - a list of ints (GPU IDs).
 
         Raises:

@@ -62,6 +62,19 @@ def test_normalize_device_specs_input_gpu_list(
 
 
 @pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("gpu:all", "gpu:all"),
+        ("GPU:ALL", "gpu:all"),
+    ],
+)
+def test_normalize_device_specs_input_gpu_all(
+    value: str, expected: str
+) -> None:
+    assert normalize_device_specs_input(value) == expected
+
+
+@pytest.mark.parametrize(
     ("value", "message"),
     [
         ("tpu", "Expected 'gpu:<id1>,<id2>' format, got 'tpu'"),
@@ -95,6 +108,22 @@ def test_get_requested_gpu_ids(
     devices: DeviceHandle, expected: list[int]
 ) -> None:
     assert get_requested_gpu_ids(devices=devices) == expected
+
+
+def test_get_requested_gpu_ids_gpu_all(
+    mocker: MockerFixture,
+) -> None:
+    mocker.patch.object(
+        device_specs,
+        "scan_available_devices",
+        autospec=True,
+        return_value=[
+            DeviceSpec.accelerator(0),
+            DeviceSpec.accelerator(1),
+            DeviceSpec.accelerator(3),
+        ],
+    )
+    assert get_requested_gpu_ids(devices="gpu:all") == [0, 1, 3]
 
 
 def test_validate_gpu_ids_allows_no_available_gpus() -> None:
@@ -156,10 +185,45 @@ def test_device_specs_from_normalized_device_handle_gpu_list(
     ]
 
 
-def test_coerce_device_specs_input_parses_strings(
+def test_device_specs_from_normalized_device_handle_gpu_all(
     mocker: MockerFixture,
 ) -> None:
     mocker.patch.object(
+        device_specs,
+        "scan_available_devices",
+        autospec=True,
+        return_value=[
+            DeviceSpec.accelerator(0),
+            DeviceSpec.accelerator(1),
+        ],
+    )
+    specs = ds_from_ndh("gpu:all")
+    assert specs == [
+        DeviceSpec.accelerator(0),
+        DeviceSpec.accelerator(1),
+    ]
+
+
+def test_device_specs_from_normalized_device_handle_gpu_all_no_gpus(
+    mocker: MockerFixture,
+) -> None:
+    mocker.patch.object(
+        device_specs,
+        "scan_available_devices",
+        autospec=True,
+        return_value=[DeviceSpec.cpu()],
+    )
+    with pytest.raises(
+        ValueError,
+        match=r"'gpu:all' was requested but no GPUs are available",
+    ):
+        ds_from_ndh("gpu:all")
+
+
+def test_coerce_device_specs_input_parses_strings(
+    mocker: MockerFixture,
+) -> None:
+    mock_scan = mocker.patch.object(
         device_specs,
         "scan_available_devices",
         autospec=True,
@@ -171,6 +235,14 @@ def test_coerce_device_specs_input_parses_strings(
     assert coerce_device_specs_input("gpu:1,2") == [
         DeviceSpec.accelerator(1),
         DeviceSpec.accelerator(2),
+    ]
+    mock_scan.return_value = [
+        DeviceSpec.accelerator(0),
+        DeviceSpec.accelerator(1),
+    ]
+    assert coerce_device_specs_input("gpu:all") == [
+        DeviceSpec.accelerator(0),
+        DeviceSpec.accelerator(1),
     ]
 
 
@@ -198,7 +270,7 @@ def test_coerce_device_specs_input_string_list(
     mocker: MockerFixture,
 ) -> None:
     """CLI parsers like cyclopts may pass device specs as list[str]."""
-    mocker.patch.object(
+    mock_scan = mocker.patch.object(
         device_specs,
         "scan_available_devices",
         autospec=True,
@@ -212,6 +284,15 @@ def test_coerce_device_specs_input_string_list(
     # Single-element string list with named values
     assert coerce_device_specs_input(["cpu"]) == [DeviceSpec.cpu()]
     assert coerce_device_specs_input(["gpu"]) == [DeviceSpec.accelerator(0)]
+    mock_scan.return_value = [
+        DeviceSpec.accelerator(0),
+        DeviceSpec.accelerator(1),
+    ]
+    assert coerce_device_specs_input(["gpu:all"]) == [
+        DeviceSpec.accelerator(0),
+        DeviceSpec.accelerator(1),
+    ]
+    mock_scan.return_value = [DeviceSpec.cpu()]
     assert coerce_device_specs_input(["default"]) == [DeviceSpec.cpu()]
     # Multi-element numeric string list (e.g. --device-specs 0 1)
     assert coerce_device_specs_input(["0", "1"]) == [
