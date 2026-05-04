@@ -38,7 +38,7 @@ from .sync import (
     circular_add,
     is_p2p_enabled,
 )
-from .device_query import dispatch_max_num_blocks, get_sm_version
+from .device_query import dispatch_select_comm_config, get_sm_version
 from .allreduce import allreduce_tuning_table
 
 from std.utils import StaticTuple
@@ -474,12 +474,12 @@ def broadcast[
     comptime BLOCK_SIZE = 256
     # Default max blocks if not specified.
     comptime sm_version = get_sm_version()
-    # TODO: dispatch_max_num_blocks was tuned for allreduce; may need separate tuning for broadcast
+    # TODO: dispatch_select_comm_config was tuned for allreduce; may need separate tuning for broadcast
     var num_bytes = num_elements * size_of[dtype]()
     var max_num_blocks = _max_num_blocks.or_else(
-        dispatch_max_num_blocks[ngpus, sm_version, allreduce_tuning_table](
+        dispatch_select_comm_config[ngpus, sm_version, allreduce_tuning_table](
             num_bytes
-        )
+        ).get_num_blocks()
     )
 
     var grid_size = min(

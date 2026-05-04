@@ -17,8 +17,22 @@ from internal_utils import TuningConfig, Table
 from std.gpu.host.info import GPUInfo
 
 
+trait CommTuningConfig(TuningConfig):
+    def get_num_blocks(self) -> Int:
+        ...
+
+    def get_num_bytes(self) -> Int:
+        ...
+
+    def get_sm_version(self) -> StaticString:
+        ...
+
+    def get_ngpus(self) -> Int:
+        ...
+
+
 @fieldwise_init
-struct CommTuningConfig(TrivialRegisterPassable, TuningConfig):
+struct DefaultCommTuningConfig(CommTuningConfig, TrivialRegisterPassable):
     """
     Parameters:
         ngpus: Number of GPUs for running allreduce.
@@ -32,6 +46,18 @@ struct CommTuningConfig(TrivialRegisterPassable, TuningConfig):
     var sm_version: StaticString
     var num_blocks: Int
 
+    def get_num_blocks(self) -> Int:
+        return self.num_blocks
+
+    def get_num_bytes(self) -> Int:
+        return self.num_bytes
+
+    def get_sm_version(self) -> StaticString:
+        return self.sm_version
+
+    def get_ngpus(self) -> Int:
+        return self.ngpus
+
     def write_to(self, mut writer: Some[Writer]):
         """Writes the tuning config as a string.
 
@@ -44,11 +70,13 @@ struct CommTuningConfig(TrivialRegisterPassable, TuningConfig):
 
 
 @always_inline
-def dispatch_max_num_blocks[
+def dispatch_select_comm_config[
+    TuningTableType: CommTuningConfig,
+    //,
     ngpus: Int,
     sm_version: StaticString,
-    tuning_table: Table[CommTuningConfig],
-](num_bytes: Int) -> Int:
+    tuning_table: Table[TuningTableType],
+](num_bytes: Int) -> TuningTableType:
     """
     This function searches for tuning configs with matching sm_version
     and ngpus. If such configs are found, then the search continues for
@@ -66,7 +94,7 @@ def dispatch_max_num_blocks[
     # corrupt barrier state.
     @parameter
     def _entry_exceeds_block_bound(x: tuning_table.type) -> Bool:
-        return x.num_blocks > 512
+        return x.get_num_blocks() > 512
 
     comptime _over_limit = tuning_table.query_index[
         _entry_exceeds_block_bound
@@ -79,12 +107,18 @@ def dispatch_max_num_blocks[
     @parameter
     def rule_eq_arch_default(x: tuning_table.type) -> Bool:
         return (
-            x.ngpus == -1 and x.num_bytes == -1 and x.sm_version == sm_version
+            x.get_ngpus() == -1
+            and x.get_num_bytes() == -1
+            and x.get_sm_version() == sm_version
         )
 
     @parameter
     def rule_eq_global_default(x: tuning_table.type) -> Bool:
-        return x.ngpus == -1 and x.num_bytes == -1 and x.sm_version == "default"
+        return (
+            x.get_ngpus() == -1
+            and x.get_num_bytes() == -1
+            and x.get_sm_version() == "default"
+        )
 
     comptime arch_default_idx = tuning_table.query_index[rule_eq_arch_default]()
     comptime global_default_idx = tuning_table.query_index[
@@ -99,22 +133,21 @@ def dispatch_max_num_blocks[
         + " or a global default entry (sm_version='default')"
     )
     comptime default_entry = tuning_table.configs[default_idx[0]]
-    var default_num_blocks = default_entry.num_blocks
 
     # narrowing the search space to matching sm_version and ngpus
     @parameter
     def rule_eq_arch_ngpus(x: tuning_table.type) -> Bool:
-        return x.sm_version == sm_version and x.ngpus == ngpus
+        return x.get_sm_version() == sm_version and x.get_ngpus() == ngpus
 
     comptime search_domain = tuning_table.query_index[rule_eq_arch_ngpus]()
 
     comptime if not search_domain:
-        return default_num_blocks
+        return default_entry
 
     # get all static num_bytes values in table within the search space
     @parameter
     def rule_get_num_bytes(x: tuning_table.type) -> Int:
-        return x.num_bytes
+        return x.get_num_bytes()
 
     comptime all_num_bytes_values = tuning_table.query_values[
         Int, rule_get_num_bytes, search_domain
@@ -124,7 +157,7 @@ def dispatch_max_num_blocks[
 
         @parameter
         def rule_eq_nb(x: tuning_table.type) -> Bool:
-            return x.num_bytes == nb
+            return x.get_num_bytes() == nb
 
         # Find the fist config x with input 'num_bytes <= x.num_bytes'
         if num_bytes <= nb:
@@ -134,11 +167,11 @@ def dispatch_max_num_blocks[
 
             comptime if idx_list:
                 comptime entry = tuning_table.configs[idx_list[0]]
-                return entry.num_blocks
+                return entry
             else:
                 break
 
-    return default_num_blocks
+    return default_entry
 
 
 def get_sm_version() -> StaticString:

@@ -93,7 +93,7 @@ from .allreduce import (
     elementwise_epilogue_type,
     allreduce_tuning_table,
 )
-from .device_query import get_sm_version, dispatch_max_num_blocks
+from .device_query import get_sm_version, dispatch_select_comm_config
 from .reducescatter import _target_address_space
 from .sync import (
     MAX_GPUS,
@@ -665,9 +665,9 @@ def _allreduce_rmsnorm_fp8_launch[
     """Launch the fused allreduce + RMSNorm + FP8 kernel."""
     comptime sm_version = get_sm_version()
     var payload_bytes = rows * cols * size_of[in_dtype]()
-    var max_blocks = dispatch_max_num_blocks[
+    var max_blocks = dispatch_select_comm_config[
         ngpus, sm_version, allreduce_tuning_table
-    ](payload_bytes)
+    ](payload_bytes).get_num_blocks()
     var grid_dim = min(rows, max_blocks)
     var block_dim = threads_per_block
 
@@ -778,9 +778,9 @@ def _allreduce_rmsnorm_fp8_launch_2stage[
     # ensures 100% block utilization in both stages.
     comptime sm_version = get_sm_version()
     var payload_bytes = rows * cols * size_of[in_dtype]()
-    var max_blocks = dispatch_max_num_blocks[
+    var max_blocks = dispatch_select_comm_config[
         ngpus, sm_version, allreduce_tuning_table
-    ](payload_bytes)
+    ](payload_bytes).get_num_blocks()
     var grid_dim = min(ceildiv(rows, ngpus), max_blocks)
     var block_dim = threads_per_block
 

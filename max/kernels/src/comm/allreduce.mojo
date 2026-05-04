@@ -138,7 +138,7 @@ from .sync import (
     circular_add,
     is_p2p_enabled,
 )
-from .device_query import dispatch_max_num_blocks, CommTuningConfig
+from .device_query import dispatch_select_comm_config, CommTuningConfig
 from internal_utils import Table
 
 comptime elementwise_epilogue_type = def[
@@ -146,75 +146,199 @@ comptime elementwise_epilogue_type = def[
 ](Coord, SIMD[dtype, size=width]) capturing -> None
 
 # Tuning table to get num_blocks for allreduce.
+
+
+@fieldwise_init
+struct AllReduceTuningConfig(CommTuningConfig, TrivialRegisterPassable):
+    """
+    Parameters:
+        ngpus: Number of GPUs for running allreduce.
+        num_bytes: Total number of input bytes supported by the config.
+        sm_version: SM version (as string).
+        num_blocks: Number of thread blocks for running allreduce.
+    """
+
+    var ngpus: Int
+    var num_bytes: Int
+    var sm_version: StaticString
+    var num_blocks: Int
+    var use_2stage: Bool
+
+    def get_num_blocks(self) -> Int:
+        return self.num_blocks
+
+    def get_num_bytes(self) -> Int:
+        return self.num_bytes
+
+    def get_sm_version(self) -> StaticString:
+        return self.sm_version
+
+    def get_ngpus(self) -> Int:
+        return self.ngpus
+
+    def get_use_2stage(self) -> Bool:
+        return self.use_2stage
+
+    def write_to(self, mut writer: Some[Writer]):
+        """Writes the tuning config as a string.
+
+        Args:
+            writer: The writer to write to.
+        """
+        writer.write(
+            self.ngpus,
+            self.num_bytes,
+            self.sm_version,
+            self.num_blocks,
+            self.use_2stage,
+        )
+
+
 # Arch-specific defaults use ngpus=-1, num_bytes=-1 with the arch's sm_version.
 # The global default (sm_version="default") is the ultimate fallback for
-# unknown architectures -- dispatch_max_num_blocks prefers arch-specific
+# unknown architectures -- dispatch_select_comm_config prefers arch-specific
 # defaults when available.
 comptime allreduce_tuning_table = Table(
     [
         # default for sm90 (encoded with ngpus=-1, num_bytes=-1)
-        CommTuningConfig(
-            ngpus=-1, num_bytes=-1, sm_version="sm_90a", num_blocks=216
+        AllReduceTuningConfig(
+            ngpus=-1,
+            num_bytes=-1,
+            sm_version="sm_90a",
+            num_blocks=216,
+            use_2stage=False,
         ),
-        CommTuningConfig(
-            ngpus=4, num_bytes=(1 << 27), sm_version="sm_90a", num_blocks=232
+        AllReduceTuningConfig(
+            ngpus=4,
+            num_bytes=(1 << 27),
+            sm_version="sm_90a",
+            num_blocks=232,
+            use_2stage=False,
         ),
         # default for sm100 (encoded with ngpus=-1, num_bytes=-1)
-        CommTuningConfig(
-            ngpus=-1, num_bytes=-1, sm_version="sm_100a", num_blocks=512
+        AllReduceTuningConfig(
+            ngpus=-1,
+            num_bytes=-1,
+            sm_version="sm_100a",
+            num_blocks=512,
+            use_2stage=False,
         ),
         # Tuning results for sm100 (2xB200, 4xB200)
-        CommTuningConfig(
-            ngpus=2, num_bytes=(1 << 23), sm_version="sm_100a", num_blocks=512
+        AllReduceTuningConfig(
+            ngpus=2,
+            num_bytes=(1 << 23),
+            sm_version="sm_100a",
+            num_blocks=512,
+            use_2stage=False,
         ),
-        CommTuningConfig(
-            ngpus=2, num_bytes=(1 << 24), sm_version="sm_100a", num_blocks=512
+        AllReduceTuningConfig(
+            ngpus=2,
+            num_bytes=(1 << 24),
+            sm_version="sm_100a",
+            num_blocks=512,
+            use_2stage=False,
         ),
-        CommTuningConfig(
-            ngpus=2, num_bytes=(1 << 25), sm_version="sm_100a", num_blocks=512
+        AllReduceTuningConfig(
+            ngpus=2,
+            num_bytes=(1 << 25),
+            sm_version="sm_100a",
+            num_blocks=512,
+            use_2stage=False,
         ),
-        CommTuningConfig(
-            ngpus=2, num_bytes=(1 << 26), sm_version="sm_100a", num_blocks=512
+        AllReduceTuningConfig(
+            ngpus=2,
+            num_bytes=(1 << 26),
+            sm_version="sm_100a",
+            num_blocks=512,
+            use_2stage=False,
         ),
-        CommTuningConfig(
-            ngpus=2, num_bytes=(1 << 27), sm_version="sm_100a", num_blocks=512
+        AllReduceTuningConfig(
+            ngpus=2,
+            num_bytes=(1 << 27),
+            sm_version="sm_100a",
+            num_blocks=512,
+            use_2stage=False,
         ),
-        CommTuningConfig(
-            ngpus=4, num_bytes=(1 << 23), sm_version="sm_100a", num_blocks=512
+        AllReduceTuningConfig(
+            ngpus=4,
+            num_bytes=(1 << 23),
+            sm_version="sm_100a",
+            num_blocks=512,
+            use_2stage=False,
         ),
-        CommTuningConfig(
-            ngpus=4, num_bytes=(1 << 24), sm_version="sm_100a", num_blocks=512
+        AllReduceTuningConfig(
+            ngpus=4,
+            num_bytes=(1 << 24),
+            sm_version="sm_100a",
+            num_blocks=512,
+            use_2stage=False,
         ),
-        CommTuningConfig(
-            ngpus=4, num_bytes=(1 << 25), sm_version="sm_100a", num_blocks=512
+        AllReduceTuningConfig(
+            ngpus=4,
+            num_bytes=(1 << 25),
+            sm_version="sm_100a",
+            num_blocks=512,
+            use_2stage=False,
         ),
-        CommTuningConfig(
-            ngpus=4, num_bytes=(1 << 26), sm_version="sm_100a", num_blocks=512
+        AllReduceTuningConfig(
+            ngpus=4,
+            num_bytes=(1 << 26),
+            sm_version="sm_100a",
+            num_blocks=512,
+            use_2stage=False,
         ),
-        CommTuningConfig(
-            ngpus=4, num_bytes=(1 << 27), sm_version="sm_100a", num_blocks=512
+        AllReduceTuningConfig(
+            ngpus=4,
+            num_bytes=(1 << 27),
+            sm_version="sm_100a",
+            num_blocks=512,
+            use_2stage=False,
         ),
         # default for sm103 (B300, encoded with ngpus=-1, num_bytes=-1)
-        CommTuningConfig(
-            ngpus=-1, num_bytes=-1, sm_version="sm_103a", num_blocks=512
+        AllReduceTuningConfig(
+            ngpus=-1,
+            num_bytes=-1,
+            sm_version="sm_103a",
+            num_blocks=512,
+            use_2stage=False,
         ),
         # default for CDNA3 (MI300X, encoded with ngpus=-1, num_bytes=-1)
-        CommTuningConfig(
-            ngpus=-1, num_bytes=-1, sm_version="CDNA3", num_blocks=32
+        AllReduceTuningConfig(
+            ngpus=-1,
+            num_bytes=-1,
+            sm_version="CDNA3",
+            num_blocks=32,
+            use_2stage=False,
         ),
         # default for CDNA4 (MI355X, encoded with ngpus=-1, num_bytes=-1)
-        CommTuningConfig(
-            ngpus=-1, num_bytes=-1, sm_version="CDNA4", num_blocks=64
+        AllReduceTuningConfig(
+            ngpus=-1,
+            num_bytes=-1,
+            sm_version="CDNA4",
+            num_blocks=64,
+            use_2stage=False,
         ),
-        CommTuningConfig(
-            ngpus=8, num_bytes=(1 << 20), sm_version="CDNA4", num_blocks=64
+        AllReduceTuningConfig(
+            ngpus=8,
+            num_bytes=(1 << 20),
+            sm_version="CDNA4",
+            num_blocks=64,
+            use_2stage=False,
         ),
-        CommTuningConfig(
-            ngpus=8, num_bytes=(1 << 31), sm_version="CDNA4", num_blocks=44
+        AllReduceTuningConfig(
+            ngpus=8,
+            num_bytes=(1 << 31),
+            sm_version="CDNA4",
+            num_blocks=44,
+            use_2stage=False,
         ),
         # global default for unknown architectures
-        CommTuningConfig(
-            ngpus=-1, num_bytes=-1, sm_version="default", num_blocks=512
+        AllReduceTuningConfig(
+            ngpus=-1,
+            num_bytes=-1,
+            sm_version="default",
+            num_blocks=512,
+            use_2stage=False,
         ),
     ],
     "allreduce_table",
@@ -1043,9 +1167,9 @@ def allreduce[
     comptime sm_version = ctx.default_device_info.version
     var num_bytes = num_elements * size_of[dtype]()
     var max_num_blocks = _max_num_blocks.or_else(
-        dispatch_max_num_blocks[ngpus, sm_version, allreduce_tuning_table](
+        dispatch_select_comm_config[ngpus, sm_version, allreduce_tuning_table](
             num_bytes
-        )
+        ).get_num_blocks()
     )
     if max_num_blocks > MAX_NUM_BLOCKS_UPPER_BOUND:
         raise Error(
