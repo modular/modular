@@ -204,7 +204,11 @@ def modular_py_test(
         test_names = []
         for src in test_srcs:
             n_shards = per_test_shard_count.get(src)
-            shard_args = ["-p", "pytest-shard"] if n_shards else []
+
+            # If a custom main is used, it is responsible for sharding via
+            # TEST_SHARD_INDEX and TEST_TOTAL_SHARDS env vars.
+            use_shard_plugin = n_shards and not main
+            shard_args = ["-p", "pytest-shard"] if use_shard_plugin else []
             test_name = test_name_prefix + src.replace(".py", "")
             test_names.append(test_name)
             py_test(
@@ -217,7 +221,7 @@ def modular_py_test(
                 deps = deps + [
                     requirement("pytest"),
                     "@rules_python//python/runfiles",
-                ] + (["//bazel/internal:pytest-shard"] if n_shards else []),
+                ] + (["//bazel/internal:pytest-shard"] if use_shard_plugin else []),
                 shard_count = n_shards,
                 srcs = [src] + non_test_srcs + ["//bazel/internal:pytest_runner"],
                 exec_properties = default_exec_properties | exec_properties,
@@ -237,7 +241,11 @@ def modular_py_test(
             fail("Don't use `per_test_tags` if only one source file is specified, use `tags` directly.")
         if per_test_shard_count:
             fail("do not use per_test_shard_count with only one test, use shard_count")
-        shard_args = ["-p", "pytest-shard"] if shard_count else []
+
+        # If a custom main is used, it is responsible for sharding via
+        # TEST_SHARD_INDEX and TEST_TOTAL_SHARDS env vars.
+        use_shard_plugin = shard_count and not main
+        shard_args = ["-p", "pytest-shard"] if use_shard_plugin else []
 
         # test_name_prefix intentionally doesn't apply here: single-source
         # collisions happen at the `name` arg, which callers pick themselves.
@@ -251,7 +259,7 @@ def modular_py_test(
             deps = deps + [
                 requirement("pytest"),
                 "@rules_python//python/runfiles",
-            ] + (["//bazel/internal:pytest-shard"] if shard_count else []),
+            ] + (["//bazel/internal:pytest-shard"] if use_shard_plugin else []),
             shard_count = shard_count,
             srcs = srcs + ["//bazel/internal:pytest_runner"],
             exec_properties = default_exec_properties | exec_properties,
