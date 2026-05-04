@@ -952,7 +952,10 @@ modular_shared_library(
     ]),
     local_defines = [
         "MODULAR_BUILDING_COMPILERRT",
-    ] + CONFIG_SECTION_LOCAL_DEFINES,
+    ] + CONFIG_SECTION_LOCAL_DEFINES + select({
+        "//MLRT:alloc_logging_setting": ["MODULAR_ALLOC_LOGGING=1"],
+        "//conditions:default": ["MODULAR_ALLOC_LOGGING=0"],
+    }),
     output_name = "KGENCompilerRTShared",
     visibility = [
         "//KGEN:consumers",
@@ -971,6 +974,7 @@ modular_shared_library(
         "//Support:Configuration",
         "//Support:Filesystem",
         "//Support:Globals",
+        "//Support:Log",
         "//Support:ML",
         "//Support:Profiling",
         "//Support:Threading",

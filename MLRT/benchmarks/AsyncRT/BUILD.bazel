@@ -33,6 +33,17 @@ modular_cc_binary(
 )
 
 modular_cc_binary(
+    name = "bench_allocator",
+    srcs = ["bench_allocator.cpp"],
+    deps = [
+        "//MLRT:AsyncRT/Runtime",
+        "//MLRT:AsyncRT/RuntimeGlobals",
+        "//Support:MicroBenchmark",
+        "@llvm-project//llvm:Support",
+    ],
+)
+
+modular_cc_binary(
     name = "bench_gpu_kernel_enqueue_devicecontext",
     srcs = [
         "bench_gpu_kernel_enqueue_devicecontext.cpp",
