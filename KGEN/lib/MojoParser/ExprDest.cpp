@@ -343,8 +343,7 @@ MLValue ExprDest::getDefinedMLValueIfExists(ASTType resultType,
   if (LValue lValue = dyn_cast<LValue>(representation)) {
     if (MLValue refValue = lValue.getIfMLValue()) {
       if (emitter.canZeroCostConvert(lValue.getRValueType(), resultType,
-                                     emitter.shared) &&
-          lValue.getMValueType().isDefaultAddrSpace())
+                                     emitter.shared))
         return refValue;
     }
 
@@ -366,6 +365,19 @@ MLValue ExprDest::getDefinedMLValueIfExists(ASTType resultType,
   }
 
   // Otherwise, this would create a new buffer.
+  return {};
+}
+
+MLValue ExprDest::getDirectMLValueIfPresent() const {
+  // If this is an already obvious MLValue, return it.
+  if (LValue lValue = dyn_cast<LValue>(representation))
+    if (MLValue refValue = lValue.getIfMLValue())
+      return refValue;
+
+  // An unresolved VarDeclOp.  Supporting this allows inferring the address
+  // space and origin even though it has no known element type.
+  if (auto *opDest = dyn_cast<Operation *>(representation))
+    return MLValue(cast<VarDeclOp>(opDest));
   return {};
 }
 
@@ -499,9 +511,7 @@ MLValue ExprDest::getMLValueForResult(SMLoc loc, ASTType resultType,
 /// Return true if this is an MLValue that could be in a non-default address
 /// space.
 bool ExprDest::isNonDefaultAddressSpace() const {
-  if (LValue lValue = dyn_cast<LValue>(representation))
-    if (MLValue refValue = lValue.getIfMLValue())
-      if (!lValue.getMValueType().isDefaultAddrSpace())
-        return true;
+  if (MLValue mlValue = getDirectMLValueIfPresent())
+    return !mlValue.getRefType().isDefaultAddrSpace();
   return false;
 }

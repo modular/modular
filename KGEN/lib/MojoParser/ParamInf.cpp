@@ -260,10 +260,10 @@ ParamInf::inferOneOperand(ASTExprAnd<AnyValue> operand, size_t operandIdx,
   // We'll bind the next provided value.
   switch (expectedConvention) {
   case ArgConvention::OwnedReg:
-    llvm_unreachable("not used by the mojo parser");
-  case ArgConvention::Mut:
   case ArgConvention::ByRefResult:
-  case ArgConvention::ByRefError: {
+  case ArgConvention::ByRefError:
+    llvm_unreachable("not used by the mojo parser");
+  case ArgConvention::Mut: {
     // The actual value must be an lvalue if callee takes things by-ref.
     auto argVal = operand.ir.getIfLValue();
     if (!argVal) {
@@ -1155,6 +1155,44 @@ ParameterExprArrayAttr ParamInf::inferForStruct(bool emitConstraintFailure) {
   return getInferredValues();
 }
 
+/// This method is called for ByRefResult arguments of the callee.  It checks to
+/// see if the callee has a parametric address space or origin. If so, it looks
+/// at the ExprDest the call is being emitted into and infers the desired
+/// values, or marks it as needing to be spilled if not.
+LogicalResult ParamInf::inferResultSlot(RefType expectedRef,
+                                        const ExprDest &dest) {
+
+  bool needsAddrSpace =
+      paramFinder.hasReferences(expectedRef.getAddressSpace());
+  bool needsOrigin = paramFinder.hasReferences(expectedRef.getOrigin());
+  if (!needsAddrSpace && !needsOrigin)
+    return success(); // Nothing to do.
+
+  // If we have a concrete MLValue, we can use it to infer the desired values.
+  if (MLValue mlDest = dest.getDirectMLValueIfPresent()) {
+    ParamMatcher matcher(getGivenBindings().callExpr, *this,
+                         /*allowImplicitConversions=*/false);
+
+    if (needsAddrSpace)
+      if (failed(matcher.matchSingleEltStruct(
+              mlDest.getRefType().getAddressSpace(),
+              expectedRef.getAddressSpace())))
+        return failure();
+    if (needsOrigin)
+      if (failed(matcher.matchSingleEltStruct(mlDest.getRefType().getOrigin(),
+                                              expectedRef.getOrigin())))
+        return failure();
+    return success();
+  }
+
+  // If the ExprDest lacks a concrete MLValue, we can't infer anything. We need
+  // the caller to spill the result into a buffer and reinfer us.
+
+  // FIXME: Implement this.
+
+  return success();
+}
+
 LogicalResult ParamInf::inferForCall(
     FnTypeGeneratorType signature, const CallOperands &operands,
     const OperandValueList &variadicKwOperands, bool returnsSelf,
@@ -1177,14 +1215,23 @@ LogicalResult ParamInf::inferForCall(
   for (auto [expectedArgIdx, expectedConvention] :
        llvm::enumerate(signature.getArgConventions())) {
 
-    // There is no provided operand for a by-ref result.
-    if (isResultSlot(expectedConvention))
-      continue;
-
     // Note that 'signature' changes the type as we go, so don't use
     // llvm::enumerate on the argument type list!
     Type expectedType =
         evaluator.getReboundType(signature.getArgument(expectedArgIdx));
+
+    // There is no provided operand for a by-ref result and error slot.
+    if (isResultSlot(expectedConvention)) {
+      auto expectedRef = sugarCast<RefType>(expectedType);
+
+      // If this is the result slot with parametric components, attempt to infer
+      // result origin/address space from it.
+      if (expectedConvention == ArgConvention::ByRefResult)
+        if (failed(inferResultSlot(expectedRef, operands.dest)))
+          return failure();
+      continue;
+    }
+
     if (signature.isKwVarArg(expectedArgIdx)) {
       Type valTy = ASTType(expectedType).getKwargsDictRefValueType();
       auto refValType = RefType::getAnyOrigin(valTy, /*isMut=*/true);

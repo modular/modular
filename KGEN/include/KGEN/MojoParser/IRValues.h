@@ -222,6 +222,7 @@ public:
   /// This returns the declared type of the value without the wrapping pointer.
   ASTType getRValueType() const { return getType().getReferenceElementType(); }
   ASTType getType() const { return ASTType(Value::getType()); }
+  RefType getRefType() const { return cast<RefType>(getType()); }
 
 private:
   void check() const;

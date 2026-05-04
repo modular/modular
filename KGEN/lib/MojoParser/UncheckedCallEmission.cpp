@@ -110,7 +110,7 @@ public:
   /// At this point, we've already applied implicit conversions and converted
   /// things to RValues or BValues as required by the argument convention, but
   /// things may still be in parameter space.
-  bool isSafeToUseValueDestForDirectResult(ASTType destRValueType,
+  bool isSafeToUseValueDestForDirectResult(RefType destRefType,
                                            ArrayRef<Value> argumentValues);
 
   /// The (type-checked and resolved) callee we are emitting the call to.
@@ -687,16 +687,24 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
 /// variadic list/packs, and emitted to the final SSA values that will get
 /// passed.
 bool CallEmitter::isSafeToUseValueDestForDirectResult(
-    ASTType destRValueType, ArrayRef<Value> argValues) {
+    RefType destRefType, ArrayRef<Value> argValues) {
 
   // We don't handle a "ref result" ExprDest initializing a pattern yet.
   if (calleeSig.isRefResult() && !dest.isOperation())
     return false;
 
+  ASTType destRValueType = destRefType.getElementType();
+
   // Check to see if the destination provides a buffer.  If not, we can't use
   // the dest as a direct memory result.
   MLValue destBuffer = dest.getDefinedMLValueIfExists(destRValueType, emitter);
   if (!destBuffer)
+    return false;
+
+  // Ok, we got a destination buffer, make sure it agrees on address space. If
+  // not, we force a temporary.
+  if (!isEqualCanon(destBuffer.getRefType().getAddressSpace(),
+                    destRefType.getAddressSpace()))
     return false;
 
   // If this is a throwing function, then we cannot write to a field of a
@@ -757,7 +765,7 @@ bool CallEmitter::isSafeToUseValueDestForDirectResult(
     //
     // If we don't do this end up with an uninitialized value on the error
     // return path.  Movable types are supposed to be efficiently movable.
-    if (ASTType(destRValueType).isMovable(callExpr->getLoc(), emitter.shared)) {
+    if (destRValueType.isMovable(callExpr->getLoc(), emitter.shared)) {
       // If we're the top level, then nothing can use the result, so we can
       // microoptimize this case.
       Operation *opForRaise = nullptr;
@@ -992,11 +1000,11 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
   case ArgConvention::Mut: {
     // byref_result can have a placeholder when there is no specified
     // destination, but can also have a destination specified directly.
+    auto resultRefType = sugarCast<RefType>(declaredArgType);
     if (!argValAndExpr.ir) {
       assert(convention == ArgConvention::ByRefResult &&
              "value must be present for 'mut' convention");
-      auto resultRValueType =
-          sugarCast<RefType>(declaredArgType).getElementType();
+      auto resultRValueType = resultRefType.getElementType();
 
       // Often the result of the call will be directly assigned into a
       // user-defined var or other location with existing storage.  In these
@@ -1008,8 +1016,7 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
       // slot. At this point we've got enough information about the arguments
       // to make that assessment in a correct way.
       Value resultSlotVal;
-      if (isSafeToUseValueDestForDirectResult(resultRValueType,
-                                              callArgsSoFar)) {
+      if (isSafeToUseValueDestForDirectResult(resultRefType, callArgsSoFar)) {
         // Use the preferred location of the destination slot.
         resultSlotVal = dest.getMLValueForResult(callExpr->getLoc(),
                                                  resultRValueType, emitter);
@@ -1027,10 +1034,11 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
     LValue lv = argValAndExpr.ir.getIfLValue();
     assert(lv && "type checking ensures we will have an lvalue");
 
-    // If this is already an MLValue in the default address space, we can pass
-    // in the reference directly.
+    // If this is already an MLValue, we want to pass the reference directly,
+    // but we require the address spaces to line up.
     if (MLValue ref = lv.getIfMLValue()) {
-      if (lv.getMValueType().isDefaultAddrSpace())
+      if (isEqualCanon(ref.getRefType().getAddressSpace(),
+                       resultRefType.getAddressSpace()))
         return ref;
     }
 
@@ -1866,6 +1874,11 @@ CValue IREmitter::emitCallUnchecked(RValue callee,
     ArgConvention convention = conventionX;
     Type declaredArgType = declaredArgTypeX;
 
+    // See if we have an implicit origin bound for this argument.
+    bool needsImplicitOrigin =
+        hasImplicitOrigin(convention) &&
+        isa<ImplicitOriginRefAttr>(cast<RefType>(declaredArgType).getOrigin());
+
     if (isResultSlot(convention)) {
       // Async function signatures have results slots even though they are not
       // actually provided.
@@ -1900,8 +1913,8 @@ CValue IREmitter::emitCallUnchecked(RValue callee,
     if (!arg)
       return {};
 
-    // See if we have an implicit origin bound for this argument.
-    if (hasImplicitOrigin(convention))
+    // If we need an implicit origin, add it to the list.
+    if (needsImplicitOrigin)
       implicitOrigins.push_back(cast<RefType>(arg.getType()).getOrigin());
 
     // The argument looks good on its own, check to see if it is an exclusivity

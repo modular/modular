@@ -39,3 +39,36 @@ struct RPType(RegisterPassable):
     # CHECK-SAME: %self: !lit.ref<!RPType, mut {{.*}}addr_space{{.*}}> byref_result
     def __init__[addr_space: AddressSpace](out[addr_space] self):
         self.value = 0
+
+# CHECK-LABEL: lit.fn @"use_out_address_space
+def use_out_address_space[addr_space: AddressSpace, o: Origin[mut=True]](
+    ref[o] mem1: MemType,
+    ref[o, addr_space] mem2: MemType,
+    ref[o, AddressSpace.GLOBAL] mem3: MemType,
+    ref[o, addr_space] rp: RPType):
+
+   # CHECK-NEXT: lit.call {{.*}}MemType::@"__init__
+   # CHECK-SAME: <:!AddressSpace {_value: !Int = {0}}, :origin<1> *"o._mlir_origin`">(%mem1)
+   mem1 = MemType()
+
+   # CHECK-NEXT: lit.call {{.*}}MemType::@"__init__
+   # CHECK-SAME: <:!AddressSpace addr_space, :origin<1> *"o._mlir_origin`">(%mem2)
+   mem2 = MemType()
+   # CHECK-NEXT: lit.call {{.*}}MemType::@"__init__
+   # CHECK-SAME: <:!AddressSpace {_value: !Int = {_mlir_value = sugar_preserved(#lit.struct.extract<:!Int #lit.struct.extract<:!AddressSpace #kgen.type<!AddressSpace>, "_value">, "_mlir_value">, 1)}}, :origin<1> *"o._mlir_origin`">(%mem3)
+   mem3 = MemType()
+
+   # CHECK: lit.call {{.*}}MemType::@"__init__
+   # CHECK-SAME: <:origin<1> *"o._mlir_origin`">({{.*}}, %mem1)
+   mem1 = MemType(0)
+
+   # CHECK: lit.call {{.*}}MemType::@"__init__
+   # CHECK-SAME: <:origin<1> *"o._mlir_origin`">({{.*}}, {{.*}}, %mem3)
+   mem3 = MemType(0, 0)
+
+   # FIXME: Doesn't work yet.
+   #var loc = MemType()
+
+   # CHECK-NEXT: lit.call {{.*}}RPType::@"__init__
+   # CHECK-SAME: <:!AddressSpace addr_space, :origin<1> *"o._mlir_origin`">(%rp)
+   rp = RPType()
