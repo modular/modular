@@ -1215,10 +1215,12 @@ def test_conv_gpu_scale_epilogue[
     @always_inline
     @__copy_capture(out_epilogue_tt)
     def scale_epilogue[
-        _dtype: DType, _rank: Int, _width: Int
+        _dtype: DType, _rank: Int, _width: Int, _alignment: Int = 1
     ](coords: IndexList[_rank], val: SIMD[_dtype, _width]):
         var scaled = (val.cast[DType.float32]() * 2.0).cast[dtype]()
-        out_epilogue_tt.store[width=_width](
+        out_epilogue_tt.store[
+            width=_width, alignment=align_of[dtype]() * _alignment
+        ](
             Coord(
                 Idx(coords[0]), Idx(coords[1]), Idx(coords[2]), Idx(coords[3])
             ),
@@ -1340,16 +1342,20 @@ def test_conv_gpu_additive_epilogue[
     @always_inline
     @__copy_capture(out_epilogue_tt)
     def add_bias_epilogue[
-        _dtype: DType, _rank: Int, _width: Int
+        _dtype: DType, _rank: Int, _width: Int, _alignment: Int = 1
     ](coords: IndexList[_rank], val: SIMD[_dtype, _width]):
         var coord = Coord(
             Idx(coords[0]), Idx(coords[1]), Idx(coords[2]), Idx(coords[3])
         )
-        var existing = out_epilogue_tt.load[width=_width](coord)
+        var existing = out_epilogue_tt.load[
+            width=_width, alignment=align_of[_dtype]() * _alignment
+        ](coord)
         var result = (
             val.cast[DType.float32]() + existing.cast[DType.float32]()
         ).cast[dtype]()
-        out_epilogue_tt.store[width=_width](coord, result)
+        out_epilogue_tt.store[
+            width=_width, alignment=align_of[_dtype]() * _alignment
+        ](coord, result)
 
     conv_gpu[
         dtype,

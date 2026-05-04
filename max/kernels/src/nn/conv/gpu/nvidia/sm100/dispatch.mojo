@@ -274,8 +274,3 @@ def dispatch_sm100_conv2d[
                 TensorMapSwizzle.SWIZZLE_64B,
                 num_pipeline_stages_override=6,
             ]()
-
-        # Synchronize before freeing the transposed filter buffer to
-        # ensure the async conv2d kernel has finished reading from it.
-        ctx.synchronize()
-        _ = filter_buf^

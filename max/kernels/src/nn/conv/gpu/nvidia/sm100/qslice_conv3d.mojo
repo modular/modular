@@ -73,13 +73,14 @@ Declined shapes fall through to `dispatch_im2col_matmul_conv3d`.
 """
 
 from std.collections import OptionalReg
-from std.math import ceildiv
+from std.math import ceildiv, gcd
 from std.math.uutils import udivmod
 from std.gpu import global_idx
-from std.gpu.host import DeviceBuffer, DeviceContext
+from std.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from std.gpu.host.info import _is_sm10x_gpu
 from layout import Coord, Idx, TileTensor, row_major
-from std.utils.index import IndexList
+from std.sys import align_of, simd_width_of
+from std.utils import IndexList
 from linalg.utils import elementwise_epilogue_type
 from nn.conv.conv_utils import elementwise_simd_epilogue_type
 
@@ -94,61 +95,79 @@ from .dispatch import dispatch_sm100_conv2d
 @__name(t"qslice_accum_bf16_to_fp32_{dtype}", mangle=True)
 def _accum_bf16_to_fp32_kernel[
     dtype: DType,
+    output_simd_width: Int,
 ](
     accum_fp32_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
-    src_bf16_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    total: Int,
+    src_bf16_ptr: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
+    accum_slice_elems: Int,
 ):
     """Elementwise `accum_fp32[i] += src_bf16[i].cast[fp32]()`.
 
     One thread per element; no atomics — each thread owns its slot.
     """
-    var tid = global_idx.x
-    if tid >= total:
+    comptime bf16_alignment = align_of[SIMD[dtype, output_simd_width]]()
+    comptime fp32_alignment = align_of[SIMD[DType.float32, output_simd_width]]()
+
+    var accum_idx = global_idx.x * output_simd_width
+    if accum_idx >= accum_slice_elems:
         return
-    var src_val = src_bf16_ptr.load(tid).cast[DType.float32]()
-    var accum_val = accum_fp32_ptr.load(tid)
-    accum_fp32_ptr.store(tid, accum_val + src_val)
+    var src_val = src_bf16_ptr.load[
+        width=output_simd_width, alignment=bf16_alignment
+    ](accum_idx).cast[DType.float32]()
+    var accum_val = accum_fp32_ptr.load[
+        width=output_simd_width, alignment=fp32_alignment
+    ](accum_idx)
+    accum_fp32_ptr.store[alignment=fp32_alignment](
+        accum_idx, accum_val + src_val
+    )
 
 
 @__name(t"qslice_fp32_to_dtype_plain_{dtype}", mangle=True)
 def _fp32_to_dtype_plain_kernel[
     dtype: DType,
+    output_simd_width: Int,
 ](
     dst_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    src_fp32_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
-    total: Int,
+    src_fp32_ptr: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
+    output_elems: Int,
 ):
     """Elementwise cast fp32 → `dtype` with no epilogue."""
-    var tid = global_idx.x
-    if tid >= total:
+    var output_idx = global_idx.x * output_simd_width
+    if output_idx >= output_elems:
         return
-    dst_ptr.store(tid, src_fp32_ptr.load(tid).cast[dtype]())
+    dst_ptr.store[alignment=align_of[SIMD[dtype, output_simd_width]]()](
+        output_idx,
+        src_fp32_ptr.load[
+            width=output_simd_width,
+            alignment=align_of[SIMD[DType.float32, output_simd_width]](),
+        ](output_idx).cast[dtype](),
+    )
 
 
 @__name(t"qslice_fp32_to_dtype_epilogue_{dtype}", mangle=True)
 def _fp32_to_dtype_epilogue_kernel[
     dtype: DType,
+    C_out: Int,
     epilogue: elementwise_simd_epilogue_type,
+    output_simd_width: Int,
 ](
-    src_fp32_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    src_fp32_ptr: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
     batch: Int,
     D_out: Int,
     H_out: Int,
     W_out: Int,
-    C_out: Int,
+    output_elems: Int,
 ):
     """Elementwise cast fp32 → `dtype`, then call the caller's 5-D
     epilogue. The epilogue is expected to perform the write
     (matching the MOGG `output._lambda_store` contract).
     """
-    var tid = global_idx.x
-    var total = batch * D_out * H_out * W_out * C_out
-    if tid >= total:
+    var output_idx = global_idx.x * output_simd_width
+    if output_idx >= output_elems:
         return
     var DHW_out = D_out * H_out * W_out
     var HW_out = H_out * W_out
-    var b, rem = udivmod(tid, DHW_out * C_out)
+    var b, rem = udivmod(output_idx, DHW_out * C_out)
     var d: Int
     d, rem = udivmod(rem, HW_out * C_out)
     var h: Int
@@ -156,11 +175,11 @@ def _fp32_to_dtype_epilogue_kernel[
     var w: Int
     var c: Int
     w, c = udivmod(rem, C_out)
-    var val = src_fp32_ptr.load(tid).cast[dtype]()
-    epilogue(
-        IndexList[5](b, d, h, w, c),
-        SIMD[dtype, 1](val),
-    )
+    var val = src_fp32_ptr.load[
+        width=output_simd_width,
+        alignment=align_of[SIMD[DType.float32, output_simd_width]](),
+    ](output_idx).cast[dtype]()
+    epilogue[alignment=output_simd_width](IndexList[5](b, d, h, w, c), val)
 
 
 @__name(t"qslice_pad_filter_qrscf_{dtype}", mangle=True)
@@ -228,12 +247,13 @@ def _copy_filter_kernel[
 @__name(t"qslice_fp32_strided_to_dtype_plain_{dtype}", mangle=True)
 def _fp32_strided_to_dtype_plain_kernel[
     dtype: DType,
-](
-    dst_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    src_fp32_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
-    total: Int,
     C_out: Int,
     C_out_padded: Int,
+    output_simd_width: Int,
+](
+    dst_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    src_fp32_ptr: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
+    output_elems: Int,
 ):
     """Cast fp32 → `dtype` while stripping padded C channels.
 
@@ -241,26 +261,34 @@ def _fp32_strided_to_dtype_plain_kernel[
     first `C_out` per pixel to the user output. `total` is the user
     output element count = batch*D_out*H_out*W_out*C_out.
     """
-    var tid = global_idx.x
-    if tid >= total:
+    var output_idx = global_idx.x * output_simd_width
+    if output_idx >= output_elems:
         return
-    var pixel, c = udivmod(tid, C_out)
+    var pixel, c = udivmod(output_idx, C_out)
     var src_idx = pixel * C_out_padded + c
-    dst_ptr.store(tid, src_fp32_ptr.load(src_idx).cast[dtype]())
+    dst_ptr.store[alignment=align_of[SIMD[dtype, output_simd_width]]()](
+        output_idx,
+        src_fp32_ptr.load[
+            width=output_simd_width,
+            alignment=align_of[SIMD[DType.float32, output_simd_width]](),
+        ](src_idx).cast[dtype](),
+    )
 
 
 @__name(t"qslice_fp32_strided_to_dtype_epilogue_{dtype}", mangle=True)
 def _fp32_strided_to_dtype_epilogue_kernel[
     dtype: DType,
+    C_out: Int,
+    C_out_padded: Int,
     epilogue: elementwise_simd_epilogue_type,
+    output_simd_width: Int,
 ](
-    src_fp32_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    src_fp32_ptr: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
     batch: Int,
     D_out: Int,
     H_out: Int,
     W_out: Int,
-    C_out: Int,
-    C_out_padded: Int,
+    output_elems: Int,
 ):
     """Strided fp32 → `dtype` with 5-D epilogue.
 
@@ -268,13 +296,12 @@ def _fp32_strided_to_dtype_epilogue_kernel[
     walks only over the first `C_out` per pixel and calls the user's
     5-D epilogue with the de-padded `c` coordinate.
     """
-    var tid = global_idx.x
-    var total = batch * D_out * H_out * W_out * C_out
-    if tid >= total:
+    var output_idx = global_idx.x * output_simd_width
+    if output_idx >= output_elems:
         return
     var DHW_out = D_out * H_out * W_out
     var HW_out = H_out * W_out
-    var b, rem = udivmod(tid, DHW_out * C_out)
+    var b, rem = udivmod(output_idx, DHW_out * C_out)
     var d: Int
     d, rem = udivmod(rem, HW_out * C_out)
     var h: Int
@@ -284,11 +311,11 @@ def _fp32_strided_to_dtype_epilogue_kernel[
     w, c = udivmod(rem, C_out)
     var src_pixel = ((b * D_out + d) * H_out + h) * W_out + w
     var src_idx = src_pixel * C_out_padded + c
-    var val = src_fp32_ptr.load(src_idx).cast[dtype]()
-    epilogue(
-        IndexList[5](b, d, h, w, c),
-        SIMD[dtype, 1](val),
-    )
+    var val = src_fp32_ptr.load[
+        width=output_simd_width,
+        alignment=align_of[SIMD[DType.float32, output_simd_width]](),
+    ](src_idx).cast[dtype]()
+    epilogue[alignment=output_simd_width](IndexList[5](b, d, h, w, c), val)
 
 
 # =========================================================================
@@ -319,6 +346,9 @@ def dispatch_qslice_conv3d_sm100[
     comptime assert filter.flat_rank == 5, "filter must be rank 5"
     comptime assert output.flat_rank == 5, "output must be rank 5 (NDHWC)"
 
+    comptime if not filter.shape_known:
+        return False
+
     comptime if input_type != DType.bfloat16:
         return False
     comptime if output_type != DType.bfloat16:
@@ -344,11 +374,11 @@ def dispatch_qslice_conv3d_sm100[
     if symmetric_padding[0] != 0:
         return False
 
-    var Q = Int(filter.dim[0]())
-    var R = Int(filter.dim[1]())
-    var S = Int(filter.dim[2]())
+    comptime Q = filter.static_shape[0]
+    comptime R = filter.static_shape[1]
+    comptime S = filter.static_shape[2]
 
-    if Q <= 1:
+    comptime if Q <= 1:
         return False
 
     # R=S=1 degenerates the per-q 2-D conv into a matmul. Running Q
@@ -357,27 +387,29 @@ def dispatch_qslice_conv3d_sm100[
     # im2col+matmul's single fused matmul on these shapes — im2col
     # collapses R*S*Q into the K dimension and runs one GEMM. Decline
     # so we fall through to the im2col path.
-    if R == 1 and S == 1:
+    comptime if R == 1 and S == 1:
         return False
 
     var batch = Int(input.dim[0]())
     var D = Int(input.dim[1]())
     var H = Int(input.dim[2]())
     var W = Int(input.dim[3]())
-    var C_in = Int(input.dim[4]())
 
     var D_out = Int(output.dim[1]())
     var H_out = Int(output.dim[2]())
     var W_out = Int(output.dim[3]())
-    var C_out = Int(output.dim[4]())
 
-    if C_in % 64 != 0:
+    comptime C_in = filter.static_shape[3]
+    comptime C_out = filter.static_shape[4]
+
+    comptime if C_in % 64 != 0:
         return False
+
     # SM100 UMMA requires the N macro-tile (MMA_N=128) to divide C_out.
     # We accept C_out that is 64-aligned but not 128-aligned by zero-padding
     # the F axis of the filter up to the next multiple of 128; the final
     # write strips the padded columns back out.
-    if C_out % 64 != 0:
+    comptime if C_out % 64 != 0:
         return False
 
     if D_out != D - Q + 1:
@@ -387,8 +419,12 @@ def dispatch_qslice_conv3d_sm100[
     var pad_w = symmetric_padding[2]
     var symmetric_padding_2d = IndexList[2](pad_h, pad_w)
 
-    var C_out_padded = ceildiv(C_out, 128) * 128
-    var padded_run = C_out_padded != C_out
+    comptime C_out_padded = ceildiv(C_out, 128) * 128
+    comptime padded_run = C_out_padded != C_out
+
+    comptime output_simd_width = gcd(
+        simd_width_of[output_type, target=get_gpu_target()](), C_out
+    )
 
     var output_elems = batch * D_out * H_out * W_out * C_out
     var accum_total_elems = batch * D_out * H_out * W_out * C_out_padded
@@ -426,7 +462,7 @@ def dispatch_qslice_conv3d_sm100[
     comptime pad_block = 256
     var pad_total = Q * filter_slab_elems
     var pad_grid = ceildiv(pad_total, pad_block)
-    if padded_run:
+    comptime if padded_run:
         ctx.enqueue_function[
             _pad_filter_qrscf_kernel[filter_type],
             _pad_filter_qrscf_kernel[filter_type],
@@ -460,9 +496,7 @@ def dispatch_qslice_conv3d_sm100[
     for n_batch in range(batch):
         var input_n_offset = n_batch * input_slice_elems
         var accum_n_offset = n_batch * accum_slice_elems
-        var accum_n_ptr = (accum_fp32_ptr + accum_n_offset).unsafe_origin_cast[
-            MutAnyOrigin
-        ]()
+        var accum_n_ptr = accum_fp32_ptr + accum_n_offset
 
         for q in range(Q):
             var input_q_offset = input_n_offset + q * H * W * C_in
@@ -505,11 +539,13 @@ def dispatch_qslice_conv3d_sm100[
             )
 
             # Accumulate: accum_fp32_n += temp_bf16.cast[fp32]().
-            var accum_grid = ceildiv(accum_slice_elems, accum_block)
-            ctx.enqueue_function[
-                _accum_bf16_to_fp32_kernel[output_type],
-                _accum_bf16_to_fp32_kernel[output_type],
-            ](
+            var accum_grid = ceildiv(
+                accum_slice_elems // output_simd_width, accum_block
+            )
+            comptime accum_kernel = _accum_bf16_to_fp32_kernel[
+                output_type, output_simd_width
+            ]
+            ctx.enqueue_function[accum_kernel, accum_kernel](
                 accum_n_ptr,
                 temp_bf16_ptr,
                 accum_slice_elems,
@@ -521,63 +557,56 @@ def dispatch_qslice_conv3d_sm100[
     # When padded_run=True the accumulator is C_out_padded-wide; use the
     # strided variants so we only write/call epilogue on the first C_out
     # columns per NDHW pixel.
-    var final_block = 256
-    var final_grid = ceildiv(output_elems, final_block)
+    comptime final_block = 256
+    var final_grid = ceildiv(output_elems // output_simd_width, final_block)
 
     comptime if maybe_epilogue_func:
         comptime epilogue_5d = maybe_epilogue_func.value()
-        if padded_run:
-            ctx.enqueue_function[
-                _fp32_strided_to_dtype_epilogue_kernel[
-                    output_type, epilogue_5d
-                ],
-                _fp32_strided_to_dtype_epilogue_kernel[
-                    output_type, epilogue_5d
-                ],
-            ](
+        comptime if padded_run:
+            comptime output_kernel = _fp32_strided_to_dtype_epilogue_kernel[
+                output_type, C_out, C_out_padded, epilogue_5d, output_simd_width
+            ]
+            ctx.enqueue_function[output_kernel, output_kernel](
                 accum_fp32_ptr,
                 batch,
                 D_out,
                 H_out,
                 W_out,
-                C_out,
-                C_out_padded,
+                output_elems,
                 grid_dim=final_grid,
                 block_dim=final_block,
             )
         else:
-            ctx.enqueue_function[
-                _fp32_to_dtype_epilogue_kernel[output_type, epilogue_5d],
-                _fp32_to_dtype_epilogue_kernel[output_type, epilogue_5d],
-            ](
+            comptime output_kernel = _fp32_to_dtype_epilogue_kernel[
+                output_type, C_out, epilogue_5d, output_simd_width
+            ]
+            ctx.enqueue_function[output_kernel, output_kernel](
                 accum_fp32_ptr,
                 batch,
                 D_out,
                 H_out,
                 W_out,
-                C_out,
+                output_elems,
                 grid_dim=final_grid,
                 block_dim=final_block,
             )
     else:
-        if padded_run:
-            ctx.enqueue_function[
-                _fp32_strided_to_dtype_plain_kernel[output_type],
-                _fp32_strided_to_dtype_plain_kernel[output_type],
-            ](
+        comptime if padded_run:
+            comptime output_kernel = _fp32_strided_to_dtype_plain_kernel[
+                output_type, C_out, C_out_padded, output_simd_width
+            ]
+            ctx.enqueue_function[output_kernel, output_kernel](
                 output.ptr,
                 accum_fp32_ptr,
                 output_elems,
-                C_out,
-                C_out_padded,
                 grid_dim=final_grid,
                 block_dim=final_block,
             )
         else:
-            ctx.enqueue_function[
-                _fp32_to_dtype_plain_kernel[output_type],
-                _fp32_to_dtype_plain_kernel[output_type],
-            ](
+            comptime output_kernel = _fp32_to_dtype_plain_kernel[
+                output_type, output_simd_width
+            ]
+            ctx.enqueue_function[output_kernel, output_kernel](
                 output.ptr,
                 accum_fp32_ptr,
                 output_elems,
@@ -585,8 +614,4 @@ def dispatch_qslice_conv3d_sm100[
                 block_dim=final_block,
             )
 
-    ctx.synchronize()
-    _ = accum_fp32_buf^
-    _ = temp_bf16_buf^
-    _ = padded_filter_buf^
     return True

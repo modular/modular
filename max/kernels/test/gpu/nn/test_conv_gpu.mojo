@@ -13,6 +13,7 @@
 
 from std.math import ceildiv
 from std.random import rand
+from std.sys import align_of
 
 from layout import (
     Coord,
@@ -280,10 +281,12 @@ def test_conv3d_gpu_dispatch[
     @always_inline
     @__copy_capture(output_lt)
     def scale_epilogue[
-        _dtype: DType, _rank: Int, _width: Int
+        _dtype: DType, _rank: Int, _width: Int, _alignment: Int = 1
     ](coords: IndexList[_rank], val: SIMD[_dtype, _width]):
         var scaled = (val.cast[DType.float32]() * 2.0).cast[dtype]()
-        output_lt.store[width=_width](
+        output_lt.store[
+            width=_width, store_alignment=align_of[dtype]() * _alignment
+        ](
             rebind[IndexList[5]](coords),
             rebind[SIMD[dtype, _width]](scaled),
         )
@@ -431,10 +434,12 @@ def test_conv3d_im2col_multi_tile[
         @always_inline
         @__copy_capture(output_lt)
         def scale_epilogue[
-            _dtype: DType, _rank: Int, _width: Int
+            _dtype: DType, _rank: Int, _width: Int, _alignment: Int = 1
         ](coords: IndexList[_rank], val: SIMD[_dtype, _width]):
             var scaled = (val.cast[DType.float32]() * 2.0).cast[dtype]()
-            output_lt.store[width=_width](
+            output_lt.store[
+                width=_width, store_alignment=align_of[dtype]() * _alignment
+            ](
                 rebind[IndexList[5]](coords),
                 rebind[SIMD[dtype, _width]](scaled),
             )
@@ -610,10 +615,12 @@ def test_conv2d_im2col_multi_tile[
         @always_inline
         @__copy_capture(output_lt)
         def scale_epilogue[
-            _dtype: DType, _rank: Int, _width: Int
+            _dtype: DType, _rank: Int, _width: Int, _alignment: Int = 1
         ](coords: IndexList[_rank], val: SIMD[_dtype, _width]):
             var scaled = (val.cast[DType.float32]() * 2.0).cast[dtype]()
-            output_lt.store[width=_width](
+            output_lt.store[
+                width=_width, store_alignment=align_of[dtype]() * _alignment
+            ](
                 rebind[IndexList[4]](coords),
                 rebind[SIMD[dtype, _width]](scaled),
             )
@@ -771,10 +778,12 @@ def test_conv3d_1x1x1_matmul_direct[
         @always_inline
         @__copy_capture(output_lt)
         def scale_epilogue[
-            _dtype: DType, _rank: Int, _width: Int
+            _dtype: DType, _rank: Int, _width: Int, _alignment: Int = 1
         ](coords: IndexList[_rank], val: SIMD[_dtype, _width]):
             var scaled = (val.cast[DType.float32]() * 2.0).cast[dtype]()
-            output_lt.store[width=_width](
+            output_lt.store[
+                width=_width, store_alignment=align_of[dtype]() * _alignment
+            ](
                 rebind[IndexList[5]](coords),
                 rebind[SIMD[dtype, _width]](scaled),
             )

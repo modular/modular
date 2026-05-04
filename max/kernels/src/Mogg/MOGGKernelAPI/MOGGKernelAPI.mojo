@@ -4958,9 +4958,9 @@ struct Conv:
         @always_inline
         @__copy_capture(output)
         def output_fn[
-            _dtype: DType, _rank: Int, _width: SIMDSize
+            _dtype: DType, _rank: Int, _width: SIMDSize, _alignment: Int = 1
         ](coords: IndexList[_rank], val: SIMD[_dtype, _width]):
-            output._lambda_store[width=_width](
+            output._lambda_store[width=_width, element_alignment=_alignment](
                 rebind[IndexList[output.rank]](coords),
                 rebind[SIMD[output.dtype, _width]](val),
             )
@@ -5147,7 +5147,7 @@ struct Conv2dResidualAdd:
         @always_inline
         @__copy_capture(output, bias)
         def output_fn[
-            _dtype: DType, _rank: Int, _width: SIMDSize
+            _dtype: DType, _rank: Int, _width: SIMDSize, _alignment: Int = 1
         ](coords: IndexList[_rank], val: SIMD[_dtype, _width]):
             var result = val
 
@@ -5156,7 +5156,7 @@ struct Conv2dResidualAdd:
                 var bias_vec = (bias.unsafe_ptr() + c_idx).load[width=_width]()
                 result = val + bias_vec.cast[_dtype]()
 
-            output._lambda_store[width=_width](
+            output._lambda_store[width=_width, element_alignment=_alignment](
                 rebind[IndexList[output.rank]](coords),
                 rebind[SIMD[output.dtype, _width]](result),
             )
@@ -5278,9 +5278,9 @@ struct ConvTranspose:
         @parameter
         @always_inline
         def output_fn[
-            _dtype: DType, _rank: Int, _width: SIMDSize
+            _dtype: DType, _rank: Int, _width: SIMDSize, _alignment: Int = 1
         ](coords: IndexList[_rank], val: SIMD[_dtype, _width]):
-            output._lambda_store[width=_width](
+            output._lambda_store[width=_width, element_alignment=_alignment](
                 rebind[IndexList[output.rank]](coords),
                 rebind[SIMD[output.dtype, _width]](val),
             )
