@@ -19,6 +19,9 @@ This version is still a work in progress.
 
 ## Library changes
 
+- `ascii()` now pre-allocates capacity to avoid repeated reallocations when
+  building the result string.
+
 ## Tooling changes
 
 ## GPU programming
