@@ -104,6 +104,35 @@ class ReasoningParser(ABC):
         """
         ...
 
+    def is_prompt_in_reasoning(
+        self,
+        prompt_token_ids: Sequence[int],
+    ) -> bool:
+        """Decide whether the next generated token continues a reasoning span.
+
+        Called once at turn initiation, given the full prompt token ids
+        (including any chat-template prefill). The result is used to seed
+        the streaming reasoning state machine before the model emits its
+        first token.
+
+        Multi-turn prompts can legitimately contain ``</think>`` tokens
+        from prior assistant turns. The default implementation delegates
+        to :meth:`stream`, which scans left-to-right and would treat any
+        such stale ``</think>`` as "reasoning has ended" — incorrect for
+        the *new* assistant turn. Architectures whose chat templates emit
+        reasoning delimiters per turn should override this to consider
+        only the most recent delimiter (e.g., a right-to-left scan).
+
+        Args:
+            prompt_token_ids: The full prompt token id sequence.
+
+        Returns:
+            ``True`` if the next generated token should be treated as
+            part of a reasoning span; ``False`` otherwise.
+        """
+        _, is_still_reasoning = self.stream(prompt_token_ids)
+        return is_still_reasoning
+
     @classmethod
     @abstractmethod
     async def from_tokenizer(

@@ -205,9 +205,12 @@ class TokenGeneratorPipeline(
             )
 
             if is_still_reasoning:
-                # Check if reasoning was disabled in the prompt
+                # Check if reasoning was disabled in the prompt. Use the
+                # parser's prompt-aware decision so multi-turn prompts (which
+                # legitimately contain ``</think>`` from prior assistant
+                # turns) don't false-trigger "reasoning already ended".
                 assert reasoning_parser is not None
-                _, is_still_reasoning = reasoning_parser.stream(
+                is_still_reasoning = reasoning_parser.is_prompt_in_reasoning(
                     cast(Sequence[int], context.tokens.prompt)
                 )
 

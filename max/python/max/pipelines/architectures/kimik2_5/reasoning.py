@@ -27,13 +27,23 @@ from max.pipelines.lib.tokenizer import convert_token_to_id
 class KimiK2_5ReasoningParser(ReasoningParser):
     """Kimi K2.5 reasoning parser for <think>...</think> sections.
 
-    Reasoning may end implicitly when a tool call section begins
-    (``<|tool_calls_section_begin|>``).
+    Per Moonshot's "Interleaved Thinking" design (see
+    https://platform.moonshot.ai/docs/guide/use-kimi-k2-thinking-model and
+    https://huggingface.co/moonshotai/Kimi-K2.5), a single assistant turn
+    can interleave multiple ``<think>...</think>`` blocks with
+    ``<|tool_calls_section_begin|>...<|tool_calls_section_end|>`` blocks.
+    Only ``</think>`` ends a reasoning span; tool-call sections are
+    neither reasoning nor content and are consumed by the tool parser
+    (when the client opted in via ``tools=[...]``) or stripped from
+    user-visible output otherwise.
 
-    Reasoning may begin implicitly, without an explicit <think> token.
+    Reasoning may begin implicitly, without an explicit ``<think>``
+    token, when the chat template prefilled the assistant turn already
+    inside a thinking block.
 
-    Reasoning can be disabled through the chat template by including a </think>
-    token in the prompt.
+    Reasoning can be disabled through the chat template by including a
+    ``</think>`` token at the end of the prompt; this is detected by
+    :meth:`is_prompt_in_reasoning`.
     """
 
     def __init__(
@@ -44,6 +54,9 @@ class KimiK2_5ReasoningParser(ReasoningParser):
     ) -> None:
         self.think_start_token_id = think_start_token_id
         self.think_end_token_id = think_end_token_id
+        # Retained only to disambiguate the "implicit pre-fill" path in
+        # :meth:`is_prompt_in_reasoning`. ``stream()`` never treats it as
+        # an end-of-reasoning delimiter.
         self.tool_section_start_token_id = tool_section_start_token_id
 
     def stream(
@@ -51,12 +64,6 @@ class KimiK2_5ReasoningParser(ReasoningParser):
         delta_token_ids: Sequence[int],
     ) -> tuple[ReasoningSpan, bool]:
         """Identify a reasoning span within a streaming delta chunk."""
-        end_token_ids = (
-            (self.think_end_token_id, self.tool_section_start_token_id)
-            if self.tool_section_start_token_id is not None
-            else (self.think_end_token_id,)
-        )
-
         start_token_idx: int | None = None
         end_token_idx: int | None = None
         for i, token_id in enumerate(delta_token_ids):
@@ -66,7 +73,7 @@ class KimiK2_5ReasoningParser(ReasoningParser):
             ):
                 # Take the earliest start token
                 start_token_idx = i
-            elif token_id in end_token_ids:
+            elif token_id == self.think_end_token_id:
                 # Take the earliest end token
                 end_token_idx = i
                 break
@@ -94,6 +101,42 @@ class KimiK2_5ReasoningParser(ReasoningParser):
         )
         is_still_reasoning = end_token_idx is None
         return span, is_still_reasoning
+
+    def is_prompt_in_reasoning(
+        self,
+        prompt_token_ids: Sequence[int],
+    ) -> bool:
+        """Decide whether the next generated token is in a reasoning span.
+
+        Kimi K2.5 chat templates emit ``<think>`` to open the new assistant
+        turn's reasoning section, and ``</think>`` to close the prior
+        assistant turn's reasoning section. A multi-turn prompt therefore
+        can contain many ``<think>``/``</think>`` tokens, only the
+        most-recently-emitted one of which describes the *current* state.
+
+        Scan right-to-left and return based on the first delimiter seen:
+
+        * ``<think>`` → reasoning is currently open → ``True``.
+        * ``</think>`` (or ``<|tool_calls_section_begin|>``) → reasoning
+          is currently closed → ``False``.
+        * No delimiters at all → assume reasoning, matching the implicit
+          pre-fill seeding used elsewhere in the pipeline.
+        """
+        end_token_ids: tuple[int, ...]
+        if self.tool_section_start_token_id is not None:
+            end_token_ids = (
+                self.think_end_token_id,
+                self.tool_section_start_token_id,
+            )
+        else:
+            end_token_ids = (self.think_end_token_id,)
+
+        for token_id in reversed(prompt_token_ids):
+            if token_id == self.think_start_token_id:
+                return True
+            if token_id in end_token_ids:
+                return False
+        return True
 
     @classmethod
     async def from_tokenizer(

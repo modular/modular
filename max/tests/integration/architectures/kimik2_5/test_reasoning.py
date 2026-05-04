@@ -71,10 +71,10 @@ TOOL_SECTION_START_TOKEN_ID = 3
         ),
         pytest.param(
             [10, TOOL_SECTION_START_TOKEN_ID, 30],
-            [10],
-            [30],
-            False,
-            id="tool_start_token_id_ends",
+            [10, TOOL_SECTION_START_TOKEN_ID, 30],
+            [],
+            True,
+            id="tool_start_token_id_does_not_end_reasoning",
         ),
         pytest.param([], [], [], True, id="empty_chunk"),
         pytest.param(
