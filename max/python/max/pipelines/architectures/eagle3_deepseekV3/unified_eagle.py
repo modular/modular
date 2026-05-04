@@ -185,10 +185,11 @@ class Eagle3DeepseekV3Unified(Module):
         logits = target_outputs[1]
         hidden_states = list(target_outputs[3 : 3 + n_devs])
 
+        seed_scalar = seed[0]
         first_rejected, recovered, bonus = self.acceptance_sampler(
             draft_tokens,
             logits,
-            seed=seed,
+            seed=seed_scalar,
             temperature=temperature,
             top_k=top_k,
             max_k=max_k,
@@ -489,7 +490,9 @@ class Eagle3DeepseekV3Unified(Module):
                 assert isinstance(sym, KVCacheInputsPerDevice)
                 all_input_types.append(sym.kv_blocks)
 
-        all_input_types.append(ops.random.SeedType(device_ref))
+        all_input_types.append(
+            TensorType(DType.uint64, shape=["batch_size"], device=device_ref)
+        )
 
         temperature_type = TensorType(
             DType.float32, shape=["batch_size"], device=device_ref

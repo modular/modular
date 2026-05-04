@@ -159,10 +159,18 @@ class Eagle3KimiK25Unified(Module):
         logits = target_outputs[1]
         hidden_states = list(target_outputs[3 : 3 + n_devs])
 
+        # ``seed`` is the per-batch ``[batch_size]`` uint64 device buffer
+        # that feeds ``topk_fused_sampling`` (recovered + bonus tokens) per
+        # row. The rejection-decision RNG below is a Bernoulli coin flip —
+        # its marginal accept distribution is unchanged whether each row
+        # gets its own Philox stream or all rows share one with offset-
+        # based diversity, so we collapse to ``seed[0]`` here. The
+        # token-sampling path keeps the full tensor.
+        seed_scalar = seed[0]
         first_rejected, recovered, bonus = self.acceptance_sampler(
             draft_tokens,
             logits,
-            seed=seed,
+            seed=seed_scalar,
             temperature=temperature,
             top_k=top_k,
             max_k=max_k,
@@ -465,7 +473,16 @@ class Eagle3KimiK25Unified(Module):
                 assert isinstance(sym, KVCacheInputsPerDevice)
                 all_input_types.append(sym.kv_blocks)
 
-        all_input_types.append(ops.random.SeedType(device_ref))
+        # Per-batch device-resident seed (see
+        # ``unified_mtp_deepseekV3.py:input_types`` for rationale —
+        # CUDA-graph-capture safety requires the seed to live in device
+        # memory, and per-batch storage lets each row carry its own
+        # ``sampling_params.seed`` once a per-row device-seeded random
+        # kernel lands).
+        seed_type = TensorType(
+            DType.uint64, shape=["batch_size"], device=device_ref
+        )
+        all_input_types.append(seed_type)
 
         temperature_type = TensorType(
             DType.float32, shape=["batch_size"], device=device_ref

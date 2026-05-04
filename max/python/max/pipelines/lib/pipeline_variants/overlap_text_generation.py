@@ -164,6 +164,8 @@ class _UnifiedEagleInputs(Protocol):
     draft_tokens: Buffer | None
     draft_kv_blocks: list[Buffer] | None
 
+    seed: Buffer | None
+
     temperature: Buffer | None
     top_k: Buffer | None
     max_k: Buffer | None
@@ -176,11 +178,11 @@ class _UnifiedEagleInputs(Protocol):
 class _SpecDecodeSamplingBuffers:
     """Per-batch sampling parameter buffers for stochastic target acceptance.
 
-    Per-batch tensors (``temperature``, ``top_k``, ``top_p``,
-    ``in_thinking_phase``) are prefix views of persistent device buffers,
-    providing stable base pointers required by graph capture. The 0-d
-    scalars (``max_k``, ``min_top_p``) live on the host and are fresh each
-    execute.
+    Per-batch tensors (``temperature``, ``top_k``, ``top_p``, ``seed``) are
+    prefix views of persistent device buffers, providing stable base
+    pointers required by graph capture. The 0-d scalars (``max_k``,
+    ``min_top_p``) live on the host and are fresh each execute.
+
     """
 
     temperature: Buffer
@@ -189,6 +191,7 @@ class _SpecDecodeSamplingBuffers:
     top_p: Buffer
     min_top_p: Buffer
     in_thinking_phase: Buffer
+    seed: Buffer
 
 
 def _get_draft_kv_blocks(
@@ -285,6 +288,10 @@ class SpecDecodeState:
     persistent_in_thinking_phase: Buffer
     """Persistent per-batch boolean for in-thinking-phase state."""
 
+    persistent_seed: Buffer
+    """Persistent ``[total_max_batch]`` uint64 seed values, one per request,
+    derived from ``sampling_params.seed + len(tokens)``."""
+
     persistent_bitmask: Buffer | None = None
     """Persistent bitmask buffer for structured output.
 
@@ -364,6 +371,11 @@ class SpecDecodeState:
             shape=(total_max_batch,),
             device=model.devices[0],
         )
+        persistent_seed = Buffer(
+            dtype=DType.uint64,
+            shape=(total_max_batch,),
+            device=model.devices[0],
+        )
 
         # Allocate persistent bitmask for structured output if vocab_size is provided.
         # Shape: [max_batch_size, num_speculative_tokens + 1, vocab_size]
@@ -393,6 +405,7 @@ class SpecDecodeState:
             persistent_top_p=persistent_top_p,
             persistent_bitmask=persistent_bitmask,
             persistent_in_thinking_phase=persistent_in_thinking_phase,
+            persistent_seed=persistent_seed,
         )
 
 
@@ -1640,6 +1653,7 @@ class OverlapTextGenerationPipeline(
                 model_inputs.max_k = sampling_buffers.max_k
                 model_inputs.top_p = sampling_buffers.top_p
                 model_inputs.min_top_p = sampling_buffers.min_top_p
+                model_inputs.seed = sampling_buffers.seed
                 model_inputs.in_thinking_phase = (
                     sampling_buffers.in_thinking_phase
                 )
@@ -1844,6 +1858,26 @@ class OverlapTextGenerationPipeline(
             np.array(float(top_p_np.min()), dtype=np.float32)
         )
 
+        # Per-request seed mirrors the production sampler at
+        # `SamplerInputs.create` (sampling_logits_processor.py:610-619):
+        # seed[i] = sampling_params.seed + len(context.tokens). Adding the
+        # current token count gives a fresh effective Philox seed per
+        # decoding step without needing in-graph seed mutation.
+        seed_np = np.fromiter(
+            (
+                ctx.sampling_params.seed + len(ctx.tokens)
+                for ctx in context_batch
+            ),
+            dtype=np.uint64,
+            count=batch_size,
+        )
+        seed_pinned = DevicePinnedBuffer(
+            shape=(batch_size,), dtype=DType.uint64, device=device0
+        )
+        seed_pinned.to_numpy()[:] = seed_np
+        seed_view = self._spec_decode_state.persistent_seed[:batch_size]
+        seed_view.inplace_copy_from(seed_pinned)
+
         return _SpecDecodeSamplingBuffers(
             temperature=temperature_view,
             top_k=top_k_view,
@@ -1851,6 +1885,7 @@ class OverlapTextGenerationPipeline(
             top_p=top_p_view,
             min_top_p=min_top_p,
             in_thinking_phase=in_thinking_phase_view,
+            seed=seed_view,
         )
 
     def _run_forward(
@@ -1964,6 +1999,7 @@ class OverlapTextGenerationPipeline(
             model_inputs.max_k = sampling_buffers.max_k
             model_inputs.top_p = sampling_buffers.top_p
             model_inputs.min_top_p = sampling_buffers.min_top_p
+            model_inputs.seed = sampling_buffers.seed
             model_inputs.in_thinking_phase = sampling_buffers.in_thinking_phase
             # token_bitmasks is only required when structured output is enabled.
             # The graph is compiled with or without bitmask input accordingly.

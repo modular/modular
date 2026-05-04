@@ -210,7 +210,7 @@ class UnifiedEagleLlama3(Module):
             *target_kv_flat,
             draft_tokens_type,
             draft_kv_blocks,
-            ops.random.SeedType(device_ref),
+            TensorType(DType.uint64, shape=["batch_size"], device=device_ref),
             temperature_type,
             top_k_type,
             max_k_type,
@@ -285,10 +285,11 @@ class UnifiedEagleLlama3(Module):
         # num_accepted_draft_tokens: [B]     (index of first rejected step, 0..K)
         # recovered                : [B, K]  (target argmax at each draft position)
         # bonus                    : [B, 1]  (target argmax at the +1 position)
+        seed_scalar = inputs.seed[0]
         num_accepted_draft_tokens, recovered, bonus = self.acceptance_sampler(
             draft_tokens,
             logits,
-            seed=inputs.seed,
+            seed=seed_scalar,
             temperature=inputs.temperature,
             top_k=inputs.top_k,
             max_k=inputs.max_k,
