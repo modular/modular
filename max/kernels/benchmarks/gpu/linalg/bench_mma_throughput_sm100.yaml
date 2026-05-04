@@ -1,0 +1,59 @@
+##===----------------------------------------------------------------------===##
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+##===----------------------------------------------------------------------===##
+
+# B200 (sm_100) tcgen05 MMA tile-size throughput sweep.
+#
+# A single CTA produces an M_LOGICAL=128 x N_LOGICAL=256 output tile via
+# `num_m_tiles * num_n_tiles = (M_LOGICAL/BM) * (N_LOGICAL/BN)` independent
+# MMA accumulators. We sweep (BM, BN) so per-instruction throughput is
+# comparable across the tcgen05 single-CTA data-path layouts (see PTX docs
+# section "tcgen05 data-path layout organization"):
+#   BM=128 -> layout D    (`tcgen05.mma.cta_group::1.<kind>`)
+#   BM=64  -> layout E    (`tcgen05.mma.ws.cta_group::1.<kind>`)
+#   BM=32  -> layout G    (`tcgen05.mma.ws.cta_group::1.<kind>`)
+#
+# Total FLOPs = 2 * M_LOGICAL * N_LOGICAL * K_LOGICAL is INVARIANT across the
+# BM x BN sweep (M_LOGICAL and N_LOGICAL are pinned). So GFLOPS is a direct
+# apples-to-apples comparison of MMA-instruction-rate efficiency across
+# layouts D / E / G — smaller BM issues more MMAs to cover the same work.
+#
+# BN minimums (from UMMA shape constraints in mma_nvidia_sm100.mojo):
+#   * BM=128 needs BN >= 16 (the BM=128 stanza below).
+#   * BM in {64, 32} can go down to BN=8 (the BM in {64, 32} stanza below).
+# These are split into two `params` entries so kbench does not try to build
+# combinations the kernel rejects at compile time (e.g. BM=128 with BN=8).
+
+name: bench_mma_throughput_sm100
+file: $KERNEL_BENCHMARKS_ROOT/gpu/linalg/bench_mma_throughput_sm100.mojo
+
+params:
+# BM, BN, and dtype are sweep dimensions but passed as compile-time defines, so
+# no `$` prefix (the `$` prefix in kbench means "runtime arg"; without it,
+# kbench rebuilds the binary with `-D BM=...` / `-D BN=...` /
+# `-D dtype=...` for each combination).
+
+# Layout D (BM=128): MMA_N minimum is 16.
+- BM: [128]
+  BN: [16, 32, 64, 128, 256]
+  dtype: [bfloat16, float8_e4m3fn]
+  M_LOGICAL: 128
+  N_LOGICAL: 256
+  K_LOGICAL: 131072
+
+# Layouts E and G (BM in {64, 32}): MMA_N minimum is 8.
+- BM: [64, 32]
+  BN: [64, 128, 256]
+  dtype: [bfloat16, float8_e4m3fn]
+  M_LOGICAL: 128
+  N_LOGICAL: 256
+  K_LOGICAL: 131072

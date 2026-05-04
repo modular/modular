@@ -60,6 +60,7 @@ _EXTRA_CONSTRAINTS = {
         "//conditions:default": [],
     }),  # FIXME: MOCO-3161
     "gpu/linalg/bench_blockwise_fp8_1d2d.mojo": ["//:b200_gpu"],  # SM100-specific blockwise FP8
+    "gpu/linalg/bench_mma_throughput_sm100.mojo": ["//:b200_gpu"],  # SM100 tcgen05 MMA tile-size microbench
     "gpu/linalg/bench_bmm.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
