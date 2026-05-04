@@ -19,6 +19,9 @@ This version is still a work in progress.
 
 ## Library changes
 
+- `Span.__eq__` now uses `memcmp` for integer and boolean element types
+  instead of an element-by-element loop.
+
 ## Tooling changes
 
 ## GPU programming
