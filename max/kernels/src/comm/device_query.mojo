@@ -16,6 +16,10 @@ from std.sys.info import _accelerator_arch
 from internal_utils import TuningConfig, Table
 from std.gpu.host.info import GPUInfo
 
+comptime KB = 1 << 10
+comptime MB = 1 << 20
+comptime GB = 1 << 30
+
 
 trait CommTuningConfig(TuningConfig):
     def get_num_blocks(self) -> Int:
