@@ -230,6 +230,7 @@ def test_mxfp4_grouped_matmul[
         b_scales_tt,
         a_offsets_tt,
         expert_ids_tt,
+        max_tokens,
         num_active_experts,
         ctx,
     )
@@ -288,5 +289,10 @@ def main() raises:
         # Larger dimensions
         print("-- Larger dimensions --")
         test_mxfp4_grouped_matmul[4, 256, 512](2, [128, 256], [1, 3], ctx)
+
+        # Decode tile path: max_tokens_per_expert <= 64 with K_BYTES >= 256.
+        print("-- Decode tile (small max tokens, large K) --")
+        test_mxfp4_grouped_matmul[1, 128, 512](1, [32], [0], ctx)
+        test_mxfp4_grouped_matmul[4, 128, 512](2, [16, 64], [0, 2], ctx)
 
         print("==== All MXFP4 grouped matmul tests passed ====")

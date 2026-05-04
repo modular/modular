@@ -36,12 +36,6 @@ from std.utils import StaticTuple
 
 from .mxfp4_matmul_amd import MXFP4MatmulAMD as _MXFP4MatmulAMD
 
-# TODO: make this dynamic in the future.
-comptime MXFP4MatmulAMD = _MXFP4MatmulAMD[
-    BM=128, BN=128, BK_ELEMS=128, WM=64, WN=64
-]
-
-
 # ===----------------------------------------------------------------------=== #
 # Device kernel
 # ===----------------------------------------------------------------------=== #
@@ -49,10 +43,19 @@ comptime MXFP4MatmulAMD = _MXFP4MatmulAMD[
 
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
-        Int32(MXFP4MatmulAMD.num_threads)
+        Int32(
+            _MXFP4MatmulAMD[
+                BM=BM, BN=BN, BK_ELEMS=BK_ELEMS, WM=WM, WN=WN
+            ].num_threads
+        )
     )
 )
 def mxfp4_grouped_matmul_amd_kernel[
+    BM: Int,
+    BN: Int,
+    BK_ELEMS: Int,
+    WM: Int,
+    WN: Int,
     out_dtype: DType,
     LayoutC: TensorLayout,
     LayoutA: TensorLayout,
@@ -83,11 +86,12 @@ def mxfp4_grouped_matmul_amd_kernel[
     comptime assert a_offsets.flat_rank == 1, "a_offsets must be rank 1"
     comptime assert expert_ids.flat_rank == 1, "expert_ids must be rank 1"
 
+    comptime Kernel = _MXFP4MatmulAMD[
+        BM=BM, BN=BN, BK_ELEMS=BK_ELEMS, WM=WM, WN=WN
+    ]
     comptime N = c_tensor.static_shape[1]
     comptime K_BYTES = b_tensor.static_shape[1]  # K//2
     comptime K_SCALES = sfa_tensor.static_shape[1]  # K//32
-
-    comptime BM = MXFP4MatmulAMD.BM
 
     var M = a_offsets[block_idx.z + 1] - a_offsets[block_idx.z]
     if M == 0 or N == 0:
@@ -98,7 +102,7 @@ def mxfp4_grouped_matmul_amd_kernel[
     if expert_id == -1:
         return
 
-    # Grid Y is ceildiv(max_tokens_per_experts, BM); skip blocks past this
+    # Grid Y is ceildiv(max_tokens_per_expert, BM); skip blocks past this
     # expert's M rows (other experts may be shorter than max_tokens).
     if block_idx.y >= ceildiv(Int(M), BM):
         return
@@ -119,7 +123,7 @@ def mxfp4_grouped_matmul_amd_kernel[
     )
     var sfb_tile = TileTensor(sfb_ptr, row_major[N, K_SCALES]())
 
-    MXFP4MatmulAMD.run[
+    Kernel.run[
         out_dtype,
         type_of(c_tile).LayoutType,
         type_of(a_tile).LayoutType,
@@ -146,6 +150,7 @@ def mxfp4_grouped_matmul_amd(
     expert_ids: TileTensor[
         mut=False, DType.int32, address_space=AddressSpace.GENERIC, ...
     ],
+    max_num_tokens_per_expert: Int,
     num_active_experts: Int,
     ctx: DeviceContext,
 ) raises:
@@ -162,6 +167,7 @@ def mxfp4_grouped_matmul_amd(
         b_scales: Weight scales [num_experts, N, K//32] float8_e8m0fnu.
         a_offsets: Token offsets [num_active_experts+1] uint32.
         expert_ids: Expert indices [num_active_experts] int32.
+        max_num_tokens_per_expert: Maximum token count for any active expert.
         num_active_experts: Number of active experts.
         ctx: Device context.
     """
@@ -170,6 +176,61 @@ def mxfp4_grouped_matmul_amd(
     comptime assert a_offsets.flat_rank == 1, "a_offsets must be rank 1"
     comptime assert expert_ids.flat_rank == 1, "expert_ids must be rank 1"
 
+    comptime K_BYTES = b.static_shape[2]  # K//2
+    comptime can_use_bk_512 = K_BYTES >= 256 and K_BYTES % 256 == 0
+
+    if max_num_tokens_per_expert <= 64:
+        comptime if can_use_bk_512:
+            _launch_mxfp4_grouped[BM=64, BN=128, BK_ELEMS=512, WM=64, WN=64](
+                c,
+                a,
+                b,
+                a_scales,
+                b_scales,
+                a_offsets,
+                expert_ids,
+                max_num_tokens_per_expert,
+                num_active_experts,
+                ctx,
+            )
+            return
+
+    _launch_mxfp4_grouped[BM=128, BN=128, BK_ELEMS=128, WM=64, WN=64](
+        c,
+        a,
+        b,
+        a_scales,
+        b_scales,
+        a_offsets,
+        expert_ids,
+        max_num_tokens_per_expert,
+        num_active_experts,
+        ctx,
+    )
+
+
+def _launch_mxfp4_grouped[
+    BM: Int, BN: Int, BK_ELEMS: Int, WM: Int, WN: Int
+](
+    c: TileTensor[mut=True, ...],
+    a: TileTensor[DType.uint8, ...],
+    b: TileTensor[DType.uint8, ...],
+    a_scales: TileTensor[DType.float8_e8m0fnu, ...],
+    b_scales: TileTensor[DType.float8_e8m0fnu, ...],
+    a_offsets: TileTensor[
+        mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
+    ],
+    expert_ids: TileTensor[
+        mut=False, DType.int32, address_space=AddressSpace.GENERIC, ...
+    ],
+    max_num_tokens_per_expert: Int,
+    num_active_experts: Int,
+    ctx: DeviceContext,
+) raises:
+    """Instantiates and launches the grouped MXFP4 kernel."""
+    comptime Kernel = _MXFP4MatmulAMD[
+        BM=BM, BN=BN, BK_ELEMS=BK_ELEMS, WM=WM, WN=WN
+    ]
     comptime num_experts = b.static_shape[0]
     comptime N = b.static_shape[1]
     comptime K_BYTES = b.static_shape[2]  # K//2
@@ -203,18 +264,16 @@ def mxfp4_grouped_matmul_amd(
         expert_ids.layout,
     )
 
-    # Use total token count as an upper bound for per-expert M.
-    # The kernel already guards against out-of-range blocks via
-    # block_idx.y >= ceildiv(expert_M, BM), so over-launching is safe.
-    var total_tokens = Int(c.dim[0]())
-    if total_tokens == 0:
+    if max_num_tokens_per_expert == 0:
         return
 
-    comptime BM = MXFP4MatmulAMD.BM
-    comptime BN = MXFP4MatmulAMD.BN
     comptime out_dtype = type_of(c).dtype
-
     comptime kernel = mxfp4_grouped_matmul_amd_kernel[
+        BM,
+        BN,
+        BK_ELEMS,
+        WM,
+        WN,
         out_dtype,
         type_of(c).LayoutType,
         type_of(a_i).LayoutType,
@@ -236,8 +295,8 @@ def mxfp4_grouped_matmul_amd(
         num_active_experts,
         grid_dim=(
             ceildiv(N, BN),
-            ceildiv(total_tokens, BM),
+            ceildiv(max_num_tokens_per_expert, BM),
             num_active_experts,
         ),
-        block_dim=MXFP4MatmulAMD.num_threads,
+        block_dim=Kernel.num_threads,
     )

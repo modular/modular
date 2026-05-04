@@ -9302,6 +9302,7 @@ struct Struct_grouped_matmul_block_scaled_mxfp4:
         b_scales: InputTensor[dtype=DType.float8_e8m0fnu, rank=3, ...],
         expert_start_indices: InputTensor[dtype=DType.uint32, rank=1, ...],
         expert_ids: InputTensor[dtype=DType.int32, rank=1, ...],
+        max_num_tokens_per_expert: UInt32,
         num_active_experts: UInt32,
         context: DeviceContextPtr,
     ) raises:
@@ -9322,6 +9323,7 @@ struct Struct_grouped_matmul_block_scaled_mxfp4:
             b_scales: The B scale factors in 3D layout.
             expert_start_indices: The starting token index for each expert.
             expert_ids: The expert ID for each group.
+            max_num_tokens_per_expert: The maximum token count for any expert.
             num_active_experts: The number of active experts.
             context: The device context pointer.
         """
@@ -9338,6 +9340,7 @@ struct Struct_grouped_matmul_block_scaled_mxfp4:
             b_scales.to_tile_tensor[DType.int64](),
             expert_start_indices.to_tile_tensor[DType.int64](),
             expert_ids.to_tile_tensor[DType.int64](),
+            Int(max_num_tokens_per_expert),
             Int(num_active_experts),
             context.get_device_context(),
         )

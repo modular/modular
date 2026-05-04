@@ -4042,6 +4042,7 @@ def grouped_dynamic_scaled_mxfp4_matmul(
             b_scales,
             expert_start_indices,
             expert_ids,
+            expert_usage_stats_host[0],
             expert_usage_stats_host[1],
         ],
         out_types=[
