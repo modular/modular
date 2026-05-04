@@ -19,6 +19,9 @@ This version is still a work in progress.
 
 ## Library changes
 
+- `math.hypot()` now supports variadic and `Span` overloads for computing the
+  Euclidean norm of N values, matching Python's `math.hypot(*coordinates)`.
+
 ## Tooling changes
 
 ## GPU programming
