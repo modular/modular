@@ -195,7 +195,7 @@ def _printf_cpu[
                 `(`,
                 `!kgen.pointer<none>,`,
                 `!kgen.pointer<scalar<si8>>`,
-                `) -> !pop.scalar<si32>`,
+                `) -> !kgen.scalar<si32>`,
             ],
             _type=Int32,
         ](
@@ -347,9 +347,9 @@ def _snprintf[
             fnType=__mlir_attr[
                 `(`,
                 `!kgen.pointer<scalar<si8>>,`,
-                `!pop.scalar<index>, `,
+                `!kgen.scalar<index>, `,
                 `!kgen.pointer<scalar<si8>>`,
-                `) -> !pop.scalar<si32>`,
+                `) -> !kgen.scalar<si32>`,
             ],
             _type=Int32,
         ](

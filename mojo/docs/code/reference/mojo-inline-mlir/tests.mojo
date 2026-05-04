@@ -39,9 +39,11 @@ def test_mlir_type_dot_syntax() raises:
 
 def test_mlir_type_backtick_syntax() raises:
     """Backtick syntax for dialect types with special characters."""
-    var s: __mlir_type.`!pop.scalar<index>` = __mlir_op.`pop.cast_from_builtin`[
-        _type=__mlir_type.`!pop.scalar<index>`
-    ](__mlir_attr.`7 : index`)
+    var s: __mlir_type.`!kgen.scalar<index>` = (
+        __mlir_op.`pop.cast_from_builtin`[
+            _type=__mlir_type.`!kgen.scalar<index>`
+        ](__mlir_attr.`7 : index`)
+    )
     var result = __mlir_op.`pop.cast_to_builtin`[_type=__mlir_type.index](s)
     assert_equal(Int(mlir_value=result), 7)
 
@@ -176,12 +178,12 @@ def test_pop_cast_roundtrip() raises:
     """Pop dialect: cast_from_builtin and cast_to_builtin roundtrip."""
     var idx: __mlir_type.index = __mlir_attr.`42 : index`
 
-    # index → !pop.scalar<index>
+    # index → !kgen.scalar<index>
     var pop_val = __mlir_op.`pop.cast_from_builtin`[
-        _type=__mlir_type.`!pop.scalar<index>`
+        _type=__mlir_type.`!kgen.scalar<index>`
     ](idx)
 
-    # !pop.scalar<index> → index
+    # !kgen.scalar<index> → index
     var back = __mlir_op.`pop.cast_to_builtin`[_type=__mlir_type.index](pop_val)
 
     assert_equal(Int(mlir_value=back), 42)
@@ -192,16 +194,16 @@ def test_pop_simd_splat() raises:
     # Create a scalar Float32
     var idx: __mlir_type.index = __mlir_attr.`3 : index`
     var pop_idx = __mlir_op.`pop.cast_from_builtin`[
-        _type=__mlir_type.`!pop.scalar<index>`
+        _type=__mlir_type.`!kgen.scalar<index>`
     ](idx)
-    var scalar_f32 = __mlir_op.`pop.cast`[_type=__mlir_type.`!pop.scalar<f32>`](
-        pop_idx
-    )
+    var scalar_f32 = __mlir_op.`pop.cast`[
+        _type=__mlir_type.`!kgen.scalar<f32>`
+    ](pop_idx)
 
     # Splat to 4-wide SIMD
-    var vec = __mlir_op.`pop.simd.splat`[_type=__mlir_type.`!pop.simd<4, f32>`](
-        scalar_f32
-    )
+    var vec = __mlir_op.`pop.simd.splat`[
+        _type=__mlir_type.`!kgen.simd<4, f32>`
+    ](scalar_f32)
 
     # Extract element 0 back out
     var elem = __mlir_op.`pop.simd.extractelement`(

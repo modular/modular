@@ -21,10 +21,10 @@ from std.os import abort
 from std.sys import CompilationTarget, bit_width_of, size_of
 from std.sys.intrinsics import _type_is_eq
 
-comptime _mIsSigned = __mlir_attr.`#pop.simd<1> : !pop.scalar<ui8>`
-comptime _mIsInteger = __mlir_attr.`#pop.simd<128> : !pop.scalar<ui8>`
-comptime _mIsNotInteger = __mlir_attr.`#pop.simd<127> : !pop.scalar<ui8>`
-comptime _mIsFloat = __mlir_attr.`#pop.simd<64> : !pop.scalar<ui8>`
+comptime _mIsSigned = __mlir_attr.`#kgen.simd<1> : !kgen.scalar<ui8>`
+comptime _mIsInteger = __mlir_attr.`#kgen.simd<128> : !kgen.scalar<ui8>`
+comptime _mIsNotInteger = __mlir_attr.`#kgen.simd<127> : !kgen.scalar<ui8>`
+comptime _mIsFloat = __mlir_attr.`#kgen.simd<64> : !kgen.scalar<ui8>`
 
 
 struct DType(
@@ -505,7 +505,7 @@ struct DType(
                 pred=__mlir_attr.`#pop<cmp_pred ne>`
             ](
                 __mlir_op.`pop.simd.and`(self._as_ui8(), mask),
-                __mlir_attr.`#pop.simd<0> : !pop.scalar<ui8>`,
+                __mlir_attr.`#kgen.simd<0> : !kgen.scalar<ui8>`,
             )
         )
 

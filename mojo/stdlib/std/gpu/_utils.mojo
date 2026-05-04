@@ -281,45 +281,45 @@ def simd_to_llvm_struct[
 @always_inline("nodebug")
 def _dtype_to_pop_scalar_str[dtype: DType]() -> StaticString:
     comptime if dtype == DType.bool:
-        return "!pop.scalar<bool>"
+        return "!kgen.scalar<bool>"
     elif dtype == DType.int8:
-        return "!pop.scalar<si8>"
+        return "!kgen.scalar<si8>"
     elif dtype == DType.uint8:
-        return "!pop.scalar<ui8>"
+        return "!kgen.scalar<ui8>"
     elif dtype == DType.int16:
-        return "!pop.scalar<si16>"
+        return "!kgen.scalar<si16>"
     elif dtype == DType.uint16:
-        return "!pop.scalar<ui16>"
+        return "!kgen.scalar<ui16>"
     elif dtype == DType.int32:
-        return "!pop.scalar<si32>"
+        return "!kgen.scalar<si32>"
     elif dtype == DType.uint32:
-        return "!pop.scalar<ui32>"
+        return "!kgen.scalar<ui32>"
     elif dtype == DType.int64:
-        return "!pop.scalar<si64>"
+        return "!kgen.scalar<si64>"
     elif dtype == DType.uint64:
-        return "!pop.scalar<ui64>"
+        return "!kgen.scalar<ui64>"
     elif dtype == DType.float16:
-        return "!pop.scalar<f16>"
+        return "!kgen.scalar<f16>"
     elif dtype == DType.bfloat16:
-        return "!pop.scalar<bf16>"
+        return "!kgen.scalar<bf16>"
     elif dtype == DType.float32:
-        return "!pop.scalar<f32>"
+        return "!kgen.scalar<f32>"
     elif dtype == DType.float64:
-        return "!pop.scalar<f64>"
+        return "!kgen.scalar<f64>"
     elif dtype == DType.float8_e5m2:
-        return "!pop.scalar<f8E5M2>"
+        return "!kgen.scalar<f8E5M2>"
     elif dtype == DType.float8_e5m2fnuz:
-        return "!pop.scalar<f8E5M2FNUZ>"
+        return "!kgen.scalar<f8E5M2FNUZ>"
     elif dtype == DType.float8_e4m3fn:
-        return "!pop.scalar<f8E4M3>"
+        return "!kgen.scalar<f8E4M3>"
     elif dtype == DType.float8_e4m3fnuz:
-        return "!pop.scalar<f8E4M3FNUZ>"
+        return "!kgen.scalar<f8E4M3FNUZ>"
     elif dtype == DType.float8_e3m4:
-        return "!pop.scalar<f8E3M4>"
+        return "!kgen.scalar<f8E3M4>"
     elif dtype == DType.float8_e8m0fnu:
-        return "!pop.scalar<f8E8M0FNU>"
+        return "!kgen.scalar<f8E8M0FNU>"
     else:
-        comptime assert False, "unsupported dtype for !pop.scalar"
+        comptime assert False, "unsupported dtype for !kgen.scalar"
 
 
 @always_inline("nodebug")
@@ -364,7 +364,7 @@ def llvm_struct_to_simd[
 
     comptime for i in range(n):
         # `kgen.pack.extract` infers a parametric element type; an
-        # unrealized_conversion_cast retypes it to `!pop.scalar<dtype>`.
+        # unrealized_conversion_cast retypes it to `!kgen.scalar<dtype>`.
         var e = __mlir_op.`builtin.unrealized_conversion_cast`[
             _type=Scalar[dtype]._mlir_type
         ](__mlir_op.`kgen.struct.extract`[index=i._int_mlir_index()](pack))

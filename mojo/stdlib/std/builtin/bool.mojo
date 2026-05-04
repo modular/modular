@@ -126,8 +126,8 @@ struct Bool(
 
     @doc_hidden
     @always_inline("builtin")
-    def __init__(out self, *, mlir_value: __mlir_type.`!pop.scalar<bool>`):
-        """Construct a Bool value given a `!pop.scalar<bool>` value.
+    def __init__(out self, *, mlir_value: __mlir_type.`!kgen.scalar<bool>`):
+        """Construct a Bool value given a `!kgen.scalar<bool>` value.
 
         Args:
             mlir_value: The initial value.

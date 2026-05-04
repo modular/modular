@@ -158,7 +158,7 @@ def gather[
         SIMD[dtype, size]._mlir_type,
     ](
         UnsafePointer(to=base).bitcast[
-            __mlir_type[`!pop.simd<`, size._mlir_value, `, address>`],
+            __mlir_type[`!kgen.simd<`, size._mlir_value, `, address>`],
         ]()[],
         Int32(alignment),
         mask,
@@ -246,7 +246,7 @@ def scatter[
     llvm_intrinsic["llvm.masked.scatter", NoneType](
         value,
         UnsafePointer(to=base).bitcast[
-            __mlir_type[`!pop.simd<`, size._mlir_value, `, address>`],
+            __mlir_type[`!kgen.simd<`, size._mlir_value, `, address>`],
         ]()[],
         Int32(alignment),
         mask,

@@ -281,7 +281,7 @@ struct Int(
 
     @doc_hidden
     @always_inline("nodebug")
-    def __init__(out self, value: __mlir_type.`!pop.scalar<index>`):
+    def __init__(out self, value: __mlir_type.`!kgen.scalar<index>`):
         """Construct Int from the given Index value.
 
         Args:

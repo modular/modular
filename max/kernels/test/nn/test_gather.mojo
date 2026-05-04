@@ -63,7 +63,7 @@ def test_gather() raises:
         )
 
         # Test gather
-        comptime simd_width = simd_width_of[__mlir_type.`!pop.scalar<f32>`]()
+        comptime simd_width = simd_width_of[__mlir_type.`!kgen.scalar<f32>`]()
 
         gather[axis=0](
             output.make_dynamic[DType.int64](),

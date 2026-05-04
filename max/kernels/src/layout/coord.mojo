@@ -312,9 +312,9 @@ def Idx(
 ) -> ComptimeInt[
     Int(
         mlir_value=__mlir_attr[
-            `#pop.cast_to_builtin<#pop.int_literal_convert<`,
+            `#kgen.cast_to_builtin<#pop.int_literal_convert<`,
             value.value,
-            `> : !pop.scalar<index>> : index`,
+            `> : !kgen.scalar<index>> : index`,
         ]
     )
 ]:

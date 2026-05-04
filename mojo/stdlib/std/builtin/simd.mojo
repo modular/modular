@@ -551,7 +551,7 @@ struct SIMD[dtype: DType, size: Int](
     # ===-------------------------------------------------------------------===#
 
     comptime _mlir_type = __mlir_type[
-        `!pop.simd<`, Self.size._mlir_value, `, `, Self.dtype._mlir_value, `>`
+        `!kgen.simd<`, Self.size._mlir_value, `, `, Self.dtype._mlir_value, `>`
     ]
 
     var _mlir_value: Self._mlir_type
@@ -674,7 +674,7 @@ struct SIMD[dtype: DType, size: Int](
         _simd_construction_checks[Self.dtype, Self.size]()
 
         var index = __mlir_op.`pop.cast_from_builtin`[
-            _type=__mlir_type.`!pop.scalar<index>`
+            _type=__mlir_type.`!kgen.scalar<index>`
         ](value._mlir_value)
         var s = __mlir_op.`pop.cast`[_type=Scalar[Self.dtype]._mlir_type](index)
 
@@ -757,7 +757,7 @@ struct SIMD[dtype: DType, size: Int](
 
         _simd_construction_checks[Self.dtype, Self.size]()
         var s = __mlir_op.`pop.cast_from_builtin`[
-            _type=__mlir_type.`!pop.scalar<bool>`
+            _type=__mlir_type.`!kgen.scalar<bool>`
         ](value._mlir_value)
 
         self._mlir_value = rebind[Self._Mask._mlir_type](s)
@@ -773,7 +773,7 @@ struct SIMD[dtype: DType, size: Int](
         """
         _simd_construction_checks[Self.dtype, Self.size]()
         var s = __mlir_op.`pop.cast_from_builtin`[
-            _type=__mlir_type.`!pop.scalar<bool>`
+            _type=__mlir_type.`!kgen.scalar<bool>`
         ](fill._mlir_value)
 
         self._mlir_value = __mlir_op.`pop.simd.splat`[

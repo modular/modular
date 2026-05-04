@@ -107,7 +107,7 @@ var x: __mlir_type.i1                  # 1-bit integer
 var y: __mlir_type.index               # Machine-width index
 var z: __mlir_type.f64                 # 64-bit float
 var a: __mlir_type.`!kgen.none`        # Dialect type with ! prefix
-var b: __mlir_type.`!pop.scalar<f64>`  # Pop dialect scalar
+var b: __mlir_type.`!kgen.scalar<f64>`  # Pop dialect scalar
 var c: __mlir_type.`!kgen.pointer<!kgen.pointer<f32>>`
     # Nested pointer
 ```
@@ -172,9 +172,9 @@ expressions (inserted as MLIR text):
 
 ```mojo
 # From SIMD: build storage type from dtype and size parameters.
-# For SIMD[DType.float32, 4], produces: !pop.simd<4, f32>
+# For SIMD[DType.float32, 4], produces: !kgen.simd<4, f32>
 comptime _mlir_type = __mlir_type[
-    `!pop.simd<`, Self.size._mlir_value, `, `,
+    `!kgen.simd<`, Self.size._mlir_value, `, `,
     Self.dtype._mlir_value, `>`
 ]
 
@@ -208,8 +208,8 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`]:
 
 # Parameter is a compile-time dtype (for example, f32 or si64)
 def example[dtype: __mlir_type.`!kgen.dtype`]():
-    # For dtype=f32, produces: !pop.scalar<f32>
-    var a: __mlir_type[`!pop.scalar<`, dtype, `>`]
+    # For dtype=f32, produces: !kgen.scalar<f32>
+    var a: __mlir_type[`!kgen.scalar<`, dtype, `>`]
     ...
 ```
 
@@ -262,7 +262,7 @@ __mlir_attr.`#index<cmp_predicate slt>`
     # Signed less-than predicate
 __mlir_attr.`#pop<atomic_ordering seq_cst>`
     # Sequential consistency ordering
-__mlir_attr.`#pop.simd<"nan"> : !pop.scalar<f32>`
+__mlir_attr.`#kgen.simd<"nan"> : !kgen.scalar<f32>`
     # Float32 NaN constant
 ```
 
@@ -358,7 +358,7 @@ in square brackets before the operands (that is, the runtime values):
 
 ```mojo
 # Cast a pop scalar to a builtin i1
-#   (for example, !pop.scalar<bool> → i1)
+#   (for example, !kgen.scalar<bool> → i1)
 __mlir_op.`pop.cast_to_builtin`[
     _type=__mlir_type.i1
 ](mlir_value)
@@ -645,7 +645,7 @@ values directly as raw MLIR values:
 # operation. No Mojo argument conventions apply.
 __mlir_region my_region(
     x: __mlir_type.index,              # Raw index from the operation
-    y: __mlir_type.`!pop.scalar<f32>`, # Raw f32 scalar
+    y: __mlir_type.`!kgen.scalar<f32>`, # Raw f32 scalar
 ):
     # x and y are raw MLIR values, not Mojo types.
     # Wrap them (for example, Int(mlir_value=x)) to use
@@ -726,10 +726,10 @@ from `dtype` and `size`:
 
 ```mojo
 # SIMD builds its storage type at compile time from its parameters.
-# For SIMD[DType.float32, 4], _mlir_type produces: !pop.simd<4, f32>
+# For SIMD[DType.float32, 4], _mlir_type produces: !kgen.simd<4, f32>
 struct SIMD[dtype: DType, size: Int]:
     comptime _mlir_type = __mlir_type[
-        `!pop.simd<`, Self.size._mlir_value, `, `,
+        `!kgen.simd<`, Self.size._mlir_value, `, `,
         Self.dtype._mlir_value, `>`
     ]
     var _mlir_value: Self._mlir_type  # Parameterized SIMD vector
