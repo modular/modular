@@ -23,6 +23,7 @@ modular_py_test(
         "//max:tensor",
         "@mojo//:std",
     ],
+    shard_count = 4,  # QUA-331
     tags = [
         "gpu",
     ],
