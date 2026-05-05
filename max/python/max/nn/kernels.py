@@ -57,6 +57,44 @@ KEY_CACHE_INDEX = 0
 VALUE_CACHE_INDEX = 1
 
 
+def _check_dtype(expected: DType, **tensors: TensorValue | BufferValue) -> None:
+    """Raises ``ValueError`` if any tensor kwarg does not have dtype ``expected``
+
+    Note: The kwarg names are used in the error message, so naming matters.
+    """
+    for name, t in tensors.items():
+        if t.dtype != expected:
+            raise ValueError(
+                f"expected {name} to have dtype {expected.name}, was {t.dtype}"
+            )
+
+
+def _check_rank(expected: int, **tensors: TensorValue | BufferValue) -> None:
+    """Raises ``ValueError`` if any tensor kwarg does not have rank ``expected``
+
+    Note: The kwarg names are used in the error message, so naming matters.
+    """
+    for name, t in tensors.items():
+        if t.rank != expected:
+            raise ValueError(
+                f"expected {name} to have rank {expected}, was {t.rank}"
+            )
+
+
+def _check_same_dtype(**tensors: TensorValue | BufferValue) -> None:
+    """Raises ``ValueError`` unless all tensor kwargs share the same dtype;
+
+    Note: The kwarg names are used in the error message, so naming matters.
+    """
+    first_name, first = next(iter(tensors.items()))
+    for name, t in list(tensors.items())[1:]:
+        if t.dtype != first.dtype:
+            raise ValueError(
+                f"expected {first_name} and {name} to have the same dtype, "
+                f"but got {first.dtype} and {t.dtype}, respectively."
+            )
+
+
 def _mask_str(mask_variant: MHAMaskVariant) -> str:
     return _MHA_MASK_VARIANT_TO_ATTENTION_MASK[mask_variant].value
 
@@ -118,32 +156,14 @@ def fused_qkv_padded_matmul(
     Raises:
         ValueError: on input shapes/dtypes that are invalid for the kernel.
     """
-    if input.dtype != wqkv.dtype:
-        raise ValueError(
-            "expected input and wqkv to have the same dtype, but got"
-            f" {input.dtype} and {wqkv.dtype}, respectively."
-        )
+    _check_same_dtype(input=input, wqkv=wqkv)
 
     input_rank_expected = 3
-    if input.rank != input_rank_expected:
-        raise ValueError(
-            f"expected input to have rank {input_rank_expected}, was {input.rank}"
-        )
+    _check_rank(input_rank_expected, input=input)
 
-    if layer_idx.dtype != DType.uint32:
-        raise ValueError(
-            f"expected layer_idx to have dtype uint32, was {layer_idx.dtype}"
-        )
+    _check_dtype(DType.uint32, layer_idx=layer_idx, valid_lengths=valid_lengths)
 
-    if valid_lengths.dtype != DType.uint32:
-        raise ValueError(
-            f"expected valid_lengths to have dtype uint32, was {valid_lengths.dtype}"
-        )
-
-    if valid_lengths.rank != 1:
-        raise ValueError(
-            f"expected valid_lengths to have rank 1 [batch], was rank {valid_lengths.rank}"
-        )
+    _check_rank(1, valid_lengths=valid_lengths)
 
     return ops.inplace_custom(
         "mo.fused_qkv_matmul.padded.paged",
@@ -196,28 +216,14 @@ def fused_qkv_ragged_matmul(
     Returns:
         Query projection tensor.
     """
-    if input.dtype != wqkv.dtype:
-        raise ValueError(
-            "expected input and wqkv to have the same dtype, but got"
-            f" {input.dtype} and {wqkv.dtype}, respectively."
-        )
+    _check_same_dtype(input=input, wqkv=wqkv)
 
     input_rank_expected = 2
-    if input.rank != input_rank_expected:
-        raise ValueError(
-            f"expected input to have rank {input_rank_expected}, was {input.rank}"
-        )
+    _check_rank(input_rank_expected, input=input)
 
-    if input_row_offsets.dtype != DType.uint32:
-        raise ValueError(
-            "expected input_row_offsets to have dtype uint32, was"
-            f" {input_row_offsets.dtype}"
-        )
-
-    if layer_idx.dtype != DType.uint32:
-        raise ValueError(
-            f"expected layer_idx to have dtype uint32, was {layer_idx.dtype}"
-        )
+    _check_dtype(
+        DType.uint32, input_row_offsets=input_row_offsets, layer_idx=layer_idx
+    )
 
     op_name = "mo.fused_qkv_matmul.ragged.paged"
     values = [
@@ -290,27 +296,16 @@ def rope_split_store_ragged(
     Returns:
         Roped Q output [total_seq_len, n_heads * head_dim].
     """
-    if qkv.rank != 2:
-        raise ValueError(f"expected qkv to have rank 2, was {qkv.rank}")
+    _check_rank(2, qkv=qkv)
 
-    if input_row_offsets.dtype != DType.uint32:
-        raise ValueError(
-            "expected input_row_offsets to have dtype uint32, was"
-            f" {input_row_offsets.dtype}"
-        )
-
-    if layer_idx.dtype != DType.uint32:
-        raise ValueError(
-            f"expected layer_idx to have dtype uint32, was {layer_idx.dtype}"
-        )
+    _check_dtype(
+        DType.uint32, input_row_offsets=input_row_offsets, layer_idx=layer_idx
+    )
 
     if kv_params.quantized_kv_cache:
         raise ValueError("rope_split_store does not support quantized KV cache")
 
-    if freqs_cis.rank != 2:
-        raise ValueError(
-            f"expected freqs_cis to have rank 2, was {freqs_cis.rank}"
-        )
+    _check_rank(2, freqs_cis=freqs_cis)
 
     head_dim = kv_params.head_dim
     q_dim = n_heads * head_dim
@@ -335,14 +330,8 @@ def rope_split_store_ragged(
         raise ValueError("mrope_section requires position_ids to be provided")
 
     if position_ids is not None:
-        if position_ids.dtype != DType.uint32:
-            raise ValueError(
-                f"expected position_ids to have dtype uint32, was {position_ids.dtype}"
-            )
-        if position_ids.rank != 2:
-            raise ValueError(
-                f"expected position_ids to be 2D, got rank {position_ids.rank}"
-            )
+        _check_dtype(DType.uint32, position_ids=position_ids)
+        _check_rank(2, position_ids=position_ids)
         if mrope_section is not None:
             if len(mrope_section) != position_ids.shape[0]:
                 raise ValueError(
@@ -545,28 +534,14 @@ def _fused_qkv_ragged_matmul_scaled_float8(
     Raises:
         ValueError: on input shapes/dtypes that are invalid for the kernel.
     """
-    if input.dtype != wqkv.dtype:
-        raise ValueError(
-            "expected input and wqkv to have the same dtype, but got"
-            f" {input.dtype} and {wqkv.dtype}, respectively."
-        )
+    _check_same_dtype(input=input, wqkv=wqkv)
 
     input_rank_expected = 2
-    if input.rank != input_rank_expected:
-        raise ValueError(
-            f"expected input to have rank {input_rank_expected}, was {input.rank}"
-        )
+    _check_rank(input_rank_expected, input=input)
 
-    if input_row_offsets.dtype != DType.uint32:
-        raise ValueError(
-            "expected input_row_offsets to have dtype uint32, was"
-            f" {input_row_offsets.dtype}"
-        )
-
-    if layer_idx.dtype != DType.uint32:
-        raise ValueError(
-            f"expected layer_idx to have dtype uint32, was {layer_idx.dtype}"
-        )
+    _check_dtype(
+        DType.uint32, input_row_offsets=input_row_offsets, layer_idx=layer_idx
+    )
 
     # Device check - all tensors must be on the same device
     tensors_to_check = [wqkv, input_row_offsets, input_scale, weight_scale]
@@ -702,28 +677,14 @@ def _fused_qkv_ragged_matmul_scaled_float4(
     Raises:
         ValueError: on input shapes/dtypes that are invalid for the kernel.
     """
-    if input.dtype != wqkv.dtype:
-        raise ValueError(
-            "expected input and wqkv to have the same dtype, but got"
-            f" {input.dtype} and {wqkv.dtype}, respectively."
-        )
+    _check_same_dtype(input=input, wqkv=wqkv)
 
     input_rank_expected = 2
-    if input.rank != input_rank_expected:
-        raise ValueError(
-            f"expected input to have rank {input_rank_expected}, was {input.rank}"
-        )
+    _check_rank(input_rank_expected, input=input)
 
-    if input_row_offsets.dtype != DType.uint32:
-        raise ValueError(
-            "expected input_row_offsets to have dtype uint32, was"
-            f" {input_row_offsets.dtype}"
-        )
-
-    if layer_idx.dtype != DType.uint32:
-        raise ValueError(
-            f"expected layer_idx to have dtype uint32, was {layer_idx.dtype}"
-        )
+    _check_dtype(
+        DType.uint32, input_row_offsets=input_row_offsets, layer_idx=layer_idx
+    )
 
     # Device check - all tensors must be on the same device
     tensors_to_check = [wqkv, input_row_offsets, input_scale, weight_scale]
@@ -822,26 +783,13 @@ def unfused_qkv_ragged_matmul_gguf_quantized(
         ValueError: on input shapes/dtypes that are invalid for the kernel.
     """
     input_rank_expected = 2
-    if input.rank != input_rank_expected:
-        raise ValueError(
-            f"expected input to have rank {input_rank_expected}, was {input.rank}"
-        )
+    _check_rank(input_rank_expected, input=input)
 
-    if input.dtype != DType.float32:
-        raise ValueError(
-            f"expected input to have dtype float32, was {input.dtype}"
-        )
+    _check_dtype(DType.float32, input=input)
 
-    if input_row_offsets.dtype != DType.uint32:
-        raise ValueError(
-            "expected input_row_offsets to have dtype uint32, was"
-            f" {input_row_offsets.dtype}"
-        )
-
-    if layer_idx.dtype != DType.uint32:
-        raise ValueError(
-            f"expected layer_idx to have dtype uint32, was {layer_idx.dtype}"
-        )
+    _check_dtype(
+        DType.uint32, input_row_offsets=input_row_offsets, layer_idx=layer_idx
+    )
 
     if (
         not quantization_encoding_q.is_gguf
@@ -905,21 +853,11 @@ def fused_qkv_ragged_matmul_quantized(
         ValueError: on input shapes/dtypes that are invalid for the kernel.
     """
     input_rank_expected = 2
-    if input.rank != input_rank_expected:
-        raise ValueError(
-            f"expected input to have rank {input_rank_expected}, was {input.rank}"
-        )
+    _check_rank(input_rank_expected, input=input)
 
-    if input_row_offsets.dtype != DType.uint32:
-        raise ValueError(
-            "expected input_row_offsets to have dtype uint32, was"
-            f" {input_row_offsets.dtype}"
-        )
-
-    if layer_idx.dtype != DType.uint32:
-        raise ValueError(
-            f"expected layer_idx to have dtype uint32, was {layer_idx.dtype}"
-        )
+    _check_dtype(
+        DType.uint32, input_row_offsets=input_row_offsets, layer_idx=layer_idx
+    )
 
     # In the group-wise quantization scheme, every `group_size` quantized weights
     # share the same scale. If `has_zp` is `True`, there is also a group-wise zero
@@ -1004,24 +942,12 @@ def matmul_kv_cache_ragged(
     implement the ragged tensor.
     `input_row_offsets` indicates where each batch starts and ends in `input`
     """
-    if hidden_states.dtype != weight.dtype:
-        raise ValueError(
-            "expected hidden_states and weight to have the same dtype, but got"
-            f" {hidden_states.dtype} and {weight.dtype}, respectively."
-        )
+    _check_same_dtype(hidden_states=hidden_states, weight=weight)
 
     hidden_states_rank_expected = 2
-    if hidden_states.rank != hidden_states_rank_expected:
-        raise ValueError(
-            "expected hidden_states to have rank "
-            f"{hidden_states_rank_expected}, was {hidden_states.rank}"
-        )
+    _check_rank(hidden_states_rank_expected, hidden_states=hidden_states)
 
-    if input_row_offsets.dtype != DType.uint32:
-        raise ValueError(
-            "expected input_row_offsets to have dtype uint32, was"
-            f" {input_row_offsets.dtype}"
-        )
+    _check_dtype(DType.uint32, input_row_offsets=input_row_offsets)
 
     op_name = "mo.kv_matmul.ragged.paged"
 
@@ -1052,24 +978,12 @@ def matmul_k_cache_ragged(
     implement the ragged tensor.
     `input_row_offsets` indicates where each batch starts and ends in `input`
     """
-    if hidden_states.dtype != weight.dtype:
-        raise ValueError(
-            "expected hidden_states and weight to have the same dtype, but got"
-            f" {hidden_states.dtype} and {weight.dtype}, respectively."
-        )
+    _check_same_dtype(hidden_states=hidden_states, weight=weight)
 
     hidden_states_rank_expected = 2
-    if hidden_states.rank != hidden_states_rank_expected:
-        raise ValueError(
-            "expected hidden_states to have rank "
-            f"{hidden_states_rank_expected}, was {hidden_states.rank}"
-        )
+    _check_rank(hidden_states_rank_expected, hidden_states=hidden_states)
 
-    if input_row_offsets.dtype != DType.uint32:
-        raise ValueError(
-            "expected input_row_offsets to have dtype uint32, was"
-            f" {input_row_offsets.dtype}"
-        )
+    _check_dtype(DType.uint32, input_row_offsets=input_row_offsets)
 
     op_name = "mo.k_matmul.ragged.paged"
 
@@ -1120,29 +1034,14 @@ def matmul_k_cache_ragged_scaled_float8(
     Raises:
         ValueError: on input shapes/dtypes that are invalid for the kernel.
     """
-    if hidden_states.dtype != weight.dtype:
-        raise ValueError(
-            "expected hidden_states and weight to have the same dtype, but got"
-            f" {hidden_states.dtype} and {weight.dtype}, respectively."
-        )
+    _check_same_dtype(hidden_states=hidden_states, weight=weight)
 
     hidden_states_rank_expected = 2
-    if hidden_states.rank != hidden_states_rank_expected:
-        raise ValueError(
-            "expected hidden_states to have rank "
-            f"{hidden_states_rank_expected}, was {hidden_states.rank}"
-        )
+    _check_rank(hidden_states_rank_expected, hidden_states=hidden_states)
 
-    if input_row_offsets.dtype != DType.uint32:
-        raise ValueError(
-            "expected input_row_offsets to have dtype uint32, was"
-            f" {input_row_offsets.dtype}"
-        )
-
-    if layer_idx.dtype != DType.uint32:
-        raise ValueError(
-            f"expected layer_idx to have dtype uint32, was {layer_idx.dtype}"
-        )
+    _check_dtype(
+        DType.uint32, input_row_offsets=input_row_offsets, layer_idx=layer_idx
+    )
 
     op_name = "mo.k_matmul.ragged.paged.scale"
 
@@ -1206,16 +1105,9 @@ def fused_qk_ragged_rope(
     calculation (cache_length + token_idx) with explicit position values. This is useful for
     3D RoPE in models like Qwen2.5-VL that need custom position encoding.
     """
-    if input_row_offsets.dtype != DType.uint32:
-        raise ValueError(
-            "expected input_row_offsets to have dtype uint32, was"
-            f" {input_row_offsets.dtype}"
-        )
-
-    if layer_idx.dtype != DType.uint32:
-        raise ValueError(
-            f"expected layer_idx to have dtype uint32, was {layer_idx.dtype}"
-        )
+    _check_dtype(
+        DType.uint32, input_row_offsets=input_row_offsets, layer_idx=layer_idx
+    )
 
     parameters: dict[str, bool | int | str | DType] = {
         "interleaved": interleaved,
@@ -1223,14 +1115,8 @@ def fused_qk_ragged_rope(
     }
 
     if position_ids is not None:
-        if position_ids.dtype != DType.uint32:
-            raise ValueError(
-                f"expected position_ids to have dtype uint32, was {position_ids.dtype}"
-            )
-        if position_ids.rank != 2:
-            raise ValueError(
-                f"expected position_ids to be 2D, got rank {position_ids.rank}"
-            )
+        _check_dtype(DType.uint32, position_ids=position_ids)
+        _check_rank(2, position_ids=position_ids)
         if mrope_section is not None:
             if len(mrope_section) != position_ids.shape[0]:
                 raise ValueError(
@@ -1317,25 +1203,11 @@ def fused_qk_padded_rope(
         works with padded batch inputs where sequences may have different actual
         lengths but are padded to a uniform shape.
     """
-    if layer_idx.dtype != DType.uint32:
-        raise ValueError(
-            f"expected layer_idx to have dtype uint32, was {layer_idx.dtype}"
-        )
+    _check_dtype(DType.uint32, layer_idx=layer_idx, valid_lengths=valid_lengths)
 
-    if valid_lengths.dtype != DType.uint32:
-        raise ValueError(
-            f"expected valid_lengths to have dtype uint32, was {valid_lengths.dtype}"
-        )
+    _check_rank(4, input=input)
 
-    if input.rank != 4:
-        raise ValueError(
-            f"expected input to have rank 4 [batch, seq_len, n_heads, head_dim], was rank {input.rank}"
-        )
-
-    if valid_lengths.rank != 1:
-        raise ValueError(
-            f"expected valid_lengths to have rank 1 [batch], was rank {valid_lengths.rank}"
-        )
+    _check_rank(1, valid_lengths=valid_lengths)
 
     parameters: dict[str, bool | int | str | DType] = {
         "interleaved": interleaved,
@@ -1366,30 +1238,15 @@ def _validate_kv_cache_store_common(
     layer_idx: TensorValue,
     key_or_value: int,
 ) -> None:
-    if layer_idx.dtype != DType.uint32:
-        raise ValueError(
-            f"expected layer_idx to have dtype uint32, was {layer_idx.dtype}"
-        )
-    if layer_idx.rank != 0:
-        raise ValueError(
-            f"expected layer_idx to be a scalar (rank 0), was rank {layer_idx.rank}"
-        )
-    if kv_collection.kv_blocks.rank != 6:
-        raise ValueError(
-            f"expected kv_blocks to have rank 6, was {kv_collection.kv_blocks.rank}"
-        )
-    if kv_collection.cache_lengths.rank != 1:
-        raise ValueError(
-            f"expected cache_lengths to have rank 1, was {kv_collection.cache_lengths.rank}"
-        )
-    if kv_collection.lookup_table.rank != 2:
-        raise ValueError(
-            f"expected lookup_table to have rank 2, was {kv_collection.lookup_table.rank}"
-        )
-    if kv_collection.max_lengths.rank != 2:
-        raise ValueError(
-            f"expected max_lengths to have rank 2, was {kv_collection.max_lengths.rank}"
-        )
+    _check_dtype(DType.uint32, layer_idx=layer_idx)
+    _check_rank(0, layer_idx=layer_idx)
+    _check_rank(6, kv_blocks=kv_collection.kv_blocks)
+    _check_rank(1, cache_lengths=kv_collection.cache_lengths)
+    _check_rank(
+        2,
+        lookup_table=kv_collection.lookup_table,
+        max_lengths=kv_collection.max_lengths,
+    )
     if key_or_value not in (KEY_CACHE_INDEX, VALUE_CACHE_INDEX):
         raise ValueError(
             "expected key_or_value to be KEY_CACHE_INDEX or VALUE_CACHE_INDEX, "
@@ -1406,17 +1263,9 @@ def kv_cache_store_paged_ragged(
     key_or_value: int,
 ) -> None:
     """Stores key or value tensor into the paged KV cache (ragged inputs)."""
-    if input_row_offsets.dtype != DType.uint32:
-        raise ValueError(
-            "expected input_row_offsets to have dtype uint32, was"
-            f" {input_row_offsets.dtype}"
-        )
-    if x_cache.rank != 3:
-        raise ValueError(f"expected x_cache to have rank 3, was {x_cache.rank}")
-    if input_row_offsets.rank != 1:
-        raise ValueError(
-            f"expected input_row_offsets to have rank 1, was {input_row_offsets.rank}"
-        )
+    _check_dtype(DType.uint32, input_row_offsets=input_row_offsets)
+    _check_rank(3, x_cache=x_cache)
+    _check_rank(1, input_row_offsets=input_row_offsets)
     _validate_kv_cache_store_common(kv_collection, layer_idx, key_or_value)
 
     parameters: dict[str, int | str | DType] = {
@@ -1500,16 +1349,9 @@ def kv_cache_store_paged_padded(
     key_or_value: int,
 ) -> None:
     """Stores key or value tensor into the paged KV cache (padded inputs)."""
-    if valid_lengths.dtype != DType.uint32:
-        raise ValueError(
-            f"expected valid_lengths to have dtype uint32, was {valid_lengths.dtype}"
-        )
-    if x_cache.rank != 4:
-        raise ValueError(f"expected x_cache to have rank 4, was {x_cache.rank}")
-    if valid_lengths.rank != 1:
-        raise ValueError(
-            f"expected valid_lengths to have rank 1, was {valid_lengths.rank}"
-        )
+    _check_dtype(DType.uint32, valid_lengths=valid_lengths)
+    _check_rank(4, x_cache=x_cache)
+    _check_rank(1, valid_lengths=valid_lengths)
     _validate_kv_cache_store_common(kv_collection, layer_idx, key_or_value)
 
     parameters: dict[str, int | str | DType] = {
@@ -1593,29 +1435,12 @@ def rope_ragged(
     interleaved: bool = True,
 ) -> TensorValue:
     """Applies RoPE to ragged input using the standard rope kernel."""
-    if input_row_offsets.dtype != DType.uint32:
-        raise ValueError(
-            "expected input_row_offsets to have dtype uint32, was"
-            f" {input_row_offsets.dtype}"
-        )
-    if start_pos.dtype != DType.uint32:
-        raise ValueError(
-            f"expected start_pos to have dtype uint32, was {start_pos.dtype}"
-        )
-    if input.rank != 3:
-        raise ValueError(f"expected input to have rank 3, was {input.rank}")
-    if input_row_offsets.rank != 1:
-        raise ValueError(
-            f"expected input_row_offsets to have rank 1, was {input_row_offsets.rank}"
-        )
-    if start_pos.rank != 1:
-        raise ValueError(
-            f"expected start_pos to have rank 1, was {start_pos.rank}"
-        )
-    if freqs_cis.rank != 2:
-        raise ValueError(
-            f"expected freqs_cis to have rank 2, was {freqs_cis.rank}"
-        )
+    _check_dtype(
+        DType.uint32, input_row_offsets=input_row_offsets, start_pos=start_pos
+    )
+    _check_rank(3, input=input)
+    _check_rank(1, input_row_offsets=input_row_offsets, start_pos=start_pos)
+    _check_rank(2, freqs_cis=freqs_cis)
 
     parameters: dict[str, bool | int | str | DType] = {
         "interleaved": interleaved,
@@ -1681,10 +1506,7 @@ def _freqs_cis_from_position_ids(
     mrope_section: list[int] | None = None,
 ) -> TensorValue:
     """Builds per-token freqs_cis from a freqs table and explicit position_ids."""
-    if position_ids.dtype != DType.uint32:
-        raise ValueError(
-            f"expected position_ids to have dtype uint32, was {position_ids.dtype}"
-        )
+    _check_dtype(DType.uint32, position_ids=position_ids)
     if position_ids.rank == 1:
         position_ids = ops.unsqueeze(position_ids, 0)
     if position_ids.rank != 2:
@@ -1774,10 +1596,7 @@ def rope_ragged_with_position_ids(
     interleaved: bool = True,
 ) -> TensorValue:
     """Applies RoPE using explicit position_ids (no KV cache coupling)."""
-    if position_ids.dtype != DType.uint32:
-        raise ValueError(
-            f"expected position_ids to have dtype uint32, was {position_ids.dtype}"
-        )
+    _check_dtype(DType.uint32, position_ids=position_ids)
     if position_ids.rank == 1:
         position_ids = ops.unsqueeze(position_ids, 0)
     if position_ids.rank != 2:
@@ -2278,10 +2097,7 @@ def flash_attention_ragged(
         )
 
     if sink_weights is not None:
-        if sink_weights.rank != 1:
-            raise ValueError(
-                f"expected sink_weights to have rank 1, got {sink_weights.rank}"
-            )
+        _check_rank(1, sink_weights=sink_weights)
         num_attention_heads = input.shape[1]
         if sink_weights.shape[0] != num_attention_heads:
             raise ValueError(
@@ -3497,13 +3313,8 @@ def kv_cache_ragged_radd(
         batch_offset: The batch to start applying the r-add to.
         layer_idx: The layer index to add to.
     """
-    if a.rank != 2:
-        raise ValueError(f"Expected a to have rank 2 but got {a.rank}")
-
-    if input_row_offsets.rank != 1:
-        raise ValueError(
-            f"Expected input_row_offsets to have rank 1 but got {input_row_offsets.rank}"
-        )
+    _check_rank(2, a=a)
+    _check_rank(1, input_row_offsets=input_row_offsets)
 
     if kv_params.page_size is None:
         raise ValueError("Expected kv_params.page_size to be set")
@@ -6047,22 +5858,13 @@ def sgmv_kernel(  # noqa: ANN201
     Raises:
         ValueError: on input shapes/dtypes that are invalid for the kernel.
     """
-    if input.rank != 2:
-        raise ValueError(f"expected input to have rank 2, was {input.rank}")
+    _check_rank(2, input=input)
 
-    if lora.rank != 3:
-        raise ValueError(f"expected lora to have rank 3, was {lora.rank}")
+    _check_rank(3, lora=lora)
 
-    if input.dtype != lora.dtype:
-        raise ValueError(
-            f"expected input and lora to have the same dtype, but got "
-            f"{input.dtype} and {lora.dtype}, respectively."
-        )
+    _check_same_dtype(input=input, lora=lora)
 
-    if input_row_offsets.dtype != DType.uint32:
-        raise ValueError(
-            f"expected input_row_offsets to have dtype uint32, was {input_row_offsets.dtype}"
-        )
+    _check_dtype(DType.uint32, input_row_offsets=input_row_offsets)
 
     M = input.shape[0] if not lora_end_idx else lora_end_idx.shape[0]
 
@@ -6132,31 +5934,13 @@ def sgmv_lora_kernel(
     Raises:
         ValueError: on input shapes/dtypes that are invalid for the kernel.
     """
-    if input.rank != 2:
-        raise ValueError(f"expected input to have rank 2, was {input.rank}")
+    _check_rank(2, input=input)
 
-    if lora_a.rank != 3:
-        raise ValueError(f"expected lora_a to have rank 3, was {lora_a.rank}")
+    _check_rank(3, lora_a=lora_a, lora_b=lora_b)
 
-    if lora_b.rank != 3:
-        raise ValueError(f"expected lora_b to have rank 3, was {lora_b.rank}")
+    _check_same_dtype(input=input, lora_a=lora_a, lora_b=lora_b)
 
-    if input.dtype != lora_a.dtype:
-        raise ValueError(
-            f"expected input and lora_a to have the same dtype, but got "
-            f"{input.dtype} and {lora_a.dtype}, respectively."
-        )
-
-    if input.dtype != lora_b.dtype:
-        raise ValueError(
-            f"expected input and lora_b to have the same dtype, but got "
-            f"{input.dtype} and {lora_b.dtype}, respectively."
-        )
-
-    if grouped_row_offsets.dtype != DType.uint32:
-        raise ValueError(
-            f"expected grouped_row_offsets to have dtype uint32, was {grouped_row_offsets.dtype}"
-        )
+    _check_dtype(DType.uint32, grouped_row_offsets=grouped_row_offsets)
 
     v = sgmv_kernel(
         input,
@@ -6219,22 +6003,13 @@ def sgmv_lora_qkv_shrink(
     Raises:
         ValueError: on input shapes/dtypes that are invalid for the kernel.
     """
-    if input.rank != 2:
-        raise ValueError(f"expected input to have rank 2, was {input.rank}")
+    _check_rank(2, input=input)
 
-    if lora_a.rank != 3:
-        raise ValueError(f"expected lora_a to have rank 3, was {lora_a.rank}")
+    _check_rank(3, lora_a=lora_a)
 
-    if input.dtype != lora_a.dtype:
-        raise ValueError(
-            f"expected input and lora_a to have the same dtype, but got "
-            f"{input.dtype} and {lora_a.dtype}, respectively."
-        )
+    _check_same_dtype(input=input, lora_a=lora_a)
 
-    if lora_grouped_offsets.dtype != DType.uint32:
-        raise ValueError(
-            f"expected lora_grouped_offsets to have dtype uint32, was {lora_grouped_offsets.dtype}"
-        )
+    _check_dtype(DType.uint32, lora_grouped_offsets=lora_grouped_offsets)
 
     return ops.custom(
         "mo.lora_sgmv.qkv_shrink.ragged",
@@ -6305,59 +6080,21 @@ def sgmv_qkv_lora_kernel(
     Raises:
         ValueError: on input shapes/dtypes that are invalid for the kernel.
     """
-    if input.rank != 2:
-        raise ValueError(f"expected input to have rank 2, was {input.rank}")
+    _check_rank(2, input=input)
 
-    if lora_a.rank != 3:
-        raise ValueError(f"expected lora_a to have rank 3, was {lora_a.rank}")
+    _check_rank(3, lora_a=lora_a, lora_b_q=lora_b_q, lora_b_kv=lora_b_kv)
 
-    if lora_b_q.rank != 3:
-        raise ValueError(
-            f"expected lora_b_q to have rank 3, was {lora_b_q.rank}"
-        )
+    _check_same_dtype(
+        input=input, lora_a=lora_a, lora_b_q=lora_b_q, lora_b_kv=lora_b_kv
+    )
 
-    if lora_b_kv.rank != 3:
-        raise ValueError(
-            f"expected lora_b_kv to have rank 3, was {lora_b_kv.rank}"
-        )
-
-    if input.dtype != lora_a.dtype:
-        raise ValueError(
-            f"expected input and lora_a to have the same dtype, but got "
-            f"{input.dtype} and {lora_a.dtype}, respectively."
-        )
-
-    if input.dtype != lora_b_q.dtype:
-        raise ValueError(
-            f"expected input and lora_b_q to have the same dtype, but got "
-            f"{input.dtype} and {lora_b_q.dtype}, respectively."
-        )
-
-    if input.dtype != lora_b_kv.dtype:
-        raise ValueError(
-            f"expected input and lora_b_kv to have the same dtype, but got "
-            f"{input.dtype} and {lora_b_kv.dtype}, respectively."
-        )
-
-    if input_row_offsets.dtype != DType.uint32:
-        raise ValueError(
-            f"expected input_row_offsets to have dtype uint32, was {input_row_offsets.dtype}"
-        )
-
-    if lora_grouped_offsets.dtype != DType.uint32:
-        raise ValueError(
-            f"expected lora_grouped_offsets to have dtype uint32, was {lora_grouped_offsets.dtype}"
-        )
-
-    if lora_grouped_offsets_kv.dtype != DType.uint32:
-        raise ValueError(
-            f"expected lora_grouped_offsets_kv to have dtype uint32, was {lora_grouped_offsets_kv.dtype}"
-        )
-
-    if layer_idx.dtype != DType.uint32:
-        raise ValueError(
-            f"expected layer_idx to have dtype uint32, was {layer_idx.dtype}"
-        )
+    _check_dtype(
+        DType.uint32,
+        input_row_offsets=input_row_offsets,
+        lora_grouped_offsets=lora_grouped_offsets,
+        lora_grouped_offsets_kv=lora_grouped_offsets_kv,
+        layer_idx=layer_idx,
+    )
 
     # shrink GMM:      [M, K] @ [G, 3*N, K]     // unchanged
     # transpose:       [M, 3, N] => [3, M, N]   // shall be fused into above
@@ -6449,13 +6186,8 @@ def kv_cache_ragged_2m_iadd(
         ValueError: If `a` does not have rank 2.
         ValueError: If `input_row_offsets` does not have rank 1.
     """
-    if a.rank != 2:
-        raise ValueError(f"Expected a to have rank 2 but got {a.rank}")
-
-    if input_row_offsets.rank != 1:
-        raise ValueError(
-            f"Expected input_row_offsets to have rank 1 but got {input_row_offsets.rank}"
-        )
+    _check_rank(2, a=a)
+    _check_rank(1, input_row_offsets=input_row_offsets)
 
     ops.inplace_custom(
         "mo.kv_cache.ragged.paged.2m_iadd",
@@ -6498,18 +6230,10 @@ def spatial_merge(
     Raises:
         ValueError: on input shapes/dtypes that are invalid for the kernel.
     """
-    if input.rank != 2:
-        raise ValueError(f"expected input to have rank 2, got {input.rank}")
+    _check_rank(2, input=input)
 
-    if grid_thw.dtype != DType.int64:
-        raise ValueError(
-            f"expected grid_thw to have dtype int64, got {grid_thw.dtype}"
-        )
-
-    if grid_thw.rank != 2:
-        raise ValueError(
-            f"expected grid_thw to have rank 2, got {grid_thw.rank}"
-        )
+    _check_dtype(DType.int64, grid_thw=grid_thw)
+    _check_rank(2, grid_thw=grid_thw)
     if grid_thw.shape[1] != 3:
         raise ValueError(
             f"expected grid_thw.shape[1] to be 3, got {grid_thw.shape[1]}"
@@ -6567,10 +6291,8 @@ def learnable_2d_interp_pos_emb(
     Raises:
         ValueError: On invalid input shapes or dtypes.
     """
-    if x.rank != 2:
-        raise ValueError(f"expected x to have rank 2, got {x.rank}")
-    if weight.rank != 3:
-        raise ValueError(f"expected weight to have rank 3, got {weight.rank}")
+    _check_rank(2, x=x)
+    _check_rank(3, weight=weight)
     if grid_thws.rank != 2 or grid_thws.shape[1] != 3:
         raise ValueError(
             "expected grid_thws of shape (N, 3), got rank="
@@ -6580,10 +6302,7 @@ def learnable_2d_interp_pos_emb(
         raise ValueError(
             f"expected grid_thws dtype int64, got {grid_thws.dtype}"
         )
-    if time_weight.rank != 2:
-        raise ValueError(
-            f"expected time_weight to have rank 2, got {time_weight.rank}"
-        )
+    _check_rank(2, time_weight=time_weight)
 
     return ops.custom(
         "learnable_2d_interp_pos_emb",
@@ -6686,11 +6405,7 @@ def inplace_memcpy(dst: BufferValue, src: TensorValue) -> None:
         dst: Destination buffer mutated in place.
         src: Source tensor whose contents are copied into `dst`.
     """
-    if dst.dtype != src.dtype:
-        raise ValueError(
-            "Expected dst and src to have the same dtype, but got "
-            f"dst={dst.dtype} and src={src.dtype}"
-        )
+    _check_same_dtype(dst=dst, src=src)
     if dst.shape != src.shape:
         raise ValueError(
             "Expected dst and src to have the same shape, but got "
@@ -6913,18 +6628,10 @@ def tpool_patch_merger(
     Raises:
         ValueError: On invalid input shapes or dtypes.
     """
-    if input.rank != 2:
-        raise ValueError(f"expected input to have rank 2, got {input.rank}")
+    _check_rank(2, input=input)
 
-    if grid_thws.dtype != DType.int64:
-        raise ValueError(
-            f"expected grid_thws to have dtype int64, got {grid_thws.dtype}"
-        )
-
-    if grid_thws.rank != 2:
-        raise ValueError(
-            f"expected grid_thws to have rank 2, got {grid_thws.rank}"
-        )
+    _check_dtype(DType.int64, grid_thws=grid_thws)
+    _check_rank(2, grid_thws=grid_thws)
 
     if grid_thws.shape[1] != 3:
         raise ValueError(
