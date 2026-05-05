@@ -1,6 +1,6 @@
-# `M::MLRT::Runtime` Overview
+# `M::MLRT::CPUDevice` Overview
 
-This document introduces the `M::MLRT::Runtime`, some of the design points,
+This document introduces the `M::MLRT::CPUDevice`, some of the design points,
 key configuration points and rationale for how it works. For more details on
 datatypes and more specialized topics please see:
 
@@ -9,7 +9,7 @@ datatypes and more specialized topics please see:
 
 ## Library-based Design
 
-`M::MLRT::Runtime` is designed as a low-level concurrency library for
+`M::MLRT::CPUDevice` is designed as a low-level concurrency library for
 managing system resources on modern CPU systems. It has many peers that provide
 similar functionality, such as Intel Thread Building Blocks, Apple Grand Central
 Dispatch, and many others.
@@ -36,7 +36,7 @@ these algorithms to be expressible in a way that isn't unduly exposed to the
 operating system details - in fact, many of these can run on bare-metal systems.
 
 On the other hand, we're not providing a virtual machine. If clients of
-`M::MLRT::Runtime` want to be written in a system specific way, the full
+`M::MLRT::CPUDevice` want to be written in a system specific way, the full
 machine is open and clients are not prevented from doing quirky and exotic
 things as necessary.
 

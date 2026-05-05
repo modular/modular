@@ -154,11 +154,11 @@ static AsyncValueRef<std::string>
 putObjectsIntoCache(BinaryBlobCacheKey::KeyTy key, BufferRef value,
                     StringRef input,
                     RCRef<BlobCache<BinaryBlobCacheKey>> &cache,
-                    MLRT::Runtime &runtime, bool useHex) {
+                    MLRT::CPUDevice &cpuDevice, bool useHex) {
 
   AsyncValueRef<std::string> insert =
-      cache->insert(runtime, std::move(key), std::move(value));
-  auto outCh = AsyncValueRef<std::string>::allocate(runtime);
+      cache->insert(cpuDevice, std::move(key), std::move(value));
+  auto outCh = AsyncValueRef<std::string>::allocate(cpuDevice);
   std::move(insert).andThenSync([outCh = outCh.copy(),
                                  input = Buffer::get(input), useHex](
                                     AsyncValueRef<std::string> &&hash) mutable {
@@ -182,12 +182,12 @@ int main(int argc, char **argv) {
 
   // Create our context.
   ErrorOr<ContextRef> ctxOr =
-      Init::createContext("cache-mgr", Init::Options().withRuntimeOptions());
+      Init::createContext("cache-mgr", Init::Options().withCPUDeviceOptions());
   if (ctxOr.isError()) {
     llvm::errs() << "failed to create context: " << ctxOr.getError() << "\n";
     return 1;
   }
-  MLRT::Runtime &runtime = *(*ctxOr)->get<MLRT::Runtime>();
+  MLRT::CPUDevice &cpuDevice = *(*ctxOr)->get<MLRT::CPUDevice>();
 
   auto backendPathOr = clOptions.getBackendPath();
   if (backendPathOr.isError())
@@ -214,8 +214,8 @@ int main(int argc, char **argv) {
     // If the key is specified, use it directly.
     std::string keyToFind =
         key.empty() ? BinaryBlobCacheKey::hashKey(*hash) : key;
-    auto result = cache->find(runtime, keyToFind);
-    auto outCh = AsyncValueRef<BufferRef>::allocate(runtime);
+    auto result = cache->find(cpuDevice, keyToFind);
+    auto outCh = AsyncValueRef<BufferRef>::allocate(cpuDevice);
     std::move(result).andThenSync(
         [outCh = outCh.copy(), input = Buffer::get(*hash)](
             AsyncValueRef<std::optional<BufferRef>> &&found) mutable {
@@ -251,7 +251,7 @@ int main(int argc, char **argv) {
         key.empty() ? BinaryBlobCacheKey::hashKey((*bufOr).copy()) : key;
     AsyncValueRef<std::string> outCh =
         putObjectsIntoCache(keyToWrite, (*bufOr).copy(), clOptions.input, cache,
-                            runtime, clOptions.outputHex);
+                            cpuDevice, clOptions.outputHex);
     await(outCh);
     if (outCh.isError()) {
       operationResult.getUnderlyingStorage().emplace<EncodedDiagnostic>(

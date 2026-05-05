@@ -359,8 +359,8 @@ namespace {
 /// be shared between both inliners.
 template <typename DerivedT, typename NodeT>
 struct InliningGraphBase : public CallGraphBase<DerivedT, NodeT> {
-  explicit InliningGraphBase(MLRT::Runtime &runtime)
-      : runtime(runtime), state(runtime) {}
+  explicit InliningGraphBase(MLRT::CPUDevice &cpuDevice)
+      : cpuDevice(cpuDevice), state(cpuDevice) {}
 
   using CallGraphBase<DerivedT, NodeT>::getDerived;
 
@@ -374,8 +374,8 @@ struct InliningGraphBase : public CallGraphBase<DerivedT, NodeT> {
   // increment the `numProcessedCalls` counters N times as appropriate.
   void complete(NodeT *node);
 
-  /// The runtime to use.
-  MLRT::Runtime &runtime;
+  /// The cpuDevice to use.
+  MLRT::CPUDevice &cpuDevice;
 
   /// The inlining task state.
   MLRT::ForkJoin state;
@@ -465,14 +465,16 @@ struct ParametricInliningGraphNode
 struct ParametricInliningGraph
     : public InliningGraphBase<ParametricInliningGraph,
                                ParametricInliningGraphNode> {
-  explicit ParametricInliningGraph(InlineLevel level, MLRT::Runtime &runtime,
+  explicit ParametricInliningGraph(InlineLevel level,
+                                   MLRT::CPUDevice &cpuDevice,
                                    ParameterCollector::Analysis &paramCache,
                                    unsigned optimizationLevel,
                                    bool updateDebugInfo)
-      : InliningGraphBase(runtime), level(level),
-        paramCaches(paramCache, runtime.getWorkQueue()->getParallelismLevel()),
+      : InliningGraphBase(cpuDevice), level(level),
+        paramCaches(paramCache,
+                    cpuDevice.getWorkQueue()->getParallelismLevel()),
         manglerCaches(baseManglerCache,
-                      runtime.getWorkQueue()->getParallelismLevel()),
+                      cpuDevice.getWorkQueue()->getParallelismLevel()),
         optimizationLevel(optimizationLevel), updateDebugInfo(updateDebugInfo) {
   }
 
@@ -668,9 +670,10 @@ void InlineParametricPass::runOnOperation() {
       getAnalysis<mlir::SymbolTableAnalysis>().getTopLevelSymbolTable();
   auto &paramCache = getAnalysis<ParameterCollector::Analysis>();
 
-  MLRT::Runtime &runtime = *loadContext(&getContext())->get<MLRT::Runtime>();
+  MLRT::CPUDevice &cpuDevice =
+      *loadContext(&getContext())->get<MLRT::CPUDevice>();
   ParametricInliningGraph graph(
-      nodebugOnly ? InlineLevel::AlwaysNoDebug : InlineLevel::Always, runtime,
+      nodebugOnly ? InlineLevel::AlwaysNoDebug : InlineLevel::Always, cpuDevice,
       paramCache, optimizationLevel, updateDebugInfo);
   graph.build(getOperation(), symtab);
   graph.process();
@@ -707,7 +710,7 @@ void InlineParametricPass::runOnOperation() {
 
   // Note: use the same threadpool as before, because that's what the thread
   // local caches are initialized for.
-  MLRT::ForkJoin state(runtime);
+  MLRT::ForkJoin state(cpuDevice);
   for (ParametricInliningGraphNode &caller :
        llvm::make_second_range(graph.nodes))
     state.fork([&] { inlineReadyFn(caller); });

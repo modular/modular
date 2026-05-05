@@ -13,7 +13,7 @@
 namespace M::MLRT {
 
 /// This class holds an (untyped) smart pointer to an AsyncValue, and is the
-/// primary API for working with AsyncValues in the Modular runtime.
+/// primary API for working with AsyncValues in the Modular cpuDevice.
 ///
 /// References can be moved and (explicitly) copied. The AsyncValue is
 /// automatically reference counted and deleted when the last reference is
@@ -71,31 +71,31 @@ public:
   /// Create an AsyncValue for the specified type in "unconstructed" state.
   /// This should be `emplace`'d, `construct`'d, or finalized with an error.
   template <typename T>
-  static AnyAsyncValueRef allocate(CompactRuntimePtr runtime) {
-    return take(AsyncValue::allocate<T>(runtime));
+  static AnyAsyncValueRef allocate(CompactCPUDevicePtr cpuDevice) {
+    return take(AsyncValue::allocate<T>(cpuDevice));
   }
 
   /// Create an AsyncValue for the specified type in "available" and ready
   /// state. This is a terminal state for an AsyncValue, it can never change out
   /// of this state.
   template <typename T, typename... Args>
-  static AnyAsyncValueRef createReady(CompactRuntimePtr runtime,
+  static AnyAsyncValueRef createReady(CompactCPUDevicePtr cpuDevice,
                                       Args &&...args) {
     return take(
-        AsyncValue::createReady<T>(runtime, std::forward<Args>(args)...));
+        AsyncValue::createReady<T>(cpuDevice, std::forward<Args>(args)...));
   }
 
   /// Create an AsyncValue that has already been turned into an error with the
   /// specified message.
-  static AnyAsyncValueRef createError(CompactRuntimePtr runtime,
+  static AnyAsyncValueRef createError(CompactCPUDevicePtr cpuDevice,
                                       EncodedDiagnostic diagnostic) {
-    return take(AsyncValue::createError(runtime, std::move(diagnostic)));
+    return take(AsyncValue::createError(cpuDevice, std::move(diagnostic)));
   }
 
   /// Create an IndirectAsyncValue that may be filled in with any AsyncValue in
   /// the future.
-  static AnyAsyncValueRef createIndirect(CompactRuntimePtr runtime) {
-    return take(AsyncValue::createIndirect(runtime));
+  static AnyAsyncValueRef createIndirect(CompactCPUDevicePtr cpuDevice) {
+    return take(AsyncValue::createIndirect(cpuDevice));
   }
 
   // Make a copy of this AnyAsyncValueRef, increasing the AsyncValue's refcount
@@ -120,7 +120,7 @@ public:
   /// Test for null.
   explicit operator bool() const { return getPointer() != nullptr; }
 
-  CompactRuntimePtr getRuntime() const { return value->getRuntime(); }
+  CompactCPUDevicePtr getCPUDevice() const { return value->getCPUDevice(); }
 
   //===--------------------------------------------------------------------===//
   // Core AsyncValue operations
@@ -158,7 +158,7 @@ public:
   ///
   /// Synchronous producers will generally require a copy on this references:
   ///
-  ///    auto ref = AnyAsyncValueRef::allocate<Foo>(runtime);
+  ///    auto ref = AnyAsyncValueRef::allocate<Foo>(cpuDevice);
   ///    ...
   ///    ref.copy().emplace(...);
   ///    ...
@@ -167,8 +167,8 @@ public:
   /// However asynchronous producers will generally have taken the copy within
   /// their addTask closure:
   ///
-  ///    auto ref = AnyAsyncValueRef::allocate<Foo>(runtime);
-  ///    addTask(runtime, [ref = ref.copy()]() mutable {
+  ///    auto ref = AnyAsyncValueRef::allocate<Foo>(cpuDevice);
+  ///    addTask(cpuDevice, [ref = ref.copy()]() mutable {
   ///                        ...
   ///                        ref.emplace(...);
   ///                     });
@@ -220,7 +220,7 @@ public:
   /// version of andThen if the waiter needs access back to the AsyncValue.
   ///
   /// If `IsAsync` is true, the waiter will be run as an asynchronous task when
-  /// triggered, using the work queue for the AsyncValue's runtime. Otherwise,
+  /// triggered, using the work queue for the AsyncValue's cpuDevice. Otherwise,
   /// the waiter will be run either on the caller's thread or the thread of the
   /// emplace or setError call.
   template <bool IsAsync>
@@ -245,7 +245,7 @@ public:
   /// if the waiter does not need access to the underlying AsyncValue.
   ///
   /// If `IsAsync` is true, the waiter will be run as an asynchronous task when
-  /// triggered, using the work queue for the AsyncValue's runtime. Otherwise,
+  /// triggered, using the work queue for the AsyncValue's cpuDevice. Otherwise,
   /// the waiter will be run either on the caller's thread or the thread of the
   /// emplace or setError call.
   template <bool IsAsync>

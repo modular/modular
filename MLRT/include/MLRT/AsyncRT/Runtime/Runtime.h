@@ -12,8 +12,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef MLRT_ASYNCRT_RUNTIME_H
-#define MLRT_ASYNCRT_RUNTIME_H
+#ifndef MLRT_ASYNCRT_CPUDEVICE_H
+#define MLRT_ASYNCRT_CPUDEVICE_H
 
 #include "MLRT/AsyncRT/Runtime/Allocator.h"
 #include "MLRT/AsyncRT/Runtime/AnyAsyncValueRef.h"
@@ -53,8 +53,8 @@ struct AllocatorOptions {
   bool useAfterFreeAllocator = false;
 };
 
-/// Collects all the options which influence a runtime.
-struct RuntimeOptions {
+/// Collects all the options which influence a cpuDevice.
+struct CPUDeviceOptions {
   enum class AllocatorType {
     /// Allocator that just calls malloc/free.
     kMalloc,
@@ -97,13 +97,13 @@ struct RuntimeOptions {
   /// Currently this only takes "type" into account and ignores "level".
   /// So any non-zero value enables the level, in other words `11111` and
   /// `22222` and `12121` all have the same effect. Set this in Runtime's ctor
-  /// via RuntimeOptions.runtimeProfilingTypeMask.
+  /// via CPUDeviceOptions.runtimeProfilingTypeMask.
   ///
   /// For example:
   ///
-  /// MLRT::RuntimeOptions rtOpt;
+  /// MLRT::CPUDeviceOptions rtOpt;
   /// rtOpt.runtimeProfilingTypeMask = 1 << Trace::typeBitshift(Trace::kOther);
-  /// auto rt = MLRT::getOrCreateRuntime(MLRT::RuntimeSource::Test,
+  /// auto rt = MLRT::getOrCreateCPUDevice(MLRT::CPUDeviceSource::Test,
   /// rtOpt);
   ///
   /// Creates a Runtime that will only record `kOther` type events.
@@ -125,19 +125,19 @@ struct RuntimeOptions {
   bool tcmallocAllocator = true;
   bool profilingAllocator = false;
   bool useAfterFreeAllocator = false;
-  WorkQueueType workQueueType{RuntimeOptions::WorkQueueType::kThreadPool};
+  WorkQueueType workQueueType{CPUDeviceOptions::WorkQueueType::kThreadPool};
 
   AllocatorType allocatorType{
 #ifdef MODULAR_DEBUG
-      RuntimeOptions::AllocatorType::kLeakChecker
+      CPUDeviceOptions::AllocatorType::kLeakChecker
 #else
-      RuntimeOptions::AllocatorType::kMalloc
+      CPUDeviceOptions::AllocatorType::kMalloc
 #endif
   };
 
   ProfilerDebuginfo profilerDebuginfo = ProfilerDebuginfo::kNoProfiler;
 
-  RuntimeOptions() = default;
+  CPUDeviceOptions() = default;
 
   StringRef getProfileFilename() const {
     if constexpr (!kIsProfilingEnabled) {
@@ -160,39 +160,39 @@ struct RuntimeOptions {
   }
 
   // Temporary shim, remove once we separate the Allocator from the Runtime
-  // Extract the Allocator-specific options from the RuntimeOptions into a
+  // Extract the Allocator-specific options from the CPUDeviceOptions into a
   // new struct.
   AllocatorOptions getAllocatorOptions() const {
     return {leakCheckedAllocator, tcmallocAllocator, profilingAllocator,
             useAfterFreeAllocator};
   }
 
-  /// Print information about the runtime configuration to standard out.
+  /// Print information about the cpuDevice configuration to standard out.
   void printRuntimeConfig() const {
-    printf("runtime using ");
+    printf("cpuDevice using ");
     switch (allocatorType) {
-    case RuntimeOptions::AllocatorType::kMalloc:
+    case CPUDeviceOptions::AllocatorType::kMalloc:
       printf("malloc");
       break;
-    case RuntimeOptions::AllocatorType::kTCMalloc:
+    case CPUDeviceOptions::AllocatorType::kTCMalloc:
       printf("tcmalloc");
       break;
-    case RuntimeOptions::AllocatorType::kLeakChecker:
+    case CPUDeviceOptions::AllocatorType::kLeakChecker:
       printf("leak check");
       break;
-    case RuntimeOptions::AllocatorType::kProfiler:
+    case CPUDeviceOptions::AllocatorType::kProfiler:
       printf("profiling");
       break;
-    case RuntimeOptions::AllocatorType::kUseAfterFree:
+    case CPUDeviceOptions::AllocatorType::kUseAfterFree:
       printf("use-after-free");
       break;
     }
     printf(" allocator, and ");
     switch (workQueueType) {
-    case RuntimeOptions::WorkQueueType::kSingleThread:
+    case CPUDeviceOptions::WorkQueueType::kSingleThread:
       printf("single thread work queue");
       break;
-    case RuntimeOptions::WorkQueueType::kThreadPool:
+    case CPUDeviceOptions::WorkQueueType::kThreadPool:
       printf("thread pool work queue");
       break;
     }
@@ -210,71 +210,71 @@ struct RuntimeOptions {
   /// Return the number of threads specified at the command-line.
   size_t getNumThreads() const { return numThreads; }
 
-  /// Equality for all fields that affect runtime behavior.
-  bool operator==(const RuntimeOptions &other) const;
-  bool operator!=(const RuntimeOptions &other) const {
+  /// Equality for all fields that affect cpuDevice behavior.
+  bool operator==(const CPUDeviceOptions &other) const;
+  bool operator!=(const CPUDeviceOptions &other) const {
     return !(*this == other);
   }
 
-  /// Create a copy of the RuntimeOptions.
-  RuntimeOptions copy() const;
+  /// Create a copy of the CPUDeviceOptions.
+  CPUDeviceOptions copy() const;
 
-  RuntimeOptions &forDebug() {
+  CPUDeviceOptions &forDebug() {
     workQueueType = WorkQueueType::kSingleThread;
     leakCheckedAllocator = true;
     return *this;
   }
 
-  RuntimeOptions &withMainWillNotDonate(bool mainWillNotDonate = true) {
+  CPUDeviceOptions &withMainWillNotDonate(bool mainWillNotDonate = true) {
     this->mainWillDonate = !mainWillNotDonate;
     return *this;
   }
 
-  RuntimeOptions &withCPUAffinity(bool cpuAffinity = true) {
+  CPUDeviceOptions &withCPUAffinity(bool cpuAffinity = true) {
     this->withAffinity = cpuAffinity;
     return *this;
   }
 
-  RuntimeOptions &
+  CPUDeviceOptions &
   withLeakCheckedAllocator(bool newLeakCheckedAllocator = true) {
     leakCheckedAllocator = newLeakCheckedAllocator;
     return *this;
   }
 
-  RuntimeOptions &withTCMallocAllocator(bool newTcmallocAllocator = true) {
+  CPUDeviceOptions &withTCMallocAllocator(bool newTcmallocAllocator = true) {
     tcmallocAllocator = newTcmallocAllocator;
     return *this;
   }
 
-  RuntimeOptions &withProfilingAllocator(bool newProfilingAllocator = true) {
+  CPUDeviceOptions &withProfilingAllocator(bool newProfilingAllocator = true) {
     profilingAllocator = newProfilingAllocator;
     return *this;
   }
 
-  RuntimeOptions &withSingleThreaded(bool singleThreaded = true) {
+  CPUDeviceOptions &withSingleThreaded(bool singleThreaded = true) {
     workQueueType = singleThreaded ? WorkQueueType::kSingleThread
                                    : WorkQueueType::kThreadPool;
     return *this;
   }
 
-  RuntimeOptions &withNumThreads(size_t newNumThreads) {
+  CPUDeviceOptions &withNumThreads(size_t newNumThreads) {
     numThreads = newNumThreads;
     return *this;
   }
 
-  RuntimeOptions &withMaxThreads(size_t newMaxThreads) {
+  CPUDeviceOptions &withMaxThreads(size_t newMaxThreads) {
     maxThreads = newMaxThreads;
     return *this;
   }
 
-  RuntimeOptions &withProfileFilename(StringRef newProfileFilename) {
+  CPUDeviceOptions &withProfileFilename(StringRef newProfileFilename) {
     profileFilename = newProfileFilename;
     return *this;
   }
 };
 
 /// Indicates how the Runtime was created, for diagnostics and tracing.
-enum class RuntimeSource {
+enum class CPUDeviceSource {
   /// Created by M::Context.
   MaxContext,
   /// Created by Mojo stdlib / CompilerRT.
@@ -285,36 +285,37 @@ enum class RuntimeSource {
   Test,
 };
 
-/// This represents one instance of the AsyncRT runtime, which can have multiple
-/// threads, a private heap for data, a way of reporting errors, and other
-/// context objects. This is also the natural unit for task cancellation.
+/// This represents one instance of the AsyncRT cpuDevice, which can have
+/// multiple threads, a private heap for data, a way of reporting errors, and
+/// other context objects. This is also the natural unit for task cancellation.
 ///
-/// Runtime is reference-counted so that RuntimeRef can be RCRef<Runtime> and
-/// support shared ownership. It inherits ReferenceCounted and must only be
+/// Runtime is reference-counted so that CPUDeviceRef can be RCRef<CPUDevice>
+/// and support shared ownership. It inherits ReferenceCounted and must only be
 /// destroyed via dropRef().
-class Runtime final : public M::ReferenceCounted<Runtime> {
+class CPUDevice final : public M::ReferenceCounted<CPUDevice> {
 public:
-  /// Construct runtime with the already reserved runtimePtr, and already
+  /// Construct cpuDevice with the already reserved cpuDevicePtr, and already
   /// created allocator and workQueue. The work queue must have been constructed
-  /// with the same runtimePtr.
+  /// with the same cpuDevicePtr.
   ///
-  /// \p source indicates how the runtime was created (for diagnostics).
+  /// \p source indicates how the cpuDevice was created (for diagnostics).
   /// If profileFilename is non-empty then time profiling will be activated
   /// and the profile JSON and text will be written to files with that prefix.
-  Runtime(CompactRuntimePtr runtimePtr, std::unique_ptr<Allocator> allocator,
-          std::unique_ptr<WorkQueue> workQueue, RuntimeSource source,
-          StringRef profileFilename = {},
-          uint64_t runtimeProfilingTypeMask = Trace::kFullyEnabled,
-          RuntimeOptions::ProfilerDebuginfo profilerDebuginfo =
-              RuntimeOptions::ProfilerDebuginfo::kNoProfiler);
-  ~Runtime();
+  CPUDevice(CompactCPUDevicePtr cpuDevicePtr,
+            std::unique_ptr<Allocator> allocator,
+            std::unique_ptr<WorkQueue> workQueue, CPUDeviceSource source,
+            StringRef profileFilename = {},
+            uint64_t runtimeProfilingTypeMask = Trace::kFullyEnabled,
+            CPUDeviceOptions::ProfilerDebuginfo profilerDebuginfo =
+                CPUDeviceOptions::ProfilerDebuginfo::kNoProfiler);
+  ~CPUDevice();
 
-  /// How this runtime was created (for diagnostics).
-  RuntimeSource getSource() const { return source; }
+  /// How this cpuDevice was created (for diagnostics).
+  CPUDeviceSource getSource() const { return source; }
 
-  /// Return a CompactRuntimePtr that identifies this Runtime instance.
-  CompactRuntimePtr getCompactPtr() const {
-    return CompactRuntimePtr(runtimeIndex);
+  /// Return a CompactCPUDevicePtr that identifies this Runtime instance.
+  CompactCPUDevicePtr getCompactPtr() const {
+    return CompactCPUDevicePtr(runtimeIndex);
   }
 
   /// Return a reference to a pre-allocated Chain value that is already ready.
@@ -322,13 +323,14 @@ public:
   /// already happened, without doing an extraneous memory allocation.
   const AsyncValueRef<Chain> &getReadyChain() const { return readyChain; }
 
-  /// Returns the runtime managing the work queue to which the callers thread
+  /// Returns the cpuDevice managing the work queue to which the callers thread
   /// is associated (ie the callers thread is either a worker thread for that
-  /// runtime or is a 'main' thread which has donated itself to running work
-  /// items on behalf of the runtime). If no runtime has been associated with
-  /// this thread but a global runtime exists, automatically associates this
-  /// thread with it. Returns null only if no global runtime exists at all.
-  static Runtime *getCurrentRuntimeOrNull();
+  /// cpuDevice or is a 'main' thread which has donated itself to running work
+  /// items on behalf of the cpuDevice). If no cpuDevice has been associated
+  /// with this thread but a global cpuDevice exists, automatically associates
+  /// this thread with it. Returns null only if no global cpuDevice exists at
+  /// all.
+  static CPUDevice *getCurrentCPUDeviceOrNull();
 
   //===--------------------------------------------------------------------===//
   // Profiling
@@ -338,7 +340,7 @@ public:
   std::optional<TimeTraceProfiler> &getProfiler() { return profiler; }
 
   /// Which profiler should we generate debug information for.
-  RuntimeOptions::ProfilerDebuginfo getProfilerDebuginfo() const {
+  CPUDeviceOptions::ProfilerDebuginfo getProfilerDebuginfo() const {
     return profilerDebuginfo;
   }
 
@@ -349,12 +351,13 @@ public:
   /// Get direct access to the low level allocator.
   Allocator *getAllocator() { return allocator.get(); }
 
-  /// Returns the current runtime allocator. This assumes that a global
+  /// Returns the current cpuDevice allocator. This assumes that a global
   /// allocator is present and would assert otherwise.
   static Allocator *getCurrentAllocator() {
-    auto rt = Runtime::getCurrentRuntimeOrNull();
-    assert(rt &&
-           "a global runtime must be set before getting the current allocator");
+    auto rt = CPUDevice::getCurrentCPUDeviceOrNull();
+    assert(
+        rt &&
+        "a global cpuDevice must be set before getting the current allocator");
     return rt->getAllocator();
   }
 
@@ -367,13 +370,13 @@ public:
   WorkQueue *getWorkQueue() { return workQueue.get(); }
 
 private:
-  Runtime(const Runtime &) = delete;
-  void operator=(const Runtime &) = delete;
+  CPUDevice(const CPUDevice &) = delete;
+  void operator=(const CPUDevice &) = delete;
 
-  /// The 'signature' for the type id registration system the runtime depends
+  /// The 'signature' for the type id registration system the cpuDevice depends
   /// on. This is expected to be unique for the running process. This can be
   /// used to catch, at runtime, accidental multiple definitions for Modular
-  /// runtime statics across dynamic libraries / executables.
+  /// cpuDevice statics across dynamic libraries / executables.
   intptr_t signature;
 
   /// These are the allocator and workQueue's that were configured by the client
@@ -381,25 +384,25 @@ private:
   std::unique_ptr<Allocator> allocator;
   std::unique_ptr<WorkQueue> workQueue;
 
-  /// An active profiler used for the runtime, or nullopt if profiling is
+  /// An active profiler used for the cpuDevice, or nullopt if profiling is
   /// disabled. This is only set when profileFilename is non-empty.
   std::optional<TimeTraceProfiler> profiler;
 
-  /// Should the runtime output debug info for `perf`.
-  RuntimeOptions::ProfilerDebuginfo profilerDebuginfo;
+  /// Should the cpuDevice output debug info for `perf`.
+  CPUDeviceOptions::ProfilerDebuginfo profilerDebuginfo;
 
-  /// This is the index # for the runtime object created.  This is held by the
-  /// CompactRuntimePtr.
+  /// This is the index # for the cpuDevice object created.  This is held by the
+  /// CompactCPUDevicePtr.
   uint8_t runtimeIndex;
 
-  /// How this runtime was created (for diagnostics).
-  RuntimeSource source;
+  /// How this cpuDevice was created (for diagnostics).
+  CPUDeviceSource source;
 
   /// This is a preallocated Chain value that is marked as ready, for use by
   /// getReadyChain.
   AsyncValueRef<Chain> readyChain;
 
-  friend void checkUniqueRuntime(const Runtime &runtime);
+  friend void checkUniqueCPUDevice(const CPUDevice &cpuDevice);
 };
 
 //===----------------------------------------------------------------------===//
@@ -410,19 +413,19 @@ private:
 std::unique_ptr<Allocator>
 getAllocator(const AllocatorOptions &options = AllocatorOptions());
 
-using RuntimeRef = M::RCRef<Runtime>;
+using CPUDeviceRef = M::RCRef<CPUDevice>;
 
 //===----------------------------------------------------------------------===//
 // Debugging helpers
 //===----------------------------------------------------------------------===//
 
-/// In debug builds, assert the given runtime's 'signature' agrees with what
+/// In debug builds, assert the given cpuDevice's 'signature' agrees with what
 /// the host's idea of signature for its dynamic library / executable.
 /// This can be used to catch, at runtime, accidental multiple definitions for
-/// Modular runtime statics across dynamic libraries / executables.
-inline void checkUniqueRuntime(const Runtime &runtime) {
-  assert(runtime.signature ==
-             (TypeID::getSignature() ^ CompactRuntimePtr::getSignature()) &&
+/// Modular cpuDevice statics across dynamic libraries / executables.
+inline void checkUniqueCPUDevice(const CPUDevice &cpuDevice) {
+  assert(cpuDevice.signature ==
+             (TypeID::getSignature() ^ CompactCPUDevicePtr::getSignature()) &&
          "It appears your process has statically linked the Modular Runtime "
          "multiple times across dynamic library / executable boundaries. "
          "Please don't do that.");
@@ -430,4 +433,4 @@ inline void checkUniqueRuntime(const Runtime &runtime) {
 
 } // namespace M::MLRT
 
-#endif // MLRT_ASYNCRT_RUNTIME_H
+#endif // MLRT_ASYNCRT_CPUDEVICE_H

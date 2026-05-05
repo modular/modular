@@ -155,7 +155,7 @@ ObjectCompiler::ObjectCompiler(RCRef<Cache::BlobCacheBackend> transformCache,
           decltype(this->transformCache)::create(std::move(transformCache))),
       options(std::move(options)), isJIT(isJIT),
       pmOptions(std::move(pmOptions)), context(context),
-      runtime(*loadContext(&context)->get<MLRT::Runtime>()), linker(linker),
+      cpuDevice(*loadContext(&context)->get<MLRT::CPUDevice>()), linker(linker),
       plugin(std::move(plugin)) {}
 
 //===----------------------------------------------------------------------===//
@@ -213,7 +213,7 @@ private:
 static LogicalResult runLLVMOptPasses(llvm::Module &module,
                                       llvm::TargetMachine &targetMachine,
                                       const CompilationOptions &options,
-                                      MLRT::Runtime &runtime) {
+                                      MLRT::CPUDevice &cpuDevice) {
   CompilerTimeTraceScope traceScope("llvm-optimize", module.getName());
   using namespace llvm;
 
@@ -353,7 +353,7 @@ runLlcPasses(llvm::Module &module, CompilationOptions &options,
 static MLRT::AnyAsyncValueRef compileOptimizedLLVMModuleToObject(
     LLVMModuleAndContext module, Location loc,
     llvm::TargetMachine &targetMachine, std::mutex &tmMutex,
-    MLRT::Runtime &runtime, bool isJIT, bool isParLLC,
+    MLRT::CPUDevice &cpuDevice, bool isJIT, bool isParLLC,
     CompilationOptions options, RCRef<Cache::TransformCache> transformCache,
     std::optional<size_t> moduleIdx, std::optional<size_t> splitIdx,
     unsigned numFunctionBase) {
@@ -378,9 +378,9 @@ static MLRT::AnyAsyncValueRef compileOptimizedLLVMModuleToObject(
     module.reset();
   }
 
-  auto output = MLRT::AsyncValueRef<MCInfo>::allocate(runtime);
+  auto output = MLRT::AsyncValueRef<MCInfo>::allocate(cpuDevice);
 
-  runtime.getWorkQueue()->addTask(
+  cpuDevice.getWorkQueue()->addTask(
       [nonBitcodeKeySize, loc, keyBuf = keyBuf.copy(), output = output.copy(),
        options, isJIT, isParLLC, moduleIdx, splitIdx, numFunctionBase,
        inputModule = std::move(module), &targetMachine, &tmMutex]() mutable {
@@ -501,7 +501,7 @@ static MLRT::AnyAsyncValueRef compileOptimizedLLVMModuleToObject(
 static LogicalResult optimizeLLVMModule(llvm::Module &module,
                                         llvm::TargetMachine &targetMachine,
                                         CompilationOptions &options,
-                                        MLRT::Runtime &runtime,
+                                        MLRT::CPUDevice &cpuDevice,
                                         std::optional<size_t> moduleIdx) {
   llvm::DataLayout targetDataLayout =
       options.targetDataLayout.empty()
@@ -516,7 +516,7 @@ static LogicalResult optimizeLLVMModule(llvm::Module &module,
   if (failed(writeTempModule(saveTempsPrefix, ".pre-opt", module)))
     return failure();
 
-  if (failed(runLLVMOptPasses(module, targetMachine, options, runtime)))
+  if (failed(runLLVMOptPasses(module, targetMachine, options, cpuDevice)))
     return failure();
 
   if (failed(writeTempModule(saveTempsPrefix, ".post-opt", module)))
@@ -533,7 +533,7 @@ static LogicalResult optimizeLLVMModule(llvm::Module &module,
 static SmallVector<MLRT::AnyAsyncValueRef> compileOptimizedLLVMToObjects(
     LLVMModuleAndContext module, mlir::Location loc,
     llvm::TargetMachine &targetMachine, std::mutex &tmMutex,
-    CompilationOptions &options, MLRT::Runtime &runtime,
+    CompilationOptions &options, MLRT::CPUDevice &cpuDevice,
     RCRef<Cache::TransformCache> transformCache, bool isParLLC, bool isJIT,
     std::optional<size_t> moduleIdx, SymbolAndMCInfo &symbolAndMirInfo,
     unsigned numFunctionBase) {
@@ -545,15 +545,16 @@ static SmallVector<MLRT::AnyAsyncValueRef> compileOptimizedLLVMToObjects(
                                    produceModule,
                                std::optional<int64_t> idx,
                                unsigned numFunctions, bool isParLLC) {
-    auto result = MLRT::AsyncValueRef<MCInfo>::allocate(runtime);
+    auto result = MLRT::AsyncValueRef<MCInfo>::allocate(cpuDevice);
 
-    runtime.getWorkQueue()->addTask([produceModule = std::move(produceModule),
-                                     loc, &runtime, isJIT, isParLLC, &options,
-                                     cache = transformCache.copy(), moduleIdx,
-                                     idx, result = result.copy(), numFunctions,
-                                     &targetMachine, &tmMutex]() mutable {
+    cpuDevice.getWorkQueue()->addTask([produceModule = std::move(produceModule),
+                                       loc, &cpuDevice, isJIT, isParLLC,
+                                       &options, cache = transformCache.copy(),
+                                       moduleIdx, idx, result = result.copy(),
+                                       numFunctions, &targetMachine,
+                                       &tmMutex]() mutable {
       MLRT::AnyAsyncValueRef output = compileOptimizedLLVMModuleToObject(
-          produceModule(), loc, targetMachine, tmMutex, runtime, isJIT,
+          produceModule(), loc, targetMachine, tmMutex, cpuDevice, isJIT,
           isParLLC, options, cache, moduleIdx, idx, numFunctions);
       andThenSyncMoving(
           output, [result = std::move(result)](
@@ -577,8 +578,9 @@ static SmallVector<MLRT::AnyAsyncValueRef> compileOptimizedLLVMToObjects(
     if (failed(writeTempModule(options.saveTempsPrefix, ".pre-llc-split",
                                *module))) {
       auto error = MLRT::AnyAsyncValueRef::createError(
-          runtime, MLRT::getMLIRDiagnostic(
-                       "writing module to file before llc split failed", loc));
+          cpuDevice,
+          MLRT::getMLIRDiagnostic(
+              "writing module to file before llc split failed", loc));
       cacheResults.push_back(std::move(error));
       return cacheResults;
     }
@@ -654,7 +656,7 @@ static void attachInstrumentationAttributes(llvm::Module &module,
   }
 
   // WORKAROUND(MOTO-1511): On macOS, ASAN defaults to `atos` for
-  // symbolization, which does not report inlined frames. The ASAN runtime
+  // symbolization, which does not report inlined frames. The ASAN cpuDevice
   // gained `-i` support for atos in llvm/llvm-project#170815 (Dec 2025), but
   // our external LLVM 20 toolchain (see update-toolchains.sh) predates it.
   // We work around this by emitting __asan_default_options() to redirect ASAN
@@ -1013,13 +1015,13 @@ ObjectCompiler::emitArchiveParallelCompilation(
     llvm::StringMap<llvm::GlobalValue::LinkageTypes> &symbolLinkageTypes) {
   CompilerTimeTraceScope traceScope("split-input-module");
 
-  bool noSplitting = runtime.getWorkQueue()->getParallelismLevel() < 2;
+  bool noSplitting = cpuDevice.getWorkQueue()->getParallelismLevel() < 2;
 
   // Disable parLLC for NVPTX because NVPTX codegen is inter-procedural for
   // arguments' alignment when calling a function.
   // TODO: MOCO-1407 investigate how to workaround NVPTX backend for
   // per function codegen.
-  bool parLLC = runtime.getWorkQueue()->getParallelismLevel() >= 2 &&
+  bool parLLC = cpuDevice.getWorkQueue()->getParallelismLevel() >= 2 &&
                 options.enableParallelLLC && !isGPUBackend(options);
 
   SmallVector<MLRT::AnyAsyncValueRef> cacheResults;
@@ -1092,7 +1094,7 @@ ErrorOrSuccess ObjectCompiler::emitArchiveSaveTemps(ModuleOp module,
   // We can't use the compilation for AsmPrint with binary here because
   // AsmPrint writes back to the MC results such as SymbolTables etc. which
   // is not reusable for a second run of AsmPrint.
-  auto output = MLRT::AsyncValueRef<BufferRef>::allocate(runtime);
+  auto output = MLRT::AsyncValueRef<BufferRef>::allocate(cpuDevice);
   LLVMModuleAndContext llvmModule;
   if (auto err = llvmModule.create([&](llvm::LLVMContext &ctx) {
         return translateModuleToLLVMIR(ctx, module, options);
@@ -1182,7 +1184,7 @@ ErrorOr<BufferRef> ObjectCompiler::emitArchive(OwningOpRef<ModuleOp> module,
   // file.
   auto runTransformation = [&](Operation *op, WriteableBufferRef buf,
                                MLRT::AnyAsyncValueRef chain) {
-    auto output = MLRT::AsyncValueRef<BufferRef>::allocate(runtime);
+    auto output = MLRT::AsyncValueRef<BufferRef>::allocate(cpuDevice);
     chain.andThenSync([this, op, output = output.copy(), buf = buf.copy(), &tm,
                        emitAssembly]() mutable {
       // Lower the module to LLVM.
@@ -1304,7 +1306,7 @@ ErrorOr<BufferRef> ObjectCompiler::emitArchive(OwningOpRef<ModuleOp> module,
 
   MLRT::AnyAsyncValueRef output = cachedTransform(
       module.release(), transformCache.copy(),
-      MLRT::AsyncValueRef<Chain>::createReady(runtime),
+      MLRT::AsyncValueRef<Chain>::createReady(cpuDevice),
       std::move(produceArchiveKey), runTransformation, onCacheHit, outKeyHash);
   await(output);
 
@@ -1322,65 +1324,66 @@ MLRT::AsyncValueRef<SymbolAndMCInfo> ObjectCompiler::lowerLLVMModuleToObjects(
     llvm::TargetMachine &targetMachine, bool parLLC,
     std::optional<size_t> moduleIdx, unsigned numFunctionsBase) {
 
-  auto result = MLRT::AsyncValueRef<SymbolAndMCInfo>::allocate(runtime);
+  auto result = MLRT::AsyncValueRef<SymbolAndMCInfo>::allocate(cpuDevice);
 
-  runtime.getWorkQueue()->addTask([this, result = result.copy(),
-                                   produceModule = std::move(produceModule),
-                                   loc, moduleIdx, parLLC, numFunctionsBase,
-                                   &targetMachine]() mutable {
-    CompilerTimeTraceScope traceScope("optimizeLLVMTask");
+  cpuDevice.getWorkQueue()->addTask(
+      [this, result = result.copy(), produceModule = std::move(produceModule),
+       loc, moduleIdx, parLLC, numFunctionsBase, &targetMachine]() mutable {
+        CompilerTimeTraceScope traceScope("optimizeLLVMTask");
 
-    // Materialize the module first so we can check its target triple
-    LLVMModuleAndContext module = produceModule();
+        // Materialize the module first so we can check its target triple
+        LLVMModuleAndContext module = produceModule();
 
-    // Create the target machine.
-    // For Metal targets, adjust options if needed
-    std::string moduleTriple = module->getTargetTriple().getTriple();
-    CompilationOptions adjustedOptions = this->options;
-    if (isMetalBackend(this->options))
-      adjustedOptions.targetTriple = "arm64" + moduleTriple.substr(5);
+        // Create the target machine.
+        // For Metal targets, adjust options if needed
+        std::string moduleTriple = module->getTargetTriple().getTriple();
+        CompilationOptions adjustedOptions = this->options;
+        if (isMetalBackend(this->options))
+          adjustedOptions.targetTriple = "arm64" + moduleTriple.substr(5);
 
-    auto tmOr = createTargetMachine(adjustedOptions, isJIT);
-    if (failed(tmOr)) {
-      return std::move(result).setToError(
-          MLRT::getMLIRDiagnostic(tmOr.takeError(), loc));
-    }
-    llvm::TargetMachine &tm = **tmOr;
+        auto tmOr = createTargetMachine(adjustedOptions, isJIT);
+        if (failed(tmOr)) {
+          return std::move(result).setToError(
+              MLRT::getMLIRDiagnostic(tmOr.takeError(), loc));
+        }
+        llvm::TargetMachine &tm = **tmOr;
 
-    // Optimize the llvm Module.
-    if (failed(optimizeLLVMModule(*module, tm, options, runtime, moduleIdx))) {
-      return std::move(result).setToError(
-          MLRT::getMLIRDiagnostic("failed to optimize LLVM IR.", loc));
-    }
+        // Optimize the llvm Module.
+        if (failed(optimizeLLVMModule(*module, tm, options, cpuDevice,
+                                      moduleIdx))) {
+          return std::move(result).setToError(
+              MLRT::getMLIRDiagnostic("failed to optimize LLVM IR.", loc));
+        }
 
-    {
-      // Deduplicate functions between splits.
-      // A mutex is needed here to make access to seenCodeGenFns thread-safe.
-      std::lock_guard<std::mutex> lock(dedupMutex);
-      for (auto &fn : module->functions()) {
-        if (fn.isDeclaration())
-          continue;
-        if (!seenCodeGenFns.insert(fn.getName()).second)
-          module.duplicatedFns.insert(fn.getName());
-      }
-    }
+        {
+          // Deduplicate functions between splits.
+          // A mutex is needed here to make access to seenCodeGenFns
+          // thread-safe.
+          std::lock_guard<std::mutex> lock(dedupMutex);
+          for (auto &fn : module->functions()) {
+            if (fn.isDeclaration())
+              continue;
+            if (!seenCodeGenFns.insert(fn.getName()).second)
+              module.duplicatedFns.insert(fn.getName());
+          }
+        }
 
-    SymbolAndMCInfo symbolAndMirInfo;
-    SmallVector<AnyAsyncValueRef> buffers = compileOptimizedLLVMToObjects(
-        std::move(module), loc, targetMachine, tmMutex, this->options, runtime,
-        transformCache, parLLC, isJIT, moduleIdx, symbolAndMirInfo,
-        numFunctionsBase);
+        SymbolAndMCInfo symbolAndMirInfo;
+        SmallVector<AnyAsyncValueRef> buffers = compileOptimizedLLVMToObjects(
+            std::move(module), loc, targetMachine, tmMutex, this->options,
+            cpuDevice, transformCache, parLLC, isJIT, moduleIdx,
+            symbolAndMirInfo, numFunctionsBase);
 
-    andThenAsyncMoving(
-        buffers, [result = std::move(result),
-                  symbolAndMirInfo = std::move(symbolAndMirInfo)](
-                     MutableArrayRef<AnyAsyncValueRef> values) mutable {
-          for (AnyAsyncValueRef &result : values)
-            symbolAndMirInfo.mcInfos.emplace_back(
-                std::make_unique<MCInfo>(std::move(result.get<MCInfo>())));
-          std::move(result).emplace(std::move(symbolAndMirInfo));
-        });
-  });
+        andThenAsyncMoving(
+            buffers, [result = std::move(result),
+                      symbolAndMirInfo = std::move(symbolAndMirInfo)](
+                         MutableArrayRef<AnyAsyncValueRef> values) mutable {
+              for (AnyAsyncValueRef &result : values)
+                symbolAndMirInfo.mcInfos.emplace_back(
+                    std::make_unique<MCInfo>(std::move(result.get<MCInfo>())));
+              std::move(result).emplace(std::move(symbolAndMirInfo));
+            });
+      });
 
   return result;
 }
@@ -1407,7 +1410,7 @@ ErrorOrSuccess ObjectCompiler::lowerAllFuncsToLLVMAndOptimize(
   if (failed(machineOr))
     return machineOr.takeError();
 
-  if (failed(runLLVMOptPasses(*llvmModule, **machineOr, options, runtime)))
+  if (failed(runLLVMOptPasses(*llvmModule, **machineOr, options, cpuDevice)))
     return Error("failed to run LLVM opt passes");
   return success();
 }
@@ -1850,7 +1853,7 @@ static ErrorOr<BufferRef> compileMetalTarget(llvm::Module &module, Location loc,
 static AnyAsyncValueRef lowerLLVMModuleToObject(
     llvm::Module &inputModule, Location loc,
     RCRef<Cache::TransformCache> transformCache, size_t moduleIdx,
-    MLRT::Runtime &runtime, CompilationOptions options, bool isJIT,
+    MLRT::CPUDevice &cpuDevice, CompilationOptions options, bool isJIT,
     bool shouldDeserialize, EmitAs emissionKind, std::string &linker,
     const std::unique_ptr<Plugin> &plugin) {
   WriteableBufferRef keyBuf = WriteableBuffer::get();
@@ -1867,14 +1870,14 @@ static AnyAsyncValueRef lowerLLVMModuleToObject(
 
   llvm::WriteBitcodeToFile(inputModule, *keyBuf);
 
-  auto runTransformation = [loc, moduleIdx, isJIT, options, &runtime,
+  auto runTransformation = [loc, moduleIdx, isJIT, options, &cpuDevice,
                             emissionKind, keyBuf = keyBuf.copy(), &inputModule,
                             nonBitcodeKeySize, shouldDeserialize, &linker,
                             &plugin](WriteableBufferRef buf,
                                      MLRT::AnyAsyncValueRef chain) mutable {
-    auto output = MLRT::AsyncValueRef<BufferRef>::allocate(runtime);
+    auto output = MLRT::AsyncValueRef<BufferRef>::allocate(cpuDevice);
 
-    chain.andThenAsync([loc, &runtime, emissionKind, output = output.copy(),
+    chain.andThenAsync([loc, &cpuDevice, emissionKind, output = output.copy(),
                         buf = buf.copy(), keyBuf = std::move(keyBuf), options,
                         isJIT, moduleIdx, &inputModule, nonBitcodeKeySize,
                         shouldDeserialize, &linker, &plugin]() mutable {
@@ -1959,7 +1962,8 @@ static AnyAsyncValueRef lowerLLVMModuleToObject(
       }
 
       // Optimize the llvm Module.
-      if (failed(optimizeLLVMModule(module, tm, options, runtime, moduleIdx))) {
+      if (failed(
+              optimizeLLVMModule(module, tm, options, cpuDevice, moduleIdx))) {
         return std::move(output).setToError(
             MLRT::getMLIRDiagnostic("failed to optimize LLVM IR.", loc));
       }
@@ -2114,29 +2118,29 @@ static AnyAsyncValueRef lowerLLVMModuleToObject(
 
   return Cache::cachedTransform(
       MLRT::MLIRLocationDecoder::getEncodedLocation(loc), transformCache.copy(),
-      MLRT::AsyncValueRef<Chain>::createReady(runtime), keyBuf.copy(),
+      MLRT::AsyncValueRef<Chain>::createReady(cpuDevice), keyBuf.copy(),
       std::move(runTransformation), onCacheHit);
 }
 
 static std::pair<AnyAsyncValueRef, AnyAsyncValueRef> lowerLLVMModuleToObject(
     llvm::unique_function<LLVMModuleAndContext()> produceModule, Location loc,
     RCRef<Cache::TransformCache> transformCache,
-    std::optional<size_t> moduleIdx, MLRT::Runtime &runtime,
+    std::optional<size_t> moduleIdx, MLRT::CPUDevice &cpuDevice,
     CompilationOptions options, bool isJIT,
     DenseMap<uint64_t, llvm::SmallSet<EmitAs, 4>> &kernelEmissionKinds,
     std::string &linker, SmallVector<std::pair<bool, Attribute>> &bitcodeLibs,
     const std::unique_ptr<Plugin> &plugin) {
   auto resultBufs =
-      MLRT::AsyncValueRef<DenseMap<EmitAs, BufferRef>>::allocate(runtime);
-  auto resultKernelId = MLRT::AsyncValueRef<uint64_t>::allocate(runtime);
+      MLRT::AsyncValueRef<DenseMap<EmitAs, BufferRef>>::allocate(cpuDevice);
+  auto resultKernelId = MLRT::AsyncValueRef<uint64_t>::allocate(cpuDevice);
 
-  runtime.getWorkQueue()->addTask([resultBufs = resultBufs.copy(),
-                                   resultKernelId = resultKernelId.copy(),
-                                   produceModule = std::move(produceModule),
-                                   loc, isJIT, options, &runtime,
-                                   transformCache = transformCache.copy(),
-                                   &kernelEmissionKinds, &linker, &bitcodeLibs,
-                                   &plugin]() mutable {
+  cpuDevice.getWorkQueue()->addTask([resultBufs = resultBufs.copy(),
+                                     resultKernelId = resultKernelId.copy(),
+                                     produceModule = std::move(produceModule),
+                                     loc, isJIT, options, &cpuDevice,
+                                     transformCache = transformCache.copy(),
+                                     &kernelEmissionKinds, &linker,
+                                     &bitcodeLibs, &plugin]() mutable {
     CompilerTimeTraceScope traceScope("lowerLLVMModuleToObjectGPU");
 
     // Materialize the module.
@@ -2178,7 +2182,7 @@ static std::pair<AnyAsyncValueRef, AnyAsyncValueRef> lowerLLVMModuleToObject(
     for (EmitAs kind : kinds) {
       emissionKinds.push_back(kind);
       emissionResults.push_back(lowerLLVMModuleToObject(
-          *module, loc, transformCache, kernelId, runtime, options, isJIT,
+          *module, loc, transformCache, kernelId, cpuDevice, options, isJIT,
           shouldDeserialize, kind, linker, plugin));
     }
 
@@ -2189,12 +2193,12 @@ static std::pair<AnyAsyncValueRef, AnyAsyncValueRef> lowerLLVMModuleToObject(
       // object file, we have to run the llvm lowering separately for each
       // codegen result.
       emissionResults.push_back(lowerLLVMModuleToObject(
-          *module, loc, transformCache, kernelId, runtime, options, isJIT,
+          *module, loc, transformCache, kernelId, cpuDevice, options, isJIT,
           shouldDeserialize, EmitAs::ASM, linker, plugin));
     }
 
     auto kernelBufs =
-        MLRT::AsyncValueRef<DenseMap<EmitAs, BufferRef>>::allocate(runtime);
+        MLRT::AsyncValueRef<DenseMap<EmitAs, BufferRef>>::allocate(cpuDevice);
 
     andThenSyncMoving(
         emissionResults,
@@ -2275,7 +2279,7 @@ ObjectCompiler::emitGPUKernels(
       [&](llvm::unique_function<LLVMModuleAndContext()> produceModule,
           std::optional<int64_t> idx, unsigned numFunctionsBase) {
         auto result = lowerLLVMModuleToObject(
-            std::move(produceModule), moduleLoc, transformCache, idx, runtime,
+            std::move(produceModule), moduleLoc, transformCache, idx, cpuDevice,
             options, isJIT, kernelEmissionKinds, linker, bitcodeLibs, plugin);
         cachedResults.push_back(std::move(result.first));
         cachedResults.push_back(std::move(result.second));
@@ -2284,7 +2288,7 @@ ObjectCompiler::emitGPUKernels(
   splitPerExported(std::move(llvmModule), handleSplit);
 
   auto result = MLRT::AsyncValueRef<
-      DenseMap<uint64_t, DenseMap<EmitAs, BufferRef>>>::allocate(runtime);
+      DenseMap<uint64_t, DenseMap<EmitAs, BufferRef>>>::allocate(cpuDevice);
 
   andThenSyncMoving(
       cachedResults, [result = result.copy(), options = options](

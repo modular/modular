@@ -123,10 +123,10 @@ private:
 //===----------------------------------------------------------------------===//
 struct ParamNodeBase {
   /// Create an expansion tree node to represent a generator instantiation.
-  ParamNodeBase(MLRT::Runtime &runtime, GeneratorOpInterface gen,
+  ParamNodeBase(MLRT::CPUDevice &cpuDevice, GeneratorOpInterface gen,
                 ParameterExprArrayAttr vals, size_t depth)
       : gen(gen), inputParams(vals), depth(depth),
-        paramCh(MLRT::AsyncValueRef<MLRT::Chain>::allocate(runtime)) {}
+        paramCh(MLRT::AsyncValueRef<MLRT::Chain>::allocate(cpuDevice)) {}
 
   /// Create a special root node. Root nodes can be identified with a null
   /// symbol.

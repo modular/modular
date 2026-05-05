@@ -58,16 +58,16 @@ static ErrorOr<ContextRef> getOrCreateGlobalContext() {
   //
   // Ownership note: existingContext is the *sole* holder of the ContextRef.
   // We deliberately avoid keeping a separate static copy so that releasing
-  // existingContext (ref-count → 0) immediately triggers Runtime::~Runtime()
+  // existingContext (ref-count → 0) immediately triggers CPUDevice::~Runtime()
   // → workQueue->shutdown(), which synchronously joins all AsyncRT worker
   // threads.  See the AddDestroyCallback in PluginInitialize for why this
   // ordering matters.
   std::call_once(g_context_init_flag, []() {
     auto ctxOr = Init::createContext(
         "mojo-lldb-plugin",
-        Init::Options().withRuntimeOptions(MLRT::RuntimeOptions()
-                                               .withCPUAffinity(false)
-                                               .withMainWillNotDonate()));
+        Init::Options().withCPUDeviceOptions(MLRT::CPUDeviceOptions()
+                                                 .withCPUAffinity(false)
+                                                 .withMainWillNotDonate()));
     if (ctxOr.isError()) {
       llvm::errs() << "Failed to create mojo-lldb-plugin context: "
                    << ctxOr.getError() << "\n";
@@ -179,7 +179,7 @@ MODULAR_VISIBILITY_EXPORT bool PluginInitialize(SBDebugger debugger) {
   // When this debugger is destroyed (SBDebugger::Destroy), release the AsyncRT
   // context before SBDebugger::Terminate() is called.  existingContext is the
   // sole ContextRef holder, so releasing it drops the ref-count to zero, which
-  // triggers Runtime::~Runtime() -> workQueue->shutdown().  shutdown() blocks
+  // triggers CPUDevice::~Runtime() -> workQueue->shutdown().  shutdown() blocks
   // until all AsyncRT worker threads have joined.  Without this sequencing the
   // live worker threads race with LLDB's internal thread pool teardown inside
   // Debugger::Terminate() and corrupt the heap.

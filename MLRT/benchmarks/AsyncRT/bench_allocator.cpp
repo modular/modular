@@ -65,10 +65,10 @@ void runBench(llvm::StringRef name, size_t size, size_t alignment,
 } // namespace
 
 int main() {
-  RuntimeOptions opts;
+  CPUDeviceOptions opts;
   opts.withTCMallocAllocator();
-  RuntimeRef runtime = getOrCreateRuntime(RuntimeSource::Test, opts);
-  Allocator *allocator = runtime->getAllocator();
+  CPUDeviceRef cpuDevice = getOrCreateCPUDevice(CPUDeviceSource::Test, opts);
+  Allocator *allocator = cpuDevice->getAllocator();
 
   llvm::errs() << "Allocator benchmark (" << kAllocsPerIter
                << " allocs/iter)\n";

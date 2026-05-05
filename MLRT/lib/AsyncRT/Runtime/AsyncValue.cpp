@@ -361,7 +361,7 @@ void AsyncValue::andThenOutOfLine(Waiter waiter, WaitersAndState oldValue) {
     // so, just run the waiter and deallocate the node we don't need anymore.
     if (isReady(oldValue.getInt())) {
       assert(oldValue.getPointer() == nullptr);
-      runWaiterLater(node->takeFirstWaiter(), runtime->getWorkQueue());
+      runWaiterLater(node->takeFirstWaiter(), cpuDevice->getWorkQueue());
       // Change the tail of the list to null.  Whatever moved this to a ready
       // state will already have executed and deallocated the list tail.
       node->next = nullptr;
@@ -389,7 +389,7 @@ AsyncValue::notifyReadyAndDecRef(State newState,
   // the value that got filled in.
   auto oldValue = exchangeWaiterAndState(WaitersAndState(nullptr, newState));
 
-  WorkQueue *workQueue = runtime->getWorkQueue();
+  WorkQueue *workQueue = cpuDevice->getWorkQueue();
 
   // The remainder of the method does not depend on the AsyncValue. We can
   // drop one ref count, possibly causing the AsyncValue to be deleted.
@@ -429,10 +429,10 @@ EncodedDiagnostic *AsyncValue::getDiagnosticIfPresent() {
 
 /// Create an AsyncValue that has already been turned into an error with the
 /// specified message.
-AsyncValue *AsyncValue::createError(CompactRuntimePtr runtime,
+AsyncValue *AsyncValue::createError(CompactCPUDevicePtr cpuDevice,
                                     EncodedDiagnostic diagnostic) {
   auto *result =
-      Detail::ConcreteAsyncValue<Chain>::allocate(State::kError, runtime);
+      Detail::ConcreteAsyncValue<Chain>::allocate(State::kError, cpuDevice);
   new (&result->diagnostic) EncodedDiagnostic(std::move(diagnostic));
   return result;
 }
@@ -440,7 +440,7 @@ AsyncValue *AsyncValue::createError(CompactRuntimePtr runtime,
 void AsyncValue::setToErrorAndDecRef(EncodedDiagnostic diagnostic) {
   if (getSubclassKind() != SubclassKind::kConcrete) {
     resolveIndirectAndDecRef(
-        takeRCRef(createError(getRuntime(), std::move(diagnostic))));
+        takeRCRef(createError(getCPUDevice(), std::move(diagnostic))));
     return;
   }
 
@@ -471,10 +471,11 @@ void AsyncValue::setToErrorAndDecRef(EncodedDiagnostic diagnostic) {
 /// list and adds the closure to the work queue when the async value becomes
 /// ready.
 void AsyncValue::andThenAsyncOutOfLine(Waiter waiter) {
-  andThenSync([waiter = std::move(waiter), runtime = getRuntime()]() mutable {
-    runtime->getWorkQueue()->addTask(
-        [waiter = std::move(waiter)]() mutable { waiter(); });
-  });
+  andThenSync(
+      [waiter = std::move(waiter), cpuDevice = getCPUDevice()]() mutable {
+        cpuDevice->getWorkQueue()->addTask(
+            [waiter = std::move(waiter)]() mutable { waiter(); });
+      });
 }
 
 //===----------------------------------------------------------------------===//
@@ -537,8 +538,8 @@ void AsyncValue::resolveIndirectAndDecRef(RCRef<AsyncValue> &&newValue) {
 
 /// Create an IndirectAsyncValue that may be filled in with any AsyncValue in
 /// the future.
-AsyncValue *AsyncValue::createIndirect(CompactRuntimePtr runtime) {
-  return new Detail::IndirectAsyncValue(runtime);
+AsyncValue *AsyncValue::createIndirect(CompactCPUDevicePtr cpuDevice) {
+  return new Detail::IndirectAsyncValue(cpuDevice);
 }
 
 static llvm::StringRef subclassToString(AsyncValue::SubclassKind kind) {
@@ -588,8 +589,8 @@ void AsyncValue::printDebug(raw_ostream &os) const {
   os << llvm::format_hex(reinterpret_cast<intptr_t>(this),
                          2 + 2 * sizeof(intptr_t));
   os << ", refs=" << refcount;
-  os << ", runtime="
-     << llvm::format_hex(reinterpret_cast<intptr_t>(runtime.get()),
+  os << ", cpuDevice="
+     << llvm::format_hex(reinterpret_cast<intptr_t>(cpuDevice.get()),
                          2 + 2 * sizeof(intptr_t));
   os << ", kind=" << subclassToString(subclassKind);
   os << ", vtable=" << (hasVTable ? "yes" : "no");

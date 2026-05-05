@@ -26,7 +26,7 @@
 #include <atomic>
 
 namespace M::MLRT {
-class Runtime;
+class CPUDevice;
 class WaiterListNode;
 class AsyncValue;
 namespace Detail {
@@ -38,7 +38,7 @@ class ConcreteAsyncValue;
 /// This is a future of the specified value type. Arbitrary C++ types may be
 /// used here, even non-copyable types and expensive ones like "your database".
 /// All AsyncValues are allocated out of a specific `Runtime` instance and can
-/// identify them with `getRuntime()`.
+/// identify them with `getCPUDevice()`.
 ///
 /// An AsyncValue is in one of four states (unconstructed, constructed,
 /// available, error), where the first two are considered "non-ready" and the
@@ -67,21 +67,21 @@ public:
   /// This should be `emplace`'d, `construct`'d, or finalized with an error.
   /// The result will have ref count 1.
   template <typename T>
-  static AsyncValue *allocate(CompactRuntimePtr runtime);
+  static AsyncValue *allocate(CompactCPUDevicePtr cpuDevice);
 
   /// Create an AsyncValue for the specified type in "available" and ready
   /// state. This is a terminal state for an AsyncValue, it can never change out
   /// of this state. The result will have ref count 1.
   template <typename T, typename... Args>
-  static AsyncValue *createReady(CompactRuntimePtr runtime, Args &&...args);
+  static AsyncValue *createReady(CompactCPUDevicePtr cpuDevice, Args &&...args);
 
   /// Create an IndirectAsyncValue that may be filled in with any AsyncValue in
   /// the future. The result will have ref count 1.
-  static AsyncValue *createIndirect(CompactRuntimePtr runtime);
+  static AsyncValue *createIndirect(CompactCPUDevicePtr cpuDevice);
 
   /// Create an AsyncValue that has already been turned into an error with the
   /// specified message. The result will have ref count 1.
-  static AsyncValue *createError(CompactRuntimePtr runtime,
+  static AsyncValue *createError(CompactCPUDevicePtr cpuDevice,
                                  EncodedDiagnostic diagnostic);
 
   //===--------------------------------------------------------------------===//
@@ -144,7 +144,7 @@ public:
   //===--------------------------------------------------------------------===//
 
   /// Return the `Runtime` instance this is part of.
-  CompactRuntimePtr getRuntime() const { return runtime; }
+  CompactCPUDevicePtr getCPUDevice() const { return cpuDevice; }
 
   /// AsyncValue maintains a list of waiters that are waiting for notification
   /// that this value transitioned to Available or Error.
@@ -158,7 +158,7 @@ public:
   /// if the waiter needs access to this AsyncValue.
   ///
   /// If `IsAsync` is true, the waiter will be scheduled as an independent
-  /// task, using the work queue for this object's runtime. Otherwise, the
+  /// task, using the work queue for this object's cpuDevice. Otherwise, the
   /// waiter will generally be run on the 'triggering' thread, ie the thread
   /// which caused this AsyncValue to become ready. However, if the triggering
   /// thread is a 'foreign' thread not in an await loop then the waiters will
@@ -377,7 +377,7 @@ public:
 
   /// Return the total number of async values that are currently live in the
   /// process. This is intended for debugging/assertions only, and shouldn't be
-  /// used for mainline logic in the runtime.
+  /// used for mainline logic in the cpuDevice.
   static ssize_t getNumAllocatedInstances() {
     assert(isAllocationTrackingEnabled() &&
            "AsyncValue instance tracking disabled!");
@@ -416,7 +416,7 @@ private:
   std::atomic<uint32_t> refcount{1};
 
   /// This is a compact (8-bit) pointer to the enclosing Runtime instance.
-  const CompactRuntimePtr runtime;
+  const CompactCPUDevicePtr cpuDevice;
 
   /// Whether this is an indirect or concrete AsyncValue.
   const SubclassKind subclassKind : 1;
@@ -524,8 +524,8 @@ protected:
   static constexpr int kAsyncValueSize = 16;
 
   AsyncValue(SubclassKind subclassKind, State state, bool hasVTable,
-             TypeID typeID, CompactRuntimePtr runtime)
-      : runtime(runtime), subclassKind(subclassKind), hasVTable(hasVTable),
+             TypeID typeID, CompactCPUDevicePtr cpuDevice)
+      : cpuDevice(cpuDevice), subclassKind(subclassKind), hasVTable(hasVTable),
         typeID(typeID),
         waitersAndState(
             (intptr_t)WaitersAndState(nullptr, state).getOpaqueValue()) {
@@ -590,19 +590,19 @@ class ConcreteAsyncValue : public SomeConcreteAsyncValue {
   /// Allocate an instance of ConcreteAsyncValue in the specified state, but
   /// with the payload uninitialized. The result will have ref count 1.
   static ConcreteAsyncValue<T> *allocate(State state,
-                                         CompactRuntimePtr runtime) {
+                                         CompactCPUDevicePtr cpuDevice) {
     auto *ptr = (ConcreteAsyncValue<T> *)alignedAlloc(
         alignof(ConcreteAsyncValue<T>), sizeof(ConcreteAsyncValue<T>));
     new (ptr) ConcreteAsyncValue<T>(state, std::is_polymorphic_v<T>,
-                                    TypeID::get<T>(), runtime);
+                                    TypeID::get<T>(), cpuDevice);
     return ptr;
   }
 
 private:
   ConcreteAsyncValue(State state, bool hasVTable, TypeID typeID,
-                     CompactRuntimePtr runtime)
+                     CompactCPUDevicePtr cpuDevice)
       : SomeConcreteAsyncValue(SubclassKind::kConcrete, state, hasVTable,
-                               typeID, runtime) {
+                               typeID, cpuDevice) {
 // This static assert verifies that no padding is inserted between the
 // AsyncValue in the base class and the union containing T below.
 // Since ConcreteAsyncValue<T> is not a standard-layout class, the use of
@@ -659,10 +659,10 @@ namespace Detail {
 /// ultimately be, or whether it will be an error.
 class IndirectAsyncValue : public AsyncValue {
   friend class AsyncValue;
-  IndirectAsyncValue(CompactRuntimePtr runtime)
+  IndirectAsyncValue(CompactCPUDevicePtr cpuDevice)
       : AsyncValue(SubclassKind::kIndirect, State::kUnconstructed,
                    /*hasVTable=*/false,
-                   /*typeID=*/{}, runtime) {}
+                   /*typeID=*/{}, cpuDevice) {}
   ~IndirectAsyncValue() {
     // If the IndirectAsyncValue is ready, then the RCRef to the resolved
     // pointer has been constructed, destroy it.
@@ -697,20 +697,20 @@ class IndirectAsyncValue : public AsyncValue {
 
 /// Create an AsyncValue for the specified type in "unconstructed" state.
 template <typename T>
-inline AsyncValue *AsyncValue::allocate(CompactRuntimePtr runtime) {
-  assert(runtime && "AsyncValue::allocate requires valid runtime");
+inline AsyncValue *AsyncValue::allocate(CompactCPUDevicePtr cpuDevice) {
+  assert(cpuDevice && "AsyncValue::allocate requires valid cpuDevice");
   return Detail::ConcreteAsyncValue<T>::allocate(State::kUnconstructed,
-                                                 runtime);
+                                                 cpuDevice);
 }
 
 /// Create an AsyncValue for the specified type in "available" and ready state.
 /// This is a terminal state for an AsyncValue, it can never change out of this
 /// state.
 template <typename T, typename... Args>
-inline AsyncValue *AsyncValue::createReady(CompactRuntimePtr runtime,
+inline AsyncValue *AsyncValue::createReady(CompactCPUDevicePtr cpuDevice,
                                            Args &&...args) {
   auto *result =
-      Detail::ConcreteAsyncValue<T>::allocate(State::kAvailable, runtime);
+      Detail::ConcreteAsyncValue<T>::allocate(State::kAvailable, cpuDevice);
   new (&result->payload) T(std::forward<Args>(args)...);
   return result;
 }
@@ -813,7 +813,7 @@ template <typename T, typename... Args>
 inline void AsyncValue::emplaceIndirectAndDecRef(Args &&...args) {
   assert(getSubclassKind() == SubclassKind::kIndirect);
   resolveIndirectAndDecRef(takeRCRef(
-      createReady<T, Args...>(getRuntime(), std::forward<Args>(args)...)));
+      createReady<T, Args...>(getCPUDevice(), std::forward<Args>(args)...)));
 }
 
 template <typename T>

@@ -15,7 +15,7 @@ namespace M::MLRT {
 /// the workqueue. For example:
 ///
 /// ```C++
-/// ForkJoin state(runtime);
+/// ForkJoin state(cpuDevice);
 /// for (int i = 0; i < limit; ++i)
 ///   state.fork([i]{ doWork(i); });
 /// state.join();
@@ -26,14 +26,14 @@ namespace M::MLRT {
 /// before moving on.
 struct ForkJoin {
 public:
-  explicit ForkJoin(Runtime &runtime)
-      : runtime(runtime), done(AsyncValueRef<Chain>::allocate(runtime)) {}
+  explicit ForkJoin(CPUDevice &cpuDevice)
+      : cpuDevice(cpuDevice), done(AsyncValueRef<Chain>::allocate(cpuDevice)) {}
 
   /// Add a new work item to track.
   template <typename FnT>
   void fork(FnT &&fn) {
     numWorkItems.fetch_add(1);
-    runtime.getWorkQueue()->addTask([fn = std::forward<FnT>(fn), this] {
+    cpuDevice.getWorkQueue()->addTask([fn = std::forward<FnT>(fn), this] {
       fn();
       endWork();
     });
@@ -51,8 +51,8 @@ private:
       done.copy().emplace();
   }
 
-  /// The runtime to use.
-  Runtime &runtime;
+  /// The cpuDevice to use.
+  CPUDevice &cpuDevice;
   /// This chain is set when all in-flight work items are processed.
   AsyncValueRef<Chain> done;
   /// This is the number of in-flight work items, plus 1 for synchronization.

@@ -364,7 +364,7 @@ internalizeBitcodeLibs(LLVMBitcodeLibArrayAttr bitcodeLibsAttr,
 /// into Mojo programs.
 static ErrorOr<OwningOpRef<ModuleOp>>
 buildPackage(const PrecompileArgs &precompileArgs, ModuleOp theModule,
-             LIT::PackageOp parsedPackageOp, MLRT::Runtime &runtime) {
+             LIT::PackageOp parsedPackageOp, MLRT::CPUDevice &cpuDevice) {
   // Add the dependencies of the package to the package itself, and strip out
   // any post parser metadata for other package.
   SmallVector<FlatSymbolRefAttr> dependencies;
@@ -461,9 +461,9 @@ static int precompile(const State &subcommandState) {
   if (auto err = parsePrecompileArgs(state, args, sourceMgr, precompileArgs))
     return state.reportError(err.getError());
 
-  // Create our context (including the runtime).
+  // Create our context (including the cpuDevice).
   ErrorOr<ContextRef> ctxOr = Init::createContext(
-      "mojo", Init::Options().withRuntimeOptions(MLRT::RuntimeOptions()),
+      "mojo", Init::Options().withCPUDeviceOptions(MLRT::CPUDeviceOptions()),
       "precompile");
   if (ctxOr.isError())
     return state.reportError(ctxOr.getError());
@@ -483,7 +483,7 @@ static int precompile(const State &subcommandState) {
 
   // Parse the input directory as a Mojo package. This returns a module op that
   // wraps the `lit.package` op, which represents the package contents.
-  MLRT::Runtime &runtime = *ctx->get<MLRT::Runtime>();
+  MLRT::CPUDevice &cpuDevice = *ctx->get<MLRT::CPUDevice>();
   LIT::PackageOp packageOp;
   mlir::SourceMgrDiagnosticHandler sourceMgrHandler(sourceMgr,
                                                     &precompileArgs.ctx);
@@ -504,8 +504,9 @@ static int precompile(const State &subcommandState) {
       precompileArgs.compileOptions.warningsAsErrors);
 
   ErrorOr<OwningOpRef<ModuleOp>> module = invokeMojoParser(
-      state, args, precompileArgs.compileOptions, &precompileArgs.ctx, runtime,
-      options::OPT_diagnose_missing_doc_strings, options::OPT_max_notes,
+      state, args, precompileArgs.compileOptions, &precompileArgs.ctx,
+      cpuDevice, options::OPT_diagnose_missing_doc_strings,
+      options::OPT_max_notes,
       /*definesId=*/llvm::opt::OptSpecifier(), options::OPT_strip_file_prefix,
       options::OPT_disable_builtins, options::OPT_mojo_search_paths,
       options::OPT_fixit, options::OPT_export_fixit,
@@ -556,7 +557,8 @@ static int precompile(const State &subcommandState) {
 
   // Build a new package op based off of the parsed package op. This new op is
   // suitable for serialization as MLIR bytecode.
-  auto builtOrErr = buildPackage(precompileArgs, **module, packageOp, runtime);
+  auto builtOrErr =
+      buildPackage(precompileArgs, **module, packageOp, cpuDevice);
   if (failed(builtOrErr))
     return state.reportError(builtOrErr.getError());
   OwningOpRef<ModuleOp> builtPackageModule = builtOrErr.takeValue();

@@ -889,7 +889,7 @@ ErrorOrSuccess KGENCompiler::runKGENPipeline(ModuleOp theModule,
 
   return runKGENPipeline(
       theModule, target, transformCache,
-      ctx->get<MLRT::Runtime>()->getReadyChain().copy(),
+      ctx->get<MLRT::CPUDevice>()->getReadyChain().copy(),
       [](mlir::Operation *) {}, [](mlir::Operation *) {});
 }
 
@@ -962,11 +962,12 @@ ErrorOrSuccess KGENCompiler::runGenerateLibraryPipeline(ModuleOp module) {
 
   buildGenerateLibraryPipeline(pm, options);
 
-  MLRT::Runtime &runtime =
-      *loadContext(module.getContext())->get<MLRT::Runtime>();
+  MLRT::CPUDevice &cpuDevice =
+      *loadContext(module.getContext())->get<MLRT::CPUDevice>();
   MLRT::AnyAsyncValueRef ready = Cache::cachedTransform(
-      module, transformCache.copy(), AsyncValueRef<Chain>::createReady(runtime),
-      pm, [](mlir::Operation *) {}, [](mlir::Operation *) {});
+      module, transformCache.copy(),
+      AsyncValueRef<Chain>::createReady(cpuDevice), pm,
+      [](mlir::Operation *) {}, [](mlir::Operation *) {});
 
   // This await here is important since pm is local in this function.
   MLRT::await(ready);
@@ -998,7 +999,7 @@ LogicalResult KGENCompiler::runCheckLITPipeline(ModuleOp module) {
 /// Returns the same AnyAsyncValueRef for error handling in the caller
 /// if needed.
 ErrorOrSuccess KGENCompiler::runElaborationPipeline(
-    ModuleOp module, TargetInfoAttr target, MLRT::Runtime &runtime,
+    ModuleOp module, TargetInfoAttr target, MLRT::CPUDevice &cpuDevice,
     std::optional<AnyAsyncValueRef> chain,
     std::function<void(Operation *)> moreOnMiss,
     std::function<void(Operation *)> moreOnHit) {

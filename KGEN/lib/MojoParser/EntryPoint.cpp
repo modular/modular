@@ -421,7 +421,7 @@ LIT::importMojoPackage(ContextRef context, StringRef path,
 /// level package operation. Returns the dependencies of the package, and its
 /// post parse module.
 static std::pair<LinkDependencyArrayAttr, DenseResourceElementsAttr>
-loadStrippedBinaryPackage(MLRT::Runtime &runtime,
+loadStrippedBinaryPackage(MLRT::CPUDevice &cpuDevice,
                           const std::shared_ptr<llvm::SourceMgr> &sourceMgr,
                           MLIRContext *ctx, StringRef path) {
   llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> packageBuffer =
@@ -477,8 +477,9 @@ loadStrippedBinaryPackage(MLRT::Runtime &runtime,
 }
 
 OwningOpRef<ModuleOp> LIT::importStandaloneMojoBinaryPackage(
-    MLRT::Runtime &runtime, const std::shared_ptr<llvm::SourceMgr> &sourceMgr,
-    MLIRContext *ctx, StringRef path) {
+    MLRT::CPUDevice &cpuDevice,
+    const std::shared_ptr<llvm::SourceMgr> &sourceMgr, MLIRContext *ctx,
+    StringRef path) {
   // Emit an error if the path doesn't actually correspond with a package.
   if (!Filesystem::isMojoBinaryPackagePath(path.str())) {
     sourceMgr->PrintMessage(
@@ -498,7 +499,7 @@ OwningOpRef<ModuleOp> LIT::importStandaloneMojoBinaryPackage(
 
   // Read in the post parser module from the package.
   auto [deps, postParseModuleAttr] =
-      loadStrippedBinaryPackage(runtime, sourceMgr, ctx, path);
+      loadStrippedBinaryPackage(cpuDevice, sourceMgr, ctx, path);
   if (!postParseModuleAttr)
     return emitPackageLoadFailure();
   OwningOpRef<ModuleOp> packageModule =
@@ -524,7 +525,7 @@ OwningOpRef<ModuleOp> LIT::importStandaloneMojoBinaryPackage(
                                     dep.getValue() + "'");
 
     auto [_, postParseModuleAttr] =
-        loadStrippedBinaryPackage(runtime, sourceMgr, ctx, *depPath);
+        loadStrippedBinaryPackage(cpuDevice, sourceMgr, ctx, *depPath);
     if (!postParseModuleAttr)
       return emitPackageLoadFailure("unable to load dependency module '" +
                                     dep.getValue() + "'");

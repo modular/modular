@@ -42,34 +42,34 @@ public:
   /// ownership of the data in `obj` on success. Subclasses are expected to
   /// overwrite the current contents on a collision.
   MLRT::AsyncValueRef<MLRT::Chain>
-  insert(MLRT::Runtime &runtime, BufferRef keyHash, BufferRef obj,
+  insert(MLRT::CPUDevice &cpuDevice, BufferRef keyHash, BufferRef obj,
          std::optional<EncodedLocation> loc = std::nullopt);
 
   /// May be overwritten to provide an asynchronous insert.
   virtual MLRT::AsyncValueRef<MLRT::Chain>
-  insertImpl(MLRT::Runtime &runtime, BufferRef keyHash, BufferRef obj,
+  insertImpl(MLRT::CPUDevice &cpuDevice, BufferRef keyHash, BufferRef obj,
              std::optional<EncodedLocation> loc = std::nullopt);
 
   /// Check if an item with key hash `keyHash` exists in this backend or in any
   /// of the delegates.
   MLRT::AsyncValueRef<bool>
-  contains(MLRT::Runtime &runtime, BufferRef keyHash,
+  contains(MLRT::CPUDevice &cpuDevice, BufferRef keyHash,
            std::optional<EncodedLocation> loc = std::nullopt);
 
   /// May be overwritten to provide an asynchronous contains.
   virtual MLRT::AsyncValueRef<bool>
-  containsImpl(MLRT::Runtime &runtime, BufferRef keyHash,
+  containsImpl(MLRT::CPUDevice &cpuDevice, BufferRef keyHash,
                std::optional<EncodedLocation> loc = std::nullopt);
 
   /// Get the item with key hash `keyHash` from this backend or any of its
   /// delegates.
   MLRT::AsyncValueRef<std::optional<BufferRef>>
-  find(MLRT::Runtime &runtime, BufferRef keyHash,
+  find(MLRT::CPUDevice &cpuDevice, BufferRef keyHash,
        std::optional<EncodedLocation> loc = std::nullopt);
 
   /// May be overwritten to provide an asynchronous find.
   virtual MLRT::AsyncValueRef<std::optional<BufferRef>>
-  findImpl(MLRT::Runtime &runtime, BufferRef keyHash,
+  findImpl(MLRT::CPUDevice &cpuDevice, BufferRef keyHash,
            std::optional<EncodedLocation> loc = std::nullopt);
 
   /// Subclasses that don't override insert should use this to provide the
@@ -137,9 +137,9 @@ public:
   /// this can be used for speeding up future hash computations or simply
   /// discarded.
   MLRT::AsyncValueRef<Chain>
-  insertKeyed(MLRT::Runtime &runtime, llvm::StringRef key, BufferRef obj,
+  insertKeyed(MLRT::CPUDevice &cpuDevice, llvm::StringRef key, BufferRef obj,
               std::optional<EncodedLocation> loc = std::nullopt) {
-    return backendList->insert(runtime, Buffer::get(key), std::move(obj),
+    return backendList->insert(cpuDevice, Buffer::get(key), std::move(obj),
                                std::move(loc));
   }
   ErrorOrSuccess insertKeyedSync(llvm::StringRef key, BufferRef obj) {
@@ -147,14 +147,14 @@ public:
   }
 
   MLRT::AsyncValueRef<std::string>
-  insert(MLRT::Runtime &runtime, KeyTy key, BufferRef obj,
+  insert(MLRT::CPUDevice &cpuDevice, KeyTy key, BufferRef obj,
          std::optional<EncodedLocation> loc = std::nullopt) {
     std::string keyHash = KeyInfo::hashKey(std::forward<KeyTy>(key));
     MLRT::AsyncValueRef<MLRT::Chain> insertAsync =
-        insertKeyed(runtime, keyHash, std::move(obj), std::move(loc));
+        insertKeyed(cpuDevice, keyHash, std::move(obj), std::move(loc));
 
     // Allocate a space for the output.
-    auto out = MLRT::AsyncValueRef<std::string>::allocate(runtime);
+    auto out = MLRT::AsyncValueRef<std::string>::allocate(cpuDevice);
     std::move(insertAsync)
         .andThenSync([keyHash = std::move(keyHash), out = out.copy()](
                          AsyncValueRef<MLRT::Chain> &&insertAsync) mutable {
@@ -180,21 +180,21 @@ public:
   /// provided, it will be set to the key hash, regardless of whether the item
   /// exists or not.
   MLRT::AsyncValueRef<bool>
-  containsKeyed(MLRT::Runtime &runtime, llvm::StringRef key,
+  containsKeyed(MLRT::CPUDevice &cpuDevice, llvm::StringRef key,
                 std::optional<EncodedLocation> loc = std::nullopt) const {
-    return backendList->contains(runtime, Buffer::get(key), std::move(loc));
+    return backendList->contains(cpuDevice, Buffer::get(key), std::move(loc));
   }
   ErrorOr<bool> containsKeyedSync(llvm::StringRef key) const {
     return backendList->containsSync(key);
   }
   MLRT::AsyncValueRef<bool>
-  contains(MLRT::Runtime &runtime, KeyTy key,
+  contains(MLRT::CPUDevice &cpuDevice, KeyTy key,
            std::optional<EncodedLocation> loc = std::nullopt,
            std::string *outKeyHash = nullptr) const {
     std::string keyHash = KeyInfo::hashKey(std::forward<KeyTy>(key));
     if (outKeyHash)
       *outKeyHash = keyHash;
-    return containsKeyed(runtime, keyHash, std::move(loc));
+    return containsKeyed(cpuDevice, keyHash, std::move(loc));
   }
   ErrorOr<bool> containsSync(KeyTy key,
                              std::string *outKeyHash = nullptr) const {
@@ -208,21 +208,21 @@ public:
   /// provided, it will be set to the key hash, regardless of whether the item
   /// exists or not.
   MLRT::AsyncValueRef<std::optional<BufferRef>>
-  findKeyed(MLRT::Runtime &runtime, llvm::StringRef key,
+  findKeyed(MLRT::CPUDevice &cpuDevice, llvm::StringRef key,
             std::optional<EncodedLocation> loc = std::nullopt) const {
-    return backendList->find(runtime, Buffer::get(key), std::move(loc));
+    return backendList->find(cpuDevice, Buffer::get(key), std::move(loc));
   }
   ErrorOr<std::optional<BufferRef>> findKeyedSync(llvm::StringRef key) const {
     return backendList->findSync(key);
   }
   MLRT::AsyncValueRef<std::optional<BufferRef>>
-  find(MLRT::Runtime &runtime, KeyTy key,
+  find(MLRT::CPUDevice &cpuDevice, KeyTy key,
        std::optional<EncodedLocation> loc = std::nullopt,
        std::string *outKeyHash = nullptr) const {
     std::string hash = KeyInfo::hashKey(std::forward<KeyTy>(key));
     if (outKeyHash)
       *outKeyHash = hash;
-    return findKeyed(runtime, hash, std::move(loc));
+    return findKeyed(cpuDevice, hash, std::move(loc));
   }
   ErrorOr<std::optional<BufferRef>>
   findSync(KeyTy key, std::string *outKeyHash = nullptr) const {

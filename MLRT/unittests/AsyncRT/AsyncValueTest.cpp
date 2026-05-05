@@ -27,14 +27,15 @@ enum WorkQueueType { kSingleThread = 0, kThreadPool = 1 };
 
 class AsyncValueTest : public testing::TestWithParam<WorkQueueType> {
 protected:
-  RuntimeRef createRuntime(int numThreads = 4, bool mainWillDonate = true) {
-    RuntimeOptions runtimeOptions;
-    runtimeOptions.leakCheckedAllocator = true;
-    runtimeOptions.withSingleThreaded(GetParam() == kSingleThread);
-    runtimeOptions.numThreads = numThreads;
-    runtimeOptions.mainWillDonate = mainWillDonate;
-    return M::MLRT::getOrCreateRuntime(M::MLRT::RuntimeSource::Test,
-                                       runtimeOptions);
+  CPUDeviceRef getOrCreateCPUDevice(int numThreads = 4,
+                                    bool mainWillDonate = true) {
+    CPUDeviceOptions cpuDeviceOptions;
+    cpuDeviceOptions.leakCheckedAllocator = true;
+    cpuDeviceOptions.withSingleThreaded(GetParam() == kSingleThread);
+    cpuDeviceOptions.numThreads = numThreads;
+    cpuDeviceOptions.mainWillDonate = mainWillDonate;
+    return M::MLRT::getOrCreateCPUDevice(M::MLRT::CPUDeviceSource::Test,
+                                         cpuDeviceOptions);
   }
 };
 
@@ -53,9 +54,9 @@ struct Foo {
 };
 
 TEST_P(AsyncValueTest, EmplaceWithMove) {
-  auto runtime = createRuntime();
+  auto cpuDevice = getOrCreateCPUDevice();
   Foo foo(42);
-  auto ref = AsyncValueRef<Foo>::allocate(*runtime);
+  auto ref = AsyncValueRef<Foo>::allocate(*cpuDevice);
   ref.copy().emplace(std::move(foo));
   EXPECT_EQ(foo.v, 0);
   EXPECT_EQ(ref->v, 42);
@@ -65,9 +66,9 @@ TEST_P(AsyncValueTest, EmplaceWithMove) {
 // Idiomatic async producer/consumer
 //===----------------------------------------------------------------------===//
 
-AsyncValueRef<int> typedProducer(Runtime &runtime) {
-  auto result = AsyncValueRef<int>::allocate(runtime);
-  addTask(runtime,
+AsyncValueRef<int> typedProducer(CPUDevice &cpuDevice) {
+  auto result = AsyncValueRef<int>::allocate(cpuDevice);
+  addTask(cpuDevice,
           [result = result.copy()]() mutable { std::move(result).emplace(1); });
   return result;
 }
@@ -75,9 +76,9 @@ AsyncValueRef<int> typedProducer(Runtime &runtime) {
 int typedConsumer(AsyncValueRef<int> result) { return *result + 1; }
 
 TEST_P(AsyncValueTest, TypedProducerConsumer) {
-  auto runtime = createRuntime();
-  AsyncValueRef<int> finished = AsyncValueRef<int>::allocate(*runtime);
-  AsyncValueRef<int> result = typedProducer(*runtime);
+  auto cpuDevice = getOrCreateCPUDevice();
+  AsyncValueRef<int> finished = AsyncValueRef<int>::allocate(*cpuDevice);
+  AsyncValueRef<int> result = typedProducer(*cpuDevice);
   std::move(result).andThenSync(
       [finished = finished.copy()](AsyncValueRef<int> &&result) mutable {
         std::move(finished).emplace(typedConsumer(std::move(result)));
@@ -86,9 +87,9 @@ TEST_P(AsyncValueTest, TypedProducerConsumer) {
   EXPECT_EQ(finished.get(), 2);
 }
 
-AnyAsyncValueRef anyProducer(Runtime &runtime) {
-  auto result = AnyAsyncValueRef::allocate<int>(runtime);
-  addTask(runtime, [result = result.copy()]() mutable {
+AnyAsyncValueRef anyProducer(CPUDevice &cpuDevice) {
+  auto result = AnyAsyncValueRef::allocate<int>(cpuDevice);
+  addTask(cpuDevice, [result = result.copy()]() mutable {
     std::move(result).emplace<int>(1);
   });
   return result;
@@ -97,9 +98,9 @@ AnyAsyncValueRef anyProducer(Runtime &runtime) {
 int anyConsumer(AnyAsyncValueRef result) { return result.get<int>() + 1; }
 
 TEST_P(AsyncValueTest, AnyProducerConsumer) {
-  auto runtime = createRuntime();
-  auto finished = AsyncValueRef<int>::allocate(*runtime);
-  AnyAsyncValueRef result = anyProducer(*runtime);
+  auto cpuDevice = getOrCreateCPUDevice();
+  auto finished = AsyncValueRef<int>::allocate(*cpuDevice);
+  AnyAsyncValueRef result = anyProducer(*cpuDevice);
   std::move(result).andThenSync(
       [finished = finished.copy()](AnyAsyncValueRef &&result) mutable {
         std::move(finished).emplace(anyConsumer(std::move(result)));
@@ -113,39 +114,39 @@ TEST_P(AsyncValueTest, AnyProducerConsumer) {
 //===----------------------------------------------------------------------===//
 
 TEST_P(AsyncValueTest, IsUnique) {
-  auto runtime = createRuntime();
+  auto cpuDevice = getOrCreateCPUDevice();
 
   {
-    auto ref = AsyncValueRef<int>::allocate(*runtime);
+    auto ref = AsyncValueRef<int>::allocate(*cpuDevice);
     ASSERT_TRUE(ref.getPointer()->isUnique());
     std::move(ref).emplace(42);
   }
 
   {
-    auto ref = AsyncValueRef<int>::allocate(*runtime);
+    auto ref = AsyncValueRef<int>::allocate(*cpuDevice);
     auto ref2 = ref.copy();
     ASSERT_FALSE(ref.getPointer()->isUnique());
     std::move(ref).emplace(42);
   }
 
   {
-    auto indirectRef = AnyAsyncValueRef::createIndirect(*runtime);
-    auto concreteRef = AsyncValueRef<int>::createReady(*runtime, 42);
+    auto indirectRef = AnyAsyncValueRef::createIndirect(*cpuDevice);
+    auto concreteRef = AsyncValueRef<int>::createReady(*cpuDevice, 42);
     indirectRef.copy().resolveIndirect(std::move(concreteRef));
     ASSERT_TRUE(indirectRef.getPointer()->isUnique());
   }
 
   {
-    auto indirectRef = AnyAsyncValueRef::createIndirect(*runtime);
-    auto concreteRef = AsyncValueRef<int>::allocate(*runtime);
+    auto indirectRef = AnyAsyncValueRef::createIndirect(*cpuDevice);
+    auto concreteRef = AsyncValueRef<int>::allocate(*cpuDevice);
     indirectRef.copy().resolveIndirect(concreteRef.copy());
     ASSERT_FALSE(indirectRef.getPointer()->isUnique());
     std::move(concreteRef).emplace(42);
   }
 
   {
-    auto indirectRef = AnyAsyncValueRef::createIndirect(*runtime);
-    auto concreteRef = AsyncValueRef<int>::createReady(*runtime, 42);
+    auto indirectRef = AnyAsyncValueRef::createIndirect(*cpuDevice);
+    auto concreteRef = AsyncValueRef<int>::createReady(*cpuDevice, 42);
     auto concreteRef2 = concreteRef.copy();
     auto concreteRef3 = concreteRef.copy();
     indirectRef.copy().resolveIndirect(std::move(concreteRef));
@@ -153,18 +154,18 @@ TEST_P(AsyncValueTest, IsUnique) {
   }
 
   {
-    auto indirectRef = AnyAsyncValueRef::createIndirect(*runtime);
+    auto indirectRef = AnyAsyncValueRef::createIndirect(*cpuDevice);
     auto indirectRef2 = indirectRef.copy();
-    auto concreteRef = AsyncValueRef<int>::createReady(*runtime, 42);
+    auto concreteRef = AsyncValueRef<int>::createReady(*cpuDevice, 42);
     indirectRef.copy().resolveIndirect(std::move(concreteRef));
     ASSERT_FALSE(indirectRef.getPointer()->isUnique());
   }
 }
 
 TEST_P(AsyncValueTest, SyncConsuming) {
-  auto runtime = createRuntime();
-  auto finished = AsyncValueRef<int>::allocate(*runtime);
-  auto ref = AnyAsyncValueRef::allocate<int>(*runtime);
+  auto cpuDevice = getOrCreateCPUDevice();
+  auto finished = AsyncValueRef<int>::allocate(*cpuDevice);
+  auto ref = AnyAsyncValueRef::allocate<int>(*cpuDevice);
   ref.andThenSync([ref = ref.copy(), finished = finished.copy()]() mutable {
     // At this point r is the only remaining reference due to the use
     // of AsyncValue::emplace below.
@@ -179,9 +180,9 @@ TEST_P(AsyncValueTest, SyncConsuming) {
 }
 
 TEST_P(AsyncValueTest, AsyncConsuming) {
-  auto runtime = createRuntime();
-  auto finished = AsyncValueRef<int>::allocate(*runtime);
-  auto ref = AnyAsyncValueRef::allocate<int>(*runtime);
+  auto cpuDevice = getOrCreateCPUDevice();
+  auto finished = AsyncValueRef<int>::allocate(*cpuDevice);
+  auto ref = AnyAsyncValueRef::allocate<int>(*cpuDevice);
   ref.andThenAsync([ref = ref.copy(), finished = finished.copy()]() mutable {
     // At this point r is the only remaining reference due to the use
     // of AsyncValue::emplace below.
@@ -204,18 +205,18 @@ TEST_P(AsyncValueTest, EmplacingFromTask_DeadlockOnFailure) {
     // Can only observe this behaviour with the thread pool workqueue.
     return;
 
-  auto runtime = createRuntime();
-  auto finished = AsyncValueRef<int>::allocate(*runtime);
+  auto cpuDevice = getOrCreateCPUDevice();
+  auto finished = AsyncValueRef<int>::allocate(*cpuDevice);
   Semaphore testReady;
   Semaphore testDone;
   Semaphore canaryProceed;
-  addTask(*runtime, [&testReady, &testDone, &canaryProceed,
-                     runtime = runtime.getPointer(),
-                     finished = finished.copy()]() mutable {
+  addTask(*cpuDevice, [&testReady, &testDone, &canaryProceed,
+                       cpuDevice = cpuDevice.getPointer(),
+                       finished = finished.copy()]() mutable {
     testReady.post();
     // Run the test inside an AsyncRT task. Waiter can be scheduled on the
     // same thread.
-    auto ref = AsyncValueRef<Chain>::allocate(*runtime);
+    auto ref = AsyncValueRef<Chain>::allocate(*cpuDevice);
     ref.andThenSync([&canaryProceed, finished = finished.copy()]() mutable {
       canaryProceed.wait();
       std::move(finished).emplace(1);
@@ -239,10 +240,10 @@ TEST_P(AsyncValueTest, EmplaceOnForeignThread_DeadlockOnFailure) {
 
   // Run the test inside the main (ie 'foreign') thread. Waiter will be
   // scheduled as an AsyncRT task.
-  auto runtime = createRuntime();
-  auto finished = AsyncValueRef<int>::allocate(*runtime);
+  auto cpuDevice = getOrCreateCPUDevice();
+  auto finished = AsyncValueRef<int>::allocate(*cpuDevice);
   Semaphore canRun;
-  auto ref = AsyncValueRef<Chain>::allocate(*runtime);
+  auto ref = AsyncValueRef<Chain>::allocate(*cpuDevice);
   ref.andThenSync([&canRun, finished = finished.copy()]() mutable {
     canRun.wait();
     std::move(finished).emplace(1);
@@ -265,15 +266,15 @@ TEST_P(AsyncValueTest, EmplaceOnForeignThread_DeadlockOnFailure) {
 // and execute waiters treats the waiter list as a true queue which may
 // grow and shrink while executing a waiter.
 TEST_P(AsyncValueTest, RecursiveAsync) {
-  auto runtime = createRuntime(/*numThreads=*/2);
+  auto cpuDevice = getOrCreateCPUDevice(/*numThreads=*/2);
 
   // If needed, force the worker thread to be occupied with a 'dummy' task.
   Semaphore dummyRunning;
   Semaphore dummyContinue;
-  auto dummyFinished = AsyncValueRef<int>::allocate(*runtime);
+  auto dummyFinished = AsyncValueRef<int>::allocate(*cpuDevice);
   if (GetParam() == kThreadPool) {
-    addTask(*runtime, [&dummyRunning, &dummyContinue,
-                       dummyFinished = dummyFinished.copy()]() mutable {
+    addTask(*cpuDevice, [&dummyRunning, &dummyContinue,
+                         dummyFinished = dummyFinished.copy()]() mutable {
       dummyRunning.post();
       dummyContinue.wait();
       std::move(dummyFinished).emplace(1);
@@ -282,18 +283,19 @@ TEST_P(AsyncValueTest, RecursiveAsync) {
   }
 
   // The main thread will run the 'test' task, but trigger from a waiter.
-  auto testFinished = AsyncValueRef<int>::allocate(*runtime);
-  auto testTrigger = AsyncValueRef<Chain>::allocate(*runtime);
-  testTrigger.andThenSync([runtime = runtime.getPointer(),
+  auto testFinished = AsyncValueRef<int>::allocate(*cpuDevice);
+  auto testTrigger = AsyncValueRef<Chain>::allocate(*cpuDevice);
+  testTrigger.andThenSync([cpuDevice = cpuDevice.getPointer(),
                            testFinished = testFinished.copy()]() {
-    addTask(*runtime, [runtime, testFinished = testFinished.copy()]() mutable {
+    addTask(*cpuDevice, [cpuDevice,
+                         testFinished = testFinished.copy()]() mutable {
       // The main thread will also run the 'nested' task, again triggered from
       // a waiter.
-      auto nestedFinished = AsyncValueRef<int>::allocate(*runtime);
-      auto nestedTrigger = AsyncValueRef<Chain>::allocate(*runtime);
-      nestedTrigger.andThenSync([runtime,
+      auto nestedFinished = AsyncValueRef<int>::allocate(*cpuDevice);
+      auto nestedTrigger = AsyncValueRef<Chain>::allocate(*cpuDevice);
+      nestedTrigger.andThenSync([cpuDevice,
                                  nestedFinished = nestedFinished.copy()]() {
-        addTask(*runtime, [nestedFinished = nestedFinished.copy()]() mutable {
+        addTask(*cpuDevice, [nestedFinished = nestedFinished.copy()]() mutable {
           std::move(nestedFinished).emplace(3);
         });
       });
@@ -326,10 +328,10 @@ TEST_P(AsyncValueTest, RecursiveAsync) {
 //===----------------------------------------------------------------------===//
 
 TEST_P(AsyncValueTest, TupleAndThenSync) {
-  auto runtime = createRuntime();
-  auto finished = AsyncValueRef<int>::allocate(*runtime);
-  auto ref1 = AnyAsyncValueRef::allocate<int>(*runtime);
-  auto ref2 = AnyAsyncValueRef::allocate<char>(*runtime);
+  auto cpuDevice = getOrCreateCPUDevice();
+  auto finished = AsyncValueRef<int>::allocate(*cpuDevice);
+  auto ref1 = AnyAsyncValueRef::allocate<int>(*cpuDevice);
+  auto ref2 = AnyAsyncValueRef::allocate<char>(*cpuDevice);
   andThenSync(std::make_tuple(ref1.copy(), ref2.copy()),
               [finished = finished.copy()](AnyAsyncValueRef ref1,
                                            AnyAsyncValueRef ref2) mutable {
@@ -348,10 +350,10 @@ TEST_P(AsyncValueTest, TupleAndThenSync) {
 }
 
 TEST_P(AsyncValueTest, TupleAndThenAsync) {
-  auto runtime = createRuntime();
-  auto finished = AsyncValueRef<int>::allocate(*runtime);
-  auto ref1 = AnyAsyncValueRef::allocate<int>(*runtime);
-  auto ref2 = AnyAsyncValueRef::allocate<char>(*runtime);
+  auto cpuDevice = getOrCreateCPUDevice();
+  auto finished = AsyncValueRef<int>::allocate(*cpuDevice);
+  auto ref1 = AnyAsyncValueRef::allocate<int>(*cpuDevice);
+  auto ref2 = AnyAsyncValueRef::allocate<char>(*cpuDevice);
   andThenAsync(std::make_tuple(ref1.copy(), ref2.copy()),
                [finished = finished.copy()](AnyAsyncValueRef ref1,
                                             AnyAsyncValueRef ref2) mutable {
@@ -370,11 +372,11 @@ TEST_P(AsyncValueTest, TupleAndThenAsync) {
 }
 
 TEST_P(AsyncValueTest, ArrayCopyingSync) {
-  auto runtime = createRuntime();
-  auto finished = AsyncValueRef<int>::allocate(*runtime);
+  auto cpuDevice = getOrCreateCPUDevice();
+  auto finished = AsyncValueRef<int>::allocate(*cpuDevice);
   llvm::SmallVector<AnyAsyncValueRef> refs;
-  refs.emplace_back(AnyAsyncValueRef::allocate<int>(*runtime));
-  refs.emplace_back(AnyAsyncValueRef::allocate<int>(*runtime));
+  refs.emplace_back(AnyAsyncValueRef::allocate<int>(*cpuDevice));
+  refs.emplace_back(AnyAsyncValueRef::allocate<int>(*cpuDevice));
   refs[0].copy().emplace<int>(1);
   refs[1].copy().emplace<int>(2);
   andThenSyncCopying(
@@ -393,11 +395,11 @@ TEST_P(AsyncValueTest, ArrayCopyingSync) {
 }
 
 TEST_P(AsyncValueTest, ArrayCopyingAsync) {
-  auto runtime = createRuntime();
-  auto finished = AsyncValueRef<int>::allocate(*runtime);
+  auto cpuDevice = getOrCreateCPUDevice();
+  auto finished = AsyncValueRef<int>::allocate(*cpuDevice);
   llvm::SmallVector<AnyAsyncValueRef> refs;
-  refs.emplace_back(AnyAsyncValueRef::allocate<int>(*runtime));
-  refs.emplace_back(AnyAsyncValueRef::allocate<int>(*runtime));
+  refs.emplace_back(AnyAsyncValueRef::allocate<int>(*cpuDevice));
+  refs.emplace_back(AnyAsyncValueRef::allocate<int>(*cpuDevice));
   refs[0].copy().emplace<int>(1);
   refs[1].copy().emplace<int>(2);
   andThenAsyncCopying(
@@ -416,11 +418,11 @@ TEST_P(AsyncValueTest, ArrayCopyingAsync) {
 }
 
 TEST_P(AsyncValueTest, ArrayMovingSync) {
-  auto runtime = createRuntime();
-  auto finished = AsyncValueRef<int>::allocate(*runtime);
+  auto cpuDevice = getOrCreateCPUDevice();
+  auto finished = AsyncValueRef<int>::allocate(*cpuDevice);
   llvm::SmallVector<AnyAsyncValueRef> refs;
-  refs.emplace_back(AnyAsyncValueRef::allocate<int>(*runtime));
-  refs.emplace_back(AnyAsyncValueRef::allocate<int>(*runtime));
+  refs.emplace_back(AnyAsyncValueRef::allocate<int>(*cpuDevice));
+  refs.emplace_back(AnyAsyncValueRef::allocate<int>(*cpuDevice));
   refs[0].copy().emplace<int>(1);
   refs[1].copy().emplace<int>(2);
   andThenSyncMoving(llvm::MutableArrayRef(refs),
@@ -439,11 +441,11 @@ TEST_P(AsyncValueTest, ArrayMovingSync) {
 }
 
 TEST_P(AsyncValueTest, ArrayMovingAsync) {
-  auto runtime = createRuntime();
-  auto finished = AsyncValueRef<int>::allocate(*runtime);
+  auto cpuDevice = getOrCreateCPUDevice();
+  auto finished = AsyncValueRef<int>::allocate(*cpuDevice);
   llvm::SmallVector<AnyAsyncValueRef> refs;
-  refs.emplace_back(AnyAsyncValueRef::allocate<int>(*runtime));
-  refs.emplace_back(AnyAsyncValueRef::allocate<int>(*runtime));
+  refs.emplace_back(AnyAsyncValueRef::allocate<int>(*cpuDevice));
+  refs.emplace_back(AnyAsyncValueRef::allocate<int>(*cpuDevice));
   refs[0].copy().emplace<int>(1);
   refs[1].copy().emplace<int>(2);
   andThenAsyncMoving(llvm::MutableArrayRef(refs),
@@ -467,21 +469,22 @@ TEST_P(AsyncValueTest, ArrayMovingAsync) {
 
 TEST_P(AsyncValueTest, StressAndThen) {
   // Deliberately over-subscribe threads to try to tickle any races.
-  auto runtime = createRuntime(/*numThreads=*/M::getNumLogicalCores() * 2);
+  auto cpuDevice =
+      getOrCreateCPUDevice(/*numThreads=*/M::getNumLogicalCores() * 2);
 
   const size_t nRounds = 5;
   const size_t nValues = 500;
   // Root AsyncValue.
-  auto start = AsyncValueRef<size_t>::allocate(*runtime);
+  auto start = AsyncValueRef<size_t>::allocate(*cpuDevice);
   // Intermediate AsyncValues.
   llvm::SmallVector<llvm::SmallVector<AsyncValueRef<size_t>>> refs;
   for (size_t i = 0; i < nRounds; ++i) {
     refs.emplace_back();
     for (size_t j = 0; j < nValues; ++j)
-      refs.back().emplace_back(AsyncValueRef<size_t>::allocate(*runtime));
+      refs.back().emplace_back(AsyncValueRef<size_t>::allocate(*cpuDevice));
   }
   // Final AsyncValue.
-  auto finish = AsyncValueRef<Chain>::allocate(*runtime);
+  auto finish = AsyncValueRef<Chain>::allocate(*cpuDevice);
 
   // Intermediate dependencies.
   for (size_t i = 0; i < nRounds; ++i) {
@@ -517,7 +520,7 @@ TEST_P(AsyncValueTest, StressAndThen) {
 
 TEST_P(AsyncValueTest, StressParallelForEachN) {
   // Deliberately over-subscribe threads to try to tickle any races.
-  auto runtime = createRuntime(
+  auto cpuDevice = getOrCreateCPUDevice(
       /*numThreads=*/M::getNumLogicalCores() * 2);
 
   const size_t nShards = 500;
@@ -531,7 +534,7 @@ TEST_P(AsyncValueTest, StressParallelForEachN) {
     *doneFlags[index] = true;
   };
 
-  parallelForEachN(*runtime, nShards, std::move(elementFn));
+  parallelForEachN(*cpuDevice, nShards, std::move(elementFn));
 
   for (size_t i = 0; i < nShards; ++i)
     EXPECT_TRUE(*doneFlags[i]) << "(index " << i << ")";
@@ -546,15 +549,15 @@ TEST_P(AsyncValueTest, AwaitFromForeign) {
     // Can only observe this behaviour with the thread pool workqueue.
     return;
 
-  auto runtime = createRuntime();
+  auto cpuDevice = getOrCreateCPUDevice();
 
   constexpr size_t nTasks = 20;
   Semaphore canRun[nTasks];
   llvm::SmallVector<AnyAsyncValueRef> finished;
   finished.reserve(nTasks);
   for (size_t i = 0; i < nTasks; ++i) {
-    finished.emplace_back(AsyncValueRef<Chain>::allocate(*runtime));
-    addTask(*runtime, [i, &canRun, finished = finished[i].copy()]() mutable {
+    finished.emplace_back(AsyncValueRef<Chain>::allocate(*cpuDevice));
+    addTask(*cpuDevice, [i, &canRun, finished = finished[i].copy()]() mutable {
       canRun[i].wait();
       std::move(finished).emplace<Chain>();
     });
@@ -577,15 +580,16 @@ TEST_P(AsyncValueTest, AwaitWithoutDonating) {
     // Can only observe this behaviour with the thread pool workqueue.
     return;
 
-  auto runtime = createRuntime(/*numThreads=*/4, /*mainWillDonate=*/false);
+  auto cpuDevice =
+      getOrCreateCPUDevice(/*numThreads=*/4, /*mainWillDonate=*/false);
 
   constexpr size_t nTasks = 20;
   Semaphore canRun[nTasks];
   llvm::SmallVector<AnyAsyncValueRef> finished;
   finished.reserve(nTasks);
   for (size_t i = 0; i < nTasks; ++i) {
-    finished.emplace_back(AsyncValueRef<Chain>::allocate(*runtime));
-    addTask(*runtime, [i, &canRun, finished = finished[i].copy()]() mutable {
+    finished.emplace_back(AsyncValueRef<Chain>::allocate(*cpuDevice));
+    addTask(*cpuDevice, [i, &canRun, finished = finished[i].copy()]() mutable {
       canRun[i].wait();
       std::move(finished).emplace<Chain>();
     });
@@ -612,14 +616,14 @@ TEST_P(AsyncValueTest, AddTaskOverflow_DeadlockOnFailure) {
     // Can only observe with the thread pool workqueue.
     return;
 
-  auto runtime = createRuntime(/*numThreads=*/2);
+  auto cpuDevice = getOrCreateCPUDevice(/*numThreads=*/2);
 
   // Keep worker 1 occupied so it won't be able to execute any 'extra' tasks.
   Semaphore workerIsWaiting;
   Semaphore workerCanRun;
-  auto workerFinished = AsyncValueRef<Chain>::allocate(*runtime);
-  addTask(*runtime, [&workerIsWaiting, &workerCanRun,
-                     workerFinished = workerFinished.copy()]() mutable {
+  auto workerFinished = AsyncValueRef<Chain>::allocate(*cpuDevice);
+  addTask(*cpuDevice, [&workerIsWaiting, &workerCanRun,
+                       workerFinished = workerFinished.copy()]() mutable {
     workerIsWaiting.post();
     workerCanRun.wait();
     std::move(workerFinished).emplace();
@@ -631,18 +635,18 @@ TEST_P(AsyncValueTest, AddTaskOverflow_DeadlockOnFailure) {
   llvm::SmallVector<AnyAsyncValueRef> extraFinished;
   extraFinished.reserve(nExtraTasks);
   for (size_t i = 0; i < nExtraTasks; ++i)
-    extraFinished.emplace_back(AsyncValueRef<Chain>::allocate(*runtime));
+    extraFinished.emplace_back(AsyncValueRef<Chain>::allocate(*cpuDevice));
 
   // Add the main task so the inner addTasks will appear to come from
   // a 'foreign awaiting' thread.
-  auto mainFinished = AsyncValueRef<Chain>::allocate(*runtime);
+  auto mainFinished = AsyncValueRef<Chain>::allocate(*cpuDevice);
   Semaphore extraCanRun[nExtraTasks];
-  addTask(*runtime, [&runtime, mainFinished = mainFinished.copy(),
-                     &extraFinished, &extraCanRun]() mutable {
+  addTask(*cpuDevice, [&cpuDevice, mainFinished = mainFinished.copy(),
+                       &extraFinished, &extraCanRun]() mutable {
     // Flood the task queue with 'extra' tasks.
     for (size_t i = 0; i < nExtraTasks; ++i) {
-      addTask(*runtime, [i, extraFinished = extraFinished[i].copy(),
-                         &extraCanRun]() mutable {
+      addTask(*cpuDevice, [i, extraFinished = extraFinished[i].copy(),
+                           &extraCanRun]() mutable {
         // Will deadlock if addTask runs this item immediately.
         extraCanRun[i].wait();
         std::move(extraFinished).emplace<Chain>();
@@ -671,8 +675,8 @@ TEST_P(AsyncValueTest, AddTaskOverflow_DeadlockOnFailure) {
 //===----------------------------------------------------------------------===//
 
 TEST_P(AsyncValueTest, LargeAsyncRefCount) {
-  auto runtime = createRuntime();
-  auto finished = AsyncValueRef<int>::createReady(*runtime, 0);
+  auto cpuDevice = getOrCreateCPUDevice();
+  auto finished = AsyncValueRef<int>::createReady(*cpuDevice, 0);
 
   // Refcount is initialized to 1.
   AsyncValue *value = finished.getPointer();

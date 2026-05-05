@@ -755,13 +755,13 @@ struct MojoDocument::Context {
 MojoDocument::MojoDocument(Kind kind, ArrayRef<lsp::URIForFile> uris,
                            int64_t version,
                            SendDiagnosticsFnRef sendDiagnosticsFn,
-                           MLRT::Runtime &runtime,
+                           MLRT::CPUDevice &cpuDevice,
                            ArrayRef<std::string> includeDirs)
     : kind(kind), uris(uris), version(version),
-      sendDiagnosticsFn(sendDiagnosticsFn), runtime(runtime),
+      sendDiagnosticsFn(sendDiagnosticsFn), cpuDevice(cpuDevice),
       // At construction, the document is in a ready state - no tasks are
       // currently enqueued.
-      currentTaskChain(runtime.getReadyChain().copy()) {
+      currentTaskChain(cpuDevice.getReadyChain().copy()) {
   // Add the parent directory of the main uri as an available include directory.
   std::string parentDir =
       std::filesystem::path(uris[0].file().str()).parent_path().string();
@@ -913,7 +913,7 @@ MojoDocument::enqueueNewTask() {
   // This is the chain that needs to be readied for the new task to signal
   // completion.
   AsyncValueRef<Chain> current =
-      AsyncValueRef<Chain>::allocate(currentTaskChain.getRuntime());
+      AsyncValueRef<Chain>::allocate(currentTaskChain.getCPUDevice());
 
   // This is the old task chain that the new task has to wait on.
   AsyncValueRef<Chain> previous = currentTaskChain.copy();
@@ -1916,11 +1916,11 @@ MojoDocStrings::CodeBlock::onSignatureHelp(llvm::SMLoc loc,
 MojoTextDocument::MojoTextDocument(const lsp::URIForFile &uri,
                                    std::string &&contents, int64_t version,
                                    SendDiagnosticsFnRef sendDiagnosticsFn,
-                                   MLRT::Runtime &runtime,
+                                   MLRT::CPUDevice &cpuDevice,
                                    ArrayRef<std::string> includeDirs,
                                    bool skipDocstringCodeBlockChecks)
     : MojoDocument(Kind::kTextDocument, uri, version, sendDiagnosticsFn,
-                   runtime, includeDirs),
+                   cpuDevice, includeDirs),
       contents(std::move(contents)) {
   docStrings.skipCodeBlockChecks = skipDocstringCodeBlockChecks;
   // We add the main doc to the SourceMgr here to ensure it's considered the
@@ -2050,10 +2050,10 @@ MojoNotebookDocument::MojoNotebookDocument(
     ArrayRef<lsp::URIForFile> notebookAndCellURIs, int64_t version,
     ArrayRef<lsp::NotebookCell> cellInfos,
     ArrayRef<lsp::TextDocumentItem> cellDocuments,
-    SendDiagnosticsFnRef sendDiagnosticsFn, MLRT::Runtime &runtime,
+    SendDiagnosticsFnRef sendDiagnosticsFn, MLRT::CPUDevice &cpuDevice,
     ArrayRef<std::string> includeDirs)
     : MojoDocument(Kind::kNotebookDocument, notebookAndCellURIs, version,
-                   sendDiagnosticsFn, runtime, includeDirs) {
+                   sendDiagnosticsFn, cpuDevice, includeDirs) {
   for (unsigned i = 0, e = cellInfos.size(); i < e; ++i) {
     if (cellInfos[i].kind != lsp::NotebookCellKind::Code)
       continue;
@@ -2376,14 +2376,14 @@ struct MojoServer::Impl {
     auto [it, _] = files.try_emplace(uri.file(), MojoDocumentRef());
 
     // If a document already exists, invalidate that version.
-    MLRT::Runtime &runtime = *ctx->get<MLRT::Runtime>();
+    MLRT::CPUDevice &cpuDevice = *ctx->get<MLRT::CPUDevice>();
     if (it->second) {
       it->second->invalidate();
     }
 
     // Create a new document.
     it->second = MojoTextDocumentRef::create(
-        uri, std::move(contents), version, sendDiagnosticsFn, runtime,
+        uri, std::move(contents), version, sendDiagnosticsFn, cpuDevice,
         includeDirs, skipDocstringCodeBlockChecks);
 
     // Clear pending contents since they're now being parsed.
@@ -2486,10 +2486,10 @@ MojoServer::create(bool singleThreaded, bool waitOnShutdown,
                    ArrayRef<std::string> includeDirs,
                    bool skipDocstringCodeBlockChecks) {
   ErrorOr<ContextRef> ctxOr = Init::createContext(
-      "mojo-lsp-server",
-      Init::Options().withRuntimeOptions(MLRT::RuntimeOptions()
-                                             .withSingleThreaded(singleThreaded)
-                                             .withMainWillNotDonate()));
+      "mojo-lsp-server", Init::Options().withCPUDeviceOptions(
+                             MLRT::CPUDeviceOptions()
+                                 .withSingleThreaded(singleThreaded)
+                                 .withMainWillNotDonate()));
   if (ctxOr.isError())
     return ctxOr.takeError();
   auto implPtr =
@@ -2715,7 +2715,7 @@ void MojoServer::addNotebookDocument(
   MojoDocumentRef &file = impl->files[uri.file()];
 
   // If a document already exists, invalidate that version.
-  MLRT::Runtime &runtime = *impl->ctx->get<MLRT::Runtime>();
+  MLRT::CPUDevice &cpuDevice = *impl->ctx->get<MLRT::CPUDevice>();
   if (file) {
     file->invalidate();
   }
@@ -2727,7 +2727,7 @@ void MojoServer::addNotebookDocument(
 
   // Create a new document.
   file = MojoNotebookDocumentRef::create(docURIs, version, cells, cellDocuments,
-                                         impl->sendDiagnosticsFn, runtime,
+                                         impl->sendDiagnosticsFn, cpuDevice,
                                          impl->includeDirs);
   for (const lsp::TextDocumentItem &cell : cellDocuments)
     impl->notebookCellToFile[cell.uri.file()] = file.copy();

@@ -201,7 +201,7 @@ int main(int argc, char *argv[]) {
   llvm::cl::ParseCommandLineOptions(argc, argv);
 
   ErrorOr<ContextRef> ctxOr = Init::createContext(
-      "mojo-jupyter-executor", Init::Options().withRuntimeOptions());
+      "mojo-jupyter-executor", Init::Options().withCPUDeviceOptions());
   if (ctxOr.isError()) {
     llvm::errs() << "failed to create context: " << ctxOr.getError() << "\n";
     return 1;

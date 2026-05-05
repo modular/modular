@@ -109,9 +109,9 @@ struct SharedThreadState {
   static_assert(std::atomic<SuspendedThreadsBitvec>::is_always_lock_free,
                 "suspendedThreads should always be lock free");
 
-  SharedThreadState(CompactRuntimePtr runtimePtr, bool mainWillDonate,
+  SharedThreadState(CompactCPUDevicePtr cpuDevicePtr, bool mainWillDonate,
                     size_t numWorkers)
-      : runtimePtr(runtimePtr), mainWillDonate(mainWillDonate) {
+      : cpuDevicePtr(cpuDevicePtr), mainWillDonate(mainWillDonate) {
     // Keeping numWorkers in a workerGroup a power of 2 to simplify arithmetic.
     multicastFactor =
         numWorkers > bitVectorWidth
@@ -120,8 +120,8 @@ struct SharedThreadState {
             : 0;
   }
 
-  /// The runtime on behalf of which this thread is processing work items.
-  CompactRuntimePtr runtimePtr;
+  /// The cpuDevice on behalf of which this thread is processing work items.
+  CompactCPUDevicePtr cpuDevicePtr;
 
   /// If true, the 'main' thread which constructed the work queue is going to
   /// call await to donate itself as another worker alongside the
@@ -461,8 +461,8 @@ void WorkQueueThread::runOnThread() {
   // when re-entering.
   workerIDInTLS = workerID;
 
-  // Set the current runtime in thread local storage.
-  CompactRuntimePtr::setCurrentRuntime(sharedState.runtimePtr);
+  // Set the current cpuDevice in thread local storage.
+  CompactCPUDevicePtr::setCurrentCPUDevice(sharedState.cpuDevicePtr);
 
   // Capture the worker's thread id so we can distinguish worker threads
   // from different work queues.
@@ -646,7 +646,7 @@ void WorkQueueThread::runItemsImpl(EarlyStopPredicateFn earlyStopPredicate,
 #endif
         // If we're spinning and the early or the late stop condition happens,
         // then we're done.  Checking the late stop condition here make sure
-        // our threads shut down promptly when a runtime is torn down.
+        // our threads shut down promptly when a cpuDevice is torn down.
         if (earlyStopPredicate() || lateStopPredicate()) {
           std::move(spinning).record();
           return;
@@ -793,7 +793,7 @@ public:
   /// thread per entry in cpuIDs. By the time the constructor finishes, all
   /// the worker threads have started and shall only be cancelled by the
   /// destructor.
-  ThreadPoolWorkQueue(CompactRuntimePtr runtimePtr, ArrayRef<size_t> cpuIDs,
+  ThreadPoolWorkQueue(CompactCPUDevicePtr cpuDevicePtr, ArrayRef<size_t> cpuIDs,
                       size_t taskListCapacity, bool mainWillDonate,
                       std::chrono::microseconds threadBusyWaitTime,
                       std::string_view poolName, int numaNode = kAnyNumaNode);
@@ -898,12 +898,12 @@ private:
 } // namespace
 
 ThreadPoolWorkQueue::ThreadPoolWorkQueue(
-    CompactRuntimePtr runtimePtr, ArrayRef<size_t> cpuIDs,
+    CompactCPUDevicePtr cpuDevicePtr, ArrayRef<size_t> cpuIDs,
     size_t taskListCapacity, bool mainWillDonate,
     std::chrono::microseconds threadBusyWaitTime, std::string_view poolName,
     int numaNode)
     : numWorkers(cpuIDs.size()), numaNode(numaNode), partitionCpuIds(cpuIDs),
-      sharedState(runtimePtr, mainWillDonate, numWorkers),
+      sharedState(cpuDevicePtr, mainWillDonate, numWorkers),
       taskList(taskListCapacity), poolName(poolName) {
   assert(numWorkers <= kMaxWorkers && "too many workers for bitvec width");
 
@@ -927,12 +927,12 @@ ThreadPoolWorkQueue::ThreadPoolWorkQueue(
   // of the work queue or synchronously in the main thread, therefore the
   // thread-local Runtime pointer must be set for the main thread regardless of
   // the value of mainWillDonate.
-  CompactRuntimePtr::setCurrentRuntime(runtimePtr);
+  CompactCPUDevicePtr::setCurrentCPUDevice(cpuDevicePtr);
 }
 
 ThreadPoolWorkQueue::~ThreadPoolWorkQueue() {
 // Note we can't assert state == kShutdown since queue may be created
-// and destroyed without ever being included in a runtime.
+// and destroyed without ever being included in a cpuDevice.
 #if ASYNCRT_WORKER_STATS
   llvm::dbgs()
       << "affinityEnqueueTime,affinityEnqueueCount,taskListEnqueueTime,"
@@ -945,7 +945,7 @@ ThreadPoolWorkQueue::~ThreadPoolWorkQueue() {
          "destroying ThreadPoolWorkQueue with pending work items");
 
   // Clear thread-local Runtime pointer.
-  CompactRuntimePtr::setCurrentRuntime({});
+  CompactCPUDevicePtr::setCurrentCPUDevice({});
 
   // Destroy all the threads datastructures.
   for (size_t i = 0; i < numWorkers; ++i)
@@ -1193,7 +1193,7 @@ void ThreadPoolWorkQueue::await(ArrayRef<AnyAsyncValueRef> values) {
 //===----------------------------------------------------------------------===//
 
 std::unique_ptr<WorkQueue> M::MLRT::createThreadPoolWorkQueue(
-    CompactRuntimePtr runtimePtr, size_t numThreads, size_t maxThreads,
+    CompactCPUDevicePtr cpuDevicePtr, size_t numThreads, size_t maxThreads,
     bool mainWillDonate, bool withAffinity,
     std::chrono::microseconds threadBusyWaitTime, std::string_view poolName) {
   // Using numThreads as a hint, figure out a CPU for each worker thread and
@@ -1215,13 +1215,13 @@ std::unique_ptr<WorkQueue> M::MLRT::createThreadPoolWorkQueue(
              << "createThreadPoolWorkQueue: Task list has capacity of at least "
              << taskListCapacity << " slots.\n");
 
-  return std::make_unique<ThreadPoolWorkQueue>(runtimePtr, cpuIDs,
+  return std::make_unique<ThreadPoolWorkQueue>(cpuDevicePtr, cpuIDs,
                                                taskListCapacity, mainWillDonate,
                                                threadBusyWaitTime, poolName);
 }
 
 std::unique_ptr<WorkQueue> M::MLRT::createPartitionedThreadPoolWorkQueue(
-    CompactRuntimePtr runtimePtr, int numaNode,
+    CompactCPUDevicePtr cpuDevicePtr, int numaNode,
     std::chrono::microseconds threadBusyWaitTime, std::string_view poolName) {
   assert(numaNode != kAnyNumaNode &&
          "partitioned WorkQueue requires a specific NUMA node");
@@ -1245,6 +1245,6 @@ std::unique_ptr<WorkQueue> M::MLRT::createPartitionedThreadPoolWorkQueue(
                           << ".\n");
 
   return std::make_unique<ThreadPoolWorkQueue>(
-      runtimePtr, cpuIDs, taskListCapacity, /*mainWillDonate=*/false,
+      cpuDevicePtr, cpuIDs, taskListCapacity, /*mainWillDonate=*/false,
       threadBusyWaitTime, poolName, numaNode);
 }

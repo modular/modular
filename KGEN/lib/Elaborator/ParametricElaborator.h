@@ -28,9 +28,9 @@ namespace M::KGEN {
 
 /// This struct represents the expansion of a callgraph during elaboration.
 struct ParametricExpansionGraph {
-  ParametricExpansionGraph(MLRT::Runtime &runtime)
-      : worklistCh(MLRT::AsyncValueRef<MLRT::Chain>::allocate(runtime)),
-        quiesceChain(MLRT::AsyncValueRef<MLRT::Chain>::allocate(runtime)) {}
+  ParametricExpansionGraph(MLRT::CPUDevice &cpuDevice)
+      : worklistCh(MLRT::AsyncValueRef<MLRT::Chain>::allocate(cpuDevice)),
+        quiesceChain(MLRT::AsyncValueRef<MLRT::Chain>::allocate(cpuDevice)) {}
 
   virtual ~ParametricExpansionGraph();
 
@@ -57,7 +57,7 @@ struct ParametricExpansionGraph {
   /// Concrete functions added directly to the expansion graph.
   std::vector<std::unique_ptr<PImplNode>> elaboratedNodes;
 
-  /// Number of outstanding resources created from this runtime.
+  /// Number of outstanding resources created from this cpuDevice.
   std::atomic<size_t> numOutstandingResources = 1;
   /// If quiesce() has been called, the chain it returned. Otherwise null.
   AsyncValueRef<Chain> quiesceChain;
@@ -221,7 +221,7 @@ private:
   //===--------------------------------------------------------------------===//
 
   /// Parameter constants are the only operation that can bridge the parameter
-  /// domain into the runtime domain. Use it to root concretization of nested
+  /// domain into the cpuDevice domain. Use it to root concretization of nested
   /// symbol references.
   template <typename OpT>
   ElaborationState processParamConstantOp(PImplNode *parent, OpT op);
@@ -391,8 +391,8 @@ private:
                   std::unique_ptr<FunctionParameterUseDefGraph>>>
       knownGraphs;
 
-  /// The AsyncRT runtime instance to use.
-  MLRT::Runtime &runtime;
+  /// The AsyncRT cpuDevice instance to use.
+  MLRT::CPUDevice &cpuDevice;
 
   /// The callgraph being expanded.
   ParametricExpansionGraph g;

@@ -13,56 +13,57 @@ using namespace M::MLRT;
 
 namespace {
 
-RuntimeRef createRuntime() {
-  return MLRT::getOrCreateRuntime(MLRT::RuntimeSource::Test,
-                                  MLRT::RuntimeOptions()
-                                      .withLeakCheckedAllocator()
-                                      .withMainWillNotDonate());
+CPUDeviceRef createTestCPUDevice() {
+  return MLRT::getOrCreateCPUDevice(MLRT::CPUDeviceSource::Test,
+                                    MLRT::CPUDeviceOptions()
+                                        .withLeakCheckedAllocator()
+                                        .withMainWillNotDonate());
 }
 
-/// `getOrCreateRuntime` installs a single global runtime; a second call on the
-/// same thread with matching options returns another reference to that runtime.
-TEST(RuntimeTest, GetOrCreateRuntimeReturnsSameGlobalInstance) {
-  auto first = createRuntime();
-  auto second = createRuntime();
+/// `getOrCreateCPUDevice` installs a single global CPUDevice; a second call on
+/// the same thread with matching options returns another reference to that
+/// CPUDevice.
+TEST(CPUDeviceTest, GetOrCreateCPUDeviceReturnsSameGlobalInstance) {
+  auto first = createTestCPUDevice();
+  auto second = createTestCPUDevice();
   EXPECT_EQ(first.getPointer(), second.getPointer());
 }
 
-/// Test to ensure that the thread-local Runtime pointer is cleared when a
-/// Runtime is destroyed.
-TEST(RuntimeTest, CreateDestroyCreateClearsTls) {
+/// Test to ensure that the thread-local CPUDevice pointer is cleared when a
+/// CPUDevice is destroyed.
+TEST(CPUDeviceTest, CreateDestroyCreateClearsTls) {
   for (int i = 0; i < 5; ++i) {
-    auto runtime = createRuntime();
-    runtime.reset(); // Destructor clears thread-local Runtime pointer.
+    auto cpuDevice = createTestCPUDevice();
+    cpuDevice.reset(); // Destructor clears thread-local CPUDevice pointer.
   }
 }
 
-TEST(RuntimeTest, DefaultAffinityBehavior) {
+TEST(CPUDeviceTest, DefaultAffinityBehavior) {
   // Ensure env var is not set (may already be in environment)
   unsetenv("MODULAR_ENABLE_AFFINITY");
-  MLRT::RuntimeOptions options;
+  MLRT::CPUDeviceOptions options;
   // Disabled by default.
   EXPECT_FALSE(options.withAffinity);
 }
 
-TEST(RuntimeTest, EnvVarEnablesAffinity) {
+TEST(CPUDeviceTest, EnvVarEnablesAffinity) {
   setenv("MODULAR_ENABLE_AFFINITY", "1", 1);
-  MLRT::RuntimeOptions options;
+  MLRT::CPUDeviceOptions options;
   EXPECT_TRUE(options.withAffinity);
   unsetenv("MODULAR_ENABLE_AFFINITY");
 }
 
-TEST(RuntimeTest, EnvVarEnablesAffinityWithTrue) {
+TEST(CPUDeviceTest, EnvVarEnablesAffinityWithTrue) {
   setenv("MODULAR_ENABLE_AFFINITY", "true", 1);
-  MLRT::RuntimeOptions options;
+  MLRT::CPUDeviceOptions options;
   EXPECT_TRUE(options.withAffinity);
   unsetenv("MODULAR_ENABLE_AFFINITY");
 }
 
-TEST(RuntimeTest, BuilderMethodOverridesEnvVar) {
+TEST(CPUDeviceTest, BuilderMethodOverridesEnvVar) {
   // Even when env var doesn't enable, builder can enable
   unsetenv("MODULAR_ENABLE_AFFINITY");
-  MLRT::RuntimeOptions options;
+  MLRT::CPUDeviceOptions options;
   EXPECT_FALSE(options.withAffinity);
   options.withCPUAffinity(true);
   EXPECT_TRUE(options.withAffinity);

@@ -6,8 +6,8 @@
 //
 // Global Runtime pointer and mutex. Implemented in the RuntimeGlobals shared
 // library so there is a single definition per process (ODR). M::MLRT
-// uses these (e.g. MLRT::getOrCreateRuntime) to manage the single global
-// runtime.
+// uses these (e.g. MLRT::getOrCreateCPUDevice) to manage the single global
+// cpuDevice.
 //
 //===----------------------------------------------------------------------===//
 
@@ -20,26 +20,27 @@
 
 namespace M::MLRT {
 
-class Runtime;
-struct RuntimeOptions;
+class CPUDevice;
+struct CPUDeviceOptions;
 
-/// Returns the mutex that protects the global runtime pointer.
-MODULAR_CXX_EXPORT std::mutex &getGlobalRuntimeMutex();
+/// Returns the mutex that protects the global cpuDevice pointer.
+MODULAR_CXX_EXPORT std::mutex &getGlobalCPUDeviceMutex();
 
-/// Returns the current global runtime pointer, or nullptr if none set.
-/// Caller must hold getGlobalRuntimeMutex().
-MODULAR_CXX_EXPORT Runtime *getGlobalRuntimePointer();
+/// Returns the current global cpuDevice pointer, or nullptr if none set.
+/// Caller must hold getGlobalCPUDeviceMutex().
+MODULAR_CXX_EXPORT CPUDevice *getGlobalCPUDevicePointer();
 
-/// Sets the global runtime pointer. Caller must hold getGlobalRuntimeMutex().
-MODULAR_CXX_EXPORT void setGlobalRuntimePointer(Runtime *ptr);
+/// Sets the global cpuDevice pointer. Caller must hold
+/// getGlobalCPUDeviceMutex().
+MODULAR_CXX_EXPORT void setGlobalCPUDevicePointer(CPUDevice *ptr);
 
-/// If the global runtime pointer equals \p ptr, clears it. Called from
-/// Runtime::~Runtime() when the runtime is destroyed.
-MODULAR_CXX_EXPORT void clearGlobalRuntimePointerIfEquals(Runtime *ptr);
+/// If the global CPUDevice pointer equals \p ptr, clears it. Called from
+/// CPUDevice::~CPUDevice() when the CPUDevice is destroyed.
+MODULAR_CXX_EXPORT void clearGlobalCPUDevicePointerIfEquals(CPUDevice *ptr);
 
-/// Options used when the global runtime was first created (Init path). Caller
-/// must hold getGlobalRuntimeMutex() when reading or writing.
-MODULAR_CXX_EXPORT RuntimeOptions &getStoredGlobalRuntimeCreationOptions();
+/// Options used when the global cpuDevice was first created (Init path). Caller
+/// must hold getGlobalCPUDeviceMutex() when reading or writing.
+MODULAR_CXX_EXPORT CPUDeviceOptions &getStoredGlobalCPUDeviceCreationOptions();
 
 } // namespace M::MLRT
 

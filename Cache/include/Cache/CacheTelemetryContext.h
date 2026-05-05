@@ -19,7 +19,7 @@
 #include <string>
 
 namespace M::MLRT {
-class Runtime;
+class CPUDevice;
 }
 
 namespace M::Cache {

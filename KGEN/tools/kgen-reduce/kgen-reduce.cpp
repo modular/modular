@@ -681,8 +681,8 @@ int main(int argc, char **argv) {
 
   // Create our context.
   ErrorOr<ContextRef> ctxOr = Init::createContext(
-      "kgen-reduce", Init::Options().withRuntimeOptions(
-                         MLRT::RuntimeOptions().withLeakCheckedAllocator()));
+      "kgen-reduce", Init::Options().withCPUDeviceOptions(
+                         MLRT::CPUDeviceOptions().withLeakCheckedAllocator()));
   if (ctxOr.isError()) {
     llvm::errs() << "failed to create context: " << ctxOr.getError() << "\n";
     return 1;

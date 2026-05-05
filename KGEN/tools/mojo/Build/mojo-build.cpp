@@ -509,7 +509,7 @@ createOutputFile(const State &state, const llvm::opt::InputArgList &args,
 /// archive. Returns an unsuccessful exit code if the archive could not be
 /// created successfully, and nullopt otherwise.
 static std::optional<int>
-compileModuleToArchive(const State &state, MLRT::Runtime &runtime,
+compileModuleToArchive(const State &state, MLRT::CPUDevice &cpuDevice,
                        MLIRContext &context, const CompilationOptions &options,
                        OwningOpRef<ModuleOp> module, TargetInfoAttr target,
                        BufferRef &archive, OutputType outputType,
@@ -657,8 +657,8 @@ static int linkOutput(OutputType outputType, const State &state,
                       const llvm::opt::InputArgList &args,
                       const CompilationOptions &options, BufferRef &archive) {
   // For now we just use the system C compiler as the linker on non-windows,
-  // which makes it a tad bit easier to link in the necessary system and runtime
-  // dependencies of KGENCompilerRT.
+  // which makes it a tad bit easier to link in the necessary system and
+  // cpuDevice dependencies of KGENCompilerRT.
 #ifdef _WIN32
   StringRef linkerFilename = "link.exe";
   StringRef binaryExt = ".exe";
@@ -832,7 +832,7 @@ static int linkOutput(OutputType outputType, const State &state,
       linkerArgs.emplace_back(options.externalLibasan);
     }
     // FIXME(MOTO-1516): Force the linker to keep __asan_default_options
-    // (emitted in ObjectCompiler.cpp) so the ASAN runtime can find it via
+    // (emitted in ObjectCompiler.cpp) so the ASAN cpuDevice can find it via
     // dlsym. Without this, -dead_strip removes the unreferenced symbol. Gate
     // on Mach-O target to stay aligned with the emission check in
     // attachInstrumentationAttributes.
@@ -918,12 +918,12 @@ static int build(const State &subcommandState) {
 
   warnBuildingForDebugWithDebugBuiltCompiler(state, options.debugLevel);
 
-  MLRT::RuntimeOptions runtimeOptions;
-  configureRuntimeOptions(runtimeOptions, options);
+  MLRT::CPUDeviceOptions cpuDeviceOptions;
+  configureCPUDeviceOptions(cpuDeviceOptions, options);
 
-  // Create our context (including the runtime).
+  // Create our context (including the cpuDevice).
   ErrorOr<ContextRef> ctxOr = Init::createContext(
-      "mojo", Init::Options().withRuntimeOptions(runtimeOptions), "build");
+      "mojo", Init::Options().withCPUDeviceOptions(cpuDeviceOptions), "build");
   if (ctxOr.isError())
     return state.reportError(ctxOr.getError());
   ContextRef ctx = std::move(*ctxOr);
@@ -955,13 +955,13 @@ static int build(const State &subcommandState) {
   }
 
   // Lower the input file to an MLIR module.
-  MLRT::Runtime &runtime = *ctx->get<MLRT::Runtime>();
+  MLRT::CPUDevice &cpuDevice = *ctx->get<MLRT::CPUDevice>();
   mlir::SourceMgrDiagnosticHandler sourceMgrHandler(sourceMgr, &mlirCtx);
   ScopedMLIRWarningHandler warningHandler(&mlirCtx, options.disableWarnings,
                                           options.warningsAsErrors);
 
   ErrorOr<OwningOpRef<ModuleOp>> moduleOp = invokeMojoParser(
-      state, args, options, &mlirCtx, runtime,
+      state, args, options, &mlirCtx, cpuDevice,
       options::OPT_diagnose_missing_doc_strings, options::OPT_max_notes,
       options::OPT_D, options::OPT_strip_file_prefix,
       options::OPT_disable_builtins, options::OPT_mojo_search_paths,
@@ -983,7 +983,7 @@ static int build(const State &subcommandState) {
   // Compile the module to a static archive.
   BufferRef archive;
   if (std::optional<int> exitCode = compileModuleToArchive(
-          state, runtime, mlirCtx, options, moduleOp.takeValue(), target,
+          state, cpuDevice, mlirCtx, options, moduleOp.takeValue(), target,
           archive, outputType, args))
     return *exitCode;
 

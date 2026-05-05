@@ -220,7 +220,7 @@ static std::optional<int> parseArgs(State &state, llvm::opt::InputArgList &args,
 /// Executes the given module's `main` function, or returns an error indicating
 /// why it could not be executed.
 static ErrorOrSuccess executeMain(ExecutionEngine &engine,
-                                  MLRT::Runtime &runtime,
+                                  MLRT::CPUDevice &cpuDevice,
                                   ArrayRef<const char *> arguments) {
   auto runFn = [arguments](void *fnPtr) -> ErrorOrSuccess {
     using FnType = int (*)(int, const char *const *);
@@ -248,7 +248,7 @@ static ErrorOrSuccess executeMain(ExecutionEngine &engine,
 /// references into its own arena so that the profiler is fully self-contained.
 static void internTimeTraceProfile(M::Context &maxContext) {
   std::optional<TimeTraceProfiler> &profilerOr =
-      maxContext.get<MLRT::Runtime>()->getProfiler();
+      maxContext.get<MLRT::CPUDevice>()->getProfiler();
   if (profilerOr)
     profilerOr->intern();
 }
@@ -257,7 +257,7 @@ static void internTimeTraceProfile(M::Context &maxContext) {
 /// along to that program, initializes an execution engine and executes the
 /// program. Returns a successful exit code if the program was executed
 /// successfully, and an unsuccessful exit code otherwise.
-static int executeModule(const State &state, MLRT::Runtime &runtime,
+static int executeModule(const State &state, MLRT::CPUDevice &cpuDevice,
                          MLIRContext &context,
                          const CompilationOptions &options,
                          OwningOpRef<ModuleOp> module, TargetInfoAttr target,
@@ -316,7 +316,7 @@ static int executeModule(const State &state, MLRT::Runtime &runtime,
 
   // Finally, execute the 'main' function of the Mojo program.
   CompilerTimeTraceScope traceScope("execute-main");
-  ErrorOrSuccess result = executeMain(engine, runtime, arguments);
+  ErrorOrSuccess result = executeMain(engine, cpuDevice, arguments);
   if (failed(result))
     return state.reportError(result.getError());
 
@@ -352,25 +352,25 @@ static int run(const State &subcommandState) {
 
   warnBuildingForDebugWithDebugBuiltCompiler(state, options.debugLevel);
 
-  MLRT::RuntimeOptions runtimeOptions;
-  configureRuntimeOptions(runtimeOptions, options);
+  MLRT::CPUDeviceOptions cpuDeviceOptions;
+  configureCPUDeviceOptions(cpuDeviceOptions, options);
 
-  // Create our context (including the runtime).
+  // Create our context (including the cpuDevice).
   ErrorOr<ContextRef> ctxOr = Init::createContext(
-      "mojo", Init::Options().withRuntimeOptions(runtimeOptions), "run");
+      "mojo", Init::Options().withCPUDeviceOptions(cpuDeviceOptions), "run");
   if (ctxOr.isError())
     return state.reportError(ctxOr.getError());
   ContextRef ctx = std::move(*ctxOr);
   registerContext(mlirCtx, ctx);
 
   // Lower the input file to an MLIR module.
-  MLRT::Runtime &runtime = *ctx->get<MLRT::Runtime>();
+  MLRT::CPUDevice &cpuDevice = *ctx->get<MLRT::CPUDevice>();
   mlir::SourceMgrDiagnosticHandler sourceMgrHandler(sourceManager, &mlirCtx);
   ScopedMLIRWarningHandler warningHandler(&mlirCtx, options.disableWarnings,
                                           options.warningsAsErrors);
 
   ErrorOr<OwningOpRef<ModuleOp>> moduleOp = invokeMojoParser(
-      state, args, options, &mlirCtx, runtime,
+      state, args, options, &mlirCtx, cpuDevice,
       options::OPT_diagnose_missing_doc_strings, options::OPT_max_notes,
       options::OPT_D, options::OPT_strip_file_prefix,
       options::OPT_disable_builtins, options::OPT_mojo_search_paths,
@@ -401,7 +401,7 @@ static int run(const State &subcommandState) {
 
   // Execute the Mojo program.
   int result = executeModule(
-      state, runtime, mlirCtx, options, moduleOp.takeValue(), target,
+      state, cpuDevice, mlirCtx, options, moduleOp.takeValue(), target,
       state.arguments.slice(args.getLastArg(options::OPT_INPUT)->getIndex()),
       *ctx, additionalLibraries);
   if (result != EXIT_SUCCESS)

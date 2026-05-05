@@ -396,7 +396,8 @@ void Graph::doRewrite(const Node *node) {
 void ArgPromotionPass::runOnOperation() {
   const SymbolTable &symtab =
       getAnalysis<mlir::SymbolTableAnalysis>().getTopLevelSymbolTable();
-  MLRT::Runtime &runtime = *loadContext(&getContext())->get<MLRT::Runtime>();
+  MLRT::CPUDevice &cpuDevice =
+      *loadContext(&getContext())->get<MLRT::CPUDevice>();
 
   // We need a target to run this pass.
   TargetInfoAttr target = lookupTargetInfo(getOperation());
@@ -408,5 +409,5 @@ void ArgPromotionPass::runOnOperation() {
 
   Graph cg(symtab, target, maxInlineSize);
   cg.build(getOperation(), symtab);
-  cg.run(runtime);
+  cg.run(cpuDevice);
 }

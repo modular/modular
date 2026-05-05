@@ -20,16 +20,16 @@ using std::chrono::time_point;
 namespace {
 
 struct TimerHeapTest : public testing::Test {
-  RuntimeRef runtime;
+  CPUDeviceRef cpuDevice;
   time_point<steady_clock> start;
   TimerHeap heap;
 
   TimerHeapTest()
-      : runtime(getOrCreateRuntime(RuntimeSource::Test)),
+      : cpuDevice(getOrCreateCPUDevice(CPUDeviceSource::Test)),
         start(steady_clock::now()) {}
 
   AsyncValueRef<Chain> in(int64_t ns) {
-    AsyncValueRef<Chain> out = AsyncValueRef<Chain>::allocate(*runtime);
+    AsyncValueRef<Chain> out = AsyncValueRef<Chain>::allocate(*cpuDevice);
     TimerHeap::deadline expiration = steady_clock::now() + nanoseconds(ns);
     heap.push(expiration, out);
     return out;

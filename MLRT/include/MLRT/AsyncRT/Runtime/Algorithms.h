@@ -30,7 +30,7 @@ using AlgorithmProfilerEntry =
 /// Returns only when all of the given async values are available.
 inline static void await(ArrayRef<AnyAsyncValueRef> values) {
   if (!values.empty())
-    values[0].getRuntime()->getWorkQueue()->await(values);
+    values[0].getCPUDevice()->getWorkQueue()->await(values);
 }
 
 template <typename T>
@@ -91,7 +91,7 @@ inline static void andThenImpl(std::tuple<ValueTys...> &&values,
   auto processAsyncValue = [state](AsyncValue *value) {
     WorkQueue *asyncWorkQueue = nullptr;
     if constexpr (IsAsync)
-      asyncWorkQueue = value->getRuntime()->getWorkQueue();
+      asyncWorkQueue = value->getCPUDevice()->getWorkQueue();
     value->andThenSync([state, asyncWorkQueue]() {
       // Once that is done we can decrement the count and trigger completion
       // when the last element is done.
@@ -204,7 +204,7 @@ inline static void andThenArrayImpl(ArrayRefType values,
   // the last one.
   WorkQueue *asyncWorkQueue = nullptr;
   if constexpr (IsAsync)
-    asyncWorkQueue = values[0].getRuntime()->getWorkQueue();
+    asyncWorkQueue = values[0].getCPUDevice()->getWorkQueue();
   for (auto &v : values) {
     state->values.push_back(copyOrMoveFn(v));
     state->values.back().andThenSync([state, asyncWorkQueue]() {
@@ -292,14 +292,14 @@ andThenAsyncMoving(llvm::MutableArrayRef<AnyAsyncValueRef> values,
 }
 
 //===----------------------------------------------------------------------===//
-// Helpers to add tasks to the runtime's work queue
+// Helpers to add tasks to the cpuDevice's work queue
 //===----------------------------------------------------------------------===//
 
 /// Add some non-blocking work to the WorkQueue managed by the specified
 /// Runtime.
-inline static void addTask(Runtime &runtime, WorkItem &&workItem,
+inline static void addTask(CPUDevice &cpuDevice, WorkItem &&workItem,
                            int taskId = -1) {
-  runtime.getWorkQueue()->addTask(std::move(workItem), taskId);
+  cpuDevice.getWorkQueue()->addTask(std::move(workItem), taskId);
 }
 
 /// Overload of addTask that returns AsyncValueRef<R> for work that returns R
@@ -307,16 +307,16 @@ inline static void addTask(Runtime &runtime, WorkItem &&workItem,
 ///
 /// Example:
 /// int a = 1, b = 2;
-/// AsyncValueRef<int> r = addTask(runtime, [a, b] { return a + b; });
+/// AsyncValueRef<int> r = addTask(cpuDevice, [a, b] { return a + b; });
 ///
 template <typename FnTy, typename ResultTy = Detail::ResultType<FnTy>,
           std::enable_if_t<!std::is_void<ResultTy>(), int> = 0>
 [[nodiscard]] inline static AsyncValueRef<ResultTy>
-addTask(Runtime &runtime, FnTy work, int taskId = -1) {
-  auto result = AsyncValueRef<ResultTy>::allocate(runtime);
+addTask(CPUDevice &cpuDevice, FnTy work, int taskId = -1) {
+  auto result = AsyncValueRef<ResultTy>::allocate(cpuDevice);
 
   addTask(
-      runtime,
+      cpuDevice,
       [result = result.copy(), work = std::forward<FnTy>(work)]() mutable {
         std::move(result).template emplace<ResultTy>(work());
       },
@@ -360,9 +360,9 @@ namespace Detail {
 template <typename... CaptureTys, typename ElementFn, typename CompletionFn,
           typename TaskIdFn>
 static inline void
-parallelForEachNImpl(Runtime &runtime, size_t totalCount, ElementFn &&elementFn,
-                     CompletionFn &&completionFn, TaskIdFn &&taskIdFn,
-                     CaptureTys &&...captures) {
+parallelForEachNImpl(CPUDevice &cpuDevice, size_t totalCount,
+                     ElementFn &&elementFn, CompletionFn &&completionFn,
+                     TaskIdFn &&taskIdFn, CaptureTys &&...captures) {
   // If there is nothing to do, then we're already done.
   if (totalCount == 0)
     return;
@@ -394,7 +394,7 @@ parallelForEachNImpl(Runtime &runtime, size_t totalCount, ElementFn &&elementFn,
   // Enqueue each element of work!
   for (size_t elementIdx = 0; elementIdx != totalCount; ++elementIdx) {
     addTask(
-        runtime,
+        cpuDevice,
         [state, elementIdx]() {
           TimeTraceScope scope(AlgorithmProfilerEntry::create(
               "asyncrt.parallelForEach", (uint64_t)elementIdx));
@@ -429,13 +429,13 @@ parallelForEachNImpl(Runtime &runtime, size_t totalCount, ElementFn &&elementFn,
 /// When all of the elements have finished, a completion handler is invoked.
 ///
 template <typename... CaptureTys, typename ElementFn, typename CompletionFn>
-static inline void parallelForEachNCustomCompletion(Runtime &runtime,
+static inline void parallelForEachNCustomCompletion(CPUDevice &cpuDevice,
                                                     size_t totalCount,
                                                     ElementFn &&elementFn,
                                                     CompletionFn &&completionFn,
                                                     CaptureTys &&...captures) {
   Detail::parallelForEachNImpl(
-      runtime, totalCount, std::forward<ElementFn>(elementFn),
+      cpuDevice, totalCount, std::forward<ElementFn>(elementFn),
       std::forward<CompletionFn>(completionFn),
       [](size_t) { return kDefaultTaskId; },
       std::forward<CaptureTys>(captures)...);
@@ -450,11 +450,11 @@ static inline void parallelForEachNCustomCompletion(Runtime &runtime,
 ///
 template <typename... CaptureTys, typename ElementFn>
 static inline void
-parallelForEachNCompleteChain(Runtime &runtime, size_t totalCount,
+parallelForEachNCompleteChain(CPUDevice &cpuDevice, size_t totalCount,
                               AsyncValueRef<Chain> readyChain,
                               ElementFn &&elementFn, CaptureTys &&...captures) {
   parallelForEachNCustomCompletion(
-      runtime, totalCount, std::forward<ElementFn>(elementFn),
+      cpuDevice, totalCount, std::forward<ElementFn>(elementFn),
       [readyChain = std::move(readyChain)](auto &&...args) mutable {
         // When all the elements are ready, complete the `readyChain`,
         // unblocking other work.
@@ -472,12 +472,12 @@ parallelForEachNCompleteChain(Runtime &runtime, size_t totalCount,
 ///
 template <typename EltTy, typename... CaptureTys, typename ElementFn>
 static inline void
-parallelForEachNFinishing(Runtime &runtime, size_t totalCount,
+parallelForEachNFinishing(CPUDevice &cpuDevice, size_t totalCount,
                           EltTy &&initialResultValue,
                           AsyncValueRef<EltTy> resultAV, ElementFn &&elementFn,
                           CaptureTys &&...captures) {
   parallelForEachNCustomCompletion(
-      runtime, totalCount, std::forward<ElementFn>(elementFn),
+      cpuDevice, totalCount, std::forward<ElementFn>(elementFn),
       [resultAV = std::move(resultAV)](EltTy &result, auto &&...args) mutable {
         // When all the elements are ready, emplace the result value into the
         // result AV.
@@ -497,10 +497,10 @@ parallelForEachNFinishing(Runtime &runtime, size_t totalCount,
 ///
 template <typename... CaptureTys, typename ElementFn>
 static inline AsyncValueRef<Chain>
-parallelForEachNChain(Runtime &runtime, size_t totalCount,
+parallelForEachNChain(CPUDevice &cpuDevice, size_t totalCount,
                       ElementFn &&elementFn, CaptureTys &&...captures) {
-  auto result = AsyncValueRef<Chain>::allocate(runtime);
-  parallelForEachNCompleteChain(runtime, totalCount, result.copy(),
+  auto result = AsyncValueRef<Chain>::allocate(cpuDevice);
+  parallelForEachNCompleteChain(cpuDevice, totalCount, result.copy(),
                                 std::forward<ElementFn>(elementFn),
                                 std::forward<CaptureTys...>(captures)...);
   return result;
@@ -515,12 +515,12 @@ parallelForEachNChain(Runtime &runtime, size_t totalCount,
 /// taskIdFn must be callable as (size_t elementIdx) -> int.
 template <typename... CaptureTys, typename ElementFn, typename TaskIdFn>
 static inline AsyncValueRef<Chain>
-parallelForEachNChainWithTaskIds(Runtime &runtime, size_t totalCount,
+parallelForEachNChainWithTaskIds(CPUDevice &cpuDevice, size_t totalCount,
                                  TaskIdFn &&taskIdFn, ElementFn &&elementFn,
                                  CaptureTys &&...captures) {
-  auto result = AsyncValueRef<Chain>::allocate(runtime);
+  auto result = AsyncValueRef<Chain>::allocate(cpuDevice);
   Detail::parallelForEachNImpl(
-      runtime, totalCount, std::forward<ElementFn>(elementFn),
+      cpuDevice, totalCount, std::forward<ElementFn>(elementFn),
       [chain = result.copy()](auto &&...) mutable {
         std::move(chain).emplace();
       },
@@ -540,7 +540,7 @@ parallelForEachNChainWithTaskIds(Runtime &runtime, size_t totalCount,
 /// Because this doesn't return until the elements are done, it is ok for the
 /// element function to capture things on the caller's stack by reference.
 template <typename... CaptureTys, typename ElementFn>
-static inline void parallelForEachN(Runtime &runtime, size_t totalCount,
+static inline void parallelForEachN(CPUDevice &cpuDevice, size_t totalCount,
                                     ElementFn &&elementFn,
                                     CaptureTys &&...captures) {
 
@@ -551,7 +551,7 @@ static inline void parallelForEachN(Runtime &runtime, size_t totalCount,
   AsyncValueRef<Chain> chainResult;
   if (totalCount > 1) {
     chainResult = parallelForEachNChain(
-        runtime, totalCount - 1, std::forward<ElementFn>(elementFn),
+        cpuDevice, totalCount - 1, std::forward<ElementFn>(elementFn),
         std::forward<CaptureTys...>(captures)...);
   }
 

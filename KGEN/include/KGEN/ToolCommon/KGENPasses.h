@@ -46,7 +46,7 @@ class HLCFDialect;
 } // namespace HLCF
 
 namespace MLRT {
-class Runtime;
+class CPUDevice;
 } // namespace MLRT
 
 namespace KGEN {

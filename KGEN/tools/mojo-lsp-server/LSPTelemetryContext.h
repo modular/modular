@@ -10,7 +10,7 @@
 #include "Support/Telemetry/Telemetry.h"
 
 namespace M::MLRT {
-class Runtime;
+class CPUDevice;
 }
 
 namespace M::Mojo::LSP {

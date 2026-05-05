@@ -5,7 +5,7 @@
 //===----------------------------------------------------------------------===//
 //
 // This file exposes a basic set of command line options for setting up and
-// configuring an M::MLRT::Runtime for tools to use.
+// configuring an M::MLRT::CPUDevice for tools to use.
 //
 //===----------------------------------------------------------------------===//
 
@@ -24,7 +24,7 @@
 
 namespace M::MLRT {
 
-class Runtime;
+class CPUDevice;
 
 /// Contains a number of command-line options that are shared among binaries
 /// that use the AsyncRT Runtime and want configurability of Allocator,
@@ -32,46 +32,47 @@ class Runtime;
 ///
 class RuntimeCLOptions {
 public:
-  RuntimeOptions &options;
-  RuntimeCLOptions(RuntimeOptions &o) : options(o) {}
+  CPUDeviceOptions &options;
+  RuntimeCLOptions(CPUDeviceOptions &o) : options(o) {}
 
 private:
-  llvm::cl::OptionCategory RuntimeOptionsCategory{
-      "Runtime command line options"};
+  llvm::cl::OptionCategory CPUDeviceOptionsCategory{
+      "CPUDevice command line options"};
   //===--------------------------------------------------------------------===//
   // Core Runtime configuration.
   //===--------------------------------------------------------------------===//
   // Enable HostAllocator types to be specified on the command line.
-  M::cl::MOpt<RuntimeOptions::WorkQueueType, true> workQueueType{
+  M::cl::MOpt<CPUDeviceOptions::WorkQueueType, true> workQueueType{
       "workqueue", llvm::cl::desc("Specify workqueue type:"),
       llvm::cl::values(
-          clEnumValN(RuntimeOptions::WorkQueueType::kSingleThread,
+          clEnumValN(CPUDeviceOptions::WorkQueueType::kSingleThread,
                      "single-thread",
                      "Work queue that only ever uses one thread"),
-          clEnumValN(RuntimeOptions::WorkQueueType::kThreadPool, "thread-pool",
+          clEnumValN(CPUDeviceOptions::WorkQueueType::kThreadPool,
+                     "thread-pool",
                      "Default threaded work queue based on std::thread")),
       llvm::cl::location(options.workQueueType),
-      llvm::cl::cat(RuntimeOptionsCategory)};
+      llvm::cl::cat(CPUDeviceOptionsCategory)};
 
   // Enable HostAllocator types to be specified on the command line.
-  M::cl::MOpt<RuntimeOptions::AllocatorType, true> allocatorType{
+  M::cl::MOpt<CPUDeviceOptions::AllocatorType, true> allocatorType{
       "allocator", llvm::cl::desc("Specify allocator type:"),
       llvm::cl::values(
 
-          clEnumValN(RuntimeOptions::AllocatorType::kMalloc, "malloc",
+          clEnumValN(CPUDeviceOptions::AllocatorType::kMalloc, "malloc",
                      "System malloc/free"),
-          clEnumValN(RuntimeOptions::AllocatorType::kTCMalloc, "tcmalloc",
+          clEnumValN(CPUDeviceOptions::AllocatorType::kTCMalloc, "tcmalloc",
                      "TCMalloc new/delete. Not available on all targets"),
-          clEnumValN(RuntimeOptions::AllocatorType::kLeakChecker,
+          clEnumValN(CPUDeviceOptions::AllocatorType::kLeakChecker,
                      "leak-checker", "Allocator with leak checking"),
-          clEnumValN(RuntimeOptions::AllocatorType::kProfiler, "profiler",
+          clEnumValN(CPUDeviceOptions::AllocatorType::kProfiler, "profiler",
                      "Allocator with profiling and leak checking"),
-          clEnumValN(RuntimeOptions::AllocatorType::kUseAfterFree,
+          clEnumValN(CPUDeviceOptions::AllocatorType::kUseAfterFree,
                      "use-after-free",
                      "Allocator to detect use-after-free errors. Not available "
                      "on all targets.")),
       llvm::cl::location(options.allocatorType),
-      llvm::cl::cat(RuntimeOptionsCategory)};
+      llvm::cl::cat(CPUDeviceOptionsCategory)};
 
   // Specify the number of threads in the thread pool. Only consulted when
   // the selected workqueue type is `kThreadPool`. The default number of
@@ -82,12 +83,12 @@ private:
                      "items. If zero "
                      "(default), will be chosen by heuristics."),
       llvm::cl::location(options.numThreads),
-      llvm::cl::cat(RuntimeOptionsCategory)};
+      llvm::cl::cat(CPUDeviceOptionsCategory)};
   M::cl::MOpt<size_t, true> maxThreads{
       "max-threads",
       llvm::cl::desc("Bound num-threads in the case of auto-configuration."),
       llvm::cl::location(options.maxThreads),
-      llvm::cl::cat(RuntimeOptionsCategory)};
+      llvm::cl::cat(CPUDeviceOptionsCategory)};
 
   // Specify the amount of time a worker thread should spin for before
   // sleeping. The optimal value here depends on the system latency for thread
@@ -99,7 +100,7 @@ private:
           "Specify the number of microseconds for threads to spin before "
           "locking. Zero indicates that threads should never spin."),
       llvm::cl::location(options.threadBusyWaitTime),
-      llvm::cl::cat(RuntimeOptionsCategory)};
+      llvm::cl::cat(CPUDeviceOptionsCategory)};
 
   // Specify whether the workqueue should be created using thread affinity.
   // Can also be controlled via MODULAR_ENABLE_AFFINITY environment variable.
@@ -110,7 +111,7 @@ private:
           "This flag takes precedence over the MODULAR_ENABLE_AFFINITY "
           "environment variable."),
       llvm::cl::location(options.withAffinity),
-      llvm::cl::cat(RuntimeOptionsCategory)};
+      llvm::cl::cat(CPUDeviceOptionsCategory)};
 
   // Filename to hold the time profiling output (as JSON text).
   M::cl::MOpt<std::string, true> profileFilename{
@@ -130,25 +131,25 @@ private:
                 "MODULAR_ASYNCRT_MAX_PROFILING_LEVEL greater than 0 to enable "
                 "it."),
       llvm::cl::location(options.profileFilename),
-      llvm::cl::cat(RuntimeOptionsCategory)};
+      llvm::cl::cat(CPUDeviceOptionsCategory)};
 
   // Should we generate debuginfo for a profiler?
-  M::cl::MOpt<RuntimeOptions::ProfilerDebuginfo, true> profilerDebuginfo{
+  M::cl::MOpt<CPUDeviceOptions::ProfilerDebuginfo, true> profilerDebuginfo{
       "profiler-debuginfo",
       llvm::cl::desc(
           "Output debug symbols in a way that a profiler can understand. After "
           "running under perf, use `perf inject --jit -i perf.data -o "
           "perf.jit.data` to add debug info for kernels to the profile."),
       llvm::cl::values(
-          clEnumValN(RuntimeOptions::ProfilerDebuginfo::kNoProfiler, "none",
+          clEnumValN(CPUDeviceOptions::ProfilerDebuginfo::kNoProfiler, "none",
                      "Do not generate debuginfo"),
-          clEnumValN(RuntimeOptions::ProfilerDebuginfo::kPerfProfiler, "perf",
+          clEnumValN(CPUDeviceOptions::ProfilerDebuginfo::kPerfProfiler, "perf",
                      "Generate debuginfo for perf."),
-          clEnumValN(RuntimeOptions::ProfilerDebuginfo::kSOProfiler, "so",
+          clEnumValN(CPUDeviceOptions::ProfilerDebuginfo::kSOProfiler, "so",
                      "Generate debuginfo by loading compiled kernels into a "
                      "shared library. Should work with all profilers.")),
       llvm::cl::location(options.profilerDebuginfo),
-      llvm::cl::cat(RuntimeOptionsCategory)};
+      llvm::cl::cat(CPUDeviceOptionsCategory)};
 };
 
 } // namespace M::MLRT

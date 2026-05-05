@@ -27,16 +27,16 @@ bool LLVMThreadPool::TurnStile::taskComplete() {
   return false;
 }
 
-void LLVMThreadPool::TurnStile::waitAndReset(MLRT::Runtime &runtime) {
+void LLVMThreadPool::TurnStile::waitAndReset(MLRT::CPUDevice &cpuDevice) {
   // Decrement the counter, and if there are still tasks running, wait.
   if (!taskComplete())
     await(chain);
   counter = 1;
-  chain = MLRT::AsyncValueRef<Chain>::allocate(runtime);
+  chain = MLRT::AsyncValueRef<Chain>::allocate(cpuDevice);
 }
 
 LLVMThreadPool::~LLVMThreadPool() {
-  poolTurnStile.waitAndReset(runtime);
+  poolTurnStile.waitAndReset(cpuDevice);
   std::move(poolTurnStile.chain).emplace();
 }
 
@@ -46,14 +46,14 @@ void LLVMThreadPool::asyncEnqueue(llvm::unique_function<void()> task,
   TurnStile *turnstile = groupTurnStiles.modify([this, group](auto &map) {
     std::unique_ptr<TurnStile> &turnstile = map[group];
     if (!turnstile)
-      turnstile = std::make_unique<TurnStile>(runtime);
+      turnstile = std::make_unique<TurnStile>(cpuDevice);
     return turnstile.get();
   });
 
   // Increment the number of active tasks.
   ++turnstile->counter;
 
-  runtime.getWorkQueue()->addTask(
+  cpuDevice.getWorkQueue()->addTask(
       [this, turnstile, func = std::move(task)]() mutable {
         // Run the task.
         func();
@@ -65,7 +65,7 @@ void LLVMThreadPool::asyncEnqueue(llvm::unique_function<void()> task,
       });
 }
 
-void LLVMThreadPool::wait() { poolTurnStile.waitAndReset(runtime); }
+void LLVMThreadPool::wait() { poolTurnStile.waitAndReset(cpuDevice); }
 
 void LLVMThreadPool::wait(ThreadPoolTaskGroup &group) {
   TurnStile *turnstile =
@@ -83,5 +83,5 @@ void LLVMThreadPool::wait(ThreadPoolTaskGroup &group) {
 }
 
 unsigned LLVMThreadPool::getMaxConcurrency() const {
-  return runtime.getWorkQueue()->getParallelismLevel();
+  return cpuDevice.getWorkQueue()->getParallelismLevel();
 }
