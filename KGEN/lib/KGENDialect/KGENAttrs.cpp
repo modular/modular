@@ -3552,10 +3552,67 @@ static TypedAttr simplifyFunctionGetArgTypes(MLIRContext *ctx,
   return ParamListAttr::get(results, variadicType);
 }
 
+/// Construct a arithmetic parameter operator attribute, folding it (in the form
+/// of SIMD) if possible. Return nullptr if the opcode is not an arithmetic
+/// POC.
+static TypedAttr getArithParamOperator(MLIRContext *ctx, POC opcode,
+                                       ArrayRef<TypedAttr> operandsIn,
+                                       Type origResultType) {
+  if (!llvm::is_contained(ArrayRef<POC>{/*migrated list*/}, opcode))
+    return {};
+
+  // We turn `(poc x, y)` into
+  // cast_to_builtin(
+  //   poc cast_from_builtin(x), cast_from_builtin(y)
+  // )
+  // s.t. all the folding are performed on SIMD types.
+  //
+  // TODO: the canonicalization process can be removed upon the Int/SIMD
+  // unification.
+  auto getEquivalentSIMDType = [&](Type type) -> Type {
+    auto [dtype, _] = M::getEquivalentDType(type);
+    if (dtype == DType::invalid) // inconvertible
+      return type;
+    return SIMDType::get(1, DTypeConstantAttr::get(ctx, dtype));
+  };
+
+  // Turn operands to SIMD
+  SmallVector<TypedAttr, 4> operands =
+      llvm::map_to_vector(operandsIn, [&](TypedAttr operand) -> TypedAttr {
+        Type operandType = getEquivalentSIMDType(operand.getType());
+        if (operandType == operand.getType())
+          return operand;
+
+        return CastFromBuiltinAttr::get(operand, cast<SIMDType>(operandType));
+      });
+  Type resultType = getEquivalentSIMDType(origResultType);
+  Attribute result;
+
+  // TODO: migrate and fold in SIMD forms.
+  switch (opcode) {
+  default:
+    return {};
+  }
+
+  TypedAttr ret =
+      result ? cast<TypedAttr>(result)
+             : ParamOperatorAttr::Base::get(ctx, opcode, operands, resultType);
+
+  // Cast back to the original type if needed.
+  if (resultType != origResultType)
+    ret = CastToBuiltinAttr::get(ctx, ret, origResultType);
+
+  return ret;
+}
+
 /// Construct a parameter operator attribute, folding it if possible.
 static TypedAttr getParamOperator(MLIRContext *ctx, POC opcode,
                                   ArrayRef<TypedAttr> operandsIn,
                                   Type resultType) {
+  // Fold arithmetic POCs in SIMD forms.
+  if (auto ret = getArithParamOperator(ctx, opcode, operandsIn, resultType))
+    return ret;
+
   SmallVector<TypedAttr, 4> operands(operandsIn.begin(), operandsIn.end());
 
   // Verify and canonicalize parameter expressions.
@@ -3626,6 +3683,7 @@ static TypedAttr getParamOperator(MLIRContext *ctx, POC opcode,
     result = simplifyRelationalCompare(opcode, operands);
     resultType = IntegerType::get(ctx, 1);
     break;
+  // TODO: Fold all POCs above in SIMD forms.
   case POC::CurrentTarget:
     resultType = TargetType::get(ctx);
     break;
@@ -4038,6 +4096,21 @@ TypedAttr CastFromBuiltinAttr::get(MLIRContext *ctx, TypedAttr arg,
     if (auto ret = dyn_cast<TypedAttr>(cast<Attribute>(fold)))
       return ret;
 
+  // a list of migrated poc that is capable of handling SIMD
+  ArrayRef<POC> migrated = {};
+
+  // Else, try sink the cast_from_builtin to the leaf of the expression,
+  // s.t.,
+  // cast_from_builtin(i * j) -> cast_from_builtin(i) * cast_from_builtin(j)
+  if (auto expr = dyn_cast<ParamOperatorAttr>(arg);
+      expr && llvm::is_contained(migrated, expr.getOpcode())) {
+    // FIXME: this assumes the operands are all the same type, which is
+    // not necessarily true.
+    auto operands = llvm::map_to_vector(expr.getOperands(), [&](auto operand) {
+      return CastFromBuiltinAttr::get(ctx, operand, out_type);
+    });
+    return ParamOperatorAttr::get(expr.getOpcode(), operands);
+  }
   return Base::get(ctx, arg, out_type);
 }
 

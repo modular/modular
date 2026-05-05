@@ -1743,8 +1743,8 @@ struct SIMD[dtype: DType, size: Int](TrivialRegisterPassable):
         comptime res = SIMD[Self.dtype, Self.size](Int())
         self = res
 
+    @always_inline("builtin")
     @implicit
-    @always_inline
     def __init__(out self, value: Int, /):
         var index = __mlir_op.`pop.cast_from_builtin`[
             _type=__mlir_type.`!kgen.scalar<index>`
@@ -1753,12 +1753,7 @@ struct SIMD[dtype: DType, size: Int](TrivialRegisterPassable):
             index
         )
 
-        comptime if Self.size == 1:
-            self._mlir_value = rebind[Self._mlir_type](s)
-        else:
-            self._mlir_value = __mlir_op.`pop.simd.splat`[
-                _type=Self._mlir_type
-            ](s)
+        self._mlir_value = __mlir_op.`pop.simd.splat`[_type=Self._mlir_type](s)
 
     @implicit
     def __init__(out self, value: FloatLiteral, /):
