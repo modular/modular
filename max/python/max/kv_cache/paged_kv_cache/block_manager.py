@@ -25,6 +25,7 @@ This logic is largely borrowed from vLLM v1:
 from __future__ import annotations
 
 import logging
+import os
 from collections import defaultdict
 from collections.abc import Iterable
 
@@ -75,6 +76,37 @@ def _compute_seq_len(
         - 1
     )
     return seq_len
+
+
+def _resolve_only_use_kv_connector_prefix_cache(
+    enable_prefix_caching: bool, num_host_blocks: int
+) -> bool:
+    """Resolve whether to only use the KVConnector prefix cache.
+
+    When this is set, the device prefix cache will be disabled. All KVCache hits
+    will stricly be served from the KVConnector. This is primarily used for
+    testing and benchmarking the performance of the KVConnector. Do NOT use this
+    flag in production.
+    """
+    enabled = os.getenv("MODULAR_ONLY_USE_KV_CONNECTOR", "0").lower() in (
+        "1",
+        "true",
+        "yes",
+        "y",
+    )
+    if enabled:
+        if not enable_prefix_caching:
+            raise ValueError(
+                "MODULAR_ONLY_USE_KV_CONNECTOR is set, but prefix caching is disabled."
+            )
+        if num_host_blocks == 0:
+            raise ValueError(
+                "MODULAR_ONLY_USE_KV_CONNECTOR is set, but no host blocks are available."
+            )
+        logger.info(
+            "Detected MODULAR_ONLY_USE_KV_CONNECTOR flag, only using KVConnector prefix cache."
+        )
+    return enabled
 
 
 class BlockManager:
@@ -130,6 +162,16 @@ class BlockManager:
 
         # Whether to enable runtime checks.
         self.enable_runtime_checks = enable_runtime_checks
+
+        # Whether to only use the KVConnector prefix cache.
+        # When this is set, the device prefix cache will be disabled. This is
+        # primarily used for testing and benchmarking the performance of the
+        # KVConnector.
+        self._only_use_kv_connector_prefix_cache = (
+            _resolve_only_use_kv_connector_prefix_cache(
+                enable_prefix_caching, connector.num_host_blocks
+            )
+        )
 
     @traced
     def step(self, ctx: TextGenerationContext) -> None:
@@ -294,6 +336,9 @@ class BlockManager:
         desired_hashes: list[int],
     ) -> list[KVCacheBlock]:
         """Returns a list of device blocks with the desired hashes."""
+        if self._only_use_kv_connector_prefix_cache:
+            return []
+
         device_prefix_cache = self.device_block_pool.hash_to_committed_block
 
         blocks = []
@@ -372,8 +417,10 @@ class BlockManager:
 
         Note that only full blocks are counted.
         """
-        assert self.enable_prefix_caching
+        if not self.enable_prefix_caching or ctx.tokens.active_length == 1:
+            return 0
 
+        self.compute_hashes_for_request(ctx)
         num_committed_blocks = (
             self.req_to_committed_idx[ctx.request_id] // self.block_size
         )
@@ -599,19 +646,6 @@ class BlockManager:
         )
         num_required_blocks = ceildiv(current_seq_len, self.block_size)
         num_new_blocks = num_required_blocks - num_current_blocks
-
-        if self.enable_prefix_caching and ctx.tokens.active_length != 1:
-            self.assert_runtime_invariants(ctx)
-
-            # Compute block hashes. These hashes are used by the subsequent methods.
-            self.compute_hashes_for_request(ctx)
-
-            # Count the prefix caches for full blocks.
-            num_prefix_cache_blocks = self.count_full_blocks_from_prefix_caches(
-                ctx
-            )
-
-            num_new_blocks = num_new_blocks - num_prefix_cache_blocks
 
         return max(num_new_blocks, 0)
 

@@ -137,6 +137,9 @@ MODEL_ALIASES = CaseInsensitiveDict({
             "--max-num-steps 1"
         ),
     },
+    "meta-llama/Llama-3.1-8B-Instruct__local_kvconnector": {
+        "max_serve_args": "--kv-connector local",
+    },
 })
 # fmt: on
 
@@ -228,6 +231,11 @@ def get_server_cmd(
         MAX += f" --devices gpu:{','.join(str(i) for i in range(gpu_count))}"
         VLLM += f" --tensor-parallel-size={gpu_count}"
         SGLANG += f" --tp-size={gpu_count}"
+
+    # Force MAX to rely solely on the KVConnector for prefix cache hits to test
+    # cpu/disk KV offload code paths.
+    if framework in ("max", "max-ci") and "--kv-connector" in serve_extra_args:
+        os.environ["MODULAR_ONLY_USE_KV_CONNECTOR"] = "1"
 
     if _inside_bazel():
         assert framework == "max-ci", "bazel invocation only supports max-ci"

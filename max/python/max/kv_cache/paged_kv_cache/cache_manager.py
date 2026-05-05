@@ -336,9 +336,11 @@ class PagedKVCacheManager:
             The percentage of total blocks used after allocating for the request.
         """
         block_manager = self._replica[replica_idx].block_manager
-        num_needed_blocks = self.get_num_used_pages(
-            replica_idx
-        ) + block_manager.num_blocks_to_allocate(ctx, num_steps)
+        num_needed_blocks = (
+            self.get_num_used_pages(replica_idx)
+            + block_manager.num_blocks_to_allocate(ctx, num_steps)
+            - block_manager.count_full_blocks_from_prefix_caches(ctx)
+        )
         return min(
             1.0,
             num_needed_blocks / self._total_num_pages,
