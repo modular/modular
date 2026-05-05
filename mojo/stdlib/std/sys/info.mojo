@@ -455,51 +455,120 @@ def is_triple[
 
 
 @always_inline("nodebug")
+def _is_nvidia_gpu_any[archs: List[String]]() -> Bool:
+    comptime for arch in archs:
+        comptime if is_nvidia_gpu[arch]():
+            return True
+    return False
+
+
+@always_inline("nodebug")
+def _has_nvidia_gpu_any[archs: List[String]]() -> Bool:
+    comptime if not has_nvidia_gpu_accelerator():
+        return False
+
+    comptime for arch in archs:
+        comptime if arch.removeprefix("sm_") in _accelerator_arch():
+            return True
+    return False
+
+
+comptime _SM_80X_ARCHS: List[String] = ["sm_80", "sm_86", "sm_89"]
+
+
+@always_inline("nodebug")
 def _is_sm_8x() -> Bool:
-    return (
-        is_nvidia_gpu["sm_80"]()
-        or is_nvidia_gpu["sm_86"]()
-        or is_nvidia_gpu["sm_89"]()
-    )
+    return _is_nvidia_gpu_any[_SM_80X_ARCHS]()
+
+
+@always_inline("nodebug")
+def _has_sm_8x() -> Bool:
+    return _has_nvidia_gpu_any[_SM_80X_ARCHS]()
+
+
+comptime _SM_90X_ARCHS: List[String] = ["sm_90", "sm_90a"]
 
 
 @always_inline("nodebug")
 def _is_sm_9x() -> Bool:
-    return is_nvidia_gpu["sm_90"]() or is_nvidia_gpu["sm_90a"]()
+    return _is_nvidia_gpu_any[_SM_90X_ARCHS]()
+
+
+@always_inline("nodebug")
+def _has_sm_9x() -> Bool:
+    return _has_nvidia_gpu_any[_SM_90X_ARCHS]()
+
+
+comptime _SM_100X_ARCHS: List[String] = ["sm_100", "sm_100a"]
 
 
 @always_inline("nodebug")
 def _is_sm_100x() -> Bool:
-    return is_nvidia_gpu["sm_100"]() or is_nvidia_gpu["sm_100a"]()
+    return _is_nvidia_gpu_any[_SM_100X_ARCHS]()
+
+
+@always_inline("nodebug")
+def _has_sm_100x() -> Bool:
+    return _has_nvidia_gpu_any[_SM_100X_ARCHS]()
+
+
+comptime _SM_101X_ARCHS: List[String] = ["sm_101", "sm_101a"]
 
 
 @always_inline("nodebug")
 def _is_sm_101x() -> Bool:
-    return is_nvidia_gpu["sm_101"]() or is_nvidia_gpu["sm_101a"]()
+    return _is_nvidia_gpu_any[_SM_101X_ARCHS]()
+
+
+@always_inline("nodebug")
+def _has_sm_101x() -> Bool:
+    return _has_nvidia_gpu_any[_SM_101X_ARCHS]()
+
+
+comptime _SM_103X_ARCHS: List[String] = ["sm_103", "sm_103a"]
 
 
 @always_inline("nodebug")
 def _is_sm_103x() -> Bool:
-    return is_nvidia_gpu["sm_103"]() or is_nvidia_gpu["sm_103a"]()
+    return _is_nvidia_gpu_any[_SM_103X_ARCHS]()
+
+
+@always_inline("nodebug")
+def _has_sm_103x() -> Bool:
+    return _has_nvidia_gpu_any[_SM_103X_ARCHS]()
+
+
+comptime _SM_110X_ARCHS: List[String] = ["sm_110", "sm_110a"]
 
 
 @always_inline("nodebug")
 def _is_sm_110x() -> Bool:
-    return is_nvidia_gpu["sm_110"]() or is_nvidia_gpu["sm_110a"]()
+    return _is_nvidia_gpu_any[_SM_110X_ARCHS]()
+
+
+@always_inline("nodebug")
+def _has_sm_110x() -> Bool:
+    return _has_nvidia_gpu_any[_SM_110X_ARCHS]()
+
+
+comptime _SM_120X_ARCHS: List[String] = ["sm_120", "sm_120a"]
 
 
 @always_inline("nodebug")
 def _is_sm_120x() -> Bool:
-    return is_nvidia_gpu["sm_120"]() or is_nvidia_gpu["sm_120a"]()
+    return _is_nvidia_gpu_any[_SM_120X_ARCHS]()
+
+
+@always_inline("nodebug")
+def _has_sm_120x() -> Bool:
+    return _has_nvidia_gpu_any[_SM_120X_ARCHS]()
 
 
 @always_inline("nodebug")
 def _has_blackwell_tcgen05() -> Bool:
-    return (
-        "sm_100a" in _accelerator_arch()
-        or "sm_101a" in _accelerator_arch()
-        or "sm_103a" in _accelerator_arch()
-    )
+    return _has_nvidia_gpu_any[
+        _SM_100X_ARCHS + _SM_101X_ARCHS + _SM_103X_ARCHS
+    ]()
 
 
 @always_inline("nodebug")
@@ -508,8 +577,18 @@ def _is_sm_8x_or_newer() -> Bool:
 
 
 @always_inline("nodebug")
+def _has_sm_8x_or_newer() -> Bool:
+    return _has_sm_8x() or _has_sm_9x_or_newer()
+
+
+@always_inline("nodebug")
 def _is_sm_9x_or_newer() -> Bool:
     return _is_sm_9x() or _is_sm_100x_or_newer()
+
+
+@always_inline("nodebug")
+def _has_sm_9x_or_newer() -> Bool:
+    return _has_sm_9x() or _has_sm_100x_or_newer()
 
 
 @always_inline("nodebug")
@@ -518,13 +597,33 @@ def _is_sm_100x_or_newer() -> Bool:
 
 
 @always_inline("nodebug")
+def _has_sm_100x_or_newer() -> Bool:
+    return (
+        _has_blackwell_tcgen05()
+        or _has_sm_100x()
+        or _has_sm_103x()
+        or _has_sm_110x_or_newer()
+    )
+
+
+@always_inline("nodebug")
 def _is_sm_110x_or_newer() -> Bool:
     return _is_sm_110x() or _is_sm_120x_or_newer()
 
 
 @always_inline("nodebug")
+def _has_sm_110x_or_newer() -> Bool:
+    return _has_sm_110x() or _has_sm_120x_or_newer()
+
+
+@always_inline("nodebug")
 def _is_sm_120x_or_newer() -> Bool:
     return _is_sm_120x()
+
+
+@always_inline("nodebug")
+def _has_sm_120x_or_newer() -> Bool:
+    return _has_sm_120x()
 
 
 @always_inline("nodebug")
@@ -586,6 +685,29 @@ def is_nvidia_gpu[subarch: StaticString]() -> Bool:
     return is_nvidia_gpu() and CompilationTarget._is_arch[subarch]()
 
 
+comptime _AMD_GCN_ARCHS: List[String] = [
+    "gfx600",
+    "gfx601",
+    "gfx602",
+    "gfx700",
+    "gfx701",
+    "gfx702",
+    "gfx703",
+    "gfx704",
+    "gfx705",
+    "gfx801",
+    "gfx802",
+    "gfx803",
+    "gfx805",
+    "gfx810",
+    "gfx900",
+    "gfx902",
+    "gfx904",
+    "gfx906",
+    "gfx909",
+]
+
+
 @always_inline("nodebug")
 def _is_amd_gcn() -> Bool:
     """Returns True if the target triple of the compiler is `amdgcn-amd-amdhsa`
@@ -594,27 +716,18 @@ def _is_amd_gcn() -> Bool:
     Returns:
         True if GCN and False otherwise.
     """
-    return (
-        is_amd_gpu["gfx600"]()
-        or is_amd_gpu["gfx601"]()
-        or is_amd_gpu["gfx602"]()
-        or is_amd_gpu["gfx700"]()
-        or is_amd_gpu["gfx701"]()
-        or is_amd_gpu["gfx702"]()
-        or is_amd_gpu["gfx703"]()
-        or is_amd_gpu["gfx704"]()
-        or is_amd_gpu["gfx705"]()
-        or is_amd_gpu["gfx801"]()
-        or is_amd_gpu["gfx802"]()
-        or is_amd_gpu["gfx803"]()
-        or is_amd_gpu["gfx805"]()
-        or is_amd_gpu["gfx810"]()
-        or is_amd_gpu["gfx900"]()
-        or is_amd_gpu["gfx902"]()
-        or is_amd_gpu["gfx904"]()
-        or is_amd_gpu["gfx906"]()
-        or is_amd_gpu["gfx909"]()
-    )
+    comptime for arch in _AMD_GCN_ARCHS:
+        comptime if is_amd_gpu[arch]():
+            return True
+    return False
+
+
+comptime _AMD_RDNA1_ARCHS: List[String] = [
+    "amdgpu:gfx1010",  # Navi 10 (RX 5700 XT/5700)
+    "amdgpu:gfx1011",  # Navi 12
+    "amdgpu:gfx1012",  # Navi 14 (RX 5500 XT/5500)
+    "amdgpu:gfx1013",  # Navi 14
+]
 
 
 @always_inline("nodebug")
@@ -631,12 +744,21 @@ def _is_amd_rdna1() -> Bool:
     Returns:
         True if the RDNA1 and False otherwise.
     """
-    return (
-        is_amd_gpu["amdgpu:gfx1010"]()
-        or is_amd_gpu["amdgpu:gfx1011"]()
-        or is_amd_gpu["amdgpu:gfx1012"]()
-        or is_amd_gpu["amdgpu:gfx1013"]()
-    )
+    comptime for arch in _AMD_RDNA1_ARCHS:
+        comptime if is_amd_gpu[arch]():
+            return True
+    return False
+
+
+comptime _AMD_RDNA2_ARCHS: List[String] = [
+    "amdgpu:gfx1030",  # Navi 21 (RX 6900/6800)
+    "amdgpu:gfx1031",  # Navi 22 (RX 6700)
+    "amdgpu:gfx1032",  # Navi 23 (RX 6600)
+    "amdgpu:gfx1033",  # Navi 24
+    "amdgpu:gfx1034",  # Navi 24
+    "amdgpu:gfx1035",  # Rembrandt APU
+    "amdgpu:gfx1036",  # Raphael APU
+]
 
 
 @always_inline("nodebug")
@@ -656,31 +778,46 @@ def _is_amd_rdna2() -> Bool:
     Returns:
         True if the RDNA2 and False otherwise.
     """
-    return (
-        is_amd_gpu["amdgpu:gfx1030"]()
-        or is_amd_gpu["amdgpu:gfx1031"]()
-        or is_amd_gpu["amdgpu:gfx1032"]()
-        or is_amd_gpu["amdgpu:gfx1033"]()
-        or is_amd_gpu["amdgpu:gfx1034"]()
-        or is_amd_gpu["amdgpu:gfx1035"]()
-        or is_amd_gpu["amdgpu:gfx1036"]()
-    )
+    comptime for arch in _AMD_RDNA2_ARCHS:
+        comptime if is_amd_gpu[arch]():
+            return True
+    return False
+
+
+comptime _AMD_RDNA3_ARCHS: List[String] = [
+    "amdgpu:gfx1100",  # Navi 31
+    "amdgpu:gfx1101",  # Navi 32
+    "amdgpu:gfx1102",  # Navi 33
+    "amdgpu:gfx1103",  # Navi 34
+    "amdgpu:gfx1150",  # Navi 41
+    "amdgpu:gfx1151",  # Navi 42
+    "amdgpu:gfx1152",  # Navi 43
+    "amdgpu:gfx1153",  # Navi 44
+]
 
 
 @always_inline("nodebug")
 def _is_amd_rdna3() -> Bool:
-    return (
-        is_amd_gpu["gfx1100"]()
-        or is_amd_gpu["gfx1101"]()
-        or is_amd_gpu["gfx1102"]()
-        or is_amd_gpu["gfx1103"]()
-        # These last four are technically RDNA3.5, but we'll treat them as RDNA3
-        # for now.
-        or is_amd_gpu["gfx1150"]()
-        or is_amd_gpu["gfx1151"]()
-        or is_amd_gpu["gfx1152"]()
-        or is_amd_gpu["gfx1153"]()
-    )
+    """Returns True if the target triple of the compiler is `amdgcn-amd-amdhsa`
+    and we are compiling for the any of the Radeon RX 7000 series
+    sub-architectures:
+
+        amdgpu:gfx1100: Navi 31
+        amdgpu:gfx1101: Navi 32
+        amdgpu:gfx1102: Navi 33
+        amdgpu:gfx1103: Navi 34
+        amdgpu:gfx1150: Navi 41
+        amdgpu:gfx1151: Navi 42
+        amdgpu:gfx1152: Navi 43
+        amdgpu:gfx1153: Navi 44
+
+    Returns:
+        True if the RDNA3 and False otherwise.
+    """
+    comptime for arch in _AMD_RDNA3_ARCHS:
+        comptime if is_amd_gpu[arch]():
+            return True
+    return False
 
 
 @always_inline("nodebug")
@@ -1207,6 +1344,36 @@ def has_nvidia_gpu_accelerator() -> Bool:
         True if the host system has an NVIDIA GPU.
     """
     return is_nvidia_gpu() or "nvidia" in _accelerator_arch()
+
+
+@always_inline("nodebug")
+def has_nvidia_gpu_accelerator[subarch: String]() -> Bool:
+    """Returns True if the host system has an NVIDIA GPU of the specified
+    sub-architecture and False otherwise.
+
+    Parameters:
+        subarch: The NVIDIA GPU sub-architecture to check for (e.g., "sm_80").
+
+    Returns:
+        True if the host system has an NVIDIA GPU of the specified
+        sub-architecture and False otherwise.
+    """
+    return is_nvidia_gpu[subarch]() or subarch in _accelerator_arch()
+
+
+@always_inline("nodebug")
+def has_nvidia_gpu_accelerator[subarchs: List[String]]() -> Bool:
+    """Returns True if the host system has an NVIDIA GPU of the specified
+    sub-architecture and False otherwise.
+
+    Parameters:
+        subarchs: The NVIDIA GPU sub-architectures to check for (e.g., ["sm_80", "sm_86"]).
+
+    Returns:
+        True if the host system has an NVIDIA GPU of the specified
+        sub-architecture and False otherwise.
+    """
+    return _is_nvidia_gpu_any[subarchs]() or _has_nvidia_gpu_any[subarchs]()
 
 
 @always_inline("nodebug")
