@@ -1256,6 +1256,63 @@ def ds_read_tr8_b64[
 
 
 # ===-----------------------------------------------------------------------===#
+# AMD f32 -> fp8 raw packed conversion (no clamp / NaN scrub)
+# ===-----------------------------------------------------------------------===#
+
+
+@always_inline
+def cvt_pk_fp8_f32_raw[
+    dtype: DType,
+](src: SIMD[DType.float32, 4]) -> SIMD[dtype, 4]:
+    """Packs 4 f32 into 4 fp8 via 2 chained `v_cvt_pk_fp8_f32` ops.
+
+    Unlike `SIMD.cast[fp8]()`, this bypasses the compiler's clamp + NaN
+    scrub wrapper (`v_med3_f32` + `v_cmp_u_f32` + `v_cndmask_b32`) that the
+    `pop.cast` lowering emits on AMDGPU. The caller is responsible for
+    ensuring inputs are in the FP8 representable range; finite
+    out-of-range values are NOT saturated by the hardware instruction.
+    NaN/Inf inputs produce implementation-defined FP8 outputs.
+
+    Parameters:
+        dtype: The FP8 destination type, `float8_e4m3fn` or `float8_e5m2`.
+
+    Args:
+        src: Four f32 values to pack.
+
+    Returns:
+        SIMD of 4 fp8 values, bitcast from the packed i32 result.
+
+    Notes:
+        - Only supported on AMD CDNA4+ GPUs.
+        - Maps to two `v_cvt_pk_fp8_f32` (or `.pk.bf8.f32`) instructions.
+        - Use only when input domain is provably bounded (e.g. softmax
+          output, where values are in (0, 1]).
+    """
+    comptime assert (
+        is_amd_gpu()
+    ), "cvt_pk_fp8_f32_raw is only supported on AMDGPU hardware."
+    comptime assert (
+        _cdna_4_or_newer()
+    ), "cvt_pk_fp8_f32_raw is only supported on CDNA4+"
+    comptime assert (
+        dtype == DType.float8_e4m3fn or dtype == DType.float8_e5m2
+    ), "cvt_pk_fp8_f32_raw requires E4M3FN or E5M2 destination dtype."
+
+    comptime intrinsic_name = (
+        "llvm.amdgcn.cvt.pk.fp8.f32" if dtype
+        == DType.float8_e4m3fn else "llvm.amdgcn.cvt.pk.bf8.f32"
+    )
+
+    var lo = llvm_intrinsic[intrinsic_name, UInt32, has_side_effect=False](
+        src[0], src[1], UInt32(0), False
+    )
+    var packed = llvm_intrinsic[intrinsic_name, UInt32, has_side_effect=False](
+        src[2], src[3], lo, True
+    )
+    return bitcast[dtype, 4](packed)
+
+
+# ===-----------------------------------------------------------------------===#
 # AMD permlane shuffle
 # ===-----------------------------------------------------------------------===#
 

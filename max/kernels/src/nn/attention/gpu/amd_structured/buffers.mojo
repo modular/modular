@@ -20,6 +20,7 @@ from std.math.uutils import umod, ufloordiv
 from std.sys import simd_width_of, size_of
 
 from std.gpu import lane_id, WARP_SIZE
+from std.gpu.intrinsics import cvt_pk_fp8_f32_raw
 from layout import TensorLayout, TileTensor
 from layout.coord import Coord, ComptimeInt, Idx
 from layout.swizzle import Swizzle
@@ -37,6 +38,38 @@ from structured_kernels.amd_tile_io import RegTileLoader
 from .mma import TiledMmaOp
 from .utils import get_warp_coords
 import std.itertools
+
+
+@always_inline
+def _cast_f32_to_fp8_raw[
+    src_dtype: DType,
+    size: Int,
+    //,
+    dtype: DType,
+](src: SIMD[src_dtype, size]) -> SIMD[dtype, size]:
+    """Cast N f32 → N fp8 without the compiler's clamp + NaN-scrub wrapper.
+
+    Chunks into groups of 4 and calls `cvt_pk_fp8_f32_raw` per chunk.
+    Only safe when inputs are provably bounded and finite — used by the
+    P→PV cast where softmax output is in (0, 1].
+    """
+    comptime assert (
+        src_dtype == DType.float32
+    ), "_cast_f32_to_fp8_raw source dtype must be float32."
+    comptime assert (
+        size % 4 == 0
+    ), "_cast_f32_to_fp8_raw requires size divisible by 4."
+    comptime assert (
+        dtype == DType.float8_e4m3fn or dtype == DType.float8_e5m2
+    ), "_cast_f32_to_fp8_raw requires E4M3FN or E5M2 destination dtype."
+
+    var f32_src = rebind[SIMD[DType.float32, size]](src)
+    var result = SIMD[dtype, size]()
+    comptime for i in range(size // 4):
+        var chunk = cvt_pk_fp8_f32_raw[dtype](f32_src.slice[4, offset=i * 4]())
+        comptime for j in range(4):
+            result[i * 4 + j] = chunk[j]
+    return result
 
 
 struct QRegisterBuffer[
@@ -224,6 +257,11 @@ struct PRegisterBuffer[
     tr_load_enabled: Bool = False,
     num_stages: Int = 1,
     p_swizzle: Optional[Swizzle] = None,
+    # When True, use raw `v_cvt_pk_fp8_f32` without the compiler's
+    # clamp + NaN-scrub wrapper. Safe only when inputs are provably
+    # bounded and finite (e.g. softmax output in (0, 1]). Saves ~200
+    # VALU ops per iteration in the FP8 MLA prefill hot path.
+    raw_fp8_cast: Bool = False,
 ]:
     comptime reg_dtype = Self.accum_type_
     comptime mma_dtype = Self.dtype
@@ -479,8 +517,23 @@ struct PRegisterBuffer[
                     )
                 elif num_gather == 2:
                     # Gather 2 rows, cast each to mma_dtype, join to full frag.
-                    var lo = src_vec[tile_idx * 2, 0].cast[Self.mma_dtype]()
-                    var hi = src_vec[tile_idx * 2 + 1, 0].cast[Self.mma_dtype]()
+                    var lo: SIMD[Self.mma_dtype, Self.output_frag_size]
+                    var hi: SIMD[Self.mma_dtype, Self.output_frag_size]
+                    comptime if (
+                        Self.raw_fp8_cast and Self.mma_dtype.is_float8()
+                    ):
+                        # Raw cvt path: softmax output is in (0, 1], so the
+                        # compiler's clamp + NaN-scrub wrapper is a no-op
+                        # that just adds ~6 VALU ops per f32→fp8 pair.
+                        lo = _cast_f32_to_fp8_raw[Self.mma_dtype](
+                            src_vec[tile_idx * 2, 0]
+                        )
+                        hi = _cast_f32_to_fp8_raw[Self.mma_dtype](
+                            src_vec[tile_idx * 2 + 1, 0]
+                        )
+                    else:
+                        lo = src_vec[tile_idx * 2, 0].cast[Self.mma_dtype]()
+                        hi = src_vec[tile_idx * 2 + 1, 0].cast[Self.mma_dtype]()
                     var joined = lo.join(hi)
                     result_vec[0, 0] = rebind[type_of(result_vec[0, 0])](
                         joined.slice[
@@ -695,9 +748,15 @@ struct PRegisterBuffer[
 
             comptime for n_mma in range(Self.num_n_mmas):
                 var p_reg_ptr = p_reg_vec.tile[1, 1](n_mma, 0).ptr
-                var reg16 = p_reg_ptr.load[width=Self.output_frag_size]().cast[
-                    Self.dtype
-                ]()
+                var loaded = p_reg_ptr.load[width=Self.output_frag_size]()
+                var reg16: SIMD[Self.dtype, Self.output_frag_size]
+                comptime if Self.raw_fp8_cast and Self.dtype.is_float8():
+                    # Raw cvt path: softmax output is bounded in (0, 1], so
+                    # the compiler's clamp + NaN-scrub wrapper around pop.cast
+                    # is a no-op that just adds ~6 VALU ops per f32→fp8 pair.
+                    reg16 = _cast_f32_to_fp8_raw[Self.dtype](loaded)
+                else:
+                    reg16 = loaded.cast[Self.dtype]()
                 var warp_off = (
                     n_mma_in_block * Int(Self.num_n_mmas) + n_mma
                 ) * Int(warp_stride)

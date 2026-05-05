@@ -165,6 +165,13 @@ struct Attention[
         ) else Optional[Swizzle](None)
     )
 
+    # Raw FP8 cast (no clamp / NaN scrub) is safe whenever the values fed
+    # to the cast are provably bounded and finite. That holds for softmax
+    # output (in (0, 1]) across all attention paths we currently ship, so
+    # enable it automatically for FP8. If a future caller feeds unbounded
+    # values into the P→PV cast, set this False at the callsite.
+    comptime _raw_fp8_cast = Self.q_type.is_float8()
+
     comptime PRegisterBufferType = PRegisterBuffer[
         Self.accum_type,
         Self.q_type,
@@ -181,6 +188,7 @@ struct Attention[
         tr_load_enabled=True,
         num_stages=Self._p_buffer_stages,
         p_swizzle=Self._p_swizzle,
+        raw_fp8_cast=Self._raw_fp8_cast,
     ]
 
     # --- TileTensor layouts for Q, output, and KV tiles ---
