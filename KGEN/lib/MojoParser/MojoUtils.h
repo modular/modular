@@ -102,11 +102,6 @@ void emitUnknownKeywords(MojoInflightDiag &diag,
 void emitPosOnlyPassedByKw(MojoInflightDiag &diag, ArrayRef<StringAttr> names,
                            StringRef argOrParam);
 
-/// Helper to emit an error message for explicitly-specified inferred parameters
-/// passed out of order.
-void emitOutOfOrderInferredKw(MojoInflightDiag &diag,
-                              ArrayRef<StringAttr> names);
-
 /// Helper to emit an error message for missing operands.
 void emitMissing(MojoInflightDiag &diag, ArrayRef<StringAttr> names,
                  const Twine &kindStr);
@@ -115,13 +110,6 @@ void emitMissing(MojoInflightDiag &diag, ArrayRef<StringAttr> names,
 /// positionally and by keyword.
 void emitByPosAndKw(MojoInflightDiag &diag, ArrayRef<StringAttr> names,
                     const Twine &kindStr);
-
-/// Helper to emit an error message for too many positional arguments/params.
-void emitTooManyPositional(MojoInflightDiag &diag, size_t numMaxAllowed,
-                           size_t numActual, const Twine &kindStr);
-
-/// Return a printable name for an anonymous positional-only argument/parameter.
-std::string nameForPosOnly(size_t idx, const Twine &argOrParam);
 
 /// Check if a name is for an internal decl or not.
 bool isInternalName(StringRef name);
