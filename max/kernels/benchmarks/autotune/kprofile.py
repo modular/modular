@@ -738,7 +738,11 @@ def correlation_analysis(
 help_str = "Profile kbench output pickle"
 
 
-@click.command(help=help_str, no_args_is_help=True)
+@click.command(
+    help=help_str,
+    no_args_is_help=True,
+    context_settings={"help_option_names": ["-h", "-help", "--help"]},
+)
 @click.option(
     "--output",
     "-o",

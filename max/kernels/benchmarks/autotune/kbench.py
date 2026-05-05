@@ -298,7 +298,9 @@ def set_build_opts(
 
 
 @click.command(
-    help="Benchmarking toolkit for Mojo kernels", no_args_is_help=True
+    help="Benchmarking toolkit for Mojo kernels",
+    no_args_is_help=True,
+    context_settings={"help_option_names": ["-h", "-help", "--help"]},
 )
 @click.option(
     "--filter",
