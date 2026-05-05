@@ -41,6 +41,10 @@ def hip_mha_decoding_num_partitions(
     heads_per_group: Int,
     sm_count: Int,
 ) -> Int:
+    # Matches the wavefront reduction limit in `mha_splitk_reduce`
+    # (<= WARP_SIZE).
+    comptime MAX_HIP_PARTITIONS = 64
+
     # AMD split-k strategy: scale partitioning based on occupancy.
     # 256: min context length where split-k overhead is worthwhile.
     if num_keys <= 256:
@@ -49,18 +53,24 @@ def hip_mha_decoding_num_partitions(
     # Compute total work items (occupancy).
     work_items = batch_size * heads_per_group
 
+    var num_partitions: Int
     # High occupancy when work_items >= sm_count (>=1 work item per CU).
     if work_items >= sm_count:
         # High occupancy: scale partition size to avoid over-partitioning.
         # 256: base partition size matching the kernel block width.
         # 64: scaling factor that reduces partitions as occupancy increases.
         occupancy_scale = work_items // 64
-        return min(ceildiv(num_keys, 256 * occupancy_scale), 64)
+        num_partitions = min(
+            ceildiv(num_keys, 256 * occupancy_scale), MAX_HIP_PARTITIONS
+        )
+    else:
+        # Low occupancy: aggressive partitioning for more parallelism.
+        # 256: keys per partition matching the kernel block width.
+        num_partitions = min(ceildiv(num_keys, 256), MAX_HIP_PARTITIONS)
 
-    # Low occupancy: aggressive partitioning for more parallelism.
-    # 256: keys per partition matching the kernel block width.
-    # 64: max partitions, matching the AMD wavefront reduction limit.
-    return min(ceildiv(num_keys, 256), 64)
+    # Bucket to power of two so HIP graph capture sees <= 7 decode grid
+    # shapes instead of up to 64; extra partitions early-exit in the kernel.
+    return min(next_power_of_two(num_partitions), MAX_HIP_PARTITIONS)
 
 
 def mha_decoding_num_partitions(

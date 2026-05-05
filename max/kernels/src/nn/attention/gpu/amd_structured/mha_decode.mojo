@@ -37,7 +37,7 @@ from std.gpu import block_idx
 from std.gpu import warp_id as get_warp_id
 from std.gpu.sync import s_waitcnt
 from std.memory import bitcast
-from std.utils.numerics import get_accum_type
+from std.utils.numerics import get_accum_type, min_or_neg_inf
 
 from layout.swizzle import Swizzle
 from nn.attention.mha_mask import TileMaskStatus
@@ -82,6 +82,19 @@ __extension Attention:
         start, end = get_start_and_end_for_partitions[Self.BN](
             self.num_keys, num_partitions, block_idx.x
         )
+
+        # Empty partitions (from power-of-two bucketing): reset to
+        # rowsum=0/rowmax=-inf so the reduce masks them via `scale > 0`.
+        # In sink mode, __init__ primes `rowsum=1/rowmax=sink_weight` —
+        # we must override that here or the reduce reads uninitialized
+        # partition outputs with a nonzero scale.
+        if start >= end:
+            _ = self.softmax.rowmax_tensor.fill(
+                min_or_neg_inf[Self.accum_type]()
+            )
+            _ = self.softmax.rowsum_tensor.fill(0)
+            self.store_partition_info(num_partitions, exp_sum_ptr, qk_max_ptr)
+            return
 
         # K: full BN × depth SMEM, per-warp DMA cooperation, transpose read.
         comptime KBufT = KVBuffer[

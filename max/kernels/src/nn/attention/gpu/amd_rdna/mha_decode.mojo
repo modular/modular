@@ -18,7 +18,7 @@ blocks for grid-level parallelism.
 
 from std.collections import OptionalReg
 from std.gpu import barrier, block_idx
-from std.utils.numerics import get_accum_type
+from std.utils.numerics import get_accum_type, min_or_neg_inf
 
 from nn.attention.mha_utils import get_start_and_end_for_partitions
 
@@ -155,6 +155,19 @@ __extension AttentionRDNA:
         start, end = get_start_and_end_for_partitions[Self.BN](
             self.num_keys, num_partitions, block_idx.x
         )
+
+        # Empty partitions (from power-of-two bucketing): reset to
+        # rowsum=0/rowmax=-inf so the reduce masks them via `scale > 0`.
+        # In sink mode, __init__ primes `rowsum=1/rowmax=sink_weight` —
+        # we must override that here or the reduce reads uninitialized
+        # partition outputs with a nonzero scale.
+        if start >= end:
+            _ = self.softmax.rowmax_tensor.fill(
+                min_or_neg_inf[Self.accum_type]()
+            )
+            _ = self.softmax.rowsum_tensor.fill(0)
+            self.store_partition_info(num_partitions, exp_sum_ptr, qk_max_ptr)
+            return
 
         for i in range(start, end, Self.BN):
             var end_ = min(i + Self.BN, end)
