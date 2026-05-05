@@ -978,12 +978,6 @@ class PipelineConfig(ConfigFileModel):
                     f"{cfg.disk_offload_dir}"
                 )
 
-        if connector == KVConnectorType.lmcache:
-            if not kv.enable_prefix_caching:
-                raise ValueError(
-                    "LMCache connector requires enable_prefix_caching=True"
-                )
-
     def _validate_and_resolve_overlap_scheduler(self) -> None:
         arch: SupportedArchitecture | None = None
         if not self.runtime.force:

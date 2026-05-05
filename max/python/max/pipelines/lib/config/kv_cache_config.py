@@ -28,8 +28,7 @@ from pydantic import ConfigDict, Field, PrivateAttr
 class KVConnectorConfig(ConfigFileModel):
     """Connector-specific configuration for KV cache connectors.
 
-    Common fields are typed. Additional connector-specific fields (e.g.
-    LMCache settings like ``local_cpu``, ``max_local_cpu_size``) pass
+    Common fields are typed. Additional connector-specific fields pass
     through via ``extra="allow"`` and are accessible via ``model_extra``.
     """
 
@@ -81,14 +80,6 @@ class KVConnectorConfig(ConfigFileModel):
     discovered metadata must include MAX-native transfer-engine metadata so
     the connector can reuse ``KVTransferEngine.connect()``.
     """
-
-    def as_lmcache_config(self) -> dict[str, object]:
-        """Returns only the extra (LMCache-specific) fields as a dict.
-
-        Filters out the typed fields defined on this class so the result
-        can be passed directly to ``LMCacheEngineConfig.from_defaults()``.
-        """
-        return dict(self.model_extra) if self.model_extra else {}
 
 
 class KVCacheConfig(ConfigFileModel):

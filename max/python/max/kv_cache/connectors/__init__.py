@@ -16,7 +16,6 @@
 - `NullConnector`: No-op connector when external caching is disabled
 - `LocalConnector`: Host memory offloading
 - `TieredConnector`: GPU <-> CPU <-> Disk offloading
-- `LMCacheConnector`: LMCache integration for tiered external caching
 - `create_connector()`: Factory function
 """
 
@@ -53,7 +52,7 @@ def create_connector(
         devices: Devices for the KV cache tensors.
         device_buffer: Device buffer for KV cache (owned by manager).
         total_num_host_blocks: Total number of host blocks for swapping.
-        total_num_blocks: Total number of device blocks (required for LMCache).
+        total_num_blocks: Total number of device blocks.
         session: Optional inference session for loading custom kernels.
 
     Returns:
@@ -80,23 +79,6 @@ def create_connector(
             device_buffer=device_buffer,
             total_num_blocks=total_num_blocks,
             local_block_store_endpoint=cfg.block_store_endpoint,
-        )
-
-    if connector == KVConnectorType.lmcache:
-        try:
-            from .lmcache_connector import LMCacheConnector
-        except ImportError as e:
-            raise ImportError(
-                "lmcache and torch are required for LMCache integration. "
-                "Install them with: pip install lmcache torch"
-            ) from e
-
-        return LMCacheConnector(
-            params=params,
-            devices=devices,
-            device_buffer=device_buffer,
-            total_num_blocks=total_num_blocks,
-            session=session,
         )
 
     if connector == KVConnectorType.tiered:
@@ -140,7 +122,6 @@ __all__ = [
     "DKVConnector",
     "KVConnector",
     "KVConnectorType",
-    "LMCacheConnector",
     "LocalConnector",
     "NullConnector",
     "TieredConnector",

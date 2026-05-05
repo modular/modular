@@ -40,7 +40,6 @@ class KVConnectorType(str, Enum):
     null = "null"
     local = "local"
     tiered = "tiered"
-    lmcache = "lmcache"
     dkv = "dkv"
 
 
@@ -200,7 +199,7 @@ class KVCacheParams(KVCacheParamInterface):
     """Whether to enable prefix caching for efficient reuse of common prompt prefixes."""
 
     kv_connector: KVConnectorType | None = None
-    """Type of KV cache connector to use (null, local, tiered, lmcache)."""
+    """Type of KV cache connector to use (null, local, tiered, dkv)."""
 
     kv_connector_config: Any = None
     """Connector-specific configuration (KVConnectorConfig from the pipelines layer)."""

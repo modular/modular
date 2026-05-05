@@ -154,10 +154,6 @@ follow_imports = "skip"
 module = "cyclopts.*"
 ignore_missing_imports = true
 
-[[tool.mypy.overrides]]
-module = "lmcache.*"
-follow_imports = "skip"
-
 [tool.pydantic-mypy]
 init_forbid_extra = true
 init_typed = true

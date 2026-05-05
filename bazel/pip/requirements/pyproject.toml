@@ -181,7 +181,6 @@ amd = [
 
   "gptqmodel; sys_platform == 'linux' and platform_machine == 'x86_64'",
 
-  "lmcache>=0.4.2; sys_platform == 'linux' and platform_machine == 'x86_64'",  # External KV cache integration (v1 API required)
 ]
 
 cpu = [
@@ -208,7 +207,6 @@ nvidia = [
 
   "nvidia-cudnn-frontend>=1.13.0; sys_platform == 'linux' and platform_machine == 'x86_64'",
   "nvidia-cutlass-dsl>=4.4.1; sys_platform == 'linux' and platform_machine == 'x86_64'",
-  "lmcache>=0.4.2; sys_platform == 'linux' and platform_machine == 'x86_64'",  # External KV cache integration (v1 API required)
 ]
 
 # Separate dependency groups for large dependencies used in a few places,
@@ -257,7 +255,6 @@ environments = [
 
 override-dependencies = [
   "numba==0.63.1",
-  # Override lmcache's numpy<=2.2.6 constraint to allow our numpy>=2.3.0
   "numpy>=2.2.0",
   # Override vllm's `transformers` constraint.
   # Pin <5.3.0: v5.3.0 has a tokenizer regression where LlamaTokenizer
