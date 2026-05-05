@@ -108,7 +108,10 @@ HF_MODELS: dict[str, set[str]] = {
 CUSTOM_MODELS: dict[str, set[str]] = {
     "meta-llama/Llama-3.1-8B-Instruct__modulev3": MULTI,
     "meta-llama/Llama-3.2-1B-Instruct__modulev3": MULTI,
-    "google/gemma-3-4b-it__modulev3": MULTI,
+      # TODO(MXF-361): Model fails on 2xh100
+      # TODO(MXF-332): Model uses too much memory, fails on H100 with
+      # --device-memory-utilization 0.7
+    "google/gemma-3-27b-it__modulev3": XL | {"H100", "2xH100"},
     "unsloth/gpt-oss-20b-BF16__modulev3": DISABLE,  # TODO(MXF-121)
     "microsoft/Phi-3.5-mini-instruct__modulev3": MULTI,
     "microsoft/phi-4__modulev3": MULTI,

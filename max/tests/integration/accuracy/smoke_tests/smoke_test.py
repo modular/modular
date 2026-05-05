@@ -87,8 +87,9 @@ MODEL_ALIASES = CaseInsensitiveDict({
     "microsoft/phi-4__modulev3": {
         "max_serve_args": "--prefer-module-v3",
     },
-    "google/gemma-3-4b-it__modulev3": {
-        "max_serve_args": "--prefer-module-v3",
+    "google/gemma-3-27b-it__modulev3": {
+        # TODO(MXF-332): Investigate extra memory usage in multi-GPU ModuleV3.
+        "max_serve_args": "--prefer-module-v3 --device-memory-utilization 0.7",
     },
     "nvidia/DeepSeek-V3.1-NVFP4__fp8kv": {
         "max_serve_args": "--kv-cache-format float8_e4m3fn",
