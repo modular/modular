@@ -203,6 +203,7 @@ class WanExecutor(
         )
 
         # Compile helper graphs.
+        self._cfg_combine_graph = self._compile_cfg_combine()
         self._guided_schedule_graph = self._compile_guided_schedule()
 
         # Runtime caches.
@@ -646,6 +647,18 @@ class WanExecutor(
 
         return latents, step_state
 
+    def _cfg_combine_step(
+        self,
+        noise_pred_cond: Buffer,
+        noise_pred_uncond: Buffer,
+        guidance_scale: Buffer,
+    ) -> Buffer:
+        """Run the CFG-combine graph to produce post-CFG ``model_output`` (f32)."""
+        result = self._cfg_combine_graph.execute(
+            noise_pred_cond, noise_pred_uncond, guidance_scale
+        )
+        return result[0] if isinstance(result, (list, tuple)) else result
+
     def _guided_schedule_step(
         self,
         noise_pred_cond: Buffer,
@@ -655,7 +668,7 @@ class WanExecutor(
         coeffs: Buffer,
         step_state: WanUniPCState,
     ) -> tuple[Buffer, WanUniPCState]:
-        """Run fused CFG guidance + UniPC scheduler step."""
+        """Run CFG combine then UniPC scheduler step."""
         last_sample, prev_model_output, older_model_output = step_state
         if last_sample is None:
             shape = tuple(int(d) for d in latents.shape)
@@ -670,10 +683,11 @@ class WanExecutor(
         assert older_model_output is not None
         assert last_sample is not None
 
+        model_output = self._cfg_combine_step(
+            noise_pred_cond, noise_pred_uncond, guidance_scale
+        )
         result = self._guided_schedule_graph.execute(
-            noise_pred_cond,
-            noise_pred_uncond,
-            guidance_scale,
+            model_output,
             latents,
             last_sample,
             prev_model_output,
@@ -692,14 +706,13 @@ class WanExecutor(
 
     # -- Helper graph compilation ---------------------------------------------
 
-    def _compile_guided_schedule(self) -> Model:
-        """Compile fused CFG guidance + UniPC scheduler step.
+    def _compile_cfg_combine(self) -> Model:
+        """Compile the CFG-combine step as a standalone graph.
 
-        Internal computation:
-        1. ``guided = uncond + scale * (cond - uncond)``
-           (when scale=1.0 and uncond=zeros this is a no-op)
-        2. ``model_output = cast(guided, f32)``
-        3. UniPC corrector + predictor update
+        Computes ``model_output = cast(uncond + scale * (cond - uncond), f32)``.
+        Split out from the fused scheduler graph so per-stream noise_pred
+        can be cached/predicted by TaylorSeer without restructuring the
+        downstream UniPC math.
         """
         device = self._model_device
         model_dtype = self._model_dtype
@@ -708,6 +721,31 @@ class WanExecutor(
             shape=["batch", "channels", "frames", "height", "width"],
             device=device,
         )
+        input_types = [
+            latent_type_model,  # noise_pred_cond
+            latent_type_model,  # noise_pred_uncond
+            TensorType(model_dtype, shape=[1], device=device),  # scale
+        ]
+        with Graph("wan_cfg_combine", input_types=input_types) as g:
+            noise_pred_cond = g.inputs[0].tensor
+            noise_pred_uncond = g.inputs[1].tensor
+            scale = g.inputs[2].tensor
+            guided = noise_pred_uncond + scale * (
+                noise_pred_cond - noise_pred_uncond
+            )
+            model_output = ops.cast(guided, DType.float32)
+            g.output(model_output)
+        return self._session.load(g)
+
+    def _compile_guided_schedule(self) -> Model:
+        """Compile the UniPC scheduler step.
+
+        Takes the post-CFG ``model_output`` (f32) as input and runs the
+        UniPC corrector + predictor update. The CFG combine is performed
+        upstream by ``_cfg_combine_graph`` so per-stream noise_pred can
+        be cached separately by TaylorSeer.
+        """
+        device = self._model_device
         latent_type_f32 = TensorType(
             DType.float32,
             shape=["batch", "channels", "frames", "height", "width"],
@@ -715,9 +753,7 @@ class WanExecutor(
         )
         coeff_type = TensorType(DType.float32, shape=[9], device=device)
         input_types = [
-            latent_type_model,  # noise_pred_cond
-            latent_type_model,  # noise_pred_uncond
-            TensorType(model_dtype, shape=[1], device=device),  # scale
+            latent_type_f32,  # model_output (post-CFG)
             latent_type_f32,  # sample (latents)
             latent_type_f32,  # last_sample
             latent_type_f32,  # prev_model_output
@@ -726,20 +762,12 @@ class WanExecutor(
         ]
 
         with Graph("wan_guided_schedule", input_types=input_types) as g:
-            noise_pred_cond = g.inputs[0].tensor
-            noise_pred_uncond = g.inputs[1].tensor
-            scale = g.inputs[2].tensor
-            sample = g.inputs[3].tensor
-            last_sample = g.inputs[4].tensor
-            prev_model_output = g.inputs[5].tensor
-            older_model_output = g.inputs[6].tensor
-            coeffs = g.inputs[7].tensor
-
-            # CFG guidance.
-            guided = noise_pred_uncond + scale * (
-                noise_pred_cond - noise_pred_uncond
-            )
-            model_output = ops.cast(guided, DType.float32)
+            model_output = g.inputs[0].tensor
+            sample = g.inputs[1].tensor
+            last_sample = g.inputs[2].tensor
+            prev_model_output = g.inputs[3].tensor
+            older_model_output = g.inputs[4].tensor
+            coeffs = g.inputs[5].tensor
 
             # UniPC scheduler step.
             sigma = coeffs[0:1]
