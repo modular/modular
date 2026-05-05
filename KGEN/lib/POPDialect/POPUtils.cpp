@@ -65,7 +65,7 @@ OpFoldResult POP::foldCast(TypedAttr operand, SIMDType resultType,
     const llvm::fltSemantics *sem = dtype->getFloatSemantics();
     if (!sem)
       return {};
-    return foldSIMDOpResult<POP::kOtherResult>(
+    return foldSIMDOpResult<kOtherResult>(
         simdOperand, *dtype, indexBitWidth,
         [&](const APSInt &in) -> APFloat {
           APFloat fp(*sem);
@@ -84,7 +84,7 @@ OpFoldResult POP::foldCast(TypedAttr operand, SIMDType resultType,
     // Note that float to integer casts are undefined if the float value is
     // too large to fit in the integer dtype.
     unsigned intWidth = dtype->getIntegerWidthInBits();
-    return foldSIMDOpResult<POP::kOtherResult>(
+    return foldSIMDOpResult<kOtherResult>(
         simdOperand, *dtype, indexBitWidth,
         [&](const APSInt &in) -> APSInt { return in.extOrTrunc(intWidth); },
         [&](const APFloat &in) -> std::optional<APSInt> {
