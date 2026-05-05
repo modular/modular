@@ -324,11 +324,11 @@ AnyValue CallEmitter::emitOneArgVal(ASTExprAnd<AnyValue> operand,
       refValueType = sugarCast<RefType>(refValue.getType());
     }
 
-    // The origins may disagree if we're converting a value to a
-    // superset origin, e.g. "immortal -> X" or "X -> X|y".
-    refValue = emitter.emitRebindOpIfNeeded(
-        refValue, refValueType.getWithOrigin(expectedRefType.getOrigin()),
-        operand.expr->getLoc());
+    // Materialize the callee's selected ref type. Overload checking already
+    // verified any origin conversion; the element type may also differ by an
+    // identity-preserving refinement wrapper, e.g. `downcast(T, Trait) -> T`.
+    refValue = emitter.emitRebindOpIfNeeded(refValue, expectedType,
+                                            operand.expr->getLoc());
     refValueType = sugarCast<RefType>(refValue.getType());
 
     assert((refValueType == expectedType ||

@@ -473,6 +473,13 @@ LogicalResult ParamMatcher::matchTypes(Type actualType, Type expectedType) {
   if (isEqualCanon(actualType, expectedType))
     return success();
 
+  // Parameter type wrappers such as `downcast(T, Trait)` do not change the
+  // runtime representation.  Accept those identity-preserving conversions here
+  // before trying to infer through the parameter expression itself.
+  if (sugarIsa<ParamType>(actualType) && sugarIsa<ParamType>(expectedType) &&
+      IREmitter::canZeroCostConvert(actualType, expectedType, shared))
+    return success();
+
   // If the expected type is a parameter ref, then we're binding the specified
   // type to an attribute parameter.
   if (auto expectedParamRef = dyn_cast<ParamType>(expectedType))

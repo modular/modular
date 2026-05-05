@@ -532,6 +532,51 @@ def ptr_eq[
     return p[] == value
 
 
+def accepts_original_ref[T: AnyType](ref x: T) -> Bool:
+    return True
+
+
+def refined_ref_to_original_ref[
+    T: AnyType
+](ref x: T) -> Bool where conforms_to(T, Equatable):
+    return accepts_original_ref[T](x)
+
+
+def explicit_downcast_ref_to_original_ref[
+    T: AnyType
+](ref x: T) -> Bool where conforms_to(T, Equatable):
+    ref y = trait_downcast[Equatable](x)
+    return accepts_original_ref[T](y)
+
+
+@fieldwise_init
+struct RefinedFieldHolder[T: Copyable & ImplicitlyDestructible & Movable]:
+    var value: Self.T
+
+    def use_value(self) -> Bool where conforms_to(Self.T, Equatable):
+        return accepts_original_ref[Self.T](self.value)
+
+
+@fieldwise_init
+struct ReflectedEquatable(Equatable):
+    var value: Int
+
+
+def reflected_refined_arg_field_eq[
+    T: AnyType
+](a: T, b: T) -> Bool where conforms_to(T, Equatable):
+    comptime r = reflect[T]()
+    comptime field_types = r.field_types()
+
+    comptime for idx in range(r.field_count()):
+        comptime if conforms_to(field_types[idx], Equatable):
+            ref lhs = r.field_ref[idx](a)
+            ref rhs = r.field_ref[idx](b)
+            if lhs != rhs:
+                return False
+    return True
+
+
 def test_pointer_deref():
     var d = Dog("Rex")
     # CHECK: Woof! I'm Rex
@@ -542,6 +587,21 @@ def test_pointer_deref():
     print(ptr_eq(Pointer(to=x), 42))
     # CHECK: False
     print(ptr_eq(Pointer(to=x), 99))
+    # CHECK: refined-ref-original: True
+    print("refined-ref-original:", refined_ref_to_original_ref(x))
+    # CHECK: explicit-downcast-original: True
+    print(
+        "explicit-downcast-original:", explicit_downcast_ref_to_original_ref(x)
+    )
+    # CHECK: refined-field-original: True
+    print("refined-field-original:", RefinedFieldHolder[Int](2).use_value())
+    # CHECK: reflected-ref-field: True
+    print(
+        "reflected-ref-field:",
+        reflected_refined_arg_field_eq(
+            ReflectedEquatable(1), ReflectedEquatable(1)
+        ),
+    )
 
 
 def local_ref_binding[
