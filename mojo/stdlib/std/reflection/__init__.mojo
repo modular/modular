@@ -18,8 +18,6 @@ This module provides compile-time reflection capabilities including:
   `Reflected[T]` handle (use `r.name()` and `r.base_name()` for type names)
 - Function name and linkage introspection (`get_function_name`, `get_linkage_name`)
 - Source location introspection (`source_location`, `call_location`)
-- Deprecated free functions: `get_type_name` (use `reflect[T]().name()`) and
-  `get_base_type_name` (use `reflect[T]().base_name()`)
 
 `reflect` is auto-imported via the prelude. The other names listed above
 must be imported explicitly from `std.reflection`.
@@ -43,21 +41,4 @@ def main():
 
 from .location import SourceLocation, source_location, call_location
 from .reflect import Reflected, reflect
-from .type_info import (
-    get_linkage_name,
-    get_function_name,
-    get_type_name,
-    # Base type reflection (for parameterized types)
-    get_base_type_name,
-)
-from .struct_fields import (
-    is_struct_type,
-    struct_field_count,
-    struct_field_names,
-    struct_field_ref,
-    struct_field_types,
-    struct_field_index_by_name,
-    struct_field_type_by_name,
-    offset_of,
-    ReflectedType,
-)
+from .type_info import get_linkage_name, get_function_name

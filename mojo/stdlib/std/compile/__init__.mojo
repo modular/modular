@@ -40,6 +40,3 @@ print(info.asm)
 """
 
 from .compile import CompiledFunctionInfo, compile_info
-
-# Re-export from reflection module for backwards compatibility
-from std.reflection import get_linkage_name

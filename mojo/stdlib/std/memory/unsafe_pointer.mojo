@@ -504,25 +504,6 @@ struct UnsafePointer[
     # ===-------------------------------------------------------------------===#
 
     @always_inline("nodebug")
-    @deprecated(
-        "UnsafePointer() no longer constructs a null pointer. To model a"
-        " null pointer use `Optional[UnsafePointer[...]]`, which stores"
-        " the null address as its niche value and lets you check for absence"
-        " with `== None` / `!= None`. If you need a non-null sentinel for"
-        " delayed initialization (e.g. a buffer that will be allocated later),"
-        " use `UnsafePointer.unsafe_dangling()` instead."
-    )
-    def __init__(out self):
-        """Create a null pointer.
-
-        Deprecated: `UnsafePointer` is non-null by design. To model a
-        nullable pointer use `Optional[UnsafePointer[...]]`. If you need a
-        non-null sentinel for delayed initialization, use
-        `UnsafePointer.unsafe_dangling()` instead.
-        """
-        self = Self(_unsafe_null=())
-
-    @always_inline("nodebug")
     @doc_hidden
     def __init__(out self, *, _unsafe_null: ()):
         self.address = __mlir_attr[`#interp.pointer<0> : `, Self._mlir_type]

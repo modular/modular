@@ -32,6 +32,10 @@ from max.pipelines.lib import (
 )
 from transformers import AutoConfig, AutoTokenizer
 
+pytestmark = pytest.mark.skip(
+    reason="MXSERV-37: times out on B200; re-enable once root-caused"
+)
+
 
 def test_sampling_top_k() -> None:
     """Test that SamplingParams accepts large top_k values.
