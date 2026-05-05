@@ -30,6 +30,10 @@ struct MemType(Movable):
     def __init__(a: Int, b: Int, out[AddressSpace.GLOBAL] self):
         self.value = 0
 
+    # This is a copy constructor that supports copying from/to different address spaces.
+    def __init__[from_as: AddressSpace,to_as: AddressSpace](out[to_as] self, *,ref [from_as] copy: Self):
+        self.value = copy.value
+
 
 # CHECK-LABEL: lit.struct.decl @RPType
 struct RPType(RegisterPassable):
@@ -41,37 +45,41 @@ struct RPType(RegisterPassable):
         self.value = 0
 
 # CHECK-LABEL: lit.fn @"use_out_address_space
-def use_out_address_space[addr_space: AddressSpace, o: Origin[mut=True]](
-    ref[o] mem1: MemType,
-    ref[o, addr_space] mem2: MemType,
-    ref[o, AddressSpace.GLOBAL] mem3: MemType,
-    ref[o, addr_space] rp: RPType):
+def use_out_address_space[addr_space: AddressSpace, o1: Origin[mut=True], o2: Origin[mut=True]](
+    ref[o1] mem1: MemType,
+    ref[o2, addr_space] mem2: MemType,
+    ref[o2, AddressSpace.GLOBAL] mem3: MemType,
+    ref[o2, addr_space] rp: RPType):
 
    # CHECK-NEXT: lit.call {{.*}}MemType::@"__init__
-   # CHECK-SAME: <:!AddressSpace {_value: !Int = {0}}, :origin<1> *"o._mlir_origin`">(%mem1)
+   # CHECK-SAME: <:!AddressSpace {_value: !Int = {0}}, :origin<1> *"o1._mlir_origin`">(%mem1)
    mem1 = MemType()
 
    # CHECK-NEXT: lit.call {{.*}}MemType::@"__init__
-   # CHECK-SAME: <:!AddressSpace addr_space, :origin<1> *"o._mlir_origin`">(%mem2)
+   # CHECK-SAME: <:!AddressSpace addr_space, :origin<1> *"o2._mlir_origin`1">(%mem2)
    mem2 = MemType()
    # CHECK-NEXT: lit.call {{.*}}MemType::@"__init__
-   # CHECK-SAME: <:!AddressSpace {_value: !Int = {_mlir_value = sugar_preserved(#lit.struct.extract<:!Int #lit.struct.extract<:!AddressSpace #kgen.type<!AddressSpace>, "_value">, "_mlir_value">, 1)}}, :origin<1> *"o._mlir_origin`">(%mem3)
+   # CHECK-SAME: <:!AddressSpace {_value: !Int = {_mlir_value = sugar_preserved(#lit.struct.extract<:!Int #lit.struct.extract<:!AddressSpace #kgen.type<!AddressSpace>, "_value">, "_mlir_value">, 1)}}, :origin<1> *"o2._mlir_origin`1">(%mem3)
    mem3 = MemType()
 
    # CHECK: lit.call {{.*}}MemType::@"__init__
-   # CHECK-SAME: <:origin<1> *"o._mlir_origin`">({{.*}}, %mem1)
+   # CHECK-SAME: <:origin<1> *"o1._mlir_origin`">({{.*}}, %mem1)
    mem1 = MemType(0)
 
    # CHECK: lit.call {{.*}}MemType::@"__init__
-   # CHECK-SAME: <:origin<1> *"o._mlir_origin`">({{.*}}, {{.*}}, %mem3)
+   # CHECK-SAME: <:origin<1> *"o2._mlir_origin`1">({{.*}}, {{.*}}, %mem3)
    mem3 = MemType(0, 0)
 
    # Infer type from RHS, infer address space from LHS.
    # CHECK-NEXT: %loc = lit.var.decl "loc" var : !lit.ref<!MemType
    # CHECK-NEXT: lit.call {{.*}}MemType::@"__init__
-   # CHECK-SAME: <:!AddressSpace {_value: !Int = {0}}, :origin<1> *"loc`8">(%loc)
+   # CHECK-SAME: <:!AddressSpace {_value: !Int = {0}}, :origin<1> *"loc{{.*}}">(%loc)
    var loc = MemType()
 
    # CHECK-NEXT: lit.call {{.*}}RPType::@"__init__
-   # CHECK-SAME: <:!AddressSpace addr_space, :origin<1> *"o._mlir_origin`">(%rp)
+   # CHECK-SAME: <:!AddressSpace addr_space, :origin<1> *"o2._mlir_origin`1">(%rp)
    rp = RPType()
+
+   # CHECK-NEXT: lit.call {{.*}}MemType::@"__init__{{.*}}(copy:out_address_space::MemType%)
+   # CHECK-SAME: <:!AddressSpace addr_space, :!AddressSpace {_value: !Int = {0}}, :i1 1, :origin<1> *"o2._mlir_origin`1", :origin<1> *"o1._mlir_origin`">(%mem2, %mem1)
+   mem1 = MemType(copy=mem2)
