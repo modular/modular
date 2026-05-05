@@ -129,6 +129,10 @@ from max.benchmark.benchmark_shared.utils import (
     set_ulimit,
     wait_for_server_ready,
 )
+from max.benchmark.benchmark_shared.warmup import (
+    log_warmup_sampling_report,
+    pick_warmup_population,
+)
 from max.diagnostics.cpu import (
     CPUMetrics,
     CPUMetricsCollector,
@@ -1123,285 +1127,6 @@ async def prime_prefix_turns(
     logger.info("Prefix turns priming complete.")
 
 
-def systematic_probability_proportional_to_size(
-    weights: np.ndarray,
-    k: int,
-    rng: np.random.Generator,
-) -> np.ndarray:
-    """Pick ``k`` distinct indices into ``weights`` with inclusion probability
-    ``min(1, k * weights[i] / sum(weights))``.
-
-    Algorithm (systematic PPS with iterated-cap handling):
-
-    1. Lay items end-to-end on a number line of length ``W = sum(weights)``,
-       item ``i`` occupying an interval of length ``weights[i]``.
-    2. Place ``k`` equally-spaced ticks at ``u, u + W/k, ..., u + (k-1)*W/k``
-       with a single shared offset ``u ~ Uniform(0, W/k)``. Each tick lands
-       in exactly one item's interval; that item is selected.
-    3. If any item has ``weights[i] >= W/k``, its interval is at least as wide
-       as the tick spacing and would be hit by 2+ ticks (a duplicate).
-       Pre-include such items, remove them from the pool, recompute the
-       threshold over the residual weight and residual tick count, and
-       repeat. Then run systematic PPS over the residual.
-
-    Why this removes the depletion bias of ``rng.choice(replace=False, p=...)``:
-    sequential PPSWOR (numpy's no-replacement weighted sampling) over-includes
-    small items because once a heavy item is drawn the remaining weights
-    renormalize. Systematic PPS, by contrast, gives ``pi_i = k*weights[i]/W``
-    *exactly* for any uncapped item: its interval is shorter than the tick
-    spacing, so at most one tick can land in it, with probability equal to
-    the interval length divided by the spacing. Plugging in:
-    ``E[mean] = (1/k) * sum_i weights[i] * pi_i = sum_i weights[i]^2 / W``
-    = the size-biased mean. No depletion, no convergence rate — equality
-    by construction.
-
-    Caps still leak some bias because pre-included items contribute
-    ``T_i * 1`` instead of the ideal ``T_i * (k * T_i / W)``. ``cap_count == 0``
-    is the condition for analytically zero bias; callers should warn the user
-    when caps occur.
-    """
-    residual = np.asarray(weights, dtype=np.float64).copy()
-    n = len(residual)
-    chosen: list[int] = []
-
-    # Iterated cap: any item with weight >= W_remaining / k_remaining is
-    # wider than the tick spacing and would be hit by multiple ticks.
-    # Pre-include it (its ideal pi >= 1 anyway) and recompute the threshold
-    # over the residual.
-    while True:
-        remaining_k = k - len(chosen)
-        if remaining_k <= 0:
-            break
-        residual_sum = float(residual.sum())
-        if residual_sum <= 0.0:
-            break
-        cap = residual_sum / remaining_k
-        over = np.where(residual >= cap)[0]
-        if len(over) == 0:
-            break
-        chosen.extend(int(i) for i in over)
-        residual[over] = 0.0
-
-    # Run systematic PPS over the residual with the remaining ticks.
-    remaining_k = k - len(chosen)
-    if remaining_k > 0:
-        cum = np.cumsum(residual)
-        residual_sum = float(cum[-1])
-        if residual_sum > 0.0:
-            step = residual_sum / remaining_k
-            offset = float(rng.uniform(0.0, step))
-            ticks = offset + np.arange(remaining_k) * step
-            picks = np.searchsorted(cum, ticks)
-            # Guard the float-edge case where a tick equals the total sum.
-            picks = np.minimum(picks, n - 1)
-            chosen.extend(int(i) for i in picks)
-
-    return np.asarray(chosen[:k], dtype=np.int64)
-
-
-@dataclass
-class _WarmupSamplingReport:
-    """Statistics about a warmup pick, logged at the start of a run."""
-
-    # Size of the warmup-candidate sub-pool. Equals ``factor * warmup_count``;
-    # bigger pools leave more cap headroom.
-    warmup_pool: int
-    # Size of the unbiased main sub-pool — the actual benchmark sessions.
-    # Untouched by the warmup pick so it preserves natural P(T).
-    main_pool: int
-    # Number of in-flight warmup slots (M) seeded at t=0.
-    warmup_count: int
-    # The configured ``warmup_oversample_factor`` for this run.
-    factor: int
-    # Closed-form size-biased mean: E[T_live] = sum(T**2)/sum(T).
-    target_mean: float
-    # Realized mean of the sampled warmup picks.
-    realized_mean: float
-    # Conservative stdev of ``realized_mean`` around ``target_mean``,
-    # treating each pick as an independent length-biased draw:
-    #   sb_var = sum(T**3)/sum(T) - target_mean**2
-    #   stdev  = sqrt(sb_var / K)
-    # Systematic PPS picks are negatively correlated, so the true stdev is
-    # smaller (typically ~half). Used to report ``|realized - target|`` as
-    # a unitless ratio in stdev units; under this conservative bound,
-    # anything below ~1 is unambiguously noise.
-    realized_mean_stdev: float
-    # Candidates whose ideal proportional inclusion probability would exceed 1
-    # (T_i > W/K). Systematic PPS pre-includes these with pi=1, which is the
-    # best a no-replacement scheme can do but introduces a small residual
-    # bias relative to ``target_mean``.
-    cap_count: int
-
-
-def _pick_warmup_population(
-    chat_sessions: Sequence[ChatSession],
-    warmup_count: int,
-    *,
-    warmup_to_steady_state: bool,
-    warmup_oversample_factor: int,
-    main_pool_target: int,
-    rng: np.random.Generator,
-) -> tuple[list[ChatSession], _WarmupSamplingReport | None]:
-    """Build the runner's task list with warmup picks at the head.
-
-    When ``warmup_to_steady_state=True`` and ``warmup_count > 0``, the
-    helper picks ``warmup_count`` warmup sessions from the leading
-    ``factor * warmup_count`` candidates (clamped to what's available)
-    and assigns each a random ``prefix_turns`` in ``[0, T-1)``. The
-    remaining trailing slice is the main benchmark sessions (untouched,
-    preserves natural P(T)). For ``factor >= 2`` the picks are length-biased
-    via :func:`systematic_probability_proportional_to_size`, which gives
-    inclusion probability ``min(1, K * T_i / sum(T))`` exactly — no
-    depletion bias. For ``factor < 2`` we don't have headroom for a
-    weighted draw so the picks are uniform; the report's target/realized
-    split lets users see the residual bias.
-
-    Returns ``(reordered_sessions, report)``. ``report`` is ``None``
-    only when warmup is off (``warmup_to_steady_state=False`` or
-    ``warmup_count == 0``).
-    """
-    n_total = len(chat_sessions)
-    warmup_count = max(0, warmup_count)
-    main_pool_target = max(0, main_pool_target)
-
-    if not warmup_to_steady_state or warmup_count == 0:
-        return list(chat_sessions), None
-
-    # Try to oversample (factor*M candidates) without eating into the
-    # user-requested main pool. If the dataset under-produced too much for
-    # that, fall back to just M candidates (no oversampling, just
-    # randomized start turn) — we still need M sessions to seed the
-    # initial concurrent batch. Under-production isn't warned about
-    # directly: if it matters, the cap-count warning below fires.
-    ideal_candidate_pool = warmup_oversample_factor * warmup_count
-    available_for_oversampling = max(0, n_total - main_pool_target)
-    candidate_pool = min(ideal_candidate_pool, available_for_oversampling)
-    if candidate_pool < warmup_count:
-        candidate_pool = min(warmup_count, n_total)
-    # Main pool gets whatever is left, up to its target.
-    main_count = min(max(0, n_total - candidate_pool), main_pool_target)
-
-    actual_warmup_count = min(warmup_count, candidate_pool)
-    candidates = chat_sessions[:candidate_pool]
-    main_sessions = list(
-        chat_sessions[candidate_pool : candidate_pool + main_count]
-    )
-
-    turn_counts = np.array(
-        [max(1, s.num_turns) for s in candidates], dtype=np.int64
-    )
-    # Length-biased only when factor>=2 AND we have headroom to pick from.
-    # Otherwise fall back to a plain uniform pick — at factor<2 we don't
-    # have enough candidates above ``actual_warmup_count`` to do a
-    # meaningful weighted draw, so the report's target/realized split tells
-    # the user about the residual bias.
-    use_length_bias = (
-        warmup_oversample_factor >= 2 and candidate_pool > actual_warmup_count
-    )
-    if use_length_bias:
-        warmup_idx = systematic_probability_proportional_to_size(
-            turn_counts, actual_warmup_count, rng
-        )
-    else:
-        warmup_idx = rng.choice(
-            candidate_pool, size=actual_warmup_count, replace=False
-        )
-
-    warmup_sessions: list[ChatSession] = []
-    for i in warmup_idx:
-        s = candidates[int(i)]
-        total_turns = max(1, s.num_turns)
-        prefix_turns = (
-            int(rng.integers(0, total_turns)) if total_turns > 1 else 0
-        )
-        warmup_sessions.append(
-            dataclasses.replace(s, prefix_turns=prefix_turns)
-        )
-
-    # ``target_mean`` is the size-biased mean of the *full* dataset (warmup
-    # candidates + main pool), so it reflects steady-state for the workload
-    # as a whole — not just the candidate slice the picker drew from.
-    full_turn_counts = np.array(
-        [max(1, s.num_turns) for s in chat_sessions],
-        dtype=np.int64,
-    )
-    full_sum = float(full_turn_counts.sum())
-    target_mean = float((full_turn_counts**2).sum() / full_sum)
-    realized_mean = float(turn_counts[list(warmup_idx)].mean())
-
-    # Per-draw stdev on ``realized_mean`` under a with-replacement bound.
-    # Variance of a single length-biased pick is
-    #   E[T^2 | size-bias] - sb_mean^2 = sum(T^3)/sum(T) - target_mean^2;
-    # K independent picks scale Var by 1/K. Systematic PPS picks are
-    # negatively correlated, so this overestimates by ~2x — that's in the
-    # safe direction: if ``|realized - target| / stdev`` is below ~1 even
-    # under this conservative bound, it's unambiguously noise.
-    sb_var = (full_turn_counts**3).sum() / full_sum - target_mean**2
-    sb_var = max(0.0, float(sb_var))
-    realized_mean_stdev = float(np.sqrt(sb_var / max(1, actual_warmup_count)))
-
-    cap_threshold = float(turn_counts.sum()) / actual_warmup_count
-    cap_count = int((turn_counts > cap_threshold).sum())
-
-    report = _WarmupSamplingReport(
-        warmup_pool=candidate_pool,
-        main_pool=len(main_sessions),
-        warmup_count=actual_warmup_count,
-        factor=warmup_oversample_factor,
-        target_mean=target_mean,
-        realized_mean=realized_mean,
-        realized_mean_stdev=realized_mean_stdev,
-        cap_count=cap_count,
-    )
-    return warmup_sessions + main_sessions, report
-
-
-def _log_warmup_sampling_report(report: _WarmupSamplingReport) -> None:
-    """Emit the per-run [warmup-sampling] log + cap-triggered warning."""
-
-    def _pct(value: float, ref: float) -> str:
-        if ref == 0:
-            return "n/a"
-        return f"{100.0 * (value - ref) / ref:+.1f}%"
-
-    if report.realized_mean_stdev > 0:
-        stdev_ratio = (
-            abs(report.realized_mean - report.target_mean)
-            / report.realized_mean_stdev
-        )
-        stdev_str = f"{stdev_ratio:.2f} stdev from target"
-    else:
-        stdev_str = "stdev n/a"
-
-    logger.info(
-        "[warmup-sampling] warmup_pool=%d main_pool=%d M=%d factor=%d\n"
-        "  target mean from samples:                      %.2f\n"
-        "  realized warmup mean (one draw):               %.2f  (%s, %s)\n"
-        "  always-picked sessions (too long for pool):    %d / %d",
-        report.warmup_pool,
-        report.main_pool,
-        report.warmup_count,
-        report.factor,
-        report.target_mean,
-        report.realized_mean,
-        _pct(report.realized_mean, report.target_mean),
-        stdev_str,
-        report.cap_count,
-        report.warmup_pool,
-    )
-
-    if report.cap_count > 0:
-        logger.warning(
-            "Could not warmup to steady state: %d session(s) are too long for "
-            "a candidate pool of %d, so they get picked every time and bias "
-            "the warmup. Increase --warmup-oversample-factor (currently %d) "
-            "to enlarge the pool.",
-            report.cap_count,
-            report.warmup_pool,
-            report.factor,
-        )
-
-
 async def run_multiturn_benchmark(
     *,
     chat_sessions: Sequence[ChatSession],
@@ -1474,7 +1199,7 @@ async def run_multiturn_benchmark(
     sessions = list(chat_sessions)
     if warmup_to_steady_state:
         warmup_count = max_concurrency or len(chat_sessions)
-        sessions, report = _pick_warmup_population(
+        sessions, report = pick_warmup_population(
             chat_sessions,
             warmup_count,
             warmup_to_steady_state=True,
@@ -1483,7 +1208,7 @@ async def run_multiturn_benchmark(
             rng=np.random.default_rng(seed),
         )
         if report is not None:
-            _log_warmup_sampling_report(report)
+            log_warmup_sampling_report(report)
 
     tasks: list[asyncio.Task[tuple[str, list[RequestFuncOutput]]]] = []
     for idx, chat_session in enumerate(sessions):
@@ -1601,7 +1326,7 @@ async def run_kv_cache_stress_benchmark(
 
     sessions = list(chat_sessions)
     if warmup_to_steady_state:
-        sessions, report = _pick_warmup_population(
+        sessions, report = pick_warmup_population(
             chat_sessions,
             max_concurrent_conversations,
             warmup_to_steady_state=True,
@@ -1610,7 +1335,7 @@ async def run_kv_cache_stress_benchmark(
             rng=np.random.default_rng(seed),
         )
         if report is not None:
-            _log_warmup_sampling_report(report)
+            log_warmup_sampling_report(report)
 
     # Queue holds (original_index, session) pairs so LoRA assignment is stable.
     session_queue: asyncio.Queue[tuple[int, ChatSession]] = asyncio.Queue()
@@ -2807,7 +2532,7 @@ def main_with_parsed_args(
                     title=f" Warmup sampling preview (max_concurrency={mc}) ",
                     char="=",
                 )
-                _, report = _pick_warmup_population(
+                _, report = pick_warmup_population(
                     samples.chat_sessions,
                     warmup_count,
                     warmup_to_steady_state=True,
@@ -2816,7 +2541,7 @@ def main_with_parsed_args(
                     rng=rng,
                 )
                 if report is not None:
-                    _log_warmup_sampling_report(report)
+                    log_warmup_sampling_report(report)
         for mc in concurrency_range:
             for rr in request_rate_range:
                 print(
