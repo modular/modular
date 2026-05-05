@@ -23,6 +23,7 @@ modular_py_library(
         requirement("pydantic"),
         requirement("pyyaml"),
         requirement("requests"),
+        requirement("taskgroup"),
         requirement("tqdm"),
         requirement("transformers"),
         requirement("typing-extensions"),
