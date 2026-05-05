@@ -106,6 +106,9 @@ private:
   const std::string kNVPTXArchName = "nvptx";
   const std::string kAMDGCNArchName = "amdgcn";
   const std::string kMetalArchName = "metal";
+  // M1/M2 lack native bf16 arithmetic; M3+ supports it.
+  const std::string kMetal1ArchName = "metal-1";
+  const std::string kMetal2ArchName = "metal-2";
   const std::string kCPUArchName = "cpu";
   // A map of types for which target has implemented conversions
   //              "target-arch" -> {input-type -> {output-types...}}
@@ -114,43 +117,39 @@ private:
   DenseMap<StringRef, DenseMap<KGENDType, llvm::SetVector<KGENDType>>>
       targetLegalConversion;
 
+  TargetInfoAttr target;
+
   /// Initialize map of known conversions for a target
   void initializeTargetLegalConversions(MLIRContext *ctx);
 
   /// Return true if legalization of the operation succeeded.
-  LogicalResult legalizeOperation(Operation *op, TargetInfoAttr target);
+  LogicalResult legalizeOperation(Operation *op);
 
   /// Return 'success' if legalization has to be done for the operation. Return
   /// false otherwise. An operation requires legalization if lowering the
   /// operation to LLVM with converted types will generate invalid IR. For now
   /// legalize all arithmetic operations that operate on unsupported by LLVM
   /// types, such as F8 types.
-  bool operationRequiresLegalization(Operation *op,
-                                     TargetInfoAttr target) const;
+  bool operationRequiresLegalization(Operation *op) const;
 
   /// Return true if lowering of the conversion is supported
-  bool conversionRequiresLegalization(CastOp castOp,
-                                      TargetInfoAttr target) const;
+  bool conversionRequiresLegalization(CastOp castOp) const;
 
   /// Return 'success' if legalization has to be done for the conversion.
-  LogicalResult legalizeConversion(CastOp castOp, TargetInfoAttr target);
+  LogicalResult legalizeConversion(CastOp castOp);
 
-  /// Return true if the type requires legalization
+  /// Return true if the type requires legalization on the current target.
   bool typeRequiresLegalization(KGENDType dtype) const;
   bool typeRequiresLegalization(Type type) const;
-
-  /// Return supported type that can be used instead of \p type
-  Type getSupportedType(Type type, TargetInfoAttr target) const;
 
   /// Helper function to find a sequence of available conversions from \p
   /// fromType to \p toType That is, this function returns a vector {type0,
   /// type1, ..., typeN} such that fromType -> type0 -> type1 -> ... -> typeN ->
   /// toType
-  SmallVector<Type> findConversionSequence(Type fromType, Type toType,
-                                           TargetInfoAttr target) const;
+  SmallVector<Type> findConversionSequence(Type fromType, Type toType) const;
 
   /// Return target key that is used to get all legal conversion for the target.
-  std::string getTargetKey(TargetInfoAttr target) const {
+  std::string getTargetKey() const {
     llvm::Triple triple = target.getTriple();
     if (triple.isNVPTX()) {
       if (isNVPTX_HopperAndAbove(target))
@@ -162,8 +161,16 @@ private:
       // generation.
       return kAMDGCNArchName;
     }
-    if (isMetalTriple(triple))
+    if (isMetalTriple(triple)) {
+      StringRef arch = target.getArch();
+      if (arch == "1" || arch.starts_with("1-") || arch == "apple-m1" ||
+          arch.starts_with("apple-m1-"))
+        return kMetal1ArchName;
+      if (arch == "2" || arch.starts_with("2-") || arch == "apple-m2" ||
+          arch.starts_with("apple-m2-"))
+        return kMetal2ArchName;
       return kMetalArchName;
+    }
     assert(!isGPUTriple(triple) && "Not all GPU targets were covered");
     return kCPUArchName;
   }
@@ -279,6 +286,12 @@ void LegalizePOPOperations::initializeTargetLegalConversions(MLIRContext *ctx) {
   addLLVMNativeConversions(kMetalArchName);
   addLLVMNativeConversions(kCPUArchName);
 
+  // bf16 loads/stores work on M1/M2; arithmetic does not. Keep bf16 in the
+  // table so findConversionSequence can produce the bf16→f32→bf16 widening
+  // path.
+  addLLVMNativeConversions(kMetal1ArchName);
+  addLLVMNativeConversions(kMetal2ArchName);
+
   // TODO: This list has to be complete for all supported types, but ideally it
   // should be taken from lowering of the POP::CastOp.
 }
@@ -287,17 +300,19 @@ void LegalizePOPOperations::initializeTargetLegalConversions(MLIRContext *ctx) {
 // typeRequiresLegalization
 //===----------------------------------------------------------------------===//
 
-/// Return true if the type requires legalization
+/// Return true if the type requires legalization on the current target.
 bool LegalizePOPOperations::typeRequiresLegalization(KGENDType dtype) const {
   if (dtype.isInvalid())
     return false;
-
-  // Assume that any floating point type below 8 bits are not supported by
-  // LLVM
-  return dtype.isFloat() && dtype.getWidthInBits() <= 8;
+  // Assume that any floating point type below 8 bits are not supported by LLVM
+  if (dtype.isFloat() && dtype.getWidthInBits() <= 8)
+    return true;
+  // M1 (Apple7) and M2 (Apple8) have no bf16 arithmetic support.
+  auto key = getTargetKey();
+  return dtype == KGENDType::bf16 &&
+         (key == kMetal1ArchName || key == kMetal2ArchName);
 }
 
-/// Return true if the type requires legalization
 bool LegalizePOPOperations::typeRequiresLegalization(Type type) const {
   return typeRequiresLegalization(getScalarKGENDType(type));
 }
@@ -306,15 +321,14 @@ bool LegalizePOPOperations::typeRequiresLegalization(Type type) const {
 // operationRequiresLegalization
 //===----------------------------------------------------------------------===//
 
-bool LegalizePOPOperations::operationRequiresLegalization(
-    Operation *op, TargetInfoAttr target) const {
+bool LegalizePOPOperations::operationRequiresLegalization(Operation *op) const {
   // If operands have supported types, do not need to do anything extra with the
   // operation.
   for (auto operand : op->getOperands())
     if (!typeRequiresLegalization(operand.getType()))
       return false;
 
-  return isa<NegOp, AddOp, SubOp, MulOp, DivOp, RemOp, MaxOp, MinOp>(op);
+  return isa<NegOp, AddOp, SubOp, MulOp, DivOp, RemOp, MaxOp, MinOp, FMAOp>(op);
 }
 
 //===----------------------------------------------------------------------===//
@@ -322,7 +336,7 @@ bool LegalizePOPOperations::operationRequiresLegalization(
 //===----------------------------------------------------------------------===//
 
 bool LegalizePOPOperations::conversionRequiresLegalization(
-    CastOp castOp, TargetInfoAttr target) const {
+    CastOp castOp) const {
   Type fromType = castOp.getInput().getType();
   Type toType = castOp.getOutput().getType();
   if (fromType == toType) {
@@ -343,7 +357,7 @@ bool LegalizePOPOperations::conversionRequiresLegalization(
     return false;
   }
 
-  auto targetConversionsIt = targetLegalConversion.find(getTargetKey(target));
+  auto targetConversionsIt = targetLegalConversion.find(getTargetKey());
   if (targetConversionsIt == targetLegalConversion.end()) {
     // Conservatively assume that all fp8 and smaller types do require
     // legalization, even if target is unknown. This will help to build a list
@@ -364,11 +378,11 @@ bool LegalizePOPOperations::conversionRequiresLegalization(
 //===----------------------------------------------------------------------===//
 
 SmallVector<Type>
-LegalizePOPOperations::findConversionSequence(Type fromType, Type toType,
-                                              TargetInfoAttr target) const {
+LegalizePOPOperations::findConversionSequence(Type fromType,
+                                              Type toType) const {
   KGENDType fromDType = getScalarKGENDType(fromType);
   KGENDType toDType = getScalarKGENDType(toType);
-  auto targetConversionsIt = targetLegalConversion.find(getTargetKey(target));
+  auto targetConversionsIt = targetLegalConversion.find(getTargetKey());
   if (targetConversionsIt == targetLegalConversion.end()) {
     // Unknown target. Return empty sequence and let caller throw an error.
     return {};
@@ -381,7 +395,7 @@ LegalizePOPOperations::findConversionSequence(Type fromType, Type toType,
   // TODO: Revisit algorithm if shortest/most cost effective sequence is
   // required.
   std::function<bool(KGENDType, KGENDType)> walker =
-      [&walker, &types, &targetConversionsIt, &target, toType,
+      [this, &walker, &types, &targetConversionsIt, toType,
        &visited](KGENDType fromDType, KGENDType toDType) -> bool {
     // To avoid possible cycles, do not visit the same type twice
     if (!visited.insert(fromDType).second)
@@ -431,16 +445,14 @@ LegalizePOPOperations::findConversionSequence(Type fromType, Type toType,
 // legalizeConversion
 //===----------------------------------------------------------------------===//
 
-LogicalResult LegalizePOPOperations::legalizeConversion(CastOp castOp,
-                                                        TargetInfoAttr target) {
-  assert(conversionRequiresLegalization(castOp, target) &&
-         "legalization not required");
+LogicalResult LegalizePOPOperations::legalizeConversion(CastOp castOp) {
+  assert(conversionRequiresLegalization(castOp) && "legalization not required");
   ImplicitLocOpBuilder b(castOp.getLoc(), castOp);
 
   Type type = castOp.getType();
 
   SmallVector<Type> commonTypes =
-      findConversionSequence(castOp.getInput().getType(), type, target);
+      findConversionSequence(castOp.getInput().getType(), type);
   if (commonTypes.empty()) {
     KGENDType fromDType = getScalarKGENDType(castOp.getInput().getType());
     KGENDType toDType = getScalarKGENDType(type);
@@ -462,10 +474,8 @@ LogicalResult LegalizePOPOperations::legalizeConversion(CastOp castOp,
 //===----------------------------------------------------------------------===//
 // legalizeOperation
 //===----------------------------------------------------------------------===//
-LogicalResult LegalizePOPOperations::legalizeOperation(Operation *op,
-                                                       TargetInfoAttr target) {
-  assert(operationRequiresLegalization(op, target) &&
-         "legalization not required");
+LogicalResult LegalizePOPOperations::legalizeOperation(Operation *op) {
+  assert(operationRequiresLegalization(op) && "legalization not required");
   ImplicitLocOpBuilder b(op->getLoc(), op);
 
   if (!llvm::all_of(op->getOperands(), [&](Value operand) {
@@ -486,8 +496,7 @@ LogicalResult LegalizePOPOperations::legalizeOperation(Operation *op,
     return op->emitError("Cannot legalize non-homogeneous operation ");
 
   Type inputType = op->getOperand(0).getType();
-  SmallVector<Type> types =
-      findConversionSequence(inputType, inputType, target);
+  SmallVector<Type> types = findConversionSequence(inputType, inputType);
   if (types.empty()) {
     KGENDType inputDType = getScalarKGENDType(inputType);
     return op->emitError("operation with a type '")
@@ -498,6 +507,11 @@ LogicalResult LegalizePOPOperations::legalizeOperation(Operation *op,
   // First type for which it's safe to perform an operation
   auto supportedTypeIt = llvm::find_if(
       types, [&](Type type) { return !typeRequiresLegalization(type); });
+  if (supportedTypeIt == types.end()) {
+    KGENDType inputDType = getScalarKGENDType(inputType);
+    return op->emitError("no supported intermediate type found for '")
+           << inputDType.getAsString() << "'";
+  }
 
   for (Value operand : op->getOperands()) {
     Value newOperand = operand;
@@ -536,23 +550,23 @@ LogicalResult LegalizePOPOperations::legalizeOperation(Operation *op,
 
 void LegalizePOPOperations::runOnOperation() {
   Operation *op = getOperation();
-  TargetInfoAttr target = lookupTargetInfo(op);
+  target = lookupTargetInfo(op);
 
   initializeTargetLegalConversions(&getContext());
 
   if (op->walk([&](Operation *op) {
           if (auto castOp = dyn_cast<CastOp>(op)) {
-            if (conversionRequiresLegalization(castOp, target)) {
-              if (failed(legalizeConversion(castOp, target)))
+            if (conversionRequiresLegalization(castOp)) {
+              if (failed(legalizeConversion(castOp)))
                 return WalkResult::interrupt();
               castOp->erase();
             }
             return WalkResult::advance();
           }
-          if (!operationRequiresLegalization(op, target))
+          if (!operationRequiresLegalization(op))
             return WalkResult::advance();
 
-          if (failed(legalizeOperation(op, target)))
+          if (failed(legalizeOperation(op)))
             return WalkResult::interrupt();
           op->erase();
           return WalkResult::advance();
