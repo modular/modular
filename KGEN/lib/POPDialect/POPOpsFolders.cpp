@@ -700,11 +700,11 @@ static OpFoldResult bitcastSIMDIndex(ArrayRef<Attribute> operands,
     if (!target)
       return {};
     std::optional<int64_t> indexBitWidth = target.resolveIndexBitWidth();
-    return foldSIMDOpResult<POP::kOtherResult>(
-        operands, outputDType, indexBitWidth, std::forward<OpsFns>(ops)...);
+    return foldSIMDOpResult<kOtherResult>(operands, outputDType, indexBitWidth,
+                                          std::forward<OpsFns>(ops)...);
   }
-  return foldSIMDOpResult<POP::kNoIndex>(operands, outputDType,
-                                         std::forward<OpsFns>(ops)...);
+  return foldSIMDOpResult<kNoIndex>(operands, outputDType,
+                                    std::forward<OpsFns>(ops)...);
 }
 
 static OpFoldResult reshape(SIMDAttr operand, KGENDType inputDType,
@@ -806,7 +806,7 @@ static OpFoldResult evaluateBitcastOp(SIMDType resultType, SIMDType inputType,
         });
   }
   if (dtype->isIndex() || dtype->isUIndex()) {
-    return foldSIMDOpResult<POP::kOtherResult>(
+    return foldSIMDOpResult<kOtherResult>(
         operand, *dtype,
         [&](const APSInt &in) -> APSInt {
           // Must zero extend to 64bit, otherwise there will be segfault during
