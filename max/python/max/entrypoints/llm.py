@@ -11,7 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""A high level interface for interacting with LLMs built from MAX pipelines"""
+"""Provides a high-level interface for interacting with LLMs built from MAX
+pipelines.
+"""
 
 from __future__ import annotations
 
@@ -66,7 +68,40 @@ class ThreadControl:
 # Long term, there are multiple other potential use cases to support.
 # This class loosely mirrors vllm.LLM for offline inference: https://docs.vllm.ai/en/stable/dev/offline_inference/llm.html
 class LLM:
-    """A high level interface for interacting with LLMs."""
+    """A high-level interface for interacting with LLMs.
+
+    Use this class for offline batch inference against a model loaded from a
+    :class:`PipelineConfig`. Call :meth:`generate` with one or more prompts
+    to receive completions.
+
+    The following example loads ``LiquidAI/LFM2.5-350M`` and generates
+    completions for a batch of prompts:
+
+    .. code-block:: python
+
+        from max.entrypoints.llm import LLM
+        from max.pipelines import MAXModelConfig, PipelineConfig
+        from max.pipelines.lib.model_manifest import ModelManifest
+
+        pipeline_config = PipelineConfig(
+            models=ModelManifest(
+                {"main": MAXModelConfig(model_path="LiquidAI/LFM2.5-350M")}
+            ),
+        )
+        llm = LLM(pipeline_config)
+
+        prompts = [
+            "In the beginning, there was",
+            "The meaning of life is",
+        ]
+        responses = llm.generate(prompts, max_new_tokens=50)
+        for prompt, response in zip(prompts, responses, strict=True):
+            print(prompt + response)
+
+    Args:
+        pipeline_config: The :class:`PipelineConfig` describing the model and
+            runtime to load.
+    """
 
     _pc: ThreadControl
     _async_runner: Thread
@@ -105,19 +140,24 @@ class LLM:
     ) -> Sequence[str]:
         """Generates text completions for the given prompts.
 
-        This method is thread safe and may be used on the same LLM instance
-        from multiple threads concurrently with no external synchronization.
+        This method is thread-safe and may be used on the same :class:`LLM`
+        instance from multiple threads concurrently with no external
+        synchronization.
 
         Args:
-            prompts: The input string or list of strings to generate completions for.
-            max_new_tokens: The maximum number of tokens to generate in the response.
+            prompts: The input string or list of strings to generate
+                completions for.
+            max_new_tokens: The maximum number of tokens to generate in the
+                response. Defaults to ``100``.
             use_tqdm: Whether to display a progress bar during generation.
+                Defaults to ``True``.
 
         Returns:
-            A list of generated text completions corresponding to each input prompt.
+            A list of generated text completions corresponding to each input
+            prompt.
 
         Raises:
-            ValueError: If prompts is empty or contains invalid data.
+            ValueError: If ``prompts`` is empty or contains invalid data.
             RuntimeError: If the model fails to generate completions.
         """
         if isinstance(prompts, str):
