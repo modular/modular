@@ -29,4 +29,7 @@ This version is still a work in progress.
 
 ## ❌ Removed
 
+- The legacy `fn` keyword now produces an error instead of a warning. Please
+  move to `def`.
+
 ## 🛠️ Fixed
