@@ -431,10 +431,10 @@ def _colorize_diff_string[color: Color](s: String, other: String) -> String:
         var other_codepoint = other_codepoints.next()
         if other_codepoint and s_codepoint == other_codepoint.value():
             # Codepoints match - no color
-            result.append(s_codepoint)
+            result += s_codepoint
         else:
             # Codepoint differs or other string is shorter - apply color
-            result += String(Text[color](s_codepoint))
+            result.write(Text[color](s_codepoint))
     return result
 
 
