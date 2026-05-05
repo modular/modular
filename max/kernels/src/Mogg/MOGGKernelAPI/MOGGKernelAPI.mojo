@@ -65,6 +65,7 @@ import comm.vendor.ccl as vendor_ccl
 from compiler_internal import StaticTensorSpec
 from std.gpu.host import DeviceContext, get_gpu_target
 from std.gpu.host.info import is_cpu, is_gpu, is_valid_target
+from kv_cache.paged_sparse_kv_index_remap import paged_sparse_kv_index_remap
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import (
     ComptimeInt,
@@ -351,7 +352,7 @@ from tensor.managed_tensor_slice import (
 from tensor.managed_tensor_slice import (
     _MutableInputVariadicTensors as MutableInputVariadicTensors,
 )
-from std.memory import memcpy
+from std.memory import UnsafePointer, memcpy
 from std.time import sleep
 from std.logger import Logger
 
@@ -8316,9 +8317,10 @@ struct Struct_mla_decode_graph_paged_fp8_sparse:
         ](coords: IndexList[2]) -> SIMD[DType.bfloat16, width]:
             return kv._lambda_load[width=width, element_alignment=width](coords)
 
-        var d_indices_ptr = UnsafePointer[Int32, MutAnyOrigin](
-            sparse_indices.to_layout_tensor().ptr
-        )
+        comptime mla_page_size = Int(kv_blocks.static_spec.shape_tuple[3])
+        var dev_ctx = context.get_device_context()
+        var num_indices_sparse = sparse_indices.size()
+
         var topk_lengths_ptr = UnsafePointer[Int32, MutAnyOrigin](
             topk_lengths.to_layout_tensor().ptr
         )
@@ -8330,6 +8332,19 @@ struct Struct_mla_decode_graph_paged_fp8_sparse:
             "mo.mla.graph.decode.paged.fp8.sparse",
             task_id=get_safe_task_id(context),
         ):
+            var scratch_sparse_indices = dev_ctx.enqueue_create_buffer[
+                DType.int32
+            ](num_indices_sparse)
+            paged_sparse_kv_index_remap[
+                target, mla_page_size, indices_stride, cache_dtype
+            ](
+                scratch_sparse_indices.unsafe_ptr(),
+                sparse_indices,
+                input_row_offsets,
+                kv_lookup_table,
+                kv_blocks,
+                context,
+            )
             mla_decode_branch_fp8[
                 m_scale_granularity=m_scale_granularity,
                 n_scale_granularity=n_scale_granularity,
@@ -8354,7 +8369,7 @@ struct Struct_mla_decode_graph_paged_fp8_sparse:
                 w_uv_scale.to_tile_tensor[DType.int64](),
                 scalar_args.to_tile_tensor[DType.int64](),
                 context.get_device_context(),
-                d_indices_ptr,
+                scratch_sparse_indices.unsafe_ptr(),
                 indices_stride,
                 topk_lengths_ptr,
                 attn_sink_ptr,
@@ -8674,9 +8689,10 @@ struct Struct_mla_prefill_graph_decode_paged_fp8_sparse:
         ](coords: IndexList[2]) -> SIMD[DType.bfloat16, width]:
             return kv._lambda_load[width=width, element_alignment=width](coords)
 
-        var d_indices_ptr = UnsafePointer[Int32, MutAnyOrigin](
-            sparse_indices.to_layout_tensor().ptr
-        )
+        comptime mla_page_size = Int(kv_blocks.static_spec.shape_tuple[3])
+        var dev_ctx = context.get_device_context()
+        var num_indices_sparse = sparse_indices.size()
+
         var topk_lengths_ptr = UnsafePointer[Int32, MutAnyOrigin](
             topk_lengths.to_layout_tensor().ptr
         )
@@ -8688,6 +8704,19 @@ struct Struct_mla_prefill_graph_decode_paged_fp8_sparse:
             "mo.mla.graph.prefill.decode.paged.fp8.sparse",
             task_id=get_safe_task_id(context),
         ):
+            var scratch_sparse_indices = dev_ctx.enqueue_create_buffer[
+                DType.int32
+            ](num_indices_sparse)
+            paged_sparse_kv_index_remap[
+                target, mla_page_size, indices_stride, cache_dtype
+            ](
+                scratch_sparse_indices.unsafe_ptr(),
+                sparse_indices,
+                input_row_offsets,
+                kv_lookup_table,
+                kv_blocks,
+                context,
+            )
             mla_prefill_decode_graph_fp8[
                 m_scale_granularity=m_scale_granularity,
                 n_scale_granularity=n_scale_granularity,
@@ -8718,7 +8747,7 @@ struct Struct_mla_prefill_graph_decode_paged_fp8_sparse:
                 w_uv_scale.to_tile_tensor[DType.int64](),
                 scalar_args.to_tile_tensor[DType.int64](),
                 context.get_device_context(),
-                d_indices_ptr,
+                scratch_sparse_indices.unsafe_ptr(),
                 indices_stride,
                 topk_lengths_ptr,
                 attn_sink_ptr,

@@ -123,6 +123,18 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
         return supported_encoding_dtype(draft_encoding)
 
     @classmethod
+    def _ep_max_rank_send_tokens_for_pipeline(
+        cls, pipeline_config: PipelineConfig
+    ) -> int:
+        """Upper bound on EP dispatch tokens held on one rank for this pipeline."""
+        return calculate_ep_max_tokens_per_rank(
+            max_batch_input_tokens=pipeline_config.runtime.max_batch_input_tokens,
+            ep_size=pipeline_config.runtime.ep_size,
+            data_parallel_degree=pipeline_config.model.data_parallel_degree,
+            use_allreduce=pipeline_config.runtime.ep_use_allreduce,
+        )
+
+    @classmethod
     def get_kv_params(
         cls,
         huggingface_config: AutoConfig,
@@ -187,11 +199,8 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
 
             n_nodes = ep_size // len(self.devices)
 
-            ep_max_rank_send_tokens = calculate_ep_max_tokens_per_rank(
-                max_batch_input_tokens=self.pipeline_config.runtime.max_batch_input_tokens,
-                ep_size=ep_size,
-                data_parallel_degree=data_parallel_degree,
-                use_allreduce=self.pipeline_config.runtime.ep_use_allreduce,
+            ep_max_rank_send_tokens = (
+                self._ep_max_rank_send_tokens_for_pipeline(self.pipeline_config)
             )
 
             ep_kwargs: dict[str, Any] = dict(
@@ -413,11 +422,8 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
         if pipeline_config.runtime.ep_size > 1:
             n_gpus_per_node = len(pipeline_config.model.device_specs)
 
-            ep_max_rank_send_tokens = calculate_ep_max_tokens_per_rank(
-                max_batch_input_tokens=pipeline_config.runtime.max_batch_input_tokens,
-                ep_size=pipeline_config.runtime.ep_size,
-                data_parallel_degree=pipeline_config.model.data_parallel_degree,
-                use_allreduce=pipeline_config.runtime.ep_use_allreduce,
+            ep_max_rank_send_tokens = cls._ep_max_rank_send_tokens_for_pipeline(
+                pipeline_config
             )
 
             # Calculate the maximum number of tokens a rank may receive during

@@ -24,7 +24,6 @@ from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph
 from max.graph.weights import WeightData
 from max.nn.comm.ep import EPCommInitializer, EPConfig
-from max.nn.comm.ep.ep_config import calculate_ep_max_tokens_per_rank
 from max.nn.kv_cache import KVCacheParamInterface, MultiKVCacheParams
 from max.pipelines.lib import CompilationTimer, KVCacheConfig, PipelineConfig
 from max.pipelines.lib.quant import parse_quant_config
@@ -40,6 +39,14 @@ logger = logging.getLogger("max.pipelines")
 
 class DeepseekV3_2Model(DeepseekV3Model):
     """A DeepseekV3.2 model."""
+
+    @classmethod
+    @override
+    def _ep_max_rank_send_tokens_for_pipeline(
+        cls, pipeline_config: PipelineConfig
+    ) -> int:
+        """Each rank holds full-length activations before EP MoE (no RS like V3 TP_EP)."""
+        return pipeline_config.runtime.max_batch_input_tokens
 
     @classmethod
     def get_kv_params(
@@ -98,10 +105,8 @@ class DeepseekV3_2Model(DeepseekV3Model):
                 )
             n_nodes = ep_size // len(self.devices)
 
-            ep_max_rank_send_tokens = calculate_ep_max_tokens_per_rank(
-                max_batch_input_tokens=self.pipeline_config.runtime.max_batch_input_tokens,
-                ep_size=ep_size,
-                data_parallel_degree=data_parallel_degree,
+            ep_max_rank_send_tokens = (
+                self._ep_max_rank_send_tokens_for_pipeline(self.pipeline_config)
             )
 
             ep_kwargs: dict[str, Any] = dict(

@@ -43,7 +43,7 @@ from .indexer import Indexer
 
 
 class SparseLatentAttentionWithRopeFp8(LatentAttentionWithRopeFp8):
-    """FP8 latent attention with optional sparse decode (physical KV row indices)."""
+    """FP8 latent attention with optional sparse decode (logical KV positions; MOGG remaps)."""
 
     def __init__(
         self,
@@ -248,7 +248,6 @@ class SparseLatentAttentionWithRopeFp8(LatentAttentionWithRopeFp8):
             if self.graph_mode in ["prefill", "auto"]
             else MHAMaskVariant.NULL_MASK,
         )
-        # TODO: restore mapping to physical cache blocks
         topk_indices = ops.where(
             (topk_indices != -1),
             topk_indices,

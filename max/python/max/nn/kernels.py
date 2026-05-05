@@ -3081,7 +3081,8 @@ def mla_decode_graph(
         w_uv_scale: Optional FP8 scale tensor for `w_uv`.
         quant_config: Optional quantization config. When set, scales are required.
         sparse_indices: Optional ``int32`` tensor of shape ``[total_seq_len, max_topk]``
-            with physical KV row indices for sparse decode (FP8 path only).
+            with logical token indices into each sequence's KV (FP8 path only); MOGG
+            remaps them to physical ``block * page_size + offset`` rows before the kernel.
         sparse_topk_lengths: Per-batch valid top-k counts, ``int32`` rank-1.
         sparse_attn_sink: Per-batch attention sink weights, ``float32`` rank-1.
         sparse_indices_stride: Row stride in ``sparse_indices`` (max top-k across
