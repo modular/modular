@@ -306,7 +306,9 @@ def update_spec_decode_context_and_prepare_responses(
 
         ctx.spec_decoding_state.maybe_accepted_draft_tokens = []
         if not ctx.is_done:
-            # Save the generated draft tokens for verification in next iteration.
+            # Save draft tokens for verification in the next TG step.
+            # Skipped when is_done=True: the context produces no further TG
+            # steps so draft tokens are unnecessary.
             ctx.spec_decoding_state.draft_tokens_to_verify = next_draft_tokens[
                 batch_idx
             ].tolist()

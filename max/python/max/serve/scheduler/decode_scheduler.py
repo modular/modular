@@ -154,7 +154,13 @@ class DecodeScheduler(Scheduler):
         # decode iteration can verify them without re-running draft prefill.
         # When speculative decoding is active, the prefill worker always
         # sends draft tokens.
-        if self.scheduler_config.num_speculative_tokens > 0:
+        if (
+            self.scheduler_config.num_speculative_tokens > 0
+            and not context.is_done
+        ):
+            # Done contexts (max_gen_tokens=1) need no further TG steps, so
+            # the prefill pod sends draft_tokens=None. For all other contexts,
+            # draft tokens must arrive with the PrefillResponse.
             if message.draft_tokens is None:
                 raise ValueError(
                     f"Expected draft tokens in PrefillResponse for request "

@@ -37,6 +37,9 @@ from max.pipelines.core import TextContext
 from max.pipelines.core.context import FUTURE_TOKEN
 from max.pipelines.lib import OverlapTextGenerationPipeline
 from max.pipelines.lib.config.speculative_config import SpeculativeConfig
+from max.pipelines.lib.pipeline_variants.utils import (
+    update_spec_decode_context_and_prepare_responses,
+)
 from max.serve.scheduler.base import (
     CancelRequest,
     PrefillRequest,
@@ -1910,6 +1913,51 @@ def test_overlap_spec_decode_cancel_between_defer_and_resolve() -> None:
             )
         except queue.Empty:
             break
+
+
+def test_update_spec_decode_skips_draft_tokens_when_is_done() -> None:
+    """update_spec_decode_context_and_prepare_responses skips draft tokens
+    when ctx.is_done=True (MAXIMUM_LENGTH).
+
+    Regression test for the 1p1d overlap + Eagle3 CE→TG handoff bug. On the
+    prefill pod, max_gen_tokens=1 arises naturally when an accumulated prompt
+    reaches max_seq_len-1 tokens (e.g. long multi-turn sessions). The overlap
+    pipeline calls update_with_future_token() during Phase 1, which advances
+    current_position to max_length and sets status=MAXIMUM_LENGTH (is_done=True).
+    The done context produces no further TG steps on the decode pod, so draft
+    tokens are neither generated nor sent. The prefill and decode schedulers
+    gate their draft-token checks on not context.is_done to handle this case.
+    """
+    prompt_len = 10
+    ctx = create_text_context(
+        target_endpoint="ipc:///tmp/test",
+        prompt_len=prompt_len,
+        output_len=1,
+    )
+    assert ctx.max_length == prompt_len + 1
+
+    # Phase 1: overlap pipeline appends FUTURE_TOKEN and advances position
+    # to max_length, setting is_done=True via MAXIMUM_LENGTH.
+    ctx.update_with_future_token()
+    assert ctx.is_done, (
+        "Expected is_done=True after update_with_future_token on max_gen_tokens=1 context"
+    )
+
+    real_draft_tokens = [10, 11, 12]
+
+    update_spec_decode_context_and_prepare_responses(
+        draft_tokens=np.array([[42, 42, 42]], dtype=np.int32),
+        next_draft_tokens=np.array([real_draft_tokens], dtype=np.int32),
+        num_accepted_draft_tokens=np.array([0], dtype=np.int32),
+        next_tokens=np.array([99], dtype=np.int32),
+        context_batch=[ctx],
+        max_seq_len=2048,
+    )
+
+    assert ctx.spec_decoding_state.draft_tokens_to_verify == [], (
+        "draft_tokens_to_verify must be empty when ctx.is_done=True; "
+        "done contexts produce no TG steps so draft tokens are not sent"
+    )
 
 
 # ---------------------------------------------------------------------------

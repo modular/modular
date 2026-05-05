@@ -255,7 +255,13 @@ class PrefillScheduler(Scheduler):
         # decoding is active, the unified Eagle/MTP model always populates
         # draft_tokens_to_verify during CE; error if it hasn't.
         draft_tokens: list[int] | None = None
-        if self.scheduler_config.num_speculative_tokens > 0:
+        if (
+            self.scheduler_config.num_speculative_tokens > 0
+            and not context.is_done
+        ):
+            # Done contexts (max_gen_tokens=1) produce no further TG steps on
+            # the decode pod, so draft tokens are unnecessary. For all other
+            # contexts, draft tokens must be present after CE.
             if not context.spec_decoding_state.draft_tokens_to_verify:
                 raise ValueError(
                     f"Expected draft tokens on context {req_id} after CE "
