@@ -2653,9 +2653,10 @@ async def benchmark(
                 pids = collect_pids_for_port(
                     int(urlparse(api_url).port or 8000)
                 )
-                cpu_collector = CPUMetricsCollector(pids)
-                cpu_collector.start()
-            except:
+                cpu_collector = benchmark_stack.enter_context(
+                    CPUMetricsCollector(pids)
+                )
+            except Exception:
                 logger.warning(
                     "Cannot access max-serve PIDs, skipping CPU stats"
                     " collection"
@@ -2899,9 +2900,8 @@ async def benchmark(
         gpu_metrics = gpu_recorder.stats
 
     cpu_metrics_result: CPUMetrics | None = None
-    if collect_cpu_stats and cpu_collector is not None:
-        cpu_collector.stop()
-        cpu_metrics_result = cpu_collector.dump_stats()
+    if cpu_collector is not None:
+        cpu_metrics_result = cpu_collector.get_stats()
 
     # Collect server-side metrics from Prometheus endpoint (with delta from baseline)
     endpoint_metrics: Mapping[str, ParsedMetrics] = {}

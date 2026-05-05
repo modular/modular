@@ -56,12 +56,11 @@ def test_collector_current_process() -> None:
     """Collect stats for the current process — a basic integration smoke test."""
     pid = os.getpid()
     collector = CPUMetricsCollector([pid])
-    collector.start()
-    # Burn a little CPU so user_percent > 0.
-    total = sum(range(500_000))
-    assert total >= 0
-    collector.stop()
-    stats = collector.dump_stats()
+    with collector:
+        # Burn a little CPU so user_percent > 0.
+        total = sum(range(500_000))
+        assert total >= 0
+    stats = collector.get_stats()
 
     assert isinstance(stats, CPUMetrics)
     assert stats.elapsed > 0
@@ -71,26 +70,26 @@ def test_collector_current_process() -> None:
     assert stats.system_percent >= 0
 
 
-def test_collector_dump_stats_without_start_raises() -> None:
+def test_collector_get_stats_without_context_raises() -> None:
     collector = CPUMetricsCollector([1])
-    with pytest.raises(RuntimeError, match="Must call start and stop"):
-        collector.dump_stats()
+    with pytest.raises(RuntimeError, match="Must use CPUMetricsCollector"):
+        collector.get_stats()
 
 
-def test_collector_dump_stats_without_stop_raises() -> None:
+def test_collector_get_stats_mid_context_raises() -> None:
     collector = CPUMetricsCollector([os.getpid()])
-    collector.start()
-    with pytest.raises(RuntimeError, match="Must call start and stop"):
-        collector.dump_stats()
+    with collector:
+        with pytest.raises(RuntimeError, match="Must use CPUMetricsCollector"):
+            collector.get_stats()
 
 
 def test_collector_handles_vanished_pid() -> None:
-    """PIDs that disappear between start/stop should not crash dump_stats."""
+    """PIDs that disappear between enter/exit should not crash get_stats."""
     fake_pid = 2_000_000_000  # almost certainly not running
     collector = CPUMetricsCollector([fake_pid])
-    collector.start()
-    collector.stop()
-    stats = collector.dump_stats()
+    with collector:
+        pass
+    stats = collector.get_stats()
 
     assert stats.user == 0.0
     assert stats.system == 0.0
@@ -110,7 +109,7 @@ def test_collector_aggregates_multiple_pids() -> None:
         1: CpuTimes(user=12.0, system=3.0),
         2: CpuTimes(user=6.0, system=1.5),
     }
-    stats = collector.dump_stats()
+    stats = collector.get_stats()
 
     assert stats.user == pytest.approx(3.0)  # (12-10) + (6-5)
     assert stats.system == pytest.approx(1.5)  # (3-2) + (1.5-1)
@@ -120,7 +119,7 @@ def test_collector_aggregates_multiple_pids() -> None:
 
 
 def test_collector_skips_none_times() -> None:
-    """If a PID had NoSuchProcess at start/stop, its entry is None."""
+    """If a PID had NoSuchProcess at enter/exit, its entry is None."""
     collector = CPUMetricsCollector([1, 2])
     collector.clock_start = 100.0
     collector.clock_end = 101.0
@@ -132,7 +131,7 @@ def test_collector_skips_none_times() -> None:
         1: CpuTimes(user=11.0, system=2.5),
         2: None,
     }
-    stats = collector.dump_stats()
+    stats = collector.get_stats()
 
     assert stats.user == pytest.approx(1.0)
     assert stats.system == pytest.approx(0.5)

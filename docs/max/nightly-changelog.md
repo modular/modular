@@ -20,6 +20,10 @@ This version is still a work in progress.
 
 ### Python API
 
+- `CPUMetricsCollector` in `max.diagnostics.cpu` is now used as a context
+  manager instead of `start`/`stop` and now exposes `get_stats()` instead of
+  `dump_stats()`, matching the interface of `GPUDiagContext`.
+
 ## Breaking changes
 
 ### Mojo API

@@ -54,8 +54,15 @@ def collect_pids_for_port(port: int) -> list[int]:
 class CPUMetricsCollector:
     """Collects aggregate CPU time across a set of PIDs.
 
-    Call :meth:`start` before the workload, :meth:`stop` after, then
-    :meth:`dump_stats` to obtain the :class:`CPUMetrics` summary.
+    Use as a context manager around the workload, then call :meth:`get_stats`
+    to obtain the :class:`CPUMetrics` summary.
+
+    .. code-block:: python
+
+        collector = CPUMetricsCollector(pids)
+        with collector:
+            run_workload()
+        metrics = collector.get_stats()
 
     Args:
         pids: The PIDs of the processes to collect CPU times from.
@@ -68,11 +75,11 @@ class CPUMetricsCollector:
         self.cpu_times_start: dict[int, Any] = {}
         self.cpu_times_end: dict[int, Any] = {}
 
-    def start(self) -> None:
+    def __enter__(self) -> CPUMetricsCollector:
         """Records the start clock and per-PID CPU times.
 
         Processes that no longer exist record ``None`` and are skipped in
-        :meth:`dump_stats`.
+        :meth:`get_stats`.
         """
         self.clock_start = time.monotonic()
         for pid in self.pids:
@@ -81,12 +88,18 @@ class CPUMetricsCollector:
                 self.cpu_times_start[pid] = proc.cpu_times()
             except psutil.NoSuchProcess:
                 self.cpu_times_start[pid] = None
+        return self
 
-    def stop(self) -> None:
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        exc_tb: object,
+    ) -> None:
         """Records the stop clock and per-PID CPU times.
 
         Processes that no longer exist record ``None`` and are skipped in
-        :meth:`dump_stats`.
+        :meth:`get_stats`.
         """
         self.clock_end = time.monotonic()
         for pid in self.pids:
@@ -96,7 +109,7 @@ class CPUMetricsCollector:
             except psutil.NoSuchProcess:
                 self.cpu_times_end[pid] = None
 
-    def dump_stats(self) -> CPUMetrics:
+    def get_stats(self) -> CPUMetrics:
         """Computes and returns CPU metrics aggregated across the tracked PIDs.
 
         Returns:
@@ -104,11 +117,13 @@ class CPUMetricsCollector:
             utilization percentages over the elapsed wall-clock interval.
 
         Raises:
-            RuntimeError: If :meth:`start` and :meth:`stop` were not called,
-                or if elapsed time is non-positive.
+            RuntimeError: If the context manager was not used, or if elapsed
+                time is non-positive.
         """
         if not self.clock_start or not self.clock_end:
-            raise RuntimeError("Must call start and stop before dump_stats")
+            raise RuntimeError(
+                "Must use CPUMetricsCollector as a context manager before calling get_stats"
+            )
 
         user = 0.0
         system = 0.0
