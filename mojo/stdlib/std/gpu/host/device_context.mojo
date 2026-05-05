@@ -3093,7 +3093,7 @@ struct DeviceGraph(ImplicitlyCopyable):
             var compiled_fn = ctx.compile_function[kernel, kernel]()
             var builder = ctx.create_graph_builder()
             builder.add_function(compiled_fn, grid_dim=1, block_dim=1)
-            var graph = builder.instantiate()
+            var graph = builder^.instantiate()
             graph.replay()
             graph.replay()  # replay as many times as needed
             ctx.synchronize()
@@ -7340,7 +7340,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
             var compiled_fn = ctx.compile_function[kernel, kernel]()
             var builder = ctx.create_graph_builder()
             builder.add_function(compiled_fn, 42, grid_dim=1, block_dim=1)
-            var graph = builder.instantiate()
+            var graph = builder^.instantiate()
             graph.replay()
             ctx.synchronize()
         ```
