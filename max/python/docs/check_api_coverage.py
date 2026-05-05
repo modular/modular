@@ -41,6 +41,7 @@ import json
 import re
 import subprocess
 import sys
+import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -246,8 +247,22 @@ def _git_show_batch(ref: str, paths: list[str]) -> dict[str, str]:
         stdout=subprocess.PIPE,
     )
     assert proc.stdin and proc.stdout
-    proc.stdin.write(("\n".join(f"{ref}:{p}" for p in paths) + "\n").encode())
-    proc.stdin.close()
+
+    # Feed stdin from a background thread so the main thread can drain
+    # stdout concurrently. Writing all queries up-front and only then
+    # reading deadlocks once git's stdout fills the pipe buffer (~64 KiB
+    # on Linux): git blocks writing the response, can't drain the rest of
+    # stdin, and the main thread blocks writing more queries.
+    def _feed() -> None:
+        try:
+            proc.stdin.write(
+                ("\n".join(f"{ref}:{p}" for p in paths) + "\n").encode()
+            )
+        finally:
+            proc.stdin.close()
+
+    feeder = threading.Thread(target=_feed, daemon=True)
+    feeder.start()
 
     out: dict[str, str] = {}
     for path in paths:
@@ -258,6 +273,7 @@ def _git_show_batch(ref: str, paths: list[str]) -> dict[str, str]:
         body = proc.stdout.read(size)
         proc.stdout.read(1)  # trailing newline
         out[path] = body.decode("utf-8", errors="replace")
+    feeder.join()
     proc.wait()
     return out
 
