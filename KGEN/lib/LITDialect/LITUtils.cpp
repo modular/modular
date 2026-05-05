@@ -1517,31 +1517,3 @@ ParamDeclRefAttr LIT::extractParamDeclRef(TypedAttr attr) {
 
   return {};
 }
-
-//===----------------------------------------------------------------------===//
-// Conversion Thunk Callee Utilities
-//===----------------------------------------------------------------------===//
-
-namespace M {
-namespace KGEN {
-
-void appendThunkCallee(ParameterEvaluator &evaluator, TypedAttr calleeParam) {
-  evaluator.appendIndexBinding(calleeParam);
-}
-
-GeneratorOp getThunkCallee(SymbolConstantAttr symbol,
-                           mlir::SymbolTable &symTab) {
-  auto paramVals = symbol.getParamValues();
-  if (paramVals.empty())
-    return {};
-  auto callee = dyn_cast<SymbolConstantAttr>(paramVals.back());
-  if (!callee)
-    return {};
-  auto flatRef = dyn_cast<FlatSymbolRefAttr>(callee.getSymbol());
-  if (!flatRef)
-    return {};
-  return symTab.lookup<GeneratorOp>(flatRef.getAttr());
-}
-
-} // namespace KGEN
-} // namespace M

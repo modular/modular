@@ -269,6 +269,31 @@ void ParamDeclareRegionOp::collectParameterUses(
     function_ref<void(Attribute)> scanAttr, function_ref<void(Type)> scanType) {
 }
 
+//===----------------------------------------------------------------------===//
+// Transparent conversion thunks
+//===----------------------------------------------------------------------===//
+
+SymbolConstantAttr
+KGEN::resolveTransparentThunkCallee(Operation *gen,
+                                    SymbolConstantAttr callsite) {
+  // The thunk carries a `BindParamsAttr(callee, [thunk's params...])`
+  // expression that resolves to a fully-bound callee SymbolConstantAttr
+  // once we substitute the thunk's paramDecls with the callsite's
+  // paramValues. Set by `generateConversionThunk` in ExprConversions.cpp.
+  auto calleeExpr =
+      gen->getAttrOfType<TypedAttr>("kgen.transparent_thunk_callee_expr");
+  if (!calleeExpr)
+    return {};
+  auto generator = cast<GeneratorOp>(gen);
+  // Note we don't need an evaluation context here because the parameters on the
+  // calleeExpr are pure references, with no operators.
+  ParameterEvaluator evaluator(generator.getInputParams(),
+                               callsite.getParamValues());
+  auto rebound =
+      dyn_cast_if_present<TypedAttr>(evaluator.getReboundAttribute(calleeExpr));
+  return dyn_cast_or_null<SymbolConstantAttr>(rebound);
+}
+
 LogicalResult ParamDeclareRegionOp::verify() {
   if (ArrayAttr argsArray = getLLVMArgMetadataArray();
       !argsArray.empty() && argsArray.size() != getNumArguments())

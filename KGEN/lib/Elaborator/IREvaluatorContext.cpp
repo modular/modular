@@ -412,6 +412,14 @@ IREvaluatorContext::evaluateMangledName(TypedAttr symCst, bool sanitize,
     return ErrorTree(errorLoc, errMsg);
   }
 
+  // For a transparent conversion thunk, look through to the wrapped function.
+  // `bundleCompileOffloadOp` does the same redirect on the GPU side — the
+  // wrapped function is what gets compiled, so its mangled name is what the
+  // host needs to look up.
+  if (SymbolConstantAttr calleeSym =
+          resolveTransparentThunkCallee(generator, symbol))
+    return evaluateMangledName(calleeSym, sanitize, errorLoc, errorContext);
+
   if (generator.getLinkageNameAttr()) {
     // @__name is present: evaluate the (possibly parametric) name expression.
     FailureOr<TypedAttr> result = evaluateLinkageName(generator, symbol, this);
@@ -481,6 +489,19 @@ FailureOr<TypedAttr> IREvaluatorContext::evaluateCompileOffloadClosureAttr(
   GeneratorOp generator = getGenerator(closureSymbolForLookup.getSymbol());
   assert(generator &&
          "compile_offload_closure must reference a valid GeneratorOp");
+
+  // If `generator` is a transparent conversion thunk, mirror what
+  // `bundleCompileOffloadOp` does and look through it to the wrapped
+  // function. The GPU-side `writeCaptureArgs` names the populate function
+  // body after the *redirected* (user-kernel) generator, so this stub must
+  // be named the same way for the fill step to match them up.
+  if (auto calleeSym =
+          resolveTransparentThunkCallee(generator, closureSymbolForLookup)) {
+    if (GeneratorOp calleeGen = getGenerator(calleeSym.getSymbol())) {
+      generator = calleeGen;
+      closureSymbolForLookup = calleeSym;
+    }
+  }
 
   // Construct the expected result type.
   MLIRContext *ctx = compileOffloadClosureAttr.getContext();

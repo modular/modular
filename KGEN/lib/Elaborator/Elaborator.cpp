@@ -1902,6 +1902,20 @@ ErrorTreeOrSuccess Elaborator::bundleCompileOffloadOp(CompileOffloadOp op) {
   auto func = oldSymTab.lookup<GeneratorOp>(
       cast<FlatSymbolRefAttr>(symbol.getSymbol()).getAttr());
   assert(func && "compile_offload must reference a valid GeneratorOp");
+
+  // If `func` is a transparent conversion thunk, reroute the offload to its
+  // wrapped function so the GPU side compiles the user's kernel directly.
+  // The thunk is just a calling-convention adapter that LowerArgConventions
+  // collapses into the kernel's signature anyway, and steering around it
+  // here keeps `compileOffloads` thunk-agnostic.
+  if (auto calleeSym = resolveTransparentThunkCallee(func, symbol)) {
+    if (auto flatRef = dyn_cast<FlatSymbolRefAttr>(calleeSym.getSymbol())) {
+      if (auto calleeGen = oldSymTab.lookup<GeneratorOp>(flatRef.getAttr())) {
+        symbol = calleeSym;
+        func = calleeGen;
+      }
+    }
+  }
   // Use mangleParameterValues for the bundling name so it matches the name
   // evaluateCompileOffloadClosureAttr uses for the _populate_captures stub.
   StringAttr name = StringAttr::get(
@@ -1986,9 +2000,8 @@ ErrorTreeOrSuccess Elaborator::bundleCompileOffloadOp(CompileOffloadOp op) {
         offloadInfo.symbols.insert({func, OffloadInfo::Group::SymbolInfo{}})
             .first;
 
-    GeneratorOp kernelOp = getThunkCallee(symbol, oldSymTab);
     std::optional<StringAttr> sourceName;
-    if (auto srcName = (kernelOp ? kernelOp : func).getSourceName())
+    if (auto srcName = func.getSourceName())
       sourceName = StringAttr::get(ctx, *srcName);
 
     auto pair = iter->second.insert(

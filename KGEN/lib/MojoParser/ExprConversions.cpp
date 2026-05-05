@@ -437,6 +437,11 @@ static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl,
              .getInputParamTypes()
              .size() == 0);
 
+  // Stash the fully-bound-when-thunk-is-bound callee expression on the thunk so
+  // we can later recover the wrapped function's SymbolConstantAttr with all its
+  // compile-time params filled in (sourced from the thunk's bound paramValues).
+  thunk->setAttr("kgen.transparent_thunk_callee_expr", calleeParam);
+
   // EXPLICIT-COPY-REF-RETURN: If the callee has a ref result and we expect a
   // value result, then we need to copy out of the ref into the value result. As
   // a (very sad) hack, we need to allow explicitly copyable types (not just
@@ -671,7 +676,12 @@ static CValue convertFunctionGeneratorValue(CValue value, const ExprNode *expr,
     evaluator.appendIndexBinding(
         UnboundAttr::get(evaluator.getReboundType(type)));
   }
-  appendThunkCallee(evaluator, calleeParam);
+  // Bind the user kernel as the conversion thunk's `callee` input parameter.
+  // Both the position (last param) and the explicit
+  // `kgen.transparent_thunk_callee_param` marker (set above) are part of how
+  // we recover the wrapped function downstream — see
+  // `resolveTransparentThunkCallee` in `KGENOps.cpp`.
+  evaluator.appendIndexBinding(calleeParam);
 
   SymbolConstantAttr symbol = thunk.getBoundSymbolRef(
       emitter.shared.getEvaluationContext(),
