@@ -20,17 +20,49 @@ from types import TracebackType
 from typing import Annotated, Any, Protocol, runtime_checkable
 
 from . import _bindtools
-from ._types import GPUStats, MemoryStats, UtilizationStats
+from ._types import ClockStats, GPUStats, MemoryStats, UtilizationStats
 
 _rsmi_status_t = Annotated[int, ctypes.c_int]
 _rsmi_memory_type_t = Annotated[int, ctypes.c_int]
+_rsmi_clk_type_t = Annotated[int, ctypes.c_int]
 _rsmi_device_index_t = Annotated[int, ctypes.c_uint32]
 
 _RSMI_STATUS_SUCCESS = 0
+_RSMI_STATUS_NOT_SUPPORTED = 2
 
 _RSMI_MEM_TYPE_VRAM = 0
 _RSMI_MEM_TYPE_VIS_VRAM = 1
 _RSMI_MEM_TYPE_GTT = 2
+
+_RSMI_CLK_TYPE_SYS = 0
+_RSMI_CLK_TYPE_MEM = 4
+
+# rsmi_frequencies_t layout for ROCm 6.0+ (verified against the rocm-6.0.0
+# through rocm-7.0.0 headers). ROCm 6.0 is the documented floor for this
+# binding: ROCm <= 5.7 omits the leading ``has_deep_sleep`` field and uses
+# RSMI_MAX_NUM_FREQUENCIES=32, which would silently misalign the struct and
+# produce garbage frequencies. The validation in ``_get_clock_freqs`` (range
+# checks on ``num_supported`` and ``current``) catches the worst cases so the
+# stats path returns None rather than a bogus number, but environments still
+# on rocm-smi <6.0 should treat clock reporting as unsupported.
+_RSMI_MAX_NUM_FREQUENCIES = 33
+
+
+class _rsmi_frequencies_t(ctypes.Structure):
+    # When `has_deep_sleep` is true, frequency[0] is the deep-sleep clock
+    # (very low) and `current` may be 0 to indicate the GPU is currently in
+    # deep sleep. _get_clock_freqs filters that case out.
+    _fields_ = [
+        ("has_deep_sleep", ctypes.c_bool),
+        ("num_supported", ctypes.c_uint32),
+        ("current", ctypes.c_uint32),
+        ("frequency", ctypes.c_uint64 * _RSMI_MAX_NUM_FREQUENCIES),
+    ]
+
+    has_deep_sleep: bool
+    num_supported: int
+    current: int
+    frequency: ctypes.Array[ctypes.c_uint64]
 
 
 @runtime_checkable
@@ -63,6 +95,12 @@ class _RSMILibrary(Protocol):
         self,
         device_index: _rsmi_device_index_t,
         busy_percent: ctypes._Pointer[ctypes.c_uint32],
+    ) -> _rsmi_status_t: ...
+    def rsmi_dev_gpu_clk_freq_get(
+        self,
+        device_index: _rsmi_device_index_t,
+        clk_type: _rsmi_clk_type_t,
+        f: ctypes._Pointer[_rsmi_frequencies_t],
     ) -> _rsmi_status_t: ...
     def rsmi_status_string(
         self, status: _rsmi_status_t, string: ctypes._Pointer[ctypes.c_char_p]
@@ -168,6 +206,72 @@ class RSMIContext:
         )
         return result.value
 
+    def _get_clock_freqs(
+        self, index: int, clk_type: int
+    ) -> tuple[int, int] | None:
+        """Return (current_mhz, max_mhz) for a clock domain, or None on error.
+
+        ROCm-SMI returns frequencies in Hz. The "max" clock is taken as the
+        highest supported DPM level (``frequency[num_supported - 1]``).
+        Deep-sleep samples (``has_deep_sleep`` set with ``current == 0``)
+        are reported as ``None``: ``frequency[0]`` would otherwise be the
+        very-low deep-sleep clock and would falsely look like severe
+        throttling.
+        """
+        assert self._library is not None
+        freqs = _rsmi_frequencies_t()
+        try:
+            _check_rsmi_status(
+                self._library,
+                self._library.rsmi_dev_gpu_clk_freq_get(
+                    index, clk_type, _bindtools.byref(freqs)
+                ),
+            )
+        except RSMIError as e:
+            # Mirror the NVML side: only swallow "not supported" so genuinely
+            # unexpected RSMI failures (permission errors, init failures, etc.)
+            # still propagate to the caller.
+            if e.code == _RSMI_STATUS_NOT_SUPPORTED:
+                return None
+            raise
+        if (
+            freqs.num_supported == 0
+            or freqs.num_supported > _RSMI_MAX_NUM_FREQUENCIES
+        ):
+            # May be dealing with a different struct layout from ROCm <= 5.7
+            # (see comment on `_RSMI_MAX_NUM_FREQUENCIES`); bail.
+            return None
+        if freqs.current >= freqs.num_supported:
+            # Either a layout mismatch slipped past the size check above, or
+            # ROCm-SMI returned an inconsistent snapshot.
+            return None
+        if freqs.has_deep_sleep and freqs.current == 0:
+            return None
+        # `freqs.current` is in [0, num_supported) and num_supported is in
+        # (0, _RSMI_MAX_NUM_FREQUENCIES] (the size of `freqs.frequency`), so
+        # both indices below are in bounds.
+        current_hz = freqs.frequency[freqs.current]
+        max_hz = freqs.frequency[freqs.num_supported - 1]
+        return (current_hz // 1_000_000, max_hz // 1_000_000)
+
+    def _get_clock_stats(self, index: int) -> ClockStats | None:
+        # ROCm-SMI has no analogue of NVML's SM->GRAPHICS clock-type fallback:
+        # `RSMI_CLK_TYPE_SYS` is the only universally-supported core clock,
+        # so a NOT_SUPPORTED here means we report no clocks at all.
+        sys_clocks = self._get_clock_freqs(index, _RSMI_CLK_TYPE_SYS)
+        if sys_clocks is None:
+            return None
+        mem_clocks = self._get_clock_freqs(index, _RSMI_CLK_TYPE_MEM)
+        return ClockStats(
+            core_mhz=sys_clocks[0],
+            core_max_mhz=sys_clocks[1],
+            mem_mhz=mem_clocks[0] if mem_clocks is not None else None,
+            mem_max_mhz=mem_clocks[1] if mem_clocks is not None else None,
+            # ROCm-SMI does not expose a single-call throttle-reasons API
+            # comparable to NVML's; leave unset for now.
+            throttle_reasons=None,
+        )
+
     def _get_device_stats(self, index: int) -> GPUStats:
         mem_total = self._get_memory_total(index)
         mem_used = self._get_memory_usage(index)
@@ -184,6 +288,7 @@ class RSMIContext:
                 gpu_usage_percent=dev_busy_pct,
                 memory_activity_percent=mem_busy_pct,
             ),
+            clocks=self._get_clock_stats(index),
         )
 
     def get_stats(self) -> dict[int, GPUStats]:

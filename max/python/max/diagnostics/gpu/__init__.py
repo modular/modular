@@ -20,6 +20,9 @@ later retrieval.
 
 from ._bgrec import BackgroundRecorder as BackgroundRecorder
 from ._multi import GPUDiagContext as GPUDiagContext
+from ._types import HARDWARE_THROTTLE_REASONS as HARDWARE_THROTTLE_REASONS
+from ._types import ClockStats as ClockStats
 from ._types import GPUStats as GPUStats
 from ._types import MemoryStats as MemoryStats
+from ._types import ThrottleReason as ThrottleReason
 from ._types import UtilizationStats as UtilizationStats

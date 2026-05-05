@@ -15,21 +15,61 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 import msgspec
+
+ThrottleReason = Literal[
+    "gpu_idle",
+    "applications_clocks_setting",
+    "sw_power_cap",
+    "hw_slowdown",
+    "sync_boost",
+    "sw_thermal_slowdown",
+    "hw_thermal_slowdown",
+    "hw_power_brake_slowdown",
+    "display_clock_setting",
+]
+"""Vendor-neutral reason that a GPU's clock is below its boost ceiling.
+
+The vocabulary mirrors the categories NVML exposes today; new vendors
+(e.g. ROCm-SMI, once it exposes an equivalent API) should map their
+reasons onto these names where possible and extend the list otherwise.
+"""
+
+# Reasons that indicate the GPU was performance-capped by hardware
+# (thermal, power, sync-boost) rather than by user/application settings
+# or simply being idle. Use ``set(stats.throttle_reasons) &
+# HARDWARE_THROTTLE_REASONS`` to decide whether a benchmark run was
+# throttled. A bare non-empty list is misleading because ``"gpu_idle"``
+# is reported whenever the GPU was idle at sample time.
+HARDWARE_THROTTLE_REASONS: frozenset[ThrottleReason] = frozenset(
+    {
+        "sw_power_cap",
+        "hw_slowdown",
+        "sync_boost",
+        "sw_thermal_slowdown",
+        "hw_thermal_slowdown",
+        "hw_power_brake_slowdown",
+    }
+)
 
 
 class GPUStats(msgspec.Struct):
-    """Comprehensive GPU state snapshot containing memory and utilization metrics.
+    """GPU state snapshot: memory, utilization, and clock metrics.
 
     This class provides a complete view of a GPU's current state, including
-    detailed memory usage statistics and utilization percentages. It serves
-    as the primary data structure returned by GPU diagnostic queries.
+    detailed memory usage statistics, utilization percentages, and current
+    clock rates. It serves as the primary data structure returned by GPU
+    diagnostic queries.
     """
 
     memory: MemoryStats
     """Detailed memory usage statistics for the GPU."""
     utilization: UtilizationStats
     """Current GPU compute and memory utilization percentages."""
+    clocks: ClockStats | None = None
+    """Current and maximum clock rates plus throttle reasons, if available."""
 
 
 class MemoryStats(msgspec.Struct):
@@ -63,3 +103,43 @@ class UtilizationStats(msgspec.Struct):
 
     memory_activity_percent: int | None
     """Memory controller activity percentage, if available from the GPU vendor."""
+
+
+class ClockStats(msgspec.Struct):
+    """Current and maximum GPU clock rates plus throttle reasons.
+
+    Captures the core (SM/graphics on NVIDIA, system clock on AMD) and memory
+    clock rates measured at sample time along with the device's boost ceiling
+    for each domain. Consumers can compare current to max clocks (or inspect
+    ``throttle_reasons``) to detect runs whose performance is limited by
+    hardware throttling rather than the workload itself.
+
+    ``throttle_reasons`` is a list of vendor-neutral
+    :data:`ThrottleReason` values. Note that ``"gpu_idle"`` is reported
+    whenever the GPU is idle, so a non-empty list does *not* on its own
+    indicate throttling -- intersect with :data:`HARDWARE_THROTTLE_REASONS`
+    to detect hardware-induced throttling specifically. On AMD,
+    ``throttle_reasons`` is ``None`` because ROCm-SMI does not expose an
+    equivalent single-call API.
+    """
+
+    core_mhz: int
+    """Current core clock rate in MHz (SM clock on NVIDIA, system clock on AMD)."""
+
+    core_max_mhz: int
+    """Maximum (boost) core clock rate in MHz."""
+
+    mem_mhz: int | None
+    """Current memory clock rate in MHz, or ``None`` if the vendor library did not report it."""
+
+    mem_max_mhz: int | None
+    """Maximum (boost) memory clock rate in MHz, or ``None`` if the vendor library did not report it."""
+
+    throttle_reasons: list[ThrottleReason] | None
+    """Vendor-neutral reasons the clock is below boost.
+
+    ``"gpu_idle"`` is reported whenever the GPU is idle, so consumers
+    should intersect with :data:`HARDWARE_THROTTLE_REASONS` when checking
+    for hardware throttling. ``None`` when the vendor library does not
+    expose a throttle-reason API.
+    """
