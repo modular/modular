@@ -92,9 +92,18 @@ def _write_junit_xml(
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "dir",
-        type=Path,
-        help="Directory to scan for .mojo files.",
+        "--scan-root-file",
+        metavar="FILE",
+        action="append",
+        dest="scan_root_files",
+        default=[],
+        help=(
+            "Treat the parent directory of FILE as a scan root and collect "
+            "all .mojo files under it. May be repeated for multiple roots. "
+            "A sentinel file such as __init__.mojo works well; the Bazel "
+            "$(rootpath) expansion makes it easy to pin a root to a specific "
+            "package without hard-coding paths."
+        ),
     )
     parser.add_argument(
         "--skip-file",
@@ -102,7 +111,7 @@ def main() -> int:
         action="append",
         default=[],
         help=(
-            "Skip a file by its path relative to the scan directory "
+            "Skip a file by its path relative to its scan root "
             "(e.g. 'collections/string/string.mojo'). May be repeated. "
             "Used to blocklist files with known crashes (MOCO-3399)."
         ),
@@ -121,20 +130,30 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    # Resolve to an absolute path so mojo-lsp-simple-client receives an
+    if not args.scan_root_files:
+        parser.error("at least one --scan-root-file is required")
+
+    # Resolve to absolute paths so mojo-lsp-simple-client receives an
     # absolute file path.  That produces a well-formed file:///abs/path URI
     # inside simple-client.cpp ("file://" + path).  A relative path yields
     # file://relative/path where the first component is mis-parsed as the
     # URI authority/host, causing the LSP server to treat the document as
     # having an unknown location and skip import resolution entirely.
-    scan_dir = args.dir.resolve()
+    scan_roots = [Path(f).resolve().parent for f in args.scan_root_files]
 
-    mojo_files = sorted(scan_dir.rglob("*.mojo"))
+    # Collect all .mojo files from all scan roots, paired with their root so
+    # relative paths (for --skip-file and --no-docstring-checks-file matching)
+    # can be computed correctly regardless of which root the file came from.
+    all_files: list[tuple[Path, Path]] = []
+    for root in scan_roots:
+        for f in root.rglob("*.mojo"):
+            all_files.append((f, root))
+    all_files.sort()
 
     if args.skip_file:
         skip = {Path(p) for p in args.skip_file}
-        mojo_files = [
-            f for f in mojo_files if f.relative_to(scan_dir) not in skip
+        all_files = [
+            (f, r) for f, r in all_files if f.relative_to(r) not in skip
         ]
 
     no_docstring_checks = {Path(p) for p in args.no_docstring_checks_file}
@@ -143,9 +162,9 @@ def main() -> int:
     shard_index = int(os.environ.get("TEST_SHARD_INDEX", "0"))
     total_shards = int(os.environ.get("TEST_TOTAL_SHARDS", "1"))
     if total_shards > 1:
-        mojo_files = [
-            f
-            for i, f in enumerate(mojo_files)
+        all_files = [
+            (f, r)
+            for i, (f, r) in enumerate(all_files)
             if i % total_shards == shard_index
         ]
 
@@ -154,16 +173,19 @@ def main() -> int:
     if shard_status_file:
         Path(shard_status_file).touch()
 
-    suite_name = f"lsp-parse/{scan_dir.name}"
+    suite_name = "lsp-parse/" + "+".join(r.name for r in scan_roots)
 
-    if not mojo_files:
+    if not all_files:
         if total_shards > 1:
             print(
                 f"Shard {shard_index}/{total_shards}: no files assigned, skipping.",
                 flush=True,
             )
         else:
-            print(f"error: no .mojo files found in {scan_dir}", file=sys.stderr)
+            roots_str = ", ".join(str(r) for r in scan_roots)
+            print(
+                f"error: no .mojo files found in {roots_str}", file=sys.stderr
+            )
             return 1
         xml_file = os.environ.get("XML_OUTPUT_FILE")
         if xml_file:
@@ -175,11 +197,11 @@ def main() -> int:
     failed: list[Path] = []
     t_start = time.monotonic()
 
-    for i, f in enumerate(mojo_files, 1):
-        rel = f.relative_to(scan_dir)
+    for i, (f, root) in enumerate(all_files, 1):
+        rel = f.relative_to(root)
         skip_docstrings = rel in no_docstring_checks
         print(
-            f"[{i}/{len(mojo_files)}] mojo-lsp-simple-client"
+            f"[{i}/{len(all_files)}] mojo-lsp-simple-client"
             f"{' --no-docstring-checks' if skip_docstrings else ''} {f}",
             flush=True,
         )
@@ -208,11 +230,12 @@ def main() -> int:
             if result.stderr:
                 print(result.stderr, file=sys.stderr)
             failed.append(f)
-        results.append((str(f.relative_to(scan_dir)), elapsed, error))
+        results.append((str(rel), elapsed, error))
 
     total = time.monotonic() - t_start
+    roots_str = ", ".join(str(r) for r in scan_roots)
     print(
-        f"TIMING: total={total:.1f}s files={len(mojo_files)} dir={scan_dir}",
+        f"TIMING: total={total:.1f}s files={len(all_files)} roots={roots_str}",
         flush=True,
     )
 

@@ -49,11 +49,19 @@ _NO_DOCSTRING_LIST = [
 #
 # shard_count=50 (the repo maximum) divides ~240 enabled files into ~5 files
 # per shard (~25 s each), well within the medium timeout.
+#
+# mojo_deps includes max:compiler/layout/tensor so the LSP can resolve imports
+# from those packages when validating stdlib docstring examples (MOCO-3767).
+# The scan root is pinned to @mojo//:std (stdlib only) via --scan-root-file so
+# the test only parses stdlib source files, not the MAX packages.
 modular_py_test(
     name = "mojo-lsp-server-parse-stdlib",
     size = "medium",
     srcs = ["parse-mojo-files-with-lsp.py"],
-    args = ["$(COMPUTED_IMPORT_PATH)"] + [
+    args = [
+        "--scan-root-file",
+        "$(rootpath //oss/modular/mojo/stdlib/std:__init__.mojo)",
+    ] + [
         arg
         for f in _NO_RUN_LIST
         for arg in [
@@ -70,10 +78,16 @@ modular_py_test(
     ],
     data = [
         "//KGEN/tools/mojo-lsp-simple-client",
+        "//oss/modular/mojo/stdlib/std:__init__.mojo",
         "//oss/modular/mojo/stdlib/std:std_srcs",
     ],
     main = "parse-mojo-files-with-lsp.py",
-    mojo_deps = ["@mojo//:std"],
+    mojo_deps = [
+        "//max:compiler",
+        "//max:layout",
+        "//max:tensor",
+        "@mojo//:std",
+    ],
     shard_count = 50,
     tags = [
         "manual",
