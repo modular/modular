@@ -32,7 +32,7 @@ lfm2_arch = SupportedArchitecture(
     rope_type="neox",
     default_weights_format=WeightsFormat.safetensors,
     required_arguments={
-        "allow_safetensors_weights_fp32_bf6_bidirectional_cast": True,
+        "allow_safetensors_weights_fp32_bf16_bidirectional_cast": True,
         "trust_remote_code": True,
     },
     multi_gpu_supported=False,
