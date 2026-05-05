@@ -284,9 +284,7 @@ def bench_conv3d[
     # this (impl, shape) as failed instead of timing a no-op (which would
     # otherwise look fastest in the CSV).
     comptime if impl == "im2col":
-        var accepted = dispatch_im2col_matmul_conv3d[
-            dtype, dtype, dtype, filter_is_fcrs=False
-        ](
+        var accepted = dispatch_im2col_matmul_conv3d(
             input_tt,
             filter_qrscf_tt,
             output_tt,
@@ -302,9 +300,7 @@ def bench_conv3d[
                 "dispatch_im2col_matmul_conv3d declined: " + bench_input_id
             )
     elif impl == "1x1x1":
-        var accepted = dispatch_1x1x1_matmul_conv3d[
-            dtype, dtype, dtype, filter_is_fcrs=False
-        ](
+        var accepted = dispatch_1x1x1_matmul_conv3d(
             input_tt,
             filter_qrscf_tt,
             output_tt,
@@ -320,9 +316,7 @@ def bench_conv3d[
                 "dispatch_1x1x1_matmul_conv3d declined: " + bench_input_id
             )
     elif impl == "qslice":
-        var accepted = dispatch_qslice_conv3d_sm100[
-            dtype, dtype, dtype, filter_is_fcrs=False
-        ](
+        var accepted = dispatch_qslice_conv3d_sm100(
             input_tt,
             filter_qrscf_tt,
             output_tt,
@@ -347,9 +341,7 @@ def bench_conv3d[
             @parameter
             @always_inline
             def kernel(ctx: DeviceContext) raises:
-                _ = dispatch_im2col_matmul_conv3d[
-                    dtype, dtype, dtype, filter_is_fcrs=False
-                ](
+                _ = dispatch_im2col_matmul_conv3d(
                     input_tt,
                     filter_qrscf_tt,
                     output_tt,
@@ -375,9 +367,7 @@ def bench_conv3d[
             @parameter
             @always_inline
             def kernel(ctx: DeviceContext) raises:
-                _ = dispatch_1x1x1_matmul_conv3d[
-                    dtype, dtype, dtype, filter_is_fcrs=False
-                ](
+                _ = dispatch_1x1x1_matmul_conv3d(
                     input_tt,
                     filter_qrscf_tt,
                     output_tt,
@@ -403,9 +393,7 @@ def bench_conv3d[
             @parameter
             @always_inline
             def kernel(ctx: DeviceContext) raises:
-                _ = dispatch_qslice_conv3d_sm100[
-                    dtype, dtype, dtype, filter_is_fcrs=False
-                ](
+                _ = dispatch_qslice_conv3d_sm100(
                     input_tt,
                     filter_qrscf_tt,
                     output_tt,

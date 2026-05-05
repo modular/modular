@@ -155,10 +155,6 @@ def test_conv3d_qslice_direct[
             )
 
         var handled = dispatch_qslice_conv3d_sm100[
-            dtype,
-            dtype,
-            dtype,
-            filter_is_fcrs=False,
             maybe_epilogue_func=Optional[elementwise_simd_epilogue_type](
                 scale_epilogue
             ),
@@ -179,12 +175,7 @@ def test_conv3d_qslice_direct[
             _ = output_dev^
             return
     else:
-        var handled = dispatch_qslice_conv3d_sm100[
-            dtype,
-            dtype,
-            dtype,
-            filter_is_fcrs=False,
-        ](
+        var handled = dispatch_qslice_conv3d_sm100(
             input_tt,
             filter_tt,
             output_tt,

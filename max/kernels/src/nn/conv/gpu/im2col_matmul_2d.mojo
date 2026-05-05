@@ -157,7 +157,8 @@ def dispatch_im2col_matmul_conv2d[
     input_type: DType,
     filter_type: DType,
     output_type: DType,
-    filter_is_fcrs: Bool,
+    //,
+    filter_is_fcrs: Bool = False,
     maybe_epilogue_func: Optional[elementwise_simd_epilogue_type] = None,
     m_tile_byte_budget: Int = _DEFAULT_M_TILE_BYTE_BUDGET,
 ](

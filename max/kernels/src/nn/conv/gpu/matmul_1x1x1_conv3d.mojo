@@ -41,7 +41,8 @@ def dispatch_1x1x1_matmul_conv3d[
     input_type: DType,
     filter_type: DType,
     output_type: DType,
-    filter_is_fcrs: Bool,
+    //,
+    filter_is_fcrs: Bool = False,
     maybe_epilogue_func: Optional[elementwise_simd_epilogue_type] = None,
 ](
     input: TileTensor[input_type, ...],

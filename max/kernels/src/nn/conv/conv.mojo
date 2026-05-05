@@ -4503,6 +4503,7 @@ def conv_gpu[
         comptime if _is_sm100 and _is_supported_dtype:
             from nn.conv.gpu.nvidia.sm100.dispatch import (
                 dispatch_sm100_conv2d,
+                test_alignment_sm100_conv2d,
             )
             from linalg.utils import elementwise_epilogue_type
 
@@ -4529,8 +4530,9 @@ def conv_gpu[
                 and d[0] == 1
                 and d[1] == 1
                 and num_groups == 1
-                and (in_c * size_of[input_type]()) % 64 == 0
-                and (out_c * size_of[output_type]()) % 4 == 0
+                and test_alignment_sm100_conv2d[input_type, output_type](
+                    in_c, out_c
+                )
             ):
 
                 @parameter
@@ -4539,9 +4541,6 @@ def conv_gpu[
                     _epilogue: Optional[elementwise_epilogue_type] = None,
                 ]() raises:
                     dispatch_sm100_conv2d[
-                        input_type,
-                        filter_type,
-                        output_type,
                         filter_is_fcrs,
                         elementwise_lambda_fn=_epilogue,
                         has_residual=has_residual,
@@ -4603,9 +4602,6 @@ def conv_gpu[
             )
 
             if dispatch_im2col_matmul_conv2d[
-                input_type,
-                filter_type,
-                output_type,
                 filter_is_fcrs,
                 maybe_epilogue_func,
             ](
@@ -4806,9 +4802,6 @@ def conv_gpu[
             # convs with stride=1, dilation=1, zero padding, groups=1.
             # Covers WAN post_quant_conv and every conv_shortcut.
             if dispatch_1x1x1_matmul_conv3d[
-                input_type,
-                filter_type,
-                output_type,
                 filter_is_fcrs,
                 maybe_epilogue_func,
             ](
@@ -4836,9 +4829,6 @@ def conv_gpu[
             comptime _is_supported_dtype = input_type == DType.bfloat16
             comptime if _is_sm100 and _is_supported_dtype:
                 if dispatch_qslice_conv3d_sm100[
-                    input_type,
-                    filter_type,
-                    output_type,
                     filter_is_fcrs,
                     maybe_epilogue_func,
                 ](
@@ -4857,9 +4847,6 @@ def conv_gpu[
             # Covers 3x3x3, 3x1x1, etc. and falls back to the naive kernel on
             # shapes it can't handle (grouped, dilated, non-bf16, etc.).
             if dispatch_im2col_matmul_conv3d[
-                input_type,
-                filter_type,
-                output_type,
                 filter_is_fcrs,
                 maybe_epilogue_func,
             ](

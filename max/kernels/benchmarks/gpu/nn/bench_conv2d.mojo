@@ -231,9 +231,7 @@ def bench_conv2d[
     # this (impl, shape) as failed instead of timing a no-op (which would
     # otherwise look fastest in the CSV).
     comptime if impl == "im2col":
-        var accepted = dispatch_im2col_matmul_conv2d[
-            dtype, dtype, dtype, filter_is_fcrs=False
-        ](
+        var accepted = dispatch_im2col_matmul_conv2d(
             input_tt,
             filter_rscf_tt,
             output_tt,
@@ -258,9 +256,7 @@ def bench_conv2d[
             @parameter
             @always_inline
             def kernel(ctx: DeviceContext) raises:
-                _ = dispatch_im2col_matmul_conv2d[
-                    dtype, dtype, dtype, filter_is_fcrs=False
-                ](
+                _ = dispatch_im2col_matmul_conv2d(
                     input_tt,
                     filter_rscf_tt,
                     output_tt,

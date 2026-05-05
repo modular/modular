@@ -445,10 +445,6 @@ def test_conv3d_im2col_multi_tile[
             )
 
         var handled = dispatch_im2col_matmul_conv3d[
-            dtype,
-            dtype,
-            dtype,
-            filter_is_fcrs=False,
             maybe_epilogue_func=Optional[elementwise_simd_epilogue_type](
                 scale_epilogue
             ),
@@ -471,10 +467,6 @@ def test_conv3d_im2col_multi_tile[
             return
     else:
         var handled = dispatch_im2col_matmul_conv3d[
-            dtype,
-            dtype,
-            dtype,
-            filter_is_fcrs=False,
             m_tile_byte_budget=m_tile_byte_budget,
         ](
             input_tt,
@@ -626,10 +618,6 @@ def test_conv2d_im2col_multi_tile[
             )
 
         handled = dispatch_im2col_matmul_conv2d[
-            dtype,
-            dtype,
-            dtype,
-            filter_is_fcrs=False,
             maybe_epilogue_func=Optional[elementwise_simd_epilogue_type](
                 scale_epilogue
             ),
@@ -646,10 +634,6 @@ def test_conv2d_im2col_multi_tile[
         )
     else:
         handled = dispatch_im2col_matmul_conv2d[
-            dtype,
-            dtype,
-            dtype,
-            filter_is_fcrs=False,
             m_tile_byte_budget=m_tile_byte_budget,
         ](
             input_tt,
@@ -789,10 +773,6 @@ def test_conv3d_1x1x1_matmul_direct[
             )
 
         var handled = dispatch_1x1x1_matmul_conv3d[
-            dtype,
-            dtype,
-            dtype,
-            filter_is_fcrs=False,
             maybe_epilogue_func=Optional[elementwise_simd_epilogue_type](
                 scale_epilogue
             ),
@@ -813,12 +793,7 @@ def test_conv3d_1x1x1_matmul_direct[
             _ = output_dev^
             return
     else:
-        var handled = dispatch_1x1x1_matmul_conv3d[
-            dtype,
-            dtype,
-            dtype,
-            filter_is_fcrs=False,
-        ](
+        var handled = dispatch_1x1x1_matmul_conv3d(
             input_tt,
             filter_tt,
             output_tt,
