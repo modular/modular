@@ -103,7 +103,9 @@ private:
   inferCValue(ASTExprAnd<AnyValue> operand, size_t argIdx, PogListAttr argPogs,
               CallSyntax syntax, ASTType expectedType);
   LogicalResult inferSelfFromInitResult(FnTypeGeneratorType signature);
-  LogicalResult inferResultSlot(RefType expectedRef, const ExprDest &dest);
+  LogicalResult
+  inferResultSlot(RefType expectedRef, size_t argIdx, const ExprDest &dest,
+                  OperandsNeedingOriginsList &operandsNeedingOrigins);
 
   /// Infer parameters from an operand being passed into this function. This is
   /// only called on the top level function operands being matched up, not

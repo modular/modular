@@ -66,8 +66,11 @@ def use_out_address_space[addr_space: AddressSpace, o: Origin[mut=True]](
    # CHECK-SAME: <:origin<1> *"o._mlir_origin`">({{.*}}, {{.*}}, %mem3)
    mem3 = MemType(0, 0)
 
-   # FIXME: Doesn't work yet.
-   #var loc = MemType()
+   # Infer type from RHS, infer address space from LHS.
+   # CHECK-NEXT: %loc = lit.var.decl "loc" var : !lit.ref<!MemType
+   # CHECK-NEXT: lit.call {{.*}}MemType::@"__init__
+   # CHECK-SAME: <:!AddressSpace {_value: !Int = {0}}, :origin<1> *"loc`8">(%loc)
+   var loc = MemType()
 
    # CHECK-NEXT: lit.call {{.*}}RPType::@"__init__
    # CHECK-SAME: <:!AddressSpace addr_space, :origin<1> *"o._mlir_origin`">(%rp)
