@@ -2602,9 +2602,20 @@ void TypeCheckedFnSignature::verifyFunctionNameBinding(ASTDecl &decl,
     break;
   case SpecialFunctionKind::kCopyCtor: {
     assert(parsedArgs.size() == 1 && "arg count already checked above");
-    if (parsedArgs[kSelfArgNo].convention != ParsedArgument::kConventionRead)
+    if (parsedArgs[kSelfArgNo].convention == ParsedArgument::kConventionRead) {
+      // ok.
+    } else if (parsedArgs[kSelfArgNo].convention ==
+               ParsedArgument::kConventionRef) {
+      // Allow ref if the origin is immutable or flexible.
+      if (cast<RefType>(fullArgTypes[kSelfArgNo]).isMutableKnown(true)) {
+        emitErrorLoc(
+            parsedArgs[kSelfArgNo].loc,
+            "existing value argument must be passed as an immutable 'ref'");
+      }
+    } else {
       emitErrorLoc(parsedArgs[kSelfArgNo].loc,
                    "existing value argument must be passed as 'read'");
+    }
     break;
   }
   case SpecialFunctionKind::kMoveCtor: {
