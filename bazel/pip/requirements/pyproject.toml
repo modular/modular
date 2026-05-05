@@ -267,7 +267,7 @@ override-dependencies = [
   # Pin packages to avoid duplicates after vllm 0.16.0 update
   "aiohttp==3.13.3",
   "apache-tvm-ffi==0.1.9",
-  "flashinfer-python==0.6.3",
+  "flashinfer-python==0.6.7.post3",
   "nvidia-cutlass-dsl==4.4.1",
 
   # Various duplicates between groups
