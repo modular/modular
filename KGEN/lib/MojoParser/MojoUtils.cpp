@@ -183,13 +183,6 @@ void LIT::emitPosOnlyPassedByKw(MojoInflightDiag &diag,
   emitNames(diag, names);
 }
 
-void LIT::emitOutOfOrderInferredKw(MojoInflightDiag &diag,
-                                   ArrayRef<StringAttr> names) {
-  size_t numNames = names.size();
-  diag << "inferred parameter" << plural(numNames) << " passed out of order: ";
-  emitNames(diag, names);
-}
-
 void LIT::emitMissing(MojoInflightDiag &diag, ArrayRef<StringAttr> names,
                       const Twine &kindStr) {
   size_t numNames = names.size();
@@ -204,16 +197,6 @@ void LIT::emitByPosAndKw(MojoInflightDiag &diag, ArrayRef<StringAttr> names,
   diag << kindStr << plural(numNames)
        << " passed both as positional and keyword operand: ";
   emitNames(diag, names);
-}
-
-void LIT::emitTooManyPositional(MojoInflightDiag &diag, size_t numMaxAllowed,
-                                size_t numActual, const Twine &kindStr) {
-  diag << "expected at most " << numMaxAllowed << " positional " << kindStr
-       << plural(numMaxAllowed) << ", got " << numActual;
-}
-
-std::string LIT::nameForPosOnly(size_t idx, const Twine &argOrParam) {
-  return ("positional-only " + argOrParam + " #" + Twine(idx)).str();
 }
 
 bool LIT::isInternalName(StringRef name) { return name.starts_with('_'); }

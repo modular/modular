@@ -10,14 +10,12 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/MojoParser/CallOperands.h"
-#include "MojoUtils.h"
-
-#include "KGEN/MojoParser/ExprNode.h"
-
 #include "KGEN/LITDialect/LITAttrs.h"
 #include "KGEN/LITDialect/LITUtils.h"
+#include "KGEN/MojoParser/ExprNode.h"
 #include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/SmallPtrSet.h"
+#include "llvm/ADT/Twine.h"
 using namespace M;
 using namespace KGEN;
 using namespace LIT;
@@ -227,8 +225,10 @@ CallOperands::diagnosePosOperands(PogListAttr pogListAttr,
     // Otherwise, we have a missing positional arg/param.
     if (name.empty()) {
       // TODO: fix "arg" below
-      name = StringAttr::get(name.getContext(),
-                             "(" + nameForPosOnly(idx, "arg") + ")");
+      name = StringAttr::get(
+          name.getContext(),
+          "(" + ("positional-only " + Twine("arg") + " #" + Twine(idx)).str() +
+              ")");
     }
     missingPosNames.push_back(name);
   }

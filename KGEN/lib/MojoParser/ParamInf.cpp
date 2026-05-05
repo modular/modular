@@ -26,6 +26,7 @@
 #include "KGEN/LITDialect/LITTypes.h"
 #include "KGEN/LITDialect/LITUtils.h"
 
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/Support/SaveAndRestore.h"
 
@@ -916,9 +917,15 @@ LogicalResult ParamInf::inferFromParamList() {
     case CallOperands::KwDiagResult::kMissingKwOnly:
       emitMissing(diag, kwDiagNames, "keyword-only parameter");
       break;
-    case CallOperands::KwDiagResult::kOutOfOrderInferredKw:
-      emitOutOfOrderInferredKw(diag, kwDiagNames);
+    case CallOperands::KwDiagResult::kOutOfOrderInferredKw: {
+      size_t numNames = kwDiagNames.size();
+      diag << "inferred parameter" << plural(numNames)
+           << " passed out of order: ";
+      llvm::interleave(
+          kwDiagNames, [&](StringAttr str) { diag << str; },
+          [&]() { diag << ", "; });
       break;
+    }
     case CallOperands::KwDiagResult::kPosOnlyPassedByKw:
       emitPosOnlyPassedByKw(diag, kwDiagNames, "parameter");
       break;

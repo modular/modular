@@ -295,7 +295,8 @@ DiagEmitter::posOnlyPassedByKw(ArrayRef<StringAttr> posOnlyPassedByKw) const {
 MojoInflightDiag DiagEmitter::tooManyPosArgs(size_t maxAllowedArgs,
                                              size_t numPosOperands) const {
   MojoInflightDiag diag = initDiag();
-  emitTooManyPositional(diag, maxAllowedArgs, numPosOperands, "argument");
+  diag << "expected at most " << maxAllowedArgs << " positional argument"
+       << plural(maxAllowedArgs) << ", got " << numPosOperands;
   return diag;
 }
 
