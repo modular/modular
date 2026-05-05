@@ -137,16 +137,16 @@ def run_test_paged_variable[
         * kv_params.head_size
     )
 
-    var blocks_host = ctx.enqueue_create_host_buffer[kv_type](block_elems)
+    var blocks_host = List(length=block_elems, fill=Scalar[kv_type](0))
 
     # Generate random data in bf16 then cast to kv_type.  This avoids
     # issues with randn producing poorly-distributed values for float8
     # types.  For bf16 kv_type the cast is a no-op.
     # Use std=0.5 to keep QK dot products moderate and softmax
     # numerically stable across all cache lengths.
-    var blocks_bf16 = ctx.enqueue_create_host_buffer[q_type](block_elems)
+    var blocks_bf16 = List(length=block_elems, fill=Scalar[q_type](0))
     randn(
-        blocks_bf16.as_span(),
+        blocks_bf16,
         mean=0.0,
         standard_deviation=0.5,
     )
@@ -165,9 +165,7 @@ def run_test_paged_variable[
     )
     var _tok_stride = kv_params.num_heads * kv_params.head_size
 
-    var cache_lengths_host = ctx.enqueue_create_host_buffer[DType.uint32](
-        batch_size
-    )
+    var cache_lengths_host = List(length=batch_size, fill=UInt32(0))
     for i in range(batch_size):
         cache_lengths_host[i] = UInt32(cache_lengths[i])
 
@@ -178,11 +176,7 @@ def run_test_paged_variable[
         ceildiv(max_cache_len + q_max_seq_len, PAGE_SIZE), 8
     )
     var lut_size = batch_size * max_pages_per_batch
-    var lookup_table_host = ctx.enqueue_create_host_buffer[DType.uint32](
-        lut_size
-    )
-    for i in range(lut_size):
-        lookup_table_host[i] = UInt32(0)
+    var lookup_table_host = List(length=lut_size, fill=UInt32(0))
 
     var page_offset = 0
     for i in range(batch_size):
@@ -213,15 +207,13 @@ def run_test_paged_variable[
     # Step 2: Q tensor (ragged: [total_q_tokens, num_heads, DEPTH])
     # -----------------------------------------------------------------------
     var q_size = total_q_tokens * num_heads * DEPTH
-    var q_host = ctx.enqueue_create_host_buffer[q_type](q_size)
-    randn(q_host.as_span(), mean=0.0, standard_deviation=0.5)
+    var q_host = List(length=q_size, fill=Scalar[q_type](0))
+    randn(q_host, mean=0.0, standard_deviation=0.5)
 
     # -----------------------------------------------------------------------
     # Step 3: input_row_offsets (batch_size + 1 elements)
     # -----------------------------------------------------------------------
-    var row_offsets_host = ctx.enqueue_create_host_buffer[DType.uint32](
-        batch_size + 1
-    )
+    var row_offsets_host = List(length=batch_size + 1, fill=UInt32(0))
     row_offsets_host[0] = UInt32(0)
     for i in range(batch_size):
         row_offsets_host[i + 1] = row_offsets_host[i] + UInt32(1)
@@ -230,7 +222,7 @@ def run_test_paged_variable[
     # Step 4: Output tensor
     # -----------------------------------------------------------------------
     var out_size = total_q_tokens * num_heads * V_DEPTH
-    var out_host = ctx.enqueue_create_host_buffer[q_type](out_size)
+    var out_host = List(length=out_size, fill=Scalar[q_type](0))
 
     # -----------------------------------------------------------------------
     # Step 5: Copy everything to device
@@ -387,7 +379,7 @@ def run_test_paged_variable[
 
         # Extract contiguous K for this batch from paged blocks
         var k_b_size = ref_num_keys * KV_NUM_HEADS * DEPTH
-        var k_b_host = ctx.enqueue_create_host_buffer[kv_type](k_b_size)
+        var k_b_host = List(length=k_b_size, fill=Scalar[kv_type](0))
 
         var page_base_b = 0
         for bi in range(b):
@@ -413,13 +405,13 @@ def run_test_paged_variable[
 
         # Q for this batch: [1, 1, num_heads, depth]
         var q_b_size = 1 * num_heads * DEPTH
-        var q_b_host = ctx.enqueue_create_host_buffer[q_type](q_b_size)
+        var q_b_host = List(length=q_b_size, fill=Scalar[q_type](0))
         for i in range(q_b_size):
             q_b_host[i] = q_host[b * num_heads * DEPTH + i]
 
         # Reference output: [1, 1, num_heads, depth] (full depth)
         var ref_b_size = 1 * num_heads * DEPTH
-        var ref_b_host = ctx.enqueue_create_host_buffer[q_type](ref_b_size)
+        var ref_b_host = List(length=ref_b_size, fill=Scalar[q_type](0))
 
         # Copy to device
         var k_b_device = ctx.enqueue_create_buffer[kv_type](k_b_size)
@@ -497,6 +489,9 @@ def run_test_paged_variable[
         _ = k_b_device
         _ = q_b_device
         _ = ref_b_device
+        _ = ref_b_host^
+        _ = q_b_host^
+        _ = k_b_host^
 
     print(
         "  Verified:",
@@ -515,6 +510,13 @@ def run_test_paged_variable[
     _ = q_device
     _ = row_offsets_device
     _ = out_device
+    _ = row_offsets_host^
+    _ = lookup_table_host^
+    _ = cache_lengths_host^
+    _ = blocks_host^
+    _ = out_host^
+    _ = q_host^
+    _ = blocks_bf16^
 
 
 # ===-----------------------------------------------------------------------===#
@@ -598,11 +600,11 @@ def run_test_paged_variable_multiq[
         * kv_params.head_size
     )
 
-    var blocks_host = ctx.enqueue_create_host_buffer[kv_type](block_elems)
+    var blocks_host = List(length=block_elems, fill=Scalar[kv_type](0))
 
-    var blocks_bf16 = ctx.enqueue_create_host_buffer[q_type](block_elems)
+    var blocks_bf16 = List(length=block_elems, fill=Scalar[q_type](0))
     randn(
-        blocks_bf16.as_span(),
+        blocks_bf16,
         mean=0.0,
         standard_deviation=0.5,
     )
@@ -618,9 +620,7 @@ def run_test_paged_variable_multiq[
     )
     var _tok_stride = kv_params.num_heads * kv_params.head_size
 
-    var cache_lengths_host = ctx.enqueue_create_host_buffer[DType.uint32](
-        batch_size
-    )
+    var cache_lengths_host = List(length=batch_size, fill=UInt32(0))
     for i in range(batch_size):
         cache_lengths_host[i] = UInt32(cache_lengths[i])
 
@@ -631,11 +631,7 @@ def run_test_paged_variable_multiq[
         ceildiv(max_cache_len + q_max_seq_len, PAGE_SIZE), 8
     )
     var lut_size = batch_size * max_pages_per_batch
-    var lookup_table_host = ctx.enqueue_create_host_buffer[DType.uint32](
-        lut_size
-    )
-    for i in range(lut_size):
-        lookup_table_host[i] = UInt32(0)
+    var lookup_table_host = List(length=lut_size, fill=UInt32(0))
 
     var page_offset = 0
     for i in range(batch_size):
@@ -666,16 +662,14 @@ def run_test_paged_variable_multiq[
     # Step 2: Q tensor (ragged: [total_q_tokens, num_heads, DEPTH])
     # -----------------------------------------------------------------------
     var q_size = total_q_tokens * num_heads * DEPTH
-    var q_host = ctx.enqueue_create_host_buffer[q_type](q_size)
-    randn(q_host.as_span(), mean=0.0, standard_deviation=0.5)
+    var q_host = List(length=q_size, fill=Scalar[q_type](0))
+    randn(q_host, mean=0.0, standard_deviation=0.5)
 
     # -----------------------------------------------------------------------
     # Step 3: input_row_offsets (batch_size + 1 elements)
     # Each batch has q_max_seq_len tokens
     # -----------------------------------------------------------------------
-    var row_offsets_host = ctx.enqueue_create_host_buffer[DType.uint32](
-        batch_size + 1
-    )
+    var row_offsets_host = List(length=batch_size + 1, fill=UInt32(0))
     row_offsets_host[0] = UInt32(0)
     for i in range(batch_size):
         row_offsets_host[i + 1] = row_offsets_host[i] + UInt32(q_max_seq_len)
@@ -684,7 +678,7 @@ def run_test_paged_variable_multiq[
     # Step 4: Output tensor
     # -----------------------------------------------------------------------
     var out_size = total_q_tokens * num_heads * V_DEPTH
-    var out_host = ctx.enqueue_create_host_buffer[q_type](out_size)
+    var out_host = List(length=out_size, fill=Scalar[q_type](0))
 
     # -----------------------------------------------------------------------
     # Step 5: Copy everything to device
@@ -832,7 +826,7 @@ def run_test_paged_variable_multiq[
 
         # Extract contiguous K for this batch from paged blocks
         var k_b_size = ref_num_keys * KV_NUM_HEADS * DEPTH
-        var k_b_host = ctx.enqueue_create_host_buffer[kv_type](k_b_size)
+        var k_b_host = List(length=k_b_size, fill=Scalar[kv_type](0))
 
         var page_base_b = 0
         for bi in range(b):
@@ -858,14 +852,14 @@ def run_test_paged_variable_multiq[
 
         # Q for this batch: [1, q_max_seq_len, num_heads, depth]
         var q_b_size = q_max_seq_len * num_heads * DEPTH
-        var q_b_host = ctx.enqueue_create_host_buffer[q_type](q_b_size)
+        var q_b_host = List(length=q_b_size, fill=Scalar[q_type](0))
         var q_batch_offset = b * q_max_seq_len * num_heads * DEPTH
         for i in range(q_b_size):
             q_b_host[i] = q_host[q_batch_offset + i]
 
         # Reference output: [1, q_max_seq_len, num_heads, depth] (full depth)
         var ref_b_size = q_max_seq_len * num_heads * DEPTH
-        var ref_b_host = ctx.enqueue_create_host_buffer[q_type](ref_b_size)
+        var ref_b_host = List(length=ref_b_size, fill=Scalar[q_type](0))
 
         # Copy to device
         var k_b_device = ctx.enqueue_create_buffer[kv_type](k_b_size)
@@ -951,6 +945,9 @@ def run_test_paged_variable_multiq[
         _ = k_b_device
         _ = q_b_device
         _ = ref_b_device
+        _ = ref_b_host^
+        _ = q_b_host^
+        _ = k_b_host^
 
     print(
         "  Verified:",
@@ -969,6 +966,13 @@ def run_test_paged_variable_multiq[
     _ = q_device
     _ = row_offsets_device
     _ = out_device
+    _ = row_offsets_host^
+    _ = lookup_table_host^
+    _ = cache_lengths_host^
+    _ = blocks_host^
+    _ = out_host^
+    _ = q_host^
+    _ = blocks_bf16^
 
 
 # ===-----------------------------------------------------------------------===#
@@ -1084,11 +1088,11 @@ def run_test_paged_variable_ragged_q[
         * kv_params.head_size
     )
 
-    var blocks_host = ctx.enqueue_create_host_buffer[kv_type](block_elems)
+    var blocks_host = List(length=block_elems, fill=Scalar[kv_type](0))
 
-    var blocks_bf16 = ctx.enqueue_create_host_buffer[q_type](block_elems)
+    var blocks_bf16 = List(length=block_elems, fill=Scalar[q_type](0))
     randn(
-        blocks_bf16.as_span(),
+        blocks_bf16,
         mean=0.0,
         standard_deviation=0.5,
     )
@@ -1104,9 +1108,7 @@ def run_test_paged_variable_ragged_q[
     )
     var _tok_stride = kv_params.num_heads * kv_params.head_size
 
-    var cache_lengths_host = ctx.enqueue_create_host_buffer[DType.uint32](
-        batch_size
-    )
+    var cache_lengths_host = List(length=batch_size, fill=UInt32(0))
     for i in range(batch_size):
         cache_lengths_host[i] = UInt32(cache_lengths[i])
 
@@ -1123,11 +1125,7 @@ def run_test_paged_variable_ragged_q[
         ceildiv(max_num_keys_any_batch, PAGE_SIZE), 8
     )
     var lut_size = batch_size * max_pages_per_batch
-    var lookup_table_host = ctx.enqueue_create_host_buffer[DType.uint32](
-        lut_size
-    )
-    for i in range(lut_size):
-        lookup_table_host[i] = UInt32(0)
+    var lookup_table_host = List(length=lut_size, fill=UInt32(0))
 
     var page_offset = 0
     for i in range(batch_size):
@@ -1157,15 +1155,13 @@ def run_test_paged_variable_ragged_q[
     # Step 2: Q tensor (ragged: [total_q_tokens, num_heads, DEPTH])
     # -----------------------------------------------------------------------
     var q_size = total_q_tokens * num_heads * DEPTH
-    var q_host = ctx.enqueue_create_host_buffer[q_type](q_size)
-    randn(q_host.as_span(), mean=0.0, standard_deviation=0.5)
+    var q_host = List(length=q_size, fill=Scalar[q_type](0))
+    randn(q_host, mean=0.0, standard_deviation=0.5)
 
     # -----------------------------------------------------------------------
     # Step 3: input_row_offsets — truly ragged per batch
     # -----------------------------------------------------------------------
-    var row_offsets_host = ctx.enqueue_create_host_buffer[DType.uint32](
-        batch_size + 1
-    )
+    var row_offsets_host = List(length=batch_size + 1, fill=UInt32(0))
     row_offsets_host[0] = UInt32(0)
     for i in range(batch_size):
         row_offsets_host[i + 1] = row_offsets_host[i] + UInt32(seq_lens[i])
@@ -1174,7 +1170,7 @@ def run_test_paged_variable_ragged_q[
     # Step 4: Output tensor
     # -----------------------------------------------------------------------
     var out_size = total_q_tokens * num_heads * V_DEPTH
-    var out_host = ctx.enqueue_create_host_buffer[q_type](out_size)
+    var out_host = List(length=out_size, fill=Scalar[q_type](0))
 
     # -----------------------------------------------------------------------
     # Step 5: Copy everything to device
@@ -1329,7 +1325,7 @@ def run_test_paged_variable_ragged_q[
 
         # Extract contiguous K for this batch from paged blocks
         var k_b_size = ref_num_keys * KV_NUM_HEADS * DEPTH
-        var k_b_host = ctx.enqueue_create_host_buffer[kv_type](k_b_size)
+        var k_b_host = List(length=k_b_size, fill=Scalar[kv_type](0))
 
         var page_base_b = 0
         for bi in range(b):
@@ -1355,14 +1351,14 @@ def run_test_paged_variable_ragged_q[
 
         # Q for this batch: [1, b_seq_len, num_heads, depth]
         var q_b_size = b_seq_len * num_heads * DEPTH
-        var q_b_host = ctx.enqueue_create_host_buffer[q_type](q_b_size)
+        var q_b_host = List(length=q_b_size, fill=Scalar[q_type](0))
         var q_batch_start = q_token_offset * num_heads * DEPTH
         for i in range(q_b_size):
             q_b_host[i] = q_host[q_batch_start + i]
 
         # Reference output: [1, b_seq_len, num_heads, depth] (full depth)
         var ref_b_size = b_seq_len * num_heads * DEPTH
-        var ref_b_host = ctx.enqueue_create_host_buffer[q_type](ref_b_size)
+        var ref_b_host = List(length=ref_b_size, fill=Scalar[q_type](0))
 
         # Copy to device
         var k_b_device = ctx.enqueue_create_buffer[kv_type](k_b_size)
@@ -1458,6 +1454,9 @@ def run_test_paged_variable_ragged_q[
         _ = k_b_device
         _ = q_b_device
         _ = ref_b_device
+        _ = ref_b_host^
+        _ = q_b_host^
+        _ = k_b_host^
 
     print(
         "  Verified:",
@@ -1476,6 +1475,13 @@ def run_test_paged_variable_ragged_q[
     _ = q_device
     _ = row_offsets_device
     _ = out_device
+    _ = row_offsets_host^
+    _ = lookup_table_host^
+    _ = cache_lengths_host^
+    _ = blocks_host^
+    _ = out_host^
+    _ = q_host^
+    _ = blocks_bf16^
 
 
 # ===-----------------------------------------------------------------------===#
@@ -1540,10 +1546,10 @@ def run_bench_paged_variable[
         * kv_params.head_size
     )
 
-    var blocks_host = ctx.enqueue_create_host_buffer[kv_type](block_elems)
-    var blocks_bf16 = ctx.enqueue_create_host_buffer[q_type](block_elems)
+    var blocks_host = List(length=block_elems, fill=Scalar[kv_type](0))
+    var blocks_bf16 = List(length=block_elems, fill=Scalar[q_type](0))
     randn(
-        blocks_bf16.as_span(),
+        blocks_bf16,
         mean=0.0,
         standard_deviation=0.5,
     )
@@ -1559,9 +1565,7 @@ def run_bench_paged_variable[
     )
     var _tok_stride = kv_params.num_heads * kv_params.head_size
 
-    var cache_lengths_host = ctx.enqueue_create_host_buffer[DType.uint32](
-        batch_size
-    )
+    var cache_lengths_host = List(length=batch_size, fill=UInt32(0))
     for i in range(batch_size):
         cache_lengths_host[i] = UInt32(cache_lengths[i])
 
@@ -1572,11 +1576,7 @@ def run_bench_paged_variable[
         ceildiv(max_cache_len + q_max_seq_len, PAGE_SIZE), 8
     )
     var lut_size = batch_size * max_pages_per_batch
-    var lookup_table_host = ctx.enqueue_create_host_buffer[DType.uint32](
-        lut_size
-    )
-    for i in range(lut_size):
-        lookup_table_host[i] = UInt32(0)
+    var lookup_table_host = List(length=lut_size, fill=UInt32(0))
 
     var page_offset = 0
     for i in range(batch_size):
@@ -1604,20 +1604,18 @@ def run_bench_paged_variable[
 
     # Step 2: Q tensor
     var q_size = total_q_tokens * num_heads * DEPTH
-    var q_host = ctx.enqueue_create_host_buffer[q_type](q_size)
-    randn(q_host.as_span(), mean=0.0, standard_deviation=0.5)
+    var q_host = List(length=q_size, fill=Scalar[q_type](0))
+    randn(q_host, mean=0.0, standard_deviation=0.5)
 
     # Step 3: input_row_offsets
-    var row_offsets_host = ctx.enqueue_create_host_buffer[DType.uint32](
-        batch_size + 1
-    )
+    var row_offsets_host = List(length=batch_size + 1, fill=UInt32(0))
     row_offsets_host[0] = UInt32(0)
     for i in range(batch_size):
         row_offsets_host[i + 1] = row_offsets_host[i] + UInt32(1)
 
     # Step 4: Output tensor
     var out_size = total_q_tokens * num_heads * V_DEPTH
-    var out_host = ctx.enqueue_create_host_buffer[q_type](out_size)
+    var out_host = List(length=out_size, fill=Scalar[q_type](0))
 
     # Step 5: Copy to device
     var blocks_device = ctx.enqueue_create_buffer[kv_type](block_elems)
@@ -1764,6 +1762,13 @@ def run_bench_paged_variable[
     _ = q_device
     _ = row_offsets_device
     _ = out_device
+    _ = row_offsets_host^
+    _ = lookup_table_host^
+    _ = cache_lengths_host^
+    _ = blocks_host^
+    _ = out_host^
+    _ = q_host^
+    _ = blocks_bf16^
 
 
 # ===-----------------------------------------------------------------------===#
@@ -1848,13 +1853,13 @@ def run_test_paged_variable_native_fp8[
         * kv_params.head_size
     )
 
-    var blocks_host = ctx.enqueue_create_host_buffer[kv_type](block_elems)
+    var blocks_host = List(length=block_elems, fill=Scalar[kv_type](0))
 
     # Generate KV data in bf16 first, then cast to FP8.
     # Keep bf16 copy for the reference path.
-    var blocks_bf16 = ctx.enqueue_create_host_buffer[ref_type](block_elems)
+    var blocks_bf16 = List(length=block_elems, fill=Scalar[ref_type](0))
     randn(
-        blocks_bf16.as_span(),
+        blocks_bf16,
         mean=0.0,
         standard_deviation=0.5,
     )
@@ -1871,9 +1876,7 @@ def run_test_paged_variable_native_fp8[
     )
     var _tok_stride = kv_params.num_heads * kv_params.head_size
 
-    var cache_lengths_host = ctx.enqueue_create_host_buffer[DType.uint32](
-        batch_size
-    )
+    var cache_lengths_host = List(length=batch_size, fill=UInt32(0))
     for i in range(batch_size):
         cache_lengths_host[i] = UInt32(cache_lengths[i])
 
@@ -1883,11 +1886,7 @@ def run_test_paged_variable_native_fp8[
         ceildiv(max_cache_len + q_max_seq_len, PAGE_SIZE), 8
     )
     var lut_size = batch_size * max_pages_per_batch
-    var lookup_table_host = ctx.enqueue_create_host_buffer[DType.uint32](
-        lut_size
-    )
-    for i in range(lut_size):
-        lookup_table_host[i] = UInt32(0)
+    var lookup_table_host = List(length=lut_size, fill=UInt32(0))
 
     var page_offset = 0
     for i in range(batch_size):
@@ -1920,24 +1919,22 @@ def run_test_paged_variable_native_fp8[
     var q_size = total_q_tokens * num_heads * DEPTH
 
     # BF16 Q for reference
-    var q_bf16_host = ctx.enqueue_create_host_buffer[ref_type](q_size)
+    var q_bf16_host = List(length=q_size, fill=Scalar[ref_type](0))
     randn(
-        q_bf16_host.as_span(),
+        q_bf16_host,
         mean=0.0,
         standard_deviation=0.5,
     )
 
     # FP8 Q for kernel
-    var q_fp8_host = ctx.enqueue_create_host_buffer[q_type](q_size)
+    var q_fp8_host = List(length=q_size, fill=Scalar[q_type](0))
     for i in range(q_size):
         q_fp8_host[i] = q_bf16_host[i].cast[q_type]()
 
     # -----------------------------------------------------------------------
     # Step 3: input_row_offsets (batch_size + 1 elements)
     # -----------------------------------------------------------------------
-    var row_offsets_host = ctx.enqueue_create_host_buffer[DType.uint32](
-        batch_size + 1
-    )
+    var row_offsets_host = List(length=batch_size + 1, fill=UInt32(0))
     row_offsets_host[0] = UInt32(0)
     for i in range(batch_size):
         row_offsets_host[i + 1] = row_offsets_host[i] + UInt32(1)
@@ -1946,7 +1943,7 @@ def run_test_paged_variable_native_fp8[
     # Step 4: Output tensor (BF16, not FP8)
     # -----------------------------------------------------------------------
     var out_size = total_q_tokens * num_heads * V_DEPTH
-    var out_host = ctx.enqueue_create_host_buffer[ref_type](out_size)
+    var out_host = List(length=out_size, fill=Scalar[ref_type](0))
 
     # -----------------------------------------------------------------------
     # Step 5: Copy everything to device
@@ -2097,7 +2094,7 @@ def run_test_paged_variable_native_fp8[
 
         # Extract contiguous BF16 K for this batch from bf16 paged blocks
         var k_b_size = ref_num_keys * KV_NUM_HEADS * DEPTH
-        var k_b_host = ctx.enqueue_create_host_buffer[ref_type](k_b_size)
+        var k_b_host = List(length=k_b_size, fill=Scalar[ref_type](0))
 
         var page_base_b = 0
         for bi in range(b):
@@ -2124,13 +2121,13 @@ def run_test_paged_variable_native_fp8[
 
         # BF16 Q for this batch: [1, 1, num_heads, depth]
         var q_b_size = 1 * num_heads * DEPTH
-        var q_b_host = ctx.enqueue_create_host_buffer[ref_type](q_b_size)
+        var q_b_host = List(length=q_b_size, fill=Scalar[ref_type](0))
         for i in range(q_b_size):
             q_b_host[i] = q_bf16_host[b * num_heads * DEPTH + i]
 
         # Reference output: [1, 1, num_heads, depth] (full depth, BF16)
         var ref_b_size = 1 * num_heads * DEPTH
-        var ref_b_host = ctx.enqueue_create_host_buffer[ref_type](ref_b_size)
+        var ref_b_host = List(length=ref_b_size, fill=Scalar[ref_type](0))
 
         # Copy to device
         var k_b_device = ctx.enqueue_create_buffer[ref_type](k_b_size)
@@ -2205,6 +2202,9 @@ def run_test_paged_variable_native_fp8[
         _ = k_b_device
         _ = q_b_device
         _ = ref_b_device
+        _ = ref_b_host^
+        _ = q_b_host^
+        _ = k_b_host^
 
     print(
         "  Verified:",
@@ -2223,6 +2223,14 @@ def run_test_paged_variable_native_fp8[
     _ = q_device
     _ = row_offsets_device
     _ = out_device
+    _ = row_offsets_host^
+    _ = lookup_table_host^
+    _ = cache_lengths_host^
+    _ = blocks_bf16^
+    _ = blocks_host^
+    _ = out_host^
+    _ = q_bf16_host^
+    _ = q_fp8_host^
 
 
 # ===-----------------------------------------------------------------------===#
@@ -2291,10 +2299,10 @@ def run_bench_paged_variable_native_fp8[
         * kv_params.head_size
     )
 
-    var blocks_host = ctx.enqueue_create_host_buffer[kv_type](block_elems)
-    var blocks_bf16 = ctx.enqueue_create_host_buffer[ref_type](block_elems)
+    var blocks_host = List(length=block_elems, fill=Scalar[kv_type](0))
+    var blocks_bf16 = List(length=block_elems, fill=Scalar[ref_type](0))
     randn(
-        blocks_bf16.as_span(),
+        blocks_bf16,
         mean=0.0,
         standard_deviation=0.5,
     )
@@ -2310,9 +2318,7 @@ def run_bench_paged_variable_native_fp8[
     )
     var _tok_stride = kv_params.num_heads * kv_params.head_size
 
-    var cache_lengths_host = ctx.enqueue_create_host_buffer[DType.uint32](
-        batch_size
-    )
+    var cache_lengths_host = List(length=batch_size, fill=UInt32(0))
     for i in range(batch_size):
         cache_lengths_host[i] = UInt32(cache_lengths[i])
 
@@ -2322,11 +2328,7 @@ def run_bench_paged_variable_native_fp8[
         ceildiv(max_cache_len + q_max_seq_len, PAGE_SIZE), 8
     )
     var lut_size = batch_size * max_pages_per_batch
-    var lookup_table_host = ctx.enqueue_create_host_buffer[DType.uint32](
-        lut_size
-    )
-    for i in range(lut_size):
-        lookup_table_host[i] = UInt32(0)
+    var lookup_table_host = List(length=lut_size, fill=UInt32(0))
 
     var page_offset = 0
     for i in range(batch_size):
@@ -2353,27 +2355,25 @@ def run_bench_paged_variable_native_fp8[
 
     # Step 2: Q tensor (FP8)
     var q_size = total_q_tokens * num_heads * DEPTH
-    var q_bf16_tmp = ctx.enqueue_create_host_buffer[ref_type](q_size)
+    var q_bf16_tmp = List(length=q_size, fill=Scalar[ref_type](0))
     randn(
-        q_bf16_tmp.as_span(),
+        q_bf16_tmp,
         mean=0.0,
         standard_deviation=0.5,
     )
-    var q_host = ctx.enqueue_create_host_buffer[q_type](q_size)
+    var q_host = List(length=q_size, fill=Scalar[q_type](0))
     for i in range(q_size):
         q_host[i] = q_bf16_tmp[i].cast[q_type]()
 
     # Step 3: input_row_offsets
-    var row_offsets_host = ctx.enqueue_create_host_buffer[DType.uint32](
-        batch_size + 1
-    )
+    var row_offsets_host = List(length=batch_size + 1, fill=UInt32(0))
     row_offsets_host[0] = UInt32(0)
     for i in range(batch_size):
         row_offsets_host[i + 1] = row_offsets_host[i] + UInt32(1)
 
     # Step 4: Output tensor (BF16)
     var out_size = total_q_tokens * num_heads * V_DEPTH
-    var out_host = ctx.enqueue_create_host_buffer[ref_type](out_size)
+    var out_host = List(length=out_size, fill=Scalar[ref_type](0))
 
     # Step 5: Copy to device
     var blocks_device = ctx.enqueue_create_buffer[kv_type](block_elems)
@@ -2514,6 +2514,14 @@ def run_bench_paged_variable_native_fp8[
     _ = q_device
     _ = row_offsets_device
     _ = out_device
+    _ = row_offsets_host^
+    _ = lookup_table_host^
+    _ = cache_lengths_host^
+    _ = blocks_host^
+    _ = out_host^
+    _ = q_host^
+    _ = q_bf16_tmp^
+    _ = blocks_bf16^
 
 
 # ===-----------------------------------------------------------------------===#
