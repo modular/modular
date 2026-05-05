@@ -83,8 +83,8 @@ struct TestPassDiagnosticValidator : public mlir::ScopedDiagnosticHandler {
 // on a cache miss and output of cacheHitFn on cache hit.
 TEST(CachedTransformTest, BufferReturn) {
   TempDir tempDir = createTempDir();
-  RuntimeRef runtime = getOrCreateRuntime(MLRT::RuntimeSource::Test,
-                                          RuntimeOptions().forDebug());
+  CPUDeviceRef cpuDevice = getOrCreateCPUDevice(MLRT::CPUDeviceSource::Test,
+                                                CPUDeviceOptions().forDebug());
   auto transformBackendChainOr =
       getLocalDefaultBackendChain(tempDir.getPath() / "xform");
   EXPECT_FALSE(failed(transformBackendChainOr));
@@ -96,7 +96,7 @@ TEST(CachedTransformTest, BufferReturn) {
   auto transform = [&](AnyAsyncValueRef inputChain) mutable {
     ++runCount;
     auto outputBuffer =
-        AsyncValueRef<BufferRef>::allocate(runtime->getCompactPtr());
+        AsyncValueRef<BufferRef>::allocate(cpuDevice->getCompactPtr());
     auto inner = [&, output = outputBuffer.copy()]() mutable {
       BufferRef outputBuffer = Buffer::get(world);
       return std::move(output).emplace(std::move(outputBuffer));
@@ -111,7 +111,7 @@ TEST(CachedTransformTest, BufferReturn) {
   };
 
   std::string hashKey;
-  const AsyncValueRef<Chain> &inputChain = runtime->getReadyChain();
+  const AsyncValueRef<Chain> &inputChain = cpuDevice->getReadyChain();
   constexpr StringLiteral keyStr = "hello";
   WriteableBufferRef key = WriteableBuffer::get(0, {}, keyStr.size());
   key->write(keyStr.data(), keyStr.size());
@@ -132,7 +132,7 @@ TEST(CachedTransformTest, BufferReturn) {
 
   // Second call should reuse same hash
   hashKey.clear();
-  const AsyncValueRef<Chain> &inputChain2 = runtime->getReadyChain();
+  const AsyncValueRef<Chain> &inputChain2 = cpuDevice->getReadyChain();
   AnyAsyncValueRef output2 =
       cachedTransform(loc.copy(), transformCache.copy(), inputChain2.copy(),
                       key.copy(), transform, hitFn, true, &hashKey);
@@ -147,7 +147,7 @@ TEST(CachedTransformTest, BufferReturn) {
 
   // Third call with same key
   hashKey.clear();
-  const AsyncValueRef<Chain> &inputChain3 = runtime->getReadyChain();
+  const AsyncValueRef<Chain> &inputChain3 = cpuDevice->getReadyChain();
   AnyAsyncValueRef output3 =
       cachedTransform(loc.copy(), transformCache.copy(), inputChain3.copy(),
                       key.copy(), transform, hitFn, true, &hashKey);
@@ -173,7 +173,7 @@ TEST(CachedTransformTest, BufferReturn) {
     return outputBuffer;
   };
 
-  const AsyncValueRef<Chain> &inputChain4 = runtime->getReadyChain();
+  const AsyncValueRef<Chain> &inputChain4 = cpuDevice->getReadyChain();
   AnyAsyncValueRef output4 =
       cachedTransform(loc.copy(), transformCache.copy(), inputChain4.copy(),
                       key.copy(), transform, anotherHitFn, true, &hashKey);

@@ -40,7 +40,7 @@ AsyncRTWrapper<T> wrap(T *ptr) {
   return AsyncRTWrapper<T>{ptr};
 }
 
-using AsyncRTRuntimeRef = AsyncRTWrapper<Runtime>;
+using AsyncRTRuntimeRef = AsyncRTWrapper<CPUDevice>;
 using AsyncRTAsyncChainRef = AsyncRTWrapper<AsyncValueRef<Chain>>;
 using AsyncRTSpinWaiterRef = AsyncRTWrapper<SpinWaiter<true>>;
 
@@ -51,7 +51,7 @@ using AsyncRTSpinWaiterRef = AsyncRTWrapper<SpinWaiter<true>>;
 /// Creates a new AsyncValueRef<Chain> and assigns it to chain.
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
 KGEN_CompilerRT_AsyncRT_InitializeChain(AsyncRTAsyncChainRef chain) {
-  auto rt = Runtime::getCurrentRuntimeOrNull();
+  auto rt = CPUDevice::getCurrentCPUDeviceOrNull();
   new (&unwrap(chain))
       AsyncValueRef<Chain>(takeRCRef(AsyncValue::allocate<Chain>(rt)));
 }
@@ -84,9 +84,9 @@ KGEN_CompilerRT_AsyncRT_Wait_Timeout(AsyncRTAsyncChainRef chain, int64_t ns) {
   static TimerHeap heap;
   AsyncValueRef<Chain> &done = unwrap(chain);
   AsyncValueRef<Chain> expired =
-      AsyncValueRef<Chain>::allocate(done.getRuntime());
+      AsyncValueRef<Chain>::allocate(done.getCPUDevice());
   AsyncValueRef<Chain> either =
-      AsyncValueRef<Chain>::allocate(done.getRuntime());
+      AsyncValueRef<Chain>::allocate(done.getCPUDevice());
 
   // Compute the expiration and push it to the heap.
   TimerHeap::deadline expiration =
@@ -118,7 +118,7 @@ KGEN_CompilerRT_AsyncRT_Wait_Timeout(AsyncRTAsyncChainRef chain, int64_t ns) {
 // Coroutine / Future
 //===----------------------------------------------------------------------===//
 
-/// Execute a coroutine as an AsyncRT task on the given runtime. If
+/// Execute a coroutine as an AsyncRT task on the given cpuDevice. If
 /// desiredWorkerId is >= 0 then the task will be executed by the worker thread
 /// with that id. Otherwise the task will be executed by the next available
 /// worker thread. Scheduling tasks onto specific workers can avoid some AsyncRT
@@ -126,7 +126,7 @@ KGEN_CompilerRT_AsyncRT_Wait_Timeout(AsyncRTAsyncChainRef chain, int64_t ns) {
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
 KGEN_CompilerRT_AsyncRT_Execute(void (*resume)(int8_t *), int8_t *hdl,
                                 ssize_t desiredWorkerId) {
-  auto rt = Runtime::getCurrentRuntimeOrNull();
+  auto rt = CPUDevice::getCurrentCPUDeviceOrNull();
   rt->getWorkQueue()->addTask([resume, hdl] { resume(hdl); },
                               static_cast<int>(desiredWorkerId));
 }
@@ -142,33 +142,33 @@ KGEN_CompilerRT_AsyncRT_AndThen(void (*resume)(int8_t *),
 // Runtime
 //===----------------------------------------------------------------------===//
 
-/// Given a pointer to an AsyncRT runtime, drop the reference to it.
+/// Given a pointer to an AsyncRT cpuDevice, drop the reference to it.
 /// Take ownership into a temporary RCRef so its destructor drops the ref.
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
-KGEN_CompilerRT_AsyncRT_ReleaseRuntime(AsyncRTRuntimeRef rt) {
-  (void)RuntimeRef::take(&unwrap(rt));
+KGEN_CompilerRT_AsyncRT_ReleaseCPUDevice(AsyncRTRuntimeRef rt) {
+  (void)CPUDeviceRef::take(&unwrap(rt));
 }
 
-/// Returns the pointer to the runtime to which the caller's thread is
+/// Returns the pointer to the cpuDevice to which the caller's thread is
 /// associated. Returns null if the caller's thread is not managed by any
-/// runtime.
+/// cpuDevice.
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT AsyncRTRuntimeRef
-KGEN_CompilerRT_AsyncRT_GetCurrentRuntime() {
-  return wrap(Runtime::getCurrentRuntimeOrNull());
+KGEN_CompilerRT_AsyncRT_GetCurrentCPUDevice() {
+  return wrap(CPUDevice::getCurrentCPUDeviceOrNull());
 }
 
-/// Get or create the AsyncRT runtime and return its pointer.
+/// Get or create the AsyncRT cpuDevice and return its pointer.
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT AsyncRTRuntimeRef
-KGEN_CompilerRT_AsyncRT_GetOrCreateRuntime() {
-  auto runtime = getOrCreateRuntime(RuntimeSource::MojoStdlib,
-                                    RuntimeOptions().withMainWillNotDonate());
-  return wrap(runtime.release());
+KGEN_CompilerRT_AsyncRT_GetOrCreateCPUDevice() {
+  auto cpuDevice = getOrCreateCPUDevice(
+      CPUDeviceSource::MojoStdlib, CPUDeviceOptions().withMainWillNotDonate());
+  return wrap(cpuDevice.release());
 }
 
-/// Given a pointer to an AsyncRT runtime, get the number of threads in it.
+/// Given a pointer to an AsyncRT cpuDevice, get the number of threads in it.
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT uint32_t
 KGEN_CompilerRT_AsyncRT_ParallelismLevel() {
-  auto rt = Runtime::getCurrentRuntimeOrNull();
+  auto rt = CPUDevice::getCurrentCPUDeviceOrNull();
   return rt->getWorkQueue()->getParallelismLevel();
 }
 
@@ -181,7 +181,7 @@ KGEN_CompilerRT_AsyncRT_CreateAsyncs_Error(
     AsyncRTWrapper<AnyAsyncValueRef> *asyncs, size_t arrayLen,
     const char *messagePtr, size_t messageLen) {
   StringRef errorMsg(messagePtr, messageLen);
-  Runtime &runtime = *Runtime::getCurrentRuntimeOrNull();
+  CPUDevice &cpuDevice = *CPUDevice::getCurrentCPUDeviceOrNull();
   // Set all async value ref to error;
   ArrayRef asyncArray(asyncs, arrayLen);
   for (AsyncRTWrapper<AnyAsyncValueRef> async : asyncArray) {
@@ -192,7 +192,7 @@ KGEN_CompilerRT_AsyncRT_CreateAsyncs_Error(
     if (value.getPointer() && value.getPointer()->isIndirect())
       value.copy().setToError(std::move(diagnostic));
     else
-      value = value.createError(runtime, std::move(diagnostic));
+      value = value.createError(cpuDevice, std::move(diagnostic));
   }
 }
 

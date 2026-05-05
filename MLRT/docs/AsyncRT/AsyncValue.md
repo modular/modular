@@ -46,23 +46,23 @@ types, but all types need to be registered before use with
 storage of the payloads and data, and allows limited type reflection with the
 `->isType<T>()` predicate.
 
-### Access to the `M::MLRT::Runtime` for an `AsyncValue`
+### Access to the `M::MLRT::CPUDevice` for an `AsyncValue`
 
 The AsyncRT runtime is designed to support multiple instances of a runtime in a
 process at the same time, so some things (for example allocating a new
-`AsyncValue`) require an `M::MLRT::Runtime&` to be handy and around. This can
-be awkward, because (like an `MLIRContext`) it is almost global state, and it
-is a pain to pass it around everywhere.
+`AsyncValue`) require an `M::MLRT::CPUDevice&` to be handy and around. This
+can be awkward, because (like an `MLIRContext`) it is almost global state, and
+it is a pain to pass it around everywhere.
 
 Fortunately, `AsyncValue` instances is that they always know what
-`M::MLRT::Runtime` they came from. You can access this through the
+`M::MLRT::CPUDevice` they came from. You can access this through the
 `asyncVal->getRuntime()` method which returns a
-[`CompactRuntimePtr`](../../include/MLRT/AsyncRT/Runtime/CompactRuntimePtr.h). A
-`CompactRuntimePtr` is a specialized class that can be used interchangeably with
-`Runtime&`.
+[`CompactCPUDevicePtr`](../../include/MLRT/AsyncRT/Runtime/CompactRuntimePtr.h).
+A `CompactCPUDevicePtr` is a specialized class that can be used interchangeably
+with `CPUDevice&`.
 
 The consequence of this is that having an `AsyncValue` at hand gives you access
-to the `Runtime&` that you need.
+to the `CPUDevice&` that you need.
 
 ### Chaining work together with `andThenSync`
 

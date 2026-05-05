@@ -69,25 +69,25 @@ public:
 
   /// Create an AsyncValue for the specified type in "unconstructed" state.
   /// This should be `emplace`'d, `construct`'d, or finalized with an error.
-  static AsyncValueRef<T> allocate(CompactRuntimePtr runtime) {
-    return take(AsyncValue::allocate<T>(runtime));
+  static AsyncValueRef<T> allocate(CompactCPUDevicePtr cpuDevice) {
+    return take(AsyncValue::allocate<T>(cpuDevice));
   }
 
   /// Create an AsyncValue for the specified type in "available" and ready
   /// state. This is a terminal state for an AsyncValue, it can never change out
   /// of this state.
   template <typename... Args>
-  static AsyncValueRef<T> createReady(CompactRuntimePtr runtime,
+  static AsyncValueRef<T> createReady(CompactCPUDevicePtr cpuDevice,
                                       Args &&...args) {
     return take(
-        AsyncValue::createReady<T>(runtime, std::forward<Args>(args)...));
+        AsyncValue::createReady<T>(cpuDevice, std::forward<Args>(args)...));
   }
 
   /// Create an AsyncValue that has already been turned into an error with the
   /// specified message.
-  static AsyncValueRef<T> createError(CompactRuntimePtr runtime,
+  static AsyncValueRef<T> createError(CompactCPUDevicePtr cpuDevice,
                                       EncodedDiagnostic diagnostic) {
-    return take(AsyncValue::createError(runtime, std::move(diagnostic)));
+    return take(AsyncValue::createError(cpuDevice, std::move(diagnostic)));
   }
 
   T &operator*() const { return getPointer()->template get<T>(); }

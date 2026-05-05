@@ -326,8 +326,9 @@ void ResolveCompilerPromisesPass::runOnOperation() {
   const SymbolTable &symtab =
       getAnalysis<mlir::SymbolTableAnalysis>().getTopLevelSymbolTable();
 
-  MLRT::Runtime &runtime = *loadContext(&getContext())->get<MLRT::Runtime>();
+  MLRT::CPUDevice &cpuDevice =
+      *loadContext(&getContext())->get<MLRT::CPUDevice>();
   CallGraph cg(symtab);
   cg.build(getOperation(), symtab);
-  cg.run(runtime);
+  cg.run(cpuDevice);
 }

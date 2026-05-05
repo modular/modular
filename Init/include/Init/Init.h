@@ -25,17 +25,17 @@ public:
     return *this;
   }
 
-  Options &
-  withRuntimeOptions(const MLRT::RuntimeOptions &v = MLRT::RuntimeOptions()) {
-    runtimeOptions.emplace(v);
+  Options &withCPUDeviceOptions(
+      const MLRT::CPUDeviceOptions &v = MLRT::CPUDeviceOptions()) {
+    cpuDeviceOptions.emplace(v);
     return *this;
   }
 
-  /// Returns true if crash-reporting and runtime options match \p other.
+  /// Returns true if crash-reporting and cpuDevice options match \p other.
   bool operator==(const Options &other) const {
     if (forceDisableCrashReporting != other.forceDisableCrashReporting)
       return false;
-    return runtimeOptions == other.runtimeOptions;
+    return cpuDeviceOptions == other.cpuDeviceOptions;
   }
 
   bool operator!=(const Options &other) const { return !(*this == other); }
@@ -44,13 +44,13 @@ public:
     return forceDisableCrashReporting;
   }
 
-  std::optional<MLRT::RuntimeOptions> getRuntimeOptions() const {
-    return runtimeOptions;
+  std::optional<MLRT::CPUDeviceOptions> getCPUDeviceOptions() const {
+    return cpuDeviceOptions;
   }
 
 private:
   bool forceDisableCrashReporting = false;
-  std::optional<MLRT::RuntimeOptions> runtimeOptions;
+  std::optional<MLRT::CPUDeviceOptions> cpuDeviceOptions;
 
   friend ErrorOr<ContextRef> getOrCreateContext(StringRef, const Options &,
                                                 StringRef);

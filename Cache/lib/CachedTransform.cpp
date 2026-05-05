@@ -196,7 +196,7 @@ Cache::cachedTransform(Operation *target, RCRef<TransformCache> transformCache,
     // Allocate a space to put the result of the pass manager (the emitted
     // diagnostics). We'll chain off that for the deflation.
     auto pmResult =
-        AsyncValueRef<std::vector<Diagnostic>>::allocate(chain.getRuntime());
+        AsyncValueRef<std::vector<Diagnostic>>::allocate(chain.getCPUDevice());
     std::move(chain).andThenSync([op, &pm, moreOnMiss,
                                   pmResult = pmResult.copy()](
                                      AnyAsyncValueRef &&chain) mutable {
@@ -224,7 +224,7 @@ Cache::cachedTransform(Operation *target, RCRef<TransformCache> transformCache,
       std::move(pmResult).emplace(std::move(diagnostics));
     });
 
-    auto out = AsyncValueRef<Chain>::allocate(pmResult.getRuntime());
+    auto out = AsyncValueRef<Chain>::allocate(pmResult.getCPUDevice());
     // Just write the bytecode and return.
     std::move(pmResult).andThenSync(
         [op, buf = std::move(buf), out = out.copy()](

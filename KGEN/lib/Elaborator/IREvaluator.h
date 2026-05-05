@@ -215,10 +215,10 @@ struct ImplNode : public ImplNodeBase {
 /// dependencies in order to make that graph explicit.
 struct ParamNode : public ParamNodeBase {
   /// Create an expansion tree node to represent a generator instantiation.
-  ParamNode(MLRT::Runtime &runtime, GeneratorOpInterface gen,
+  ParamNode(MLRT::CPUDevice &cpuDevice, GeneratorOpInterface gen,
             ParameterExprArrayAttr vals, size_t depth,
             ExpansionGraph *expansionGraph)
-      : ParamNodeBase(runtime, gen, vals, depth), impl(this),
+      : ParamNodeBase(cpuDevice, gen, vals, depth), impl(this),
         expansionGraph(expansionGraph) {
     assert(expansionGraph && "Expansion graph cannot be null");
   }
@@ -246,7 +246,7 @@ struct ParamNode : public ParamNodeBase {
   /// The instantiation of the parametric function.
   ImplNode impl;
 
-  /// Add a waiter to the runtime and report task completion to
+  /// Add a waiter to the cpuDevice and report task completion to
   /// ParamNodeRuntime.
   void andThenAsync(AsyncValue::Waiter &&waiter);
 
@@ -258,9 +258,9 @@ struct ParamNode : public ParamNodeBase {
   void setToError();
 
 private:
-  /// The runtime manages the set of tasks kicked off in a given process. The
-  /// ParamNode alerts the runtime upon creation and completion of tasks so that
-  /// the runtime can sync tasks.
+  /// The cpuDevice manages the set of tasks kicked off in a given process. The
+  /// ParamNode alerts the cpuDevice upon creation and completion of tasks so
+  /// that the cpuDevice can sync tasks.
   ExpansionGraph *expansionGraph;
 };
 

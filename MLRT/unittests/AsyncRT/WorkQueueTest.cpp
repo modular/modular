@@ -33,11 +33,11 @@ namespace {
 
 // Enqueue a worker-task that records the result of `shouldRunInlineForTask` for
 // a given `checkTaskId`.
-static AsyncValueRef<bool> enqueueInlineCheck(Runtime &runtime,
+static AsyncValueRef<bool> enqueueInlineCheck(CPUDevice &cpuDevice,
                                               WorkQueue &workQueue,
                                               int dispatchTaskId,
                                               int checkTaskId) {
-  AsyncValueRef<bool> result = AsyncValueRef<bool>::allocate(runtime);
+  AsyncValueRef<bool> result = AsyncValueRef<bool>::allocate(cpuDevice);
   WorkItem probe([&workQueue, checkTaskId, ready = result.copy()]() mutable {
     ready.copy().emplace(workQueue.shouldRunInlineForTask(checkTaskId));
   });
@@ -50,11 +50,11 @@ static AsyncValueRef<bool> enqueueInlineCheck(Runtime &runtime,
 /// - 4 workers (0, 1, 2, 3), but we use workers 1, 2, 3 for affinity tasks
 /// - taskId = 1 + (hint % 3) for non-negative hints
 TEST(WorkQueueTest, TaskIdRouting) {
-  RuntimeOptions options;
+  CPUDeviceOptions options;
   options.numThreads = 4;
   options.mainWillDonate = false;
-  RuntimeRef runtime = getOrCreateRuntime(RuntimeSource::Test, options);
-  WorkQueue *workQueue = runtime->getWorkQueue();
+  CPUDeviceRef cpuDevice = getOrCreateCPUDevice(CPUDeviceSource::Test, options);
+  WorkQueue *workQueue = cpuDevice->getWorkQueue();
 
   // Use 3 different taskIds (1, 2, 3) since worker 0 is avoided
   constexpr int numTaskIds = 3;
@@ -70,7 +70,7 @@ TEST(WorkQueueTest, TaskIdRouting) {
   results.reserve(numTaskIds * numTasksPerTaskId);
   for (int taskId = 1; taskId <= numTaskIds; ++taskId) {
     for (int task = 0; task < numTasksPerTaskId; ++task) {
-      results.emplace_back(AsyncValueRef<int>::allocate(*runtime));
+      results.emplace_back(AsyncValueRef<int>::allocate(*cpuDevice));
       AsyncValueRef<int> &result = results.back();
 
       WorkItem workItem([taskId, task, result = result.copy(),
@@ -123,12 +123,12 @@ TEST(WorkQueueTest, TaskIdRouting) {
 
 /// Test that negative taskIds are handled correctly (global queue).
 TEST(WorkQueueTest, NegativeTaskId) {
-  RuntimeOptions options;
+  CPUDeviceOptions options;
   options.numThreads = 4;
-  RuntimeRef runtime = getOrCreateRuntime(RuntimeSource::Test, options);
-  WorkQueue *workQueue = runtime->getWorkQueue();
+  CPUDeviceRef cpuDevice = getOrCreateCPUDevice(CPUDeviceSource::Test, options);
+  WorkQueue *workQueue = cpuDevice->getWorkQueue();
 
-  auto result = AsyncValueRef<int>::allocate(*runtime);
+  auto result = AsyncValueRef<int>::allocate(*cpuDevice);
 
   WorkItem workItem([result = result.copy()]() { result.copy().emplace(42); });
 
@@ -143,11 +143,11 @@ TEST(WorkQueueTest, NegativeTaskId) {
 /// Since we conservatively skip worker 0, all tasks should complete
 /// without needing await on main thread.
 TEST(WorkQueueTest, TaskIdWithMainWillDonate) {
-  RuntimeOptions options;
+  CPUDeviceOptions options;
   options.numThreads = 4;
   options.mainWillDonate = true;
-  RuntimeRef runtime = getOrCreateRuntime(RuntimeSource::Test, options);
-  WorkQueue *workQueue = runtime->getWorkQueue();
+  CPUDeviceRef cpuDevice = getOrCreateCPUDevice(CPUDeviceSource::Test, options);
+  WorkQueue *workQueue = cpuDevice->getWorkQueue();
 
   constexpr int numTasks = 20;
   std::vector<AsyncValueRef<int>> results;
@@ -155,7 +155,7 @@ TEST(WorkQueueTest, TaskIdWithMainWillDonate) {
 
   // Create tasks with various taskIds (all avoid worker 0)
   for (int i = 0; i < numTasks; ++i) {
-    results.emplace_back(AsyncValueRef<int>::allocate(*runtime));
+    results.emplace_back(AsyncValueRef<int>::allocate(*cpuDevice));
     AsyncValueRef<int> &result = results.back();
 
     WorkItem workItem([i, result = result.copy()]() {
@@ -199,12 +199,12 @@ TEST(WorkQueueTest, TaskIdWithMainWillDonate) {
 
 /// Test that kDefaultTaskId uses global queue scheduling.
 TEST(WorkQueueTest, DefaultTaskId) {
-  RuntimeOptions options;
+  CPUDeviceOptions options;
   options.numThreads = 4;
-  RuntimeRef runtime = getOrCreateRuntime(RuntimeSource::Test, options);
-  WorkQueue *workQueue = runtime->getWorkQueue();
+  CPUDeviceRef cpuDevice = getOrCreateCPUDevice(CPUDeviceSource::Test, options);
+  WorkQueue *workQueue = cpuDevice->getWorkQueue();
 
-  auto result = AsyncValueRef<int>::allocate(*runtime);
+  auto result = AsyncValueRef<int>::allocate(*cpuDevice);
 
   WorkItem workItem([result = result.copy()]() { result.copy().emplace(99); });
 
@@ -216,11 +216,11 @@ TEST(WorkQueueTest, DefaultTaskId) {
 }
 
 TEST(WorkQueueTest, ShouldRunInlineMatchesAssignedWorker) {
-  RuntimeOptions options;
+  CPUDeviceOptions options;
   options.numThreads = 4;
   options.mainWillDonate = false;
-  RuntimeRef runtime = getOrCreateRuntime(RuntimeSource::Test, options);
-  WorkQueue &workQueue = *runtime->getWorkQueue();
+  CPUDeviceRef cpuDevice = getOrCreateCPUDevice(CPUDeviceSource::Test, options);
+  WorkQueue &workQueue = *cpuDevice->getWorkQueue();
 
   // Each worker executes a task pinned to its taskId and reports whether the
   // inline heuristic agrees; tasks dispatched and checked with the same taskId
@@ -230,7 +230,7 @@ TEST(WorkQueueTest, ShouldRunInlineMatchesAssignedWorker) {
   // Test with taskIds 1, 2, 3.
   for (int taskId = 1; taskId <= 3; ++taskId) {
     inlineResults.emplace_back(
-        enqueueInlineCheck(*runtime, workQueue, taskId, taskId));
+        enqueueInlineCheck(*cpuDevice, workQueue, taskId, taskId));
   }
 
   for (size_t idx = 0; idx < inlineResults.size(); ++idx) {
@@ -241,18 +241,18 @@ TEST(WorkQueueTest, ShouldRunInlineMatchesAssignedWorker) {
   // When a worker is pinned to taskId 1 but queries taskId 2, it should decline
   // to inline because it is running on the wrong worker thread.
   AsyncValueRef<bool> mismatch =
-      enqueueInlineCheck(*runtime, workQueue, /*dispatchTaskId=*/1,
+      enqueueInlineCheck(*cpuDevice, workQueue, /*dispatchTaskId=*/1,
                          /*checkTaskId=*/2);
   await(mismatch);
   EXPECT_FALSE(mismatch.get());
 }
 
 TEST(WorkQueueTest, ShouldRunInlineHonorsWorkerAffinity) {
-  RuntimeOptions options;
+  CPUDeviceOptions options;
   options.numThreads = 3;
   options.mainWillDonate = true;
-  RuntimeRef runtime = getOrCreateRuntime(RuntimeSource::Test, options);
-  WorkQueue &workQueue = *runtime->getWorkQueue();
+  CPUDeviceRef cpuDevice = getOrCreateCPUDevice(CPUDeviceSource::Test, options);
+  WorkQueue &workQueue = *cpuDevice->getWorkQueue();
 
   // Enqueue tasks to workers 1 and 2.
   // The worker that actually executes the task should still report inline =
@@ -260,7 +260,7 @@ TEST(WorkQueueTest, ShouldRunInlineHonorsWorkerAffinity) {
   std::vector<AsyncValueRef<bool>> results;
   for (int taskId = 1; taskId <= 2; ++taskId) {
     results.emplace_back(
-        enqueueInlineCheck(*runtime, workQueue, taskId, taskId));
+        enqueueInlineCheck(*cpuDevice, workQueue, taskId, taskId));
   }
 
   for (AsyncValueRef<bool> &ready : results) {
@@ -270,11 +270,11 @@ TEST(WorkQueueTest, ShouldRunInlineHonorsWorkerAffinity) {
 }
 
 TEST(WorkQueueTest, ShouldRunInlineFromForeignThread) {
-  RuntimeOptions options;
+  CPUDeviceOptions options;
   options.numThreads = 2;
   options.mainWillDonate = false; // Ensure main thread is "foreign"
-  RuntimeRef runtime = getOrCreateRuntime(RuntimeSource::Test, options);
-  WorkQueue &workQueue = *runtime->getWorkQueue();
+  CPUDeviceRef cpuDevice = getOrCreateCPUDevice(CPUDeviceSource::Test, options);
+  WorkQueue &workQueue = *cpuDevice->getWorkQueue();
 
   // From a foreign thread (main thread not donating), we should inline only
   // for default/negative taskId; positive taskIds belong to workers and should
@@ -286,14 +286,14 @@ TEST(WorkQueueTest, ShouldRunInlineFromForeignThread) {
 }
 
 TEST(WorkQueueTest, ShouldRunInlineSingleThreadedAlwaysTrue) {
-  RuntimeOptions options;
+  CPUDeviceOptions options;
   options.withSingleThreaded();
-  RuntimeRef runtime = getOrCreateRuntime(RuntimeSource::Test, options);
-  WorkQueue &workQueue = *runtime->getWorkQueue();
+  CPUDeviceRef cpuDevice = getOrCreateCPUDevice(CPUDeviceSource::Test, options);
+  WorkQueue &workQueue = *cpuDevice->getWorkQueue();
 
   // The single worker should inline regardless of the taskId value.
   AsyncValueRef<bool> inlineCheck =
-      enqueueInlineCheck(*runtime, workQueue, /*dispatchTaskId=*/0,
+      enqueueInlineCheck(*cpuDevice, workQueue, /*dispatchTaskId=*/0,
                          /*checkTaskId=*/3);
   await(inlineCheck);
   EXPECT_TRUE(inlineCheck.get());
@@ -321,11 +321,11 @@ std::optional<int> firstUsableNumaNode() {
   return std::nullopt;
 }
 
-/// Constructs a Runtime and returns its CompactRuntimePtr for use with the
-/// partitioned WorkQueue factory. Holds the RuntimeRef alive for the caller.
+/// Constructs a Runtime and returns its CompactCPUDevicePtr for use with the
+/// partitioned WorkQueue factory. Holds the CPUDeviceRef alive for the caller.
 struct PartitionedHarness {
-  RuntimeRef runtime;
-  CompactRuntimePtr runtimePtr;
+  CPUDeviceRef cpuDevice;
+  CompactCPUDevicePtr cpuDevicePtr;
   std::unique_ptr<WorkQueue> workQueue;
 
   ~PartitionedHarness() {
@@ -335,13 +335,13 @@ struct PartitionedHarness {
 };
 
 PartitionedHarness makeHarness(int numaNode) {
-  RuntimeOptions options;
-  options.withSingleThreaded(); // Minimal "host" runtime just to supply ptr.
-  RuntimeRef runtime = getOrCreateRuntime(RuntimeSource::Test, options);
-  CompactRuntimePtr ptr = runtime->getCompactPtr();
+  CPUDeviceOptions options;
+  options.withSingleThreaded(); // Minimal "host" cpuDevice just to supply ptr.
+  CPUDeviceRef cpuDevice = getOrCreateCPUDevice(CPUDeviceSource::Test, options);
+  CompactCPUDevicePtr ptr = cpuDevice->getCompactPtr();
   std::unique_ptr<WorkQueue> wq = createPartitionedThreadPoolWorkQueue(
       ptr, numaNode, std::chrono::microseconds(200), "🔥 NumaTest");
-  return {std::move(runtime), ptr, std::move(wq)};
+  return {std::move(cpuDevice), ptr, std::move(wq)};
 }
 
 } // namespace
@@ -390,7 +390,7 @@ TEST(WorkQueueTest, PartitionedRunsOnlyOnSelectedCpus) {
   std::vector<AsyncValueRef<int>> observed;
   observed.reserve(numWorkers);
   for (size_t workerID = 0; workerID < numWorkers; ++workerID) {
-    observed.emplace_back(AsyncValueRef<int>::allocate(*h.runtime));
+    observed.emplace_back(AsyncValueRef<int>::allocate(*h.cpuDevice));
     AsyncValueRef<int> &slot = observed.back();
     WorkItem probe([slot = slot.copy()]() mutable {
       // sched_getcpu may return -1 on failure; store as int for inspection.
@@ -413,11 +413,11 @@ TEST(WorkQueueTest, PartitionedRunsOnlyOnSelectedCpus) {
 #endif // defined(__linux__)
 
 TEST(WorkQueueTest, UnpartitionedReportsNoPartition) {
-  RuntimeOptions options;
+  CPUDeviceOptions options;
   options.numThreads = 2;
   options.mainWillDonate = false;
-  RuntimeRef runtime = getOrCreateRuntime(RuntimeSource::Test, options);
-  WorkQueue *workQueue = runtime->getWorkQueue();
+  CPUDeviceRef cpuDevice = getOrCreateCPUDevice(CPUDeviceSource::Test, options);
+  WorkQueue *workQueue = cpuDevice->getWorkQueue();
 
   EXPECT_EQ(workQueue->getCpuIds().size(), 2u);
   EXPECT_EQ(workQueue->getNumaNode(), M::kAnyNumaNode);
@@ -428,10 +428,10 @@ TEST(WorkQueueTest, PartitionedRejectsUnknownNumaNode) {
   if (topologyOr.isError())
     GTEST_SKIP() << "host has no NUMA topology available";
 
-  RuntimeOptions options;
+  CPUDeviceOptions options;
   options.withSingleThreaded();
-  RuntimeRef runtime = getOrCreateRuntime(RuntimeSource::Test, options);
-  CompactRuntimePtr ptr = runtime->getCompactPtr();
+  CPUDeviceRef cpuDevice = getOrCreateCPUDevice(CPUDeviceSource::Test, options);
+  CompactCPUDevicePtr ptr = cpuDevice->getCompactPtr();
 
   // Pick a NUMA node id that definitely doesn't exist on this host.
   EXPECT_DEATH_IF_SUPPORTED(

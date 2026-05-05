@@ -561,7 +561,7 @@ ErrorOrSuccess M::parseTargetOptions(
 ErrorOr<OwningOpRef<ModuleOp>> M::invokeMojoParser(
     const State &state, const llvm::opt::InputArgList &args,
     KGEN::CompilationOptions &compilationOptions, MLIRContext *ctx,
-    MLRT::Runtime &runtime, llvm::opt::OptSpecifier docDiagnoseMissingId,
+    MLRT::CPUDevice &cpuDevice, llvm::opt::OptSpecifier docDiagnoseMissingId,
     llvm::opt::OptSpecifier maxNotesId, llvm::opt::OptSpecifier definesId,
     llvm::opt::OptSpecifier stripFilePrefixId,
     llvm::opt::OptSpecifier disableBuiltins, llvm::opt::OptSpecifier stdLibPath,
@@ -683,8 +683,8 @@ ErrorOr<OwningOpRef<ModuleOp>> M::invokeMojoParser(
   return module;
 }
 
-void M::configureRuntimeOptions(MLRT::RuntimeOptions &runtimeOptions,
-                                const KGEN::CompilationOptions &options) {
+void M::configureCPUDeviceOptions(MLRT::CPUDeviceOptions &cpuDeviceOptions,
+                                  const KGEN::CompilationOptions &options) {
   if (options.numThreads != 0) {
     // AsyncRT has a sophisticated thread pool configuration system.
     // There are two parameters: numThreads and maxThreads.
@@ -694,7 +694,7 @@ void M::configureRuntimeOptions(MLRT::RuntimeOptions &runtimeOptions,
     //
     // Here we take the stance that mojo build -j 5 means "Use at most 5
     // threads"
-    runtimeOptions.numThreads = 0;
-    runtimeOptions.maxThreads = options.numThreads;
+    cpuDeviceOptions.numThreads = 0;
+    cpuDeviceOptions.maxThreads = options.numThreads;
   }
 }

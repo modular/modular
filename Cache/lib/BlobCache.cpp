@@ -96,18 +96,19 @@ static bool checkOrCreateWriteableDirectory(const std::filesystem::path &path) {
 //===----------------------------------------------------------------------===//
 
 AsyncValueRef<Chain>
-BlobCacheBackend::insert(MLRT::Runtime &runtime, BufferRef keyHash,
+BlobCacheBackend::insert(MLRT::CPUDevice &cpuDevice, BufferRef keyHash,
                          BufferRef obj, std::optional<EncodedLocation> loc) {
   EncodedLocation location = loc.has_value()
                                  ? std::move(*loc)
                                  : UnknownLocationDecoder::getEncodedLocation();
 
-  auto chain = insertImpl(runtime, keyHash.copy(), obj.copy(), location.copy());
+  auto chain =
+      insertImpl(cpuDevice, keyHash.copy(), obj.copy(), location.copy());
   if (!delegate)
     return chain;
 
   // Arrange to wait and then insert into the delegate.
-  auto result = AsyncValueRef<Chain>::allocate(runtime);
+  auto result = AsyncValueRef<Chain>::allocate(cpuDevice);
   std::move(chain).andThenSync(
       [result = result.copy(), thisRef = copyRCRef(this),
        keyHash = std::move(keyHash), obj = std::move(obj),
@@ -115,7 +116,7 @@ BlobCacheBackend::insert(MLRT::Runtime &runtime, BufferRef keyHash,
         if (chain.isError())
           return std::move(result).setToError(chain.takeDiagnostic());
         auto insert =
-            thisRef->delegate->insert(result.getRuntime(), std::move(keyHash),
+            thisRef->delegate->insert(result.getCPUDevice(), std::move(keyHash),
                                       std::move(obj), std::move(loc));
         std::move(insert).andThenSync(
             [result =
@@ -140,14 +141,14 @@ ErrorOrSuccess BlobCacheBackend::insertSync(StringRef keyHash, BufferRef obj) {
 }
 
 AsyncValueRef<Chain>
-BlobCacheBackend::insertImpl(MLRT::Runtime &runtime, BufferRef keyHash,
+BlobCacheBackend::insertImpl(MLRT::CPUDevice &cpuDevice, BufferRef keyHash,
                              BufferRef obj,
                              std::optional<EncodedLocation> loc) {
   // Wrap the synchronous implementation by default.
-  auto result = AsyncValueRef<Chain>::allocate(runtime);
-  addTask(runtime, [thisRef = copyRCRef(this), keyHash = std::move(keyHash),
-                    obj = std::move(obj), result = result.copy(),
-                    loc = std::move(loc)]() mutable {
+  auto result = AsyncValueRef<Chain>::allocate(cpuDevice);
+  addTask(cpuDevice, [thisRef = copyRCRef(this), keyHash = std::move(keyHash),
+                      obj = std::move(obj), result = result.copy(),
+                      loc = std::move(loc)]() mutable {
     if (auto err = thisRef->insertSync(keyHash->getBuffer(), std::move(obj))) {
       return std::move(result).setToError(
           getError(std::move(loc), err.takeError()));
@@ -158,18 +159,18 @@ BlobCacheBackend::insertImpl(MLRT::Runtime &runtime, BufferRef keyHash,
 }
 
 AsyncValueRef<bool>
-BlobCacheBackend::contains(MLRT::Runtime &runtime, BufferRef keyHash,
+BlobCacheBackend::contains(MLRT::CPUDevice &cpuDevice, BufferRef keyHash,
                            std::optional<EncodedLocation> loc) {
   EncodedLocation location = loc.has_value()
                                  ? std::move(*loc)
                                  : UnknownLocationDecoder::getEncodedLocation();
 
-  auto chain = containsImpl(runtime, keyHash.copy(), location.copy());
+  auto chain = containsImpl(cpuDevice, keyHash.copy(), location.copy());
   if (!delegate)
     return chain;
 
   // Check the delegate, if this fails.
-  auto result = AsyncValueRef<bool>::allocate(runtime);
+  auto result = AsyncValueRef<bool>::allocate(cpuDevice);
   std::move(chain).andThenSync(
       [result = result.copy(), thisRef = copyRCRef(this),
        keyHash = std::move(keyHash),
@@ -180,7 +181,7 @@ BlobCacheBackend::contains(MLRT::Runtime &runtime, BufferRef keyHash,
           return std::move(result).emplace(true); // Value is locally available.
         // Need to schedule a delegate contains call.
         auto contains = thisRef->delegate->contains(
-            result.getRuntime(), std::move(keyHash), std::move(loc));
+            result.getCPUDevice(), std::move(keyHash), std::move(loc));
         std::move(contains).andThenSync(
             [result =
                  std::move(result)](AsyncValueRef<bool> &&contains) mutable {
@@ -206,12 +207,12 @@ ErrorOr<bool> BlobCacheBackend::containsSync(StringRef keyHash) {
 }
 
 AsyncValueRef<bool>
-BlobCacheBackend::containsImpl(MLRT::Runtime &runtime, BufferRef keyHash,
+BlobCacheBackend::containsImpl(MLRT::CPUDevice &cpuDevice, BufferRef keyHash,
                                std::optional<EncodedLocation> loc) {
   // Wrap the synchronous implementation by default.
-  auto result = AsyncValueRef<bool>::allocate(runtime);
-  addTask(runtime, [thisRef = copyRCRef(this), keyHash = std::move(keyHash),
-                    result = result.copy(), loc = std::move(loc)]() mutable {
+  auto result = AsyncValueRef<bool>::allocate(cpuDevice);
+  addTask(cpuDevice, [thisRef = copyRCRef(this), keyHash = std::move(keyHash),
+                      result = result.copy(), loc = std::move(loc)]() mutable {
     auto errOr = thisRef->containsSync(keyHash->getBuffer());
     if (errOr.isError()) {
       return std::move(result).setToError(
@@ -223,18 +224,18 @@ BlobCacheBackend::containsImpl(MLRT::Runtime &runtime, BufferRef keyHash,
 }
 
 AsyncValueRef<std::optional<BufferRef>>
-BlobCacheBackend::find(MLRT::Runtime &runtime, BufferRef keyHash,
+BlobCacheBackend::find(MLRT::CPUDevice &cpuDevice, BufferRef keyHash,
                        std::optional<EncodedLocation> loc) {
   EncodedLocation location = loc.has_value()
                                  ? std::move(*loc)
                                  : UnknownLocationDecoder::getEncodedLocation();
 
-  auto chain = findImpl(runtime, keyHash.copy(), location.copy());
+  auto chain = findImpl(cpuDevice, keyHash.copy(), location.copy());
   if (!delegate)
     return chain;
 
   // Check the delegate, if this fails.
-  auto result = AsyncValueRef<std::optional<BufferRef>>::allocate(runtime);
+  auto result = AsyncValueRef<std::optional<BufferRef>>::allocate(cpuDevice);
   std::move(chain).andThenSync(
       [result = result.copy(), thisRef = copyRCRef(this),
        keyHash = std::move(keyHash), loc = std::move(location)](
@@ -245,7 +246,7 @@ BlobCacheBackend::find(MLRT::Runtime &runtime, BufferRef keyHash,
           return std::move(result).emplace(
               std::move(**chain)); // Found locally.
         // Need to attempt to find within the delegate.
-        auto found = thisRef->delegate->find(result.getRuntime(),
+        auto found = thisRef->delegate->find(result.getCPUDevice(),
                                              keyHash.copy(), loc.copy());
         std::move(found).andThenSync(
             [thisRef = thisRef.copy(), result = std::move(result),
@@ -257,7 +258,7 @@ BlobCacheBackend::find(MLRT::Runtime &runtime, BufferRef keyHash,
                 return std::move(result).emplace(std::nullopt); // Not found.
               // We need to insert locally.
               auto inserted =
-                  thisRef->insert(result.getRuntime(), std::move(keyHash),
+                  thisRef->insert(result.getCPUDevice(), std::move(keyHash),
                                   (*found)->copy(), std::move(loc));
               std::move(inserted).andThenSync(
                   [result = std::move(result), obj = std::move(**found)](
@@ -301,12 +302,12 @@ BlobCacheBackend::findSync(StringRef keyHash) {
 }
 
 AsyncValueRef<std::optional<BufferRef>>
-BlobCacheBackend::findImpl(MLRT::Runtime &runtime, BufferRef keyHash,
+BlobCacheBackend::findImpl(MLRT::CPUDevice &cpuDevice, BufferRef keyHash,
                            std::optional<EncodedLocation> loc) {
   // Wrap the synchronous execution by default.
-  auto result = AsyncValueRef<std::optional<BufferRef>>::allocate(runtime);
-  addTask(runtime, [thisRef = copyRCRef(this), keyHash = std::move(keyHash),
-                    result = result.copy(), loc = std::move(loc)]() mutable {
+  auto result = AsyncValueRef<std::optional<BufferRef>>::allocate(cpuDevice);
+  addTask(cpuDevice, [thisRef = copyRCRef(this), keyHash = std::move(keyHash),
+                      result = result.copy(), loc = std::move(loc)]() mutable {
     auto errOr = thisRef->findSync(keyHash->getBuffer());
     if (errOr.isError())
       return std::move(result).setToError(

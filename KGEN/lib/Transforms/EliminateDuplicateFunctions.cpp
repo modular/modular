@@ -87,9 +87,9 @@ struct CallGraphNode
     : public CallGraphNodeBase<CallGraphNode, FuncOp, KGENCallOpInterface> {
   using CallGraphNodeBase::CallGraphNodeBase;
   using CallGraphNodeBase::EdgeT;
-  CallGraphNode(FuncOp func, MLRT::Runtime &runtime)
+  CallGraphNode(FuncOp func, MLRT::CPUDevice &cpuDevice)
       : CallGraphNodeBase(func),
-        doneDedup(MLRT::AsyncValueRef<MLRT::Chain>::allocate(runtime)) {}
+        doneDedup(MLRT::AsyncValueRef<MLRT::Chain>::allocate(cpuDevice)) {}
   CallGraphNode(CallGraphNode &&other)
       : CallGraphNodeBase(std::move(other)),
         doneDedup(std::move(other.doneDedup)) {}
@@ -106,7 +106,7 @@ struct CallGraphNode
 struct CallGraph : public CallGraphBase<CallGraph, CallGraphNode> {
   // Construct and build the callgraph
   CallGraph(mlir::ModuleOp module, const SymbolTable &symtable,
-            MLRT::Runtime &runtime);
+            MLRT::CPUDevice &cpuDevice);
 
   bool shouldAddToGraph(CallOpT call, CallGraphNode *node) {
     // Skip external functions.
@@ -133,8 +133,8 @@ struct CallGraph : public CallGraphBase<CallGraph, CallGraphNode> {
   /// All work items (i.e. functions might need to be deduplicated).
   SmallVector<CallGraphNode *> workItems;
 
-  /// Reference to the AsyncRT runtime for launch jobs in parallel.
-  MLRT::Runtime &runtime;
+  /// Reference to the AsyncRT cpuDevice for launch jobs in parallel.
+  MLRT::CPUDevice &cpuDevice;
 
   /// Chain value to mark if all work items are done to mark main thread
   /// (this deduplication pass) to be done.
@@ -162,11 +162,11 @@ struct GraphTraits<CallGraph *> : public GraphTraits<CallGraph::BaseT *> {};
 } // namespace llvm
 
 CallGraph::CallGraph(mlir::ModuleOp module, const SymbolTable &symtable,
-                     MLRT::Runtime &runtime)
-    : externalNode(nullptr, runtime), numWorkItems(0), runtime(runtime),
-      done(MLRT::AsyncValueRef<MLRT::Chain>::allocate(runtime)),
+                     MLRT::CPUDevice &cpuDevice)
+    : externalNode(nullptr, cpuDevice), numWorkItems(0), cpuDevice(cpuDevice),
+      done(MLRT::AsyncValueRef<MLRT::Chain>::allocate(cpuDevice)),
       uniqueFuncSet() {
-  CallGraphBase::build(module, symtable, runtime);
+  CallGraphBase::build(module, symtable, cpuDevice);
 
   for (auto &[func, node] : nodes) {
     // We add an edge from externalNode to every other node. Note that it would
@@ -256,9 +256,9 @@ void EliminateDuplicateFunctionsPass::runOnOperation() {
   mlir::ModuleOp module = getOperation();
   const SymbolTable &symtab =
       getAnalysis<mlir::SymbolTableAnalysis>().getTopLevelSymbolTable();
-  auto &runtime = *loadContext(&getContext())->get<MLRT::Runtime>();
+  auto &cpuDevice = *loadContext(&getContext())->get<MLRT::CPUDevice>();
 
-  CallGraph cg(module, symtab, runtime);
+  CallGraph cg(module, symtab, cpuDevice);
   cg.startDeduplication();
   this->numDeduped = cg.numDeduped;
   // NOTE: We do not erase the duplicated function in the pass but rely later

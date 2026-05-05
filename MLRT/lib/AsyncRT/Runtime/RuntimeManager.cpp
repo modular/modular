@@ -6,7 +6,6 @@
 
 #include "MLRT/AsyncRT/Runtime/RuntimeManager.h"
 #include "MLRT/AsyncRT/Runtime/Globals/RuntimeGlobal.h"
-#include "MLRT/AsyncRT/Runtime/Runtime.h"
 #include "Support/Threading/HWInfo.h"
 
 #include "llvm/Support/ErrorHandling.h"
@@ -15,52 +14,52 @@
 
 namespace M::MLRT {
 
-RuntimeRef getOrCreateRuntime(RuntimeSource source,
-                              const RuntimeOptions &options,
-                              bool allowUsingExistingOptions) {
-  std::lock_guard<std::mutex> lock(getGlobalRuntimeMutex());
-  Runtime *existingRuntime = getGlobalRuntimePointer();
-  if (existingRuntime) {
-    if (getStoredGlobalRuntimeCreationOptions() != options &&
+CPUDeviceRef getOrCreateCPUDevice(CPUDeviceSource source,
+                                  const CPUDeviceOptions &options,
+                                  bool allowUsingExistingOptions) {
+  std::lock_guard<std::mutex> lock(getGlobalCPUDeviceMutex());
+  CPUDevice *existingCPUDevice = getGlobalCPUDevicePointer();
+  if (existingCPUDevice) {
+    if (getStoredGlobalCPUDeviceCreationOptions() != options &&
         !allowUsingExistingOptions)
       llvm::report_fatal_error(
-          "MLRT::getOrCreateRuntime called requesting different options to "
-          "those used to create the existing Runtime.");
-    return RuntimeRef::copy(existingRuntime);
+          "MLRT::getOrCreateCPUDevice called requesting different options to "
+          "those used to create the existing CPUDevice.");
+    return CPUDeviceRef::copy(existingCPUDevice);
   }
 
-  assert(Runtime::getCurrentRuntimeOrNull() == nullptr &&
-         "creating a runtime from a thread already associated with an outer "
-         "runtime");
-  CompactRuntimePtr runtimePtr = CompactRuntimePtr::reserve();
+  assert(CPUDevice::getCurrentCPUDeviceOrNull() == nullptr &&
+         "creating a CPUDevice from a thread already associated with an outer "
+         "CPUDevice");
+  CompactCPUDevicePtr cpuDevicePtr = CompactCPUDevicePtr::reserve();
   std::unique_ptr<Allocator> allocator =
       getAllocator(options.getAllocatorOptions());
   std::unique_ptr<WorkQueue> workQueue;
   switch (options.workQueueType) {
-  case RuntimeOptions::WorkQueueType::kSingleThread:
-    workQueue = createSingleThreadWorkQueue(runtimePtr);
+  case CPUDeviceOptions::WorkQueueType::kSingleThread:
+    workQueue = createSingleThreadWorkQueue(cpuDevicePtr);
     break;
-  case RuntimeOptions::WorkQueueType::kThreadPool:
+  case CPUDeviceOptions::WorkQueueType::kThreadPool:
     workQueue = createThreadPoolWorkQueue(
-        runtimePtr, options.numThreads, options.maxThreads,
+        cpuDevicePtr, options.numThreads, options.maxThreads,
         options.mainWillDonate, options.withAffinity,
         std::chrono::microseconds(options.threadBusyWaitTime),
         options.poolName);
     break;
   }
-  RuntimeRef newRuntime = RuntimeRef::take(
-      new Runtime(runtimePtr, std::move(allocator), std::move(workQueue),
-                  source, options.profileFilename,
-                  options.runtimeProfilingTypeMask, options.profilerDebuginfo));
+  CPUDeviceRef newCPUDevice = CPUDeviceRef::take(new CPUDevice(
+      cpuDevicePtr, std::move(allocator), std::move(workQueue), source,
+      options.profileFilename, options.runtimeProfilingTypeMask,
+      options.profilerDebuginfo));
 
-  getStoredGlobalRuntimeCreationOptions() = options;
+  getStoredGlobalCPUDeviceCreationOptions() = options;
 
   // Initialise the NUMA topology, to be used later when creating allocators and
   // work-queues.
   (void)NUMATopology::get();
 
-  setGlobalRuntimePointer(newRuntime.getPointer());
-  return newRuntime.copy();
+  setGlobalCPUDevicePointer(newCPUDevice.getPointer());
+  return newCPUDevice.copy();
 }
 
 } // namespace M::MLRT

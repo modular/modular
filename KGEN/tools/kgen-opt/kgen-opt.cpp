@@ -136,20 +136,20 @@ int main(int argc, char **argv) {
   mlir::PassRegistration<TestAlwaysFailPass>{};
 
   // Create our context.
-  MLRT::RuntimeOptions asyncrtOpts;
+  MLRT::CPUDeviceOptions asyncrtOpts;
   asyncrtOpts.withLeakCheckedAllocator();
   if (asyncrtSingleThread)
     asyncrtOpts.withSingleThreaded();
   ErrorOr<ContextRef> ctxOr = Init::createContext(
-      "kgen-opt", Init::Options().withRuntimeOptions(asyncrtOpts));
+      "kgen-opt", Init::Options().withCPUDeviceOptions(asyncrtOpts));
   if (ctxOr.isError()) {
     llvm::errs() << "failed to create context: " << ctxOr.getError() << "\n";
     return 1;
   }
   if (asyncrtSingleThread) {
     // Defend against upstream errors.
-    [[maybe_unused]] auto &runtime = *(*ctxOr)->get<MLRT::Runtime>();
-    assert(runtime.getWorkQueue()->getParallelismLevel() == 1);
+    [[maybe_unused]] auto &cpuDevice = *(*ctxOr)->get<MLRT::CPUDevice>();
+    assert(cpuDevice.getWorkQueue()->getParallelismLevel() == 1);
   }
   registerContext(registry, *ctxOr);
 

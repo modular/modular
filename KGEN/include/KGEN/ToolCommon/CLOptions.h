@@ -79,7 +79,7 @@ public:
              CommandLineFunc &val);
 };
 
-class KGENCommonOptions : public MLRT::RuntimeOptions {
+class KGENCommonOptions : public MLRT::CPUDeviceOptions {
 
 public:
   KGENCommonOptions() = default;

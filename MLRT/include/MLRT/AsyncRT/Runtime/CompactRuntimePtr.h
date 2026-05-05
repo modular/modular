@@ -8,8 +8,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef MLRT_ASYNCRT_RUNTIME_COMPACT_RUNTIME_PTR_H
-#define MLRT_ASYNCRT_RUNTIME_COMPACT_RUNTIME_PTR_H
+#ifndef MLRT_ASYNCRT_RUNTIME_COMPACT_CPU_DEVICE_PTR_H
+#define MLRT_ASYNCRT_RUNTIME_COMPACT_CPU_DEVICE_PTR_H
 
 #include "MLRT/AsyncRT/Runtime/Globals/Globals.h"
 #include "llvm/ADT/SmallVector.h"
@@ -20,148 +20,150 @@
 
 namespace M::MLRT {
 
-class Runtime;
+class CPUDevice;
 
 namespace Detail {
 
 //===----------------------------------------------------------------------===//
-// RuntimeTable
+// CPUDeviceTable
 //===----------------------------------------------------------------------===//
 
-/// Global singleton which maintains the runtime index to runtime map.
-class RuntimeTable {
+/// Global singleton which maintains the cpuDevice index to CPUDevice map.
+class CPUDeviceTable {
 public:
-  /// Returns runtime with given index, which must have already been added or
+  /// Returns CPUDevice with given index, which must have already been added or
   /// registered.
-  Runtime *getRuntime(uint8_t index) const;
+  CPUDevice *getCPUDevice(uint8_t index) const;
 
-  /// Reserves an index for a runtime, returning the index. The actual runtime
-  /// must be set by setRuntime() below once known.
+  /// Reserves an index for a CPUDevice, returning the index. The actual
+  /// CPUDevice must be set by setCPUDevice() below once known.
   uint8_t reserveIndex();
 
-  /// Sets the runtime for the already reserved index.
-  void setRuntime(uint8_t index, Runtime *runtime);
+  /// Sets the CPUDevice for the already reserved index.
+  void setCPUDevice(uint8_t index, CPUDevice *cpuDevice);
 
-  /// Unregistered the runtime with the given index.
-  void clearRuntime(uint8_t index);
+  /// Unregisters the CPUDevice with the given index.
+  void clearCPUDevice(uint8_t index);
 
-  /// Returns the number of active runtimes.
-  size_t numActiveRuntimes() const;
+  /// Returns the number of active CPUDevices.
+  size_t numActiveCPUDevices() const;
 
-  /// Index representing 'no runtime'.
+  /// Index representing 'no CPUDevice'.
   static constexpr uint8_t kInvalidIndex = 255;
 
-  static RuntimeTable &getSingleton() {
-    return Globals::getRuntimeTableSingleton(
-        []() { return new RuntimeTable(); });
+  static CPUDeviceTable &getSingleton() {
+    return Globals::getCPUDeviceTableSingleton(
+        []() { return new CPUDeviceTable(); });
   }
 
 private:
-  RuntimeTable();
+  CPUDeviceTable();
 
   /// Protects mutation to both of the following fields.
   mutable std::mutex mu;
   llvm::SmallVector<uint8_t, 256> freeIndices;
-  Runtime *allRuntimes[kInvalidIndex];
+  CPUDevice *allCPUDevices[kInvalidIndex];
 };
 
 } // namespace Detail
 
 //===----------------------------------------------------------------------===//
-// CompactRuntimePtr
+// CompactCPUDevicePtr
 //===----------------------------------------------------------------------===//
 
-/// The `CompactRuntimePtr` type provides a pointer compressed version of
+/// The `CompactCPUDevicePtr` type provides a pointer compressed version of
 /// `Runtime*` that fits in 8 bits.  This allows every AsyncValue to carry a
 /// backpointer to the Runtime which allocated it, and allows deallocating the
 /// memory for the AsyncValue through the Runtime's allocator.
-class CompactRuntimePtr {
+class CompactCPUDevicePtr {
 public:
-  constexpr CompactRuntimePtr() = default;
-  CompactRuntimePtr(const CompactRuntimePtr &) = default;
-  CompactRuntimePtr &operator=(const CompactRuntimePtr &) = default;
+  constexpr CompactCPUDevicePtr() = default;
+  CompactCPUDevicePtr(const CompactCPUDevicePtr &) = default;
+  CompactCPUDevicePtr &operator=(const CompactCPUDevicePtr &) = default;
 
-  static CompactRuntimePtr reserve() {
-    return CompactRuntimePtr(
-        Detail::RuntimeTable::getSingleton().reserveIndex());
+  static CompactCPUDevicePtr reserve() {
+    return CompactCPUDevicePtr(
+        Detail::CPUDeviceTable::getSingleton().reserveIndex());
   }
 
-  // Implicitly convert Runtime* to CompactRuntimePtr.
-  /*implicit*/ CompactRuntimePtr(Runtime *runtime);
-  /*implicit*/ CompactRuntimePtr(Runtime &runtime)
-      : CompactRuntimePtr(&runtime) {}
+  // Implicitly convert Runtime* to CompactCPUDevicePtr.
+  /*implicit*/ CompactCPUDevicePtr(CPUDevice *cpuDevice);
+  /*implicit*/ CompactCPUDevicePtr(CPUDevice &cpuDevice)
+      : CompactCPUDevicePtr(&cpuDevice) {}
 
-  Runtime *operator->() const { return get(); }
-  Runtime &operator*() const { return *get(); }
-  Runtime *get() const {
-    return Detail::RuntimeTable::getSingleton().getRuntime(index);
+  CPUDevice *operator->() const { return get(); }
+  CPUDevice &operator*() const { return *get(); }
+  CPUDevice *get() const {
+    return Detail::CPUDeviceTable::getSingleton().getCPUDevice(index);
   }
 
-  Runtime *getOrNull() const {
-    return index == Detail::RuntimeTable::kInvalidIndex
+  CPUDevice *getOrNull() const {
+    return index == Detail::CPUDeviceTable::kInvalidIndex
                ? nullptr
-               : Detail::RuntimeTable::getSingleton().getRuntime(index);
+               : Detail::CPUDeviceTable::getSingleton().getCPUDevice(index);
   }
 
   /// Explicitly testing for truth value determines whether this pointer is
   /// "null".
   explicit operator bool() const {
-    return index != Detail::RuntimeTable::kInvalidIndex;
+    return index != Detail::CPUDeviceTable::kInvalidIndex;
   }
 
-  bool operator==(CompactRuntimePtr that) const { return index == that.index; }
+  bool operator==(CompactCPUDevicePtr that) const {
+    return index == that.index;
+  }
 
   /// We implicitly convert to Runtime& since we are used interchangeably with
   /// it.
-  /*implicit*/ operator Runtime &() const { return *get(); }
+  /*implicit*/ operator CPUDevice &() const { return *get(); }
 
-  /// Returns a 'signature' for the CompactRuntimePtr subsystem which is
+  /// Returns a 'signature' for the CompactCPUDevicePtr subsystem which is
   /// expected to be unique for the running process. This can be used to catch,
-  /// at runtime, accidental multiple definitions for Modular runtime statics
-  /// across dynamic libraries / executables.
+  /// at runtime, accidental multiple definitions for Modular cpuDevice
+  /// statics across dynamic libraries / executables.
   ///
-  /// (This is just the address of the underlying runtime table, but
+  /// (This is just the address of the underlying cpuDevice table, but
   /// please don't depend on that.)
   static intptr_t getSignature() {
-    return reinterpret_cast<intptr_t>(&Detail::RuntimeTable::getSingleton());
+    return reinterpret_cast<intptr_t>(&Detail::CPUDeviceTable::getSingleton());
   }
 
-  /// Returns the CompactRuntimePtr to the Runtime which is managing the
-  /// caller's thread. Returns the invalid CompactRuntimePtr if no such
-  /// runtime has been associated.
-  static CompactRuntimePtr getCurrentRuntime() {
-    return Globals::getCurrentRuntimeInTLS();
+  /// Returns the CompactCPUDevicePtr to the Runtime which is managing the
+  /// caller's thread. Returns the invalid CompactCPUDevicePtr if no such
+  /// cpuDevice has been associated.
+  static CompactCPUDevicePtr getCurrentCPUDevice() {
+    return Globals::getCurrentCPUDeviceInTLS();
   }
 
-  /// Sets the thread-local Runtime pointer, providing it hasn't already been
-  /// set to another Runtime.
-  static void setCurrentRuntime(CompactRuntimePtr ptr) {
-    CompactRuntimePtr current = getCurrentRuntime();
+  /// Sets the thread-local CPUDevice pointer, providing it hasn't already been
+  /// set to another CPUDevice.
+  static void setCurrentCPUDevice(CompactCPUDevicePtr ptr) {
+    CompactCPUDevicePtr current = getCurrentCPUDevice();
 
-    /// Invariant: There should only ever be one Runtime alive at once so the
-    // thread-local Runtime pointer should never be overwritten by a different
-    // Runtime.
+    /// Invariant: There should only ever be one CPUDevice alive at once so the
+    // thread-local CPUDevice pointer should never be overwritten by a different
+    // CPUDevice.
     bool willSet = !current || !ptr || current == ptr;
     if (willSet) {
-      Globals::getCurrentRuntimeInTLS() = ptr;
+      Globals::getCurrentCPUDeviceInTLS() = ptr;
     } else {
       assert(
           false &&
-          "The thread-local Runtime pointer should never be overwritten by a "
-          "different Runtime.");
+          "The thread-local CPUDevice pointer should never be overwritten by a "
+          "different CPUDevice.");
     }
   }
 
 private:
-  friend class Runtime;
+  friend class CPUDevice;
 
-  explicit CompactRuntimePtr(uint8_t index) : index{index} {
-    assert(index < Detail::RuntimeTable::kInvalidIndex &&
+  explicit CompactCPUDevicePtr(uint8_t index) : index{index} {
+    assert(index < Detail::CPUDeviceTable::kInvalidIndex &&
            "Too many Runtime instances created");
   }
-  uint8_t index = Detail::RuntimeTable::kInvalidIndex;
+  uint8_t index = Detail::CPUDeviceTable::kInvalidIndex;
 };
 
 } // namespace M::MLRT
 
-#endif // MLRT_ASYNCRT_RUNTIME_COMPACT_RUNTIME_PTR_H
+#endif // MLRT_ASYNCRT_RUNTIME_COMPACT_CPU_DEVICE_PTR_H

@@ -27,16 +27,16 @@ using namespace M::MLRT;
 [[maybe_unused]] MODULAR_CXX_EXPORT std::atomic<ssize_t>
     M::MLRT::Globals::totalAllocatedAsyncValues{0};
 
-MODULAR_CXX_EXPORT CompactRuntimePtr &
-M::MLRT::Globals::getCurrentRuntimeInTLS() {
-  static thread_local CompactRuntimePtr currentRuntimeInTLS;
-  return currentRuntimeInTLS;
+MODULAR_CXX_EXPORT CompactCPUDevicePtr &
+M::MLRT::Globals::getCurrentCPUDeviceInTLS() {
+  static thread_local CompactCPUDevicePtr currentCPUDeviceInTLS;
+  return currentCPUDeviceInTLS;
 }
 
-MODULAR_CXX_EXPORT Detail::RuntimeTable &
-M::MLRT::Globals::getRuntimeTableSingleton(
-    const std::function<Detail::RuntimeTable *()> &ctor) {
-  static Detail::RuntimeTable *table = ctor();
+MODULAR_CXX_EXPORT Detail::CPUDeviceTable &
+M::MLRT::Globals::getCPUDeviceTableSingleton(
+    const std::function<Detail::CPUDeviceTable *()> &ctor) {
+  static Detail::CPUDeviceTable *table = ctor();
   return *table;
 }
 

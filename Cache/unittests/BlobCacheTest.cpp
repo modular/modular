@@ -46,14 +46,14 @@ static TempDir createTempDir() {
 class BlobCacheTest : public testing::Test {
 protected:
   TempDir tempDir;
-  MLRT::RuntimeRef runtime;
+  MLRT::CPUDeviceRef cpuDevice;
   RCRef<BlobCache<StringKeyInfo>> cache;
 
   BlobCacheTest()
       : tempDir(createTempDir()),
-        runtime(getOrCreateRuntime(
-            MLRT::RuntimeSource::Test,
-            MLRT::RuntimeOptions().withLeakCheckedAllocator())),
+        cpuDevice(getOrCreateCPUDevice(
+            MLRT::CPUDeviceSource::Test,
+            MLRT::CPUDeviceOptions().withLeakCheckedAllocator())),
         cache(RCRef<BlobCache<StringKeyInfo>>::create(
             getLocalDefaultBackendChain(tempDir.getPath()).takeValue())) {}
 };
@@ -61,8 +61,8 @@ protected:
 } // namespace
 
 TEST_F(BlobCacheTest, NotContainItemThatHasNotBeenInserted) {
-  auto done = AsyncValueRef<Chain>::allocate(*runtime);
-  auto contains = cache->contains(*runtime, "does not exist");
+  auto done = AsyncValueRef<Chain>::allocate(*cpuDevice);
+  auto contains = cache->contains(*cpuDevice, "does not exist");
   std::move(contains).andThenSync(
       [done = done.copy()](AsyncValueRef<bool> &&contains) mutable {
         ASSERT_FALSE(contains.isError())
@@ -75,8 +75,8 @@ TEST_F(BlobCacheTest, NotContainItemThatHasNotBeenInserted) {
 }
 
 TEST_F(BlobCacheTest, FindShouldNotReturnErrorForNonexistentItem) {
-  auto done = AsyncValueRef<Chain>::allocate(*runtime);
-  auto dneOr = cache->find(*runtime, "does not exist");
+  auto done = AsyncValueRef<Chain>::allocate(*cpuDevice);
+  auto dneOr = cache->find(*cpuDevice, "does not exist");
   std::move(dneOr).andThenSync(
       [done =
            done.copy()](AsyncValueRef<std::optional<BufferRef>> dneOr) mutable {
@@ -90,7 +90,7 @@ TEST_F(BlobCacheTest, FindShouldNotReturnErrorForNonexistentItem) {
 }
 
 TEST_F(BlobCacheTest, ContainItemWhenInserted) {
-  auto done = AsyncValueRef<Chain>::allocate(*runtime);
+  auto done = AsyncValueRef<Chain>::allocate(*cpuDevice);
 
   // Get an uninitialized buffer. We don't care what's in this, as long as it
   // goes in and comes out the same.
@@ -99,7 +99,7 @@ TEST_F(BlobCacheTest, ContainItemWhenInserted) {
   BufferRef zerosBuf = std::move(zerosDataBuf);
 
   AsyncValueRef<std::string> insertOr =
-      cache->insert(*runtime, "zeros", std::move(zerosBuf));
+      cache->insert(*cpuDevice, "zeros", std::move(zerosBuf));
   std::move(insertOr).andThenSync(
       [this, cache = cache.copy(),
        done = done.copy()](AsyncValueRef<std::string> insertOr) mutable {
@@ -107,7 +107,7 @@ TEST_F(BlobCacheTest, ContainItemWhenInserted) {
             << insertOr.getDiagnostic().getMessage() << '\n';
         EXPECT_FALSE(insertOr->empty()) << "expected to receive the hash key\v";
 
-        auto contains = cache->contains(*runtime, "zeros");
+        auto contains = cache->contains(*cpuDevice, "zeros");
         std::move(contains).andThenSync(
             [done = std::move(done)](AsyncValueRef<bool> contains) mutable {
               ASSERT_FALSE(contains.isError())
@@ -127,9 +127,9 @@ TEST_F(BlobCacheTest, FindItemThatExists) {
   zerosDataBuf->write(0);
   BufferRef zerosBuf = std::move(zerosDataBuf);
 
-  auto inserted = AsyncValueRef<Chain>::allocate(*runtime);
+  auto inserted = AsyncValueRef<Chain>::allocate(*cpuDevice);
   AsyncValueRef<std::string> insertOr =
-      cache->insert(*runtime, "zeros", zerosBuf.copy());
+      cache->insert(*cpuDevice, "zeros", zerosBuf.copy());
   std::move(insertOr).andThenSync(
       [this, cache = cache.copy(), inserted = inserted.copy()](
           AsyncValueRef<std::string> insertOr) mutable {
@@ -137,7 +137,7 @@ TEST_F(BlobCacheTest, FindItemThatExists) {
             << insertOr.getDiagnostic().getMessage() << '\n';
         EXPECT_FALSE(insertOr->empty()) << "expected to receive the hash key\v";
 
-        auto contains = cache->contains(*runtime, "zeros");
+        auto contains = cache->contains(*cpuDevice, "zeros");
         std::move(contains).andThenSync(
             [inserted =
                  std::move(inserted)](AsyncValueRef<bool> contains) mutable {
@@ -149,8 +149,8 @@ TEST_F(BlobCacheTest, FindItemThatExists) {
       });
   await(inserted);
 
-  auto found = AsyncValueRef<Chain>::allocate(*runtime);
-  auto zerosOr = cache->find(*runtime, "zeros");
+  auto found = AsyncValueRef<Chain>::allocate(*cpuDevice);
+  auto zerosOr = cache->find(*cpuDevice, "zeros");
   std::move(zerosOr).andThenSync(
       [zerosBuf = zerosBuf.copy(), found = found.copy()](
           AsyncValueRef<std::optional<BufferRef>> &&zerosOr) mutable {
@@ -177,7 +177,7 @@ TEST_F(BlobCacheTest, FileSystemFindItemThatExists) {
   BufferRef zerosBuf = std::move(zerosDataBuf);
 
   AsyncValueRef<std::string> err =
-      cache->insert(*runtime, "zeros", zerosBuf.copy());
+      cache->insert(*cpuDevice, "zeros", zerosBuf.copy());
   await(err);
   ASSERT_FALSE(err.isError()) << err.getDiagnostic().getMessage() << '\n';
 
@@ -186,7 +186,7 @@ TEST_F(BlobCacheTest, FileSystemFindItemThatExists) {
       getLocalDefaultBackendChain(tempDir.getPath()).takeValue());
 
   // Check that the cache holds the new item, and it's the same data as before.
-  auto zerosOr = fsCache->find(*runtime, "zeros");
+  auto zerosOr = fsCache->find(*cpuDevice, "zeros");
   await(zerosOr);
   ASSERT_FALSE(zerosOr.isError())
       << zerosOr.getDiagnostic().getMessage() << '\n';
@@ -221,7 +221,7 @@ TEST_F(BlobCacheTest, FileSystemTestOldVersionDeletion) {
 TEST_F(BlobCacheTest, OutKeyHashPopulatedOnContains) {
   std::string outHash;
   auto contains =
-      cache->contains(*runtime, "containsHashTest", std::nullopt, &outHash);
+      cache->contains(*cpuDevice, "containsHashTest", std::nullopt, &outHash);
   await(contains);
 
   ASSERT_FALSE(contains.isError()) << contains.getDiagnostic().getMessage();
@@ -230,7 +230,7 @@ TEST_F(BlobCacheTest, OutKeyHashPopulatedOnContains) {
 
 TEST_F(BlobCacheTest, OutKeyHashPopulatedOnFind) {
   std::string outHash;
-  auto findOr = cache->find(*runtime, "findHashTest", std::nullopt, &outHash);
+  auto findOr = cache->find(*cpuDevice, "findHashTest", std::nullopt, &outHash);
   await(findOr);
 
   ASSERT_FALSE(findOr.isError()) << findOr.getDiagnostic().getMessage();
@@ -242,8 +242,8 @@ TEST_F(BlobCacheTest, OutKeyHashNullSafe) {
   auto zerosDataBuf = WriteableBuffer::get();
   zerosDataBuf->write(0);
 
-  auto contains = cache->contains(*runtime, "nullHashTest");
-  auto findOr = cache->find(*runtime, "nullHashTest");
+  auto contains = cache->contains(*cpuDevice, "nullHashTest");
+  auto findOr = cache->find(*cpuDevice, "nullHashTest");
 
   await(contains);
   await(findOr);
@@ -264,11 +264,11 @@ TEST_F(BlobCacheTest, InsertKeyedAsyncWorks) {
   std::string hashedKey = cache->getHash(plainKey);
 
   // Insert using insertKeyed; note we pass the already hashed key
-  auto chainAV = cache->insertKeyed(*runtime, hashedKey, onesBuf.copy());
+  auto chainAV = cache->insertKeyed(*cpuDevice, hashedKey, onesBuf.copy());
   await(chainAV);
 
   // Now find using the plain key, which will compute hash
-  auto findAV = cache->find(*runtime, plainKey);
+  auto findAV = cache->find(*cpuDevice, plainKey);
   await(findAV);
 
   ASSERT_FALSE(findAV.isError()) << findAV.getDiagnostic().getMessage();
@@ -322,11 +322,11 @@ TEST_F(BlobCacheTest, ContainsKeyedWorks) {
   std::string hashedKey = cache->getHash(plainKey);
 
   // Insert using insertKeyed with pre-hashed key
-  auto chainAV = cache->insertKeyed(*runtime, hashedKey, threesBuf.copy());
+  auto chainAV = cache->insertKeyed(*cpuDevice, hashedKey, threesBuf.copy());
   await(chainAV);
 
   // Verify containsKeyed with direct hash check
-  auto containsAV = cache->containsKeyed(*runtime, hashedKey);
+  auto containsAV = cache->containsKeyed(*cpuDevice, hashedKey);
   await(containsAV);
 
   ASSERT_FALSE(containsAV.isError()) << containsAV.getDiagnostic().getMessage();
@@ -361,10 +361,10 @@ TEST_F(BlobCacheTest, FindKeyedWorks) {
   std::string plainKey = "findKeyedTest";
   std::string hashedKey = cache->getHash(plainKey);
 
-  auto chainAV = cache->insertKeyed(*runtime, hashedKey, fivesBuf.copy());
+  auto chainAV = cache->insertKeyed(*cpuDevice, hashedKey, fivesBuf.copy());
   await(chainAV);
 
-  auto findAV = cache->findKeyed(*runtime, hashedKey);
+  auto findAV = cache->findKeyed(*cpuDevice, hashedKey);
   await(findAV);
 
   ASSERT_FALSE(findAV.isError()) << findAV.getDiagnostic().getMessage();
@@ -429,11 +429,11 @@ static MLRT::EncodedLocation unknownLoc() {
   return MLRT::UnknownLocationDecoder::getEncodedLocation();
 }
 
-static MLRT::RuntimeRef makeRuntime() {
-  return MLRT::getOrCreateRuntime(MLRT::RuntimeSource::Test,
-                                  MLRT::RuntimeOptions()
-                                      .withLeakCheckedAllocator()
-                                      .withMainWillNotDonate());
+static MLRT::CPUDeviceRef makeCPUDevice() {
+  return MLRT::getOrCreateCPUDevice(MLRT::CPUDeviceSource::Test,
+                                    MLRT::CPUDeviceOptions()
+                                        .withLeakCheckedAllocator()
+                                        .withMainWillNotDonate());
 }
 
 TEST(FilesystemBackend, Hammer) {
@@ -445,72 +445,72 @@ TEST(FilesystemBackend, Hammer) {
   std::vector<std::thread> threads;
   for (int thread = 0; thread < numThreads; ++thread) {
     threads.emplace_back([thread, &tempDir]() {
-      auto runtime = makeRuntime();
+      auto cpuDevice = makeCPUDevice();
       auto backend = getFilesystemBackend(tempDir.getPath());
-      auto threadDone = AsyncValueRef<Chain>::allocate(*runtime);
+      auto threadDone = AsyncValueRef<Chain>::allocate(*cpuDevice);
 
       // Insert known values with known keys.
       std::vector<AnyAsyncValueRef> insertsDone;
       for (int run = 0; run < numKeys; ++run) {
         insertsDone.emplace_back(
-            backend->insert(*runtime, makeKey(thread, run),
+            backend->insert(*cpuDevice, makeKey(thread, run),
                             makeValue(size, numThreads, thread, run)));
       }
-      andThenSyncMoving(insertsDone, [thread, runtime = runtime.getPointer(),
-                                      backend = backend.copy(),
-                                      threadDone = threadDone.copy()](
-                                         MutableArrayRef<AnyAsyncValueRef>
-                                             insertsDone) mutable {
-        for (auto &ref : insertsDone) {
-          if (ref.isError())
-            return std::move(threadDone).setToError(ref.takeDiagnostic());
-        }
+      andThenSyncMoving(
+          insertsDone,
+          [thread, cpuDevice = cpuDevice.getPointer(), backend = backend.copy(),
+           threadDone = threadDone.copy()](
+              MutableArrayRef<AnyAsyncValueRef> insertsDone) mutable {
+            for (auto &ref : insertsDone) {
+              if (ref.isError())
+                return std::move(threadDone).setToError(ref.takeDiagnostic());
+            }
 
-        // Retrieve those values and check they match.
-        std::vector<AnyAsyncValueRef> findsDone;
-        for (int run = 0; run < numKeys; ++run) {
-          auto findDone = AsyncValueRef<Chain>::allocate(*runtime);
-          backend->find(*runtime, makeKey(thread, run))
-              .andThenSync([thread, run, findDone = findDone.copy()](
-                               AsyncValueRef<std::optional<BufferRef>>
-                                   optResult) mutable {
-                if (optResult.isError())
-                  return std::move(findDone).setToError(
-                      optResult.takeDiagnostic());
-                if (!optResult->has_value())
-                  return std::move(findDone).setToError(
-                      {Twine("no entry for ") + makeKeyStr(thread, run),
-                       unknownLoc()});
-                if (optResult->value()->getBufferSize() != size)
-                  return std::move(findDone).setToError(
-                      {Twine("mismatched size for ") + makeKeyStr(thread, run) +
-                           ": actual size is " +
-                           Twine(optResult->value()->getBufferSize()),
-                       unknownLoc()});
-                BufferRef expectedValue =
-                    makeValue(size, numThreads, thread, run);
-                if (memcmp(optResult->value()->getBufferStart(),
-                           expectedValue->getBufferStart(), size))
-                  return std::move(findDone).setToError(
-                      {Twine("retrieved value does not match expected value "
-                             "for ") +
-                           makeKeyStr(thread, run),
-                       unknownLoc()});
-                std::move(findDone).emplace();
-              });
-          findsDone.emplace_back(std::move(findDone));
-        }
-        andThenSyncMoving(
-            findsDone,
-            [threadDone = std::move(threadDone)](
-                MutableArrayRef<AnyAsyncValueRef> findsDone) mutable {
+            // Retrieve those values and check they match.
+            std::vector<AnyAsyncValueRef> findsDone;
+            for (int run = 0; run < numKeys; ++run) {
+              auto findDone = AsyncValueRef<Chain>::allocate(*cpuDevice);
+              backend->find(*cpuDevice, makeKey(thread, run))
+                  .andThenSync([thread, run, findDone = findDone.copy()](
+                                   AsyncValueRef<std::optional<BufferRef>>
+                                       optResult) mutable {
+                    if (optResult.isError())
+                      return std::move(findDone).setToError(
+                          optResult.takeDiagnostic());
+                    if (!optResult->has_value())
+                      return std::move(findDone).setToError(
+                          {Twine("no entry for ") + makeKeyStr(thread, run),
+                           unknownLoc()});
+                    if (optResult->value()->getBufferSize() != size)
+                      return std::move(findDone).setToError(
+                          {Twine("mismatched size for ") +
+                               makeKeyStr(thread, run) + ": actual size is " +
+                               Twine(optResult->value()->getBufferSize()),
+                           unknownLoc()});
+                    BufferRef expectedValue =
+                        makeValue(size, numThreads, thread, run);
+                    if (memcmp(optResult->value()->getBufferStart(),
+                               expectedValue->getBufferStart(), size))
+                      return std::move(findDone).setToError(
+                          {Twine(
+                               "retrieved value does not match expected value "
+                               "for ") +
+                               makeKeyStr(thread, run),
+                           unknownLoc()});
+                    std::move(findDone).emplace();
+                  });
+              findsDone.emplace_back(std::move(findDone));
+            }
+            andThenSyncMoving(findsDone, [threadDone = std::move(threadDone)](
+                                             MutableArrayRef<AnyAsyncValueRef>
+                                                 findsDone) mutable {
               for (auto &ref : findsDone) {
                 if (ref.isError())
                   return std::move(threadDone).setToError(ref.takeDiagnostic());
               }
               std::move(threadDone).emplace();
             });
-      });
+          });
 
       await(threadDone);
       EXPECT_FALSE(threadDone.isError())

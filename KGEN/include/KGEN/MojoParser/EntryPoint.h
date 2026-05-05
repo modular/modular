@@ -23,7 +23,7 @@ class AutoFixItHandler;
 } // namespace M
 
 namespace M::MLRT {
-class Runtime;
+class CPUDevice;
 } // namespace M::MLRT
 namespace M::KGEN {
 class CompilationOptions;
@@ -128,8 +128,9 @@ importMojoPackage(ContextRef context, StringRef path, StringRef packageName,
 /// module, resolving all dependencies into a self contained module. Returns a
 /// module op that contains the package.
 OwningOpRef<ModuleOp> importStandaloneMojoBinaryPackage(
-    MLRT::Runtime &runtime, const std::shared_ptr<llvm::SourceMgr> &sourceMgr,
-    MLIRContext *ctx, StringRef path);
+    MLRT::CPUDevice &cpuDevice,
+    const std::shared_ptr<llvm::SourceMgr> &sourceMgr, MLIRContext *ctx,
+    StringRef path);
 
 /// Clone the module containing the given decl, and prepare it for compilation.
 /// This handles stripping out any unused decls, stabilizing value uses, and

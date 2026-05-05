@@ -30,48 +30,51 @@ void Allocator::vtableAnchor() {}
 /// Create "Chain" AsyncValue, making sure that "Chain" type is registered
 /// before the construction. "Chain" is core to AsyncRT implementation, so it
 /// needs to be registered unconditionally from AsyncRT.
-static AsyncValueRef<Chain> createReadyChain(Runtime &runtime) {
-  return AsyncValueRef<Chain>::createReady(runtime);
+static AsyncValueRef<Chain> createReadyChain(CPUDevice &cpuDevice) {
+  return AsyncValueRef<Chain>::createReady(cpuDevice);
 }
 
 //===----------------------------------------------------------------------===//
-// CompactRuntimePtr
+// CompactCPUDevicePtr
 //===----------------------------------------------------------------------===//
 
-CompactRuntimePtr::CompactRuntimePtr(Runtime *runtime)
-    : CompactRuntimePtr(runtime ? runtime->getCompactPtr()
-                                : CompactRuntimePtr()) {}
+CompactCPUDevicePtr::CompactCPUDevicePtr(CPUDevice *cpuDevice)
+    : CompactCPUDevicePtr(cpuDevice ? cpuDevice->getCompactPtr()
+                                    : CompactCPUDevicePtr()) {}
 
 //===----------------------------------------------------------------------===//
 // Runtime
 //===----------------------------------------------------------------------===//
 
-Runtime *Runtime::getCurrentRuntimeOrNull() {
+CPUDevice *CPUDevice::getCurrentCPUDeviceOrNull() {
   // First check the thread-local Runtime pointer, set when Runtime is created
   // for WorkQueue worker threads and the thread which created the Runtime, and
   // if that's set use this.
-  if (CompactRuntimePtr tlsRuntimePtr = CompactRuntimePtr::getCurrentRuntime())
+  if (CompactCPUDevicePtr tlsRuntimePtr =
+          CompactCPUDevicePtr::getCurrentCPUDevice())
     return tlsRuntimePtr.get();
 
   // Next check if the Runtime exists by checking the global Runtime pointer,
   // and if it does set the thread-local Runtime pointer and use that.
-  Runtime *globalRuntimePtr = getGlobalRuntimePointer();
+  CPUDevice *globalRuntimePtr = getGlobalCPUDevicePointer();
   if (globalRuntimePtr)
-    CompactRuntimePtr::setCurrentRuntime(CompactRuntimePtr(globalRuntimePtr));
+    CompactCPUDevicePtr::setCurrentCPUDevice(
+        CompactCPUDevicePtr(globalRuntimePtr));
   return globalRuntimePtr;
 }
 
-Runtime::Runtime(CompactRuntimePtr runtimePtr,
-                 std::unique_ptr<Allocator> allocator,
-                 std::unique_ptr<WorkQueue> workQueue, RuntimeSource source,
-                 StringRef profileFilename, uint64_t runtimeProfilingTypeMask,
-                 RuntimeOptions::ProfilerDebuginfo profilerDebuginfo)
-    : signature(TypeID::getSignature() ^ CompactRuntimePtr::getSignature()),
+CPUDevice::CPUDevice(CompactCPUDevicePtr cpuDevicePtr,
+                     std::unique_ptr<Allocator> allocator,
+                     std::unique_ptr<WorkQueue> workQueue,
+                     CPUDeviceSource source, StringRef profileFilename,
+                     uint64_t runtimeProfilingTypeMask,
+                     CPUDeviceOptions::ProfilerDebuginfo profilerDebuginfo)
+    : signature(TypeID::getSignature() ^ CompactCPUDevicePtr::getSignature()),
       allocator(std::move(allocator)), workQueue(std::move(workQueue)),
-      profilerDebuginfo(profilerDebuginfo), runtimeIndex(runtimePtr.index),
+      profilerDebuginfo(profilerDebuginfo), runtimeIndex(cpuDevicePtr.index),
       source(source), readyChain(createReadyChain(*this)) {
-  // Establish association of runtime to runtime index.
-  Detail::RuntimeTable::getSingleton().setRuntime(runtimePtr.index, this);
+  // Establish association of cpuDevice to cpuDevice index.
+  Detail::CPUDeviceTable::getSingleton().setCPUDevice(cpuDevicePtr.index, this);
 
   // NOTE: Users can't pass in profileFilename AND activate the time
   // profiler in the caller.
@@ -80,19 +83,19 @@ Runtime::Runtime(CompactRuntimePtr runtimePtr,
                      runtimeProfilingTypeMask);
 }
 
-Runtime::~Runtime() {
-  // Explicitly shutdown the workQueue while the Runtime is still alive.
+CPUDevice::~CPUDevice() {
+  // Explicitly shutdown the workQueue while the CPUDevice is still alive.
   // Shutting down the workqueue will execute unfinished tasks, and those tasks
-  // can add new tasks to the runtime, so we need to make sure to tie all this
+  // can add new tasks to the cpuDevice, so we need to make sure to tie all this
   // off before invalidating the workQueue pointer.
   workQueue->shutdown();
 
-  // Remove association of runtime to runtime index.
-  Detail::RuntimeTable::getSingleton().clearRuntime(runtimeIndex);
+  // Remove association of cpuDevice to cpuDevice index.
+  Detail::CPUDeviceTable::getSingleton().clearCPUDevice(runtimeIndex);
 
-  // Clear global pointer if it pointed to this runtime (same pattern as
+  // Clear global pointer if it pointed to this cpuDevice (same pattern as
   // Context).
-  clearGlobalRuntimePointerIfEquals(this);
+  clearGlobalCPUDevicePointerIfEquals(this);
 
   // We're done with profiling.
   if (profiler) {

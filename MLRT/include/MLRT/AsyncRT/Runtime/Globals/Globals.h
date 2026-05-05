@@ -15,27 +15,27 @@
 #include <string>
 
 namespace M::MLRT {
-class Runtime;
-class CompactRuntimePtr;
+class CPUDevice;
+class CompactCPUDevicePtr;
 
 namespace Detail {
-class RuntimeTable;
+class CPUDeviceTable;
 } // namespace Detail
 
 class Globals {
 
 public:
-  /// This is a TLS CompactRuntimePtr pointing to the runtime on behalf of
+  /// This is a TLS CompactCPUDevicePtr pointing to the cpuDevice on behalf of
   /// which the thread is processing work items. That thread may be a 'worker'
-  /// thread of the runtime's work queue, or a 'main' thread which is also
-  /// donating itself to processing work items for the runtime.
+  /// thread of the cpuDevice's work queue, or a 'main' thread which is also
+  /// donating itself to processing work items for the cpuDevice.
   ///
   /// NOTE: MSVC does not allow a thread_local to have DLL linkage, so we must
   /// hide this under a function.
-  static MODULAR_CXX_EXPORT CompactRuntimePtr &getCurrentRuntimeInTLS();
+  static MODULAR_CXX_EXPORT CompactCPUDevicePtr &getCurrentCPUDeviceInTLS();
 
-  static MODULAR_CXX_EXPORT Detail::RuntimeTable &
-  getRuntimeTableSingleton(const std::function<Detail::RuntimeTable *()> &ctor);
+  static MODULAR_CXX_EXPORT Detail::CPUDeviceTable &getCPUDeviceTableSingleton(
+      const std::function<Detail::CPUDeviceTable *()> &ctor);
 
 private:
   friend class AsyncValue;

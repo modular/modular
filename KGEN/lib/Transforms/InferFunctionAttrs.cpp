@@ -119,12 +119,13 @@ struct InferFunctionAttrsPass
 };
 
 void InferFunctionAttrsPass::runOnOperation() {
-  MLRT::Runtime &runtime = *loadContext(&getContext())->get<MLRT::Runtime>();
+  MLRT::CPUDevice &cpuDevice =
+      *loadContext(&getContext())->get<MLRT::CPUDevice>();
   const SymbolTable &symtab =
       getAnalysis<mlir::SymbolTableAnalysis>().getTopLevelSymbolTable();
   CallGraph cg(symtab);
   cg.build(getOperation(), symtab);
-  cg.run(runtime);
+  cg.run(cpuDevice);
 }
 
 } // namespace

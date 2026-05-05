@@ -9,7 +9,7 @@
 
 using namespace M::MLRT;
 
-bool RuntimeOptions::operator==(const RuntimeOptions &other) const {
+bool CPUDeviceOptions::operator==(const CPUDeviceOptions &other) const {
   return numThreads == other.numThreads && maxThreads == other.maxThreads &&
          profileFilename == other.profileFilename &&
          runtimeProfilingTypeMask == other.runtimeProfilingTypeMask &&
@@ -25,45 +25,45 @@ bool RuntimeOptions::operator==(const RuntimeOptions &other) const {
          profilerDebuginfo == other.profilerDebuginfo;
 }
 
-RuntimeOptions RuntimeOptions::copy() const {
-  RuntimeOptions runtimeOptions;
+CPUDeviceOptions CPUDeviceOptions::copy() const {
+  CPUDeviceOptions cpuDeviceOptions;
   switch (allocatorType) {
-  case RuntimeOptions::AllocatorType::kMalloc:
-    runtimeOptions.tcmallocAllocator = false;
+  case CPUDeviceOptions::AllocatorType::kMalloc:
+    cpuDeviceOptions.tcmallocAllocator = false;
     break;
-  case RuntimeOptions::AllocatorType::kTCMalloc:
-    runtimeOptions.tcmallocAllocator = true;
+  case CPUDeviceOptions::AllocatorType::kTCMalloc:
+    cpuDeviceOptions.tcmallocAllocator = true;
     break;
-  case RuntimeOptions::AllocatorType::kLeakChecker:
-    runtimeOptions.leakCheckedAllocator = true;
+  case CPUDeviceOptions::AllocatorType::kLeakChecker:
+    cpuDeviceOptions.leakCheckedAllocator = true;
     break;
-  case RuntimeOptions::AllocatorType::kProfiler:
-    runtimeOptions.profilingAllocator = true;
+  case CPUDeviceOptions::AllocatorType::kProfiler:
+    cpuDeviceOptions.profilingAllocator = true;
     break;
-  case RuntimeOptions::AllocatorType::kUseAfterFree:
+  case CPUDeviceOptions::AllocatorType::kUseAfterFree:
 #if HAVE_MODULAR_USE_AFTER_FREE_ALLOCATOR
-    runtimeOptions.useAfterFreeAllocator = true;
+    cpuDeviceOptions.useAfterFreeAllocator = true;
 #else
     llvm::errs() << "The use-after-free allocator is not available for this "
-                    "target. Using the leak-checker runtime instead.";
-    runtimeOptions.leakCheckedAllocator = true;
+                    "target. Using the leak-checker cpuDevice instead.";
+    cpuDeviceOptions.leakCheckedAllocator = true;
 #endif
     break;
   }
-  runtimeOptions.workQueueType = workQueueType;
+  cpuDeviceOptions.workQueueType = workQueueType;
   switch (workQueueType) {
-  case RuntimeOptions::WorkQueueType::kSingleThread:
+  case CPUDeviceOptions::WorkQueueType::kSingleThread:
     break;
-  case RuntimeOptions::WorkQueueType::kThreadPool:
-    runtimeOptions.numThreads = numThreads;
-    runtimeOptions.maxThreads = maxThreads;
-    runtimeOptions.withAffinity = withAffinity;
-    runtimeOptions.threadBusyWaitTime = threadBusyWaitTime;
+  case CPUDeviceOptions::WorkQueueType::kThreadPool:
+    cpuDeviceOptions.numThreads = numThreads;
+    cpuDeviceOptions.maxThreads = maxThreads;
+    cpuDeviceOptions.withAffinity = withAffinity;
+    cpuDeviceOptions.threadBusyWaitTime = threadBusyWaitTime;
     break;
   }
-  runtimeOptions.profileFilename = getProfileFilename();
-  runtimeOptions.profilerDebuginfo = profilerDebuginfo;
-  runtimeOptions.poolName = poolName;
-  runtimeOptions.mainWillDonate = mainWillDonate;
-  return runtimeOptions;
+  cpuDeviceOptions.profileFilename = getProfileFilename();
+  cpuDeviceOptions.profilerDebuginfo = profilerDebuginfo;
+  cpuDeviceOptions.poolName = poolName;
+  cpuDeviceOptions.mainWillDonate = mainWillDonate;
+  return cpuDeviceOptions;
 }

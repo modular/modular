@@ -98,8 +98,8 @@ overflow.
 
 ### Ownership and Lifecycle
 
-The `WorkQueue` is typically owned by an `M::MLRT::Runtime` instance, which
-creates and manages it based on `RuntimeOptions`. The lifecycle is:
+The `WorkQueue` is typically owned by an `M::MLRT::CPUDevice` instance, which
+creates and manages it based on `CPUDeviceOptions`. The lifecycle is:
 
 1. **Creation**: Via `createThreadPoolWorkQueue()` or
    `createSingleThreadWorkQueue()`. Worker threads start immediately.

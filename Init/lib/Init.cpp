@@ -62,15 +62,15 @@ ErrorOr<ContextRef> createContextImpl(StringRef programName,
   // required.
   ctx->emplace<Telemetry::TelemetryContext>(settings, programName, subCommand);
 
-  // Create a new runtime (if needed).
-  if (options.getRuntimeOptions()) {
+  // Create a new cpuDevice (if needed).
+  if (options.getCPUDeviceOptions()) {
     std::string profileFilename =
         llvm::sys::Process::GetEnv("MODULAR_PROFILE_FILENAME").value_or("");
-    MLRT::RuntimeOptions opts = *options.getRuntimeOptions();
+    MLRT::CPUDeviceOptions opts = *options.getCPUDeviceOptions();
     if (!profileFilename.empty())
       opts.profileFilename = profileFilename;
-    MLRT::RuntimeRef ref =
-        MLRT::getOrCreateRuntime(MLRT::RuntimeSource::MaxContext, opts);
+    MLRT::CPUDeviceRef ref =
+        MLRT::getOrCreateCPUDevice(MLRT::CPUDeviceSource::MaxContext, opts);
     ctx->setRuntime(GenericRCRef::fromRCRef(std::move(ref)));
   }
 

@@ -49,18 +49,19 @@ int main() {
 
   // Create our context for execution.
   ErrorOr<ContextRef> ctxOr = Init::createContext(
-      "mojo-repl", Init::Options().withRuntimeOptions(MLRT::RuntimeOptions()));
+      "mojo-repl",
+      Init::Options().withCPUDeviceOptions(MLRT::CPUDeviceOptions()));
   if (ctxOr.isError()) {
     llvm::errs() << "unable to create context: " << ctxOr.getError() << "\n";
     return 1;
   }
   ContextRef ctx = std::move(*ctxOr);
-  MLRT::Runtime *runtime = ctx->get<MLRT::Runtime>();
+  MLRT::CPUDevice *cpuDevice = ctx->get<MLRT::CPUDevice>();
 
-  // In order to ensure that mojo has a runtime for execution, inject
+  // In order to ensure that mojo has a cpuDevice for execution, inject
   // a global value. Normally this would be set by Mojo during startup,
   // but given that we are skipping that dance we can set it here.
-  KGEN_CompilerRT_InsertGlobal("Runtime", static_cast<void *>(runtime));
+  KGEN_CompilerRT_InsertGlobal("Runtime", static_cast<void *>(cpuDevice));
 
   return mojo_repl_main();
 }

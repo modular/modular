@@ -203,7 +203,7 @@ protected:
 /// Creates a thread pool that only uses the host donor thread, involving no
 /// synchronization.
 std::unique_ptr<WorkQueue>
-createSingleThreadWorkQueue(CompactRuntimePtr runtimePtr);
+createSingleThreadWorkQueue(CompactCPUDevicePtr cpuDevicePtr);
 
 /// Creates a thread pool able to distribute the execution of work items
 /// across numThreads.
@@ -231,14 +231,14 @@ createSingleThreadWorkQueue(CompactRuntimePtr runtimePtr);
 /// contribute to processing outstanding work items. Otherwise shutdown
 /// may be called from any foreign thread.
 std::unique_ptr<WorkQueue> createThreadPoolWorkQueue(
-    CompactRuntimePtr runtimePtr, size_t numThreads, size_t maxThreads,
+    CompactCPUDevicePtr cpuDevicePtr, size_t numThreads, size_t maxThreads,
     bool mainWillDonate, bool withAffinity,
     std::chrono::microseconds threadBusyWaitTime, std::string_view poolName);
 
 /// Creates a partitioned thread pool WorkQueue whose worker threads are
 /// restricted to the CPU cores of a single NUMA node.
 std::unique_ptr<WorkQueue> createPartitionedThreadPoolWorkQueue(
-    CompactRuntimePtr runtimePtr, int numaNode,
+    CompactCPUDevicePtr cpuDevicePtr, int numaNode,
     std::chrono::microseconds threadBusyWaitTime, std::string_view poolName);
 
 } // namespace M::MLRT

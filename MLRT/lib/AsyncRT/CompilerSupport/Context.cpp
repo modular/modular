@@ -38,11 +38,11 @@ public:
       return;
     MLRT::LLVMThreadPool *tp = ctxRef->get<MLRT::LLVMThreadPool>();
     if (!tp) {
-      if (MLRT::Runtime *runtime = ctxRef->get<MLRT::Runtime>())
-        tp = &ctxRef->emplace<MLRT::LLVMThreadPool>(*runtime);
+      if (MLRT::CPUDevice *cpuDevice = ctxRef->get<MLRT::CPUDevice>())
+        tp = &ctxRef->emplace<MLRT::LLVMThreadPool>(*cpuDevice);
     }
 
-    // If the runtime is available, enable threading in MLIR with it.
+    // If the cpuDevice is available, enable threading in MLIR with it.
     if (tp)
       context->setThreadPool(*tp);
   }

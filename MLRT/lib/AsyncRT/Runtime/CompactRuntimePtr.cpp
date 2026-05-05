@@ -13,48 +13,48 @@
 using namespace M;
 using namespace M::MLRT;
 
-Detail::RuntimeTable::RuntimeTable() {
+Detail::CPUDeviceTable::CPUDeviceTable() {
   freeIndices.resize(kInvalidIndex);
   for (uint8_t i = 0; i < kInvalidIndex; ++i) {
-    allRuntimes[i] = nullptr;
+    allCPUDevices[i] = nullptr;
     freeIndices[i] = kInvalidIndex - i - 1;
   }
 }
 
-Runtime *Detail::RuntimeTable::getRuntime(uint8_t index) const {
-  assert(index != kInvalidIndex && "invalid Runtime index");
-  assert(allRuntimes[index] != nullptr &&
-         "no Runtime has been registered for index");
-  // NOTE: We are assuming the mutex lock will force all writes to allRuntimes
+CPUDevice *Detail::CPUDeviceTable::getCPUDevice(uint8_t index) const {
+  assert(index != kInvalidIndex && "invalid CPUDevice index");
+  assert(allCPUDevices[index] != nullptr &&
+         "no CPUDevice has been registered for index");
+  // NOTE: We are assuming the mutex lock will force all writes to allCPUDevices
   // to be flushed.
-  return allRuntimes[index];
+  return allCPUDevices[index];
 }
 
-uint8_t Detail::RuntimeTable::reserveIndex() {
+uint8_t Detail::CPUDeviceTable::reserveIndex() {
   std::lock_guard<std::mutex> lock(mu);
-  assert(!freeIndices.empty() && "too many Runtimes are currently active");
+  assert(!freeIndices.empty() && "too many CPUDevices are currently active");
   auto index = freeIndices.pop_back_val();
-  assert(allRuntimes[index] == nullptr &&
-         "index is still occupied by a Runtime");
+  assert(allCPUDevices[index] == nullptr &&
+         "index is still occupied by a CPUDevice");
   return index;
 }
 
-void Detail::RuntimeTable::setRuntime(uint8_t index, Runtime *runtime) {
-  // NOTE: Take the lock to ensure writes to allRuntimes are flushed.
+void Detail::CPUDeviceTable::setCPUDevice(uint8_t index, CPUDevice *cpuDevice) {
+  // NOTE: Take the lock to ensure writes to allCPUDevices are flushed.
   std::lock_guard<std::mutex> lock(mu);
-  allRuntimes[index] = runtime;
+  allCPUDevices[index] = cpuDevice;
 }
 
-void Detail::RuntimeTable::clearRuntime(uint8_t index) {
+void Detail::CPUDeviceTable::clearCPUDevice(uint8_t index) {
   std::lock_guard<std::mutex> lock(mu);
-  assert(allRuntimes[index] != nullptr &&
-         "no Runtime has been registered for index");
+  assert(allCPUDevices[index] != nullptr &&
+         "no CPUDevice has been registered for index");
   assert(freeIndices.size() < kInvalidIndex && "all indices are already free");
-  allRuntimes[index] = nullptr;
+  allCPUDevices[index] = nullptr;
   freeIndices.push_back(index);
 }
 
-size_t Detail::RuntimeTable::numActiveRuntimes() const {
+size_t Detail::CPUDeviceTable::numActiveCPUDevices() const {
   std::lock_guard<std::mutex> lock(mu);
   return kInvalidIndex - freeIndices.size();
 }

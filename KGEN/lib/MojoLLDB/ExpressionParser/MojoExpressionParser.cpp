@@ -457,7 +457,7 @@ MojoExpressionParser::parse(MojoPersistentExpressionState &state,
   // Run the elaboration pipeline.
   ErrorOrSuccess compilerResult = kgenCompiler.runKGENPipeline(
       *module, targetInfo, impl->objCompiler->getTransformCache().copy(),
-      AsyncValueRef<Chain>::createReady(impl->typeSystem->getRuntime()));
+      AsyncValueRef<Chain>::createReady(impl->typeSystem->getCPUDevice()));
   if (compilerResult.isError())
     return returnErrorCleanup();
 

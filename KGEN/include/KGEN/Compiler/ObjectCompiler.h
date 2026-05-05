@@ -157,8 +157,8 @@ private:
   /// The MLIR context.
   MLIRContext &context;
 
-  /// The AsyncRT runtime.
-  MLRT::Runtime &runtime;
+  /// The AsyncRT cpuDevice.
+  MLRT::CPUDevice &cpuDevice;
 
   /// Mutex to protect deduplicating shared
   /// data structure among parallel splits.

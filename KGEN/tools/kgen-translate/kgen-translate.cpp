@@ -42,8 +42,8 @@ int main(int argc, char *argv[]) {
   // Create our context.
   ErrorOr<ContextRef> ctxOr = Init::createContext(
       "kgen-translate",
-      Init::Options().withRuntimeOptions(
-          MLRT::RuntimeOptions().withMainWillNotDonate().withCPUAffinity(
+      Init::Options().withCPUDeviceOptions(
+          MLRT::CPUDeviceOptions().withMainWillNotDonate().withCPUAffinity(
               false)));
   if (ctxOr.isError()) {
     llvm::errs() << "failed to create context: " << ctxOr.getError() << "\n";

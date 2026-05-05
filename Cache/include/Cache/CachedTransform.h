@@ -62,7 +62,7 @@ using TransformCache = BlobCache<TransformCacheKey>;
 ///
 ///    // Allocate a space to put the result of the transformation. We'll chain
 ///    // off that.
-///    auto result = AsyncValueRef<Chain>::allocate(chain.getRuntime());
+///    auto result = AsyncValueRef<Chain>::allocate(chain.getCPUDevice());
 ///    xform.andThenSync([&]() mutable {
 ///      result.emplace(doSyncTransform(op, buf));
 ///    });
@@ -139,13 +139,13 @@ MLRT::AnyAsyncValueRef cachedTransform(
   // Try to find the key in the cache. The cache hit function should chain off
   // that and do the right for the cache state.
   auto foundOr =
-      AsyncValueRef<std::optional<BufferRef>>::allocate(chain.getRuntime());
+      AsyncValueRef<std::optional<BufferRef>>::allocate(chain.getCPUDevice());
   chain.andThenSync([foundOr = foundOr.copy(), keyBuffer = keyBuffer.copy(),
                      transformCache = transformCache.copy(),
                      loc = std::move(loc), outKeyHash]() mutable {
     // Find the thing in the cache with the target op's location. This copy of
     // `keyBuffer` is local, so it's safe to move.
-    auto f = transformCache->find(foundOr.getRuntime(), std::move(keyBuffer),
+    auto f = transformCache->find(foundOr.getCPUDevice(), std::move(keyBuffer),
                                   std::move(loc), outKeyHash);
     std::move(f).andThenSync(
         [foundOr = foundOr.copy()](
@@ -158,7 +158,7 @@ MLRT::AnyAsyncValueRef cachedTransform(
   });
 
   // Allocate space for the output.
-  AnyAsyncValueRef out = AnyAsyncValueRef::createIndirect(chain.getRuntime());
+  AnyAsyncValueRef out = AnyAsyncValueRef::createIndirect(chain.getCPUDevice());
   std::move(foundOr).andThenSync(
       [out = out.copy(), transformCache = transformCache.copy(),
        transformFn = std::move(transformFn), keyBuffer = std::move(keyBuffer),
@@ -216,9 +216,9 @@ MLRT::AnyAsyncValueRef cachedTransform(
                 llvm_unreachable("unknown_fn_type");
 
               // Again, this keyBuffer is local, so it's safe to move.
-              AsyncValueRef<std::string> hashOr =
-                  transformCache->insert(out.getRuntime(), std::move(keyBuffer),
-                                         std::move(bufferToCache));
+              AsyncValueRef<std::string> hashOr = transformCache->insert(
+                  out.getCPUDevice(), std::move(keyBuffer),
+                  std::move(bufferToCache));
               std::move(hashOr).andThenSync(
                   [out = out.copy(), xform = xform.copy(),
                    errorOnCacheInsertFailure = errorOnCacheInsertFailure,
@@ -255,17 +255,17 @@ cachedTransform(EncodedLocation loc, RCRef<TransformCache> transformCache,
       auto resultOr = cacheHitFn(std::move(buf));
       if (resultOr.isError())
         return Detail::AsyncValueRefResultT<CacheHitFnT>::createError(
-            chain.getRuntime(),
+            chain.getCPUDevice(),
             EncodedDiagnostic(resultOr.takeError(), std::move(loc)));
 
       return Detail::AsyncValueRefResultT<CacheHitFnT>::createReady(
-          chain.getRuntime(), resultOr.takeValue());
+          chain.getCPUDevice(), resultOr.takeValue());
     };
   } else {
     onCacheHit = [chain = chain.copy(),
                   cacheHitFn = std::move(cacheHitFn)](BufferRef buf) {
       auto result = Detail::AsyncValueRefResultT<CacheHitFnT>::allocate(
-          chain.getRuntime());
+          chain.getCPUDevice());
       result.copy().emplace(cacheHitFn(std::move(buf)));
       return result;
     };

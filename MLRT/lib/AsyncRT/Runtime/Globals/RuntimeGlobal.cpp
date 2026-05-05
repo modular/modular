@@ -13,38 +13,40 @@ namespace M::MLRT {
 
 namespace {
 
-static std::mutex &getGlobalRuntimeMutexImpl() {
+static std::mutex &getGlobalCPUDeviceMutexImpl() {
   static std::mutex m;
   return m;
 }
 
-static Runtime *&getGlobalRuntimePtrImpl() {
-  static Runtime *ptr = nullptr;
+static CPUDevice *&getGlobalCPUDevicePtrImpl() {
+  static CPUDevice *ptr = nullptr;
   return ptr;
 }
 
-static RuntimeOptions &storedGlobalRuntimeCreationOptionsImpl() {
-  static RuntimeOptions opts;
+static CPUDeviceOptions &storedGlobalCPUDeviceCreationOptionsImpl() {
+  static CPUDeviceOptions opts;
   return opts;
 }
 
 } // namespace
 
-std::mutex &getGlobalRuntimeMutex() { return getGlobalRuntimeMutexImpl(); }
+std::mutex &getGlobalCPUDeviceMutex() { return getGlobalCPUDeviceMutexImpl(); }
 
-Runtime *getGlobalRuntimePointer() { return getGlobalRuntimePtrImpl(); }
+CPUDevice *getGlobalCPUDevicePointer() { return getGlobalCPUDevicePtrImpl(); }
 
-void setGlobalRuntimePointer(Runtime *ptr) { getGlobalRuntimePtrImpl() = ptr; }
+void setGlobalCPUDevicePointer(CPUDevice *ptr) {
+  getGlobalCPUDevicePtrImpl() = ptr;
+}
 
-void clearGlobalRuntimePointerIfEquals(Runtime *ptr) {
-  std::lock_guard<std::mutex> lock(getGlobalRuntimeMutexImpl());
-  if (getGlobalRuntimePtrImpl() == ptr) {
-    getGlobalRuntimePtrImpl() = nullptr;
+void clearGlobalCPUDevicePointerIfEquals(CPUDevice *ptr) {
+  std::lock_guard<std::mutex> lock(getGlobalCPUDeviceMutexImpl());
+  if (getGlobalCPUDevicePtrImpl() == ptr) {
+    getGlobalCPUDevicePtrImpl() = nullptr;
   }
 }
 
-RuntimeOptions &getStoredGlobalRuntimeCreationOptions() {
-  return storedGlobalRuntimeCreationOptionsImpl();
+CPUDeviceOptions &getStoredGlobalCPUDeviceCreationOptions() {
+  return storedGlobalCPUDeviceCreationOptionsImpl();
 }
 
 } // namespace M::MLRT

@@ -131,7 +131,7 @@ struct Trace {
     kOther = 0,
 
     // kAsyncRT:
-    //   For traces related to core AsyncRT scheduling and runtime.
+    //   For traces related to core AsyncRT scheduling and cpuDevice.
     // Level 2:
     //   AlgorithmProfilerEntry for addTask via parallelization helpers
     //   InternalProfilerEntry for tracking thread spinning and sleeping.
@@ -736,13 +736,13 @@ struct TimeTraceThreadProfiler {
   /// Currently this only takes "type" into account and ignores "level".
   /// So any non-zero value enables the level, in other words `11111` and
   /// `22222` and `12121` all have the same effect. Set this in Runtime's ctor
-  /// via RuntimeOptions.runtimeProfilingTypeMask.
+  /// via CPUDeviceOptions.runtimeProfilingTypeMask.
   ///
   /// For example:
   ///
-  /// MLRT::RuntimeOptions rtOpt;
+  /// MLRT::CPUDeviceOptions rtOpt;
   /// rtOpt.runtimeProfilingTypeMask = 1 << Trace::typeBitshift(Trace::kOther);
-  /// auto rt = MLRT::getOrCreateRuntime(MLRT::RuntimeSource::Test,
+  /// auto rt = MLRT::getOrCreateCPUDevice(MLRT::CPUDeviceSource::Test,
   /// rtOpt);
   ///
   /// Creates a Runtime that will only record `kOther` type events.
@@ -778,7 +778,7 @@ struct GlobalProfilerContext {
   /// them, and return them as timing entries sorted by time then thread id.
   std::vector<CompletedEntry> getCompletedEntries();
 
-  /// Sets the runtime profiling mask in order to toggle trace types enabled
+  /// Sets the cpuDevice profiling mask in order to toggle trace types enabled
   /// with MODULAR_ASYNCRT_MAX_PROFILING_LEVEL.
   /// Pre-condition: there must be no profiler events currently in progress.
   void setRuntimeProfilingTypeMask(uint64_t typeMask);
@@ -879,7 +879,7 @@ struct TimeTraceProfiler {
   /// Initialize the time trace profiler. This should be constructed from the
   /// main thread.
   /// `runtimeProfilingTypeMask` defaults to fully enabled, but can be set at
-  /// runtime to toggle trace types enabled with
+  /// cpuDevice to toggle trace types enabled with
   /// MODULAR_ASYNCRT_MAX_PROFILING_LEVEL.
   TimeTraceProfiler(unsigned timeTraceGranularity, StringRef procName,
                     StringRef filename = "",
@@ -893,12 +893,12 @@ struct TimeTraceProfiler {
   /// These will be included in metadata written to output stream.
   void addInputShape(const std::string &shape);
 
-  /// Sets the runtime profiling mask in order to toggle trace types enabled
+  /// Sets the cpuDevice profiling mask in order to toggle trace types enabled
   /// with MODULAR_ASYNCRT_MAX_PROFILING_LEVEL.
   /// Pre-condition: there must be no profiler events currently in progress.
   void setRuntimeProfilingTypeMask(uint64_t typeMask);
 
-  /// Get the runtime profiling mask that toggles trace types enabled with
+  /// Get the cpuDevice profiling mask that toggles trace types enabled with
   /// MODULAR_ASYNCRT_MAX_PROFILING_LEVEL.
   uint64_t runtimeProfilingTypeMask();
 

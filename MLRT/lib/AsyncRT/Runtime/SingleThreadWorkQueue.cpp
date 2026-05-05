@@ -26,19 +26,19 @@ namespace {
 /// threads.
 class SingleThreadWorkQueue : public WorkQueue {
 public:
-  SingleThreadWorkQueue(CompactRuntimePtr runtimePtr) {
-    CompactRuntimePtr::setCurrentRuntime(runtimePtr);
+  SingleThreadWorkQueue(CompactCPUDevicePtr cpuDevicePtr) {
+    CompactCPUDevicePtr::setCurrentCPUDevice(cpuDevicePtr);
   }
 
   void shutdown() override;
 
   ~SingleThreadWorkQueue() override {
     // Note we can't assert state == kShutdown since queue may be created
-    // and destroyed without ever being included in a runtime.
+    // and destroyed without ever being included in a cpuDevice.
     assert(!workItems.dequeue());
 
     // Clear thread-local Runtime pointer.
-    CompactRuntimePtr::setCurrentRuntime({});
+    CompactCPUDevicePtr::setCurrentCPUDevice({});
   }
 
   void addTask(WorkItem &&workItem, int taskId = -1) override {
@@ -130,6 +130,6 @@ void SingleThreadWorkQueue::runUntil(StopPredicateFn stopPredicate) {
 }
 
 std::unique_ptr<WorkQueue>
-M::MLRT::createSingleThreadWorkQueue(CompactRuntimePtr runtimePtr) {
-  return std::make_unique<SingleThreadWorkQueue>(runtimePtr);
+M::MLRT::createSingleThreadWorkQueue(CompactCPUDevicePtr cpuDevicePtr) {
+  return std::make_unique<SingleThreadWorkQueue>(cpuDevicePtr);
 }

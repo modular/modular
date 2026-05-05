@@ -96,7 +96,7 @@ dereferenceIfREPLResult(lldb::opaque_compiler_type_t type) {
 
 struct MojoTypeSystem::Impl {
   Impl(ContextRef ctx, Target *target, const ArchSpec &archSpec)
-      : runtime(*ctx->get<MLRT::Runtime>()), target(target),
+      : cpuDevice(*ctx->get<MLRT::CPUDevice>()), target(target),
         archSpec(archSpec) {
     // Register all of the various dialect state.
     DialectRegistry registry;
@@ -164,10 +164,10 @@ struct MojoTypeSystem::Impl {
   /// typesystem.
   MLIRContext mlirContext{MLIRContext::Threading::DISABLED};
 
-  /// The AsyncRT runtime to use for compilation/processing associated with this
-  /// type system. This is derived from the context available in the
+  /// The AsyncRT cpuDevice to use for compilation/processing associated with
+  /// this type system. This is derived from the context available in the
   /// MLIRContext.
-  MLRT::Runtime &runtime;
+  MLRT::CPUDevice &cpuDevice;
 
   /// The compilation options to use when compiling.
   KGEN::CompilationOptions compilationOptions;
@@ -229,7 +229,7 @@ TargetInfoAttr MojoTypeSystem::GetTargetInfo() const {
   return impl->targetInfo;
 }
 
-MLRT::Runtime &MojoTypeSystem::getRuntime() { return impl->runtime; }
+MLRT::CPUDevice &MojoTypeSystem::getCPUDevice() { return impl->cpuDevice; }
 
 //===----------------------------------------------------------------------===//
 // Initialization

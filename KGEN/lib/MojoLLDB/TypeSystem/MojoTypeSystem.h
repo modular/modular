@@ -33,7 +33,7 @@ class SourceNameAttr;
 } // namespace M
 
 namespace M::MLRT {
-class Runtime;
+class CPUDevice;
 } // namespace M::MLRT
 
 namespace M::KGEN::Mojo {
@@ -54,8 +54,8 @@ public:
   /// Return the parser's SharedState for this type system.
   LIT::SharedState &getSharedState();
 
-  /// Return the AsyncRT runtime for this type system.
-  MLRT::Runtime &getRuntime();
+  /// Return the AsyncRT cpuDevice for this type system.
+  MLRT::CPUDevice &getCPUDevice();
 
   /// Return the Mojo parser context attached to this type system.
   MojoParserContext &getParserContext();

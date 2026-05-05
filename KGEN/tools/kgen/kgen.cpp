@@ -215,9 +215,9 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   registerAllKGENDialects(registry);
   registerKGENToLLVMTranslation(registry);
 
-  // Create our context, with a runtime; this should not fail.
+  // Create our context, with a cpuDevice; this should not fail.
   ErrorOr<ContextRef> ctxOr = Init::createContext(
-      "kgen", Init::Options().withRuntimeOptions(
+      "kgen", Init::Options().withCPUDeviceOptions(
                   clOptions.parser.options.withCPUAffinity(false)));
   if (ctxOr.isError())
     return failure();

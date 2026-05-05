@@ -198,7 +198,7 @@ static ElaborationState processRebindOp(PImplNode *inode, RebindOp op) {
     // FIXME MOCO-2053: This should be an error.
     // This rebind op was removed, but is still traversed due to flaw in
     // ParameterUseDefGraph's collect function.
-    // oss/modular/mojo/stdlib/test/runtime/test_locks.mojo
+    // oss/modular/mojo/stdlib/test/cpuDevice/test_locks.mojo
     return ElaborationState::advance();
   }
   Type outType;
@@ -406,9 +406,9 @@ ParametricElaborator::ParametricElaborator(
     : InterpreterCache(target, config.optimizeInterpreter), target(target),
       options(options), config(config), oldSymTab(symtab),
       env(symtab.getOp()->getAttrOfType<EnvAttr>(EnvAttr::getEnvAttrName())),
-      runtime(*loadContext(target.getContext())->get<MLRT::Runtime>()),
-      g(this->runtime),
-      paramCache(paramCache, runtime.getWorkQueue()->getParallelismLevel()),
+      cpuDevice(*loadContext(target.getContext())->get<MLRT::CPUDevice>()),
+      g(this->cpuDevice),
+      paramCache(paramCache, cpuDevice.getWorkQueue()->getParallelismLevel()),
       compileAsmFn(compileAsmFn), compileOffloadFn(compileOffloadFn) {}
 
 //===----------------------------------------------------------------------===//
@@ -1465,7 +1465,7 @@ void ParametricElaborator::processImplNodeTask(PImplNode *inode) {
 }
 
 void ParametricElaborator::scheduleImplNode(PImplNode *inode) {
-  runtime.getWorkQueue()->addTask(
+  cpuDevice.getWorkQueue()->addTask(
       [inode, this] { processImplNodeTask(inode); });
 }
 
@@ -1541,8 +1541,8 @@ ElaborationState ParametricElaborator::processOp(PImplNode *node,
       return ElaborationState::advance();
 
   // ParamDeclareOp declaring a new parameter, in param space
-  // ParamConstantOp runtime constant value
-  // ParamMaterializeOp same as ParamConstantOp, runtime constant? value
+  // ParamConstantOp cpuDevice constant value
+  // ParamMaterializeOp same as ParamConstantOp, cpuDevice constant? value
   // RebindOp  check during elab, no-op
   // ParamAssertOp: similar to RebindOp, just do checks
   // ParamIfOp:
@@ -1602,7 +1602,7 @@ PParamNode *ParametricElaborator::getOrCreateNode(ParameterExprArrayAttr values,
   PParamNode *paramNode = g.nodes.modify([&](auto &map) {
     std::unique_ptr<PParamNode> &n = map[{values, gen}];
     if (!n)
-      n = std::make_unique<PParamNode>(runtime, gen, values, depth, &g);
+      n = std::make_unique<PParamNode>(cpuDevice, gen, values, depth, &g);
     return n.get();
   });
   // Add the node to the concrete nodes map regardless of whether it was
@@ -2159,7 +2159,7 @@ ParametricElaborator::processCodeGenReachableOp(PImplNode *inode,
   HANDLE_EVALUATOR_CONC(value, inode, op.getLoc(), op.getCond());
 
   // If the constraint evaluated to zero then we are not allowing to generate
-  // runtime code.
+  // cpuDevice code.
   auto resultInt = cast<IntegerAttr>(value);
   if (resultInt.getValue().isZero()) {
     // Evaluate the string to report it.
@@ -2398,7 +2398,7 @@ bool ParametricElaborator::diagnoseAndBreakRecursion(
       inode->numDependencies -=
           (inode->dependencies.size() - newDeps.size() - 1);
       inode->dependencies = std::move(newDeps);
-      inode->sccCh = AsyncValueRef<Chain>::allocate(runtime);
+      inode->sccCh = AsyncValueRef<Chain>::allocate(cpuDevice);
       sccChains.push_back(inode->sccCh.copy());
       reschedule.push_back(inode);
     }
@@ -2598,7 +2598,7 @@ LogicalResult ParametricElaborator::run(
       g.numWorkItems = 1;
 
       // Re-initialize the worklist chain.
-      g.worklistCh = AsyncValueRef<Chain>::allocate(runtime);
+      g.worklistCh = AsyncValueRef<Chain>::allocate(cpuDevice);
 
       // The only other possibility is a cycle due to recursion.
       if (diagnoseAndBreakRecursion(++cycleGeneration, primaryNodes))
@@ -2809,7 +2809,7 @@ LogicalResult ParametricElaborator::run(
                               options.elaborationErrorIncludePrelude);
     } else if (auto isCompileTime =
                    dyn_cast<IsRunInComptimeInterpreterOp>(op)) {
-      // Rewrite IsCompileTimeOp to runtime value as always false.
+      // Rewrite IsCompileTimeOp to cpuDevice value as always false.
       OpBuilder b(op);
       isCompileTime->replaceAllUsesWith(ParamConstantOp::create(
           b, op->getLoc(), b.getIntegerAttr(b.getI1Type(), 0)));

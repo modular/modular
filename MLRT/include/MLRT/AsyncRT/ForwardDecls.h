@@ -30,7 +30,7 @@ class AsyncValue;
 class AnyAsyncValueRef;
 template <typename T>
 class AsyncValueRef;
-class Runtime;
+class CPUDevice;
 
 } // namespace M::MLRT
 
@@ -50,7 +50,7 @@ using MLRT::Allocator;
 using MLRT::AnyAsyncValueRef;
 using MLRT::AsyncValue;
 using MLRT::AsyncValueRef;
-using MLRT::Runtime;
+using MLRT::CPUDevice;
 } // namespace M
 
 #endif // MLRT_ASYNCRT_FORWARD_DECLS_H

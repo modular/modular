@@ -258,7 +258,7 @@ static ElaborationState processRebindOp(ImplNode *inode, RebindOp op) {
     // FIXME MOCO-2053: This should be an error.
     // This rebind op was removed, but is still traversed due to flaw in
     // ParameterUseDefGraph's collect function.
-    // oss/modular/mojo/stdlib/test/runtime/test_locks.mojo
+    // oss/modular/mojo/stdlib/test/cpuDevice/test_locks.mojo
     return ElaborationState::advance();
   }
   Type outType;
@@ -466,9 +466,9 @@ Elaborator::Elaborator(SymbolTable &symtab,
     : InterpreterCache(target, config.optimizeInterpreter), target(target),
       options(options), config(config), oldSymTab(symtab),
       env(symtab.getOp()->getAttrOfType<EnvAttr>(EnvAttr::getEnvAttrName())),
-      runtime(*loadContext(target.getContext())->get<MLRT::Runtime>()),
-      g(this->runtime),
-      paramCache(paramCache, runtime.getWorkQueue()->getParallelismLevel()),
+      cpuDevice(*loadContext(target.getContext())->get<MLRT::CPUDevice>()),
+      g(this->cpuDevice),
+      paramCache(paramCache, cpuDevice.getWorkQueue()->getParallelismLevel()),
       compileAsmFn(compileAsmFn), compileOffloadFn(compileOffloadFn) {}
 
 //===----------------------------------------------------------------------===//
@@ -1490,7 +1490,7 @@ void Elaborator::processImplNodeTask(ImplNode *inode) {
 }
 
 void Elaborator::scheduleImplNode(ImplNode *inode) {
-  runtime.getWorkQueue()->addTask(
+  cpuDevice.getWorkQueue()->addTask(
       [inode, this] { processImplNodeTask(inode); });
 }
 
@@ -1606,7 +1606,7 @@ ParamNode *Elaborator::getOrCreateNode(ParameterExprArrayAttr values,
   ParamNode *paramNode = g.nodes.modify([&](auto &map) {
     std::unique_ptr<ParamNode> &n = map[{values, gen}];
     if (!n)
-      n = std::make_unique<ParamNode>(runtime, gen, values, depth, &g);
+      n = std::make_unique<ParamNode>(cpuDevice, gen, values, depth, &g);
     return n.get();
   });
   // Add the node to the concrete nodes map regardless of whether it was
@@ -2395,7 +2395,7 @@ bool Elaborator::diagnoseAndBreakRecursion(unsigned generation,
       inode->numDependencies -=
           (inode->dependencies.size() - newDeps.size() - 1);
       inode->dependencies = std::move(newDeps);
-      inode->sccCh = AsyncValueRef<Chain>::allocate(runtime);
+      inode->sccCh = AsyncValueRef<Chain>::allocate(cpuDevice);
       sccChains.push_back(inode->sccCh.copy());
       reschedule.push_back(inode);
     }
@@ -2566,7 +2566,7 @@ bool Elaborator::checkCodeGenUnreachable(ModuleOp module,
     DenseMap<ParamNode *, std::vector<Location>> &parents = iter->second;
     for (auto &[parent, locs] : parents) {
       // callInstantiationGraph can have cycles for recursive function calls at
-      // runtime (with proper runtime leaf condition which is totally legal)
+      // cpuDevice (with proper cpuDevice leaf condition which is totally legal)
       // Stop recursing to the parent while emitting the errors if the parent
       // has already seen.
 
@@ -2659,7 +2659,7 @@ LogicalResult Elaborator::run(
       g.numWorkItems = 1;
 
       // Re-initialize the worklist chain.
-      g.worklistCh = AsyncValueRef<Chain>::allocate(runtime);
+      g.worklistCh = AsyncValueRef<Chain>::allocate(cpuDevice);
 
       // The only other possibility is a cycle due to recursion.
       if (diagnoseAndBreakRecursion(++cycleGeneration, primaryNodes))
@@ -2854,7 +2854,7 @@ LogicalResult Elaborator::run(
                               options.elaborationErrorIncludePrelude);
     } else if (auto isCompileTime =
                    dyn_cast<IsRunInComptimeInterpreterOp>(op)) {
-      // Rewrite IsCompileTimeOp to runtime value as always false.
+      // Rewrite IsCompileTimeOp to cpuDevice value as always false.
       OpBuilder b(op);
       isCompileTime->replaceAllUsesWith(ParamConstantOp::create(
           b, op->getLoc(), b.getIntegerAttr(b.getI1Type(), 0)));
