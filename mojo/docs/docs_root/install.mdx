@@ -8,6 +8,7 @@ import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 import ConditionalVersionDocs from '@site/src/components/ConditionalVersionDocs'
 import Tooltip from '@site/src/components/Tooltip/tooltip';
+import VersionSubheader from '@site/src/components/VersionSubheader';
 
 export const tooltipNightly = (<Tooltip
   parent="nightly build"
@@ -17,6 +18,8 @@ export const tooltipStable = (<Tooltip
   parent="stable build"
   content="To get the nightly build, change the version in the website header."
 />);
+
+<VersionSubheader />
 
 You can install Mojo using any Python/Conda package manager and it's compatible
 with macOS and Linux. For details, see the [system
@@ -84,3 +87,17 @@ that follows best practices.
 ```sh
 npx skills add modular/skills
 ```
+
+## Get started
+
+import ListingCard from '@site/src/components/Listing/ListingCard';
+import ListingCards from '@site/src/components/Listing/ListingCards';
+
+<ListingCards className="docs-desktop:!grid-cols-2">
+  <ListingCard title="Quickstart"
+    url="/docs/manual/quickstart"
+    description="Quickly learn the Mojo programming basics with simple code examples" />
+  <ListingCard title="Beginner tutorial"
+    url="/docs/manual/get-started/"
+    description="Build a deeper understanding of Mojo in this tutorial to build the Game of Life" />
+</ListingCards>
