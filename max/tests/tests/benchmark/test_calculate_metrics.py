@@ -18,13 +18,15 @@ from __future__ import annotations
 import math
 from unittest.mock import MagicMock
 
-from max.benchmark.benchmark_serving import (
-    calculate_metrics,
-    calculate_pixel_generation_metrics,
-)
+import pytest
 from max.benchmark.benchmark_shared.request import (
     PixelGenerationRequestFuncOutput,
     RequestFuncOutput,
+)
+from max.benchmark.benchmark_shared.serving_metrics import (
+    _compute_steady_state_result,
+    calculate_metrics,
+    calculate_pixel_generation_metrics,
 )
 from max.diagnostics.cpu import CPUMetrics
 
@@ -971,3 +973,142 @@ def test_skip_first_overlaps_with_skip_last_drops_both() -> None:
     # slow_warmup is in both head_drop_ids and tail_drop_ids — set union
     # handles dedupe. The remaining "a" and "b" are both measured.
     assert metrics.completed == 2
+
+
+def _make_tokenizer_mock(tokens_per_output: int = 5) -> MagicMock:
+    """Return a tokenizer mock whose encode call returns a fixed token count."""
+    tokenizer = MagicMock()
+    tokenizer.return_value = MagicMock(input_ids=list(range(tokens_per_output)))
+    return tokenizer
+
+
+def _make_request_func_output(
+    *,
+    prompt_len: int = 10,
+    generated_text: str = "hello world",
+    latency: float = 1.0,
+    ttft: float = 0.1,
+    itl: list[float] | None = None,
+    request_submit_time: float | None = 0.0,
+) -> RequestFuncOutput:
+    return RequestFuncOutput(
+        success=True,
+        latency=latency,
+        ttft=ttft,
+        prompt_len=prompt_len,
+        generated_text=generated_text,
+        itl=itl or [],
+        request_submit_time=request_submit_time,
+    )
+
+
+def test_compute_steady_state_result_not_detected() -> None:
+    """With too few requests, _compute_steady_state_result returns only detection-metadata keys."""
+    outputs = [_make_request_func_output() for _ in range(3)]
+    result = _compute_steady_state_result(
+        outputs=outputs,
+        tokenizer=None,
+        gpu_metrics=None,
+        cpu_metrics=None,
+        max_concurrency=None,
+        max_concurrent_conversations=None,
+        collect_gpu_stats=False,
+        metrics_by_endpoint=None,
+    ).to_result_dict()
+
+    assert result == {
+        "steady_state_detected": False,
+        "steady_state_start_index": None,
+        "steady_state_end_index": None,
+        "steady_state_count": 0,
+        "steady_state_warning": (
+            "Too few valid requests (3 of 3 total) for steady-state"
+            " detection (need at least 100). TPOT was absent across the"
+            " run, so detection ran in TTFT-only mode; the run has too few"
+            " valid requests (cancelled, failed, or missing"
+            " timestamps/TTFT are filtered out)."
+        ),
+        "steady_state_mode": "ttft_only",
+    }
+
+
+def _make_stable_request_func_output(submit_time: float) -> RequestFuncOutput:
+    """Return a RequestFuncOutput with stable TTFT and TPOT suitable for steady-state detection."""
+    tpot = [0.02, 0.02, 0.02]
+    return RequestFuncOutput(
+        success=True,
+        latency=1.0,
+        ttft=0.05,
+        prompt_len=10,
+        generated_text="hello world",
+        itl=tpot,
+        tpot=tpot,
+        request_submit_time=submit_time,
+    )
+
+
+def test_compute_steady_state_result_detected() -> None:
+    """With enough stable requests, _compute_steady_state_result detects steady state and returns metric keys."""
+    outputs = [_make_stable_request_func_output(float(i)) for i in range(200)]
+    tokenizer = _make_tokenizer_mock(tokens_per_output=5)
+    result = _compute_steady_state_result(
+        outputs=outputs,
+        tokenizer=tokenizer,
+        gpu_metrics=None,
+        cpu_metrics=None,
+        max_concurrency=None,
+        max_concurrent_conversations=None,
+        collect_gpu_stats=False,
+        metrics_by_endpoint=None,
+    ).to_result_dict()
+
+    assert set(result.keys()) == {
+        # Detection metadata — always present.
+        "steady_state_detected",
+        "steady_state_start_index",
+        "steady_state_end_index",
+        "steady_state_count",
+        "steady_state_warning",
+        "steady_state_mode",
+        # Per-metric summaries — present when detected and ≥2 valid requests.
+        "steady_state_request_throughput",
+        "steady_state_mean_ttft_ms",
+        "steady_state_p99_ttft_ms",
+        "steady_state_mean_tpot_ms",
+        "steady_state_p99_tpot_ms",
+        "steady_state_mean_itl_ms",
+        "steady_state_p99_itl_ms",
+        "steady_state_mean_latency_ms",
+        "steady_state_p99_latency_ms",
+        # Confidence-interval keys for each latency metric.
+        "steady_state_ttft_ms_ci_lower",
+        "steady_state_ttft_ms_ci_upper",
+        "steady_state_ttft_ms_ci_relative_width",
+        "steady_state_ttft_ms_confidence",
+        "steady_state_ttft_ms_sample_size",
+        "steady_state_tpot_ms_ci_lower",
+        "steady_state_tpot_ms_ci_upper",
+        "steady_state_tpot_ms_ci_relative_width",
+        "steady_state_tpot_ms_confidence",
+        "steady_state_tpot_ms_sample_size",
+        "steady_state_itl_ms_ci_lower",
+        "steady_state_itl_ms_ci_upper",
+        "steady_state_itl_ms_ci_relative_width",
+        "steady_state_itl_ms_confidence",
+        "steady_state_itl_ms_sample_size",
+        "steady_state_latency_ms_ci_lower",
+        "steady_state_latency_ms_ci_upper",
+        "steady_state_latency_ms_ci_relative_width",
+        "steady_state_latency_ms_confidence",
+        "steady_state_latency_ms_sample_size",
+    }
+
+    assert result["steady_state_detected"] is True
+    assert result["steady_state_mode"] == "full"
+    assert result["steady_state_start_index"] is not None
+    assert result["steady_state_end_index"] is not None
+    assert isinstance(result["steady_state_count"], int)
+    assert result["steady_state_count"] > 0
+    assert result["steady_state_warning"] is None
+    # With ttft=0.05 s the mean should be ≈50 ms.
+    assert result["steady_state_mean_ttft_ms"] == pytest.approx(50.0, rel=0.05)
