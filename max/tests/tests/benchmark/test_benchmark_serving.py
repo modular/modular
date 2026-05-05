@@ -25,7 +25,6 @@ import pytest
 from max.benchmark.benchmark_serving import (
     _ConcurrentTurnsRequestDriver,
     chat_session_driver,
-    elide_data_uris_in_string,
     get_request,
     parse_args,
     prime_prefix_turns,
@@ -652,54 +651,6 @@ def test_request_intervals_burstiness_variations() -> None:
     # Lower burstiness should generally have higher variance
     assert std_05 != std_10  # Should be different
     assert std_10 != std_20  # Should be different
-
-
-def test_elide_data_uris_in_string() -> None:
-    """Test that elide_data_uris_in_string correctly elides base64 data URIs."""
-
-    # fmt: off
-
-    # Basic case
-    sample = "'image': 'data:image/jpeg;base64,/9j/4AAQSASDEEAE'"
-    expected = "'image': 'data:image/jpeg;base64,...(hash: 783e7013, 16 bytes)...'"
-    assert elide_data_uris_in_string(sample) == expected
-
-    # Two data URIs in a single string
-    sample = "data:image/jpeg;base64,/9j/4AAQSASDEEAE + data:image/jpeg;base64,/9j/4AAQSASDEEAE"
-    expected = "data:image/jpeg;base64,...(hash: 783e7013, 16 bytes)... + data:image/jpeg;base64,...(hash: 783e7013, 16 bytes)..."
-    assert elide_data_uris_in_string(sample) == expected
-
-    # Still elides even if it results in longer string
-    sample = "data:image/jpeg;base64,ABC"
-    expected = "data:image/jpeg;base64,...(hash: b5d4045c, 3 bytes)..."
-    assert elide_data_uris_in_string(sample) == expected
-
-    # Does not elide if invalid characters in data
-    sample = "data:image/jpeg;base64,ദ്ദി(˵ •̀ ᴗ - ˵ ) ✧"
-    expected = "data:image/jpeg;base64,ദ്ദി(˵ •̀ ᴗ - ˵ ) ✧"
-    assert elide_data_uris_in_string(sample) == expected
-
-    # Does not elide if data uri type is empty
-    sample = "data:;base64,ABC"
-    expected = "data:;base64,ABC"
-    assert elide_data_uris_in_string(sample) == expected
-
-    # `data:` is present in string but not part of data uri
-    sample = "Here is some data: 'data:image/jpeg;base64,AAAAAAAAASTUFF=='"
-    expected = "Here is some data: 'data:image/jpeg;base64,...(hash: 6c6e1584, 16 bytes)...'"
-    assert elide_data_uris_in_string(sample) == expected
-
-    # `;base64` is present in string but not part of data uri
-    sample = ";base64"
-    expected = ";base64"
-    assert elide_data_uris_in_string(sample) == expected
-
-    # String is empty
-    sample = ""
-    expected = ""
-    assert elide_data_uris_in_string(sample) == expected
-
-    # fmt: on
 
 
 def test_chat_session_driver_forwards_sampling_params() -> None:
