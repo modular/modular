@@ -147,7 +147,7 @@ def _run_block_scaled_mma_amd_smoke[
         matrix_format,
     ]
 
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         baseline_tt.as_any_origin(),
         scaled_tt.as_any_origin(),
         grid_dim=1,

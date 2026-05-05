@@ -485,22 +485,7 @@ def run_selective_scan_gpu[
             D_gpu_tt.LayoutType,
             z_gpu_tt.LayoutType,
             delta_bias_gpu_tt.LayoutType,
-        ],
-        selective_scan_fwd_gpu[
-            dtype,
-            DSTATE,
-            output_gpu_tt.LayoutType,
-            x_gpu_tt.LayoutType,
-            out_z_gpu_tt.LayoutType,
-            u_gpu_tt.LayoutType,
-            delta_gpu_tt.LayoutType,
-            A_gpu_tt.LayoutType,
-            B_gpu_tt.LayoutType,
-            C_gpu_tt.LayoutType,
-            D_gpu_tt.LayoutType,
-            z_gpu_tt.LayoutType,
-            delta_bias_gpu_tt.LayoutType,
-        ],
+        ]
     ]()
 
     ctx.enqueue_function(
@@ -837,22 +822,7 @@ def run_selective_scan_update_gpu[
                 D_device_tt.LayoutType,
                 z_device_tt.LayoutType,
                 dt_bias_device_tt.LayoutType,
-            ],
-            selective_scan_update_gpu[
-                dtype,
-                DSTATE,
-                state_out_device_tt.LayoutType,
-                output_device_tt.LayoutType,
-                state_in_device_tt.LayoutType,
-                x_device_tt.LayoutType,
-                dt_device_tt.LayoutType,
-                A_device_tt.LayoutType,
-                B_device_tt.LayoutType,
-                C_device_tt.LayoutType,
-                D_device_tt.LayoutType,
-                z_device_tt.LayoutType,
-                dt_bias_device_tt.LayoutType,
-            ],
+            ]
         ]()
         ctx.enqueue_function(
             compiled_func,

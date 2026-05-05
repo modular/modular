@@ -488,7 +488,7 @@ def rms_norm_fused_residual_gpu[
         output_residual_fn_2d,
         multiply_before_cast=multiply_before_cast,
     ]
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         gamma,
         epsilon,
         weight_offset,

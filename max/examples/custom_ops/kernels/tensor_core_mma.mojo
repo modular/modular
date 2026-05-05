@@ -172,7 +172,7 @@ struct TensorCoreMMA[algorithm: StaticString]:
                         MMA_K,
                     ]
 
-                    gpu_ctx.enqueue_function[native_kernel, native_kernel](
+                    gpu_ctx.enqueue_function[native_kernel](
                         a_layout,
                         b_layout,
                         out_layout,
@@ -204,9 +204,7 @@ struct TensorCoreMMA[algorithm: StaticString]:
                         MMA_K,
                     ]
 
-                    gpu_ctx.enqueue_function[
-                        basic_shared_mem_kernel, basic_shared_mem_kernel
-                    ](
+                    gpu_ctx.enqueue_function[basic_shared_mem_kernel](
                         a_layout,
                         b_layout,
                         out_layout,
@@ -242,9 +240,7 @@ struct TensorCoreMMA[algorithm: StaticString]:
                         MMA_K,
                     ]
 
-                    gpu_ctx.enqueue_function[
-                        multi_block_tiled_kernel, multi_block_tiled_kernel
-                    ](
+                    gpu_ctx.enqueue_function[multi_block_tiled_kernel](
                         a_layout,
                         b_layout,
                         out_layout,
@@ -280,9 +276,7 @@ struct TensorCoreMMA[algorithm: StaticString]:
                         MMA_K,
                     ]
 
-                    gpu_ctx.enqueue_function[
-                        scheduler_hints_kernel, scheduler_hints_kernel
-                    ](
+                    gpu_ctx.enqueue_function[scheduler_hints_kernel](
                         a_layout,
                         b_layout,
                         out_layout,
@@ -318,9 +312,7 @@ struct TensorCoreMMA[algorithm: StaticString]:
                         MMA_K,
                     ]
 
-                    gpu_ctx.enqueue_function[
-                        double_buffer_kernel, double_buffer_kernel
-                    ](
+                    gpu_ctx.enqueue_function[double_buffer_kernel](
                         a_layout,
                         b_layout,
                         out_layout,
@@ -359,9 +351,7 @@ struct TensorCoreMMA[algorithm: StaticString]:
                         MMA_K,
                     ]
 
-                    gpu_ctx.enqueue_function[
-                        mma_tile_buffers_kernel, mma_tile_buffers_kernel
-                    ](
+                    gpu_ctx.enqueue_function[mma_tile_buffers_kernel](
                         a_layout,
                         b_layout_transposed,
                         out_layout,
@@ -405,9 +395,7 @@ struct TensorCoreMMA[algorithm: StaticString]:
                     MMA_K,
                 ]
 
-                gpu_ctx.enqueue_function[
-                    naive_tensor_kernel, naive_tensor_kernel
-                ](
+                gpu_ctx.enqueue_function[naive_tensor_kernel](
                     a_layout,
                     b_layout,
                     reference,

@@ -12711,18 +12711,7 @@ struct GatedDeltaConv1dFwd:
                     input_row_offsets_tt.LayoutType,
                     conv_output_ragged_tt.LayoutType,
                     conv_state_out_tt.LayoutType,
-                ],
-                gated_delta_conv1d_fwd_gpu[
-                    dtype,
-                    kKernelSize,
-                    CONV1D_BLOCK_DIM,
-                    qkv_input_ragged_tt.LayoutType,
-                    conv_weight_tt.LayoutType,
-                    conv_state_in_tt.LayoutType,
-                    input_row_offsets_tt.LayoutType,
-                    conv_output_ragged_tt.LayoutType,
-                    conv_state_out_tt.LayoutType,
-                ],
+                ]
             ](
                 batch_size,
                 total_seq_len,
@@ -12916,20 +12905,7 @@ struct GatedDeltaRecurrenceFwd:
                     beta_per_token_tt.LayoutType,
                     recurrent_state_in_tt.LayoutType,
                     input_row_offsets_tt.LayoutType,
-                ],
-                gated_delta_recurrence_fwd_gpu[
-                    dtype,
-                    kKD,
-                    kVD,
-                    RECURRENCE_BLOCK_SIZE,
-                    recurrence_output_tt.LayoutType,
-                    recurrent_state_out_tt.LayoutType,
-                    qkv_conv_output_tt.LayoutType,
-                    decay_per_token_tt.LayoutType,
-                    beta_per_token_tt.LayoutType,
-                    recurrent_state_in_tt.LayoutType,
-                    input_row_offsets_tt.LayoutType,
-                ],
+                ]
             ](
                 total_threads,
                 batch_size,
@@ -13023,7 +12999,7 @@ struct Sleep:
                 sleep(duration_sec)
 
             var device_ctx = ctx.get_device_context()
-            device_ctx.enqueue_function[sleep_kernel, sleep_kernel](
+            device_ctx.enqueue_function[sleep_kernel](
                 duration_sec, grid_dim=(1,), block_dim=(1,)
             )
         else:

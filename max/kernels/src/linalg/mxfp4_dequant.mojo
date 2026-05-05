@@ -211,7 +211,7 @@ def dequant_mxfp4[
         ELEMENTS_PER_THREAD=ELEMENTS_PER_THREAD,
     ]
 
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         output,
         input_tt,
         scales_tt,

@@ -271,20 +271,7 @@ def run_gated_delta_recurrence_gpu[
             beta_tt.LayoutType,
             state_in_tt.LayoutType,
             offsets_tt.LayoutType,
-        ],
-        gated_delta_recurrence_fwd_gpu[
-            dtype,
-            KEY_HEAD_DIM,
-            VALUE_HEAD_DIM,
-            RECURRENCE_BLOCK_SIZE,
-            recurrence_output_tt.LayoutType,
-            state_out_tt.LayoutType,
-            qkv_tt.LayoutType,
-            decay_tt.LayoutType,
-            beta_tt.LayoutType,
-            state_in_tt.LayoutType,
-            offsets_tt.LayoutType,
-        ],
+        ]
     ]()
 
     with ctx.push_context():

@@ -93,7 +93,7 @@ def run_gpu_programming_example() raises:
     # Launch the compiled function on the GPU. The target device is specified
     # first, followed by all function arguments. The last two named parameters
     # are the dimensions of the grid in blocks, and the block dimensions.
-    ctx.enqueue_function[vector_add, vector_add](
+    ctx.enqueue_function[vector_add](
         a_tensor,
         b_tensor,
         result_tensor,

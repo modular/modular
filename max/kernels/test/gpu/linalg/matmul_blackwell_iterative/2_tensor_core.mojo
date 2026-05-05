@@ -411,7 +411,7 @@ def kernel_2[
         num_threads=block_dim,
     ]
 
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         a_tma_op,
         b_tma_op,
         c,

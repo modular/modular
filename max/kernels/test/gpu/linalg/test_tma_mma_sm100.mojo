@@ -761,7 +761,7 @@ def test_tma_umma[
             b_swizzle=b_swizzle,
             num_threads=block_dim,
         ]
-        ctx.enqueue_function[kernel, kernel](
+        ctx.enqueue_function[kernel](
             a_tma_op,
             b_tma_op,
             c.device_tensor(),
@@ -792,7 +792,7 @@ def test_tma_umma[
             num_threads=block_dim,
         ]
 
-        ctx.enqueue_function[kernel, kernel](
+        ctx.enqueue_function[kernel](
             a.device_tensor(),
             b_tma_op,
             c.device_tensor(),

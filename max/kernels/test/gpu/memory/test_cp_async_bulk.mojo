@@ -87,7 +87,7 @@ def test_bulk_g2s[NUM_ELEMS: Int](ctx: DeviceContext) raises:
     ctx.enqueue_copy(in_dev, in_host)
     ctx.enqueue_copy(out_dev, out_host)
 
-    ctx.enqueue_function_experimental[kernel_bulk_g2s[NUM_ELEMS]](
+    ctx.enqueue_function[kernel_bulk_g2s[NUM_ELEMS]](
         in_dev,
         out_dev,
         grid_dim=(1,),
@@ -137,7 +137,7 @@ def test_bulk_s2g[NUM_ELEMS: Int](ctx: DeviceContext) raises:
     var out_dev = ctx.enqueue_create_buffer[DType.float32](NUM_ELEMS)
     ctx.enqueue_copy(out_dev, out_host)
 
-    ctx.enqueue_function_experimental[kernel_bulk_s2g[NUM_ELEMS]](
+    ctx.enqueue_function[kernel_bulk_s2g[NUM_ELEMS]](
         out_dev,
         grid_dim=(1,),
         block_dim=(NUM_ELEMS,),
@@ -191,7 +191,7 @@ def test_bulk_reduce_s2g[NUM_ELEMS: Int](ctx: DeviceContext) raises:
     var out_dev = ctx.enqueue_create_buffer[DType.float32](NUM_ELEMS)
     ctx.enqueue_copy(out_dev, out_host)
 
-    ctx.enqueue_function_experimental[kernel_bulk_reduce_s2g[NUM_ELEMS]](
+    ctx.enqueue_function[kernel_bulk_reduce_s2g[NUM_ELEMS]](
         out_dev,
         grid_dim=(1,),
         block_dim=(NUM_ELEMS,),

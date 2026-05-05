@@ -151,7 +151,7 @@ def test_conv3d_gpu[
     ]
 
     # run gpu implementation
-    ctx.enqueue_function_experimental[kernel](
+    ctx.enqueue_function[kernel](
         input_buf,
         filter_buf,
         output_buf,

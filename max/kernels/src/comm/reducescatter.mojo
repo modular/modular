@@ -458,7 +458,7 @@ def _reducescatter_p2p[
     ]
 
     # Launch the kernel
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         kernel_in_bufs,
         output_buffer,
         rank_sigs,

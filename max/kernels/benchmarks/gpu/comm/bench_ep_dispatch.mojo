@@ -213,7 +213,7 @@ def bench_dispatch[
             TokenFmtType,
         ]
 
-        var func = ctx.compile_function_experimental[dispatch_async]()
+        var func = ctx.compile_function[dispatch_async]()
         shmem_module_init(func)
 
         comptime dispatch_wait = dispatch_wait_kernel[
@@ -228,7 +228,7 @@ def bench_dispatch[
             FormatHandlerType,
         ]
 
-        var func_wait = ctx.compile_function[dispatch_wait, dispatch_wait]()
+        var func_wait = ctx.compile_function[dispatch_wait]()
 
         @always_inline
         @parameter

@@ -121,7 +121,7 @@ def main() raises:
     var blockSize = 256
     var numBlocks = (rows + blockSize - 1) // blockSize
 
-    ctx.enqueue_function_experimental[spmv_csr_kernel](
+    ctx.enqueue_function[spmv_csr_kernel](
         d_csrMatrix,
         d_x_buf,
         d_y_buf,

@@ -148,7 +148,7 @@ def main() raises:
         ctx.enqueue_copy(d_hasChanged, h_hasChanged)
 
         # Odd phase
-        ctx.enqueue_function_experimental[sort_kernel](
+        ctx.enqueue_function[sort_kernel](
             d_data,
             d_hasChanged,
             N,
@@ -159,7 +159,7 @@ def main() raises:
         )
 
         # Even phase
-        ctx.enqueue_function_experimental[sort_kernel](
+        ctx.enqueue_function[sort_kernel](
             d_data,
             d_hasChanged,
             N,

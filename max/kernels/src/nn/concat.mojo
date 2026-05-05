@@ -880,7 +880,7 @@ def _concat_gpu_elementwise[
                 _vw,
             ]
             var total_vec_items = output.num_elements() // _vw
-            ctx.enqueue_function[kernel_fn, kernel_fn](
+            ctx.enqueue_function[kernel_fn](
                 output,
                 inputs,
                 inner_size,
@@ -1039,7 +1039,7 @@ def _concat_gpu[
                 epilogue_fn,
             ]
 
-            return ctx.enqueue_function[kernel, kernel](
+            return ctx.enqueue_function[kernel](
                 output,
                 inputs,
                 grid_dim=(inputs[0].num_elements() // block_size),
@@ -1273,7 +1273,7 @@ def _fused_concat_gpu[
                 size,
             ]
 
-            return ctx.enqueue_function[kernel, kernel](
+            return ctx.enqueue_function[kernel](
                 input_shapes,
                 output,
                 grid_dim=(

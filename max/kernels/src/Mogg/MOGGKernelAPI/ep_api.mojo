@@ -1735,7 +1735,7 @@ struct Struct_ep_fused_silu:
             Trace[TraceLevel.OP]._get_detail_str[description_fn](),
             task_id=get_safe_task_id(context),
         ):
-            gpu_ctx.enqueue_function[fused_silu, fused_silu](
+            gpu_ctx.enqueue_function[fused_silu](
                 output_tensor,
                 input_tensor,
                 row_offsets_tensor,
@@ -1818,7 +1818,7 @@ struct Struct_ep_fused_silu_fp8:
             Trace[TraceLevel.OP]._get_detail_str[description_fn](),
             task_id=get_safe_task_id(context),
         ):
-            gpu_ctx.enqueue_function[fused_silu_fp8, fused_silu_fp8](
+            gpu_ctx.enqueue_function[fused_silu_fp8](
                 output_tensor,
                 scales_tensor,
                 input_tensor,
@@ -1897,7 +1897,7 @@ struct Struct_ep_fused_silu_mxfp4:
             Trace[TraceLevel.OP]._get_detail_str[description_fn](),
             task_id=get_safe_task_id(context),
         ):
-            gpu_ctx.enqueue_function[fused_silu_mxfp4, fused_silu_mxfp4](
+            gpu_ctx.enqueue_function[fused_silu_mxfp4](
                 output_tensor,
                 scales_tensor,
                 input_tensor,
@@ -1987,7 +1987,7 @@ struct Struct_ep_fused_silu_nvfp4:
             Trace[TraceLevel.OP]._get_detail_str[description_fn](),
             task_id=get_safe_task_id(context),
         ):
-            gpu_ctx.enqueue_function[fused_silu_nvfp4, fused_silu_nvfp4](
+            gpu_ctx.enqueue_function[fused_silu_nvfp4](
                 output_tensor,
                 scales_tensor,
                 input_tensor,

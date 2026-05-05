@@ -92,7 +92,7 @@ def run_reduce(fill_strategy: FillStrategy, ctx: DeviceContext) raises:
     var res_add_device = ctx.enqueue_create_buffer[F32](1)
     res_add_device.enqueue_fill(0)
 
-    ctx.enqueue_function_experimental[reduce_add](
+    ctx.enqueue_function[reduce_add](
         res_add_device,
         vec_device,
         n,
@@ -112,7 +112,7 @@ def run_reduce(fill_strategy: FillStrategy, ctx: DeviceContext) raises:
 
         var res_max_device = ctx.enqueue_create_buffer[F32](1)
         res_max_device.enqueue_fill(0)
-        ctx.enqueue_function_experimental[reduce_min_max](
+        ctx.enqueue_function[reduce_min_max](
             res_min_device,
             res_max_device,
             vec_device,

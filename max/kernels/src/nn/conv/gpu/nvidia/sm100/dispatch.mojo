@@ -181,10 +181,7 @@ def dispatch_sm100_conv2d[
             var C = Int(filter.dim[1]())
             var R = Int(filter.dim[2]())
             var S = Int(filter.dim[3]())
-            ctx.enqueue_function[
-                _transpose_fcrs_to_krsc[filter_type],
-                _transpose_fcrs_to_krsc[filter_type],
-            ](
+            ctx.enqueue_function[_transpose_fcrs_to_krsc[filter_type]](
                 filter.ptr,
                 filter_krsc_ptr,
                 F,
@@ -199,10 +196,7 @@ def dispatch_sm100_conv2d[
             var S = Int(filter.dim[1]())
             var C = Int(filter.dim[2]())
             var F = Int(filter.dim[3]())
-            ctx.enqueue_function[
-                _transpose_rscf_to_krsc[filter_type],
-                _transpose_rscf_to_krsc[filter_type],
-            ](
+            ctx.enqueue_function[_transpose_rscf_to_krsc[filter_type]](
                 filter.ptr,
                 filter_krsc_ptr,
                 R,

@@ -89,7 +89,7 @@ def test(ctx: DeviceContext) raises:
     # CHECK-DAG: 3 (12, 24, True, False)
     # ----
     # CHECK-DAG: 0 (16, 24, True, False)
-    ctx.enqueue_function_experimental[test_kernel[False, offset_layout]](
+    ctx.enqueue_function[test_kernel[False, offset_layout]](
         dev_group_offsets,
         grid_dim=(4),
         block_dim=(1),
@@ -128,7 +128,7 @@ def test(ctx: DeviceContext) raises:
     # CHECK-DAG: 3 (12, 24, True, False)
     # ----
     # CHECK-DAG: 0 (16, 24, True, False)
-    ctx.enqueue_function_experimental[test_kernel[True, offset_layout]](
+    ctx.enqueue_function[test_kernel[True, offset_layout]](
         dev_group_offsets,
         grid_dim=(4),
         block_dim=(1),

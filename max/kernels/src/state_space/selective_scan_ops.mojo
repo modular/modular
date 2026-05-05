@@ -215,22 +215,7 @@ struct SelectiveScanFwd[delta_softplus: Bool = False]:
                         D_tt.LayoutType,
                         z_tt.LayoutType,
                         delta_bias_tt.LayoutType,
-                    ],
-                    selective_scan_fwd_gpu[
-                        dtype,
-                        DSTATE_VAL,
-                        output_tt.LayoutType,
-                        x_tt.LayoutType,
-                        out_z_tt.LayoutType,
-                        u_tt.LayoutType,
-                        delta_tt.LayoutType,
-                        A_tt.LayoutType,
-                        B_tt.LayoutType,
-                        C_tt.LayoutType,
-                        D_tt.LayoutType,
-                        z_tt.LayoutType,
-                        delta_bias_tt.LayoutType,
-                    ],
+                    ]
                 ]()
                 gpu_ctx.enqueue_function(
                     compiled_kernel,
@@ -282,22 +267,7 @@ struct SelectiveScanFwd[delta_softplus: Bool = False]:
                         D_tt.LayoutType,
                         z_tt.LayoutType,
                         delta_bias_tt.LayoutType,
-                    ],
-                    selective_scan_fwd_gpu[
-                        dtype,
-                        DSTATE_VAL,
-                        output_tt.LayoutType,
-                        x_tt.LayoutType,
-                        out_z_tt.LayoutType,
-                        u_tt.LayoutType,
-                        delta_tt.LayoutType,
-                        A_tt.LayoutType,
-                        B_tt.LayoutType,
-                        C_tt.LayoutType,
-                        D_tt.LayoutType,
-                        z_tt.LayoutType,
-                        delta_bias_tt.LayoutType,
-                    ],
+                    ]
                 ]()
                 gpu_ctx.enqueue_function(
                     compiled_kernel,
@@ -492,18 +462,7 @@ struct SelectiveScanFwdMinimal[delta_softplus: Bool = False]:
                         A_tt.LayoutType,
                         B_tt.LayoutType,
                         C_tt.LayoutType,
-                    ],
-                    selective_scan_fwd_gpu_minimal[
-                        dtype,
-                        DSTATE_VAL,
-                        output_tt.LayoutType,
-                        x_tt.LayoutType,
-                        u_tt.LayoutType,
-                        delta_tt.LayoutType,
-                        A_tt.LayoutType,
-                        B_tt.LayoutType,
-                        C_tt.LayoutType,
-                    ],
+                    ]
                 ]()
                 gpu_ctx.enqueue_function(
                     compiled_kernel,
@@ -543,18 +502,7 @@ struct SelectiveScanFwdMinimal[delta_softplus: Bool = False]:
                         A_tt.LayoutType,
                         B_tt.LayoutType,
                         C_tt.LayoutType,
-                    ],
-                    selective_scan_fwd_gpu_minimal[
-                        dtype,
-                        DSTATE_VAL,
-                        output_tt.LayoutType,
-                        x_tt.LayoutType,
-                        u_tt.LayoutType,
-                        delta_tt.LayoutType,
-                        A_tt.LayoutType,
-                        B_tt.LayoutType,
-                        C_tt.LayoutType,
-                    ],
+                    ]
                 ]()
                 gpu_ctx.enqueue_function(
                     compiled_kernel,
@@ -767,22 +715,7 @@ struct SelectiveScanUpdate[delta_softplus: Bool = False]:
                         D_tt.LayoutType,
                         z_tt.LayoutType,
                         dt_bias_tt.LayoutType,
-                    ],
-                    selective_scan_update_gpu[
-                        dtype,
-                        DSTATE_VAL,
-                        state_out_tt.LayoutType,
-                        output_tt.LayoutType,
-                        state_in_tt.LayoutType,
-                        x_tt.LayoutType,
-                        dt_tt.LayoutType,
-                        A_tt.LayoutType,
-                        B_tt.LayoutType,
-                        C_tt.LayoutType,
-                        D_tt.LayoutType,
-                        z_tt.LayoutType,
-                        dt_bias_tt.LayoutType,
-                    ],
+                    ]
                 ]()
                 gpu_ctx.enqueue_function(
                     compiled_kernel,
@@ -833,22 +766,7 @@ struct SelectiveScanUpdate[delta_softplus: Bool = False]:
                         D_tt.LayoutType,
                         z_tt.LayoutType,
                         dt_bias_tt.LayoutType,
-                    ],
-                    selective_scan_update_gpu[
-                        dtype,
-                        DSTATE_VAL,
-                        state_out_tt.LayoutType,
-                        output_tt.LayoutType,
-                        state_in_tt.LayoutType,
-                        x_tt.LayoutType,
-                        dt_tt.LayoutType,
-                        A_tt.LayoutType,
-                        B_tt.LayoutType,
-                        C_tt.LayoutType,
-                        D_tt.LayoutType,
-                        z_tt.LayoutType,
-                        dt_bias_tt.LayoutType,
-                    ],
+                    ]
                 ]()
                 gpu_ctx.enqueue_function(
                     compiled_kernel,

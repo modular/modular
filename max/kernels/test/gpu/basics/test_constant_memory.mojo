@@ -62,9 +62,7 @@ def test_constant_mem(ctx: DeviceContext) raises:
     res_device.enqueue_fill(0)
 
     comptime kernel = static_constant_kernel[16]
-    ctx.enqueue_function_experimental[kernel](
-        res_device, grid_dim=1, block_dim=16
-    )
+    ctx.enqueue_function[kernel](res_device, grid_dim=1, block_dim=16)
 
     with res_device.map_to_host() as res_host:
         for i in range(16):
@@ -99,9 +97,7 @@ def test_constant_mem_via_func(ctx: DeviceContext) raises:
     res_device.enqueue_fill(0)
 
     comptime kernel = static_constant_kernel[_fill_impl[20]]
-    ctx.enqueue_function_experimental[kernel](
-        res_device, grid_dim=1, block_dim=16
-    )
+    ctx.enqueue_function[kernel](res_device, grid_dim=1, block_dim=16)
 
     with res_device.map_to_host() as res_host:
         for i in range(16):
@@ -144,7 +140,7 @@ def test_external_constant_mem(ctx: DeviceContext) raises:
     res_device.enqueue_fill(0)
 
     comptime kernel = static_constant_kernel
-    ctx.enqueue_function_experimental[kernel](
+    ctx.enqueue_function[kernel](
         res_device,
         grid_dim=1,
         block_dim=16,

@@ -456,13 +456,13 @@ def bench_copy_roundtrip[
         ]
     )
 
-    ctx.enqueue_function_experimental[tile_io_kernel](
+    ctx.enqueue_function[tile_io_kernel](
         src_dev,
         tile_io_dst_dev,
         grid_dim=(1,),
         block_dim=(num_threads,),
     )
-    ctx.enqueue_function_experimental[layout_tensor_kernel](
+    ctx.enqueue_function[layout_tensor_kernel](
         src_tensor,
         layout_tensor_dst,
         grid_dim=(1,),
@@ -488,13 +488,13 @@ def bench_copy_roundtrip[
         "layout_tensor_copy_roundtrip",
     )
 
-    ctx.enqueue_function_experimental[tile_io_dram_to_sram_kernel_type](
+    ctx.enqueue_function[tile_io_dram_to_sram_kernel_type](
         src_dev,
         tile_io_dst_dev,
         grid_dim=(1,),
         block_dim=(num_threads,),
     )
-    ctx.enqueue_function_experimental[layout_tensor_dram_to_sram_kernel_type](
+    ctx.enqueue_function[layout_tensor_dram_to_sram_kernel_type](
         src_tensor,
         layout_tensor_dst_dev,
         grid_dim=(1,),
@@ -516,13 +516,13 @@ def bench_copy_roundtrip[
         "layout_tensor_dram_to_sram",
     )
 
-    ctx.enqueue_function_experimental[tile_io_sram_to_dram_kernel_type](
+    ctx.enqueue_function[tile_io_sram_to_dram_kernel_type](
         src_dev,
         tile_io_dst_dev,
         grid_dim=(1,),
         block_dim=(num_threads,),
     )
-    ctx.enqueue_function_experimental[layout_tensor_sram_to_dram_kernel_type](
+    ctx.enqueue_function[layout_tensor_sram_to_dram_kernel_type](
         src_dev,
         layout_tensor_dst,
         grid_dim=(1,),
@@ -548,7 +548,7 @@ def bench_copy_roundtrip[
     def bench_tile_io_roundtrip(mut b: Bencher) {var}:
         @always_inline
         def tile_io_roundtrip_launch(ctx: DeviceContext) raises {var}:
-            ctx.enqueue_function_experimental[tile_io_kernel](
+            ctx.enqueue_function[tile_io_kernel](
                 src_dev,
                 tile_io_dst_dev,
                 grid_dim=(1,),
@@ -567,7 +567,7 @@ def bench_copy_roundtrip[
             var dst = LayoutTensor[dtype, tensor_layout, MutAnyOrigin](
                 layout_tensor_dst_dev.unsafe_ptr()
             )
-            ctx.enqueue_function_experimental[layout_tensor_kernel](
+            ctx.enqueue_function[layout_tensor_kernel](
                 src,
                 dst,
                 grid_dim=(1,),
@@ -580,7 +580,7 @@ def bench_copy_roundtrip[
     def bench_tile_io_dram_to_sram(mut b: Bencher) {var}:
         @always_inline
         def tile_io_dram_to_sram_launch(ctx: DeviceContext) raises {var}:
-            ctx.enqueue_function_experimental[tile_io_dram_to_sram_kernel_type](
+            ctx.enqueue_function[tile_io_dram_to_sram_kernel_type](
                 src_dev,
                 tile_io_dst_dev,
                 grid_dim=(1,),
@@ -596,9 +596,7 @@ def bench_copy_roundtrip[
             var src = LayoutTensor[dtype, tensor_layout, MutAnyOrigin](
                 src_dev.unsafe_ptr()
             )
-            ctx.enqueue_function_experimental[
-                layout_tensor_dram_to_sram_kernel_type
-            ](
+            ctx.enqueue_function[layout_tensor_dram_to_sram_kernel_type](
                 src,
                 layout_tensor_dst_dev,
                 grid_dim=(1,),
@@ -611,7 +609,7 @@ def bench_copy_roundtrip[
     def bench_tile_io_sram_to_dram(mut b: Bencher) {var}:
         @always_inline
         def tile_io_sram_to_dram_launch(ctx: DeviceContext) raises {var}:
-            ctx.enqueue_function_experimental[tile_io_sram_to_dram_kernel_type](
+            ctx.enqueue_function[tile_io_sram_to_dram_kernel_type](
                 src_dev,
                 tile_io_dst_dev,
                 grid_dim=(1,),
@@ -627,9 +625,7 @@ def bench_copy_roundtrip[
             var dst = LayoutTensor[dtype, tensor_layout, MutAnyOrigin](
                 layout_tensor_dst_dev.unsafe_ptr()
             )
-            ctx.enqueue_function_experimental[
-                layout_tensor_sram_to_dram_kernel_type
-            ](
+            ctx.enqueue_function[layout_tensor_sram_to_dram_kernel_type](
                 src_dev,
                 dst,
                 grid_dim=(1,),

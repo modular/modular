@@ -254,10 +254,7 @@ def dispatch_im2col_matmul_conv2d[
         C_dim = Int(filter.dim[2]())
         F_dim = Int(filter.dim[3]())
 
-    ctx.enqueue_function[
-        _transpose_filter_to_nk[filter_type, filter_is_fcrs],
-        _transpose_filter_to_nk[filter_type, filter_is_fcrs],
-    ](
+    ctx.enqueue_function[_transpose_filter_to_nk[filter_type, filter_is_fcrs]](
         filter.ptr,
         filter_nk_ptr,
         R_dim,
@@ -296,10 +293,7 @@ def dispatch_im2col_matmul_conv2d[
 
         # Block-per-row: one block per output pixel, threads cooperate on K.
         comptime im2col_block = 256
-        ctx.enqueue_function[
-            _im2col_nhwc_kernel[input_type],
-            _im2col_nhwc_kernel[input_type],
-        ](
+        ctx.enqueue_function[_im2col_nhwc_kernel[input_type]](
             im2col_ptr,
             input.ptr,
             batch,

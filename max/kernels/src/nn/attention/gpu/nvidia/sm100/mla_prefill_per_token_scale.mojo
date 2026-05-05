@@ -1619,7 +1619,7 @@ def mla_sm100_prefill_per_token_scale[
     comptime num_threads = fa4_config.num_threads
     comptime smem_use = fa4_config.smem_used
 
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         q_nope_tma_op,
         q_rope_tma_op,
         k_nope_tma_op,

@@ -214,7 +214,7 @@ def main() raises:
 
     print("Launching MM Kernel with Grid(", grid_x, ",", grid_y, ",", N, ")")
 
-    ctx.enqueue_function_experimental[conv_layer_mm_kernel](
+    ctx.enqueue_function[conv_layer_mm_kernel](
         C,
         M,
         H,

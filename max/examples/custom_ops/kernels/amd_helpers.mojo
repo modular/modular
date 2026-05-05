@@ -577,7 +577,7 @@ def compare_equal[
 
     # Compute the relative error between the reference and computed tensors
     comptime rel_error_kernel = compute_relative_error_kernel[dtype, layout]
-    gpu_ctx.enqueue_function_experimental[rel_error_kernel](
+    gpu_ctx.enqueue_function[rel_error_kernel](
         reference,
         computed,
         max_relative_error,
@@ -595,7 +595,7 @@ def compare_equal[
         var num_elements = i if i < 1024 else 1024
 
         comptime reduce_kernel = max_reduce_kernel[dtype, layout]
-        gpu_ctx.enqueue_function_experimental[reduce_kernel](
+        gpu_ctx.enqueue_function[reduce_kernel](
             max_relative_error,
             num_elements,
             offset,

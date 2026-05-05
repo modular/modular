@@ -561,7 +561,7 @@ def mla_fused_rope_rmsnorm_quantization[
         kv_input_fn,
     ]
 
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         q_rope_output,
         q_rope.as_immut(),
         input_row_offsets.as_immut(),

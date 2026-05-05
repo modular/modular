@@ -285,14 +285,14 @@ def _elementwise_impl_gpu_clc[
 
     if shape[rank - 1] % simd_width == 0:
         comptime kernel = _kernel[handle_uneven_simd=False]
-        ctx.enqueue_function[kernel, kernel](
+        ctx.enqueue_function[kernel](
             grid_dim=num_tiles,
             block_dim=block_size,
             attributes=pdl_launch_attributes(pdl_level),
         )
     else:
         comptime kernel = _kernel[handle_uneven_simd=True]
-        ctx.enqueue_function[kernel, kernel](
+        ctx.enqueue_function[kernel](
             grid_dim=num_tiles,
             block_dim=block_size,
             attributes=pdl_launch_attributes(pdl_level),
@@ -425,14 +425,14 @@ def _elementwise_impl_gpu_grid_stride[
 
     if shape[rank - 1] % simd_width == 0:
         comptime kernel = _kernel[handle_uneven_simd=False]
-        ctx.enqueue_function[kernel, kernel](
+        ctx.enqueue_function[kernel](
             grid_dim=num_blocks,
             block_dim=block_size,
             attributes=pdl_launch_attributes(pdl_level),
         )
     else:
         comptime kernel = _kernel[handle_uneven_simd=True]
-        ctx.enqueue_function[kernel, kernel](
+        ctx.enqueue_function[kernel](
             grid_dim=num_blocks,
             block_dim=block_size,
             attributes=pdl_launch_attributes(pdl_level),

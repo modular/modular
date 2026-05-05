@@ -722,7 +722,7 @@ def flash_attention_dispatch[
                     batch_size,
                 )
 
-                ctx.enqueue_function[kernel, kernel](
+                ctx.enqueue_function[kernel](
                     q_device,
                     k,
                     v,
@@ -952,7 +952,7 @@ def flash_attention_dispatch[
                             var nullptr_device = DeviceBuffer[accum_type].empty(
                                 ctx
                             )
-                            ctx.enqueue_function[kernel, kernel](
+                            ctx.enqueue_function[kernel](
                                 q_device,
                                 k,
                                 v,
@@ -1136,7 +1136,7 @@ def flash_attention_dispatch[
                                 decoding_warp_split_k=decoding_warp_split_k,
                             ]
 
-                            ctx.enqueue_function[kernel_splitk, kernel_splitk](
+                            ctx.enqueue_function[kernel_splitk](
                                 q_device,
                                 k,
                                 v,
@@ -1176,7 +1176,7 @@ def flash_attention_dispatch[
                             use_exp2=reduce_use_exp2,
                         ]
 
-                        ctx.enqueue_function[kernel_reduce, kernel_reduce](
+                        ctx.enqueue_function[kernel_reduce](
                             output_intermediate_data,
                             output_device,
                             exp_sum_device,
@@ -4877,7 +4877,7 @@ def mha_gpu_naive[
         _is_cache_length_accurate=_is_cache_length_accurate,
     ]
 
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         p_device,
         q_device,
         k,
@@ -4923,7 +4923,7 @@ def mha_gpu_naive[
         _use_valid_length=_use_valid_length,
         _is_cache_length_accurate=_is_cache_length_accurate,
     ]
-    ctx.enqueue_function[kernel_1, kernel_1](
+    ctx.enqueue_function[kernel_1](
         output_device,
         p_device,
         v,

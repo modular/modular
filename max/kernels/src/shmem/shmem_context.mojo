@@ -426,7 +426,7 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
             ctx.synchronize()
         ```
         """
-        var gpu_kernel = self._ctx.compile_function_experimental[
+        var gpu_kernel = self._ctx.compile_function[
             func,
             dump_asm=dump_asm,
             dump_llvm=dump_llvm,
@@ -452,11 +452,9 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
     @always_inline
     @parameter
     def enqueue_function_collective_checked[
-        func_type: TrivialRegisterPassable,
         declared_arg_types: TypeList[Trait=AnyType, ...],
         //,
-        func: func_type,
-        signature_func: def(* args: * declared_arg_types) thin -> None,
+        func: def(* args: * declared_arg_types) thin -> None,
         *actual_arg_types: DevicePassable,
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
@@ -476,12 +474,9 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
         """Compiles and enqueues a kernel for execution on this device.
 
         Parameters:
-            func_type: The dtype of the function to launch.
             declared_arg_types: The declared argument types from the function
                 signature (usually inferred).
             func: The function to launch.
-            signature_func: The kernel function, passed again for type checking.
-                Typically the same as `func`.
             actual_arg_types: The types of the arguments being passed (usually inferred).
             dump_asm: To dump the compiled assembly, pass `True`, or a file
                 path to dump to, or a function returning a file path.
@@ -524,8 +519,8 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
 
         ```mojo
         with DeviceContext() as ctx:
-            ctx.enqueue_function_experimental[kernel](grid_dim=1, block_dim=1)
-            ctx.enqueue_function_experimental[kernel](grid_dim=1, block_dim=1)
+            ctx.enqueue_function[kernel](grid_dim=1, block_dim=1)
+            ctx.enqueue_function[kernel](grid_dim=1, block_dim=1)
             ctx.synchronize()
         ```
         """
@@ -534,7 +529,6 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
         ), "only available on NVIDIA GPUs"
         var gpu_kernel = self._ctx.compile_function[
             func,
-            signature_func,
             dump_asm=dump_asm,
             dump_llvm=dump_llvm,
             _dump_sass=_dump_sass,

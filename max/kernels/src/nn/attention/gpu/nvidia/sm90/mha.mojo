@@ -831,7 +831,7 @@ def _mha_sm90_enqueue[
 
     comptime smem_use = config.shared_mem_bytes[True, sm_90=True]()
     comptime num_threads = config.num_threads[True]()
-    ctx.enqueue_function[kernel_sm90, kernel_sm90](
+    ctx.enqueue_function[kernel_sm90](
         q_tma_op,
         k_tma_op,
         v_tma_op,

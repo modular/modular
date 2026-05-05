@@ -487,7 +487,7 @@ def bench_conv3d[
             @parameter
             @always_inline
             def kernel(ctx: DeviceContext) raises:
-                ctx.enqueue_function_experimental[naive_kernel](
+                ctx.enqueue_function[naive_kernel](
                     input_buf,
                     filter_qrscf_buf,
                     output_buf,

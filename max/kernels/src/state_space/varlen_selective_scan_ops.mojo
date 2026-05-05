@@ -278,24 +278,7 @@ struct VarlenSelectiveScanFwd[delta_softplus: Bool = False]:
                         query_start_loc_tt.LayoutType,
                         cache_indices_tt.LayoutType,
                         has_initial_state_tt.LayoutType,
-                    ],
-                    varlen_selective_scan_fwd_gpu[
-                        dtype,
-                        DSTATE_VAL,
-                        u_tt.LayoutType,
-                        delta_tt.LayoutType,
-                        A_tt.LayoutType,
-                        B_tt.LayoutType,
-                        C_tt.LayoutType,
-                        D_tt.LayoutType,
-                        z_tt.LayoutType,
-                        delta_bias_tt.LayoutType,
-                        ssm_states_tt.LayoutType,
-                        output_tt.LayoutType,
-                        query_start_loc_tt.LayoutType,
-                        cache_indices_tt.LayoutType,
-                        has_initial_state_tt.LayoutType,
-                    ],
+                    ]
                 ]()
                 gpu_ctx.enqueue_function(
                     compiled_kernel,
@@ -349,24 +332,7 @@ struct VarlenSelectiveScanFwd[delta_softplus: Bool = False]:
                         query_start_loc_tt.LayoutType,
                         cache_indices_tt.LayoutType,
                         has_initial_state_tt.LayoutType,
-                    ],
-                    varlen_selective_scan_fwd_gpu[
-                        dtype,
-                        DSTATE_VAL,
-                        u_tt.LayoutType,
-                        delta_tt.LayoutType,
-                        A_tt.LayoutType,
-                        B_tt.LayoutType,
-                        C_tt.LayoutType,
-                        D_tt.LayoutType,
-                        z_tt.LayoutType,
-                        delta_bias_tt.LayoutType,
-                        ssm_states_tt.LayoutType,
-                        output_tt.LayoutType,
-                        query_start_loc_tt.LayoutType,
-                        cache_indices_tt.LayoutType,
-                        has_initial_state_tt.LayoutType,
-                    ],
+                    ]
                 ]()
                 gpu_ctx.enqueue_function(
                     compiled_kernel,
@@ -420,24 +386,7 @@ struct VarlenSelectiveScanFwd[delta_softplus: Bool = False]:
                         query_start_loc_tt.LayoutType,
                         cache_indices_tt.LayoutType,
                         has_initial_state_tt.LayoutType,
-                    ],
-                    varlen_selective_scan_fwd_gpu[
-                        dtype,
-                        DSTATE_VAL,
-                        u_tt.LayoutType,
-                        delta_tt.LayoutType,
-                        A_tt.LayoutType,
-                        B_tt.LayoutType,
-                        C_tt.LayoutType,
-                        D_tt.LayoutType,
-                        z_tt.LayoutType,
-                        delta_bias_tt.LayoutType,
-                        ssm_states_tt.LayoutType,
-                        output_tt.LayoutType,
-                        query_start_loc_tt.LayoutType,
-                        cache_indices_tt.LayoutType,
-                        has_initial_state_tt.LayoutType,
-                    ],
+                    ]
                 ]()
                 gpu_ctx.enqueue_function(
                     compiled_kernel,
@@ -740,22 +689,7 @@ struct VarlenSelectiveStateUpdate[dt_softplus: Bool = False]:
                         output_tt.LayoutType,
                         dt_bias_tt.LayoutType,
                         state_batch_indices_tt.LayoutType,
-                    ],
-                    varlen_selective_state_update_gpu[
-                        dtype,
-                        DSTATE_VAL,
-                        state_tt.LayoutType,
-                        x_tt.LayoutType,
-                        dt_tt.LayoutType,
-                        A_tt.LayoutType,
-                        B_tt.LayoutType,
-                        C_tt.LayoutType,
-                        D_tt.LayoutType,
-                        z_tt.LayoutType,
-                        output_tt.LayoutType,
-                        dt_bias_tt.LayoutType,
-                        state_batch_indices_tt.LayoutType,
-                    ],
+                    ]
                 ]()
                 gpu_ctx.enqueue_function(
                     compiled_kernel,
@@ -808,22 +742,7 @@ struct VarlenSelectiveStateUpdate[dt_softplus: Bool = False]:
                         output_tt.LayoutType,
                         dt_bias_tt.LayoutType,
                         state_batch_indices_tt.LayoutType,
-                    ],
-                    varlen_selective_state_update_gpu[
-                        dtype,
-                        DSTATE_VAL,
-                        state_tt.LayoutType,
-                        x_tt.LayoutType,
-                        dt_tt.LayoutType,
-                        A_tt.LayoutType,
-                        B_tt.LayoutType,
-                        C_tt.LayoutType,
-                        D_tt.LayoutType,
-                        z_tt.LayoutType,
-                        output_tt.LayoutType,
-                        dt_bias_tt.LayoutType,
-                        state_batch_indices_tt.LayoutType,
-                    ],
+                    ]
                 ]()
                 gpu_ctx.enqueue_function(
                     compiled_kernel,
@@ -876,22 +795,7 @@ struct VarlenSelectiveStateUpdate[dt_softplus: Bool = False]:
                         output_tt.LayoutType,
                         dt_bias_tt.LayoutType,
                         state_batch_indices_tt.LayoutType,
-                    ],
-                    varlen_selective_state_update_gpu[
-                        dtype,
-                        DSTATE_VAL,
-                        state_tt.LayoutType,
-                        x_tt.LayoutType,
-                        dt_tt.LayoutType,
-                        A_tt.LayoutType,
-                        B_tt.LayoutType,
-                        C_tt.LayoutType,
-                        D_tt.LayoutType,
-                        z_tt.LayoutType,
-                        output_tt.LayoutType,
-                        dt_bias_tt.LayoutType,
-                        state_batch_indices_tt.LayoutType,
-                    ],
+                    ]
                 ]()
                 gpu_ctx.enqueue_function(
                     compiled_kernel,

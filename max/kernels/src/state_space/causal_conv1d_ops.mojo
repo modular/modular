@@ -149,20 +149,7 @@ struct CausalConv1D[activation: StaticString]:
                         W.LayoutType,
                         O.LayoutType,
                         B.LayoutType,
-                    ],
-                    causal_conv1d_channel_first_fwd_gpu[
-                        X.dtype,
-                        W.dtype,
-                        O.dtype,
-                        kNThreads,
-                        kWidth,
-                        kNElts,
-                        B.dtype,
-                        X.LayoutType,
-                        W.LayoutType,
-                        O.LayoutType,
-                        B.LayoutType,
-                    ],
+                    ]
                 ]()
                 var silu_activation_int8 = Int8(silu_activation)
                 gpu_ctx.enqueue_function(
@@ -207,20 +194,7 @@ struct CausalConv1D[activation: StaticString]:
                         W.LayoutType,
                         O.LayoutType,
                         B.LayoutType,
-                    ],
-                    causal_conv1d_channel_first_fwd_gpu[
-                        X.dtype,
-                        W.dtype,
-                        O.dtype,
-                        kNThreads,
-                        kWidth,
-                        kNElts,
-                        B.dtype,
-                        X.LayoutType,
-                        W.LayoutType,
-                        O.LayoutType,
-                        B.LayoutType,
-                    ],
+                    ]
                 ]()
                 var silu_activation_int8 = Int8(silu_activation)
                 gpu_ctx.enqueue_function(
@@ -265,20 +239,7 @@ struct CausalConv1D[activation: StaticString]:
                         W.LayoutType,
                         O.LayoutType,
                         B.LayoutType,
-                    ],
-                    causal_conv1d_channel_first_fwd_gpu[
-                        X.dtype,
-                        W.dtype,
-                        O.dtype,
-                        kNThreads,
-                        kWidth,
-                        kNElts,
-                        B.dtype,
-                        X.LayoutType,
-                        W.LayoutType,
-                        O.LayoutType,
-                        B.LayoutType,
-                    ],
+                    ]
                 ]()
                 var silu_activation_int8 = Int8(silu_activation)
                 gpu_ctx.enqueue_function(
@@ -323,20 +284,7 @@ struct CausalConv1D[activation: StaticString]:
                         W.LayoutType,
                         O.LayoutType,
                         B.LayoutType,
-                    ],
-                    causal_conv1d_channel_first_fwd_gpu[
-                        X.dtype,
-                        W.dtype,
-                        O.dtype,
-                        kNThreads,
-                        kWidth,
-                        kNElts,
-                        B.dtype,
-                        X.LayoutType,
-                        W.LayoutType,
-                        O.LayoutType,
-                        B.LayoutType,
-                    ],
+                    ]
                 ]()
                 var silu_activation_int8 = Int8(silu_activation)
                 gpu_ctx.enqueue_function(
@@ -521,20 +469,7 @@ struct CausalConv1DUpdate[activation: StaticString]:
                     W.LayoutType,
                     O.LayoutType,
                     B.LayoutType,
-                ],
-                causal_conv1d_update_gpu[
-                    X.dtype,
-                    CS.dtype,
-                    W.dtype,
-                    O.dtype,
-                    B.dtype,
-                    kNThreads,
-                    X.LayoutType,
-                    CS.LayoutType,
-                    W.LayoutType,
-                    O.LayoutType,
-                    B.LayoutType,
-                ],
+                ]
             ]()
             var silu_activation_int8 = Int8(silu_activation)
             gpu_ctx.enqueue_function(

@@ -741,7 +741,7 @@ def test_dense_mma_ws_ts(ctx: DeviceContext) raises:
         type_of(k_tma_op).tile_shape,
         type_of(k_tma_op).desc_shape,
     ]
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         q_tma_op,
         k_tma_op,
         p_out_buf.device_tensor(),
@@ -818,7 +818,7 @@ def test_dense_mma_ws_ts(ctx: DeviceContext) raises:
         transpose_b=True,
     ]
 
-    ctx.enqueue_function_experimental[gemm_naive](
+    ctx.enqueue_function[gemm_naive](
         c_ref_tt,
         a_tt,
         b_tt,
@@ -1000,7 +1000,7 @@ def test_sparse_mma_ws_ts[
         type_of(k_gather4_tma).tile_shape,
         type_of(k_gather4_tma).desc_shape,
     ]
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         q_tma_op,
         k_gather4_tma,
         d_indices.unsafe_ptr(),
@@ -1065,7 +1065,7 @@ def test_sparse_mma_ws_ts[
         transpose_b=True,
     ]
 
-    ctx.enqueue_function_experimental[gemm_naive](
+    ctx.enqueue_function[gemm_naive](
         c_ref_tt,
         a_tt,
         b_tt,
@@ -1324,7 +1324,7 @@ def test_sparse_paged_mma_ws_ts[
         type_of(k_gather4_tma).tile_shape,
         type_of(k_gather4_tma).desc_shape,
     ]
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         q_tma_op,
         k_gather4_tma,
         d_indices.unsafe_ptr(),
@@ -1389,7 +1389,7 @@ def test_sparse_paged_mma_ws_ts[
         transpose_b=True,
     ]
 
-    ctx.enqueue_function_experimental[gemm_naive](
+    ctx.enqueue_function[gemm_naive](
         c_ref_tt,
         a_tt,
         b_tt,

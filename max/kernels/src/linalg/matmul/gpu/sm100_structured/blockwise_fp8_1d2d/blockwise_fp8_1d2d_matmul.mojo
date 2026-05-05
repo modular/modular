@@ -190,7 +190,7 @@ def grouped_matmul_1d2d_blockwise_fp8[
     comptime mma_warps = 1
     comptime epilogue_warps = 4
 
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         a_tma_op,
         b_tma_op,
         a_scales_tma_op,

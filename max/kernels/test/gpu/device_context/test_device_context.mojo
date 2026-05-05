@@ -64,7 +64,7 @@ def test_basic(ctx: DeviceContext) raises:
 
     # Execute the kernel on the device.
     #  - notice the simple function call like invocation
-    ctx.enqueue_function_experimental[vec_func](
+    ctx.enqueue_function[vec_func](
         in0_device,
         in1_device,
         out_device,

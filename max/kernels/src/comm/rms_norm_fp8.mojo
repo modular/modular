@@ -435,9 +435,9 @@ def _rms_norm_fused_fp8_gpu_launch[
             output_fn=output_fn,
         ]
         comptime if compile_only:
-            _ = ctx.compile_function[kernel, kernel]()
+            _ = ctx.compile_function[kernel]()
         else:
-            ctx.enqueue_function[kernel, kernel](
+            ctx.enqueue_function[kernel](
                 gamma,
                 scale_output,
                 epsilon,
@@ -464,9 +464,9 @@ def _rms_norm_fused_fp8_gpu_launch[
             output_fn=output_fn,
         ]
         comptime if compile_only:
-            _ = ctx.compile_function[kernel, kernel]()
+            _ = ctx.compile_function[kernel]()
         else:
-            ctx.enqueue_function[kernel, kernel](
+            ctx.enqueue_function[kernel](
                 gamma,
                 scale_output,
                 epsilon,

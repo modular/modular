@@ -306,8 +306,7 @@ def dispatch_im2col_matmul_conv3d[
 
     comptime if filter_is_fcrs:
         ctx.enqueue_function[
-            _transpose_fcqrs_to_nk[filter_type, filter.LayoutType],
-            _transpose_fcqrs_to_nk[filter_type, filter.LayoutType],
+            _transpose_fcqrs_to_nk[filter_type, filter.LayoutType]
         ](
             filter.as_immut(),
             filter_nk_buf,
@@ -316,8 +315,7 @@ def dispatch_im2col_matmul_conv3d[
         )
     else:
         ctx.enqueue_function[
-            _transpose_qrscf_to_nk[filter_type, filter.LayoutType],
-            _transpose_qrscf_to_nk[filter_type, filter.LayoutType],
+            _transpose_qrscf_to_nk[filter_type, filter.LayoutType]
         ](
             filter.as_immut(),
             filter_nk_buf,
@@ -365,7 +363,7 @@ def dispatch_im2col_matmul_conv3d[
             output.LayoutType,
             filter_is_fcrs,
         ]
-        ctx.enqueue_function[im2col_kernel, im2col_kernel](
+        ctx.enqueue_function[im2col_kernel](
             im2col_buf,
             input.as_immut(),
             filter.as_immut(),

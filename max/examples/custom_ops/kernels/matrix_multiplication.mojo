@@ -986,7 +986,7 @@ struct MatrixMultiplication[algorithm: StaticString]:
                     BM,
                     BN,
                 ]
-                gpu_ctx.enqueue_function[matmul_kernel, matmul_kernel](
+                gpu_ctx.enqueue_function[matmul_kernel](
                     a_tt,
                     b_tt,
                     out_tt,
@@ -1004,9 +1004,7 @@ struct MatrixMultiplication[algorithm: StaticString]:
                     BM,
                     BN,
                 ]
-                gpu_ctx.enqueue_function[
-                    coalescing_matmul_kernel, coalescing_matmul_kernel
-                ](
+                gpu_ctx.enqueue_function[coalescing_matmul_kernel](
                     a_tt,
                     b_tt,
                     out_tt,
@@ -1028,9 +1026,7 @@ struct MatrixMultiplication[algorithm: StaticString]:
                     BK,
                     NUM_THREADS,
                 ]
-                gpu_ctx.enqueue_function[
-                    tiled_matmul_kernel, tiled_matmul_kernel
-                ](
+                gpu_ctx.enqueue_function[tiled_matmul_kernel](
                     a_tt,
                     b_tt,
                     out_tt,
@@ -1054,9 +1050,7 @@ struct MatrixMultiplication[algorithm: StaticString]:
                     TM,
                     NUM_THREADS,
                 ]
-                gpu_ctx.enqueue_function[
-                    tiled_register_matmul_kernel, tiled_register_matmul_kernel
-                ](
+                gpu_ctx.enqueue_function[tiled_register_matmul_kernel](
                     a_tt,
                     b_tt,
                     out_tt,
@@ -1082,9 +1076,7 @@ struct MatrixMultiplication[algorithm: StaticString]:
                     TN,
                     NUM_THREADS,
                 ]
-                gpu_ctx.enqueue_function[
-                    block_tiled_matmul_kernel, block_tiled_matmul_kernel
-                ](
+                gpu_ctx.enqueue_function[block_tiled_matmul_kernel](
                     a_tt,
                     b_tt,
                     out_tt,
@@ -1110,10 +1102,7 @@ struct MatrixMultiplication[algorithm: StaticString]:
                     TN,
                     NUM_THREADS,
                 ]
-                gpu_ctx.enqueue_function[
-                    block_tiled_vectorized_matmul_kernel,
-                    block_tiled_vectorized_matmul_kernel,
-                ](
+                gpu_ctx.enqueue_function[block_tiled_vectorized_matmul_kernel](
                     a_tt,
                     b_tt,
                     out_tt,
@@ -1151,9 +1140,7 @@ struct MatrixMultiplication[algorithm: StaticString]:
                         MMA_N,
                         MMA_K,
                     ]
-                    gpu_ctx.enqueue_function[
-                        tensor_core_matmul_kernel, tensor_core_matmul_kernel
-                    ](
+                    gpu_ctx.enqueue_function[tensor_core_matmul_kernel](
                         a_layout,
                         b_layout,
                         out_layout,

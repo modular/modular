@@ -141,7 +141,7 @@ def small_MN_gemms[
             check_bounds=check_bounds,
         ]
 
-        ctx.enqueue_function[kernel, kernel](
+        ctx.enqueue_function[kernel](
             c,
             a.as_immut(),
             b.as_immut(),
@@ -848,7 +848,7 @@ def _vendor_blas_matmul_sm100[
                 elementwise_lambda_fn=elementwise_lambda_wrapper,
             ]
 
-            ctx.enqueue_function[kernel, kernel](
+            ctx.enqueue_function[kernel](
                 c,
                 a,
                 b,

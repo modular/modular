@@ -706,7 +706,7 @@ def flare_mla_decoding_dispatch[
         )
         var nullptr_device = DeviceBuffer[accum_type].empty(ctx)
 
-        ctx.enqueue_function[kernel, kernel](
+        ctx.enqueue_function[kernel](
             q_device,
             k,
             output_device,
@@ -2412,7 +2412,7 @@ def flare_mla_prefill_dispatch[
             ceildiv(max_prompt_len, BM),
             batch_size,
         )
-        ctx.enqueue_function[kernel, kernel](
+        ctx.enqueue_function[kernel](
             q_device,
             k,
             v,
@@ -3378,9 +3378,7 @@ def mla_prefill_plan[
     if batch_size == 0:
         # Fill buffer lengths with 0
         comptime kernel = set_buffer_lengths_to_zero[buffer_lengths.LayoutType,]
-        ctx.enqueue_function[kernel, kernel](
-            buffer_lengths, grid_dim=1, block_dim=1
-        )
+        ctx.enqueue_function[kernel](buffer_lengths, grid_dim=1, block_dim=1)
     else:
         comptime kernel = mla_prefill_plan_kernel[
             buffer_row_offsets.LayoutType,
@@ -3390,7 +3388,7 @@ def mla_prefill_plan[
             cache_t,
         ]
 
-        ctx.enqueue_function[kernel, kernel](
+        ctx.enqueue_function[kernel](
             buffer_row_offsets,
             cache_offsets,
             buffer_lengths,

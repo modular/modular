@@ -889,15 +889,7 @@ def launch_mla_combine_kernel_split_parallel[
             num_splits,
             ragged,
             has_attn_sink,
-        ],
-        mla_combine_kernel_split_parallel[
-            output_type,
-            accum_type,
-            head_dim,
-            num_splits,
-            ragged,
-            has_attn_sink,
-        ],
+        ]
     ](
         params,
         grid_dim=grid_dim,
@@ -983,16 +975,7 @@ def launch_mla_combine_kernel[
             ragged,
             warps_per_head,
             has_attn_sink,
-        ],
-        mla_combine_kernel[
-            output_type,
-            accum_type,
-            head_dim,
-            num_splits,
-            ragged,
-            warps_per_head,
-            has_attn_sink,
-        ],
+        ]
     ](
         params,
         grid_dim=grid_dim,

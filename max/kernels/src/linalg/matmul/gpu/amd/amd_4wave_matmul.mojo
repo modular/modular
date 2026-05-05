@@ -1199,7 +1199,7 @@ def amd_4wave_matmul[
         var num_blocks_n = ceildiv(N, config.block_shape[1])
         var num_blocks_m = ceildiv(M, config.block_shape[0])
         comptime if dump_asm_path != "":
-            ctx.enqueue_function[kernel, kernel, dump_asm=dump_asm_path](
+            ctx.enqueue_function[kernel, dump_asm=dump_asm_path](
                 a,
                 b,
                 c,
@@ -1207,7 +1207,7 @@ def amd_4wave_matmul[
                 block_dim=config.num_threads(),
             )
         else:
-            ctx.enqueue_function[kernel, kernel](
+            ctx.enqueue_function[kernel](
                 a,
                 b,
                 c,
@@ -1345,7 +1345,7 @@ def amd_4wave_scheduled_matmul[
         var num_blocks_n = ceildiv(N, config.block_shape[1])
         var num_blocks_m = ceildiv(M, config.block_shape[0])
         comptime if dump_asm_path != "":
-            ctx.enqueue_function[kernel, kernel, dump_asm=dump_asm_path](
+            ctx.enqueue_function[kernel, dump_asm=dump_asm_path](
                 a,
                 b,
                 c,
@@ -1353,7 +1353,7 @@ def amd_4wave_scheduled_matmul[
                 block_dim=config.num_threads(),
             )
         else:
-            ctx.enqueue_function[kernel, kernel](
+            ctx.enqueue_function[kernel](
                 a,
                 b,
                 c,

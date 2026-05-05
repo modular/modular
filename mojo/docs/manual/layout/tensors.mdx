@@ -277,7 +277,7 @@ def initialize_tensor_from_cpu_example() raises:
         ctx.enqueue_copy(dev_buf, host_buf)
         var tensor = LayoutTensor[dtype, input_layout](dev_buf)
 
-        ctx.enqueue_function[kernel, kernel](
+        ctx.enqueue_function[kernel](
             tensor,
             grid_dim=(col_blocks, row_blocks),
             block_dim=(block_size, block_size),
@@ -657,7 +657,7 @@ def copy_from_async_example():
         var tensor = LayoutTensor[dtype, input_layout](dev_buf)
 
         ctx.enqueue_copy(dev_buf, host_buf)
-        ctx.enqueue_function[kernel, kernel](
+        ctx.enqueue_function[kernel](
             tensor,
             grid_dim=(num_row_blocks, num_col_blocks),
             block_dim=(block_size, block_size),

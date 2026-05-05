@@ -229,7 +229,7 @@ def learnable_2d_interp_pos_emb[
         time_weight.LayoutType,
         ImmutOrigin(time_weight.origin),
     ]
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         output,
         x.as_immut(),
         weight.as_immut(),

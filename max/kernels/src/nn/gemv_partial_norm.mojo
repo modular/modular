@@ -626,7 +626,7 @@ def _gemv_partial_norm_fused[
         enable_trace=enable_trace,
         pdl_level=pdl_level,
     ]
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         normed_output,
         unnormed_output,
         act,

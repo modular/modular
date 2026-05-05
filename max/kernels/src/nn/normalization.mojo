@@ -572,7 +572,7 @@ def layer_norm_gpu[
                 gamma_fn,
                 output_fn_2d,
             ]
-            ctx.enqueue_function[kernel, kernel](
+            ctx.enqueue_function[kernel](
                 flattened_shape,
                 beta,
                 epsilon,
@@ -594,7 +594,7 @@ def layer_norm_gpu[
                 gamma_fn,
                 output_fn_2d,
             ]
-            ctx.enqueue_function[kernel, kernel](
+            ctx.enqueue_function[kernel](
                 flattened_shape,
                 beta,
                 epsilon,
@@ -612,7 +612,7 @@ def layer_norm_gpu[
                 gamma_fn,
                 output_fn_2d,
             ]
-            ctx.enqueue_function[kernel, kernel](
+            ctx.enqueue_function[kernel](
                 flattened_shape,
                 beta,
                 epsilon,
@@ -630,7 +630,7 @@ def layer_norm_gpu[
             gamma_fn,
             output_fn_2d,
         ]
-        ctx.enqueue_function[kernel, kernel](
+        ctx.enqueue_function[kernel](
             flattened_shape,
             beta,
             epsilon,
@@ -1256,7 +1256,7 @@ def rms_norm_gpu[
                 output_fn_2d,
                 multiply_before_cast=multiply_before_cast,
             ]
-            ctx.enqueue_function[kernel, kernel](
+            ctx.enqueue_function[kernel](
                 gamma,
                 epsilon,
                 weight_offset,
@@ -1277,7 +1277,7 @@ def rms_norm_gpu[
                 output_fn_2d,
                 multiply_before_cast=multiply_before_cast,
             ]
-            ctx.enqueue_function[kernel, kernel](
+            ctx.enqueue_function[kernel](
                 gamma,
                 epsilon,
                 weight_offset,
@@ -1300,7 +1300,7 @@ def rms_norm_gpu[
                 output_fn_2d,
                 multiply_before_cast=multiply_before_cast,
             ]
-            ctx.enqueue_function[kernel, kernel](
+            ctx.enqueue_function[kernel](
                 gamma,
                 epsilon,
                 weight_offset,
@@ -1320,7 +1320,7 @@ def rms_norm_gpu[
                 output_fn_2d,
                 multiply_before_cast=multiply_before_cast,
             ]
-            ctx.enqueue_function[kernel, kernel](
+            ctx.enqueue_function[kernel](
                 gamma,
                 epsilon,
                 weight_offset,
@@ -1340,7 +1340,7 @@ def rms_norm_gpu[
             output_fn_2d,
             multiply_before_cast=multiply_before_cast,
         ]
-        ctx.enqueue_function[kernel, kernel](
+        ctx.enqueue_function[kernel](
             gamma,
             epsilon,
             weight_offset,
@@ -2117,7 +2117,7 @@ def rms_norm_fused_residual_add_gpu[
                 output_residual_fn_2d,
                 multiply_before_cast=multiply_before_cast,
             ]
-            ctx.enqueue_function[kernel, kernel](
+            ctx.enqueue_function[kernel](
                 gamma1,
                 epsilon1,
                 weight_offset1,
@@ -2149,7 +2149,7 @@ def rms_norm_fused_residual_add_gpu[
                     output_residual_fn_2d,
                     multiply_before_cast=multiply_before_cast,
                 ]
-                ctx.enqueue_function[no_shmem_kernel, no_shmem_kernel](
+                ctx.enqueue_function[no_shmem_kernel](
                     gamma1,
                     epsilon1,
                     weight_offset1,
@@ -2182,7 +2182,7 @@ def rms_norm_fused_residual_add_gpu[
                     output_residual_fn_2d,
                     multiply_before_cast=multiply_before_cast,
                 ]
-                ctx.enqueue_function[kernel, kernel](
+                ctx.enqueue_function[kernel](
                     gamma1,
                     epsilon1,
                     weight_offset1,
@@ -2219,7 +2219,7 @@ def rms_norm_fused_residual_add_gpu[
                 multiply_before_cast=multiply_before_cast,
             ]
 
-            ctx.enqueue_function[no_shmem_kernel, no_shmem_kernel](
+            ctx.enqueue_function[no_shmem_kernel](
                 gamma1,
                 epsilon1,
                 weight_offset1,
@@ -2250,7 +2250,7 @@ def rms_norm_fused_residual_add_gpu[
                 output_residual_fn_2d,
                 multiply_before_cast=multiply_before_cast,
             ]
-            ctx.enqueue_function[kernel, kernel](
+            ctx.enqueue_function[kernel](
                 gamma1,
                 epsilon1,
                 weight_offset1,
@@ -2939,7 +2939,7 @@ def rms_norm_rope_gpu[
             output_fn_2d,
             multiply_before_cast=multiply_before_cast,
         ]
-        ctx.enqueue_function[kernel, kernel](
+        ctx.enqueue_function[kernel](
             gamma,
             epsilon,
             weight_offset,
@@ -2970,7 +2970,7 @@ def rms_norm_rope_gpu[
             output_fn_2d,
             multiply_before_cast=multiply_before_cast,
         ]
-        ctx.enqueue_function[kernel, kernel](
+        ctx.enqueue_function[kernel](
             gamma,
             epsilon,
             weight_offset,
@@ -2999,7 +2999,7 @@ def rms_norm_rope_gpu[
             output_fn_2d,
             multiply_before_cast=multiply_before_cast,
         ]
-        ctx.enqueue_function[kernel, kernel](
+        ctx.enqueue_function[kernel](
             gamma,
             epsilon,
             weight_offset,
@@ -3022,7 +3022,7 @@ def rms_norm_rope_gpu[
             output_fn_2d,
             multiply_before_cast=multiply_before_cast,
         ]
-        ctx.enqueue_function[kernel, kernel](
+        ctx.enqueue_function[kernel](
             gamma,
             epsilon,
             weight_offset,
@@ -3770,7 +3770,7 @@ def group_norm_gpu[
                 gamma_fn=gamma_fn,
                 beta_fn=beta_fn,
             ]
-            ctx.enqueue_function[kernel, kernel](
+            ctx.enqueue_function[kernel](
                 output_rs,
                 epsilon,
                 num_groups,
@@ -3838,7 +3838,7 @@ def group_norm_gpu[
                     simd_width=simd_width,
                     input_fn=input_fn_2d,
                 ]
-                ctx.enqueue_function[stats_kernel, stats_kernel](
+                ctx.enqueue_function[stats_kernel](
                     stats,
                     num_splits,
                     group_size,
@@ -3859,7 +3859,7 @@ def group_norm_gpu[
                     gamma_fn=gamma_fn,
                     beta_fn=beta_fn,
                 ]
-                ctx.enqueue_function[norm_kernel, norm_kernel](
+                ctx.enqueue_function[norm_kernel](
                     output_rs,
                     stats,
                     epsilon,
@@ -3884,7 +3884,7 @@ def group_norm_gpu[
                     gamma_fn=gamma_fn,
                     beta_fn=beta_fn,
                 ]
-                ctx.enqueue_function[kernel, kernel](
+                ctx.enqueue_function[kernel](
                     output_rs,
                     epsilon,
                     num_groups,
@@ -3904,7 +3904,7 @@ def group_norm_gpu[
             gamma_fn=gamma_fn,
             beta_fn=beta_fn,
         ]
-        ctx.enqueue_function[kernel, kernel](
+        ctx.enqueue_function[kernel](
             output_rs,
             epsilon,
             num_groups,

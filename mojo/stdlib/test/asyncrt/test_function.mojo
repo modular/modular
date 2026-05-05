@@ -84,7 +84,7 @@ def _run_test_function_checked(ctx: DeviceContext) raises:
     var in1 = ctx.enqueue_create_buffer[T](length)
     in1.enqueue_fill(scalar)
 
-    var compiled_vec_func = ctx.compile_function_experimental[vec_func]()
+    var compiled_vec_func = ctx.compile_function[vec_func]()
     ctx.enqueue_function(
         compiled_vec_func,
         in0,
@@ -134,8 +134,8 @@ def _run_test_function_experimental(ctx: DeviceContext) raises:
     var in1 = ctx.enqueue_create_buffer[T](length)
     in1.enqueue_fill(scalar)
 
-    var compiled_vec_func = ctx.compile_function_experimental[vec_func]()
-    ctx.enqueue_function_experimental(
+    var compiled_vec_func = ctx.compile_function[vec_func]()
+    ctx.enqueue_function(
         compiled_vec_func,
         in0,
         in1,

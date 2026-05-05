@@ -44,7 +44,7 @@ def test_kernel[schedule: MHASchedule]():
 def test[schedule: MHASchedule](ctx: DeviceContext) raises:
     comptime kernel = test_kernel[schedule]
 
-    ctx.enqueue_function_experimental[kernel](
+    ctx.enqueue_function[kernel](
         grid_dim=8,
         block_dim=1,
     )

@@ -400,7 +400,7 @@ def main() raises:
     print("Config: ", num_blocks, " blocks x ", threads_per_block, " threads")
     print("Tile size: ", tile_size)
 
-    ctx.enqueue_function_experimental[merge_tiled_kernel](
+    ctx.enqueue_function[merge_tiled_kernel](
         d_A,
         m,
         d_B,

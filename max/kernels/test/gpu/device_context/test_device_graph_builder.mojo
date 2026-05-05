@@ -43,7 +43,7 @@ def test_vec_add_kernel_node(ctx: DeviceContext) raises:
             in0_host[i] = Float32(i)
             in1_host[i] = Float32(length - i)
 
-    var func = ctx.compile_function_experimental[vec_add]()
+    var func = ctx.compile_function[vec_add]()
     var builder = ctx.create_graph_builder()
     builder.add_function(
         func,

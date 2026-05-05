@@ -39,7 +39,7 @@ def main() raises:
         print("block_idx\t\tthread_idx")
         print("x\ty\tz", "x\ty\tz", sep="\t")
         print("-" * 20, "-" * 20, sep="\t")
-        ctx.enqueue_function[print_threads, print_threads](
+        ctx.enqueue_function[print_threads](
             grid_dim=(2, 2, 1), block_dim=(16, 4, 2)
         )
         ctx.synchronize()

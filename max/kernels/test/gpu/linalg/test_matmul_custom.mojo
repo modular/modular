@@ -98,7 +98,7 @@ def run_matmul_naive(ctx: DeviceContext, M: Int, N: Int, K: Int) raises:
             type_of(b_tt_bf16).LayoutType,
             BLOCK_DIM,
         ]
-        ctx.enqueue_function[kernel, kernel](
+        ctx.enqueue_function[kernel](
             c_tt_bf16,
             a_tt_bf16,
             b_tt_bf16,
@@ -147,7 +147,7 @@ def run_matmul_naive(ctx: DeviceContext, M: Int, N: Int, K: Int) raises:
             type_of(b_tt_fp32).LayoutType,
             BLOCK_DIM,
         ]
-        ctx.enqueue_function[kernel, kernel](
+        ctx.enqueue_function[kernel](
             c_tt_fp32,
             a_tt_fp32,
             b_tt_fp32,
@@ -281,7 +281,7 @@ def run_matmul[
             type_of(b_tt).LayoutType,
             BLOCK_DIM,
         ]
-        ctx.enqueue_function[kernel, kernel](
+        ctx.enqueue_function[kernel](
             c_tt,
             a_tt,
             b_tt,
@@ -429,7 +429,7 @@ def run_matmul_split_k[
         BLOCK_DIM,
     ]
 
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         c_tt,
         a_tt,
         b_tt,
@@ -565,7 +565,7 @@ def run_matmul_transpose[
             BLOCK_DIM,
             transpose_b,
         ]
-        ctx.enqueue_function[kernel, kernel](
+        ctx.enqueue_function[kernel](
             c_tt,
             a_tt,
             b_tt,

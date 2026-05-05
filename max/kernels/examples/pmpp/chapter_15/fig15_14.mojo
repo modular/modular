@@ -308,7 +308,7 @@ def main() raises:
             ")...",
         )
 
-        ctx.enqueue_function_experimental[mm_tiled_kernel_double_buffer](
+        ctx.enqueue_function[mm_tiled_kernel_double_buffer](
             d_A,
             d_B,
             d_C,

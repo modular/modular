@@ -158,7 +158,7 @@ def main() raises:
     var blockSize = 256
     var numBlocks = (cols + blockSize - 1) // blockSize
 
-    ctx.enqueue_function_experimental[spmv_csc_kernel](
+    ctx.enqueue_function[spmv_csc_kernel](
         d_cscMatrix,
         d_x_buf,
         d_y_buf,

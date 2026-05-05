@@ -284,7 +284,7 @@ def _launch_mxfp4_grouped[
         type_of(expert_ids_i).LayoutType,
     ]
 
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         c,
         a_i,
         b_2d,

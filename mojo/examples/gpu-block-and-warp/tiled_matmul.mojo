@@ -240,7 +240,7 @@ def main() raises:
         )
 
         # Launch the kernel
-        ctx.enqueue_function[tiled_matmul_kernel, tiled_matmul_kernel](
+        ctx.enqueue_function[tiled_matmul_kernel](
             device_matrix_a,
             device_matrix_b,
             device_matrix_c,

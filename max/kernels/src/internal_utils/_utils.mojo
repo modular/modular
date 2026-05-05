@@ -409,7 +409,7 @@ def init_vector_launch[
     # using num-threads = 1/4th of length to initialize the array
 
     comptime kernel = init_vector_gpu[dtype]
-    context.enqueue_function[kernel, kernel](
+    context.enqueue_function[kernel](
         out_device,
         length,
         init_type,
@@ -461,7 +461,7 @@ def _init_block_scaled_scales_launch[
     # using num-threads = 1/4th of length to initialize the array
 
     comptime kernel = _init_block_scaled_scales_gpu[dtype]
-    context.enqueue_function_experimental[kernel](
+    context.enqueue_function[kernel](
         out_device,
         length,
         grid_dim=(num_blocks),

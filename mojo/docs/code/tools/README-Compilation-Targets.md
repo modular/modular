@@ -73,7 +73,7 @@ def main() raises:
     with DeviceContext() as ctx:
         var out = ctx.enqueue_create_buffer[DType.int32](1)
         out.enqueue_fill(`❌`)
-        ctx.enqueue_function[kernel, kernel](
+        ctx.enqueue_function[kernel](
             out, grid_dim=1, block_dim=1
         )
         with out.map_to_host() as out_host:

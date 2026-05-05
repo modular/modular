@@ -116,7 +116,7 @@ def sum_kernel_benchmark(
         var a_ptr = input_data.a_ptr
         var out_buffer = DeviceBuffer[dtype](ctx, out_ptr, 1, owning=False)
         var a_buffer = DeviceBuffer[dtype](ctx, a_ptr, SIZE, owning=False)
-        ctx.enqueue_function[kernel, kernel](
+        ctx.enqueue_function[kernel](
             out_buffer,
             a_buffer,
             grid_dim=NUM_BLOCKS,
@@ -143,7 +143,7 @@ def main() raises:
             randint[dtype](a_host.as_span(), low=0, high=10)
 
         # Call the kernel
-        ctx.enqueue_function[kernel, kernel](
+        ctx.enqueue_function[kernel](
             out,
             a,
             grid_dim=NUM_BLOCKS,

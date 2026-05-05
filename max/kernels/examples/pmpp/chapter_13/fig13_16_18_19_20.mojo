@@ -430,7 +430,7 @@ def main() raises:
     )
     print("Tile size: ", tile_size)
 
-    ctx.enqueue_function_experimental[merge_circular_buffer_kernel](
+    ctx.enqueue_function[merge_circular_buffer_kernel](
         d_A,
         m,
         d_B,

@@ -221,7 +221,7 @@ def test_block_scaled_mxfp4_hipblaslt[
 
     comptime BLOCK_DIM = 32
 
-    ctx.enqueue_function_experimental[block_scaled_matmul_ref[output_dtype]](
+    ctx.enqueue_function[block_scaled_matmul_ref[output_dtype]](
         a_device,
         b_device,
         a_scales_device,

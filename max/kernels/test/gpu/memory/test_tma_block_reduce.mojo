@@ -211,7 +211,7 @@ def test_tma_block_reduce[
             comptime kernel = tma_reduction_kernel[
                 dtype, accum_type, simd_width
             ]
-            ctx.enqueue_function[kernel, kernel](
+            ctx.enqueue_function[kernel](
                 tma_desc,
                 rows,
                 cols,
@@ -243,7 +243,7 @@ def test_tma_block_reduce[
                 input_fn_2d,
             ]
 
-            ctx.enqueue_function[kernel, kernel](
+            ctx.enqueue_function[kernel](
                 d_out,
                 cols,  # num_cols
                 grid_dim=grid_dim,

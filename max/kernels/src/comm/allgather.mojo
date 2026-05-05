@@ -387,7 +387,7 @@ def _allgather_p2p_tma[
         BLOCK_SIZE=TMA_BLOCK_SIZE,
         BYTES_PER_COPY=TMA_BYTES_PER_COPY,
     ]
-    ctx.enqueue_function_experimental[tma_kernel](
+    ctx.enqueue_function[tma_kernel](
         output_ptrs,
         list_of_in_ptrs,
         rank_sigs,
@@ -491,7 +491,7 @@ def _allgather_p2p[
         ngpus,
         BLOCK_SIZE=BLOCK_SIZE,
     ]
-    ctx.enqueue_function[allgather_p2p_kernel, allgather_p2p_kernel](
+    ctx.enqueue_function[allgather_p2p_kernel](
         output_ptrs,
         list_of_in_ptrs,
         rank_sigs,

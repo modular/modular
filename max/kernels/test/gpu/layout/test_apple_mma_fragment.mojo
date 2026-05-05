@@ -337,7 +337,7 @@ def test_fragment_load_layout(ctx: DeviceContext) raises:
     )
     ctx.enqueue_copy(input_dev, input_host)
 
-    ctx.enqueue_function_experimental[fragment_load_kernel](
+    ctx.enqueue_function[fragment_load_kernel](
         input_dev, output_dev, grid_dim=(1), block_dim=(WARP_SIZE)
     )
 
@@ -390,7 +390,7 @@ def test_mma_2x2(ctx: DeviceContext) raises:
     ctx.enqueue_copy(a_dev, a_host)
     ctx.enqueue_copy(b_dev, b_host)
 
-    ctx.enqueue_function_experimental[mma_2x2_kernel](
+    ctx.enqueue_function[mma_2x2_kernel](
         a_dev, b_dev, d_dev, grid_dim=(1), block_dim=(WARP_SIZE)
     )
 
@@ -499,7 +499,7 @@ def test_mma_k32(ctx: DeviceContext) raises:
     ctx.enqueue_copy(a_dev, a_host)
     ctx.enqueue_copy(b_dev, b_host)
 
-    ctx.enqueue_function_experimental[mma_k32_kernel](
+    ctx.enqueue_function[mma_k32_kernel](
         a_dev, b_dev, d_dev, grid_dim=(1), block_dim=(WARP_SIZE)
     )
 
@@ -602,7 +602,7 @@ def test_mma_i8_k32(ctx: DeviceContext) raises:
     ctx.enqueue_copy(a_dev, a_host)
     ctx.enqueue_copy(b_dev, b_host)
 
-    ctx.enqueue_function_experimental[mma_i8_k32_kernel](
+    ctx.enqueue_function[mma_i8_k32_kernel](
         a_dev, b_dev, d_dev, grid_dim=(1), block_dim=(WARP_SIZE)
     )
 
@@ -675,7 +675,7 @@ def test_parent_stride(ctx: DeviceContext) raises:
     ctx.enqueue_copy(a_dev, a_host)
     ctx.enqueue_copy(b_dev, b_host)
 
-    ctx.enqueue_function_experimental[mma_parent_stride_kernel](
+    ctx.enqueue_function[mma_parent_stride_kernel](
         a_dev, b_dev, d_dev, grid_dim=(1), block_dim=(WARP_SIZE)
     )
 
@@ -739,7 +739,7 @@ def test_zero_accum(ctx: DeviceContext) raises:
     ctx.enqueue_copy(a_dev, a_host)
     ctx.enqueue_copy(b_dev, b_host)
 
-    ctx.enqueue_function_experimental[zero_accum_kernel](
+    ctx.enqueue_function[zero_accum_kernel](
         a_dev, b_dev, d1_dev, d2_dev, grid_dim=(1), block_dim=(WARP_SIZE)
     )
 
@@ -852,7 +852,7 @@ def test_bounded_mma(ctx: DeviceContext) raises:
     ctx.enqueue_copy(a_dev, a_host)
     ctx.enqueue_copy(b_dev, b_host)
 
-    ctx.enqueue_function_experimental[bounded_mma_kernel](
+    ctx.enqueue_function[bounded_mma_kernel](
         a_dev,
         b_dev,
         d_dev,
@@ -940,7 +940,7 @@ def test_store_bounded(ctx: DeviceContext) raises:
     ctx.enqueue_copy(b_dev, b_host)
     ctx.enqueue_copy(d_dev, d_host_init)
 
-    ctx.enqueue_function_experimental[bounded_store_kernel](
+    ctx.enqueue_function[bounded_store_kernel](
         a_dev,
         b_dev,
         d_dev,
@@ -1155,7 +1155,7 @@ def _run_16x16_mma_test[
     ctx.enqueue_copy(a_dev, a_phys)
     ctx.enqueue_copy(b_dev, b_phys)
 
-    ctx.enqueue_function_experimental[kernel_fn](
+    ctx.enqueue_function[kernel_fn](
         a_dev, b_dev, d_dev, grid_dim=(1), block_dim=(WARP_SIZE)
     )
 

@@ -135,7 +135,7 @@ struct TopK:
                     top_k_sram[index].val = min_or_neg_inf[dtype]()
 
         comptime if target == "gpu":
-            dev_ctx.enqueue_function_experimental[top_k_gpu[K]](
+            dev_ctx.enqueue_function[top_k_gpu[K]](
                 out_vals_tensor,
                 out_idxs_tensor,
                 in_vals_tensor,

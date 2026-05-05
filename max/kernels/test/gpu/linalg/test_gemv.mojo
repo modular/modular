@@ -77,7 +77,7 @@ def run_matvec[
     def run_func_gemv(ctx: DeviceContext) raises:
         comptime kernel = gemv_kernel[c_type, a_type, b_type]
 
-        ctx.enqueue_function_experimental[kernel](
+        ctx.enqueue_function[kernel](
             c_device,
             a_device,
             b_device,
@@ -98,7 +98,7 @@ def run_matvec[
             tile_size=WARP_SIZE * WARPS_PER_BLOCK,
         ]
 
-        ctx.enqueue_function_experimental[kernel](
+        ctx.enqueue_function[kernel](
             c_device,
             a_device,
             b_device,
@@ -238,7 +238,7 @@ def run_matvec_with_epilogue_fn(
             DType.float32,
             elementwise_lambda_fn=epilogue_fn,
         ]
-        var func = ctx.compile_function_experimental[kernel]()
+        var func = ctx.compile_function[kernel]()
         ctx.enqueue_function(
             func,
             c_device,
@@ -261,7 +261,7 @@ def run_matvec_with_epilogue_fn(
             tile_size=WARP_SIZE * WARPS_PER_BLOCK,
             elementwise_lambda_fn=epilogue_fn,
         ]
-        var func = ctx.compile_function_experimental[kernel]()
+        var func = ctx.compile_function[kernel]()
         ctx.enqueue_function(
             func,
             c_device,
@@ -315,7 +315,7 @@ def run_matvec_with_epilogue_fn(
             BLOCK_DIM,
             elementwise_lambda_fn=epilogue_fn,
         ]
-        var func = ctx.compile_function_experimental[kernel]()
+        var func = ctx.compile_function[kernel]()
         ctx.enqueue_function(
             func,
             c_device,

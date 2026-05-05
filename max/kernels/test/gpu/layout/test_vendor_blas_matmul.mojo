@@ -99,7 +99,7 @@ def test_matmul[
         BLOCK_DIM,
         transpose_b=True,
     ]
-    ctx.enqueue_function_experimental[kernel](
+    ctx.enqueue_function[kernel](
         c_ref_tt,
         a_immut_tt,
         b_immut_tt,

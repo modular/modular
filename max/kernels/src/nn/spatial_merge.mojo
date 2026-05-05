@@ -185,7 +185,7 @@ def spatial_merge[
         ImmutOrigin(grid_thw.origin),
     ]
 
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         output,
         input.as_immut(),
         grid_thw.as_immut(),

@@ -231,7 +231,7 @@ def test_mxfp4_matmul[
         type_of(a_scales_tt).LayoutType,
         type_of(b_scales_tt).LayoutType,
     ]
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         c_tt,
         a_tt,
         b_tt,
@@ -243,7 +243,7 @@ def test_mxfp4_matmul[
 
     # --- Reference ---
     comptime BLOCK_DIM = 32
-    ctx.enqueue_function_experimental[block_scaled_matmul_ref](
+    ctx.enqueue_function[block_scaled_matmul_ref](
         a_dev,
         b_dev,
         a_scales_dev,

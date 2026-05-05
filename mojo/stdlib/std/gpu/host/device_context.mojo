@@ -4018,6 +4018,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
             _dump_sass=_dump_sass,
         ]()
 
+    @deprecated("Pass the kernel only once: `compile_function[func]`.")
     @always_inline
     def compile_function[
         func_type: TrivialRegisterPassable,
@@ -4099,7 +4100,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
         ]()
 
     @always_inline
-    def compile_function_experimental[
+    def compile_function[
         declared_arg_types: TypeList[Trait=AnyType, ...],
         //,
         func: def(* args: * declared_arg_types) thin -> None,
@@ -4173,6 +4174,66 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
             _dump_sass=_dump_sass,
         ]()
 
+    @deprecated("Use `compile_function[func]` instead.")
+    @always_inline
+    def compile_function_experimental[
+        declared_arg_types: TypeList[Trait=AnyType, ...],
+        //,
+        func: def(* args: * declared_arg_types) thin -> None,
+        *,
+        compile_options: StaticString = CompilationTarget[
+            Self.default_device_info.target()
+        ].default_compile_options(),
+        link_options: StaticString = "",
+        dump_asm: _DumpPath = False,
+        dump_llvm: _DumpPath = False,
+        _dump_sass: _DumpPath = False,
+        _ptxas_info_verbose: Bool = False,
+    ](
+        self,
+        *,
+        func_attribute: OptionalReg[FuncAttribute] = None,
+        out result: DeviceFunction[
+            func,
+            declared_arg_types.values,
+            target=Self.default_device_info.target(),
+            compile_options=compile_options,
+            link_options=link_options,
+            _ptxas_info_verbose=_ptxas_info_verbose,
+        ],
+    ) raises:
+        """Deprecated alias for `compile_function[func]`.
+
+        Parameters:
+            declared_arg_types: Types of the arguments to pass to the device function.
+            func: The function to compile.
+            compile_options: Compile options.
+            link_options: Additional linker flags and options as a string.
+            dump_asm: To dump the compiled assembly.
+            dump_llvm: To dump the generated LLVM code.
+            _dump_sass: NVIDIA SASS dump.
+            _ptxas_info_verbose: Verbose PTX assembly.
+
+        Args:
+            func_attribute: An attribute to use when compiling the code.
+
+        Returns:
+            The compiled function via the `result` output parameter.
+
+        Raises:
+            If the operation fails.
+        """
+        result = self.compile_function[
+            func,
+            compile_options=compile_options,
+            link_options=link_options,
+            dump_asm=dump_asm,
+            dump_llvm=dump_llvm,
+            _dump_sass=_dump_sass,
+            _ptxas_info_verbose=_ptxas_info_verbose,
+        ](func_attribute=func_attribute)
+
+    @deprecated("Pass the kernel only once: `compile_function[func]`.")
     @always_inline
     def compile_function[
         func_type: TrivialRegisterPassable,
@@ -4255,7 +4316,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
         ]()
 
     @always_inline
-    def compile_function_experimental[
+    def compile_function[
         declared_arg_types: TypeList[Trait=AnyType, ...],
         //,
         func: def(* args: * declared_arg_types) capturing -> None,
@@ -4328,6 +4389,65 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
             dump_llvm=dump_llvm,
             _dump_sass=_dump_sass,
         ]()
+
+    @deprecated("Use `compile_function[func]` instead.")
+    @always_inline
+    def compile_function_experimental[
+        declared_arg_types: TypeList[Trait=AnyType, ...],
+        //,
+        func: def(* args: * declared_arg_types) capturing -> None,
+        *,
+        compile_options: StaticString = CompilationTarget[
+            Self.default_device_info.target()
+        ].default_compile_options(),
+        link_options: StaticString = "",
+        dump_asm: _DumpPath = False,
+        dump_llvm: _DumpPath = False,
+        _dump_sass: _DumpPath = False,
+        _ptxas_info_verbose: Bool = False,
+    ](
+        self,
+        *,
+        func_attribute: OptionalReg[FuncAttribute] = None,
+        out result: DeviceFunction[
+            func,
+            declared_arg_types.values,
+            target=Self.default_device_info.target(),
+            compile_options=compile_options,
+            link_options=link_options,
+            _ptxas_info_verbose=_ptxas_info_verbose,
+        ],
+    ) raises:
+        """Deprecated alias for `compile_function[func]` (capturing).
+
+        Parameters:
+            declared_arg_types: Types of the arguments to pass to the device function.
+            func: The function to compile.
+            compile_options: Compile options.
+            link_options: Additional linker flags and options as a string.
+            dump_asm: To dump the compiled assembly.
+            dump_llvm: To dump the generated LLVM code.
+            _dump_sass: NVIDIA SASS dump.
+            _ptxas_info_verbose: Verbose PTX assembly.
+
+        Args:
+            func_attribute: An attribute to use when compiling the code.
+
+        Returns:
+            The compiled function via the `result` output parameter.
+
+        Raises:
+            If the operation fails.
+        """
+        result = self.compile_function[
+            func,
+            compile_options=compile_options,
+            link_options=link_options,
+            dump_asm=dump_asm,
+            dump_llvm=dump_llvm,
+            _dump_sass=_dump_sass,
+            _ptxas_info_verbose=_ptxas_info_verbose,
+        ](func_attribute=func_attribute)
 
     def load_function[
         func_type: TrivialRegisterPassable,
@@ -4780,6 +4900,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
             location=location.or_else(call_location()),
         )
 
+    @deprecated("Pass the kernel only once: `enqueue_function[func]`.")
     @parameter
     @always_inline
     def enqueue_function[
@@ -4893,7 +5014,6 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
                 )
 
         var gpu_kernel = self.compile_function[
-            func,
             signature_func,
             dump_asm=dump_asm,
             dump_llvm=dump_llvm,
@@ -4916,7 +5036,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
 
     @parameter
     @always_inline
-    def enqueue_function_experimental[
+    def enqueue_function[
         declared_arg_types: TypeList[Trait=AnyType, ...],
         //,
         func: def(* args: * declared_arg_types) thin -> None,
@@ -4967,7 +5087,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
             func_attribute: `CUfunction_attribute` enum.
             location: Source location for the function call.
 
-        You can pass the function directly to `enqueue_function_experimental`
+        You can pass the function directly to `enqueue_function`
         without compiling it first:
 
         ```mojo
@@ -4977,7 +5097,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
             print("hello from the GPU")
 
         with DeviceContext() as ctx:
-            ctx.enqueue_function_experimental[kernel](grid_dim=1, block_dim=1)
+            ctx.enqueue_function[kernel](grid_dim=1, block_dim=1)
             ctx.synchronize()
         ```
 
@@ -4992,19 +5112,19 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
             print("hello from the GPU")
 
         with DeviceContext() as ctx:
-            var compiled_func = ctx.compile_function_experimental[kernel]()
-            ctx.enqueue_function_experimental(compiled_func, grid_dim=1, block_dim=1)
-            ctx.enqueue_function_experimental(compiled_func, grid_dim=1, block_dim=1)
+            var compiled_func = ctx.compile_function[kernel]()
+            ctx.enqueue_function(compiled_func, grid_dim=1, block_dim=1)
+            ctx.enqueue_function(compiled_func, grid_dim=1, block_dim=1)
             ctx.synchronize()
         ```
 
         Raises:
             If the operation fails.
         """
-        _check_dim["DeviceContext.enqueue_function_experimental", "grid_dim"](
+        _check_dim["DeviceContext.enqueue_function", "grid_dim"](
             grid_dim, location=call_location()
         )
-        _check_dim["DeviceContext.enqueue_function_experimental", "block_dim"](
+        _check_dim["DeviceContext.enqueue_function", "block_dim"](
             block_dim, location=call_location()
         )
 
@@ -5020,7 +5140,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
                     FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(max_shared)
                 )
 
-        var gpu_kernel = self.compile_function_experimental[
+        var gpu_kernel = self.compile_function[
             func,
             dump_asm=dump_asm,
             dump_llvm=dump_llvm,
@@ -5041,6 +5161,77 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
             location=location.or_else(call_location()),
         )
 
+    @deprecated("Use `enqueue_function[func]` instead.")
+    @parameter
+    @always_inline
+    def enqueue_function_experimental[
+        declared_arg_types: TypeList[Trait=AnyType, ...],
+        //,
+        func: def(* args: * declared_arg_types) thin -> None,
+        *actual_arg_types: DevicePassable,
+        link_options: StaticString = "",
+        dump_asm: _DumpPath = False,
+        dump_llvm: _DumpPath = False,
+        _dump_sass: _DumpPath = False,
+        _ptxas_info_verbose: Bool = False,
+    ](
+        self,
+        *args: *actual_arg_types,
+        grid_dim: Dim,
+        block_dim: Dim,
+        cluster_dim: OptionalReg[Dim] = None,
+        shared_mem_bytes: OptionalReg[Int] = None,
+        var attributes: List[LaunchAttribute] = [],
+        var constant_memory: List[ConstantMemoryMapping] = [],
+        func_attribute: OptionalReg[FuncAttribute] = None,
+        location: OptionalReg[SourceLocation] = None,
+    ) raises:
+        """Deprecated alias for `enqueue_function[func]`.
+
+        Parameters:
+            declared_arg_types: Types of the arguments to pass to the device function.
+            func: The function to compile and launch.
+            actual_arg_types: The dtypes of the arguments being passed.
+            link_options: Additional linker flags and options as a string.
+            dump_asm: To dump the compiled assembly.
+            dump_llvm: To dump the generated LLVM code.
+            _dump_sass: NVIDIA SASS dump.
+            _ptxas_info_verbose: Verbose PTX assembly.
+
+        Args:
+            args: Variadic arguments which are passed to the `func`.
+            grid_dim: The grid dimensions.
+            block_dim: The block dimensions.
+            cluster_dim: The cluster dimensions.
+            shared_mem_bytes: Per-block memory shared between blocks.
+            attributes: A `List` of launch attributes.
+            constant_memory: A `List` of constant memory mappings.
+            func_attribute: `CUfunction_attribute` enum.
+            location: Source location for the function call.
+
+        Raises:
+            If the operation fails.
+        """
+        self.enqueue_function[
+            func,
+            link_options=link_options,
+            dump_asm=dump_asm,
+            dump_llvm=dump_llvm,
+            _dump_sass=_dump_sass,
+            _ptxas_info_verbose=_ptxas_info_verbose,
+        ](
+            *args,
+            grid_dim=grid_dim,
+            block_dim=block_dim,
+            cluster_dim=cluster_dim,
+            shared_mem_bytes=shared_mem_bytes,
+            attributes=attributes^,
+            constant_memory=constant_memory^,
+            func_attribute=func_attribute,
+            location=location.or_else(call_location()),
+        )
+
+    @deprecated("Pass the kernel only once: `enqueue_function[func]`.")
     @parameter
     @always_inline
     def enqueue_function[
@@ -5154,7 +5345,6 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
                 )
 
         var gpu_kernel = self.compile_function[
-            func,
             signature_func,
             dump_asm=dump_asm,
             dump_llvm=dump_llvm,
@@ -5287,7 +5477,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
 
     @parameter
     @always_inline
-    def enqueue_function_experimental[
+    def enqueue_function[
         declared_arg_types: TypeList[Trait=AnyType, ...],
         //,
         func: def(* args: * declared_arg_types) capturing -> None,
@@ -5339,7 +5529,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
             func_attribute: `CUfunction_attribute` enum.
             location: Source location for the function call.
 
-        You can pass the function directly to `enqueue_function_experimental`
+        You can pass the function directly to `enqueue_function`
         without compiling it first:
 
         ```mojo
@@ -5349,7 +5539,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
             print("hello from the GPU")
 
         with DeviceContext() as ctx:
-            ctx.enqueue_function_experimental[kernel](grid_dim=1, block_dim=1)
+            ctx.enqueue_function[kernel](grid_dim=1, block_dim=1)
             ctx.synchronize()
         ```
 
@@ -5364,19 +5554,19 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
             print("hello from the GPU")
 
         with DeviceContext() as ctx:
-            var compiled_func = ctx.compile_function_experimental[kernel]()
-            ctx.enqueue_function_experimental(compiled_func, grid_dim=1, block_dim=1)
-            ctx.enqueue_function_experimental(compiled_func, grid_dim=1, block_dim=1)
+            var compiled_func = ctx.compile_function[kernel]()
+            ctx.enqueue_function(compiled_func, grid_dim=1, block_dim=1)
+            ctx.enqueue_function(compiled_func, grid_dim=1, block_dim=1)
             ctx.synchronize()
         ```
 
         Raises:
             If the operation fails.
         """
-        _check_dim["DeviceContext.enqueue_function_experimental", "grid_dim"](
+        _check_dim["DeviceContext.enqueue_function", "grid_dim"](
             grid_dim, location=call_location()
         )
-        _check_dim["DeviceContext.enqueue_function_experimental", "block_dim"](
+        _check_dim["DeviceContext.enqueue_function", "block_dim"](
             block_dim, location=call_location()
         )
 
@@ -5392,7 +5582,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
                     FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(max_shared)
                 )
 
-        var gpu_kernel = self.compile_function_experimental[
+        var gpu_kernel = self.compile_function[
             func,
             dump_asm=dump_asm,
             dump_llvm=dump_llvm,
@@ -5413,6 +5603,77 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
             location=location.or_else(call_location()),
         )
 
+    @deprecated("Use `enqueue_function[func]` instead.")
+    @parameter
+    @always_inline
+    def enqueue_function_experimental[
+        declared_arg_types: TypeList[Trait=AnyType, ...],
+        //,
+        func: def(* args: * declared_arg_types) capturing -> None,
+        *actual_arg_types: DevicePassable,
+        link_options: StaticString = "",
+        dump_asm: _DumpPath = False,
+        dump_llvm: _DumpPath = False,
+        _dump_sass: _DumpPath = False,
+        _ptxas_info_verbose: Bool = False,
+    ](
+        self,
+        *args: *actual_arg_types,
+        grid_dim: Dim,
+        block_dim: Dim,
+        cluster_dim: OptionalReg[Dim] = None,
+        shared_mem_bytes: OptionalReg[Int] = None,
+        var attributes: List[LaunchAttribute] = [],
+        var constant_memory: List[ConstantMemoryMapping] = [],
+        func_attribute: OptionalReg[FuncAttribute] = None,
+        location: OptionalReg[SourceLocation] = None,
+    ) raises:
+        """Deprecated alias for `enqueue_function[func]` (capturing).
+
+        Parameters:
+            declared_arg_types: Types of the arguments to pass to the device function.
+            func: The function to compile and launch.
+            actual_arg_types: The dtypes of the arguments being passed.
+            link_options: Additional linker flags and options as a string.
+            dump_asm: To dump the compiled assembly.
+            dump_llvm: To dump the generated LLVM code.
+            _dump_sass: NVIDIA SASS dump.
+            _ptxas_info_verbose: Verbose PTX assembly.
+
+        Args:
+            args: Variadic arguments which are passed to the `func`.
+            grid_dim: The grid dimensions.
+            block_dim: The block dimensions.
+            cluster_dim: The cluster dimensions.
+            shared_mem_bytes: Per-block memory shared between blocks.
+            attributes: A `List` of launch attributes.
+            constant_memory: A `List` of constant memory mappings.
+            func_attribute: `CUfunction_attribute` enum.
+            location: Source location for the function call.
+
+        Raises:
+            If the operation fails.
+        """
+        self.enqueue_function[
+            func,
+            link_options=link_options,
+            dump_asm=dump_asm,
+            dump_llvm=dump_llvm,
+            _dump_sass=_dump_sass,
+            _ptxas_info_verbose=_ptxas_info_verbose,
+        ](
+            *args,
+            grid_dim=grid_dim,
+            block_dim=block_dim,
+            cluster_dim=cluster_dim,
+            shared_mem_bytes=shared_mem_bytes,
+            attributes=attributes^,
+            constant_memory=constant_memory^,
+            func_attribute=func_attribute,
+            location=location.or_else(call_location()),
+        )
+
+    @deprecated("Use `enqueue_function(func, ...)` instead.")
     @parameter
     @always_inline
     def enqueue_function_experimental[

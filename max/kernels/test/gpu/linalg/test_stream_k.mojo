@@ -373,7 +373,7 @@ def matmul_stream_k[
             GROUP_M,
         ]
 
-        ctx.enqueue_function_experimental[first_wave](
+        ctx.enqueue_function[first_wave](
             c_buffer,
             a_buffer,
             b_buffer,
@@ -405,7 +405,7 @@ def matmul_stream_k[
             BLK_K,
             GROUP_M,
         ]
-        ctx.enqueue_function_experimental[full_tiles](
+        ctx.enqueue_function[full_tiles](
             c_buffer,
             a_buffer,
             b_buffer,
@@ -486,7 +486,7 @@ def run_matmul_stream_k[
 
     # Create TileTensors for the naive kernel.
     # a/b are constructed as immutable to match the ImmutAnyOrigin
-    # parameters that matmul_kernel_naive expects (enqueue_function_experimental
+    # parameters that matmul_kernel_naive expects (enqueue_function
     # requires exact type matches).
 
     var c_buf_n = TileTensor(c_device_n, row_major[M, N]())
@@ -501,7 +501,7 @@ def run_matmul_stream_k[
         BLOCK_DIM,
     ]
 
-    ctx.enqueue_function_experimental[kernel](
+    ctx.enqueue_function[kernel](
         c_buf_n,
         a_buf.as_immut(),
         b_buf.as_immut(),

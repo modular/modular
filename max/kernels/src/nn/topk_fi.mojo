@@ -416,7 +416,7 @@ def topk_mask_logits[
                 MaskedLogitsLayoutType=masked_logits.LayoutType,
                 masked_logits_origin=masked_logits.origin,
             ]
-            ctx.enqueue_function[kernel, kernel](
+            ctx.enqueue_function[kernel](
                 logits.as_immut(),
                 masked_logits,
                 top_k_ptr,
@@ -984,7 +984,7 @@ def topk_sampling_from_prob[
                 out_idx_type,
                 deterministic,
             ]
-            ctx.enqueue_function[kernel, kernel](
+            ctx.enqueue_function[kernel](
                 probs.as_immut(),
                 output,
                 indices_ptr,
@@ -1416,7 +1416,7 @@ def topk_topp_sampling_from_prob[
                 out_idx_type,
                 deterministic,
             ]
-            ctx.enqueue_function[kernel, kernel](
+            ctx.enqueue_function[kernel](
                 probs.as_immut(),
                 output,
                 indices_ptr,
@@ -1803,7 +1803,7 @@ def topk_softmax_sample[
                 SampledLayoutType=sampled_indices.LayoutType,
                 sampled_origin=sampled_indices.origin,
             ]
-            ctx.enqueue_function[kernel, kernel](
+            ctx.enqueue_function[kernel](
                 logits.as_immut(),
                 sampled_indices,
                 top_k_ptr,

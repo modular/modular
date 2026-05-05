@@ -308,7 +308,7 @@ def main() raises:
 
     print("Launching kernel with grid=", grid_size, "block=", BLOCK_SIZE, "...")
 
-    device.enqueue_function_experimental[flashattention_forward_kernel](
+    device.enqueue_function[flashattention_forward_kernel](
         d_Q,
         d_K,
         d_V,

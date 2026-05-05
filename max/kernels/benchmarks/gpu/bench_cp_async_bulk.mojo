@@ -239,7 +239,7 @@ def main() raises:
             @parameter
             @always_inline
             def kernel_launch(ctx: DeviceContext) raises:
-                ctx.enqueue_function_experimental[
+                ctx.enqueue_function[
                     bulk_memcpy_kernel[NUM_THREADS, BYTES_PER_COPY, S, PREFETCH]
                 ](
                     src_dev,

@@ -146,7 +146,7 @@ def main() raises:
         ctx.enqueue_copy(d_input, h_input)
 
         # Launch kernel (single block with coarsening)
-        ctx.enqueue_function_experimental[coarsened_sum_reduction_kernel](
+        ctx.enqueue_function[coarsened_sum_reduction_kernel](
             d_input,
             d_output,
             grid_dim=(1, 1, 1),

@@ -220,7 +220,7 @@ def main() raises:
     else:
         ctx = DeviceContext()
         print("block\tthread")
-        ctx.enqueue_function[print_threads, print_threads](
+        ctx.enqueue_function[print_threads](
             grid_dim=2, block_dim=64
         )
         ctx.synchronize()
@@ -289,7 +289,7 @@ perform compile-time type checking of the kernel function arguments. You'll
 encounter run-time errors if the values you pass don't conform to the expected
 argument types.
 
-The `compile_function_experimental()` and `enqueue_function_experimental()`
+The `compile_function()` and `enqueue_function()`
 methods perform compile-time type checking but require the kernel function as a
 parameter only once instead of twice. Once we verify these APIs work correctly,
 we'll rename them to `compile_function()` and `enqueue_function()` to make
@@ -405,7 +405,7 @@ each thread block:
         print("block_idx\t\tthread_idx")
         print("x\ty\tz", "x\ty\tz", sep="\t")
         print("-" * 20, "-" * 20, sep="\t")
-        ctx.enqueue_function[print_threads, print_threads](
+        ctx.enqueue_function[print_threads](
             grid_dim=(2, 2, 1),
             block_dim=(16, 4, 2)
         )
@@ -735,7 +735,7 @@ back to the CPU. Add the following code to the end of the `main()` function:
 
 ```mojo title="vector_addition.mojo"
         # Compile and enqueue the kernel
-        ctx.enqueue_function[vector_addition, vector_addition](
+        ctx.enqueue_function[vector_addition](
             lhs_tensor,
             rhs_tensor,
             result_tensor,
@@ -839,7 +839,7 @@ def main() raises:
         result_tensor = TileTensor(result_device_buffer, layout)
 
         # Compile and enqueue the kernel
-        ctx.enqueue_function[vector_addition, vector_addition](
+        ctx.enqueue_function[vector_addition](
             lhs_tensor,
             rhs_tensor,
             result_tensor,

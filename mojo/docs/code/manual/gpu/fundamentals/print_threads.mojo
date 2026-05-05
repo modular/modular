@@ -47,7 +47,7 @@ def main() raises:
         print("block_idx\t\tthread_idx\t\tglobal_idx\t\tcalculated global_idx")
         print("x\ty\tz", "x\ty\tz", "x\ty\tz", "x\ty\tz", sep="\t")
         print("-" * 20, "-" * 20, "-" * 20, "-" * 20, sep="\t")
-        ctx.enqueue_function[print_threads, print_threads](
+        ctx.enqueue_function[print_threads](
             grid_dim=(2, 2, 1),  # 2x2x1 blocks per grid
             block_dim=(4, 4, 2),  # 4x4x2 threads per block
         )

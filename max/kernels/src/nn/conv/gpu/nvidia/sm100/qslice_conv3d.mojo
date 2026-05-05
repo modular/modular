@@ -322,7 +322,7 @@ def dispatch_qslice_conv3d_sm100[
             comptime accum_kernel = _accum_bf16_to_fp32_kernel[
                 output_type, output_simd_width
             ]
-            ctx.enqueue_function[accum_kernel, accum_kernel](
+            ctx.enqueue_function[accum_kernel](
                 accum_n_ptr,
                 temp_bf16_buf,
                 per_batch_elems,
@@ -339,7 +339,7 @@ def dispatch_qslice_conv3d_sm100[
         comptime output_kernel = _fp32_to_dtype_epilogue_kernel[
             output_type, C_out, epilogue_5d, output_simd_width
         ]
-        ctx.enqueue_function[output_kernel, output_kernel](
+        ctx.enqueue_function[output_kernel](
             accum_fp32_ptr,
             batch,
             D_out,
@@ -353,7 +353,7 @@ def dispatch_qslice_conv3d_sm100[
         comptime output_kernel = _fp32_to_dtype_plain_kernel[
             output_type, output_simd_width
         ]
-        ctx.enqueue_function[output_kernel, output_kernel](
+        ctx.enqueue_function[output_kernel](
             output.ptr,
             accum_fp32_ptr,
             output_elems,

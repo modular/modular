@@ -193,7 +193,7 @@ def main() raises:
 
         # Launch kernel with shared memory configuration
         # Note: func_attribute is now automatically inferred from shared_mem_bytes
-        ctx.enqueue_function_experimental[matrixMulKernel](
+        ctx.enqueue_function[matrixMulKernel](
             d_a,
             d_b,
             d_c,

@@ -220,7 +220,7 @@ def test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
         TN,
     ]
 
-    ctx.enqueue_function_experimental[kernel](
+    ctx.enqueue_function[kernel](
         c_tensor,
         a_tensor,
         b_tensor,
@@ -232,7 +232,7 @@ def test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
 
     # Create TileTensors for the naive kernel.
     # a/b are constructed as immutable to match the ImmutAnyOrigin
-    # parameters that matmul_kernel_naive expects (enqueue_function_experimental
+    # parameters that matmul_kernel_naive expects (enqueue_function
     # requires exact type matches).
     from std.memory import UnsafePointer
 
@@ -265,7 +265,7 @@ def test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
         BLOCK_DIM,
     ]
 
-    ctx.enqueue_function_experimental[gemm_naive](
+    ctx.enqueue_function[gemm_naive](
         c_ref_tt,
         a_tt,
         b_tt,
@@ -290,7 +290,7 @@ def test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
         @always_inline
         @parameter
         def run_func(ctx: DeviceContext) raises:
-            ctx.enqueue_function_experimental[kernel](
+            ctx.enqueue_function[kernel](
                 c_tensor,
                 a_tensor,
                 b_tensor,
@@ -300,7 +300,7 @@ def test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
 
         # Warmup
         for i in range(nwarmup):
-            ctx.enqueue_function_experimental[kernel](
+            ctx.enqueue_function[kernel](
                 c_tensor,
                 a_tensor,
                 b_tensor,

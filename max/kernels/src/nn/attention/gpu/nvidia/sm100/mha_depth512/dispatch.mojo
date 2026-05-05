@@ -228,7 +228,7 @@ def mha_sm100_depth512_dispatch[
                 PartitionType,
             ].kernel
 
-            ctx.enqueue_function[kernel, kernel](
+            ctx.enqueue_function[kernel](
                 q_tma_op,
                 k_tma_op,
                 v_tma_op,

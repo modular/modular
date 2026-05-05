@@ -155,7 +155,7 @@ def test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
     )
     @parameter
     def run_concat_inner_most_single_dim(ctx: DeviceContext) raises:
-        ctx.enqueue_function[kernel, kernel](
+        ctx.enqueue_function[kernel](
             output_dyn.as_any_origin(),
             StaticTuple[
                 TileTensor[dtype, input_0_dyn.LayoutType, ImmutAnyOrigin],

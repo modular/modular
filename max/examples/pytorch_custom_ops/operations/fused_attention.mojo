@@ -371,7 +371,7 @@ def fused_attention_gpu[
         BN,
         BD,
     ]
-    ctx.enqueue_function_experimental[kernel_func](
+    ctx.enqueue_function[kernel_func](
         Q,
         K,
         V,

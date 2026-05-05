@@ -372,7 +372,7 @@ def test(ctx: DeviceContext) raises:
         @always_inline
         @parameter
         def run_func(ctx: DeviceContext) raises:
-            ctx.enqueue_function_experimental[gemm](
+            ctx.enqueue_function[gemm](
                 c_tensor,
                 a_tensor,
                 b_tensor,
@@ -389,7 +389,7 @@ def test(ctx: DeviceContext) raises:
         var TFlop = 2.0 * M * N * K * 1e-12
         print(nrun, "runs avg(s)", sectime, "TFlops/s", TFlop / sectime)
 
-    ctx.enqueue_function_experimental[gemm](
+    ctx.enqueue_function[gemm](
         c_tensor,
         a_tensor,
         b_tensor,
@@ -404,7 +404,7 @@ def test(ctx: DeviceContext) raises:
 
     # Create TileTensors for the naive kernel.
     # a/b are constructed as immutable to match the ImmutAnyOrigin
-    # parameters that matmul_kernel_naive expects (enqueue_function_experimental
+    # parameters that matmul_kernel_naive expects (enqueue_function
     # requires exact type matches).
     var c_ref_tt = TileTensor(
         c_device_ref,
@@ -432,7 +432,7 @@ def test(ctx: DeviceContext) raises:
         type_of(b_tt).LayoutType,
         BLOCK_DIM,
     ]
-    ctx.enqueue_function_experimental[gemm_naive](
+    ctx.enqueue_function[gemm_naive](
         c_ref_tt,
         a_tt,
         b_tt,

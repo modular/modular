@@ -182,7 +182,7 @@ def main() raises:
         ctx.enqueue_copy(d_num_curr_frontier, h_zero)
         h_zero.free()
 
-        ctx.enqueue_function_experimental[bfs_kernel](
+        ctx.enqueue_function[bfs_kernel](
             d_src_ptrs,
             d_dst,
             d_level,

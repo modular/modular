@@ -182,7 +182,7 @@ def _pad_constant_impl[
         simd_width=simd_width,
     ]
 
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         input_tensor.as_immut(),
         output_tensor,
         rows_per_block,

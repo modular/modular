@@ -152,7 +152,7 @@ def nan_check_count[
             nan_ptr[] = Int32(0)
             inf_ptr[] = Int32(0)
 
-        gpu_ctx.enqueue_function[zero_counts, zero_counts](
+        gpu_ctx.enqueue_function[zero_counts](
             out_nan_ptr, out_inf_ptr, grid_dim=1, block_dim=1
         )
 
@@ -160,7 +160,7 @@ def nan_check_count[
         var grid = ceildiv(total, BLOCK)
 
         comptime kernel = _nan_check_gpu_kernel[dtype]
-        gpu_ctx.enqueue_function[kernel, kernel](
+        gpu_ctx.enqueue_function[kernel](
             rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](
                 input.unsafe_ptr()
             ),

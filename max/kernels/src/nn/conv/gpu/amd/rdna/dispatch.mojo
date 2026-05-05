@@ -218,10 +218,7 @@ def dispatch_rdna_conv2d[
         var transpose_grid = ceildiv(filter_size, transpose_block)
 
         comptime if filter_is_fcrs:
-            ctx.enqueue_function[
-                _transpose_fcrs_to_nk[filter_type],
-                _transpose_fcrs_to_nk[filter_type],
-            ](
+            ctx.enqueue_function[_transpose_fcrs_to_nk[filter_type]](
                 filter.ptr,
                 filter_nk_ptr,
                 Int(filter.dim[0]()),
@@ -232,10 +229,7 @@ def dispatch_rdna_conv2d[
                 block_dim=transpose_block,
             )
         else:
-            ctx.enqueue_function[
-                _transpose_rscf_to_nk[filter_type],
-                _transpose_rscf_to_nk[filter_type],
-            ](
+            ctx.enqueue_function[_transpose_rscf_to_nk[filter_type]](
                 filter.ptr,
                 filter_nk_ptr,
                 Int(filter.dim[0]()),
@@ -276,7 +270,7 @@ def dispatch_rdna_conv2d[
                 BLOCK_K=BLOCK_K,
             ]
 
-            ctx.enqueue_function[conv_kernel, conv_kernel](
+            ctx.enqueue_function[conv_kernel](
                 out_tt,
                 input.ptr,
                 filter_nk_tt,
@@ -308,10 +302,7 @@ def dispatch_rdna_conv2d[
 
             comptime im2col_block = 256
             var im2col_grid = ceildiv(im2col_size, im2col_block)
-            ctx.enqueue_function[
-                _im2col_nhwc_kernel[input_type],
-                _im2col_nhwc_kernel[input_type],
-            ](
+            ctx.enqueue_function[_im2col_nhwc_kernel[input_type]](
                 im2col_ptr,
                 input.ptr,
                 batch,

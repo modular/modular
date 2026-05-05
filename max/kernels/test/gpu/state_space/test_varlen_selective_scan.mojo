@@ -496,24 +496,7 @@ def run_varlen_selective_scan_fwd_gpu[
             query_start_loc_gpu_tt.LayoutType,
             cache_indices_gpu_tt.LayoutType,
             has_initial_state_gpu_tt.LayoutType,
-        ],
-        varlen_selective_scan_fwd_gpu[
-            dtype,
-            DSTATE,
-            u_gpu_tt.LayoutType,
-            delta_gpu_tt.LayoutType,
-            A_gpu_tt.LayoutType,
-            B_gpu_tt.LayoutType,
-            C_gpu_tt.LayoutType,
-            D_gpu_tt.LayoutType,
-            z_gpu_tt.LayoutType,
-            delta_bias_gpu_tt.LayoutType,
-            ssm_states_gpu_tt.LayoutType,
-            output_gpu_tt.LayoutType,
-            query_start_loc_gpu_tt.LayoutType,
-            cache_indices_gpu_tt.LayoutType,
-            has_initial_state_gpu_tt.LayoutType,
-        ],
+        ]
     ]()
 
     ctx.enqueue_function(

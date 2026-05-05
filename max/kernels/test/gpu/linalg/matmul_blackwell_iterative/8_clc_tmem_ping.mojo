@@ -1126,7 +1126,7 @@ def blackwell_kernel_8[
         1,
     )
 
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         a_tma_op,
         b_tma_op,
         c_tma_op,

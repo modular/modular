@@ -448,27 +448,7 @@ def run_mamba_split_conv1d_scan_combined_gpu[
             rmsnorm_weight_gpu_lt.layout,
             outproj_weight_gpu_lt.layout,
             outproj_bias_gpu_lt.layout,
-        ],
-        mamba_split_conv1d_scan_combined_gpu[
-            dtype,
-            DSTATE,
-            zxbcdt_gpu_lt.layout,
-            conv_weight_gpu_lt.layout,
-            conv_bias_gpu_lt.layout,
-            output_gpu_gpu_lt.layout,
-            x_gpu_lt.layout,
-            out_z_gpu_lt.layout,
-            dt_gpu_lt.layout,
-            A_gpu_lt.layout,
-            B_gpu_lt.layout,
-            C_gpu_lt.layout,
-            D_gpu_lt.layout,
-            z_gpu_lt.layout,
-            dt_bias_gpu_lt.layout,
-            rmsnorm_weight_gpu_lt.layout,
-            outproj_weight_gpu_lt.layout,
-            outproj_bias_gpu_lt.layout,
-        ],
+        ]
     ]()
 
     ctx.enqueue_function(

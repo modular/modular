@@ -89,7 +89,7 @@ def main() raises:
         result_tensor = TileTensor(result_device_buffer, layout)
 
         # Compile and enqueue the kernel
-        ctx.enqueue_function[vector_addition, vector_addition](
+        ctx.enqueue_function[vector_addition](
             lhs_tensor,
             rhs_tensor,
             result_tensor,

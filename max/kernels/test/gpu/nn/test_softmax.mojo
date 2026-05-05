@@ -361,7 +361,7 @@ def test_gpu_online_softmax[
         transpose_fragments,
     ]
 
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         in_device,
         out_device,
         grid_dim=1,

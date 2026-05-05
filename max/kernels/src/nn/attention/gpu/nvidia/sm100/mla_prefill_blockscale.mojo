@@ -1877,7 +1877,7 @@ def _mla_prefill_sm100_valid_length_dispatch[
     )
     comptime assert smem_use <= fa4_config.sm100_smem_carveout
 
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         q_tma_op,
         k_nope_tma_op,
         k_rope_tma_op,

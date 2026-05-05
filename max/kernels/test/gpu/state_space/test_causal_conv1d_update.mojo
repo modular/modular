@@ -249,20 +249,7 @@ def run_causal_conv1d_update_gpu[
                     weight_device_tt.LayoutType,
                     output_device_tt.LayoutType,
                     bias_device_tt.LayoutType,
-                ],
-                causal_conv1d_update_gpu[
-                    dtype,
-                    dtype,
-                    dtype,
-                    dtype,
-                    dtype,
-                    kNThreads,
-                    input_device_tt.LayoutType,
-                    conv_state_device_tt.LayoutType,
-                    weight_device_tt.LayoutType,
-                    output_device_tt.LayoutType,
-                    bias_device_tt.LayoutType,
-                ],
+                ]
             ]()
             ctx.enqueue_function(
                 compiled_func,
@@ -303,18 +290,7 @@ def run_causal_conv1d_update_gpu[
                     conv_state_device_tt.LayoutType,
                     weight_device_tt.LayoutType,
                     output_device_tt.LayoutType,
-                ],
-                causal_conv1d_update_gpu_no_bias[
-                    dtype,
-                    dtype,
-                    dtype,
-                    dtype,
-                    kNThreads,
-                    input_device_tt.LayoutType,
-                    conv_state_device_tt.LayoutType,
-                    weight_device_tt.LayoutType,
-                    output_device_tt.LayoutType,
-                ],
+                ]
             ]()
             ctx.enqueue_function(
                 compiled_func,

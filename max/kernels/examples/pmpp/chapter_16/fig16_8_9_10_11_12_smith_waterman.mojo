@@ -368,7 +368,7 @@ def main() raises:
         # Figure 16.8: Loop over anti-diagonals of tiles
         for d in range(2 * numTiles_x - 1):
             # Figure 16.8: Kernel call
-            ctx.enqueue_function_experimental[sw_kernel_square](
+            ctx.enqueue_function[sw_kernel_square](
                 d_sw,
                 d_rea,
                 d_ref,

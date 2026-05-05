@@ -41,6 +41,23 @@ This version is still a work in progress.
 
 ## GPU programming
 
+- `DeviceContext.enqueue_function[func]` and
+  `DeviceContext.compile_function[func]` now accept a single kernel argument
+  instead of requiring it to be passed twice. The previous two-argument forms
+  `enqueue_function[func, func]` and `compile_function[func, func]` are
+  deprecated. The transitional `enqueue_function_experimental` and
+  `compile_function_experimental` aliases are also deprecated; switch to
+  `enqueue_function` / `compile_function`.
+
+  ```mojo
+  # Before
+  ctx.enqueue_function[my_kernel, my_kernel](grid_dim=1, block_dim=1)
+  ctx.enqueue_function_experimental[my_kernel](grid_dim=1, block_dim=1)
+
+  # After
+  ctx.enqueue_function[my_kernel](grid_dim=1, block_dim=1)
+  ```
+
 ## ❌ Removed
 
 - The legacy `fn` keyword now produces an error instead of a warning. Please

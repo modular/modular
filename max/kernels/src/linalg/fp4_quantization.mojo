@@ -200,7 +200,7 @@ def quantize_dynamic_scaled_fp4fp8[
         num_max_threads=num_max_threads,
     ]
 
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         output,
         scales,
         input,
@@ -421,7 +421,7 @@ def block_scales_interleave_fp4[
         num_max_threads=num_max_threads,
     ]
 
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         input_scales,
         output_scales,
         block_dim=block_dim,
@@ -610,7 +610,7 @@ def naive_block_scaled_matmul[
         elementwise_lambda_fn=elementwise_lambda_fn,
     ]
 
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         c,
         a,
         b,
@@ -1130,7 +1130,7 @@ def quantize_dynamic_scaled_fp4_async[
         NUM_PIPELINES_STAGES=NUM_PIPELINES_STAGES,
     ]
 
-    ctx.enqueue_function[kernel, kernel, dump_asm=False](
+    ctx.enqueue_function[kernel, dump_asm=False](
         input_tma_op,
         output_tma_op,
         scales_tma_op,
@@ -1428,7 +1428,7 @@ def grouped_quantize_dynamic_scaled_fp4_async[
         sf_tensor.LayoutType,
     ]
 
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         output_tensor,
         scales_tma_op,
         input_tensor,
@@ -2176,7 +2176,7 @@ def quantize_mxfp4_amd[
         num_max_threads=num_max_threads,
     ]
 
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         output_tile,
         scales_tile,
         input_tt,
@@ -2250,7 +2250,7 @@ def quantize_dynamic_block_scaled_mxfp4[
             elements_per_thread=elements_per_thread,
         ]
 
-        ctx.enqueue_function[kernel, kernel](
+        ctx.enqueue_function[kernel](
             output.ptr,
             output_scales.ptr,
             input.ptr,
@@ -2398,7 +2398,7 @@ def matmul_dynamic_block_scaled_mxfp4[
             out_dtype, BLOCK_N
         ]
 
-        ctx.enqueue_function[kernel, kernel](
+        ctx.enqueue_function[kernel](
             c.ptr,
             a.ptr,
             b.ptr,
@@ -2488,7 +2488,7 @@ def grouped_matmul_block_scaled_mxfp4[
             out_dtype, BLOCK_N
         ]
 
-        ctx.enqueue_function[kernel, kernel](
+        ctx.enqueue_function[kernel](
             c.ptr,
             a.ptr,
             b.ptr,

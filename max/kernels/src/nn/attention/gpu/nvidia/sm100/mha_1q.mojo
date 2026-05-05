@@ -1840,7 +1840,7 @@ def _mha_sm100_enqueue[
         "Num Partitions:",
         partition.num_partitions(),
     )
-    ctx.enqueue_function[kernel_sm100, kernel_sm100](
+    ctx.enqueue_function[kernel_sm100](
         q_tma_op,
         k_tma_op,
         v_tma_op,

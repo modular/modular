@@ -1004,7 +1004,7 @@ def blackwell_kernel_6[
         num_pipeline_stages=max_pipeline_stages,
     ]
 
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         a_tma_op,
         b_tma_op,
         c_tma_op,

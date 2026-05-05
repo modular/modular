@@ -78,7 +78,7 @@ def shared_memory_alloc_example() raises:
         ctx.enqueue_memset(dev_buf, 0.0)
         var tensor = TileTensor(dev_buf, input_layout)
 
-        ctx.enqueue_function[kernel, kernel](
+        ctx.enqueue_function[kernel](
             tensor,
             grid_dim=(num_blocks, num_blocks),
             block_dim=(block_size, block_size),
@@ -142,7 +142,7 @@ def tile_tensor_distribute_example() raises:
             host_buf[i] = Int32(i)
         var tensor = TileTensor(dev_buf, layout)
         ctx.enqueue_copy(dev_buf, host_buf)
-        ctx.enqueue_function[kernel, kernel](
+        ctx.enqueue_function[kernel](
             tensor,
             grid_dim=(1, 1),
             block_dim=(8, 1),
@@ -200,7 +200,7 @@ def simple_copy_example():
         ctx.enqueue_copy(dev_buf, host_buf)
         var tensor = TileTensor(dev_buf, input_layout)
 
-        ctx.enqueue_function[kernel, kernel](
+        ctx.enqueue_function[kernel](
             tensor,
             grid_dim=(num_row_blocks, num_col_blocks),
             block_dim=(block_size, block_size),

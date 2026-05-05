@@ -2207,7 +2207,7 @@ def launch_mla_sm100_decode_enqueue_kernel[
     # the MLA decode kernel with the combine kernel, reducing host synchronization.
     comptime pdl_level = PDLLevel.OVERLAP_AT_END if config.decoding_warp_split_k else PDLLevel.OFF
 
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         q_tma,
         k_tma,
         o_tma,
@@ -2314,7 +2314,7 @@ def launch_mla_sm100_decode_native_fp8[
         q_len_fold=q_len_fold,
     ].kernel
     comptime pdl_level = PDLLevel.OVERLAP_AT_END if config.decoding_warp_split_k else PDLLevel.OFF
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         q_tma,
         k_tma,
         o_tma,
@@ -2427,7 +2427,7 @@ def launch_mla_sm100_decode_fp8_per_token_scale_rope_aware[
         has_per_token_scales=has_per_token_scales,
     ].kernel
     comptime pdl_level = PDLLevel.OVERLAP_AT_END if config.decoding_warp_split_k else PDLLevel.OFF
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         q_nope_tma,
         q_rope_tma,
         k_content_tma,
@@ -2636,7 +2636,7 @@ def launch_mla_sm100_decode_sparse[
     # Total extra: 548 bytes.
     comptime sparse_extra_smem = 4 * config.mbar_size + 4 + 2 * config.BN * 4
     comptime sparse_smem_used = config.smem_used + sparse_extra_smem
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         q_tma,
         k_nope_tma,
         k_rope_tma,
@@ -2805,7 +2805,7 @@ def launch_mla_sm100_decode_sparse_kv_fp8[
     comptime sparse_extra_smem = 4 * config.mbar_size + 4 + 2 * config.BN * 4
     comptime sparse_smem_used = config.smem_used + sparse_extra_smem
 
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         q_tma,
         k_tma,
         o_tma,

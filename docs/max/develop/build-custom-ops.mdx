@@ -353,7 +353,7 @@ def _vector_addition_gpu(
             output.store[1](idx, result)
 
     var num_blocks = ceildiv(vector_length, BLOCK_SIZE)
-    gpu_ctx.enqueue_function_experimental[vector_addition_gpu_kernel](
+    gpu_ctx.enqueue_function[vector_addition_gpu_kernel](
         vector_length, grid_dim=num_blocks, block_dim=BLOCK_SIZE
     )
 ```

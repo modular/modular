@@ -414,7 +414,7 @@ def _run_roundtrip[
     var dst_dev = ctx.enqueue_create_buffer[DType.float32](_NUM_ELEMENTS)
     ctx.enqueue_copy(src_dev, src_host)
 
-    ctx.enqueue_function_experimental[kernel_fn](
+    ctx.enqueue_function[kernel_fn](
         src_dev, dst_dev, grid_dim=(1), block_dim=(_BLOCK_DIM)
     )
 
@@ -484,9 +484,9 @@ def test_async_generic_to_shared_to_generic_16b_bf16(
     var dst_dev = ctx.enqueue_create_buffer[DType.bfloat16](_BF16_NUM_ELEMENTS)
     ctx.enqueue_copy(src_dev, src_host)
 
-    ctx.enqueue_function_experimental[
-        async_generic_to_shared_to_generic_16b_bf16_kernel
-    ](src_dev, dst_dev, grid_dim=(1), block_dim=(_BF16_ROWS))
+    ctx.enqueue_function[async_generic_to_shared_to_generic_16b_bf16_kernel](
+        src_dev, dst_dev, grid_dim=(1), block_dim=(_BF16_ROWS)
+    )
 
     var dst_host = ctx.enqueue_create_host_buffer[DType.bfloat16](
         _BF16_NUM_ELEMENTS

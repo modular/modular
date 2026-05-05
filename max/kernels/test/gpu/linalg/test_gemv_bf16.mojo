@@ -65,7 +65,7 @@ def run_matvec(M: Int, N: Int, K: Int, *, ctx: DeviceContext) raises:
     @always_inline
     @parameter
     def run_func_gemv(ctx: DeviceContext) raises:
-        ctx.enqueue_function_experimental[kernel](
+        ctx.enqueue_function[kernel](
             c_device,
             a_device,
             b_device,
@@ -95,7 +95,7 @@ def run_matvec(M: Int, N: Int, K: Int, *, ctx: DeviceContext) raises:
 
     # Create TileTensors for the naive kernel.
     # a/b are constructed as immutable to match the ImmutAnyOrigin
-    # parameters that matmul_kernel_naive expects (enqueue_function_experimental
+    # parameters that matmul_kernel_naive expects (enqueue_function
     # requires exact type matches).
     from std.memory import UnsafePointer
 
@@ -129,7 +129,7 @@ def run_matvec(M: Int, N: Int, K: Int, *, ctx: DeviceContext) raises:
             BLOCK_DIM,
         ]
 
-        ctx.enqueue_function_experimental[kernel](
+        ctx.enqueue_function[kernel](
             c_tt,
             a_tt,
             b_tt,

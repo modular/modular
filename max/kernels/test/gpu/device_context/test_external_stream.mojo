@@ -70,7 +70,7 @@ def main() raises:
         # Run a kernel on this new stream
         # Note: DeviceStream currently only runs pre-compiled kernels, so the
         # compilation step here is needed.
-        var func = ctx.compile_function[scale_kernel, scale_kernel]()
+        var func = ctx.compile_function[scale_kernel]()
         stream.enqueue_function(
             func,
             dev_in,

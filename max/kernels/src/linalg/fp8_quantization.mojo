@@ -250,7 +250,7 @@ def quantize_tensor_dynamic_scaled_fp8[
                 type_of(scales).LayoutType,
             ]
 
-            ctx.enqueue_function[scales_kernel, scales_kernel](
+            ctx.enqueue_function[scales_kernel](
                 scales,
                 scale_ub.cast[scales_dtype](),
                 grid_dim=(num_rows, num_cols // group_size, 1),
@@ -271,7 +271,7 @@ def quantize_tensor_dynamic_scaled_fp8[
                 type_of(scales).LayoutType,
             ]
 
-            ctx.enqueue_function[quant_kernel, quant_kernel](
+            ctx.enqueue_function[quant_kernel](
                 scaled_output,
                 scales,
                 scale_ub.cast[scales_dtype](),
@@ -293,7 +293,7 @@ def quantize_tensor_dynamic_scaled_fp8[
                 type_of(scales).LayoutType,
             ]
 
-            ctx.enqueue_function[kernel, kernel](
+            ctx.enqueue_function[kernel](
                 scaled_output,
                 scales,
                 scale_ub.cast[scales_dtype](),
@@ -392,7 +392,7 @@ def quantize_dynamic_scaled_fp8[
                 type_of(scales).LayoutType,
             ]
 
-            ctx.enqueue_function[kernel, kernel](
+            ctx.enqueue_function[kernel](
                 scaled_output,
                 scales,
                 scale_ub.cast[scales_dtype](),
@@ -685,7 +685,7 @@ def batched_quantize_dynamic_scaled_fp8[
         type_of(scales).LayoutType,
     ]
 
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         scaled_output,
         scales,
         scale_ub.cast[scales_dtype](),
@@ -1245,7 +1245,7 @@ def naive_blockwise_scaled_fp8_matmul[
         scales_granularity_mnk=scales_granularity_mnk,
     ]
 
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         c_tt,
         a_tt,
         b_tt,
@@ -1481,7 +1481,7 @@ def naive_blockwise_scaled_fp8_grouped_matmul[
         elementwise_lambda_fn,
     ]
 
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         c,
         a,
         b,

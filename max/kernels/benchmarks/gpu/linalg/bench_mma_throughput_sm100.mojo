@@ -584,7 +584,7 @@ def main() raises:
         @parameter
         @always_inline
         def kernel_launch(ctx: DeviceContext) raises:
-            ctx.enqueue_function[kernel, kernel](
+            ctx.enqueue_function[kernel](
                 a_tma_op,
                 b_tma_op,
                 sink.device_tensor(),

@@ -375,7 +375,7 @@ def test_combine[
     @parameter
     def run_dispatch_async(dev_idx: Int, slot_idx: Int) raises:
         var ctx = list_of_ctx[dev_idx]
-        ctx.enqueue_function[dispatch_async, dispatch_async](
+        ctx.enqueue_function[dispatch_async](
             get_input_tokens_tensor(dev_idx, slot_idx),
             get_topk_ids_tensor(dev_idx, slot_idx),
             get_dispatch_send_buf_ptr(dev_idx, slot_idx),
@@ -391,7 +391,7 @@ def test_combine[
     @parameter
     def run_dispatch_async_wait(dev_idx: Int, slot_idx: Int) raises:
         var ctx = list_of_ctx[dev_idx]
-        ctx.enqueue_function[dispatch_wait, dispatch_wait](
+        ctx.enqueue_function[dispatch_wait](
             type_of(format_handler)(get_output_tensor(dev_idx, slot_idx)),
             get_row_offsets_tensor(dev_idx, slot_idx),
             get_expert_ids_tensor(dev_idx, slot_idx),
@@ -414,7 +414,7 @@ def test_combine[
     @parameter
     def run_combine_async(dev_idx: Int, slot_idx: Int) raises:
         var ctx = list_of_ctx[dev_idx]
-        ctx.enqueue_function[combine_async, combine_async](
+        ctx.enqueue_function[combine_async](
             get_output_tensor(dev_idx, slot_idx).as_immut(),
             get_src_token_info_tensor(dev_idx, slot_idx).as_immut(),
             get_combine_send_buf_ptr(dev_idx, slot_idx),
@@ -430,7 +430,7 @@ def test_combine[
     @parameter
     def run_combine_async_wait(dev_idx: Int, slot_idx: Int) raises:
         var ctx = list_of_ctx[dev_idx]
-        ctx.enqueue_function[combine_wait, combine_wait](
+        ctx.enqueue_function[combine_wait](
             get_output_2_tensor(dev_idx, slot_idx),
             get_combine_recv_buf_ptr(dev_idx, slot_idx),
             get_combine_recv_count_ptr(dev_idx, slot_idx),

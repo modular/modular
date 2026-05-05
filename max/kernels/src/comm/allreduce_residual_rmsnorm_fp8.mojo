@@ -701,7 +701,7 @@ def _allreduce_rmsnorm_fp8_launch[
         has_residual=has_residual,
         output_fn=output_fn,
     ]
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         src_ptrs,
         gamma,
         scale_output,
@@ -854,7 +854,7 @@ def _allreduce_rmsnorm_fp8_launch_2stage[
         has_residual=has_residual,
         output_fn=output_fn,
     ]
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         src_ptrs,
         gamma,
         scale_output,

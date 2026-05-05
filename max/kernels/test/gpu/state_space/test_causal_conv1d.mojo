@@ -228,20 +228,7 @@ def run_causal_conv1d_gpu[
                 weight_device_tt.LayoutType,
                 output_device_tt.LayoutType,
                 bias_device_tt.LayoutType,
-            ],
-            causal_conv1d_channel_first_fwd_gpu[
-                dtype,
-                dtype,
-                dtype,
-                kNThreads,
-                kWidth,
-                kNElts,
-                dtype,
-                input_device_tt.LayoutType,
-                weight_device_tt.LayoutType,
-                output_device_tt.LayoutType,
-                bias_device_tt.LayoutType,
-            ],
+            ]
         ]()
         var silu_activation_int8 = Int8(silu_activation)
         with ctx.push_context():
@@ -283,20 +270,7 @@ def run_causal_conv1d_gpu[
                 weight_device_tt.LayoutType,
                 output_device_tt.LayoutType,
                 bias_device_tt.LayoutType,
-            ],
-            causal_conv1d_channel_first_fwd_gpu[
-                dtype,
-                dtype,
-                dtype,
-                kNThreads,
-                kWidth,
-                kNElts,
-                dtype,
-                input_device_tt.LayoutType,
-                weight_device_tt.LayoutType,
-                output_device_tt.LayoutType,
-                bias_device_tt.LayoutType,
-            ],
+            ]
         ]()
         var silu_activation_int8 = Int8(silu_activation)
         with ctx.push_context():
@@ -338,20 +312,7 @@ def run_causal_conv1d_gpu[
                 weight_device_tt.LayoutType,
                 output_device_tt.LayoutType,
                 bias_device_tt.LayoutType,
-            ],
-            causal_conv1d_channel_first_fwd_gpu[
-                dtype,
-                dtype,
-                dtype,
-                kNThreads,
-                kWidth,
-                kNElts,
-                dtype,
-                input_device_tt.LayoutType,
-                weight_device_tt.LayoutType,
-                output_device_tt.LayoutType,
-                bias_device_tt.LayoutType,
-            ],
+            ]
         ]()
         var silu_activation_int8 = Int8(silu_activation)
         with ctx.push_context():
@@ -393,20 +354,7 @@ def run_causal_conv1d_gpu[
                 weight_device_tt.LayoutType,
                 output_device_tt.LayoutType,
                 bias_device_tt.LayoutType,
-            ],
-            causal_conv1d_channel_first_fwd_gpu[
-                dtype,
-                dtype,
-                dtype,
-                kNThreads,
-                kWidth,
-                kNElts,
-                dtype,
-                input_device_tt.LayoutType,
-                weight_device_tt.LayoutType,
-                output_device_tt.LayoutType,
-                bias_device_tt.LayoutType,
-            ],
+            ]
         ]()
         var silu_activation_int8 = Int8(silu_activation)
         with ctx.push_context():

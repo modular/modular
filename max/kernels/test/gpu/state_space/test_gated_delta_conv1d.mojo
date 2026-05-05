@@ -222,18 +222,7 @@ def run_gated_delta_conv1d_gpu[
             input_row_offsets_tt.LayoutType,
             conv_output_tt.LayoutType,
             conv_state_out_tt.LayoutType,
-        ],
-        gated_delta_conv1d_fwd_gpu[
-            dtype,
-            KERNEL_SIZE,
-            CONV1D_BLOCK_DIM,
-            qkv_input_tt.LayoutType,
-            conv_weight_tt.LayoutType,
-            conv_state_in_tt.LayoutType,
-            input_row_offsets_tt.LayoutType,
-            conv_output_tt.LayoutType,
-            conv_state_out_tt.LayoutType,
-        ],
+        ]
     ]()
 
     with ctx.push_context():

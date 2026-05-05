@@ -134,7 +134,7 @@ def _test_arithmetic[width: Int, mode: String](ctx: DeviceContext) raises:
     comptime if mode == "add":
         comptime kernel = simd_add_kernel[width]
 
-        ctx.enqueue_function_experimental[kernel](
+        ctx.enqueue_function[kernel](
             a_device_buffer,
             b_device_buffer,
             c_device_buffer,
@@ -146,7 +146,7 @@ def _test_arithmetic[width: Int, mode: String](ctx: DeviceContext) raises:
     elif mode == "mult":
         comptime kernel = simd_mult_kernel[width]
 
-        ctx.enqueue_function_experimental[kernel](
+        ctx.enqueue_function[kernel](
             a_device_buffer,
             b_device_buffer,
             c_device_buffer,
@@ -159,7 +159,7 @@ def _test_arithmetic[width: Int, mode: String](ctx: DeviceContext) raises:
         comptime kernel = simd_fma_kernel[width]
 
         # Execute kernel on GPU
-        ctx.enqueue_function_experimental[kernel](
+        ctx.enqueue_function[kernel](
             a_device_buffer,
             b_device_buffer,
             c_device_buffer,

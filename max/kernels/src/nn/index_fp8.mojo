@@ -353,7 +353,7 @@ def fp8_index[
         _is_cache_length_accurate=True,
     ]
 
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         output,
         q.as_immut(),
         q_s,
@@ -602,7 +602,7 @@ def fp8_index_naive[
         type_of(k_operand),
     ]
 
-    ctx.enqueue_function[mm, mm](
+    ctx.enqueue_function[mm](
         logits_tensor,
         q_lt,
         q_s_lt,
@@ -625,7 +625,7 @@ def fp8_index_naive[
         type_of(k_operand),
     ]
 
-    ctx.enqueue_function[reduce_logits, reduce_logits](
+    ctx.enqueue_function[reduce_logits](
         logits_tensor,
         output_lt,
         k_s_lt,

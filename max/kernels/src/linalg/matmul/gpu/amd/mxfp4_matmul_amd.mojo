@@ -839,7 +839,7 @@ def _launch_mxfp4[
         type_of(b_scales).LayoutType,
     ]
 
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         c,
         a,
         b,

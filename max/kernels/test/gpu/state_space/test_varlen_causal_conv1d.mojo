@@ -315,28 +315,7 @@ def run_varlen_causal_conv1d_fwd_gpu[
                 has_initial_state_device_tt.LayoutType,
                 conv_states_device_tt.LayoutType,
                 output_device_tt.LayoutType,
-            ],
-            causal_conv1d_varlen_fwd_gpu[
-                dtype,
-                dtype,
-                dtype,
-                dtype,
-                DType.int32,
-                DType.int32,
-                DType.bool,
-                dtype,
-                kWidth,
-                BLOCK_DIM,
-                BLOCK_SEQ,
-                x_device_tt.LayoutType,
-                weight_device_tt.LayoutType,
-                bias_device_tt.LayoutType,
-                query_start_loc_device_tt.LayoutType,
-                cache_indices_device_tt.LayoutType,
-                has_initial_state_device_tt.LayoutType,
-                conv_states_device_tt.LayoutType,
-                output_device_tt.LayoutType,
-            ],
+            ]
         ]()
         with ctx.push_context():
             ctx.enqueue_function(
@@ -393,28 +372,7 @@ def run_varlen_causal_conv1d_fwd_gpu[
                 has_initial_state_device_tt.LayoutType,
                 conv_states_device_tt.LayoutType,
                 output_device_tt.LayoutType,
-            ],
-            causal_conv1d_varlen_fwd_gpu[
-                dtype,
-                dtype,
-                dtype,
-                dtype,
-                DType.int32,
-                DType.int32,
-                DType.bool,
-                dtype,
-                kWidth,
-                BLOCK_DIM,
-                BLOCK_SEQ,
-                x_device_tt.LayoutType,
-                weight_device_tt.LayoutType,
-                bias_device_tt.LayoutType,
-                query_start_loc_device_tt.LayoutType,
-                cache_indices_device_tt.LayoutType,
-                has_initial_state_device_tt.LayoutType,
-                conv_states_device_tt.LayoutType,
-                output_device_tt.LayoutType,
-            ],
+            ]
         ]()
         with ctx.push_context():
             ctx.enqueue_function(
@@ -471,28 +429,7 @@ def run_varlen_causal_conv1d_fwd_gpu[
                 has_initial_state_device_tt.LayoutType,
                 conv_states_device_tt.LayoutType,
                 output_device_tt.LayoutType,
-            ],
-            causal_conv1d_varlen_fwd_gpu[
-                dtype,
-                dtype,
-                dtype,
-                dtype,
-                DType.int32,
-                DType.int32,
-                DType.bool,
-                dtype,
-                kWidth,
-                BLOCK_DIM,
-                BLOCK_SEQ,
-                x_device_tt.LayoutType,
-                weight_device_tt.LayoutType,
-                bias_device_tt.LayoutType,
-                query_start_loc_device_tt.LayoutType,
-                cache_indices_device_tt.LayoutType,
-                has_initial_state_device_tt.LayoutType,
-                conv_states_device_tt.LayoutType,
-                output_device_tt.LayoutType,
-            ],
+            ]
         ]()
         with ctx.push_context():
             ctx.enqueue_function(
@@ -549,28 +486,7 @@ def run_varlen_causal_conv1d_fwd_gpu[
                 has_initial_state_device_tt.LayoutType,
                 conv_states_device_tt.LayoutType,
                 output_device_tt.LayoutType,
-            ],
-            causal_conv1d_varlen_fwd_gpu[
-                dtype,
-                dtype,
-                dtype,
-                dtype,
-                DType.int32,
-                DType.int32,
-                DType.bool,
-                dtype,
-                kWidth,
-                BLOCK_DIM,
-                BLOCK_SEQ,
-                x_device_tt.LayoutType,
-                weight_device_tt.LayoutType,
-                bias_device_tt.LayoutType,
-                query_start_loc_device_tt.LayoutType,
-                cache_indices_device_tt.LayoutType,
-                has_initial_state_device_tt.LayoutType,
-                conv_states_device_tt.LayoutType,
-                output_device_tt.LayoutType,
-            ],
+            ]
         ]()
         with ctx.push_context():
             ctx.enqueue_function(
@@ -951,25 +867,7 @@ def run_varlen_causal_conv1d_update_gpu[
                 cache_seqlens_device_tt.LayoutType,
                 conv_state_indices_device_tt.LayoutType,
                 output_upd_device_tt.LayoutType,
-            ],
-            causal_conv1d_varlen_update_gpu[
-                dtype,
-                dtype,
-                dtype,
-                dtype,
-                dtype,
-                DType.int32,
-                DType.int32,
-                kWidth,
-                BLOCK_DIM,
-                x_upd_device_tt.LayoutType,
-                weight_upd_device_tt.LayoutType,
-                bias_upd_device_tt.LayoutType,
-                conv_state_upd_device_tt.LayoutType,
-                cache_seqlens_device_tt.LayoutType,
-                conv_state_indices_device_tt.LayoutType,
-                output_upd_device_tt.LayoutType,
-            ],
+            ]
         ]()
         with ctx.push_context():
             ctx.enqueue_function(
@@ -1024,25 +922,7 @@ def run_varlen_causal_conv1d_update_gpu[
                 cache_seqlens_device_tt.LayoutType,
                 conv_state_indices_device_tt.LayoutType,
                 output_upd_device_tt.LayoutType,
-            ],
-            causal_conv1d_varlen_update_gpu[
-                dtype,
-                dtype,
-                dtype,
-                dtype,
-                dtype,
-                DType.int32,
-                DType.int32,
-                kWidth,
-                BLOCK_DIM,
-                x_upd_device_tt.LayoutType,
-                weight_upd_device_tt.LayoutType,
-                bias_upd_device_tt.LayoutType,
-                conv_state_upd_device_tt.LayoutType,
-                cache_seqlens_device_tt.LayoutType,
-                conv_state_indices_device_tt.LayoutType,
-                output_upd_device_tt.LayoutType,
-            ],
+            ]
         ]()
         with ctx.push_context():
             ctx.enqueue_function(
@@ -1097,25 +977,7 @@ def run_varlen_causal_conv1d_update_gpu[
                 cache_seqlens_device_tt.LayoutType,
                 conv_state_indices_device_tt.LayoutType,
                 output_upd_device_tt.LayoutType,
-            ],
-            causal_conv1d_varlen_update_gpu[
-                dtype,
-                dtype,
-                dtype,
-                dtype,
-                dtype,
-                DType.int32,
-                DType.int32,
-                kWidth,
-                BLOCK_DIM,
-                x_upd_device_tt.LayoutType,
-                weight_upd_device_tt.LayoutType,
-                bias_upd_device_tt.LayoutType,
-                conv_state_upd_device_tt.LayoutType,
-                cache_seqlens_device_tt.LayoutType,
-                conv_state_indices_device_tt.LayoutType,
-                output_upd_device_tt.LayoutType,
-            ],
+            ]
         ]()
         with ctx.push_context():
             ctx.enqueue_function(
@@ -1170,25 +1032,7 @@ def run_varlen_causal_conv1d_update_gpu[
                 cache_seqlens_device_tt.LayoutType,
                 conv_state_indices_device_tt.LayoutType,
                 output_upd_device_tt.LayoutType,
-            ],
-            causal_conv1d_varlen_update_gpu[
-                dtype,
-                dtype,
-                dtype,
-                dtype,
-                dtype,
-                DType.int32,
-                DType.int32,
-                kWidth,
-                BLOCK_DIM,
-                x_upd_device_tt.LayoutType,
-                weight_upd_device_tt.LayoutType,
-                bias_upd_device_tt.LayoutType,
-                conv_state_upd_device_tt.LayoutType,
-                cache_seqlens_device_tt.LayoutType,
-                conv_state_indices_device_tt.LayoutType,
-                output_upd_device_tt.LayoutType,
-            ],
+            ]
         ]()
         with ctx.push_context():
             ctx.enqueue_function(

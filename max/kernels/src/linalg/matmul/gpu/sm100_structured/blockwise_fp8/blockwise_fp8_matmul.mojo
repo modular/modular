@@ -214,7 +214,7 @@ def blockwise_fp8_matmul[
 
     var problem_shape = StaticTuple[Int32, 3](Int32(M), Int32(N), Int32(K))
 
-    ctx.enqueue_function[Kernel.run, Kernel.run, dump_asm=False](
+    ctx.enqueue_function[Kernel.run, dump_asm=False](
         a_tma_op,
         b_tma_op,
         c_tma_op,

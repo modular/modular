@@ -1726,7 +1726,7 @@ def _topk_gpu[
             comptime kernel_1 = _topk_stage1_old_no_shmem[
                 dtype, out_idx_type, largest
             ]
-            ctx.enqueue_function[kernel_1, kernel_1](
+            ctx.enqueue_function[kernel_1](
                 k_ptr,
                 max_k,
                 N,
@@ -1741,7 +1741,7 @@ def _topk_gpu[
         else:
             var shared_mem_bytes_1 = _get_shmem_size_stg_1[dtype](block_size)
             comptime kernel_1 = _topk_stage1_old[dtype, out_idx_type, largest]
-            ctx.enqueue_function[kernel_1, kernel_1](
+            ctx.enqueue_function[kernel_1](
                 k_ptr,
                 max_k,
                 N,
@@ -1762,7 +1762,7 @@ def _topk_gpu[
             comptime kernel_1 = _topk_stage1_no_shmem[
                 dtype, out_idx_type, largest
             ]
-            ctx.enqueue_function[kernel_1, kernel_1](
+            ctx.enqueue_function[kernel_1](
                 k_ptr,
                 max_k,
                 N,
@@ -1776,7 +1776,7 @@ def _topk_gpu[
             )
         else:
             comptime kernel_1 = _topk_stage1[dtype, out_idx_type, largest]
-            ctx.enqueue_function[kernel_1, kernel_1](
+            ctx.enqueue_function[kernel_1](
                 k_ptr,
                 max_k,
                 N,
@@ -1845,7 +1845,7 @@ def _topk_gpu[
 
     # Enqueue the second kernel (stage 2)
     comptime kernel_2 = _topk_stage2[dtype, out_idx_type, sampling, largest]
-    ctx.enqueue_function[kernel_2, kernel_2](
+    ctx.enqueue_function[kernel_2](
         k_ptr,
         max_k,
         num_blocks_per_input_,
@@ -2182,7 +2182,7 @@ def _topk_topp_sampling_fi[
     if min_p:
         comptime MASK_BLOCK_SIZE = 256
         comptime mask_kernel = apply_min_p_mask_kernel[dtype, MASK_BLOCK_SIZE]
-        ctx.enqueue_function[mask_kernel, mask_kernel](
+        ctx.enqueue_function[mask_kernel](
             probs_buf,
             min_p.value().to_device_buffer(ctx),
             d,
@@ -2521,7 +2521,7 @@ def gumbel_sampling_gpu[
         if seed:
             seed_ptr = seed.value().ptr
 
-        ctx.enqueue_function[gumbel_kernel, gumbel_kernel](
+        ctx.enqueue_function[gumbel_kernel](
             noised_input,
             input.as_immut(),
             temperature_ptr,

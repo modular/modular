@@ -128,7 +128,7 @@ def main() raises:
         zeros.free()
 
         # Launch kernel
-        ctx.enqueue_function_experimental[histogram_kernel](
+        ctx.enqueue_function[histogram_kernel](
             d_image,
             d_bins,
             d_bins_pool,

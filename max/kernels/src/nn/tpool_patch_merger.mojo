@@ -189,7 +189,7 @@ def tpool_patch_merger[
             simd_width,
             num_threads,
         ]
-        ctx.enqueue_function[kernel, kernel](
+        ctx.enqueue_function[kernel](
             x.as_immut(),
             output,
             bounds.as_immut(),
@@ -213,7 +213,7 @@ def tpool_patch_merger[
             1,
             num_threads,
         ]
-        ctx.enqueue_function[kernel, kernel](
+        ctx.enqueue_function[kernel](
             x.as_immut(),
             output,
             bounds.as_immut(),

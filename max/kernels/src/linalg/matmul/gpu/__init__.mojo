@@ -1123,7 +1123,7 @@ def _matmul_gpu[
                 WARP_TILE_N=WARP_TILE_N,
             ]
 
-            ctx.enqueue_function[rdna_kernel, rdna_kernel](
+            ctx.enqueue_function[rdna_kernel](
                 c,
                 a,
                 b,
@@ -1191,7 +1191,7 @@ def _matmul_gpu[
         elementwise_lambda_fn=elementwise_lambda_wrapper,
     ]
 
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         c,
         a,
         b,
@@ -1312,7 +1312,7 @@ def multistage_gemm[
                     enable_swizzle=True,
                     elementwise_lambda_fn=elementwise_lambda_fn,
                 ].run[a.LayoutType, b.LayoutType, c.LayoutType]
-                ctx.enqueue_function[k, k](
+                ctx.enqueue_function[k](
                     a,
                     b,
                     c,
@@ -1336,7 +1336,7 @@ def multistage_gemm[
                     enable_swizzle=True,
                     elementwise_lambda_fn=elementwise_lambda_fn,
                 ].run[a.LayoutType, b.LayoutType, c.LayoutType]
-                ctx.enqueue_function[k, k](
+                ctx.enqueue_function[k](
                     a,
                     b,
                     c,
@@ -1363,7 +1363,7 @@ def multistage_gemm[
                     std_config,
                     elementwise_lambda_fn,
                 ].run[c.LayoutType, a.LayoutType, b.LayoutType]
-                ctx.enqueue_function[k, k](
+                ctx.enqueue_function[k](
                     c,
                     a,
                     b,
@@ -1401,7 +1401,7 @@ def multistage_gemm[
                 bf16_config,
                 elementwise_lambda_fn,
             ].run[c.LayoutType, a.LayoutType, b.LayoutType]
-            ctx.enqueue_function[k, k](
+            ctx.enqueue_function[k](
                 c,
                 a,
                 b,
@@ -1421,7 +1421,7 @@ def multistage_gemm[
             config=config,
             elementwise_lambda_fn=elementwise_lambda_fn,
         ]
-        ctx.enqueue_function[gemm_kernel_type, gemm_kernel_type](
+        ctx.enqueue_function[gemm_kernel_type](
             c,
             a,
             b,
@@ -1501,7 +1501,7 @@ def multistage_gemm[
         ]
 
         comptime if has_amd_gpu_accelerator() and not has_amd_rdna_gpu_accelerator():
-            ctx.enqueue_function[gemm_kernel_type, gemm_kernel_type](
+            ctx.enqueue_function[gemm_kernel_type](
                 tensor_c,
                 tensor_a,
                 tensor_b,
@@ -1511,7 +1511,7 @@ def multistage_gemm[
                 block_dim=runtime_config.block_dim(),
             )
         else:
-            ctx.enqueue_function[gemm_kernel_type, gemm_kernel_type](
+            ctx.enqueue_function[gemm_kernel_type](
                 tensor_c,
                 tensor_a,
                 tensor_b,
@@ -1577,7 +1577,7 @@ def multistage_gemm[
                     enable_swizzle=True,
                     elementwise_lambda_fn=elementwise_lambda_fn,
                 ].run[a.LayoutType, b.LayoutType, c.LayoutType]
-                ctx.enqueue_function[k, k](
+                ctx.enqueue_function[k](
                     a,
                     b,
                     c,
@@ -1601,7 +1601,7 @@ def multistage_gemm[
                     enable_swizzle=True,
                     elementwise_lambda_fn=elementwise_lambda_fn,
                 ].run[a.LayoutType, b.LayoutType, c.LayoutType]
-                ctx.enqueue_function[k, k](
+                ctx.enqueue_function[k](
                     a,
                     b,
                     c,
@@ -1628,7 +1628,7 @@ def multistage_gemm[
                     std_config,
                     elementwise_lambda_fn,
                 ].run[c.LayoutType, a.LayoutType, b.LayoutType]
-                ctx.enqueue_function[k, k](
+                ctx.enqueue_function[k](
                     c,
                     a,
                     b,
@@ -1666,7 +1666,7 @@ def multistage_gemm[
                 bf16_config,
                 elementwise_lambda_fn,
             ].run[c.LayoutType, a.LayoutType, b.LayoutType]
-            ctx.enqueue_function[k, k](
+            ctx.enqueue_function[k](
                 c,
                 a,
                 b,
@@ -1687,7 +1687,7 @@ def multistage_gemm[
             elementwise_lambda_fn=elementwise_lambda_fn,
         ]
 
-        ctx.enqueue_function[gemm_kernel_type, gemm_kernel_type](
+        ctx.enqueue_function[gemm_kernel_type](
             c,
             a,
             b,

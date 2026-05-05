@@ -158,7 +158,7 @@ def main() raises:
     var block_size = 256
     var num_blocks = (numatoms + block_size - 1) // block_size
 
-    ctx.enqueue_function[cenergy_scatter_kernel, cenergy_scatter_kernel](
+    ctx.enqueue_function[cenergy_scatter_kernel](
         d_energygrid,
         d_atoms,
         vol_dim.x,

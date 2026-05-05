@@ -876,7 +876,7 @@ def _softmax_gpu[
                 output.LayoutType,
                 output.origin,
             ]
-            ctx.enqueue_function[kernel, kernel](
+            ctx.enqueue_function[kernel](
                 shape,
                 output,
                 Float32(1),
@@ -910,7 +910,7 @@ def _softmax_gpu[
             sink=sink,
             logsoftmax=logsoftmax,
         ]
-        ctx.enqueue_function[kernel, kernel](
+        ctx.enqueue_function[kernel](
             shape,
             output,
             sink_weights.unsafe_value(),
@@ -1186,7 +1186,7 @@ def softmax_with_temperature[
         output.LayoutType,
         output.origin,
     ]
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         IndexList[2](batch_size, d),
         output,
         temperature,

@@ -1567,7 +1567,7 @@ def multistage_gemm_q[
                         elementwise_lambda_fn,
                     ]
 
-                    ctx.enqueue_function[gemm_kernel_type, gemm_kernel_type](
+                    ctx.enqueue_function[gemm_kernel_type](
                         c,
                         a,
                         b,
@@ -1595,7 +1595,7 @@ def multistage_gemm_q[
         elementwise_lambda_fn,
     ]
 
-    ctx.enqueue_function[gemm_kernel_type, gemm_kernel_type](
+    ctx.enqueue_function[gemm_kernel_type](
         c,
         a,
         b,
@@ -2168,7 +2168,7 @@ def gpu_qint4_repack_Q4_0[
         b.layout, b_packed.layout, DType.bfloat16
     ]
 
-    cuda_ctx.enqueue_function[repack, repack](
+    cuda_ctx.enqueue_function[repack](
         b,
         b_packed,
         grid_dim=(ceildiv(N, BN), ceildiv(K, BK), 1),
@@ -2229,7 +2229,7 @@ def gpu_qint4_repack_GPTQ[
             perm_layout=perm_idx.T.layout,
         ]
 
-        cuda_ctx.enqueue_function[repack, repack](
+        cuda_ctx.enqueue_function[repack](
             b,
             b_packed,
             perm_idx.value(),
@@ -2251,7 +2251,7 @@ def gpu_qint4_repack_GPTQ[
             DType.int32, Layout(), MutExternalOrigin
         ](None)
 
-        cuda_ctx.enqueue_function[repack, repack](
+        cuda_ctx.enqueue_function[repack](
             b,
             b_packed,
             null_tensor,

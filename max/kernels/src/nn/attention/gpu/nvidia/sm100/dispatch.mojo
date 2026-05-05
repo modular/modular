@@ -220,7 +220,7 @@ def mha_sm100_dispatch[
                 var cluster_dim: OptionalReg[Dim] = None
                 comptime if pair_cta:
                     cluster_dim = Dim(2, 1, 1)
-                ctx.enqueue_function[kernel, kernel](
+                ctx.enqueue_function[kernel](
                     q_tma_op,
                     k_tma_op,
                     v_tma_op,

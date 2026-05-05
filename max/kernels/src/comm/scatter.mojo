@@ -188,7 +188,7 @@ def scatter[
         dp_size,
     ]
 
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](output_buffer.ptr),
         input_ptrs,
         chunk_num_elems,

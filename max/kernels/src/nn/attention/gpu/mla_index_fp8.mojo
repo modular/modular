@@ -274,7 +274,7 @@ def mla_indexer_ragged_float8_paged[
         depth,
     ]
 
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         scores_tile,
         q.as_immut(),
         q_s,
@@ -308,7 +308,7 @@ def mla_indexer_ragged_float8_paged[
                     ImmutOrigin(input_row_offsets.origin),
                 ]
 
-                ctx.enqueue_function[mask_kernel, mask_kernel](
+                ctx.enqueue_function[mask_kernel](
                     scores_tile,
                     input_row_offsets.as_immut(),
                     mask,
@@ -373,7 +373,7 @@ def mla_indexer_ragged_float8_paged[
     var block_size = ceildiv(top_k, 32) * 32
     block_size = min(block_size, 1024)  # Cap at max threads per block
 
-    ctx.enqueue_function[fill_kernel, fill_kernel](
+    ctx.enqueue_function[fill_kernel](
         rebind[UnsafePointer[Scalar[DType.int32], MutAnyOrigin]](
             output_indices.ptr
         ),

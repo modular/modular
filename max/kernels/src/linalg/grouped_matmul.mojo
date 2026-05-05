@@ -165,7 +165,7 @@ def naive_epilogue[
     var N = Int(c.dim[1]())
     comptime simd_size = simd_width_of[c_type]()
     var block_dim = (128 // simd_size, simd_size, 1)
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         c,
         grid_dim=(ceildiv(N, block_dim[0]), ceildiv(M, block_dim[1]), 1),
         block_dim=block_dim,
@@ -622,7 +622,7 @@ def grouped_matmul_sm100[
         elementwise_lambda_fn=elementwise_lambda_fn,
     ]
 
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         a_tma_op,
         b_tma_op,
         a_offsets,
@@ -945,7 +945,7 @@ def grouped_matmul_amd[
             config,
             elementwise_lambda_fn=elementwise_lambda_fn,
         ]
-        ctx.enqueue_function[kernel, kernel](
+        ctx.enqueue_function[kernel](
             c,
             a,
             b_2d,
@@ -1195,7 +1195,7 @@ def naive_grouped_matmul[
         type_of(expert_ids).LayoutType,
         elementwise_lambda_fn=elementwise_lambda_fn,
     ]
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         c,
         a.as_immut(),
         b.as_immut(),

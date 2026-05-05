@@ -735,7 +735,7 @@ def sm100_blockscaled_mxfp8_cta_pair[
         cta_group=cta_group,
     ]
 
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         a_tma_op,
         b_tma_op,
         a_scales_tma_op,

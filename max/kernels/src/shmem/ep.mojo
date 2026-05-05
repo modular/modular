@@ -201,7 +201,7 @@ def ep_dispatch_async_kernel_api[
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
         task_id=get_safe_task_id(context),
     ):
-        var func = gpu_ctx.compile_function[dispatch_async, dispatch_async]()
+        var func = gpu_ctx.compile_function[dispatch_async]()
 
         comptime if use_shmem:
             var cached_module_key = String(t"EP_DISPATCH_INITED_DEV_{gpu_id}")
@@ -359,7 +359,7 @@ def ep_dispatch_wait_kernel_api[
         )
 
         var smem_size = UInt32(token_fmt_type.dispatch_smem_size)
-        gpu_ctx.enqueue_function[dispatch_wait, dispatch_wait](
+        gpu_ctx.enqueue_function[dispatch_wait](
             token_handler,
             row_offsets,
             expert_ids,
@@ -524,7 +524,7 @@ def ep_fused_dispatch_kernel_api[
         task_id=get_safe_task_id(context),
     ):
         var smem_size = UInt32(token_fmt_type.dispatch_smem_size)
-        var func = gpu_ctx.compile_function[fused_dispatch, fused_dispatch](
+        var func = gpu_ctx.compile_function[fused_dispatch](
             func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
                 smem_size
             ),
@@ -694,7 +694,7 @@ def ep_combine_async_kernel_api[
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
         task_id=get_safe_task_id(context),
     ):
-        var func = gpu_ctx.compile_function[combine_async, combine_async]()
+        var func = gpu_ctx.compile_function[combine_async]()
 
         comptime if use_shmem:
             var cached_module_key = String(t"EP_COMBINE_INITED_DEV_{gpu_id}")
@@ -862,7 +862,7 @@ def ep_combine_wait_kernel_api[
             )
         )
 
-        gpu_ctx.enqueue_function[combine_wait, combine_wait](
+        gpu_ctx.enqueue_function[combine_wait](
             output_tokens,
             recv_buf_ptr,
             recv_count_ptr,
@@ -1020,7 +1020,7 @@ def ep_fused_combine_kernel_api[
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
         task_id=get_safe_task_id(context),
     ):
-        var func = gpu_ctx.compile_function[fused_combine, fused_combine]()
+        var func = gpu_ctx.compile_function[fused_combine]()
 
         comptime if use_shmem:
             var cached_module_key = String(

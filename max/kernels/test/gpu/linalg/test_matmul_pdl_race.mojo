@@ -142,7 +142,7 @@ def run_pdl_race_test[
         var num_threads = 256
         var num_blocks = ceildiv(M * N, num_threads)
         comptime kernel = consumer_kernel[dtype]
-        ctx.enqueue_function_experimental[kernel](
+        ctx.enqueue_function[kernel](
             c_device,
             result_device,
             M * N,

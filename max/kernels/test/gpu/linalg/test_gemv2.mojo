@@ -149,7 +149,7 @@ def test[
         BLOCK_DIM,
         transpose_b=transpose_b,
     ]
-    ctx.enqueue_function_experimental[naive_kernel](
+    ctx.enqueue_function[naive_kernel](
         c_tt,
         a_tt,
         b_tt,

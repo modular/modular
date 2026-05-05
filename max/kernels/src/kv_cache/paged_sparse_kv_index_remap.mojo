@@ -173,7 +173,7 @@ def paged_sparse_kv_logical_to_physical_indices_from_row_offsets_dispatch[
         comptime BLOCK = 256
         var grid = ceildiv(num_indices, BLOCK)
         comptime kernel = _paged_sparse_kv_index_remap_row_offs_kernel
-        gpu_ctx.enqueue_function[kernel, kernel](
+        gpu_ctx.enqueue_function[kernel](
             logical,
             input_row_offsets,
             lut,

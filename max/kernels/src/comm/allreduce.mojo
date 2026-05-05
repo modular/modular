@@ -574,9 +574,7 @@ def _allreduce_naive_single[
     )
 
     # Reduce local buffer first.
-    ctx.enqueue_function[
-        _naive_reduce_kernel[dtype], _naive_reduce_kernel[dtype]
-    ](
+    ctx.enqueue_function[_naive_reduce_kernel[dtype]](
         accum,
         dev_inputs[my_rank],
         num_elements,
@@ -591,9 +589,7 @@ def _allreduce_naive_single[
 
         # Copy remote input into device-local scratch, then accumulate.
         ctx.enqueue_copy(scratch, dev_inputs[i])
-        ctx.enqueue_function[
-            _naive_reduce_kernel[dtype], _naive_reduce_kernel[dtype]
-        ](
+        ctx.enqueue_function[_naive_reduce_kernel[dtype]](
             accum,
             scratch,
             num_elements,
@@ -607,9 +603,7 @@ def _allreduce_naive_single[
         out_layout,
         output_lambda=output_lambda,
     ]
-    ctx.enqueue_function[
-        naive_reduce_with_lambda_kernel, naive_reduce_with_lambda_kernel
-    ](
+    ctx.enqueue_function[naive_reduce_with_lambda_kernel](
         rebind[TileTensor[dtype, out_layout, MutAnyOrigin]](out_tensor),
         accum,
         num_elements,
@@ -1073,7 +1067,7 @@ def _allreduce_p2p[
             output_lambda=output_lambda,
             use_multimem=use_multimem,
         ]
-        ctx.enqueue_function[allreduce_1stage_kernel, allreduce_1stage_kernel](
+        ctx.enqueue_function[allreduce_1stage_kernel](
             rebind[TileTensor[dtype, out_layout, MutAnyOrigin]](out_tensor),
             flat_inputs,
             rank_sigs,
@@ -1101,7 +1095,7 @@ def _allreduce_p2p[
             output_lambda=output_lambda,
             use_multimem=use_multimem,
         ]
-        ctx.enqueue_function[kernel, kernel](
+        ctx.enqueue_function[kernel](
             rebind[TileTensor[dtype, out_layout, MutAnyOrigin]](out_tensor),
             flat_inputs,
             rank_sigs,

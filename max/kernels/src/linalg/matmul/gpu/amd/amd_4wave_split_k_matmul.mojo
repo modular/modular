@@ -260,7 +260,7 @@ def amd_4wave_split_k_matmul[
 
         var num_blocks_n = ceildiv(N, config.block_shape[1])
         var num_blocks_m = ceildiv(M, config.block_shape[0])
-        ctx.enqueue_function[kernel, kernel](
+        ctx.enqueue_function[kernel](
             a,
             b,
             ws_tile,
@@ -298,7 +298,7 @@ def amd_4wave_split_k_matmul[
     comptime reduce_kernel = _split_k_reduce_kernel[
         num_splits, c_type, elementwise_lambda_fn=elementwise_lambda_fn
     ]
-    ctx.enqueue_function[reduce_kernel, reduce_kernel](
+    ctx.enqueue_function[reduce_kernel](
         workspace.scratch.unsafe_ptr(),
         c.ptr,
         total_elems,

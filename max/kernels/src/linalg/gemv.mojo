@@ -808,7 +808,7 @@ def gemv_gpu_dispatch[
                 check_bounds=check_bounds,
                 pdl_level=pdl_level,
             ]
-            ctx.enqueue_function[kernel, kernel](
+            ctx.enqueue_function[kernel](
                 c,
                 a,
                 b,
@@ -870,7 +870,7 @@ def gemv_gpu_dispatch[
                     check_bounds=check_bounds_k,
                     pdl_level=pdl_level,
                 ]
-                ctx.enqueue_function[kernel, kernel](
+                ctx.enqueue_function[kernel](
                     c,
                     a,
                     b,
@@ -906,7 +906,7 @@ def gemv_gpu_dispatch[
                     check_bounds=check_bounds_k,
                     pdl_level=pdl_level,
                 ]
-                ctx.enqueue_function[kernel, kernel](
+                ctx.enqueue_function[kernel](
                     c,
                     a,
                     b_tile_n_major,
@@ -931,7 +931,7 @@ def gemv_gpu_dispatch[
                 check_bounds=check_bounds_k,
                 pdl_level=pdl_level,
             ]
-            ctx.enqueue_function[kernel, kernel](
+            ctx.enqueue_function[kernel](
                 c,
                 b,
                 a,
@@ -954,7 +954,7 @@ def gemv_gpu_dispatch[
             pdl_level=pdl_level,
         ]
 
-        ctx.enqueue_function[kernel, kernel](
+        ctx.enqueue_function[kernel](
             c.to_device_buffer(ctx),
             a.to_device_buffer(ctx),
             b.to_device_buffer(ctx),
@@ -977,7 +977,7 @@ def gemv_gpu_dispatch[
             elementwise_lambda_fn=elementwise_lambda_fn,
             pdl_level=pdl_level,
         ]
-        ctx.enqueue_function[kernel, kernel](
+        ctx.enqueue_function[kernel](
             c.to_device_buffer(ctx),
             b.to_device_buffer(ctx),
             a.to_device_buffer(ctx),
@@ -998,7 +998,7 @@ def gemv_gpu_dispatch[
             elementwise_lambda_fn=elementwise_lambda_fn,
             pdl_level=pdl_level,
         ]
-        ctx.enqueue_function[kernel, kernel](
+        ctx.enqueue_function[kernel](
             c.to_device_buffer(ctx),
             a.to_device_buffer(ctx),
             b.to_device_buffer(ctx),
@@ -1025,7 +1025,7 @@ def gemv_gpu_dispatch[
             transpose_b,
             elementwise_lambda_fn=elementwise_lambda_fn,
         ]
-        ctx.enqueue_function[kernel, kernel](
+        ctx.enqueue_function[kernel](
             c,
             a,
             b,
@@ -1902,7 +1902,7 @@ def gemm_mma_cpasync[
             elementwise_lambda_fn=elementwise_lambda_fn,
             pdl_level=pdl_level,
         ]
-        ctx.enqueue_function[kernel, kernel, dump_asm=False](
+        ctx.enqueue_function[kernel, dump_asm=False](
             c,
             act,
             weight,
@@ -1936,7 +1936,7 @@ def gemm_mma_cpasync[
             elementwise_lambda_fn=elementwise_lambda_fn,
             pdl_level=pdl_level,
         ]
-        ctx.enqueue_function[kernel, kernel, dump_asm=False](
+        ctx.enqueue_function[kernel, dump_asm=False](
             c3d,
             a3d,
             w3d,

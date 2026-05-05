@@ -562,7 +562,7 @@ def moe_create_indices[
             expert_usage_stats_ptr.store(0)
             expert_usage_stats_ptr.store(1, 0)
 
-        cuda_ctx.enqueue_function[fill_zero_kernel, fill_zero_kernel](
+        cuda_ctx.enqueue_function[fill_zero_kernel](
             lock_buffer,
             expert_usage_stats.ptr,
             grid_dim=(1,),
@@ -591,7 +591,7 @@ def moe_create_indices[
             expected_count=expected_count,
         ]
 
-        cuda_ctx.enqueue_function[kernel, kernel](
+        cuda_ctx.enqueue_function[kernel](
             token_expert_order,
             lock,
             expert_start_indices,
@@ -944,7 +944,7 @@ def router_group_limited[
             scores_input_fn=scores_input_fn,
         ]
 
-        gpu_ctx.enqueue_function[kernel, kernel](
+        gpu_ctx.enqueue_function[kernel](
             expert_indices,
             expert_weights,
             expert_scores,
@@ -1242,7 +1242,7 @@ def single_group_router[
         ]
 
         # launch the kernle using gpu_ctx
-        gpu_ctx.enqueue_function[kernel, kernel](
+        gpu_ctx.enqueue_function[kernel](
             expert_indices,
             expert_weight,
             expert_scores,

@@ -370,7 +370,7 @@ def grouped_matmul_block_scaled[
         ](
             ctx, sfa_4d
         )  # AB_swapped: SFB uses sfa data
-        ctx.enqueue_function[kernel, kernel](
+        ctx.enqueue_function[kernel](
             a_tma_op,
             b_tma_op,
             c_tma_op,
@@ -436,7 +436,7 @@ def grouped_matmul_block_scaled[
             __tile_shape=sfb_tma_tile_shape,
             __desc_shape=sfb_tma_tile_shape,
         ](ctx, sfb_4d)
-        ctx.enqueue_function[kernel, kernel](
+        ctx.enqueue_function[kernel](
             a_tma_op,
             b_tma_op,
             c_tma_op,

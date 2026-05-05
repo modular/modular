@@ -495,7 +495,7 @@ def broadcast[
             ngpus,
         ]
 
-        ctx.enqueue_function[bcast_kernel, bcast_kernel](
+        ctx.enqueue_function[bcast_kernel](
             output_tensor,
             input_tensor.as_immut(),
             rank_sigs,
@@ -524,7 +524,7 @@ def broadcast[
                 ngpus,
             ]
 
-            ctx.enqueue_function[bcast_kernel, bcast_kernel](
+            ctx.enqueue_function[bcast_kernel](
                 output_tensor,
                 input_tensor.as_immut(),
                 rank_sigs,
@@ -614,7 +614,7 @@ def broadcast_2stage[
         BLOCK_SIZE=BLOCK_SIZE,
     ]
 
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         output_tensor,
         input_tensor.as_immut().ptr,
         rank_sigs,

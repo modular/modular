@@ -102,7 +102,7 @@ def test_vendor_blas[
         transpose_b=transpose_b,
     ]
 
-    ctx.enqueue_function_experimental[kernel](
+    ctx.enqueue_function[kernel](
         c_ref_tt,
         a_tt,
         b_tt,

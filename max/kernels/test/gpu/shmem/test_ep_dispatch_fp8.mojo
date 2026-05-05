@@ -216,7 +216,7 @@ def test_dispatch[
         token_fmt_type,
     ]
 
-    var func = ctx.compile_function[dispatch_async, dispatch_async]()
+    var func = ctx.compile_function[dispatch_async]()
     shmem_module_init(func)
 
     comptime dispatch_wait = dispatch_wait_kernel[
@@ -231,7 +231,7 @@ def test_dispatch[
         type_of(format_handler),
     ]
 
-    var func_wait = ctx.compile_function[dispatch_wait, dispatch_wait]()
+    var func_wait = ctx.compile_function[dispatch_wait]()
 
     var num_iters: Int = 100 if is_benchmark() or is_pressure_test() else 3
     var dispatch_async_stat_m: Float64 = 0

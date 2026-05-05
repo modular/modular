@@ -60,7 +60,7 @@ def test_ring_bcast(ctx: SHMEMContext) raises:
 
     var root: Int32 = 0
     ctx.barrier_all()
-    ctx.enqueue_function_collective_checked[ring_bcast, ring_bcast](
+    ctx.enqueue_function_collective_checked[ring_bcast](
         data,
         data_len,
         root,

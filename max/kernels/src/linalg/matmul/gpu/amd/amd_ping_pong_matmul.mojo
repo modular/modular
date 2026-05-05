@@ -678,7 +678,7 @@ def structured_ping_pong_matmul[
             enable_swizzle,
         ].run[a.LayoutType, b.LayoutType, c.LayoutType]
 
-        ctx.enqueue_function[kernel, kernel](
+        ctx.enqueue_function[kernel](
             a,
             b,
             c,

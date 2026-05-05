@@ -232,7 +232,7 @@ def scatter_nd[
     var num_updates_elements = count_copy
     comptime kernel = scatter_nd_gpu[dtype=dtype, indices_type=indices_type]
 
-    ctx.enqueue_function_experimental[kernel](
+    ctx.enqueue_function[kernel](
         output_device,
         indices_device,
         element_counts_and_input_dims_device,

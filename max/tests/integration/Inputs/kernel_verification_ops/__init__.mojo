@@ -303,7 +303,5 @@ struct IntentionalGpuCrash:
         def crash_kernel():
             abort()
 
-        gpu_ctx.enqueue_function_experimental[crash_kernel](
-            grid_dim=(1,), block_dim=(1,)
-        )
+        gpu_ctx.enqueue_function[crash_kernel](grid_dim=(1,), block_dim=(1,))
         gpu_ctx.synchronize()

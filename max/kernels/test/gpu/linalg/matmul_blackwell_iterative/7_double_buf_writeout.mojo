@@ -879,7 +879,7 @@ def blackwell_kernel_7[
         output_tile_shape=output_tile_shape,
     ]
 
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel](
         a_tma_op,
         b_tma_op,
         c_tma_op,

@@ -77,7 +77,7 @@ def run_vector_reduction[
     ctx.enqueue_copy(c_device, c_host)
 
     comptime kernel = semaphore_vector_reduce[dtype, N, num_parts]
-    ctx.enqueue_function_experimental[kernel](
+    ctx.enqueue_function[kernel](
         c_device,
         a_device,
         lock_dev,
@@ -167,7 +167,7 @@ def run_matrix_reduction[
     var block_size = 1024
 
     comptime kernel = semaphore_matrix_reduce[dtype, M, N, num_parts]
-    ctx.enqueue_function_experimental[kernel](
+    ctx.enqueue_function[kernel](
         c_device,
         a_device,
         lock_dev,

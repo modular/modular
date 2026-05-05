@@ -123,7 +123,7 @@ def check_ldmatrix_fp8[
     ctx.enqueue_copy(b_device, b_host)
 
     comptime kernel_func = test_ldmatrix_fp8[input_type]
-    ctx.enqueue_function_experimental[kernel_func](
+    ctx.enqueue_function[kernel_func](
         c_device,
         a_device,
         b_device,
@@ -138,7 +138,7 @@ def check_ldmatrix_fp8[
 
     # Create TileTensors for the naive kernel.
     # a/b are constructed as immutable to match the ImmutAnyOrigin
-    # parameters that matmul_kernel_naive expects (enqueue_function_experimental
+    # parameters that matmul_kernel_naive expects (enqueue_function
     # requires exact type matches).
     from std.memory import UnsafePointer
 
@@ -169,7 +169,7 @@ def check_ldmatrix_fp8[
         BLOCK_DIM,
         transpose_b=True,
     ]
-    ctx.enqueue_function_experimental[kernel](
+    ctx.enqueue_function[kernel](
         c_ref_tt,
         a_tt,
         b_tt,

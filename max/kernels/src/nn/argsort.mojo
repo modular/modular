@@ -331,7 +331,7 @@ def _argsort_gpu_impl[
         IndicesLayoutType=indices.LayoutType,
         InputLayoutType=input.LayoutType,
     ]
-    ctx.enqueue_function[local_sort_kernel, local_sort_kernel](
+    ctx.enqueue_function[local_sort_kernel](
         indices,
         input,
         n,
@@ -346,7 +346,7 @@ def _argsort_gpu_impl[
         var j = k // 2
         while j >= BLOCK_SIZE:
             comptime global_step_kernel = bitonic_global_step
-            ctx.enqueue_function[global_step_kernel, global_step_kernel](
+            ctx.enqueue_function[global_step_kernel](
                 indices,
                 input,
                 n,
@@ -365,7 +365,7 @@ def _argsort_gpu_impl[
             IndicesLayoutType=indices.LayoutType,
             InputLayoutType=input.LayoutType,
         ]
-        ctx.enqueue_function[merge_local_kernel, merge_local_kernel](
+        ctx.enqueue_function[merge_local_kernel](
             indices,
             input,
             n,
