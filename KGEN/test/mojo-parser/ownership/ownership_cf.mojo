@@ -48,7 +48,7 @@ struct MemExample(ImplicitlyCopyable):
         return True
 
     def unsafe_ptr(self) -> UnsafePointer[Int, AnyOrigin[mut=True]]:
-        return UnsafePointer[Int, AnyOrigin[mut=True]]()
+        return UnsafePointer[Int, AnyOrigin[mut=True]].unsafe_dangling()
 
     def __del__(deinit self):
         pass

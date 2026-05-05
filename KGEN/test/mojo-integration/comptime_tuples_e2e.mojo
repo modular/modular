@@ -27,7 +27,9 @@ struct MTuple[T: ImplicitlyCopyable](ImplicitlyCopyable, Writable):
 
     @always_inline
     def __init__(out self):
-        self._data = UnsafePointer[Self.Element, MutExternalOrigin]()
+        self._data = UnsafePointer[
+            Self.Element, MutExternalOrigin
+        ].unsafe_dangling()
         self._len = 0
         self._cap = 0
 
@@ -43,7 +45,9 @@ struct MTuple[T: ImplicitlyCopyable](ImplicitlyCopyable, Writable):
         self._data = take._data
         self._len = take._len
         self._cap = take._cap
-        take._data = UnsafePointer[Self.Element, MutExternalOrigin]()
+        take._data = UnsafePointer[
+            Self.Element, MutExternalOrigin
+        ].unsafe_dangling()
         take._len = 0
         take._cap = 0
 
@@ -56,7 +60,9 @@ struct MTuple[T: ImplicitlyCopyable](ImplicitlyCopyable, Writable):
             for i in range(copy._len):
                 (self._data + i).init_pointee_copy(copy._data[i])
         else:
-            self._data = UnsafePointer[Self.Element, MutExternalOrigin]()
+            self._data = UnsafePointer[
+                Self.Element, MutExternalOrigin
+            ].unsafe_dangling()
 
     def __del__(deinit self):
         for i in range(self._len):
