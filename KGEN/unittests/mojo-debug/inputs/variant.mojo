@@ -4,7 +4,6 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from std.reflection import offset_of, struct_field_count, struct_field_names
 from std.sys import size_of
 from std.utils import Variant
 
@@ -19,9 +18,9 @@ from std.utils import Variant
 # principled fix that removes the positional dependency.
 def _check_string_layout():
     comptime assert (
-        struct_field_count[String]() == 3
+        reflect[String]().field_count() == 3
     ), "Variant LLDB formatter expects String to have 3 fields"
-    comptime names = struct_field_names[String]()
+    comptime names = reflect[String]().field_names()
     comptime assert (
         names[0] == "_ptr_or_data"
     ), "Variant LLDB formatter expects String field 0 to be `_ptr_or_data`"
@@ -38,13 +37,13 @@ def _check_string_layout():
     # names/count/size but shuffled fields would otherwise silently feed the
     # formatter the wrong words.
     comptime assert (
-        offset_of[String, name="_ptr_or_data"]() == 0
+        reflect[String]().field_offset[name="_ptr_or_data"]() == 0
     ), "Variant LLDB formatter expects `_ptr_or_data` at offset 0"
     comptime assert (
-        offset_of[String, name="_len_or_data"]() == 8
+        reflect[String]().field_offset[name="_len_or_data"]() == 8
     ), "Variant LLDB formatter expects `_len_or_data` at offset 8"
     comptime assert (
-        offset_of[String, name="_capacity_or_data"]() == 16
+        reflect[String]().field_offset[name="_capacity_or_data"]() == 16
     ), "Variant LLDB formatter expects `_capacity_or_data` at offset 16"
 
 

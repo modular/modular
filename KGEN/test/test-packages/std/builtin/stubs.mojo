@@ -578,7 +578,7 @@ struct Span[
     var _len: Int
 
     def __init__(out self):
-        self._data = UnsafePointer[Self.T, Self.origin]()
+        self._data = UnsafePointer[Self.T, Self.origin].unsafe_dangling()
         self._len = 0
 
     def __init__(
@@ -1426,6 +1426,10 @@ struct UnsafePointer[
     @staticmethod
     def address_of(ref[Self.address_space] arg: Self.type) -> Self:
         return Self(__mlir_op.`lit.ref.to_pointer`(__get_mvalue_as_litref(arg)))
+
+    @staticmethod
+    def unsafe_dangling() -> Self:
+        return Self()
 
     def __getitem__(self) -> ref[Self.origin, Self.address_space] Self.type:
         while __mlir_attr.true:

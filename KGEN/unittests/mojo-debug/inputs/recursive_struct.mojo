@@ -23,11 +23,11 @@ struct Bar:
 
 
 def main():
-    var f1: Foo = Foo(7, {})
+    var f1: Foo = Foo(7, UnsafePointer[Foo, MutAnyOrigin].unsafe_dangling())
     var f2: Foo = Foo(8, UnsafePointer(to=f1))
     print(f2.ptr[].x)
 
-    var b1: Bar = Bar(22, {})
+    var b1: Bar = Bar(22, UnsafePointer[Bar, MutAnyOrigin].unsafe_dangling())
     var b2: Bar = Bar(23, UnsafePointer(to=b1))
     print(b2.ptr[].x)  # breakpoint
 

@@ -1127,22 +1127,22 @@ def handleAnyLifetime2():
 
 # CHECK-LABEL: lit.fn @"handleAnyLifetime3
 def handleAnyLifetime3():
-    # CHECK-NEXT: lit.call {{.*}}__init__
+    # CHECK-NEXT: lit.call {{.*}}unsafe_dangling
     # CHECK-NEXT: %a_packed_ptr = lit.var.decl
     # CHECK-NEXT: lit.var.lifetime.start %a_packed_ptr
     # CHECK-NEXT: lit.ref.store
     # CHECK-NEXT: lit.var.lifetime.end %a_packed_ptr
     # expected-warning @+1 {{assignment to 'a_packed_ptr' was never used}}
-    var a_packed_ptr = UnsafePointer[Int, AnyOrigin[mut=True]]()
+    var a_packed_ptr = UnsafePointer[Int, AnyOrigin[mut=True]].unsafe_dangling()
 
-    # CHECK-NEXT: lit.call {{.*}}__init__
+    # CHECK-NEXT: lit.call {{.*}}unsafe_dangling
     # CHECK-NEXT: lit.var.lifetime.start %a_packed_ptr
     # CHECK-NEXT: lit.ref.store
     # CHECK-NEXT: lit.var.lifetime.end %a_packed_ptr
 
     # This shouldn't be treated as a use of `a_packed_ptr`
     # expected-warning @+1 {{assignment to 'a_packed_ptr' was never used}}
-    a_packed_ptr = UnsafePointer[Int, AnyOrigin[mut=True]]()
+    a_packed_ptr = UnsafePointer[Int, AnyOrigin[mut=True]].unsafe_dangling()
 
 
 def take_pack[*Ts: AnyType](*values: *Ts): pass
@@ -1165,7 +1165,7 @@ def handleAnyLifetime4():
 struct A:
     var data: UnsafePointer[Int, AnyOrigin[mut=True]]
     def __init__(out self):
-        self.data = UnsafePointer[Int, AnyOrigin[mut=True]]()
+        self.data = UnsafePointer[Int, AnyOrigin[mut=True]].unsafe_dangling()
     def __del__(deinit self): pass
 
 def use_int(a: Int): pass
