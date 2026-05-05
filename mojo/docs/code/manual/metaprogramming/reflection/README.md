@@ -1,7 +1,7 @@
 # Code examples and tests for reflection
 
 This directory contains Code examples and tests for the
-[Reflection](../../../../../docs/manual/reflection.mdx) section of
+[Reflection](../../../../manual/metaprogramming/reflection.mdx) section of
 the Mojo Manual.
 
 Contents:

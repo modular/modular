@@ -277,7 +277,7 @@ package](/docs/manual/python/mojo-from-python)—situations where you don't need
 the LSP and debugger tools. It includes:
 
 - [`mojo` CLI](/docs/cli) (includes the Mojo compiler)
-- [Mojo standard library](/docs/sdk)
+- [Mojo standard library](/docs/std)
 - [`mojo` Python
   package](https://github.com/modular/modular/tree/main/mojo/python/mojo)
 

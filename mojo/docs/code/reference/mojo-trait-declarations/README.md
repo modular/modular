@@ -1,7 +1,7 @@
 # Code examples and tests for traits reference
 
 This directory contains Code examples and tests for the
-[Mojo traits reference](/docs/reference/mojo-trait-declarations)
+[Mojo traits reference](../../../reference/mojo-trait-declarations.mdx)
 section of the Mojo Manual.
 
 Contents:

@@ -1,7 +1,7 @@
 # Code examples and tests for calling Mojo from Python
 
 This directory contains Code examples and tests for the
-[Calling Mojo from Python](/docs/manual/python/mojo-from-python)
+[Calling Mojo from Python](../../../../manual/python/mojo-from-python.mdx)
 section of the Mojo Manual.
 
 Contents:

@@ -1,7 +1,7 @@
 # Code examples and tests for Notebooks
 
 This directory contains code examples for the
-[Notebooks](/docs/tools/notebooks/)
+[Notebooks](../../../tools/notebooks.mdx)
 section of the Mojo Manual.
 
 Contents:

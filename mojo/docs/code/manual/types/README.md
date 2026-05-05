@@ -1,7 +1,7 @@
 # Code examples and tests for types
 
 This directory contains Code examples and tests for the
-[types](/docs/manual/types) section of the Mojo Manual.
+[types](../../../manual/types.mdx) section of the Mojo Manual.
 
 Contents:
 

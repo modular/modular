@@ -1,7 +1,7 @@
 # Code examples and tests for traits
 
 This directory contains Code examples and tests for the
-[Traits](/docs/manual/traits) section of the Mojo
+[Traits](../../../manual/traits.mdx) section of the Mojo
 Manual.
 
 Contents:

@@ -1,7 +1,7 @@
 # Code examples and tests for compile-time evaluation
 
 This directory contains Code examples and tests for the
-[Compile-time evaluation](/docs/manual/metaprogramming/comptime-evaluation)
+[Compile-time evaluation](../../../../manual/metaprogramming/comptime-evaluation.mdx)
 section of the Mojo Manual.
 
 Contents:

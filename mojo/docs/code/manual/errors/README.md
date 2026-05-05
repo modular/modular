@@ -1,7 +1,7 @@
 # Code examples and tests for errors
 
 This directory contains Code examples and tests for the
-[Errors, error handling, and context managers](/docs/manual/errors)
+[Errors, error handling, and context managers](../../../manual/errors.mdx)
 section of the Mojo Manual.
 
 Contents:

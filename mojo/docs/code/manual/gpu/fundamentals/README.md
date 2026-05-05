@@ -1,7 +1,7 @@
 # Code examples and tests for GPU programming fundamentals
 
 This directory contains Code examples and tests for the
-[GPU programming fundamentals](/docs/manual/gpu/fundamentals)
+[GPU programming fundamentals](../../../../manual/gpu/intro-tutorial.mdx)
 section of the Mojo Manual.
 
 Contents:

@@ -1,7 +1,7 @@
 # Code examples and tests for death of a value
 
 This directory contains Code examples and tests for the
-[Death of a value](/docs/manual/lifecycle/death) section of
+[Death of a value](../../../../manual/lifecycle/death.mdx) section of
 the Mojo Manual.
 
 Contents:

@@ -2,7 +2,7 @@
 
 This directory contains Code examples and tests for the
 [Operators for custom
-types](/docs/manual/structs/operator-support)
+types](../../../../manual/structs/operator-support.mdx)
 section of the Mojo Manual.
 
 Contents:

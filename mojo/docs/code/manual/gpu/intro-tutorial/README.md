@@ -2,7 +2,7 @@
 
 This directory contains Code examples and tests for the intermediate steps of
 the
-[Get started with GPU programming](/docs/manual/gpu/intro-tutorial)
+[Get started with GPU programming](../../../../manual/gpu/intro-tutorial.mdx)
 section of the Mojo Manual. The fully completed reference solution is maintained
 in [examples/mojo/gpu-intro](../../../../../examples/gpu-intro) and published to
 the public GitHub repo.

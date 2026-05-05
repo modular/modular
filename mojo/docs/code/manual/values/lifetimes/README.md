@@ -1,7 +1,7 @@
 # Code examples and tests for lifetimes, origins, and references
 
 This directory contains Code examples and tests for the
-[Lifetimes, origins, and references](/docs/manual/values/lifetimes)
+[Lifetimes, origins, and references](../../../../manual/values/lifetimes.mdx)
 section of the Mojo Manual.
 
 Contents:

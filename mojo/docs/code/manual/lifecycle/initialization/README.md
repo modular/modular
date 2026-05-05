@@ -1,7 +1,7 @@
 # Code examples and tests for initialization
 
 This directory contains Code examples and tests for the
-[initialization](/docs/manual)
+[initialization](../../../../manual/lifecycle/initialization.mdx)
 section of the Mojo Manual.
 
 Contents:

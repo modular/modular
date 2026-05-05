@@ -1,7 +1,7 @@
 # Code examples and tests for Python types
 
 This directory contains Code examples and tests for the [Python
-types](/docs/manual/python/types) section of the Mojo Manual.
+types](../../../../manual/python/types.mdx) section of the Mojo Manual.
 
 Contents:
 

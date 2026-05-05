@@ -1,7 +1,8 @@
 # Code examples and tests for Parameterization
 
 This directory contains Code examples and tests for the
-[Parameterization: compile-time metaprogramming](/docs/manual/parameters)
+[Parameterization: compile-time
+metaprogramming](../../../../manual/parameters/index.mdx)
 section of the Mojo Manual.
 
 Contents:
