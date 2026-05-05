@@ -58,6 +58,28 @@ private:
   SymbolTableCollection &symbolTable;
 };
 
+namespace KGEN {
+
+//===----------------------------------------------------------------------===//
+// Transparent conversion thunks
+//===----------------------------------------------------------------------===//
+//
+// A "transparent" conversion thunk bridges calling conventions to a wrapped
+// function while delegating its public identity (linkage name, LLVM
+// metadata) to that function. The thunk carries a
+// `kgen.transparent_thunk_callee_expr` attribute holding a parametric
+// expression that resolves - once the thunk's paramDecls are substituted
+// with the callsite's paramValues - to a fully-bound SymbolConstantAttr
+// for the wrapped function.
+
+/// Look through a transparent thunk to its wrapped function. Returns the
+/// wrapped function's SymbolConstantAttr bound at `callsite`, or null if
+/// `gen` is not a transparent thunk.
+SymbolConstantAttr resolveTransparentThunkCallee(mlir::Operation *gen,
+                                                 SymbolConstantAttr callsite);
+
+} // namespace KGEN
+
 } // namespace M
 
 //===----------------------------------------------------------------------===//
