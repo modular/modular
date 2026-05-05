@@ -1159,8 +1159,10 @@ ParameterExprArrayAttr ParamInf::inferForStruct(bool emitConstraintFailure) {
 /// see if the callee has a parametric address space or origin. If so, it looks
 /// at the ExprDest the call is being emitted into and infers the desired
 /// values, or marks it as needing to be spilled if not.
-LogicalResult ParamInf::inferResultSlot(RefType expectedRef,
-                                        const ExprDest &dest) {
+LogicalResult
+ParamInf::inferResultSlot(RefType expectedRef, size_t argIdx,
+                          const ExprDest &dest,
+                          OperandsNeedingOriginsList &operandsNeedingOrigins) {
 
   bool needsAddrSpace =
       paramFinder.hasReferences(expectedRef.getAddressSpace());
@@ -1168,28 +1170,33 @@ LogicalResult ParamInf::inferResultSlot(RefType expectedRef,
   if (!needsAddrSpace && !needsOrigin)
     return success(); // Nothing to do.
 
+  RefType actualRef;
   // If we have a concrete MLValue, we can use it to infer the desired values.
   if (MLValue mlDest = dest.getDirectMLValueIfPresent()) {
-    ParamMatcher matcher(getGivenBindings().callExpr, *this,
-                         /*allowImplicitConversions=*/false);
+    actualRef = mlDest.getRefType();
+  } else {
+    // If the ExprDest lacks a concrete MLValue, we can't infer anything. We
+    // need the caller to spill the result into a buffer and reinfer us. Until
+    // then, bind it as AnyOrigin to avoid failing to infer the parameters.
+    operandsNeedingOrigins.push_back({OperandNeedingOrigin::kExprDestOperandIdx,
+                                      argIdx, expectedRef.getElementType()});
 
-    if (needsAddrSpace)
-      if (failed(matcher.matchSingleEltStruct(
-              mlDest.getRefType().getAddressSpace(),
-              expectedRef.getAddressSpace())))
-        return failure();
     if (needsOrigin)
-      if (failed(matcher.matchSingleEltStruct(mlDest.getRefType().getOrigin(),
-                                              expectedRef.getOrigin())))
-        return failure();
-    return success();
+      actualRef = expectedRef.getWithOrigin(
+          AnyOriginAttr::get(expectedRef.getContext(), /*isMut=*/true));
+    if (needsAddrSpace)
+      actualRef = actualRef.getWithAddressSpace(
+          IntegerAttr::get(IndexType::get(expectedRef.getContext()), 0));
   }
 
-  // If the ExprDest lacks a concrete MLValue, we can't infer anything. We need
-  // the caller to spill the result into a buffer and reinfer us.
+  ParamMatcher matcher(getGivenBindings().callExpr, *this,
+                       /*allowImplicitConversions=*/false);
 
-  // FIXME: Implement this.
-
+  if (failed(matcher.matchSingleEltStruct(actualRef.getAddressSpace(),
+                                          expectedRef.getAddressSpace())) ||
+      failed(matcher.matchSingleEltStruct(actualRef.getOrigin(),
+                                          expectedRef.getOrigin())))
+    return failure();
   return success();
 }
 
@@ -1227,7 +1234,8 @@ LogicalResult ParamInf::inferForCall(
       // If this is the result slot with parametric components, attempt to infer
       // result origin/address space from it.
       if (expectedConvention == ArgConvention::ByRefResult)
-        if (failed(inferResultSlot(expectedRef, operands.dest)))
+        if (failed(inferResultSlot(expectedRef, expectedArgIdx, operands.dest,
+                                   operandsNeedingOrigins)))
           return failure();
       continue;
     }

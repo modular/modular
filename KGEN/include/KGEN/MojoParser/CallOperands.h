@@ -226,7 +226,14 @@ struct OperandNeedingOrigin {
   size_t operandIdx; // The index of the operand in the call operands list.
   size_t argIdx;     // The index of the argument in the callee's signature.
   ASTType expectedArgType; // The expected RValue type of the argument.
+
+  enum {
+    /// This is a sentinel representing the the "operand" that needs spilling is
+    /// actually the ExprDest of the call, not an actual operand.
+    kExprDestOperandIdx = ~1ULL,
+  };
 };
+
 using OperandsNeedingOriginsList = std::vector<OperandNeedingOrigin>;
 
 } // namespace M::KGEN::LIT

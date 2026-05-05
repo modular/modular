@@ -460,10 +460,22 @@ static LogicalResult emitOperandsNeedingOriginsToMemory(
     auto expectedArgType = info.expectedArgType;
     // If the operand is a positional argument it will be in the normal
     // operand list, otherwise it will be in the kwargs list.
-    assert(operandIdx < operands.size() && "argument index incorrect");
+    assert((operandIdx < operands.size() ||
+            operandIdx == OperandNeedingOrigin::kExprDestOperandIdx) &&
+           "argument index incorrect");
 
     if (!operandsAlreadySpilled.insert(operandIdx).second)
       continue; // Ignore duplicates.
+
+    // Handle the result slot if we have to materialize it into memory.
+    if (operandIdx == OperandNeedingOrigin::kExprDestOperandIdx) {
+      MLValue addr = operands.dest.getMLValueForResult(
+          operands.getExprLoc(), expectedArgType, emitter);
+      if (!addr)
+        return failure();
+      operands.dest = ExprDest(addr, operands.dest.getContext());
+      continue;
+    }
 
     // If the argument is a variadic, get the expected element type from it.
     ArgConvention argConvention = expectedSig.getArgConvention(argIdx);

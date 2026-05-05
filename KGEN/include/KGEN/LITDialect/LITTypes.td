@@ -585,6 +585,9 @@ def LIT_RefType : LITType<"Ref", "ref",
     /// Return this RefType but with a different mutability.
     RefType getWithMutability(bool isMut);
 
+    /// Return this RefType but with a different address space.
+    RefType getWithAddressSpace(TypedAttr newAddressSpace);
+
     /// Return true if the mutable attribute is known to be the specific
     /// constant.  This returns false if parametric or if the other value.
     bool isMutableKnown(bool value);

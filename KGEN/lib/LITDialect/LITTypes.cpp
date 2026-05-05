@@ -1154,6 +1154,11 @@ RefType RefType::getWithMutability(bool isMut) {
              getAddressSpace());
 }
 
+/// Return this RefType but with a different address space.
+RefType RefType::getWithAddressSpace(TypedAttr newAddressSpace) {
+  return get(getElementType(), getOrigin(), newAddressSpace);
+}
+
 /// Return the type of the origin reference, which is always a
 /// `!lit.origin<mutability>` type.
 OriginType RefType::getOriginType() {
