@@ -32,7 +32,7 @@ from max.benchmark.benchmark_shared.metrics import (
 def test_percentile_metrics_valid() -> None:
     """Healthy PercentileMetrics passes validation."""
     pm = PercentileMetrics(
-        mean=10.0, std=1.0, median=9.5, p90=15.0, p95=18.0, p99=20.0
+        mean=10.0, std=1.0, p50=9.5, p90=15.0, p95=18.0, p99=20.0
     )
     ok, errors = pm.validate_metrics()
     assert ok is True
@@ -42,7 +42,7 @@ def test_percentile_metrics_valid() -> None:
 def test_percentile_metrics_nan_mean() -> None:
     """NaN mean is flagged by PercentileMetrics.validate_metrics()."""
     pm = PercentileMetrics(
-        mean=float("nan"), std=1.0, median=9.5, p90=15.0, p95=18.0, p99=20.0
+        mean=float("nan"), std=1.0, p50=9.5, p90=15.0, p95=18.0, p99=20.0
     )
     ok, errors = pm.validate_metrics()
     assert ok is False
@@ -53,7 +53,7 @@ def test_percentile_metrics_nan_mean() -> None:
 def test_percentile_metrics_zero_mean() -> None:
     """Zero mean is flagged by PercentileMetrics.validate_metrics()."""
     pm = PercentileMetrics(
-        mean=0.0, std=1.0, median=9.5, p90=15.0, p95=18.0, p99=20.0
+        mean=0.0, std=1.0, p50=9.5, p90=15.0, p95=18.0, p99=20.0
     )
     ok, errors = pm.validate_metrics()
     assert ok is False
@@ -63,7 +63,7 @@ def test_percentile_metrics_zero_mean() -> None:
 def test_percentile_metrics_inf_mean() -> None:
     """Infinite mean is flagged by PercentileMetrics.validate_metrics()."""
     pm = PercentileMetrics(
-        mean=float("inf"), std=0.0, median=0.0, p90=0.0, p95=0.0, p99=0.0
+        mean=float("inf"), std=0.0, p50=0.0, p90=0.0, p95=0.0, p99=0.0
     )
     ok, _ = pm.validate_metrics()
     assert ok is False
@@ -72,7 +72,7 @@ def test_percentile_metrics_inf_mean() -> None:
 def test_percentile_metrics_negative_mean() -> None:
     """Negative mean is flagged by PercentileMetrics.validate_metrics()."""
     pm = PercentileMetrics(
-        mean=-5.0, std=1.0, median=9.5, p90=15.0, p95=18.0, p99=20.0
+        mean=-5.0, std=1.0, p50=9.5, p90=15.0, p95=18.0, p99=20.0
     )
     ok, _ = pm.validate_metrics()
     assert ok is False
@@ -483,7 +483,7 @@ def test_confidence_warnings_for_low_confidence() -> None:
 
 def test_percentile_to_flat_dict() -> None:
     pm = PercentileMetrics(
-        mean=10.0, std=1.0, median=9.5, p90=15.0, p95=18.0, p99=20.0
+        mean=10.0, std=1.0, p50=9.5, p90=15.0, p95=18.0, p99=20.0
     )
     d = pm.to_flat_dict("ttft_ms")
     assert d == {
@@ -509,7 +509,7 @@ def test_confidence_to_flat_dict_present() -> None:
     pm = PercentileMetrics(
         mean=10.0,
         std=1.0,
-        median=9.5,
+        p50=9.5,
         p90=15.0,
         p95=18.0,
         p99=20.0,
@@ -523,7 +523,7 @@ def test_confidence_to_flat_dict_present() -> None:
 
 def test_confidence_to_flat_dict_absent() -> None:
     pm = PercentileMetrics(
-        mean=10.0, std=1.0, median=9.5, p90=15.0, p95=18.0, p99=20.0
+        mean=10.0, std=1.0, p50=9.5, p90=15.0, p95=18.0, p99=20.0
     )
     assert pm.confidence_to_flat_dict("x") == {}
 

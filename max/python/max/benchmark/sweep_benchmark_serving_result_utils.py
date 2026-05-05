@@ -69,7 +69,7 @@ class SweepUploader(Protocol):
 def _get_percentile(metrics: StandardPercentileMetrics, p: int) -> float:
     """Extracts a percentile value from a typed metrics object."""
     if p == 50:
-        return metrics.median
+        return metrics.p50
     return getattr(metrics, f"p{p}")
 
 

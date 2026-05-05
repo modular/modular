@@ -43,11 +43,11 @@ def _validate_data(data: list[float]) -> None:
 def _calculate_basic_stats(
     data: list[float], scale_factor: float
 ) -> dict[str, float]:
-    """Calculate basic statistics (mean, std, median) with scaling."""
+    """Calculate basic statistics (mean, std, p50) with scaling."""
     return {
         "mean": float(np.mean(data)) * scale_factor,
         "std": float(np.std(data)) * scale_factor,
-        "median": float(np.median(data)) * scale_factor,
+        "p50": float(np.median(data)) * scale_factor,
     }
 
 
@@ -152,7 +152,7 @@ class PercentileMetrics(Metrics):
 
     mean: float
     std: float
-    median: float
+    p50: float
     p90: float
     p95: float
     p99: float
@@ -164,7 +164,7 @@ class PercentileMetrics(Metrics):
         lines = []
         lines.append("{:<40} {:<10.2f}".format("Mean:", self.mean))
         lines.append("{:<40} {:<10.2f}".format("Std:", self.std))
-        lines.append("{:<40} {:<10.2f}".format("Median:", self.median))
+        lines.append("{:<40} {:<10.2f}".format("P50:", self.p50))
         lines.append("{:<40} {:<10.2f}".format("P90:", self.p90))
         lines.append("{:<40} {:<10.2f}".format("P95:", self.p95))
         lines.append("{:<40} {:<10.2f}".format("P99:", self.p99))
@@ -178,7 +178,7 @@ class PercentileMetrics(Metrics):
         metrics_data = [
             ("Mean", self.mean),
             ("Std", self.std),
-            ("Median", self.median),
+            ("P50", self.p50),
             ("P90", self.p90),
             ("P95", self.p95),
             ("P99", self.p99),
@@ -189,11 +189,18 @@ class PercentileMetrics(Metrics):
         )
 
     def to_flat_dict(self, name: str) -> dict[str, float]:
-        """Flatten percentile stats into ``{"mean_{name}": v, ...}``."""
+        """Flatten percentile stats into ``{"mean_{name}": v, ...}``.
+
+        Note: emits ``median_{name}`` (not ``p50_{name}``) for the 50th
+        percentile to preserve the legacy BigQuery column naming consumed by
+        the SweepUploader path and benchmark-visibility dashboards. The
+        dataclass field is named ``p50``; the legacy column name is kept
+        here as the public flattening contract.
+        """
         return {
             f"mean_{name}": self.mean,
             f"std_{name}": self.std,
-            f"median_{name}": self.median,
+            f"median_{name}": self.p50,
             f"p90_{name}": self.p90,
             f"p95_{name}": self.p95,
             f"p99_{name}": self.p99,

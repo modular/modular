@@ -78,7 +78,7 @@ def test_percentile_metrics_basic_creation() -> None:
     metrics = PercentileMetrics(
         mean=10.0,
         std=2.0,
-        median=9.5,
+        p50=9.5,
         p90=12.0,
         p95=14.0,
         p99=18.0,
@@ -86,7 +86,7 @@ def test_percentile_metrics_basic_creation() -> None:
     )
     assert metrics.mean == 10.0
     assert metrics.std == 2.0
-    assert metrics.median == 9.5
+    assert metrics.p50 == 9.5
     assert metrics.p90 == 12.0
     assert metrics.p95 == 14.0
     assert metrics.p99 == 18.0
@@ -96,7 +96,7 @@ def test_percentile_metrics_basic_creation() -> None:
 def test_percentile_metrics_creation_without_unit() -> None:
     """Test creating PercentileMetrics without unit."""
     metrics = PercentileMetrics(
-        mean=10.0, std=2.0, median=9.5, p90=12.0, p95=14.0, p99=18.0
+        mean=10.0, std=2.0, p50=9.5, p90=12.0, p95=14.0, p99=18.0
     )
     assert metrics.unit is None
 
@@ -106,7 +106,7 @@ def test_percentile_metrics_str_representation() -> None:
     metrics = PercentileMetrics(
         mean=10.5,
         std=2.3,
-        median=9.8,
+        p50=9.8,
         p90=12.7,
         p95=14.2,
         p99=18.9,
@@ -118,7 +118,7 @@ def test_percentile_metrics_str_representation() -> None:
     assert "10.50" in result
     assert "Std:" in result
     assert "2.30" in result
-    assert "Median:" in result
+    assert "P50:" in result
     assert "9.80" in result
     assert "P90:" in result
     assert "12.70" in result
@@ -133,7 +133,7 @@ def test_percentile_metrics_format_with_prefix() -> None:
     metrics = PercentileMetrics(
         mean=10.0,
         std=2.0,
-        median=9.5,
+        p50=9.5,
         p90=12.0,
         p95=14.0,
         p99=18.0,
@@ -144,7 +144,7 @@ def test_percentile_metrics_format_with_prefix() -> None:
     # Check that prefix and unit are correctly included
     assert "Mean latency (ms):" in result
     assert "Std latency (ms):" in result
-    assert "Median latency (ms):" in result
+    assert "P50 latency (ms):" in result
     assert "P90 latency (ms):" in result
     assert "P95 latency (ms):" in result
     assert "P99 latency (ms):" in result
@@ -155,7 +155,7 @@ def test_percentile_metrics_format_with_prefix_override_unit() -> None:
     metrics = PercentileMetrics(
         mean=10.0,
         std=2.0,
-        median=9.5,
+        p50=9.5,
         p90=12.0,
         p95=14.0,
         p99=18.0,
@@ -171,7 +171,7 @@ def test_percentile_metrics_format_with_prefix_override_unit() -> None:
 def test_percentile_metrics_format_with_prefix_no_unit() -> None:
     """Test format_with_prefix without unit."""
     metrics = PercentileMetrics(
-        mean=10.0, std=2.0, median=9.5, p90=12.0, p95=14.0, p99=18.0
+        mean=10.0, std=2.0, p50=9.5, p90=12.0, p95=14.0, p99=18.0
     )
     result = metrics.format_with_prefix("metric")
 
@@ -192,7 +192,7 @@ def test_standard_percentile_metrics_basic_functionality() -> None:
 
     # Verify mean and basic statistics
     assert metrics.mean == pytest.approx(5.5, rel=1e-10)
-    assert metrics.median == pytest.approx(5.5, rel=1e-10)
+    assert metrics.p50 == pytest.approx(5.5, rel=1e-10)
 
     # Verify percentiles are calculated correctly (90th, 95th, 99th)
     expected_p90 = np.percentile(data, 90)
@@ -213,7 +213,7 @@ def test_standard_percentile_metrics_scale_factor() -> None:
 
     # All values should be scaled by the factor
     assert metrics.mean == pytest.approx(3.0 * scale_factor, rel=1e-10)
-    assert metrics.median == pytest.approx(3.0 * scale_factor, rel=1e-10)
+    assert metrics.p50 == pytest.approx(3.0 * scale_factor, rel=1e-10)
 
     # Percentiles should also be scaled
     expected_p90 = np.percentile(data, 90) * scale_factor
@@ -268,7 +268,7 @@ def test_standard_percentile_metrics_single_value() -> None:
     # All statistics should equal the single value
     assert metrics.mean == 5.0
     assert metrics.std == 0.0
-    assert metrics.median == 5.0
+    assert metrics.p50 == 5.0
     assert metrics.p90 == 5.0
     assert metrics.p95 == 5.0
     assert metrics.p99 == 5.0
@@ -284,7 +284,7 @@ def test_throughput_metrics_basic_functionality() -> None:
 
     # Verify mean and basic statistics (same as standard)
     assert metrics.mean == pytest.approx(5.5, rel=1e-10)
-    assert metrics.median == pytest.approx(5.5, rel=1e-10)
+    assert metrics.p50 == pytest.approx(5.5, rel=1e-10)
 
 
 def test_throughput_metrics_reversed_percentiles() -> None:
@@ -327,7 +327,7 @@ def test_throughput_metrics_scale_factor() -> None:
 
     # All values should be scaled by the factor
     assert metrics.mean == pytest.approx(3.0 * scale_factor, rel=1e-10)
-    assert metrics.median == pytest.approx(3.0 * scale_factor, rel=1e-10)
+    assert metrics.p50 == pytest.approx(3.0 * scale_factor, rel=1e-10)
 
     # Percentiles should also be scaled
     expected_p90 = np.percentile(data, 10) * scale_factor
@@ -382,7 +382,7 @@ def test_throughput_metrics_single_value() -> None:
     # All statistics should equal the single value
     assert metrics.mean == 5.0
     assert metrics.std == 0.0
-    assert metrics.median == 5.0
+    assert metrics.p50 == 5.0
     assert metrics.p90 == 5.0
     assert metrics.p95 == 5.0
     assert metrics.p99 == 5.0
@@ -400,7 +400,7 @@ def test_both_metrics_with_same_data() -> None:
     assert (
         standard.mean == throughput.mean * 1000.0
     )  # Due to scale factor difference
-    assert standard.median == throughput.median * 1000.0
+    assert standard.p50 == throughput.p50 * 1000.0
 
     # But percentiles should be different due to reversed logic
     assert standard.p90 > throughput.p90 * 1000.0

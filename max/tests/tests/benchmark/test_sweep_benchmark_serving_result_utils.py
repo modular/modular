@@ -70,7 +70,7 @@ def test_format_float() -> None:
 
 def test_get_percentile_median() -> None:
     m = StandardPercentileMetrics([0.048, 0.050, 0.052], scale_factor=1000.0)
-    assert _get_percentile(m, 50) == m.median
+    assert _get_percentile(m, 50) == m.p50
 
 
 def test_get_percentile_p99() -> None:
@@ -175,15 +175,15 @@ def test_llm_from_metrics_basic() -> None:
     assert r.itl_mean == m.itl_ms.mean
     assert r.req_latency_mean == m.latency_ms.mean
     assert r.gpu_utilization == 0.9
-    assert r.ttft_percentiles == {50: m.ttft_ms.median}
-    assert r.itl_percentiles == {50: m.itl_ms.median}
-    assert r.req_latency_percentiles == {50: m.latency_ms.median}
+    assert r.ttft_percentiles == {50: m.ttft_ms.p50}
+    assert r.itl_percentiles == {50: m.itl_ms.p50}
+    assert r.req_latency_percentiles == {50: m.latency_ms.p50}
 
 
 def test_llm_from_metrics_multiple_percentiles() -> None:
     m = _make_llm_metrics()
     r = LLMBenchmarkResult.from_metrics(m, [50, 90, 99])
-    assert r.ttft_percentiles[50] == m.ttft_ms.median
+    assert r.ttft_percentiles[50] == m.ttft_ms.p50
     assert r.ttft_percentiles[90] == m.ttft_ms.p90
     assert r.ttft_percentiles[99] == m.ttft_ms.p99
     assert r.itl_percentiles[90] == m.itl_ms.p90
@@ -242,7 +242,7 @@ def test_t2i_from_metrics() -> None:
     assert r.req_latency_mean == m.latency_ms.mean
     assert r.gpu_utilization == 0.6
     assert r.total_generated_outputs == 16
-    assert r.req_latency_percentiles[50] == m.latency_ms.median
+    assert r.req_latency_percentiles[50] == m.latency_ms.p50
     assert r.req_latency_percentiles[90] == m.latency_ms.p90
 
 

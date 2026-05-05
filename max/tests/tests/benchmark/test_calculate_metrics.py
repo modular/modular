@@ -79,7 +79,7 @@ def test_per_chunk_tpot_collected_from_outputs() -> None:
 
     # TPOT percentiles should be based on the per-chunk values [0.05, 0.1, 0.15]
     # scaled by 1000 (to ms)
-    assert math.isclose(metrics.tpot_ms.median, 100.0, rel_tol=1e-3)
+    assert math.isclose(metrics.tpot_ms.p50, 100.0, rel_tol=1e-3)
 
 
 def test_tpot_weighted_mean() -> None:
@@ -216,7 +216,7 @@ def test_itl_metrics_unchanged() -> None:
 
     # ITL should be computed from the raw itl values [0.1, 0.2, 0.3] * 1000
     assert math.isclose(metrics.itl_ms.mean, 200.0, rel_tol=1e-3)
-    assert math.isclose(metrics.itl_ms.median, 200.0, rel_tol=1e-3)
+    assert math.isclose(metrics.itl_ms.p50, 200.0, rel_tol=1e-3)
 
 
 def test_failed_requests_excluded() -> None:
@@ -256,7 +256,7 @@ def test_failed_requests_excluded() -> None:
     assert metrics.completed == 1
     assert metrics.failures == 1
     # TPOT values should only include [0.1, 0.2], not [999.0]
-    assert metrics.tpot_ms.median < 500.0
+    assert metrics.tpot_ms.p50 < 500.0
 
 
 def test_skip_last_n_requests() -> None:
