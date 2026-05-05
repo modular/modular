@@ -1391,7 +1391,7 @@ async def run_single_turn_benchmark(
     request_rate: float,
     burstiness: float,
     timing_data: dict[str, list[float]] | None,
-    semaphore: asyncio.Semaphore | None,
+    semaphore: contextlib.AbstractAsyncContextManager[None],
     benchmark_should_end_time: int | None,
     request_driver: RequestDriver,
     model_id: str,
@@ -1411,8 +1411,6 @@ async def run_single_turn_benchmark(
     async def limited_request_func(
         request_func_input: BaseRequestFuncInput,
     ) -> BaseRequestFuncOutput:
-        if semaphore is None:
-            return await request_driver.request(request_func_input)
         async with semaphore:
             if (
                 benchmark_should_end_time is not None
@@ -1825,7 +1823,7 @@ async def run_multiturn_benchmark(
     *,
     chat_sessions: Sequence[ChatSession],
     max_requests: int,
-    semaphore: asyncio.Semaphore | None,
+    semaphore: contextlib.AbstractAsyncContextManager[None],
     benchmark_should_end_time: int | None,
     request_driver: RequestDriver,
     model_id: str,
@@ -1866,7 +1864,7 @@ async def run_multiturn_benchmark(
         if lora_manager:
             lora_id = lora_manager.get_lora_for_request(session_idx)
 
-        if semaphore is None:
+        async with semaphore:
             outputs = await chat_session_driver(
                 model_id=model_id if lora_id is None else lora_id,
                 api_url=api_url,
@@ -1883,24 +1881,6 @@ async def run_multiturn_benchmark(
                 run_prefix=run_prefix,
                 run_prefix_len=run_prefix_len,
             )
-        else:
-            async with semaphore:
-                outputs = await chat_session_driver(
-                    model_id=model_id if lora_id is None else lora_id,
-                    api_url=api_url,
-                    request_driver=request_driver,
-                    request_counter=request_counter,
-                    chat_session=chat_session,
-                    max_chat_len=tokenizer.model_max_length,
-                    temperature=temperature,
-                    top_p=top_p,
-                    top_k=top_k,
-                    ignore_first_turn_stats=ignore_first_turn_stats,
-                    benchmark_should_end_time=benchmark_should_end_time,
-                    randomize_session_start=randomize_session_start,
-                    run_prefix=run_prefix,
-                    run_prefix_len=run_prefix_len,
-                )
         session_id = (
             str(chat_session.id)
             if chat_session.id is not None
@@ -1961,7 +1941,7 @@ class _ConcurrentTurnsRequestDriver(RequestDriver):
     def __init__(
         self,
         request_driver: RequestDriver,
-        semaphore: asyncio.Semaphore,
+        semaphore: contextlib.AbstractAsyncContextManager[None],
         benchmark_should_end_time: int | None = None,
     ) -> None:
         super().__init__(tokenizer=request_driver.tokenizer)
@@ -1988,7 +1968,7 @@ async def run_kv_cache_stress_benchmark(
     chat_sessions: Sequence[ChatSession],
     max_requests: int,
     max_concurrent_conversations: int,
-    semaphore: asyncio.Semaphore | None,
+    semaphore: contextlib.AbstractAsyncContextManager[None],
     benchmark_should_end_time: int | None,
     request_driver: RequestDriver,
     model_id: str,
@@ -2032,12 +2012,8 @@ async def run_kv_cache_stress_benchmark(
         total_sent_requests=0,
     )
 
-    inflight_limited_driver: RequestDriver = (
-        _ConcurrentTurnsRequestDriver(
-            request_driver, semaphore, benchmark_should_end_time
-        )
-        if semaphore is not None
-        else request_driver
+    request_driver = _ConcurrentTurnsRequestDriver(
+        request_driver, semaphore, benchmark_should_end_time
     )
 
     sessions = list(chat_sessions)
@@ -2081,7 +2057,7 @@ async def run_kv_cache_stress_benchmark(
             outputs = await chat_session_driver(
                 model_id=model_id if lora_id is None else lora_id,
                 api_url=api_url,
-                request_driver=inflight_limited_driver,
+                request_driver=request_driver,
                 request_counter=request_counter,
                 chat_session=chat_session,
                 max_chat_len=tokenizer.model_max_length,
@@ -2624,11 +2600,11 @@ async def benchmark(
     logger.info(f"Burstiness factor: {burstiness} ({distribution})")
     logger.info(f"Maximum request concurrency: {max_concurrency}")
 
-    # This can be used once the minimum Python version is 3.10 or higher,
-    # and it will simplify the code in limited_request_func.
-    #    semaphore = (asyncio.Semaphore(max_concurrency)
-    #                 if max_concurrency else contextlib.nullcontext())
-    semaphore = asyncio.Semaphore(max_concurrency) if max_concurrency else None
+    semaphore: contextlib.AbstractAsyncContextManager[None]
+    if max_concurrency:
+        semaphore = asyncio.Semaphore(max_concurrency)
+    else:
+        semaphore = contextlib.nullcontext()
 
     with contextlib.ExitStack() as benchmark_stack:
         gpu_recorder: GPUBackgroundRecorder | None = None
