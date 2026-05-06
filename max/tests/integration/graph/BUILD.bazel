@@ -34,6 +34,7 @@ _SEPARATE_TARGET_TESTS = [
     "test_debug_config.py",
     "test_debug_config_integration.py",
     "test_engine_device_graph.py",
+    "test_graph_error_messages.py",
     "test_graph_pinned.py",
     "test_graph_telemetry.py",
     "test_load_weights_no_deps.py",
@@ -64,6 +65,7 @@ modular_py_test(
     srcs = glob(
         ["*.py"],
         exclude = _AMD_ONLY_TESTS + _NVIDIA_ONLY_TESTS + _CPU_ONLY_TESTS + _SEPARATE_TARGET_TESTS + [
+            "graph_error_messages_scenario.py",
             "modular_graph_test.py",
             "test_nan_check.py",
         ],
@@ -427,5 +429,47 @@ modular_py_test(
     deps = [
         "//max/python/max/engine",
         "//max/python/max/graph",
+    ],
+)
+
+modular_py_library(
+    name = "graph_error_messages_scenario",
+    testonly = True,
+    srcs = ["graph_error_messages_scenario.py"],
+    imports = ["."],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "test_graph_error_messages",
+    size = "large",
+    srcs = ["test_graph_error_messages.py"],
+    env = {
+        "MODULAR_DEBUG": "source-tracebacks",
+        "MODULAR_DEVICE_CONTEXT_SYNC_MODE": "1",
+        "MODULAR_MAX_DEBUG_ASSERT_LEVEL": "all",
+    },
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//:amd_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    tags = [
+        "gpu",
+        "no-sandbox",
+    ],
+    deps = [
+        ":graph_error_messages_scenario",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        requirement("numpy"),
     ],
 )

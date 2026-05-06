@@ -612,15 +612,19 @@ class InferenceSession:
                         model.name,
                     )
                 except Exception as e:
-                    raise RuntimeError(
+                    msg = (
                         "Failed to compile the model. Please file an issue, "
                         "all models should be correct by construction and "
-                        "this error should have been caught during construction.\n"
-                        "For more detailed failure information enable the "
-                        "`max-debug.source-tracebacks` config key (for example, "
-                        "`Graph.debug.source_tracebacks = True` or "
-                        "`MODULAR_DEBUG=source-tracebacks`)."
-                    ) from e
+                        "this error should have been caught during construction."
+                    )
+                    if not self.debug.source_tracebacks:
+                        msg += (
+                            "\nFor more detailed failure information enable the "
+                            "`max-debug.source-tracebacks` config key (for example, "
+                            "`Graph.debug.source_tracebacks = True` or "
+                            "`MODULAR_DEBUG=source-tracebacks`)."
+                        )
+                    raise RuntimeError(msg) from e
         else:
             raise RuntimeError("The model is not a valid path or module.")
 
