@@ -136,3 +136,29 @@ TEST(StdlibTypesTest, testUnsafePointerSummary) {
   SBValue p_float = ctx.frame.FindVariable("p_float");
   EXPECT_STREQ(p_float.GetSummary(), "3.125");
 }
+
+TEST(StdlibTypesTest, testDict) {
+  StopContext ctx = buildAndLaunch("dict.mojo");
+
+  // d = Dict[String, Int] with three entries inserted in order.
+  SBValue d = ctx.frame.FindVariable("d");
+  EXPECT_STREQ(d.GetSummary(), "(size 3)");
+  EXPECT_EQ(d.GetNumChildren(), 3);
+  // Entries are exposed in insertion order. Entry [0] is "one" → 1.
+  EXPECT_STREQ(d.GetValueForExpressionPath("[0].key").GetSummary(), "\"one\"");
+  EXPECT_STREQ(d.GetValueForExpressionPath("[0].value").GetValue(), "1");
+
+  ctx.resume();
+
+  // d2 = Dict[String, Int] with a single entry.
+  SBValue d2 = ctx.frame.FindVariable("d2");
+  EXPECT_STREQ(d2.GetSummary(), "(size 1)");
+  EXPECT_EQ(d2.GetNumChildren(), 1);
+
+  ctx.resume();
+
+  // d3 = empty Dict[String, Int].
+  SBValue d3 = ctx.frame.FindVariable("d3");
+  EXPECT_STREQ(d3.GetSummary(), "(size 0)");
+  EXPECT_EQ(d3.GetNumChildren(), 0);
+}
