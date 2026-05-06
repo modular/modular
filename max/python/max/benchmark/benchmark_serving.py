@@ -931,51 +931,39 @@ def _session_sort_key(sid: str) -> tuple[int, int, str]:
         return (1, 0, sid)
 
 
-def main_with_parsed_args(
-    args: ServingBenchmarkConfig,
-) -> Iterator[BenchmarkRunResult]:
-    logging.basicConfig(
-        format="%(asctime)s.%(msecs)03d %(levelname)s: %(name)s: %(message)s",
-        datefmt="%H:%M:%S",
-        level=logging.DEBUG if args.verbose else logging.INFO,
-    )
+def _load_workload_yaml(args: ServingBenchmarkConfig) -> None:
+    if not args.workload_config:
+        return
+    with open(args.workload_config) as workload_file:
+        workload = yaml.safe_load(workload_file)
+    # Resolve relative paths against the YAML's directory.
+    for key in ("dataset-path", "output-lengths"):
+        if workload.get(key) is not None:
+            if is_castable_to_int(str(workload[key])):
+                continue
+            path = Path(os.path.expandvars(workload[key]))
+            if not path.is_absolute():
+                path = Path(args.workload_config).parent / path
+            workload[key] = path
+    # Resolve max_concurrency: CLI > YAML.
+    yaml_max_concurrency = workload.pop("max-concurrency", None)
+    if yaml_max_concurrency is not None and args.max_concurrency is None:
+        args.max_concurrency = str(yaml_max_concurrency)
+    # Resolve num_prompts: CLI > YAML > default (deferred).
+    cli_num_prompts = args.num_prompts is not None
+    yaml_num_prompts = workload.pop("num-prompts", None)
+    if not cli_num_prompts:
+        if yaml_num_prompts is not None:
+            args.num_prompts = int(yaml_num_prompts)
+    # Resolve max_benchmark_duration_s: CLI > YAML.
+    w_duration = workload.pop("max-benchmark-duration-s", None)
+    if w_duration is not None and args.max_benchmark_duration_s is None:
+        args.max_benchmark_duration_s = int(w_duration)
+    _apply_workload_to_config(args, workload)
+    args.skip_test_prompt = True
 
-    logger.info(args)
 
-    if args.model is None:
-        raise ValueError("--model is required when running benchmark")
-
-    # ---- Workload YAML ----
-    if args.workload_config:
-        with open(args.workload_config) as workload_file:
-            workload = yaml.safe_load(workload_file)
-        # Resolve relative paths against the YAML's directory.
-        for key in ("dataset-path", "output-lengths"):
-            if workload.get(key) is not None:
-                if is_castable_to_int(str(workload[key])):
-                    continue
-                path = Path(os.path.expandvars(workload[key]))
-                if not path.is_absolute():
-                    path = Path(args.workload_config).parent / path
-                workload[key] = path
-        # Resolve max_concurrency: CLI > YAML.
-        yaml_max_concurrency = workload.pop("max-concurrency", None)
-        if yaml_max_concurrency is not None and args.max_concurrency is None:
-            args.max_concurrency = str(yaml_max_concurrency)
-        # Resolve num_prompts: CLI > YAML > default (deferred).
-        cli_num_prompts = args.num_prompts is not None
-        yaml_num_prompts = workload.pop("num-prompts", None)
-        if not cli_num_prompts:
-            if yaml_num_prompts is not None:
-                args.num_prompts = int(yaml_num_prompts)
-        # Resolve max_benchmark_duration_s: CLI > YAML.
-        w_duration = workload.pop("max-benchmark-duration-s", None)
-        if w_duration is not None and args.max_benchmark_duration_s is None:
-            args.max_benchmark_duration_s = int(w_duration)
-        _apply_workload_to_config(args, workload)
-        args.skip_test_prompt = True
-
-    # Warn + default when nothing constrains run length (common to both paths).
+def _apply_run_length_defaults(args: ServingBenchmarkConfig) -> None:
     has_prompts = args.num_prompts is not None
     has_duration = args.max_benchmark_duration_s is not None
     has_multiplier = args.num_prompts_multiplier is not None
@@ -993,13 +981,11 @@ def main_with_parsed_args(
     elif not has_prompts and not multiplier_will_resolve:
         args.num_prompts = 1000
 
-    # ---- Parse sweep ranges ----
-    concurrency_range = parse_comma_separated(args.max_concurrency, int_or_none)
-    request_rate_range = parse_comma_separated(args.request_rate, float)
 
-    # When num_prompts_multiplier is active AND no explicit num_prompts or
-    # duration constrains the run, dynamically compute num_prompts per
-    # concurrency level.
+def _apply_dynamic_num_prompts(
+    args: ServingBenchmarkConfig,
+    concurrency_range: list[int | None],
+) -> bool:
     use_dynamic_num_prompts = (
         args.num_prompts_multiplier is not None
         and args.num_prompts is None
@@ -1018,8 +1004,38 @@ def main_with_parsed_args(
             " Defaulting to 300s timeout per max-concurrency configuration."
         )
         args.max_benchmark_duration_s = 300
+    return use_dynamic_num_prompts
 
-    # ``--dry-run`` falls through — handled after samples build.
+
+def main_with_parsed_args(
+    args: ServingBenchmarkConfig,
+) -> Iterator[BenchmarkRunResult]:
+    logging.basicConfig(
+        format="%(asctime)s.%(msecs)03d %(levelname)s: %(name)s: %(message)s",
+        datefmt="%H:%M:%S",
+        level=logging.DEBUG if args.verbose else logging.INFO,
+    )
+
+    logger.info(args)
+
+    if args.model is None:
+        raise ValueError("--model is required when running benchmark")
+
+    _load_workload_yaml(args)
+
+    # Warn + default when nothing constrains run length (common to both paths).
+    _apply_run_length_defaults(args)
+
+    # ---- Parse sweep ranges ----
+    concurrency_range = parse_comma_separated(args.max_concurrency, int_or_none)
+    request_rate_range = parse_comma_separated(args.request_rate, float)
+
+    # When num_prompts_multiplier is active AND no explicit num_prompts or
+    # duration constrains the run, dynamically compute num_prompts per
+    # concurrency level.
+    use_dynamic_num_prompts = _apply_dynamic_num_prompts(
+        args, concurrency_range
+    )
 
     random.seed(args.seed)
     np.random.seed(args.seed)
