@@ -6,11 +6,9 @@ modular_py_library(
     name = "benchmark_utils",
     srcs = ["benchmark_utils.py"],
     ignore_extra_deps = ["//max/python/max/profiler"],
-    ignore_unresolved_imports = [
-        "max._core.profiler.Trace",
-    ],
     imports = ["."],
     deps = [
+        "//max/python/max:_core",
         "//max/python/max/driver",
         "//max/python/max/engine",
         "//max/python/max/profiler",
@@ -30,13 +28,10 @@ modular_py_library(
     ignore_extra_deps = [
         "//max/python/max/profiler",
     ],
-    ignore_unresolved_imports = [
-        "max._core.driver.Buffer",
-        "max._core.profiler.Trace",
-    ],
     imports = ["."],
     deps = [
         ":benchmark_utils",
+        "//max/python/max:_core",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
