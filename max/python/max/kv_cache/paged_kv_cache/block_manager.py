@@ -78,17 +78,22 @@ def _compute_seq_len(
     return seq_len
 
 
-def _resolve_only_use_kv_connector_prefix_cache(
+def _resolve_only_use_kv_connector_last_level_cache(
     enable_prefix_caching: bool, num_host_blocks: int
 ) -> bool:
-    """Resolve whether to only use the KVConnector prefix cache.
+    """Resolve whether to only use the KVConnector last level cache.
 
     When this is set, the device prefix cache will be disabled. All KVCache hits
     will stricly be served from the KVConnector. This is primarily used for
     testing and benchmarking the performance of the KVConnector. Do NOT use this
     flag in production.
+
+    With the local connector, the last level cache is the host memory. With the
+    tiered connector, the last level cache is the disk.
     """
-    enabled = os.getenv("MODULAR_ONLY_USE_KV_CONNECTOR", "0").lower() in (
+    enabled = os.getenv(
+        "MODULAR_ONLY_USE_KV_CONNECTOR_LAST_LEVEL_CACHE", "0"
+    ).lower() in (
         "1",
         "true",
         "yes",
@@ -97,14 +102,14 @@ def _resolve_only_use_kv_connector_prefix_cache(
     if enabled:
         if not enable_prefix_caching:
             raise ValueError(
-                "MODULAR_ONLY_USE_KV_CONNECTOR is set, but prefix caching is disabled."
+                "MODULAR_ONLY_USE_KV_CONNECTOR_LAST_LEVEL_CACHE is set, but prefix caching is disabled."
             )
         if num_host_blocks == 0:
             raise ValueError(
-                "MODULAR_ONLY_USE_KV_CONNECTOR is set, but no host blocks are available."
+                "MODULAR_ONLY_USE_KV_CONNECTOR_LAST_LEVEL_CACHE is set, but no host blocks are available."
             )
         logger.info(
-            "Detected MODULAR_ONLY_USE_KV_CONNECTOR flag, only using KVConnector prefix cache."
+            "Detected MODULAR_ONLY_USE_KV_CONNECTOR_LAST_LEVEL_CACHE flag, only using KVConnector prefix cache."
         )
     return enabled
 
@@ -163,12 +168,12 @@ class BlockManager:
         # Whether to enable runtime checks.
         self.enable_runtime_checks = enable_runtime_checks
 
-        # Whether to only use the KVConnector prefix cache.
+        # Whether to only use the KVConnector last level cache.
         # When this is set, the device prefix cache will be disabled. This is
         # primarily used for testing and benchmarking the performance of the
         # KVConnector.
-        self._only_use_kv_connector_prefix_cache = (
-            _resolve_only_use_kv_connector_prefix_cache(
+        self._only_use_kv_connector_last_level_cache = (
+            _resolve_only_use_kv_connector_last_level_cache(
                 enable_prefix_caching, connector.num_host_blocks
             )
         )
@@ -336,7 +341,7 @@ class BlockManager:
         desired_hashes: list[int],
     ) -> list[KVCacheBlock]:
         """Returns a list of device blocks with the desired hashes."""
-        if self._only_use_kv_connector_prefix_cache:
+        if self._only_use_kv_connector_last_level_cache:
             return []
 
         device_prefix_cache = self.device_block_pool.hash_to_committed_block

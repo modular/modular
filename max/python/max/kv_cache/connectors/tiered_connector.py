@@ -35,6 +35,9 @@ from max.nn.kv_cache.metrics import KVCacheMetrics
 from max.profiler import traced
 
 from ..paged_kv_cache.block_copy_engine import BlockOffloadEngine
+from ..paged_kv_cache.block_manager import (
+    _resolve_only_use_kv_connector_last_level_cache,
+)
 from ..paged_kv_cache.block_pool import BlockPool
 from ..paged_kv_cache.block_utils import KVCacheBlock
 from .disk_tier import DiskTier
@@ -140,6 +143,15 @@ class TieredConnector:
         self._disk_blocks_written: int = 0
         self._disk_blocks_read: int = 0
 
+        # Whether to only use the KVConnector last level cache.
+        # When this is set, cache hits will only be served from the disk tier.
+        self._only_use_kv_connector_last_level_cache = (
+            _resolve_only_use_kv_connector_last_level_cache(
+                enable_prefix_caching=True,
+                num_host_blocks=total_num_host_blocks,
+            )
+        )
+
     @property
     def name(self) -> str:
         """Connector name for logging/debugging."""
@@ -177,7 +189,11 @@ class TieredConnector:
         read_futures: list[tuple[Future[None], int]] = []
 
         for block_hash in block_hashes:
-            if block_hash in host_cache:
+            # Skip the host tier if env var is set
+            if (
+                not self._only_use_kv_connector_last_level_cache
+                and block_hash in host_cache
+            ):
                 # CPU hit
                 host_block = host_cache[block_hash]
                 self._host_block_pool.touch(host_block)
@@ -210,9 +226,10 @@ class TieredConnector:
                 read_futures.append((future, block_hash))
 
                 # Commit to prefix cache (data will be valid before load())
-                self._host_block_pool.commit_into_prefix_cache(
-                    block_hash, host_block
-                )
+                if block_hash not in host_cache:
+                    self._host_block_pool.commit_into_prefix_cache(
+                        block_hash, host_block
+                    )
                 hits.append((host_block, block_hash))
                 self._disk_blocks_read += 1
 

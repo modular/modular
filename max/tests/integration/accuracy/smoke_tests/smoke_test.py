@@ -140,6 +140,9 @@ MODEL_ALIASES = CaseInsensitiveDict({
     "meta-llama/Llama-3.1-8B-Instruct__local_kvconnector": {
         "max_serve_args": "--kv-connector local",
     },
+    "meta-llama/Llama-3.1-8B-Instruct__tiered_kvconnector": {
+        "max_serve_args": "--kv-connector tiered",
+    },
 })
 # fmt: on
 
@@ -235,7 +238,7 @@ def get_server_cmd(
     # Force MAX to rely solely on the KVConnector for prefix cache hits to test
     # cpu/disk KV offload code paths.
     if framework in ("max", "max-ci") and "--kv-connector" in serve_extra_args:
-        os.environ["MODULAR_ONLY_USE_KV_CONNECTOR"] = "1"
+        os.environ["MODULAR_ONLY_USE_KV_CONNECTOR_LAST_LEVEL_CACHE"] = "1"
 
     if _inside_bazel():
         assert framework == "max-ci", "bazel invocation only supports max-ci"
