@@ -14,8 +14,6 @@
 
 from __future__ import annotations
 
-import asyncio
-
 import numpy as np
 import pytest
 from max.benchmark.benchmark_shared.datasets import SampledRequest
@@ -76,20 +74,16 @@ def calculate_interval_stats(
     }
 
 
-def test_request_intervals_basic_functionality() -> None:
+@pytest.mark.asyncio
+async def test_request_intervals_basic_functionality() -> None:
     """Test basic request interval generation functionality."""
+    request_rate = 5.0
+    burstiness = 1.0
+    num_samples = 50
 
-    async def run_test():  # noqa: ANN202
-        request_rate = 5.0
-        burstiness = 1.0
-        num_samples = 50
-
-        intervals = await generate_test_intervals(
-            request_rate, burstiness, num_samples
-        )
-        return intervals, request_rate, num_samples
-
-    intervals, request_rate, num_samples = asyncio.run(run_test())
+    intervals = await generate_test_intervals(
+        request_rate, burstiness, num_samples
+    )
 
     assert len(intervals) == num_samples - 1
     assert all(interval > 0 for interval in intervals)
@@ -101,26 +95,21 @@ def test_request_intervals_basic_functionality() -> None:
     )  # 30% tolerance for small samples
 
 
-def test_request_intervals_seed_reproducibility() -> None:
+@pytest.mark.asyncio
+async def test_request_intervals_seed_reproducibility() -> None:
     """Test that same seed produces identical results."""
-
-    async def run_test():  # noqa: ANN202
-        request_rate = 10.0
-        burstiness = 1.0
-        num_samples = 30
-        seed = 42
-
-        intervals_1 = await generate_test_intervals(
-            request_rate, burstiness, num_samples, seed
-        )
-        intervals_2 = await generate_test_intervals(
-            request_rate, burstiness, num_samples, seed
-        )
-        return intervals_1, intervals_2
-
-    intervals_1, intervals_2 = asyncio.run(run_test())
-
     request_rate = 10.0
+    burstiness = 1.0
+    num_samples = 30
+    seed = 42
+
+    intervals_1 = await generate_test_intervals(
+        request_rate, burstiness, num_samples, seed
+    )
+    intervals_2 = await generate_test_intervals(
+        request_rate, burstiness, num_samples, seed
+    )
+
     stats_1 = calculate_interval_stats(intervals_1, request_rate)
     stats_2 = calculate_interval_stats(intervals_2, request_rate)
 
@@ -140,23 +129,19 @@ def test_request_intervals_seed_reproducibility() -> None:
     )
 
 
-def test_request_intervals_different_seeds() -> None:
+@pytest.mark.asyncio
+async def test_request_intervals_different_seeds() -> None:
     """Test that different seeds produce different results."""
+    request_rate = 8.0
+    burstiness = 1.0
+    num_samples = 40
 
-    async def run_test():  # noqa: ANN202
-        request_rate = 8.0
-        burstiness = 1.0
-        num_samples = 40
-
-        intervals_seed1 = await generate_test_intervals(
-            request_rate, burstiness, num_samples, seed=42
-        )
-        intervals_seed2 = await generate_test_intervals(
-            request_rate, burstiness, num_samples, seed=123
-        )
-        return intervals_seed1, intervals_seed2, request_rate
-
-    intervals_seed1, intervals_seed2, request_rate = asyncio.run(run_test())
+    intervals_seed1 = await generate_test_intervals(
+        request_rate, burstiness, num_samples, seed=42
+    )
+    intervals_seed2 = await generate_test_intervals(
+        request_rate, burstiness, num_samples, seed=123
+    )
 
     assert not np.array_equal(intervals_seed1, intervals_seed2)
 
@@ -167,51 +152,39 @@ def test_request_intervals_different_seeds() -> None:
     assert rate_2 == pytest.approx(request_rate, rel=0.3)
 
 
-def test_request_intervals_infinite_rate() -> None:
+@pytest.mark.asyncio
+async def test_request_intervals_infinite_rate() -> None:
     """Test that infinite request rate works correctly."""
+    request_rate = float("inf")
+    burstiness = 1.0
+    num_samples = 20
 
-    async def run_test():  # noqa: ANN202
-        request_rate = float("inf")
-        burstiness = 1.0
-        num_samples = 20
-
-        intervals = await generate_test_intervals(
-            request_rate, burstiness, num_samples
-        )
-        return intervals, num_samples
-
-    intervals, num_samples = asyncio.run(run_test())
+    intervals = await generate_test_intervals(
+        request_rate, burstiness, num_samples
+    )
 
     assert len(intervals) == num_samples - 1
     assert all(interval < 0.01 for interval in intervals)
 
 
-def test_request_intervals_burstiness_variations() -> None:
+@pytest.mark.asyncio
+async def test_request_intervals_burstiness_variations() -> None:
     """Test different burstiness values produce expected behavior."""
+    request_rate = 5.0
+    num_samples = 50
 
-    async def run_test():  # noqa: ANN202
-        request_rate = 5.0
-        num_samples = 50
+    burstiness_values = [0.5, 1.0, 2.0]
+    results = {}
 
-        burstiness_values = [0.5, 1.0, 2.0]
-        results = {}
-
-        for burstiness in burstiness_values:
-            intervals = await generate_test_intervals(
-                request_rate, burstiness, num_samples
-            )
-            stats = calculate_interval_stats(intervals, request_rate)
-            results[burstiness] = stats
-
-        return results, request_rate
-
-    results, request_rate = asyncio.run(run_test())
-
-    for burstiness, stats in results.items():
-        actual_rate = stats["actual_request_rate"]
-        assert actual_rate == pytest.approx(request_rate, rel=0.4), (
-            f"Burstiness {burstiness} failed rate check"
+    for burstiness in burstiness_values:
+        intervals = await generate_test_intervals(
+            request_rate, burstiness, num_samples
         )
+        stats = calculate_interval_stats(intervals, request_rate)
+        results[burstiness] = stats
+        assert stats["actual_request_rate"] == pytest.approx(
+            request_rate, rel=0.4
+        ), f"Burstiness {burstiness} failed rate check"
 
     std_05 = results[0.5]["std_dev"]
     std_10 = results[1.0]["std_dev"]
