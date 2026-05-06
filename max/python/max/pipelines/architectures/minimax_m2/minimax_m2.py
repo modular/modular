@@ -109,7 +109,7 @@ class MiniMaxM2TransformerBlock(Module):
     ) -> None:
         super().__init__()
         assert config.quant_config is not None, (
-            "MiniMax-M2 requires quantized weights (FP8 or NVFP4)"
+            "MiniMax-M2 requires quantized weights (FP8, NVFP4, or MXFP4)"
         )
         self.devices = config.devices
         num_devices = len(config.devices)

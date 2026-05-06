@@ -26,7 +26,10 @@ from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph
 from max.graph.weights import Weights, WeightsAdapter
 from max.nn.comm.ep import EPCommInitializer, EPConfig
-from max.nn.comm.ep.ep_config import calculate_ep_max_tokens_per_rank
+from max.nn.comm.ep.ep_config import (
+    calculate_ep_max_tokens_per_rank,
+    estimate_ep_memory_usage,
+)
 from max.nn.kv_cache import KVCacheParams
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
@@ -34,6 +37,7 @@ from max.pipelines.lib import (
     KVCacheConfig,
     PipelineConfig,
 )
+from max.pipelines.lib.config.config_enums import supported_encoding_dtype
 from max.pipelines.lib.interfaces import AlwaysSignalBuffersMixin
 from max.pipelines.lib.interfaces.pipeline_model import ModelInputs
 from max.pipelines.lib.utils import (
@@ -41,6 +45,7 @@ from max.pipelines.lib.utils import (
     parse_state_dict_from_weights,
 )
 from max.support.algorithm import flatten2d
+from max.support.human_readable_formatter import to_human_readable_bytes
 from transformers import AutoConfig
 from typing_extensions import override
 
@@ -108,6 +113,93 @@ class MiniMaxM2Model(AlwaysSignalBuffersMixin, LlamaModelBase):
             kv_cache_config=kv_cache_config,
             cache_dtype=cache_dtype,
         )
+
+    # Empirically determined headroom reserved per device when CUDA graph
+    # capture is enabled, on top of the activation memory we account for
+    # explicitly. Without this, capture can OOM on large MoE models.
+    _GRAPH_CAPTURE_HEADROOM_BYTES_PER_DEVICE = 8 * 1024**3
+
+    @classmethod
+    def estimate_activation_memory(
+        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
+    ) -> int:
+        encoding = pipeline_config.model.quantization_encoding
+        n_gpus_per_node = len(pipeline_config.model.device_specs)
+        num_experts = getattr(huggingface_config, "num_local_experts", 256)
+        moe_dim = getattr(huggingface_config, "intermediate_size", 1536)
+        hidden_size = getattr(huggingface_config, "hidden_size", 3072)
+        top_k = getattr(huggingface_config, "num_experts_per_tok", 8)
+
+        ep_buffer_memory = 0
+        moe_activation_memory = 0
+        ep_size = pipeline_config.runtime.ep_size
+        if ep_size > 1 and encoding is not None:
+            ep_max_rank_send_tokens = calculate_ep_max_tokens_per_rank(
+                max_batch_input_tokens=pipeline_config.runtime.max_batch_input_tokens,
+                ep_size=ep_size,
+                data_parallel_degree=pipeline_config.model.data_parallel_degree,
+            )
+            ep_dispatch_dtype = supported_encoding_dtype(encoding)
+
+            # Worst-case tokens received per rank during all-to-all routing.
+            max_recv_tokens_per_rank = ep_max_rank_send_tokens * min(
+                num_experts,
+                ep_size * top_k,
+            )
+
+            # Peak MoE activation: input to second grouped_matmul has shape
+            # [max_recv_tokens_per_rank, moe_intermediate_size].
+            moe_activation_memory += (
+                max_recv_tokens_per_rank
+                * moe_dim
+                * ep_dispatch_dtype.size_in_bytes
+            )
+            # Output has shape [max_recv_tokens_per_rank, hidden_size] in
+            # bfloat16.
+            moe_activation_memory += (
+                max_recv_tokens_per_rank
+                * hidden_size
+                * DType.bfloat16.size_in_bytes
+            )
+            # 256MB per GPU for misc scalar buffers.
+            moe_activation_memory += 256 * 1024 * 1024
+            moe_activation_memory *= n_gpus_per_node
+
+            n_nodes = max(ep_size // n_gpus_per_node, 1)
+            per_device_ep_memory = estimate_ep_memory_usage(
+                hidden_size=hidden_size,
+                dispatch_dtype=ep_dispatch_dtype,
+                combine_dtype=DType.bfloat16,
+                max_tokens_per_rank=ep_max_rank_send_tokens,
+                n_experts=num_experts,
+                n_nodes=n_nodes,
+                n_gpus_per_node=n_gpus_per_node,
+                top_k=top_k,
+            )
+            # EPCommInitializer double-buffers (NUM_GROUPS=2) the SHMEM
+            # dispatch/combine buffers.
+            ep_buffer_memory = per_device_ep_memory * n_gpus_per_node * 2
+
+        activation_memory = moe_activation_memory + ep_buffer_memory
+
+        graph_capture_headroom = 0
+        if pipeline_config.runtime.device_graph_capture:
+            graph_capture_headroom = (
+                cls._GRAPH_CAPTURE_HEADROOM_BYTES_PER_DEVICE * n_gpus_per_node
+            )
+            activation_memory += graph_capture_headroom
+
+        if activation_memory != 0:
+            logger.info(
+                "Estimated activation memory: %s "
+                "(ep_buffers=%s, moe_activation=%s, graph_capture=%s)",
+                to_human_readable_bytes(activation_memory),
+                to_human_readable_bytes(ep_buffer_memory),
+                to_human_readable_bytes(moe_activation_memory),
+                to_human_readable_bytes(graph_capture_headroom),
+            )
+
+        return activation_memory
 
     @override
     def prepare_initial_token_inputs(
@@ -306,8 +398,12 @@ class MiniMaxM2Model(AlwaysSignalBuffersMixin, LlamaModelBase):
             ep_size=ep_size,
             data_parallel_degree=self.pipeline_config.model.data_parallel_degree,
         )
+        is_mxfp4 = (
+            model_config.quant_config is not None
+            and model_config.quant_config.is_mxfp4
+        )
         model_config.ep_config = EPConfig(
-            dispatch_dtype=model_config.dtype,
+            dispatch_dtype=DType.uint8 if is_mxfp4 else model_config.dtype,
             combine_dtype=DType.bfloat16,
             hidden_size=model_config.hidden_size,
             top_k=model_config.num_experts_per_tok,

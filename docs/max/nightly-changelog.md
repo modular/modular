@@ -10,6 +10,8 @@ This version is still a work in progress.
 
 ## MAX models
 
+- Added MXFP4 quantization support for MiniMax-M2.
+
 ## MAX framework
 
 ### Inference server
