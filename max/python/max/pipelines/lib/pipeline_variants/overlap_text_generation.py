@@ -1686,34 +1686,6 @@ class OverlapTextGenerationPipeline(
                     bitmask_device.inplace_copy_from(bitmask_host)
                     model_inputs.token_bitmasks = bitmask_device
 
-                # Set all-True bitmask for warmup (unconstrained).
-                # Shape: [batch_size, num_speculative_tokens + 1, vocab_size].
-                if self._spec_decode_state.persistent_bitmask is not None:
-                    total_batch = batch_size * dp_size
-                    persistent_bitmask = (
-                        self._spec_decode_state.persistent_bitmask
-                    )
-                    num_positions = persistent_bitmask.shape[1]
-                    vocab_size_dim = persistent_bitmask.shape[2]
-                    # Flatten, slice to batch size, reshape back to 3D.
-                    num_elements = total_batch * num_positions * vocab_size_dim
-                    flat = persistent_bitmask.view(
-                        persistent_bitmask.dtype,
-                        (persistent_bitmask.num_elements,),
-                    )
-                    bitmask_device = flat[:num_elements].view(
-                        persistent_bitmask.dtype,
-                        (total_batch, num_positions, vocab_size_dim),
-                    )
-                    bitmask_host = DevicePinnedBuffer(
-                        dtype=DType.bool,
-                        shape=bitmask_device.shape,
-                        device=self._devices[0],
-                    )
-                    bitmask_host.to_numpy()[:] = True
-                    bitmask_device.inplace_copy_from(bitmask_host)
-                    model_inputs.token_bitmasks = bitmask_device
-
             yield model_inputs
 
     def warmup_graph_capture(self) -> None:

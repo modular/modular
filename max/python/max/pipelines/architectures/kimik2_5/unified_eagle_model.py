@@ -525,18 +525,4 @@ class Eagle3KimiK25Unified(Module):
             )
             all_input_types.append(token_bitmasks_type)
 
-        # Optional bitmask input for structured output. Appended last so the
-        # mandatory input count is stable - graph callers can detect presence
-        # by checking self.enable_structured_output.
-        if self.enable_structured_output:
-            # num_bitmask_positions = num_speculative_tokens + 1
-            # Position i contains valid tokens given FSM state after draft[0:i-1]
-            # Position num_speculative_tokens is for the bonus token
-            token_bitmasks_type = TensorType(
-                DType.bool,
-                shape=["batch_size", "num_bitmask_positions", "vocab_size"],
-                device=device_ref,
-            )
-            all_input_types.append(token_bitmasks_type)
-
         return tuple(all_input_types)
