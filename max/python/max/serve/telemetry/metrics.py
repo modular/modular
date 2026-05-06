@@ -59,12 +59,14 @@ OtelAttributes = dict[str, str] | None
 # SDK instruments are the "types" that actually do recording
 API_PROXIES = (
     api_instrument._ProxyCounter
+    | api_instrument._ProxyGauge
     | api_instrument._ProxyHistogram
     | api_instrument._ProxyUpDownCounter
 )
 
 SDK_INSTRUMENTS = (
     sdk_instrument._Counter
+    | sdk_instrument._Gauge
     | sdk_instrument._Histogram
     | sdk_instrument._UpDownCounter
 )
@@ -106,9 +108,13 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
     "maxserve.num_output_tokens": _meter.create_counter(
         "maxserve.num_output_tokens", description="Count of generated tokens"
     ),  # type: ignore
-    "maxserve.num_requests_queued": _meter.create_up_down_counter(
+    "maxserve.num_requests_queued": _meter.create_gauge(
         "maxserve.num_requests_queued",
-        description="Count of requests waiting to be processed",
+        description=(
+            "Current depth of the scheduler's CE / prefill queue, "
+            "sampled once per scheduler iteration. Mirrors the "
+            "'Pending: N reqs' value in scheduler logs."
+        ),
     ),  # type: ignore
     "maxserve.num_requests_running": _meter.create_up_down_counter(
         "maxserve.num_requests_running",
@@ -493,6 +499,14 @@ class _AsyncMetrics:
         )
 
     def reqs_queued(self, value: int) -> None:
+        """Publish the current depth of the scheduler's CE / prefill queue.
+
+        ``maxserve.num_requests_queued`` is a synchronous gauge: every call
+        replaces the previously reported value rather than accumulating.
+        Schedulers should call this once per iteration with
+        ``len(all_ce_reqs)`` (or the equivalent for their queue layout) at
+        the same point that the "Pending: N reqs" log line is computed.
+        """
         self.client.send_measurement(
             MaxMeasurement(
                 "maxserve.num_requests_queued", value, self.extra_attributes

@@ -17,7 +17,7 @@ import queue
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import TypeVar
+from typing import Any, TypeVar
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -2053,3 +2053,60 @@ def test_stall_watchdog_default_is_disabled() -> None:
     """The stall timeout defaults to None (disabled) when the env var is unset."""
     decode, _, _, _ = create_di_scheduler()
     assert decode.scheduler_config.decode_stall_timeout_s is None
+
+
+# ---------------------------------------------------------------------------
+# maxserve.num_requests_queued gauge (MXSERV-29).
+#
+# The gauge is a synchronous OTel Gauge: ``BatchMetrics.publish_metrics``
+# samples ``num_pending_reqs`` once per scheduler iteration and replaces
+# the previous reading. The ``num_pending_reqs`` value the DecodeScheduler
+# passes into ``log_metrics`` is ``len(pending_reqs) + len(prefill_reqs)``,
+# so the gauge mirrors the local pending set on the decode side.
+# ---------------------------------------------------------------------------
+
+
+class _GaugeRecorder:
+    """Captures METRICS.reqs_queued snapshots from BatchMetrics."""
+
+    def __init__(self) -> None:
+        self.values: list[int] = []
+
+    @property
+    def last(self) -> int | None:
+        return self.values[-1] if self.values else None
+
+    def reqs_queued(self, value: int) -> None:
+        self.values.append(value)
+
+    def __getattr__(self, _name: str) -> object:
+        return MagicMock()
+
+
+def _patch_decode_metrics(recorder: _GaugeRecorder) -> Any:
+    """Patches the METRICS binding used by ``BatchMetrics.publish_metrics``."""
+    return patch("max.serve.scheduler.utils.METRICS", recorder)
+
+
+def test_decode_publish_metrics_emits_pending_snapshot() -> None:
+    """Each decode iteration that runs a batch publishes the current
+    pending depth (len(pending_reqs) + len(prefill_reqs)) as a gauge.
+    """
+    recorder = _GaugeRecorder()
+    with _patch_decode_metrics(recorder):
+        decode, prefill, _q, _ctx = (
+            create_default_di_scheduler_and_submit_one_request()
+        )
+
+        # Drive the request all the way through: decode drains and
+        # forwards to prefill, prefill runs, decode picks up the
+        # response and runs TG. Each non-empty batch on either side
+        # publishes a snapshot; the final value must read 0.
+        decode.run_iteration()
+        prefill.run_iteration()
+        decode.run_iteration()
+
+        assert recorder.last == 0
+        assert (
+            len(decode.pending_reqs) + len(decode.prefill_reqs) == recorder.last
+        )

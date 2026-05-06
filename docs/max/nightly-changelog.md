@@ -14,6 +14,17 @@ This version is still a work in progress.
 
 ### Inference server
 
+- MAX Serve now emits the `maxserve.num_requests_queued` OTel/Prometheus
+  metric (changed from an `UpDownCounter` to a synchronous `Gauge`). The
+  gauge is sampled once per scheduler iteration from
+  `BatchMetrics.publish_metrics` and reports the depth of the scheduler's
+  CE / prefill queue (the same value as the `Pending: N reqs` line in
+  scheduler logs). It is published by every text-path scheduler that
+  drives `BatchMetrics`: `TokenGenerationScheduler` and `PrefillScheduler`
+  (via `TextBatchConstructor`), and `DecodeScheduler` (via
+  `len(pending_reqs) + len(prefill_reqs)`). Operators can use this metric
+  to observe queue buildup during overload conditions.
+
 ### `max` CLI
 
 - Added `--devices=gpu:all` to use every visible GPU (including MAX Serve).

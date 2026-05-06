@@ -460,6 +460,9 @@ class BatchMetrics:
 
         METRICS.batch_terminated_reqs(self.terminated_reqs, batch_type=bt)
         METRICS.batch_pending_reqs(self.num_pending_reqs, batch_type=bt)
+        # Publish the current scheduler queue depth as a synchronous gauge
+        # (mirrors the "Pending: N reqs" value emitted in scheduler logs).
+        METRICS.reqs_queued(self.num_pending_reqs)
         METRICS.batch_prompt_throughput(self.prompt_throughput, batch_type=bt)
 
         METRICS.batch_generation_throughput(
