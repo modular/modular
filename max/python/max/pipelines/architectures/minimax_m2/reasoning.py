@@ -102,6 +102,16 @@ class MiniMaxM2ReasoningParser(ReasoningParser):
         is_still_reasoning = end_token_idx is None
         return span, is_still_reasoning
 
+    def is_prompt_in_reasoning(self, prompt_token_ids: Sequence[int]) -> bool:
+        """Decide whether the next generated token is in a reasoning span.
+
+        Only checks for ``</think>`` — not ``<minimax:tool_call>`` — because
+        the chat template embeds tool-call format tokens in the system prompt
+        when tools are provided, which must not disable reasoning for the
+        generation that follows.
+        """
+        return self.think_end_token_id not in prompt_token_ids
+
     @classmethod
     async def from_tokenizer(
         cls,

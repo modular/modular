@@ -93,6 +93,28 @@ def test_stream_no_end_still_reasoning() -> None:
     assert span.extract_content(tokens) == []
 
 
+def test_is_prompt_in_reasoning_tool_call_token_does_not_disable_reasoning() -> (
+    None
+):
+    parser = _make_parser()
+    # The MiniMax chat template embeds <minimax:tool_call> in the prompt when
+    # tools are provided. This must NOT disable reasoning for generation.
+    prompt = [10, 20, 300, 30, 40]  # 300 = tool_call_start_token_id
+    assert parser.is_prompt_in_reasoning(prompt) is True
+
+
+def test_is_prompt_in_reasoning_think_end_disables_reasoning() -> None:
+    parser = _make_parser()
+    # If the prompt already contains </think>, reasoning is disabled.
+    prompt = [10, 100, 11, 200, 20]  # 200 = think_end_token_id
+    assert parser.is_prompt_in_reasoning(prompt) is False
+
+
+def test_is_prompt_in_reasoning_empty_prompt_stays_active() -> None:
+    parser = _make_parser()
+    assert parser.is_prompt_in_reasoning([]) is True
+
+
 @pytest.mark.asyncio
 async def test_from_tokenizer_missing_tokens_raises() -> None:
     mock = _mock_tokenizer(

@@ -136,6 +136,31 @@ def test_stream_no_tool_start_token_id_support() -> None:
     assert is_still_reasoning
 
 
+def test_is_prompt_in_reasoning_tool_section_token_disables_reasoning() -> None:
+    parser = KimiK2_5ReasoningParser(
+        THINK_START_TOKEN_ID, THINK_END_TOKEN_ID, TOOL_SECTION_START_TOKEN_ID
+    )
+    # Right-to-left scan: <|tool_calls_section_begin|> is treated as an
+    # end-of-reasoning delimiter, so reasoning is disabled.
+    prompt = [10, 20, TOOL_SECTION_START_TOKEN_ID, 30]
+    assert parser.is_prompt_in_reasoning(prompt) is False
+
+
+def test_is_prompt_in_reasoning_think_end_disables_reasoning() -> None:
+    parser = KimiK2_5ReasoningParser(
+        THINK_START_TOKEN_ID, THINK_END_TOKEN_ID, TOOL_SECTION_START_TOKEN_ID
+    )
+    prompt = [10, THINK_START_TOKEN_ID, 20, THINK_END_TOKEN_ID, 30]
+    assert parser.is_prompt_in_reasoning(prompt) is False
+
+
+def test_is_prompt_in_reasoning_empty_prompt_stays_active() -> None:
+    parser = KimiK2_5ReasoningParser(
+        THINK_START_TOKEN_ID, THINK_END_TOKEN_ID, TOOL_SECTION_START_TOKEN_ID
+    )
+    assert parser.is_prompt_in_reasoning([]) is True
+
+
 @pytest.mark.asyncio
 async def test_from_tokenizer_missing_tokens_raises() -> None:
     mock = _mock_tokenizer(

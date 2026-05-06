@@ -152,14 +152,11 @@ class KimiToolParser:
         """Parses a complete response into tool calls."""
         tool_calls: list[ParsedToolCall] = []
 
-        # Check if response contains tool calls section
-        if TOOL_CALLS_SECTION_BEGIN not in response:
-            # No tool calls in response
-            return ParsedToolResponse(content=response, tool_calls=[])
-
         # Extract content before tool calls section (if any)
         content_before: str | None = None
         section_start_idx = response.find(TOOL_CALLS_SECTION_BEGIN)
+        if section_start_idx == -1:
+            return ParsedToolResponse(content=response, tool_calls=[])
         if section_start_idx > 0:
             content_before = response[:section_start_idx].strip() or None
 
@@ -220,15 +217,17 @@ class KimiToolParser:
         deltas: list[ParsedToolCallDelta] = []
 
         try:
+            section_begin_pos = self._buffer.find(TOOL_CALLS_SECTION_BEGIN)
+
             # Extract content before tool calls section
-            content_delta = self._extract_content_delta()
+            content_delta = self._extract_content_delta(section_begin_pos)
             if content_delta:
                 deltas.append(
                     ParsedToolCallDelta(index=0, content=content_delta)
                 )
 
             # Extract tool calls from the buffer
-            tool_call_bodies = self._extract_tool_call_bodies()
+            tool_call_bodies = self._extract_tool_call_bodies(section_begin_pos)
 
             for i, body in enumerate(tool_call_bodies):
                 # Ensure we have state for this tool call index
@@ -271,23 +270,27 @@ class KimiToolParser:
             logger.exception("Error parsing streaming tool call delta")
             raise
 
-    def _extract_content_delta(self) -> str | None:
+    def _extract_content_delta(self, section_begin_pos: int) -> str | None:
         """Extracts unsent content before the tool-calls section.
 
         Holds back any trailing suffix that partially matches the tool calls
         section begin marker to avoid leaking marker bytes into content.
 
+        Args:
+            section_begin_pos: Buffer index of the first
+                ``TOOL_CALLS_SECTION_BEGIN`` marker, or ``-1`` if absent.
+
         Returns:
             New content to send, or None if nothing to send.
         """
-        if TOOL_CALLS_SECTION_BEGIN not in self._buffer:
+        if section_begin_pos == -1:
             # Check for partial marker overlap at the end
             overlap = _partial_tag_overlap(
                 self._buffer, TOOL_CALLS_SECTION_BEGIN
             )
             sendable_idx = len(self._buffer) - overlap
         else:
-            sendable_idx = self._buffer.index(TOOL_CALLS_SECTION_BEGIN)
+            sendable_idx = section_begin_pos
 
         if sendable_idx > self._state.sent_content_idx:
             content = self._buffer[self._state.sent_content_idx : sendable_idx]
@@ -295,23 +298,26 @@ class KimiToolParser:
             return content
         return None
 
-    def _extract_tool_call_bodies(self) -> list[str]:
+    def _extract_tool_call_bodies(self, section_begin_pos: int) -> list[str]:
         """Extracts raw bodies from tool call blocks.
 
         Finds complete and partial ``<|tool_call_begin|>...<|tool_call_end|>``
         blocks and returns their inner content.
 
+        Args:
+            section_begin_pos: Buffer index of the first
+                ``TOOL_CALLS_SECTION_BEGIN`` marker, or ``-1`` if absent.
+
         Returns:
             List of tool call body strings (may include incomplete ones).
         """
-        if TOOL_CALLS_SECTION_BEGIN not in self._buffer:
+        if section_begin_pos == -1:
             return []
 
         results: list[str] = []
-        pos = self._buffer.index(TOOL_CALLS_SECTION_BEGIN)
 
         while True:
-            start = self._buffer.find(TOOL_CALL_BEGIN, pos)
+            start = self._buffer.find(TOOL_CALL_BEGIN, section_begin_pos)
             if start == -1:
                 break
 
@@ -321,7 +327,7 @@ class KimiToolParser:
             if end != -1:
                 # Complete tool call block
                 tool_call = self._buffer[tc_start:end]
-                pos = end + len(TOOL_CALL_END)
+                section_begin_pos = end + len(TOOL_CALL_END)
             else:
                 # Incomplete - might still be streaming
                 tool_call = self._buffer[tc_start:]
