@@ -6,7 +6,7 @@ description: Answers to questions we expect about Mojo.
 
 We tried to anticipate your questions about Mojo on this page. If this page
 doesn't answer all your questions, also check out our [community
-channels](https://www.modular.com/community).
+channels](/community/).
 
 ## Motivation
 
@@ -21,7 +21,7 @@ compile-time metaprogramming, integration of adaptive compilation techniques,
 caching throughout the compilation flow, and other features that are not
 supported by existing languages.
 
-As a result, we're extremely committed to Mojo's long term success and are
+As a result, we're extremely committed to Mojo's long-term success and are
 investing heavily in it. Our overall mission is to unify AI software and we
 can’t do that without a unified language that can scale across the whole AI
 infrastructure stack. Our current focus is to unify CPU and GPU programming
@@ -34,29 +34,28 @@ For more detail, see the [Mojo vision](/docs/vision/).
 ### Why is it called Mojo?
 
 Mojo means "a magical charm" or "magical powers." We thought this was a fitting
-name for a language that brings magical powers to Python, including unlocking
-an innovative programming model for accelerators and other heterogeneous
-systems pervasive in AI today.
+name for a language that brings magical powers to programmers, including
+unlocking an innovative programming model for accelerators and other
+heterogeneous systems pervasive in AI today.
 
 ### What problems does Mojo solve that no other language can?
 
-Mojo combines the usability of Python with the systems programming features
-it’s missing. We are guided more by pragmatism than novelty, but Mojo’s use of
+Mojo combines the usability of Python with the systems programming features it’s
+missing. We are guided more by pragmatism than novelty, but Mojo’s use of
 [MLIR](https://mlir.llvm.org/) allows it to scale to new exotic hardware types
-and domains in a way that other languages haven’t demonstrated. It also
-has caching and distributed compilation built into its
-core. We also believe Mojo has a good chance of unifying hybrid packages in the
-broader Python community.
+and domains in a way that other languages haven’t demonstrated. It also has
+caching and distributed compilation built into its core. We also believe Mojo
+has a good chance of unifying hybrid packages in the broader Python community.
 
 ### What kind of developers will benefit the most from Mojo?
 
 Mojo’s initial focus is to bring programmability back to AI, enabling AI
 developers to customize and get the most out of their hardware. As such, Mojo
 will primarily benefit researchers and other engineers looking to write
-high-performance AI operations. Over time, Mojo will become much more
-interesting to the general Python community as it grows to be a superset of
-Python. We hope this will help lift the vast Python library ecosystem and
-empower more traditional systems developers that use C, C++, Rust, etc.
+high-performance AI operations. Over time, Mojo will expand its focus on general
+systems programming. We hope this will help lift the vast Python library
+ecosystem and empower more traditional systems developers that use C, C++, Rust,
+etc.
 
 ### Why build upon Python?
 
@@ -69,71 +68,21 @@ workflows.
 
 Our focus is to innovate in the programmability for AI workloads on
 heterogeneous hardware, and we don't see any need to innovate in language
-_syntax_ or _community_. So we chose to embrace the Python ecosystem because
-it's so widely used, it's loved by the AI ecosystem, and because we believe it
-is a really nice language.
+_syntax_ or _community_. We chose to build on Pythonic syntax because it's
+simple, familiar, and we believe it's a really nice language. We prioritize
+Python interoperability because Python is widely used and loved by the AI
+community.
 
-### Why not enhance CPython (the major Python implementation) instead?
+### Why a new language instead of enhancing existing approaches?
 
 For a variety of reasons, Python isn't suitable for systems programming.
-Python has amazing strengths as a glue layer—it offers low-level
-bindings that allow developers to build libraries in C, C++ and many other
-languages that have better performance characteristics. This enables
-things like NumPy and PyTorch, and a vast number of other libraries in
-the AI ecosystem, but it comes with a cost.
+Domain-specific languages (DSLs) such as Triton trade maximum efficiency
+and generality for ease of use. Other major compiled languages are designed
+around CPUs, not heterogenous compute.
 
-Building these hybrid libraries is very complicated. It requires a deep
-understanding of CPython and strong C/C++ (or other) programming abilities
-(undermining one of the original goals of using Python in the first place).
-These hybrid-language libraries also create problems for the library users,
-because debuggers generally can't step between Python and C/C++ code.
-
-We’re thrilled to see a big push to improve the performance of
-[CPython](https://en.wikipedia.org/wiki/CPython), but our goals for Mojo (such
-as to deploy onto GPUs and other accelerators) requires a fundamentally
-different architecture and compiler approach. That said, CPython is still a
-critical part of our compatibility approach and powers [Mojo's Python
-interoperability](/docs/manual/python).
-
-### Why not enhance another Python implementation (like Codon, PyPy, etc)?
-
-Codon and PyPy aim to improve performance compared to CPython, but Mojo’s goals
-are much deeper than this. Our objective isn’t just to create "a faster
-Python," but to enable a whole new layer of systems programming that includes
-direct access to accelerated hardware.
-
-Many hardware accelerators support very limited dynamic features, or do so with
-terrible performance. Furthermore, systems programmers don't seek only
-"performance," but also demand a lot of predictability and control over how a
-computation happens, so in some cases we cannot accept dynamic features at all.
-
-Furthermore, solving big challenges for the computing industry is hard and
-requires a fundamental rethinking of the compiler and runtime infrastructure.
-This drove us to build an entirely new approach and we’re willing to put in the
-time required to do it properly, rather than tweaking an existing system that
-would only solve a small part of the problem. For more detail, see our blog
-post about [How Modular is Democratizing AI
+For much more on the motivation behind developing Mojo and the Modular Platform,
+see our blog series about [How Modular is Democratizing AI
 Compute](https://www.modular.com/blog/how-is-modular-democratizing-ai-compute).
-
-### Why not make Julia better?
-
-We think [Julia](https://julialang.org/) is a great language and it has a
-wonderful community, but Mojo is completely different. While Julia and Mojo
-might share some goals and look similar as an easy-to-use and high-performance
-alternative to Python, we’re taking a completely different approach to building
-Mojo. Notably, Mojo is Python-first and doesn't require existing Python
-developers to learn a new syntax.
-
-Mojo also has a bunch of technical advancements compared to Julia, simply
-because Mojo is newer and we’ve been able to learn from Julia (and from Swift,
-Rust, C++ and many others that came before us). For example, Mojo takes a
-different approach to memory ownership and memory management, it scales down to
-smaller envelopes, and is designed with AI and MLIR-first principles (though
-Mojo is not only for AI).
-
-That said, we also believe there’s plenty of room for many languages and this
-isn’t an OR proposition. If you use and love Julia, that's great! We’d love for
-you to try Mojo and if you find it useful, then that's great too.
 
 ## Functionality
 
@@ -176,38 +125,30 @@ currently isn't possible with any other language.
 ### Is Mojo only for AI or can it be used for other stuff?
 
 Mojo's initial focus is to solve AI programmability challenges. However,
-our goal is to grow Mojo into a general purpose programming language. We
+our goal is to grow Mojo into a general-purpose programming language. We
 use Mojo at Modular to develop AI algorithms and GPU kernels, but you can
 use it for other things like HPC, data transformations, writing pre/post
 processing operations, and much more.
 
 ### Is Mojo interpreted or compiled?
 
-Mojo is a compiled language. [`mojo build`](/docs/cli/build/) performs
-ahead-of-time (AOT) compilation to save an executable program. [`mojo
-run`](/docs/cli/run) performs just-in-time (JIT) compilation to execute a Mojo
-source file without saving the compiled result.
-
-### How does Mojo compare to Triton Lang?
-
-[Triton Lang](https://triton-lang.org/main/index.html) is a specialized
-programming model for one type of accelerator, whereas Mojo is a more general
-language that will support more architectures over time and includes a
-debugger, a full tool suite, etc.
-
-For more about our thoughts on embedded domain-specific languages (EDSLs) like
-Triton, read
-[Democratizing AI Compute, Part 7](https://www.modular.com/blog/democratizing-ai-compute-part-7-what-about-triton-and-python-edsls).
+Mojo is a compiled language. [`mojo build`](/docs/cli/build/) and [`mojo
+run`](/docs/cli/run/) both perform ahead-of-time (AOT) compilation.
 
 ### Does Mojo support distributed execution?
 
 Not alone. Mojo is one component of the Modular Platform, which
 makes it easier for you to author highly performant, portable CPU and GPU graph
-operations, but you’ll also need a runtime (or "OS") that supports graph level
-transformations and heterogeneous compute, which is provided by
-[MAX](https://docs.modular.com/max/intro).
+operations, but you’ll also need a runtime (or "OS") that supports graph-level
+transformations and heterogeneous compute, which is provided by the
+[Modular Platform](https://docs.modular.com/max/intro).
 
 ### How do I convert Python programs or libraries to Mojo?
+
+See [Tips for Python devs](/docs/manual/python-to-mojo/) for a quick primer on
+important differences between Python and Mojo. The
+[Mojo AI skills](/docs/tools/skills/) can help your AI coding assistant
+translate Python code into working Mojo code.
 
 You can migrate parts of a Python project to Mojo
 by building Mojo bindings for Python. See the documentation about how to [call
@@ -215,10 +156,13 @@ Mojo from Python](/docs/manual/python/mojo-from-python).
 
 ### What about interoperability with other languages like C/C++?
 
-Yes, we want to enable developers to port code from languages other than Python
-to Mojo as well. We expect that due to Mojo’s similarity to the C/C++ type
-systems, migrating code from C/C++ should work well and it’s in [our
-roadmap](/docs/roadmap#cc-interop).
+Mojo code is interoperable with C code. For information, see the docs for the
+[`ffi`](/docs/std/ffi/) module, the
+[`@export`](/docs/manual/decorators/export/) decorator, and the
+[`abi("C")` function effect](/docs/reference/mojo-function-declarations/#abi-c).
+
+Mojo code is also interoperable with C++ code that uses `extern "C"`. We
+believe we can deliver better C++ interoperability in the future.
 
 ### How does Mojo support hardware lowering?
 
@@ -234,16 +178,16 @@ will contribute additional hardware support in the future.
 
 ## Performance
 
-### Are there any AI related performance benchmarks for Mojo?
+### Are there any AI-related performance benchmarks for Mojo?
 
 It’s important to remember that Mojo is designed to be a general-purpose
 programming language, and any AI-related benchmarks will rely heavily upon other
 framework components. For example, our in-house CPU and GPU graph operations
-that power the Modular Platform are all written in Mojo and you can learn more
-about performance in our
-[matrix multiplication blog post](https://www.modular.com/blog/the-worlds-fastest-unified-matrix-multiplication).
-For details about our end-to-end model performance, read about
-[how we measure performance at Modular](https://www.modular.com/blog/max-gpu-state-of-the-art-throughput-on-a-new-genai-platform).
+that power the Modular Platform are all written in Mojo. You can learn more
+about performance in our blog posts on
+[bringing the Modular Platform up on AMD MI355](https://www.modular.com/blog/achieving-state-of-the-art-performance-on-amd-mi355----in-just-14-days)
+and
+[optimizing matmul performance on the NVIDIA Blackwell GPU](https://www.modular.com/blog/matrix-multiplication-on-blackwell-part-4---breaking-sota).
 
 ## Mojo SDK
 
@@ -262,6 +206,7 @@ It includes:
 
 - [`mojo` CLI](/docs/cli/) (includes the Mojo compiler)
 - [Mojo standard library](/docs/std/)
+- [Layout library](/docs/layout/)
 - [`mojo` Python
   package](https://github.com/modular/modular/tree/main/mojo/python/mojo)
 - Mojo language server (LSP) for IDE/editor integration
@@ -278,23 +223,9 @@ the LSP and debugger tools. It includes:
 
 - [`mojo` CLI](/docs/cli/) (includes the Mojo compiler)
 - [Mojo standard library](/docs/std/)
+- [Layout library](/docs/layout/)
 - [`mojo` Python
   package](https://github.com/modular/modular/tree/main/mojo/python/mojo)
-
-### Is the Mojo Playground still available?
-
-No. We shut it down with the v25.6 release.
-
-Here's the story: When we announced Mojo in May, 2023, Mojo wasn't
-available in an SDK; it was available only in web-hosted a JupyterLab
-environment. After we made Mojo available for local development, we
-shut down the JupyterLab environment and launched a new Mojo Playground
-for people to try Mojo on the web. But ever since we made the Mojo SDK
-available for Linux and Mac, Mojo Playground usage steadily declined.
-The trickle of users we get now no longer justifies the maintenance
-and hosting costs.
-
-See how to [install Mojo](/install/).
 
 ### What are the license terms for the SDK?
 
@@ -302,10 +233,10 @@ Please read the [Terms of use](https://www.modular.com/legal/terms).
 
 ### What operating systems are supported?
 
-Mac and Linux. For details, see the
-[Mojo system requirements](/docs/requirements/).
+Mojo supports Mac and Linux natively and supports Windows via WSL. For details,
+see the [Mojo system requirements](/docs/requirements/).
 
-### Is there IDE Integration?
+### Is there IDE integration?
 
 Yes, we've published an official Mojo language extension for
 [Visual Studio Code](https://code.visualstudio.com/) and other editors that
@@ -348,27 +279,27 @@ to build better products for you.
 
 ### What’s the Mojo versioning strategy?
 
-Mojo is still in early development and not at a 1.0 version yet. It’s
-still missing many foundational features, but please take a look at our
-[roadmap](/docs/roadmap/) to understand where things are headed. As such,
-the language is evolving rapidly and source stability is not guaranteed.
+Mojo is working towards a 1.0 release in Summer 2026. For 1.0, we expect the
+core language features to be stabilized. Not all Mojo library APIs will be
+stable at 1.0, but stable APIs will be marked.
+
+See our
+[roadmap](/docs/roadmap/) to understand where things are headed.
 
 ### How often will you be releasing new versions of Mojo?
 
 Mojo development is moving fast and we are regularly releasing updates,
 including nightly builds almost every day.
 
-Join the [Mojo Discord channel](http://discord.gg/modular) for notifications
-and [sign up for our newsletter](https://www.modular.com/blog) (scroll to
-the bottom of the page) for more coarse-grain updates.
+Join the [Mojo Discord channel](http://discord.gg/modular) for notifications and
+[sign up for our newsletter](https://www.modular.com/blog#sign-up-for-our-newsletter)
+(on the bottom of the Mojo blog page) for more coarse-grained updates.
 
-## Open Source
+## Open source
 
 ### Will Mojo be open-sourced?
 
-We have committed to open-sourcing Mojo in 2026.
-Mojo is still young, so we will continue to incubate it within Modular until
-more of its internal architecture is fleshed out.
+We have committed to open-sourcing Mojo in Fall 2026.
 
 ### Why not develop Mojo in the open from the beginning?
 
@@ -387,4 +318,4 @@ language, be sure you first read the [Mojo roadmap](/docs/roadmap/), which
 provides important information about our current priorities.
 
 To get in touch with the Mojo team and developer community, use the resources
-on our [community page](https://www.modular.com/community).
+on our [community page](/community/).
