@@ -132,9 +132,7 @@ MODEL_ALIASES = CaseInsensitiveDict({
             "--num-speculative-tokens 3 "
             "--kv-cache-format float8_e4m3fn "
             "--device-memory-utilization 0.75 "
-            "--max-batch-input-tokens 4096 "
-            "--max-length 163840 "
-            "--max-num-steps 1"
+            "--max-batch-input-tokens 4096"
         ),
     },
     "meta-llama/Llama-3.1-8B-Instruct__local_kvconnector": {
