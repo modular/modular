@@ -91,14 +91,14 @@ struct ContainerWithNonCopyable:
 
 
 def test_reflect_returns_handle() raises:
-    comptime r = reflect[SimpleStruct]()
+    comptime r = reflect[SimpleStruct]
     # The handle's T parameter is the reflected type.
-    assert_equal(reflect[r.T]().name(), "test_reflect.SimpleStruct")
+    assert_equal(reflect[r.T].name(), "test_reflect.SimpleStruct")
     assert_equal(r.field_count(), 2)
 
 
 def test_reflected_t_is_usable_as_type() raises:
-    comptime r = reflect[Int]()
+    comptime r = reflect[Int]
     # Reflected[Int].T is Int -> can be used in declarations.
     var v: r.T = 42
     assert_equal(v, 42)
@@ -117,19 +117,19 @@ def test_reflected_is_zero_sized() raises:
 
 
 def test_is_struct_user_struct() raises:
-    assert_true(reflect[SimpleStruct]().is_struct())
-    assert_true(reflect[Outer]().is_struct())
-    assert_true(reflect[EmptyStruct]().is_struct())
+    assert_true(reflect[SimpleStruct].is_struct())
+    assert_true(reflect[Outer].is_struct())
+    assert_true(reflect[EmptyStruct].is_struct())
 
 
 def test_is_struct_stdlib() raises:
-    assert_true(reflect[Int]().is_struct())
-    assert_true(reflect[String]().is_struct())
-    assert_true(reflect[Float64]().is_struct())
+    assert_true(reflect[Int].is_struct())
+    assert_true(reflect[String].is_struct())
+    assert_true(reflect[Float64].is_struct())
 
 
 def _is_struct_generic[T: AnyType]() -> Bool:
-    return reflect[T]().is_struct()
+    return reflect[T].is_struct()
 
 
 def test_is_struct_through_generic() raises:
@@ -139,7 +139,7 @@ def test_is_struct_through_generic() raises:
 
 def test_is_struct_with_mlir_primitive() raises:
     """When an MLIR primitive is reached via field_types, is_struct is False."""
-    comptime types = reflect[StructWithMLIRField]().field_types()
+    comptime types = reflect[StructWithMLIRField].field_types()
     assert_true(_is_struct_generic[types[0]]())  # Int
     assert_false(_is_struct_generic[types[1]]())  # __mlir_type.index
 
@@ -150,10 +150,10 @@ def test_is_struct_as_guard() raises:
     var struct_count = 0
     var non_struct_count = 0
 
-    comptime r = reflect[StructWithMLIRField]()
+    comptime r = reflect[StructWithMLIRField]
     comptime for i in range(r.field_count()):
         comptime field_type = r.field_types()[i]
-        comptime if reflect[field_type]().is_struct():
+        comptime if reflect[field_type].is_struct():
             struct_count += 1
         else:
             non_struct_count += 1
@@ -168,34 +168,34 @@ def test_is_struct_as_guard() raises:
 
 
 def test_field_count_simple() raises:
-    assert_equal(reflect[SimpleStruct]().field_count(), 2)
+    assert_equal(reflect[SimpleStruct].field_count(), 2)
 
 
 def test_field_count_nested_returns_unflattened() raises:
     # Nested struct counts the inner field as one entry, not its inner fields.
-    assert_equal(reflect[Outer]().field_count(), 3)
-    assert_equal(reflect[Inner]().field_count(), 2)
+    assert_equal(reflect[Outer].field_count(), 3)
+    assert_equal(reflect[Inner].field_count(), 2)
 
 
 def test_field_count_empty() raises:
-    assert_equal(reflect[EmptyStruct]().field_count(), 0)
+    assert_equal(reflect[EmptyStruct].field_count(), 0)
 
 
 def test_field_names_simple() raises:
-    var names = reflect[SimpleStruct]().field_names()
+    var names = reflect[SimpleStruct].field_names()
     assert_equal(names[0], "x")
     assert_equal(names[1], "y")
 
 
 def test_field_types_match_get_type_name() raises:
-    comptime types = reflect[SimpleStruct]().field_types()
-    assert_equal(reflect[types[0]]().name(), "Int")
-    assert_equal(reflect[types[1]]().name(), "SIMD[DType.float64, 1]")
+    comptime types = reflect[SimpleStruct].field_types()
+    assert_equal(reflect[types[0]].name(), "Int")
+    assert_equal(reflect[types[1]].name(), "SIMD[DType.float64, 1]")
 
 
 def test_field_iteration() raises:
     var count = 0
-    comptime r = reflect[SimpleStruct]()
+    comptime r = reflect[SimpleStruct]
     comptime for i in range(r.field_count()):
         comptime field_name = r.field_names()[i]
         comptime field_type = r.field_types()[i]
@@ -206,7 +206,7 @@ def test_field_iteration() raises:
 
 
 def _count_fields_generic[T: AnyType]() -> Int:
-    return reflect[T]().field_count()
+    return reflect[T].field_count()
 
 
 def test_field_count_through_generic() raises:
@@ -221,31 +221,31 @@ def test_field_count_through_generic() raises:
 
 
 def test_field_index_simple() raises:
-    comptime r = reflect[SimpleStruct]()
+    comptime r = reflect[SimpleStruct]
     assert_equal(r.field_index["x"](), 0)
     assert_equal(r.field_index["y"](), 1)
 
 
 def test_field_index_nested() raises:
-    comptime r = reflect[Outer]()
+    comptime r = reflect[Outer]
     assert_equal(r.field_index["name"](), 0)
     assert_equal(r.field_index["inner"](), 1)
     assert_equal(r.field_index["count"](), 2)
 
 
 def test_field_type_by_name_simple() raises:
-    comptime r = reflect[SimpleStruct]()
-    comptime x_type = r.field_type["x"]()
+    comptime r = reflect[SimpleStruct]
+    comptime x_type = r.field_type["x"]
     assert_equal(x_type.name(), "Int")
 
-    comptime y_type = r.field_type["y"]()
+    comptime y_type = r.field_type["y"]
     assert_equal(y_type.name(), "SIMD[DType.float64, 1]")
 
 
 def test_field_type_returns_reflected_handle() raises:
     """`field_type[name]()` returns a `Reflected[FieldT]`, fully composable."""
-    comptime r = reflect[Outer]()
-    comptime inner_handle = r.field_type["inner"]()
+    comptime r = reflect[Outer]
+    comptime inner_handle = r.field_type["inner"]
     # The returned handle is itself a Reflected, with its own field_count etc.
     assert_equal(inner_handle.field_count(), 2)
     assert_equal(inner_handle.field_names()[0], "a")
@@ -253,17 +253,17 @@ def test_field_type_returns_reflected_handle() raises:
 
 
 def test_field_type_usable_as_type_annotation() raises:
-    comptime y_type = reflect[SimpleStruct]().field_type["y"]()
+    comptime y_type = reflect[SimpleStruct].field_type["y"]
     var v: y_type.T = 3.14
     assert_true(v > 3.0)
 
 
 def test_field_type_matches_field_types_by_index() raises:
-    comptime r = reflect[SimpleStruct]()
+    comptime r = reflect[SimpleStruct]
     comptime idx = r.field_index["x"]()
-    comptime by_name = r.field_type["x"]()
+    comptime by_name = r.field_type["x"]
     comptime by_idx = r.field_types()[idx]
-    assert_equal(by_name.name(), reflect[by_idx]().name())
+    assert_equal(by_name.name(), reflect[by_idx].name())
 
 
 # ===----------------------------------------------------------------------=== #
@@ -279,7 +279,7 @@ struct PointForRef:
 
 def test_field_ref_basic_read() raises:
     var p = PointForRef(10, 20)
-    comptime r = reflect[PointForRef]()
+    comptime r = reflect[PointForRef]
     ref x_ref = r.field_ref[0](p)
     ref y_ref = r.field_ref[1](p)
     assert_equal(x_ref, 10)
@@ -288,7 +288,7 @@ def test_field_ref_basic_read() raises:
 
 def test_field_ref_mutation() raises:
     var p = PointForRef(1, 2)
-    comptime r = reflect[PointForRef]()
+    comptime r = reflect[PointForRef]
     r.field_ref[0](p) = 100
     r.field_ref[1](p) = 200
     assert_equal(p.x, 100)
@@ -298,7 +298,7 @@ def test_field_ref_mutation() raises:
 def test_field_ref_non_copyable() raises:
     """Verify `field_ref` does not copy non-copyable fields."""
     var c = ContainerWithNonCopyable(42, 100, 5)
-    comptime r = reflect[ContainerWithNonCopyable]()
+    comptime r = reflect[ContainerWithNonCopyable]
 
     ref id_ref = r.field_ref[0](c)
     ref resource_ref = r.field_ref[1](c)
@@ -314,7 +314,7 @@ def test_field_ref_non_copyable() raises:
 
 def _print_fields_generic[T: AnyType](ref s: T):
     """Generic example: works with parametric idx in a comptime for loop."""
-    comptime r = reflect[T]()
+    comptime r = reflect[T]
     comptime for i in range(r.field_count()):
         _ = r.field_ref[i](s)
 
@@ -332,13 +332,13 @@ def test_field_ref_parametric_index() raises:
 
 
 def test_field_offset_first_is_zero() raises:
-    comptime r = reflect[SimpleOffsetStruct]()
+    comptime r = reflect[SimpleOffsetStruct]
     assert_equal(r.field_offset[name="x"](), 0)
     assert_equal(r.field_offset[index=0](), 0)
 
 
 def test_field_offset_with_padding() raises:
-    comptime r = reflect[OffsetTestStruct]()
+    comptime r = reflect[OffsetTestStruct]
     assert_equal(r.field_offset[name="a"](), 0)
     assert_equal(r.field_offset[name="b"](), 8)  # aligned to 8
     assert_equal(r.field_offset[name="c"](), 16)
@@ -346,7 +346,7 @@ def test_field_offset_with_padding() raises:
 
 
 def test_field_offset_by_index_matches_by_name() raises:
-    comptime r = reflect[OffsetTestStruct]()
+    comptime r = reflect[OffsetTestStruct]
     assert_equal(r.field_offset[index=0](), r.field_offset[name="a"]())
     assert_equal(r.field_offset[index=1](), r.field_offset[name="b"]())
     assert_equal(r.field_offset[index=2](), r.field_offset[name="c"]())
@@ -355,7 +355,7 @@ def test_field_offset_by_index_matches_by_name() raises:
 
 def test_field_offset_iteration() raises:
     var offsets = InlineArray[Int, 4](uninitialized=True)
-    comptime r = reflect[OffsetTestStruct]()
+    comptime r = reflect[OffsetTestStruct]
     comptime for i in range(r.field_count()):
         offsets[i] = r.field_offset[index=i]()
     assert_equal(offsets[0], 0)

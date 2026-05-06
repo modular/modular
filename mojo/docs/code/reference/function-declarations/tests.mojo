@@ -82,7 +82,7 @@ def test_clamp() raises:
 
 
 def inferred_type[T: Writable, //](value: T):
-    print(t"Value is {value}. Type is {reflect[T]().name()}.")
+    print(t"Value is {value}. Type is {reflect[T].name()}.")
 
 
 def test_inferred_type():

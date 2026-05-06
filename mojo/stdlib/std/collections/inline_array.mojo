@@ -297,7 +297,7 @@ struct InlineArray[ElementType: Copyable, size: Int](
         """
         return String(
             "InlineArray[",
-            reflect[Self.ElementType]().name(),
+            reflect[Self.ElementType].name(),
             ", ",
             Self.size,
             "]",

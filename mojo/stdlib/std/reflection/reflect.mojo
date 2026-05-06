@@ -12,16 +12,17 @@
 # ===----------------------------------------------------------------------=== #
 """Provides the unified `reflect[T]` / `Reflected[T]` reflection API.
 
-This module exposes a single entry point `reflect[T]()` which returns a
-`Reflected[T]` handle. The handle exposes struct introspection through methods,
-without the `struct_` prefix used by the legacy free-function API:
+`reflect[T]` is a `comptime` alias for the `Reflected[T]` handle type, which
+exposes type introspection through static methods. The handle has no runtime
+state — `T` is carried entirely in the compile-time parameter — so all queries
+are spelled as `reflect[T].method()` (no parens after `[T]`).
 
 - `is_struct()` - whether `T` is a Mojo struct type.
 - `field_count()` - number of fields.
 - `field_names()` - `InlineArray[StaticString, N]` of field names.
 - `field_types()` - a `TypeList` of field types.
 - `field_index[name]()` - index of the named field.
-- `field_type[name]()` - a `Reflected[FieldT]` handle for the named field's type.
+- `field_type[name]` - `Reflected[FieldT]` for the named field's type.
 - `field_offset[name=...]()` / `field_offset[index=...]()` - byte offset.
 - `field_ref[idx](s)` - reference to field at index `idx` in value `s`.
 
@@ -37,9 +38,8 @@ struct Point:
     var y: Float64
 
 def print_fields[T: AnyType]():
-    comptime r = reflect[T]()
-    comptime names = r.field_names()
-    comptime for i in range(r.field_count()):
+    comptime names = reflect[T].field_names()
+    comptime for i in range(reflect[T].field_count()):
         print(names[i])
 
 def main():
@@ -47,12 +47,11 @@ def main():
 ```
 
 The wrapped type is exposed as the `T` parameter, so the result of
-`field_type[name]()` can be used as a type:
+`field_type[name]` can be used as a type directly:
 
 ```mojo
 def main():
-    comptime r = reflect[Point]()
-    comptime y_type = r.field_type["y"]()
+    comptime y_type = reflect[Point].field_type["y"]
     var v: y_type.T = 3.14  # y_type.T is Float64
 ```
 """
@@ -71,7 +70,7 @@ from std.sys.info import _TargetType, _current_target
 # generic code:
 #
 #   def foo[T: AnyType]():
-#       comptime count = reflect[T]().field_count()
+#       comptime count = reflect[T].field_count()
 # ===----------------------------------------------------------------------=== #
 
 
@@ -91,45 +90,72 @@ comptime _field_names_of[T: AnyType] = ParameterList[
 # ===----------------------------------------------------------------------=== #
 # `reflect` / `Reflected[T]`
 # ===----------------------------------------------------------------------=== #
+#
+# `reflect[T]` is a `comptime` alias for `Reflected[T]`, not a function. The
+# handle type has no runtime fields — only the compile-time parameter `T` —
+# so all introspection answers come from the parameter alone. Every method is
+# `@staticmethod`. Spelling access as `reflect[T].method()` (no parens after
+# `[T]`) keeps the elaboration-time work elaboration-time and removes the
+# zero-sized-instance ceremony the previous instance form required.
+# ===----------------------------------------------------------------------=== #
 
 
-@always_inline("builtin")
-def reflect[T: AnyType]() -> Reflected[T]:
-    """Returns a compile-time reflection handle for type `T`.
+comptime reflect[T: AnyType] = Reflected[T]
+"""A compile-time alias for the reflection handle type of `T`.
 
-    Parameters:
-        T: The type to introspect.
+Resolves to `Reflected[T]`, whose static methods expose introspection of `T`.
+Use it as `reflect[T].method()` rather than constructing an instance.
 
-    Returns:
-        A `Reflected[T]` handle exposing introspection methods.
+`reflect` is auto-imported via the prelude.
 
-    Example:
-        ```mojo
-        struct Point:
-            var x: Int
-            var y: Float64
+Parameters:
+    T: The type to introspect.
 
-        def main():
-            comptime r = reflect[Point]()
-            print(r.field_count())  # 2
-        ```
-    """
-    return {}
+Example:
+    ```mojo
+    struct Point:
+        var x: Int
+        var y: Float64
+
+    def main():
+        print(reflect[Point].field_count())  # 2
+    ```
+"""
 
 
-struct Reflected[T: AnyType](TrivialRegisterPassable):
-    """A compile-time reflection handle for a type.
+struct Reflected[T: AnyType]:
+    """A compile-time reflection handle type for a Mojo type.
 
-    `Reflected[T]` is a zero-sized handle that exposes compile-time
-    introspection of `T` through methods. Construct it via `reflect[T]()`.
+    `Reflected[T]` exposes compile-time introspection of `T` through static
+    methods. It has no runtime fields — `T` lives entirely in the compile-time
+    parameter — and is not constructible. Spell access as `reflect[T].method()`
+    (preferred) or `Reflected[T].method()`.
 
-    For best performance, assign the result of `reflect[T]()` and any methods
-    that return type-level values (such as `field_names`, `field_types`,
-    `field_count`) to `comptime` variables so the work happens at compile time.
+    Member shape — when to use `@staticmethod` vs a `comptime` alias:
+
+    - A member that returns a **type** (e.g. `Reflected[FieldT]`) is a
+      `comptime` member alias and is spelled without `()`. This keeps it
+      composable in type position: `reflect[T].field_type["x"].T` reads as a
+      type. `field_type[name]` is the only such member today.
+    - A member that returns a **value** (an `Int`, `StaticString`,
+      `InlineArray`, a `TypeList`, a typed `ref`, etc.) is an
+      `@staticmethod` and is spelled with `()` — e.g.
+      `reflect[T].field_count()`, `reflect[T].field_names()`,
+      `reflect[T].field_index["x"]()`. The `()` at the call site signals
+      "evaluate this comptime expression to a value." `field_types`
+      returns a `TypeList` value (not a type) and so is a static method.
+
+    When adding a new member: pick a `comptime` alias if the result will be
+    used in type position, `@staticmethod` if it will be assigned to a
+    `comptime` variable or compared at the call site.
+
+    For best performance, assign the result of static methods that return
+    type-level values (such as `field_names`, `field_types`, `field_count`)
+    to `comptime` variables so the work happens at compile time.
 
     Parameters:
         T: The type being introspected. The wrapped type is exposed via this
-            parameter, so `reflect[T]().T` is `T`.
+            parameter, so `reflect[T].T` is `T`.
 
     Example:
         ```mojo
@@ -138,21 +164,16 @@ struct Reflected[T: AnyType](TrivialRegisterPassable):
             var y: Float64
 
         def main():
-            comptime r = reflect[Point]()
-            comptime if r.is_struct():
-                comptime names = r.field_names()
-                comptime for i in range(r.field_count()):
+            comptime if reflect[Point].is_struct():
+                comptime names = reflect[Point].field_names()
+                comptime for i in range(reflect[Point].field_count()):
                     print(names[i])
         ```
     """
 
+    @staticmethod
     @always_inline("builtin")
-    def __init__(out self):
-        """Constructs a reflection handle. Prefer `reflect[T]()`."""
-        pass
-
-    @always_inline("builtin")
-    def is_struct(self) -> Bool:
+    def is_struct() -> Bool:
         """Returns `True` if `T` is a Mojo struct type, `False` otherwise.
 
         This distinguishes Mojo struct types from MLIR primitive types (such as
@@ -167,16 +188,16 @@ struct Reflected[T: AnyType](TrivialRegisterPassable):
         Example:
             ```mojo
             def process_type[T: AnyType]():
-                comptime r = reflect[T]()
-                comptime if r.is_struct():
-                    print("struct with", r.field_count(), "fields")
+                comptime if reflect[T].is_struct():
+                    print("struct with", reflect[T].field_count(), "fields")
                 else:
-                    print("non-struct:", r.name())
+                    print("non-struct:", reflect[T].name())
             ```
         """
         return __mlir_attr[`#kgen.is_struct_type<`, Self.T, `> : i1`]
 
-    def name[*, qualified_builtins: Bool = False](self) -> StaticString:
+    @staticmethod
+    def name[*, qualified_builtins: Bool = False]() -> StaticString:
         """Returns the struct name of `T`.
 
         Parameters:
@@ -194,8 +215,7 @@ struct Reflected[T: AnyType](TrivialRegisterPassable):
                 var y: Float64
 
             def main():
-                comptime r = reflect[Point]()
-                print(r.name())  # "Point" (or module-qualified if defined)
+                print(reflect[Point].name())  # "Point" (or module-qualified if defined)
             ```
         """
         return StaticString(
@@ -208,7 +228,8 @@ struct Reflected[T: AnyType](TrivialRegisterPassable):
             ]
         )
 
-    def base_name(self) -> StaticString:
+    @staticmethod
+    def base_name() -> StaticString:
         """Returns the name of the base type of a parameterized type.
 
         For parameterized types like `List[Int]`, this returns `"List"`.
@@ -225,9 +246,9 @@ struct Reflected[T: AnyType](TrivialRegisterPassable):
             from std.collections import List, Dict
 
             def main():
-                print(reflect[List[Int]]().base_name())          # "List"
-                print(reflect[Dict[String, Int]]().base_name())  # "Dict"
-                print(reflect[Int]().base_name())                # "Int"
+                print(reflect[List[Int]].base_name())          # "List"
+                print(reflect[Dict[String, Int]].base_name())  # "Dict"
+                print(reflect[Int].base_name())                # "Int"
             ```
         """
         return StaticString(
@@ -238,8 +259,9 @@ struct Reflected[T: AnyType](TrivialRegisterPassable):
             ]
         )
 
+    @staticmethod
     @always_inline("builtin")
-    def field_count(self) -> Int:
+    def field_count() -> Int:
         """Returns the number of fields in struct `T`.
 
         Constraints:
@@ -250,7 +272,8 @@ struct Reflected[T: AnyType](TrivialRegisterPassable):
         """
         return _field_types_of[Self.T]().size
 
-    def field_types(self) -> _field_types_of[Self.T]:
+    @staticmethod
+    def field_types() -> _field_types_of[Self.T]:
         """Returns the types of all fields in struct `T` as a `TypeList`.
 
         For nested structs this returns the struct type itself, not its
@@ -269,17 +292,17 @@ struct Reflected[T: AnyType](TrivialRegisterPassable):
                 var y: Float64
 
             def main():
-                comptime r = reflect[Point]()
-                comptime types = r.field_types()
-                comptime for i in range(r.field_count()):
-                    print(reflect[types[i]]().name())
+                comptime types = reflect[Point].field_types()
+                comptime for i in range(reflect[Point].field_count()):
+                    print(reflect[types[i]].name())
             ```
         """
         return {}
 
-    def field_names(
-        self,
-    ) -> InlineArray[StaticString, _field_types_of[Self.T]().size]:
+    @staticmethod
+    def field_names() -> (
+        InlineArray[StaticString, _field_types_of[Self.T]().size]
+    ):
         """Returns the names of all fields in struct `T`.
 
         Constraints:
@@ -300,7 +323,8 @@ struct Reflected[T: AnyType](TrivialRegisterPassable):
 
         return result^
 
-    def field_index[name: StringLiteral](self) -> Int:
+    @staticmethod
+    def field_index[name: StringLiteral]() -> Int:
         """Returns the index of the field with the given name in struct `T`.
 
         Note: `T` must be a concrete type, not a generic type parameter, when
@@ -323,11 +347,11 @@ struct Reflected[T: AnyType](TrivialRegisterPassable):
             ]
         )
 
-    def field_type[
-        name: StringLiteral,
-    ](
-        self,
-    ) -> Reflected[
+    # `field_type` is a parametric `comptime` member alias rather than a
+    # static method, so callers spell `reflect[T].field_type["y"]` (no
+    # parens) and get back `Reflected[FieldT]` directly. The result is
+    # itself a reflection handle type — fully composable.
+    comptime field_type[name: StringLiteral] = Reflected[
         __mlir_attr[
             `#kgen.struct_field_type_by_name<`,
             Self.T,
@@ -336,41 +360,38 @@ struct Reflected[T: AnyType](TrivialRegisterPassable):
             `> : `,
             AnyType,
         ]
-    ]:
-        """Returns a reflection handle for the type of the named field.
+    ]
+    """A reflection handle type for the named field's type.
 
-        The returned handle's `T` parameter is the field's type, so
-        `r.field_type["x"]().T` can be used in type position.
+    The result is `Reflected[FieldT]`, so `reflect[T].field_type["x"].T` can
+    be used in type position and `.name()`, `.field_count()`, etc. compose
+    directly without an additional `()`.
 
-        Note: `T` must be a concrete type, not a generic type parameter, when
-        looking up by name.
+    Note: `T` must be a concrete type, not a generic type parameter, when
+    looking up by name.
 
-        Parameters:
-            name: The name of the field.
+    Parameters:
+        name: The name of the field.
 
-        Returns:
-            A `Reflected` handle whose `T` is the named field's type.
+    Example:
+        ```mojo
+        struct Point:
+            var x: Int
+            var y: Float64
 
-        Example:
-            ```mojo
-            struct Point:
-                var x: Int
-                var y: Float64
-
-            def main():
-                comptime r = reflect[Point]()
-                comptime y_type = r.field_type["y"]()
-                var v: y_type.T = 3.14  # y_type.T is Float64
-            ```
-        """
-        return {}
+        def main():
+            comptime y_type = reflect[Point].field_type["y"]
+            var v: y_type.T = 3.14  # y_type.T is Float64
+        ```
+    """
 
     # `nodebug` (not `builtin`) because the body emits a `lit.ref.struct.ger`
     # MLIR op, which is not legal inside a `@always_inline("builtin")` function.
+    @staticmethod
     @always_inline("nodebug")
     def field_ref[
         idx: Int
-    ](self, ref s: Self.T) -> ref[s] _field_types_of[Self.T]()[idx]:
+    ](ref s: Self.T) -> ref[s] _field_types_of[Self.T]()[idx]:
         """Returns a reference to the field at the given index in `s`.
 
         Returns a reference rather than a copy, so this works with
@@ -399,8 +420,7 @@ struct Reflected[T: AnyType](TrivialRegisterPassable):
 
             def main():
                 var c = Container(id=1, name="test")
-                comptime r = reflect[Container]()
-                r.field_ref[0](c) = 42  # mutates c.id
+                reflect[Container].field_ref[0](c) = 42  # mutates c.id
             ```
         """
         # Emit `lit.ref.struct.ger` with index-access form. The op accepts
@@ -419,11 +439,12 @@ struct Reflected[T: AnyType](TrivialRegisterPassable):
             ](__get_mvalue_as_litref(s))
         )
 
+    @staticmethod
     def field_offset[
         *,
         name: StringLiteral,
         target: _TargetType = _current_target(),
-    ](self) -> Int:
+    ]() -> Int:
         """Returns the byte offset of the named field within struct `T`.
 
         Accounts for alignment padding between fields. Computed using the
@@ -446,9 +467,8 @@ struct Reflected[T: AnyType](TrivialRegisterPassable):
                 var y: Float64  # offset 8
 
             def main():
-                comptime r = reflect[Point]()
-                comptime x_off = r.field_offset[name="x"]()  # 0
-                comptime y_off = r.field_offset[name="y"]()  # 8
+                comptime x_off = reflect[Point].field_offset[name="x"]()  # 0
+                comptime y_off = reflect[Point].field_offset[name="y"]()  # 8
             ```
         """
         comptime str_value = name.value
@@ -464,11 +484,12 @@ struct Reflected[T: AnyType](TrivialRegisterPassable):
             ]
         )
 
+    @staticmethod
     def field_offset[
         *,
         index: Int,
         target: _TargetType = _current_target(),
-    ](self) -> Int:
+    ]() -> Int:
         """Returns the byte offset of the field at the given index.
 
         Accounts for alignment padding between fields. Computed using the

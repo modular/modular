@@ -114,13 +114,13 @@ def lookup_py_type_object[T: AnyType]() raises -> PythonObject:
     #   This should use a unique compiler type ID, not the Python name of this
     #   type.
 
-    comptime type_name = reflect[T]().name[qualified_builtins=True]()
+    comptime type_name = reflect[T].name[qualified_builtins=True]()
     if entry := type_dict[].find(type_name):
         return entry.take()
 
     raise Error(
         "No Python type object registered for Mojo type with name: ",
-        reflect[T]().name(),
+        reflect[T].name(),
     )
 
 
@@ -224,7 +224,7 @@ def _tp_repr_wrapper[
         ), "_tp_repr_wrapper requires conformance to Writable."
         trait_downcast[Writable](self.mojo_value).write_repr_to(repr_str)
     else:
-        repr_str = String(t"<uninitialized {reflect[T]().name()}>")
+        repr_str = String(t"<uninitialized {reflect[T].name()}>")
 
     return cpython.PyUnicode_DecodeUTF8(repr_str)
 
@@ -572,7 +572,7 @@ struct PythonTypeBuilder(Copyable):
         b._insert_slot(PyType_Slot.tp_repr(_tp_repr_wrapper[T]))
 
         b.methods = List[PyMethodDef]()
-        b._type_id = reflect[T]().name[qualified_builtins=True]()
+        b._type_id = reflect[T].name[qualified_builtins=True]()
 
         return b^
 
@@ -1264,7 +1264,7 @@ def _try_convert_arg[
             "() expected argument at position ",
             argidx,
             " to be instance of (or convertible to) Mojo '",
-            reflect[T]().name(),
+            reflect[T].name(),
             "'; got '",
             _get_type_name(py_args[argidx]),
             "'. (Note: attempted conversion failed due to: ",

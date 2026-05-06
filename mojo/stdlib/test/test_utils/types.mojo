@@ -614,7 +614,7 @@ struct Observable[
         Args:
             memory: Pointer to uninitialized storage sized and aligned for `Self`.
         """
-        comptime niche_offset = reflect[Self]().field_offset[
+        comptime niche_offset = reflect[Self].field_offset[
             name="_always_zero"
         ]()
         (memory.bitcast[Byte]() + niche_offset).store(Byte(index + 1))
@@ -632,7 +632,7 @@ struct Observable[
         Returns:
             The niche index of the memory.
         """
-        comptime niche_offset = reflect[Self]().field_offset[
+        comptime niche_offset = reflect[Self].field_offset[
             name="_always_zero"
         ]()
         var value = (memory.bitcast[Byte]() + niche_offset).load()

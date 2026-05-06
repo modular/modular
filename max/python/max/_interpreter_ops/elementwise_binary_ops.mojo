@@ -64,7 +64,7 @@ comptime BINARY_BOOLEAN_OPS = TypeList.of[
 
 def _is_gpu_allowed_binary_op[op: ElementwiseBinaryOp]() -> Bool:
     """Check if a binary op is allowed on GPU at compile time."""
-    comptime name = reflect[op]().base_name()
+    comptime name = reflect[op].base_name()
     # Arithmetic and boolean ops that work on GPU
     return (
         name == "Add"
@@ -95,7 +95,7 @@ def PyInit_elementwise_binary_ops() -> PythonObject:
         # Binary arithmetic operations
         comptime for i in range(BINARY_ARITHMETIC_OPS.size):
             comptime op = BINARY_ARITHMETIC_OPS[i]
-            comptime name = reflect[op]().base_name()
+            comptime name = reflect[op].base_name()
             comptime docstring = StaticString(
                 "Elementwise " + name + " with dtype dispatch"
             )
@@ -106,7 +106,7 @@ def PyInit_elementwise_binary_ops() -> PythonObject:
         # Binary boolean operations
         comptime for i in range(BINARY_BOOLEAN_OPS.size):
             comptime op = BINARY_BOOLEAN_OPS[i]
-            comptime name = reflect[op]().base_name()
+            comptime name = reflect[op].base_name()
             comptime docstring = StaticString(
                 "Elementwise " + name + " (boolean only)"
             )

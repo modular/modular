@@ -577,7 +577,7 @@ struct Optional[T: Movable](
         Returns:
             A string representation of the type, e.g. `Optional[Int]`.
         """
-        return String(t"Optional[{reflect[Self.T]().name()}]")
+        return String(t"Optional[{reflect[Self.T].name()}]")
 
     # ===-------------------------------------------------------------------===#
     # Methods
@@ -1080,7 +1080,7 @@ struct OptionalReg[T: TrivialRegisterPassable](
         Returns:
             A string representation of the type, e.g. `OptionalReg[Int]`.
         """
-        return String(t"OptionalReg[{reflect[Self.T]().name()}]")
+        return String(t"OptionalReg[{reflect[Self.T].name()}]")
 
     # ===-------------------------------------------------------------------===#
     # Life cycle methods

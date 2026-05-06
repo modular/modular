@@ -1730,7 +1730,7 @@ struct PythonObject(
                         " '{}'"
                     ),
                     func[],
-                    reflect[T]().name(),
+                    reflect[T].name(),
                     _get_type_name(self),
                 )
             )
@@ -1738,7 +1738,7 @@ struct PythonObject(
             raise Error(
                 String.format(
                     "TypeError: expected Mojo '{}' type value, got '{}'",
-                    reflect[T]().name(),
+                    reflect[T].name(),
                     _get_type_name(self),
                 )
             )

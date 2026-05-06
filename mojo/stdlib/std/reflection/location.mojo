@@ -162,7 +162,7 @@ struct SourceLocation(TrivialRegisterPassable, UnsafeSingleNicheable, Writable):
         writer.write(self._file_name, ":", self._line, ":", self._col)
 
     comptime _LineNiche = -1
-    comptime _LineByteOffset = reflect[Self]().field_offset[name="_line"]()
+    comptime _LineByteOffset = reflect[Self].field_offset[name="_line"]()
 
     @staticmethod
     @always_inline

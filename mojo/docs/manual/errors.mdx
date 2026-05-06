@@ -1174,7 +1174,7 @@ information. You can use
 [reflection](/docs/manual/metaprogramming/reflection/) to inspect the error
 type at compile time. For example, you can:
 
-- `reflect[ErrType]().name()` — Get the error type's name as a string.
+- `reflect[ErrType].name()` — Get the error type's name as a string.
 - `comptime if conforms_to(ErrType, Writable)` — Check if the error
   implements `Writable`.
 - `trait_downcast[Writable](err)` — Access the error through its `Writable`
@@ -1209,7 +1209,7 @@ struct ResourceGuard(ImplicitlyCopyable):
         print("Releasing:", self.name, "(no error)")
 
     def __exit__[ErrType: AnyType](self, err: ErrType) -> Bool:
-        comptime type_name = reflect[ErrType]().name()
+        comptime type_name = reflect[ErrType].name()
         print("Releasing:", self.name)
         print("  Error type:", type_name)
 

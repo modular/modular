@@ -193,7 +193,7 @@ struct Span[
         """
         return String(
             "Span[",
-            reflect[Self.T]().name(),
+            reflect[Self.T].name(),
             "]",
         )
 

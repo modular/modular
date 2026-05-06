@@ -37,6 +37,53 @@ This version is still a work in progress.
   reflect that writing invalid UTF-8 to the resulting `Span[Byte]` can lead to
   later issues like out of bounds access.
 
+- `reflect[T]` is now a `comptime` alias for the `Reflected[T]` handle type
+  rather than a function returning a zero-sized handle instance. All methods on
+  `Reflected[T]` are `@staticmethod`s, and the type is no longer constructible.
+  Drop the parens at call sites:
+
+  ```mojo
+  # Before
+  comptime r = reflect[Point]()
+  print(r.field_count())
+  print(reflect[Point]().name())
+  comptime y_handle = reflect[Point]().field_type["y"]()
+  var v: y_handle.T = 3.14
+
+  # After
+  comptime r = reflect[Point]
+  print(r.field_count())
+  print(reflect[Point].name())
+  comptime y_handle = reflect[Point].field_type["y"]
+  var v: y_handle.T = 3.14
+  ```
+
+  `field_type[name]` is now a parametric `comptime` member alias that yields
+  `Reflected[FieldT]` directly — no trailing `()`, and the result is fully
+  composable (e.g. `reflect[T].field_type["x"].name()`). The previously
+  deprecated free functions `get_type_name`, `get_base_type_name`, and the
+  `struct_field_*` family (along with the `ReflectedType[T]` wrapper) have been
+  removed; use the corresponding methods on `reflect[T]`:
+
+  <!-- markdownlint-disable MD013 -->
+
+  | Removed                                 | Replacement                              |
+  |-----------------------------------------|------------------------------------------|
+  | `get_type_name[T]()`                    | `reflect[T].name()`                      |
+  | `get_base_type_name[T]()`               | `reflect[T].base_name()`                 |
+  | `is_struct_type[T]()`                   | `reflect[T].is_struct()`                 |
+  | `struct_field_count[T]()`               | `reflect[T].field_count()`               |
+  | `struct_field_names[T]()`               | `reflect[T].field_names()`               |
+  | `struct_field_types[T]()`               | `reflect[T].field_types()`               |
+  | `struct_field_index_by_name[T, name]()` | `reflect[T].field_index[name]()`         |
+  | `struct_field_type_by_name[T, name]()`  | `reflect[T].field_type[name]`            |
+  | `struct_field_ref[idx, T](s)`           | `reflect[T].field_ref[idx](s)`           |
+  | `offset_of[T, name=name]()`             | `reflect[T].field_offset[name=name]()`   |
+  | `offset_of[T, index=index]()`           | `reflect[T].field_offset[index=index]()` |
+  | `ReflectedType[T]`                      | `Reflected[T]`                           |
+
+  <!-- markdownlint-enable MD013 -->
+
 ## Tooling changes
 
 ## GPU programming

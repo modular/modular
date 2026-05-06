@@ -218,7 +218,7 @@ def alloc[
     ```
     """
     comptime size_of_t = size_of[type]()
-    comptime type_name = reflect[type]().name()
+    comptime type_name = reflect[type].name()
     comptime assert size_of_t > 0, "size must be greater than zero"
     debug_assert(
         count >= 0,
@@ -1077,7 +1077,7 @@ struct UnsafePointer[
         """
         return String(
             "UnsafePointer[",
-            reflect[Self.type]().name(),
+            reflect[Self.type].name(),
             ", mut=",
             Self.mut,
             ", address_space=",

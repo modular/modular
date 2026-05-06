@@ -50,8 +50,8 @@ def test_sensor_equality() raises:
 
 def test_base_name() raises:
     """Check `base_name()` strips parameters and module path."""
-    assert_equal(reflect[List[Int]]().base_name(), "List")
-    assert_equal(reflect[Dict[String, Int]]().base_name(), "Dict")
+    assert_equal(reflect[List[Int]].base_name(), "List")
+    assert_equal(reflect[Dict[String, Int]].base_name(), "Dict")
 
 
 @fieldwise_init
@@ -63,9 +63,8 @@ struct Config(Equatable):
 
 
 def test_field_type_by_name() raises:
-    """Check `field_type["host"]()` gives a handle whose .T is usable."""
-    comptime r = reflect[Config]()
-    comptime host_handle = r.field_type["host"]()
+    """Check `field_type["host"]` gives a handle whose .T is usable."""
+    comptime host_handle = reflect[Config].field_type["host"]
     var default_host: host_handle.T = "localhost"
     assert_equal(default_host, "localhost")
 
@@ -74,15 +73,14 @@ def test_field_type_by_name() raises:
 
 
 def diff_fields[T: AnyType](a: T, b: T) -> List[String]:
-    comptime r = reflect[T]()
-    comptime names = r.field_names()
-    comptime types = r.field_types()
+    comptime names = reflect[T].field_names()
+    comptime types = reflect[T].field_types()
     var diffs = List[String]()
 
-    comptime for idx in range(r.field_count()):
+    comptime for idx in range(reflect[T].field_count()):
         comptime if conforms_to(types[idx], Equatable):
-            ref a_val = r.field_ref[idx](a)
-            ref b_val = r.field_ref[idx](b)
+            ref a_val = reflect[T].field_ref[idx](a)
+            ref b_val = reflect[T].field_ref[idx](b)
             if a_val != b_val:
                 diffs.append(String(names[idx]))
 
@@ -123,15 +121,16 @@ def test_diff_fields_single_field() raises:
 
 trait MakeCopyable:
     def copy_to(self, mut other: Self):
-        comptime r = reflect[Self]()
-        comptime field_count = r.field_count()
-        comptime field_types = r.field_types()
+        comptime field_count = reflect[Self].field_count()
+        comptime field_types = reflect[Self].field_types()
 
         comptime Usable = Copyable & ImplicitlyDestructible
         comptime for idx in range(field_count):
             comptime field_type = field_types[idx]
             comptime if conforms_to(field_type, Usable):
-                r.field_ref[idx](other) = r.field_ref[idx](self).copy()
+                reflect[Self].field_ref[idx](other) = (
+                    reflect[Self].field_ref[idx](self).copy()
+                )
 
 
 @fieldwise_init
@@ -176,14 +175,12 @@ struct Packet:
 
 def test_field_offset_zero() raises:
     """First field is always at offset 0."""
-    comptime r = reflect[Packet]()
-    assert_equal(r.field_offset[index=0](), 0)
+    assert_equal(reflect[Packet].field_offset[index=0](), 0)
 
 
 def test_field_offset_alignment() raises:
     """UInt32 field is at offset >= 4 due to alignment padding after UInt8."""
-    comptime r = reflect[Packet]()
-    comptime off = r.field_offset[index=1]()
+    comptime off = reflect[Packet].field_offset[index=1]()
     assert_true(off >= 4)
 
 

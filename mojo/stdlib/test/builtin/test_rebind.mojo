@@ -109,14 +109,14 @@ struct TestStructForRebindDowncast:
 def test_rebind_downcasted_struct_field_type() raises:
     """Test that rebind accepts downcasted struct field types.
 
-    When using `reflect[T]().field_types()` with downcast and then rebinding
+    When using `reflect[T].field_types()` with downcast and then rebinding
     back to the original type, the compiler should recognize that the
     downcasted type is semantically equivalent to the original for rebind
     purposes.
     """
     comptime T = TestStructForRebindDowncast
     comptime TField = downcast[
-        reflect[T]().field_types()[0], Defaultable & Movable
+        reflect[T].field_types()[0], Defaultable & Movable
     ]
 
     # Test rebind_var with downcasted type

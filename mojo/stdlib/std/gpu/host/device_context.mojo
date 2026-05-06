@@ -2432,7 +2432,7 @@ struct DeviceFunction[
                         declared_arg_type, DevicePassable
                     ].get_type_name()
                 else:
-                    return reflect[declared_arg_type]().name()
+                    return reflect[declared_arg_type].name()
 
             # Now we'll check if the given argument's device_type is
             # what the kernel expects.

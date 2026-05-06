@@ -41,7 +41,7 @@ from op_utils import _get_dtype, _get_buffer_ptr, _get_size, _get_ctx
 
 def _is_gpu_allowed_mixed_unary_op[op: ElementwiseUnaryMixedOp]() -> Bool:
     """Check if a mixed-type unary op is allowed on GPU at compile time."""
-    comptime name = reflect[op]().base_name()
+    comptime name = reflect[op].base_name()
     return name == "Cast"
 
 

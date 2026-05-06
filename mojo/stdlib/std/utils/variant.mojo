@@ -350,7 +350,7 @@ struct _DefaultVariantStorage[*Ts: AnyType](
 # an `Optional` is used as a comptime parameter's field.
 comptime _IsEmptyType[T: AnyType]: Bool = reflect[
     T
-]().field_count() == 0 and conforms_to(T, TrivialRegisterPassable)
+].field_count() == 0 and conforms_to(T, TrivialRegisterPassable)
 """True if `T` is a zero-sized, trivially passable type (i.e. carries no state,
 like `NoneType`). Used to identify the "empty" arm of a niche-optimized variant."""
 

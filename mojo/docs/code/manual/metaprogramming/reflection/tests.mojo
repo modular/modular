@@ -18,7 +18,6 @@
 #        source_location log (print-only, path-dependent).
 from std.testing import assert_equal, assert_true
 from std.reflection import (
-    Reflected,
     source_location,
     call_location,
     get_function_name,
@@ -38,30 +37,26 @@ struct Point:
 
 def test_reflect_name() raises:
     """Returns the compiler-resolved type name."""
-    comptime r = reflect[Point]()
-    comptime name = r.name()
+    comptime name = reflect[Point].name()
     assert_true(name.find("Point") >= 0)
 
 
 def test_reflect_field_count() raises:
     """Returns the number of fields."""
-    comptime r = reflect[Point]()
-    assert_equal(r.field_count(), 2)
+    assert_equal(reflect[Point].field_count(), 2)
 
 
 def test_reflect_field_names() raises:
     """Returns field names in order."""
-    comptime r = reflect[Point]()
-    comptime names = r.field_names()
+    comptime names = reflect[Point].field_names()
     assert_equal(String(names[0]), "x")
     assert_equal(String(names[1]), "y")
 
 
 def test_reflect_field_types() raises:
     """Returns field types iterable with reflect."""
-    comptime r = reflect[Point]()
-    comptime types = r.field_types()
-    comptime first_type_name = reflect[types[0]]().name()
+    comptime types = reflect[Point].field_types()
+    comptime first_type_name = reflect[types[0]].name()
     assert_equal(first_type_name, "Int")
 
 
@@ -70,13 +65,13 @@ def test_reflect_field_types() raises:
 
 def test_base_name_parameterized() raises:
     """Strips parameters and module path."""
-    assert_equal(reflect[List[Int]]().base_name(), "List")
-    assert_equal(reflect[Dict[String, Int]]().base_name(), "Dict")
+    assert_equal(reflect[List[Int]].base_name(), "List")
+    assert_equal(reflect[Dict[String, Int]].base_name(), "Dict")
 
 
 def test_base_name_simple() raises:
     """Returns simple name for non-parameterized type."""
-    assert_equal(reflect[Int]().base_name(), "Int")
+    assert_equal(reflect[Int].base_name(), "Int")
 
 
 # --- is_struct ---
@@ -84,14 +79,12 @@ def test_base_name_simple() raises:
 
 def test_is_struct_on_struct() raises:
     """Returns True for Mojo struct types."""
-    comptime r = reflect[Point]()
-    assert_true(r.is_struct())
+    assert_true(reflect[Point].is_struct())
 
 
 def test_is_struct_on_int() raises:
     """Returns True for Int, a struct wrapping an MLIR primitive."""
-    comptime r = reflect[Int]()
-    assert_true(r.is_struct())
+    assert_true(reflect[Int].is_struct())
 
 
 # --- Example: Finding what changed (diff_fields) ---
@@ -107,17 +100,16 @@ struct Config(Equatable):
 
 def diff_fields[T: AnyType](a: T, b: T) -> List[String]:
     """From the page: returns names of fields that differ."""
-    comptime r = reflect[T]()
-    comptime names = r.field_names()
-    comptime types = r.field_types()
+    comptime names = reflect[T].field_names()
+    comptime types = reflect[T].field_types()
     var diffs = List[String]()
 
-    comptime for idx in range(r.field_count()):
+    comptime for idx in range(reflect[T].field_count()):
         comptime if not conforms_to(types[idx], Equatable):
             continue
 
-        ref a_val = r.field_ref[idx](a)
-        ref b_val = r.field_ref[idx](b)
+        ref a_val = reflect[T].field_ref[idx](a)
+        ref b_val = reflect[T].field_ref[idx](b)
 
         if trait_downcast[Equatable](a_val) != trait_downcast[Equatable](b_val):
             diffs.append(String(names[idx]))
@@ -172,9 +164,8 @@ def test_trait_downcast_equality() raises:
     """Enables trait operations on reflected fields."""
     var p1 = Point(x=1, y=2.0)
     var p2 = Point(x=1, y=2.0)
-    comptime r = reflect[Point]()
-    ref lhs = r.field_ref[0](p1)
-    ref rhs = r.field_ref[0](p2)
+    ref lhs = reflect[Point].field_ref[0](p1)
+    ref rhs = reflect[Point].field_ref[0](p2)
     var equal = trait_downcast[Equatable](lhs) == trait_downcast[Equatable](rhs)
     assert_true(equal)
 
@@ -183,9 +174,8 @@ def test_trait_downcast_inequality() raises:
     """Detects differing field values."""
     var p1 = Point(x=1, y=2.0)
     var p2 = Point(x=1, y=9.0)
-    comptime r = reflect[Point]()
-    ref lhs = r.field_ref[1](p1)
-    ref rhs = r.field_ref[1](p2)
+    ref lhs = reflect[Point].field_ref[1](p1)
+    ref rhs = reflect[Point].field_ref[1](p2)
     var equal = trait_downcast[Equatable](lhs) == trait_downcast[Equatable](rhs)
     assert_true(not equal)
 
@@ -233,16 +223,14 @@ struct Container:
 def test_field_ref_read() raises:
     """Returns a reference to the field."""
     var c = Container(id=42, name="test")
-    comptime r = reflect[Container]()
-    ref id_ref = r.field_ref[0](c)
+    ref id_ref = reflect[Container].field_ref[0](c)
     assert_equal(id_ref, 42)
 
 
 def test_field_ref_mutate() raises:
     """Supports mutation through the reference."""
     var c = Container(id=1, name="test")
-    comptime r = reflect[Container]()
-    r.field_ref[0](c) = 99
+    reflect[Container].field_ref[0](c) = 99
     assert_equal(c.id, 99)
 
 
@@ -251,18 +239,17 @@ def test_field_ref_mutate() raises:
 
 trait MakeCopyable:
     def copy_to(self, mut other: Self):
-        comptime r = reflect[Self]()
-        comptime field_count = r.field_count()
-        comptime field_types = r.field_types()
+        comptime field_count = reflect[Self].field_count()
+        comptime field_types = reflect[Self].field_types()
 
         comptime for idx in range(field_count):
             comptime field_type = field_types[idx]
             comptime if not conforms_to(field_type, Copyable):
                 continue
 
-            ref p_value = r.field_ref[idx](self)
+            ref p_value = reflect[Self].field_ref[idx](self)
             trait_downcast[Copyable & ImplicitlyDestructible](
-                r.field_ref[idx](other)
+                reflect[Self].field_ref[idx](other)
             ) = trait_downcast[Copyable & ImplicitlyDestructible](
                 p_value
             ).copy()
@@ -304,17 +291,15 @@ def test_copy_to_independent() raises:
 
 def test_field_type_by_name() raises:
     """Returns a Reflected handle for the field; .T is usable."""
-    comptime r = reflect[Config]()
-    comptime host_handle = r.field_type["host"]()
+    comptime host_handle = reflect[Config].field_type["host"]
     var default_host: host_handle.T = "localhost"
     assert_equal(default_host, "localhost")
 
 
 def test_field_index_by_name() raises:
     """Returns the zero-based index for a field name."""
-    comptime r = reflect[Point]()
-    comptime x_idx = r.field_index["x"]()
-    comptime y_idx = r.field_index["y"]()
+    comptime x_idx = reflect[Point].field_index["x"]()
+    comptime y_idx = reflect[Point].field_index["y"]()
     assert_equal(x_idx, 0)
     assert_equal(y_idx, 1)
 
@@ -330,24 +315,21 @@ struct Padded:
 
 def test_field_offset_first_field() raises:
     """First field is always at offset 0."""
-    comptime r = reflect[Padded]()
-    comptime off = r.field_offset[index=0]()
+    comptime off = reflect[Padded].field_offset[index=0]()
     assert_equal(off, 0)
 
 
 def test_field_offset_alignment() raises:
     """Returns the offset of a field, accounting for alignment padding."""
-    comptime r = reflect[Padded]()
-    comptime off_b = r.field_offset[index=1]()
+    comptime off_b = reflect[Padded].field_offset[index=1]()
     assert_true(off_b >= 4)
 
 
 def test_field_offset_by_name() raises:
     """Returns the offset of a field by name, matching the index-based offset.
     """
-    comptime r = reflect[Point]()
-    comptime by_name = r.field_offset[name="y"]()
-    comptime by_index = r.field_offset[index=1]()
+    comptime by_name = reflect[Point].field_offset[name="y"]()
+    comptime by_index = reflect[Point].field_offset[index=1]()
     assert_equal(by_name, by_index)
 
 
@@ -442,27 +424,13 @@ def test_linkage_name_differs_from_source_name() raises:
     assert_true(source != linkage)
 
 
-# --- Reflected[T] import and usage ---
-
-
-def accepts_reflected[T: AnyType](r: Reflected[T]) -> Int:
-    return r.field_count()
-
-
-def test_reflected_in_signature() raises:
-    """Reflected[T] can be imported and used in function signatures."""
-    comptime r = reflect[Point]()
-    assert_equal(accepts_reflected(r), 2)
-
-
 # --- Iteration pattern: comptime for + conforms_to ---
 
 
 def count_equatable_fields[T: AnyType]() -> Int:
-    comptime r = reflect[T]()
-    comptime types = r.field_types()
+    comptime types = reflect[T].field_types()
     var count = 0
-    comptime for idx in range(r.field_count()):
+    comptime for idx in range(reflect[T].field_count()):
         comptime if conforms_to(types[idx], Equatable):
             count += 1
     return count
@@ -539,9 +507,6 @@ def main() raises:
     test_get_function_name()
     test_get_linkage_name()
     test_linkage_name_differs_from_source_name()
-
-    # Reflected[T] in signatures
-    test_reflected_in_signature()
 
     # Iteration patterns
     test_count_equatable_fields_multi()

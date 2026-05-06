@@ -10,16 +10,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Provides type and function name introspection utilities.
+"""Provides function name introspection utilities.
 
-This module provides compile-time introspection of function names. Type names
-are introspected via `reflect[T]()`:
+For type-name introspection, use the static methods on `Reflected[T]`
+(obtained via `reflect[T]`):
 
-- `reflect[T]().name()` - returns the name of a type
-- `reflect[T]().base_name()` - returns the unqualified name of a type's base
-   type
-- `get_function_name[func]()` - returns the source name of a function
-- `get_linkage_name[func]()` - returns the symbol/linkage name of a function
+- `reflect[T].name()` - returns the name of a type.
+- `reflect[T].base_name()` - returns the unqualified name of a type's base
+  type.
+
+This module exposes the function-side counterparts:
+
+- `get_function_name[func]()` - returns the source name of a function.
+- `get_linkage_name[func]()` - returns the symbol/linkage name of a function.
 
 Example:
 
@@ -34,7 +37,7 @@ def my_function():
     pass
 
 def main():
-    print(reflect[Point]().name())           # "Point"
+    print(reflect[Point].name())             # "Point"
     print(get_function_name[my_function]())  # "my_function"
 ```
 """
@@ -96,7 +99,7 @@ def get_function_name[
 # For example, Generic[Foo] should return "Generic[Foo]" but currently returns
 # "Generic[module_name.Foo]".
 def _unqualified_type_name[type: AnyType]() -> StaticString:
-    comptime name = reflect[type]().name()
+    comptime name = reflect[type].name()
     comptime parameter_list_start = name.find("[")
     if parameter_list_start == -1:
         # HACK: Split is evaluated twice because `List[StringSlice]` cannot

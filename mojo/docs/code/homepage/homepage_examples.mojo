@@ -138,16 +138,15 @@ trait FauxEquatable(ImplicitlyDestructible):
     # Generic implementation using reflection: compare all fields
     @always_inline
     def __eq__(self, other: Self) -> Bool:
-        comptime r = reflect[Self]()
-        comptime names = r.field_names()
-        comptime types = r.field_types()
+        comptime names = reflect[Self].field_names()
+        comptime types = reflect[Self].field_types()
 
         comptime for i in range(names.size):
             comptime T = types[i]
             comptime assert conforms_to(T, Equatable)
             if trait_downcast[Equatable](
-                r.field_ref[i](self)
-            ) != trait_downcast[Equatable](r.field_ref[i](other)):
+                reflect[Self].field_ref[i](self)
+            ) != trait_downcast[Equatable](reflect[Self].field_ref[i](other)):
                 return False
         return True
 

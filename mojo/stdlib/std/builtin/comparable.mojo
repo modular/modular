@@ -66,7 +66,7 @@ trait Equatable(ImplicitlyDestructible):
         """
 
         # Default implementation using reflection: compare all fields
-        comptime r = reflect[Self]()
+        comptime r = reflect[Self]
         comptime names = r.field_names()
         comptime types = r.field_types()
 

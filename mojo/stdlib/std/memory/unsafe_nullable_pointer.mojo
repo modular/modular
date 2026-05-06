@@ -768,7 +768,7 @@ struct UnsafeNullablePointer[
         """
         return String(
             "UnsafeNullablePointer[",
-            reflect[Self.type]().name(),
+            reflect[Self.type].name(),
             ", mut=",
             Self.mut,
             ", address_space=",

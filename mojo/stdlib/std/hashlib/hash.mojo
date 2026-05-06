@@ -84,7 +84,7 @@ trait Hashable:
         Args:
             hasher: The hasher instance to contribute to.
         """
-        comptime r = reflect[Self]()
+        comptime r = reflect[Self]
         comptime names = r.field_names()
         comptime types = r.field_types()
 

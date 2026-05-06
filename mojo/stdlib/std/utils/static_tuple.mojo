@@ -48,7 +48,7 @@ def _static_tuple_construction_checks[T: _StaticTupleTraits, size: Int]():
             "`StaticTuple` element type must have a trivial move/copy"
             " constructor and destructor: "
         ),
-        reflect[T]().name(),
+        reflect[T].name(),
     )
     comptime assert (
         size >= 0
@@ -86,7 +86,7 @@ struct StaticTuple[element_type: _StaticTupleTraits, size: Int](
         """
         return String(
             "StaticTuple[",
-            reflect[Self.element_type]().name(),
+            reflect[Self.element_type].name(),
             ", ",
             Self.size,
             "]",

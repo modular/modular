@@ -26,10 +26,10 @@ def _constrained_conforms_to[
     ParentConformsTo: StaticString,
     ElementConformsTo: StaticString = ParentConformsTo,
 ]():
-    comptime parent_type_name = reflect[Parent]().name()
-    comptime elem_type_name = reflect[Element]().name()
-    # TODO(MOCO-2901): Support traits in reflect[T]().name()
-    #   comptime trait_name = reflect[ParentConformsTo]().name()
+    comptime parent_type_name = reflect[Parent].name()
+    comptime elem_type_name = reflect[Element].name()
+    # TODO(MOCO-2901): Support traits in reflect[T].name()
+    #   comptime trait_name = reflect[ParentConformsTo].name()
     comptime parent_conforms_to_trait_name = ParentConformsTo
     comptime elem_conforms_to_trait_name = ElementConformsTo
 
@@ -73,7 +73,7 @@ def _constrained_field_conforms_to[
         FieldConformsTo: The trait the field must conform to
             (defaults to ParentConformsTo).
     """
-    comptime r = reflect[Parent]()
+    comptime r = reflect[Parent]
     comptime names = r.field_names()
     comptime field_name = names[FieldIndex]
     comptime parent_type_name = _unqualified_type_name[Parent]()
@@ -85,7 +85,7 @@ def _constrained_field_conforms_to[
     #     does not implement Equatable
     # For MLIR types, omit the type name since `_unqualified_type_name`
     # can't handle non-struct types.
-    comptime if reflect[FieldType]().is_struct():
+    comptime if reflect[FieldType].is_struct():
         comptime field_type_name = _unqualified_type_name[FieldType]()
         comptime assert cond, StaticString(
             _get_kgen_string[

@@ -275,7 +275,7 @@ def _reflection_write_to[
     //,
     f: def[FieldType: Writable](field: FieldType, mut writer: W) thin,
 ](this: T, mut writer: W,):
-    comptime r = reflect[T]()
+    comptime r = reflect[T]
     comptime names = r.field_names()
     comptime types = r.field_types()
     comptime type_name = _unqualified_type_name[T]()

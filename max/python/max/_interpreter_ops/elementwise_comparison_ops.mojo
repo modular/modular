@@ -50,7 +50,7 @@ comptime BINARY_COMPARISON_OPS = TypeList.of[
 
 def _is_gpu_allowed_comparison_op[op: ElementwiseBinaryComparisonOp]() -> Bool:
     """Check if a comparison op is allowed on GPU at compile time."""
-    comptime name = reflect[op]().base_name()
+    comptime name = reflect[op].base_name()
     return (
         name == "Equal"
         or name == "Greater"
@@ -74,7 +74,7 @@ def PyInit_elementwise_comparison_ops() -> PythonObject:
         # Binary comparison operations
         comptime for i in range(BINARY_COMPARISON_OPS.size):
             comptime op = BINARY_COMPARISON_OPS[i]
-            comptime name = reflect[op]().base_name()
+            comptime name = reflect[op].base_name()
             comptime docstring = StaticString(
                 "Elementwise " + name + " comparison"
             )

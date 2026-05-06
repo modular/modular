@@ -62,25 +62,24 @@ cleanly, without extra code.
 
 ## Inspect a type
 
-Use the `reflect[T]()` function to inspect a type at compile time. Built
-into Mojo, it returns a `Reflected[T]` handle with methods for querying a
-type.
+Use the `reflect[T]` alias to inspect a type at compile time. Built into
+Mojo, it resolves to `Reflected[T]` — a handle type with static methods
+for querying a type.
 
-This code uses `reflect[T]()` to inspect a type's structure:
+This code uses `reflect[T]` to inspect a type's structure:
 
 ```mojo
 def show_type[T: AnyType]():
-    comptime r = reflect[T]()
-    comptime type_name = r.name()
-    comptime field_count = r.field_count()
-    comptime field_names = r.field_names()
-    comptime field_types = r.field_types()
+    comptime type_name = reflect[T].name()
+    comptime field_count = reflect[T].field_count()
+    comptime field_names = reflect[T].field_names()
+    comptime field_types = reflect[T].field_types()
 
     print("struct", type_name)
 
     comptime for idx in range(field_count):
         comptime field_name = field_names[idx]
-        comptime field_type = reflect[field_types[idx]]().name()
+        comptime field_type = reflect[field_types[idx]].name()
         var intro = "├──" if idx < (field_count - 1) else "└──"
         print(intro, " var ", field_name, ": ", field_type, sep="")
 ```
@@ -136,17 +135,15 @@ The output uses compiler-resolved names. Types appear fully qualified with
 parameters applied. If you only need the base type name, use `base_name()`:
 
 ```mojo
-print(reflect[List[Int]]().base_name())          # List
-print(reflect[Dict[String, Int]]().base_name())  # Dict
+print(reflect[List[Int]].base_name())          # List
+print(reflect[Dict[String, Int]].base_name())  # Dict
 ```
 
 :::note
 When you need one field, access it by name instead of iterating:
 
 ```mojo
-comptime r = reflect[Config]()
-
-comptime host_handle = r.field_type["host"]()
+comptime host_handle = reflect[Config].field_type["host"]
 var default_host: host_handle.T = "localhost"
 
 print(default_host)  # localhost
@@ -163,15 +160,14 @@ assertions, audit logs, change tracking, or debugging.
 
 ```mojo
 def diff_fields[T: AnyType](a: T, b: T) -> List[String]:
-    comptime r = reflect[T]()
-    comptime names = r.field_names()
-    comptime types = r.field_types()
+    comptime names = reflect[T].field_names()
+    comptime types = reflect[T].field_types()
     var diffs = List[String]()
 
-    comptime for idx in range(r.field_count()):
+    comptime for idx in range(reflect[T].field_count()):
         comptime if conforms_to(types[idx], Equatable):
-            ref a_val = r.field_ref[idx](a)
-            ref b_val = r.field_ref[idx](b)
+            ref a_val = reflect[T].field_ref[idx](a)
+            ref b_val = reflect[T].field_ref[idx](b)
             if a_val != b_val:
                 diffs.append(String(names[idx]))
 
@@ -214,15 +210,16 @@ method runs for any conforming struct that meets the trait constraints.
 ```mojo
 trait MakeCopyable:
     def copy_to(self, mut other: Self):
-        comptime r = reflect[Self]()
-        comptime field_count = r.field_count()
-        comptime field_types = r.field_types()
+        comptime field_count = reflect[Self].field_count()
+        comptime field_types = reflect[Self].field_types()
 
         comptime Usable = Copyable & ImplicitlyDestructible
         comptime for idx in range(field_count):
             comptime field_type = field_types[idx]
             comptime if conforms_to(field_type, Usable):
-                r.field_ref[idx](other) = r.field_ref[idx](self).copy()
+                reflect[Self].field_ref[idx](other) = reflect[Self].field_ref[
+                    idx
+                ](self).copy()
 ```
 
 Conforming structs receive `copy_to()` without writing an implementation.
@@ -269,10 +266,9 @@ struct Packet:
     var payload: UInt64
 
 def show_layout[T: AnyType]():
-    comptime r = reflect[T]()
-    comptime names = r.field_names()
-    comptime for i in range(r.field_count()):
-        comptime off = r.field_offset[index=i]()
+    comptime names = reflect[T].field_names()
+    comptime for i in range(reflect[T].field_count()):
+        comptime off = reflect[T].field_offset[index=i]()
         print(names[i], "at byte", off)
 
 def main():
