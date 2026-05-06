@@ -243,12 +243,16 @@ def LIT_PogListAttr : LITAttr<"PogList", "pog_list",
       ArrayRef<VariadicKind> variadics, ArrayRef<TypedAttr> defaults,
       ArrayRef<SmallVector<ConstraintAttr>> constraints);
 
-    /// Prepend inferred parameters: `defaults` is either empty (names
-    /// only) or the same length as `names` (use null/empty `TypedAttr` for
+    /// Prepend inferred parameters: `defaults` and `constraints` are either
+    /// empty or the same length as `names` (use null/empty `TypedAttr` for
     /// slots with no default). When non-empty, defaults must already be
     /// remapped for the prepended `ParamDeclAttr` list by the caller.
+    /// `preConstraints` are the constraints that must hold before the
+    /// prepended parameters.
     PogListAttr prependAsInferredParams(
-      ArrayRef<StringAttr> names, ArrayRef<TypedAttr> defaults) const;
+      ArrayRef<StringAttr> names, ArrayRef<TypedAttr> defaults,
+      ArrayRef<SmallVector<ConstraintAttr>> constraints = {},
+      ArrayRef<ConstraintAttr> preConstraints = {}) const;
   }];
 
   let genVerifyDecl = 1;

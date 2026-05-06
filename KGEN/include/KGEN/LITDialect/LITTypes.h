@@ -276,11 +276,14 @@ public:
   /// index references. If `paramNames` is non-empty, it must match
   /// `parentParams` in length. If `paramDefaults` is non-empty, it must match
   /// `parentParams` in length; a nullptr `TypedAttr` at index `i` means no
-  /// default for that parameter.
+  /// default for that parameter. If `paramConstraints` is non-empty, it must
+  /// match `parentParams` in length.
   static FnTypeGeneratorType
   prependParams(FnTypeGeneratorType sig, ArrayRef<ParamDeclAttr> parentParams,
                 ArrayRef<StringAttr> paramNames = {},
-                ArrayRef<TypedAttr> paramDefaults = {});
+                ArrayRef<TypedAttr> paramDefaults = {},
+                ArrayRef<SmallVector<ConstraintAttr>> paramConstraints = {},
+                ArrayRef<ConstraintAttr> preConstraints = {});
 
   /// Substitute the specified implicit origin references into the specified
   /// type, replacing them with `values` if they are at depth 0, or decrementing

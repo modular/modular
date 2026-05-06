@@ -961,7 +961,7 @@ def test_infer_with_default_arg():
 
 struct InferredDefaultType[dtype: DType = DType.uint32]:
     var value: SIMD[Self.dtype, 1]
-    
+
     # This default depends on a previous default (on the struct).
     def __init__[v_dtype: DType = Self.dtype](
         out self: InferredDefaultType[v_dtype], value: SIMD[v_dtype, 1]
@@ -1256,9 +1256,12 @@ def test_indirect_default_params[
     callee[4, 9, "meow"]()
 
 
-struct ContextDefault[a: Int = 7, b: Int = a]:
+struct ContextDefault[
+    a: Int where a > 0 = 7,
+    b: Int where b >= a = a,
+]:
     @staticmethod
-    def inner[c: Int = Self.b, d: Int = c]():
+    def inner[c: Int where c >= Self.b = Self.b, d: Int = c]() where Self.b > 0:
         pass
 
 
@@ -1266,7 +1269,14 @@ struct ContextDefault[a: Int = 7, b: Int = a]:
 # COM: reconstruction when referencing a function on a bound parametric type.
 # CHECK-LABEL: lit.fn @"test_contextual_default_fn_ref()"
 def test_contextual_default_fn_ref():
-    # CHECK: contextual_default_fn{{.*}}: !lit.generator<<"a": !Int = {7}, "b": !Int = *(0,0), +, "c": !Int = *(0,1), "d": !Int = *(0,2)
+    # CHECK: contextual_default_fn{{.*}}: !lit.generator<
+    # CHECK-SAME: "a": !Int = {7} {<{{.*}}__gt__(::Int,::Int)", *(0,0), {0})
+    # CHECK-SAME: ge(#lit.struct.extract<:!Int *(0,0), "_mlir_value">, 1))
+    # CHECK-SAME: "b": !Int = *(0,0) {<{{.*}}__ge__(::Int,::Int)", *(0,1), *(0,0))
+    # CHECK-SAME: le(#lit.struct.extract<:!Int *(0,0), "_mlir_value">, #lit.struct.extract<:!Int *(0,1), "_mlir_value">))
+    # CHECK-SAME: "c": !Int = *(0,1) {<{{.*}}__ge__(::Int,::Int)", *(0,2), *(0,1))
+    # CHECK-SAME: le(#lit.struct.extract<:!Int *(0,1), "_mlir_value">, #lit.struct.extract<:!Int *(0,2), "_mlir_value">))
+    # CHECK-SAME: "d": !Int = *(0,2)>
     comptime contextual_default_fn = ContextDefault.inner
 
 

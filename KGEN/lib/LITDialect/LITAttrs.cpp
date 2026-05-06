@@ -276,27 +276,40 @@ GeneratorMetadataAttrInterface PogListAttr::getSpecializedMetadata(
 
 /// Get a new metadata attribute for a generator with the given number of
 /// positional input parameters prepended to the generator.
-/// TODO: Also prepend constraints and handle pre-constraints the right way.
-PogListAttr
-PogListAttr::prependAsInferredParams(ArrayRef<StringAttr> names,
-                                     ArrayRef<TypedAttr> defaults) const {
+PogListAttr PogListAttr::prependAsInferredParams(
+    ArrayRef<StringAttr> names, ArrayRef<TypedAttr> defaults,
+    ArrayRef<SmallVector<ConstraintAttr>> constraints,
+    ArrayRef<ConstraintAttr> preConstraints) const {
   assert((defaults.empty() || defaults.size() == names.size()) &&
          "defaults is either empty (no default column) or parallel to names");
-  if (names.empty())
-    return *this;
+  assert((constraints.empty() || constraints.size() == names.size()) &&
+         "constraints is either empty or parallel to names");
+
+  SmallVector<ConstraintAttr> newPreConstraints(preConstraints);
+  if (names.empty()) {
+    llvm::append_range(newPreConstraints, getPreConstraints());
+    return PogListAttr::get(getContext(), getPogs(), newPreConstraints,
+                            getOrigVariadicConvention());
+  }
 
   SmallVector<PogMetadataAttr> newPogs;
   for (auto [i, name] : llvm::enumerate(names)) {
     TypedAttr newDefault{};
     if (!defaults.empty() && defaults[i])
       newDefault = defaults[i];
+    SmallVector<ConstraintAttr> newConstraints;
+    if (!constraints.empty())
+      llvm::append_range(newConstraints, constraints[i]);
+    if (i + 1 == names.size())
+      llvm::append_range(newConstraints, getPreConstraints());
+
     // Strip off variadic kinds and turn the parameter into infer-only too.
     newPogs.push_back(PogMetadataAttr::get(name, PassingKind::Inferred,
                                            VariadicKind::None, newDefault,
-                                           /*constraints=*/{}));
+                                           newConstraints));
   }
   newPogs.append(getPogs().begin(), getPogs().end());
-  return PogListAttr::get(getContext(), newPogs, getPreConstraints(),
+  return PogListAttr::get(getContext(), newPogs, newPreConstraints,
                           getOrigVariadicConvention());
 }
 
