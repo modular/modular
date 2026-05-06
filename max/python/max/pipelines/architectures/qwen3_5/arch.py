@@ -16,9 +16,7 @@ from max.interfaces import PipelineTask
 from max.pipelines.architectures.qwen3vl_moe.context import (
     Qwen3VLTextAndVisionContext,
 )
-from max.pipelines.lib import (
-    SupportedArchitecture,
-)
+from max.pipelines.lib import SupportedArchitecture
 
 from .model import Qwen3_5Model
 from .model_config import Qwen3_5Config
@@ -41,6 +39,9 @@ qwen3_5_arch = SupportedArchitecture(
     rope_type="normal",
     weight_adapters={
         WeightsFormat.safetensors: convert_qwen3_5_state_dict,
+    },
+    required_arguments={
+        "enable_prefix_caching": False,  # TODO: Remove when Deltanet supports prefix caching
     },
     config=Qwen3_5Config,
     multi_gpu_supported=False,
