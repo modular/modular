@@ -49,4 +49,5 @@ minimax_m2_arch = SupportedArchitecture(
     config=MiniMaxM2Config,
     multi_gpu_supported=True,
     tool_parser=MinimaxM2ToolParser,
+    reasoning_parser="minimax_m2",
 )
