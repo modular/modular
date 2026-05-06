@@ -223,7 +223,7 @@ struct GenericToSharedTileCopier[
             Self.thread_layout, swizzle=Self.swizzle
         ](worker_idx)
 
-        dst_fragments.copy(src_fragments.bitcast[dst_fragments.dtype]())
+        dst_fragments.copy_from(src_fragments.bitcast[dst_fragments.dtype]())
 
 
 @fieldwise_init
@@ -299,7 +299,9 @@ struct SharedToGenericTileCopier[
         var dst_fragments = dst.distribute[Self.thread_layout](worker_idx)
 
         comptime if not Self.swizzle:
-            dst_fragments.copy(src_fragments.bitcast[dst_fragments.dtype]())
+            dst_fragments.copy_from(
+                src_fragments.bitcast[dst_fragments.dtype]()
+            )
         else:
             comptime simd_size = src.element_size
             comptime src_align = align_of[SIMD[src.dtype, simd_size]]()
@@ -391,7 +393,7 @@ struct GenericToLocalTileCopier[
                 return
 
         var src_fragments = src.distribute[Self.thread_layout](worker_idx)
-        dst.copy(src_fragments.bitcast[dst.dtype]())
+        dst.copy_from(src_fragments.bitcast[dst.dtype]())
 
 
 @fieldwise_init
@@ -456,7 +458,7 @@ struct LocalToGenericTileCopier[
                 return
 
         var dst_fragments = dst.distribute[Self.thread_layout](worker_idx)
-        dst_fragments.copy(src.bitcast[dst_fragments.dtype]())
+        dst_fragments.copy_from(src.bitcast[dst_fragments.dtype]())
 
 
 @fieldwise_init
@@ -515,7 +517,7 @@ struct SharedToLocalTileCopier[
 
         var worker_idx = _get_worker_idx[Self.thread_scope]()
         var src_fragments = src.distribute[Self.thread_layout](worker_idx)
-        dst.copy(src_fragments.bitcast[dst.dtype]())
+        dst.copy_from(src_fragments.bitcast[dst.dtype]())
 
 
 @fieldwise_init
@@ -585,7 +587,7 @@ struct LocalToSharedTileCopier[
         var dst_fragments = dst.distribute[Self.thread_layout](worker_idx)
 
         comptime if not Self.swizzle:
-            dst_fragments.copy(src.bitcast[dst_fragments.dtype]())
+            dst_fragments.copy_from(src.bitcast[dst_fragments.dtype]())
         else:
             comptime simd_size = src.element_size
             comptime src_align = align_of[SIMD[src.dtype, simd_size]]()

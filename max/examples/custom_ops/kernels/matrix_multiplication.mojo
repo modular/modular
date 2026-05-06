@@ -460,7 +460,7 @@ def tiled_register_matrix_multiplication[
     var dst_reg = stack_allocation[
         dtype=dtype, address_space=AddressSpace.LOCAL
     ](row_major[TM]())
-    dst_reg.copy(dst)
+    dst_reg.copy_from(dst)
 
     # Define the layout for loading tiles of A and B into shared
     # memory.
@@ -497,7 +497,7 @@ def tiled_register_matrix_multiplication[
         barrier()
 
     # Write the final accumulated results to the output matrix.
-    dst.copy(dst_reg)
+    dst.copy_from(dst_reg)
 
 
 # ===-----------------------------------------------------------------------=== #
@@ -576,7 +576,7 @@ def block_tiled_matrix_multiplication[
     var dst_reg = stack_allocation[
         dtype=dtype, address_space=AddressSpace.LOCAL
     ](row_major[TM, TN]())
-    dst_reg.copy(dst)
+    dst_reg.copy_from(dst)
 
     var a_reg = stack_allocation[dtype=dtype, address_space=AddressSpace.LOCAL](
         row_major[TM]()
@@ -603,12 +603,12 @@ def block_tiled_matrix_multiplication[
         comptime for k in range(BK):
             var a_tile = a_smem.tile[TM, 1](partition_row, k)
             var b_tile = b_smem.tile[1, TN](k, partition_col)
-            a_reg.copy(a_tile)
-            b_reg.copy(b_tile)
+            a_reg.copy_from(a_tile)
+            b_reg.copy_from(b_tile)
             outer_product_acc(dst_reg, a_reg, b_reg)
         barrier()
 
-    dst.copy(dst_reg)
+    dst.copy_from(dst_reg)
 
 
 # ===-----------------------------------------------------------------------=== #
@@ -695,7 +695,7 @@ def block_tiled_vectorized_matrix_multiplication[
     var dst_reg = stack_allocation[
         dtype=dtype, address_space=AddressSpace.LOCAL
     ](row_major[TM, TN]())
-    dst_reg.copy(dst)
+    dst_reg.copy_from(dst)
 
     var a_reg = stack_allocation[dtype=dtype, address_space=AddressSpace.LOCAL](
         row_major[TM]()
@@ -740,8 +740,8 @@ def block_tiled_vectorized_matrix_multiplication[
             # Load the corresponding tiles from shared memory into registers.
             var a_tile = a_smem.tile[TM, 1](partition_row, k)
             var b_tile = b_smem.tile[1, TN](k, partition_col)
-            a_reg.copy(a_tile)
-            b_reg.copy(b_tile)
+            a_reg.copy_from(a_tile)
+            b_reg.copy_from(b_tile)
 
             # Perform outer product and accumulate the partial results.
             outer_product_acc(dst_reg, a_reg, b_reg)
@@ -749,7 +749,7 @@ def block_tiled_vectorized_matrix_multiplication[
         barrier()
 
     # Write the final accumulated results to the output matrix.
-    dst.copy(dst_reg)
+    dst.copy_from(dst_reg)
 
 
 # ===-----------------------------------------------------------------------=== #

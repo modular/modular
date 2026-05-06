@@ -1180,8 +1180,8 @@ def test_write_to_3d() raises:
     assert_equal(String(tensor), "[1.0, 5.0, 3.0, 7.0, 2.0, 6.0, 4.0, 8.0]")
 
 
-def test_copy_roundtrip_scalar() raises:
-    """Roundtrip `TileTensor.copy` with element_size == 1 restores original
+def test_copy_from_roundtrip_scalar() raises:
+    """Roundtrip `TileTensor.copy_from` with element_size == 1 restores original
     data."""
     var src_data = InlineArray[Int32, 16](uninitialized=True)
     for i in range(16):
@@ -1194,15 +1194,15 @@ def test_copy_roundtrip_scalar() raises:
     var mid = TileTensor(mid_data, row_major[4, 4]())
     var dst = TileTensor(dst_data, row_major[4, 4]())
 
-    mid.copy(src)
-    dst.copy(mid)
+    mid.copy_from(src)
+    dst.copy_from(mid)
 
     for i in range(16):
         assert_equal(dst_data[i], src_data[i])
 
 
-def test_copy_roundtrip_vectorized() raises:
-    """Roundtrip `TileTensor.copy` when both sides have element_size > 1.
+def test_copy_from_roundtrip_vectorized() raises:
+    """Roundtrip `TileTensor.copy_from` when both sides have element_size > 1.
 
     Regression test for the element_size-vs-scalar-count bug: previously
     this would only touch 1/element_size of the underlying scalars.
@@ -1219,17 +1219,17 @@ def test_copy_roundtrip_vectorized() raises:
     var mid = TileTensor(mid_data, row_major[4, 4]()).vectorize[1, 4]()
     var dst = TileTensor(dst_data, row_major[4, 4]()).vectorize[1, 4]()
 
-    mid.copy(src)
-    dst.copy(mid)
+    mid.copy_from(src)
+    dst.copy_from(mid)
 
     for i in range(16):
         assert_equal(dst_data[i], src_data[i])
 
 
-def test_copy_roundtrip_tile_by_tile() raises:
+def test_copy_from_roundtrip_tile_by_tile() raises:
     """Roundtrip a full tensor tile-by-tile through an intermediate.
 
-    Exercises `TileTensor.copy` on sub-tiles (so the layout strides don't
+    Exercises `TileTensor.copy_from` on sub-tiles (so the layout strides don't
     equal the full-tensor strides) and verifies a full tile-by-tile
     round-trip restores every element of the original tensor.
     """
@@ -1248,13 +1248,255 @@ def test_copy_roundtrip_tile_by_tile() raises:
         comptime for tile_j in range(2):
             var s = src.tile[2, 2]((Idx(tile_i), Idx(tile_j)))
             var m = mid.tile[2, 2]((Idx(tile_i), Idx(tile_j)))
-            m.copy(s)
+            m.copy_from(s)
 
     comptime for tile_i in range(2):
         comptime for tile_j in range(2):
             var m = mid.tile[2, 2]((Idx(tile_i), Idx(tile_j)))
             var d = dst.tile[2, 2]((Idx(tile_i), Idx(tile_j)))
-            d.copy(m)
+            d.copy_from(m)
 
     for i in range(16):
         assert_equal(dst_data[i], src_data[i])
+
+
+def test_copy_from_respects_non_contiguous_layout() raises:
+    """Copy into a padded layout without touching padding slots."""
+    var src_data = InlineArray[Int32, 6](uninitialized=True)
+    for i in range(6):
+        src_data[i] = Int32(i + 1)
+
+    var dst_data = InlineArray[Int32, 8](fill=-1)
+
+    var src = TileTensor(src_data, row_major[2, 3]())
+
+    comptime padded_shape = Coord[ComptimeInt[2], ComptimeInt[3]]
+    comptime padded_stride = Coord[ComptimeInt[4], ComptimeInt[1]]
+    var dst = TileTensor(
+        ptr=dst_data.unsafe_ptr(),
+        layout=TileLayout(
+            shape=padded_shape(Idx[2](), Idx[3]()),
+            stride=padded_stride(Idx[4](), Idx[1]()),
+        ),
+    )
+
+    dst.copy_from(src)
+
+    var expected = [1, 2, 3, -1, 4, 5, 6, -1]
+    for i in range(8):
+        assert_equal(dst_data[i], Int32(expected[i]))
+
+
+def test_copy_from_converts_dtype() raises:
+    """Copy between different dtypes by casting each logical element."""
+    var src_data: InlineArray[Int32, 4] = [1, 2, 3, 4]
+    var dst_data = InlineArray[Float32, 4](fill=0)
+
+    var src = TileTensor(src_data, row_major[2, 2]())
+    var dst = TileTensor(dst_data, row_major[2, 2]())
+
+    dst.copy_from(src)
+
+    for i in range(4):
+        assert_equal(dst_data[i], Float32(i + 1))
+
+
+def test_copy_from_contiguous_converts_dtype() raises:
+    """Copy contiguous data between different dtypes."""
+    var src_data = InlineArray[Float32, 16](uninitialized=True)
+    for i in range(16):
+        src_data[i] = Float32(i + 1)
+
+    var dst_data = InlineArray[BFloat16, 16](fill=0)
+
+    var src = TileTensor(src_data, row_major[4, 4]())
+    var dst = TileTensor(dst_data, row_major[4, 4]())
+
+    dst.copy_from(src)
+
+    for i in range(16):
+        assert_equal(dst_data[i], BFloat16(i + 1))
+
+
+def test_copy_from_vectorized_converts_dtype() raises:
+    """Copy vectorized elements between different dtypes."""
+    var src_data = InlineArray[Float32, 16](uninitialized=True)
+    for i in range(16):
+        src_data[i] = Float32(i + 1)
+
+    var dst_data = InlineArray[BFloat16, 16](fill=0)
+
+    var src = TileTensor(src_data, row_major[4, 4]()).vectorize[1, 4]()
+    var dst = TileTensor(dst_data, row_major[4, 4]()).vectorize[1, 4]()
+
+    dst.copy_from(src)
+
+    for i in range(16):
+        assert_equal(dst_data[i], BFloat16(i + 1))
+
+
+def test_split_static_axis0() raises:
+    var data = InlineArray[Int32, 16](uninitialized=True)
+    for i in range(16):
+        data[i] = Int32(i)
+
+    var tensor = TileTensor(data, row_major[4, 4]())
+    var tiles = tensor.as_immut().split[2]()
+
+    assert_equal(tiles[0][0, 0], 0)
+    assert_equal(tiles[0][1, 3], 7)
+    assert_equal(tiles[1][0, 0], 8)
+    assert_equal(tiles[1][1, 3], 15)
+
+
+def test_split_static_axis1() raises:
+    var data = InlineArray[Int32, 16](uninitialized=True)
+    for i in range(16):
+        data[i] = Int32(i)
+
+    var tensor = TileTensor(data, row_major[4, 4]())
+    var tiles = tensor.as_immut().split[2, axis=1]()
+
+    assert_equal(tiles[0][0, 0], 0)
+    assert_equal(tiles[0][3, 1], 13)
+    assert_equal(tiles[1][0, 0], 2)
+    assert_equal(tiles[1][3, 1], 15)
+
+
+def test_split_static_count_one() raises:
+    var data = InlineArray[Int32, 16](uninitialized=True)
+    for i in range(16):
+        data[i] = Int32(i)
+
+    var tensor = TileTensor(data, row_major[4, 4]())
+    var tiles = tensor.as_immut().split[1]()
+
+    assert_equal(tiles[0][0, 0], tensor[0, 0])
+    assert_equal(tiles[0][2, 1], tensor[2, 1])
+    assert_equal(tiles[0][3, 3], tensor[3, 3])
+
+
+def test_split_static_vectorized() raises:
+    var data = InlineArray[Int32, 16](uninitialized=True)
+    for i in range(16):
+        data[i] = Int32(i)
+
+    var tensor = TileTensor(data, row_major[4, 4]()).vectorize[1, 2]()
+    var tiles = tensor.as_immut().split[2]()
+
+    assert_equal(tiles[0][0, 0][0], 0)
+    assert_equal(tiles[0][1, 1][0], 6)
+    assert_equal(tiles[1][0, 0][0], 8)
+    assert_equal(tiles[1][1, 1][0], 14)
+
+
+def test_split_static_after_tile_non_contiguous() raises:
+    var data = InlineArray[Int32, 16](uninitialized=True)
+    for i in range(16):
+        data[i] = Int32(i)
+
+    var tensor = TileTensor(data, row_major[4, 4]())
+    var tile = tensor.as_immut().tile[4, 2]((Idx(0), Idx(1)))
+    var splits = tile.split[2]()
+
+    assert_equal(splits[0][0, 0], 2)
+    assert_equal(splits[0][1, 1], 7)
+    assert_equal(splits[1][0, 0], 10)
+    assert_equal(splits[1][1, 1], 15)
+
+
+def test_tile_after_split_static_non_contiguous() raises:
+    var data = InlineArray[Int32, 16](uninitialized=True)
+    for i in range(16):
+        data[i] = Int32(i)
+
+    var tensor = TileTensor(data, row_major[4, 4]())
+    var splits = tensor.as_immut().split[2, axis=1]()
+    var tile = splits[1].tile[2, 2]((Idx(1), Idx(0)))
+
+    assert_equal(tile[0, 0], 10)
+    assert_equal(tile[0, 1], 11)
+    assert_equal(tile[1, 0], 14)
+    assert_equal(tile[1, 1], 15)
+
+
+def test_split_dynamic_axis0_without_alignment() raises:
+    var data = InlineArray[Int32, 16](uninitialized=True)
+    for i in range(16):
+        data[i] = Int32(i)
+
+    var tensor = TileTensor(data, row_major[8, 2]())
+    var split0 = tensor.as_immut().split[axis=0](4, 0)
+    var split1 = tensor.as_immut().split[axis=0](4, 1)
+    var split3 = tensor.as_immut().split[axis=0](4, 3)
+
+    assert_equal(split0.layout.shape[0]().value(), 2)
+    assert_equal(split1.layout.shape[0]().value(), 2)
+    assert_equal(split3.layout.shape[0]().value(), 2)
+
+    assert_equal(split0[0, 0], 0)
+    assert_equal(split0[1, 1], 3)
+    assert_equal(split1[0, 0], 4)
+    assert_equal(split1[1, 1], 7)
+    assert_equal(split3[0, 0], 12)
+    assert_equal(split3[1, 1], 15)
+
+
+def test_split_dynamic_non_divisible_without_alignment() raises:
+    var data = InlineArray[Int32, 10](uninitialized=True)
+    for i in range(10):
+        data[i] = Int32(i)
+
+    var tensor = TileTensor(data, row_major[5, 2]())
+    var split0 = tensor.as_immut().split[axis=0](2, 0)
+    var split1 = tensor.as_immut().split[axis=0](2, 1)
+
+    assert_equal(split0.layout.shape[0]().value(), 3)
+    assert_equal(split1.layout.shape[0]().value(), 2)
+
+    assert_equal(split0[0, 0], 0)
+    assert_equal(split0[2, 1], 5)
+    assert_equal(split1[0, 0], 6)
+    assert_equal(split1[1, 1], 9)
+
+
+def test_split_dynamic_axis1_with_alignment() raises:
+    var data = InlineArray[Int32, 16](uninitialized=True)
+    for i in range(16):
+        data[i] = Int32(i)
+
+    var tensor = TileTensor(data, row_major[2, 8]())
+    var split0 = tensor.as_immut().split[1, split_alignment=3](3, 0)
+    var split1 = tensor.as_immut().split[1, split_alignment=3](3, 1)
+    var split2 = tensor.as_immut().split[1, split_alignment=3](3, 2)
+
+    assert_equal(split0.layout.shape[1]().value(), 3)
+    assert_equal(split1.layout.shape[1]().value(), 3)
+    assert_equal(split2.layout.shape[1]().value(), 2)
+
+    assert_equal(split0[0, 0], 0)
+    assert_equal(split0[1, 2], 10)
+    assert_equal(split1[0, 0], 3)
+    assert_equal(split1[1, 2], 13)
+    assert_equal(split2[0, 0], 6)
+    assert_equal(split2[1, 1], 15)
+
+
+def test_split_dynamic_alignment_trailing_zero_partition() raises:
+    var data = InlineArray[Int32, 16](uninitialized=True)
+    for i in range(16):
+        data[i] = Int32(i)
+
+    var tensor = TileTensor(data, row_major[2, 8]())
+    var split0 = tensor.as_immut().split[1, split_alignment=4](3, 0)
+    var split1 = tensor.as_immut().split[1, split_alignment=4](3, 1)
+    var split2 = tensor.as_immut().split[1, split_alignment=4](3, 2)
+
+    assert_equal(split0.layout.shape[1]().value(), 4)
+    assert_equal(split1.layout.shape[1]().value(), 4)
+    assert_equal(split2.layout.shape[1]().value(), 0)
+
+    assert_equal(split0[0, 0], 0)
+    assert_equal(split0[1, 3], 11)
+    assert_equal(split1[0, 0], 4)
+    assert_equal(split1[1, 3], 15)

@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """TileTensor type for structured memory access with compile-time layout information."""
 
-from std.math import ceildiv
+from std.math import align_up, ceildiv
 from std.sys import align_of, simd_width_of, is_gpu, size_of
 from std.os import abort
 
@@ -27,7 +27,7 @@ from std.gpu.host import DeviceBuffer, DeviceContext, HostBuffer
 from layout._fillers import BATCH_SIZE
 from std.sys import prefetch
 from std.sys.intrinsics import PrefetchOptions, _type_is_eq_parse_time
-from std.utils import IndexList
+from std.utils import IndexList, StaticTuple
 
 from .swizzle import Swizzle
 
@@ -66,7 +66,8 @@ def _default_invariant[mut: Bool]() -> Bool:
 
 
 def _copy_widen_factor[
-    dtype: DType,
+    dst_dtype: DType,
+    src_dtype: DType,
     element_size: Int,
     dst_row_major: Bool,
     src_row_major: Bool,
@@ -83,7 +84,10 @@ def _copy_widen_factor[
     comptime if not dst_row_major or not src_row_major or element_size != 1:
         return 1
 
-    comptime native = simd_width_of[dtype]()
+    # Use the narrower SIMD width so both load and store fit native lanes
+    comptime native = min(
+        simd_width_of[dst_dtype](), simd_width_of[src_dtype]()
+    )
     var w = native
     while w > 1:
         if num_elements % w == 0:
@@ -947,11 +951,10 @@ struct TileTensor[
             result *= Int(self.layout.shape[i]().value())
         return result
 
-    def copy(
+    @always_inline("nodebug")
+    def copy_from(
         self,
-        other: TileTensor[
-            dtype=Self.dtype, element_size=Self.element_size, ...
-        ],
+        other: TileTensor[element_size=Self.element_size, ...],
     ) where Self.mut:
         """Copy data from another tensor into this tensor.
 
@@ -962,45 +965,51 @@ struct TileTensor[
         have different shapes or strides (as long as they agree on total
         element count).
 
-        When both tensors have fully static layouts, matching inner
-        dimensions, and unit stride along the innermost axis, the copy
-        widens to SIMD loads/stores of up to `simd_width_of[dtype]()`
-        elements at a time.
+        When both tensors have fully static, row-major layouts,
+        the copy widens to SIMD load + cast + SIMD store,
+        using the narrower of the two dtypes' native SIMD widths.
 
         Constraints:
 
         - Both tensors must have statically known shapes with matching total
             element count.
+        - Both tensors must have the same logical element size.
+        - Source and destination dtypes may differ; each logical element is
+            cast to the destination dtype.
 
         Args:
             other: The source tensor to copy data from. Must have the same
-                `dtype`, `element_size`, and total number of elements as
-                `self`.
+                `element_size` and total number of elements as `self`.
         """
-        comptime src_static = Coord[
-            *type_of(other).LayoutType._shape_types
-        ].static_product
-        comptime dst_static = Coord[
-            *Self.LayoutType._shape_types
-        ].static_product
+        comptime OtherType = type_of(other)
+        comptime assert (
+            Self.LayoutType.shape_known and OtherType.LayoutType.shape_known
+        ), "TileTensor.copy_from requires statically known shapes"
+
+        comptime src_static = OtherType.LayoutType.static_product
+        comptime dst_static = Self.LayoutType.static_product
 
         comptime assert (
             src_static == dst_static
-        ), "TileTensor.copy requires matching total element count"
+        ), "TileTensor.copy_from requires matching total element count"
 
         comptime num_elements = dst_static
 
         comptime widen = _copy_widen_factor[
-            dtype=Self.dtype,
+            dst_dtype=Self.dtype,
+            src_dtype=OtherType.dtype,
             element_size=Self.element_size,
             dst_row_major=Self.is_row_major,
-            src_row_major=type_of(other).is_row_major,
+            src_row_major=OtherType.is_row_major,
             num_elements=num_elements,
         ]()
 
         comptime width = Self.element_size * widen
-        comptime alignment = align_of[
+        comptime dst_alignment = align_of[
             SIMD[Self.dtype, width]
+        ]() if is_gpu() else 1
+        comptime src_alignment = align_of[
+            SIMD[OtherType.dtype, width]
         ]() if is_gpu() else 1
 
         comptime if widen > 1:
@@ -1016,19 +1025,21 @@ struct TileTensor[
             var src_ptr = other.ptr
             var dst_ptr = self.ptr.mut_cast[True]()
             comptime for i in range(num_chunks):
-                dst_ptr.store[alignment=alignment](
+                dst_ptr.store[alignment=dst_alignment](
                     i * width,
-                    src_ptr.load[width=width, alignment=alignment](i * width),
+                    src_ptr.load[width=width, alignment=src_alignment](
+                        i * width
+                    ).cast[Self.dtype](),
                 )
         else:
             comptime for i in range(num_elements):
                 var src_offset = other.layout(Idx[i]())
                 var dst_offset = self.layout(Idx[i]())
-                self.ptr.mut_cast[True]().store[alignment=alignment](
+                self.ptr.mut_cast[True]().store[alignment=dst_alignment](
                     dst_offset,
                     other.ptr.load[
-                        width=Self.element_size, alignment=alignment
-                    ](src_offset),
+                        width=Self.element_size, alignment=src_alignment
+                    ](src_offset).cast[Self.dtype](),
                 )
 
     def _distance(
@@ -1654,6 +1665,229 @@ struct TileTensor[
                 )
         # Should this raise instead?
         abort("attempt to dynamically index out of bounds")
+
+    comptime SplitElementType[
+        count: Int,
+        axis: Int = 0,
+    ] = TileTensor[
+        Self.dtype,
+        Layout[
+            _StaticSplitShape[count, axis, Self.LayoutType._shape_types](),
+            Self.LayoutType._stride_types,
+        ],
+        ImmutOrigin(Self.origin),
+        address_space=Self.address_space,
+        linear_idx_type=Self.linear_idx_type,
+        element_size=Self.element_size,
+    ]
+    """Type alias for equal-sized split element tensors.
+
+    The result has an immutable origin.
+
+    Parameters:
+        count: The number of equal-sized partitions.
+        axis: The axis along which the tensor is split.
+    """
+
+    comptime StaticSplitType[
+        count: Int,
+        axis: Int = 0,
+    ] = StaticTuple[
+        Self.SplitElementType[count, axis],
+        count,
+    ]
+    """Type alias for static split result tuples.
+
+    Each tuple element is an immutable view.
+
+    Parameters:
+        count: The number of equal-sized partitions.
+        axis: The axis along which the tensor is split.
+    """
+
+    @always_inline("nodebug")
+    def split[
+        count: Int,
+        axis: Int = 0,
+    ](self) -> Self.StaticSplitType[count, axis] where not Self.mut:
+        """Splits the tensor into equal-sized views along an axis.
+
+        Split views are immutable. Call `as_immut().split[count]()` on a
+        mutable tensor before splitting.
+
+        Parameters:
+            count: The number of partitions to split into.
+            axis: The axis along which to split.
+
+        Constraints:
+            The tensor shape must be statically known. The split axis must
+            have static, scalar shape and stride values. The split-axis shape
+            must be evenly divisible by `count`.
+
+        Returns:
+            A `StaticTuple` containing `count` non-overlapping `TileTensor`
+            views into this tensor.
+
+        See also:
+            Use `split(count, idx)` to return a single partition with a
+            runtime-sized split axis. The dynamic overload takes `axis` before
+            `split_alignment` as compile-time parameters, while this overload
+            takes `count` before `axis`.
+        """
+        comptime assert (
+            axis >= 0 and axis < Self.rank
+        ), "TileTensor.split axis out of bounds"
+        comptime assert (
+            Self.LayoutType.shape_known
+        ), "TileTensor.split[count]() requires statically known shapes"
+        comptime assert Self.LayoutType._shape_types[
+            axis
+        ].is_value, "TileTensor.split only supports scalar dimensions"
+        comptime assert (
+            Self.LayoutType._shape_types[axis].is_static_value
+            and Self.LayoutType._stride_types[axis].is_static_value
+        ), "TileTensor.split requires static shape and stride on the split axis"
+        comptime assert (
+            Self.LayoutType._shape_types[axis].static_value % count == 0
+        ), "The input dimension must be divisible by the input count"
+
+        comptime tile_size = (
+            Self.LayoutType._shape_types[axis].static_value // count
+        )
+        comptime axis_stride = Self.LayoutType._stride_types[axis].static_value
+
+        var tiles = Self.StaticSplitType[count, axis]()
+        var split_layout = self._split_layout[count, axis]()
+
+        comptime for i in range(count):
+            tiles[i] = Self.SplitElementType[count, axis](
+                self.ptr.as_immutable() + i * tile_size * axis_stride,
+                split_layout,
+            )
+
+        return tiles
+
+    comptime DynamicSplitType[
+        axis: Int = 0,
+    ] = TileTensor[
+        Self.dtype,
+        Layout[
+            _DynamicSplitShape[
+                Self.linear_idx_type, axis, Self.LayoutType._shape_types
+            ](),
+            Self.LayoutType._stride_types,
+        ],
+        ImmutOrigin(Self.origin),
+        address_space=Self.address_space,
+        linear_idx_type=Self.linear_idx_type,
+        element_size=Self.element_size,
+    ]
+    """Type alias for runtime-sized split element tensors.
+
+    The result has an immutable origin.
+
+    Parameters:
+        axis: The axis along which the tensor is split.
+    """
+
+    @always_inline("nodebug")
+    def split[
+        axis: Int = 0,
+        split_alignment: Int = 1,
+    ](self, count: Int, idx: Int) -> Self.DynamicSplitType[
+        axis
+    ] where not Self.mut:
+        """Returns one partition of the tensor after splitting along an axis.
+
+        The returned partition is immutable. Call
+        `as_immut().split(count, idx)` on a mutable tensor before splitting.
+
+        The base partition size is `align_up(ceildiv(axis_dim, count),
+        split_alignment)`. This can make the first `count - 1` partitions
+        larger than `ceildiv(axis_dim, count)`; each returned view is clamped
+        to the remaining elements. If the aligned partition offsets exhaust
+        the axis before all `count` partitions are assigned, trailing
+        partitions have size 0.
+
+        Parameters:
+            axis: The axis along which to split.
+            split_alignment: Alignment for the partition size.
+
+        Args:
+            count: The number of partitions.
+            idx: The partition index to return.
+
+        Returns:
+            An immutable `TileTensor` view whose split axis has runtime shape.
+
+        See also:
+            Use `split[count]()` to split into a `StaticTuple` of equal-sized
+            views when the partition count is known at compile time.
+        """
+        comptime assert (
+            axis >= 0 and axis < Self.rank
+        ), "TileTensor.split axis out of bounds"
+        comptime assert Self.LayoutType._shape_types[
+            axis
+        ].is_value, "TileTensor.split only supports scalar dimensions"
+        comptime assert (
+            Self.LayoutType._shape_types[axis].is_static_value
+            and Self.LayoutType._stride_types[axis].is_static_value
+        ), "TileTensor.split requires static shape and stride on the split axis"
+        debug_assert(count > 0, "split requires count > 0")
+        debug_assert(idx >= 0 and idx < count, "split idx out of range")
+
+        comptime axis_dim = Self.LayoutType._shape_types[axis].static_value
+        comptime axis_stride = Self.LayoutType._stride_types[axis].static_value
+
+        var axis_partition_dim = align_up(
+            ceildiv(axis_dim, count), split_alignment
+        )
+        var raw_remaining = axis_dim - idx * axis_partition_dim
+        var partition_dim = max(0, min(axis_partition_dim, raw_remaining))
+        comptime NewShapeTypes = _DynamicSplitShape[
+            Self.linear_idx_type, axis, Self.LayoutType._shape_types
+        ]()
+        var new_shape = Coord[*NewShapeTypes]()
+
+        comptime for i in range(Self.rank):
+            comptime NewShapeType = NewShapeTypes[i]
+            comptime if i == axis:
+                UnsafePointer(to=new_shape[i]).init_pointee_copy(
+                    rebind[NewShapeType](
+                        RuntimeInt[Self.linear_idx_type](
+                            Scalar[Self.linear_idx_type](partition_dim)
+                        )
+                    )
+                )
+            else:
+                UnsafePointer(to=new_shape[i]).init_pointee_copy(
+                    rebind[NewShapeType](self.layout.shape[i]())
+                )
+
+        return Self.DynamicSplitType[axis](
+            self.ptr.as_immutable() + idx * axis_partition_dim * axis_stride,
+            Layout(new_shape, self.layout.stride_coord()),
+        )
+
+    @always_inline("nodebug")
+    def _split_layout[
+        count: Int,
+        axis: Int = 0,
+    ](self) -> Layout[
+        _StaticSplitShape[count, axis, Self.LayoutType._shape_types](),
+        Self.LayoutType._stride_types,
+    ]:
+        comptime NewShapeTypes = _StaticSplitShape[
+            count, axis, Self.LayoutType._shape_types
+        ]()
+        var new_shape = Coord[*NewShapeTypes]()
+
+        comptime for i in range(Self.rank):
+            comptime NewShapeType = NewShapeTypes[i]
+            UnsafePointer(to=new_shape[i]).init_pointee_copy(NewShapeType())
+
+        return Layout(new_shape, self.layout.stride_coord())
 
     @always_inline
     def slice[
@@ -3406,6 +3640,45 @@ comptime _Slice[
     element_types: TypeList[Trait=CoordLike, ...],
 ] = TypeList.tabulate[
     element_types.size, _SliceTabulator[slices, element_types, _]
+]
+
+
+comptime _StaticSplitShapeTabulator[
+    count: Int,
+    axis: Int,
+    element_types: TypeList[Trait=CoordLike, ...],
+    idx: Int,
+]: CoordLike = (
+    ComptimeInt[element_types[idx].static_value // count] if idx
+    == axis else element_types[idx]
+)
+
+
+comptime _StaticSplitShape[
+    count: Int,
+    axis: Int,
+    element_types: TypeList[Trait=CoordLike, ...],
+] = TypeList.tabulate[
+    element_types.size,
+    _StaticSplitShapeTabulator[count, axis, element_types, _],
+]
+
+
+comptime _DynamicSplitShapeTabulator[
+    dtype: DType,
+    axis: Int,
+    element_types: TypeList[Trait=CoordLike, ...],
+    idx: Int,
+]: CoordLike = RuntimeInt[dtype] if idx == axis else element_types[idx]
+
+
+comptime _DynamicSplitShape[
+    dtype: DType,
+    axis: Int,
+    element_types: TypeList[Trait=CoordLike, ...],
+] = TypeList.tabulate[
+    element_types.size,
+    _DynamicSplitShapeTabulator[dtype, axis, element_types, _],
 ]
 
 # ===-----------------------------------------------------------------------===#

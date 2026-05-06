@@ -1,4 +1,4 @@
-load("//bazel:api.bzl", "mojo_filecheck_test", "mojo_test")
+load("//bazel:api.bzl", "lit_tests", "mojo_filecheck_test", "mojo_test")
 
 package(default_visibility = ["//max:consumers"])
 
@@ -12,6 +12,12 @@ _FILECHECK_TESTS = [
     "test_tensor_runtime_layout.mojo",
     "test_tiled_matmul.mojo",
     "test_vectorized_matmul.mojo",
+]
+
+_LIT_TESTS = [
+    "test_tile_tensor_copy_from_mismatched_element_size_fail.mojo",
+    "test_tile_tensor_copy_from_mismatched_total_elements_fail.mojo",
+    "test_tile_tensor_split_static_non_divisible_fail.mojo",
 ]
 
 _EXTRA_CONSTRAINTS = {
@@ -45,6 +51,16 @@ mojo_filecheck_test(
     ],
 )
 
+mojo_filecheck_test(
+    name = "test_tile_tensor_split_dynamic_negative_idx.mojo.test",
+    srcs = ["test_tile_tensor_split_dynamic_negative_idx.mojo"],
+    expect_crash = True,
+    deps = [
+        "//max:layout",
+        "@mojo//:std",
+    ],
+)
+
 [
     mojo_test(
         name = src + ".test",
@@ -57,6 +73,19 @@ mojo_filecheck_test(
     )
     for src in glob(
         ["**/*.mojo"],
-        exclude = _FILECHECK_TESTS + ["test_negative_index_int_tuple.mojo"],
+        exclude = _FILECHECK_TESTS + _LIT_TESTS + [
+            "test_negative_index_int_tuple.mojo",
+            "test_tile_tensor_split_dynamic_negative_idx.mojo",
+        ],
     )
 ]
+
+lit_tests(
+    name = "lit",
+    size = "small",
+    srcs = _LIT_TESTS,
+    mojo_deps = [
+        "//max:layout",
+        "@mojo//:std",
+    ],
+)

@@ -33,6 +33,10 @@ This version is still a work in progress.
 
 ## Library changes
 
+- Added `TileTensor.copy_from()` and `TileTensor.split()` for copying between
+  compatible tile views and splitting tiles into static or runtime-sized
+  partitions.
+
 - `String.as_bytes_mut()` has been renamed to `String.unsafe_as_bytes_mut()`, to
   reflect that writing invalid UTF-8 to the resulting `Span[Byte]` can lead to
   later issues like out of bounds access.

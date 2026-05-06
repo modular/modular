@@ -553,7 +553,7 @@ var b_smem = stack_allocation[
 var dst_reg = stack_allocation[
     dtype=dtype, address_space=AddressSpace.LOCAL
 ](row_major[TM]())
-dst_reg.copy(dst)
+dst_reg.copy_from(dst)
 
 comptime load_a_layout = row_major[NUM_THREADS // BK, BK]()
 comptime load_b_layout = row_major[BK, NUM_THREADS // BK]()
@@ -579,7 +579,7 @@ for block in range(Int(b.dim[0]()) // BK):
 
     barrier()
 
-dst.copy(dst_reg)
+dst.copy_from(dst_reg)
 ```
 
 This gives a nearly 80% improvement over the previous tiling implementation.
@@ -614,7 +614,7 @@ var b_smem = stack_allocation[
 var dst_reg = stack_allocation[
     dtype=dtype, address_space=AddressSpace.LOCAL
 ](row_major[TM, TN]())
-dst_reg.copy(dst)
+dst_reg.copy_from(dst)
 
 var a_reg = stack_allocation[dtype=dtype, address_space=AddressSpace.LOCAL](
     row_major[TM]()
@@ -641,12 +641,12 @@ for block in range(ntiles):
     comptime for k in range(BK):
         var a_tile = a_smem.tile[TM, 1](partition_row, k)
         var b_tile = b_smem.tile[1, TN](k, partition_col)
-        a_reg.copy(a_tile)
-        b_reg.copy(b_tile)
+        a_reg.copy_from(a_tile)
+        b_reg.copy_from(b_tile)
         outer_product_acc(dst_reg, a_reg, b_reg)
     barrier()
 
-dst.copy(dst_reg)
+dst.copy_from(dst_reg)
 ```
 
 In the above benchmarks, this provides an additional 50% boost over the previous
@@ -685,7 +685,7 @@ var b_smem = stack_allocation[
 var dst_reg = stack_allocation[
     dtype=dtype, address_space=AddressSpace.LOCAL
 ](row_major[TM, TN]())
-dst_reg.copy(dst)
+dst_reg.copy_from(dst)
 
 var a_reg = stack_allocation[dtype=dtype, address_space=AddressSpace.LOCAL](
     row_major[TM]()
@@ -729,14 +729,14 @@ for block in range(ntiles):
     comptime for k in range(BK):
         var a_tile = a_smem.tile[TM, 1](partition_row, k)
         var b_tile = b_smem.tile[1, TN](k, partition_col)
-        a_reg.copy(a_tile)
-        b_reg.copy(b_tile)
+        a_reg.copy_from(a_tile)
+        b_reg.copy_from(b_tile)
 
         outer_product_acc(dst_reg, a_reg, b_reg)
 
     barrier()
 
-dst.copy(dst_reg)
+dst.copy_from(dst_reg)
 ```
 
 From beginning to end, we've realized more than a 36X improvement in matrix
