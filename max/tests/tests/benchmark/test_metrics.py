@@ -15,6 +15,8 @@
 
 from __future__ import annotations
 
+import numpy as np
+import pytest
 from max.benchmark.benchmark_shared.metrics import (
     BenchmarkMetrics,
     PercentileMetrics,
@@ -23,6 +25,317 @@ from max.benchmark.benchmark_shared.metrics import (
     ThroughputMetrics,
     _compute_confidence_info,
 )
+
+# ---------------------------------------------------------------------------
+# PercentileMetrics construction and formatting
+# ---------------------------------------------------------------------------
+
+
+def test_percentile_metrics_basic_creation() -> None:
+    """Test basic creation of PercentileMetrics."""
+    metrics = PercentileMetrics(
+        mean=10.0,
+        std=2.0,
+        p50=9.5,
+        p90=12.0,
+        p95=14.0,
+        p99=18.0,
+        unit="ms",
+    )
+    assert metrics.mean == 10.0
+    assert metrics.std == 2.0
+    assert metrics.p50 == 9.5
+    assert metrics.p90 == 12.0
+    assert metrics.p95 == 14.0
+    assert metrics.p99 == 18.0
+    assert metrics.unit == "ms"
+
+
+def test_percentile_metrics_creation_without_unit() -> None:
+    """Test creating PercentileMetrics without unit."""
+    metrics = PercentileMetrics(
+        mean=10.0, std=2.0, p50=9.5, p90=12.0, p95=14.0, p99=18.0
+    )
+    assert metrics.unit is None
+
+
+def test_percentile_metrics_str_representation() -> None:
+    """Test string representation of PercentileMetrics."""
+    metrics = PercentileMetrics(
+        mean=10.5,
+        std=2.3,
+        p50=9.8,
+        p90=12.7,
+        p95=14.2,
+        p99=18.9,
+    )
+    result = str(metrics)
+
+    assert "Mean:" in result
+    assert "10.50" in result
+    assert "Std:" in result
+    assert "2.30" in result
+    assert "P50:" in result
+    assert "9.80" in result
+    assert "P90:" in result
+    assert "12.70" in result
+    assert "P95:" in result
+    assert "14.20" in result
+    assert "P99:" in result
+    assert "18.90" in result
+
+
+def test_percentile_metrics_format_with_prefix() -> None:
+    """Test format_with_prefix method."""
+    metrics = PercentileMetrics(
+        mean=10.0,
+        std=2.0,
+        p50=9.5,
+        p90=12.0,
+        p95=14.0,
+        p99=18.0,
+        unit="ms",
+    )
+    result = metrics.format_with_prefix("latency")
+
+    assert "Mean latency (ms):" in result
+    assert "Std latency (ms):" in result
+    assert "P50 latency (ms):" in result
+    assert "P90 latency (ms):" in result
+    assert "P95 latency (ms):" in result
+    assert "P99 latency (ms):" in result
+
+
+def test_percentile_metrics_format_with_prefix_override_unit() -> None:
+    """Test format_with_prefix with unit override."""
+    metrics = PercentileMetrics(
+        mean=10.0,
+        std=2.0,
+        p50=9.5,
+        p90=12.0,
+        p95=14.0,
+        p99=18.0,
+        unit="ms",
+    )
+    result = metrics.format_with_prefix("latency", unit="seconds")
+
+    assert "Mean latency (seconds):" in result
+    assert "P99 latency (seconds):" in result
+
+
+def test_percentile_metrics_format_with_prefix_no_unit() -> None:
+    """Test format_with_prefix without unit."""
+    metrics = PercentileMetrics(
+        mean=10.0, std=2.0, p50=9.5, p90=12.0, p95=14.0, p99=18.0
+    )
+    result = metrics.format_with_prefix("metric")
+
+    assert "Mean metric:" in result
+    assert "P99 metric:" in result
+    assert " (ms):" not in result
+    assert " (seconds):" not in result
+
+
+# ---------------------------------------------------------------------------
+# StandardPercentileMetrics construction and data validation
+# ---------------------------------------------------------------------------
+
+
+def test_standard_percentile_metrics_basic_functionality() -> None:
+    """Test basic StandardPercentileMetrics functionality."""
+    data = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0]
+
+    metrics = StandardPercentileMetrics(data)
+
+    assert metrics.mean == pytest.approx(5.5, rel=1e-10)
+    assert metrics.p50 == pytest.approx(5.5, rel=1e-10)
+
+    assert metrics.p90 == pytest.approx(np.percentile(data, 90), rel=1e-10)
+    assert metrics.p95 == pytest.approx(np.percentile(data, 95), rel=1e-10)
+    assert metrics.p99 == pytest.approx(np.percentile(data, 99), rel=1e-10)
+
+
+def test_standard_percentile_metrics_scale_factor() -> None:
+    """Test scale factor functionality."""
+    data = [1.0, 2.0, 3.0, 4.0, 5.0]
+    scale_factor = 1000.0
+
+    metrics = StandardPercentileMetrics(data, scale_factor=scale_factor)
+
+    assert metrics.mean == pytest.approx(3.0 * scale_factor, rel=1e-10)
+    assert metrics.p50 == pytest.approx(3.0 * scale_factor, rel=1e-10)
+    assert metrics.p90 == pytest.approx(
+        np.percentile(data, 90) * scale_factor, rel=1e-10
+    )
+
+
+def test_standard_percentile_metrics_with_unit() -> None:
+    """Test StandardPercentileMetrics with unit."""
+    assert StandardPercentileMetrics([1.0, 2.0, 3.0], unit="ms").unit == "ms"
+
+
+def test_standard_percentile_metrics_str_representation() -> None:
+    """Test string representation uses 'metric' prefix."""
+    result = str(StandardPercentileMetrics([1.0, 2.0, 3.0]))
+    assert "metric" in result.lower()
+
+
+def test_standard_percentile_metrics_empty_data_assertion() -> None:
+    """Test that empty data raises assertion error."""
+    with pytest.raises(AssertionError, match="data must not be empty"):
+        StandardPercentileMetrics([])
+
+
+def test_standard_percentile_metrics_non_list_data_assertion() -> None:
+    """Test that non-list data raises assertion error."""
+    with pytest.raises(AssertionError, match="data must be a list"):
+        StandardPercentileMetrics((1.0, 2.0, 3.0))  # type: ignore
+
+
+def test_standard_percentile_metrics_non_float_data_assertion() -> None:
+    """Test that non-float data raises assertion error."""
+    with pytest.raises(AssertionError, match="data must contain only floats"):
+        StandardPercentileMetrics([1, 2, 3])
+
+
+def test_standard_percentile_metrics_single_value() -> None:
+    """Test with single value in data."""
+    metrics = StandardPercentileMetrics([5.0])
+
+    assert metrics.mean == 5.0
+    assert metrics.std == 0.0
+    assert metrics.p50 == 5.0
+    assert metrics.p90 == 5.0
+    assert metrics.p95 == 5.0
+    assert metrics.p99 == 5.0
+
+
+# ---------------------------------------------------------------------------
+# ThroughputMetrics construction, reversed percentiles, and data validation
+# ---------------------------------------------------------------------------
+
+
+def test_throughput_metrics_basic_functionality() -> None:
+    """Test basic ThroughputMetrics functionality."""
+    data = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0]
+    metrics = ThroughputMetrics(data)
+
+    assert metrics.mean == pytest.approx(5.5, rel=1e-10)
+    assert metrics.p50 == pytest.approx(5.5, rel=1e-10)
+
+
+def test_throughput_metrics_reversed_percentiles() -> None:
+    """Test that percentiles are reversed for throughput (lower percentiles for p90, p95, p99)."""
+    data = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0]
+    metrics = ThroughputMetrics(data)
+
+    assert metrics.p90 == pytest.approx(np.percentile(data, 10), rel=1e-10)
+    assert metrics.p95 == pytest.approx(np.percentile(data, 5), rel=1e-10)
+    assert metrics.p99 == pytest.approx(np.percentile(data, 1), rel=1e-10)
+
+
+def test_throughput_metrics_vs_standard_percentiles() -> None:
+    """Test that throughput percentiles are lower than standard percentiles."""
+    data = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0]
+
+    throughput_metrics = ThroughputMetrics(data)
+    standard_metrics = StandardPercentileMetrics(data)
+
+    assert throughput_metrics.p90 < standard_metrics.p90
+    assert throughput_metrics.p95 < standard_metrics.p95
+    assert throughput_metrics.p99 < standard_metrics.p99
+
+
+def test_throughput_metrics_scale_factor() -> None:
+    """Test scale factor functionality."""
+    data = [1.0, 2.0, 3.0, 4.0, 5.0]
+    scale_factor = 1000.0
+
+    metrics = ThroughputMetrics(data, scale_factor=scale_factor)
+
+    assert metrics.mean == pytest.approx(3.0 * scale_factor, rel=1e-10)
+    assert metrics.p50 == pytest.approx(3.0 * scale_factor, rel=1e-10)
+    assert metrics.p90 == pytest.approx(
+        np.percentile(data, 10) * scale_factor, rel=1e-10
+    )
+
+
+def test_throughput_metrics_with_unit() -> None:
+    """Test ThroughputMetrics with unit."""
+    assert ThroughputMetrics([1.0, 2.0, 3.0], unit="tok/s").unit == "tok/s"
+
+
+def test_throughput_metrics_str_representation() -> None:
+    """Test string representation uses 'throughput' prefix."""
+    result = str(ThroughputMetrics([1.0, 2.0, 3.0]))
+    assert "throughput" in result.lower()
+
+
+def test_throughput_metrics_empty_data_assertion() -> None:
+    """Test that empty data raises assertion error."""
+    with pytest.raises(AssertionError, match="data must not be empty"):
+        ThroughputMetrics([])
+
+
+def test_throughput_metrics_non_list_data_assertion() -> None:
+    """Test that non-list data raises assertion error."""
+    with pytest.raises(AssertionError, match="data must be a list"):
+        ThroughputMetrics((1.0, 2.0, 3.0))  # type: ignore
+
+
+def test_throughput_metrics_non_float_data_assertion() -> None:
+    """Test that non-float data raises assertion error."""
+    with pytest.raises(AssertionError, match="data must contain only floats"):
+        ThroughputMetrics([1, 2, 3])
+
+
+def test_throughput_metrics_single_value() -> None:
+    """Test with single value in data."""
+    metrics = ThroughputMetrics([5.0])
+
+    assert metrics.mean == 5.0
+    assert metrics.std == 0.0
+    assert metrics.p50 == 5.0
+    assert metrics.p90 == 5.0
+    assert metrics.p95 == 5.0
+    assert metrics.p99 == 5.0
+
+
+# ---------------------------------------------------------------------------
+# Integration: StandardPercentileMetrics and ThroughputMetrics together
+# ---------------------------------------------------------------------------
+
+
+def test_both_metrics_with_same_data() -> None:
+    """Both metric types compute mean/median the same but differ on percentiles."""
+    data = [10.0, 20.0, 30.0, 40.0, 50.0, 60.0, 70.0, 80.0, 90.0, 100.0]
+
+    standard = StandardPercentileMetrics(data, scale_factor=1000.0, unit="ms")
+    throughput = ThroughputMetrics(data, scale_factor=1.0, unit="tok/s")
+
+    assert standard.mean == throughput.mean * 1000.0
+    assert standard.p50 == throughput.p50 * 1000.0
+
+    assert standard.p90 > throughput.p90 * 1000.0
+    assert standard.p95 > throughput.p95 * 1000.0
+    assert standard.p99 > throughput.p99 * 1000.0
+
+
+def test_edge_case_large_dataset() -> None:
+    """Both metric types handle large datasets and maintain expected orderings."""
+    np.random.seed(42)
+    data = np.random.normal(50.0, 10.0, 1000).tolist()
+
+    standard = StandardPercentileMetrics(data)
+    throughput = ThroughputMetrics(data)
+
+    assert isinstance(standard.mean, float)
+    assert isinstance(throughput.mean, float)
+    assert standard.mean == pytest.approx(throughput.mean, rel=1e-10)
+
+    assert standard.p99 > standard.p95 > standard.p90
+    assert throughput.p90 > throughput.p95 > throughput.p99
+
 
 # ---------------------------------------------------------------------------
 # PercentileMetrics.validate_metrics()
