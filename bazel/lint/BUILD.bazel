@@ -1,7 +1,7 @@
 load("@buildifier_prebuilt//:rules.bzl", "buildifier")
 load("@rules_multirun//:defs.bzl", "command", "multirun")
 load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
-load("//bazel:api.bzl", "modular_py_binary", "mojo_binary")
+load("//bazel:api.bzl", "modular_py_binary", "mojo_binary", "requirement")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -128,6 +128,18 @@ command(
     environment = {"FAST": "1"},
 )
 
+modular_py_binary(
+    name = "action-versions-pinned",
+    srcs = ["action-versions-pinned.py"],
+    deps = [requirement("pyyaml")],
+)
+
+command(
+    name = "action-versions-pinned.check",
+    command = ":action-versions-pinned",
+    run_from_workspace_root = True,
+)
+
 mojo_binary(
     name = "check_licenses",
     srcs = [":check_licenses.mojo"],
@@ -171,6 +183,7 @@ multirun(
     name = "lint",
     buffer_output = True,
     commands = [
+        ":action-versions-pinned.check",
         ":buildifier.check",
         ":check_licenses.check",
         ":mblack.check",
