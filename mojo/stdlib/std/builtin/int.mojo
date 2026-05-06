@@ -106,13 +106,7 @@ trait Intable(ImplicitlyDestructible):
     Now you can construct an `Int`:
 
     ```mojo
-    %# from testing import assert_equal
-    @fieldwise_init
-    struct Foo(Intable):
-        var i: Int
-
-        def __int__(self) -> Int:
-            return self.i
+    from std.testing import assert_equal
 
     foo = Foo(42)
     assert_equal(Int(foo), 42)
@@ -155,13 +149,7 @@ trait IntableRaising:
     Now you can construct an `Int`:
 
     ```mojo
-    %# from testing import assert_equal
-    @fieldwise_init
-    struct Foo(IntableRaising):
-        var i: Int
-
-        def __int__(self) raises -> Int:
-            return self.i
+    from std.testing import assert_equal
 
     foo = Foo(42)
     assert_equal(Int(foo), 42)
@@ -1148,7 +1136,7 @@ struct Int(
         Examples:
 
         ```mojo
-        %# from testing import assert_equal
+        from std.testing import assert_equal
         assert_equal(Int(10)._decimal_digit_count(), 2)
         assert_equal(Int(-10)._decimal_digit_count(), 2)
         ```

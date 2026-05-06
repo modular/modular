@@ -3197,17 +3197,22 @@ def multimem_st[
 
     Example:
 
-    ```text
-    from std.gpu.memory.memory import *
+    ```mojo
+    from std.gpu.memory.memory import multimem_st, Consistency
+    from std.gpu.intrinsics import Scope
+    from std.utils import StaticTuple
+    var addr = UnsafePointer[Float32, MutAnyOrigin, address_space=AddressSpace.GLOBAL]()
+    %# val1, val2 = Float32(0), Float32(0)
+    %# vec1, vec2, vec3, vec4 = Float16(0), Float16(0), Float16(0), Float16(0)
 
     # Store 2 float32 values to multimem address.
     multimem_st[DType.float32, count=2, scope=Scope.BLOCK, consistency=Consistency.RELAXED](
-        addr, StaticTuple[DType.float32, 2](val1, val2)
+        addr, StaticTuple[Float32, 2](val1, val2)
     )
 
     # Vector store of 4 float16x2 values.
-    multimem_st[DType.float16, count=4, scope=Scope.CLUSTER, consistency=Consistency.RELEASE, width=2](
-        addr, StaticTuple[DType.float16, 4](vec1, vec2, vec3, vec4)
+    multimem_st[DType.float16, count=4, scope=Scope.CLUSTER, consistency=Consistency.RELEASE](
+        addr.bitcast[Float16](), StaticTuple[Float16, 4](vec1, vec2, vec3, vec4)
     )
     ```
 
