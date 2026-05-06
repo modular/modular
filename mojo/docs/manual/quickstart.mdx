@@ -6,6 +6,17 @@ sidebar_label: Quickstart
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
+import ConditionalVersionDocs from '@site/src/components/ConditionalVersionDocs'
+import Tooltip from '@site/src/components/Tooltip/tooltip';
+
+export const tooltipNightly = (<Tooltip
+  parent="nightly build"
+  content="To get the stable build, change the version in the website header."
+/>);
+export const tooltipStable = (<Tooltip
+  parent="stable build"
+  content="To get the nightly build, change the version in the website header."
+/>);
 
 This page quickly teaches you Mojo's syntax by focusing on code.
 
@@ -25,9 +36,12 @@ You can use Mac, Linux, or Windows with WSL. For details, see the
 You can install Mojo using any Python or Conda package manager,
 but we recommend either `pixi` or `uv`.
 
-<Tabs groupId="install">
+<ConditionalVersionDocs version="nightly">
 
-<TabItem value="uv" label="uv" default>
+Use the following command to install the {tooltipNightly}:
+
+<Tabs groupId="install">
+<TabItem value="uv" label="uv">
 
 1. If needed, install `uv`:
 
@@ -40,8 +54,8 @@ but we recommend either `pixi` or `uv`.
     ```bash
     uv init temperature-analyzer && cd temperature-analyzer
     uv venv && source .venv/bin/activate
-    uv pip install mojo --extra-index-url https://modular.gateway.scarf.sh/simple/
-    ```
+    uv add mojo  --index https://whl.modular.com/nightly/simple/ \
+      --prerelease allow    ```
 
 </TabItem>
 
@@ -63,8 +77,38 @@ but we recommend either `pixi` or `uv`.
     ```
 
 </TabItem>
-
 </Tabs>
+
+</ConditionalVersionDocs>
+
+<ConditionalVersionDocs version="stable">
+
+Use the following command to install the {tooltipStable}:
+
+<Tabs groupId="install">
+<TabItem value="uv" label="uv">
+
+    ```sh
+    uv init temperature-analyzer && cd temperature-analyzer
+    uv venv && source .venv/bin/activate
+    uv add mojo
+    ```
+
+</TabItem>
+<TabItem value="pixi" label="pixi">
+
+    ```sh
+    pixi init temperature-analyzer \
+    -c https://conda.modular.com/max/  -c conda-forge
+    cd temperature-analyzer
+    pixi add mojo
+    pixi shell
+    ```
+
+</TabItem>
+</Tabs>
+
+</ConditionalVersionDocs>
 
 ## Try Mojo agent skills
 

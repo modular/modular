@@ -37,6 +37,8 @@ Or add Mojo to a project:
 <TabItem value="pixi" label="pixi">
 
     ```sh
+    pixi init hello-world \
+    -c https://conda.modular.com/max-nightly/ -c conda-forge
     pixi add mojo
     ```
 
@@ -64,7 +66,10 @@ Or add Mojo to a project:
 <TabItem value="pixi" label="pixi">
 
     ```sh
-    pixi add "mojo==1.0.0b1"
+    pixi init hello-world \
+    -c https://conda.modular.com/max/ -c conda-forge
+    cd hello-world
+    pixi add mojo
     ```
 
 </TabItem>
