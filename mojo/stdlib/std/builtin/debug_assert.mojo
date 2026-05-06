@@ -171,8 +171,8 @@ def debug_assert[
         debug_assert[check_name, cpu_only=True]("unexpected name")
     ```
 
-    For compile-time assertions, see
-    [`constrained()`](/docs/std/builtin/constrained/constrained/).
+    For compile-time assertions, see [`comptime
+    assert`](/docs/manual/metaprogramming/constraints/#compile-time-assertions)
 
     Parameters:
         cond: The function to invoke to check if the assertion holds.
@@ -292,8 +292,8 @@ def debug_assert[
         debug_assert[check_name, cpu_only=True]("unexpected name")
     ```
 
-    For compile-time assertions, see
-    [`constrained()`](/docs/std/builtin/constrained/constrained/).
+    For compile-time assertions, see [`comptime
+    assert`](/docs/manual/metaprogramming/constraints/#compile-time-assertions)
 
     Parameters:
         assert_mode: Determines when the assert is turned on.
@@ -419,8 +419,8 @@ def debug_assert[
         debug_assert[check_name, cpu_only=True]("unexpected name")
     ```
 
-    For compile-time assertions, see
-    [`constrained()`](/docs/std/builtin/constrained/constrained/).
+    For compile-time assertions, see [`comptime
+    assert`](/docs/manual/metaprogramming/constraints/#compile-time-assertions)
 
     Parameters:
         assert_mode: Determines when the assert is turned on.
