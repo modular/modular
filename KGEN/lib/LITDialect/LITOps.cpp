@@ -139,10 +139,23 @@ FnTypeGeneratorType LIT::getFullSignature(Operation *container,
   SmallVector<StringAttr> paramNames;
   SmallVector<ParamDeclAttr> paramDecls;
   SmallVector<TypedAttr> paramDefaults;
+  SmallVector<SmallVector<ConstraintAttr>> paramConstraints;
+  SmallVector<ConstraintAttr> preConstraints;
+  auto appendPreConstraints = [&](ArrayRef<ConstraintAttr> constraints) {
+    if (constraints.empty())
+      return;
+    if (paramConstraints.empty()) {
+      llvm::append_range(preConstraints, constraints);
+      return;
+    }
+    llvm::append_range(paramConstraints.back(), constraints);
+  };
   for (auto [op, pogList] : opAndPogLists) {
+    appendPreConstraints(pogList.getPreConstraints());
     for (PogMetadataAttr pog : pogList.getPogs()) {
       paramNames.push_back(pog.getName());
       paramDefaults.push_back(pog.getDefaultValue());
+      paramConstraints.emplace_back(pog.getConstraints());
     }
     for (ParamDeclAttr param : cast<DeclInterface>(op).getInputParams())
       paramDecls.push_back(param);
@@ -150,8 +163,10 @@ FnTypeGeneratorType LIT::getFullSignature(Operation *container,
 
   assert(paramNames.size() == paramDecls.size());
   assert(paramDefaults.size() == paramDecls.size());
+  assert(paramConstraints.size() == paramDecls.size());
   return FnTypeGeneratorType::prependParams(signature, paramDecls, paramNames,
-                                            paramDefaults);
+                                            paramDefaults, paramConstraints,
+                                            preConstraints);
 }
 
 //===----------------------------------------------------------------------===//

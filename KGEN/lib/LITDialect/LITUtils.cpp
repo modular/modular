@@ -561,6 +561,7 @@ void LIT::printOptionalParamSignature(AsmPrinter &p,
 
   size_t idx = 0;
   PassingKindPrinter passingKindPrinter(p, paramListAttr, '|');
+  ArrayRef<PogMetadataAttr> pogs = paramListAttr.getPogs();
   auto printWithDefault = [&](Type type) {
     if (idx == 0 && !preConstraints.empty()) {
       p << '{';
@@ -577,6 +578,8 @@ void LIT::printOptionalParamSignature(AsmPrinter &p,
     printKGENType(p, type);
     printVariadicness(p, paramListAttr.getVariadicKind(idx));
     printOptionalDefaultValue(p, paramListAttr.getDefault(idx), type);
+    printOptionalConstraintsList(p, pogs[idx].getConstraints(),
+                                 /*evaluator=*/nullptr);
 
     // Check if we are at the end; if so, we might still have to print a '/'.
     passingKindPrinter.printOptionalTrailingSlash(idx++);
