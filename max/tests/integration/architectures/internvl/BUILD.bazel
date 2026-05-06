@@ -104,6 +104,9 @@ modular_py_test(
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: MOCO-2411
+    per_test_tags = {
+        "tests/test_vision_model.py": ["manual"],  # MODELS-1422: Test timing out in CI
+    },
     tags = [
         "gpu",
         "no-sandbox",
