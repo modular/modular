@@ -14,10 +14,11 @@
 
 from __future__ import annotations
 
+import logging
 import math
 from dataclasses import dataclass, field
-from typing import Any
 
+from max.driver import Device, load_devices
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn.kv_cache import KVCacheParams
@@ -29,6 +30,8 @@ from ..llama3.model_config import Llama3Config
 from ..qwen3vl_moe.model_config import VisionConfig
 
 __all__ = ["Qwen3_5Config", "VisionConfig"]
+
+logger = logging.getLogger("max.pipelines")
 
 
 @dataclass(kw_only=True)
@@ -194,7 +197,13 @@ class Qwen3_5Config(Llama3Config):
         )
         return num_linear * bytes_per_layer
 
-    def infer_optimal_batch_size(self, devices: list[Any]) -> int:
+    def infer_optimal_batch_size(
+        self,
+        devices: list[Device],
+        *,
+        weights_size: int,
+        device_memory_utilization: float,
+    ) -> int:
         """Return a memory-safe default `max_batch_size` for this architecture.
 
         Qwen3.5 allocates GPU memory for GatedDeltaNet recurrent states with
@@ -208,10 +217,10 @@ class Qwen3_5Config(Llama3Config):
            model kernel and scattered back to the pool by `update_states()`.
 
         Worst-case simultaneous footprint is therefore **3 x max_batch x per_req**
-        (pool + both working copies). We budget 15 % of current free GPU
-        memory for this total, so:
-
-            max_batch = 0.15 x free_memory / (3 x per_req)
+        (pool + both working copies). We split the post-weights utilization
+        budget evenly: the state pool gets up to half, the KV cache absorbs
+        the rest. This uses the same ``device_memory_utilization`` headroom
+        factor as the rest of the pipeline.
 
         This is consistent with `estimate_activation_memory()` which reserves
         `3 x max_batch x per_req` bytes before the KV-cache allocator runs.
@@ -220,21 +229,21 @@ class Qwen3_5Config(Llama3Config):
         the device query fails.
         """
         per_req = self._per_request_state_bytes()
-        if per_req == 0:
-            return 512  # No recurrent overhead; use the standard default.
         try:
             free_bytes = int(
                 sum(d.stats.get("free_memory", 0) for d in devices)
             )
-            if free_bytes > 0:
-                state_budget = int(free_bytes * 0.15)
-                # Divide by 3*per_req: pool + input working + output working.
-                return max(1, state_budget // (3 * per_req))
         except Exception:
-            pass
-        # Conservative fallback: safe for Qwen3.5-27B on H100/A100 (80 GB).
-        # (0.15 x 79 GB) / (3 x ~147 MB) ~= 26, so 32 gives a small margin.
-        return 32
+            free_bytes = 0
+        if free_bytes <= 0:
+            # Conservative fallback: safe for Qwen3.5-27B on H100/A100 (80 GB).
+            return 32
+        budget = int(free_bytes * device_memory_utilization) - weights_size
+        if budget <= 0:
+            return 1
+        # Divide by 3*per_req: pool + input working + output working.
+        max_batch = max(1, (budget // 2) // (3 * per_req))
+        return min(512, max_batch)
 
     @override
     @classmethod
@@ -424,12 +433,31 @@ class Qwen3_5Config(Llama3Config):
 
         # Set a safe default max_batch_size if not explicitly set by user.
         # Qwen3.5 has per-request GPU overhead (recurrent-state buffers)
-        # beyond the KV cache, so it needs a smaller batch size than the
-        # global default.
+        # beyond the KV cache, so the framework's default 512 can OOM us;
+        # compute a bound that fits actual free memory.
         if pipeline_config.runtime.max_batch_size is None:
-            safe_batch_size = config_instance.infer_optimal_batch_size(
-                device_refs
+            try:
+                actual_devices = load_devices(model_config.device_specs)
+            except Exception:
+                actual_devices = []
+            try:
+                weights_bytes = model_config.weights_size()
+            except (FileNotFoundError, ValueError, RuntimeError) as e:
+                logger.warning(
+                    "Qwen3.5: weights_size() failed (%s); assuming 0 bytes "
+                    "for max_batch_size inference. The state-pool budget "
+                    "may be over-allocated and risk OOM.",
+                    e,
+                )
+                weights_bytes = 0
+            pipeline_config.runtime.max_batch_size = (
+                config_instance.infer_optimal_batch_size(
+                    actual_devices,
+                    weights_size=weights_bytes,
+                    device_memory_utilization=(
+                        model_config.kv_cache.device_memory_utilization
+                    ),
+                )
             )
-            pipeline_config.runtime.max_batch_size = safe_batch_size
 
         return config_instance

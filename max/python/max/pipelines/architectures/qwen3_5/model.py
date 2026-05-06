@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 import numpy as np
-from max.driver import Buffer, DLPackArray, is_virtual_device_mode, load_devices
+from max.driver import Buffer, DLPackArray, is_virtual_device_mode
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType
@@ -219,17 +219,8 @@ class Qwen3_5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
 
         Worst-case simultaneous footprint: `3 x max_batch x per_req`.
 
-        This method is called **before** `infer_optimal_batch_size()` sets
-        `max_batch_size` on the pipeline config. To keep the reservation
-        consistent with the batch size that will be inferred, we reproduce the
-        same device-memory query used by `infer_optimal_batch_size()`:
-
-            max_batch = 0.15 x free_memory / (3 x per_req)
-
-        so that `3 x max_batch x per_req = 0.15 x free_memory`.
-
-        Falls back to 32 (safe for Qwen3.5-27B on H100/A100 80 GB) when the
-        device query is unavailable or the user has not specified a batch size.
+        `Qwen3_5Config.initialize_from_config` pre-sets `max_batch_size`
+        before this method runs, so it is always known here.
         """
         text_config = Qwen3_5Config._get_text_config(huggingface_config)
         layer_types = Qwen3_5Config._get_layer_types(text_config)
@@ -258,26 +249,10 @@ class Qwen3_5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
         per_req = num_linear * bytes_per_layer
 
         max_batch = pipeline_config.runtime.max_batch_size
-        if max_batch is None:
-            # max_batch_size has not been set yet (estimate_activation_memory
-            # is called before infer_optimal_batch_size in the pipeline config
-            # flow).  Reproduce the same device-memory query so this
-            # reservation is consistent with the batch size that will be
-            # inferred.
-            try:
-                devices = load_devices(pipeline_config.model.device_specs)
-                free_bytes = int(
-                    sum(d.stats.get("free_memory", 0) for d in devices)
-                )
-                if free_bytes > 0:
-                    state_budget = int(free_bytes * 0.15)
-                    max_batch = max(1, state_budget // (3 * per_req))
-            except Exception:
-                pass
-            if max_batch is None:
-                # Conservative fallback: safe for Qwen3.5-27B on H100/A100.
-                max_batch = 32
-
+        assert max_batch is not None, (
+            "Qwen3_5Config.initialize_from_config must set max_batch_size "
+            "before estimate_activation_memory runs"
+        )
         # 3x: persistent pool + input working buffers + output working buffers.
         return 3 * max_batch * per_req
 
