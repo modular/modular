@@ -14,10 +14,11 @@
 from max.graph.weights import WeightsFormat
 from max.interfaces import InputModality, PipelineTask
 from max.pipelines.core import PixelContext
-from max.pipelines.lib import PixelGenerationTokenizer, SupportedArchitecture
+from max.pipelines.lib import SupportedArchitecture
 
 from ..qwen_image.arch import QwenImageArchConfig
 from .pipeline_qwen_image_edit import QwenImageEditPipeline
+from .tokenizer import QwenImageEditTokenizer
 
 qwen_image_edit_arch = SupportedArchitecture(
     name="QwenImageEditPipeline",
@@ -31,7 +32,7 @@ qwen_image_edit_arch = SupportedArchitecture(
     pipeline_model=QwenImageEditPipeline,  # type: ignore[arg-type]
     context_type=PixelContext,
     default_weights_format=WeightsFormat.safetensors,
-    tokenizer=PixelGenerationTokenizer,
+    tokenizer=QwenImageEditTokenizer,
     config=QwenImageArchConfig,
 )
 
@@ -47,6 +48,6 @@ qwen_image_edit_plus_arch = SupportedArchitecture(
     pipeline_model=QwenImageEditPipeline,  # type: ignore[arg-type]
     context_type=PixelContext,
     default_weights_format=WeightsFormat.safetensors,
-    tokenizer=PixelGenerationTokenizer,
+    tokenizer=QwenImageEditTokenizer,
     config=QwenImageArchConfig,
 )
