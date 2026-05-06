@@ -118,7 +118,6 @@ class Qwen3_5TransformerBlock(Module):
         input_row_offsets: TensorValue | None = None,
         conv_state: TensorValue | None = None,
         recurrent_state: TensorValue | None = None,
-        is_decode: TensorValue | None = None,
     ) -> tuple[TensorValue, TensorValue | None, TensorValue | None]:
         residual = x
         h = self.input_layernorm(x)
@@ -138,9 +137,8 @@ class Qwen3_5TransformerBlock(Module):
             assert conv_state is not None
             assert recurrent_state is not None
             assert input_row_offsets is not None
-            assert is_decode is not None
             h, new_conv_state, new_recurrent_state = self.linear_attn(
-                h, conv_state, recurrent_state, input_row_offsets, is_decode
+                h, conv_state, recurrent_state, input_row_offsets
             )
 
         h = residual + h
@@ -341,18 +339,6 @@ class Qwen3_5(DistributedLogitsPostprocessMixin, Module):
         # we must NOT pass the absolute layer index here.
         kv_cache_idx = 0
 
-        # Pre-compute the decode/prefill flag once and share it across all
-        # 48 linear attention layers, avoiding redundant graph ops per layer.
-        total_N_s = ops.cast(
-            ops.shape_to_tensor([h.shape[0]]).reshape(()), DType.int32
-        )
-        batch_B_s = ops.cast(
-            ops.shape_to_tensor([input_row_offsets.shape[0]]).reshape(())
-            - ops.constant(1, DType.int32, device=DeviceRef.CPU()),
-            DType.int32,
-        )
-        is_decode = total_N_s == batch_B_s  # bool scalar on CPU
-
         # Process through transformer layers
         for idx, layer in enumerate(self.layers):
             if self.layer_types[idx] == "full_attention":
@@ -373,7 +359,6 @@ class Qwen3_5(DistributedLogitsPostprocessMixin, Module):
                     conv_state=conv_states[linear_state_idx],
                     recurrent_state=recurrent_states[linear_state_idx],
                     input_row_offsets=input_row_offsets,
-                    is_decode=is_decode,
                 )
                 updated_conv_states.append(new_conv)
                 updated_recurrent_states.append(new_recurrent)
