@@ -1007,36 +1007,8 @@ def _apply_dynamic_num_prompts(
     return use_dynamic_num_prompts
 
 
-def main_with_parsed_args(
-    args: ServingBenchmarkConfig,
-) -> Iterator[BenchmarkRunResult]:
-    logging.basicConfig(
-        format="%(asctime)s.%(msecs)03d %(levelname)s: %(name)s: %(message)s",
-        datefmt="%H:%M:%S",
-        level=logging.DEBUG if args.verbose else logging.INFO,
-    )
-
-    logger.info(args)
-
-    if args.model is None:
-        raise ValueError("--model is required when running benchmark")
-
-    _load_workload_yaml(args)
-
-    # Warn + default when nothing constrains run length (common to both paths).
-    _apply_run_length_defaults(args)
-
-    # ---- Parse sweep ranges ----
-    concurrency_range = parse_comma_separated(args.max_concurrency, int_or_none)
-    request_rate_range = parse_comma_separated(args.request_rate, float)
-
-    # When num_prompts_multiplier is active AND no explicit num_prompts or
-    # duration constrains the run, dynamically compute num_prompts per
-    # concurrency level.
-    use_dynamic_num_prompts = _apply_dynamic_num_prompts(
-        args, concurrency_range
-    )
-
+def _build_session(args: ServingBenchmarkConfig) -> BenchmarkSession:
+    assert args.model is not None
     random.seed(args.seed)
     np.random.seed(args.seed)
     set_ulimit()
@@ -1113,11 +1085,87 @@ def main_with_parsed_args(
                 "ignoring for multi-turn chat sessions"
             )
 
+    lora_manager = None
+    if args.lora_paths:
+        num_requests = (
+            len(samples.requests)
+            if isinstance(samples, RequestSamples)
+            else len(samples.chat_sessions)
+        )
+        lora_manager = LoRABenchmarkManager(
+            lora_paths=args.lora_paths,
+            num_requests=num_requests,
+            traffic_ratios=args.per_lora_traffic_ratio
+            if args.per_lora_traffic_ratio
+            else None,
+            uniform_ratio=args.lora_uniform_traffic_ratio,
+            seed=args.seed,
+            max_concurrent_lora_ops=args.max_concurrent_lora_ops,
+        )
+        lora_manager.log_traffic_distribution()
+
+    # Handle trace flag
+    trace_path = None
+    if args.trace:
+        assert_nvidia_gpu()
+        trace_path = (
+            args.trace_file if args.trace_file else get_default_trace_path()
+        )
+        logger.info(f"Tracing enabled, output: {trace_path}")
+
+    return BenchmarkSession(
+        benchmark_task=benchmark_task,
+        endpoint=endpoint,
+        api_url=api_url,
+        base_url=base_url,
+        model_id=model_id,
+        tokenizer_id=tokenizer_id,
+        tokenizer=tokenizer,
+        samples=samples,
+        lora_manager=lora_manager,
+        trace_path=trace_path,
+        orig_skip_first=args.skip_first_n_requests,
+        orig_skip_last=args.skip_last_n_requests,
+    )
+
+
+def main_with_parsed_args(
+    args: ServingBenchmarkConfig,
+) -> Iterator[BenchmarkRunResult]:
+    logging.basicConfig(
+        format="%(asctime)s.%(msecs)03d %(levelname)s: %(name)s: %(message)s",
+        datefmt="%H:%M:%S",
+        level=logging.DEBUG if args.verbose else logging.INFO,
+    )
+
+    logger.info(args)
+
+    if args.model is None:
+        raise ValueError("--model is required when running benchmark")
+
+    _load_workload_yaml(args)
+
+    # Warn + default when nothing constrains run length (common to both paths).
+    _apply_run_length_defaults(args)
+
+    # ---- Parse sweep ranges ----
+    concurrency_range = parse_comma_separated(args.max_concurrency, int_or_none)
+    request_rate_range = parse_comma_separated(args.request_rate, float)
+
+    # When num_prompts_multiplier is active AND no explicit num_prompts or
+    # duration constrains the run, dynamically compute num_prompts per
+    # concurrency level.
+    use_dynamic_num_prompts = _apply_dynamic_num_prompts(
+        args, concurrency_range
+    )
+
+    session = _build_session(args)
+
     if args.print_workload_stats:
-        print_workload_stats(samples)
+        print_workload_stats(session.samples)
 
     if args.print_inputs_and_outputs:
-        print_input_prompts(samples)
+        print_input_prompts(session.samples)
 
     # Samples are ready; wait for the server before issuing any requests.
     if not args.dry_run:
@@ -1128,21 +1176,24 @@ def main_with_parsed_args(
     # ---- Dry run: build dataset + show warmup-sampling preview ----
     if args.dry_run:
         if not args.print_workload_stats:
-            print_workload_stats(samples)
-        if isinstance(samples, ChatSamples) and args.warmup_to_steady_state:
+            print_workload_stats(session.samples)
+        if (
+            isinstance(session.samples, ChatSamples)
+            and args.warmup_to_steady_state
+        ):
             rng = np.random.default_rng(args.seed or 0)
             for mc in concurrency_range:
                 warmup_count = (
                     args.max_concurrent_conversations
                     or mc
-                    or len(samples.chat_sessions)
+                    or len(session.samples.chat_sessions)
                 )
                 print_section(
                     title=f" Warmup sampling preview (max_concurrency={mc}) ",
                     char="=",
                 )
                 _, report = pick_warmup_population(
-                    samples.chat_sessions,
+                    session.samples.chat_sessions,
                     warmup_count,
                     warmup_to_steady_state=True,
                     warmup_oversample_factor=args.warmup_oversample_factor,
@@ -1169,50 +1220,6 @@ def main_with_parsed_args(
                     num_prompts=args.num_prompts or 0,
                 )
         return
-
-    lora_manager = None
-    if args.lora_paths:
-        num_requests = (
-            len(samples.requests)
-            if isinstance(samples, RequestSamples)
-            else len(samples.chat_sessions)
-        )
-
-        lora_manager = LoRABenchmarkManager(
-            lora_paths=args.lora_paths,
-            num_requests=num_requests,
-            traffic_ratios=args.per_lora_traffic_ratio
-            if args.per_lora_traffic_ratio
-            else None,
-            uniform_ratio=args.lora_uniform_traffic_ratio,
-            seed=args.seed,
-            max_concurrent_lora_ops=args.max_concurrent_lora_ops,
-        )
-        lora_manager.log_traffic_distribution()
-
-    # Handle trace flag (once, before loop)
-    trace_path = None
-    if args.trace:
-        assert_nvidia_gpu()
-        trace_path = (
-            args.trace_file if args.trace_file else get_default_trace_path()
-        )
-        logger.info(f"Tracing enabled, output: {trace_path}")
-
-    session = BenchmarkSession(
-        benchmark_task=benchmark_task,
-        endpoint=endpoint,
-        api_url=api_url,
-        base_url=base_url,
-        model_id=model_id,
-        tokenizer_id=tokenizer_id,
-        tokenizer=tokenizer,
-        samples=samples,
-        lora_manager=lora_manager,
-        trace_path=trace_path,
-        orig_skip_first=args.skip_first_n_requests,
-        orig_skip_last=args.skip_last_n_requests,
-    )
 
     # ---- Sweep loop ----
     for mc in concurrency_range:
