@@ -27,7 +27,12 @@ from max.engine import InferenceSession, Model
 from max.graph import Graph, TensorType, ops
 from max.pipelines.lib.bfloat16_utils import float32_to_bfloat16_as_uint16
 from max.pipelines.lib.config.config_enums import supported_encoding_dtype
+from max.pipelines.lib.denoising_cache import (
+    TaylorSeerBufferState,
+    TaylorSeerCache,
+)
 from max.pipelines.lib.interfaces import TensorStruct
+from max.pipelines.lib.interfaces.cache_mixin import DenoisingCacheConfig
 from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.lib.pipeline_executor import PipelineExecutor
 from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
@@ -159,6 +164,11 @@ class WanExecutor(
 
     default_num_inference_steps: int = 50
 
+    # TaylorSeer defaults (from https://github.com/Shenyi-Z/TaylorSeer).
+    _DEFAULT_TAYLORSEER_CACHE_INTERVAL: int = 5
+    _DEFAULT_TAYLORSEER_WARMUP_STEPS: int = 4
+    _DEFAULT_TAYLORSEER_MAX_ORDER: int = 1
+
     def __init__(
         self,
         manifest: ModelManifest,
@@ -205,6 +215,27 @@ class WanExecutor(
         # Compile helper graphs.
         self._cfg_combine_graph = self._compile_cfg_combine()
         self._guided_schedule_graph = self._compile_guided_schedule()
+
+        # Cache configuration (TaylorSeer).
+        self._cache_config: DenoisingCacheConfig = (
+            runtime_config.denoising_cache
+        )
+        self._resolve_cache_defaults()
+
+        self._taylor_cache: TaylorSeerCache | None = None
+        if self._cache_config.taylorseer:
+            logger.info(
+                "Wan TaylorSeer enabled (warmup=%d, interval=%d, order=%d).",
+                self._cache_config.taylorseer_warmup_steps,
+                self._cache_config.taylorseer_cache_interval,
+                self._cache_config.taylorseer_max_order,
+            )
+            self._taylor_cache = TaylorSeerCache(
+                config=self._cache_config,
+                dtype=self._model_dtype,
+                device=self._model_device,
+                session=session,
+            )
 
         # Runtime caches.
         self._guidance_scale_cache: dict[tuple[float, DType, str], Buffer] = {}
@@ -581,14 +612,67 @@ class WanExecutor(
         # when CFG is disabled.
         noise_uncond_buf: Buffer | None = None
 
+        # TaylorSeer per-stream state. Allocated once per phase: factors
+        # cached by the high-noise transformer don't apply to the
+        # low-noise transformer, so each phase starts fresh.
+        # ``state_uncond`` is allocated only when there's a real uncond
+        # forward to cache (cfg_batched or do_cfg with neg-prompt embeds).
+        state_cond: TaylorSeerBufferState | None = None
+        state_uncond: TaylorSeerBufferState | None = None
+        has_real_uncond = cfg_batched or (
+            do_cfg and negative_prompt_embeds is not None
+        )
+        if self._taylor_cache is not None:
+            b, c, t, h, w = (int(d) for d in latents.shape)
+            state_cond = self._taylor_cache.create_state(b, c, t * h * w)
+            if has_real_uncond:
+                state_uncond = self._taylor_cache.create_state(b, c, t * h * w)
+
+        # Cache of the 5D noise_pred shape for the predict-path reshape.
+        # Set after the first transformer call.
+        noise_pred_shape_5d: tuple[int, ...] | None = None
+
         for i in step_range:
             with Tracer(f"{desc}:step_{i}"):
                 dit_timestep = batched_timesteps[i]
 
-                # Transformer forward — cond + uncond in one B=2 pass when
-                # batched CFG applies, otherwise sequential B=1 calls.
+                # Decide once per step (shared across CFG streams), using
+                # the cond stream's last_compute_step. The two states stay
+                # synchronized because they're updated together at every
+                # anchor step.
+                skip_transformer = (
+                    state_cond is not None
+                    and noise_pred_shape_5d is not None
+                    and self._should_skip(i, state_cond.last_compute_step)
+                )
+
                 with Tracer("transformer"):
-                    if cfg_batched:
+                    if skip_transformer:
+                        # Predict path — no transformer dispatch.
+                        assert state_cond is not None
+                        assert noise_pred_shape_5d is not None
+                        noise_pred_cond = self._taylor_predict_5d(
+                            state_cond, i, noise_pred_shape_5d
+                        )
+                        if state_uncond is not None:
+                            noise_pred_uncond = self._taylor_predict_5d(
+                                state_uncond, i, noise_pred_shape_5d
+                            )
+                        elif noise_uncond_buf is not None:
+                            noise_pred_uncond = noise_uncond_buf
+                        else:
+                            # No cached uncond and no zero buffer yet: this
+                            # can only happen if we somehow skipped step 0,
+                            # which the cold-start guard in _should_skip
+                            # prevents. Defensive fallback.
+                            noise_uncond_buf = self._make_zero_buffer(
+                                noise_pred_shape_5d,
+                                dtype=self._model_dtype,
+                                device=latents.device,
+                            )
+                            noise_pred_uncond = noise_uncond_buf
+                    elif cfg_batched:
+                        # Anchor path, batched CFG: one B=2 forward.
                         noise_pred_cond, noise_pred_uncond = (
                             self.transformer.call_cfg_batched(
                                 latents,
@@ -601,6 +685,7 @@ class WanExecutor(
                             )
                         )
                     else:
+                        # Anchor path, sequential B=1 calls.
                         noise_pred_cond = transformer_call(
                             latents,
                             dit_timestep,
@@ -634,7 +719,20 @@ class WanExecutor(
                                 )
                             noise_pred_uncond = noise_uncond_buf
 
-                # Fused guidance + UniPC scheduler step.
+                # On the anchor path, record shape and update Taylor caches.
+                if not skip_transformer:
+                    if noise_pred_shape_5d is None:
+                        noise_pred_shape_5d = tuple(
+                            int(d) for d in noise_pred_cond.shape
+                        )
+                    if state_cond is not None:
+                        self._taylor_update_5d(state_cond, noise_pred_cond, i)
+                    if state_uncond is not None:
+                        self._taylor_update_5d(
+                            state_uncond, noise_pred_uncond, i
+                        )
+
+                # CFG combine + UniPC scheduler step.
                 with Tracer("guided_schedule"):
                     latents, step_state = self._guided_schedule_step(
                         noise_pred_cond,
@@ -795,6 +893,82 @@ class WanExecutor(
             )
             g.output(previous_sample, converted, corrected_sample)
         return self._session.load(g)
+
+    # -- TaylorSeer helpers ---------------------------------------------------
+
+    def _resolve_cache_defaults(self) -> None:
+        """Fill nullable DenoisingCacheConfig fields with Wan defaults."""
+        cc = self._cache_config
+        if cc.taylorseer_cache_interval is None:
+            cc.taylorseer_cache_interval = (
+                self._DEFAULT_TAYLORSEER_CACHE_INTERVAL
+            )
+        if cc.taylorseer_warmup_steps is None:
+            cc.taylorseer_warmup_steps = self._DEFAULT_TAYLORSEER_WARMUP_STEPS
+        if cc.taylorseer_max_order is None:
+            cc.taylorseer_max_order = self._DEFAULT_TAYLORSEER_MAX_ORDER
+
+    def _taylor_predict_5d(
+        self,
+        state: TaylorSeerBufferState,
+        step: int,
+        shape_5d: tuple[int, ...],
+    ) -> Buffer:
+        """Predict ``noise_pred`` from cache, returning a 5D buffer.
+
+        The TaylorSeer cache operates on flat ``(B, C, T*H*W)`` buffers
+        (a metadata-only reshape of the 5D ``(B, C, T, H, W)`` latent).
+        This helper wraps the cache's ``predict`` call with the inverse
+        reshape so the result can flow into ``_cfg_combine_step``
+        unchanged.
+        """
+        assert self._taylor_cache is not None
+        flat_pred = self._taylor_cache.predict(state, step)
+        return flat_pred.view(self._model_dtype, list(shape_5d))
+
+    def _taylor_update_5d(
+        self,
+        state: TaylorSeerBufferState,
+        noise_pred_5d: Buffer,
+        step: int,
+    ) -> None:
+        """Update Taylor factors from a fresh 5D ``noise_pred``.
+
+        Reshapes ``noise_pred`` from ``(B, C, T, H, W)`` to
+        ``(B, C, T*H*W)`` (metadata-only) and feeds it to the cache.
+        Mutates ``state`` in place.
+        """
+        assert self._taylor_cache is not None
+        b, c, t, h, w = (int(d) for d in noise_pred_5d.shape)
+        flat = noise_pred_5d.view(self._model_dtype, [b, c, t * h * w])
+        self._taylor_cache.update(state, flat, step)
+
+    def _should_skip(
+        self,
+        step: int,
+        state_last_compute_step: int | None,
+    ) -> bool:
+        """Return True when the full transformer pass can be skipped.
+
+        Matches the TaylorSeer-Wan2.1 reference schedule: anchor on
+        ``step == 0`` and every ``interval``-th step thereafter (e.g.
+        steps 0, 5, 10, … with ``interval=5``).
+
+        Cold-start safety: if the per-stream cache state has no anchor
+        yet (``state_last_compute_step is None``), force an anchor
+        regardless of the schedule. This handles the MoE phase boundary
+        where the low-noise phase's first step may not align with
+        ``step % interval == 0``.
+        """
+        if state_last_compute_step is None:
+            return False
+        warmup = self._cache_config.taylorseer_warmup_steps
+        interval = self._cache_config.taylorseer_cache_interval
+        assert warmup is not None
+        assert interval is not None
+        if step < warmup:
+            return False
+        return step % interval != 0
 
     # -- Utilities ------------------------------------------------------------
 
