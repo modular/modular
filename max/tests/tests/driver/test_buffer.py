@@ -802,6 +802,48 @@ def test_inplace_copy_from_tensor_view() -> None:
     assert np.array_equal(dst.to_numpy(), expected)
 
 
+def test_inplace_copy_from_cross_dtype_view() -> None:
+    """Regression test: inplace_copy_from on slices of a view'd buffer.
+
+    When a buffer is view'd from one dtype to another (e.g. int16 -> uint8),
+    the underlying storage retains the original dtype. Slicing the view'd
+    buffer and calling inplace_copy_from must correctly compute byte offsets
+    using the view's dtype, not the storage's dtype.
+    """
+    num_rows = 4
+    cols_i16 = 3
+    cols_u8 = cols_i16 * 2
+
+    # Create source data as int16, fill with a known pattern
+    src_data = np.zeros((num_rows, cols_i16), dtype=np.int16)
+    for i in range(num_rows):
+        for j in range(cols_i16):
+            src_data[i, j] = i * 10 + j
+    src_buf = Buffer.from_numpy(src_data)
+
+    # View as uint8 (same total bytes, different element count)
+    src_u8 = src_buf.view(DType.uint8, [num_rows, cols_u8])
+
+    # Create a destination buffer of the same uint8 shape, filled with 0xFF
+    dst_data = np.full((num_rows, cols_u8), 0xFF, dtype=np.uint8)
+    dst_buf = Buffer.from_numpy(dst_data)
+
+    # Copy slices from the LAST row of source to the FIRST row of destination.
+    # This exercises a large startOffset that would fail if byte offset
+    # computation used the wrong dtype.
+    dst_buf[0, :].inplace_copy_from(src_u8[num_rows - 1, :])
+
+    result = dst_buf.to_numpy()
+    expected_row = src_u8.to_numpy()[num_rows - 1]
+    np.testing.assert_array_equal(result[0], expected_row)
+
+    # Other rows should be unchanged
+    for i in range(1, num_rows):
+        np.testing.assert_array_equal(
+            result[i], np.full(cols_u8, 0xFF, dtype=np.uint8)
+        )
+
+
 def test_GEX_2088() -> None:
     t = Buffer.zeros([2], DType.uint32)
     assert t[1].to_numpy().item() == 0
