@@ -8,6 +8,7 @@
 #include "../Utils/Errors.h"
 #include "../Utils/ValueObjectHelpers.h"
 #include "Formatters/MojoDecoratorBasedTypeFormatter.h"
+#include "Formatters/MojoDictTypeFormatter.h"
 #include "Formatters/MojoKGENVariantTypeFormatter.h"
 #include "Formatters/MojoListTypeFormatter.h"
 #include "Formatters/MojoStringHelpers.h"
@@ -481,6 +482,8 @@ LoadLibMojoFormatters(const lldb::TypeCategoryImplSP &mojoCategorySP) {
 
   constexpr const char *kListRegex =
       R"(^!lit.struct<@std::@collections::@list::@"?List[\[<].*)";
+  constexpr const char *kDictRegex =
+      R"(^!lit.struct<@std::@collections::@dict::@"?Dict[\[<].*)";
   constexpr const char *kLLDBFormatterWrappingTypeRegex =
       R"(.* {@std::utils::_visualizers::lldb_formatter_wrapping_type\(.*)";
   // Matches both DWARF form (@"Variant[...]) and REPL form (@Variant<...>).
@@ -507,6 +510,9 @@ LoadLibMojoFormatters(const lldb::TypeCategoryImplSP &mojoCategorySP) {
   AddCXXSynthetic(mojoCategorySP, mojoKGENVariantSyntheticFrontEndCreator,
                   "Mojo !kgen.variant synthetic children",
                   R"(^!kgen\.variant<.*>)", synthFlags, /*regex=*/true);
+  AddCXXSynthetic(mojoCategorySP, mojoDictSyntheticFrontEndCreator,
+                  "Mojo Dict synthetic children", kDictRegex, synthFlags,
+                  /*regex=*/true);
 
   TypeSummaryImpl::Flags summaryFlags;
   summaryFlags.SetCascades(true)
@@ -587,6 +593,9 @@ LoadLibMojoFormatters(const lldb::TypeCategoryImplSP &mojoCategorySP) {
   AddCXXSummary(mojoCategorySP, mojoOptionalSummaryProvider,
                 "Optional summary provider", kOptionalRegex, summaryFlags,
                 /*regex=*/true);
+  AddCXXSummary(mojoCategorySP, vectorLikeSummaryProvider,
+                "collections::dict::Dict summary provider", kDictRegex,
+                summaryFlags, /*regex=*/true);
 }
 
 lldb::TypeCategoryImplSP MojoLanguage::GetFormatters() {
