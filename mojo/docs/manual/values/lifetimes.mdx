@@ -51,8 +51,8 @@ However, in some cases you'll need to interact with origins directly:
   values.
 
 - When working with types like
-  [`Pointer`](/docs/std/memory/pointer/Pointer) or
-  [`Span`](/docs/std/memory/span/Span) which are parameterized on the
+  [`Pointer`](/docs/std/memory/pointer/Pointer/) or
+  [`Span`](/docs/std/memory/span/Span/) which are parameterized on the
   origin of the data they refer to.
 
 This section also covers [`ref` arguments](#ref-arguments) and
@@ -80,7 +80,7 @@ struct ImmutRef[origin: ImmutOrigin]:
     pass
 ```
 
-Or you can use the [`Origin`](/docs/std/builtin/type_aliases/Origin)
+Or you can use the [`Origin`](/docs/std/builtin/type_aliases/Origin/)
 struct to specify an origin with parametric mutability:
 
 ```mojo
@@ -99,7 +99,7 @@ depending on a parameter specified by the enclosing API.
 The `is_mutable` parameter here is an [infer-only
 parameter](/docs/manual/parameters/#infer-only-parameters). The `origin` value
 is often inferred, as well. For example, the following code creates a
-[`Pointer`](/docs/std/memory/pointer/Pointer) to an existing value, but
+[`Pointer`](/docs/std/memory/pointer/Pointer/) to an existing value, but
 doesn't need to specify an origin—the `origin` is inferred from the existing
 value.
 
@@ -140,11 +140,12 @@ You can use the static origin `StaticConstantOrigin` when you have a
 value that exists for the entire duration of the program.
 
 For example, the `StringLiteral` method
-[`as_string_slice()`](/docs/std/builtin/string_literal/StringLiteral#as_string_slice)
-returns a [`StringSlice`](/docs/std/collections/string/string_slice/StringSlice)
-pointing to the original string literal. String literals are static—they're
-allocated at compile time and never destroyed—so the slice is created with an
-immutable, static origin.
+[`as_string_slice()`](/docs/std/builtin/string_literal/StringLiteral/#as_string_slice)
+returns a
+[`StringSlice`](/docs/std/collections/string/string_slice/StringSlice/) pointing
+to the original string literal. String literals are static—they're allocated at
+compile time and never destroyed—so the slice is created with an immutable,
+static origin.
 
 #### Derived origins
 
@@ -170,7 +171,7 @@ when the compiler analyzes `origin_of(foo())`, it doesn't run the `foo()`
 function.)
 
 The following struct stores a string value using a
-[`OwnedPointer`](/docs/std/memory/owned_pointer/OwnedPointer): a smart
+[`OwnedPointer`](/docs/std/memory/owned_pointer/OwnedPointer/): a smart
 pointer that holds an owned value. The `as_ptr()` method returns a `Pointer` to
 the stored string, using the same origin as the original `OwnedPointer`.
 
@@ -292,7 +293,7 @@ specifier can be either:
   ref[self]
   ```
 
-- An [`AddressSpace`](/docs/std/memory/pointer/AddressSpace) value.
+- An [`AddressSpace`](/docs/std/memory/pointer/AddressSpace/) value.
 
 - An underscore character (`_`) to indicate that the origin is *unbound*. This
   is equivalent to omitting the origin specifier.
@@ -405,7 +406,7 @@ Note the use of the `ref name` syntax to create a reference binding.
 
 If you assign a `ref` return value to a variable, the variable receives a
 *copy* of the referenced item. Use a
-[reference binding](/docs/manual/variables#reference-bindings) if you need to
+[reference binding](/docs/manual/variables/#reference-bindings) if you need to
 capture the reference for future use:
 
 ```mojo

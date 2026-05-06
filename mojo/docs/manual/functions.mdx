@@ -182,7 +182,7 @@ def use_defaults():
 ```
 
 However, you can't define a default value for an argument that's declared with
-the [`mut`](/docs/manual/values/ownership#mutable-arguments-mut) argument
+the [`mut`](/docs/manual/values/ownership/#mutable-arguments-mut) argument
 convention.
 
 Any optional arguments must appear after any required arguments. [Keyword-only
@@ -258,7 +258,7 @@ def greet(*names: String):
 
 Inside the function body, the variadic argument is available as an iterable list
 for ease of use. Concretely, that type is named
-[`VariadicList`](/docs/std/builtin/variadics/VariadicList). Here is a
+[`VariadicList`](/docs/std/builtin/variadics/VariadicList/). Here is a
 simple example:
 
 ```mojo
@@ -293,8 +293,8 @@ def make_worldly(mut *strs: String):
 Implementing heterogeneous variadic arguments (each argument type may be
 different) is somewhat more complicated than homogeneous variadic arguments. To
 handle multiple argument types, the function must be
-[generic](/docs/manual/generics), which requires using
-[traits](/docs/manual/traits) and [parameters](/docs/manual/parameters/). So
+[generic](/docs/manual/generics/), which requires using
+[traits](/docs/manual/traits/) and [parameters](/docs/manual/parameters/). So
 the syntax may look a little unfamiliar if you haven't worked with those
 features.
 
@@ -308,7 +308,7 @@ def count_many_things[*ArgTypes: Intable](*args: *ArgTypes):
 
 The parameter list, `[*ArgTypes: Intable]` specifies that the function takes an
 `ArgTypes` parameter, which is a list of types, all of which conform to the
-[`Intable`](/docs/std/builtin/int/Intable) trait. The asterisk in `*ArgTypes`
+[`Intable`](/docs/std/builtin/int/Intable/) trait. The asterisk in `*ArgTypes`
 indicates that `ArgTypes` is a **variadic type parameter** (a list of types).
 
 The argument list, `(*args: *ArgTypes)` has the familiar `*args` for the
@@ -322,7 +322,7 @@ so <code>args[<var>n</var>]</code> is of type
 <code>ArgTypes[<var>n</var>]</code>.
 
 Inside the function, `args` becomes a
-[`VariadicPack`](/docs/std/builtin/variadics/VariadicPack) because the
+[`VariadicPack`](/docs/std/builtin/variadics/VariadicPack/) because the
 syntax `*args: *ArgTypes` creates a heterogeneous variadic argument. That means
 each element in `args` can be a different type that requires a different amount
 of memory. To iterate through the `VariadicPack`, the compiler must know each
@@ -372,7 +372,7 @@ In this example, the argument name `kwargs` is a placeholder that accepts any
 number of keyword arguments. Inside the body of the function, you can access
 the arguments as a dictionary of keywords and argument values (specifically,
 an instance of
-[`OwnedKwargsDict`](/docs/std/collections/dict/OwnedKwargsDict)).
+[`OwnedKwargsDict`](/docs/std/collections/dict/OwnedKwargsDict/)).
 
 There are currently a few limitations:
 
@@ -392,7 +392,7 @@ There are currently a few limitations:
   `OwnedKwargsDict[Float64]`.
 
 - The argument type must conform to the
-  [`Copyable`](/docs/std/builtin/value/Copyable) trait.
+  [`Copyable`](/docs/std/builtin/value/Copyable/) trait.
 
 - Dictionary unpacking is not supported yet:
 
@@ -508,7 +508,7 @@ If you pass anything other than `Int` or `String` to the `add()` function,
 you'll get a compiler error. That is, unless `Int` or `String` can implicitly
 cast the type into their own type. For example, `String` includes an overloaded
 version of its constructor (`__init__()`) that supports
-[implicit conversion](/docs/manual/lifecycle/life#constructors-and-implicit-conversion)
+[implicit conversion](/docs/manual/lifecycle/life/#constructors-and-implicit-conversion)
 from a `StringLiteral` value. Thus, you can also pass a `StringLiteral` to a
 function that expects a `String`.
 
@@ -661,7 +661,7 @@ string literal, `"Hello"`, which is implicitly converted to a `String`.
 
 A function can also return a mutable or immutable reference using a `ref` return
 value. For details, see
-[Lifetimes, origins, and references](/docs/manual/values/lifetimes).
+[Lifetimes, origins, and references](/docs/manual/values/lifetimes/).
 
 :::
 
@@ -678,7 +678,7 @@ def get_name_tag(var name: String, out name_tag: NameTag):
 
 The `out` argument convention identifies an uninitialized variable that the
 function must initialize. (This is the same as the `out` convention used in
-[struct constructors](/docs/manual/lifecycle/life#constructor).) The `out`
+[struct constructors](/docs/manual/lifecycle/life/#constructor).) The `out`
 argument for a named result can appear anywhere in the argument list, but by
 convention, it should be the last argument in the list.
 
@@ -790,4 +790,4 @@ def validate(value: Int) raises ValidationError -> Int:
 ```
 
 For more information, see
-[Errors, error handling, and context managers](/docs/manual/errors).
+[Errors, error handling, and context managers](/docs/manual/errors/).

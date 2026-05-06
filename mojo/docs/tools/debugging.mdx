@@ -12,11 +12,9 @@ You can install the Mojo extension from either the
 [Visual Studio Code Marketplace](https://marketplace.visualstudio.com/items?itemName=modular-mojotools.vscode-mojo)
 or the
 [Open VSX Registry](https://open-vsx.org/extension/modular-mojotools/vscode-mojo).
-See [Add the VS Code extension](/docs/manual/install/#add-the-vs-code-extension)
-for more information.
 
 To use the Mojo extension, you must also
-[install the `mojo` package](/docs/manual/install)—or, if you're developing for
+[install the `mojo` package](/install/)—or, if you're developing for
 the MAX framework, [install the `modular` package](/max/packages), which
 includes the `mojo` package.
 
@@ -42,7 +40,7 @@ in VS Code.
 The `mojo` package also includes support for debugging Mojo programs running on
 GPU. This requires some extra software and configuration. Currently GPU
 debugging only works with NVIDIA GPUs. For details, see
-[GPU debugging](/docs/tools/gpu-debugging).
+[GPU debugging](/docs/tools/gpu-debugging/).
 
 ## Start debugging
 
@@ -221,7 +219,7 @@ mojo debug --vscode myproject
 For best results, build with the `-O0 -g` command-line options when you build a
 binary that you intend to debug—this produces a binary with full debug info.
 (When you call `mojo debug` on a Mojo source file, it includes debug
-information by default.) See the [`mojo build` reference page](/docs/cli/build)
+information by default.) See the [`mojo build` reference page](/docs/cli/build/)
 for details on compilation options.
 
 ### Attach the debugger to a running process from the command line
@@ -515,7 +513,7 @@ to the debugger, but which can help you debug your programs. These include:
 ### Set a programmatic breakpoint
 
 To break at a specific point in your code, you can use the built-in
-[`breakpoint()`](/docs/std/builtin/breakpoint/breakpoint) function:
+[`breakpoint()`](/docs/std/builtin/breakpoint/breakpoint/) function:
 
 ```mojo
 if some_value.is_valid():

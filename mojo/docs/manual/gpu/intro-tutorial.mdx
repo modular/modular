@@ -23,7 +23,7 @@ adding more complexity. The concepts you learn here will serve as a foundation
 for more advanced GPU programming with Mojo. If you just want to see the
 finished code, you can [get it on
 GitHub](https://github.com/modular/modular/tree/main/mojo/examples/gpu-intro).
-See [GPU compatibility](/docs/requirements#gpu-compatibility) for a list of
+See [GPU compatibility](/docs/requirements/#gpu-compatibility) for a list of
 compatible GPUs and software requirements.
 
 :::tip
@@ -36,7 +36,7 @@ compatible GPUs and software requirements.
 ## 1. Create a Mojo project
 
 To install Mojo, we recommend using [`pixi`](https://pixi.sh/latest/) (for
-other options, see the [install guide](/docs/manual/install)).
+other options, see the [install guide](/install/)).
 
 1. If you don't have `pixi`, you can install it with this command:
 
@@ -96,7 +96,7 @@ allocating memory on the device, copying data between the host CPU and the GPU,
 and compiling and running functions (also known as *kernels*) on the device.
 
 Use the
-[`DeviceContext()`](/docs/std/gpu/host/device_context/DeviceContext#__init__)
+[`DeviceContext()`](/docs/std/gpu/host/device_context/DeviceContext/#__init__)
 constructor to get a reference to the GPU device. The constructor raises an
 error if no compatible GPU is available. You can use the
 [`has_accelerator()`](/docs/std/sys/info/has_accelerator/) function to check
@@ -134,7 +134,7 @@ Found GPU: NVIDIA A10G
 :::note
 
 Mojo requires a
-[compatible GPU development environment](/docs/requirements#gpu-compatibility)
+[compatible GPU development environment](/docs/requirements/#gpu-compatibility)
 to compile kernel functions, otherwise it raises a compile-time error. In our
 code, we're using the
 [`comptime if`](/docs/manual/metaprogramming/comptime-evaluation/#comptime-if)
@@ -266,7 +266,7 @@ stream of queued operations to execute on the GPU. Operations within a stream
 execute in the order they are issued.
 
 The
-[`enqueue_function()`](/docs/std/gpu/host/device_context/DeviceContext#enqueue_function)
+[`enqueue_function()`](/docs/std/gpu/host/device_context/DeviceContext/#enqueue_function)
 method compiles a kernel function and enqueues it to run on the given device.
 You must provide the name of the kernel function as a compile-time Mojo
 parameter, and the following arguments:
@@ -276,9 +276,9 @@ parameter, and the following arguments:
 - The grid dimensions using the `grid_dim` keyword argument.
 - The thread block dimensions using the `block_dim` keyword argument.
 
-(See the [Functions](/docs/manual/functions) section of the Mojo Manual for more
-information on Mojo function arguments and the
-[Parameters](/docs/manual/parameters) section for more information on Mojo
+(See the [Functions](/docs/manual/functions/) section of the Mojo Manual for
+more information on Mojo function arguments and the
+[Parameters](/docs/manual/parameters/) section for more information on Mojo
 compile-time parameters and metaprogramming.)
 
 :::note API variants
@@ -352,7 +352,7 @@ that's ready to run.
 
 After enqueuing the kernel function, we want to ensure that the CPU waits for it
 to finish execution before exiting the program. We do this by calling the
-[`synchronize()`](/docs/std/gpu/host/device_context/DeviceContext#synchronize)
+[`synchronize()`](/docs/std/gpu/host/device_context/DeviceContext/#synchronize)
 method of the `DeviceContext` object, which blocks until the device completes
 all operations in its queue.
 
@@ -467,7 +467,7 @@ function. Similarly, if your kernel function produces data that you want the CPU
 to use later, you must explicitly copy it back to host memory.
 
 For this tutorial, we'll use the
-[`HostBuffer`](/docs/std/gpu/host/device_context/HostBuffer) type to
+[`HostBuffer`](/docs/std/gpu/host/device_context/HostBuffer/) type to
 represent our vectors on the host. A `HostBuffer` is a block of host memory
 associated with a particular `DeviceContext`. It supports methods for
 transferring data between host and device memory, as well as a basic set of
@@ -516,7 +516,7 @@ def main() raises:
 ```
 
 The
-[`enqueue_create_host_buffer()`](/docs/std/gpu/host/device_context/DeviceContext#enqueue_create_host_buffer)
+[`enqueue_create_host_buffer()`](/docs/std/gpu/host/device_context/DeviceContext/#enqueue_create_host_buffer)
 method accepts the data type as a compile-time parameter and the size of the
 buffer as a run-time argument and returns a `HostBuffer`. As with all
 `DeviceContext` methods whose name starts with `enqueue_`, the method is
@@ -548,8 +548,8 @@ reference to an object is used and automatically adds a call to the object's
 destructor. In our program, we last reference the buffers at the end of our
 program's `main()` method. However, in a more complex program, the `HostBuffer`
 could persist across calls to multiple kernel functions if it is referenced at
-later points in the program. See the [Ownership](/docs/manual/values/ownership)
-and [Intro to value lifecycle](/docs/manual/lifecycle) sections of the Mojo
+later points in the program. See the [Ownership](/docs/manual/values/ownership/)
+and [Intro to value lifecycle](/docs/manual/lifecycle/) sections of the Mojo
 Manual for more information on Mojo value ownership and value lifecycle
 management.
 
@@ -579,7 +579,7 @@ Add the following code to the end of the `main()` function:
         )
 ```
 
-The [`DeviceBuffer`](/docs/std/gpu/host/device_context/DeviceBuffer) type is
+The [`DeviceBuffer`](/docs/std/gpu/host/device_context/DeviceBuffer/) type is
 analogous to the `HostBuffer` type, but represents a block of device memory
 associated with a particular `DeviceContext`. Specifically, the buffer is
 located in the device's *global memory* space, which is accessible by all
@@ -589,14 +589,14 @@ it is no longer referenced in the program or until the `DeviceContext` itself
 is destroyed.
 
 The
-[`enqueue_create_buffer()`](/docs/std/gpu/host/device_context/DeviceContext#enqueue_create_buffer)
+[`enqueue_create_buffer()`](/docs/std/gpu/host/device_context/DeviceContext/#enqueue_create_buffer)
 method accepts the data type as a compile-time parameter and the size of the
 buffer as a run-time argument and returns a `DeviceBuffer`. The operation is
 asynchronous, but we don't need to call the `synchronize()` method yet because
 we have more operations to add to the queue.
 
 The
-[`enqueue_copy()`](/docs/std/gpu/host/device_context/DeviceContext#enqueue_copy)
+[`enqueue_copy()`](/docs/std/gpu/host/device_context/DeviceContext/#enqueue_copy)
 method is overloaded to support copying from host to device, device to host, or
 even device to device for systems that have multiple GPUs. In this example, we
 use it to copy the data in our `HostBuffer`s to the `DeviceBuffer`s.
@@ -604,9 +604,9 @@ use it to copy the data in our `HostBuffer`s to the `DeviceBuffer`s.
 :::note
 
 Both `DeviceBuffer` and `HostBuffer` also include
-[`enqueue_copy_to()`](/docs/std/gpu/host/device_context/DeviceBuffer#enqueue_copy_to)
+[`enqueue_copy_to()`](/docs/std/gpu/host/device_context/DeviceBuffer/#enqueue_copy_to)
 and
-[`enqueue_copy_from()`](/docs/std/gpu/host/device_context/DeviceBuffer#enqueue_copy_from)
+[`enqueue_copy_from()`](/docs/std/gpu/host/device_context/DeviceBuffer/#enqueue_copy_from)
 methods. These are simply convenience methods that call the `enqueue_copy()`
 method on their corresponding `DeviceContext`. Therefore, we could have written
 the copy operations in the previous example with the following equivalent code:
@@ -713,7 +713,7 @@ on.
 
 :::note
 
-As a convenience, the [`gpu`](/docs/std/gpu) package includes a `global_idx`
+As a convenience, the [`gpu`](/docs/std/gpu/) package includes a `global_idx`
 `comptime` value that contains the unique "global" `x`, `y`, and `z` indices of
 the thread within the grid of thread blocks. So for our one-dimensional grid of
 one-dimensional thread blocks, `global_idx.x` is equivalent to the value of
@@ -880,7 +880,7 @@ At this point, the Mojo compiler determines that the `DeviceContext`, the
 `DeviceBuffer`s, the `HostBuffer`s, and the `TileTensor`s are no longer used
 and so it automatically invokes their destructors to free their allocated
 memory. (For a detailed explanation of object lifetime and destruction in Mojo,
-see the [Death of a value](/docs/manual/lifecycle/death) section of the Mojo
+see the [Death of a value](/docs/manual/lifecycle/death/) section of the Mojo
 Manual.)
 
 Now it's time to run the program to see the results of our work.

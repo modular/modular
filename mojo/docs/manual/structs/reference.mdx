@@ -69,7 +69,7 @@ The `next` field is an `Optional[Self.NodePointer]` because a node may or may
 not link to another node. `UnsafePointer` is non-nullable, so `Optional`
 provides the null state. `Optional[UnsafePointer]` has the same memory layout as
 a raw pointer, so there's no overhead. For more on this pattern, see
-[Working with nullability](/docs/manual/pointers/unsafe-pointers#working-with-nullability).
+[Working with nullability](/docs/manual/pointers/unsafe-pointers/#working-with-nullability).
 
 The optional `value` lets you create "empty" nodes, enabling you to move
 new `Node` memory allocations into place.

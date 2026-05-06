@@ -39,7 +39,7 @@ Python 3.11.0
 ## Import a Python module in Mojo
 
 To import a Python module in Mojo, just call
-[`Python.import_module()`](/docs/std/python/python/Python#import_module)
+[`Python.import_module()`](/docs/std/python/python/Python/#import_module)
 with the module name. The following shows an example of importing the standard
 Python [NumPy](https://numpy.org/) package:
 
@@ -85,11 +85,11 @@ def main() raises:
 A few things to note:
 
 - The `import_module()` method returns a reference to the module in the form of
-  a [`PythonObject`](/docs/std/python/python_object/PythonObject) wrapper. You
+  a [`PythonObject`](/docs/std/python/python_object/PythonObject/) wrapper. You
   must store the reference in a variable and then use it as shown in the example
   above to access functions, classes, and other objects defined by the module.
-  See [Mojo wrapper objects](/docs/manual/python/types#mojo-wrapper-objects) for
-  more information about the `PythonObject` type.
+  See [Mojo wrapper objects](/docs/manual/python/types/#mojo-wrapper-objects)
+  for more information about the `PythonObject` type.
 
 - Currently, you cannot import individual members (such as a single Python class
   or function). You must import the whole Python module and then access members
@@ -108,12 +108,12 @@ reasons](/docs/roadmap#the-standard-library-has-limited-exceptions-use).
 
 - We recommend using a package manager such as pixi, uv, or conda to manage your
   environment. For instructions on setting up a Mojo project with pixi, see
-  [Create a Mojo project](/docs/manual/get-started#1-create-a-mojo-project) in
+  [Create a Mojo project](/docs/manual/get-started/#1-create-a-mojo-project) in
   the Get started with Mojo tutorial.
 
 :::caution
 
-[`mojo build`](/docs/cli/build) doesn't include the Python packages used by
+[`mojo build`](/docs/cli/build/) doesn't include the Python packages used by
 your Mojo project. Instead, Mojo loads the Python interpreter and Python
 packages at runtime, so they must be provided in the environment where you run
 the Mojo program (such as inside the pixi environment where you built the
@@ -151,7 +151,7 @@ def main() raises:
 ```
 
 Both absolute and relative paths work with
-[`add_to_path()`](/docs/std/python/python/Python#add_to_path). For example,
+[`add_to_path()`](/docs/std/python/python/Python/#add_to_path). For example,
 you can import from the local directory like this:
 
 ```mojo

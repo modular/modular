@@ -383,9 +383,9 @@ constructors, copy constructors and move constructors.
 For example, the following code creates a `MassProducible` trait. A
 `MassProducible` type has a default (no-argument) constructor and can be moved.
 It uses two built-in traits:
-[`Defaultable`](/docs/std/builtin/value/Defaultable), which requires a default
+[`Defaultable`](/docs/std/builtin/value/Defaultable/), which requires a default
 (no-argument) constructor, and
-[`Movable`](/docs/std/builtin/value/Movable),
+[`Movable`](/docs/std/builtin/value/Movable/),
 which requires the type to have a [move
 constructor](/docs/manual/lifecycle/life#move-constructor).
 
@@ -434,7 +434,7 @@ and restrictions:
 - Every field must either be register passable or trivially register
   passable.
 - The type must be
-  [`Movable`](/docs/manual/lifecycle/life#move-constructor).
+  [`Movable`](/docs/manual/lifecycle/life/#move-constructor).
 - Their self pointer is neither stable nor predictable. They can move
   in memory at any time so they aren't suitable for types that rely on
   pointer identity.
@@ -463,7 +463,7 @@ and restrictions:
 - They do not use lifecycle methods.
 - Every field must be trivially register passable.
 - The type must be
-  [`Copyable`](/docs/manual/lifecycle/life#copy-constructor).
+  [`Copyable`](/docs/manual/lifecycle/life/#copy-constructor).
 - They use a special trivial (no-op) destructor. They are _trivially
   movable_ (via `Copyable`, which refines `Movable`), _trivially
   copyable_, and *trivially destructible*.
@@ -474,36 +474,36 @@ The Mojo standard library includes many traits. They're implemented
 by a number of standard library types, and you can also implement these on your
 own types. These standard library traits include:
 
-- [`Absable`](/docs/std/math/math/Absable)
-- [`AnyType`](/docs/std/builtin/anytype/AnyType)
-- [`Boolable`](/docs/std/builtin/bool/Boolable)
-- [`Comparable`](/docs/std/builtin/comparable/Comparable)
-- [`Copyable`](/docs/std/builtin/value/Copyable)
-- [`Defaultable`](/docs/std/builtin/value/Defaultable)
-- [`Hashable`](/docs/std/hashlib/hash/Hashable)
-- [`ImplicitlyDestructible`](/docs/std/builtin/anytype/ImplicitlyDestructible)
-- [`Indexer`](/docs/std/builtin/int/Indexer)
-- [`Intable`](/docs/std/builtin/int/Intable)
-- [`IntableRaising`](/docs/std/builtin/int/IntableRaising)
+- [`Absable`](/docs/std/math/math/Absable/)
+- [`AnyType`](/docs/std/builtin/anytype/AnyType/)
+- [`Boolable`](/docs/std/builtin/bool/Boolable/)
+- [`Comparable`](/docs/std/builtin/comparable/Comparable/)
+- [`Copyable`](/docs/std/builtin/value/Copyable/)
+- [`Defaultable`](/docs/std/builtin/value/Defaultable/)
+- [`Hashable`](/docs/std/hashlib/hash/Hashable/)
+- [`ImplicitlyDestructible`](/docs/std/builtin/anytype/ImplicitlyDestructible/)
+- [`Indexer`](/docs/std/builtin/int/Indexer/)
+- [`Intable`](/docs/std/builtin/int/Intable/)
+- [`IntableRaising`](/docs/std/builtin/int/IntableRaising/)
 - [`KeyElement`](/docs/std/collections/dict/#keyelement)
-- [`Movable`](/docs/std/builtin/value/Movable)
-- [`PathLike`](/docs/std/os/pathlike/PathLike)
-- [`Powable`](/docs/std/math/math/Powable)
-- [`Sized`](/docs/std/builtin/len/Sized)
-- [`Roundable`](/docs/std/math/math/Roundable)
-- [`Writable`](/docs/std/format/Writable)
-- [`Writer`](/docs/std/format/Writer)
+- [`Movable`](/docs/std/builtin/value/Movable/)
+- [`PathLike`](/docs/std/os/pathlike/PathLike/)
+- [`Powable`](/docs/std/math/math/Powable/)
+- [`Sized`](/docs/std/builtin/len/Sized/)
+- [`Roundable`](/docs/std/math/math/Roundable/)
+- [`Writable`](/docs/std/format/Writable/)
+- [`Writer`](/docs/std/format/Writer/)
 
 The API reference docs linked above include usage examples for each trait. The
 following sections discuss a few of these traits.
 
 ### The `Sized` trait
 
-The [`Sized`](/docs/std/builtin/len/Sized) trait identifies types that
+The [`Sized`](/docs/std/builtin/len/Sized/) trait identifies types that
 have a measurable length, like strings and arrays.
 
 Specifically, `Sized` requires a type to implement the `__len__()` method.
-This trait is used by the built-in [`len()`](/docs/std/builtin/len/len)
+This trait is used by the built-in [`len()`](/docs/std/builtin/len/len/)
 function. For example, if you're writing a custom list type, you could
 implement this trait so your type works with `len()`:
 
@@ -527,9 +527,9 @@ print(len(MyList()))
 
 ### The `Intable` and `IntableRaising` traits
 
-The [`Intable`](/docs/std/builtin/int/Intable) trait identifies a type that
+The [`Intable`](/docs/std/builtin/int/Intable/) trait identifies a type that
 can be converted to `Int`. The
-[`IntableRaising`](/docs/std/builtin/int/IntableRaising) trait describes a
+[`IntableRaising`](/docs/std/builtin/int/IntableRaising/) trait describes a
 type can be converted to an `Int`, but the conversion might raise an error.
 
 Both of these traits require the type to implement the `__int__()` method. For
@@ -554,7 +554,7 @@ True
 ### The `Writable` trait
 
 Any type that conforms to
-[`Writable`](/docs/std/format/Writable) gets a default implementation
+[`Writable`](/docs/std/format/Writable/) gets a default implementation
 that formats its fields using reflection. Add the trait and you can
 print your type:
 
@@ -562,7 +562,7 @@ print your type:
 struct SomeType(Writable):
 ```
 
-[`print()`](/docs/std/io/io/print) requires its arguments to
+[`print()`](/docs/std/io/io/print/) requires its arguments to
 conform to `Writable`. This uses stream-based writing and avoids
 unnecessary `String` allocations.
 
@@ -590,7 +590,7 @@ arbitrary bytes. This guarantees that types like `String` can
 implement `Writer` without risking corruption.
 
 `Writable` provides
-[`write_repr_to()`](/docs/std/format/Writable#write_repr_to), which
+[`write_repr_to()`](/docs/std/format/Writable/#write_repr_to), which
 produces a debugging-specific string representation of a value.
 
 `write_repr_to()` has a default implementation based on reflection.
@@ -608,10 +608,10 @@ print(repr(p))  # 1.5 : 2.7
 
 Mojo provides two core traits for managing value lifetimes:
 
-- [`AnyType`](/docs/std/builtin/anytype/AnyType): The base trait that all types
+- [`AnyType`](/docs/std/builtin/anytype/AnyType/): The base trait that all types
 extend. Types conforming only to `AnyType` may require explicit destruction.
 
-- [`ImplicitlyDestructible`](/docs/std/builtin/anytype/ImplicitlyDestructible):
+- [`ImplicitlyDestructible`](/docs/std/builtin/anytype/ImplicitlyDestructible/):
 Types that can be automatically destroyed by calling `__del__()` when their
 lifetime ends.
 
@@ -628,7 +628,7 @@ items to a container. But in a statically-typed environment, the compiler needs
 to be able to identify the types at compile time. For example, if the container
 needs to copy a value, the compiler needs to verify that the type can be copied.
 
-The [`List`](/docs/std/collections/list) type is an example of a
+The [`List`](/docs/std/collections/list/) type is an example of a
 generic container. A single `List` can only hold a single type of data.
 The list elements must conform to the `Copyable` trait:
 
@@ -653,8 +653,8 @@ You can use traits to define requirements for elements that are stored in a
 container. For example, `List` requires elements that can be moved and
 copied. To store a struct in a `List`, the struct needs to conform to
 the `Copyable` trait, which requires a
-[copy constructor](/docs/manual/lifecycle/life#copy-constructor) and a
-[move constructor](/docs/manual/lifecycle/life#move-constructor).
+[copy constructor](/docs/manual/lifecycle/life/#copy-constructor) and a
+[move constructor](/docs/manual/lifecycle/life/#move-constructor).
 
 Building generic containers is an advanced topic. For an introduction, see the
 section on

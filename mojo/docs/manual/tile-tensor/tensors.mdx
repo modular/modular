@@ -26,7 +26,7 @@ CPU-based algorithms.
 
 A `TileTensor` consists of three main properties:
 
-- A [layout](/docs/manual/tile-tensor/layouts), defining how the elements are
+- A [layout](/docs/manual/tile-tensor/layouts/), defining how the elements are
   laid out in memory.
 - A [`DType`](/docs/std/builtin/dtype/DType/), defining the data type stored
   in the tensor.
@@ -150,9 +150,9 @@ The `load()` and `store()` methods take the indices as a `Coord` object.
 ### Tensor indexing and nested layouts
 
 A tensor's layout may have nested modes (or sub-layouts), as described in
-[TileTensor layouts](/docs/manual/tile-tensor/layouts#modes). These layouts have
-one or more of their dimensions divided into sub-layouts. For example, Figure 2
-shows a tensor with a nested layout:
+[TileTensor layouts](/docs/manual/tile-tensor/layouts/#modes). These layouts
+have one or more of their dimensions divided into sub-layouts. For example,
+Figure 2 shows a tensor with a nested layout:
 
 <figure>
 
@@ -280,9 +280,9 @@ memory is on the GPU.
 
 In both cases, if you want to initialize data for the tensor from the CPU, you
 can call
-[`enqueue_copy()`](/docs/std/gpu/host/device_context/DeviceContext#enqueue_copy)
+[`enqueue_copy()`](/docs/std/gpu/host/device_context/DeviceContext/#enqueue_copy)
 or
-[`enqueue_memset()`](/docs/std/gpu/host/device_context/DeviceContext#enqueue_memset)
+[`enqueue_memset()`](/docs/std/gpu/host/device_context/DeviceContext/#enqueue_memset)
 on the buffer prior to invoking the kernel. The following example shows
 initializing a `TileTensor` from the CPU and passing it to a GPU kernel.
 

@@ -21,7 +21,7 @@ Key topics covered in this guide:
 Before diving into GPU programming, ensure you have a [compatible
 GPU](/docs/requirements#gpu-compatibility) and the necessary development
 environment installed. And if you're new to GPU programming, we suggest you
-read the [Intro to GPU architectures](/docs/manual/gpu/architecture).
+read the [Intro to GPU architectures](/docs/manual/gpu/architecture/).
 
 ## Overview of GPU programming in Mojo
 
@@ -36,14 +36,14 @@ several subpackages for interacting with GPUs, with the
 APIs. However, the [`sys`](/docs/std/sys/info/) package contains a few basic
 introspection functions for determining whether a system has a supported GPU:
 
-- [`has_accelerator()`](/docs/std/sys/info/has_accelerator): Returns `True`
+- [`has_accelerator()`](/docs/std/sys/info/has_accelerator/): Returns `True`
   if the host system has an accelerator and `False` otherwise.
-- [`has_amd_gpu_accelerator()`](/docs/std/sys/info/has_amd_gpu_accelerator):
+- [`has_amd_gpu_accelerator()`](/docs/std/sys/info/has_amd_gpu_accelerator/):
   Returns `True` if the host system has an AMD GPU and `False` otherwise.
-- [`has_apple_gpu_accelerator()`](/docs/std/sys/info/has_apple_gpu_accelerator):
+- [`has_apple_gpu_accelerator()`](/docs/std/sys/info/has_apple_gpu_accelerator/):
   Returns `True` if the host system has an Apple silicon GPU and `False`
   otherwise.
-- [`has_nvidia_gpu_accelerator()`](/docs/std/sys/info/has_nvidia_gpu_accelerator):
+- [`has_nvidia_gpu_accelerator()`](/docs/std/sys/info/has_nvidia_gpu_accelerator/):
   Returns `True` if the host system has an NVIDIA GPU and `False` otherwise.
 
 These functions are useful for conditional compilation or execution depending on
@@ -64,7 +64,7 @@ def main():
 :::note
 
 Mojo requires a
-[compatible GPU development environment](/docs/requirements#gpu-compatibility)
+[compatible GPU development environment](/docs/requirements/#gpu-compatibility)
 to compile kernel functions, otherwise it raises a compile-time error. In this
 example, we're using the
 [`comptime if`](/docs/manual/metaprogramming/comptime-evaluation/#comptime-if)
@@ -227,7 +227,7 @@ and compiling and running functions (also known as *kernels*) on the device.
 Mojo supports systems with multiple GPUs. GPUs are uniquely identified by
 integer indices starting with `0`, which is considered the "default" device. You
 can determine the number of GPUs available by invoking the
-[`DeviceContext.number_of_devices()`](/docs/std/gpu/host/device_context/DeviceContext#number_of_devices)
+[`DeviceContext.number_of_devices()`](/docs/std/gpu/host/device_context/DeviceContext/#number_of_devices)
 static method.
 
 The `DeviceContext()` constructor returns an instance for interacting with a
@@ -249,7 +249,7 @@ stream of queued operations to execute on the GPU. Operations within a stream
 execute in the order they are enqueued.
 
 The
-[`synchronize()`](/docs/std/gpu/host/device_context/DeviceContext#synchronize)
+[`synchronize()`](/docs/std/gpu/host/device_context/DeviceContext/#synchronize)
 method blocks execution of the current CPU thread until all queued operations on
 the associated `DeviceContext` stream have completed. Most commonly, you use
 this to wait until the result of a kernel function is copied from device memory
@@ -320,7 +320,7 @@ threads executing the kernel using the following structures:
 :::note
 
 All of these dimensions and indices are
-[`Int`](/docs/std/builtin/int/Int) values.
+[`Int`](/docs/std/builtin/int/Int/) values.
 
 :::
 
@@ -405,7 +405,7 @@ Kernel functions must be
 
 For functions called from GPU kernels that need error handling, Mojo supports
 typed errors with types that don't allocate heap memory. See
-[Define a custom error type](/docs/manual/errors#define-a-custom-error-type)
+[Define a custom error type](/docs/manual/errors/#define-a-custom-error-type)
 for details.
 
 :::
@@ -474,12 +474,12 @@ The trait declares a
 used on the GPU device.
 
 As an example,
-[`DeviceBuffer`](/docs/std/gpu/host/device_context/DeviceBuffer) is a
+[`DeviceBuffer`](/docs/std/gpu/host/device_context/DeviceBuffer/) is a
 host-side representation of a buffer located in the GPU's global memory space.
 But it defines its `device_type` member as `UnsafePointer`, so the
 data represented by a `DeviceBuffer` is actually passed to the kernel function
 as a value of type
-[`UnsafePointer`](/docs/std/memory/unsafe_pointer/UnsafePointer). The next
+[`UnsafePointer`](/docs/std/memory/unsafe_pointer/UnsafePointer/). The next
 section, [`DeviceBuffer` and `HostBuffer`](#devicebuffer-and-hostbuffer),
 describes in more detail how to allocate memory buffers on the host and device
 and to exchange blocks of data between host and device.
@@ -487,12 +487,12 @@ and to exchange blocks of data between host and device.
 The following table lists the most commonly used types in the Mojo libraries
 that conform to the `DevicePassable` trait.
 
-| Host type                                                               | Device Type                                                                       | Description                                                                                                                                                                          |
-|-------------------------------------------------------------------------|-----------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| [`Int`](/docs/std/builtin/int/Int)                                      | `Int`                                                                             | Signed integer                                                                                                                                                                       |
-| [`SIMD[dtype, width]`](/docs/std/builtin/simd/SIMD)                     | `SIMD[dtype, width]`                                                              | Small vector backed by a hardware vector element                                                                                                                                     |
-| [`DeviceBuffer[dtype]`](/docs/std/gpu/host/device_context/DeviceBuffer) | [`UnsafePointer[SIMD[dtype, 1]]`](/docs/std/memory/unsafe_pointer/UnsafePointer/) | Memory buffer of `dtype` values                                                                                                                                                      |
-| [`TileTensor`](/docs/layout/tile_tensor/TileTensor/)                    | `TileTensor`                                                                      | A powerful abstraction for multi-dimensional data. See [Using `TileTensor`](/docs/manual/tile-tensor/tensors).                                                                       |
+| Host type                                                                | Device Type                                                                       | Description                                                                                                     |
+|--------------------------------------------------------------------------|-----------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------|
+| [`Int`](/docs/std/builtin/int/Int/)                                      | `Int`                                                                             | Signed integer                                                                                                  |
+| [`SIMD[dtype, width]`](/docs/std/builtin/simd/SIMD/)                     | `SIMD[dtype, width]`                                                              | Small vector backed by a hardware vector element                                                                |
+| [`DeviceBuffer[dtype]`](/docs/std/gpu/host/device_context/DeviceBuffer/) | [`UnsafePointer[SIMD[dtype, 1]]`](/docs/std/memory/unsafe_pointer/UnsafePointer/) | Memory buffer of `dtype` values                                                                                 |
+| [`TileTensor`](/docs/layout/tile_tensor/TileTensor/)                     | `TileTensor`                                                                      | A powerful abstraction for multi-dimensional data. See [Using `TileTensor`](/docs/manual/tile-tensor/tensors/). |
 
 ### `DeviceBuffer` and `HostBuffer`
 
@@ -503,7 +503,7 @@ host memory.
 #### Creating a `DeviceBuffer`
 
 The
-[`DeviceBuffer`](/docs/std/gpu/host/device_context/DeviceBuffer)
+[`DeviceBuffer`](/docs/std/gpu/host/device_context/DeviceBuffer/)
 type represents a block of device memory associated with a particular
 `DeviceContext`. Specifically, the buffer is located in the device's *global
 memory* space. As such, the buffer is accessible by all threads of all kernel
@@ -517,7 +517,7 @@ by the function is of type `UnsafePointer`. Attempting to use the `DeviceBuffer`
 type directly from within a kernel function results in an error.
 
 The
-[`DeviceContext.enqueue_create_buffer()`](/docs/std/gpu/host/device_context/DeviceContext#enqueue_create_buffer)
+[`DeviceContext.enqueue_create_buffer()`](/docs/std/gpu/host/device_context/DeviceContext/#enqueue_create_buffer)
 method creates a `DeviceBuffer` associated with that `DeviceContext`. It accepts
 the data type as a compile-time [`DType`](/docs/std/builtin/dtype/DType/)
 parameter and the size of the buffer as a run-time argument. So to create a
@@ -534,14 +534,14 @@ operations](#asynchronous-operation-and-synchronizing-the-cpu-and-gpu).
 
 #### Creating a `HostBuffer`
 
-The [`HostBuffer`](/docs/std/gpu/host/device_context/HostBuffer) type is
+The [`HostBuffer`](/docs/std/gpu/host/device_context/HostBuffer/) type is
 analogous to `DeviceBuffer`, but represents a block of host memory associated
 with a particular `DeviceContext`. It supports methods for transferring data
 between host and device memory, as well as a basic set of methods for accessing
 data elements by index and for printing the buffer.
 
 The
-[`DeviceContext.enqueue_create_host_buffer()`](/docs/std/gpu/host/device_context/DeviceContext#enqueue_create_host_buffer)
+[`DeviceContext.enqueue_create_host_buffer()`](/docs/std/gpu/host/device_context/DeviceContext/#enqueue_create_host_buffer)
 method accepts the data type as a compile-time
 [`DType`](/docs/std/builtin/dtype/DType/) parameter and the size of the buffer
 as a run-time argument and returns a `HostBuffer`. As with all `DeviceContext`
@@ -565,21 +565,21 @@ for i in range(1024):
 #### Copying data between host and device memory
 
 The
-[`enqueue_copy()`](/docs/std/gpu/host/device_context/DeviceContext#enqueue_copy)
+[`enqueue_copy()`](/docs/std/gpu/host/device_context/DeviceContext/#enqueue_copy)
 method is overloaded to support copying from host to device, device to host, or
 even device to device for systems that have multiple GPUs. Typically, you'll use
 it to copy data that you've staged in a `HostBuffer` to a `DeviceBuffer` before
 executing a kernel, and then from a `DeviceBuffer` to a `HostBuffer` to retrieve
-the results of kernel execution. The `scalar_add.mojo` example in [GPU
-programming model](#gpu-programming-model) shows this pattern in action. In it,
-the kernel function does an in-place modification of the buffer it receives as
-an argument and then reuses the original `HostBuffer` to copy the results back
-from the device. However, you can allocate a separate `DeviceBuffer` and
+the results of kernel execution. The `scalar_add.mojo` example in
+[GPU programming model](#gpu-programming-model) shows this pattern in action. In
+it, the kernel function does an in-place modification of the buffer it receives
+as an argument and then reuses the original `HostBuffer` to copy the results
+back from the device. However, you can allocate a separate `DeviceBuffer` and
 `HostBuffer` for the result of a kernel function if you want to retain the
 original data.
 
 In addition to copying data between a `HostBuffer` to a `DeviceBuffer`, you can
-use an [`UnsafePointer`](/docs/std/memory/unsafe_pointer/UnsafePointer) as
+use an [`UnsafePointer`](/docs/std/memory/unsafe_pointer/UnsafePointer/) as
 the source or destination of a copy. However, the `UnsafePointer` must reference
 host memory for this operation. Attempting to use an `UnsafePointer` referencing
 device memory results in an error. For example, this is useful if you have data
@@ -588,9 +588,9 @@ an `UnsafePointer`. In that case you would not need to copy the data from the
 data structure to a `HostBuffer` before copying it to the `DeviceBuffer`.
 
 Both `DeviceBuffer` and `HostBuffer` also include
-[`enqueue_copy_to()`](/docs/std/gpu/host/device_context/DeviceBuffer#enqueue_copy_to)
+[`enqueue_copy_to()`](/docs/std/gpu/host/device_context/DeviceBuffer/#enqueue_copy_to)
 and
-[`enqueue_copy_from()`](/docs/std/gpu/host/device_context/DeviceBuffer#enqueue_copy_from)
+[`enqueue_copy_from()`](/docs/std/gpu/host/device_context/DeviceBuffer/#enqueue_copy_from)
 methods. These are simply convenience methods that call the `enqueue_copy()`
 method on their corresponding `DeviceContext`. For example, the following two
 method calls are interchangeable:
@@ -603,10 +603,10 @@ host_buffer.enqueue_copy_to(dst=device_buffer)
 ```
 
 Finally, as a convenience for testing or prototyping, you can use the
-[`DeviceBuffer.map_to_host()`](/docs/std/gpu/host/device_context/DeviceBuffer#map_to_host)
+[`DeviceBuffer.map_to_host()`](/docs/std/gpu/host/device_context/DeviceBuffer/#map_to_host)
 method to create a host-accessible view of the device buffer's contents. This
 returns `HostBuffer` as a
-[context manager](/docs/manual/errors#use-a-context-manager) that contains a
+[context manager](/docs/manual/errors/#use-a-context-manager) that contains a
 copy of the data from the corresponding `DeviceBuffer`. Additionally, any
 modifications that you make to the `HostBuffer` are automatically copied back to
 the `DeviceBuffer` when the `with` statement exits. For example:
@@ -651,10 +651,10 @@ and lifecycle mechanisms. The Mojo compiler analyzes our program to determine
 the last point that the owner of or a reference to an object is used and
 automatically adds a call to the object's destructor. This means that you don't
 explicitly call any method to free the memory represented by a `DeviceBuffer` or
-`HostBuffer` instance. See the [Ownership](/docs/manual/values/ownership) and
-[Intro to value lifecycle](/docs/manual/lifecycle) sections of the Mojo Manual
+`HostBuffer` instance. See the [Ownership](/docs/manual/values/ownership/) and
+[Intro to value lifecycle](/docs/manual/lifecycle/) sections of the Mojo Manual
 for more information on Mojo value ownership and value lifecycle management, and
-the [Death of a value](/docs/manual/lifecycle/death) section for a detailed
+the [Death of a value](/docs/manual/lifecycle/death/) section for a detailed
 explanation of object destruction.
 
 ### Compiling and enqueuing a kernel function for execution
@@ -662,7 +662,7 @@ explanation of object destruction.
 The
 [`compile_function()`](/docs/std/gpu/host/device_context/DeviceContext/#compile_function)
 method accepts a kernel function as a compile-time
-[parameter](/docs/manual/parameters) and then compiles it for the associated
+[parameter](/docs/manual/parameters/) and then compiles it for the associated
 `DeviceContext`. Then you can enqueue the compiled kernel for execution by
 passing it to the
 [`enqueue_function()`](/docs/std/gpu/host/device_context/DeviceContext/#enqueue_function)

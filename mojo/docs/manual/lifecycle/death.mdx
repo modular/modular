@@ -68,8 +68,8 @@ anything. Most structs don't require a custom destructor, and Mojo automatically
 adds a no-op destructor if you don't define one.
 
 The `__del__()` method takes its argument using the `deinit`
-[argument convention](/docs/manual/values/ownership#argument-conventions), which
-indicates that the value is being deinitialized.
+[argument convention](/docs/manual/values/ownership/#argument-conventions),
+which indicates that the value is being deinitialized.
 
 ## Default destruction behavior
 
@@ -84,7 +84,7 @@ no longer used, and it is also immediately destroyed.
 
 The `String` value is a little more complicated. Mojo strings are mutable. The
 `String` object has an internal buffer—a
-[`List`](/docs/std/collections/list/List) field,
+[`List`](/docs/std/collections/list/List/) field,
 which holds the characters that make up the string. A `List` stores
 its contents in dynamically allocated memory on the heap, so the string can
 grow or shrink. The string itself doesn't have any special destructor logic,
@@ -153,7 +153,7 @@ dynamically allocate memory.
 
 Whereas, the following struct must define the `__del__()` method to free the
 memory allocated by its
-[`UnsafePointer`](/docs/std/memory/unsafe_pointer/UnsafePointer):
+[`UnsafePointer`](/docs/std/memory/unsafe_pointer/UnsafePointer/):
 
 ```mojo
 struct HeapArray(Writable):
@@ -531,7 +531,7 @@ You might do this:
   warnings or dead-code elimination).
 
 - When writing unsafe/advanced code (for example, code that manipulates a
-  value's [origin](/docs/manual/values/lifetimes)).
+  value's [origin](/docs/manual/values/lifetimes/)).
 
 - When you need deterministic destructor timing relative to specific side
   effects (such as logging or profiling).
@@ -560,6 +560,6 @@ Previous versions of Mojo required the transfer sigil (`^`) when discarding a
 move-only type. This is no longer required, since the compiler doesn't actually
 move the discarded value. For more information on the transfer sigil, see the
 section on
-[ownership transfer](/docs/manual/values/ownership#transfer-arguments-var-and-).
+[ownership transfer](/docs/manual/values/ownership/#transfer-arguments-var-and-).
 
 :::

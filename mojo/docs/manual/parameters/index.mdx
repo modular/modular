@@ -109,7 +109,7 @@ compilation fails.
 
 Functions and methods can be overloaded on their parameter signatures. For
 information on overload resolution, see
-[Overloaded functions](/docs/manual/functions#overloaded-functions).
+[Overloaded functions](/docs/manual/functions/#overloaded-functions).
 
 ## Parameters at a glance
 
@@ -160,7 +160,7 @@ Here's a quick overview of the special characters in the parameter list:
 
 Generics let functions work across multiple types, and let containers
 store values of many types. For example,
-[`List`](/docs/std/collections/list/List) takes a type parameter, so
+[`List`](/docs/std/collections/list/List/) takes a type parameter, so
 `List[Int]` holds integers and `List[String]` holds strings.
 
 In Mojo, generics use compile-time parameters. A function parameterized
@@ -225,8 +225,8 @@ struct GenericArray[ElementType: Copyable & ImplicitlyDestructible]:
 This struct has a single parameter, `ElementType`, which is a placeholder for
 the data type you want to store in the array, sometimes called a *type
 parameter*. `ElementType` conforms to the
-[`Copyable`](/docs/std/builtin/value/Copyable) trait and therefore to the
-[`Movable`](/docs/std/builtin/value/Movable) trait.
+[`Copyable`](/docs/std/builtin/value/Copyable/) trait and therefore to the
+[`Movable`](/docs/std/builtin/value/Movable/) trait.
 
 As with parameterized functions, you need to pass in parameter values when you
 use a parameterized struct. In this case, when you create an instance of
@@ -355,7 +355,7 @@ def is_happy(s: Sentiment):
 
 This pattern provides a type-safe enumeration.
 
-The [`DType`](/docs/std/builtin/dtype/DType) struct implements a simple enum
+The [`DType`](/docs/std/builtin/dtype/DType/) struct implements a simple enum
 using `comptime` members like this. This allows clients to use values like
 `DType.float32` in parameter expressions or run-time expressions.
 
@@ -420,7 +420,7 @@ this rule—they can't take parameters.
 ### Case study: the SIMD type
 
 For a real-world example of a parameterized type, let's look at the
-[`SIMD`](/docs/std/builtin/simd/SIMD) type from Mojo's standard library.
+[`SIMD`](/docs/std/builtin/simd/SIMD/) type from Mojo's standard library.
 
 [Single instruction, multiple data (SIMD)](https://en.wikipedia.org/wiki/Single_instruction,_multiple_data)
 is a parallel processing technology built into many modern CPUs, GPUs, and
@@ -436,7 +436,7 @@ longer SIMD vectors, and support many data types from 8-bit integers to 64-bit
 floating point numbers, so it's not practical to define all of the possible SIMD
 variations.
 
-Mojo's [`SIMD`](/docs/std/builtin/simd/SIMD) type (defined as a struct)
+Mojo's [`SIMD`](/docs/std/builtin/simd/SIMD/) type (defined as a struct)
 exposes the common SIMD operations through its methods, and takes the SIMD data
 type and size values as parameters. This allows you to directly map your data to
 the SIMD vectors on any hardware.
@@ -661,7 +661,7 @@ arguments](/docs/manual/functions#optional-arguments) in function signatures,
 you can also define an optional *parameter* by giving it a default value.
 
 You can also pass parameters by keyword, just like you can use
-[keyword arguments](/docs/manual/functions#keyword-arguments).
+[keyword arguments](/docs/manual/functions/#keyword-arguments).
 For a function or struct with multiple optional parameters, using keywords
 allows you to pass only the parameters you want to specify, regardless of
 their position in the function signature.
@@ -732,7 +732,7 @@ arguments](/docs/manual/functions#positional-only-and-keyword-only-arguments).
 ### Variadic parameters
 
 Mojo also supports variadic parameters, similar to
-[Variadic arguments](/docs/manual/functions#variadic-arguments):
+[Variadic arguments](/docs/manual/functions/#variadic-arguments):
 
 ```mojo
 struct MyTensor[*dimensions: Int]:
@@ -810,7 +810,7 @@ to infer the infer-only values from bound parameters or arguments.
 There are sometimes cases where it's useful to specify an infer-only parameter
 by keyword. For example, the
 [`Span`](/docs/std/memory/span/Span/) type
-is parameterized on [origin](/docs/manual/values/lifetimes):
+is parameterized on [origin](/docs/manual/values/lifetimes/):
 
 ```mojo no-test
 struct Span[mut: Bool, //, T: Copyable, origin: Origin[mut]]:

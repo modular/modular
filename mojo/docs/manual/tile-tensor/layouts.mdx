@@ -10,7 +10,7 @@ that describes how logical tensor coordinates are mapped to memory
 locations. This section describes how to create and work with layouts
 for `TileTensor`. In particular, it discusses the following types:
 
-- The [`tile_layout.Layout`](/docs/layout/tile_layout/Layout) struct
+- The [`tile_layout.Layout`](/docs/layout/tile_layout/Layout/) struct
   describes an arrangement of data in memory. A *layout* is a function that maps
   a set of logical coordinates (like (*x*, *y*) in a two-dimensional array) to a
   linear index value. Layouts can also describe more complex organizations, like
@@ -78,7 +78,7 @@ sub-layouts or *modes*: a row mode and a column mode: 3 rows with a stride of 4
 (3:4, the first numbers from each tuple) and 4 columns with a stride of 1 (4:1,
 the second numbers from each tuple).
 
-The [`print_layout()`](/docs/layout/layout/print_layout) function
+The [`print_layout()`](/docs/layout/layout/print_layout/) function
 generates an ASCII diagram of any 2D layout, showing the coordinates on the
 outside and the corresponding index values in the grid.
 
@@ -125,7 +125,7 @@ coordinates at index 7: (1, 3)
 
 As this example shows, the layout is a function that takes a set of integer
 coordinates and returns a single integer (the linear index). The `Layout` struct
-also provides an [`idx2crd()`](/docs/layout/tile_layout/Layout#idx2crd)
+also provides an [`idx2crd()`](/docs/layout/tile_layout/Layout/#idx2crd)
 method that transforms a linear index into a set of logical coordinates.
 
 When you use a `TileTensor`, you'll use the layout to define how the data is
@@ -151,12 +151,12 @@ representation of the layout in the form of a (*shape*:*stride*) pair.
 ### `Coord` and `Idx`: representing multidimensional coordinates {#coord-and-idx}
 
 Logical coordinates—and a layout's shape and size—are represented using the
-[`Coord`](/docs/layout/coord/Coord) type, a tuple-like structure that
+[`Coord`](/docs/layout/coord/Coord/) type, a tuple-like structure that
 can hold both compile-time and run-time integer values. Each element of a
 `Coord` is either an integer value or a nested tuple.
 
 You can create a simple `Coord` with all compile-time values or all run-time
-values using the [`coord()`](/docs/layout/coord/coord/) function:
+values using the [`coord()`](/docs/layout/coord/coord-function/) function:
 
 ```mojo
 var comptime_coords = coord[4, 4]()
@@ -391,7 +391,7 @@ using the `Layout` constructor. But calculating the strides for a complicated
 layout is far from intuitive.
 
 An easier way to generate this type of tiled layout is the
-[`blocked_product()`](/docs/layout/tile_layout/blocked_product)
+[`blocked_product()`](/docs/layout/tile_layout/blocked_product/)
 function. `blocked_product()` takes two layouts: a *tile* layout and a *tiler*
 layout: essentially, every element in the tiler layout is replaced by a tile.
 The following example generates the same tiled layout using `blocked_product()`.

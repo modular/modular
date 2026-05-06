@@ -15,24 +15,24 @@ core types that can be composed in powerful ways.
 ## Numbers
 
 Explore numbers on their dedicated page:
-[Mojo numeric types](/docs/reference/numeric-types).
+[Mojo numeric types](/docs/reference/numeric-types/).
 
 <!-- markdownlint-disable MD013 -->
 
-| Type                                                                           | What it is                                                      |
-|--------------------------------------------------------------------------------|-----------------------------------------------------------------|
-| [`IntLiteral`](/docs/reference/numeric-types#int-literal)                      | Arbitrary-precision integer. Compile-time only.                 |
-| [`FloatLiteral`](/docs/reference/numeric-types#float-literal)                  | Arbitrary-precision float. Compile-time only.                   |
-| [`Int`](/docs/reference/numeric-types#int)                                     | Signed integer, system word size. Its own struct.               |
-| [`SIMD`](/docs/reference/numeric-types#simd)                                   | Fixed-size vector of numeric values. Mojo's numeric foundation. |
-| [`DType`](/docs/reference/numeric-types#dtype)                                 | Enumeration of numeric type identifiers. Used as a parameter.   |
-| [`Scalar`](/docs/reference/numeric-types#scalar)                               | Single numeric value. Alias for `SIMD[dtype, 1]`.               |
-| [`UInt`](/docs/reference/numeric-types#uint)                                   | Unsigned integer, system word size. A `Scalar` alias.           |
-| [`Int8`-`Int256`](/docs/reference/numeric-types#sized-integer-types)           | Fixed-width signed integers. `Scalar` aliases.                  |
-| [`UInt8`-`UInt256`, `Byte`](/docs/reference/numeric-types#sized-integer-types) | Fixed-width unsigned integers. `Scalar` aliases.                |
-| [`Float16`-`Float64`](/docs/reference/numeric-types#floating-point-types)      | IEEE 754 floating-point types. `Scalar` aliases.                |
-| [`BFloat16`](/docs/reference/numeric-types#bfloat16)                           | Brain floating-point (16-bit). A `Scalar` alias.                |
-| [`Float8_*`, `Float4_*`](/docs/reference/numeric-types#floating-point-types)   | AI-optimized low-precision floats. `Scalar` aliases.            |
+| Type                                                                            | What it is                                                      |
+|---------------------------------------------------------------------------------|-----------------------------------------------------------------|
+| [`IntLiteral`](/docs/reference/numeric-types/#int-literal)                      | Arbitrary-precision integer. Compile-time only.                 |
+| [`FloatLiteral`](/docs/reference/numeric-types/#float-literal)                  | Arbitrary-precision float. Compile-time only.                   |
+| [`Int`](/docs/reference/numeric-types/#int)                                     | Signed integer, system word size. Its own struct.               |
+| [`SIMD`](/docs/reference/numeric-types/#simd)                                   | Fixed-size vector of numeric values. Mojo's numeric foundation. |
+| [`DType`](/docs/reference/numeric-types/#dtype)                                 | Enumeration of numeric type identifiers. Used as a parameter.   |
+| [`Scalar`](/docs/reference/numeric-types/#scalar)                               | Single numeric value. Alias for `SIMD[dtype, 1]`.               |
+| [`UInt`](/docs/reference/numeric-types/#uint)                                   | Unsigned integer, system word size. A `Scalar` alias.           |
+| [`Int8`-`Int256`](/docs/reference/numeric-types/#sized-integer-types)           | Fixed-width signed integers. `Scalar` aliases.                  |
+| [`UInt8`-`UInt256`, `Byte`](/docs/reference/numeric-types/#sized-integer-types) | Fixed-width unsigned integers. `Scalar` aliases.                |
+| [`Float16`-`Float64`](/docs/reference/numeric-types/#floating-point-types)      | IEEE 754 floating-point types. `Scalar` aliases.                |
+| [`BFloat16`](/docs/reference/numeric-types/#bfloat16)                           | Brain floating-point (16-bit). A `Scalar` alias.                |
+| [`Float8_*`, `Float4_*`](/docs/reference/numeric-types/#floating-point-types)   | AI-optimized low-precision floats. `Scalar` aliases.            |
 
 <!-- markdownlint-enable MD013 -->
 

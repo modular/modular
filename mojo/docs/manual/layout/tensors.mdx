@@ -26,7 +26,7 @@ CPU-based algorithms.
 
 A `LayoutTensor` consists of three main properties:
 
-- A [layout](/docs/manual/layout/layouts), defining how the elements are
+- A [layout](/docs/manual/layout/layouts/), defining how the elements are
   laid out in memory.
 - A `DType`, defining the data type stored in the tensor.
 - A pointer to memory where the data is stored.
@@ -116,9 +116,9 @@ tensor.store(row, col, elements)
 ### Tensor indexing and nested layouts
 
 A tensor's layout may have nested modes (or sub-layouts), as described in
-[Introduction to layouts](/docs/manual/layout/layouts#modes). These layouts have
-one or more of their dimensions divided into sub-layouts. For example, Figure 2
-shows a tensor with a nested layout:
+[Introduction to layouts](/docs/manual/layout/layouts/#modes). These layouts
+have one or more of their dimensions divided into sub-layouts. For example,
+Figure 2 shows a tensor with a nested layout:
 
 <figure>
 
@@ -236,9 +236,9 @@ itself:
 
 In both cases, if you want to initialize data for the tensor from the CPU, you
 can call
-[`enqueue_copy()`](/docs/std/gpu/host/device_context/DeviceContext#enqueue_copy)
+[`enqueue_copy()`](/docs/std/gpu/host/device_context/DeviceContext/#enqueue_copy)
 or
-[`enqueue_memset()`](/docs/std/gpu/host/device_context/DeviceContext#enqueue_memset)
+[`enqueue_memset()`](/docs/std/gpu/host/device_context/DeviceContext/#enqueue_memset)
 on the buffer prior to invoking the kernel. The following example shows
 initializing a `LayoutTensor` from the CPU and passing it to a GPU kernel.
 

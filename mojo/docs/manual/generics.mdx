@@ -82,10 +82,10 @@ constraints in place, the compiler can check correctness and report
 missing requirements early.
 
 - The most permissive bound is
-  [`AnyType`](/docs/std/builtin/anytype/AnyType). It places no behavioral
+  [`AnyType`](/docs/std/builtin/anytype/AnyType/). It places no behavioral
   requirements on a type and serves as the least restrictive option.
 
-- [`ImplicitlyDestructible`](/docs/std/builtin/anytype/ImplicitlyDestructible)
+- [`ImplicitlyDestructible`](/docs/std/builtin/anytype/ImplicitlyDestructible/)
   is a common baseline for types with lifetimes. It marks types that need
   cleanup when they go out of scope. Generic code that stores or owns
   values often requires it.
@@ -254,7 +254,7 @@ This function accepts any type, because its only limit is `AnyType`.
 `AnyType` is the root of the trait hierarchy. It's the baseline
 that all types extend. Using `AnyType` means the value has no guaranteed
 destructor or lifetime management. Outside of
-[_reflection_](/docs/manual/metaprogramming/reflection) (type introspection),
+[_reflection_](/docs/manual/metaprogramming/reflection/) (type introspection),
 this function is effectively useless.
 
 ## Generic types
@@ -373,7 +373,7 @@ a bound (for example, `T: Writable`) instead of downcasting.
 
 Use this pattern when you can't express the requirement as a bound.
 It's common in reflection-style code that handles values based on
-their traits. See [reflection](/docs/manual/metaprogramming/reflection).
+their traits. See [reflection](/docs/manual/metaprogramming/reflection/).
 
 ## Type generics and explicit destruction
 
@@ -478,7 +478,7 @@ larger APIs, you'll run into a few additional patterns:
 
 - _Associated (dependent) types:_
   Some traits declare
-  [associated types](/docs/manual/traits#comptime-members-for-generics).
+  [associated types](/docs/manual/traits/#comptime-members-for-generics).
   For example, collection and iteration traits use an associated
   element type (often `Element`) to describe the values they own.
   Associated types can also constrain behavior—for example, requiring
