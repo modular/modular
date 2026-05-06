@@ -166,6 +166,8 @@ kgen.func @generator_types() {
   kgen.param.declare arg_kinds: type = <!lit.generator<<"dt": dtype, |, "width": index, *, "tag": i1>index>>
   // CHECK-NEXT: type = <!lit.generator<<{<1, {{.*}}>, <1, {{.*}}>}, dtype>index>>
   kgen.param.declare pre_constraint: type = <!lit.generator<<{<1, loc("pre-gen.mlir":1:1)>, <1, loc("pre-gen.mlir":1:2)>}, dtype>index>>
+  // CHECK-NEXT: type = <!lit.generator<<{<1, {{.*}}>, <1, {{.*}}>}>index>>
+  kgen.param.declare pre_constraint_no_params: type = <!lit.generator<<{<1, loc("pre-gen.mlir":1:1)>, <1, loc("pre-gen.mlir":1:2)>}>index>>
   kgen.return
 }
 

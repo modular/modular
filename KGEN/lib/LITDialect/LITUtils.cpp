@@ -544,16 +544,23 @@ ParseResult LIT::parseOptionalParamSignature(
 
 void LIT::printOptionalParamSignature(AsmPrinter &p,
                                       ArrayRef<Type> inputParamTypes,
-                                      PogListAttr paramListAttr) {
-  size_t idx = 0;
-  PassingKindPrinter passingKindPrinter(p, paramListAttr, '|');
+                                      PogListAttr paramListAttr,
+                                      bool omitEmptyAngleBrackets) {
   ArrayRef<ConstraintAttr> preConstraints = paramListAttr.getPreConstraints();
-  if (!preConstraints.empty() && inputParamTypes.empty()) {
-    p << "<{";
-    printConstraintsListContents(p, preConstraints, /*evaluator=*/nullptr);
-    p << "}>";
+  if (inputParamTypes.empty()) {
+    if (!preConstraints.empty()) {
+      p << "<{";
+      printConstraintsListContents(p, preConstraints, /*evaluator=*/nullptr);
+      p << "}>";
+      return;
+    }
+    if (!omitEmptyAngleBrackets)
+      p << "<>";
     return;
   }
+
+  size_t idx = 0;
+  PassingKindPrinter passingKindPrinter(p, paramListAttr, '|');
   auto printWithDefault = [&](Type type) {
     if (idx == 0 && !preConstraints.empty()) {
       p << '{';

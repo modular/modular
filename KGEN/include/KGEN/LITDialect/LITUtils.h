@@ -136,7 +136,8 @@ ParseResult parseOptionalParamSignature(AsmParser &p,
 /// Print the parameter type signature if there are any input or result types,
 /// along with the default input parameter values.
 void printOptionalParamSignature(AsmPrinter &p, ArrayRef<Type> inputParamTypes,
-                                 PogListAttr paramListAttr);
+                                 PogListAttr paramListAttr,
+                                 bool omitEmptyAngleBrackets = false);
 
 /// Parse an optional parameter or argument name.
 ParseResult parseOptionalName(AsmParser &p, StringAttr &name);
