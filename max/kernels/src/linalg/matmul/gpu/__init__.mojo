@@ -249,16 +249,11 @@ def matmul_kernel_naive[
 
     comptime if transpose_b:
         for i in range(k):
-            var a_val = a[x, i]
-            accum += rebind[Scalar[s_type]](a[x, i].cast[s_type]()) * rebind[
-                Scalar[s_type]
-            ](b[y, i].cast[s_type]())
+            accum += a[x, i].cast[s_type]() * b[y, i].cast[s_type]()
 
     else:
         for i in range(k):
-            accum += rebind[Scalar[s_type]](a[x, i].cast[s_type]()) * rebind[
-                Scalar[s_type]
-            ](b[i, y].cast[s_type]())
+            accum += a[x, i].cast[s_type]() * b[i, y].cast[s_type]()
 
     comptime if elementwise_lambda_fn:
         comptime elementwise_lambda = elementwise_lambda_fn.value()
@@ -484,7 +479,7 @@ def _matmul_gpu[
     comptime matmul_supported_format_amd = (
         (a_type == DType.bfloat16 or a_type in amd_float8_dtypes)
         and b_type == a_type
-        and c_type in (DType.float32, DType.bfloat16)
+        and c_type in amd_float8_dtypes.concat((DType.float32, DType.bfloat16))
         and not has_amd_rdna_gpu_accelerator()
     )
 
@@ -564,9 +559,6 @@ def _matmul_gpu[
             transpose_b=transpose_b,
             elementwise_lambda_fn=elementwise_lambda_wrapper,
         ](c, a, b, ctx)
-
-    comptime bf16_or_fp16 = (DType.bfloat16, DType.float16)
-    comptime bf16_or_fp16_fp32 = (DType.bfloat16, DType.float16, DType.float32)
 
     comptime if (has_nvidia_gpu_accelerator() and _has_blackwell_tcgen05()):
         return matmul_dispatch_sm100[

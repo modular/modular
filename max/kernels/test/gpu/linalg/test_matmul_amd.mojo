@@ -13,7 +13,8 @@
 # mojo build --debug-level=full --mcmodel=medium --large-data-threshold=1048576
 # to build this file if running into linking issues with large PTX kernels.
 
-from std.random import random_si64
+from std.random import rand, random_si64
+from std.math import ceildiv
 
 import linalg.matmul.vendor.blas as vendor_blas
 from std.gpu.host import DeviceContext
@@ -27,6 +28,7 @@ from layout import (
 from linalg.matmul.gpu import (
     _amdgpu_matmul_config_from_block_shape,
     _matmul_gpu,
+    matmul_kernel_naive,
     multistage_gemm,
 )
 from linalg.utils_gpu import MatmulConfig
@@ -86,16 +88,20 @@ def test[
         row_major(Coord(Idx(m), Idx[N.value()]())),
     )
 
-    comptime rand_min = -100
-    comptime rand_max = 100
+    comptime if c_type.is_float8():
+        rand(a_host_ptr.unsafe_ptr(), m * k, min=-1.0, max=1.0)
+        rand(b_host_ptr.unsafe_ptr(), k * n, min=-1.0, max=1.0)
+    else:
+        comptime rand_min = -100
+        comptime rand_max = 100
 
-    for i in range(m * k):
-        var val = random_si64(rand_min, rand_max)
-        a_host_ptr[i] = val.cast[a_type]()
+        for i in range(m * k):
+            var val = random_si64(rand_min, rand_max)
+            a_host_ptr[i] = val.cast[a_type]()
 
-    for i in range(k * n):
-        var val = random_si64(rand_min, rand_max)
-        b_host_ptr[i] = val.cast[b_type]()
+        for i in range(k * n):
+            var val = random_si64(rand_min, rand_max)
+            b_host_ptr[i] = val.cast[b_type]()
 
     # Move operands to the Device
     ctx.enqueue_copy(a_device_buffer, a_host_ptr)
@@ -117,14 +123,39 @@ def test[
             ctx,
         )
 
-    vendor_blas.matmul(
-        ctx,
-        c_ref_tensor,
-        a_tensor.as_immut(),
-        b_tensor.as_immut(),
-        c_row_major=True,
-        transpose_b=transpose_b,
-    )
+    comptime if c_type.is_float8():
+        # The vendor BLAS does not support `BF16 @ BF16 = FP8`, so use the naive
+        # kernel as the reference implementation.
+        comptime BLOCK_DIM = 16
+        comptime gemm_naive = matmul_kernel_naive[
+            c_type,
+            a_type,
+            b_type,
+            type_of(c_tensor).LayoutType,
+            type_of(a_tensor).LayoutType,
+            type_of(b_tensor).LayoutType,
+            BLOCK_DIM,
+            transpose_b=True,
+        ]
+        ctx.enqueue_function[gemm_naive](
+            c_ref_tensor,
+            a_tensor.as_immut(),
+            b_tensor.as_immut(),
+            m,
+            n,
+            k,
+            grid_dim=(ceildiv(m, BLOCK_DIM), ceildiv(n, BLOCK_DIM)),
+            block_dim=(BLOCK_DIM, BLOCK_DIM),
+        )
+    else:
+        vendor_blas.matmul(
+            ctx,
+            c_ref_tensor,
+            a_tensor.as_immut(),
+            b_tensor.as_immut(),
+            c_row_major=True,
+            transpose_b=transpose_b,
+        )
 
     ctx.enqueue_copy(c_host_ptr, c_device_buffer)
     ctx.enqueue_copy(c_host_ref_ptr, c_device_ref_buffer)
@@ -132,7 +163,10 @@ def test[
 
     var errors = 0
     for i in range(m * n):
-        if c_host_ptr[i] != c_host_ref_ptr[i]:
+        if (
+            c_host_ptr[i].cast[DType.float32]()
+            != c_host_ref_ptr[i].cast[DType.float32]()
+        ):
             errors += 1
 
     assert_equal(errors, 0)
@@ -290,16 +324,24 @@ def test_bf16(ctx: DeviceContext) raises:
     ](ctx, 2, 6144, 6144)
 
 
-def test_float8[in_type: DType](ctx: DeviceContext) raises:
-    print("=== test_float8", in_type)
+def test_float8[fp8_type: DType](ctx: DeviceContext) raises:
+    print("=== test_float8", fp8_type)
 
     test[
-        in_type=in_type,
+        in_type=fp8_type,
         out_type=DType.bfloat16,
         transpose_b=True,
         N=Int(512),
         K=Int(640),
     ](ctx, 480, 512, 640)
+
+    test[
+        in_type=DType.bfloat16,
+        out_type=fp8_type,
+        transpose_b=True,
+        N=Int(384),
+        K=Int(128),
+    ](ctx, 256, 384, 128)
 
 
 def test_block_k(ctx: DeviceContext) raises:
