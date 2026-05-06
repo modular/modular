@@ -7,33 +7,28 @@ description: You can install Mojo using pixi, uv, conda, pip, or other Python/Co
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 import ConditionalVersionDocs from '@site/src/components/ConditionalVersionDocs'
-import Tooltip from '@site/src/components/Tooltip/tooltip';
 import VersionSubheader from '@site/src/components/VersionSubheader';
-
-export const tooltipNightly = (<Tooltip
-  parent="nightly build"
-  content="To get the stable build, change the version in the website header."
-/>);
-export const tooltipStable = (<Tooltip
-  parent="stable build"
-  content="To get the nightly build, change the version in the website header."
-/>);
 
 <VersionSubheader />
 
-You can install Mojo using any Python/Conda package manager and it's compatible
-with macOS and Linux. For details, see the [system
-requirements](/docs/requirements/).
+Mojo installs exactly like a Python or Conda package on
+macOS and Linux (see the [system requirements](/docs/requirements/)).
 
 <ConditionalVersionDocs version="nightly">
-
-Use the following command to install the {tooltipNightly}:
 
 <Tabs groupId="install">
 <TabItem value="uv" label="uv">
 
     ```sh
     uv pip install mojo \
+      --index https://whl.modular.com/nightly/simple/ \
+      --prerelease allow
+    ```
+
+Or add Mojo to a project:
+
+    ```sh
+    uv add mojo \
       --index https://whl.modular.com/nightly/simple/ \
       --prerelease allow
     ```
@@ -52,13 +47,17 @@ Use the following command to install the {tooltipNightly}:
 
 <ConditionalVersionDocs version="stable">
 
-Use the following command to install the {tooltipStable}:
-
 <Tabs groupId="install">
 <TabItem value="uv" label="uv">
 
     ```sh
     uv pip install mojo
+    ```
+
+Or add Mojo to a project:
+
+    ```sh
+    uv add mojo
     ```
 
 </TabItem>
@@ -73,11 +72,13 @@ Use the following command to install the {tooltipStable}:
 
 </ConditionalVersionDocs>
 
+## Get the VS Code extension
+
 For syntax highlighting, code completion, and debugging support, install the
-Mojo extension
-[from the VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=modular-mojotools.vscode-mojo),
-or
-[from the Open VSX Registry](https://open-vsx.org/extension/modular-mojotools/vscode-mojo).
+Mojo extension from:
+
+- [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=modular-mojotools.vscode-mojo)
+- [Open VSX Registry](https://open-vsx.org/extension/modular-mojotools/vscode-mojo)
 
 ## Get Mojo skills
 
