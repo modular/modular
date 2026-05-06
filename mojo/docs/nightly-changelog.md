@@ -94,3 +94,14 @@ This version is still a work in progress.
   - `ReflectedType[T]` → `Reflected[T]`
 
 ## 🛠️ Fixed
+
+- Reduced the virtual address space reserved by every `mojo` invocation by
+  ~1 GiB. The JIT memory mapper's reservation granularity was 1 GiB, so each
+  fresh reservation was rounded up to that size and mmapped
+  `PROT_READ|PROT_WRITE`, inflating `VmPeak` and counting against Linux
+  `RLIMIT_AS`. This caused non-deterministic OOM crashes in
+  `libKGENCompilerRTShared.so` when two `mojo` processes ran concurrently on
+  memory-constrained CI runners (e.g. GitHub Actions free-tier, 7 GiB). The
+  granularity is now 64 MiB; large compiles still work because the mapper
+  reserves additional slabs on demand.
+  ([Issue #6433](https://github.com/modular/modular/issues/6433))
