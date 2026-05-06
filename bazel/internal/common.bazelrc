@@ -54,7 +54,7 @@ common --sandbox_default_allow_network=false
 common --incompatible_allow_tags_propagation
 
 # Disable legacy __init__.py creation behavior
-common --incompatible_default_to_explicit_init_py
+common --@rules_python//python/config_settings:incompatible_default_to_explicit_init_py
 
 # Reduce disk usage if using multiple clones
 common --experimental_repository_cache_hardlinks
@@ -64,7 +64,6 @@ common --experimental_ui_max_stdouterr_bytes=4000000
 
 # TODO: Break lit tests finding FileCheck
 # Disable legacy duplicate runfiles creation
-common --legacy_external_runfiles=false
 common --build_runfile_links=false
 
 # Generate a smaller manifest which is nicer for remote exec
@@ -191,8 +190,8 @@ build --remote_execution_priority=-1
 
 build:cache --bes_backend=grpcs://modular.buildbuddy.io
 build:cache --bes_results_url=https://modular.buildbuddy.io/invocation/
-build:cache --experimental_remote_downloader=grpcs://modular.buildbuddy.io
-build:cache --experimental_remote_downloader_local_fallback
+build:cache --remote_downloader=grpcs://modular.buildbuddy.io
+build:cache --remote_downloader_local_fallback
 build:cache --remote_cache=grpcs://modular.aws-us-west-2.buildbuddy.io
 
 build:remote --config=cache
@@ -284,6 +283,3 @@ build:remote-mi355 --build_metadata=TAG_TARGET_OS=linux
 build:ci-remote-mi355 --config=ci-gpu-common
 build:ci-remote-mi355 --config=remote-mi355
 build:ci-remote-mi355 --test_keep_going=false
-
-# TODO: Remove once transitives are fixed
-common --incompatible_autoload_externally=@rules_shell,@com_google_protobuf,java_binary,+JavaInfo,+@rules_cc

@@ -7,6 +7,7 @@ load(":gpu_toolchain_alias.bzl", "gpu_toolchain_alias")
 package(default_visibility = ["//visibility:public"])
 
 exports_files([
+    "create_venv.py",
     "load_bazel_tools.py",
     "lsan-suppressions.txt",
 ])

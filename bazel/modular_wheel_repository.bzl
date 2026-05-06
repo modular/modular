@@ -44,6 +44,7 @@ def _rebuild_wheel(rctx):
         "BUILD.bazel",
         """
 load("@rules_python//python:defs.bzl", "py_library")
+load("@rules_cc//cc:defs.bzl", "cc_import")
 
 # Subdirectories of the wheel that are part of this repo and therefore should
 # be removed so that they're not accidentally used when testing changes that

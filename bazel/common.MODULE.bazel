@@ -78,6 +78,8 @@ single_version_override(
     module_name = "rules_pycross",
     patch_strip = 1,
     patches = [
+        # https://github.com/jvolkman/rules_pycross/pull/219
+        "//bazel/public-patches:rules_pycross_exports.patch",
         # TODO: Remove when 3.8 is no longer pulled in transitively
         "//bazel/public-patches:rules_pycross_versions.patch",
     ],
@@ -108,6 +110,8 @@ single_version_override(
         "//bazel/public-patches:grpc-no-macos-x86.patch",
         # TODO: Drop when logspew is fixed
         "//bazel/public-patches:grpc-warnings.patch",
+        # TODO: Drop when this is in a release: https://github.com/grpc/grpc/commit/a1e64a2ed6a81c2f51b65c4d28b265db5892dfec
+        "//bazel/public-patches:grpc-loads.patch",
     ],
     version = "1.76.0.bcr.1",
 )
