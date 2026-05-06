@@ -85,45 +85,6 @@ class KVCacheBuffer:
                     "Corresponding values and scales must be either both pinned or both non-pinned"
                 )
 
-    def allocate_host_offload_buffer(
-        self, total_num_host_pages: int
-    ) -> KVCacheBuffer:
-        """Allocates a KVCacheBuffer for host offloading.
-
-        The allocated buffer will have the same characteristics as the original
-        buffer, apart from the total_num_pages and the location. The host offload
-        buffer will be allocated on DevicePinnedBuffer for fast transfer speeds.
-        """
-        if any(
-            buffer.device.is_host or isinstance(buffer, DevicePinnedBuffer)
-            for buffer in self.all_buffers
-        ):
-            raise ValueError(
-                "KVCacheBuffer is on the CPU. Unable to allocate host offload buffer for already-on-CPU buffers."
-            )
-
-        return KVCacheBuffer(
-            total_num_pages=self.total_num_pages,
-            values=[
-                DevicePinnedBuffer(
-                    shape=[total_num_host_pages, *value.shape[1:]],
-                    dtype=value.dtype,
-                    device=value.device,
-                )
-                for value in self.values
-            ],
-            scales=[
-                DevicePinnedBuffer(
-                    shape=[total_num_host_pages, *scale.shape[1:]],
-                    dtype=scale.dtype,
-                    device=scale.device,
-                )
-                for scale in self.scales
-            ]
-            if self.scales is not None
-            else None,
-        )
-
     @property
     def all_buffers(self) -> list[Buffer]:
         """Returns all value and scale buffers in a single flat list.

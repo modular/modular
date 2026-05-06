@@ -133,27 +133,15 @@ class DiskTier:
         self,
         cache_dir: str,
         block_nbytes: int,
-        num_devices: int,
         max_disk_size_bytes: int,
         num_workers: int = 4,
-        has_scales: bool = False,
-        scale_block_nbytes: int = 0,
         use_direct_io: bool = False,
     ) -> None:
         self._cache_dir = Path(cache_dir)
         self._cache_dir.mkdir(parents=True, exist_ok=True)
 
         self._block_nbytes = block_nbytes
-        self._num_devices = num_devices
         self._max_disk_size_bytes = max_disk_size_bytes
-        self._has_scales = has_scales
-        self._scale_block_nbytes = scale_block_nbytes
-
-        # Total bytes per block on disk (all TP shards concatenated)
-        self._total_block_nbytes = block_nbytes * num_devices
-        self._total_scale_nbytes = (
-            scale_block_nbytes * num_devices if has_scales else 0
-        )
 
         # Optional O_DIRECT for bypassing OS page cache.
         self._use_direct_io = use_direct_io
@@ -168,7 +156,7 @@ class DiskTier:
             else:
                 stat = os.statvfs(str(self._cache_dir))
                 self._fs_block_size = stat.f_bsize
-                total = self._total_block_nbytes + self._total_scale_nbytes
+                total = self._block_nbytes
                 if total % self._fs_block_size != 0:
                     logger.warning(
                         "Block size (%d) not aligned to FS block size "
@@ -190,17 +178,15 @@ class DiskTier:
         # O_DIRECT's buffer alignment requirement.  Allocated lazily in
         # _get_aligned_buf() on first use per thread.
         self._aligned_buf_size = (
-            max(self._total_block_nbytes, self._total_scale_nbytes)
-            if self._use_direct_io
-            else 0
+            self._block_nbytes if self._use_direct_io else 0
         )
         self._tls = threading.local()
 
-        # LRU tracking: hash -> file size on disk
-        self._hash_to_size: OrderedDict[int, int] = OrderedDict()
-        self._total_bytes_used: int = 0
+        # LRU tracking: hashes that have been saved to disk
+        # The value for the dict is ignored.
+        self._saved_hashes: OrderedDict[int, None] = OrderedDict()
 
-        # Thread safety for _hash_to_size, _total_bytes_used, _pending_hashes
+        # Thread safety for _saved_hashes, _pending_hashes
         self._lock = threading.Lock()
 
         # Hashes with in-flight writes (not yet on disk but "claimed")
@@ -218,45 +204,42 @@ class DiskTier:
         self._load_existing()
 
     def contains(self, block_hash: int) -> bool:
-        """Check if a block hash exists on disk or has an in-flight write."""
+        """Check if a block hash is saved on disk and eligible for cache hit.
+
+        Note that block hashes that have active in-flight writes are not eligible
+        for cache hit from the disk tier. Instead, the caller should serve the cache
+        hit from the cpu tier instead."""
         with self._lock:
-            return (
-                block_hash in self._hash_to_size
-                or block_hash in self._pending_hashes
-            )
+            return block_hash in self._saved_hashes
 
     def read_block_async(
         self,
         block_hash: int,
-        dest: list[npt.NDArray[np.uint8]],
-        scale_dest: list[npt.NDArray[np.uint8]] | None = None,
+        dest: npt.NDArray[np.uint8],
     ) -> Future[None]:
-        """Submit an async read from disk into *dest* numpy views.
+        """Submit an async read from disk into *dest* numpy view.
 
         Args:
             block_hash: Hash of the block to read.
-            dest: Per-device numpy views into host tensors at the target bid.
-            scale_dest: Per-device scale numpy views, or None.
+            dest: Numpy view into host tensor at the target bid.
 
         Returns:
-            A Future that completes when dest (and scale_dest) are populated.
+            A Future that completes when dest is populated.
         """
         with self._lock:
-            self._hash_to_size.move_to_end(block_hash)  # LRU touch
+            self._saved_hashes.move_to_end(block_hash)  # LRU touch
 
         return self._executor.submit(
             PriorityExecutor.READ_PRIORITY,
             self._read_block_sync,
             block_hash,
             dest,
-            scale_dest,
         )
 
     def write_block_async(
         self,
         block_hash: int,
-        src: list[npt.NDArray[np.uint8]],
-        scale_src: list[npt.NDArray[np.uint8]] | None = None,
+        src: npt.NDArray[np.uint8],
     ) -> Future[None] | None:
         """Submit an async write to disk.
 
@@ -267,21 +250,20 @@ class DiskTier:
 
         Args:
             block_hash: Hash of the block to write.
-            src: Per-device numpy arrays (views or copies) of block data.
-            scale_src: Per-device scale numpy arrays, or None.
+            src: Numpy array of block data.
 
         Returns:
             A Future that completes when the write is done, or None.
         """
         with self._lock:
             if (
-                block_hash in self._hash_to_size
+                block_hash in self._saved_hashes
                 or block_hash in self._pending_hashes
             ):
                 return None  # already on disk or write in progress
 
             # Reserve space, evicting LRU blocks if needed
-            needed = self._total_block_nbytes + self._total_scale_nbytes
+            needed = self._block_nbytes
             self._evict_until_fits(needed)
 
             self._pending_hashes.add(block_hash)
@@ -291,7 +273,6 @@ class DiskTier:
             self._write_block_sync,
             block_hash,
             src,
-            scale_src,
         )
         self._write_futures.append(future)
         return future
@@ -299,14 +280,11 @@ class DiskTier:
     def remove(self, block_hash: int) -> None:
         """Remove a block from disk."""
         with self._lock:
-            if block_hash not in self._hash_to_size:
+            if block_hash not in self._saved_hashes:
                 return
-            size = self._hash_to_size.pop(block_hash)
-            self._total_bytes_used -= size
+            self._saved_hashes.pop(block_hash)
 
         self._hash_to_path(block_hash).unlink(missing_ok=True)
-        if self._has_scales:
-            self._scale_path(block_hash).unlink(missing_ok=True)
 
     def wait_for_writes(self) -> None:
         """Block until all pending async writes complete."""
@@ -323,8 +301,7 @@ class DiskTier:
     def reset(self) -> None:
         """Clear all blocks from disk."""
         with self._lock:
-            self._hash_to_size.clear()
-            self._total_bytes_used = 0
+            self._saved_hashes.clear()
             self._pending_hashes.clear()
         for path in self._cache_dir.glob("*.bin"):
             path.unlink(missing_ok=True)
@@ -336,56 +313,30 @@ class DiskTier:
     def _read_block_sync(
         self,
         block_hash: int,
-        dest: list[npt.NDArray[np.uint8]],
-        scale_dest: list[npt.NDArray[np.uint8]] | None,
+        dest: npt.NDArray[np.uint8],
     ) -> None:
         path = self._hash_to_path(block_hash)
         if self._use_direct_io:
             self._read_file_direct(path, dest)
         else:
             with open(path, "rb") as f:
-                for arr in dest:
-                    f.readinto(arr)  # type: ignore[arg-type]
-
-        if self._has_scales and scale_dest is not None:
-            scale_path = self._scale_path(block_hash)
-            if self._use_direct_io:
-                self._read_file_direct(scale_path, scale_dest)
-            else:
-                with open(scale_path, "rb") as f:
-                    for arr in scale_dest:
-                        f.readinto(arr)  # type: ignore[arg-type]
+                f.readinto(dest)  # type: ignore[arg-type]
 
     def _write_block_sync(
         self,
         block_hash: int,
-        src: list[npt.NDArray[np.uint8]],
-        scale_src: list[npt.NDArray[np.uint8]] | None,
+        src: npt.NDArray[np.uint8],
     ) -> None:
         path = self._hash_to_path(block_hash)
         if self._use_direct_io:
             self._write_file_direct(path, src)
         else:
             with open(path, "wb") as f:
-                for arr in src:
-                    f.write(arr.tobytes())
-
-        total_size = self._total_block_nbytes
-
-        if self._has_scales and scale_src is not None:
-            scale_path = self._scale_path(block_hash)
-            if self._use_direct_io:
-                self._write_file_direct(scale_path, scale_src)
-            else:
-                with open(scale_path, "wb") as f:
-                    for arr in scale_src:
-                        f.write(arr.tobytes())
-            total_size += self._total_scale_nbytes
+                f.write(src.tobytes())
 
         with self._lock:
             self._pending_hashes.discard(block_hash)
-            self._hash_to_size[block_hash] = total_size
-            self._total_bytes_used += total_size
+            self._saved_hashes[block_hash] = None
             self._writes_since_metadata_save += 1
             should_save = (
                 self._writes_since_metadata_save >= self._metadata_save_interval
@@ -413,18 +364,15 @@ class DiskTier:
         return buf
 
     def _write_file_direct(
-        self, path: Path, arrays: list[npt.NDArray[np.uint8]]
+        self, path: Path, src: npt.NDArray[np.uint8]
     ) -> None:
-        """Write *arrays* to *path* using O_DIRECT (bypass OS page cache).
+        """Write src to path using O_DIRECT (bypass OS page cache).
 
-        Concatenates all arrays into the pre-allocated page-aligned staging
-        buffer, then issues a single ``os.write()`` via a ``memoryview``
-        slice — one syscall, aligned pointer, no per-call allocation.
+        Issues a single ``os.write()`` via a ``memoryview``slice.
         """
         buf = self._get_aligned_buf()
         buf.seek(0)
-        for arr in arrays:
-            buf.write(arr.tobytes())
+        buf.write(src.tobytes())
         total = buf.tell()
 
         fd = os.open(
@@ -440,42 +388,32 @@ class DiskTier:
             os.close(fd)
 
     def _read_file_direct(
-        self, path: Path, arrays: list[npt.NDArray[np.uint8]]
+        self, path: Path, array: npt.NDArray[np.uint8]
     ) -> None:
-        """Read into *arrays* from *path* using O_DIRECT.
+        """Read into *array* from *path* using O_DIRECT.
 
-        Single ``os.read()`` into the pre-allocated page-aligned buffer,
-        then scatter into the target numpy arrays — one syscall, no
-        per-call allocation.
+        Single ``os.read()`` into the pre-allocated page-aligned buffer.
         """
-        total = sum(a.nbytes for a in arrays)
+        nbytes = array.nbytes
         buf = self._get_aligned_buf()
 
         fd = os.open(str(path), os.O_RDONLY | os.O_DIRECT)
         try:
             # Read the whole file in one aligned read.
-            n = os.readv(fd, [memoryview(buf)[:total]])
-            if n != total:
-                raise OSError(f"Short O_DIRECT read: got {n}, expected {total}")
+            n = os.readv(fd, [memoryview(buf)[:nbytes]])
+            if n != nbytes:
+                raise OSError(
+                    f"Short O_DIRECT read: got {n}, expected {nbytes}"
+                )
         finally:
             os.close(fd)
 
-        # Scatter the staging buffer into destination arrays.
-        offset = 0
-        for arr in arrays:
-            nbytes = arr.nbytes
-            arr.flat[:] = np.frombuffer(
-                buf[offset : offset + nbytes], dtype=arr.dtype
-            )
-            offset += nbytes
+        array.flat[:] = np.frombuffer(buf[:nbytes], dtype=array.dtype)
 
     # -- file paths --
 
     def _hash_to_path(self, block_hash: int) -> Path:
         return self._cache_dir / f"{block_hash:016x}.bin"
-
-    def _scale_path(self, block_hash: int) -> Path:
-        return self._cache_dir / f"{block_hash:016x}.scale.bin"
 
     # -- eviction --
 
@@ -484,15 +422,15 @@ class DiskTier:
 
         Caller must hold ``self._lock``.
         """
-        while self._total_bytes_used + needed_bytes > self._max_disk_size_bytes:
-            if not self._hash_to_size:
+        while (
+            len(self._saved_hashes) * self._block_nbytes + needed_bytes
+            > self._max_disk_size_bytes
+        ):
+            if not self._saved_hashes:
                 logger.warning("Disk cache full, no blocks to evict")
                 return
-            evicted_hash, evicted_size = self._hash_to_size.popitem(last=False)
-            self._total_bytes_used -= evicted_size
+            evicted_hash = self._saved_hashes.popitem(last=False)[0]
             self._hash_to_path(evicted_hash).unlink(missing_ok=True)
-            if self._has_scales:
-                self._scale_path(evicted_hash).unlink(missing_ok=True)
 
     # -- persistence --
 
@@ -505,8 +443,7 @@ class DiskTier:
         with self._lock:
             meta = {
                 "block_nbytes": self._block_nbytes,
-                "num_devices": self._num_devices,
-                "hashes": list(self._hash_to_size.keys()),
+                "hashes": list(self._saved_hashes.keys()),
             }
         tmp_path = self._cache_dir / "_metadata.json.tmp"
         final_path = self._cache_dir / "_metadata.json"
@@ -526,10 +463,7 @@ class DiskTier:
             self.reset()
             return
 
-        if (
-            meta.get("block_nbytes") != self._block_nbytes
-            or meta.get("num_devices") != self._num_devices
-        ):
+        if meta.get("block_nbytes") != self._block_nbytes:
             logger.info("Disk cache config mismatch, clearing stale cache")
             self.reset()
             return
@@ -537,15 +471,13 @@ class DiskTier:
         for h in meta.get("hashes", []):
             path = self._hash_to_path(h)
             if path.exists():
-                file_size = path.stat().st_size
-                self._hash_to_size[h] = file_size
-                self._total_bytes_used += file_size
+                self._saved_hashes[h] = None
 
-        if self._hash_to_size:
+        if self._saved_hashes:
             logger.info(
                 "Disk cache warm start: loaded %d blocks (%.1f GB) from %s",
-                len(self._hash_to_size),
-                self._total_bytes_used / (1024**3),
+                len(self._saved_hashes),
+                len(self._saved_hashes) * self._block_nbytes / (1024**3),
                 self._cache_dir,
             )
         else:

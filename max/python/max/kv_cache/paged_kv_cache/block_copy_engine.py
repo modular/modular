@@ -15,8 +15,13 @@
 
 from __future__ import annotations
 
-from max.driver import DeviceStream
-from max.nn.kv_cache.cache_params import KVCacheBuffer
+from max.driver import Buffer, DevicePinnedBuffer, DeviceStream
+from max.dtype import DType
+
+
+def _bytes_per_page(buffer: Buffer) -> int:
+    num_pages = buffer.shape[0]
+    return buffer.num_elements * buffer.dtype.size_in_bytes // num_pages
 
 
 class BlockOffloadEngine:
@@ -30,49 +35,60 @@ class BlockOffloadEngine:
     """
 
     def __init__(
-        self, total_num_host_blocks: int, device_buffer: KVCacheBuffer
+        self, total_num_host_blocks: int, device_buffers: list[Buffer]
     ) -> None:
-        self.device_buffer = device_buffer
-        self.host_buffer = device_buffer.allocate_host_offload_buffer(
-            total_num_host_blocks
+        num_device_pages = device_buffers[0].shape[0]
+        self.device_buffers = [
+            buffer.view(
+                dtype=DType.uint8,
+                shape=[num_device_pages, _bytes_per_page(buffer)],
+            )
+            for buffer in device_buffers
+        ]
+        gpu0 = device_buffers[0].device
+        if gpu0.is_host:
+            raise ValueError(
+                "KVCacheBuffer is on the CPU. Unable to allocate host"
+                " offload buffer for already-on-CPU buffers."
+            )
+        bytes_per_page = sum(
+            _bytes_per_page(buffer) for buffer in device_buffers
         )
-
+        self.host_buffer = DevicePinnedBuffer(
+            shape=[total_num_host_blocks, bytes_per_page],
+            dtype=DType.uint8,
+            device=gpu0,
+        )
         self.main_streams: dict[int, DeviceStream] = {
             buffer.device.id: buffer.device.default_stream
-            for buffer in device_buffer.all_buffers
+            for buffer in self.device_buffers
         }
         self.d2h_auxiliary_streams: dict[int, DeviceStream] = {
             buffer.device.id: DeviceStream(buffer.device)
-            for buffer in device_buffer.all_buffers
+            for buffer in self.device_buffers
         }
 
     def memcpy_h2d(self, dst: int, src: int) -> None:
         """Copies a block from host to device(s)."""
         # Copy block from host to each of the devices
-        for device_tensor, host_tensor in zip(
-            self.device_buffer.all_buffers,
-            self.host_buffer.all_buffers,
-            strict=True,
-        ):
-            device_tensor[dst, :, :, :, :, :].inplace_copy_from(
-                host_tensor[src, :, :, :, :, :]
-            )
+        offset = 0
+        for device_buffer in self.device_buffers:
+            bytes_per_page = device_buffer.shape[1]
+            dst_block = device_buffer[dst, :]
+            src_block = self.host_buffer[src, offset : offset + bytes_per_page]
+            dst_block.inplace_copy_from(src_block)
+            offset += bytes_per_page
 
     def memcpy_d2h(self, dst: int, src: int) -> None:
         """Copies a block from device(s) to host."""
         # Copy the data from one device to the host.
-        for device_buffer, host_buffer in zip(
-            self.device_buffer.all_buffers,
-            self.host_buffer.all_buffers,
-            strict=True,
-        ):
-            src_block = device_buffer[src, :, :, :, :, :]
-            dst_block = host_buffer[dst, :, :, :, :, :]
-
-            device_id = device_buffer.device.id
-            dst_block = dst_block.to(self.d2h_auxiliary_streams[device_id])
-
-            dst_block.inplace_copy_from(src_block)
+        offset = 0
+        for device_buffer in self.device_buffers:
+            bytes_per_page = device_buffer.shape[1]
+            host_block = self.host_buffer[dst, offset : offset + bytes_per_page]
+            host_block.to(self.d2h_auxiliary_streams[device_buffer.device.id])
+            host_block.inplace_copy_from(device_buffer[src, :])
+            offset += bytes_per_page
 
     def wait_for_completion(self) -> None:
         """Synchronize main stream with the auxiliary stream.

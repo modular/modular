@@ -90,8 +90,7 @@ def test_connector_name() -> None:
 def test_host_tensors_are_pinned() -> None:
     connector = create_tiered_connector()
     assert connector._host_buffer
-    for tensor in connector._host_buffer.all_buffers:
-        assert tensor.pinned, "Host tensors should be pinned memory"
+    assert connector._host_buffer.pinned, "Host buffer should be pinned memory"
     connector.shutdown()
 
 
