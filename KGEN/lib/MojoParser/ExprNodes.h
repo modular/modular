@@ -193,6 +193,8 @@ struct TStringExprNode final : public ExprNode {
 
   SMLoc getLoc() const override { return startLoc; }
   SourceRange getRange() const override;
+  void walkSubExprs(
+      llvm::function_ref<void(const ExprNode *)> callback) const override;
   AnyValue emitIR(ExprDest &dest, IREmitter &emitter) const override;
   void print(mlir::raw_indented_ostream &os) const override;
 };
@@ -260,6 +262,8 @@ struct AttributeRefNode final : public LValueCapableExprNode, Identifier {
   SourceRange getRange() const override {
     return {base->getRangeStart(), getIdentifierLoc()};
   }
+  void walkSubExprs(
+      llvm::function_ref<void(const ExprNode *)> callback) const override;
   ELVIITResult emitLCVIR(ExprDest &dest, IREmitter &emitter,
                          bool isSpeculative) const override;
   void print(mlir::raw_indented_ostream &os) const override;
@@ -348,6 +352,8 @@ struct CallNode final : public ExprNode {
     return {callee->getRangeStart(), rparenLoc};
   }
   SourceRange getParenRange() const { return {lparenLoc, rparenLoc}; }
+  void walkSubExprs(
+      llvm::function_ref<void(const ExprNode *)> callback) const override;
   AnyValue emitIR(ExprDest &dest, IREmitter &emitter) const override;
   void print(mlir::raw_indented_ostream &os) const override;
 };
@@ -373,6 +379,8 @@ struct SubscriptNode final : public LValueCapableExprNode {
   /// Return a source range from '[' to ']'.
   SourceRange getIndexRange() const { return {lsquareLoc, rsquareLoc}; }
 
+  void walkSubExprs(
+      llvm::function_ref<void(const ExprNode *)> callback) const override;
   ELVIITResult emitLCVIR(ExprDest &dest, IREmitter &emitter,
                          bool isSpeculative) const override;
   void print(mlir::raw_indented_ostream &os) const override;
@@ -412,6 +420,8 @@ struct SliceLiteralNode final : public ExprNode {
     return {startLoc, colon1Loc};
   }
 
+  void walkSubExprs(
+      llvm::function_ref<void(const ExprNode *)> callback) const override;
   AnyValue emitIR(ExprDest &dest, IREmitter &emitter) const override;
   void print(mlir::raw_indented_ostream &os) const override;
 };
@@ -428,6 +438,8 @@ struct ParenNode final : public ExprNode {
   static bool classof(const ExprNode *node) { return node->kind == kParen; }
   SMLoc getLoc() const override { return lparenLoc; }
   SourceRange getRange() const override { return {lparenLoc, rparenLoc}; }
+  void walkSubExprs(
+      llvm::function_ref<void(const ExprNode *)> callback) const override;
   AnyValue emitIR(ExprDest &dest, IREmitter &emitter) const override;
   LogicalResult emitDestructuringPValue(PValue value,
                                         IREmitter &emitter) const override;
@@ -460,6 +472,8 @@ struct TupleNode final : public LValueCapableExprNode {
       return {firstCommaLoc, firstCommaLoc};
     return {exprs.front()->getRangeStart(), exprs.back()->getRangeEnd()};
   }
+  void walkSubExprs(
+      llvm::function_ref<void(const ExprNode *)> callback) const override;
   ELVIITResult emitLCVIR(ExprDest &dest, IREmitter &emitter,
                          bool isSpeculative) const override;
   LogicalResult emitDestructuringPValue(PValue value,
@@ -483,6 +497,8 @@ struct ListLiteralNode final : public ExprNode {
   }
   SMLoc getLoc() const override { return lsquareLoc; }
   SourceRange getRange() const override { return {lsquareLoc, rsquareLoc}; }
+  void walkSubExprs(
+      llvm::function_ref<void(const ExprNode *)> callback) const override;
   AnyValue emitIR(ExprDest &dest, IREmitter &emitter) const override;
   void print(mlir::raw_indented_ostream &os) const override;
 };
@@ -525,6 +541,8 @@ struct ComprehensionNode final : public ExprNode {
   }
   SMLoc getLoc() const override { return lsquareLoc; }
   SourceRange getRange() const override { return {lsquareLoc, rsquareLoc}; }
+  void walkSubExprs(
+      llvm::function_ref<void(const ExprNode *)> callback) const override;
   AnyValue emitIR(ExprDest &dest, IREmitter &emitter) const override;
   void print(mlir::raw_indented_ostream &os) const override;
 };
@@ -549,6 +567,8 @@ struct DictLiteralNode final : public ExprNode {
   SMLoc getLoc() const override { return lbraceLoc; }
   SourceRange getRange() const override { return {lbraceLoc, rbraceLoc}; }
 
+  void walkSubExprs(
+      llvm::function_ref<void(const ExprNode *)> callback) const override;
   AnyValue emitIR(ExprDest &dest, IREmitter &emitter) const override;
   void print(mlir::raw_indented_ostream &os) const override;
 };
@@ -572,6 +592,8 @@ struct SetInitLiteralNode final : public ExprNode {
   SMLoc getLoc() const override { return lbraceLoc; }
   SourceRange getRange() const override { return {lbraceLoc, rbraceLoc}; }
 
+  void walkSubExprs(
+      llvm::function_ref<void(const ExprNode *)> callback) const override;
   AnyValue emitIR(ExprDest &dest, IREmitter &emitter) const override;
   void print(mlir::raw_indented_ostream &os) const override;
 };
@@ -595,6 +617,8 @@ struct IfElseOpNode final : public ExprNode {
   SourceRange getRange() const override {
     return {trueExpr->getRangeStart(), falseExpr->getRangeEnd()};
   }
+  void walkSubExprs(
+      llvm::function_ref<void(const ExprNode *)> callback) const override;
   AnyValue emitIR(ExprDest &dest, IREmitter &emitter) const override;
   void print(mlir::raw_indented_ostream &os) const override;
 };
@@ -620,6 +644,8 @@ struct BinOpNode final : public ExprNode {
   SourceRange getRange() const override {
     return {lhs->getRangeStart(), rhs->getRangeEnd()};
   }
+  void walkSubExprs(
+      llvm::function_ref<void(const ExprNode *)> callback) const override;
   ELVIITResult emitLValueIfImplicitlyTyped(IREmitter &emitter,
                                            PatternDeclKind kind) const override;
   AnyValue emitIR(ExprDest &dest, IREmitter &emitter) const override;
@@ -647,6 +673,8 @@ struct UnaryOpNode final : public ExprNode {
     return isPostfix() ? SourceRange(subExpr->getRangeStart(), opLoc)
                        : SourceRange(opLoc, subExpr->getRangeEnd());
   }
+  void walkSubExprs(
+      llvm::function_ref<void(const ExprNode *)> callback) const override;
   AnyValue emitIR(ExprDest &dest, IREmitter &emitter) const override;
   ELVIITResult emitLValueIfImplicitlyTyped(IREmitter &emitter,
                                            PatternDeclKind kind) const override;
@@ -677,11 +705,17 @@ struct ChainedCmpOpNode final : public ExprNode {
   const ArrayRef<ExprNode::Kind> ops;
   const SMLoc opLoc;
 
+  static bool classof(const ExprNode *node) {
+    return node->kind == kChainedCmp;
+  }
+
   SMLoc getLoc() const override { return opLoc; }
   SourceRange getRange() const override {
     return {exprs.front()->getRangeStart(), exprs.back()->getRangeEnd()};
   }
 
+  void walkSubExprs(
+      llvm::function_ref<void(const ExprNode *)> callback) const override;
   AnyValue emitIR(ExprDest &dest, IREmitter &emitter) const override;
   void print(mlir::raw_indented_ostream &os) const override;
   RValue emitNextCmp(IREmitter &emitter, size_t opIdx, RValue lastCmp,
@@ -714,6 +748,8 @@ struct FunctionTypeNode final : public ExprNode {
   }
   SMLoc getLoc() const override { return baseLoc; }
   SourceRange getRange() const override { return {baseLoc, endLoc}; }
+  void walkSubExprs(
+      llvm::function_ref<void(const ExprNode *)> callback) const override;
   AnyValue emitIR(ExprDest &dest, IREmitter &emitter) const override;
   void print(mlir::raw_indented_ostream &os) const override;
 };
@@ -740,6 +776,8 @@ struct MagicFunctionNode final : public ExprNode {
   }
   SMLoc getLoc() const override { return baseLoc; }
   SourceRange getRange() const override { return {baseLoc, rparenLoc}; }
+  void walkSubExprs(
+      llvm::function_ref<void(const ExprNode *)> callback) const override;
   AnyValue emitIR(ExprDest &dest, IREmitter &emitter) const override;
   void print(mlir::raw_indented_ostream &os) const override;
 

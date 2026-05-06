@@ -537,6 +537,155 @@ bool ExprNode::isEmptyTuple() const {
   return false;
 }
 
+static void
+walkNullableSubExpr(const ExprNode *expr,
+                    llvm::function_ref<void(const ExprNode *)> callback) {
+  if (expr)
+    callback(expr);
+}
+
+static void walkParsedArgumentSubExprs(
+    const ParsedArgument &arg,
+    llvm::function_ref<void(const ExprNode *)> callback) {
+  walkNullableSubExpr(arg.typeExpr, callback);
+  walkNullableSubExpr(arg.initExpr, callback);
+  walkNullableSubExpr(arg.refOriginExpr, callback);
+  for (const ParsedConstraint &constraint : arg.constraints)
+    walkNullableSubExpr(constraint.propExpr, callback);
+}
+
+static void
+walkOperandSubExprs(ArrayRef<Operand> operands,
+                    llvm::function_ref<void(const ExprNode *)> callback) {
+  for (const Operand &operand : operands)
+    walkNullableSubExpr(operand.expr, callback);
+}
+
+void ExprNode::walkSubExprs(
+    llvm::function_ref<void(const ExprNode *)> callback) const {
+  (void)callback;
+}
+
+void TStringExprNode::walkSubExprs(
+    llvm::function_ref<void(const ExprNode *)> callback) const {
+  for (const Part &part : parts)
+    if (auto *interpolation = std::get_if<InterpolationPart>(&part))
+      walkNullableSubExpr(interpolation->expr, callback);
+}
+
+void AttributeRefNode::walkSubExprs(
+    llvm::function_ref<void(const ExprNode *)> callback) const {
+  walkNullableSubExpr(base, callback);
+}
+
+void CallNode::walkSubExprs(
+    llvm::function_ref<void(const ExprNode *)> callback) const {
+  walkNullableSubExpr(callee, callback);
+  walkOperandSubExprs(operands, callback);
+}
+
+void SubscriptNode::walkSubExprs(
+    llvm::function_ref<void(const ExprNode *)> callback) const {
+  walkNullableSubExpr(base, callback);
+  walkOperandSubExprs(operands, callback);
+}
+
+void SliceLiteralNode::walkSubExprs(
+    llvm::function_ref<void(const ExprNode *)> callback) const {
+  walkNullableSubExpr(lower, callback);
+  walkNullableSubExpr(upper, callback);
+  walkNullableSubExpr(stride, callback);
+}
+
+void ParenNode::walkSubExprs(
+    llvm::function_ref<void(const ExprNode *)> callback) const {
+  walkNullableSubExpr(subExpr, callback);
+}
+
+void TupleNode::walkSubExprs(
+    llvm::function_ref<void(const ExprNode *)> callback) const {
+  for (ExprNode *expr : exprs)
+    walkNullableSubExpr(expr, callback);
+}
+
+void ListLiteralNode::walkSubExprs(
+    llvm::function_ref<void(const ExprNode *)> callback) const {
+  for (ExprNode *expr : exprs)
+    walkNullableSubExpr(expr, callback);
+}
+
+void ComprehensionNode::walkSubExprs(
+    llvm::function_ref<void(const ExprNode *)> callback) const {
+  walkNullableSubExpr(expr, callback);
+  walkNullableSubExpr(valueExpr, callback);
+  for (const ComprehensionClause &clause : clauses) {
+    walkNullableSubExpr(clause.forPattern, callback);
+    walkNullableSubExpr(clause.expr, callback);
+  }
+}
+
+void DictLiteralNode::walkSubExprs(
+    llvm::function_ref<void(const ExprNode *)> callback) const {
+  for (auto [key, value] : values) {
+    walkNullableSubExpr(key, callback);
+    walkNullableSubExpr(value, callback);
+  }
+}
+
+void SetInitLiteralNode::walkSubExprs(
+    llvm::function_ref<void(const ExprNode *)> callback) const {
+  for (auto [key, value] : values) {
+    walkNullableSubExpr(key, callback);
+    walkNullableSubExpr(value, callback);
+  }
+}
+
+void IfElseOpNode::walkSubExprs(
+    llvm::function_ref<void(const ExprNode *)> callback) const {
+  walkNullableSubExpr(trueExpr, callback);
+  walkNullableSubExpr(condExpr, callback);
+  walkNullableSubExpr(falseExpr, callback);
+}
+
+void BinOpNode::walkSubExprs(
+    llvm::function_ref<void(const ExprNode *)> callback) const {
+  walkNullableSubExpr(lhs, callback);
+  walkNullableSubExpr(rhs, callback);
+}
+
+void UnaryOpNode::walkSubExprs(
+    llvm::function_ref<void(const ExprNode *)> callback) const {
+  walkNullableSubExpr(subExpr, callback);
+}
+
+void ChainedCmpOpNode::walkSubExprs(
+    llvm::function_ref<void(const ExprNode *)> callback) const {
+  for (ExprNode *expr : exprs)
+    walkNullableSubExpr(expr, callback);
+}
+
+void FunctionTypeNode::walkSubExprs(
+    llvm::function_ref<void(const ExprNode *)> callback) const {
+  for (const ParsedArgument &arg : parsedParams)
+    walkParsedArgumentSubExprs(arg, callback);
+  for (const ParsedArgument &arg : parsedArgs)
+    walkParsedArgumentSubExprs(arg, callback);
+  walkParsedArgumentSubExprs(resultArg, callback);
+  walkNullableSubExpr(thrownTypeExpr, callback);
+  walkNullableSubExpr(originExpr, callback);
+}
+
+void MagicFunctionNode::walkSubExprs(
+    llvm::function_ref<void(const ExprNode *)> callback) const {
+  for (ExprNode *expr : subExprs)
+    walkNullableSubExpr(expr, callback);
+}
+
+void ExprNode::walk(llvm::function_ref<void(const ExprNode *)> callback) const {
+  callback(this);
+  walkSubExprs([&](const ExprNode *subExpr) { subExpr->walk(callback); });
+}
+
 //===----------------------------------------------------------------------===//
 // ExprNode implementations
 //===----------------------------------------------------------------------===//
