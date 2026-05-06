@@ -1,7 +1,7 @@
 # Code examples and tests for "deprecated" decorator
 
 This directory contains Code examples and tests for the
-[Deprecated](../../../../manual/decorators/deprecated.mdx)
+[Deprecated](../../../../reference/decorators/deprecated.mdx)
 section of the Mojo Manual.
 
 Contents:

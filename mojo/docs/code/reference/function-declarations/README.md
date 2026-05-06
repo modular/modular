@@ -1,8 +1,9 @@
-# Code examples and tests for inline MLIR
+# Code examples and tests for function declarations reference
 
 This directory contains Code examples and tests for the
-[inline MLIR](../../../reference/mojo-inline-mlir.mdx) section of
-the Mojo Manual.
+[Function declarations
+reference](../../../reference/function-declarations.mdx)
+section of the Mojo Manual.
 
 Contents:
 

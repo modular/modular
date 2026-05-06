@@ -227,7 +227,7 @@ struct ValidationError(Copyable, Writable):
         writer.write("ValidationError(", self.field, "): ", self.reason)
 ```
 
-The [`@fieldwise_init`](/docs/manual/decorators/fieldwise-init) decorator
+The [`@fieldwise_init`](/docs/reference/decorators/fieldwise-init) decorator
 generates an `__init__()` method with an argument for each field, so you
 can construct errors like `ValidationError("username", "too short")` or with
 keyword arguments like `ValidationError(field="username", reason="too short")`.

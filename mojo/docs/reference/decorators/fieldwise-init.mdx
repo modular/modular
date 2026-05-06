@@ -39,7 +39,7 @@ lifecycle methods, read [Life of a value](/docs/manual/lifecycle/life).
 Implicit conversion lets you pass a value and lets a type build itself, without
 calling the constructor directly. This keeps caller code simple and clean. You
 enable this by marking an initializer as
-[`@implicit`](/docs/manual/decorators/implicit) or using
+[`@implicit`](/docs/reference/decorators/implicit) or using
 `@fieldwise_init("implicit")` to create one for you.
 
 For example, if `MyStruct` has an initializer that accepts an `Int`, you can
@@ -68,7 +68,7 @@ You can declare implicit initializers in two ways:
 - Use `@fieldwise_init("implicit")` to auto-create one, as long as your
   type has exactly _one_ instance field. This limit applies to the type itself,
   not just to initializer arguments.
-- Add [`@implicit`](/docs/manual/decorators/implicit) to an initializer you
+- Add [`@implicit`](/docs/reference/decorators/implicit) to an initializer you
   write. The initializer can accept only one argument.
 
 :::note

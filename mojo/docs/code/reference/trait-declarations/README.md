@@ -1,9 +1,8 @@
-# Code examples and tests for struct reference
+# Code examples and tests for traits reference
 
 This directory contains Code examples and tests for the
-[Mojo struct declarations
-reference](../../../reference/mojo-struct-declarations.mdx) section
-of the Mojo Manual.
+[Mojo traits reference](../../../reference/trait-declarations.mdx)
+section of the Mojo Manual.
 
 Contents:
 
