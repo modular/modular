@@ -112,7 +112,14 @@ struct CPUDeviceOptions {
   bool mainWillDonate = true;
   // TODO arekay - revert to time units
   //  std::chrono::microseconds threadBusyWaitTime = 200us;
-  size_t threadBusyWaitTime = 200;
+  size_t threadBusyWaitTime = []() -> size_t {
+    if (auto env = llvm::sys::Process::GetEnv("MODULAR_THREAD_BUSY_WAIT_US")) {
+      size_t value;
+      if (!llvm::StringRef(*env).getAsInteger(10, value))
+        return value;
+    }
+    return 200;
+  }();
   // Affinity is disabled by default due to performance issues with multiple
   // processes. Can be enabled by MODULAR_ENABLE_AFFINITY environment variable,
   // which in turn can be overridden by --cpu-affinity CLI flag.
