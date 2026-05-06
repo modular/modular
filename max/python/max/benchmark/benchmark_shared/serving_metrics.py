@@ -374,7 +374,6 @@ def calculate_metrics(
         input_lens=[o.prompt_len for o in outputs],
         output_lens=actual_output_lens,
         ttfts=[o.ttft for o in outputs],
-        itls=[o.itl for o in outputs],
         errors=[o.error for o in outputs],
         request_submit_times=[o.request_submit_time for o in outputs],
         request_complete_times=[o.request_complete_time for o in outputs],

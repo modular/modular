@@ -531,7 +531,6 @@ class BenchmarkMetrics(BaseBenchmarkMetrics):
     input_lens: list[int] = Field(default_factory=list)
     output_lens: list[int] = Field(default_factory=list)
     ttfts: list[float] = Field(default_factory=list)
-    itls: list[list[float]] = Field(default_factory=list)
     errors: list[str] = Field(default_factory=list)
     request_submit_times: list[float | None] = Field(default_factory=list)
     request_complete_times: list[float | None] = Field(default_factory=list)
@@ -608,7 +607,6 @@ class BenchmarkMetrics(BaseBenchmarkMetrics):
         d["input_lens"] = self.input_lens
         d["output_lens"] = self.output_lens
         d["ttfts"] = self.ttfts
-        d["itls"] = self.itls
         d["errors"] = self.errors
         d["request_submit_times"] = self.request_submit_times
         d["request_complete_times"] = self.request_complete_times
