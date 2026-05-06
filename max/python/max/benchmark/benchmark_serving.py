@@ -1129,6 +1129,55 @@ def _build_session(args: ServingBenchmarkConfig) -> BenchmarkSession:
     )
 
 
+def _run_dry_run_sweep(
+    args: ServingBenchmarkConfig,
+    session: BenchmarkSession,
+    concurrency_range: list[int | None],
+    request_rate_range: list[float],
+) -> Iterator[BenchmarkRunResult]:
+    if not args.print_workload_stats:
+        print_workload_stats(session.samples)
+    if isinstance(session.samples, ChatSamples) and args.warmup_to_steady_state:
+        rng = np.random.default_rng(args.seed or 0)
+        for mc in concurrency_range:
+            warmup_count = (
+                args.max_concurrent_conversations
+                or mc
+                or len(session.samples.chat_sessions)
+            )
+            print_section(
+                title=f" Warmup sampling preview (max_concurrency={mc}) ",
+                char="=",
+            )
+            _, report = pick_warmup_population(
+                session.samples.chat_sessions,
+                warmup_count,
+                warmup_to_steady_state=True,
+                warmup_oversample_factor=args.warmup_oversample_factor,
+                main_pool_target=args.num_chat_sessions or 0,
+                rng=rng,
+            )
+            if report is not None:
+                log_warmup_sampling_report(report)
+    for mc in concurrency_range:
+        for rr in request_rate_range:
+            print(
+                f"Dry run: model={args.model}"
+                f" host={args.host} port={args.port}"
+                f" endpoint={args.endpoint}"
+                f" max_concurrency={mc}"
+                f" request_rate={rr}"
+                f" num_prompts={args.num_prompts}"
+                f" max_benchmark_duration_s="
+                f"{args.max_benchmark_duration_s}"
+            )
+            yield BenchmarkRunResult(
+                max_concurrency=mc,
+                request_rate=rr,
+                num_prompts=args.num_prompts or 0,
+            )
+
+
 def main_with_parsed_args(
     args: ServingBenchmarkConfig,
 ) -> Iterator[BenchmarkRunResult]:
@@ -1167,59 +1216,16 @@ def main_with_parsed_args(
     if args.print_inputs_and_outputs:
         print_input_prompts(session.samples)
 
-    # Samples are ready; wait for the server before issuing any requests.
-    if not args.dry_run:
-        wait_for_server_ready(
-            args.host, args.port, timeout_s=args.server_ready_timeout_s
-        )
-
-    # ---- Dry run: build dataset + show warmup-sampling preview ----
     if args.dry_run:
-        if not args.print_workload_stats:
-            print_workload_stats(session.samples)
-        if (
-            isinstance(session.samples, ChatSamples)
-            and args.warmup_to_steady_state
-        ):
-            rng = np.random.default_rng(args.seed or 0)
-            for mc in concurrency_range:
-                warmup_count = (
-                    args.max_concurrent_conversations
-                    or mc
-                    or len(session.samples.chat_sessions)
-                )
-                print_section(
-                    title=f" Warmup sampling preview (max_concurrency={mc}) ",
-                    char="=",
-                )
-                _, report = pick_warmup_population(
-                    session.samples.chat_sessions,
-                    warmup_count,
-                    warmup_to_steady_state=True,
-                    warmup_oversample_factor=args.warmup_oversample_factor,
-                    main_pool_target=args.num_chat_sessions or 0,
-                    rng=rng,
-                )
-                if report is not None:
-                    log_warmup_sampling_report(report)
-        for mc in concurrency_range:
-            for rr in request_rate_range:
-                print(
-                    f"Dry run: model={args.model}"
-                    f" host={args.host} port={args.port}"
-                    f" endpoint={args.endpoint}"
-                    f" max_concurrency={mc}"
-                    f" request_rate={rr}"
-                    f" num_prompts={args.num_prompts}"
-                    f" max_benchmark_duration_s="
-                    f"{args.max_benchmark_duration_s}"
-                )
-                yield BenchmarkRunResult(
-                    max_concurrency=mc,
-                    request_rate=rr,
-                    num_prompts=args.num_prompts or 0,
-                )
+        yield from _run_dry_run_sweep(
+            args, session, concurrency_range, request_rate_range
+        )
         return
+
+    # Samples are ready; wait for the server before issuing any requests.
+    wait_for_server_ready(
+        args.host, args.port, timeout_s=args.server_ready_timeout_s
+    )
 
     # ---- Sweep loop ----
     for mc in concurrency_range:
