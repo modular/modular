@@ -238,14 +238,11 @@ void PogListAttr::printGenerator(AsmPrinter &p, GeneratorType generator) const {
   if (auto sig = ::dyn_cast<FnType>(generator.getBody())) {
     // Special case for FnType Generators: Skip the empty angle brackets, and
     // print the FnType without any additional wrapper.
-    if (!paramTypes.empty())
-      LIT::printOptionalParamSignature(p, paramTypes, *this);
+    LIT::printOptionalParamSignature(p, paramTypes, *this,
+                                     /*omitEmptyAngleBrackets=*/true);
     printFnType(p, sig);
   } else {
-    if (paramTypes.empty())
-      p << "<>";
-    else
-      LIT::printOptionalParamSignature(p, paramTypes, *this);
+    LIT::printOptionalParamSignature(p, paramTypes, *this);
     printKGENType(p, generator.getBody());
   }
   p << '>';
