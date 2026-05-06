@@ -27,7 +27,6 @@ family.
    pipelines.architectures.eagle_llama3
    pipelines.architectures.exaone
    pipelines.architectures.exaone_modulev3
-   pipelines.architectures.flux1_modulev3
    pipelines.architectures.flux2
    pipelines.architectures.flux2_modulev3
    pipelines.architectures.gemma3
@@ -146,7 +145,6 @@ Image generation
 .. autosummary::
    :nosignatures:
 
-   ~max.pipelines.architectures.flux1_modulev3
    ~max.pipelines.architectures.flux2
    ~max.pipelines.architectures.flux2_modulev3
    ~max.pipelines.architectures.qwen_image

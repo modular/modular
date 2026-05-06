@@ -20,7 +20,6 @@ import pytest
 from max.interfaces import TokenBuffer
 from max.pipelines.core import (
     PixelContext,
-    validate_flux1_max_pixel_area,
     validate_flux2_max_pixel_area,
     validate_wan_max_pixel_area,
 )
@@ -33,21 +32,6 @@ def _make_context(width: int, height: int) -> PixelContext:
         width=width,
         height=height,
     )
-
-
-class TestFlux1PixelAreaValidator:
-    def test_at_max_passes(self) -> None:
-        validate_flux1_max_pixel_area(_make_context(1024, 1024))
-
-    def test_below_max_passes(self) -> None:
-        validate_flux1_max_pixel_area(_make_context(512, 512))
-
-    def test_above_max_raises(self) -> None:
-        with pytest.raises(InputError, match="FLUX1") as excinfo:
-            validate_flux1_max_pixel_area(_make_context(2048, 2048))
-        msg = str(excinfo.value)
-        assert "2048x2048" in msg
-        assert "1048576" in msg
 
 
 class TestFlux2PixelAreaValidator:

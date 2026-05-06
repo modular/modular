@@ -109,7 +109,6 @@ class BaseAutoencoderModel(ComponentModel):
             self.model = autoencoder.decoder.compile(
                 *autoencoder.decoder.input_types(), weights=decoder_state_dict
             )
-            # Flux.1 does not have an encoder.
             if encoder_state_dict and hasattr(autoencoder, "encoder"):
                 autoencoder.encoder.to(self.devices[0])
                 self.encoder_model = autoencoder.encoder.compile(

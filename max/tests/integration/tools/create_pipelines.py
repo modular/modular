@@ -38,9 +38,6 @@ from internvl import torch_utils as internvl_torch_utils
 from max import driver, pipelines
 from max.interfaces import PipelineTask, PipelineTokenizer
 from max.pipelines import TextGenerationPipelineInterface
-from max.pipelines.architectures.flux1_modulev3.pipeline_flux import (
-    FluxPipeline,
-)
 from max.pipelines.architectures.flux2_modulev3.pipeline_flux2 import (
     Flux2Pipeline,
 )
@@ -1184,7 +1181,7 @@ class ImageGenerationOracle(PipelineOracle):
 
     def __init__(
         self,
-        model_path: str = "black-forest-labs/FLUX.1-dev",
+        model_path: str = "black-forest-labs/FLUX.2-dev-t2i-bfloat16-v2",
         num_steps: int = 50,
         requests: list[Any] = test_data.DEFAULT_PIXEL_GENERATION,
         config_params: dict[str, Any] = {},  # noqa: B006
@@ -1229,35 +1226,21 @@ class ImageGenerationOracle(PipelineOracle):
             ),
         )
 
-        if self.model_path.startswith("black-forest-labs/FLUX.2"):
-            pipeline_model_cls = (
-                Flux2KleinPipeline
-                if self.model_path.startswith("black-forest-labs/FLUX.2-klein")
-                else Flux2Pipeline
-            )
-            tokenizer = PixelGenerationTokenizer(
-                model_path=self.model_path,
-                pipeline_config=config,
-                subfolder="tokenizer",
-                max_length=512,
-            )
-            pipeline = PixelGenerationPipeline[PixelContext](
-                pipeline_config=config,
-                pipeline_model=pipeline_model_cls,
-            )
-        else:
-            tokenizer = PixelGenerationTokenizer(
-                model_path=self.model_path,
-                pipeline_config=config,
-                subfolder="tokenizer",
-                max_length=77,
-                subfolder_2="tokenizer_2",
-                secondary_max_length=512,
-            )
-            pipeline = PixelGenerationPipeline[PixelContext](
-                pipeline_config=config,
-                pipeline_model=FluxPipeline,
-            )
+        pipeline_model_cls = (
+            Flux2KleinPipeline
+            if self.model_path.startswith("black-forest-labs/FLUX.2-klein")
+            else Flux2Pipeline
+        )
+        tokenizer = PixelGenerationTokenizer(
+            model_path=self.model_path,
+            pipeline_config=config,
+            subfolder="tokenizer",
+            max_length=512,
+        )
+        pipeline = PixelGenerationPipeline[PixelContext](
+            pipeline_config=config,
+            pipeline_model=pipeline_model_cls,
+        )
 
         return MaxPipelineAndTokenizer(
             pipeline=pipeline,  # type: ignore
@@ -1876,9 +1859,6 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
             "Convert the text to speech:<|TEXT_UNDERSTANDING_START|>In a hole in the ground there lived a hobbit.<|TEXT_UNDERSTANDING_END|>",
         ],
         use_cache=True,
-    ),
-    "black-forest-labs/FLUX.1-dev": ImageGenerationOracle(
-        "black-forest-labs/FLUX.1-dev"
     ),
     "black-forest-labs/FLUX.2-dev-t2i": ImageGenerationOracle(
         "black-forest-labs/FLUX.2-dev",

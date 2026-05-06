@@ -82,7 +82,7 @@ class AutoencoderKLFlux2Config(AutoencoderKLConfigBase):
     patch_size: tuple[int, int] = (2, 2)
     batch_norm_eps: float = 1e-4
     batch_norm_momentum: float = 0.1
-    latent_channels: int = 32  # Flux2 uses 32 channels, Flux1 uses 4
+    latent_channels: int = 32  # Flux2 uses 32 channels
 
     @staticmethod
     def generate(

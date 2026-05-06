@@ -55,7 +55,6 @@ Modules
    pipelines.architectures.eagle_llama3
    pipelines.architectures.exaone
    pipelines.architectures.exaone_modulev3
-   pipelines.architectures.flux1_modulev3
    pipelines.architectures.flux2
    pipelines.architectures.flux2_modulev3
    pipelines.architectures.gemma3

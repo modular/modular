@@ -146,8 +146,7 @@ class DenoisingCacheConfig(ConfigFileModel):
 class DenoisingCacheState:
     """Per-request mutable cache state for a single denoising stream.
 
-    One instance per stream (e.g. Flux1 true-CFG uses two: positive + negative).
-    Created fresh per execute() call.
+    One instance per stream. Created fresh per execute() call.
     """
 
     # FBCache state

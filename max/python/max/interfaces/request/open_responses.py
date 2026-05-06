@@ -1518,7 +1518,7 @@ class ResponseResource(BaseModel):
             >>>
             >>> # Convert to ResponseResource
             >>> response = ResponseResource.from_generation_output(
-            ...     gen_output, model="flux-1-schnell"
+            ...     gen_output, model="flux-2-dev-t2i-bfloat16-v2"
             ... )
         """
         if any(

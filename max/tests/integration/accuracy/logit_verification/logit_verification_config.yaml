@@ -1001,16 +1001,6 @@ logit_verification_pipelines:
 
   # ========== Pixel Generation Pipelines ==========
 
-  black-forest-labs/FLUX.1-dev-bfloat16:
-    pre_submit_agents: []
-    post_submit_agents: []
-    pipeline: "black-forest-labs/FLUX.1-dev"
-    compatible_with: [gpu]
-    encoding: bfloat16
-    tags: [nvidia-only, image-generation, manual]
-    ssim_threshold: 0.60
-    lpips_threshold: 0.35
-
   black-forest-labs/FLUX.2-dev-t2i-bfloat16-v2:
     pre_submit_agents: []
     post_submit_agents: [*b200_1x, *mi355_1x]

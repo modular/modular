@@ -43,7 +43,6 @@ from tag_filters import (
 logger = logging.getLogger(__name__)
 
 SKIP_MODELS: set[str] = {
-    "black-forest-labs/flux.1-dev",
     "black-forest-labs/flux.2-dev",
     "black-forest-labs/flux.2-klein-4b",
 }
