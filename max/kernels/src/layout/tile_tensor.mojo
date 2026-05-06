@@ -844,7 +844,7 @@ struct TileTensor[
             value: The SIMD vector to store.
         """
         self.ptr.unsafe_mut_cast[True]().store[
-            alignment=alignment, non_temporal=non_temporal
+            width=width, alignment=alignment, non_temporal=non_temporal
         ](_index(offset), value)
 
     @always_inline("nodebug")
