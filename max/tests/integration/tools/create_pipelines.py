@@ -45,6 +45,9 @@ from max.pipelines.architectures.flux2_modulev3.pipeline_flux2_klein import (
     Flux2KleinPipeline,
 )
 from max.pipelines.architectures.internvl.tokenizer import InternVLProcessor
+from max.pipelines.architectures.wan.context import WanContext
+from max.pipelines.architectures.wan.tokenizer import WanTokenizer
+from max.pipelines.architectures.wan.wan_executor import WanExecutor
 from max.pipelines.core import PixelContext
 from max.pipelines.lib import (
     PipelineRuntimeConfig,
@@ -56,7 +59,10 @@ from peft.peft_model import PeftModel
 from qwen2_5vl import generate_utils as qwen2_5vl_utils
 from qwen3vl import generate_utils as qwen3vl_utils
 from test_common import test_data, torch_utils
-from test_common.test_data import MockTextGenerationRequest
+from test_common.test_data import (
+    WAN_PIXEL_GENERATION_T2I,
+    MockTextGenerationRequest,
+)
 from typing_extensions import NotRequired
 
 
@@ -1291,6 +1297,100 @@ class ImageGenerationOracle(PipelineOracle):
         )
 
 
+class WanGenerationOracle(ImageGenerationOracle):
+    """Pipeline oracle for Wan T2V single-frame (image) generation."""
+
+    def __init__(
+        self,
+        model_path: str = "Wan-AI/Wan2.1-T2V-14B-Diffusers",
+        num_steps: int = 20,
+        requests: list[Any] = WAN_PIXEL_GENERATION_T2I,
+    ) -> None:
+        super().__init__(
+            model_path=model_path,
+            num_steps=num_steps,
+            requests=requests,
+        )
+
+    def create_max_pipeline(
+        self,
+        *,
+        encoding: pipelines.SupportedEncoding,
+        device_specs: list[driver.DeviceSpec],
+    ) -> MaxPipelineAndTokenizer:
+        """Create MAX Wan pixel generation pipeline."""
+        models = ModelManifest.from_model_path(
+            self.model_path,
+            device_specs=device_specs,
+        )
+        config = pipelines.PipelineConfig(models=models)
+        tokenizer = WanTokenizer(
+            model_path=self.model_path,
+            pipeline_config=config,
+            subfolder="tokenizer",
+            max_length=512,
+        )
+        pipeline = PixelGenerationPipeline[WanContext](
+            pipeline_config=config,
+            pipeline_model=WanExecutor,
+        )
+        return MaxPipelineAndTokenizer(
+            pipeline=pipeline,  # type: ignore
+            tokenizer=tokenizer,
+        )
+
+    def create_torch_pipeline(
+        self,
+        *,
+        encoding: pipelines.SupportedEncoding | None,
+        device: torch.device,
+    ) -> TorchModelAndDataProcessor:
+        """Load Wan diffusers pipeline with embed_tokens weight tie applied."""
+        import diffusers
+        from diffusers import AutoencoderKLWan
+
+        revision = hf_repo_lock.revision_for_hf_repo(self.model_path)
+        vae = AutoencoderKLWan.from_pretrained(
+            self.model_path,
+            subfolder="vae",
+            revision=revision,
+            torch_dtype=torch.bfloat16,
+        )
+        pipeline = diffusers.WanPipeline.from_pretrained(
+            self.model_path,
+            vae=vae,
+            revision=revision,
+            torch_dtype=torch.bfloat16,
+            low_cpu_mem_usage=True,
+        ).to(device)
+
+        # The HF checkpoint only ships shared.weight for the UMT5 text encoder,
+        # but config.json sets tie_word_embeddings=false so transformers randomly
+        # initializes encoder.embed_tokens.weight on load.  Force the tie to
+        # recover correct text conditioning.
+        pipeline.text_encoder.encoder.embed_tokens.weight = (
+            pipeline.text_encoder.shared.weight
+        )
+
+        return TorchModelAndDataProcessor(model=pipeline, data_processor=None)
+
+    def run_torch_image_generation(
+        self,
+        *,
+        torch_pipeline_and_tokenizer: TorchModelAndDataProcessor,
+        device: torch.device,
+        num_steps: int,
+        inputs: list[Any],
+    ) -> list[dict[str, Any]]:
+        """Run single-frame generation using diffusers WanPipeline."""
+        return torch_utils.run_wan_image_generation(
+            pipeline=torch_pipeline_and_tokenizer.model,
+            requests=inputs,
+            num_steps=num_steps,
+            print_outputs=True,
+        )
+
+
 PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
     "stepfun-ai/Step-3.5-Flash": GenericOracle(
         model_path="stepfun-ai/Step-3.5-Flash",
@@ -1870,5 +1970,8 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
     "black-forest-labs/FLUX.2-klein-4B": ImageGenerationOracle(
         "black-forest-labs/FLUX.2-klein-4B",
         num_steps=4,
+    ),
+    "Wan-AI/Wan2.1-T2V-14B-Diffusers": WanGenerationOracle(
+        "Wan-AI/Wan2.1-T2V-14B-Diffusers",
     ),
 }

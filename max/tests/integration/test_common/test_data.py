@@ -394,6 +394,57 @@ KIMIK2_5_REQUESTS = [
     ),
 ]
 
+# Default negative prompt from the official Wan repo (sample_neg_prompt).
+# The model was trained with this as the "empty" negative; omitting it produces
+# over-saturated, jittery, low-detail output.
+WAN_DEFAULT_NEGATIVE_PROMPT = (
+    "色调艳丽，过曝，静态，细节模糊不清，字幕，风格，作品，画作，画面，静止，"
+    "整体发灰，最差质量，低质量，JPEG压缩残留，丑陋的，残缺的，多余的手指，"
+    "画得不好的手部，画得不好的脸部，畸形的，毁容的，形态畸形的肢体，手指融合，"
+    "静止不动的画面，杂乱的背景，三条腿，背景人很多，倒着走"
+)
+
+# Single-frame (1 frame, 20 steps) verification requests for Wan2.1 T2V.
+# Prompts follow the WAN guide formula:
+#   Subject + Scene + Motion + Camera + Atmosphere + Styling
+# Motion is the centerpiece — static/still framing fights the model's T2V
+# prior and produces high-variance outputs, inflating error bounds.
+WAN_PIXEL_GENERATION_T2I = [
+    # Slot 0 — fox trotting through autumn forest (natural motion, landscape)
+    MockPixelGenerationRequest.from_prompt(
+        prompt=(
+            "A red fox trots steadily along a leaf-covered path through an"
+            " autumn forest at dawn, its tail swaying gently with each"
+            " stride. Camera tracks smoothly alongside at ground level,"
+            " keeping pace with the fox. Soft amber light filters through"
+            " the canopy, mist rising between the trees. Cinematic nature"
+            " documentary style."
+        ),
+        negative_prompt=WAN_DEFAULT_NEGATIVE_PROMPT,
+        height=720,
+        width=1280,
+        num_inference_steps=20,
+        guidance_scale=5.0,
+        seed=42,
+    ),
+    # Slot 1 — man pausing at flower stall (human motion, portrait)
+    MockPixelGenerationRequest.from_prompt(
+        prompt=(
+            "An elderly man strolls slowly through a quiet Kyoto side street"
+            " at dusk and stops at a small flower stall, reaching out to"
+            " touch a white chrysanthemum. Camera dollies in gently from a"
+            " medium shot to a close-up on his hand. Warm lantern light,"
+            " subtle film grain, contemplative mood."
+        ),
+        negative_prompt=WAN_DEFAULT_NEGATIVE_PROMPT,
+        height=1280,
+        width=720,
+        num_inference_steps=20,
+        guidance_scale=5.0,
+        seed=42,
+    ),
+]
+
 FLUX2_PIXEL_GENERATION_I2I = [
     MockPixelGenerationRequest.from_prompt(
         prompt="Transform this image into a cinematic nighttime scene with neon reflections, wet streets, and dramatic contrast.",

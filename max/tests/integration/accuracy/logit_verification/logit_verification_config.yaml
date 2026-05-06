@@ -1071,3 +1071,16 @@ logit_verification_pipelines:
     ssim_threshold: 0.60
     lpips_threshold: 0.35
     timeout: 3600
+
+  # ========== Wan T2V Pipelines ==========
+
+  Wan-AI/Wan2.1-T2V-14B-Diffusers-bfloat16:
+    pre_submit_agents: []
+    post_submit_agents: []
+    pipeline: "Wan-AI/Wan2.1-T2V-14B-Diffusers"
+    compatible_with: [gpu]
+    encoding: bfloat16
+    tags: [nvidia-only, no-h100, video-generation]
+    ssim_threshold: 0.60
+    lpips_threshold: 0.28
+    timeout: 7200
