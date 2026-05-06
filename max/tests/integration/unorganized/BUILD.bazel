@@ -245,14 +245,42 @@ modular_py_test(
     ],
 )
 
+# Common configuration for sampling tests (GPU required)
+_SAMPLING_GPU_CONSTRAINTS = ["//:has_gpu"] + select({
+    "//:apple_gpu": ["@platforms//:incompatible"],
+    "//conditions:default": [],
+})  # FIXME: MOCO-2411
+
+_SAMPLING_BASE_DEPS = [
+    "//max/python/max/driver",
+    "//max/python/max/dtype",
+    "//max/python/max/engine",
+    "//max/python/max/graph",
+    requirement("numpy"),
+]
+
+# Test for SamplingParams validation (no GPU required, fast)
 modular_py_test(
-    name = "test-sampling",
-    size = "large",
+    name = "test-sampling-params",
+    size = "small",
+    srcs = [
+        "sampling/test_sampling_params.py",
+    ],
+    env = {
+        "MODULAR_PATH": ".",
+    },
+    deps = [
+        "//max/python/max/interfaces",
+    ],
+)
+
+# Test for llguidance-based structured output sampling
+modular_py_test(
+    name = "test-llguidance-sampling",
+    size = "medium",
     srcs = [
         "conftest.py",
-        "sampling/test_build_token_frequency_csr.py",
-        "sampling/test_gumbel_sampling.py",
-        "sampling/test_sampling.py",
+        "sampling/test_llguidance_sampling.py",
     ],
     env = {
         "MODULAR_PATH": ".",
@@ -260,28 +288,260 @@ modular_py_test(
     exec_properties = {
         "test.resources:gpu-memory": "8",
     },
-    gpu_constraints = ["//:has_gpu"] + select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # FIXME: MOCO-2411
+    gpu_constraints = _SAMPLING_GPU_CONSTRAINTS,
     tags = [
         "gpu",
         "no-sandbox",
         "requires-network",
     ],
+    deps = _SAMPLING_BASE_DEPS + [
+        "//max/python/max/interfaces",
+        "//max/python/max/pipelines/lib",
+        "//max/tests/integration:hf_repo_lock",
+        requirement("llguidance"),
+        requirement("transformers"),
+    ],
+)
+
+# Test for token_sampler (basic sampling without structured output)
+modular_py_test(
+    name = "test-token-sampler",
+    size = "medium",
+    srcs = [
+        "conftest.py",
+        "sampling/test_token_sampler.py",
+    ],
+    env = {
+        "MODULAR_PATH": ".",
+    },
+    exec_properties = {
+        "test.resources:gpu-memory": "8",
+    },
+    gpu_constraints = _SAMPLING_GPU_CONSTRAINTS,
+    tags = [
+        "gpu",
+        "no-sandbox",
+    ],
+    deps = _SAMPLING_BASE_DEPS + [
+        "//max/python/max/interfaces",
+        "//max/python/max/pipelines/lib",
+        "//max/tests/integration:hf_repo_lock",
+    ],
+)
+
+# Test for fused_token_sampling with top_p
+modular_py_test(
+    name = "test-fused-top-p",
+    size = "medium",
+    srcs = [
+        "conftest.py",
+        "sampling/test_fused_top_p.py",
+    ],
+    env = {
+        "MODULAR_PATH": ".",
+    },
+    exec_properties = {
+        "test.resources:gpu-memory": "8",
+    },
+    gpu_constraints = _SAMPLING_GPU_CONSTRAINTS,
+    tags = [
+        "gpu",
+        "no-sandbox",
+    ],
+    deps = _SAMPLING_BASE_DEPS + [
+        "//max/python/max/pipelines/lib",
+        "//max/tests/integration:hf_repo_lock",
+    ],
+)
+
+# Test for fused_token_sampling with min_p filtering
+modular_py_test(
+    name = "test-min-p-filtering",
+    size = "medium",
+    srcs = [
+        "conftest.py",
+        "sampling/test_min_p_filtering.py",
+    ],
+    env = {
+        "MODULAR_PATH": ".",
+    },
+    exec_properties = {
+        "test.resources:gpu-memory": "8",
+    },
+    gpu_constraints = _SAMPLING_GPU_CONSTRAINTS,
+    tags = [
+        "gpu",
+        "no-sandbox",
+    ],
+    deps = _SAMPLING_BASE_DEPS + [
+        "//max/python/max/pipelines/lib",
+        "//max/tests/integration:hf_repo_lock",
+    ],
+)
+
+# Test for token_sampler with return_all_top_k_logits (skipped - MXSERV-41)
+modular_py_test(
+    name = "test-sampling-return-logits",
+    size = "medium",
+    srcs = [
+        "conftest.py",
+        "sampling/test_sampling_return_logits.py",
+    ],
+    env = {
+        "MODULAR_PATH": ".",
+    },
+    exec_properties = {
+        "test.resources:gpu-memory": "8",
+    },
+    gpu_constraints = _SAMPLING_GPU_CONSTRAINTS,
+    tags = [
+        "gpu",
+        "no-sandbox",
+    ],
+    deps = _SAMPLING_BASE_DEPS + [
+        "//max/python/max/pipelines/lib",
+        "//max/tests/integration:hf_repo_lock",
+    ],
+)
+
+# Test for token frequency CSR building
+modular_py_test(
+    name = "test-token-frequency-csr",
+    size = "medium",
+    srcs = [
+        "conftest.py",
+        "sampling/test_build_token_frequency_csr.py",
+    ],
+    env = {
+        "MODULAR_PATH": ".",
+    },
+    exec_properties = {
+        "test.resources:gpu-memory": "8",
+    },
+    gpu_constraints = _SAMPLING_GPU_CONSTRAINTS,
+    tags = [
+        "gpu",
+        "no-sandbox",
+    ],
     deps = [
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
-        "//max/python/max/graph",
         "//max/python/max/interfaces",
         "//max/python/max/pipelines/core",
         "//max/python/max/pipelines/lib",
         "//max/tests/integration:hf_repo_lock",
-        requirement("llguidance"),
+        requirement("numpy"),
+    ],
+)
+
+# Test for gumbel sampling
+modular_py_test(
+    name = "test-gumbel-sampling",
+    size = "medium",
+    srcs = [
+        "conftest.py",
+        "sampling/test_gumbel_sampling.py",
+    ],
+    env = {
+        "MODULAR_PATH": ".",
+    },
+    exec_properties = {
+        "test.resources:gpu-memory": "8",
+    },
+    gpu_constraints = _SAMPLING_GPU_CONSTRAINTS,
+    tags = [
+        "gpu",
+        "no-sandbox",
+    ],
+    deps = _SAMPLING_BASE_DEPS + [
+        "//max/python/max/pipelines/lib",
+        "//max/tests/integration:hf_repo_lock",
+    ],
+)
+
+# Test for rejection_sampler (speculative decoding)
+modular_py_test(
+    name = "test-rejection-sampler",
+    size = "medium",
+    srcs = [
+        "conftest.py",
+        "sampling/test_rejection_sampler.py",
+    ],
+    env = {
+        "MODULAR_PATH": ".",
+    },
+    exec_properties = {
+        "test.resources:gpu-memory": "8",
+    },
+    gpu_constraints = _SAMPLING_GPU_CONSTRAINTS,
+    tags = [
+        "gpu",
+        "no-sandbox",
+    ],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/lib",
+        "//max/tests/integration:hf_repo_lock",
+        requirement("numpy"),
+    ],
+)
+
+# Test for rejection_sampler_with_residuals (speculative decoding)
+modular_py_test(
+    name = "test-rejection-sampler-residuals",
+    size = "medium",
+    srcs = [
+        "conftest.py",
+        "sampling/test_rejection_sampler_residuals.py",
+    ],
+    env = {
+        "MODULAR_PATH": ".",
+    },
+    exec_properties = {
+        "test.resources:gpu-memory": "8",
+    },
+    gpu_constraints = _SAMPLING_GPU_CONSTRAINTS,
+    tags = [
+        "gpu",
+        "no-sandbox",
+    ],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/lib",
+        "//max/tests/integration:hf_repo_lock",
         requirement("numpy"),
         requirement("torch"),
-        requirement("transformers"),
+    ],
+)
+
+# Test for penalty ops (apply_penalties, update_frequency_data)
+modular_py_test(
+    name = "test-penalty-ops",
+    size = "medium",
+    srcs = [
+        "conftest.py",
+        "sampling/test_penalty_ops.py",
+    ],
+    env = {
+        "MODULAR_PATH": ".",
+    },
+    exec_properties = {
+        "test.resources:gpu-memory": "8",
+    },
+    gpu_constraints = _SAMPLING_GPU_CONSTRAINTS,
+    tags = [
+        "gpu",
+        "no-sandbox",
+    ],
+    deps = _SAMPLING_BASE_DEPS + [
+        "//max/python/max/pipelines/lib",
+        "//max/tests/integration:hf_repo_lock",
+        requirement("torch"),
     ],
 )
 
