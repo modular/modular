@@ -42,7 +42,8 @@ class MoEGate(Module[[Tensor], tuple[Tensor, Tensor]]):
         num_experts: int,
         num_experts_per_token: int,
     ) -> None:
-        """
+        """Initialize MoE gate.
+
         Args:
             hidden_dim: The dimension of the hidden state.
             num_experts: The number of experts.
@@ -58,7 +59,8 @@ class MoEGate(Module[[Tensor], tuple[Tensor, Tensor]]):
         )
 
     def forward(self, hidden_state: Tensor) -> tuple[Tensor, Tensor]:
-        """
+        """Forward pass for MoE gate.
+
         Args:
             hidden_state: The hidden state of the model.
 
@@ -88,7 +90,8 @@ class MoE(Module[[Tensor], Tensor]):
         ep_size: int = 1,
         apply_router_weight_first: bool = False,
     ):
-        """
+        """Initialize MoE layer.
+
         Args:
             hidden_dim: The dimension of the hidden state.
             num_experts: The number of experts.
@@ -144,6 +147,7 @@ class MoE(Module[[Tensor], Tensor]):
 
     @property
     def gate_up_proj(self) -> Tensor:
+        """Return the stacked expert gate and up projection weights."""
         gate_list = [expert.gate_proj.weight for expert in self.experts]
         up_list = [expert.up_proj.weight for expert in self.experts]
 
@@ -157,18 +161,20 @@ class MoE(Module[[Tensor], Tensor]):
 
     @property
     def down_proj(self) -> Tensor:
+        """Return the stacked expert down projection weights."""
         down_proj = F.stack(
             [expert.down_proj.weight for expert in self.experts], axis=0
         )
         return down_proj
 
     def forward(self, x: Tensor) -> Tensor:
-        """
+        """Forward pass for MoE layer.
+
         Args:
             x: (seq_len, hidden_dim)
 
         Returns:
-            (seq_len, hidden_dim)
+            Tensor with shape (seq_len, hidden_dim)
         """
         seq_len = x.shape[0]
 

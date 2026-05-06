@@ -26,13 +26,13 @@ from max.experimental.nn.common_layers.functional_kernels import (
     grouped_matmul_ragged,
     moe_create_indices,
 )
+from max.experimental.nn.common_layers.moe import MoE, MoEGate
 from max.experimental.nn.sequential import ModuleList
 from max.experimental.tensor import Tensor
 from max.graph.type import DeviceRef
 from max.graph.weight import ShardingStrategy
 
 from ..model_config import GptOssConfig
-from .moe_base import MoE, MoEGate
 
 
 class GptOssMoEGate(MoEGate):
