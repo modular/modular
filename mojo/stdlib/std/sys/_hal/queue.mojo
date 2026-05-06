@@ -13,15 +13,17 @@
 from .plugin import (
     RawDriver,
     OutParam,
+    EventHandle,
     QueueHandle,
     FunctionHandle,
     MemoryHandle,
 )
 from .context import Context
+from .event import Event, _EventInner
 from .device import DeviceSpec
 from .status import STATUS_SUCCESS, HALError
 from std.memory import (
-    MutPointer,
+    ImmutPointer,
     OpaquePointer,
     UnsafePointer,
     UnsafeMaybeUninit,
@@ -29,7 +31,7 @@ from std.memory import (
 
 
 @fieldwise_init
-struct Queue[context_origin: MutOrigin, device_spec: DeviceSpec](Movable):
+struct Queue[context_origin: ImmutOrigin, device_spec: DeviceSpec](Movable):
     """A command queue bound to a context.
 
     Parameters:
@@ -38,13 +40,13 @@ struct Queue[context_origin: MutOrigin, device_spec: DeviceSpec](Movable):
     """
 
     var _handle: QueueHandle
-    var _raw: MutPointer[RawDriver, Self.context_origin]
-    var _context: MutPointer[
+    var _raw: ImmutPointer[RawDriver, Self.context_origin]
+    var _context: ImmutPointer[
         Context[Self.context_origin, Self.device_spec], Self.context_origin
     ]
 
     def __init__[
-        o1: MutOrigin, o2: MutOrigin
+        o1: ImmutOrigin, o2: ImmutOrigin
     ](
         out self: Queue[origin_of(o1, o2), Self.device_spec],
         ref[o1] context: Context[o2, Self.device_spec],
@@ -80,7 +82,7 @@ struct Queue[context_origin: MutOrigin, device_spec: DeviceSpec](Movable):
 
     # TODO: revisit all of these when we get to queue dependency ordering
     def execute(
-        mut self,
+        self,
         func: FunctionHandle,
         grid: Tuple[UInt32, UInt32, UInt32],
         block: Tuple[UInt32, UInt32, UInt32],
@@ -99,7 +101,7 @@ struct Queue[context_origin: MutOrigin, device_spec: DeviceSpec](Movable):
         )
 
     def copy_to_device(
-        mut self,
+        self,
         dst: Buffer,
         src: UnsafePointer[UInt8, MutAnyOrigin],
         size: UInt64,
@@ -112,7 +114,7 @@ struct Queue[context_origin: MutOrigin, device_spec: DeviceSpec](Movable):
         self._raw[].copy_to_device(self._handle, dst._handle, src, size)
 
     def copy_from_device(
-        mut self,
+        self,
         dst: UnsafePointer[UInt8, MutAnyOrigin],
         src: Buffer,
         size: UInt64,
@@ -124,7 +126,35 @@ struct Queue[context_origin: MutOrigin, device_spec: DeviceSpec](Movable):
         """
         self._raw[].copy_from_device(self._handle, dst, src._handle, size)
 
-    def synchronize(mut self) raises HALError:
+    def record_event(
+        self,
+        out event: Event[Self.context_origin],
+    ) raises HALError:
+        """Creates a fresh event, records it on this queue's timeline, and
+        returns it.
+
+        The returned event is signaled when all operations enqueued on the
+        queue before this call have completed.
+
+        """
+        var event_handle = self._raw[].create_event(self._context[]._handle)
+        event = Event[Self.context_origin](
+            _EventInner[Self.context_origin](
+                _handle=event_handle,
+                _context_handle=self._context[]._handle,
+                _raw=self._raw,
+            )
+        )
+        self._raw[].record_event(self._handle, event._inner[]._handle)
+
+    def wait_for_events(
+        self,
+        read events: List[Event[Self.context_origin]],
+    ) raises HALError:
+        """Enqueues a wait for the given events on this queue."""
+        self._raw[].wait_for_events(self._handle, events)
+
+    def synchronize(self) raises HALError:
         """
         Totally ordered with respect to other operations within this queue
         if backed by a stream.

@@ -20,6 +20,7 @@ from .plugin import (
 from .status import STATUS_SUCCESS, STATUS_INVALID_ARG, HALError
 
 from std.memory import (
+    ImmutPointer,
     MutPointer,
     ArcPointer,
     UnsafeMaybeUninit,
@@ -47,7 +48,7 @@ def get_device_spec[
 
 
 @fieldwise_init
-struct Device[driver_origin: MutOrigin, spec: DeviceSpec](Movable):
+struct Device[driver_origin: ImmutOrigin, spec: DeviceSpec](Movable):
     """A device retrieved from a Driver.
 
     Does not own the device handle — the plugin manages device lifetime
@@ -60,19 +61,21 @@ struct Device[driver_origin: MutOrigin, spec: DeviceSpec](Movable):
     """
 
     var _handle: DeviceHandle
-    var _driver: MutPointer[Driver, Self.driver_origin]
-    var _raw: MutPointer[RawDriver, Self.driver_origin]
+    var _driver: ImmutPointer[Driver, Self.driver_origin]
+    var _raw: ImmutPointer[RawDriver, Self.driver_origin]
     var id: Int64
 
     def __init__[
-        o1: MutOrigin
+        o1: ImmutOrigin
     ](
-        out self: Device[o1, Self.spec], ref[o1] driver: Driver, id: Int64
+        out self: Device[o1, Self.spec],
+        ref[o1] driver: Driver,
+        id: Int64,
     ) raises HALError:
         self.id = id
 
-        self._driver = MutPointer(to=driver)
-        self._raw = rebind[type_of(self._raw)](MutPointer(to=driver._raw))
+        self._driver = ImmutPointer(to=driver)
+        self._raw = rebind[type_of(self._raw)](ImmutPointer(to=driver._raw))
 
         ref raw = self._raw[]
 
@@ -103,7 +106,7 @@ struct Device[driver_origin: MutOrigin, spec: DeviceSpec](Movable):
         self._handle = device_handle.unsafe_assume_init_ref()
 
     def get_context(
-        mut self,
+        self,
     ) raises HALError -> Context[
         origin_of(self, Self.driver_origin), Self.spec
     ]:

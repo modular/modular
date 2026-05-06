@@ -19,5 +19,7 @@ from .status import HALError, STATUS_SUCCESS
 from .plugin import RawDriver
 from .driver import Driver
 from .device import Device
-from .context import Context, Buffer, Event, RuntimeBundle
+from .context import Context, Buffer, RuntimeBundle
+from .event import Event
 from .queue import Queue
+from .stream import Stream

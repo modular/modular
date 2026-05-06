@@ -18,7 +18,6 @@ from .plugin import (
     ContextHandle,
     DeviceHandle,
     QueueHandle,
-    EventHandle,
     FunctionHandle,
     MemoryHandle,
     RuntimeBundleHandle,
@@ -30,6 +29,7 @@ from .plugin import (
 )
 
 from .device import DeviceSpec
+from .stream import Stream
 
 from .status import STATUS_SUCCESS, HALError
 
@@ -71,7 +71,7 @@ def _bundle_file_type[target: _TargetType]() -> StaticString:
 
 
 @fieldwise_init
-struct Context[device_origin: MutOrigin, device_spec: DeviceSpec](Movable):
+struct Context[device_origin: ImmutOrigin, device_spec: DeviceSpec](Movable):
     """A context loaded on a specific device.
 
     Represents a runtime handle to an initialized
@@ -88,13 +88,13 @@ struct Context[device_origin: MutOrigin, device_spec: DeviceSpec](Movable):
     """
 
     var _handle: ContextHandle
-    var _device: MutPointer[
+    var _device: ImmutPointer[
         Device[Self.device_origin, Self.device_spec], Self.device_origin
     ]
-    var _raw: MutPointer[RawDriver, Self.device_origin]
+    var _raw: ImmutPointer[RawDriver, Self.device_origin]
 
     def __init__[
-        o1: MutOrigin, o2: MutOrigin
+        o1: ImmutOrigin, o2: ImmutOrigin
     ](
         out self: Context[origin_of(o1, o2), Self.device_spec],
         ref[o1] device: Device[o2, Self.device_spec],
@@ -127,7 +127,7 @@ struct Context[device_origin: MutOrigin, device_spec: DeviceSpec](Movable):
     def _compile_inner[
         fn_type: TrivialRegisterPassable,
         func: fn_type,
-    ](mut self) raises -> CompiledFunctionInfo[
+    ](self) raises -> CompiledFunctionInfo[
         fn_type, func, Self.device_spec.target.value
     ]:
         comptime target = Self.device_spec.target.value
@@ -158,7 +158,7 @@ struct Context[device_origin: MutOrigin, device_spec: DeviceSpec](Movable):
     def compile[
         fn_type: TrivialRegisterPassable,
         func: fn_type,
-    ](mut self) raises -> Tuple[RuntimeBundle, String]:
+    ](self) raises -> Tuple[RuntimeBundle, String]:
         var compiled_info = self._compile_inner[fn_type, func]()
 
         # Build the M_driver_static_bundle from the compiled object code.
@@ -215,7 +215,7 @@ struct Context[device_origin: MutOrigin, device_spec: DeviceSpec](Movable):
     # ===-------------------------------------------------------------------===#
 
     def create_queue(
-        mut self,
+        self,
     ) raises HALError -> Queue[
         origin_of(self, Self.device_origin), Self.device_spec
     ]:
@@ -224,18 +224,31 @@ struct Context[device_origin: MutOrigin, device_spec: DeviceSpec](Movable):
         )
 
     # ===-------------------------------------------------------------------===#
+    # Stream operations
+    # ===-------------------------------------------------------------------===#
+
+    def create_stream(
+        self,
+    ) raises HALError -> Stream[
+        origin_of(self, Self.device_origin), Self.device_spec
+    ]:
+        return Stream[origin_of(self, Self.device_origin), Self.device_spec](
+            self
+        )
+
+    # ===-------------------------------------------------------------------===#
     # Memory operations
     # ===-------------------------------------------------------------------===#
 
-    def alloc_sync(mut self, byte_size: UInt64) raises HALError -> Buffer:
+    def alloc_sync(self, byte_size: UInt64) raises HALError -> Buffer:
         return Buffer(
             self._raw[].alloc_sync(self._handle, byte_size), byte_size
         )
 
-    def free_sync(mut self, var mem: Buffer) raises HALError:
+    def free_sync(self, var mem: Buffer) raises HALError:
         self._raw[].free_sync(self._handle, mem._handle)
 
-    def memory_get_address(mut self, mem: Buffer) raises HALError -> UInt64:
+    def memory_get_address(self, mem: Buffer) raises HALError -> UInt64:
         """Get the GPU address of a device memory allocation."""
         return self._raw[].get_memory_property["address", UInt64](mem._handle)
 
@@ -244,11 +257,11 @@ struct Context[device_origin: MutOrigin, device_spec: DeviceSpec](Movable):
     # ===-------------------------------------------------------------------===#
 
     def load_function(
-        mut self, bundle: RuntimeBundle, var name: String
+        self, bundle: RuntimeBundle, var name: String
     ) raises HALError -> FunctionHandle:
         return self._raw[].load_function(self._handle, bundle._handle, name)
 
-    def unload_function(mut self, func: FunctionHandle) raises HALError:
+    def unload_function(self, func: FunctionHandle) raises HALError:
         self._raw[].unload_function(self._handle, func)
 
 
@@ -261,12 +274,6 @@ struct Buffer(Movable):
 
     var _handle: MemoryHandle
     var byte_size: UInt64
-
-
-struct Event:
-    """A synchronisation event."""
-
-    var _handle: EventHandle
 
 
 @fieldwise_init

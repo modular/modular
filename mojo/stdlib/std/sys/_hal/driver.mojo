@@ -70,8 +70,6 @@ struct Driver(Movable):
 
     def get_device[
         id: Int64
-    ](mut self) raises HALError -> Device[
-        origin_of(self), get_device_spec[id]()
-    ]:
+    ](self) raises HALError -> Device[origin_of(self), get_device_spec[id]()]:
         # """Retrieve a device by ID."""
         return Device[origin_of(self), get_device_spec[id]()](self, id)

@@ -40,6 +40,8 @@ from std.memory import (
 )
 
 from .status import STATUS_SUCCESS, STATUS_UNKNOWN_ERROR, HALError
+from .event import Event
+from .device import DeviceSpec
 
 # ===-----------------------------------------------------------------------===#
 # Shared plugin structs across FFI
@@ -390,6 +392,97 @@ struct RawDriver(Movable):
             )
 
     # ===-------------------------------------------------------------------===#
+    # Event operations
+    # ===-------------------------------------------------------------------===#
+
+    def create_event(
+        self, context: ContextHandle
+    ) raises HALError -> EventHandle:
+        var event = UnsafeMaybeUninit[EventHandle]()
+        var status = self._raw.event_create.f(
+            context, OutParam[EventHandle](to=event)
+        )
+        if status != STATUS_SUCCESS:
+            var err = self.get_status_message(status)
+            raise HALError(
+                err.status,
+                message=String(t"failed to create event: {err.message}"),
+            )
+        return event.unsafe_assume_init_ref()
+
+    def destroy_event(
+        self, context: ContextHandle, event: EventHandle
+    ) raises HALError:
+        var status = self._raw.event_destroy.f(context, event)
+        if status != STATUS_SUCCESS:
+            var err = self.get_status_message(status)
+            raise HALError(
+                err.status,
+                message=String(t"failed to destroy event: {err.message}"),
+            )
+
+    def synchronize_event(
+        self, context: ContextHandle, event: EventHandle
+    ) raises HALError:
+        var status = self._raw.event_synchronize.f(context, event)
+        if status != STATUS_SUCCESS:
+            var err = self.get_status_message(status)
+            raise HALError(
+                err.status,
+                message=String(t"failed to synchronize event: {err.message}"),
+            )
+
+    def is_event_ready(
+        self, context: ContextHandle, event: EventHandle
+    ) raises HALError -> Bool:
+        var result = UnsafeMaybeUninit[Bool]()
+        var status = self._raw.is_event_ready.f(
+            context, event, OutParam[Bool](to=result)
+        )
+        if status != STATUS_SUCCESS:
+            var err = self.get_status_message(status)
+            raise HALError(
+                err.status,
+                message=String(
+                    t"failed to query event readiness: {err.message}"
+                ),
+            )
+        return result.unsafe_assume_init_ref()
+
+    def record_event(
+        self, queue: QueueHandle, event: EventHandle
+    ) raises HALError:
+        var status = self._raw.queue_record_event.f(queue, event)
+        if status != STATUS_SUCCESS:
+            var err = self.get_status_message(status)
+            raise HALError(
+                err.status,
+                message=String(t"failed to record event: {err.message}"),
+            )
+
+    def wait_for_events[
+        origin: ImmutOrigin
+    ](
+        self,
+        queue: QueueHandle,
+        read events: List[Event[origin]],
+    ) raises HALError:
+        var handles = List[EventHandle](capacity=len(events))
+        for ref event in events:
+            handles.append(event._inner[]._handle)
+        var status = self._raw.queue_wait_for_events.f(
+            queue, handles.unsafe_ptr(), UInt32(len(handles))
+        )
+        if status != STATUS_SUCCESS:
+            var err = self.get_status_message(status)
+            raise HALError(
+                err.status,
+                message=String(
+                    t"failed to wait for events on queue: {err.message}"
+                ),
+            )
+
+    # ===-------------------------------------------------------------------===#
     # Function execution
     # ===-------------------------------------------------------------------===#
 
@@ -725,13 +818,23 @@ struct RawPlugin(Movable):
         "M_driver_queue_record_event",
         def(queue: QueueHandle, event: EventHandle) thin -> PluginResultCode,
     ]
-    var queue_wait_for_event: HALFunction[
-        "M_driver_queue_wait_for_event",
-        def(queue: QueueHandle, event: EventHandle) thin -> PluginResultCode,
+    var queue_wait_for_events: HALFunction[
+        "M_driver_queue_wait_for_events",
+        def(
+            queue: QueueHandle,
+            events: UnsafePointer[EventHandle, MutAnyOrigin],
+            num_events: UInt32,
+        ) thin -> PluginResultCode,
     ]
     var queue_synchronize: HALFunction[
         "M_driver_queue_synchronize",
         def(queue: QueueHandle) thin -> PluginResultCode,
+    ]
+    var queue_is_stream: HALFunction[
+        "M_driver_queue_is_stream",
+        def(
+            queue: QueueHandle, is_stream: OutParam[Bool]
+        ) thin -> PluginResultCode,
     ]
     var bundle_load: HALFunction[
         "M_driver_bundle_load",
@@ -804,12 +907,13 @@ struct RawPlugin(Movable):
         self.queue_record_event = type_of(self.queue_record_event)(
             handle, so_path
         )
-        self.queue_wait_for_event = type_of(self.queue_wait_for_event)(
+        self.queue_wait_for_events = type_of(self.queue_wait_for_events)(
             handle, so_path
         )
         self.queue_synchronize = type_of(self.queue_synchronize)(
             handle, so_path
         )
+        self.queue_is_stream = type_of(self.queue_is_stream)(handle, so_path)
         self.bundle_load = type_of(self.bundle_load)(handle, so_path)
         self.bundle_unload = type_of(self.bundle_unload)(handle, so_path)
 
