@@ -42,6 +42,9 @@ from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu import block_idx, lane_id, thread_idx
 from std.gpu.memory import (
     AddressSpace,
+    async_copy,
+    async_copy_commit_group,
+    async_copy_wait_group,
     external_memory,
     fence_mbarrier_init,
     CacheEviction,
@@ -52,7 +55,7 @@ from std.gpu.primitives.grid_controls import (
     PDLLevel,
     wait_on_dependent_grids,
 )
-from std.gpu.sync import syncwarp
+from std.gpu.sync import async_copy_arrive, syncwarp
 from std.gpu.compute.arch.tcgen05 import *
 from layout import (
     ComptimeInt,
@@ -116,7 +119,7 @@ from ..structured_kernels.warp_context import (
     EpilogueWarpContext,
 )
 from ..structured_kernels.tile_loader import TileLoader
-from ..structured_kernels.tile_scheduler import TileScheduler
+from ..structured_kernels.tile_scheduler import TileScheduler, WorkIterator
 from ..structured_kernels.tile_scheduler_splitk import (
     TileScheduler as TileSchedulerSplitK,
 )
@@ -217,14 +220,23 @@ struct B200MatmulSmem[
     ]
 
     # Epilogue load tiles: allocated only when use_tma_epilogue_load=True (0 stages → zero-sized).
-    # non-AB_swapped: each stage is BM×stageN (= OutputN); num_tma_epilogue_pipeline_stages stages.
-    # AB_swapped: transposed layout (MMA_N×BM per stage) requires all MMA_N rows
+    # 1D bias: 1×MMA_N per stage, one load per output tile (like AB_swapped 2D).
+    # non-AB_swapped 2D: each stage is BM×stageN (= OutputN); num_tma_epilogue_pipeline_stages stages.
+    # AB_swapped 2D: transposed layout (MMA_N×BM per stage) requires all MMA_N rows
     #   simultaneously for ldmatrix.trans; keep full tile with num_accum_pipeline_stages.
     comptime num_epilogue_load_stages: Int = (
-        Self.config.num_accum_pipeline_stages if Self.config.AB_swapped else Self.config.num_tma_epilogue_pipeline_stages
+        Self.config.num_accum_pipeline_stages if (
+            Self.config.AB_swapped or Self.config.epilogue_is_1d
+        ) else Self.config.num_tma_epilogue_pipeline_stages
     ) if Self.config.use_tma_epilogue_load else 0
-    comptime epilogue_load_tile_rows: Int = Self.MMA_N if Self.config.AB_swapped else Self.BM
-    comptime epilogue_load_tile_cols: Int = Self.BM if Self.config.AB_swapped else Self.OutputN
+    comptime epilogue_load_tile_rows: Int = 1 if Self.config.epilogue_is_1d else (
+        Self.MMA_N if Self.config.AB_swapped else Self.BM
+    )
+    comptime epilogue_load_tile_cols: Int = (
+        Self.BM if Self.config.AB_swapped else Self.MMA_N
+    ) if Self.config.epilogue_is_1d else (
+        Self.BM if Self.config.AB_swapped else Self.OutputN
+    )
     comptime EpilogueLoadTileArray = SMemTileArray2DRowMajor[
         Self.c_type,
         Self.epilogue_load_tile_rows,
@@ -437,7 +449,12 @@ struct BlackwellMatmulSM100Kernel[
     comptime accum_pipeline_producer_arv_count = Self._accum_barrier_counts[0]
     comptime accum_pipeline_consumer_arv_count = Self._accum_barrier_counts[1]
 
-    comptime epi_load_producer_arv_count: Int32 = 1
+    comptime _bias_tile_elems = Self.BM if Self.config.AB_swapped else Self.MMA_N
+    comptime epi_load_producer_arv_count: Int32 = (
+        Int32(
+            ceildiv(Self._bias_tile_elems, 8)
+        ) if Self.config.epilogue_is_1d else 1
+    )
     comptime epi_load_consumer_arv_count: Int32 = Int32(Self.EPILOGUE_THREADS)
 
     # ========== Shared Memory Layout Types ==========
@@ -536,7 +553,8 @@ struct BlackwellMatmulSM100Kernel[
     comptime c_swizzle_elems = Self.config.c_swizzle.bytes() // size_of[
         Self.c_type
     ]()
-    comptime epi_load_swizzle_elems = Self.config.epi_load_swizzle.bytes() // size_of[
+    comptime epi_load_swizzle = Self.config.epi_load_swizzle
+    comptime epi_load_swizzle_elems = Self.epi_load_swizzle.bytes() // size_of[
         Self.c_type
     ]()
     # C tile shape depends on MMA shape, cta_group, and AB_swapped.
@@ -587,14 +605,18 @@ struct BlackwellMatmulSM100Kernel[
     comptime CDescLayout_splitk = static_row_major[
         Self.c_tile_dim0, Self.c_swizzle_elems
     ]
+    # TMA descriptor layouts for epilogue load (2D only; 1D uses cp.async.bulk).
+    # For 1D, use 2D-default dimensions so the placeholder TMA descriptor is valid.
+    comptime _epi_tma_tile_rows: Int = Self.MMA_N if Self.config.AB_swapped else Self.BM
+    comptime _epi_tma_tile_cols: Int = Self.BM if Self.config.AB_swapped else Self.OutputN
     comptime EpilogueLoadTileLayout = static_row_major[
-        Self.SmemType.epilogue_load_tile_rows,
-        Self.SmemType.epilogue_load_tile_cols,
+        Self._epi_tma_tile_rows,
+        Self._epi_tma_tile_cols,
     ]
     comptime EpilogueLoadDescLayout = static_row_major[
-        Self.SmemType.epilogue_load_tile_rows,
+        Self._epi_tma_tile_rows,
         Self.epi_load_swizzle_elems if Self.epi_load_swizzle_elems
-        > 0 else Self.SmemType.epilogue_load_tile_cols,
+        > 0 else Self._epi_tma_tile_cols,
     ]
 
     # 3D TMA operation types (primary, used by run())
@@ -1179,6 +1201,154 @@ struct BlackwellMatmulSM100Kernel[
                     b_gmem_n_coord,
                 )
 
+    comptime Bias1DTileLayout = row_major[1, Self.MMA_N]()
+    comptime Bias1DTile = TileTensor[
+        Self.c_type,
+        type_of(Self.Bias1DTileLayout),
+        ImmutAnyOrigin,
+    ]
+
+    comptime WorkIter = WorkIterator[
+        Self.num_clc_pipeline_stages,
+        Index[dtype=DType.uint32](
+            Self.config.cluster_shape[0],
+            Self.config.cluster_shape[1],
+            Self.config.cluster_shape[2],
+        ),
+        Self.config.raster_order,
+        Self.config.block_swizzle_size,
+    ]
+
+    @staticmethod
+    @always_inline
+    def epilogue_load_producer[
+        _epi_pipeline_stages: Int,
+    ](
+        epi_load_iter: Self.WorkIter,
+        mut epilogue_load_pipeline: ProducerConsumerPipeline[
+            _epi_pipeline_stages
+        ],
+        epilogue_load_tma_op: Self.EpilogueLoadTmaOp,
+        bias_1d_tile: Self.Bias1DTile,
+        epilogue_load_tiles: Self.SmemType.EpilogueLoadTileArray,
+        mnk: StaticTuple[UInt32, 3],
+    ):
+        """Load epilogue tiles (bias) from GMEM to SMEM for each output tile.
+
+        Handles three cases based on config:
+        - 1D bias: warp-wide cp.async with zero-fill for OOB elements
+        - AB_swapped: full MMA_N x BM TMA per output tile
+        - non-AB_swapped: BM x stageN strips in stage-outer/col_wg-inner order
+        """
+
+        comptime if Self.config.epilogue_is_1d:
+            # 1D bias: warp-wide cp.async GMEM->SMEM with zero-fill
+            # for OOB elements. Each active lane copies 16B (8 bf16).
+            # When AB_swapped, bias is along the kernel's M dim (=original N).
+            comptime bias_dim = Self._bias_tile_elems
+            var bias_N = Int(mnk[1])
+            var lane = Int(lane_id())
+            comptime elems_per_lane = 8
+            comptime bytes_per_lane = elems_per_lane * size_of[
+                Scalar[Self.c_type]
+            ]()
+            var lane_start = lane * elems_per_lane
+            for current in epi_load_iter:
+                epilogue_load_pipeline.wait_consumer()
+                var stage = epilogue_load_pipeline.producer_stage()
+                var smem_tile = epilogue_load_tiles[Int(stage)]
+                var gmem_offset = (
+                    Int(current.m)
+                    * Self.BM if Self.config.AB_swapped else Int(current.n)
+                    * Self.MMA_N
+                )
+                var valid_elems = min(bias_dim, bias_N - gmem_offset)
+
+                if lane_start < bias_dim:
+                    var src_bytes = Int32(
+                        bytes_per_lane
+                    ) if lane_start + elems_per_lane <= valid_elems else Int32(
+                        0
+                    )
+                    var src_ptr = (
+                        bias_1d_tile.ptr + gmem_offset + lane_start
+                    ).address_space_cast[AddressSpace.GLOBAL]()
+                    var dst_ptr = smem_tile.ptr + lane_start
+                    async_copy[
+                        bytes_per_lane,
+                        fill=Scalar[Self.c_type](0),
+                    ](src_ptr, dst_ptr, src_size=src_bytes)
+                var mbar = epilogue_load_pipeline.producer_mbar(stage)
+                if lane_start < bias_dim:
+                    async_copy_arrive(mbar[0].unsafe_ptr())
+                    _ = mbar[0].arrive()
+                epilogue_load_pipeline.producer_step()
+        elif Self.config.AB_swapped:
+            # AB_swapped: full MMA_N x BM tile per pipeline stage (one TMA per output tile).
+            # ldmatrix.trans accesses non-contiguous N-rows so we keep the full tile.
+            comptime epilogue_load_expected_bytes = Self.MMA_N * Self.BM * size_of[
+                Self.c_type
+            ]()
+            for current in epi_load_iter:
+                epilogue_load_pipeline.wait_consumer()
+                var stage = epilogue_load_pipeline.producer_stage()
+                if elect_one_sync():
+                    var mbar = epilogue_load_pipeline.producer_mbar(stage)
+                    mbar[0].expect_bytes(Int32(epilogue_load_expected_bytes))
+                    epilogue_load_tma_op.async_copy[
+                        cta_group=1,
+                        eviction_policy=CacheEviction.NO_ALLOCATE,
+                    ](
+                        epilogue_load_tiles[Int(stage)],
+                        mbar[0],
+                        (
+                            Int(current.m) * Self.BM,
+                            Int(current.n) * Self.MMA_N,
+                        ),
+                    )
+                epilogue_load_pipeline.producer_step()
+        else:
+            # non-AB_swapped: BM x stageN tile per pipeline stage.
+            # Tiles sent in stage-outer / col_wg-inner order to match the consumer.
+            comptime stageN = Self.OutputN
+            comptime epilogue_load_expected_bytes = Self.BM * stageN * size_of[
+                Self.c_type
+            ]()
+            # num_stages mirrors EpilogueConfig.create logic.
+            comptime num_epi_stages_tw = (
+                Self.MMA_N
+                // stageN
+                // 2 if (
+                    Self.MMA_M == 128 and Self.cta_group == 2
+                ) else Self.MMA_N
+                // stageN
+            )
+            comptime num_col_wgs = Self.MMA_N // (num_epi_stages_tw * stageN)
+            for current in epi_load_iter:
+                var base_n_col = Int(current.n) * Self.MMA_N
+                var base_m_row = Int(current.m) * Self.BM
+                comptime for epi_stage in range(num_epi_stages_tw):
+                    comptime for col_wg in range(num_col_wgs):
+                        comptime col_pos = col_wg * num_epi_stages_tw * stageN + epi_stage * stageN
+                        epilogue_load_pipeline.wait_consumer()
+                        var prod_stage = epilogue_load_pipeline.producer_stage()
+                        if elect_one_sync():
+                            var mbar = epilogue_load_pipeline.producer_mbar(
+                                prod_stage
+                            )
+                            mbar[0].expect_bytes(
+                                Int32(epilogue_load_expected_bytes)
+                            )
+                            epilogue_load_tma_op.async_copy[
+                                cta_group=1,
+                                eviction_policy=CacheEviction.NO_ALLOCATE,
+                            ](
+                                epilogue_load_tiles[Int(prod_stage)],
+                                mbar[0],
+                                (base_n_col + col_pos, base_m_row),
+                            )
+                        epilogue_load_pipeline.producer_step()
+
     @staticmethod
     @always_inline
     @__llvm_metadata(`nvvm.cluster_dim`=Self.cluster_shape)
@@ -1202,6 +1372,7 @@ struct BlackwellMatmulSM100Kernel[
         b_tma_op: Self.BTmaOp,
         c_tma_op: Self.CTmaOp,
         epilogue_load_tma_op: Self.EpilogueLoadTmaOp,
+        bias_1d_tile: Self.Bias1DTile,
         cluster_dim: StaticTuple[Int32, 3],
         mnk: StaticTuple[UInt32, 3],
         workspace: Span[UInt64, MutAnyOrigin],
@@ -1235,7 +1406,7 @@ struct BlackwellMatmulSM100Kernel[
             a_tma_op.prefetch_descriptor()
             b_tma_op.prefetch_descriptor()
             c_tma_op.prefetch_descriptor()
-            comptime if Self.config.use_tma_epilogue_load:
+            comptime if Self.config.use_tma_epilogue_load and not Self.config.epilogue_is_1d:
                 epilogue_load_tma_op.prefetch_descriptor()
 
         Self.init_barriers[
@@ -1423,84 +1594,14 @@ struct BlackwellMatmulSM100Kernel[
         comptime if Self.config.use_tma_epilogue_load:
             if WarpRole.is_epilogue_load():
                 var epi_load_iter = scheduler.work_iterator()
-
-                comptime if Self.config.AB_swapped:
-                    # AB_swapped: full MMA_N×BM tile per pipeline stage (one TMA per output tile).
-                    # ldmatrix.trans accesses non-contiguous N-rows so we keep the full tile.
-                    comptime epilogue_load_expected_bytes = Self.MMA_N * Self.BM * size_of[
-                        Self.c_type
-                    ]()
-                    for current in epi_load_iter:
-                        epilogue_load_pipeline.wait_consumer()
-                        var stage = epilogue_load_pipeline.producer_stage()
-                        if elect_one_sync():
-                            var mbar = epilogue_load_pipeline.producer_mbar(
-                                stage
-                            )
-                            mbar[0].expect_bytes(
-                                Int32(epilogue_load_expected_bytes)
-                            )
-                            epilogue_load_tma_op.async_copy[
-                                cta_group=1,
-                                eviction_policy=CacheEviction.NO_ALLOCATE,
-                            ](
-                                smem.epilogue_load_tiles()[Int(stage)],
-                                mbar[0],
-                                (
-                                    Int(current.m) * Self.BM,
-                                    Int(current.n) * Self.MMA_N,
-                                ),
-                            )
-                        epilogue_load_pipeline.producer_step()
-                else:
-                    # non-AB_swapped: BM×stageN tile per pipeline stage.
-                    # Tiles sent in stage-outer / col_wg-inner order to match the consumer.
-                    comptime stageN = Self.OutputN
-                    comptime epilogue_load_expected_bytes = Self.BM * stageN * size_of[
-                        Self.c_type
-                    ]()
-                    # num_stages mirrors EpilogueConfig.create logic.
-                    comptime num_epi_stages_tw = (
-                        Self.MMA_N
-                        // stageN
-                        // 2 if (
-                            Self.MMA_M == 128 and Self.cta_group == 2
-                        ) else Self.MMA_N
-                        // stageN
-                    )
-                    comptime num_col_wgs = Self.MMA_N // (
-                        num_epi_stages_tw * stageN
-                    )
-                    for current in epi_load_iter:
-                        var base_n_col = Int(current.n) * Self.MMA_N
-                        var base_m_row = Int(current.m) * Self.BM
-                        comptime for epi_stage in range(num_epi_stages_tw):
-                            comptime for col_wg in range(num_col_wgs):
-                                comptime col_pos = col_wg * num_epi_stages_tw * stageN + epi_stage * stageN
-                                epilogue_load_pipeline.wait_consumer()
-                                var prod_stage = (
-                                    epilogue_load_pipeline.producer_stage()
-                                )
-                                if elect_one_sync():
-                                    var mbar = (
-                                        epilogue_load_pipeline.producer_mbar(
-                                            prod_stage
-                                        )
-                                    )
-                                    mbar[0].expect_bytes(
-                                        Int32(epilogue_load_expected_bytes)
-                                    )
-                                    epilogue_load_tma_op.async_copy[
-                                        cta_group=1,
-                                        eviction_policy=CacheEviction.NO_ALLOCATE,
-                                    ](
-                                        smem.epilogue_load_tiles()[
-                                            Int(prod_stage)
-                                        ],
-                                        mbar[0],
-                                        (base_n_col + col_pos, base_m_row),
-                                    )
-                                epilogue_load_pipeline.producer_step()
+                Self.epilogue_load_producer[_epi_pipeline_stages](
+                    epi_load_iter,
+                    epilogue_load_pipeline,
+                    epilogue_load_tma_op,
+                    bias_1d_tile,
+                    smem.epilogue_load_tiles(),
+                    mnk,
+                )
 
         if WarpRole.is_mma():
             var mma_iter = scheduler.work_iterator()
@@ -1540,32 +1641,88 @@ struct BlackwellMatmulSM100Kernel[
                 comptime if Self.pdl_level > PDLLevel.OFF:
                     launch_dependent_grids()
 
-        if WarpRole.is_epilogue():
-            Self.EpilogueCtx.Sync.wait()  # wait for MMA to publish TMEM addr
+        comptime if not Self.config.use_tma_epilogue_load:
+            if WarpRole.is_epilogue():
+                Self.EpilogueCtx.Sync.wait()  # wait for MMA to publish TMEM addr
 
-            var tmem = Self.Tmem.from_shared(smem.pipelines.tmem_addr())
-            var epi_ctx = Self.EpilogueCtx(
-                tmem,
-                Self.OutputPipeline(
-                    smem.pipelines.accum_barriers().ptr,
+                var tmem = Self.Tmem.from_shared(smem.pipelines.tmem_addr())
+                var epi_ctx = Self.EpilogueCtx(
                     tmem,
-                    UInt16(ctx.mma_complete_mask),
-                ),
-                Self.TmemDealloc(smem.pipelines.tmem_dealloc()),
-            )
+                    Self.OutputPipeline(
+                        smem.pipelines.accum_barriers().ptr,
+                        tmem,
+                        UInt16(ctx.mma_complete_mask),
+                    ),
+                    Self.TmemDealloc(smem.pipelines.tmem_dealloc()),
+                )
 
-            var tile_writer = Self.TileWriterType(Pointer(to=c_tma_op))
-            var epi_iter = scheduler.work_iterator()
+                var tile_writer = Self.TileWriterType(Pointer(to=c_tma_op))
+                var epi_iter = scheduler.work_iterator()
 
-            with epi_ctx:  # signals TMEM dealloc on exit
-                var tile_idx = 0
+                with epi_ctx:  # signals TMEM dealloc on exit
+                    var tile_idx = 0
 
-                for current in epi_iter:
-                    with MatmulProfilerType[3](workspace, UInt32(tile_idx)):
-                        with epi_ctx.output_pipeline.consumer() as output_stage:  # waits for MMA
-                            # Use loaded epilogue tile using TMA + write back to GMEM (only enabled for bfloat16)
-                            comptime if Self.config.use_tma_epilogue_load:
-                                comptime if Self.config.AB_swapped:
+                    for current in epi_iter:
+                        with MatmulProfilerType[3](workspace, UInt32(tile_idx)):
+                            with epi_ctx.output_pipeline.consumer() as output_stage:  # waits for MMA
+                                # Use synchronous GMEM load (if any epilogue lambda is provided) + write back to GMEM
+                                tile_writer.write_batched(
+                                    smem.c_tiles(),
+                                    output_stage,
+                                    (
+                                        current.m,
+                                        current.n,
+                                        current.k_start,
+                                    ),
+                                    (mnk[0], mnk[1]),
+                                )
+
+                        tile_idx += 1
+        else:
+            if WarpRole.is_epilogue():
+                Self.EpilogueCtx.Sync.wait()  # wait for MMA to publish TMEM addr
+
+                var tmem = Self.Tmem.from_shared(smem.pipelines.tmem_addr())
+                var epi_ctx = Self.EpilogueCtx(
+                    tmem,
+                    Self.OutputPipeline(
+                        smem.pipelines.accum_barriers().ptr,
+                        tmem,
+                        UInt16(ctx.mma_complete_mask),
+                    ),
+                    Self.TmemDealloc(smem.pipelines.tmem_dealloc()),
+                )
+
+                var tile_writer = Self.TileWriterType(Pointer(to=c_tma_op))
+                var epi_iter = scheduler.work_iterator()
+
+                with epi_ctx:  # signals TMEM dealloc on exit
+                    var tile_idx = 0
+
+                    for current in epi_iter:
+                        with MatmulProfilerType[3](workspace, UInt32(tile_idx)):
+                            with epi_ctx.output_pipeline.consumer() as output_stage:  # waits for MMA
+                                # Use loaded epilogue tile using TMA + write back to GMEM (only enabled for bfloat16)
+                                comptime if Self.config.epilogue_is_1d:
+                                    # 1D bias: single 1×MMA_N tile, one pipeline stage per output tile.
+                                    epilogue_load_pipeline.wait_producer()
+                                    var epilogue_load_stage_idx = Int(
+                                        epilogue_load_pipeline.consumer_stage()
+                                    )
+                                    tile_writer.write_batched_with_1d_bias(
+                                        smem.c_tiles(),
+                                        output_stage,
+                                        smem.epilogue_load_tiles()[
+                                            epilogue_load_stage_idx
+                                        ],
+                                        (current.m, current.n, current.k_start),
+                                        (mnk[0], mnk[1]),
+                                    )
+                                    _ = epilogue_load_pipeline.consumer_mbar(
+                                        UInt32(epilogue_load_stage_idx)
+                                    )[0].arrive()
+                                    epilogue_load_pipeline.consumer_step()
+                                elif Self.config.AB_swapped:
                                     # AB_swapped: full MMA_N×BM tile, one pipeline stage per output tile.
                                     epilogue_load_pipeline.wait_producer()
                                     var epilogue_load_stage_idx = Int(
@@ -1600,20 +1757,8 @@ struct BlackwellMatmulSM100Kernel[
                                         (current.m, current.n, current.k_start),
                                         (mnk[0], mnk[1]),
                                     )
-                            # Use synchronous GMEM load (if any epilogue lambda is provided) + write back to GMEM
-                            else:
-                                tile_writer.write_batched(
-                                    smem.c_tiles(),
-                                    output_stage,
-                                    (
-                                        current.m,
-                                        current.n,
-                                        current.k_start,
-                                    ),
-                                    (mnk[0], mnk[1]),
-                                )
 
-                    tile_idx += 1
+                        tile_idx += 1
 
     @staticmethod
     @always_inline

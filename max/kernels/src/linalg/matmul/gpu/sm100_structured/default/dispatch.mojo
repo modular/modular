@@ -168,6 +168,7 @@ def dispatch_gemv[
     ] = None,
     pdl_level: PDLLevel = PDLLevel(),
     has_epilogue_tensor: Bool = False,
+    epilogue_is_1d: Bool = False,
 ](
     c: TileTensor[mut=True, c_type, ...],
     a: TileTensor[a_type, ...],
@@ -209,6 +210,7 @@ def dispatch_gemv[
             elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
             pdl_level=pdl_level,
             has_epilogue_tensor=has_epilogue_tensor,
+            epilogue_is_1d=epilogue_is_1d,
         ](c, a, b, ctx, epilogue_tensor=epilogue_tensor)
 
         if status:
@@ -236,6 +238,7 @@ def matmul_dispatch_sm100[
     ] = None,
     pdl_level: PDLLevel = PDLLevel(),
     has_epilogue_tensor: Bool = False,
+    epilogue_is_1d: Bool = False,
 ](
     c: TileTensor[mut=True, c_type, ...],
     a: TileTensor[a_type, ...],
@@ -290,6 +293,7 @@ def matmul_dispatch_sm100[
             AB_swapped=AB_SWAPPED,
             k_group_size=K_GROUP_SIZE,
             use_tma_epilogue_load=has_epilogue_tensor,
+            epilogue_is_1d=epilogue_is_1d,
         )
 
         return blackwell_matmul_tma_umma_warp_specialized[
@@ -308,6 +312,7 @@ def matmul_dispatch_sm100[
                 elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                 pdl_level=pdl_level,
                 has_epilogue_tensor=has_epilogue_tensor,
+                epilogue_is_1d=epilogue_is_1d,
             ](c, a, b, ctx, epilogue_tensor=epilogue_tensor)
             return
 
@@ -324,6 +329,7 @@ def matmul_dispatch_sm100[
                 elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                 pdl_level=pdl_level,
                 has_epilogue_tensor=has_epilogue_tensor,
+                epilogue_is_1d=epilogue_is_1d,
             ](c, a, b, ctx, epilogue_tensor=epilogue_tensor)
             if status:
                 return
@@ -384,6 +390,7 @@ def matmul_dispatch_sm100[
                 elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                 pdl_level=pdl_level,
                 has_epilogue_tensor=has_epilogue_tensor,
+                epilogue_is_1d=epilogue_is_1d,
             ](c, a, b, ctx, epilogue_tensor=epilogue_tensor)
 
         elif a_type == b_type == DType.float8_e4m3fn:
@@ -554,6 +561,7 @@ def select_and_launch_sm100_config[
     ] = None,
     pdl_level: PDLLevel = PDLLevel(),
     has_epilogue_tensor: Bool = False,
+    epilogue_is_1d: Bool = False,
 ](
     launch: launch_type,
     c: TileTensor[mut=True, c_type, ...],
@@ -607,6 +615,7 @@ def select_and_launch_sm100_config[
                     k_group_size=tuning_config.k_group_size,
                     num_split_k=tuning_config.num_split_k,
                     use_tma_epilogue_load=has_epilogue_tensor,
+                    epilogue_is_1d=epilogue_is_1d,
                 )
 
                 logger.info("dispatching to outlier config: ", matmul_config)
@@ -622,6 +631,7 @@ def select_and_launch_sm100_config[
         static_K,
         transpose_b,
         has_epilogue_tensor=has_epilogue_tensor,
+        epilogue_is_1d=epilogue_is_1d,
     ]()
     var aligned_m = align_up(m, 64) if m >= 256 else m
     var config_runtime = choose_config[
@@ -630,6 +640,7 @@ def select_and_launch_sm100_config[
         c_type,
         transpose_b,
         has_epilogue_tensor=has_epilogue_tensor,
+        epilogue_is_1d=epilogue_is_1d,
     ](aligned_m, static_N, static_K, 1)
 
     comptime for config in configs:
@@ -666,6 +677,7 @@ def heuristic_and_outliers_dispatch[
     ] = None,
     pdl_level: PDLLevel = PDLLevel(),
     has_epilogue_tensor: Bool = False,
+    epilogue_is_1d: Bool = False,
 ](
     c: TileTensor[mut=True, c_type, ...],
     a: TileTensor[a_type, ...],
@@ -695,6 +707,7 @@ def heuristic_and_outliers_dispatch[
         elementwise_compute_lambda_fn,
         pdl_level,
         has_epilogue_tensor=has_epilogue_tensor,
+        epilogue_is_1d=epilogue_is_1d,
     ](launch_callback, c, a, b, ctx)
 
 
@@ -713,6 +726,7 @@ def matmul_dispatch_sm100_bf16[
     ] = None,
     pdl_level: PDLLevel = PDLLevel(),
     has_epilogue_tensor: Bool = False,
+    epilogue_is_1d: Bool = False,
 ](
     c: TileTensor[mut=True, c_type, ...],
     a: TileTensor[a_type, ...],
@@ -782,6 +796,7 @@ def matmul_dispatch_sm100_bf16[
         elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
         pdl_level=pdl_level,
         has_epilogue_tensor=has_epilogue_tensor,
+        epilogue_is_1d=epilogue_is_1d,
     ](c, a, b, ctx, epilogue_tensor=epilogue_tensor)
 
 
@@ -1119,6 +1134,7 @@ def sm100_heuristic_and_outliers_dispatch[
     ] = None,
     pdl_level: PDLLevel = PDLLevel(),
     has_epilogue_tensor: Bool = False,
+    epilogue_is_1d: Bool = False,
 ](
     c: TileTensor[mut=True, c_type, ...],
     a: TileTensor[a_type, ...],
@@ -1150,4 +1166,5 @@ def sm100_heuristic_and_outliers_dispatch[
         elementwise_compute_lambda_fn,
         pdl_level,
         has_epilogue_tensor=has_epilogue_tensor,
+        epilogue_is_1d=epilogue_is_1d,
     ](launch_callback, c, a, b, ctx)

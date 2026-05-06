@@ -76,6 +76,7 @@ _EXTRA_CONSTRAINTS = {
     "gpu/nn/bench_conv2d_sm100.mojo": ["//:b200_gpu"],  # SM100-specific TMA im2col
     "gpu/linalg/bench_block_scaled_matmul.mojo": ["//:b200_gpu"],  # SM100-specific block-scaled matmul
     "gpu/linalg/bench_matmul_tma_epilogue.mojo": ["//:b200_gpu"],  # SM100-specific TMA epilogue matmul
+    "gpu/linalg/bench_matmul_1d_tma_epilogue.mojo": ["//:b200_gpu"],  # SM100-specific 1D bias TMA epilogue matmul
     "gpu/nn/bench_moe_routing.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],

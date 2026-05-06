@@ -418,6 +418,7 @@ def _matmul_gpu[
     ] = None,
     pdl_level: PDLLevel = PDLLevel(),
     has_epilogue_tensor: Bool = False,
+    epilogue_is_1d: Bool = False,
 ](
     c: TileTensor[mut=True, ...],
     a: TileTensor[mut=False, ...],
@@ -568,6 +569,7 @@ def _matmul_gpu[
             elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
             pdl_level=PDLLevel(1),
             has_epilogue_tensor=has_epilogue_tensor,
+            epilogue_is_1d=epilogue_is_1d,
         ](c, a, b, ctx, epilogue_tensor=epilogue_tensor)
 
     comptime if ctx.default_device_info == H100:
