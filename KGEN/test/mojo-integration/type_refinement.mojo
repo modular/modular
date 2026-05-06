@@ -565,13 +565,12 @@ struct ReflectedEquatable(Equatable):
 def reflected_refined_arg_field_eq[
     T: AnyType
 ](a: T, b: T) -> Bool where conforms_to(T, Equatable):
-    comptime r = reflect[T]()
-    comptime field_types = r.field_types()
+    comptime field_types = reflect[T].field_types()
 
-    comptime for idx in range(r.field_count()):
+    comptime for idx in range(reflect[T].field_count()):
         comptime if conforms_to(field_types[idx], Equatable):
-            ref lhs = r.field_ref[idx](a)
-            ref rhs = r.field_ref[idx](b)
+            ref lhs = reflect[T].field_ref[idx](a)
+            ref rhs = reflect[T].field_ref[idx](b)
             if lhs != rhs:
                 return False
     return True

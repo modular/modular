@@ -26,7 +26,7 @@ def test_nonexistent_field_index():
     comptime if get_defined_bool["TEST_NONEXISTENT_INDEX", False]():
         # CHECK-INDEX: has no field named 'nonexistent'
         comptime assert (
-            reflect[TestStruct]().field_index["nonexistent"]() == 0
+            reflect[TestStruct].field_index["nonexistent"]() == 0
         ), "should not reach here"
 
 
@@ -34,9 +34,7 @@ def test_nonexistent_field_index():
 def test_nonexistent_field_type():
     comptime if get_defined_bool["TEST_NONEXISTENT_TYPE", False]():
         # CHECK-TYPE: has no field named 'missing_field'
-        comptime field_type = reflect[TestStruct]().field_type[
-            "missing_field"
-        ]()
+        comptime field_type = reflect[TestStruct].field_type["missing_field"]
         # Force evaluation by using the type
         comptime assert field_type.name() == "Int", "should not reach here"
 
@@ -46,7 +44,7 @@ def test_offset_nonexistent_field():
     comptime if get_defined_bool["TEST_OFFSET_NONEXISTENT_FIELD", False]():
         # CHECK-OFFSET-NAME: has no field named 'does_not_exist'
         comptime assert (
-            reflect[TestStruct]().field_offset[name="does_not_exist"]() == 0
+            reflect[TestStruct].field_offset[name="does_not_exist"]() == 0
         ), "should not reach here"
 
 
@@ -55,7 +53,7 @@ def test_offset_out_of_bounds():
     comptime if get_defined_bool["TEST_OFFSET_OUT_OF_BOUNDS", False]():
         # CHECK-OFFSET-INDEX: field index 99 is out of bounds for struct with 2 fields
         comptime assert (
-            reflect[TestStruct]().field_offset[index=99]() == 0
+            reflect[TestStruct].field_offset[index=99]() == 0
         ), "should not reach here"
 
 
@@ -64,7 +62,7 @@ def test_offset_negative_index():
     comptime if get_defined_bool["TEST_OFFSET_NEGATIVE_INDEX", False]():
         # CHECK-OFFSET-NEGATIVE: field index -1 is out of bounds for struct with 2 fields
         comptime assert (
-            reflect[TestStruct]().field_offset[index=-1]() == 0
+            reflect[TestStruct].field_offset[index=-1]() == 0
         ), "should not reach here"
 
 
