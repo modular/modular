@@ -92,6 +92,14 @@ class Eagle3DeepseekV3Inputs(DeepseekV3Inputs):
     the field is required to satisfy the ``_UnifiedEagleInputs`` protocol
     used by ``OverlapTextGenerationPipeline``."""
 
+    token_bitmasks: Buffer | None = None
+    """Grammar constraint bitmask for structured output.
+
+    Shape: [batch_size, num_speculative_tokens + 1, vocab_size].
+    Applied to target logits at the acceptance sampling step.
+    None when structured output is disabled.
+    """
+
     @property
     def buffers(self) -> tuple[Buffer, ...]:
         buffers = super().buffers
@@ -116,6 +124,8 @@ class Eagle3DeepseekV3Inputs(DeepseekV3Inputs):
                 self.top_p,
                 self.min_top_p,
             )
+            if self.token_bitmasks is not None:
+                buffers += (self.token_bitmasks,)
         return buffers
 
 
@@ -240,6 +250,7 @@ class Eagle3DeepseekV3Model(DeepseekV3Model):
             config,
             draft_config,
             speculative_config=self.pipeline_config.speculative,
+            enable_structured_output=self.pipeline_config.sampling.enable_structured_output,
         )
 
         # Share embed_tokens before loading so the graph sees a single
@@ -364,6 +375,12 @@ class Eagle3DeepseekV3Model(DeepseekV3Model):
                 top_p = next(variadic_args_iter).tensor
                 min_top_p = next(variadic_args_iter).tensor
 
+                # Optional bitmask — present only when structured output is
+                # enabled (matches the conditional in input_types()).
+                token_bitmasks_graph = None
+                if nn_model.enable_structured_output:
+                    token_bitmasks_graph = next(variadic_args_iter).tensor
+
                 outputs = nn_model(
                     tokens=tokens.tensor,
                     input_row_offsets=devices_input_row_offsets.tensor,
@@ -382,6 +399,7 @@ class Eagle3DeepseekV3Model(DeepseekV3Model):
                     min_top_p=min_top_p,
                     ep_inputs=target_ep_inputs,
                     draft_kv_collections=draft_kv_collections,
+                    token_bitmasks=token_bitmasks_graph,
                 )
                 graph.output(*outputs)
 

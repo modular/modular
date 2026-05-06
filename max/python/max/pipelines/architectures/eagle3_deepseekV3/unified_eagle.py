@@ -71,9 +71,11 @@ class Eagle3DeepseekV3Unified(Module):
         config: DeepseekV3Config,
         draft_config: DeepseekV3Config | None = None,
         speculative_config: SpeculativeConfig | None = None,
+        enable_structured_output: bool = False,
     ) -> None:
         super().__init__()
         self.config = config
+        self.enable_structured_output = enable_structured_output
         self.num_draft_steps = (
             speculative_config.num_speculative_tokens
             if speculative_config
@@ -114,6 +116,7 @@ class Eagle3DeepseekV3Unified(Module):
         min_top_p: TensorValue,
         ep_inputs: list[Value[Any]] | None = None,
         draft_kv_collections: list[PagedCacheValues] | None = None,
+        token_bitmasks: TensorValue | None = None,
     ) -> tuple[TensorValue, ...]:
         """Run target + ``num_draft_steps`` draft steps + acceptance sampling.
 
@@ -195,6 +198,7 @@ class Eagle3DeepseekV3Unified(Module):
             max_k=max_k,
             top_p=top_p,
             min_top_p=min_top_p,
+            token_bitmasks=token_bitmasks,
         )
 
         # Compute next_tokens: target argmax at the first rejected position.
@@ -429,7 +433,10 @@ class Eagle3DeepseekV3Unified(Module):
                data_parallel_splits, signal_buffers, target_kv_cache,
                batch_context_lengths, target_ep_inputs, draft_tokens,
                draft_kv_blocks_per_device, seed, temperature, top_k,
-               max_k, top_p, min_top_p.
+               max_k, top_p, min_top_p[, token_bitmasks].
+
+        The optional token_bitmasks input is appended last when
+        ``enable_structured_output`` is True.
         """
         devices = self.config.devices
         device_ref = devices[0]
@@ -516,5 +523,16 @@ class Eagle3DeepseekV3Unified(Module):
                 min_top_p_type,
             ]
         )
+
+        if self.enable_structured_output:
+            # num_bitmask_positions = num_speculative_tokens + 1
+            # Position i contains valid tokens given FSM state after draft[0:i-1]
+            # Position num_speculative_tokens is for the bonus token
+            token_bitmasks_type = TensorType(
+                DType.bool,
+                shape=["batch_size", "num_bitmask_positions", "vocab_size"],
+                device=device_ref,
+            )
+            all_input_types.append(token_bitmasks_type)
 
         return tuple(all_input_types)
