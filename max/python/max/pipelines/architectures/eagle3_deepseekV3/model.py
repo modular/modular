@@ -74,7 +74,7 @@ class Eagle3DeepseekV3Inputs(DeepseekV3Inputs):
     draft_tokens: Buffer | None = None
     draft_kv_blocks: list[Buffer] | None = None
     seed: Buffer | None = None
-    """Per-execute int64 scalar seed consumed by the stochastic acceptance
+    """Per-execute uint64 [1] seed consumed by the stochastic acceptance
     sampler (and, when enabled, the synthetic benchmarking sampler)."""
 
     temperature: Buffer | None = None
@@ -151,9 +151,11 @@ class Eagle3DeepseekV3Model(DeepseekV3Model):
         self._seed_counter = 0
 
     def _next_seed(self) -> Buffer:
-        """Monotonically advancing int64 scalar seed, fresh per execute."""
+        """Monotonically advancing uint64 [1] seed, fresh per execute."""
         self._seed_counter += 1
-        return Buffer.from_numpy(np.array(self._seed_counter, dtype=np.int64))
+        return Buffer.from_numpy(
+            np.array([self._seed_counter], dtype=np.uint64)
+        ).to(self.devices[0])
 
     @override
     def load_model(self, session: InferenceSession) -> Model:

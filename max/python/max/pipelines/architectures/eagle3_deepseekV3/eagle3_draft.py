@@ -204,7 +204,14 @@ class Eagle3DeepseekV3(Module):
             devices=config.devices,
             quant_config=config.quant_config,
         )
-        dense_mlp.sharding_strategy = ShardingStrategy.replicate(num_devices)
+        if self.use_tp_ep:
+            dense_mlp.sharding_strategy = ShardingStrategy.tensor_parallel(
+                num_devices
+            )
+        else:
+            dense_mlp.sharding_strategy = ShardingStrategy.replicate(
+                num_devices
+            )
         self.decoder_layer.mlp = dense_mlp
         self.decoder_layer.mlp_shards = list(dense_mlp.shard(devices))
 
@@ -363,6 +370,8 @@ class Eagle3DeepseekV3(Module):
         mlp_outs = forward_moe_sharded_layers(
             self.decoder_layer.mlp_shards, norm_outs
         )
+        if self.use_tp_ep:
+            mlp_outs = ops.allreduce.sum(mlp_outs, signal_buffers)
         hs = [h + mlp_out for h, mlp_out in zip(hs, mlp_outs, strict=True)]
 
         if self.config.data_parallel_degree > 1:
