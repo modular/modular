@@ -287,15 +287,12 @@ class PixelGenerationTokenizer(
 
         # Store static model dimensions
         self._default_sample_size = 128
-        if self._pipeline_class_name == PipelineClassName.ZIMAGE:
-            self._num_channels_latents = transformer_config["in_channels"]
-        else:
-            out_channels = transformer_config.get("out_channels")
-            self._num_channels_latents = (
-                out_channels
-                if out_channels is not None
-                else transformer_config["in_channels"] // 4
-            )
+        out_channels = transformer_config.get("out_channels")
+        self._num_channels_latents = (
+            out_channels
+            if out_channels is not None
+            else transformer_config["in_channels"] // 4
+        )
 
         # Create scheduler from its component config.
         scheduler_config = models["scheduler"].huggingface_config
@@ -573,26 +570,6 @@ class PixelGenerationTokenizer(
 
         def _encode_fn(prompt_str: str) -> Any:
             assert delegate is not None
-            if self._pipeline_class_name == PipelineClassName.ZIMAGE:
-                # For Z-Image, use Qwen chat-template formatting.
-                messages = [{"role": "user", "content": prompt_str}]
-                if not hasattr(delegate, "apply_chat_template"):
-                    raise ValueError(
-                        "Z-Image requires tokenizer.apply_chat_template, "
-                        "but the loaded tokenizer does not provide it."
-                    )
-                return delegate.apply_chat_template(
-                    messages,
-                    enable_thinking=True,
-                    add_generation_prompt=True,
-                    tokenize=True,
-                    return_dict=True,
-                    padding="max_length",
-                    truncation=True,
-                    max_length=max_sequence_length,
-                    return_length=False,
-                    return_overflowing_tokens=False,
-                )
             # The tokenizer's truncation=True silently drops tokens beyond
             # max_sequence_length; error early instead.
             raw_ids = delegate.encode(
@@ -841,10 +818,6 @@ class PixelGenerationTokenizer(
                 "falling back to standard generation."
             )
 
-        do_zimage_cfg = (
-            self._pipeline_class_name == PipelineClassName.ZIMAGE
-            and guidance_scale > 0.0
-        )
         if self._pipeline_class_name in (
             PipelineClassName.WAN,
             PipelineClassName.WAN_I2V,
@@ -885,7 +858,7 @@ class PixelGenerationTokenizer(
             image_specific.secondary_prompt,
             negative_prompt_resolved,
             image_specific.secondary_negative_prompt,
-            do_true_cfg or do_zimage_cfg,
+            do_true_cfg,
             images=images_for_tokenization,
         )
 
@@ -914,20 +887,11 @@ class PixelGenerationTokenizer(
         # 2. Preprocess input image if provided
         preprocessed_image_array = None
         if input_image is not None:
-            _preserve_aspect = (
-                self._pipeline_class_name != PipelineClassName.ZIMAGE
-            )
             preprocessed_image = self._preprocess_input_image(
                 input_image,
-                # Only pass the user's output dims as preprocessing targets
-                # when the pipeline opts out of aspect preservation. For
-                # aspect-preserving pipelines, passing them would force-resize the
-                # input image to the output shape and defeat aspect preservation.
-                target_height=None
-                if _preserve_aspect
-                else pixel_options.height,
-                target_width=None if _preserve_aspect else pixel_options.width,
-                preserve_aspect_ratio=_preserve_aspect,
+                target_height=None,
+                target_width=None,
+                preserve_aspect_ratio=True,
             )
             height = pixel_options.height or preprocessed_image.height
             width = pixel_options.width or preprocessed_image.width
@@ -952,42 +916,9 @@ class PixelGenerationTokenizer(
             if pixel_options.steps is not None
             else self._default_num_inference_steps
         )
-        sigma_min = (
-            0.0
-            if self._pipeline_class_name == PipelineClassName.ZIMAGE
-            else None
-        )
         timesteps, sigmas = self._scheduler.retrieve_timesteps_and_sigmas(
-            image_seq_len, num_inference_steps, sigma_min=sigma_min
+            image_seq_len, num_inference_steps, sigma_min=None
         )
-        if (
-            self._pipeline_class_name == PipelineClassName.ZIMAGE
-            and self._scheduler_shift != 1.0
-        ):
-            # Match diffusers FlowMatchEulerDiscreteScheduler static shift behavior.
-            # Z-Image scheduler config uses shift=6.0.
-            shifted_timesteps = (
-                self._scheduler_shift
-                * timesteps
-                / (1.0 + (self._scheduler_shift - 1.0) * timesteps)
-            ).astype(np.float32)
-            timesteps = shifted_timesteps
-            sigmas = np.append(shifted_timesteps, np.float32(0.0))
-
-        # Z-Image img2img follows diffusers strength behavior by starting
-        # denoising from a later timestep.
-        if (
-            self._pipeline_class_name == PipelineClassName.ZIMAGE
-            and input_image is not None
-        ):
-            init_timestep = min(
-                num_inference_steps * image_specific.strength,
-                float(num_inference_steps),
-            )
-            t_start = int(max(num_inference_steps - init_timestep, 0.0))
-            timesteps = timesteps[t_start:]
-            sigmas = sigmas[t_start:]
-            num_inference_steps = int(timesteps.shape[0])
 
         num_warmup_steps: int = max(
             len(timesteps) - num_inference_steps * self._scheduler.order, 0
