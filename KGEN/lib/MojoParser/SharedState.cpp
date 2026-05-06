@@ -117,8 +117,13 @@ public:
 
     // Walk this element, bailing if skipped or interrupted.
     WalkResult walkResult = processBytecodeReferences(element);
-    if (walkResult.wasInterrupted())
-      return visitedAttrTypes[key] = WalkResult::interrupt();
+    if (walkResult.wasInterrupted()) {
+      // Don't cache failures: they can be transient (e.g., a symbol lookup
+      // that fires before its container's body is materialized). Caching
+      // would permanently suppress any retry once the container is ready.
+
+      return WalkResult::interrupt();
+    }
     if (walkResult.wasSkipped())
       return WalkResult::advance();
 
@@ -130,7 +135,8 @@ public:
     };
     element.walkImmediateSubElements(walkFn, walkFn);
 
-    visitedAttrTypes.try_emplace(key, WalkResult::advance());
+    if (!result.wasInterrupted())
+      visitedAttrTypes.try_emplace(key, WalkResult::advance());
     return result.wasInterrupted() ? result : WalkResult::advance();
   }
   void walkRange(TypeRange types) {
@@ -1905,6 +1911,14 @@ SharedState::resolveDeclFromBytecode(ASTDecl &decl,
   if (bytecodeReader->isMaterializable(declOp)) {
     if (failed(bytecodeReader->materialize(declOp)))
       return failure();
+    // Invalidate the MLIR symbol-table cache for this op. The cache is keyed
+    // by op pointer and built lazily on first lookup. If lookupSymbolIn was
+    // called on this op *before* materialization (possible because
+    // decl.resolvedness = body is set early, above, to break cycles), the
+    // cached table was built from an empty body region and won't see the
+    // newly-inflated child ops. Invalidating here forces a fresh rebuild on
+    // the next lookup.
+    impl->symbolTables.invalidateSymbolTable(declOp);
   }
 
   // Process the parsed region bodies, generating any necessary nested decls.
