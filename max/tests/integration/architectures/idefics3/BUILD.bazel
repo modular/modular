@@ -69,6 +69,7 @@ modular_py_test(
     ],
 )
 
+# MODELS-1415: Test timing out in CI
 modular_py_test(
     name = "test_vision_encoder_layer",
     srcs = ["test_vision_encoder_layer.py"],
@@ -84,6 +85,7 @@ modular_py_test(
     }),  # FIXME: MOCO-2411
     tags = [
         "gpu",
+        "manual",
     ],
     deps = [
         "//max/python/max/driver",
