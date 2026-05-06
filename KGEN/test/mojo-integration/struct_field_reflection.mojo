@@ -12,12 +12,13 @@ from std.builtin.rebind import downcast
 trait CanDoSomething:
     # An unsafe default that assumes all fields implement CanDoSomething.
     def do_something(self):
-        comptime r = reflect[Self]()
-        comptime names = r.field_names()
+        comptime names = reflect[Self].field_names()
 
         comptime for i in range(names.size):
             print(materialize[names[i]](), ": ", sep="", end="")
-            trait_downcast[CanDoSomething](r.field_ref[i](self)).do_something()
+            trait_downcast[CanDoSomething](
+                reflect[Self].field_ref[i](self)
+            ).do_something()
 
 
 @fieldwise_init
