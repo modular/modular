@@ -42,13 +42,8 @@ static std::string locationToString(Location location) {
       .str();
 }
 
-void FormatScopedDiagnosticHandler::emitDiagLocSeverity(
+void FormatScopedDiagnosticHandler::emitDiagnosticSeverityToStream(
     raw_ostream &os, const Diagnostic &diag) {
-  // Only display the location if it is meaningful.
-  std::string location = locationToString(diag.getLocation());
-  if (!location.empty())
-    os << location << ": ";
-
   os << severityToString(diag.getSeverity()) << ": ";
   os << diag;
   os << "\n";
