@@ -33,6 +33,7 @@
         "max/serve/function-calling",
         "max/serve/structured-output",
         "max/serve/offline-inference",
+        "max/develop/max-pipeline-bring-your-own-model",
         "max/models"
       ]
     },
@@ -86,7 +87,6 @@
             "max/develop/model-bringup-workflow",
             "max/develop/pipelines",
             "max/develop/serve-custom-model-architectures",
-            "max/develop/max-pipeline-bring-your-own-model",
             "max/graph/quantize"
           ]
         },

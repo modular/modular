@@ -1,234 +1,147 @@
 ---
-title: Bring your own fine-tuned model to MAX pipelines
+title: Serve a fine-tuned model on a supported architecture
 sidebar_label: Custom weights
-description: Learn how to use your fine-tuned model in MAX pipelines
-is_tutorial: true
+description: Serve a fine-tuned model checkpoint with MAX when the base architecture is already supported, with no architecture code required.
 ---
 
-import Tabs from '@theme/Tabs';
-import TabItem from '@theme/TabItem';
 import MDXListing from '@site/src/components/Listing/MDXListing';
 
-In this tutorial, you'll integrate a fine-tuned custom model into MAX
-pipelines. More specifically, we will start with the initial configuration and
-then demonstrate how to download a model from the Hugging Face Hub. If the
-model is not already available in a supported quantized GGUF format, we'll show
-you how to convert it to prepare for ingestion into the MAX pipelines. Finally,
-we will explore how to use the quantized GGUF model via the MAX pipelines CLI.
+This page covers serving a fine-tune built on an architecture MAX already
+supports. To bring up a new architecture, see the
+[model bring-up workflow](/max/develop/model-bringup-workflow).
 
-## About model customization
+When you fine-tune a Llama 3, Mistral, or Qwen model, the resulting checkpoint
+runs the same computation as the base: the same attention mechanism, the same
+normalization placement, the same residual connections. MAX already implements
+that computation for every architecture in its
+[supported models](/max/models/) list, which means serving your fine-tune
+doesn't require writing or modifying any architecture code. The work here is
+configuration, pointing MAX at your weights and letting it load them into the
+implementation it already has.
 
-Model customization in machine learning typically involves modifying a
-pre-trained model to better suit specific tasks or datasets. One effective
-approach is fine-tuning, where a model trained on a large dataset is further
-trained (or fine-tuned) on a smaller, task-specific dataset. In this tutorial,
-we focus on [Low Rank Adaptation (LoRA)](https://arxiv.org/abs/2106.09685).
+## Where fine-tuned models fit in the customization spectrum
 
-LoRA (and its quantized variant [QLoRA](https://arxiv.org/abs/2305.14314))
-allows for efficient adaptation of large models by only updating a small set of
-additional parameters, preserving the original model's structure by integrating
-LoRA layers without altering the primary architecture. For this tutorial, we
-are assuming the LoRA weights have been merged into the original model such as
-**Llama3.1**. If you want to serve a LoRA adapter with MAX without merging the
-weights into your base model, see the [LoRA adapters](/max/serve/lora-adapters)
-guide.
+MAX customization spans three levels, ordered by how much implementation work
+each requires:
 
-Such a functionality is provided by major fine-tuning libraries such as
-[unsloth `save_pretrained_merged`](https://docs.unsloth.ai/basics/saving-models/saving-to-gguf)
-or using
-[PEFT model merging](https://huggingface.co/docs/peft/en/developer_guides/model_merging)
-APIs.
+- **Fine-tuned weights on a supported base architecture** — no implementation
+  work. This page covers it.
+- **Weight adapter** — a small adapter resolves mismatched weight or config
+  field names that some fine-tuning pipelines introduce, without touching the
+  architecture implementation. Covered in the
+  [model bring-up workflow](/max/develop/model-bringup-workflow).
+- **Full architecture package** — required when the compute graph itself is
+  new (a different attention variant, routing mechanism, or normalization
+  scheme that MAX hasn't implemented). Also covered in the
+  [model bring-up workflow](/max/develop/model-bringup-workflow).
 
-## Step 1: Set up Hugging Face access
+The decision signal is the `architectures` field in your model's `config.json`.
+If it lists an architecture that MAX already supports (`LlamaForCausalLM`,
+`MistralForCausalLM`, `Qwen2ForCausalLM`, or another entry from the
+[supported models](/max/models/) list), you're in the right place and no code
+is required.
 
-To interact with models hosted on Hugging Face, secure access is required either
-via SSH or an access token. Follow the instructions in the
-[Hugging Face documentation](https://huggingface.co/docs/hub/en/security-git-ssh)
-to set up SSH. We can verify our configuration by running:
+## Serve a merged fine-tune
 
-```sh
-ssh -T git@hf.co
-```
+MAX serves merged fine-tunes in two formats: safetensors directly (covered
+next) and GGUF after quantization (covered in
+[Quantize for production](#quantize-for-production)).
 
-A successful setup will display `Hi <USERNAME>, welcome to Hugging Face`.
+When you've merged LoRA weights (or any other fine-tuning) into the base model
+using a library like unsloth's `save_pretrained_merged` or PEFT's model-merging
+API, the result is a standard Hugging Face model repo in safetensors format
+with your fine-tuned weights baked in. MAX can serve this checkpoint directly,
+with no format conversion required.
 
-## Step 2: Set up MAX pipelines
-
-Next is to clone the [MAX GitHub repository](https://github.com/modular/modular)
-and navigate to the MAX pipeline:
-
-```sh
-git clone -b stable https://github.com/modular/modular && cd max
-
-cd src/max
-```
-
-## Step 3: Include the `huggingface_hub` CLI
-
-We'll use the `pixi` CLI to create a virtual environment and install the
-required packages. If you don't have `pixi`, you can install it with this
-command:
+If your merged checkpoint is published on the Hugging Face Hub, serve it by
+passing the repo ID to `max serve`:
 
 ```sh
-curl -fsSL https://pixi.sh/install.sh | sh
+max serve --model <your-hf-org>/<your-fine-tuned-model>
 ```
 
-Now install the `huggingface_hub` library to enable interactions with the
-Hugging Face Hub. This package facilitates the download, and management of
-models and datasets:
+MAX downloads the model, reads `config.json` to identify the architecture class,
+loads the matching MAX implementation, and applies your weights. The
+`architectures` field in `config.json` must name an architecture that MAX
+supports; if it doesn't, MAX exits with an error indicating no matching
+architecture was found.
+
+If your merged checkpoint is saved to a local directory, pass the directory path
+instead:
 
 ```sh
-pixi add --pypi huggingface_hub hf_transfer
+max serve --model /path/to/your/merged-model
 ```
 
-With the Hugging Face Hub CLI installed, we can proceed to the next steps of
-downloading and converting our model.
+MAX reads the local `config.json` and loads weights from the safetensors files
+in that directory. The architecture matching works the same way.
 
-## Step 4: Convert to GGUF format
+### Quantize for production
 
-If your model is already in the
-[GGUF format](https://github.com/ggerganov/ggml/blob/master/docs/gguf.md), you
-can skip this conversion step and proceed directly to the next step. If not,
-here are the most common methods to convert a model to a quantized GGUF format
-suitable for deployment:
+For production workloads, a quantized checkpoint typically reduces memory
+requirements and improves throughput. The most common format is GGUF, and two
+tools handle the conversion from safetensors.
 
-- **Automated conversion via Hugging Face space**: We can use the
-  [gguf-my-repo](https://huggingface.co/spaces/ggml-org/gguf-my-repo) space for
-  a streamlined conversion process to convert to a supported quantized GGUF
-  format. Remember to log in and for the sake of this tutorial, we choose the
-  `Q4_K_M` quantization method.
+The [gguf-my-repo](https://huggingface.co/spaces/ggml-org/gguf-my-repo) space on
+Hugging Face converts your merged model without any local setup: log in, select
+your merged model's repo, and choose a quantization method such as `Q4_K_M`.
+After conversion, the GGUF file appears under your HuggingFace username and can
+be downloaded for local use.
 
-  You can see all the supported quantization encodings in the
-  [`QuantizationEncoding` module](/max/api/python/generated/max.graph.quantization.QuantizationEncoding).
-  For demonstration, we will choose
-  [mlabonne/FineLlama-3.1-8B](https://huggingface.co/mlabonne/FineLlama-3.1-8B).
+To convert locally using the llama.cpp script instead, run the converter against
+your merged model directory:
 
-  After conversion, the model will be available under your Hugging Face
-  USERNAME, ready for download and deployment.
-
-  ![](images/max-pipeline-bring-your-own-model/gguf-my-repo.png)
-
-  The following will download the converted GGUF model:
-
-  ```sh
-  pixi run huggingface-cli download \
-  <USERNAME>/FineLlama-3.1-8B-Q4_K_M-GGUF \
-  --repo-type model \
-  --local-dir ./models
-  ```
-
-- **Manually convert via llama.cpp script**: Alternatively, utilize the
-  [llama.cpp converter script](https://github.com/ggerganov/llama.cpp/blob/master/convert_hf_to_gguf.py)
-  to manually convert your model.
-
-  ```sh
-  git clone https://github.com/ggerganov/llama.cpp
-
-  # If your model is available in Hugging Face <REPO-ID/MODEL-ID>.
-  # Ensure you replace <REPO-ID/MODEL-ID> with the appropriate
-  # repository or model ID from Hugging Face.
-  # Otherwise skip this command.
-  pixi run huggingface-cli download <REPO-ID/MODEL-ID> \
-   --repo-type model \
-   --local-dir ./models
-
-  python llama.cpp/convert_hf_to_gguf.py models
-  ```
-
-With all the requirements in place we are now ready to use our custom model in
-MAX pipelines.
-
-## Step 5: Run the custom model
-
-With our fine-tuned Llama 3.1 model successfully converted to GGUF format, we're
-ready to put it into action using MAX pipelines. For this demonstration, we'll
-be using our converted model file `finellama-3.1-8b-q4_k_m.gguf`.
-
-First, let's install the necessary CLI tool. MAX provides the `max`
-package, which we can easily install using the `pixi` command:
-
-```bash
-pixi global install modular -c https://conda.modular.com/max-nightly -c conda-forge
+```sh
+git clone https://github.com/ggerganov/llama.cpp
+python llama.cpp/convert_hf_to_gguf.py /path/to/your/merged-model
 ```
 
-Before running our model, it's worth noting that MAX pipelines offer various
-configuration options. You can explore these by running, `max --help`
-for the available options.
+Once you have the GGUF file, serve it with the following command, which uses a
+base model repo for architecture registration and your converted weights for
+inference:
 
-:::note
-
-If you use private or gated models, you must set your [Hugging Face access
-token](https://huggingface.co/docs/hub/en/security-tokens) first. For example:
-
-```bash
-export HF_TOKEN="hf_..."
-```
-
-Then you can run a `max` command to execute a private or gated model.
-
-:::
-
-Now, let's run our custom model. We'll use the `max generate` command,
-specifying our model configuration and a test prompt:
-
-```bash
-max generate \
+```sh
+max serve \
   --model modularai/Llama-3.1-8B-Instruct-GGUF \
-  --quantization-encoding "q4_k" \
-  --weight-path "./models/finellama-3.1-8b-q4_k_m.gguf" \
-  --prompt "What is the meaning of life?"
+  --quantization-encoding q4_k \
+  --weight-path ./models/your-fine-tuned-model-q4_k_m.gguf
 ```
 
-It generates the following answer:
+`--model` points to a base GGUF model repo that provides the architecture
+registration. `--weight-path` tells MAX to serve your fine-tuned weights instead
+of the base model's weights. Both flags are required when serving a custom GGUF
+checkpoint; omitting `--weight-path` causes MAX to serve the base model's
+weights rather than yours. All supported quantization encodings are listed in
+[`QuantizationEncoding`](/max/api/python/generated/max.graph.quantization.QuantizationEncoding).
 
-```output
-The meaning of life is a question that has been pondered by philosophers, scientists,
-and spiritual leaders for centuries. It is a question that has no definitive answer,
-as it is deeply personal and subjective to each individual. However, many have
-attempted to provide their own interpretations or explanations.
+## Use LoRA adapters without merging
 
-One interpretation of the meaning of life is that it is simply to live and experience
-the world around us. This view suggests that the purpose of life is to experience all
-that it has to offer, whether it be through the senses, emotions, or intellectual
-pursuits. In this sense, the meaning of life is not necessarily tied to any specific goal
-or achievement, but rather to the process of living itself.
+If you're serving multiple task-specific adapters from a single base model, or
+if you want to swap adapters at runtime without restarting the server, you can
+skip the merge step and load LoRA adapters at serve time instead. Pass each
+adapter as a name-to-path pair with `--lora-paths` and enable the adapter API
+with `--enable-lora`:
 
-Another interpretation is that the meaning of life is to find purpose and meaning in
-our lives. This view suggests that we are here to seek out our own unique purpose and
-to strive to achieve it. This can be achieved through various means, such as through our
-work, relationships, or personal pursuits.
-
-A third interpretation is that the meaning of life is to connect with something larger
-than ourselves. This view suggests that we are here to connect with a higher power,
-whether it be through religion, spirituality, or a sense of awe and wonder at the
-universe. In this sense, the meaning of life is to find a sense of purpose and
-connection that transcends our individual lives.
-
-Ultimately, the meaning of life is a question that each person must answer for themselves.
-It is a question that requires us to reflect on our own values, beliefs, and experiences.
-As the saying goes, "Ask a flower" - the meaning of life is not something that can be
-answered in words, but rather in the experience of living itself.
+```sh
+max serve \
+  --model meta-llama/Llama-3.1-8B-Instruct \
+  --lora-paths finance=/path/to/finance-adapter \
+  --enable-lora \
+  --no-enable-prefix-caching
 ```
 
-For more information on quantization, see the
-[Quantization](/max/graph/quantize) documentation.
+Prefix caching is enabled by default and is incompatible with LoRA serving, so
+`--no-enable-prefix-caching` is required. LoRA serving currently supports Llama
+3 base models with PEFT-trained adapters in safetensors format; other base
+architectures are not yet supported. For dynamic loading and unloading of
+adapters while the server is running, see
+[LoRA adapters](/max/serve/lora-adapters).
 
 ## Next steps
 
-Congratulations on successfully integrating your fine-tuned Llama3.1 model into
-the MAX pipelines.
-
-We have navigated through setting up secure access, downloading and converting
-models, and finally running your custom model in MAX pipelines. We encourage you
-to further customize your models via the MAX Graph API, test your pipeline and
-explore other MAX features including how to
-**deploy your fine-tuned model on GPU using MAX Serve**.
-
-Here are some other topics to explore next:
-
 export const docs = [
   '../../develop/serve-custom-model-architectures.mdx',
-  '../../develop/custom-ops.mdx',
+  '../../serve/lora-adapters.mdx',
   '../../graph/quantize.mdx',
 ];
 
