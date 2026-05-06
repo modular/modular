@@ -47,7 +47,7 @@ trait Floatable:
     ```
 
     **Note:** If the `__float__()` method can raise an error, use
-    the [`FloatableRaising`](/docs/std/builtin/floatable/floatableraising)
+    the [`FloatableRaising`](/docs/std/builtin/floatable/FloatableRaising/)
     trait instead.
     """
 

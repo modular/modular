@@ -19,7 +19,7 @@ grouped into a grid of thread blocks.
 
 A _kernel_ is a function that runs on the GPU in parallel across many threads.
 Currently, the
-[`DeviceContext`](/docs/std/gpu/host/device_context/DeviceContext) struct
+[`DeviceContext`](/docs/std/gpu/host/device_context/DeviceContext/) struct
 provides the interface for compiling and launching GPU kernels inside MAX
 [custom operations](/max/develop/custom-ops/).
 

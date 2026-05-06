@@ -381,12 +381,12 @@ def print[
     and followed by `end`.
 
     This function accepts any number of values, but their types must implement
-    the [`Writable`](/docs/std/format/Writable) trait. Most built-in types
+    the [`Writable`](/docs/std/format/Writable/) trait. Most built-in types
     (like `Int`, `Float64`, `Bool`, `String`) implement the
-    [`Writable`](/docs/std/format/Writable) trait.
+    [`Writable`](/docs/std/format/Writable/) trait.
 
     For string formatting, use the
-    [`format()`](/docs/std/collections/string/string/String#format) function.
+    [`format()`](/docs/std/collections/string/string/String/#format) function.
 
     Examples:
 

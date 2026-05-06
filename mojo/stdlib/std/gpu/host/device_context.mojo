@@ -14,7 +14,7 @@
 # Implementation of the C++ backed DeviceContext in Mojo
 """This module provides functionality for interacting with accelerators. In
 particular the
-[`DeviceContext`](/docs/std/gpu/host/device_context/DeviceContext) struct,
+[`DeviceContext`](/docs/std/gpu/host/device_context/DeviceContext/) struct,
 which represents a single stream of execution on a given accelerator. You can
 use this struct to allocate accelerator memory, copy data to and from the
 accelerator, and compile and execute functions on the accelerator."""
@@ -334,7 +334,7 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
 
     To allocate a `HostBuffer`, use one of the methods provided by
     `DeviceContext`, such as
-    [`enqueue_create_host_buffer()`](/docs/std/gpu/host/device_context/DeviceContext#enqueue_create_host_buffer).
+    [`enqueue_create_host_buffer()`](/docs/std/gpu/host/device_context/DeviceContext/#enqueue_create_host_buffer).
 
     Parameters:
         dtype: Data type to be stored in the buffer.
@@ -853,7 +853,7 @@ struct DeviceBuffer[dtype: DType](
 
     To allocate a `DeviceBuffer`, use one of the methods provided by
     `DeviceContext`, such as
-    [`enqueue_create_buffer()`](/docs/std/gpu/host/device_context/DeviceContext#enqueue_create_buffer).
+    [`enqueue_create_buffer()`](/docs/std/gpu/host/device_context/DeviceContext/#enqueue_create_buffer).
 
     Parameters:
         dtype: Data dtype to be stored in the buffer.
@@ -3041,7 +3041,7 @@ struct DeviceGraph(ImplicitlyCopyable):
     lower overhead than re-enqueueing each operation individually.
 
     To obtain a `DeviceGraph`, use
-    [`DeviceGraphBuilder.instantiate()`](/mojo/std/gpu/host/device_context/DeviceGraphBuilder#instantiate).
+    [`DeviceGraphBuilder.instantiate()`](/docs/std/gpu/host/device_context/DeviceGraphBuilder/#instantiate).
     """
 
     var _handle: _DeviceGraphPtr[mut=True]
@@ -3113,7 +3113,7 @@ struct DeviceGraphBuilder(Movable, _FunctionEnqueuer):
     """Builder for explicit device graph construction.
 
     A `DeviceGraphBuilder` is obtained from
-    [`DeviceContext.create_graph_builder()`](/mojo/std/gpu/host/device_context/DeviceContext#create_graph_builder).
+    [`DeviceContext.create_graph_builder()`](/docs/std/gpu/host/device_context/DeviceContext/#create_graph_builder).
     Callers add kernel nodes via `add_function()` and then call
     `instantiate()` to produce a reusable `DeviceGraph`.
 
@@ -3545,7 +3545,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
     the device.
 
     The device context can be used as a
-    [context manager](/docs/manual/errors#use-a-context-manager). For example:
+    [context manager](/docs/manual/errors/#use-a-context-manager). For example:
 
     ```mojo
     from std.gpu.host import DeviceContext
@@ -3897,7 +3897,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
 
         Pinned memory is guaranteed to remain resident in the host's RAM, not be
         paged/swapped out to disk. Memory allocated normally (for example, using
-        [`alloc()`](/docs/std/memory/unsafe_pointer/alloc))
+        [`alloc()`](/docs/std/memory/unsafe_pointer/alloc/))
         is pageable—individual pages of memory can be moved to secondary storage
         (disk/SSD) when main memory fills up.
 
@@ -7088,7 +7088,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
         """Returns the specified attribute for this device.
 
         Use the aliases defined by
-        [DeviceAttribute](/docs/std/gpu/host/device_attribute/DeviceAttribute)
+        [DeviceAttribute](/docs/std/gpu/host/device_attribute/DeviceAttribute/)
         to specify attributes. For example:
 
         ```mojo

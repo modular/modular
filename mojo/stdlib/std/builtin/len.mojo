@@ -25,8 +25,8 @@ trait Sized:
     string or array).
 
     Any type that conforms to `Sized` or
-    [`SizedRaising`](/docs/std/builtin/len/SizedRaising) works with the
-    built-in [`len()`](/docs/std/builtin/len/len) function.
+    [`SizedRaising`](/docs/std/builtin/len/SizedRaising/) works with the
+    built-in [`len()`](/docs/std/builtin/len/len/) function.
 
     The `Sized` trait requires a type to implement the `__len__()`
     method. For example:
@@ -60,7 +60,7 @@ trait Sized:
     ```
 
     **Note:** If the `__len__()` method can raise an error, use the
-    [`SizedRaising`](/docs/std/builtin/len/SizedRaising) trait instead.
+    [`SizedRaising`](/docs/std/builtin/len/SizedRaising/) trait instead.
 
     """
 
@@ -77,9 +77,9 @@ trait SizedRaising:
     """The `SizedRaising` trait describes a type that has an integer length,
     which might raise an error if the length can't be determined.
 
-    Any type that conforms to [`Sized`](/docs/std/builtin/len/Sized) or
+    Any type that conforms to [`Sized`](/docs/std/builtin/len/Sized/) or
     `SizedRaising` works with the built-in
-    [`len()`](/docs/std/builtin/len/len) function.
+    [`len()`](/docs/std/builtin/len/len/) function.
 
     The `SizedRaising` trait requires a type to implement the `__len__()`
     method, which can raise an error. For example:

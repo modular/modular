@@ -23,7 +23,7 @@ Core features:
 
 Key components:
 
-- [`String`](/docs/std/collections/string/string/String):
+- [`String`](/docs/std/collections/string/string/String/):
   Mutable and owning string
 
   - Uses a smart three-mode allocation strategy: static memory
@@ -36,7 +36,7 @@ Key components:
 
   - Mutable and grows dynamically as needed.
 
-- [`StringSlice`](/docs/std/collections/string/string_slice/StringSlice):
+- [`StringSlice`](/docs/std/collections/string/string_slice/StringSlice/):
   Non-owning string view
 
   - Performs zero heap allocations: stores only a pointer and length
@@ -54,7 +54,7 @@ Key components:
   - References data with a static lifetime that exists for the entire program
   duration, unlike `StringSlice` which can reference temporary data.
 
-- [`Codepoint`](/docs/std/collections/string/codepoint/Codepoint):
+- [`Codepoint`](/docs/std/collections/string/codepoint/Codepoint/):
   Unicode codepoint representation and operations
 
   - Represents a single Unicode codepoint as a 32-bit value.

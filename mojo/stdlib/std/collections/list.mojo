@@ -192,7 +192,7 @@ struct List[T: Copyable](
       ```
 
       However, you can get around this by defining your list type as
-      [`Variant`](/docs/std/utils/variant/Variant). This is a discriminated
+      [`Variant`](/docs/std/utils/variant/Variant/). This is a discriminated
       union type, meaning it can store any number of different types that can
       vary at runtime.
 
