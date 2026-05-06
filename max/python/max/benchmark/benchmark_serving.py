@@ -1178,55 +1178,13 @@ def _run_dry_run_sweep(
             )
 
 
-def main_with_parsed_args(
+def _run_benchmark_sweep(
     args: ServingBenchmarkConfig,
+    session: BenchmarkSession,
+    concurrency_range: list[int | None],
+    request_rate_range: list[float],
+    use_dynamic_num_prompts: bool,
 ) -> Iterator[BenchmarkRunResult]:
-    logging.basicConfig(
-        format="%(asctime)s.%(msecs)03d %(levelname)s: %(name)s: %(message)s",
-        datefmt="%H:%M:%S",
-        level=logging.DEBUG if args.verbose else logging.INFO,
-    )
-
-    logger.info(args)
-
-    if args.model is None:
-        raise ValueError("--model is required when running benchmark")
-
-    _load_workload_yaml(args)
-
-    # Warn + default when nothing constrains run length (common to both paths).
-    _apply_run_length_defaults(args)
-
-    # ---- Parse sweep ranges ----
-    concurrency_range = parse_comma_separated(args.max_concurrency, int_or_none)
-    request_rate_range = parse_comma_separated(args.request_rate, float)
-
-    # When num_prompts_multiplier is active AND no explicit num_prompts or
-    # duration constrains the run, dynamically compute num_prompts per
-    # concurrency level.
-    use_dynamic_num_prompts = _apply_dynamic_num_prompts(
-        args, concurrency_range
-    )
-
-    session = _build_session(args)
-
-    if args.print_workload_stats:
-        print_workload_stats(session.samples)
-
-    if args.print_inputs_and_outputs:
-        print_input_prompts(session.samples)
-
-    if args.dry_run:
-        yield from _run_dry_run_sweep(
-            args, session, concurrency_range, request_rate_range
-        )
-        return
-
-    # Samples are ready; wait for the server before issuing any requests.
-    wait_for_server_ready(
-        args.host, args.port, timeout_s=args.server_ready_timeout_s
-    )
-
     # ---- Sweep loop ----
     for mc in concurrency_range:
         if use_dynamic_num_prompts:
@@ -1286,6 +1244,55 @@ def main_with_parsed_args(
             yield BenchmarkRunResult(
                 mc, rr, args.num_prompts or 0, result=best_result
             )
+
+
+def main_with_parsed_args(
+    args: ServingBenchmarkConfig,
+) -> Iterator[BenchmarkRunResult]:
+    logging.basicConfig(
+        format="%(asctime)s.%(msecs)03d %(levelname)s: %(name)s: %(message)s",
+        datefmt="%H:%M:%S",
+        level=logging.DEBUG if args.verbose else logging.INFO,
+    )
+
+    logger.info(args)
+
+    if args.model is None:
+        raise ValueError("--model is required when running benchmark")
+
+    _load_workload_yaml(args)
+    _apply_run_length_defaults(args)
+
+    concurrency_range = parse_comma_separated(args.max_concurrency, int_or_none)
+    request_rate_range = parse_comma_separated(args.request_rate, float)
+    use_dynamic_num_prompts = _apply_dynamic_num_prompts(
+        args, concurrency_range
+    )
+
+    session = _build_session(args)
+
+    if args.print_workload_stats:
+        print_workload_stats(session.samples)
+    if args.print_inputs_and_outputs:
+        print_input_prompts(session.samples)
+
+    if args.dry_run:
+        yield from _run_dry_run_sweep(
+            args, session, concurrency_range, request_rate_range
+        )
+        return
+
+    wait_for_server_ready(
+        args.host, args.port, timeout_s=args.server_ready_timeout_s
+    )
+
+    yield from _run_benchmark_sweep(
+        args,
+        session,
+        concurrency_range,
+        request_rate_range,
+        use_dynamic_num_prompts,
+    )
 
 
 def _extract_metadata_args(
