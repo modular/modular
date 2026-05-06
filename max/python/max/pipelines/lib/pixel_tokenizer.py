@@ -194,6 +194,7 @@ class PixelGenerationTokenizer(
         secondary_max_length: int | None = None,
         trust_remote_code: bool = False,
         default_num_inference_steps: int = 50,
+        scheduler_config_overrides: dict[str, Any] | None = None,
         **unused_kwargs,
     ) -> None:
         self.model_path = model_path
@@ -306,79 +307,29 @@ class PixelGenerationTokenizer(
                 "Scheduler config missing '_class_name' attribute."
             )
         scheduler_cfg = scheduler_config.to_dict()
-        scheduler_cfg["use_empirical_mu"] = self._pipeline_class_name in (
-            PipelineClassName.FLUX2,
-            PipelineClassName.FLUX2_KLEIN,
-        )
+        scheduler_cfg["use_empirical_mu"] = False
+        if scheduler_config_overrides:
+            scheduler_cfg.update(scheduler_config_overrides)
         self._scheduler = SchedulerFactory.create(
             class_name=scheduler_class_name,
             config_dict=scheduler_cfg,
         )
         self._scheduler_shift = float(scheduler_cfg.get("shift", 1.0))
 
-        self._max_pixel_size = None
-        if self._pipeline_class_name in (
-            PipelineClassName.FLUX2,
-            PipelineClassName.FLUX2_KLEIN,
-        ):
-            self._max_pixel_size = 1024 * 1024
+        self._max_pixel_size: int | None = None
 
     def _prepare_latent_image_ids(
         self, height: int, width: int, batch_size: int = 1
     ) -> npt.NDArray[np.float32]:
-        if self._pipeline_class_name in (
-            PipelineClassName.FLUX2,
-            PipelineClassName.FLUX2_KLEIN,
-        ):
-            # Create 4D coordinates using numpy (T=0, H, W, L=0)
-            t_coords, h_coords, w_coords, l_coords = np.meshgrid(
-                np.array([0]),  # T dimension
-                np.arange(height),  # H dimension
-                np.arange(width),  # W dimension
-                np.array([0]),  # L dimension
-                indexing="ij",
-            )
-            latent_image_ids = np.stack(
-                [t_coords, h_coords, w_coords, l_coords], axis=-1
-            )
-            latent_image_ids = latent_image_ids.reshape(-1, 4)
-
-            latent_image_ids = np.tile(
-                latent_image_ids[np.newaxis, :, :], (batch_size, 1, 1)
-            )
-            return latent_image_ids
-        else:
-            latent_image_ids = np.zeros((height, width, 3))
-            latent_image_ids[..., 1] = (
-                latent_image_ids[..., 1] + np.arange(height)[:, None]
-            )
-            latent_image_ids[..., 2] = (
-                latent_image_ids[..., 2] + np.arange(width)[None, :]
-            )
-            return latent_image_ids.reshape(
-                -1, latent_image_ids.shape[-1]
-            ).astype(np.float32)
-
-    @staticmethod
-    def _build_text_ids(batch_size: int, seq_len: int) -> npt.NDArray[np.int64]:
-        """Create 4D text position IDs in (T, H, W, L) format.
-
-        For text tokens: T=0, H=0, W=0, L=arange(seq_len).
-
-        Returns:
-            Array of shape ``(batch_size, seq_len, 4)`` int64.
-        """
-        coords = np.stack(
-            [
-                np.zeros(seq_len, dtype=np.int64),
-                np.zeros(seq_len, dtype=np.int64),
-                np.zeros(seq_len, dtype=np.int64),
-                np.arange(seq_len, dtype=np.int64),
-            ],
-            axis=-1,
-        )  # (seq_len, 4)
-        return np.ascontiguousarray(
-            np.tile(coords[np.newaxis, :, :], (batch_size, 1, 1))
+        latent_image_ids = np.zeros((height, width, 3))
+        latent_image_ids[..., 1] = (
+            latent_image_ids[..., 1] + np.arange(height)[:, None]
+        )
+        latent_image_ids[..., 2] = (
+            latent_image_ids[..., 2] + np.arange(width)[None, :]
+        )
+        return latent_image_ids.reshape(-1, latent_image_ids.shape[-1]).astype(
+            np.float32
         )
 
     def _randn_tensor(
@@ -622,101 +573,7 @@ class PixelGenerationTokenizer(
 
         def _encode_fn(prompt_str: str) -> Any:
             assert delegate is not None
-            if self._pipeline_class_name == PipelineClassName.FLUX2:
-                # Import lazily to avoid a lib <-> architectures cycle.
-                from max.pipelines.architectures.flux2_modulev3.system_messages import (
-                    SYSTEM_MESSAGE,
-                    format_input,
-                )
-
-                messages_batch = format_input(
-                    prompts=[prompt_str],
-                    system_message=SYSTEM_MESSAGE,
-                    images=None,
-                )
-
-                # Validate prompt length before truncation.
-                # apply_chat_template with truncation=True silently
-                # drops tokens; error early instead.
-                precheck = delegate.apply_chat_template(
-                    messages_batch[0],
-                    add_generation_prompt=False,
-                    tokenize=True,
-                    return_dict=True,
-                    truncation=False,
-                )
-                precheck_ids = precheck["input_ids"]
-                precheck_len = (
-                    len(precheck_ids[0])
-                    if precheck_ids and isinstance(precheck_ids[0], list)
-                    else len(precheck_ids)
-                )
-                if max_sequence_length and precheck_len > max_sequence_length:
-                    raise ValueError(
-                        f"Prompt is too long for this model's text"
-                        f" encoder: {precheck_len} tokens exceeds"
-                        f" the maximum of {max_sequence_length}"
-                        " tokens. Please shorten your prompt."
-                    )
-
-                return delegate.apply_chat_template(
-                    messages_batch[0],
-                    add_generation_prompt=False,
-                    tokenize=True,
-                    return_dict=True,
-                    padding="max_length",
-                    truncation=True,
-                    max_length=max_sequence_length,
-                    return_length=False,
-                    return_overflowing_tokens=False,
-                )
-            elif self._pipeline_class_name == PipelineClassName.FLUX2_KLEIN:
-                # Import lazily to avoid a lib <-> architectures cycle.
-                from max.pipelines.architectures.flux2_modulev3.system_messages import (
-                    format_input_klein,
-                )
-
-                messages_batch = format_input_klein(
-                    prompts=[prompt_str],
-                    images=None,
-                )
-                kwargs = dict(
-                    add_generation_prompt=True,
-                    tokenize=False,
-                )
-                try:
-                    prompt_text = delegate.apply_chat_template(
-                        messages_batch[0],
-                        enable_thinking=False,
-                        **kwargs,
-                    )
-                except TypeError:
-                    prompt_text = delegate.apply_chat_template(
-                        messages_batch[0],
-                        **kwargs,
-                    )
-                # Validate prompt length before truncation.
-                raw_ids = delegate.encode(
-                    prompt_text,
-                    add_special_tokens=add_special_tokens,
-                )
-                if max_sequence_length and len(raw_ids) > max_sequence_length:
-                    raise ValueError(
-                        f"Prompt is too long for this model's text"
-                        f" encoder: {len(raw_ids)} tokens exceeds"
-                        f" the maximum of {max_sequence_length}"
-                        " tokens. Please shorten your prompt."
-                    )
-
-                return delegate(
-                    prompt_text,
-                    padding="max_length",
-                    max_length=max_sequence_length,
-                    truncation=True,
-                    add_special_tokens=add_special_tokens,
-                    return_attention_mask=True,
-                )
-            elif self._pipeline_class_name == PipelineClassName.ZIMAGE:
+            if self._pipeline_class_name == PipelineClassName.ZIMAGE:
                 # For Z-Image, use Qwen chat-template formatting.
                 messages = [{"role": "user", "content": prompt_str}]
                 if not hasattr(delegate, "apply_chat_template"):
@@ -736,30 +593,27 @@ class PixelGenerationTokenizer(
                     return_length=False,
                     return_overflowing_tokens=False,
                 )
-            else:
-                # Validate prompt length before truncation.
-                # The tokenizer's truncation=True silently drops
-                # tokens beyond max_sequence_length; error early
-                # instead.
-                raw_ids = delegate.encode(
-                    prompt_str,
-                    add_special_tokens=add_special_tokens,
+            # The tokenizer's truncation=True silently drops tokens beyond
+            # max_sequence_length; error early instead.
+            raw_ids = delegate.encode(
+                prompt_str,
+                add_special_tokens=add_special_tokens,
+            )
+            if max_sequence_length and len(raw_ids) > max_sequence_length:
+                raise ValueError(
+                    f"Prompt is too long for this model's text"
+                    f" encoder: {len(raw_ids)} tokens exceeds"
+                    f" the maximum of {max_sequence_length}"
+                    " tokens. Please shorten your prompt."
                 )
-                if max_sequence_length and len(raw_ids) > max_sequence_length:
-                    raise ValueError(
-                        f"Prompt is too long for this model's text"
-                        f" encoder: {len(raw_ids)} tokens exceeds"
-                        f" the maximum of {max_sequence_length}"
-                        " tokens. Please shorten your prompt."
-                    )
 
-                return delegate(
-                    prompt_str,
-                    padding="max_length",
-                    max_length=max_sequence_length,
-                    truncation=True,
-                    add_special_tokens=add_special_tokens,
-                )
+            return delegate(
+                prompt_str,
+                padding="max_length",
+                max_length=max_sequence_length,
+                truncation=True,
+                add_special_tokens=add_special_tokens,
+            )
 
         tokenizer_output = await run_with_default_executor(_encode_fn, prompt)
 
@@ -797,23 +651,6 @@ class PixelGenerationTokenizer(
                 "Tokenizer produced mismatched `input_ids` and `attention_mask` shapes: "
                 f"{input_ids_array.shape} vs {attention_mask_array.shape}."
             )
-
-        # Flux2 text encoder path currently does not consume an explicit
-        # attention mask. Strip padded tokens here and keep a dense mask.
-        # FLUX2_KLEIN/Z-Image consume attention_mask directly.
-        if self._pipeline_class_name == PipelineClassName.FLUX2:
-            token_row = input_ids_array[0]
-            mask_row = attention_mask_array[0]
-            real_token_ids = token_row[mask_row]
-            if real_token_ids.size == 0:
-                raise ValueError(
-                    f"{self._pipeline_class_name.value} tokenization produced "
-                    "an empty effective prompt after attention masking."
-                )
-            input_ids_array = np.expand_dims(
-                real_token_ids.astype(np.int64, copy=False), axis=0
-            )
-            attention_mask_array = np.ones_like(input_ids_array, dtype=np.bool_)
 
         if (
             max_sequence_length is not None
@@ -1008,14 +845,7 @@ class PixelGenerationTokenizer(
             self._pipeline_class_name == PipelineClassName.ZIMAGE
             and guidance_scale > 0.0
         )
-        if self._pipeline_class_name == PipelineClassName.FLUX2_KLEIN:
-            is_distilled_klein = bool(
-                self._manifest_metadata.get("is_distilled", False)
-            )
-            # for non-distilled models, CFG is enabled
-            # whenever guidance_scale > 1.0; negative prompt defaults to "".
-            do_true_cfg = guidance_scale > 1.0 and not is_distilled_klein
-        elif self._pipeline_class_name in (
+        if self._pipeline_class_name in (
             PipelineClassName.WAN,
             PipelineClassName.WAN_I2V,
         ):
@@ -1171,22 +1001,8 @@ class PixelGenerationTokenizer(
             request.body.seed,
         )
 
-        # 4b. Build text position IDs for Flux2-family pipelines.
         text_ids = np.array([], dtype=np.int64)
         negative_text_ids = np.array([], dtype=np.int64)
-        if self._pipeline_class_name in (
-            PipelineClassName.FLUX2,
-            PipelineClassName.FLUX2_KLEIN,
-        ):
-            text_ids = self._build_text_ids(
-                image_specific.num_images,
-                int(token_buffer.array.shape[0]),
-            )
-            if negative_token_buffer is not None:
-                negative_text_ids = self._build_text_ids(
-                    image_specific.num_images,
-                    int(negative_token_buffer.array.shape[0]),
-                )
 
         # 5. Build the context
         context = PixelContext(
