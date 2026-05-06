@@ -143,6 +143,24 @@ MODEL_ALIASES = CaseInsensitiveDict({
     "meta-llama/Llama-3.1-8B-Instruct__tiered_kvconnector": {
         "max_serve_args": "--kv-connector tiered",
     },
+    "austinpowers/Kimi-K2.5-NVFP4-DeepseekV3__local_kvconnector_tpep": {
+        "max_serve_args": (
+            "--data-parallel-degree 1 "
+            "--kv-cache-format float8_e4m3fn "
+            "--device-memory-utilization 0.75 "
+            "--max-batch-input-tokens 4096 "
+            "--kv-connector local"
+        ),
+    },
+    "austinpowers/Kimi-K2.5-NVFP4-DeepseekV3__tiered_kvconnector_tpep": {
+        "max_serve_args": (
+            "--data-parallel-degree 1 "
+            "--kv-cache-format float8_e4m3fn "
+            "--device-memory-utilization 0.75 "
+            "--max-batch-input-tokens 4096 "
+            "--kv-connector tiered"
+        ),
+    },
 })
 # fmt: on
 
@@ -152,7 +170,14 @@ def is_vision_model(model: str) -> bool:
     """Check if the model supports vision tasks."""
     model = model.casefold()
     if any(
-        kw in model for kw in ("no_vision", "__eagle", "__mtp", "gemma-3-1b")
+        kw in model
+        for kw in (
+            "no_vision",
+            "__eagle",
+            "__mtp",
+            "_kvconnector",
+            "gemma-3-1b",
+        )
     ):
         return False
     return any(
