@@ -135,7 +135,17 @@ ExecutionEngine::create(ExecutionEngineOptions options,
 
   // The JIT-link memory manager is owned by the ObjectLinkingLayer so build it
   // up front.
-  size_t slabSize = 1024 * 1024 * 1024;
+  //
+  // JIT mapper reservation granularity. Every fresh reservation by LLVM's
+  // MapperJITLinkMemoryManager is rounded up to this size and mmapped
+  // PROT_READ|PROT_WRITE, so it sets a floor on the JIT region's virtual
+  // footprint — which counts against RLIMIT_AS on Linux. Large compiles
+  // still work: the mapper reserves additional slabs on demand.
+  //
+  // Do not increase this unless you know what you are doing. In the past,
+  // setting this to 1 GiB caused sporadic OoM crashes on memory-constrained
+  // runners.
+  size_t slabSize = size_t{64} * 1024 * 1024;
   auto managerOr =
       toModularErrorOr(llvm::orc::MapperJITLinkMemoryManager::CreateWithMapper<
                        llvm::orc::InProcessMemoryMapper>(slabSize));
