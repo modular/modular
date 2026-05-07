@@ -26,6 +26,7 @@ from std.format._utils import (
     FormatStruct,
     TypeNames,
 )
+from std.memory.alloc import alloc, free, Layout
 
 
 struct OwnedPointer[T: AnyType](
@@ -61,7 +62,7 @@ struct OwnedPointer[T: AnyType](
         Args:
             value: The value to move into the `OwnedPointer`.
         """
-        self._inner = alloc[_T](1)
+        self._inner = alloc(Layout[_T].single())
         self._inner.init_pointee_move(value^)
 
     def __init__[_T: Copyable](out self: OwnedPointer[_T], *, copy_value: _T):
@@ -74,7 +75,7 @@ struct OwnedPointer[T: AnyType](
         Args:
             copy_value: The value to explicitly copy into the `OwnedPointer`.
         """
-        self._inner = alloc[_T](1)
+        self._inner = alloc(Layout[_T].single())
         self._inner.init_pointee_copy(copy_value)
 
     def __init__[
@@ -89,7 +90,7 @@ struct OwnedPointer[T: AnyType](
         Args:
             value: The value to copy into the `OwnedPointer`.
         """
-        self._inner = alloc[_T](1)
+        self._inner = alloc(Layout[_T].single())
         self._inner.init_pointee_copy(value)
 
     def __init__[
@@ -159,7 +160,7 @@ struct OwnedPointer[T: AnyType](
         comptime TDestructible = downcast[Self.T, ImplicitlyDestructible]
 
         self._inner.bitcast[TDestructible]().destroy_pointee()
-        self._inner.free()
+        free(self._inner, Layout[Self.T].single())
 
     # ===-------------------------------------------------------------------===#
     # Operator dunders
@@ -214,7 +215,7 @@ struct OwnedPointer[T: AnyType](
             The data that is (was) backing the `OwnedPointer`.
         """
         var r = self._inner.take_pointee()
-        self._inner.free()
+        free(self._inner, Layout[_T].single())
         return r^
 
     def steal_data(deinit self) -> UnsafePointer[Self.T, MutExternalOrigin]:

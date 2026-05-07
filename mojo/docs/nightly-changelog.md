@@ -101,6 +101,19 @@ This version is still a work in progress.
   def main():
       print(reflect_fn[my_func].display_name())  # "my_func"
       print(reflect_fn[my_func].linkage_name())  # mangled symbol name
+
+- Added `alloc`, `free`, and `Layout` in `memory.alloc` for layout-aware memory
+  allocation. A `Layout[T]` bundles an element count and alignment into a
+  single value that is passed to both `alloc` and `free`, keeping size and
+  alignment requirements explicit and co-located at every call site.
+
+  ```mojo
+  from memory import alloc, free, Layout
+
+  var layout = Layout[Int32](count=4)
+  var ptr = alloc(layout)
+  # ... initialize & use ptr ...
+  free(ptr, layout)
   ```
 
 ## Tooling changes

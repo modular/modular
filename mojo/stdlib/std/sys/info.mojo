@@ -1100,7 +1100,7 @@ def size_of[dtype: DType, target: _TargetType = _current_target()]() -> Int:
     )
 
 
-@always_inline("nodebug")
+@always_inline("builtin")
 def align_of[type: AnyType, target: _TargetType = _current_target()]() -> Int:
     """Returns the align of (in bytes) of the type.
 
