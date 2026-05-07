@@ -88,6 +88,21 @@ This version is still a work in progress.
 
   <!-- markdownlint-enable MD013 -->
 
+- Added `ReflectedFn[func]`, a function-side reflection handle accessed via
+  the `reflect_fn[func]` `comptime` alias. Exposes function introspection
+  through static methods, paralleling the type-side `Reflected[T]` API:
+
+  ```mojo
+  from std.reflection import reflect_fn
+
+  def my_func(x: Int) -> Int:
+      return x + 1
+
+  def main():
+      print(reflect_fn[my_func].display_name())  # "my_func"
+      print(reflect_fn[my_func].linkage_name())  # mangled symbol name
+  ```
+
 ## Tooling changes
 
 ## GPU programming
