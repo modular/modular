@@ -226,7 +226,7 @@ class Flux2TransformerBlock(Module):
             mult=mlp_ratio,
             bias=bias,
             dtype=dtype,
-            device=device,
+            devices=[device],
             quant_config=quant.ff,
         )
         self.norm2_context = LayerNorm(
@@ -243,7 +243,7 @@ class Flux2TransformerBlock(Module):
             mult=mlp_ratio,
             bias=bias,
             dtype=dtype,
-            device=device,
+            devices=[device],
             quant_config=quant.ff_context,
         )
 

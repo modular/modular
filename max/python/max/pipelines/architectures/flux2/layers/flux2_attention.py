@@ -11,12 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from __future__ import annotations
+
+from collections.abc import Iterable, Sequence
 
 from max.dtype import DType
-from max.graph import DeviceRef, TensorValue, ops
+from max.graph import DeviceRef, ShardingStrategy, TensorValue, ops
 from max.nn.attention.mask_config import MHAMaskVariant
 from max.nn.kernels import flash_attention_gpu, rope_ragged_with_position_ids
-from max.nn.layer import LayerList, Module
+from max.nn.layer import LayerList, Module, Shardable
 from max.nn.linear import Linear
 from max.nn.norm import RMSNorm
 from max.nn.quant_config import QuantConfig
@@ -95,7 +98,7 @@ class Flux2SwiGLU(Module):
         return ops.silu(x1) * x2
 
 
-class Flux2FeedForward(Module):
+class Flux2FeedForward(Module, Shardable):
     def __init__(
         self,
         dim: int,
@@ -105,7 +108,7 @@ class Flux2FeedForward(Module):
         bias: bool = False,
         *,
         dtype: DType,
-        device: DeviceRef,
+        devices: Sequence[DeviceRef],
         quant_config: QuantConfig | None = None,
     ):
         """Initialize Flux2FeedForward.
@@ -117,17 +120,27 @@ class Flux2FeedForward(Module):
             inner_dim: Explicit inner dimension (overrides mult if provided).
             bias: Whether to use bias in linear layers.
             dtype: Weight dtype.
-            device: Weight device.
+            devices: Devices for placement and tensor parallelism. The
+                un-sharded base lives on ``devices[0]``; ``shard()`` produces
+                one shard per device.
+            quant_config: Quantization config applied to both linears.
         """
         super().__init__()
         if inner_dim is None:
             inner_dim = int(dim * mult)
         dim_out = dim_out or dim
+        self.dim = dim
+        self.dim_out = dim_out
+        self.inner_dim = inner_dim
+        self.has_bias = bias
+        self.dtype = dtype
+        self.devices = list(devices)
+        self.quant_config = quant_config
         self.linear_in = Linear(
             dim,
             inner_dim * 2,
             dtype,
-            device,
+            self.devices[0],
             has_bias=bias,
             quant_config=quant_config,
         )
@@ -136,10 +149,11 @@ class Flux2FeedForward(Module):
             inner_dim,
             dim_out,
             dtype,
-            device,
+            self.devices[0],
             has_bias=bias,
             quant_config=quant_config,
         )
+        self._sharding_strategy: ShardingStrategy | None = None
 
     def __call__(self, x: TensorValue) -> TensorValue:
         """Apply feedforward transformation.
@@ -154,6 +168,64 @@ class Flux2FeedForward(Module):
         x = self.act_fn(x)
         x = self.linear_out(x)
         return x
+
+    @property
+    def sharding_strategy(self) -> ShardingStrategy | None:
+        return self._sharding_strategy
+
+    @sharding_strategy.setter
+    def sharding_strategy(self, strategy: ShardingStrategy) -> None:
+        if strategy.is_replicate:
+            self.linear_in.sharding_strategy = strategy
+            self.linear_out.sharding_strategy = strategy
+        elif strategy.is_tensor_parallel:
+            # SwiGLU on a stacked-gate-up linear_in: each device must own
+            # the matching halves of gate and up so silu(gate)*up runs
+            # locally. ``gate_up`` axis=0 picks aligned slices from each
+            # half rather than cutting the output dim contiguously.
+            self.linear_in.sharding_strategy = ShardingStrategy.gate_up(
+                strategy.num_devices, axis=0
+            )
+            # linear_out reduces along the inner_dim axis that was just
+            # sharded; columnwise leaves partial sums for a block-level
+            # allreduce.
+            self.linear_out.sharding_strategy = ShardingStrategy.columnwise(
+                strategy.num_devices
+            )
+        else:
+            raise ValueError(
+                "Flux2FeedForward only supports tensor_parallel and "
+                f"replicate sharding; got {strategy}"
+            )
+        self._sharding_strategy = strategy
+
+    def shard(self, devices: Iterable[DeviceRef]) -> list[Flux2FeedForward]:
+        if self._sharding_strategy is None:
+            raise ValueError(
+                "Flux2FeedForward cannot be sharded without a sharding "
+                "strategy."
+            )
+        devices_list = list(devices)
+        sharded_in = self.linear_in.shard(devices_list)
+        sharded_out = self.linear_out.shard(devices_list)
+        shards: list[Flux2FeedForward] = []
+        for device, lin_in, lin_out in zip(
+            devices_list, sharded_in, sharded_out, strict=True
+        ):
+            sharded = Flux2FeedForward(
+                dim=self.dim,
+                dim_out=self.dim_out,
+                inner_dim=self.inner_dim,
+                bias=self.has_bias,
+                dtype=self.dtype,
+                devices=[device],
+                quant_config=self.quant_config,
+            )
+            sharded.linear_in = lin_in
+            sharded.linear_out = lin_out
+            sharded._sharding_strategy = self._sharding_strategy
+            shards.append(sharded)
+        return shards
 
 
 class Flux2PosEmbed(Module):
