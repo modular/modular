@@ -14,7 +14,6 @@
 
 #include "KGEN/MojoParser/IRValues.h"
 #include "Support/LLVMCompilerForwardDecls.h"
-#include "llvm/ADT/STLFunctionalExtras.h"
 #include <variant>
 
 namespace mlir {
@@ -188,13 +187,6 @@ public:
 
   /// Return true if this is a TupleNode with no subexpressions.
   bool isEmptyTuple() const;
-
-  /// Invoke `callback` for each immediate child expression of this node.
-  virtual void
-  walkSubExprs(llvm::function_ref<void(const ExprNode *)> callback) const;
-
-  /// Walk this expression and its child expressions in pre-order.
-  void walk(llvm::function_ref<void(const ExprNode *)> callback) const;
 
   virtual llvm::LogicalResult emitDestructuringPValue(PValue value,
                                                       IREmitter &emitter) const;
