@@ -18,9 +18,6 @@ common --experimental_strict_repo_env
 # More resilient to network issues with the BCR URL
 common --module_mirrors=https://bcr.cloudflaremirrors.com
 
-# https://github.com/bazelbuild/bazel/pull/27030
-common --experimental_objc_fastbuild_options=
-
 # Don't inherit magic copts for objc_library rules
 common --incompatible_avoid_hardcoded_objc_compilation_flags
 
@@ -116,6 +113,7 @@ build --remote_cache_compression
 build --experimental_remote_cache_compression_threshold=100
 build --legacy_important_outputs=false
 build --slim_profile=false
+build --rewind_lost_inputs
 
 # Include full test log in failed tests
 build --test_output=errors
