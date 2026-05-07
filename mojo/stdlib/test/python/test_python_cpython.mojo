@@ -74,7 +74,7 @@ def _test_exception_handling_api(cpy: CPython) raises:
     cpy.PyErr_SetString(ValueError, msg.as_c_string_slice().unsafe_ptr())
     assert_true(cpy.PyErr_Occurred())
 
-    if cpy.version.minor < 12:
+    if cpy.version < (3, 12):
         # PyErr_Fetch is deprecated since Python 3.12.
         assert_true(cpy.PyErr_Fetch())
         # Manually clear the error indicator.
@@ -154,8 +154,28 @@ def _test_iterator_protocol_api(cpy: CPython) raises:
     var it = cpy.PyObject_GetIter(l)
 
     assert_false(cpy.PyIter_Check(n))
+    assert_true(cpy.PyIter_Check(it))
     assert_true(it)
-    assert_true(cpy.PyIter_Next(it))
+    var obj = cpy.PyIter_Next(it)
+    assert_true(obj)
+    cpy.Py_DecRef(obj)
+    obj = cpy.PyIter_Next(it)
+    assert_false(obj)
+    cpy.Py_DecRef(it)
+
+    if cpy.version >= (3, 14):
+        it = cpy.PyObject_GetIter(l)
+        assert_true(cpy.PyIter_Check(it))
+        assert_true(it)
+        assert_equal(cpy.PyIter_NextItem(it, UnsafePointer(to=obj)), 1)
+        assert_true(obj, String("value: ", obj))
+        cpy.Py_DecRef(obj)
+        assert_equal(cpy.PyIter_NextItem(it, UnsafePointer(to=obj)), 0)
+        assert_false(obj)
+        cpy.Py_DecRef(it)
+
+    cpy.Py_DecRef(l)
+    cpy.Py_DecRef(n)
 
 
 def _test_type_object_api(cpy: CPython) raises:

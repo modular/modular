@@ -380,7 +380,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
     def dict[
         V: ConvertibleToPython & Copyable = PythonObject
     ](**kwargs: V) raises -> PythonObject:
-        """Construct an Python dictionary from keyword arguments.
+        """Construct a Python dictionary from keyword arguments.
 
         Parameters:
             V: The type of the values in the dictionary. Must implement the
