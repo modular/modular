@@ -202,6 +202,8 @@ class PagedKVCacheManager:
         enable_runtime_checks: bool = False,
         *,
         max_batch_size: int,
+        other_kv_managers_device_buffers_per_replica: list[list[Buffer]]
+        | None = None,
     ) -> None:
         """Initialize the multi-device paged KV cache manager.
 
@@ -214,6 +216,10 @@ class PagedKVCacheManager:
             max_batch_size: Maximum runtime batch size used to preallocate
                 per-replica runtime lookup-table/cache-length row capacity.
             enable_runtime_checks: Whether to enable runtime checks.
+            other_kv_managers_device_buffers_per_replica:
+                A list of lists of device buffers for other KV managers that should
+                be offloaded by this KV manager's KVConnectors. This is a massive
+                hack due to the lack of unified KVCache that handles multiple KVs.
         """
         if max_batch_size < 1:
             raise ValueError("max_batch_size must be positive")
@@ -270,13 +276,17 @@ class PagedKVCacheManager:
             replica_params = primary_params.copy_as_dp_1(
                 replica_idx=replica_idx
             )
+            device_buffers_to_offload = replica_device_buffers[0].all_buffers
+            if other_kv_managers_device_buffers_per_replica is not None:
+                device_buffers_to_offload.extend(
+                    other_kv_managers_device_buffers_per_replica[replica_idx]
+                )
             connector = create_connector(
                 params=replica_params,
                 devices=replica_devices,
-                device_buffer=replica_device_buffers[0],
+                device_buffers=device_buffers_to_offload,
                 total_num_host_blocks=total_num_host_pages,
                 total_num_blocks=total_num_pages,
-                session=session,
             )
 
             persistent_kv_device_input_buffers = (

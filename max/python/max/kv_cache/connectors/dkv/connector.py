@@ -41,7 +41,7 @@ from dkv import (
     RequestState,
 )
 from max._core import nixl
-from max.driver import Device
+from max.driver import Buffer, Device
 from max.interfaces import RequestID, TextGenerationContext
 from max.kv_cache.paged_kv_cache.transfer_engine import (
     KVTransferEngine,
@@ -51,7 +51,7 @@ from max.kv_cache.paged_kv_cache.transfer_engine import (
     TransferReqData,
     _get_nixl_backend_type,
 )
-from max.nn.kv_cache import KVCacheBuffer, KVCacheParams
+from max.nn.kv_cache import KVCacheParams
 from max.nn.kv_cache.metrics import KVCacheMetrics
 from max.profiler import traced
 
@@ -187,7 +187,7 @@ class DKVConnector:
         self,
         params: KVCacheParams,
         devices: Sequence[Device],
-        device_buffer: KVCacheBuffer,
+        device_buffers: list[Buffer],
         total_num_blocks: int,
         local_block_store_endpoint: str,
     ) -> None:
@@ -203,7 +203,7 @@ class DKVConnector:
         # or lazily on first NIXL-backed load/save when metadata is provided
         # externally. Falls back to None in RPC-only mode.
         self._engine: KVTransferEngine | None = None
-        self._device_buffer = device_buffer
+        self._device_buffers = device_buffers
         self._bytes_per_page: int = 0
         self._default_remote_metadata: KVTransferEngineMetadata | None = None
 
@@ -362,8 +362,8 @@ class DKVConnector:
         if self._engine is None:
             self._engine = KVTransferEngine(
                 name=f"dkv_{id(self):x}",
-                tensors=[self._device_buffer.values],
-                total_num_pages=self._device_buffer.total_num_pages,
+                tensors=[self._device_buffers],
+                total_num_pages=self._device_buffers[0].shape[0],
             )
             self._bytes_per_page = self._engine.bytes_per_page
         return self._engine

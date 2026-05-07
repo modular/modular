@@ -138,6 +138,14 @@ MODEL_ALIASES = CaseInsensitiveDict({
     "meta-llama/Llama-3.1-8B-Instruct__local_kvconnector": {
         "max_serve_args": "--kv-connector local",
     },
+    "meta-llama/Llama-3.1-8B-Instruct__eagle_local_kvconnector": {
+        "max_serve_args": (
+            "--draft-model-path atomicapple0/EAGLE-LLaMA3.1-Instruct-8B "
+            "--devices gpu:0 "
+            "--speculative-method eagle "
+            "--kv-connector local"
+        )
+    },
     "meta-llama/Llama-3.1-8B-Instruct__tiered_kvconnector": {
         "max_serve_args": "--kv-connector tiered",
     },
@@ -153,6 +161,18 @@ MODEL_ALIASES = CaseInsensitiveDict({
     "austinpowers/Kimi-K2.5-NVFP4-DeepseekV3__tiered_kvconnector_tpep": {
         "max_serve_args": (
             "--data-parallel-degree 1 "
+            "--kv-cache-format float8_e4m3fn "
+            "--device-memory-utilization 0.75 "
+            "--max-batch-input-tokens 4096 "
+            "--kv-connector tiered"
+        ),
+    },
+    "austinpowers/Kimi-K2.5-NVFP4-DeepseekV3__eagle_tiered_kvconnector_tpep": {
+        "max_serve_args": (
+            "--data-parallel-degree 1 "
+            "--draft-model-path nvidia/Kimi-K2.5-Thinking-Eagle3 "
+            "--speculative-method eagle "
+            "--num-speculative-tokens 3 "
             "--kv-cache-format float8_e4m3fn "
             "--device-memory-utilization 0.75 "
             "--max-batch-input-tokens 4096 "

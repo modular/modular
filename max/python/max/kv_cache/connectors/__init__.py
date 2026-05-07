@@ -25,9 +25,8 @@ import logging
 from collections.abc import Sequence
 
 from max.driver import Buffer, Device
-from max.engine import InferenceSession
 from max.kv_cache.kv_connector import KVConnector
-from max.nn.kv_cache import KVCacheBuffer, KVCacheParams
+from max.nn.kv_cache import KVCacheParams
 from max.nn.kv_cache.cache_params import KVConnectorType
 
 from .local_connector import LocalConnector
@@ -40,10 +39,9 @@ logger = logging.getLogger("max.pipelines")
 def create_connector(
     params: KVCacheParams,
     devices: Sequence[Device],
-    device_buffer: KVCacheBuffer,
+    device_buffers: list[Buffer],
     total_num_host_blocks: int,
     total_num_blocks: int,
-    session: InferenceSession | None = None,
 ) -> KVConnector:
     """Create a KV cache connector instance based on ``params.kv_connector``.
 
@@ -76,7 +74,7 @@ def create_connector(
         return DKVConnector(
             params=params,
             devices=devices,
-            device_buffer=device_buffer,
+            device_buffers=device_buffers,
             total_num_blocks=total_num_blocks,
             local_block_store_endpoint=cfg.block_store_endpoint,
         )
@@ -97,7 +95,7 @@ def create_connector(
         return TieredConnector(
             params=params,
             devices=devices,
-            device_buffer=device_buffer,
+            device_buffers=device_buffers,
             total_num_host_blocks=total_num_host_blocks,
             disk_cache_dir=cfg.disk_offload_dir,
             max_disk_size_gb=cfg.disk_offload_max_gb,
@@ -110,7 +108,7 @@ def create_connector(
         )
         return LocalConnector(
             params=params,
-            device_buffer=device_buffer,
+            device_buffers=device_buffers,
             total_num_host_blocks=total_num_host_blocks,
         )
 

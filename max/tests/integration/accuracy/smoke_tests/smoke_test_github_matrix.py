@@ -126,9 +126,11 @@ CUSTOM_MODELS: dict[str, set[str]] = {
     "austinpowers/Kimi-K2.5-NVFP4-DeepseekV3__eagle": NON_XL | {"8xMI355"},
     "google/gemma-4-26B-A4B-it__no_dgc": MULTI,
     "meta-llama/Llama-3.1-8B-Instruct__local_kvconnector": {"vllm", "sglang"},
+    "meta-llama/Llama-3.1-8B-Instruct__eagle_local_kvconnector": {"vllm", "sglang"},
     "meta-llama/Llama-3.1-8B-Instruct__tiered_kvconnector": {"vllm", "sglang"},
     "austinpowers/Kimi-K2.5-NVFP4-DeepseekV3__local_kvconnector_tpep": NON_XL | {"8xMI355"},
     "austinpowers/Kimi-K2.5-NVFP4-DeepseekV3__tiered_kvconnector_tpep": NON_XL | {"8xMI355"},
+    "austinpowers/Kimi-K2.5-NVFP4-DeepseekV3__eagle_tiered_kvconnector_tpep": NON_XL | {"8xMI355"},
 }
 
 MODELS = {**HF_MODELS, **CUSTOM_MODELS}

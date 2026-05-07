@@ -105,6 +105,28 @@ def _strip_default_model_kwargs(
     return non_default
 
 
+# FIXME: This method seems like a major hack...
+# Can this be moved to the KVCacheConfig post init?
+def _resolve_kvconnector_config(kv: KVCacheConfig) -> None:
+    """Validates KV connector configuration and applies defaults."""
+    connector = kv.kv_connector
+    if connector is None:
+        return
+
+    # Ensure a config object exists for connectors that need one.
+    cfg = kv.kv_connector_config or KVConnectorConfig()
+
+    if connector == KVConnectorType.tiered:
+        if cfg.disk_offload_dir is None:
+            cfg.disk_offload_dir = tempfile.mkdtemp(prefix="max_kv_tiered_")
+            logger.info(
+                f"Tiered connector: auto-created disk offload dir "
+                f"{cfg.disk_offload_dir}"
+            )
+
+    kv.kv_connector_config = cfg
+
+
 _AUTO_ENABLE_OVERLAP_SCHEDULER_ARCHITECTURES = (
     "LlamaForCausalLM",
     "DeepseekV2ForCausalLM",
@@ -915,12 +937,13 @@ class PipelineConfig(ConfigFileModel):
                 target_archs[0] = "Eagle3DeepseekV2ForCausalLM"
 
         # Validate KV connector configuration
-        self._validate_kv_connector_config()
+        _resolve_kvconnector_config(self.model.kv_cache)
 
         # By this point, we should have a valid model_path.
 
         if self.draft_model:
             # Joint memory estimation for speculative decoding
+            _resolve_kvconnector_config(self.draft_model.kv_cache)
             self._validate_and_resolve_speculative_memory()
             self._validate_pipeline_config_for_speculative_decoding()
         else:
@@ -956,27 +979,6 @@ class PipelineConfig(ConfigFileModel):
             arch.reasoning_parser,
             arch.name,
         )
-
-    def _validate_kv_connector_config(self) -> None:
-        """Validates KV connector configuration and applies defaults."""
-        kv = self.model.kv_cache
-        connector = kv.kv_connector
-        if connector is None:
-            return
-
-        # Ensure a config object exists for connectors that need one.
-        if kv.kv_connector_config is None:
-            kv.kv_connector_config = KVConnectorConfig()
-
-        cfg = kv.kv_connector_config
-
-        if connector == KVConnectorType.tiered:
-            if cfg.disk_offload_dir is None:
-                cfg.disk_offload_dir = tempfile.mkdtemp(prefix="max_kv_tiered_")
-                logger.info(
-                    f"Tiered connector: auto-created disk offload dir "
-                    f"{cfg.disk_offload_dir}"
-                )
 
     def _validate_and_resolve_overlap_scheduler(self) -> None:
         arch: SupportedArchitecture | None = None

@@ -63,9 +63,9 @@ def create_local_connector(
 
     return LocalConnector(
         params=kv_params,
-        device_buffer=KVCacheBuffer(
+        device_buffers=KVCacheBuffer(
             total_num_pages=num_device_blocks, values=device_values
-        ),
+        ).all_buffers,
         total_num_host_blocks=num_host_blocks,
     )
 

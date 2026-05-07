@@ -16,12 +16,14 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import replace
 from unittest.mock import MagicMock, Mock
 
-from max.driver import is_virtual_device_mode
+from max.driver import Buffer, is_virtual_device_mode
 from max.engine import InferenceSession
 from max.nn.kv_cache import (
     KVCacheParamInterface,
+    KVConnectorType,
     MultiKVCacheParams,
     compute_num_device_blocks,
     compute_num_host_blocks,
@@ -38,6 +40,8 @@ def _load_single_kv_manager(
     total_num_host_pages: int,
     session: InferenceSession,
     max_batch_size: int,
+    other_kv_managers_device_buffers_per_replica: list[list[Buffer]]
+    | None = None,
 ) -> PagedKVCacheManager:
     # In compile-only mode (virtual device mode), use the null KV manager
     # to avoid GPU memory allocation
@@ -59,6 +63,7 @@ def _load_single_kv_manager(
         total_num_host_pages=total_num_host_pages,
         session=session,
         max_batch_size=max_batch_size,
+        other_kv_managers_device_buffers_per_replica=other_kv_managers_device_buffers_per_replica,
     )
 
 
@@ -149,13 +154,63 @@ def load_multi_kv_managers(
 
     total_num_host_pages = compute_num_host_blocks(params)
 
-    return [
+    param0 = params.params[0]
+    if param0.kv_connector is None:
+        return [
+            _load_single_kv_manager(
+                params=p,
+                total_num_pages=total_num_pages,
+                total_num_host_pages=total_num_host_pages,
+                session=session,
+                max_batch_size=max_batch_size,
+            )
+            for p in params.params
+        ]
+
+    # What follows is a terrible terrible hack to get KVCache offloading via
+    # KVConnector to compose with speculative decoding. The right solution is to
+    # have a unified KVCache that handles both the target and draft models
+    # KVCaches buffers. Lets fix this ASAP.
+    if param0.kv_connector not in (
+        KVConnectorType.local,
+        KVConnectorType.tiered,
+    ):
+        raise ValueError(
+            f"Only local and tiered connectors are supported for multi-cache models. Found {param0.kv_connector}"
+        )
+
+    # HACK ALERT: Disable KVConnector for all but the first cache.
+    kv_managers_1_to_n = [
         _load_single_kv_manager(
-            params=p,
+            params=replace(p, kv_connector=None),
             total_num_pages=total_num_pages,
             total_num_host_pages=total_num_host_pages,
             session=session,
             max_batch_size=max_batch_size,
         )
-        for p in params.params
+        for p in params.params[1:]
     ]
+
+    dp = param0.data_parallel_degree
+    other_kv_managers_device_buffers_per_replica: list[list[Buffer]] = [
+        [] for _ in range(dp)
+    ]
+
+    for kv_manager_i in kv_managers_1_to_n:
+        for replica_idx in range(dp):
+            buffers = kv_manager_i.get_device_buffer(replica_idx).all_buffers
+            other_kv_managers_device_buffers_per_replica[replica_idx].extend(
+                buffers
+            )
+
+    kv_manager_0 = _load_single_kv_manager(
+        params=param0,
+        total_num_pages=total_num_pages,
+        total_num_host_pages=total_num_host_pages,
+        session=session,
+        max_batch_size=max_batch_size,
+        # Smuggle the other kv managers' device buffers to the first kv manager
+        # for use in its KVConnector.
+        other_kv_managers_device_buffers_per_replica=other_kv_managers_device_buffers_per_replica,
+    )
+    return [kv_manager_0] + kv_managers_1_to_n

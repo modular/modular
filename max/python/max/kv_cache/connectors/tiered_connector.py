@@ -25,11 +25,11 @@ import logging
 from collections.abc import Sequence
 from concurrent.futures import Future, wait
 
-from max.driver import Device
+from max.driver import Buffer, Device
 from max.dtype import DType
 from max.interfaces import RequestID, TextGenerationContext
 from max.kv_cache.memory_tier import MemoryTier
-from max.nn.kv_cache import KVCacheBuffer, KVCacheParams
+from max.nn.kv_cache import KVCacheParams
 from max.nn.kv_cache.metrics import KVCacheMetrics
 from max.profiler import traced
 
@@ -58,7 +58,7 @@ class TieredConnector:
         self,
         params: KVCacheParams,
         devices: Sequence[Device],
-        device_buffer: KVCacheBuffer,
+        device_buffers: list[Buffer],
         total_num_host_blocks: int,
         disk_cache_dir: str,
         max_disk_size_gb: float,
@@ -76,7 +76,7 @@ class TieredConnector:
         self._total_num_host_blocks = total_num_host_blocks
 
         self._block_copy_engine = BlockOffloadEngine(
-            total_num_host_blocks, device_buffer.all_buffers
+            total_num_host_blocks, device_buffers
         )
         self._host_buffer = self._block_copy_engine.host_buffer
 
@@ -130,10 +130,7 @@ class TieredConnector:
         # Whether to only use the KVConnector last level cache.
         # When this is set, cache hits will only be served from the disk tier.
         self._only_use_kv_connector_last_level_cache = (
-            _resolve_only_use_kv_connector_last_level_cache(
-                enable_prefix_caching=True,
-                num_host_blocks=total_num_host_blocks,
-            )
+            _resolve_only_use_kv_connector_last_level_cache()
         )
 
     @property

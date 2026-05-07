@@ -22,10 +22,10 @@ from __future__ import annotations
 
 import logging
 
+from max.driver import Buffer
 from max.interfaces import RequestID, TextGenerationContext
 from max.kv_cache.memory_tier import MemoryTier
 from max.nn.kv_cache import KVCacheParams
-from max.nn.kv_cache.cache_params import KVCacheBuffer
 from max.nn.kv_cache.metrics import KVCacheMetrics
 from max.profiler import traced
 
@@ -47,7 +47,7 @@ class LocalConnector:
     def __init__(
         self,
         params: KVCacheParams,
-        device_buffer: KVCacheBuffer,
+        device_buffers: list[Buffer],
         total_num_host_blocks: int,
     ) -> None:
         """Initialize the local host memory connector."""
@@ -64,7 +64,7 @@ class LocalConnector:
 
         # Create BlockOffloadEngine for memory transfers
         self._block_copy_engine = BlockOffloadEngine(
-            total_num_host_blocks, device_buffer.all_buffers
+            total_num_host_blocks, device_buffers
         )
 
         # Host block pool for managing host memory

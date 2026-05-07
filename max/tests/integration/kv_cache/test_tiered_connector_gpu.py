@@ -69,9 +69,9 @@ def create_tiered_connector(
     return TieredConnector(
         params=kv_params,
         devices=[device],
-        device_buffer=KVCacheBuffer(
+        device_buffers=KVCacheBuffer(
             total_num_pages=num_device_blocks, values=device_buffers
-        ),
+        ).all_buffers,
         total_num_host_blocks=num_host_blocks,
         disk_cache_dir=disk_cache_dir,
         max_disk_size_gb=max_disk_size_gb,

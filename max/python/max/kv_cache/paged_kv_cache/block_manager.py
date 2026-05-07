@@ -78,9 +78,7 @@ def _compute_seq_len(
     return seq_len
 
 
-def _resolve_only_use_kv_connector_last_level_cache(
-    enable_prefix_caching: bool, num_host_blocks: int
-) -> bool:
+def _resolve_only_use_kv_connector_last_level_cache() -> bool:
     """Resolve whether to only use the KVConnector last level cache.
 
     When this is set, the device prefix cache will be disabled. All KVCache hits
@@ -99,18 +97,9 @@ def _resolve_only_use_kv_connector_last_level_cache(
         "yes",
         "y",
     )
-    if enabled:
-        if not enable_prefix_caching:
-            raise ValueError(
-                "MODULAR_ONLY_USE_KV_CONNECTOR_LAST_LEVEL_CACHE is set, but prefix caching is disabled."
-            )
-        if num_host_blocks == 0:
-            raise ValueError(
-                "MODULAR_ONLY_USE_KV_CONNECTOR_LAST_LEVEL_CACHE is set, but no host blocks are available."
-            )
-        logger.info(
-            "Detected MODULAR_ONLY_USE_KV_CONNECTOR_LAST_LEVEL_CACHE flag, only using KVConnector prefix cache."
-        )
+    logger.info(
+        "Detected MODULAR_ONLY_USE_KV_CONNECTOR_LAST_LEVEL_CACHE flag, only using KVConnector prefix cache."
+    )
     return enabled
 
 
@@ -173,9 +162,7 @@ class BlockManager:
         # primarily used for testing and benchmarking the performance of the
         # KVConnector.
         self._only_use_kv_connector_last_level_cache = (
-            _resolve_only_use_kv_connector_last_level_cache(
-                enable_prefix_caching, connector.num_host_blocks
-            )
+            _resolve_only_use_kv_connector_last_level_cache()
         )
 
     @traced
