@@ -15,7 +15,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from functools import cached_property, partial
 
@@ -145,6 +145,126 @@ def head_aware_col_sharding_strategy(
     return weight[:, col_start:col_end]
 
 
+@dataclass(frozen=True)
+class Segment:
+    """One contiguous segment of a :func:`segmented_sharding_strategy` weight.
+
+    A segmented strategy splits a weight along one axis into several contiguous
+    regions ("segments"), shards each region independently across devices, and
+    concatenates the per-device pieces back along that axis. Each segment
+    declares how it should be split:
+
+    - :meth:`even` splits the segment's ``size`` rows/cols evenly across devices
+      via :func:`_compute_shard_range`. Used for gate/up halves of SwiGLU
+      stacks, MoE intermediate dims, etc.
+    - :meth:`head_aware` splits the segment by attention head; each device
+      receives ``_compute_shard_range(num_heads, ...)`` heads of ``head_dim``
+      slots. Handles uneven head distributions.
+
+    Construct via the factory methods rather than the raw constructor so the
+    invariants (``size == num_heads * head_dim`` for head-aware) hold.
+    """
+
+    size: int
+    """Logical extent of this segment along the sharded axis."""
+
+    num_heads: int | None
+    """Number of attention heads if this is a head-aware segment, else ``None``.
+
+    When set, the segment's ``size`` must equal ``num_heads * head_dim`` and
+    the per-device range is computed in head units. When ``None`` the segment
+    is split evenly in dim units.
+    """
+
+    @staticmethod
+    def even(size: int) -> Segment:
+        """Returns a segment of ``size`` slots split evenly across devices."""
+        return Segment(size=size, num_heads=None)
+
+    @staticmethod
+    def head_aware(num_heads: int, head_dim: int) -> Segment:
+        """Returns a segment of ``num_heads * head_dim`` slots split by head."""
+        return Segment(size=num_heads * head_dim, num_heads=num_heads)
+
+    def shard_range(self, i: int, num_devices: int) -> tuple[int, int]:
+        """Returns the (start, end) slot range of this segment on device ``i``."""
+        if self.num_heads is None:
+            return _compute_shard_range(self.size, i, num_devices)
+        head_dim = self.size // self.num_heads
+        head_start, head_end = _compute_shard_range(
+            self.num_heads, i, num_devices
+        )
+        return head_start * head_dim, head_end * head_dim
+
+
+def segmented_sharding_strategy(
+    weight: Weight,
+    i: int,
+    num_devices: int,
+    *,
+    axis: int,
+    segments: Sequence[Segment],
+) -> TensorValue:
+    """Shards a weight along ``axis`` by per-segment slicing and re-concat.
+
+    Each :class:`Segment` declares a contiguous region along ``axis`` plus how
+    that region should be split across devices (evenly or head-aware). The
+    region offsets are derived from each segment's ``size``; the segment list
+    must therefore cover the entire axis without gaps.
+
+    Generalises :func:`stacked_qkv_sharding_strategy` (3 head-aware segments
+    along axis 0) and :func:`gate_up_sharding_strategy` (2 even segments along
+    a configured axis), and supports arbitrary mixtures (for example, the
+    flux2 fused QKV+MLP projection: three head-aware Q/K/V segments followed
+    by two even gate/up segments along axis 0).
+
+    Supports packed weights (NVFP4 columns stored as in_dim // 2): if the
+    actual axis size is exactly half the sum of segment sizes, slot indices
+    are halved. This mirrors :func:`head_aware_col_sharding_strategy`.
+
+    Args:
+        weight: The :class:`Weight` to shard.
+        i: The index of the current device.
+        num_devices: The total number of devices to shard across.
+        axis: Axis along which segments are laid out.
+        segments: Ordered segments covering the entire ``axis`` extent.
+
+    Returns:
+        A :class:`~max.graph.TensorValue` containing the per-segment slices for
+        device ``i`` concatenated back along ``axis``.
+    """
+    rank = len(weight.shape)
+    if axis < 0:
+        axis += rank
+
+    logical_total = sum(seg.size for seg in segments)
+    actual = int(weight.shape[axis])
+    if actual == logical_total:
+        packed_factor = 1
+    elif actual * 2 == logical_total:
+        # NVFP4-style packed columns: indices map to the packed extent.
+        packed_factor = 2
+    else:
+        raise ValueError(
+            f"Segmented sharding: segments cover {logical_total} slots along "
+            f"axis {axis}, but weight has {actual} (expected {logical_total} "
+            f"or {logical_total // 2} for packed FP4)."
+        )
+
+    pieces = []
+    offset = 0
+    for seg in segments:
+        seg_start, seg_end = seg.shard_range(i, num_devices)
+        slot_start = (offset + seg_start) // packed_factor
+        slot_end = (offset + seg_end) // packed_factor
+        slices: list[slice] = [slice(None)] * rank
+        slices[axis] = slice(slot_start, slot_end)
+        pieces.append(weight[tuple(slices)])
+        offset += seg.size
+
+    return ops.concat(pieces, axis=axis)
+
+
 def stacked_qkv_sharding_strategy(
     weight: Weight, i: int, num_devices: int, num_heads: int, head_dim: int
 ) -> TensorValue:
@@ -154,6 +274,9 @@ def stacked_qkv_sharding_strategy(
     where the first hidden_size rows are Q, next hidden_size rows are K,
     and last hidden_size rows are V. It shards each section separately by
     attention heads.
+
+    Thin wrapper over :func:`segmented_sharding_strategy` with three
+    head-aware segments along axis 0.
 
     Args:
         weight: The stacked QKV :class:`Weight` to shard.
@@ -165,41 +288,27 @@ def stacked_qkv_sharding_strategy(
     Returns:
         A :class:`~max.graph.TensorValue` representing the sharded QKV for the i-th device.
     """
-    # Weight shape is [3 * hidden_size, hidden_size]
     total_rows = int(weight.shape[0])
     if total_rows % 3 != 0:
         raise ValueError(
             f"Stacked QKV weight must have shape [3*hidden_size, hidden_size], "
             f"got shape {weight.shape}"
         )
-
-    # Split into Q, K, V sections.
-    hidden_size = total_rows // 3
     expected_hidden = num_heads * head_dim
-    if hidden_size != expected_hidden:
+    if total_rows // 3 != expected_hidden:
         raise ValueError(
-            f"Weight hidden_size {hidden_size} doesn't match "
+            f"Weight hidden_size {total_rows // 3} doesn't match "
             f"num_heads * head_dim = {num_heads} * {head_dim} = {expected_hidden}"
         )
 
-    q_weight, k_weight, v_weight = ops.split(
-        weight, split_sizes=(hidden_size, hidden_size, hidden_size)
+    head_aware_seg = Segment.head_aware(num_heads, head_dim)
+    return segmented_sharding_strategy(
+        weight,
+        i,
+        num_devices,
+        axis=0,
+        segments=(head_aware_seg, head_aware_seg, head_aware_seg),
     )
-
-    # Compute the head range for this device
-    head_start, head_end = _compute_shard_range(num_heads, i, num_devices)
-
-    # Convert head indices to dimension indices
-    dim_start = head_start * head_dim
-    dim_end = head_end * head_dim
-
-    # Shard each section
-    q_shard = q_weight[dim_start:dim_end]
-    k_shard = k_weight[dim_start:dim_end]
-    v_shard = v_weight[dim_start:dim_end]
-
-    # Stack the sharded sections back together.
-    return ops.concat([q_shard, k_shard, v_shard], axis=0)
 
 
 def tensor_parallel_sharding_strategy(
@@ -253,8 +362,8 @@ def gate_up_sharding_strategy(
 ) -> TensorValue:
     """Shards a combined gate/up projection weight.
 
-    This strategy is designed for weights where the gate and up projections are
-    concatenated along a specific axis. It shards both projections equally.
+    Thin wrapper over :func:`segmented_sharding_strategy` with two even
+    segments along ``axis``.
 
     Args:
         weight: The :class:`Weight` to shard.
@@ -270,29 +379,31 @@ def gate_up_sharding_strategy(
         raise ValueError(
             f"Dimension {axis} must be even for gate_up sharding, got {full_dim}"
         )
+    half = full_dim // 2
+    return segmented_sharding_strategy(
+        weight,
+        i,
+        num_devices,
+        axis=axis,
+        segments=(Segment.even(half), Segment.even(half)),
+    )
 
-    moe_dim = full_dim // 2
 
-    # Compute the range for this device within the single projection dimension
-    start, end = _compute_shard_range(moe_dim, i, num_devices)
-
-    # Convert to slices
+def axiswise_sharding_strategy(
+    weight: Weight, i: int, num_devices: int, axis: int
+) -> TensorValue:
+    """Shards a weight evenly along a single axis."""
     rank = len(weight.shape)
     if axis < 0:
         axis += rank
-
-    # Create slices for gate part
-    gate_slices = [slice(None)] * rank
-    gate_slices[axis] = slice(start, end)
-
-    # Create slices for up part (offset by moe_dim)
-    up_slices = [slice(None)] * rank
-    up_slices[axis] = slice(moe_dim + start, moe_dim + end)
-
-    sharded_gate = weight[tuple(gate_slices)]
-    sharded_up = weight[tuple(up_slices)]
-
-    return ops.concat((sharded_gate, sharded_up), axis=axis)
+    start, end = _compute_shard_range(
+        shard_dim=int(weight.shape[axis]),
+        shard_idx=i,
+        num_devices=num_devices,
+    )
+    slices: list[slice] = [slice(None)] * rank
+    slices[axis] = slice(start, end)
+    return weight[tuple(slices)]
 
 
 @dataclass(frozen=True)
@@ -375,6 +486,41 @@ class ShardingStrategy:
             return self.shard.func is gate_up_sharding_strategy
         return self.shard is gate_up_sharding_strategy
 
+    @property
+    def is_segmented(self) -> bool:
+        """Whether the sharding strategy is segmented."""
+        if isinstance(self.shard, partial):
+            return self.shard.func is segmented_sharding_strategy
+        return self.shard is segmented_sharding_strategy
+
+    @property
+    def is_axiswise(self) -> bool:
+        """Whether the sharding strategy is axiswise."""
+        if isinstance(self.shard, partial):
+            return self.shard.func is axiswise_sharding_strategy
+        return self.shard is axiswise_sharding_strategy
+
+    @property
+    def sharded_axis(self) -> int | None:
+        """Axis being sharded, or ``None`` for replicate / placeholder strategies.
+
+        Lets consumers (notably :meth:`max.nn.Linear.shard`) decide whether
+        the output dim, the input dim, or neither is being split, without
+        enumerating every concrete strategy. Returns ``0`` for ``rowwise`` /
+        ``stacked_qkv``, ``1`` for ``columnwise`` / ``head_aware_columnwise``,
+        and the configured axis for ``gate_up`` / ``axiswise`` / ``segmented``.
+        Replicate and the ``tensor_parallel`` / ``expert_parallel``
+        placeholders return ``None``.
+        """
+        if self.is_rowwise or self.is_stacked_qkv:
+            return 0
+        if self.is_colwise or self.is_head_aware_colwise:
+            return 1
+        if self.is_gate_up or self.is_axiswise or self.is_segmented:
+            assert isinstance(self.shard, partial)
+            return self.shard.keywords["axis"]
+        return None
+
     @staticmethod
     def rowwise(num_devices: int) -> ShardingStrategy:
         """Creates a row-wise sharding strategy.
@@ -417,22 +563,9 @@ class ShardingStrategy:
             axis: The axis along which to shard the weight.
             num_devices: The number of devices to shard the weight across.
         """
-        empty_slices = [slice(None) for _ in range(axis)]
-
-        def _axis_sharding_strategy(
-            weight: Weight, i: int, num_devices: int
-        ) -> TensorValue:
-            start, end = _compute_shard_range(
-                shard_dim=int(weight.shape[axis]),
-                shard_idx=i,
-                num_devices=num_devices,
-            )
-            full_slices = tuple(empty_slices) + (slice(start, end),)
-            return weight[full_slices]
-
         return ShardingStrategy(
             num_devices=num_devices,
-            shard=_axis_sharding_strategy,
+            shard=partial(axiswise_sharding_strategy, axis=axis),
         )
 
     @staticmethod
@@ -559,6 +692,40 @@ class ShardingStrategy:
             A :class:`ShardingStrategy` instance configured for gate_up sharding.
         """
         shard_fn = partial(gate_up_sharding_strategy, axis=axis)
+        return ShardingStrategy(num_devices=num_devices, shard=shard_fn)
+
+    @staticmethod
+    def segmented(
+        num_devices: int, axis: int, segments: Sequence[Segment]
+    ) -> ShardingStrategy:
+        """Creates a segmented sharding strategy.
+
+        Splits the weight along ``axis`` into the given ordered segments and
+        shards each segment independently before concatenating the per-device
+        pieces back. Generalises :meth:`stacked_qkv` (3 head-aware segments
+        along axis 0) and :meth:`gate_up` (2 even segments along ``axis``).
+
+        Use this when a fused projection's output (or input) is laid out as a
+        sequence of independently-typed blocks — for example a stacked
+        ``[Q | K | V | gate | up]`` along axis 0, or a fused output projection
+        whose input is ``[attn_out | mlp_out]`` along axis 1.
+
+        Args:
+            num_devices: The number of devices to shard the weight across.
+            axis: The axis along which segments are laid out.
+            segments: Ordered :class:`Segment` instances covering the entire
+                ``axis`` extent. Use :meth:`Segment.even` and
+                :meth:`Segment.head_aware` to construct.
+
+        Returns:
+            A :class:`ShardingStrategy` instance configured for segmented
+            sharding.
+        """
+        shard_fn = partial(
+            segmented_sharding_strategy,
+            axis=axis,
+            segments=tuple(segments),
+        )
         return ShardingStrategy(num_devices=num_devices, shard=shard_fn)
 
 
