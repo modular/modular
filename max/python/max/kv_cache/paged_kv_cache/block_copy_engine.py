@@ -81,12 +81,18 @@ class BlockOffloadEngine:
 
     def memcpy_d2h(self, dst: int, src: int) -> None:
         """Copies a block from device(s) to host."""
-        # Copy the data from one device to the host.
         offset = 0
         for device_buffer in self.device_buffers:
             bytes_per_page = device_buffer.shape[1]
-            host_block = self.host_buffer[dst, offset : offset + bytes_per_page]
-            host_block.to(self.d2h_auxiliary_streams[device_buffer.device.id])
+            aux_stream = self.d2h_auxiliary_streams[device_buffer.device.id]
+            # WAR: with overlap scheduling, the previous batch's writes to
+            # the source block may still be in flight on the main stream
+            # when this d2h is queued.
+            aux_stream.wait_for(self.main_streams[device_buffer.device.id])
+
+            host_block = self.host_buffer[
+                dst, offset : offset + bytes_per_page
+            ].to(aux_stream)
             host_block.inplace_copy_from(device_buffer[src, :])
             offset += bytes_per_page
 
