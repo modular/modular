@@ -182,12 +182,14 @@ def main():
     # ... existing code ...
 
     for index in range(len(temps)):  # The range is [0, len(temps))
-        print("  Day {}: {}°C".format(index + 1, temps[index]))
+        print(t"  Day {index + 1}: {temps[index]}°C")
 ```
 
 Insights:
 
 - The day is offset by 1 because the range uses zero-based indexing.
+- The `t"..."` prefix creates a *template string*: braces `{}` interpolate
+  expressions directly into the output.
 
 ## Functions
 
@@ -208,7 +210,7 @@ Add to the end of `main()` to call the function:
 
 ```mojo
     var avg = calculate_average(temps)
-    print("Average: {}°C".format(avg))
+    print(t"Average: {avg}°C")
 ```
 
 ## Conditionals
@@ -253,7 +255,7 @@ In `main()`, wrap your code in `try-except` for error handling:
 ```mojo
     try:
         var avg = calculate_average(temps)
-        print("Average: {}°C".format(avg))
+        print(t"Average: {avg}°C")
 
         if avg > 25.0:
             print("Status: Hot week")
@@ -336,11 +338,11 @@ def main():
     print("Recorded", len(temps), "temperatures")
 
     for index in range(len(temps)):
-        print("  Day {}: {}°C".format(index + 1, temps[index]))
+        print(t"  Day {index + 1}: {temps[index]}°C")
 
     try:
         var avg = calculate_average(temps)
-        print("Average: {}°C".format(avg))
+        print(t"Average: {avg}°C")
 
         if avg > 25.0:
             print("Status: Hot week")
