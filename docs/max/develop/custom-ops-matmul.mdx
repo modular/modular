@@ -24,7 +24,7 @@ Mojo.
 :::note
 
 This page doesn't cover Mojo syntax. For that, see the [Mojo get started
-tutorial](https://www.mojolang.org/docs/manual/get-started).
+tutorial](https://mojolang.org/docs/manual/get-started).
 
 :::
 
@@ -109,7 +109,7 @@ Each node in a MAX graph is defined by an operation that performs a calculation
 on zero or more inputs and produces one or more outputs. These inputs and
 outputs tend to be in the form of tensors, and the operations are usually
 data-parallel calculations that are accelerated on CPUs or GPUs. In MAX, these
-operations are written using [Mojo](https://www.mojolang.org/docs/manual/), a
+operations are written using [Mojo](https://mojolang.org/docs/manual/), a
 Python-family language built for high-performance computation.
 
 Matrix multiplications are key components in modern AI models, accounting for a
@@ -266,8 +266,8 @@ be the same.
 ### Layouts, `TileTensor`, and `LayoutTensor`
 
 The `matrix_multiplication` custom operation uses
-[layouts](https://www.mojolang.org/docs/layout/layout/) and
-[`TileTensor`](https://www.mojolang.org/docs/layout/tile_tensor/TileTensor) to
+[layouts](https://mojolang.org/docs/layout/layout/) and
+[`TileTensor`](https://mojolang.org/docs/layout/tile_tensor/TileTensor) to
 represent the input and output matrices, so it's helpful to understand a little
 bit about these types before getting started.
 
@@ -318,8 +318,8 @@ The layout of the extracted tile looks like this:
 This just scratches the surface of layouts, `TileTensor`, and `LayoutTensor`,
 which provide powerful tools for manipulating data and writing parallel
 algorithms. For more information, see the
-[Introduction to layouts](https://www.mojolang.org/docs/manual/layout/layouts)
-and [Using `LayoutTensor`](https://www.mojolang.org/docs/manual/layout/tensors)
+[Introduction to layouts](https://mojolang.org/docs/manual/layout/layouts)
+and [Using `LayoutTensor`](https://mojolang.org/docs/manual/layout/tensors)
 sections of the Mojo Manual.
 
 ## Kernel 1: Naive matrix multiplication with no optimizations
@@ -462,7 +462,7 @@ The kernel then iterates across the input matrices, loading tiles into shared
 memory.
 
 The
-[`GenericToSharedAsyncTileCopier`](https://www.mojolang.org/docs/layout/tile_io/GenericToSharedAsyncTileCopier)
+[`GenericToSharedAsyncTileCopier`](https://mojolang.org/docs/layout/tile_io/GenericToSharedAsyncTileCopier)
 type deserves special note. This takes the place of the CUDA pattern of
 instructing each thread which value or values to copy to shared memory. The
 `thread_layout` parameter associates individual threads with values, and the
@@ -657,7 +657,7 @@ algorithm.
 As a final optimization to our block-tiling kernel, memory accesses can be
 vectorized to improve memory access bandwidth. The new tool in this kernel is
 the
-[`TileTensor.vectorize()`](https://www.mojolang.org/docs/layout/tile_tensor/TileTensor#vectorize)
+[`TileTensor.vectorize()`](https://mojolang.org/docs/layout/tile_tensor/TileTensor#vectorize)
 method, which produces a vectorized view of a tile so that multiple values can
 be loaded or stored as a single SIMD vector. The `B` tile copies straight into
 row-major shared memory, but `a_smem` switches to column-major so the inner loop
@@ -866,12 +866,12 @@ showing pathways to get the most speed out of modern GPUs using MAX and Mojo.
 - Follow [our tutorial for building a custom operation from
 scratch](/max/develop/build-custom-ops).
 
-- See the [GPU programming](https://www.mojolang.org/docs/manual/gpu/gpu-basics)
+- See the [GPU programming](https://mojolang.org/docs/manual/gpu/gpu-basics)
   page in the Mojo manual.
 
-- See the [`gpu`](https://www.mojolang.org/docs/std/gpu/) module for detail on
+- See the [`gpu`](https://mojolang.org/docs/std/gpu/) module for detail on
   Mojo's GPU programming functions and types, and the documentation on
-  [`@compiler.register`](https://www.mojolang.org/docs/manual/decorators/compiler-register/)
+  [`@compiler.register`](https://mojolang.org/docs/manual/decorators/compiler-register/)
   shows how to register custom graph operations.
 
 - Join our [Modular Forum](https://forum.modular.com/) and [Discord

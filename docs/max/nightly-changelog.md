@@ -1,5 +1,5 @@
 ---
-title: MAX nightly
+title: Nightly (v26.4)
 ---
 
 This version is still a work in progress.
@@ -39,22 +39,13 @@ This version is still a work in progress.
   manager instead of `start`/`stop` and now exposes `get_stats()` instead of
   `dump_stats()`, matching the interface of `GPUDiagContext`.
 
-## Breaking changes
-
-### Mojo API
-
-### Custom ops
-
 ## MAX kernels
 
-<!-- Please place Layout/LayoutTensor changes under "Library changes" in the
-     **Mojo changelog**, since the layout package is packaged with and
-     documented alongside Mojo. -->
+## Breaking changes
 
-## 🛠️ Fixed
+## Fixes
 
 ## Mojo language
 
 For all the updates to the Mojo language, standard library, and tools,
-including all GPU programming and `Layout`/`LayoutTensor` changes, see the [Mojo
-changelog](https://www.mojolang.org/releases)
+see the [Mojo release notes](https://mojolang.org/releases).
