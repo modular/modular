@@ -18,7 +18,55 @@ import sys
 from unittest.mock import patch
 
 import pytest
-from max.benchmark.benchmark_serving import parse_args
+from max.benchmark.benchmark_serving import _resolve_skip_counts, parse_args
+
+
+def test_resolve_skip_counts() -> None:
+    def rsc(
+        orig_skip_first: int | None = None,
+        orig_skip_last: int | None = None,
+        request_rate: float = float("inf"),
+        max_concurrency: int | None = None,
+        ignore_first_turn_stats: bool = False,
+        warmup_to_steady_state: bool = False,
+    ) -> tuple[int, int]:
+        return _resolve_skip_counts(
+            orig_skip_first=orig_skip_first,
+            orig_skip_last=orig_skip_last,
+            request_rate=request_rate,
+            max_concurrency=max_concurrency,
+            ignore_first_turn_stats=ignore_first_turn_stats,
+            warmup_to_steady_state=warmup_to_steady_state,
+        )
+
+    # finite rate: auto-None → 0; explicit values are preserved
+    assert rsc(request_rate=2.0) == (0, 0)
+    assert rsc(orig_skip_first=3, orig_skip_last=5, request_rate=2.0) == (3, 5)
+    assert rsc(orig_skip_last=5, request_rate=2.0) == (0, 5)
+
+    # infinite rate, max_concurrency > 1: auto-None → concurrency value
+    assert rsc(max_concurrency=4) == (4, 4)
+    assert rsc(orig_skip_first=2, max_concurrency=4) == (2, 4)
+    assert rsc(orig_skip_last=2, max_concurrency=4) == (4, 2)
+    assert rsc(orig_skip_first=2, orig_skip_last=3, max_concurrency=4) == (2, 3)
+
+    # infinite rate, max_concurrency=1: sequential, no ramp-up → 0
+    assert rsc(max_concurrency=1) == (0, 0)
+
+    # infinite rate, max_concurrency=None: unbounded → 0
+    assert rsc(max_concurrency=None) == (0, 0)
+
+    # ignore_first_turn_stats resets skip_first unless warmup_to_steady_state
+    assert rsc(max_concurrency=4, ignore_first_turn_stats=True) == (0, 4)
+    assert rsc(
+        max_concurrency=4,
+        ignore_first_turn_stats=True,
+        warmup_to_steady_state=True,
+    ) == (4, 4)
+    assert rsc(max_concurrency=4, ignore_first_turn_stats=False) == (4, 4)
+
+    # ignore_first_turn_stats with skip_first=0 (falsy): no override
+    assert rsc(request_rate=2.0, ignore_first_turn_stats=True) == (0, 0)
 
 
 def test_benchmark_serving_help(capsys: pytest.CaptureFixture[str]) -> None:

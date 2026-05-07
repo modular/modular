@@ -241,21 +241,22 @@ def create_benchmark_pbar(disable_tqdm: bool, samples: Samples) -> tqdm | None:
         return tqdm(total=sum(num_qa_turns))
 
 
-async def benchmark(
-    args: ServingBenchmarkConfig,
-    session: BenchmarkSession,
-    max_concurrency: int | None,
+def _resolve_skip_counts(
+    orig_skip_first: int | None,
+    orig_skip_last: int | None,
     request_rate: float,
-) -> TextGenerationBenchmarkResult | PixelGenerationBenchmarkResult:
-    """Run a single benchmark invocation.
+    max_concurrency: int | None,
+    ignore_first_turn_stats: bool,
+    warmup_to_steady_state: bool,
+) -> tuple[int, int]:
+    """Resolve effective skip_first / skip_last from user-supplied and auto-derived values.
 
-    ``session.orig_skip_first`` / ``session.orig_skip_last`` are the
-    user-supplied values (``None`` = auto-derive from *max_concurrency*).
+    Returns:
+        ``(skip_first, skip_last)`` request counts to exclude from stats.
     """
-    backend: Backend = args.backend
+    skip_first = orig_skip_first
+    skip_last = orig_skip_last
 
-    skip_first = session.orig_skip_first
-    skip_last = session.orig_skip_last
     if request_rate != float("inf"):
         # Finite rate → steady drip with no ramp-up / ramp-down artifacts,
         # so skip nothing (PERF-878).
@@ -284,6 +285,48 @@ async def benchmark(
     if skip_last is None:
         skip_last = 0
 
+    if ignore_first_turn_stats and skip_first and not warmup_to_steady_state:
+        # Without --warmup-to-steady-state, sessions all start at turn 0,
+        # so --ignore-first-turn-stats already drops the same head requests
+        # that --skip-first-n-requests would target. Combining them just
+        # trims deeper into the run than the user asked for.
+        # With --warmup-to-steady-state, sessions begin at randomized turn
+        # offsets, so the two features filter different requests and we
+        # want them to compose.
+        logger.warning(
+            "--ignore-first-turn-stats and --skip-first-n-requests both set"
+            " without --warmup-to-steady-state. --ignore-first-turn-stats"
+            " already drops every session's first turn, so"
+            " --skip-first-n-requests would trim deeper than expected."
+            " Ignoring --skip-first-n-requests."
+        )
+        skip_first = 0
+
+    return skip_first, skip_last
+
+
+async def benchmark(
+    args: ServingBenchmarkConfig,
+    session: BenchmarkSession,
+    max_concurrency: int | None,
+    request_rate: float,
+) -> TextGenerationBenchmarkResult | PixelGenerationBenchmarkResult:
+    """Run a single benchmark invocation.
+
+    ``session.orig_skip_first`` / ``session.orig_skip_last`` are the
+    user-supplied values (``None`` = auto-derive from *max_concurrency*).
+    """
+    backend: Backend = args.backend
+
+    skip_first, skip_last = _resolve_skip_counts(
+        orig_skip_first=session.orig_skip_first,
+        orig_skip_last=session.orig_skip_last,
+        request_rate=request_rate,
+        max_concurrency=max_concurrency,
+        ignore_first_turn_stats=args.ignore_first_turn_stats,
+        warmup_to_steady_state=args.warmup_to_steady_state,
+    )
+
     if args.warm_shared_prefix:
         fit_with_sys = args.fit_distributions and args.dataset_name in (
             "instruct-coder",
@@ -305,27 +348,6 @@ async def benchmark(
 
     logger.info("Starting benchmark run")
     assert args.num_prompts is not None
-
-    if (
-        args.ignore_first_turn_stats
-        and skip_first
-        and not args.warmup_to_steady_state
-    ):
-        # Without --warmup-to-steady-state, sessions all start at turn 0,
-        # so --ignore-first-turn-stats already drops the same head requests
-        # that --skip-first-n-requests would target. Combining them just
-        # trims deeper into the run than the user asked for.
-        # With --warmup-to-steady-state, sessions begin at randomized turn
-        # offsets, so the two features filter different requests and we
-        # want them to compose.
-        logger.warning(
-            "--ignore-first-turn-stats and --skip-first-n-requests both set"
-            " without --warmup-to-steady-state. --ignore-first-turn-stats"
-            " already drops every session's first turn, so"
-            " --skip-first-n-requests would trim deeper than expected."
-            " Ignoring --skip-first-n-requests."
-        )
-        skip_first = 0
 
     # Benchmark LoRA loading if manager provided
     if session.lora_manager:
