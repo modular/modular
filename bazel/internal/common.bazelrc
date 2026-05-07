@@ -116,8 +116,6 @@ build --remote_cache_compression
 build --experimental_remote_cache_compression_threshold=100
 build --legacy_important_outputs=false
 build --slim_profile=false
-build --experimental_remote_cache_chunking
-build --rewind_lost_inputs
 
 # Include full test log in failed tests
 build --test_output=errors
