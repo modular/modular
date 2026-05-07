@@ -30,6 +30,8 @@ This version is still a work in progress.
 ### `max` CLI
 
 - Added `--devices=gpu:all` to use every visible GPU (including MAX Serve).
+- Removed the `default` value for `--devices`; omit `--devices` to use the model
+  or config default.
 
 ### Python API
 

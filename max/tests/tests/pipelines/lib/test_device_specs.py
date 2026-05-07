@@ -16,10 +16,11 @@ from __future__ import annotations
 
 import pytest
 from max.driver import DeviceSpec
-from max.pipelines.lib import device_specs
+from max.pipelines.lib import MAXModelConfig, device_specs
 from max.pipelines.lib.device_specs import (
     DeviceHandle,
     coerce_device_specs_input,
+    default_device_specs,
     get_requested_gpu_ids,
     normalize_device_specs_input,
     validate_gpu_ids,
@@ -37,8 +38,6 @@ from pytest_mock import MockerFixture
         ("CPU", "cpu"),
         ("gpu", "gpu"),
         ("GPU", "gpu"),
-        ("default", "default"),
-        ("DeFaUlT", "default"),
     ],
 )
 def test_normalize_device_specs_input_named_values(
@@ -79,6 +78,10 @@ def test_normalize_device_specs_input_gpu_all(
     [
         ("tpu", "Expected 'gpu:<id1>,<id2>' format, got 'tpu'"),
         (
+            "default",
+            "Expected 'gpu:<id1>,<id2>' format, got 'default'",
+        ),
+        (
             "gpu:a,1",
             "'gpu:a,1' is not a valid device list. Use format 'cpu', 'gpu', or 'gpu:0,1'.",
         ),
@@ -99,7 +102,6 @@ def test_normalize_device_specs_input_invalid_values(
     ("devices", "expected"),
     [
         ("gpu", [0]),
-        ("default", [0]),
         ([2, 3], [2, 3]),
         ("cpu", []),
     ],
@@ -157,7 +159,7 @@ def test_device_specs_from_normalized_device_handle_cpu(
     assert ds_from_ndh("cpu") == [DeviceSpec.cpu()]
 
 
-def test_device_specs_from_normalized_device_handle_default_no_gpus(
+def test_default_device_specs_no_gpus(
     mocker: MockerFixture,
 ) -> None:
     mocker.patch.object(
@@ -166,7 +168,51 @@ def test_device_specs_from_normalized_device_handle_default_no_gpus(
         autospec=True,
         return_value=[],
     )
-    assert ds_from_ndh("default") == [DeviceSpec.cpu()]
+    assert default_device_specs() == []
+
+
+def test_default_device_specs_first_gpu(
+    mocker: MockerFixture,
+) -> None:
+    mocker.patch.object(
+        device_specs,
+        "scan_available_devices",
+        autospec=True,
+        return_value=[
+            DeviceSpec.accelerator(0),
+            DeviceSpec.accelerator(1),
+        ],
+    )
+    assert default_device_specs() == [DeviceSpec.accelerator(0)]
+
+
+def test_max_model_config_defaults_to_first_gpu(
+    mocker: MockerFixture,
+) -> None:
+    mocker.patch.object(
+        device_specs,
+        "scan_available_devices",
+        autospec=True,
+        return_value=[
+            DeviceSpec.accelerator(0),
+            DeviceSpec.accelerator(1),
+        ],
+    )
+
+    assert MAXModelConfig().device_specs == [DeviceSpec.accelerator(0)]
+
+
+def test_max_model_config_defaults_to_cpu_without_gpus(
+    mocker: MockerFixture,
+) -> None:
+    mocker.patch.object(
+        device_specs,
+        "scan_available_devices",
+        autospec=True,
+        return_value=[DeviceSpec.cpu()],
+    )
+
+    assert MAXModelConfig().device_specs == [DeviceSpec.cpu()]
 
 
 def test_device_specs_from_normalized_device_handle_gpu_list(
@@ -231,7 +277,6 @@ def test_coerce_device_specs_input_parses_strings(
     )
     assert coerce_device_specs_input("cpu") == [DeviceSpec.cpu()]
     assert coerce_device_specs_input("gpu") == [DeviceSpec.accelerator(0)]
-    assert coerce_device_specs_input("default") == [DeviceSpec.cpu()]
     assert coerce_device_specs_input("gpu:1,2") == [
         DeviceSpec.accelerator(1),
         DeviceSpec.accelerator(2),
@@ -293,7 +338,6 @@ def test_coerce_device_specs_input_string_list(
         DeviceSpec.accelerator(1),
     ]
     mock_scan.return_value = [DeviceSpec.cpu()]
-    assert coerce_device_specs_input(["default"]) == [DeviceSpec.cpu()]
     # Multi-element numeric string list (e.g. --device-specs 0 1)
     assert coerce_device_specs_input(["0", "1"]) == [
         DeviceSpec.accelerator(0),
