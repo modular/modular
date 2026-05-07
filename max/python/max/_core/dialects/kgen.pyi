@@ -1377,6 +1377,25 @@ class PreservedAttr(max._core.Attribute):
     @property
     def value(self) -> max._core.Attribute | None: ...
 
+class SIMDSplatAttr(max._core.Attribute):
+    """
+    The `#kgen.simd_splat` attribute takes a scalar value and replicates it
+    across a SIMD vector.
+    """
+
+    @overload
+    def __init__(
+        self, arg: max._core.dialects.builtin.TypedAttr, type: SIMDType
+    ) -> None: ...
+    @overload
+    def __init__(
+        self, arg: max._core.dialects.builtin.TypedAttr, type: SIMDType
+    ) -> None: ...
+    @property
+    def arg(self) -> max._core.dialects.builtin.TypedAttr: ...
+    @property
+    def type(self) -> SIMDType: ...
+
 class StructAttr(max._core.Attribute):
     """
     The `#kgen.struct` attribute contains a heterogenous list of elements of
