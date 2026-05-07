@@ -800,6 +800,7 @@ class Flux2Transformer2DModel(Module):
         img_ids: TensorValue,
         txt_ids: TensorValue,
         guidance: TensorValue,
+        signal_buffers: list[BufferValue] | None = None,
     ) -> tuple[TensorValue]:
         """Forward pass through Flux2 Transformer.
 
@@ -812,10 +813,16 @@ class Flux2Transformer2DModel(Module):
             txt_ids: Text position IDs of shape [batch_size, text_seq_len, 4]
                 or [text_seq_len, 4].
             guidance: Guidance scale of shape [B].
+            signal_buffers: Per-device communication buffers used by the
+                transformer blocks for allreduce. Required when running
+                multi-device; ignored on single-device (the blocks bypass
+                allreduce when ``num_devices == 1``).
 
         Returns:
             Denoised output of shape [B, H*W, patch_size^2 * out_channels].
         """
+        if signal_buffers is None:
+            signal_buffers = []
         if img_ids.rank == 3:
             img_ids = img_ids[0]
         if txt_ids.rank == 3:
@@ -844,13 +851,16 @@ class Flux2Transformer2DModel(Module):
         ids = ops.concat([txt_ids, img_ids], axis=0)
         image_rotary_emb = self.pos_embed(ids)
 
-        # Blocks now take per-device lists. The model itself remains
-        # single-device until ``Flux2Transformer2DModel`` is migrated; for
-        # now, wrap/unwrap with length-1 lists and pass an empty signal
-        # buffer list (``Allreduce`` is bypassed when ``num_devices == 1``).
-        signal_buffers: list[BufferValue] = []
-        hidden_states_d: list[TensorValue] = [hidden_states]
-        encoder_hidden_states_d: list[TensorValue] = [encoder_hidden_states]
+        # Replicate stream tensors across devices for the blocks. The
+        # un-sharded head/tail (embedders, modulation, norm_out, proj_out)
+        # still runs on ``self.devices[0]``; per-device collapse happens
+        # after the block stacks via ``hidden_states_d[0]``.
+        hidden_states_d: list[TensorValue] = [
+            hidden_states.to(dev) for dev in self.devices
+        ]
+        encoder_hidden_states_d: list[TensorValue] = [
+            encoder_hidden_states.to(dev) for dev in self.devices
+        ]
         for block in self.transformer_blocks:
             encoder_hidden_states_d, hidden_states_d = block(
                 hidden_states=hidden_states_d,
