@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import dataclasses
 import json
 import logging
 import os
@@ -739,28 +738,20 @@ async def benchmark(
             spec_decode_stats=spec_decode_stats,
         )
         if outputs_by_session is not None:
-            result = dataclasses.replace(
-                text_result,
-                session_server_stats={
-                    sid: [
-                        dataclasses.asdict(out.server_token_stats)
-                        for out in outs
-                    ]
-                    for sid, outs in sorted(
-                        outputs_by_session.items(),
-                        key=lambda kv: _session_sort_key(kv[0]),
-                    )
-                },
-            )
+            text_result.session_server_stats = {
+                sid: [out.server_token_stats for out in outs]
+                for sid, outs in sorted(
+                    outputs_by_session.items(),
+                    key=lambda kv: _session_sort_key(kv[0]),
+                )
+            }
         else:
-            result = dataclasses.replace(
-                text_result,
-                aggregate_server_stats=[
-                    dataclasses.asdict(out.server_token_stats)
-                    for out in all_outputs
-                    if isinstance(out, RequestFuncOutput)
-                ],
-            )
+            text_result.aggregate_server_stats = [
+                out.server_token_stats
+                for out in all_outputs
+                if isinstance(out, RequestFuncOutput)
+            ]
+        result = text_result
     if session.lora_manager is not None:
         result.lora_metrics = session.lora_manager.metrics
 
