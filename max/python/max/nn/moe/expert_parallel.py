@@ -67,6 +67,18 @@ def _ep_forward(
 
     batch_mgr = moe_shards[0].ep_batch_manager
 
+    # When the model has an unfused shared expert and non-allreduce EP, split
+    # the per-device dispatch and combine into async launch + wait and run the
+    # shared-expert subgraph in the gap. It reads only ``x`` and has no data
+    # dependency on dispatch, so the graph compiler can schedule it
+    # concurrently with the EP comms on each device's stream.
+    overlap_shared_expert = (
+        not batch_mgr.config.use_allreduce
+        and moe_shards[0].has_shared_experts
+        and not batch_mgr.config.fused_shared_expert
+    )
+    shared_outs: list[TensorValue] | None = None
+
     if batch_mgr.config.use_allreduce:
         # launch per-device dispatch since they don't need to do cross-device
         # communication.
@@ -80,6 +92,24 @@ def _ep_forward(
                 input_scales=scales[i] if scales is not None else None,
             )
             all_dispatch_results.append(dispatch_result)
+    elif overlap_shared_expert:
+        # Per-device async dispatch so we can interleave the shared-expert
+        # subgraph between launch and wait.
+        for i, (shard, x) in enumerate(zip(moe_shards, xs, strict=True)):
+            shard.ep_batch_manager.ep_dispatch_async(
+                x,
+                all_topk_ids[i],
+                device_ids[i],
+                input_scales=scales[i] if scales is not None else None,
+            )
+        shared_outs = [
+            shard.shared_experts(x)
+            for shard, x in zip(moe_shards, xs, strict=True)
+        ]
+        all_dispatch_results = [
+            shard.ep_batch_manager.ep_dispatch_wait(device_ids[i])
+            for i, shard in enumerate(moe_shards)
+        ]
     else:
         # Multi-device dispatch (single op).
         all_dispatch_results = batch_mgr.ep_dispatch_all(
@@ -116,6 +146,21 @@ def _ep_forward(
                 all_topk_ids[i],
             )
             combine_results.append(combine_result)
+    elif overlap_shared_expert:
+        # Per-device async combine. The shared-expert subgraph was issued
+        # earlier between dispatch_async and dispatch_wait; combine_async +
+        # combine_wait gives the scheduler a second window to absorb any
+        # remaining shared-expert work.
+        for i, shard in enumerate(moe_shards):
+            shard.ep_batch_manager.ep_combine_async(
+                all_down_projs[i], device_ids[i]
+            )
+        combine_results = [
+            shard.ep_batch_manager.ep_combine_wait(
+                all_router_weights[i], device_ids[i]
+            )
+            for i, shard in enumerate(moe_shards)
+        ]
     else:
         # Multi-device combine (single op).
         combine_results = batch_mgr.ep_combine_all(
@@ -125,7 +170,9 @@ def _ep_forward(
     outputs: list[TensorValue] = []
     for i, (shard, x) in enumerate(zip(moe_shards, xs, strict=True)):
         out = combine_results[i]
-        if (
+        if shared_outs is not None:
+            out += shared_outs[i]
+        elif (
             shard.has_shared_experts
             and not shard.ep_batch_manager.config.fused_shared_expert
         ):

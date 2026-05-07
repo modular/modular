@@ -446,6 +446,61 @@ struct Struct_ep_dispatch_async_nvfp4:
         )
 
 
+@compiler.register("ep.dispatch_async.mxfp4")
+struct Struct_ep_dispatch_async_mxfp4:
+    @always_inline
+    @staticmethod
+    def execute[
+        input_dtype: DType,
+        dispatch_dtype: DType,
+        dispatch_scale_dtype: DType,
+        hidden_size: Int,
+        top_k: Int,
+        n_experts: Int,
+        max_token_per_rank: Int,
+        n_gpus_per_node: Int,
+        n_nodes: Int,
+        //,
+        target: StaticString,
+    ](
+        atomic_counters: MutableInputTensor[dtype=DType.int32, rank=1, ...],
+        input_tokens: InputTensor[dtype=input_dtype, rank=2, ...],
+        topk_ids: InputTensor[dtype=DType.int32, rank=2, ...],
+        send_ptrs: InputTensor[dtype=DType.uint64, rank=1, ...],
+        recv_ptrs: InputTensor[dtype=DType.uint64, rank=1, ...],
+        recv_count_ptrs: InputTensor[dtype=DType.uint64, rank=1, ...],
+        context: DeviceContextPtr,
+    ) raises:
+        """Execute the Expert Parallelism async dispatch kernel. Tokens are
+        transferred in MXFP4 format with per-token even-mode scales packed
+        alongside the FP4 quants in the send buffer.
+        """
+        comptime token_fmt_type = MXFP4TokenFormat[
+            fp4_dtype=dispatch_dtype,
+            scales_dtype=dispatch_scale_dtype,
+            output_layout=RT_LAYOUT_2D,
+            scales_layout=RT_LAYOUT_2D,
+            hidden_size,
+            top_k,
+        ]
+        ep_dispatch_async_kernel_api[
+            token_fmt_type,
+            n_experts,
+            max_token_per_rank,
+            n_gpus_per_node,
+            n_nodes,
+            target,
+        ](
+            atomic_counters.to_tile_tensor[DType.int64](),
+            input_tokens.to_tile_tensor[DType.int64]().as_immut(),
+            topk_ids.to_tile_tensor[DType.int64]().as_immut(),
+            send_ptrs.to_tile_tensor[DType.int64](),
+            recv_ptrs.to_tile_tensor[DType.int64](),
+            recv_count_ptrs.to_tile_tensor[DType.int64](),
+            context,
+        )
+
+
 # ===-----------------------------------------------------------------------===#
 # Expert Parallelism Dispatch Wait Kernel
 # ===-----------------------------------------------------------------------===#
@@ -609,6 +664,66 @@ struct Struct_ep_dispatch_wait_nvfp4:
             output_scales_tensor,
             scales_offsets_tensor,
             context[],
+        )
+
+        ep_dispatch_wait_kernel_api[
+            n_experts,
+            max_token_per_rank,
+            n_gpus_per_node,
+            n_nodes,
+            target,
+        ](
+            format_handler,
+            row_offsets.to_tile_tensor[DType.int64](),
+            expert_ids.to_tile_tensor[DType.int64](),
+            src_info.to_tile_tensor[DType.int64](),
+            recv_ptrs.to_tile_tensor[DType.int64](),
+            recv_count_ptrs.to_tile_tensor[DType.int64](),
+            atomic_counters.to_tile_tensor[DType.int64](),
+            context,
+        )
+
+
+@compiler.register("ep.dispatch_wait.mxfp4")
+struct Struct_ep_dispatch_wait_mxfp4:
+    @always_inline
+    @staticmethod
+    def execute[
+        dispatch_dtype: DType,
+        dispatch_scale_dtype: DType,
+        hidden_size: Int,
+        top_k: Int,
+        n_experts: Int,
+        max_token_per_rank: Int,
+        n_gpus_per_node: Int,
+        n_nodes: Int,
+        //,
+        target: StaticString,
+    ](
+        output_tokens: OutputTensor[dtype=dispatch_dtype, rank=2, ...],
+        output_scales: OutputTensor[dtype=dispatch_scale_dtype, rank=2, ...],
+        row_offsets: OutputTensor[dtype=DType.uint32, rank=1, ...],
+        expert_ids: OutputTensor[dtype=DType.int32, rank=1, ...],
+        src_info: OutputTensor[dtype=DType.int32, rank=2, ...],
+        atomic_counters: MutableInputTensor[dtype=DType.int32, rank=1, ...],
+        recv_ptrs: InputTensor[dtype=DType.uint64, rank=1, ...],
+        recv_count_ptrs: InputTensor[dtype=DType.uint64, rank=1, ...],
+        context: DeviceContextPtr,
+    ) raises:
+        """Execute the Expert Parallelism dispatch completion kernel. Received
+        tokens are in MXFP4 format: two FP4 elements packed per ``uint8`` in
+        ``output_tokens`` with per-token even-mode scales in ``output_scales``.
+        """
+        var output_tokens_tensor = output_tokens.to_tile_tensor[DType.int64]()
+        var output_scales_tensor = output_scales.to_tile_tensor[DType.int64]()
+
+        comptime assert (
+            output_tokens_tensor.static_shape[1] * 2 == hidden_size
+        ), "EP dispatch_wait: output tokens shape doesn't match hidden size."
+
+        var format_handler = MXFP4TokenFormat[hidden_size, top_k](
+            output_tokens_tensor,
+            output_scales_tensor,
         )
 
         ep_dispatch_wait_kernel_api[

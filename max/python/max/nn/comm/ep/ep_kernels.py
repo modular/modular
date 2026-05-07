@@ -287,6 +287,10 @@ def call_ep_dispatch_async(
                 )
             op_name += ".nvfp4"
             input_vals.append(1.0 / input_scales.to(input_tokens.device))
+        elif quant_config.is_mxfp4:
+            op_name += ".mxfp4"
+            # No output tensor for MOGG to deduce the scale dtype from.
+            parameters["dispatch_scale_dtype"] = DType.float8_e8m0fnu
         elif config.dispatch_dtype.is_float8():
             parameters["dispatch_fmt_str"] = "BlockwiseFP8"
         else:
@@ -379,6 +383,8 @@ def call_ep_dispatch_wait(
                 raise ValueError(
                     "NVFP4 dispatch with fused shared expert is not supported"
                 )
+        elif quant_config.is_mxfp4:
+            op_name += ".mxfp4"
         else:
             raise ValueError(
                 f"Unsupported dispatch dtype: {config.dispatch_dtype}"
