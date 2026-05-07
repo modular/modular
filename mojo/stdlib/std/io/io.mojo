@@ -27,6 +27,7 @@ from std.ffi import (
     _CPointer,
 )
 from std.memory.unsafe_pointer import unsafe_cast
+from std.reflection.traits import AllWritable
 from std.sys import (
     is_amd_gpu,
     is_apple_gpu,
@@ -409,30 +410,20 @@ def print[
         file: The output stream.
     """
 
+    comptime assert AllWritable[*Ts]  # satisfy _write_to where clause.
+
     if __is_run_in_comptime_interpreter:
         var buffer = _WriteBufferStack(file)
-        comptime length = values.__len__()
+        values._write_to(buffer, sep=sep, end=end)
 
-        comptime for i in range(length):
-            values[i].write_to(buffer)
-            if i < length - 1:
-                sep.write_to(buffer)
-
-        end.write_to(buffer)
         buffer.flush()
         if flush:
             _flush(file=file)
     else:
         comptime if CurrentPlugin.print_emit_fn:
             var buffer = _WriteBufferHeap()
-            comptime length = values.__len__()
+            values._write_to(buffer, sep=sep, end=end)
 
-            comptime for i in range(length):
-                values[i].write_to(buffer)
-                if i < length - 1:
-                    sep.write_to(buffer)
-
-            end.write_to(buffer)
             var cstr = buffer.nul_terminate()
 
             comptime _emit = CurrentPlugin.print_emit_fn.unsafe_value()
@@ -443,14 +434,8 @@ def print[
             # Apple GPU: same formatting path as other GPUs but output
             # goes through Metal os_log via _metal_print_write.
             var buffer = _WriteBufferHeap()
-            comptime length = values.__len__()
+            values._write_to(buffer, sep=sep, end=end)
 
-            comptime for i in range(length):
-                values[i].write_to(buffer)
-                if i < length - 1:
-                    sep.write_to(buffer)
-
-            end.write_to(buffer)
             _ = buffer.nul_terminate()
 
             var slice = buffer.as_string_slice()
@@ -460,14 +445,8 @@ def print[
             )
         elif is_gpu():
             var buffer = _WriteBufferHeap()
-            comptime length = values.__len__()
+            values._write_to(buffer, sep=sep, end=end)
 
-            comptime for i in range(length):
-                values[i].write_to(buffer)
-                if i < length - 1:
-                    sep.write_to(buffer)
-
-            end.write_to(buffer)
             _ = buffer.nul_terminate()
 
             var slice = buffer.as_string_slice()
@@ -483,16 +462,10 @@ def print[
                 ]()
         else:
             var buffer = _WriteBufferStack(file)
-            comptime length = values.__len__()
+            values._write_to(buffer, sep=sep, end=end)
 
-            comptime for i in range(length):
-                values[i].write_to(buffer)
-
-                comptime if i < length - 1:
-                    sep.write_to(buffer)
-
-            end.write_to(buffer)
             buffer.flush()
+
             if flush:
                 _flush(file=file)
 
