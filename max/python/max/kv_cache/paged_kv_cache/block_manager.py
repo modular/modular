@@ -395,6 +395,13 @@ class BlockManager:
 
         # Commit the device blocks into the device prefix cache.
         for device_block, block_hash in zip(blocks, loaded_hashes, strict=True):
+            if block_hash in self.device_block_pool.hash_to_committed_block:
+                # When this env var is set, we may perform host/disk -> device
+                # transfers of blocks already resident in the device prefix cache.
+                # If the block is already in the device prefix cache, we skip the
+                # commit.
+                assert self._only_use_kv_connector_last_level_cache
+                continue
             self.device_block_pool.commit_into_prefix_cache(
                 block_hash, device_block
             )

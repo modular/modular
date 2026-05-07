@@ -79,6 +79,7 @@ class BlockPool:
         block.block_hash = block_hash
 
         # Commit the block into the prefix cache.
+        assert block_hash not in self.hash_to_committed_block
         self.hash_to_committed_block[block_hash] = block
 
     def get_or_commit_into_prefix_cache(
