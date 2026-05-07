@@ -33,6 +33,7 @@ from max.interfaces import (
     TextGenerationContextType,
     TextGenerationOutput,
 )
+from max.pipelines.core.exceptions import InputError
 from max.pipelines.lib.utils import upper_bounded_default
 from max.profiler import traced
 from transformers import (
@@ -453,14 +454,11 @@ class StructuredOutputHelper:
                 matcher = LLMatcher(self._tokenizer_info, serialized_grammar)
                 context.set_matcher(matcher)
             except Exception as e:
-                msg = (
-                    f"Json schema provided in request cannot be compiled to "
-                    f"valid grammar. Update your json schema to produce valid "
+                raise InputError(
+                    f"JSON schema provided in request cannot be compiled to "
+                    f"valid grammar. Update your JSON schema to produce valid "
                     f"structured output. From llguidance: {e}"
-                )
-                logger.warning(msg)
-                # Remove json_schema so we don't retry compilation repeatedly.
-                context.json_schema = None  # type: ignore
+                ) from e
 
         if context.matcher:
             # Fill the bitmask for this context.

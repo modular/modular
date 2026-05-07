@@ -626,8 +626,9 @@ class TextTokenizer(
         )
 
         json_schema = (
-            json.dumps(request.response_format.get("json_schema", None))
+            json.dumps(request.response_format.get("json_schema"))
             if request.response_format
+            and request.response_format.get("json_schema")
             else None
         )
 
@@ -947,8 +948,9 @@ class TextAndVisionTokenizer(
             ]
 
         json_schema = (
-            json.dumps(request.response_format.get("json_schema", None))
+            json.dumps(request.response_format.get("json_schema"))
             if request.response_format
+            and request.response_format.get("json_schema")
             else None
         )
 

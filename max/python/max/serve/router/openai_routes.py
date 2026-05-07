@@ -18,6 +18,7 @@ import base64
 import json
 import logging
 import queue
+import re
 import uuid
 from abc import ABC, abstractmethod
 from collections.abc import AsyncGenerator, Sequence
@@ -33,6 +34,7 @@ import aiofiles
 from fastapi import APIRouter, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
 from httpx import AsyncClient, HTTPStatusError
+from llguidance import LLMatcher
 from max.interfaces import (
     AudioGenerationRequest,
     GenerationStatus,
@@ -120,9 +122,7 @@ from openai.types.shared_params import (
 from openai.types.shared_params import (
     ResponseFormatJSONSchema as ResponseFormatJsonSchema,
 )
-from openai.types.shared_params import (
-    ResponseFormatText as ResponseFormatText,
-)
+from openai.types.shared_params import ResponseFormatText as ResponseFormatText
 from pydantic import AnyUrl, BaseModel, Field, ValidationError
 from sse_starlette.sse import EventSourceResponse
 from starlette.datastructures import State
@@ -133,6 +133,9 @@ router = APIRouter(prefix="/v1")
 logger = logging.getLogger("max.serve")
 
 _CLIENT_DISCONNECTED_STATUS_CODE = 499
+
+# OpenAI spec: function names must be a-z, A-Z, 0-9, underscores, or hyphens.
+_VALID_TOOL_NAME_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
 
 
 class _ClientDisconnectedError(RuntimeError):
@@ -1103,7 +1106,12 @@ async def openai_create_chat_completion(
     except JSONDecodeError as e:
         logger.exception("JSONDecodeError in request %s", request_id)
         raise HTTPException(status_code=400, detail="Missing JSON.") from e
-    except (TypeError, ValidationError) as e:
+    except ValidationError as e:
+        logger.warning(
+            "Request validation error in request %s: %s", request_id, e
+        )
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except TypeError as e:
         logger.exception("TypeError in request %s", request_id)
         raise HTTPException(status_code=400, detail="Invalid JSON.") from e
     except InputError as e:
@@ -1129,10 +1137,12 @@ def _convert_chat_completion_tools_to_token_generator_tools(
     token_generator_tools = []
     for tool in chat_tools:
         function = tool["function"]
+        name = function["name"]
+        _validate_tool_function_name(name)
         token_generator_tool = TextGenerationRequestTool(
             type=tool["type"],
             function=TextGenerationRequestFunction(
-                name=function["name"],
+                name=name,
                 description=function.get("description"),
                 parameters=dict(function.get("parameters") or {}),
             ),
@@ -1140,6 +1150,48 @@ def _convert_chat_completion_tools_to_token_generator_tools(
         token_generator_tools.append(token_generator_tool)
 
     return token_generator_tools
+
+
+def _validate_tool_function_name(name: str) -> None:
+    """Validate that a tool function name conforms to the OpenAI spec.
+
+    Raises:
+        InputError: If the name is empty or contains invalid characters.
+    """
+    if not name:
+        raise InputError(
+            "Invalid tool function name: name cannot be empty. "
+            "Function names must contain only a-z, A-Z, 0-9, underscores, or hyphens."
+        )
+    if not _VALID_TOOL_NAME_RE.match(name):
+        raise InputError(
+            f"Invalid tool function name: '{name}'. "
+            "Function names must contain only a-z, A-Z, 0-9, underscores, or hyphens."
+        )
+
+
+def _validate_json_schema(json_schema: dict[str, Any]) -> None:
+    """Validate that a JSON schema can be compiled to a grammar.
+
+    This catches invalid schemas (recursive $ref, unsupported constructs) early
+    in the HTTP request handler, returning a 400 error instead of crashing the
+    model worker process later during constrained decoding.
+
+    Raises:
+        InputError: If the schema cannot be compiled.
+    """
+    if not json_schema:
+        return
+
+    try:
+        # This validates the schema can be compiled to a grammar.
+        # It doesn't need a tokenizer - just checks schema structure.
+        LLMatcher.grammar_from_json_schema(json_schema)
+    except Exception as e:
+        raise InputError(
+            f"JSON schema cannot be compiled to valid grammar: {e}. "
+            "Recursive $ref schemas and other unsupported constructs are not allowed."
+        ) from e
 
 
 def _create_response_format(
@@ -1173,6 +1225,9 @@ def _create_response_format(
         )
         if (schema := json_schema_param.get("schema")) is not None:
             json_schema = dict(schema)
+
+    # Validate the schema early to return 400 instead of crashing the model worker.
+    _validate_json_schema(json_schema)
 
     return TextGenerationResponseFormat(
         type=response_type, json_schema=json_schema
@@ -1235,7 +1290,12 @@ async def openai_create_embeddings(
     except JSONDecodeError as e:
         logger.exception("JSONDecodeError in request %s", request_id)
         raise HTTPException(status_code=400, detail="Missing JSON.") from e
-    except (TypeError, ValidationError) as e:
+    except ValidationError as e:
+        logger.warning(
+            "Request validation error in request %s: %s", request_id, e
+        )
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except TypeError as e:
         logger.exception("TypeError in request %s", request_id)
         raise HTTPException(status_code=400, detail="Invalid JSON.") from e
     except InputError as e:
@@ -1691,7 +1751,12 @@ async def openai_create_completion(
     except JSONDecodeError as e:
         logger.exception("JSONDecodeError for request %s", http_req_id)
         raise HTTPException(status_code=400, detail="Missing JSON.") from e
-    except (TypeError, ValidationError) as e:
+    except ValidationError as e:
+        logger.warning(
+            "Request validation error for request %s: %s", http_req_id, e
+        )
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except TypeError as e:
         logger.exception("Validation error for request %s", http_req_id)
         raise HTTPException(status_code=400, detail="Invalid JSON.") from e
     except ValueError as e:
@@ -1794,7 +1859,12 @@ async def create_streaming_audio_speech(
     except JSONDecodeError as e:
         logger.exception("JSONDecodeError in request %s", request_id)
         raise HTTPException(status_code=400, detail="Missing JSON.") from e
-    except (TypeError, ValidationError) as e:
+    except ValidationError as e:
+        logger.warning(
+            "Request validation error in request %s: %s", request_id, e
+        )
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except TypeError as e:
         logger.exception("TypeError in request %s", request_id)
         raise HTTPException(status_code=400, detail="Invalid JSON.") from e
     except InputError as e:
@@ -1866,7 +1936,12 @@ async def load_lora_adapter(
     except JSONDecodeError as e:
         logger.exception("JSONDecodeError in request %s", request_id)
         raise HTTPException(status_code=400, detail="Missing JSON.") from e
-    except (TypeError, ValidationError) as e:
+    except ValidationError as e:
+        logger.warning(
+            "Request validation error in request %s: %s", request_id, e
+        )
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except TypeError as e:
         logger.exception("Validation error in request %s", request_id)
         raise HTTPException(status_code=400, detail="Invalid JSON.") from e
     except ValueError as e:
@@ -1926,7 +2001,12 @@ async def unload_lora_adapter(
     except JSONDecodeError as e:
         logger.exception("JSONDecodeError in request %s", request_id)
         raise HTTPException(status_code=400, detail="Missing JSON.") from e
-    except (TypeError, ValidationError) as e:
+    except ValidationError as e:
+        logger.warning(
+            "Request validation error in request %s: %s", request_id, e
+        )
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except TypeError as e:
         logger.exception("Validation error in request %s", request_id)
         raise HTTPException(status_code=400, detail="Invalid JSON.") from e
     except ValueError as e:
