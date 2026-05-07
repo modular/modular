@@ -26,7 +26,7 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
     %1 = kgen.param.constant: !kgen.scalar<si32> = <y>
 
     // CHECK-NEXT: kgen.param.constant: simd<4, si64> = <-1>
-    %2 = kgen.param.constant: !kgen.simd<4, si64> = <#pop.simd_splat<#pop.cast<#kgen<simd 0x7FFFFFFFFFFFFFFF> : !kgen.scalar<index>>: !kgen.scalar<si64>>: !kgen.simd<4, si64>>
+    %2 = kgen.param.constant: !kgen.simd<4, si64> = <#kgen.simd_splat<#pop.cast<#kgen<simd 0x7FFFFFFFFFFFFFFF> : !kgen.scalar<index>>: !kgen.scalar<si64>>: !kgen.simd<4, si64>>
     // CHECK-NEXT: kgen.param.constant: scalar<ui64> = <18446744073709551615>
     %3 = kgen.param.constant: !kgen.scalar<ui64> = <#pop.cast<#kgen<simd 0x7FFFFFFFFFFFFFFF> : !kgen.scalar<index>>: !kgen.scalar<ui64>>
     // CHECK-NEXT: kgen.param.constant: scalar<si64> = <2147483647>

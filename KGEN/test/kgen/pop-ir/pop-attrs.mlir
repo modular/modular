@@ -84,8 +84,8 @@ kgen.func @union_constants() {
 // CHECK: f0 = #kgen.cast_to_builtin<#kgen.unknown : !kgen.scalar<f16>> : f16
 "pop_cast_to_builtin.op"() { f0 = #kgen.cast_to_builtin<#kgen.unknown: !kgen.scalar<f16>> : f16 } : () -> ()
 
-// CHECK: f0 = #pop.simd_splat<#kgen.unknown : !kgen.scalar<f16>> : !kgen.simd<4, f16>
-"pop_simd_splat.op"() { f0 = #pop.simd_splat<#kgen.unknown : !kgen.scalar<f16>> : !kgen.simd<4, f16> } : () -> ()
+// CHECK: f0 = #kgen.simd_splat<#kgen.unknown : !kgen.scalar<f16>> : !kgen.simd<4, f16>
+"pop_simd_splat.op"() { f0 = #kgen.simd_splat<#kgen.unknown : !kgen.scalar<f16>> : !kgen.simd<4, f16> } : () -> ()
 
 // CHECK: f0 = #pop.dtype_to_ui8<*?> : ui8
 "pop_dtype_to_ui8.op"() { f0 = #pop.dtype_to_ui8<*?> : ui8 } : () -> ()

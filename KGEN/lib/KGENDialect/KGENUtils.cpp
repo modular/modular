@@ -2618,3 +2618,17 @@ OpFoldResult KGEN::foldCastFromBuiltin(TypedAttr val, SIMDType resultType) {
   assert(dtype->isFloat() && "unexpected dtype");
   return SIMDAttr::get({cast<FloatAttr>(val).getValue(), *dtype}, resultType);
 }
+
+OpFoldResult KGEN::foldSIMDSplat(Value scalarVal, Attribute scalarAttr,
+                                 SIMDType resultType) {
+  std::optional<int64_t> size = resultType.getResolvedSize();
+
+  if (size == 1)
+    return scalarAttr ? OpFoldResult(scalarAttr) : scalarVal;
+
+  auto scalarSIMD = sugarDynCastIfPresent<SIMDAttr>(scalarAttr);
+  if (!size || !scalarSIMD)
+    return {};
+  SmallVector<DTypeValue> values(*size, scalarSIMD.getValues().front());
+  return SIMDAttr::get(values, resultType);
+}

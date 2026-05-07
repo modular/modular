@@ -173,10 +173,6 @@ def CastAttr : DialectAttribute<(attr
 def DTypeToUI8Attr : DialectAttribute<(attr TypedAttr:$value)>;
 def DTypeFromUI8Attr : DialectAttribute<(attr TypedAttr:$value)>;
 
-def SIMDSplatAttr : DialectAttribute<(attr
-  TypedAttr:$arg, ConcreteType<"SIMDType">:$type
-)>;
-
 def SIMDNegAttr : DialectAttribute<(attr TypedAttr:$operand)>;
 def SIMDCeilAttr : DialectAttribute<(attr TypedAttr:$operand)>;
 def SIMDFloorAttr : DialectAttribute<(attr TypedAttr:$operand)>;
@@ -228,7 +224,6 @@ def POPDialectAttributes : DialectAttributes<"pop"> {
     CastAttr,
     DTypeToUI8Attr,
     DTypeFromUI8Attr,
-    SIMDSplatAttr,
 
     SIMDNegAttr,
     SIMDCeilAttr,

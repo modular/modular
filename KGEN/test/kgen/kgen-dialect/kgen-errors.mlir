@@ -736,7 +736,7 @@ kgen.generator @closure_types(%arg0 : index) {
 
 // expected-error @+2 {{mismatch between value type 'si32' and splat element type 'f16'}}
 "some.op"() {
-  a = #pop.simd_splat< #kgen<simd 1> : !kgen.scalar<si32>> : !kgen.simd<3, f16>
+  a = #kgen.simd_splat< #kgen<simd 1> : !kgen.scalar<si32>> : !kgen.simd<3, f16>
 } : () -> ()
 
 // -----

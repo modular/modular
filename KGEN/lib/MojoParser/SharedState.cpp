@@ -2750,7 +2750,7 @@ FailureOr<TypedAttr> BuiltinFunctionFolder::fold(Operation &op) {
   if (auto splatOp = dyn_cast<POP::SIMDSplatOp>(op)) {
     auto type = evaluator.getReboundType(splatOp.getType());
     if (auto op = findValue(splatOp.getScalar()))
-      return POP::SIMDSplatAttr::get(op, cast<SIMDType>(type));
+      return SIMDSplatAttr::get(op, cast<SIMDType>(type));
   }
 
   // Handle a simple binary operation that folds to a POC binary op.
@@ -2904,7 +2904,7 @@ FailureOr<TypedAttr> BuiltinFunctionFolder::fold(Operation &op) {
                   /*size=*/1,
                   DTypeConstantAttr::get(cmpOp.getContext(), DType::kBool)));
           auto oneVecVal =
-              POP::SIMDSplatAttr::get(oneVal, cast<SIMDType>(resultType));
+              KGEN::SIMDSplatAttr::get(oneVal, cast<SIMDType>(resultType));
           cmp = POP::SIMDXorAttr::get(cmp, oneVecVal);
         }
 

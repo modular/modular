@@ -150,20 +150,6 @@ OpFoldResult POP::foldCast(TypedAttr operand, SIMDType resultType,
       [](const APFloat &in) -> bool { return !in.isZero(); });
 }
 
-OpFoldResult POP::foldSIMDSplat(Value scalarVal, Attribute scalarAttr,
-                                SIMDType resultType) {
-  std::optional<int64_t> size = resultType.getResolvedSize();
-
-  if (size == 1)
-    return scalarAttr ? OpFoldResult(scalarAttr) : scalarVal;
-
-  auto scalarSIMD = sugarDynCastIfPresent<SIMDAttr>(scalarAttr);
-  if (!size || !scalarSIMD)
-    return {};
-  SmallVector<DTypeValue> values(*size, scalarSIMD.getValues().front());
-  return SIMDAttr::get(values, resultType);
-}
-
 /// Fold a SIMD Or-reduction operation.
 OpFoldResult POP::foldSIMDReduceOr(Value vectorVal, Attribute vectorAttr,
                                    SIMDType vectorType) {

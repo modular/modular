@@ -349,7 +349,7 @@ kgen.func @simd_cast_sugar_fold() -> !kgen.scalar<ui32> {
 
 // CHECK-LABEL: @simd_splat_sugar_fold
 kgen.func @simd_splat_sugar_fold() -> !kgen.simd<3, f16> {
-  %r = kgen.param.constant: !kgen.simd<3, f16> = <#pop.simd_splat<#kgen<sugar alias, !kgen.scalar<f16>, *?, #kgen<simd "1.0">>>>
+  %r = kgen.param.constant: !kgen.simd<3, f16> = <#kgen.simd_splat<#kgen<sugar alias, !kgen.scalar<f16>, *?, #kgen<simd "1.0">>>>
   // CHECK: kgen.param.constant: simd<3, f16> = <"1">
   kgen.return %r : !kgen.simd<3, f16>
 }
