@@ -1117,6 +1117,9 @@ async def openai_create_chat_completion(
     except JSONDecodeError as e:
         logger.exception("JSONDecodeError in request %s", request_id)
         raise HTTPException(status_code=400, detail="Missing JSON.") from e
+    except KeyError as e:
+        logger.exception("KeyError in request %s", request_id)
+        raise HTTPException(status_code=400, detail="Invalid JSON.") from e
     except ValidationError as e:
         logger.warning(
             "Request validation error in request %s: %s", request_id, e
@@ -1301,6 +1304,9 @@ async def openai_create_embeddings(
     except JSONDecodeError as e:
         logger.exception("JSONDecodeError in request %s", request_id)
         raise HTTPException(status_code=400, detail="Missing JSON.") from e
+    except KeyError as e:
+        logger.exception("KeyError in request %s", request_id)
+        raise HTTPException(status_code=400, detail="Invalid JSON.") from e
     except ValidationError as e:
         logger.warning(
             "Request validation error in request %s: %s", request_id, e
@@ -1754,6 +1760,9 @@ async def openai_create_completion(
     except JSONDecodeError as e:
         logger.exception("JSONDecodeError for request %s", http_req_id)
         raise HTTPException(status_code=400, detail="Missing JSON.") from e
+    except KeyError as e:
+        logger.exception("KeyError in request %s", http_req_id)
+        raise HTTPException(status_code=400, detail="Invalid JSON.") from e
     except ValidationError as e:
         logger.warning(
             "Request validation error for request %s: %s", http_req_id, e
@@ -1862,6 +1871,9 @@ async def create_streaming_audio_speech(
     except JSONDecodeError as e:
         logger.exception("JSONDecodeError in request %s", request_id)
         raise HTTPException(status_code=400, detail="Missing JSON.") from e
+    except KeyError as e:
+        logger.exception("KeyError in request %s", request_id)
+        raise HTTPException(status_code=400, detail="Invalid JSON.") from e
     except ValidationError as e:
         logger.warning(
             "Request validation error in request %s: %s", request_id, e
@@ -1939,6 +1951,9 @@ async def load_lora_adapter(
     except JSONDecodeError as e:
         logger.exception("JSONDecodeError in request %s", request_id)
         raise HTTPException(status_code=400, detail="Missing JSON.") from e
+    except KeyError as e:
+        logger.exception("KeyError in request %s", request_id)
+        raise HTTPException(status_code=400, detail="Invalid JSON.") from e
     except ValidationError as e:
         logger.warning(
             "Request validation error in request %s: %s", request_id, e
@@ -2004,6 +2019,9 @@ async def unload_lora_adapter(
     except JSONDecodeError as e:
         logger.exception("JSONDecodeError in request %s", request_id)
         raise HTTPException(status_code=400, detail="Missing JSON.") from e
+    except KeyError as e:
+        logger.exception("KeyError in request %s", request_id)
+        raise HTTPException(status_code=400, detail="Invalid JSON.") from e
     except ValidationError as e:
         logger.warning(
             "Request validation error in request %s: %s", request_id, e
