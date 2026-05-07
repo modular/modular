@@ -209,7 +209,7 @@ class Flux2TransformerBlock(Module):
             out_bias=bias,
             eps=eps,
             dtype=dtype,
-            device=device,
+            devices=[device],
             quant=quant,
         )
         self.norm2 = LayerNorm(

@@ -17,6 +17,7 @@ from collections.abc import Iterable, Sequence
 
 from max.dtype import DType
 from max.graph import DeviceRef, ShardingStrategy, TensorValue, ops
+from max.nn.attention import num_heads_for_device
 from max.nn.attention.mask_config import MHAMaskVariant
 from max.nn.kernels import flash_attention_gpu, rope_ragged_with_position_ids
 from max.nn.layer import LayerList, Module, Shardable
@@ -278,7 +279,7 @@ class Flux2PosEmbed(Module):
         return freqs_cos, freqs_sin
 
 
-class Flux2Attention(Module):
+class Flux2Attention(Module, Shardable):
     def __init__(
         self,
         query_dim: int,
@@ -293,7 +294,7 @@ class Flux2Attention(Module):
         out_dim: int | None = None,
         *,
         dtype: DType,
-        device: DeviceRef,
+        devices: Sequence[DeviceRef],
         quant: Flux2BlockQuant = Flux2BlockQuant(),
     ) -> None:
         """Initialize Flux2Attention.
@@ -310,7 +311,9 @@ class Flux2Attention(Module):
             eps: Epsilon for RMSNorm.
             out_dim: Output dimension (defaults to query_dim).
             dtype: Weight dtype.
-            device: Weight device.
+            devices: Devices for placement and tensor parallelism. The
+                un-sharded base lives on ``devices[0]``; ``shard()`` produces
+                one shard per device.
             quant: Per-Linear quant plan; defaults to all-BF16.
         """
         super().__init__()
@@ -319,6 +322,9 @@ class Flux2Attention(Module):
         self.inner_dim = out_dim if out_dim is not None else dim_head * heads
         self.heads = out_dim // dim_head if out_dim is not None else heads
         self.added_kv_proj_dim = added_kv_proj_dim
+        self.devices = list(devices)
+        device = self.devices[0]
+        self._sharding_strategy: ShardingStrategy | None = None
         out_dim = out_dim if out_dim is not None else query_dim
 
         # Main Q/K/V projections
@@ -414,6 +420,196 @@ class Flux2Attention(Module):
             self.add_k_proj = None
             self.add_v_proj = None
             self.to_add_out = None
+
+    @property
+    def sharding_strategy(self) -> ShardingStrategy | None:
+        return self._sharding_strategy
+
+    @sharding_strategy.setter
+    def sharding_strategy(self, strategy: ShardingStrategy) -> None:
+        num_devices = strategy.num_devices
+        to_out_linear = self.to_out[0]
+        assert isinstance(to_out_linear, Linear)
+
+        if strategy.is_replicate:
+            qkv_strategy = strategy
+            out_strategy = strategy
+            norm_strategy = strategy
+        elif strategy.is_tensor_parallel:
+            # Head-parallel: each head occupies ``head_dim`` consecutive
+            # output rows of Q/K/V, so a plain rowwise split is head-aligned
+            # only when ``heads % num_devices == 0``. ``head_aware_rowwise``
+            # does not exist today (cf. ``head_aware_columnwise`` for the
+            # output projection), so enforce divisibility here. TODO:
+            # generalize to uneven splits if/when ``head_aware_rowwise``
+            # lands in ``max.graph.ShardingStrategy``.
+            if self.heads % num_devices != 0:
+                raise ValueError(
+                    f"Flux2Attention tensor_parallel requires heads "
+                    f"({self.heads}) divisible by num_devices "
+                    f"({num_devices})."
+                )
+            qkv_strategy = ShardingStrategy.rowwise(num_devices)
+            # Output projection reduces along the inner_dim axis; the
+            # head-aware variant splits per-head so each shard's input dim
+            # matches its local head count even for uneven distributions.
+            out_strategy = ShardingStrategy.head_aware_columnwise(
+                num_devices, self.heads, self.head_dim
+            )
+            # QK norm weight is [head_dim] which isn't sharded, so replicate.
+            norm_strategy = ShardingStrategy.replicate(num_devices)
+        else:
+            raise ValueError(
+                "Flux2Attention only supports tensor_parallel and replicate "
+                f"sharding; got {strategy}"
+            )
+
+        for proj in (self.to_q, self.to_k, self.to_v):
+            proj.sharding_strategy = qkv_strategy
+        to_out_linear.sharding_strategy = out_strategy
+        self.norm_q.sharding_strategy = norm_strategy
+        self.norm_k.sharding_strategy = norm_strategy
+
+        if self.added_kv_proj_dim is not None:
+            add_q, add_k, add_v, to_add_out, norm_added_q, norm_added_k = (
+                self._dual_stream_layers()
+            )
+            for proj in (add_q, add_k, add_v):
+                proj.sharding_strategy = qkv_strategy
+            to_add_out.sharding_strategy = out_strategy
+            norm_added_q.sharding_strategy = norm_strategy
+            norm_added_k.sharding_strategy = norm_strategy
+
+        self._sharding_strategy = strategy
+
+    def _dual_stream_layers(
+        self,
+    ) -> tuple[Linear, Linear, Linear, Linear, RMSNorm, RMSNorm]:
+        """Returns the six non-None encoder layers (raises if not dual-stream).
+
+        Centralises the assert pattern so callers can deconstruct the tuple
+        and let mypy narrow each binding.
+        """
+        assert self.add_q_proj is not None
+        assert self.add_k_proj is not None
+        assert self.add_v_proj is not None
+        assert self.to_add_out is not None
+        assert self.norm_added_q is not None
+        assert self.norm_added_k is not None
+        return (
+            self.add_q_proj,
+            self.add_k_proj,
+            self.add_v_proj,
+            self.to_add_out,
+            self.norm_added_q,
+            self.norm_added_k,
+        )
+
+    def _empty_shard(
+        self, device: DeviceRef, sharded_heads: int
+    ) -> Flux2Attention:
+        """Build a per-device shell without running __init__'s Linear setup.
+
+        ``__init__`` would allocate full-size Linears we'd immediately
+        overwrite. This sets only the attributes ``__call__`` reads (heads,
+        head_dim, inner_dim, added_kv_proj_dim, devices, _sharding_strategy);
+        the caller is responsible for assigning every sub-layer.
+
+        ``Module.__init__`` is still invoked so that subsequent attribute
+        assignments go through ``Module.__setattr__`` and auto-register
+        each sub-layer in the parameter tree.
+        """
+        shard = object.__new__(Flux2Attention)
+        Module.__init__(shard)
+        shard.head_dim = self.head_dim
+        shard.heads = sharded_heads
+        shard.inner_dim = sharded_heads * self.head_dim
+        shard.added_kv_proj_dim = self.added_kv_proj_dim
+        shard.devices = [device]
+        shard._sharding_strategy = self._sharding_strategy
+        return shard
+
+    def shard(self, devices: Iterable[DeviceRef]) -> list[Flux2Attention]:
+        if self._sharding_strategy is None:
+            raise ValueError(
+                "Flux2Attention cannot be sharded without a sharding strategy."
+            )
+        devices_list = list(devices)
+        num_devices = len(devices_list)
+
+        to_out_linear = self.to_out[0]
+        assert isinstance(to_out_linear, Linear)
+
+        to_q_shards = self.to_q.shard(devices_list)
+        to_k_shards = self.to_k.shard(devices_list)
+        to_v_shards = self.to_v.shard(devices_list)
+        to_out_shards = to_out_linear.shard(devices_list)
+        norm_q_shards = self.norm_q.shard(devices_list)
+        norm_k_shards = self.norm_k.shard(devices_list)
+
+        dual_shards: (
+            tuple[
+                Sequence[Linear],
+                Sequence[Linear],
+                Sequence[Linear],
+                Sequence[Linear],
+                Sequence[RMSNorm],
+                Sequence[RMSNorm],
+            ]
+            | None
+        ) = None
+        if self.added_kv_proj_dim is not None:
+            add_q, add_k, add_v, to_add_out, norm_added_q, norm_added_k = (
+                self._dual_stream_layers()
+            )
+            dual_shards = (
+                add_q.shard(devices_list),
+                add_k.shard(devices_list),
+                add_v.shard(devices_list),
+                to_add_out.shard(devices_list),
+                norm_added_q.shard(devices_list),
+                norm_added_k.shard(devices_list),
+            )
+
+        shards: list[Flux2Attention] = []
+        for shard_idx, device in enumerate(devices_list):
+            sharded_heads = num_heads_for_device(
+                num_heads=self.heads,
+                device_idx=shard_idx,
+                num_devices=num_devices,
+            )
+            sharded = self._empty_shard(device, sharded_heads)
+            sharded.to_q = to_q_shards[shard_idx]
+            sharded.to_k = to_k_shards[shard_idx]
+            sharded.to_v = to_v_shards[shard_idx]
+            sharded.to_out = LayerList([to_out_shards[shard_idx]])
+            sharded.norm_q = norm_q_shards[shard_idx]
+            sharded.norm_k = norm_k_shards[shard_idx]
+            if dual_shards is not None:
+                (
+                    add_q_s,
+                    add_k_s,
+                    add_v_s,
+                    to_add_out_s,
+                    norm_added_q_s,
+                    norm_added_k_s,
+                ) = dual_shards
+                sharded.add_q_proj = add_q_s[shard_idx]
+                sharded.add_k_proj = add_k_s[shard_idx]
+                sharded.add_v_proj = add_v_s[shard_idx]
+                sharded.to_add_out = to_add_out_s[shard_idx]
+                sharded.norm_added_q = norm_added_q_s[shard_idx]
+                sharded.norm_added_k = norm_added_k_s[shard_idx]
+            else:
+                sharded.add_q_proj = None
+                sharded.add_k_proj = None
+                sharded.add_v_proj = None
+                sharded.to_add_out = None
+                sharded.norm_added_q = None
+                sharded.norm_added_k = None
+            shards.append(sharded)
+
+        return shards
 
     def __call__(
         self,
