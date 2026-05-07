@@ -199,6 +199,7 @@ def run_sweep(
         is_pixel_gen = wl.get("benchmark-task") in (
             "text-to-image",
             "image-to-image",
+            "text-to-video",
         )
 
     upload_active = uploader is not None and config.upload_results

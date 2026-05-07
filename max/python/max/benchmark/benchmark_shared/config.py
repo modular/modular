@@ -60,11 +60,13 @@ BenchmarkTask = Literal[
     "text-generation",
     "text-to-image",
     "image-to-image",
+    "text-to-video",
 ]
 
 PIXEL_GENERATION_TASKS: tuple[BenchmarkTask, ...] = (
     "text-to-image",
     "image-to-image",
+    "text-to-video",
 )
 
 # Default endpoint per backend for pixel generation tasks.
@@ -324,7 +326,7 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
 
     benchmark_task: BenchmarkTask = Field(
         default="text-generation",
-        description="Benchmark task type. Choices: text-generation, text-to-image, image-to-image",
+        description="Benchmark task type. Choices: text-generation, text-to-image, image-to-image, text-to-video",
         json_schema_extra={"group": "Backend and API Configuration"},
     )
 
@@ -476,6 +478,12 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
     image_seed: int | None = Field(
         default=None,
         description="Deterministic seed for pixel generation.",
+        json_schema_extra={"group": "Output Control"},
+    )
+
+    num_frames: int | None = Field(
+        default=None,
+        description="Number of frames to generate. Required for text-to-video.",
         json_schema_extra={"group": "Output Control"},
     )
 

@@ -812,21 +812,27 @@ def _build_pixel_generation_payload(
     if request_func_input.image_options is None:
         return payload
 
-    image_options_payload: dict[str, Any] = {}
+    options_payload: dict[str, Any] = {}
     image_options = request_func_input.image_options
     if image_options.width is not None:
-        image_options_payload["width"] = image_options.width
+        options_payload["width"] = image_options.width
     if image_options.height is not None:
-        image_options_payload["height"] = image_options.height
+        options_payload["height"] = image_options.height
     if image_options.steps is not None:
-        image_options_payload["steps"] = image_options.steps
+        options_payload["steps"] = image_options.steps
     if image_options.guidance_scale is not None:
-        image_options_payload["guidance_scale"] = image_options.guidance_scale
+        options_payload["guidance_scale"] = image_options.guidance_scale
     if image_options.negative_prompt is not None:
-        image_options_payload["negative_prompt"] = image_options.negative_prompt
+        options_payload["negative_prompt"] = image_options.negative_prompt
+    # num_frames is video-only; presence routes the payload to
+    # provider_options.video instead of provider_options.image.
+    is_video = image_options.num_frames is not None
+    if is_video:
+        options_payload["num_frames"] = image_options.num_frames
 
-    if image_options_payload:
-        payload["provider_options"] = {"image": image_options_payload}
+    if options_payload:
+        modality_key = "video" if is_video else "image"
+        payload["provider_options"] = {modality_key: options_payload}
 
     if image_options.seed is not None:
         payload["seed"] = image_options.seed
