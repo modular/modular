@@ -14,7 +14,9 @@
 """Update GitHub branch references in docs.
 
 Example:
-python3 update-github-links.py . modular/v26.2
+cd oss/modular/docs
+python3 update-github-links.py . max/v26.3
+python3 update-github-links.py ../mojo/docs mojo/v1.0.0b1
 """
 
 import sys
