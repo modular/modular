@@ -302,27 +302,11 @@ class Qwen3_5(DistributedLogitsPostprocessMixin, Module):
         h_list = self.embed_tokens(tokens, signal_buffers)
         h: TensorValue = h_list[0] if isinstance(h_list, list) else h_list
 
-        # Merge vision embeddings into text embeddings at image token positions.
-        # Use ops.cond to skip at runtime on decode steps (zero vision tokens).
-        # Both branches compile; only the selected one executes.
         if image_embeddings is not None and image_token_indices is not None:
             # TODO: multi-device — merge must be applied per shard with a
             # matching sharded image_embeddings.
-            n_vision = ops.cast(
-                ops.shape_to_tensor([image_token_indices.shape[0]]).reshape(()),
-                DType.int32,
-            )
-            has_vision = n_vision > ops.constant(
-                0, DType.int32, device=DeviceRef.CPU()
-            )
-            h_pre = h
-            [h] = ops.cond(
-                has_vision,
-                [TensorType(h_pre.dtype, h_pre.shape, h_pre.device)],
-                lambda: merge_multimodal_embeddings(
-                    h_pre, image_embeddings, image_token_indices
-                ),
-                lambda: h_pre,
+            h = merge_multimodal_embeddings(
+                h, image_embeddings, image_token_indices
             )
 
         # Place RoPE frequencies and row offsets on device
