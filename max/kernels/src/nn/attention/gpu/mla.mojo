@@ -27,7 +27,10 @@ from std.sys import (
     CompilationTarget,
 )
 
-from nn.attention.gpu.mha import q_num_matrix_view_rows
+from nn.attention.gpu.mha import mha_splitk_reduce, q_num_matrix_view_rows
+from nn.attention.gpu.mha_decode_partition_heuristic import (
+    mha_decoding_num_partitions,
+)
 import std.gpu.primitives.warp as warp
 from std.algorithm.functional import (
     _elementwise_impl_gpu,
@@ -675,6 +678,8 @@ def flare_mla_decoding_dispatch[
 
         comptime num_blocks_y = ceildiv(num_heads, BM)
 
+        comptime depth_v = type_of(output).static_shape[output.rank - 1]
+
         comptime kernel = mla_decoding[
             q.dtype,
             k_t,
@@ -687,6 +692,7 @@ def flare_mla_decoding_dispatch[
             WM=WM,
             WN=WN,
             depth=depth,
+            depth_v=depth_v,
             num_heads=num_heads,
             num_threads=num_threads,
             num_pipeline_stages=num_pipeline_stages,
@@ -697,37 +703,126 @@ def flare_mla_decoding_dispatch[
             decoding_warp_split_k=decoding_warp_split_k,
         ]
 
-        var num_partitions_value: Int = 1
+        # Pick num_partitions for split-K. Only AMD has a tuned heuristic
+        # today; non-SM10x NVIDIA stays at 1 to preserve existing behavior.
+        var num_partitions_value: Int
+        if num_partitions:
+            num_partitions_value = num_partitions.value()
+        else:
+            comptime if has_amd_gpu_accelerator():
+                # MLA: kv_num_heads == 1, so heads_per_group == num_heads.
+                num_partitions_value = mha_decoding_num_partitions(
+                    batch_size, max_cache_valid_length, num_heads, ctx
+                )
+            else:
+                num_partitions_value = 1
+
         var q_device = DeviceBuffer[q.dtype](
             ctx, q.ptr, q.num_elements(), owning=False
         )
         var output_device = DeviceBuffer[output.dtype](
             ctx, output.ptr, output.num_elements(), owning=False
         )
-        var nullptr_device = DeviceBuffer[accum_type].empty(ctx)
 
-        ctx.enqueue_function[kernel](
-            q_device,
-            k,
-            output_device,
-            nullptr_device,
-            nullptr_device,
-            scale,
-            batch_size,
-            num_partitions_value,
-            max_cache_valid_length,
-            valid_length,
-            mask_functor,
-            grid_dim=(1, num_blocks_y, batch_size),
-            block_dim=(num_threads, 1, 1),
-            shared_mem_bytes=shared_mem_bytes,
-            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                UInt32(
-                    ctx.default_device_info.shared_memory_per_multiprocessor
-                    - 4096
-                )
-            ),
-        )
+        if num_partitions_value == 1:
+            # Single-partition fast path — no intermediate buffers, no reduce.
+            var nullptr_device = DeviceBuffer[accum_type].empty(ctx)
+            ctx.enqueue_function[kernel](
+                q_device,
+                k,
+                output_device,
+                nullptr_device,
+                nullptr_device,
+                scale,
+                batch_size,
+                num_partitions_value,
+                max_cache_valid_length,
+                valid_length,
+                mask_functor,
+                grid_dim=(1, num_blocks_y, batch_size),
+                block_dim=(num_threads, 1, 1),
+                shared_mem_bytes=shared_mem_bytes,
+                func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+                    UInt32(
+                        ctx.default_device_info.shared_memory_per_multiprocessor
+                        - 4096
+                    )
+                ),
+            )
+        else:
+            # Split-K: per-partition output (depth_v) and softmax stats.
+            comptime intermediate_dtype = output.dtype
+
+            var output_intermediate_data = ctx.enqueue_create_buffer[
+                intermediate_dtype
+            ](num_heads * depth_v * batch_size * num_partitions_value)
+
+            var data_len = num_heads * batch_size * num_partitions_value
+            var exp_sum_qk_max_data = ctx.enqueue_create_buffer[accum_type](
+                2 * data_len
+            )
+            var exp_sum_device = DeviceBuffer[accum_type](
+                ctx,
+                exp_sum_qk_max_data.unsafe_ptr(),
+                data_len,
+                owning=False,
+            )
+            var qk_max_device = DeviceBuffer[accum_type](
+                ctx,
+                exp_sum_qk_max_data.unsafe_ptr() + data_len,
+                data_len,
+                owning=False,
+            )
+
+            ctx.enqueue_function[kernel](
+                q_device,
+                k,
+                output_intermediate_data,
+                exp_sum_device,
+                qk_max_device,
+                scale,
+                batch_size,
+                num_partitions_value,
+                max_cache_valid_length,
+                valid_length,
+                mask_functor,
+                grid_dim=(
+                    num_partitions_value,
+                    num_blocks_y,
+                    batch_size,
+                ),
+                block_dim=(num_threads, 1, 1),
+                shared_mem_bytes=shared_mem_bytes,
+                func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+                    UInt32(
+                        ctx.default_device_info.shared_memory_per_multiprocessor
+                        - 4096
+                    )
+                ),
+            )
+
+            # AMD softmax always uses exp2; CUDA non-FA3 path uses exp.
+            comptime reduce_use_exp2 = has_amd_gpu_accelerator()
+            comptime kernel_reduce = mha_splitk_reduce[
+                intermediate_dtype,
+                output.dtype,
+                depth=depth_v,
+                num_heads=num_heads,
+                num_threads=WARP_SIZE,
+                use_exp2=reduce_use_exp2,
+            ]
+            ctx.enqueue_function[kernel_reduce](
+                output_intermediate_data,
+                output_device,
+                exp_sum_device,
+                qk_max_device,
+                batch_size,
+                num_partitions_value,
+                grid_dim=(1, num_heads, batch_size),
+                block_dim=(WARP_SIZE, 1, 1),
+            )
+            _ = exp_sum_qk_max_data^
+            _ = output_intermediate_data^
 
 
 @__llvm_metadata(
@@ -749,6 +844,7 @@ def mla_decoding[
     WM: Int,
     WN: Int,
     depth: Int,
+    depth_v: Int,
     num_heads: Int,
     num_threads: Int,
     num_pipeline_stages: Int,
@@ -776,8 +872,6 @@ def mla_decoding[
 ):
     var valid_length = valid_length_tt.to_layout_tensor()
     var batch_idx = block_idx.z
-
-    comptime depth_v = depth - 64
 
     # split-k offsets
     var partition_idx = block_idx.x

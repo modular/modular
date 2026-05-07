@@ -817,10 +817,16 @@ struct Attention[
         comptime if not Self.token_gen:
             return
 
-        var q_head_idx = self.q_head_idx()
-        if num_partitions > 1:
-            if thread_idx.x < Self.group:
-                var row_sum = self.softmax.rowsum_tensor[0, 0][0]
-                var row_max = self.softmax.rowmax_tensor[0, 0][0]
-                exp_sum_ptr[q_head_idx] = row_sum
-                qk_max_ptr[q_head_idx] = row_max
+        if num_partitions <= 1:
+            return
+
+        # `q_head_idx()` is per-thread for both MHA and MLA: it folds
+        # `lane_id % MMA_M` into the tile base, so we just gate on the
+        # filter and write.
+        var head_idx = self.q_head_idx()
+        if (
+            thread_idx.x < Self.amd_structured_config.heads_per_tile()
+            and head_idx < Self.num_heads
+        ):
+            exp_sum_ptr[head_idx] = self.softmax.rowsum_tensor[0, 0][0]
+            qk_max_ptr[head_idx] = self.softmax.rowmax_tensor[0, 0][0]
