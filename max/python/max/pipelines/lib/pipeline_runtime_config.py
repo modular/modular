@@ -237,6 +237,20 @@ class PipelineRuntimeConfig(ConfigFileModel):
         ),
     )
 
+    decode_request_ttl_s: float | None = Field(
+        default=float(os.environ["MODULAR_DECODE_REQUEST_TTL_S"])
+        if "MODULAR_DECODE_REQUEST_TTL_S" in os.environ
+        else None,
+        description=(
+            "Per-request TTL in seconds for the decode-side ``prefill_reqs`` "
+            "and ``inflight_transfers`` dicts. Entries older than this are "
+            "evicted individually (KV blocks released, failure surfaced to "
+            "the client) before the stall watchdog fires. ``None`` (the "
+            "default) disables eviction. Set with the "
+            "``MODULAR_DECODE_REQUEST_TTL_S`` environment variable."
+        ),
+    )
+
     enable_overlap_scheduler: bool = Field(
         default=False,
         description=(

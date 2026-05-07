@@ -17,6 +17,7 @@ import queue
 import time
 import uuid
 from collections import OrderedDict
+from dataclasses import dataclass, field
 
 from max.interfaces import (
     MAXPullQueue,
@@ -61,6 +62,23 @@ from .utils import (
 logger = logging.getLogger("max.serve")
 
 
+@dataclass
+class PendingPrefill:
+    """Decode-side state for a request awaiting a ``PrefillResponse``."""
+
+    context: TextContext
+    replica_idx: int
+    sent_at: float = field(default_factory=time.monotonic)
+
+
+@dataclass
+class PendingTransfer:
+    """Decode-side state for an in-flight prefill->decode KV transfer."""
+
+    transfer: TransferReqData
+    sent_at: float = field(default_factory=time.monotonic)
+
+
 class DecodeScheduler(Scheduler):
     def __init__(
         self,
@@ -92,8 +110,8 @@ class DecodeScheduler(Scheduler):
 
         # Initialize Scheduler state.
         self.pending_reqs: OrderedDict[RequestID, TextContext] = OrderedDict()
-        self.prefill_reqs: dict[RequestID, tuple[TextContext, int]] = {}
-        self.inflight_transfers: dict[RequestID, TransferReqData] = {}
+        self.prefill_reqs: dict[RequestID, PendingPrefill] = {}
+        self.inflight_transfers: dict[RequestID, PendingTransfer] = {}
         self.prefill_reqs_per_replica: list[int] = [
             0 for _ in range(scheduler_config.data_parallel_degree)
         ]
@@ -147,7 +165,7 @@ class DecodeScheduler(Scheduler):
             return
 
         # Update the context with the generated token
-        context, _ = self.prefill_reqs[request_id]
+        context = self.prefill_reqs[request_id].context
         context.update(message.generated_token_id)
 
         # Restore draft tokens from Eagle/MTP prefill so the first
@@ -177,7 +195,9 @@ class DecodeScheduler(Scheduler):
             {request_id: SchedulerResult.create(output)}
         )
 
-        self.inflight_transfers[request_id] = message.transfer_metadata
+        self.inflight_transfers[request_id] = PendingTransfer(
+            transfer=message.transfer_metadata,
+        )
 
     @traced
     def send_prefill_request(
@@ -297,7 +317,10 @@ class DecodeScheduler(Scheduler):
             dst_idxs = self.kv_cache.get_req_blocks(
                 req_id, replica_idx=replica_idx
             )
-            self.prefill_reqs[req_id] = (context, replica_idx)
+            self.prefill_reqs[req_id] = PendingPrefill(
+                context=context,
+                replica_idx=replica_idx,
+            )
             self.prefill_reqs_per_replica[replica_idx] += 1
             self.send_prefill_request(req_id, context, dst_idxs, replica_idx)
 
@@ -313,10 +336,9 @@ class DecodeScheduler(Scheduler):
 
             # If it is pending prefill, remove the pending request.
             elif req_id in self.prefill_reqs:
-                data, dst_replica_idx = self.prefill_reqs[req_id]
-
-                # Remove from pending requests.
-                del self.prefill_reqs[req_id]
+                pending = self.prefill_reqs.pop(req_id)
+                data = pending.context
+                dst_replica_idx = pending.replica_idx
                 self.prefill_reqs_per_replica[dst_replica_idx] -= 1
 
                 # Release the KV cache blocks that were allocated on the
@@ -344,6 +366,103 @@ class DecodeScheduler(Scheduler):
                     f"cancel request received on decode node for {req_id} not in pending or active batch."
                 )
 
+    def _evict_expired_requests(self) -> None:
+        """Evict per-request entries stuck past ``decode_request_ttl_s``.
+
+        Two failure modes are recovered individually so the stall watchdog
+        does not have to kill the engine:
+
+        - ``prefill_reqs`` without a matching ``inflight_transfers`` entry
+          means ``PrefillResponse`` never arrived.
+        - ``inflight_transfers`` past TTL means the NIXL transfer never
+          completed.
+
+        Each evicted request releases its KV cache blocks, decrements
+        ``prefill_reqs_per_replica``, and surfaces a cancelled
+        ``SchedulerResult``.
+        """
+        ttl_s = self.scheduler_config.decode_request_ttl_s
+        if ttl_s is None:
+            return
+
+        now = time.monotonic()
+        cutoff = now - ttl_s
+
+        # Evict prefill_reqs without a matching inflight_transfers (no
+        # PrefillResponse received). The dual-membership case is handled
+        # by the inflight_transfers sweep below, to avoid evicting on a
+        # stale prefill_reqs.sent_at while the transfer still makes
+        # progress.
+        expired_prefill = [
+            req_id
+            for req_id, pending in self.prefill_reqs.items()
+            if pending.sent_at < cutoff
+            and req_id not in self.inflight_transfers
+        ]
+        for req_id in expired_prefill:
+            pending = self.prefill_reqs.pop(req_id)
+            self.prefill_reqs_per_replica[pending.replica_idx] -= 1
+            self.kv_cache.release(req_id, replica_idx=pending.replica_idx)
+            self._send_cancel_to_prefill(req_id, pending.context)
+            self.response_queue.put_nowait(
+                {req_id: SchedulerResult.cancelled()}
+            )
+            logger.warning(
+                "Evicting stuck prefill request %s (no PrefillResponse)"
+                " after %.1fs (TTL=%.1fs)",
+                req_id,
+                now - pending.sent_at,
+                ttl_s,
+            )
+
+        # Evict inflight_transfers past TTL (transfer never completed);
+        # the matching prefill_reqs entry, if any, is also evicted.
+        expired_transfers = [
+            req_id
+            for req_id, pending in self.inflight_transfers.items()
+            if pending.sent_at < cutoff
+        ]
+        for req_id in expired_transfers:
+            pending_transfer = self.inflight_transfers.pop(req_id)
+            try:
+                self.transfer_engine.cleanup_transfer(pending_transfer.transfer)
+            except ValueError:
+                logger.warning(
+                    "cleanup_transfer failed for evicted request %s",
+                    req_id,
+                    exc_info=True,
+                )
+            if req_id in self.prefill_reqs:
+                pending = self.prefill_reqs.pop(req_id)
+                self.prefill_reqs_per_replica[pending.replica_idx] -= 1
+                self.kv_cache.release(req_id, replica_idx=pending.replica_idx)
+                self._send_cancel_to_prefill(req_id, pending.context)
+            self.response_queue.put_nowait(
+                {req_id: SchedulerResult.cancelled()}
+            )
+            logger.warning(
+                "Evicting stuck inflight transfer %s after %.1fs (TTL=%.1fs)",
+                req_id,
+                now - pending_transfer.sent_at,
+                ttl_s,
+            )
+
+    def _send_cancel_to_prefill(
+        self, req_id: RequestID, context: TextContext
+    ) -> None:
+        """Best-effort cancel to prefill so a late ``PrefillResponse`` does
+        not arrive against released decode-side memory."""
+        if context.target_endpoint is None:
+            logger.warning(
+                "Evicted request %s has no target_endpoint; skipping"
+                " cancel to prefill",
+                req_id,
+            )
+            return
+        self.dispatcher.send_request_nowait(
+            CancelRequest(id=req_id), context.target_endpoint
+        )
+
     def check_for_completed_transfers(self) -> None:
         """Checks for the completion of KVCache transfers.
 
@@ -355,15 +474,15 @@ class DecodeScheduler(Scheduler):
 
         request_ids = list(self.inflight_transfers.keys())
         for request_id in request_ids:
-            transfer_metadata = self.inflight_transfers[request_id]
+            pending_transfer = self.inflight_transfers[request_id]
 
             # Transfer is not complete, skip.
-            if not self.transfer_engine.is_complete(transfer_metadata):
+            if not self.transfer_engine.is_complete(pending_transfer.transfer):
                 continue
 
             # Cleanup the transfer.
             del self.inflight_transfers[request_id]
-            self.transfer_engine.cleanup_transfer(transfer_metadata)
+            self.transfer_engine.cleanup_transfer(pending_transfer.transfer)
 
             # When cancelled, the request is removed from prefill_reqs
             # therefore the request should only be added to the active_batch
@@ -372,9 +491,11 @@ class DecodeScheduler(Scheduler):
                 continue
 
             # Remove from pending prefill requests and add to TG requests.
-            context, dst_replica_idx = self.prefill_reqs.pop(request_id)
-            self.prefill_reqs_per_replica[dst_replica_idx] -= 1
-            self.batch_constructor.enqueue_new_request(context, dst_replica_idx)
+            pending = self.prefill_reqs.pop(request_id)
+            self.prefill_reqs_per_replica[pending.replica_idx] -= 1
+            self.batch_constructor.enqueue_new_request(
+                pending.context, pending.replica_idx
+            )
 
         # Manage for cancelled requests
         self._handle_cancelled_requests()
@@ -439,6 +560,8 @@ class DecodeScheduler(Scheduler):
                 self.handle_prefill_response(reply)
             else:
                 raise ValueError(f"Invalid reply type: {reply}")
+
+        self._evict_expired_requests()
 
         # Eagerly reserve memory and send to prefill worker
         self.reserve_memory_and_send_to_prefill()
