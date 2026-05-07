@@ -312,8 +312,10 @@ async def prime_shared_contexts(
     if not warmup_entries:
         logger.warning(
             "shared_contexts is empty; the prefix cache could not be primed."
-            " Check that --random-sys-prompt-ratio > 0 and input lengths are"
-            " sufficient to produce a non-trivial shared context."
+            " Check that --random-sys-prompt-ratio > 0 (and"
+            " --fit-distributions for instruct-coder/agentic-code) and that"
+            " input lengths are sufficient to produce a non-trivial shared"
+            " context."
         )
         return
 

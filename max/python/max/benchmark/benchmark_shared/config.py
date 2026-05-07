@@ -626,8 +626,10 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
         default=False,
         description=(
             "Send each unique shared prefix once (max_tokens=1) before the"
-            " benchmark run to prime prefix-cache KV entries. Only supported for"
-            " random/synthetic datasets with --random-sys-prompt-ratio > 0."
+            " benchmark run to prime prefix-cache KV entries. Supported for"
+            " random/synthetic datasets, or instruct-coder/agentic-code with"
+            " --fit-distributions; in all cases requires"
+            " --random-sys-prompt-ratio > 0."
         ),
         json_schema_extra={
             "group": "Control Flags",

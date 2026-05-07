@@ -286,11 +286,18 @@ async def benchmark(
         skip_last = 0
 
     if args.warm_shared_prefix:
-        if args.dataset_name not in ("random", "synthetic"):
+        fit_with_sys = args.fit_distributions and args.dataset_name in (
+            "instruct-coder",
+            "agentic-code",
+        )
+        if (
+            args.dataset_name not in ("random", "synthetic")
+            and not fit_with_sys
+        ):
             raise ValueError(
                 f"--warm-shared-prefix is not supported for dataset"
-                f" '{args.dataset_name}'. Only random/synthetic datasets have a"
-                " defined shared prefix to cache."
+                f" '{args.dataset_name}'. Use random/synthetic, or"
+                " instruct-coder/agentic-code with --fit-distributions."
             )
         if args.random_sys_prompt_ratio <= 0:
             raise ValueError(
