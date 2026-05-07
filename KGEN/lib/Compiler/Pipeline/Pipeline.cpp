@@ -33,7 +33,7 @@ void KGEN::buildCheckLITPipeline(mlir::PassManager &pm,
 }
 
 /// This populates the early pipeline passes of the KGEN compiler that lowers
-/// the lit dialect. It also runs the mogg-annotate pass. `
+/// the lit dialect.
 static void buildLowerLITPipeline(mlir::PassManager &pm,
                                   const CompilationOptions &options) {
   buildCheckLITPipeline(pm, options);
