@@ -49,6 +49,7 @@ from pydantic import (
     Field,
     ModelWrapValidatorHandler,
     PrivateAttr,
+    TypeAdapter,
     field_validator,
     model_validator,
 )
@@ -388,11 +389,24 @@ class PipelineConfig(ConfigFileModel):
             if key in KVCacheConfig.model_fields:
                 kv_cache_kwargs[key] = unmatched_kwargs.pop(key)
 
+        # Parse --model-override entries once, grouped by target component, so
+        # "main"/"draft" overrides can be folded into the constructor kwargs
+        # below.  HuggingFaceRepo.__post_init__ and the MAXModelConfig
+        # validator eagerly hit HF using the dataclass-default revision, which
+        # fails under HF_HUB_OFFLINE for repos cached only at a pinned SHA.
+        component_overrides: dict[str, dict[str, Any]] = {}
+        for override_str in self.model_override:
+            component, field_name, value = self._parse_model_override(
+                override_str
+            )
+            component_overrides.setdefault(component, {})[field_name] = value
+
         # Only rebuild the manifest when explicit model kwargs were provided
         # in unmatched_kwargs.  When a pre-built ModelManifest was passed via
         # the ``models=`` kwarg, ``model_kwargs`` will be empty and we should
         # not reconstruct the manifest (which would trigger HF validation).
         if model_kwargs:
+            model_kwargs.update(component_overrides.get("main", {}))
             model_path = model_kwargs.pop("model_path", "")
             if model_path:
                 revision = model_kwargs.pop("huggingface_model_revision", None)
@@ -425,6 +439,10 @@ class PipelineConfig(ConfigFileModel):
             if "main" in self.models:
                 self._apply_draft_model_defaults(draft_kwargs, self.model)
 
+            # "draft" overrides are applied after inheritance so explicit
+            # user intent wins over copied target-model defaults.
+            draft_kwargs.update(component_overrides.get("draft", {}))
+
             draft_config = MAXModelConfig(**draft_kwargs)
             if kv_cache_kwargs:
                 draft_config.create_kv_cache_config(**kv_cache_kwargs)
@@ -432,9 +450,17 @@ class PipelineConfig(ConfigFileModel):
                 "draft", config=draft_config
             )
 
-        # Apply per-component overrides from --model-override flags
-        if self.model_override:
-            self._apply_model_overrides()
+        # Apply parsed overrides via with_override.  This is idempotent for
+        # "main"/"draft" fields already folded into kwargs above, and is the
+        # only path that runs when a pre-built manifest was passed via
+        # ``models=``.
+        for component, fields in component_overrides.items():
+            if component not in self.models:
+                raise ValueError(
+                    f"Component {component!r} not found in manifest. "
+                    f"Available: {list(self.models.keys())}"
+                )
+            self.models = self.models.with_override(component, **fields)
 
     @staticmethod
     def _apply_draft_model_defaults(
@@ -492,60 +518,48 @@ class PipelineConfig(ConfigFileModel):
                 target_model.data_parallel_degree
             )
 
-    def _apply_model_overrides(self) -> None:
-        """Apply --model-override entries to the manifest.
+    @staticmethod
+    def _parse_model_override(override_str: str) -> tuple[str, str, Any]:
+        """Parse ``component.field=value`` into ``(component, field, value)``.
 
-        Each entry has the form ``component.field=value``. The value is
-        coerced to the target field's type via Pydantic's TypeAdapter.
-        Overrides are applied sequentially via ``with_override()``.
+        The value is coerced to the target field's type via Pydantic's
+        ``TypeAdapter`` (JSON-first, raw-string fallback for scalars).
+
+        Raises:
+            ValueError: if the string is malformed or names an unknown
+                ``MAXModelConfig`` field.
         """
-        from pydantic import TypeAdapter
-
-        for override_str in self.model_override:
-            # Parse "component.field=value"
-            dot_pos = override_str.find(".")
-            if dot_pos < 1:
-                raise ValueError(
-                    f"Invalid --model-override format: {override_str!r}. "
-                    f"Expected 'component.field=value'."
-                )
-            eq_pos = override_str.find("=", dot_pos)
-            if eq_pos < dot_pos + 2:
-                raise ValueError(
-                    f"Invalid --model-override format: {override_str!r}. "
-                    f"Expected 'component.field=value'."
-                )
-            component = override_str[:dot_pos]
-            field_name = override_str[dot_pos + 1 : eq_pos]
-            raw_value = override_str[eq_pos + 1 :]
-
-            if field_name not in MAXModelConfig.model_fields:
-                raise ValueError(
-                    f"Unknown MAXModelConfig field: {field_name!r}. "
-                    f"Valid fields: {sorted(MAXModelConfig.model_fields.keys())}"
-                )
-
-            if component not in self.models:
-                raise ValueError(
-                    f"Component {component!r} not found in manifest. "
-                    f"Available: {list(self.models.keys())}"
-                )
-
-            # Coerce value using the field's type annotation.
-            # For compound types (list, dict) the raw CLI string is JSON,
-            # so we attempt json.loads first before falling back to the
-            # raw string for scalar fields.
-            field_info = MAXModelConfig.model_fields[field_name]
-            adapter: TypeAdapter[Any] = TypeAdapter(field_info.annotation)
-            try:
-                parsed_value = json.loads(raw_value)
-            except (json.JSONDecodeError, ValueError):
-                parsed_value = raw_value
-            value = adapter.validate_python(parsed_value)
-
-            self.models = self.models.with_override(
-                component, **{field_name: value}
+        dot_pos = override_str.find(".")
+        if dot_pos < 1:
+            raise ValueError(
+                f"Invalid --model-override format: {override_str!r}. "
+                f"Expected 'component.field=value'."
             )
+        eq_pos = override_str.find("=", dot_pos)
+        if eq_pos < dot_pos + 2:
+            raise ValueError(
+                f"Invalid --model-override format: {override_str!r}. "
+                f"Expected 'component.field=value'."
+            )
+        component = override_str[:dot_pos]
+        field_name = override_str[dot_pos + 1 : eq_pos]
+        raw_value = override_str[eq_pos + 1 :]
+
+        if field_name not in MAXModelConfig.model_fields:
+            raise ValueError(
+                f"Unknown MAXModelConfig field: {field_name!r}. "
+                f"Valid fields: {sorted(MAXModelConfig.model_fields.keys())}"
+            )
+
+        # For compound types (list, dict) the raw CLI string is JSON, so try
+        # json.loads first; fall back to the raw string for plain scalars.
+        field_info = MAXModelConfig.model_fields[field_name]
+        adapter: TypeAdapter[Any] = TypeAdapter(field_info.annotation)
+        try:
+            parsed_value = json.loads(raw_value)
+        except (json.JSONDecodeError, ValueError):
+            parsed_value = raw_value
+        return component, field_name, adapter.validate_python(parsed_value)
 
     def _create_speculative_config_if_needed(
         self, kwargs: dict[str, Any]
