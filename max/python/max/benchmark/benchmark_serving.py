@@ -111,9 +111,7 @@ from max.benchmark.benchmark_shared.single_turn import (
 from max.benchmark.benchmark_shared.utils import (
     argmedian,
     get_tokenizer,
-    int_or_none,
     is_castable_to_int,
-    parse_comma_separated,
     print_section,
     set_ulimit,
     wait_for_server_ready,
@@ -845,6 +843,13 @@ def _apply_workload_to_config(
             v = str(v)
         elif isinstance(v, str):
             v = os.path.expandvars(v)
+        # 'request-rate' from YAML can be a bare number; stringify so the
+        # config before-validator (comma-split strings) runs. 'max-concurrency'
+        # is handled in _load_workload_yaml instead.
+        # TODO(MXTOOLS-166): This should be handled through workload YAML being
+        # a Pydantic model instead, eventually.
+        if field_name == "request_rate" and isinstance(v, (int, float)):
+            v = str(v)
         logger.info(f"Applying workload YAML value: --{k}={v!r}")
         setattr(config, field_name, v)
 
@@ -967,8 +972,15 @@ def _load_workload_yaml(args: ServingBenchmarkConfig) -> None:
             workload[key] = path
     # Resolve max_concurrency: CLI > YAML.
     yaml_max_concurrency = workload.pop("max-concurrency", None)
-    if yaml_max_concurrency is not None and args.max_concurrency is None:
-        args.max_concurrency = str(yaml_max_concurrency)
+    if (
+        yaml_max_concurrency is not None
+        and "max_concurrency" not in args.model_fields_set
+    ):
+        # TODO(MXTOOLS-166): validate_assignment=True makes it so that this
+        # goes through Pydantic's validator, which converts as needed.
+        # Workload should itself be parsed with Pydantic so we don't need to
+        # defer validation like so.
+        args.max_concurrency = yaml_max_concurrency
     # Resolve num_prompts: CLI > YAML > default (deferred).
     cli_num_prompts = args.num_prompts is not None
     yaml_num_prompts = workload.pop("num-prompts", None)
@@ -1004,7 +1016,7 @@ def _apply_run_length_defaults(args: ServingBenchmarkConfig) -> None:
 
 def _apply_dynamic_num_prompts(
     args: ServingBenchmarkConfig,
-    concurrency_range: list[int | None],
+    concurrency_range: Sequence[int | None],
 ) -> bool:
     use_dynamic_num_prompts = (
         args.num_prompts_multiplier is not None
@@ -1152,8 +1164,8 @@ def _build_session(args: ServingBenchmarkConfig) -> BenchmarkSession:
 def _run_dry_run_sweep(
     args: ServingBenchmarkConfig,
     session: BenchmarkSession,
-    concurrency_range: list[int | None],
-    request_rate_range: list[float],
+    concurrency_range: Sequence[int | None],
+    request_rate_range: Sequence[float],
 ) -> Iterator[BenchmarkRunResult]:
     if not args.print_workload_stats:
         print_workload_stats(session.samples)
@@ -1201,12 +1213,10 @@ def _run_dry_run_sweep(
 def _run_benchmark_sweep(
     args: ServingBenchmarkConfig,
     session: BenchmarkSession,
-    concurrency_range: list[int | None],
-    request_rate_range: list[float],
     use_dynamic_num_prompts: bool,
 ) -> Iterator[BenchmarkRunResult]:
     # ---- Sweep loop ----
-    for mc in concurrency_range:
+    for mc in args.max_concurrency:
         if use_dynamic_num_prompts:
             assert args.num_prompts_multiplier is not None
             assert mc is not None
@@ -1216,13 +1226,7 @@ def _run_benchmark_sweep(
                 f" * {mc} = {args.num_prompts}"
             )
 
-        for rr in request_rate_range:
-            # Temporarily write the per-iteration values so that downstream
-            # code reading args.max_concurrency / args.request_rate sees the
-            # correct scalar value.
-            args.max_concurrency = str(mc) if mc is not None else None
-            args.request_rate = str(rr)
-
+        for rr in args.request_rate:
             iteration_results: list[
                 TextGenerationBenchmarkResult | PixelGenerationBenchmarkResult
             ] = []
@@ -1256,10 +1260,16 @@ def _run_benchmark_sweep(
                 model_id=session.model_id,
                 tokenizer_id=session.tokenizer_id,
                 request_rate=rr,
+                record_max_concurrency=mc,
             )
 
             # Output lengths recording (for the median iteration).
-            save_output_lengths(args, best_result, session.benchmark_task)
+            save_output_lengths(
+                args,
+                best_result,
+                session.benchmark_task,
+                iteration_config=(mc, rr),
+            )
 
             yield BenchmarkRunResult(
                 mc, rr, args.num_prompts or 0, result=best_result
@@ -1283,10 +1293,8 @@ def main_with_parsed_args(
     _load_workload_yaml(args)
     _apply_run_length_defaults(args)
 
-    concurrency_range = parse_comma_separated(args.max_concurrency, int_or_none)
-    request_rate_range = parse_comma_separated(args.request_rate, float)
     use_dynamic_num_prompts = _apply_dynamic_num_prompts(
-        args, concurrency_range
+        args, args.max_concurrency
     )
 
     session = _build_session(args)
@@ -1298,7 +1306,7 @@ def main_with_parsed_args(
 
     if args.dry_run:
         yield from _run_dry_run_sweep(
-            args, session, concurrency_range, request_rate_range
+            args, session, args.max_concurrency, args.request_rate
         )
         return
 
@@ -1306,13 +1314,7 @@ def main_with_parsed_args(
         args.host, args.port, timeout_s=args.server_ready_timeout_s
     )
 
-    yield from _run_benchmark_sweep(
-        args,
-        session,
-        concurrency_range,
-        request_rate_range,
-        use_dynamic_num_prompts,
-    )
+    yield from _run_benchmark_sweep(args, session, use_dynamic_num_prompts)
 
 
 def _extract_metadata_args(

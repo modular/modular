@@ -13,13 +13,14 @@
 
 """Benchmark configuration classes with inheritance structure for MAX benchmarks."""
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import Literal
 
 from max.config import ConfigFileModel
-from pydantic import Field
+from pydantic import ConfigDict, Field, field_validator
 
 from .datasets import DatasetMode, DistributionParameter
+from .utils import int_or_none, parse_comma_separated
 
 BaseBackend = Literal[
     "modular",
@@ -226,8 +227,8 @@ class BaseServingBenchmarkConfig(BaseBenchmarkConfig):
     classes. Only holds fields whose type *and* default align across both
     serving codepaths so downstream configs can opt into shared behavior
     without per-codepath overrides. Fields whose semantics diverge (e.g.
-    ``request_rate`` sweep strings vs floats) are intentionally left on the
-    concrete subclasses.
+    ``request_rate`` sweep lists vs scalars on TTS) are intentionally left on
+    the concrete subclasses.
     """
 
     burstiness: float = Field(
@@ -290,6 +291,13 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
     - CPU and server stats collection
     """
 
+    # TODO(MXTOOLS-166): The validate_assignment here is only because workload
+    # YAMLs are not themselves parsed with Pydantic, and when we set fields via
+    # _apply_workload_to_config, we rely on re-running the validators.
+    # Workload YAMLs should probably be parsed with Pydantic too, and then
+    # values need not be re-validated, and validate_assignment can be removed.
+    model_config = ConfigDict(strict=False, validate_assignment=True)
+
     # Backend and API configuration (serving-specific)
     backend: Backend = Field(
         default="modular",
@@ -331,9 +339,13 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
     )
 
     # Request configuration (serving-specific)
-    max_concurrency: str | None = Field(
-        default=None,
-        description="Maximum concurrent requests (optimized for serving benchmarks). Can be a single integer, 'None', or comma-separated string for sweep configs.",
+    max_concurrency: Sequence[int | None] = Field(
+        default=[None],
+        description=(
+            "Maximum concurrent requests per sweep step. Parsed from a single "
+            "value or comma-separated string (e.g. ``1,none,8``); ``none`` means "
+            "unbounded."
+        ),
         json_schema_extra={
             "group": "Request Configuration",
             "group_description": "Parameters controlling request concurrency and processing",
@@ -488,9 +500,12 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
     )
 
     # Traffic control (serving-specific)
-    request_rate: str = Field(
-        default="inf",
-        description="Requests per second (finite rate for realistic benchmarking). Can be a single float value or comma-separated string for sweep configs.",
+    request_rate: Sequence[float] = Field(
+        default=[float("inf")],
+        description=(
+            "Requests per second per sweep step. Parsed from a single value or "
+            "comma-separated string (use ``inf`` for unlimited)."
+        ),
         json_schema_extra={
             "group": "Traffic Control",
             "group_description": "Parameters controlling request rate and traffic patterns",
@@ -794,6 +809,38 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
         description="Maximum concurrent LoRA loading/unloading operations.",
         json_schema_extra={"group": "LoRA Configuration"},
     )
+
+    @field_validator("max_concurrency", mode="before")
+    @classmethod
+    def _parse_max_concurrency_cli_strings(cls, value: object) -> object:
+        """Expand comma-separated CLI/env strings (and cyclopts ``['sweep']``)."""
+        if isinstance(value, int):
+            return [value]
+        if (
+            isinstance(value, list)
+            and len(value) == 1
+            and isinstance(value[0], str)
+        ):
+            value = value[0]
+        if isinstance(value, str):
+            return parse_comma_separated(value, int_or_none)
+        return value
+
+    @field_validator("request_rate", mode="before")
+    @classmethod
+    def _parse_request_rate_cli_strings(cls, value: object) -> object:
+        """Expand comma-separated CLI/env strings (and cyclopts ``['sweep']``)."""
+        if isinstance(value, (int, float)):
+            return [value]
+        if (
+            isinstance(value, list)
+            and len(value) == 1
+            and isinstance(value[0], str)
+        ):
+            value = value[0]
+        if isinstance(value, str):
+            return parse_comma_separated(value, float)
+        return value
 
 
 # ---------------------------------------------------------------------------

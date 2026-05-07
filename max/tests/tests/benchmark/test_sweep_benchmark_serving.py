@@ -671,6 +671,7 @@ def test_save_result_json_writes_valid_json(
         model_id="myorg/mymodel",
         tokenizer_id="myorg/mymodel",
         request_rate=10.0,
+        record_max_concurrency=config.max_concurrency[0],
     )
 
     assert Path(result_path).exists(), (
@@ -760,7 +761,7 @@ def test_apply_workload_skips_explicitly_set_fields() -> None:
 
     config = ServingBenchmarkConfig(
         model="myorg/mymodel",
-        request_rate="5",
+        request_rate=[5.0],
     )
     # Both `model` and `request_rate` are now in model_fields_set.
     assert "request_rate" in config.model_fields_set
@@ -774,7 +775,7 @@ def test_apply_workload_skips_explicitly_set_fields() -> None:
 
     _apply_workload_to_config(config, workload)
 
-    assert config.request_rate == "5", (
+    assert list(config.request_rate) == [5.0], (
         f"CLI request_rate should not be overwritten by workload YAML;"
         f" got {config.request_rate}"
     )
@@ -1034,6 +1035,7 @@ def test_upload_writes_correct_data_to_correct_files(
                 model_id=config.model,
                 tokenizer_id=config.model,
                 request_rate=float(mc),
+                record_max_concurrency=mc,
             )
             yield BenchmarkRunResult(
                 max_concurrency=mc,

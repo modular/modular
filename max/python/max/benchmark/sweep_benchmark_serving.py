@@ -254,6 +254,7 @@ def run_sweep(
                     model_id=config.model,
                     tokenizer_id=config.tokenizer or config.model,
                     request_rate=result.request_rate,
+                    record_max_concurrency=result.max_concurrency,
                 )
 
             sweep_result = _build_sweep_result(

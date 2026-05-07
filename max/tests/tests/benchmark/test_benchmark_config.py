@@ -49,8 +49,8 @@ class TestServingSweepFields:
         assert config.num_iters == 1
         assert config.num_prompts_multiplier is None
         assert config.flush_prefix_cache is True
-        assert config.max_concurrency is None
-        assert config.request_rate == "inf"
+        assert list(config.max_concurrency) == [None]
+        assert list(config.request_rate) == [float("inf")]
 
     def test_sweep_config_field_metadata(self) -> None:
         """Test that sweep-related fields have proper json_schema_extra metadata."""
@@ -304,7 +304,7 @@ class TestWorkloadMaxConcurrency:
         config = ServingBenchmarkConfig(
             model="HuggingFaceTB/SmolLM2-135M",
             workload_config=str(workload),
-            max_concurrency="4",
+            max_concurrency=[4],
             dry_run=True,
         )
 

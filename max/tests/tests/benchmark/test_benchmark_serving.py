@@ -69,6 +69,23 @@ def test_resolve_skip_counts() -> None:
     assert rsc(request_rate=2.0, ignore_first_turn_stats=True) == (0, 0)
 
 
+def test_parse_args_pre_parses_concurrency_and_request_rate_sweeps() -> None:
+    """CLI strings for concurrency and request-rate sweeps become parsed lists."""
+    cfg = parse_args(
+        [
+            "--model",
+            "myorg/model",
+            "--max-concurrency",
+            "1,none,4",
+            "--request-rate",
+            "inf,2.5",
+        ]
+    )
+    assert list(cfg.max_concurrency) == [1, None, 4]
+    assert cfg.request_rate[0] == float("inf")
+    assert cfg.request_rate[1] == pytest.approx(2.5)
+
+
 def test_benchmark_serving_help(capsys: pytest.CaptureFixture[str]) -> None:
     """Test the benchmark serving help function."""
     # Mock sys.argv to simulate running with --help flag
