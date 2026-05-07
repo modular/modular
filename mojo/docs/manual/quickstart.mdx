@@ -108,35 +108,6 @@ Use the following command to install the {tooltipStable}:
 </TabItem>
 </Tabs>
 
-</ConditionalVersionDocs>
-
-## Try Mojo agent skills
-
-Mojo is an AI-first programming language. If you're using an AI
-coding assistant, you don't have to rely on whatever it
-remembers about Mojo.
-
-[Mojo agent skills](/docs/tools/skills/) give your AI tool
-up-to-date guidance about the language. They're maintained
-alongside Mojo and updated as it evolves, so your agent isn't
-limited by when the model was trained. This helps it generate
-code that compiles, follows current patterns, and matches how
-Mojo works today.
-
-```bash
-npx skills add modular/skills
-```
-
-Two skills are especially useful when you're getting started:
-
-- **Project setup** (`new-modular-project`): helps create and structure new Mojo
-  projects without manual setup
-- **Mojo syntax** (`mojo-syntax`): keeps generated code aligned with the
-  current language, even as it evolves
-
-You describe what you want to build. The skills keep the code
-accurate and up to date.
-
 ## Hello Mojo
 
 Create `analyzer.mojo` in your favorite IDE or editor.
@@ -362,8 +333,21 @@ def main():
 Mojo variables, lists, loops, functions, conditionals, error handling, and
 Python integration, all in one working program.
 
-**Build something bigger:** [Tutorial: Game of Life](/docs/manual/get-started/)
-**Language guide:** [Mojo Manual](/docs/manual/)
-**API docs:** [Standard Library](/docs/std/)
+## Use Mojo with AI coding assistants
 
-Read about [learning Mojo with AI Agent skills](/docs/tools/skills/).
+If you use AI coding assistants, the `mojo-syntax` skill keeps you aligned
+with the latest nightly language releases. Stay up to date with Mojo's
+rapid development:
+
+```bash
+npx skills add modular/skills
+```
+
+This installs all four [Mojo agent skills](/docs/tools/skills), including
+`mojo-syntax`.
+
+## Keep going
+
+**Build something bigger:** [Tutorial: Game of Life](/docs/manual/get-started)
+**Language guide:** [Mojo Manual](/docs/manual)
+**API docs:** [Standard Library](/docs/std)
