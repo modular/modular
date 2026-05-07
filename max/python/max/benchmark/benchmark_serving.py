@@ -70,7 +70,6 @@ from max.benchmark.benchmark_shared.lora_benchmark_manager import (
 )
 from max.benchmark.benchmark_shared.metrics import (
     PixelGenerationBenchmarkResult,
-    SpecDecodeMetrics,
     TextGenerationBenchmarkResult,
     calculate_spec_decode_stats,
 )
@@ -433,6 +432,52 @@ async def benchmark(
     logger.info(f"Burstiness factor: {args.burstiness} ({distribution})")
     logger.info(f"Maximum request concurrency: {max_concurrency}")
 
+    base_driver = request_driver_class(tokenizer=session.tokenizer)
+
+    # Prime prefix turns before the benchmark timer starts. Only the initial
+    # concurrent population keeps its prefix_turns; sessions arriving
+    # mid-benchmark get reset to 0 and don't need priming.
+    # Bound: kv-cache-stress uses max_concurrent_conversations; multiturn uses
+    # max_concurrency (may be None for unbounded, in which case all sessions
+    # keep prefix_turns and are all primed).
+    if isinstance(session.samples, ChatSamples):
+        assert session.tokenizer is not None
+        prime_bound = (
+            args.max_concurrent_conversations
+            if args.max_concurrent_conversations is not None
+            else max_concurrency
+        )
+        await prime_prefix_turns(
+            sessions=session.samples.chat_sessions,
+            request_driver=base_driver,
+            model_id=session.model_id,
+            api_url=session.api_url,
+            max_chat_len=session.tokenizer.model_max_length,
+            temperature=args.temperature,
+            top_p=args.top_p,
+            top_k=args.top_k,
+            max_sessions=prime_bound,
+        )
+
+    # Capture baseline server metrics after priming so priming requests
+    # don't affect the delta calculation.
+    baseline_endpoints: Mapping[str, ParsedMetrics] = {}
+    if args.collect_server_stats:
+        try:
+            baseline_endpoints = collect_benchmark_metrics(
+                args.metrics_urls, backend, session.base_url
+            )
+            logger.info("Captured baseline server metrics")
+        except Exception as e:
+            logger.warning(f"Failed to capture baseline server metrics: {e}")
+
+    if session.benchmark_task == "text-generation":
+        spec_decode_metrics_before = fetch_spec_decode_metrics(
+            backend, session.base_url
+        )
+    else:
+        spec_decode_metrics_before = None
+
     semaphore: contextlib.AbstractAsyncContextManager[None]
     if max_concurrency:
         semaphore = asyncio.Semaphore(max_concurrency)
@@ -441,8 +486,6 @@ async def benchmark(
 
     with contextlib.ExitStack() as benchmark_stack:
         gpu_recorder: GPUBackgroundRecorder | None = None
-        spec_decode_metrics_before: SpecDecodeMetrics | None = None
-        spec_decode_metrics_after: SpecDecodeMetrics | None = None
         if args.collect_gpu_stats:
             try:
                 from max.diagnostics.gpu import BackgroundRecorder
@@ -478,60 +521,13 @@ async def benchmark(
             )
 
         # Create pbar for actual benchmark runs
+        request_driver = base_driver
         pbar = create_benchmark_pbar(
             disable_tqdm=args.disable_tqdm, samples=session.samples
         )
-
-        # Create base driver and wrap with ProgressBarRequestDriver if pbar is provided
-        request_driver = base_driver = request_driver_class(
-            tokenizer=session.tokenizer
-        )
         if pbar is not None:
+            benchmark_stack.callback(pbar.close)
             request_driver = ProgressBarRequestDriver(request_driver, pbar)
-
-        # Prime prefix turns before the benchmark timer starts. Only the
-        # initial concurrent population keeps its prefix_turns; sessions
-        # arriving mid-benchmark get reset to 0 and don't need priming.
-        # Bound: kv-cache-stress uses max_concurrent_conversations;
-        # multiturn uses max_concurrency (may be None for unbounded, in
-        # which case all sessions keep prefix_turns and are all primed).
-        if isinstance(session.samples, ChatSamples):
-            assert session.tokenizer is not None
-            prime_bound = (
-                args.max_concurrent_conversations
-                if args.max_concurrent_conversations is not None
-                else max_concurrency
-            )
-            await prime_prefix_turns(
-                sessions=session.samples.chat_sessions,
-                request_driver=base_driver,
-                model_id=session.model_id,
-                api_url=session.api_url,
-                max_chat_len=session.tokenizer.model_max_length,
-                temperature=args.temperature,
-                top_p=args.top_p,
-                top_k=args.top_k,
-                max_sessions=prime_bound,
-            )
-
-        # Capture baseline server metrics after priming so priming requests
-        # don't affect the delta calculation.
-        baseline_endpoints: Mapping[str, ParsedMetrics] = {}
-        if args.collect_server_stats:
-            try:
-                baseline_endpoints = collect_benchmark_metrics(
-                    args.metrics_urls, backend, session.base_url
-                )
-                logger.info("Captured baseline server metrics")
-            except Exception as e:
-                logger.warning(
-                    f"Failed to capture baseline server metrics: {e}"
-                )
-
-        if session.benchmark_task == "text-generation":
-            spec_decode_metrics_before = fetch_spec_decode_metrics(
-                backend, session.base_url
-            )
 
         # Marker consumed by utils/benchmarking/serving/analyze_batch_logs.py
         # to slice the batch log by concurrency and exclude warmup/test-prompt
@@ -652,10 +648,6 @@ async def benchmark(
                 out for outs in outputs_by_session.values() for out in outs
             ]
 
-        # Close pbar if it was created
-        if pbar is not None:
-            pbar.close()
-
         benchmark_duration = (
             time.perf_counter_ns() - benchmark_start_time
         ) / 1e9
@@ -664,6 +656,8 @@ async def benchmark(
         spec_decode_metrics_after = fetch_spec_decode_metrics(
             backend, session.base_url
         )
+    else:
+        spec_decode_metrics_after = None
     spec_decode_stats = None
     if (
         spec_decode_metrics_before is not None
