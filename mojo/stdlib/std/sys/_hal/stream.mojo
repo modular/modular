@@ -114,6 +114,18 @@ struct Stream[context_origin: ImmutOrigin, device_spec: DeviceSpec](Movable):
         self._queue.copy_from_device(dst, src, size)
         self._chain_signal()
 
+    def copy_device_to_device(
+        mut self,
+        dst: Buffer,
+        src: Buffer,
+        size: UInt64,
+    ) raises HALError:
+        """Same-device device-to-device copy. Runs after all previous Stream ops.
+        """
+        self._chain_wait()
+        self._queue.copy_device_to_device(dst, src, size)
+        self._chain_signal()
+
     def record_event(
         mut self,
     ) raises HALError -> Event[Self.context_origin]:

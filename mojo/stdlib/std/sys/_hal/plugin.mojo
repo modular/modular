@@ -382,6 +382,25 @@ struct RawDriver(Movable):
                 message=String(t"failed to copy from device: {err.message}"),
             )
 
+    def copy_device_to_device(
+        self,
+        queue: QueueHandle,
+        dst: MemoryHandle,
+        src: MemoryHandle,
+        size: UInt64,
+    ) raises HALError:
+        var status = self._raw.queue_copy_device_to_device.f(
+            queue, dst, src, size
+        )
+        if status != STATUS_SUCCESS:
+            var err = self.get_status_message(status)
+            raise HALError(
+                err.status,
+                message=String(
+                    t"failed to copy device to device: {err.message}"
+                ),
+            )
+
     def synchronize_queue(self, queue: QueueHandle) raises HALError:
         var status = self._raw.queue_synchronize.f(queue)
         if status != STATUS_SUCCESS:
@@ -735,6 +754,15 @@ struct RawPlugin(Movable):
             size: UInt64,
         ) thin -> PluginResultCode,
     ]
+    var queue_copy_device_to_device: HALFunction[
+        "M_driver_queue_copy_device_to_device",
+        def(
+            queue: QueueHandle,
+            dst: MemoryHandle,
+            src: MemoryHandle,
+            size: UInt64,
+        ) thin -> PluginResultCode,
+    ]
     var queue_set_memory: HALFunction[
         "M_driver_queue_set_memory",
         def(
@@ -892,6 +920,9 @@ struct RawPlugin(Movable):
         self.queue_copy_from_device = type_of(self.queue_copy_from_device)(
             handle, so_path
         )
+        self.queue_copy_device_to_device = type_of(
+            self.queue_copy_device_to_device
+        )(handle, so_path)
         self.queue_set_memory = type_of(self.queue_set_memory)(handle, so_path)
         self.event_create = type_of(self.event_create)(handle, so_path)
         self.event_destroy = type_of(self.event_destroy)(handle, so_path)
