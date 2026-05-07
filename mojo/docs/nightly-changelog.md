@@ -4,7 +4,7 @@ title: Mojo nightly
 
 This version is still a work in progress.
 
-## ✨ Highlights
+## Highlights
 
 ## Documentation
 
@@ -109,7 +109,7 @@ This version is still a work in progress.
   ctx.enqueue_function[my_kernel](grid_dim=1, block_dim=1)
   ```
 
-## ❌ Removed
+## Removed
 
 - The legacy `fn` keyword now produces an error instead of a warning. Please
   move to `def`.
@@ -144,7 +144,7 @@ This version is still a work in progress.
   - `offset_of[T, index=...]()` → `reflect[T]().field_offset[index=...]()`
   - `ReflectedType[T]` → `Reflected[T]`
 
-## 🛠️ Fixed
+## Fixed
 
 - Reduced the virtual address space reserved by every `mojo` invocation by
   ~1 GiB. The JIT memory mapper's reservation granularity was 1 GiB, so each
