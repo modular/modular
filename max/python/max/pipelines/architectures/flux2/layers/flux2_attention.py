@@ -17,6 +17,7 @@ from collections.abc import Iterable, Sequence
 
 from max.dtype import DType
 from max.graph import DeviceRef, ShardingStrategy, TensorValue, ops
+from max.graph.weight import Segment
 from max.nn.attention import num_heads_for_device
 from max.nn.attention.mask_config import MHAMaskVariant
 from max.nn.kernels import flash_attention_gpu, rope_ragged_with_position_ids
@@ -733,7 +734,7 @@ class Flux2Attention(Module, Shardable):
             return hidden_states
 
 
-class Flux2ParallelSelfAttention(Module):
+class Flux2ParallelSelfAttention(Module, Shardable):
     def __init__(
         self,
         query_dim: int,
@@ -748,7 +749,7 @@ class Flux2ParallelSelfAttention(Module):
         mlp_mult_factor: int = 2,
         *,
         dtype: DType,
-        device: DeviceRef,
+        devices: Sequence[DeviceRef],
         quant_config: QuantConfig | None = None,
     ) -> None:
         """Initialize Flux2ParallelSelfAttention.
@@ -763,15 +764,26 @@ class Flux2ParallelSelfAttention(Module):
             eps: Epsilon for RMSNorm.
             out_dim: Output dimension (defaults to query_dim).
             mlp_ratio: Multiplier for MLP hidden dimension.
-            mlp_mult_factor: Multiplier for MLP projection (2 for SwiGLU).
+            mlp_mult_factor: Multiplier for MLP projection. Must be 2;
+                the SwiGLU activation chunks its input in half.
             dtype: Weight dtype.
-            device: Weight device.
+            devices: Devices for placement and tensor parallelism. The
+                un-sharded base lives on ``devices[0]``; ``shard()`` produces
+                one shard per device.
         """
+        if mlp_mult_factor != 2:
+            raise ValueError(
+                "Flux2ParallelSelfAttention only supports mlp_mult_factor=2 "
+                f"(SwiGLU expects two chunks); got {mlp_mult_factor}"
+            )
         super().__init__()
         del dropout
         self.head_dim = dim_head
         self.inner_dim = out_dim if out_dim is not None else dim_head * heads
         self.heads = out_dim // dim_head if out_dim is not None else heads
+        self.devices = list(devices)
+        device = self.devices[0]
+        self._sharding_strategy: ShardingStrategy | None = None
         out_dim = out_dim if out_dim is not None else query_dim
 
         self.mlp_hidden_dim = int(query_dim * mlp_ratio)
@@ -804,6 +816,125 @@ class Flux2ParallelSelfAttention(Module):
             has_bias=out_bias,
             quant_config=quant_config,
         )
+
+    @property
+    def sharding_strategy(self) -> ShardingStrategy | None:
+        return self._sharding_strategy
+
+    @sharding_strategy.setter
+    def sharding_strategy(self, strategy: ShardingStrategy) -> None:
+        num_devices = strategy.num_devices
+
+        if strategy.is_replicate:
+            qkv_mlp_strategy = strategy
+            out_strategy = strategy
+            norm_strategy = strategy
+        elif strategy.is_tensor_parallel:
+            # Column-parallel on the fused [Q | K | V | gate | up] output
+            # projection. Q/K/V split per-head; gate/up split evenly. Each
+            # device receives one contiguous chunk per segment.
+            qkv_mlp_strategy = ShardingStrategy.segmented(
+                num_devices,
+                axis=0,
+                segments=[
+                    Segment.head_aware(self.heads, self.head_dim),
+                    Segment.head_aware(self.heads, self.head_dim),
+                    Segment.head_aware(self.heads, self.head_dim),
+                    Segment.even(self.mlp_hidden_dim),
+                    Segment.even(self.mlp_hidden_dim),
+                ],
+            )
+            # Row-parallel on the fused [attn_out | mlp_out] input projection.
+            # The input split mirrors the QKV/MLP output split exactly so each
+            # device's local activation matches its local weight slice. Each
+            # device produces a partial sum; the containing block all-reduces.
+            out_strategy = ShardingStrategy.segmented(
+                num_devices,
+                axis=1,
+                segments=[
+                    Segment.head_aware(self.heads, self.head_dim),
+                    Segment.even(self.mlp_hidden_dim),
+                ],
+            )
+            # RMSNorm weight is [head_dim]; not sharded.
+            norm_strategy = ShardingStrategy.replicate(num_devices)
+        else:
+            raise ValueError(
+                "Flux2ParallelSelfAttention only supports tensor_parallel "
+                f"and replicate sharding; got {strategy}"
+            )
+
+        self.to_qkv_mlp_proj.sharding_strategy = qkv_mlp_strategy
+        self.to_out.sharding_strategy = out_strategy
+        self.norm_q.sharding_strategy = norm_strategy
+        self.norm_k.sharding_strategy = norm_strategy
+
+        self._sharding_strategy = strategy
+
+    def _empty_shard(
+        self,
+        device: DeviceRef,
+        sharded_heads: int,
+        sharded_mlp_hidden_dim: int,
+    ) -> Flux2ParallelSelfAttention:
+        """Build a per-device shell without running __init__'s Linear setup.
+
+        ``__init__`` would allocate full-size Linears we'd immediately
+        overwrite. This sets only the attributes ``__call__`` reads; the
+        caller is responsible for assigning every sub-layer.
+        """
+        shard = object.__new__(Flux2ParallelSelfAttention)
+        Module.__init__(shard)
+        shard.head_dim = self.head_dim
+        shard.heads = sharded_heads
+        shard.inner_dim = sharded_heads * self.head_dim
+        shard.mlp_hidden_dim = sharded_mlp_hidden_dim
+        shard.mlp_mult_factor = self.mlp_mult_factor
+        shard.devices = [device]
+        shard._sharding_strategy = self._sharding_strategy
+        return shard
+
+    def shard(
+        self, devices: Iterable[DeviceRef]
+    ) -> list[Flux2ParallelSelfAttention]:
+        if self._sharding_strategy is None:
+            raise ValueError(
+                "Flux2ParallelSelfAttention cannot be sharded without a "
+                "sharding strategy."
+            )
+        devices_list = list(devices)
+        num_devices = len(devices_list)
+
+        to_qkv_mlp_shards = self.to_qkv_mlp_proj.shard(devices_list)
+        to_out_shards = self.to_out.shard(devices_list)
+        norm_q_shards = self.norm_q.shard(devices_list)
+        norm_k_shards = self.norm_k.shard(devices_list)
+
+        # Even split of mlp_hidden_dim with remainder going to earlier devices,
+        # matching Segment.even's per-device range.
+        base_mlp, mlp_remainder = divmod(self.mlp_hidden_dim, num_devices)
+
+        shards: list[Flux2ParallelSelfAttention] = []
+        for shard_idx, device in enumerate(devices_list):
+            sharded_heads = num_heads_for_device(
+                num_heads=self.heads,
+                device_idx=shard_idx,
+                num_devices=num_devices,
+            )
+            sharded_mlp_hidden_dim = base_mlp + (
+                1 if shard_idx < mlp_remainder else 0
+            )
+            sharded = self._empty_shard(
+                device, sharded_heads, sharded_mlp_hidden_dim
+            )
+            sharded.to_qkv_mlp_proj = to_qkv_mlp_shards[shard_idx]
+            sharded.mlp_act_fn = self.mlp_act_fn
+            sharded.to_out = to_out_shards[shard_idx]
+            sharded.norm_q = norm_q_shards[shard_idx]
+            sharded.norm_k = norm_k_shards[shard_idx]
+            shards.append(sharded)
+
+        return shards
 
     def __call__(
         self,

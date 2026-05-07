@@ -370,7 +370,7 @@ class Flux2SingleTransformerBlock(Module):
             mlp_ratio=mlp_ratio,
             mlp_mult_factor=2,
             dtype=dtype,
-            device=device,
+            devices=[device],
             quant_config=quant_config,
         )
 
