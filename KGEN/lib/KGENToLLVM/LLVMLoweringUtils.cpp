@@ -164,6 +164,18 @@ bool KGEN::isFP8(Type fpType) {
       fpType);
 }
 
+bool KGEN::isFP4(Type fpType) { return isa<mlir::Float4E2M1FNType>(fpType); }
+
+// If the type is a floating-point type lowered to an integer, return the
+// bitwidth of the integer width. Else return std::nullopt.
+std::optional<int> KGEN::isFPTyLoweredAsInt(Type fpType) {
+  if (isFP4(fpType))
+    return 4;
+  if (isFP8(fpType))
+    return 8;
+  return std::nullopt;
+}
+
 std::optional<Type> M::KGEN::getMLIRTypeForDType(MLIRContext *ctx,
                                                  KGENDType dtype,
                                                  size_t indexBitwidth) {
@@ -182,8 +194,8 @@ std::optional<Type> M::KGEN::getMLIRTypeForDType(MLIRContext *ctx,
 
   if (dtype.isFloat()) {
     if (FloatType fpType = getEquivalentFloatType(ctx, dtype)) {
-      if (isFP8(fpType))
-        return IntegerType::get(ctx, 8);
+      if (auto intWidth = isFPTyLoweredAsInt(fpType))
+        return IntegerType::get(ctx, *intWidth);
       return fpType;
     }
   }
@@ -945,8 +957,8 @@ static Value convertSIMDAttr(ImplicitLocOpBuilder &b,
 
     FloatType fpType = getEquivalentFloatType(b.getContext(), dtype);
     FloatAttr attrVal = b.getFloatAttr(fpType, value.getFloatVal());
-    if (isFP8(fpType))
-      return LLVM::ConstantOp::create(b, b.getI8Type(), attrVal);
+    if (auto intWidth = isFPTyLoweredAsInt(fpType))
+      return LLVM::ConstantOp::create(b, b.getIntegerType(*intWidth), attrVal);
 
     return asConst(attrVal);
   }
@@ -991,9 +1003,10 @@ static Value convertSIMDAttr(ImplicitLocOpBuilder &b,
   auto attrVal = cast<TypedAttr>(FloatArrayElementsAttr::get(
       VectorType::get(values.size(), fpType), values));
 
-  if (isFP8(fpType)) {
+  if (auto intWidth = isFPTyLoweredAsInt(fpType)) {
     return LLVM::ConstantOp::create(
-        b, VectorType::get(values.size(), b.getI8Type()), attrVal);
+        b, VectorType::get(values.size(), b.getIntegerType(*intWidth)),
+        attrVal);
   }
 
   return asConst(attrVal);
@@ -1093,7 +1106,7 @@ ErrorOr<Value> KGEN::convertParameterToLLVM(
 
   if (auto fltCst = dyn_cast<FloatAttr>(attr)) {
     Type type = fltCst.getType();
-    if (isFP8(type)) {
+    if (isFPTyLoweredAsInt(type)) {
       return LLVM::ConstantOp::create(b, tc.convertType(type),
                                       fltCst.getValue().bitcastToAPInt());
     }

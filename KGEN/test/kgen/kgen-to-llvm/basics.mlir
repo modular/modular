@@ -286,6 +286,19 @@ kgen.func @kgen_fp8_ptr_arg(%arg0: !kgen.pointer<scalar<f8e5m2>>) -> !kgen.scala
 
 // -----
 
+module attributes {M.target_info = #M.target<triple = "nvptx64-nvidia-cuda", arch = "sm_90", data_layout = "e-i64:64-i128:128-i256:256-v16:16-v32:32-n16:32:64", simd_bit_width = 128>} {
+
+// CHECK-LABEL: kgen_fp4_ptr_arg
+kgen.func @kgen_fp4_ptr_arg(%arg0: !kgen.pointer<scalar<f4e2m1fn>>) -> !kgen.scalar<f4e2m1fn>{
+  %0 = pop.load %arg0 : !kgen.pointer<scalar<f4e2m1fn>>
+  // CHECK: llvm.return %2 : i4
+  kgen.return %0 : !kgen.scalar<f4e2m1fn>
+}
+
+}
+
+// -----
+
 module attributes {M.target_info = #M.target<triple = "amdgcn-amd-amdhsa", arch = "gfx942", data_layout = "", simd_bit_width = 128, index_bit_width = 64>} {
   // CHECK: llvm.func amdgpu_kernelcc @test() attributes {{{.*}} rocdl.flat_work_group_size = "1, 128"}
   kgen.func export @test() attributes {LLVMMetadata = {rocdl.flat_work_group_size = #pop.array<128> : !pop.array<1, scalar<si32>>}} {
