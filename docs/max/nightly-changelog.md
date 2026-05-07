@@ -41,6 +41,9 @@ This version is still a work in progress.
 
 ## Breaking changes
 
+- `max/python/max/benchmark/benchmark_throughput.py`, deprecated in v0.26.3,
+  has been removed.
+
 ## Fixes
 
 - `MODULAR_DEBUG=ir-output-dir=<dir>` (and the equivalent
