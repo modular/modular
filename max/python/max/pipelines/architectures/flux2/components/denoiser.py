@@ -191,7 +191,7 @@ class Denoiser(CompiledComponent):
         )
 
         dtype = transformer_config.dtype
-        device = transformer_config.device
+        device = transformer_config.devices[0]
 
         # Load weights and adapt for NVFP4 / stacked-QKV checkpoints.
         paths = config.resolved_weight_paths()

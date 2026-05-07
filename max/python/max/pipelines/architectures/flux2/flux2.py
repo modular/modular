@@ -453,7 +453,8 @@ class Flux2Transformer2DModel(Module):
         mlp_ratio = config.mlp_ratio
         axes_dims_rope = config.axes_dims_rope
         rope_theta = config.rope_theta
-        device = config.device
+        devices = config.devices
+        device = devices[0]
         dtype = config.dtype
         eps = config.eps
         quant_config = config.quant_config
@@ -461,7 +462,7 @@ class Flux2Transformer2DModel(Module):
             config, "nvfp4_layers_bfl", frozenset()
         )
 
-        self.device = device
+        self.devices = devices
         self.patch_size = patch_size
         self.out_channels = out_channels or in_channels
         self.inner_dim = num_attention_heads * attention_head_dim
@@ -572,33 +573,30 @@ class Flux2Transformer2DModel(Module):
         Returns:
             Tuple of TensorType specifications for all model inputs.
         """
+        primary = self.devices[0]
         return (
             TensorType(
                 self.max_dtype,
                 shape=["batch_size", "image_seq_len", self.in_channels],
-                device=self.device,
+                device=primary,
             ),
             TensorType(
                 self.max_dtype,
                 shape=["batch_size", "text_seq_len", self.joint_attention_dim],
-                device=self.device,
+                device=primary,
             ),
-            TensorType(
-                self.max_dtype, shape=["batch_size"], device=self.device
-            ),
+            TensorType(self.max_dtype, shape=["batch_size"], device=primary),
             TensorType(
                 DType.int64,
                 shape=["batch_size", "image_seq_len", 4],
-                device=self.device,
+                device=primary,
             ),
             TensorType(
                 DType.int64,
                 shape=["batch_size", "text_seq_len", 4],
-                device=self.device,
+                device=primary,
             ),
-            TensorType(
-                self.max_dtype, shape=["batch_size"], device=self.device
-            ),
+            TensorType(self.max_dtype, shape=["batch_size"], device=primary),
         )
 
     def __call__(
