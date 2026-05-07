@@ -1863,6 +1863,9 @@ def test_resolve_default_reasoning_parser__applies_arch_default(
         models=ModelManifest({"main": MAXModelConfig(model_path="test/model")}),
         runtime=PipelineRuntimeConfig(),
     )
+    config.models["main"]._huggingface_config = SimpleNamespace(
+        architectures=["KimiK25ForConditionalGeneration"]
+    )
     assert config.runtime.reasoning_parser is None
 
     config._resolve_default_reasoning_parser()
@@ -1889,6 +1892,9 @@ def test_resolve_default_reasoning_parser__user_value_preserved(
     config = PipelineConfig(
         models=ModelManifest({"main": MAXModelConfig(model_path="test/model")}),
         runtime=PipelineRuntimeConfig(reasoning_parser="user_choice"),
+    )
+    config.models["main"]._huggingface_config = SimpleNamespace(
+        architectures=["KimiK25ForConditionalGeneration"]
     )
 
     config._resolve_default_reasoning_parser()
@@ -1918,6 +1924,9 @@ def test_resolve_default_reasoning_parser__no_arch_default_is_noop(
         models=ModelManifest({"main": MAXModelConfig(model_path="test/model")}),
         runtime=PipelineRuntimeConfig(),
     )
+    config.models["main"]._huggingface_config = SimpleNamespace(
+        architectures=["LlamaForCausalLM"]
+    )
 
     config._resolve_default_reasoning_parser()
     assert config.runtime.reasoning_parser is None
@@ -1929,3 +1938,99 @@ def test_resolve_default_reasoning_parser__no_arch_default_is_noop(
     )
     config._resolve_default_reasoning_parser()
     assert config.runtime.reasoning_parser is None
+
+
+@prepare_registry
+@mock_pipeline_config_resolve
+def test_resolve_default_tool_parser__applies_arch_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When runtime.tool_parser is unset and architecture declares a default,
+    the default is applied."""
+    arch = SimpleNamespace(
+        name="KimiK25ForConditionalGeneration",
+        tool_parser="kimik2_5",
+    )
+    monkeypatch.setattr(
+        PIPELINE_REGISTRY,
+        "retrieve_architecture",
+        Mock(return_value=arch),
+    )
+
+    config = PipelineConfig(
+        models=ModelManifest({"main": MAXModelConfig(model_path="test/model")}),
+        runtime=PipelineRuntimeConfig(),
+    )
+    config.models["main"]._huggingface_config = SimpleNamespace(
+        architectures=["KimiK25ForConditionalGeneration"]
+    )
+    assert config.runtime.tool_parser is None
+
+    config._resolve_default_tool_parser()
+
+    assert config.runtime.tool_parser == "kimik2_5"
+
+
+@prepare_registry
+@mock_pipeline_config_resolve
+def test_resolve_default_tool_parser__user_value_preserved(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An explicit runtime.tool_parser value is never overwritten."""
+    arch = SimpleNamespace(
+        name="KimiK25ForConditionalGeneration",
+        tool_parser="kimik2_5",
+    )
+    retrieve_mock = Mock(return_value=arch)
+    monkeypatch.setattr(
+        PIPELINE_REGISTRY, "retrieve_architecture", retrieve_mock
+    )
+
+    config = PipelineConfig(
+        models=ModelManifest({"main": MAXModelConfig(model_path="test/model")}),
+        runtime=PipelineRuntimeConfig(tool_parser="user_choice"),
+    )
+    config.models["main"]._huggingface_config = SimpleNamespace(
+        architectures=["KimiK25ForConditionalGeneration"]
+    )
+
+    config._resolve_default_tool_parser()
+
+    assert config.runtime.tool_parser == "user_choice"
+    retrieve_mock.assert_not_called()
+
+
+@prepare_registry
+@mock_pipeline_config_resolve
+def test_resolve_default_tool_parser__no_arch_default_is_noop(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """If architecture has no default tool parser, runtime value stays None."""
+    arch_without_default = SimpleNamespace(
+        name="LlamaForCausalLM",
+        tool_parser=None,
+    )
+    monkeypatch.setattr(
+        PIPELINE_REGISTRY,
+        "retrieve_architecture",
+        Mock(return_value=arch_without_default),
+    )
+
+    config = PipelineConfig(
+        models=ModelManifest({"main": MAXModelConfig(model_path="test/model")}),
+        runtime=PipelineRuntimeConfig(),
+    )
+    config.models["main"]._huggingface_config = SimpleNamespace(
+        architectures=["LlamaForCausalLM"]
+    )
+
+    config._resolve_default_tool_parser()
+    assert config.runtime.tool_parser is None
+
+    monkeypatch.setattr(
+        PIPELINE_REGISTRY,
+        "retrieve_architecture",
+        Mock(return_value=None),
+    )
+    config._resolve_default_tool_parser()
+    assert config.runtime.tool_parser is None

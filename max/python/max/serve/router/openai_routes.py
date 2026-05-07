@@ -57,7 +57,8 @@ from max.interfaces import (
     VideoContentPart,
 )
 from max.pipelines.core.exceptions import InputError
-from max.pipelines.lib import PIPELINE_REGISTRY, PipelineConfig
+from max.pipelines.lib import PipelineConfig
+from max.pipelines.lib.tool_parsing import create as create_tool_parser
 from max.profiler import traced
 from max.serve.config import Settings
 from max.serve.parser import LlamaToolParser, ToolParser, parse_json_from_text
@@ -1428,34 +1429,15 @@ def get_app_pipeline_config(app: FastAPI) -> PipelineConfig:
 
 
 def get_tool_parser(app: FastAPI) -> ToolParser | None:
-    """Gets the appropriate tool parser for the current model architecture.
+    """Gets the configured tool parser for the current model.
 
-    Returns the architecture-specific tool parser if one is registered,
-    otherwise None.
+    Returns the runtime-configured parser if set, otherwise None.
     """
-
     pipeline_config = get_app_pipeline_config(app)
-
-    # Get architecture name from HuggingFace config
-    try:
-        hf_config = pipeline_config.model.huggingface_config
-    except ValueError:
-        # Model doesn't have a valid HuggingFace config (e.g., mock models, local models)
+    parser_name = pipeline_config.runtime.tool_parser
+    if parser_name is None:
         return None
-
-    if not hf_config.architectures:
-        return None
-
-    arch_name = hf_config.architectures[0]
-    arch = PIPELINE_REGISTRY.retrieve_architecture(
-        architecture_name=arch_name,
-        prefer_module_v3=pipeline_config.runtime.prefer_module_v3,
-    )
-
-    if arch is not None and arch.tool_parser is not None:
-        return arch.tool_parser()
-
-    return None
+    return create_tool_parser(parser_name)
 
 
 class OpenAICompletionResponseGenerator(

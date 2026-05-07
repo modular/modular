@@ -282,6 +282,14 @@ class PipelineRuntimeConfig(ConfigFileModel):
         ),
     )
 
+    tool_parser: str | None = Field(
+        default=None,
+        description=(
+            "Name of the tool call parser. The parser extracts tool calls "
+            "from model output in chat completion responses."
+        ),
+    )
+
     # TODO(SERVSYS-1096): Remove this field once we've reworked how required
     # config fields are validated.
     defer_resolve: bool = Field(

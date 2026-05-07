@@ -20,6 +20,7 @@ from max.interfaces import (
     ParsedToolCallDelta,
     ParsedToolResponse,
 )
+from max.pipelines.lib.tool_parsing import register
 
 # Gemma4 special tokens for tool calls
 TOOL_CALL_START = "<|tool_call>"
@@ -278,6 +279,7 @@ def _tool_call_id() -> str:
     return str(uuid.uuid4()).replace("-", "")[:8]
 
 
+@register("gemma4")
 class Gemma4ToolParser:
     def __init__(self) -> None:
         self._buffer: str = ""

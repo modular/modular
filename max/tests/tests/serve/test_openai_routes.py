@@ -25,6 +25,7 @@ from unittest.mock import AsyncMock, MagicMock, Mock, patch
 import pytest
 import pytest_asyncio
 from async_asgi_testclient import TestClient as AsyncTestClient
+from fastapi import FastAPI
 from fastapi.testclient import TestClient as SyncTestClient
 from max.interfaces import (
     BaseContext,
@@ -47,6 +48,7 @@ from max.serve.router.openai_routes import (
     OpenAIChatResponseGenerator,
     _create_response_format,
     _process_chat_log_probabilities,
+    get_tool_parser,
     openai_create_chat_completion,
 )
 from max.serve.schemas.openai import (
@@ -159,6 +161,39 @@ def test_openai_chat_completion_concurrent(app) -> None:  # noqa: ANN001
         received_response = response.choices[0].message.content
         expected_response = request_contents[id]
         assert received_response == expected_response
+
+
+def test_get_tool_parser_uses_runtime_override(
+    mock_pipeline_config: PipelineConfig,
+) -> None:
+    mock_pipeline_config.runtime.tool_parser = "kimik2_5"
+    app = FastAPI()
+    app.state.pipeline_config = mock_pipeline_config
+
+    parser = get_tool_parser(app)
+
+    assert isinstance(parser, KimiToolParser)
+
+
+def test_get_tool_parser_returns_none_when_unset(
+    mock_pipeline_config: PipelineConfig,
+) -> None:
+    mock_pipeline_config.runtime.tool_parser = None
+    app = FastAPI()
+    app.state.pipeline_config = mock_pipeline_config
+
+    assert get_tool_parser(app) is None
+
+
+def test_get_tool_parser_unknown_parser_raises(
+    mock_pipeline_config: PipelineConfig,
+) -> None:
+    mock_pipeline_config.runtime.tool_parser = "does_not_exist"
+    app = FastAPI()
+    app.state.pipeline_config = mock_pipeline_config
+
+    with pytest.raises(ValueError, match="Unknown tool parser"):
+        get_tool_parser(app)
 
 
 @pytest.mark.asyncio

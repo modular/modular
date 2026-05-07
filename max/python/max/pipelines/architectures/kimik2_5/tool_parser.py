@@ -37,6 +37,7 @@ from max.interfaces import (
     ParsedToolCallDelta,
     ParsedToolResponse,
 )
+from max.pipelines.lib.tool_parsing import register
 
 logger = logging.getLogger(__name__)
 
@@ -137,6 +138,7 @@ class _StreamingState:
     tool_calls: list[_StreamingToolCallState] = field(default_factory=list)
 
 
+@register("kimik2_5")
 class KimiToolParser:
     """Parses Kimi K2.5-style tool calls from model responses.
 

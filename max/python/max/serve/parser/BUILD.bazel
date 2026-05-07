@@ -7,6 +7,7 @@ modular_py_library(
     srcs = glob(["*.py"]),
     deps = [
         "//max/python/max/interfaces",
+        "//max/python/max/pipelines/lib",
         requirement("regex"),
     ],
 )

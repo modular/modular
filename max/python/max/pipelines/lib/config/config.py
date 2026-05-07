@@ -973,6 +973,7 @@ class PipelineConfig(ConfigFileModel):
         self._validate_and_resolve_overlap_scheduler()
 
         self._resolve_default_reasoning_parser()
+        self._resolve_default_tool_parser()
 
     def _resolve_default_reasoning_parser(self) -> None:
         """Apply the architecture's default reasoning parser when unset.
@@ -996,6 +997,31 @@ class PipelineConfig(ConfigFileModel):
             "Defaulting reasoning parser to %r for architecture %s. "
             "Override with --reasoning-parser.",
             arch.reasoning_parser,
+            arch.name,
+        )
+
+    def _resolve_default_tool_parser(self) -> None:
+        """Apply the architecture's default tool parser when unset.
+
+        If the user did not configure ``runtime.tool_parser`` and the
+        resolved ``SupportedArchitecture`` declares a default
+        ``tool_parser``, use it. Explicit user configuration always wins.
+        """
+        if self.runtime.tool_parser is not None:
+            return
+
+        arch = PIPELINE_REGISTRY.retrieve_architecture(
+            architecture_name=self.models.main_architecture_name,
+            prefer_module_v3=self.runtime.prefer_module_v3,
+        )
+        if arch is None or arch.tool_parser is None:
+            return
+
+        self.runtime.tool_parser = arch.tool_parser
+        logger.info(
+            "Defaulting tool parser to %r for architecture %s. "
+            "Override with --tool-parser.",
+            arch.tool_parser,
             arch.name,
         )
 
