@@ -1065,6 +1065,16 @@ async def openai_create_chat_completion(
                 else 1
             )
 
+        if (
+            logprobs_count != 0
+            and request.app.state.pipeline_config.runtime.enable_overlap_scheduler
+        ):
+            raise InputError(
+                "Log probabilities are not supported with the overlap"
+                " scheduler. Start the server with"
+                " --no-enable-overlap-scheduler to use logprobs."
+            )
+
         # When the orchestrator has already tokenized the prompt for
         # KV cache-aware routing, pass the token IDs directly so MAX Serve
         # skips re-tokenization. ``messages`` and ``prompt`` are mutually
@@ -1680,6 +1690,19 @@ async def openai_create_completion(
             completion_request.model,
         )
 
+        pipeline_config = get_app_pipeline_config(request.app)
+
+        if (
+            completion_request.logprobs is not None
+            and completion_request.logprobs != 0
+            and pipeline_config.runtime.enable_overlap_scheduler
+        ):
+            raise InputError(
+                "Log probabilities are not supported with the overlap"
+                " scheduler. Start the server with"
+                " --no-enable-overlap-scheduler to use logprobs."
+            )
+
         response_generator = OpenAICompletionResponseGenerator(pipeline)
         prompts = get_prompts_from_openai_request(completion_request.prompt)
         token_requests = []
@@ -1702,9 +1725,7 @@ async def openai_create_completion(
                     stop_token_ids=completion_request.stop_token_ids,
                     stop=_convert_stop(completion_request.stop),
                 ),
-                sampling_params_defaults=get_app_pipeline_config(
-                    request.app
-                ).model.sampling_params_defaults,
+                sampling_params_defaults=pipeline_config.model.sampling_params_defaults,
             )
             tgr = TextGenerationRequest(
                 # Generate a unique request_id for each prompt in the request
