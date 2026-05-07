@@ -20,6 +20,7 @@ import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from max.benchmark.benchmark_shared.config import SamplingConfig
 from max.benchmark.benchmark_shared.datasets.types import (
     ChatSession,
     SessionMessage,
@@ -143,17 +144,15 @@ def test_chat_session_driver_forwards_sampling_params() -> None:
             request_counter=request_counter,
             chat_session=chat_session,
             max_chat_len=4096,
-            temperature=0.7,
-            top_p=0.9,
-            top_k=50,
+            sampling=SamplingConfig(temperature=0.7, top_p=0.9, top_k=50),
         )
 
     asyncio.run(run_test())
 
     assert len(captured_inputs) == 1
-    assert captured_inputs[0].temperature == 0.7
-    assert captured_inputs[0].top_p == 0.9
-    assert captured_inputs[0].top_k == 50
+    assert captured_inputs[0].sampling.temperature == 0.7
+    assert captured_inputs[0].sampling.top_p == 0.9
+    assert captured_inputs[0].sampling.top_k == 50
 
 
 def test_chat_session_driver_run_prefix_prepends_first_turn() -> None:
@@ -196,9 +195,7 @@ def test_chat_session_driver_run_prefix_prepends_first_turn() -> None:
             request_counter=request_counter,
             chat_session=chat_session,
             max_chat_len=4096,
-            temperature=None,
-            top_p=None,
-            top_k=None,
+            sampling=SamplingConfig(),
             run_prefix="RUN-UUID: ",
             run_prefix_len=4,
         )
@@ -233,9 +230,7 @@ def test_prefix_turns_excluded_from_results() -> None:
             request_counter=counter,
             chat_session=session,
             max_chat_len=4096,
-            temperature=None,
-            top_p=None,
-            top_k=None,
+            sampling=SamplingConfig(),
         )
 
     outputs = asyncio.run(run_test())
@@ -256,9 +251,7 @@ def test_prefix_turns_dont_count_against_max_requests() -> None:
             request_counter=counter,
             chat_session=session,
             max_chat_len=4096,
-            temperature=None,
-            top_p=None,
-            top_k=None,
+            sampling=SamplingConfig(),
         )
         return outputs, len(driver.calls), counter.total_sent_requests
 
@@ -288,9 +281,7 @@ def test_prefix_turns_no_server_or_delays() -> None:
                 request_counter=counter,
                 chat_session=session,
                 max_chat_len=4096,
-                temperature=None,
-                top_p=None,
-                top_k=None,
+                sampling=SamplingConfig(),
             )
         return len(driver.calls)
 
@@ -316,9 +307,7 @@ def test_prefix_turns_zero_is_noop() -> None:
             request_counter=counter,
             chat_session=session,
             max_chat_len=4096,
-            temperature=None,
-            top_p=None,
-            top_k=None,
+            sampling=SamplingConfig(),
         )
 
     outputs = asyncio.run(run_test())
@@ -341,9 +330,7 @@ def test_prime_prefix_turns_only_primes_sessions_with_prefix() -> None:
             model_id="test",
             api_url="http://localhost:8000/v1/chat/completions",
             max_chat_len=4096,
-            temperature=None,
-            top_p=None,
-            top_k=None,
+            sampling=SamplingConfig(),
         )
 
     asyncio.run(run())
@@ -367,9 +354,7 @@ def test_prime_prefix_turns_respects_max_sessions() -> None:
             model_id="test",
             api_url="http://localhost:8000/v1/chat/completions",
             max_chat_len=4096,
-            temperature=None,
-            top_p=None,
-            top_k=None,
+            sampling=SamplingConfig(),
             max_sessions=2,
         )
 
@@ -392,9 +377,7 @@ def test_prime_prefix_turns_noop_without_prefix_sessions() -> None:
             model_id="test",
             api_url="http://localhost:8000/v1/chat/completions",
             max_chat_len=4096,
-            temperature=None,
-            top_p=None,
-            top_k=None,
+            sampling=SamplingConfig(),
         )
 
     asyncio.run(run())

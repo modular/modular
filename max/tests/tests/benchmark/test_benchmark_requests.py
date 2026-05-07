@@ -20,6 +20,7 @@ from typing import Any
 
 import pytest
 from max.benchmark.benchmark_serving import validate_task_and_endpoint
+from max.benchmark.benchmark_shared.config import SamplingConfig
 from max.benchmark.benchmark_shared.datasets.types import (
     ChatMessage,
     PixelGenerationImageOptions,
@@ -87,9 +88,7 @@ class TestRequestFuncInput:
         request_input = RequestFuncInput(
             model="test-model",
             session_id=None,
-            temperature=None,
-            top_p=None,
-            top_k=None,
+            sampling=SamplingConfig(),
             prompt="Test prompt",
             images=[],
             api_url="http://localhost:8000/completions",
@@ -106,18 +105,16 @@ class TestRequestFuncInput:
         assert request_input.ignore_eos is False
         assert request_input.model == "test-model"
         assert request_input.session_id is None
-        assert request_input.temperature is None
-        assert request_input.top_p is None
-        assert request_input.top_k is None
+        assert request_input.sampling.temperature is None
+        assert request_input.sampling.top_p is None
+        assert request_input.sampling.top_k is None
 
     def test_request_func_input_with_optional_fields(self) -> None:
         """Test creating a RequestFuncInput with optional fields."""
         request_input = RequestFuncInput(
             model="test-model",
             session_id="session-123",
-            temperature=0.7,
-            top_p=0.9,
-            top_k=50,
+            sampling=SamplingConfig(temperature=0.7, top_p=0.9, top_k=50),
             prompt="Test prompt",
             images=[],
             api_url="http://localhost:8000/completions",
@@ -127,9 +124,9 @@ class TestRequestFuncInput:
         )
 
         assert request_input.session_id == "session-123"
-        assert request_input.temperature == 0.7
-        assert request_input.top_p == 0.9
-        assert request_input.top_k == 50
+        assert request_input.sampling.temperature == 0.7
+        assert request_input.sampling.top_p == 0.9
+        assert request_input.sampling.top_k == 50
 
     def test_request_func_input_with_chat_messages(self) -> None:
         """Test creating a RequestFuncInput with chat messages."""
@@ -147,9 +144,7 @@ class TestRequestFuncInput:
         request_input = RequestFuncInput(
             model="test-model",
             session_id=None,
-            temperature=None,
-            top_p=None,
-            top_k=None,
+            sampling=SamplingConfig(),
             prompt=messages,
             images=[],
             api_url="http://localhost:8000/chat/completions",
@@ -344,9 +339,7 @@ class TestRequestDriver:
         request_input = RequestFuncInput(
             model="test-model",
             session_id=None,
-            temperature=None,
-            top_p=None,
-            top_k=None,
+            sampling=SamplingConfig(),
             prompt="Test prompt",
             images=[],
             api_url="http://localhost:8000/completions",
@@ -393,9 +386,7 @@ class TestRequestDriver:
         request_input = RequestFuncInput(
             model="test-model",
             session_id=None,
-            temperature=None,
-            top_p=None,
-            top_k=None,
+            sampling=SamplingConfig(),
             prompt="Test prompt",
             images=[],
             api_url="http://localhost:8000/chat/completions",
@@ -442,9 +433,7 @@ class TestRequestDriver:
         request_input = RequestFuncInput(
             model="test-model",
             session_id=None,
-            temperature=None,
-            top_p=None,
-            top_k=None,
+            sampling=SamplingConfig(),
             prompt="Think step by step",
             images=[],
             api_url="http://localhost:8000/chat/completions",
@@ -495,9 +484,7 @@ class TestRequestDriver:
         request_input = RequestFuncInput(
             model="test-model",
             session_id=None,
-            temperature=None,
-            top_p=None,
-            top_k=None,
+            sampling=SamplingConfig(),
             prompt="Test",
             images=[],
             api_url="http://localhost:8000/chat/completions",
@@ -544,9 +531,7 @@ class TestRequestDriver:
         request_input = RequestFuncInput(
             model="test-model",
             session_id=None,
-            temperature=None,
-            top_p=None,
-            top_k=None,
+            sampling=SamplingConfig(),
             prompt="Test prompt",
             images=[],
             api_url="http://localhost:8000/completions",
@@ -583,9 +568,7 @@ class TestRequestDriver:
         request_input = RequestFuncInput(
             model="test-model",
             session_id=None,
-            temperature=None,
-            top_p=None,
-            top_k=None,
+            sampling=SamplingConfig(),
             prompt="Test prompt",
             images=[],
             api_url="http://localhost:8000/generate_stream",
@@ -624,9 +607,7 @@ class TestRequestDriver:
         request_input = RequestFuncInput(
             model="test-model",
             session_id=None,
-            temperature=None,
-            top_p=None,
-            top_k=None,
+            sampling=SamplingConfig(),
             prompt="Test prompt",
             images=[],
             api_url="http://localhost:8000/generate_stream",

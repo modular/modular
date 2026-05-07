@@ -28,6 +28,7 @@ except ImportError:
     from taskgroup import TaskGroup  # Python < 3.11 backport
 
 import numpy as np
+from max.benchmark.benchmark_shared.config import SamplingConfig
 from max.benchmark.benchmark_shared.datasets import ChatSession
 from max.benchmark.benchmark_shared.datasets.types import TextContentBlock
 from max.benchmark.benchmark_shared.lora_benchmark_manager import (
@@ -58,9 +59,7 @@ async def chat_session_driver(
     request_counter: RequestCounter,
     chat_session: ChatSession,
     max_chat_len: int,
-    temperature: float | None,
-    top_p: float | None,
-    top_k: int | None,
+    sampling: SamplingConfig,
     ignore_first_turn_stats: bool = False,
     benchmark_should_end_time: int | None = None,
     randomize_session_start: bool = False,
@@ -70,9 +69,7 @@ async def chat_session_driver(
     request_func_input = RequestFuncInput(
         model=model_id,
         session_id=str(chat_session.id),
-        temperature=temperature,
-        top_p=top_p,
-        top_k=top_k,
+        sampling=sampling,
         prompt=[],
         images=[],
         api_url=api_url,
@@ -209,9 +206,7 @@ async def prime_prefix_turns(
     model_id: str,
     api_url: str,
     max_chat_len: int,
-    temperature: float | None,
-    top_p: float | None,
-    top_k: int | None,
+    sampling: SamplingConfig,
     max_sessions: int | None = None,
 ) -> None:
     """Prime the server's KV cache for sessions with prefix turns.
@@ -268,9 +263,7 @@ async def prime_prefix_turns(
             prime_input = RequestFuncInput(
                 model=model_id,
                 session_id=str(session.id),
-                temperature=temperature,
-                top_p=top_p,
-                top_k=top_k,
+                sampling=sampling,
                 prompt=message_history,
                 images=[],
                 api_url=api_url,
@@ -298,9 +291,7 @@ async def run_multiturn_benchmark(
     lora_manager: LoRABenchmarkManager | None,
     warmup_delay_ms: float,
     max_concurrency: int | None,
-    temperature: float | None,
-    top_p: float | None,
-    top_k: int | None,
+    sampling: SamplingConfig,
     randomize_session_start: bool = False,
     warmup_to_steady_state: bool = False,
     warmup_oversample_factor: int = 0,
@@ -337,9 +328,7 @@ async def run_multiturn_benchmark(
                 request_counter=request_counter,
                 chat_session=chat_session,
                 max_chat_len=tokenizer.model_max_length,
-                temperature=temperature,
-                top_p=top_p,
-                top_k=top_k,
+                sampling=sampling,
                 ignore_first_turn_stats=ignore_first_turn_stats,
                 benchmark_should_end_time=benchmark_should_end_time,
                 randomize_session_start=randomize_session_start,
@@ -442,9 +431,7 @@ async def run_kv_cache_stress_benchmark(
     ignore_first_turn_stats: bool,
     lora_manager: LoRABenchmarkManager | None,
     warmup_delay_ms: float,
-    temperature: float | None,
-    top_p: float | None,
-    top_k: int | None,
+    sampling: SamplingConfig,
     randomize_session_start: bool = False,
     warmup_to_steady_state: bool = False,
     warmup_oversample_factor: int = 0,
@@ -526,9 +513,7 @@ async def run_kv_cache_stress_benchmark(
                 request_counter=request_counter,
                 chat_session=chat_session,
                 max_chat_len=tokenizer.model_max_length,
-                temperature=temperature,
-                top_p=top_p,
-                top_k=top_k,
+                sampling=sampling,
                 ignore_first_turn_stats=ignore_first_turn_stats,
                 benchmark_should_end_time=benchmark_should_end_time,
                 randomize_session_start=randomize_session_start,

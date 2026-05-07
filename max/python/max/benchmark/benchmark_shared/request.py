@@ -34,7 +34,7 @@ from pydantic import BaseModel
 from tqdm.asyncio import tqdm
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
-from .config import PIXEL_GENERATION_TASKS, BenchmarkTask
+from .config import PIXEL_GENERATION_TASKS, BenchmarkTask, SamplingConfig
 from .datasets.types import (
     ChatMessage,
     OpenAIImage,
@@ -90,15 +90,25 @@ class BaseRequestFuncInput(ABC):
         """Get the output type for the request function input."""
 
 
+def _apply_sampling_to_request_payload(
+    payload: dict[str, Any], sampling: SamplingConfig
+) -> None:
+    """Merge non-None OpenAI-style sampling fields from *sampling* into *payload*."""
+    if sampling.temperature is not None:
+        payload["temperature"] = sampling.temperature
+    if sampling.top_k is not None:
+        payload["top_k"] = sampling.top_k
+    if sampling.top_p is not None:
+        payload["top_p"] = sampling.top_p
+
+
 # TODO: We shouldn't have to maintain two separate RequestFuncInput classes for
 # text generation and TTS benchmarks respectively.
 @dataclass
 class RequestFuncInput(BaseRequestFuncInput):
     """Request function input for text generation benchmarks."""
 
-    temperature: float | None
-    top_p: float | None
-    top_k: int | None
+    sampling: SamplingConfig
     prompt: str | list[ChatMessage]
     images: list[OpenAIImage]
     api_url: str
@@ -128,9 +138,7 @@ class PixelGenerationRequestFuncInput(BaseRequestFuncInput):
 class TTSRequestFuncInput(BaseRequestFuncInput):
     """Request function input for TTS (text-to-speech) benchmarks."""
 
-    temperature: float | None
-    top_p: float | None
-    top_k: int | None
+    sampling: SamplingConfig
     request_index: int
     tts_request: SampleTTSRequest
     is_streaming_mode: bool
@@ -408,12 +416,9 @@ class TRTLLMRequestDriver(RequestDriver):
 
             if request_func_input.max_tokens is not None:
                 payload["max_tokens"] = request_func_input.max_tokens
-            if request_func_input.temperature is not None:
-                payload["temperature"] = request_func_input.temperature
-            if request_func_input.top_k is not None:
-                payload["top_k"] = request_func_input.top_k
-            if request_func_input.top_p is not None:
-                payload["top_p"] = request_func_input.top_p
+            _apply_sampling_to_request_payload(
+                payload, request_func_input.sampling
+            )
 
             output = RequestFuncOutput()
             output.prompt_len = request_func_input.prompt_len
@@ -645,12 +650,7 @@ class OpenAICompletionsRequestDriver(RequestDriver):
 
         if request_func_input.max_tokens is not None:
             payload["max_tokens"] = request_func_input.max_tokens
-        if request_func_input.temperature is not None:
-            payload["temperature"] = request_func_input.temperature
-        if request_func_input.top_k is not None:
-            payload["top_k"] = request_func_input.top_k
-        if request_func_input.top_p is not None:
-            payload["top_p"] = request_func_input.top_p
+        _apply_sampling_to_request_payload(payload, request_func_input.sampling)
 
         headers = {
             "Authorization": f"Bearer {os.environ.get('OPENAI_API_KEY')}"
@@ -706,12 +706,7 @@ class OpenAIChatCompletionsRequestDriver(RequestDriver):
 
         if request_func_input.max_tokens is not None:
             payload["max_tokens"] = request_func_input.max_tokens
-        if request_func_input.temperature is not None:
-            payload["temperature"] = request_func_input.temperature
-        if request_func_input.top_k is not None:
-            payload["top_k"] = request_func_input.top_k
-        if request_func_input.top_p is not None:
-            payload["top_p"] = request_func_input.top_p
+        _apply_sampling_to_request_payload(payload, request_func_input.sampling)
         if request_func_input.response_format is not None:
             # Convert TypedDict to plain dict so mypy accepts the assignment into
             # payload (since a TypedDict is stricter than a dict[str, Any]).

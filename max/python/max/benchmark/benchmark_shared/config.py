@@ -13,6 +13,8 @@
 
 """Benchmark configuration classes with inheritance structure for MAX benchmarks."""
 
+from __future__ import annotations
+
 from collections.abc import Mapping, Sequence
 from typing import Literal
 
@@ -847,6 +849,17 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
         if isinstance(value, str):
             return parse_comma_separated(value, float)
         return value
+
+    @property
+    def sampling(self) -> SamplingConfig:
+        """OpenAI-style completion sampling from flat ``temperature`` / ``top_p`` / ``top_k``."""
+        # TODO: We should just embed SamplingConfig directly.  This may change
+        # the CLI interface, so we'd need to find all callers to update them.
+        return SamplingConfig(
+            temperature=self.temperature,
+            top_p=self.top_p,
+            top_k=self.top_k,
+        )
 
 
 # ---------------------------------------------------------------------------
