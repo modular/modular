@@ -97,6 +97,12 @@ class HardwareConfig(ConfigFileModel):
 class SamplingConfig(ConfigFileModel):
     """Configuration class for sampling options."""
 
+    temperature: float | None = Field(default=None)
+    """Sampling temperature. Default: None (use model / pipeline defaults)."""
+
+    top_p: float | None = Field(default=None)
+    """Nucleus sampling cumulative probability threshold. Default: None (use defaults)."""
+
     top_k: int | None = Field(default=None)
     """Limits the sampling to the K most probable tokens. Default: None (no sampling)."""
 

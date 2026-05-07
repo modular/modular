@@ -260,7 +260,7 @@ async def all_tokens(
     pbar: tqdm,
     request_id: int,
     request_payload: RequestPayload,
-    top_k: int | None,
+    sampling_config: SamplingConfig,
     config: PipelineConfig,
 ) -> tuple[str, list[TokenGeneratorOutput]]:
     """Generate all tokens for a request."""
@@ -273,7 +273,9 @@ async def all_tokens(
     params = SamplingParamsInput(
         max_new_tokens=output_len,
         ignore_eos=True,
-        top_k=top_k,
+        temperature=sampling_config.temperature,
+        top_p=sampling_config.top_p,
+        top_k=sampling_config.top_k,
     )
     sampling_params = SamplingParams.from_input_and_generation_config(
         params,
@@ -341,7 +343,7 @@ async def run_max_async(
     tokenizer: TextTokenizer,
     show_text: bool,
     pipeline_task: PipelineTask,
-    top_k: int | None,
+    sampling_config: SamplingConfig,
 ) -> tuple[float, list[int]]:
     model_worker_interface = ZmqModelWorkerInterface[
         TextAndVisionContext | TextContext, TextGenerationOutput
@@ -375,7 +377,13 @@ async def run_max_async(
         if pipeline_task == PipelineTask.TEXT_GENERATION:
             all_tokens_tasks = [
                 all_tokens(
-                    model_name, pipeline, pbar, i, request, top_k, config
+                    model_name,
+                    pipeline,
+                    pbar,
+                    i,
+                    request,
+                    sampling_config,
+                    config,
                 )
                 for i, request in enumerate(requests)
             ]
@@ -559,7 +567,7 @@ def run(benchmark_config: ThroughputBenchmarkConfig) -> None:
                     tokenizer=model_tokenizer,
                     show_text=benchmark_config.show_text,
                     pipeline_task=benchmark_config.pipeline_task,
-                    top_k=benchmark_config.sampling.top_k,
+                    sampling_config=benchmark_config.sampling,
                 )
             )
         else:
