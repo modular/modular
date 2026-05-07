@@ -470,7 +470,7 @@ struct Variant[*Ts: Movable](
     comptime Result = Variant[String, Error]
 
     def process_data(data: String) -> Result:
-        if len(data) == 0:
+        if data.byte_length() == 0:
             return Result(Error("Empty data"))
         return Result(String("Processed: ", data))
 

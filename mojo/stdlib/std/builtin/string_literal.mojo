@@ -308,7 +308,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
             Query the length of a string, in bytes and Unicode codepoints:
 
             ```mojo
-            %# from testing import assert_equal
+            from std.testing import assert_equal
 
             var s = StringSlice("ನಮಸ್ಕಾರ")
             assert_equal(s.count_codepoints(), 7)
@@ -319,7 +319,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
             Unicode codepoint length:
 
             ```mojo
-            %# from testing import assert_equal
+            from std.testing import assert_equal
 
             var s = StringSlice("abc")
             assert_equal(s.count_codepoints(), 3)
@@ -330,7 +330,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
             the length in Unicode codepoints, not grapheme clusters:
 
             ```mojo
-            %# from testing import assert_equal
+            from std.testing import assert_equal
 
             var s = StringSlice("á")
             assert_equal(s.count_codepoints(), 2)

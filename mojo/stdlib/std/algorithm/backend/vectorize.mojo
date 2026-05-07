@@ -62,7 +62,7 @@ def vectorize[
 
         def closure[width: Int](i: Int) {mut}:
             print("storing", width, "els at pos", i)
-            p.store[width=width](i, i)
+            p.store[width=width](i, Int32(i))
 
         vectorize[simd_width](size, closure)
         print(p.load[width=simd_width]())

@@ -147,8 +147,8 @@ def isdir[PathLike: os.PathLike, //](path: PathLike) -> Bool:
     ```mojo
     from std.os.path import isdir
 
-    isdir("/tmp")       # returns True
-    isdir("noexist")    # returns False
+    print(isdir("/tmp")) # True
+    print(isdir("noexist")) # False
     ```
     """
     var fspath = path.__fspath__()
@@ -182,8 +182,8 @@ def isfile[PathLike: os.PathLike, //](path: PathLike) -> Bool:
     ```mojo
     from std.os.path import isfile
 
-    isfile("/etc/hosts")  # returns True
-    isfile("/tmp")        # returns False (it's a directory)
+    print(isfile("/etc/hosts")) # True
+    print(isfile("/tmp")) # False (it's a directory)
     ```
     """
     var fspath = path.__fspath__()
@@ -216,7 +216,7 @@ def islink[PathLike: os.PathLike, //](path: PathLike) -> Bool:
     ```mojo
     from std.os.path import islink
 
-    islink("/etc/hosts")  # returns False (regular file, not a symlink)
+    print(islink("/etc/hosts"))  # False (regular file, not a symlink)
     ```
     """
     try:
@@ -246,8 +246,8 @@ def dirname[PathLike: os.PathLike, //](path: PathLike) -> String:
     ```mojo
     from std.os.path import dirname
 
-    dirname("/a/b/c.txt")  # returns "/a/b"
-    dirname("c.txt")       # returns ""
+    print(dirname("/a/b/c.txt")) # "/a/b"
+    print(dirname("c.txt")) # ""
     ```
     """
     var fspath = path.__fspath__()
@@ -340,8 +340,8 @@ def exists[PathLike: os.PathLike, //](path: PathLike) -> Bool:
     ```mojo
     from std.os.path import exists
 
-    exists("/tmp")       # returns True
-    exists("noexist")    # returns False
+    print(exists("/tmp")) # True
+    print(exists("noexist")) # False
     ```
     """
     try:
@@ -420,8 +420,8 @@ def is_absolute[PathLike: os.PathLike, //](path: PathLike) -> Bool:
     ```mojo
     from std.os.path import is_absolute
 
-    is_absolute("/usr/bin")   # returns True
-    is_absolute("relative")   # returns False
+    print(is_absolute("/usr/bin")) # True
+    print(is_absolute("relative")) # False
     ```
     """
     return path.__fspath__().startswith(sep)
@@ -452,8 +452,8 @@ def join(var path: String, *paths: String) -> String:
     ```mojo
     from std.os.path import join
 
-    join("a", "b", "c")     # returns "a/b/c"
-    join("a", "/b", "c")    # returns "/b/c" (absolute resets)
+    print(join("a", "b", "c")) # "a/b/c"
+    print(join("a", "/b", "c")) # "/b/c" (absolute resets)
     ```
     """
     var joined_path = path
@@ -496,8 +496,8 @@ def split[PathLike: os.PathLike, //](path: PathLike) -> Tuple[String, String]:
     ```mojo
     from std.os.path import split
 
-    split("/a/b/c.txt")  # returns ("/a/b", "c.txt")
-    split("/a/b/")       # returns ("/a/b", "")
+    print(split("/a/b/c.txt")) # ("/a/b", "c.txt")
+    print(split("/a/b/")) # ("/a/b", "")
     ```
     """
     var fspath = path.__fspath__()
@@ -514,7 +514,7 @@ def basename[PathLike: os.PathLike, //](path: PathLike) -> String:
     ```mojo
     from std.os.path import basename
 
-    basename("a/path/foo.txt")  # returns "foo.txt"
+    print(basename("a/path/foo.txt")) # "foo.txt"
     ```
 
     Parameters:
@@ -622,8 +622,8 @@ def split_extension[
     ```mojo
     from std.os.path import split_extension
 
-    split_extension("foo.tar.gz")  # returns ("foo.tar", ".gz")
-    split_extension("README")      # returns ("README", "")
+    print(split_extension("foo.tar.gz")) # ("foo.tar", ".gz")
+    print(split_extension("README")) # ("README", "")
     ```
     """
     return _split_extension(path.__fspath__(), sep, "", ".")

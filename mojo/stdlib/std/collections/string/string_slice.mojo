@@ -1257,7 +1257,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         Example:
 
         ```mojo
-        %# from testing import assert_equal
+        from testing import assert_equal
         # "café" with combining accent: c, a, f, e + combining acute
         var s = StringSlice("cafe\\u{0301}")
         var count = 0
@@ -1425,7 +1425,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         Example:
 
         ```mojo
-        %# from testing import assert_equal
+        from testing import assert_equal
         var s = StringSlice("Hello")
         assert_equal(s.count_graphemes(), 5)
         ```
@@ -1475,7 +1475,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
             Query the length of a string, in bytes and Unicode codepoints:
 
             ```mojo
-            %# from testing import assert_equal
+            from std.testing import assert_equal
 
             var s = StringSlice("ನಮಸ್ಕಾರ")
             assert_equal(s.count_codepoints(), 7)
@@ -1486,7 +1486,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
             Unicode codepoint length:
 
             ```mojo
-            %# from testing import assert_equal
+            from std.testing import assert_equal
 
             var s = StringSlice("abc")
             assert_equal(s.count_codepoints(), 3)
@@ -1497,7 +1497,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
             the length in Unicode codepoints, not grapheme clusters:
 
             ```mojo
-            %# from testing import assert_equal
+            from std.testing import assert_equal
 
             var s = StringSlice("á")
             assert_equal(s.count_codepoints(), 2)
@@ -1826,7 +1826,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         Check if a string contains only whitespace:
 
         ```mojo
-        %# from testing import assert_true, assert_false
+        from std.testing import assert_true, assert_false
 
         # An empty string is not considered to contain only whitespace chars:
         assert_false(StringSlice("").isspace())

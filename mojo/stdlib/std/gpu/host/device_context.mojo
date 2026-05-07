@@ -3564,6 +3564,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
 
     ```text
     from std.runtime.asyncrt import DeviceContextPtr
+    from compiler import register
 
     @register("custom_op")
     struct CustomOp:
