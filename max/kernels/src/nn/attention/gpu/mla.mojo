@@ -960,6 +960,8 @@ def mla_decoding[
             q_depth=depth,
             output_depth=depth_v,
             mla_mode=True,
+            # K==V in MLA — load once, let PV reuse K's SMEM.
+            mla_kv_alias=True,
         ](
             output_ptr + output_batch_offset,
             q_ptr + q_batch_offset,

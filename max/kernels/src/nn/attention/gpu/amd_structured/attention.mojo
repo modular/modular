@@ -80,6 +80,11 @@ struct Attention[
     cache_depth: Int = config.depth,
     output_depth: Int = config.depth,
     mla_mode: Bool = False,
+    # MLA decode: alias V onto K's SMEM (skip V DMA); K loaded unswizzled.
+    # Requires `shared_kv=True` in `AMDStructuredConfig` — that's where the
+    # `v_smem_ptr` is bitcast'd from `k_smem_ptr` (no separate V allocation).
+    # Enforced via `comptime assert` in `__init__`.
+    mla_kv_alias: Bool = False,
 ]:
     # Block/warp dimensions from MHAConfig.
     comptime BM = Self.config.block_m()
@@ -272,6 +277,15 @@ struct Attention[
         MutExternalOrigin,
         address_space=AddressSpace.SHARED,
     ]
+    # Dedicated warp-reduction scratch SMEM. Decoupling from K SMEM
+    # avoids races between softmax's scratch ds_writes and other warps'
+    # in-flight K ds_reads (the prior overlay only happened to be safe
+    # for non-kv-alias decode because V's later DMA wiped the corruption).
+    var warp_scratch_ptr: UnsafePointer[
+        Scalar[Self.accum_type],
+        MutExternalOrigin,
+        address_space=AddressSpace.SHARED,
+    ]
 
     var q_buffer: Self.QRegisterBufferType
     var output_tile: TileTensor[
@@ -324,6 +338,7 @@ struct Attention[
         MutAnyOrigin,
         address_space=AddressSpace.SHARED,
     ]
+    comptime _warp_scratch_size = (2 * Int(Self.num_warps_n) * Int(Self.BM))
 
     # --- Config delegation (static methods) ---
 
@@ -389,6 +404,13 @@ struct Attention[
         start_pos: Int,
         cache_start_pos: Int = 0,
     ):
+        # `mla_kv_alias` relies on the `shared_kv` aliasing below to make
+        # `v_smem_ptr` a bitcast view of `k_smem_ptr`; without it we'd
+        # double-allocate SMEM and PV would read from an empty V buffer.
+        comptime assert (
+            not Self.mla_kv_alias or Self.amd_structured_config.shared_kv
+        ), "mla_kv_alias=True requires shared_kv=True"
+
         self.softmax = type_of(self.softmax)()
         self.out_reg_buffer = Self.OutputRegisterBufferType()
         self.out_reg_buffer.zero()
@@ -406,6 +428,12 @@ struct Attention[
             Self.v_t.dtype,
             address_space=AddressSpace.SHARED,
             alignment=Self._smem_alignment,
+        ]()
+
+        self.warp_scratch_ptr = stack_allocation[
+            Self._warp_scratch_size,
+            Self.accum_type,
+            address_space=AddressSpace.SHARED,
         ]()
 
         self.p_reg_buffer = Self.PRegisterBufferType(
@@ -640,26 +668,10 @@ struct Attention[
 
     @always_inline
     def warp_scratch_tile(self) -> Self._WarpScratchTileType:
-        """Warp-reduction scratch tile (overlays K SMEM for decode).
-
-        For decode (`token_gen=True`) the scratch reinterprets the K SMEM
-        as `accum_type`. For prefill the scratch is never dereferenced
-        (num_rowwise_warps == 1), so a null-backed view is safe.
-        """
-        comptime if Self.token_gen:
-            return Self._WarpScratchTileType(
-                self.k_smem_ptr.bitcast[Scalar[Self.accum_type]](),
-                Self._warp_scratch_layout,
-            )
-        else:
-            return Self._WarpScratchTileType(
-                UnsafePointer[
-                    Scalar[Self.accum_type],
-                    MutAnyOrigin,
-                    address_space=AddressSpace.SHARED,
-                ](_unsafe_null=()),
-                Self._warp_scratch_layout,
-            )
+        """Warp-reduction scratch tile (decode only)."""
+        return Self._WarpScratchTileType(
+            self.warp_scratch_ptr, Self._warp_scratch_layout
+        )
 
     @always_inline
     def online_softmax[stage: Int = 0](mut self):
