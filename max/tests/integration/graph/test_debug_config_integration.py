@@ -450,3 +450,129 @@ class TestReaderMigration:
             env_overrides={"MODULAR_DEBUG": "source-tracebacks"},
         )
         _assert_pass(result)
+
+    def test_ir_output_dir_via_modular_debug_dumps_ir(
+        self, tmp_path: Path
+    ) -> None:
+        """Compiling a graph under `MODULAR_DEBUG=ir-output-dir=...`
+        should write per-stage MLIR files into the configured directory.
+
+        Regression test for GEX-3684: prior to the fix the option was
+        plumbed into `InferenceSession.debug.ir_output_dir` but no
+        compiler stage actually consulted it, so files were silently
+        not written.
+        """
+        ir_dir = tmp_path / "ir-dump"
+        ir_dir.mkdir()
+        # Disable the MEF cache so the gc-pipeline actually runs (and
+        # therefore writes IR); a previous test in the same shard could
+        # otherwise have cached an MEF for the same graph and skipped
+        # compilation entirely.
+        result = _run_script(
+            """\
+            import numpy as np
+            from max.driver import CPU
+            from max.dtype import DType
+            from max.engine import InferenceSession
+            from max.graph import DeviceRef, Graph, TensorType
+
+            graph = Graph(
+                "tiny_add_modular_debug_dump",
+                forward=lambda x, y: x + y,
+                input_types=[
+                    TensorType(
+                        dtype=DType.float32,
+                        shape=(4,),
+                        device=DeviceRef.CPU(),
+                    ),
+                    TensorType(
+                        dtype=DType.float32,
+                        shape=(4,),
+                        device=DeviceRef.CPU(),
+                    ),
+                ],
+            )
+            session = InferenceSession(devices=[CPU()])
+            model = session.load(graph)
+            model.execute(
+                np.ones((4,), dtype=np.float32),
+                np.ones((4,), dtype=np.float32),
+            )
+            print("PASS")
+            """,
+            env_overrides={
+                "MODULAR_DEBUG": f"ir-output-dir={ir_dir}",
+                "MODULAR_MAX_ENABLE_MODEL_IR_CACHE": "false",
+            },
+        )
+        _assert_pass(result)
+        files = sorted(p.name for p in ir_dir.iterdir())
+        assert files, (
+            "Expected per-stage IR dumps in ir-output-dir, but found nothing.\n"
+            f"stdout: {result.stdout}\nstderr: {result.stderr}"
+        )
+        # The pipeline writes one file per stage with extensions like
+        # `.mo.mlir`, `.mo-pre-mogg.mlir`, `.mogg.mlir`, etc.  We just
+        # require at least one MLIR file landed.
+        assert any(name.endswith(".mlir") for name in files), (
+            f"Expected at least one .mlir file in {ir_dir}, got {files}"
+        )
+
+    def test_ir_output_dir_via_legacy_temps_dir_still_works(
+        self, tmp_path: Path
+    ) -> None:
+        """`MODULAR_MAX_TEMPS_DIR` continues to drive IR dumping after
+        the migration to `max-debug.ir-output-dir`.
+        """
+        ir_dir = tmp_path / "legacy-ir-dump"
+        ir_dir.mkdir()
+        # Disable the MEF cache so the gc-pipeline actually runs (and
+        # therefore writes IR); a previous test in the same shard could
+        # otherwise have cached an MEF for the same graph and skipped
+        # compilation entirely.
+        result = _run_script(
+            """\
+            import numpy as np
+            from max.driver import CPU
+            from max.dtype import DType
+            from max.engine import InferenceSession
+            from max.graph import DeviceRef, Graph, TensorType
+
+            graph = Graph(
+                "tiny_add_legacy_dump",
+                forward=lambda x, y: x + y,
+                input_types=[
+                    TensorType(
+                        dtype=DType.float32,
+                        shape=(4,),
+                        device=DeviceRef.CPU(),
+                    ),
+                    TensorType(
+                        dtype=DType.float32,
+                        shape=(4,),
+                        device=DeviceRef.CPU(),
+                    ),
+                ],
+            )
+            session = InferenceSession(devices=[CPU()])
+            model = session.load(graph)
+            model.execute(
+                np.ones((4,), dtype=np.float32),
+                np.ones((4,), dtype=np.float32),
+            )
+            print("PASS")
+            """,
+            env_overrides={
+                "MODULAR_MAX_TEMPS_DIR": str(ir_dir),
+                "MODULAR_MAX_ENABLE_MODEL_IR_CACHE": "false",
+            },
+        )
+        _assert_pass(result)
+        files = sorted(p.name for p in ir_dir.iterdir())
+        assert files, (
+            "Expected per-stage IR dumps under MODULAR_MAX_TEMPS_DIR.\n"
+            f"stdout: {result.stdout}\nstderr: {result.stderr}"
+        )
+        assert any(name.endswith(".mlir") for name in files), (
+            f"Expected at least one .mlir file in {ir_dir}, got {files}"
+        )

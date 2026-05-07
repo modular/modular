@@ -419,16 +419,23 @@ modular_py_test(
     name = "test_debug_config_integration",
     size = "medium",
     srcs = ["test_debug_config_integration.py"],
-    # The test spawns subprocesses that `import max.engine` / `max.graph`;
-    # the parent test file itself only references these modules inside
-    # subprocess script strings, so pydeps flags them as extra.
+    # The test spawns subprocesses that `import max.engine` / `max.graph` /
+    # `max.driver` / `max.dtype` / `numpy`; the parent test file itself only
+    # references these modules inside subprocess script strings, so pydeps
+    # flags them as extra.
     ignore_extra_deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
+        requirement("numpy"),
     ],
     deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
+        requirement("numpy"),
     ],
 )
 

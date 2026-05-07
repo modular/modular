@@ -45,6 +45,14 @@ This version is still a work in progress.
 
 ## Fixes
 
+- `MODULAR_DEBUG=ir-output-dir=<dir>` (and the equivalent
+  `[max-debug] ir-output-dir = <dir>` config-file entry and
+  `InferenceSession.debug.ir_output_dir = <dir>` Python setter) now
+  actually dumps per-stage MLIR files to the configured directory. The
+  option was previously parsed but no compiler stage consulted it, so
+  users had to fall back to the legacy `MODULAR_MAX_TEMPS_DIR` env var.
+  Both spellings are now honored.
+
 ## Mojo language
 
 For all the updates to the Mojo language, standard library, and tools,
