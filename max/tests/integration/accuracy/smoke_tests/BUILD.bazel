@@ -36,15 +36,12 @@ modular_py_binary(
     name = "smoke_test",
     testonly = True,
     srcs = ["smoke_test.py"],
-    data = ["//max/python/max/pipelines/architectures:recipe_configs"],
     imports = [".."],
     tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
         ":eval_runner",
         ":inference_server_harness",
         requirement("click"),
-        requirement("pydantic"),
-        requirement("pyyaml"),
         "//max/python/max/entrypoints:pipelines",
         "//max/tests/integration:hf_repo_lock",
     ],

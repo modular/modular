@@ -22,7 +22,7 @@ from max.driver import DeviceSpec, scan_available_devices
 
 logger = logging.getLogger("max.pipelines")
 
-DeviceHandleStr = Literal["cpu", "gpu", "gpu:all"]
+DeviceHandleStr = Literal["cpu", "gpu", "default", "gpu:all"]
 DeviceHandleList = list[int]
 DeviceHandle = DeviceHandleStr | DeviceHandleList
 
@@ -34,8 +34,8 @@ def normalize_device_specs_input(value: str | list[int]) -> DeviceHandle:
         value: The value provided as a string (e.g., "cpu", "gpu", "gpu:0,1,2")
 
     Returns:
-        ``"cpu"``, ``"gpu"``, ``"gpu:all"`` (every visible GPU), or a non-empty
-        list of GPU IDs as integers.
+        ``"cpu"``, ``"gpu"``, ``"default"``, ``"gpu:all"`` (every visible GPU), or a
+        non-empty list of GPU IDs as integers.
 
     Raises:
         ValueError: If the format is invalid
@@ -48,7 +48,7 @@ def normalize_device_specs_input(value: str | list[int]) -> DeviceHandle:
         return value
 
     lowered = value.lower()
-    if lowered in {"cpu", "gpu"}:
+    if lowered in {"cpu", "gpu", "default"}:
         return cast(DeviceHandleStr, lowered)
     # By this point, we should only be left with a list of GPU IDs in a
     # gpu:<id1>,<id2> format (prefix is matched case-insensitively).
@@ -71,13 +71,13 @@ def get_requested_gpu_ids(devices: DeviceHandle) -> list[int]:
     """Helper function to get requested GPU IDs from devices input.
 
     Args:
-        devices: The devices input: ``"gpu"``, ``"gpu:all"``, or a list of GPU
-            IDs.
+        devices: The devices input: ``"gpu"``, ``"default"``, ``"gpu:all"``,
+            or a list of GPU IDs.
 
     Returns:
         List of requested GPU IDs
     """
-    if devices == "gpu":
+    if devices == "gpu" or devices == "default":
         return [0]
     if devices == "gpu:all":
         available_devices = scan_available_devices()
@@ -125,6 +125,9 @@ def device_specs_from_normalized_device_handle(
     ]
     if devices == "cpu":
         return [DeviceSpec.cpu()]
+    if devices == "default" and len(available_gpu_ids) == 0:
+        logger.info("No GPUs available, falling back to CPU")
+        return [DeviceSpec.cpu()]
 
     requested_gpu_ids = get_requested_gpu_ids(devices=devices)
     if devices == "gpu:all" and len(requested_gpu_ids) == 0:
@@ -140,11 +143,6 @@ def device_specs_from_normalized_device_handle(
     return [DeviceSpec.accelerator(id=gpu_id) for gpu_id in requested_gpu_ids]
 
 
-def default_device_specs() -> list[DeviceSpec]:
-    """Return the first visible device, or no explicit device if none exist."""
-    return scan_available_devices()[:1]
-
-
 def _coerce_str(value: str) -> list[DeviceSpec]:
     """Coerce a single string into validated DeviceSpec objects."""
     normalized = normalize_device_specs_input(value)
@@ -154,6 +152,8 @@ def _coerce_str(value: str) -> list[DeviceSpec]:
         return [DeviceSpec.accelerator(0)]
     if normalized == "gpu:all":
         return device_specs_from_normalized_device_handle("gpu:all")
+    if normalized == "default":
+        return scan_available_devices()
     if isinstance(normalized, list):
         return [DeviceSpec.accelerator(id=gpu_id) for gpu_id in normalized]
     raise ValueError(f"Invalid device specs input: {value}")

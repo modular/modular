@@ -20,9 +20,8 @@ from typing import Any
 import click
 from click.testing import CliRunner
 from max.config import ConfigFileModel
-from max.entrypoints.cli.config import config_to_flag, pipeline_config_options
+from max.entrypoints.cli.config import config_to_flag
 from pydantic import Field
-from pytest import MonkeyPatch
 
 
 class _TestConfig(ConfigFileModel):
@@ -36,21 +35,6 @@ def _make_cli() -> click.Command:
     def cli(**config_kwargs: Any) -> None:
         config = _TestConfig(**config_kwargs)
         click.echo(f"{config.model_path}|{config.device_graph_capture}")
-
-    return cli
-
-
-def _make_pipeline_cli() -> click.Command:
-    @click.command()
-    @pipeline_config_options
-    def cli(**config_kwargs: Any) -> None:
-        click.echo(
-            "|".join(
-                key
-                for key in ("device_specs", "draft_device_specs")
-                if key in config_kwargs
-            )
-        )
 
     return cli
 
@@ -96,64 +80,3 @@ def test_cli_args_override_config_file(tmp_path: Path) -> None:
     )
     assert result.exit_code == 0, result.output
     assert result.output.strip() == "from-cli|True"
-
-
-def test_implicit_devices_do_not_override_config(
-    monkeypatch: MonkeyPatch,
-) -> None:
-    """Absent --devices leaves device_specs to config or model defaults."""
-    monkeypatch.setattr(
-        "max.entrypoints.cli.config.DevicesOptionType.device_specs",
-        staticmethod(lambda devices: [devices]),
-    )
-
-    result = CliRunner().invoke(_make_pipeline_cli(), ["--config-file", "x"])
-
-    assert result.exit_code == 0, result.output
-    assert result.output.strip() == ""
-
-
-def test_implicit_devices_use_default_without_config(
-    monkeypatch: MonkeyPatch,
-) -> None:
-    """Absent --devices lets MAXModelConfig use its Pydantic default."""
-    monkeypatch.setattr(
-        "max.entrypoints.cli.config.DevicesOptionType.device_specs",
-        staticmethod(lambda devices: [devices]),
-    )
-
-    result = CliRunner().invoke(_make_pipeline_cli(), [])
-
-    assert result.exit_code == 0, result.output
-    assert result.output.strip() == ""
-
-
-def test_explicit_devices_still_override_config_file(
-    monkeypatch: MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(
-        "max.entrypoints.cli.config.DevicesOptionType.device_specs",
-        staticmethod(lambda devices: [devices]),
-    )
-
-    result = CliRunner().invoke(
-        _make_pipeline_cli(),
-        ["--config-file", "x", "--devices", "gpu:0"],
-    )
-
-    assert result.exit_code == 0, result.output
-    assert result.output.strip() == "device_specs|draft_device_specs"
-
-
-def test_explicit_devices_inherited_by_draft_devices(
-    monkeypatch: MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(
-        "max.entrypoints.cli.config.DevicesOptionType.device_specs",
-        staticmethod(lambda devices: [devices]),
-    )
-
-    result = CliRunner().invoke(_make_pipeline_cli(), ["--devices", "gpu:0"])
-
-    assert result.exit_code == 0, result.output
-    assert result.output.strip() == "device_specs|draft_device_specs"
