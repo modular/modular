@@ -410,6 +410,49 @@ class TestPipelineConfigUtilityMethods:
         assert config.model.kv_cache.cache_dtype == DType.bfloat16
         assert config.draft_model.kv_cache.cache_dtype == DType.bfloat16
 
+    @mock_pipeline_config_resolve
+    def test_denoising_cache_survives_runtime_kwargs(self) -> None:
+        """``--taylorseer`` and friends must reach ``runtime.denoising_cache``
+        even when runtime kwargs are also present.
+
+        The CLI ``serve`` flow flattens every flag into ``PipelineConfig``
+        kwargs, so taylorseer/FBC/teacache fields and runtime fields like
+        ``max_batch_size`` arrive together. Cache fields must not be wiped
+        when the runtime config gets reconstructed from the runtime kwargs.
+        """
+        kwargs = {
+            "model_path": "test/model",
+            # DenoisingCacheConfig fields (--taylorseer etc.)
+            "taylorseer": True,
+            "taylorseer_cache_interval": 5,
+            "taylorseer_warmup_steps": 4,
+            "taylorseer_max_order": 1,
+            # PipelineRuntimeConfig field that triggers runtime reconstruction
+            "max_batch_size": 4,
+        }
+
+        config = PipelineConfig(**kwargs)  # type: ignore[arg-type]
+
+        assert config.runtime.max_batch_size == 4
+        assert config.runtime.denoising_cache.taylorseer is True
+        assert config.runtime.denoising_cache.taylorseer_cache_interval == 5
+        assert config.runtime.denoising_cache.taylorseer_warmup_steps == 4
+        assert config.runtime.denoising_cache.taylorseer_max_order == 1
+
+    @mock_pipeline_config_resolve
+    def test_first_block_caching_survives_runtime_kwargs(self) -> None:
+        """``--first-block-caching`` must also survive runtime reconstruction."""
+        kwargs = {
+            "model_path": "test/model",
+            "first_block_caching": True,
+            "max_batch_size": 4,
+        }
+
+        config = PipelineConfig(**kwargs)  # type: ignore[arg-type]
+
+        assert config.runtime.max_batch_size == 4
+        assert config.runtime.denoising_cache.first_block_caching is True
+
 
 class TestDraftModelDefaultsInheritance:
     """Tests that draft model inherits certain defaults from the target model."""

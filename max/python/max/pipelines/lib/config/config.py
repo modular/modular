@@ -27,6 +27,7 @@ from max.config import ConfigFileModel
 from max.driver import DeviceSpec, accelerator_api, load_devices
 from max.engine import InferenceSession
 from max.graph.quantization import QuantizationEncoding
+from max.interfaces.task import PipelineTask
 from max.nn.kv_cache.cache_params import KVConnectorType
 from max.pipelines.lib.hf_utils import is_diffusion_pipeline
 from max.pipelines.lib.interfaces import PipelineModel
@@ -751,7 +752,6 @@ class PipelineConfig(ConfigFileModel):
         delattr(self, "_unmatched_kwargs")
 
         # Process specialized config creation
-        self._create_denoising_cache_config_if_needed(unmatched_kwargs)
         self._create_lora_config_if_needed(unmatched_kwargs)
 
         # Build model manifest from kwargs — must come before sampling
@@ -763,6 +763,11 @@ class PipelineConfig(ConfigFileModel):
         # Process remaining config classes (runtime, sampling, profiling)
         if unmatched_kwargs:
             self._process_remaining_config_classes(unmatched_kwargs)
+
+        # Set denoising_cache on runtime AFTER runtime is constructed by
+        # _process_remaining_config_classes; otherwise the runtime
+        # replacement there clobbers the cache fields set here.
+        self._create_denoising_cache_config_if_needed(unmatched_kwargs)
 
         if unmatched_kwargs:
             raise ValueError(f"Unmatched kwargs: {unmatched_kwargs}")
@@ -1506,6 +1511,51 @@ class PipelineConfig(ConfigFileModel):
             logger.info(line)
         logger.info("")
 
+        # Denoising cache details for diffusion pipelines.
+        if arch.task == PipelineTask.PIXEL_GENERATION:
+            cache = self.runtime.denoising_cache
+            cache_entries: list[tuple[str, Any]] = [
+                ("first_block_caching", cache.first_block_caching),
+                ("taylorseer", cache.taylorseer),
+                (
+                    "taylorseer_cache_interval",
+                    cache.taylorseer_cache_interval
+                    if cache.taylorseer_cache_interval is not None
+                    else "model-default",
+                ),
+                (
+                    "taylorseer_warmup_steps",
+                    cache.taylorseer_warmup_steps
+                    if cache.taylorseer_warmup_steps is not None
+                    else "model-default",
+                ),
+                (
+                    "taylorseer_max_order",
+                    cache.taylorseer_max_order
+                    if cache.taylorseer_max_order is not None
+                    else "model-default",
+                ),
+                ("teacache", cache.teacache),
+                (
+                    "teacache_rel_l1_thresh",
+                    cache.teacache_rel_l1_thresh
+                    if cache.teacache_rel_l1_thresh is not None
+                    else "model-default",
+                ),
+                (
+                    "teacache_coefficients",
+                    cache.teacache_coefficients
+                    if cache.teacache_coefficients is not None
+                    else "model-default",
+                ),
+            ]
+
+            logger.info("Denoising Cache")
+            logger.info("=" * 60)
+            for line in _format_config_entries(cache_entries):
+                logger.info(line)
+            logger.info("")
+
     def log_basic_config(self) -> None:
         """Log minimal pipeline configuration information.
 
@@ -1533,8 +1583,6 @@ class PipelineConfig(ConfigFileModel):
         pipeline_class = get_pipeline_for_task(task, self)
 
         # Get reserved memory info from KVCache config (only for tasks that use KV cache)
-        from max.interfaces.task import PipelineTask
-
         kv_cache_tasks = {
             PipelineTask.TEXT_GENERATION,
             PipelineTask.AUDIO_GENERATION,
