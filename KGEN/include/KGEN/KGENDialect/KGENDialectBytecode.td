@@ -529,6 +529,10 @@ def SIMDAttr : DialectAttribute<(attr
   let cBuilder = "get<$_resultType>(context, $_args)";
 }
 
+def SIMDSplatAttr : DialectAttribute<(attr
+  TypedAttr:$arg, ConcreteType<"SIMDType">:$type
+)>;
+
 def KGENDialectAttributes : DialectAttributes<"kgen"> {
   let elems = [
     ConstraintAttr,
@@ -598,7 +602,8 @@ def KGENDialectAttributes : DialectAttributes<"kgen"> {
     ToStringDeferredAttr,
     CastFromBuiltinAttr,
     CastToBuiltinAttr,
-    SIMDAttr
+    SIMDAttr,
+    SIMDSplatAttr
   ];
 }
 

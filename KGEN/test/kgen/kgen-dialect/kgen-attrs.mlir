@@ -330,9 +330,9 @@ kgen.generator @witnessed_mem_del(%arg0: !kgen.pointer<struct<(index)>> owned_in
 
 "some.op"() {
   // CHECK: a = #kgen<simd 1> : !kgen.simd<4, si32>
-  a = #pop.simd_splat< #kgen<simd 1> : !kgen.scalar<si32>> : !kgen.simd<4, si32>,
+  a = #kgen.simd_splat< #kgen<simd 1> : !kgen.scalar<si32>> : !kgen.simd<4, si32>,
   // CHECK: b = #kgen<simd "1"> : !kgen.simd<3, f16>
-  b = #pop.simd_splat< #kgen<simd "1.0"> : !kgen.scalar<f16>> : !kgen.simd<3, f16>
+  b = #kgen.simd_splat< #kgen<simd "1.0"> : !kgen.scalar<f16>> : !kgen.simd<3, f16>
 } : () -> ()
 
 "some.op"() {

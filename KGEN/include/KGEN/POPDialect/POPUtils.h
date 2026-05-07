@@ -29,10 +29,6 @@ OpFoldResult foldCast(TypedAttr operand, SIMDType resultType,
                       SIMDType inputType, SIMDType outputType,
                       std::optional<int64_t> indexBitWidth = std::nullopt);
 
-/// Fold a SIMD splat operation.
-OpFoldResult foldSIMDSplat(Value scalarVal, Attribute scalarAttr,
-                           SIMDType resultType);
-
 /// Fold a SIMD Or-reduction operation.
 OpFoldResult foldSIMDReduceOr(Value vectorVal, Attribute vectorAttr,
                               SIMDType vectorType);

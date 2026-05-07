@@ -1372,56 +1372,6 @@ DTypeFromUI8Attr::verify(function_ref<InFlightDiagnostic()> emitError,
 }
 
 //===----------------------------------------------------------------------===//
-// SIMDSplatAttr
-//===----------------------------------------------------------------------===//
-
-TypedAttr SIMDSplatAttr::get(MLIRContext *ctx, TypedAttr arg,
-                             SIMDType outType) {
-  // Fold if possible
-  if (auto fold = POP::foldSIMDSplat(/*scalarVal=*/{}, arg, outType))
-    if (auto ret = dyn_cast<TypedAttr>(cast<Attribute>(fold)))
-      return ret;
-  return Base::get(ctx, arg, outType);
-}
-
-TypedAttr
-SIMDSplatAttr::getChecked(function_ref<InFlightDiagnostic()> emitError,
-                          MLIRContext *context, TypedAttr value,
-                          SIMDType outType) {
-  if (failed(verify(emitError, value, outType)))
-    return {};
-  return SIMDSplatAttr::get(context, value, outType);
-}
-
-bool SIMDSplatAttr::isConstant() const { return false; }
-
-LogicalResult
-SIMDSplatAttr::verify(function_ref<InFlightDiagnostic()> emitError,
-                      TypedAttr value, SIMDType outType) {
-  auto simdType = dyn_cast<SIMDType>(value.getType());
-  if (!simdType)
-    return emitError() << "requires a SIMD-type operand";
-
-  auto splatDType = outType.getResolvedDType();
-  auto valueDType = simdType.getResolvedDType();
-  if (splatDType && valueDType && splatDType != valueDType) {
-    return emitError() << "mismatch between value type '"
-                       << valueDType->getAsString()
-                       << "' and splat element type '"
-                       << splatDType->getAsString() << "'";
-  }
-
-  std::optional<int64_t> size = outType.getResolvedSize();
-  if (!size)
-    return success();
-
-  if (*size <= 0)
-    return emitError() << "requires a non-negative size";
-
-  return success();
-}
-
-//===----------------------------------------------------------------------===//
 // SIMD Unary Operation Attrs
 //===----------------------------------------------------------------------===//
 

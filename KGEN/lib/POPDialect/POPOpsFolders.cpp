@@ -1389,7 +1389,7 @@ SIMDShuffleOp::parametric_interpret(ArrayRef<Attribute> operands,
 //===----------------------------------------------------------------------===//
 
 OpFoldResult SIMDSplatOp::fold(FoldAdaptor adaptor) {
-  return POP::foldSIMDSplat(getScalar(), adaptor.getScalar(), getType());
+  return KGEN::foldSIMDSplat(getScalar(), adaptor.getScalar(), getType());
 }
 
 ErrorTreeOrSuccess SIMDSplatOp::interpret(ArrayRef<Attribute> operands,

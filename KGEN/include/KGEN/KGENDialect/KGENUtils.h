@@ -39,6 +39,10 @@ OpFoldResult foldCastToBuiltin(TypedAttr input, Type resultType);
 /// Fold a conversion from a MLIR builtin type to a SIMD type.
 OpFoldResult foldCastFromBuiltin(TypedAttr input, SIMDType resultType);
 
+/// Fold a SIMD splat operation.
+OpFoldResult foldSIMDSplat(Value scalarVal, Attribute scalarAttr,
+                           SIMDType resultType);
+
 /// This type is a bit of a mouthful, add a useful alias for it.
 using ExportMap = llvm::MapVector<StringAttr, ExportKind>;
 
