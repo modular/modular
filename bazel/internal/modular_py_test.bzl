@@ -25,10 +25,16 @@ def _get_resource_tags(use_resource_tags, name):
     return tags
 
 def _get_manual_srcs(tags, per_test_tags, srcs):
-    if "manual" in tags:
+    if "manual" in tags or "postsubmit" in tags:
         return srcs
 
-    return [src for src in srcs if "manual" in per_test_tags.get(src, [])]
+    result = []
+    for src in srcs:
+        src_tags = per_test_tags.get(src, [])
+        if "manual" in src_tags or "postsubmit" in src_tags:
+            result.append(src)
+
+    return result
 
 def modular_py_test(
         name,
