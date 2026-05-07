@@ -629,9 +629,10 @@ struct ConvertPOPCast : public ConvertPOPToLLVMPattern<CastOp> {
       opName = LLVM::FPExtOp::getOperationName();
     } else if (outByteCount < inByteCount) {
       // Truncate.
-      if (isFP8(getEquivalentFloatType(op.getContext(), outDType))) {
-        // Can't truncate a floating point number to fp8 because fp8 is
-        // represented as int8.
+      if (isFPTyLoweredAsInt(
+              getEquivalentFloatType(op.getContext(), outDType))) {
+        // Can't truncate a floating point number to a floating point number
+        // that's represented as an int (e.g., fp8 types).
         return emitError(op.getLoc(),
                          Twine("casts between " + inDType.getAsString() +
                                " and " + outDType.getAsString() +

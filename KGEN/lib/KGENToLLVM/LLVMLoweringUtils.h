@@ -434,6 +434,13 @@ bool isNVPTX_HopperAndAbove(TargetInfoAttr target);
 /// Return true if fpType is an fp8 type.
 bool isFP8(Type fpType);
 
+/// Return true if fpType is an fp4 type.
+bool isFP4(Type fpType);
+
+/// If the type is a floating-point type lowered to an integer, return the
+/// bitwidth of the integer width. Else return std::nullopt.
+std::optional<int> isFPTyLoweredAsInt(Type fpType);
+
 /// Recursively squash pairs of unrealized_conversion_cast ops that cancel out.
 /// For example, cast<A→B>(cast<B→A>(v)) reduces to v.
 /// Used to clean up residual casts before generating calls.
