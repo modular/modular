@@ -209,7 +209,7 @@ def test_tstring_unicode_out_of_range():
 
 def test_tstring_unicode_surrogate():
     var x = 42
-    # expected-error @below {{surrogates (U+D800 to U+DFFF) are not allowed}}
+    # expected-error @below {{unicode escape sequences do not support surrogate code points (U+D800 to U+DFFF); use '\U' with the full code point (not a UTF-16 surrogate pair)}}
     _ = t"\uD800{x}"
 
 

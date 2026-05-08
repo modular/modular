@@ -421,7 +421,7 @@ PValue OverloadSet::filterOverloadSetForParamBindings() const {
          << " implicit conversion" << plural(minConversions)
          << ", disambiguate with an explicit cast" << getExpr()->getRange();
   else
-    diag.attachNote(getExprLoc()) << "did you mean to call it?";
+    diag.attachNote(getExprLoc()) << "add '()' to call the function";
   for (auto &[candidate, eval] : evaluations) {
     auto func = cast<FnOp>(candidate->getIfOperation());
     MojoInflightDiag &note = diag.attachNote(candidate->getLoc());
@@ -1013,7 +1013,7 @@ TypedAttr OverloadSet::getBoundConstantAttr() const {
                   getExprLoc(),
                   "cannot form a reference to overloaded declaration of '")
               << baseName << "'" << getExpr()->getRange();
-  diag.attachNote(getExprLoc()) << "did you mean to call it?";
+  diag.attachNote(getExprLoc()) << "add '()' to call the function";
 
   for (ASTDecl *candidate : fnDecls) {
     auto func = cast<FnOp>(candidate->getIfOperation());
@@ -1253,11 +1253,10 @@ CValue OverloadSet::emitAsCValue(IREmitter &emitter, ExprDest &dest) {
   // TODO: Need to emit a closure instance that partially applies the 'self'
   // argument here.
   auto loc = getExprLoc();
-  auto diag = emitter.emitError(loc, "cannot emit closure for method '")
-              << baseName << "'";
-  diag.attachNote(loc)
-      << "computing member method closure is not yet supported";
-  diag.attachNote(loc) << "did you forget '()'s?";
+  auto diag =
+      emitter.emitError(
+          loc, "member method closures are not supported; add '()' to call '")
+      << baseName << "'";
   dest.resetForError(emitter);
   return {};
 }

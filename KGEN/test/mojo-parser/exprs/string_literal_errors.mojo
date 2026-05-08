@@ -54,7 +54,7 @@ def testUnicodeBigUOutOfRange():
 
 # Surrogates are not valid Unicode scalar values.
 def testUnicodeSurrogate():
-    # expected-error @below {{surrogates (U+D800 to U+DFFF) are not allowed}}
+    # expected-error @below {{unicode escape sequences do not support surrogate code points (U+D800 to U+DFFF); use '\U' with the full code point (not a UTF-16 surrogate pair)}}
     var x = "\uD800"
 
 

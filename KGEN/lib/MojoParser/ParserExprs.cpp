@@ -285,8 +285,8 @@ ParseResult ExprParser::parseExpression(ExprNode *&result, Precedence minPrec) {
       if (parseExpression(ifElseCond, Precedence(int(Precedence::kIfElse) + 1)))
         return failure();
       elseLoc = getToken().getLoc();
-      if (parseToken(Token::Kind::kw_else,
-                     "expecting an 'else' followed by an expression"))
+      if (parseToken(Token::Kind::kw_else, "expected 'else' clause in ternary; "
+                                           "add 'else' and the false branch"))
         return failure();
     }
 
@@ -1653,8 +1653,8 @@ ParseResult ParserBase::parseSimpleStmtExprs(ExprNode *&result,
   //   x =
   // y.foo()
   if (!p.isTokenInCurrentStatement()) {
-    emitError(assignLoc, "end of line found after '='; the right-hand side "
-                         "must be on the same line");
+    emitError(assignLoc,
+              "'=' must be followed by an expression on the same line");
     return failure();
   }
 

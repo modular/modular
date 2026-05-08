@@ -16,7 +16,7 @@
 
 # // -----
 
-# expected-error @+1 {{decimal integer literals may not use leading zeros; add '0o' for octal literals}}
+# expected-error @+1 {{decimal integer literals must not use leading zeros; add '0o' for octal literals}}
 0123
 
 # // -----

@@ -853,24 +853,25 @@ ParseResult StmtParser::parseStmt(bool onlySimpleStmt, bool &parsedCompound,
     // TODO: Top level expressions will be supported in the future.
     if (isa_and_nonnull<FileModuleOp>(parentDecl.getIfOperation())) {
       emitError(startCursor.getToken().getLoc())
-          << "expressions are not allowed at global scope; move this into a "
+          << "expressions must not appear at file scope; move this into a "
              "function body";
     } else if (isa_and_nonnull<StructDeclOp>(parentDecl.getIfOperation())) {
       emitError(startCursor.getToken().getLoc())
-          << "bare expressions not permitted within structs; use a field "
-             "declaration ('var') or move this into a method body";
+          << "bare expressions must not appear within structs; use 'var' for a "
+             "field or move this into a method body";
     } else if (isa_and_nonnull<TraitDeclOp>(parentDecl.getIfOperation())) {
       emitError(startCursor.getToken().getLoc())
-          << "bare expressions not permitted within traits; use an associated "
-             "type declaration ('comptime') or move this into a method body";
+          << "bare expressions must not appear within traits; use 'comptime' "
+             "for an associated type or move this into a method body";
     } else if (isa_and_nonnull<ExtensionDeclOp>(parentDecl.getIfOperation())) {
       emitError(startCursor.getToken().getLoc())
-          << "bare expressions not permitted within extensions; move this into "
-             "a method body";
+          << "bare expressions must not appear within extensions; move this "
+             "into a method body";
     } else {
+      // fallback: unknown parent declaration type
       emitError(expr->getLoc(),
-                "bare expression not permitted here; move this into a function "
-                "body or replace with a valid declaration")
+                "bare expression must not appear here; move this into a "
+                "function body")
           << expr->getRange();
     }
     return success();
