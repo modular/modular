@@ -307,7 +307,7 @@ bool LegalizePOPOperations::typeRequiresLegalization(KGENDType dtype) const {
   // Assume that any floating point type below 8 bits are not supported by LLVM
   if (dtype.isFloat() && dtype.getWidthInBits() <= 8)
     return true;
-  // M1 (Apple7) and M2 (Apple8) have no bf16 arithmetic support.
+  // M1 (Apple7) and M2 (Apple8) lack native bf16 arithmetic; M3+ supports it.
   auto key = getTargetKey();
   return dtype == KGENDType::bf16 &&
          (key == kMetal1ArchName || key == kMetal2ArchName);

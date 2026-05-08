@@ -31,8 +31,8 @@ void KGEN::buildLowerToLLVMPipeline(mlir::OpPassManager &pm,
       options.globalCtorFnName, options.globalDtorFnName}));
   pm.addNestedPass<LLVMFuncOp>(createKGENVerifierPass());
   pm.addPass(createLowerRuntimeClosures());
-  pm.addPass(createLowerGlobalPOPToLLVM(plugin));
   pm.addNestedPass<LLVMFuncOp>(createLegalizePOPOperations());
+  pm.addPass(createLowerGlobalPOPToLLVM(plugin));
   pm.addNestedPass<LLVMFuncOp>(createLowerPOPToLLVM(plugin));
   pm.addNestedPass<LLVMFuncOp>(createLowerControlFlow());
   pm.addNestedPass<LLVMFuncOp>(mlir::createReconcileUnrealizedCastsPass());
