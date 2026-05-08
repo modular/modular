@@ -31,7 +31,7 @@ from max.kv_cache import (
     PagedKVCacheManager,
     TransferReqData,
 )
-from max.pipelines.core import TextAndVisionContext, TextContext
+from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     PipelineConfig,
     TextGenerationPipeline,
@@ -62,6 +62,15 @@ class TransferDest:
     dst_replica_idx: int
 
 
+@dataclass
+class ActiveTransfer:
+    """Prefill-side state for a posted KV transfer awaiting completion."""
+
+    context: TextContext
+    replica_idx: int
+    transfer: TransferReqData
+
+
 class PrefillScheduler(Scheduler):
     def __init__(
         self,
@@ -77,12 +86,7 @@ class PrefillScheduler(Scheduler):
         self.kv_cache = kv_cache
 
         # Initialize Scheduler state.
-
-        # Maps request_id to (context, replica_idx, transfer_data)
-        self.active_transfers: dict[
-            RequestID,
-            tuple[TextAndVisionContext | TextContext, int, TransferReqData],
-        ] = {}
+        self.active_transfers: dict[RequestID, ActiveTransfer] = {}
         self.request_id_to_reply_context: dict[
             RequestID, tuple[ClientIdentity, TransferDest]
         ] = {}
@@ -112,9 +116,7 @@ class PrefillScheduler(Scheduler):
         # whose first generated token hasn't materialized yet due to the overlap scheduling
         # one-batch lag. Populated when a CE batch completes; resolved in the
         # next execute() call when the real token surfaces.
-        self._pending_first_token: dict[
-            RequestID, tuple[TextAndVisionContext | TextContext, int]
-        ] = {}
+        self._pending_first_token: dict[RequestID, tuple[TextContext, int]] = {}
 
         self.batch_constructor = TextBatchConstructor(
             scheduler_config=scheduler_config,
@@ -177,17 +179,17 @@ class PrefillScheduler(Scheduler):
         - Removes the transfer from active_transfers
         """
         to_be_deleted = []
-        for context, replica_idx, transfer in self.active_transfers.values():
-            if self.transfer_engine.is_complete(transfer):
-                self.transfer_engine.cleanup_transfer(transfer)
+        for active in self.active_transfers.values():
+            if self.transfer_engine.is_complete(active.transfer):
+                self.transfer_engine.cleanup_transfer(active.transfer)
                 # Release from paged cache (scheduler manages primary KV cache lifecycle)
                 self.kv_cache.release(
-                    context.request_id, replica_idx=replica_idx
+                    active.context.request_id, replica_idx=active.replica_idx
                 )
                 # Pipeline release handles special cases (spec decoding draft model KV cache)
                 # For regular pipelines, release() is a no-op
-                self.pipeline.release(context.request_id)
-                to_be_deleted.append(context.request_id)
+                self.pipeline.release(active.context.request_id)
+                to_be_deleted.append(active.context.request_id)
 
         for id in to_be_deleted:
             del self.active_transfers[id]
@@ -236,10 +238,10 @@ class PrefillScheduler(Scheduler):
             src_replica_idx=src_replica_idx,
             dst_replica_idx=transfer_dest.dst_replica_idx,
         )
-        self.active_transfers[req_id] = (
-            context,
-            src_replica_idx,
-            transfer_data,
+        self.active_transfers[req_id] = ActiveTransfer(
+            context=context,
+            replica_idx=src_replica_idx,
+            transfer=transfer_data,
         )
 
         assert context.tokens.generated_length != 0, (
