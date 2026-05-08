@@ -44,6 +44,9 @@ from max.pipelines.architectures.flux2_modulev3.pipeline_flux2 import (
 from max.pipelines.architectures.flux2_modulev3.pipeline_flux2_klein import (
     Flux2KleinPipeline,
 )
+from max.pipelines.architectures.flux2_modulev3.tokenizer import (
+    Flux2Tokenizer,
+)
 from max.pipelines.architectures.internvl.tokenizer import InternVLProcessor
 from max.pipelines.architectures.wan.context import WanContext
 from max.pipelines.architectures.wan.tokenizer import WanTokenizer
@@ -52,7 +55,6 @@ from max.pipelines.core import PixelContext
 from max.pipelines.lib import (
     PipelineRuntimeConfig,
     PixelGenerationPipeline,
-    PixelGenerationTokenizer,
 )
 from max.pipelines.lib.model_manifest import ModelManifest
 from peft.peft_model import PeftModel
@@ -1237,7 +1239,7 @@ class ImageGenerationOracle(PipelineOracle):
             if self.model_path.startswith("black-forest-labs/FLUX.2-klein")
             else Flux2Pipeline
         )
-        tokenizer = PixelGenerationTokenizer(
+        tokenizer = Flux2Tokenizer(
             model_path=self.model_path,
             pipeline_config=config,
             subfolder="tokenizer",
