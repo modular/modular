@@ -29,7 +29,6 @@ from max import driver, pipelines
 from max.entrypoints.cli import DevicesOptionType
 from max.entrypoints.cli.entrypoint import configure_cli_logging
 from max.pipelines.lib.device_specs import (
-    default_device_specs,
     device_specs_from_normalized_device_handle,
     normalize_device_specs_input,
 )
@@ -77,7 +76,7 @@ EX_TEMPFAIL = 75
     "--devices",
     "device_type",
     type=DevicesOptionType(),
-    default=None,
+    default="default",
     help="Type of device to run pipeline with. Default is to use the first available GPU.",
 )
 @click.option(
@@ -139,7 +138,7 @@ EX_TEMPFAIL = 75
     help="Generate logprobs in addition to logits.",
 )
 def main(
-    device_type: str | list[int] | None,
+    device_type: str | list[int],
     framework_name: str,
     pipeline_name: str,
     encoding_name: pipelines.SupportedEncoding | None,
@@ -189,12 +188,8 @@ def main(
         )
     try:
         generate_llm_logits(
-            device_specs=(
-                default_device_specs()
-                if device_type is None
-                else device_specs_from_normalized_device_handle(
-                    normalize_device_specs_input(device_type)
-                )
+            device_specs=device_specs_from_normalized_device_handle(
+                normalize_device_specs_input(device_type)
             ),
             framework_name=framework_name,
             pipeline_name=pipeline_name,

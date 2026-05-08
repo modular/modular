@@ -39,6 +39,7 @@ def main():
 ```
 """
 
+from .function import ReflectedFn, reflect_fn
 from .location import SourceLocation, source_location, call_location
 from .reflect import Reflected, reflect
 from .type_info import get_linkage_name, get_function_name

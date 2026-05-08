@@ -23,6 +23,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Generic, Literal, TypeVar
 
 import numpy as np
+from max.benchmark.benchmark_shared.request import ServerTokenStats
 from pydantic import BaseModel, ConfigDict, Field
 
 if TYPE_CHECKING:
@@ -711,8 +712,8 @@ class TextGenerationBenchmarkResult(BaseBenchmarkResult[BenchmarkMetrics]):
 
     steady_state_result: SteadyStateResult | None = None
     spec_decode_stats: SpecDecodeStats | None = None
-    session_server_stats: dict[str, list[dict[str, Any]]] | None = None
-    aggregate_server_stats: list[dict[str, Any]] | None = None
+    session_server_stats: dict[str, list[ServerTokenStats]] | None = None
+    aggregate_server_stats: list[ServerTokenStats] | None = None
 
     def to_result_dict(self) -> dict[str, object]:
         d = super().to_result_dict()
@@ -721,9 +722,14 @@ class TextGenerationBenchmarkResult(BaseBenchmarkResult[BenchmarkMetrics]):
         if self.spec_decode_stats is not None:
             d.update(self.spec_decode_stats.to_result_dict())
         if self.session_server_stats is not None:
-            d["session_server_stats"] = self.session_server_stats
+            d["session_server_stats"] = {
+                sid: [dataclasses.asdict(s) for s in stats]
+                for sid, stats in self.session_server_stats.items()
+            }
         if self.aggregate_server_stats is not None:
-            d["aggregate_server_stats"] = self.aggregate_server_stats
+            d["aggregate_server_stats"] = [
+                dataclasses.asdict(s) for s in self.aggregate_server_stats
+            ]
         return d
 
     def validate_metrics(self) -> tuple[bool, list[str]]:

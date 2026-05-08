@@ -93,20 +93,26 @@ def test[
     # Query, key, value dimensions.
     comptime scale = Float32(0.125)  # rsqrt[type, 1](Float32(depth))
     comptime kv_num_heads = num_heads // group
+    # MLA: output's last dim is depth_v (= depth - rope_dim = depth - 64).
+    # The reference path (mha_gpu_naive) writes the full `depth` columns
+    # because it's a generic MHA reference, but only the first depth_v
+    # columns are compared.
+    comptime depth_v = depth - 64
 
     # Q, K, V shapes.
     var q_size = batch_size * num_heads * seq_len * depth
     var k_size = batch_size * kv_num_heads * num_keys * depth
     # var v_size = k_size
-    var o_size = q_size
+    var o_size = batch_size * num_heads * seq_len * depth_v
+    var o_size_ref = batch_size * num_heads * seq_len * depth
 
     # Allocate memory for all variables.
     var q_ptr = ctx.enqueue_create_host_buffer[qkv_type](q_size)
     var k_ptr = ctx.enqueue_create_host_buffer[qkv_type](k_size)
-    var output_ptr = ctx.enqueue_create_host_buffer[output_type](o_size)
+    var output_ptr = ctx.enqueue_create_host_buffer[output_type](o_size_ref)
     var flash_output_ptr = ctx.enqueue_create_host_buffer[output_type](o_size)
 
-    for i in range(o_size):
+    for i in range(o_size_ref):
         output_ptr[i] = Scalar[output_type](0)
 
     # Q, K, V are randomly initialized.
@@ -159,7 +165,7 @@ def test[
     var output_device = TileTensor(
         output_device_ptr,
         row_major(
-            (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth]())
+            (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth_v]())
         ),
     )
 
@@ -216,7 +222,7 @@ def test[
 
     comptime if against_gpu_naive:
         var output_ref_device_ptr = ctx.enqueue_create_buffer[output_type](
-            o_size
+            o_size_ref
         )
         var output_ref_device = TileTensor(
             output_ref_device_ptr,
@@ -995,10 +1001,19 @@ def main() raises:
         test_decoding[128, 1, False](ctx, False)
         test_decoding[0, 1, False](ctx, False)
 
-        # FP8 Q/K/V with BF16 output. AMD MLA FP8 decode uses 32x32x64 MMA
-        # with BM=32, BK=64 (depth=576 is not a multiple of 128, so the
-        # 16x16x128 path is not usable).
         comptime if has_amd_gpu_accelerator():
+            test_decoding[1, 4, False](ctx, False)
+            test_decoding[27, 2, False](ctx, False)
+            # Default (None) — exercise the AMD heuristic.
+            test_decoding[1, None, False](ctx, False)
+            test_decoding[
+                1,
+                4,
+                False,
+                qkv_type=DType.float8_e4m3fn,
+                output_type=DType.bfloat16,
+            ](ctx, False)
+
             test_decoding[
                 1,
                 1,

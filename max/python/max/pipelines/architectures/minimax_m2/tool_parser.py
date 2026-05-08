@@ -39,6 +39,7 @@ from max.interfaces import (
     ParsedToolCallDelta,
     ParsedToolResponse,
 )
+from max.pipelines.lib.tool_parsing import register
 
 logger = logging.getLogger(__name__)
 
@@ -161,6 +162,7 @@ class _StreamingState:
     tool_calls: list[_StreamingToolCallState] = field(default_factory=list)
 
 
+@register("minimax_m2")
 class MinimaxM2ToolParser:
     """Parses MiniMax M2-style tool calls from model responses.
 

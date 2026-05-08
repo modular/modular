@@ -489,13 +489,16 @@ def save_result_json(
     model_id: str,
     tokenizer_id: str,
     request_rate: float,
+    record_max_concurrency: int | None,
 ) -> None:
     """Persist benchmark results to *result_filename*."""
     if not result_filename:
         return
     backend: Backend = args.backend
     client_args = args.model_dump()
-    client_args["request_rate"] = str(client_args["request_rate"])
+    rr_client = str(request_rate) if request_rate < float("inf") else "inf"
+    client_args["request_rate"] = rr_client
+    client_args["max_concurrency"] = record_max_concurrency
     result_json: dict[str, object] = {
         "date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "backend": backend,
@@ -509,7 +512,7 @@ def save_result_json(
             request_rate if request_rate < float("inf") else "inf"
         ),
         "burstiness": args.burstiness,
-        "max_concurrency": args.max_concurrency,
+        "max_concurrency": record_max_concurrency,
         "max_concurrent_conversations": args.max_concurrent_conversations,
         **_parse_metadata(args.metadata),
         **benchmark_result.to_result_dict(),
@@ -530,6 +533,8 @@ def save_output_lengths(
     benchmark_result: TextGenerationBenchmarkResult
     | PixelGenerationBenchmarkResult,
     benchmark_task: BenchmarkTask,
+    *,
+    iteration_config: tuple[int | None, float] | None = None,
 ) -> None:
     """Save output lengths to a YAML file if configured."""
     if not args.record_output_lengths:
@@ -557,6 +562,10 @@ def save_output_lengths(
     )
     output_lens_dict: dict[str, object] = {}
     args_dict = args.model_dump()
+    if iteration_config is not None:
+        mc_snap, rr_snap = iteration_config
+        args_dict["max_concurrency"] = mc_snap
+        args_dict["request_rate"] = rr_snap
     output_lens_dict["args"] = {x: args_dict[x] for x in args_to_save}
     output_lens_dict["output_lengths"] = benchmark_result.metrics.output_lens
     with open(args.record_output_lengths, "w") as f:

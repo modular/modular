@@ -145,7 +145,12 @@ class Flux2Config(MAXModelConfigBase):
     guidance_embeds: bool = True
     """If False (Klein/distilled), no guidance embedder weights are expected."""
     dtype: DType = DType.bfloat16
-    device: DeviceRef = Field(default_factory=DeviceRef.GPU)
+    devices: list[DeviceRef] = Field(default_factory=lambda: [DeviceRef.GPU()])
+    """Devices for tensor parallelism. ``len(devices) == 1`` (default) runs
+    single-GPU; larger lengths shard the denoiser across the listed devices.
+    The first device hosts replicated components and any sub-models that
+    stay single-device (text encoder, VAE, etc.).
+    """
     quant_config: QuantConfig | None = None
     """NVFP4 quantization config, populated when encoding is float4_e2m1fnx2."""
 
@@ -186,7 +191,7 @@ class Flux2Config(MAXModelConfigBase):
         init_dict.update(
             {
                 "dtype": raw_dtype,
-                "device": DeviceRef.from_device(devices[0]),
+                "devices": [DeviceRef.from_device(d) for d in devices],
                 "quant_config": quant_config,
             }
         )

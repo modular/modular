@@ -1721,9 +1721,9 @@ def test_spec_decode_prefill_decode_receives_draft_tokens() -> None:
 
     # The context in prefill_reqs should now have draft tokens set
     assert req_id in decode.prefill_reqs
-    context, _ = decode.prefill_reqs[req_id]
+    pending = decode.prefill_reqs[req_id]
     assert (
-        len(context.spec_decoding_state.draft_tokens_to_verify)
+        len(pending.context.spec_decoding_state.draft_tokens_to_verify)
         == num_spec_tokens
     )
 
@@ -2053,6 +2053,90 @@ def test_stall_watchdog_default_is_disabled() -> None:
     """The stall timeout defaults to None (disabled) when the env var is unset."""
     decode, _, _, _ = create_di_scheduler()
     assert decode.scheduler_config.decode_stall_timeout_s is None
+
+
+# ---------------------------------------------------------------------------
+# Per-request TTL eviction (decode_request_ttl_s)
+# ---------------------------------------------------------------------------
+
+
+def test_decode_request_ttl_default_is_disabled() -> None:
+    """The per-request TTL defaults to None when the env var is unset."""
+    decode, _, _, _ = create_di_scheduler()
+    assert decode.scheduler_config.decode_request_ttl_s is None
+
+
+def test_decode_request_ttl_propagates_from_pipeline_config() -> None:
+    """``decode_request_ttl_s`` flows through ``from_pipeline_config``."""
+    pipeline_config = MagicMock()
+    pipeline_config.runtime.max_batch_size = 1
+    pipeline_config.runtime.max_num_steps = 1
+    pipeline_config.runtime.max_batch_input_tokens = 8192
+    pipeline_config.runtime.max_batch_total_tokens = 8192
+    pipeline_config.runtime.enable_chunked_prefill = True
+    pipeline_config.runtime.enable_in_flight_batching = False
+    pipeline_config.runtime.kvcache_ce_watermark = 0.95
+    pipeline_config.runtime.decode_stall_timeout_s = None
+    pipeline_config.runtime.decode_request_ttl_s = 42.0
+    pipeline_config.model.max_length = 2048
+    pipeline_config.model.data_parallel_degree = 1
+    pipeline_config.speculative = None
+
+    config = TokenGenerationSchedulerConfig.from_pipeline_config(
+        pipeline_config
+    )
+
+    assert config.decode_request_ttl_s == 42.0
+
+
+def test_decode_run_iteration_evicts_stuck_prefill_request_end_to_end(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``run_iteration`` evicts a request stuck in ``prefill_reqs`` past TTL."""
+    decode, prefill, server_addr, q = create_di_scheduler()
+    decode.scheduler_config.decode_request_ttl_s = 30.0
+
+    ctx = create_text_context(
+        target_endpoint=server_addr, prompt_len=100, output_len=5
+    )
+    q.request_queue.put(ctx)
+    req_id = ctx.request_id
+
+    pages_before = decode.kv_cache.get_num_used_pages(replica_idx=0)
+
+    # Send to prefill but never run prefill, so PrefillResponse never arrives.
+    decode.run_iteration()
+    assert req_id in decode.prefill_reqs
+    assert decode.prefill_reqs_per_replica[0] == 1
+
+    # Patch only affects time.monotonic() in _evict_expired_requests; the
+    # already-set PendingPrefill.sent_at uses the originally-captured ref.
+    real_now = time.monotonic()
+    monkeypatch.setattr(time, "monotonic", lambda: real_now + 1000.0)
+
+    decode.run_iteration()
+
+    assert req_id not in decode.prefill_reqs
+    assert decode.prefill_reqs_per_replica[0] == 0
+    assert decode.kv_cache.get_num_used_pages(replica_idx=0) == pages_before
+
+    saw_cancel_response = False
+    while not q.response_queue.empty():
+        batch = q.response_queue.get_nowait()
+        if req_id in batch and batch[req_id].result is None:
+            saw_cancel_response = True
+    assert saw_cancel_response
+
+    # Drain the prefill dispatcher: handshake + PrefillRequest + CancelRequest.
+    saw_cancel_to_prefill = False
+    for _ in range(3):
+        try:
+            msg, _identity = prefill.dispatcher.recv_request_nowait()
+        except queue.Empty:
+            break
+        if isinstance(msg, CancelRequest) and msg.id == req_id:
+            saw_cancel_to_prefill = True
+    assert saw_cancel_to_prefill
 
 
 # ---------------------------------------------------------------------------

@@ -26,7 +26,6 @@ import torch
 from max import pipelines
 from max.entrypoints.cli import DevicesOptionType
 from max.pipelines.lib.device_specs import (
-    default_device_specs,
     device_specs_from_normalized_device_handle,
     normalize_device_specs_input,
 )
@@ -64,7 +63,7 @@ EX_TEMPFAIL = 75
     "--devices",
     "device_type",
     type=DevicesOptionType(),
-    default=None,
+    default="default",
     help="Type of device to run pipeline with. Default is to use the first available GPU.",
 )
 @click.option(
@@ -144,7 +143,7 @@ EX_TEMPFAIL = 75
     ),
 )
 def main(
-    device_type: str | list[int] | None,
+    device_type: str | list[int],
     framework_name: str,
     pipeline_name: str,
     encoding_name: pipelines.SupportedEncoding | None,
@@ -191,12 +190,8 @@ def main(
 
     try:
         run_debug_model(
-            device_specs=(
-                default_device_specs()
-                if device_type is None
-                else device_specs_from_normalized_device_handle(
-                    normalize_device_specs_input(device_type)
-                )
+            device_specs=device_specs_from_normalized_device_handle(
+                normalize_device_specs_input(device_type)
             ),
             framework_name=framework_name,
             pipeline_name=pipeline_name,

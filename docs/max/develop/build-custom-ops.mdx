@@ -27,7 +27,7 @@ Before you begin, you should have a basic understanding of MAX graphs, which
 are computation graphs written in Python. These graphs are the foundation for
 high-performance AI models that run on MAX. To learn more, see [build a model
 graph with Module](/max/develop/modules). It also helps to know the [Mojo
-language basics](https://www.mojolang.org/docs/manual/basics).
+language basics](https://mojolang.org/docs/manual/basics).
 
 ## Requirements
 
@@ -95,7 +95,7 @@ available.
 
 Take a look at the custom op defined in
 [`custom_ops/kernels/add_one.mojo`](https://github.com/modular/modular/tree/main/max/examples/custom_ops/kernels/add_one.mojo).
-You'll see a Mojo [struct](https://www.mojolang.org/docs/manual/structs) called
+You'll see a Mojo [struct](https://mojolang.org/docs/manual/structs) called
 `AddOne` with an `execute()` function. Every custom op must be defined with this
 general format, as described below.
 
@@ -131,7 +131,7 @@ as the first runtime argument; the graph compiler uses this order to identify
 the op's hardware target and output slots:
 
 - There's one [compile-time
-parameter](https://www.mojolang.org/docs/manual/parameters/#parameterized-functions),
+parameter](https://mojolang.org/docs/manual/parameters/#parameterized-functions),
 `target`, which tells the function what kind of hardware it's being compiled for
 (either `"cpu"` or `"gpu"`; we'll use this in the next example).
 
@@ -324,7 +324,7 @@ struct VectorAddition:
 ```
 
 Using the
-[`comptime if`](https://www.mojolang.org/docs/manual/metaprogramming/comptime-evaluation/#comptime-if)
+[`comptime if`](https://mojolang.org/docs/manual/metaprogramming/comptime-evaluation/#comptime-if)
 statement, Mojo checks at compile time if the target device has a GPU or not. If
 it does, it uses the `_vector_addition_gpu()` function; otherwise, it uses
 `_vector_addition_cpu()`. Compile-time specialization like this is a unique and

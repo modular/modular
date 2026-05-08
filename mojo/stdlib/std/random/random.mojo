@@ -420,7 +420,6 @@ def shuffle[T: Copyable, //](mut list: List[T]):
 
     ```mojo
     from std.random import shuffle
-    from std.collections.list import List
     var list: List[Int] = [0, 1, 2, 3, 4, 5]
     shuffle(list)
     print(list)  # The list elements are now in random order

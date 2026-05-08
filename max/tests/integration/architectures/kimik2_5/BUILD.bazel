@@ -41,3 +41,12 @@ modular_py_test(
         requirement("pytest-asyncio"),
     ],
 )
+
+modular_py_test(
+    name = "test_tokenizer",
+    srcs = ["test_tokenizer.py"],
+    deps = [
+        "//max/python/max/interfaces",
+        "//max/python/max/pipelines/architectures",
+    ],
+)

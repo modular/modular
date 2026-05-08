@@ -343,7 +343,7 @@ def _encode_mp4(
 
     height, width = frames[0].shape[:2]
     container = av.open(str(output_path), mode="w")
-    stream: av.video.VideoStream = container.add_stream(  # type: ignore[assignment]
+    stream: av.video.VideoStream = container.add_stream(
         "libx264",
         rate=frames_per_second,
     )

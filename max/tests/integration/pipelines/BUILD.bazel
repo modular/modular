@@ -72,6 +72,15 @@ modular_py_test(
 )
 
 modular_py_test(
+    name = "test_pipeline_config_model_override",
+    size = "small",
+    srcs = ["test_pipeline_config_model_override.py"],
+    deps = [
+        "//max/python/max/pipelines",
+    ],
+)
+
+modular_py_test(
     name = "test_model_manifest_hf",
     size = "large",
     srcs = ["test_model_manifest_hf.py"],
@@ -100,6 +109,7 @@ modular_py_test(
             "test_device_graph_capture_release.py",
             "test_model_config_encoding_resolution.py",
             "test_model_config_subfolder.py",
+            "test_pipeline_config_model_override.py",
             "test_pipeline_config_resolve.py",
             "test_structured_output_spec_decode_gpu.py",
             "test_model_manifest.py",

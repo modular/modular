@@ -30,6 +30,7 @@ import numpy as np
 from max.benchmark.benchmark_shared.config import (
     PIXEL_GENERATION_TASKS,
     BenchmarkTask,
+    SamplingConfig,
 )
 from max.benchmark.benchmark_shared.datasets import SampledRequest
 from max.benchmark.benchmark_shared.datasets.types import (
@@ -105,9 +106,7 @@ def build_single_turn_request_input(
     model_id: str,
     lora_id: str | None,
     api_url: str,
-    temperature: float | None,
-    top_p: float | None,
-    top_k: int | None,
+    sampling: SamplingConfig,
     max_output_len: int | None,
     run_prefix: str | None = None,
     run_prefix_len: int = 0,
@@ -126,9 +125,7 @@ def build_single_turn_request_input(
         return RequestFuncInput(
             model=request_model_id,
             session_id=None,
-            temperature=temperature,
-            top_p=top_p,
-            top_k=top_k,
+            sampling=sampling,
             prompt=prompt,
             images=request.encoded_images,
             api_url=api_url,
@@ -233,9 +230,7 @@ async def run_single_turn_benchmark(
     model_id: str,
     api_url: str,
     max_output_len: int | None,
-    temperature: float | None,
-    top_p: float | None,
-    top_k: int | None,
+    sampling: SamplingConfig,
     lora_manager: LoRABenchmarkManager | None,
     run_prefix: str | None = None,
     run_prefix_len: int = 0,
@@ -278,9 +273,7 @@ async def run_single_turn_benchmark(
             model_id=model_id,
             lora_id=lora_id,
             api_url=api_url,
-            temperature=temperature,
-            top_p=top_p,
-            top_k=top_k,
+            sampling=sampling,
             max_output_len=max_output_len,
             run_prefix=run_prefix,
             run_prefix_len=run_prefix_len,
@@ -300,9 +293,7 @@ async def prime_shared_contexts(
     api_url: str,
     samples: Samples,
     request_driver: RequestDriver,
-    temperature: float | None,
-    top_p: float | None,
-    top_k: int | None,
+    sampling: SamplingConfig,
     run_prefix: str | None = None,
     run_prefix_len: int = 0,
 ) -> None:
@@ -312,8 +303,10 @@ async def prime_shared_contexts(
     if not warmup_entries:
         logger.warning(
             "shared_contexts is empty; the prefix cache could not be primed."
-            " Check that --random-sys-prompt-ratio > 0 and input lengths are"
-            " sufficient to produce a non-trivial shared context."
+            " Check that --random-sys-prompt-ratio > 0 (and"
+            " --fit-distributions for instruct-coder/agentic-code) and that"
+            " input lengths are sufficient to produce a non-trivial shared"
+            " context."
         )
         return
 
@@ -345,9 +338,7 @@ async def prime_shared_contexts(
             RequestFuncInput(
                 model=model_id,
                 session_id=None,
-                temperature=temperature,
-                top_p=top_p,
-                top_k=top_k,
+                sampling=sampling,
                 prompt=warmup_prompt,
                 images=[],
                 api_url=api_url,
@@ -394,9 +385,7 @@ async def run_single_test_prompt(
     api_url: str,
     samples: Samples,
     request_driver: RequestDriver,
-    temperature: float | None,
-    top_p: float | None,
-    top_k: int | None,
+    sampling: SamplingConfig,
     max_output_len: int | None,
     run_prefix: str | None = None,
     run_prefix_len: int = 0,
@@ -428,9 +417,7 @@ async def run_single_test_prompt(
         model_id=model_id,
         lora_id=None,
         api_url=api_url,
-        temperature=temperature,
-        top_p=top_p,
-        top_k=top_k,
+        sampling=sampling,
         max_output_len=test_max_output_len,
         run_prefix=run_prefix,
         run_prefix_len=run_prefix_len,

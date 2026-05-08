@@ -410,6 +410,49 @@ class TestPipelineConfigUtilityMethods:
         assert config.model.kv_cache.cache_dtype == DType.bfloat16
         assert config.draft_model.kv_cache.cache_dtype == DType.bfloat16
 
+    @mock_pipeline_config_resolve
+    def test_denoising_cache_survives_runtime_kwargs(self) -> None:
+        """``--taylorseer`` and friends must reach ``runtime.denoising_cache``
+        even when runtime kwargs are also present.
+
+        The CLI ``serve`` flow flattens every flag into ``PipelineConfig``
+        kwargs, so taylorseer/FBC/teacache fields and runtime fields like
+        ``max_batch_size`` arrive together. Cache fields must not be wiped
+        when the runtime config gets reconstructed from the runtime kwargs.
+        """
+        kwargs = {
+            "model_path": "test/model",
+            # DenoisingCacheConfig fields (--taylorseer etc.)
+            "taylorseer": True,
+            "taylorseer_cache_interval": 5,
+            "taylorseer_warmup_steps": 4,
+            "taylorseer_max_order": 1,
+            # PipelineRuntimeConfig field that triggers runtime reconstruction
+            "max_batch_size": 4,
+        }
+
+        config = PipelineConfig(**kwargs)  # type: ignore[arg-type]
+
+        assert config.runtime.max_batch_size == 4
+        assert config.runtime.denoising_cache.taylorseer is True
+        assert config.runtime.denoising_cache.taylorseer_cache_interval == 5
+        assert config.runtime.denoising_cache.taylorseer_warmup_steps == 4
+        assert config.runtime.denoising_cache.taylorseer_max_order == 1
+
+    @mock_pipeline_config_resolve
+    def test_first_block_caching_survives_runtime_kwargs(self) -> None:
+        """``--first-block-caching`` must also survive runtime reconstruction."""
+        kwargs = {
+            "model_path": "test/model",
+            "first_block_caching": True,
+            "max_batch_size": 4,
+        }
+
+        config = PipelineConfig(**kwargs)  # type: ignore[arg-type]
+
+        assert config.runtime.max_batch_size == 4
+        assert config.runtime.denoising_cache.first_block_caching is True
+
 
 class TestDraftModelDefaultsInheritance:
     """Tests that draft model inherits certain defaults from the target model."""
@@ -1820,6 +1863,9 @@ def test_resolve_default_reasoning_parser__applies_arch_default(
         models=ModelManifest({"main": MAXModelConfig(model_path="test/model")}),
         runtime=PipelineRuntimeConfig(),
     )
+    config.models["main"]._huggingface_config = SimpleNamespace(
+        architectures=["KimiK25ForConditionalGeneration"]
+    )
     assert config.runtime.reasoning_parser is None
 
     config._resolve_default_reasoning_parser()
@@ -1846,6 +1892,9 @@ def test_resolve_default_reasoning_parser__user_value_preserved(
     config = PipelineConfig(
         models=ModelManifest({"main": MAXModelConfig(model_path="test/model")}),
         runtime=PipelineRuntimeConfig(reasoning_parser="user_choice"),
+    )
+    config.models["main"]._huggingface_config = SimpleNamespace(
+        architectures=["KimiK25ForConditionalGeneration"]
     )
 
     config._resolve_default_reasoning_parser()
@@ -1875,6 +1924,9 @@ def test_resolve_default_reasoning_parser__no_arch_default_is_noop(
         models=ModelManifest({"main": MAXModelConfig(model_path="test/model")}),
         runtime=PipelineRuntimeConfig(),
     )
+    config.models["main"]._huggingface_config = SimpleNamespace(
+        architectures=["LlamaForCausalLM"]
+    )
 
     config._resolve_default_reasoning_parser()
     assert config.runtime.reasoning_parser is None
@@ -1886,3 +1938,99 @@ def test_resolve_default_reasoning_parser__no_arch_default_is_noop(
     )
     config._resolve_default_reasoning_parser()
     assert config.runtime.reasoning_parser is None
+
+
+@prepare_registry
+@mock_pipeline_config_resolve
+def test_resolve_default_tool_parser__applies_arch_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When runtime.tool_parser is unset and architecture declares a default,
+    the default is applied."""
+    arch = SimpleNamespace(
+        name="KimiK25ForConditionalGeneration",
+        tool_parser="kimik2_5",
+    )
+    monkeypatch.setattr(
+        PIPELINE_REGISTRY,
+        "retrieve_architecture",
+        Mock(return_value=arch),
+    )
+
+    config = PipelineConfig(
+        models=ModelManifest({"main": MAXModelConfig(model_path="test/model")}),
+        runtime=PipelineRuntimeConfig(),
+    )
+    config.models["main"]._huggingface_config = SimpleNamespace(
+        architectures=["KimiK25ForConditionalGeneration"]
+    )
+    assert config.runtime.tool_parser is None
+
+    config._resolve_default_tool_parser()
+
+    assert config.runtime.tool_parser == "kimik2_5"
+
+
+@prepare_registry
+@mock_pipeline_config_resolve
+def test_resolve_default_tool_parser__user_value_preserved(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An explicit runtime.tool_parser value is never overwritten."""
+    arch = SimpleNamespace(
+        name="KimiK25ForConditionalGeneration",
+        tool_parser="kimik2_5",
+    )
+    retrieve_mock = Mock(return_value=arch)
+    monkeypatch.setattr(
+        PIPELINE_REGISTRY, "retrieve_architecture", retrieve_mock
+    )
+
+    config = PipelineConfig(
+        models=ModelManifest({"main": MAXModelConfig(model_path="test/model")}),
+        runtime=PipelineRuntimeConfig(tool_parser="user_choice"),
+    )
+    config.models["main"]._huggingface_config = SimpleNamespace(
+        architectures=["KimiK25ForConditionalGeneration"]
+    )
+
+    config._resolve_default_tool_parser()
+
+    assert config.runtime.tool_parser == "user_choice"
+    retrieve_mock.assert_not_called()
+
+
+@prepare_registry
+@mock_pipeline_config_resolve
+def test_resolve_default_tool_parser__no_arch_default_is_noop(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """If architecture has no default tool parser, runtime value stays None."""
+    arch_without_default = SimpleNamespace(
+        name="LlamaForCausalLM",
+        tool_parser=None,
+    )
+    monkeypatch.setattr(
+        PIPELINE_REGISTRY,
+        "retrieve_architecture",
+        Mock(return_value=arch_without_default),
+    )
+
+    config = PipelineConfig(
+        models=ModelManifest({"main": MAXModelConfig(model_path="test/model")}),
+        runtime=PipelineRuntimeConfig(),
+    )
+    config.models["main"]._huggingface_config = SimpleNamespace(
+        architectures=["LlamaForCausalLM"]
+    )
+
+    config._resolve_default_tool_parser()
+    assert config.runtime.tool_parser is None
+
+    monkeypatch.setattr(
+        PIPELINE_REGISTRY,
+        "retrieve_architecture",
+        Mock(return_value=None),
+    )
+    config._resolve_default_tool_parser()
+    assert config.runtime.tool_parser is None

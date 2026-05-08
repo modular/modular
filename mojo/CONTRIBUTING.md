@@ -58,6 +58,11 @@ accepted. For example:
 
 - Changes that do not align with the published roadmap or the core principles of
   the standard library.
+- Non-trivial pull requests opened without a prior issue or proposal that a
+  maintainer has signed off on. See
+  [Please open an issue before opening a pull request](../CONTRIBUTING.md#please-open-an-issue-before-opening-a-pull-request)
+  in the primary contributor guide — we'll usually ask you to pause the PR
+  and file an issue so we can align on the approach before reviewing code.
 - Changes to the math module until more thorough performance
   benchmarking is available.
 - Code without tests—especially for core primitives.

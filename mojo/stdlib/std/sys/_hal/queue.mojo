@@ -126,6 +126,21 @@ struct Queue[context_origin: ImmutOrigin, device_spec: DeviceSpec](Movable):
         """
         self._raw[].copy_from_device(self._handle, dst, src._handle, size)
 
+    def copy_device_to_device(
+        self,
+        dst: Buffer,
+        src: Buffer,
+        size: UInt64,
+    ) raises HALError:
+        """
+        Same-device device-to-device buffer copy. Enqueues on this queue.
+        Totally ordered with respect to other operations within this queue
+        if backed by a stream.
+        """
+        self._raw[].copy_device_to_device(
+            self._handle, dst._handle, src._handle, size
+        )
+
     def record_event(
         self,
         out event: Event[Self.context_origin],

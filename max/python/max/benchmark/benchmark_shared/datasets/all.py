@@ -67,10 +67,6 @@ from max.benchmark.benchmark_shared.datasets.types import Samples
 from max.benchmark.benchmark_shared.datasets.vision_arena import (
     VisionArenaBenchmarkDataset,
 )
-from max.benchmark.benchmark_shared.utils import (
-    int_or_none,
-    parse_comma_separated,
-)
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
 logger = logging.getLogger(__name__)
@@ -89,8 +85,7 @@ def _inflated_chat_session_count(
         max_warmup = max(max_warmup, args.max_concurrent_conversations)
     if args.max_concurrency:
         try:
-            mcs = parse_comma_separated(args.max_concurrency, int_or_none)
-            mcs_ints = [m for m in mcs if m is not None]
+            mcs_ints = [m for m in args.max_concurrency if m is not None]
             if mcs_ints:
                 max_warmup = max(max_warmup, max(mcs_ints))
         except Exception:
@@ -154,7 +149,9 @@ def sample_requests(
         # is a list of ints.
         if args.output_lengths is None:
             output_lengths = None
-        elif os.path.exists(args.output_lengths):
+        elif isinstance(args.output_lengths, str) and os.path.exists(
+            args.output_lengths
+        ):
             with open(args.output_lengths) as f:
                 output_lengths = yaml.safe_load(f)["output_lengths"]
         else:
@@ -421,6 +418,18 @@ def sample_requests(
                     "text-to-image currently supports only "
                     "--dataset-name synthetic-pixel"
                 )
+        elif benchmark_task == "text-to-video":
+            if not isinstance(
+                benchmark_dataset, SyntheticPixelBenchmarkDataset
+            ):
+                raise ValueError(
+                    "text-to-video currently supports only "
+                    "--dataset-name synthetic-pixel"
+                )
+            if args.num_frames is None:
+                raise ValueError(
+                    "--num-frames is required for --benchmark-task text-to-video"
+                )
         elif not isinstance(
             benchmark_dataset,
             (LocalImageBenchmarkDataset, SyntheticPixelBenchmarkDataset),
@@ -440,6 +449,7 @@ def sample_requests(
             image_guidance_scale=args.image_guidance_scale,
             image_negative_prompt=args.image_negative_prompt,
             image_seed=args.image_seed,
+            num_frames=args.num_frames,
         )
     else:
         raise ValueError(f"Unsupported benchmark task: {benchmark_task}")

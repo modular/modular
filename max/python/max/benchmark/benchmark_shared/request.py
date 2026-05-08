@@ -34,7 +34,7 @@ from pydantic import BaseModel
 from tqdm.asyncio import tqdm
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
-from .config import PIXEL_GENERATION_TASKS, BenchmarkTask
+from .config import PIXEL_GENERATION_TASKS, BenchmarkTask, SamplingConfig
 from .datasets.types import (
     ChatMessage,
     OpenAIImage,
@@ -90,15 +90,25 @@ class BaseRequestFuncInput(ABC):
         """Get the output type for the request function input."""
 
 
+def _apply_sampling_to_request_payload(
+    payload: dict[str, Any], sampling: SamplingConfig
+) -> None:
+    """Merge non-None OpenAI-style sampling fields from *sampling* into *payload*."""
+    if sampling.temperature is not None:
+        payload["temperature"] = sampling.temperature
+    if sampling.top_k is not None:
+        payload["top_k"] = sampling.top_k
+    if sampling.top_p is not None:
+        payload["top_p"] = sampling.top_p
+
+
 # TODO: We shouldn't have to maintain two separate RequestFuncInput classes for
 # text generation and TTS benchmarks respectively.
 @dataclass
 class RequestFuncInput(BaseRequestFuncInput):
     """Request function input for text generation benchmarks."""
 
-    temperature: float | None
-    top_p: float | None
-    top_k: int | None
+    sampling: SamplingConfig
     prompt: str | list[ChatMessage]
     images: list[OpenAIImage]
     api_url: str
@@ -128,9 +138,7 @@ class PixelGenerationRequestFuncInput(BaseRequestFuncInput):
 class TTSRequestFuncInput(BaseRequestFuncInput):
     """Request function input for TTS (text-to-speech) benchmarks."""
 
-    temperature: float | None
-    top_p: float | None
-    top_k: int | None
+    sampling: SamplingConfig
     request_index: int
     tts_request: SampleTTSRequest
     is_streaming_mode: bool
@@ -408,12 +416,9 @@ class TRTLLMRequestDriver(RequestDriver):
 
             if request_func_input.max_tokens is not None:
                 payload["max_tokens"] = request_func_input.max_tokens
-            if request_func_input.temperature is not None:
-                payload["temperature"] = request_func_input.temperature
-            if request_func_input.top_k is not None:
-                payload["top_k"] = request_func_input.top_k
-            if request_func_input.top_p is not None:
-                payload["top_p"] = request_func_input.top_p
+            _apply_sampling_to_request_payload(
+                payload, request_func_input.sampling
+            )
 
             output = RequestFuncOutput()
             output.prompt_len = request_func_input.prompt_len
@@ -645,12 +650,7 @@ class OpenAICompletionsRequestDriver(RequestDriver):
 
         if request_func_input.max_tokens is not None:
             payload["max_tokens"] = request_func_input.max_tokens
-        if request_func_input.temperature is not None:
-            payload["temperature"] = request_func_input.temperature
-        if request_func_input.top_k is not None:
-            payload["top_k"] = request_func_input.top_k
-        if request_func_input.top_p is not None:
-            payload["top_p"] = request_func_input.top_p
+        _apply_sampling_to_request_payload(payload, request_func_input.sampling)
 
         headers = {
             "Authorization": f"Bearer {os.environ.get('OPENAI_API_KEY')}"
@@ -706,12 +706,7 @@ class OpenAIChatCompletionsRequestDriver(RequestDriver):
 
         if request_func_input.max_tokens is not None:
             payload["max_tokens"] = request_func_input.max_tokens
-        if request_func_input.temperature is not None:
-            payload["temperature"] = request_func_input.temperature
-        if request_func_input.top_k is not None:
-            payload["top_k"] = request_func_input.top_k
-        if request_func_input.top_p is not None:
-            payload["top_p"] = request_func_input.top_p
+        _apply_sampling_to_request_payload(payload, request_func_input.sampling)
         if request_func_input.response_format is not None:
             # Convert TypedDict to plain dict so mypy accepts the assignment into
             # payload (since a TypedDict is stricter than a dict[str, Any]).
@@ -812,21 +807,27 @@ def _build_pixel_generation_payload(
     if request_func_input.image_options is None:
         return payload
 
-    image_options_payload: dict[str, Any] = {}
+    options_payload: dict[str, Any] = {}
     image_options = request_func_input.image_options
     if image_options.width is not None:
-        image_options_payload["width"] = image_options.width
+        options_payload["width"] = image_options.width
     if image_options.height is not None:
-        image_options_payload["height"] = image_options.height
+        options_payload["height"] = image_options.height
     if image_options.steps is not None:
-        image_options_payload["steps"] = image_options.steps
+        options_payload["steps"] = image_options.steps
     if image_options.guidance_scale is not None:
-        image_options_payload["guidance_scale"] = image_options.guidance_scale
+        options_payload["guidance_scale"] = image_options.guidance_scale
     if image_options.negative_prompt is not None:
-        image_options_payload["negative_prompt"] = image_options.negative_prompt
+        options_payload["negative_prompt"] = image_options.negative_prompt
+    # num_frames is video-only; presence routes the payload to
+    # provider_options.video instead of provider_options.image.
+    is_video = image_options.num_frames is not None
+    if is_video:
+        options_payload["num_frames"] = image_options.num_frames
 
-    if image_options_payload:
-        payload["provider_options"] = {"image": image_options_payload}
+    if options_payload:
+        modality_key = "video" if is_video else "image"
+        payload["provider_options"] = {modality_key: options_payload}
 
     if image_options.seed is not None:
         payload["seed"] = image_options.seed
