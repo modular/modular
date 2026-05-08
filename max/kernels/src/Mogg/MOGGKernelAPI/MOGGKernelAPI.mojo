@@ -12614,30 +12614,33 @@ struct KVCacheCopyPagesD2H:
 struct GatedDeltaConv1dFwd:
     """Gated DeltaNet causal conv1d forward pass (Pass 1 of two-pass prefill).
 
-    Computes causal depthwise conv1d over a ragged batch, updating the
-    per-sequence sliding-window conv state.
-
-    All tensors use seqlen-first [total_seq_len, conv_dim] layout.
+    Reads/writes a single mutable conv-state pool of shape
+    ``[max_slots, conv_dim, kernel_size-1]`` in place at slot
+    ``slot_idx[batch_item]``. No state-out tensor; the only output is the
+    per-token conv output. The pool's dtype is independent of the working
+    dtype, so the caller can keep the per-token tensors at fp32 while
+    storing the pool at the model's native dtype (typically bf16).
 
     Tensor Shapes:
-        - conv_output_ragged : [total_seq_len, conv_dim]             (OUT)
-        - conv_state_out     : [batch_size, conv_dim, kernel_size-1] (OUT)
+        - conv_output_ragged : [total_seq_len, conv_dim]                  (OUT)
         - qkv_input_ragged   : [total_seq_len, conv_dim]
         - conv_weight        : [conv_dim, kernel_size]
-        - conv_state_in      : [batch_size, conv_dim, kernel_size-1]
-        - input_row_offsets  : [batch_size + 1]  uint32
+        - conv_state         : [max_slots, conv_dim, kernel_size-1]       (MUT)
+        - slot_idx           : [batch_size]                          uint32
+        - input_row_offsets  : [batch_size + 1]                      uint32
     """
 
     @staticmethod
     def execute[
-        dtype: DType,
+        work_dtype: DType,
+        state_dtype: DType,
         target: StaticString,
     ](
-        conv_output_ragged: OutputTensor[dtype=dtype, rank=2, ...],
-        conv_state_out: OutputTensor[dtype=dtype, rank=3, ...],
-        qkv_input_ragged: InputTensor[dtype=dtype, rank=2, ...],
-        conv_weight: InputTensor[dtype=dtype, rank=2, ...],
-        conv_state_in: InputTensor[dtype=dtype, rank=3, ...],
+        conv_output_ragged: OutputTensor[dtype=work_dtype, rank=2, ...],
+        qkv_input_ragged: InputTensor[dtype=work_dtype, rank=2, ...],
+        conv_weight: InputTensor[dtype=work_dtype, rank=2, ...],
+        conv_state: MutableInputTensor[dtype=state_dtype, rank=3, ...],
+        slot_idx: InputTensor[dtype=DType.uint32, rank=1, ...],
         input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
         ctx: DeviceContextPtr,
     ) capturing raises:
@@ -12647,43 +12650,64 @@ struct GatedDeltaConv1dFwd:
         var total_seq_len = qkv_input_ragged.dim_size(0)
         var conv_dim = qkv_input_ragged.dim_size(1)
         var kernel_size = conv_weight.dim_size(1)
-        var batch_size = conv_state_in.dim_size(0)
+        var batch_size = slot_idx.dim_size(0)
+
+        # Host-side shape sanity checks. The kernel indexes the conv_state pool
+        # via `slot = slot_idx[batch_item]`; slot bounds are guaranteed by the
+        # Python-side `GatedDeltaNetStateCache.claim`, so we only validate that
+        # tensor shapes are mutually consistent here.
+        debug_assert(
+            input_row_offsets.dim_size(0) == batch_size + 1,
+            (
+                "gated_delta_conv1d_fwd: input_row_offsets must"
+                " have batch_size + 1 entries"
+            ),
+        )
+        debug_assert(
+            conv_state.dim_size(0) > 0,
+            (
+                "gated_delta_conv1d_fwd: conv_state pool must"
+                " have at least one slot"
+            ),
+        )
+        debug_assert(
+            conv_state.dim_size(1) == conv_dim,
+            (
+                "gated_delta_conv1d_fwd: conv_state pool channel"
+                " dim must equal conv_dim"
+            ),
+        )
+        debug_assert(
+            conv_state.dim_size(2) == kernel_size - 1,
+            (
+                "gated_delta_conv1d_fwd: conv_state pool window"
+                " dim must equal kernel_size - 1"
+            ),
+        )
 
         var conv_output_ragged_tt = conv_output_ragged.to_tile_tensor[
             DType.int64
         ]()
-        var conv_state_out_tt = conv_state_out.to_tile_tensor[DType.int64]()
         var qkv_input_ragged_tt = qkv_input_ragged.to_tile_tensor[DType.int64]()
         var conv_weight_tt = conv_weight.to_tile_tensor[DType.int64]()
-        var conv_state_in_tt = conv_state_in.to_tile_tensor[DType.int64]()
+        var conv_state_tt = conv_state.to_tile_tensor[DType.int64]()
+        var slot_idx_tt = slot_idx.to_tile_tensor[DType.int64]()
         var input_row_offsets_tt = input_row_offsets.to_tile_tensor[
             DType.int64
         ]()
 
         var qkv_input_strides = qkv_input_ragged.strides()
         var conv_weight_strides = conv_weight.strides()
-        var conv_state_in_strides = conv_state_in.strides()
-        var conv_state_out_strides = conv_state_out.strides()
+        var conv_state_strides = conv_state.strides()
         var conv_output_strides = conv_output_ragged.strides()
-
-        # Verify that output strides match input strides (required for correct indexing).
-        # If the allocator ever produces non-contiguous buffers, this assertion will
-        # surface the misconfiguration rather than silently miswriting state.
-        debug_assert(
-            conv_state_out_strides == conv_state_in_strides,
-            (
-                "gated_delta_conv1d_fwd: conv_state_out strides must match"
-                " conv_state_in strides"
-            ),
-        )
 
         var qkv_input_seqlen_stride = UInt32(qkv_input_strides[0])
         var qkv_input_channel_stride = UInt32(qkv_input_strides[1])
         var conv_weight_channel_stride = UInt32(conv_weight_strides[0])
         var conv_weight_offset_stride = UInt32(conv_weight_strides[1])
-        var conv_state_batch_stride = UInt32(conv_state_in_strides[0])
-        var conv_state_channel_stride = UInt32(conv_state_in_strides[1])
-        var conv_state_slot_stride = UInt32(conv_state_in_strides[2])
+        var conv_state_pool_stride = UInt32(conv_state_strides[0])
+        var conv_state_channel_stride = UInt32(conv_state_strides[1])
+        var conv_state_window_stride = UInt32(conv_state_strides[2])
         var conv_output_seqlen_stride = UInt32(conv_output_strides[0])
         var conv_output_channel_stride = UInt32(conv_output_strides[1])
 
@@ -12702,15 +12726,16 @@ struct GatedDeltaConv1dFwd:
             comptime kKernelSize = 4
             gpu_ctx.enqueue_function[
                 gated_delta_conv1d_fwd_gpu[
-                    dtype,
+                    work_dtype,
+                    state_dtype,
                     kKernelSize,
                     CONV1D_BLOCK_DIM,
                     qkv_input_ragged_tt.LayoutType,
                     conv_weight_tt.LayoutType,
-                    conv_state_in_tt.LayoutType,
+                    conv_state_tt.LayoutType,
+                    slot_idx_tt.LayoutType,
                     input_row_offsets_tt.LayoutType,
                     conv_output_ragged_tt.LayoutType,
-                    conv_state_out_tt.LayoutType,
                 ]
             ](
                 batch_size,
@@ -12718,17 +12743,17 @@ struct GatedDeltaConv1dFwd:
                 conv_dim,
                 qkv_input_ragged_tt,
                 conv_weight_tt,
-                conv_state_in_tt,
+                conv_state_tt,
+                slot_idx_tt,
                 input_row_offsets_tt,
                 conv_output_ragged_tt,
-                conv_state_out_tt,
                 qkv_input_seqlen_stride,
                 qkv_input_channel_stride,
                 conv_weight_channel_stride,
                 conv_weight_offset_stride,
-                conv_state_batch_stride,
+                conv_state_pool_stride,
                 conv_state_channel_stride,
-                conv_state_slot_stride,
+                conv_state_window_stride,
                 conv_output_seqlen_stride,
                 conv_output_channel_stride,
                 grid_dim=(grid_dim_batch, grid_dim_channels),
@@ -12738,58 +12763,56 @@ struct GatedDeltaConv1dFwd:
             raise Error(
                 "gated_delta_conv1d_fwd: unsupported kernel_size "
                 + String(kernel_size)
-                + ". Only kernel_size=4 is currently compiled; add a new"
-                + " elif branch in MOGGKernelAPI.mojo to support"
-                + " other sizes."
+                + ". Only kernel_size=4 is currently compiled; add a new elif"
+                + " branch in MOGGKernelAPI.mojo to support other sizes."
             )
 
     @staticmethod
     def shape[
-        dtype: DType,
+        work_dtype: DType,
+        state_dtype: DType,
     ](
-        qkv_input_ragged: InputTensor[dtype=dtype, rank=2, ...],
-        conv_weight: InputTensor[dtype=dtype, rank=2, ...],
-        conv_state_in: InputTensor[dtype=dtype, rank=3, ...],
+        qkv_input_ragged: InputTensor[dtype=work_dtype, rank=2, ...],
+        conv_weight: InputTensor[dtype=work_dtype, rank=2, ...],
+        conv_state: InputTensor[dtype=state_dtype, rank=3, ...],
+        slot_idx: InputTensor[dtype=DType.uint32, rank=1, ...],
         input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
-    ) -> Tuple[IndexList[2], IndexList[3]]:
+    ) -> IndexList[2]:
         # conv_output_ragged has same shape as qkv_input_ragged
-        # conv_state_out has same shape as conv_state_in
-        return (qkv_input_ragged.shape(), conv_state_in.shape())
+        return qkv_input_ragged.shape()
 
 
 @compiler.register("gated_delta_recurrence_fwd")
 struct GatedDeltaRecurrenceFwd:
     """Gated DeltaNet recurrence forward pass (Pass 2 of two-pass prefill).
 
-    Runs the gated delta rule recurrence over a ragged batch of sequences,
-    consuming causal conv1d outputs and producing the token-level recurrence
-    output and the updated per-sequence recurrent KV state.
-
-    The op infers batch_size, num_value_heads, and total_seq_len from tensor
-    shapes.  key_head_dim and value_head_dim are dispatched at runtime to
-    compile-time-specialised kernels.
+    Reads/writes a single mutable recurrent-state pool of shape
+    ``[max_slots, num_value_heads, key_head_dim, value_head_dim]`` in place
+    at slot ``slot_idx[batch_item]``. No state-out tensor; the only output
+    is the per-token recurrence output.
 
     Tensor Shapes:
-        - recurrence_output   : [total_seq_len, value_dim]            (OUT)
-        - recurrent_state_out : [batch_size, num_value_heads, KD, VD] (OUT)
-        - qkv_conv_output     : [total_seq_len, conv_dim]
-        - decay_per_token     : [total_seq_len, num_value_heads]
-        - beta_per_token      : [total_seq_len, num_value_heads]
-        - recurrent_state_in  : [batch_size, num_value_heads, KD, VD]
-        - input_row_offsets   : [batch_size + 1]  uint32
+        - recurrence_output : [total_seq_len, value_dim]                  (OUT)
+        - qkv_conv_output   : [total_seq_len, conv_dim]
+        - decay_per_token   : [total_seq_len, num_value_heads]
+        - beta_per_token    : [total_seq_len, num_value_heads]
+        - recurrent_state   : [max_slots, num_value_heads, KD, VD]        (MUT)
+        - slot_idx          : [batch_size]                          uint32
+        - input_row_offsets : [batch_size + 1]                      uint32
     """
 
     @staticmethod
     def execute[
-        dtype: DType,
+        work_dtype: DType,
+        state_dtype: DType,
         target: StaticString,
     ](
-        recurrence_output: OutputTensor[dtype=dtype, rank=2, ...],
-        recurrent_state_out: OutputTensor[dtype=dtype, rank=4, ...],
-        qkv_conv_output: InputTensor[dtype=dtype, rank=2, ...],
-        decay_per_token: InputTensor[dtype=dtype, rank=2, ...],
-        beta_per_token: InputTensor[dtype=dtype, rank=2, ...],
-        recurrent_state_in: InputTensor[dtype=dtype, rank=4, ...],
+        recurrence_output: OutputTensor[dtype=work_dtype, rank=2, ...],
+        qkv_conv_output: InputTensor[dtype=work_dtype, rank=2, ...],
+        decay_per_token: InputTensor[dtype=work_dtype, rank=2, ...],
+        beta_per_token: InputTensor[dtype=work_dtype, rank=2, ...],
+        recurrent_state: MutableInputTensor[dtype=state_dtype, rank=4, ...],
+        slot_idx: InputTensor[dtype=DType.uint32, rank=1, ...],
         input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
         ctx: DeviceContextPtr,
     ) capturing raises:
@@ -12800,9 +12823,9 @@ struct GatedDeltaRecurrenceFwd:
         var total_seq_len = qkv_conv_output.dim_size(0)
         var conv_dim = qkv_conv_output.dim_size(1)
         var num_value_heads = decay_per_token.dim_size(1)
-        var batch_size = recurrent_state_in.dim_size(0)
-        var key_head_dim = recurrent_state_in.dim_size(2)
-        var value_head_dim = recurrent_state_in.dim_size(3)
+        var batch_size = slot_idx.dim_size(0)
+        var key_head_dim = recurrent_state.dim_size(2)
+        var value_head_dim = recurrent_state.dim_size(3)
         var value_dim = num_value_heads * value_head_dim
         # key_dim = (conv_dim - value_dim) / 2  where conv_dim = 2*key_dim + value_dim
         var key_dim = (conv_dim - value_dim) // 2
@@ -12817,44 +12840,73 @@ struct GatedDeltaRecurrenceFwd:
         debug_assert(
             key_dim % key_head_dim == 0,
             (
-                "gated_delta_recurrence_fwd: key_dim must be divisible by"
-                " key_head_dim"
+                "gated_delta_recurrence_fwd: key_dim must be"
+                " divisible by key_head_dim"
+            ),
+        )
+
+        # Host-side shape sanity checks. The kernel indexes the recurrent_state
+        # pool via `slot = slot_idx[batch_item]`; slot bounds are guaranteed by
+        # the Python-side `GatedDeltaNetStateCache.claim`, so we only validate
+        # tensor shapes here.
+        debug_assert(
+            input_row_offsets.dim_size(0) == batch_size + 1,
+            (
+                "gated_delta_recurrence_fwd: input_row_offsets"
+                " must have batch_size + 1 entries"
+            ),
+        )
+        debug_assert(
+            recurrent_state.dim_size(0) > 0,
+            (
+                "gated_delta_recurrence_fwd: recurrent_state pool"
+                " must have at least one slot"
+            ),
+        )
+        debug_assert(
+            recurrent_state.dim_size(1) == num_value_heads,
+            (
+                "gated_delta_recurrence_fwd: recurrent_state pool"
+                " value-head dim must equal num_value_heads"
+            ),
+        )
+        debug_assert(
+            decay_per_token.dim_size(0) == total_seq_len,
+            (
+                "gated_delta_recurrence_fwd: decay_per_token"
+                " seqlen must equal qkv_conv_output seqlen"
+            ),
+        )
+        debug_assert(
+            beta_per_token.dim_size(0) == total_seq_len,
+            (
+                "gated_delta_recurrence_fwd: beta_per_token"
+                " seqlen must equal qkv_conv_output seqlen"
             ),
         )
 
         var recurrence_output_tt = recurrence_output.to_tile_tensor[
             DType.int64
         ]()
-        var recurrent_state_out_tt = recurrent_state_out.to_tile_tensor[
-            DType.int64
-        ]()
         var qkv_conv_output_tt = qkv_conv_output.to_tile_tensor[DType.int64]()
         var decay_per_token_tt = decay_per_token.to_tile_tensor[DType.int64]()
         var beta_per_token_tt = beta_per_token.to_tile_tensor[DType.int64]()
-        var recurrent_state_in_tt = recurrent_state_in.to_tile_tensor[
-            DType.int64
-        ]()
+        var recurrent_state_tt = recurrent_state.to_tile_tensor[DType.int64]()
+        var slot_idx_tt = slot_idx.to_tile_tensor[DType.int64]()
         var input_row_offsets_tt = input_row_offsets.to_tile_tensor[
             DType.int64
         ]()
 
         var qkv_strides = qkv_conv_output.strides()
         var per_token_decay_strides = decay_per_token.strides()
-        var recurrent_state_strides = recurrent_state_in.strides()
+        var recurrent_state_strides = recurrent_state.strides()
         var recurrence_output_strides = recurrence_output.strides()
 
         debug_assert(
             beta_per_token.strides() == per_token_decay_strides,
             (
-                "gated_delta_recurrence_fwd: beta_per_token strides must"
-                " match decay_per_token strides"
-            ),
-        )
-        debug_assert(
-            recurrent_state_out.strides() == recurrent_state_strides,
-            (
-                "gated_delta_recurrence_fwd: recurrent_state_out strides"
-                " must match recurrent_state_in strides"
+                "gated_delta_recurrence_fwd: beta_per_token"
+                " strides must match decay_per_token strides"
             ),
         )
 
@@ -12862,7 +12914,7 @@ struct GatedDeltaRecurrenceFwd:
         var qkv_conv_output_channel_stride = UInt32(qkv_strides[1])
         var per_token_seqlen_stride = UInt32(per_token_decay_strides[0])
         var per_token_head_stride = UInt32(per_token_decay_strides[1])
-        var recurrent_state_batch_stride = UInt32(recurrent_state_strides[0])
+        var recurrent_state_slot_stride = UInt32(recurrent_state_strides[0])
         var recurrent_state_value_head_stride = UInt32(
             recurrent_state_strides[1]
         )
@@ -12894,16 +12946,17 @@ struct GatedDeltaRecurrenceFwd:
             comptime kVD = 128
             gpu_ctx.enqueue_function[
                 gated_delta_recurrence_fwd_gpu[
-                    dtype,
+                    work_dtype,
+                    state_dtype,
                     kKD,
                     kVD,
                     RECURRENCE_BLOCK_SIZE,
                     recurrence_output_tt.LayoutType,
-                    recurrent_state_out_tt.LayoutType,
                     qkv_conv_output_tt.LayoutType,
                     decay_per_token_tt.LayoutType,
                     beta_per_token_tt.LayoutType,
-                    recurrent_state_in_tt.LayoutType,
+                    recurrent_state_tt.LayoutType,
+                    slot_idx_tt.LayoutType,
                     input_row_offsets_tt.LayoutType,
                 ]
             ](
@@ -12916,17 +12969,17 @@ struct GatedDeltaRecurrenceFwd:
                 value_dim,
                 conv_dim,
                 recurrence_output_tt,
-                recurrent_state_out_tt,
+                recurrent_state_tt,
+                slot_idx_tt,
                 qkv_conv_output_tt,
                 decay_per_token_tt,
                 beta_per_token_tt,
-                recurrent_state_in_tt,
                 input_row_offsets_tt,
                 qkv_conv_output_seqlen_stride,
                 qkv_conv_output_channel_stride,
                 per_token_seqlen_stride,
                 per_token_head_stride,
-                recurrent_state_batch_stride,
+                recurrent_state_slot_stride,
                 recurrent_state_value_head_stride,
                 recurrent_state_key_dim_stride,
                 recurrent_state_value_dim_stride,
@@ -12937,8 +12990,8 @@ struct GatedDeltaRecurrenceFwd:
             )
         else:
             raise Error(
-                "gated_delta_recurrence_fwd: unsupported (key_head_dim,"
-                " value_head_dim) = ("
+                "gated_delta_recurrence_fwd: unsupported"
+                + " (key_head_dim, value_head_dim) = ("
                 + String(key_head_dim)
                 + ", "
                 + String(value_head_dim)
@@ -12948,24 +13001,22 @@ struct GatedDeltaRecurrenceFwd:
 
     @staticmethod
     def shape[
-        dtype: DType,
+        work_dtype: DType,
+        state_dtype: DType,
     ](
-        qkv_conv_output: InputTensor[dtype=dtype, rank=2, ...],
-        decay_per_token: InputTensor[dtype=dtype, rank=2, ...],
-        beta_per_token: InputTensor[dtype=dtype, rank=2, ...],
-        recurrent_state_in: InputTensor[dtype=dtype, rank=4, ...],
+        qkv_conv_output: InputTensor[dtype=work_dtype, rank=2, ...],
+        decay_per_token: InputTensor[dtype=work_dtype, rank=2, ...],
+        beta_per_token: InputTensor[dtype=work_dtype, rank=2, ...],
+        recurrent_state: InputTensor[dtype=state_dtype, rank=4, ...],
+        slot_idx: InputTensor[dtype=DType.uint32, rank=1, ...],
         input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
-    ) -> Tuple[IndexList[2], IndexList[4]]:
+    ) -> IndexList[2]:
         # recurrence_output: [total_seq_len, value_dim]
-        # recurrent_state_out: same shape as recurrent_state_in
         var total_seq_len = qkv_conv_output.dim_size(0)
         var num_value_heads = decay_per_token.dim_size(1)
-        var value_head_dim = recurrent_state_in.dim_size(3)
+        var value_head_dim = recurrent_state.dim_size(3)
         var value_dim = num_value_heads * value_head_dim
-        return (
-            IndexList[2](total_seq_len, value_dim),
-            recurrent_state_in.shape(),
-        )
+        return IndexList[2](total_seq_len, value_dim)
 
 
 # ===-----------------------------------------------------------------------===#

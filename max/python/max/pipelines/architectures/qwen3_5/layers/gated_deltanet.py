@@ -17,29 +17,37 @@ This implements the linear attention mechanism used in 48 out of 64 layers
 of Qwen3.5. It uses a gated delta rule recurrence with causal convolution
 for sequence modeling without the quadratic cost of full attention.
 
-The layer maintains two types of state:
-- conv_state: sliding window of recent inputs for the causal conv1d
-  Shape: [batch_size, conv_dim, kernel_size - 1]
-- recurrent_state: the accumulated key-value memory
-  Shape: [batch_size, num_v_heads, key_head_dim, value_head_dim]
+State is held in two pools, one per layer per direction, that the kernels
+mutate in place at slot ``slot_idx[batch_item]``:
+
+- ``conv_pool``: sliding window of recent inputs for the causal conv1d.
+  Shape ``[max_slots, conv_dim, kernel_size - 1]``.
+- ``recurrent_pool``: the accumulated key-value memory.
+  Shape ``[max_slots, num_v_heads, key_head_dim, value_head_dim]``.
 
 Both prefill (seq_len > 1) and decode (seq_len == 1) are handled by the
-same two fused GPU kernels:
+same two slot-indexed fused GPU kernels:
 
-- Pass 1 (gated_delta_conv1d_fwd): one GPU thread per (batch_item,
-  conv_channel).  Each thread processes its full sequence, reading from
-  conv_state for the initial look-back window.
+- Pass 1 (``gated_delta_conv1d_fwd``): one GPU thread per (batch_item,
+  conv_channel). Each thread reads/writes its slot's window in place;
+  no gather/scatter, no working buffers.
 
-- Pass 2 (gated_delta_recurrence_fwd): one GPU thread per (batch_item,
-  value_head, value_dim_element).  Each thread owns a KD-element state
+- Pass 2 (``gated_delta_recurrence_fwd``): one GPU thread per (batch_item,
+  value_head, value_dim_element). Each thread owns a KD-element state
   column in registers and iterates over its sequence, applying the
-  five-step gated delta rule.  For decode (seqlen=1) the loop runs once.
+  five-step gated delta rule, then writes the final state back into its
+  slot. For decode (seqlen=1) the loop runs once.
+
+This matches vLLM's ``selective_state_update`` design: the kernel does
+pointer arithmetic ``state_ptr += slot * stride`` into a long-lived pool,
+so there is no per-step pool allocation and no Python-level
+gather/scatter loop.
 """
 
 from __future__ import annotations
 
 from max.dtype import DType
-from max.graph import DeviceRef, TensorValue, Weight, ops
+from max.graph import BufferValue, DeviceRef, TensorValue, Weight, ops
 from max.nn.layer import Module
 from max.nn.linear import Linear
 from max.nn.norm import RMSNorm
@@ -170,21 +178,30 @@ class GatedDeltaNet(Module):
     def __call__(
         self,
         x: TensorValue,
-        conv_state: TensorValue,
-        recurrent_state: TensorValue,
+        conv_pool: BufferValue,
+        recurrent_pool: BufferValue,
+        slot_idx: TensorValue,
         input_row_offsets: TensorValue,
-    ) -> tuple[TensorValue, TensorValue, TensorValue]:
+    ) -> TensorValue:
         """Forward pass through the Gated DeltaNet layer.
 
+        The conv and recurrent state pools live in graph-input buffers that
+        the slot-indexed SSM kernels mutate in place at slot
+        ``slot_idx[batch_item]``; there are no graph outputs for the new
+        state. This matches vLLM's ``selective_state_update`` design and
+        avoids per-decode pool allocation.
+
         Args:
-            x: Input hidden states [total_seq_len, hidden_size].
-            conv_state: Conv state [batch_size, conv_dim, kernel_size - 1].
-            recurrent_state: Recurrent state
-                [batch_size, num_v_heads, key_head_dim, value_head_dim].
-            input_row_offsets: Row offsets [batch_size + 1] (uint32).
+            x: Input hidden states ``[total_seq_len, hidden_size]``.
+            conv_pool: Per-layer conv pool (mutable),
+                ``[max_slots, conv_dim, kernel_size - 1]``.
+            recurrent_pool: Per-layer recurrent pool (mutable),
+                ``[max_slots, num_v_heads, key_head_dim, value_head_dim]``.
+            slot_idx: ``[batch_size]`` uint32 slot indices into the pools.
+            input_row_offsets: Row offsets ``[batch_size + 1]`` (uint32).
 
         Returns:
-            Tuple of (output, updated_conv_state, updated_recurrent_state).
+            Output hidden states ``[total_seq_len, hidden_size]``.
         """
         device = x.device
         nv = self.num_value_heads
@@ -222,50 +239,39 @@ class GatedDeltaNet(Module):
             conv_weight_f32, [self.conv_dim, K]
         )  # [conv_dim, K]
 
-        # Cast input states to float32 for computation.
-        # States are stored in the model's native dtype (typically bfloat16);
-        # all recurrence arithmetic runs in float32 for numerical accuracy.
-        # The output states are cast back to the original dtype before returning.
-        conv_state_f32 = ops.cast(conv_state, DType.float32)
-        recurrent_state_f32 = ops.cast(recurrent_state, DType.float32)
-
         # ---- Two-pass fused kernel path (handles both prefill and decode) ----
         # Pass 1: causal conv1d — one GPU thread per (batch_item, conv_channel)
         # Pass 2: gated delta recurrence — one GPU thread per
         #         (batch_item, value_head, vd_element); state column lives in
         #         registers. For decode (seqlen=1) both loops execute once.
+        # The pools are mutable graph inputs at the model's native dtype
+        # (typically bf16); the kernels cast on read/write so the per-token
+        # working tensors stay at fp32.
         offsets_uint32 = ops.cast(input_row_offsets, DType.uint32)
+        slot_idx_uint32 = ops.cast(slot_idx, DType.uint32)
 
-        conv_output_ragged, new_conv_state = gated_delta_conv1d_fwd(
+        conv_output_ragged = gated_delta_conv1d_fwd(
             qkv_input_ragged=qkv_f32,
             conv_weight=conv_weight_flat,
-            conv_state_in=conv_state_f32,
+            conv_state=conv_pool,
+            slot_idx=slot_idx_uint32,
             input_row_offsets=offsets_uint32,
         )
         conv_output_ragged = ops.silu(conv_output_ragged)
 
-        recurrence_output_flat, new_recurrent_state = (
-            gated_delta_recurrence_fwd(
-                qkv_conv_output=conv_output_ragged,
-                decay_per_token=decay,
-                beta_per_token=beta,
-                recurrent_state_in=recurrent_state_f32,
-                input_row_offsets=offsets_uint32,
-            )
+        recurrence_output_flat = gated_delta_recurrence_fwd(
+            qkv_conv_output=conv_output_ragged,
+            decay_per_token=decay,
+            beta_per_token=beta,
+            recurrent_state=recurrent_pool,
+            slot_idx=slot_idx_uint32,
+            input_row_offsets=offsets_uint32,
         )
 
         output_flat = ops.rebind(
             recurrence_output_flat,
             [x.shape[0], self.value_dim],
             "recurrence_output_flat total_seq_len rebind",
-        )
-
-        # Cast updated states back to the original storage dtype (model dtype,
-        # typically bfloat16).  Computation runs in float32 above; storing in
-        # model dtype halves state memory vs float32.
-        new_conv_state = ops.cast(new_conv_state, conv_state.dtype)
-        new_recurrent_state = ops.cast(
-            new_recurrent_state, recurrent_state.dtype
         )
 
         # ---- Post-process: gated RMSNorm + output projection ----
@@ -281,4 +287,4 @@ class GatedDeltaNet(Module):
         output_gated = ops.cast(output_gated, x.dtype)
 
         result = self.out_proj(ops.reshape(output_gated, [-1, self.value_dim]))
-        return result, new_conv_state, new_recurrent_state
+        return result

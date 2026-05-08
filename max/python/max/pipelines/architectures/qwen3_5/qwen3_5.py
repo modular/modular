@@ -117,14 +117,12 @@ class Qwen3_5TransformerBlock(Module):
         kv_collection: PagedCacheValues | None = None,
         freqs_cis: TensorValue | None = None,
         input_row_offsets: TensorValue | None = None,
-        conv_state: TensorValue | None = None,
-        recurrent_state: TensorValue | None = None,
-    ) -> tuple[TensorValue, TensorValue | None, TensorValue | None]:
+        conv_pool: BufferValue | None = None,
+        recurrent_pool: BufferValue | None = None,
+        slot_idx: TensorValue | None = None,
+    ) -> TensorValue:
         residual = x
         h = self.input_layernorm(x)
-
-        new_conv_state = None
-        new_recurrent_state = None
 
         if self.layer_type == "full_attention":
             assert layer_idx is not None
@@ -135,18 +133,23 @@ class Qwen3_5TransformerBlock(Module):
                 layer_idx, h, kv_collection, freqs_cis, input_row_offsets
             )
         else:
-            assert conv_state is not None
-            assert recurrent_state is not None
+            assert conv_pool is not None
+            assert recurrent_pool is not None
+            assert slot_idx is not None
             assert input_row_offsets is not None
-            h, new_conv_state, new_recurrent_state = self.linear_attn(
-                h, conv_state, recurrent_state, input_row_offsets
+            h = self.linear_attn(
+                h,
+                conv_pool=conv_pool,
+                recurrent_pool=recurrent_pool,
+                slot_idx=slot_idx,
+                input_row_offsets=input_row_offsets,
             )
 
         h = residual + h
         residual = h
         h = self.post_attention_layernorm(h)
         h = self.mlp(h)
-        return residual + h, new_conv_state, new_recurrent_state
+        return residual + h
 
 
 class Qwen3_5(DistributedLogitsPostprocessMixin, Module):
@@ -276,12 +279,18 @@ class Qwen3_5(DistributedLogitsPostprocessMixin, Module):
         return_n_logits: TensorValue,
         input_row_offsets: TensorValue,
         signal_buffers: list[BufferValue],
-        conv_states: list[TensorValue],
-        recurrent_states: list[TensorValue],
+        slot_idx: TensorValue,
+        conv_pools: list[BufferValue],
+        recurrent_pools: list[BufferValue],
         image_embeddings: TensorValue | None = None,
         image_token_indices: TensorValue | None = None,
     ) -> tuple[TensorValue, ...]:
         """Forward pass through the hybrid model.
+
+        The conv and recurrent state pools are mutable graph inputs;
+        per-linear-layer the slot-indexed SSM kernels read and write them in
+        place at slot ``slot_idx[batch_item]``. There are no per-layer state
+        graph outputs — the only graph outputs are the logits.
 
         Args:
             tokens: Input token IDs.
@@ -289,15 +298,19 @@ class Qwen3_5(DistributedLogitsPostprocessMixin, Module):
             return_n_logits: Number of logits to return.
             input_row_offsets: Row offsets for ragged batching.
             signal_buffers: Signal buffers for allreduce.
-            conv_states: Per-linear-layer conv states.
-            recurrent_states: Per-linear-layer recurrent states.
+            slot_idx: Per-batch slot indices into the linear-attention pools,
+                shape ``[batch_size]`` uint32.
+            conv_pools: Per-linear-layer mutable conv state pools,
+                shape ``[max_slots, conv_dim, K-1]``.
+            recurrent_pools: Per-linear-layer mutable recurrent state pools,
+                shape ``[max_slots, num_v_heads, key_dim, val_dim]``.
             image_embeddings: Vision encoder output to merge into token embeddings.
                 Shape [vision_merged_seq_len, hidden_size]. None for text-only.
             image_token_indices: Scatter indices for placing image embeddings in
                 the token sequence. Shape [vision_merged_seq_len]. None for text-only.
 
         Returns:
-            Tuple of (logits, updated_conv_states..., updated_recurrent_states...).
+            Tuple of (logits,).
         """
         # Get embeddings — unwrap immediately; this model is single-GPU only.
         h_list = self.embed_tokens(tokens, signal_buffers)
@@ -314,9 +327,6 @@ class Qwen3_5(DistributedLogitsPostprocessMixin, Module):
         freqs_cis = self.rope.freqs_cis.to(self.devices[0])
         input_row_offsets = input_row_offsets.to(self.devices[0])
 
-        # Track updated linear attention states
-        updated_conv_states: list[TensorValue] = []
-        updated_recurrent_states: list[TensorValue] = []
         linear_state_idx = 0
         # kv_cache_idx is the sequential index within the KV cache (0-based
         # across full-attention layers only), distinct from the absolute layer
@@ -324,13 +334,15 @@ class Qwen3_5(DistributedLogitsPostprocessMixin, Module):
         # we must NOT pass the absolute layer index here.
         kv_cache_idx = 0
 
-        # Process through transformer layers
+        # Process through transformer layers. The slot-indexed SSM kernels
+        # mutate the conv/recurrent pools in place; no state outputs to thread
+        # through.
         for idx, layer in enumerate(self.layers):
             if self.layer_types[idx] == "full_attention":
                 layer_idx_tensor = ops.constant(
                     kv_cache_idx, DType.uint32, device=DeviceRef.CPU()
                 )
-                h, _, _ = layer(
+                h = layer(
                     h,
                     layer_idx=layer_idx_tensor,
                     kv_collection=kv_collections[0],
@@ -339,20 +351,19 @@ class Qwen3_5(DistributedLogitsPostprocessMixin, Module):
                 )
                 kv_cache_idx += 1
             else:
-                h, new_conv, new_recurrent = layer(
+                h = layer(
                     h,
-                    conv_state=conv_states[linear_state_idx],
-                    recurrent_state=recurrent_states[linear_state_idx],
+                    conv_pool=conv_pools[linear_state_idx],
+                    recurrent_pool=recurrent_pools[linear_state_idx],
+                    slot_idx=slot_idx,
                     input_row_offsets=input_row_offsets,
                 )
-                updated_conv_states.append(new_conv)
-                updated_recurrent_states.append(new_recurrent)
                 linear_state_idx += 1
 
         logits = self._postprocess_logits(
             [h], [input_row_offsets], return_n_logits, signal_buffers
         )
-        return (*logits, *updated_conv_states, *updated_recurrent_states)
+        return tuple(logits)
 
     def input_types(
         self, kv_params: KVCacheParamInterface
@@ -385,18 +396,20 @@ class Qwen3_5(DistributedLogitsPostprocessMixin, Module):
         # Flatten KV types for all devices
         flattened_kv_types = kv_inputs.flatten()
 
-        # Linear attention state types.
-        # States are per-sequence (batch_size), independent of total_seq_len
-        # (which counts all tokens across sequences in the ragged batch).
-        # States are stored in the model's native dtype (typically bfloat16);
-        # computation is promoted to float32 inside GatedDeltaNet.__call__().
+        # Linear-attention state pools. Pools are mutable ``BufferType`` graph
+        # inputs in the model's native dtype (typically bf16); the slot-indexed
+        # SSM kernels mutate them in place at slot ``slot_idx[batch_item]``.
+        # ``slot_idx`` is a single per-step ``[batch_size]`` uint32 tensor.
         num_linear_layers = len(self.linear_layer_indices)
         state_dtype = self.config.dtype
-        conv_state_types: list[TensorType | BufferType] = [
-            TensorType(
+        slot_idx_type = TensorType(
+            DType.uint32, shape=["batch_size"], device=device_ref
+        )
+        conv_pool_types: list[TensorType | BufferType] = [
+            BufferType(
                 state_dtype,
                 shape=[
-                    "batch_size",
+                    "max_slots",
                     self._conv_dim,
                     self._conv_kernel_size - 1,
                 ],
@@ -404,11 +417,11 @@ class Qwen3_5(DistributedLogitsPostprocessMixin, Module):
             )
             for _ in range(num_linear_layers)
         ]
-        recurrent_state_types: list[TensorType | BufferType] = [
-            TensorType(
+        recurrent_pool_types: list[TensorType | BufferType] = [
+            BufferType(
                 state_dtype,
                 shape=[
-                    "batch_size",
+                    "max_slots",
                     self._num_v_heads,
                     self._key_head_dim,
                     self._value_head_dim,
@@ -437,7 +450,8 @@ class Qwen3_5(DistributedLogitsPostprocessMixin, Module):
             base_inputs
             + signal_buffer_types
             + flattened_kv_types
-            + conv_state_types
-            + recurrent_state_types
+            + [slot_idx_type]
+            + conv_pool_types
+            + recurrent_pool_types
             + vision_types
         )

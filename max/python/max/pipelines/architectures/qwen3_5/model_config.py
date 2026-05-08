@@ -209,24 +209,15 @@ class Qwen3_5Config(Llama3Config):
     ) -> int:
         """Return a memory-safe default `max_batch_size` for this architecture.
 
-        Qwen3.5 allocates GPU memory for GatedDeltaNet recurrent states with
-        three distinct cost centres per active request:
+        Qwen3.5 stores GatedDeltaNet conv and recurrent state in a single
+        ``max_batch x per_req`` pool that the slot-indexed SSM kernels
+        mutate in place. There are no working copies, so peak footprint is
+        ``max_batch x per_req`` bytes.
 
-        1. **Persistent pool** (`max_batch x per_req`): pre-allocated once at
-           startup and lives for the full server lifetime.
-        2. **Input working buffers** (`batch x per_req`): gathered from the
-           pool into dense batch tensors by `get_states()` each step.
-        3. **Output working buffers** (`batch x per_req`): produced by the
-           model kernel and scattered back to the pool by `update_states()`.
-
-        Worst-case simultaneous footprint is therefore **3 x max_batch x per_req**
-        (pool + both working copies). We split the post-weights utilization
-        budget evenly: the state pool gets up to half, the KV cache absorbs
-        the rest. This uses the same ``device_memory_utilization`` headroom
-        factor as the rest of the pipeline.
-
-        This is consistent with `estimate_activation_memory()` which reserves
-        `3 x max_batch x per_req` bytes before the KV-cache allocator runs.
+        We split the post-weights utilization budget evenly: the state pool
+        gets up to half, the KV cache absorbs the rest. This uses the same
+        ``device_memory_utilization`` headroom factor as the rest of the
+        pipeline, and matches the ``estimate_activation_memory()`` reservation.
 
         Falls back to 32—safe for the 27B model on H100/A100 (80 GB)—when
         the device query fails.
@@ -244,8 +235,8 @@ class Qwen3_5Config(Llama3Config):
         budget = int(free_bytes * device_memory_utilization) - weights_size
         if budget <= 0:
             return 1
-        # Divide by 3*per_req: pool + input working + output working.
-        max_batch = max(1, (budget // 2) // (3 * per_req))
+        # Single in-place pool: divide half the budget by per_req.
+        max_batch = max(1, (budget // 2) // per_req)
         return min(512, max_batch)
 
     @override

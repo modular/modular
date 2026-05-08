@@ -66,18 +66,24 @@ Inputs:
       Per-token, per-head scalar decay factor (exp(-softplus) pre-applied).
   beta_per_token     : [total_seq_len, num_value_heads]        float32
       Per-token, per-head beta gate (sigmoid pre-applied).
-  recurrent_state_in : [batch_size, num_value_heads, key_head_dim, value_head_dim]
-      Initial recurrent KV memory at the start of the current segment.
-  input_row_offsets  : [batch_size + 1]                       uint32
+  recurrent_state    : [max_slots, num_value_heads, key_head_dim, value_head_dim]
+      Mutable recurrent-state pool.  The kernel reads/writes slot
+      `slot_idx[batch_item]` in place; all other slots are untouched.
+      Pool dtype is independent of the working dtype, so the caller can
+      keep per-token tensors at float32 while storing the pool at the
+      model's native dtype (typically bfloat16).
+  slot_idx           : [batch_size]                            uint32
+      Pool slot index for each batch item.
+  input_row_offsets  : [batch_size + 1]                        uint32
       Ragged offsets: sequence b spans flat indices
       [input_row_offsets[b], input_row_offsets[b+1]).
 
 Outputs:
-  recurrence_output     : [total_seq_len, value_dim]           float32
+  recurrence_output  : [total_seq_len, value_dim]              float32
       Flat output for all tokens.  Indexed as
       output[flat_t, value_head_idx * value_head_dim + vd_element_idx].
-  recurrent_state_out   : [batch_size, num_value_heads, key_head_dim, value_head_dim]
-      Updated recurrent KV memory after processing all tokens.
+  (recurrent_state is mutated in place; there is no separate state-out
+   tensor.)
 
 Thread mapping (GPU)
 --------------------
@@ -94,7 +100,8 @@ Thread mapping (GPU)
     key_head_idx          = value_head_idx // heads_expansion_ratio
 
   Each thread owns the KD-element column
-    state_col[0..KD-1]  =  recurrent_state_in[batch, value_head, 0..KD-1, vd_element]
+    state_col[0..KD-1] =
+      recurrent_state[slot_idx[batch_item], value_head, 0..KD-1, vd_element]
   in registers and iterates over its sequence sequentially.
 """
 
@@ -114,16 +121,17 @@ from std.utils.index import IndexList
 
 
 def gated_delta_recurrence_fwd_gpu[
-    dtype: DType,
+    work_dtype: DType,  # for qkv/decay/beta/recurrence_output (typically fp32)
+    state_dtype: DType,  # for the recurrent_state pool (typically bf16)
     KEY_HEAD_DIM: Int,  # key_head_dim, compile-time (e.g. 128 for Qwen3.5)
     VALUE_HEAD_DIM: Int,  # value_head_dim, compile-time (e.g. 128 for Qwen3.5)
     RECURRENCE_BLOCK_SIZE: Int,
     recurrence_output_LT: TensorLayout,
-    recurrent_state_out_LT: TensorLayout,
     qkv_conv_output_LT: TensorLayout,
     decay_per_token_LT: TensorLayout,
     beta_per_token_LT: TensorLayout,
-    recurrent_state_in_LT: TensorLayout,
+    recurrent_state_LT: TensorLayout,
+    slot_idx_LT: TensorLayout,
     input_row_offsets_LT: TensorLayout,
 ](
     total_threads: Int,  # batch_size * num_value_heads * value_head_dim
@@ -135,16 +143,20 @@ def gated_delta_recurrence_fwd_gpu[
     value_dim: Int,  # num_value_heads * value_head_dim
     conv_dim: Int,  # key_dim * 2 + value_dim
     recurrence_output: TileTensor[
-        dtype, recurrence_output_LT, MutExternalOrigin
+        work_dtype, recurrence_output_LT, MutExternalOrigin
     ],
-    recurrent_state_out: TileTensor[
-        dtype, recurrent_state_out_LT, MutExternalOrigin
+    recurrent_state: TileTensor[
+        state_dtype, recurrent_state_LT, MutExternalOrigin
     ],
-    qkv_conv_output: TileTensor[dtype, qkv_conv_output_LT, MutExternalOrigin],
-    decay_per_token: TileTensor[dtype, decay_per_token_LT, MutExternalOrigin],
-    beta_per_token: TileTensor[dtype, beta_per_token_LT, MutExternalOrigin],
-    recurrent_state_in: TileTensor[
-        dtype, recurrent_state_in_LT, MutExternalOrigin
+    slot_idx: TileTensor[DType.uint32, slot_idx_LT, MutExternalOrigin],
+    qkv_conv_output: TileTensor[
+        work_dtype, qkv_conv_output_LT, MutExternalOrigin
+    ],
+    decay_per_token: TileTensor[
+        work_dtype, decay_per_token_LT, MutExternalOrigin
+    ],
+    beta_per_token: TileTensor[
+        work_dtype, beta_per_token_LT, MutExternalOrigin
     ],
     input_row_offsets: TileTensor[
         DType.uint32, input_row_offsets_LT, MutExternalOrigin
@@ -155,8 +167,11 @@ def gated_delta_recurrence_fwd_gpu[
     # Strides for [total_seq_len, num_value_heads] tensors (decay, beta)
     per_token_seqlen_stride: UInt32,
     per_token_head_stride: UInt32,
-    # Strides for [batch, nv, KD, VD] recurrent state tensors
-    recurrent_state_batch_stride: UInt32,
+    # Strides for [max_slots, nv, KD, VD] recurrent state pool.
+    # `recurrent_state_slot_stride` is the stride between adjacent slots —
+    # same numeric meaning as the previous `recurrent_state_batch_stride`
+    # for the old [B, nv, KD, VD] tensor.
+    recurrent_state_slot_stride: UInt32,
     recurrent_state_value_head_stride: UInt32,
     recurrent_state_key_dim_stride: UInt32,
     recurrent_state_value_dim_stride: UInt32,
@@ -164,10 +179,14 @@ def gated_delta_recurrence_fwd_gpu[
     recurrence_output_seqlen_stride: UInt32,
     recurrence_output_valuedim_stride: UInt32,
 ):
-    """GPU kernel: gated delta rule recurrence over a ragged batch.
+    """GPU kernel: slot-indexed gated delta rule recurrence.
 
-    One thread per (batch_item, value_head, vd_element) triple.
-    The KD-element state column lives entirely in registers.
+    The recurrent state lives in a single mutable pool of shape
+    ``[max_slots, nv, KD, VD]``; this kernel reads/writes pool slot
+    ``slot_idx[batch_item_idx]`` for batch item ``batch_item_idx`` and avoids
+    the gather/scatter copies the host-side state cache used to do.
+    One thread per (batch_item, value_head, vd_element) triple; the
+    KD-element state column lives entirely in registers.
     """
     # Cast to Int before multiplication to avoid UInt32 overflow
     var flat_thread_idx = Int(block_dim.x) * Int(block_idx.x) + Int(
@@ -186,22 +205,26 @@ def gated_delta_recurrence_fwd_gpu[
     if batch_item_idx >= batch_size:
         return
 
+    # Read the pool slot for this batch item exactly once. The caller
+    # (`GatedDeltaNetStateCache.claim`) guarantees `slot < max_slots`.
+    var slot = Int(slot_idx.ptr[batch_item_idx])
+
     # GQA: map value head to key head
     var heads_expansion_ratio = num_value_heads // num_key_heads
     var key_head_idx = value_head_idx // heads_expansion_ratio
 
-    # ── Load initial state column into registers ─────────────────────────────
-    # state_col[k] = recurrent_state_in[batch, value_head, k, vd_element]
+    # ── Load initial state column from pool[slot, ...] ──────────────────────
+    # state_col[k] = recurrent_state[slot, value_head, k, vd_element]
     var state_col = SIMD[DType.float32, KEY_HEAD_DIM](0.0)
     comptime for kd_element_k in range(KEY_HEAD_DIM):
-        var state_in_flat_offset = (
-            UInt32(batch_item_idx) * recurrent_state_batch_stride
+        var state_flat_offset = (
+            UInt32(slot) * recurrent_state_slot_stride
             + UInt32(value_head_idx) * recurrent_state_value_head_stride
             + UInt32(kd_element_k) * recurrent_state_key_dim_stride
             + UInt32(vd_element_idx) * recurrent_state_value_dim_stride
         )
         state_col[kd_element_k] = Scalar[DType.float32](
-            recurrent_state_in.ptr[state_in_flat_offset]
+            recurrent_state.ptr[state_flat_offset]
         )
 
     # ── Sequence boundaries from ragged offsets ──────────────────────────────
@@ -337,18 +360,18 @@ def gated_delta_recurrence_fwd_gpu[
             + UInt32(value_head_idx * VALUE_HEAD_DIM + vd_element_idx)
             * recurrence_output_valuedim_stride
         )
-        recurrence_output.ptr[recurrence_output_flat_offset] = Scalar[dtype](
-            output_value
-        )
+        recurrence_output.ptr[recurrence_output_flat_offset] = Scalar[
+            work_dtype
+        ](output_value)
 
-    # ── Write final state column back to recurrent_state_out ────────────────
+    # ── Write final state column back into pool[slot, ...] ──────────────────
     comptime for kd_element_k in range(KEY_HEAD_DIM):
-        var state_out_flat_offset = (
-            UInt32(batch_item_idx) * recurrent_state_batch_stride
+        var state_flat_offset = (
+            UInt32(slot) * recurrent_state_slot_stride
             + UInt32(value_head_idx) * recurrent_state_value_head_stride
             + UInt32(kd_element_k) * recurrent_state_key_dim_stride
             + UInt32(vd_element_idx) * recurrent_state_value_dim_stride
         )
-        recurrent_state_out.ptr[state_out_flat_offset] = Scalar[dtype](
+        recurrent_state.ptr[state_flat_offset] = Scalar[state_dtype](
             state_col[kd_element_k]
         )
