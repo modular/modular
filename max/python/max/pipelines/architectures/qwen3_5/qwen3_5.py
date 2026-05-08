@@ -15,7 +15,8 @@
 from __future__ import annotations
 
 import functools
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
+from typing import Any
 
 from max.dtype import DType
 from max.graph import (
@@ -26,6 +27,7 @@ from max.graph import (
     TensorType,
     TensorValue,
     TensorValueLike,
+    Value,
     ops,
 )
 from max.graph.quantization import QuantizationEncoding
@@ -36,6 +38,7 @@ from max.nn.layer import LayerList, Module
 from max.nn.linear import MLP, ColumnParallelLinear, Linear
 from max.nn.norm import RMSNorm
 from max.nn.rotary_embedding import Llama3RotaryEmbedding
+from max.nn.transformer import forward_sequential_layers
 from max.nn.transformer.distributed_transformer import (
     DistributedLogitsPostprocessMixin,
 )
@@ -47,12 +50,8 @@ from .layers.visual_transformer import VisionTransformer
 from .model_config import Qwen3_5Config
 
 
-class Qwen3_5TransformerBlock(Module):
-    """Transformer block for Qwen3.5 that supports both attention types.
-
-    Each block can be either a full attention block (with KV cache) or a
-    linear attention block (with Gated DeltaNet recurrence).
-    """
+class Qwen3_5FullAttentionBlock(Module):
+    """Full-attention transformer block (KV cache path)."""
 
     def __init__(
         self,
@@ -63,41 +62,23 @@ class Qwen3_5TransformerBlock(Module):
         linear_cls: Callable[..., Linear],
     ) -> None:
         super().__init__()
-        self.layer_type = config.layer_types[layer_idx]
-        self.devices = config.devices
-
-        if self.layer_type == "full_attention":
-            self.self_attn = Qwen3_5Attention(
-                num_attention_heads=config.num_attention_heads,
-                num_key_value_heads=config.num_key_value_heads,
-                hidden_size=config.hidden_size,
-                head_dim=config.kv_params.head_dim,
-                kv_params=config.kv_params,
-                layer_idx=layer_idx,
-                dtype=config.dtype,
-                rope=rope,
-                linear_cls=linear_cls,
-                devices=config.devices,
-                scale=config.attention_multiplier,
-                partial_rotary_factor=config.partial_rotary_factor,
-                has_bias=config.attention_bias,
-                norm_dtype=config.norm_dtype or config.dtype,
-                norm_eps=config.rms_norm_eps or 1e-6,
-            )
-        else:
-            self.linear_attn = GatedDeltaNet(
-                hidden_size=config.hidden_size,
-                num_key_heads=config.linear_num_key_heads,
-                num_value_heads=config.linear_num_value_heads,
-                key_head_dim=config.linear_key_head_dim,
-                value_head_dim=config.linear_value_head_dim,
-                conv_kernel_size=config.linear_conv_kernel_dim,
-                dtype=config.dtype,
-                device=config.devices[0],
-                rms_norm_eps=config.rms_norm_eps or 1e-6,
-                ssm_dtype=config.mamba_ssm_dtype,
-            )
-
+        self.self_attn = Qwen3_5Attention(
+            num_attention_heads=config.num_attention_heads,
+            num_key_value_heads=config.num_key_value_heads,
+            hidden_size=config.hidden_size,
+            head_dim=config.kv_params.head_dim,
+            kv_params=config.kv_params,
+            layer_idx=layer_idx,
+            dtype=config.dtype,
+            rope=rope,
+            linear_cls=linear_cls,
+            devices=config.devices,
+            scale=config.attention_multiplier,
+            partial_rotary_factor=config.partial_rotary_factor,
+            has_bias=config.attention_bias,
+            norm_dtype=config.norm_dtype or config.dtype,
+            norm_eps=config.rms_norm_eps or 1e-6,
+        )
         self.mlp = MLP(
             config.dtype,
             config.model_quantization_encoding,
@@ -106,45 +87,90 @@ class Qwen3_5TransformerBlock(Module):
             config.devices,
             linear_cls,
         )
-
         self.input_layernorm = create_norm()
         self.post_attention_layernorm = create_norm()
 
     def __call__(
         self,
         x: TensorValue,
-        layer_idx: TensorValue | None = None,
-        kv_collection: PagedCacheValues | None = None,
-        freqs_cis: TensorValue | None = None,
-        input_row_offsets: TensorValue | None = None,
-        conv_pool: BufferValue | None = None,
-        recurrent_pool: BufferValue | None = None,
-        slot_idx: TensorValue | None = None,
+        layer_idx: TensorValue,
+        kv_blocks: BufferValue,
+        cache_lengths: TensorValue,
+        lookup_table: TensorValue,
+        max_lengths: TensorValue,
+        attention_dispatch_metadata: TensorValue,
+        freqs_cis: TensorValue,
+        input_row_offsets: TensorValue,
+    ) -> TensorValue:
+        kv_collection = PagedCacheValues(
+            kv_blocks=kv_blocks,
+            cache_lengths=cache_lengths,
+            lookup_table=lookup_table,
+            max_lengths=max_lengths,
+            attention_dispatch_metadata=attention_dispatch_metadata,
+        )
+        residual = x
+        h = self.input_layernorm(x)
+        h = self.self_attn(
+            layer_idx, h, kv_collection, freqs_cis, input_row_offsets
+        )
+        h = residual + h
+        residual = h
+        h = self.post_attention_layernorm(h)
+        h = self.mlp(h)
+        return residual + h
+
+
+class Qwen3_5LinearAttentionBlock(Module):
+    """Linear-attention transformer block (Gated DeltaNet path)."""
+
+    def __init__(
+        self,
+        config: Qwen3_5Config,
+        create_norm: Callable[..., RMSNorm],
+        linear_cls: Callable[..., Linear],
+    ) -> None:
+        super().__init__()
+        self.linear_attn = GatedDeltaNet(
+            hidden_size=config.hidden_size,
+            num_key_heads=config.linear_num_key_heads,
+            num_value_heads=config.linear_num_value_heads,
+            key_head_dim=config.linear_key_head_dim,
+            value_head_dim=config.linear_value_head_dim,
+            conv_kernel_size=config.linear_conv_kernel_dim,
+            dtype=config.dtype,
+            device=config.devices[0],
+            rms_norm_eps=config.rms_norm_eps or 1e-6,
+            ssm_dtype=config.mamba_ssm_dtype,
+        )
+        self.mlp = MLP(
+            config.dtype,
+            config.model_quantization_encoding,
+            config.hidden_size,
+            config.intermediate_size,
+            config.devices,
+            linear_cls,
+        )
+        self.input_layernorm = create_norm()
+        self.post_attention_layernorm = create_norm()
+
+    def __call__(
+        self,
+        x: TensorValue,
+        conv_pool: BufferValue,
+        recurrent_pool: BufferValue,
+        slot_idx: TensorValue,
+        input_row_offsets: TensorValue,
     ) -> TensorValue:
         residual = x
         h = self.input_layernorm(x)
-
-        if self.layer_type == "full_attention":
-            assert layer_idx is not None
-            assert kv_collection is not None
-            assert freqs_cis is not None
-            assert input_row_offsets is not None
-            h = self.self_attn(
-                layer_idx, h, kv_collection, freqs_cis, input_row_offsets
-            )
-        else:
-            assert conv_pool is not None
-            assert recurrent_pool is not None
-            assert slot_idx is not None
-            assert input_row_offsets is not None
-            h = self.linear_attn(
-                h,
-                conv_pool=conv_pool,
-                recurrent_pool=recurrent_pool,
-                slot_idx=slot_idx,
-                input_row_offsets=input_row_offsets,
-            )
-
+        h = self.linear_attn(
+            h,
+            conv_pool=conv_pool,
+            recurrent_pool=recurrent_pool,
+            slot_idx=slot_idx,
+            input_row_offsets=input_row_offsets,
+        )
         h = residual + h
         residual = h
         h = self.post_attention_layernorm(h)
@@ -205,27 +231,34 @@ class Qwen3_5(DistributedLogitsPostprocessMixin, Module):
 
         linear_cls = functools.partial(Linear, quant_config=config.quant_config)
 
-        # Create transformer layers
-        self.layers = LayerList(
-            [
-                Qwen3_5TransformerBlock(
-                    config=config,
-                    layer_idx=i,
-                    rope=rope,
-                    create_norm=create_norm,
-                    linear_cls=linear_cls,
-                )
-                for i in range(config.num_hidden_layers)
-            ]
-        )
-
-        # Track which layers are which type for state management
         self.layer_types = config.layer_types
         self.linear_layer_indices = [
             i
             for i, lt in enumerate(config.layer_types)
             if lt == "linear_attention"
         ]
+
+        layers: list[Module] = []
+        for i, lt in enumerate(config.layer_types):
+            if lt == "full_attention":
+                layers.append(
+                    Qwen3_5FullAttentionBlock(
+                        config=config,
+                        layer_idx=i,
+                        rope=rope,
+                        create_norm=create_norm,
+                        linear_cls=linear_cls,
+                    )
+                )
+            else:
+                layers.append(
+                    Qwen3_5LinearAttentionBlock(
+                        config=config,
+                        create_norm=create_norm,
+                        linear_cls=linear_cls,
+                    )
+                )
+        self.layers = LayerList(layers)
 
         # Final norm (replicated across devices)
         self.norm = create_norm()
@@ -327,38 +360,74 @@ class Qwen3_5(DistributedLogitsPostprocessMixin, Module):
         freqs_cis = self.rope.freqs_cis.to(self.devices[0])
         input_row_offsets = input_row_offsets.to(self.devices[0])
 
-        linear_state_idx = 0
-        # kv_cache_idx is the sequential index within the KV cache (0-based
-        # across full-attention layers only), distinct from the absolute layer
-        # index.  The KV cache is only allocated for full-attention layers, so
-        # we must NOT pass the absolute layer index here.
+        kv_collection = kv_collections[0]
+        # ``forward_sequential_layers`` only introspects ``Value`` and
+        # ``Sequence[Value]``, so the dataclass is unpacked into positional
+        # args below.
+        assert kv_collection.kv_scales is None, (
+            "Qwen3.5 does not support quantized KV cache"
+        )
+        assert kv_collection.draft_attention_dispatch_metadata is None, (
+            "Qwen3.5 does not support eagle speculation"
+        )
+        assert kv_collection.attention_dispatch_metadata is not None
+        attention_dispatch_metadata = kv_collection.attention_dispatch_metadata
         kv_cache_idx = 0
+        linear_state_idx = 0
 
-        # Process through transformer layers. The slot-indexed SSM kernels
-        # mutate the conv/recurrent pools in place; no state outputs to thread
-        # through.
-        for idx, layer in enumerate(self.layers):
+        def inputs_for_layer(
+            idx: int, hs: list[TensorValue]
+        ) -> list[Value[Any] | Sequence[Value[Any]]]:
+            nonlocal kv_cache_idx, linear_state_idx
+            hidden = hs[0]
             if self.layer_types[idx] == "full_attention":
+                # ``layer_idx`` is the sequential index within the KV cache
+                # (0-based across full-attention layers only), distinct from
+                # the absolute layer index. The KV cache is only allocated for
+                # full-attention layers.
                 layer_idx_tensor = ops.constant(
                     kv_cache_idx, DType.uint32, device=DeviceRef.CPU()
                 )
-                h = layer(
-                    h,
-                    layer_idx=layer_idx_tensor,
-                    kv_collection=kv_collections[0],
-                    freqs_cis=freqs_cis,
-                    input_row_offsets=input_row_offsets,
-                )
                 kv_cache_idx += 1
-            else:
-                h = layer(
-                    h,
-                    conv_pool=conv_pools[linear_state_idx],
-                    recurrent_pool=recurrent_pools[linear_state_idx],
-                    slot_idx=slot_idx,
-                    input_row_offsets=input_row_offsets,
-                )
-                linear_state_idx += 1
+                return [
+                    hidden,
+                    layer_idx_tensor,
+                    kv_collection.kv_blocks,
+                    kv_collection.cache_lengths,
+                    kv_collection.lookup_table,
+                    kv_collection.max_lengths,
+                    attention_dispatch_metadata,
+                    freqs_cis,
+                    input_row_offsets,
+                ]
+            vals: list[Value[Any] | Sequence[Value[Any]]] = [
+                hidden,
+                conv_pools[linear_state_idx],
+                recurrent_pools[linear_state_idx],
+                slot_idx,
+                input_row_offsets,
+            ]
+            linear_state_idx += 1
+            return vals
+
+        full_attn_indices = [
+            i for i, lt in enumerate(self.layer_types) if lt == "full_attention"
+        ]
+        groups: list[list[int]] = [
+            g for g in (full_attn_indices, self.linear_layer_indices) if g
+        ]
+
+        h_list = forward_sequential_layers(
+            list(self.layers),
+            inputs_for_layer=inputs_for_layer,
+            initial_hidden_states=[h],
+            subgraph_layer_groups=(
+                groups if self.config.use_subgraphs else None
+            ),
+            name_for_subgraph=lambda g: f"qwen3_5_{self.layer_types[groups[g][0]]}_block",
+            weight_prefix_for_layer=lambda i: f"layers.{i}.",
+        )
+        h = h_list[0]
 
         logits = self._postprocess_logits(
             [h], [input_row_offsets], return_n_logits, signal_buffers
