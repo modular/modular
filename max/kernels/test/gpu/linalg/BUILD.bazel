@@ -362,6 +362,57 @@ _GPU_MEMORY = {
     for src in _GROUPED_BLOCK_SCALED_GEMM_B200_TESTS
 ]
 
+# Explicit rule for the SwiGLU+NVFP4 interleave test — needs //max:shmem
+# (for fused_silu_nvfp4_kernel) on top of the standard B200 deps.
+mojo_test(
+    name = "test_grouped_matmul_swiglu_nvfp4_interleave.mojo.test",
+    size = "large",
+    srcs = ["test_grouped_matmul_swiglu_nvfp4_interleave.mojo"],
+    exec_properties = {
+        "test.resources:gpu-memory": "8",
+    },
+    tags = ["gpu"],
+    target_compatible_with = [
+        "//:has_gpu",
+        "//:b200_gpu",
+    ],
+    deps = [
+        "//max:internal_utils",
+        "//max:linalg",
+        "//max:nn",
+        "//max:shmem",
+        "//max:structured_kernels",
+        "@mojo//:std",
+        "@mojo//:test_utils",
+    ],
+)
+
+# Explicit rule for the SwiGLU+NVFP4 dispatch test — same deps as the
+# interleave test (shmem provides fused_silu_nvfp4_interleaved_kernel for
+# the reference chain; the dispatch itself now lives in //max:linalg).
+mojo_test(
+    name = "test_grouped_matmul_swiglu_nvfp4_dispatch.mojo.test",
+    size = "large",
+    srcs = ["test_grouped_matmul_swiglu_nvfp4_dispatch.mojo"],
+    exec_properties = {
+        "test.resources:gpu-memory": "8",
+    },
+    tags = ["gpu"],
+    target_compatible_with = [
+        "//:has_gpu",
+        "//:b200_gpu",
+    ],
+    deps = [
+        "//max:internal_utils",
+        "//max:linalg",
+        "//max:nn",
+        "//max:shmem",
+        "//max:structured_kernels",
+        "@mojo//:std",
+        "@mojo//:test_utils",
+    ],
+)
+
 # Explicit rule for PDL race test - needs MODULAR_DISABLE_VENDOR_FALLBACK to avoid cuBLAS fallback
 mojo_test(
     name = "test_matmul_pdl_race.mojo.test",
@@ -407,6 +458,8 @@ mojo_test(
         ["**/*.mojo"],
         exclude = _FILECHECK_TESTS + _B200_TESTS + _B200_SMOKE_TESTS + _GROUPED_BLOCK_SCALED_GEMM_B200_TESTS + [
             "test_matmul_pdl_race.mojo",
+            "test_grouped_matmul_swiglu_nvfp4_interleave.mojo",
+            "test_grouped_matmul_swiglu_nvfp4_dispatch.mojo",
         ],
     )
 ]

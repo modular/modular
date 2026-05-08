@@ -142,7 +142,8 @@ struct BlockwiseFP8_1D2DMatmulKernel[
     # ========== Thread/Warp Organization ==========
 
     comptime num_output_warps = 4
-    comptime NUM_THREADS = WarpRole1D1D.TOTAL_THREADS
+    comptime WarpRole = WarpRole1D1D[has_sfb=False, num_epi_warps=4]
+    comptime NUM_THREADS = Self.WarpRole.TOTAL_THREADS
 
     # ========== Pipeline Configuration ==========
 
@@ -167,7 +168,7 @@ struct BlockwiseFP8_1D2DMatmulKernel[
     # ========== Barrier Arrival Counts ==========
 
     comptime _accum_barrier_counts = compute_accum_barrier_counts[
-        WarpRole1D1D.NUM_EPILOGUE_THREADS, Self.cta_group
+        Self.WarpRole.NUM_EPILOGUE_THREADS, Self.cta_group
     ]()
     comptime accum_pipeline_producer_arv_count = Self._accum_barrier_counts[0]
     comptime accum_pipeline_consumer_arv_count = Self._accum_barrier_counts[1]
@@ -228,19 +229,19 @@ struct BlockwiseFP8_1D2DMatmulKernel[
 
     # ========== Warp Context Types ==========
     comptime MmaEpilogueSync = WarpGroupBarrier[
-        WarpRole1D1D.NUM_MMA_THREADS + WarpRole1D1D.NUM_EPILOGUE_THREADS, 1
+        Self.WarpRole.NUM_MMA_THREADS + Self.WarpRole.NUM_EPILOGUE_THREADS, 1
     ]
 
     comptime MmaCtx = MmaWarpContext[
         Self.opc,
-        WarpRole1D1D.NUM_MMA_THREADS,
-        WarpRole1D1D.NUM_EPILOGUE_THREADS,
+        Self.WarpRole.NUM_MMA_THREADS,
+        Self.WarpRole.NUM_EPILOGUE_THREADS,
     ]
 
     comptime EpilogueCtx = EpilogueWarpContext[
         Self.opc,
-        WarpRole1D1D.NUM_MMA_THREADS,
-        WarpRole1D1D.NUM_EPILOGUE_THREADS,
+        Self.WarpRole.NUM_MMA_THREADS,
+        Self.WarpRole.NUM_EPILOGUE_THREADS,
     ]
 
     # ========== TMA Load Size Constants ==========
@@ -402,14 +403,14 @@ struct BlockwiseFP8_1D2DMatmulKernel[
                         Self.CLUSTER_N,
                         Self.cta_group,
                         CLUSTER_SIZE=Self.CLUSTER_SIZE,
-                        epilogue_threads=WarpRole1D1D.NUM_EPILOGUE_THREADS,
+                        epilogue_threads=Self.WarpRole.NUM_EPILOGUE_THREADS,
                     ]()
                 ),
                 accum_barriers.ptr,
                 Int32(Self.accum_pipeline_producer_arv_count),
                 Int32(Self.accum_pipeline_consumer_arv_count),
                 tmem_dealloc.ptr,
-                Int32(WarpRole1D1D.NUM_EPILOGUE_THREADS * Self.cta_group),
+                Int32(Self.WarpRole.NUM_EPILOGUE_THREADS * Self.cta_group),
             )
 
         fence_mbarrier_init()
@@ -513,7 +514,7 @@ struct BlockwiseFP8_1D2DMatmulKernel[
         var mma_op = Self.MmaOp()
 
         # ===== TMA LOAD WARP =====
-        if WarpRole1D1D.is_load():
+        if Self.WarpRole.is_load():
             var load_iter = Self.WorkIterator(
                 num_active_experts, a_offsets, expert_ids, expert_scales
             )
@@ -547,7 +548,7 @@ struct BlockwiseFP8_1D2DMatmulKernel[
         # ===== MMA WARP =====
         # Blockwise FP8: per-K synchronization (MMA writes fresh partial each K,
         # epilogue reads TMEM per-K to accumulate in registers).
-        if WarpRole1D1D.is_mma():
+        if Self.WarpRole.is_mma():
             var mma_iter = Self.WorkIterator(
                 num_active_experts, a_offsets, expert_ids, expert_scales
             )
@@ -578,7 +579,7 @@ struct BlockwiseFP8_1D2DMatmulKernel[
                                 input_tiles^.release()
 
         # ===== EPILOGUE WARPS =====
-        if WarpRole1D1D.is_epilogue():
+        if Self.WarpRole.is_epilogue():
             var epi_iter = Self.WorkIterator(
                 num_active_experts, a_offsets, expert_ids, expert_scales
             )

@@ -33,3 +33,4 @@ from .dispatch import (
     grouped_matmul_nvfp4_dispatch,
     grouped_matmul_block_scaled_sm100_dispatch,
 )
+from .grouped_matmul_swiglu_nvfp4 import grouped_matmul_swiglu_nvfp4_dispatch

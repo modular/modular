@@ -54,8 +54,13 @@ from linalg.fp4_utils import (
     MXFP4_SF_DTYPE,
     MXFP8_SF_DTYPE,
 )
+from structured_kernels.trace_buf import NullTrace, TraceBuf
 from ..structured_kernels.config import BlockScaledMatmulConfig
-from .grouped_1d1d_matmul_kernel import Grouped1D1DMatmulKernel
+from .grouped_1d1d_matmul_kernel import (
+    Grouped1D1DMatmulKernel,
+    NullSwiGLUOutput,
+    SwiGLUOutput,
+)
 from std.memory import UnsafePointer
 
 
@@ -71,6 +76,20 @@ def grouped_matmul_block_scaled[
         a_type, b_type, c_type, sfa_dtype, sfb_dtype, transpose_b
     ],
     pdl_level: PDLLevel = PDLLevel(1),
+    # When True, the kernel emits packed NVFP4 + a 5D FP8-E4M3 scale tile
+    # in place of the BF16 GMEM C store, fusing SwiGLU + per-block quant
+    # into the matmul epilogue. Caller must:
+    #   1) pre-permute W on the N axis with σ(2i)=i, σ(2i+1)=H+i,
+    #   2) pass a `RealSwiGLUOutput[...]` instance via `swiglu_out`.
+    # When False, swiglu_out=NullSwiGLUOutput() is used and the kernel
+    # is bit-identical to the original BF16-output path.
+    fuse_swiglu_nvfp4: Bool = False,
+    SwiGLUOutputT: SwiGLUOutput = NullSwiGLUOutput,
+    swiglu_match_bf16: Bool = True,
+    swiglu_disable_compute: Bool = False,
+    swiglu_enable_trace: Bool = False,
+    TraceBufT: TraceBuf = NullTrace,
+    swiglu_use_inplace: Bool = False,
 ](
     c_device: TileTensor,
     a_device: TileTensor,
@@ -83,6 +102,8 @@ def grouped_matmul_block_scaled[
     expert_scales: TileTensor,
     num_active_experts: Int,
     ctx: DeviceContext,
+    swiglu_out: SwiGLUOutputT = NullSwiGLUOutput(),
+    trace_buf: TraceBufT = NullTrace(),
 ) raises:
     """Launch grouped 1D-1D block-scaled matmul kernel.
 
@@ -101,6 +122,10 @@ def grouped_matmul_block_scaled[
         expert_scales: Per-expert output scaling (num_experts).
         num_active_experts: Number of active experts.
         ctx: Device context.
+        swiglu_out: Sink carrier when `fuse_swiglu_nvfp4=True` (packed
+            NVFP4 + E4M3 SF tile). `NullSwiGLUOutput()` otherwise.
+        trace_buf: Per-CTA timestamp buffer when `swiglu_enable_trace=True`.
+            `NullTrace()` otherwise.
     """
     comptime assert transpose_b, "Only support transposed B"
 
@@ -201,6 +226,13 @@ def grouped_matmul_block_scaled[
             Int32(config.cluster_shape[2]),
         ),
         pdl_level=pdl_level,
+        fuse_swiglu_nvfp4=fuse_swiglu_nvfp4,
+        SwiGLUOutputT=SwiGLUOutputT,
+        swiglu_match_bf16=swiglu_match_bf16,
+        swiglu_disable_compute=swiglu_disable_compute,
+        swiglu_enable_trace=swiglu_enable_trace,
+        TraceBufT=TraceBufT,
+        swiglu_use_inplace=swiglu_use_inplace,
     ]
     comptime KernelType = type_of(matmul_kernel)
 
@@ -303,8 +335,9 @@ def grouped_matmul_block_scaled[
 
     # Always launch with scheduler warp. SFB warps only on MMA_N < 64 decode
     # path, so MMA_N >= 64 (prefill / 2SM) shrinks from 384 → 224 threads and
-    # frees ~7.5K registers per CTA.
-    comptime block_threads = WarpRole1D1D[MMA_N < 64].TOTAL_THREADS_WITH_SCHED
+    # frees ~7.5K registers per CTA. Source the launch dim from the kernel's
+    # WarpRole so any per-config epilogue-warp count flows through.
+    comptime block_threads = KernelType.WarpRole.TOTAL_THREADS_WITH_SCHED
 
     # Re-wrap 1D TileTensors with GMEMLayout1D to match the kernel's
     # expected types. The caller's TileTensors may have a different symbolic
@@ -389,6 +422,8 @@ def grouped_matmul_block_scaled[
             ),
             Int(a_scales.layout.shape[1]().value()) * _sfb_K_TILE_ELEMS,
             Int(a_scales.layout.shape[1]().value()),
+            swiglu_out,
+            trace_buf,
             grid_dim=grid_dim,
             block_dim=block_threads,
             cluster_dim=Dim(
@@ -455,6 +490,8 @@ def grouped_matmul_block_scaled[
             ),
             Int(_b_scales.layout.shape[2]().value()) * _sfb_K_TILE_ELEMS,
             Int(_b_scales.layout.shape[2]().value()),
+            swiglu_out,
+            trace_buf,
             grid_dim=grid_dim,
             block_dim=block_threads,
             cluster_dim=Dim(
