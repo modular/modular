@@ -184,3 +184,7 @@ This version is still a work in progress.
   granularity is now 64 MiB; large compiles still work because the mapper
   reserves additional slabs on demand.
   ([Issue #6433](https://github.com/modular/modular/issues/6433))
+
+- Attempting to import a source Mojo package from a broken symlink will no
+  longer result in a compiler crash.
+  ([Issue #6424](https://github.com/modular/modular/issues/6424))
