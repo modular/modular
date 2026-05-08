@@ -161,6 +161,10 @@ class _ReplicaMetadata:
     claimed_requests: set[RequestID] = field(default_factory=set)
     """Set of request IDs claimed on this replica."""
 
+    # Store last host buffers to ensure lifetimes outlive async copies.
+    last_lut_table_host: Buffer | None = None
+    last_cache_lengths_host: Buffer | None = None
+
 
 class PagedKVCacheManager:
     """Paged KVCache manager with data and tensor parallelism support.
@@ -586,6 +590,9 @@ class PagedKVCacheManager:
                 cache_lengths_host
             )
             lut_table_by_device[tp_shard].inplace_copy_from(lut_table_host)
+
+        replica.last_lut_table_host = lut_table_host
+        replica.last_cache_lengths_host = cache_lengths_host
 
         # Keep metadata aligned with kernel-side dispatch inputs.
         # `k.max_context_length()` in flash attention corresponds to the
