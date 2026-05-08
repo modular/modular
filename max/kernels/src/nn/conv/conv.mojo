@@ -1746,9 +1746,7 @@ struct ConvDirectNHWC[
                     (S - 1) * Self.conv_attr.dilations()[1] + 1
                 )
                 comptime right_pad_impact_start = (
-                    W
-                    + Self.conv_attr.pad_left()
-                    - effective_filter_width
+                    W + Self.conv_attr.pad_left() - effective_filter_width
                 ) // Self.conv_attr.strides()[1] + 1
                 comptime left_boundary_end = min(left_pad_impact_end, WO)
                 comptime middle_start = left_boundary_end
