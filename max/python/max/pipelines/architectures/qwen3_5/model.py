@@ -48,7 +48,6 @@ from max.profiler import traced
 from transformers import AutoConfig
 
 from ..llama3.model import Llama3Inputs, LlamaModelBase
-from .layers.functional_ops import get_state_space_paths
 from .model_config import Qwen3_5Config
 from .qwen3_5 import Qwen3_5
 from .state_cache import GatedDeltaNetStateCache
@@ -525,7 +524,6 @@ class Qwen3_5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
         with Graph(
             "qwen3_5",
             input_types=graph_inputs,
-            custom_extensions=get_state_space_paths(),
         ) as graph:
             tokens, input_row_offsets, return_n_logits, *variadic_args = (
                 graph.inputs

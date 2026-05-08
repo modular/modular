@@ -10,10 +10,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Python wrappers for the Gated DeltaNet two-pass prefill kernels.
+"""Python wrappers for the Gated DeltaNet two-pass kernels.
 
-Provides two graph-level wrappers that call the Mojo ops registered in
-state_space.mojopkg:
+Provides two graph-level wrappers that call the Mojo ops registered in the
+state_space package:
 
   gated_delta_conv1d_fwd()
     Pass 1: causal depthwise conv1d over a ragged batch of sequences.
@@ -23,16 +23,11 @@ state_space.mojopkg:
     Pass 2: gated delta rule recurrence over the conv1d outputs.
     Produces [total_seq_len, value_dim] output and updated recurrent state.
 
-get_state_space_paths() locates the state_space.mojopkg via
-MODULAR_MOJO_MAX_IMPORT_PATH.  It is memoised and called once at Graph
-construction time to pre-register the extension before any op is verified.
-
 Usage
 -----
     from .functional_ops import (
         gated_delta_conv1d_fwd,
         gated_delta_recurrence_fwd,
-        get_state_space_paths,
     )
 
     # Pass 1
@@ -55,74 +50,10 @@ Usage
 
 from __future__ import annotations
 
-import functools
-import logging
-import os
-from pathlib import Path
 from typing import cast
 
 from max.dtype import DType
 from max.graph import TensorType, TensorValue, ops
-
-logger = logging.getLogger("max.pipelines.qwen3_5")
-
-_MODULAR_MOJO_MAX_IMPORT_PATH_ENV_VAR = "MODULAR_MOJO_MAX_IMPORT_PATH"
-
-
-# TODO: Remove (along with logger, env var constant, and unused imports) once kernels are in main.
-@functools.cache
-def get_state_space_paths() -> tuple[Path, ...]:
-    """Locate state_space.mojopkg files via MODULAR_MOJO_MAX_IMPORT_PATH.
-
-    Searches comma-separated directory or .mojopkg entries from the env var
-    and returns all resolved paths whose filename contains "state_space".
-
-    **IMPORTANT**: This function caches its result for the process lifetime.
-    MODULAR_MOJO_MAX_IMPORT_PATH must be set BEFORE this function is called.
-    If the environment variable is modified after the first call (common in
-    test harnesses), the cache will be stale and tests may silently run the
-    wrong code path. Call get_state_space_paths.cache_clear() between tests
-    if needed.
-
-    Returns:
-        Tuple of resolved paths to state_space.mojopkg files, or an empty
-        tuple if the environment variable is not set or no matching files
-        are found.  An empty tuple means the kernel path will not be used
-        (the while_loop fallback is selected instead).
-    """
-    import_path_env = os.environ.get(_MODULAR_MOJO_MAX_IMPORT_PATH_ENV_VAR, "")
-    if not import_path_env:
-        logger.warning(
-            "MODULAR_MOJO_MAX_IMPORT_PATH is not set; gated_delta kernels"
-            " will not be available for the prefill path."
-        )
-        return ()
-
-    found_paths: list[Path] = []
-    for raw_entry in import_path_env.split(","):
-        entry = raw_entry.strip()
-        if not entry:
-            continue
-        entry_path = Path(entry)
-        if not entry_path.is_absolute():
-            resolved = Path.cwd() / entry_path
-            entry_path = resolved if resolved.exists() else entry_path
-        if not entry_path.exists():
-            continue
-        if entry_path.suffix == ".mojopkg" and "state_space" in entry_path.name:
-            found_paths.append(entry_path.resolve())
-        elif entry_path.is_dir():
-            for mojopkg_path in entry_path.rglob("*.mojopkg"):
-                if "state_space" in mojopkg_path.name and (
-                    mojopkg_path.is_file() or mojopkg_path.is_symlink()
-                ):
-                    found_paths.append(mojopkg_path.resolve())
-
-    logger.debug(
-        "gated_delta kernels: found %d state_space.mojopkg path(s)",
-        len(found_paths),
-    )
-    return tuple(found_paths)
 
 
 def gated_delta_conv1d_fwd(
