@@ -532,15 +532,9 @@ void VariantHelper::walkAndCreateVariant(
     }
     return;
   }
-  if (auto vecType = dyn_cast<VectorType>(value.getType())) {
-    for (unsigned i = 0, e = vecType.getNumElements(); i < e; ++i) {
-      Value nestedValue = LLVM::ExtractElementOp::create(
-          b, value, LLVM::ConstantOp::create(b, b.getI32Type(), i));
-      walkAndCreateVariant(valueIt, storageOffset, offset, nestedValue);
-    }
-    return;
-  }
-  auto vectorType = cast<VectorType>(value.getType());
+  auto vectorType = dyn_cast<VectorType>(value.getType());
+  assert(vectorType && !vectorType.isScalable() &&
+         "Expecting a fixed vector type");
   for (unsigned i = 0, e = vectorType.getNumElements(); i < e; ++i) {
     Value nestedValue = LLVM::ExtractElementOp::create(
         b, value, LLVM::ConstantOp::create(b, b.getI32Type(), i));
