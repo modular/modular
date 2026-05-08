@@ -145,6 +145,12 @@ def depth512_load[
     comptime PairBM = BM * 2
     comptime PairBM_mask = BM_eff * 2
 
+    # Alignment of `kv_row` produced by mask-driven iteration.
+    # Used by `kv_lut.populate` to pick the largest legal SIMD chunk.
+    comptime base_alignment: Int = MaskType.start_column_alignment[
+        PairBM_mask, BN, page_size
+    ]()
+
     comptime PositionType = MHAPosition[
         PairBM,
         BN,
@@ -421,7 +427,7 @@ def depth512_load[
     # Populate kv_paged_rows once for this tile; reused by every K
     # depth stage below and by the subsequent V loop (which captures
     # kv_paged_rows from this scope).
-    kv_paged_rows = kv_lut.populate[BN, True, is_leader](
+    kv_paged_rows = kv_lut.populate[BN, base_alignment, True, is_leader](
         seq_info.prompt_idx, kv_row
     )
     comptime for qk_stage in range(num_qk_stages):
@@ -516,7 +522,7 @@ def depth512_load[
         # ---- K depth stages (num_qk_stages loads) ----
         # Populate once per tile; reused by every K depth stage and the
         # subsequent V loop. Full tile (no partial) in main loop.
-        kv_paged_rows = kv_lut.populate[BN, True, is_leader](
+        kv_paged_rows = kv_lut.populate[BN, base_alignment, True, is_leader](
             seq_info.prompt_idx, kv_row
         )
         comptime for qk_stage in range(num_qk_stages):
@@ -574,9 +580,9 @@ def depth512_load[
 
                 # K: populate once per tile; reused by every K depth
                 # stage and the subsequent V loop.
-                kv_paged_rows = kv_lut.populate[BN, True, is_leader](
-                    seq_info.prompt_idx, kv_row
-                )
+                kv_paged_rows = kv_lut.populate[
+                    BN, base_alignment, True, is_leader
+                ](seq_info.prompt_idx, kv_row)
                 comptime for qk_stage in range(num_qk_stages):
                     _produce_k[
                         partial=k_needs_partial,

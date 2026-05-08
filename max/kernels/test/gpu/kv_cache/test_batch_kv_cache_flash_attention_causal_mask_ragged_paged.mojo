@@ -26,7 +26,7 @@ from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._fillers import random
 from std.memory import memcpy, memset_zero
 from nn.attention.gpu.mha import flash_attention
-from nn.attention.mha_mask import CausalMask
+from nn.attention.mha_mask import CausalMask, MHAMask, SlidingWindowCausalMask
 from std.testing import assert_almost_equal, assert_equal
 from std.sys import has_amd_gpu_accelerator, has_nvidia_gpu_accelerator
 
@@ -34,12 +34,16 @@ from std.utils import IndexList
 
 
 def execute_ragged_flash_attention[
-    num_q_heads: Int, dtype: DType, kv_params: KVCacheStaticParams
+    num_q_heads: Int,
+    dtype: DType,
+    kv_params: KVCacheStaticParams,
+    mask_t: MHAMask,
 ](
     valid_lengths: List[Int],
     cache_lengths: List[Int],
     num_layers: Int,
     layer_idx: Int,
+    mask: mask_t,
     ctx: DeviceContext,
 ) raises:
     # TODO(KERN-2666): float32 + depth=256 exceeds shared memory on H100/B200.
@@ -335,7 +339,7 @@ def execute_ragged_flash_attention[
         q_ragged_lt,
         kv_collection_continuous_device.get_key_cache(layer_idx),
         kv_collection_continuous_device.get_value_cache(layer_idx),
-        CausalMask(),
+        mask,
         input_row_offsets.device_tensor(),
         rsqrt(Float32(kv_params.head_size)),
         ctx,
@@ -347,7 +351,7 @@ def execute_ragged_flash_attention[
         q_ragged_lt,
         kv_collection_paged_device.get_key_cache(layer_idx),
         kv_collection_paged_device.get_value_cache(layer_idx),
-        CausalMask(),
+        mask,
         input_row_offsets.device_tensor(),
         rsqrt(Float32(kv_params.head_size)),
         ctx,
@@ -388,7 +392,7 @@ def execute_ragged_flash_attention[
             q_ragged_lt,
             kv_collection_paged_device.get_key_cache(layer_idx),
             kv_collection_paged_device.get_value_cache(layer_idx),
-            CausalMask(),
+            mask,
             input_row_offsets.device_tensor(),
             rsqrt(Float32(kv_params.head_size)),
             ctx,
@@ -412,7 +416,8 @@ def execute_ragged_flash_attention[
 def execute_flash_attention_suite[
     num_q_heads: Int,
     kv_params: KVCacheStaticParams,
-](ctx: DeviceContext) raises:
+    mask_t: MHAMask,
+](mask: mask_t, ctx: DeviceContext) raises:
     comptime types = (DType.bfloat16,)
 
     for bs in [1, 4, 16]:
@@ -436,7 +441,7 @@ def execute_flash_attention_suite[
                 kv_params.head_size,
             )
             execute_ragged_flash_attention[num_q_heads, type, kv_params](
-                ce_seq_lens, ce_cache_sizes, 2, 1, ctx
+                ce_seq_lens, ce_cache_sizes, 2, 1, mask, ctx
             )
 
             print(
@@ -447,7 +452,7 @@ def execute_flash_attention_suite[
                 kv_params.head_size,
             )
             execute_ragged_flash_attention[num_q_heads, type, kv_params](
-                tg_seq_lens, tg_cache_sizes, 2, 0, ctx
+                tg_seq_lens, tg_cache_sizes, 2, 0, mask, ctx
             )
 
             # GQA group=16 (405B TP=8 shape)
@@ -463,14 +468,14 @@ def execute_flash_attention_suite[
                 16,
                 type,
                 KVCacheStaticParams(num_heads=1, head_size=kv_params.head_size),
-            ](tg_seq_lens, tg_cache_sizes, 2, 0, ctx)
+            ](tg_seq_lens, tg_cache_sizes, 2, 0, mask, ctx)
             # GQA group=16 (32Q/2KV variant)
             print("TG", bs, type, "q_heads//kv_heads = 32//2")
             execute_ragged_flash_attention[
                 32,
                 type,
                 KVCacheStaticParams(num_heads=2, head_size=kv_params.head_size),
-            ](tg_seq_lens, tg_cache_sizes, 2, 0, ctx)
+            ](tg_seq_lens, tg_cache_sizes, 2, 0, mask, ctx)
 
     # edge cases
     print("CE", 1, DType.bfloat16, "depth=", kv_params.head_size)
@@ -478,14 +483,14 @@ def execute_flash_attention_suite[
         var short_ce_seq_len = [len]
         var short_ce_cache_size = [0]
         execute_ragged_flash_attention[num_q_heads, DType.bfloat16, kv_params](
-            short_ce_seq_len, short_ce_cache_size, 2, 1, ctx
+            short_ce_seq_len, short_ce_cache_size, 2, 1, mask, ctx
         )
 
     print("TG", 2, DType.bfloat16, "depth=", kv_params.head_size)
     tg_seq_lens = [1, 1]
     tg_variable_cache_lens = [1024, 11]
     execute_ragged_flash_attention[num_q_heads, DType.bfloat16, kv_params](
-        tg_seq_lens, tg_variable_cache_lens, 2, 0, ctx
+        tg_seq_lens, tg_variable_cache_lens, 2, 0, mask, ctx
     )
 
 
@@ -521,7 +526,7 @@ def main() raises:
                     KVCacheStaticParams(
                         num_heads=kv_num_heads, head_size=head_size_val
                     ),
-                ](tg_seq_lens, tg_cache_sizes, 2, 0, ctx)
+                ](tg_seq_lens, tg_cache_sizes, 2, 0, CausalMask(), ctx)
             except e:
                 print("FAIL seed=", s, "caches=", tg_cache_sizes)
                 fail_count += 1
@@ -536,4 +541,24 @@ def main() raises:
             KVCacheStaticParams(
                 num_heads=kv_num_heads, head_size=head_size_val
             ),
-        ](ctx)
+        ](CausalMask(), ctx)
+
+        # Sliding-window coverage at the same head_size as above. 1024
+        # matches the Gemma 3 / Gemma 4 production window; 32 stresses the
+        # in-page mask boundary since it is well below page_size=256.
+        comptime sliding_windows = (32, 1024)
+        comptime for ws_idx in range(len(sliding_windows)):
+            comptime window_size = sliding_windows[ws_idx]
+            seed(42 + window_size)
+            print(
+                "Sliding-window suite [window_size=",
+                window_size,
+                "]:",
+                sep="",
+            )
+            execute_flash_attention_suite[
+                num_q_heads,
+                KVCacheStaticParams(
+                    num_heads=kv_num_heads, head_size=head_size_val
+                ),
+            ](SlidingWindowCausalMask[window_size](), ctx)

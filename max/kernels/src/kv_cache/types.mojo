@@ -351,23 +351,24 @@ struct PagedRowIndices[
             # `if` check.
             comptime for _p in range(dispatch_start, pages_per_iter):
                 if UInt32(_p) == valid_pages:
-                    self._tma_copy_kv_impl[
-                        is_k=is_k,
-                        needs_partial=False,
-                        num_v_sub_tiles=num_v_sub_tiles,
-                        v_sub_tile_idx=v_sub_tile_idx,
-                        smem_BN=smem_BN,
-                        eviction_policy=eviction_policy,
-                        num_iters=_p,
-                    ](
-                        tma_op,
-                        stage_base,
-                        mbar,
-                        kv_head_idx=kv_head_idx,
-                        elect=elect,
-                        valid_pages=valid_pages,
-                        depth_offset=depth_offset,
-                    )
+                    comptime if _p > 0:
+                        self._tma_copy_kv_impl[
+                            is_k=is_k,
+                            needs_partial=False,
+                            num_v_sub_tiles=num_v_sub_tiles,
+                            v_sub_tile_idx=v_sub_tile_idx,
+                            smem_BN=smem_BN,
+                            eviction_policy=eviction_policy,
+                            num_iters=_p,
+                        ](
+                            tma_op,
+                            stage_base,
+                            mbar,
+                            kv_head_idx=kv_head_idx,
+                            elect=elect,
+                            valid_pages=valid_pages,
+                            depth_offset=depth_offset,
+                        )
                     return
         comptime for _p in range(effective_iters):
             comptime src_idx = idx_offset_ct + _p
@@ -754,12 +755,20 @@ trait KVCacheT(DevicePassable, TrivialRegisterPassable):
     @always_inline
     def populate[
         BN: Int,
+        base_alignment: Int,
         pair_cta: Bool = False,
         is_leader: Bool = True,
     ](self, batch_idx: UInt32, base_kv_row: UInt32) -> PagedRowIndices[
         BN, Self.page_size_, pair_cta, is_leader
     ]:
         """Populate a full `PagedRowIndices[BN, ...]` for a BN-row tile.
+
+        `base_alignment` is a comptime promise that
+        `base_kv_row % base_alignment == 0` at runtime — typically
+        `mask.start_column_alignment[...]()`. The `PagedKVCache`
+        override uses it to pick the largest legal SIMD chunk for its
+        LUT vector load and to skip the intra-page divmod when
+        `base_alignment % page_size == 0`.
 
         Default: scalar loop over `num_pages` calls to `row_idx`. The
         `PagedKVCache` override replaces this with a single aligned
@@ -1653,6 +1662,7 @@ struct PagedKVCache[
     @always_inline
     def populate[
         BN: Int,
+        base_alignment: Int,
         pair_cta: Bool = False,
         is_leader: Bool = True,
     ](self, batch_idx: UInt32, base_kv_row: UInt32) -> PagedRowIndices[
@@ -1670,19 +1680,21 @@ struct PagedKVCache[
             of `num_pages` uint32s starting at any valid
             `first_lut_idx` stays in bounds (see `PagedKVCacheManager`
             for the allocation-side padding).
-          - `base_kv_row` is `BN`-aligned for `num_pages > 1` (every
-            mask shipped with fa4/depth512/sm90 satisfies this). The
-            first LUT index is then a multiple of `num_pages`, giving
-            up to `chunk * 4`-byte alignment on the vector load. For
-            `num_pages == 1` the load is a scalar and alignment is
-            irrelevant.
+          - `base_kv_row % base_alignment == 0` holds at runtime
+            (typically `mask.start_column_alignment[...]()`).
+            For `num_pages > 1`, `base_alignment` must be at least
+            `page_size` — required so `tok_in_block_idx == 0` and the
+            SIMD `multiply-add` collapses to a `multiply`. Larger
+            `base_alignment` values let us pick a wider SIMD chunk
+            (`chunk * page_size` must divide `base_alignment`).
 
         The per-load width `chunk` is the largest power of two that
-        divides `num_pages`, capped at 8 — this keeps both the load
-        width and the remaining chunk offsets aligned for the common
-        `num_pages in {1, 2, 4, 8, 16}` cases and falls back to smaller
-        widths when `num_pages` has a factor like 3 (e.g. `BN=192`,
-        `page_size=16` gives `num_pages=12`, `chunk=4`).
+        divides both `num_pages` and `base_alignment / page_size`,
+        capped at 8. With `base_alignment == BN` (the historical
+        contract), this matches the previous behaviour: `chunk =
+        min(num_pages & -num_pages, 8)`. With looser alignments
+        (e.g. `ChunkedMask` providing only `page_size` alignment when
+        `BN > page_size`), the chunk degrades to 1 (scalar loads).
         """
         comptime Result = PagedRowIndices[
             BN, Self.page_size_, pair_cta, is_leader
@@ -1690,25 +1702,53 @@ struct PagedKVCache[
         comptime num_pages = Result.num_pages
         var result = Result()
         comptime if num_pages == 1:
-            result.rows[0] = self.row_idx(batch_idx, base_kv_row)
+            comptime if base_alignment % Self.page_size == 0:
+                # `base_kv_row` is page_size-aligned, so
+                # `tok_in_block_idx == 0`: skip the divmod and the
+                # `+ tok_in_block` add baked into `row_idx`.
+                debug_assert(
+                    base_kv_row % UInt32(Self.page_size) == 0,
+                    (
+                        "PagedKVCache.populate fast path requires"
+                        " base_kv_row to be page_size-aligned"
+                    ),
+                )
+                var lut_idx = base_kv_row // UInt32(Self.page_size)
+                var block_idx = self.lookup_table[Int(batch_idx), Int(lut_idx)]
+                result.rows[0] = block_idx * self._stride()
+            else:
+                result.rows[0] = self.row_idx(batch_idx, base_kv_row)
         else:
-            # `chunk` = largest power of 2 <= `min(num_pages, 8)`.
-            comptime chunk = min(num_pages & -num_pages, 8)
+            # `chunk` is the largest power of two that
+            #   1. divides `num_pages` (so the `comptime for` covers
+            #      every LUT entry exactly once), and
+            #   2. satisfies `chunk * page_size <= base_alignment` (so
+            #      `first_lut_idx = base_kv_row / page_size` is a
+            #      multiple of `chunk`, giving the natural
+            #      `chunk * 4`-byte alignment the
+            #      `ld.global.v{chunk}.u32` emitter needs).
+            # Capped at 8 by hardware. With the historical contract of
+            # `base_alignment == BN`, `alignment_chunks == num_pages`,
+            # and this collapses to `min(num_pages & -num_pages, 8)`.
+            comptime num_pages_pow2 = num_pages & -num_pages
+            comptime alignment_chunks = base_alignment // Self.page_size
+            comptime alignment_chunks_pow2 = (
+                alignment_chunks & -alignment_chunks
+            )
+            comptime chunk = min(min(num_pages_pow2, alignment_chunks_pow2), 8)
+            comptime assert (
+                chunk >= 1
+            ), "base_alignment must be >= page_size when num_pages > 1"
             comptime num_chunks = num_pages // chunk
 
             var stride = self._stride()
-            # `tok_in_block` is zero whenever `num_pages > 1` under the
-            # mask contract used by fa4/depth512/sm90 (base_kv_row is
-            # page-aligned). We compute it here — and add it to the
-            # row — so that the SIMD path produces exactly the same
-            # values as the scalar `row_idx` fallback, matching every
-            # caller's expectations.
-            # Under every mask shipped with fa4/depth512/sm90,
-            # `base_kv_row` is aligned to `BN` whenever `num_pages > 1`,
-            # so it is also `page_size`-aligned (`page_size <= BN` in
-            # this branch) — meaning the intra-page offset that
-            # `row_idx` would add is zero, and we can drop the add from
-            # the SIMD multiply-add.
+            # `tok_in_block` is zero because `base_alignment` is
+            # required to be at least `page_size` whenever
+            # `num_pages > 1` (every shipped mask satisfies this; see
+            # the chunk derivation above). With
+            # `tok_in_block_idx == 0`, `row_idx` collapses to
+            # `block_idx * stride`, so the SIMD path emits a plain
+            # multiply with no add.
             debug_assert(
                 base_kv_row % UInt32(Self.page_size) == 0,
                 (
@@ -1731,8 +1771,8 @@ struct PagedKVCache[
             #      by the LUT padding rule in
             #      ``PagedKVCacheManager`` / the Mojo tests.
             #   3. `first_lut_idx` is a multiple of `chunk` — which
-            #      follows from `base_kv_row` being `BN`-aligned and
-            #      `chunk` dividing `num_pages = BN / page_size`.
+            #      follows from `chunk * page_size` dividing
+            #      `base_alignment` (enforced at comptime above).
             # Catch any violation under ``MOJO_ASSERT_LEVEL=safe`` so
             # misaligned vector loads don't silently produce garbage.
             debug_assert(

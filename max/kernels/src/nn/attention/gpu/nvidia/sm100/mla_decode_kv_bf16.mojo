@@ -538,6 +538,11 @@ struct MLA_SM100_Decode_KV_BF16[
             offset_position.num_keys_this_split, Self.config.BN_QK
         )
 
+        # Alignment of `kv_row` produced by mask-driven iteration.
+        comptime base_alignment: Int = Self.MaskType.start_column_alignment[
+            Self.config.BM, Self.config.BN_QK, Self.KVLUTType.page_size
+        ]()
+
         var kv_prod = DecodeKVProducer[Self.kv_type, Self.config](
             kv_pipeline, kv_smem
         )
@@ -549,7 +554,7 @@ struct MLA_SM100_Decode_KV_BF16[
         # Clamp kv_row to prevent OOB lookup_table access on the last tile.
         var num_keys_u32 = UInt32(offset_position.num_keys)
         kv_row = min(kv_row, max(num_keys_u32, UInt32(1)) - 1)
-        var paged_rows = kv_lut.populate[Self.config.BN_QK](
+        var paged_rows = kv_lut.populate[Self.config.BN_QK, base_alignment](
             UInt32(offset_position.batch_idx), kv_row
         )
         # this is the total bytes expected to be transferred to the mbar for Q and K0
@@ -593,7 +598,7 @@ struct MLA_SM100_Decode_KV_BF16[
             var stage_ptr = kv_prod.stage_base_ptr[qk_stage=0]()
             var k_mbar = kv_prod.producer_mbar[qk_stage=0]()
             kv_row = min(kv_row, max(num_keys_u32, UInt32(1)) - 1)
-            var paged_rows = kv_lut.populate[Self.config.BN_QK](
+            var paged_rows = kv_lut.populate[Self.config.BN_QK, base_alignment](
                 UInt32(offset_position.batch_idx), kv_row
             )
 

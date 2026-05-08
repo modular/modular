@@ -656,6 +656,11 @@ struct MLA_SM100_Decode_KV_FP8[
         if num_k_tiles == 0:
             return
 
+        # Alignment of `kv_row` produced by mask-driven iteration.
+        comptime base_alignment: Int = Self.MaskType.start_column_alignment[
+            Self.config.BM, Self.config.BN_QK, Self.KVLUTType.page_size
+        ]()
+
         var kv_load_prod = KVLoad2CvtProducer[Self.kv_type, Self.config](
             kv_load2cvt_pipe,
             kv_smem_fp8,
@@ -668,7 +673,7 @@ struct MLA_SM100_Decode_KV_FP8[
         # Clamp kv_row to prevent OOB lookup_table access on the last tile.
         var num_keys_u32 = UInt32(offset_position.num_keys)
         kv_row = min(kv_row, max(num_keys_u32, UInt32(1)) - 1)
-        var paged_rows = kv_lut.populate[Self.config.BN_QK](
+        var paged_rows = kv_lut.populate[Self.config.BN_QK, base_alignment](
             UInt32(offset_position.batch_idx), kv_row
         )
 
@@ -736,7 +741,7 @@ struct MLA_SM100_Decode_KV_FP8[
             var k_mbar = kv_load_prod.producer_mbar[qk_stage=0]()
 
             kv_row = min(kv_row, max(num_keys_u32, UInt32(1)) - 1)
-            var paged_rows = kv_lut.populate[Self.config.BN_QK](
+            var paged_rows = kv_lut.populate[Self.config.BN_QK, base_alignment](
                 UInt32(offset_position.batch_idx), kv_row
             )
 

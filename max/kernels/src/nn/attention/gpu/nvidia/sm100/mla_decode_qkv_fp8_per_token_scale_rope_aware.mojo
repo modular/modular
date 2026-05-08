@@ -712,6 +712,11 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
             offset_position.num_keys_this_split, Self.config.BN_QK
         )
 
+        # Alignment of `kv_row` produced by mask-driven iteration.
+        comptime base_alignment: Int = Self.MaskType.start_column_alignment[
+            Self.config.BM, Self.config.BN_QK, Self.KVLUTType.page_size
+        ]()
+
         # We manage the KV pipeline manually for barrier sync,
         # but compute SMEM pointers ourselves for the split layout.
         var kv_prod = DecodeKVProducer[
@@ -723,7 +728,7 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
         var kv_row: UInt32 = UInt32(offset_position.kv_start_row)
         var num_keys_u32 = UInt32(offset_position.num_keys)
         kv_row = min(kv_row, max(num_keys_u32, UInt32(1)) - 1)
-        var paged_rows = kv_lut.populate[Self.config.BN_QK](
+        var paged_rows = kv_lut.populate[Self.config.BN_QK, base_alignment](
             UInt32(offset_position.batch_idx), kv_row
         )
         # For the scale TMA (flat 2D layout), we still need a single
@@ -838,7 +843,7 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
             var stage_idx = kv_prod.stage_index[qk_stage=0]()
             var k_mbar = kv_prod.producer_mbar[qk_stage=0]()
             kv_row = min(kv_row, max(num_keys_u32, UInt32(1)) - 1)
-            var paged_rows = kv_lut.populate[Self.config.BN_QK](
+            var paged_rows = kv_lut.populate[Self.config.BN_QK, base_alignment](
                 UInt32(offset_position.batch_idx), kv_row
             )
             var kv_gmem_row: UInt32 = UInt32(paged_rows.rows[0])

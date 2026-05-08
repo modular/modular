@@ -135,6 +135,7 @@ trait MHAOperand(DevicePassable, TrivialRegisterPassable):
     @always_inline
     def populate[
         BN: Int,
+        base_alignment: Int,
         pair_cta: Bool = False,
         is_leader: Bool = True,
     ](self, batch_idx: UInt32, base_kv_row: UInt32) -> PagedRowIndices[
@@ -147,6 +148,13 @@ trait MHAOperand(DevicePassable, TrivialRegisterPassable):
         `base_kv_row` for `batch_idx`. Both K's TMA (which may cover only
         a subset in `pair_cta` mode) and V's TMA (which covers the full
         range) can then consume the result without any lazy LUT lookup.
+
+        `base_alignment` is a comptime promise that
+        `base_kv_row % base_alignment == 0` at runtime — typically
+        `mask.start_column_alignment[...]()`. The `PagedKVCache`
+        override uses it to pick the largest legal SIMD chunk for its
+        LUT vector load and to skip the intra-page divmod when
+        `base_alignment % page_size == 0`.
 
         Default implementation: scalar loop over `num_pages` calls to
         `row_idx`. Overrides (e.g. `PagedKVCache`) replace this with a
@@ -435,6 +443,7 @@ struct KVCacheMHAOperand[
     @always_inline
     def populate[
         BN: Int,
+        base_alignment: Int,
         pair_cta: Bool = False,
         is_leader: Bool = True,
     ](self, batch_idx: UInt32, base_kv_row: UInt32) -> PagedRowIndices[
@@ -444,9 +453,10 @@ struct KVCacheMHAOperand[
 
         `PagedKVCache.populate` overrides with a SIMD lookup-table read;
         other cache types fall through to the scalar default on
-        `KVCacheT.populate`.
+        `KVCacheT.populate`. `base_alignment` is the comptime alignment
+        of `base_kv_row` (typically `mask.start_column_alignment[...]()`).
         """
-        return self.cache.populate[BN, pair_cta, is_leader](
+        return self.cache.populate[BN, base_alignment, pair_cta, is_leader](
             batch_idx, base_kv_row
         )
 

@@ -569,6 +569,11 @@ __extension SM100MLA:
             Self.config.BN, Self.KRopeType.page_size
         ]
 
+        # Alignment of `kv_row` produced by mask-driven iteration.
+        comptime base_alignment: Int = Self.MaskType.start_column_alignment[
+            Self.BM, Self.BN, Self.page_size
+        ]()
+
         var q_gmem_row: UInt32 = Self.PositionType.get_q_gmem_row[ragged=True](
             seq_info, max_seq_len
         )
@@ -578,12 +583,12 @@ __extension SM100MLA:
         var kv_row: UInt32 = mask.start_column[
             Self.BM, Self.BN, Self.page_size
         ](score_row)
-        var paged_rows = kv_lut.populate[Self.config.BN](
+        var paged_rows = kv_lut.populate[Self.config.BN, base_alignment](
             seq_info.prompt_idx, kv_row
         )
-        var rope_paged_rows = k_rope_lut.populate[Self.config.BN](
-            seq_info.prompt_idx, kv_row
-        )
+        var rope_paged_rows = k_rope_lut.populate[
+            Self.config.BN, base_alignment
+        ](seq_info.prompt_idx, kv_row)
         var iter_count: UInt32 = (
             mask.last_masked_set_end[Self.BM, Self.BN, Self.page_size](
                 score_row, num_keys
@@ -1035,12 +1040,12 @@ __extension SM100MLA:
                         == TileMaskStatus.FULL_MASK
                     ):
                         continue
-                paged_rows = kv_lut.populate[Self.config.BN](
+                paged_rows = kv_lut.populate[Self.config.BN, base_alignment](
                     seq_info.prompt_idx, kv_row
                 )
-                rope_paged_rows = k_rope_lut.populate[Self.config.BN](
-                    seq_info.prompt_idx, kv_row
-                )
+                rope_paged_rows = k_rope_lut.populate[
+                    Self.config.BN, base_alignment
+                ](seq_info.prompt_idx, kv_row)
 
                 # Produce K_nope_n + K_rope_n + k_scale (full sub-tiles)
                 kv_pipeline.producer_acquire()
@@ -1073,12 +1078,12 @@ __extension SM100MLA:
                             _skip_last = True
                     if not _skip_last:
                         # Re-populate BOTH LUTs at the new kv_row.
-                        paged_rows = kv_lut.populate[Self.config.BN](
-                            seq_info.prompt_idx, kv_row
-                        )
-                        rope_paged_rows = k_rope_lut.populate[Self.config.BN](
-                            seq_info.prompt_idx, kv_row
-                        )
+                        paged_rows = kv_lut.populate[
+                            Self.config.BN, base_alignment
+                        ](seq_info.prompt_idx, kv_row)
+                        rope_paged_rows = k_rope_lut.populate[
+                            Self.config.BN, base_alignment
+                        ](seq_info.prompt_idx, kv_row)
                         var k_nvp_last = _k_num_valid_pages(kv_row)
                         var rope_nvp_last = _rope_num_valid_pages(kv_row)
                         # Kn (partial) + K_rope_n (partial) + k_scale_n
@@ -1346,12 +1351,12 @@ __extension SM100MLA:
                         == TileMaskStatus.FULL_MASK
                     ):
                         continue
-                paged_rows = kv_lut.populate[Self.config.BN](
+                paged_rows = kv_lut.populate[Self.config.BN, base_alignment](
                     seq_info.prompt_idx, kv_row
                 )
-                rope_paged_rows = k_rope_lut.populate[Self.config.BN](
-                    seq_info.prompt_idx, kv_row
-                )
+                rope_paged_rows = k_rope_lut.populate[
+                    Self.config.BN, base_alignment
+                ](seq_info.prompt_idx, kv_row)
 
                 # produce k (full sub-tile loops for paged KV)
                 k_pipeline.producer_acquire[qk_stage=0]()
@@ -1382,12 +1387,12 @@ __extension SM100MLA:
                             _skip_last = True
                     if not _skip_last:
                         # Re-populate BOTH LUTs at the new kv_row.
-                        paged_rows = kv_lut.populate[Self.config.BN](
-                            seq_info.prompt_idx, kv_row
-                        )
-                        rope_paged_rows = k_rope_lut.populate[Self.config.BN](
-                            seq_info.prompt_idx, kv_row
-                        )
+                        paged_rows = kv_lut.populate[
+                            Self.config.BN, base_alignment
+                        ](seq_info.prompt_idx, kv_row)
+                        rope_paged_rows = k_rope_lut.populate[
+                            Self.config.BN, base_alignment
+                        ](seq_info.prompt_idx, kv_row)
                         var k_nvp_last = _k_num_valid_pages(kv_row)
                         var rope_nvp_last = _rope_num_valid_pages(kv_row)
                         # produce k (partial)

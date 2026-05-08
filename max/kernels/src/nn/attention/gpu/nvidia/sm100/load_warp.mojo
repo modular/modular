@@ -98,6 +98,11 @@ def fa4_load[
     # For pair-CTA, use PairBM so both CTAs make identical mask decisions.
     comptime BM_mask: Int = config.PairBM_eff()
     comptime page_size = KVLUTType.page_size
+    # Alignment of `kv_row` values produced by mask-driven iteration.
+    # Used by `kv_lut.populate` to pick the largest legal SIMD chunk.
+    comptime base_alignment: Int = MaskType.start_column_alignment[
+        BM_mask, BN, page_size
+    ]()
     comptime ragged = not ValidLengthType.is_null
     comptime cta_group: Int = config.cta_group()
     comptime pair_cta: Bool = config.pair_cta
@@ -397,9 +402,9 @@ def fa4_load[
         var k0_smem = kv_smem + kv_pipeline.state.index() * UInt32(
             kv_stage_elems
         )
-        var kv_paged_rows = kv_lut.populate[BN, pair_cta, is_leader](
-            seq_info.prompt_idx, kv_row
-        )
+        var kv_paged_rows = kv_lut.populate[
+            BN, base_alignment, pair_cta, is_leader
+        ](seq_info.prompt_idx, kv_row)
         _produce_k[partial=needs_partial, qk_stage=0, with_q=True](
             kv_paged_rows, k0_smem, k0_mbar, k_nvp
         )
@@ -461,9 +466,9 @@ def fa4_load[
             var kn_smem = kv_smem + kv_pipeline.state.index() * UInt32(
                 kv_stage_elems
             )
-            kv_paged_rows = kv_lut.populate[BN, pair_cta, is_leader](
-                seq_info.prompt_idx, kv_row
-            )
+            kv_paged_rows = kv_lut.populate[
+                BN, base_alignment, pair_cta, is_leader
+            ](seq_info.prompt_idx, kv_row)
             _produce_k[partial=False, qk_stage=0](
                 kv_paged_rows,
                 kn_smem,
@@ -514,9 +519,9 @@ def fa4_load[
                     var kn_smem = kv_smem + kv_pipeline.state.index() * UInt32(
                         kv_stage_elems
                     )
-                    kv_paged_rows = kv_lut.populate[BN, pair_cta, is_leader](
-                        seq_info.prompt_idx, kv_row
-                    )
+                    kv_paged_rows = kv_lut.populate[
+                        BN, base_alignment, pair_cta, is_leader
+                    ](seq_info.prompt_idx, kv_row)
                     _produce_k[partial=True, qk_stage=0](
                         kv_paged_rows, kn_smem, kn_mbar, k_nvp
                     )
@@ -551,9 +556,9 @@ def fa4_load[
 
         # ---- First tile: K stage 0 (Q0 + populate + K TMA) ----
         var mbark0 = pipeline_k.get_k[qk_stage=0]()  # no wait
-        var kv_paged_rows = kv_lut.populate[BN, pair_cta, is_leader](
-            seq_info.prompt_idx, kv_row
-        )
+        var kv_paged_rows = kv_lut.populate[
+            BN, base_alignment, pair_cta, is_leader
+        ](seq_info.prompt_idx, kv_row)
         _produce_k[partial=needs_partial, qk_stage=0, with_q=True](
             kv_paged_rows, mbark0.smem.ptr, mbark0.mbar, k_nvp
         )
@@ -625,9 +630,9 @@ def fa4_load[
             # K stage 0 (full, populate + K TMA, no Q).
             pipeline_k.acquire_k[qk_stage=0]()
             mbark0 = pipeline_k.get_k[qk_stage=0]()
-            kv_paged_rows = kv_lut.populate[BN, pair_cta, is_leader](
-                seq_info.prompt_idx, kv_row
-            )
+            kv_paged_rows = kv_lut.populate[
+                BN, base_alignment, pair_cta, is_leader
+            ](seq_info.prompt_idx, kv_row)
             _produce_k[partial=False, qk_stage=0](
                 kv_paged_rows,
                 mbark0.smem.ptr,
@@ -683,9 +688,9 @@ def fa4_load[
                     # K stage 0 (partial, populate + K TMA, no Q).
                     pipeline_k.acquire_k[qk_stage=0]()
                     mbark0 = pipeline_k.get_k[qk_stage=0]()
-                    kv_paged_rows = kv_lut.populate[BN, pair_cta, is_leader](
-                        seq_info.prompt_idx, kv_row
-                    )
+                    kv_paged_rows = kv_lut.populate[
+                        BN, base_alignment, pair_cta, is_leader
+                    ](seq_info.prompt_idx, kv_row)
                     _produce_k[partial=True, qk_stage=0](
                         kv_paged_rows, mbark0.smem.ptr, mbark0.mbar, k_nvp
                     )

@@ -239,6 +239,25 @@ trait MHAMask(Copyable, DevicePassable, TrivialRegisterPassable):
         """
         ...
 
+    @staticmethod
+    def start_column_alignment[BM: Int, BN: Int, page_size: Int]() -> Int:
+        """
+        The largest power of 2, capped at `BN`, that divides every
+        `base_kv_row = start_column + k*BN` produced by BN-stride
+        mask-driven iteration. Callers pass this directly as
+        `base_alignment` to `PagedKVCache.populate`, which uses it to
+        pick the largest legal SIMD chunk for its LUT vector load.
+
+        Implementations must return a value that already divides `BN`
+        (equivalently, the value must equal
+        `gcd(natural_alignment, BN)`). For an implementation whose
+        natural `start_column` alignment is a power of 2 less than or
+        equal to `BN`, this is automatic. An implementation whose
+        natural alignment doesn't divide `BN` must wrap its return in
+        `gcd(..., BN)` itself.
+        """
+        ...
+
     def total_iters[
         BM: Int, BN: Int, page_size: Int
     ](self, row: UInt32, num_cols: UInt32) -> UInt32:
@@ -423,6 +442,12 @@ struct CausalMask(MHAMask, TrivialRegisterPassable):
         # causal mask is
         return 0
 
+    @staticmethod
+    def start_column_alignment[BM: Int, BN: Int, page_size: Int]() -> Int:
+        # `start_column` always returns 0, which is divisible by anything;
+        # cap at BN.
+        return BN
+
     @always_inline
     def total_iters[
         BM: Int, BN: Int, page_size: Int
@@ -531,6 +556,11 @@ struct NullMask(MHAMask, TrivialRegisterPassable):
         BM: Int, BN: Int, page_size: Int
     ](self, row: UInt32) -> UInt32:
         return 0
+
+    @staticmethod
+    def start_column_alignment[BM: Int, BN: Int, page_size: Int]() -> Int:
+        # `start_column` always returns 0; cap at BN.
+        return BN
 
     @always_inline
     def total_iters[
@@ -713,6 +743,11 @@ struct ChunkedMask[local_window_size: Int](MHAMask, TrivialRegisterPassable):
         # num_keys.
         comptime align_to = BN if page_size <= 1 else min(page_size, BN)
         return align_down(col, UInt32(align_to))
+
+    @staticmethod
+    def start_column_alignment[BM: Int, BN: Int, page_size: Int]() -> Int:
+        # Matches `align_to` in `start_column`.
+        return BN if page_size <= 1 else min(page_size, BN)
 
     @always_inline
     def total_iters[
@@ -923,6 +958,11 @@ struct SlidingWindowCausalMask[window_size: Int](
         comptime align_to = BN if page_size <= 1 else min(page_size, BN)
         return align_down(col, UInt32(align_to))
 
+    @staticmethod
+    def start_column_alignment[BM: Int, BN: Int, page_size: Int]() -> Int:
+        # Matches `align_to` in `start_column`.
+        return BN if page_size <= 1 else min(page_size, BN)
+
     @always_inline
     def total_iters[
         BM: Int, BN: Int, page_size: Int
@@ -1116,6 +1156,11 @@ struct CausalPaddingMask[layout_: Layout, origin_: Origin[mut=False]](
         BM: Int, BN: Int, page_size: Int
     ](self, row: UInt32) -> UInt32:
         return Self.causal_mask.start_column[BM, BN, page_size](row)
+
+    @staticmethod
+    def start_column_alignment[BM: Int, BN: Int, page_size: Int]() -> Int:
+        # Delegates to `CausalMask`, which always returns 0.
+        return CausalMask.start_column_alignment[BM, BN, page_size]()
 
     @always_inline
     def total_iters[
@@ -1326,6 +1371,11 @@ struct MaterializedMask[
     ](self, row: UInt32) -> UInt32:
         return naively_get_first_nonempty_mask_col[BM, BN](self, row)
 
+    @staticmethod
+    def start_column_alignment[BM: Int, BN: Int, page_size: Int]() -> Int:
+        # `naively_get_first_nonempty_mask_col` steps by BN from 0.
+        return BN
+
     @always_inline
     def total_iters[
         BM: Int, BN: Int, page_size: Int
@@ -1430,6 +1480,11 @@ struct AndMask[T: MHAMask, S: MHAMask, //, lhs: T, rhs: S](
     ](self, row: UInt32) -> UInt32:
         return naively_get_first_nonempty_mask_col[BM, BN](self, row)
 
+    @staticmethod
+    def start_column_alignment[BM: Int, BN: Int, page_size: Int]() -> Int:
+        # `naively_get_first_nonempty_mask_col` steps by BN from 0.
+        return BN
+
     @always_inline
     def total_iters[
         BM: Int, BN: Int, page_size: Int
@@ -1531,6 +1586,11 @@ struct OrMask[T: MHAMask, S: MHAMask, //, lhs: T, rhs: S](
         BM: Int, BN: Int, page_size: Int
     ](self, row: UInt32) -> UInt32:
         return naively_get_first_nonempty_mask_col[BM, BN](self, row)
+
+    @staticmethod
+    def start_column_alignment[BM: Int, BN: Int, page_size: Int]() -> Int:
+        # `naively_get_first_nonempty_mask_col` steps by BN from 0.
+        return BN
 
     @always_inline
     def total_iters[

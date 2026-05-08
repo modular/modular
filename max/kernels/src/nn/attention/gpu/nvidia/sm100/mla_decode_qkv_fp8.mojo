@@ -639,6 +639,11 @@ struct MLA_SM100_Decode_QKV_FP8[
             offset_position.num_keys_this_split, Self.config.BN_QK
         )
 
+        # Alignment of `kv_row` produced by mask-driven iteration.
+        comptime base_alignment: Int = Self.MaskType.start_column_alignment[
+            Self.config.BM, Self.config.BN_QK, Self.KVLUTType.page_size
+        ]()
+
         # Sliding-window early exit + leading-tile skip (comptime-gated;
         # entire block compiles away for non-sliding masks).
         comptime _sliding_window_mask: Bool = (
@@ -664,7 +669,7 @@ struct MLA_SM100_Decode_QKV_FP8[
             kv_row += UInt32(_tile_skip * Self.config.BN_QK)
         var num_keys_u32 = UInt32(offset_position.num_keys)
         kv_row = min(kv_row, max(num_keys_u32, UInt32(1)) - 1)
-        var paged_rows = kv_lut.populate[Self.config.BN_QK](
+        var paged_rows = kv_lut.populate[Self.config.BN_QK, base_alignment](
             UInt32(offset_position.batch_idx), kv_row
         )
 
@@ -724,7 +729,7 @@ struct MLA_SM100_Decode_QKV_FP8[
             var stage_ptr = kv_prod.stage_base_ptr[qk_stage=0]()
             var k_mbar = kv_prod.producer_mbar[qk_stage=0]()
             kv_row = min(kv_row, max(num_keys_u32, UInt32(1)) - 1)
-            var paged_rows = kv_lut.populate[Self.config.BN_QK](
+            var paged_rows = kv_lut.populate[Self.config.BN_QK, base_alignment](
                 UInt32(offset_position.batch_idx), kv_row
             )
 
