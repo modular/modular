@@ -437,6 +437,7 @@ class Qwen3VLTokenizer(TextAndVisionTokenizer):
         self,
         messages: list[TextGenerationRequestMessage],
         tools: list[TextGenerationRequestTool] | None = None,
+        chat_template_options: dict[str, Any] | None = None,
     ) -> str:
         """Apply chat template using tokenizer directly (not processor)."""
         templated_message = self.delegate.apply_chat_template(
@@ -493,9 +494,15 @@ class Qwen3VLTokenizer(TextAndVisionTokenizer):
                     messages=messages,
                 )
                 assert new_request.messages
-                prompt = self.apply_chat_template(new_request.messages)
+                prompt = self.apply_chat_template(
+                    new_request.messages,
+                    chat_template_options=request.chat_template_options,
+                )
         elif request.messages:
-            prompt = self.apply_chat_template(request.messages)
+            prompt = self.apply_chat_template(
+                request.messages,
+                chat_template_options=request.chat_template_options,
+            )
         else:
             raise ValueError(f"{request} does not provide messages or prompt.")
 
