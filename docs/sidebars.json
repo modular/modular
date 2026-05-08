@@ -123,7 +123,8 @@
             "max/develop/dtypes",
             "max/develop/basic-ops",
             "max/develop/broadcasting",
-            "max/develop/indexing"
+            "max/develop/indexing",
+            "max/develop/tensor-realization"
           ]
         },
         {
