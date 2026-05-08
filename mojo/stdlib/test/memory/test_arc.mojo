@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.memory import ArcPointer
+from std.memory.arc_pointer import WeakPointer
 from test_utils import ObservableDel, check_write_to
 from std.testing import assert_equal, assert_false, assert_true, TestSuite
 
@@ -35,7 +36,7 @@ def test_is() raises:
 
 def test_deleter_not_called_until_no_references() raises:
     var deleted = False
-    var p = ArcPointer(ObservableDel(UnsafePointer(to=deleted).as_any_origin()))
+    var p = ArcPointer(ObservableDel(UnsafePointer(to=deleted)))
     var p2 = p
     _ = p^
     assert_false(deleted)
@@ -50,7 +51,7 @@ def test_deleter_not_called_until_no_references() raises:
 
 def test_deleter_not_called_until_no_references_explicit_copy() raises:
     var deleted = False
-    var p = ArcPointer(ObservableDel(UnsafePointer(to=deleted).as_any_origin()))
+    var p = ArcPointer(ObservableDel(UnsafePointer(to=deleted)))
     var p2 = p.copy()
     _ = p^
     assert_false(deleted)
@@ -76,9 +77,7 @@ def test_count() raises:
 
 def test_steal_data_and_construct_from_raw_ptr() raises:
     var deleted = False
-    var leaked = ArcPointer(
-        ObservableDel(UnsafePointer(to=deleted).as_any_origin())
-    )
+    var leaked = ArcPointer(ObservableDel(UnsafePointer(to=deleted)))
 
     var raw = leaked^.steal_data()
     assert_false(deleted)
@@ -153,6 +152,212 @@ def test_eq() raises:
     var s = ArcPointer(99)
     assert_false(p == s)
     assert_true(p != s)
+
+
+# ---------------------------------------------------------------------------
+# WeakPointer tests
+# ---------------------------------------------------------------------------
+
+
+def test_weak_basic_upgrade() raises:
+    var p = ArcPointer(7)
+    var w = WeakPointer(downgrade=p)
+    assert_equal(UInt64(1), p.count())
+    assert_equal(UInt64(1), w.strong_count())
+
+    var up = w.try_upgrade()
+    assert_equal(UInt64(2), p.count())
+    assert_true(up)
+    assert_equal(7, up.value()[])
+    _ = p^
+    _ = up^
+
+
+def test_downgrade_does_not_change_strong_count() raises:
+    var p = ArcPointer(1)
+    assert_equal(UInt64(1), p.count())
+
+    var w = WeakPointer(downgrade=p)
+    assert_equal(UInt64(1), p.count())
+    assert_equal(UInt64(1), p.weak_count())
+
+    _ = w^
+    assert_equal(UInt64(0), p.weak_count())
+
+
+def test_weak_count_via_arc() raises:
+    var p = ArcPointer(0)
+    assert_equal(UInt64(0), p.weak_count())
+
+    var w1 = WeakPointer(downgrade=p)
+    assert_equal(UInt64(1), p.weak_count())
+
+    var w2 = w1
+    assert_equal(UInt64(2), p.weak_count())
+
+    var w3 = WeakPointer(downgrade=p)
+    assert_equal(UInt64(3), p.weak_count())
+
+    _ = w1^
+    assert_equal(UInt64(2), p.weak_count())
+    _ = w2^
+    assert_equal(UInt64(1), p.weak_count())
+    _ = w3^
+    assert_equal(UInt64(0), p.weak_count())
+
+
+def test_upgrade_increments_strong() raises:
+    var p = ArcPointer(99)
+    var w = WeakPointer(downgrade=p)
+
+    var up = w.try_upgrade()
+    assert_true(up)
+    assert_equal(UInt64(2), p.count())
+
+    _ = up^
+    assert_equal(UInt64(1), p.count())
+
+
+def test_upgrade_fails_after_last_strong_dropped() raises:
+    var p = ArcPointer(123)
+    var w = WeakPointer(downgrade=p)
+    _ = p^
+
+    var up = w.try_upgrade()
+    assert_false(up)
+    assert_equal(UInt64(0), w.strong_count())
+
+
+def test_upgrade_returns_none_after_strong_drop() raises:
+    var deleted = False
+    var p = ArcPointer(ObservableDel(UnsafePointer(to=deleted)))
+    var w = WeakPointer(downgrade=p)
+    _ = p^
+    var observed = deleted  # snapshot before any further use of `w`
+    assert_true(observed)
+    var up = w.try_upgrade()
+    assert_false(up)
+    _ = up^
+    _ = w^
+
+
+def test_payload_destroyed_when_strong_zero_even_with_weak() raises:
+    var deleted = False
+    var p = ArcPointer(ObservableDel(UnsafePointer(to=deleted)))
+    var w = WeakPointer(downgrade=p)
+    _ = p^
+    _ = w^
+    assert_true(deleted)
+
+
+def test_allocation_kept_alive_by_weak() raises:
+    # Strong drops while weak is live: weak.strong_count and weak.try_upgrade
+    # must still be safe to call.
+    var p = ArcPointer(5)
+    var w = WeakPointer(downgrade=p)
+    _ = p^
+
+    assert_equal(UInt64(0), w.strong_count())
+    var up = w.try_upgrade()
+    assert_false(up)
+    _ = up^
+    _ = w^
+
+
+def test_weak_clone_increments_weak_count() raises:
+    var p = ArcPointer(11)
+    var w1 = WeakPointer(downgrade=p)
+    assert_equal(UInt64(1), p.weak_count())
+
+    var w2 = w1.copy()
+    assert_equal(UInt64(2), p.weak_count())
+
+    var w3 = w2  # implicit copy
+    assert_equal(UInt64(3), p.weak_count())
+
+    _ = w1^
+    _ = w2^
+    _ = w3^
+    assert_equal(UInt64(0), p.weak_count())
+
+
+def test_weak_upgraded_arc_keeps_payload_alive() raises:
+    var deleted = False
+    var p = ArcPointer(ObservableDel(UnsafePointer(to=deleted)))
+    var w = WeakPointer(downgrade=p)
+
+    var up = w.try_upgrade()
+    assert_true(up)
+
+    # Drop original strong; an upgraded one keeps payload alive.
+    _ = p^
+    assert_false(deleted)
+
+    # Drop the upgraded strong; now payload destroyed.
+    _ = up^
+    assert_true(deleted)
+
+    _ = w^
+
+
+def test_multiple_upgrades_then_drops() raises:
+    var p = ArcPointer(42)
+    var w = WeakPointer(downgrade=p)
+
+    var u1 = w.try_upgrade().value()
+    var u2 = w.try_upgrade().value()
+    var u3 = w.try_upgrade().value()
+    assert_equal(UInt64(4), p.count())
+
+    _ = u1^
+    _ = u2^
+    _ = u3^
+    assert_equal(UInt64(1), p.count())
+    _ = w^
+
+
+def test_weak_count() raises:
+    var p = ArcPointer(0)
+    var w = WeakPointer(downgrade=p)
+    assert_equal(UInt64(1), w.strong_count())
+    assert_equal(UInt64(1), w.weak_count())
+    _ = p^
+    assert_equal(UInt64(0), w.strong_count())
+    # weak still live, even once strong drops to zero
+    assert_equal(UInt64(1), w.weak_count())
+    _ = w^
+
+
+def test_only_weak_no_strong_then_free() raises:
+    # Multiple WeakPointers outliving the last strong. Payload is destroyed
+    # promptly when the last strong drops; weaks remain valid handles whose
+    # try_upgrade() returns None.
+    var deleted = False
+    var p = ArcPointer(ObservableDel(UnsafePointer(to=deleted)))
+    var w1 = WeakPointer(downgrade=p)
+    var w2 = WeakPointer(downgrade=p)
+    var w3 = WeakPointer(downgrade=p)
+    assert_false(deleted)
+    _ = p^
+    assert_true(deleted)
+    _ = w1^
+    _ = w2^
+    _ = w3^
+
+
+def test_lifetime_probe_arc_drop_with_weak_in_scope() raises:
+    var deleted = False
+    var p = ArcPointer(ObservableDel(UnsafePointer(to=deleted)))
+    var w = WeakPointer(downgrade=p)
+    _ = p^
+    var observed = deleted
+    var up = w.try_upgrade()
+    _ = up^
+    _ = w^
+
+    # If `_ = p^` is honored as a real drop point: observed is True.
+    # If lifetime extension defers p's drop to last-use of w: observed is False.
+    assert_true(observed)
 
 
 def main() raises:
