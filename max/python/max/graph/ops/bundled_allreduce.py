@@ -16,14 +16,12 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from max import mlir
-from max._core import Value as _CValue
-from max.mlir.dialects import mo
+from max._core.dialects import mo
 
-from ..graph import Graph, _location
+from ..graph import Graph
+from ..type import _ChainType
 from ..value import BufferValue, BufferValueLike, TensorValue, TensorValueLike
-from ..value import Value as _GValue
-from .parallel import _graph_type_to_mlir, _graph_val_to_mlir, parallel
+from .parallel import parallel
 from .utils import _buffer_values, _tensor_values
 
 
@@ -59,36 +57,30 @@ def sum(
         [graph._current_chain, *(graph.device_chains[d] for d in devices)]
     )
 
-    graph._current_chain = in_chain
+    input_types = [inp.type for inp in inputs]
 
-    input_types = [_graph_type_to_mlir(inp) for inp in inputs]
-    sig_mlir_vals = [_graph_val_to_mlir(sb) for sb in signal_buffers]
-
-    def body_fn(tensor: TensorValue, signal_buffer: BufferValue) -> TensorValue:
-        tensor_mlir = _graph_val_to_mlir(tensor)
-        chain_mlir = _graph_val_to_mlir(graph._current_chain)
-        ip = mlir.InsertionPoint(graph._current_block)
-        with ip, _location():
-            expand_op = mo.BundledExpandOp(
-                results_=input_types, input=tensor_mlir
-            )
-            peers = list(expand_op.results)
-            chain_type = mlir.Type.parse("!mo.chain")
-            ar_op = mlir.Operation.create(
-                "mo.bundled.allreduce.sum",
-                results=[input_types[0], chain_type],
-                operands=[*peers, *sig_mlir_vals, chain_mlir],
-            )
-        graph._current_chain = _GValue.from_mlir(
-            _CValue._from_cmlir(ar_op.results[1])
+    def body_fn(tensor: TensorValue, _: BufferValue) -> TensorValue:
+        peers = graph._add_op_generated(mo.BundledExpandOp, input_types, tensor)
+        out, _out_chain = graph._add_op_generated(
+            mo.BundledAllreduceSumOp,
+            input_types[0],
+            _ChainType(),
+            peers,
+            signal_buffers,
+            in_chain,
         )
-        return _GValue.from_mlir(_CValue._from_cmlir(ar_op.results[0])).tensor
+        return out.tensor
 
     result = parallel(
-        inputs, body_fn, extra_inputs=signal_buffers, chain=in_chain
+        [inputs],
+        body_fn,
+        buffers=signal_buffers,
+        chain=in_chain,
+        result_types=[input_types],
     )
     assert isinstance(result, tuple)
-    results, out_chain = result
+    bundles, out_chain = result
+    [results] = bundles
 
     graph._update_chain(out_chain)
     for d in devices:

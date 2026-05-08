@@ -17,7 +17,7 @@ from collections.abc import Iterable
 
 from max._mlir.dialects import _ods_common
 from max._mlir.dialects.mo import *
-from max._mlir.dialects.mo import GraphOp, IfOp, ParallelOp, _Dialect
+from max._mlir.dialects.mo import GraphOp, IfOp, _Dialect
 
 from .. import Attribute, Block, FunctionType, Type, TypeAttr
 
@@ -94,66 +94,6 @@ def while_(  # type: ignore[no-redef]
 ) -> _ods_common.VariadicResultValueT:
     return _ods_common.get_op_result_or_op_results(
         WhileOp(results_=results_, inputs=inputs, loc=loc, ip=ip)
-    )
-
-
-@_ods_common._cext.register_operation(_Dialect, replace=True)
-class ParallelOp(ParallelOp):  # type: ignore[no-redef]
-    """Extends mo.parallel op with a simpler builder that creates block args.
-
-    The parallel op takes ``!mo.bundle`` operands and produces bundle results.
-    An optional ``buffers`` list provides per-launch signal buffers for
-    collective operations.  ``buffers`` and ``in_chain`` must be both present
-    or both absent.  ``block_arg_types`` supplies the representative per-launch
-    types so that the body block can be created with the right argument types.
-    """
-
-    def __init__(
-        self,
-        results_,  # noqa: ANN001
-        inputs,  # noqa: ANN001
-        buffers=None,  # noqa: ANN001
-        in_chain=None,  # noqa: ANN001
-        *,
-        block_arg_types=None,  # noqa: ANN001
-        loc=None,  # noqa: ANN001
-        ip=None,  # noqa: ANN001
-    ) -> None:
-        all_results = list(results_)
-        if in_chain is not None:
-            all_results.append(Type.parse("!mo.chain"))
-        super().__init__(
-            results_=all_results,
-            inputs=inputs,
-            buffers=buffers if buffers is not None else [],
-            inChain=in_chain,
-            loc=loc,
-            ip=ip,
-        )
-        if block_arg_types is not None:
-            Block.create_at_start(self.bodyRegion, block_arg_types)
-
-
-def parallel_(
-    results_,  # noqa: ANN001
-    inputs,  # noqa: ANN001
-    buffers=None,  # noqa: ANN001
-    in_chain=None,  # noqa: ANN001
-    *,
-    block_arg_types=None,  # noqa: ANN001
-    loc=None,  # noqa: ANN001
-    ip=None,  # noqa: ANN001
-) -> _ods_common.VariadicResultValueT:
-    return _ods_common.get_op_result_or_op_results(
-        ParallelOp(  # type: ignore[call-arg]
-            results_=results_,
-            inputs=inputs,
-            buffers=buffers,
-            in_chain=in_chain,
-            block_arg_types=block_arg_types,
-            loc=loc,
-            ip=ip,
-        )
     )
 
 

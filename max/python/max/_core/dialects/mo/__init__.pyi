@@ -7203,6 +7203,7 @@ class TanhOp(max._core.Operation):
     def input(self) -> max._core.Value[TensorType]: ...
 
 class TensorBundleOp(max._core.Operation):
+    @overload
     def __init__(
         self,
         builder: max._core.OpBuilder,
@@ -7210,16 +7211,31 @@ class TensorBundleOp(max._core.Operation):
         result: BundleType,
         inputs: Sequence[max._core.Value[max._core.Type]],
     ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        inputs: Sequence[max._core.Value[max._core.Type]],
+    ) -> None: ...
     @property
     def inputs(self) -> Sequence[max._core.Value[max._core.Type]]: ...
 
 class TensorUnbundleOp(max._core.Operation):
+    @overload
     def __init__(
         self,
         builder: max._core.OpBuilder,
         location: Location,
         outputs: Sequence[max._core.Type],
         input: max._core.Value[BundleType],
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        input: max._core.Value,
     ) -> None: ...
     @property
     def input(self) -> max._core.Value[BundleType]: ...
