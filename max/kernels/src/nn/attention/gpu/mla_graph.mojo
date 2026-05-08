@@ -65,9 +65,10 @@ from nn.normalization import _rms_norm_warp_tiling_subkernel
 
 # ===-----------------------------------------------------------------------===#
 # Maximum sequence length that routes through the decode branch instead of
-# prefill. This covers MTP verification where a small number of draft tokens
-# (> 1) should still use the decode kernel.
-comptime MLA_DECODE_MAX_SEQ_LEN = 4
+# prefill. This covers MTP verification and speculative decoding (1 actual +
+# up to 5 spec ahead = 6) where a small number of draft tokens (> 1) should
+# still use the decode kernel.
+comptime MLA_DECODE_MAX_SEQ_LEN = 6
 
 # Manually fused MLA RoPE and RMSNorm kernel
 # ===-----------------------------------------------------------------------===#

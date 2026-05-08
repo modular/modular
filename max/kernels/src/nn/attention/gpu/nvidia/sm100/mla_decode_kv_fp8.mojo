@@ -107,16 +107,16 @@ struct MLA_SM100_Decode_KV_FP8[
     comptime kv_type = Self.KVLUTType.dtype
     comptime AccumType = get_accum_type[Self.q_type]()
     # 576 / 64 = 9
-    comptime NumQKBlocks = Self.config.padded_q_depth // Self.config.BN
+    comptime NumQKBlocks = Self.config.padded_q_depth // Self.config.BN_QK
     # 512 / 64 = 8
-    comptime NumVOBlocks = Self.config.padded_depth // Self.config.BN
+    comptime NumVOBlocks = Self.config.padded_depth // Self.config.BN_QK
     # 64 * 64 = 4096
-    comptime BlockElems = Self.config.BM * Self.config.BN
+    comptime BlockElems = Self.config.BM * Self.config.BN_QK
     # 2 bytes for float16
     comptime bytes_per_element = size_of[Self.q_type]()
     # the stage element is the same for both K and V
     comptime KVStageElems = Self.NumQKBlocks * Self.BlockElems
-    comptime output_tile_width = (Self.config.BN // 2) * (
+    comptime output_tile_width = (Self.config.BN_QK // 2) * (
         4 // size_of[Self.output_type]()
     )
     comptime UMMAQKTSS = DecodeSM100QKTSS[
@@ -248,19 +248,20 @@ struct MLA_SM100_Decode_KV_FP8[
         q_tma: QOTMATile[
             dtype=Self.q_type,
             BM=Self.config.BM,  # tile_m =64
-            BK=Self.config.BK0,  # tile_n =576
+            BK=Self.config.BK_QK,  # tile_n =576
             swizzle_mode=Self.config.swizzle_mode,
         ],
         k_tma: KVTMATile[
             dtype=Self.kv_type,
             swizzle_mode=Self.config.kv_tma_swizzle_mode,
-            BN=Self.config.BK1,  # tile_m =64
-            BK=Self.config.BK0,  # tile_n =576
+            BN=Self.config.BK_PV,  # tile_m =64
+            BK=Self.config.BK_QK,  # tile_n =576
         ],
         o_tma: QOTMATile[
             dtype=Self.output_type,
             BM=Self.config.out_rows,
-            BK=Self.config.BN,
+            # Per-warp output stripe (= BN_PV/4), not BN_QK.
+            BK=Self.config.BN_PV // 4,
             swizzle_mode=Self.config.swizzle_mode,
         ],
         kv_lut: Self.KVLUTType,
@@ -478,7 +479,7 @@ struct MLA_SM100_Decode_KV_FP8[
         )  # kv_load2cvt_pipe uses 23..26
         mbar_base += kv_load2cvt_pipe.num_mbars()  # barrier total [27]
         # We need (num_out_stages * 2) more barriers for the out pipeline.
-        # num_out_stages = (Depth/BN) / blocks_per_stage = 8/2 = 4, so 4*2 = 8.
+        # num_out_stages = (Depth/BN_QK) / blocks_per_stage = 8/2 = 4, so 4*2 = 8.
         comptime OutPipeType = DecodeOutProducer[Self.output_type, Self.config]
         var out_pipeline = OutPipeline[
             num_out_stages=OutPipeType.num_out_stages,
@@ -588,7 +589,7 @@ struct MLA_SM100_Decode_KV_FP8[
             warpgroup_reg_alloc[num_reg_keep_fp8tofp16]()
             # Use num_keys_this_split for loop bounds (each split processes its portion)
             var num_k_tiles = ceildiv(
-                offset_position.num_keys_this_split, Self.config.BN
+                offset_position.num_keys_this_split, Self.config.BN_QK
             )
             Self.convertFP8ToBF16(
                 kv_smem_fp8_upper0,
@@ -617,14 +618,14 @@ struct MLA_SM100_Decode_KV_FP8[
         q_tma: QOTMATile[
             dtype=Self.q_type,
             BM=Self.config.BM,  # tile_m =64
-            BK=Self.config.BK0,  # tile_n =576
+            BK=Self.config.BK_QK,  # tile_n =576
             swizzle_mode=Self.config.swizzle_mode,
         ],
         k_tma_fp8: KVTMATile[
             dtype=Self.kv_type,
             swizzle_mode=Self.config.kv_tma_swizzle_mode,
-            BN=Self.config.BK1,  # tile_m =64
-            BK=Self.config.BK0,  # tile_n =576
+            BN=Self.config.BK_PV,  # tile_m =64
+            BK=Self.config.BK_QK,  # tile_n =576
         ],
         kv_lut: Self.KVLUTType,
         q_smem: SharedMemPointer[Scalar[Self.q_type]],
@@ -648,7 +649,7 @@ struct MLA_SM100_Decode_KV_FP8[
         scales_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin],
     ):
         num_k_tiles = ceildiv(
-            offset_position.num_keys_this_split, Self.config.BN
+            offset_position.num_keys_this_split, Self.config.BN_QK
         )
 
         # Early exit if this split has no work (prevents producer/consumer deadlock)
@@ -667,7 +668,7 @@ struct MLA_SM100_Decode_KV_FP8[
         # Clamp kv_row to prevent OOB lookup_table access on the last tile.
         var num_keys_u32 = UInt32(offset_position.num_keys)
         kv_row = min(kv_row, max(num_keys_u32, UInt32(1)) - 1)
-        var paged_rows = kv_lut.populate[Self.config.BN](
+        var paged_rows = kv_lut.populate[Self.config.BN_QK](
             UInt32(offset_position.batch_idx), kv_row
         )
 
@@ -686,7 +687,9 @@ struct MLA_SM100_Decode_KV_FP8[
         expect_bytes_pred(
             k0_bar,
             Int32(
-                Self.config.BN * Self.config.q_depth * size_of[Self.kv_type]()
+                Self.config.BN_QK
+                * Self.config.q_depth
+                * size_of[Self.kv_type]()
             ),
             elect_mask,
         )
@@ -723,7 +726,7 @@ struct MLA_SM100_Decode_KV_FP8[
 
         kv_load_prod.commit_step()
 
-        kv_row += UInt32(Self.config.BN)
+        kv_row += UInt32(Self.config.BN_QK)
 
         var tile_idx: Int = 1
         while tile_idx < num_k_tiles:
@@ -733,14 +736,14 @@ struct MLA_SM100_Decode_KV_FP8[
             var k_mbar = kv_load_prod.producer_mbar[qk_stage=0]()
 
             kv_row = min(kv_row, max(num_keys_u32, UInt32(1)) - 1)
-            var paged_rows = kv_lut.populate[Self.config.BN](
+            var paged_rows = kv_lut.populate[Self.config.BN_QK](
                 UInt32(offset_position.batch_idx), kv_row
             )
 
             expect_bytes_pred(
                 k_mbar,
                 Int32(
-                    Self.config.BN
+                    Self.config.BN_QK
                     * Self.config.q_depth
                     * size_of[Self.kv_type]()
                 ),
@@ -771,7 +774,7 @@ struct MLA_SM100_Decode_KV_FP8[
                 # prior SMEM writes. No separate named barrier needed.
                 _ = k_mbar[].arrive()
 
-            kv_row += UInt32(Self.config.BN)
+            kv_row += UInt32(Self.config.BN_QK)
             kv_load_prod.commit_step()
 
             tile_idx += 1
@@ -790,7 +793,7 @@ struct MLA_SM100_Decode_KV_FP8[
         """Load FP32 scales from HBM, convert to e8m0, store to scale SMEM.
 
         Called by all 32 threads of warp 8. Each thread handles 2 rows
-        (32 threads * 2 rows = 64 = BN). For each row: ONE page table
+        (32 threads * 2 rows = 64 = BN_QK). For each row: ONE page table
         lookup via row_idx, then load all scales_per_token FP32 values
         and convert to e8m0 (1 byte each) in SMEM.
         """
@@ -847,10 +850,13 @@ struct MLA_SM100_Decode_KV_FP8[
         ]()
         comptime sw_bf16 = make_swizzle[Self.q_type, Self.config.swizzle_mode]()
 
-        comptime BN: Int = Self.config.BN
-        comptime BK: Int = Self.config.q_depth
-        comptime NumBlocks: Int = BK // BN
-        comptime BlockElems: Int = Self.config.BM * BN
+        comptime BN_QK: Int = Self.config.BN_QK
+        # FP8 -> BF16 conversion slices q_depth (576) into 64-element
+        # chunks. This chunk size is independent of the QK MMA's N
+        # tile width (BN_QK).
+        comptime BK_QK_chunk: Int = 64
+        comptime NumBlocks: Int = Self.config.q_depth // BK_QK_chunk
+        comptime BlockElems: Int = Self.config.BM * BK_QK_chunk
 
         var kv_load_cons_cvt = KVLoad2CvtConsumer[Self.kv_type, Self.config](
             kv_load2cvt_pipe,
@@ -868,8 +874,8 @@ struct MLA_SM100_Decode_KV_FP8[
         var half: Int = (lane >> 6) ^ ((row >> 3) & 1)
         var col0: Int = half * 32
 
-        var direct0: Int = row * BN + col0
-        var direct1: Int = row * BN + col0 + 16
+        var direct0: Int = row * BN_QK + col0
+        var direct1: Int = row * BN_QK + col0 + 16
 
         var phys_fp8_0: Int = sw_fp8(direct0)
         var phys_fp8_1: Int = sw_fp8(direct1)
@@ -945,12 +951,12 @@ struct MLA_SM100_Decode_KV_FP8[
 
                 # Blockwise scaling: multiply converted BF16 values by the
                 # e8m0 scale for this (row, block) from scale SMEM.
-                # scale_idx = (b * BN + col0) // scale_block_size
+                # scale_idx = (b * BN_QK + col0) // scale_block_size
                 # All 32 columns this thread handles within a block share
                 # the same scale when scale_block_size >= 32.
                 comptime if Self.config.scale_block_size > 0:
                     var scale_idx = (
-                        b * BN + col0
+                        b * BN_QK + col0
                     ) // Self.config.scale_block_size
                     var scale_byte = scale_smem_stage[
                         row * Self.config.scales_per_token + scale_idx
@@ -1083,7 +1089,7 @@ struct MLA_SM100_Decode_KV_FP8[
         var elect_mask = elect()
         # Use num_keys_this_split for loop bounds (each split processes its portion)
         num_k_tiles = ceildiv(
-            offset_position.num_keys_this_split, Self.config.BN
+            offset_position.num_keys_this_split, Self.config.BN_QK
         )
 
         # Early exit if there are no K tiles
@@ -1163,7 +1169,7 @@ struct MLA_SM100_Decode_KV_FP8[
         var o_tmem = tmem_addr + UInt32(Self.config.TMEM_O)
         var elect_mask = elect()
         num_k_tiles = ceildiv(
-            offset_position.num_keys_this_split, Self.config.BN
+            offset_position.num_keys_this_split, Self.config.BN_QK
         )
 
         # Early exit if there are no K tiles
@@ -1180,7 +1186,7 @@ struct MLA_SM100_Decode_KV_FP8[
         var p_smem_base = kv_smem + Self.NumVOBlocks * Self.BlockElems
         var p_descriptor = Self.UMMAPVSS.descriptor_p_block(p_smem_base)
         var v_descriptor = Self.UMMAPVSS.descriptor_v_block(kv_smem)
-        comptime block_step = Self.config.MMA_PV_N // Self.config.BN
+        comptime block_step = Self.config.MMA_PV_N // Self.config.BN_QK
         comptime stage_stride_in_bytes = Self.KVStageElems * Self.bytes_per_element
         comptime block_stride_in_bytes = Self.BlockElems * Self.bytes_per_element
 
@@ -1201,7 +1207,7 @@ struct MLA_SM100_Decode_KV_FP8[
                     b=v_descriptor
                     + v_slot_index * UInt32(stage_stride_in_bytes)
                     + UInt32(block * block_stride_in_bytes),
-                    c=o_tmem + UInt32(block) * UInt32(Self.config.BN // 2),
+                    c=o_tmem + UInt32(block) * UInt32(Self.config.BN_QK // 2),
                     c_scale=c_scale,
                     elect=elect_mask,
                 )

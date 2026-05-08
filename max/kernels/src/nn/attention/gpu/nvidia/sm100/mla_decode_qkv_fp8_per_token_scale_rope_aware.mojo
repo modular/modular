@@ -159,13 +159,13 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
     # Total Q depth: 576 (padded_q_depth = content + rope)
 
     # Content blocks: 512 / 64 = 8
-    comptime NumContentBlocks = Self.config.padded_depth // Self.config.BN
+    comptime NumContentBlocks = Self.config.padded_depth // Self.config.BN_QK
     # Rope blocks: 64 / 64 = 1
-    comptime NumRopeBlocks = Self.config.rope_depth // Self.config.BN
+    comptime NumRopeBlocks = Self.config.rope_depth // Self.config.BN_QK
     # V/O blocks: 512 / 64 = 8 (V is content-only)
-    comptime NumVOBlocks = Self.config.padded_depth // Self.config.BN
+    comptime NumVOBlocks = Self.config.padded_depth // Self.config.BN_QK
     # 64 * 64 = 4096
-    comptime BlockElems = Self.config.BM * Self.config.BN
+    comptime BlockElems = Self.config.BM * Self.config.BN_QK
 
     # FP8: 1 byte per element
     comptime fp8_bytes_per_element = size_of[Self.fp8_type]()
@@ -184,7 +184,7 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
     # P stage element count (FP8): 1 block * 4096 elems = 4096
     comptime PStageElems = Self.BlockElems
 
-    comptime output_tile_width = (Self.config.BN // 2) * (
+    comptime output_tile_width = (Self.config.BN_QK // 2) * (
         4 // size_of[Self.output_type]()
     )
 
@@ -283,22 +283,23 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
         k_content_tma: KVTMATile[
             dtype=Self.fp8_type,
             swizzle_mode=TensorMapSwizzle.SWIZZLE_64B,
-            BN=Self.config.BK1,  # 64
+            BN=Self.config.BK_PV,  # 64
             BK=Self.config.padded_depth,  # 512
         ],
         # K_rope TMA: BF16, 64×64, SWIZZLE_128B
         k_rope_tma: KVTMATile[
             dtype=Self.bf16_type,
             swizzle_mode=TensorMapSwizzle.SWIZZLE_128B,
-            BN=Self.config.BK1,  # 64
+            BN=Self.config.BK_PV,  # 64
             BK=Self.config.rope_depth,  # 64
         ],
-        # Per-token scales TMA: float32, [1, BN], SWIZZLE_NONE
-        scale_tma: ScalesTMATile[BN=Self.config.BN],
+        # Per-token scales TMA: float32, [1, BN_QK], SWIZZLE_NONE
+        scale_tma: ScalesTMATile[BN_QK=Self.config.BN_QK],
         o_tma: QOTMATile[
             dtype=Self.output_type,
             BM=Self.config.out_rows,
-            BK=Self.config.BN,
+            # Per-warp output stripe (= BN_PV/4), not BN_QK.
+            BK=Self.config.BN_PV // 4,
             swizzle_mode=Self.config.swizzle_mode,
         ],
         kv_lut: Self.KVLUTType,
@@ -672,16 +673,16 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
         k_content_tma: KVTMATile[
             dtype=Self.fp8_type,
             swizzle_mode=TensorMapSwizzle.SWIZZLE_64B,
-            BN=Self.config.BK1,  # 64
+            BN=Self.config.BK_PV,  # 64
             BK=Self.config.padded_depth,  # 512
         ],
         k_rope_tma: KVTMATile[
             dtype=Self.bf16_type,
             swizzle_mode=TensorMapSwizzle.SWIZZLE_128B,
-            BN=Self.config.BK1,  # 64
+            BN=Self.config.BK_PV,  # 64
             BK=Self.config.rope_depth,  # 64
         ],
-        scale_tma: ScalesTMATile[BN=Self.config.BN],
+        scale_tma: ScalesTMATile[BN_QK=Self.config.BN_QK],
         kv_lut: Self.KVLUTType,
         q_nope_smem: SharedMemPointer[Scalar[Self.fp8_type]],
         q_rope_smem: SharedMemPointer[Scalar[Self.bf16_type]],
@@ -708,7 +709,7 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
             return
 
         num_k_tiles = ceildiv(
-            offset_position.num_keys_this_split, Self.config.BN
+            offset_position.num_keys_this_split, Self.config.BN_QK
         )
 
         # We manage the KV pipeline manually for barrier sync,
@@ -722,13 +723,13 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
         var kv_row: UInt32 = UInt32(offset_position.kv_start_row)
         var num_keys_u32 = UInt32(offset_position.num_keys)
         kv_row = min(kv_row, max(num_keys_u32, UInt32(1)) - 1)
-        var paged_rows = kv_lut.populate[Self.config.BN](
+        var paged_rows = kv_lut.populate[Self.config.BN_QK](
             UInt32(offset_position.batch_idx), kv_row
         )
         # For the scale TMA (flat 2D layout), we still need a single
         # base row index. `paged_rows.rows[0]` matches the old
         # `kv_lut.row_idx(...)` result. The scale TMA assumes
-        # `page_size >= BN` (tokens within a tile are contiguous in the
+        # `page_size >= BN_QK` (tokens within a tile are contiguous in the
         # global scales array); small pages are not supported in this
         # kernel.
         var kv_gmem_row: UInt32 = UInt32(paged_rows.rows[0])
@@ -736,13 +737,13 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
         # Q bytes: content FP8 (BM*512*1) + rope BF16 (BM*64*2)
         comptime q_content_bytes = Self.config.BM * Self.config.depth * Self.fp8_bytes_per_element
         comptime q_rope_bytes = Self.config.BM * Self.config.rope_depth * Self.bf16_bytes_per_element
-        # KV bytes per tile: content FP8 (BN*512*1) + rope BF16 (BN*64*2)
-        comptime kv_content_bytes = Self.config.BN * Self.config.depth * Self.fp8_bytes_per_element
-        comptime kv_rope_bytes = Self.config.BN * Self.config.rope_depth * Self.bf16_bytes_per_element
-        # Scale bytes per tile: BN * 1 * sizeof(float32) = 256 bytes
-        comptime scale_bytes = Self.config.BN * 4
-        # Each scale stage holds BN float32 values = 64 elements
-        comptime scale_elems_per_stage = Self.config.BN
+        # KV bytes per tile: content FP8 (BN_QK*512*1) + rope BF16 (BN_QK*64*2)
+        comptime kv_content_bytes = Self.config.BN_QK * Self.config.depth * Self.fp8_bytes_per_element
+        comptime kv_rope_bytes = Self.config.BN_QK * Self.config.rope_depth * Self.bf16_bytes_per_element
+        # Scale bytes per tile: BN_QK * 1 * sizeof(float32) = 256 bytes
+        comptime scale_bytes = Self.config.BN_QK * 4
+        # Each scale stage holds BN_QK float32 values = 64 elements
+        comptime scale_elems_per_stage = Self.config.BN_QK
 
         # TMA only uses .ptr — flat row_major TileTensor is sufficient.
         comptime _smem_tt[dtype: DType, elems: Int] = TileTensor[
@@ -810,7 +811,7 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
                 kv_head_idx=UInt32(0),
                 elect=Int32(1),
             )
-            # Scale TMA: load BN float32 per-token scales into scale SMEM.
+            # Scale TMA: load BN_QK float32 per-token scales into scale SMEM.
             # The scale TMA treats scales as a flat [1, total_elements] 2D
             # tensor; the column coordinate is the physical row index
             # (kv_gmem_row) which directly indexes the flat scales array.
@@ -828,7 +829,7 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
                 )
 
         kv_prod.commit_step()
-        kv_row += UInt32(Self.config.BN)
+        kv_row += UInt32(Self.config.BN_QK)
 
         # Load remaining KV tiles
         var tile_idx: Int = 1
@@ -837,7 +838,7 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
             var stage_idx = kv_prod.stage_index[qk_stage=0]()
             var k_mbar = kv_prod.producer_mbar[qk_stage=0]()
             kv_row = min(kv_row, max(num_keys_u32, UInt32(1)) - 1)
-            var paged_rows = kv_lut.populate[Self.config.BN](
+            var paged_rows = kv_lut.populate[Self.config.BN_QK](
                 UInt32(offset_position.batch_idx), kv_row
             )
             var kv_gmem_row: UInt32 = UInt32(paged_rows.rows[0])
@@ -887,7 +888,7 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
                         (Int(kv_gmem_row), 0),
                     )
 
-            kv_row += UInt32(Self.config.BN)
+            kv_row += UInt32(Self.config.BN_QK)
             kv_prod.commit_step()
             tile_idx += 1
 
@@ -927,7 +928,7 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
         var elect_mask = elect()
 
         num_k_tiles = ceildiv(
-            offset_position.num_keys_this_split, Self.config.BN
+            offset_position.num_keys_this_split, Self.config.BN_QK
         )
 
         if num_k_tiles == 0:
@@ -1027,7 +1028,7 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
         var o_tmem = tmem_addr + UInt32(Self.config.TMEM_O)
         var elect_mask = elect()
         num_k_tiles = ceildiv(
-            offset_position.num_keys_this_split, Self.config.BN
+            offset_position.num_keys_this_split, Self.config.BN_QK
         )
 
         if num_k_tiles == 0:
@@ -1045,7 +1046,7 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
         var p_descriptor = Self.UMMAPVSS.descriptor_p_block(p_smem)
         # V descriptor: points to the KV content SMEM (V = content-only, 512 dims)
         var v_descriptor = Self.UMMAPVSS.descriptor_v_block(kv_content_smem)
-        comptime block_step = Self.config.MMA_PV_N // Self.config.BN
+        comptime block_step = Self.config.MMA_PV_N // Self.config.BN_QK
         # Content stage stride in bytes (for V data)
         comptime kv_content_stage_stride_bytes = Self.ContentStageBytes
         # P stage stride in bytes: one rope stage = RopeStageBytes (8192)
@@ -1069,7 +1070,7 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
                     b=v_descriptor
                     + v_slot_index * UInt32(kv_content_stage_stride_bytes)
                     + UInt32(block * block_stride_in_bytes),
-                    c=o_tmem + UInt32(block) * UInt32(Self.config.BN // 2),
+                    c=o_tmem + UInt32(block) * UInt32(Self.config.BN_QK // 2),
                     c_scale=c_scale,
                     elect=elect_mask,
                 )
