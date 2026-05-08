@@ -18,10 +18,11 @@ from __future__ import annotations
 import numpy as np
 import pytest
 from max.benchmark.benchmark_shared.metrics import (
-    BenchmarkMetrics,
     PercentileMetrics,
     RatePercentileMetrics,
+    ServingBenchmarkMetrics,
     StandardPercentileMetrics,
+    TextGenAggregates,
     ThroughputMetrics,
     _compute_confidence_info,
 )
@@ -481,7 +482,7 @@ def test_rate_percentile_metrics_fraction_mode_bound() -> None:
 
 
 # ---------------------------------------------------------------------------
-# BenchmarkMetrics.validate_metrics()
+# ServingBenchmarkMetrics.validate_metrics()
 # ---------------------------------------------------------------------------
 
 
@@ -498,8 +499,8 @@ def _make_metrics(
     itl_values: list[float] | None = None,
     ttft_values: list[float] | None = None,
     latency_values: list[float] | None = None,
-) -> BenchmarkMetrics:
-    """Build a BenchmarkMetrics with sensible defaults that pass validation.
+) -> ServingBenchmarkMetrics:
+    """Build a text-gen ServingBenchmarkMetrics with defaults that pass validation.
 
     Individual fields can be overridden to inject specific degenerate values.
     """
@@ -509,41 +510,44 @@ def _make_metrics(
     ttft_values = ttft_values or [0.05]
     latency_values = latency_values or [0.5]
 
-    return BenchmarkMetrics(
-        duration=10.0,
-        completed=completed,
-        failures=failures,
-        total_input=total_input,
-        total_output=total_output,
-        nonempty_response_chunks=total_output,
+    return ServingBenchmarkMetrics(
+        task_type="text",
         max_concurrency=1,
-        request_throughput=request_throughput,
-        input_throughput=ThroughputMetrics([100.0], unit="tok/s"),
-        output_throughput=ThroughputMetrics(
-            output_throughput_values, unit="tok/s"
-        ),
-        ttft_ms=StandardPercentileMetrics(
-            ttft_values, scale_factor=1000.0, unit="ms"
-        ),
-        tpot_ms=StandardPercentileMetrics(
-            tpot_values, scale_factor=1000.0, unit="ms"
-        ),
-        itl_ms=StandardPercentileMetrics(
-            itl_values, scale_factor=1000.0, unit="ms"
-        ),
-        latency_ms=StandardPercentileMetrics(
-            latency_values, scale_factor=1000.0, unit="ms"
-        ),
-        max_input=100,
-        max_output=max_output,
-        max_total=150,
-        global_cached_token_rate=0.35,
-        per_turn_cached_token_rate=RatePercentileMetrics(
-            [0.35], as_percent=True
-        ),
         peak_gpu_memory_mib=[],
         available_gpu_memory_mib=[],
         gpu_utilization=[],
+        text_data=TextGenAggregates(
+            duration=10.0,
+            completed=completed,
+            failures=failures,
+            request_throughput=request_throughput,
+            latency_ms=StandardPercentileMetrics(
+                latency_values, scale_factor=1000.0, unit="ms"
+            ),
+            total_input=total_input,
+            total_output=total_output,
+            nonempty_response_chunks=total_output,
+            input_throughput=ThroughputMetrics([100.0], unit="tok/s"),
+            output_throughput=ThroughputMetrics(
+                output_throughput_values, unit="tok/s"
+            ),
+            ttft_ms=StandardPercentileMetrics(
+                ttft_values, scale_factor=1000.0, unit="ms"
+            ),
+            tpot_ms=StandardPercentileMetrics(
+                tpot_values, scale_factor=1000.0, unit="ms"
+            ),
+            itl_ms=StandardPercentileMetrics(
+                itl_values, scale_factor=1000.0, unit="ms"
+            ),
+            max_input=100,
+            max_output=max_output,
+            max_total=150,
+            global_cached_token_rate=0.35,
+            per_turn_cached_token_rate=RatePercentileMetrics(
+                [0.35], as_percent=True
+            ),
+        ),
     )
 
 
@@ -585,7 +589,8 @@ def test_zero_request_throughput_detected() -> None:
 def test_zero_cache_rate_passes() -> None:
     """A 0% per-turn cache hit rate is valid (cold cache, not a benchmark error)."""
     metrics = _make_metrics()
-    metrics.per_turn_cached_token_rate = RatePercentileMetrics(
+    assert metrics.text_data is not None
+    metrics.text_data.per_turn_cached_token_rate = RatePercentileMetrics(
         [0.0, 0.0, 0.0], as_percent=True
     )
     ok, errors = metrics.validate_metrics()
@@ -868,26 +873,29 @@ def test_benchmark_metrics_to_result_dict_keys() -> None:
 
 
 # ---------------------------------------------------------------------------
-# PixelGenerationBenchmarkMetrics.to_result_dict
+# Pixel-gen ServingBenchmarkMetrics.to_result_dict
 # ---------------------------------------------------------------------------
 
 
 def test_pixel_metrics_to_result_dict() -> None:
-    from max.benchmark.benchmark_shared.metrics import (
-        PixelGenerationBenchmarkMetrics,
-    )
+    from max.benchmark.benchmark_shared.metrics import PixelGenAggregates
 
-    pm = PixelGenerationBenchmarkMetrics(
-        duration=5.0,
-        completed=8,
-        failures=0,
+    pm = ServingBenchmarkMetrics(
+        task_type="pixel",
         max_concurrency=2,
-        request_throughput=1.6,
-        total_generated_outputs=8,
-        latency_ms=StandardPercentileMetrics([0.5, 0.6], scale_factor=1000.0),
         peak_gpu_memory_mib=[],
         available_gpu_memory_mib=[],
         gpu_utilization=[],
+        pixel_data=PixelGenAggregates(
+            duration=5.0,
+            completed=8,
+            failures=0,
+            request_throughput=1.6,
+            latency_ms=StandardPercentileMetrics(
+                [0.5, 0.6], scale_factor=1000.0
+            ),
+            total_generated_outputs=8,
+        ),
     )
     d = pm.to_result_dict()
     assert d["total_generated_outputs"] == 8

@@ -22,13 +22,14 @@ from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, TypeGuard
 
 from max.benchmark.benchmark_shared.metrics import (
-    BenchmarkMetrics,
-    PixelGenerationBenchmarkMetrics,
+    PixelGenAggregates,
     PixelGenerationBenchmarkResult,
     RatePercentileMetrics,
+    ServingBenchmarkMetrics,
     SpecDecodeStats,
     StandardPercentileMetrics,
     SteadyStateResult,
+    TextGenAggregates,
     TextGenerationBenchmarkResult,
     ThroughputMetrics,
 )
@@ -153,7 +154,7 @@ def calculate_metrics(
     max_concurrent_conversations: int | None,
     collect_gpu_stats: bool,
     metrics_by_endpoint: Mapping[str, ParsedMetrics] | None = None,
-) -> BenchmarkMetrics:
+) -> ServingBenchmarkMetrics:
     actual_output_lens: list[int] = []
     failures = 0
     failed_responses: list[RequestFuncOutput] = []
@@ -330,16 +331,21 @@ def calculate_metrics(
         else None
     )
 
-    metrics = BenchmarkMetrics(
+    text_data = TextGenAggregates(
         duration=measured_duration,
         completed=measured_count,
         failures=failures,
+        request_throughput=measured_count / measured_duration,
+        latency_ms=StandardPercentileMetrics(
+            latencies or [float("nan")], scale_factor=1000.0, unit="ms"
+        ),
+        errors=[o.error for o in outputs],
+        request_submit_times=[o.request_submit_time for o in outputs],
+        request_complete_times=[o.request_complete_time for o in outputs],
         total_input=total_input,
         total_output=total_output,
         nonempty_response_chunks=nonempty_response_chunks,
-        max_concurrency=max_concurrency or len(outputs),
         max_concurrent_conversations=max_concurrent_conversations,
-        request_throughput=measured_count / measured_duration,
         # Use specialized metric classes that handle percentile calculations automatically
         input_throughput=ThroughputMetrics(
             input_throughputs or [float("nan")], unit="tok/s"
@@ -356,27 +362,16 @@ def calculate_metrics(
         itl_ms=StandardPercentileMetrics(
             itls or [float("nan")], scale_factor=1000.0, unit="ms"
         ),
-        latency_ms=StandardPercentileMetrics(
-            latencies or [float("nan")], scale_factor=1000.0, unit="ms"
-        ),
         max_input=max_input,
         max_output=max_output,
         max_total=max_total,
         global_cached_token_rate=global_cached_token_rate,
         per_turn_cached_token_rate=per_turn_cached_token_rate,
-        peak_gpu_memory_mib=peak_gpu_memory_mib,
-        available_gpu_memory_mib=available_gpu_memory_mib,
-        gpu_utilization=gpu_utilization,
-        cpu_metrics=cpu_metrics,
-        metrics_by_endpoint=metrics_by_endpoint or {},
         skip_first_n_requests=skip_first_n_requests,
         skip_last_n_requests=skip_last_n_requests,
         input_lens=[o.prompt_len for o in outputs],
         output_lens=actual_output_lens,
         ttfts=[o.ttft for o in outputs],
-        errors=[o.error for o in outputs],
-        request_submit_times=[o.request_submit_time for o in outputs],
-        request_complete_times=[o.request_complete_time for o in outputs],
         per_turn_cached_token_rates=per_turn_cached_token_rates,
     )
 
@@ -385,9 +380,18 @@ def calculate_metrics(
     # request's first token is prefill (TTFT), not decode.
     decode_tokens = total_output - measured_count
     if decode_tokens > 0 and itls:
-        metrics.tpot_ms._metrics.mean = sum(itls) / decode_tokens * 1000.0
+        text_data.tpot_ms._metrics.mean = sum(itls) / decode_tokens * 1000.0
 
-    return metrics
+    return ServingBenchmarkMetrics(
+        task_type="text",
+        max_concurrency=max_concurrency or len(outputs),
+        peak_gpu_memory_mib=peak_gpu_memory_mib,
+        available_gpu_memory_mib=available_gpu_memory_mib,
+        gpu_utilization=gpu_utilization,
+        cpu_metrics=cpu_metrics,
+        metrics_by_endpoint=metrics_by_endpoint or {},
+        text_data=text_data,
+    )
 
 
 def calculate_pixel_generation_metrics(
@@ -398,7 +402,7 @@ def calculate_pixel_generation_metrics(
     max_concurrency: int | None,
     collect_gpu_stats: bool,
     metrics_by_endpoint: Mapping[str, ParsedMetrics] | None = None,
-) -> PixelGenerationBenchmarkMetrics:
+) -> ServingBenchmarkMetrics:
     completed = 0
     failures = 0
     latencies: list[float] = []
@@ -437,26 +441,31 @@ def calculate_pixel_generation_metrics(
     # around the actual requests doesn't inflate the denominator.
     measured_duration = measured_window_duration(successful, fallback=dur_s)
 
-    return PixelGenerationBenchmarkMetrics(
+    pixel_data = PixelGenAggregates(
         duration=measured_duration,
         completed=completed,
         failures=failures,
-        max_concurrency=max_concurrency or len(outputs),
         request_throughput=completed / measured_duration,
-        total_generated_outputs=total_generated_outputs,
         latency_ms=StandardPercentileMetrics(
             latencies or [float("nan")], scale_factor=1000.0, unit="ms"
         ),
+        errors=[o.error for o in outputs],
+        request_submit_times=[o.request_submit_time for o in outputs],
+        request_complete_times=[o.request_complete_time for o in outputs],
+        total_generated_outputs=total_generated_outputs,
+        latencies=[o.latency for o in outputs],
+        num_generated_outputs=[o.num_generated_outputs for o in outputs],
+    )
+
+    return ServingBenchmarkMetrics(
+        task_type="pixel",
+        max_concurrency=max_concurrency or len(outputs),
         peak_gpu_memory_mib=peak_gpu_memory_mib,
         available_gpu_memory_mib=available_gpu_memory_mib,
         gpu_utilization=gpu_utilization,
         cpu_metrics=cpu_metrics,
         metrics_by_endpoint=metrics_by_endpoint or {},
-        latencies=[o.latency for o in outputs],
-        num_generated_outputs=[o.num_generated_outputs for o in outputs],
-        errors=[o.error for o in outputs],
-        request_submit_times=[o.request_submit_time for o in outputs],
-        request_complete_times=[o.request_complete_time for o in outputs],
+        pixel_data=pixel_data,
     )
 
 
@@ -579,7 +588,7 @@ def _compute_steady_state_result(
         steady.mode if (steady.detected or steady.warning is not None) else None
     )
 
-    ss_metrics: BenchmarkMetrics | None = None
+    ss_metrics: TextGenAggregates | None = None
     if steady.detected:
         ss_index_set = set(steady.steady_state_indices)
         ss_outputs = [
@@ -613,7 +622,8 @@ def _compute_steady_state_result(
                 max_concurrent_conversations=max_concurrent_conversations,
                 collect_gpu_stats=collect_gpu_stats,
                 metrics_by_endpoint=metrics_by_endpoint,
-            )
+            ).text_data
+            assert ss_metrics is not None  # text-gen path always populates
 
         # start_index and end_index are in original dispatch order and
         # may span requests filtered out by detect_steady_state (failed,

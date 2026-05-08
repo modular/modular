@@ -20,10 +20,11 @@ from unittest.mock import MagicMock
 
 import pytest
 from max.benchmark.benchmark_shared.metrics import (
-    BenchmarkMetrics,
-    PixelGenerationBenchmarkMetrics,
+    PixelGenAggregates,
     RatePercentileMetrics,
+    ServingBenchmarkMetrics,
     StandardPercentileMetrics,
+    TextGenAggregates,
     ThroughputMetrics,
 )
 from max.benchmark.sweep_benchmark_serving_result_utils import (
@@ -120,39 +121,14 @@ def test_t2i_result_default_total_generated_outputs() -> None:
     assert r.total_generated_outputs == 0
 
 
-def _make_llm_metrics() -> BenchmarkMetrics:
+def _make_llm_metrics() -> ServingBenchmarkMetrics:
     ttfts = [0.048, 0.050, 0.060, 0.080]
     itls = [0.0095, 0.010, 0.012, 0.018]
     latencies = [0.390, 0.400, 0.450, 0.550]
     per_turn_cache_rates = [0.30, 0.35, 0.40, 0.45]
-    return BenchmarkMetrics(
-        duration=12.0,
-        completed=100,
-        failures=0,
-        total_input=5000,
-        total_output=10000,
-        nonempty_response_chunks=100,
+    return ServingBenchmarkMetrics(
+        task_type="text",
         max_concurrency=4,
-        request_throughput=3.5,
-        input_throughput=ThroughputMetrics([500.0], unit="tok/s"),
-        output_throughput=ThroughputMetrics([1000.0], unit="tok/s"),
-        ttft_ms=StandardPercentileMetrics(
-            ttfts, scale_factor=1000.0, unit="ms"
-        ),
-        tpot_ms=StandardPercentileMetrics(
-            [0.01], scale_factor=1000.0, unit="ms"
-        ),
-        itl_ms=StandardPercentileMetrics(itls, scale_factor=1000.0, unit="ms"),
-        latency_ms=StandardPercentileMetrics(
-            latencies, scale_factor=1000.0, unit="ms"
-        ),
-        max_input=100,
-        max_output=200,
-        max_total=300,
-        global_cached_token_rate=0.35,
-        per_turn_cached_token_rate=RatePercentileMetrics(
-            per_turn_cache_rates, as_percent=True
-        ),
         peak_gpu_memory_mib=[8000.0],
         available_gpu_memory_mib=[2000.0],
         gpu_utilization=[0.9],
@@ -163,31 +139,65 @@ def _make_llm_metrics() -> BenchmarkMetrics:
             system_percent=5.0,
             elapsed=10.0,
         ),
+        text_data=TextGenAggregates(
+            duration=12.0,
+            completed=100,
+            failures=0,
+            request_throughput=3.5,
+            latency_ms=StandardPercentileMetrics(
+                latencies, scale_factor=1000.0, unit="ms"
+            ),
+            total_input=5000,
+            total_output=10000,
+            nonempty_response_chunks=100,
+            input_throughput=ThroughputMetrics([500.0], unit="tok/s"),
+            output_throughput=ThroughputMetrics([1000.0], unit="tok/s"),
+            ttft_ms=StandardPercentileMetrics(
+                ttfts, scale_factor=1000.0, unit="ms"
+            ),
+            tpot_ms=StandardPercentileMetrics(
+                [0.01], scale_factor=1000.0, unit="ms"
+            ),
+            itl_ms=StandardPercentileMetrics(
+                itls, scale_factor=1000.0, unit="ms"
+            ),
+            max_input=100,
+            max_output=200,
+            max_total=300,
+            global_cached_token_rate=0.35,
+            per_turn_cached_token_rate=RatePercentileMetrics(
+                per_turn_cache_rates, as_percent=True
+            ),
+        ),
     )
 
 
 def test_llm_from_metrics_basic() -> None:
     m = _make_llm_metrics()
+    assert m.text_data is not None
+    t = m.text_data
     r = LLMBenchmarkResult.from_metrics(m, [50])
     assert r.duration == 12.0
     assert r.throughput == 3.5
-    assert r.ttft_mean == m.ttft_ms.mean
-    assert r.itl_mean == m.itl_ms.mean
-    assert r.req_latency_mean == m.latency_ms.mean
+    assert r.ttft_mean == t.ttft_ms.mean
+    assert r.itl_mean == t.itl_ms.mean
+    assert r.req_latency_mean == t.latency_ms.mean
     assert r.gpu_utilization == 0.9
-    assert r.ttft_percentiles == {50: m.ttft_ms.p50}
-    assert r.itl_percentiles == {50: m.itl_ms.p50}
-    assert r.req_latency_percentiles == {50: m.latency_ms.p50}
+    assert r.ttft_percentiles == {50: t.ttft_ms.p50}
+    assert r.itl_percentiles == {50: t.itl_ms.p50}
+    assert r.req_latency_percentiles == {50: t.latency_ms.p50}
 
 
 def test_llm_from_metrics_multiple_percentiles() -> None:
     m = _make_llm_metrics()
+    assert m.text_data is not None
+    t = m.text_data
     r = LLMBenchmarkResult.from_metrics(m, [50, 90, 99])
-    assert r.ttft_percentiles[50] == m.ttft_ms.p50
-    assert r.ttft_percentiles[90] == m.ttft_ms.p90
-    assert r.ttft_percentiles[99] == m.ttft_ms.p99
-    assert r.itl_percentiles[90] == m.itl_ms.p90
-    assert r.req_latency_percentiles[99] == m.latency_ms.p99
+    assert r.ttft_percentiles[50] == t.ttft_ms.p50
+    assert r.ttft_percentiles[90] == t.ttft_ms.p90
+    assert r.ttft_percentiles[99] == t.ttft_ms.p99
+    assert r.itl_percentiles[90] == t.itl_ms.p90
+    assert r.req_latency_percentiles[99] == t.latency_ms.p99
 
 
 def test_llm_from_metrics_preserves_result_filename() -> None:
@@ -209,18 +219,11 @@ def test_llm_zeros_all_fields_zero() -> None:
     assert r.req_latency_percentiles == {50: 0.0, 99: 0.0}
 
 
-def _make_t2i_metrics() -> PixelGenerationBenchmarkMetrics:
+def _make_t2i_metrics() -> ServingBenchmarkMetrics:
     latencies = [1.4, 1.5, 1.7, 1.9]
-    return PixelGenerationBenchmarkMetrics(
-        duration=20.0,
-        completed=16,
-        failures=0,
+    return ServingBenchmarkMetrics(
+        task_type="pixel",
         max_concurrency=2,
-        request_throughput=0.8,
-        total_generated_outputs=16,
-        latency_ms=StandardPercentileMetrics(
-            latencies, scale_factor=1000.0, unit="ms"
-        ),
         peak_gpu_memory_mib=[8000.0],
         available_gpu_memory_mib=[2000.0],
         gpu_utilization=[0.6],
@@ -231,19 +234,31 @@ def _make_t2i_metrics() -> PixelGenerationBenchmarkMetrics:
             system_percent=5.0,
             elapsed=10.0,
         ),
+        pixel_data=PixelGenAggregates(
+            duration=20.0,
+            completed=16,
+            failures=0,
+            request_throughput=0.8,
+            latency_ms=StandardPercentileMetrics(
+                latencies, scale_factor=1000.0, unit="ms"
+            ),
+            total_generated_outputs=16,
+        ),
     )
 
 
 def test_t2i_from_metrics() -> None:
     m = _make_t2i_metrics()
+    assert m.pixel_data is not None
+    p = m.pixel_data
     r = TextToImageBenchmarkResult.from_metrics(m, [50, 90])
     assert r.duration == 20.0
     assert r.throughput == 0.8
-    assert r.req_latency_mean == m.latency_ms.mean
+    assert r.req_latency_mean == p.latency_ms.mean
     assert r.gpu_utilization == 0.6
     assert r.total_generated_outputs == 16
-    assert r.req_latency_percentiles[50] == m.latency_ms.p50
-    assert r.req_latency_percentiles[90] == m.latency_ms.p90
+    assert r.req_latency_percentiles[50] == p.latency_ms.p50
+    assert r.req_latency_percentiles[90] == p.latency_ms.p90
 
 
 def test_t2i_from_metrics_no_gpu() -> None:

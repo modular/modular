@@ -656,7 +656,7 @@ def test_save_result_json_writes_valid_json(
     )
 
     mock_result = MagicMock()
-    mock_result.metrics.completed = 5
+    mock_result.metrics.aggregates.completed = 5
     mock_result.to_result_dict.return_value = {
         "duration": 1.0,
         "completed": 5,
@@ -1020,7 +1020,7 @@ def test_upload_writes_correct_data_to_correct_files(
         assert config.model is not None
         for mc, sentinel in [(1, MC1_SENTINEL), (2, MC2_SENTINEL)]:
             mock_result = MagicMock()
-            mock_result.metrics.completed = 5
+            mock_result.metrics.aggregates.completed = 5
             mock_result.to_result_dict.return_value = {
                 "duration": float(mc),
                 "completed": 5,

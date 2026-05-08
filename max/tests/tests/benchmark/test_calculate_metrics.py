@@ -77,9 +77,11 @@ def test_per_chunk_tpot_collected_from_outputs() -> None:
         collect_gpu_stats=False,
     )
 
+    assert metrics.text_data is not None
+
     # TPOT percentiles should be based on the per-chunk values [0.05, 0.1, 0.15]
     # scaled by 1000 (to ms)
-    assert math.isclose(metrics.tpot_ms.p50, 100.0, rel_tol=1e-3)
+    assert math.isclose(metrics.text_data.tpot_ms.p50, 100.0, rel_tol=1e-3)
 
 
 def test_tpot_weighted_mean() -> None:
@@ -122,13 +124,17 @@ def test_tpot_weighted_mean() -> None:
         collect_gpu_stats=False,
     )
 
+    assert metrics.text_data is not None
+
     # total_output = 10 + 4 = 14
     # completed = 2
     # decode_tokens = 14 - 2 = 12
     # sum(itl) = 0.9 + 0.6 = 1.5
     # weighted mean TPOT = 1.5 / 12 * 1000 = 125.0 ms
     expected_mean = 1.5 / 12 * 1000.0
-    assert math.isclose(metrics.tpot_ms.mean, expected_mean, rel_tol=1e-6)
+    assert math.isclose(
+        metrics.text_data.tpot_ms.mean, expected_mean, rel_tol=1e-6
+    )
 
 
 def test_tpot_zero_decode_tokens() -> None:
@@ -160,8 +166,10 @@ def test_tpot_zero_decode_tokens() -> None:
         collect_gpu_stats=False,
     )
 
+    assert metrics.text_data is not None
+
     # With empty tpots, StandardPercentileMetrics gets [nan], so mean is nan
-    assert math.isnan(metrics.tpot_ms.mean)
+    assert math.isnan(metrics.text_data.tpot_ms.mean)
 
 
 def test_empty_outputs_no_crash() -> None:
@@ -181,10 +189,12 @@ def test_empty_outputs_no_crash() -> None:
         collect_gpu_stats=False,
     )
 
-    assert metrics.completed == 0
-    assert metrics.output_lens == []
+    assert metrics.text_data is not None
+
+    assert metrics.text_data.completed == 0
+    assert metrics.text_data.output_lens == []
     # TPOT mean should be NaN since there are no outputs
-    assert math.isnan(metrics.tpot_ms.mean)
+    assert math.isnan(metrics.text_data.tpot_ms.mean)
 
 
 def test_itl_metrics_unchanged() -> None:
@@ -214,9 +224,11 @@ def test_itl_metrics_unchanged() -> None:
         collect_gpu_stats=False,
     )
 
+    assert metrics.text_data is not None
+
     # ITL should be computed from the raw itl values [0.1, 0.2, 0.3] * 1000
-    assert math.isclose(metrics.itl_ms.mean, 200.0, rel_tol=1e-3)
-    assert math.isclose(metrics.itl_ms.p50, 200.0, rel_tol=1e-3)
+    assert math.isclose(metrics.text_data.itl_ms.mean, 200.0, rel_tol=1e-3)
+    assert math.isclose(metrics.text_data.itl_ms.p50, 200.0, rel_tol=1e-3)
 
 
 def test_failed_requests_excluded() -> None:
@@ -252,11 +264,13 @@ def test_failed_requests_excluded() -> None:
         collect_gpu_stats=False,
     )
 
+    assert metrics.text_data is not None
+
     # Only successful request's TPOT should be used
-    assert metrics.completed == 1
-    assert metrics.failures == 1
+    assert metrics.text_data.completed == 1
+    assert metrics.text_data.failures == 1
     # TPOT values should only include [0.1, 0.2], not [999.0]
-    assert metrics.tpot_ms.p50 < 500.0
+    assert metrics.text_data.tpot_ms.p50 < 500.0
 
 
 def test_skip_last_n_requests() -> None:
@@ -319,11 +333,17 @@ def test_skip_last_n_requests() -> None:
         collect_gpu_stats=False,
     )
 
+    assert metrics_all.text_data is not None
+    assert metrics_skip_last.text_data is not None
+
     # completed reflects the measured slice (first two, third was skipped).
-    assert metrics_all.completed == 3
-    assert metrics_skip_last.completed == 2
+    assert metrics_all.text_data.completed == 3
+    assert metrics_skip_last.text_data.completed == 2
     # The last request's high TTFT (0.5s) is excluded from latency metrics.
-    assert metrics_skip_last.ttft_ms.mean < metrics_all.ttft_ms.mean
+    assert (
+        metrics_skip_last.text_data.ttft_ms.mean
+        < metrics_all.text_data.ttft_ms.mean
+    )
 
 
 def test_skip_first_and_last_n_requests() -> None:
@@ -373,10 +393,12 @@ def test_skip_first_and_last_n_requests() -> None:
         collect_gpu_stats=False,
     )
 
+    assert metrics.text_data is not None
+
     # Only the middle request is measured.
-    assert metrics.completed == 1
+    assert metrics.text_data.completed == 1
     # Only the middle request's TTFT (0.1s = 100ms) should be measured
-    assert math.isclose(metrics.ttft_ms.mean, 100.0, rel_tol=1e-3)
+    assert math.isclose(metrics.text_data.ttft_ms.mean, 100.0, rel_tol=1e-3)
 
 
 def test_skip_last_with_cancelled_requests() -> None:
@@ -430,11 +452,13 @@ def test_skip_last_with_cancelled_requests() -> None:
         collect_gpu_stats=False,
     )
 
+    assert metrics.text_data is not None
+
     # skip_last is applied to successful (3), not to the padded cancelled
     # entries, so only the middle successful request is measured.
-    assert metrics.completed == 1
+    assert metrics.text_data.completed == 1
     # Only the second request should be measured (skip first 1, last 1)
-    assert math.isclose(metrics.ttft_ms.mean, 200.0, rel_tol=1e-3)
+    assert math.isclose(metrics.text_data.ttft_ms.mean, 200.0, rel_tol=1e-3)
 
 
 def test_skip_all_requests_warns() -> None:
@@ -497,11 +521,17 @@ def test_calculate_pixel_generation_metrics() -> None:
         collect_gpu_stats=False,
     )
 
-    assert metrics.completed == 2
-    assert metrics.failures == 1
-    assert math.isclose(metrics.request_throughput, 0.4, rel_tol=1e-6)
-    assert metrics.total_generated_outputs == 3
-    assert math.isclose(metrics.latency_ms.mean, 1500.0, rel_tol=1e-6)
+    assert metrics.pixel_data is not None
+
+    assert metrics.pixel_data.completed == 2
+    assert metrics.pixel_data.failures == 1
+    assert math.isclose(
+        metrics.pixel_data.request_throughput, 0.4, rel_tol=1e-6
+    )
+    assert metrics.pixel_data.total_generated_outputs == 3
+    assert math.isclose(
+        metrics.pixel_data.latency_ms.mean, 1500.0, rel_tol=1e-6
+    )
 
 
 def test_request_submit_time_defaults_to_none() -> None:
@@ -539,8 +569,9 @@ def test_request_submit_time_set_on_output() -> None:
         max_concurrent_conversations=None,
         collect_gpu_stats=False,
     )
+    assert metrics.text_data is not None
     # Metrics are computed normally regardless of submit time
-    assert metrics.completed == 1
+    assert metrics.text_data.completed == 1
 
 
 def test_measured_duration_uses_measured_window() -> None:
@@ -608,21 +639,27 @@ def test_measured_duration_uses_measured_window() -> None:
         collect_gpu_stats=False,
     )
 
+    assert metrics.text_data is not None
+
     # Measured = the 100 steady requests.
-    assert metrics.completed == 100
+    assert metrics.text_data.completed == 100
     # total_input / total_output are over the measured 100 only.
-    assert metrics.total_input == 100 * 10
-    assert metrics.total_output == 100 * 5
+    assert metrics.text_data.total_input == 100 * 10
+    assert metrics.text_data.total_output == 100 * 5
     # Measured window: first steady submits at t=10.0; last steady
     # completes at t = 10.0 + 99*0.1 + 0.5 = 20.4.
     expected_window = 20.4 - 10.0
-    assert math.isclose(metrics.duration, expected_window, rel_tol=1e-6)
+    assert math.isclose(
+        metrics.text_data.duration, expected_window, rel_tol=1e-6
+    )
     # Request throughput is over the measured window, not the full run.
     assert math.isclose(
-        metrics.request_throughput, 100 / expected_window, rel_tol=1e-6
+        metrics.text_data.request_throughput,
+        100 / expected_window,
+        rel_tol=1e-6,
     )
     # Crucially, throughput does NOT use the full run duration.
-    assert metrics.request_throughput > 100 / full_run_duration
+    assert metrics.text_data.request_throughput > 100 / full_run_duration
 
 
 def test_measured_duration_falls_back_when_no_timestamps() -> None:
@@ -650,8 +687,11 @@ def test_measured_duration_falls_back_when_no_timestamps() -> None:
         max_concurrent_conversations=None,
         collect_gpu_stats=False,
     )
-    assert math.isclose(metrics.duration, 3.0, rel_tol=1e-9)
-    assert math.isclose(metrics.request_throughput, 1.0 / 3.0, rel_tol=1e-9)
+    assert metrics.text_data is not None
+    assert math.isclose(metrics.text_data.duration, 3.0, rel_tol=1e-9)
+    assert math.isclose(
+        metrics.text_data.request_throughput, 1.0 / 3.0, rel_tol=1e-9
+    )
 
 
 def test_skipped_tokens_excluded_from_totals() -> None:
@@ -703,10 +743,12 @@ def test_skipped_tokens_excluded_from_totals() -> None:
         collect_gpu_stats=False,
     )
 
+    assert metrics.text_data is not None
+
     # Only the middle request counts toward totals.
-    assert metrics.total_input == 10
-    assert metrics.total_output == 3
-    assert metrics.completed == 1
+    assert metrics.text_data.total_input == 10
+    assert metrics.text_data.total_output == 3
+    assert metrics.text_data.completed == 1
 
 
 def test_request_complete_time_property() -> None:
@@ -834,13 +876,15 @@ def test_skip_uses_submit_time_for_head_complete_time_for_tail() -> None:
         collect_gpu_stats=False,
     )
 
+    assert metrics.text_data is not None
+
     # Head trim drops s0t0 (submit=0.0, the earliest).
     # Tail trim drops s2t1 (complete=9.0, the latest).
     # Dispatch-order slicing would have dropped s0t0 and s2t1 here too —
     # but only because outputs[0] happens to be the earliest submit and
     # outputs[-1] happens to be the latest complete. Use the asymmetric
     # case below to distinguish.
-    assert metrics.completed == 4
+    assert metrics.text_data.completed == 4
 
 
 def test_skip_distinguishes_dispatch_order_from_timing() -> None:
@@ -903,17 +947,19 @@ def test_skip_distinguishes_dispatch_order_from_timing() -> None:
         collect_gpu_stats=False,
     )
 
+    assert metrics.text_data is not None
+
     # Head trim drops outputs[1] (block_early_submit, submit=0.0).
     # Tail trim drops outputs[0] (block_late_complete, complete=12.0).
     # Both removed → only outputs[2] (middle) is measured.
-    assert metrics.completed == 1
+    assert metrics.text_data.completed == 1
     # If the old dispatch-order slice were still in effect it would have
     # kept outputs[1] (the index-1 middle slot) and dropped outputs[0] and
     # outputs[2]. The "middle" generated_text being the sole measured
     # output proves the timing-based selection is what's running.
     # tail_drop on a request with latency=10.0 that we kept would have
     # inflated total_input. Verify only middle's prompt_len (10) is counted.
-    assert metrics.total_input == 10
+    assert metrics.text_data.total_input == 10
 
 
 def test_skip_first_overlaps_with_skip_last_drops_both() -> None:
@@ -970,9 +1016,11 @@ def test_skip_first_overlaps_with_skip_last_drops_both() -> None:
         collect_gpu_stats=False,
     )
 
+    assert metrics.text_data is not None
+
     # slow_warmup is in both head_drop_ids and tail_drop_ids — set union
     # handles dedupe. The remaining "a" and "b" are both measured.
-    assert metrics.completed == 2
+    assert metrics.text_data.completed == 2
 
 
 def _make_tokenizer_mock(tokens_per_output: int = 5) -> MagicMock:

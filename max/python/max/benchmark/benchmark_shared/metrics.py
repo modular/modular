@@ -29,7 +29,7 @@ import dataclasses
 import math
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Generic, TypeVar
+from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
 from max.benchmark.benchmark_shared.percentile_metrics import (
@@ -40,7 +40,7 @@ from max.benchmark.benchmark_shared.percentile_metrics import (
     _is_finite_and_positive,
 )
 from max.benchmark.benchmark_shared.request import ServerTokenStats
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 __all__ = [
     "ConfidenceInfo",
@@ -390,8 +390,77 @@ class BaseBenchmarkMetrics(BaseModel, Metrics):
         return len(errors) == 0, errors
 
 
-class BenchmarkMetrics(BaseBenchmarkMetrics):
-    """Container for comprehensive text-generation benchmark metrics."""
+# Workload-specific aggregates. ``ServingBenchmarkMetrics`` (below) holds at
+# most one per record, selected by ``task_type``; failed runs leave both
+# ``None``. Composing them as nested pydantic objects (rather than
+# mostly-Optional flat fields on the parent) lets consumers narrow once and
+# access required fields directly.
+
+
+class _CompletedRunBase(BaseModel):
+    """Aggregates required for any completed benchmark iteration."""
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    duration: float
+    completed: int
+    failures: int
+    request_throughput: float
+    latency_ms: StandardPercentileMetrics
+
+    errors: list[str] = Field(default_factory=list)
+    request_submit_times: list[float | None] = Field(default_factory=list)
+    request_complete_times: list[float | None] = Field(default_factory=list)
+
+    def to_result_dict(self) -> dict[str, object]:
+        """Serialize aggregate fields to a flat dict.
+
+        Subclasses extend with their workload-specific fields.
+        """
+        d: dict[str, object] = {
+            "duration": self.duration,
+            "completed": self.completed,
+            "failures": self.failures,
+            "request_throughput": self.request_throughput,
+            "errors": self.errors,
+            "request_submit_times": self.request_submit_times,
+            "request_complete_times": self.request_complete_times,
+        }
+        d.update(self.latency_ms.to_flat_dict("latency_ms"))
+        d.update(self.latency_ms.confidence_to_flat_dict("latency_ms"))
+        return d
+
+    def validate_metrics(self) -> tuple[bool, list[str]]:
+        """Validate common aggregate invariants.
+
+        Subclasses extend with their workload-specific checks.
+        """
+        errors: list[str] = []
+        if self.failures > 0:
+            errors.append(f"Some requests failed (failures={self.failures})")
+        if self.completed <= 0:
+            errors.append(f"No requests completed (completed={self.completed})")
+        if not _is_finite_and_positive(self.request_throughput):
+            errors.append(
+                "Invalid throughput:"
+                f" request_throughput={self.request_throughput}"
+            )
+        ok, sub_errors = self.latency_ms.validate_metrics()
+        if not ok:
+            errors.extend(f"latency_ms: {e}" for e in sub_errors)
+        return len(errors) == 0, errors
+
+    def confidence_warnings(self) -> list[str]:
+        """Return warnings for metrics with low or insufficient confidence.
+
+        Default implementation returns ``[]``; workload-specific subclasses
+        with comparable percentile fields override.
+        """
+        return []
+
+
+class TextGenAggregates(_CompletedRunBase):
+    """Aggregates from a successful text-generation iteration."""
 
     total_input: int
     total_output: int
@@ -416,28 +485,183 @@ class BenchmarkMetrics(BaseBenchmarkMetrics):
 
     # Global: SUM(cached_tokens) / SUM(prompt_tokens).
     global_cached_token_rate: float
-    # Per-turn cached_tokens / prompt_tokens; None when usage data is unavailable.
-    per_turn_cached_token_rate: RatePercentileMetrics | None
+    # Per-turn cached_tokens / prompt_tokens; None when usage data is
+    # unavailable.
+    per_turn_cached_token_rate: RatePercentileMetrics | None = None
 
-    # Per-request raw data, preserved for archival and post-processing.
-    # N.B.: skip_first_n_requests and skip_last_n_requests are inputs and
+    # ``skip_first_n_requests`` / ``skip_last_n_requests`` are inputs and
     # shouldn't be part of the output metrics, but are included for
-    # compatibility.  These should be removed once results publication is in
+    # compatibility. These should be removed once results publication is in
     # use.
     skip_first_n_requests: int = 0
     skip_last_n_requests: int = 0
     # input_lens covers all outputs (including cancelled); output_lens covers
-    # only non-cancelled outputs (failures get 0, not None — they failed, they
-    # did not produce a zero-length response). The two lists are not aligned
-    # index-for-index: failures appear first in output_lens, then successes.
+    # only non-cancelled outputs (failures get 0, not None — they failed,
+    # they did not produce a zero-length response). The two lists are not
+    # aligned index-for-index: failures appear first in output_lens, then
+    # successes.
     input_lens: list[int] = Field(default_factory=list)
     output_lens: list[int] = Field(default_factory=list)
     ttfts: list[float] = Field(default_factory=list)
-    errors: list[str] = Field(default_factory=list)
-    request_submit_times: list[float | None] = Field(default_factory=list)
-    request_complete_times: list[float | None] = Field(default_factory=list)
     # Empty when the server did not report per-request cached_tokens.
     per_turn_cached_token_rates: list[float] = Field(default_factory=list)
+
+    def to_result_dict(self) -> dict[str, object]:
+        d = super().to_result_dict()
+        d["total_input_tokens"] = self.total_input
+        d["total_output_tokens"] = self.total_output
+        d["max_concurrent_conversations"] = self.max_concurrent_conversations
+        d["skip_first_n_requests"] = self.skip_first_n_requests
+        d["skip_last_n_requests"] = self.skip_last_n_requests
+        d["input_lens"] = self.input_lens
+        d["output_lens"] = self.output_lens
+        d["ttfts"] = self.ttfts
+        d["per_turn_cached_token_rates"] = self.per_turn_cached_token_rates
+        d["global_cached_token_rate"] = self.global_cached_token_rate
+        for name, pm in [
+            ("input_throughput", self.input_throughput),
+            ("output_throughput", self.output_throughput),
+        ]:
+            d.update(pm.to_flat_dict(name))
+            d.update(pm.confidence_to_flat_dict(name))
+        for name, spm in [
+            ("ttft_ms", self.ttft_ms),
+            ("tpot_ms", self.tpot_ms),
+            ("itl_ms", self.itl_ms),
+        ]:
+            d.update(spm.to_flat_dict(name))
+            d.update(spm.confidence_to_flat_dict(name))
+        if self.per_turn_cached_token_rate is not None:
+            d.update(
+                self.per_turn_cached_token_rate.to_flat_dict(
+                    "per_turn_cached_token_rate"
+                )
+            )
+            d.update(
+                self.per_turn_cached_token_rate.confidence_to_flat_dict(
+                    "per_turn_cached_token_rate"
+                )
+            )
+        return d
+
+    def validate_metrics(self) -> tuple[bool, list[str]]:
+        _, errors = super().validate_metrics()
+        if self.total_output <= 0:
+            errors.append(
+                f"No output tokens generated (total_output={self.total_output})"
+            )
+        for name, m in [
+            ("input_throughput", self.input_throughput),
+            ("output_throughput", self.output_throughput),
+            ("ttft_ms", self.ttft_ms),
+            ("tpot_ms", self.tpot_ms),
+            ("itl_ms", self.itl_ms),
+        ]:
+            ok, sub_errors = m.validate_metrics()
+            if not ok:
+                errors.extend(f"{name}: {e}" for e in sub_errors)
+        if self.per_turn_cached_token_rate is not None:
+            ok, sub_errors = self.per_turn_cached_token_rate.validate_metrics()
+            if not ok:
+                errors.extend(
+                    f"per_turn_cached_token_rate: {e}" for e in sub_errors
+                )
+        # Prefill-only workloads (max 1 output token per request) produce
+        # no decode data, so decode-phase metrics are expected to be
+        # degenerate.
+        if self.max_output <= 1:
+            decode_fields = {
+                name
+                for name, info in TextGenAggregates.model_fields.items()
+                if isinstance(info.json_schema_extra, dict)
+                and info.json_schema_extra.get("phase") == "decode"
+            }
+            errors = [
+                e
+                for e in errors
+                if not any(e.startswith(f"{name}:") for name in decode_fields)
+            ]
+        return len(errors) == 0, errors
+
+    def confidence_warnings(self) -> list[str]:
+        warns: list[str] = []
+        for name, metric in [
+            ("ttft_ms", self.ttft_ms),
+            ("tpot_ms", self.tpot_ms),
+            ("output_throughput", self.output_throughput),
+        ]:
+            ci = getattr(metric, "confidence_info", None)
+            if ci and ci.confidence in ("low", "insufficient_data"):
+                warns.append(
+                    f"{name}: {ci.confidence} confidence"
+                    f" (CI width {ci.ci_relative_width:.0%} of mean,"
+                    f" n={ci.sample_size})"
+                )
+        return warns
+
+
+class PixelGenAggregates(_CompletedRunBase):
+    """Aggregates from a successful pixel-generation iteration."""
+
+    total_generated_outputs: int
+    latencies: list[float] = Field(default_factory=list)
+    # Per-request output counts; distinct from ``total_generated_outputs``,
+    # which is the run-level sum of successful outputs only.
+    num_generated_outputs: list[int] = Field(default_factory=list)
+
+    def to_result_dict(self) -> dict[str, object]:
+        d = super().to_result_dict()
+        d["total_generated_outputs"] = self.total_generated_outputs
+        d["latencies"] = self.latencies
+        d["num_generated_outputs"] = self.num_generated_outputs
+        return d
+
+
+BenchmarkType = Literal["text", "pixel"]
+
+
+class ServingBenchmarkMetrics(BaseModel):
+    """Per-iteration serving benchmark metrics.
+
+    The workload-specific aggregates (latencies, throughput, etc.) are nested
+    in :attr:`text_data` / :attr:`pixel_data` so a successful run carries all
+    of its required fields together. :attr:`task_type` discriminates which
+    one is expected; both stay ``None`` for iterations that failed before
+    producing metrics, in which case only the always-collected GPU/CPU
+    sampling fields are populated.
+    """
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    task_type: BenchmarkType
+    max_concurrency: int
+
+    # Common per-iteration sampling. Populated regardless of success.
+    peak_gpu_memory_mib: list[float] = Field(default_factory=list)
+    available_gpu_memory_mib: list[float] = Field(default_factory=list)
+    gpu_utilization: list[float] = Field(default_factory=list)
+    cpu_metrics: CPUMetrics | None = None
+    metrics_by_endpoint: Mapping[str, ParsedMetrics] = Field(
+        default_factory=dict
+    )
+
+    # Workload aggregates. Exactly the one matching ``task_type`` is set on
+    # success; both stay ``None`` for failed iterations / dry runs.
+    text_data: TextGenAggregates | None = None
+    pixel_data: PixelGenAggregates | None = None
+
+    @model_validator(mode="after")
+    def _check_data_matches_task_type(self) -> ServingBenchmarkMetrics:
+        if self.text_data is not None and self.task_type != "text":
+            raise ValueError(f"text_data set but task_type={self.task_type!r}")
+        if self.pixel_data is not None and self.task_type != "pixel":
+            raise ValueError(f"pixel_data set but task_type={self.task_type!r}")
+        return self
+
+    @property
+    def aggregates(self) -> _CompletedRunBase | None:
+        """Return whichever workload-specific aggregates are populated."""
+        return self.text_data or self.pixel_data
 
     def _find_batch_histogram(self, batch_type: str) -> HistogramData | None:
         """First endpoint that exposes the MAX-serve batch-time histogram."""
@@ -474,74 +698,72 @@ class BenchmarkMetrics(BaseBenchmarkMetrics):
         hist = self._find_batch_histogram("TG")
         return int(hist.count) if hist else 0
 
-    def validate_metrics(self) -> tuple[bool, list[str]]:
-        _, errors = super().validate_metrics()
-
-        if self.total_output <= 0:
-            errors.append(
-                f"No output tokens generated (total_output={self.total_output})"
-            )
-
-        # Prefill-only workloads (max 1 output token per request) produce no
-        # decode data, so decode-phase metrics are expected to be degenerate.
-        if self.max_output <= 1:
-            decode_fields = {
-                name
-                for name, info in type(self).model_fields.items()
-                if isinstance(info.json_schema_extra, dict)
-                and info.json_schema_extra.get("phase") == "decode"
-            }
-            errors = [
-                e
-                for e in errors
-                if not any(e.startswith(f"{name}:") for name in decode_fields)
-            ]
-
-        return len(errors) == 0, errors
-
     def to_result_dict(self) -> dict[str, object]:
-        d = super().to_result_dict()
-        d["total_input_tokens"] = self.total_input
-        d["total_output_tokens"] = self.total_output
-        d["max_concurrent_conversations"] = self.max_concurrent_conversations
-        d["skip_first_n_requests"] = self.skip_first_n_requests
-        d["skip_last_n_requests"] = self.skip_last_n_requests
-        d["input_lens"] = self.input_lens
-        d["output_lens"] = self.output_lens
-        d["ttfts"] = self.ttfts
-        d["errors"] = self.errors
-        d["request_submit_times"] = self.request_submit_times
-        d["request_complete_times"] = self.request_complete_times
-        d["per_turn_cached_token_rates"] = self.per_turn_cached_token_rates
-        d["global_cached_token_rate"] = self.global_cached_token_rate
-        if "server_metrics" in d:
-            assert isinstance(d["server_metrics"], dict)
-            d["server_metrics"].update(
-                {
-                    "prefill_batch_execution_time_ms": self.mean_prefill_batch_time_ms,
-                    "prefill_batch_count": self.prefill_batch_count,
-                    "decode_batch_execution_time_ms": self.mean_decode_batch_time_ms,
-                    "decode_batch_count": self.decode_batch_count,
-                }
-            )
+        """Serialize aggregate metrics to a flat dict.
+
+        Produces the key layout that the upload script and the
+        ``--result-filename`` JSON expect (e.g. ``mean_ttft_ms``,
+        ``p99_latency_ms``, ``ttft_ms_confidence``, …).
+        """
+        d: dict[str, object] = {
+            "max_concurrency": self.max_concurrency,
+            "peak_gpu_memory_mib": self.peak_gpu_memory_mib,
+            "available_gpu_memory_mib": self.available_gpu_memory_mib,
+            "gpu_utilization": self.gpu_utilization,
+        }
+        if self.cpu_metrics is not None:
+            d["cpu_metrics"] = dataclasses.asdict(self.cpu_metrics)
+        if self.metrics_by_endpoint:
+            # Backwards compat: ``server_metrics`` mirrors the first endpoint
+            # so existing BigQuery / analysis consumers keep working.
+            # ``server_metrics_by_endpoint`` carries the full per-endpoint
+            # breakdown.
+            first_pm = next(iter(self.metrics_by_endpoint.values()))
+            d["server_metrics"] = first_pm.to_dict()
+            d["server_metrics_by_endpoint"] = {
+                label: pm.to_dict()
+                for label, pm in self.metrics_by_endpoint.items()
+            }
+
+        agg = self.aggregates
+        if agg is not None:
+            d.update(agg.to_result_dict())
+            # Prefill/decode batch stats live on parent histograms (not on
+            # the aggregate); enrich server_metrics here to avoid threading
+            # parent state through agg.to_result_dict().
+            if self.task_type == "text" and "server_metrics" in d:
+                assert isinstance(d["server_metrics"], dict)
+                d["server_metrics"].update(
+                    {
+                        "prefill_batch_execution_time_ms": self.mean_prefill_batch_time_ms,
+                        "prefill_batch_count": self.prefill_batch_count,
+                        "decode_batch_execution_time_ms": self.mean_decode_batch_time_ms,
+                        "decode_batch_count": self.decode_batch_count,
+                    }
+                )
         return d
 
+    def validate_metrics(self) -> tuple[bool, list[str]]:
+        """Validate that aggregates are populated with sensible values.
+
+        Returns ``(True, [])`` for failed iterations / dry runs that have no
+        aggregates to check.
+        """
+        agg = self.aggregates
+        if agg is None:
+            return True, []
+        return agg.validate_metrics()
+
     def confidence_warnings(self) -> list[str]:
-        """Return warnings for metrics with low or insufficient confidence."""
-        warns: list[str] = []
-        for name, metric in [
-            ("ttft_ms", self.ttft_ms),
-            ("tpot_ms", self.tpot_ms),
-            ("output_throughput", self.output_throughput),
-        ]:
-            ci = getattr(metric, "confidence_info", None)
-            if ci and ci.confidence in ("low", "insufficient_data"):
-                warns.append(
-                    f"{name}: {ci.confidence} confidence"
-                    f" (CI width {ci.ci_relative_width:.0%} of mean,"
-                    f" n={ci.sample_size})"
-                )
-        return warns
+        """Return warnings for metrics with low or insufficient confidence.
+
+        Returns ``[]`` for pixel-gen workloads (no comparable percentile
+        fields) and for failed iterations.
+        """
+        agg = self.aggregates
+        if agg is None:
+            return []
+        return agg.confidence_warnings()
 
 
 @dataclass(kw_only=True)
@@ -554,7 +776,11 @@ class SteadyStateResult:
     count: int
     warning: str | None
     mode: str | None = None
-    metrics: BenchmarkMetrics | None = None
+    # ``TextGenAggregates`` rather than ``ServingBenchmarkMetrics``: steady
+    # state is text-only, and using the parent type would self-contain once
+    # steady-state data moves into ``ServingBenchmarkMetrics`` for result
+    # publication.
+    metrics: TextGenAggregates | None = None
 
     def to_result_dict(self) -> dict[str, object]:
         """Return a flat dict of steady-state keys with the same layout as the full-run result dict."""
@@ -568,33 +794,30 @@ class SteadyStateResult:
         if self.mode is not None:
             d["steady_state_mode"] = self.mode
         if self.metrics is not None:
-            m = self.metrics
+            t = self.metrics
             for suffix, value in [
-                ("request_throughput", m.request_throughput),
-                ("mean_ttft_ms", m.ttft_ms.mean),
-                ("p99_ttft_ms", m.ttft_ms.p99),
-                ("mean_tpot_ms", m.tpot_ms.mean),
-                ("p99_tpot_ms", m.tpot_ms.p99),
-                ("mean_itl_ms", m.itl_ms.mean),
-                ("p99_itl_ms", m.itl_ms.p99),
-                ("mean_latency_ms", m.latency_ms.mean),
-                ("p99_latency_ms", m.latency_ms.p99),
+                ("request_throughput", t.request_throughput),
+                ("mean_ttft_ms", t.ttft_ms.mean),
+                ("p99_ttft_ms", t.ttft_ms.p99),
+                ("mean_tpot_ms", t.tpot_ms.mean),
+                ("p99_tpot_ms", t.tpot_ms.p99),
+                ("mean_itl_ms", t.itl_ms.mean),
+                ("p99_itl_ms", t.itl_ms.p99),
+                ("mean_latency_ms", t.latency_ms.mean),
+                ("p99_latency_ms", t.latency_ms.p99),
             ]:
                 d[f"steady_state_{suffix}"] = value
             for name in ("ttft_ms", "tpot_ms", "itl_ms", "latency_ms"):
-                pm = getattr(m, name)
+                pm = getattr(t, name)
                 d.update(pm.confidence_to_flat_dict(f"steady_state_{name}"))
         return d
 
 
-_BenchmarkMetricT = TypeVar("_BenchmarkMetricT", bound=BaseBenchmarkMetrics)
-
-
 @dataclass(kw_only=True)
-class BaseBenchmarkResult(Generic[_BenchmarkMetricT]):
+class BaseBenchmarkResult:
     """Base class for benchmark result objects."""
 
-    metrics: _BenchmarkMetricT
+    metrics: ServingBenchmarkMetrics
     lora_metrics: LoRAMetrics | None = None
 
     def to_result_dict(self) -> dict[str, object]:
@@ -608,7 +831,7 @@ class BaseBenchmarkResult(Generic[_BenchmarkMetricT]):
 
 
 @dataclass(kw_only=True)
-class TextGenerationBenchmarkResult(BaseBenchmarkResult[BenchmarkMetrics]):
+class TextGenerationBenchmarkResult(BaseBenchmarkResult):
     """Result from a text-generation benchmark iteration."""
 
     steady_state_result: SteadyStateResult | None = None
@@ -633,42 +856,9 @@ class TextGenerationBenchmarkResult(BaseBenchmarkResult[BenchmarkMetrics]):
             ]
         return d
 
-    def validate_metrics(self) -> tuple[bool, list[str]]:
-        # TODO: Mirroring previous behavior, we only validate the normal
-        # metrics.  Perhaps we should validate the steady-state metrics too,
-        # but that would be a change in behavior.
-        return super().validate_metrics()
-
-
-class PixelGenerationBenchmarkMetrics(BaseBenchmarkMetrics):
-    """Container for pixel generation serving benchmark metrics."""
-
-    total_generated_outputs: int
-
-    # Per-request raw data, preserved for archival and post-processing.
-    latencies: list[float] = Field(default_factory=list)
-    # Per-request output counts (distinct from total_generated_outputs, which
-    # is the run-level sum of successful outputs only).
-    num_generated_outputs: list[int] = Field(default_factory=list)
-    errors: list[str] = Field(default_factory=list)
-    request_submit_times: list[float | None] = Field(default_factory=list)
-    request_complete_times: list[float | None] = Field(default_factory=list)
-
-    def to_result_dict(self) -> dict[str, object]:
-        d = super().to_result_dict()
-        d["total_generated_outputs"] = self.total_generated_outputs
-        d["latencies"] = self.latencies
-        d["num_generated_outputs"] = self.num_generated_outputs
-        d["errors"] = self.errors
-        d["request_submit_times"] = self.request_submit_times
-        d["request_complete_times"] = self.request_complete_times
-        return d
-
 
 @dataclass(kw_only=True)
-class PixelGenerationBenchmarkResult(
-    BaseBenchmarkResult[PixelGenerationBenchmarkMetrics]
-):
+class PixelGenerationBenchmarkResult(BaseBenchmarkResult):
     """Result from a pixel generation benchmark iteration."""
 
 
@@ -935,6 +1125,5 @@ from max.diagnostics.cpu import CPUMetrics
 from .server_metrics import ParsedMetrics
 
 BaseBenchmarkMetrics.model_rebuild()
-BenchmarkMetrics.model_rebuild()
-PixelGenerationBenchmarkMetrics.model_rebuild()
+ServingBenchmarkMetrics.model_rebuild()
 TTSBenchmarkMetrics.model_rebuild()

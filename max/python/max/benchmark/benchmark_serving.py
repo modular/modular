@@ -1226,7 +1226,11 @@ def _run_benchmark_sweep(
             # Median selection when running multiple iterations.
             if len(iteration_results) > 1:
                 throughputs = np.asarray(
-                    [r.metrics.request_throughput for r in iteration_results]
+                    [
+                        agg.request_throughput
+                        for r in iteration_results
+                        if (agg := r.metrics.aggregates) is not None
+                    ]
                 )
                 idx = argmedian(throughputs)
             else:

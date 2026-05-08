@@ -32,8 +32,7 @@ from pathlib import Path
 from typing import ClassVar, Protocol, TextIO
 
 from max.benchmark.benchmark_shared.metrics import (
-    BenchmarkMetrics,
-    PixelGenerationBenchmarkMetrics,
+    ServingBenchmarkMetrics,
     StandardPercentileMetrics,
 )
 from typing_extensions import Self
@@ -103,29 +102,31 @@ class LLMBenchmarkResult(SweepServingBenchmarkResult):
     @classmethod
     def from_metrics(
         cls,
-        metrics: BenchmarkMetrics,
+        metrics: ServingBenchmarkMetrics,
         percentiles: list[int],
         result_filename: str | None = None,
     ) -> LLMBenchmarkResult:
-        """Constructs from a typed :class:`BenchmarkMetrics` object."""
+        """Constructs from a text-gen :class:`ServingBenchmarkMetrics`."""
+        t = metrics.text_data
+        assert t is not None, "expected populated text_data for text-gen run"
         gpu_util = metrics.gpu_utilization
         mean_gpu = sum(gpu_util) / len(gpu_util) if gpu_util else 0.0
         return cls(
-            duration=metrics.duration,
-            throughput=metrics.request_throughput,
-            req_latency_mean=metrics.latency_ms.mean,
+            duration=t.duration,
+            throughput=t.request_throughput,
+            req_latency_mean=t.latency_ms.mean,
             gpu_utilization=mean_gpu,
             req_latency_percentiles={
-                p: _get_percentile(metrics.latency_ms, p) for p in percentiles
+                p: _get_percentile(t.latency_ms, p) for p in percentiles
             },
             result_filename=result_filename,
-            ttft_mean=metrics.ttft_ms.mean,
-            itl_mean=metrics.itl_ms.mean,
+            ttft_mean=t.ttft_ms.mean,
+            itl_mean=t.itl_ms.mean,
             ttft_percentiles={
-                p: _get_percentile(metrics.ttft_ms, p) for p in percentiles
+                p: _get_percentile(t.ttft_ms, p) for p in percentiles
             },
             itl_percentiles={
-                p: _get_percentile(metrics.itl_ms, p) for p in percentiles
+                p: _get_percentile(t.itl_ms, p) for p in percentiles
             },
         )
 
@@ -167,23 +168,25 @@ class TextToImageBenchmarkResult(SweepServingBenchmarkResult):
     @classmethod
     def from_metrics(
         cls,
-        metrics: PixelGenerationBenchmarkMetrics,
+        metrics: ServingBenchmarkMetrics,
         percentiles: list[int],
         result_filename: str | None = None,
     ) -> TextToImageBenchmarkResult:
-        """Constructs from a typed :class:`PixelGenerationBenchmarkMetrics` object."""
+        """Constructs from a pixel-gen :class:`ServingBenchmarkMetrics`."""
+        p = metrics.pixel_data
+        assert p is not None, "expected populated pixel_data for pixel-gen run"
         gpu_util = metrics.gpu_utilization
         mean_gpu = sum(gpu_util) / len(gpu_util) if gpu_util else 0.0
         return cls(
-            duration=metrics.duration,
-            throughput=metrics.request_throughput,
-            req_latency_mean=metrics.latency_ms.mean,
+            duration=p.duration,
+            throughput=p.request_throughput,
+            req_latency_mean=p.latency_ms.mean,
             gpu_utilization=mean_gpu,
             req_latency_percentiles={
-                p: _get_percentile(metrics.latency_ms, p) for p in percentiles
+                pct: _get_percentile(p.latency_ms, pct) for pct in percentiles
             },
             result_filename=result_filename,
-            total_generated_outputs=metrics.total_generated_outputs,
+            total_generated_outputs=p.total_generated_outputs,
         )
 
 
