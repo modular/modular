@@ -1185,10 +1185,10 @@ struct RegTileLoader[
     Each load() call distributes a source tile across threads and
     issues buffer_load intrinsics to fill a LOCAL register TileTensor.
 
-    The dst register tile uses col-major element ordering, matching
-    the LayoutTensor copy_dram_to_local convention. This ensures
-    compatibility with `RegTileWriterLDS.copy`, which reads registers
-    in the same col-major order.
+    The dst register tile uses row-major element ordering (per-thread
+    (M, N) fragment stored with strides (N, 1)) so that dst row i is
+    m_mma=i's contiguous fragment. `RegTileWriterLDS.copy` reads in the
+    same row-major order; the two are paired and must agree.
 
     Parameters:
         dtype: Element data type.
@@ -1262,7 +1262,7 @@ struct RegTileLoader[
         """Loads DRAM tile data into a LOCAL register tile.
 
         Distributes src across threads, reads row-major from DRAM,
-        stores col-major into dst (for RegTileWriterLDS.copy compat).
+        stores row-major into dst (matched by `RegTileWriterLDS.copy`).
 
         Args:
             dst: Destination register TileTensor (LOCAL address space).
@@ -1283,7 +1283,7 @@ struct RegTileLoader[
             src,
             self.bc,
             self.base_ptr_as_int,
-            dst_layout=col_major[M, N](),
+            dst_layout=row_major[M, N](),
         )
 
 
@@ -1314,6 +1314,9 @@ struct RegTileWriter[
       (any MMA shape).
     - mfma32=True: 32×32 MFMA path with hardware-specific register
       permutation (`src[4*n + 16*m]` → fragment position `4*m + n`).
+
+    See `RegTileWriterLDS.copy` for the matching row-major register reader
+    used in DRAM→reg→SMEM pipelines.
 
     The buffer-resource OOB clamp bounds the store by the destination
     tensor's TOTAL byte extent, not by a per-row column extent — so a
@@ -1587,8 +1590,8 @@ def _buffer_load_impl[
     Distributes src across threads via thread_layout, reads row-major from
     DRAM (for cache locality), stores into dst using dst_layout strides.
     The dst_layout controls how the M x N per-thread fragment is packed
-    into registers (e.g. col_major for RegTileWriterLDS.copy compatibility,
-    row_major for direct use).
+    into registers; `RegTileLoader` pairs row_major dst with
+    `RegTileWriterLDS.copy`'s row-major reads.
 
     Parameters:
         thread_layout: Thread distribution layout (row_major or col_major).
@@ -1657,7 +1660,7 @@ struct RegTileWriterLDS[
 
     Static methods:
         copy         - Standard plain-SMEM write (rank-2 or rank-3
-                       distributed layouts); reads src in col-major
+                       distributed layouts); reads src in row-major
                        order to match `RegTileLoader`'s storage.
         copy_blocked - `blocked_product` SMEM write with its own
                        `block_cols` param. Used when thread_layout and
@@ -1675,7 +1678,7 @@ struct RegTileWriterLDS[
     ):
         """Copy register data to SMEM, distributed across threads.
 
-        Reads src registers in col-major element order to match the
+        Reads src registers in row-major element order to match the
         storage convention of `RegTileLoader`. Supports both flat
         (rank 2) and hierarchical (rank 3) distributed layouts.
 
@@ -1701,7 +1704,7 @@ struct RegTileWriterLDS[
         comptime DstVec = SIMD[dist_type.dtype, elem_size]
         comptime rank = dist_type.LayoutType.flat_rank
 
-        # Col-major iteration order matches RegTileLoader's storage.
+        # Row-major iteration order matches RegTileLoader's storage.
         # Handles both flat (rank 2) and hierarchical Coord layouts (rank 3).
         comptime if rank == 2:
             comptime R0 = dist_type.static_shape[0]
@@ -1710,7 +1713,7 @@ struct RegTileWriterLDS[
             comptime s1 = dist_type.static_stride[1]
             comptime for i in range(R0):
                 comptime for j in range(R1):
-                    comptime src_idx = i + j * R0
+                    comptime src_idx = i * R1 + j
                     comptime dst_off = i * s0 + j * s1
                     dst_dist.raw_store[width=elem_size](
                         dst_off,
@@ -1728,7 +1731,7 @@ struct RegTileWriterLDS[
             comptime for i in range(R0):
                 comptime for j in range(R1):
                     comptime for k in range(R2):
-                        comptime src_idx = i + j * R0 + k * R0 * R1
+                        comptime src_idx = i * R1 * R2 + j * R2 + k
                         comptime dst_off = i * s0 + j * s1 + k * s2
                         dst_dist.raw_store[width=elem_size](
                             dst_off,
@@ -1752,8 +1755,9 @@ struct RegTileWriterLDS[
 
         Handles structural mismatches between `thread_layout` and SMEM
         layout by computing per-element SMEM offsets using the
-        `blocked_product` formula. Reads registers in col-major order
-        (matching `RegTileLoader` convention).
+        `blocked_product` formula. Reads registers sequentially as
+        `simd_width`-wide vectors; this is invariant to col- vs row-major
+        flat ordering when each per-thread row equals one SIMD vector.
 
         The SMEM layout is `blocked_product` with blocks of
         `dst.shape[0] x block_cols`. `thread_layout` distributes a 2D
@@ -1765,7 +1769,7 @@ struct RegTileWriterLDS[
 
         Args:
             dst: Destination `[block_rows, data_cols]` in SHARED.
-            src: Source register tile in LOCAL (col-major elements).
+            src: Source register tile in LOCAL (row-major elements).
         """
         comptime block_rows = type_of(dst).static_shape[0]
         comptime data_cols = type_of(dst).static_shape[1]

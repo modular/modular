@@ -638,191 +638,239 @@ def flare_mla_decoding_dispatch[
         # AMD FP8 MLA decode uses 32x32x64 MMA (depth=576 is not a multiple
         # of 128, so the 16x16x128 path is unusable). That requires BM>=32
         # and BK>=64. BF16 AMD MLA keeps BM=16, BK=32 (16x16x32 MMA).
-        # For amd_fp8 we always use BM=32 even when num_heads<32; the top
-        # num_heads rows of the tile carry real work and the bottom rows
-        # do wasted MMA work (OOB Q reads return 0 via AMD buffer_load).
+        # For amd_fp8, BM=64 packs all 64 q-heads into one block per
+        # (batch, partition), halving K DRAM reads vs BM=32 (which splits
+        # heads across 2 blocks that each re-read the same K tile). The
+        # win is real only when K traffic actually overflows L2 AND the
+        # kernel reaches the bandwidth-bound regime; otherwise BM=64's 2×
+        # per-block compute (more MFMAs, more SMEM round-trip) loses out.
+        # See heuristic dispatch below.
         comptime amd_fp8 = has_amd_gpu_accelerator() and q.dtype.is_float8()
-        comptime preferred_BM = 32 if amd_fp8 else (
-            16 if (not has_enough_smem or has_amd_gpu_accelerator()) else 32
-        )
-        comptime BM = preferred_BM if (
-            amd_fp8 or preferred_BM <= num_heads
-        ) else num_heads
-        comptime BN = 64 if has_nvidia_gpu_accelerator() else 128
-        comptime BK = 64 if (
-            has_nvidia_gpu_accelerator() or amd_fp8
-        ) else 32  # need 8 mma_tile per row to resolve the bank conflict on nvidia
-        comptime WM = BM
-        comptime WN = 16 if has_nvidia_gpu_accelerator() else 32
-        # num warps in M and N, multiplied by warp size.
-        comptime num_threads = (BM // WM) * (BN // WN) * WARP_SIZE
 
-        comptime accum_type = get_accum_type[q.dtype]()
-        comptime num_pipeline_stages = 6
-        # smem for q
-        var shared_mem_bytes = BM * depth * size_of[q.dtype]()
+        @always_inline
+        @parameter
+        def launch_with_BM[BM: Int]() raises:
+            comptime BN = 64 if has_nvidia_gpu_accelerator() else 128
+            comptime BK = 64 if (
+                has_nvidia_gpu_accelerator() or amd_fp8
+            ) else 32  # 8 mma_tile per row resolves bank conflict on nvidia
+            comptime WM = BM
+            comptime WN = 16 if has_nvidia_gpu_accelerator() else 32
+            # num warps in M and N, multiplied by warp size.
+            comptime num_threads = (BM // WM) * (BN // WN) * WARP_SIZE
 
-        shared_mem_bytes += BN * depth * size_of[k_t.dtype]()
+            comptime accum_type = get_accum_type[q.dtype]()
+            comptime num_pipeline_stages = 6
+            # smem for q
+            var shared_mem_bytes = BM * depth * size_of[q.dtype]()
 
-        comptime num_warps = ceildiv(num_threads, WARP_SIZE)
+            shared_mem_bytes += BN * depth * size_of[k_t.dtype]()
 
-        # smem for p and warp_scratch
-        shared_mem_bytes += (
-            BM * BN * size_of[k_t.dtype]()
-            + 2 * num_warps * BM * size_of[accum_type]()
-        )
+            comptime num_warps = ceildiv(num_threads, WARP_SIZE)
 
-        shared_mem_bytes = (
-            shared_mem_bytes if has_nvidia_gpu_accelerator() else 0
-        )
+            # smem for p and warp_scratch
+            shared_mem_bytes += (
+                BM * BN * size_of[k_t.dtype]()
+                + 2 * num_warps * BM * size_of[accum_type]()
+            )
 
-        comptime num_blocks_y = ceildiv(num_heads, BM)
+            shared_mem_bytes = (
+                shared_mem_bytes if has_nvidia_gpu_accelerator() else 0
+            )
 
-        comptime depth_v = type_of(output).static_shape[output.rank - 1]
+            comptime num_blocks_y = ceildiv(num_heads, BM)
 
-        comptime kernel = mla_decoding[
-            q.dtype,
-            k_t,
-            output.dtype,
-            mask_t,
-            type_of(valid_length).LayoutType,
-            BM=BM,
-            BN=BN,
-            BK=BK,
-            WM=WM,
-            WN=WN,
-            depth=depth,
-            depth_v=depth_v,
-            num_heads=num_heads,
-            num_threads=num_threads,
-            num_pipeline_stages=num_pipeline_stages,
-            group=group,
-            ragged=ragged,
-            _use_valid_length=_use_valid_length,
-            _is_cache_length_accurate=_is_cache_length_accurate,
-            decoding_warp_split_k=decoding_warp_split_k,
-        ]
+            comptime depth_v = type_of(output).static_shape[output.rank - 1]
 
-        # Pick num_partitions for split-K. Only AMD has a tuned heuristic
-        # today; non-SM10x NVIDIA stays at 1 to preserve existing behavior.
-        var num_partitions_value: Int
-        if num_partitions:
-            num_partitions_value = num_partitions.value()
-        else:
-            comptime if has_amd_gpu_accelerator():
-                # MLA: kv_num_heads == 1, so heads_per_group == num_heads.
-                num_partitions_value = mha_decoding_num_partitions(
-                    batch_size, max_cache_valid_length, num_heads, ctx
+            comptime kernel = mla_decoding[
+                q.dtype,
+                k_t,
+                output.dtype,
+                mask_t,
+                type_of(valid_length).LayoutType,
+                BM=BM,
+                BN=BN,
+                BK=BK,
+                WM=WM,
+                WN=WN,
+                depth=depth,
+                depth_v=depth_v,
+                num_heads=num_heads,
+                num_threads=num_threads,
+                num_pipeline_stages=num_pipeline_stages,
+                group=group,
+                ragged=ragged,
+                _use_valid_length=_use_valid_length,
+                _is_cache_length_accurate=_is_cache_length_accurate,
+                decoding_warp_split_k=decoding_warp_split_k,
+            ]
+
+            # Pick num_partitions for split-K. Only AMD has a tuned heuristic
+            # today; non-SM10x NVIDIA stays at 1 to preserve existing behavior.
+            # Partition count is independent of BM; both BM variants share it.
+            var num_partitions_value: Int
+            if num_partitions:
+                num_partitions_value = num_partitions.value()
+            else:
+                comptime if has_amd_gpu_accelerator():
+                    # MLA: kv_num_heads == 1, so heads_per_group == num_heads.
+                    num_partitions_value = mha_decoding_num_partitions(
+                        batch_size, max_cache_valid_length, num_heads, ctx
+                    )
+                else:
+                    num_partitions_value = 1
+
+            var q_device = DeviceBuffer[q.dtype](
+                ctx, q.ptr, q.num_elements(), owning=False
+            )
+            var output_device = DeviceBuffer[output.dtype](
+                ctx, output.ptr, output.num_elements(), owning=False
+            )
+
+            if num_partitions_value == 1:
+                # Single-partition fast path — no intermediate buffers, no reduce.
+                var nullptr_device = DeviceBuffer[accum_type].empty(ctx)
+                ctx.enqueue_function[kernel](
+                    q_device,
+                    k,
+                    output_device,
+                    nullptr_device,
+                    nullptr_device,
+                    scale,
+                    batch_size,
+                    num_partitions_value,
+                    max_cache_valid_length,
+                    valid_length,
+                    mask_functor,
+                    grid_dim=(1, num_blocks_y, batch_size),
+                    block_dim=(num_threads, 1, 1),
+                    shared_mem_bytes=shared_mem_bytes,
+                    func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+                        UInt32(
+                            ctx.default_device_info.shared_memory_per_multiprocessor
+                            - 4096
+                        )
+                    ),
                 )
             else:
-                num_partitions_value = 1
+                # Split-K: per-partition output (depth_v) and softmax stats.
+                comptime intermediate_dtype = output.dtype
 
-        var q_device = DeviceBuffer[q.dtype](
-            ctx, q.ptr, q.num_elements(), owning=False
-        )
-        var output_device = DeviceBuffer[output.dtype](
-            ctx, output.ptr, output.num_elements(), owning=False
-        )
+                var output_intermediate_data = ctx.enqueue_create_buffer[
+                    intermediate_dtype
+                ](num_heads * depth_v * batch_size * num_partitions_value)
 
-        if num_partitions_value == 1:
-            # Single-partition fast path — no intermediate buffers, no reduce.
-            var nullptr_device = DeviceBuffer[accum_type].empty(ctx)
-            ctx.enqueue_function[kernel](
-                q_device,
-                k,
-                output_device,
-                nullptr_device,
-                nullptr_device,
-                scale,
-                batch_size,
-                num_partitions_value,
-                max_cache_valid_length,
-                valid_length,
-                mask_functor,
-                grid_dim=(1, num_blocks_y, batch_size),
-                block_dim=(num_threads, 1, 1),
-                shared_mem_bytes=shared_mem_bytes,
-                func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                    UInt32(
-                        ctx.default_device_info.shared_memory_per_multiprocessor
-                        - 4096
-                    )
-                ),
-            )
-        else:
-            # Split-K: per-partition output (depth_v) and softmax stats.
-            comptime intermediate_dtype = output.dtype
+                var data_len = num_heads * batch_size * num_partitions_value
+                var exp_sum_qk_max_data = ctx.enqueue_create_buffer[accum_type](
+                    2 * data_len
+                )
+                var exp_sum_device = DeviceBuffer[accum_type](
+                    ctx,
+                    exp_sum_qk_max_data.unsafe_ptr(),
+                    data_len,
+                    owning=False,
+                )
+                var qk_max_device = DeviceBuffer[accum_type](
+                    ctx,
+                    exp_sum_qk_max_data.unsafe_ptr() + data_len,
+                    data_len,
+                    owning=False,
+                )
 
-            var output_intermediate_data = ctx.enqueue_create_buffer[
-                intermediate_dtype
-            ](num_heads * depth_v * batch_size * num_partitions_value)
-
-            var data_len = num_heads * batch_size * num_partitions_value
-            var exp_sum_qk_max_data = ctx.enqueue_create_buffer[accum_type](
-                2 * data_len
-            )
-            var exp_sum_device = DeviceBuffer[accum_type](
-                ctx,
-                exp_sum_qk_max_data.unsafe_ptr(),
-                data_len,
-                owning=False,
-            )
-            var qk_max_device = DeviceBuffer[accum_type](
-                ctx,
-                exp_sum_qk_max_data.unsafe_ptr() + data_len,
-                data_len,
-                owning=False,
-            )
-
-            ctx.enqueue_function[kernel](
-                q_device,
-                k,
-                output_intermediate_data,
-                exp_sum_device,
-                qk_max_device,
-                scale,
-                batch_size,
-                num_partitions_value,
-                max_cache_valid_length,
-                valid_length,
-                mask_functor,
-                grid_dim=(
-                    num_partitions_value,
-                    num_blocks_y,
+                ctx.enqueue_function[kernel](
+                    q_device,
+                    k,
+                    output_intermediate_data,
+                    exp_sum_device,
+                    qk_max_device,
+                    scale,
                     batch_size,
-                ),
-                block_dim=(num_threads, 1, 1),
-                shared_mem_bytes=shared_mem_bytes,
-                func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                    UInt32(
-                        ctx.default_device_info.shared_memory_per_multiprocessor
-                        - 4096
-                    )
-                ),
-            )
+                    num_partitions_value,
+                    max_cache_valid_length,
+                    valid_length,
+                    mask_functor,
+                    grid_dim=(
+                        num_partitions_value,
+                        num_blocks_y,
+                        batch_size,
+                    ),
+                    block_dim=(num_threads, 1, 1),
+                    shared_mem_bytes=shared_mem_bytes,
+                    func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+                        UInt32(
+                            ctx.default_device_info.shared_memory_per_multiprocessor
+                            - 4096
+                        )
+                    ),
+                )
 
-            # AMD softmax always uses exp2; CUDA non-FA3 path uses exp.
-            comptime reduce_use_exp2 = has_amd_gpu_accelerator()
-            comptime kernel_reduce = mha_splitk_reduce[
-                intermediate_dtype,
-                output.dtype,
-                depth=depth_v,
-                num_heads=num_heads,
-                num_threads=WARP_SIZE,
-                use_exp2=reduce_use_exp2,
-            ]
-            ctx.enqueue_function[kernel_reduce](
-                output_intermediate_data,
-                output_device,
-                exp_sum_device,
-                qk_max_device,
-                batch_size,
-                num_partitions_value,
-                grid_dim=(1, num_heads, batch_size),
-                block_dim=(WARP_SIZE, 1, 1),
+                # AMD softmax always uses exp2; CUDA non-FA3 path uses exp.
+                comptime reduce_use_exp2 = has_amd_gpu_accelerator()
+                comptime kernel_reduce = mha_splitk_reduce[
+                    intermediate_dtype,
+                    output.dtype,
+                    depth=depth_v,
+                    num_heads=num_heads,
+                    num_threads=WARP_SIZE,
+                    use_exp2=reduce_use_exp2,
+                ]
+                ctx.enqueue_function[kernel_reduce](
+                    output_intermediate_data,
+                    output_device,
+                    exp_sum_device,
+                    qk_max_device,
+                    batch_size,
+                    num_partitions_value,
+                    grid_dim=(1, num_heads, batch_size),
+                    block_dim=(WARP_SIZE, 1, 1),
+                )
+                _ = exp_sum_qk_max_data^
+                _ = output_intermediate_data^
+
+        # ---- BM dispatch ----
+        # AMD FP8: pick BM=32 vs BM=64 from a runtime predicate. Empirically
+        # (MI355X, num_heads=64, see kern-2876 regression sweep), BM=64 wins
+        # iff BOTH:
+        #   1) cache_len >= 32K  — long enough for the kernel to reach the
+        #      bandwidth-bound regime where K traffic dominates per-block
+        #      compute. Below this, per-block setup/sync of BM=64's 2×
+        #      MFMAs and 2× SMEM round-trip overwhelms the K-traffic savings
+        #      regardless of total bytes (e.g. bs=128 cache=4096 is 302 MB
+        #      yet still regresses -8% under BM=64).
+        #   2) bs * cache_len * depth >= ~0.4 × L2  — total K bytes large
+        #      enough that BM=32's redundant per-block_y K reads actually
+        #      hit DRAM. When K fits in L2, the second block_y's reads are
+        #      L2 hits and BM=32's "doubled" traffic is free.
+        # Together these capture every meaningful win in the sweep
+        # (+14%..+64%) with zero false positives. Thresholds tuned for the
+        # MI355X (256 MB L2); generalizes by physical interpretation.
+        # For num_heads <= 32, BM=32 already covers all heads in one m_mma,
+        # so BM=64 has no head-packing benefit — keep BM=32.
+        comptime if amd_fp8:
+            comptime if num_heads > 32:
+                # MI355X L2 = 256 MB; threshold ≈ 0.4 × L2 = 100 MB leaves
+                # headroom for Q + V + working state in L2.
+                comptime L2_K_BYTES_THRESHOLD = 100 * 1024 * 1024
+                comptime CACHE_LEN_THRESHOLD = 32768
+                var k_bytes_total = batch_size * max_cache_valid_length * depth
+                if (
+                    max_cache_valid_length >= CACHE_LEN_THRESHOLD
+                    and k_bytes_total >= L2_K_BYTES_THRESHOLD
+                ):
+                    launch_with_BM[64]()
+                else:
+                    launch_with_BM[32]()
+            else:
+                launch_with_BM[32]()
+        else:
+            # BF16 AMD or non-AMD: keep original BM choice.
+            comptime preferred_BM_default = (
+                16 if (not has_enough_smem or has_amd_gpu_accelerator()) else 32
             )
-            _ = exp_sum_qk_max_data^
-            _ = output_intermediate_data^
+            comptime BM_default = preferred_BM_default if (
+                preferred_BM_default <= num_heads
+            ) else num_heads
+            launch_with_BM[BM_default]()
 
 
 @__llvm_metadata(
