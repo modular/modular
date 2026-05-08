@@ -25,8 +25,17 @@ from typing import Any
 from max.driver import Buffer, load_devices
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
+from max.graph import (
+    BufferType,
+    BufferValue,
+    DeviceRef,
+    Graph,
+    TensorType,
+    TensorValue,
+    ops,
+)
 from max.graph.weights import load_weights
+from max.nn.comm import Signals
 from max.nn.layer import Module
 from max.pipelines.lib.compiled_component import CompiledComponent
 from max.pipelines.lib.model_manifest import ModelManifest
@@ -71,6 +80,8 @@ class DenoiseComputeStep(Module):
         latent_image_ids: TensorValue,
         image_latent_ids: TensorValue,
         txt_ids: TensorValue,
+        *,
+        signal_buffers: list[BufferValue] | None = None,
     ) -> TensorValue:
         # Concat image latents for img2img (no-op when img_seq=0).
         latents_concat = ops.concat([latents, image_latents], axis=1)
@@ -92,6 +103,7 @@ class DenoiseComputeStep(Module):
             latent_image_ids_concat,
             txt_ids,
             guidance,
+            signal_buffers=signal_buffers,
         )
 
         # Slice noise_pred to latents.shape[1] tokens (discard image
@@ -165,6 +177,7 @@ class DenoiseCompute(CompiledComponent):
     """
 
     _model: Model
+    _signal_buffers: list[Buffer]
 
     @traced(message="DenoiseCompute.__init__")
     def __init__(
@@ -185,6 +198,7 @@ class DenoiseCompute(CompiledComponent):
 
         dtype = transformer_config.dtype
         device = transformer_config.devices[0]
+        device_refs = transformer_config.devices
 
         # Load weights and adapt for NVFP4 / stacked-QKV checkpoints.
         paths = config.resolved_weight_paths()
@@ -223,11 +237,27 @@ class DenoiseCompute(CompiledComponent):
         }
         compute.load_state_dict(state_dict, weight_alignment=1)
 
-        # Build and compile graph.
-        with Graph(
-            "denoise_compute", input_types=compute.input_types()
-        ) as graph:
-            outputs = compute(*(v.tensor for v in graph.inputs))
+        # Build and compile graph. When running multi-device, append
+        # ``Signals`` buffer types so the transformer's allreduces have
+        # peer-to-peer scratch space; on a single device the graph is
+        # unchanged from the pre-multi-device build.
+        tensor_types = compute.input_types()
+        input_types: list[TensorType | BufferType] = list(tensor_types)
+        if len(device_refs) > 1:
+            signals = Signals(devices=device_refs)
+            input_types.extend(signals.input_types())
+            self._signal_buffers = signals.buffers()
+        else:
+            self._signal_buffers = []
+
+        with Graph("denoise_compute", input_types=input_types) as graph:
+            inputs = list(graph.inputs)
+            tensor_inputs = inputs[: len(tensor_types)]
+            buffer_inputs = inputs[len(tensor_types) :]
+            outputs = compute(
+                *(v.tensor for v in tensor_inputs),
+                signal_buffers=[v.buffer for v in buffer_inputs],
+            )
             graph.output(outputs)
 
         self._model = self._load_graph(
@@ -274,5 +304,6 @@ class DenoiseCompute(CompiledComponent):
             latent_image_ids,
             image_latent_ids,
             txt_ids,
+            *self._signal_buffers,
         )
         return result[0] if isinstance(result, (list, tuple)) else result
