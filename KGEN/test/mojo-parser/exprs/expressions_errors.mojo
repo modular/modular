@@ -171,7 +171,7 @@ def overloaded_arg(x: Int): pass # expected-note {{candidate declared here}}
 def overloaded_arg(x: String): pass # expected-note {{candidate declared here}}
 def test_overloaded_arg_ambiguity() :
   # expected-error @below {{cannot form a reference to overloaded declaration of 'overloaded_arg'}}
-  # expected-note @below {{did you mean to call it?}}
+  # expected-note @below {{add '()' to call the function}}
   (var xxx) = overloaded_arg
 
 def throws_int() raises Int:
@@ -265,9 +265,7 @@ def testLValuesRvalues() raises -> None:
   lv.mutatingMethod()
 
   # Partial application.
-  # expected-error @below {{cannot emit closure for method 'mutatingMethod'}}
-  # expected-note @below {{computing member method closure is not yet supported}}
-  # expected-note @below {{did you forget '()'s?}}
+  # expected-error @below {{member method closures are not supported; add '()' to call 'mutatingMethod'}}
   lv.mutatingMethod
 
   # Test with rvalues
@@ -524,7 +522,7 @@ def bad_assignment1(a: Int, b: Int) raises:
 
 # MOCO-1936 / Issue #4501: Incorrect parsing of incomplete assignment
 def bad_assignment2():
-  # expected-error @+1 {{end of line found after '='; the right-hand side must be on the same line}}
+  # expected-error @+1 {{'=' must be followed by an expression on the same line}}
   _ =    # should error here
   a = 1
 
@@ -694,9 +692,7 @@ def transfer_diags[param: String](borrowed_arg: CopyAndInitMemType, obj: SomeNon
 struct SomeThing:
     def overloaded[a: Int](self, b: Int) -> Int: pass
 def testSomeThing(a: SomeThing):
-  # expected-error @below {{cannot emit closure for method 'overloaded'}}
-  # expected-note @below {{computing member method closure is not yet supported}}
-  # expected-note @below {{did you forget '()'s?}}
+  # expected-error @below {{member method closures are not supported; add '()' to call 'overloaded'}}
    a.overloaded[4] / 1.0
 
 # Test invalid references that cannot bind to potentially-register_passable
@@ -1116,3 +1112,7 @@ comptime TwoParamsTypeAlias[B: Int] = TwoParamsType[B, ...]
 def take_anytype[T: AnyType]():
   # expected-error @below {{'take_anytype' parameter 'T' has 'AnyType' type, but value has type '[B: Int] AnyStruct[TwoParamsType[B, ?]]'}}
     take_anytype[TwoParamsTypeAlias]()
+
+def ternary_missing_else(a: Int, b: Int) -> Int:
+  # expected-error @+1 {{expected 'else' clause in ternary; add 'else' and the false branch}}
+  return a if a > b

@@ -80,7 +80,7 @@ def missingColon(x: Int)
 
 def out1(a: Int, out b: Int): pass
 
-# expected-error @+1 {{'out' convention may not be variadic}}
+# expected-error @+1 {{'out' convention must not be variadic}}
 def bad_out2(out *b: Int): pass
 
 # expected-error @+1 {{expected ']' for parameter list}}
@@ -162,7 +162,7 @@ def test_contextual_default[T: AnyType](copies: T = {}):
 def test_contextual_default2[i: Int](x: HasIntParam[i] = {}):
     pass
 
-# expected-error @+1 {{'mut' arguments may not have defaults}}
+# expected-error @+1 {{'mut' arguments must not have defaults}}
 def byref_default(mut x: Int = 2): pass
 
 # expected-error @below {{'**' marker must be at end of argument list}}
@@ -174,7 +174,7 @@ def twoStarStar(**a: Int, **b: Int): pass
 # expected-error @+1 {{expected argument name}}
 def starSpaceStar(* *a: Int): pass
 
-# expected-error @+1 {{variadic arguments may not have defaults}}
+# expected-error @+1 {{variadic arguments must not have defaults}}
 def noDefaultVariadics(*a: Int = 42): pass
 
 # expected-note @+1 {{function declared here}}
@@ -272,7 +272,7 @@ def invalidStarExpression(*x: *): pass
 def invalidPackType(*x: *Int): pass
 
 def invalidParameterPack[*Ts: AnyType]():
-  # expected-error @+1 {{parameters may not be variadic packs}}
+  # expected-error @+1 {{parameters must not be variadic packs}}
   def invalid[*Us: *Ts](): pass
 
 # expected-error @+2 {{variadic unpacking with '*' requires a variadic argument}}
@@ -513,7 +513,7 @@ struct TestOverloading:
     pass
 
   def test(self, a: Int, b: FloatDyn) raises:
-    # expected-note @below {{did you mean to call it?}}
+    # expected-note @below {{add '()' to call the function}}
     # expected-error @below {{cannot form a reference to overloaded declaration}}
     var bad = overloadIntFloat32
 
@@ -781,8 +781,19 @@ struct BadInit[size: __mlir_type.index]:
     self = x
 
 struct MLIRAttrWithinStruct:
-  # expected-error @below {{bare expressions not permitted within structs; use a field declaration ('var') or move this into a method body}}
+  # expected-error @below {{bare expressions must not appear within structs; use 'var' for a field or move this into a method body}}
   __mlir_attr.`#index<cmp_predicate eq>`
+
+trait BareExprInTrait:
+  # expected-error @below {{bare expressions must not appear within traits; use 'comptime' for an associated type or move this into a method body}}
+  1 + 1
+
+struct BareExprInExtension:
+  pass
+
+__extension BareExprInExtension:
+  # expected-error @below {{bare expressions must not appear within extensions; move this into a method body}}
+  1 + 1
 
 
 # In register structs may only have stored properties of other in-reg values.
@@ -807,7 +818,7 @@ struct InvalidMember(TrivialRegisterPassable):
   # expected-error @+2 {{redefinition of function '__init__' cannot overload on return type only}}
   # expected-error @+1 {{trivial types must not declare explicit copy constructors; they are trivially copyable}}
   def __init__(out self, *, copy: Self): pass
-  # expected-error @+2 {{trivial types may not have '__del__' methods; they are trivially destroyable}}
+  # expected-error @+2 {{trivial types must not declare '__del__' methods; they are trivially destroyable}}
   # expected-note @+1 {{trivial types have no identity; the compiler destroys them automatically with no observable effect}}
   def __del__(deinit self): pass
 
@@ -1186,7 +1197,7 @@ def top_level_func() raises -> Int:
 def use_error(e: Error):
    pass
 
-# expected-error @below {{expressions are not allowed at global scope; move this into a function body}}
+# expected-error @below {{expressions must not appear at file scope; move this into a function body}}
 _ = top_level_func()
 
 # NOTE: try/except at module scope is tested in module_scope_try_error.mojo
@@ -1197,7 +1208,7 @@ def top_level_func_param[p: Int]():
     pass
 
 comptime a = 100
-# expected-error @below {{expressions are not allowed at global scope; move this into a function body}}
+# expected-error @below {{expressions must not appear at file scope; move this into a function body}}
 top_level_func_param[a]()
 
 # expected-error @below {{global variables are not supported; move this into a function body or use 'comptime' to declare a constant}}

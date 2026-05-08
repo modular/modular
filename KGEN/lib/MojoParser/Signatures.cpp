@@ -309,7 +309,7 @@ ParseResult ParsedArgument::parse(ParserBase &p, KWArgMarkerInfo &markerInfo,
 
   // Reject attempts to make variadic output arguments.
   if (variadicKind != VariadicKind::None && convention == kConventionOut) {
-    p.emitError(loc, "'out' convention may not be variadic");
+    p.emitError(loc, "'out' convention must not be variadic");
     isErroneous = true;
     variadicKind = VariadicKind::None;
   }
@@ -353,7 +353,7 @@ ParseResult ParsedArgument::parse(ParserBase &p, KWArgMarkerInfo &markerInfo,
 
         if (kind == ArgListKind::kParamList ||
             kind == ArgListKind::kFnTypeParamList) {
-          p.emitError(starLoc, "parameters may not be variadic packs");
+          p.emitError(starLoc, "parameters must not be variadic packs");
           return failure();
         }
 
@@ -405,13 +405,13 @@ ParseResult ParsedArgument::parse(ParserBase &p, KWArgMarkerInfo &markerInfo,
     if (convention == kConventionMut || convention == kConventionOut) {
       p.emitError(equalLoc)
           << (convention == kConventionOut ? "'out'" : "'mut'")
-          << " arguments may not have defaults" << initExpr->getRange();
+          << " arguments must not have defaults" << initExpr->getRange();
       initExpr = nullptr;
     }
 
     // Default args and varargs don't mix.
     if (variadicKind != VariadicKind::None) {
-      p.emitError(equalLoc, "variadic arguments may not have defaults")
+      p.emitError(equalLoc, "variadic arguments must not have defaults")
           << initExpr->getRange();
       initExpr = nullptr;
     }
@@ -2399,7 +2399,7 @@ TypeCheckedFnSignature::TypeCheckedFnSignature(TypeCheckedParamList &paramList,
       selfType.isTrivial(fnDecl->getLoc(), shared)) {
     fnDecl->setErroneous();
     auto diag =
-        shared.emitError(fnDecl->getLoc(), "trivial types may not have '");
+        shared.emitError(fnDecl->getLoc(), "trivial types must not declare '");
     diag << fnInfo.name << "' methods; they are trivially destroyable";
     diag.attachNote(fnDecl->getLoc())
         << "trivial types have no identity; the compiler destroys them "

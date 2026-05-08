@@ -599,9 +599,10 @@ Lexer::ConsumeStringResult Lexer::consumeUnicodeEscape(const char *&curPtr,
   if (cp >= 0xD800 && cp <= 0xDFFF)
     return {.result = Lexer::ConsumeStringResult::ErrorAt{
                 .errorLoc = escStart,
-                .errorMsg = "unicode escape sequence is not a valid code "
-                            "point: surrogates (U+D800 to U+DFFF) are not "
-                            "allowed"}};
+                .errorMsg = "unicode escape sequences do not support surrogate "
+                            "code points (U+D800 to U+DFFF); use '\\U' with "
+                            "the full code point (not a UTF-16 surrogate "
+                            "pair)"}};
   return {.result = Lexer::ConsumeStringResult::Success{}};
 }
 
@@ -982,8 +983,9 @@ void Lexer::lexInteger(const char *tokStart, ssize_t indentation) {
       while (*curPtr == '0' || *curPtr == '_');
     } else if (llvm::isDigit(*curPtr)) {
       // ex. 0123
-      emitErrorAt(curPtr, "decimal integer literals may not use leading zeros; "
-                          "add '0o' for octal literals");
+      emitErrorAt(curPtr,
+                  "decimal integer literals must not use leading zeros; "
+                  "add '0o' for octal literals");
       return;
     }
   } else {
