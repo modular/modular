@@ -26,3 +26,4 @@ functionality not yet available in native Mojo.
 from .python import Python
 from .conversions import ConvertibleFromPython, ConvertibleToPython
 from .python_object import PythonObject
+from .python_exception import PythonException
