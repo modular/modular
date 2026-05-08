@@ -44,6 +44,10 @@ agent_anchors:
     queue: ephemeral
     pool: mi355
     resource_class: "1x"
+  mi355_8x: &mi355_8x
+    queue: ephemeral
+    pool: mi355
+    resource_class: "8x"
 
 logit_verification_pipelines:
   # Each pipeline is defined by a name and the following fields:
@@ -843,6 +847,19 @@ logit_verification_pipelines:
       json_file: "vllm_lukealonso_MiniMax-M2.7-NVFP4_float4_e2m1fnx2_golden.json"
     cos_dist_threshold: 9.0e-04
     kl_div_threshold: 3.5e-01
+
+  amd/MiniMax-M2.7-MXFP4:
+    pre_submit_agents: []
+    post_submit_agents: [*mi355_8x]
+    pipeline: "amd/MiniMax-M2.7-MXFP4"
+    compatible_with: [gpu]
+    encoding: float4_e2m1fnx2
+    tags: [amd-multi, 8xmi355]
+    pregenerated_torch_goldens:
+      tar_file: "s3://modular-bazel-artifacts-public/artifacts/amd_MiniMax-M2.7-MXFP4_golden/1/1ba298cb/vllm_amd_MiniMax-M2.7-MXFP4_float4_e2m1fnx2_golden.json.tar.gz"
+      json_file: "vllm_amd_MiniMax-M2.7-MXFP4_float4_e2m1fnx2_golden.json"
+    cos_dist_threshold: 8.0e-03
+    kl_div_threshold: 4.0e+00
 
   deepseek-ai/DeepSeek-V3.1-Terminus:
     pre_submit_agents: []

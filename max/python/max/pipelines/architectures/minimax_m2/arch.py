@@ -22,7 +22,6 @@ from max.pipelines.lib import (
 from . import weight_adapters
 from .model import MiniMaxM2Model
 from .model_config import MiniMaxM2Config
-from .tool_parser import MinimaxM2ToolParser
 
 minimax_m2_arch = SupportedArchitecture(
     name="MiniMaxM2ForCausalLM",
@@ -48,6 +47,6 @@ minimax_m2_arch = SupportedArchitecture(
     },
     config=MiniMaxM2Config,
     multi_gpu_supported=True,
-    tool_parser=MinimaxM2ToolParser,
+    tool_parser="minimax_m2",
     reasoning_parser="minimax_m2",
 )

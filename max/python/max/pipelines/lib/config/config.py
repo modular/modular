@@ -27,6 +27,7 @@ from max.config import ConfigFileModel
 from max.driver import DeviceSpec, accelerator_api, load_devices
 from max.engine import InferenceSession
 from max.graph.quantization import QuantizationEncoding
+from max.interfaces.task import PipelineTask
 from max.nn.kv_cache.cache_params import KVConnectorType
 from max.pipelines.lib.hf_utils import is_diffusion_pipeline
 from max.pipelines.lib.interfaces import PipelineModel
@@ -48,6 +49,7 @@ from pydantic import (
     Field,
     ModelWrapValidatorHandler,
     PrivateAttr,
+    TypeAdapter,
     field_validator,
     model_validator,
 )
@@ -387,11 +389,24 @@ class PipelineConfig(ConfigFileModel):
             if key in KVCacheConfig.model_fields:
                 kv_cache_kwargs[key] = unmatched_kwargs.pop(key)
 
+        # Parse --model-override entries once, grouped by target component, so
+        # "main"/"draft" overrides can be folded into the constructor kwargs
+        # below.  HuggingFaceRepo.__post_init__ and the MAXModelConfig
+        # validator eagerly hit HF using the dataclass-default revision, which
+        # fails under HF_HUB_OFFLINE for repos cached only at a pinned SHA.
+        component_overrides: dict[str, dict[str, Any]] = {}
+        for override_str in self.model_override:
+            component, field_name, value = self._parse_model_override(
+                override_str
+            )
+            component_overrides.setdefault(component, {})[field_name] = value
+
         # Only rebuild the manifest when explicit model kwargs were provided
         # in unmatched_kwargs.  When a pre-built ModelManifest was passed via
         # the ``models=`` kwarg, ``model_kwargs`` will be empty and we should
         # not reconstruct the manifest (which would trigger HF validation).
         if model_kwargs:
+            model_kwargs.update(component_overrides.get("main", {}))
             model_path = model_kwargs.pop("model_path", "")
             if model_path:
                 revision = model_kwargs.pop("huggingface_model_revision", None)
@@ -424,6 +439,10 @@ class PipelineConfig(ConfigFileModel):
             if "main" in self.models:
                 self._apply_draft_model_defaults(draft_kwargs, self.model)
 
+            # "draft" overrides are applied after inheritance so explicit
+            # user intent wins over copied target-model defaults.
+            draft_kwargs.update(component_overrides.get("draft", {}))
+
             draft_config = MAXModelConfig(**draft_kwargs)
             if kv_cache_kwargs:
                 draft_config.create_kv_cache_config(**kv_cache_kwargs)
@@ -431,9 +450,17 @@ class PipelineConfig(ConfigFileModel):
                 "draft", config=draft_config
             )
 
-        # Apply per-component overrides from --model-override flags
-        if self.model_override:
-            self._apply_model_overrides()
+        # Apply parsed overrides via with_override.  This is idempotent for
+        # "main"/"draft" fields already folded into kwargs above, and is the
+        # only path that runs when a pre-built manifest was passed via
+        # ``models=``.
+        for component, fields in component_overrides.items():
+            if component not in self.models:
+                raise ValueError(
+                    f"Component {component!r} not found in manifest. "
+                    f"Available: {list(self.models.keys())}"
+                )
+            self.models = self.models.with_override(component, **fields)
 
     @staticmethod
     def _apply_draft_model_defaults(
@@ -491,60 +518,48 @@ class PipelineConfig(ConfigFileModel):
                 target_model.data_parallel_degree
             )
 
-    def _apply_model_overrides(self) -> None:
-        """Apply --model-override entries to the manifest.
+    @staticmethod
+    def _parse_model_override(override_str: str) -> tuple[str, str, Any]:
+        """Parse ``component.field=value`` into ``(component, field, value)``.
 
-        Each entry has the form ``component.field=value``. The value is
-        coerced to the target field's type via Pydantic's TypeAdapter.
-        Overrides are applied sequentially via ``with_override()``.
+        The value is coerced to the target field's type via Pydantic's
+        ``TypeAdapter`` (JSON-first, raw-string fallback for scalars).
+
+        Raises:
+            ValueError: if the string is malformed or names an unknown
+                ``MAXModelConfig`` field.
         """
-        from pydantic import TypeAdapter
-
-        for override_str in self.model_override:
-            # Parse "component.field=value"
-            dot_pos = override_str.find(".")
-            if dot_pos < 1:
-                raise ValueError(
-                    f"Invalid --model-override format: {override_str!r}. "
-                    f"Expected 'component.field=value'."
-                )
-            eq_pos = override_str.find("=", dot_pos)
-            if eq_pos < dot_pos + 2:
-                raise ValueError(
-                    f"Invalid --model-override format: {override_str!r}. "
-                    f"Expected 'component.field=value'."
-                )
-            component = override_str[:dot_pos]
-            field_name = override_str[dot_pos + 1 : eq_pos]
-            raw_value = override_str[eq_pos + 1 :]
-
-            if field_name not in MAXModelConfig.model_fields:
-                raise ValueError(
-                    f"Unknown MAXModelConfig field: {field_name!r}. "
-                    f"Valid fields: {sorted(MAXModelConfig.model_fields.keys())}"
-                )
-
-            if component not in self.models:
-                raise ValueError(
-                    f"Component {component!r} not found in manifest. "
-                    f"Available: {list(self.models.keys())}"
-                )
-
-            # Coerce value using the field's type annotation.
-            # For compound types (list, dict) the raw CLI string is JSON,
-            # so we attempt json.loads first before falling back to the
-            # raw string for scalar fields.
-            field_info = MAXModelConfig.model_fields[field_name]
-            adapter: TypeAdapter[Any] = TypeAdapter(field_info.annotation)
-            try:
-                parsed_value = json.loads(raw_value)
-            except (json.JSONDecodeError, ValueError):
-                parsed_value = raw_value
-            value = adapter.validate_python(parsed_value)
-
-            self.models = self.models.with_override(
-                component, **{field_name: value}
+        dot_pos = override_str.find(".")
+        if dot_pos < 1:
+            raise ValueError(
+                f"Invalid --model-override format: {override_str!r}. "
+                f"Expected 'component.field=value'."
             )
+        eq_pos = override_str.find("=", dot_pos)
+        if eq_pos < dot_pos + 2:
+            raise ValueError(
+                f"Invalid --model-override format: {override_str!r}. "
+                f"Expected 'component.field=value'."
+            )
+        component = override_str[:dot_pos]
+        field_name = override_str[dot_pos + 1 : eq_pos]
+        raw_value = override_str[eq_pos + 1 :]
+
+        if field_name not in MAXModelConfig.model_fields:
+            raise ValueError(
+                f"Unknown MAXModelConfig field: {field_name!r}. "
+                f"Valid fields: {sorted(MAXModelConfig.model_fields.keys())}"
+            )
+
+        # For compound types (list, dict) the raw CLI string is JSON, so try
+        # json.loads first; fall back to the raw string for plain scalars.
+        field_info = MAXModelConfig.model_fields[field_name]
+        adapter: TypeAdapter[Any] = TypeAdapter(field_info.annotation)
+        try:
+            parsed_value = json.loads(raw_value)
+        except (json.JSONDecodeError, ValueError):
+            parsed_value = raw_value
+        return component, field_name, adapter.validate_python(parsed_value)
 
     def _create_speculative_config_if_needed(
         self, kwargs: dict[str, Any]
@@ -751,7 +766,6 @@ class PipelineConfig(ConfigFileModel):
         delattr(self, "_unmatched_kwargs")
 
         # Process specialized config creation
-        self._create_denoising_cache_config_if_needed(unmatched_kwargs)
         self._create_lora_config_if_needed(unmatched_kwargs)
 
         # Build model manifest from kwargs — must come before sampling
@@ -763,6 +777,11 @@ class PipelineConfig(ConfigFileModel):
         # Process remaining config classes (runtime, sampling, profiling)
         if unmatched_kwargs:
             self._process_remaining_config_classes(unmatched_kwargs)
+
+        # Set denoising_cache on runtime AFTER runtime is constructed by
+        # _process_remaining_config_classes; otherwise the runtime
+        # replacement there clobbers the cache fields set here.
+        self._create_denoising_cache_config_if_needed(unmatched_kwargs)
 
         if unmatched_kwargs:
             raise ValueError(f"Unmatched kwargs: {unmatched_kwargs}")
@@ -954,6 +973,7 @@ class PipelineConfig(ConfigFileModel):
         self._validate_and_resolve_overlap_scheduler()
 
         self._resolve_default_reasoning_parser()
+        self._resolve_default_tool_parser()
 
     def _resolve_default_reasoning_parser(self) -> None:
         """Apply the architecture's default reasoning parser when unset.
@@ -977,6 +997,31 @@ class PipelineConfig(ConfigFileModel):
             "Defaulting reasoning parser to %r for architecture %s. "
             "Override with --reasoning-parser.",
             arch.reasoning_parser,
+            arch.name,
+        )
+
+    def _resolve_default_tool_parser(self) -> None:
+        """Apply the architecture's default tool parser when unset.
+
+        If the user did not configure ``runtime.tool_parser`` and the
+        resolved ``SupportedArchitecture`` declares a default
+        ``tool_parser``, use it. Explicit user configuration always wins.
+        """
+        if self.runtime.tool_parser is not None:
+            return
+
+        arch = PIPELINE_REGISTRY.retrieve_architecture(
+            architecture_name=self.models.main_architecture_name,
+            prefer_module_v3=self.runtime.prefer_module_v3,
+        )
+        if arch is None or arch.tool_parser is None:
+            return
+
+        self.runtime.tool_parser = arch.tool_parser
+        logger.info(
+            "Defaulting tool parser to %r for architecture %s. "
+            "Override with --tool-parser.",
+            arch.tool_parser,
             arch.name,
         )
 
@@ -1506,6 +1551,51 @@ class PipelineConfig(ConfigFileModel):
             logger.info(line)
         logger.info("")
 
+        # Denoising cache details for diffusion pipelines.
+        if arch.task == PipelineTask.PIXEL_GENERATION:
+            cache = self.runtime.denoising_cache
+            cache_entries: list[tuple[str, Any]] = [
+                ("first_block_caching", cache.first_block_caching),
+                ("taylorseer", cache.taylorseer),
+                (
+                    "taylorseer_cache_interval",
+                    cache.taylorseer_cache_interval
+                    if cache.taylorseer_cache_interval is not None
+                    else "model-default",
+                ),
+                (
+                    "taylorseer_warmup_steps",
+                    cache.taylorseer_warmup_steps
+                    if cache.taylorseer_warmup_steps is not None
+                    else "model-default",
+                ),
+                (
+                    "taylorseer_max_order",
+                    cache.taylorseer_max_order
+                    if cache.taylorseer_max_order is not None
+                    else "model-default",
+                ),
+                ("teacache", cache.teacache),
+                (
+                    "teacache_rel_l1_thresh",
+                    cache.teacache_rel_l1_thresh
+                    if cache.teacache_rel_l1_thresh is not None
+                    else "model-default",
+                ),
+                (
+                    "teacache_coefficients",
+                    cache.teacache_coefficients
+                    if cache.teacache_coefficients is not None
+                    else "model-default",
+                ),
+            ]
+
+            logger.info("Denoising Cache")
+            logger.info("=" * 60)
+            for line in _format_config_entries(cache_entries):
+                logger.info(line)
+            logger.info("")
+
     def log_basic_config(self) -> None:
         """Log minimal pipeline configuration information.
 
@@ -1533,8 +1623,6 @@ class PipelineConfig(ConfigFileModel):
         pipeline_class = get_pipeline_for_task(task, self)
 
         # Get reserved memory info from KVCache config (only for tasks that use KV cache)
-        from max.interfaces.task import PipelineTask
-
         kv_cache_tasks = {
             PipelineTask.TEXT_GENERATION,
             PipelineTask.AUDIO_GENERATION,

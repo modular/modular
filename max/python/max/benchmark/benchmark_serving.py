@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import dataclasses
 import json
 import logging
 import os
@@ -71,7 +70,6 @@ from max.benchmark.benchmark_shared.lora_benchmark_manager import (
 )
 from max.benchmark.benchmark_shared.metrics import (
     PixelGenerationBenchmarkResult,
-    SpecDecodeMetrics,
     TextGenerationBenchmarkResult,
     calculate_spec_decode_stats,
 )
@@ -112,9 +110,7 @@ from max.benchmark.benchmark_shared.single_turn import (
 from max.benchmark.benchmark_shared.utils import (
     argmedian,
     get_tokenizer,
-    int_or_none,
     is_castable_to_int,
-    parse_comma_separated,
     print_section,
     set_ulimit,
     wait_for_server_ready,
@@ -242,21 +238,22 @@ def create_benchmark_pbar(disable_tqdm: bool, samples: Samples) -> tqdm | None:
         return tqdm(total=sum(num_qa_turns))
 
 
-async def benchmark(
-    args: ServingBenchmarkConfig,
-    session: BenchmarkSession,
-    max_concurrency: int | None,
+def _resolve_skip_counts(
+    orig_skip_first: int | None,
+    orig_skip_last: int | None,
     request_rate: float,
-) -> TextGenerationBenchmarkResult | PixelGenerationBenchmarkResult:
-    """Run a single benchmark invocation.
+    max_concurrency: int | None,
+    ignore_first_turn_stats: bool,
+    warmup_to_steady_state: bool,
+) -> tuple[int, int]:
+    """Resolve effective skip_first / skip_last from user-supplied and auto-derived values.
 
-    ``session.orig_skip_first`` / ``session.orig_skip_last`` are the
-    user-supplied values (``None`` = auto-derive from *max_concurrency*).
+    Returns:
+        ``(skip_first, skip_last)`` request counts to exclude from stats.
     """
-    backend: Backend = args.backend
+    skip_first = orig_skip_first
+    skip_last = orig_skip_last
 
-    skip_first = session.orig_skip_first
-    skip_last = session.orig_skip_last
     if request_rate != float("inf"):
         # Finite rate → steady drip with no ramp-up / ramp-down artifacts,
         # so skip nothing (PERF-878).
@@ -285,26 +282,7 @@ async def benchmark(
     if skip_last is None:
         skip_last = 0
 
-    if args.warm_shared_prefix:
-        if args.dataset_name not in ("random", "synthetic"):
-            raise ValueError(
-                f"--warm-shared-prefix is not supported for dataset"
-                f" '{args.dataset_name}'. Only random/synthetic datasets have a"
-                " defined shared prefix to cache."
-            )
-        if args.random_sys_prompt_ratio <= 0:
-            raise ValueError(
-                "--warm-shared-prefix requires --random-sys-prompt-ratio > 0."
-            )
-
-    logger.info("Starting benchmark run")
-    assert args.num_prompts is not None
-
-    if (
-        args.ignore_first_turn_stats
-        and skip_first
-        and not args.warmup_to_steady_state
-    ):
+    if ignore_first_turn_stats and skip_first and not warmup_to_steady_state:
         # Without --warmup-to-steady-state, sessions all start at turn 0,
         # so --ignore-first-turn-stats already drops the same head requests
         # that --skip-first-n-requests would target. Combining them just
@@ -320,6 +298,53 @@ async def benchmark(
             " Ignoring --skip-first-n-requests."
         )
         skip_first = 0
+
+    return skip_first, skip_last
+
+
+async def benchmark(
+    args: ServingBenchmarkConfig,
+    session: BenchmarkSession,
+    max_concurrency: int | None,
+    request_rate: float,
+) -> TextGenerationBenchmarkResult | PixelGenerationBenchmarkResult:
+    """Run a single benchmark invocation.
+
+    ``session.orig_skip_first`` / ``session.orig_skip_last`` are the
+    user-supplied values (``None`` = auto-derive from *max_concurrency*).
+    """
+    backend: Backend = args.backend
+
+    skip_first, skip_last = _resolve_skip_counts(
+        orig_skip_first=session.orig_skip_first,
+        orig_skip_last=session.orig_skip_last,
+        request_rate=request_rate,
+        max_concurrency=max_concurrency,
+        ignore_first_turn_stats=args.ignore_first_turn_stats,
+        warmup_to_steady_state=args.warmup_to_steady_state,
+    )
+
+    if args.warm_shared_prefix:
+        fit_with_sys = args.fit_distributions and args.dataset_name in (
+            "instruct-coder",
+            "agentic-code",
+        )
+        if (
+            args.dataset_name not in ("random", "synthetic")
+            and not fit_with_sys
+        ):
+            raise ValueError(
+                f"--warm-shared-prefix is not supported for dataset"
+                f" '{args.dataset_name}'. Use random/synthetic, or"
+                " instruct-coder/agentic-code with --fit-distributions."
+            )
+        if args.random_sys_prompt_ratio <= 0:
+            raise ValueError(
+                "--warm-shared-prefix requires --random-sys-prompt-ratio > 0."
+            )
+
+    logger.info("Starting benchmark run")
+    assert args.num_prompts is not None
 
     # Benchmark LoRA loading if manager provided
     if session.lora_manager:
@@ -366,9 +391,7 @@ async def benchmark(
             api_url=session.api_url,
             samples=session.samples,
             request_driver=test_request_driver,
-            temperature=args.temperature,
-            top_p=args.top_p,
-            top_k=args.top_k,
+            sampling=args.sampling,
             run_prefix=run_prefix,
             run_prefix_len=run_prefix_len,
         )
@@ -381,9 +404,7 @@ async def benchmark(
             api_url=session.api_url,
             samples=session.samples,
             request_driver=test_request_driver,
-            temperature=args.temperature,
-            top_p=args.top_p,
-            top_k=args.top_k,
+            sampling=args.sampling,
             max_output_len=args.max_output_len,
             run_prefix=run_prefix,
             run_prefix_len=run_prefix_len,
@@ -407,6 +428,50 @@ async def benchmark(
     logger.info(f"Burstiness factor: {args.burstiness} ({distribution})")
     logger.info(f"Maximum request concurrency: {max_concurrency}")
 
+    base_driver = request_driver_class(tokenizer=session.tokenizer)
+
+    # Prime prefix turns before the benchmark timer starts. Only the initial
+    # concurrent population keeps its prefix_turns; sessions arriving
+    # mid-benchmark get reset to 0 and don't need priming.
+    # Bound: kv-cache-stress uses max_concurrent_conversations; multiturn uses
+    # max_concurrency (may be None for unbounded, in which case all sessions
+    # keep prefix_turns and are all primed).
+    if isinstance(session.samples, ChatSamples):
+        assert session.tokenizer is not None
+        prime_bound = (
+            args.max_concurrent_conversations
+            if args.max_concurrent_conversations is not None
+            else max_concurrency
+        )
+        await prime_prefix_turns(
+            sessions=session.samples.chat_sessions,
+            request_driver=base_driver,
+            model_id=session.model_id,
+            api_url=session.api_url,
+            max_chat_len=session.tokenizer.model_max_length,
+            sampling=args.sampling,
+            max_sessions=prime_bound,
+        )
+
+    # Capture baseline server metrics after priming so priming requests
+    # don't affect the delta calculation.
+    baseline_endpoints: Mapping[str, ParsedMetrics] = {}
+    if args.collect_server_stats:
+        try:
+            baseline_endpoints = collect_benchmark_metrics(
+                args.metrics_urls, backend, session.base_url
+            )
+            logger.info("Captured baseline server metrics")
+        except Exception as e:
+            logger.warning(f"Failed to capture baseline server metrics: {e}")
+
+    if session.benchmark_task == "text-generation":
+        spec_decode_metrics_before = fetch_spec_decode_metrics(
+            backend, session.base_url
+        )
+    else:
+        spec_decode_metrics_before = None
+
     semaphore: contextlib.AbstractAsyncContextManager[None]
     if max_concurrency:
         semaphore = asyncio.Semaphore(max_concurrency)
@@ -415,8 +480,6 @@ async def benchmark(
 
     with contextlib.ExitStack() as benchmark_stack:
         gpu_recorder: GPUBackgroundRecorder | None = None
-        spec_decode_metrics_before: SpecDecodeMetrics | None = None
-        spec_decode_metrics_after: SpecDecodeMetrics | None = None
         if args.collect_gpu_stats:
             try:
                 from max.diagnostics.gpu import BackgroundRecorder
@@ -452,60 +515,13 @@ async def benchmark(
             )
 
         # Create pbar for actual benchmark runs
+        request_driver = base_driver
         pbar = create_benchmark_pbar(
             disable_tqdm=args.disable_tqdm, samples=session.samples
         )
-
-        # Create base driver and wrap with ProgressBarRequestDriver if pbar is provided
-        request_driver = base_driver = request_driver_class(
-            tokenizer=session.tokenizer
-        )
         if pbar is not None:
+            benchmark_stack.callback(pbar.close)
             request_driver = ProgressBarRequestDriver(request_driver, pbar)
-
-        # Prime prefix turns before the benchmark timer starts. Only the
-        # initial concurrent population keeps its prefix_turns; sessions
-        # arriving mid-benchmark get reset to 0 and don't need priming.
-        # Bound: kv-cache-stress uses max_concurrent_conversations;
-        # multiturn uses max_concurrency (may be None for unbounded, in
-        # which case all sessions keep prefix_turns and are all primed).
-        if isinstance(session.samples, ChatSamples):
-            assert session.tokenizer is not None
-            prime_bound = (
-                args.max_concurrent_conversations
-                if args.max_concurrent_conversations is not None
-                else max_concurrency
-            )
-            await prime_prefix_turns(
-                sessions=session.samples.chat_sessions,
-                request_driver=base_driver,
-                model_id=session.model_id,
-                api_url=session.api_url,
-                max_chat_len=session.tokenizer.model_max_length,
-                temperature=args.temperature,
-                top_p=args.top_p,
-                top_k=args.top_k,
-                max_sessions=prime_bound,
-            )
-
-        # Capture baseline server metrics after priming so priming requests
-        # don't affect the delta calculation.
-        baseline_endpoints: Mapping[str, ParsedMetrics] = {}
-        if args.collect_server_stats:
-            try:
-                baseline_endpoints = collect_benchmark_metrics(
-                    args.metrics_urls, backend, session.base_url
-                )
-                logger.info("Captured baseline server metrics")
-            except Exception as e:
-                logger.warning(
-                    f"Failed to capture baseline server metrics: {e}"
-                )
-
-        if session.benchmark_task == "text-generation":
-            spec_decode_metrics_before = fetch_spec_decode_metrics(
-                backend, session.base_url
-            )
 
         # Marker consumed by utils/benchmarking/serving/analyze_batch_logs.py
         # to slice the batch log by concurrency and exclude warmup/test-prompt
@@ -545,9 +561,7 @@ async def benchmark(
                 model_id=session.model_id,
                 api_url=session.api_url,
                 max_output_len=args.max_output_len,
-                temperature=args.temperature,
-                top_p=args.top_p,
-                top_k=args.top_k,
+                sampling=args.sampling,
                 lora_manager=session.lora_manager,
                 run_prefix=run_prefix,
                 run_prefix_len=run_prefix_len,
@@ -582,9 +596,7 @@ async def benchmark(
                 ignore_first_turn_stats=args.ignore_first_turn_stats,
                 lora_manager=session.lora_manager,
                 warmup_delay_ms=args.chat_warmup_delay_ms,
-                temperature=args.temperature,
-                top_p=args.top_p,
-                top_k=args.top_k,
+                sampling=args.sampling,
                 randomize_session_start=args.randomize_session_start,
                 warmup_to_steady_state=args.warmup_to_steady_state,
                 warmup_oversample_factor=args.warmup_oversample_factor,
@@ -611,9 +623,7 @@ async def benchmark(
                 lora_manager=session.lora_manager,
                 warmup_delay_ms=args.chat_warmup_delay_ms,
                 max_concurrency=max_concurrency,
-                temperature=args.temperature,
-                top_p=args.top_p,
-                top_k=args.top_k,
+                sampling=args.sampling,
                 randomize_session_start=args.randomize_session_start,
                 warmup_to_steady_state=args.warmup_to_steady_state,
                 warmup_oversample_factor=args.warmup_oversample_factor,
@@ -626,10 +636,6 @@ async def benchmark(
                 out for outs in outputs_by_session.values() for out in outs
             ]
 
-        # Close pbar if it was created
-        if pbar is not None:
-            pbar.close()
-
         benchmark_duration = (
             time.perf_counter_ns() - benchmark_start_time
         ) / 1e9
@@ -638,6 +644,8 @@ async def benchmark(
         spec_decode_metrics_after = fetch_spec_decode_metrics(
             backend, session.base_url
         )
+    else:
+        spec_decode_metrics_after = None
     spec_decode_stats = None
     if (
         spec_decode_metrics_before is not None
@@ -732,28 +740,20 @@ async def benchmark(
             spec_decode_stats=spec_decode_stats,
         )
         if outputs_by_session is not None:
-            result = dataclasses.replace(
-                text_result,
-                session_server_stats={
-                    sid: [
-                        dataclasses.asdict(out.server_token_stats)
-                        for out in outs
-                    ]
-                    for sid, outs in sorted(
-                        outputs_by_session.items(),
-                        key=lambda kv: _session_sort_key(kv[0]),
-                    )
-                },
-            )
+            text_result.session_server_stats = {
+                sid: [out.server_token_stats for out in outs]
+                for sid, outs in sorted(
+                    outputs_by_session.items(),
+                    key=lambda kv: _session_sort_key(kv[0]),
+                )
+            }
         else:
-            result = dataclasses.replace(
-                text_result,
-                aggregate_server_stats=[
-                    dataclasses.asdict(out.server_token_stats)
-                    for out in all_outputs
-                    if isinstance(out, RequestFuncOutput)
-                ],
-            )
+            text_result.aggregate_server_stats = [
+                out.server_token_stats
+                for out in all_outputs
+                if isinstance(out, RequestFuncOutput)
+            ]
+        result = text_result
     if session.lora_manager is not None:
         result.lora_metrics = session.lora_manager.metrics
 
@@ -825,6 +825,13 @@ def _apply_workload_to_config(
             v = str(v)
         elif isinstance(v, str):
             v = os.path.expandvars(v)
+        # 'request-rate' from YAML can be a bare number; stringify so the
+        # config before-validator (comma-split strings) runs. 'max-concurrency'
+        # is handled in _load_workload_yaml instead.
+        # TODO(MXTOOLS-166): This should be handled through workload YAML being
+        # a Pydantic model instead, eventually.
+        if field_name == "request_rate" and isinstance(v, (int, float)):
+            v = str(v)
         logger.info(f"Applying workload YAML value: --{k}={v!r}")
         setattr(config, field_name, v)
 
@@ -947,8 +954,15 @@ def _load_workload_yaml(args: ServingBenchmarkConfig) -> None:
             workload[key] = path
     # Resolve max_concurrency: CLI > YAML.
     yaml_max_concurrency = workload.pop("max-concurrency", None)
-    if yaml_max_concurrency is not None and args.max_concurrency is None:
-        args.max_concurrency = str(yaml_max_concurrency)
+    if (
+        yaml_max_concurrency is not None
+        and "max_concurrency" not in args.model_fields_set
+    ):
+        # TODO(MXTOOLS-166): validate_assignment=True makes it so that this
+        # goes through Pydantic's validator, which converts as needed.
+        # Workload should itself be parsed with Pydantic so we don't need to
+        # defer validation like so.
+        args.max_concurrency = yaml_max_concurrency
     # Resolve num_prompts: CLI > YAML > default (deferred).
     cli_num_prompts = args.num_prompts is not None
     yaml_num_prompts = workload.pop("num-prompts", None)
@@ -984,7 +998,7 @@ def _apply_run_length_defaults(args: ServingBenchmarkConfig) -> None:
 
 def _apply_dynamic_num_prompts(
     args: ServingBenchmarkConfig,
-    concurrency_range: list[int | None],
+    concurrency_range: Sequence[int | None],
 ) -> bool:
     use_dynamic_num_prompts = (
         args.num_prompts_multiplier is not None
@@ -1132,8 +1146,8 @@ def _build_session(args: ServingBenchmarkConfig) -> BenchmarkSession:
 def _run_dry_run_sweep(
     args: ServingBenchmarkConfig,
     session: BenchmarkSession,
-    concurrency_range: list[int | None],
-    request_rate_range: list[float],
+    concurrency_range: Sequence[int | None],
+    request_rate_range: Sequence[float],
 ) -> Iterator[BenchmarkRunResult]:
     if not args.print_workload_stats:
         print_workload_stats(session.samples)
@@ -1181,12 +1195,10 @@ def _run_dry_run_sweep(
 def _run_benchmark_sweep(
     args: ServingBenchmarkConfig,
     session: BenchmarkSession,
-    concurrency_range: list[int | None],
-    request_rate_range: list[float],
     use_dynamic_num_prompts: bool,
 ) -> Iterator[BenchmarkRunResult]:
     # ---- Sweep loop ----
-    for mc in concurrency_range:
+    for mc in args.max_concurrency:
         if use_dynamic_num_prompts:
             assert args.num_prompts_multiplier is not None
             assert mc is not None
@@ -1196,13 +1208,7 @@ def _run_benchmark_sweep(
                 f" * {mc} = {args.num_prompts}"
             )
 
-        for rr in request_rate_range:
-            # Temporarily write the per-iteration values so that downstream
-            # code reading args.max_concurrency / args.request_rate sees the
-            # correct scalar value.
-            args.max_concurrency = str(mc) if mc is not None else None
-            args.request_rate = str(rr)
-
+        for rr in args.request_rate:
             iteration_results: list[
                 TextGenerationBenchmarkResult | PixelGenerationBenchmarkResult
             ] = []
@@ -1236,10 +1242,16 @@ def _run_benchmark_sweep(
                 model_id=session.model_id,
                 tokenizer_id=session.tokenizer_id,
                 request_rate=rr,
+                record_max_concurrency=mc,
             )
 
             # Output lengths recording (for the median iteration).
-            save_output_lengths(args, best_result, session.benchmark_task)
+            save_output_lengths(
+                args,
+                best_result,
+                session.benchmark_task,
+                iteration_config=(mc, rr),
+            )
 
             yield BenchmarkRunResult(
                 mc, rr, args.num_prompts or 0, result=best_result
@@ -1263,10 +1275,8 @@ def main_with_parsed_args(
     _load_workload_yaml(args)
     _apply_run_length_defaults(args)
 
-    concurrency_range = parse_comma_separated(args.max_concurrency, int_or_none)
-    request_rate_range = parse_comma_separated(args.request_rate, float)
     use_dynamic_num_prompts = _apply_dynamic_num_prompts(
-        args, concurrency_range
+        args, args.max_concurrency
     )
 
     session = _build_session(args)
@@ -1278,7 +1288,7 @@ def main_with_parsed_args(
 
     if args.dry_run:
         yield from _run_dry_run_sweep(
-            args, session, concurrency_range, request_rate_range
+            args, session, args.max_concurrency, args.request_rate
         )
         return
 
@@ -1286,13 +1296,7 @@ def main_with_parsed_args(
         args.host, args.port, timeout_s=args.server_ready_timeout_s
     )
 
-    yield from _run_benchmark_sweep(
-        args,
-        session,
-        concurrency_range,
-        request_rate_range,
-        use_dynamic_num_prompts,
-    )
+    yield from _run_benchmark_sweep(args, session, use_dynamic_num_prompts)
 
 
 def _extract_metadata_args(

@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from collections.abc import Sequence
 from dataclasses import dataclass, field
@@ -996,6 +997,121 @@ class KimiK2_5Model(
                 logits=model_outputs[0],
             )
 
+    def _collect_vision_encoder_request_metadata(
+        self,
+        context_batch: Sequence[KimiK2_5TextAndVisionContext],
+        uncached_contexts: Sequence[KimiK2_5TextAndVisionContext],
+        vision_inputs: dict[str, list[Buffer]],
+    ) -> dict[str, Any]:
+        """Collect debug metadata for a vision-encoder invocation."""
+        patch_size = int(self.model_config.vision_config.patch_size)
+        merge_cfg = self.model_config.vision_config.merge_kernel_size
+        if isinstance(merge_cfg, int):
+            merge_h, merge_w = merge_cfg, merge_cfg
+        else:
+            merge_h = int(merge_cfg[0])
+            merge_w = int(merge_cfg[1])
+        merge_sq = merge_h * merge_w
+
+        request_ids = [str(ctx.request_id) for ctx in context_batch]
+        total_images = sum(len(ctx.images) for ctx in context_batch)
+        next_images_total = sum(len(ctx.next_images) for ctx in context_batch)
+        context_sequence_lengths = [
+            {
+                "request_id": str(ctx.request_id),
+                "active_sequence_length": int(ctx.tokens.active_length),
+                "processed_sequence_length": int(ctx.tokens.processed_length),
+                "total_sequence_length": len(ctx.tokens),
+                "context_needs_vision_encoding": bool(
+                    ctx.needs_vision_encoding
+                ),
+                "image_count": len(ctx.images),
+                "next_image_count": len(ctx.next_images),
+            }
+            for ctx in context_batch
+        ]
+
+        per_image_metadata: list[dict[str, Any]] = []
+        image_counter = 0
+        for ctx in uncached_contexts:
+            for i, (img, thw) in enumerate(
+                zip(ctx.images, ctx.grid_thws, strict=True)
+            ):
+                if (
+                    img.image_hash is None
+                    or self._ve_cache.lookup(img.image_hash) is not None
+                ):
+                    continue
+
+                t = int(thw[0])
+                h = int(thw[1])
+                w = int(thw[2])
+                pixel_values_shape = [int(x) for x in img.pixel_values.shape]
+                per_image_metadata.append(
+                    {
+                        "request_id": str(ctx.request_id),
+                        "image_index_in_request": i,
+                        "image_index_in_uncached_batch": image_counter,
+                        "image_hash_present": img.image_hash is not None,
+                        "token_span": {
+                            "start_idx": int(img.start_idx),
+                            "end_idx": int(img.end_idx),
+                            "length": int(img.end_idx - img.start_idx),
+                        },
+                        "size_before_patching": {
+                            "temporal_frames": t,
+                            "height_px": h * patch_size,
+                            "width_px": w * patch_size,
+                        },
+                        "size_after_patching": {
+                            "patch_grid_thw": [t, h, w],
+                            "patch_tensor_shape": pixel_values_shape,
+                        },
+                        "size_after_patch_merger": {
+                            "merge_kernel_hw": [merge_h, merge_w],
+                            "merged_token_count": int((t * h * w) // merge_sq),
+                        },
+                    }
+                )
+                image_counter += 1
+
+        images_needing_encoding = len(per_image_metadata)
+        if vision_inputs["grid_thws"]:
+            expected_from_inputs = int(vision_inputs["grid_thws"][0].shape[0])
+        else:
+            expected_from_inputs = 0
+
+        return {
+            "request_ids": request_ids,
+            "batch_size": len(context_batch),
+            "uncached_context_count": len(uncached_contexts),
+            "vision_cache_enabled": bool(self._ve_cache.enabled),
+            "vision_input_dtype": str(self.model_config.vision_config.dtype),
+            "vision_input_shapes": {
+                key: [int(x) for x in values[0].shape] if values else []
+                for key, values in vision_inputs.items()
+            },
+            "images": {
+                "total_images_in_batch": total_images,
+                "next_images_total": next_images_total,
+                "images_needing_encoding": images_needing_encoding,
+                "images_not_needing_encoding": (
+                    total_images - images_needing_encoding
+                ),
+                "images_already_encoded_in_prior_steps": (
+                    total_images - next_images_total
+                ),
+                "images_skipped_due_to_cache": max(
+                    0, next_images_total - images_needing_encoding
+                ),
+                "images_needing_encoding_from_vision_input_shapes": (
+                    expected_from_inputs
+                ),
+            },
+            "context_sequence_lengths": context_sequence_lengths,
+            "per_image_metadata": per_image_metadata,
+        }
+
     def _prepare_vision_inputs(
         self,
         context_batch: Sequence[KimiK2_5TextAndVisionContext],
@@ -1211,14 +1327,35 @@ class KimiK2_5Model(
             vision_inputs = self._prepare_vision_inputs(uncached_contexts)
             assert vision_inputs is not None
 
-            vision_embeds = self.vision_model.execute(
-                *vision_inputs["pixel_values"],
-                *vision_inputs["grid_thws"],
-                *vision_inputs["cu_seqlens"],
-                *vision_inputs["max_seqlen"],
-                *vision_inputs["vision_position_ids"],
-                *self.signal_buffers,
+            vision_metadata = self._collect_vision_encoder_request_metadata(
+                context_batch=context_batch,
+                uncached_contexts=uncached_contexts,
+                vision_inputs=vision_inputs,
             )
+            try:
+                vision_embeds = self.vision_model.execute(
+                    *vision_inputs["pixel_values"],
+                    *vision_inputs["grid_thws"],
+                    *vision_inputs["cu_seqlens"],
+                    *vision_inputs["max_seqlen"],
+                    *vision_inputs["vision_position_ids"],
+                    *self.signal_buffers,
+                )
+            except Exception as err:
+                failure_payload = {
+                    "stage": "prepare_initial_token_inputs",
+                    "error": {
+                        "type": type(err).__name__,
+                        "message": str(err),
+                        "repr": repr(err),
+                    },
+                    "metadata": vision_metadata,
+                }
+                logger.exception(
+                    "Vision encoder failed. Request metadata: %s",
+                    json.dumps(failure_payload, sort_keys=True),
+                )
+                raise
             assert len(vision_embeds) == len(self.devices)
 
             merge_size = self.model_config.vision_config.merge_kernel_size

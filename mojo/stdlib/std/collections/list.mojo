@@ -29,6 +29,7 @@ from std.os import abort
 from std.sys import size_of
 from std.sys.intrinsics import _type_is_eq, _type_is_eq_parse_time
 
+from std.memory.alloc import alloc, free, Layout
 from std.memory import Pointer, destroy_n, memcpy, uninit_copy_n, uninit_move_n
 from std.builtin.builtin_slice import ContiguousSlice, StridedSlice
 from .optional import Optional
@@ -397,7 +398,7 @@ struct List[T: Copyable](
             capacity: The requested capacity of the list.
         """
         if capacity:
-            self._data = alloc[Self.T](capacity)
+            self._data = alloc(Layout[Self.T](count=capacity))
         else:
             self._data = Self._UnsafePointerType.unsafe_dangling()
         self._len = 0
@@ -498,7 +499,7 @@ struct List[T: Copyable](
         destroy_n(self._data.bitcast[TDestructible](), count=len(self))
         if self.capacity > 0:
             self._annotate_delete()
-            self._data.free()
+            free(self._data, Layout[Self.T](count=self.capacity))
 
     # ===-------------------------------------------------------------------===#
     # Operator dunders
@@ -736,7 +737,7 @@ struct List[T: Copyable](
 
     @no_inline
     def _realloc(mut self, new_capacity: Int):
-        var new_data = alloc[Self.T](new_capacity)
+        var new_data = alloc(Layout[Self.T](count=new_capacity))
 
         uninit_move_n[overlapping=False](
             dest=new_data, src=self._data, count=len(self)
@@ -744,7 +745,7 @@ struct List[T: Copyable](
 
         if self.capacity > 0:
             self._annotate_delete()
-            self._data.free()
+            free(self._data, Layout[Self.T](count=self.capacity))
         self._data = new_data
         self.capacity = new_capacity
         self._annotate_new()

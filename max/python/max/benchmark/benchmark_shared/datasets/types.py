@@ -99,6 +99,7 @@ class PixelGenerationImageOptions:
     guidance_scale: float | None = None
     negative_prompt: str | None = None
     seed: int | None = None
+    num_frames: int | None = None
 
 
 @dataclass

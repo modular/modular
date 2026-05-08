@@ -1,5 +1,5 @@
 ---
-title: MAX nightly
+title: Nightly (v26.4)
 ---
 
 This version is still a work in progress.
@@ -30,8 +30,6 @@ This version is still a work in progress.
 ### `max` CLI
 
 - Added `--devices=gpu:all` to use every visible GPU (including MAX Serve).
-- Removed the `default` value for `--devices`; omit `--devices` to use the model
-  or config default.
 
 ### Python API
 
@@ -39,22 +37,24 @@ This version is still a work in progress.
   manager instead of `start`/`stop` and now exposes `get_stats()` instead of
   `dump_stats()`, matching the interface of `GPUDiagContext`.
 
-## Breaking changes
-
-### Mojo API
-
-### Custom ops
-
 ## MAX kernels
 
-<!-- Please place Layout/LayoutTensor changes under "Library changes" in the
-     **Mojo changelog**, since the layout package is packaged with and
-     documented alongside Mojo. -->
+## Breaking changes
 
-## 🛠️ Fixed
+- `max/python/max/benchmark/benchmark_throughput.py`, deprecated in v0.26.3,
+  has been removed.
+
+## Fixes
+
+- `MODULAR_DEBUG=ir-output-dir=<dir>` (and the equivalent
+  `[max-debug] ir-output-dir = <dir>` config-file entry and
+  `InferenceSession.debug.ir_output_dir = <dir>` Python setter) now
+  actually dumps per-stage MLIR files to the configured directory. The
+  option was previously parsed but no compiler stage consulted it, so
+  users had to fall back to the legacy `MODULAR_MAX_TEMPS_DIR` env var.
+  Both spellings are now honored.
 
 ## Mojo language
 
 For all the updates to the Mojo language, standard library, and tools,
-including all GPU programming and `Layout`/`LayoutTensor` changes, see the [Mojo
-changelog](https://www.mojolang.org/releases)
+see the [Mojo release notes](https://mojolang.org/releases).

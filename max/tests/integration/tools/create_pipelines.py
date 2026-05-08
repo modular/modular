@@ -1942,6 +1942,17 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         },
         device_encoding_map={"gpu": ["float4_e2m1fnx2"]},
     ),
+    "amd/MiniMax-M2.7-MXFP4": GenericOracle(
+        model_path="amd/MiniMax-M2.7-MXFP4",
+        config_params={
+            "max_length": 516,
+            "trust_remote_code": True,
+            "max_batch_input_tokens": 512,
+            "ep_size": 8,
+            "data_parallel_degree": 8,
+        },
+        device_encoding_map={"gpu": ["float4_e2m1fnx2"]},
+    ),
     "HKUSTAudio/Llasa-8B": GenericOracle(
         model_path="HKUSTAudio/Llasa-8B",
         config_params={

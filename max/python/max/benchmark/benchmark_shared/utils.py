@@ -34,7 +34,7 @@ from transformers import (
 def wait_for_server_ready(
     host: str,
     port: int,
-    path: str = "v1/models",
+    path: str = "health",
     *,
     timeout_s: int = 120 * 60,
     interval_s: float = 5.0,

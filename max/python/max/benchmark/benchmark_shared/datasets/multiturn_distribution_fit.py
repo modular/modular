@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import logging
 import random
+from dataclasses import dataclass
 
 import numpy as np
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
@@ -31,6 +32,7 @@ from .types import (
     ChatSamples,
     ChatSession,
     SessionMessage,
+    SharedContext,
     estimate_num_tokens,
 )
 
@@ -151,6 +153,21 @@ def _system_prompt_template(variant: int) -> str:
     )
 
 
+@dataclass(frozen=True)
+class ScaledUserMessage:
+    """User message scaled to a per-turn token budget, with optional sys prefix.
+
+    `content` is the full text sent to the model
+    (`sys_prefix.text + "\\n\\n" + user_body_scaled` when `sys_prefix` is set).
+    `sys_prefix` describes the leading sys-prefix slice, or `None` when
+    `sys_prompt_ratio <= 0`.
+    """
+
+    content: str
+    num_tokens: int
+    sys_prefix: SharedContext | None
+
+
 def build_scaled_user_message(
     tokenizer: PreTrainedTokenizerBase,
     user_body: str,
@@ -158,23 +175,41 @@ def build_scaled_user_message(
     sys_prompt_ratio: float,
     sys_variant: int,
     min_input_len: int,
-) -> tuple[str, int]:
+) -> ScaledUserMessage:
     """Optional synthetic system prefix + body scaled to the target token budget."""
     sys_len, user_len = _split_sys_user_token_targets(
         target_input_tokens, sys_prompt_ratio, min_input_len
     )
     parts: list[str] = []
+    sys_prefix: SharedContext | None = None
     if sys_len > 0:
-        sys_text, _ = _text_scaled_to_token_length(
+        sys_text, sys_tokens = _text_scaled_to_token_length(
             tokenizer, _system_prompt_template(sys_variant), sys_len, min_len=1
         )
         parts.append(sys_text)
+        sys_prefix = SharedContext(text=sys_text, num_tokens=sys_tokens)
     user_text, _ = _text_scaled_to_token_length(
         tokenizer, user_body, user_len, min_len=min_input_len
     )
     parts.append(user_text)
     combined = "\n\n".join(parts)
-    return combined, estimate_num_tokens(tokenizer, combined)
+    return ScaledUserMessage(
+        content=combined,
+        num_tokens=estimate_num_tokens(tokenizer, combined),
+        sys_prefix=sys_prefix,
+    )
+
+
+def _register_longest_sys_prompt(
+    warmup_dict: dict[int, SharedContext],
+    variant_idx: int,
+    sys_prefix: SharedContext,
+) -> None:
+    """Update warmup_dict[variant_idx] when sys_prefix.num_tokens exceeds the prior entry."""
+    prev = warmup_dict.get(variant_idx)
+    prev_tokens = prev.num_tokens if prev else 0
+    if prev_tokens < sys_prefix.num_tokens:
+        warmup_dict[variant_idx] = sys_prefix
 
 
 def build_chat_samples_from_user_text_pool(
@@ -270,6 +305,7 @@ def build_chat_samples_from_user_text_pool(
         )
 
     sessions: list[ChatSession] = []
+    warmup_dict: dict[int, SharedContext] = {}
     idx = 0
     max_variant = max(1, max_num_unique_sys_prompt)
 
@@ -296,7 +332,7 @@ def build_chat_samples_from_user_text_pool(
             target_out = max(round(out_dist.sample_value()), min_output_len)
 
             sys_variant = (session_id + turn_i) % max_variant
-            user_text, user_tokens = build_scaled_user_message(
+            msg = build_scaled_user_message(
                 tokenizer,
                 prompt_text,
                 target_in,
@@ -305,7 +341,10 @@ def build_chat_samples_from_user_text_pool(
                 min_input_len,
             )
 
-            if context_tokens + user_tokens + target_out > max_context_length:
+            if (
+                context_tokens + msg.num_tokens + target_out
+                > max_context_length
+            ):
                 logger.info(
                     "%s session %s: stopping at turn %s (planned %s): "
                     "context %s + turn %s+%s exceeds max %s",
@@ -314,11 +353,18 @@ def build_chat_samples_from_user_text_pool(
                     turn_i,
                     n_turns,
                     context_tokens,
-                    user_tokens,
+                    msg.num_tokens,
                     target_out,
                     max_context_length,
                 )
                 break
+
+            # Register after the context-length check; that bound check also
+            # implicitly ensures sys_prefix stays within max_context_length.
+            if msg.sys_prefix is not None:
+                _register_longest_sys_prompt(
+                    warmup_dict, sys_variant, msg.sys_prefix
+                )
 
             idx += 1
 
@@ -331,8 +377,8 @@ def build_chat_samples_from_user_text_pool(
             messages.append(
                 SessionMessage(
                     source="user",
-                    content=user_text,
-                    num_tokens=user_tokens,
+                    content=msg.content,
+                    num_tokens=msg.num_tokens,
                 )
             )
             messages.append(
@@ -343,7 +389,7 @@ def build_chat_samples_from_user_text_pool(
                     delay_until_next_message=delay_ms,
                 )
             )
-            context_tokens += user_tokens + target_out
+            context_tokens += msg.num_tokens + target_out
 
         if len(messages) >= 2:
             sessions.append(ChatSession(session_id, messages))
@@ -356,4 +402,6 @@ def build_chat_samples_from_user_text_pool(
             num_sessions,
         )
 
-    return ChatSamples(chat_sessions=sessions)
+    return ChatSamples(
+        chat_sessions=sessions, shared_contexts=list(warmup_dict.values())
+    )

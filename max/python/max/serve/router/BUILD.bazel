@@ -20,6 +20,7 @@ modular_py_library(
         requirement("aiofiles"),
         requirement("fastapi"),
         requirement("httpx"),
+        requirement("llguidance"),
         requirement("openai"),
         requirement("pydantic"),
         requirement("sse-starlette"),

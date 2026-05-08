@@ -44,8 +44,6 @@ from transformers import (
 )
 
 if TYPE_CHECKING:
-    from max.interfaces import ToolParser
-
     from .audio_generator_pipeline import AudioGeneratorPipeline
     from .config import PipelineConfig
     from .pipeline_executor import PipelineExecutor
@@ -341,14 +339,18 @@ class SupportedArchitecture:
     the max sequence length of the model.
     """
 
-    tool_parser: type[ToolParser] | None = None
-    """Optional tool parser class for parsing tool calls from model responses.
+    tool_parser: str | None = None
+    """Optional default tool parser name for this architecture.
 
-    When set, the serving layer will use this parser to extract tool calls
-    from the model's output. Different model architectures may use different
-    tool calling formats (e.g., Llama uses JSON, Kimi K2.5 uses structural tags).
+    The name must correspond to a parser registered via
+    :func:`max.pipelines.lib.tool_parsing.register`. When set, the pipeline
+    config will fall back to this value for ``runtime.tool_parser`` if
+    the user did not explicitly configure one. Different model architectures
+    emit tool calls in different formats (e.g., Kimi K2.5 uses structural
+    tags), so the appropriate default is architecture-specific.
 
-    If None, the default LlamaToolParser will be used.
+    If None, no tool parser is enabled by default and the serving layer
+    falls back to its baseline parser.
     """
 
     reasoning_parser: str | None = None

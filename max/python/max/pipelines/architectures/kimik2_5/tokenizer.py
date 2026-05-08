@@ -224,7 +224,7 @@ class KimiK2_5VLTokenizer(TextAndVisionTokenizer):
         if request.prompt is not None:
             prompt = request.prompt
         elif request.messages:
-            prompt = self.apply_chat_template(request.messages)
+            prompt = self.apply_chat_template(request.messages, request.tools)
             add_special_tokens = False
         else:
             raise ValueError(f"{request} does not provide messages or prompt.")
@@ -306,6 +306,7 @@ class KimiK2_5VLTokenizer(TextAndVisionTokenizer):
         json_schema = (
             json.dumps(request.response_format.get("json_schema"))
             if request.response_format
+            and request.response_format.get("json_schema")
             else None
         )
 

@@ -161,6 +161,13 @@ PIPELINES = [
         "timeout": 120,  # 2 hours
     },
     {
+        "pipeline": "amd/MiniMax-M2.7-MXFP4",
+        "runner": "modrunner-mi355-4x",
+        "gpu_flag": "--devices gpu:0,1,2,3",
+        "instance_type": "bm.gpu.mi355x.4",
+        "timeout": 120,  # 2 hours
+    },
+    {
         "pipeline": "nvidia/DeepSeek-V3.1-NVFP4-longbench-v2",
         "runner": "modrunner-b200-8x",
         "gpu_flag": "--devices gpu:0,1,2,3,4,5,6,7",

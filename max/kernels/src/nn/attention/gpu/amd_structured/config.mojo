@@ -44,16 +44,19 @@ struct AMDStructuredConfig[
 
     @staticmethod
     @always_inline
+    def heads_per_tile() -> Int:
+        # MLA: tile spans `BM` heads of the single latent kv (block_idx.y is
+        # the tile idx). MHA: tile spans `group` heads of one kv head
+        # (block_idx.y is the kv-head idx).
+        return Self.config.block_m() if Self.mla_mode else Self.group
+
+    @staticmethod
+    @always_inline
     def q_head_idx() -> Int:
         comptime if Self.token_gen:
-            comptime if Self.mla_mode:
-                # MLA decode: tile-level head idx (masks are head-agnostic
-                # because all heads share the same latent KV cache).
-                return Int(block_idx.y)
-            else:
-                comptime mma_shape = Self.get_mma_shape()
-                var group_idx = umod(lane_id(), mma_shape[0])
-                return block_idx.y * Self.group + group_idx
+            comptime mma_shape = Self.get_mma_shape()
+            var lane_in_row = umod(lane_id(), mma_shape[0])
+            return Int(block_idx.y) * Self.heads_per_tile() + lane_in_row
         else:
             return block_idx.x
 

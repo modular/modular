@@ -188,6 +188,13 @@ def _model_from_typeddict(name: str, td: type) -> type[BaseModel]:
     """
     fields: dict[str, Any] = {}
     for field_name, annotation in get_type_hints(td).items():
+        # Strip Required/NotRequired qualifiers (valid in TypedDict definitions
+        # but rejected by Pydantic's create_model on Python 3.10).
+        if getattr(get_origin(annotation), "_name", "") in (
+            "Required",
+            "NotRequired",
+        ):
+            (annotation,) = get_args(annotation)
         if get_origin(annotation) is collections.abc.Iterable:
             (inner,) = get_args(annotation)
             annotation = list[inner]  # type: ignore[valid-type]

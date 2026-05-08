@@ -28,6 +28,8 @@ macOS and Linux (see the [system requirements](/docs/requirements/)).
 Or add Mojo to a project:
 
     ```sh
+    uv init hello-world
+    cd hello-world
     uv add mojo \
       --index https://whl.modular.com/nightly/simple/ \
       --prerelease allow
@@ -38,7 +40,8 @@ Or add Mojo to a project:
 
     ```sh
     pixi init hello-world \
-    -c https://conda.modular.com/max-nightly/ -c conda-forge
+      -c https://conda.modular.com/max-nightly/ -c conda-forge
+    cd hello-world
     pixi add mojo
     ```
 
@@ -59,6 +62,8 @@ Or add Mojo to a project:
 Or add Mojo to a project:
 
     ```sh
+    uv init hello-world
+    cd hello-world
     uv add mojo
     ```
 
@@ -67,7 +72,7 @@ Or add Mojo to a project:
 
     ```sh
     pixi init hello-world \
-    -c https://conda.modular.com/max/ -c conda-forge
+      -c https://conda.modular.com/max/ -c conda-forge
     cd hello-world
     pixi add mojo
     ```
@@ -87,8 +92,10 @@ Mojo extension from:
 
 ## Get Mojo skills
 
-Use our Mojo skills with your AI tools to generate high-performance Mojo code
-that follows best practices.
+Mojo agent skills keep your AI coding assistants aligned with the latest
+language updates and best practices.
+
+Install with:
 
 ```sh
 npx skills add modular/skills

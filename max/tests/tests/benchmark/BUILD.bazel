@@ -14,7 +14,6 @@ modular_py_test(
         ["*.py"],
         exclude = [
             "test_benchmark_datasets_functional.py",
-            "test_benchmark_throughput_*.py",
         ],
     ),
     deps = [
@@ -48,36 +47,5 @@ modular_py_test(
         "//max/python/max/pipelines/lib",
         "//max/tests/integration:hf_repo_lock",
         requirement("transformers"),
-    ],
-)
-
-modular_py_test(
-    name = "test_benchmark_throughput_cpu",
-    size = "large",
-    srcs = glob(
-        ["test_benchmark_throughput_*_cpu.py"],
-    ),
-    data = [
-        "//max/python/max/benchmark:benchmark_throughput",
-        "//max/python/max/benchmark:python_files",
-        "//max/python/max/benchmark:yaml_files",
-    ],
-    env = {
-        "BENCHMARK_THROUGHPUT_BINARY": "$(location //max/python/max/benchmark:benchmark_throughput)",
-    },
-    tags = [
-        "no-sandbox",
-        "requires-network",
-    ],
-    target_compatible_with = select({
-        # TODO(MAXSERV-1036): Disabled due to timeouts on aarch64 machines, fix this
-        "//:linux_aarch64": ["@platforms//:incompatible"],
-        # Disabled on macOS: exceeds 600s CI timeout cap (full model inference too slow)
-        "@platforms//os:macos": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),
-    deps = [
-        "//max/python/max/pipelines/lib",
-        "//max/tests/integration:hf_repo_lock",
     ],
 )

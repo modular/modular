@@ -338,18 +338,14 @@ class Linear(Module, Shardable):
                 self.weight_scale.sharding_strategy = strategy
 
         if self.bias:
-            # Only truly shard the bias across devices when the weight sharding
-            # is rowwise or stacked_qkv (output dimension is split per device).
-            # Otherwise, when the weight sharding is columnwise, set the bias to
-            # replicate so that it is complete on device 0.
-            # Linear.shard handles setting bias to None on devices >= 1 to
-            # prevent bias duplication, which would be incorrect.
-            if strategy.is_rowwise:
+            # When the weight is sharded along axis 0 the output dim is split
+            # per device, so the bias (1D, indexed by output dim) is sharded
+            # by the same strategy. Otherwise the output dim is unchanged, so
+            # replicate the bias. Linear.shard handles setting bias to None
+            # on devices >= 1 to prevent bias duplication, which would be
+            # incorrect.
+            if strategy.sharded_axis == 0:
                 self.bias.sharding_strategy = strategy
-            elif strategy.is_stacked_qkv:
-                self.bias.sharding_strategy = ShardingStrategy.rowwise(
-                    strategy.num_devices
-                )
             else:
                 self.bias.sharding_strategy = ShardingStrategy.replicate(
                     strategy.num_devices
@@ -369,9 +365,13 @@ class Linear(Module, Shardable):
                 "Linear layer cannot be sharded because no sharding strategy was provided."
             )
 
-        # Calculate sharded dimensions.
+        # Calculate sharded dimensions. The placeholder Linear constructed
+        # below has its weight overwritten with the true sharded weight, so
+        # this only needs to be a reasonable approximation of the per-device
+        # output dim — for uneven distributions the actual shape comes from
+        # ``weight_shard``.
         strategy = self.weight.sharding_strategy
-        if strategy.is_rowwise or strategy.is_stacked_qkv:
+        if strategy.sharded_axis == 0:
             out_dim = int(self.weight.shape[0]) // strategy.num_devices
         else:
             out_dim = int(self.weight.shape[0])

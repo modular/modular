@@ -72,7 +72,14 @@ __extension Attention:
         ), "depth must be a multiple of BK"
         comptime assert Self.BN % Self.BK == 0, "BN must be a multiple of BK"
 
-        comptime k_swizzle = _get_k_swizzle[Self.mma_shape[0], Self.BK]()
+        # MLA-alias mode: load K unswizzled so PV can read V from K's SMEM
+        # without a V DMA. QK reads then take LDS bank conflicts on K.
+        # TODO(KERN-2875): try to recover the K-side swizzle for QK reads.
+        comptime k_swizzle = (
+            Optional[Swizzle](None) if Self.mla_kv_alias else _get_k_swizzle[
+                Self.mma_shape[0], Self.BK
+            ]()
+        )
 
         var warp_id = UInt32(
             readfirstlane(bitcast[DType.int32](UInt32(get_warp_id())))
@@ -196,7 +203,8 @@ __extension Attention:
 
         # Advance iterators and mask tracking to partition start.
         k_buffer.kv_cache_iter.tile_start_row = start
-        v_dma_buffer.kv_cache_iter.tile_start_row = start
+        comptime if not Self.mla_kv_alias:
+            v_dma_buffer.kv_cache_iter.tile_start_row = start
         self.kv_start_row = UInt32(start)
 
         # Pre-scale Q by (scale * log2e).  Default on for bf16: the deferred
@@ -279,7 +287,7 @@ __extension Attention:
                 _ = k_buffer.load_from_dram[1 - slot]()
             else:
                 _ = k_buffer.load_from_dram[0]()
-            comptime if not shared_kv:
+            comptime if not shared_kv and not Self.mla_kv_alias:
                 _ = v_dma_buffer.load_from_dram[0]()
 
         @always_inline
@@ -325,7 +333,7 @@ __extension Attention:
             s_waitcnt[lgkmcnt=0]()
             barrier()
 
-            comptime if shared_kv:
+            comptime if shared_kv and not Self.mla_kv_alias:
                 # K consumed + P synced.  Load V into shared SMEM
                 # (overwrites K).  All warps finished K LDS reads above.
                 _ = v_dma_buffer.load_from_dram[0]()
@@ -355,9 +363,10 @@ __extension Attention:
         var num_tiles = ceildiv(end - start, Self.BN)
 
         # Prologue: load first tile's K (slot 0).  V loaded in parallel
-        # when separate SMEM, or mid-tile when shared.
+        # when separate SMEM, or mid-tile when shared.  In mla_kv_alias
+        # mode, K==V and K's no-swizzle SMEM image already serves PV.
         _ = k_buffer.load_from_dram[0]()
-        comptime if not shared_kv:
+        comptime if not shared_kv and not Self.mla_kv_alias:
             _ = v_dma_buffer.load_from_dram[0]()
 
         comptime if double_buffer_k_only:

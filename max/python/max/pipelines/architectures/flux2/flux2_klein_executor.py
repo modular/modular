@@ -246,6 +246,10 @@ class Flux2KleinExecutor(
             if encoding == "float4_e2m1fnx2"
             else supported_encoding_dtype(encoding)
         )
+        if len(transformer_config.device_specs) != 1:
+            raise ValueError(
+                "FLUX.2-Klein is only supported on a single device"
+            )
         model_devices = load_devices(transformer_config.device_specs)
         self._model_device: Device = model_devices[0]
         self._in_channels: int = 128

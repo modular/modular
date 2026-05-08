@@ -10,13 +10,26 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 ##===----------------------------------------------------------------------===##
-model:
-  model_path: deepseek-ai/DeepSeek-R1-0528
-  device_specs: [0, 1, 2, 3, 4, 5, 6, 7]
-  data_parallel_degree: 8
-  kv_cache:
-    device_memory_utilization: 0.8
 
-runtime:
-  ep_size: 8
-  max_batch_input_tokens: 1024
+# shellcheck disable=SC2034  # Variables are used when sourced
+batch_size=64
+max_length=50000
+
+extra_pipelines_args=(
+  --ep-size 4
+  --data-parallel-degree 4
+  --max-batch-input-tokens 1024
+  --trust-remote-code
+)
+extra_lm_eval_args=(
+  --apply_chat_template
+  --fewshot_as_multiturn
+  "--gen_kwargs=max_gen_toks=4096,seed=42,temperature=0"
+)
+
+# Increase generation timeout to 5000s
+extra_lm_model_args=(
+  timeout=5000
+)
+
+tasks=gsm8k_cot_llama

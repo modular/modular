@@ -49,19 +49,46 @@ First, consider that several parts of this repository currently do not accept
 contributions. You should refer to the README or CONTRIBUTING file nearest the
 code you're interested in.
 
-We also want to be sure that you spend your time efficiently and prepare
-changes that aren’t controversial and get stuck in long rounds of reviews. So
-if the change is non-trivial, please submit an issue or write a proposal, as
-described in the corresponding sections.
-
-For example, we accept contributions to the following sections where you can
-find specific contribution guidelines:
+We accept contributions to the following sections, each of which has its own
+contribution guidelines:
 
 - [Mojo standard library](mojo/CONTRIBUTING.md)
 - [MAX API and models](/max/CONTRIBUTING.md)
 - [MAX AI kernels](/max/kernels/CONTRIBUTING.md)
 - [Code examples](examples#contributing)
 - [Mojo documentation](mojo/docs#contributing)
+
+#### Please open an issue before opening a pull request
+
+We want your time to be well spent, and we want to be able to give your PR
+the review it deserves. The best way to make both of those things happen is
+to talk with us *before* you start writing code.
+
+For anything beyond a small, obvious fix, please open a GitHub issue (or, for
+larger changes, a [proposal](mojo/CONTRIBUTING.md#proposals)) that describes
+the problem you're solving and the approach you have in mind. A maintainer
+will respond to let you know whether the change aligns with where we're
+headed, suggest alternatives, or flag anything you should know before
+investing the time. Once a maintainer has signaled that the change is a good
+fit — typically by adding the `accepted` label or by leaving a comment
+giving the go-ahead — you're clear to start work.
+
+What counts as a "small, obvious fix" where you can skip straight to a PR:
+
+- Typos and grammar fixes in documentation or comments.
+- One- or two-line bug fixes with an obvious root cause and a clear test.
+- Small, localized documentation clarifications.
+
+Everything else — new APIs, refactors, performance work, behavior changes,
+anything touching public interfaces, or anything over ~100 lines — benefits
+from a conversation first. If you're unsure which bucket your change falls
+into, please err on the side of opening an issue; we're happy to help you
+scope it.
+
+If you open a non-trivial PR without a linked, maintainer-approved issue, we
+may ask you to pause the PR and file an issue so we can align on the
+approach. This isn't a rejection of your contribution — it's us trying to
+make sure your work lands rather than stalling in review.
 
 ### Step 2: Create a pull request
 
@@ -204,9 +231,10 @@ pull request:
    Now fill out the pull request details in the GitHub UI:
 
    - Add a short commit title describing the change.
-   - Add a detailed commit description that includes rationalization for the
-     change and/or explanation of the problem that it solves, with a link to any
-     relevant GitHub issues.
+   - Fill out the [pull request template](.github/PULL_REQUEST_TEMPLATE.md).
+     In particular, link the GitHub issue that was agreed upon in
+     [Step 1](#step-1-evaluate-and-get-buy-in-on-the-change) (for example,
+     `Fixes #1234`) and write a clear motivation for the change.
 
      Click **Create pull request**.
 

@@ -32,7 +32,6 @@ from max.experimental.nn import Module as ModuleV3
 from max.nn.hooks import PrintHook
 from max.nn.layer import Module
 from max.pipelines.lib.device_specs import (
-    default_device_specs,
     device_specs_from_normalized_device_handle,
     normalize_device_specs_input,
 )
@@ -366,7 +365,7 @@ def load_intermediate_tensors(
     model: str,
     framework: str,
     output_dir: Path = Path("/tmp/intermediate_tensors/torch"),
-    device_type: str | None = None,
+    device_type: str = "default",
     encoding_name: pipelines.SupportedEncoding | None = None,
 ) -> dict[str, torch.Tensor]:
     """Run a Transformers model using Torch with print hooks enabled and return intermediate tensors as a dictionary mapping tensor name to torch.Tensor.
@@ -375,7 +374,7 @@ def load_intermediate_tensors(
         model: Hugging Face model id (e.g., "google/gemma-3-1b-it").
         framework: Framework to run the model on (e.g., "torch", "max").
         dir: Output directory where Torch print hooks will write .pt files; may contain subdirectories.
-        device_type: Device selector passed through DevicesOptionType (e.g., "gpu", "cpu", "gpu:0,1,2").
+        device_type: Device selector passed through DevicesOptionType (e.g., "default", "gpu", "cpu", "gpu:0,1,2").
         encoding_name: Optional explicit encoding/dtype (e.g., "bfloat16"). If None, the pipeline default is used.
 
     Returns:
@@ -386,12 +385,8 @@ def load_intermediate_tensors(
         pipeline_name=model,
         framework_name=framework,
         output_path=output_dir,
-        device_specs=(
-            default_device_specs()
-            if device_type is None
-            else device_specs_from_normalized_device_handle(
-                normalize_device_specs_input(device_type)
-            )
+        device_specs=device_specs_from_normalized_device_handle(
+            normalize_device_specs_input(device_type)
         ),
         encoding_name=encoding_name if encoding_name else None,
     )
@@ -420,7 +415,7 @@ def get_torch_testdata(
     model: str,
     module_name: str,
     output_dir: Path = Path("/tmp/intermediate_tensors/torch"),
-    device_type: str | None = None,
+    device_type: str = "default",
     encoding_name: pipelines.SupportedEncoding | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Get input and output tensors for a specific module from a torch model run.
@@ -436,7 +431,7 @@ def get_torch_testdata(
                     The "model." prefix is added automatically. Pass empty string for
                     the top-level model.
         output_dir: Output directory where Torch print hooks write .pt files.
-        device_type: Device selector passed through DevicesOptionType (e.g., "gpu", "cpu").
+        device_type: Device selector passed through DevicesOptionType (e.g., "default", "gpu").
         encoding_name: Optional explicit encoding/dtype (e.g., "bfloat16").
 
     Returns:

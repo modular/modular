@@ -61,6 +61,7 @@ DISABLE = set(RUNNERS)
 HF_MODELS: dict[str, set[str]] = {
     "allenai/Olmo-3-7B-Instruct": MULTI | {"max"},
     "allenai/olmOCR-2-7B-1025-FP8": MULTI | {"sglang"},
+    "amd/MiniMax-M2.7-MXFP4": NON_XL | {"8xB200"},
     "ByteDance-Seed/academic-ds-9B": MULTI | {"max", "max-ci", "sglang@B200", "vllm@B200"},  # SERVOPT-1120
     "deepseek-ai/DeepSeek-R1-0528": NON_XL | {"max", "sglang", "8xMI355"},  # 8xMI355: needs nvshmem
     "deepseek-ai/DeepSeek-V2-Lite-Chat": MULTI | {"max", "max-ci", "vllm@B200"},  # SERVOPT-1120
@@ -102,8 +103,9 @@ HF_MODELS: dict[str, set[str]] = {
     "unsloth/gpt-oss-20b-BF16": XL | {"2xMI355"},
 }
 
-# Models tested with custom MAX recipe presets. MODEL_RECIPES in
-# smoke_test.py maps each alias to its reusable recipe config.
+# Models tested with custom MAX serve flags. MODEL_ALIASES in
+# smoke_test.py maps each alias back to the real HuggingFace model
+# path and injects the appropriate serve args.
 CUSTOM_MODELS: dict[str, set[str]] = {
     "meta-llama/Llama-3.1-8B-Instruct__modulev3": MULTI,
     "meta-llama/Llama-3.2-1B-Instruct__modulev3": MULTI,
