@@ -14,17 +14,21 @@
 
 For a PR-scoped diff between BASE_REF and HEAD_REF, identifies:
 
-* MISSING: symbols added to a public module's ``__all__`` that have no
+* MISSING:   symbols newly added to a module's public surface with no
   corresponding entry in any RST under ``max/python/docs/``.
-* STALE:   symbols removed from ``__all__`` that are still referenced by
-  an RST file.
+* STALE:     symbols removed from a module's public surface that are
+  still referenced by an RST file.
+* AMBIGUOUS: top-level non-underscore names added without an explicit
+  visibility declaration (not in any ancestor's ``__all__`` and not
+  re-exported via an ancestor ``__init__.py``).
 
 Public scoping rules (mirroring the docs build's filtering in
 ``max/python/docs/conf.py.in``):
 
 * A module is public iff no segment of its dotted path starts with ``_``.
-* A symbol is public iff it is listed in its module's ``__all__`` and does
-  not start with ``_``.
+* A symbol is public iff it is listed in some ancestor's ``__all__`` or
+  re-exported via an ancestor ``__init__.py``. Top-level non-underscore
+  names with no such declaration are AMBIGUOUS.
 * A symbol re-exported by a parent ``__init__.py`` is canonicalized to
   that parent (e.g. ``max.nn.linear.Linear`` -> ``max.nn.Linear`` when
   ``max.nn`` re-exports ``Linear`` from ``.linear``).
@@ -198,6 +202,33 @@ def _derive_public_names(
     return out
 
 
+def _parse_top_level(source: str) -> set[str]:
+    """Top-level non-underscore def/class/assign names. Imports excluded
+    (``_parse_reexports`` tracks them).
+    """
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return set()
+    names: set[str] = set()
+    for node in tree.body:
+        if isinstance(
+            node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
+        ):
+            if not node.name.startswith("_"):
+                names.add(node.name)
+        elif isinstance(node, ast.Assign):
+            for t in node.targets:
+                if isinstance(t, ast.Name) and not t.id.startswith("_"):
+                    names.add(t.id)
+        elif isinstance(node, ast.AnnAssign) and isinstance(
+            node.target, ast.Name
+        ):
+            if not node.target.id.startswith("_"):
+                names.add(node.target.id)
+    return names
+
+
 # -----------------------------------------------------------------------------
 # Snapshot at a git ref
 # -----------------------------------------------------------------------------
@@ -209,16 +240,18 @@ class ApiSnapshot:
 
     ``symbols`` maps fully-qualified canonical name -> defining module.
     ``module_alls`` maps module dotted path -> list of names in __all__.
-    ``unexported_imports`` maps ``__init__.py`` module dotted path -> list
-    of names imported there but not surfaced as public (not in ``__all__``,
-    or no ``__all__`` exists and the import isn't an explicit ``as X``
-    re-export). These are candidates for "did you forget to export?"
-    flagging — DOCS-1117 / the DeviceStream pattern.
+    ``ambiguous`` maps module dotted path -> sorted list of top-level
+    non-underscore names defined or imported there that aren't surfaced
+    as public via any ancestor's ``__all__`` or ``__init__.py``. The
+    author hasn't picked a side; the check nudges them to declare.
+    ``module_files`` maps module dotted path -> repo-relative source
+    path (``.py`` or ``__init__.py``).
     """
 
     symbols: dict[str, str] = field(default_factory=dict)
     module_alls: dict[str, list[str]] = field(default_factory=dict)
-    unexported_imports: dict[str, list[str]] = field(default_factory=dict)
+    ambiguous: dict[str, list[str]] = field(default_factory=dict)
+    module_files: dict[str, str] = field(default_factory=dict)
 
 
 def _git_ls_tree(ref: str, prefix: str) -> list[str]:
@@ -291,9 +324,11 @@ def snapshot_at(ref: str) -> ApiSnapshot:
             continue
         paths_by_module[mod] = path
 
+    snap.module_files = paths_by_module
     sources = _git_show_batch(ref, list(paths_by_module.values()))
 
     module_reexports: dict[str, dict[str, _ReExport]] = {}
+    module_top_level: dict[str, set[str]] = {}
     for mod, path in paths_by_module.items():
         src = sources.get(path)
         if src is None:
@@ -301,6 +336,7 @@ def snapshot_at(ref: str) -> ApiSnapshot:
         is_init = path.endswith("__init__.py") or path.endswith("__init__.pyi")
         reexports = _parse_reexports(src, mod) if is_init else {}
         module_reexports[mod] = reexports
+        module_top_level[mod] = _parse_top_level(src)
 
         declared = _parse_all(src)
         if declared is not None:
@@ -310,22 +346,6 @@ def snapshot_at(ref: str) -> ApiSnapshot:
         else:
             continue
         snap.module_alls[mod] = public_names
-
-        # Record imports in __init__.py that aren't surfaced as public.
-        # With __all__: every imported name not listed is suspect. Without
-        # __all__: only implicit imports are suspect (PEP 484 ``as X`` is
-        # already counted public).
-        if is_init:
-            public_set = set(public_names)
-            unexported = [
-                name
-                for name, info in reexports.items()
-                if not name.startswith("_")
-                and name not in public_set
-                and not (declared is None and info.explicit)
-            ]
-            if unexported:
-                snap.unexported_imports[mod] = unexported
 
     # Walk shallowest modules first so re-exported names get canonicalized
     # to the parent rather than the child that defined them.
@@ -343,6 +363,18 @@ def snapshot_at(ref: str) -> ApiSnapshot:
         for name in names:
             owner = canonical.get(f"{mod}.{name}", mod)
             snap.symbols[f"{owner}.{name}"] = owner
+
+    for mod, top_level in module_top_level.items():
+        candidates = top_level | set(module_reexports.get(mod, {}).keys())
+        parts = mod.split(".")
+        surfaced: set[str] = set()
+        for i in range(len(parts), 0, -1):
+            surfaced.update(snap.module_alls.get(".".join(parts[:i]), []))
+        names = sorted(
+            n for n in candidates - surfaced if not n.startswith("_")
+        )
+        if names:
+            snap.ambiguous[mod] = names
 
     return snap
 
@@ -487,11 +519,11 @@ class CoverageReport:
     missing: list[tuple[str, str]] = field(default_factory=list)
     stale: list[tuple[str, str]] = field(default_factory=list)
     new_modules: list[str] = field(default_factory=list)
-    suspicious: list[tuple[str, str]] = field(default_factory=list)
+    ambiguous: list[tuple[str, str]] = field(default_factory=list)
 
     def is_empty(self) -> bool:
         return not (
-            self.missing or self.stale or self.new_modules or self.suspicious
+            self.missing or self.stale or self.new_modules or self.ambiguous
         )
 
 
@@ -564,16 +596,13 @@ def diff_snapshots(
             owner_module = canonical.rsplit(".", 1)[0]
             report.stale.append((canonical, _candidate_rst(owner_module)))
 
-    # Possibly-missed __all__ entries: names newly imported in an
-    # __init__.py that aren't exported. DOCS-1117 / DeviceStream pattern.
-    for module, names in head.unexported_imports.items():
-        base_unexported = set(base.unexported_imports.get(module, []))
-        for name in sorted(names):
-            if name in base_unexported:
+    for module, names in head.ambiguous.items():
+        base_ambiguous = set(base.ambiguous.get(module, []))
+        for name in names:
+            if name in base_ambiguous:
                 continue
-            init_rel = module.replace(".", "/") + "/__init__.py"
-            init_path = init_rel.replace("max/", str(PACKAGE_ROOT) + "/", 1)
-            report.suspicious.append((f"{module}.{name}", init_path))
+            path = head.module_files.get(module, "")
+            report.ambiguous.append((f"{module}.{name}", path))
 
     # Dedupe missing list (same canonical may surface from multiple modules
     # in the re-export case).
@@ -603,12 +632,34 @@ def render_markdown(report: CoverageReport) -> str:
         COMMENT_MARKER,
         "## MAX Python API documentation coverage",
         "",
-        "This PR changes the public surface of `max/python/max/`. The"
-        f" following items may need follow-up by {DOCS_TEAM}:",
+        "This PR changes the public surface of `max/python/max/`.",
         "",
     ]
+    if report.ambiguous:
+        lines.append("### Visibility not declared")
+        lines.append("")
+        lines.append(
+            "These names were added without an explicit visibility"
+            " declaration. Pick one:"
+        )
+        lines.append("")
+        lines.append(
+            "- **Public**: add to the module's `__all__` or import in an"
+            " ancestor `__init__.py`."
+        )
+        lines.append(
+            "- **Internal**: rename to `_`-prefixed (e.g. `_Foo`) or move"
+            " to a `_`-prefixed module."
+        )
+        lines.append("")
+        for sym, where in report.ambiguous:
+            lines.append(f"- `{sym}` (`{where}`)")
+        lines.append("")
     if report.missing:
-        lines.append("### New public symbols missing from `max/python/docs/`")
+        lines.append(
+            "### New public symbols missing from `max/python/docs/`"
+            f" — follow-up by {DOCS_TEAM}"
+        )
         lines.append("")
         for sym, where in report.missing:
             note = ""
@@ -618,41 +669,17 @@ def render_markdown(report: CoverageReport) -> str:
         lines.append("")
     if report.stale:
         lines.append(
-            "### Symbols removed from `__all__` but still referenced in RST"
+            "### Symbols removed from `__all__` but still referenced in"
+            f" RST — follow-up by {DOCS_TEAM}"
         )
         lines.append("")
         for sym, where in report.stale:
             lines.append(f"- `{sym}` -> remove from `{where}`")
         lines.append("")
-    if report.suspicious:
-        lines.append(
-            "### Newly imported but not in `__all__` (possibly missed export)"
-        )
-        lines.append("")
-        lines.append(
-            "These names were added to an `__init__.py`'s imports but aren't"
-            " listed in `__all__`. If they're meant to be public, add them"
-            " to `__all__` so the docs build picks them up. If they're"
-            " internal, ignore — or rename to underscore-prefixed to make the"
-            " intent explicit."
-        )
-        lines.append("")
-        for sym, where in report.suspicious:
-            lines.append(f"- `{sym}` -> imported in `{where}`")
-        lines.append("")
-    lines.extend(
-        [
-            "<details><summary>How to resolve</summary>",
-            "",
-            "See `max/python/docs/CLAUDE.md` for the doc-build conventions.",
-            "Add new symbols to the appropriate `autosummary` block in the"
-            " candidate RST, or create a new RST page (don't forget to"
-            " register it in `index.rst` and `oss/modular/docs/sidebars.json`).",
-            "",
-            "This check is advisory and does not block merge. The comment is"
-            " regenerated on every push.",
-            "</details>",
-        ]
+    lines.append(
+        "See `max/python/docs/CLAUDE.md` for the doc-build conventions."
+        " This check is advisory and does not block merge. The comment is"
+        " regenerated on every push."
     )
     return "\n".join(lines) + "\n"
 
@@ -703,6 +730,9 @@ def main(argv: list[str] | None = None) -> int:
                     {"symbol": s, "candidate": w} for s, w in report.stale
                 ],
                 "new_modules": report.new_modules,
+                "ambiguous": [
+                    {"symbol": s, "file": w} for s, w in report.ambiguous
+                ],
             },
             indent=2,
         )
