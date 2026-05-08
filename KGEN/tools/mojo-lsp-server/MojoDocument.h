@@ -229,6 +229,7 @@ public:
 
   void onCodeCompletion(const llvm::lsp::URIForFile &uri,
                         const llvm::lsp::Position &completePos,
+                        llvm::unique_function<bool()> hasPendingUpdate,
                         LSPResponder<llvm::lsp::CompletionList> responder);
 
   void onDefinition(const llvm::lsp::URIForFile &uri,

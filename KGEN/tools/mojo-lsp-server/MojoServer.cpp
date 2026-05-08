@@ -1130,14 +1130,22 @@ MojoDocument::getCodeActionsSync(SMRange range,
 
 void MojoDocument::onCodeCompletion(
     const lsp::URIForFile &uri, const lsp::Position &completePos,
+    llvm::unique_function<bool()> hasPendingUpdate,
     LSPResponder<lsp::CompletionList> responder) {
-  startTask([uri, completePos,
+  startTask([uri, completePos, hasPendingUpdate = std::move(hasPendingUpdate),
              responder = std::move(responder)](MojoDocument &doc) mutable {
     if (doc.isInvalidated)
       return responder.replyOutdatedRequest();
     SMLoc completeLoc = doc.getLocFromPos(uri, completePos);
-    if (!completeLoc.isValid())
+    if (!completeLoc.isValid()) {
+      // The position doesn't map in the currently-parsed document. If a
+      // newer, unparsed version is already queued, treat this as a stale
+      // request so clients retry against the updated document; otherwise
+      // the position is genuinely out-of-bounds.
+      if (hasPendingUpdate && hasPendingUpdate())
+        return responder.replyOutdatedRequest();
       return responder.replyInvalidRequest();
+    }
     responder.reply(doc.onCodeCompletionSync(completeLoc));
   });
 }
@@ -2519,6 +2527,11 @@ void MojoServer::receiveCapabilities(bool workDoneProgress) {
 //===----------------------------------------------------------------------===//
 // Document Management
 
+bool MojoServer::hasPendingUpdate(llvm::StringRef file) const {
+  std::lock_guard<std::mutex> lock(impl->filesMutex);
+  return impl->pendingDocContents.contains(file);
+}
+
 void MojoServer::addDocument(const lsp::URIForFile &uri, std::string &&contents,
                              int64_t version) {
   // Assign a new generation for this document open. This is used to detect
@@ -2875,11 +2888,20 @@ void MojoServer::getCodeActions(
 
 void MojoServer::onCodeCompletion(const lsp::CompletionParams &params,
                                   LSPResponder<lsp::CompletionList> responder) {
-  if (MojoDocumentRef doc = impl->findDocument(params.textDocument.uri.file()))
-    doc->onCodeCompletion(params.textDocument.uri, params.position,
-                          std::move(responder));
-  else
+  std::string file = params.textDocument.uri.file().str();
+  if (MojoDocumentRef doc = impl->findDocument(file)) {
+    doc->onCodeCompletion(
+        params.textDocument.uri, params.position,
+        [this, file]() { return hasPendingUpdate(file); },
+        std::move(responder));
+  } else if (hasPendingUpdate(file)) {
+    // Document is transitioning (closed and reopened, or didChange
+    // outran didOpen). Let the client retry rather than reporting
+    // a protocol-level invalid request.
+    responder.replyOutdatedRequest();
+  } else {
     responder.replyInvalidRequest();
+  }
 }
 
 void MojoServer::onDefinition(
