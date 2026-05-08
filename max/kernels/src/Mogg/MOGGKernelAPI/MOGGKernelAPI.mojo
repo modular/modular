@@ -312,6 +312,7 @@ from std.runtime.asyncrt import (
     DeviceContextPtr,
     DeviceContextPtrList,
     TaskGroup,
+    task_id_for_device,
 )
 from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
 from tensor import (
@@ -10843,21 +10844,6 @@ def _check_signal_buffer_size(
                 " consider increasing the signal buffer size."
             ),
         )
-
-
-@always_inline("nodebug")
-def task_id_for_device(device_id: Int) -> Int:
-    """Map from device ID to task ID for CPU affinity.
-
-    Delegates to the shared C++ implementation in DeviceAffinity.cpp which
-    handles explicit MODULAR_RUNTIME_DEVICE_TASK_CPU_IDS config,
-    NUMA-inferred GPU-to-CPU core mapping, and round-robin fallback.
-    """
-    return Int(
-        external_call["KGEN_CompilerRT_TaskIdForDevice", Int32](
-            Int32(device_id),
-        )
-    )
 
 
 @always_inline
