@@ -14,7 +14,7 @@
 from .plugin import OpaquePointer, FunctionHandle, OutParam
 from .context import Context, Buffer
 from .queue import Queue
-from .event import Event
+from .event import Event, EventFlags, EVENT_FLAG_NONE, Waitable
 from .device import DeviceSpec
 from .status import STATUS_SUCCESS, HALError
 from std.memory import UnsafePointer, UnsafeMaybeUninit
@@ -32,7 +32,7 @@ struct Stream[context_origin: ImmutOrigin, device_spec: DeviceSpec](Movable):
     """
 
     var _queue: Queue[Self.context_origin, Self.device_spec]
-    var _chain_event: Optional[Event[Self.context_origin]]
+    var _chain_event: Optional[Event[Self.context_origin, EVENT_FLAG_NONE]]
     var _queue_is_stream: Bool
 
     def __init__[
@@ -66,7 +66,7 @@ struct Stream[context_origin: ImmutOrigin, device_spec: DeviceSpec](Movable):
         """Waits on the chain event if a previous op has recorded one."""
         if self._queue_is_stream or not self._chain_event:
             return
-        self._queue.wait_for_events([self._chain_event.value()])
+        self._queue.wait_for_events(self._chain_event.value())
 
     def _chain_signal(mut self) raises HALError:
         """Records a fresh chain event after the just-submitted op."""
@@ -125,20 +125,26 @@ struct Stream[context_origin: ImmutOrigin, device_spec: DeviceSpec](Movable):
         self._queue.copy_intra_device(dst, src, size)
         self._chain_signal()
 
-    def record_event(
-        mut self,
-    ) raises HALError -> Event[Self.context_origin]:
-        """Returns an event signaled when all previous stream ops complete."""
-        if self._chain_event:
-            return self._chain_event.value()
-        return self._queue.record_event()
+    def record_event[
+        flags: EventFlags = EVENT_FLAG_NONE,
+    ](mut self,) raises HALError -> Event[Self.context_origin, flags]:
+        """Returns an event signaled when all previous stream ops complete.
 
-    def wait_for_events(
-        mut self,
-        read events: List[Event[Self.context_origin]],
-    ) raises HALError:
-        """Inserts a wait for cross-stream events into the in-order chain."""
-        self._queue.wait_for_events(events)
+        Parameters:
+            flags: Capability bitmask. Default `EVENT_FLAG_NONE` is intra-GPU
+                only. Pass `EVENT_FLAG_CPU_VISIBLE` to enable host-side
+                synchronization on the returned event.
+        """
+        return self._queue.record_event[flags]()
+
+    def wait_for_events[
+        *EventTypes: Waitable,
+    ](mut self, *events: *EventTypes,) raises HALError:
+        """Inserts a wait for cross-stream events into the in-order chain.
+
+        Accepts any combination of events with different flag combos.
+        """
+        self._queue.wait_for_events(*events)
         self._chain_signal()
 
     def synchronize(self) raises HALError:

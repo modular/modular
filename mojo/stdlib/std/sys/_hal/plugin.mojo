@@ -40,7 +40,6 @@ from std.memory import (
 )
 
 from .status import STATUS_SUCCESS, STATUS_UNKNOWN_ERROR, HALError
-from .event import Event
 from .device import DeviceSpec
 
 # ===-----------------------------------------------------------------------===#
@@ -411,11 +410,11 @@ struct RawDriver(Movable):
     # ===-------------------------------------------------------------------===#
 
     def create_event(
-        self, context: ContextHandle
+        self, context: ContextHandle, flags: UInt32
     ) raises HALError -> EventHandle:
         var event = UnsafeMaybeUninit[EventHandle]()
         var status = self._raw.event_create.f(
-            context, OutParam[EventHandle](to=event)
+            context, flags, OutParam[EventHandle](to=event)
         )
         if status != STATUS_SUCCESS:
             var err = self.get_status_message(status)
@@ -475,18 +474,14 @@ struct RawDriver(Movable):
                 message=String(t"failed to record event: {err.message}"),
             )
 
-    def wait_for_events[
-        origin: ImmutOrigin
-    ](
+    def wait_for_events(
         self,
         queue: QueueHandle,
-        read events: List[Event[origin]],
+        handles: UnsafePointer[EventHandle, MutAnyOrigin],
+        num_events: UInt32,
     ) raises HALError:
-        var handles = List[EventHandle](capacity=len(events))
-        for ref event in events:
-            handles.append(event._inner[]._handle)
         var status = self._raw.queue_wait_for_events.f(
-            queue, handles.unsafe_ptr(), UInt32(len(handles))
+            queue, handles, num_events
         )
         if status != STATUS_SUCCESS:
             var err = self.get_status_message(status)
@@ -772,7 +767,9 @@ struct RawPlugin(Movable):
     var event_create: HALFunction[
         "M_driver_event_create",
         def(
-            context: ContextHandle, event: OutParam[EventHandle]
+            context: ContextHandle,
+            flags: UInt32,
+            event: OutParam[EventHandle],
         ) thin -> PluginResultCode,
     ]
     var event_destroy: HALFunction[

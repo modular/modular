@@ -19,9 +19,10 @@ from .plugin import (
     MemoryHandle,
 )
 from .context import Context
-from .event import Event, _EventInner
+from .event import Event, EventFlags, EVENT_FLAG_NONE, Waitable, _EventInner
 from .device import DeviceSpec
 from .status import STATUS_SUCCESS, HALError
+from std.collections import InlineArray
 from std.memory import (
     ImmutPointer,
     OpaquePointer,
@@ -141,19 +142,24 @@ struct Queue[context_origin: ImmutOrigin, device_spec: DeviceSpec](Movable):
             self._handle, dst._handle, src._handle, size
         )
 
-    def record_event(
-        self,
-        out event: Event[Self.context_origin],
-    ) raises HALError:
+    def record_event[
+        flags: EventFlags = EVENT_FLAG_NONE,
+    ](self, out event: Event[Self.context_origin, flags],) raises HALError:
         """Creates a fresh event, records it on this queue's timeline, and
         returns it.
 
         The returned event is signaled when all operations enqueued on the
         queue before this call have completed.
 
+        Parameters:
+            flags: Capability bitmask. Default `EVENT_FLAG_NONE` is intra-GPU
+                only — the cheapest path. Pass `EVENT_FLAG_CPU_VISIBLE` to
+                enable host-side `synchronize()` / `is_ready()` calls.
         """
-        var event_handle = self._raw[].create_event(self._context[]._handle)
-        event = Event[Self.context_origin](
+        var event_handle = self._raw[].create_event(
+            self._context[]._handle, flags
+        )
+        event = Event[Self.context_origin, flags](
             _EventInner[Self.context_origin](
                 _handle=event_handle,
                 _context_handle=self._context[]._handle,
@@ -162,12 +168,24 @@ struct Queue[context_origin: ImmutOrigin, device_spec: DeviceSpec](Movable):
         )
         self._raw[].record_event(self._handle, event._inner[]._handle)
 
-    def wait_for_events(
-        self,
-        read events: List[Event[Self.context_origin]],
-    ) raises HALError:
-        """Enqueues a wait for the given events on this queue."""
-        self._raw[].wait_for_events(self._handle, events)
+    def wait_for_events[
+        *EventTypes: Waitable,
+    ](self, *events: *EventTypes,) raises HALError:
+        """Enqueues a wait for the given events on this queue.
+
+        Accepts any combination of events with different flag combos.
+        """
+        comptime n = events.__len__()
+
+        comptime if n == 0:
+            return
+
+        var handles = InlineArray[EventHandle, n](uninitialized=True)
+        comptime for i in range(n):
+            handles[i] = events[i]._handle()
+        self._raw[].wait_for_events(
+            self._handle, handles.unsafe_ptr(), UInt32(n)
+        )
 
     def synchronize(self) raises HALError:
         """
