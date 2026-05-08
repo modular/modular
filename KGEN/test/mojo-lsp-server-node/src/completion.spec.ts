@@ -2,8 +2,14 @@ import * as assert from "assert";
 import { Document, LanguageServer } from "./harness";
 import {
   CompletionItemKind,
+  CompletionList,
+  CompletionRequest,
+  DidChangeTextDocumentNotification,
+  ErrorCodes,
+  LSPErrorCodes,
   MarkupContent,
   Position,
+  ResponseError,
 } from "vscode-languageserver-protocol";
 
 describe("completions", function () {
@@ -266,6 +272,127 @@ def function(arg: Int):
   with arg.value`
       );
       await checkSnippet(doc, "value");
+    });
+  });
+
+  describe("stale requests during rapid edits", function () {
+    // When a client fires textDocument/completion while a burst of
+    // textDocument/didChange notifications is still mid-debounce, the
+    // server's currently-parsed document may not contain the position
+    // being asked about. The correct response is ContentModified
+    // (-32801), which tells spec-compliant clients to retry against the
+    // updated document. Returning InvalidRequest (-32600) makes the
+    // client discard the request outright, which manifested as
+    // "completions silently don't work" in nvim-cmp.
+
+    const source = `
+struct Foo:
+    var field_a: Int
+    var field_b: Int
+    fn bar(self):
+        self.
+`;
+
+    it("never returns InvalidRequest while a reparse is pending", async function () {
+      let doc = new Document(server, "test:///burst.mojo", source);
+      await doc.open();
+      // Wait for the initial parse so the first didChange below is a
+      // genuine update and not racing with the didOpen parse.
+      await doc.diagnostics();
+
+      // Cursor immediately after `self.` on the last non-empty line.
+      let position = doc.findFirstPosition("self.");
+      position.character += "self.".length;
+
+      // Fire a burst of didChange notifications with no awaits between
+      // them so the debouncer coalesces and a completion can land while
+      // pendingDocContents is still populated.
+      for (let i = 0; i < 8; ++i) {
+        server.connection.sendNotification(
+          DidChangeTextDocumentNotification.type,
+          {
+            textDocument: { uri: doc.uri, version: i + 1 },
+            contentChanges: [{ text: source + `# burst ${i}\n` }],
+          }
+        );
+      }
+
+      // Completion request issued immediately — inside the debounce
+      // window from the final didChange.
+      try {
+        const result = await server.connection.sendRequest(
+          CompletionRequest.type,
+          {
+            textDocument: { uri: doc.uri },
+            position,
+            context: { triggerKind: 2, triggerCharacter: "." },
+          }
+        );
+        // If the request won the race and ran against a parsed document,
+        // the response must be a well-formed list with the expected
+        // members — not some malformed payload.
+        assert.ok(result !== null, "completion result was null");
+        const items = Array.isArray(result) ? result : (result as CompletionList).items;
+        assert.ok(
+          items.some((i) => i.label === "field_a"),
+          "expected field_a in completion list"
+        );
+      } catch (err) {
+        const responseErr = err as ResponseError<unknown>;
+        assert.notStrictEqual(
+          responseErr.code,
+          ErrorCodes.InvalidRequest,
+          `completion during pending reparse returned InvalidRequest; ` +
+            `expected ContentModified. Message: ${responseErr.message}`
+        );
+        assert.strictEqual(
+          responseErr.code,
+          LSPErrorCodes.ContentModified,
+          `expected ContentModified (-32801), got ${responseErr.code}: ` +
+            `${responseErr.message}`
+        );
+      }
+    });
+
+    it("returns a valid completion list once the reparse settles", async function () {
+      let doc = new Document(server, "test:///burst_settle.mojo", source);
+      await doc.open();
+      await doc.diagnostics();
+
+      let position = doc.findFirstPosition("self.");
+      position.character += "self.".length;
+
+      // Same burst, but this time wait for diagnostics from the final
+      // change before asking for completion — the server's current
+      // document should now reflect the last write, so completion must
+      // succeed with real members.
+      const diagPromise = server.awaitDiagnostics();
+      for (let i = 0; i < 8; ++i) {
+        server.connection.sendNotification(
+          DidChangeTextDocumentNotification.type,
+          {
+            textDocument: { uri: doc.uri, version: i + 1 },
+            contentChanges: [{ text: source + `# burst ${i}\n` }],
+          }
+        );
+      }
+      await diagPromise;
+
+      const result = await server.connection.sendRequest(
+        CompletionRequest.type,
+        {
+          textDocument: { uri: doc.uri },
+          position,
+          context: { triggerKind: 2, triggerCharacter: "." },
+        }
+      );
+      assert.ok(result !== null, "completion result was null after settle");
+      const items = Array.isArray(result) ? result : (result as CompletionList).items;
+      const labels = items.map((i) => i.label);
+      assert.ok(
+        labels.includes("field_a") && labels.includes("field_b"),
+        `expected field_a and field_b in completion list, got: ${labels.join(", ")}`
+      );
     });
   });
 });

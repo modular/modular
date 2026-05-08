@@ -78,6 +78,14 @@ public:
   /// Remove the document with the given uri.
   void removeDocument(const llvm::lsp::URIForFile &uri);
 
+  /// Returns true if there is a pending (not-yet-parsed) content update for
+  /// the given file URI. Used by request handlers to distinguish a transient
+  /// stale-document state from a genuinely invalid request: when a position
+  /// fails to map in the current document but a newer, unparsed version is
+  /// already queued, the request should be reported as ContentModified so
+  /// clients retry against the updated document.
+  bool hasPendingUpdate(llvm::StringRef file) const;
+
   //===--------------------------------------------------------------------===//
   // Notebook Document Management
   //===--------------------------------------------------------------------===//
