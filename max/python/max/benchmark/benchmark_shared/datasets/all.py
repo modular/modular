@@ -149,7 +149,9 @@ def sample_requests(
         # is a list of ints.
         if args.output_lengths is None:
             output_lengths = None
-        elif os.path.exists(args.output_lengths):
+        elif isinstance(args.output_lengths, str) and os.path.exists(
+            args.output_lengths
+        ):
             with open(args.output_lengths) as f:
                 output_lengths = yaml.safe_load(f)["output_lengths"]
         else:

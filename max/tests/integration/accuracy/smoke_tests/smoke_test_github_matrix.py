@@ -61,6 +61,7 @@ DISABLE = set(RUNNERS)
 HF_MODELS: dict[str, set[str]] = {
     "allenai/Olmo-3-7B-Instruct": MULTI | {"max"},
     "allenai/olmOCR-2-7B-1025-FP8": MULTI | {"sglang"},
+    "amd/MiniMax-M2.7-MXFP4": NON_XL | {"8xB200"},
     "ByteDance-Seed/academic-ds-9B": MULTI | {"max", "max-ci", "sglang@B200", "vllm@B200"},  # SERVOPT-1120
     "deepseek-ai/DeepSeek-R1-0528": NON_XL | {"max", "sglang", "8xMI355"},  # 8xMI355: needs nvshmem
     "deepseek-ai/DeepSeek-V2-Lite-Chat": MULTI | {"max", "max-ci", "vllm@B200"},  # SERVOPT-1120

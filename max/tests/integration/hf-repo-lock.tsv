@@ -60,6 +60,7 @@ allenai/OLMo-2-1124-7B-Instruct	470b1fba1ae01581f270116362ee4aa1b97f4c84
 allenai/Olmo-3-7B-Instruct	096bb5469fe34348bc88d851a69edb3bf6f40df4
 allenai/olmOCR-2-7B-1025-FP8	19133a8e683f7203f37c49000377c11a896c8d9b
 amd/Kimi-K2.5-MXFP4	a717d434531121079eef3dc0be9d0315d8960bcc
+amd/MiniMax-M2.7-MXFP4	b2bb0741c4c87e4705c1dbc89995a8d0503844df
 atomicapple0/EAGLE-Llama-3.2-3B-Instruct-bf16	501d80362f7fbcf83a6ed2e62bd46a94712db1e2
 austinpowers/Kimi-K2.5-NVFP4-DeepseekV3	720312a51eb10ee26701443b29ed3886b6a08d68
 bartowski/Meta-Llama-3-8B-Instruct-GGUF	4ebc4aa83d60a5d6f9e1e1e9272a4d6306d770c1
