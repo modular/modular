@@ -800,6 +800,7 @@ class Flux2Transformer2DModel(Module):
         img_ids: TensorValue,
         txt_ids: TensorValue,
         guidance: TensorValue,
+        *,
         signal_buffers: list[BufferValue] | None = None,
     ) -> tuple[TensorValue]:
         """Forward pass through Flux2 Transformer.
