@@ -189,7 +189,8 @@ Insights:
 
 - The day is offset by 1 because the range uses zero-based indexing.
 - The `t"..."` prefix creates a *template string*: braces `{}` interpolate
-  expressions directly into the output.
+  expressions directly into the output. This is useful because it avoids
+  memory allocations for the intermediate values.
 
 ## Functions
 
