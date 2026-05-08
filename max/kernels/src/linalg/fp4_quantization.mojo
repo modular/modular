@@ -1821,7 +1821,12 @@ def block_scaled_matmul[
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
         task_id=get_safe_task_id(ctx),
     ):
-        if m <= 128:
+        # For these large-N shapes on B200, Mojo also wins at M=256.
+        comptime is_widened_shape = (
+            static_K == 7168 and static_N in (18432, 36864)
+        )
+        comptime mojo_m_cap = 256 if is_widened_shape else 128
+        if m <= mojo_m_cap:
             var status = heuristic_and_outliers_dispatch[
                 SF_VECTOR_SIZE=SF_VECTOR_SIZE,
                 transpose_b=transpose_b,
