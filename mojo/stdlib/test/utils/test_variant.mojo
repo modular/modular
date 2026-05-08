@@ -440,6 +440,25 @@ def test_variant_conditional_conformances() raises:
     assert_false(conforms_to(Variant[Int, String], RegisterPassable))
     assert_false(conforms_to(Variant[Bool, List[Int], Int], RegisterPassable))
 
+    trait Producer(ImplicitlyDestructible, Movable):
+        comptime Value: Copyable
+
+    @fieldwise_init
+    struct IntProducer(Producer):
+        comptime Value = Int
+        var x: Int
+
+    @fieldwise_init
+    struct StringProducer(Producer):
+        comptime Value = String
+        var s: String
+
+    comptime _ProducerValue[T: Producer]: Copyable = T.Value
+    comptime ProducerValues = TypeList.of[
+        Trait=Producer, IntProducer, StringProducer
+    ]().map[_ProducerValue]()
+    assert_true(conforms_to(Variant[*ProducerValues], Copyable))
+
 
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()
