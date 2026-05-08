@@ -20,6 +20,7 @@ from std.sys import (
     align_of,
     has_nvidia_gpu_accelerator,
     has_amd_gpu_accelerator,
+    get_defined_int,
     simd_width_of,
     size_of,
     is_nvidia_gpu,
@@ -85,6 +86,7 @@ from layout.layout_tensor import (
 from layout.swizzle import make_swizzle
 from layout.tensor_core import get_fragment_size, get_mma_shape
 from layout.tile_tensor import NullableTileTensor
+from layout.tile_tensor import stack_allocation as tt_stack_allocation
 from linalg.matmul.gpu._multistage_gemm_gpu import multistage_mma
 from std.memory import stack_allocation
 from nn._ragged_utils import get_batch_from_row_offsets
@@ -109,7 +111,11 @@ from std.utils.numerics import get_accum_type, min_or_neg_inf
 from std.utils.static_tuple import StaticTuple
 
 from nn.attention.mha_utils import get_start_and_end_for_partitions
-from nn.softmax import _online_softmax_iter_for_mma_output
+from nn.softmax import (
+    _exp2_concrete,
+    _exp_concrete,
+    _online_softmax_iter_for_mma_output,
+)
 from .amd_structured.mla_decode import Attention
 from .amd_structured.mla_prefill import Attention
 from .nvidia.sm100.mla_prefill import mla_sm100_prefill
@@ -806,24 +812,57 @@ def flare_mla_decoding_dispatch[
 
                 # AMD softmax always uses exp2; CUDA non-FA3 path uses exp.
                 comptime reduce_use_exp2 = has_amd_gpu_accelerator()
-                comptime kernel_reduce = mha_splitk_reduce[
-                    intermediate_dtype,
-                    output.dtype,
-                    depth=depth_v,
-                    num_heads=num_heads,
-                    num_threads=WARP_SIZE,
-                    use_exp2=reduce_use_exp2,
-                ]
-                ctx.enqueue_function[kernel_reduce](
-                    output_intermediate_data,
-                    output_device,
-                    exp_sum_device,
-                    qk_max_device,
-                    batch_size,
-                    num_partitions_value,
-                    grid_dim=(1, num_heads, batch_size),
-                    block_dim=(WARP_SIZE, 1, 1),
-                )
+                comptime if has_amd_gpu_accelerator():
+                    # Defaults tuned for MLA depth=512 on MI355; overridable
+                    # via -D for tuning sweeps.
+                    comptime D_TILES = get_defined_int[
+                        "MODULAR_MLA_REDUCE_DTILES", 4
+                    ]()
+                    comptime W_PARTS = get_defined_int[
+                        "MODULAR_MLA_REDUCE_WPARTS", 8
+                    ]()
+                    comptime MAX_PARTITIONS = get_defined_int[
+                        "MODULAR_MLA_REDUCE_MAXP", 64
+                    ]()
+                    comptime kernel_reduce = mla_splitk_reduce[
+                        intermediate_dtype,
+                        output.dtype,
+                        depth=depth_v,
+                        num_heads=num_heads,
+                        D_TILES=D_TILES,
+                        W_PARTS=W_PARTS,
+                        MAX_PARTITIONS=MAX_PARTITIONS,
+                        use_exp2=reduce_use_exp2,
+                    ]
+                    ctx.enqueue_function[kernel_reduce](
+                        output_intermediate_data,
+                        output_device,
+                        exp_sum_device,
+                        qk_max_device,
+                        batch_size,
+                        num_partitions_value,
+                        grid_dim=(D_TILES, num_heads, batch_size),
+                        block_dim=(W_PARTS * WARP_SIZE, 1, 1),
+                    )
+                else:
+                    comptime kernel_reduce = mha_splitk_reduce[
+                        intermediate_dtype,
+                        output.dtype,
+                        depth=depth_v,
+                        num_heads=num_heads,
+                        num_threads=WARP_SIZE,
+                        use_exp2=reduce_use_exp2,
+                    ]
+                    ctx.enqueue_function[kernel_reduce](
+                        output_intermediate_data,
+                        output_device,
+                        exp_sum_device,
+                        qk_max_device,
+                        batch_size,
+                        num_partitions_value,
+                        grid_dim=(1, num_heads, batch_size),
+                        block_dim=(WARP_SIZE, 1, 1),
+                    )
                 _ = exp_sum_qk_max_data^
                 _ = output_intermediate_data^
 
@@ -871,6 +910,172 @@ def flare_mla_decoding_dispatch[
                 preferred_BM_default <= num_heads
             ) else num_heads
             launch_with_BM[BM_default]()
+
+
+# Split-K combine for MLA decode. Splits work two ways vs the generic
+# mha_splitk_reduce (1 warp per head, ~25% CU coverage on MI355):
+#   - W_PARTS warps per CTA over the partition axis (in-CU latency hiding)
+#   - D_TILES CTAs per (batch, head) over the depth axis (CU coverage).
+# Depth tiles are disjoint outputs, so no cross-CTA reduction is needed;
+# warp 0 sums per-warp partition partials in SMEM.
+@__llvm_metadata(
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
+        Int32(W_PARTS * WARP_SIZE)
+    )
+)
+@__name(
+    t"mla_splitk_reduce_{intermediate_type}_{output_type}",
+    mangle=True,
+)
+def mla_splitk_reduce[
+    intermediate_type: DType,
+    output_type: DType,
+    depth: Int,
+    num_heads: Int,
+    D_TILES: Int,
+    W_PARTS: Int,
+    MAX_PARTITIONS: Int,
+    use_exp2: Bool = False,
+](
+    intermediate_ptr: UnsafePointer[Scalar[intermediate_type], ImmutAnyOrigin],
+    output_ptr: UnsafePointer[Scalar[output_type], MutAnyOrigin],
+    exp_sum_ptr: UnsafePointer[
+        Scalar[get_accum_type[output_type]()], MutAnyOrigin
+    ],
+    qk_max_ptr: UnsafePointer[
+        Scalar[get_accum_type[output_type]()], MutAnyOrigin
+    ],
+    batch_size: Int,
+    num_partitions: Int,
+):
+    comptime assert depth > 0, "depth must be positive"
+    comptime assert (
+        depth % (D_TILES * WARP_SIZE) == 0
+    ), "depth must be divisible by D_TILES * WARP_SIZE"
+    comptime assert (
+        MAX_PARTITIONS <= WARP_SIZE
+    ), "MAX_PARTITIONS must be <= WARP_SIZE"
+    comptime assert (
+        MAX_PARTITIONS % W_PARTS == 0
+    ), "MAX_PARTITIONS must be divisible by W_PARTS"
+    comptime assert (
+        W_PARTS >= 1 and D_TILES >= 1
+    ), "W_PARTS and D_TILES must be positive"
+
+    comptime accum_type = get_accum_type[output_type]()
+    comptime depth_per_cta = depth // D_TILES
+    comptime elems_per_lane = depth_per_cta // WARP_SIZE
+    comptime parts_per_warp = MAX_PARTITIONS // W_PARTS
+
+    var qk_max_tt = TileTensor(
+        qk_max_ptr,
+        row_major((Idx(num_partitions), Idx(batch_size), Idx[num_heads]())),
+    )
+    var exp_sum_tt = TileTensor(
+        exp_sum_ptr,
+        row_major((Idx(num_partitions), Idx(batch_size), Idx[num_heads]())),
+    )
+    var intermediate_tt = TileTensor(
+        intermediate_ptr,
+        row_major(
+            (
+                Idx(num_partitions),
+                Idx(batch_size),
+                Idx[num_heads](),
+                Idx[depth](),
+            )
+        ),
+    )
+    var output_tt = TileTensor(
+        output_ptr,
+        row_major((Idx(batch_size), Idx[num_heads](), Idx[depth]())),
+    )
+
+    var scales_tt = tt_stack_allocation[
+        dtype=accum_type, address_space=AddressSpace.SHARED
+    ](row_major[MAX_PARTITIONS]())
+    var warp_partial_tt = tt_stack_allocation[
+        dtype=accum_type, address_space=AddressSpace.SHARED
+    ](row_major[W_PARTS, depth_per_cta]())
+
+    var d_tile_idx = block_idx.x
+    var head_idx = block_idx.y
+    var batch_idx = block_idx.z
+    var warp_idx = warp_id()
+    var lane_idx = lane_id()
+    var depth_in_tile = lane_idx * elems_per_lane
+    var depth_global = d_tile_idx * depth_per_cta + depth_in_tile
+
+    # Step 1: warp 0 computes per-partition scales.
+    if warp_idx == 0:
+        var partition_idx = lane_idx
+        var lse: Scalar[accum_type] = min_or_neg_inf[accum_type]()
+        if partition_idx < num_partitions:
+            lse = qk_max_tt[partition_idx, batch_idx, head_idx]
+
+        var qk_max_global = warp.lane_group_max[WARP_SIZE](lse)
+        if qk_max_global == min_or_neg_inf[accum_type]():
+            qk_max_global = 0
+
+        comptime exp_fn = _exp2_concrete if use_exp2 else _exp_concrete
+        var rescaled: Scalar[accum_type] = 0
+        if partition_idx < num_partitions:
+            rescaled = exp_sum_tt[partition_idx, batch_idx, head_idx] * exp_fn(
+                lse - qk_max_global
+            )
+
+        var exp_sum = warp.sum(rescaled)
+        # exp_sum == 0 only if every partition had qk_max == -inf; emit
+        # scale = 0 instead of NaN so step 2 produces a clean zero output.
+        var inv_global_exp_sum: Scalar[accum_type] = 0
+        if exp_sum > 0:
+            inv_global_exp_sum = Scalar[accum_type](1) / exp_sum
+        scales_tt[partition_idx] = rescaled * inv_global_exp_sum
+
+    barrier()
+
+    # Step 2: per-warp partition accumulation.
+    var part_start_warp = warp_idx * parts_per_warp
+    var acc = SIMD[accum_type, elems_per_lane](0)
+
+    comptime for k in range(parts_per_warp):
+        var p = part_start_warp + k
+        if p < num_partitions:
+            var scale = scales_tt[p]
+            var x = intermediate_tt.load[width=elems_per_lane](
+                Coord(
+                    Idx(p),
+                    Idx(batch_idx),
+                    Idx(head_idx),
+                    Idx(depth_global),
+                )
+            ).cast[accum_type]()
+            # Mask out empty partitions (scale == 0): the producer kernel
+            # leaves their intermediate values undefined.
+            var mask = SIMD[DType.bool, elems_per_lane](fill=scale > 0)
+            var safe = mask.select(x, type_of(x)(0))
+            acc += safe * type_of(safe)(scale)
+
+    # Step 3: cross-warp reduction and output store.
+    comptime if W_PARTS == 1:
+        output_tt.store(
+            Coord(Idx(batch_idx), Idx(head_idx), Idx(depth_global)),
+            acc.cast[output_type](),
+        )
+    else:
+        warp_partial_tt.store(Coord(Idx(warp_idx), Idx(depth_in_tile)), acc)
+        barrier()
+
+        if warp_idx == 0:
+            var final_acc = SIMD[accum_type, elems_per_lane](0)
+            comptime for w in range(W_PARTS):
+                final_acc += warp_partial_tt.load[width=elems_per_lane](
+                    Coord(Idx[w](), Idx(depth_in_tile))
+                )
+            output_tt.store(
+                Coord(Idx(batch_idx), Idx(head_idx), Idx(depth_global)),
+                final_acc.cast[output_type](),
+            )
 
 
 @__llvm_metadata(
