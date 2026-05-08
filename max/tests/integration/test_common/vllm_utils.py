@@ -143,9 +143,12 @@ def run_text_generation(
             LLM,
             SamplingParams,
         )
-    except ImportError:
+    except ImportError as e:
         raise SystemExit(
-            "Attempted to import vLLM, which is only supported for nvidia GPUs."
+            f"Failed to import vLLM ({e}). vLLM is an opt-in dependency "
+            "gated by the `--//:use_vllm` Bazel flag and is only supported "
+            "on NVIDIA GPUs. Rebuild the target with `--//:use_vllm` (and "
+            "run on an NVIDIA GPU) to use the vLLM framework."
         ) from None
 
     # Map encoding_name to vLLM dtype/quantization
