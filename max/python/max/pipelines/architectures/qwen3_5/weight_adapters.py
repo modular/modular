@@ -134,11 +134,16 @@ def convert_qwen3_5_state_dict(
                 max_name = after + max_name[len(before) :]
                 break
 
-        # Cast linear attention scalar weights to float32.
-        # dt_bias is stored as bfloat16 but model expects float32.
+        # Cast linear attention scalar weights and gated RMSNorm weight to
+        # float32.  dt_bias is stored as bfloat16 but model expects float32.
         # A_log is already stored as float32; the cast is a no-op but kept
         # for safety in case older checkpoints stored it as bfloat16.
-        if max_name.endswith((".dt_bias", ".A_log")):
+        # linear_attn.norm.weight backs a float32 RMSNorm inside
+        # GatedDeltaNet, but the global float32→bfloat16 cast applied below
+        # would otherwise downcast it.
+        if max_name.endswith(
+            (".dt_bias", ".A_log", ".linear_attn.norm.weight")
+        ):
             weight_data = weight_data.astype(DType.float32)
 
         # Reshape conv1d weight from [conv_dim, kernel_size] to
