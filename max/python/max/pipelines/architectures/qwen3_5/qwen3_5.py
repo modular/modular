@@ -95,6 +95,7 @@ class Qwen3_5TransformerBlock(Module):
                 dtype=config.dtype,
                 device=config.devices[0],
                 rms_norm_eps=config.rms_norm_eps or 1e-6,
+                ssm_dtype=config.mamba_ssm_dtype,
             )
 
         self.mlp = MLP(

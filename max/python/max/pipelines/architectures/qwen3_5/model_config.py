@@ -73,6 +73,9 @@ class Qwen3_5Config(Llama3Config):
     attn_output_gate: bool = True
     """Whether full attention layers use a sigmoid output gate."""
 
+    mamba_ssm_dtype: DType = DType.float32
+    """Dtype for SSM (state space model) computations in linear attention layers."""
+
     # Vision encoder (optional - text-only models leave these None)
     vision_config: VisionConfig | None = None
     """Vision encoder configuration; None for text-only models."""
@@ -355,6 +358,16 @@ class Qwen3_5Config(Llama3Config):
         )
         attn_output_gate = getattr(text_config, "attn_output_gate", True)
 
+        _mamba_dtype_map: dict[str, DType] = {
+            "float32": DType.float32,
+            "bfloat16": DType.bfloat16,
+            "float16": DType.float16,
+        }
+        mamba_ssm_dtype_str = getattr(text_config, "mamba_ssm_dtype", "float32")
+        mamba_ssm_dtype = _mamba_dtype_map.get(
+            mamba_ssm_dtype_str, DType.float32
+        )
+
         # Handle tie_word_embeddings from top-level config
         tie_word_embeddings = getattr(
             huggingface_config, "tie_word_embeddings", False
@@ -423,6 +436,7 @@ class Qwen3_5Config(Llama3Config):
             linear_conv_kernel_dim=linear_conv_kernel_dim,
             partial_rotary_factor=partial_rotary_factor,
             attn_output_gate=attn_output_gate,
+            mamba_ssm_dtype=mamba_ssm_dtype,
             # Vision (optional)
             vision_config=vision_cfg,
             image_token_id=image_token_id,

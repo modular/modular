@@ -82,6 +82,7 @@ class GatedDeltaNet(Module):
         dtype: DType,
         device: DeviceRef,
         rms_norm_eps: float = 1e-6,
+        ssm_dtype: DType = DType.float32,
     ) -> None:
         super().__init__()
         self.hidden_size = hidden_size
@@ -92,6 +93,7 @@ class GatedDeltaNet(Module):
         self.conv_kernel_size = conv_kernel_size
         self.dtype = dtype
         self.device = device
+        self.ssm_dtype = ssm_dtype
 
         self.key_dim = key_head_dim * num_key_heads
         self.value_dim = value_head_dim * num_value_heads
@@ -199,18 +201,18 @@ class GatedDeltaNet(Module):
         # ---- Decay / beta params ----
         dt_bias = self.dt_bias.to(device)
         A_log = self.A_log.to(device)
-        # this cast is hard-coded, however it can come from `mamba_ssm_dtype` in HF config
-        A = ops.exp(ops.cast(A_log, DType.float32))
-        a_float = ops.cast(a_proj, DType.float32)  # [N, nv]
+        A = ops.exp(ops.cast(A_log, self.ssm_dtype))
+        a_float = ops.cast(a_proj, self.ssm_dtype)  # [N, nv]
         # Stabilised softplus: for x>20 return x directly (avoids float32 overflow)
-        x_sp = a_float + dt_bias
+        x_sp = a_float + ops.cast(dt_bias, self.ssm_dtype)
         softplus_val = ops.where(
-            x_sp > ops.constant(20.0, DType.float32, device=device),
+            x_sp > ops.constant(20.0, self.ssm_dtype, device=device),
             x_sp,
             ops.log(
-                ops.constant(1.0, DType.float32, device=device) + ops.exp(x_sp)
+                ops.constant(1.0, self.ssm_dtype, device=device) + ops.exp(x_sp)
             ),
         )
+        # Cast to float32 for downstream recurrence arithmetic (q/k/v ops always float32).
         decay = ops.exp(ops.cast(-A * softplus_val, DType.float32))  # [N, nv]
         beta = ops.cast(ops.sigmoid(b_proj), DType.float32)  # [N, nv] float32
 
