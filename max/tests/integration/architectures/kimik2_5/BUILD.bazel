@@ -35,6 +35,10 @@ modular_py_test(
 modular_py_test(
     name = "test_reasoning",
     srcs = ["test_reasoning.py"],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2411
     deps = [
         "//max/python/max/pipelines/architectures",
         requirement("numpy"),

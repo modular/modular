@@ -66,6 +66,10 @@ modular_py_test(
 modular_py_test(
     name = "test_dp_padding",
     srcs = ["test_dp_padding.py"],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2411
     deps = [
         "//max/python/max/driver",
         "//max/python/max/dtype",

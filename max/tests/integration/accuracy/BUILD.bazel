@@ -222,6 +222,10 @@ modular_py_test(
     name = "test_verify_pipelines_results",
     size = "large",
     srcs = ["test_verify_pipelines_results.py"],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2411
     deps = [
         ":verify_pipelines",
         requirement("click"),

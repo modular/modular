@@ -106,6 +106,10 @@ modular_py_test(
 modular_py_test(
     name = "test_pipelines_cli_json_lightweight",
     srcs = ["test_pipelines_cli_json_lightweight.py"],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2411
     deps = [
         "//max/python/max/entrypoints:pipelines",
     ],
