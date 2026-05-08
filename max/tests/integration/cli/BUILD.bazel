@@ -1,4 +1,4 @@
-load("//bazel:api.bzl", "modular_py_test", "requirement")
+load("//bazel:api.bzl", "modular_multi_py_version_test", "modular_py_test", "requirement")
 
 package(default_visibility = [
     "//:__pkg__",
@@ -80,7 +80,7 @@ modular_py_test(
     ],
 )
 
-modular_py_test(
+modular_multi_py_version_test(
     name = "test_pipelines_cli_help",
     srcs = ["test_pipelines_cli_help.py"],
     # TODO(MODELS-994): Investigate and enable on macOS
