@@ -1172,6 +1172,11 @@ SharedState::importSubModuleState(StringRef name, ASTDecl *parentDecl,
   if (!fileID) {
     std::string fullPath;
     fileID = getSourceMgr().AddIncludeFile(*modulePath, loc, fullPath);
+    if (!fileID) {
+      return createErrorModuleState(identifierLoc, declName, *parentState->decl,
+                                    "unable to resolve imported module '" +
+                                        pathRef + "'");
+    }
     impl->includedFiles.push_back(fullPath);
   }
 
