@@ -874,6 +874,21 @@ logit_verification_pipelines:
     cos_dist_threshold: 1.3e-01
     kl_div_threshold: 4.0e-01
 
+  deepseek-ai/DeepSeek-V3.2-Exp:
+    pre_submit_agents: []
+    post_submit_agents: [*b200_8x]
+    pipeline: "deepseek-ai/DeepSeek-V3.2-Exp"
+    compatible_with: [gpu]
+    encoding: float8_e4m3fn
+    tags: [nvidia-multi, 8xb200]
+    pregenerated_torch_goldens:
+      tar_file: "s3://modular-bazel-artifacts-public/artifacts/deepseek-ai_DeepSeek-V3.2-Exp_golden/deepseek-ai_DeepSeek-V3.2-Exp_golden.tar.gz"
+      json_file: "torch_deepseek-ai_DeepSeek-V3.2-Exp_float8_e4m3fn_golden.json"
+    # From verify_pipelines --find-tolerances (max cos 9.47e-2, max KL 3.85e-1).
+    cos_dist_threshold: 9.5e-02
+    kl_div_threshold: 3.9e-01
+    timeout: 1200
+
   nvidia/DeepSeek-R1-0528-NVFP4-v2:
     pre_submit_agents: []
     post_submit_agents: [*b200_8x]

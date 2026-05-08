@@ -1907,6 +1907,19 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         },
         device_encoding_map={"gpu": ["float8_e4m3fn"]},
     ),
+    "deepseek-ai/DeepSeek-V3.2-Exp": GenericOracle(
+        model_path="deepseek-ai/DeepSeek-V3.2-Exp",
+        config_params={
+            "max_length": 516,
+            "trust_remote_code": False,
+            "max_batch_input_tokens": 512,
+            "ep_size": 8,
+            "data_parallel_degree": 1,
+            # Match `--kv-cache-format float8_e4m3fn` (FP8 KV avoids dtype mismatches / hangs).
+            "kv_cache_format": "float8_e4m3fn",
+        },
+        device_encoding_map={"gpu": ["float8_e4m3fn"]},
+    ),
     "nvidia/DeepSeek-R1-0528-NVFP4-v2": GenericOracle(
         model_path="nvidia/DeepSeek-R1-0528-NVFP4-v2",
         config_params={

@@ -74,6 +74,7 @@ deepseek-ai/DeepSeek-R1-0528	4236a6af538feda4548eca9ab308586007567f52
 deepseek-ai/DeepSeek-R1-Distill-Llama-8B	6a6f4aa4197940add57724a7707d069478df56b1
 deepseek-ai/DeepSeek-V2-Lite-Chat	85864749cd611b4353ce1decdb286193298f64c7
 deepseek-ai/DeepSeek-V3.1-Terminus	19510d6dc61f79dbd925bd51ee8a9081c509a4b6
+deepseek-ai/DeepSeek-V3.2-Exp	194c67e12b1b0d6df0ef373ddcf215bc84027409
 fausap/peft-smollm2-lora-gtx1660	6b3a770dc8dceb01b1d1f4c593f1d516a03882c2
 google/gemma-3-12b-it	96b6f1eccf38110c56df3a15bffe176da04bfd80
 google/gemma-3-1b-it	dcc83ea841ab6100d6b47a070329e1ba4cf78752
