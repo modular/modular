@@ -658,17 +658,19 @@ class KimiK2_5Model(
         # Load the vision + language model.
         with CompilationTimer("vision + language model") as timer:
             # Create a new module to hold both models
-            module = Graph.empty_module()
+            module = Module()
 
             # Build the vision graph in the module
-            self._build_vision_graph(kimik2_5_config, state_dict, module=module)
+            vision_graph = self._build_vision_graph(
+                kimik2_5_config, state_dict, module=module
+            )
 
             # Build the language graph in the module
             language_graph = self._build_language_graph(config, module=module)
             timer.mark_build_complete()
-            vision_model, language_model = session.load_all(
-                language_graph, weights_registry=self.state_dict
-            )
+            models = session.load_all(module, weights_registry=self.state_dict)
+            vision_model = models[vision_graph.name]
+            language_model = models[language_graph.name]
 
         return vision_model, language_model
 
