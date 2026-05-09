@@ -509,8 +509,11 @@ struct WeakPointer[T: Movable & ImplicitlyDestructible](
     @no_inline
     def __del__(deinit self):
         """Decrement the weak count and free the allocation if last."""
-        if self._inner and self._inner.unsafe_value()[].drop_weak():
-            free(self._inner.unsafe_value(), {count = 1})
+        if not self._inner:
+            return
+        var inner_ptr = self._inner.unsafe_value()
+        if inner_ptr[].drop_weak():
+            free(inner_ptr, {count = 1})
 
     def try_upgrade(self) -> Optional[ArcPointer[Self.T]]:
         """Attempts to obtain a strong reference.
@@ -519,9 +522,12 @@ struct WeakPointer[T: Movable & ImplicitlyDestructible](
             An `ArcPointer` sharing the allocation, or `None` if the
             payload has already been destroyed (strong count reached 0).
         """
-        if self._inner and self._inner.unsafe_value()[].try_add_strong():
-            return {ArcPointer[Self.T](_inner=self._inner.unsafe_value())}
-        return Optional[ArcPointer[Self.T]]()
+        if not self._inner:
+            return None
+        var inner_ptr = self._inner.unsafe_value()
+        if inner_ptr[].try_add_strong():
+            return {ArcPointer[Self.T](_inner=inner_ptr)}
+        return None
 
     def strong_count(self) -> UInt64:
         """Returns the current strong count, or 0 if the payload is gone.
@@ -543,12 +549,12 @@ struct WeakPointer[T: Movable & ImplicitlyDestructible](
             The approximate number of outstanding `WeakPointer`s.
         """
 
-        if self._inner:
-            var w = self._inner.unsafe_value()[].weak_count_with_implicit()
-            if self._inner.unsafe_value()[].strong_count() == 0:
-                return w
-            # If there are any strong remaining, we don't want to
-            # include the implicit weak in the returned count.
-            return w - 1
-        else:
+        if not self._inner:
             return 0
+        ref inner = self._inner.unsafe_value()[]
+        var w = inner.weak_count_with_implicit()
+        if inner.strong_count() == 0:
+            return w
+        # If there are any strong remaining, we don't want to
+        # include the implicit weak in the returned count.
+        return w - 1
