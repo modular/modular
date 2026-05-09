@@ -12,6 +12,7 @@
 
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENOps.h"
+#include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "Support/MDialect/MTypeInterfaces.h"
 #include "mlir/IR/Builders.h"
@@ -127,7 +128,7 @@ FailureOr<TypedAttr> TypeConformsToTraitAttr::evaluateWithContext(
     // struct (e.g. MLIR primitive types like `index`). Non-struct types don't
     // conform to any traits, so return false.
     if (context.isMaterializationContext())
-      return {BoolAttr::get(getContext(), false)};
+      return {getScalarBoolConstant(getContext(), false)};
     return failure();
   }
 

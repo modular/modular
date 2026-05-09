@@ -123,9 +123,8 @@ checkMethodConstraintStatus(FnOp method, ConstraintAttr conformanceConstraint,
       continue;
 
     // Trivially false method constraint is always violated.
-    if (auto intProp = dyn_cast<IntegerAttr>(methodProp))
-      if (intProp.getValue().isZero())
-        return ConstraintResult::Violated;
+    if (isTriviallyFalseProposition(methodProp))
+      return ConstraintResult::Violated;
 
     // Unconditional conformance can't prove non-trivial constraints, but
     // keep scanning for violations before returning Unprovable.

@@ -1453,14 +1453,7 @@ TypedAttr SIMDTruncAttr::get(MLIRContext *ctx, TypedAttr operand) {
 //===----------------------------------------------------------------------===//
 
 TypedAttr SIMDAndAttr::get(MLIRContext *ctx, TypedAttr lhs, TypedAttr rhs) {
-  // Fold if possible
-  if (auto fold = foldSIMDOp(
-          {lhs, rhs}, [](APSInt lhs, APSInt rhs) { return lhs & rhs; },
-          [](bool lhs, bool rhs) { return lhs && rhs; })) {
-    if (auto ret = dyn_cast<TypedAttr>(cast<Attribute>(fold)))
-      return ret;
-  }
-  return Base::get(ctx, lhs, rhs);
+  return ParamOperatorAttr::get(POC::And, {lhs, rhs});
 }
 
 //===----------------------------------------------------------------------===//
@@ -1468,14 +1461,7 @@ TypedAttr SIMDAndAttr::get(MLIRContext *ctx, TypedAttr lhs, TypedAttr rhs) {
 //===----------------------------------------------------------------------===//
 
 TypedAttr SIMDXorAttr::get(MLIRContext *ctx, TypedAttr lhs, TypedAttr rhs) {
-  // Fold if possible
-  if (auto fold = foldSIMDOp(
-          {lhs, rhs}, [](APSInt lhs, APSInt rhs) { return lhs ^ rhs; },
-          [](bool lhs, bool rhs) { return (bool)(lhs ^ rhs); })) {
-    if (auto ret = dyn_cast<TypedAttr>(cast<Attribute>(fold)))
-      return ret;
-  }
-  return Base::get(ctx, lhs, rhs);
+  return ParamOperatorAttr::get(POC::Xor, {lhs, rhs});
 }
 
 //===----------------------------------------------------------------------===//
@@ -1483,14 +1469,7 @@ TypedAttr SIMDXorAttr::get(MLIRContext *ctx, TypedAttr lhs, TypedAttr rhs) {
 //===----------------------------------------------------------------------===//
 
 TypedAttr SIMDOrAttr::get(MLIRContext *ctx, TypedAttr lhs, TypedAttr rhs) {
-  // Fold if possible
-  if (auto fold = foldSIMDOp(
-          {lhs, rhs}, [](APSInt lhs, APSInt rhs) { return lhs | rhs; },
-          [](bool lhs, bool rhs) { return (bool)(lhs || rhs); })) {
-    if (auto ret = dyn_cast<TypedAttr>(cast<Attribute>(fold)))
-      return ret;
-  }
-  return Base::get(ctx, lhs, rhs);
+  return ParamOperatorAttr::get(POC::Or, {lhs, rhs});
 }
 
 //===----------------------------------------------------------------------===//
@@ -1498,15 +1477,7 @@ TypedAttr SIMDOrAttr::get(MLIRContext *ctx, TypedAttr lhs, TypedAttr rhs) {
 //===----------------------------------------------------------------------===//
 
 TypedAttr SIMDAddAttr::get(MLIRContext *ctx, TypedAttr lhs, TypedAttr rhs) {
-  // Fold if possible
-  if (auto fold = foldSIMDOp(
-          {lhs, rhs}, [](APSInt lhs, APSInt rhs) { return lhs + rhs; },
-          [](APFloat lhs, APFloat rhs) { return lhs + rhs; },
-          [](bool lhs, bool rhs) { return (bool)(lhs ^ rhs); })) {
-    if (auto ret = dyn_cast<TypedAttr>(cast<Attribute>(fold)))
-      return ret;
-  }
-  return Base::get(ctx, lhs, rhs);
+  return ParamOperatorAttr::get(POC::Add, {lhs, rhs});
 }
 
 //===----------------------------------------------------------------------===//
@@ -1514,6 +1485,15 @@ TypedAttr SIMDAddAttr::get(MLIRContext *ctx, TypedAttr lhs, TypedAttr rhs) {
 //===----------------------------------------------------------------------===//
 
 TypedAttr SIMDSubAttr::get(MLIRContext *ctx, TypedAttr lhs, TypedAttr rhs) {
+  auto simdType = cast<SIMDType>(lhs.getType());
+  // ParamOperatorAttr does not have a sub poc, only safe to turn the sub into
+  // lhs + (-rhs) for signed int dtype.
+  //
+  // TODO: the gap should be filled, but it should be enough for the purpose of
+  // int/simd unification.
+  if (simdType.getResolvedDType() && simdType.getResolvedDType()->isSInt())
+    return ParamOperatorAttr::getSub(lhs, rhs);
+
   // Fold if possible
   if (auto fold = foldSIMDOp(
           {lhs, rhs}, [](APSInt lhs, APSInt rhs) { return lhs - rhs; },
@@ -1530,15 +1510,7 @@ TypedAttr SIMDSubAttr::get(MLIRContext *ctx, TypedAttr lhs, TypedAttr rhs) {
 //===----------------------------------------------------------------------===//
 
 TypedAttr SIMDMulAttr::get(MLIRContext *ctx, TypedAttr lhs, TypedAttr rhs) {
-  // Fold if possible
-  if (auto fold = foldSIMDOp(
-          {lhs, rhs}, [](APSInt lhs, APSInt rhs) { return lhs * rhs; },
-          [](APFloat lhs, APFloat rhs) { return lhs * rhs; },
-          [](bool lhs, bool rhs) { return (bool)(lhs & rhs); })) {
-    if (auto ret = dyn_cast<TypedAttr>(cast<Attribute>(fold)))
-      return ret;
-  }
-  return Base::get(ctx, lhs, rhs);
+  return ParamOperatorAttr::get(POC::Mul, {lhs, rhs});
 }
 
 //===----------------------------------------------------------------------===//
@@ -1546,10 +1518,7 @@ TypedAttr SIMDMulAttr::get(MLIRContext *ctx, TypedAttr lhs, TypedAttr rhs) {
 //===----------------------------------------------------------------------===//
 
 TypedAttr SIMDDivAttr::get(MLIRContext *ctx, TypedAttr lhs, TypedAttr rhs) {
-  Attribute operands[] = {lhs, rhs};
-  if (TypedAttr folded = tryFoldAttr(operands, foldSIMDDiv))
-    return folded;
-  return Base::get(ctx, lhs, rhs);
+  return ParamOperatorAttr::get(POC::Div, {lhs, rhs});
 }
 
 //===----------------------------------------------------------------------===//
@@ -1583,10 +1552,7 @@ TypedAttr SIMDRoundAttr::get(MLIRContext *ctx, TypedAttr operand) {
 
 TypedAttr SIMDFloorDivAttr::get(MLIRContext *ctx, TypedAttr lhs,
                                 TypedAttr rhs) {
-  Attribute operands[] = {lhs, rhs};
-  if (TypedAttr folded = tryFoldAttr(operands, foldSIMDFloorDiv))
-    return folded;
-  return Base::get(ctx, lhs, rhs);
+  return ParamOperatorAttr::get(POC::FloorDivS, {lhs, rhs});
 }
 
 //===----------------------------------------------------------------------===//
@@ -1657,6 +1623,10 @@ OpFoldResult SIMDReduceAndAttr::fold(TypedAttr vector, SIMDType outType) {
 //===----------------------------------------------------------------------===//
 
 TypedAttr SIMDShlAttr::get(MLIRContext *ctx, TypedAttr value, TypedAttr shft) {
+  // TODO: support mismatched operand types in `ParamOperatorAttr`
+  if (value.getType() == shft.getType())
+    return ParamOperatorAttr::get(POC::Shl, {value, shft});
+
   Attribute operands[] = {value, shft};
   if (TypedAttr folded = tryFoldAttr(operands, foldSIMDShl))
     return folded;
@@ -1668,6 +1638,10 @@ TypedAttr SIMDShlAttr::get(MLIRContext *ctx, TypedAttr value, TypedAttr shft) {
 //===----------------------------------------------------------------------===//
 
 TypedAttr SIMDShrAttr::get(MLIRContext *ctx, TypedAttr value, TypedAttr shft) {
+  // TODO: support mismatched operand types in `ParamOperatorAttr`
+  if (value.getType() == shft.getType())
+    return ParamOperatorAttr::get(POC::Shr, {value, shft});
+
   Attribute operands[] = {value, shft};
   if (TypedAttr folded = tryFoldAttr(operands, foldSIMDShr))
     return folded;

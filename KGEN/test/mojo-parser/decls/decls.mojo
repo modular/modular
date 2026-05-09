@@ -366,7 +366,7 @@ def callDefaultArgument(x: Int) -> Int:
 
 
 # CHECK-LABEL: lit.fn @"defaultArgumentReferencesParameter
-# CHECK-SAME: (%a: !Int = {{.*}}{_mlir_value = add(#lit.struct.extract<:!Int p, "_mlir_value">, 87)}
+# CHECK-SAME: (%a: !Int = sugar_builtin(apply({{.*}}add(#lit.struct.extract<:!Int p, "_mlir_value">, 87)}))
 def defaultArgumentReferencesParameter[p: Int](a: Int = p + 87) -> Int:
     return a
 

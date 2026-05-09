@@ -6,6 +6,7 @@
 
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/Interpreter/InterpreterAttrs.h"
+#include "KGEN/KGENDialect/FoldUtils.h"
 #include "KGEN/KGENDialect/KGENDType.h"
 #include "KGEN/KGENDialect/KGENDialect.h"
 #include "KGEN/KGENDialect/KGENOps.h"
@@ -669,7 +670,8 @@ TypedAttr DowncastAttr::getTypeRefIfResolved() {
 //===----------------------------------------------------------------------===//
 
 Type TypeConformsToTraitAttr::getType() const {
-  return IntegerType::get(getContext(), 1);
+  return SIMDType::get(1,
+                       DTypeConstantAttr::get(getContext(), KGENDType::kBool));
 }
 
 TypedAttr TypeConformsToTraitAttr::getTypeRefIfResolved() {
@@ -685,14 +687,14 @@ TypeConformsToTraitAttr::simplify(const SymbolTable &traitTableOp,
         traitTableOp.lookup(getFlattenedSymbolName(traitSym)));
 
     if (!conformOp)
-      return {BoolAttr::get(getContext(), false)};
+      return {getScalarBoolConstant(getContext(), false)};
 
     props.push_back(evaluator.replace(
         getCanonicalAttr(conformOp.getConstraint().getProposition())));
   }
 
   if (props.empty())
-    return {BoolAttr::get(getContext(), true)};
+    return {getScalarBoolConstant(getContext(), true)};
 
   return {ParamOperatorAttr::get(POC::And, props)};
 }
@@ -1996,7 +1998,9 @@ LogicalResult ParamOperatorAttr::verify(
     // Check the types that are supported.
     if (type.isIntOrIndex())
       break; // Index and fixed-width integer types supported for all of these.
-    return emitError() << "operator requires an index or integer type";
+    if (sugarIsa<SIMDType>(type))
+      break;
+    return emitError() << "operator requires an index, integer or float type";
     break;
   // Binary expressions.
   case POC::Shl:
@@ -2014,7 +2018,8 @@ LogicalResult ParamOperatorAttr::verify(
       return emitError() << stringifyEnum(opcode) << " must have two operands";
     if (type != operands[0].getType())
       return emitError() << "result type should match operand types";
-    if (!operands[0].getType().isIntOrIndex())
+    if (!operands[0].getType().isIntOrIndex() &&
+        !sugarIsa<SIMDType>(operands[0].getType()))
       return emitError() << "operator requires an index or integer type";
     break;
   case POC::EQ:
@@ -2276,17 +2281,42 @@ static void deduplicateOperands(SmallVectorImpl<TypedAttr> &operands) {
   operands = uniqueOperands.takeVector();
 }
 
+template <typename... OpFns>
+static bool isSpecialConstant(SIMDAttr cst, OpFns &&...ops) {
+  KGENDType dtype = *cst.getType().getResolvedDType();
+
+  if (dtype.isBool()) {
+    auto fn = KGEN::Detail::getOpFnOfType<bool>(std::forward<OpFns>(ops)...);
+    if constexpr (!std::is_same_v<decltype(fn), std::nullopt_t>)
+      return llvm::all_of(cst.getValues(), [fn](DTypeValue val) {
+        return fn(val.getBoolVal());
+      });
+  }
+  if (dtype.isFloat()) {
+    auto fn = KGEN::Detail::getOpFnOfType<APFloat>(std::forward<OpFns>(ops)...);
+    if constexpr (!std::is_same_v<decltype(fn), std::nullopt_t>)
+      return llvm::all_of(cst.getValues(), [fn](DTypeValue val) {
+        return fn(val.getFloatVal());
+      });
+  }
+  if (dtype.isIntLike()) {
+    // TODO: not sure whether we need to handle index specially here...
+    auto fn = KGEN::Detail::getOpFnOfType<APSInt>(std::forward<OpFns>(ops)...);
+    if constexpr (!std::is_same_v<decltype(fn), std::nullopt_t>)
+      return llvm::all_of(cst.getValues(),
+                          [fn](DTypeValue val) { return fn(val.getIntVal()); });
+  }
+
+  llvm_unreachable("unhandled dtype");
+}
+
 /// Given a fully associative variadic integer operation, constant fold any
 /// constant operands and move them to the right.  If the whole expression is
 /// constant, then return that, otherwise update the operands list.
-static Attribute simplifyAssocOp(
-    POC opcode, SmallVectorImpl<TypedAttr> &operands,
-    llvm::function_ref<APInt(const APInt &, const APInt &)> unsignedFn,
-    llvm::function_ref<APInt(const APInt &, const APInt &)> signedFn = {},
-    llvm::function_ref<bool(const APInt &)> identityConstantFn = {},
-    llvm::function_ref<bool(const APInt &)> destructiveConstantFn = {},
-    bool shouldDeduplicateOperands = false) {
-  auto type = operands[0].getType();
+template <typename... OpFns>
+static Attribute
+simplifyAssocOp(POC opcode, SmallVectorImpl<TypedAttr> &operands,
+                bool shouldDeduplicateOperands, OpFns &&...ops) {
   if (operands.size() == 1)
     return operands[0];
 
@@ -2313,14 +2343,13 @@ static Attribute simplifyAssocOp(
   llvm::stable_sort(operands, ParameterAttr::compare);
 
   // Merge any constants, they will appear at the back of the operand list now.
-  if (llvm::isa<IntegerAttr>(operands.back())) {
+  if (llvm::isa<SIMDAttr>(operands.back())) {
     while (operands.size() >= 2 &&
-           llvm::isa<IntegerAttr>(operands[operands.size() - 2])) {
-      APInt c1 =
-          llvm::cast<IntegerAttr>(operands[operands.size() - 2]).getValue();
-      APInt c2 = llvm::cast<IntegerAttr>(operands.back()).getValue();
-      if (auto resultConstant = foldBinaryValues(
-              unsignedFn, signedFn ? signedFn : unsignedFn, c1, c2, type)) {
+           llvm::isa<SIMDAttr>(operands[operands.size() - 2])) {
+      Attribute c1 = operands[operands.size() - 2];
+      Attribute c2 = operands.back();
+      if (auto resultConstant =
+              foldSIMDOp({c1, c2}, std::get<0>(std::forward<OpFns>(ops))...)) {
         operands.pop_back();
         operands.pop_back();
         operands.push_back(resultConstant);
@@ -2329,19 +2358,17 @@ static Attribute simplifyAssocOp(
         break;
       }
     }
-
-    auto resultCst = llvm::cast<IntegerAttr>(operands.back());
-
-    // If the resulting constant is the destructive constant (e.g. `x*0`), then
-    // return it.
-    if (destructiveConstantFn && destructiveConstantFn(resultCst.getValue()))
+    auto resultCst = llvm::cast<SIMDAttr>(operands.back());
+    // Destructive constant
+    if (isSpecialConstant(resultCst, std::get<2>(std::forward<OpFns>(ops))...))
       return resultCst;
 
-    // Remove the constant back to our operand list if it is the identity
-    // constant for this operator (e.g. `x*1`) and there are other operands.
-    if (identityConstantFn && identityConstantFn(resultCst.getValue()) &&
-        operands.size() != 1)
+    // Identity constant.
+    if (operands.size() != 1 &&
+        isSpecialConstant(resultCst,
+                          std::get<1>(std::forward<OpFns>(ops))...)) {
       operands.pop_back();
+    }
   }
 
   return operands.size() == 1 ? operands[0] : Attribute();
@@ -2350,7 +2377,10 @@ static Attribute simplifyAssocOp(
 struct DecomposedAddend {
   POC opcode;
   TypedAttr nonConstant;
-  IntegerAttr constant;
+  ArrayRef<DTypeValue> constant;
+
+  // cache the original operand to avoid reconstruction.
+  TypedAttr expression;
 };
 
 /// Analyze an operand to an add.  If it is a multiplication by a constant (e.g.
@@ -2360,99 +2390,131 @@ struct DecomposedAddend {
 static DecomposedAddend decomposeAddend(TypedAttr operand) {
   auto mul = sugarDynCast<ParamOperatorAttr>(operand);
   if (mul && llvm::is_contained({POC::MulNoWrap, POC::Mul}, mul.getOpcode())) {
-    if (auto cst = sugarDynCast<IntegerAttr>(mul.getOperands().back())) {
+    if (auto cst = sugarDynCast<SIMDAttr>(mul.getOperands().back())) {
       auto nonCst = ParamOperatorAttr::get(mul.getOpcode(),
                                            mul.getOperands().drop_back());
-      return {mul.getOpcode(), nonCst, cst};
+      return {mul.getOpcode(), nonCst, cst.getValues(), operand};
     }
   }
 
   auto opcode = mul ? mul.getOpcode() : POC::Mul;
-  return {opcode, operand, IntegerAttr()};
+  return {opcode, operand, {}, operand};
 }
-
-/// Infer the preferred multiplication opcode from two decomposed addends.
-/// The goal is to avoid accidentally converting MulNoWrap to the more strict
-/// Mul when Mul is not present in the original expression.
-static POC inferOpcode(const DecomposedAddend &lhs,
-                       const DecomposedAddend &rhs) {
-  if (lhs.constant && rhs.constant) {
-    if (lhs.opcode == POC::Mul || rhs.opcode == POC::Mul)
-      return POC::Mul;
-    return POC::MulNoWrap;
-  }
-
-  if (lhs.constant)
-    return lhs.opcode;
-  if (rhs.constant)
-    return rhs.opcode;
-  return KGEN::POC::Mul;
-}
-
-static IntegerAttr getOneOfType(Type type) { return IntegerAttr::get(type, 1); }
 
 static Attribute simplifyAdd(SmallVectorImpl<TypedAttr> &operands) {
   if (auto result = simplifyAssocOp(
-          POC::Add, operands, [](auto a, auto b) { return a + b; }, {},
-          /*identityCst*/ [](auto cst) { return cst.isZero(); }))
+          POC::Add, operands, false,
+          std::make_tuple(
+              /*folder*/ [](APSInt lhs, APSInt rhs) { return lhs + rhs; },
+              /*idCst*/ [](APSInt cst) { return cst.isZero(); },
+              /*dstCst*/ [](APSInt) { return false; }),
+          std::make_tuple(
+              /*folder*/ [](APFloat lhs, APFloat rhs) { return lhs + rhs; },
+              /*idCst*/ [](APFloat cst) { return cst.isZero(); },
+              /*dstCst*/ [](APFloat) { return false; }),
+          std::make_tuple(
+              /*folder*/ [](bool lhs, bool rhs) { return (bool)(lhs ^ rhs); },
+              /*idCst*/ [](bool cst) { return !cst; },
+              /*dstCst*/ [](bool) { return false; })))
     return result;
 
-  // Canonicalize the add by splitting all addends into their variable and
-  // constant factors.
-  SmallVector<DecomposedAddend> decomposedOperands;
-  llvm::SmallDenseSet<TypedAttr> nonConstantParts;
+  // NOTE: `simplifyAdd` is an EXTREMELY hot path, pay more attention to
+  // performance.
+  const SIMDType simdType = cast<SIMDType>(operands[0].getType());
+  const KGENDType dtype = *simdType.getResolvedDType();
+  const int64_t simdSize = *simdType.getResolvedSize();
+  if (!dtype.isSInt() && !dtype.isUInt())
+    return {};
+
+  bool needToMerge = false;
+  // A map from non-constant part to the decomposed addends.
+  llvm::SmallDenseMap<TypedAttr, SmallVector<DecomposedAddend>> addendMap;
   for (auto &op : operands) {
-    decomposedOperands.push_back(decomposeAddend(op));
-
-    // Keep track of non-constant parts we've already seen.  If we see multiple
-    // uses of the same value, then we can fold them together with a multiply.
-    // This handles things like `(a+b+a)` => `(a*2 + b)` and `(a*2 + b + a)` =>
-    // `(a*3 + b)`.
-    if (!nonConstantParts.insert(decomposedOperands.back().nonConstant)
-             .second) {
-      // The thing we multiply will be the common expression.
-      TypedAttr mulOperand = decomposedOperands.back().nonConstant;
-
-      // Find the index of the first occurrence.
-      size_t i = 0;
-      while (decomposedOperands[i].nonConstant != mulOperand)
-        ++i;
-
-      // Remove both occurrences from the operand list.
-      operands.erase(operands.begin() + (&op - &operands[0]));
-      operands.erase(operands.begin() + i);
-
-      auto type = mulOperand.getType();
-      auto c1 = decomposedOperands[i].constant,
-           c2 = decomposedOperands.back().constant;
-
-      // Fill in missing constant multiplicands with 1.
-      if (!c1)
-        c1 = getOneOfType(type);
-      if (!c2)
-        c2 = getOneOfType(type);
-
-      auto opcode =
-          inferOpcode(decomposedOperands[i], decomposedOperands.back());
-
-      // Re-add the "a"*(c1+c2) expression to the operand list and
-      // re-canonicalize.
-      auto constant = ParamOperatorAttr::get(POC::Add, c1, c2);
-      auto mulCst = ParamOperatorAttr::get(opcode, mulOperand, constant);
-      operands.push_back(mulCst);
-      return ParamOperatorAttr::get(POC::Add, operands);
-    }
+    DecomposedAddend addend = decomposeAddend(op);
+    SmallVector<DecomposedAddend> &toPush = addendMap[addend.nonConstant];
+    toPush.push_back(addend);
+    if (toPush.size() > 1)
+      needToMerge = true;
   }
 
-  return {};
+  // early return if we don't need to merge any addends
+  if (!needToMerge)
+    return {};
+
+  SmallVector<TypedAttr> newOperands;
+  for (auto [nonConstant, addends] : addendMap) {
+    // If there is just one addend, the original expression is the operand
+    if (addends.size() == 1) {
+      newOperands.push_back(addends[0].expression);
+      continue;
+    }
+
+    assert(addends.size() > 1);
+    size_t numOnes = 0;
+    // Fold directly on the constant value to avoid creating intermediate
+    // attribute for performance.
+    SmallVector<DTypeValue> folded;
+    POC opCode = KGEN::POC::Mul;
+    for (auto addend : addends) {
+      if (addend.constant.empty()) {
+        numOnes++;
+        continue;
+      }
+
+      // Infer the preferred multiplication opcode from two decomposed addends.
+      // The goal is to avoid accidentally converting MulNoWrap to the more
+      // strict Mul when Mul is not present in the original expression.
+      opCode = opCode == KGEN::POC::Mul ? addend.opcode : opCode;
+      if (folded.empty()) {
+        folded.assign(addend.constant.begin(), addend.constant.end());
+        continue;
+      }
+
+      // Accumulate the constant part
+      for (size_t i = 0; i < folded.size(); i++)
+        folded[i] = DTypeValue(
+            addend.constant[i].getIntVal() + folded[i].getIntVal(), dtype);
+    }
+
+    if (numOnes > 0) {
+      APSInt oneToAdd(APInt(dtype.getWidthInBits(nullptr), numOnes),
+                      dtype.isUInt());
+      if (folded.empty()) {
+        folded.assign(simdSize, DTypeValue(oneToAdd, dtype));
+      } else {
+        for (size_t i = 0; i < folded.size(); i++)
+          folded[i] = DTypeValue(oneToAdd + folded[i].getIntVal(), dtype);
+      }
+    }
+    // FIXME: make sure not to fold index type when we shouldn't.
+    assert(!folded.empty());
+
+    newOperands.push_back(ParamOperatorAttr::get(
+        opCode, {nonConstant, SIMDAttr::get(folded, simdType)}));
+  }
+
+  if (newOperands.size() == 1)
+    return newOperands[0];
+
+  return ParamOperatorAttr::get(POC::Add, newOperands);
 }
 
 static Attribute simplifyGenericMul(SmallVectorImpl<TypedAttr> &operands,
                                     POC opcode) {
   if (auto result = simplifyAssocOp(
-          opcode, operands, [](auto a, auto b) { return a * b; }, {},
-          /*identityCst*/ [](auto cst) { return cst.isOne(); },
-          /*destructiveCst*/ [](auto cst) { return cst.isZero(); }))
+          opcode, operands, false,
+          std::make_tuple(
+              /*folder*/ [](APSInt lhs, APSInt rhs) { return lhs * rhs; },
+              /*idCst*/ [](APSInt cst) { return cst.isOne(); },
+              /*dstCst*/ [](APSInt cst) { return cst.isZero(); }),
+          std::make_tuple(
+              /*folder*/ [](APFloat lhs, APFloat rhs) { return lhs * rhs; },
+              /*idCst*/ [](APFloat cst) { return cst.isExactlyValue(1.0); },
+              /*dstCst*/ [](APFloat cst) { return cst.isZero(); }),
+          std::make_tuple(
+              /*folder*/ [](bool lhs, bool rhs) { return lhs && rhs; },
+              /*idCst*/ [](bool cst) { return cst; },
+              /*dstCst*/ [](bool cst) { return !cst; })))
     return result;
 
   // We always build a sum-of-products representation, so if we see an addition
@@ -2480,48 +2542,69 @@ static Attribute simplifyGenericMul(SmallVectorImpl<TypedAttr> &operands,
 
 static Attribute simplifyAnd(SmallVectorImpl<TypedAttr> &operands) {
   return simplifyAssocOp(
-      POC::And, operands, [](auto a, auto b) { return a & b; }, {},
-      /*identityCst*/ [](auto cst) { return cst.isAllOnes(); },
-      /*destructiveCst*/ [](auto cst) { return cst.isZero(); },
-      /*shouldDeduplicateOperands=*/true);
+      POC::And, operands, true,
+      std::make_tuple(
+          /*folder*/ [](APSInt lhs, APSInt rhs) { return lhs & rhs; },
+          /*idCst*/ [](APSInt cst) { return cst.isAllOnes(); },
+          /*dstCst*/ [](APSInt cst) { return cst.isZero(); }),
+      std::make_tuple(
+          /*folder*/ [](bool lhs, bool rhs) { return lhs && rhs; },
+          /*idCst*/ [](bool cst) { return cst; },
+          /*dstCst*/ [](bool cst) { return !cst; }));
 }
 
 static Attribute simplifyOr(SmallVectorImpl<TypedAttr> &operands) {
   return simplifyAssocOp(
-      POC::Or, operands, [](auto a, auto b) { return a | b; }, {},
-      /*identityCst*/ [](auto cst) { return cst.isZero(); },
-      /*destructiveCst*/ [](auto cst) { return cst.isAllOnes(); },
-      /*shouldDeduplicateOperands=*/true);
+      POC::Or, operands, true,
+      std::make_tuple(
+          /*folder*/ [](APSInt lhs, APSInt rhs) { return lhs | rhs; },
+          /*idCst*/ [](APSInt cst) { return cst.isZero(); },
+          /*dstCst*/ [](APSInt cst) { return cst.isAllOnes(); }),
+      std::make_tuple(
+          /*folder*/ [](bool lhs, bool rhs) { return lhs || rhs; },
+          /*idCst*/ [](bool cst) { return !cst; },
+          /*dstCst*/ [](bool cst) { return cst; }));
 }
 
 static Attribute simplifyXor(SmallVectorImpl<TypedAttr> &operands) {
   return simplifyAssocOp(
-      POC::Xor, operands, [](auto a, auto b) { return a ^ b; }, {},
-      /*identityCst*/ [](auto cst) { return cst.isZero(); });
+      POC::Xor, operands, false,
+      std::make_tuple(
+          /*folder*/ [](APSInt lhs, APSInt rhs) { return lhs ^ rhs; },
+          /*idCst*/ [](APSInt cst) { return cst.isZero(); },
+          /*dstCst*/ [](APSInt) { return false; }),
+      std::make_tuple(
+          /*folder*/ [](bool lhs, bool rhs) { return (bool)(lhs ^ rhs); },
+          /*idCst*/ [](bool cst) { return !cst; },
+          /*dstCst*/ [](bool) { return false; }));
 }
 
 /// Returns true if the integer is at its max value.
 static bool intIsMaxValue(Type type, const APInt &value) {
   return isSignedIntType(type) ? value.isMaxSignedValue() : value.isMaxValue();
 }
+static bool intIsMaxValue(const APSInt &value) {
+  return value.isSigned() ? value.isMaxSignedValue() : value.isMaxValue();
+}
 
 /// Returns true if the integer is at its min value.
-static bool intIsMinValue(Type type, const APInt &value) {
-  return isSignedIntType(type) ? value.isMinSignedValue() : value.isMinValue();
+static bool intIsMinValue(const APSInt &value) {
+  return value.isSigned() ? value.isMinSignedValue() : value.isMinValue();
 }
 
 static Attribute simplifyMax(SmallVectorImpl<TypedAttr> &operands) {
-  Type type = operands.front().getType();
   Attribute maybeConstAttr = simplifyAssocOp(
-      POC::Max, operands, llvm::APIntOps::umax, llvm::APIntOps::smax,
-      [&](auto cst) { return intIsMinValue(type, cst); },
-      [&](auto cst) { return intIsMaxValue(type, cst); },
-      /*shouldDeduplicateOperands*/ true);
+      POC::Max, operands, true,
+      std::make_tuple(
+          /*folder*/ [](APSInt lhs,
+                        APSInt rhs) { return lhs > rhs ? lhs : rhs; },
+          /*idCst*/ [&](APSInt cst) { return intIsMinValue(cst); },
+          /*dstCst*/ [&](APSInt cst) { return intIsMaxValue(cst); }));
   if (maybeConstAttr)
     return maybeConstAttr;
 
   // Add folding rule: max(a*x, a*y) --> a*max(x, y)
-  IntegerAttr commonFactor;
+  SIMDAttr commonFactor;
   for (TypedAttr operand : operands) {
     // Operand must be a product.
     auto mulAttr = dyn_castPE(POC::MulNoWrap, operand);
@@ -2530,7 +2613,7 @@ static Attribute simplifyMax(SmallVectorImpl<TypedAttr> &operands) {
 
     // The product must end with a constant integer attribute, which (if
     // present) will be canonicalized to be in the back
-    auto factor = sugarDynCast<IntegerAttr>(mulAttr.getOperands().back());
+    auto factor = sugarDynCast<SIMDAttr>(mulAttr.getOperands().back());
     if (!factor)
       return {};
 
@@ -2569,29 +2652,27 @@ static Attribute simplifyMax(SmallVectorImpl<TypedAttr> &operands) {
 }
 
 static Attribute simplifyMin(SmallVectorImpl<TypedAttr> &operands) {
-  Type type = operands.front().getType();
   return simplifyAssocOp(
-      POC::Min, operands, llvm::APIntOps::umin, llvm::APIntOps::smin,
-      [&](auto cst) { return intIsMaxValue(type, cst); },
-      [&](auto cst) { return intIsMinValue(type, cst); },
-      /*shouldDeduplicateOperands*/ true);
+      POC::Min, operands, true,
+      std::make_tuple(
+          /*folder*/ [](APSInt lhs,
+                        APSInt rhs) { return lhs < rhs ? lhs : rhs; },
+          /*idCst*/ [&](APSInt cst) { return intIsMaxValue(cst); },
+          /*dstCst*/ [&](APSInt cst) { return intIsMinValue(cst); }));
 }
 
 /// Given a binary function, if the two operands are known constant integers,
 /// use the specified fold functions to compute the result.
-static Attribute
-foldBinaryOp(ArrayRef<TypedAttr> operands,
-             llvm::function_ref<APInt(const APInt &, const APInt &)> unsignedFn,
-             llvm::function_ref<APInt(const APInt &, const APInt &)> signedFn) {
+template <typename... OpFns>
+static Attribute foldBinaryOp(ArrayRef<TypedAttr> operands, OpFns &&...ops) {
   assert(operands.size() == 2 && "binary operator always has two operands");
-  if (auto lhs = sugarDynCast<IntegerAttr>(operands[0]))
-    if (auto rhs = sugarDynCast<IntegerAttr>(operands[1])) {
-      if (auto resultConstant =
-              foldBinaryValues(unsignedFn, signedFn, lhs.getValue(),
-                               rhs.getValue(), lhs.getType()))
-        return resultConstant;
-    }
-  return {};
+
+  TypedAttr resultConstant;
+  if (auto lhs = sugarDynCast<SIMDAttr>(operands[0]))
+    if (auto rhs = sugarDynCast<SIMDAttr>(operands[1]))
+      resultConstant = foldSIMDOp({lhs, rhs}, std::forward<OpFns>(ops)...);
+
+  return resultConstant;
 }
 
 /// Folds constants given a comparison function that returns bool.  The client
@@ -2705,30 +2786,44 @@ static IntegerAttr foldEquality(TypedAttr lhs, TypedAttr rhs) {
 static Attribute simplifyShl(SmallVectorImpl<TypedAttr> &operands) {
   // Canonicalize `x << cst` => `x * (1<<cst)` to compose correctly with
   // add/mul canonicalization (also handles constant folding).
-  if (auto rhs = sugarDynCast<IntegerAttr>(operands[1])) {
+  if (auto rhs = sugarDynCast<SIMDAttr>(operands[1])) {
+    int64_t width = rhs.getType().getResolvedDType()->getWidthInBits(nullptr);
+    assert(width > 0 && "unresolved dtype");
+
     // NOTE: This is correct even for index types because an overlong shift will
     // turn the result to zero.
-    if (rhs.getValue().getZExtValue() >= rhs.getValue().getBitWidth())
-      return IntegerAttr::get(rhs.getType(), 0);
+    if (llvm::all_of(rhs.getValues(), [width](const DTypeValue &v) {
+          return v.getData().getZExtValue() >= static_cast<uint64_t>(width);
+        })) {
+      return splatIntLiteralToSIMD(0, rhs.getType());
+    }
 
-    auto rhsCst = APInt::getOneBitSet(rhs.getValue().getBitWidth(),
-                                      rhs.getValue().getZExtValue());
+    SmallVector<DTypeValue> rhsCst =
+        llvm::map_to_vector(rhs.getValues(), [width](const DTypeValue &v) {
+          auto rhsCst = APInt::getOneBitSet(width, v.getData().getZExtValue());
+          return DTypeValue(rhsCst, v.getDType());
+        });
+
     return ParamOperatorAttr::get(POC::Mul, operands[0],
-                                  IntegerAttr::get(rhs.getType(), rhsCst));
+                                  SIMDAttr::get(rhsCst, rhs.getType()));
   }
   return {};
 }
 
 static Attribute simplifyShr(SmallVectorImpl<TypedAttr> &operands) {
-  if (auto rhs = sugarDynCast<IntegerAttr>(operands[1]))
-    if (rhs.getValue().isZero())
+  if (auto rhs = sugarDynCast<SIMDAttr>(operands[1]))
+    if (isAllIntZero(rhs))
       return operands[0]; // `x >> 0 = x`.
   // TODO: 0 >> x, -1 >>> x
 
   // FIXME: Must care about high bits.
-  return foldBinaryOp(
-      operands, [](auto a, auto b) { return a.lshr(b); },
-      [](auto a, auto b) { return a.ashr(b); });
+  return foldBinaryOp(operands,
+                      [](APSInt lhs, APSInt rhs) -> std::optional<APSInt> {
+                        if (rhs.uge(lhs.getBitWidth()))
+                          return std::nullopt;
+
+                        return lhs >> rhs.getZExtValue();
+                      });
 }
 
 /// Tracks the operands of MulNoWrap in a form which allows easy simplification.
@@ -2739,9 +2834,7 @@ struct DivOperandInfo {
 
   // tracks the coalesced constant terms, e.g. mul_no_wrap(5, 10, D1)
   // this would be 5 * 10 = 50.
-  APInt constant;
-
-  Type attrType;
+  SIMDAttr constant;
 
   // whether folding of `constant` leads to overflow on the current system
   // OR initialized with wrong attr (only support IntegerAttr and MulNoWrap)
@@ -2750,45 +2843,54 @@ struct DivOperandInfo {
   bool isPoisoned = false;
 
   // Multiplies `constant` by `num`, checking overflow
-  inline void updateConstant(IntegerAttr integerAttr) {
-    APInt num = integerAttr.getValue();
-
-    if (num == 0) {
+  inline void updateConstant(SIMDAttr simdAttr) {
+    if (llvm::all_of(simdAttr.getValues(), [](const DTypeValue &v) {
+          return v.getData().isZero();
+        })) {
       // the power of 0 -- it's always going to be 0!
-      constant = 0;
+      constant = cast<SIMDAttr>(
+          splatIntLiteralToSIMD(0, cast<SIMDType>(simdAttr.getType())));
 
       // TODO: think of this more
       isPoisoned = false;
       return;
     }
 
-    bool overflow = false;
-    constant = isSignedIntType(integerAttr.getType())
-                   ? constant.smul_ov(num, overflow)
-                   : constant.umul_ov(num, overflow);
+    SmallVector<DTypeValue> mulResults;
+    for (auto [v, c] :
+         llvm::zip_equal(simdAttr.getValues(), constant.getValues())) {
+      APInt num = v.getData();
+      // The result of the current lane.
+      bool overflow = false;
+      APInt lane = c.getDType().isSInt() ? c.getData().smul_ov(num, overflow)
+                                         : c.getData().umul_ov(num, overflow);
 
-    bool isIndex = attrType.isIndex();
+      bool isIndex = c.getDType().isIndex() || c.getDType().isUIndex();
 
-    // poison if overflow on the current system OR would overflow on
-    // 32 bit system for `index` types
-    isPoisoned = isPoisoned || overflow ||
-                 (isIndex && (constant.trunc(32).sext(64) != constant));
+      // poison if overflow on the current system OR would overflow on
+      // 32 bit system for `index` types
+      isPoisoned = isPoisoned || overflow ||
+                   (isIndex && (lane.trunc(32).sext(64) != lane));
+      mulResults.push_back(DTypeValue(lane, c.getDType()));
+    }
+
+    constant = SIMDAttr::get(mulResults, constant.getType());
   }
 
   /// Construct an Info object using a MulNoWrap operator, or constant
   /// IntegerAttr
   DivOperandInfo(TypedAttr attr) {
-    constant = IntegerAttr::get(attr.getType(), 1).getValue();
-    attrType = attr.getType();
+    constant = cast<SIMDAttr>(
+        splatIntLiteralToSIMD(1, cast<SIMDType>(attr.getType())));
 
-    if (auto constAttr = sugarDynCast<IntegerAttr>(attr)) {
+    if (auto constAttr = sugarDynCast<SIMDAttr>(attr)) {
       updateConstant(constAttr);
       return;
     }
 
     if (auto mulAttr = dyn_castPE(POC::MulNoWrap, attr)) {
       for (TypedAttr numOpAttr : mulAttr.getOperands()) {
-        if (auto constAttr = sugarDynCast<IntegerAttr>(numOpAttr)) {
+        if (auto constAttr = sugarDynCast<SIMDAttr>(numOpAttr)) {
           updateConstant(constAttr);
         } else {
           ++symOccurrences[numOpAttr];
@@ -2802,6 +2904,12 @@ struct DivOperandInfo {
       return;
     }
 
+    if (auto castAttr = sugarDynCast<KGEN::CastFromBuiltinAttr>(attr);
+        castAttr && sugarIsa<KGEN::ParamDeclRefAttr>(castAttr.getArg())) {
+      ++symOccurrences[castAttr];
+      return;
+    }
+
     // Not supported attr
     isPoisoned = true;
   }
@@ -2811,15 +2919,13 @@ struct DivOperandInfo {
   TypedAttr getExpression() {
     SmallVector<TypedAttr> operands;
 
-    IntegerAttr constTerm = IntegerAttr::get(attrType, constant);
-
-    operands.push_back(constTerm);
+    operands.push_back(constant);
     for (auto [operand, occurrences] : symOccurrences)
       operands.append(occurrences, operand);
 
     if (operands.size() == 1) {
       // Implies `constant` only term
-      return constTerm;
+      return constant;
     }
 
     return ParamOperatorAttr::get(POC::MulNoWrap, operands);
@@ -2851,29 +2957,38 @@ struct DivOperandInfo {
     }
 
     // Cancel out the constant terms
-    if (numerator.constant == 0) {
+    if (isAllIntZero(numerator.constant)) {
       numerator.symOccurrences.clear();
     }
-    if (denominator.constant == 0) {
+    if (isAllIntZero(denominator.constant)) {
       denominator.symOccurrences.clear();
     }
-    if (numerator.constant != 0 && denominator.constant != 0) {
-      bool isSigned = isSignedIntType(numerator.attrType);
+    if (!isAllIntZero(numerator.constant) &&
+        !isAllIntZero(denominator.constant)) {
 
-      APInt gcdTerm = llvm::APIntOps::GreatestCommonDivisor(
-          isSigned ? numerator.constant.abs() : numerator.constant,
-          isSigned ? denominator.constant.abs() : denominator.constant);
+      SmallVector<DTypeValue> nC, dC;
+      for (auto [n, d] : llvm::zip_equal(numerator.constant.getValues(),
+                                         denominator.constant.getValues())) {
 
-      bool bothNegative = isSigned && numerator.constant.isNegative() &&
-                          denominator.constant.isNegative();
+        bool isSigned = n.getDType().isSInt();
+        APInt gcdTerm = llvm::APIntOps::GreatestCommonDivisor(
+            isSigned ? n.getData().abs() : n.getData(),
+            isSigned ? d.getData().abs() : d.getData());
 
-      if (bothNegative)
-        gcdTerm = -gcdTerm;
+        if (isSigned && n.getData().isNegative() && d.getData().isNegative())
+          gcdTerm = -gcdTerm;
 
-      numerator.constant = isSigned ? numerator.constant.sdiv(gcdTerm)
-                                    : numerator.constant.udiv(gcdTerm);
-      denominator.constant = isSigned ? denominator.constant.sdiv(gcdTerm)
-                                      : denominator.constant.udiv(gcdTerm);
+        APInt nLane =
+            isSigned ? n.getData().sdiv(gcdTerm) : n.getData().udiv(gcdTerm);
+        APInt dLane =
+            isSigned ? d.getData().sdiv(gcdTerm) : d.getData().udiv(gcdTerm);
+
+        nC.push_back(DTypeValue(nLane, n.getDType()));
+        dC.push_back(DTypeValue(dLane, d.getDType()));
+      }
+
+      numerator.constant = SIMDAttr::get(nC, numerator.constant.getType());
+      denominator.constant = SIMDAttr::get(dC, denominator.constant.getType());
     }
   }
 };
@@ -2906,21 +3021,27 @@ static bool tryDistributeDivOverAdd(SmallVectorImpl<TypedAttr> &operands) {
     DivOperandInfo::simplifyDivInPlace(numInfo, denomInfo);
 
     // Only distribute if this term fully cancels the denominator.
-    auto denomConst = sugarDynCast<IntegerAttr>(denomInfo.getExpression());
-    if (!denomConst || !denomConst.getValue().isOne())
+    auto denomConst = sugarDynCast<SIMDAttr>(denomInfo.getExpression());
+    if (!denomConst || !isAllIntOne(denomConst))
       return false;
 
     quotients.push_back(numInfo.getExpression());
   }
 
   operands[0] = ParamOperatorAttr::get(POC::Add, quotients);
-  operands[1] = IntegerAttr::get(denominatorAttr.getType(), 1);
+  operands[1] =
+      splatIntLiteralToSIMD(1, cast<SIMDType>(denominatorAttr.getType()));
   return true;
 }
 
 /// Simplify division operands by cancelling out shared elements within
 /// numerator and denominator products, e.g., `(a*b)/(b*b) --> a/b`
 static void simplifyDivOperands(SmallVectorImpl<TypedAttr> &operands) {
+  // Only simplify integer division.
+  KGENDType dtype = *(cast<SIMDType>(operands[0].getType()).getResolvedDType());
+  if (!dtype.isSInt() && !dtype.isUInt())
+    return;
+
   if (tryDistributeDivOverAdd(operands))
     return;
 
@@ -2949,16 +3070,26 @@ static Attribute simplifyDiv(SmallVectorImpl<TypedAttr> &operands) {
   simplifyDivOperands(operands);
 
   // Implement support for identities like `x/1 = x` and guard against `x/0`
-  if (auto rhs = sugarDynCast<IntegerAttr>(operands[1])) {
-    if (rhs.getValue().isOne())
+  if (auto rhs = sugarDynCast<SIMDAttr>(operands[1])) {
+    if (isAllIntOne(rhs))
       return operands[0];
-    if (rhs.getValue().isZero())
+    if (isAllIntZero(rhs))
       return {};
   }
 
   return foldBinaryOp(
-      operands, [](auto a, auto b) { return a.udiv(b); },
-      [](auto a, auto b) { return a.sdiv(b); });
+      operands,
+      [](APSInt lhs, APSInt rhs) -> std::optional<APSInt> {
+        if (rhs.isZero())
+          return std::nullopt;
+        return lhs / rhs;
+      },
+      [](APFloat lhs, APFloat rhs) { return lhs / rhs; },
+      [](bool lhs, bool rhs) -> std::optional<bool> {
+        if (!rhs)
+          return std::nullopt;
+        return lhs;
+      });
 }
 
 static llvm::APInt ceilSDiv(const llvm::APInt &a, const llvm::APInt &b) {
@@ -2979,41 +3110,60 @@ static Attribute simplifyCeilDiv(SmallVectorImpl<TypedAttr> &operands) {
   simplifyDivOperands(operands);
 
   // Implement support for identities like `x/1 = x` and guard against `x/0`
-  if (auto rhs = sugarDynCast<IntegerAttr>(operands[1])) {
-    if (rhs.getValue().isOne())
+  if (auto rhs = sugarDynCast<SIMDAttr>(operands[1])) {
+    if (isAllIntOne(rhs))
       return operands[0];
-    if (rhs.getValue().isZero())
+    if (isAllIntZero(rhs))
       return {};
   }
 
   return foldBinaryOp(
-      operands, [](auto a, auto b) { return ceilUDiv(a, b); },
-      [](auto a, auto b) { return ceilSDiv(a, b); });
-}
-
-static llvm::APInt floorSDiv(const llvm::APInt &a, const llvm::APInt &b) {
-  assert(!b.isZero() && "Division by zero!");
-  llvm::APInt q = a.sdiv(b);
-  llvm::APInt r = a.srem(b);
-  if (!r.isZero() && ((a.isNegative() != b.isNegative())))
-    q -= llvm::APInt(a.getBitWidth(), 1);
-  return q;
+      operands,
+      [](APFloat lhs, APFloat rhs) -> APFloat {
+        auto div = lhs / rhs;
+        div.roundToIntegral(APFloat::rmTowardPositive);
+        return div;
+      },
+      [](APSInt lhs, APSInt rhs) -> std::optional<APSInt> {
+        // Integer division by zero is UB - don't fold.
+        if (rhs.isZero())
+          return std::nullopt;
+        return APSInt(lhs.isSigned() ? ceilSDiv(lhs, rhs) : ceilUDiv(lhs, rhs),
+                      lhs.isSigned());
+      });
 }
 
 static Attribute simplifyFloorDiv(SmallVectorImpl<TypedAttr> &operands) {
   simplifyDivOperands(operands);
 
   // Implement support for identities like `x/1 = x` and guard against `x/0`
-  if (auto rhs = sugarDynCast<IntegerAttr>(operands[1])) {
-    if (rhs.getValue().isOne())
+  if (auto rhs = sugarDynCast<SIMDAttr>(operands[1])) {
+    if (isAllIntOne(rhs))
       return operands[0];
-    if (rhs.getValue().isZero())
+    if (isAllIntZero(rhs))
       return {};
   }
 
   return foldBinaryOp(
-      operands, [](auto a, auto b) { return floorSDiv(a, b); },
-      [](auto a, auto b) { return floorSDiv(a, b); });
+      operands,
+      [](APFloat lhs, APFloat rhs) -> APFloat {
+        auto div = lhs / rhs;
+        div.roundToIntegral(APFloat::rmTowardNegative);
+        return div;
+      },
+      [](APSInt lhs, APSInt rhs) -> std::optional<APSInt> {
+        // Integer division by zero is UB - don't fold.
+        if (rhs.isZero())
+          return std::nullopt;
+        APSInt div = lhs / rhs;
+        if (lhs.isUnsigned())
+          return div;
+        // int div = lhs / rhs;
+        // return div * rhs == lhs ? div : div - ((lhs < 0) ^ (rhs < 0));
+        int xorOp = (lhs < 0) ^ (rhs < 0);
+        return APSInt(div * rhs == lhs ? div : div - xorOp,
+                      /*isUnsigned=*/false);
+      });
 }
 
 static Attribute simplifyMod(SmallVectorImpl<TypedAttr> &operands) {
@@ -3032,22 +3182,25 @@ static Attribute simplifyMod(SmallVectorImpl<TypedAttr> &operands) {
       xProductOperands = mulAttr.getOperands();
     return llvm::is_contained(xProductOperands, y);
   };
-
+  auto simdType = cast<SIMDType>(rhs.getType());
   // Add folding rule `(n * x) % x = 0` for `x` of integer type.
-  if (lhs.getType().isIntOrIndex() && isMultipleOf(lhs, rhs))
-    return IntegerAttr::get(rhs.getType(), 0);
+  if (simdType.getResolvedDType()->isIntLike() && isMultipleOf(lhs, rhs))
+    return splatIntLiteralToSIMD(0, simdType);
 
   // Implement support for identities like `x%1 = 0`
-  if (auto rhs = sugarDynCast<IntegerAttr>(operands[1])) {
-    if (rhs.getValue().isOne())
-      return IntegerAttr::get(rhs.getType(), 0);
-    if (rhs.getValue().isZero())
+  if (auto rhs = sugarDynCast<SIMDAttr>(operands[1])) {
+    if (isAllIntOne(rhs))
+      return splatIntLiteralToSIMD(0, rhs.getType());
+    if (isAllIntZero(rhs))
       return {};
   }
 
-  return foldBinaryOp(
-      operands, [](auto a, auto b) { return a.urem(b); },
-      [](auto a, auto b) { return a.srem(b); });
+  return foldBinaryOp(operands,
+                      [](APSInt lhs, APSInt rhs) -> std::optional<APSInt> {
+                        if (rhs.isZero())
+                          return std::nullopt;
+                        return lhs % rhs;
+                      });
 }
 
 static Attribute simplifyEQ(SmallVectorImpl<TypedAttr> &operands) {
@@ -3552,13 +3705,19 @@ static TypedAttr simplifyFunctionGetArgTypes(MLIRContext *ctx,
   return ParamListAttr::get(results, variadicType);
 }
 
+#define MIGRATED_POC                                                           \
+  {POC::Add,       POC::Mul,  POC::MulNoWrap, POC::And,      POC::Or,          \
+   POC::Xor,       POC::Max,  POC::Min,       POC::Shl,      POC::Shr,         \
+   POC::Div,       POC::DivS, POC::DivU,      POC::CeilDivS, POC::CeilDivU,    \
+   POC::FloorDivS, POC::RemS, POC::RemU,      POC::Mod}
+
 /// Construct a arithmetic parameter operator attribute, folding it (in the form
 /// of SIMD) if possible. Return nullptr if the opcode is not an arithmetic
 /// POC.
 static TypedAttr getArithParamOperator(MLIRContext *ctx, POC opcode,
                                        ArrayRef<TypedAttr> operandsIn,
                                        Type origResultType) {
-  if (!llvm::is_contained(ArrayRef<POC>{/*migrated list*/}, opcode))
+  if (!llvm::is_contained(MIGRATED_POC, opcode))
     return {};
 
   // We turn `(poc x, y)` into
@@ -3568,32 +3727,122 @@ static TypedAttr getArithParamOperator(MLIRContext *ctx, POC opcode,
   // s.t. all the folding are performed on SIMD types.
   //
   // TODO: the canonicalization process can be removed upon the Int/SIMD
-  // unification.
-  auto getEquivalentSIMDType = [&](Type type) -> Type {
-    auto [dtype, _] = M::getEquivalentDType(type);
-    if (dtype == DType::invalid) // inconvertible
-      return type;
-    return SIMDType::get(1, DTypeConstantAttr::get(ctx, dtype));
-  };
-
-  // Turn operands to SIMD
+  // unification
   SmallVector<TypedAttr, 4> operands =
       llvm::map_to_vector(operandsIn, [&](TypedAttr operand) -> TypedAttr {
-        Type operandType = getEquivalentSIMDType(operand.getType());
-        if (operandType == operand.getType())
+        if (sugarIsa<SIMDType>(operand.getType()))
           return operand;
 
-        return CastFromBuiltinAttr::get(operand, cast<SIMDType>(operandType));
+        SIMDType operandType = getEquivalentScalarType(operand.getType());
+        return CastFromBuiltinAttr::get(operand, operandType);
       });
-  Type resultType = getEquivalentSIMDType(origResultType);
-  Attribute result;
 
-  // TODO: migrate and fold in SIMD forms.
-  switch (opcode) {
-  default:
-    return {};
+  SIMDType resultType = getEquivalentScalarType(origResultType);
+  if (!resultType)
+    resultType = cast<SIMDType>(origResultType);
+
+  Attribute result;
+  if (resultType.getResolvedDType() && resultType.getResolvedSize()) {
+    // Fold only if the simd type is not parametric.
+    switch (opcode) {
+    case POC::Add:
+      result = simplifyAdd(operands);
+      break;
+    case POC::MulNoWrap:
+      [[fallthrough]];
+    case POC::Mul:
+      result = simplifyGenericMul(operands, opcode);
+      break;
+    case POC::And:
+      result = simplifyAnd(operands);
+      break;
+    case POC::Or:
+      result = simplifyOr(operands);
+      break;
+    case POC::Xor:
+      result = simplifyXor(operands);
+      break;
+    case POC::Max:
+      result = simplifyMax(operands);
+      break;
+    case POC::Min:
+      result = simplifyMin(operands);
+      break;
+    case POC::Shl:
+      result = simplifyShl(operands);
+      break;
+    case POC::Shr:
+      result = simplifyShr(operands);
+      break;
+    case POC::Div:
+      result = simplifyDiv(operands);
+      break;
+    case POC::DivS:
+      result = simplifyDiv(operands);
+      break;
+    case POC::DivU:
+      result = simplifyDiv(operands);
+      break;
+    case POC::CeilDivS:
+      result = simplifyCeilDiv(operands);
+      break;
+    case POC::CeilDivU:
+      result = simplifyCeilDiv(operands);
+      break;
+    case POC::FloorDivS:
+      result = simplifyFloorDiv(operands);
+      break;
+    case POC::RemS:
+      result = simplifyMod(operands);
+      break;
+    case POC::RemU:
+      result = simplifyMod(operands);
+      break;
+    case POC::Mod:
+      result = simplifyMod(operands);
+      break;
+    // TODO: migrate and fold in SIMD forms.
+    default:
+      llvm_unreachable("unhandled opcode");
+    }
   }
 
+#if 1
+  // TODO: We should just do a simple cast on the result, for now, convert the
+  // expression back to the original form such that GC can handle the folded
+  // version.
+  //
+  // NOTE: we need to be careful here: we convert the operands of the expression
+  // back to builtin type instead of cast the top expression directly, otherwise
+  // cast_to_builtin sink will recurse.
+  TypedAttr ret = llvm::cast_if_present<TypedAttr>(result);
+  if (ret && resultType != origResultType) {
+    if (auto expr = sugarDynCast<ParamOperatorAttr>(ret)) {
+      // instead of a concrete result, we might fold the expression to a canon
+      // form. We need to convert the expression back to non-SIMD form as well.
+      operands.assign(expr.getOperands().begin(), expr.getOperands().end());
+      opcode = expr.getOpcode();
+      // Unset the result.
+      ret = nullptr;
+    } else {
+      ret = CastToBuiltinAttr::get(ctx, ret, origResultType);
+    }
+  }
+
+  if (!ret) {
+    if (resultType != origResultType) {
+      for (TypedAttr &operand : operands) {
+        // FIXME: all the operators that we have migrated have the same
+        // result/operand type, this is not necessarily true for cmp operators.
+        operand = CastToBuiltinAttr::get(ctx, operand, origResultType);
+      }
+    }
+    ret = ParamOperatorAttr::Base::get(ctx, opcode, operands, origResultType);
+  }
+
+  return ret;
+#else
+  // Re-enable after fixing GC, then delete after builtin/SIMD unification.
   TypedAttr ret =
       result ? cast<TypedAttr>(result)
              : ParamOperatorAttr::Base::get(ctx, opcode, operands, resultType);
@@ -3603,6 +3852,7 @@ static TypedAttr getArithParamOperator(MLIRContext *ctx, POC opcode,
     ret = CastToBuiltinAttr::get(ctx, ret, origResultType);
 
   return ret;
+#endif
 }
 
 /// Construct a parameter operator attribute, folding it if possible.
@@ -3618,62 +3868,6 @@ static TypedAttr getParamOperator(MLIRContext *ctx, POC opcode,
   // Verify and canonicalize parameter expressions.
   Attribute result;
   switch (opcode) {
-  case POC::Add:
-    result = simplifyAdd(operands);
-    break;
-  case POC::Mul:
-    [[fallthrough]];
-  case POC::MulNoWrap:
-    result = simplifyGenericMul(operands, opcode);
-    break;
-  case POC::And:
-    result = simplifyAnd(operands);
-    break;
-  case POC::Or:
-    result = simplifyOr(operands);
-    break;
-  case POC::Xor:
-    result = simplifyXor(operands);
-    break;
-  case POC::Max:
-    result = simplifyMax(operands);
-    break;
-  case POC::Min:
-    result = simplifyMin(operands);
-    break;
-  case POC::Shl:
-    result = simplifyShl(operands);
-    break;
-  case POC::Shr:
-    result = simplifyShr(operands);
-    break;
-  case POC::Div:
-    result = simplifyDiv(operands);
-    break;
-  case POC::DivS:
-    result = simplifyDiv(operands);
-    break;
-  case POC::DivU:
-    result = simplifyDiv(operands);
-    break;
-  case POC::CeilDivS:
-    result = simplifyCeilDiv(operands);
-    break;
-  case POC::CeilDivU:
-    result = simplifyCeilDiv(operands);
-    break;
-  case POC::FloorDivS:
-    result = simplifyFloorDiv(operands);
-    break;
-  case POC::RemS:
-    result = simplifyMod(operands);
-    break;
-  case POC::RemU:
-    result = simplifyMod(operands);
-    break;
-  case POC::Mod:
-    result = simplifyMod(operands);
-    break;
   case POC::EQ:
     result = simplifyEQ(operands);
     resultType = IntegerType::get(ctx, 1);
@@ -3751,6 +3945,8 @@ static TypedAttr getParamOperator(MLIRContext *ctx, POC opcode,
     assert(operands.size() == 1 && "variadic_ptrremove_map has 1 operand");
     result = simplifyVariadicPtrRemoveMap(operands[0], resultType);
     break;
+  default:
+    llvm_unreachable("unhandled opcode");
   }
 
   // If we folded to an operand, return it.
@@ -3825,16 +4021,24 @@ TypedAttr ParamOperatorAttr::get(POC opcode, ArrayRef<TypedAttr> operandsIn) {
 }
 
 /// Return (not x) which is the same as (xor x, true).  The `operand` value
-/// must have type `i1`.
+/// must have type `i1`/`scalar<bool>`.
 TypedAttr ParamOperatorAttr::getNot(TypedAttr operand) {
   TypedAttr one = BoolAttr::get(operand.getContext(), true);
+  if (auto simdType = dyn_cast<SIMDType>(operand.getType())) {
+    one = splatBuiltinToSIMD(one, simdType.getSize());
+    assert(one.getType() == simdType);
+  }
   return ParamOperatorAttr::get(POC::Xor, {operand, one});
 }
 
 /// Return (neg x) which is the same as (mul x, -1).  The `operand` value
 /// must have `index` type.
 TypedAttr ParamOperatorAttr::getNeg(TypedAttr operand) {
-  IntegerAttr minusOne = IntegerAttr::get(operand.getType(), -1);
+  TypedAttr minusOne = [&]() -> TypedAttr {
+    if (auto simdType = dyn_cast<SIMDType>(operand.getType()))
+      return splatIntLiteralToSIMD(-1, simdType);
+    return IntegerAttr::get(operand.getType(), -1);
+  }();
   return ParamOperatorAttr::get(POC::Mul, operand, minusOne);
 }
 
@@ -4079,11 +4283,38 @@ LogicalResult
 ConstraintAttr::verify(function_ref<InFlightDiagnostic()> emitError,
                        TypedAttr proposition, LocationAttr loc) {
   // Verify that the proposition has i1 type
-  if (!proposition.getType().isSignlessInteger(1)) {
-    return emitError() << "constraint proposition must have i1 type, but got '"
-                       << proposition.getType() << "'";
+  if (auto t = dyn_cast<SIMDType>(proposition.getType());
+      !t || !t.getResolvedDType() || !t.getResolvedDType()->isBool()) {
+    return emitError()
+           << "constraint proposition must have scalar<bool> type, but got "
+           << proposition.getType();
   }
   return success();
+}
+
+ConstraintAttr
+ConstraintAttr::getChecked(function_ref<InFlightDiagnostic()> emitError,
+                           TypedAttr proposition, LocationAttr loc) {
+  MLIRContext *ctx = proposition.getContext();
+  if (proposition.getType().isSignlessInteger(1)) {
+    proposition = CastFromBuiltinAttr::get(
+        ctx, proposition, SIMDType::get(ctx, 1, KGENDType::kBool));
+  }
+
+  if (failed(verify(emitError, proposition, loc)))
+    return {};
+  return get(proposition, loc);
+}
+
+ConstraintAttr ConstraintAttr::get(TypedAttr proposition, LocationAttr loc) {
+  // TODO: maybe we should just update all the callsites to passing in an
+  // `scalar<bool>` at the first place.
+  MLIRContext *ctx = proposition.getContext();
+  if (proposition.getType().isSignlessInteger(1)) {
+    proposition = CastFromBuiltinAttr::get(
+        ctx, proposition, SIMDType::get(ctx, 1, KGENDType::kBool));
+  }
+  return get(ctx, proposition, loc);
 }
 
 //===----------------------------------------------------------------------===//
@@ -4096,18 +4327,13 @@ TypedAttr CastFromBuiltinAttr::get(MLIRContext *ctx, TypedAttr arg,
     if (auto ret = dyn_cast<TypedAttr>(cast<Attribute>(fold)))
       return ret;
 
-  // a list of migrated poc that is capable of handling SIMD
-  ArrayRef<POC> migrated = {};
-
   // Else, try sink the cast_from_builtin to the leaf of the expression,
   // s.t.,
   // cast_from_builtin(i * j) -> cast_from_builtin(i) * cast_from_builtin(j)
   if (auto expr = dyn_cast<ParamOperatorAttr>(arg);
-      expr && llvm::is_contained(migrated, expr.getOpcode())) {
-    // FIXME: this assumes the operands are all the same type, which is
-    // not necessarily true.
+      expr && llvm::is_contained(MIGRATED_POC, expr.getOpcode())) {
     auto operands = llvm::map_to_vector(expr.getOperands(), [&](auto operand) {
-      return CastFromBuiltinAttr::get(ctx, operand, out_type);
+      return splatBuiltinToSIMD(operand, out_type.getSize());
     });
     return ParamOperatorAttr::get(expr.getOpcode(), operands);
   }
@@ -4140,6 +4366,19 @@ TypedAttr CastToBuiltinAttr::get(MLIRContext *ctx, TypedAttr arg,
   if (auto fold = KGEN::foldCastToBuiltin(arg, out_type))
     if (auto ret = dyn_cast<TypedAttr>(cast<Attribute>(fold)))
       return ret;
+
+  // FIXME: We should not sink the cast_to_builtin to the leaf of the
+  // expression, ideally, ParamOperatorAttr should only take SIMD types: We have
+  // to do it now because GC use a scalar `si64` for DimType, which need to be
+  // migrated first.
+  if (auto expr = dyn_cast<ParamOperatorAttr>(arg);
+      expr && llvm::is_contained(MIGRATED_POC, expr.getOpcode())) {
+    auto operands = llvm::map_to_vector(expr.getOperands(), [&](auto operand) {
+      // FIXME: all the operators that we have migrated have the same
+      return CastToBuiltinAttr::get(ctx, operand, out_type);
+    });
+    return ParamOperatorAttr::get(expr.getOpcode(), operands);
+  }
 
   return Base::get(ctx, arg, out_type);
 }

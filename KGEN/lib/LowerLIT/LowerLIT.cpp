@@ -381,8 +381,8 @@ LITLowerer::lowerStructDecl(StructDeclOp structDecl,
     info.isMemoryOnlyAttr = BoolAttr::get(ctx, false);
   } else if (auto rpConstraint =
                  structDecl.getRegisterPassableConstraintAttr()) {
-    info.isMemoryOnlyAttr =
-        ParamOperatorAttr::getNot(rpConstraint.getProposition());
+    info.isMemoryOnlyAttr = ParamOperatorAttr::getNot(CastToBuiltinAttr::get(
+        rpConstraint.getProposition(), IntegerType::get(ctx, 1)));
   } else {
     info.isMemoryOnlyAttr = BoolAttr::get(ctx, true);
   }

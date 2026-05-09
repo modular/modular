@@ -235,20 +235,20 @@ kgen.generator @witnessed_mem_del(%arg0: !kgen.pointer<struct<(index)>> owned_in
 
 "some.op"() {
   a = 5 : index,
-  // CHECK: gen0 = #kgen.gen<add(a, 3)> : !kgen.generator<<>index>
+  // CHECK-DAG: gen0 = #kgen.gen<{{.*}}add{{.*}}a{{.*}}3{{.*}}> : !kgen.generator<<>index>
   gen0 = #kgen.gen<add(a, 3)> : !kgen.generator<<>index>,
-  // CHECK-SAME: gen1 = #kgen.gen<add(*(0,0), 1)> : !kgen.generator<<index>index>
+  // CHECK-DAG: gen1 = #kgen.gen<add([[G1:[*]]](0,0), 1)> : !kgen.generator<<index>index>
   gen1 = #kgen.gen<add(*(0,0), 1)> : !kgen.generator<<index> index>,
-  // CHECK-SAME: gen2 = #kgen.gen<add(*(0,0), *(0,1))> : !kgen.generator<<index, index>index>
+  // CHECK-DAG: gen2 = #kgen.gen<add([[G2:[*]]](0,0), [[G2]](0,1))> : !kgen.generator<<index, index>index>
   gen2 = #kgen.gen<add(*(0,0), *(0,1))> : !kgen.generator<<index, index> index>
 } : () -> ()
 
 "some.op"() {
   a = 5 : index,
-  // CHECK: constraint1 = #kgen.constraint<1, #[[LOC_C1]]>
-  constraint1 = #kgen.constraint<1, loc("test.mojo":10:5)>,
-  // CHECK-SAME: constraint2 = #kgen.constraint<ge(a, 4), #[[LOC_C2]]>
-  constraint2 = #kgen.constraint<ge(a, 4), loc("test.mojo":15:10)>,
+  // CHECK: constraint1 = #kgen.constraint<true, #[[LOC_C1]]>
+  constraint1 = #kgen.constraint<true, loc("test.mojo":10:5)>,
+  // CHECK-SAME: constraint2 = #kgen.constraint<{{.*}}xor{{.*}}lt{{.*}}a{{.*}}4{{.*}}, #[[LOC_C2]]>
+  constraint2 = #kgen.constraint<#kgen.param.expr<xor, #kgen.cast_from_builtin<#kgen.param.expr<lt, #kgen.param.decl.ref<"a"> : index, 4 : index> : i1> : !kgen.scalar<bool>, #kgen<simd true> : !kgen.scalar<bool>> : !kgen.scalar<bool>, loc("test.mojo":15:10)>,
   // CHECK-SAME: #kgen.constraint<conforms_to(:type array<1, i1>, [@trait_1, @trait_2]), #[[LOC_C3]]>
   constraint3 = #kgen.constraint<conforms_to(:type array<1, i1>, [@trait_1, @trait_2]), loc("test.mojo":20:15)>
 } : () -> ()
@@ -341,7 +341,7 @@ kgen.generator @witnessed_mem_del(%arg0: !kgen.pointer<struct<(index)>> owned_in
   // CHECK: b = #kgen.simd<2, 42, 1024, 0>
   b = #pop.simd_and< #kgen.simd<7, 42, -1, 0> : !kgen.simd<4, si32>,
                      #kgen.simd<2, -1, 1024, -1> : !kgen.simd<4, si32>> : !kgen.simd<4, si32>,
-  // CHECK: c = #pop.simd_and<#kgen.unknown : !kgen.simd<4, si32>, #kgen.unknown : !kgen.simd<4, si32>> : !kgen.simd<4, si32>
+  // CHECK: c = #kgen.unknown : !kgen.simd<4, si32>
   c = #pop.simd_and< #kgen.unknown : !kgen.simd<4, si32>, #kgen.unknown : !kgen.simd<4, si32>>
 } : () -> ()
 
@@ -351,7 +351,7 @@ kgen.generator @witnessed_mem_del(%arg0: !kgen.pointer<struct<(index)>> owned_in
   // CHECK: b = #kgen.simd<5, -43, -1025, -1>
   b = #pop.simd_xor< #kgen.simd<7, 42, -1, 0> : !kgen.simd<4, si32>,
                      #kgen.simd<2, -1, 1024, -1> : !kgen.simd<4, si32>> : !kgen.simd<4, si32>,
-  // CHECK: c = #pop.simd_xor<#kgen.unknown : !kgen.simd<4, si32>, #kgen.unknown : !kgen.simd<4, si32>> : !kgen.simd<4, si32>
+  // CHECK: c = #kgen.param.expr<xor, #kgen.unknown : !kgen.simd<4, si32>, #kgen.unknown : !kgen.simd<4, si32>> : !kgen.simd<4, si32>
   c = #pop.simd_xor< #kgen.unknown : !kgen.simd<4, si32>, #kgen.unknown : !kgen.simd<4, si32>>
 } : () -> ()
 
@@ -361,7 +361,7 @@ kgen.generator @witnessed_mem_del(%arg0: !kgen.pointer<struct<(index)>> owned_in
   // CHECK: b = #kgen.simd<7, -1, -1, -1>
   b = #pop.simd_or< #kgen.simd<7, 42, -1, 0> : !kgen.simd<4, si32>,
                      #kgen.simd<2, -1, 1024, -1> : !kgen.simd<4, si32>> : !kgen.simd<4, si32>,
-  // CHECK: c = #pop.simd_or<#kgen.unknown : !kgen.simd<4, si32>, #kgen.unknown : !kgen.simd<4, si32>> : !kgen.simd<4, si32>
+  // CHECK: c = #kgen.unknown : !kgen.simd<4, si32>
   c = #pop.simd_or< #kgen.unknown : !kgen.simd<4, si32>, #kgen.unknown : !kgen.simd<4, si32>>
 } : () -> ()
 
@@ -371,7 +371,7 @@ kgen.generator @witnessed_mem_del(%arg0: !kgen.pointer<struct<(index)>> owned_in
   // CHECK: b = #kgen.simd<9, 41, 1023, -1>
   b = #pop.simd_add< #kgen.simd<7, 42, -1, 0> : !kgen.simd<4, si32>,
                      #kgen.simd<2, -1, 1024, -1> : !kgen.simd<4, si32>> : !kgen.simd<4, si32>,
-  // CHECK: c = #pop.simd_add<#kgen.unknown : !kgen.simd<4, si32>, #kgen.unknown : !kgen.simd<4, si32>> : !kgen.simd<4, si32>
+  // CHECK: c = #kgen.param.expr<mul, #kgen<simd 2> : !kgen.simd<4, si32>, #kgen.unknown : !kgen.simd<4, si32>> : !kgen.simd<4, si32>
   c = #pop.simd_add< #kgen.unknown : !kgen.simd<4, si32>, #kgen.unknown : !kgen.simd<4, si32>>,
 
   // CHECK: d = #kgen<simd false> : !kgen.scalar<bool>
@@ -396,7 +396,8 @@ kgen.generator @witnessed_mem_del(%arg0: !kgen.pointer<struct<(index)>> owned_in
   // CHECK: b = #kgen.simd<5, 43, -1025, 1>
   b = #pop.simd_sub< #kgen.simd<7, 42, -1, 0> : !kgen.simd<4, si32>,
                      #kgen.simd<2, -1, 1024, -1> : !kgen.simd<4, si32>> : !kgen.simd<4, si32>,
-  // CHECK: c = #pop.simd_sub<#kgen.unknown : !kgen.simd<4, si32>, #kgen.unknown : !kgen.simd<4, si32>> : !kgen.simd<4, si32>
+  // `sub(x, y)` canonicalizes to `add(x, mul(-1, y))`.
+  // CHECK: c = #kgen.param.expr<add, #kgen.param.expr<mul, #kgen<simd -1> : !kgen.simd<4, si32>, #kgen.unknown : !kgen.simd<4, si32>> : !kgen.simd<4, si32>, #kgen.unknown : !kgen.simd<4, si32>> : !kgen.simd<4, si32>
   c = #pop.simd_sub< #kgen.unknown : !kgen.simd<4, si32>, #kgen.unknown : !kgen.simd<4, si32>>,
 
   // CHECK: d = #kgen<simd false> : !kgen.scalar<bool>
@@ -421,7 +422,7 @@ kgen.generator @witnessed_mem_del(%arg0: !kgen.pointer<struct<(index)>> owned_in
   // CHECK: b = #kgen.simd<14, -42, -1024, 0>
   b = #pop.simd_mul< #kgen.simd<7, 42, -1, 0> : !kgen.simd<4, si32>,
                      #kgen.simd<2, -1, 1024, -1> : !kgen.simd<4, si32>> : !kgen.simd<4, si32>,
-  // CHECK: c = #pop.simd_mul<#kgen.unknown : !kgen.simd<4, si32>, #kgen.unknown : !kgen.simd<4, si32>> : !kgen.simd<4, si32>
+  // CHECK: c = #kgen.param.expr<mul, #kgen.unknown : !kgen.simd<4, si32>, #kgen.unknown : !kgen.simd<4, si32>> : !kgen.simd<4, si32>
   c = #pop.simd_mul< #kgen.unknown : !kgen.simd<4, si32>, #kgen.unknown : !kgen.simd<4, si32>>,
 
   // CHECK: d = #kgen<simd true> : !kgen.scalar<bool>
@@ -446,11 +447,11 @@ kgen.generator @witnessed_mem_del(%arg0: !kgen.pointer<struct<(index)>> owned_in
   // CHECK: b = #kgen.simd<3, -42, 0, 0>
   b = #pop.simd_div< #kgen.simd<7, 42, -1, 0> : !kgen.simd<4, si32>,
                      #kgen.simd<2, -1, 1024, -1> : !kgen.simd<4, si32>> : !kgen.simd<4, si32>,
-  // CHECK: c = #pop.simd_div<#kgen.unknown : !kgen.simd<4, si32>, #kgen.unknown : !kgen.simd<4, si32>> : !kgen.simd<4, si32>
+  // CHECK: c = #kgen.param.expr<div, #kgen.unknown : !kgen.simd<4, si32>, #kgen.unknown : !kgen.simd<4, si32>> : !kgen.simd<4, si32>
   c = #pop.simd_div< #kgen.unknown : !kgen.simd<4, si32>, #kgen.unknown : !kgen.simd<4, si32>>,
 
   // Integer division by zero should not fold (undefined behavior)
-  // CHECK: d = #pop.simd_div<#kgen<simd 6> : !kgen.scalar<si32>, #kgen<simd 0> : !kgen.scalar<si32>> : !kgen.scalar<si32>
+  // CHECK: d = #kgen.param.expr<div, #kgen<simd 6> : !kgen.scalar<si32>, #kgen<simd 0> : !kgen.scalar<si32>> : !kgen.scalar<si32>
   d = #pop.simd_div< #kgen<simd 6> : !kgen.scalar<si32>, #kgen<simd 0> : !kgen.scalar<si32>>,
 
   // CHECK: e = #kgen<simd "2.5"> : !kgen.scalar<f32>
@@ -468,7 +469,7 @@ kgen.generator @witnessed_mem_del(%arg0: !kgen.pointer<struct<(index)>> owned_in
   // CHECK: i = #kgen<simd false> : !kgen.scalar<bool>
   i = #pop.simd_div< #kgen<simd false> : !kgen.scalar<bool>, #kgen<simd true> : !kgen.scalar<bool>> : !kgen.scalar<bool>,
   // Bool division by zero (false) should not fold
-  // CHECK: j = #pop.simd_div<#kgen<simd true> : !kgen.scalar<bool>, #kgen<simd false> : !kgen.scalar<bool>> : !kgen.scalar<bool>
+  // CHECK: j = #kgen.param.expr<div, #kgen<simd true> : !kgen.scalar<bool>, #kgen<simd false> : !kgen.scalar<bool>> : !kgen.scalar<bool>
   j = #pop.simd_div< #kgen<simd true> : !kgen.scalar<bool>, #kgen<simd false> : !kgen.scalar<bool>>
 } : () -> ()
 
@@ -582,7 +583,7 @@ kgen.generator @witnessed_mem_del(%arg0: !kgen.pointer<struct<(index)>> owned_in
   a = #pop.simd_shl< #kgen<simd 1> : !kgen.scalar<si32>, #kgen<simd 2> : !kgen.scalar<si32>> : !kgen.scalar<si32>,
   // CHECK: b = #kgen.simd<4, 4, -48, 99> : !kgen.simd<4, si16>
   b = #pop.simd_shl< #kgen.simd<1, 2, -3, 99> : !kgen.simd<4, si16>, #kgen.simd<2, 1, 4, 0> : !kgen.simd<4, si16>> : !kgen.simd<4, si16>,
-  // CHECK: c = #pop.simd_shl<#kgen<simd 1>{{.*}}, #kgen<simd 17>
+  // CHECK: c = #kgen<simd 0> : !kgen.scalar<si16>
   c = #pop.simd_shl< #kgen<simd 1> : !kgen.scalar<si16>, #kgen<simd 17> : !kgen.scalar<si16>> : !kgen.scalar<si16>,
   // CHECK: d = #kgen<simd 32> : !kgen.scalar<si8>
   d = #pop.simd_shl< #kgen<simd 1> : !kgen.scalar<si8>, #kgen<simd 5> : !kgen.scalar<index>> : !kgen.scalar<si8>,
@@ -590,8 +591,8 @@ kgen.generator @witnessed_mem_del(%arg0: !kgen.pointer<struct<(index)>> owned_in
   e = #pop.simd_shl< #kgen<simd 1> : !kgen.scalar<index>, #kgen<simd 6> : !kgen.scalar<index>> : !kgen.scalar<index>,
   // CHECK: f = #kgen<simd 64> : !kgen.scalar<uindex>
   f = #pop.simd_shl< #kgen<simd 1> : !kgen.scalar<uindex>, #kgen<simd 6> : !kgen.scalar<uindex>> : !kgen.scalar<uindex>,
-  // Index shl that does NOT fold without target: shift >= 32 is poison in 32-bit.
-  // CHECK: g = #pop.simd_shl<#kgen<simd 1>{{.*}}, #kgen<simd 33>
+  // We can fold shl in 64bit even on 32 bit target, as the truncated result will be the same.
+  // CHECK: g = #kgen<simd 8589934592> : !kgen.scalar<index>
   g = #pop.simd_shl< #kgen<simd 1> : !kgen.scalar<index>, #kgen<simd 33> : !kgen.scalar<index>> : !kgen.scalar<index>
 } : () -> ()
 
@@ -600,7 +601,7 @@ kgen.generator @witnessed_mem_del(%arg0: !kgen.pointer<struct<(index)>> owned_in
   a = #pop.simd_shr< #kgen<simd 1> : !kgen.scalar<si32>, #kgen<simd 2> : !kgen.scalar<si32>> : !kgen.scalar<si32>,
   // CHECK: b = #kgen.simd<0, 1, -1, 99> : !kgen.simd<4, si16>
   b = #pop.simd_shr< #kgen.simd<1, 2, -3, 99> : !kgen.simd<4, si16>, #kgen.simd<2, 1, 4, 0> : !kgen.simd<4, si16>> : !kgen.simd<4, si16>,
-  // CHECK: c = #pop.simd_shr<#kgen<simd 1>{{.*}}, #kgen<simd 17>
+  // CHECK: c = #kgen.param.expr<shr, #kgen<simd 1>{{.*}}, #kgen<simd 17>
   c = #pop.simd_shr< #kgen<simd 1> : !kgen.scalar<si16>, #kgen<simd 17> : !kgen.scalar<si16>> : !kgen.scalar<si16>,
   // CHECK: d = #kgen.simd<1, 4095> : !kgen.simd<2, ui16>
   d = #pop.simd_shr< #kgen.simd<65535, 65533> : !kgen.simd<2, ui16>, #kgen.simd<15, 4> : !kgen.simd<2, ui16>> : !kgen.simd<2, ui16>,
@@ -609,7 +610,7 @@ kgen.generator @witnessed_mem_del(%arg0: !kgen.pointer<struct<(index)>> owned_in
   // CHECK: f = #kgen.simd<1, 4095> : !kgen.simd<2, uindex>
   f = #pop.simd_shr< #kgen.simd<65535, 65533> : !kgen.simd<2, uindex>, #kgen.simd<15, 4> : !kgen.simd<2, uindex>> : !kgen.simd<2, uindex>,
   // Index shr that does NOT fold without target: 32-bit and 64-bit results differ.
-  // CHECK: g = #pop.simd_shr<#kgen<simd 3000000000>{{.*}}, #kgen<simd 1>
+  // CHECK: g = #kgen.param.expr<shr, #kgen<simd 3000000000>{{.*}}, #kgen<simd 1>
   g = #pop.simd_shr< #kgen<simd 3000000000> : !kgen.scalar<index>, #kgen<simd 1> : !kgen.scalar<index>> : !kgen.scalar<index>
 } : () -> ()
 
@@ -653,12 +654,13 @@ kgen.generator @witnessed_mem_del(%arg0: !kgen.pointer<struct<(index)>> owned_in
   // CHECK: b = #kgen.simd<"2", "-3">
   b = #pop.simd_floordiv< #kgen.simd<"7", "7"> : !kgen.simd<2, f32>,
                           #kgen.simd<"3", "-3"> : !kgen.simd<2, f32>> : !kgen.simd<2, f32>,
-  // CHECK: c = #pop.simd_floordiv<#kgen.unknown :
+  // `floor_div_s(x, 1)` folds to `x`.
+  // CHECK: c = #kgen.unknown : !kgen.scalar<si32>
   c = #pop.simd_floordiv< #kgen.unknown : !kgen.scalar<si32>, #kgen.simd<1> : !kgen.scalar<si32>>,
-  // CHECK: d = #pop.simd_floordiv<#kgen<simd 1> : !kgen.scalar<si32>, #kgen.unknown
+  // CHECK: d = #kgen.param.expr<floor_div_s, #kgen<simd 1> : !kgen.scalar<si32>, #kgen.unknown
   d = #pop.simd_floordiv<  #kgen.simd<1> : !kgen.scalar<si32>, #kgen.unknown : !kgen.scalar<si32>>,
   // CHECK: e = #kgen<simd -3>
   e = #pop.simd_floordiv<  #kgen.simd<7> : !kgen.scalar<index>, #kgen.simd<-3> : !kgen.scalar<index>>,
-  // CHECK: f = #pop.simd_floordiv<#kgen<simd 9223372036854775807>
+  // CHECK: f = #kgen.param.expr<floor_div_s, #kgen<simd 9223372036854775807>
   f = #pop.simd_floordiv<  #kgen.simd<9223372036854775807> : !kgen.scalar<index>, #kgen.simd<-3> : !kgen.scalar<index>>
 } : () -> ()

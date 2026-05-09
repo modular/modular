@@ -616,16 +616,6 @@ static LogicalResult printTypeValue(AsmPrinter &p, TypedAttr value) {
 //
 //===----------------------------------------------------------------------===//
 
-/// Helper to check if a constraint is trivially false (proposition = 0).
-/// Null is treated as trivially true (not false) for backward compatibility.
-static bool isTriviallyFalseConstraint(ConstraintAttr constraint) {
-  if (!constraint)
-    return false;
-  if (auto intAttr = dyn_cast<IntegerAttr>(constraint.getProposition()))
-    return intAttr.getValue().isZero();
-  return false;
-}
-
 TraitType TraitType::canonicalizeAndGet(MLIRContext *context,
                                         ArrayRef<SymbolRefAttr> symbols,
                                         ArrayRef<ConstraintAttr> constraints) {

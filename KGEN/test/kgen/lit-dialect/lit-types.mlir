@@ -164,10 +164,10 @@ kgen.func @generator_types() {
   kgen.param.declare more_args: type = <!lit.generator<<"dt": dtype, "width": index>index>>
   // CHECK-NEXT: type = <!lit.generator<<"dt": dtype, |, "width": index, *, "tag": i1>index>>
   kgen.param.declare arg_kinds: type = <!lit.generator<<"dt": dtype, |, "width": index, *, "tag": i1>index>>
-  // CHECK-NEXT: type = <!lit.generator<<{<1, {{.*}}>, <1, {{.*}}>}, dtype>index>>
-  kgen.param.declare pre_constraint: type = <!lit.generator<<{<1, loc("pre-gen.mlir":1:1)>, <1, loc("pre-gen.mlir":1:2)>}, dtype>index>>
-  // CHECK-NEXT: type = <!lit.generator<<{<1, {{.*}}>, <1, {{.*}}>}>index>>
-  kgen.param.declare pre_constraint_no_params: type = <!lit.generator<<{<1, loc("pre-gen.mlir":1:1)>, <1, loc("pre-gen.mlir":1:2)>}>index>>
+  // CHECK-NEXT: type = <!lit.generator<<{<true, {{.*}}>, <true, {{.*}}>}, dtype>index>>
+  kgen.param.declare pre_constraint: type = <!lit.generator<<{<true, loc("pre-gen.mlir":1:1)>, <true, loc("pre-gen.mlir":1:2)>}, dtype>index>>
+  // CHECK-NEXT: type = <!lit.generator<<{<true, {{.*}}>, <true, {{.*}}>}>index>>
+  kgen.param.declare pre_constraint_no_params: type = <!lit.generator<<{<true, loc("pre-gen.mlir":1:1)>, <true, loc("pre-gen.mlir":1:2)>}>index>>
   kgen.return
 }
 
@@ -181,8 +181,8 @@ kgen.generator @fn_types<x: index, y: index>() {
   kgen.param.declare type2: type = <!kgen.func<!lit.fn<(index, i8) -> ()>>>
   // CHECK-NEXT: type = <!lit.fn<("a": index, "b": i8 = 2) -> none>>
   kgen.param.declare type3: type = <!lit.fn<("a": index, "b": i8 = 2) -> none>>
-  // CHECK-NEXT: type = <!lit.fn<("a": index, "b": i8 = 2) -> none where {<ge(x, 2), {{.*}}>, <lt(x, 10), {{.*}}>}>>
-  kgen.param.declare type4: type = <!lit.fn<("a": index, "b": i8 = 2) -> none where {<ge(x, 2), loc("test.mlir":1:2)>, <lt(x, 10), loc("test.mlir":3:4)>}>>
+  // CHECK-NEXT: type = <!lit.fn<("a": index, "b": i8 = 2) -> none where {<{{.*}}lt{{.*}}x{{.*}}2{{.*}}, {{.*}}>, <{{.*}}lt{{.*}}x{{.*}}10{{.*}}, {{.*}}>}>>
+  kgen.param.declare type4: type = <!lit.fn<("a": index, "b": i8 = 2) -> none where {<#kgen.param.expr<xor, #kgen.cast_from_builtin<#kgen.param.expr<lt, #kgen.param.decl.ref<"x"> : index, 2 : index> : i1> : !kgen.scalar<bool>, #kgen<simd true> : !kgen.scalar<bool>> : !kgen.scalar<bool>, loc("test.mlir":1:2)>, <#kgen.cast_from_builtin<#kgen.param.expr<lt, #kgen.param.decl.ref<"x"> : index, 10 : index> : i1> : !kgen.scalar<bool>, loc("test.mlir":3:4)>}>>
   kgen.return
 }
 
@@ -207,24 +207,24 @@ kgen.generator @trait_constraints<x: index>() {
 
   // Trait with non-trivial constraint is printed with `where`.
   // CHECK: kgen.param.declare conditional: type = <trait<@Trait where #kgen.constraint<{{.*}}>
-  kgen.param.declare conditional: type = <!lit.trait<@Trait where #kgen.constraint<gt(x, 0), loc("test.mlir":1:1)>>>
+  kgen.param.declare conditional: type = <!lit.trait<@Trait where #kgen.constraint<#kgen.cast_from_builtin<#kgen.param.expr<lt, 0 : index, #kgen.param.decl.ref<"x"> : index> : i1> : !kgen.scalar<bool>, loc("test.mlir":1:1)>>>
 
   // Literal true constraint is elided.
   // CHECK: kgen.param.declare literal_true: type = <trait<@MyTrait>>
-  kgen.param.declare literal_true: type = <!lit.trait<@MyTrait where #kgen.constraint<1, loc("t":1:1)>>>
+  kgen.param.declare literal_true: type = <!lit.trait<@MyTrait where #kgen.constraint<true, loc("t":1:1)>>>
 
   // Foldable true constraint (gt(1, 0) = true) is also elided.
   // CHECK: kgen.param.declare foldable_true: type = <trait<@MyTrait>>
-  kgen.param.declare foldable_true: type = <!lit.trait<@MyTrait where #kgen.constraint<gt(1, 0), loc("t":1:2)>>>
+  kgen.param.declare foldable_true: type = <!lit.trait<@MyTrait where #kgen.constraint<#kgen.cast_from_builtin<#kgen.param.expr<lt, 0 : index, 1 : index> : i1> : !kgen.scalar<bool>, loc("t":1:2)>>>
 
   // False constraints remove the trait slot entirely.
   // CHECK: kgen.param.declare false_removed: type = <trait<@Trait>>
-  kgen.param.declare false_removed: type = <!lit.trait<@MyTrait where #kgen.constraint<0, loc("t":2:1)>, @Trait>>
+  kgen.param.declare false_removed: type = <!lit.trait<@MyTrait where #kgen.constraint<false, loc("t":2:1)>, @Trait>>
 
   // Combined: foldable true (elided) + non-trivial (kept) + false (removed).
   // Result: @MyTrait (no constraint), @Trait with constraint. @TParam is removed.
   // CHECK: kgen.param.declare combined: type = <trait<@MyTrait, @Trait where #kgen.constraint<{{.*}}>
-  kgen.param.declare combined: type = <!lit.trait<@MyTrait where #kgen.constraint<gt(1, 0), loc("t":3:1)>, @Trait where #kgen.constraint<gt(x, 0), loc("t":3:2)>, @TParam where #kgen.constraint<0, loc("t":3:3)>>>
+  kgen.param.declare combined: type = <!lit.trait<@MyTrait where #kgen.constraint<#kgen.cast_from_builtin<#kgen.param.expr<lt, 0 : index, 1 : index> : i1> : !kgen.scalar<bool>, loc("t":3:1)>, @Trait where #kgen.constraint<#kgen.cast_from_builtin<#kgen.param.expr<lt, 0 : index, #kgen.param.decl.ref<"x"> : index> : i1> : !kgen.scalar<bool>, loc("t":3:2)>, @TParam where #kgen.constraint<false, loc("t":3:3)>>>
 
   kgen.return
 }

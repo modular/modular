@@ -204,7 +204,7 @@ def return_def_arg_box(abc: MemoryOnly) raises -> ref [abc] MemoryOnly:
 
 # CHECK-LABEL: lit.fn @"foldable_requires_1
 # CHECK-SAME: where {
-# CHECK-SAME:   ne(#lit.struct.extract<:!Int x, "_mlir_value">, 0){{.*}}>}
+# CHECK-SAME:   ne(#lit.struct.extract<:!Int x, "_mlir_value">, 0)
 def foldable_requires_1[x: Int]()
     where x:
         pass
@@ -213,7 +213,7 @@ def foldable_requires_1[x: Int]()
 # CHECK-LABEL: lit.fn @"foldable_requires_2
 # CHECK-SAME: where {
 # CHECK-SAME:   ge(#lit.struct.extract<:!Int y, "_mlir_value">, 11)
-# CHECK-SAME:   lt(#lit.struct.extract<:!Int x, "_mlir_value">, {{.*}}
+# CHECK-SAME:   lt(#lit.struct.extract<:!Int x, "_mlir_value">, 1)
 def foldable_requires_2[x: Int, y: Int]()
     where y > 10
     where x < 1:

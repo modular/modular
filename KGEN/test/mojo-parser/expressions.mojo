@@ -639,9 +639,9 @@ def callInParam[callable: def[x: Int](Int) thin -> Int]() -> Int:
 def parameterExprs[a: Int, a2: Int]():
   # CHECK: lit.alias.decl *"b{{.*}}": !Int = <{0}>
   comptime b = a-a
-  # CHECK: lit.alias.decl *"c{{.*}}": !Int = <{{.*}}{_mlir_value = add(#lit.struct.extract<:!Int a, "_mlir_value">, 42)}
+  # CHECK: lit.alias.decl *"c{{.*}}": !Int = <{{.*}}add(#lit.struct.extract<:!Int a, "_mlir_value">, 42)
   comptime c = a+42
-  # CHECK: lit.alias.decl *"d{{.*}}": !Int = <{{.*}}{_mlir_value = mul(#lit.struct.extract<:!Int a, "_mlir_value">, #lit.struct.extract<:!Int a2, "_mlir_value">)}
+  # CHECK: lit.alias.decl *"d{{.*}}": !Int = <{{.*}}mul(#lit.struct.extract<:!Int a, "_mlir_value">, #lit.struct.extract<:!Int a2, "_mlir_value">)
   comptime d = a*a2
 
 ##===----------------------------------------------------------------------===##

@@ -94,9 +94,10 @@ ConstraintResult LIT::checkConstraints(
     TypedAttr canonProp = getCanonicalAttr(origProp);
 
     // If the constraint evaluated to a constant, check its value directly.
-    if (auto intValue = dyn_cast<IntegerAttr>(canonProp)) {
-      if (intValue.getValue().isZero())
-        failedConstraints.emplace_back(idx, constraint);
+    if (isTriviallyTrueProposition(canonProp))
+      continue;
+    if (isTriviallyFalseProposition(canonProp)) {
+      failedConstraints.emplace_back(idx, constraint);
       continue;
     }
 

@@ -45,7 +45,7 @@ def fancy_signature[dt: DType, size: Int](
   # CHECK: lit.ref.store %[[RES]], %local
   var local = take_3index(size, size, size)
 
-  # CHECK: %[[TMP:.*]] = kgen.param.constant: !Int = <{{.*}}{_mlir_value = add(#lit.struct.extract<:!Int size, "_mlir_value">, 42)}
+  # CHECK: %[[TMP:.*]] = kgen.param.constant: !Int = <sugar_builtin(apply({{.*}}add(#lit.struct.extract<:!Int size, "_mlir_value">, 42)})>
   # CHECK: lit.return %[[TMP]]
   return size+42
 
@@ -69,13 +69,13 @@ def call_generic[dt: DType]():
 struct TestParamStruct[A: Int](TrivialRegisterPassable):
 
   # CHECK: lit.fn @"method{{.*}}"<B: !Int>(%self: !lit.struct<#TestParamStruct <:!Int [[A]]>
-  # CHECK-SAME: %other: {{.*}}#TestParamStruct <:!Int {{.*}}{_mlir_value = add(#lit.struct.extract<:!Int [[A]], "_mlir_value">, #lit.struct.extract<:!Int B, "_mlir_value">)}
+  # CHECK-SAME: %other: {{.*}}#TestParamStruct <:!Int sugar_builtin(apply({{.*}}add(#lit.struct.extract<:!Int [[A]], "_mlir_value">, #lit.struct.extract<:!Int B, "_mlir_value">)})>>
   def method[B: Int](self: TestParamStruct[Self.A], other: TestParamStruct[Self.A + B]):
     pass
 
   # CHECK-LABEL: lit.fn @"aliases{{.*}}%x: {{.*}}#TestParamStruct <
   def aliases(self, x: TestParamStruct[TestParamStruct[Self.A].TypeLevelAlias]):
-    # CHECK: lit.alias.decl [[B:.*]]: !Int = <{{.*}}{_mlir_value = add({{.*}}mul(#lit.struct.extract<:!Int *"A`", "_mlir_value">, 2){{.*}}, 1)}
+    # CHECK: lit.alias.decl [[B:.*]]: !Int = <{{.*}}add({{.*}}mul(#lit.struct.extract<:!Int *"A`", "_mlir_value">, 2), 1)
     comptime B = Self.A + Self.A + 1
     # CHECK: lit.alias.decl *"C{{.*}}: !Int =
     comptime C = B + Self.A
@@ -88,10 +88,10 @@ struct TestParamStruct[A: Int](TrivialRegisterPassable):
     # CHECK: lit.alias.decl *"intVal{{.*}}": !Int = <{42}>
     comptime intVal : Int = 42
 
-    # CHECK: %temp2 = lit.var.decl {{.*}} : {{.*}}#TestParamStruct <:!Int {{.*}}{_mlir_value = mul(#lit.struct.extract<:!Int [[A]], "_mlir_value">, 2)}
+    # CHECK: %temp2 = lit.var.decl {{.*}} : {{.*}}sugar_member_alias({{.*}}mul(#lit.struct.extract<:!Int [[A]], "_mlir_value">, 2)
     var temp2: TestParamStruct[TestParamStruct[Self.A].TypeLevelAlias]
 
-  # CHECK: lit.alias.decl *"TypeLevelAlias{{.*}}": !Int = <{{.*}}{_mlir_value = mul(#lit.struct.extract<:!Int *"A`", "_mlir_value">, 2)}
+  # CHECK: lit.alias.decl *"TypeLevelAlias{{.*}}": !Int = <{{.*}}mul(#lit.struct.extract<:!Int *"A`", "_mlir_value">, 2)
   comptime TypeLevelAlias = Self.A+Self.A
 
 # Test that we support partially bound parameters.
@@ -653,7 +653,7 @@ comptime FORTY_TWO = 42
 # CHECK-LABEL: lit.struct.decl @A
 # CHECK-SAME: <v: !Int>
 struct A[v: Int]:
-  # CHECK: lit.alias.decl *"member{{.*}}": !Int = <{{.*}}{_mlir_value = add(#lit.struct.extract<:!Int v, "_mlir_value">, 42)}
+  # CHECK: lit.alias.decl *"member{{.*}}": !Int = <{{.*}}add(#lit.struct.extract<:!Int v, "_mlir_value">, 42)
   comptime member = Self.v + FORTY_TWO
 
 # CHECK-LABEL: lit.fn @"testUseOfAliases
@@ -690,10 +690,10 @@ def testMyDType[dt: MyDType](a: MyVector[4, MyDType.float32],
 # Issue #6828: Unqualified name lookup into structs doesn't work
 # CHECK-LABEL: lit.struct.decl @UnqualAliasLookup<param: !Int>
 struct UnqualAliasLookup[param: Int]:
-  # CHECK: lit.alias.decl *"member{{.*}}": !Int = <{{.*}}{_mlir_value = add(#lit.struct.extract<:!Int param, "_mlir_value">, 1)}
+  # CHECK: lit.alias.decl *"member{{.*}}": !Int = <{{.*}}add(#lit.struct.extract<:!Int param, "_mlir_value">, 1)
   comptime member = Self.param + 1
   def get(self) -> Int:
-    # CHECK: %0 = kgen.param.constant: !Int = <{{.*}}{_mlir_value = add(#lit.struct.extract<:!Int param, "_mlir_value">, 1)}
+    # CHECK: %0 = kgen.param.constant: !Int = <{{.*}}add(#lit.struct.extract<:!Int param, "_mlir_value">, 1)
     return Self.member
 
 ##===----------------------------------------------------------------------===##
@@ -853,7 +853,7 @@ def testParamInference[size: Int](a: StaticVec[4], b: StaticVec[size],
   callee1(a)
   # CHECK-NEXT: lit.call {{.*}}callee1{{.*}}<:!Int size>(%b)
   callee1(b)
-  # CHECK-NEXT: lit.call {{.*}}callee1{{.*}}<:!Int {{.*}}{_mlir_value = add(#lit.struct.extract<:!Int size, "_mlir_value">, 2)}{{.*}}(%b2)
+  # CHECK-NEXT: lit.call tail {{.*}}callee1{{.*}}add(#lit.struct.extract<:!Int size, "_mlir_value">, 2)})>(%b2)
   callee1(b2)
   # CHECK-NEXT: lit.call {{.*}}callee2{{.*}}<:!TrivialRegisterPassable {{.*}}StaticVec<:!Int size>>(%b)
   callee2(b)
@@ -1269,14 +1269,10 @@ struct ContextDefault[
 # COM: reconstruction when referencing a function on a bound parametric type.
 # CHECK-LABEL: lit.fn @"test_contextual_default_fn_ref()"
 def test_contextual_default_fn_ref():
-    # CHECK: contextual_default_fn{{.*}}: !lit.generator<
-    # CHECK-SAME: "a": !Int = {7} {<{{.*}}__gt__(::Int,::Int)", *(0,0), {0})
-    # CHECK-SAME: ge(#lit.struct.extract<:!Int *(0,0), "_mlir_value">, 1))
-    # CHECK-SAME: "b": !Int = *(0,0) {<{{.*}}__ge__(::Int,::Int)", *(0,1), *(0,0))
-    # CHECK-SAME: le(#lit.struct.extract<:!Int *(0,0), "_mlir_value">, #lit.struct.extract<:!Int *(0,1), "_mlir_value">))
-    # CHECK-SAME: "c": !Int = *(0,1) {<{{.*}}__ge__(::Int,::Int)", *(0,2), *(0,1))
-    # CHECK-SAME: le(#lit.struct.extract<:!Int *(0,1), "_mlir_value">, #lit.struct.extract<:!Int *(0,2), "_mlir_value">))
-    # CHECK-SAME: "d": !Int = *(0,2)>
+    # CHECK: lit.alias.decl *"contextual_default_fn`": !lit.generator<
+    # CHECK-SAME: ge(#lit.struct.extract<:!Int *(0,0), "_mlir_value">, 1)
+    # CHECK-SAME: le(#lit.struct.extract<:!Int *(0,0), "_mlir_value">, #lit.struct.extract<:!Int *(0,1), "_mlir_value">)
+    # CHECK-SAME: le(#lit.struct.extract<:!Int *(0,1), "_mlir_value">, #lit.struct.extract<:!Int *(0,2), "_mlir_value">)
     comptime contextual_default_fn = ContextDefault.inner
 
 

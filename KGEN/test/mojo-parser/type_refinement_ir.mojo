@@ -39,7 +39,7 @@ struct MiniPack[element_trait: type_of(AnyType), //, *element_types: element_tra
             pass
 
     # CHECK-LABEL: lit.fn @"refine_param_list_get_after_assert
-    # CHECK: kgen.param.assert <{{.*}}conforms_to(:!kgen.param<{{.*}}element_trait> #kgen.param_list.get<{{.*}}element_types.values{{.*}}, #lit.struct.extract<:!Int i, "_mlir_value">>, [{{.*}}@type_refinement_ir::@Extra]){{.*}}>
+    # CHECK: kgen.param.assert <{{.*}}#kgen.type_conforms_to_trait<#kgen.param_list.get<{{.*}}element_types.values{{.*}}, #lit.struct.extract<:!Int i, "_mlir_value">> : !kgen.param<{{.*}}element_trait>, [{{.*}}@type_refinement_ir::@Extra]{{.*}}>
     # CHECK: [[ITEM:%.*]] = lit.call tail @type_refinement_ir::@MiniPack::@"get_element
     # CHECK: [[REBIND:%.*]] = kgen.rebind [[ITEM]] : {{.*}}#kgen.param_list.get<{{.*}}element_types.values{{.*}}, #lit.struct.extract<:!Int i, "_mlir_value">>{{.*}} to {{.*}}downcast(:!kgen.param<{{.*}}> #kgen.param_list.get<{{.*}}element_types.values{{.*}}, #lit.struct.extract<:!Int i, "_mlir_value">>){{.*}}
     # CHECK: lit.call{{.*}}@"use_extra{{.*}}([[REBIND]])
@@ -57,7 +57,7 @@ struct BaseMiniPack[element_trait: type_of(Base), //, *element_types: element_tr
             pass
 
     # CHECK-LABEL: lit.fn @"refine_param_list_get_preserves_parametric_bound
-    # CHECK: kgen.param.assert <{{.*}}conforms_to(:!kgen.param<{{.*}}element_trait> #kgen.param_list.get<{{.*}}element_types.values{{.*}}, #lit.struct.extract<:!Int i, "_mlir_value">>, [{{.*}}@type_refinement_ir::@Extra]){{.*}}>
+    # CHECK: kgen.param.assert <{{.*}}#kgen.type_conforms_to_trait<#kgen.param_list.get<{{.*}}element_types.values{{.*}}, #lit.struct.extract<:!Int i, "_mlir_value">> : !kgen.param<{{.*}}element_trait>, [{{.*}}@type_refinement_ir::@Extra]{{.*}}>
     # CHECK: [[EXTRA_ITEM:%.*]] = lit.call tail @type_refinement_ir::@BaseMiniPack::@"get_element
     # CHECK: [[EXTRA_REBIND:%.*]] = kgen.rebind [[EXTRA_ITEM]] : {{.*}}#kgen.param_list.get<{{.*}}element_types.values{{.*}}, #lit.struct.extract<:!Int i, "_mlir_value">>{{.*}} to {{.*}}Base_Extra downcast(:!kgen.param<{{.*}}> #kgen.param_list.get<{{.*}}element_types.values{{.*}}, #lit.struct.extract<:!Int i, "_mlir_value">>){{.*}}
     # CHECK: lit.call{{.*}}@"use_extra{{.*}}([[EXTRA_REBIND]])

@@ -2402,15 +2402,13 @@ def KGEN_ConstraintAttr : KGENAttr<"Constraint", "constraint"> {
   );
 
   let assemblyFormat = [{
-    `<` custom<I1ParamValue>($proposition) `,` $loc `>`
+    `<` custom<ScalarBoolParamValue>($proposition) `,` $loc `>`
   }];
 
   let builders = [
     AttrBuilderWithInferredContext<(ins
         "TypedAttr":$proposition,
-        "LocationAttr":$loc), [{
-      return $_get(proposition.getContext(), proposition, loc);
-    }]>
+        "LocationAttr":$loc)>
   ];
 
   let genVerifyDecl = 1;

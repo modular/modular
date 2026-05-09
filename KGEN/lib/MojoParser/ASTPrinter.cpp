@@ -572,6 +572,10 @@ findArgNameForImplicitOriginRef(ImplicitOriginRefAttr originRef,
 /// Pretty print a parameter value.
 void ASTType::printParam(raw_ostream &os, TypedAttr param,
                          SharedState *diagShared) {
+  if (auto cast = dyn_cast<CastFromBuiltinAttr>(param))
+    return printParam(os, cast.getArg(), diagShared);
+  if (auto cast = dyn_cast<CastToBuiltinAttr>(param))
+    return printParam(os, cast.getArg(), diagShared);
 
   auto printOperands =
       [&](ArrayRef<TypedAttr> operands, StringRef separator = ", ",
