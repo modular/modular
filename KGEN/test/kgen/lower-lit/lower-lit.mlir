@@ -578,18 +578,20 @@ lit.struct.decl @Int {
   lit.struct.field value : index
 }
 
-lit.struct.decl @IndexList<size: !Int> {
-  lit.fn @getitem(%self[*""]: !lit.struct<@IndexList<:!Int size>>) -> !Int {
+lit.struct.decl @IndexList<life: !lit.origin<1>, size: !Int> {
+  lit.fn @getitem(%self[*""]: !lit.struct<@IndexList<:!lit.origin<1> life, :!Int size>>) -> !Int {
     kgen.unreachable
   }
 }
 
-// CHECK-LABEL: kgen.generator @paramReplacement
-// CHECK-SAME: callee: (!kgen.struct<() memoryOnly>) -> ()>
+// COM: Origin parameters are singleton values and must be dropped from
+// COM: TypeGeneratorRefAttr bindings during LowerLIT.
+// CHECK-LABEL: kgen.generator @"IndexList::getitem"<size: struct<(index) memoryOnly>>(
+// CHECK-LABEL: kgen.generator @paramReplacement<_1: struct<(index) memoryOnly>, callee: (!kgen.struct<() memoryOnly>) -> ()>()
 lit.fn @paramReplacement<
     _1: !Int,
-    _2: @IndexList<:!Int _1>,
-    callee: !lit.generator<[1](!lit.struct<#IndexList <:!Int apply(:!lit.generator<(!lit.struct<#IndexList <:!Int _1>>) -> !Int> @IndexList::@getitem<:!Int _1>, _2)>>) -> ()>>(){
+    _2: @IndexList<:!lit.origin<1> lt, :!Int _1>,
+    callee: !lit.generator<[1](!lit.struct<#IndexList <:!lit.origin<1> lt, :!Int apply(:!lit.generator<(!lit.struct<#IndexList <:!lit.origin<1> lt, :!Int _1>>) -> !Int> @IndexList::@getitem<:!lit.origin<1> lt, :!Int _1>, _2)>>) -> ()>>[mut lt]() {
   kgen.unreachable
 }
 
