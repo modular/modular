@@ -29,7 +29,7 @@ from max.benchmark.benchmark_shared.datasets.types import (
 from max.benchmark.benchmark_shared.multi_turn import (
     ConcurrentTurnsRequestDriver,
     chat_session_driver,
-    prime_prefix_turns,
+    prerun_warmup_turns,
 )
 from max.benchmark.benchmark_shared.request import (
     BaseRequestFuncInput,
@@ -44,6 +44,7 @@ class _CapturingDriver(RequestDriver):
     """Request driver that records all requests and returns success."""
 
     def __init__(self) -> None:
+        super().__init__()
         self.calls: list[RequestFuncInput] = []
 
     async def request(
@@ -314,18 +315,43 @@ def test_prefix_turns_zero_is_noop() -> None:
     assert len(outputs) == 4
 
 
-def test_prime_prefix_turns_only_primes_sessions_with_prefix() -> None:
-    """Sessions with prefix_turns=0 should not generate any priming requests."""
+def test_prerun_warmup_turns_one_request_per_session_with_prefix() -> None:
+    """Each session with prefix_turns>0 produces exactly one warmup request."""
     sessions = [
         _make_session_with_id(0, prefix_turns=0),
         _make_session_with_id(1, prefix_turns=2),
         _make_session_with_id(2, prefix_turns=0),
+        _make_session_with_id(3, prefix_turns=3),
     ]
     driver = _CapturingDriver()
 
     async def run() -> None:
-        await prime_prefix_turns(
+        await prerun_warmup_turns(
             sessions=sessions,
+            request_driver=driver,
+            model_id="test",
+            api_url="http://localhost:8000/v1/chat/completions",
+            max_chat_len=4096,
+            sampling=SamplingConfig(),
+        )
+
+    asyncio.run(run())
+    # Sessions 1 and 3 fire one request each; sessions with
+    # prefix_turns=0 fire nothing.
+    assert len(driver.calls) == 2
+    assert {call.session_id for call in driver.calls} == {"1", "3"}
+    assert all(call.ignore_eos is True for call in driver.calls)
+
+
+def test_prerun_warmup_turns_request_prompt_is_last_turn_prefix() -> None:
+    """For prefix_turns=N, the one request's prompt = dataset messages[0:2N-1]."""
+    session = _make_session_with_id(0, prefix_turns=3)
+    msgs = session.messages
+    driver = _CapturingDriver()
+
+    async def run() -> None:
+        await prerun_warmup_turns(
+            sessions=[session],
             request_driver=driver,
             model_id="test",
             api_url="http://localhost:8000/v1/chat/completions",
@@ -335,43 +361,74 @@ def test_prime_prefix_turns_only_primes_sessions_with_prefix() -> None:
 
     asyncio.run(run())
     assert len(driver.calls) == 1
-    assert driver.calls[0].session_id == "1"
-    # Priming requests request a single token and must not stop early on EOS
-    # (otherwise the full prefix may not be prefilled).
-    assert driver.calls[0].max_tokens == 1
-    assert driver.calls[0].ignore_eos is True
+    call = driver.calls[0]
+    # prefix_turns=3 means the prompt is messages[0:5]:
+    # [user_1, asst_1, user_2, asst_2, user_3].
+    assert len(call.prompt) == 5
+    last = call.prompt[-1]
+    assert not isinstance(last, str)
+    block = last.content[0]
+    assert isinstance(block, TextContentBlock)
+    assert block.text == msgs[4].content  # user_3
+    assert call.max_tokens == msgs[5].num_tokens  # dataset turn-3 output
 
 
-def test_prime_prefix_turns_respects_max_sessions() -> None:
-    """max_sessions caps priming to the initial concurrent population."""
-    sessions = [_make_session_with_id(idx, prefix_turns=2) for idx in range(5)]
-    driver = _CapturingDriver()
+def test_prerun_warmup_turns_cross_session_parallelism() -> None:
+    """Requests for different sessions fire concurrently."""
+
+    enter_count = 0
+    max_concurrent_seen = 0
+    in_flight = 0
+    release = asyncio.Event()
+
+    class _SlowDriver(RequestDriver):
+        async def request(
+            self, request_func_input: BaseRequestFuncInput
+        ) -> RequestFuncOutput:
+            nonlocal enter_count, max_concurrent_seen, in_flight
+            enter_count += 1
+            in_flight += 1
+            max_concurrent_seen = max(max_concurrent_seen, in_flight)
+            try:
+                if enter_count >= 3:
+                    release.set()
+                await release.wait()
+            finally:
+                in_flight -= 1
+            assert isinstance(request_func_input, RequestFuncInput)
+            return RequestFuncOutput(
+                success=True,
+                latency=0.0,
+                ttft=0.0,
+                prompt_len=request_func_input.prompt_len,
+                generated_text="ok",
+            )
+
+    # 3 sessions, one request each. All 3 should overlap.
+    sessions = [_make_session_with_id(i, prefix_turns=2) for i in range(3)]
 
     async def run() -> None:
-        await prime_prefix_turns(
+        await prerun_warmup_turns(
             sessions=sessions,
-            request_driver=driver,
+            request_driver=_SlowDriver(),
             model_id="test",
             api_url="http://localhost:8000/v1/chat/completions",
             max_chat_len=4096,
             sampling=SamplingConfig(),
-            max_sessions=2,
         )
 
     asyncio.run(run())
-    # Only the first two sessions should be primed.
-    assert len(driver.calls) == 2
-    primed_ids = {call.session_id for call in driver.calls}
-    assert primed_ids == {"0", "1"}
+    # If serialised, only one would be in flight before release fires.
+    assert max_concurrent_seen == 3
 
 
-def test_prime_prefix_turns_noop_without_prefix_sessions() -> None:
+def test_prerun_warmup_turns_noop_without_prefix_sessions() -> None:
     """When no session has prefix_turns > 0, no requests are issued."""
     sessions = [_make_session_with_id(idx, prefix_turns=0) for idx in range(3)]
     driver = _CapturingDriver()
 
     async def run() -> None:
-        await prime_prefix_turns(
+        await prerun_warmup_turns(
             sessions=sessions,
             request_driver=driver,
             model_id="test",
@@ -382,6 +439,27 @@ def test_prime_prefix_turns_noop_without_prefix_sessions() -> None:
 
     asyncio.run(run())
     assert driver.calls == []
+
+
+def test_prerun_warmup_turns_respects_chat_length_budget() -> None:
+    """Turns that would overflow max_chat_len are dropped."""
+    # Each turn = 5 user + 5 asst tokens. With max_chat_len=15, only
+    # turn 1 fits.
+    session = _make_session_with_id(0, prefix_turns=3)
+    driver = _CapturingDriver()
+
+    async def run() -> None:
+        await prerun_warmup_turns(
+            sessions=[session],
+            request_driver=driver,
+            model_id="test",
+            api_url="http://localhost:8000/v1/chat/completions",
+            max_chat_len=15,
+            sampling=SamplingConfig(),
+        )
+
+    asyncio.run(run())
+    assert len(driver.calls) == 1
 
 
 def test_concurrent_turns_driver_expired_deadline_cancels_without_calling_base() -> (

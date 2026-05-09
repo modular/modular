@@ -62,6 +62,7 @@ from max.benchmark.benchmark_shared.config import (
 from max.benchmark.benchmark_shared.datasets.all import sample_requests
 from max.benchmark.benchmark_shared.datasets.types import (
     ChatSamples,
+    ChatSession,
     RequestSamples,
     Samples,
 )
@@ -74,7 +75,7 @@ from max.benchmark.benchmark_shared.metrics import (
     calculate_spec_decode_stats,
 )
 from max.benchmark.benchmark_shared.multi_turn import (
-    prime_prefix_turns,
+    prerun_warmup_turns,
     run_kv_cache_stress_benchmark,
     run_multiturn_benchmark,
 )
@@ -430,27 +431,48 @@ async def benchmark(
 
     base_driver = request_driver_class(tokenizer=session.tokenizer)
 
-    # Prime prefix turns before the benchmark timer starts. Only the initial
-    # concurrent population keeps its prefix_turns; sessions arriving
-    # mid-benchmark get reset to 0 and don't need priming.
-    # Bound: kv-cache-stress uses max_concurrent_conversations; multiturn uses
-    # max_concurrency (may be None for unbounded, in which case all sessions
-    # keep prefix_turns and are all primed).
+    # Warm up the initial-slot sessions before starting the timer.
+    # pick_warmup_population assigns each picked session a random
+    # prefix_turns; prerun_warmup_turns fires one request per session
+    # covering that prefix. Sessions arriving mid-benchmark start cold.
+    chat_sessions: Sequence[ChatSession] | None = None
     if isinstance(session.samples, ChatSamples):
         assert session.tokenizer is not None
-        prime_bound = (
+        chat_sessions = session.samples.chat_sessions
+        warmup_count = (
             args.max_concurrent_conversations
             if args.max_concurrent_conversations is not None
             else max_concurrency
         )
-        await prime_prefix_turns(
-            sessions=session.samples.chat_sessions,
+        if args.warmup_to_steady_state and warmup_count:
+            chat_sessions, report = pick_warmup_population(
+                chat_sessions,
+                warmup_count,
+                warmup_to_steady_state=True,
+                warmup_oversample_factor=args.warmup_oversample_factor,
+                main_pool_target=args.num_chat_sessions or len(chat_sessions),
+                rng=np.random.default_rng(args.seed),
+            )
+            if report is not None:
+                log_warmup_sampling_report(report)
+            cold_count = sum(
+                1 for s in chat_sessions[:warmup_count] if s.prefix_turns == 0
+            )
+            logger.info(
+                "Warming up to steady state: %d sessions (%d will"
+                " pre-run, %d drew prefix_turns=0 and start cold).",
+                warmup_count,
+                warmup_count - cold_count,
+                cold_count,
+            )
+        await prerun_warmup_turns(
+            sessions=chat_sessions,
             request_driver=base_driver,
             model_id=session.model_id,
             api_url=session.api_url,
             max_chat_len=session.tokenizer.model_max_length,
             sampling=args.sampling,
-            max_sessions=prime_bound,
+            disable_tqdm=args.disable_tqdm,
         )
 
     # Capture baseline server metrics after priming so priming requests
@@ -583,8 +605,9 @@ async def benchmark(
                 )
             assert session.tokenizer is not None
             assert isinstance(args.max_concurrent_conversations, int)
+            assert chat_sessions is not None
             outputs_by_session = await run_kv_cache_stress_benchmark(
-                chat_sessions=session.samples.chat_sessions,
+                chat_sessions=chat_sessions,
                 max_requests=args.num_prompts,
                 max_concurrent_conversations=args.max_concurrent_conversations,
                 semaphore=semaphore,
@@ -598,10 +621,6 @@ async def benchmark(
                 warmup_delay_ms=args.chat_warmup_delay_ms,
                 sampling=args.sampling,
                 randomize_session_start=args.randomize_session_start,
-                warmup_to_steady_state=args.warmup_to_steady_state,
-                warmup_oversample_factor=args.warmup_oversample_factor,
-                num_chat_sessions=args.num_chat_sessions or 0,
-                seed=args.seed,
                 run_prefix=run_prefix,
                 run_prefix_len=run_prefix_len,
             )
@@ -610,8 +629,9 @@ async def benchmark(
             ]
         else:
             # multi-turn chat scenario
+            assert chat_sessions is not None
             outputs_by_session = await run_multiturn_benchmark(
-                chat_sessions=session.samples.chat_sessions,
+                chat_sessions=chat_sessions,
                 max_requests=args.num_prompts,
                 semaphore=semaphore,
                 benchmark_should_end_time=benchmark_should_end_time,
@@ -625,10 +645,6 @@ async def benchmark(
                 max_concurrency=max_concurrency,
                 sampling=args.sampling,
                 randomize_session_start=args.randomize_session_start,
-                warmup_to_steady_state=args.warmup_to_steady_state,
-                warmup_oversample_factor=args.warmup_oversample_factor,
-                num_chat_sessions=args.num_chat_sessions or 0,
-                seed=args.seed,
                 run_prefix=run_prefix,
                 run_prefix_len=run_prefix_len,
             )
