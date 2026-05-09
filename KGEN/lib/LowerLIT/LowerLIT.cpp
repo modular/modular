@@ -859,6 +859,25 @@ static void lowerAttributesAndTypes(
           if (auto newFuncSym = removeSingletonParams(funcSym))
             return std::make_pair(newFuncSym, WalkResult::skip());
 
+        if (auto genRef = dyn_cast<TypeGeneratorRefAttr>(attr)) {
+          SmallVector<TypedAttr> newBindings;
+          bool changed = false;
+          for (TypedAttr binding : genRef.getParamValues()) {
+            if (singletonTypeHelper.isSingletonType(binding.getType())) {
+              changed = true;
+              continue;
+            }
+            newBindings.push_back(cast<TypedAttr>(replacer.replace(binding)));
+          }
+          if (changed)
+            return std::make_pair(
+                TypeGeneratorRefAttr::get(
+                    attr.getContext(),
+                    cast<SymbolRefAttr>(replacer.replace(genRef.getSymbol())),
+                    newBindings, genRef.getType()),
+                WalkResult::skip());
+        }
+
         // Remove singleton parameter values from BindParamsAttr.
         if (auto bindParams = dyn_cast<BindParamsAttr>(attr)) {
           SmallVector<TypedAttr> newOperands;
