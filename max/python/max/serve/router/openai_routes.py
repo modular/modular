@@ -1455,20 +1455,27 @@ class OpenAICompletionResponseGenerator(
         logger.debug("Streaming: Start: %s", request)
         record_request_start()
         request_timer = StopWatch(start_ns=request.timestamp_ns)
+        n_reasoning_tokens = 0
         n_tokens = 0
         n_prompt_tokens = 0
         status_code = 200
         try:
             async for chunk in self.pipeline.next_token_chunk(request):
+                chunk_total_tokens = (
+                    chunk.reasoning_token_count or 0
+                ) + chunk.token_count
                 self.logger.debug(
-                    "Streaming: %s, TOKENS: %d, %s",
+                    "Streaming: %s, TOKENS: %d, REASONING: %s, TEXT: %s",
                     request.request_id,
-                    chunk.token_count,
+                    chunk_total_tokens,
+                    chunk.decoded_reasoning_tokens,
                     chunk.decoded_tokens,
                 )
 
                 if chunk.prompt_token_count:
                     n_prompt_tokens = chunk.prompt_token_count
+                n_reasoning_tokens += chunk.reasoning_token_count or 0
+                n_tokens += chunk.token_count
 
                 log_probs = _process_log_probabilities([chunk])
 
@@ -1486,7 +1493,7 @@ class OpenAICompletionResponseGenerator(
                             ),
                         )
                     ]
-                else:
+                elif chunk.status.is_done:
                     choices = [
                         CompletionResponseStreamChoice(
                             index=0,
@@ -1496,6 +1503,13 @@ class OpenAICompletionResponseGenerator(
                             ),
                         )
                     ]
+                else:
+                    # Reasoning-capable models (e.g. Kimi K2.5) can emit
+                    # intermediate chunks with no user-visible completion text
+                    # while still ACTIVE. For legacy /completions streaming we
+                    # skip those chunks instead of forcing a terminal
+                    # finish_reason.
+                    continue
 
                 # Each chunk is expected to have the same id
                 # https://platform.openai.com/docs/api-reference/chat/streaming
@@ -1506,13 +1520,16 @@ class OpenAICompletionResponseGenerator(
                     model=request.model_name,
                     object="text_completion",
                 )
-                n_tokens += chunk.token_count
 
                 payload = response.model_dump_json()
 
                 yield payload
 
-            logger.debug("Streaming: Done: %s, %d tokens", request, n_tokens)
+            logger.debug(
+                "Streaming: Done: %s, %d tokens",
+                request,
+                n_reasoning_tokens + n_tokens,
+            )
             yield "[DONE]"
         except queue.Full:
             logger.exception("Request queue full %s", request.request_id)
@@ -1543,7 +1560,7 @@ class OpenAICompletionResponseGenerator(
                 status_code,
                 request.request_path,
                 request_timer.elapsed_ms,
-                n_tokens,
+                n_reasoning_tokens + n_tokens,
                 n_prompt_tokens,
             )
 
@@ -1553,6 +1570,7 @@ class OpenAICompletionResponseGenerator(
         # we assume that all entries in `requests` came from the same http
         # request and timestamp, request id, path should all be the same.
         record_request_start()
+        n_reasoning_tokens = 0
         n_tokens = 0
         n_prompt_tokens = 0
         request_timer = StopWatch(start_ns=requests[0].timestamp_ns)
@@ -1564,6 +1582,9 @@ class OpenAICompletionResponseGenerator(
             )
             response_choices = []
             for i, req_outputs in enumerate(req_output_list):
+                n_reasoning_tokens += sum(
+                    chunk.reasoning_token_count or 0 for chunk in req_outputs
+                )
                 n_tokens += sum(chunk.token_count for chunk in req_outputs)
                 if req_outputs and req_outputs[0].prompt_token_count:
                     n_prompt_tokens += req_outputs[0].prompt_token_count
@@ -1605,7 +1626,7 @@ class OpenAICompletionResponseGenerator(
                 status_code,
                 requests[0].request_path,
                 request_timer.elapsed_ms,
-                n_tokens,
+                n_reasoning_tokens + n_tokens,
                 n_prompt_tokens,
             )
 

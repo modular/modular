@@ -45,7 +45,9 @@ from max.serve.pipelines.echo_gen import (
 )
 from max.serve.pipelines.llm import TokenGeneratorOutput, TokenGeneratorPipeline
 from max.serve.router.openai_routes import (
+    CompletionStreamResponse,
     OpenAIChatResponseGenerator,
+    OpenAICompletionResponseGenerator,
     _create_response_format,
     _process_chat_log_probabilities,
     get_tool_parser,
@@ -839,6 +841,29 @@ async def _run_stream(
     ]
 
 
+async def _run_completion_stream(
+    chunks: list[TokenGeneratorOutput],
+) -> list[CompletionStreamResponse]:
+    """Run legacy text-completion streaming generator and parse chunks."""
+    mock_pipeline = Mock()
+    mock_pipeline.model_name = "test-model"
+
+    async def mock_next_token_chunk(request: Any) -> Any:
+        for chunk in chunks:
+            yield chunk
+
+    mock_pipeline.next_token_chunk = mock_next_token_chunk
+    mock_request = _make_mock_request()
+    mock_request.request_path = "/v1/completions"
+
+    generator = OpenAICompletionResponseGenerator(mock_pipeline)
+    return [
+        CompletionStreamResponse.model_validate_json(p)
+        async for p in generator.stream(mock_request)
+        if isinstance(p, str) and p != "[DONE]"
+    ]
+
+
 async def _run_stream_with_kimi_tool_parser(
     chunks: list[TokenGeneratorOutput],
 ) -> list[CreateChatCompletionStreamResponse]:
@@ -950,6 +975,141 @@ async def test_openai_chat_stream_reasoning_finish_reason(
     assert responses[0].choices[0].finish_reason is None
     assert responses[1].choices[0].finish_reason is None
     assert responses[2].choices[0].finish_reason == "stop"
+
+
+@pytest.mark.asyncio
+async def test_openai_completion_stream_skips_active_empty_chunks(
+    patch_openai_metrics: None,
+) -> None:
+    """Regression: reasoning-only ACTIVE chunks do not crash /completions stream."""
+    chunks = [
+        TokenGeneratorOutput(
+            status=GenerationStatus.ACTIVE,
+            decoded_reasoning_tokens="thinking",
+            reasoning_token_count=2,
+            decoded_tokens=None,
+            token_count=0,
+            prompt_token_count=5,
+        ),
+        TokenGeneratorOutput(
+            status=GenerationStatus.ACTIVE,
+            decoded_reasoning_tokens=None,
+            reasoning_token_count=0,
+            decoded_tokens="partial",
+            token_count=1,
+            prompt_token_count=5,
+        ),
+        TokenGeneratorOutput(
+            status=GenerationStatus.END_OF_SEQUENCE,
+            decoded_reasoning_tokens=None,
+            reasoning_token_count=0,
+            decoded_tokens=" answer",
+            token_count=1,
+            prompt_token_count=5,
+        ),
+    ]
+
+    responses = await _run_completion_stream(chunks)
+    assert len(responses) == 2
+    assert responses[0].choices[0].text == "partial"
+    assert responses[0].choices[0].finish_reason is None
+    assert responses[1].choices[0].text == " answer"
+    assert responses[1].choices[0].finish_reason == "stop"
+
+
+@pytest.mark.asyncio
+async def test_openai_completion_stream_accounts_reasoning_tokens_for_metrics() -> (
+    None
+):
+    """Billing/metrics counts include reasoning tokens even when chunk is skipped."""
+    chunks = [
+        TokenGeneratorOutput(
+            status=GenerationStatus.ACTIVE,
+            decoded_reasoning_tokens="thinking",
+            reasoning_token_count=3,
+            decoded_tokens=None,
+            token_count=0,
+            prompt_token_count=5,
+        ),
+        TokenGeneratorOutput(
+            status=GenerationStatus.END_OF_SEQUENCE,
+            decoded_reasoning_tokens=None,
+            reasoning_token_count=0,
+            decoded_tokens="done",
+            token_count=2,
+            prompt_token_count=5,
+        ),
+    ]
+
+    mock_pipeline = Mock()
+    mock_pipeline.model_name = "test-model"
+
+    async def mock_next_token_chunk(request: Any) -> Any:
+        for chunk in chunks:
+            yield chunk
+
+    mock_pipeline.next_token_chunk = mock_next_token_chunk
+    mock_request = _make_mock_request()
+    mock_request.request_path = "/v1/completions"
+
+    with (
+        patch("max.serve.router.openai_routes.record_request_start"),
+        patch("max.serve.router.openai_routes.record_request_end") as end_mock,
+    ):
+        generator = OpenAICompletionResponseGenerator(mock_pipeline)
+        _ = [p async for p in generator.stream(mock_request)]
+
+    assert end_mock.call_count == 1
+    args = end_mock.call_args.args
+    assert args[0] == 200
+    assert args[1] == "/v1/completions"
+    assert args[3] == 5  # 3 reasoning + 2 completion tokens
+    assert args[4] == 5
+
+
+@pytest.mark.asyncio
+async def test_openai_completion_non_stream_accounts_reasoning_tokens_for_metrics() -> (
+    None
+):
+    """Billing/metrics counts include reasoning tokens in non-streaming mode."""
+    chunks = [
+        TokenGeneratorOutput(
+            status=GenerationStatus.ACTIVE,
+            decoded_reasoning_tokens="thinking",
+            reasoning_token_count=2,
+            decoded_tokens=None,
+            token_count=0,
+            prompt_token_count=4,
+        ),
+        TokenGeneratorOutput(
+            status=GenerationStatus.END_OF_SEQUENCE,
+            decoded_reasoning_tokens=None,
+            reasoning_token_count=0,
+            decoded_tokens="done",
+            token_count=1,
+            prompt_token_count=4,
+        ),
+    ]
+
+    mock_pipeline = Mock()
+    mock_pipeline.model_name = "test-model"
+    mock_pipeline.all_tokens = AsyncMock(return_value=chunks)
+    mock_request = _make_mock_request()
+    mock_request.request_path = "/v1/completions"
+
+    with (
+        patch("max.serve.router.openai_routes.record_request_start"),
+        patch("max.serve.router.openai_routes.record_request_end") as end_mock,
+    ):
+        generator = OpenAICompletionResponseGenerator(mock_pipeline)
+        _ = await generator.complete([mock_request])
+
+    assert end_mock.call_count == 1
+    args = end_mock.call_args.args
+    assert args[0] == 200
+    assert args[1] == "/v1/completions"
+    assert args[3] == 3  # 2 reasoning + 1 completion tokens
+    assert args[4] == 4
 
 
 @pytest.mark.asyncio
