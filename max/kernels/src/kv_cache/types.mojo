@@ -2143,7 +2143,7 @@ struct PagedKVCache[
             head_dim_idx < Self.kv_params.head_size
         ), "KVCache head_dim_idx is out of range"
 
-        var lut_block_index, tok_in_block_idx = divmod(tok_idx, self.page_size)
+        var lut_block_idx, tok_in_block_idx = divmod(tok_idx, self.page_size)
 
         assert tok_in_block_idx < Int(
             self.blocks.dim[1]()
@@ -2151,13 +2151,13 @@ struct PagedKVCache[
 
         assert bs < self.cache_lengths.num_elements(), "batch_idx is oob"
         debug_assert(
-            lut_block_index < Int(self.blocks.dim[0]()),
-            "block_idx is OOB. Attempted to access block index ",
-            lut_block_index,
-            " with num_blocks ",
-            Int(self.blocks.dim[0]()),
+            lut_block_idx < Int(self.lookup_table.dim[1]()),
+            "lut_block_idx is OOB. Attempted to access LUT column ",
+            lut_block_idx,
+            " with lookup_table inner dim ",
+            Int(self.lookup_table.dim[1]()),
         )
-        block_idx = Int(self.lookup_table[bs, lut_block_index])
+        block_idx = Int(self.lookup_table[bs, lut_block_idx])
         return coord[DType.int64](
             Tuple(block_idx, tok_in_block_idx, head_idx, head_dim_idx)
         )
@@ -2176,8 +2176,7 @@ struct PagedKVCache[
             head_idx,
             ")",
         )
-
-        var lut_block_index, tok_in_block_idx = divmod(tok_idx, self.page_size)
+        var lut_block_idx, tok_in_block_idx = divmod(tok_idx, self.page_size)
 
         assert tok_in_block_idx < Int(
             self.blocks.dim[1]()
@@ -2185,14 +2184,13 @@ struct PagedKVCache[
 
         assert bs < self.cache_lengths.num_elements(), "batch_idx is oob"
         debug_assert(
-            lut_block_index < Int(self.blocks.dim[0]()),
-            "block_idx is OOB. Attempted to access block index ",
-            lut_block_index,
-            " with num_blocks ",
-            Int(self.blocks.dim[0]()),
+            lut_block_idx < Int(self.lookup_table.dim[1]()),
+            "lut_block_idx is OOB. Attempted to access LUT column ",
+            lut_block_idx,
+            " with lookup_table inner dim ",
+            Int(self.lookup_table.dim[1]()),
         )
-
-        block_idx = Int(self.lookup_table[bs, lut_block_index])
+        block_idx = Int(self.lookup_table[bs, lut_block_idx])
         var head_dim_granularity = ceildiv(
             head_dim_idx,
             Self.quantization_granularity,
