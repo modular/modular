@@ -43,7 +43,7 @@ def requires_natural[x: Int](y: Int) where x >= 0:
 # CHECK-LABEL: lit.fn @"test_assert_enables_where_constraint
 def test_assert_enables_where_constraint[x: Int](y: Int):
     # First assert that x >= 0
-    # CHECK: kgen.param.assert <{{.*}}ge(#lit.struct.extract<:!Int x, "_mlir_value">, 0){{.*}}>
+    # CHECK: kgen.param.assert <{{.*}}ge(#lit.struct.extract<:!Int x, "_mlir_value">, 0)
     comptime assert x >= 0
 
     # Now we can call a function that requires x >= 0 via where clause

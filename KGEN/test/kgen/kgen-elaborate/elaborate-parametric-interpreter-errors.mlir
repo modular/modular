@@ -19,34 +19,6 @@ kgen.generator export @use_Itf3two() {
 
 // -----
 
-// expected-error @+1 {{function instantiation failed}}
-kgen.generator @unfoldableIndex() {
-  kgen.param.declare x = <4>
-
-  // Index type parameter expressions can only fold when they are known the
-  // same on 32-bit and 64-bit systems or if target-specific information is
-  // known.
-  // expected-note @+1 {{could not simplify operator div(8000000000, 4)}}
-  %1 = kgen.param.constant = <div(8000000000, x)> // 8B/4 differs on 32-bit.
-  kgen.return
-}
-
-// -----
-
-// expected-error @below {{function instantiation failed}}
-kgen.generator @unfoldableIndex() {
-  kgen.param.declare x = <4>
-
-  // Index type parameter expressions can only fold when they are known the
-  // same on 32-bit and 64-bit systems or if target-specific information is
-  // known.
-  // expected-note @+1 {{could not simplify operator div(8000000000, 4)}}
-  %1 = kgen.param.constant = <add(1, div(8000000000, x))> // 8B/4 differs on 32-bit.
-  kgen.return
-}
-
-// -----
-
 #target = #kgen.target<triple="", arch="", features="", data_layout="", simd_bit_width=128> : !kgen.target
 
 // expected-error @below {{function instantiation failed}}
@@ -346,4 +318,3 @@ kgen.generator @test_non_struct_type() {
   kgen.param.constant: param_list<type> = <#kgen.struct_field_types<i32>>
   kgen.return
 }
-

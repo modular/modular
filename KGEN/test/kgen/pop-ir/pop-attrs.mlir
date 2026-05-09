@@ -72,7 +72,7 @@ kgen.func @union_constants() {
   f3 = #pop<fmf fast>
 } : () -> ()
 
-// CHECK: f0 = #pop.simd_and<#kgen.unknown : !kgen.simd<4, si32>, #kgen<simd -1> : !kgen.simd<4, si32>> : !kgen.simd<4, si32>
+// CHECK: f0 = #kgen.param.expr<and, #kgen<simd -1> : !kgen.simd<4, si32>, #kgen.unknown : !kgen.simd<4, si32>> : !kgen.simd<4, si32>
 "simd_and.attr"() { f0 = #pop.simd_and<#kgen.unknown : !kgen.simd<4, si32>, #kgen<simd -1> : !kgen.simd<4, si32>> } : () -> ()
 
 // CHECK: f0 = #pop.cast<#kgen.unknown : !kgen.scalar<si32>> : !kgen.scalar<ui32>
@@ -93,7 +93,7 @@ kgen.func @union_constants() {
 // CHECK: f0 = #pop.dtype_from_ui8<#kgen.unknown : ui8> : !kgen.dtype
 "pop_dtype_from_ui8.op"() { f0 = #pop.dtype_from_ui8<#kgen.unknown : ui8> : !kgen.dtype } : () -> ()
 
-// CHECK: f0 = #pop.simd_xor<#kgen.unknown : !kgen.simd<4, si32>, #kgen<simd -1> : !kgen.simd<4, si32>> : !kgen.simd<4, si32>
+// CHECK: f0 = #kgen.param.expr<xor, #kgen<simd -1> : !kgen.simd<4, si32>, #kgen.unknown : !kgen.simd<4, si32>> : !kgen.simd<4, si32>
 "simd_xor.attr"() { f0 = #pop.simd_xor<#kgen.unknown : !kgen.simd<4, si32>, #kgen<simd -1> : !kgen.simd<4, si32>> } : () -> ()
 
 // CHECK: f0 = #pop.simd_cmp<eq, #kgen.unknown : !kgen.simd<4, si32>, #kgen<simd -1> : !kgen.simd<4, si32>> : !kgen.simd<4, bool>
@@ -102,10 +102,11 @@ kgen.func @union_constants() {
 // CHECK: f0 = #pop.simd_reduce_or<#kgen.unknown : !kgen.simd<4, si32>> : !kgen.scalar<si32>
 "simd_reduce_or.attr"() { f0 = #pop.simd_reduce_or<#kgen.unknown : !kgen.simd<4, si32>> : !kgen.scalar<si32> } : () -> ()
 
-// CHECK: f0 = #pop.simd_shl<#kgen.unknown : !kgen.simd<4, si32>, #kgen<simd 1> : !kgen.simd<4, si32>> : !kgen.simd<4, si32>
+// `shl(x, c)` canonicalizes to `mul(x, 1<<c)`.
+// CHECK: f0 = #kgen.param.expr<mul, #kgen<simd 2> : !kgen.simd<4, si32>, #kgen.unknown : !kgen.simd<4, si32>> : !kgen.simd<4, si32>
 "simd_shl.attr"() { f0 = #pop.simd_shl<#kgen.unknown : !kgen.simd<4, si32>, #kgen<simd 1> : !kgen.simd<4, si32>> } : () -> ()
 
-// CHECK: f0 = #pop.simd_shr<#kgen.unknown : !kgen.simd<4, si32>, #kgen<simd 1> : !kgen.simd<4, si32>> : !kgen.simd<4, si32>
+// CHECK: f0 = #kgen.param.expr<shr, #kgen.unknown : !kgen.simd<4, si32>, #kgen<simd 1> : !kgen.simd<4, si32>> : !kgen.simd<4, si32>
 "simd_shr.attr"() { f0 = #pop.simd_shr<#kgen.unknown : !kgen.simd<4, si32>, #kgen<simd 1> : !kgen.simd<4, si32>> } : () -> ()
 
 // CHECK: f0 = #pop.variadic_to_array<:param_list<index> v> : !pop.array<#kgen.param_list.size<:param_list<index> v>, index>

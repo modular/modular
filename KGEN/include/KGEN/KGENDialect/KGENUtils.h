@@ -25,24 +25,6 @@ class DeclInterface;
 class FuncInterface;
 class SIMDType;
 
-/// Verify a conversion between a SIMD type and an MLIR builtin type.
-/// Conversions are assumed to be bi-directional. In error messages, the
-/// direction of the conversion is controlled by the `fromSimd` parameter.
-LogicalResult
-verifyConversionCast(function_ref<InFlightDiagnostic(StringRef)> emitError,
-                     SIMDType simd, Type builtinType, bool fromSimd);
-
-/// Fold a CastToBuiltin operation/attribute from a SIMD-typed value to a MLIR
-/// builtin type.
-OpFoldResult foldCastToBuiltin(TypedAttr input, Type resultType);
-
-/// Fold a conversion from a MLIR builtin type to a SIMD type.
-OpFoldResult foldCastFromBuiltin(TypedAttr input, SIMDType resultType);
-
-/// Fold a SIMD splat operation.
-OpFoldResult foldSIMDSplat(Value scalarVal, Attribute scalarAttr,
-                           SIMDType resultType);
-
 /// This type is a bit of a mouthful, add a useful alias for it.
 using ExportMap = llvm::MapVector<StringAttr, ExportKind>;
 
@@ -248,6 +230,12 @@ void printI1ParamValue(AsmPrinter &p, Operation *op, Attribute value);
 void printI1ParamValue(AsmPrinter &p, Attribute value);
 /// Parse a parameter value that is known to have `i1` type.
 ParseResult parseI1ParamValue(AsmParser &p, TypedAttr &value);
+
+/// Print a parameter value that is known to have `scalar<bool>` type.
+void printScalarBoolParamValue(AsmPrinter &p, Operation *op, Attribute value);
+void printScalarBoolParamValue(AsmPrinter &p, Attribute value);
+/// Parse a parameter value that is known to have `scalar<bool>` type.
+ParseResult parseScalarBoolParamValue(AsmParser &p, TypedAttr &value);
 
 /// Parse a index-or-colon-type and then a parameter value of that type.
 ParseResult parseColonTypeParamValue(AsmParser &p, TypedAttr &value);
@@ -545,6 +533,50 @@ std::string
 printSimpleParamAttrValues(ArrayRef<ParamDeclAttr> params,
                            ArrayRef<TypedAttr> values,
                            CompilationOptions::ErrorVerboseLevel verboseLevel);
+//===----------------------------------------------------------------------===//
+// SIMD Utilities
+//===----------------------------------------------------------------------===//
+
+/// Verify a conversion between a SIMD type and an MLIR builtin type.
+/// Conversions are assumed to be bi-directional. In error messages, the
+/// direction of the conversion is controlled by the `fromSimd` parameter.
+LogicalResult
+verifyConversionCast(function_ref<InFlightDiagnostic(StringRef)> emitError,
+                     SIMDType simd, Type builtinType, bool fromSimd);
+
+/// Fold a CastToBuiltin operation/attribute from a SIMD-typed value to a MLIR
+/// builtin type.
+OpFoldResult foldCastToBuiltin(TypedAttr input, Type resultType);
+
+/// Fold a conversion from a MLIR builtin type to a SIMD type.
+OpFoldResult foldCastFromBuiltin(TypedAttr input, SIMDType resultType);
+
+/// Fold a SIMD splat operation.
+OpFoldResult foldSIMDSplat(Value scalarVal, Attribute scalarAttr,
+                           SIMDType resultType);
+
+/// Get the equivalent simd scalar type for a given builtin type, return nullptr
+/// if there is no equivalent scalar type.
+SIMDType getEquivalentScalarType(Type type);
+
+/// Splat a value of a builtin type to a SIMD type of the given size.
+TypedAttr splatBuiltinToSIMD(TypedAttr builtinScalarVal, TypedAttr simdSize);
+TypedAttr splatFloatLiteralToSIMD(double literal, SIMDType target);
+TypedAttr splatIntLiteralToSIMD(uint64_t literal, SIMDType target);
+
+// Whether all elements of the SIMD attribute are zero/one.
+inline bool isAllIntZero(SIMDAttr simdAttr) {
+  return llvm::all_of(simdAttr.getValues(), [](const DTypeValue &v) {
+    return v.getData().isZero() && v.getDType().isIntLike() &&
+           v.getDType().isArithmetic();
+  });
+}
+inline bool isAllIntOne(SIMDAttr simdAttr) {
+  return llvm::all_of(simdAttr.getValues(), [](const DTypeValue &v) {
+    return v.getData().isOne() && v.getDType().isIntLike() &&
+           v.getDType().isArithmetic();
+  });
+}
 
 //===----------------------------------------------------------------------===//
 // Constraint Utilities
@@ -552,8 +584,14 @@ printSimpleParamAttrValues(ArrayRef<ParamDeclAttr> params,
 
 /// Returns true if the proposition is trivially true (constant i1 = 1).
 inline bool isTriviallyTrueProposition(TypedAttr prop) {
-  auto intAttr = dyn_cast<IntegerAttr>(prop);
-  return intAttr && intAttr.getValue().isOne();
+  auto scalarBoolAttr = dyn_cast<SIMDAttr>(prop);
+  return scalarBoolAttr && scalarBoolAttr.getValues()[0].getBoolVal();
+}
+
+/// Returns true if the proposition is trivially true (constant i1 = 1).
+inline bool isTriviallyFalseProposition(TypedAttr prop) {
+  auto scalarBoolAttr = dyn_cast<SIMDAttr>(prop);
+  return scalarBoolAttr && !scalarBoolAttr.getValues()[0].getBoolVal();
 }
 
 /// Returns true if the constraint is trivially true (proposition = constant 1)
@@ -562,6 +600,20 @@ inline bool isTriviallyTrueConstraint(ConstraintAttr constraint) {
   if (!constraint)
     return true;
   return isTriviallyTrueProposition(constraint.getProposition());
+}
+
+/// Returns true if the constraint is trivially true (proposition = constant 1)
+/// or null (for backward compatibility with old IR).
+inline bool isTriviallyFalseConstraint(ConstraintAttr constraint) {
+  if (!constraint)
+    return false;
+  return isTriviallyFalseProposition(constraint.getProposition());
+}
+
+/// Get a constant value of scalar<bool> type.
+inline TypedAttr getScalarBoolConstant(MLIRContext *ctx, bool value) {
+  return SIMDAttr::get(DTypeValue(value, KGENDType::kBool),
+                       SIMDType::get(ctx, 1, KGENDType::kBool));
 }
 
 /// Create a placeholder constraint for unconditional trait conformance.

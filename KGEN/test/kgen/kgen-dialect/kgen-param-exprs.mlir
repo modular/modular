@@ -278,35 +278,35 @@ kgen.generator @param_expr_type_equality<p1>() {
 }
 
 // CHECK-LABEL: @fixed_width_integers
-kgen.generator @fixed_width_integers<p1: i32, p2: i32>() {
-  // CHECK-NEXT: constant: i32 = <add(p1, p2)>
-  %0 = kgen.param.constant: i32 = <add(p1, p2)>
+kgen.generator @fixed_width_integers<p1: si32, p2: si32>() {
+  // CHECK-NEXT: constant: si32 = <add(p1, p2)>
+  %0 = kgen.param.constant: si32 = <add(p1, p2)>
 
-  // CHECK-NEXT: constant: i32 = <11>
-  %1 = kgen.param.constant: i32 = <add(5, 6)>
+  // CHECK-NEXT: constant: si32 = <11>
+  %1 = kgen.param.constant: si32 = <add(5, 6)>
 
-  // CHECK-NEXT: constant: i32 = <div(p2, p1)>
-  %2 = kgen.param.constant: i32 = <div(p2, p1)>
+  // CHECK-NEXT: constant: si32 = <div(p2, p1)>
+  %2 = kgen.param.constant: si32 = <div(p2, p1)>
 
-  // CHECK-NEXT: constant: i32 = <2>
-  %3 = kgen.param.constant: i32 = <div(12, 5)>
+  // CHECK-NEXT: constant: si32 = <2>
+  %3 = kgen.param.constant: si32 = <div(12, 5)>
 
-  // CHECK-NEXT: constant: i1 = <lt(:i32 p2, p1)>
-  %4 = kgen.param.constant: i1 = <lt(:i32 p2, p1)>
+  // CHECK-NEXT: constant: i1 = <lt(:si32 p2, p1)>
+  %4 = kgen.param.constant: i1 = <lt(:si32 p2, p1)>
 
-  // CHECK-NEXT: constant: i32 = <1>
-  %5 = kgen.param.constant: i32 = <div(mul_no_wrap(p1, p2), mul_no_wrap(p1, p2))>
+  // CHECK-NEXT: constant: si32 = <1>
+  %5 = kgen.param.constant: si32 = <div(mul_no_wrap(p1, p2), mul_no_wrap(p1, p2))>
 
   // Division by 0 is undefined behavior.
-  // CHECK-NEXT: constant: i32 = <div(12, 0)>
-  %6 = kgen.param.constant: i32 = <div(12, 0)>
+  // CHECK-NEXT: constant: si32 = <div(12, 0)>
+  %6 = kgen.param.constant: si32 = <div(12, 0)>
 
   // Folder only kicks in for constants.
-  // CHECK-NEXT: constant: i32 = <div(p1, 0)>
-  %7 = kgen.param.constant: i32 = <div(p1, 0)>
+  // CHECK-NEXT: constant: si32 = <div(p1, 0)>
+  %7 = kgen.param.constant: si32 = <div(p1, 0)>
 
-  // CHECK-NEXT: constant: i32 = <div(0, 0)>
-  %8 = kgen.param.constant: i32 = <div(0, 0)>
+  // CHECK-NEXT: constant: si32 = <div(0, 0)>
+  %8 = kgen.param.constant: si32 = <div(0, 0)>
 
   // CHECK-NEXT: constant: si32 = <5>
   %9 = kgen.param.constant: si32 = <div(:si32 10, 2)>
@@ -579,7 +579,7 @@ kgen.generator @param_canonicalize<p1, p2>() {
 // CHECK-LABEL: kgen.generator @datalayout_operators()
 kgen.generator @datalayout_operators() {
   // CHECK-NEXT: <4>
-  kgen.param.constant: index = <get_sizeof(i32, #target)>
+  kgen.param.constant: index = <get_sizeof(si32, #target)>
   // CHECK-NEXT: <3>
   kgen.param.constant: index = <get_sizeof(i20, #target)>
   // CHECK-NEXT: <8>
@@ -592,7 +592,7 @@ kgen.generator @datalayout_operators() {
   kgen.param.constant: index = <get_sizeof(!kgen.generator<() capturing -> ()>, #target)>
 
   // CHECK-NEXT: <4>
-  kgen.param.constant: index = <get_alignof(i32, #target)>
+  kgen.param.constant: index = <get_alignof(si32, #target)>
   // CHECK-NEXT: <4>
   kgen.param.constant: index = <get_alignof(i20, #target)>
   // CHECK-NEXT: <8>
@@ -867,8 +867,8 @@ kgen.generator @mlirOperationExpr() {
   kgen.param.declare indexAdd: (index, index) -> index = <"index.add">
   // CHECK: (index, index) -> i1 = <"index.cmp"{pred = #index<cmp_predicate slt>}>
   kgen.param.declare indexCmp: (index, index) -> i1 = <"index.cmp"{pred = #index<cmp_predicate slt>}>
-  // CHECK: (!pop.array<2, i32>) -> i32 = <"pop.array.get"{index = 0 : index}>
-  kgen.param.declare arrayGet: (!pop.array<2, i32>) -> i32 = <"pop.array.get"{index = 0 : index}>
+  // CHECK: (!pop.array<2, si32>) -> si32 = <"pop.array.get"{index = 0 : index}>
+  kgen.param.declare arrayGet: (!pop.array<2, si32>) -> si32 = <"pop.array.get"{index = 0 : index}>
 
   // CHECK: cmpResult: i1 = <1>
   kgen.param.declare cmpResult: i1 = <apply(:(index, index) -> i1 "index.cmp"{pred = #index<cmp_predicate eq>}, 3, 3)>
@@ -889,14 +889,14 @@ kgen.generator @f2() {
 }
 
 lit.struct.decl @IndexParams0<a, b: f32> {}
-lit.struct.decl @IndexParams1<a: i32, b: i64, c: f32> {}
+lit.struct.decl @IndexParams1<a: si32, b: i64, c: f32> {}
 
 // CHECK-LABEL: kgen.generator @indexParamRef
-// CHECK-SAME: @IndexParams1<:i32 *(0,0), :i64 *(0,1), :f32 *(1,1)>
+// CHECK-SAME: @IndexParams1<:si32 *(0,0), :i64 *(0,1), :f32 *(1,1)>
 // CHECK-SAME: @IndexParams0<*(0,0), :f32 *(0,1)>
 kgen.generator @indexParamRef<
-  fn: <index, f32, <i32, i64>()
-      -> !lit.struct<@IndexParams1<:i32 *(0,0), :i64 *(0,1), :f32 *(1,1)>>>()
+  fn: <index, f32, <si32, i64>()
+      -> !lit.struct<@IndexParams1<:si32 *(0,0), :i64 *(0,1), :f32 *(1,1)>>>()
     -> !lit.struct<@IndexParams0<*(0,0), :f32 *(0,1)>>
 >() {
   kgen.return

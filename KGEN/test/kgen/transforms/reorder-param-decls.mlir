@@ -94,7 +94,7 @@ kgen.generator @reorder_asserts_def_in_parent<q, w>() {
         kgen.param.assert <ge(q, 3)>, "q is no less than 3"
         // CHECK: kgen.param.if
         %1 = kgen.param.if <lt(q, iter)> -> index {
-          // CHECK: kgen.param.assert <ge(iter, 3)>
+          // CHECK-NEXT: kgen.param.assert <ge(iter, 3)>
           // CHECK-NEXT: kgen.param.assert <ge(q, 3)>
           %2 = "produce.value"() : () -> index
           kgen.param.assert <ge(iter, 3)>, "iter is no less than 3"

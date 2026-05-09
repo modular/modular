@@ -768,6 +768,18 @@ struct Bool(TrivialRegisterPassable):
     def __init__(out self, value: __mlir_type.i1):
         self._mlir_value = value
 
+    @implicit
+    @always_inline("builtin")
+    def __init__(out self, mlir_value: __mlir_type.`!kgen.scalar<bool>`):
+        """Construct a Bool value given a `!kgen.scalar<bool>` value.
+
+        Args:
+            mlir_value: The initial value.
+        """
+        self._mlir_value = __mlir_op.`pop.cast_to_builtin`[
+            _type=__mlir_type.i1
+        ](mlir_value)
+
     @always_inline("builtin")
     def __mlir_i1__(self) -> __mlir_type.i1:
         return self._mlir_value
@@ -1734,7 +1746,7 @@ struct SIMD[dtype: DType, size: Int](TrivialRegisterPassable):
     var _mlir_value: Self._mlir_type
     """The underlying storage for the vector."""
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     def __init__(out self, *, mlir_value: Self._mlir_type):
         self._mlir_value = mlir_value
 
@@ -1762,9 +1774,11 @@ struct SIMD[dtype: DType, size: Int](TrivialRegisterPassable):
         ]
         self = Self(mlir_value=res)
 
-    def __add__(lhs, rhs: Self) -> Self:
-        while __mlir_attr.true:
-            pass
+    @always_inline("builtin")
+    def __add__(self, rhs: Self) -> Self:
+        return Self(
+            mlir_value=__mlir_op.`pop.add`(self._mlir_value, rhs._mlir_value)
+        )
 
     @staticmethod
     def splat():

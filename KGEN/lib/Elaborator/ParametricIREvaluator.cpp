@@ -591,6 +591,24 @@ FailureOr<TypedAttr> ParametricIREvaluator::evaluateContextSpecific(
       return value.takeValue();
     }
     return failure();
+  case POC::Div:
+  case POC::DivS:
+  case POC::DivU: {
+    Attribute operands[] = {op.getOperands()[0], op.getOperands()[1]};
+    return foldAttrWithTarget(*this, operands, POP::foldSIMDDiv);
+  }
+  case POC::FloorDivS: {
+    Attribute operands[] = {op.getOperands()[0], op.getOperands()[1]};
+    return foldAttrWithTarget(*this, operands, POP::foldSIMDFloorDiv);
+  }
+  case POC::Shr: {
+    Attribute operands[] = {op.getOperands()[0], op.getOperands()[1]};
+    return foldAttrWithTarget(*this, operands, POP::foldSIMDShr);
+  }
+  case POC::Shl: {
+    Attribute operands[] = {op.getOperands()[0], op.getOperands()[1]};
+    return foldAttrWithTarget(*this, operands, POP::foldSIMDShl);
+  }
   default:
     return failure();
   }

@@ -40,24 +40,18 @@ struct C[X: ImplicitlyCopyable, Y: ImplicitlyCopyable](ImplicitlyCopyable):
     # CHECK-LABEL:  kgen.conformance @"{{.*}}::Copyable" {
     # CHECK-NEXT:      kgen.witness "__init__{{.*}}(*, "copy":{{.*}}"
     # CHECK-NEXT:      kgen.witness "copy{{.*}}"
-    # CHECK-NEXT:      kgen.witness "__copy_ctor_is_trivial" : !Bool =
-    # CHECK-SAME:     {_mlir_value: i1 = and(#lit.struct.extract<:!Bool #kgen.get_witness<:[[X_TYPE]] X, "{{.*}}::Copyable", "__copy_ctor_is_trivial">, "_mlir_value">,
-    # CHECK-SAME:                            #lit.struct.extract<:!Bool #kgen.get_witness<:[[Y_TYPE]] Y, "{{.*}}::Copyable", "__copy_ctor_is_trivial">, "_mlir_value">)}
+    # CHECK: kgen.witness "__copy_ctor_is_trivial" : !Bool = sugar_builtin(apply({{.*}})
 
     # CHECK-LABEL:  kgen.conformance @"{{.*}}::ImplicitlyCopyable" {
     # CHECK-NEXT:   }
 
     # CHECK-LABEL:  kgen.conformance @"{{.*}}::ImplicitlyDestructible" {
     # CHECK-NEXT:    kgen.witness "__del__{{.*}}"
-    # CHECK-NEXT:    kgen.witness "__del__is_trivial" : !Bool =
-    # CHECK-SAME:     {_mlir_value: i1 = and(#lit.struct.extract<:!Bool #kgen.get_witness<:[[X_TYPE]] X, "{{.*}}::ImplicitlyDestructible", "__del__is_trivial">, "_mlir_value">,
-    # CHECK-SAME:                            #lit.struct.extract<:!Bool #kgen.get_witness<:[[Y_TYPE]] Y, "{{.*}}::ImplicitlyDestructible", "__del__is_trivial">, "_mlir_value">)}
+    # CHECK: kgen.witness "__del__is_trivial" : !Bool = sugar_builtin(apply({{.*}})
 
     # CHECK-LABEL:  kgen.conformance @"{{.*}}::Movable" {
     # CHECK-NEXT:    kgen.witness "__init__{{.*}}(*, "take":{{.*}}"
-    # CHECK-NEXT:    kgen.witness "__move_ctor_is_trivial" : !Bool =
-    # CHECK-SAME:     {_mlir_value: i1 = and(#lit.struct.extract<:!Bool #kgen.get_witness<:[[X_TYPE]] X, "{{.*}}::Movable", "__move_ctor_is_trivial">, "_mlir_value">,
-    # CHECK-SAME:                            #lit.struct.extract<:!Bool #kgen.get_witness<:[[Y_TYPE]] Y, "{{.*}}::Movable", "__move_ctor_is_trivial">, "_mlir_value">)}
+    # CHECK: kgen.witness "__move_ctor_is_trivial" : !Bool = sugar_builtin(apply({{.*}})
 
 
 # CHECK-LABEL: lit.struct.decl @StructMLIRTypeOnly

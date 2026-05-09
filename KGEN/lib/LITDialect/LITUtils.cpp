@@ -1237,7 +1237,7 @@ FailureOr<TypedAttr> LIT::simplifyConformsToAgainstTypeValue(
       return failure();
   }
 
-  return {BoolAttr::get(conformsTo.getContext(), true)};
+  return {getScalarBoolConstant(conformsTo.getContext(), true)};
 }
 
 static LIT::StructType getStructTypeForTypeValue(TypedAttr typeValue) {
@@ -1500,9 +1500,10 @@ LIT::evaluateConstraint(ParameterEvaluator &evaluator,
   TypedAttr prop = getCanonicalAttr(constraint.getProposition());
   TypedAttr rebound = getCanonicalAttr(evaluator.getReboundAttribute(prop));
 
-  if (auto intResult = dyn_cast<IntegerAttr>(rebound))
-    return intResult.getValue().isOne() ? ConformanceResult::Yes
-                                        : ConformanceResult::No;
+  if (isTriviallyTrueProposition(rebound))
+    return ConformanceResult::Yes;
+  if (isTriviallyFalseProposition(rebound))
+    return ConformanceResult::No;
 
   if (llvm::any_of(callerAssumptions, [&](ConstraintAttr c) {
         return constraintImplies(getCanonicalAttr(c.getProposition()), rebound);

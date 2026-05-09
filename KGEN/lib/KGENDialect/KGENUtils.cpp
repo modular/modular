@@ -19,6 +19,7 @@
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/Support/CompilerProfiling.h"
 #include "MLRT/AsyncRT/CompilerSupport/Context.h"
+#include "Support/Compiler/MLIRDType.h"
 #include "Support/Compiler/VerifyUtils.h"
 #include "Support/MDialect/MAttrs.h"
 #include "Support/MDialect/ParserUtils.h"
@@ -537,6 +538,19 @@ void KGEN::printI1ParamValue(AsmPrinter &p, Attribute value) {
 }
 ParseResult KGEN::parseI1ParamValue(AsmParser &p, TypedAttr &value) {
   return parseParamValue(p, value, p.getBuilder().getI1Type());
+}
+
+/// Print/Parse an attribute value that is known to have scalar<bool> type.
+void KGEN::printScalarBoolParamValue(AsmPrinter &p, Operation *op,
+                                     Attribute value) {
+  printParamValue(p, cast<TypedAttr>(value));
+}
+void KGEN::printScalarBoolParamValue(AsmPrinter &p, Attribute value) {
+  printParamValue(p, cast<TypedAttr>(value));
+}
+ParseResult KGEN::parseScalarBoolParamValue(AsmParser &p, TypedAttr &value) {
+  return parseParamValue(p, value,
+                         SIMDType::get(p.getContext(), 1, KGENDType::kBool));
 }
 
 ParseResult KGEN::parseColonTypeParamValue(AsmParser &p, TypedAttr &value) {
@@ -2520,17 +2534,19 @@ LogicalResult KGEN::verifyConversionCast(
   return success();
 }
 
-namespace {
+//===----------------------------------------------------------------------===//
+// SIMD Utilities
+//===----------------------------------------------------------------------===//
+
 /// Convert a SIMD attribute to a vector-typed attribute.
 template <typename AttrT, typename TransformFn>
-ArrayElementsAttr convertSIMDToVectorAttr(SIMDAttr simd, VectorType type,
-                                          TransformFn fn) {
+static ArrayElementsAttr convertSIMDToVectorAttr(SIMDAttr simd, VectorType type,
+                                                 TransformFn fn) {
   SmallVector<decltype(fn(std::declval<DTypeValue>()))> values;
   for (const DTypeValue &value : simd.getValues())
     values.push_back(fn(value));
   return AttrT::get(type, values);
 }
-} // namespace
 
 OpFoldResult KGEN::foldCastToBuiltin(TypedAttr input, Type resultType) {
   if (auto cast = sugarDynCastIfPresent<CastFromBuiltinAttr>(input))
@@ -2631,4 +2647,59 @@ OpFoldResult KGEN::foldSIMDSplat(Value scalarVal, Attribute scalarAttr,
     return {};
   SmallVector<DTypeValue> values(*size, scalarSIMD.getValues().front());
   return SIMDAttr::get(values, resultType);
+}
+
+SIMDType KGEN::getEquivalentScalarType(Type type) {
+  KGENDType dtype = M::getEquivalentDType(type).first;
+
+  // `getEquivalentDType` does not know the extra case in KGENDType.
+  if (dtype.isInvalid() && type.isIndex())
+    dtype = KGENDType::index;
+
+  if (dtype.isInvalid())
+    return {};
+
+  return SIMDType::get(1, DTypeConstantAttr::get(type.getContext(), dtype));
+}
+
+TypedAttr KGEN::splatBuiltinToSIMD(TypedAttr builtinScalarVal,
+                                   TypedAttr simdSize) {
+  SIMDType simdScalarTp = getEquivalentScalarType(builtinScalarVal.getType());
+  if (!simdScalarTp)
+    return {};
+
+  auto simdScalarVal = CastFromBuiltinAttr::get(builtinScalarVal, simdScalarTp);
+  return SIMDSplatAttr::get(simdSize.getContext(), simdScalarVal,
+                            SIMDType::get(simdSize, simdScalarTp.getDType()));
+}
+
+template <typename T>
+TypedAttr splatLiteralToSIMDImpl(T literal, SIMDType target) {
+  std::optional<KGENDType> dtype = target.getResolvedDType();
+  if (!dtype)
+    return {};
+
+  auto scalarType = SIMDType::get(target.getContext(), 1, *dtype);
+  SIMDAttr scalar;
+  if constexpr (std::is_same_v<T, double>) {
+    assert(dtype->isFloat() && "unexpected dtype");
+    APFloat storage(static_cast<double>(literal));
+    scalar = SIMDAttr::get({storage, *dtype}, scalarType);
+  } else {
+    assert(dtype->isIntLike());
+    APInt storage(dtype->getWidthInBits() == -1 ? /*index or uindex*/ 64
+                                                : dtype->getWidthInBits(),
+                  literal, dtype->isSInt());
+    scalar = SIMDAttr::get({storage, *dtype}, scalarType);
+  }
+
+  // splat to the target type.
+  return SIMDSplatAttr::get(target.getContext(), scalar, target);
+}
+
+TypedAttr KGEN::splatFloatLiteralToSIMD(double literal, SIMDType target) {
+  return splatLiteralToSIMDImpl<double>(literal, target);
+}
+TypedAttr KGEN::splatIntLiteralToSIMD(uint64_t literal, SIMDType target) {
+  return splatLiteralToSIMDImpl<uint64_t>(literal, target);
 }
