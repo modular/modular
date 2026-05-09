@@ -277,6 +277,7 @@ struct PagedRowIndices[
         smem_BN: Int = Self.BN,
         eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
         num_iters: Int = -1,
+        oob_fill_pages: Bool = False,
     ](
         self,
         tma_op: TMATensorTile[dtype, 3, tile_shape, desc_shape, True],
@@ -301,6 +302,21 @@ struct PagedRowIndices[
         `valid_pages` (named `num_valid_pages` for V and `k_num_valid_pages`
         for K in their public signatures); it is only consulted when
         `needs_partial=True`.
+
+        `oob_fill_pages` (only consulted when `needs_partial=True`): when
+        True, after dispatching the `valid_pages` valid-block TMAs, also
+        dispatch deliberately out-of-bounds TMAs for the remaining
+        `[valid_pages, pages_per_iter)` page slots. With `OOBFill.NONE`
+        (the default for our descriptors — see
+        `mojo/stdlib/std/gpu/host/nvidia/tma.mojo:431`), OOB coordinates
+        return 0, so the corresponding SMEM rows are zero-initialized.
+        This is required by callers whose downstream MMA reads the full
+        `pages_per_iter` row range regardless of mask — e.g. depth-512
+        FA4's `O += P * V` reads the full BN V-tile so masked rows must
+        contain 0 (not stale `+inf`/`NaN` from prior compute) to avoid
+        `0 * non-finite = NaN` propagation. Callers opting in MUST set
+        `expect_bytes` to the full (non-partial) byte count, since every
+        `pages_per_iter * num_depth_chunks` TMA arrives at the mbar.
         """
         comptime swizzle_gran = desc_shape[2]
         comptime num_depth_chunks = ceildiv(tile_shape[2], swizzle_gran)
@@ -369,6 +385,40 @@ struct PagedRowIndices[
                             valid_pages=valid_pages,
                             depth_offset=depth_offset,
                         )
+                    comptime if oob_fill_pages:
+                        # Issue OOB TMAs for the remaining `[_p,
+                        # pages_per_iter)` page slots. The TMA descriptor
+                        # is built with `OOBFill.NONE`, which writes 0
+                        # for any OOB coordinate; we use a row coord
+                        # (`Int32.MAX >> 1`) that is unconditionally
+                        # past `globalDim[0]` (block-row count is
+                        # bounded by `total_blocks * stride`, well
+                        # below 2^30 for any realistic workload). Each
+                        # OOB TMA still arrives at `mbar` with its
+                        # byte count, so the caller's `expect_bytes`
+                        # MUST cover the full
+                        # `pages_per_iter * num_depth_chunks` issues.
+                        comptime _OOB_ROW: Int = 1 << 30
+                        comptime for _q in range(_p, pages_per_iter):
+                            comptime for j in range(num_depth_chunks):
+                                comptime smem_off_oob = (
+                                    j * smem_j_stride_rows * swizzle_gran
+                                    + _q * tma_per_issue_rows * swizzle_gran
+                                )
+                                cp_async_bulk_tensor_shared_cluster_global_elect[
+                                    cta_group=Self.cta_group,
+                                    eviction_policy=eviction_policy,
+                                ](
+                                    stage_base + smem_off_oob,
+                                    desc_ptr,
+                                    mbar.unsafe_ptr(),
+                                    Index(
+                                        Int(depth_offset) + j * swizzle_gran,
+                                        Int(kv_head_idx),
+                                        _OOB_ROW,
+                                    ),
+                                    elect,
+                                )
                     return
         comptime for _p in range(effective_iters):
             comptime src_idx = idx_offset_ct + _p
@@ -404,6 +454,7 @@ struct PagedRowIndices[
         v_sub_tile_idx: Int = 0,
         eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
         num_iters: Int = -1,
+        oob_fill_pages: Bool = False,
     ](
         self,
         tma_op: TMATensorTile[dtype, 3, tile_shape, desc_shape, True],
@@ -459,6 +510,22 @@ struct PagedRowIndices[
         fully unrolls exactly that many. Only the `needs_partial=True`
         wrapper sets it, when it recurses.
 
+        `oob_fill_pages` (consulted only when `needs_partial=True`):
+        when True, after dispatching the `num_valid_pages` valid TMAs,
+        also issue OOB TMAs for the remaining
+        `[num_valid_pages, v_pages_per_sub_tile)` page slots. The TMA
+        descriptor's `OOBFill.NONE` policy zero-fills SMEM for OOB
+        coordinates, ensuring the full V-tile region holds finite (0)
+        data — required by depth-512 FA4 whose `O += P * V` reads the
+        full BN V-tile and would otherwise propagate
+        `0 * non-finite = NaN` from uninitialized SMEM (the bug only
+        materializes when this is the very first write to the SMEM
+        slot — typically `seq_len <= BN` so the only iter is partial).
+        Callers opting in MUST predicate `expect_bytes` on the full
+        (non-partial) byte count; every
+        `v_pages_per_sub_tile * num_depth_chunks` TMA arrives at the
+        mbar.
+
         `elect` is the raw `Int32` returned by `elect()`. Each
         `cp_async_bulk_tensor_shared_cluster_global_elect` call predicates
         its TMA issue in-PTX on `elect`, so no Mojo-level `if elect != 0:`
@@ -472,6 +539,7 @@ struct PagedRowIndices[
             v_sub_tile_idx=v_sub_tile_idx,
             eviction_policy=eviction_policy,
             num_iters=num_iters,
+            oob_fill_pages=oob_fill_pages,
         ](
             tma_op,
             stage_base,
@@ -1762,25 +1830,52 @@ struct PagedKVCache[
                 self.lookup_table.layout.stride[0]().value()
             )
             # The address passed to the `ld.global.v{chunk}.u32`
-            # emitter must be naturally aligned to `chunk * 4` bytes,
-            # i.e. the element offset from the base pointer must be a
-            # multiple of `chunk`. This holds when:
-            #   1. The base allocation is chunk-aligned (GPU allocator
-            #      returns 256-byte alignment).
-            #   2. `row_stride` is a multiple of `chunk` — guaranteed
-            #      by the LUT padding rule in
-            #      ``PagedKVCacheManager`` / the Mojo tests.
-            #   3. `first_lut_idx` is a multiple of `chunk` — which
-            #      follows from `chunk * page_size` dividing
-            #      `base_alignment` (enforced at comptime above).
+            # emitter must be naturally aligned to `chunk * 4` bytes
+            # AND each `ceildiv(num_pages, chunk)`-width vector load
+            # must stay in-bounds of the LUT row. The three runtime
+            # invariants below name each independent contract:
+            #   1. `row_stride` chunk-aligned — LUT layout contract
+            #      (see `_padded_lut_cols` in `cache_manager.py` /
+            #      `padded_lut_cols` in `kv_cache_test_utils`).
+            #   2. `first_lut_idx` chunk-aligned — mask contract (the
+            #      mask's `start_column_alignment` must guarantee
+            #      `base_kv_row` is `chunk * page_size`-aligned).
+            #   3. `first_lut_idx + num_pages <= row_stride` — LUT
+            #      allocation contract (the row has enough columns
+            #      for a full SIMD sweep at the rightmost
+            #      `first_lut_idx`).
             # Catch any violation under ``MOJO_ASSERT_LEVEL=safe`` so
-            # misaligned vector loads don't silently produce garbage.
+            # misaligned or OOB vector loads don't silently produce
+            # garbage.
             debug_assert(
-                (batch_idx * row_stride + first_lut_idx) % UInt32(chunk) == 0,
+                row_stride % UInt32(chunk) == 0,
                 (
                     "PagedKVCache.populate SIMD path requires the LUT"
-                    " element offset (batch_idx * row_stride +"
-                    " first_lut_idx) to be chunk-aligned"
+                    " row stride (lookup_table.dim[1]) to be"
+                    " chunk-aligned. Production allocates via"
+                    " `_padded_lut_cols` in cache_manager.py; tests"
+                    " should use `padded_lut_cols` from"
+                    " kv_cache_test_utils."
+                ),
+            )
+            debug_assert(
+                first_lut_idx % UInt32(chunk) == 0,
+                (
+                    "PagedKVCache.populate SIMD path requires"
+                    " first_lut_idx (= base_kv_row / page_size) to be"
+                    " chunk-aligned. The mask's"
+                    " `start_column_alignment[BM, BN, page_size]()`"
+                    " must return a value such that every"
+                    " `base_kv_row` is `chunk * page_size`-aligned."
+                ),
+            )
+            debug_assert(
+                first_lut_idx + UInt32(num_pages) <= row_stride,
+                (
+                    "PagedKVCache.populate SIMD path requires the LUT"
+                    " row to have at least `first_lut_idx + num_pages`"
+                    " columns. Production adds a 16-element tail pad"
+                    " in `_padded_lut_cols`."
                 ),
             )
             var lut_row_ptr = (

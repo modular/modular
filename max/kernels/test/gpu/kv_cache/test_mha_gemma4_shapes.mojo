@@ -33,6 +33,7 @@ cache_len=0 (pure prefill).
 from std.collections import Set
 from std.math import ceildiv, rsqrt
 from std.random import random_ui64, seed
+from std.sys.defines import get_defined_int
 from layout._utils import ManagedLayoutTensor
 from std.gpu.host import DeviceContext
 from kv_cache.types import (
@@ -42,22 +43,28 @@ from kv_cache.types import (
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._fillers import random
 from std.memory import memset_zero
+from kv_cache_test_utils import assert_no_nan_inf, padded_lut_cols
 from nn.attention.gpu.mha import flash_attention
-from nn.attention.mha_mask import CausalMask
+from nn.attention.mha_mask import CausalMask, MHAMask, SlidingWindowCausalMask
 
 from std.utils import IndexList
 
 
 def execute_ragged_paged_flash_attention[
-    num_q_heads: Int, dtype: DType, kv_params: KVCacheStaticParams
+    num_q_heads: Int,
+    dtype: DType,
+    kv_params: KVCacheStaticParams,
+    mask_t: MHAMask,
 ](
     valid_lengths: List[Int],
     cache_lengths: List[Int],
     num_layers: Int,
     layer_idx: Int,
+    mask: mask_t,
+    label: StaticString,
     ctx: DeviceContext,
 ) raises:
-    comptime page_size = 256
+    comptime page_size = get_defined_int["page_size", 256]()
 
     var batch_size = len(valid_lengths)
     assert len(valid_lengths) == len(cache_lengths)
@@ -142,8 +149,14 @@ def execute_ragged_paged_flash_attention[
         kv_params.num_heads,
         kv_params.head_size,
     )
+    # Pad LUT inner dim to honor `PagedKVCache.populate`'s SIMD padding
+    # invariant — see `padded_lut_cols`. Production
+    # (`max/python/max/kv_cache/paged_kv_cache/cache_manager.py`) does
+    # the same; tests that bypass the padding hit either a chunk-
+    # alignment debug_assert or an OOB SIMD read into adjacent memory.
     var paged_lut_shape = IndexList[2](
-        batch_size, ceildiv(max_full_context_length, page_size)
+        batch_size,
+        padded_lut_cols(ceildiv(max_full_context_length, page_size)),
     )
 
     var kv_block_paged_runtime_layout = RuntimeLayout[
@@ -199,78 +212,145 @@ def execute_ragged_paged_flash_attention[
         q_ragged_lt,
         kv_collection_paged_device.get_key_cache(layer_idx),
         kv_collection_paged_device.get_value_cache(layer_idx),
-        CausalMask(),
+        mask,
         input_row_offsets.device_tensor(),
         rsqrt(Float32(kv_params.head_size)),
         ctx,
     )
     ctx.synchronize()
+    assert_no_nan_inf(test_output, label)
+
+
+def run_gemma4_suite[
+    local_mask_t: MHAMask
+](local_mask: local_mask_t, ctx: DeviceContext) raises:
+    """Run the gemma4 prefill+decode suite. `local_mask` is applied to the
+    local (sliding) layer; the global layer always uses `CausalMask()` to
+    match production."""
+    # Gemma4 local (sliding) attention: layer_idx=0.
+    # num_q_heads=32, num_kv_heads=16, head_dim=256, seq_len=11 prefill.
+    print("Gemma4 local: q_heads=32 kv_heads=16 head_dim=256 seq_len=11")
+    var ce_seq_lens_local = [11]
+    var ce_cache_sizes_local = [0]
+    execute_ragged_paged_flash_attention[
+        32,
+        DType.bfloat16,
+        KVCacheStaticParams(num_heads=16, head_size=256),
+    ](
+        ce_seq_lens_local,
+        ce_cache_sizes_local,
+        2,
+        0,
+        local_mask,
+        "local_ce_bs1",
+        ctx,
+    )
+
+    # Gemma4 global (full) attention: layer_idx=5.
+    # num_q_heads=32, num_kv_heads=4, head_dim=512, seq_len=11 prefill.
+    print("Gemma4 global: q_heads=32 kv_heads=4 head_dim=512 seq_len=11")
+    var ce_seq_lens_global = [11]
+    var ce_cache_sizes_global = [0]
+    execute_ragged_paged_flash_attention[
+        32,
+        DType.bfloat16,
+        KVCacheStaticParams(num_heads=4, head_size=512),
+    ](
+        ce_seq_lens_global,
+        ce_cache_sizes_global,
+        2,
+        0,
+        CausalMask(),
+        "global_ce_bs1",
+        ctx,
+    )
+
+    # Also try batch_size=4 to mirror a realistic serving scenario.
+    print("Gemma4 local bs=4")
+    var ce_seq_lens_local_bs4 = [11, 11, 11, 11]
+    var ce_cache_sizes_local_bs4 = [0, 0, 0, 0]
+    execute_ragged_paged_flash_attention[
+        32,
+        DType.bfloat16,
+        KVCacheStaticParams(num_heads=16, head_size=256),
+    ](
+        ce_seq_lens_local_bs4,
+        ce_cache_sizes_local_bs4,
+        2,
+        0,
+        local_mask,
+        "local_ce_bs4",
+        ctx,
+    )
+
+    print("Gemma4 global bs=4")
+    var ce_seq_lens_global_bs4 = [11, 11, 11, 11]
+    var ce_cache_sizes_global_bs4 = [0, 0, 0, 0]
+    execute_ragged_paged_flash_attention[
+        32,
+        DType.bfloat16,
+        KVCacheStaticParams(num_heads=4, head_size=512),
+    ](
+        ce_seq_lens_global_bs4,
+        ce_cache_sizes_global_bs4,
+        2,
+        0,
+        CausalMask(),
+        "global_ce_bs4",
+        ctx,
+    )
+
+    # Decode (token-generation) shapes. MAX attention graphs compile both
+    # CE and TG kernels; the LLVM crash was bisected to the decode
+    # scaffolding commit so exercise these here too.
+    print("Gemma4 local decode: seq_len=1 cache_len=512")
+    var tg_seq_lens_local = [1]
+    var tg_cache_sizes_local = [512]
+    execute_ragged_paged_flash_attention[
+        32,
+        DType.bfloat16,
+        KVCacheStaticParams(num_heads=16, head_size=256),
+    ](
+        tg_seq_lens_local,
+        tg_cache_sizes_local,
+        2,
+        0,
+        local_mask,
+        "local_tg",
+        ctx,
+    )
+
+    print("Gemma4 global decode: seq_len=1 cache_len=512")
+    var tg_seq_lens_global = [1]
+    var tg_cache_sizes_global = [512]
+    execute_ragged_paged_flash_attention[
+        32,
+        DType.bfloat16,
+        KVCacheStaticParams(num_heads=4, head_size=512),
+    ](
+        tg_seq_lens_global,
+        tg_cache_sizes_global,
+        2,
+        0,
+        CausalMask(),
+        "global_tg",
+        ctx,
+    )
 
 
 def main() raises:
+    # Compile-time switches. `page_size` mirrors the production KV cache page
+    # size; `mask_kind` selects the local-layer mask family
+    # (0 = causal everywhere; 1 = SlidingWindowCausalMask[1024] for local
+    # layers, CausalMask for global — the realistic Gemma-4 production
+    # config per `sliding_window=1024`). The global layer always uses
+    # CausalMask in either case.
+    comptime mask_kind = get_defined_int["mask_kind", 0]()
+
     with DeviceContext() as ctx:
         seed(42)
-
-        # Gemma4 local (sliding) attention: layer_idx=0.
-        # num_q_heads=32, num_kv_heads=16, head_dim=256, seq_len=11 prefill.
-        print("Gemma4 local: q_heads=32 kv_heads=16 head_dim=256 seq_len=11")
-        var ce_seq_lens_local = [11]
-        var ce_cache_sizes_local = [0]
-        execute_ragged_paged_flash_attention[
-            32,
-            DType.bfloat16,
-            KVCacheStaticParams(num_heads=16, head_size=256),
-        ](ce_seq_lens_local, ce_cache_sizes_local, 2, 0, ctx)
-
-        # Gemma4 global (full) attention: layer_idx=5.
-        # num_q_heads=32, num_kv_heads=4, head_dim=512, seq_len=11 prefill.
-        print("Gemma4 global: q_heads=32 kv_heads=4 head_dim=512 seq_len=11")
-        var ce_seq_lens_global = [11]
-        var ce_cache_sizes_global = [0]
-        execute_ragged_paged_flash_attention[
-            32,
-            DType.bfloat16,
-            KVCacheStaticParams(num_heads=4, head_size=512),
-        ](ce_seq_lens_global, ce_cache_sizes_global, 2, 0, ctx)
-
-        # Also try batch_size=4 to mirror a realistic serving scenario.
-        print("Gemma4 local bs=4")
-        var ce_seq_lens_local_bs4 = [11, 11, 11, 11]
-        var ce_cache_sizes_local_bs4 = [0, 0, 0, 0]
-        execute_ragged_paged_flash_attention[
-            32,
-            DType.bfloat16,
-            KVCacheStaticParams(num_heads=16, head_size=256),
-        ](ce_seq_lens_local_bs4, ce_cache_sizes_local_bs4, 2, 0, ctx)
-
-        print("Gemma4 global bs=4")
-        var ce_seq_lens_global_bs4 = [11, 11, 11, 11]
-        var ce_cache_sizes_global_bs4 = [0, 0, 0, 0]
-        execute_ragged_paged_flash_attention[
-            32,
-            DType.bfloat16,
-            KVCacheStaticParams(num_heads=4, head_size=512),
-        ](ce_seq_lens_global_bs4, ce_cache_sizes_global_bs4, 2, 0, ctx)
-
-        # Decode (token-generation) shapes. MAX attention graphs compile both
-        # CE and TG kernels; the LLVM crash was bisected to the decode
-        # scaffolding commit so exercise these here too.
-        print("Gemma4 local decode: seq_len=1 cache_len=512")
-        var tg_seq_lens_local = [1]
-        var tg_cache_sizes_local = [512]
-        execute_ragged_paged_flash_attention[
-            32,
-            DType.bfloat16,
-            KVCacheStaticParams(num_heads=16, head_size=256),
-        ](tg_seq_lens_local, tg_cache_sizes_local, 2, 0, ctx)
-
-        print("Gemma4 global decode: seq_len=1 cache_len=512")
-        var tg_seq_lens_global = [1]
-        var tg_cache_sizes_global = [512]
-        execute_ragged_paged_flash_attention[
-            32,
-            DType.bfloat16,
-            KVCacheStaticParams(num_heads=4, head_size=512),
-        ](tg_seq_lens_global, tg_cache_sizes_global, 2, 0, ctx)
-
+        comptime if mask_kind == 0:
+            run_gemma4_suite(CausalMask(), ctx)
+        else:
+            run_gemma4_suite(SlidingWindowCausalMask[1024](), ctx)
         print("PASS")

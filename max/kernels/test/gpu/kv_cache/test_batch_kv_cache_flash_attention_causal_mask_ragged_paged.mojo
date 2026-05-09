@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.collections import Set
-from std.math import align_up, ceildiv, rsqrt
+from std.math import ceildiv, rsqrt
 from std.random import random_ui64, seed
 from std.sys.defines import get_defined_int
 from layout._utils import ManagedLayoutTensor
@@ -22,6 +22,7 @@ from kv_cache.types import (
     KVCacheStaticParams,
     PagedKVCacheCollection,
 )
+from kv_cache_test_utils import assert_no_nan_inf, padded_lut_cols
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._fillers import random
 from std.memory import memcpy, memset_zero
@@ -168,13 +169,11 @@ def execute_ragged_flash_attention[
         kv_params.num_heads,
         kv_params.head_size,
     )
-    # Pad LUT inner dim to a multiple of 8 with at least 16 extra slots so
-    # the SIMD `populate` in PagedKVCache can safely load up to 16 uint32s
-    # past any valid `first_lut_idx` (partial-tile tails) — matches the
-    # padding rule in `max/python/max/kv_cache/paged_kv_cache/cache_manager.py`.
+    # Pad LUT inner dim to honor `PagedKVCache.populate`'s SIMD padding
+    # invariant — see `padded_lut_cols`.
     var paged_lut_shape = IndexList[2](
         batch_size,
-        align_up(ceildiv(max_full_context_length, page_size), 8) + 16,
+        padded_lut_cols(ceildiv(max_full_context_length, page_size)),
     )
 
     # KV block runtime layouts
@@ -356,6 +355,11 @@ def execute_ragged_flash_attention[
         rsqrt(Float32(kv_params.head_size)),
         ctx,
     )
+    # Catch NaN/Inf before the tolerance comparison — gives a clear, named
+    # failure if either path produces non-finite output.
+    assert_no_nan_inf(ref_output, "ref_output_continuous")
+    assert_no_nan_inf(test_output, "test_output_paged")
+
     # Fetch host views for verification.
     var ref_out = ref_output.tensor()
     var test_out = test_output.tensor()

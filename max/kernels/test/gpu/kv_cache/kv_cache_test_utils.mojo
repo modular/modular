@@ -15,11 +15,74 @@
 from std.collections import Set
 from std.math import ceildiv
 from std.random import random_ui64
+from std.utils.numerics import isinf, isnan
 
 from std.gpu.host import DeviceBuffer, DeviceContext
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from layout._utils import ManagedLayoutTensor
 
 from std.utils import Index, IndexList
+
+
+# Mirror of `_LUT_TAIL_PAD` in
+# `max/python/max/kv_cache/paged_kv_cache/cache_manager.py`. Bump in
+# lockstep if the Python value changes.
+comptime _LUT_TAIL_PAD = 16
+
+
+def padded_lut_cols(cols: Int) -> Int:
+    """Mirror of `_padded_lut_cols` in
+    `max/python/max/kv_cache/paged_kv_cache/cache_manager.py`.
+
+    `PagedKVCache.populate`'s SIMD path requires the LUT row stride to
+    be a multiple of 8 (chunk alignment, chunk capped at 8) and at
+    least `cols + 15` (so a 16-wide SIMD load at any valid
+    `first_lut_idx` stays in-bounds). Production allocates with this
+    padding; tests must do the same.
+    """
+    return ((cols + 7) // 8) * 8 + _LUT_TAIL_PAD
+
+
+def assert_no_nan_inf[
+    dtype: DType, layout: Layout
+](
+    mut output: ManagedLayoutTensor[dtype, layout],
+    name: StaticString = "output",
+) raises:
+    """Assert no NaN/Inf is present in `output`.
+
+    Copies the managed tensor's device buffer back to host (via
+    `tensor[update=True]()`) and linearly scans every element. Raises on the
+    first NaN or Inf with the element's flat index, total size, and the
+    caller-supplied `name`. Use immediately after a kernel + `synchronize()`
+    to give a named, indexed failure rather than relying on tolerance
+    comparisons (which mask NaN-vs-NaN matches and produce vague error
+    messages).
+    """
+    var host = output.tensor[update=True]()
+    var n = host.runtime_layout.size()
+    for i in range(n):
+        var v = host.ptr[i].cast[DType.float32]()
+        if isnan(v):
+            raise Error(
+                String("NaN at element ")
+                + String(i)
+                + " of "
+                + String(n)
+                + " in '"
+                + String(name)
+                + "'"
+            )
+        if isinf(v):
+            raise Error(
+                String("Inf at element ")
+                + String(i)
+                + " of "
+                + String(n)
+                + " in '"
+                + String(name)
+                + "'"
+            )
 
 
 struct _KVCacheTestTensor[dtype: DType, layout: Layout, rank: Int](Copyable):
@@ -134,8 +197,15 @@ struct PagedLookupTable[page_size: Int](Copyable):
     def __init__(
         out self, batch_size: Int, max_full_context_length: Int
     ) raises:
+        # Pad the LUT inner dim to honor `PagedKVCache.populate`'s SIMD
+        # padding invariant — see `padded_lut_cols`.
         self.paged_lut = type_of(self.paged_lut)(
-            Index(batch_size, ceildiv(max_full_context_length, Self.page_size))
+            Index(
+                batch_size,
+                padded_lut_cols(
+                    ceildiv(max_full_context_length, Self.page_size)
+                ),
+            )
         )
 
     def _build(
