@@ -22,12 +22,18 @@ struct _MLIR:
     ]
 
 
-comptime AnyOrigin[*, mut: Bool = False] = Origin[
+comptime ImmutOrigin = Origin[mut=False]
+comptime MutOrigin = Origin[mut=True]
+
+comptime AnyOrigin[*, mut: Bool] = Origin[
     _mlir_origin=__mlir_attr[
         `#lit.any.origin : !lit.origin<`, +mut._mlir_value, `>`
     ]
 ]()
-comptime ExternalOrigin[*, mut: Bool = False] = Origin[
+comptime ImmutAnyOrigin = AnyOrigin[mut=False]
+comptime MutAnyOrigin = AnyOrigin[mut=True]
+
+comptime ExternalOrigin[*, mut: Bool] = Origin[
     _mlir_origin=__mlir_attr[
         `#lit.origin.union<> : !lit.origin<`,
         mut._mlir_value,
@@ -51,9 +57,9 @@ comptime _lit_origin_type_of_mut[mut: Bool] = __mlir_type[
 ]
 
 
-struct Origin[
-    mut: Bool = False, _mlir_origin: _lit_origin_type_of_mut[mut], //
-](TrivialRegisterPassable):
+struct Origin[mut: Bool, _mlir_origin: _lit_origin_type_of_mut[mut], //](
+    TrivialRegisterPassable
+):
     @always_inline("builtin")
     def __init__(out self):
         pass
@@ -1194,7 +1200,7 @@ struct VariadicList[
 ](RegisterPassable):
     comptime _EltPointerType = Pointer[Self.element_type, Self.origin]
     # FIXME: This should be the origin of the container, not ExternalOrigin.
-    var value: Span[Self._EltPointerType, ExternalOrigin[]]
+    var value: Span[Self._EltPointerType, ExternalOrigin[mut=False]]
 
     # TODO: the origin of the vardecl is captured in the Self.origin set
     # by the compiler to make sure the container outlives all its elements.
@@ -1211,7 +1217,7 @@ struct VariadicList[
         # Convert the !lit.ref to an UnsafePointer, then cast to a pointer to
         # the first element.
         var array_up = UnsafePointer(to=Pointer(value)[])
-        var elt_ptr = UnsafePointer[_, ExternalOrigin[]](
+        var elt_ptr = UnsafePointer[_, ExternalOrigin[mut=False]](
             __mlir_op.`pop.array.gep`(
                 array_up.address,
                 Int(0)._mlir_value,

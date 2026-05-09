@@ -849,7 +849,7 @@ def bad_union[ao: Origin[mut=True]](ref [ao] a: String, mut b: String) -> ref [a
     return c
 
 # https://github.com/modular/mojo/issues/3829
-def apply_in_memory[o: Origin[]](f: def(ref[o] x: SomeNonTrivRegPassable) thin -> None, x: SomeNonTrivRegPassable):
+def apply_in_memory[o: ImmutOrigin](f: def(ref[o] x: SomeNonTrivRegPassable) thin -> None, x: SomeNonTrivRegPassable):
 # expected-error @below {{value passed to 'x' cannot be converted from 'SomeNonTrivRegPassable' to ref 'SomeNonTrivRegPassable'}}
 # expected-note @below {{operand origin 'x' doesn't match expected origin 'o'}}
     f(x)
@@ -866,12 +866,12 @@ def test3830():
     # expected-note @below {{operand origin 'anonymous*' doesn't match expected origin 'anonymous*'}}
     direct3830(getSomeNonTrivRegPassable(), getSomeNonTrivRegPassable())
 
-def test3830_1[o: Origin[]](f: def(ref[o] x: SomeNonTrivRegPassable) thin -> None):
+def test3830_1[o: ImmutOrigin](f: def(ref[o] x: SomeNonTrivRegPassable) thin -> None):
     # expected-error @below {{invalid indirect call: value passed to 'x' cannot be converted from 'SomeNonTrivRegPassable' to ref 'SomeNonTrivRegPassable'}}
     # expected-note @below {{operand origin 'anonymous*' doesn't match expected origin 'o'}}
     f(getSomeNonTrivRegPassable())
 
-def test3830_2[o: Origin[]](f: def(ref[o] x: Int) thin -> None, x: Int):
+def test3830_2[o: ImmutOrigin](f: def(ref[o] x: Int) thin -> None, x: Int):
     # expected-error @below {{invalid indirect call: value passed to 'x' cannot be converted from 'Int' to ref 'Int'}}
     # expected-note @below {{operand origin 'anonymous*' doesn't match expected origin 'o'}}
     f(x)

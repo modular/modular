@@ -25,11 +25,11 @@ struct MemExample(ImplicitlyCopyable):
   def mutate(mut self): pass
 
 # CHECK-LABEL: lit.fn @"borrow{{.*}}"<{{.*}}>(%a: !lit.ref<!MemExample, imm *"lt._mlir_origin`">
-def borrow[lt: Origin[]](a: Pointer[MemExample, lt]._mlir_type):
+def borrow[lt: ImmutOrigin](a: Pointer[MemExample, lt]._mlir_type):
   pass
 
 # CHECK-LABEL: lit.fn @"mutate{{.*}}"<{{.*}}>(%a: !lit.ref<!MemExample, mut *"lt._mlir_origin`">
-def mutate[lt: Origin[mut=True]](a: Pointer[MemExample, lt]._mlir_type):
+def mutate[lt: MutOrigin](a: Pointer[MemExample, lt]._mlir_type):
   pass
 
 # CHECK-LABEL: lit.fn @"implicit_borrow
@@ -259,11 +259,11 @@ def returnTwoArgLifetimes(a: MemExample, b: MemExample)
   -> TwoLifetimes[origin_of(a), origin_of(b)]:
   return TwoLifetimes[origin_of(a), origin_of(b)]()
 
-struct OneLifetime[a_origin: Origin[]]:
+struct OneLifetime[a_origin: ImmutOrigin]:
   def __init__(out self): pass
 
-struct TwoLifetimes[a_origin: Origin[],
-                    b_origin: Origin[]]:
+struct TwoLifetimes[a_origin: ImmutOrigin,
+                    b_origin: ImmutOrigin]:
   def __init__(out self): pass
 
 # Test that we can infer the type of 'T' in the func param invocation.
