@@ -75,9 +75,6 @@ MODEL_ALIASES = CaseInsensitiveDict({
     "meta-llama/Llama-3.1-8B-Instruct__modulev3": {
         "max_serve_args": "--prefer-module-v3",
     },
-    "meta-llama/Llama-3.2-1B-Instruct__modulev3": {
-        "max_serve_args": "--prefer-module-v3",
-    },
     "unsloth/gpt-oss-20b-BF16__modulev3": {
         "max_serve_args": "--prefer-module-v3",
     },
