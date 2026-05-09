@@ -97,9 +97,10 @@ def _resolve_only_use_kv_connector_last_level_cache() -> bool:
         "yes",
         "y",
     )
-    logger.info(
-        "Detected MODULAR_ONLY_USE_KV_CONNECTOR_LAST_LEVEL_CACHE flag, only using KVConnector prefix cache."
-    )
+    if enabled:
+        logger.info(
+            "Detected MODULAR_ONLY_USE_KV_CONNECTOR_LAST_LEVEL_CACHE flag, only using KVConnector prefix cache."
+        )
     return enabled
 
 
