@@ -84,6 +84,28 @@ struct Origin[mut: Bool, _mlir_origin: _lit_origin_type_of_mut[mut], //](
     ]:
         return {}
 
+    @always_inline("builtin")
+    @__unsafe_disable_nested_origin_exclusivity
+    def __eq__(self, rhs: Origin) -> Bool:
+        return __mlir_attr[
+            `#lit.origin.eq<`,
+            Self._mlir_origin,
+            `, `,
+            rhs._mlir_origin,
+            `> : i1`,
+        ]
+
+    @always_inline("builtin")
+    @__unsafe_disable_nested_origin_exclusivity
+    def __ne__(self, rhs: Origin) -> Bool:
+        return not self == rhs
+
+    # Return true if self is a superset of element.
+    @always_inline("builtin")
+    @__unsafe_disable_nested_origin_exclusivity
+    def __contains__(self, element: Origin) -> Bool:
+        return self == origin_of(self._mlir_origin, element._mlir_origin)
+
 
 comptime _lit_indirect_origin[mut: Bool, //, base: Origin[mut=mut]] = Origin[
     _mlir_origin=__mlir_attr[
@@ -1346,6 +1368,11 @@ struct Pointer[
             to: The value to construct a pointer to.
         """
         self = Self(_mlir_value=__get_mvalue_as_litref(to))
+
+    @implicit
+    @always_inline("nodebug")
+    def __init__(out self, other: Pointer) where other.origin in Self.origin:
+        self._value = rebind[Self._mlir_type](other._value)
 
     @staticmethod
     @always_inline("nodebug")

@@ -1733,6 +1733,27 @@ CValue IREmitter::emitCallUnchecked(RValue callee,
   if (calleeSig.isThrows() && builder) {
     MLValue errSlot = findNearestErrorSlot();
     ASTType thrownType = calleeSig.getUserThrownType();
+
+    auto isErrorTypeConvertible = [&]() -> bool {
+      // FIXME: ImplicitOrigins aren't bound here, but implicit origins may
+      // be in the error type of callee_sig, which will break implicit
+      // conversion checking below.  Implicit origins need to go away!
+      // Example:
+      //  def callee(a: String) raises Pointer[String, origin_of(a)]: ...
+      //  def caller(a: String) raises Pointer[String, origin_of(a)]:
+      //      callee(a)  # calee.error type is a pointer refering to a's origin.
+      mlir::AttrTypeWalker walker;
+      // This is overly conservative because it isn't tracking depths.
+      walker.addWalk(
+          [](ImplicitOriginRefAttr sig) { return WalkResult::interrupt(); });
+      if (walker.walk(thrownType).wasInterrupted())
+        return false;
+
+      return canImplicitlyConvertToType(
+          {UnboundAttr::get(thrownType), callExpr}, errSlot.getRValueType(),
+          getDeclScope());
+    };
+
     if (errSlot &&
         // We don't need a temp if the types line up, which is common.
         !isEqualCanon(thrownType, errSlot.getRValueType()) &&
@@ -1741,8 +1762,7 @@ CValue IREmitter::emitCallUnchecked(RValue callee,
         // Throw NeverType isn't actually thrown.
         !sugarIsa<NeverType>(thrownType) &&
         // Thrown type must be implicitly convertible to the error slot type.
-        canImplicitlyConvertToType({UnboundAttr::get(thrownType), callExpr},
-                                   errSlot.getRValueType(), getDeclScope())) {
+        isErrorTypeConvertible()) {
 
       return emitIndirectCallInTryBlock(
           callee, std::move(callOperands), [&](VarDeclOp errDecl) {

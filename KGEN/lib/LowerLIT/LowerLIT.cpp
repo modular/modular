@@ -770,12 +770,30 @@ replaceGeneratorAttrType(SingletonTypeHelper &singletonTypeHelper,
   return std::make_pair(result, WalkResult::skip());
 }
 
-static void lowerAttributesAndTypes(
+static LogicalResult lowerAttributesAndTypes(
     Operation *op, const DenseMap<StringAttr, StringAttr> &renamedSymbols,
     SingletonTypeHelper &singletonTypeHelper,
     DenseMap<StringAttr, ParamDeclDropMask> &symbolDroppedParamDecls,
     StructDecls &structDecls) {
+
+  bool hadErrors = false;
+  // This is the location of the current op that we're working on, updated as
+  // we traverse the Module hierarchy.
+  Location curOpLoc = op->getLoc();
+
   mlir::AttrTypeReplacer replacer;
+
+  // OriginEqAttr may not survive to lowering.
+  replacer.addReplacement(
+      [&](OriginEqAttr attr)
+          -> std::optional<std::pair<TypedAttr, WalkResult>> {
+        mlir::emitError(curOpLoc)
+            << "origin equality may only be tested in 'where' clauses";
+        hadErrors = true;
+        return std::make_pair(
+            IntegerAttr::get(IntegerType::get(op->getContext(), 1), 0),
+            WalkResult::skip());
+      });
 
   // Member functions are reference with nested symbol references. After
   // lowering, the symbol tree will be flat. Concatenate all nested symbol
@@ -905,8 +923,12 @@ static void lowerAttributesAndTypes(
         return std::nullopt;
       });
 
-  replacer.recursivelyReplaceElementsIn(
-      op, /*replaceAttrs=*/true, /*replaceLocs=*/true, /*replaceTypes=*/true);
+  // Walk the entire Module updating everything.
+  op->walk([&](Operation *nestedOp) {
+    curOpLoc = nestedOp->getLoc();
+    replacer.replaceElementsIn(nestedOp, /*replaceAttrs=*/true,
+                               /*replaceLocs=*/true, /*replaceTypes=*/true);
+  });
 
   // Update saved types in struct decls.
   for (auto &decl : structDecls.structDecls) {
@@ -920,6 +942,8 @@ static void lowerAttributesAndTypes(
     decl.second.isMemoryOnlyAttr =
         cast<TypedAttr>(replacer.replace(decl.second.isMemoryOnlyAttr));
   }
+
+  return failure(hadErrors);
 }
 
 //===----------------------------------------------------------------------===//
@@ -956,10 +980,11 @@ struct LowerLITPass : public KGEN::impl::LowerLITBase<LowerLITPass> {
 
       // Now lower away everything else including modules etc.
       if (failed(lowerer.lowerModuleDecl(module.getBody(), Block::iterator(),
-                                         /*isTopLevel=*/true)))
+                                         /*isTopLevel=*/true)) ||
+          failed(lowerAttributesAndTypes(
+              module, renamedSymbols, singletonTypeHelper,
+              lowerer.symbolDroppedParamDecls, structDecls)))
         return signalPassFailure();
-      lowerAttributesAndTypes(module, renamedSymbols, singletonTypeHelper,
-                              lowerer.symbolDroppedParamDecls, structDecls);
     }
 
     // Keep lowering all the operations and types.

@@ -638,6 +638,37 @@ def OriginUnionAttr : LITTypedAttr<"OriginUnion", "origin.union", [
 }
 
 //===----------------------------------------------------------------------===//
+// OriginEqAttr
+//===----------------------------------------------------------------------===//
+
+def OriginEqAttr : LITTypedAttr<"OriginEq", "origin.eq",
+   [ContextuallyEvaluatedAttrInterface]> {
+  let summary = "Check if two !lit.origin values are equal";
+  let description = [{
+    This attribute is a check if two !lit.origin values are equal. This is used
+    at parser time in 'where' clauses, but cannot be used in things like
+    "comptime if" that are evaluated at elaboration time (because origins are
+    gone by then).
+  }];
+
+  let parameters = (ins "TypedAttr":$lhs, "TypedAttr":$rhs);
+
+  let assemblyFormat = "`<` $lhs `,` $rhs `>`";
+
+  let skipDefaultBuilders = 1;
+  let builders = [
+    // These builders fold the request automatically.
+    AttrBuilderWithInferredContext<(ins
+      "TypedAttr":$lhs, "TypedAttr":$rhs), "", "TypedAttr">,
+    AttrBuilder<(ins "TypedAttr":$lhs, "TypedAttr":$rhs), [{
+      return get(lhs, rhs);
+    }], "TypedAttr">,
+  ];
+
+  let extraClassDeclaration = [{ Type getType() const; }];
+}
+
+//===----------------------------------------------------------------------===//
 // OriginMutCastAttr
 //===----------------------------------------------------------------------===//
 

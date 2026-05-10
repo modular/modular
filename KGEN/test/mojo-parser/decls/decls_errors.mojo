@@ -1276,7 +1276,7 @@ def bar[n: Int]():
     pass
 
 
-comptime _ = MyParam.p # expected-error {{'p' refers to an unbound parameter in 'MyParam[?]'}}
+comptime _something = MyParam.p # expected-error {{'p' refers to an unbound parameter in 'MyParam[?]'}}
 
-def pack_error[trait: type_of(AnyType), *element_types: trait]():
+def pack_error[Trait: type_of(AnyType), //, *element_types: Trait]():
     pass
