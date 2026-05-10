@@ -715,9 +715,11 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
     hasCTADParams = !fn.getIsStatic() && isa<StructDeclOp>(fn->getParentOp());
   }
 
-  ParamInf inference(callable.paramBindings, signature.getInputParamTypes(),
-                     signature.getParamListAttrs(), allowImplicitConversions,
-                     funcIfDirect, /*discardError=*/false);
+  OperandsNeedingOriginsList operandsNeedingOrigins;
+  CallParamInf inference(
+      callable.paramBindings, signature.getInputParamTypes(),
+      signature.getParamListAttrs(), allowImplicitConversions, funcIfDirect,
+      /*discardError=*/false, signature, operands, variadicKwOperands);
   // Check if we're calling a closure's __call__ method and need to set
   // captured closure parameters. Only applies to method call syntax on a
   // __call__ method — not direct calls that happen to pass a closure as an
@@ -751,19 +753,7 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
       ++paramIdx;
     }
   }
-  // TODO: inferForCall will eventually be separated. We will eventually blend
-  // parameter inference into overload resolution have something like:
-  //
-  //  inference.inferFromParamBinding(...)
-  //
-  //  for (arg in callexpr) {
-  //    case call_conv:
-  //       inference.inferOneOperand(...)
-  //    ...
-  //  }
-  OperandsNeedingOriginsList operandsNeedingOrigins;
-  if (failed(inference.inferForCall(signature, operands, variadicKwOperands,
-                                    returnsSelf, hasCTADParams,
+  if (failed(inference.inferForCall(returnsSelf, hasCTADParams,
                                     operandsNeedingOrigins))) {
     if (inference.diag.hasErrorEmitted())
       return std::move(*inference.diag.takeMojoDiag());

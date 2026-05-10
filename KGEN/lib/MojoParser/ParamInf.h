@@ -32,19 +32,6 @@ public:
            PogListAttr declaredParamPogs, bool allowImplicitConversions,
            ASTDecl *declIfDirect, bool discardError);
 
-  /// Given an incomplete parameter binding set and the arguments for a call to
-  /// the specified signature, try to infer the value of the next 'decl'
-  /// parameter. This should always return failure /without/ an error if it
-  /// cannot be inferred, and return success if a value was determined.
-  ///
-  /// returnsSelf is True if this is performing inference on a function like
-  /// __init__ that returns Self, which might be specialized.
-  LogicalResult
-  inferForCall(FnTypeGeneratorType signature, const CallOperands &callOperands,
-               const OperandValueList &variadicKwOperands, bool returnsSelf,
-               bool hasCTADParams,
-               OperandsNeedingOriginsList &operandsNeedingOrigins);
-
   // Infer the parameter binding for a struct given a (potentially incomplete)
   // parameter binding.
   ParameterExprArrayAttr inferForStruct(bool emitConstraintFailure = true);
@@ -77,13 +64,6 @@ private:
   /// On failure, this will emit a diagnostic through the 'getDiag' callback.
   LogicalResult inferFromParamList();
 
-  /// Given an incomplete parameter binding set, try to infer parameters on Self
-  /// of a method from the first argument.
-  LogicalResult
-  inferCTADParams(FnTypeGeneratorType signature,
-                  const CallOperands &callOperands,
-                  OperandsNeedingOriginsList &operandsNeedingOrigins);
-
   // Infer any missing parameter from defaulted value (this is supposed to be
   // invoked after both parameter list and argument list has been scanned).
   LogicalResult inferFromDefaults();
@@ -102,10 +82,6 @@ private:
   FailureOr<SmartVariant<CValue, ASTType>>
   inferCValue(ASTExprAnd<AnyValue> operand, size_t argIdx, PogListAttr argPogs,
               CallSyntax syntax, ASTType expectedType);
-  LogicalResult inferSelfFromInitResult(FnTypeGeneratorType signature);
-  LogicalResult
-  inferResultSlot(RefType expectedRef, size_t argIdx, const ExprDest &dest,
-                  OperandsNeedingOriginsList &operandsNeedingOrigins);
 
   /// Infer parameters from an operand being passed into this function. This is
   /// only called on the top level function operands being matched up, not
@@ -167,6 +143,51 @@ private:
 
   friend class ParamMatcher;
   friend class ParamBindings;
+  friend class CallParamInf;
+};
+
+//===----------------------------------------------------------------------===//
+// CallParamInf
+//===----------------------------------------------------------------------===//
+
+/// Parameter inference specialized for matching a call's operands against a
+/// callee signature.
+class CallParamInf : public ParamInf {
+public:
+  CallParamInf(const ParamBindings &paramBinding,
+               ArrayRef<Type> declaredParamTypes, PogListAttr declaredParamPogs,
+               bool allowImplicitConversions, ASTDecl *declIfDirect,
+               bool discardError, FnTypeGeneratorType calleeSignature,
+               const CallOperands &callOperands,
+               const OperandValueList &variadicKwOperands);
+
+  /// Given an incomplete parameter binding set and the arguments for a call to
+  /// the specified signature, try to infer the value of the next 'decl'
+  /// parameter. This should always return failure /without/ an error if it
+  /// cannot be inferred, and return success if a value was determined.
+  ///
+  /// Callee signature and call operands are supplied on construction.
+  /// returnsSelf is True if this is performing inference on a function like
+  /// __init__ that returns Self, which might be specialized.
+  LogicalResult
+  inferForCall(bool returnsSelf, bool hasCTADParams,
+               OperandsNeedingOriginsList &operandsNeedingOrigins);
+
+private:
+  FnTypeGeneratorType calleeSignature;
+  const CallOperands &callOperands;
+  const OperandValueList &variadicKwOperands;
+
+  /// Given an incomplete parameter binding set, try to infer parameters on
+  /// Self of a method from the first argument.
+  LogicalResult
+  inferCTADParams(OperandsNeedingOriginsList &operandsNeedingOrigins);
+
+  LogicalResult inferSelfFromInitResult();
+
+  LogicalResult
+  inferResultSlot(RefType expectedRef, size_t argIdx, const ExprDest &dest,
+                  OperandsNeedingOriginsList &operandsNeedingOrigins);
 };
 
 } // namespace M::KGEN::LIT

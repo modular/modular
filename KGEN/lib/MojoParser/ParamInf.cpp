@@ -97,82 +97,6 @@ ParamInf::ParamInf(const ParamBindings &paramBinding,
       explicitlyUnboundParams(declaredParamTypes.size(), false),
       allowImplicitConversions(allowImplicitConversions) {}
 
-/// Try to infer parameters of Self from an initializer if specialized.
-///
-/// Consider:
-///    struct S[a: Int]:
-///      def __init__(out self): ...
-///      def __init__(out self: S[1], x: Int): ...
-///
-/// When constructed with no arguments, the first constructor must be used and
-/// it is impossible to infer the value of 'a', so you must use `S[1]()`.  This
-/// is the usual case.
-///
-/// However the second initializer is more specialized due to its custom Self -
-/// it only applies when 'a' is 1, so we can infer that would be the value to
-/// use if it is selected because one arg is passed to the initializer `S(42)`.
-///
-/// This function helps to infer the 'a' parameter when more specialized.  This
-/// custom logic is required because often (eg in this case) the "actual" type
-/// will have UnboundAttr parameters, instead of fully bound ones like a normal
-/// argument.
-LogicalResult ParamInf::inferSelfFromInitResult(FnTypeGeneratorType signature) {
-  DeclResolver::DiagnosticDeclContextChanger x(declIfKnown);
-
-  ASTType returnedType =
-      evaluator.getReboundType(signature.getUserResultType());
-
-  auto reportConflict = [&](size_t paramIdx, TypedAttr actual,
-                            TypedAttr expected) -> LogicalResult {
-    getMojoDiag(getGivenBindings().callExpr->getLoc())
-        << "return type " << returnedType << " parameter "
-        << ParamIndexRefAttr::get(/*depth*/ 0, paramIdx, actual.getType())
-        << " value " << actual << " doesn't match expected value " << expected;
-    return failure();
-  };
-
-  // Match up the parameter bindings if the 'actual' param is an UnboundAttr and
-  // the expected has something more specific than a reference to the contextual
-  // parameter.
-  for (auto [idx, retParam] :
-       llvm::enumerate(returnedType.getParamBindings())) {
-    // If this is simply a reference to the enclosing parameter (as in a normal
-    // Self) init, then we can't infer anything from it.  In the example above,
-    // this ignores the "a" parameter in "def __init__() -> S[a]:" which is what
-    // "out self" desugars to.
-    auto selfParam = evaluator.getIndexBindings()[idx];
-    if (retParam == selfParam)
-      continue;
-
-    // Otherwise, if the self parameter got inferred, propagate the result
-    // from it to the returned parameter.  This handles things like:
-    //   struct X[A: AnyType]:
-    //     def __init__[T: Movable](arg: Int, out self: X[T]):
-    // which gets used as X[String](42) inferring T and A.
-    ParamMatcher matcher(getGivenBindings().callExpr, *this,
-                         allowImplicitConversions);
-    if (selfParam) {
-      // TODO: Macro'ize this when error handling logic is fixed.
-      if (failed(matcher.matchParams(selfParam, retParam))) {
-        return reportConflict(idx, retParam, selfParam);
-      }
-    } else if (!paramFinder.hasReferences(retParam)) {
-      // Otherwise if the the returned parameter has no unbound parameter
-      // references then we infer the self parameter from it. This infers X=42:
-      //   struct X[A: Int]:
-      //     def __init__(out self: X[42]):
-      auto selfType =
-          evaluator.getReboundType(signature.getInputParamTypes()[idx]);
-      auto selfParam = ParamIndexRefAttr::get(/*depth*/ 0, idx, selfType);
-      if (failed(matcher.matchParams(retParam, selfParam))) {
-        return reportConflict(idx, selfParam, retParam);
-      }
-    }
-  }
-
-  return success();
-}
-
 static Type inferInitializerType(ASTDecl &declScope, InitializerUValue &init,
                                  ASTExprAnd<AnyValue> operand,
                                  ASTType defaultType) {
@@ -1162,641 +1086,6 @@ ParameterExprArrayAttr ParamInf::inferForStruct(bool emitConstraintFailure) {
   return getInferredValues();
 }
 
-/// This method is called for ByRefResult arguments of the callee.  It checks to
-/// see if the callee has a parametric address space or origin. If so, it looks
-/// at the ExprDest the call is being emitted into and infers the desired
-/// values, or marks it as needing to be spilled if not.
-LogicalResult
-ParamInf::inferResultSlot(RefType expectedRef, size_t argIdx,
-                          const ExprDest &dest,
-                          OperandsNeedingOriginsList &operandsNeedingOrigins) {
-
-  bool needsAddrSpace =
-      paramFinder.hasReferences(expectedRef.getAddressSpace());
-  bool needsOrigin = paramFinder.hasReferences(expectedRef.getOrigin());
-  if (!needsAddrSpace && !needsOrigin)
-    return success(); // Nothing to do.
-
-  RefType actualRef;
-  // If we have a concrete MLValue, we can use it to infer the desired values.
-  if (MLValue mlDest = dest.getDirectMLValueIfPresent()) {
-    actualRef = mlDest.getRefType();
-  } else {
-    // If the ExprDest lacks a concrete MLValue, we can't infer anything. We
-    // need the caller to spill the result into a buffer and reinfer us. Until
-    // then, bind it as AnyOrigin to avoid failing to infer the parameters.
-    operandsNeedingOrigins.push_back({OperandNeedingOrigin::kExprDestOperandIdx,
-                                      argIdx, expectedRef.getElementType()});
-
-    if (needsOrigin)
-      actualRef = expectedRef.getWithOrigin(
-          AnyOriginAttr::get(expectedRef.getContext(), /*isMut=*/true));
-    if (needsAddrSpace)
-      actualRef = actualRef.getWithAddressSpace(
-          IntegerAttr::get(IndexType::get(expectedRef.getContext()), 0));
-  }
-
-  ParamMatcher matcher(getGivenBindings().callExpr, *this,
-                       /*allowImplicitConversions=*/false);
-
-  if (failed(matcher.matchSingleEltStruct(actualRef.getAddressSpace(),
-                                          expectedRef.getAddressSpace())) ||
-      failed(matcher.matchSingleEltStruct(actualRef.getOrigin(),
-                                          expectedRef.getOrigin())))
-    return failure();
-  return success();
-}
-
-LogicalResult ParamInf::inferForCall(
-    FnTypeGeneratorType signature, const CallOperands &operands,
-    const OperandValueList &variadicKwOperands, bool returnsSelf,
-    bool hasCTADParams, OperandsNeedingOriginsList &operandsNeedingOrigins) {
-  isInferForStruct = false;
-
-  CrashReporter handler(paramBindings.getExprLoc(), "ParamInf::inferForCall",
-                        getShared());
-
-  // First try to infer parameters from the already provided bindings.
-  if (failed(inferFromParamList()))
-    return failure();
-
-  // Match up the operands provided by the call to the input arguments.  Keep in
-  // mind that the callee signature might not match at all, so we have to be
-  // careful here!
-  size_t posOperandIdx = 0;
-  size_t numOperands = operands.size();
-  PogListAttr argPogs = signature.getArgListAttrs();
-  for (auto [expectedArgIdx, expectedConvention] :
-       llvm::enumerate(signature.getArgConventions())) {
-
-    // Note that 'signature' changes the type as we go, so don't use
-    // llvm::enumerate on the argument type list!
-    Type expectedType =
-        evaluator.getReboundType(signature.getArgument(expectedArgIdx));
-
-    // There is no provided operand for a by-ref result and error slot.
-    if (isResultSlot(expectedConvention)) {
-      auto expectedRef = sugarCast<RefType>(expectedType);
-
-      // If this is the result slot with parametric components, attempt to infer
-      // result origin/address space from it.
-      if (expectedConvention == ArgConvention::ByRefResult)
-        if (failed(inferResultSlot(expectedRef, expectedArgIdx, operands.dest,
-                                   operandsNeedingOrigins)))
-          return failure();
-      continue;
-    }
-
-    if (signature.isKwVarArg(expectedArgIdx)) {
-      Type valTy = ASTType(expectedType).getKwargsDictRefValueType();
-      auto refValType = RefType::getAnyOrigin(valTy, /*isMut=*/true);
-      for (auto operand : variadicKwOperands) {
-        // TODO: Passing OwnedMem is a hack that is needed because the value
-        // type is not a reference type (and doesn't have a origin), but we
-        // still want to type check it. So, passing it as if it was reg-passable
-        // happens to just work, until we rectify this. Right now the reason the
-        // value type cannot be a reference type is because `Pointer` does not
-        // (and in fact cannot) conform to `Copyable & Movable`.
-        if (failed(inferOneOperand(operand, /*operandIdx unknown*/ ~0ULL,
-                                   expectedArgIdx, refValType,
-                                   ArgConvention::OwnedMem, argPogs,
-                                   operands.syntax, operandsNeedingOrigins)))
-          return failure();
-      }
-      // This is always last in the operand list.
-      posOperandIdx = numOperands;
-      continue;
-    }
-
-    // Determine if we can use an value for this argument directly, or
-    // if we need an implicit conversion, or memory materialization to get
-    // an origin.
-    auto canUseMValue = [&](AnyValue value, ASTType expectedType,
-                            ArgConvention convention) -> bool {
-      // The operand must an MValue and must have the same element type as
-      // the variadic list element type (otherwise a conversion is needed).
-      if (!value.isMValue())
-        return false; // Can't use it if not an MValue obviously.
-
-      // The origin has to be in the default address space.
-      if (!value.getMValueType().isDefaultAddrSpace())
-        return false;
-
-      // The argument must have a compatible element type (and we might
-      // infer the type of the variadic from it.  If not, there must be an
-      // implicit conversion going on.  We can test for type equality here
-      // because inferOneOperand will have inferred the type from the arg.
-      // TODO: Move this logic into inferOneOperand.
-      expectedType = evaluator.getReboundType(expectedType);
-      if (!expectedType.isEqualCanon(value.getMValueType().getElementType()))
-        return false; // Implicit conversion will generate a new temp.
-
-      // If this is a owned operand, we can use it if we have an RValue.
-      if (convention == ArgConvention::OwnedMem)
-        return !!value.getIfRValue();
-
-      // TODO: What about "mut" arguments getting passed MBValues?
-      return true;
-    };
-
-    // Given a call argument that will be bound to the specified operand of a
-    // callee, get the memory origin of the value (if it can be used) or mark it
-    // as needing to be spilled if not.
-    auto getArgOrigin = [&](AnyValue value, ASTType expectedType, size_t argIdx,
-                            size_t operandIdx, ArgConvention convention,
-                            OriginType expectedOriginType) -> TypedAttr {
-      if (canUseMValue(value, expectedType, convention)) {
-        // The argument could be mutable, but the arg convention may expect
-        // immutable.
-        auto opOrigin = value.getMValueType().getOrigin();
-        return OriginMutCastAttr::get(opOrigin, expectedOriginType);
-      }
-      // The value isn't in memory (or isn't usable in memory) yet.  We will
-      // tell call emission that it needs to dump it in memory and try again
-      // to use this callee.  Until then, we use AnyOrigin as a placeholder.
-      operandsNeedingOrigins.push_back(
-          {operandIdx, argIdx, evaluator.getReboundType(expectedType)});
-      return AnyOriginAttr::get(expectedOriginType);
-    };
-
-    // If we have a varargs argument, then it will eat the rest of the
-    // arguments, but we have to check each of them.
-    if (signature.isPosVarArg(expectedArgIdx)) {
-      ASTType expectedRVType =
-          RefType::stripRefConvention(expectedType, expectedConvention);
-      // The expected origin type will always have its mutability known because
-      // the arg convention of the VariadicList is always constant.
-      auto variadicListInfo = expectedRVType.getVariadicListInfo();
-      auto expectedOriginType =
-          cast<OriginType>(variadicListInfo.origin.getType());
-      auto argConvention = signature.getVariadicConvention(expectedArgIdx);
-
-      // Support forwarding an entire list with "*list".
-      if (posOperandIdx != numOperands &&
-          operands[posOperandIdx].isUnpackedPositional()) {
-
-        if (failed(inferOneOperand(operands[posOperandIdx], posOperandIdx,
-                                   expectedArgIdx, expectedType,
-                                   expectedConvention, argPogs, operands.syntax,
-                                   operandsNeedingOrigins)))
-          return failure();
-        ++posOperandIdx;
-        continue;
-      }
-
-      // Otherwise, we're binding a sequence of values into the list.
-
-      // TODO: This is subtly wrong in a way that doesn't matter. We're passing
-      // the ultimate origin in as the origin for the RefType, but we need to
-      // infer the union all of the arg origins: not just the first arg's
-      // origin.  inferOneOperand currently doesn't do anything with this except
-      // for 'ref' convention, that we don't support in variadics.  When we do
-      // or when we get rid of implicit origins, this will need to be adjusted
-      // to pass in something that matches anything so the code below can
-      // infer the correct origin union.
-      auto varArgsEltType =
-          RefType::get(variadicListInfo.elementType, variadicListInfo.origin);
-
-      SmallVector<TypedAttr> argOrigins;
-      while (posOperandIdx != numOperands) {
-        auto &operand = operands[posOperandIdx++];
-
-        // Passed arguments with keywords specified don't bind to varargs.
-        if (operand.keyword)
-          continue;
-
-        if (operand.isUnpackedPositional()) {
-          getMojoDiag(operand.expr->getLoc())
-              << "cannot unpack a value into a variadic argument";
-          return failure();
-        }
-
-        if (failed(inferOneOperand(operand, posOperandIdx - 1, expectedArgIdx,
-                                   varArgsEltType, argConvention, argPogs,
-                                   operands.syntax, operandsNeedingOrigins)))
-          return failure();
-
-        // Keep track of all the arg origins so we can infer from them later.
-        argOrigins.push_back(getArgOrigin(
-            operand.ir, variadicListInfo.elementType, expectedArgIdx,
-            posOperandIdx - 1, argConvention, expectedOriginType));
-      }
-
-      // Infer the origin of the variadic list from the unified origins of the
-      // arguments.
-      auto commonOrigin = OriginUnionAttr::get(argOrigins, expectedOriginType);
-      ParamMatcher matcher(getGivenBindings().callExpr, *this,
-                           /*noImplicitConversions=*/false);
-      if (failed(matcher.matchParams(commonOrigin, variadicListInfo.origin)))
-        return failure();
-
-      continue;
-    }
-
-    // If we have a pack argument, then we're binding a variadic parameter with
-    // multiple type values.  We need to consume all remaining arguments and use
-    // their RValue types as bindings.
-    if (signature.isPack(expectedArgIdx)) {
-      ASTType variadicPackType =
-          RefType::stripRefConvention(expectedType, expectedConvention);
-      variadicPackType = evaluator.getReboundType(variadicPackType);
-      ASTType::VariadicPackInfo expectedInfo =
-          variadicPackType.getVariadicPackInfo();
-
-      // Support forwarding an entire pack with "*pack".
-      if (posOperandIdx != numOperands &&
-          operands[posOperandIdx].isUnpackedPositional()) {
-        ASTType actualPackType = // FIXME: This is wrong for UValues.
-            operands[posOperandIdx].ir.getRValueTypeIfResolvable();
-        assert(actualPackType &&
-               "unpacked positional operand must have a resolvable type");
-
-        // FIXME: This will crash on *foo where foo isn't a VariadicPack.
-        ASTType::VariadicPackInfo actualInfo =
-            actualPackType.getVariadicPackInfo();
-        if (actualInfo.isOwned != expectedInfo.isOwned) {
-          auto &diag = getMojoDiag(operands[posOperandIdx].expr->getLoc());
-          diag << "cannot unpack a variadic pack into a call that requires a "
-                  "different ownership. Expected "
-               << expectedInfo.isOwned << ", got " << actualInfo.isOwned;
-          return failure();
-        }
-
-        // Skip matching the origin, since the expected origin is an implicit
-        // origin that will be filled in during call emission. Just make sure
-        // that the element types match.
-        RefPackType actualRefPackType =
-            actualPackType.getVariadicPackInfo(getShared());
-        RefPackType expectedRefPackType =
-            variadicPackType.getVariadicPackInfo(getShared());
-
-        auto actualMutable = actualRefPackType.getOriginType().getIsMutable();
-        auto expectedMutable =
-            expectedRefPackType.getOriginType().getIsMutable();
-        auto bothMutable =
-            ParamOperatorAttr::get(POC::And, actualMutable, expectedMutable);
-        if (bothMutable != expectedMutable) {
-          auto &diag = getMojoDiag(operands[posOperandIdx].expr->getLoc());
-          diag << "cannot unpack a variadic pack into a call that requires a "
-                  "stricter mutability. Expected "
-               << expectedMutable << ", got " << actualMutable;
-          return failure();
-        }
-
-        ParamMatcher matcher(operands[posOperandIdx].expr, *this,
-                             allowImplicitConversions);
-        if (failed(matcher.matchParams(actualRefPackType.getVariadic(),
-                                       expectedRefPackType.getVariadic())) ||
-            failed(matcher.matchParams(actualRefPackType.getOrigin(),
-                                       expectedRefPackType.getOrigin()))) {
-          auto &diag = getMojoDiag(operands[posOperandIdx].expr->getLoc());
-          diag << "cannot unpack a pack of type "
-               << actualRefPackType.getParamListElementType()
-               << " into a call that expects a pack of type "
-               << expectedRefPackType.getParamListElementType();
-          matcher.failureReason->addExplanation(diag);
-          return failure();
-        }
-
-        // Now that we bound the elements of the TypeList, we can infer the
-        // value of the TypeList struct.
-        auto typeListType =
-            evaluator.getReboundType(expectedInfo.typeListStruct.getType());
-        auto typeListValue = UnknownAttr::get(typeListType);
-        (void)matcher.matchParams(typeListValue, expectedInfo.typeListStruct);
-
-        ++posOperandIdx;
-        continue;
-      }
-
-      // Otherwise, we're binding a sequence of values into the pack.
-      RefPackType packType = variadicPackType.getVariadicPackInfo(getShared());
-
-      // Figure out that the element type of the list is, e.g. AnyType or
-      // Stringable.
-      Type elementType = packType.getParamListElementType();
-      auto expectedOriginType = packType.getOriginType();
-
-      // It is possible the pack element types are not being inferred - for
-      // example, they could have been explicitly specified.  If this is the
-      // case, then we need to perform an implicit conversion to the element
-      // type that was explicitly specified.  Be careful though, it is possible
-      // the specified type list is completely wrong in length or content.
-      ParamListAttr eltsTypesIfResolved =
-          dyn_cast<ParamListAttr>(packType.getVariadic());
-
-      SmallVector<TypedAttr> types;
-      SmallVector<TypedAttr> argOrigins;
-      IREmitter emitter(getDeclScope(), EC_TypeParamValue);
-      const ExprNode *packArgExpr = nullptr;
-      while (posOperandIdx != numOperands) {
-        const auto &operand = operands[posOperandIdx++];
-        if (operand.keyword) // Ignore keyword operands.
-          continue;
-
-        // Remember the first argument expression for the pack.
-        if (packArgExpr == nullptr)
-          packArgExpr = operand.expr;
-
-        // If the element types for the pack were specified, convert the value
-        // to that type.
-        TypedAttr eltTypeValue;
-        if (eltsTypesIfResolved &&
-            types.size() < eltsTypesIfResolved.getValues().size()) {
-          eltTypeValue = eltsTypesIfResolved.getValues()[types.size()];
-        } else {
-          // Otherwise, infer the variadic element type from the value's type.
-          ASTType toPush = operand.ir.getRValueTypeIfResolvable();
-
-          // Initializer UValues (list/dict/set/slice literals) don't have a
-          // resolvable RValue type until they're bound to a target type.
-          // Apply the same fallback `inferCValue` uses so a literal passed to
-          // a trait-bound pack binds to its default type instead of bailing
-          // out with a bogus "unresolved type" diagnostic.
-          if (!toPush) {
-            if (auto initValue = operand.ir.getIfInitializer())
-              toPush = tryInferInitializerType(getDeclScope(), *initValue,
-                                               operand, ASTType(elementType));
-          }
-
-          if (!toPush) {
-            getMojoDiag(operand.expr->getLoc())
-                << "could not infer type of parameter pack "
-                << argPogs.getName(expectedArgIdx)
-                << " given value with unresolved type";
-            return failure();
-          }
-
-          // Infer nonmaterializable types as their materialization target.
-          if (ASTType nmTarget = toPush.getNonmaterializableTarget(getShared()))
-            toPush = nmTarget;
-
-          Type metatype = toPush.extractMetaType();
-          eltTypeValue = TypeParamAttr::get(toPush, metatype);
-          // Make sure the value is compatible with the expected trait, this
-          // produces better error messages.  It would be great to sink this
-          // into matchType at some point!
-          if (!IREmitter::canImplicitlyConvertToType(
-                  {eltTypeValue, operand.expr}, elementType,
-                  emitter.getDeclScope())) {
-            getMojoDiag(operand.expr->getLoc())
-                << "could not convert element of "
-                << argPogs.getName(expectedArgIdx) << " with type " << toPush
-                << " to expected type " << elementType;
-            return failure();
-          }
-
-          // Perform a conversion (e.g. from a concrete to trait type) as
-          // needed.
-          // FIXME(MOCO-3601): We have been very unprincipled about converting
-          // using TypeParamAttr/UpcastAttr: They both are used as a way to
-          // `rebind` type values. We have to use upcast here because we
-          // have a upcast inserted for variadic element type for Tuple.
-          if (!ASTType(eltTypeValue.getType()).isEqualCanon(elementType)) {
-            if (isa<NonStructTypeType>(eltTypeValue.getType())) {
-              eltTypeValue = emitter.emitPValue({eltTypeValue, operand.expr},
-                                                EC_TypeParamValue, elementType);
-            } else {
-              eltTypeValue = UpcastAttr::get(elementType, eltTypeValue);
-            }
-          }
-        }
-
-        RefType refType =
-            packType.getElementRefTypeFor(ASTType(eltTypeValue).mlirType);
-        ArgConvention packEltConvention =
-            signature.getVariadicConvention(expectedArgIdx);
-        if (failed(inferOneOperand(operand, posOperandIdx - 1, expectedArgIdx,
-                                   refType, packEltConvention, argPogs,
-                                   operands.syntax, operandsNeedingOrigins))) {
-          return failure();
-        }
-
-        // Keep track of all the arg origins so we can infer from them later.
-        argOrigins.push_back(getArgOrigin(
-            operand.ir, refType.getElementType(), expectedArgIdx,
-            posOperandIdx - 1, packEltConvention, expectedOriginType));
-        types.push_back(eltTypeValue);
-      }
-
-      ParamMatcher matcher(packArgExpr, *this, allowImplicitConversions);
-
-      // Infer the origin of the pack from the unified origins of the
-      // arguments.
-      auto commonOrigin = OriginUnionAttr::get(argOrigins, expectedOriginType);
-      if (failed(matcher.matchParams(commonOrigin, packType.getOrigin())))
-        return failure();
-
-      // Infer the value of type list from the types we have.
-      auto variadicType =
-          sugarCast<ParamListType>(packType.getVariadic().getType());
-
-      // If there are no arguments for the pack, use the location of the call.
-      if (!packArgExpr)
-        packArgExpr = getGivenBindings().getExpr();
-      auto actualVA = ParamListAttr::get(types, variadicType);
-      if (succeeded(matcher.matchParams(actualVA, packType.getVariadic()))) {
-        // Now that we bound the elements of the TypeList, we can infer the
-        // value of the TypeList struct.
-        auto typeListType =
-            evaluator.getReboundType(expectedInfo.typeListStruct.getType());
-        auto typeListValue = UnknownAttr::get(typeListType);
-        (void)matcher.matchParams(typeListValue, expectedInfo.typeListStruct);
-        continue;
-      }
-
-      // Match failed, diagnose why:
-      std::optional<std::pair<size_t, size_t>> posNumBoundOr =
-          calculateRequiredPosOperandsForPacks(signature, variadicPackType);
-      // This means that we can not determine a concrete number of packed
-      // arguments, this is always an error.
-      MojoInflightDiag &diag = getMojoDiag({packArgExpr->getLoc()});
-      if (!posNumBoundOr) {
-        diag << "assigning " << numOperands << " operand" << plural(numOperands)
-             << " to an unresolvable variadic pack argument";
-        return failure();
-      }
-
-      auto [minPosOperands, maxPosOperands] = *posNumBoundOr;
-      size_t numPosOperands = operands.getNumPositional();
-      if (numPosOperands < minPosOperands || maxPosOperands < numPosOperands) {
-        diag << "callee with non-empty variadic pack argument";
-        emitWrongArgOrParamCount(diag, minPosOperands, maxPosOperands,
-                                 numOperands, "positional operand");
-        return failure();
-      }
-      llvm_unreachable("unhandled variadic pack failure?");
-    }
-
-    // Check for any more positional operands.
-    while (posOperandIdx != numOperands && operands[posOperandIdx].keyword)
-      ++posOperandIdx;
-
-    // Handle positional arguments.
-    if (posOperandIdx < numOperands) {
-      const OperandValue &operand = operands[posOperandIdx];
-      if (operand.isUnpackedPositional()) {
-        getMojoDiag(operand.expr->getLoc())
-            << "unpacked positional arguments are only supported for callees "
-               "that expect a variadic pack argument at this position";
-        return failure();
-      }
-      if (failed(inferOneOperand(operand, posOperandIdx, expectedArgIdx,
-                                 expectedType, expectedConvention, argPogs,
-                                 operands.syntax, operandsNeedingOrigins)))
-        return failure();
-      ++posOperandIdx;
-      continue;
-    }
-
-    // Handle case when there are no more provided positional operands.
-    // Check if a keyword operand was provided for this argument
-    if (const OperandValue *kwOperandOr =
-            operands.findKwArg(signature.getArgName(expectedArgIdx))) {
-      size_t operandIdx = kwOperandOr - operands.values.begin();
-      if (failed(inferOneOperand(*kwOperandOr, operandIdx, expectedArgIdx,
-                                 expectedType, expectedConvention, argPogs,
-                                 operands.syntax, operandsNeedingOrigins)))
-        return failure();
-      continue;
-    }
-
-    // If not, and this argument has a default value, then infer from default
-    // values - it might not match the argument type in a parametric situation.
-    if (auto defaultVal = argPogs.getDefault(expectedArgIdx)) {
-      defaultVal = evaluator.getReboundAttribute(defaultVal);
-      if (failed(inferOneOperand({defaultVal, getGivenBindings().getExpr()},
-                                 /*FIXME*/ ~0ULL, expectedArgIdx, expectedType,
-                                 expectedConvention, argPogs, operands.syntax,
-                                 operandsNeedingOrigins)))
-        return failure();
-      continue;
-    }
-
-    // Otherwise we have an argument count mismatch, just fail.
-    return failure();
-  }
-
-  // If we have left over operands, then this signature cannot match.
-  if (posOperandIdx != numOperands && !signature.getMetadata().hasAnyVarArg())
-    return failure();
-
-  // If this is a result in a returnsSelf function like an __init__, infer
-  // self parameters (which could be specialized and shadowed).
-  //   struct Example[T: AnyType]:
-  //      def __init__[U: Movable](owned value: U) -> Example[U]:
-  //         pass
-  // All of the arguments have been resolved here so all parameters must be
-  // inferred (or not able to).
-  if (returnsSelf) {
-    if (failed(inferSelfFromInitResult(signature)))
-      return failure();
-  }
-
-  // Check to see if this is a CTAD parameter - a parameter on the struct
-  // that encloses the method.  Consider "conditional conformance" cases like:
-  //     struct X[A: AnyType]:
-  //       def foo[B: Movable](self: X[B]): ...
-  // When resolving a function call like `someX.foo()`, we install the
-  // bindings for 'A' from the typeof(someX) when resolving the
-  // AttributeRefExpr and then infer 'B' from someX again.
-  //
-  // However, when we have something like `X.foo(someX)` we cannot install the
-  // bindings for 'A' at AttributeRef resolution time, and 'someX' is only
-  // bound by parameter inference to 'B'.  Notice this and infer the parameter
-  // directly from A.  This is also important for operator resolution, which
-  // works effectively the same way.
-  //
-  // TODO: Provide a first class representation for conditional conformance
-  // that doesn't have us shadowing parameters like this!
-  if (hasCTADParams &&
-      failed(inferCTADParams(signature, operands, operandsNeedingOrigins)))
-    return failure();
-
-  // Lastly, See if we can fulfill any missing parameters with default values
-  // for their type (variadic attr always have a default empty value if not
-  // inferable).
-  if (failed(inferFromDefaults()))
-    return failure();
-
-  if (hasDeferredGivenParam) {
-    // Simply try it again now that more parameter has been inferred.
-    if (failed(inferFromParamList()))
-      return failure();
-  }
-
-  // See if we still have any unbound attr, if so, report error. (This must be a
-  // full binding context).
-  if (failed(finalizeWithUnbound()))
-    return failure();
-
-  // We succeed iff we inferred a value for this parameter.
-  return success();
-}
-
-/// Given an incomplete parameter binding set, try to infer parameters on Self
-/// of a method from the first argument.
-LogicalResult
-ParamInf::inferCTADParams(FnTypeGeneratorType signature,
-                          const CallOperands &operands,
-                          OperandsNeedingOriginsList &operandsNeedingOrigins) {
-  // Consider "conditional conformance" cases like:
-  //     struct X[A: AnyType]:
-  //       def foo[B: Movable](self: X[B]): ...
-  //
-  // When resolving a function call like `someX.foo()`, we install the
-  // bindings for 'A' from the typeof(someX) when resolving the
-  // AttributeRefExpr and then infer 'B' from someX again.
-  //
-  // However, when we have something like `X.foo(someX)` we cannot install the
-  // bindings for 'A' at AttributeRef resolution time, and 'someX' is only
-  // bound by parameter inference to 'B'.  Notice this and infer the parameter
-  // directly from A.  This is also important for operator resolution, which
-  // works effectively the same way.
-  //
-  // TODO: Provide a first class representation for conditional conformance
-  // that doesn't have us shadowing parameters like this!
-
-  // We can only do this if we have an argument.
-  assert(!operands.empty() && !operands[0].keyword &&
-         "init should have positional self argument");
-
-  auto selfConvention = signature.getArgConventions()[0];
-  ASTType declaredSelfType =
-      RefType::stripRefConvention(signature.getArgument(0), selfConvention);
-
-  // Get the ASTDecl for the declared self type.  This will give us the struct
-  // that we are referring to without bound parameters.
-  ASTDecl *decl = declaredSelfType.getDecl(getShared());
-  if (!decl)
-    return success();
-
-  // Get the Self type, with parameters bound to the structs CTAD parameters.
-  ASTType selfType = decl->getTypeDeclSelf();
-  if (!selfType)
-    return success();
-
-  // We need to convert named parameters like "T", which are ParamDeclRefAttr
-  // into ParamIndexRefAttr(0) style of representation.
-  if (auto structDecl = dyn_cast<StructDeclOp>(decl->getIfOperation())) {
-    IndexRefRemapper remapper(structDecl.getParams(), /*resultParams*/ {});
-    selfType = remapper.replace(selfType.mlirType);
-  }
-
-  // If passing self by reference, wrap the Self type with the RefType
-  // paraphernalia like origins.
-  if (hasAddress(selfConvention))
-    selfType =
-        sugarCast<RefType>(signature.getArgument(0)).getWithElement(selfType);
-
-  // Infer the first operand against this type - it was presumably already
-  // inferred against the methods declared type of 'self' as well.
-  auto argPogs = signature.getArgListAttrs();
-  return inferOneOperand(operands[0], /*operandIdx*/ 0, /*argIdx*/ 0, selfType,
-                         selfConvention, argPogs, operands.syntax,
-                         operandsNeedingOrigins);
-}
-
 // Infer any missing parameter from defaulted value (this is supposed to be
 // invoked after both parameter list and argument list has been scanned).
 LogicalResult ParamInf::inferFromDefaults() {
@@ -2073,5 +1362,733 @@ LogicalResult ParamInf::finalizeWithUnbound() {
     return failure();
   }
 
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
+// CallParamInf Implementation
+//===----------------------------------------------------------------------===//
+
+CallParamInf::CallParamInf(const ParamBindings &paramBinding,
+                           ArrayRef<Type> declaredParamTypes,
+                           PogListAttr declaredParamPogs,
+                           bool allowImplicitConversions, ASTDecl *declIfDirect,
+                           bool discardError,
+                           FnTypeGeneratorType calleeSignature,
+                           const CallOperands &callOperands,
+                           const OperandValueList &variadicKwOperands)
+    : ParamInf(paramBinding, declaredParamTypes, declaredParamPogs,
+               allowImplicitConversions, declIfDirect, discardError),
+      calleeSignature(calleeSignature), callOperands(callOperands),
+      variadicKwOperands(variadicKwOperands) {}
+
+/// Try to infer parameters of Self from an initializer if specialized.
+///
+/// Consider:
+///    struct S[a: Int]:
+///      def __init__(out self): ...
+///      def __init__(out self: S[1], x: Int): ...
+///
+/// When constructed with no arguments, the first constructor must be used and
+/// it is impossible to infer the value of 'a', so you must use `S[1]()`.  This
+/// is the usual case.
+///
+/// However the second initializer is more specialized due to its custom Self -
+/// it only applies when 'a' is 1, so we can infer that would be the value to
+/// use if it is selected because one arg is passed to the initializer `S(42)`.
+///
+/// This function helps to infer the 'a' parameter when more specialized.  This
+/// custom logic is required because often (eg in this case) the "actual" type
+/// will have UnboundAttr parameters, instead of fully bound ones like a normal
+/// argument.
+LogicalResult CallParamInf::inferSelfFromInitResult() {
+  DeclResolver::DiagnosticDeclContextChanger x(declIfKnown);
+
+  ASTType returnedType =
+      evaluator.getReboundType(calleeSignature.getUserResultType());
+
+  auto reportConflict = [&](size_t paramIdx, TypedAttr actual,
+                            TypedAttr expected) -> LogicalResult {
+    getMojoDiag(getGivenBindings().callExpr->getLoc())
+        << "return type " << returnedType << " parameter "
+        << ParamIndexRefAttr::get(/*depth*/ 0, paramIdx, actual.getType())
+        << " value " << actual << " doesn't match expected value " << expected;
+    return failure();
+  };
+
+  // Match up the parameter bindings if the 'actual' param is an UnboundAttr and
+  // the expected has something more specific than a reference to the contextual
+  // parameter.
+  for (auto [idx, retParam] :
+       llvm::enumerate(returnedType.getParamBindings())) {
+    // If this is simply a reference to the enclosing parameter (as in a normal
+    // Self) init, then we can't infer anything from it.  In the example above,
+    // this ignores the "a" parameter in "def __init__() -> S[a]:" which is what
+    // "out self" desugars to.
+    auto selfParam = evaluator.getIndexBindings()[idx];
+    if (retParam == selfParam)
+      continue;
+
+    // Otherwise, if the self parameter got inferred, propagate the result
+    // from it to the returned parameter.  This handles things like:
+    //   struct X[A: AnyType]:
+    //     def __init__[T: Movable](arg: Int, out self: X[T]):
+    // which gets used as X[String](42) inferring T and A.
+    ParamMatcher matcher(getGivenBindings().callExpr, *this,
+                         allowImplicitConversions);
+    if (selfParam) {
+      // TODO: Macro'ize this when error handling logic is fixed.
+      if (failed(matcher.matchParams(selfParam, retParam))) {
+        return reportConflict(idx, retParam, selfParam);
+      }
+    } else if (!paramFinder.hasReferences(retParam)) {
+      // Otherwise if the the returned parameter has no unbound parameter
+      // references then we infer the self parameter from it. This infers X=42:
+      //   struct X[A: Int]:
+      //     def __init__(out self: X[42]):
+      auto selfType =
+          evaluator.getReboundType(calleeSignature.getInputParamTypes()[idx]);
+      auto selfParam = ParamIndexRefAttr::get(/*depth*/ 0, idx, selfType);
+      if (failed(matcher.matchParams(retParam, selfParam))) {
+        return reportConflict(idx, selfParam, retParam);
+      }
+    }
+  }
+
+  return success();
+}
+
+/// This method is called for ByRefResult arguments of the callee.  It checks to
+/// see if the callee has a parametric address space or origin. If so, it looks
+/// at the ExprDest the call is being emitted into and infers the desired
+/// values, or marks it as needing to be spilled if not.
+LogicalResult CallParamInf::inferResultSlot(
+    RefType expectedRef, size_t argIdx, const ExprDest &dest,
+    OperandsNeedingOriginsList &operandsNeedingOrigins) {
+
+  bool needsAddrSpace =
+      paramFinder.hasReferences(expectedRef.getAddressSpace());
+  bool needsOrigin = paramFinder.hasReferences(expectedRef.getOrigin());
+  if (!needsAddrSpace && !needsOrigin)
+    return success(); // Nothing to do.
+
+  RefType actualRef;
+  // If we have a concrete MLValue, we can use it to infer the desired values.
+  if (MLValue mlDest = dest.getDirectMLValueIfPresent()) {
+    actualRef = mlDest.getRefType();
+  } else {
+    // If the ExprDest lacks a concrete MLValue, we can't infer anything. We
+    // need the caller to spill the result into a buffer and reinfer us. Until
+    // then, bind it as AnyOrigin to avoid failing to infer the parameters.
+    operandsNeedingOrigins.push_back({OperandNeedingOrigin::kExprDestOperandIdx,
+                                      argIdx, expectedRef.getElementType()});
+
+    if (needsOrigin)
+      actualRef = expectedRef.getWithOrigin(
+          AnyOriginAttr::get(expectedRef.getContext(), /*isMut=*/true));
+    if (needsAddrSpace)
+      actualRef = actualRef.getWithAddressSpace(
+          IntegerAttr::get(IndexType::get(expectedRef.getContext()), 0));
+  }
+
+  ParamMatcher matcher(getGivenBindings().callExpr, *this,
+                       /*allowImplicitConversions=*/false);
+
+  if (failed(matcher.matchSingleEltStruct(actualRef.getAddressSpace(),
+                                          expectedRef.getAddressSpace())) ||
+      failed(matcher.matchSingleEltStruct(actualRef.getOrigin(),
+                                          expectedRef.getOrigin())))
+    return failure();
+  return success();
+}
+
+/// Given an incomplete parameter binding set, try to infer parameters on Self
+/// of a method from the first argument.
+LogicalResult CallParamInf::inferCTADParams(
+    OperandsNeedingOriginsList &operandsNeedingOrigins) {
+  // Consider "conditional conformance" cases like:
+  //     struct X[A: AnyType]:
+  //       def foo[B: Movable](self: X[B]): ...
+  //
+  // When resolving a function call like `someX.foo()`, we install the
+  // bindings for 'A' from the typeof(someX) when resolving the
+  // AttributeRefExpr and then infer 'B' from someX again.
+  //
+  // However, when we have something like `X.foo(someX)` we cannot install the
+  // bindings for 'A' at AttributeRef resolution time, and 'someX' is only
+  // bound by parameter inference to 'B'.  Notice this and infer the parameter
+  // directly from A.  This is also important for operator resolution, which
+  // works effectively the same way.
+  //
+  // TODO: Provide a first class representation for conditional conformance
+  // that doesn't have us shadowing parameters like this!
+
+  // We can only do this if we have an argument.
+  assert(!callOperands.empty() && !callOperands[0].keyword &&
+         "init should have positional self argument");
+
+  auto selfConvention = calleeSignature.getArgConventions()[0];
+  ASTType declaredSelfType = RefType::stripRefConvention(
+      calleeSignature.getArgument(0), selfConvention);
+
+  // Get the ASTDecl for the declared self type.  This will give us the struct
+  // that we are referring to without bound parameters.
+  ASTDecl *decl = declaredSelfType.getDecl(getShared());
+  if (!decl)
+    return success();
+
+  // Get the Self type, with parameters bound to the structs CTAD parameters.
+  ASTType selfType = decl->getTypeDeclSelf();
+  if (!selfType)
+    return success();
+
+  // We need to convert named parameters like "T", which are ParamDeclRefAttr
+  // into ParamIndexRefAttr(0) style of representation.
+  if (auto structDecl = dyn_cast<StructDeclOp>(decl->getIfOperation())) {
+    IndexRefRemapper remapper(structDecl.getParams(), /*resultParams*/ {});
+    selfType = remapper.replace(selfType.mlirType);
+  }
+
+  // If passing self by reference, wrap the Self type with the RefType
+  // paraphernalia like origins.
+  if (hasAddress(selfConvention))
+    selfType = sugarCast<RefType>(calleeSignature.getArgument(0))
+                   .getWithElement(selfType);
+
+  // Infer the first operand against this type - it was presumably already
+  // inferred against the methods declared type of 'self' as well.
+  auto argPogs = calleeSignature.getArgListAttrs();
+  return inferOneOperand(callOperands[0], /*operandIdx*/ 0, /*argIdx*/ 0,
+                         selfType, selfConvention, argPogs, callOperands.syntax,
+                         operandsNeedingOrigins);
+}
+
+LogicalResult
+CallParamInf::inferForCall(bool returnsSelf, bool hasCTADParams,
+                           OperandsNeedingOriginsList &operandsNeedingOrigins) {
+  isInferForStruct = false;
+
+  CrashReporter handler(paramBindings.getExprLoc(),
+                        "CallParamInf::inferForCall", getShared());
+
+  // First try to infer parameters from the already provided bindings.
+  if (failed(inferFromParamList()))
+    return failure();
+
+  // Match up the operands provided by the call to the input arguments.  Keep in
+  // mind that the callee signature might not match at all, so we have to be
+  // careful here!
+  size_t posOperandIdx = 0;
+  size_t numOperands = callOperands.size();
+  PogListAttr argPogs = calleeSignature.getArgListAttrs();
+  for (auto [expectedArgIdx, expectedConvention] :
+       llvm::enumerate(calleeSignature.getArgConventions())) {
+
+    // Note that 'calleeSignature' changes the type as we go, so don't use
+    // llvm::enumerate on the argument type list!
+    Type expectedType =
+        evaluator.getReboundType(calleeSignature.getArgument(expectedArgIdx));
+
+    // There is no provided operand for a by-ref result and error slot.
+    if (isResultSlot(expectedConvention)) {
+      auto expectedRef = sugarCast<RefType>(expectedType);
+
+      // If this is the result slot with parametric components, attempt to infer
+      // result origin/address space from it.
+      if (expectedConvention == ArgConvention::ByRefResult)
+        if (failed(inferResultSlot(expectedRef, expectedArgIdx,
+                                   callOperands.dest, operandsNeedingOrigins)))
+          return failure();
+      continue;
+    }
+
+    if (calleeSignature.isKwVarArg(expectedArgIdx)) {
+      Type valTy = ASTType(expectedType).getKwargsDictRefValueType();
+      auto refValType = RefType::getAnyOrigin(valTy, /*isMut=*/true);
+      for (auto operand : variadicKwOperands) {
+        // TODO: Passing OwnedMem is a hack that is needed because the value
+        // type is not a reference type (and doesn't have a origin), but we
+        // still want to type check it. So, passing it as if it was reg-passable
+        // happens to just work, until we rectify this. Right now the reason the
+        // value type cannot be a reference type is because `Pointer` does not
+        // (and in fact cannot) conform to `Copyable & Movable`.
+        if (failed(inferOneOperand(
+                operand, /*operandIdx unknown*/ ~0ULL, expectedArgIdx,
+                refValType, ArgConvention::OwnedMem, argPogs,
+                callOperands.syntax, operandsNeedingOrigins)))
+          return failure();
+      }
+      // This is always last in the operand list.
+      posOperandIdx = numOperands;
+      continue;
+    }
+
+    // Determine if we can use an value for this argument directly, or
+    // if we need an implicit conversion, or memory materialization to get
+    // an origin.
+    auto canUseMValue = [&](AnyValue value, ASTType expectedType,
+                            ArgConvention convention) -> bool {
+      // The operand must an MValue and must have the same element type as
+      // the variadic list element type (otherwise a conversion is needed).
+      if (!value.isMValue())
+        return false; // Can't use it if not an MValue obviously.
+
+      // The origin has to be in the default address space.
+      if (!value.getMValueType().isDefaultAddrSpace())
+        return false;
+
+      // The argument must have a compatible element type (and we might
+      // infer the type of the variadic from it.  If not, there must be an
+      // implicit conversion going on.  We can test for type equality here
+      // because inferOneOperand will have inferred the type from the arg.
+      // TODO: Move this logic into inferOneOperand.
+      expectedType = evaluator.getReboundType(expectedType);
+      if (!expectedType.isEqualCanon(value.getMValueType().getElementType()))
+        return false; // Implicit conversion will generate a new temp.
+
+      // If this is a owned operand, we can use it if we have an RValue.
+      if (convention == ArgConvention::OwnedMem)
+        return !!value.getIfRValue();
+
+      // TODO: What about "mut" arguments getting passed MBValues?
+      return true;
+    };
+
+    // Given a call argument that will be bound to the specified operand of a
+    // callee, get the memory origin of the value (if it can be used) or mark it
+    // as needing to be spilled if not.
+    auto getArgOrigin = [&](AnyValue value, ASTType expectedType, size_t argIdx,
+                            size_t operandIdx, ArgConvention convention,
+                            OriginType expectedOriginType) -> TypedAttr {
+      if (canUseMValue(value, expectedType, convention)) {
+        // The argument could be mutable, but the arg convention may expect
+        // immutable.
+        auto opOrigin = value.getMValueType().getOrigin();
+        return OriginMutCastAttr::get(opOrigin, expectedOriginType);
+      }
+      // The value isn't in memory (or isn't usable in memory) yet.  We will
+      // tell call emission that it needs to dump it in memory and try again
+      // to use this callee.  Until then, we use AnyOrigin as a placeholder.
+      operandsNeedingOrigins.push_back(
+          {operandIdx, argIdx, evaluator.getReboundType(expectedType)});
+      return AnyOriginAttr::get(expectedOriginType);
+    };
+
+    // If we have a varargs argument, then it will eat the rest of the
+    // arguments, but we have to check each of them.
+    if (calleeSignature.isPosVarArg(expectedArgIdx)) {
+      ASTType expectedRVType =
+          RefType::stripRefConvention(expectedType, expectedConvention);
+      // The expected origin type will always have its mutability known because
+      // the arg convention of the VariadicList is always constant.
+      auto variadicListInfo = expectedRVType.getVariadicListInfo();
+      auto expectedOriginType =
+          cast<OriginType>(variadicListInfo.origin.getType());
+      auto argConvention =
+          calleeSignature.getVariadicConvention(expectedArgIdx);
+
+      // Support forwarding an entire list with "*list".
+      if (posOperandIdx != numOperands &&
+          callOperands[posOperandIdx].isUnpackedPositional()) {
+
+        if (failed(inferOneOperand(
+                callOperands[posOperandIdx], posOperandIdx, expectedArgIdx,
+                expectedType, expectedConvention, argPogs, callOperands.syntax,
+                operandsNeedingOrigins)))
+          return failure();
+        ++posOperandIdx;
+        continue;
+      }
+
+      // Otherwise, we're binding a sequence of values into the list.
+
+      // TODO: This is subtly wrong in a way that doesn't matter. We're passing
+      // the ultimate origin in as the origin for the RefType, but we need to
+      // infer the union all of the arg origins: not just the first arg's
+      // origin.  inferOneOperand currently doesn't do anything with this except
+      // for 'ref' convention, that we don't support in variadics.  When we do
+      // or when we get rid of implicit origins, this will need to be adjusted
+      // to pass in something that matches anything so the code below can
+      // infer the correct origin union.
+      auto varArgsEltType =
+          RefType::get(variadicListInfo.elementType, variadicListInfo.origin);
+
+      SmallVector<TypedAttr> argOrigins;
+      while (posOperandIdx != numOperands) {
+        auto &operand = callOperands[posOperandIdx++];
+
+        // Passed arguments with keywords specified don't bind to varargs.
+        if (operand.keyword)
+          continue;
+
+        if (operand.isUnpackedPositional()) {
+          getMojoDiag(operand.expr->getLoc())
+              << "cannot unpack a value into a variadic argument";
+          return failure();
+        }
+
+        if (failed(inferOneOperand(operand, posOperandIdx - 1, expectedArgIdx,
+                                   varArgsEltType, argConvention, argPogs,
+                                   callOperands.syntax,
+                                   operandsNeedingOrigins)))
+          return failure();
+
+        // Keep track of all the arg origins so we can infer from them later.
+        argOrigins.push_back(getArgOrigin(
+            operand.ir, variadicListInfo.elementType, expectedArgIdx,
+            posOperandIdx - 1, argConvention, expectedOriginType));
+      }
+
+      // Infer the origin of the variadic list from the unified origins of the
+      // arguments.
+      auto commonOrigin = OriginUnionAttr::get(argOrigins, expectedOriginType);
+      ParamMatcher matcher(getGivenBindings().callExpr, *this,
+                           /*noImplicitConversions=*/false);
+      if (failed(matcher.matchParams(commonOrigin, variadicListInfo.origin)))
+        return failure();
+
+      continue;
+    }
+
+    // If we have a pack argument, then we're binding a variadic parameter with
+    // multiple type values.  We need to consume all remaining arguments and use
+    // their RValue types as bindings.
+    if (calleeSignature.isPack(expectedArgIdx)) {
+      ASTType variadicPackType =
+          RefType::stripRefConvention(expectedType, expectedConvention);
+      variadicPackType = evaluator.getReboundType(variadicPackType);
+      ASTType::VariadicPackInfo expectedInfo =
+          variadicPackType.getVariadicPackInfo();
+
+      // Support forwarding an entire pack with "*pack".
+      if (posOperandIdx != numOperands &&
+          callOperands[posOperandIdx].isUnpackedPositional()) {
+        ASTType actualPackType = // FIXME: This is wrong for UValues.
+            callOperands[posOperandIdx].ir.getRValueTypeIfResolvable();
+        assert(actualPackType &&
+               "unpacked positional operand must have a resolvable type");
+
+        // FIXME: This will crash on *foo where foo isn't a VariadicPack.
+        ASTType::VariadicPackInfo actualInfo =
+            actualPackType.getVariadicPackInfo();
+        if (actualInfo.isOwned != expectedInfo.isOwned) {
+          auto &diag = getMojoDiag(callOperands[posOperandIdx].expr->getLoc());
+          diag << "cannot unpack a variadic pack into a call that requires a "
+                  "different ownership. Expected "
+               << expectedInfo.isOwned << ", got " << actualInfo.isOwned;
+          return failure();
+        }
+
+        // Skip matching the origin, since the expected origin is an implicit
+        // origin that will be filled in during call emission. Just make sure
+        // that the element types match.
+        RefPackType actualRefPackType =
+            actualPackType.getVariadicPackInfo(getShared());
+        RefPackType expectedRefPackType =
+            variadicPackType.getVariadicPackInfo(getShared());
+
+        auto actualMutable = actualRefPackType.getOriginType().getIsMutable();
+        auto expectedMutable =
+            expectedRefPackType.getOriginType().getIsMutable();
+        auto bothMutable =
+            ParamOperatorAttr::get(POC::And, actualMutable, expectedMutable);
+        if (bothMutable != expectedMutable) {
+          auto &diag = getMojoDiag(callOperands[posOperandIdx].expr->getLoc());
+          diag << "cannot unpack a variadic pack into a call that requires a "
+                  "stricter mutability. Expected "
+               << expectedMutable << ", got " << actualMutable;
+          return failure();
+        }
+
+        ParamMatcher matcher(callOperands[posOperandIdx].expr, *this,
+                             allowImplicitConversions);
+        if (failed(matcher.matchParams(actualRefPackType.getVariadic(),
+                                       expectedRefPackType.getVariadic())) ||
+            failed(matcher.matchParams(actualRefPackType.getOrigin(),
+                                       expectedRefPackType.getOrigin()))) {
+          auto &diag = getMojoDiag(callOperands[posOperandIdx].expr->getLoc());
+          diag << "cannot unpack a pack of type "
+               << actualRefPackType.getParamListElementType()
+               << " into a call that expects a pack of type "
+               << expectedRefPackType.getParamListElementType();
+          matcher.failureReason->addExplanation(diag);
+          return failure();
+        }
+
+        // Now that we bound the elements of the TypeList, we can infer the
+        // value of the TypeList struct.
+        auto typeListType =
+            evaluator.getReboundType(expectedInfo.typeListStruct.getType());
+        auto typeListValue = UnknownAttr::get(typeListType);
+        (void)matcher.matchParams(typeListValue, expectedInfo.typeListStruct);
+
+        ++posOperandIdx;
+        continue;
+      }
+
+      // Otherwise, we're binding a sequence of values into the pack.
+      RefPackType packType = variadicPackType.getVariadicPackInfo(getShared());
+
+      // Figure out that the element type of the list is, e.g. AnyType or
+      // Stringable.
+      Type elementType = packType.getParamListElementType();
+      auto expectedOriginType = packType.getOriginType();
+
+      // It is possible the pack element types are not being inferred - for
+      // example, they could have been explicitly specified.  If this is the
+      // case, then we need to perform an implicit conversion to the element
+      // type that was explicitly specified.  Be careful though, it is possible
+      // the specified type list is completely wrong in length or content.
+      ParamListAttr eltsTypesIfResolved =
+          dyn_cast<ParamListAttr>(packType.getVariadic());
+
+      SmallVector<TypedAttr> types;
+      SmallVector<TypedAttr> argOrigins;
+      IREmitter emitter(getDeclScope(), EC_TypeParamValue);
+      const ExprNode *packArgExpr = nullptr;
+      while (posOperandIdx != numOperands) {
+        const auto &operand = callOperands[posOperandIdx++];
+        if (operand.keyword) // Ignore keyword operands.
+          continue;
+
+        // Remember the first argument expression for the pack.
+        if (packArgExpr == nullptr)
+          packArgExpr = operand.expr;
+
+        // If the element types for the pack were specified, convert the value
+        // to that type.
+        TypedAttr eltTypeValue;
+        if (eltsTypesIfResolved &&
+            types.size() < eltsTypesIfResolved.getValues().size()) {
+          eltTypeValue = eltsTypesIfResolved.getValues()[types.size()];
+        } else {
+          // Otherwise, infer the variadic element type from the value's type.
+          ASTType toPush = operand.ir.getRValueTypeIfResolvable();
+
+          // Initializer UValues (list/dict/set/slice literals) don't have a
+          // resolvable RValue type until they're bound to a target type.
+          // Apply the same fallback `inferCValue` uses so a literal passed to
+          // a trait-bound pack binds to its default type instead of bailing
+          // out with a bogus "unresolved type" diagnostic.
+          if (!toPush) {
+            if (auto initValue = operand.ir.getIfInitializer())
+              toPush = tryInferInitializerType(getDeclScope(), *initValue,
+                                               operand, ASTType(elementType));
+          }
+
+          if (!toPush) {
+            getMojoDiag(operand.expr->getLoc())
+                << "could not infer type of parameter pack "
+                << argPogs.getName(expectedArgIdx)
+                << " given value with unresolved type";
+            return failure();
+          }
+
+          // Infer nonmaterializable types as their materialization target.
+          if (ASTType nmTarget = toPush.getNonmaterializableTarget(getShared()))
+            toPush = nmTarget;
+
+          Type metatype = toPush.extractMetaType();
+          eltTypeValue = TypeParamAttr::get(toPush, metatype);
+          // Make sure the value is compatible with the expected trait, this
+          // produces better error messages.  It would be great to sink this
+          // into matchType at some point!
+          if (!IREmitter::canImplicitlyConvertToType(
+                  {eltTypeValue, operand.expr}, elementType,
+                  emitter.getDeclScope())) {
+            getMojoDiag(operand.expr->getLoc())
+                << "could not convert element of "
+                << argPogs.getName(expectedArgIdx) << " with type " << toPush
+                << " to expected type " << elementType;
+            return failure();
+          }
+
+          // Perform a conversion (e.g. from a concrete to trait type) as
+          // needed.
+          // FIXME(MOCO-3601): We have been very unprincipled about converting
+          // using TypeParamAttr/UpcastAttr: They both are used as a way to
+          // `rebind` type values. We have to use upcast here because we
+          // have a upcast inserted for variadic element type for Tuple.
+          if (!ASTType(eltTypeValue.getType()).isEqualCanon(elementType)) {
+            if (isa<NonStructTypeType>(eltTypeValue.getType())) {
+              eltTypeValue = emitter.emitPValue({eltTypeValue, operand.expr},
+                                                EC_TypeParamValue, elementType);
+            } else {
+              eltTypeValue = UpcastAttr::get(elementType, eltTypeValue);
+            }
+          }
+        }
+
+        RefType refType =
+            packType.getElementRefTypeFor(ASTType(eltTypeValue).mlirType);
+        ArgConvention packEltConvention =
+            calleeSignature.getVariadicConvention(expectedArgIdx);
+        if (failed(inferOneOperand(operand, posOperandIdx - 1, expectedArgIdx,
+                                   refType, packEltConvention, argPogs,
+                                   callOperands.syntax,
+                                   operandsNeedingOrigins))) {
+          return failure();
+        }
+
+        // Keep track of all the arg origins so we can infer from them later.
+        argOrigins.push_back(getArgOrigin(
+            operand.ir, refType.getElementType(), expectedArgIdx,
+            posOperandIdx - 1, packEltConvention, expectedOriginType));
+        types.push_back(eltTypeValue);
+      }
+
+      ParamMatcher matcher(packArgExpr, *this, allowImplicitConversions);
+
+      // Infer the origin of the pack from the unified origins of the
+      // arguments.
+      auto commonOrigin = OriginUnionAttr::get(argOrigins, expectedOriginType);
+      if (failed(matcher.matchParams(commonOrigin, packType.getOrigin())))
+        return failure();
+
+      // Infer the value of type list from the types we have.
+      auto variadicType =
+          sugarCast<ParamListType>(packType.getVariadic().getType());
+
+      // If there are no arguments for the pack, use the location of the call.
+      if (!packArgExpr)
+        packArgExpr = getGivenBindings().getExpr();
+      auto actualVA = ParamListAttr::get(types, variadicType);
+      if (succeeded(matcher.matchParams(actualVA, packType.getVariadic()))) {
+        // Now that we bound the elements of the TypeList, we can infer the
+        // value of the TypeList struct.
+        auto typeListType =
+            evaluator.getReboundType(expectedInfo.typeListStruct.getType());
+        auto typeListValue = UnknownAttr::get(typeListType);
+        (void)matcher.matchParams(typeListValue, expectedInfo.typeListStruct);
+        continue;
+      }
+
+      // Match failed, diagnose why:
+      std::optional<std::pair<size_t, size_t>> posNumBoundOr =
+          calculateRequiredPosOperandsForPacks(calleeSignature,
+                                               variadicPackType);
+      // This means that we can not determine a concrete number of packed
+      // arguments, this is always an error.
+      MojoInflightDiag &diag = getMojoDiag({packArgExpr->getLoc()});
+      if (!posNumBoundOr) {
+        diag << "assigning " << numOperands << " operand" << plural(numOperands)
+             << " to an unresolvable variadic pack argument";
+        return failure();
+      }
+
+      auto [minPosOperands, maxPosOperands] = *posNumBoundOr;
+      size_t numPosOperands = callOperands.getNumPositional();
+      if (numPosOperands < minPosOperands || maxPosOperands < numPosOperands) {
+        diag << "callee with non-empty variadic pack argument";
+        emitWrongArgOrParamCount(diag, minPosOperands, maxPosOperands,
+                                 numOperands, "positional operand");
+        return failure();
+      }
+      llvm_unreachable("unhandled variadic pack failure?");
+    }
+
+    // Check for any more positional operands.
+    while (posOperandIdx != numOperands && callOperands[posOperandIdx].keyword)
+      ++posOperandIdx;
+
+    // Handle positional arguments.
+    if (posOperandIdx < numOperands) {
+      const OperandValue &operand = callOperands[posOperandIdx];
+      if (operand.isUnpackedPositional()) {
+        getMojoDiag(operand.expr->getLoc())
+            << "unpacked positional arguments are only supported for callees "
+               "that expect a variadic pack argument at this position";
+        return failure();
+      }
+      if (failed(inferOneOperand(operand, posOperandIdx, expectedArgIdx,
+                                 expectedType, expectedConvention, argPogs,
+                                 callOperands.syntax, operandsNeedingOrigins)))
+        return failure();
+      ++posOperandIdx;
+      continue;
+    }
+
+    // Handle case when there are no more provided positional operands.
+    // Check if a keyword operand was provided for this argument
+    if (const OperandValue *kwOperandOr = callOperands.findKwArg(
+            calleeSignature.getArgName(expectedArgIdx))) {
+      size_t operandIdx = kwOperandOr - callOperands.values.begin();
+      if (failed(inferOneOperand(*kwOperandOr, operandIdx, expectedArgIdx,
+                                 expectedType, expectedConvention, argPogs,
+                                 callOperands.syntax, operandsNeedingOrigins)))
+        return failure();
+      continue;
+    }
+
+    // If not, and this argument has a default value, then infer from default
+    // values - it might not match the argument type in a parametric situation.
+    if (auto defaultVal = argPogs.getDefault(expectedArgIdx)) {
+      defaultVal = evaluator.getReboundAttribute(defaultVal);
+      if (failed(inferOneOperand({defaultVal, getGivenBindings().getExpr()},
+                                 /*FIXME*/ ~0ULL, expectedArgIdx, expectedType,
+                                 expectedConvention, argPogs,
+                                 callOperands.syntax, operandsNeedingOrigins)))
+        return failure();
+      continue;
+    }
+
+    // Otherwise we have an argument count mismatch, just fail.
+    return failure();
+  }
+
+  // If we have left over operands, then this signature cannot match.
+  if (posOperandIdx != numOperands &&
+      !calleeSignature.getMetadata().hasAnyVarArg())
+    return failure();
+
+  // If this is a result in a returnsSelf function like an __init__, infer
+  // self parameters (which could be specialized and shadowed).
+  //   struct Example[T: AnyType]:
+  //      def __init__[U: Movable](owned value: U) -> Example[U]:
+  //         pass
+  // All of the arguments have been resolved here so all parameters must be
+  // inferred (or not able to).
+  if (returnsSelf) {
+    if (failed(inferSelfFromInitResult()))
+      return failure();
+  }
+
+  // Check to see if this is a CTAD parameter - a parameter on the struct
+  // that encloses the method.  Consider "conditional conformance" cases like:
+  //     struct X[A: AnyType]:
+  //       def foo[B: Movable](self: X[B]): ...
+  // When resolving a function call like `someX.foo()`, we install the
+  // bindings for 'A' from the typeof(someX) when resolving the
+  // AttributeRefExpr and then infer 'B' from someX again.
+  //
+  // However, when we have something like `X.foo(someX)` we cannot install the
+  // bindings for 'A' at AttributeRef resolution time, and 'someX' is only
+  // bound by parameter inference to 'B'.  Notice this and infer the parameter
+  // directly from A.  This is also important for operator resolution, which
+  // works effectively the same way.
+  //
+  // TODO: Provide a first class representation for conditional conformance
+  // that doesn't have us shadowing parameters like this!
+  if (hasCTADParams && failed(inferCTADParams(operandsNeedingOrigins)))
+    return failure();
+
+  // Lastly, See if we can fulfill any missing parameters with default values
+  // for their type (variadic attr always have a default empty value if not
+  // inferable).
+  if (failed(inferFromDefaults()))
+    return failure();
+
+  if (hasDeferredGivenParam) {
+    // Simply try it again now that more parameter has been inferred.
+    if (failed(inferFromParamList()))
+      return failure();
+  }
+
+  // See if we still have any unbound attr, if so, report error. (This must be a
+  // full binding context).
+  if (failed(finalizeWithUnbound()))
+    return failure();
+
+  // We succeed iff we inferred a value for this parameter.
   return success();
 }
