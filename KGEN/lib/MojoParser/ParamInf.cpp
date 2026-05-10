@@ -1376,11 +1376,13 @@ CallParamInf::CallParamInf(const ParamBindings &paramBinding,
                            bool discardError,
                            FnTypeGeneratorType calleeSignature,
                            const CallOperands &callOperands,
-                           const OperandValueList &variadicKwOperands)
+                           const OperandValueList &variadicKwOperands,
+                           OperandsNeedingOriginsList &operandsNeedingOrigins)
     : ParamInf(paramBinding, declaredParamTypes, declaredParamPogs,
                allowImplicitConversions, declIfDirect, discardError),
       calleeSignature(calleeSignature), callOperands(callOperands),
-      variadicKwOperands(variadicKwOperands) {}
+      variadicKwOperands(variadicKwOperands),
+      operandsNeedingOrigins(operandsNeedingOrigins) {}
 
 /// Try to infer parameters of Self from an initializer if specialized.
 ///
@@ -1462,9 +1464,8 @@ LogicalResult CallParamInf::inferSelfFromInitResult() {
 /// see if the callee has a parametric address space or origin. If so, it looks
 /// at the ExprDest the call is being emitted into and infers the desired
 /// values, or marks it as needing to be spilled if not.
-LogicalResult CallParamInf::inferResultSlot(
-    RefType expectedRef, size_t argIdx, const ExprDest &dest,
-    OperandsNeedingOriginsList &operandsNeedingOrigins) {
+LogicalResult CallParamInf::inferResultSlot(RefType expectedRef, size_t argIdx,
+                                            const ExprDest &dest) {
 
   bool needsAddrSpace =
       paramFinder.hasReferences(expectedRef.getAddressSpace());
@@ -1504,8 +1505,7 @@ LogicalResult CallParamInf::inferResultSlot(
 
 /// Given an incomplete parameter binding set, try to infer parameters on Self
 /// of a method from the first argument.
-LogicalResult CallParamInf::inferCTADParams(
-    OperandsNeedingOriginsList &operandsNeedingOrigins) {
+LogicalResult CallParamInf::inferCTADParams() {
   // Consider "conditional conformance" cases like:
   //     struct X[A: AnyType]:
   //       def foo[B: Movable](self: X[B]): ...
@@ -1563,9 +1563,7 @@ LogicalResult CallParamInf::inferCTADParams(
                          operandsNeedingOrigins);
 }
 
-LogicalResult
-CallParamInf::inferForCall(bool returnsSelf, bool hasCTADParams,
-                           OperandsNeedingOriginsList &operandsNeedingOrigins) {
+LogicalResult CallParamInf::inferForCall() {
   isInferForStruct = false;
 
   CrashReporter handler(paramBindings.getExprLoc(),
@@ -1597,7 +1595,7 @@ CallParamInf::inferForCall(bool returnsSelf, bool hasCTADParams,
       // result origin/address space from it.
       if (expectedConvention == ArgConvention::ByRefResult)
         if (failed(inferResultSlot(expectedRef, expectedArgIdx,
-                                   callOperands.dest, operandsNeedingOrigins)))
+                                   callOperands.dest)))
           return failure();
       continue;
     }
@@ -2048,7 +2046,9 @@ CallParamInf::inferForCall(bool returnsSelf, bool hasCTADParams,
   //         pass
   // All of the arguments have been resolved here so all parameters must be
   // inferred (or not able to).
-  if (returnsSelf) {
+  if (declIfKnown && cast<FnOp>(declIfKnown->getIfOperation())
+                         .getSpecialFunctionInfo()
+                         .hasSelfResult()) {
     if (failed(inferSelfFromInitResult()))
       return failure();
   }
@@ -2069,8 +2069,13 @@ CallParamInf::inferForCall(bool returnsSelf, bool hasCTADParams,
   //
   // TODO: Provide a first class representation for conditional conformance
   // that doesn't have us shadowing parameters like this!
-  if (hasCTADParams && failed(inferCTADParams(operandsNeedingOrigins)))
-    return failure();
+  if (declIfKnown) {
+    auto fnOp = cast<FnOp>(declIfKnown->getIfOperation());
+    if (!fnOp.getIsStatic() && isa<StructDeclOp>(fnOp->getParentOp())) {
+      if (failed(inferCTADParams()))
+        return failure();
+    }
+  }
 
   // Lastly, See if we can fulfill any missing parameters with default values
   // for their type (variadic attr always have a default empty value if not

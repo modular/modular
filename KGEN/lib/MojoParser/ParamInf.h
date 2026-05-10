@@ -159,35 +159,29 @@ public:
                bool allowImplicitConversions, ASTDecl *declIfDirect,
                bool discardError, FnTypeGeneratorType calleeSignature,
                const CallOperands &callOperands,
-               const OperandValueList &variadicKwOperands);
+               const OperandValueList &variadicKwOperands,
+               OperandsNeedingOriginsList &operandsNeedingOrigins);
 
   /// Given an incomplete parameter binding set and the arguments for a call to
   /// the specified signature, try to infer the value of the next 'decl'
   /// parameter. This should always return failure /without/ an error if it
   /// cannot be inferred, and return success if a value was determined.
-  ///
-  /// Callee signature and call operands are supplied on construction.
-  /// returnsSelf is True if this is performing inference on a function like
-  /// __init__ that returns Self, which might be specialized.
-  LogicalResult
-  inferForCall(bool returnsSelf, bool hasCTADParams,
-               OperandsNeedingOriginsList &operandsNeedingOrigins);
+  LogicalResult inferForCall();
 
 private:
   FnTypeGeneratorType calleeSignature;
   const CallOperands &callOperands;
   const OperandValueList &variadicKwOperands;
+  OperandsNeedingOriginsList &operandsNeedingOrigins;
 
   /// Given an incomplete parameter binding set, try to infer parameters on
   /// Self of a method from the first argument.
-  LogicalResult
-  inferCTADParams(OperandsNeedingOriginsList &operandsNeedingOrigins);
+  LogicalResult inferCTADParams();
 
   LogicalResult inferSelfFromInitResult();
 
-  LogicalResult
-  inferResultSlot(RefType expectedRef, size_t argIdx, const ExprDest &dest,
-                  OperandsNeedingOriginsList &operandsNeedingOrigins);
+  LogicalResult inferResultSlot(RefType expectedRef, size_t argIdx,
+                                const ExprDest &dest);
 };
 
 } // namespace M::KGEN::LIT

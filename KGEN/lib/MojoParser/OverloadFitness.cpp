@@ -503,9 +503,12 @@ bool OverloadFitness::isBetter(const OverloadFitness &other) const {
   if (numConversions != otherNumConversions)
     return numConversions < otherNumConversions;
 
-  // If ambiguous, we compare the boolean metrics.
-  int8_t mask = payload.getBoolMask();
-  int8_t otherMask = other.payload.getBoolMask();
+  // We consider exact matches of concrete types to be more specific than
+  // those needing nonmaterializable conversions, both of these more
+  // specific than varargs matches (for example, when overloading a
+  // `foo(Int)` and `foo(Int*)` we should pick the former if both work).
+  int8_t mask = 2 * payload.passesVarArgArgument;
+  int8_t otherMask = 2 * other.payload.passesVarArgArgument;
   if (mask != otherMask)
     return mask < otherMask;
 
@@ -523,15 +526,6 @@ bool OverloadFitness::isBetter(const OverloadFitness &other) const {
   //    def foo(a: Int):   and  def foo[T: AnyType](a: T):
   // resolve to the more specific function.
   return paramBindings.size() < other.paramBindings.size();
-}
-
-int8_t OverloadFitness::Payload::getBoolMask() const {
-  // We consider exact matches of concrete types to be more specific than
-  // those needing nonmaterializable conversions, both of these more
-  // specific than varargs matches (for example, when overloading a
-  // `foo(Int)` and `foo(Int*)` we should pick the former if both work), and
-  // all of these more specific than matches with variadic parameters.
-  return 2 * passesVarArgArgument + 1 * hasVariadicParams;
 }
 
 OverloadFitness OverloadFitness::evaluate(ASTDecl *candidate,
@@ -704,22 +698,12 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
   }
 
   // Check that the signature can be rebound with this set of bindings.
-
-  // Determine if this is an initializer that returns Self, which can be used
-  // for inferring parameters on Self.
-  bool returnsSelf = false;
-  bool hasCTADParams = false;
-  if (funcIfDirect) {
-    auto fn = cast<FnOp>(funcIfDirect->getIfOperation());
-    returnsSelf = fn.getSpecialFunctionInfo().hasSelfResult();
-    hasCTADParams = !fn.getIsStatic() && isa<StructDeclOp>(fn->getParentOp());
-  }
-
   OperandsNeedingOriginsList operandsNeedingOrigins;
-  CallParamInf inference(
-      callable.paramBindings, signature.getInputParamTypes(),
-      signature.getParamListAttrs(), allowImplicitConversions, funcIfDirect,
-      /*discardError=*/false, signature, operands, variadicKwOperands);
+  CallParamInf inference(callable.paramBindings, signature.getInputParamTypes(),
+                         signature.getParamListAttrs(),
+                         allowImplicitConversions, funcIfDirect,
+                         /*discardError=*/false, signature, operands,
+                         variadicKwOperands, operandsNeedingOrigins);
   // Check if we're calling a closure's __call__ method and need to set
   // captured closure parameters. Only applies to method call syntax on a
   // __call__ method — not direct calls that happen to pass a closure as an
@@ -753,8 +737,7 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
       ++paramIdx;
     }
   }
-  if (failed(inference.inferForCall(returnsSelf, hasCTADParams,
-                                    operandsNeedingOrigins))) {
+  if (failed(inference.inferForCall())) {
     if (inference.diag.hasErrorEmitted())
       return std::move(*inference.diag.takeMojoDiag());
     // Then there must be unprovable constraints.
