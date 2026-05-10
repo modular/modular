@@ -41,7 +41,7 @@ from std.sys.info import is_32bit
 
 from std.bit import count_leading_zeros
 from std.memory import memcmp, memcpy, memset
-from std.python import ConvertibleFromPython, ConvertibleToPython, PythonObject
+from std.python import ConvertibleFromPython, PythonObject
 from std.reflection.traits import AllWritable
 
 # ===----------------------------------------------------------------------=== #
@@ -53,7 +53,6 @@ struct String(
     Boolable,
     Comparable,
     ConvertibleFromPython,
-    ConvertibleToPython,
     Defaultable,
     FloatableRaising,
     ImplicitlyCopyable,
@@ -1001,17 +1000,6 @@ struct String(
           The file system path representation as a string.
         """
         return self
-
-    def to_python_object(var self) raises -> PythonObject:
-        """Convert this value to a PythonObject.
-
-        Returns:
-            A PythonObject representing the value.
-
-        Raises:
-            If the operation fails.
-        """
-        return PythonObject(self)
 
     def __init__(out self, *, py: PythonObject) raises:
         """Construct a `String` from a PythonObject.

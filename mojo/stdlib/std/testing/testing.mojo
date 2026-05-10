@@ -36,7 +36,7 @@ from std.reflection.traits import AllWritable
 
 from std.reflection import call_location, SourceLocation
 from std.memory import memcmp
-from std.python import PythonObject, ConvertibleToPython
+from std.python import PythonObject
 from std.utils._ansi import Color, Text
 
 # ===----------------------------------------------------------------------=== #

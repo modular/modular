@@ -24,8 +24,6 @@ from std.collections.string.string_slice import (
 from std.os import PathLike
 from std.ffi import c_char, CStringSlice
 
-from std.python import ConvertibleToPython, PythonObject
-
 # ===-----------------------------------------------------------------------===#
 # StringLiteral
 # ===-----------------------------------------------------------------------===#
@@ -34,7 +32,6 @@ from std.python import ConvertibleToPython, PythonObject
 @__nonmaterializable(String)
 struct StringLiteral[value: __mlir_type.`!kgen.string`](
     Boolable,
-    ConvertibleToPython,
     Defaultable,
     FloatableRaising,
     ImplicitlyCopyable,
@@ -174,17 +171,6 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
     # ===-------------------------------------------------------------------===#
     # Trait implementations
     # ===-------------------------------------------------------------------===#
-
-    def to_python_object(var self) raises -> PythonObject:
-        """Convert this value to a PythonObject.
-
-        Returns:
-            A PythonObject representing the value.
-
-        Raises:
-            If the Python runtime is not initialized or conversion fails.
-        """
-        return PythonObject(self)
 
     @always_inline("nodebug")
     def __bool__(self) -> Bool:

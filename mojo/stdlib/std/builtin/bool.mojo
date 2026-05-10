@@ -20,7 +20,6 @@ from std.hashlib.hasher import Hasher
 
 from std.python import (
     ConvertibleFromPython,
-    ConvertibleToPython,
     Python,
     PythonObject,
 )
@@ -68,7 +67,6 @@ struct Bool(
     Boolable,
     Comparable,
     ConvertibleFromPython,
-    ConvertibleToPython,
     Defaultable,
     Floatable,
     Hashable,
@@ -457,17 +455,6 @@ struct Bool(
             hasher: The hasher instance.
         """
         hasher._update_with_simd(Scalar[DType.bool](self))
-
-    def to_python_object(var self) raises -> PythonObject:
-        """Convert this value to a PythonObject.
-
-        Returns:
-            A PythonObject representing the value.
-
-        Raises:
-            If the Python runtime is not initialized or conversion fails.
-        """
-        return PythonObject(self)
 
     @doc_hidden
     def __init__(out self, *, py: PythonObject) raises:

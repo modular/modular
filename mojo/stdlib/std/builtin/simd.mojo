@@ -76,7 +76,7 @@ from std.builtin.format_int import _write_int
 from std.builtin.int import _FromInt
 from std.math import DivModable, Powable
 from std.memory import bitcast, memcpy, pack_bits
-from std.python import ConvertibleToPython, Python, PythonObject
+from std.python import Python, PythonObject
 
 from std.utils import IndexList, StaticTuple
 from std.utils._visualizers import lldb_formatter_wrapping_type
@@ -408,7 +408,6 @@ struct SIMD[dtype: DType, size: Int](
     CeilDivable,
     Ceilable,
     Comparable,
-    ConvertibleToPython,
     Defaultable,
     DevicePassable,
     DivModable,
@@ -3223,22 +3222,6 @@ struct SIMD[dtype: DType, size: Int](
             return res
 
         return self.shuffle[mask=indices()]()
-
-    # ===----------------------------------------------------------------------=== #
-    # ConvertibleToPython
-    # ===------------------------------------------------------------------=== #
-
-    def to_python_object(var self) raises -> PythonObject:
-        """Convert this value to a PythonObject.
-
-        Raises:
-            If the conversion to a PythonObject failed.
-
-        Returns:
-            A PythonObject representing the value.
-        """
-        comptime assert Self.size == 1, "only works with scalar values"
-        return PythonObject(self._refine[new_size=1]())
 
 
 comptime U8x16 = SIMD[DType.uint8, 16]

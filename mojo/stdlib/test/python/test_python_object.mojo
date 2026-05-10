@@ -305,8 +305,7 @@ def test_setitem() raises:
 
 def test_dict() raises:
     # Test Python.dict from keyword arguments.
-    # TODO(MOCO-2945): Heterogenous convertible kwargs should work
-    var dd = Python.dict(food=PythonObject(123), fries=PythonObject("yes"))
+    var dd = Python.dict(food=123, fries="yes")
     assert_equal(String(py=dd), "{'food': 123, 'fries': 'yes'}")
 
     var dd2: PythonObject = {"food": 123, "fries": "yes"}
@@ -586,8 +585,7 @@ def test_contains_dunder() raises:
     assert_true(1.5 in x)
     assert_false(3.5 in x)
 
-    # TODO(MOCO-2945): Heterogenous convertible kwargs should work
-    var y = Python.dict(A=PythonObject("A"), B=PythonObject(5))
+    var y = Python.dict(A="A", B=5)
     assert_true("A" in y)
     assert_false("C" in y)
     assert_true("B" in y)
