@@ -79,6 +79,12 @@ class TextContext:
     log_probabilities_echo: bool = field(default=False)
     ignore_eos: bool = field(default=False)
     json_schema: str | None = field(default=None)
+    grammar: str | None = field(default=None)
+    """Grammar for constrained decoding (e.g., regex grammar).
+
+    When set, this takes precedence over ``json_schema``. Used for model-specific
+    constrained decoding formats like Kimi's tool call grammar.
+    """
     sampling_params: SamplingParams = field(default_factory=SamplingParams)
     model_name: str = field(default="")
     _matcher: Any | None = field(default=None)

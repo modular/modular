@@ -310,6 +310,12 @@ class KimiK2_5VLTokenizer(TextAndVisionTokenizer):
             else None
         )
 
+        grammar = (
+            request.response_format.get("grammar")
+            if request.response_format
+            else None
+        )
+
         if self.max_length and encoded_prompt.shape[0] > self.max_length:
             raise ValueError(
                 f"encoded_prompt length {encoded_prompt.shape[0]} is greater than the max_length of the tokenizer {self.max_length}"
@@ -331,6 +337,7 @@ class KimiK2_5VLTokenizer(TextAndVisionTokenizer):
             if max_gen_tokens is not None
             else self.max_length,
             json_schema=json_schema,
+            grammar=grammar,
             sampling_params=request.sampling_params,
             target_endpoint=request.target_endpoint,
             grid_thws=grid_thws,

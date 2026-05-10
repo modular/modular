@@ -69,10 +69,17 @@ class TextGenerationResponseFormat(TypedDict):
     """Represents the response format specification for a text generation request."""
 
     type: str
-    """The type of response format, for example, ``json_object``."""
+    """The type of response format, for example, ``json_object`` or ``grammar``."""
 
     json_schema: dict[str, Any]
     """A JSON schema dictionary that defines the structure and validation rules for the generated response."""
+
+    grammar: str | None
+    """Grammar for constrained decoding.
+
+    When set with ``type="grammar"``, this takes precedence over ``json_schema``.
+    Used for model-specific constrained decoding formats like Kimi's tool call grammar.
+    """
 
 
 class ContentPart(BaseModel):
@@ -686,6 +693,11 @@ class TextGenerationContext(BaseContext, Protocol):
             The JSON schema string, or ``None`` if no schema constraint is active.
         """
         ...
+
+    @property
+    def grammar(self) -> str | None:
+        """Grammar for constrained decoding, if configured."""
+        return None
 
     def set_matcher(self, matcher: Any) -> None:
         """Set a grammar matcher for constrained decoding.

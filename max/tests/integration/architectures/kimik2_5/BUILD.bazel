@@ -29,6 +29,7 @@ modular_py_test(
     deps = [
         "//max/python/max/interfaces",
         "//max/python/max/pipelines/architectures",
+        requirement("llguidance"),
     ],
 )
 

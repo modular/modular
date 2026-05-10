@@ -32,6 +32,8 @@ from max.interfaces import (
     GenerationStatus,
     PipelineTask,
     RequestID,
+    TextGenerationRequestTool,
+    TextGenerationResponseFormat,
 )
 from max.pipelines.architectures.kimik2_5.tool_parser import KimiToolParser
 from max.pipelines.core import TextContext
@@ -39,6 +41,7 @@ from max.pipelines.lib import PIPELINE_REGISTRY, PipelineConfig
 from max.serve.api_server import ServingTokenGeneratorSettings, fastapi_app
 from max.serve.config import APIType, Settings
 from max.serve.mocks.mock_api_requests import simple_openai_request
+from max.serve.parser import LlamaToolParser
 from max.serve.pipelines.echo_gen import (
     EchoPipelineTokenizer,
     EchoTokenGenerator,
@@ -50,11 +53,13 @@ from max.serve.router.openai_routes import (
     OpenAICompletionResponseGenerator,
     _create_response_format,
     _process_chat_log_probabilities,
+    _resolve_grammar_constraints,
     get_tool_parser,
     openai_create_chat_completion,
 )
 from max.serve.schemas.openai import (
     ChatCompletionLogprobs,
+    ChatCompletionMessageToolCall,
     ChatCompletionTokenLogprob,
     CreateChatCompletionRequest,
     CreateChatCompletionResponse,
@@ -867,7 +872,7 @@ async def _run_completion_stream(
 async def _run_stream_with_kimi_tool_parser(
     chunks: list[TokenGeneratorOutput],
 ) -> list[CreateChatCompletionStreamResponse]:
-    """Stream with tool_use + KimiToolParser (same path as OpenAI + tools)."""
+    """Stream with parse_tool_calls + KimiToolParser (same path as OpenAI + tools)."""
     mock_pipeline = Mock()
     mock_pipeline.model_name = "test-model"
 
@@ -881,7 +886,7 @@ async def _run_stream_with_kimi_tool_parser(
     generator = OpenAIChatResponseGenerator(
         mock_pipeline,
         parser=KimiToolParser(),
-        tool_use=True,
+        parse_tool_calls=True,
     )
     return [
         CreateChatCompletionStreamResponse.model_validate_json(p)
@@ -1219,3 +1224,245 @@ def test_create_response_format_none() -> None:
     """Test that None input returns None."""
     result = _create_response_format(None)
     assert result is None
+
+
+# ============================================================================
+# Tests for _resolve_grammar_constraints
+# ============================================================================
+
+
+def _make_tools(names: list[str]) -> list[TextGenerationRequestTool]:
+    """Helper to create tool definitions for testing."""
+    return [
+        TextGenerationRequestTool(
+            type="function",
+            function={"name": name, "description": None, "parameters": {}},
+        )
+        for name in names
+    ]
+
+
+def _make_response_format(
+    json_schema: dict[str, Any],
+) -> TextGenerationResponseFormat:
+    """Helper to create response format for testing."""
+    return TextGenerationResponseFormat(
+        type="json_schema", json_schema=json_schema, grammar=None
+    )
+
+
+def test_resolve_grammar_constraints_tools_required() -> None:
+    """When tool_choice='required', constrain to all tools, no response schema."""
+    tools = _make_tools(["get_weather", "search"])
+    response_format = _make_response_format({"type": "object"})
+
+    tool_names, schema = _resolve_grammar_constraints(
+        tools=tools,
+        tool_choice="required",
+        response_format=response_format,
+    )
+
+    assert tool_names == ["get_weather", "search"]
+    assert schema is None  # response_format ignored when tools forced
+
+
+def test_resolve_grammar_constraints_named_function() -> None:
+    """When tool_choice names a specific function, constrain to that tool only."""
+    tools = _make_tools(["get_weather", "search"])
+    response_format = _make_response_format({"type": "object"})
+
+    tool_names, schema = _resolve_grammar_constraints(
+        tools=tools,
+        tool_choice={"type": "function", "function": {"name": "get_weather"}},
+        response_format=response_format,
+    )
+
+    assert tool_names == ["get_weather"]
+    assert schema is None  # response_format ignored when tools forced
+
+
+def test_resolve_grammar_constraints_auto_with_response_format() -> None:
+    """Auto mode + response_format: include all tools and response schema."""
+    tools = _make_tools(["get_weather", "search"])
+    response_format = _make_response_format({"type": "object"})
+
+    tool_names, schema = _resolve_grammar_constraints(
+        tools=tools,
+        tool_choice="auto",
+        response_format=response_format,
+    )
+
+    assert tool_names == ["get_weather", "search"]
+    assert schema == {"type": "object"}
+
+
+def test_resolve_grammar_constraints_auto_no_response_format() -> None:
+    """Auto mode + no response_format: no grammar generated."""
+    tools = _make_tools(["get_weather", "search"])
+
+    tool_names, schema = _resolve_grammar_constraints(
+        tools=tools,
+        tool_choice="auto",
+        response_format=None,
+    )
+
+    assert tool_names is None
+    assert schema is None
+
+
+def test_resolve_grammar_constraints_response_format_only() -> None:
+    """Response format only (no tools): constrain to JSON schema."""
+    response_format = _make_response_format({"type": "object"})
+
+    tool_names, schema = _resolve_grammar_constraints(
+        tools=None,
+        tool_choice=None,
+        response_format=response_format,
+    )
+
+    assert tool_names is None
+    assert schema == {"type": "object"}
+
+
+def test_resolve_grammar_constraints_no_constraints() -> None:
+    """No tools, no response_format: no grammar generated."""
+    tool_names, schema = _resolve_grammar_constraints(
+        tools=None,
+        tool_choice=None,
+        response_format=None,
+    )
+
+    assert tool_names is None
+    assert schema is None
+
+
+# ============================================================================
+# Tests for OpenAIChatResponseGenerator with tool calling
+# ============================================================================
+
+
+@pytest.mark.asyncio
+async def test_openai_chat_completion_tool_calling_with_reasoning(
+    patch_openai_metrics: None,
+) -> None:
+    """Test non-streaming response with tool calls and reasoning tokens."""
+    # The model outputs reasoning first, then a tool call JSON
+    tool_call_json = (
+        '{"name": "get_weather", "parameters": {"location": "Boston"}}'
+    )
+    chunks = [
+        TokenGeneratorOutput(
+            status=GenerationStatus.ACTIVE,
+            decoded_reasoning_tokens="Let me check the weather for Boston...",
+            reasoning_token_count=7,
+            decoded_tokens=None,
+            token_count=0,
+            prompt_token_count=10,
+        ),
+        TokenGeneratorOutput(
+            status=GenerationStatus.END_OF_SEQUENCE,
+            decoded_reasoning_tokens=None,
+            reasoning_token_count=0,
+            decoded_tokens=tool_call_json,
+            token_count=15,
+            prompt_token_count=10,
+        ),
+    ]
+
+    mock_pipeline = Mock()
+    mock_pipeline.model_name = "test-model"
+    mock_pipeline.all_tokens = AsyncMock(return_value=chunks)
+
+    mock_request = _make_mock_request()
+
+    generator = OpenAIChatResponseGenerator(
+        mock_pipeline,
+        parser=LlamaToolParser(),
+        parse_tool_calls=True,
+    )
+    response = await generator.complete([mock_request])
+
+    # Check that reasoning is present
+    message = response.choices[0].message
+    assert message.reasoning == "Let me check the weather for Boston..."
+
+    # Check that tool calls were parsed
+    assert message.tool_calls is not None
+    assert len(message.tool_calls) == 1
+    tool_call = message.tool_calls[0]
+    assert isinstance(tool_call, ChatCompletionMessageToolCall)
+    assert tool_call.function.name == "get_weather"
+    assert tool_call.function.arguments == '{"location": "Boston"}'
+    assert tool_call.type == "function"
+    assert tool_call.id.startswith("call_")
+
+    # Check finish reason is tool_calls
+    assert response.choices[0].finish_reason == "tool_calls"
+
+    # Check usage includes reasoning tokens
+    assert response.usage is not None
+    assert response.usage.completion_tokens == 22  # 7 reasoning + 15 content
+    assert response.usage.prompt_tokens == 10
+    assert response.usage.total_tokens == 32
+
+
+@pytest.mark.asyncio
+async def test_openai_chat_completion_tool_calling_with_content(
+    patch_openai_metrics: None,
+) -> None:
+    """Test non-streaming response with tool calls and regular content (no reasoning)."""
+    # The model outputs a tool call JSON without any reasoning
+    tool_call_json = '{"name": "get_time", "parameters": {"timezone": "EST"}}'
+    chunks = [
+        TokenGeneratorOutput(
+            status=GenerationStatus.ACTIVE,
+            decoded_reasoning_tokens=None,
+            reasoning_token_count=0,
+            decoded_tokens="Here is the time: ",
+            token_count=4,
+            prompt_token_count=8,
+        ),
+        TokenGeneratorOutput(
+            status=GenerationStatus.END_OF_SEQUENCE,
+            decoded_reasoning_tokens=None,
+            reasoning_token_count=0,
+            decoded_tokens=tool_call_json,
+            token_count=12,
+            prompt_token_count=8,
+        ),
+    ]
+
+    mock_pipeline = Mock()
+    mock_pipeline.model_name = "test-model"
+    mock_pipeline.all_tokens = AsyncMock(return_value=chunks)
+
+    mock_request = _make_mock_request()
+
+    generator = OpenAIChatResponseGenerator(
+        mock_pipeline,
+        parser=LlamaToolParser(),
+        parse_tool_calls=True,
+    )
+    response = await generator.complete([mock_request])
+
+    # Check that reasoning is NOT present (no reasoning tokens)
+    message = response.choices[0].message
+    assert message.reasoning is None
+
+    # Check that tool calls were parsed
+    assert message.tool_calls is not None
+    assert len(message.tool_calls) == 1
+    tool_call = message.tool_calls[0]
+    assert isinstance(tool_call, ChatCompletionMessageToolCall)
+    assert tool_call.function.name == "get_time"
+    assert tool_call.function.arguments == '{"timezone": "EST"}'
+    assert tool_call.type == "function"
+
+    # Check finish reason is tool_calls
+    assert response.choices[0].finish_reason == "tool_calls"
+
+    # Check usage (no reasoning tokens)
+    assert response.usage is not None
+    assert response.usage.completion_tokens == 16  # 4 + 12
+    assert response.usage.prompt_tokens == 8
+    assert response.usage.total_tokens == 24

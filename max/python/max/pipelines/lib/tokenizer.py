@@ -632,6 +632,12 @@ class TextTokenizer(
             else None
         )
 
+        grammar = (
+            request.response_format.get("grammar")
+            if request.response_format
+            else None
+        )
+
         # Calculate Max Length
         max_new_tokens = None
         if request.sampling_params.max_new_tokens is not None:
@@ -655,6 +661,7 @@ class TextTokenizer(
             log_probabilities=request.logprobs,
             log_probabilities_echo=request.echo,
             json_schema=json_schema,
+            grammar=grammar,
             sampling_params=request.sampling_params,
             model_name=request.model_name,
             target_endpoint=request.target_endpoint,
@@ -954,6 +961,12 @@ class TextAndVisionTokenizer(
             else None
         )
 
+        grammar = (
+            request.response_format.get("grammar")
+            if request.response_format
+            else None
+        )
+
         if self.max_length and encoded_prompt.shape[0] > self.max_length:
             raise ValueError(
                 "encoded_prompt is greater than the max_length of the tokenizer"
@@ -976,6 +989,7 @@ class TextAndVisionTokenizer(
             if max_gen_tokens is not None
             else self.max_length,
             json_schema=json_schema,
+            grammar=grammar,
             sampling_params=request.sampling_params,
             external_block_metadata=_parse_dkv_cache_hint(
                 request.dkv_cache_hint

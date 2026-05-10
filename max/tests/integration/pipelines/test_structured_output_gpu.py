@@ -91,6 +91,7 @@ def test_smollm_with_structured_output_gpu(
         sampling_params=sampling_params,
         response_format=TextGenerationResponseFormat(
             type="json_schema",
+            grammar=None,
             json_schema={
                 "title": "Person",
                 "type": "object",
@@ -208,6 +209,7 @@ def test_multistep_structured_output_gpu(
         sampling_params=sampling_params,
         response_format=TextGenerationResponseFormat(
             type="json_schema",
+            grammar=None,
             json_schema={
                 "title": "Person",
                 "type": "object",
@@ -299,6 +301,7 @@ def test_multi_step_guided_decoding_gpu(
         sampling_params=SamplingParams(max_new_tokens=30, top_k=1),
         response_format=TextGenerationResponseFormat(
             type="json_schema",
+            grammar=None,
             json_schema={
                 "title": "Person",
                 "type": "object",
@@ -382,6 +385,7 @@ def test_overlap_pipeline_structured_output_gpu(
         sampling_params=SamplingParams(max_new_tokens=50, top_k=1),
         response_format=TextGenerationResponseFormat(
             type="json_schema",
+            grammar=None,
             json_schema={
                 "title": "Person",
                 "type": "object",
@@ -499,6 +503,7 @@ def test_heterogeneous_batch_structured_output_gpu(
         sampling_params=SamplingParams(max_new_tokens=50, top_k=1),
         response_format=TextGenerationResponseFormat(
             type="json_schema",
+            grammar=None,
             json_schema={
                 "title": "Person",
                 "type": "object",

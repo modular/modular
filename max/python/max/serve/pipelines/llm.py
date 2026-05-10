@@ -214,6 +214,16 @@ class TokenGeneratorPipeline(
                     cast(Sequence[int], context.tokens.prompt)
                 )
 
+            # When constrained decoding is active (grammar for tool-call
+            # grammars, or json_schema for structured output), the
+            # grammar forces the model to emit tool calls or JSON directly
+            # without closing </think>. Disable reasoning classification so
+            # those tokens are routed to the content field, not reasoning.
+            if is_still_reasoning and (
+                getattr(context, "grammar", None) or context.json_schema
+            ):
+                is_still_reasoning = False
+
             with record_ms(METRICS.output_time):
                 has_stop_sequences = bool(context.eos_tracker.eos_stop_strings)
 

@@ -40,6 +40,7 @@ modular_py_test(
         "//max/python/max/serve:process_control",
         "//max/python/max/serve/media",
         "//max/python/max/serve/mocks",
+        "//max/python/max/serve/parser",
         "//max/python/max/serve/pipelines",
         "//max/python/max/serve/router",
         "//max/python/max/serve/scheduler",

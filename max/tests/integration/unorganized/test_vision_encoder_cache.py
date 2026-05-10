@@ -179,6 +179,10 @@ class FakeContext:
     def json_schema(self) -> str | None:
         return None
 
+    @property
+    def grammar(self) -> str | None:
+        return None
+
     def set_matcher(self, matcher: Any) -> None:
         pass
 

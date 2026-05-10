@@ -387,6 +387,7 @@ def test_text_tokenizer_with_constrained_decoding(
         ],
         response_format=TextGenerationResponseFormat(
             type="json_schema",
+            grammar=None,
             json_schema={
                 "title": "Person",
                 "type": "object",
