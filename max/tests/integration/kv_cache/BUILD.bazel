@@ -71,14 +71,7 @@ modular_py_test(
     srcs = glob(
         ["*_rotary_embedding.py"],
     ) + ["conftest.py"],
-    args = [
-        "-n",
-        "auto",
-    ],
-    ignore_extra_deps = [
-        # Used for parallelizing tests
-        requirement("pytest-xdist"),
-    ],
+    shard_count = 11,
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
         "//:asan": ["@platforms//:incompatible"],
@@ -95,7 +88,6 @@ modular_py_test(
         "//max/tests/integration/test_common:context_utils",
         requirement("hypothesis"),
         requirement("numpy"),
-        requirement("pytest-xdist"),
         requirement("torch"),
     ],
 )

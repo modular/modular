@@ -28,21 +28,16 @@ modular_py_test(
             "test_functional_custom_gpu.py",
         ],
     ),
-    args = [
-        "-n",
-        "auto",
-    ],
     data = [
         "//max/tests/integration/Inputs/kernel_verification_ops",
     ],
     env = {
         "MODULAR_KERNEL_VERIFICATION_OPS_PATH": "$(rootpath //max/tests/integration/Inputs/kernel_verification_ops)",
     },
-    ignore_extra_deps = [
-        # Used for parallel testing
-        requirement("pytest-xdist"),
-    ],
     imports = ["."],
+    per_test_shard_count = {
+        "test_functional_other.py": 8,
+    },
     target_compatible_with = select({
         # Takes too long, this is mostly just testing plumbing into other code so low value.
         "//:asan": ["@platforms//:incompatible"],
@@ -60,7 +55,6 @@ modular_py_test(
         "//max/python/max/graph",
         "//max/python/max/nn",
         requirement("numpy"),
-        requirement("pytest-xdist"),
     ],
 )
 

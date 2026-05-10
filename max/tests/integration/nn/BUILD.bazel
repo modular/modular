@@ -51,15 +51,11 @@ modular_py_test(
             "shared_mlp_impl.py",
         ],
     ),
-    args = [
-        "-n",
-        "auto",
-    ],
-    ignore_extra_deps = [
-        # Used for parallelization (-n auto above)
-        requirement("pytest-xdist"),
-    ],
     imports = ["."],
+    per_test_shard_count = {
+        "test_mlp.py": 20,
+        "test_conv.py": 8,
+    },
     per_test_tags = {
         "test_conv.py": ["skip-external-ci"],
         "test_mlp.py": ["manual"],
@@ -83,7 +79,6 @@ modular_py_test(
         requirement("torch"),
         requirement("hypothesis"),
         requirement("pytest-mock"),
-        requirement("pytest-xdist"),
     ],
 )
 

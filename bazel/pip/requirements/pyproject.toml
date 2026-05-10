@@ -68,7 +68,6 @@ dependencies = [
   "pytest-asyncio==0.23.7",
   "pytest-benchmark",
   "pytest-mock",
-  "pytest-xdist",
   "pytest>=7.2",
   "python-json-logger",
   "PyGithub>=2.1.0",
