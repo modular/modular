@@ -547,7 +547,8 @@ async def generate_image(args: argparse.Namespace) -> None:
             f"Using secondary max length: {secondary_max_length} for tokenizer_2"
         )
 
-    tokenizer = PixelGenerationTokenizer(
+    tokenizer_cls = cast(type[PixelGenerationTokenizer], arch.tokenizer_cls)
+    tokenizer = tokenizer_cls(
         model_path=args.model,
         pipeline_config=config,
         subfolder="tokenizer",  # Tokenizer is in a subfolder for diffusion models
