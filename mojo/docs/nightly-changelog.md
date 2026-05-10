@@ -24,6 +24,19 @@ This version is still a work in progress.
         ...
   ```
 
+- Mojo now supports building types that support implicit conversions for
+  widening origins, allowing code like this to "just work" without rebind:
+
+  ```mojo
+  def origin_superset_conversion(
+    a: String, b: String, c: Bool
+  ) -> Pointer[String, origin_of(a, b)]:
+    if c:  # These pointers implicitly convert.
+        return Pointer(to=a)
+    else:
+        return Pointer(to=b)
+  ```
+
 ## Language changes
 
 - Support for "set-only" accessors has been removed. You need to define a

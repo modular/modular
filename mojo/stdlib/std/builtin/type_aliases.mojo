@@ -149,3 +149,29 @@ struct Origin[mut: Bool, _mlir_origin: _lit_origin_type_of_mut[mut], //](
             The same origin but with a new specified mutability.
         """
         return {}
+
+    comptime equals[rhs: Origin]: Bool = __mlir_attr[
+        `#lit.origin.eq<`,
+        Self._mlir_origin,
+        `, `,
+        rhs._mlir_origin,
+        `> : i1`,
+    ]
+    """Is true if self is equal to rhs.  This predicate can only be
+    used in 'where' clauses and other expressions evaluated at parse time.
+    It may not be used in 'comptime if' and similar expressions.
+
+    Parameters:
+        rhs: The other origin to compare to.
+    """
+
+    comptime contains[element: Origin]: Bool = Self.equals[
+        origin_of(Self._mlir_origin, element._mlir_origin)
+    ]
+    """Is true if self is a superset of element.  This predicate can
+    only be used in 'where' clauses and other expressions evaluated at parse
+    time. It may not be used in 'comptime if' and similar expressions.
+
+    Parameters:
+        element: The origin to check if it is a subset of Self.
+    """
