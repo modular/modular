@@ -349,7 +349,7 @@ def test_dict() raises:
     var key: PyObjectPtr = {}
     var val: PyObjectPtr = {}
     _ = cpy.PyDict_Next(
-        d._obj_ptr,
+        d._as_py_object_ptr(),
         UnsafePointer(to=_pos),
         UnsafePointer(to=key),
         UnsafePointer(to=val),
@@ -832,6 +832,61 @@ def test_python_object_write_repr_to() raises:
     s = String()
     str_obj.write_repr_to(s)
     assert_equal(s, "PythonObject('hello')")
+
+
+def test_nonnull_obj_ptr() raises:
+    """Test that PythonObject always holds a non-null pointer."""
+
+    # Construction from various types produces valid (non-null) objects.
+    var none_obj = PythonObject(None)
+    assert_true(none_obj is None)
+
+    var int_obj = PythonObject(42)
+    assert_equal_pyobj(int_obj, 42)
+
+    var bool_obj = PythonObject(True)
+    assert_true(bool_obj.__bool__())
+
+    var str_obj = PythonObject("hello")
+    assert_equal_pyobj(str_obj, "hello")
+
+    var float_obj = PythonObject(3.14)
+    assert_true(float_obj.__bool__())
+
+
+def test_steal_data_leaves_valid_object() raises:
+    """Test that steal_data() returns a valid owned pointer.
+
+    steal_data(var self) takes self by value, so the caller's object is
+    unchanged. The returned pointer is an owned reference that the caller
+    must DecRef.
+    """
+    ref cpy = Python().cpython()
+
+    # Create a Python object and steal its data.
+    var obj = PythonObject(42)
+    var stolen_ptr = obj.steal_data()
+
+    # The stolen pointer should be non-null.
+    assert_true(Bool(stolen_ptr), "steal_data() returned a NULL pointer")
+
+    # The original object is unchanged (steal_data takes self by value).
+    assert_true(obj == PythonObject(42))
+
+    # Clean up the stolen pointer — we own it now.
+    cpy.Py_DecRef(stolen_ptr)
+
+
+def test_steal_data_roundtrip() raises:
+    """Test that steal_data can be used to transfer ownership."""
+    ref cpy = Python().cpython()
+
+    var original = PythonObject(99)
+    var ptr = original.steal_data()
+
+    # Reconstruct a new PythonObject from the stolen pointer.
+    var reconstructed = PythonObject(from_owned=ptr)
+    assert_equal_pyobj(reconstructed, 99)
 
 
 def main() raises:

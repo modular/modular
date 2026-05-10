@@ -57,7 +57,7 @@ struct MojoPair(Defaultable, ImplicitlyCopyable, Writable):
 
         if args:
             tuple_len = len(args)
-        if kwargs._obj_ptr:
+        if Bool(kwargs):
             kwargs_len = len(kwargs)
         print(
             "MojoPair.__init__ called with tuple of",

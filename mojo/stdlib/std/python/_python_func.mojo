@@ -1342,7 +1342,7 @@ struct PyObjectFunction[
         var result = OwnedKwargsDict[PythonObject]()
 
         # Handle the case where kwargs is None or empty
-        if not py_kwargs._obj_ptr:
+        if not Bool(py_kwargs):
             return result^
 
         # Iterate through the Python dictionary and populate OwnedKwargsDict
