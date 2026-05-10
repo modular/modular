@@ -42,6 +42,7 @@ from max.support.math import ceildiv
 
 from .block_pool import BlockPool
 from .block_utils import (
+    DEFAULT_PARENT_HASH,
     InsufficientBlocksError,
     KVCacheBlock,
     hash_request_tokens,
@@ -495,7 +496,7 @@ class BlockManager:
         current_parent = (
             req_hashes[num_committed_blocks - 1]
             if num_committed_blocks > 0
-            else 0
+            else DEFAULT_PARENT_HASH
         )
         run_bids: list[int] = []
         run_hashes: list[int] = []
