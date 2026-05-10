@@ -134,11 +134,6 @@ private:
     size_t numMismatchedConventions = 0;
     /// Whether the candidate has a (non-empty) variadic argument.
     bool passesVarArgArgument = false;
-    /// Whether the bindings include variadic parameters.
-    bool hasVariadicParams = false;
-
-    /// Return a numeric value that allows easy comparison of boolean metrics.
-    int8_t getBoolMask() const;
   } payload;
 
   /// Constructor for invalid candidates (kInvalid).
