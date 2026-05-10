@@ -28,6 +28,12 @@ bool M::generateMojoDocJSON(const std::filesystem::path &resolvedPath,
   sourceManager.setDiagHandler(getDiagHandler(config.diagnosticFormat));
   sourceManager.setIncludeDirs(config.includePaths);
 
+  // Add a sentinel buffer as the "main file" so that diagnostics emitted for
+  // decls without valid source locations (e.g., from bytecode packages) have a
+  // fallback location to reference.
+  sourceManager.AddNewSourceBuffer(llvm::MemoryBuffer::getMemBuffer("", ""),
+                                   llvm::SMLoc());
+
   CompilationOptions compilationOptions;
   compilationOptions.warningsAsErrors = config.warningsAsErrors;
   LIT::ParserConfig parserConfig(&context, compilationOptions);
