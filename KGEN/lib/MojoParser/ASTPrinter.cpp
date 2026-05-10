@@ -1334,6 +1334,15 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
     return;
   }
 
+  if (auto eqAttr = dyn_cast<OriginEqAttr>(param)) {
+    os << "(origin_eq ";
+    printOriginParam(os, eqAttr.getLhs(), diagShared);
+    os << " == ";
+    printOriginParam(os, eqAttr.getRhs(), diagShared);
+    os << ")";
+    return;
+  }
+
   // Handle other KGEN parameters that it knows about with an ugly fallback.
   // TODO: Remove this - we should cover all attrs here, anything that falls
   // back should be an error/assertion.

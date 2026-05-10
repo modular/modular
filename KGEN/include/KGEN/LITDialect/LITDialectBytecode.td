@@ -214,6 +214,11 @@ def WrappedOriginUnionAttr : DialectAttribute<(attr
   ConcreteType<"OriginType">:$type
 )>;
 
+def OriginEqAttr : DialectAttribute<(attr
+  TypedAttr:$lhs,
+  TypedAttr:$rhs
+)>;
+
 def WrappedOriginMutCastAttr : DialectAttribute<(attr
   TypedAttr:$operand,
   ConcreteType<"OriginType">:$type
@@ -297,6 +302,7 @@ def LITDialectAttributes : DialectAttributes<"lit"> {
     UnpackedAttr,
     ModuleAttr,
     AnyOriginAttr,
+    OriginEqAttr,
     WrappedOriginUnionAttr,
     WrappedOriginMutCastAttr,
     WrappedOriginFieldAttr,

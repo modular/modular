@@ -390,6 +390,10 @@ static void populateReplacer(StructDecls &decls, LowerLITReplacer &replacer,
       [=](OriginSetAttr) { return emptyStruct; });
   replacer.addInferredDomainNonRecursiveReplacement(
       [=](EllipsisAttr) { return emptyStruct; });
+  replacer.addInferredDomainNonRecursiveReplacement(
+      [](OriginEqAttr) -> FailureOr<Attribute> {
+        llvm_unreachable("OriginEqAttr should be replaced by now");
+      });
 
   // !lit.origin -> !kgen.struct<()>
   replacer.addInferredDomainNonRecursiveReplacement(

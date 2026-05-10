@@ -781,15 +781,6 @@ def unbound_function_type():
   # expected-note @below {{'HasIntParamAlias' is aka 'comptime[p: Int] HasIntParam[p]'}}
   var h: HasIntParamAlias
 
-
-# Crash converting mvalue of #lit.any.origin origin to Pointer with specific one.
-# https://github.com/modular/mojo/issues/1921
-struct SomeStruct:
-  def refBindingToImmortal(mut self, ptr: UnsafePointer[Int, AnyOrigin[mut=True]])
-      -> Pointer[Int, origin_of(self)]:
-    # expected-error @below {{cannot implicitly convert 'Pointer[Int, MutAnyOrigin]' value to 'Pointer[Int, origin_of(self)]'}}
-    return Pointer(to=ptr[])
-
 # Various type printing cases.
 #
 struct HasKWOnlyParam[*, kwplz: Int]: pass

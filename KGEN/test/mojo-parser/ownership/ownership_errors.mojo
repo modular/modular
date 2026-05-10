@@ -638,7 +638,6 @@ def test_linear_type() raises:
 # Trait-bound fields
 # ===----------------------------------------------------------------------=== #
 
-
 struct Pair[T: Movable & ImplicitlyDestructible](Movable):
     var first: Self.T
     var second: Self.T

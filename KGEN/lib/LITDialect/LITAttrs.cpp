@@ -570,6 +570,27 @@ bool StaticOriginAttr::isConstant() const { return true; }
 bool ComptimeOriginAttr::isConstant() const { return true; }
 
 //===----------------------------------------------------------------------===//
+// OriginEqAttr
+//===----------------------------------------------------------------------===//
+
+TypedAttr OriginEqAttr::get(TypedAttr lhs, TypedAttr rhs) {
+  assert(isa<OriginType>(lhs.getType()) && isa<OriginType>(rhs.getType()) &&
+         "only works with origins");
+  if (lhs == rhs)
+    return BoolAttr::get(rhs.getContext(), true);
+
+  // If we can tell they are different origins, return false.
+  if (ParameterAttr::isSimpleConstant(getCanonicalAttr(lhs)) &&
+      ParameterAttr::isSimpleConstant(getCanonicalAttr(rhs)))
+    return BoolAttr::get(rhs.getContext(), false);
+
+  // Otherwise keep symbolic.
+  return OriginEqAttr::Base::get(lhs.getContext(), lhs, rhs);
+}
+
+Type OriginEqAttr::getType() const { return IntegerType::get(getContext(), 1); }
+
+//===----------------------------------------------------------------------===//
 // OriginUnionAttr
 //===----------------------------------------------------------------------===//
 
