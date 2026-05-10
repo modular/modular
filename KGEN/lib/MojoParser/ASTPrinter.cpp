@@ -764,20 +764,27 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
       // Print arithmetic functions using their mathematical form rather than
       // as dunder method calls.
       static SmallDenseMap<StringRef, StringRef> binaryOpNames{
-          {"__add__", " + "},     {"__sub__", " - "},
-          {"__mul__", " * "},     {"__mod__", " % "},
-          {"__truediv__", " / "}, {"__floordiv__", " // "},
-          {"__xor__", " ^ "},     {"__and__", " & "},
-          {"__or__", " | "},      {"__lshift__", " << "},
-          {"__rshift__", " >> "}, {"__eq__", " == "},
-          {"__lt__", " < "},      {"__le__", " <= "},
-          {"__in__", " in "},     {"__ne__", " != "},
-          {"__gt__", " > "},      {"__ge__", " >= "},
-          {"__matmul__", " @ "},  {"__pow__", " ** "},
-          {"__is__", " is "},     {"__isnot__", " isnot "},
+          {"__add__", " + "},       {"__sub__", " - "},
+          {"__mul__", " * "},       {"__mod__", " % "},
+          {"__truediv__", " / "},   {"__floordiv__", " // "},
+          {"__xor__", " ^ "},       {"__and__", " & "},
+          {"__or__", " | "},        {"__lshift__", " << "},
+          {"__rshift__", " >> "},   {"__eq__", " == "},
+          {"__lt__", " < "},        {"__le__", " <= "},
+          {"__in__", " in "},       {"__ne__", " != "},
+          {"__gt__", " > "},        {"__ge__", " >= "},
+          {"__matmul__", " @ "},    {"__pow__", " ** "},
+          {"__is__", " is "},       {"__isnot__", " isnot "},
+          {"__contains__", " in "},
       };
-      if (auto it = binaryOpNames.find(name); it != binaryOpNames.end())
+      if (auto it = binaryOpNames.find(name); it != binaryOpNames.end()) {
+        if (name == "__contains__" && operandsToPrint.size() == 2) {
+          TypedAttr swapped[] = {operandsToPrint[1], operandsToPrint[0]};
+          return printOperands(swapped, /*separator=*/it->second);
+        }
+
         return printOperands(operandsToPrint, /*separator=*/it->second);
+      }
 
       // Print unary prefix operators using their operator syntax.
       static SmallDenseMap<StringRef, StringRef> unaryOpNames{
@@ -829,7 +836,8 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
       }
 
       // Special case: struct __init__ constructor calls for literal types.
-      if (name != "__init__" && diagShared && operands.size() >= 2) {
+      if (calleeIsStatic && name != "__init__" && diagShared &&
+          operands.size() >= 2) {
         // Helper function to check if this is a literal wrapper by name
         auto isLiteralWrapperName = [](StringRef structName) {
           return structName == "StringLiteral" || structName == "IntLiteral" ||
@@ -854,7 +862,8 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
       }
 
       // For constructors, print the type name instead of __init__.
-      if (name == "__init__" && nameAttr.getNestedReferences().size() >= 2) {
+      if (calleeIsStatic && name == "__init__" &&
+          nameAttr.getNestedReferences().size() >= 2) {
         // Identity reconstruction: if every callee parameter is an auto-param
         // from the same argument, print just the argument name instead of the
         // full TypeName[arg.field1, arg.field2, ...] expansion.
