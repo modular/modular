@@ -212,21 +212,15 @@ def assert_equal(
 
 
 @always_inline
-def assert_equal_pyobj[
-    LHS: ConvertibleToPython & Copyable, RHS: ConvertibleToPython & Copyable
-](
-    lhs: LHS,
-    rhs: RHS,
+def assert_equal_pyobj(
+    lhs: PythonObject,
+    rhs: PythonObject,
     msg: String = "",
     *,
     location: Optional[SourceLocation] = None,
 ) raises:
     """Asserts that the `PythonObject`s are equal. If it is not then an Error
     is raised.
-
-    Parameters:
-        LHS: Argument type that can be converted to `PythonObject`.
-        RHS: Argument type that can be converted to `PythonObject`.
 
     Args:
         lhs: The lhs of the equality.
@@ -237,13 +231,10 @@ def assert_equal_pyobj[
     Raises:
         An Error with the provided message if assert fails.
     """
-    var lhs_obj = lhs.copy().to_python_object()
-    var rhs_obj = rhs.copy().to_python_object()
-
-    if lhs_obj != rhs_obj:
+    if lhs != rhs:
         raise _assert_cmp_error["`left == right` comparison"](
-            String(lhs_obj),
-            String(rhs_obj),
+            String(lhs),
+            String(rhs),
             msg=msg,
             loc=location.or_else(call_location()),
         )

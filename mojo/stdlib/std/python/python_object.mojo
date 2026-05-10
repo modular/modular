@@ -306,13 +306,10 @@ struct PythonObject(
         self = Self(from_owned=_slice_to_py_object_ptr(slice))
 
     @always_inline
-    def __init__[
-        *Ts: ConvertibleToPython & Copyable
-    ](out self, var *values: *Ts, __list_literal__: NoneType) raises:
+    def __init__(
+        out self, var *values: PythonObject, __list_literal__: NoneType
+    ) raises:
         """Construct an Python list of objects.
-
-        Parameters:
-            Ts: The types of the input values.
 
         Args:
             values: The values to initialize the list with.
@@ -327,13 +324,10 @@ struct PythonObject(
         self = Python.list(*values^)
 
     @always_inline
-    def __init__[
-        *Ts: ConvertibleToPython & Copyable
-    ](out self, var *values: *Ts, __set_literal__: NoneType) raises:
+    def __init__(
+        out self, var *values: PythonObject, __set_literal__: NoneType
+    ) raises:
         """Construct an Python set of objects.
-
-        Parameters:
-            Ts: The types of the input values.
 
         Args:
             values: The values to initialize the set with.
@@ -348,9 +342,8 @@ struct PythonObject(
         ref cpy = Python().cpython()
         var set_ptr = cpy.PySet_New({})
 
-        comptime for i in range(Ts.size):
-            var obj = values[i].copy().to_python_object()
-            var errno = cpy.PySet_Add(set_ptr, obj.steal_data())
+        for i in range(len(values)):
+            var errno = cpy.PySet_Add(set_ptr, values[i].steal_data())
             if errno == -1:
                 raise cpy.unsafe_get_error()
         return PythonObject(from_owned=set_ptr)
@@ -552,16 +545,14 @@ struct PythonObject(
         var size = len(args)
         var key_ptr: PyObjectPtr
         if size == 1:
-            var single = args[0].copy().to_python_object()
-            key_ptr = cpy.Py_NewRef(single._obj_ptr)
-            _ = single^
+            key_ptr = cpy.Py_NewRef(args[0].steal_data())
         else:
             key_ptr = cpy.PyTuple_New(size)
 
             for i in range(size):
-                var arg = args[i].copy().to_python_object()
-                _ = cpy.PyTuple_SetItem(key_ptr, i, cpy.Py_NewRef(arg._obj_ptr))
-                _ = arg^
+                _ = cpy.PyTuple_SetItem(
+                    key_ptr, i, cpy.Py_NewRef(args[i].steal_data())
+                )
 
         var value_obj = value^.to_python_object()
         var errno = cpy.PyObject_SetItem(
@@ -1294,13 +1285,10 @@ struct PythonObject(
 
     # see https://github.com/python/cpython/blob/main/Objects/call.c
     # for decrement rules
-    def __call__[
-        *Ts: ConvertibleToPython & Copyable,
-    ](self, *args: *Ts, **kwargs: PythonObject) raises -> PythonObject:
+    def __call__(
+        self, *args: PythonObject, **kwargs: PythonObject
+    ) raises -> PythonObject:
         """Call the underlying object as if it were a function.
-
-        Parameters:
-            Ts: Types of the positional arguments.
 
         Args:
             args: Positional arguments to the function.
@@ -1312,17 +1300,14 @@ struct PythonObject(
         Returns:
             The return value from the called object.
         """
-        comptime size = Ts.size
-
+        var size = len(args)
         ref cpy = Python().cpython()
         var args_ptr = cpy.PyTuple_New(size)
 
-        comptime for i in range(size):
-            var arg = args[i].copy().to_python_object()
-
-            _ = cpy.PyTuple_SetItem(args_ptr, i, cpy.Py_NewRef(arg._obj_ptr))
-
-            _ = arg^
+        for i in range(size):
+            _ = cpy.PyTuple_SetItem(
+                args_ptr, i, cpy.Py_NewRef(args[i].steal_data())
+            )
         var kwargs_ptr = Python._dict(kwargs)
         var res_ptr = cpy.PyObject_Call(self._obj_ptr, args_ptr, kwargs_ptr)
         cpy.Py_DecRef(args_ptr)

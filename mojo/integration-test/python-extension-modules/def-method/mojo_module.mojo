@@ -102,7 +102,10 @@ struct Person(Defaultable, ImplicitlyCopyable, Writable):
         py_self: PythonObject, sep: PythonObject
     ) raises -> PythonObject:
         var self_ptr = Self._get_self_ptr(py_self)
-        return Python.list(self_ptr[].name.split(String(py=sep)))
+        var names = List[PythonObject]()
+        for name in self_ptr[].name.split(String(py=sep)):
+            names.append(PythonObject(name))
+        return Python.list(names^)
 
     @staticmethod
     def _with(

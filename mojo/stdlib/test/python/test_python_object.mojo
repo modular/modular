@@ -143,16 +143,6 @@ def _test_inplace_dunder_methods(mut python: Python) raises:
     # test dunder methods that don't fall back to their non-inplace counterparts
     var list_obj: PythonObject = [1, 2]
 
-    # FIXME: list literal can be converted to `PythonObject`? We might turn list
-    # into nonmaterializable target too early?
-    # Given:
-    #
-    # @always_inline
-    # def __init__[
-    #    *Ts: ConvertibleToPython & Copyable
-    # ](out self, var *values: *Ts, __list_literal__: NoneType) raises:
-    #     pass
-    #
     # Note that there is no @implicit
     var to_be_added: PythonObject = [3, 4]
     list_obj += to_be_added
@@ -327,7 +317,10 @@ def test_dict() raises:
     assert_equal(String(py=dd), "{'food': 'salad', 'fries': 'yes', 42: [4, 2]}")
 
     # Test Python.dict from a Span of tuples.
-    var tuples = [(123, PythonObject("food")), (42, PythonObject("42"))]
+    var tuples = [
+        (PythonObject(123), PythonObject("food")),
+        (PythonObject(42), PythonObject("42")),
+    ]
     dd = Python.dict(tuples)
     assert_equal(String(py=dd), "{123: 'food', 42: '42'}")
 
