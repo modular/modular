@@ -1828,7 +1828,18 @@ LogicalResult CallParamInf::inferForCall() {
         assert(actualPackType &&
                "unpacked positional operand must have a resolvable type");
 
-        // FIXME: This will crash on *foo where foo isn't a VariadicPack.
+        // Check that the actual type is the same struct type as the expected
+        // VariadicPack. If not, the user tried to unpack a non-pack type
+        // (e.g., a List) which is not allowed.
+        ASTDecl *actualDecl = actualPackType.getDecl(getShared());
+        ASTDecl *expectedDecl = variadicPackType.getDecl(getShared());
+        if (!actualDecl || actualDecl != expectedDecl) {
+          auto &diag = getMojoDiag(callOperands[posOperandIdx].expr->getLoc());
+          diag << "cannot unpack value of type " << actualPackType
+               << " into a variadic pack argument; expected a VariadicPack";
+          return failure();
+        }
+
         ASTType::VariadicPackInfo actualInfo =
             actualPackType.getVariadicPackInfo();
         if (actualInfo.isOwned != expectedInfo.isOwned) {
