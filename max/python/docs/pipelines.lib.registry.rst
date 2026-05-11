@@ -18,6 +18,7 @@ max.pipelines.lib.registry
 
    SupportedArchitecture
    PipelineRegistry
+   PipelineTypes
 
 .. autosummary::
    :nosignatures:
