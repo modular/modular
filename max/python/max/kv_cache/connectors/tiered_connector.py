@@ -121,9 +121,6 @@ class TieredConnector:
         # (bid, hash, host_block) — host_block kept at ref_cnt=1 for
         # zero-copy disk writes (pinned until write completes).
         self._pending_disk_writes: list[tuple[int, int, KVCacheBlock]] = []
-        self._pending_disk_reads: dict[
-            str, list[tuple[Future[None], int]]
-        ] = {}  # (future, block_hash)
         # Blocks with in-flight disk writes.  Holds ref_cnt=1 until the
         # write Future completes so the host memory can't be evicted.
         self._write_locked_blocks: list[tuple[Future[None], KVCacheBlock]] = []
@@ -180,13 +177,14 @@ class TieredConnector:
             ):
                 # CPU hit
                 host_block = host_cache[block_hash]
+                # Touch the host block to ensure it does not get evicted / recycled
+                # in subsequent iterations of this loop.
                 self._host_block_pool.touch(host_block)
                 hits.append(_CacheHit(block_hash, host_block, device_block_id))
 
             elif self._disk_tier.contains(block_hash):
                 # Disk hit -> async promote to CPU
                 host_block, _ = self._host_block_pool.alloc_block()
-                self._host_block_pool.free_block(host_block)
 
                 # Use uint8 view to avoid bfloat16 numpy incompatibility
                 assert self._host_buffer.dtype == DType.uint8
@@ -203,6 +201,10 @@ class TieredConnector:
 
         # Wait for async disk reads to complete
         wait(hit.future for hit in hits if hit.future is not None)
+
+        # Unpin the host blocks now that the disk reads have completed.
+        for hit in hits:
+            self._host_block_pool.free_block(hit.host_block)
 
         # Filter to successful hits, stopping at the first failure.
         successful_hits: list[_CacheHit] = []
@@ -265,12 +267,11 @@ class TieredConnector:
             src = self._host_buffer.to_numpy()[bid]
             future = self._disk_tier.write_block_async(block_hash, src)
             if future is not None:
+                self._disk_blocks_written += 1
                 self._write_locked_blocks.append((future, host_block))
             else:
                 # write_block_async returned None (already on disk / pending)
                 self._host_block_pool.free_block(host_block)
-
-            self._disk_blocks_written += 1
 
         self._pending_disk_writes.clear()
 
@@ -321,7 +322,6 @@ class TieredConnector:
             self._host_block_pool.free_block(host_block)
         self._pending_saves.clear()
         self._pending_disk_writes.clear()
-        self._pending_disk_reads.clear()
 
         d2h_gb = self._d2h_blocks_copied * self._block_disk_bytes / GiB
         h2d_gb = self._h2d_blocks_copied * self._block_disk_bytes / GiB

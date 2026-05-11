@@ -375,7 +375,6 @@ def test_shutdown_clears_pending_state() -> None:
 
     assert len(connector._pending_saves) == 0
     assert len(connector._pending_disk_writes) == 0
-    assert len(connector._pending_disk_reads) == 0
 
 
 # -- Reset --
