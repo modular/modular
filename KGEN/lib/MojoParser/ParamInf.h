@@ -83,16 +83,6 @@ private:
   inferCValue(ASTExprAnd<AnyValue> operand, size_t argIdx, PogListAttr argPogs,
               CallSyntax syntax, ASTType expectedType);
 
-  /// Infer parameters from an operand being passed into this function. This is
-  /// only called on the top level function operands being matched up, not
-  /// anything in recursive functiontype positions.
-  LogicalResult
-  inferOneOperand(ASTExprAnd<AnyValue> operand, size_t operandIdx,
-                  size_t argIdx, ASTType expectedType,
-                  ArgConvention expectedConvention, PogListAttr argPogs,
-                  CallSyntax syntax,
-                  OperandsNeedingOriginsList &operandsNeedingOrigins);
-
   /// Core type matching logic for parameter inference, this matches expected
   /// type against the RValue type of the operand (which means this does not
   /// handle calling convention).
@@ -182,6 +172,13 @@ private:
 
   LogicalResult inferResultSlot(RefType expectedRef, size_t argIdx,
                                 const ExprDest &dest);
+
+  /// Infer parameters from an operand being passed into this function. This is
+  /// only called on the top level function operands being matched up, not
+  /// anything in recursive functiontype positions.
+  LogicalResult inferOneOperand(ASTExprAnd<AnyValue> operand, size_t operandIdx,
+                                size_t argIdx, ASTType expectedType,
+                                ArgConvention expectedConvention);
 };
 
 } // namespace M::KGEN::LIT
