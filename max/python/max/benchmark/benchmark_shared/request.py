@@ -1100,6 +1100,106 @@ class VllmOmniPixelGenerationRequestDriver(RequestDriver):
                 return output
 
 
+def _build_vllm_omni_video_payload(
+    request_func_input: PixelGenerationRequestFuncInput,
+) -> dict[str, str]:
+    """Build form payload for vllm-omni's /v1/videos/sync endpoint."""
+    payload: dict[str, str] = {
+        "prompt": request_func_input.prompt,
+        "model": request_func_input.model,
+    }
+
+    if request_func_input.image_options is not None:
+        opts = request_func_input.image_options
+        if opts.width is not None:
+            payload["width"] = str(opts.width)
+        if opts.height is not None:
+            payload["height"] = str(opts.height)
+        if opts.steps is not None:
+            payload["num_inference_steps"] = str(opts.steps)
+        if opts.guidance_scale is not None:
+            payload["guidance_scale"] = str(opts.guidance_scale)
+        if opts.seed is not None:
+            payload["seed"] = str(opts.seed)
+        if opts.negative_prompt is not None:
+            payload["negative_prompt"] = opts.negative_prompt
+        if opts.num_frames is not None:
+            payload["num_frames"] = str(opts.num_frames)
+
+    return payload
+
+
+class VllmOmniVideoRequestDriver(RequestDriver):
+    """Request driver for vllm-omni's /v1/videos/sync endpoint
+    (diffusion video generation)."""
+
+    async def request(
+        self, request_func_input: BaseRequestFuncInput
+    ) -> PixelGenerationRequestFuncOutput:
+        if not isinstance(request_func_input, PixelGenerationRequestFuncInput):
+            raise TypeError(
+                "VllmOmniVideoRequestDriver requires"
+                " PixelGenerationRequestFuncInput."
+            )
+        api_url = request_func_input.api_url
+        if not api_url.endswith("videos/sync"):
+            raise ValueError(
+                "vllm-omni video generation URL must end with 'videos/sync'."
+            )
+
+        payload = _build_vllm_omni_video_payload(request_func_input)
+
+        headers = {
+            "Authorization": f"Bearer {os.environ.get('OPENAI_API_KEY')}",
+        }
+
+        output = PixelGenerationRequestFuncOutput()
+        start = time.perf_counter()
+        output.request_submit_time = start
+
+        async with aiohttp.ClientSession(timeout=AIOHTTP_TIMEOUT) as session:
+            try:
+                async with session.post(
+                    url=api_url, data=payload, headers=headers
+                ) as response:
+                    output.latency = time.perf_counter() - start
+                    if response.status != 200:
+                        body = await response.text()
+                        output.error = (
+                            f"HTTP {response.status}: {body}"
+                            if body
+                            else (response.reason or "")
+                        )
+                        output.success = False
+                        return output
+
+                    video_bytes = await response.read()
+                    if not video_bytes:
+                        output.error = (
+                            "Empty response body from /v1/videos/sync."
+                        )
+                        output.success = False
+                        return output
+
+                    output.num_generated_outputs = 1
+                    output.success = True
+
+                    inference_time = response.headers.get("X-Inference-Time-S")
+                    if inference_time:
+                        logger.debug(
+                            "vllm-omni video: inference_time=%s s",
+                            inference_time,
+                        )
+
+                    return output
+            except Exception:
+                output.latency = time.perf_counter() - start
+                output.success = False
+                exc_info = sys.exc_info()
+                output.error = "".join(traceback.format_exception(*exc_info))
+                return output
+
+
 class RequestCounter:
     """Thread-safe counter for limiting the number of requests in benchmarks.
 
@@ -1239,21 +1339,25 @@ def get_request_driver_class(
     each backend uses a fundamentally different API format. The mapping is:
       /v1/responses          -> OpenResponsesRequestDriver (modular)
       /v1/images/generations -> SglangPixelGenerationRequestDriver
+      /v1/videos/sync        -> VllmOmniVideoRequestDriver
       /v1/chat/completions   -> VllmOmniPixelGenerationRequestDriver
     The correct endpoint is typically auto-selected by PIXEL_GEN_DEFAULT_ENDPOINT
-    in benchmark_serving.py based on the --backend flag.
+    (or VIDEO_GEN_DEFAULT_ENDPOINT for text-to-video) in benchmark_serving.py
+    based on the --backend flag and task.
     """
     if task in PIXEL_GENERATION_TASKS:
         if api_url.endswith("responses"):
             return OpenResponsesRequestDriver
         if api_url.endswith("images/generations"):
             return SglangPixelGenerationRequestDriver
+        if api_url.endswith("videos/sync"):
+            return VllmOmniVideoRequestDriver
         if api_url.endswith("chat/completions"):
             return VllmOmniPixelGenerationRequestDriver
         raise ValueError(
             "Unsupported API URL for pixel-generation driver selection: "
             f"'{api_url}'. Expected /v1/responses, /v1/images/generations,"
-            " or /v1/chat/completions."
+            " /v1/videos/sync, or /v1/chat/completions."
         )
 
     # for text generation task

@@ -51,13 +51,13 @@ if TYPE_CHECKING:
 
 from max.benchmark.benchmark_shared.config import (
     CACHE_RESET_ENDPOINT_MAP,
-    PIXEL_GEN_DEFAULT_ENDPOINT,
     PIXEL_GENERATION_ENDPOINTS,
     PIXEL_GENERATION_TASKS,
     Backend,
     BenchmarkTask,
     Endpoint,
     ServingBenchmarkConfig,
+    get_pixel_gen_endpoint,
 )
 from max.benchmark.benchmark_shared.datasets.all import sample_requests
 from max.benchmark.benchmark_shared.datasets.types import (
@@ -798,12 +798,21 @@ def validate_task_and_endpoint(
     benchmark_task: BenchmarkTask, endpoint: Endpoint
 ) -> None:
     if benchmark_task == "text-generation":
-        if endpoint in ("/v1/responses", "/v1/images/generations"):
+        if endpoint in (
+            "/v1/responses",
+            "/v1/images/generations",
+            "/v1/videos/sync",
+        ):
             raise ValueError(
                 f"--benchmark-task text-generation does not support "
                 f"--endpoint {endpoint}"
             )
     elif benchmark_task in PIXEL_GENERATION_TASKS:
+        if endpoint == "/v1/videos/sync" and benchmark_task != "text-to-video":
+            raise ValueError(
+                f"--endpoint /v1/videos/sync is only valid for"
+                f" --benchmark-task text-to-video, got {benchmark_task!r}"
+            )
         if endpoint not in PIXEL_GENERATION_ENDPOINTS:
             raise ValueError(
                 f"--benchmark-task {benchmark_task} requires --endpoint"
@@ -1052,23 +1061,22 @@ def _build_session(args: ServingBenchmarkConfig) -> BenchmarkSession:
     # /v1/chat/completions). We auto-select when the current endpoint
     # doesn't match this backend's expected pixel-gen endpoint.
     if benchmark_task in PIXEL_GENERATION_TASKS:
-        backend_key = args.backend.removesuffix("-chat")
-        if backend_key in PIXEL_GEN_DEFAULT_ENDPOINT:
-            expected = PIXEL_GEN_DEFAULT_ENDPOINT[backend_key]
-            if endpoint != expected:
-                logger.info(
-                    "Auto-selected endpoint %s for backend %s"
-                    " (pixel generation task)",
-                    expected,
-                    args.backend,
-                )
-                endpoint = expected
-        else:
+        try:
+            expected = get_pixel_gen_endpoint(args.backend, benchmark_task)
+        except ValueError:
             raise ValueError(
                 f"Backend {args.backend!r} does not have a default"
                 f" pixel-generation endpoint. Explicitly pass --endpoint"
                 f" with one of {sorted(PIXEL_GENERATION_ENDPOINTS)}."
+            ) from None
+        if endpoint != expected:
+            logger.info(
+                "Auto-selected endpoint %s for backend %s (%s task)",
+                expected,
+                args.backend,
+                benchmark_task,
             )
+            endpoint = expected
 
     validate_task_and_endpoint(benchmark_task, endpoint)
     # chat is only meaningful for text-generation (enables chat template
