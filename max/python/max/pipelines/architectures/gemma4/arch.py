@@ -25,6 +25,8 @@ example_repo_ids = [
     # pt = Pre-trained.
     "google/gemma-4-31B-it",
     # "google/gemma-4-26B-A4B-it"
+    "nvidia/Gemma-4-31B-IT-NVFP4",
+    # "nvidia/Gemma-4-26B-A4B-NVFP4"
 ]
 
 gemma4_arch = SupportedArchitecture(

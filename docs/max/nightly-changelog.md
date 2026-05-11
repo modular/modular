@@ -10,6 +10,7 @@ This version is still a work in progress.
 
 ## MAX models
 
+- Added NVFP4 quantization support for Gemma 4.
 - Added MXFP4 quantization support for MiniMax-M2.
 
 ## MAX framework
