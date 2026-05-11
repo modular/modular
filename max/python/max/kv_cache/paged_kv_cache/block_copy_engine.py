@@ -84,10 +84,8 @@ class BlockOffloadEngine:
         offset = 0
         for device_buffer in self.device_buffers:
             bytes_per_page = device_buffer.shape[1]
-            aux_stream = self.d2h_auxiliary_streams[device_buffer.device.id]
-            host_block = self.host_buffer[
-                dst, offset : offset + bytes_per_page
-            ].to(aux_stream)
+            # TODO(SERVOPT-1389): issue d2h on auxiliary stream after fixing driver bugs
+            host_block = self.host_buffer[dst, offset : offset + bytes_per_page]
             host_block.inplace_copy_from(device_buffer[src, :])
             offset += bytes_per_page
 
