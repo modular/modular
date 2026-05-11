@@ -266,8 +266,26 @@ Avoid using the `Some[]` utility if a named type parameter is reused in a
 function signature or body.
 
 ```mojo
-def foo(arg0: Some[Writable], arg1: type_of(arg0)): ... # 🔴 Avoid
-def foo[Str: Writable, //](arg0: Str, arg1: Str): ...     # 🟢 Preferred
+def foo(arg0: Some[Writable], arg1: type_of(arg0)): ...  # 🔴 Avoid
+def foo[Str: Writable, //](arg0: Str, arg1: Str): ...    # 🟢 Preferred
+```
+
+#### Use the `SomeTypeList[]` utility instead of named type lists
+
+Consider using `SomeTypeList[]` if a named type list is not reused in a
+function signature or body.
+
+```mojo
+def foo[*Ts: Writable](*args: *Ts): ...       # 🔴 Avoid
+def foo(*args: *SomeTypeList[Writable]): ...  # 🟢 Preferred
+```
+
+Avoid using `SomeTypeList[]` if the named type list is reused in a function
+signature or body.
+
+```mojo
+def foo(*args: *SomeTypeList[Writable]) -> Tuple[type_of(args)]: ... # 🔴 Avoid
+def foo[*Ts: Writable](*args: *Ts) -> Tuple[*Ts]: ...            # 🟢 Preferred
 ```
 
 ### Container lifecycle semantics

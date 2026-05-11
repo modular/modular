@@ -241,19 +241,14 @@ struct Logger[level: Level = DEFAULT_LEVEL](ImplicitlyCopyable):
         return Self.level > target_level
 
     @always_inline
-    def trace[
-        *Ts: Writable
-    ](
+    def trace(
         self,
-        *values: *Ts,
+        *values: *SomeTypeList[Writable],
         sep: StaticString = " ",
         end: StaticString = "\n",
         location: Optional[SourceLocation] = None,
     ):
         """Logs a trace message.
-
-        Parameters:
-            Ts: The types of values to log.
 
         Args:
             values: The values to log.
@@ -273,19 +268,14 @@ struct Logger[level: Level = DEFAULT_LEVEL](ImplicitlyCopyable):
             )
 
     @always_inline
-    def debug[
-        *Ts: Writable
-    ](
+    def debug(
         self,
-        *values: *Ts,
+        *values: *SomeTypeList[Writable],
         sep: StaticString = " ",
         end: StaticString = "\n",
         location: Optional[SourceLocation] = None,
     ):
         """Logs a debug message.
-
-        Parameters:
-            Ts: The types of values to log.
 
         Args:
             values: The values to log.
@@ -305,19 +295,14 @@ struct Logger[level: Level = DEFAULT_LEVEL](ImplicitlyCopyable):
             )
 
     @always_inline
-    def info[
-        *Ts: Writable
-    ](
+    def info(
         self,
-        *values: *Ts,
+        *values: *SomeTypeList[Writable],
         sep: StaticString = " ",
         end: StaticString = "\n",
         location: Optional[SourceLocation] = None,
     ):
         """Logs an info message.
-
-        Parameters:
-            Ts: The types of values to log.
 
         Args:
             values: The values to log.
@@ -337,19 +322,14 @@ struct Logger[level: Level = DEFAULT_LEVEL](ImplicitlyCopyable):
             )
 
     @always_inline
-    def warning[
-        *Ts: Writable
-    ](
+    def warning(
         self,
-        *values: *Ts,
+        *values: *SomeTypeList[Writable],
         sep: StaticString = " ",
         end: StaticString = "\n",
         location: Optional[SourceLocation] = None,
     ):
         """Logs a warning message.
-
-        Parameters:
-            Ts: The types of values to log.
 
         Args:
             values: The values to log.
@@ -369,19 +349,14 @@ struct Logger[level: Level = DEFAULT_LEVEL](ImplicitlyCopyable):
             )
 
     @always_inline
-    def error[
-        *Ts: Writable
-    ](
+    def error(
         self,
-        *values: *Ts,
+        *values: *SomeTypeList[Writable],
         sep: StaticString = " ",
         end: StaticString = "\n",
         location: Optional[SourceLocation] = None,
     ):
         """Logs an error message.
-
-        Parameters:
-            Ts: The types of values to log.
 
         Args:
             values: The values to log.
@@ -401,19 +376,14 @@ struct Logger[level: Level = DEFAULT_LEVEL](ImplicitlyCopyable):
             )
 
     @always_inline
-    def critical[
-        *Ts: Writable
-    ](
+    def critical(
         self,
-        *values: *Ts,
+        *values: *SomeTypeList[Writable],
         sep: StaticString = " ",
         end: StaticString = "\n",
         location: Optional[SourceLocation] = None,
     ):
         """Logs a critical message and aborts execution.
-
-        Parameters:
-            Ts: The types of values to log.
 
         Args:
             values: The values to log.
@@ -436,11 +406,10 @@ struct Logger[level: Level = DEFAULT_LEVEL](ImplicitlyCopyable):
         abort()
 
     def _write_out[
-        _level: Level,
-        *Ts: Writable,
+        _level: Level
     ](
         self,
-        *values: *Ts,
+        *values: *SomeTypeList[Writable],
         location: SourceLocation,
         sep: StaticString = " ",
         end: StaticString = "\n",

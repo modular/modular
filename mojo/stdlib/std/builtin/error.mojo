@@ -209,15 +209,11 @@ struct Error(
         self._stack_trace = StackTrace.collect_if_enabled(0)
 
     @no_inline
-    def __init__[*Ts: Writable](out self, *args: *Ts):
+    def __init__(out self, *args: *SomeTypeList[Writable]):
         """Construct an Error by concatenating a sequence of Writable arguments.
 
         Args:
             args: A sequence of Writable arguments.
-
-        Parameters:
-            Ts: The types of the arguments to format. Each type must be satisfy
-                `Writable`.
         """
         self = Error(String(*args), depth=0)
 

@@ -90,9 +90,11 @@ def _assert_enabled[assert_mode: StaticString, cpu_only: Bool]() -> Bool:
 def debug_assert[
     cond: def() capturing[_] -> Bool,
     assert_mode: StaticString = "none",
-    *Ts: Writable,
     cpu_only: Bool = False,
-](*messages: *Ts, location: Optional[SourceLocation] = None):
+](
+    *messages: *SomeTypeList[Writable],
+    location: Optional[SourceLocation] = None,
+):
     """Asserts that the condition is true at run time.
 
     If the condition is false, the assertion displays the given message and
@@ -179,7 +181,6 @@ def debug_assert[
         assert_mode: Determines when the assert is turned on.
             - default ("none"): Turned on when compiled with `-D ASSERT=all`.
             - "safe": Turned on by default.
-        Ts: The element types for the message arguments.
         cpu_only: If true, only run the assert on CPU.
 
     Args:
@@ -210,10 +211,13 @@ def debug_assert[
 @always_inline
 def debug_assert[
     assert_mode: StaticString = "none",
-    *Ts: Writable,
     cpu_only: Bool = False,
     _use_compiler_assume: Bool = False,
-](cond: Bool, *messages: *Ts, location: Optional[SourceLocation] = None):
+](
+    cond: Bool,
+    *messages: *SomeTypeList[Writable],
+    location: Optional[SourceLocation] = None,
+):
     """Asserts that the condition is true at run time.
 
     If the condition is false, the assertion displays the given message and
@@ -299,7 +303,6 @@ def debug_assert[
         assert_mode: Determines when the assert is turned on.
             - default ("none"): Turned on when compiled with `-D ASSERT=all`.
             - "safe": Turned on by default.
-        Ts: The element types for the message arguments.
         cpu_only: If true, only run the assert on CPU.
         _use_compiler_assume: If true, assume the condition is true for repeated checks,
             to help the compiler optimize (default False).

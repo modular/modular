@@ -121,11 +121,8 @@ trait Writer(ImplicitlyDestructible):
         """
         ...
 
-    def write[*Ts: Writable](mut self, *args: *Ts):
+    def write(mut self, *args: *SomeTypeList[Writable]):
         """Write a sequence of Writable arguments to the provided Writer.
-
-        Parameters:
-            Ts: Types of the provided argument sequence.
 
         Args:
             args: Sequence of arguments to write to this Writer.

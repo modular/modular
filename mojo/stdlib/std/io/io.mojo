@@ -182,8 +182,8 @@ def _flush(file: FileDescriptor = stdout):
 
 
 def _printf_cpu[
-    fmt: StaticString, *types: AnyType
-](*args: *types, file: FileDescriptor = stdout):
+    fmt: StaticString
+](*args: *SomeTypeList[AnyType], file: FileDescriptor = stdout):
     # The argument pack will contain references for each value in the pack,
     # but we want to pass their values directly into the C printf call. Load
     # all the members of the pack.
@@ -369,10 +369,8 @@ def _snprintf[
 
 
 @no_inline
-def print[
-    *Ts: Writable
-](
-    *values: *Ts,
+def print(
+    *values: *SomeTypeList[Writable],
     sep: StaticString = " ",
     end: StaticString = "\n",
     flush: Bool = False,
@@ -398,9 +396,6 @@ def print[
 
     print("{} is {}".format("Mojo", "🔥"))   # Mojo is 🔥
     ```
-
-    Parameters:
-        Ts: The elements types.
 
     Args:
         values: The elements to print.

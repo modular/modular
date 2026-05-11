@@ -72,9 +72,11 @@ def _format_nsec(nanoseconds: UInt) -> String:
 
 
 # TODO: (MOCO-2450) - Add defaulted `writeln` to `Writer` trait.
-def _writeln[
-    *Ts: Writable
-](mut writer: Some[Writer], *args: *Ts, sep: StaticString = StaticString("")):
+def _writeln(
+    mut writer: Some[Writer],
+    *args: *SomeTypeList[Writable],
+    sep: StaticString = StaticString(""),
+):
     comptime for i in range(args.__len__()):
         args[i].write_to(writer)
         sep.write_to(writer)

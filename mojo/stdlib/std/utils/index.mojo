@@ -714,13 +714,14 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
 
 @always_inline
 def Index[
-    *Ts: Intable,
     dtype: DType = DType.int64,
-](*args: *Ts, out result: IndexList[args.__len__(), element_type=dtype]):
+](
+    *args: *SomeTypeList[Intable],
+    out result: IndexList[args.__len__(), element_type=dtype],
+):
     """Constructs an N-D Index from the given values.
 
     Parameters:
-        Ts: The types of the arguments (must be `Intable`).
         dtype: The integer type of the underlying element of the resulting list.
 
     Args:

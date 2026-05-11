@@ -306,13 +306,12 @@ struct PythonObject(
         self = Self(from_owned=_slice_to_py_object_ptr(slice))
 
     @always_inline
-    def __init__[
-        *Ts: ConvertibleToPython & Copyable
-    ](out self, var *values: *Ts, __list_literal__: NoneType) raises:
+    def __init__(
+        out self,
+        var *values: *SomeTypeList[ConvertibleToPython & Copyable],
+        __list_literal__: NoneType,
+    ) raises:
         """Construct an Python list of objects.
-
-        Parameters:
-            Ts: The types of the input values.
 
         Args:
             values: The values to initialize the list with.

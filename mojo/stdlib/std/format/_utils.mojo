@@ -70,7 +70,7 @@ struct _SequenceWriter[W: Writer, origin: MutOrigin](Movable, Writer):
         self.write(string)
 
     @always_inline
-    def write[*Ts: Writable](mut self, *args: *Ts):
+    def write(mut self, *args: *SomeTypeList[Writable]):
         if self.at_element_start:
             if not self.is_first_element:
                 self.writer[].write_string(self.sep)

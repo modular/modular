@@ -738,7 +738,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         """
         return StringSlice(self).codepoints()
 
-    def format[*Ts: Writable](self, *args: *Ts) -> String:
+    def format(self, *args: *SomeTypeList[Writable]) -> String:
         """Produce a formatted string using the current string as a template.
 
         The template, or "format string" can contain literal text and/or
@@ -748,9 +748,6 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
 
         For more information, see the discussion in the
         [`format` module](/docs/std/collections/string/format/).
-
-        Parameters:
-            Ts: The types of substitution values that implement `Writable`.
 
         Args:
             args: The substitution values.

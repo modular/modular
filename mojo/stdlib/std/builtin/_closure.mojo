@@ -22,5 +22,5 @@ def __closure_wrapper_noop_copy(
     return copy
 
 
-def __ownership_keepalive[*Ts: AnyType](*args: *Ts):
+def __ownership_keepalive(*args: *SomeTypeList[AnyType]):
     pass

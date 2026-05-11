@@ -179,12 +179,10 @@ struct _FormatUtils:
         writer.write(_build_slice(ptr, offset, fmt_len))
 
     @staticmethod
-    def format[*Ts: Writable](format: StringSlice, *args: *Ts) raises -> String:
+    def format(
+        format: StringSlice, *args: *SomeTypeList[Writable]
+    ) raises -> String:
         """Format the arguments using the given format string.
-
-        Parameters:
-            Ts: The types of the format substitution values; each must be
-                `Writable`.
 
         Args:
             format: The format string.

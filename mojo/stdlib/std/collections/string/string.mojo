@@ -1831,7 +1831,7 @@ struct String(
         """
         return StringSlice(self) * n
 
-    def format[*Ts: Writable](self, *args: *Ts) raises -> String:
+    def format(self, *args: *SomeTypeList[Writable]) raises -> String:
         """Produce a formatted string using the current string as a template.
 
         The template, or "format string" can contain literal text and/or
@@ -1844,9 +1844,6 @@ struct String(
 
         Args:
             args: The substitution values.
-
-        Parameters:
-            Ts: The types of substitution values that implement `Writable`.
 
         Returns:
             The template with the given values substituted.
