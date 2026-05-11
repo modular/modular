@@ -50,6 +50,7 @@ query interval data, particularly for finding overlaps.
 
 
 from std.builtin.string_literal import StaticString
+from std.memory.alloc import alloc, free, Layout
 
 import std.format._utils as fmt
 
@@ -492,7 +493,7 @@ struct IntervalTree[
         if node[].right():
             Self._del_helper(node[].right().value())
         node.destroy_pointee()
-        node.free()
+        free(node, {count = 1})
 
     def _left_rotate(mut self, rotation_node: Self._IntervalNodePointer):
         """Performs a left rotation around node x in the red-black tree.
@@ -649,7 +650,7 @@ struct IntervalTree[
         """
         # Allocate memory for a new node and initialize it with the interval
         # and data
-        var new_node = alloc[_IntervalNode[Self.T, Self.U]](1)
+        var new_node = alloc(Layout[_IntervalNode[Self.T, Self.U]].single())
         new_node.init_pointee_move(_IntervalNode(interval, data))
         self._len += 1
 

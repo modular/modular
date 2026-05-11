@@ -62,8 +62,8 @@ from std.gpu.host.compile import (
     get_gpu_target,
 )
 from std.memory import stack_allocation
+from std.memory import alloc, free, Layout
 from std.memory.unsafe import bitcast
-from std.memory.unsafe_pointer import alloc
 from std.builtin.rebind import downcast
 
 from std.builtin.coroutine import (
@@ -2312,14 +2312,18 @@ struct DeviceFunction[
         # Variant[List, InlineArray] instead, but it would look a lot more
         # verbose. This way, however, we need to conditionally free at the end.
         var dense_args_addrs: UnsafePointer[
-            OpaquePointer[MutAnyOrigin], MutAnyOrigin
+            OpaquePointer[MutAnyOrigin], MutExternalOrigin
         ]
-        var dense_args_sizes: UnsafePointer[UInt64, MutAnyOrigin]
+        var dense_args_sizes: UnsafePointer[UInt64, MutExternalOrigin]
         if num_captures > num_captures_static:
-            dense_args_addrs = alloc[OpaquePointer[MutAnyOrigin]](
-                num_captures + num_args
+            dense_args_addrs = alloc(
+                Layout[OpaquePointer[MutAnyOrigin]](
+                    count=num_captures + num_args
+                )
             )
-            dense_args_sizes = alloc[UInt64](num_captures + num_args)
+            dense_args_sizes = alloc(
+                Layout[UInt64](count=num_captures + num_args)
+            )
             for i in range(num_captures + num_args):
                 dense_args_sizes[i] = 0
         else:
@@ -2393,8 +2397,8 @@ struct DeviceFunction[
         )
 
         if num_captures > num_captures_static:
-            dense_args_addrs.free()
-            dense_args_sizes.free()
+            free(dense_args_addrs, {count = num_captures + num_args})
+            free(dense_args_sizes, {count = num_captures + num_args})
 
     @always_inline
     @staticmethod
@@ -2546,14 +2550,18 @@ struct DeviceFunction[
         # Variant[List, InlineArray] instead, but it would look a lot more
         # verbose. This way, however, we need to conditionally free at the end.
         var dense_args_addrs: UnsafePointer[
-            OpaquePointer[MutAnyOrigin], MutAnyOrigin
+            OpaquePointer[MutAnyOrigin], MutExternalOrigin
         ]
-        var dense_args_sizes: UnsafePointer[UInt64, MutAnyOrigin]
+        var dense_args_sizes: UnsafePointer[UInt64, MutExternalOrigin]
         if num_captures > num_captures_static:
-            dense_args_addrs = alloc[OpaquePointer[MutAnyOrigin]](
-                num_captures + num_passed_args
+            dense_args_addrs = alloc(
+                Layout[OpaquePointer[MutAnyOrigin]](
+                    count=num_captures + num_passed_args
+                )
             )
-            dense_args_sizes = alloc[UInt64](num_captures + num_passed_args)
+            dense_args_sizes = alloc(
+                Layout[UInt64](count=num_captures + num_passed_args)
+            )
             for i in range(num_captures + num_passed_args):
                 dense_args_sizes[i] = 0
         else:
@@ -2636,8 +2644,8 @@ struct DeviceFunction[
         )
 
         if num_captures > num_captures_static:
-            dense_args_addrs.free()
-            dense_args_sizes.free()
+            free(dense_args_addrs, {count = num_captures + num_passed_args})
+            free(dense_args_sizes, {count = num_captures + num_passed_args})
 
     @always_inline
     def get_attribute(self, attr: Attribute) raises -> Int:
@@ -5868,7 +5876,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
                 "enqueue_cpu_range is only supported on CPU DeviceContexts"
             )
 
-        var handles = alloc[AnyCoroutine](count)
+        var handles = List[AnyCoroutine](capacity=count)
 
         @always_inline
         @parameter
@@ -5878,7 +5886,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
         for j in range(count):
             var coro = wrapper(j)
             coro._set_noop_callback()
-            handles[j] = coro^._take_handle()
+            handles.append(coro^._take_handle())
 
         _checked(
             external_call[
@@ -5888,11 +5896,10 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
                 self._handle,
                 _coro_resume_fn,
                 _coro_destroy_fn,
-                handles,
+                handles.unsafe_ptr(),
                 count,
             )
         )
-        handles.free()
 
     @always_inline
     def enqueue_cpu_range[
@@ -5921,7 +5928,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
                 "enqueue_cpu_range is only supported on CPU DeviceContexts"
             )
 
-        var handles = alloc[AnyCoroutine](count)
+        var handles = List[AnyCoroutine](capacity=count)
 
         async def wrapper(idx: Int) capturing -> None:
             func(idx)
@@ -5929,7 +5936,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
         for j in range(count):
             var coro = wrapper(j)
             coro._set_noop_callback()
-            handles[j] = coro^._take_handle()
+            handles.append(coro^._take_handle())
 
         _checked(
             external_call[
@@ -5939,11 +5946,10 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
                 self._handle,
                 _coro_resume_fn,
                 _coro_destroy_fn,
-                handles,
+                handles.unsafe_ptr(),
                 count,
             )
         )
-        handles.free()
 
     @parameter
     @always_inline
@@ -7645,9 +7651,9 @@ struct DeviceMulticastBuffer[dtype: DType]:
         var handle: _DeviceMulticastBufferPtr[mut=True] = {}
 
         var ctxs_len = len(contexts)
-        var ctxs = alloc[_DeviceContextPtr[mut=True]](ctxs_len)
+        var ctxs = List[_DeviceContextPtr[mut=True]](capacity=ctxs_len)
         for i in range(ctxs_len):
-            ctxs[i] = contexts[i]._handle
+            ctxs.append(contexts[i]._handle)
 
         # const char* AsyncRT_DeviceMulticastBuffer_allocate(const DeviceMulticastBuffer **result, size_t ctxsLen, const DeviceContext **ctxs, size_t len, size_t elemSize)
         _checked(
@@ -7657,7 +7663,7 @@ struct DeviceMulticastBuffer[dtype: DType]:
             ](
                 UnsafePointer(to=handle),
                 c_size_t(ctxs_len),
-                ctxs,
+                ctxs.unsafe_ptr(),
                 c_size_t(size),
                 c_size_t(elem_size),
             )

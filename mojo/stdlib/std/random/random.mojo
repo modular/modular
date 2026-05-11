@@ -31,6 +31,7 @@ Warning:
 
 import std.math
 from std.math import floor
+from std.memory.alloc import alloc, free, Layout
 from std.time import perf_counter_ns
 
 from ._rng import _get_global_random_state
@@ -184,14 +185,15 @@ def randint[
 
     ```mojo
     from std.random import randint, seed
-    from std.memory import alloc
+    from std.memory.alloc import alloc, free, Layout
     seed()
     var size: Int = 10
-    var ptr = alloc[Int32](size)
+    var layout = Layout[Int32](count=size)
+    var ptr = alloc(layout)
     randint[DType.int32](ptr, size, -50, 50)
     for i in range(size):
         print(ptr[i])  # Random Int32 between -50 and 50
-    ptr.free()
+    free(ptr, layout)
     ```
     """
 
@@ -266,15 +268,16 @@ def rand[
 
     ```mojo
     from std.random import rand, seed
-    from std.memory import alloc
+    from std.memory.alloc import alloc, free, Layout
 
     seed()
     var size: Int = 10
-    var ptr = alloc[Float32](size)
+    var layout = Layout[Float32](count=size)
+    var ptr = alloc(layout)
     rand[DType.float32](ptr, size, min=0.0, max=1.0, int_scale=16)
     for i in range(size):
         print(ptr[i])  # Random Float32 between 0.0 and 1.0
-    ptr.free()
+    free(ptr, layout)
     ```
     """
     var scale_val = int_scale.or_else(-1)
@@ -388,15 +391,16 @@ def randn[
 
     ```mojo
     from std.random import randn, seed
-    from std.memory import alloc
+    from std.memory.alloc import alloc, free, Layout
 
     seed()
     var size: Int = 10
-    var ptr = alloc[Float64](size)
+    var layout = Layout[Float64](count=size)
+    var ptr = alloc(layout)
     randn[DType.float64](ptr, size, mean=0.0, standard_deviation=1.0)
     for i in range(size):
         print(ptr[i])  # Random Float64 from Normal(0.0, 1.0)
-    ptr.free()
+    free(ptr, layout)
     ```
     """
 

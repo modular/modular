@@ -24,7 +24,8 @@ or an h2 fingerprint (0x00-0x7F) derived from the top 7 bits of the hash.
 from std.bit import count_trailing_zeros, next_power_of_two
 from std.hashlib import Hasher, default_hasher
 from std.math import ceildiv
-from std.memory import alloc, memcpy, memset, pack_bits
+from std.memory import alloc, free, memcpy, memset, pack_bits
+from std.memory.alloc import Layout
 from std.sys.intrinsics import likely
 
 # ===-----------------------------------------------------------------------===#
@@ -302,10 +303,12 @@ struct SwissTable[
     def __init__(out self):
         """Initialize an empty Swiss Table."""
         self._capacity = INITIAL_CAPACITY
-        self._ctrl = alloc[UInt8](self._capacity + GROUP_WIDTH)
+        self._ctrl = alloc(Layout[UInt8](count=self._capacity + GROUP_WIDTH))
         memset(self._ctrl, CTRL_EMPTY, self._capacity + GROUP_WIDTH)
-        self._slots = alloc[SwissTableEntry[Self.K, Self.V, Self.H]](
-            self._capacity
+        self._slots = alloc(
+            Layout[SwissTableEntry[Self.K, Self.V, Self.H]](
+                count=self._capacity
+            )
         )
         self._len = 0
         self._growth_left = self._capacity * 7 // 8
@@ -323,10 +326,12 @@ struct SwissTable[
         self._capacity = max(
             next_power_of_two(ceildiv(capacity * 8, 7)), INITIAL_CAPACITY
         )
-        self._ctrl = alloc[UInt8](self._capacity + GROUP_WIDTH)
+        self._ctrl = alloc(Layout[UInt8](count=self._capacity + GROUP_WIDTH))
         memset(self._ctrl, CTRL_EMPTY, self._capacity + GROUP_WIDTH)
-        self._slots = alloc[SwissTableEntry[Self.K, Self.V, Self.H]](
-            self._capacity
+        self._slots = alloc(
+            Layout[SwissTableEntry[Self.K, Self.V, Self.H]](
+                count=self._capacity
+            )
         )
         self._len = 0
         self._growth_left = self._capacity * 7 // 8
@@ -341,15 +346,17 @@ struct SwissTable[
         self._len = copy._len
         self._growth_left = copy._growth_left
 
-        self._ctrl = alloc[UInt8](self._capacity + GROUP_WIDTH)
+        self._ctrl = alloc(Layout[UInt8](count=self._capacity + GROUP_WIDTH))
         memcpy(
             dest=self._ctrl,
             src=copy._ctrl,
             count=self._capacity + GROUP_WIDTH,
         )
 
-        self._slots = alloc[SwissTableEntry[Self.K, Self.V, Self.H]](
-            self._capacity
+        self._slots = alloc(
+            Layout[SwissTableEntry[Self.K, Self.V, Self.H]](
+                count=self._capacity
+            )
         )
         for i in range(self._capacity):
             if is_occupied(self._ctrl[i]):
@@ -361,8 +368,8 @@ struct SwissTable[
             if is_occupied(self._ctrl[i]):
                 (self._slots + i).destroy_pointee()
 
-        self._ctrl.free()
-        self._slots.free()
+        free(self._ctrl, {count = self._capacity + GROUP_WIDTH})
+        free(self._slots, {count = self._capacity})
 
     # ===-------------------------------------------------------------------===#
     # Core operations
@@ -547,10 +554,10 @@ struct SwissTable[
         var old_slots = self._slots
         var old_capacity = self._capacity
 
-        self._ctrl = alloc[UInt8](new_capacity + GROUP_WIDTH)
+        self._ctrl = alloc(Layout[UInt8](count=new_capacity + GROUP_WIDTH))
         memset(self._ctrl, CTRL_EMPTY, new_capacity + GROUP_WIDTH)
-        self._slots = alloc[SwissTableEntry[Self.K, Self.V, Self.H]](
-            new_capacity
+        self._slots = alloc(
+            Layout[SwissTableEntry[Self.K, Self.V, Self.H]](count=new_capacity)
         )
         self._capacity = new_capacity
         self._growth_left = new_capacity * 7 // 8 - self._len
@@ -566,8 +573,8 @@ struct SwissTable[
                 (self._slots + new_slot).init_pointee_move(entry^)
                 relocations.append((i, new_slot))
 
-        old_ctrl.free()
-        old_slots.free()
+        free(old_ctrl, {count = old_capacity + GROUP_WIDTH})
+        free(old_slots, {count = old_capacity})
 
         return relocations^
 
@@ -600,7 +607,7 @@ struct SwissTable[
         )
 
         # Step 3: Relocate entries.
-        var slot_map = alloc[Int32](self._capacity)
+        var slot_map = alloc(Layout[Int32](count=self._capacity))
         for i in range(self._capacity):
             slot_map[i] = Int32(i)
 

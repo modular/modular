@@ -18,7 +18,8 @@ Documentation for these functions can be found online at:
 """
 
 from std.collections import InlineArray
-from std.memory import OpaquePointer, alloc
+from std.memory import OpaquePointer
+from std.memory.alloc import alloc, Layout
 from std.memory.unsafe_pointer import unsafe_cast
 from std.os import abort, getenv, setenv
 from std.os.path import dirname
@@ -2816,7 +2817,7 @@ struct CPython(Defaultable, Movable):
 
         # NOTE: See https://github.com/pybind/pybind11/blob/a1d00916b26b187e583f3bce39cd59c3b0652c32/include/pybind11/pybind11.h#L1326
         # for what we want to do here.
-        var module_def_ptr = alloc[PyModuleDef](1)
+        var module_def_ptr = alloc(Layout[PyModuleDef].single())
         module_def_ptr.init_pointee_move(PyModuleDef(name))
 
         # TODO: set gil stuff
