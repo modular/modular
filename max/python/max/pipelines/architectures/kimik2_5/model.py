@@ -68,7 +68,7 @@ from transformers import AutoConfig
 from ..deepseekV3.model import DeepseekV3Inputs
 from .context import KimiK2_5TextAndVisionContext
 from .kimik2_5 import KimiK2_5
-from .model_config import KimiK2_5Config, KimiK2_5TextConfig
+from .model_config import KimiK2_5Config, KimiK2_5TextConfig, VisionConfig
 
 logger = logging.getLogger("max.pipelines")
 
@@ -150,6 +150,17 @@ class KimiK2_5Model(
     """A Kimi-K2.5 pipeline model for multimodal text generation."""
 
     _GRAPH_CAPTURE_HEADROOM_BYTES_PER_DEVICE = 8 * 1024**3
+
+    _VISION_PEAK_BYTES_PER_PATCH_COEFF = 20
+    """Conservative coefficient for vision encoder peak transient memory.
+
+    Per-patch peak transient working memory in the encoder, in units of
+    ``vt_hidden_size`` bytes. Captures the in-layer attention working set
+    (packed QKV bf16 + fp32 Q/K upcast in RoPE + attention output + residual)
+    which dominates the MLP working set for the Kimi-VL config. See
+    ``layers/vision/attention.py::_apply_rope`` for the fp32 upcast that drives
+    this; rounded up from ~16x to leave headroom.
+    """
 
     vision_model: Model
     """The compiled vision model for processing images."""
@@ -426,9 +437,37 @@ class KimiK2_5Model(
             n_sparse_layers * config.n_shared_experts * expert_size
         )
 
+        # The vision encoder (patch_embed + transformer encoder) is REPLICATED
+        # on every device -- see ``Transformer.__init__`` in
+        # ``layers/vision/transformer.py``. The patch_merger is tensor-parallel,
+        # so it correctly stays in the LM-attention TP pool below.
+        #
+        # Pull replicated vision bytes out of the bulk weights so they don't
+        # get scaled by ``data_parallel_degree`` (which is the wrong factor
+        # for replicated weights), then add them back at the right scale
+        # (``n_gpus_per_node``).
+        hf_vision_cfg = getattr(
+            model_config.huggingface_config, "vision_config", None
+        )
+        vision_config = (
+            VisionConfig.initialize_from_config(
+                pipeline_config,
+                hf_vision_cfg,
+                huggingface_config=model_config.huggingface_config,
+            )
+            if hf_vision_cfg is not None
+            else None
+        )
+        replicated_vision_bytes = cls._estimate_replicated_vision_weights_bytes(
+            vision_config
+        )
+
         # Estimate the size of the attention weights.
         attn_weights_size = (
-            weights_size - routing_experts_size - shared_experts_size
+            weights_size
+            - routing_experts_size
+            - shared_experts_size
+            - replicated_vision_bytes
         )
 
         # If we use DP attention, attention weights are duplicated on each DP rank.
@@ -436,6 +475,9 @@ class KimiK2_5Model(
 
         # The shared experts are duplicated on each device.
         total_size += shared_experts_size * n_gpus_per_node
+
+        # Replicated vision encoder weights live on every GPU.
+        total_size += replicated_vision_bytes * n_gpus_per_node
 
         ep_size = max(pipeline_config.runtime.ep_size, 1)
         if ep_size == 1:
@@ -449,6 +491,17 @@ class KimiK2_5Model(
 
         # Add back the lm_head/embed_tokens size, they will never be duplicated.
         total_size += lm_head_size + embed_tokens_size
+
+        if replicated_vision_bytes:
+            logger.info(
+                "Estimated replicated vision encoder weights: %s per device, "
+                "%s cluster-wide (%d devices)",
+                to_human_readable_bytes(replicated_vision_bytes),
+                to_human_readable_bytes(
+                    replicated_vision_bytes * n_gpus_per_node
+                ),
+                n_gpus_per_node,
+            )
 
         return total_size
 
@@ -568,10 +621,50 @@ class KimiK2_5Model(
                 f"{to_human_readable_bytes(ep_buffer_memory)}"
             )
 
-        # We only need to consider the maximum of the MLA and MoE activation
-        # memories, because the MLA and MoE layers are executed sequentially.
-        activation_memory = max(mla_activation_memory, moe_activation_memory)
+        # Vision encoder activation memory.
+        #
+        # The vision encoder runs during prefill in
+        # ``prepare_initial_token_inputs`` and is invisible to the LM-side
+        # activation accounting above. Its peak transient working set scales
+        # linearly with the patches in a single ``vision_model.execute``
+        # call, which is bounded by the per-call image-token budget enforced
+        # by the chunking path in ``prepare_initial_token_inputs``.
+        #
+        # See MXSERV-32 / GEX-2365 for the underlying encoder OOM and the
+        # general "estimate from compiled graph" follow-up.
+        hf_vision_cfg = getattr(huggingface_config, "vision_config", None)
+        vision_config = (
+            VisionConfig.initialize_from_config(
+                pipeline_config,
+                hf_vision_cfg,
+                huggingface_config=huggingface_config,
+            )
+            if hf_vision_cfg is not None
+            else None
+        )
+        vision_activation_memory = cls._estimate_vision_activation_memory(
+            pipeline_config=pipeline_config,
+            vision_config=vision_config,
+        )
+
+        # MLA, MoE, and vision encoder activations are all transient and
+        # mutually exclusive in time -- the vision encoder runs to
+        # completion (transients freed) before the LM graph executes; the
+        # leftover image-embedding output handed to the LM is small enough
+        # to ignore at this resolution. EP SHMEM buffers are persistent
+        # (allocated once at model init), so they stack on top.
+        activation_memory = max(
+            mla_activation_memory,
+            moe_activation_memory,
+            vision_activation_memory,
+        )
         activation_memory += ep_buffer_memory
+
+        if vision_activation_memory:
+            logger.info(
+                "Estimated vision encoder activation memory: %s",
+                to_human_readable_bytes(vision_activation_memory),
+            )
 
         if pipeline_config.runtime.device_graph_capture:
             graph_capture_headroom = (
@@ -590,6 +683,131 @@ class KimiK2_5Model(
             )
 
         return activation_memory
+
+    @classmethod
+    def _estimate_replicated_vision_weights_bytes(
+        cls, vision_config: VisionConfig | None
+    ) -> int:
+        """Estimate per-device bytes for replicated vision encoder weights.
+
+        Covers the parts of the vision tower that live on every GPU --
+        ``patch_embed`` (Conv2d projection + 2D positional grid) and the
+        transformer ``encoder`` (per-layer attention QKV/O + MLP up/down).
+        The patch merger is tensor-parallel sharded (see
+        ``Transformer.__init__``) and intentionally excluded here so it
+        stays in the LM-attention TP pool of ``estimate_weights_size``.
+
+        Returns 0 when the model has no vision config.
+
+        Approximation: ignores per-layer norms, biases, and the temporal
+        patch dimension on patch_embed (Kimi-VL uses a 2D conv, but
+        future variants may use a 3D conv with ``temporal_patch_size > 1``;
+        if that happens, this term will under-count by that factor on
+        ``patch_embed`` alone, which is a small fraction of the total).
+        Result is in bf16 bytes since that's the Kimi K2.5 default; if the
+        model later shifts to fp16/fp8 this still over-counts safely.
+        """
+        if vision_config is None:
+            return 0
+
+        # Per-layer encoder params:
+        #   wqkv: vt_hidden * 3 * vt_hidden
+        #   wo:   vt_hidden * vt_hidden
+        #   mlp:  2 * vt_hidden * vt_intermediate (up_proj + down_proj)
+        encoder_params_per_layer = (
+            4 * vision_config.vt_hidden_size * vision_config.vt_hidden_size
+            + 2
+            * vision_config.vt_hidden_size
+            * vision_config.vt_intermediate_size
+        )
+        encoder_params = (
+            vision_config.vt_num_hidden_layers * encoder_params_per_layer
+        )
+
+        # Patch embed: Conv2d(in_ch, vt_hidden, patch_size) + 2D pos grid
+        patch_embed_params = (
+            vision_config.vt_hidden_size
+            * vision_config.in_channels
+            * vision_config.patch_size
+            * vision_config.patch_size
+            + vision_config.init_pos_emb_height
+            * vision_config.init_pos_emb_width
+            * vision_config.vt_hidden_size
+        )
+
+        total_params = encoder_params + patch_embed_params
+        # vt weights are stored in vision_config.dtype; we approximate via
+        # bf16 (2 bytes) since that is the Kimi K2.5 default and what the
+        # checkpoint ships. If the model later shifts to fp16/fp8 this still
+        # over-counts safely.
+        return int(total_params * DType.bfloat16.size_in_bytes)
+
+    @classmethod
+    def _vision_merge_sq(cls, vision_config: VisionConfig) -> int:
+        """Patches-per-output-token from the vision config's merge kernel."""
+        merge_kernel_size = vision_config.merge_kernel_size
+        return max(1, merge_kernel_size[0] * merge_kernel_size[1])
+
+    @classmethod
+    def _vision_encoder_token_budget(
+        cls, pipeline_config: PipelineConfig
+    ) -> int | None:
+        """Return the per-call image-token ceiling for the vision encoder.
+
+        Returns ``max_batch_input_tokens`` so the vision encoder respects the
+        same input-token budget the LM forward pass honors under chunked
+        prefill. Mirrors how vLLM caps multimodal work via
+        ``max_num_batched_tokens`` and SGLang via ``chunked_prefill_size``:
+        the budget is denominated in **image tokens after patch merging**,
+        not raw vision-tower patches.
+
+        Returns ``None`` when ``max_batch_input_tokens`` is unset, signalling
+        that chunking should be disabled (matches the pre-MXSERV-32 behavior
+        of running the encoder on the full uncached batch in one call).
+        """
+        max_batch_input_tokens = int(
+            pipeline_config.runtime.max_batch_input_tokens or 0
+        )
+        if max_batch_input_tokens <= 0:
+            return None
+        return max_batch_input_tokens
+
+    @classmethod
+    def _estimate_vision_activation_memory(
+        cls,
+        pipeline_config: PipelineConfig,
+        vision_config: VisionConfig | None,
+    ) -> int:
+        """Estimate vision encoder peak activation memory cluster-wide.
+
+        Returns 0 when the model has no vision config or the vision encoder
+        is unbounded (i.e. ``max_batch_input_tokens`` is unset, which
+        disables chunking and removes the per-call ceiling). The bound is::
+
+            patches_per_call * vt_hidden_size * coeff
+
+        where ``patches_per_call = token_budget * merge_sq`` -- i.e. the
+        per-call work is bounded by the same image-token budget the LM
+        forward pass honors.
+        """
+        if vision_config is None:
+            return 0
+
+        token_budget = cls._vision_encoder_token_budget(pipeline_config)
+        if token_budget is None:
+            # Chunking disabled -- no per-call ceiling, can't bound activation.
+            return 0
+        merge_sq = cls._vision_merge_sq(vision_config)
+        patches_per_call = token_budget * merge_sq
+
+        per_device_bytes = (
+            patches_per_call
+            * vision_config.vt_hidden_size
+            * cls._VISION_PEAK_BYTES_PER_PATCH_COEFF
+        )
+
+        n_devices = len(pipeline_config.model.device_specs)
+        return int(per_device_bytes * n_devices)
 
     def load_model(self, session: InferenceSession) -> tuple[Model, Model]:
         """Load the model with the given weights."""
