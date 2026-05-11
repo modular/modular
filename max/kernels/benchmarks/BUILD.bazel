@@ -47,6 +47,7 @@ _EXTRA_CONSTRAINTS = {
     }),  # FIXME: PRDT-506
     "gpu/bench_matmul_mxfp4.mojo": ["//:amd_gpu"],
     "gpu/linalg/bench_grouped_matmul_dequant_mxfp4_amd.mojo": ["//:amd_gpu"],
+    "gpu/linalg/bench_grouped_matmul_amd.mojo": ["//:amd_gpu"],
     "gpu/bench_topk.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
