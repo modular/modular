@@ -93,6 +93,7 @@ Functions
    build_eos_tracker_for_request
    convert_max_config_value
    deep_merge_max_configs
+   float32_array_to_buffer
    float32_to_bfloat16_as_uint16
    generate_local_model_path
    get_default_max_config_file_section_name
