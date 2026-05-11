@@ -197,17 +197,7 @@ struct Error(
         self._error = String(value)
         self._stack_trace = StackTrace.collect_if_enabled(0)
 
-    @no_inline
     @implicit
-    def __init__(out self, value: Some[Writable]):
-        """Construct an Error object from a Writable argument.
-
-        Args:
-            value: The Writable argument to store in the error message.
-        """
-        self._error = String(value)
-        self._stack_trace = StackTrace.collect_if_enabled(0)
-
     @no_inline
     def __init__[*Ts: Writable](out self, *args: *Ts):
         """Construct an Error by concatenating a sequence of Writable arguments.
