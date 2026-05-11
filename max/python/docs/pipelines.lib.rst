@@ -87,6 +87,7 @@ Functions
    :toctree: generated
    :template: autosummary/function.rst
 
+   build_eos_tracker_for_request
    convert_max_config_value
    deep_merge_max_configs
    float32_to_bfloat16_as_uint16
