@@ -1041,10 +1041,12 @@ logit_verification_pipelines:
     encoding: bfloat16
     tags: [image-generation, no-h100]
     pregenerated_torch_goldens:
-      tar_file: "s3://modular-bazel-artifacts-public/artifacts/torch_black-forest-labs_FLUX.2-dev-t2i_golden/1/4a5da181a0bbbd1434ca8b02f51e68200c27535b8c0ed0941d77f0bc2e530f5a/torch_black-forest-labs_FLUX.2-dev-t2i_golden.tar.gz"
+      tar_file: "s3://modular-bazel-artifacts-public/artifacts/torch_black-forest-labs_FLUX.2-dev-t2i_golden/1/09e2330e3ea8016979b145072037df30ac8a7c6a425c00d64ae340cd52455295/torch_black-forest-labs_FLUX.2-dev-t2i_golden.tar.gz"
       json_file: "torch_black-forest-labs_FLUX.2-dev-t2i_bfloat16_golden.json"
-    ssim_threshold: 0.55
-    lpips_threshold: 0.40
+    # Per-prompt SSIM range: [0.761, 0.837, 0.830, 0.788, 0.764] on B200 (worst 0.761).
+    # Thresholds set with ~10% headroom below the worst-performing prompt.
+    ssim_threshold: 0.68
+    lpips_threshold: 0.30
     timeout: 3600
     config_params_override: {"prefer_module_v3": false}
 
@@ -1056,10 +1058,12 @@ logit_verification_pipelines:
     encoding: bfloat16
     tags: [image-generation, no-h100]
     pregenerated_torch_goldens:
-      tar_file: "s3://modular-bazel-artifacts-public/artifacts/torch_black-forest-labs_FLUX.2-dev-t2i_golden/1/4a5da181a0bbbd1434ca8b02f51e68200c27535b8c0ed0941d77f0bc2e530f5a/torch_black-forest-labs_FLUX.2-dev-t2i_golden.tar.gz"
+      tar_file: "s3://modular-bazel-artifacts-public/artifacts/torch_black-forest-labs_FLUX.2-dev-t2i_golden/1/09e2330e3ea8016979b145072037df30ac8a7c6a425c00d64ae340cd52455295/torch_black-forest-labs_FLUX.2-dev-t2i_golden.tar.gz"
       json_file: "torch_black-forest-labs_FLUX.2-dev-t2i_bfloat16_golden.json"
-    ssim_threshold: 0.55
-    lpips_threshold: 0.40
+    # Per-prompt SSIM range: [0.761, 0.837, 0.830, 0.788, 0.764] on B200 (worst 0.761).
+    # Thresholds set with ~10% headroom below the worst-performing prompt.
+    ssim_threshold: 0.68
+    lpips_threshold: 0.30
     timeout: 3600
     config_params_override: {"prefer_module_v3": true}
 
