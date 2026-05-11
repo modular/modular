@@ -185,6 +185,8 @@ class CastFromBuiltinAttr(max._core.Attribute):
     """
 
     @overload
+    def __init__(self, arg: max._core.dialects.builtin.TypedAttr) -> None: ...
+    @overload
     def __init__(
         self, arg: max._core.dialects.builtin.TypedAttr, type: SIMDType
     ) -> None: ...
@@ -203,6 +205,8 @@ class CastToBuiltinAttr(max._core.Attribute):
     type.
     """
 
+    @overload
+    def __init__(self, arg: max._core.dialects.builtin.TypedAttr) -> None: ...
     @overload
     def __init__(
         self, arg: max._core.dialects.builtin.TypedAttr, type: max._core.Type
