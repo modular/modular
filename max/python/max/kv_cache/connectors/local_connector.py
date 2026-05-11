@@ -161,7 +161,12 @@ class LocalConnector:
         if block_hash in self._host_block_pool.hash_to_committed_block:
             return
 
-        # Allocate host block
+        # Allocate host block. This should never fail!
+        assert (
+            len(self._host_block_pool.free_block_queue)
+            == self._host_block_pool.total_num_blocks
+        )
+        assert self._host_block_pool.total_num_blocks > 0
         host_block, _ = self._host_block_pool.alloc_block()
 
         # Copy from device to host

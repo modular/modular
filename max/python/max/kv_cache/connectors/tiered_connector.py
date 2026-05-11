@@ -181,7 +181,10 @@ class TieredConnector:
                 self._host_block_pool.touch(host_block)
                 hits.append(_CacheHit(block_hash, host_block, device_block_id))
 
-            elif self._disk_tier.contains(block_hash):
+            elif (
+                self._disk_tier.contains(block_hash)
+                and len(self._host_block_pool.free_block_queue) > 0
+            ):
                 # Disk hit -> async promote to CPU
                 host_block, _ = self._host_block_pool.alloc_block()
 
@@ -356,7 +359,13 @@ class TieredConnector:
         caller is responsible for calling ``free_block()`` when the write
         completes (via ``_drain_completed_writes()``).
         """
+        # Skip if already in host cache
         if block_hash in self._host_block_pool.hash_to_committed_block:
+            return None
+
+        # Skip if no free host blocks are available. This is possible if there
+        # are many disk writes inflight that are holding on to host blocks.
+        if len(self._host_block_pool.free_block_queue) == 0:
             return None
 
         host_block, _ = self._host_block_pool.alloc_block()  # ref_cnt=1
