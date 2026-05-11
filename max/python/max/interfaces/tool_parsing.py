@@ -119,8 +119,20 @@ class ToolParser(Protocol):
             delta: The incremental token(s) to process.
 
         Returns:
-            A list of tool call deltas if any can be extracted,
-            or None if more tokens are needed.
+            - A non-empty list of :class:`ParsedToolCallDelta` when new
+              content (tool name, id, or argument bytes) is ready to stream.
+            - An empty list ``[]`` when the parser has consumed the token and
+              is inside the tool-calls section but has no deltas to emit yet;
+              the caller must suppress the raw token from flowing as text
+              content.
+            - ``None`` when more tokens are needed before anything can be
+              emitted (e.g. buffering a potential section-begin marker).
+
+        Note:
+            The empty-list suppression state is currently only implemented by
+            :class:`~max.pipelines.architectures.kimik2_5.tool_parser.KimiToolParser`.
+            Other model tool parsers return only non-empty lists or ``None``
+            and should be updated to adopt this convention.
         """
         ...
 

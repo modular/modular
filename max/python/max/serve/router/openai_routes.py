@@ -316,7 +316,11 @@ class OpenAIChatResponseGenerator(
                 tool_call_chunks: list[ChoiceDeltaToolCall] = []
                 if self.parse_tool_calls and chunk.decoded_tokens:
                     tool_deltas = self.parser.parse_delta(chunk.decoded_tokens)
-                    if tool_deltas:
+                    if tool_deltas is not None:
+                        # parse_delta returns [] (not None) once inside the
+                        # tool-calls section, even if no deltas are ready yet.
+                        # An empty list means "I consumed this chunk; suppress
+                        # the raw structural tokens from flowing as content".
                         stream_content_parts: list[str] = []
                         for delta in tool_deltas:
                             if delta.content is not None:
@@ -337,11 +341,10 @@ class OpenAIChatResponseGenerator(
                                     )
                                 )
 
-                        merged_stream_content = (
-                            "".join(stream_content_parts)
-                            if stream_content_parts
-                            else None
-                        )
+                        # Always assign a string (possibly "") so that
+                        # merged_stream_content is non-None and prevents
+                        # chunk.decoded_tokens from being used as content.
+                        merged_stream_content = "".join(stream_content_parts)
 
                 if (
                     chunk.decoded_tokens is not None
@@ -351,9 +354,12 @@ class OpenAIChatResponseGenerator(
                 ):
                     # Parsed streaming deltas may carry assistant text in
                     # ``content`` separate from tool-call argument deltas.
+                    # When merged_stream_content is "" (parser consumed the
+                    # chunk but has no content to emit), use None to avoid
+                    # leaking raw structural tokens from chunk.decoded_tokens.
                     content = chunk.decoded_tokens
                     if merged_stream_content is not None:
-                        content = merged_stream_content
+                        content = merged_stream_content or None
                     elif tool_call_chunks:
                         content = None
 
