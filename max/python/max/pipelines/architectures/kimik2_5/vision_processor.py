@@ -34,7 +34,8 @@ from typing import Any
 
 import numpy as np
 import numpy.typing as npt
-from PIL import Image
+from max.pipelines.core.exceptions import InputError
+from PIL import Image, UnidentifiedImageError
 
 
 @dataclass
@@ -78,7 +79,17 @@ def _to_pil(data: bytes | Image.Image) -> Image.Image:
     if isinstance(data, Image.Image):
         return data.convert("RGB")
     if isinstance(data, bytes):
-        return Image.open(io.BytesIO(data)).convert("RGB")
+        try:
+            return Image.open(io.BytesIO(data)).convert("RGB")
+        except (
+            UnidentifiedImageError,
+            OSError,
+            Image.DecompressionBombError,
+        ) as e:
+            raise InputError(
+                "Invalid image input: image bytes could not be decoded as a "
+                "supported image."
+            ) from e
     raise ValueError(f"Unsupported data type: {type(data)}")
 
 

@@ -37,6 +37,7 @@ from max.interfaces import (
 )
 from max.pipelines.architectures.kimik2_5.tool_parser import KimiToolParser
 from max.pipelines.core import TextContext
+from max.pipelines.core.exceptions import InputError
 from max.pipelines.lib import PIPELINE_REGISTRY, PipelineConfig
 from max.serve.api_server import ServingTokenGeneratorSettings, fastapi_app
 from max.serve.config import APIType, Settings
@@ -225,6 +226,22 @@ async def test_openai_chat_completion_empty_model_name(app) -> None:  # noqa: AN
         choice = response.choices[0]
         assert choice.message.content == request_content
         assert choice.finish_reason == "stop"
+
+
+@pytest.mark.asyncio
+async def test_openai_chat_completion_input_error_returns_400(app) -> None:  # noqa: ANN001
+    async with AsyncTestClient(app) as client:
+        app.state.pipeline.all_tokens = AsyncMock(
+            side_effect=InputError("invalid image input")
+        )
+
+        response_json = await client.post(
+            "/v1/chat/completions",
+            json=simple_openai_request(model_name="echo", content="test data"),
+        )
+
+        assert response_json.status_code == 400
+        assert response_json.json()["detail"] == "invalid image input"
 
 
 def test_vllm_response_deserialization() -> None:

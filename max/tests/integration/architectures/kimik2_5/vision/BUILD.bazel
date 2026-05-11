@@ -73,6 +73,7 @@ modular_py_test(
     ],
     deps = [
         "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/core",
         requirement("av"),
         requirement("numpy"),
         requirement("pillow"),
