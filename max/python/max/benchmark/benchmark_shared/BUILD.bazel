@@ -28,7 +28,7 @@ modular_py_library(
     deps = [
         ":percentile_metrics",
         "//max/python/max/config",
-        "//max/python/max/diagnostics",
+        "//max/python/max/profiler",
         "//max/python/max/serve:config",
         requirement("aiohttp"),
         requirement("datasets"),

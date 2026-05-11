@@ -30,12 +30,27 @@ The profiler supports three usage patterns:
    spans.
 """
 
-from max._core.profiler import is_profiling_enabled, set_gpu_profiling_state
-from max.profiler import gpu
-from max.profiler.tracing import Tracer, traced
+from max.profiler import cpu, gpu
+
+try:
+    from max._core.profiler import is_profiling_enabled, set_gpu_profiling_state
+    from max.profiler.tracing import Tracer, traced
+except ImportError:
+
+    def _not_available(*args, **kwargs) -> None:
+        raise ImportError(
+            "max._core is not available in this environment. "
+            "Install the full MAX package to use profiling and tracing."
+        )
+
+    Tracer = _not_available  # type: ignore[assignment, misc]
+    traced = _not_available  # type: ignore[assignment]
+    is_profiling_enabled = _not_available  # type: ignore[assignment]
+    set_gpu_profiling_state = _not_available
 
 __all__ = [
     "Tracer",
+    "cpu",
     "gpu",
     "is_profiling_enabled",
     "set_gpu_profiling_state",

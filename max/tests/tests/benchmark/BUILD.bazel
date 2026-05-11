@@ -19,7 +19,7 @@ modular_py_test(
     deps = [
         "//max/python/max/benchmark:benchmark_serving_lib",
         "//max/python/max/benchmark/benchmark_shared",
-        "//max/python/max/diagnostics",
+        "//max/python/max/profiler",
         requirement("numpy"),
         requirement("pillow"),
         requirement("pydantic"),

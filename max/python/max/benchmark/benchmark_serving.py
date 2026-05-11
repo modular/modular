@@ -120,7 +120,7 @@ from max.benchmark.benchmark_shared.warmup import (
     log_warmup_sampling_report,
     pick_warmup_population,
 )
-from max.diagnostics.cpu import (
+from max.profiler.cpu import (
     CPUMetrics,
     CPUMetricsCollector,
     collect_pids_for_port,
