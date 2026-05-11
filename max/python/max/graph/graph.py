@@ -27,7 +27,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, TypeGuard, TypeVar, cast
 
-from max import mlir
+from max import _core, mlir
 from max._core import Attribute as _Attribute
 from max._core import Block, OpBuilder, Operation
 from max._core import Type as _Type
@@ -364,52 +364,45 @@ class Module:
     serializers, etc.); routine users should not need it.
     """
 
-    mlir_module: mlir.Module
-    """The wrapped MLIR module. Internal callers may reach through this to
-    the cmlir bindings; user code should prefer the methods on this class."""
+    mlir_module: builtin.ModuleOp
+    """The wrapped MLIR module, exposed through the typed nanobind dialect
+    bindings."""
 
-    def __init__(self, mlir_module: mlir.Module | None = None) -> None:
-        """Create a new, empty module, or wrap an existing :class:`mlir.Module`.
+    def __init__(self, mlir_module: builtin.ModuleOp | None = None) -> None:
+        """Create a new, empty module, or wrap an existing :class:`builtin.ModuleOp`.
 
         Args:
-            mlir_module: An existing MLIR module to wrap. When ``None``
-                (the default), a new empty module is created. The
-                wrap-existing form is intended for code inside the graph
-                package (for example, :class:`Graph`'s subgraph plumbing
-                and the :attr:`Graph.module` property) that already holds
-                an ``mlir.Module`` and needs to expose it through the
-                public :class:`Module` surface; routine users should leave
-                this argument unset.
+            mlir_module: An existing typed :class:`builtin.ModuleOp` to
+                wrap. When ``None`` (the default), a new empty module is
+                created. The wrap-existing form is intended for code that
+                already holds a typed ``ModuleOp`` (for example
+                :class:`Graph`'s subgraph plumbing or the
+                :attr:`Graph.module` property) and needs to expose it
+                through the public :class:`Module` surface; routine users
+                should leave this argument unset.
         """
-        if mlir_module is not None:
-            self.mlir_module = mlir_module
-            return
-
-        with _location():
-            self.mlir_module = mlir.Module.create()
+        if mlir_module is None:
+            mlir_module = builtin.ModuleOp(location=_location())
+        self.mlir_module = mlir_module
 
     def top_level_graph_names(self) -> list[str]:
         """Return the name of every top-level (non-subgraph) graph in this module.
 
-        Walks the wrapped module's body, casts each op to :class:`_mo.GraphOp`,
-        and skips any that have ``is_subgraph`` set (subgraphs are inlined
-        callees, not loaded as standalone models). Non-graph ops are skipped
-        rather than raising. The resulting order matches MEF model order,
-        which is the order
-        :func:`max.engine.InferenceSession.load_all` returns models in.
+        Walks the wrapped module's body and skips any op whose
+        ``is_subgraph`` is set (subgraphs are inlined callees, not loaded
+        as standalone models). Non-graph ops are skipped rather than
+        raising. The resulting order matches MEF model order, which is the
+        order :func:`max.engine.InferenceSession.load_all` returns models
+        in.
 
         Returns:
             The names of the top-level graphs, in MEF order. The list is
             empty for a freshly constructed :class:`Module`.
         """
         names: list[str] = []
-        for op in self.mlir_module.body.operations:
-            graph_op = Operation._from_cmlir(op)
-            if not isinstance(graph_op, _mo.GraphOp):
-                continue
-            if graph_op.is_subgraph:
-                continue
-            names.append(graph_op.sym_name)
+        for op in self.mlir_module.body:
+            if isinstance(op, _mo.GraphOp) and not op.is_subgraph:
+                names.append(op.sym_name)
         return names
 
 
@@ -524,7 +517,7 @@ class Graph:
     _params: dict[str, None]
     _mlir_op: mlir.Operation | mlir.OpView
     _graph_body: mlir.Block
-    _module: mlir.Module
+    _module: builtin.ModuleOp
     _context_state: list[contextlib.AbstractContextManager[Graph]]
     _weights: dict[str, _GraphWeight]
     # A global sequence of chains that is updated by side-effecting ops.
@@ -572,17 +565,13 @@ class Graph:
         self._should_verify_ops = True
 
         with _location() as loc:
-            # Create the top level module op. ``Module`` is the public
-            # wrapper; ``self._module`` keeps the underlying ``mlir.Module``
-            # so internal MLIR access in this file does not have to thread
-            # through ``.mlir_module`` everywhere.
+            # The top-level module op is stored as a typed nanobind
+            # :class:`builtin.ModuleOp`. Either reuse the one supplied via
+            # ``module=`` or create a fresh one.
             self._module = (
-                module.mlir_module if module else mlir.Module.create()
+                module.mlir_module if module else builtin.ModuleOp(location=loc)
             )
-            _module: builtin.ModuleOp = Operation._from_cmlir(  # type: ignore
-                self._module.operation
-            )
-            builder = OpBuilder(_module.body.end)
+            builder = OpBuilder(self._module.body.end)
 
             op = _mo.GraphOp(
                 builder,
@@ -749,7 +738,7 @@ class Graph:
             path=path,
             # *args,
             custom_extensions=custom_extensions,
-            module=Module(mlir_module=self._module),
+            module=self.module,
             # **kwargs,
         )
 
@@ -1258,13 +1247,12 @@ class Graph:
         with open(path) as f:
             context = default_mlir_context()
             with _location():
-                # Create the top level module op.
-                self._module = mlir.Module.create()
-                with mlir.InsertionPoint(self._module.body):
-                    self._module = self._module.parse(f.read(), context)
-                    # Set the mo.graph op, which is the first operation in the
-                    # module body block.
-                    self._mlir_op = self._module.body.operations[0]
+                self._module = _core.parse_module(f.read(), context)
+                # Set the mo.graph op, which is the first operation in the
+                # module body block.
+                self._mlir_op = mlir.Operation._CAPICreate(
+                    self._module.body[0]._CAPIPtr
+                )
 
         # Initialize the Kernel Library
         kernels_paths = []

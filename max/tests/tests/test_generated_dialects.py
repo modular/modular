@@ -21,7 +21,6 @@ from max._core import (
     InsertPoint,
     NamedAttribute,
     OpBuilder,
-    Operation,
     Pass,
     Type,
     lower,
@@ -321,19 +320,16 @@ def test_discardable_attrs__concurrent_modification(mlir_context) -> None:  # no
 def test_lower_remove_dead_values(mlir_context) -> None:  # noqa: ANN001
     with Graph("empty", input_types=[]) as graph:
         graph.output()
-    module = Operation._from_cmlir(graph._module.operation)
-    assert isinstance(module, builtin.ModuleOp)
-    assert "mo.chain.create()" in str(module)
+    module = graph._module
+    assert "mo.chain.create()" in module.asm()
     lower(module, [builtin.passes.RemoveDeadValuesPass()])
-    assert isinstance(module, builtin.ModuleOp)
-    assert "mo.chain.create()" not in str(module)
+    assert "mo.chain.create()" not in module.asm()
 
 
 def test_lowering_failure_diagnostic(mlir_context) -> None:  # noqa: ANN001
     # graph with no output!
     graph = Graph("empty", input_types=[])
-    module = Operation._from_cmlir(graph._module.operation)
-    assert isinstance(module, builtin.ModuleOp)
+    module = graph._module
     with pytest.raises(Exception):
         module.verify()
     with pytest.raises(Exception):

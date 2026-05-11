@@ -676,7 +676,7 @@ class InferenceSession:
         with self._compilation_lock:
             try:
                 return self._impl.compile_from_object(
-                    module.mlir_module._CAPIPtr,  # type: ignore
+                    module.mlir_module._CAPIPtr,
                     custom_extensions_final,
                     _derive_pipeline_name(module),
                 )

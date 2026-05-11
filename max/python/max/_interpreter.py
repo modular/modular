@@ -100,9 +100,7 @@ class MOInterpreter:
         Returns:
             True if the interpreter can handle the graph, False otherwise.
         """
-        module: builtin.ModuleOp = _core.Operation._from_cmlir(
-            graph._module.operation
-        )  # type: ignore[assignment]
+        module = graph._module
         dispatchable_count = 0
         for op in self._walk_ops(module):
             if isinstance(op, mo.OutputOp):
@@ -153,9 +151,7 @@ class MOInterpreter:
         _handlers_module._weights_registry = weights
         try:
             # Walk ops in the graph body and dispatch
-            module: builtin.ModuleOp = _core.Operation._from_cmlir(
-                graph._module.operation
-            )  # type: ignore[assignment]
+            module = graph._module
             output_op = None
             for op in self._walk_ops(module):
                 if isinstance(op, mo.OutputOp):
