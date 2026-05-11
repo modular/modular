@@ -1,15 +1,15 @@
-:title: max.diagnostics.cpu
+:title: max.profiler.cpu
 :type: module
 :lang: python
 :wrapper_class: rst-module-autosummary
 
-max.diagnostics.cpu
-===================
+max.profiler.cpu
+================
 
-.. automodule:: max.diagnostics.cpu
+.. automodule:: max.profiler.cpu
    :no-members:
 
-.. currentmodule:: max.diagnostics.cpu
+.. currentmodule:: max.profiler.cpu
 
 Monitoring
 ----------

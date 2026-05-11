@@ -192,17 +192,6 @@
         "max/api/python/index",
         {
           "type": "category",
-          "label": "max.diagnostics.cpu",
-          "link": {
-            "type": "doc",
-            "id": "max/api/python/diagnostics.cpu"
-          },
-          "items": [
-            "__AUTOGEN:max.diagnostics.cpu__"
-          ]
-        },
-        {
-          "type": "category",
           "label": "max.driver",
           "link": {
             "type": "doc",
@@ -575,6 +564,17 @@
           },
           "items": [
             "__AUTOGEN:max.profiler__",
+            {
+              "type": "category",
+              "label": "max.profiler.cpu",
+              "link": {
+                "type": "doc",
+                "id": "max/api/python/profiler.cpu"
+              },
+              "items": [
+                "__AUTOGEN:max.profiler.cpu__"
+              ]
+            },
             {
               "type": "category",
               "label": "max.profiler.gpu",

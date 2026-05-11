@@ -18,7 +18,7 @@ from collections import namedtuple
 
 import psutil
 import pytest
-from max.diagnostics.cpu import (
+from max.profiler.cpu import (
     CPUMetrics,
     CPUMetricsCollector,
     collect_pids_for_port,

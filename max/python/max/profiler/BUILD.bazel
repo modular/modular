@@ -8,6 +8,7 @@ modular_py_library(
     deps = [
         "//max/python/max:_core",
         requirement("msgspec"),
+        requirement("psutil"),
         requirement("taskgroup"),
         requirement("typing-extensions"),
     ],

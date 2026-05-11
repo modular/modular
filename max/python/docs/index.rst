@@ -28,7 +28,6 @@ Modules
 .. toctree::
    :maxdepth: 1
 
-   diagnostics.cpu
    driver
    dtype
    engine
@@ -106,6 +105,7 @@ Modules
    pipelines.lib.interfaces
    pipelines.lib.log_probabilities
    profiler
+   profiler.cpu
    profiler.gpu
    experimental
    experimental.nn

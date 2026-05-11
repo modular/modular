@@ -1,4 +1,4 @@
-load("//bazel:api.bzl", "modular_py_library", "requirement")
+load("//bazel:api.bzl", "modular_py_library")
 
 package(default_visibility = ["//max:consumers"])
 
@@ -7,6 +7,5 @@ modular_py_library(
     srcs = glob(["**/*.py"]),
     deps = [
         "//max/python/max/profiler",
-        requirement("psutil"),
     ],
 )

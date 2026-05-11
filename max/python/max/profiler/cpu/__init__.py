@@ -11,17 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Deprecated: use max.profiler.cpu instead."""
+"""CPU diagnostics API.
 
-import warnings
+This module allows collecting CPU utilization metrics for a set of
+processes, identified by PID.
+"""
 
-warnings.warn(
-    "max.diagnostics.cpu is deprecated and will be removed in a future release."
-    " Use max.profiler.cpu instead.",
-    DeprecationWarning,
-    stacklevel=2,
-)
-
-from max.profiler.cpu import CPUMetrics as CPUMetrics
-from max.profiler.cpu import CPUMetricsCollector as CPUMetricsCollector
-from max.profiler.cpu import collect_pids_for_port as collect_pids_for_port
+from ._collector import CPUMetricsCollector as CPUMetricsCollector
+from ._collector import collect_pids_for_port as collect_pids_for_port
+from ._types import CPUMetrics as CPUMetrics
