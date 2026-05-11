@@ -331,96 +331,28 @@ std::optional<MojoInflightDiag> OverloadFitness::checkOneOperand(
     bool allowImplicitConversions, const OverloadSet &callable,
     PogListAttr argListAttr) {
 
-  auto loc = operand.expr->getLoc();
-
   ASTType expectedRVType =
       RefType::stripRefConvention(expectedType, expectedConvention);
-
-  // Allow overloading on "owned" vs "by-ref" arguments.
-  // If the argument convention is owned but the operand is not an RValue then
-  // we'll need to copy the value (or this is entirely invalid).  If the
-  // argument convention is borrowed/ref but the value is an RValue then we have
-  // an RValue decay.  Model these so that APIs can overload on owned vs
-  // borrowed effectively.
-  bool argTypesMatchOrIsUValue = !operand.ir.getIfCValue();
-  if (!argTypesMatchOrIsUValue)
-    argTypesMatchOrIsUValue =
-        operand.ir.getIfCValue().getRValueType().isEqualCanon(expectedRVType);
-
-  if (argTypesMatchOrIsUValue) {
-    if (operand.ir.getIfBValue() || operand.ir.getIfLValue()) {
-      // Heavily penalize implicit copies.
-      if (expectedConvention == ArgConvention::OwnedMem ||
-          expectedConvention == ArgConvention::DeinitMem)
-        payload.numMismatchedConventions += 2;
-    } else {
-      assert((operand.ir.getIfUValue() || operand.ir.getIfRValue()) &&
-             "UValue and RValue expressions are always owned");
-      // Slightly penalize RValue->ref conversions.
-      if (expectedConvention != ArgConvention::OwnedMem &&
-          expectedConvention != ArgConvention::DeinitMem)
-        ++payload.numMismatchedConventions;
-    }
-  }
 
   ASTDecl &declScope = callable.paramBindings.declScope;
   SharedState &shared = declScope.getShared();
   switch (expectedConvention) {
   case ArgConvention::OwnedReg:
+  case ArgConvention::ByRefResult:
+  case ArgConvention::ByRefError:
     llvm_unreachable("not used by the mojo parser");
   case ArgConvention::Mut:
-  case ArgConvention::ByRefResult:
-  case ArgConvention::ByRefError: {
-    // The actual value must be an lvalue if callee takes things by-ref.
-    auto argVal = operand.ir.getIfLValue();
-    assert(argVal && "Checked by param inference already");
-
-    // If this is a wildcard type, we can match any operand.
-    if (sugarIsa<NameLookupArgWildcardType>(argVal.getRValueType()))
-      return {}; // Success.
-
-    // ByRef argument types must exactly match, no conversions are allowed.
-    assert(argVal.getRValueType().isEqualCanon(expectedRVType) &&
-           "Checked by param inference already");
-
-    // Notice if a register-passable type is being passed in-memory. This allows
-    // 'mut' arguments overloads to be more expensive than borrowed.
-    payload.numMismatchedConventions +=
-        expectedRVType.isRegisterPassable(loc, shared);
     return {}; // Success.
-  }
   case ArgConvention::Ref:
-  case ArgConvention::MutRef: {
+  case ArgConvention::MutRef:
     // If we are binding to something that is already a reference, check for
     // compatibility of the references and we're done.
     if (operand.ir.isMValue())
       return {}; // Checked by param inference already.
-
-    // Otherwise, we are binding something like a PValue or SRValue to a
-    // reference argument, which doesn't have a origin.  This is a problem
-    // because origins can be propagated through the type system of the
-    // function call to other arguments and they all need to line up.  We
-    // handle this in two phases: during overload resolution we bind this to
-    // an immortal origin, and then after the candidate is selected, we
-    // re-emit these arguments to memory and re-infer all the parameters.
-    //
-    // One detail is how we do this: we bind these arguments to immutable
-    // temporaries, because we specifically do NOT want 'ref' arguments with
-    // parametric mutability to treat these things as mutable.
-    assert(!sugarCast<RefType>(expectedType).isMutableKnown(true) &&
-           "Checked by param inference already");
-
-    // Handle this like a normal memory argument, since the value can undergo
-    // implicit conversions etc.
     [[fallthrough]];
-  }
   case ArgConvention::ReadMem:
   case ArgConvention::OwnedMem:
   case ArgConvention::DeinitMem:
-    // If a register-passable type is being passed in-memory, remember this.
-    payload.numMismatchedConventions +=
-        expectedRVType.isRegisterPassable(loc, shared);
-    [[fallthrough]];
   case ArgConvention::ReadReg:
     break;
   }
@@ -463,12 +395,14 @@ std::optional<MojoInflightDiag> OverloadFitness::checkOneOperand(
   if (auto nonmaterializableTarget =
           argType.getNonmaterializableTarget(shared)) {
     if (nonmaterializableTarget.isEqualCanon(expectedRVType)) {
+#if 1
       // Implicit conversion for nonmaterializable types to their target
       // type is allowed even if !allowImplicitConversions and count as half
       // as much of a mismatch as a normal implicit conversion.  This enables
       // exact matches to be more specific, and literals to be more compatible
       // than an actual conversion.
       ++payload.numImplicitConversions;
+#endif
       return {}; // Success.
     }
   }
@@ -478,8 +412,6 @@ std::optional<MojoInflightDiag> OverloadFitness::checkOneOperand(
   if (allowImplicitConversions &&
       IREmitter::canImplicitlyConvertToType({argVal, operand.expr},
                                             expectedRVType, declScope)) {
-    // If we had one, this bumps our # implicit conversions.
-    payload.numImplicitConversions += 2;
     return {}; // Success.
   }
 
@@ -507,10 +439,8 @@ bool OverloadFitness::isBetter(const OverloadFitness &other) const {
   // those needing nonmaterializable conversions, both of these more
   // specific than varargs matches (for example, when overloading a
   // `foo(Int)` and `foo(Int*)` we should pick the former if both work).
-  int8_t mask = 2 * payload.passesVarArgArgument;
-  int8_t otherMask = 2 * other.payload.passesVarArgArgument;
-  if (mask != otherMask)
-    return mask < otherMask;
+  if (payload.passesVarArgArgument != other.payload.passesVarArgArgument)
+    return payload.passesVarArgArgument < other.payload.passesVarArgArgument;
 
   // Otherwise these candidates are almost identical, so we try to decide based
   // on the number of input conventions mismatches (e.g. register-passable
@@ -759,6 +689,11 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
   // This is the result we will return if we succeed.
   OverloadFitness result(newBindings, std::move(operandsNeedingOrigins));
 
+  // Get the overload ranking metrics.
+  result.payload.numImplicitConversions = inference.numImplicitConversions;
+  result.payload.numMismatchedConventions = inference.numMismatchedConventions;
+  result.payload.passesVarArgArgument = inference.passesVarArgArgument;
+
   // Check that the result didn't bind to a type that would require changing to
   // a different result convention.
   for (Type outputType : signature.getResults())
@@ -783,15 +718,9 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
     assert(expectedType &&
            "specialized signature produced a null argument type");
     // Ignore the return slot if present.
-    if (expectedConvention == ArgConvention::ByRefError)
+    if (expectedConvention == ArgConvention::ByRefError ||
+        expectedConvention == ArgConvention::ByRefResult)
       continue;
-    if (expectedConvention == ArgConvention::ByRefResult) {
-      result.payload.numMismatchedConventions +=
-          ASTType(expectedType)
-              .getReferenceElementType()
-              .isRegisterPassable(callLoc, shared);
-      continue;
-    }
 
     if (signature.isKwVarArg(expectedArgIdx)) {
       expectedType = ASTType(expectedType).getKwargsDictRefValueType();
@@ -832,9 +761,7 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
       // initialized with zero values no problem.
       if (signature.isPosVarArg(expectedArgIdx) ||
           signature.isPack(expectedArgIdx)) {
-        // We consider an empty varargs list to be an implicit conversion,
-        // so an exact signature match takes precedence.
-        ++result.payload.numImplicitConversions;
+
         continue;
       }
 
@@ -880,7 +807,6 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
       if (operands[posOperandIdx].isUnpackedPositional()) {
         // Fully checked by ParamInf.
         ++posOperandIdx;
-        result.payload.passesVarArgArgument = true;
         continue;
       }
 
@@ -894,7 +820,6 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
         if (auto result =
                 processPositionalOperand(varArgsEltType, actualArgConvention))
           return std::move(*result);
-        result.payload.passesVarArgArgument = true;
       }
       continue;
     }
@@ -907,7 +832,6 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
       if (operands[posOperandIdx].isUnpackedPositional()) {
         // Fully checked by ParamInf.
         ++posOperandIdx;
-        result.payload.passesVarArgArgument = true;
         continue;
       }
 
@@ -919,7 +843,6 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
         if (auto result =
                 processPositionalOperand(refType, actualArgConvention))
           return std::move(*result);
-        result.payload.passesVarArgArgument = true;
       }
       continue;
     }
