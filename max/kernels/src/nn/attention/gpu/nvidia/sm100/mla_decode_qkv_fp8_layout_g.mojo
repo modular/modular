@@ -57,6 +57,7 @@ from std.gpu.compute.arch.tcgen05 import (
     tcgen05_load_wait,
     tcgen05_release_allocation_lock,
     tcgen05_st,
+    tcgen05_store_wait,
 )
 from layout.tma_async import (
     SharedMemBarrier,
@@ -517,6 +518,7 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
                     repeat=1,
                     pack=False,
                 ](corr_scale_tmem, _scale_tuple)
+                tcgen05_store_wait()
                 c_prod.commit()
 
             # Wait for MMA to release P SMEM, then write the FP8 P-row
@@ -976,6 +978,7 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
                         o_tmem_subtile,
                         _o_st_corr,
                     )
+                    tcgen05_store_wait()
                 o_cons.release()
             tiles_done += 1
 
