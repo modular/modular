@@ -35,6 +35,7 @@ from max.pipelines.lib.config.config_enums import supported_encoding_dtype
 from max.pipelines.lib.interfaces.arch_config import (
     ArchConfigWithKVAndVisionCache,
 )
+from max.pipelines.lib.quant import parse_quant_config
 from transformers import AutoConfig, PretrainedConfig
 from typing_extensions import Self, override
 
@@ -429,6 +430,9 @@ class Gemma4ForConditionalGenerationConfig(ArchConfigWithKVAndVisionCache):
     dtype: DType
     """DType of the model weights and input."""
 
+    unquantized_dtype: DType = DType.bfloat16
+    """DType of unquantized weights."""
+
     kv_params: MultiKVCacheParams
     """KV cache parameters."""
 
@@ -653,8 +657,21 @@ class Gemma4ForConditionalGenerationConfig(ArchConfigWithKVAndVisionCache):
         hf_text_config = getattr(huggingface_config, "text_config", None)
         if hf_text_config is None:
             raise ValueError("text_config not found in huggingface_config")
+
+        quant_config = parse_quant_config(
+            huggingface_config,
+            state_dict,
+            self.dtype,
+        )
+
+        for k, v in state_dict.items():
+            if k.endswith("layers.0.input_layernorm.weight"):
+                self.unquantized_dtype = v.dtype
+                break
+
         self.text_config.finalize(
             huggingface_config=hf_text_config,
             state_dict=state_dict,
             return_logits=return_logits,
+            quant_config=quant_config,
         )

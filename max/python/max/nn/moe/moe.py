@@ -31,6 +31,7 @@ from ..kernels import grouped_matmul_ragged, moe_create_indices
 from ..layer import Layer, LayerList, Module, Shardable
 from ..linear import MLP, Linear
 from ..quant_config import QuantConfig
+from .quant_strategy import gated_activation
 
 
 class MoEGate(Module):
@@ -162,6 +163,11 @@ class MoE(Module, Shardable):
             ``None``.
         quant_config: The scaled quantization configuration. Defaults to
             ``None``.
+        gate_activation: The activation function name to use for the
+            gate projection. Defaults to ``"silu"``.
+        pre_expert_norm_cls: A callable that returns a normalization
+            module to apply before expert computation. Defaults to
+            ``None``.
         is_sharding: Whether the constructor is being called during
             sharding. Defaults to ``False``.
     """
@@ -199,6 +205,8 @@ class MoE(Module, Shardable):
         dtype: DType = DType.bfloat16,
         apply_router_weight_first: bool = False,
         swiglu_limit: float = 0.0,
+        gate_activation: str = "silu",
+        pre_expert_norm_cls: Callable[[], Module] | None = None,
         ep_batch_manager: EPBatchManager | None = None,
         quant_config: QuantConfig | None = None,
         is_sharding: bool = False,
@@ -217,6 +225,11 @@ class MoE(Module, Shardable):
         self.dtype = dtype
         self.apply_router_weight_first = apply_router_weight_first
         self.swiglu_limit = swiglu_limit
+        self.gate_activation = gate_activation
+        self.pre_expert_norm_cls = pre_expert_norm_cls
+        self.pre_expert_norm = (
+            pre_expert_norm_cls() if pre_expert_norm_cls else None
+        )
         self.gate = gate_cls(
             devices=devices,
             hidden_dim=hidden_dim,
@@ -352,6 +365,8 @@ class MoE(Module, Shardable):
                 dtype=self.dtype,
                 apply_router_weight_first=self.apply_router_weight_first,
                 swiglu_limit=self.swiglu_limit,
+                gate_activation=self.gate_activation,
+                pre_expert_norm_cls=self.pre_expert_norm_cls,
                 quant_config=self.quant_config,
                 is_sharding=True,
             )
@@ -487,7 +502,7 @@ class MoE(Module, Shardable):
             self.gate_up_proj,
             *expert_inputs[1:],
         )
-        if self.swiglu_limit > 0:
+        if self.gate_activation == "silu" and self.swiglu_limit > 0:
             gate = ops.silu(gate_up_projs[:, : self.moe_dim])
             up = gate_up_projs[:, self.moe_dim :]
             lim = ops.constant(
@@ -498,11 +513,15 @@ class MoE(Module, Shardable):
             )
             gate = ops.min(gate, lim)
             up = ops.min(ops.max(up, neg_lim), lim)
-            silu_out = gate * up
+            activated = gate * up
+        elif self.gate_activation == "silu":
+            activated = fused_silu(gate_up_projs, expert_inputs[1])
         else:
-            silu_out = fused_silu(gate_up_projs, expert_inputs[1])
+            activated = gated_activation(
+                gate_up_projs, self.moe_dim, self.gate_activation
+            )
         return grouped_matmul_ragged(
-            silu_out,
+            activated,
             self.down_proj,
             *expert_inputs[1:],
         )
@@ -524,6 +543,9 @@ class MoE(Module, Shardable):
 
         # Get the topk experts per token and their weights
         router_idx, router_weight = self.gate(x)
+
+        if self.pre_expert_norm is not None:
+            x = self.pre_expert_norm(x)
 
         router_idx = ops.reshape(
             router_idx, [-1]
@@ -560,9 +582,9 @@ class MoE(Module, Shardable):
             expert_usage_stats.to(DeviceRef.CPU()),
         )
 
-        gate = ops.silu(gate_up_projs[:, : self.moe_dim])
-        up = gate_up_projs[:, self.moe_dim :]
-        if self.swiglu_limit > 0:
+        if self.gate_activation == "silu" and self.swiglu_limit > 0:
+            gate = ops.silu(gate_up_projs[:, : self.moe_dim])
+            up = gate_up_projs[:, self.moe_dim :]
             lim = ops.constant(
                 self.swiglu_limit, gate.dtype, device=gate.device
             )
@@ -571,7 +593,11 @@ class MoE(Module, Shardable):
             )
             gate = ops.min(gate, lim)
             up = ops.min(ops.max(up, neg_lim), lim)
-        gate_up_projs = gate * up
+            gate_up_projs = gate * up
+        else:
+            gate_up_projs = gated_activation(
+                gate_up_projs, self.moe_dim, self.gate_activation
+            )
 
         down_projs = grouped_matmul_ragged(
             gate_up_projs,

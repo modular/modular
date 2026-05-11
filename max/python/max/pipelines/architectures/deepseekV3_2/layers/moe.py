@@ -19,7 +19,7 @@ from max.graph import DeviceRef, TensorValue, ops
 from max.nn.kernels import moe_create_indices
 from max.nn.moe import MoEQuantized
 from max.nn.moe.quant_strategy import (
-    silu_gate,
+    gated_activation,
 )
 
 
@@ -186,7 +186,9 @@ class DeepseekV3_2MoE(MoEQuantized):
         # V3.2: Cast to float32 at the silu
         # https://github.com/deepseek-ai/DeepSeek-V3.2-Exp/blob/87e509a2e5a100d221c97df52c6e8be7835f0057/inference/model.py#L744
         gate_up_projs = gate_up_projs.cast(DType.float32)
-        gate_up_projs = silu_gate(gate_up_projs, self.moe_dim)
+        gate_up_projs = gated_activation(
+            gate_up_projs, self.moe_dim, self.gate_activation
+        )
         if nvfp4:
             assert scales_offset is not None
             gate_up_quant, gate_up_scales = strategy.grouped_quantize(
