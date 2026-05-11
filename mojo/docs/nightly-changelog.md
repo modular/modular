@@ -135,6 +135,17 @@ This version is still a work in progress.
   that omitted the `seed` argument will now produce a different output
   stream; pass `seed=0` explicitly to keep the previous behavior.
 
+- Added `nth()` as a default method on the `Iterator` trait. It advances the
+  iterator by `n` elements (destroying them) and returns the next element, or
+  `None` if the iterator runs out before reaching index `n`.
+
+  ```mojo
+  var l = [10, 20, 30, 40]
+  print(iter(l).nth(0).value())   # 10
+  print(iter(l).nth(3).value())   # 40
+  var missing = iter(l).nth(10)   # None (Optional)
+  ```
+
 ## Tooling changes
 
 ## GPU programming
