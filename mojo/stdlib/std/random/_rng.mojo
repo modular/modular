@@ -58,7 +58,7 @@ struct _PhiloxWrapper(Copyable):
     var _cache_index: Int
     """Index into the cache for the next value to return."""
 
-    def __init__(out self, seed: UInt64 = 0):
+    def __init__(out self, seed: UInt64 = 0x3D30F19CD101):
         """Initializes the Philox wrapper.
 
         Args:

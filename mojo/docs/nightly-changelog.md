@@ -129,6 +129,12 @@ This version is still a work in progress.
   free(ptr, layout)
   ```
 
+- The default `seed` for `random.Random`, `random.NormalRandom`, and the
+  internal `_PhiloxWrapper` has changed from `0` to `0x3D30F19CD101`
+  (67280421310721) to match PyTorch's `at::Philox4_32_10` default. Calls
+  that omitted the `seed` argument will now produce a different output
+  stream; pass `seed=0` explicitly to keep the previous behavior.
+
 ## Tooling changes
 
 ## GPU programming
