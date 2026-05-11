@@ -1076,28 +1076,35 @@ def _py_c_function_wrapper[
     # SAFETY:
     #   Call the user provided function, and take ownership of the
     #   PyObjectPtr of the returned PythonObject.
+    #
+    # NOTE:
+    #   The GIL is already held when we are called via the CPython method
+    #   dispatch (METH_VARARGS / METH_VARARGS | METH_KEYWORDS). PyO3,
+    #   pybind11 and nanobind all rely on this invariant. We therefore
+    #   skip an explicit PyGILState_Ensure/Release pair, which would only
+    #   bump CPython's internal counter and cost two extra C calls per
+    #   Mojo function invocation.
 
     ref cpython = Python().cpython()
 
-    with GILAcquired(Python(cpython)):
-        try:
-            if user_func.isa[PyFunctionRaising]():
-                return user_func[PyFunctionRaising](py_self, args).steal_data()
-            else:
-                var kwargs = PythonObject(from_borrowed=kwargs_ptr)
-                return user_func[PyFunctionWithKeywordsRaising](
-                    py_self, args, kwargs
-                ).steal_data()
-        except e:
-            var error_message = String(e)
-            var error_type = cpython.get_error_global("PyExc_Exception")
+    try:
+        if user_func.isa[PyFunctionRaising]():
+            return user_func[PyFunctionRaising](py_self, args).steal_data()
+        else:
+            var kwargs = PythonObject(from_borrowed=kwargs_ptr)
+            return user_func[PyFunctionWithKeywordsRaising](
+                py_self, args, kwargs
+            ).steal_data()
+    except e:
+        var error_message = String(e)
+        var error_type = cpython.get_error_global("PyExc_Exception")
 
-            cpython.PyErr_SetString(
-                error_type, error_message.as_c_string_slice().unsafe_ptr()
-            )
+        cpython.PyErr_SetString(
+            error_type, error_message.as_c_string_slice().unsafe_ptr()
+        )
 
-            # Return a NULL `PyObject*`.
-            return PyObjectPtr()
+        # Return a NULL `PyObject*`.
+        return PyObjectPtr()
 
 
 @always_inline
