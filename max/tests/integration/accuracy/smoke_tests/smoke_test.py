@@ -75,6 +75,7 @@ MODEL_RECIPES = CaseInsensitiveDict({
     "deepseek-ai/DeepSeek-R1-0528": "deepseekV3/recipes/r1_0528_8x_b200.yaml",
     "deepseek-ai/DeepSeek-V3.1-Terminus": "deepseekV3/recipes/terminus_8x_b200.yaml",
     "google/gemma-4-26B-A4B-it__no_dgc": "gemma4/recipes/gemma4_26b_a4b_no_dgc.yaml",
+    "nvidia/Gemma-4-26B-A4B-NVFP4__no_dgc": "gemma4/recipes/gemma4_26b_a4b_nvfp4_no_dgc.yaml",
     "google/gemma-3-27b-it__modulev3": "gemma3_modulev3/recipes/gemma3_27b.yaml",
     "MiniMaxAI/MiniMax-M2.7": "minimax_m2/recipes/minimax_m2_8x_b200.yaml",
     "amd/MiniMax-M2.7-MXFP4": "minimax_m2/recipes/minimax_m2_mxfp4_8x_mi355.yaml",

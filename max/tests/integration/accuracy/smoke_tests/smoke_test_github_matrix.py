@@ -71,6 +71,8 @@ HF_MODELS: dict[str, set[str]] = {
     "google/gemma-3-27b-it": MULTI,
     "google/gemma-4-26B-A4B-it": MULTI | {"max", "max-ci"},  # TODO(SERVOPT-1292)
     "google/gemma-4-31B-it": MULTI,
+    "nvidia/Gemma-4-26B-A4B-NVFP4": MULTI | {"max", "max-ci"},  # TODO(SERVOPT-1292)
+    "nvidia/Gemma-4-31B-IT-NVFP4": MULTI,
     "meta-llama/Llama-3.1-8B-Instruct": MULTI,
     "microsoft/Phi-3.5-mini-instruct": MULTI,
     "microsoft/phi-4": MULTI,
@@ -118,6 +120,7 @@ CUSTOM_MODELS: dict[str, set[str]] = {
     "nvidia/DeepSeek-V3.1-NVFP4__mtp_tpep": NON_XL | {"8xMI355"},
     "austinpowers/Kimi-K2.5-NVFP4-DeepseekV3__eagle": NON_XL | {"8xMI355"},
     "google/gemma-4-26B-A4B-it__no_dgc": MULTI,
+    "nvidia/Gemma-4-26B-A4B-NVFP4__no_dgc": MULTI,
     "meta-llama/Llama-3.1-8B-Instruct__local_kvconnector": MULTI | {"vllm", "sglang", "MI355"},
     "meta-llama/Llama-3.1-8B-Instruct__eagle_local_kvconnector": MULTI | {"vllm", "sglang", "MI355"},
     "meta-llama/Llama-3.1-8B-Instruct__tiered_kvconnector": MULTI | {"vllm", "sglang", "MI355"},
