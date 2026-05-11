@@ -78,12 +78,22 @@ comptime PyCFunction = def(PyObjectPtr, PyObjectPtr) thin -> PyObjectPtr
 comptime PyCFunctionWithKeywords = def(
     PyObjectPtr, PyObjectPtr, PyObjectPtr
 ) thin -> PyObjectPtr
+# `METH_FASTCALL` signature, no kwargs:
+#   PyObject* (*)(PyObject *self, PyObject *const *args, Py_ssize_t nargs)
+# Skips the per-call tuple allocation that `METH_VARARGS` requires.
+# ref: https://docs.python.org/3/c-api/structures.html#c.PyCFunctionFast
+comptime PyCFunctionFast = def(
+    PyObjectPtr,
+    UnsafePointer[PyObjectPtr, ImmutAnyOrigin],
+    Py_ssize_t,
+) thin -> PyObjectPtr
 
 # Flag passed to newmethodobject
 # ref: https://github.com/python/cpython/blob/main/Include/methodobject.h
 comptime METH_VARARGS = 0x01
 comptime METH_KEYWORDS = 0x02
 comptime METH_STATIC = 0x20
+comptime METH_FASTCALL = 0x80
 
 
 # GIL
@@ -373,6 +383,38 @@ struct PyMethodDef(Defaultable, ImplicitlyCopyable):
         return PyMethodDef(
             func_name.unsafe_ptr().bitcast[c_char](),
             func_ptr,
+            flags,
+            docstring.unsafe_ptr().bitcast[c_char](),
+        )
+
+    @staticmethod
+    def function_fastcall[
+        static_method: Bool = False
+    ](
+        func: PyCFunctionFast,
+        func_name: StaticString,
+        docstring: StaticString = StaticString(),
+    ) -> Self:
+        """Create a `PyMethodDef` for a `METH_FASTCALL` function.
+
+        `METH_FASTCALL` lets CPython hand us the positional arguments as a
+        pointer-and-length pair instead of allocating a tuple per call,
+        which saves ~30-50 ns/call on small functions.
+
+        Parameters:
+            static_method: Whether the function is a static method.
+
+        Arguments:
+            func: The fastcall-shaped trampoline.
+            func_name: The name of the function as exposed to Python.
+            docstring: The docstring for the function.
+        """
+        var flags = c_int(
+            METH_FASTCALL | (METH_STATIC if static_method else 0)
+        )
+        return PyMethodDef(
+            func_name.unsafe_ptr().bitcast[c_char](),
+            rebind[OpaquePointer[MutAnyOrigin]](func),
             flags,
             docstring.unsafe_ptr().bitcast[c_char](),
         )

@@ -31,6 +31,7 @@ from std.python._cpython import (
     GILAcquired,
     Py_TPFLAGS_DEFAULT,
     PyCFunction,
+    PyCFunctionFast,
     PyCFunctionWithKeywords,
     PyMethodDef,
     PyObject,
@@ -386,6 +387,35 @@ struct PythonModuleBuilder:
         """
 
         self.functions.append(PyMethodDef.function(func, func_name, docstring))
+
+    def def_py_c_fastcall_function(
+        mut self,
+        func: PyCFunctionFast,
+        func_name: StaticString,
+        docstring: StaticString = "",
+    ):
+        """Declare a binding for a `METH_FASTCALL` trampoline.
+
+        `METH_FASTCALL` skips the per-call positional-tuple allocation that
+        `METH_VARARGS` requires; CPython hands the trampoline a pointer +
+        length pair instead. Typical wins on small functions are
+        ~30-50 ns/call (~15-30% of the FFI overhead measured in #6521).
+
+        The trampoline must match `PyCFunctionFast`:
+        `def(PyObjectPtr, UnsafePointer[PyObjectPtr], Py_ssize_t) -> PyObjectPtr`.
+        It owns enforcing argument arity and converting borrowed-pointer
+        args into whatever shape the user logic expects.
+
+        Args:
+            func: The fastcall-shaped trampoline.
+            func_name: The name with which the function will be exposed in
+                the module.
+            docstring: The docstring for the function in the module.
+        """
+
+        self.functions.append(
+            PyMethodDef.function_fastcall(func, func_name, docstring)
+        )
 
     def def_py_function[
         func: PyFunctionRaising
