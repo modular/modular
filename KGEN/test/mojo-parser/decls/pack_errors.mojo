@@ -83,3 +83,22 @@ def test_unpack_twice[*Ts: AnyType](*pack: *Ts):
     # expected-error @below {{unpack markers (*name syntax) must not appear more than once in a call; remove the second unpack}}
     # expected-note @below {{previous unpacked positional argument specified here}}
     takes_varpack(*pack, *pack)
+
+
+# Splatting a non-VariadicPack type is not allowed.
+struct MyStruct:
+    var x: Int
+
+    def __init__(out self, x: Int):
+        self.x = x
+
+
+# expected-note @+1 {{function declared here}}
+def takes_variadic_pack2[*Ts: AnyType](*pack: *Ts):
+    pass
+
+
+def test_splat_non_pack():
+    var s = MyStruct(42)
+    # expected-error @+1 {{cannot unpack value of type 'MyStruct' into a variadic pack argument; expected a VariadicPack}}
+    takes_variadic_pack2(*s)
