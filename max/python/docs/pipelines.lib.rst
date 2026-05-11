@@ -19,6 +19,7 @@ Configuration
    :toctree: generated
    :template: autosummary/class.rst
 
+   DenoisingCacheConfig
    KVConnectorConfig
    MAXConfig
    MAXModelConfigBase
