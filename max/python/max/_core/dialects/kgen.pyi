@@ -2131,6 +2131,24 @@ class ClosureMethod(enum.Enum):
 
     none = 4
 
+class CmpPredicate(enum.Enum):
+    eq = 0
+
+    ne = 1
+
+    lt = 2
+
+    gt = 3
+
+    le = 4
+
+    ge = 5
+
+class CmpPredicateAttr(max._core.Attribute):
+    def __init__(self, value: CmpPredicate) -> None: ...
+    @property
+    def value(self) -> CmpPredicate: ...
+
 class ExportKind(enum.Enum):
     not_exported = 0
 
