@@ -32,7 +32,7 @@ decorators: decorator+
 decorated: decorators (classdef | funcdef | async_funcdef | if_stmt | for_stmt | var_stmt NEWLINE | alias_stmt NEWLINE | comptime_stmt)
 async_funcdef: ASYNC funcdef
 where_clause: WHERE top_test
-funcdef: ('def' | MLIR_REGION) NAME [metaparams] parameters [named_effect*] [global_effects] [unified_capture] ['->' result_type] (where_clause)* ':' suite
+funcdef: ('def' | MLIR_REGION) NAME [metaparams] parameters [named_effect*] [global_effects] [captures] ['->' result_type] (where_clause)* ':' suite
 global_effects: global_effect_keyword*
 global_effect_keyword: 'raises' [raises_type] | 'escaping' | 'capturing'
 # `raises_type` lists allowed shapes after `raises` in global_effects. It
@@ -40,15 +40,12 @@ global_effect_keyword: 'raises' [raises_type] | 'escaping' | 'capturing'
 # and would steal the capture list from `raises {a, b}`. Subscripts use the
 # same `testlist_gexp` as inside `[...]` elsewhere in the grammar.
 raises_type: dotted_name ( '[' testlist_gexp ']' )* | '(' [testlist_gexp] ')'
-unified_capture: UNIFIED [effect_list] [captures] | captures
-effect_list: effect_keyword*
-effect_keyword: named_effect | 'raises' [raises_type]
 named_effect: NAME ['(' STRING ')']
 captures: '{' [capture_list] '}'
 capture_list: capture_item (',' capture_item)* [',']
 # Support both specific captures (e.g., "var x", "var x^", "mut y") and
-# global capture modes (e.g., "var", "var^", "read") used by unified
-# closures. Only VAR allows the move marker '^'.
+# global capture modes (e.g., "var", "var^", "read"). Only VAR allows the
+# move marker '^'.
 capture_item: (VAR [NAME ['^'] | '^' [NAME]]) | (READ [NAME]) | (MUT [NAME]) | (REF NAME) | (NAME [NAME])
 metaparams: '[' [typedparamslist] ']'
 parameters: '(' [typedargslist] ')'
@@ -240,7 +237,7 @@ classdef: ('class' | STRUCT | TRAIT | EXTENSION) NAME [metaparams] ['(' [arglist
 
 typeconvexpr: atom trailer* | functype
 typeconv: (['*'|VAR|READ|MUT|OUT|DEINIT] ['*'|'**'] typeconvexpr [':' ['*'|'**'] test]) | '/' | '*' | '//'
-functype: [ASYNC] 'def' [metaparams] '(' [typeconv (',' typeconv)*] [','] ')' named_effect* [global_effects] [unified_capture] ['[' test ']'] ['->' test]
+functype: [ASYNC] 'def' [metaparams] '(' [typeconv (',' typeconv)*] [','] ')' named_effect* [global_effects] [captures] ['[' test ']'] ['->' test]
 
 arglist: argument (',' argument)* [',']
 

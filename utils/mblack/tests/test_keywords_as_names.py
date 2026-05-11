@@ -56,7 +56,7 @@ KEYWORDS = [
     "struct",
     "trait",
     "try",
-    "unified",
+    "unified",  # Used to be a keyword
     "var",
     "where",
     "while",

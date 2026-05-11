@@ -642,7 +642,6 @@ def generate_tokens(
         "deinit": DEINIT,
         "trait": TRAIT,
         "ref": REF,
-        "unified": UNIFIED,
         "where": WHERE,
         "__extension": EXTENSION,
     }
