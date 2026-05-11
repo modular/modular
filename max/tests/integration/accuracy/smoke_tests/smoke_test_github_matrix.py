@@ -91,6 +91,7 @@ HF_MODELS: dict[str, set[str]] = {
     "Qwen/Qwen3-VL-4B-Instruct-FP8": XL | {"MI355", "2xMI355"},  # MI355: no FP8
     "Qwen/Qwen3-VL-30B-A3B-Instruct-FP8": XL | {"MI355", "2xMI355", "max-ci@B200", "sglang@B200"},  # MI355: no FP8, B200: MODELS-1020
     "Qwen/Qwen3-VL-30B-A3B-Thinking": XL | {"max"},
+    "Qwen/Qwen3.5-9B": MULTI | {"max", "max-ci@MI355"},
     "RedHatAI/gemma-3-27b-it-FP8-dynamic": MULTI,  # TODO(MODELS-1021)
     "nvidia/Llama-3.1-405B-Instruct-NVFP4": NON_XL | {"max", "8xMI355"},
     "RedHatAI/Meta-Llama-3.1-405B-Instruct-FP8-dynamic": NON_XL,
