@@ -24,7 +24,10 @@ from max.interfaces import (
 )
 from max.pipelines.core import TextContext
 from max.pipelines.core.context import FUTURE_TOKEN
-from max.pipelines.lib import OverlapTextGenerationPipeline
+from max.pipelines.lib import (
+    OverlapTextGenerationPipeline,
+    TextGenerationPipeline,
+)
 from max.pipelines.lib.pipeline_variants.overlap_text_generation import (
     _MAX_GRAPH_CAPTURE_BATCH_SIZE,
     AsyncBatch,
@@ -456,3 +459,236 @@ class TestSyncAndProcessOutputsStructuredOutput:
 
             # FSM should NOT be advanced for actively chunked context
             mock_matcher.consume_token.assert_not_called()
+
+
+class TestInitializeBitmaskWithGrammar:
+    """Tests for initialize_bitmask behavior with grammar field.
+
+    These tests verify that structured output bitmasks are allocated when
+    a context has a grammar set (e.g., for tool calls), even if json_schema
+    is not set.
+    """
+
+    def _create_overlap_pipeline_with_structured_output(
+        self, enabled: bool = True
+    ) -> OverlapTextGenerationPipeline[TextContext]:
+        """Create a mock OverlapTextGenerationPipeline with structured output."""
+        pipeline = OverlapTextGenerationPipeline.__new__(
+            OverlapTextGenerationPipeline
+        )
+        mock_structured_output = MagicMock()
+        mock_structured_output.enabled = enabled
+        mock_structured_output.vocab_size = 32000
+        mock_structured_output.allocate_bitmask.return_value = np.zeros(
+            (1, 1000), dtype=np.int32
+        )
+        pipeline._structured_output = mock_structured_output
+        return pipeline
+
+    def _create_text_pipeline_with_structured_output(
+        self, enabled: bool = True
+    ) -> TextGenerationPipeline[TextContext]:
+        """Create a mock TextGenerationPipeline with structured output."""
+        pipeline = TextGenerationPipeline.__new__(TextGenerationPipeline)
+        mock_structured_output = MagicMock()
+        mock_structured_output.enabled = enabled
+        mock_structured_output.vocab_size = 32000
+        mock_structured_output.allocate_bitmask.return_value = np.zeros(
+            (1, 1000), dtype=np.int32
+        )
+        pipeline._structured_output = mock_structured_output
+        return pipeline
+
+    def test_allocates_bitmask_when_grammar_only_overlap_pipeline(self) -> None:
+        """initialize_bitmask should allocate when grammar is set but json_schema is None.
+
+        This simulates tool call scenarios where grammar is used for constrained
+        decoding without a JSON schema.
+        """
+        pipeline = self._create_overlap_pipeline_with_structured_output()
+
+        # Create context with grammar but no json_schema
+        ctx = TextContext(
+            request_id=RequestID("grammar_only"),
+            max_length=1000,
+            tokens=TokenBuffer(np.array([42, 67, 21])),
+            grammar="<some llguidance grammar>",
+        )
+        assert ctx.json_schema is None
+        assert ctx.grammar is not None
+
+        result = pipeline.initialize_bitmask([ctx])
+
+        # Should have allocated a bitmask
+        assert result is not None
+
+    def test_allocates_bitmask_when_grammar_only_text_pipeline(self) -> None:
+        """initialize_bitmask should allocate when grammar is set (TextGenerationPipeline)."""
+        pipeline = self._create_text_pipeline_with_structured_output()
+
+        ctx = TextContext(
+            request_id=RequestID("grammar_only"),
+            max_length=1000,
+            tokens=TokenBuffer(np.array([42, 67, 21])),
+            grammar="<some llguidance grammar>",
+        )
+
+        result = pipeline.initialize_bitmask([ctx])
+
+        assert result is not None
+
+    def test_returns_none_when_both_grammar_and_json_schema_none(self) -> None:
+        """initialize_bitmask should return None when neither grammar nor json_schema is set."""
+        pipeline = self._create_overlap_pipeline_with_structured_output()
+
+        # Create context with neither grammar nor json_schema
+        ctx = TextContext(
+            request_id=RequestID("no_constraint"),
+            max_length=1000,
+            tokens=TokenBuffer(np.array([42, 67, 21])),
+        )
+        assert ctx.json_schema is None
+        assert ctx.grammar is None
+
+        result = pipeline.initialize_bitmask([ctx])
+
+        # Should NOT allocate a bitmask
+        assert result is None
+
+    def test_returns_none_when_structured_output_disabled(self) -> None:
+        """initialize_bitmask should return None when structured output is disabled."""
+        pipeline = self._create_overlap_pipeline_with_structured_output(
+            enabled=False
+        )
+
+        # Even with grammar set, should return None if structured output is disabled
+        ctx = TextContext(
+            request_id=RequestID("grammar_but_disabled"),
+            max_length=1000,
+            tokens=TokenBuffer(np.array([42, 67, 21])),
+            grammar="<some grammar>",
+        )
+
+        result = pipeline.initialize_bitmask([ctx])
+
+        assert result is None
+
+    def test_allocates_bitmask_for_heterogeneous_batch_with_grammar(
+        self,
+    ) -> None:
+        """initialize_bitmask should allocate for batch with mixed grammar/no-grammar contexts.
+
+        A batch containing at least one context with grammar should trigger
+        bitmask allocation, even if other contexts have no constraints.
+        """
+        pipeline = self._create_overlap_pipeline_with_structured_output()
+
+        # Context with grammar (e.g., tool call)
+        ctx_with_grammar = TextContext(
+            request_id=RequestID("with_grammar"),
+            max_length=1000,
+            tokens=TokenBuffer(np.array([42, 67, 21])),
+            grammar="<tool call grammar>",
+        )
+
+        # Context without any constraint
+        ctx_no_constraint = TextContext(
+            request_id=RequestID("no_constraint"),
+            max_length=1000,
+            tokens=TokenBuffer(np.array([10, 20, 30])),
+        )
+
+        batch = [ctx_with_grammar, ctx_no_constraint]
+
+        result = pipeline.initialize_bitmask(batch)
+
+        # Should allocate bitmask for the entire batch
+        assert result is not None
+
+    def test_allocates_bitmask_for_heterogeneous_batch_with_json_schema(
+        self,
+    ) -> None:
+        """initialize_bitmask should allocate for batch with mixed json_schema/no-constraint contexts."""
+        pipeline = self._create_overlap_pipeline_with_structured_output()
+
+        # Context with json_schema
+        ctx_with_schema = TextContext(
+            request_id=RequestID("with_schema"),
+            max_length=1000,
+            tokens=TokenBuffer(np.array([42, 67, 21])),
+            json_schema='{"type": "object"}',
+        )
+
+        # Context without any constraint
+        ctx_no_constraint = TextContext(
+            request_id=RequestID("no_constraint"),
+            max_length=1000,
+            tokens=TokenBuffer(np.array([10, 20, 30])),
+        )
+
+        batch = [ctx_with_schema, ctx_no_constraint]
+
+        result = pipeline.initialize_bitmask(batch)
+
+        # Should allocate bitmask for the entire batch
+        assert result is not None
+
+    def test_allocates_bitmask_for_batch_with_grammar_and_json_schema(
+        self,
+    ) -> None:
+        """initialize_bitmask should allocate for batch mixing grammar and json_schema contexts."""
+        pipeline = self._create_overlap_pipeline_with_structured_output()
+
+        # Context with grammar (tool call)
+        ctx_with_grammar = TextContext(
+            request_id=RequestID("with_grammar"),
+            max_length=1000,
+            tokens=TokenBuffer(np.array([42, 67, 21])),
+            grammar="<tool call grammar>",
+        )
+
+        # Context with json_schema (structured response format)
+        ctx_with_schema = TextContext(
+            request_id=RequestID("with_schema"),
+            max_length=1000,
+            tokens=TokenBuffer(np.array([10, 20, 30])),
+            json_schema='{"type": "object", "properties": {"name": {"type": "string"}}}',
+        )
+
+        # Context with neither
+        ctx_freeform = TextContext(
+            request_id=RequestID("freeform"),
+            max_length=1000,
+            tokens=TokenBuffer(np.array([1, 2, 3])),
+        )
+
+        batch = [ctx_with_grammar, ctx_with_schema, ctx_freeform]
+
+        result = pipeline.initialize_bitmask(batch)
+
+        # Should allocate bitmask for the entire batch
+        assert result is not None
+
+    def test_returns_none_for_all_unconstrained_batch(self) -> None:
+        """initialize_bitmask should return None when all contexts are unconstrained."""
+        pipeline = self._create_overlap_pipeline_with_structured_output()
+
+        # Multiple contexts, none with grammar or json_schema
+        contexts = [
+            TextContext(
+                request_id=RequestID(f"ctx_{i}"),
+                max_length=1000,
+                tokens=TokenBuffer(np.array([i, i + 1, i + 2])),
+            )
+            for i in range(3)
+        ]
+
+        # Verify all contexts are unconstrained
+        for ctx in contexts:
+            assert ctx.json_schema is None
+            assert ctx.grammar is None
+
+        result = pipeline.initialize_bitmask(contexts)
+
+        # Should NOT allocate a bitmask
+        assert result is None
