@@ -293,8 +293,8 @@ inferLoopCount(LoopOp loop, ContinueOp continueOp, BreakOp breakOp,
     if (!cmp)
       return {};
 
-    POP::CmpPredicate pred = cmp.getPred();
-    if (pred != POP::CmpPredicate::LT && pred != POP::CmpPredicate::GT)
+    KGEN::CmpPredicate pred = cmp.getPred();
+    if (pred != KGEN::CmpPredicate::LT && pred != KGEN::CmpPredicate::GT)
       return {};
     auto simdTy = dyn_cast<SIMDType>(cmp.getLhs().getType());
     auto dtype = simdTy ? simdTy.getResolvedDType() : std::nullopt;
@@ -303,7 +303,7 @@ inferLoopCount(LoopOp loop, ContinueOp continueOp, BreakOp breakOp,
     // pattern-matches `index`-ops.
     if (!dtype || !dtype->isSInt())
       return {};
-    cmpPredicate = pred == POP::CmpPredicate::LT
+    cmpPredicate = pred == KGEN::CmpPredicate::LT
                        ? HLCF::ForLoopBoundCmpPredicate::SLT
                        : HLCF::ForLoopBoundCmpPredicate::SGT;
 
@@ -315,7 +315,7 @@ inferLoopCount(LoopOp loop, ContinueOp continueOp, BreakOp breakOp,
       end = start;
       start = getValueAtLoopEntry(cmp.getRhs(), inductionVarArgNumber, loop,
                                   domInfo);
-      cmpPredicate = pred == POP::CmpPredicate::LT
+      cmpPredicate = pred == KGEN::CmpPredicate::LT
                          ? HLCF::ForLoopBoundCmpPredicate::SGT
                          : HLCF::ForLoopBoundCmpPredicate::SLT;
     }

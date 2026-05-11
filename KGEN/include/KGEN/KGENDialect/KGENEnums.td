@@ -111,6 +111,25 @@ def KGEN_POCAttr : I32EnumAttr<"POC", "Parameter Operator Code", [
 ]>;
 
 //===----------------------------------------------------------------------===//
+// CmpPredicate
+//===----------------------------------------------------------------------===//
+
+def KGEN_CmpPredicate : I32EnumAttr<
+    "CmpPredicate", "cmp comparison predicate", [
+      I32EnumAttrCase<"EQ", 0, "eq">,
+      I32EnumAttrCase<"NE", 1, "ne">,
+      I32EnumAttrCase<"LT", 2, "lt">,
+      I32EnumAttrCase<"GT", 3, "gt">,
+      I32EnumAttrCase<"LE", 4, "le">,
+      I32EnumAttrCase<"GE", 5, "ge">
+    ]> {
+  let cppNamespace = "::M::KGEN";
+  let genSpecializedAttr = 0;
+}
+
+def KGEN_CmpPredicateAttr : EnumAttr<KGENDialect, KGEN_CmpPredicate, "cmp_pred">;
+
+//===----------------------------------------------------------------------===//
 // InlineLevelAttr
 //===----------------------------------------------------------------------===//
 

@@ -532,7 +532,7 @@ def POP_CmpOp : POPOp<"cmp", [Pure, SameTypeOperands, InferTypeOpAdaptor,
     ```
   }];
 
-  let arguments = (ins POP_CmpPredicateAttr:$pred,
+  let arguments = (ins KGEN_CmpPredicateAttr:$pred,
                        UnboundOrBoolOrIndexOrArithmeticSIMD:$lhs,
                        UnboundOrBoolOrIndexOrArithmeticSIMD:$rhs);
   let results = (outs BoolSIMD:$result);

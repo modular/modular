@@ -2874,23 +2874,23 @@ FailureOr<TypedAttr> BuiltinFunctionFolder::fold(Operation &op) {
       if (auto rhs = findValue(cmpOp.getRhs())) {
         POP::NormalizedCmpPredicate cc;
         switch (cmpOp.getPred()) {
-        case POP::CmpPredicate::EQ:
+        case KGEN::CmpPredicate::EQ:
           cc = POP::NormalizedCmpPredicate::EQ;
           break;
-        case POP::CmpPredicate::NE:
+        case KGEN::CmpPredicate::NE:
           cc = POP::NormalizedCmpPredicate::EQ;
           break;
-        case POP::CmpPredicate::LT:
+        case KGEN::CmpPredicate::LT:
           cc = POP::NormalizedCmpPredicate::LT;
           break;
-        case POP::CmpPredicate::LE:
+        case KGEN::CmpPredicate::LE:
           cc = POP::NormalizedCmpPredicate::LE;
           break;
-        case POP::CmpPredicate::GT:
+        case KGEN::CmpPredicate::GT:
           cc = POP::NormalizedCmpPredicate::LT;
           std::swap(lhs, rhs);
           break;
-        case POP::CmpPredicate::GE:
+        case KGEN::CmpPredicate::GE:
           cc = POP::NormalizedCmpPredicate::LE;
           std::swap(lhs, rhs);
           break;
@@ -2900,7 +2900,7 @@ FailureOr<TypedAttr> BuiltinFunctionFolder::fold(Operation &op) {
         auto cmp = POP::SIMDCmpAttr::get(cc, lhs, rhs, resultType);
 
         // For NE comparisons, negate the EQ result with an XOR
-        if (cmpOp.getPred() == POP::CmpPredicate::NE) {
+        if (cmpOp.getPred() == KGEN::CmpPredicate::NE) {
           // Splat a boolean 'true' value to the same width as the comparison.
           // This avoids us having to introspect the return type.
           KGEN::SIMDAttr oneVal = KGEN::SIMDAttr::get(

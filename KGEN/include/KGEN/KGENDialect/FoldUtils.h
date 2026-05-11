@@ -507,6 +507,13 @@ SIMDAttr foldBitwiseSIMDReduceOp(Attribute operand, OpFns &&...ops) {
   return Detail::foldBitwiseSIMDReduceOp(operand, dtype, dtype,
                                          std::forward<OpFns>(ops)...);
 }
+
+/// Fold a SIMD comparison operation. Handles constant folding, bool identity
+/// folds (eq(true, x) -> x), and unsigned comparisons with zero. Returns null
+/// if no fold applies.
+FoldValue foldSIMDCmp(CmpPredicate cc, FoldValues operands,
+                      TargetInfoAttr target = {});
+
 } // namespace M::KGEN
 
 #endif // KGEN_KGENDIALECT_FOLDUTILS_H
