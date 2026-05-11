@@ -290,6 +290,10 @@ def WrappedParamOperatorAttr : DialectAttribute<(attr
   Type:$type
 )>;
 
+def CmpPredicateAttr : DialectAttribute<(attr
+  EnumAttr<"CmpPredicate">:$value
+)>;
+
 def MLIROpAttr : DialectAttribute<(attr
   StringAttr:$name,
   ConcreteAttribute<"DictionaryAttr">:$attrs,
@@ -567,6 +571,7 @@ def KGENDialectAttributes : DialectAttributes<"kgen"> {
     VariantAttr,
     EnvAttr,
     WrappedParamOperatorAttr,
+    CmpPredicateAttr,
     MLIROpAttr,
     DecoratorsAttr,
     PreservedAttr,

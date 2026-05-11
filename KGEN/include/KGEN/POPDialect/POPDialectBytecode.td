@@ -43,10 +43,6 @@ def POPDialectTypes : DialectTypes<"pop"> {
 // POPDialect Attributes
 //===----------------------------------------------------------------------===//
 
-def CmpPredicateAttr : DialectAttribute<(attr
-  EnumAttr<"CmpPredicate">:$value
-)>;
-
 def AtomicOrderingAttr : DialectAttribute<(attr
   EnumAttr<"AtomicOrdering">:$value
 )>;
@@ -193,7 +189,6 @@ def VariadicToArrayAttr : DialectAttribute<(attr
 
 def POPDialectAttributes : DialectAttributes<"pop"> {
   let elems = [
-    CmpPredicateAttr,
     AtomicOrderingAttr,
     AtomicBinOpAttr,
     FastmathFlagsAttr,

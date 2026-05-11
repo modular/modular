@@ -49,12 +49,6 @@ inline CmpPredicate toCmpPredicate(NormalizedCmpPredicate cc) {
   llvm_unreachable("invalid NormalizedCmpPredicate");
 }
 
-/// Fold a SIMD comparison operation. Handles constant folding, bool identity
-/// folds (eq(true, x) -> x), and unsigned comparisons with zero. Returns null
-/// if no fold applies.
-FoldValue foldSIMDCmp(CmpPredicate cc, FoldValues operands,
-                      TargetInfoAttr target = {});
-
 /// Fold a SIMD left-shift operation.
 FoldValue foldSIMDShl(FoldValues operands, TargetInfoAttr target = {});
 

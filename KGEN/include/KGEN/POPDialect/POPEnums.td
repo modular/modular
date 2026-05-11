@@ -74,22 +74,6 @@ def POP_GlobalAllocAddressSpaceAttr: EnumAttr<POPDialect,
                                                "global_alloc_addr_space">;
 
 //===----------------------------------------------------------------------===//
-// CmpPredicate
-//===----------------------------------------------------------------------===//
-
-def POP_CmpPredicate : POP_Enum<
-    "CmpPredicate", "pop.cmp comparison predicate", [
-      I32EnumAttrCase<"EQ", 0, "eq">,
-      I32EnumAttrCase<"NE", 1, "ne">,
-      I32EnumAttrCase<"LT", 2, "lt">,
-      I32EnumAttrCase<"GT", 3, "gt">,
-      I32EnumAttrCase<"LE", 4, "le">,
-      I32EnumAttrCase<"GE", 5, "ge">
-    ]>;
-
-def POP_CmpPredicateAttr : EnumAttr<POPDialect, POP_CmpPredicate, "cmp_pred">;
-
-//===----------------------------------------------------------------------===//
 // NormalizedCmpPredicate
 //===----------------------------------------------------------------------===//
 

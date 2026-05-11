@@ -240,22 +240,22 @@ private:
   /// Get the equivalent index comparison predicate. POP treats the `index`
   /// dtype as signed.
   static mlir::index::IndexCmpPredicate
-  getIndexCmpPredicate(POP::CmpPredicate pred, bool isSigned) {
+  getIndexCmpPredicate(KGEN::CmpPredicate pred, bool isSigned) {
     switch (pred) {
-    case POP::CmpPredicate::EQ:
+    case KGEN::CmpPredicate::EQ:
       return mlir::index::IndexCmpPredicate::EQ;
-    case POP::CmpPredicate::NE:
+    case KGEN::CmpPredicate::NE:
       return mlir::index::IndexCmpPredicate::NE;
-    case POP::CmpPredicate::LT:
+    case KGEN::CmpPredicate::LT:
       return isSigned ? mlir::index::IndexCmpPredicate::SLT
                       : mlir::index::IndexCmpPredicate::ULT;
-    case POP::CmpPredicate::GT:
+    case KGEN::CmpPredicate::GT:
       return isSigned ? mlir::index::IndexCmpPredicate::SGT
                       : mlir::index::IndexCmpPredicate::UGT;
-    case POP::CmpPredicate::LE:
+    case KGEN::CmpPredicate::LE:
       return isSigned ? mlir::index::IndexCmpPredicate::SLE
                       : mlir::index::IndexCmpPredicate::ULE;
-    case POP::CmpPredicate::GE:
+    case KGEN::CmpPredicate::GE:
       return isSigned ? mlir::index::IndexCmpPredicate::SGE
                       : mlir::index::IndexCmpPredicate::UGE;
     }
