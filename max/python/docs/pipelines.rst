@@ -120,6 +120,13 @@ Utilities
    supported_encoding_supported_on
    upper_bounded_default
 
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/data.rst
+
+   ADAPTER_CONFIG_FILE
+
 Submodules
 ----------
 
