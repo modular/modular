@@ -53,6 +53,11 @@ public:
     return setInferredValue(paramIdx, paramVal);
   }
 
+  /// The number of implicit conversions required.  Normal implicit
+  /// conversions count as 2 each, nonmaterializable value conversions count
+  /// as 1.
+  size_t numImplicitConversions = 0;
+
 private:
   /// Infer all of the parameters we can from 'givenBindings'.
   ///
@@ -157,6 +162,14 @@ public:
   /// parameter. This should always return failure /without/ an error if it
   /// cannot be inferred, and return success if a value was determined.
   LogicalResult inferForCall();
+
+  /// For each mismatch in "preferred" argument convention, penalize the
+  /// overload. This is to resolve ambiguities that can arise from synthesized
+  /// thunks for converting calling conventions.
+  size_t numMismatchedConventions = 0;
+
+  /// Whether the candidate has a (non-empty) variadic argument.
+  bool passesVarArgArgument = false;
 
 private:
   FnTypeGeneratorType calleeSignature;

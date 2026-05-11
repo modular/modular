@@ -273,8 +273,17 @@ LogicalResult ParamInf::inferFromRVType(ASTExprAnd<AnyValue> operand,
     ParamMatcher::FailableScope failableScope(matcher);
     // Infer the parameters of this overload candidate against the computed
     // result type of the initializer.
-    if (succeeded(matcher.matchTypes(nonmaterializableTarget, expectedType)))
+    if (succeeded(matcher.matchTypes(nonmaterializableTarget, expectedType))) {
+#if 0
+      // Implicit conversion for nonmaterializable types to their target
+      // type is allowed even if !allowImplicitConversions and count as half
+      // as much of a mismatch as a normal implicit conversion.  This enables
+      // exact matches to be more specific, and literals to be more compatible
+      // than an actual conversion.
+      ++numImplicitConversions;
+#endif
       return success();
+    }
 
     // Roll back any error and inferred bindings.
     failableScope.revert();
@@ -292,13 +301,17 @@ LogicalResult ParamInf::inferFromRVType(ASTExprAnd<AnyValue> operand,
     return failure();
   }
 
+  // If we had one, this bumps our # implicit conversions.
+  numImplicitConversions += 2;
+
   // If the expected type has been fully resolved, check it for implicit
   // conversions using the normal type machinery.  This will handle things like
   // function pointer conversions that the code below doesn't.
   if (!paramFinder.hasReferences(expectedType)) {
     if (IREmitter::canImplicitlyConvertToType({argVal, operand.expr},
-                                              expectedType, getDeclScope()))
+                                              expectedType, getDeclScope())) {
       return success();
+    }
 
     // Restore the information from the original failure so we have a simple
     // diagnostic.
@@ -1259,7 +1272,7 @@ LogicalResult CallParamInf::inferOneOperand(ASTExprAnd<AnyValue> operand,
       matcher.failureReason->addExplanation(diag);
       return failure();
     }
-    return success();
+    break;
   }
   case ArgConvention::Ref:
   case ArgConvention::MutRef: {
@@ -1291,19 +1304,20 @@ LogicalResult CallParamInf::inferOneOperand(ASTExprAnd<AnyValue> operand,
       // rebound when origins disagree, but this isn't correct/possible in
       // arbitrary nested positions.
       if (!paramFinder.hasReferences(expectedType)) {
-        if (IREmitter::canZeroCostConvert(valueRefType, expectedType,
-                                          getShared()))
-          return success();
-        emitWrongTypeDiag(expectedType);
-        return failure();
+        if (!IREmitter::canZeroCostConvert(valueRefType, expectedType,
+                                           getShared())) {
+          emitWrongTypeDiag(expectedType);
+          return failure();
+        }
+      } else {
+        // Otherwise, match the references as a whole - this matches the origins
+        // up to infer from the value.
+        if (failed(matcher.matchTypes(valueRefType, expectedType))) {
+          emitWrongTypeDiag(expectedType);
+          return failure();
+        }
       }
-
-      // Otherwise, match the origins up to infer from the value.
-      if (succeeded(matcher.matchTypes(valueRefType, expectedType)))
-        return success();
-
-      emitWrongTypeDiag(expectedType);
-      return failure();
+      break;
     }
 
     // Otherwise, we are binding something like a PValue or SRValue to a
@@ -1369,14 +1383,44 @@ LogicalResult CallParamInf::inferOneOperand(ASTExprAnd<AnyValue> operand,
                              callOperands.syntax)))
     return failure();
 
+  // We may have refined expectedRVType.
+  expectedRVType = evaluator.getReboundType(expectedRVType);
+
   // If the argument needed to be spilled to memory to get an origin,
   // record it so call emission can reinfer and reemit this candidate if
   // selected from the overload set, but with the argument in a temporary
   // vardecl.
   if (needsArgInMemory) {
     assert(operandIdx != ~0ULL && "FIXME: KWVarArgs not passing correctly");
-    operandsNeedingOrigins.push_back(
-        {operandIdx, argIdx, evaluator.getReboundType(expectedRVType)});
+    operandsNeedingOrigins.push_back({operandIdx, argIdx, expectedRVType});
+  }
+
+  // If a register-passable type is being passed in-memory, remember this.
+  if (expectedConvention != ArgConvention::ReadReg &&
+      expectedRVType.isRegisterPassable(operand.expr->getLoc(), getShared()))
+    ++numMismatchedConventions;
+
+  // Allow overloading on "owned" vs "by-ref" arguments.
+  // If the argument convention is owned but the operand is not an RValue then
+  // we'll need to copy the value (or this is entirely invalid).  If the
+  // argument convention is borrowed/ref but the value is an RValue then we have
+  // an RValue decay.  Model these so that APIs can overload on owned vs
+  // borrowed effectively.
+  if (!operand.ir.getIfCValue() ||
+      operand.ir.getIfCValue().getRValueType().isEqualCanon(expectedRVType)) {
+    if (operand.ir.getIfBValue() || operand.ir.getIfLValue()) {
+      // Heavily penalize implicit copies.
+      if (expectedConvention == ArgConvention::OwnedMem ||
+          expectedConvention == ArgConvention::DeinitMem)
+        numMismatchedConventions += 2;
+    } else {
+      assert((operand.ir.getIfUValue() || operand.ir.getIfRValue()) &&
+             "UValue and RValue expressions are always owned");
+      // Slightly penalize RValue->ref conversions.
+      if (expectedConvention != ArgConvention::OwnedMem &&
+          expectedConvention != ArgConvention::DeinitMem)
+        ++numMismatchedConventions;
+    }
   }
 
   return success();
@@ -1464,6 +1508,12 @@ LogicalResult CallParamInf::inferSelfFromInitResult() {
 /// values, or marks it as needing to be spilled if not.
 LogicalResult CallParamInf::inferResultSlot(RefType expectedRef, size_t argIdx,
                                             const ExprDest &dest) {
+
+  // Penalize generic code slightly.
+  if (ASTType(expectedRef.getElementType())
+          .isRegisterPassable(getGivenBindings().callExpr->getLoc(),
+                              getShared()))
+    ++numMismatchedConventions;
 
   bool needsAddrSpace =
       paramFinder.hasReferences(expectedRef.getAddressSpace());
@@ -1596,6 +1646,12 @@ LogicalResult CallParamInf::inferForCall() {
       continue;
     }
 
+    // Check for any more positional operands. This ensures the code handling
+    // positional arguments below is looking at the next one to process or that
+    // we have run out.
+    while (posOperandIdx != numOperands && callOperands[posOperandIdx].keyword)
+      ++posOperandIdx;
+
     if (calleeSignature.isKwVarArg(expectedArgIdx)) {
       Type valTy = ASTType(expectedType).getKwargsDictRefValueType();
       auto refValType = RefType::getAnyOrigin(valTy, /*isMut=*/true);
@@ -1666,6 +1722,19 @@ LogicalResult CallParamInf::inferForCall() {
           {operandIdx, argIdx, evaluator.getReboundType(expectedType)});
       return AnyOriginAttr::get(expectedOriginType);
     };
+
+    // Handle ranking for variadics.  Packs and positional rank the same way.
+    if (calleeSignature.isPosVarArg(expectedArgIdx) ||
+        calleeSignature.isPack(expectedArgIdx)) {
+      if (posOperandIdx != numOperands) {
+        // Remember that there is a variadic argument for overload ranking.
+        passesVarArgArgument = true;
+      } else {
+        // We consider an empty varargs list to be an implicit conversion,
+        // so an exact signature match takes precedence.
+        ++numImplicitConversions;
+      }
+    }
 
     // If we have a varargs argument, then it will eat the rest of the
     // arguments, but we have to check each of them.
@@ -1753,6 +1822,7 @@ LogicalResult CallParamInf::inferForCall() {
       // Support forwarding an entire pack with "*pack".
       if (posOperandIdx != numOperands &&
           callOperands[posOperandIdx].isUnpackedPositional()) {
+
         ASTType actualPackType = // FIXME: This is wrong for UValues.
             callOperands[posOperandIdx].ir.getRValueTypeIfResolvable();
         assert(actualPackType &&
@@ -1974,10 +2044,6 @@ LogicalResult CallParamInf::inferForCall() {
       }
       llvm_unreachable("unhandled variadic pack failure?");
     }
-
-    // Check for any more positional operands.
-    while (posOperandIdx != numOperands && callOperands[posOperandIdx].keyword)
-      ++posOperandIdx;
 
     // Handle positional arguments.
     if (posOperandIdx < numOperands) {
