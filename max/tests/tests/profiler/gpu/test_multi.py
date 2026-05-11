@@ -11,12 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Diagnostics API for MAX platform.
+from __future__ import annotations
 
-This module provides diagnostic utilities for monitoring and analyzing
-system performance, including CPU utilization.
-"""
+from max.profiler.gpu import GPUDiagContext
 
-from . import cpu, gpu
 
-__all__ = ["cpu", "gpu"]
+def test_smoke() -> None:
+    with GPUDiagContext() as context:
+        _ = context.get_stats()

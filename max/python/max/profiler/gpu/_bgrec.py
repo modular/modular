@@ -293,7 +293,7 @@ class BackgroundRecorder:
 
     .. code-block:: python
 
-        from max.diagnostics.gpu import BackgroundRecorder
+        from max.profiler.gpu import BackgroundRecorder
 
         with BackgroundRecorder() as recorder:
             # Run your GPU workload here

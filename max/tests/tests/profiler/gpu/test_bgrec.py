@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import time
 
-from max.diagnostics.gpu import BackgroundRecorder
+from max.profiler.gpu import BackgroundRecorder
 
 
 def test_smoke() -> None:

@@ -11,11 +11,21 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from __future__ import annotations
+"""Entry point into _bgrec.recorder_main.
 
-from max.diagnostics.gpu import GPUDiagContext
+This exists because _bgrec itself can't be used as an entry point without
+causing this warning:
 
+    <frozen runpy>:128: RuntimeWarning: 'max.profiler.gpu._bgrec' found in
+    sys.modules after import of package 'max.profiler.gpu', but prior to
+    execution of 'max.profiler.gpu._bgrec'; this may result in unpredictable
+    behaviour
 
-def test_smoke() -> None:
-    with GPUDiagContext() as context:
-        _ = context.get_stats()
+This is because _bgrec is imported by __init__, but we need that, so this
+module exists as an entry point that isn't imported by __init__.
+"""
+
+from ._bgrec import recorder_main
+
+if __name__ == "__main__":
+    recorder_main()

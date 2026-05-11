@@ -31,10 +31,12 @@ The profiler supports three usage patterns:
 """
 
 from max._core.profiler import is_profiling_enabled, set_gpu_profiling_state
+from max.profiler import gpu
 from max.profiler.tracing import Tracer, traced
 
 __all__ = [
     "Tracer",
+    "gpu",
     "is_profiling_enabled",
     "set_gpu_profiling_state",
     "traced",

@@ -46,8 +46,8 @@ from transformers import PreTrainedTokenizerBase
 
 if TYPE_CHECKING:
     from max.benchmark.benchmark_shared.server_metrics import ParsedMetrics
-    from max.diagnostics.gpu import BackgroundRecorder as GPUBackgroundRecorder
-    from max.diagnostics.gpu import GPUStats
+    from max.profiler.gpu import BackgroundRecorder as GPUBackgroundRecorder
+    from max.profiler.gpu import GPUStats
 
 from max.benchmark.benchmark_shared.config import (
     CACHE_RESET_ENDPOINT_MAP,
@@ -125,7 +125,7 @@ from max.diagnostics.cpu import (
     CPUMetricsCollector,
     collect_pids_for_port,
 )
-from max.diagnostics.gpu import GPUDiagContext
+from max.profiler.gpu import GPUDiagContext
 from openai.types.chat.completion_create_params import ResponseFormat
 from pydantic import TypeAdapter, ValidationError
 
@@ -504,11 +504,10 @@ async def benchmark(
         gpu_recorder: GPUBackgroundRecorder | None = None
         if args.collect_gpu_stats:
             try:
-                from max.diagnostics.gpu import BackgroundRecorder
+                from max.profiler.gpu import BackgroundRecorder
             except ImportError:
                 logger.warning(
-                    "max.diagnostics not available, skipping GPU stats"
-                    " collection"
+                    "max.profiler not available, skipping GPU stats collection"
                 )
             else:
                 gpu_recorder = benchmark_stack.enter_context(

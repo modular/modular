@@ -12,7 +12,7 @@ modular_py_test(
     size = "small",
     srcs = glob(["*.py"]),
     deps = [
-        "//max/python/max/diagnostics",
+        "//max/python/max/profiler",
         requirement("msgspec"),
     ],
 )

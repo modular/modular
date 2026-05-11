@@ -14,7 +14,7 @@
 from __future__ import annotations
 
 import msgspec
-from max.diagnostics.gpu import (
+from max.profiler.gpu import (
     HARDWARE_THROTTLE_REASONS,
     ClockStats,
     GPUStats,
@@ -102,7 +102,7 @@ def test_hardware_throttle_reasons_excludes_gpu_idle() -> None:
 def test_decode_throttle_bits() -> None:
     # Importing _nvml is safe without libnvidia-ml because the CDLL load
     # only happens inside NVMLContext.__enter__.
-    from max.diagnostics.gpu._nvml import _decode_throttle_bits
+    from max.profiler.gpu._nvml import _decode_throttle_bits
 
     assert _decode_throttle_bits(0x0) == []
     assert _decode_throttle_bits(0x1) == ["gpu_idle"]

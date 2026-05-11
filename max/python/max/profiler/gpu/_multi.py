@@ -33,7 +33,7 @@ class GPUDiagContext:
 
     .. code-block:: python
 
-        from max.diagnostics.gpu import GPUDiagContext
+        from max.profiler.gpu import GPUDiagContext
 
         with GPUDiagContext() as ctx:
             stats = ctx.get_stats()

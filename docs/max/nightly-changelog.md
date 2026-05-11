@@ -74,6 +74,12 @@ This version is still a work in progress.
 
 ## Breaking changes
 
+- GPU diagnostic tooling has moved from `max.diagnostics.gpu` to
+  `max.profiler.gpu`. Update imports from
+  `from max.diagnostics.gpu import ...` to `from max.profiler.gpu import ...`.
+  `max.diagnostics` now contains only `max.diagnostics.cpu`. A deprecation
+  shim with a `DeprecationWarning` remains at `max.diagnostics.gpu`.
+
 - `max/python/max/benchmark/benchmark_throughput.py`, deprecated in v0.26.3,
   has been removed.
 

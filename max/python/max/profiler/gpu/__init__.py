@@ -11,21 +11,18 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Entry point into _bgrec.recorder_main.
+"""GPU diagnostics API.
 
-This exists because _bgrec itself can't be used as an entry point without
-causing this warning:
-
-    <frozen runpy>:128: RuntimeWarning: 'max.diagnostics.gpu._bgrec' found in
-    sys.modules after import of package 'max.diagnostics.gpu', but prior to
-    execution of 'max.diagnostics.gpu._bgrec'; this may result in unpredictable
-    behaviour
-
-This is because _bgrec is imported by __init__, but we need that, so this
-module exists as an entry point that isn't imported by __init__.
+This module allows accessing information about GPU(s) on the system.
+Information can be accessed synchronously or collected in the background for
+later retrieval.
 """
 
-from ._bgrec import recorder_main
-
-if __name__ == "__main__":
-    recorder_main()
+from ._bgrec import BackgroundRecorder as BackgroundRecorder
+from ._multi import GPUDiagContext as GPUDiagContext
+from ._types import HARDWARE_THROTTLE_REASONS as HARDWARE_THROTTLE_REASONS
+from ._types import ClockStats as ClockStats
+from ._types import GPUStats as GPUStats
+from ._types import MemoryStats as MemoryStats
+from ._types import ThrottleReason as ThrottleReason
+from ._types import UtilizationStats as UtilizationStats

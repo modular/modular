@@ -1,15 +1,15 @@
-:title: max.diagnostics.gpu
+:title: max.profiler.gpu
 :type: module
 :lang: python
 :wrapper_class: rst-module-autosummary
 
-max.diagnostics.gpu
+max.profiler.gpu
 ===================
 
-.. automodule:: max.diagnostics.gpu
+.. automodule:: max.profiler.gpu
    :no-members:
 
-.. currentmodule:: max.diagnostics.gpu
+.. currentmodule:: max.profiler.gpu
 
 Monitoring
 ----------
@@ -33,3 +33,12 @@ Stats
    GPUStats
    MemoryStats
    UtilizationStats
+   ClockStats
+   ThrottleReason
+
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/data.rst
+
+   HARDWARE_THROTTLE_REASONS
