@@ -46,6 +46,7 @@ Model interface
 
    AlwaysSignalBuffersMixin
    PipelineModelWithKVCache
+   UnifiedEagleOutputs
 
 Tokenizers
 ----------
