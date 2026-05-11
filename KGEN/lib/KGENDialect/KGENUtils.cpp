@@ -2649,22 +2649,18 @@ OpFoldResult KGEN::foldSIMDSplat(Value scalarVal, Attribute scalarAttr,
   return SIMDAttr::get(values, resultType);
 }
 
-SIMDType KGEN::getEquivalentScalarType(Type type) {
-  KGENDType dtype = M::getEquivalentDType(type).first;
-
-  // `getEquivalentDType` does not know the extra case in KGENDType.
-  if (dtype.isInvalid() && type.isIndex())
-    dtype = KGENDType::index;
-
+SIMDType KGEN::getEquivalentSIMDType(Type type) {
+  auto [dtype, size] = KGENDType::getEquivalentDType(type);
   if (dtype.isInvalid())
     return {};
 
-  return SIMDType::get(1, DTypeConstantAttr::get(type.getContext(), dtype));
+  return SIMDType::get(size.value_or(1),
+                       DTypeConstantAttr::get(type.getContext(), dtype));
 }
 
 TypedAttr KGEN::splatBuiltinToSIMD(TypedAttr builtinScalarVal,
                                    TypedAttr simdSize) {
-  SIMDType simdScalarTp = getEquivalentScalarType(builtinScalarVal.getType());
+  SIMDType simdScalarTp = getEquivalentSIMDType(builtinScalarVal.getType());
   if (!simdScalarTp)
     return {};
 
