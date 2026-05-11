@@ -117,7 +117,6 @@ class TieredConnector:
         )
 
         # -- State --
-        self._pending_saves: list[tuple[int, int]] = []  # (block_id, hash)
         # (bid, hash, host_block) — host_block kept at ref_cnt=1 for
         # zero-copy disk writes (pinned until write completes).
         self._pending_disk_writes: list[tuple[int, int, KVCacheBlock]] = []
@@ -235,17 +234,6 @@ class TieredConnector:
         return len(successful_hits)
 
     @traced
-    def save(
-        self,
-        block_ids: list[int],
-        block_hashes: list[int],
-        parent_seq_hash: int = 0,
-    ) -> None:
-        """Queue device blocks for offload to host. Executed in flush()."""
-        for block_id, block_hash in zip(block_ids, block_hashes, strict=True):
-            self._pending_saves.append((block_id, block_hash))
-
-    @traced
     def sync(self) -> None:
         """Wait for D2H transfers, then write-through to disk.
 
@@ -292,12 +280,15 @@ class TieredConnector:
         self._write_locked_blocks = still_pending
 
     @traced
-    def flush(self) -> None:
+    def offload(
+        self,
+        block_ids: list[int],
+        block_hashes: list[int],
+    ) -> None:
         """Execute pending D2H copies and record blocks for disk write-through."""
-        if not self._pending_saves:
-            return
-
-        for device_block_id, block_hash in self._pending_saves:
+        for device_block_id, block_hash in zip(
+            block_ids, block_hashes, strict=True
+        ):
             host_block = self._maybe_offload_to_host(
                 device_block_id, block_hash
             )
@@ -305,8 +296,6 @@ class TieredConnector:
                 self._pending_disk_writes.append(
                     (host_block.bid, block_hash, host_block)
                 )
-
-        self._pending_saves.clear()
 
     def shutdown(self) -> None:
         """Clean shutdown of connector resources."""
@@ -320,7 +309,6 @@ class TieredConnector:
         # Release any host blocks still pinned in pending disk writes.
         for _, _, host_block in self._pending_disk_writes:
             self._host_block_pool.free_block(host_block)
-        self._pending_saves.clear()
         self._pending_disk_writes.clear()
 
         d2h_gb = self._d2h_blocks_copied * self._block_disk_bytes / GiB

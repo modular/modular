@@ -104,32 +104,20 @@ def test_num_used_host_blocks_initially_zero() -> None:
     connector.shutdown()
 
 
-# -- Save / flush / sync --
+# -- Offload / sync --
 
 
-def test_save_queues_blocks_for_offload() -> None:
+def test_offload_transfers_blocks_to_host() -> None:
     connector = create_tiered_connector()
-    connector.save([0, 1, 2], [100, 200, 300])
-    assert len(connector._pending_saves) == 3
-    assert connector.num_used_host_blocks == 0
-    connector.shutdown()
-
-
-def test_flush_executes_pending_saves() -> None:
-    connector = create_tiered_connector()
-    connector.save([0, 1], [100, 200])
-    connector.flush()
-    assert len(connector._pending_saves) == 0
+    connector.offload([0, 1], [100, 200])
     assert connector.num_used_host_blocks == 2
     connector.shutdown()
 
 
 def test_duplicate_hash_not_saved_twice() -> None:
     connector = create_tiered_connector()
-    connector.save([0], [100])
-    connector.flush()
-    connector.save([1], [100])
-    connector.flush()
+    connector.offload([0], [100])
+    connector.offload([1], [100])
     assert connector.num_used_host_blocks == 1
     connector.shutdown()
 
@@ -146,8 +134,7 @@ def test_load_returns_zero_for_empty_cache() -> None:
 
 def test_load_finds_cached_blocks() -> None:
     connector = create_tiered_connector(page_size=16)
-    connector.save([0, 1, 2], [100, 200, 300])
-    connector.flush()
+    connector.offload([0, 1, 2], [100, 200, 300])
 
     loaded = connector.load([3, 4, 5], [100, 200, 300])
     assert loaded == 3
@@ -156,9 +143,8 @@ def test_load_finds_cached_blocks() -> None:
 
 def test_load_stops_at_first_miss() -> None:
     connector = create_tiered_connector(page_size=16)
-    connector.save([0], [100])
-    connector.save([2], [300])
-    connector.flush()
+    connector.offload([0], [100])
+    connector.offload([2], [300])
 
     loaded = connector.load([3, 4, 5], [100, 200, 300])
     assert loaded == 1
@@ -168,8 +154,7 @@ def test_load_stops_at_first_miss() -> None:
 def test_load_full_round_trip() -> None:
     """Verify full prefix cache hit: save -> load round-trip."""
     connector = create_tiered_connector(page_size=16)
-    connector.save([0, 1], [100, 200])
-    connector.flush()
+    connector.offload([0, 1], [100, 200])
 
     loaded = connector.load([10, 11], [100, 200])
     assert loaded == 2
@@ -184,9 +169,8 @@ def test_write_through_to_disk() -> None:
     with tempfile.TemporaryDirectory(prefix="tiered_wt_") as disk_dir:
         connector = create_tiered_connector(disk_cache_dir=disk_dir)
 
-        connector.save([0, 1, 2], [100, 200, 300])
-        connector.flush()
-        # flush() records pending disk writes; sync() executes them
+        connector.offload([0, 1, 2], [100, 200, 300])
+        # offload() records pending disk writes; sync() executes them
         connector.sync()
 
         # Wait for async disk writes to complete
@@ -208,17 +192,15 @@ def test_write_through_skips_already_on_disk() -> None:
     with tempfile.TemporaryDirectory(prefix="tiered_skip_") as disk_dir:
         connector = create_tiered_connector(disk_cache_dir=disk_dir)
 
-        # First save
-        connector.save([0], [100])
-        connector.flush()
+        # First offload
+        connector.offload([0], [100])
         connector.sync()
         connector._disk_tier.wait_for_writes()
 
         written_before = connector._disk_blocks_written
 
-        # Save same hash again (from different device block)
-        connector.save([1], [100])
-        connector.flush()
+        # Offload same hash again (from different device block)
+        connector.offload([1], [100])
         connector.sync()
         connector._disk_tier.wait_for_writes()
 
@@ -240,9 +222,8 @@ def test_disk_promotion_to_cpu() -> None:
             disk_cache_dir=disk_dir,
         )
 
-        # Save 4 blocks -> fills CPU cache
-        connector.save([0, 1, 2, 3], [100, 200, 300, 400])
-        connector.flush()
+        # Offload 4 blocks -> fills CPU cache
+        connector.offload([0, 1, 2, 3], [100, 200, 300, 400])
         connector.sync()
         connector._disk_tier.wait_for_writes()
         connector.sync()  # drain write-locked blocks
@@ -251,9 +232,8 @@ def test_disk_promotion_to_cpu() -> None:
         for h in [100, 200, 300, 400]:
             assert connector._disk_tier.contains(h)
 
-        # Save 4 more blocks -> evicts the first 4 from CPU
-        connector.save([4, 5, 6, 7], [500, 600, 700, 800])
-        connector.flush()
+        # Offload 4 more blocks -> evicts the first 4 from CPU
+        connector.offload([4, 5, 6, 7], [500, 600, 700, 800])
         connector.sync()
         connector._disk_tier.wait_for_writes()
         connector.sync()  # drain write-locked blocks
@@ -280,16 +260,14 @@ def test_full_round_trip() -> None:
             disk_cache_dir=disk_dir,
         )
 
-        # Save 2 blocks (fills CPU)
-        connector.save([0, 1], [100, 200])
-        connector.flush()
+        # Offload 2 blocks (fills CPU)
+        connector.offload([0, 1], [100, 200])
         connector.sync()
         connector._disk_tier.wait_for_writes()
         connector.sync()  # drain write-locked blocks
 
-        # Save 2 more -> evicts 100, 200 from CPU
-        connector.save([2, 3], [300, 400])
-        connector.flush()
+        # Offload 2 more -> evicts 100, 200 from CPU
+        connector.offload([2, 3], [300, 400])
         connector.sync()
         connector._disk_tier.wait_for_writes()
         connector.sync()  # drain write-locked blocks
@@ -317,8 +295,7 @@ def test_metrics_track_disk_operations() -> None:
         )
 
         # Write 2 blocks through to disk
-        connector.save([0, 1], [100, 200])
-        connector.flush()
+        connector.offload([0, 1], [100, 200])
         connector.sync()
         connector._disk_tier.wait_for_writes()
         connector.sync()  # drain write-locked blocks
@@ -328,8 +305,7 @@ def test_metrics_track_disk_operations() -> None:
         assert metrics.disk_blocks_written == 2
 
         # Evict from CPU, then promote from disk
-        connector.save([2, 3], [300, 400])
-        connector.flush()
+        connector.offload([2, 3], [300, 400])
         connector.sync()
         connector._disk_tier.wait_for_writes()
         connector.sync()  # drain write-locked blocks
@@ -351,10 +327,9 @@ def test_load_breaks_chain_at_disk_miss() -> None:
     with tempfile.TemporaryDirectory(prefix="tiered_gap_") as disk_dir:
         connector = create_tiered_connector(disk_cache_dir=disk_dir)
 
-        # Only save hash 100 and 300, NOT 200
-        connector.save([0], [100])
-        connector.save([2], [300])
-        connector.flush()
+        # Only offload hash 100 and 300, NOT 200
+        connector.offload([0], [100])
+        connector.offload([2], [300])
         connector.sync()
         connector._disk_tier.wait_for_writes()
 
@@ -370,10 +345,9 @@ def test_load_breaks_chain_at_disk_miss() -> None:
 
 def test_shutdown_clears_pending_state() -> None:
     connector = create_tiered_connector()
-    connector.save([0, 1], [100, 200])
+    connector.offload([0, 1], [100, 200])
     connector.shutdown()
 
-    assert len(connector._pending_saves) == 0
     assert len(connector._pending_disk_writes) == 0
 
 
@@ -384,8 +358,7 @@ def test_reset_prefix_cache_clears_cpu_and_disk() -> None:
     with tempfile.TemporaryDirectory(prefix="tiered_reset_") as disk_dir:
         connector = create_tiered_connector(disk_cache_dir=disk_dir)
 
-        connector.save([0, 1], [100, 200])
-        connector.flush()
+        connector.offload([0, 1], [100, 200])
         connector.sync()
         connector._disk_tier.wait_for_writes()
         assert connector.num_used_host_blocks == 2
@@ -408,8 +381,7 @@ def test_warm_restart_loads_disk_cache() -> None:
     with tempfile.TemporaryDirectory(prefix="tiered_warm_") as disk_dir:
         # First connector: write blocks to disk
         c1 = create_tiered_connector(disk_cache_dir=disk_dir)
-        c1.save([0, 1], [100, 200])
-        c1.flush()
+        c1.offload([0, 1], [100, 200])
         c1.sync()
         c1._disk_tier.wait_for_writes()
         c1.shutdown()  # saves metadata
@@ -434,9 +406,8 @@ def test_write_locked_blocks_lifecycle() -> None:
     with tempfile.TemporaryDirectory(prefix="tiered_wlb_") as disk_dir:
         connector = create_tiered_connector(disk_cache_dir=disk_dir)
 
-        # Save and flush -> creates pending_disk_writes
-        connector.save([0, 1], [100, 200])
-        connector.flush()
+        # Offload -> creates pending_disk_writes
+        connector.offload([0, 1], [100, 200])
 
         assert len(connector._pending_disk_writes) == 2
 
@@ -467,9 +438,8 @@ def test_host_blocks_pinned_during_disk_write() -> None:
     with tempfile.TemporaryDirectory(prefix="tiered_zc_") as disk_dir:
         connector = create_tiered_connector(disk_cache_dir=disk_dir)
 
-        # Save and flush -> D2H copies queued
-        connector.save([0, 1], [100, 200])
-        connector.flush()
+        # Offload -> D2H copies queued
+        connector.offload([0, 1], [100, 200])
 
         # At this point, host blocks should be pinned (ref_cnt=1)
         for _bid, _hash, host_block in connector._pending_disk_writes:
@@ -492,17 +462,15 @@ def test_drain_completed_writes_across_sync_cycles() -> None:
     with tempfile.TemporaryDirectory(prefix="tiered_drain_") as disk_dir:
         connector = create_tiered_connector(disk_cache_dir=disk_dir)
 
-        # Cycle 1: save + flush + sync
-        connector.save([0, 1], [100, 200])
-        connector.flush()
+        # Cycle 1: offload + sync
+        connector.offload([0, 1], [100, 200])
         connector.sync()
 
         # Wait for cycle 1 writes to complete
         connector._disk_tier.wait_for_writes()
 
-        # Cycle 2: save + flush + sync — should drain cycle 1's blocks
-        connector.save([2, 3], [300, 400])
-        connector.flush()
+        # Cycle 2: offload + sync — should drain cycle 1's blocks
+        connector.offload([2, 3], [300, 400])
         connector.sync()  # calls _drain_completed_writes() internally
 
         # Wait for cycle 2
@@ -525,8 +493,7 @@ def test_shutdown_releases_write_locked_blocks() -> None:
     with tempfile.TemporaryDirectory(prefix="tiered_sd_wlb_") as disk_dir:
         connector = create_tiered_connector(disk_cache_dir=disk_dir)
 
-        connector.save([0, 1], [100, 200])
-        connector.flush()
+        connector.offload([0, 1], [100, 200])
         connector.sync()
 
         # Don't manually drain — let shutdown handle it

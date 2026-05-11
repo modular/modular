@@ -73,9 +73,6 @@ class LocalConnector:
             enable_runtime_checks=False,
         )
 
-        # Pending saves to host (accumulated between step() and flush())
-        self._pending_saves: list[tuple[int, int]] = []  # (block_id, hash)
-
         # Metrics tracking
         self._h2d_blocks_copied: int = 0
         self._d2h_blocks_copied: int = 0
@@ -124,37 +121,24 @@ class LocalConnector:
         return hit
 
     @traced
-    def save(
+    def offload(
         self,
         block_ids: list[int],
         block_hashes: list[int],
-        parent_seq_hash: int = 0,
     ) -> None:
         """Queue device blocks for offload to host. Executed in flush()."""
         for block_id, block_hash in zip(block_ids, block_hashes, strict=True):
-            self._pending_saves.append((block_id, block_hash))
+            self._maybe_offload_to_host(block_id, block_hash)
 
     @traced
     def sync(self) -> None:
         """Wait for pending H2D transfers to complete."""
         self._block_copy_engine.wait_for_completion()
 
-    @traced
-    def flush(self) -> None:
-        """Execute pending D2H copies to host cache."""
-        if not self._pending_saves:
-            return
-
-        for device_block_id, block_hash in self._pending_saves:
-            self._maybe_offload_to_host(device_block_id, block_hash)
-
-        self._pending_saves.clear()
-
     def shutdown(self) -> None:
         """Clean shutdown of connector resources."""
         # Wait for any pending transfers
         self._block_copy_engine.wait_for_completion()
-        self._pending_saves.clear()
 
     def reset_prefix_cache(self) -> None:
         """Reset the host prefix cache."""

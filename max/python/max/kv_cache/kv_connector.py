@@ -26,13 +26,12 @@ class KVConnector(Protocol):
 
     The manager owns device tensors, block allocation, and device-side prefix
     cache. Connectors handle external tier operations (e.g., host memory)
-    via lookup/load/save methods.
+    via load/offload methods.
 
     Required call ordering per inference step:
       1. connector.sync()   — wait for H2D loads before model execution
       2. [model executes]
-      3. connector.flush()  — initiate D2H saves after execution
-      connector.save() is called by BlockManager between steps.
+      3. connector.offload()  — initiate D2H offloads after execution
     """
 
     @property
@@ -56,29 +55,21 @@ class KVConnector(Protocol):
         """
         ...
 
-    def save(
+    def offload(
         self,
         block_ids: list[int],
         block_hashes: list[int],
-        parent_seq_hash: int = 0,
     ) -> None:
-        """Queue device blocks for save to external cache.
+        """Offload the device blocks to the external cache.
 
         Args:
-            block_ids: Device block IDs to save.
-            block_hashes: Hashes for the blocks being saved.
-            parent_seq_hash: Hash of the parent block for the first block
-                in this sequence (0 means root). Subsequent blocks chain
-                to their predecessor within the sequence.
+            block_ids: Device block IDs to offload.
+            block_hashes: Hashes for the blocks being offloaded.
         """
         ...
 
     def sync(self) -> None:
         """Wait for pending loads to complete."""
-        ...
-
-    def flush(self) -> None:
-        """Initiate queued async saves."""
         ...
 
     def shutdown(self) -> None:
