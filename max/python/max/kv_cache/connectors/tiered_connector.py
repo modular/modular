@@ -24,10 +24,10 @@ from __future__ import annotations
 import logging
 from collections.abc import Sequence
 from concurrent.futures import Future, wait
+from dataclasses import dataclass
 
 from max.driver import Buffer, Device
 from max.dtype import DType
-from max.interfaces import RequestID, TextGenerationContext
 from max.kv_cache.memory_tier import MemoryTier
 from max.nn.kv_cache import KVCacheParams
 from max.nn.kv_cache.metrics import KVCacheMetrics
@@ -44,6 +44,14 @@ from .disk_tier import DiskTier
 logger = logging.getLogger("max.pipelines")
 
 GiB = 1024**3
+
+
+@dataclass
+class _CacheHit:
+    block_hash: int
+    host_block: KVCacheBlock
+    device_block_id: int
+    future: Future[None] | None = None
 
 
 class TieredConnector:
@@ -110,7 +118,6 @@ class TieredConnector:
 
         # -- State --
         self._pending_saves: list[tuple[int, int]] = []  # (block_id, hash)
-        self._pending_loads: dict[str, list[tuple[KVCacheBlock, int]]] = {}
         # (bid, hash, host_block) — host_block kept at ref_cnt=1 for
         # zero-copy disk writes (pinned until write completes).
         self._pending_disk_writes: list[tuple[int, int, KVCacheBlock]] = []
@@ -149,27 +156,23 @@ class TieredConnector:
         return len(self._host_block_pool.hash_to_committed_block)
 
     @traced
-    def lookup(
+    def load(
         self,
-        ctx: TextGenerationContext,
+        device_block_ids: list[int],
         block_hashes: list[int],
     ) -> int:
-        """Look up blocks in CPU and disk caches. Returns tokens available."""
-        if not block_hashes:
-            return 0
+        """Load data from host or disk cache into device blocks.
 
-        request_id = str(ctx.request_id)
-
-        # Clear any previous state for this request
-        self._pending_loads.pop(request_id, None)
-        self._pending_disk_reads.pop(request_id, None)
+        Returns:
+            Number of blocks loaded from host cache.
+        """
 
         host_cache = self._host_block_pool.hash_to_committed_block
+        hits: list[_CacheHit] = []
 
-        hits: list[tuple[KVCacheBlock, int]] = []
-        read_futures: list[tuple[Future[None], int]] = []
-
-        for block_hash in block_hashes:
+        for device_block_id, block_hash in zip(
+            device_block_ids, block_hashes, strict=True
+        ):
             # Skip the host tier if env var is set
             if (
                 not self._only_use_kv_connector_last_level_cache
@@ -178,95 +181,56 @@ class TieredConnector:
                 # CPU hit
                 host_block = host_cache[block_hash]
                 self._host_block_pool.touch(host_block)
-                hits.append((host_block, block_hash))
+                hits.append(_CacheHit(block_hash, host_block, device_block_id))
 
             elif self._disk_tier.contains(block_hash):
                 # Disk hit -> async promote to CPU
-                # ref_cnt=1 from alloc_block().  Do NOT call free_block()
-                # here — the block must stay pinned so the async disk read
-                # thread can safely write into its memory.  free_block()
-                # is deferred to load() (after H2D) or on_request_complete().
                 host_block, _ = self._host_block_pool.alloc_block()
+                self._host_block_pool.free_block(host_block)
 
                 # Use uint8 view to avoid bfloat16 numpy incompatibility
                 assert self._host_buffer.dtype == DType.uint8
                 dest = self._host_buffer.to_numpy()[host_block.bid]
                 future = self._disk_tier.read_block_async(block_hash, dest)
-                read_futures.append((future, block_hash))
+                hits.append(
+                    _CacheHit(block_hash, host_block, device_block_id, future)
+                )
 
-                # Commit to prefix cache (data will be valid before load())
-                if block_hash not in host_cache:
-                    self._host_block_pool.commit_into_prefix_cache(
-                        block_hash, host_block
-                    )
-                hits.append((host_block, block_hash))
                 self._disk_blocks_read += 1
 
             else:
                 break  # prefix chain broken
 
-        if hits:
-            self._pending_loads[request_id] = hits
-        if read_futures:
-            self._pending_disk_reads[request_id] = read_futures
+        # Wait for async disk reads to complete
+        wait(hit.future for hit in hits if hit.future is not None)
 
-        return len(hits) * self._block_size
+        # Filter to successful hits, stopping at the first failure.
+        successful_hits: list[_CacheHit] = []
+        for hit in hits:
+            if hit.future is not None and hit.future.exception():
+                logger.error(
+                    "Disk read failed for hash %s: %s",
+                    hit.block_hash,
+                    hit.future.exception(),
+                )
+                break
+            successful_hits.append(hit)
 
-    @traced
-    def load(
-        self,
-        ctx: TextGenerationContext,
-        target_block_ids: list[int],
-    ) -> list[int]:
-        """Load data from host cache into device blocks.
-
-        Waits for any pending disk reads before issuing H2D copies.
-
-        Returns:
-            List of block hashes for the loaded blocks.
-        """
-        request_id = str(ctx.request_id)
-
-        # Wait for async disk reads to complete before H2D
-        failed_hashes: set[int] = set()
-        read_entries = self._pending_disk_reads.pop(request_id, None)
-        if read_entries:
-            futures = [f for f, _ in read_entries]
-            wait(futures)
-
-            # Check for read failures and evict corrupt prefix cache entries
-            for future, block_hash in read_entries:
-                exc = future.exception()
-                if exc is not None:
-                    logger.error(
-                        "Disk read failed for hash %s: %s", block_hash, exc
-                    )
-                    failed_hashes.add(block_hash)
-                    # Evict the corrupt entry from prefix cache
-                    host_cache = self._host_block_pool.hash_to_committed_block
-                    if block_hash in host_cache:
-                        del host_cache[block_hash]
-
-        pending = self._pending_loads.pop(request_id, None)
-        if not pending:
-            return []
-
-        loaded_hashes: list[int] = []
-        for (host_block, block_hash), device_block_id in zip(
-            pending, target_block_ids, strict=False
-        ):
-            if block_hash in failed_hashes:
-                # Release the pinned block for failed reads.
-                self._host_block_pool.free_block(host_block)
-                continue
-            self._block_copy_engine.memcpy_h2d(device_block_id, host_block.bid)
+        # For all successful hits, commit to host cache and copy to GPU.
+        for hit in successful_hits:
+            if (
+                hit.block_hash
+                not in self._host_block_pool.hash_to_committed_block
+            ):
+                self._host_block_pool.commit_into_prefix_cache(
+                    hit.block_hash, hit.host_block
+                )
+            self._block_copy_engine.memcpy_h2d(
+                hit.device_block_id, hit.host_block.bid
+            )
             self._h2d_blocks_copied += 1
-            loaded_hashes.append(block_hash)
-            # Release the pin set in lookup().  The block is now in the
-            # prefix cache (ref_cnt → 0) and can be evicted if needed.
-            self._host_block_pool.free_block(host_block)
 
-        return loaded_hashes
+        return len(successful_hits)
 
     @traced
     def save(
@@ -343,29 +307,6 @@ class TieredConnector:
 
         self._pending_saves.clear()
 
-    def on_request_complete(
-        self,
-        request_id: RequestID,
-        block_ids: list[int],
-    ) -> None:
-        """Clean up request-specific state.
-
-        Waits for any pending disk reads, then releases host blocks that
-        were pinned in lookup() but never consumed by load().
-        """
-        req_id = str(request_id)
-        # Wait for any pending disk reads before freeing their target blocks.
-        read_futures = self._pending_disk_reads.pop(req_id, None)
-        if read_futures:
-            futures = [f for f, _ in read_futures]
-            wait(futures)
-
-        # Free blocks that were never consumed by load().
-        pending = self._pending_loads.pop(req_id, None)
-        if pending:
-            for host_block, _hash in pending:
-                self._host_block_pool.free_block(host_block)
-
     def shutdown(self) -> None:
         """Clean shutdown of connector resources."""
         self._block_copy_engine.wait_for_completion()
@@ -379,7 +320,6 @@ class TieredConnector:
         for _, _, host_block in self._pending_disk_writes:
             self._host_block_pool.free_block(host_block)
         self._pending_saves.clear()
-        self._pending_loads.clear()
         self._pending_disk_writes.clear()
         self._pending_disk_reads.clear()
 

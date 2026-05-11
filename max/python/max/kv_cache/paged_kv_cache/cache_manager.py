@@ -729,14 +729,8 @@ class PagedKVCacheManager:
 
         replica.claimed_requests.remove(request_id)
 
-        # Get block IDs before releasing
-        block_ids = replica.block_manager.get_req_blocks(request_id)
-
         # Call the block manager release method with the request_id
         replica.block_manager.release(request_id)
-
-        # Notify connector of request completion
-        replica.connector.on_request_complete(request_id, block_ids)
 
     def claim(self, request_id: RequestID, replica_idx: int) -> None:
         """Reserves a sequence ID for the given request ID."""

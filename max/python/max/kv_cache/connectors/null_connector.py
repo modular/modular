@@ -19,7 +19,7 @@ All operations are no-ops that return immediately.
 
 from __future__ import annotations
 
-from max.interfaces import RequestID, TextGenerationContext
+from max.interfaces import RequestID
 from max.nn.kv_cache.metrics import KVCacheMetrics
 
 
@@ -30,19 +30,12 @@ class NullConnector:
     def name(self) -> str:
         return "NullConnector"
 
-    def lookup(
+    def load(
         self,
-        ctx: TextGenerationContext,
+        device_block_ids: list[int],
         block_hashes: list[int],
     ) -> int:
         return 0
-
-    def load(
-        self,
-        ctx: TextGenerationContext,
-        target_block_ids: list[int],
-    ) -> list[int]:
-        return []
 
     def save(
         self,

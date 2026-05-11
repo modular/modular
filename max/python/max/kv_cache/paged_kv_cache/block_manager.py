@@ -308,21 +308,11 @@ class BlockManager:
                 # Record potential host hash
                 desired_host_hashes.append(hash_value)
 
+        # Ignoring host cache hits in this calculation as it may be expensive
+        # to compute. Eg: due to querying an external process.
         device_prefix_cache_hit_count = len(device_prefix_cache_hits)
 
-        # Count host cache hits via connector (if any host blocks are available).
-        host_prefix_cache_hit_count = 0
-        if self.connector.num_host_blocks > 0 and desired_host_hashes:
-            # Query connector for how many tokens are available from host cache.
-            available_tokens = self.connector.lookup(ctx, desired_host_hashes)
-            available_blocks = available_tokens // self.block_size
-            # Limit by available device blocks for loading.
-            host_prefix_cache_hit_count = min(
-                available_blocks,
-                len(self.device_block_pool.free_block_queue),
-            )
-
-        return device_prefix_cache_hit_count + host_prefix_cache_hit_count
+        return device_prefix_cache_hit_count
 
     @traced
     def _get_full_blocks_from_device_prefix_cache(
@@ -348,9 +338,7 @@ class BlockManager:
 
     @traced
     def _get_full_blocks_from_host_prefix_cache(
-        self,
-        ctx: TextGenerationContext,
-        desired_hashes: list[int],
+        self, desired_hashes: list[int]
     ) -> list[KVCacheBlock]:
         """Returns a list of device blocks with the desired hashes.
 
@@ -360,43 +348,27 @@ class BlockManager:
         if self.connector.num_host_blocks == 0 or not desired_hashes:
             return []
 
-        # Query connector for available blocks from host cache.
-        available_tokens = self.connector.lookup(ctx, desired_hashes)
-        num_available_blocks = available_tokens // self.block_size
-
-        if num_available_blocks == 0:
-            return []
-
         # Limit by available device blocks.
-        num_blocks_to_load = min(
-            num_available_blocks,
-            len(self.device_block_pool.free_block_queue),
+        num_hashes_to_load = min(
+            len(desired_hashes), len(self.device_block_pool.free_block_queue)
         )
+        desired_hashes = desired_hashes[:num_hashes_to_load]
+        blocks = [
+            self.allocate_device_block() for _ in range(num_hashes_to_load)
+        ]
 
-        if num_blocks_to_load == 0:
-            return []
+        # Query connector for available blocks from host cache.
+        block_ids = [b.bid for b in blocks]
+        num_loaded = self.connector.load(block_ids, desired_hashes)
 
-        # Allocate device blocks for the loaded data.
-        blocks: list[KVCacheBlock] = []
-        device_block_ids: list[int] = []
-        for _ in range(num_blocks_to_load):
-            device_block = self.allocate_device_block()
-            blocks.append(device_block)
-            device_block_ids.append(device_block.bid)
-
-        # Load from host cache via connector - returns the block hashes.
-        loaded_hashes = self.connector.load(ctx, device_block_ids)
-
-        # The connector may return fewer hashes than requested (e.g.
-        # transport failure or connector degraded between lookup/load).
-        # Free any surplus pre-allocated device blocks.
-        if len(loaded_hashes) < len(blocks):
-            for surplus_block in blocks[len(loaded_hashes) :]:
-                self.device_block_pool.free_block(surplus_block)
-            blocks = blocks[: len(loaded_hashes)]
+        # The connector may return fewer hashes than requested.
+        for surplus_block in blocks[num_loaded:]:
+            self.device_block_pool.free_block(surplus_block)
+        loaded_blocks = blocks[:num_loaded]
+        loaded_hashes = desired_hashes[:num_loaded]
 
         # Commit the device blocks into the device prefix cache.
-        for device_block, block_hash in zip(blocks, loaded_hashes, strict=True):
+        for block, block_hash in zip(loaded_blocks, loaded_hashes, strict=True):
             if block_hash in self.device_block_pool.hash_to_committed_block:
                 # When this env var is set, we may perform host/disk -> device
                 # transfers of blocks already resident in the device prefix cache.
@@ -404,11 +376,9 @@ class BlockManager:
                 # commit.
                 assert self._only_use_kv_connector_last_level_cache
                 continue
-            self.device_block_pool.commit_into_prefix_cache(
-                block_hash, device_block
-            )
+            self.device_block_pool.commit_into_prefix_cache(block_hash, block)
 
-        return blocks
+        return loaded_blocks
 
     @traced
     def count_full_blocks_from_prefix_caches(
@@ -462,7 +432,7 @@ class BlockManager:
 
         # query the host prefix cache for full blocks via connector
         host_blocks = self._get_full_blocks_from_host_prefix_cache(
-            ctx, uncommitted_hashes
+            uncommitted_hashes
         )
         return device_blocks + host_blocks
 
@@ -488,18 +458,7 @@ class BlockManager:
         # to the block size.
         num_computed_blocks = ctx.tokens.processed_length // self.block_size
 
-        # Commit blocks into the prefix cache, grouping contiguous runs
-        # of new blocks with their parent hash for the connector.
-        # When a block already exists in the device prefix cache (dup),
-        # it breaks the current run; the dup's hash becomes the parent
-        # of the next new block.
-        current_parent = (
-            req_hashes[num_committed_blocks - 1]
-            if num_committed_blocks > 0
-            else DEFAULT_PARENT_HASH
-        )
-        run_bids: list[int] = []
-        run_hashes: list[int] = []
+        # Commit blocks into the prefix cache.
         for block_idx in range(num_committed_blocks, num_computed_blocks):
             block = req_blocks[block_idx]
             block_hash = req_hashes[block_idx]
@@ -507,27 +466,30 @@ class BlockManager:
             new_block = self.device_block_pool.get_or_commit_into_prefix_cache(
                 block_hash, block
             )
+            # If the block is already int the prefix cache, we skip the commit.
+            # Then we overwrite the req blocks with the existing block that contains
+            # the same contents.
             if new_block is not None:
                 req_blocks[block_idx] = new_block
-                if run_bids:
-                    self.connector.save(
-                        run_bids, run_hashes, parent_seq_hash=current_parent
-                    )
-                    run_bids = []
-                    run_hashes = []
-                current_parent = block_hash
-            else:
-                run_bids.append(block.bid)
-                run_hashes.append(block_hash)
 
-        if run_bids:
-            self.connector.save(
-                run_bids, run_hashes, parent_seq_hash=current_parent
-            )
-
-        # Update committed index managed by BlockManager.
+        # Bump the committed index.
         self.req_to_committed_idx[ctx.request_id] = (
             num_computed_blocks * self.block_size
+        )
+
+        # Save the blocks to the connector.
+        current_parent = (
+            req_hashes[num_committed_blocks - 1]
+            if num_committed_blocks > 0
+            else DEFAULT_PARENT_HASH
+        )
+        block_ids = [
+            block.bid
+            for block in req_blocks[num_committed_blocks:num_computed_blocks]
+        ]
+        block_hashes = req_hashes[num_committed_blocks:num_computed_blocks]
+        self.connector.save(
+            block_ids, block_hashes, parent_seq_hash=current_parent
         )
 
     def release(self, request_id: RequestID) -> None:
