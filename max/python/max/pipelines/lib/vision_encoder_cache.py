@@ -36,23 +36,45 @@ from max.pipelines.lib.vlm_utils import compute_multimodal_merge_indices
 from max.profiler import traced
 
 
-def _concat_buffers(bufs: list[Buffer]) -> Buffer:
-    """Concatenate Buffers along dim 0 on device.
+def concat_device_buffers(bufs: list[Buffer]) -> Buffer:
+    """Concatenate 2D Buffers along dim 0 on device.
 
-    Allocates a single output buffer on the same device as the inputs
-    and copies each input slice into it via inplace_copy_from.
+    Each buffer must have shape ``[n_rows_i, hidden]`` on the same device
+    and with the same dtype. Allocates a single output buffer
+    ``[sum(n_rows_i), hidden]`` and copies each input slice into it via
+    ``inplace_copy_from``.
+
+    Used both internally by the vision encoder cache (per-image splits
+    re-assembled into a batch-shaped output) and by VLM model code that
+    runs the vision encoder in multiple chunks and needs to concat the
+    per-chunk outputs back into a single per-device tensor before handing
+    off to ``prepare_vision_outputs``.
     """
-    assert len(bufs) > 0
-    total_rows = sum(b.shape[0] for b in bufs)
-    hidden = bufs[0].shape[1]
+    assert len(bufs) > 0, "concat_device_buffers requires at least one buffer"
+    first = bufs[0]
+    hidden = int(first.shape[1])
+    dtype = first.dtype
+    device = first.device
+    for b in bufs[1:]:
+        assert b.dtype == dtype, (
+            f"concat_device_buffers: dtype mismatch ({b.dtype} vs {dtype})"
+        )
+        assert b.device == device, (
+            f"concat_device_buffers: device mismatch ({b.device} vs {device})"
+        )
+        assert int(b.shape[1]) == hidden, (
+            f"concat_device_buffers: dim-1 mismatch "
+            f"({int(b.shape[1])} vs {hidden})"
+        )
+    total_rows = sum(int(b.shape[0]) for b in bufs)
     out = Buffer(
         shape=[total_rows, hidden],
-        dtype=bufs[0].dtype,
-        device=bufs[0].device,
+        dtype=dtype,
+        device=device,
     )
     offset = 0
     for b in bufs:
-        n = b.shape[0]
+        n = int(b.shape[0])
         out[offset : offset + n, :].inplace_copy_from(b)
         offset += n
     return out
@@ -383,4 +405,4 @@ class VisionEncoderCache(Generic[VLMContextType]):
             return [dl[0] for dl in all_device_bufs]
 
         # allocate on device and copy slices in.
-        return [_concat_buffers(dl) for dl in all_device_bufs]
+        return [concat_device_buffers(dl) for dl in all_device_bufs]
