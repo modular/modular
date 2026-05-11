@@ -53,7 +53,7 @@ from std.sys.defines import _is_bool_like
 from std.reflection import call_location, SourceLocation
 from std.builtin.device_passable import DevicePassable
 from std.compile.compile import CompiledFunctionInfo
-from std.reflection import get_linkage_name, reflect
+from std.reflection import get_linkage_name, reflect, reflect_fn
 from std.gpu.host.compile import (
     _compile_code,
     _cross_compilation,
@@ -217,11 +217,10 @@ def _checked_call[
     device_context: DeviceContext,
     location: SourceLocation,
 ) raises:
-    # Extract the linkage name of the function and strip off everything after
-    # the fully qualified name.
-    comptime func_name = get_linkage_name[func]().split("[", 2)[0].split(
-        "(", 2
-    )[0]
+    # Use the source-level function name for the error message. This is purely
+    # a display string; kernel launch/compilation continues to use the mangled
+    # linkage name elsewhere.
+    comptime func_name = reflect_fn[func].display_name()
     if err:
         var err_msg = _string_from_owned_charptr(err)
         raise Error(
