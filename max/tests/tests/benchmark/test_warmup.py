@@ -51,6 +51,8 @@ def _make_report(
     realized_mean: float = 20.0,
     realized_mean_stdev: float = 1.0,
     cap_count: int = 0,
+    ideal_total: int = 228,
+    available_total: int = 228,
 ) -> _WarmupSamplingReport:
     return _WarmupSamplingReport(
         warmup_pool=128,
@@ -61,6 +63,8 @@ def _make_report(
         realized_mean=realized_mean,
         realized_mean_stdev=realized_mean_stdev,
         cap_count=cap_count,
+        ideal_total=ideal_total,
+        available_total=available_total,
     )
 
 
@@ -195,6 +199,89 @@ def test_pick_warmup_length_biased_matches_size_biased_target() -> None:
     assert abs(avg_realized - target_mean) / target_mean < 0.02
 
 
+def test_pick_warmup_sufficient_dataset_no_shrink() -> None:
+    main = 20
+    M = 4
+    factor = 8
+    pool = _fixed_pool([5] * (main + factor * M))
+    _, report = pick_warmup_population(
+        pool,
+        warmup_count=M,
+        warmup_to_steady_state=True,
+        warmup_oversample_factor=factor,
+        main_pool_target=main,
+        rng=np.random.default_rng(0),
+    )
+    assert report is not None
+    assert report.warmup_pool == factor * M
+    assert report.main_pool == main
+    assert report.ideal_total == main + factor * M
+    assert report.available_total == main + factor * M
+
+
+def test_pick_warmup_mild_underproduction_shrinks_both_pools() -> None:
+    main = 20
+    M = 4
+    factor = 8
+    ideal_total = main + factor * M  # 52
+    n_total = 39  # ~75% of ideal
+    pool = _fixed_pool([5] * n_total)
+    _, report = pick_warmup_population(
+        pool,
+        warmup_count=M,
+        warmup_to_steady_state=True,
+        warmup_oversample_factor=factor,
+        main_pool_target=main,
+        rng=np.random.default_rng(0),
+    )
+    assert report is not None
+    assert report.ideal_total == ideal_total
+    assert report.available_total == n_total
+    # Both pools shrunk: warmup still oversampled (> M), main below target.
+    assert report.warmup_pool < factor * M
+    assert report.warmup_pool > M
+    assert report.main_pool < main
+    assert report.main_pool > 0
+    # Both pools shrank by roughly the same fraction.
+    warmup_frac = report.warmup_pool / (factor * M)
+    main_frac = report.main_pool / main
+    assert abs(warmup_frac - main_frac) < 0.1
+
+
+def test_pick_warmup_raises_when_dataset_smaller_than_warmup_count() -> None:
+    pool = _fixed_pool([5, 5, 5])
+    with pytest.raises(ValueError, match="warmup needs at least"):
+        pick_warmup_population(
+            pool,
+            warmup_count=4,
+            warmup_to_steady_state=True,
+            warmup_oversample_factor=8,
+            main_pool_target=20,
+            rng=np.random.default_rng(0),
+        )
+
+
+def test_pick_warmup_severe_underproduction_floors_warmup() -> None:
+    main = 20
+    M = 4
+    factor = 8
+    n_total = 5  # shrink drops candidate_pool below M, floor kicks in
+    pool = _fixed_pool([5] * n_total)
+    _, report = pick_warmup_population(
+        pool,
+        warmup_count=M,
+        warmup_to_steady_state=True,
+        warmup_oversample_factor=factor,
+        main_pool_target=main,
+        rng=np.random.default_rng(0),
+    )
+    assert report is not None
+    assert report.warmup_pool == M
+    assert report.main_pool == n_total - M
+    assert report.ideal_total == main + factor * M
+    assert report.available_total == n_total
+
+
 def test_pick_warmup_realized_mean_stdev_brackets_observed_spread() -> None:
     """The reported per-draw stdev should upper-bound the actual spread of
     realized_mean across seeds (with-replacement bound; systematic PPS
@@ -251,6 +338,28 @@ def test_log_warmup_sampling_report_caps_warn(
         log_warmup_sampling_report(report)
     assert any(
         "Could not warmup to steady state" in r.message for r in caplog.records
+    )
+
+
+def test_log_warmup_sampling_report_warns_on_underproduction(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    report = _make_report(ideal_total=200, available_total=160)
+    with caplog.at_level("WARNING"):
+        log_warmup_sampling_report(report)
+    msgs = [r.message for r in caplog.records if r.levelname == "WARNING"]
+    assert any("Dataset under-produced for warmup" in m for m in msgs)
+    assert any("20.0% deficit" in m for m in msgs)
+
+
+def test_log_warmup_sampling_report_no_warning_when_target_met(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    report = _make_report()
+    with caplog.at_level("WARNING"):
+        log_warmup_sampling_report(report)
+    assert not any(
+        "Dataset under-produced for warmup" in r.message for r in caplog.records
     )
 
 
