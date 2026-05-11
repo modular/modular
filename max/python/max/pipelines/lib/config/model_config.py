@@ -29,7 +29,10 @@ from max.graph.quantization import QuantizationConfig, QuantizationEncoding
 from max.graph.weights import WeightsFormat, weights_format
 from max.interfaces import SamplingParamsGenerationConfigDefaults
 from max.nn.kv_cache.cache_params import KVConnectorType
-from max.pipelines.lib.device_specs import coerce_device_specs_input
+from max.pipelines.lib.device_specs import (
+    coerce_device_specs_input,
+    default_device_specs,
+)
 from max.pipelines.lib.hf_utils import (
     HuggingFaceRepo,
     download_weight_files,
@@ -204,7 +207,7 @@ class MAXModelConfig(MAXModelConfigBase):
     """Subdirectory within the HuggingFace repo to load config and weights from."""
 
     device_specs: list[DeviceSpec] = Field(
-        default_factory=scan_available_devices,
+        default_factory=default_device_specs,
         description=(
             "Devices to run inference upon. This option should not be used "
             "directly via the CLI entrypoint."

@@ -675,7 +675,12 @@ class PipelineConfig(ConfigFileModel):
                 sampling_config.enable_variable_logits = True
             setattr(self, config_name, sampling_config)
         else:
-            setattr(self, config_name, config_class(**matched_kwargs))
+            existing = getattr(self, config_name, None)
+            if existing is not None and isinstance(existing, config_class):
+                merged = existing.model_copy(update=matched_kwargs)
+                setattr(self, config_name, merged)
+            else:
+                setattr(self, config_name, config_class(**matched_kwargs))
 
     # This has to be mode="wrap" instead of mode="before" to be able to pass
     # state of self._unmatched_kwargs to be used in the mode="after" validator

@@ -162,8 +162,8 @@ def calculate_virtual_device_count_from_cli(
             # Handle list of GPU IDs like [0, 1, 2]
             if len(device_input) > 0:
                 max_gpu_id = max(max_gpu_id, max(device_input))
-        elif device_input in ("gpu", "default"):
-            # Handle "gpu" or "default" which means GPU 0
+        elif device_input == "gpu":
+            # Handle "gpu" which means GPU 0.
             max_gpu_id = max(max_gpu_id, 0)
         elif (
             isinstance(device_input, str) and device_input.lower() == "gpu:all"

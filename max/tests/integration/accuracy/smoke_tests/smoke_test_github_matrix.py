@@ -100,9 +100,8 @@ HF_MODELS: dict[str, set[str]] = {
     "unsloth/gpt-oss-20b-BF16": XL | {"2xMI355"},
 }
 
-# Models tested with custom MAX serve flags. MODEL_ALIASES in
-# smoke_test.py maps each alias back to the real HuggingFace model
-# path and injects the appropriate serve args.
+# Models tested with custom MAX recipe presets. MODEL_RECIPES in
+# smoke_test.py maps each alias to its reusable recipe config.
 CUSTOM_MODELS: dict[str, set[str]] = {
     "meta-llama/Llama-3.1-8B-Instruct__modulev3": MULTI,
     "google/gemma-3-27b-it__modulev3": XL,
