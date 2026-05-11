@@ -19,8 +19,8 @@ from max.driver import DeviceSpec
 from max.pipelines.lib import MAXModelConfig, device_specs
 from max.pipelines.lib.device_specs import (
     DeviceHandle,
+    _default_device_specs,
     coerce_device_specs_input,
-    default_device_specs,
     get_requested_gpu_ids,
     normalize_device_specs_input,
     validate_gpu_ids,
@@ -168,7 +168,7 @@ def test_default_device_specs_no_gpus(
         autospec=True,
         return_value=[],
     )
-    assert default_device_specs() == []
+    assert _default_device_specs() == []
 
 
 def test_default_device_specs_first_gpu(
@@ -183,7 +183,7 @@ def test_default_device_specs_first_gpu(
             DeviceSpec.accelerator(1),
         ],
     )
-    assert default_device_specs() == [DeviceSpec.accelerator(0)]
+    assert _default_device_specs() == [DeviceSpec.accelerator(0)]
 
 
 def test_max_model_config_defaults_to_first_gpu(

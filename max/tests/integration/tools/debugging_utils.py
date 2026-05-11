@@ -32,7 +32,7 @@ from max.experimental.nn import Module as ModuleV3
 from max.nn.hooks import PrintHook
 from max.nn.layer import Module
 from max.pipelines.lib.device_specs import (
-    default_device_specs,
+    _default_device_specs,
     device_specs_from_normalized_device_handle,
     normalize_device_specs_input,
 )
@@ -387,7 +387,7 @@ def load_intermediate_tensors(
         framework_name=framework,
         output_path=output_dir,
         device_specs=(
-            default_device_specs()
+            _default_device_specs()
             if device_type is None
             else device_specs_from_normalized_device_handle(
                 normalize_device_specs_input(device_type)

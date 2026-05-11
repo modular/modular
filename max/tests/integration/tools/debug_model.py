@@ -26,7 +26,7 @@ import torch
 from max import pipelines
 from max.entrypoints.cli import DevicesOptionType
 from max.pipelines.lib.device_specs import (
-    default_device_specs,
+    _default_device_specs,
     device_specs_from_normalized_device_handle,
     normalize_device_specs_input,
 )
@@ -192,7 +192,7 @@ def main(
     try:
         run_debug_model(
             device_specs=(
-                default_device_specs()
+                _default_device_specs()
                 if device_type is None
                 else device_specs_from_normalized_device_handle(
                     normalize_device_specs_input(device_type)

@@ -140,7 +140,7 @@ def device_specs_from_normalized_device_handle(
     return [DeviceSpec.accelerator(id=gpu_id) for gpu_id in requested_gpu_ids]
 
 
-def default_device_specs() -> list[DeviceSpec]:
+def _default_device_specs() -> list[DeviceSpec]:
     """Return the first visible device, or no explicit device if none exist."""
     return scan_available_devices()[:1]
 

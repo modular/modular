@@ -29,7 +29,7 @@ from max import driver, pipelines
 from max.entrypoints.cli import DevicesOptionType
 from max.entrypoints.cli.entrypoint import configure_cli_logging
 from max.pipelines.lib.device_specs import (
-    default_device_specs,
+    _default_device_specs,
     device_specs_from_normalized_device_handle,
     normalize_device_specs_input,
 )
@@ -190,7 +190,7 @@ def main(
     try:
         generate_llm_logits(
             device_specs=(
-                default_device_specs()
+                _default_device_specs()
                 if device_type is None
                 else device_specs_from_normalized_device_handle(
                     normalize_device_specs_input(device_type)

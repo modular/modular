@@ -188,9 +188,8 @@ def call_eval(
         "base_url": url,
         "num_concurrent": str(max_concurrent),
         "max_retries": "1",
+        "timeout": "86400" if disable_timeouts else "600",
     }
-    if disable_timeouts:
-        model_args["timeout"] = "86400"
 
     include_path = str(Path(__file__).parent.resolve() / "tasks")
     with TemporaryDirectory() as tempdir:
