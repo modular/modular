@@ -2581,7 +2581,10 @@ def KGEN_CastFromBuiltinAttr : KGEN_ExprAttr<"CastFromBuiltin",
     AttrBuilderWithInferredContext<(ins "TypedAttr":$arg,
                                         "SIMDType":$type), [{
       return get(arg.getContext(), arg, type);
-    }], "TypedAttr">
+    }], "TypedAttr">,
+
+    // A builder that infers the return type from the argument type.
+    AttrBuilderWithInferredContext<(ins "TypedAttr":$arg), "", "TypedAttr">
   ];
 }
 
@@ -2610,7 +2613,10 @@ def KGEN_CastToBuiltinAttr : KGEN_ExprAttr<"CastToBuiltin", "cast_to_builtin"> {
 
     AttrBuilderWithInferredContext<(ins "TypedAttr":$arg, "Type":$type), [{
       return get(arg.getContext(), arg, type);
-    }], "TypedAttr">
+    }], "TypedAttr">,
+
+    // A builder that infers the return type from the argument type.
+    AttrBuilderWithInferredContext<(ins "TypedAttr":$arg), "", "TypedAttr">
   ];
 }
 

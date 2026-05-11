@@ -557,7 +557,7 @@ OpFoldResult foldSIMDSplat(Value scalarVal, Attribute scalarAttr,
 
 /// Get the equivalent simd scalar type for a given builtin type, return nullptr
 /// if there is no equivalent scalar type.
-SIMDType getEquivalentScalarType(Type type);
+SIMDType getEquivalentSIMDType(Type type);
 
 /// Splat a value of a builtin type to a SIMD type of the given size.
 TypedAttr splatBuiltinToSIMD(TypedAttr builtinScalarVal, TypedAttr simdSize);

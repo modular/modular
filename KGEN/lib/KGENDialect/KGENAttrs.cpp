@@ -3732,12 +3732,10 @@ static TypedAttr getArithParamOperator(MLIRContext *ctx, POC opcode,
       llvm::map_to_vector(operandsIn, [&](TypedAttr operand) -> TypedAttr {
         if (sugarIsa<SIMDType>(operand.getType()))
           return operand;
-
-        SIMDType operandType = getEquivalentScalarType(operand.getType());
-        return CastFromBuiltinAttr::get(operand, operandType);
+        return CastFromBuiltinAttr::get(operand);
       });
 
-  SIMDType resultType = getEquivalentScalarType(origResultType);
+  SIMDType resultType = getEquivalentSIMDType(origResultType);
   if (!resultType)
     resultType = cast<SIMDType>(origResultType);
 
@@ -3825,17 +3823,14 @@ static TypedAttr getArithParamOperator(MLIRContext *ctx, POC opcode,
       // Unset the result.
       ret = nullptr;
     } else {
-      ret = CastToBuiltinAttr::get(ctx, ret, origResultType);
+      ret = CastToBuiltinAttr::get(ret, origResultType);
     }
   }
 
   if (!ret) {
     if (resultType != origResultType) {
-      for (TypedAttr &operand : operands) {
-        // FIXME: all the operators that we have migrated have the same
-        // result/operand type, this is not necessarily true for cmp operators.
-        operand = CastToBuiltinAttr::get(ctx, operand, origResultType);
-      }
+      for (TypedAttr &operand : operands)
+        operand = CastToBuiltinAttr::get(operand);
     }
     ret = ParamOperatorAttr::Base::get(ctx, opcode, operands, origResultType);
   }
@@ -3876,6 +3871,9 @@ static TypedAttr getParamOperator(MLIRContext *ctx, POC opcode,
   case POC::LE:
     result = simplifyRelationalCompare(opcode, operands);
     resultType = IntegerType::get(ctx, 1);
+    break;
+  case POC::Cond:
+    result = simplifyCond(operands);
     break;
   // TODO: Fold all POCs above in SIMD forms.
   case POC::CurrentTarget:
@@ -3922,9 +3920,6 @@ static TypedAttr getParamOperator(MLIRContext *ctx, POC opcode,
     break;
   case POC::Rebind:
     result = simplifyRebind(operands, resultType);
-    break;
-  case POC::Cond:
-    result = simplifyCond(operands);
     break;
   case POC::ApplyResultSlot:
   case POC::GetEnv:
@@ -4295,12 +4290,10 @@ ConstraintAttr::verify(function_ref<InFlightDiagnostic()> emitError,
 ConstraintAttr
 ConstraintAttr::getChecked(function_ref<InFlightDiagnostic()> emitError,
                            TypedAttr proposition, LocationAttr loc) {
-  MLIRContext *ctx = proposition.getContext();
-  if (proposition.getType().isSignlessInteger(1)) {
-    proposition = CastFromBuiltinAttr::get(
-        ctx, proposition, SIMDType::get(ctx, 1, KGENDType::kBool));
-  }
+  if (proposition.getType().isSignlessInteger(1))
+    proposition = CastFromBuiltinAttr::get(proposition);
 
+  assert(proposition);
   if (failed(verify(emitError, proposition, loc)))
     return {};
   return get(proposition, loc);
@@ -4310,10 +4303,10 @@ ConstraintAttr ConstraintAttr::get(TypedAttr proposition, LocationAttr loc) {
   // TODO: maybe we should just update all the callsites to passing in an
   // `scalar<bool>` at the first place.
   MLIRContext *ctx = proposition.getContext();
-  if (proposition.getType().isSignlessInteger(1)) {
-    proposition = CastFromBuiltinAttr::get(
-        ctx, proposition, SIMDType::get(ctx, 1, KGENDType::kBool));
-  }
+  if (proposition.getType().isSignlessInteger(1))
+    proposition = CastFromBuiltinAttr::get(proposition);
+
+  assert(proposition);
   return get(ctx, proposition, loc);
 }
 
@@ -4349,6 +4342,25 @@ CastFromBuiltinAttr::getChecked(function_ref<InFlightDiagnostic()> emitError,
   return CastFromBuiltinAttr::get(context, value, out_type);
 }
 
+TypedAttr CastFromBuiltinAttr::get(TypedAttr arg) {
+  auto simdType = getEquivalentSIMDType(arg.getType());
+  if (!simdType)
+    return {};
+  return get(arg.getContext(), arg, simdType);
+}
+
+TypedAttr
+CastFromBuiltinAttr::getChecked(function_ref<InFlightDiagnostic()> emitError,
+                                TypedAttr arg) {
+  auto simdType = getEquivalentSIMDType(arg.getType());
+  if (!simdType) {
+    emitError() << "failed to infer the equivalent simd type for "
+                << arg.getType();
+    return {};
+  }
+  return getChecked(emitError, arg.getContext(), arg, simdType);
+}
+
 bool CastFromBuiltinAttr::isConstant() const { return false; }
 
 LogicalResult
@@ -4366,7 +4378,7 @@ TypedAttr CastToBuiltinAttr::get(MLIRContext *ctx, TypedAttr arg,
   if (auto fold = KGEN::foldCastToBuiltin(arg, out_type))
     if (auto ret = dyn_cast<TypedAttr>(cast<Attribute>(fold)))
       return ret;
-
+#if 1
   // FIXME: We should not sink the cast_to_builtin to the leaf of the
   // expression, ideally, ParamOperatorAttr should only take SIMD types: We have
   // to do it now because GC use a scalar `si64` for DimType, which need to be
@@ -4374,12 +4386,11 @@ TypedAttr CastToBuiltinAttr::get(MLIRContext *ctx, TypedAttr arg,
   if (auto expr = dyn_cast<ParamOperatorAttr>(arg);
       expr && llvm::is_contained(MIGRATED_POC, expr.getOpcode())) {
     auto operands = llvm::map_to_vector(expr.getOperands(), [&](auto operand) {
-      // FIXME: all the operators that we have migrated have the same
-      return CastToBuiltinAttr::get(ctx, operand, out_type);
+      return CastToBuiltinAttr::get(operand);
     });
     return ParamOperatorAttr::get(expr.getOpcode(), operands);
   }
-
+#endif
   return Base::get(ctx, arg, out_type);
 }
 
@@ -4390,6 +4401,50 @@ CastToBuiltinAttr::getChecked(function_ref<InFlightDiagnostic()> emitError,
   if (failed(verify(emitError, value, out_type)))
     return {};
   return CastToBuiltinAttr::get(context, value, out_type);
+}
+
+TypedAttr CastToBuiltinAttr::get(TypedAttr arg) {
+  auto simdType = sugarDynCast<SIMDType>(arg.getType());
+  if (!simdType || !simdType.getResolvedDType() || !simdType.getResolvedSize())
+    return {};
+
+  KGENDType dtype = *simdType.getResolvedDType();
+  Type builtinType = dtype.getEquivalentBuiltinType(arg.getContext());
+  if (!builtinType)
+    return {};
+
+  // SIMDType -> VectorType conversion.
+  if (1 != *simdType.getResolvedSize())
+    builtinType = VectorType::get(*simdType.getResolvedSize(), builtinType);
+
+  return CastToBuiltinAttr::get(arg, builtinType);
+}
+
+TypedAttr
+CastToBuiltinAttr::getChecked(function_ref<InFlightDiagnostic()> emitError,
+                              TypedAttr arg) {
+  auto simdType = sugarDynCast<SIMDType>(arg.getType());
+  if (!simdType || !simdType.getResolvedDType() ||
+      !simdType.getResolvedSize()) {
+    emitError() << "can not infer the equivalent builtin type from "
+                   "non-simd type or unresolved SIMD type: "
+                << arg.getType();
+    return {};
+  }
+
+  KGENDType dtype = *simdType.getResolvedDType();
+  Type builtinType = dtype.getEquivalentBuiltinType(arg.getContext());
+  if (!builtinType) {
+    emitError() << "failed to infer the equivalent builtin type for "
+                << arg.getType();
+    return {};
+  }
+
+  // SIMDType -> VectorType conversion.
+  if (1 != *simdType.getResolvedSize())
+    builtinType = VectorType::get(*simdType.getResolvedSize(), builtinType);
+
+  return getChecked(emitError, arg.getContext(), arg, builtinType);
 }
 
 bool CastToBuiltinAttr::isConstant() const { return false; }

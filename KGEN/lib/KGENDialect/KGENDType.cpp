@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/KGENDialect/KGENDType.h"
+#include "Support/Compiler/MLIRDType.h"
 
 using namespace M;
 using namespace KGEN;
@@ -77,4 +78,35 @@ std::string KGENDType::getAsString(bool libForm) const {
   default:
     return libForm ? getAsLongString(dtype) : DType::getAsString();
   }
+}
+
+std::pair<KGENDType, std::optional<int64_t>>
+KGENDType::getEquivalentDType(Type type) {
+  auto [dt, vecSize] = M::getEquivalentDType(type);
+
+  KGENDType dtype = KGENDType(dt);
+  // `M::getEquivalentDType` does not know the extra case in KGENDType.
+  if (dt.isInvalid() && type.isIndex())
+    dtype = KGENDType::index;
+
+  return {dtype, vecSize};
+}
+
+Type KGENDType::getEquivalentBuiltinType(MLIRContext *ctx) {
+  // Bool can only be `i1`.
+  if (isBool())
+    return IntegerType::get(ctx, 1);
+
+  if (isIndex() || isUIndex())
+    return IndexType::get(ctx);
+
+  if (isInt())
+    return IntegerType::get(ctx, getWidthInBits(),
+                            isSInt() ? IntegerType::Signed
+                                     : IntegerType::Unsigned);
+
+  if (isFloat())
+    return getEquivalentFloatType(ctx, *this);
+
+  return {};
 }

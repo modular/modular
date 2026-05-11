@@ -39,6 +39,12 @@ public:
   KGENDType(DType dtype) : DType(dtype) {}
   KGENDType(ExtraCases type) : DType(type) {}
 
+  /// Return the equivalent KGENDType for the given builtin MLIR type.
+  static std::pair<KGENDType, std::optional<int64_t>>
+  getEquivalentDType(Type type);
+  /// Return the equivalent builtin MLIR type for the given KGENDType.
+  Type getEquivalentBuiltinType(MLIRContext *ctx);
+
   constexpr bool isAddress() const { return getValue() == ExtraCases::address; }
   constexpr bool isIndex() const { return getValue() == ExtraCases::index; }
   constexpr bool isUIndex() const { return getValue() == ExtraCases::uindex; }
