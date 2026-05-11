@@ -136,7 +136,6 @@ __all__ = [
     "RopeType",
     "SamplingConfig",
     "SpeculativeConfig",
-    "SpeculativeDecodingBase",
     "SpeechTokenGenerationPipeline",
     "StandaloneSpeculativeDecodingPipeline",
     "SupportedArchitecture",
