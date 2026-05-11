@@ -543,6 +543,63 @@ struct PyObject(
         )
 
 
+@fieldwise_init
+struct _PyMutex(Defaultable, ImplicitlyCopyable):
+    """CPython `PyMutex` from `Include/cpython/lock.h`."""
+
+    # https://github.com/python/cpython/blob/323c59a5e348347be2ce2b7ea55fcb30bf68b2d3/Include/cpython/lock.h#L29
+
+    var bits: UInt8
+
+    def __init__(out self):
+        self.bits = 0
+
+
+@fieldwise_init
+struct PyObject_FreeThreaded(
+    Defaultable,
+    ImplicitlyCopyable,
+    Writable,
+):
+    """CPython free-threaded `_object` layout (`Py_GIL_DISABLED`). Same docs for `PyObject` apply,
+    but with additional fields used by the free-threaded interpreter.
+    """
+
+    var object_tid: c_size_t
+    var object_flags: UInt16
+    var object_mutex: _PyMutex
+    var object_gc_bits: UInt8
+    var object_ref_local: UInt32
+    var object_ref_shared: Py_ssize_t
+    var object_type: PyTypeObjectPtr
+
+    def __init__(out self):
+        self.object_tid = 0
+        self.object_flags = 0
+        self.object_mutex = {}
+        self.object_gc_bits = 0
+        self.object_ref_local = 0
+        self.object_ref_shared = 0
+        self.object_type = {}
+
+    def write_to(self, mut writer: Some[Writer]):
+        """Formats to the provided Writer.
+
+        Args:
+            writer: The object to write to.
+        """
+
+        writer.write("PyObject_FreeThreaded(")
+        writer.write("object_tid=", self.object_tid, ",")
+        writer.write("object_flags=", self.object_flags, ",")
+        writer.write("object_mutex=", self.object_mutex.bits, ",")
+        writer.write("object_gc_bits=", self.object_gc_bits, ",")
+        writer.write("object_ref_local=", self.object_ref_local, ",")
+        writer.write("object_ref_shared=", self.object_ref_shared, ",")
+        writer.write("object_type=", self.object_type)
+        writer.write(")")
+
+
 # Mojo doesn't have macros, so we define it here for ease.
 struct PyModuleDef_Base(Defaultable, Movable, Writable):
     """PyModuleDef_Base.
@@ -625,6 +682,85 @@ struct PyModuleDef_Slot:
     var value: OpaquePointer[MutAnyOrigin]
 
 
+# Common function pointer types used in `_PyModuleDef_Body`/`_PyModuleDef_FreeThreaded`.
+# TODO(MOCO-1138): These are C ABI function pointers, not Mojo functions.
+comptime _PyModuleDef_visitproc_fn_type = def(
+    PyObjectPtr, OpaquePointer[MutAnyOrigin]
+) thin -> c_int
+comptime _PyModuleDef_traverse_fn_type = def(
+    PyObjectPtr, _PyModuleDef_visitproc_fn_type, OpaquePointer[MutAnyOrigin]
+) thin -> c_int
+comptime _PyModuleDef_clear_fn_type = def(PyObjectPtr) thin -> c_int
+comptime _PyModuleDef_free_fn_type = def(
+    OpaquePointer[MutAnyOrigin]
+) thin -> OpaquePointer[MutAnyOrigin]
+
+
+struct _PyModuleDef_Body(Movable):
+    """Shared `PyModuleDef` fields after `PyModuleDef_Base`."""
+
+    var name: _CPointer[c_char, StaticConstantOrigin]
+    """Name for the new module."""
+    var docstring: _CPointer[c_char, StaticConstantOrigin]
+    """Points to the contents of the docstring for the module."""
+    var size: Py_ssize_t
+    """Size of per-module data."""
+    var methods: _CPointer[PyMethodDef, MutAnyOrigin]
+    """A pointer to a table of module-level functions. Can be null if there
+    are no functions present."""
+    var slots: _CPointer[PyModuleDef_Slot, MutAnyOrigin]
+    """An array of slot definitions for multi-phase initialization, terminated
+    by a `{0, NULL}` entry."""
+    var traverse_fn: _PyModuleDef_traverse_fn_type
+    """A traversal function to call during GC traversal of the module object,
+    or `NULL` if not needed."""
+    var clear_fn: _PyModuleDef_clear_fn_type
+    """A clear function to call during GC clearing of the module object,
+    or `NULL` if not needed."""
+    var free_fn: _PyModuleDef_free_fn_type
+    """A function to call during deallocation of the module object,
+    or `NULL` if not needed."""
+
+    def __init__(out self, name: StaticString):
+        self.name = name.unsafe_ptr().bitcast[c_char]()
+        self.docstring = {}
+        # setting `size` to -1 means that the module does not support sub-interpreters
+        self.size = -1
+        self.methods = {}
+        self.slots = {}
+        self.traverse_fn = _null_fn_ptr[_PyModuleDef_traverse_fn_type]()
+        self.clear_fn = _null_fn_ptr[_PyModuleDef_clear_fn_type]()
+        self.free_fn = _null_fn_ptr[_PyModuleDef_free_fn_type]()
+
+
+struct PyModuleDef_Base_FreeThreaded(Defaultable, Movable):
+    """`PyModuleDef_Base` for free-threaded CPython (`Py_GIL_DISABLED`)."""
+
+    var object_base: PyObject_FreeThreaded
+
+    # TODO(MOCO-1138): This is a C ABI function pointer, not a Mojo function.
+    comptime _init_fn_type = def() thin -> PyObjectPtr
+    var init_fn: Self._init_fn_type
+    var index: Py_ssize_t
+    var dict_copy: PyObjectPtr
+
+    def __init__(out self):
+        self.object_base = {}
+        self.init_fn = _null_fn_ptr[Self._init_fn_type]()
+        self.index = 0
+        self.dict_copy = {}
+
+
+struct _PyModuleDef_FreeThreaded(Movable):
+    var base: PyModuleDef_Base_FreeThreaded
+    var body: _PyModuleDef_Body
+    """The trailing CPython `PyModuleDef` fields after `m_base`."""
+
+    def __init__(out self, name: StaticString):
+        self.base = {}
+        self.body = _PyModuleDef_Body(name)
+
+
 struct PyModuleDef(Movable, Writable):
     """The Python module definition structs that holds all of the information
     needed to create a module.
@@ -634,58 +770,12 @@ struct PyModuleDef(Movable, Writable):
     """
 
     var base: PyModuleDef_Base
-
-    var name: _CPointer[c_char, StaticConstantOrigin]
-    """Name for the new module."""
-
-    var docstring: _CPointer[c_char, StaticConstantOrigin]
-    """Points to the contents of the docstring for the module."""
-
-    var size: Py_ssize_t
-    """Size of per-module data."""
-
-    var methods: _CPointer[PyMethodDef, MutAnyOrigin]
-    """A pointer to a table of module-level functions. Can be null if there
-    are no functions present."""
-
-    var slots: _CPointer[PyModuleDef_Slot, MutAnyOrigin]
-    """An array of slot definitions for multi-phase initialization, terminated
-    by a `{0, NULL}` entry."""
-
-    # TODO(MOCO-1138): These are C ABI function pointers, not Mojo functions.
-    comptime _visitproc_fn_type = def(
-        PyObjectPtr, OpaquePointer[MutAnyOrigin]
-    ) thin -> c_int
-    comptime _traverse_fn_type = def(
-        PyObjectPtr, Self._visitproc_fn_type, OpaquePointer[MutAnyOrigin]
-    ) thin -> c_int
-    var traverse_fn: Self._traverse_fn_type
-    """A traversal function to call during GC traversal of the module object,
-    or `NULL` if not needed."""
-
-    comptime _clear_fn_type = def(PyObjectPtr) thin -> c_int
-    var clear_fn: Self._clear_fn_type
-    """A clear function to call during GC clearing of the module object,
-    or `NULL` if not needed."""
-
-    comptime _free_fn_type = def(
-        OpaquePointer[MutAnyOrigin]
-    ) thin -> OpaquePointer[MutAnyOrigin]
-    var free_fn: Self._free_fn_type
-    """A function to call during deallocation of the module object,
-    or `NULL` if not needed."""
+    var body: _PyModuleDef_Body
+    """The trailing CPython `PyModuleDef` fields after `m_base`."""
 
     def __init__(out self, name: StaticString):
         self.base = {}
-        self.name = name.unsafe_ptr().bitcast[c_char]()
-        self.docstring = {}
-        # setting `size` to -1 means that the module does not support sub-interpreters
-        self.size = -1
-        self.methods = {}
-        self.slots = {}
-        self.traverse_fn = _null_fn_ptr[Self._traverse_fn_type]()
-        self.clear_fn = _null_fn_ptr[Self._clear_fn_type]()
-        self.free_fn = _null_fn_ptr[Self._free_fn_type]()
+        self.body = _PyModuleDef_Body(name)
 
     # ===-------------------------------------------------------------------===#
     # Trait implementations
@@ -704,11 +794,11 @@ struct PyModuleDef(Movable, Writable):
 
         writer.write("PyModuleDef(")
         writer.write("base=", self.base, ",")
-        writer.write("name=", self.name, ",")
-        writer.write("docstring=", self.docstring, ",")
-        writer.write("size=", self.size, ",")
-        writer.write("methods=", self.methods, ",")
-        writer.write("slots=", self.slots, ",")
+        writer.write("name=", self.body.name, ",")
+        writer.write("docstring=", self.body.docstring, ",")
+        writer.write("size=", self.body.size, ",")
+        writer.write("methods=", self.body.methods, ",")
+        writer.write("slots=", self.body.slots, ",")
         writer.write("traverse_fn=<unprintable>", ",")
         writer.write("clear_fn=<unprintable>", ",")
         writer.write("free_fn=<unprintable>")
@@ -722,10 +812,10 @@ struct PyModuleDef(Movable, Writable):
             writer: The object to write to.
         """
         fmt.FormatStruct(writer, "PyModuleDef").fields(
-            fmt.Named("name", self.name),
-            fmt.Named("size", self.size),
-            fmt.Named("methods", self.methods),
-            fmt.Named("slots", self.slots),
+            fmt.Named("name", self.body.name),
+            fmt.Named("size", self.body.size),
+            fmt.Named("methods", self.body.methods),
+            fmt.Named("slots", self.body.slots),
         )
 
 
@@ -855,6 +945,21 @@ comptime PyGILState_Release = ExternalFunction[
     "PyGILState_Release",
     # void PyGILState_Release(PyGILState_STATE)
     def(PyGILState_STATE) thin -> None,
+]
+
+# for Py_mod_gil:
+#   #define Py_MOD_GIL_USED ((void *)0)
+#   #define Py_MOD_GIL_NOT_USED ((void *)1)
+# From: https://github.com/python/cpython/blob/323c59a5e348347be2ce2b7ea55fcb30bf68b2d3/Include/moduleobject.h#L98
+comptime Py_MOD_GIL_USED = OpaquePointer[MutAnyOrigin](unsafe_from_address=0)
+comptime Py_MOD_GIL_NOT_USED = OpaquePointer[MutAnyOrigin](
+    unsafe_from_address=1
+)
+
+comptime PyUnstable_Module_SetGIL = ExternalFunction[
+    "PyUnstable_Module_SetGIL",
+    # int PyUnstable_Module_SetGIL(PyObject *module, void *gil)
+    def(PyObjectPtr, OpaquePointer[MutAnyOrigin]) thin -> c_int,
 ]
 
 # Importing Modules
@@ -1134,6 +1239,13 @@ comptime PyModule_Create2 = ExternalFunction[
     # PyObject *PyModule_Create2(PyModuleDef *def, int module_api_version)
     def(_CPointer[PyModuleDef, MutAnyOrigin], c_int) thin -> PyObjectPtr,
 ]
+comptime PyModule_Create2_FreeThreaded = ExternalFunction[
+    "PyModule_Create2",
+    # PyObject *PyModule_Create2(PyModuleDef *def, int module_api_version)
+    def(
+        _CPointer[_PyModuleDef_FreeThreaded, MutAnyOrigin], c_int
+    ) thin -> PyObjectPtr,
+]
 comptime PyModule_AddFunctions = ExternalFunction[
     "PyModule_AddFunctions",
     # int PyModule_AddFunctions(PyObject *module, PyMethodDef *functions)
@@ -1200,6 +1312,14 @@ def _PyErr_GetRaisedException_dummy() -> PyObjectPtr:
 
 def _PyType_GetName_dummy(type: PyTypeObjectPtr) -> PyObjectPtr:
     abort("PyType_GetName is not available in this Python version")
+
+
+def _PyUnstable_Module_SetGIL_dummy(
+    module: PyObjectPtr, gil: OpaquePointer[MutAnyOrigin]
+) -> c_int:
+    _ = module
+    _ = gil
+    return 0
 
 
 # ===-------------------------------------------------------------------===#
@@ -1314,6 +1434,8 @@ struct CPython(Defaultable, Movable):
     """The handle to the CPython shared library."""
     var version: PythonVersion
     """The version of the Python runtime."""
+    var is_free_threaded: Bool
+    """Whether the loaded Python runtime is built with `Py_GIL_DISABLED`."""
     var init_error: StaticString
     """An error message if initialization failed."""
 
@@ -1341,6 +1463,7 @@ struct CPython(Defaultable, Movable):
     var _PyEval_RestoreThread: PyEval_RestoreThread.type
     var _PyGILState_Ensure: PyGILState_Ensure.type
     var _PyGILState_Release: PyGILState_Release.type
+    var _PyUnstable_Module_SetGIL: PyUnstable_Module_SetGIL.type
     # Importing Modules
     var _PyImport_ImportModule: PyImport_ImportModule.type
     var _PyImport_AddModule: PyImport_AddModule.type
@@ -1410,6 +1533,7 @@ struct CPython(Defaultable, Movable):
     # Module Objects
     var _PyModule_GetDict: PyModule_GetDict.type
     var _PyModule_Create2: PyModule_Create2.type
+    var _PyModule_Create2_FreeThreaded: PyModule_Create2_FreeThreaded.type
     var _PyModule_AddFunctions: PyModule_AddFunctions.type
     var _PyModule_AddObjectRef: PyModule_AddObjectRef.type
     # Slice Objects
@@ -1478,6 +1602,11 @@ struct CPython(Defaultable, Movable):
         else:
             self.version = PythonVersion(0, 0, 0)
 
+        # Present only when CPython is built with `Py_GIL_DISABLED`.
+        self.is_free_threaded = self.lib.check_symbol(
+            "PyUnstable_Module_SetGIL"
+        )
+
         # The Very High Level Layer
         self._PyRun_SimpleString = PyRun_SimpleString.load(self.lib.borrow())
         self._PyRun_String = PyRun_String.load(self.lib.borrow())
@@ -1506,6 +1635,12 @@ struct CPython(Defaultable, Movable):
         )
         self._PyGILState_Ensure = PyGILState_Ensure.load(self.lib.borrow())
         self._PyGILState_Release = PyGILState_Release.load(self.lib.borrow())
+        if self.is_free_threaded:
+            self._PyUnstable_Module_SetGIL = PyUnstable_Module_SetGIL.load(
+                self.lib.borrow()
+            )
+        else:
+            self._PyUnstable_Module_SetGIL = _PyUnstable_Module_SetGIL_dummy
         # Importing Modules
         self._PyImport_ImportModule = PyImport_ImportModule.load(
             self.lib.borrow()
@@ -1620,6 +1755,9 @@ struct CPython(Defaultable, Movable):
         # Module Objects
         self._PyModule_GetDict = PyModule_GetDict.load(self.lib.borrow())
         self._PyModule_Create2 = PyModule_Create2.load(self.lib.borrow())
+        self._PyModule_Create2_FreeThreaded = (
+            PyModule_Create2_FreeThreaded.load(self.lib.borrow())
+        )
         self._PyModule_AddFunctions = PyModule_AddFunctions.load(
             self.lib.borrow()
         )
@@ -2816,19 +2954,31 @@ struct CPython(Defaultable, Movable):
 
         # NOTE: See https://github.com/pybind/pybind11/blob/a1d00916b26b187e583f3bce39cd59c3b0652c32/include/pybind11/pybind11.h#L1326
         # for what we want to do here.
-        var module_def_ptr = alloc[PyModuleDef](1)
-        module_def_ptr.init_pointee_move(PyModuleDef(name))
-
-        # TODO: set gil stuff
-        # Note: Python automatically calls https://docs.python.org/3/c-api/module.html#c.PyState_AddModule
-        # after the caller imports said module.
 
         # TODO: it would be nice to programmatically call a CPython API to get the value here
         # but I think it's only defined via the `PYTHON_API_VERSION` macro that ships with Python.
         # if this mismatches with the user's Python, then a `RuntimeWarning` is emitted according to the
         # docs.
         comptime module_api_version: c_int = 1013
-        return self._PyModule_Create2(module_def_ptr, module_api_version)
+
+        # Handle differences for a free-threaded module
+        if self.is_free_threaded:
+            var module_def_ptr = alloc[_PyModuleDef_FreeThreaded](1)
+            module_def_ptr.init_pointee_move(_PyModuleDef_FreeThreaded(name))
+            var module = self._PyModule_Create2_FreeThreaded(
+                module_def_ptr, module_api_version
+            )
+            if module:
+                if (
+                    self._PyUnstable_Module_SetGIL(module, Py_MOD_GIL_NOT_USED)
+                    == -1
+                ):
+                    return {}
+            return module
+        else:
+            var module_def_ptr = alloc[PyModuleDef](1)
+            module_def_ptr.init_pointee_move(PyModuleDef(name))
+            return self._PyModule_Create2(module_def_ptr, module_api_version)
 
     def PyModule_AddFunctions(
         self,
