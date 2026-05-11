@@ -191,6 +191,37 @@ class TestNavitResizeImage:
         assert total_h % factor == 0
         assert result["num_tokens"] == (total_h // factor) * (total_w // factor)
 
+    @pytest.mark.parametrize(
+        "width,height",
+        [
+            # Patch grids that scale narrowly under in_patch_limit=16384
+            # but pad back over by one row + one column. Each previously
+            # OOM'd the vision encoder under shadow traffic.
+            (1204, 2716),
+            (1484, 2212),
+            (1512, 2184),
+        ],
+        ids=["1204x2716", "1484x2212", "1512x2184"],
+    )
+    def test_post_pad_patches_within_cap(self, width: int, height: int) -> None:
+        """Post-pad patch count must not exceed ``in_patch_limit``."""
+        cfg = MediaProcConfig()
+        result = navit_resize_image(
+            width=width,
+            height=height,
+            patch_size=cfg.patch_size,
+            merge_kernel_size=cfg.merge_kernel_size,
+            in_patch_limit=cfg.in_patch_limit,
+            patch_limit_on_one_side=cfg.patch_limit_on_one_side,
+            fixed_output_tokens=cfg.fixed_output_tokens,
+        )
+        merge_sq = cfg.merge_kernel_size * cfg.merge_kernel_size
+        post_pad_patches = result["num_tokens"] * merge_sq
+        assert post_pad_patches <= cfg.in_patch_limit, (
+            f"{width}x{height}: {post_pad_patches} patches "
+            f"> in_patch_limit={cfg.in_patch_limit}"
+        )
+
 
 # ---------------------------------------------------------------------------
 # navit_resize_video tests
