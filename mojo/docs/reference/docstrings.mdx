@@ -104,34 +104,6 @@ Separate the summary from additional body text with a blank line.
 Start the summary with a capital letter and end it with a period.
 Avoid repeating the declaration name.
 
-### `Examples`
-
-`Examples:` is not compiler-checked, but it is widely used in Mojo
-documentation. Use `Examples:` to show how to use an API in practice.
-
-It's normally the last section in a docstring. Example code is usually
-left-aligned with the label. Use fenced code blocks with the `mojo`
-language tag for syntax highlighting.
-
-<!-- markdownlint-disable MD048 -->
-
-~~~text
-Examples:
-
-```mojo
-var names = ["alice", "bob", "carol"]
-print(names.find("bob").value())  # 1
-print(names.find("dave") is None) # True
-
-var numbers = [1, 2, 3, 4, 3, 9, 3]
-while idx := numbers.find(3):
-    _ = numbers.pop(idx.value())
-print(numbers)  # [1, 2, 4, 9]
-```
-~~~
-
-<!-- markdownlint-enable MD048 -->
-
 ## Labeled content
 
 Structured sections include a labeled header followed by indented
@@ -223,6 +195,34 @@ Args:
     stride: The step between sampled indices. A stride of 1 returns
         all elements; a stride of 2 returns every other element.
 ```
+
+### `Examples`
+
+`Examples:` is not compiler-checked, but it is widely used in Mojo
+documentation. Use `Examples:` to show how to use an API in practice.
+
+It's normally the last section in a docstring. Example code is usually
+left-aligned with the label. Use fenced code blocks with the `mojo`
+language tag for syntax highlighting.
+
+<!-- markdownlint-disable MD048 -->
+
+~~~text
+Examples:
+
+```mojo
+var names = ["alice", "bob", "carol"]
+print(names.find("bob").value())  # 1
+print(names.find("dave") is None) # True
+
+var numbers = [1, 2, 3, 4, 3, 9, 3]
+while idx := numbers.find(3):
+    _ = numbers.pop(idx.value())
+print(numbers)  # [1, 2, 4, 9]
+```
+~~~
+
+<!-- markdownlint-enable MD048 -->
 
 ### Custom labels
 
