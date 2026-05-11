@@ -17,8 +17,9 @@ Supports parsing distribution specifications from strings like "N(mean, std)"
 for normal distributions, "U(lower, upper)" for continuous uniform distributions,
 "DU(lower, upper)" for discrete uniform distributions, "NB(n, p)" for
 negative binomial distributions, "G(shape, scale)" for gamma distributions,
-"LN(mean, std)" for log-normal distributions, as well as plain float values
-for constant returns.
+"LN(mean, std)" for log-normal distributions, "Burr12(c, d, scale)" for
+Burr Type XII distributions, as well as plain float values for constant
+returns.
 
 The class hierarchy separates continuous (float-valued) and discrete
 (int-valued) distributions:
@@ -29,7 +30,8 @@ The class hierarchy separates continuous (float-valued) and discrete
     │   ├── NormalDistribution        N(mean, std)
     │   ├── UniformDistribution       U(lower, upper)
     │   ├── GammaDistribution         G(shape, scale)
-    │   └── LogNormalDistribution     LN(mean, std)
+    │   ├── LogNormalDistribution     LN(mean, std)
+    │   └── Burr12Distribution        Burr12(c, d, scale)
     └── DiscreteDistribution
         ├── DiscreteUniformDistribution   DU(lower, upper)
         └── NegativeBinomialDistribution  NB(n, p)
@@ -68,7 +70,8 @@ class BaseDistribution(ABC):
         Args:
             param: An int or float, a string like "N(mean,std)",
                 "U(lower,upper)", "DU(lower,upper)", "NB(n,p)",
-                "G(shape,scale)", "LN(mean,std)", or None.
+                "G(shape,scale)", "LN(mean,std)", "Burr12(c,d,scale)",
+                or None.
 
         Returns:
             A BaseDistribution instance, or None if param is None.
@@ -92,7 +95,9 @@ class BaseDistribution(ABC):
                 pass
 
             upper = stripped.upper()
-            if upper.startswith("LN("):
+            if upper.startswith("BURR12("):
+                return Burr12Distribution.parse_from_str_schema(stripped)
+            elif upper.startswith("LN("):
                 return LogNormalDistribution.parse_from_str_schema(stripped)
             elif upper.startswith("NB("):
                 return NegativeBinomialDistribution.parse_from_str_schema(
@@ -113,7 +118,8 @@ class BaseDistribution(ABC):
                     f"Unrecognized distribution format: '{param}'. "
                     "Expected a float, 'N(mean,std)', "
                     "'U(lower,upper)', 'DU(lower,upper)', 'NB(n,p)', "
-                    "'G(shape,scale)', or 'LN(mean,std)'."
+                    "'G(shape,scale)', 'LN(mean,std)', "
+                    "or 'Burr12(c,d,scale)'."
                 )
 
         else:
@@ -331,6 +337,75 @@ class LogNormalDistribution(ContinuousDistribution):
                 f"Cannot parse numeric values from '{schema}': {e}"
             ) from e
         return cls(mean=mean, std=std)
+
+
+@dataclass
+class Burr12Distribution(ContinuousDistribution):
+    """A Burr Type XII distribution with shape parameters ``c``, ``d`` and
+    a ``scale`` parameter.
+
+    The CDF is ``F(x) = 1 - (1 + (x/scale)**c)**(-d)`` for ``x >= 0``.
+    Samples are drawn via the inverse-CDF transform on a uniform draw, so
+    no scipy dependency is required:
+
+        x = scale * ((1 - U)**(-1/d) - 1)**(1/c),  U ~ Uniform[0, 1)
+
+    ``np.random.uniform`` samples from ``[0, 1)``, so ``1 - U`` lies in
+    ``(0, 1]``. That keeps ``(1 - U)**(-1/d)`` well-defined and avoids the
+    divide-by-zero that ``U**(-1/d)`` would hit when ``U`` is 0.
+    """
+
+    c: float
+    d: float
+    scale: float
+
+    def __post_init__(self) -> None:
+        if self.c <= 0:
+            raise ValueError(f"c (shape) must be positive, got {self.c}")
+        if self.d <= 0:
+            raise ValueError(f"d (shape) must be positive, got {self.d}")
+        if self.scale <= 0:
+            raise ValueError(f"scale must be positive, got {self.scale}")
+
+    def sample_value(self) -> float:
+        u = np.random.uniform(low=0.0, high=1.0)
+        return float(
+            self.scale * ((1.0 - u) ** (-1.0 / self.d) - 1.0) ** (1.0 / self.c)
+        )
+
+    @classmethod
+    def parse_from_str_schema(cls, schema: str) -> Burr12Distribution:
+        """Parse a string like "Burr12(c, d, scale)" into a Burr12Distribution.
+
+        Args:
+            schema: A string in the format ``Burr12(c, d, scale)``
+                (case-insensitive prefix). All three parameters must be
+                positive floats.
+
+        Returns:
+            A Burr12Distribution instance.
+
+        Raises:
+            ValueError: If the string cannot be parsed.
+        """
+        match = re.match(
+            r"[Bb][Uu][Rr][Rr]12\(\s*([^,]+)\s*,\s*([^,]+)\s*,\s*([^)]+)\s*\)",
+            schema,
+        )
+        if not match:
+            raise ValueError(
+                f"Cannot parse Burr12 distribution from '{schema}'. "
+                "Expected format: 'Burr12(c, d, scale)'."
+            )
+        try:
+            c = float(match.group(1))
+            d = float(match.group(2))
+            scale = float(match.group(3))
+        except ValueError as e:
+            raise ValueError(
+                f"Cannot parse numeric values from '{schema}': {e}"
+            ) from e
+        return cls(c=c, d=d, scale=scale)
 
 
 @dataclass
