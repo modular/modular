@@ -36,4 +36,5 @@ Dtype conversion
    :toctree: generated
    :template: autosummary/function.rst
 
+   max_dtype_to_torch
    torch_dtype_to_max
