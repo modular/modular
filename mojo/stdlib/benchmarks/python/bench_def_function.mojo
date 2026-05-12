@@ -10,18 +10,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""End-to-end benchmark of `PythonModuleBuilder.def_function` bindings.
+"""End-to-end benchmarks for `PythonModuleBuilder.def_function` bindings.
 
-Drives a Mojo function from Python via the registered `def_function`
-trampoline, in the same shape as issue #6521's reproducer
-(`def add(a: PythonObject, b: PythonObject) raises -> PythonObject:
-return PythonObject(Int(py=a) + Int(py=b))`).
+Each bench registers a Mojo function on a `PythonModuleBuilder` and
+drives it from a tight loop, measuring the round-trip cost of a
+Python -> Mojo call through the registered wrapper.
 
-The bench loop runs in Mojo, so each iteration pays a Mojo -> Python
+The loop runs in Mojo, so every iteration pays an extra Mojo -> Python
 crossing on top of the Python -> Mojo overhead being measured. The
 absolute numbers are therefore noisier than what an external Python
-`timeit.repeat` driver would see; the file is here so future
-optimizations to the binding plumbing can be A/B'd on the same shape.
+`timeit.repeat` driver would see; for clean end-to-end numbers drive
+the registered module from Python instead.
 """
 
 from std.benchmark import Bench, BenchConfig, Bencher, BenchId, keep
