@@ -545,7 +545,11 @@ def detect_infra_errors() -> Generator[None, None, None]:
         if (
             'failed to create device: No supported "gpu" device available.'
             in exc_str
-            and "CUDA call failed: CUDA_ERROR_UNKNOWN" in exc_str
+            and (
+                "CUDA call failed: CUDA_ERROR_UNKNOWN" in exc_str
+                or "cuInit failed with 802" in exc_str
+                or "CUDA_ERROR_SYSTEM_NOT_INITIALIZED" in exc_str
+            )
         ):
             raise InfraError(
                 "GPU device seems to have fallen off from runner"
