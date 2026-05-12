@@ -1089,6 +1089,21 @@ struct Int(
         Raises:
             An error if the conversion failed.
         """
+        ref cpy = Python().cpython()
+        # Fast path: if `py` is exactly a Python int (PyLong, not a subclass),
+        # call PyLong_AsSsize_t directly. The slow path goes through
+        # `py.__int__()` -> `PyNumber_Long`, which allocates a fresh PyLong
+        # and wraps it in a temporary PythonObject even when the input is
+        # already a Python int. `PyLong_CheckExact` is a single Py_TYPE
+        # pointer compare, so the fast path is essentially free when it hits.
+        if cpy.PyLong_CheckExact(py._obj_ptr):
+            self = cpy.PyLong_AsSsize_t(py._obj_ptr)
+            if self == -1 and cpy.PyErr_Occurred():
+                raise cpy.unsafe_get_error()
+            return
+        # Slow path: covers ints from numpy/custom subclasses, plus types
+        # that implement `__int__` (e.g. floats), where `PyNumber_Long`
+        # actually does work.
         self = Python.py_long_as_ssize_t(py.__int__())
 
     # ===-------------------------------------------------------------------===#
