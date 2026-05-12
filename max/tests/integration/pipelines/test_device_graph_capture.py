@@ -263,6 +263,7 @@ def _make_runner_for_resolve(
     data_parallel_degree: int = 1,
     is_mla: bool = False,
     num_speculative_tokens: int = 0,
+    draft_is_mla: bool | None = None,
 ) -> ServeGraphCaptureRunner:
     """Creates a runner suitable for ``_resolve_replay_key`` tests."""
     output_buffer = Buffer.zeros((4,), dtype=DType.float32)
@@ -273,6 +274,15 @@ def _make_runner_for_resolve(
     kv_params.n_kv_heads_per_device = 1
     kv_params.is_mla = is_mla
     kv_params.data_parallel_degree = data_parallel_degree
+
+    draft_kv_params: MagicMock | None = None
+    if draft_is_mla is not None:
+        draft_kv_params = MagicMock()
+        draft_kv_params.devices = [DeviceRef.CPU()]
+        draft_kv_params.n_kv_heads_per_device = 1
+        draft_kv_params.is_mla = draft_is_mla
+        draft_kv_params.data_parallel_degree = data_parallel_degree
+
     return ServeGraphCaptureRunner(
         model=cast(Model, dummy_model),
         execute_model=lambda mi: ModelOutputs(logits=output_buffer),
@@ -282,6 +292,7 @@ def _make_runner_for_resolve(
         max_cache_length_upper_bound=1,
         max_batch_size=1,
         num_speculative_tokens=num_speculative_tokens,
+        draft_kv_params=draft_kv_params,
     )
 
 
@@ -662,6 +673,133 @@ def test_warmup_eagle_outputs_vs_model_outputs() -> None:
             )
             assert key[2] == 1 + num_spec
             assert key[3] >= 0
+
+
+# ---------------------------------------------------------------------------
+# Tests for asymmetric target/draft attention types (e.g. MLA target with
+# GQA/MHA drafter, or the reverse).
+# ---------------------------------------------------------------------------
+
+
+def test_runner_uses_separate_resolvers_for_asymmetric_attention() -> None:
+    """draft_kv_params builds a distinct resolver/probe strategy."""
+    runner = _make_runner_for_resolve(
+        is_mla=True, draft_is_mla=False, num_speculative_tokens=1
+    )
+    assert runner._target_is_mla is True
+    assert runner._draft_is_mla is False
+    assert runner._target_resolver is not runner._draft_resolver
+    assert runner._target_probe_strategy is not runner._draft_probe_strategy
+
+
+def test_runner_falls_back_to_target_when_draft_kv_params_omitted() -> None:
+    """Without ``draft_kv_params`` the draft fields alias the target fields."""
+    runner = _make_runner_for_resolve(is_mla=True, num_speculative_tokens=1)
+    assert runner._target_is_mla is True
+    assert runner._draft_is_mla is True
+    assert runner._target_resolver is runner._draft_resolver
+    assert runner._target_probe_strategy is runner._draft_probe_strategy
+
+
+def test_resolve_replay_key_mla_target_mha_draft_buckets_target_only() -> None:
+    """MLA target buckets up; MHA draft requires an exact match."""
+    runner = _make_runner_for_resolve(
+        is_mla=True, draft_is_mla=False, num_speculative_tokens=1
+    )
+    output_buf = Buffer.zeros((4,), dtype=DType.float32)
+    expected_q = 2
+    draft_np = 7
+    runner.graph_entries[(1, 10, expected_q, draft_np)] = (
+        (),
+        ModelOutputs(logits=output_buf),
+    )
+
+    kv_ok = _make_kv_per_device(
+        max_cache_len=100,
+        num_partitions=5,
+        q_max_seq_len=expected_q,
+        is_mla=True,
+        draft_num_partitions=draft_np,
+    )
+    inputs_ok = _make_mock_inputs_with_kv(1, [kv_ok])
+    assert runner._resolve_replay_key(inputs_ok) == (
+        1,
+        10,
+        expected_q,
+        draft_np,
+    )
+
+    kv_bad_draft = _make_kv_per_device(
+        max_cache_len=100,
+        num_partitions=5,
+        q_max_seq_len=expected_q,
+        is_mla=True,
+        draft_num_partitions=99,
+    )
+    inputs_bad_draft = _make_mock_inputs_with_kv(1, [kv_bad_draft])
+    with pytest.raises(RuntimeError, match=r"No captured device graph for"):
+        runner._resolve_replay_key(inputs_bad_draft)
+
+
+def test_resolve_replay_key_mha_target_mla_draft_buckets_draft_only() -> None:
+    """MHA target requires an exact match; MLA draft buckets up."""
+    runner = _make_runner_for_resolve(
+        is_mla=False, draft_is_mla=True, num_speculative_tokens=1
+    )
+    output_buf = Buffer.zeros((4,), dtype=DType.float32)
+    expected_q = 2
+    target_np = 5
+    runner.graph_entries[(1, target_np, expected_q, 10)] = (
+        (),
+        ModelOutputs(logits=output_buf),
+    )
+
+    kv_ok = _make_kv_per_device(
+        max_cache_len=100,
+        num_partitions=target_np,
+        q_max_seq_len=expected_q,
+        draft_num_partitions=7,
+    )
+    inputs_ok = _make_mock_inputs_with_kv(1, [kv_ok])
+    assert runner._resolve_replay_key(inputs_ok) == (
+        1,
+        target_np,
+        expected_q,
+        10,
+    )
+
+    kv_bad_target = _make_kv_per_device(
+        max_cache_len=100,
+        num_partitions=99,
+        q_max_seq_len=expected_q,
+        draft_num_partitions=7,
+    )
+    inputs_bad_target = _make_mock_inputs_with_kv(1, [kv_bad_target])
+    with pytest.raises(RuntimeError, match=r"No captured device graph for"):
+        runner._resolve_replay_key(inputs_bad_target)
+
+
+def test_resolve_replay_key_mla_target_mla_draft_buckets_both_axes() -> None:
+    """Both axes MLA: each is independently bucketed up."""
+    runner = _make_runner_for_resolve(
+        is_mla=True, draft_is_mla=True, num_speculative_tokens=1
+    )
+    output_buf = Buffer.zeros((4,), dtype=DType.float32)
+    expected_q = 2
+    runner.graph_entries[(1, 10, expected_q, 10)] = (
+        (),
+        ModelOutputs(logits=output_buf),
+    )
+
+    kv = _make_kv_per_device(
+        max_cache_len=100,
+        num_partitions=7,
+        q_max_seq_len=expected_q,
+        is_mla=True,
+        draft_num_partitions=7,
+    )
+    inputs = _make_mock_inputs_with_kv(1, [kv])
+    assert runner._resolve_replay_key(inputs) == (1, 10, expected_q, 10)
 
 
 def test_replay_returns_correct_output_type() -> None:

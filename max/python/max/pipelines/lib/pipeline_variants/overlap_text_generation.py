@@ -1736,6 +1736,11 @@ class OverlapTextGenerationPipeline(
             if self._spec_decode_state is not None
             else 0
         )
+        draft_kv_params = (
+            self._kv_manager.cache_params(1)
+            if self._kv_manager.num_caches > 1
+            else None
+        )
         graph_capture_runner = ServeGraphCaptureRunner(
             model=self._pipeline_model.model,
             execute_model=self._pipeline_model.execute,
@@ -1746,6 +1751,7 @@ class OverlapTextGenerationPipeline(
             max_batch_size=max_capture_batch_size,
             num_speculative_tokens=num_speculative_tokens,
             num_kv_caches=self._kv_manager.num_caches,
+            draft_kv_params=draft_kv_params,
         )
         self._graph_capture_runner = graph_capture_runner
         self._max_graph_capture_batch_size = max_capture_batch_size

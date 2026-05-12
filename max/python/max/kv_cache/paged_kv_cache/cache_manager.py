@@ -156,7 +156,11 @@ class _ReplicaMetadata:
     """Devices for the replica."""
 
     attention_dispatch_resolver: AttentionDispatchResolver
-    """Attention dispatch resolver for the replica."""
+    """Attention dispatch resolver for the replica's target attention."""
+
+    draft_attention_dispatch_resolver: AttentionDispatchResolver | None = None
+    """Optional draft resolver, used when the drafter's attention type differs
+    from the target's. Falls back to the target resolver when ``None``."""
 
     claimed_requests: set[RequestID] = field(default_factory=set)
     """Set of request IDs claimed on this replica."""
@@ -276,6 +280,20 @@ class PagedKVCacheManager:
                 is_fp8_kv=primary_params.is_fp8_kv_dtype,
             )
 
+            draft_dispatch_resolver: AttentionDispatchResolver | None = None
+            if self._num_caches > 1:
+                draft_params = self._cache_params[1]
+                if draft_params.is_mla != primary_params.is_mla:
+                    draft_dispatch_resolver = AttentionDispatchResolver(
+                        devices=[
+                            DeviceRef.from_device(d) for d in replica_devices
+                        ],
+                        is_mla=draft_params.is_mla,
+                        n_kv_heads_per_device=draft_params.n_kv_heads_per_device,
+                        num_q_heads_per_device=draft_params.num_q_heads_per_device,
+                        is_fp8_kv=draft_params.is_fp8_kv_dtype,
+                    )
+
             # TODO(SERVOPT-1254): Connector uses primary cache buffer only.
             replica_params = primary_params.copy_as_dp_1(
                 replica_idx=replica_idx
@@ -318,6 +336,7 @@ class PagedKVCacheManager:
                     device_buffers=replica_device_buffers,
                     devices=replica_devices,
                     attention_dispatch_resolver=dispatch_resolver,
+                    draft_attention_dispatch_resolver=draft_dispatch_resolver,
                 )
             )
 
@@ -607,8 +626,12 @@ class PagedKVCacheManager:
         )
 
         if self.params.num_eagle_speculative_tokens > 0:
+            draft_resolver = (
+                replica.draft_attention_dispatch_resolver
+                or replica.attention_dispatch_resolver
+            )
             draft_resolved_metadata: list[Buffer] | None = (
-                replica.attention_dispatch_resolver.resolve_for_replica(
+                draft_resolver.resolve_for_replica(
                     batch_size,
                     1,
                     absolute_max_cached_len,
@@ -700,11 +723,15 @@ class PagedKVCacheManager:
         """
         for replica in self._replica:
             replica.attention_dispatch_resolver.host_only = True
+            if replica.draft_attention_dispatch_resolver is not None:
+                replica.draft_attention_dispatch_resolver.host_only = True
         try:
             yield
         finally:
             for replica in self._replica:
                 replica.attention_dispatch_resolver.host_only = False
+                if replica.draft_attention_dispatch_resolver is not None:
+                    replica.draft_attention_dispatch_resolver.host_only = False
 
     def alloc_dummy(
         self,

@@ -473,7 +473,11 @@ class KVCacheParams(KVCacheParamInterface):
         )
 
     def _get_symbolic_inputs_for_replica(
-        self, devices: Sequence[DeviceRef], replica_idx: int, prefix: str = ""
+        self,
+        devices: Sequence[DeviceRef],
+        replica_idx: int,
+        prefix: str = "",
+        draft_attention_group: KVCacheParams | None = None,
     ) -> list[KVCacheInputsPerDevice[TensorType, BufferType]]:
         """Computes the symbolic inputs for a single replica.
 
@@ -485,6 +489,13 @@ class KVCacheParams(KVCacheParamInterface):
         kv_cache_scale_dtype = DType.float32
         if self.quantized_kv_cache and self.kvcache_quant_config is not None:
             kv_cache_scale_dtype = self.kvcache_quant_config.scale_dtype
+
+        draft_params: KVCacheParams | None = (
+            draft_attention_group
+            if draft_attention_group is not None
+            else (self if self.num_eagle_speculative_tokens > 0 else None)
+        )
+
         return [
             KVCacheInputsPerDevice(
                 kv_blocks=BufferType(
@@ -529,22 +540,29 @@ class KVCacheParams(KVCacheParamInterface):
                 ),
                 draft_attention_dispatch_metadata=TensorType(
                     DType.int64,
-                    shape=[3] if self.is_mla else [4],
-                    device=device if self.is_mla else DeviceRef.CPU(),
+                    shape=[3] if draft_params.is_mla else [4],
+                    device=device if draft_params.is_mla else DeviceRef.CPU(),
                 )
-                if self.num_eagle_speculative_tokens > 0
+                if draft_params is not None
                 else None,
             )
             for device in devices
         ]
 
     def get_symbolic_inputs(
-        self, prefix: str = ""
+        self,
+        prefix: str = "",
+        *,
+        draft_attention_group: KVCacheParams | None = None,
     ) -> KVCacheInputs[TensorType, BufferType]:
         """Computes the symbolic inputs for the KV cache.
 
-        This method returns a list of KVCacheInputs for each replica.
-        This is used when constructing the model graph.
+        Args:
+            prefix: Prefix for dynamic dim names.
+            draft_attention_group: When set, sizes
+                ``draft_attention_dispatch_metadata`` by the drafter's
+                ``is_mla`` rather than ``self``'s. Use for unified spec-dec
+                graphs with asymmetric attention types.
 
         Returns:
             The symbolic inputs for the KV cache.
@@ -558,6 +576,7 @@ class KVCacheParams(KVCacheParamInterface):
                 devices,
                 replica_idx,
                 prefix,
+                draft_attention_group=draft_attention_group,
             )
             input_symbols.extend(symbols)
         return KVCacheInputs(inputs=input_symbols)
