@@ -71,6 +71,14 @@ ParserEvaluationContext::resolveStructOp(TypedAttr typeValue,
       genRef.getParamValues(), structGenDecl, /*instance=*/nullptr};
 }
 
+FuncInterface
+ParserEvaluationContext::resolveFunctionDecl(SymbolRefAttr symbol) {
+  ASTDecl *decl = shared.declResolver->getDeclForFuncSymbol(symbol);
+  if (!decl)
+    return nullptr;
+  return dyn_cast_or_null<FuncInterface>(decl->getIfOperation());
+}
+
 Operation *ParserEvaluationContext::resolveConformanceForStruct(
     ResolvedStructHandle resolved, StringAttr traitName) {
   auto *astDecl = static_cast<ASTDecl *>(resolved.handle);

@@ -282,6 +282,76 @@ FailureOr<TypedAttr> StructFieldNamesAttr::evaluateWithContext(
   return cast<TypedAttr>(ParamListAttr::get(resultAttrs, getType()));
 }
 
+//===----------------------------------------------------------------------===//
+// Function Reflection Attrs
+//===----------------------------------------------------------------------===//
+
+namespace {
+/// Resolve a function-valued `TypedAttr` to its defining op via the
+/// evaluation context. Returns null if the value is not a direct function
+/// reference (`#kgen.symbol.constant<@...>`).
+///
+/// The returned `FuncInterface` op is `lit.fn` when resolved through the
+/// parser or LIT symbol-table contexts, or `kgen.generator` when resolved
+/// through the KGEN symbol-table or IR evaluator contexts. Reflection
+/// attrs are evaluated during parsing or during elaboration, so the
+/// post-elaboration `kgen.func` form is never the resolution target. Both
+/// reachable ops also implement `DeclInterface`, so callers needing the
+/// param list cast accordingly.
+FuncInterface resolveFuncDecl(TypedAttr funcValue,
+                              ParameterEvaluationContext &context) {
+  // Mojo function values reach reflection as `#kgen.symbol.constant<@func>`.
+  // Closure literals are not yet supported.
+  auto symbol = dyn_cast<SymbolConstantAttr>(funcValue);
+  if (!symbol)
+    return nullptr;
+  return context.resolveFunctionDecl(symbol.getSymbol());
+}
+} // namespace
+
+FailureOr<TypedAttr> GetFunctionParameterCountAttr::evaluateWithContext(
+    ParameterEvaluationContext &context) const {
+  FuncInterface func = resolveFuncDecl(getFunc(), context);
+  if (!func) {
+    context.emitMaterializationError(
+        "get_function_parameter_count requires a concrete function value");
+    return failure();
+  }
+  return cast<TypedAttr>(IntegerAttr::get(
+      IndexType::get(getContext()),
+      cast<DeclInterface>(func.getOperation()).getInputParams().size()));
+}
+
+FailureOr<TypedAttr> GetFunctionParameterNamesAttr::evaluateWithContext(
+    ParameterEvaluationContext &context) const {
+  FuncInterface func = resolveFuncDecl(getFunc(), context);
+  if (!func) {
+    context.emitMaterializationError(
+        "get_function_parameter_names requires a concrete function value");
+    return failure();
+  }
+  MLIRContext *ctx = getContext();
+  SmallVector<TypedAttr> resultAttrs;
+  ArrayRef<ParamDeclAttr> params =
+      cast<DeclInterface>(func.getOperation()).getInputParams();
+  resultAttrs.reserve(params.size());
+  for (ParamDeclAttr param : params)
+    resultAttrs.push_back(
+        StringAttr::get(param.getName().getValue(), StringType::get(ctx)));
+  return cast<TypedAttr>(ParamListAttr::get(resultAttrs, getType()));
+}
+
+FailureOr<TypedAttr> GetFunctionIsRaisingAttr::evaluateWithContext(
+    ParameterEvaluationContext &context) const {
+  FuncInterface func = resolveFuncDecl(getFunc(), context);
+  if (!func) {
+    context.emitMaterializationError(
+        "get_function_is_raising requires a concrete function value");
+    return failure();
+  }
+  return cast<TypedAttr>(BoolAttr::get(getContext(), func.isThrows()));
+}
+
 FailureOr<TypedAttr> StructFieldIndexByNameAttr::evaluateWithContext(
     ParameterEvaluationContext &context) const {
   auto fieldNameAttr = dyn_cast<StringAttr>(getFieldName());

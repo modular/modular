@@ -329,6 +329,11 @@ protected:
   FailureOr<ResolvedStructHandle> resolveStructOp(TypedAttr typeValue,
                                                   bool acceptAsync) override;
 
+  /// Resolve a function symbol via the LIT/KGEN symbol table. Returns the
+  /// `lit.fn` op if present, otherwise falls back to the kgen-generator
+  /// lookup inherited from `SymTabEvaluationContext`.
+  FuncInterface resolveFunctionDecl(SymbolRefAttr symbol) override;
+
   /// Resolve conformance using the struct's symbol table.
   Operation *resolveConformanceForStruct(ResolvedStructHandle resolved,
                                          StringAttr traitName) override;

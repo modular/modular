@@ -909,6 +909,98 @@ def KGEN_GetSourceNameAttr : KGEN_ExprAttr<"GetSourceName",
 }
 
 //===----------------------------------------------------------------------===//
+// GetFunctionParameterCountAttr
+//===----------------------------------------------------------------------===//
+
+def KGEN_GetFunctionParameterCountAttr : KGEN_ExprAttr<"GetFunctionParameterCount",
+    "get_function_parameter_count",
+    [DeclareAttrInterfaceMethods<ContextuallyEvaluatedAttrInterface,
+                                 ["evaluateWithContext"]>]> {
+  let summary = "Get the compile-time parameter count of a function value.";
+  let description = [{
+    The `#kgen.get_function_parameter_count` attribute returns the number of
+    compile-time parameters declared on a function generator, as an `index`.
+
+    Example:
+
+    ```mlir
+    #kgen.get_function_parameter_count<
+      #kgen.symbol.constant<@my_func> : !kgen.generator<...>
+    > : index
+    ```
+  }];
+
+  let parameters = (ins
+    "TypedAttr":$func,
+    AttributeSelfTypeParameter<"", "Type">:$type
+  );
+
+  let assemblyFormat = "`<` $func `>`";
+}
+
+//===----------------------------------------------------------------------===//
+// GetFunctionParameterNamesAttr
+//===----------------------------------------------------------------------===//
+
+def KGEN_GetFunctionParameterNamesAttr : KGEN_ExprAttr<"GetFunctionParameterNames",
+    "get_function_parameter_names",
+    [DeclareAttrInterfaceMethods<ContextuallyEvaluatedAttrInterface,
+                                 ["evaluateWithContext"]>]> {
+  let summary = "Get the compile-time parameter names of a function value.";
+  let description = [{
+    The `#kgen.get_function_parameter_names` attribute returns the names of
+    the compile-time parameters declared on a function generator, as a
+    `param_list` of strings, in declaration order.
+
+    Example:
+
+    ```mlir
+    #kgen.get_function_parameter_names<
+      #kgen.symbol.constant<@my_func> : !kgen.generator<...>
+    > : !kgen.param_list<!kgen.string>
+    ```
+  }];
+
+  let parameters = (ins
+    "TypedAttr":$func,
+    AttributeSelfTypeParameter<"", "ParamListType">:$type
+  );
+
+  let assemblyFormat = "`<` $func `>`";
+}
+
+//===----------------------------------------------------------------------===//
+// GetFunctionIsRaisingAttr
+//===----------------------------------------------------------------------===//
+
+def KGEN_GetFunctionIsRaisingAttr : KGEN_ExprAttr<"GetFunctionIsRaising",
+    "get_function_is_raising",
+    [DeclareAttrInterfaceMethods<ContextuallyEvaluatedAttrInterface,
+                                 ["evaluateWithContext"]>]> {
+  let summary = "Whether a function value can raise an error.";
+  let description = [{
+    The `#kgen.get_function_is_raising` attribute returns true if the function
+    value's signature declares it as raising (Mojo's `raises` keyword, or any
+    `def`), and false otherwise.
+
+    Example:
+
+    ```mlir
+    #kgen.get_function_is_raising<
+      #kgen.symbol.constant<@my_def> : !kgen.generator<...>
+    > : i1
+    ```
+  }];
+
+  let parameters = (ins
+    "TypedAttr":$func,
+    AttributeSelfTypeParameter<"", "IntegerType">:$type
+  );
+
+  let assemblyFormat = "`<` $func `>`";
+}
+
+//===----------------------------------------------------------------------===//
 // CompileAssemblyAttr
 //===----------------------------------------------------------------------===//
 

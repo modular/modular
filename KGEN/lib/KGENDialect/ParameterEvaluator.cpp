@@ -198,6 +198,11 @@ Operation *SymTabEvaluationContext::resolveConformanceForStruct(
   return symtab.lookupSymbolIn<ConformanceOp>(resolved.decl, traitName);
 }
 
+FuncInterface
+SymTabEvaluationContext::resolveFunctionDecl(SymbolRefAttr symbol) {
+  return symtab.lookupSymbolIn<GeneratorOp>(module, symbol);
+}
+
 FailureOr<TypedAttr> SymTabEvaluationContext::evaluateContextSpecific(
     ContextuallyEvaluatedAttrInterface attr) {
   TypedAttr typedAttr = dyn_cast<TypedAttr>((Attribute)attr);

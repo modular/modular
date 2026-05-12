@@ -812,6 +812,24 @@ LogicalResult GetLinkageNameAttr::verify(
 bool GetSourceNameAttr::isConstant() const { return false; }
 
 //===----------------------------------------------------------------------===//
+// GetFunctionParameterCountAttr
+//===----------------------------------------------------------------------===//
+
+bool GetFunctionParameterCountAttr::isConstant() const { return false; }
+
+//===----------------------------------------------------------------------===//
+// GetFunctionParameterNamesAttr
+//===----------------------------------------------------------------------===//
+
+bool GetFunctionParameterNamesAttr::isConstant() const { return false; }
+
+//===----------------------------------------------------------------------===//
+// GetFunctionIsRaisingAttr
+//===----------------------------------------------------------------------===//
+
+bool GetFunctionIsRaisingAttr::isConstant() const { return false; }
+
+//===----------------------------------------------------------------------===//
 // CompileAssemblyAttr
 //===----------------------------------------------------------------------===//
 
