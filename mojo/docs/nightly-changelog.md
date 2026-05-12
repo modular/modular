@@ -136,14 +136,6 @@ This version is still a work in progress.
   free(ptr, layout)
   ```
 
-- Optimized `Int(py=...)` to fast-path Python `int` arguments via
-  `PyLong_AsSsize_t` directly, skipping the previous `py.__int__()` ->
-  `PyNumber_Long` round trip and temporary `PythonObject`. Speeds up the
-  conversion ~22x for exact-`int` inputs (~88 -> ~4 ns/call); subclasses
-  still fall through to the slow path so semantics are preserved. This
-  benefits every `PythonModuleBuilder.def_function` binding that converts
-  Python ints to Mojo `Int`s (see issue #6521 for context).
-
 - The default `seed` for `random.Random`, `random.NormalRandom`, and the
   internal `_PhiloxWrapper` has changed from `0` to `0x3D30F19CD101`
   (67280421310721) to match PyTorch's `at::Philox4_32_10` default. Calls
