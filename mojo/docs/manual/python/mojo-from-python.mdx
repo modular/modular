@@ -639,9 +639,9 @@ def PyInit_mojo_module() -> PythonObject:
     return m.finalize()
 ```
 
-Initial shapes supported: `def f(a: Int) -> Int` and `def f(a: Int, b: Int) -> Int`,
-with or without `raises` (non-raising functions are implicitly compatible with
-the raising signature).
+Initial shapes supported: `def f(a: Int) -> Int` and
+`def f(a: Int, b: Int) -> Int`, with or without `raises` (non-raising
+functions are implicitly compatible with the raising signature).
 
 On the `add(Int, Int) -> Int` shape this is roughly 60-70% faster than the
 equivalent `def_function` registration with `PythonObject` arguments. The

@@ -483,9 +483,19 @@ struct PythonModuleBuilder:
     def def_typed_function[
         func: _FnIntToInt
     ](mut self, func_name: StaticString, docstring: StaticString = ""):
-        """Register a typed fast-path binding for `def f(a: Int) -> Int`
-        (or its `raises` variant). Non-raising functions are implicitly
-        compatible with this raising signature."""
+        """Register a typed fast-path binding for `def f(a: Int) -> Int`.
+
+        Non-raising functions are implicitly compatible with this
+        raising signature.
+
+        Parameters:
+            func: The Mojo function to expose to Python.
+
+        Args:
+            func_name: The name with which the function will be exposed
+                in the module.
+            docstring: The docstring for the function in the module.
+        """
         self.def_py_c_function(
             _typed_int_to_int_wrapper[func], func_name, docstring
         )
@@ -493,9 +503,19 @@ struct PythonModuleBuilder:
     def def_typed_function[
         func: _FnIntIntToInt
     ](mut self, func_name: StaticString, docstring: StaticString = ""):
-        """Register a typed fast-path binding for `def f(a: Int, b: Int) -> Int`
-        (or its `raises` variant). Non-raising functions are implicitly
-        compatible with this raising signature."""
+        """Register a typed fast-path binding for `def f(a: Int, b: Int) -> Int`.
+
+        Non-raising functions are implicitly compatible with this
+        raising signature.
+
+        Parameters:
+            func: The Mojo function to expose to Python.
+
+        Args:
+            func_name: The name with which the function will be exposed
+                in the module.
+            docstring: The docstring for the function in the module.
+        """
         self.def_py_c_function(
             _typed_int_int_to_int_wrapper[func], func_name, docstring
         )
