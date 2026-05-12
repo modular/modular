@@ -28,7 +28,7 @@ def test_string() raises:
 
     var cap_mojo_string = String(py_string_capitalized)
     assert_equal(cap_mojo_string, "Mojo")
-    assert_equal_pyobj(cap_mojo_string.to_python_object(), PythonObject("Mojo"))
+    assert_equal_pyobj(cap_mojo_string, PythonObject("Mojo"))
 
     var os = Python.import_module("os")
     assert_true(String(os.environ).startswith("environ({"))
@@ -42,8 +42,8 @@ def test_int() raises:
     with assert_raises(contains="invalid literal for int()"):
         _ = Int(py=PythonObject("str"))
 
-    assert_equal_pyobj(Int(5).to_python_object(), PythonObject(5))
-    assert_equal_pyobj(Int(-1).to_python_object(), PythonObject(-1))
+    assert_equal_pyobj(Int(5), PythonObject(5))
+    assert_equal_pyobj(Int(-1), PythonObject(-1))
 
 
 def test_float() raises:
@@ -56,8 +56,8 @@ def test_bool() raises:
     assert_true(Bool(PythonObject(True)))
     assert_false(Bool(PythonObject(False)))
 
-    assert_equal_pyobj(Bool(True).to_python_object(), PythonObject(True))
-    assert_equal_pyobj(Bool(False).to_python_object(), PythonObject(False))
+    assert_equal_pyobj(Bool(True), PythonObject(True))
+    assert_equal_pyobj(Bool(False), PythonObject(False))
 
 
 def test_numpy_int() raises:

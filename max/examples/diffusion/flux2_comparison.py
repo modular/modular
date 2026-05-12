@@ -910,7 +910,8 @@ def _load_max_pipeline(args: argparse.Namespace) -> tuple[Any, Any, Any]:
     if "tokenizer" in config.models:
         max_length = 512  # Flux2-specific override
 
-    tokenizer = PixelGenerationTokenizer(
+    tokenizer_cls = cast(type[PixelGenerationTokenizer], arch.tokenizer_cls)
+    tokenizer = tokenizer_cls(
         model_path=model_id,
         pipeline_config=config,
         subfolder="tokenizer",

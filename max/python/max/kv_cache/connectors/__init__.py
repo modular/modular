@@ -71,13 +71,19 @@ def create_connector(
             "Creating DKVConnector: endpoint=%s",
             cfg.block_store_endpoint,
         )
-        return DKVConnector(
-            params=params,
-            devices=devices,
-            device_buffers=device_buffers,
-            total_num_blocks=total_num_blocks,
-            local_block_store_endpoint=cfg.block_store_endpoint,
-        )
+        # DKVConnector is temporarily disabled. We need to implement proper support
+        # later down the line. For now, we raise an error.
+        # Note that mantaining backward compatibility is hard since we are
+        # changing the core KVConnector protocol in order to better support
+        # the other connectors.
+        raise NotImplementedError("DKVConnector is not implemented")
+        # return DKVConnector(
+        #     params=params,
+        #     devices=devices,
+        #     device_buffers=device_buffers,
+        #     total_num_blocks=total_num_blocks,
+        #     local_block_store_endpoint=cfg.block_store_endpoint,
+        # )
 
     if connector == KVConnectorType.tiered:
         cfg = params.kv_connector_config

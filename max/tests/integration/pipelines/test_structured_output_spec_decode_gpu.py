@@ -118,6 +118,7 @@ def test_eagle_structured_output_json_schema_gpu(
         sampling_params=SamplingParams(max_new_tokens=50, top_k=1),
         response_format=TextGenerationResponseFormat(
             type="json_schema",
+            grammar=None,
             json_schema={
                 "title": "Person",
                 "type": "object",
@@ -251,6 +252,7 @@ def test_eagle_structured_output_heterogeneous_batch_gpu(
         sampling_params=SamplingParams(max_new_tokens=50, top_k=1),
         response_format=TextGenerationResponseFormat(
             type="json_schema",
+            grammar=None,
             json_schema={
                 "title": "Person",
                 "type": "object",

@@ -208,6 +208,7 @@ def is_vision_model(model: str) -> bool:
             "pixtral",
             "qwen2.5-vl",
             "qwen3-vl",
+            "qwen3.5",
             "vision",
         )
     )

@@ -143,16 +143,6 @@ def _test_inplace_dunder_methods(mut python: Python) raises:
     # test dunder methods that don't fall back to their non-inplace counterparts
     var list_obj: PythonObject = [1, 2]
 
-    # FIXME: list literal can be converted to `PythonObject`? We might turn list
-    # into nonmaterializable target too early?
-    # Given:
-    #
-    # @always_inline
-    # def __init__[
-    #    *Ts: ConvertibleToPython & Copyable
-    # ](out self, var *values: *Ts, __list_literal__: NoneType) raises:
-    #     pass
-    #
     # Note that there is no @implicit
     var to_be_added: PythonObject = [3, 4]
     list_obj += to_be_added
@@ -315,8 +305,7 @@ def test_setitem() raises:
 
 def test_dict() raises:
     # Test Python.dict from keyword arguments.
-    # TODO(MOCO-2945): Heterogenous convertible kwargs should work
-    var dd = Python.dict(food=PythonObject(123), fries=PythonObject("yes"))
+    var dd = Python.dict(food=123, fries="yes")
     assert_equal(String(py=dd), "{'food': 123, 'fries': 'yes'}")
 
     var dd2: PythonObject = {"food": 123, "fries": "yes"}
@@ -327,7 +316,10 @@ def test_dict() raises:
     assert_equal(String(py=dd), "{'food': 'salad', 'fries': 'yes', 42: [4, 2]}")
 
     # Test Python.dict from a Span of tuples.
-    var tuples = [(123, PythonObject("food")), (42, PythonObject("42"))]
+    var tuples = [
+        (PythonObject(123), PythonObject("food")),
+        (PythonObject(42), PythonObject("42")),
+    ]
     dd = Python.dict(tuples)
     assert_equal(String(py=dd), "{123: 'food', 42: '42'}")
 
@@ -593,8 +585,7 @@ def test_contains_dunder() raises:
     assert_true(1.5 in x)
     assert_false(3.5 in x)
 
-    # TODO(MOCO-2945): Heterogenous convertible kwargs should work
-    var y = Python.dict(A=PythonObject("A"), B=PythonObject(5))
+    var y = Python.dict(A="A", B=5)
     assert_true("A" in y)
     assert_false("C" in y)
     assert_true("B" in y)

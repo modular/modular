@@ -31,7 +31,9 @@ import logging
 import re
 import uuid
 from dataclasses import dataclass, field
+from typing import Any
 
+from llguidance import LLMatcher
 from max.interfaces import (
     ParsedToolCall,
     ParsedToolCallDelta,
@@ -418,3 +420,103 @@ class KimiToolParser:
         """Resets internal state for a new streaming session."""
         self._buffer = ""
         self._state = _StreamingState()
+
+    @staticmethod
+    def _build_tool_call_regex(tool_names: list[str] | None = None) -> str:
+        """Builds the regex pattern for Kimi tool calls.
+
+        Args:
+            tool_names: Optional list of allowed function names. If None,
+                any valid identifier is accepted.
+
+        Returns:
+            A regex pattern string for matching Kimi tool calls.
+        """
+        # Build the function name pattern
+        if tool_names is not None:
+            # Escape any regex special characters in tool names
+            escaped_names = [re.escape(name) for name in tool_names]
+            func_name_pattern = "(" + "|".join(escaped_names) + ")"
+        else:
+            # Accept any router-valid tool name, including names starting with digits.
+            func_name_pattern = r"[a-zA-Z0-9_-]+"
+
+        # Build the full regex pattern for Kimi tool calls
+        # We use a permissive pattern for JSON arguments since:
+        # 1. Nested braces are common: {"loc": {"city": "NYC"}}
+        # 2. Strings can contain special chars: {"text": "hello}world"}
+        # The pattern matches any sequence of characters that looks like JSON
+        # (starts with { and allows any content). Actual JSON validation
+        # happens at parse time in parse_complete().
+        #
+        # Pattern breakdown:
+        # - \{ matches opening brace
+        # - [^<]* matches any chars except '<' (to avoid matching structural tags)
+        # - \} matches closing brace
+        # This is permissive but prevents runaway matching into the next tag.
+        return (
+            rf"{re.escape(TOOL_CALLS_SECTION_BEGIN)}"
+            r"("
+            rf"{re.escape(TOOL_CALL_BEGIN)}"
+            rf"functions\.{func_name_pattern}:[0-9]+"
+            rf"{re.escape(TOOL_CALL_ARGUMENT_BEGIN)}"
+            r"\{[^<]*\}"  # Match JSON: any chars except '<' between braces
+            rf"{re.escape(TOOL_CALL_END)}"
+            r")+"
+            rf"{re.escape(TOOL_CALLS_SECTION_END)}"
+        )
+
+    @staticmethod
+    def generate_tool_call_grammar(
+        tool_names: list[str] | None = None,
+        response_format_schema: dict[str, Any] | None = None,
+    ) -> str:
+        """Generates a grammar for constrained decoding of Kimi tool calls / response format.
+
+        The grammar enforces the Kimi tool call format::
+
+            <|tool_calls_section_begin|>
+            <|tool_call_begin|>functions.{name}:{idx}<|tool_call_argument_begin|>
+            {...json...}
+            <|tool_call_end|>
+            <|tool_calls_section_end|>
+
+        When ``response_format_schema`` is provided, generates a combined grammar
+        that accepts EITHER tool calls OR JSON content matching the schema. This
+        matches OpenAI's behavior where tools constrain tool calls and
+        response_format constrains the final content response.
+
+        Args:
+            tool_names: Optional list of allowed function names. If None,
+                any valid identifier is accepted.
+            response_format_schema: Optional JSON schema dict for structured
+                output. When provided, the grammar accepts either tool calls
+                or JSON content matching this schema.
+
+        Returns:
+            A grammar string for use with LLMatcher.
+        """
+
+        tool_call_regex = KimiToolParser._build_tool_call_regex(tool_names)
+
+        if response_format_schema is None:
+            # Original behavior - just tool calls
+            return LLMatcher.grammar_from_regex(tool_call_regex)
+
+        # Combined grammar using Lark syntax with alternation:
+        # Accept EITHER tool calls OR JSON content matching schema.
+        # The model's first tokens determine which branch to follow:
+        # - "<|tool_calls_section_begin|>" -> tool calls branch
+        # - "{" -> JSON content branch
+        schema_str = json.dumps(response_format_schema)
+
+        # Use llguidance's Lark-style grammar syntax.
+        # The grammar accepts either the tool call pattern (as a regex terminal)
+        # or JSON conforming to the provided schema.
+        combined_grammar = f"""
+start: tool_calls | json_response
+tool_calls: TOOL_CALL_PATTERN
+TOOL_CALL_PATTERN: /{tool_call_regex}/
+json_response: %json {schema_str}
+"""
+        return combined_grammar

@@ -428,7 +428,8 @@ class StructuredOutputHelper:
     ) -> None:
         """Update context and bitmask for structured output.
 
-        If a json_schema is present and no matcher is set, this compiles a
+        If a grammar is present, it is used directly. Otherwise,
+        if a json_schema is present and no matcher is set, this compiles a
         grammar matcher and installs it on the context, then fills the
         per-request token bitmask.
 
@@ -438,20 +439,37 @@ class StructuredOutputHelper:
             index: Position in the bitmask for this request.
 
         Raises:
-            ValueError: If a JSON schema is provided but structured output
-                is not enabled.
+            ValueError: If a JSON schema or grammar is provided but structured
+                output is not enabled.
         """
-        if context.json_schema and context.matcher is None:
+        # Check for grammar first (e.g., Kimi tool call regex)
+        if context.grammar and context.matcher is None:
+            if not self.enabled:
+                raise ValueError(
+                    "grammar provided but structured output is not enabled."
+                )
+
+            try:
+                matcher = LLMatcher(self._tokenizer_info, context.grammar)
+                context.set_matcher(matcher)
+            except Exception as e:
+                raise InputError(
+                    f"Grammar provided in request cannot be compiled. "
+                    f"From llguidance: {e}"
+                ) from e
+
+        # Fall back to json_schema if no grammar
+        elif context.json_schema and context.matcher is None:
             if not self.enabled:
                 raise ValueError(
                     "json_schema provided but structured output is not enabled."
                 )
 
             try:
-                serialized_grammar = LLMatcher.grammar_from_json_schema(
+                grammar = LLMatcher.grammar_from_json_schema(
                     context.json_schema,
                 )
-                matcher = LLMatcher(self._tokenizer_info, serialized_grammar)
+                matcher = LLMatcher(self._tokenizer_info, grammar)
                 context.set_matcher(matcher)
             except Exception as e:
                 raise InputError(
@@ -537,7 +555,9 @@ class StructuredOutputHelper:
 
         # Check if any context has structured output
         has_structured_output = any(
-            ctx.json_schema is not None or ctx.matcher is not None
+            ctx.json_schema is not None
+            or ctx.matcher is not None
+            or ctx.grammar is not None
             for ctx in context_batch
         )
 
@@ -556,9 +576,12 @@ class StructuredOutputHelper:
             batch_size, num_positions, packed_vocab_size
         )
 
-        # Initialize matchers for contexts with json_schema
+        # Initialize matchers for contexts with json_schema or grammar
         for ctx in context_batch:
-            if ctx.json_schema and ctx.matcher is None:
+            needs_matcher = ctx.matcher is None and (
+                ctx.json_schema or ctx.grammar is not None
+            )
+            if needs_matcher:
                 self.update_context(
                     ctx,
                     packed_bitmask[0, 0, :].reshape(
