@@ -535,3 +535,159 @@ async def run_kv_cache_stress_benchmark(
         for sid, outs in worker_dict.items():
             outputs_by_session.setdefault(sid, []).extend(outs)
     return outputs_by_session
+
+
+async def chat_judge_session_driver(
+    model_id: str,
+    api_url: str,
+    request_driver: RequestDriver,
+    request_counter: RequestCounter,
+    chat_session: ChatSession,
+    max_output_tokens: int,
+    sampling: SamplingConfig,
+    benchmark_should_end_time: int | None = None,
+) -> list[RequestFuncOutput]:
+    """Drive one chat-judge session: every turn already has its full
+    context inlined as text in the user message, so we send
+    ``[system?, user]`` per turn without accumulating assistant responses.
+
+    If the session's first message is a system prompt
+    (``source="system"``), it is prepended to every user turn; otherwise
+    user turns are sent alone. Turns within a session run sequentially.
+    """
+    session_outputs: list[RequestFuncOutput] = []
+
+    messages = chat_session.messages
+    system_message: ChatMessage | None = None
+    system_num_tokens = 0
+    if messages and messages[0].source == "system":
+        system_message = ChatMessage(
+            role="system",
+            content=[TextContentBlock(text=messages[0].content)],
+        )
+        system_num_tokens = messages[0].num_tokens
+        user_messages = messages[1:]
+    else:
+        user_messages = messages
+
+    for message in user_messages:
+        if not request_counter.advance_until_max():
+            break
+
+        prompt_messages: list[ChatMessage] = []
+        if system_message is not None:
+            prompt_messages.append(system_message)
+        prompt_messages.append(
+            ChatMessage(
+                role="user",
+                content=[TextContentBlock(text=message.content)],
+            )
+        )
+        request_input = RequestFuncInput(
+            model=model_id,
+            session_id=str(chat_session.id),
+            sampling=sampling,
+            prompt=prompt_messages,
+            images=[],
+            api_url=api_url,
+            prompt_len=system_num_tokens + message.num_tokens,
+            max_tokens=max_output_tokens,
+            ignore_eos=False,
+        )
+
+        if (
+            benchmark_should_end_time is not None
+            and time.perf_counter_ns() >= benchmark_should_end_time
+        ):
+            response = RequestFuncOutput(
+                cancelled=True, request_submit_time=time.perf_counter()
+            )
+        else:
+            raw_response = await request_driver.request(request_input)
+            if not isinstance(raw_response, RequestFuncOutput):
+                raise TypeError(
+                    "Expected RequestFuncOutput in chat-judge benchmark flow."
+                )
+            response = raw_response
+
+        session_outputs.append(response)
+
+        if not response.success:
+            if not response.cancelled:
+                logger.error(
+                    f"Ending chat-judge session {chat_session.id} due to "
+                    f"server error response: {response.error}"
+                )
+            break
+
+    return session_outputs
+
+
+async def run_chat_judge_benchmark(
+    *,
+    chat_sessions: Sequence[ChatSession],
+    max_output_tokens: int,
+    max_requests: int,
+    semaphore: contextlib.AbstractAsyncContextManager[None],
+    benchmark_should_end_time: int | None,
+    request_driver: RequestDriver,
+    model_id: str,
+    api_url: str,
+    lora_manager: LoRABenchmarkManager | None,
+    warmup_delay_ms: float,
+    max_concurrency: int | None,
+    sampling: SamplingConfig,
+) -> dict[str, list[RequestFuncOutput]]:
+    """Run the chat-judge multi-turn scenario."""
+    request_counter = RequestCounter(
+        max_requests=max_requests,
+        total_sent_requests=0,
+    )
+    outputs_by_session: dict[str, list[RequestFuncOutput]] = {}
+
+    async def limited_session_driver(
+        chat_session: ChatSession,
+        session_idx: int,
+    ) -> None:
+        lora_id = None
+        if lora_manager:
+            lora_id = lora_manager.get_lora_for_request(session_idx)
+
+        async with semaphore:
+            outputs = await chat_judge_session_driver(
+                model_id=model_id if lora_id is None else lora_id,
+                api_url=api_url,
+                request_driver=request_driver,
+                request_counter=request_counter,
+                chat_session=chat_session,
+                max_output_tokens=max_output_tokens,
+                sampling=sampling,
+                benchmark_should_end_time=benchmark_should_end_time,
+            )
+        session_id = (
+            str(chat_session.id)
+            if chat_session.id is not None
+            else f"anonymous-{session_idx}"
+        )
+        outputs_by_session[session_id] = outputs
+
+    async with TaskGroup() as tg:
+        for idx, chat_session in enumerate(chat_sessions):
+            if (
+                warmup_delay_ms > 0
+                and max_concurrency
+                and idx < max_concurrency
+            ):
+                await asyncio.sleep(warmup_delay_ms / 1000)
+            tg.create_task(limited_session_driver(chat_session, idx))
+
+    if (
+        benchmark_should_end_time is not None
+        and time.perf_counter_ns() < benchmark_should_end_time
+    ):
+        logger.warning(
+            "All chat-judge sessions completed before the time limit. "
+            "Consider increasing --num-chat-sessions for more stable load."
+        )
+
+    return outputs_by_session

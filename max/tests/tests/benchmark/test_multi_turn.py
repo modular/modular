@@ -30,6 +30,7 @@ from max.benchmark.benchmark_shared.multi_turn import (
     ConcurrentTurnsRequestDriver,
     chat_session_driver,
     prerun_warmup_turns,
+    run_chat_judge_benchmark,
 )
 from max.benchmark.benchmark_shared.request import (
     BaseRequestFuncInput,
@@ -460,6 +461,61 @@ def test_prerun_warmup_turns_respects_chat_length_budget() -> None:
 
     asyncio.run(run())
     assert len(driver.calls) == 1
+
+
+def _make_chat_judge_session(
+    session_id: int,
+    num_user_turns: int = 2,
+) -> ChatSession:
+    """Self-contained per-turn session with a system message at turn 0
+    and `num_user_turns` user turns (no assistant turns)."""
+    messages: list[SessionMessage] = [
+        SessionMessage(
+            source="system", content="You are a judge.", num_tokens=4
+        )
+    ]
+    for i in range(num_user_turns):
+        messages.append(
+            SessionMessage(source="user", content=f"Item {i}", num_tokens=5)
+        )
+    return ChatSession(id=session_id, messages=messages)
+
+
+@pytest.mark.asyncio
+async def test_run_chat_judge_benchmark_smoke_with_system_role() -> None:
+    """Orchestrator runs multiple sessions with system role end-to-end:
+    outputs are collected per session and every call carries the
+    system+user prompt without crashing through the TaskGroup wrapper."""
+    driver = _CapturingDriver()
+    sessions = [
+        _make_chat_judge_session(0, num_user_turns=2),
+        _make_chat_judge_session(1, num_user_turns=3),
+    ]
+    outputs_by_session = await run_chat_judge_benchmark(
+        chat_sessions=sessions,
+        max_output_tokens=16,
+        max_requests=10,
+        semaphore=asyncio.Semaphore(len(sessions)),
+        benchmark_should_end_time=None,
+        request_driver=driver,
+        model_id="test-model",
+        api_url="http://localhost:8000/v1/chat/completions",
+        lora_manager=None,
+        warmup_delay_ms=0.0,
+        max_concurrency=None,
+        sampling=SamplingConfig(),
+    )
+
+    assert set(outputs_by_session.keys()) == {"0", "1"}
+    assert len(outputs_by_session["0"]) == 2
+    assert len(outputs_by_session["1"]) == 3
+    assert len(driver.calls) == 5
+    for call in driver.calls:
+        assert isinstance(call.prompt, list)
+        assert len(call.prompt) == 2
+        assert call.prompt[0].role == "system"
+        assert call.prompt[1].role == "user"
+        assert call.prompt_len == 4 + 5  # system + user tokens
 
 
 def test_concurrent_turns_driver_expired_deadline_cancels_without_calling_base() -> (

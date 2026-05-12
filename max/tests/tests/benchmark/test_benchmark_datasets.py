@@ -104,6 +104,7 @@ def test_dataset_registry_contents() -> None:
     expected_datasets = {
         "agentic-code",
         "arxiv-summarization",
+        "chat-judge",
         "instruct-coder",
         "sharegpt",
         "code_debug",

@@ -71,8 +71,10 @@ class ImageContentBlock(BaseModel):
 
 
 class ChatMessage(BaseModel):
-    # role is "user" or "assistant" in practice; "system" is plausible once
-    # sys_prompt_ratio support is wired through the multi-turn path.
+    # role is "user", "assistant", or "system" in practice. "system" is
+    # used by chat-judge today.
+    # TODO: wire sys_prompt_ratio support with "system" role through the
+    # multi-turn path.
     role: str
     # content is always list[TextContentBlock] in prompts produced by this
     # codebase.  The str variant exists to match the OpenAI spec and to support
@@ -118,7 +120,7 @@ class PixelGenerationSampledRequest(SampledRequest):
     image_options: PixelGenerationImageOptions | None = None
 
 
-MessageSource = Literal["user", "assistant"]
+MessageSource = Literal["user", "assistant", "system"]
 
 
 @dataclass
@@ -137,8 +139,8 @@ class ChatSession:
 
     @property
     def num_turns(self) -> int:
-        """Number of turns in the session (one (user, assistant) pair = one turn)."""
-        return len(self.messages) // 2
+        """Number of user-initiated turns (model invocations) in the session."""
+        return sum(1 for m in self.messages if m.source == "user")
 
 
 @dataclass

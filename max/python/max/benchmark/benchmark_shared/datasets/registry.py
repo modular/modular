@@ -84,6 +84,10 @@ DATASET_REGISTRY: Mapping[str, DatasetRegistryEntry] = {
         class_name="CodeDebugBenchmarkDataset",
         has_multiturn_chat_support=True,
     ),
+    "chat-judge": DatasetRegistryEntry(
+        class_name="ChatJudgeBenchmarkDataset",
+        has_multiturn_chat_support=True,
+    ),
     "obfuscated-conversations": DatasetRegistryEntry(
         class_name="ObfuscatedConversationsBenchmarkDataset",
         has_multiturn_chat_support=False,

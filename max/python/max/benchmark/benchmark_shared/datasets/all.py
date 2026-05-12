@@ -38,6 +38,9 @@ from max.benchmark.benchmark_shared.datasets.axolotl import (
 from max.benchmark.benchmark_shared.datasets.batch_job import (
     BatchJobBenchmarkDataset,
 )
+from max.benchmark.benchmark_shared.datasets.chat_judge import (
+    ChatJudgeBenchmarkDataset,
+)
 from max.benchmark.benchmark_shared.datasets.code_debug import (
     CodeDebugBenchmarkDataset,
 )
@@ -362,6 +365,20 @@ def sample_requests(
                     output_lengths is None and not args.record_output_lengths
                 ),
                 image_dir=args.batch_job_image_dir,
+            )
+        elif isinstance(benchmark_dataset, ChatJudgeBenchmarkDataset):
+            if not args.num_chat_sessions:
+                raise ValueError(
+                    "chat-judge dataset requires --num-chat-sessions; "
+                    "single-turn mode is not supported."
+                )
+            return benchmark_dataset.gen_chat_sessions(
+                num_sessions=_inflated_chat_session_count(
+                    args, args.num_chat_sessions
+                ),
+                tokenizer=tokenizer,
+                shuffle=(not args.record_output_lengths),
+                seed=args.seed,
             )
         elif isinstance(benchmark_dataset, AgenticCodeBenchmarkDataset):
             if args.num_chat_sessions:

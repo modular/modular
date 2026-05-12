@@ -15,6 +15,7 @@ from .agentic_code import AgenticCodeBenchmarkDataset
 from .arxiv_summarization import ArxivSummarizationBenchmarkDataset
 from .axolotl import AxolotlBenchmarkDataset
 from .batch_job import BatchJobBenchmarkDataset
+from .chat_judge import ChatJudgeBenchmarkDataset, ChatJudgeChatSamples
 from .code_debug import CodeDebugBenchmarkDataset
 from .distribution import (
     BaseDistribution,
@@ -54,6 +55,8 @@ __all__ = [
     "BaseDistribution",
     "BatchJobBenchmarkDataset",
     "BenchmarkDataset",
+    "ChatJudgeBenchmarkDataset",
+    "ChatJudgeChatSamples",
     "ChatSamples",
     "ChatSession",
     "CodeDebugBenchmarkDataset",
