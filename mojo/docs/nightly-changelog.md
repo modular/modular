@@ -152,9 +152,10 @@ This version is still a work in progress.
       return m.finalize()
   ```
 
-  On `add(Int, Int) -> Int`, the typed fast path measures ~71% faster than
-  the equivalent `def_function` registration with `PythonObject` args
-  (see `mojo/stdlib/benchmarks/python/bench_python_ffi_typed.mojo`).
+  On `add(Int, Int) -> Int`, the typed fast path measures roughly 60-70%
+  faster than the equivalent `def_function` registration with
+  `PythonObject` args (see
+  `mojo/stdlib/benchmarks/python/bench_python_ffi_typed.mojo`).
 
 ## Tooling changes
 

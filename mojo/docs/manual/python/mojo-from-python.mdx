@@ -643,7 +643,7 @@ Initial shapes supported: `def f(a: Int) -> Int` and `def f(a: Int, b: Int) -> I
 with or without `raises` (non-raising functions are implicitly compatible with
 the raising signature).
 
-On the `add(Int, Int) -> Int` shape this is roughly 70% faster than the
+On the `add(Int, Int) -> Int` shape this is roughly 60-70% faster than the
 equivalent `def_function` registration with `PythonObject` arguments. The
 regular `def_function` path remains the right choice when a binding needs the
 full `PythonObject` API (attribute access, calling methods, downcasting to

@@ -32,8 +32,8 @@ def add_pyobj(a: PythonObject, b: PythonObject) raises -> PythonObject:
     return PythonObject(Int(py=a) + Int(py=b))
 
 
-# --- Variant B: typed fast-path — `def_function` overload picks the
-# right wrapper based on the user's function signature.
+# --- Variant B: typed fast-path via `def_typed_function`, which picks
+# the right wrapper based on the user's function signature.
 
 
 def add_int(a: Int, b: Int) -> Int:

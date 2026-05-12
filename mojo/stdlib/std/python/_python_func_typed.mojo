@@ -47,6 +47,30 @@ def _set_exception(cpy: CPython, var msg: String):
 
 
 @always_inline
+def _check_arity(
+    cpy: CPython, args: PyObjectPtr, expected: Py_ssize_t
+) -> Bool:
+    """Return True if `args` (a tuple) has exactly `expected` items.
+
+    On mismatch, sets `PyExc_TypeError` and returns False so the caller
+    can return NULL to surface the error to Python (matching the
+    `TypeError: f() takes N positional arguments but M were given`
+    convention).
+    """
+    var got = cpy.PyObject_Length(args)
+    if got == expected:
+        return True
+    var exc_type = cpy.get_error_global("PyExc_TypeError")
+    cpy.PyErr_SetString(
+        exc_type,
+        StaticString("wrong number of positional arguments")
+        .unsafe_ptr()
+        .bitcast[Int8](),
+    )
+    return False
+
+
+@always_inline
 def _get_int_arg(
     cpy: CPython, args: PyObjectPtr, i: Py_ssize_t
 ) -> Tuple[Int, Bool]:
@@ -74,6 +98,8 @@ def _typed_int_to_int_wrapper[
 ](_self: PyObjectPtr, args: PyObjectPtr) -> PyObjectPtr:
     ref cpy = Python().cpython()
     try:
+        if not _check_arity(cpy, args, 1):
+            return PyObjectPtr()
         var a = _get_int_arg(cpy, args, 0)
         if not a[1]:
             return PyObjectPtr()
@@ -93,6 +119,8 @@ def _typed_int_int_to_int_wrapper[
 ](_self: PyObjectPtr, args: PyObjectPtr) -> PyObjectPtr:
     ref cpy = Python().cpython()
     try:
+        if not _check_arity(cpy, args, 2):
+            return PyObjectPtr()
         var a = _get_int_arg(cpy, args, 0)
         if not a[1]:
             return PyObjectPtr()
