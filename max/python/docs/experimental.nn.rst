@@ -21,6 +21,7 @@ Base classes
 
    Module
    ModuleList
+   PinnedDeviceTensor
    Sequential
 
 Linear layers
