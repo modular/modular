@@ -1005,6 +1005,25 @@ Type LIT::maybeRefineTypeWithAssumptions(Type varType, ASTDecl &declScope) {
   return maybeRefineParamType(varType, paramType, declScope);
 }
 
+TypedAttr LIT::maybeRefineTypeValueWithAssumptions(TypedAttr typeValue,
+                                                   ASTDecl &declScope) {
+  if (!typeValue || !LIT::isTypeExpr(typeValue))
+    return typeValue;
+
+  // `ASTType(TypedAttr)` turns the type value into the type it represents via
+  // `ParamType::get(...)`. That builder canonicalizes: unresolved parameter
+  // refs stay as `ParamType`, but constant type values can fold to the
+  // represented MLIR type. Rebuild the refined type value through `PValue` so
+  // both cases are handled uniformly.
+  ASTType originalType(typeValue);
+  Type refinedType =
+      maybeRefineTypeWithAssumptions(originalType.mlirType, declScope);
+  if (refinedType == originalType.mlirType)
+    return typeValue;
+
+  return PValue(refinedType).get();
+}
+
 Value LIT::maybeEmitRefinementRebind(Value value, ASTDecl &declScope,
                                      OpBuilder &builder, Location loc) {
   Type refinedType = maybeRefineTypeWithAssumptions(value.getType(), declScope);
@@ -1025,6 +1044,63 @@ CValue LIT::maybeEmitRefinementRebind(ASTExprAnd<CValue> value,
   if (refinedType == ssa.getType())
     return value.ir;
   return emitter.rebindValue(value, refinedType);
+}
+
+/// Apply type refinement to a type expression used as an attribute receiver.
+///
+/// This creates a local shadow for this member lookup only: `T.member` can see
+/// `downcast(T, Trait)` under a matching `conforms_to(T, Trait)` assumption,
+/// while unrelated uses of `T` in the surrounding scope remain unchanged.
+static void maybeRefineTypeAttributeBase(CValue &baseVal, ASTType &baseRVType,
+                                         ASTDecl &declScope) {
+  PValue basePValue = baseVal.getIfPValue();
+  if (!basePValue)
+    return;
+
+  TypedAttr refinedTypeValue =
+      maybeRefineTypeValueWithAssumptions(basePValue.get(), declScope);
+  if (refinedTypeValue == basePValue.get())
+    return;
+
+  baseVal = CValue(PValue(refinedTypeValue));
+  baseRVType = ASTType(refinedTypeValue);
+}
+
+/// Look up `spelling` across each container decl (the struct/trait plus any
+/// visible extensions) and accumulate matching member decls into
+/// `memberDecls`. Returns failure only on an erroneous lookup (already
+/// diagnosed); a successful lookup that finds no members is reported by
+/// `memberDecls` being empty on return.
+static LogicalResult
+lookupMembersInDecls(SmallVectorImpl<ASTDecl *> &memberDecls,
+                     ArrayRef<ASTDecl *> structAndExtensionsDecls,
+                     StringRef spelling, SMLoc loc, SharedState &shared) {
+  memberDecls.clear();
+  for (ASTDecl *containerDecl : structAndExtensionsDecls) {
+    LookupResult lookup = shared.lookupAndResolveDecl(
+        spelling, loc, *containerDecl, /*searchParentScopes=*/false);
+    if (lookup.isErroneous())
+      return failure(); // Error already diagnosed.
+    if (!lookup.isSuccess())
+      continue;
+
+    // The param decls from structs are duplicated into the extension's
+    // ASTDecl. This fact is inconvenient here, because we would see both the
+    // ParamDeclRefAttr from the struct and the extension, and it would look
+    // like a conflict further below. So filter out the param refs from
+    // extensions to avoid duplicates.
+    bool isExtension =
+        isa_and_nonnull<ExtensionDeclOp>(containerDecl->getIfOperation());
+    for (ASTDecl *decl : lookup.getIfSuccess()) {
+      if (isExtension)
+        if (!decl->getIfOperation())
+          if (PValue cv = decl->getIfIRValue().getIfPValue())
+            if (sugarIsa<ParamDeclRefAttr>(cv.get()))
+              continue;
+      memberDecls.push_back(decl);
+    }
+  }
+  return success();
 }
 
 ExprNode::ELVIITResult
@@ -1925,6 +2001,7 @@ auto AttributeRefNode::emitLCVIR(ExprDest &dest, IREmitter &emitter,
   if (ASTType baseType = baseVal.getIfTypeValue()) {
     baseRVType = baseType;
     hasTypeBase = true;
+    maybeRefineTypeAttributeBase(baseVal, baseRVType, emitter.declScope);
   } else {
     // Otherwise, it must be an access to a field of a value.  Look up in the
     // RValueType of the value.
@@ -2062,39 +2139,14 @@ auto AttributeRefNode::emitLCVIR(ExprDest &dest, IREmitter &emitter,
     return {};
   }
 
-  // Find the member being accessed.
-  // Search through the struct and also through any of its visible extensions.
-  // Type refinement is applied at value creation time and at variable use
-  // time (for comptime if/assert scopes), so baseRVType should already
-  // include any refinements.
+  // Find the member being accessed. Search through the struct and also through
+  // any of its visible extensions.
   SmallVector<ASTDecl *, 4> structAndExtensionsDecls =
       emitter.getDeclScope().collectTypeAndExtensions(baseRVType, getLoc());
   SmallVector<ASTDecl *> memberDecls;
-  for (ASTDecl *containerDecl : structAndExtensionsDecls) {
-    LookupResult lookup =
-        shared.lookupAndResolveDecl(spelling, getLoc(), *containerDecl,
-                                    /*searchParentScopes=*/false);
-    if (lookup.isErroneous())
-      return {}; // Error already diagnosed.
-    if (lookup.isSuccess()) {
-      // The param decls from structs are duplicated into the extension's
-      // ASTDecl.
-      // This fact is inconvenient here in emitLCVIR, because we would see
-      // both the ParamDeclRefAttr from the struct and the extension, and it
-      // would look like a conflict further below. So, here we filter out the
-      // param refs from extensions to avoid duplicates.
-      bool isExtension =
-          isa_and_nonnull<ExtensionDeclOp>(containerDecl->getIfOperation());
-      for (auto *decl : lookup.getIfSuccess()) {
-        if (isExtension)
-          if (!decl->getIfOperation())
-            if (auto cv = decl->getIfIRValue().getIfPValue())
-              if (sugarIsa<ParamDeclRefAttr>(cv.get()))
-                continue;
-        memberDecls.push_back(decl);
-      }
-    }
-  }
+  if (failed(lookupMembersInDecls(memberDecls, structAndExtensionsDecls,
+                                  spelling, getLoc(), shared)))
+    return {};
 
   // If the struct has no static member of the required name, try to look for
   // dynamic lookup attribute methods (__getattr__ etc) on the type.

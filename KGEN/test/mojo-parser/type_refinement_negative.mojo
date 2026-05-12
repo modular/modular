@@ -135,3 +135,52 @@ def test_nested_assert_refinement_does_not_leak[
         comptime assert conforms_to(T, LeakTestTrait)
         _ = needs_leak_trait_4(val)
     return needs_leak_trait_4(val)  # expected-error {{cannot be converted}}
+
+
+# --- Refined-but-still-failing type-value parameter binding mentions the
+# refined trait composition in the diagnostic ---
+#
+# When `T: AnyType` is bound to a parameter expecting an unrelated trait, the
+# compiler also tries the refined value `downcast(T, ...)`. If that still
+# doesn't satisfy the parameter, the diagnostic should report the type the
+# compiler actually considered (the merged trait composition), not the
+# original bound — otherwise the user can't tell that the assumption was
+# taken into account at all.
+
+trait NeededTrait:
+    pass
+
+
+trait UnrelatedTrait:
+    pass
+
+
+# expected-note @below {{function declared here}}
+def needs_needed_trait[T: NeededTrait]():
+    pass
+
+
+def test_diag_shows_refined_type[T: AnyType]():
+    comptime if conforms_to(T, UnrelatedTrait):
+        # expected-error @+1 {{value has type 'AnyType & UnrelatedTrait'}}
+        needs_needed_trait[T]()
+
+
+# --- Refinement fallback for type-base attribute lookup falls through
+# cleanly when the refined trait also lacks the member ---
+#
+# `AttributeRefNode::emitLCVIR` refines the type-valued base for this lookup.
+# If the refined trait doesn't expose the member, we fall through to the
+# standard "no such attribute" diagnostic, which should report the refined
+# merged trait so the user knows the assumption was applied.
+
+trait HasKnownStaticMethod:
+    @staticmethod
+    def known_method() -> Int:
+        ...
+
+
+def test_refined_type_base_unknown_member[T: AnyType]():
+    comptime if conforms_to(T, HasKnownStaticMethod):
+        # expected-error @+1 {{'AnyType & HasKnownStaticMethod' value has no attribute 'unknown_method'}}
+        _ = T.unknown_method()

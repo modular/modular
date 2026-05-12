@@ -1522,6 +1522,14 @@ CValue IREmitter::emitNamedMethodCall(StringRef methodName,
   return emitIndirectCall(callee, std::move(operands));
 }
 
+static ASTType getConstructorLookupType(ASTType type, ASTDecl &declScope) {
+  Type refinedMlirType =
+      maybeRefineTypeWithAssumptions(type.mlirType, declScope);
+  if (refinedMlirType == type.mlirType)
+    return type;
+  return ASTType(refinedMlirType);
+}
+
 /// Emit a call to __init__, returning an instance of the specified type.  If
 /// `allowImplicitConversion` is true, the provided args are allowed to
 /// implicitly convert to the expectations of the constructor signatures.
@@ -1535,8 +1543,10 @@ CValue IREmitter::emitConstructorCall(ASTType type,
 
   // Check to see if we can invoke an __init__ method to convert it.
   const ExprNode *expr = callOperands.getExpr();
+  type = getConstructorLookupType(type, getDeclScope());
   OverloadSet callee = OverloadSet::lookup(getDeclScope(), type, "__init__",
                                            expr, callOperands.syntax);
+
   shared.notifyListenerOnCall(callee.fnDecls, expr->getRangeEnd(),
                               callOperands.syntax, callOperands);
   if (callee.isErroneous()) {
@@ -1619,6 +1629,7 @@ FailureOr<PValue> OverloadSet::canConstructType(ASTType requiredType,
                                                 ASTDecl &declScope) {
   // Check to see if we can do an implicit conversion by invoking a `__init__`
   // method on the expected type.
+  requiredType = getConstructorLookupType(requiredType, declScope);
   OverloadSet callee = OverloadSet::lookup(
       declScope, requiredType, "__init__", operands.getExpr(), operands.syntax,
       /*no error emission on failure */ {});

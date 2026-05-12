@@ -723,8 +723,13 @@ bool GetWitnessAttr::isConstant() const { return false; }
 GetWitnessAttr GetWitnessAttr::get(MLIRContext *ctx, TypedAttr typeValue,
                                    StringAttr traitName, StringAttr witnessName,
                                    Type type) {
-  return Base::get(ctx, UpcastAttr::strip(typeValue), traitName, witnessName,
-                   type);
+  // Witness lookup is keyed by underlying type identity; upcast/downcast only
+  // adjust trait-view sugar. Strip them here so get_witness matches across
+  // refined vs unrefined type values (same as prior constraintImplies
+  // replacer).
+  typeValue = UpcastAttr::strip(typeValue);
+  typeValue = DowncastAttr::strip(typeValue);
+  return Base::get(ctx, typeValue, traitName, witnessName, type);
 }
 
 TypedAttr GetWitnessAttr::getTypeRefIfResolved() {

@@ -544,18 +544,43 @@ ParamInf::inferAndEmitOneParam(ASTExprAnd<AnyValue> binding,
     return failure();
   }
 
-  // Check the type matches what is expected, and perform an implicit
-  // conversion if needed.
-  if (expectedType.isEqualCanon(bindingVal.getType()))
-    // Align sugar if necessary.
-    return ParamOperatorAttr::getRebind(bindingVal, expectedType);
+  auto tryEmitBindingConversion = [&](TypedAttr candidate) -> TypedAttr {
+    // Check the type matches what is expected, and perform an implicit
+    // conversion if needed.
+    if (expectedType.isEqualCanon(candidate.getType()))
+      // Align sugar if necessary.
+      return ParamOperatorAttr::getRebind(candidate, expectedType);
 
-  // If the parameter can be implicitly converted, do so.
-  if (IREmitter::canImplicitlyConvertToType(
-          {bindingVal, binding.expr}, expectedType, emitter.getDeclScope())) {
+    if (!IREmitter::canImplicitlyConvertToType(
+            {candidate, binding.expr}, expectedType, emitter.getDeclScope()))
+      return {};
+
     return emitter
-        .emitPValue({bindingVal, binding.expr}, EC_ParameterList, expectedType)
+        .emitPValue({candidate, binding.expr}, EC_ParameterList, expectedType)
         .get();
+  };
+
+  if (TypedAttr convertedBinding = tryEmitBindingConversion(bindingVal))
+    return convertedBinding;
+
+  // A type value may become valid for this parameter inside a refined scope,
+  // e.g. `T: AnyType` used as a `GuardedTrait` parameter under
+  // `comptime if conforms_to(T, GuardedTrait)`. Keep the shadow local to this
+  // binding instead of changing the declaration of `T` for the whole scope.
+  // If the refinement still doesn't satisfy `expectedType`, prefer the
+  // refined value in the diagnostic so the user sees the type the compiler
+  // actually considered (e.g. `AnyType_GuardedTrait downcast(T)` rather than
+  // just `AnyType T`).
+  TypedAttr diagBindingVal = bindingVal;
+  if (LIT::isTypeExpr(bindingVal)) {
+    TypedAttr refinedBindingVal =
+        maybeRefineTypeValueWithAssumptions(bindingVal, emitter.getDeclScope());
+    if (refinedBindingVal != bindingVal) {
+      if (TypedAttr convertedBinding =
+              tryEmitBindingConversion(refinedBindingVal))
+        return convertedBinding;
+      diagBindingVal = refinedBindingVal;
+    }
   }
 
   // Otherwise, the parameter is simply the wrong type, emit an error about this
@@ -568,7 +593,7 @@ ParamInf::inferAndEmitOneParam(ASTExprAnd<AnyValue> binding,
        << ParamDeclRefAttr::get(declaredParamPogs.getName(paramIdx),
                                 declaredParamTypes[paramIdx])
        << " has " << expectedType << " type, but value has type "
-       << bindingVal.getType() << binding.expr->getRange();
+       << diagBindingVal.getType() << binding.expr->getRange();
 
   return failure();
 }

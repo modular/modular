@@ -44,6 +44,451 @@ struct Cat(Copyable, Greetable, ImplicitlyDestructible, Movable):
         return "Meow! I'm " + self.name
 
 
+trait StaticLabel:
+    @staticmethod
+    def static_label() -> String:
+        ...
+
+
+trait StaticOriginalLabel:
+    @staticmethod
+    def original_static_label() -> String:
+        ...
+
+
+trait StaticRefinedLabel:
+    @staticmethod
+    def refined_static_label() -> String:
+        ...
+
+
+trait StaticOriginalOverload:
+    @staticmethod
+    def overloaded_static() -> String:
+        ...
+
+
+trait StaticRefinedOverload:
+    @staticmethod
+    def overloaded_static(value: Int) -> String:
+        ...
+
+
+trait ArgConstructible(ImplicitlyDestructible):
+    def __init__(out self, value: Int):
+        ...
+
+
+trait RefinedDefaultConstructible:
+    def __init__(out self):
+        ...
+
+
+trait RefinedStringConstructible:
+    @implicit
+    def __init__(out self, value: String):
+        ...
+
+
+struct StaticDog(StaticLabel):
+    def __init__(out self):
+        pass
+
+    @staticmethod
+    def static_label() -> String:
+        return "static dog"
+
+
+struct StaticOriginalAndRefined(StaticOriginalLabel, StaticRefinedLabel):
+    def __init__(out self):
+        pass
+
+    @staticmethod
+    def original_static_label() -> String:
+        return "original static"
+
+    @staticmethod
+    def refined_static_label() -> String:
+        return "refined static"
+
+
+struct StaticOriginalAndRefinedOverload(
+    StaticOriginalOverload,
+    StaticRefinedOverload,
+):
+    def __init__(out self):
+        pass
+
+    @staticmethod
+    def overloaded_static() -> String:
+        return "original overload"
+
+    @staticmethod
+    def overloaded_static(value: Int) -> String:
+        return "refined overload"
+
+
+struct RefinedConstructorWitness(
+    ArgConstructible,
+    RefinedDefaultConstructible,
+    RefinedStringConstructible,
+):
+    def __init__(out self):
+        pass
+
+    def __init__(out self, value: Int):
+        pass
+
+    @implicit
+    def __init__(out self, value: String):
+        pass
+
+
+struct TypeToken[T: AnyType]:
+    def __init__(out self):
+        pass
+
+
+def require_type_token[T: AnyType](token: TypeToken[T]) -> String:
+    return "token-ok"
+
+
+def static_label_comptime_if[T: AnyType]() -> String:
+    comptime if conforms_to(T, StaticLabel):
+        return T.static_label()
+    else:
+        return "fallback"
+
+
+def static_label_alias[T: AnyType]() -> String:
+    comptime Alias = T
+    comptime if conforms_to(T, StaticLabel):
+        return Alias.static_label()
+    return "fallback"
+
+
+def static_label_type_of_value[
+    T: AnyType
+](x: T,) -> String where conforms_to(T, StaticLabel):
+    return type_of(x).static_label()
+
+
+def static_label_preserves_original_bound[T: StaticOriginalLabel]() -> String:
+    comptime if conforms_to(T, StaticRefinedLabel):
+        return T.refined_static_label() + " | " + T.original_static_label()
+    return "fallback"
+
+
+def static_label_alias_preserves_original_bound[
+    T: StaticOriginalLabel
+]() -> String:
+    comptime Alias = T
+    comptime if conforms_to(T, StaticRefinedLabel):
+        return (
+            Alias.refined_static_label() + " | " + Alias.original_static_label()
+        )
+    return "fallback"
+
+
+def static_label_type_of_preserves_original_bound[
+    T: StaticOriginalLabel
+](x: T) -> String:
+    comptime if conforms_to(T, StaticRefinedLabel):
+        return (
+            type_of(x).refined_static_label()
+            + " | "
+            + type_of(x).original_static_label()
+        )
+    return "fallback"
+
+
+def static_label_same_name_overload[T: StaticOriginalOverload]() -> String:
+    comptime if conforms_to(T, StaticRefinedOverload):
+        return T.overloaded_static(1)
+    return "fallback"
+
+
+def static_label_does_not_rewrite_type_uses[
+    T: AnyType
+](token: TypeToken[T]) -> String where conforms_to(T, StaticLabel):
+    var label = T.static_label()
+    return label + " | " + require_type_token[T](token)
+
+
+def default_construct_refined[
+    T: AnyType
+]() where conforms_to(T, Defaultable & ImplicitlyDestructible):
+    _ = T()
+
+
+def default_construct_with_original_candidate[
+    T: ArgConstructible
+]() -> String where conforms_to(
+    T, RefinedDefaultConstructible & ImplicitlyDestructible
+):
+    _ = T()
+    return "refined-constructor"
+
+
+def original_construct_with_refined_candidates[
+    T: ArgConstructible
+]() -> String where conforms_to(
+    T, RefinedDefaultConstructible & ImplicitlyDestructible
+):
+    _ = T(1)
+    return "original-constructor"
+
+
+def accept_refined_implicit_conversion[
+    T: ArgConstructible
+](value: T) -> String where conforms_to(T, ImplicitlyDestructible):
+    return "refined-implicit-conversion"
+
+
+def implicit_construct_with_original_candidate[
+    T: ArgConstructible
+]() -> String where conforms_to(
+    T, RefinedStringConstructible & ImplicitlyDestructible
+):
+    return accept_refined_implicit_conversion[T](String("converted"))
+
+
+def test_static_type_refinement():
+    # CHECK: static-if: static dog
+    print("static-if:", static_label_comptime_if[StaticDog]())
+    # CHECK: static-if-fallback: fallback
+    print("static-if-fallback:", static_label_comptime_if[Int]())
+    # CHECK: static-alias: static dog
+    print("static-alias:", static_label_alias[StaticDog]())
+    # CHECK: static-type-of: static dog
+    print("static-type-of:", static_label_type_of_value(StaticDog()))
+    # CHECK: static-original-bound: refined static | original static
+    print(
+        "static-original-bound:",
+        static_label_preserves_original_bound[StaticOriginalAndRefined](),
+    )
+    # CHECK: static-alias-original-bound: refined static | original static
+    print(
+        "static-alias-original-bound:",
+        static_label_alias_preserves_original_bound[StaticOriginalAndRefined](),
+    )
+    # CHECK: static-type-of-original-bound: refined static | original static
+    print(
+        "static-type-of-original-bound:",
+        static_label_type_of_preserves_original_bound(
+            StaticOriginalAndRefined()
+        ),
+    )
+    # CHECK: static-same-name-overload: refined overload
+    print(
+        "static-same-name-overload:",
+        static_label_same_name_overload[StaticOriginalAndRefinedOverload](),
+    )
+    # CHECK: static-no-leak: static dog | token-ok
+    print(
+        "static-no-leak:",
+        static_label_does_not_rewrite_type_uses[StaticDog](
+            TypeToken[StaticDog]()
+        ),
+    )
+    default_construct_refined[Int]()
+    # CHECK: refined-constructor: refined-constructor
+    print(
+        "refined-constructor:",
+        default_construct_with_original_candidate[RefinedConstructorWitness](),
+    )
+    # CHECK: original-constructor: original-constructor
+    print(
+        "original-constructor:",
+        original_construct_with_refined_candidates[RefinedConstructorWitness](),
+    )
+    # CHECK: refined-implicit-conversion: refined-implicit-conversion
+    print(
+        "refined-implicit-conversion:",
+        implicit_construct_with_original_candidate[RefinedConstructorWitness](),
+    )
+
+
+trait TypeArgMarker:
+    pass
+
+
+trait OriginalTypeArg:
+    pass
+
+
+trait RefinedTypeArg:
+    pass
+
+
+struct TypeArgWitness(TypeArgMarker):
+    pass
+
+
+struct OriginalAndRefinedTypeArg(OriginalTypeArg, RefinedTypeArg):
+    pass
+
+
+def accepts_type_arg[T: TypeArgMarker]() -> String:
+    return "function"
+
+
+def accepts_original_type_arg[T: OriginalTypeArg]() -> String:
+    return "original"
+
+
+def accepts_refined_type_arg[T: RefinedTypeArg]() -> String:
+    return "refined"
+
+
+@fieldwise_init
+struct TypeArgBox[T: TypeArgMarker]:
+    pass
+
+
+def type_arg_function_binding[T: AnyType]() -> String:
+    comptime if conforms_to(T, TypeArgMarker):
+        return accepts_type_arg[T]()
+    return "fallback"
+
+
+def type_arg_struct_binding[T: AnyType]() -> String:
+    comptime if conforms_to(T, TypeArgMarker):
+        _ = TypeArgBox[T]()
+        return "struct"
+    return "fallback"
+
+
+def type_arg_alias_binding[T: AnyType]() -> String:
+    comptime Alias = T
+    comptime if conforms_to(T, TypeArgMarker):
+        _ = TypeArgBox[Alias]()
+        return "alias"
+    return "fallback"
+
+
+struct TypeArgPack[*Ts: AnyType]:
+    def __init__(out self):
+        pass
+
+    def bind_element[i: Int](self) -> String:
+        comptime if conforms_to(Self.Ts[i], TypeArgMarker):
+            _ = TypeArgBox[Self.Ts[i]]()
+            return "variadic"
+        return "fallback"
+
+
+trait HasTypeArgElement:
+    comptime Element: AnyType
+
+
+struct TypeArgContainer(HasTypeArgElement):
+    comptime Element = TypeArgWitness
+
+
+def type_arg_associated_binding[C: AnyType]() -> String:
+    comptime if conforms_to(C, HasTypeArgElement):
+        comptime assert conforms_to(C.Element, TypeArgMarker)
+        _ = TypeArgBox[C.Element]()
+        return "associated"
+    return "fallback"
+
+
+def type_arg_preserves_original_bound[T: OriginalTypeArg]() -> String:
+    comptime if conforms_to(T, RefinedTypeArg):
+        return (
+            accepts_refined_type_arg[T]()
+            + " | "
+            + accepts_original_type_arg[T]()
+        )
+    return "fallback"
+
+
+def type_arg_alias_preserves_original_bound[T: OriginalTypeArg]() -> String:
+    comptime Alias = T
+    comptime if conforms_to(T, RefinedTypeArg):
+        return (
+            accepts_refined_type_arg[Alias]()
+            + " | "
+            + accepts_original_type_arg[Alias]()
+        )
+    return "fallback"
+
+
+struct OriginalTypeArgPack[*Ts: OriginalTypeArg]:
+    def __init__(out self):
+        pass
+
+    def bind_element[i: Int](self) -> String:
+        comptime if conforms_to(Self.Ts[i], RefinedTypeArg):
+            return (
+                accepts_refined_type_arg[Self.Ts[i]]()
+                + " | "
+                + accepts_original_type_arg[Self.Ts[i]]()
+            )
+        return "fallback"
+
+
+trait HasOriginalTypeArgElement:
+    comptime Element: OriginalTypeArg
+
+
+struct OriginalTypeArgContainer(HasOriginalTypeArgElement):
+    comptime Element = OriginalAndRefinedTypeArg
+
+
+def type_arg_associated_preserves_original_bound[C: AnyType]() -> String:
+    comptime if conforms_to(C, HasOriginalTypeArgElement):
+        comptime assert conforms_to(C.Element, RefinedTypeArg)
+        return (
+            accepts_refined_type_arg[C.Element]()
+            + " | "
+            + accepts_original_type_arg[C.Element]()
+        )
+    return "fallback"
+
+
+def test_type_value_parameter_refinement():
+    # CHECK: type-arg-function: function
+    print("type-arg-function:", type_arg_function_binding[TypeArgWitness]())
+    # CHECK: type-arg-struct: struct
+    print("type-arg-struct:", type_arg_struct_binding[TypeArgWitness]())
+    # CHECK: type-arg-alias: alias
+    print("type-arg-alias:", type_arg_alias_binding[TypeArgWitness]())
+    # CHECK: type-arg-variadic: variadic
+    print(
+        "type-arg-variadic:",
+        TypeArgPack[TypeArgWitness]().bind_element[0](),
+    )
+    # CHECK: type-arg-associated: associated
+    print(
+        "type-arg-associated:",
+        type_arg_associated_binding[TypeArgContainer](),
+    )
+    # CHECK: type-arg-original-bound: refined | original
+    print(
+        "type-arg-original-bound:",
+        type_arg_preserves_original_bound[OriginalAndRefinedTypeArg](),
+    )
+    # CHECK: type-arg-alias-original-bound: refined | original
+    print(
+        "type-arg-alias-original-bound:",
+        type_arg_alias_preserves_original_bound[OriginalAndRefinedTypeArg](),
+    )
+    # CHECK: type-arg-variadic-original-bound: refined | original
+    print(
+        "type-arg-variadic-original-bound:",
+        OriginalTypeArgPack[OriginalAndRefinedTypeArg]().bind_element[0](),
+    )
+    # CHECK: type-arg-associated-original-bound: refined | original
+    print(
+        "type-arg-associated-original-bound:",
+        type_arg_associated_preserves_original_bound[
+            OriginalTypeArgContainer
+        ](),
+    )
+
+
 def call_greet_read[
     T: AnyType
 ](read x: T) -> String where conforms_to(T, Greetable):
@@ -880,6 +1325,8 @@ def test_variadic_element_refinement():
 
 
 def main():
+    test_static_type_refinement()
+    test_type_value_parameter_refinement()
     test_conventions()
     test_bound_preservation()
     test_conjunction()

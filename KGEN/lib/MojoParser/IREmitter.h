@@ -439,6 +439,12 @@ public:
 /// Returns the refined type if refinement applies, otherwise the original type.
 Type maybeRefineTypeWithAssumptions(Type varType, ASTDecl &declScope);
 
+/// Refine a type-valued parameter expression based on where-clause constraints
+/// in the scope. Returns the refined type value if refinement applies,
+/// otherwise the original type value.
+TypedAttr maybeRefineTypeValueWithAssumptions(TypedAttr typeValue,
+                                              ASTDecl &declScope);
+
 /// Emit a `kgen.rebind` for `value` when type refinement applies in the
 /// current scope, otherwise return `value` unchanged. Use this overload when
 /// only a raw SSA `Value` is available (e.g., from a GEP or a block

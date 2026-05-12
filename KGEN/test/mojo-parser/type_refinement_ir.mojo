@@ -23,6 +23,53 @@ trait SomeTrait:
     pass
 
 
+trait StaticExtra:
+    @staticmethod
+    def static_value() -> Int:
+        ...
+
+
+trait StaticOriginal:
+    @staticmethod
+    def original_static_value() -> Int:
+        ...
+
+
+trait StaticRefined:
+    @staticmethod
+    def refined_static_value() -> Int:
+        ...
+
+
+trait GuardedParam:
+    pass
+
+
+trait OriginalParam:
+    pass
+
+
+trait RefinedParam:
+    pass
+
+
+def accepts_guarded_param[T: GuardedParam]():
+    pass
+
+
+def accepts_original_param[T: OriginalParam]():
+    pass
+
+
+def accepts_refined_param[T: RefinedParam]():
+    pass
+
+
+@fieldwise_init
+struct GuardedParamBox[T: GuardedParam]:
+    pass
+
+
 def use_base[T: Base](read x: T):
     pass
 
@@ -69,6 +116,111 @@ struct BaseMiniPack[element_trait: type_of(Base), //, *element_types: element_tr
         comptime assert conforms_to(element_type, Extra)
         use_extra(self.get_element[i]())
         use_base(self.get_element[i]())
+
+
+# CHECK-LABEL: lit.fn @"refine_type_base_static_member
+# CHECK: kgen.param.if <{{.*}}conforms_to(:!AnyType T, [{{.*}}@type_refinement_ir::@StaticExtra]){{.*}}> {
+# CHECK: lit.call{{.*}}#kgen.get_witness<:!AnyType T, "type_refinement_ir::StaticExtra", "static_value{{.*}}">
+def refine_type_base_static_member[T: AnyType]():
+    comptime if conforms_to(T, StaticExtra):
+        _ = T.static_value()
+
+
+# CHECK-LABEL: lit.fn @"refine_type_base_static_member_preserves_original_bound
+# CHECK: lit.call{{.*}}#kgen.get_witness<:!StaticOriginal T, "type_refinement_ir::StaticRefined", "refined_static_value{{.*}}">
+# CHECK: lit.call{{.*}}#kgen.get_witness<:!StaticOriginal T, "type_refinement_ir::StaticOriginal", "original_static_value{{.*}}">
+def refine_type_base_static_member_preserves_original_bound[
+    T: StaticOriginal
+]():
+    comptime if conforms_to(T, StaticRefined):
+        _ = T.refined_static_value()
+        _ = T.original_static_value()
+
+
+# CHECK-LABEL: lit.fn @"refine_type_base_alias_static_member_preserves_original_bound
+# CHECK: lit.call{{.*}}#kgen.get_witness<:!StaticOriginal T, "type_refinement_ir::StaticRefined", "refined_static_value{{.*}}">
+# CHECK: lit.call{{.*}}#kgen.get_witness<:!StaticOriginal T, "type_refinement_ir::StaticOriginal", "original_static_value{{.*}}">
+def refine_type_base_alias_static_member_preserves_original_bound[
+    T: StaticOriginal
+]():
+    comptime Alias = T
+    comptime if conforms_to(T, StaticRefined):
+        _ = Alias.refined_static_value()
+        _ = Alias.original_static_value()
+
+
+# CHECK-LABEL: lit.fn @"refine_type_of_static_member_preserves_original_bound
+# CHECK: lit.call{{.*}}#kgen.get_witness<:!StaticOriginal T, "type_refinement_ir::StaticRefined", "refined_static_value{{.*}}">
+# CHECK: lit.call{{.*}}#kgen.get_witness<:!StaticOriginal T, "type_refinement_ir::StaticOriginal", "original_static_value{{.*}}">
+def refine_type_of_static_member_preserves_original_bound[
+    T: StaticOriginal
+](read x: T):
+    comptime if conforms_to(T, StaticRefined):
+        _ = type_of(x).refined_static_value()
+        _ = type_of(x).original_static_value()
+
+
+# CHECK-LABEL: lit.fn @"refine_type_value_function_binding
+# CHECK: lit.call{{.*}}@"accepts_guarded_param{{.*}}<:!GuardedParam upcast(:!AnyType_GuardedParam downcast(:!AnyType T))>
+def refine_type_value_function_binding[T: AnyType]():
+    comptime if conforms_to(T, GuardedParam):
+        accepts_guarded_param[T]()
+
+
+# CHECK-LABEL: lit.fn @"refine_type_value_struct_binding
+# CHECK: #GuardedParamBox <:!GuardedParam upcast(:!AnyType_GuardedParam downcast(:!AnyType T))>
+def refine_type_value_struct_binding[T: AnyType]():
+    comptime if conforms_to(T, GuardedParam):
+        _ = GuardedParamBox[T]()
+
+
+# CHECK-LABEL: lit.fn @"refine_type_value_binding_preserves_original_bound
+# CHECK: lit.call{{.*}}@"accepts_refined_param{{.*}}<:!RefinedParam upcast(:!AnyType_OriginalParam_RefinedParam downcast(:!OriginalParam T))>
+# CHECK: lit.call{{.*}}@"accepts_original_param{{.*}}<:!OriginalParam T>
+def refine_type_value_binding_preserves_original_bound[T: OriginalParam]():
+    comptime if conforms_to(T, RefinedParam):
+        accepts_refined_param[T]()
+        accepts_original_param[T]()
+
+
+# CHECK-LABEL: lit.fn @"refine_type_value_alias_binding_preserves_original_bound
+# CHECK: lit.call{{.*}}@"accepts_refined_param{{.*}}<:!RefinedParam upcast(:!AnyType_OriginalParam_RefinedParam downcast(:!OriginalParam T))>
+# CHECK: lit.call{{.*}}@"accepts_original_param{{.*}}<:!OriginalParam #alias_Alias
+def refine_type_value_alias_binding_preserves_original_bound[
+    T: OriginalParam
+]():
+    comptime Alias = T
+    comptime if conforms_to(T, RefinedParam):
+        accepts_refined_param[Alias]()
+        accepts_original_param[Alias]()
+
+
+struct OriginalParamPack[*Ts: OriginalParam]:
+    # CHECK-LABEL: lit.fn @"refine_type_value_variadic_binding_preserves_original_bound
+    # CHECK: lit.call{{.*}}@"accepts_refined_param{{.*}}<:!RefinedParam upcast(:!AnyType_OriginalParam_RefinedParam downcast(:!OriginalParam #kgen.param_list.get<{{.*}}Ts.values{{.*}}))>
+    # CHECK: lit.call{{.*}}@"accepts_original_param
+    def refine_type_value_variadic_binding_preserves_original_bound[
+        i: Int
+    ](self):
+        comptime assert conforms_to(Self.Ts[i], RefinedParam)
+        accepts_refined_param[Self.Ts[i]]()
+        accepts_original_param[Self.Ts[i]]()
+
+
+trait HasOriginalParamElement:
+    comptime Element: OriginalParam
+
+
+# CHECK-LABEL: lit.fn @"refine_type_value_associated_binding_preserves_original_bound
+# CHECK: lit.call{{.*}}@"accepts_refined_param{{.*}}<:!RefinedParam upcast(:!AnyType_OriginalParam_RefinedParam downcast(:!OriginalParam #kgen.get_witness<{{.*}}Element{{.*}}))>
+# CHECK: lit.call{{.*}}@"accepts_original_param
+def refine_type_value_associated_binding_preserves_original_bound[
+    C: AnyType
+]():
+    comptime if conforms_to(C, HasOriginalParamElement):
+        comptime assert conforms_to(C.Element, RefinedParam)
+        accepts_refined_param[C.Element]()
+        accepts_original_param[C.Element]()
 
 
 # CHECK-LABEL: lit.fn @"refine_from_where
