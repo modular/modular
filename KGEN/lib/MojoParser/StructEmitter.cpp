@@ -42,8 +42,7 @@ createFunction(ASTDecl &parent, StringRef name, ArrayRef<ParamDeclAttr> params,
                ArrayRef<ArgConvention> argConventions, PogListAttr argListAttrs,
                Type resultType, SpecialFunctionKind specialFnID, SMLoc loc,
                ImplicitLocOpBuilder &builder, FnEffects fnEffects,
-               StringRef suffix, bool synthetic, InlineLevel inlineLevel,
-               ArrayRef<ConstraintAttr> fnConstraints = {}) {
+               StringRef suffix, bool synthetic, InlineLevel inlineLevel) {
   MLIRContext *ctx = parent.getContext();
   SharedState &shared = parent.getShared();
 
@@ -142,7 +141,8 @@ createFunction(ASTDecl &parent, StringRef name, ArrayRef<ParamDeclAttr> params,
       argListAttrs, numImplicitOriginDecls,
       getOriginsAccessibleByParams(paramListAttrs, params, shared,
                                    /*captureOrigins=*/nullptr),
-      /*isNestedOriginExclusivityCheckingDisabled=*/false, fnConstraints);
+      /*isNestedOriginExclusivityCheckingDisabled=*/false,
+      /*constraints=*/{});
   FunctionType functionType =
       builder.getFunctionType(adjustedArgTypes, {resultType});
   Location location = shared.translateLocation(loc);
@@ -205,13 +205,12 @@ std::pair<FnOp, ASTDecl *> FunctionEmitter::synthesizeFunction(
     PogListAttr paramListAttrs, ArrayRef<Type> argTypes,
     ArrayRef<ArgConvention> argConventions, PogListAttr argListAttrs,
     Type resultType, SpecialFunctionKind specialFnID, SMLoc loc,
-    ImplicitLocOpBuilder &builder, ArrayRef<ConstraintAttr> constraints,
-    FnEffects fnEffects, StringRef suffix, bool synthetic,
-    InlineLevel inlineLevel) {
-  FnOp funcOp = createFunction(parent, name, params, paramListAttrs, argTypes,
-                               argConventions, argListAttrs, resultType,
-                               specialFnID, loc, builder, fnEffects, suffix,
-                               synthetic, inlineLevel, constraints);
+    ImplicitLocOpBuilder &builder, FnEffects fnEffects, StringRef suffix,
+    bool synthetic, InlineLevel inlineLevel) {
+  FnOp funcOp =
+      createFunction(parent, name, params, paramListAttrs, argTypes,
+                     argConventions, argListAttrs, resultType, specialFnID, loc,
+                     builder, fnEffects, suffix, synthetic, inlineLevel);
 
   // Return null if the function already exists with the same signature.
   if (!funcOp)
@@ -225,8 +224,9 @@ std::pair<FnOp, ASTDecl *> FunctionEmitter::synthesizeFunction(
   // Synthesized functions skip DeclResolution's insertKnownAssumptions, so
   // inject the fn's where-clause constraints as known assumptions here,
   // when the ASTDecl is first created.
-  if (!constraints.empty())
-    funcDecl.insertKnownAssumptions(constraints);
+  funcDecl.insertKnownAssumptions(paramListAttrs.getBodyConstraints());
+  for (PogMetadataAttr pog : paramListAttrs.getPogs())
+    funcDecl.insertKnownAssumptions(pog.getConstraints());
 
   // Set the symbol and notice if we are redeclaring something.
   [[maybe_unused]] Operation *existing =
@@ -314,17 +314,21 @@ FnOp StructEmitter::synthesizeDefaultTraitMethodWrapper(
   if (structDeclOp.getConvention() == TypeConvention::RegisterPassableTrivial)
     inlineLevel = InlineLevel::AlwaysNoDebug;
 
-  SmallVector<ConstraintAttr> fnConstraints;
+  SmallVector<ConstraintAttr> bodyConstraints;
   if (conformanceConstraint &&
       !isTriviallyTrueConstraint(conformanceConstraint))
-    fnConstraints.push_back(conformanceConstraint);
+    bodyConstraints.push_back(conformanceConstraint);
 
-  FnOp funcOp = createFunction(
-      structDecl, name, mangledParams, wrapperSignature.getParamListAttrs(),
-      argTypes, argConventions, traitArgListAttrs, resultType,
-      SpecialFunctionKind::kNormal, structDecl.getLoc(), builder,
-      traitFn.getFuncTypeGenerator().getFnEffects(), suffix, /*synthetic=*/true,
-      inlineLevel, fnConstraints);
+  PogListAttr wrapperParamListAttrs = wrapperSignature.getParamListAttrs();
+  PogListAttr paramListAttrs = PogListAttr::get(
+      wrapperParamListAttrs.getContext(), wrapperParamListAttrs.getPogs(),
+      bodyConstraints, wrapperParamListAttrs.getOrigVariadicConvention());
+  FnOp funcOp =
+      createFunction(structDecl, name, mangledParams, paramListAttrs, argTypes,
+                     argConventions, traitArgListAttrs, resultType,
+                     SpecialFunctionKind::kNormal, structDecl.getLoc(), builder,
+                     traitFn.getFuncTypeGenerator().getFnEffects(), suffix,
+                     /*synthetic=*/true, inlineLevel);
 
   if (!funcOp)
     return nullptr;
@@ -347,8 +351,9 @@ FnOp StructEmitter::synthesizeDefaultTraitMethodWrapper(
   assert(!existing &&
          "unexpected redefinition when synthesizing method into existing decl");
 
-  if (!fnConstraints.empty())
-    existingDecl.insertKnownAssumptions(fnConstraints);
+  existingDecl.insertKnownAssumptions(paramListAttrs.getBodyConstraints());
+  for (PogMetadataAttr pog : paramListAttrs.getPogs())
+    existingDecl.insertKnownAssumptions(pog.getConstraints());
 
   assert(funcOp && "Couldn't synthesize default trait wrapper in body");
 
@@ -493,20 +498,18 @@ StructEmitter::StructEmitter(ASTDecl &structDecl)
 std::pair<FnOp, ASTDecl *> StructEmitter::synthesizeMethodInStruct(
     StringRef name, ArrayRef<Type> argTypes,
     ArrayRef<ArgConvention> argConventions, PogListAttr argListAttrs,
-    Type resultType, ArrayRef<ConstraintAttr> constraints,
-    SpecialFunctionKind specialFnID, FnEffects fnEffects, StringRef suffix,
-    bool synthetic) {
+    Type resultType, SpecialFunctionKind specialFnID, FnEffects fnEffects,
+    StringRef suffix, bool synthetic) {
   return synthesizeMethodInStruct(
       name, /*params=*/{}, /*paramListAttrs=*/PogListAttr::get(getContext()),
-      argTypes, argConventions, argListAttrs, resultType, constraints,
-      specialFnID, fnEffects, suffix, synthetic);
+      argTypes, argConventions, argListAttrs, resultType, specialFnID,
+      fnEffects, suffix, synthetic);
 }
 
 std::pair<FnOp, ASTDecl *> StructEmitter::synthesizeMethodInStruct(
     StringRef name, ArrayRef<ParamDeclAttr> params, PogListAttr paramListAttrs,
     ArrayRef<Type> argTypes, ArrayRef<ArgConvention> argConventions,
-    PogListAttr argListAttrs, Type resultType,
-    ArrayRef<ConstraintAttr> constraints, SpecialFunctionKind specialFnID,
+    PogListAttr argListAttrs, Type resultType, SpecialFunctionKind specialFnID,
     FnEffects fnEffects, StringRef suffix, bool synthetic) {
   ImplicitLocOpBuilder builder = ImplicitLocOpBuilder::atBlockEnd(
       structDeclOp.getLoc(), &structDeclOp.getFields().front());
@@ -515,10 +518,10 @@ std::pair<FnOp, ASTDecl *> StructEmitter::synthesizeMethodInStruct(
   // @always_inline("nodebug").
   if (structDeclOp.getConvention() == TypeConvention::RegisterPassableTrivial)
     inlineLevel = InlineLevel::AlwaysNoDebug;
-  return synthesizeFunction(
-      structDecl, name, params, paramListAttrs, argTypes, argConventions,
-      argListAttrs, resultType, specialFnID, structDecl.getLoc(), builder,
-      constraints, fnEffects, suffix, synthetic, inlineLevel);
+  return synthesizeFunction(structDecl, name, params, paramListAttrs, argTypes,
+                            argConventions, argListAttrs, resultType,
+                            specialFnID, structDecl.getLoc(), builder,
+                            fnEffects, suffix, synthetic, inlineLevel);
 }
 
 /// Given a struct and a trait declaration, make the struct inherit from the
@@ -593,7 +596,7 @@ FnOp StructEmitter::synthesizeFieldwiseInit(
   // Create the FnOp and ASTDecl for the method.
   auto [funcOp, _] = synthesizeMethodInStruct(
       "__init__", argTypes, argConventions, argListAttrs, litReturnType,
-      /*constraints=*/{}, SpecialFunctionKind::kInit);
+      SpecialFunctionKind::kInit);
   assert(funcOp && "couldn't synthesize method or had a conflict?");
   funcOp.setInlineLevel(InlineLevel::AlwaysNoDebug);
 
@@ -695,7 +698,7 @@ FnOp StructEmitter::synthesizeEmptyDtor() {
   auto [funcOp, funcDecl] = synthesizeMethodInStruct(
       "__del__", selfType.mlirType, ArgConvention::DeinitMem,
       PogListAttr::get(getContext(), selfName, PassingKind::PosOnly),
-      shared.getNoneType(), /*constraints=*/{}, SpecialFunctionKind::kDel);
+      shared.getNoneType(), SpecialFunctionKind::kDel);
   if (!funcOp)
     return {};
   funcOp.setInlineLevel(InlineLevel::AlwaysNoDebug);
@@ -737,10 +740,10 @@ FnOp StructEmitter::synthesizeEmptyMoveOrCopyInit(
                        {PassingKind::KwOnly, PassingKind::Implicit});
   auto [resultFn, resultDecl] = synthesizeMethodInStruct(
       "__init__", /*params=*/{},
-      /*paramListAttrs=*/PogListAttr::get(getContext()),
+      /*paramListAttrs=*/PogListAttr::get(ctx, /*numPogs=*/0, constraints),
       /*argTypes*/ {srcArgType, selfArgType},
       /*argConvs*/ {srcConv, ArgConvention::ByRefResult}, argListAttrs,
-      shared.getNoneType(), constraints,
+      shared.getNoneType(),
       isMove ? SpecialFunctionKind::kMoveCtor : SpecialFunctionKind::kCopyCtor);
   if (!resultFn)
     return {};
@@ -767,7 +770,7 @@ FnOp StructEmitter::synthesizeEmptyMoveOrCopyInit(
 static TraitDeclOp
 fieldConditionallyConformsToBuiltin(Type fieldMLIRType, StringRef traitName,
                                     SharedState &shared, ASTDecl &structDecl,
-                                    ArrayRef<ConstraintAttr> fnConstraints) {
+                                    ArrayRef<ConstraintAttr> bodyConstraints) {
   auto paramType = dyn_cast<ParamType>(fieldMLIRType);
   if (!paramType)
     return {};
@@ -785,7 +788,7 @@ fieldConditionallyConformsToBuiltin(Type fieldMLIRType, StringRef traitName,
   SmallVector<SymbolRefAttr> traitSymbols = {requiredTraitDecl->getSymbolRef()};
   auto conformsTo = TypeConformsToTraitAttr::get(fieldParam, traitSymbols);
 
-  for (ConstraintAttr constraint : fnConstraints)
+  for (ConstraintAttr constraint : bodyConstraints)
     if (constraintImplies(constraint.getProposition(), conformsTo))
       return traitOp;
   return {};
@@ -859,8 +862,8 @@ LogicalResult StructEmitter::populateMoveCopy(ASTDecl &fnDecl, bool isMove) {
   bool isImplicitlyCopyableStruct =
       structDecl.getTypeDeclSelf().isImplicitlyCopyable(structDecl.getLoc(),
                                                         shared);
-  ArrayRef<ConstraintAttr> fnConstraints =
-      fn.getFuncTypeGenerator().getBody().getMetadata().getConstraints();
+  ArrayRef<ConstraintAttr> bodyConstraints =
+      fn.getFuncTypeGenerator().getParamListAttrs().getBodyConstraints();
 
   for (StructFieldOp fieldOp : structDeclOp.getFieldDecls()) {
     ASTType fieldType = fieldOp.getType();
@@ -888,7 +891,7 @@ LogicalResult StructEmitter::populateMoveCopy(ASTDecl &fnDecl, bool isMove) {
           !fieldType.isImplicitlyCopyable(fieldASTDecl.getLoc(), shared,
                                           &fnDecl)) {
         conditionalTraitOp = fieldConditionallyConformsToBuiltin(
-            fieldType.mlirType, "Movable", shared, structDecl, fnConstraints);
+            fieldType.mlirType, "Movable", shared, structDecl, bodyConstraints);
         if (!conditionalTraitOp)
           return emitError(fieldASTDecl.getLoc())
                  << "cannot synthesize move constructor because field '"
@@ -906,7 +909,8 @@ LogicalResult StructEmitter::populateMoveCopy(ASTDecl &fnDecl, bool isMove) {
       if (!fieldType.isCopyable(fieldASTDecl.getLoc(), shared,
                                 isImplicitlyCopyableStruct, &fnDecl)) {
         conditionalTraitOp = fieldConditionallyConformsToBuiltin(
-            fieldType.mlirType, "Copyable", shared, structDecl, fnConstraints);
+            fieldType.mlirType, "Copyable", shared, structDecl,
+            bodyConstraints);
         if (!conditionalTraitOp)
           return emitError(fieldASTDecl.getLoc())
                  << "cannot synthesize copy constructor because field '"

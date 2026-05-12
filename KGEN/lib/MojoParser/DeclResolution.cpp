@@ -1720,8 +1720,9 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
   // Parse the result type if present.
   fnSignature.parseResultIfPresent(p);
 
-  // Parse the constraints if present.
-  if (failed(fnSignature.parseConstraintsIfPresent(p)))
+  // Parse trailing body constraints if present. Keep these with the parameter
+  // list because body constraints are stored on the generator metadata.
+  if (failed(parsedParamList.parseTrailingConstraintsIfPresent(p)))
     return failure();
 
   // Reject where clauses on trait methods. Users almost certainly expect
@@ -1732,7 +1733,7 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
   // constraint today.
   // See: https://www.notion.so/modularai/Conditional-Method-Availability for a
   // discussion on conditional availability vs. callability.
-  if (!fnSignature.fnConstraints.empty() &&
+  if (!parsedParamList.bodyConstraints.empty() &&
       isa_and_nonnull<TraitDeclOp>(decl.getParentDecl()->getIfOperation())) {
     shared.emitError(funcOp.getLoc())
         << "'where' clauses on trait methods are not supported";
@@ -1817,7 +1818,7 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
   }
   shared.setClosureParamCaptures(decl, std::move(closureParamCaptures));
   // Emit type equality constraints for closure external references.
-  // Add to tcSignature.fnConstraints so they become part of the function type.
+  // Add to tcSignature.bodyConstraints so they become part of the generator.
   for (const ClosureExternalRef &ref : closureExternalRefs) {
     AliasDeclOp aliasOp = ref.aliasOp;
     ParamDeclAttr closureParam = ref.closureParam;
@@ -1840,14 +1841,15 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
     TypedAttr eqConstraint =
         ParamOperatorAttr::get(POC::EQ, witnessAttr, funcParamRef);
     Location loc = shared.diags.translateLocation(decl.getLoc());
-    tcSignature.fnConstraints.push_back(ConstraintAttr::get(eqConstraint, loc));
+    tcSignature.bodyConstraints.push_back(
+        ConstraintAttr::get(eqConstraint, loc));
   }
 
   FnTypeGeneratorType signature = tcSignature.getFnTypeGeneratorType();
   if (!signature)
     return failure();
 
-  decl.insertKnownAssumptions(tcSignature.fnConstraints);
+  decl.insertKnownAssumptions(tcSignature.bodyConstraints);
 
   /// configure FnOp
 

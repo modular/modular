@@ -354,7 +354,7 @@ addClosureSelfArgToFunctionSignature(Type closureType, ArgConvention convention,
       argListAttr.cloneWith(argPogs), oldFnMetadata.getNumImplicitOriginDecls(),
       oldFnMetadata.getCaptureOrigins(),
       oldFnMetadata.getIsNestedOriginExclusivityCheckingDisabled(),
-      oldFnMetadata.getConstraints());
+      /*constraints=*/{});
   return FuncTypeGeneratorType::get(
       sig.getInputParamTypes(),
       FunctionType::get(ctx, signatureInputs, sig.getResults()), argConventions,
@@ -595,7 +595,6 @@ ClosureEmitter::pushBackTraitFunctionImpl(FnOp traitFnOp, ASTDecl &structDecl,
       argumentTypes, wrapperSignature.getArgConventions(),
       wrapperSignature.getArgListAttrs(), result,
       traitFnOp.getSpecialFunctionKind(), structDecl.getLoc(), b,
-      /*constraints=*/{},
       wrapperSignature.getFnEffects().setRegisterPassable(false), "", synthetic,
       traitFnOp.getInlineLevel());
   return {op, parameters, result};
@@ -1059,7 +1058,7 @@ ASTDecl *ClosureEmitter::createStructWrapper(ASTDecl &moduleDecl,
       structDecl, initName, {}, PogListAttr::get(ctx), initArgumentTypes,
       argConventions, PogListAttr::get(ctx, argNames, argPassingKinds),
       NoneType::get(ctx), SpecialFunctionKind::kInit, smLocation, b,
-      /*constraints=*/{}, /*fnEffects=*/{}, /*suffix=*/"", /*synthetic=*/true,
+      /*fnEffects=*/{}, /*suffix=*/"", /*synthetic=*/true,
       InlineLevel::Automatic);
 
   // Generate the body of the constructor, which should contain a call to the
@@ -1244,8 +1243,7 @@ ClosureEmitter::createFnStructWrapper(ASTDecl &moduleDecl, ASTDecl &traitDecl,
       argConventions,
       PogListAttr::get(ctx, {selfName}, {PassingKind::Implicit}),
       NoneType::get(ctx), SpecialFunctionKind::kInit, smLocation, b,
-      /*constraints=*/{}, /*fnEffects=*/{}, /*suffix=*/"", /*synthetic=*/true,
-      InlineLevel::Always);
+      /*fnEffects=*/{}, /*suffix=*/"", /*synthetic=*/true, InlineLevel::Always);
   b.setInsertionPointToStart(&initFnOp.getBodyRegion().front());
   IREmitter::emitNormalReturn(b);
   initDecl->resolvedness = DeclResolvedness::body;
@@ -1555,7 +1553,6 @@ ASTDecl *ClosureEmitter::createClosureTrait(
         decl, callName, parameters, extendedParamListAttrs, argumentTypes,
         sig.getArgConventions(), sig.getArgListAttrs(), result,
         SpecialFunctionKind::kNormal, nestedFunctionOrTypeLocation, builder,
-        /*constraints=*/{},
         sig.getFnEffects().setRegisterPassable(false).setCapturing(true), "",
         true, InlineLevel::Always);
     builder.setInsertionPointToEnd(&fnOp.getBodyRegion().front());

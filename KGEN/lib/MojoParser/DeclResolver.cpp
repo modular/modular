@@ -1613,7 +1613,7 @@ void DeclResolver::exportMain(ASTDecl &funcDecl) {
       mainWrapperFnMeta.getNumImplicitOriginDecls(),
       mainWrapperFnMeta.getCaptureOrigins(),
       mainWrapperFnMeta.getIsNestedOriginExclusivityCheckingDisabled(),
-      mainWrapperFnMeta.getConstraints());
+      /*constraints=*/{});
   auto strippedMainWrapperSig =
       FuncType::get(getContext(), mainWrapperSig.getValues(),
                     mainWrapperSig.getArgConventions(),
@@ -1771,7 +1771,7 @@ StringAttr DeclResolver::getMangledName(StringAttr baseName, ASTDecl &container,
   mangledName += ')';
 
   // Add def constraints to the mangled name.
-  printConstraints(os, fullSig.getFnMetadata().getConstraints());
+  printConstraints(os, fullSig.getMetadata().getBodyConstraints());
 
   // Having "@" in mangled names confuses gnu ld and triggers error at linking
   // stage. See issue #6918. So replacing "@" with "_".

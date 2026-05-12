@@ -160,6 +160,9 @@ public:
   /// The full ParsedArgument for each parameter.
   SmallVector<ParsedArgument> params;
 
+  /// Trailing constraints specified with 'where' clauses after the signature.
+  SmallVector<ParsedConstraint> bodyConstraints;
+
   /// Parse a parameter signature if present.
   ///
   /// param_signature    ::= "[" param_list ("->" param_result_types)? "]"
@@ -168,6 +171,11 @@ public:
   ParseResult parseParametersIfPresent(
       ParserBase &p, ArgListKind kind,
       InlineWhereNote inlineWhereNote = InlineWhereNote::kNone);
+
+  /// Parse trailing constraints if present.
+  ///
+  /// constraint_clauses ::= ("where" expression string_literal?)*
+  ParseResult parseTrailingConstraintsIfPresent(ParserBase &p);
 };
 
 /// This contains the result state from type checking a parameter signature.
@@ -187,7 +195,8 @@ public:
   create(ParsedParamList &parsedParams, ASTDecl &declScope);
 
   /// Get an PogListAttr for this parameter list.
-  PogListAttr getParamListAttr() const;
+  PogListAttr
+  getParamListAttr(ArrayRef<ConstraintAttr> bodyConstraints = {}) const;
 
   // These are the results of type checking 'params' in typeCheck.
   /// One ParamDeclAttr for each parameter being declared.
@@ -202,6 +211,9 @@ public:
 
   /// Constraints specified with 'where' clauses at each parameter position.
   SmallVector<SmallVector<ConstraintAttr>> allParamConstraints;
+
+  /// Trailing constraints specified with 'where' clauses after the signature.
+  SmallVector<ParsedConstraint> bodyConstraints;
 };
 
 //===----------------------------------------------------------------------===//
@@ -227,9 +239,6 @@ public:
   bool hasExplicitABI = false;
   ExprNode *thrownTypeExpr = nullptr;
 
-  /// Trailing function level constraints specified with 'where' clauses.
-  SmallVector<ParsedConstraint> fnConstraints;
-
   /// Parse an argument list, including the parentheses around them. This also
   /// parses 'raises' and other effects.
   ParseResult parseArgumentListAndEffects(ParserBase &p, ArgListKind kind);
@@ -237,11 +246,6 @@ public:
   /// Parse the result specifier starting with a `->` if present.
   void parseResultIfPresent(ParserBase &p,
                             std::optional<size_t> stmtIndent = std::nullopt);
-
-  /// Parse the constraints if present.
-  ///
-  /// constraint_clauses ::= ("where" expression string_literal?)*
-  ParseResult parseConstraintsIfPresent(ParserBase &p);
 
   /// Returns true when a function type should be interpreted as a closure
   /// trait rather than a thin function pointer or legacy capturing function.
@@ -304,7 +308,7 @@ public:
   SmallVector<ParamDeclAttr> implicitOriginDecls;
 
   /// Trailing function level constraints specified with 'where' clauses.
-  SmallVector<ConstraintAttr> fnConstraints;
+  SmallVector<ConstraintAttr> bodyConstraints;
 
   /// This is the result type + variant for throwing functions.  This is what
   /// finally gets treated as the ABI for the function.

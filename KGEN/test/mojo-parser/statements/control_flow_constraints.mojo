@@ -21,7 +21,7 @@ struct PStruct[*a: Int]:
 
 
 # CHECK-LABEL: lit.fn @"double_where_clause
-# CHECK-SAME: where {<
+# CHECK-SAME: {<
 # CHECK-SAME: ::@PStruct::@"predicate()"
 # CHECK-SAME: eq(#kgen.param_list.size<:param_list<!Int> *"x.a.values``">, 2)> : i1>, #{{[[:alnum:]]+}}>, <
 # CHECK-SAME: ::@PStruct::@"predicate()"

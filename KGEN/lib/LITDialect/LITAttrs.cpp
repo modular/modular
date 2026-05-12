@@ -46,10 +46,16 @@ PogListAttr PogListAttr::get(MLIRContext *context) {
 }
 
 PogListAttr PogListAttr::get(MLIRContext *context, size_t numPogs) {
+  return PogListAttr::get(context, numPogs, /*bodyConstraints=*/{});
+}
+
+PogListAttr PogListAttr::get(MLIRContext *context, size_t numPogs,
+                             ArrayRef<ConstraintAttr> bodyConstraints) {
   SmallVector<PogMetadataAttr> pogs;
   for (size_t i = 0; i != numPogs; ++i)
     pogs.push_back(PogMetadataAttr::get(context));
-  return PogListAttr::get(context, pogs);
+  return PogListAttr::get(context, pogs, bodyConstraints,
+                          ArgConvention::ByRefError);
 }
 
 PogListAttr PogListAttr::get(MLIRContext *context,
@@ -300,29 +306,23 @@ PogListAttr PogListAttr::prependAsInferredParams(
     SmallVector<ConstraintAttr> newConstraints;
     if (!paramConstraints.empty())
       llvm::append_range(newConstraints, paramConstraints[i]);
+    if (i + 1 == names.size())
+      llvm::append_range(newConstraints, bodyConstraints);
     // Strip off variadic kinds and turn the parameter into infer-only too.
     newPogs.push_back(PogMetadataAttr::get(name, PassingKind::Inferred,
                                            VariadicKind::None, newDefault,
                                            newConstraints));
   }
 
-  if (getPogs().empty()) {
+  llvm::append_range(newPogs, getPogs());
+
+  // If there are no new parameters to prepend, concat the body constraints onto
+  // the existing body constraints.
+  if (newPogs.empty()) {
     SmallVector<ConstraintAttr> newBodyConstraints(bodyConstraints);
     llvm::append_range(newBodyConstraints, getBodyConstraints());
     return PogListAttr::get(getContext(), newPogs, newBodyConstraints,
                             getOrigVariadicConvention());
-  }
-
-  for (auto [i, pog] : llvm::enumerate(getPogs())) {
-    if (i == 0 && !bodyConstraints.empty()) {
-      SmallVector<ConstraintAttr> newConstraints(bodyConstraints);
-      llvm::append_range(newConstraints, pog.getConstraints());
-      newPogs.push_back(PogMetadataAttr::get(
-          pog.getName(), pog.getPassingKind(), pog.getVariadic(),
-          pog.getDefaultValue(), newConstraints));
-      continue;
-    }
-    newPogs.push_back(pog);
   }
 
   return PogListAttr::get(getContext(), newPogs, getBodyConstraints(),

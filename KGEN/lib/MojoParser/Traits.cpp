@@ -108,7 +108,7 @@ static ConstraintResult
 checkMethodConstraintStatus(FnOp method, ConstraintAttr conformanceConstraint,
                             ASTDecl &structDecl) {
   ArrayRef<ConstraintAttr> methodConstraints =
-      method.getFuncTypeGenerator().getBody().getMetadata().getConstraints();
+      method.getFuncTypeGenerator().getParamListAttrs().getBodyConstraints();
   if (methodConstraints.empty())
     return ConstraintResult::Satisfied;
 

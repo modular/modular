@@ -44,9 +44,9 @@ public:
       PogListAttr paramListAttrs, ArrayRef<Type> argTypes,
       ArrayRef<ArgConvention> argConventions, PogListAttr argListAttrs,
       Type resultType, SpecialFunctionKind specialFnID, SMLoc loc,
-      ImplicitLocOpBuilder &builder, ArrayRef<ConstraintAttr> constraints,
-      FnEffects fnEffects = FnEffects(), StringRef suffix = "",
-      bool synthetic = true, InlineLevel inlineLevel = InlineLevel::Automatic);
+      ImplicitLocOpBuilder &builder, FnEffects fnEffects = FnEffects(),
+      StringRef suffix = "", bool synthetic = true,
+      InlineLevel inlineLevel = InlineLevel::Automatic);
 };
 
 class StructEmitter : public FunctionEmitter {
@@ -109,14 +109,14 @@ public:
       StringRef name, ArrayRef<ParamDeclAttr> params,
       PogListAttr paramListAttrs, ArrayRef<Type> argTypes,
       ArrayRef<ArgConvention> argConventions, PogListAttr argListAttrs,
-      Type resultType, ArrayRef<ConstraintAttr> constraints,
+      Type resultType,
       SpecialFunctionKind specialFnID = SpecialFunctionKind::kNormal,
       FnEffects fnEffects = FnEffects(), StringRef suffix = "",
       bool synthetic = true);
   std::pair<FnOp, ASTDecl *> synthesizeMethodInStruct(
       StringRef name, ArrayRef<Type> argTypes,
       ArrayRef<ArgConvention> argConventions, PogListAttr argListAttrs,
-      Type resultType, ArrayRef<ConstraintAttr> constraints,
+      Type resultType,
       SpecialFunctionKind specialFnID = SpecialFunctionKind::kNormal,
       FnEffects fnEffects = FnEffects(), StringRef suffix = "",
       bool synthetic = true);
