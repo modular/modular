@@ -437,7 +437,7 @@ struct BenchConfig(Copyable):
 
 
 @fieldwise_init
-struct BenchId(Copyable, ImplicitlyCopyable, Movable):
+struct BenchId(Copyable, Movable):
     """Defines a benchmark Id struct to identify and represent a particular benchmark execution.
     """
 
