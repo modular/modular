@@ -19,6 +19,21 @@ import sys
 from pathlib import Path
 
 import jinja2
+from mojodoc_api_href import resolve_api_href
+
+
+def _configure_jinja_env(
+    environment: jinja2.Environment,
+    hosted_on_mojolang: bool,
+) -> None:
+    """Attach filters and ``api_href`` used by mojodoc templates."""
+
+    environment.filters["pad_backticks"] = pad_backticks
+
+    def api_href(path: str | None) -> str:
+        return resolve_api_href(path, hosted_on_mojolang=hosted_on_mojolang)
+
+    environment.globals["api_href"] = api_href
 
 
 def addStabilityMarker(mojo_json, mode: str) -> None:  # noqa: ANN001
@@ -446,6 +461,15 @@ def main() -> None:
         default=None,
         help="Custom title for the top-level package index page.",
     )
+    parser.add_argument(
+        "--hosted-on-mojolang",
+        action="store_true",
+        default=False,
+        help=(
+            "Generated docs are published on mojolang.org (stdlib/layout). "
+            "Uses root-relative /docs/... links instead of absolute mojolang URLs."
+        ),
+    )
     args = parser.parse_args()
 
     with open(args.filename) as jsonFile:
@@ -457,7 +481,10 @@ def main() -> None:
             trim_blocks=True,
             lstrip_blocks=True,
         )
-        environment.filters["pad_backticks"] = pad_backticks
+        _configure_jinja_env(
+            environment,
+            hosted_on_mojolang=args.hosted_on_mojolang,
+        )
         template = environment.get_template("mojodoc_module.md")
         docJson = json.load(jsonFile)
 
