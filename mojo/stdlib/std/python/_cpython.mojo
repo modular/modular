@@ -2034,10 +2034,6 @@ struct CPython(Defaultable, Movable):
     def PyGILState_Check(self) -> Bool:
         """Returns True if the GIL is currently held by the calling thread.
 
-        Useful for avoiding redundant `PyGILState_Ensure`/`PyGILState_Release`
-        pairs in hot paths that are known to run while another part of the
-        program already holds the GIL (e.g. inside CPython method dispatch).
-
         References:
         - https://docs.python.org/3/c-api/init.html#c.PyGILState_Check
         """

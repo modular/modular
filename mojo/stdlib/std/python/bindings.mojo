@@ -1073,17 +1073,9 @@ def _py_c_function_wrapper[
     var py_self = PythonObject(from_borrowed=py_self_ptr)
     var args = PythonObject(from_borrowed=args_ptr)
 
-    # SAFETY:
-    #   Call the user provided function, and take ownership of the
-    #   PyObjectPtr of the returned PythonObject.
-    #
-    # NOTE:
-    #   The GIL is already held when we are called via the CPython method
-    #   dispatch (METH_VARARGS / METH_VARARGS | METH_KEYWORDS). PyO3,
-    #   pybind11 and nanobind all rely on this invariant. We therefore
-    #   skip an explicit PyGILState_Ensure/Release pair, which would only
-    #   bump CPython's internal counter and cost two extra C calls per
-    #   Mojo function invocation.
+    # SAFETY: take ownership of the returned PyObjectPtr.
+    # The GIL is already held by the CPython dispatch caller, so we
+    # don't re-acquire it here.
 
     ref cpython = Python().cpython()
 
