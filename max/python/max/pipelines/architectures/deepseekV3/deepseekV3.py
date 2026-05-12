@@ -143,6 +143,7 @@ def _validate_parallelism_config(config: DeepseekV3Config) -> None:
 def deepseek_logits_postprocess(
     h: list[TensorValue],
     input_row_offsets: list[TensorValue],
+    all_logits_input_row_offsets: TensorValue | None,
     return_n_logits: TensorValue,
     norm_shards: Sequence[Callable[[TensorValue], TensorValue]],
     lm_head: Callable[
@@ -279,6 +280,8 @@ def deepseek_logits_postprocess(
                 device=devices[0],
             )
     elif return_logits == ReturnLogits.ALL:
+        if is_data_parallel_attention:
+            h = ops.allgather(h, signal_buffers)
         logits = ops.cast(
             lm_head(
                 forward_sharded_layers(norm_shards, h),
@@ -286,7 +289,11 @@ def deepseek_logits_postprocess(
             )[0],
             DType.float32,
         )
-        offsets = input_row_offsets[0]
+        offsets = (
+            all_logits_input_row_offsets
+            if all_logits_input_row_offsets is not None
+            else input_row_offsets[0]
+        )
 
     if logits_scaling != 1.0:
         last_logits = last_logits / logits_scaling
@@ -814,6 +821,7 @@ class DeepseekV3(Module):
         # the caller. The caller is responsible for producing one copy per
         # device so we do not need a local distributed_broadcast here.
         input_row_offsets_ = list(input_row_offsets)
+        all_logits_input_row_offsets = input_row_offsets_[0]
 
         if self.config.data_parallel_degree > 1:
             # Split batch across devices for data-parallel attention.
@@ -921,6 +929,7 @@ class DeepseekV3(Module):
         return deepseek_logits_postprocess(
             h=h,
             input_row_offsets=input_row_offsets_,
+            all_logits_input_row_offsets=all_logits_input_row_offsets,
             return_n_logits=return_n_logits,
             norm_shards=self.norm_shards,
             lm_head=self.lm_head,

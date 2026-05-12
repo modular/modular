@@ -77,7 +77,12 @@ from typing import (
 
 import numpy as np
 import numpy.typing as npt
-from max.driver import Buffer, DeviceEvent, DevicePinnedBuffer, load_devices
+from max.driver import (
+    Buffer,
+    DeviceEvent,
+    DevicePinnedBuffer,
+    load_devices,
+)
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import (
@@ -1444,6 +1449,12 @@ class OverlapTextGenerationPipeline(
                 device=self._devices[0],
             )
 
+        self._identity_logit_offsets = (
+            FusedSamplingProcessor.allocate_identity_logit_offsets(
+                pipeline_config, self._devices[0]
+            )
+        )
+
         # Overlap scheduling specific initialization.
 
         # Load the realize future tokens graph — not needed on prefill-only
@@ -2064,6 +2075,7 @@ class OverlapTextGenerationPipeline(
                     num_steps=1,
                     device=device0,
                     pinned_new_tokens=self._pinned_new_tokens,
+                    identity_logit_offsets=self._identity_logit_offsets,
                     bitmask=bitmask,
                     vocab_size=self.vocab_size,
                 )
@@ -2077,6 +2089,7 @@ class OverlapTextGenerationPipeline(
                     num_steps=1,
                     device=device0,
                     pinned_new_tokens=self._pinned_new_tokens,
+                    identity_logit_offsets=self._identity_logit_offsets,
                 )
 
         return sampling_processor, bitmask
@@ -2113,10 +2126,17 @@ class OverlapTextGenerationPipeline(
                 )
 
         with Tracer("apply_logits_processors"):
+            sample_logits, sample_offsets = (
+                sampling_processor.logits_for_sampling(
+                    logits=model_outputs.logits,
+                    next_token_logits=model_outputs.next_token_logits,
+                    logit_offsets=model_outputs.logit_offsets,
+                )
+            )
             apply_logits_processors(
                 context_batch=flat_batch,
-                batch_logits=model_outputs.logits,
-                batch_logit_offsets=model_outputs.logit_offsets,
+                batch_logits=sample_logits,
+                batch_logit_offsets=sample_offsets,
                 batch_processors=[sampling_processor],
             )
         generated_tokens_device = sampling_processor.generated_tokens
