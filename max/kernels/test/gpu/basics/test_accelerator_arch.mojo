@@ -37,6 +37,8 @@ def main() raises:
         or accelerator_arch == "amdgpu:gfx1103"
         or accelerator_arch == "amdgpu:gfx1200"
         or accelerator_arch == "amdgpu:gfx1201"
-        or accelerator_arch == "metal:3",
+        or accelerator_arch == "metal:2"
+        or accelerator_arch == "metal:3"
+        or accelerator_arch == "metal:4",
         "Expected specific accelerator_archs, got: " + accelerator_arch,
     )
