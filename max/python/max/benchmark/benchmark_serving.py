@@ -802,15 +802,19 @@ def validate_task_and_endpoint(
             "/v1/responses",
             "/v1/images/generations",
             "/v1/videos/sync",
+            "/v1/videos",
         ):
             raise ValueError(
                 f"--benchmark-task text-generation does not support "
                 f"--endpoint {endpoint}"
             )
     elif benchmark_task in PIXEL_GENERATION_TASKS:
-        if endpoint == "/v1/videos/sync" and benchmark_task != "text-to-video":
+        if (
+            endpoint in ("/v1/videos/sync", "/v1/videos")
+            and benchmark_task != "text-to-video"
+        ):
             raise ValueError(
-                f"--endpoint /v1/videos/sync is only valid for"
+                f"--endpoint {endpoint} is only valid for"
                 f" --benchmark-task text-to-video, got {benchmark_task!r}"
             )
         if endpoint not in PIXEL_GENERATION_ENDPOINTS:

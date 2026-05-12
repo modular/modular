@@ -49,6 +49,7 @@ Endpoint = Literal[
     "/v1/responses",
     "/v1/images/generations",
     "/v1/videos/sync",
+    "/v1/videos",
 ]
 
 CACHE_RESET_ENDPOINT_MAP: Mapping[Backend, str] = {
@@ -92,6 +93,8 @@ PIXEL_GEN_DEFAULT_ENDPOINT: Mapping[Backend, Endpoint] = {
 VIDEO_GEN_DEFAULT_ENDPOINT: Mapping[Backend, Endpoint] = {
     "vllm": "/v1/videos/sync",
     "vllm-chat": "/v1/videos/sync",
+    "sglang": "/v1/videos",
+    "sglang-chat": "/v1/videos",
 }
 
 # Valid endpoints for pixel generation tasks (union of all backend defaults).
