@@ -162,20 +162,19 @@ def LIT_PogListAttr : LITAttr<"PogList", "pog_list",
     The `origVariadicConvention` indicates whether the original argument
     convention of a VariadicList or VariadicPack, e.g. "mut *args: Int".
 
-    Optional `preConstraints` holds constraints that must hold for the list to
-    be usable; they may only reference contextual parameters (not any name in
-    this list).
+    Optional `bodyConstraints` holds constraints that are enforced by the body
+    of the generator type that carries this list as metadata.
   }];
 
   let parameters = (ins
     OptionalArrayRefParameter<"PogMetadataAttr">:$pogs,
-    OptionalArrayRefParameter<"ConstraintAttr">:$preConstraints,
+    OptionalArrayRefParameter<"ConstraintAttr">:$bodyConstraints,
     LIT_OptionalConventionParameter:$origVariadicConvention
   );
 
   let assemblyFormat = [{
     `<` `[` (`]`) : ($pogs^ `]`)?
-        (`{` $preConstraints^ `}`)?
+        (`{` $bodyConstraints^ `}`)?
         (`,` custom<ArgConvention>($origVariadicConvention)^)?
     `>`
   }];
@@ -191,8 +190,8 @@ def LIT_PogListAttr : LITAttr<"PogList", "pog_list",
                      "ArrayRef<VariadicKind>":$variadics,
                      "ArrayRef<TypedAttr>":$defaults,
                      "std::optional<ArgConvention>":$origVariadicConvention,
-                     "ArrayRef<ConstraintAttr>":$preConstraints,
-                     "ArrayRef<SmallVector<ConstraintAttr>>":$constraints)>
+                     "ArrayRef<SmallVector<ConstraintAttr>>":$paramConstraints,
+                     "ArrayRef<ConstraintAttr>":$bodyConstraints)>
   ];
 
   let extraClassDeclaration = [{
@@ -241,18 +240,18 @@ def LIT_PogListAttr : LITAttr<"PogList", "pog_list",
     static SmallVector<PogMetadataAttr> toPogs(
       ArrayRef<StringAttr> names, ArrayRef<PassingKind> passingKinds,
       ArrayRef<VariadicKind> variadics, ArrayRef<TypedAttr> defaults,
-      ArrayRef<SmallVector<ConstraintAttr>> constraints);
+      ArrayRef<SmallVector<ConstraintAttr>> paramConstraints);
 
-    /// Prepend inferred parameters: `defaults` and `constraints` are either
+    /// Prepend inferred parameters: `defaults` and `paramConstraints` are either
     /// empty or the same length as `names` (use null/empty `TypedAttr` for
     /// slots with no default). When non-empty, defaults must already be
     /// remapped for the prepended `ParamDeclAttr` list by the caller.
-    /// `preConstraints` are the constraints that must hold before the
-    /// prepended parameters.
+    /// `bodyConstraints` are the constraints enforced by the body that follows
+    /// the prepended parameters.
     PogListAttr prependAsInferredParams(
       ArrayRef<StringAttr> names, ArrayRef<TypedAttr> defaults,
-      ArrayRef<SmallVector<ConstraintAttr>> constraints = {},
-      ArrayRef<ConstraintAttr> preConstraints = {}) const;
+      ArrayRef<SmallVector<ConstraintAttr>> paramConstraints = {},
+      ArrayRef<ConstraintAttr> bodyConstraints = {}) const;
   }];
 
   let genVerifyDecl = 1;

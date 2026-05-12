@@ -96,12 +96,15 @@ TypeSignatureType TypeSignatureType::remapToSignature(
       });
 
   MLIRContext *ctx = paramDecls.getContext();
-  // No need to rebind the pre-constraints. They do not reference any
-  // parameters.
-  paramListAttrs =
-      PogListAttr::get(ctx, remapper.replace(paramListAttrs.getPogs()),
-                       paramListAttrs.getPreConstraints(),
-                       paramListAttrs.getOrigVariadicConvention());
+  SmallVector<ConstraintAttr> bodyConstraints;
+  for (ConstraintAttr constraint : paramListAttrs.getBodyConstraints()) {
+    bodyConstraints.push_back(
+        cast<ConstraintAttr>(remapper.replace(constraint)));
+  }
+
+  paramListAttrs = PogListAttr::get(
+      ctx, remapper.replace(paramListAttrs.getPogs()), bodyConstraints,
+      paramListAttrs.getOrigVariadicConvention());
   return TypeSignatureType::getChecked(emitError, ctx, inputParamTypes,
                                        paramListAttrs);
 }
@@ -147,11 +150,14 @@ TypeSignatureType TypeSignatureType::bind(ArrayRef<TypedAttr> values) const {
       hasVarArg ? paramListAttr.getOrigVariadicConvention()
                 : ArgConvention::ByRefError;
 
-  // No need to rebind the pre-constraints. They do not reference any
-  // parameters.
-  auto paramListAttrs =
-      PogListAttr::get(getContext(), newPogs, paramListAttr.getPreConstraints(),
-                       origVariadicConvention);
+  SmallVector<ConstraintAttr> newBodyConstraints;
+  for (ConstraintAttr constraint : paramListAttr.getBodyConstraints()) {
+    newBodyConstraints.push_back(
+        cast<ConstraintAttr>(evaluator.getReboundAttribute(constraint)));
+  }
+
+  auto paramListAttrs = PogListAttr::get(
+      getContext(), newPogs, newBodyConstraints, origVariadicConvention);
   return TypeSignatureType::get(getContext(), newParamTypes, paramListAttrs);
 }
 
@@ -1352,7 +1358,7 @@ static OptionalParseResult parseOptionalLITFuncType(AsmParser &p,
   auto metadata = FnMetadataAttr::get(
       PogListAttr::get(ctx, argNames, argPassingKinds, argVariadics,
                        defaultValues, origVariadicConvention,
-                       /*preConstraints=*/{}, /*constraints=*/{}),
+                       /*paramConstraints=*/{}, /*bodyConstraints=*/{}),
       numOriginDecls, captureOrigins, isNestedOriginExclusivityCheckingDisabled,
       constraints);
   signature =
@@ -1774,7 +1780,7 @@ FnTypeGeneratorType FnTypeGeneratorType::prependParams(
     FnTypeGeneratorType sigGen, ArrayRef<ParamDeclAttr> parentParams,
     ArrayRef<StringAttr> paramNames, ArrayRef<TypedAttr> paramDefaults,
     ArrayRef<SmallVector<ConstraintAttr>> paramConstraints,
-    ArrayRef<ConstraintAttr> preConstraints) {
+    ArrayRef<ConstraintAttr> bodyConstraints) {
   assert((paramNames.empty() || paramNames.size() == parentParams.size()) &&
          "paramNames, when provided, must match parent parameter list size");
   assert(
@@ -1818,15 +1824,15 @@ FnTypeGeneratorType FnTypeGeneratorType::prependParams(
     }
     remappedParamConstraints.push_back(std::move(remappedConstraints));
   }
-  SmallVector<ConstraintAttr> remappedPreConstraints;
-  for (ConstraintAttr constraint : preConstraints) {
-    remappedPreConstraints.push_back(
+  SmallVector<ConstraintAttr> remappedBodyConstraints;
+  for (ConstraintAttr constraint : bodyConstraints) {
+    remappedBodyConstraints.push_back(
         cast<ConstraintAttr>(contextRemapper.replace(constraint)));
   }
 
   GeneratorMetadataAttrInterface genMetadata = oldMeta.prependAsInferredParams(
       names, remappedParamDefaults, remappedParamConstraints,
-      remappedPreConstraints);
+      remappedBodyConstraints);
 
   return FuncTypeGeneratorType::get(
       inputParamTypes, remapper.replace(sig.getValues()),

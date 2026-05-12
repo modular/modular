@@ -140,23 +140,27 @@ FnTypeGeneratorType LIT::getFullSignature(Operation *container,
   SmallVector<ParamDeclAttr> paramDecls;
   SmallVector<TypedAttr> paramDefaults;
   SmallVector<SmallVector<ConstraintAttr>> paramConstraints;
-  SmallVector<ConstraintAttr> preConstraints;
-  auto appendPreConstraints = [&](ArrayRef<ConstraintAttr> constraints) {
-    if (constraints.empty())
-      return;
-    if (paramConstraints.empty()) {
-      llvm::append_range(preConstraints, constraints);
-      return;
-    }
-    llvm::append_range(paramConstraints.back(), constraints);
-  };
+  SmallVector<ConstraintAttr> prevBodyConstraints;
   for (auto [op, pogList] : opAndPogLists) {
-    appendPreConstraints(pogList.getPreConstraints());
-    for (PogMetadataAttr pog : pogList.getPogs()) {
-      paramNames.push_back(pog.getName());
-      paramDefaults.push_back(pog.getDefaultValue());
-      paramConstraints.emplace_back(pog.getConstraints());
+    ArrayRef<PogMetadataAttr> pogs = pogList.getPogs();
+    if (pogs.empty()) {
+      llvm::append_range(prevBodyConstraints, pogList.getBodyConstraints());
+    } else {
+      size_t firstNewConstraintSlot = paramConstraints.size();
+      for (PogMetadataAttr pog : pogs) {
+        paramNames.push_back(pog.getName());
+        paramDefaults.push_back(pog.getDefaultValue());
+        paramConstraints.emplace_back(pog.getConstraints());
+      }
+      if (!prevBodyConstraints.empty()) {
+        SmallVector<ConstraintAttr> &constraints =
+            paramConstraints[firstNewConstraintSlot];
+        constraints.insert(constraints.begin(), prevBodyConstraints.begin(),
+                           prevBodyConstraints.end());
+      }
+      prevBodyConstraints = llvm::to_vector(pogList.getBodyConstraints());
     }
+
     for (ParamDeclAttr param : cast<DeclInterface>(op).getInputParams())
       paramDecls.push_back(param);
   }
@@ -166,7 +170,7 @@ FnTypeGeneratorType LIT::getFullSignature(Operation *container,
   assert(paramConstraints.size() == paramDecls.size());
   return FnTypeGeneratorType::prependParams(signature, paramDecls, paramNames,
                                             paramDefaults, paramConstraints,
-                                            preConstraints);
+                                            prevBodyConstraints);
 }
 
 //===----------------------------------------------------------------------===//
@@ -689,7 +693,7 @@ static ParseResult parseLITFunctionSignature(
   auto metadata = FnMetadataAttr::get(
       PogListAttr::get(p.getContext(), argNames, argPassingKinds, argVariadics,
                        defaults, origVariadicConvention,
-                       /*preConstraints=*/{}, /*constraints=*/{}),
+                       /*paramConstraints=*/{}, /*bodyConstraints=*/{}),
       originDecls.size(), captureOrigins,
       isNestedOriginExclusivityCheckingDisabled, constraints);
   signature = FuncTypeGeneratorType::remapToFuncTypeGenerator(

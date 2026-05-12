@@ -629,11 +629,11 @@ lit.fn @has_pogs_requires<
 }
 
 // CHECK-LABEL: lit.fn @has_param_list_pre_constraint
-// CHECK-SAME: <{<true, #loc>, <true, #loc1>}, x, y {<{{.*}}lt{{.*}}y{{.*}}10{{.*}}, #loc1>}>
+// CHECK-SAME: <x, y {<{{.*}}lt{{.*}}y{{.*}}10{{.*}}, #loc1>}, {<true, #loc>, <true, #loc1>}>
 lit.fn @has_param_list_pre_constraint<
-  {<true, #loc>, <true, #loc1>},
   x: index,
-  y: index {<#kgen.cast_from_builtin<#kgen.param.expr<lt, #kgen.param.decl.ref<"y"> : index, 10 : index> : i1> : !kgen.scalar<bool>, #loc1>}
+  y: index {<#kgen.cast_from_builtin<#kgen.param.expr<lt, #kgen.param.decl.ref<"y"> : index, 10 : index> : i1> : !kgen.scalar<bool>, #loc1>},
+  {<true, #loc>, <true, #loc1>}
 >() -> !kgen.none {
   %none = kgen.param.constant: none = <#kgen.none>
   lit.return %none : !kgen.none

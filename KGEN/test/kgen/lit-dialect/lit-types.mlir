@@ -164,10 +164,10 @@ kgen.func @generator_types() {
   kgen.param.declare more_args: type = <!lit.generator<<"dt": dtype, "width": index>index>>
   // CHECK-NEXT: type = <!lit.generator<<"dt": dtype, |, "width": index, *, "tag": i1>index>>
   kgen.param.declare arg_kinds: type = <!lit.generator<<"dt": dtype, |, "width": index, *, "tag": i1>index>>
-  // CHECK-NEXT: type = <!lit.generator<<{<true, {{.*}}>, <true, {{.*}}>}, dtype>index>>
-  kgen.param.declare pre_constraint: type = <!lit.generator<<{<true, loc("pre-gen.mlir":1:1)>, <true, loc("pre-gen.mlir":1:2)>}, dtype>index>>
+  // CHECK-NEXT: type = <!lit.generator<<dtype, {<true, {{.*}}>, <true, {{.*}}>}>index>>
+  kgen.param.declare body_constraint: type = <!lit.generator<<dtype, {<true, loc("body-gen.mlir":1:1)>, <true, loc("body-gen.mlir":1:2)>}>index>>
   // CHECK-NEXT: type = <!lit.generator<<{<true, {{.*}}>, <true, {{.*}}>}>index>>
-  kgen.param.declare pre_constraint_no_params: type = <!lit.generator<<{<true, loc("pre-gen.mlir":1:1)>, <true, loc("pre-gen.mlir":1:2)>}>index>>
+  kgen.param.declare body_constraint_no_params: type = <!lit.generator<<{<true, loc("body-gen.mlir":1:1)>, <true, loc("body-gen.mlir":1:2)>}>index>>
   kgen.return
 }
 
