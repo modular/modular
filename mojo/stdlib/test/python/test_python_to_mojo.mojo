@@ -67,6 +67,23 @@ def test_numpy_int() raises:
     assert_equal(Int(py=py_numpy_int), mojo_int)
 
 
+def test_int_subclass_with_overridden_dunder_int() raises:
+    """Subclasses of `int` with an overridden `__int__` must take the
+    slow path so the override is honored. The fast path uses
+    `PyLong_CheckExact`, which excludes subclasses by design."""
+    var mod = Python.evaluate(
+        String(
+            "class MyInt(int):\n",
+            "    def __int__(self): return 42\n",
+            "value = MyInt(7)\n",
+        ),
+        file=True,
+    )
+    # MyInt's stored int value is 7, but its overridden `__int__()` returns
+    # 42. The slow path goes through `py.__int__()` so we get 42, not 7.
+    assert_equal(Int(py=mod.value), 42)
+
+
 def test_numpy_float() raises:
     var np = Python.import_module("numpy")
     var py_numpy_float = np.float64(1.0)
