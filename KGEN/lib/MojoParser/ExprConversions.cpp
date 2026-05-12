@@ -178,8 +178,8 @@ static FnType getReducedFnType(FnType sig) {
 
   auto newPogListAttr =
       PogListAttr::get(ctx, names, passingKinds, variadics, defaults,
-                       origPogListAttr.getOrigVariadicConvention(),
-                       origPogListAttr.getPreConstraints(), constraints);
+                       origPogListAttr.getOrigVariadicConvention(), constraints,
+                       origPogListAttr.getBodyConstraints());
 
   auto metadata = FnMetadataAttr::get(
       newPogListAttr, sig.getNumImplicitOriginDecls(),

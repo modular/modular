@@ -41,7 +41,7 @@ void LITDialect::registerAttributes() {
 //===----------------------------------------------------------------------===//
 
 PogListAttr PogListAttr::get(MLIRContext *context) {
-  return PogListAttr::get(context, /*pogs=*/{}, /*preConstraints=*/{},
+  return PogListAttr::get(context, /*pogs=*/{}, /*bodyConstraints=*/{},
                           ArgConvention::ByRefError);
 }
 
@@ -54,7 +54,7 @@ PogListAttr PogListAttr::get(MLIRContext *context, size_t numPogs) {
 
 PogListAttr PogListAttr::get(MLIRContext *context,
                              ArrayRef<PogMetadataAttr> pogs) {
-  return PogListAttr::get(context, pogs, /*preConstraints=*/{},
+  return PogListAttr::get(context, pogs, /*bodyConstraints=*/{},
                           ArgConvention::ByRefError);
 }
 
@@ -73,17 +73,18 @@ PogListAttr::get(MLIRContext *context, ArrayRef<StringAttr> names,
                  ArrayRef<VariadicKind> argVariadics,
                  ArrayRef<TypedAttr> defaults,
                  std::optional<ArgConvention> origVariadicConvention,
-                 ArrayRef<ConstraintAttr> preConstraints,
-                 ArrayRef<SmallVector<ConstraintAttr>> constraints) {
+                 ArrayRef<SmallVector<ConstraintAttr>> paramConstraints,
+                 ArrayRef<ConstraintAttr> bodyConstraints) {
   return PogListAttr::get(
-      context, toPogs(names, passingKinds, argVariadics, defaults, constraints),
-      preConstraints,
+      context,
+      toPogs(names, passingKinds, argVariadics, defaults, paramConstraints),
+      bodyConstraints,
       origVariadicConvention.value_or(ArgConvention::ByRefError));
 }
 
 LogicalResult PogListAttr::verify(function_ref<InFlightDiagnostic()> emitError,
                                   ArrayRef<PogMetadataAttr> pogs,
-                                  ArrayRef<ConstraintAttr> preConstraints,
+                                  ArrayRef<ConstraintAttr> bodyConstraints,
                                   ArgConvention origVariadicConvention) {
   size_t numEl = pogs.size();
   for (PogMetadataAttr pogAttr : pogs)
@@ -137,7 +138,7 @@ LogicalResult PogListAttr::verify(function_ref<InFlightDiagnostic()> emitError,
 }
 
 PogListAttr PogListAttr::cloneWith(ArrayRef<PogMetadataAttr> pogs) const {
-  return PogListAttr::get(getContext(), pogs, getPreConstraints(),
+  return PogListAttr::get(getContext(), pogs, getBodyConstraints(),
                           getOrigVariadicConvention());
 }
 
@@ -206,16 +207,17 @@ size_t PogListAttr::getNumImplicit() const {
 SmallVector<PogMetadataAttr> PogListAttr::toPogs(
     ArrayRef<StringAttr> names, ArrayRef<PassingKind> passingKinds,
     ArrayRef<VariadicKind> variadics, ArrayRef<TypedAttr> defaults,
-    ArrayRef<SmallVector<ConstraintAttr>> constraints) {
+    ArrayRef<SmallVector<ConstraintAttr>> paramConstraints) {
   SmallVector<PogMetadataAttr> pogs;
   for (auto [idx, name, passingKind] : llvm::enumerate(names, passingKinds)) {
     VariadicKind variadic =
         variadics.empty() ? VariadicKind::None : variadics[idx];
-    ArrayRef<ConstraintAttr> pogConstraints =
-        constraints.empty() ? ArrayRef<ConstraintAttr>() : constraints[idx];
+    ArrayRef<ConstraintAttr> constraints = paramConstraints.empty()
+                                               ? ArrayRef<ConstraintAttr>()
+                                               : paramConstraints[idx];
     TypedAttr defaultVal = defaults.empty() ? TypedAttr() : defaults[idx];
     pogs.push_back(PogMetadataAttr::get(name, passingKind, variadic, defaultVal,
-                                        pogConstraints));
+                                        constraints));
   }
   return pogs;
 }
@@ -268,9 +270,13 @@ GeneratorMetadataAttrInterface PogListAttr::getSpecializedMetadata(
   if (!hasAnyVarArg)
     varargsConvention = ArgConvention::ByRefError;
 
-  // No need to rebind the pre-constraints. They do not reference any
-  // parameters.
-  return PogListAttr::get(getContext(), newPogs, getPreConstraints(),
+  SmallVector<ConstraintAttr> newBodyConstraints;
+  for (ConstraintAttr constraint : getBodyConstraints()) {
+    newBodyConstraints.push_back(
+        cast<ConstraintAttr>(evaluator.getReboundAttribute(constraint)));
+  }
+
+  return PogListAttr::get(getContext(), newPogs, newBodyConstraints,
                           varargsConvention);
 }
 
@@ -278,19 +284,13 @@ GeneratorMetadataAttrInterface PogListAttr::getSpecializedMetadata(
 /// positional input parameters prepended to the generator.
 PogListAttr PogListAttr::prependAsInferredParams(
     ArrayRef<StringAttr> names, ArrayRef<TypedAttr> defaults,
-    ArrayRef<SmallVector<ConstraintAttr>> constraints,
-    ArrayRef<ConstraintAttr> preConstraints) const {
+    ArrayRef<SmallVector<ConstraintAttr>> paramConstraints,
+    ArrayRef<ConstraintAttr> bodyConstraints) const {
   assert((defaults.empty() || defaults.size() == names.size()) &&
          "defaults is either empty (no default column) or parallel to names");
-  assert((constraints.empty() || constraints.size() == names.size()) &&
-         "constraints is either empty or parallel to names");
-
-  SmallVector<ConstraintAttr> newPreConstraints(preConstraints);
-  if (names.empty()) {
-    llvm::append_range(newPreConstraints, getPreConstraints());
-    return PogListAttr::get(getContext(), getPogs(), newPreConstraints,
-                            getOrigVariadicConvention());
-  }
+  assert(
+      (paramConstraints.empty() || paramConstraints.size() == names.size()) &&
+      "paramConstraints is either empty or parallel to names");
 
   SmallVector<PogMetadataAttr> newPogs;
   for (auto [i, name] : llvm::enumerate(names)) {
@@ -298,18 +298,34 @@ PogListAttr PogListAttr::prependAsInferredParams(
     if (!defaults.empty() && defaults[i])
       newDefault = defaults[i];
     SmallVector<ConstraintAttr> newConstraints;
-    if (!constraints.empty())
-      llvm::append_range(newConstraints, constraints[i]);
-    if (i + 1 == names.size())
-      llvm::append_range(newConstraints, getPreConstraints());
-
+    if (!paramConstraints.empty())
+      llvm::append_range(newConstraints, paramConstraints[i]);
     // Strip off variadic kinds and turn the parameter into infer-only too.
     newPogs.push_back(PogMetadataAttr::get(name, PassingKind::Inferred,
                                            VariadicKind::None, newDefault,
                                            newConstraints));
   }
-  newPogs.append(getPogs().begin(), getPogs().end());
-  return PogListAttr::get(getContext(), newPogs, newPreConstraints,
+
+  if (getPogs().empty()) {
+    SmallVector<ConstraintAttr> newBodyConstraints(bodyConstraints);
+    llvm::append_range(newBodyConstraints, getBodyConstraints());
+    return PogListAttr::get(getContext(), newPogs, newBodyConstraints,
+                            getOrigVariadicConvention());
+  }
+
+  for (auto [i, pog] : llvm::enumerate(getPogs())) {
+    if (i == 0 && !bodyConstraints.empty()) {
+      SmallVector<ConstraintAttr> newConstraints(bodyConstraints);
+      llvm::append_range(newConstraints, pog.getConstraints());
+      newPogs.push_back(PogMetadataAttr::get(
+          pog.getName(), pog.getPassingKind(), pog.getVariadic(),
+          pog.getDefaultValue(), newConstraints));
+      continue;
+    }
+    newPogs.push_back(pog);
+  }
+
+  return PogListAttr::get(getContext(), newPogs, getBodyConstraints(),
                           getOrigVariadicConvention());
 }
 
@@ -388,7 +404,7 @@ FnMetadataAttr::getWithBoundPosArgs(size_t numBound) const {
       argListAttrs.getPogs().drop_front(numBound);
 
   auto newArgListAttrs =
-      PogListAttr::get(getContext(), newPogs, argListAttrs.getPreConstraints(),
+      PogListAttr::get(getContext(), newPogs, argListAttrs.getBodyConstraints(),
                        argListAttrs.getOrigVariadicConvention());
   return get(newArgListAttrs, getNumImplicitOriginDecls(), getCaptureOrigins(),
              getIsNestedOriginExclusivityCheckingDisabled(), getConstraints());

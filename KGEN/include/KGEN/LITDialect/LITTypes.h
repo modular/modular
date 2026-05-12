@@ -283,7 +283,7 @@ public:
                 ArrayRef<StringAttr> paramNames = {},
                 ArrayRef<TypedAttr> paramDefaults = {},
                 ArrayRef<SmallVector<ConstraintAttr>> paramConstraints = {},
-                ArrayRef<ConstraintAttr> preConstraints = {});
+                ArrayRef<ConstraintAttr> bodyConstraints = {});
 
   /// Substitute the specified implicit origin references into the specified
   /// type, replacing them with `values` if they are at depth 0, or decrementing
