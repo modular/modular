@@ -552,38 +552,31 @@ def layer_norm_gpu[
     comptime max_warps_per_block = ctx.default_device_info.max_thread_block_size // WARP_SIZE
 
     var grid_dim = rows
-    var block_dim = min(
-        ceildiv(ceildiv(cols, simd_width), WARP_SIZE) * WARP_SIZE,
-        WARP_SIZE * max_warps_per_block,
-    )
+
+    @parameter
+    @always_inline
+    def warp_tiling_block_dim(sw: Int) -> Int:
+        return min(
+            ceildiv(ceildiv(cols, sw), WARP_SIZE) * WARP_SIZE,
+            WARP_SIZE * max_warps_per_block,
+        )
 
     if cols % simd_width == 0:
         # When the number of columns is small enough that they can be placed in
         # registers, we do warp tiling, which is a single pass to do mean/var
         # computation and normalization.
-        if cols <= (WARP_SIZE * simd_width * max_warps_per_block):
-            comptime kernel = layer_norm_gpu_warp_tiling[
-                mut=beta.mut,
-                LayoutType=beta.LayoutType,
-                origin=beta.origin,
-                simd_width,
-                max_warps_per_block,
-                input_fn_2d,
-                gamma_fn,
-                output_fn_2d,
-            ]
-            ctx.enqueue_function[kernel](
-                flattened_shape,
-                beta,
-                epsilon,
-                grid_dim=grid_dim,
-                block_dim=block_dim,
-                attributes=pdl_launch_attributes(PDLLevel(1)),
-            )
-        elif (
-            cols <= (WARP_SIZE * (simd_width * 2) * max_warps_per_block)
-            and cols % (simd_width * 2) == 0
-        ):
+        #
+        # Prefer the simd_width*2 specialization when cols is large enough
+        # that the baseline Path A would saturate at least half of
+        # max_warps_per_block. At that point the inter-warp barrier in
+        # block_reduce_dual_sum dominates, and halving the warp count
+        # (e.g. 24 -> 12 at cols=6144, bf16) is a net win. Below that
+        # threshold (e.g. cols <= 3072 for bf16), Path A's wider thread
+        # parallelism amortises memory latency better than Path B's wider
+        # per-thread SIMD.
+        if cols % (simd_width * 2) == 0 and (
+            WARP_SIZE * simd_width * (max_warps_per_block // 2)
+        ) <= cols <= (WARP_SIZE * (simd_width * 2) * max_warps_per_block):
             comptime kernel = layer_norm_gpu_warp_tiling[
                 mut=beta.mut,
                 LayoutType=beta.LayoutType,
@@ -599,7 +592,26 @@ def layer_norm_gpu[
                 beta,
                 epsilon,
                 grid_dim=grid_dim,
-                block_dim=block_dim,
+                block_dim=warp_tiling_block_dim(simd_width * 2),
+                attributes=pdl_launch_attributes(PDLLevel(1)),
+            )
+        elif cols <= (WARP_SIZE * simd_width * max_warps_per_block):
+            comptime kernel = layer_norm_gpu_warp_tiling[
+                mut=beta.mut,
+                LayoutType=beta.LayoutType,
+                origin=beta.origin,
+                simd_width,
+                max_warps_per_block,
+                input_fn_2d,
+                gamma_fn,
+                output_fn_2d,
+            ]
+            ctx.enqueue_function[kernel](
+                flattened_shape,
+                beta,
+                epsilon,
+                grid_dim=grid_dim,
+                block_dim=warp_tiling_block_dim(simd_width),
                 attributes=pdl_launch_attributes(PDLLevel(1)),
             )
         else:
@@ -617,7 +629,7 @@ def layer_norm_gpu[
                 beta,
                 epsilon,
                 grid_dim=grid_dim,
-                block_dim=block_dim,
+                block_dim=warp_tiling_block_dim(simd_width),
                 attributes=pdl_launch_attributes(PDLLevel(1)),
             )
     else:
@@ -635,7 +647,7 @@ def layer_norm_gpu[
             beta,
             epsilon,
             grid_dim=grid_dim,
-            block_dim=block_dim,
+            block_dim=warp_tiling_block_dim(1),
             attributes=pdl_launch_attributes(PDLLevel(1)),
         )
 

@@ -44,10 +44,9 @@ from max.benchmark.benchmark_shared.lora_benchmark_manager import (
     LoRABenchmarkManager,
 )
 from max.benchmark.benchmark_shared.metrics import (
-    BenchmarkMetrics,
     LoRAMetrics,
-    PixelGenerationBenchmarkMetrics,
     PixelGenerationBenchmarkResult,
+    ServingBenchmarkMetrics,
     SpecDecodeStats,
     TextGenerationBenchmarkResult,
 )
@@ -260,7 +259,7 @@ def print_lora_benchmark_results(metrics: LoRAMetrics) -> None:
 
 
 def print_benchmark_summary(
-    metrics: BenchmarkMetrics | PixelGenerationBenchmarkMetrics,
+    metrics: ServingBenchmarkMetrics,
     request_rate: float,
     max_concurrency: int | None,
     achieved_request_rate: float,
@@ -270,23 +269,19 @@ def print_benchmark_summary(
     lora_manager: LoRABenchmarkManager | None = None,
 ) -> None:
     """Print benchmark summary for text-generation and pixel-generation."""
-
-    # 1. Print common benchmark summary
-    print_section(title=" Serving Benchmark Result ", char="=")
-    print("{:<40} {:<10}".format("Successful requests:", metrics.completed))
-    print("{:<40} {:<10}".format("Failed requests:", metrics.failures))
-    print(
-        "{:<40} {:<10.2f}".format("Benchmark duration (s):", metrics.duration)
+    agg = metrics.aggregates
+    assert agg is not None, (
+        "print_benchmark_summary called on a metrics record with no aggregates"
     )
-    if isinstance(metrics, BenchmarkMetrics):
-        print(
-            "{:<40} {:<10}".format("Total input tokens:", metrics.total_input)
-        )
-        print(
-            "{:<40} {:<10}".format(
-                "Total generated tokens:", metrics.total_output
-            )
-        )
+
+    print_section(title=" Serving Benchmark Result ", char="=")
+    print("{:<40} {:<10}".format("Successful requests:", agg.completed))
+    print("{:<40} {:<10}".format("Failed requests:", agg.failures))
+    print("{:<40} {:<10.2f}".format("Benchmark duration (s):", agg.duration))
+    if metrics.text_data is not None:
+        t = metrics.text_data
+        print("{:<40} {:<10}".format("Total input tokens:", t.total_input))
+        print("{:<40} {:<10}".format("Total generated tokens:", t.total_output))
         # We found that response chunks can be empty in content and the token number
         # can be different with the re-tokenization in one pass or chunk-by-chunk.
         # Let's count the number of nonempty_response_chunks for all serving backends.
@@ -295,13 +290,15 @@ def print_benchmark_summary(
         print(
             "{:<40} {:<10}".format(
                 "Total nonempty serving response chunks:",
-                metrics.nonempty_response_chunks,
+                t.nonempty_response_chunks,
             )
         )
-    elif isinstance(metrics, PixelGenerationBenchmarkMetrics):
+    else:
+        assert metrics.pixel_data is not None
         print(
             "{:<40} {:<10}".format(
-                "Total generated outputs:", metrics.total_generated_outputs
+                "Total generated outputs:",
+                metrics.pixel_data.total_generated_outputs,
             )
         )
     offline_benchmark = math.isinf(request_rate) and max_concurrency is None
@@ -313,66 +310,66 @@ def print_benchmark_summary(
     )
     print(
         "{:<40} {:<10.5f}".format(
-            "Request throughput (req/s):", metrics.request_throughput
+            "Request throughput (req/s):", agg.request_throughput
         )
     )
     print("{:<40} {:<10}".format("Max Concurrency:", metrics.max_concurrency))
     if (
-        isinstance(metrics, BenchmarkMetrics)
-        and metrics.max_concurrent_conversations is not None
+        metrics.text_data is not None
+        and metrics.text_data.max_concurrent_conversations is not None
     ):
         print(
             "{:<40} {:<10}".format(
                 "Max Concurrent Conversations:",
-                metrics.max_concurrent_conversations,
+                metrics.text_data.max_concurrent_conversations,
             )
         )
 
-    if isinstance(metrics, BenchmarkMetrics):
+    if metrics.text_data is not None:
+        t = metrics.text_data
         print_section(title="Client Experience Metrics")
         print(
-            metrics.input_throughput.format_with_prefix(
+            t.input_throughput.format_with_prefix(
                 prefix="input token throughput", unit="tok/s"
             )
         )
         print(
-            metrics.output_throughput.format_with_prefix(
+            t.output_throughput.format_with_prefix(
                 prefix="output token throughput", unit="tok/s"
             )
         )
         print(
             "{:<40} {:<10.2f}".format(
                 "Global Cached Token Rate:",
-                metrics.global_cached_token_rate * 100,
+                t.global_cached_token_rate * 100,
             )
             + "%"
         )
         print_section(title="Time to First Token")
-        print(metrics.ttft_ms.format_with_prefix(prefix="TTFT", unit="ms"))
+        print(t.ttft_ms.format_with_prefix(prefix="TTFT", unit="ms"))
         print_section(title="Time per Output Token (excl. 1st token)")
-        print(metrics.tpot_ms.format_with_prefix(prefix="TPOT", unit="ms"))
+        print(t.tpot_ms.format_with_prefix(prefix="TPOT", unit="ms"))
         print_section(title="Inter-token Latency")
-        print(metrics.itl_ms.format_with_prefix(prefix="ITL", unit="ms"))
-        if metrics.per_turn_cached_token_rate is not None:
+        print(t.itl_ms.format_with_prefix(prefix="ITL", unit="ms"))
+        if t.per_turn_cached_token_rate is not None:
             print_section(title="Per-Turn Cached Token Rate")
             print(
-                metrics.per_turn_cached_token_rate.format_with_prefix(
+                t.per_turn_cached_token_rate.format_with_prefix(
                     prefix="Per-Turn Cached Token Rate", unit="%"
                 )
             )
 
     print_section(title="Per-Request E2E Latency")
     print(
-        metrics.latency_ms.format_with_prefix(
-            prefix="Request Latency", unit="ms"
-        )
+        agg.latency_ms.format_with_prefix(prefix="Request Latency", unit="ms")
     )
 
-    if isinstance(metrics, BenchmarkMetrics):
+    if metrics.text_data is not None:
+        t = metrics.text_data
         print_section(title="Token Stats")
-        print("{:<40} {:<10}".format("Max input tokens:", metrics.max_input))
-        print("{:<40} {:<10}".format("Max output tokens:", metrics.max_output))
-        print("{:<40} {:<10}".format("Max total tokens:", metrics.max_total))
+        print("{:<40} {:<10}".format("Max input tokens:", t.max_input))
+        print("{:<40} {:<10}".format("Max output tokens:", t.max_output))
+        print("{:<40} {:<10}".format("Max total tokens:", t.max_total))
 
     if spec_decode_stats is not None:
         print_section(title="Speculative Decoding")
@@ -505,7 +502,11 @@ def save_result_json(
         "benchmark_task": benchmark_task,
         "model_id": model_id,
         "tokenizer_id": tokenizer_id,
-        "num_prompts": benchmark_result.metrics.completed,
+        "num_prompts": (
+            agg.completed
+            if (agg := benchmark_result.metrics.aggregates) is not None
+            else 0
+        ),
         "dataset_name": args.dataset_name,
         "client_args": client_args,
         "request_rate": (
@@ -567,6 +568,9 @@ def save_output_lengths(
         args_dict["max_concurrency"] = mc_snap
         args_dict["request_rate"] = rr_snap
     output_lens_dict["args"] = {x: args_dict[x] for x in args_to_save}
-    output_lens_dict["output_lengths"] = benchmark_result.metrics.output_lens
+    text_data = benchmark_result.metrics.text_data
+    output_lens_dict["output_lengths"] = (
+        text_data.output_lens if text_data is not None else []
+    )
     with open(args.record_output_lengths, "w") as f:
         yaml.dump(output_lens_dict, f)

@@ -129,7 +129,6 @@ PINS = {
     "pytest-asyncio": "pytest-asyncio@0.23.7",
     "pytest-benchmark": "pytest-benchmark@4.0.0",
     "pytest-mock": "pytest-mock@3.14.0",
-    "pytest-xdist": "pytest-xdist@3.6.1",
     "python-json-logger": "python-json-logger@2.0.7",
     "pyyaml": "pyyaml@6.0.3",
     "pyzmq": "pyzmq@27.1.0",
@@ -2315,17 +2314,6 @@ def targets():
         name = "exceptiongroup@1.2.2",
         wheel = ":_wheel_exceptiongroup@1.2.2",
         testonly = "exceptiongroup" in _TESTONLY_DEPS,
-    )
-
-    native.alias(
-        name = "_wheel_execnet@2.1.1",
-        actual = "@pycross_lock_file_wheel_execnet_2.1.1_py3_none_any//file",
-    )
-
-    pycross_wheel_library(
-        name = "execnet@2.1.1",
-        wheel = ":_wheel_execnet@2.1.1",
-        testonly = "execnet" in _TESTONLY_DEPS,
     )
 
     native.alias(
@@ -8335,23 +8323,6 @@ def targets():
         deps = _pytest_mock_3_14_0_deps,
         wheel = ":_wheel_pytest-mock@3.14.0",
         testonly = "pytest-mock" in _TESTONLY_DEPS,
-    )
-
-    _pytest_xdist_3_6_1_deps = [
-        ":execnet@2.1.1",
-        ":pytest@8.2.2",
-    ]
-
-    native.alias(
-        name = "_wheel_pytest-xdist@3.6.1",
-        actual = "@pycross_lock_file_wheel_pytest_xdist_3.6.1_py3_none_any//file",
-    )
-
-    pycross_wheel_library(
-        name = "pytest-xdist@3.6.1",
-        deps = _pytest_xdist_3_6_1_deps,
-        wheel = ":_wheel_pytest-xdist@3.6.1",
-        testonly = "pytest-xdist" in _TESTONLY_DEPS,
     )
 
     _python_dateutil_2_9_0_post0_deps = [
@@ -17068,16 +17039,6 @@ def repositories():
         ],
         sha256 = "3111b9d131c238bec2f8f516e123e14ba243563fb135d3fe885990585aa7795b",
         downloaded_file_path = "exceptiongroup-1.2.2-py3-none-any.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_execnet_2.1.1_py3_none_any",
-        urls = [
-            "https://files.pythonhosted.org/packages/43/09/2aea36ff60d16dd8879bdb2f5b3ee0ba8d08cbbdcdfe870e695ce3784385/execnet-2.1.1-py3-none-any.whl",
-        ],
-        sha256 = "26dee51f1b80cebd6d0ca8e74dd8745419761d3bef34163928cbebbdc4749fdc",
-        downloaded_file_path = "execnet-2.1.1-py3-none-any.whl",
     )
 
     maybe(
@@ -25958,16 +25919,6 @@ def repositories():
         ],
         sha256 = "0b72c38033392a5f4621342fe11e9219ac11ec9d375f8e2a0c164539e0d70f6f",
         downloaded_file_path = "pytest_mock-3.14.0-py3-none-any.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_pytest_xdist_3.6.1_py3_none_any",
-        urls = [
-            "https://files.pythonhosted.org/packages/6d/82/1d96bf03ee4c0fdc3c0cbe61470070e659ca78dc0086fb88b66c185e2449/pytest_xdist-3.6.1-py3-none-any.whl",
-        ],
-        sha256 = "9ed4adfb68a016610848639bb7e02c9352d5d9f03d04809919e2dafc3be4cca7",
-        downloaded_file_path = "pytest_xdist-3.6.1-py3-none-any.whl",
     )
 
     maybe(

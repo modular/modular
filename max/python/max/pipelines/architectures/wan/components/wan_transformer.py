@@ -211,7 +211,7 @@ class WanTransformer(CompiledComponent):
             # primary/secondary compiles also skips the Python-side
             # traversal of the 40-layer combined block graph.
             if self._pre_graph is None:
-                self._graphs_module = Graph.empty_module()
+                self._graphs_module = Module()
                 # Pre-processor graph. Latents and timestep are pinned to
                 # B=1 (the executor enforces single-prompt batches) so
                 # that the pre module can ``ops.broadcast_to`` them up to
@@ -350,20 +350,21 @@ class WanTransformer(CompiledComponent):
 
             # Load all three weight-bearing Models in one parallel
             # compile pass. The combined registry covers every GraphOp in
-            # the shared module; ``load_all`` returns one Model per
-            # GraphOp in MEF (insertion) order.
+            # the shared module; ``load_all`` returns a dict keyed by
+            # each graph's sym_name.
             combined_registry: dict[str, Any] = {
                 **pre_module.state_dict(),
                 **block_sequence.state_dict(),
                 **post_module.state_dict(),
             }
-            assert self._pre_graph is not None
+            assert self._graphs_module is not None
             with Tracer("dit_compile_load_all"):
-                pre_model, combined_blocks_model, post_model = (
-                    self._session.load_all(
-                        self._pre_graph, weights_registry=combined_registry
-                    )
+                models = self._session.load_all(
+                    self._graphs_module, weights_registry=combined_registry
                 )
+                pre_model = models[pre_graph.name]
+                combined_blocks_model = models[blocks_graph.name]
+                post_model = models[post_graph.name]
             self._model = BlockLevelModel(
                 pre_model,
                 post_model,

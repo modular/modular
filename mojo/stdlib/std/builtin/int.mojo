@@ -29,7 +29,6 @@ from std.builtin.device_passable import DevicePassable
 from std.math import Absable, DivModable, Powable
 from std.python import (
     ConvertibleFromPython,
-    ConvertibleToPython,
     Python,
     PythonObject,
 )
@@ -188,7 +187,6 @@ struct Int(
     Ceilable,
     Comparable,
     ConvertibleFromPython,
-    ConvertibleToPython,
     Defaultable,
     DevicePassable,
     DivModable,
@@ -1096,17 +1094,6 @@ struct Int(
     # ===-------------------------------------------------------------------===#
     # Methods
     # ===-------------------------------------------------------------------===#
-
-    def to_python_object(var self) raises -> PythonObject:
-        """Convert this value to a PythonObject.
-
-        Returns:
-            A PythonObject representing the value.
-
-        Raises:
-            If the Python runtime is not initialized or conversion fails.
-        """
-        return PythonObject(self)
 
     @always_inline("builtin")
     def _positive_rem(self, rhs: Int) -> Int:

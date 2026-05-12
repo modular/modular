@@ -27,7 +27,6 @@ try:
 except ImportError:
     from taskgroup import TaskGroup  # Python < 3.11 backport
 
-import numpy as np
 from max.benchmark.benchmark_shared.config import SamplingConfig
 from max.benchmark.benchmark_shared.datasets import ChatSession
 from max.benchmark.benchmark_shared.datasets.types import TextContentBlock
@@ -38,18 +37,19 @@ from max.benchmark.benchmark_shared.request import (
     BaseRequestFuncInput,
     BaseRequestFuncOutput,
     ChatMessage,
+    ProgressBarRequestDriver,
     RequestCounter,
     RequestDriver,
     RequestFuncInput,
     RequestFuncOutput,
 )
-from max.benchmark.benchmark_shared.warmup import (
-    log_warmup_sampling_report,
-    pick_warmup_population,
-)
+from tqdm.asyncio import tqdm
 from transformers import PreTrainedTokenizerBase
 
 logger = logging.getLogger(__name__)
+
+# Cap concurrent warmup requests to avoid swamping the server.
+_WARMUP_MAX_INFLIGHT = 512
 
 
 async def chat_session_driver(
@@ -200,41 +200,40 @@ async def chat_session_driver(
     return session_outputs
 
 
-async def prime_prefix_turns(
+async def prerun_warmup_turns(
     sessions: Sequence[ChatSession],
     request_driver: RequestDriver,
     model_id: str,
     api_url: str,
     max_chat_len: int,
     sampling: SamplingConfig,
-    max_sessions: int | None = None,
+    disable_tqdm: bool = False,
 ) -> None:
-    """Prime the server's KV cache for sessions with prefix turns.
+    """Send one warmup request per session with prefix_turns > 0.
 
-    Sends one request per session with the full prefix context and
-    max_tokens=1. Runs before the benchmark timer so priming doesn't
-    affect measured throughput or duration.
+    The request's prompt is the dataset history through user_N, where
+    N is the session's prefix_turns. Processing it caches every
+    earlier prefix in one pass, since turn k's prompt is a strict
+    prefix of turn k+1's. Outputs are discarded.
 
-    Sessions beyond ``max_sessions`` are skipped because the multiturn /
-    kv-cache-stress runners reset ``prefix_turns=0`` for them anyway
-    (they represent new conversations arriving mid-benchmark).
+    Inter-turn assistant text comes from the dataset, matching what
+    chat_session_driver builds when it skips through prefix turns.
+    The runner can resume the session at turn N+1 with a cache hit.
+
+    Runs before benchmark_start_time so warmup time doesn't count.
     """
-    if max_sessions is not None:
-        sessions = sessions[:max_sessions]
     sessions_with_prefix = [s for s in sessions if s.prefix_turns > 0]
     if not sessions_with_prefix:
         return
 
-    logger.info(
-        f"Priming prefix turns for {len(sessions_with_prefix)} sessions..."
-    )
-
-    async def _prime_session(session: ChatSession) -> None:
+    requests_to_fire: list[RequestFuncInput] = []
+    for session in sessions_with_prefix:
         messages = session.messages
         prefix_end_idx = session.prefix_turns * 2
         message_history: list[ChatMessage] = []
         chat_len = 0
         content_idx = 0
+        pending_request: RequestFuncInput | None = None
         while content_idx < prefix_end_idx and content_idx + 1 < len(messages):
             chat_len += messages[content_idx].num_tokens
             output_len = messages[content_idx + 1].num_tokens
@@ -248,6 +247,19 @@ async def prime_prefix_turns(
                     ],
                 )
             )
+            # Overwrite each iteration; only the last fitting turn's
+            # request fires. Its prompt covers every earlier prefix.
+            pending_request = RequestFuncInput(
+                model=model_id,
+                session_id=str(session.id),
+                sampling=sampling,
+                prompt=list(message_history),
+                images=[],
+                api_url=api_url,
+                prompt_len=chat_len,
+                max_tokens=output_len,
+                ignore_eos=True,
+            )
             assistant_content = messages[content_idx + 1].content
             if not assistant_content:
                 assistant_content = " ".join(["token"] * max(output_len, 1))
@@ -259,22 +271,37 @@ async def prime_prefix_turns(
             )
             chat_len += output_len
             content_idx += 2
-        if message_history:
-            prime_input = RequestFuncInput(
-                model=model_id,
-                session_id=str(session.id),
-                sampling=sampling,
-                prompt=message_history,
-                images=[],
-                api_url=api_url,
-                prompt_len=chat_len,
-                max_tokens=1,
-                ignore_eos=True,
-            )
-            await request_driver.request(prime_input)
+        if pending_request is not None:
+            requests_to_fire.append(pending_request)
 
-    await asyncio.gather(*(_prime_session(s) for s in sessions_with_prefix))
-    logger.info("Prefix turns priming complete.")
+    if not requests_to_fire:
+        return
+
+    logger.info(
+        f"[warmup-prerun] Sending {len(requests_to_fire)} warmup"
+        " requests to seed the prefix cache..."
+    )
+
+    pbar = (
+        None
+        if disable_tqdm
+        else tqdm(total=len(requests_to_fire), desc="warmup")
+    )
+    if pbar is not None:
+        request_driver = ProgressBarRequestDriver(request_driver, pbar)
+
+    semaphore = asyncio.Semaphore(_WARMUP_MAX_INFLIGHT)
+
+    async def _fire(req: RequestFuncInput) -> None:
+        async with semaphore:
+            await request_driver.request(req)
+
+    try:
+        await asyncio.gather(*(_fire(r) for r in requests_to_fire))
+    finally:
+        if pbar is not None:
+            pbar.close()
+    logger.info("[warmup-prerun] complete.")
 
 
 async def run_multiturn_benchmark(
@@ -293,14 +320,14 @@ async def run_multiturn_benchmark(
     max_concurrency: int | None,
     sampling: SamplingConfig,
     randomize_session_start: bool = False,
-    warmup_to_steady_state: bool = False,
-    warmup_oversample_factor: int = 0,
-    num_chat_sessions: int = 0,
-    seed: int | None = None,
     run_prefix: str | None = None,
     run_prefix_len: int = 0,
 ) -> dict[str, list[RequestFuncOutput]]:
-    """Run multi-turn chat benchmark scenario."""
+    """Run multi-turn chat benchmark scenario.
+
+    chat_sessions is already reordered (warmup picks first, with
+    prefix_turns set). The orchestrator runs warmup before the timer.
+    """
 
     # Track total sent requests among chat sessions
     request_counter = RequestCounter(
@@ -342,22 +369,8 @@ async def run_multiturn_benchmark(
         )
         return session_id, outputs
 
-    sessions = list(chat_sessions)
-    if warmup_to_steady_state:
-        warmup_count = max_concurrency or len(chat_sessions)
-        sessions, report = pick_warmup_population(
-            chat_sessions,
-            warmup_count,
-            warmup_to_steady_state=True,
-            warmup_oversample_factor=warmup_oversample_factor,
-            main_pool_target=num_chat_sessions or len(chat_sessions),
-            rng=np.random.default_rng(seed),
-        )
-        if report is not None:
-            log_warmup_sampling_report(report)
-
     tasks: list[asyncio.Task[tuple[str, list[RequestFuncOutput]]]] = []
-    for idx, chat_session in enumerate(sessions):
+    for idx, chat_session in enumerate(chat_sessions):
         if warmup_delay_ms > 0 and max_concurrency and idx < max_concurrency:
             await asyncio.sleep(warmup_delay_ms / 1000)
         tasks.append(
@@ -433,10 +446,6 @@ async def run_kv_cache_stress_benchmark(
     warmup_delay_ms: float,
     sampling: SamplingConfig,
     randomize_session_start: bool = False,
-    warmup_to_steady_state: bool = False,
-    warmup_oversample_factor: int = 0,
-    num_chat_sessions: int = 0,
-    seed: int | None = None,
     run_prefix: str | None = None,
     run_prefix_len: int = 0,
 ) -> dict[str, list[RequestFuncOutput]]:
@@ -468,25 +477,12 @@ async def run_kv_cache_stress_benchmark(
         request_driver, semaphore, benchmark_should_end_time
     )
 
-    sessions = list(chat_sessions)
-    if warmup_to_steady_state:
-        sessions, report = pick_warmup_population(
-            chat_sessions,
-            max_concurrent_conversations,
-            warmup_to_steady_state=True,
-            warmup_oversample_factor=warmup_oversample_factor,
-            main_pool_target=num_chat_sessions or len(chat_sessions),
-            rng=np.random.default_rng(seed),
-        )
-        if report is not None:
-            log_warmup_sampling_report(report)
-
     # Queue holds (original_index, session) pairs so LoRA assignment is stable.
     session_queue: asyncio.Queue[tuple[int, ChatSession]] = asyncio.Queue()
-    for idx, session in enumerate(sessions):
+    for idx, session in enumerate(chat_sessions):
         await session_queue.put((idx, session))
 
-    num_workers = min(max_concurrent_conversations, len(sessions))
+    num_workers = min(max_concurrent_conversations, len(chat_sessions))
     worker_outputs: list[dict[str, list[RequestFuncOutput]]] = [
         {} for _ in range(num_workers)
     ]

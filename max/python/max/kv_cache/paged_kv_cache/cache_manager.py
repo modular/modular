@@ -161,6 +161,10 @@ class _ReplicaMetadata:
     claimed_requests: set[RequestID] = field(default_factory=set)
     """Set of request IDs claimed on this replica."""
 
+    # Store last host buffers to ensure lifetimes outlive async copies.
+    last_lut_table_host: Buffer | None = None
+    last_cache_lengths_host: Buffer | None = None
+
 
 class PagedKVCacheManager:
     """Paged KVCache manager with data and tensor parallelism support.
@@ -587,6 +591,9 @@ class PagedKVCacheManager:
             )
             lut_table_by_device[tp_shard].inplace_copy_from(lut_table_host)
 
+        replica.last_lut_table_host = lut_table_host
+        replica.last_cache_lengths_host = cache_lengths_host
+
         # Keep metadata aligned with kernel-side dispatch inputs.
         # `k.max_context_length()` in flash attention corresponds to the
         # max cached context length for this step (including active prompt
@@ -722,14 +729,8 @@ class PagedKVCacheManager:
 
         replica.claimed_requests.remove(request_id)
 
-        # Get block IDs before releasing
-        block_ids = replica.block_manager.get_req_blocks(request_id)
-
         # Call the block manager release method with the request_id
         replica.block_manager.release(request_id)
-
-        # Notify connector of request completion
-        replica.connector.on_request_complete(request_id, block_ids)
 
     def claim(self, request_id: RequestID, replica_idx: int) -> None:
         """Reserves a sequence ID for the given request ID."""

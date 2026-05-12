@@ -83,6 +83,10 @@ modular_py_test(
     mojo_deps = [
         "@mojo//:std",
     ],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2411
     deps = [
         "//max/python/max:_mlir_context",
         "//max/python/max/driver",

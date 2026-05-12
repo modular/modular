@@ -137,6 +137,7 @@ def test_concat() -> None:
     assert result.shape.static_dims == [8, 6]
 
 
+@pytest.mark.unique_shard
 def test_cond_true_branch() -> None:
     pred = Tensor.full([], True, dtype=DType.bool, device=DEVICE)
 
@@ -157,6 +158,7 @@ def test_cond_true_branch() -> None:
     np.testing.assert_equal(np.from_dlpack(result_cpu), 42.0)
 
 
+@pytest.mark.unique_shard
 def test_cond_false_branch() -> None:
     pred = Tensor.full([], False, dtype=DType.bool, device=DEVICE)
 
@@ -177,6 +179,7 @@ def test_cond_false_branch() -> None:
     np.testing.assert_equal(np.from_dlpack(result_cpu), 0.0)
 
 
+@pytest.mark.unique_shard
 def test_cond_with_functional_ops_in_branches() -> None:
     """Branches using F.xxx operations return Tensor, which must be converted."""
     pred = Tensor.full([], True, dtype=DType.bool, device=DEVICE)
@@ -244,6 +247,7 @@ def test_conv2d_transpose() -> None:
     assert result.real
 
 
+@pytest.mark.unique_shard
 def test_conv3d() -> None:
     # NDHWC input: [batch, depth, height, width, in_channels]
     # QRSCF filter: [depth, height, width, in_channels/groups, out_channels]
@@ -263,6 +267,7 @@ def test_flatten() -> None:
     assert result.real
 
 
+@pytest.mark.unique_shard
 def test_fold() -> None:
     # needs shape [N, C * kernel_size[0] * kernel_size[1], L]
     # For kernel_size=[2, 2], we need C * 4 channels
@@ -370,6 +375,7 @@ def test_arange() -> None:
     assert result.real
 
 
+@pytest.mark.unique_shard
 def test_repeat_interleave() -> None:
     # repeat_interleave not supported on GPU, use CPU
     tensor_2d = Tensor.ones([4, 6], dtype=DType.float32, device=CPU())
@@ -383,6 +389,8 @@ def test_reshape() -> None:
     assert result.real
 
 
+# FIXME: Crashes if not in its own shard
+@pytest.mark.unique_shard
 def test_scatter() -> None:
     tensor_2d = Tensor.ones([4, 6], dtype=DType.float32, device=DEVICE)
     indices_scatter = Tensor.full([2, 2], 0, dtype=DType.int64, device=DEVICE)

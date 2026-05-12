@@ -355,9 +355,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
 
     @doc_hidden
     @staticmethod
-    def _dict[
-        V: ConvertibleToPython & Copyable = PythonObject
-    ](kwargs: OwnedKwargsDict[V]) raises -> PyObjectPtr:
+    def _dict(kwargs: OwnedKwargsDict[PythonObject]) raises -> PyObjectPtr:
         """Construct a Python dictionary from keyword arguments.
 
         Return value: New reference.
@@ -368,23 +366,18 @@ struct Python(Defaultable, ImplicitlyCopyable):
             var key_ptr = cpy.PyUnicode_DecodeUTF8(StringSlice(entry.key))
             if not key_ptr:
                 raise cpy.unsafe_get_error()
-            var val = entry.value.copy().to_python_object()
-            var errno = cpy.PyDict_SetItem(dict_ptr, key_ptr, val._obj_ptr)
+            # PyDict_SetItem doesn't steal the value.
+            var errno = cpy.PyDict_SetItem(
+                dict_ptr, key_ptr, entry.value._obj_ptr
+            )
             cpy.Py_DecRef(key_ptr)
-            _ = val
             if errno == -1:
                 raise cpy.unsafe_get_error()
         return dict_ptr
 
     @staticmethod
-    def dict[
-        V: ConvertibleToPython & Copyable = PythonObject
-    ](**kwargs: V) raises -> PythonObject:
+    def dict(**kwargs: PythonObject) raises -> PythonObject:
         """Construct an Python dictionary from keyword arguments.
-
-        Parameters:
-            V: The type of the values in the dictionary. Must implement the
-                `ConvertibleToPython`, and `Copyable` traits.
 
         Args:
             kwargs: The keyword arguments to construct the dictionary with.
@@ -399,17 +392,10 @@ struct Python(Defaultable, ImplicitlyCopyable):
         return PythonObject(from_owned=Self._dict(kwargs))
 
     @staticmethod
-    def dict[
-        K: ConvertibleToPython & Copyable = PythonObject,
-        V: ConvertibleToPython & Copyable = PythonObject,
-    ](tuples: Span[Tuple[K, V], _]) raises -> PythonObject:
+    def dict(
+        tuples: Span[Tuple[PythonObject, PythonObject], _]
+    ) raises -> PythonObject:
         """Construct an Python dictionary from a list of key-value tuples.
-
-        Parameters:
-            K: The type of the keys in the dictionary. Must implement the
-                `ConvertibleToPython`, and `Copyable` traits.
-            V: The type of the values in the dictionary. Must implement the
-                `ConvertibleToPython`, and `Copyable` traits.
 
         Args:
             tuples: The list of key-value tuples to construct the dictionary
@@ -425,23 +411,17 @@ struct Python(Defaultable, ImplicitlyCopyable):
         ref cpy = Self().cpython()
         var dict_ptr = cpy.PyDict_New()
         for i in range(len(tuples)):
-            var key = tuples[i][0].copy().to_python_object()
-            var val = tuples[i][1].copy().to_python_object()
-            var errno = cpy.PyDict_SetItem(dict_ptr, key._obj_ptr, val._obj_ptr)
-            _ = key
-            _ = val
+            # PyDict_SetItem doesn't steal the values.
+            var errno = cpy.PyDict_SetItem(
+                dict_ptr, tuples[i][0]._obj_ptr, tuples[i][1]._obj_ptr
+            )
             if errno == -1:
                 raise cpy.unsafe_get_error()
         return PythonObject(from_owned=dict_ptr)
 
     @staticmethod
-    def list[
-        T: ConvertibleToPython & Copyable
-    ](values: Span[T, _]) raises -> PythonObject:
+    def list(values: Span[PythonObject, _]) raises -> PythonObject:
         """Initialize the object from a list of values.
-
-        Parameters:
-            T: The span element type.
 
         Args:
             values: The values to initialize the list with.
@@ -453,20 +433,15 @@ struct Python(Defaultable, ImplicitlyCopyable):
             If the operation fails.
         """
         ref cpy = Self().cpython()
-        var list_ptr = cpy.PyList_New(len(values))
-        for i in range(len(values)):
-            var obj = values[i].copy().to_python_object()
-            _ = cpy.PyList_SetItem(list_ptr, i, obj.steal_data())
+        var size = len(values)
+        var list_ptr = cpy.PyList_New(size)
+        for i in range(size):
+            _ = cpy.PyList_SetItem(list_ptr, i, values[i].steal_data())
         return PythonObject(from_owned=list_ptr)
 
     @staticmethod
-    def list[
-        *Ts: ConvertibleToPython & Copyable
-    ](var *values: *Ts) raises -> PythonObject:
+    def list(var *values: PythonObject) raises -> PythonObject:
         """Construct an Python list of objects.
-
-        Parameters:
-            Ts: The list element types.
 
         Args:
             values: The values to initialize the list with.
@@ -480,19 +455,13 @@ struct Python(Defaultable, ImplicitlyCopyable):
         ref cpy = Self().cpython()
         var list_ptr = cpy.PyList_New(len(values))
 
-        comptime for i in range(Ts.size):
-            var obj = values[i].copy().to_python_object()
-            _ = cpy.PyList_SetItem(list_ptr, i, obj.steal_data())
+        for i in range(len(values)):
+            _ = cpy.PyList_SetItem(list_ptr, i, values[i].steal_data())
         return PythonObject(from_owned=list_ptr)
 
     @staticmethod
-    def tuple[
-        *Ts: ConvertibleToPython & Copyable
-    ](var *values: *Ts) raises -> PythonObject:
+    def tuple(var *values: PythonObject) raises -> PythonObject:
         """Construct an Python tuple of objects.
-
-        Parameters:
-            Ts: The list element types.
 
         Args:
             values: The values to initialize the tuple with.
@@ -504,11 +473,11 @@ struct Python(Defaultable, ImplicitlyCopyable):
             If the operation fails.
         """
         ref cpy = Self().cpython()
-        var tup_ptr = cpy.PyTuple_New(len(values))
+        var size = len(values)
+        var tup_ptr = cpy.PyTuple_New(size)
 
-        comptime for i in range(Ts.size):
-            var obj = values[i].copy().to_python_object()
-            _ = cpy.PyTuple_SetItem(tup_ptr, i, obj.steal_data())
+        for i in range(size):
+            _ = cpy.PyTuple_SetItem(tup_ptr, i, values[i].steal_data())
         return PythonObject(from_owned=tup_ptr)
 
     @no_inline

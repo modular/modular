@@ -41,10 +41,6 @@ from max.benchmark.benchmark_serving import (
     parse_args as _parse_serving_args,
 )
 from max.benchmark.benchmark_shared.config import ServingBenchmarkConfig
-from max.benchmark.benchmark_shared.metrics import (
-    BenchmarkMetrics,
-    PixelGenerationBenchmarkMetrics,
-)
 from max.benchmark.sweep_benchmark_serving_result_utils import (
     LLMBenchmarkResult,
     LLMBenchmarkResultWriter,
@@ -72,9 +68,8 @@ def _build_sweep_result(
             return TextToImageBenchmarkResult.zeros(percentiles)
         return LLMBenchmarkResult.zeros(percentiles)
     metrics = result.result.metrics
-    if isinstance(metrics, PixelGenerationBenchmarkMetrics):
+    if metrics.task_type == "pixel":
         return TextToImageBenchmarkResult.from_metrics(metrics, percentiles)
-    assert isinstance(metrics, BenchmarkMetrics)
     return LLMBenchmarkResult.from_metrics(metrics, percentiles)
 
 

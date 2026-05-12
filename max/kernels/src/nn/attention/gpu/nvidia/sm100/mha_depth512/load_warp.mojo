@@ -145,6 +145,12 @@ def depth512_load[
     comptime PairBM = BM * 2
     comptime PairBM_mask = BM_eff * 2
 
+    # Alignment of `kv_row` produced by mask-driven iteration.
+    # Used by `kv_lut.populate` to pick the largest legal SIMD chunk.
+    comptime base_alignment: Int = MaskType.start_column_alignment[
+        PairBM_mask, BN, page_size
+    ]()
+
     comptime PositionType = MHAPosition[
         PairBM,
         BN,
@@ -324,22 +330,30 @@ def depth512_load[
     def _load_v_stage[
         pv_stage: Int
     ](depth_col_offset: Int, v_nvp: UInt32,):
-        """Load one V pv_stage using the shared kv_paged_rows."""
+        """Load one V pv_stage using the shared kv_paged_rows.
+
+        With `oob_fill_pages=True` on the partial path, OOB-coord TMAs
+        zero-fill the SMEM rows past `v_nvp` valid pages, so the full
+        BN-row V tile holds finite data before the MMA reads it. This
+        prevents `0 * non-finite = NaN` propagation in `O += P * V`
+        when masked V rows would otherwise contain stale or
+        uninitialized SMEM (most common when this is the very first
+        write to the SMEM slot — typically the only iter is partial,
+        i.e. `seq_len <= BN`). Because each OOB TMA still arrives at
+        `mbar` with its byte count, we always set the full
+        `v_expect_bytes` regardless of `v_needs_partial`.
+        """
         kv_pipeline.producer_acquire()
         var mbar = kv_pipeline.producer_mbar()
 
         comptime if is_leader:
-            comptime if v_needs_partial:
-                expect_bytes_pred(
-                    mbar, Int32(cta_group * v_bytes_pp * Int(v_nvp)), e
-                )
-            else:
-                expect_bytes_pred(mbar, Int32(v_expect_bytes), e)
+            expect_bytes_pred(mbar, Int32(v_expect_bytes), e)
 
         kv_paged_rows.tma_copy_v[
             needs_partial=v_needs_partial,
             num_v_sub_tiles=num_pv_stages,
             v_sub_tile_idx=pv_stage,
+            oob_fill_pages=v_needs_partial,
         ](
             v_tma_op,
             kv_smem + kv_pipeline.state.index() * UInt32(kv_elems),
@@ -421,7 +435,7 @@ def depth512_load[
     # Populate kv_paged_rows once for this tile; reused by every K
     # depth stage below and by the subsequent V loop (which captures
     # kv_paged_rows from this scope).
-    kv_paged_rows = kv_lut.populate[BN, True, is_leader](
+    kv_paged_rows = kv_lut.populate[BN, base_alignment, True, is_leader](
         seq_info.prompt_idx, kv_row
     )
     comptime for qk_stage in range(num_qk_stages):
@@ -516,7 +530,7 @@ def depth512_load[
         # ---- K depth stages (num_qk_stages loads) ----
         # Populate once per tile; reused by every K depth stage and the
         # subsequent V loop. Full tile (no partial) in main loop.
-        kv_paged_rows = kv_lut.populate[BN, True, is_leader](
+        kv_paged_rows = kv_lut.populate[BN, base_alignment, True, is_leader](
             seq_info.prompt_idx, kv_row
         )
         comptime for qk_stage in range(num_qk_stages):
@@ -574,9 +588,9 @@ def depth512_load[
 
                 # K: populate once per tile; reused by every K depth
                 # stage and the subsequent V loop.
-                kv_paged_rows = kv_lut.populate[BN, True, is_leader](
-                    seq_info.prompt_idx, kv_row
-                )
+                kv_paged_rows = kv_lut.populate[
+                    BN, base_alignment, True, is_leader
+                ](seq_info.prompt_idx, kv_row)
                 comptime for qk_stage in range(num_qk_stages):
                     _produce_k[
                         partial=k_needs_partial,

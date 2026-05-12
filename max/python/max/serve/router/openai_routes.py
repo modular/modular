@@ -251,14 +251,15 @@ class OpenAIChatResponseGenerator(
         pipeline: TokenGeneratorPipeline,
         stream_options: ChatCompletionStreamOptionsParam | None = None,
         parser: ToolParser | None = None,
-        tool_use: bool = False,
+        parse_tool_calls: bool = False,
     ) -> None:
         super().__init__(pipeline)
         self.stream_options = stream_options
         self.parser: ToolParser = (
             parser if parser is not None else LlamaToolParser()
         )
-        self.tool_use = tool_use
+        # Whether to parse tool calls from the response.
+        self.parse_tool_calls = parse_tool_calls
 
     async def stream(
         self, request: TextGenerationRequest
@@ -274,7 +275,7 @@ class OpenAIChatResponseGenerator(
         has_emitted_tool_calls = False
 
         # Reset parser state for new streaming session
-        if self.tool_use:
+        if self.parse_tool_calls:
             self.parser.reset()
 
         try:
@@ -313,7 +314,7 @@ class OpenAIChatResponseGenerator(
                 # Handle streaming tool calls if enabled
                 merged_stream_content: str | None = None
                 tool_call_chunks: list[ChoiceDeltaToolCall] = []
-                if self.tool_use and chunk.decoded_tokens:
+                if self.parse_tool_calls and chunk.decoded_tokens:
                     tool_deltas = self.parser.parse_delta(chunk.decoded_tokens)
                     if tool_deltas:
                         stream_content_parts: list[str] = []
@@ -497,7 +498,6 @@ class OpenAIChatResponseGenerator(
         n_cached_prompt_tokens = 0
         request_timer = StopWatch(start_ns=request.timestamp_ns)
         status_code = 200
-        tool_use = request.tools is not None
 
         try:
             completed_outputs = await self.pipeline.all_tokens(request)
@@ -553,7 +553,11 @@ class OpenAIChatResponseGenerator(
                 )
 
             response_choices: list[ChatCompletionResponseChoice] = []
-            if tool_use and request.response_format is None:
+            # Note: Do not gate on `response_format is None` here.
+            # The TextGenerationRequest was mutated to contain a
+            # response format with type="grammar" since tools are involved
+            # (see openai_create_chat_completion).
+            if self.parse_tool_calls:
                 try:
                     parsed = self.parser.parse_complete(response_message)
                     if parsed.tool_calls:
@@ -868,7 +872,7 @@ async def resolve_image_from_url(
             except HTTPStatusError as e:
                 raise ValueError(
                     f"Failed to fetch image: HTTP {e.response.status_code}"
-                ) from e
+                ) from None
             images_bytes = await response.aread()
             logger.debug(
                 "ResolvedImageUrl: %s -> %d bytes", image_ref, len(images_bytes)
@@ -979,6 +983,81 @@ def _get_target_endpoint(
     return body_target_endpoint
 
 
+def _resolve_grammar_constraints(
+    tools: list[TextGenerationRequestTool] | None,
+    tool_choice: str | dict[str, Any] | None,
+    response_format: TextGenerationResponseFormat | None,
+) -> tuple[list[str] | None, dict[str, Any] | None]:
+    """Determine grammar constraints for tool calling and response format.
+
+    This function decides what constraints to apply for grammar-based decoding:
+    - `tools` defines the menu of available tools
+    - `tool_choice` controls how tools are used (none/auto/required/named)
+
+    The behavior depends on the combination of inputs:
+    - tools forced (required or named function): grammar constrains to tool
+      calls only, response_format is ignored
+    - auto mode + response_format: grammar allows either tool calls or JSON
+      content matching the schema
+    - auto mode + no response_format: no grammar generated (unconstrained)
+    - response_format only (no tools): no Kimi-specific grammar is
+      generated; the caller falls through to the standard json_schema
+      flow handled by StructuredOutputHelper
+
+    Args:
+        tools: List of tool definitions from the request.
+        tool_choice: The tool_choice value from the request.
+        response_format: Response format dict from the request.
+
+    Returns:
+        (grammar_tool_names, response_format_schema) tuple. Both None means
+        no grammar should be generated.
+    """
+    grammar_tool_names: list[str] | None = None
+    response_format_schema: dict[str, Any] | None = None
+
+    tools_required = tool_choice == "required"
+
+    # Determine forced tool names from tool_choice
+    forced_tool_names: list[str] | None = None
+    if tools is not None:
+        if tools_required:
+            forced_tool_names = [
+                t["function"]["name"]
+                for t in tools
+                if "function" in t and "name" in t["function"]
+            ] or None
+        elif (
+            isinstance(tool_choice, dict)
+            and tool_choice.get("type") == "function"
+            and isinstance(tool_choice.get("function"), dict)
+            and tool_choice["function"].get("name")
+        ):
+            forced_tool_names = [tool_choice["function"]["name"]]
+
+    # Set grammar_tool_names
+    if tools_required or response_format is not None:
+        if forced_tool_names:
+            grammar_tool_names = forced_tool_names
+        else:
+            names = [
+                t["function"]["name"]
+                for t in (tools or [])
+                if "function" in t and "name" in t["function"]
+            ]
+            if names:
+                grammar_tool_names = names
+
+    # Only include response_format in grammar when tools aren't forced.
+    # When tools are forced, constrain to tool calls only.
+    tools_forced = forced_tool_names is not None
+    if response_format is not None and not tools_forced:
+        if response_format.get("type") == "json_schema":
+            response_format_schema = response_format.get("json_schema")
+
+    return grammar_tool_names, response_format_schema
+
+
 @router.post("/chat/completions", response_model=None)
 async def openai_create_chat_completion(
     request: Request,
@@ -1011,6 +1090,7 @@ async def openai_create_chat_completion(
             request.app.state.settings,
         )
 
+        # Unless the user explicitly disabled tools with tool_choice='none', generate the tools list.
         tools = None
         if (
             completion_request.tool_choice is None
@@ -1024,17 +1104,60 @@ async def openai_create_chat_completion(
             completion_request.response_format
         )
 
+        # For architectures with a grammar-based tool parser (e.g., Kimi),
+        # generate constrained decoding grammars for tool calls and/or
+        # response_format.
+        parser = get_tool_parser(request.app)
+        has_grammar_parser = parser is not None and hasattr(
+            parser, "generate_tool_call_grammar"
+        )
+        if has_grammar_parser:
+            grammar_tool_names, response_format_schema = (
+                _resolve_grammar_constraints(
+                    tools=tools,
+                    tool_choice=completion_request.tool_choice,
+                    response_format=response_format,
+                )
+            )
+            # Only invoke the architecture-specific grammar generator when
+            # tools are actually involved. In the response_format-only case,
+            # fall through to the standard json_schema flow handled by StructuredOutputHelper.
+            if grammar_tool_names:
+                assert parser is not None
+                logger.debug(
+                    "Generating tool call grammar for %s with tools: %s, "
+                    "response_format_schema: %s",
+                    type(parser).__name__,
+                    grammar_tool_names,
+                    response_format_schema,
+                )
+                # Create the grammar from the tools and response format schema.
+                grammar = parser.generate_tool_call_grammar(  # type: ignore[attr-defined]
+                    tool_names=grammar_tool_names,
+                    response_format_schema=response_format_schema,
+                )
+                # Create the response format.
+                response_format = TextGenerationResponseFormat(
+                    type="grammar",
+                    grammar=grammar,
+                    json_schema={},
+                )
+                logger.info(
+                    "Successfully generated tool call grammar (length=%d)",
+                    len(grammar),
+                )
         stream_options = None
         if completion_request.stream:
             stream_options = completion_request.stream_options
-
-        parser = get_tool_parser(request.app)
-        tool_use = tools is not None
+        # Parse tool calls when tools are provided. With combined grammar support,
+        # the model can output either tool calls or structured content. The parser
+        # will detect which format was used and handle accordingly.
+        parse_tool_calls = tools is not None
         response_generator = OpenAIChatResponseGenerator(
             pipeline,
             stream_options=stream_options,
             parser=parser,
-            tool_use=tool_use,
+            parse_tool_calls=parse_tool_calls,
         )
         sampling_params = SamplingParams.from_input_and_generation_config(
             SamplingParamsInput(
@@ -1244,7 +1367,7 @@ def _create_response_format(
     _validate_json_schema(json_schema)
 
     return TextGenerationResponseFormat(
-        type=response_type, json_schema=json_schema
+        type=response_type, json_schema=json_schema, grammar=None
     )
 
 
@@ -1455,20 +1578,27 @@ class OpenAICompletionResponseGenerator(
         logger.debug("Streaming: Start: %s", request)
         record_request_start()
         request_timer = StopWatch(start_ns=request.timestamp_ns)
+        n_reasoning_tokens = 0
         n_tokens = 0
         n_prompt_tokens = 0
         status_code = 200
         try:
             async for chunk in self.pipeline.next_token_chunk(request):
+                chunk_total_tokens = (
+                    chunk.reasoning_token_count or 0
+                ) + chunk.token_count
                 self.logger.debug(
-                    "Streaming: %s, TOKENS: %d, %s",
+                    "Streaming: %s, TOKENS: %d, REASONING: %s, TEXT: %s",
                     request.request_id,
-                    chunk.token_count,
+                    chunk_total_tokens,
+                    chunk.decoded_reasoning_tokens,
                     chunk.decoded_tokens,
                 )
 
                 if chunk.prompt_token_count:
                     n_prompt_tokens = chunk.prompt_token_count
+                n_reasoning_tokens += chunk.reasoning_token_count or 0
+                n_tokens += chunk.token_count
 
                 log_probs = _process_log_probabilities([chunk])
 
@@ -1486,7 +1616,7 @@ class OpenAICompletionResponseGenerator(
                             ),
                         )
                     ]
-                else:
+                elif chunk.status.is_done:
                     choices = [
                         CompletionResponseStreamChoice(
                             index=0,
@@ -1496,6 +1626,13 @@ class OpenAICompletionResponseGenerator(
                             ),
                         )
                     ]
+                else:
+                    # Reasoning-capable models (e.g. Kimi K2.5) can emit
+                    # intermediate chunks with no user-visible completion text
+                    # while still ACTIVE. For legacy /completions streaming we
+                    # skip those chunks instead of forcing a terminal
+                    # finish_reason.
+                    continue
 
                 # Each chunk is expected to have the same id
                 # https://platform.openai.com/docs/api-reference/chat/streaming
@@ -1506,13 +1643,16 @@ class OpenAICompletionResponseGenerator(
                     model=request.model_name,
                     object="text_completion",
                 )
-                n_tokens += chunk.token_count
 
                 payload = response.model_dump_json()
 
                 yield payload
 
-            logger.debug("Streaming: Done: %s, %d tokens", request, n_tokens)
+            logger.debug(
+                "Streaming: Done: %s, %d tokens",
+                request,
+                n_reasoning_tokens + n_tokens,
+            )
             yield "[DONE]"
         except queue.Full:
             logger.exception("Request queue full %s", request.request_id)
@@ -1543,7 +1683,7 @@ class OpenAICompletionResponseGenerator(
                 status_code,
                 request.request_path,
                 request_timer.elapsed_ms,
-                n_tokens,
+                n_reasoning_tokens + n_tokens,
                 n_prompt_tokens,
             )
 
@@ -1553,6 +1693,7 @@ class OpenAICompletionResponseGenerator(
         # we assume that all entries in `requests` came from the same http
         # request and timestamp, request id, path should all be the same.
         record_request_start()
+        n_reasoning_tokens = 0
         n_tokens = 0
         n_prompt_tokens = 0
         request_timer = StopWatch(start_ns=requests[0].timestamp_ns)
@@ -1564,6 +1705,9 @@ class OpenAICompletionResponseGenerator(
             )
             response_choices = []
             for i, req_outputs in enumerate(req_output_list):
+                n_reasoning_tokens += sum(
+                    chunk.reasoning_token_count or 0 for chunk in req_outputs
+                )
                 n_tokens += sum(chunk.token_count for chunk in req_outputs)
                 if req_outputs and req_outputs[0].prompt_token_count:
                     n_prompt_tokens += req_outputs[0].prompt_token_count
@@ -1605,7 +1749,7 @@ class OpenAICompletionResponseGenerator(
                 status_code,
                 requests[0].request_path,
                 request_timer.elapsed_ms,
-                n_tokens,
+                n_reasoning_tokens + n_tokens,
                 n_prompt_tokens,
             )
 

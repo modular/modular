@@ -192,6 +192,10 @@ _EXTRA_CONSTRAINTS = {
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: MOCO-3650 — NaN in BFloat16 top-p sampling on Apple GPU
+    "test_concat.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2411 — segfaults on Apple GPU remote workers
 }
 
 _FILECHECK_TESTS = [

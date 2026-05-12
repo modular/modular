@@ -123,41 +123,52 @@ struct WarpRole(TrivialRegisterPassable):
 # =============================================================================
 
 
-struct WarpRole1D1D[has_sfb: Bool = False](TrivialRegisterPassable):
+struct WarpRole1D1D[has_sfb: Bool = False, num_epi_warps: Int = 4](
+    TrivialRegisterPassable
+):
     """Warp role for 1D-1D kernels with warp specialization.
 
     Parameterized on `has_sfb` so the SFB TMA-load / TMEM-load warps (and the
-    scheduler's warp index) compile out cleanly on the MMA_N >= 64 path.
+    scheduler's warp index) compile out cleanly on the MMA_N >= 64 path, and
+    on `num_epi_warps` so kernels with heavier consumer phases can grow the
+    pool without affecting other kernels.
 
-    Base layout, `has_sfb = False` (224 threads with scheduler, MMA_N >= 64):
-    - Warps 0-3 (threads 0-127): Epilogue (4 warps)
+    Default layout (`has_sfb=False, num_epi_warps=4` — 224 threads with
+    scheduler, MMA_N >= 64):
+    - Warps 0-3 (threads 0-127): Epilogue
     - Warp 4 (threads 128-159): TMA Load
     - Warp 5 (threads 160-191): MMA
     - Warp 6 (threads 192-223): Scheduler
 
-    Extended layout, `has_sfb = True` (384 threads with scheduler, MMA_N < 64):
-    - Warps 0-3 (threads 0-127):    Epilogue (4 warps)
+    Extended layout (`has_sfb=True, num_epi_warps=4` — 384 threads with
+    scheduler, MMA_N < 64):
+    - Warps 0-3 (threads 0-127):    Epilogue
     - Warp 4 (threads 128-159):     TMA Load (A, B, SFA)
     - Warp 5 (threads 160-191):     MMA
-    - Warp 6 (threads 192-223):     SFB TMA Load (1 warp)
-    - Warps 7-10 (threads 224-351): SFB TMEM Load (4 warps)
+    - Warp 6 (threads 192-223):     SFB TMA Load
+    - Warps 7-10 (threads 224-351): SFB TMEM Load
     - Warp 11 (threads 352-383):    Scheduler
 
-    The epilogue warps being at 0-3 is important because TMAStoreCoords
-    uses `warp_id == 0` for election.
+    The epilogue warps being at 0..NUM_EPILOGUE_THREADS-1 is important
+    because TMAStoreCoords uses `warp_id == 0` for election.
     """
 
-    comptime EPILOGUE_WARP_START = 0
-    comptime LOAD_WARP_START = 128
-    comptime MMA_WARP_START = 160
-    comptime SFB_TMA_LOAD_WARP_START = 192
-    comptime SFB_LOAD_WARP_START = 224
-
-    comptime NUM_EPILOGUE_THREADS = 128  # 4 warps
+    comptime NUM_EPILOGUE_THREADS = Self.num_epi_warps * 32
     comptime NUM_LOAD_THREADS = 32
     comptime NUM_MMA_THREADS = 32
     comptime NUM_SFB_TMA_LOAD_THREADS = 32  # 1 warp
     comptime NUM_SFB_LOAD_THREADS = 128  # 4 warps
+    comptime NUM_SCHEDULER_THREADS = 32
+
+    comptime EPILOGUE_WARP_START = 0
+    comptime LOAD_WARP_START = Self.NUM_EPILOGUE_THREADS
+    comptime MMA_WARP_START = (Self.LOAD_WARP_START + Self.NUM_LOAD_THREADS)
+    comptime SFB_TMA_LOAD_WARP_START = (
+        Self.MMA_WARP_START + Self.NUM_MMA_THREADS
+    )
+    comptime SFB_LOAD_WARP_START = (
+        Self.SFB_TMA_LOAD_WARP_START + Self.NUM_SFB_TMA_LOAD_THREADS
+    )
 
     # Scheduler warp sits right after the SFB warps when they exist, otherwise
     # directly after the MMA warp. Launching the SFB warps on MMA_N >= 64 would
@@ -166,11 +177,15 @@ struct WarpRole1D1D[has_sfb: Bool = False](TrivialRegisterPassable):
         Self.SFB_LOAD_WARP_START
         + Self.NUM_SFB_LOAD_THREADS if Self.has_sfb else Self.SFB_TMA_LOAD_WARP_START
     )
-    comptime NUM_SCHEDULER_THREADS = 32
 
-    comptime TOTAL_THREADS = 192
-    comptime TOTAL_THREADS_WITH_SFB = 352
-    # 384 when has_sfb else 224.
+    comptime TOTAL_THREADS = (
+        Self.NUM_EPILOGUE_THREADS + Self.NUM_LOAD_THREADS + Self.NUM_MMA_THREADS
+    )
+    comptime TOTAL_THREADS_WITH_SFB = (
+        Self.TOTAL_THREADS
+        + Self.NUM_SFB_TMA_LOAD_THREADS
+        + Self.NUM_SFB_LOAD_THREADS
+    )
     comptime TOTAL_THREADS_WITH_SCHED = (
         Self.SCHEDULER_WARP_START + Self.NUM_SCHEDULER_THREADS
     )

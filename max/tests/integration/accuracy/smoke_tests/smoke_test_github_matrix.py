@@ -61,18 +61,17 @@ DISABLE = set(RUNNERS)
 HF_MODELS: dict[str, set[str]] = {
     "allenai/Olmo-3-7B-Instruct": MULTI | {"max"},
     "allenai/olmOCR-2-7B-1025-FP8": MULTI | {"sglang"},
+    "amd/Kimi-K2.5-MXFP4": NON_XL | {"8xB200"},
     "amd/MiniMax-M2.7-MXFP4": NON_XL | {"8xB200"},
     "ByteDance-Seed/academic-ds-9B": MULTI | {"max", "max-ci", "sglang@B200", "vllm@B200"},  # SERVOPT-1120
     "deepseek-ai/DeepSeek-R1-0528": NON_XL | {"max", "sglang", "8xMI355"},  # 8xMI355: needs nvshmem
     "deepseek-ai/DeepSeek-V2-Lite-Chat": MULTI | {"max", "max-ci", "vllm@B200"},  # SERVOPT-1120
     "deepseek-ai/DeepSeek-V3.1-Terminus": NON_XL | {"8xMI355"},
     "google/gemma-3-1b-it": MULTI | {"vllm@B200"},
-    "google/gemma-3-12b-it": MULTI,
     "google/gemma-3-27b-it": MULTI,
     "google/gemma-4-26B-A4B-it": MULTI | {"max", "max-ci"},  # TODO(SERVOPT-1292)
     "google/gemma-4-31B-it": MULTI,
     "meta-llama/Llama-3.1-8B-Instruct": MULTI,
-    "meta-llama/Llama-3.2-1B-Instruct": MULTI,
     "microsoft/Phi-3.5-mini-instruct": MULTI,
     "microsoft/phi-4": MULTI,
     "MiniMaxAI/MiniMax-M2.7": NON_XL | {"8xMI355", "sglang"},
@@ -82,19 +81,17 @@ HF_MODELS: dict[str, set[str]] = {
     "modularai/Llama-3.1-405B-Instruct-autofp8": NON_XL | {"max"},
     "nvidia/DeepSeek-V3.1-NVFP4": NON_XL | {"8xMI355"},
     "nvidia/Kimi-K2.5-NVFP4": NON_XL | {"8xMI355"},
-    "OpenGVLab/InternVL3-8B-Instruct": MULTI | {"sglang"},
     "OpenGVLab/InternVL3_5-8B-Instruct": MULTI | {"max", "sglang"},
     "Qwen/Qwen2.5-7B-Instruct": MULTI,
-    "Qwen/Qwen2.5-VL-3B-Instruct": MULTI,
     "Qwen/Qwen2.5-VL-7B-Instruct": MULTI,
     "Qwen/Qwen3-235B-A22B-Instruct-2507": NON_XL | {"max", "8xMI355"},
     "Qwen/Qwen3-30B-A3B-Instruct-2507": MULTI,
     "Qwen/Qwen3-8B": MULTI,
     "Qwen/Qwen3-VL-4B-Instruct": XL | {"vllm@B200"},  # MODELS-1020
     "Qwen/Qwen3-VL-4B-Instruct-FP8": XL | {"MI355", "2xMI355"},  # MI355: no FP8
-    "Qwen/Qwen3-VL-30B-A3B-Instruct": XL,
     "Qwen/Qwen3-VL-30B-A3B-Instruct-FP8": XL | {"MI355", "2xMI355", "max-ci@B200", "sglang@B200"},  # MI355: no FP8, B200: MODELS-1020
     "Qwen/Qwen3-VL-30B-A3B-Thinking": XL | {"max"},
+    "Qwen/Qwen3.5-9B": MULTI | {"max", "max-ci@MI355"},
     "RedHatAI/gemma-3-27b-it-FP8-dynamic": MULTI,  # TODO(MODELS-1021)
     "nvidia/Llama-3.1-405B-Instruct-NVFP4": NON_XL | {"max", "8xMI355"},
     "RedHatAI/Meta-Llama-3.1-405B-Instruct-FP8-dynamic": NON_XL,
@@ -108,11 +105,7 @@ HF_MODELS: dict[str, set[str]] = {
 # path and injects the appropriate serve args.
 CUSTOM_MODELS: dict[str, set[str]] = {
     "meta-llama/Llama-3.1-8B-Instruct__modulev3": MULTI,
-    "meta-llama/Llama-3.2-1B-Instruct__modulev3": MULTI,
-      # TODO(MXF-361): Model fails on 2xh100
-      # TODO(MXF-332): Model uses too much memory, fails on H100 with
-      # --device-memory-utilization 0.7
-    "google/gemma-3-27b-it__modulev3": XL | {"H100", "2xH100"},
+    "google/gemma-3-27b-it__modulev3": XL,
     "unsloth/gpt-oss-20b-BF16__modulev3": DISABLE,  # TODO(MXF-121)
     "microsoft/Phi-3.5-mini-instruct__modulev3": MULTI,
     "microsoft/phi-4__modulev3": MULTI,
@@ -126,9 +119,9 @@ CUSTOM_MODELS: dict[str, set[str]] = {
     "nvidia/DeepSeek-V3.1-NVFP4__mtp_tpep": NON_XL | {"8xMI355"},
     "austinpowers/Kimi-K2.5-NVFP4-DeepseekV3__eagle": NON_XL | {"8xMI355"},
     "google/gemma-4-26B-A4B-it__no_dgc": MULTI,
-    "meta-llama/Llama-3.1-8B-Instruct__local_kvconnector": {"vllm", "sglang"},
-    "meta-llama/Llama-3.1-8B-Instruct__eagle_local_kvconnector": {"vllm", "sglang"},
-    "meta-llama/Llama-3.1-8B-Instruct__tiered_kvconnector": {"vllm", "sglang"},
+    "meta-llama/Llama-3.1-8B-Instruct__local_kvconnector": MULTI | {"vllm", "sglang", "MI355"},
+    "meta-llama/Llama-3.1-8B-Instruct__eagle_local_kvconnector": MULTI | {"vllm", "sglang", "MI355"},
+    "meta-llama/Llama-3.1-8B-Instruct__tiered_kvconnector": MULTI | {"vllm", "sglang", "MI355"},
     "austinpowers/Kimi-K2.5-NVFP4-DeepseekV3__local_kvconnector_tpep": NON_XL | {"8xMI355"},
     "austinpowers/Kimi-K2.5-NVFP4-DeepseekV3__tiered_kvconnector_tpep": NON_XL | {"8xMI355"},
     "austinpowers/Kimi-K2.5-NVFP4-DeepseekV3__eagle_tiered_kvconnector_tpep": NON_XL | {"8xMI355"},

@@ -33,7 +33,7 @@ from max._core.engine import PrintStyle
 from max._core.engine import TensorSpec as TensorSpec
 from max._core.profiler import set_gpu_profiling_state
 from max.driver import CPU, Buffer, Device, DLPackArray
-from max.graph import Graph
+from max.graph import Graph, Module
 from max.profiler import traced
 from mojo.paths import _build_mojo_source_package, is_mojo_source_package_path
 
@@ -333,6 +333,16 @@ def _process_custom_extensions_objects(
     ]
 
 
+def _derive_pipeline_name(module: Module) -> str:
+    """Concatenate the sym_names of every non-subgraph `mo.graph` in `module`.
+
+    Used as the diagnostic ``pipelineName`` passed to
+    ``compile_from_object``; replaces the previous reliance on ``Graph.name``
+    so the public :class:`Module` overload doesn't need a separate name kwarg.
+    """
+    return "+".join(module.top_level_graph_names())
+
+
 class SplitKReductionPrecision(IntEnum):
     """Internal use."""
 
@@ -525,25 +535,28 @@ class InferenceSession:
                 f"Expected exactly one model in the compiled artifact, but "
                 f"got {len(models)}. Use load_all() to load multi-model artifacts."
             )
-        return models[0]
+        return next(iter(models.values()))
 
     def load_all(
         self,
-        model: str | Path | Graph,
+        model: str | Path | Module | Graph,
         *,
         custom_extensions: CustomExtensionsType | None = None,
         weights_registry: Mapping[str, DLPackArray] | None = None,
-    ) -> list[Model]:
-        """Loads all trained models and compiles it for inference.
+    ) -> dict[str, Model]:
+        """Loads all trained models and compiles them for inference.
 
         A compiled MEF artifact may contain more than one model (for example a
         vision encoder and a language model compiled together).  This method
-        returns one :class:`Model` per model encoded in the artifact, in MEF
-        order.  For single-model artifacts the returned list has exactly one
-        element.
+        returns one :class:`Model` per model encoded in the artifact, keyed by
+        the ``sym_name`` of the corresponding ``mo.graph`` op (preserved
+        through MEF serialization). For single-model artifacts the returned
+        dict has exactly one entry.
 
         Args:
-            model: Path to a model.
+            model: Path to a compiled model artifact, a
+              :class:`max.graph.Module` containing one or more ``mo.graph``
+              ops, or a :class:`Graph`.
 
             custom_extensions: The extensions to load for the model.
               Supports paths to `.mojopkg` custom ops.
@@ -556,8 +569,8 @@ class InferenceSession:
               need to load weights in practice.
 
         Returns:
-            The loaded models, compiled and ready to execute, one per model
-            primitive encoded in the compiled artifact.
+            A mapping from each model's ``sym_name`` to its loaded
+            :class:`Model`, ready to execute.
 
         Raises:
             RuntimeError: If the path provided is invalid.
@@ -573,11 +586,16 @@ class InferenceSession:
                 custom_extensions
             )
 
+        # Track the MLIR module if we have one so we can derive a diagnostic
+        # pipeline name and (in virtual-device mode) enumerate graph names.
+        module: Module | None = None
+
         if isinstance(model, Path | str):
             _model = self._impl.compile_from_path(
                 model, custom_extensions_final
             )
         elif isinstance(model, Graph):
+            module = model.module
             custom_extensions_final.extend(
                 _process_custom_extensions_objects(model.kernel_libraries_paths)
             )
@@ -604,27 +622,10 @@ class InferenceSession:
                             f"Mismatch in device type for weight '{weight_name}'. Expected {expected_device} but weight is {registered_weight}"
                         )
 
-            with self._compilation_lock:
-                try:
-                    _model = self._impl.compile_from_object(
-                        model._module._CAPIPtr,  # type: ignore
-                        custom_extensions_final,
-                        model.name,
-                    )
-                except Exception as e:
-                    msg = (
-                        "Failed to compile the model. Please file an issue, "
-                        "all models should be correct by construction and "
-                        "this error should have been caught during construction."
-                    )
-                    if not self.debug.source_tracebacks:
-                        msg += (
-                            "\nFor more detailed failure information enable the "
-                            "`max-debug.source-tracebacks` config key (for example, "
-                            "`Graph.debug.source_tracebacks = True` or "
-                            "`MODULAR_DEBUG=source-tracebacks`)."
-                        )
-                    raise RuntimeError(msg) from e
+            _model = self._compile_module(module, custom_extensions_final)
+        elif isinstance(model, Module):
+            module = model
+            _model = self._compile_module(module, custom_extensions_final)
         else:
             raise RuntimeError("The model is not a valid path or module.")
 
@@ -645,21 +646,54 @@ class InferenceSession:
             # Initialization requires device memory allocation which virtual
             # devices don't support. Return one handle per top-level graph in
             # the module (skipping subgraphs, which are inlined callees) so
-            # callers that unpack per-model
-            # (e.g. ``vision, language = session.load_all(...)``) still work.
-            # The MLIR attribute for subgraph GraphOps is stored as
-            # ``isSubgraph`` (camelCase matches the tablegen ODS).
-            if isinstance(model, Graph):
-                num_models = sum(
-                    1
-                    for op in model._module.body.operations
-                    if "isSubgraph" not in op.attributes
-                )
-            else:
-                num_models = 1
-            return [_model] * num_models
+            # callers that key by graph name still work.
+            if module is not None:
+                return {name: _model for name in module.top_level_graph_names()}
+            # Path input has no MLIR module to inspect; return a single
+            # entry under a placeholder key. Real execution paths use the
+            # non-virtual branch below, which keys by Model.name.
+            return {"<unknown>": _model}
 
-        return self._impl._load_all(_model, weights_registry_real)
+        models = self._impl._load_all(_model, weights_registry_real)
+        result = {m.name: m for m in models}
+        if len(result) != len(models):
+            raise RuntimeError(
+                "Compiled artifact contains models with duplicate sym_names; "
+                f"got {[m.name for m in models]}"
+            )
+        return result
+
+    def _compile_module(
+        self,
+        module: Module,
+        custom_extensions_final: list[CustomExtensionType],
+    ) -> Model:
+        """Compile an MLIR Module under the session's compilation lock.
+
+        Wraps any compilation failure in a RuntimeError pointing at the
+        ``max-debug.source-tracebacks`` config key for richer diagnostics.
+        """
+        with self._compilation_lock:
+            try:
+                return self._impl.compile_from_object(
+                    module.mlir_module._CAPIPtr,  # type: ignore
+                    custom_extensions_final,
+                    _derive_pipeline_name(module),
+                )
+            except Exception as e:
+                msg = (
+                    "Failed to compile the model. Please file an issue, "
+                    "all models should be correct by construction and "
+                    "this error should have been caught during construction."
+                )
+                if not self.debug.source_tracebacks:
+                    msg += (
+                        "\nFor more detailed failure information enable the "
+                        "`max-debug.source-tracebacks` config key (for example, "
+                        "`Graph.debug.source_tracebacks = True` or "
+                        "`MODULAR_DEBUG=source-tracebacks`)."
+                    )
+                raise RuntimeError(msg) from e
 
     def set_debug_print_options(
         self,

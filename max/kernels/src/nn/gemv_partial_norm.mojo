@@ -37,7 +37,6 @@ values to `normed_output`. The unnormed tail lives as a view into
 expresses this.
 """
 
-from std.builtin.device_passable import DevicePassable
 from std.math import ceildiv, rsqrt
 from std.memory import AddressSpace
 from std.atomic import Atomic, Ordering, fence
@@ -79,6 +78,7 @@ from std.utils.static_tuple import StaticTuple
 
 from linalg.matmul.gpu import _matmul_gpu
 from shmem.ep_comm import DEVICE_SCOPE
+from structured_kernels.trace_buf import GmemTrace, NullTrace, TraceBuf
 
 from .normalization import rms_norm_gpu
 
@@ -88,9 +88,10 @@ from .normalization import rms_norm_gpu
 # ===----------------------------------------------------------------------=== #
 #
 # Records per-block timestamps (`global_perf_counter_ns` → PTX
-# `globaltimer`, SM-synchronized) at key phase boundaries. Designed as a
-# trait + two impls so that when tracing is disabled the kernel has
-# ZERO extra kernel arguments and the record() calls fully inline away:
+# `globaltimer`, SM-synchronized) at key phase boundaries. Uses the
+# shared `TraceBuf` trait + `NullTrace` / `GmemTrace` impls from
+# `structured_kernels/trace_buf.mojo` so the no-trace path has ZERO
+# extra kernel arguments and the record() calls fully inline away:
 #
 #   comptime if enable_trace:  -> strips the store body at compile time
 #   TraceBufT: TraceBuf        -> NullTrace (zero-sized) when disabled
@@ -113,100 +114,6 @@ comptime GEMV_TRACE_EVENTS_PER_BLOCK = 16
 """Number of `UInt64` timestamp slots reserved per block in a trace
 buffer. Only 10 slots are used today (roles 0 through 9); slots 10
 through 15 are reserved for future per-iteration instrumentation."""
-
-
-trait TraceBuf(DevicePassable, TrivialRegisterPassable):
-    """Trace-buffer interface. Implementations: `NullTrace`, `GmemTrace`."""
-
-    def store(self, offset: Int, val: UInt64):
-        """Stores a timestamp at a slot in the trace buffer.
-
-        Args:
-            offset: Slot index (`block_idx.y * GEMV_TRACE_EVENTS_PER_BLOCK + role`).
-            val: Timestamp value (ns from `global_perf_counter_ns`).
-        """
-        ...
-
-
-struct NullTrace(TraceBuf):
-    """Zero-sized no-op trace buffer. `store` is `pass`; struct has no
-    fields so it contributes 0 kernel-arg bytes when passed as an
-    argument."""
-
-    comptime device_type: AnyType = Self
-    """Device-side type alias. `NullTrace` is trivially device-passable."""
-
-    @always_inline
-    def __init__(out self):
-        """Constructs a zero-sized no-op trace buffer."""
-        pass
-
-    @always_inline
-    def store(self, offset: Int, val: UInt64):
-        """No-op store. The body compiles away entirely.
-
-        Args:
-            offset: Unused.
-            val: Unused.
-        """
-        pass
-
-    def _to_device_type(self, target: MutOpaquePointer[_]):
-        pass
-
-    @staticmethod
-    def get_type_name() -> String:
-        """Returns the type name for runtime diagnostics.
-
-        Returns:
-            Always `"NullTrace"`.
-        """
-        return "NullTrace"
-
-
-struct GmemTrace(TraceBuf):
-    """HBM-backed trace buffer: `store(offset, ts)` writes `ts` to
-    `ptr[offset]`. 8 bytes of kernel arg."""
-
-    comptime device_type: AnyType = Self
-    """Device-side type alias. `GmemTrace` is trivially device-passable."""
-
-    var ptr: UnsafePointer[UInt64, MutAnyOrigin]
-    """Device pointer to a u64 buffer sized for
-    `num_blocks * GEMV_TRACE_EVENTS_PER_BLOCK` slots."""
-
-    @always_inline
-    def __init__(out self, ptr: UnsafePointer[UInt64, MutAnyOrigin]):
-        """Wraps a device pointer as a trace buffer.
-
-        Args:
-            ptr: Device-side `UnsafePointer[UInt64]` with room for
-                `num_blocks * GEMV_TRACE_EVENTS_PER_BLOCK` slots,
-                zero-initialized on first use.
-        """
-        self.ptr = ptr
-
-    @always_inline
-    def store(self, offset: Int, val: UInt64):
-        """Writes a timestamp into the device-side trace buffer.
-
-        Args:
-            offset: Slot index.
-            val: Timestamp value (ns).
-        """
-        self.ptr.store(offset, val)
-
-    def _to_device_type(self, target: MutOpaquePointer[_]):
-        target.bitcast[Self]()[] = self
-
-    @staticmethod
-    def get_type_name() -> String:
-        """Returns the type name for runtime diagnostics.
-
-        Returns:
-            Always `"GmemTrace"`.
-        """
-        return "GmemTrace"
 
 
 # ===----------------------------------------------------------------------=== #

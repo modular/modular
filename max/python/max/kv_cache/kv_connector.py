@@ -15,12 +15,9 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Protocol, runtime_checkable
+from typing import Protocol, runtime_checkable
 
 from max.nn.kv_cache.metrics import KVCacheMetrics
-
-if TYPE_CHECKING:
-    from max.interfaces import RequestID, TextGenerationContext
 
 
 @runtime_checkable
@@ -43,36 +40,19 @@ class KVConnector(Protocol):
         """Connector name for logging/debugging."""
         ...
 
-    def lookup(
-        self,
-        ctx: TextGenerationContext,
-        block_hashes: list[int],
-    ) -> int:
-        """Look up blocks in external cache tiers.
-
-        Args:
-            ctx: The request context.
-            block_hashes: Hashes to look up in external cache.
-
-        Returns:
-            Number of tokens available from external cache.
-        """
-        ...
-
     def load(
         self,
-        ctx: TextGenerationContext,
-        target_block_ids: list[int],
-    ) -> list[int]:
+        device_block_ids: list[int],
+        block_hashes: list[int],
+    ) -> int:
         """Load data from external cache into device blocks.
 
         Args:
-            ctx: The request context.
-            target_block_ids: Device block IDs to load data into.
+            device_block_ids: Device block IDs to load data into.
+            block_hashes: Hashes to load data for.
 
         Returns:
-            List of block hashes for the loaded blocks, in the same order
-            as target_block_ids. Returns empty list if no loads occurred.
+            Number of blocks loaded from external cache.
         """
         ...
 
@@ -99,14 +79,6 @@ class KVConnector(Protocol):
 
     def flush(self) -> None:
         """Initiate queued async saves."""
-        ...
-
-    def on_request_complete(
-        self,
-        request_id: RequestID,
-        block_ids: list[int],
-    ) -> None:
-        """Called when a request completes to clean up tracking state."""
         ...
 
     def shutdown(self) -> None:

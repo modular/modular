@@ -102,6 +102,10 @@ modular_py_test(
 modular_py_test(
     name = "test_video_processor",
     srcs = ["test_video_processor.py"],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2411
     deps = [
         "//max/python/max/pipelines/architectures",
         requirement("av"),

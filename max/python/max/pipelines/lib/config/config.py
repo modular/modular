@@ -1316,12 +1316,6 @@ class PipelineConfig(ConfigFileModel):
                     "LoRA is currently not supported with the number of devices > 1."
                 )
 
-        # TODO(KERN-2861): gemma currently can crash with CUDA_ERROR_ILLEGAL_ADDRESS with 128 page size.
-        if "Gemma3" in arch.name or "Gemma4" in arch.name:
-            model_config.kv_cache.kv_cache_page_size = max(
-                model_config.kv_cache.kv_cache_page_size, 256
-            )
-
         model_config.validate_multi_gpu_supported(
             multi_gpu_supported=arch.multi_gpu_supported
         )

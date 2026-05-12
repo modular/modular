@@ -53,7 +53,7 @@ from std.memory import (
     memcpy,
     pack_bits,
 )
-from std.python import ConvertibleToPython, Python, PythonObject
+from std.python import Python, PythonObject
 from std.format._utils import _write_hex
 
 
@@ -87,7 +87,6 @@ print(format_string.format("bats", 6))     # => bats: 6
 
 struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
     Boolable,
-    ConvertibleToPython,
     Defaultable,
     Equatable,
     FloatableRaising,
@@ -481,17 +480,6 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
             " which is not a codepoint boundary.",
         )
         return Self(unsafe_from_utf8=self._slice[byte])
-
-    def to_python_object(var self) raises -> PythonObject:
-        """Convert this value to a PythonObject.
-
-        Returns:
-            A PythonObject representing the value.
-
-        Raises:
-            If the operation fails.
-        """
-        return PythonObject(self)
 
     @doc_hidden
     def __init__(

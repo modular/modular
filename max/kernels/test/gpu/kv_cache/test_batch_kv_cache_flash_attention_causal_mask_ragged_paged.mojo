@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.collections import Set
-from std.math import align_up, ceildiv, rsqrt
+from std.math import ceildiv, rsqrt
 from std.random import random_ui64, seed
 from std.sys.defines import get_defined_int
 from layout._utils import ManagedLayoutTensor
@@ -22,11 +22,12 @@ from kv_cache.types import (
     KVCacheStaticParams,
     PagedKVCacheCollection,
 )
+from kv_cache_test_utils import assert_no_nan_inf, padded_lut_cols
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._fillers import random
 from std.memory import memcpy, memset_zero
 from nn.attention.gpu.mha import flash_attention
-from nn.attention.mha_mask import CausalMask
+from nn.attention.mha_mask import CausalMask, MHAMask, SlidingWindowCausalMask
 from std.testing import assert_almost_equal, assert_equal
 from std.sys import has_amd_gpu_accelerator, has_nvidia_gpu_accelerator
 
@@ -34,12 +35,16 @@ from std.utils import IndexList
 
 
 def execute_ragged_flash_attention[
-    num_q_heads: Int, dtype: DType, kv_params: KVCacheStaticParams
+    num_q_heads: Int,
+    dtype: DType,
+    kv_params: KVCacheStaticParams,
+    mask_t: MHAMask,
 ](
     valid_lengths: List[Int],
     cache_lengths: List[Int],
     num_layers: Int,
     layer_idx: Int,
+    mask: mask_t,
     ctx: DeviceContext,
 ) raises:
     # TODO(KERN-2666): float32 + depth=256 exceeds shared memory on H100/B200.
@@ -164,13 +169,11 @@ def execute_ragged_flash_attention[
         kv_params.num_heads,
         kv_params.head_size,
     )
-    # Pad LUT inner dim to a multiple of 8 with at least 16 extra slots so
-    # the SIMD `populate` in PagedKVCache can safely load up to 16 uint32s
-    # past any valid `first_lut_idx` (partial-tile tails) — matches the
-    # padding rule in `max/python/max/kv_cache/paged_kv_cache/cache_manager.py`.
+    # Pad LUT inner dim to honor `PagedKVCache.populate`'s SIMD padding
+    # invariant — see `padded_lut_cols`.
     var paged_lut_shape = IndexList[2](
         batch_size,
-        align_up(ceildiv(max_full_context_length, page_size), 8) + 16,
+        padded_lut_cols(ceildiv(max_full_context_length, page_size)),
     )
 
     # KV block runtime layouts
@@ -335,7 +338,7 @@ def execute_ragged_flash_attention[
         q_ragged_lt,
         kv_collection_continuous_device.get_key_cache(layer_idx),
         kv_collection_continuous_device.get_value_cache(layer_idx),
-        CausalMask(),
+        mask,
         input_row_offsets.device_tensor(),
         rsqrt(Float32(kv_params.head_size)),
         ctx,
@@ -347,11 +350,16 @@ def execute_ragged_flash_attention[
         q_ragged_lt,
         kv_collection_paged_device.get_key_cache(layer_idx),
         kv_collection_paged_device.get_value_cache(layer_idx),
-        CausalMask(),
+        mask,
         input_row_offsets.device_tensor(),
         rsqrt(Float32(kv_params.head_size)),
         ctx,
     )
+    # Catch NaN/Inf before the tolerance comparison — gives a clear, named
+    # failure if either path produces non-finite output.
+    assert_no_nan_inf(ref_output, "ref_output_continuous")
+    assert_no_nan_inf(test_output, "test_output_paged")
+
     # Fetch host views for verification.
     var ref_out = ref_output.tensor()
     var test_out = test_output.tensor()
@@ -388,7 +396,7 @@ def execute_ragged_flash_attention[
             q_ragged_lt,
             kv_collection_paged_device.get_key_cache(layer_idx),
             kv_collection_paged_device.get_value_cache(layer_idx),
-            CausalMask(),
+            mask,
             input_row_offsets.device_tensor(),
             rsqrt(Float32(kv_params.head_size)),
             ctx,
@@ -412,7 +420,8 @@ def execute_ragged_flash_attention[
 def execute_flash_attention_suite[
     num_q_heads: Int,
     kv_params: KVCacheStaticParams,
-](ctx: DeviceContext) raises:
+    mask_t: MHAMask,
+](mask: mask_t, ctx: DeviceContext) raises:
     comptime types = (DType.bfloat16,)
 
     for bs in [1, 4, 16]:
@@ -436,7 +445,7 @@ def execute_flash_attention_suite[
                 kv_params.head_size,
             )
             execute_ragged_flash_attention[num_q_heads, type, kv_params](
-                ce_seq_lens, ce_cache_sizes, 2, 1, ctx
+                ce_seq_lens, ce_cache_sizes, 2, 1, mask, ctx
             )
 
             print(
@@ -447,7 +456,7 @@ def execute_flash_attention_suite[
                 kv_params.head_size,
             )
             execute_ragged_flash_attention[num_q_heads, type, kv_params](
-                tg_seq_lens, tg_cache_sizes, 2, 0, ctx
+                tg_seq_lens, tg_cache_sizes, 2, 0, mask, ctx
             )
 
             # GQA group=16 (405B TP=8 shape)
@@ -463,14 +472,14 @@ def execute_flash_attention_suite[
                 16,
                 type,
                 KVCacheStaticParams(num_heads=1, head_size=kv_params.head_size),
-            ](tg_seq_lens, tg_cache_sizes, 2, 0, ctx)
+            ](tg_seq_lens, tg_cache_sizes, 2, 0, mask, ctx)
             # GQA group=16 (32Q/2KV variant)
             print("TG", bs, type, "q_heads//kv_heads = 32//2")
             execute_ragged_flash_attention[
                 32,
                 type,
                 KVCacheStaticParams(num_heads=2, head_size=kv_params.head_size),
-            ](tg_seq_lens, tg_cache_sizes, 2, 0, ctx)
+            ](tg_seq_lens, tg_cache_sizes, 2, 0, mask, ctx)
 
     # edge cases
     print("CE", 1, DType.bfloat16, "depth=", kv_params.head_size)
@@ -478,14 +487,14 @@ def execute_flash_attention_suite[
         var short_ce_seq_len = [len]
         var short_ce_cache_size = [0]
         execute_ragged_flash_attention[num_q_heads, DType.bfloat16, kv_params](
-            short_ce_seq_len, short_ce_cache_size, 2, 1, ctx
+            short_ce_seq_len, short_ce_cache_size, 2, 1, mask, ctx
         )
 
     print("TG", 2, DType.bfloat16, "depth=", kv_params.head_size)
     tg_seq_lens = [1, 1]
     tg_variable_cache_lens = [1024, 11]
     execute_ragged_flash_attention[num_q_heads, DType.bfloat16, kv_params](
-        tg_seq_lens, tg_variable_cache_lens, 2, 0, ctx
+        tg_seq_lens, tg_variable_cache_lens, 2, 0, mask, ctx
     )
 
 
@@ -521,7 +530,7 @@ def main() raises:
                     KVCacheStaticParams(
                         num_heads=kv_num_heads, head_size=head_size_val
                     ),
-                ](tg_seq_lens, tg_cache_sizes, 2, 0, ctx)
+                ](tg_seq_lens, tg_cache_sizes, 2, 0, CausalMask(), ctx)
             except e:
                 print("FAIL seed=", s, "caches=", tg_cache_sizes)
                 fail_count += 1
@@ -536,4 +545,24 @@ def main() raises:
             KVCacheStaticParams(
                 num_heads=kv_num_heads, head_size=head_size_val
             ),
-        ](ctx)
+        ](CausalMask(), ctx)
+
+        # Sliding-window coverage at the same head_size as above. 1024
+        # matches the Gemma 3 / Gemma 4 production window; 32 stresses the
+        # in-page mask boundary since it is well below page_size=256.
+        comptime sliding_windows = (32, 1024)
+        comptime for ws_idx in range(len(sliding_windows)):
+            comptime window_size = sliding_windows[ws_idx]
+            seed(42 + window_size)
+            print(
+                "Sliding-window suite [window_size=",
+                window_size,
+                "]:",
+                sep="",
+            )
+            execute_flash_attention_suite[
+                num_q_heads,
+                KVCacheStaticParams(
+                    num_heads=kv_num_heads, head_size=head_size_val
+                ),
+            ](SlidingWindowCausalMask[window_size](), ctx)

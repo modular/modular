@@ -40,7 +40,6 @@ from std.memory import (
 )
 
 from .status import STATUS_SUCCESS, STATUS_UNKNOWN_ERROR, HALError
-from .event import Event
 from .device import DeviceSpec
 
 # ===-----------------------------------------------------------------------===#
@@ -382,23 +381,19 @@ struct RawDriver(Movable):
                 message=String(t"failed to copy from device: {err.message}"),
             )
 
-    def copy_device_to_device(
+    def copy_intra_device(
         self,
         queue: QueueHandle,
         dst: MemoryHandle,
         src: MemoryHandle,
         size: UInt64,
     ) raises HALError:
-        var status = self._raw.queue_copy_device_to_device.f(
-            queue, dst, src, size
-        )
+        var status = self._raw.queue_copy_intra_device.f(queue, dst, src, size)
         if status != STATUS_SUCCESS:
             var err = self.get_status_message(status)
             raise HALError(
                 err.status,
-                message=String(
-                    t"failed to copy device to device: {err.message}"
-                ),
+                message=String(t"failed to copy intra-device: {err.message}"),
             )
 
     def synchronize_queue(self, queue: QueueHandle) raises HALError:
@@ -415,11 +410,11 @@ struct RawDriver(Movable):
     # ===-------------------------------------------------------------------===#
 
     def create_event(
-        self, context: ContextHandle
+        self, context: ContextHandle, flags: UInt32
     ) raises HALError -> EventHandle:
         var event = UnsafeMaybeUninit[EventHandle]()
         var status = self._raw.event_create.f(
-            context, OutParam[EventHandle](to=event)
+            context, flags, OutParam[EventHandle](to=event)
         )
         if status != STATUS_SUCCESS:
             var err = self.get_status_message(status)
@@ -479,18 +474,14 @@ struct RawDriver(Movable):
                 message=String(t"failed to record event: {err.message}"),
             )
 
-    def wait_for_events[
-        origin: ImmutOrigin
-    ](
+    def wait_for_events(
         self,
         queue: QueueHandle,
-        read events: List[Event[origin]],
+        handles: UnsafePointer[EventHandle, MutAnyOrigin],
+        num_events: UInt32,
     ) raises HALError:
-        var handles = List[EventHandle](capacity=len(events))
-        for ref event in events:
-            handles.append(event._inner[]._handle)
         var status = self._raw.queue_wait_for_events.f(
-            queue, handles.unsafe_ptr(), UInt32(len(handles))
+            queue, handles, num_events
         )
         if status != STATUS_SUCCESS:
             var err = self.get_status_message(status)
@@ -754,8 +745,8 @@ struct RawPlugin(Movable):
             size: UInt64,
         ) thin -> PluginResultCode,
     ]
-    var queue_copy_device_to_device: HALFunction[
-        "M_driver_queue_copy_device_to_device",
+    var queue_copy_intra_device: HALFunction[
+        "M_driver_queue_copy_intra_device",
         def(
             queue: QueueHandle,
             dst: MemoryHandle,
@@ -776,7 +767,9 @@ struct RawPlugin(Movable):
     var event_create: HALFunction[
         "M_driver_event_create",
         def(
-            context: ContextHandle, event: OutParam[EventHandle]
+            context: ContextHandle,
+            flags: UInt32,
+            event: OutParam[EventHandle],
         ) thin -> PluginResultCode,
     ]
     var event_destroy: HALFunction[
@@ -920,9 +913,9 @@ struct RawPlugin(Movable):
         self.queue_copy_from_device = type_of(self.queue_copy_from_device)(
             handle, so_path
         )
-        self.queue_copy_device_to_device = type_of(
-            self.queue_copy_device_to_device
-        )(handle, so_path)
+        self.queue_copy_intra_device = type_of(self.queue_copy_intra_device)(
+            handle, so_path
+        )
         self.queue_set_memory = type_of(self.queue_set_memory)(handle, so_path)
         self.event_create = type_of(self.event_create)(handle, so_path)
         self.event_destroy = type_of(self.event_destroy)(handle, so_path)

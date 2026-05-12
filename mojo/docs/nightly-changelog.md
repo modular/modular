@@ -24,6 +24,19 @@ This version is still a work in progress.
         ...
   ```
 
+- Mojo now supports building types that support implicit conversions for
+  widening origins, allowing code like this to "just work" without rebind:
+
+  ```mojo
+  def origin_superset_conversion(
+    a: String, b: String, c: Bool
+  ) -> Pointer[String, origin_of(a, b)]:
+    if c:  # These pointers implicitly convert.
+        return Pointer(to=a)
+    else:
+        return Pointer(to=b)
+  ```
+
 ## Language changes
 
 - Support for "set-only" accessors has been removed. You need to define a
@@ -184,3 +197,7 @@ This version is still a work in progress.
   granularity is now 64 MiB; large compiles still work because the mapper
   reserves additional slabs on demand.
   ([Issue #6433](https://github.com/modular/modular/issues/6433))
+
+- Attempting to import a source Mojo package from a broken symlink will no
+  longer result in a compiler crash.
+  ([Issue #6424](https://github.com/modular/modular/issues/6424))

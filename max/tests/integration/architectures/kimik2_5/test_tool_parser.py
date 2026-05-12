@@ -16,12 +16,38 @@ import uuid
 from unittest.mock import patch
 
 import pytest
+from llguidance import LLMatcher, LLTokenizer
+from llguidance._tokenizer import TokenizerWrapper
 from max.interfaces import (
     ParsedToolCall,
     ParsedToolCallDelta,
     ParsedToolResponse,
 )
 from max.pipelines.architectures.kimik2_5.tool_parser import KimiToolParser
+
+
+class _MinimalTokenizer:
+    """Minimal byte tokenizer for grammar compilation validation tests.
+
+    Maps each byte value to a token ID, providing a 256-token vocabulary
+    sufficient for testing grammar compilation without loading a real model.
+    """
+
+    eos_token_id: int = 0
+    bos_token_id: int | None = None
+    tokens: list[bytes] = [bytes([i]) for i in range(256)]
+
+    def __call__(self, s: bytes | str) -> list[int]:
+        if isinstance(s, str):
+            s = s.encode("utf-8")
+        return list(s)
+
+
+@pytest.fixture(scope="module")
+def ll_tokenizer() -> LLTokenizer:
+    """Create a minimal LLTokenizer for grammar validation tests."""
+    wrapper = TokenizerWrapper(_MinimalTokenizer())
+    return LLTokenizer(wrapper, n_vocab=256)
 
 
 def test_single_tool_call_parsing() -> None:
@@ -625,3 +651,145 @@ def test_special_characters_in_arguments() -> None:
     assert len(result.tool_calls) == 1
     parsed_args = json.loads(result.tool_calls[0].arguments)
     assert parsed_args == special_args
+
+
+def test_generate_tool_call_grammar_with_tool_names(
+    ll_tokenizer: LLTokenizer,
+) -> None:
+    """Test generating a regex grammar for constrained decoding with specific tools."""
+    grammar = KimiToolParser.generate_tool_call_grammar(
+        tool_names=["get_weather", "search"]
+    )
+
+    # Verify the grammar is a non-empty string
+    assert isinstance(grammar, str)
+    assert len(grammar) > 0
+
+    # Verify LLMatcher can compile the grammar (will raise if invalid)
+    matcher = LLMatcher(ll_tokenizer, grammar)
+    assert matcher is not None
+
+
+def test_generate_tool_call_grammar_without_tool_names(
+    ll_tokenizer: LLTokenizer,
+) -> None:
+    """Test generating a regex grammar that accepts any valid identifier."""
+    grammar = KimiToolParser.generate_tool_call_grammar(tool_names=None)
+
+    # Verify the grammar is a non-empty string
+    assert isinstance(grammar, str)
+    assert len(grammar) > 0
+
+    # Verify LLMatcher can compile the grammar (will raise if invalid)
+    matcher = LLMatcher(ll_tokenizer, grammar)
+    assert matcher is not None
+
+
+def test_generate_tool_call_grammar_escapes_special_chars(
+    ll_tokenizer: LLTokenizer,
+) -> None:
+    """Test that special regex characters in tool names are escaped."""
+    # Tool names with regex special characters
+    grammar = KimiToolParser.generate_tool_call_grammar(
+        tool_names=["get_weather.v2", "search+plus", "tool[0]"]
+    )
+
+    # Should not raise and should produce valid grammar
+    assert isinstance(grammar, str)
+    assert len(grammar) > 0
+
+    # Verify LLMatcher can compile the grammar (will raise if invalid)
+    matcher = LLMatcher(ll_tokenizer, grammar)
+    assert matcher is not None
+
+
+def test_generate_tool_call_grammar_with_response_format_schema(
+    ll_tokenizer: LLTokenizer,
+) -> None:
+    """Test generating a combined grammar with tools and response_format_schema."""
+    response_format_schema = {
+        "type": "object",
+        "properties": {
+            "answer": {"type": "string"},
+            "confidence": {"type": "number"},
+        },
+        "required": ["answer"],
+    }
+
+    grammar = KimiToolParser.generate_tool_call_grammar(
+        tool_names=["get_weather", "search"],
+        response_format_schema=response_format_schema,
+    )
+
+    # Verify the grammar is a non-empty string
+    assert isinstance(grammar, str)
+    assert len(grammar) > 0
+
+    # Combined grammar should contain alternation syntax (Lark format)
+    # It should reference both tool_calls and json_response
+    assert "tool_calls" in grammar
+    assert "json_response" in grammar
+    assert "%json" in grammar  # JSON schema embedding
+
+    # Verify LLMatcher can compile the grammar (will raise if invalid)
+    matcher = LLMatcher(ll_tokenizer, grammar)
+    assert matcher is not None
+
+
+def test_generate_tool_call_grammar_combined_accepts_json_object_type(
+    ll_tokenizer: LLTokenizer,
+) -> None:
+    """Test combined grammar with json_object type (any valid JSON)."""
+    # json_object mode uses a permissive schema
+    response_format_schema = {"type": "object"}
+
+    grammar = KimiToolParser.generate_tool_call_grammar(
+        tool_names=["calculate"],
+        response_format_schema=response_format_schema,
+    )
+
+    assert isinstance(grammar, str)
+    assert len(grammar) > 0
+    assert "json_response" in grammar
+
+    # Verify LLMatcher can compile the grammar (will raise if invalid)
+    matcher = LLMatcher(ll_tokenizer, grammar)
+    assert matcher is not None
+
+
+def test_generate_tool_call_grammar_no_schema_returns_regex_grammar(
+    ll_tokenizer: LLTokenizer,
+) -> None:
+    """Test that without response_format_schema, we get regex-only grammar."""
+    grammar = KimiToolParser.generate_tool_call_grammar(
+        tool_names=["get_weather"],
+        response_format_schema=None,
+    )
+
+    # Without schema, should return grammar from grammar_from_regex()
+    assert isinstance(grammar, str)
+    assert len(grammar) > 0
+    # The regex grammar should NOT contain JSON schema embedding
+    assert "%json" not in grammar
+    # Should contain the tool call pattern
+    assert "tool_calls_section_begin" in grammar
+
+    # Verify LLMatcher can compile the grammar (will raise if invalid)
+    matcher = LLMatcher(ll_tokenizer, grammar)
+    assert matcher is not None
+
+
+def test_parser_handles_json_content_when_no_tool_calls() -> None:
+    """Test that parser returns content as-is when no tool call markers present."""
+    parser = KimiToolParser()
+
+    # This is what the model would output when choosing JSON content
+    # instead of tool calls (with combined grammar)
+    json_response = '{"answer": "The weather is sunny", "confidence": 0.95}'
+
+    result = parser.parse_complete(json_response)
+
+    # No tool calls should be parsed
+    assert len(result.tool_calls) == 0
+    # Content should be returned as-is
+    assert result.content == json_response

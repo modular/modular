@@ -2,13 +2,31 @@ load("//bazel:api.bzl", "modular_py_library", "requirement")
 
 package(default_visibility = ["//max:consumers"])
 
+# Lightweight library containing just the percentile-metric type
+# definitions (``PercentileMetrics``, ``Metrics``, ``ConfidenceInfo``).
+# Carved out so consumers that only need the type shapes (e.g.
+# benchmark dashboards deserialising result rows from BigQuery) can
+# import them without pulling in the full ``benchmark_shared`` library
+# and its transitive deps (transformers, huggingface-hub, openai,
+# pillow, prometheus-client, etc.). The full ``metrics`` module
+# re-exports these types for backwards-compatible imports.
+modular_py_library(
+    name = "percentile_metrics",
+    srcs = ["percentile_metrics.py"],
+    deps = [],
+)
+
 modular_py_library(
     name = "benchmark_shared",
-    srcs = glob(["**/*.py"]),
+    srcs = glob(
+        ["**/*.py"],
+        exclude = ["percentile_metrics.py"],
+    ),
     data = glob(["datasets/packaged_data/**/*"]) + [
         "//max/python/max/benchmark:benchmark_config_yaml_files",
     ],
     deps = [
+        ":percentile_metrics",
         "//max/python/max/config",
         "//max/python/max/diagnostics",
         "//max/python/max/serve:config",

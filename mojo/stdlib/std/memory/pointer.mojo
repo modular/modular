@@ -247,6 +247,23 @@ struct Pointer[
         self = {_mlir_value = other._value}
 
     @doc_hidden
+    @implicit
+    @always_inline("nodebug")
+    def __init__(
+        out self, other: Pointer[address_space=Self.address_space, ...]
+    ) where Self.origin.contains[other.origin]:
+        """Implicitly cast a pointer with one origin to a another origin when
+        the result origin is a superset.
+
+        Args:
+            other: The `Pointer` to cast.
+
+        Returns:
+            A new Pointer with the same target as self and an ImmutOrigin.
+        """
+        self._value = rebind[Self._mlir_type](other._value)
+
+    @doc_hidden
     @always_inline("nodebug")
     def __init__(out self, *, _mlir_value: Self._mlir_type):
         """Constructs a Pointer from its MLIR prepresentation.

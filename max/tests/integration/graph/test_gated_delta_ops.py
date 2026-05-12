@@ -10,207 +10,233 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Python-level integration tests for the Gated DeltaNet (GDN) GPU kernels.
+"""Graph-level tests for the slot-indexed Gated DeltaNet (GDN) GPU kernels.
 
-Tests call through the @compiler.register path (MOGGKernelAPI) via ops.custom()
-and verify output shapes and basic numerical properties.
+The kernels are exposed via ``ops.inplace_custom`` and mutate a shared
+``BufferType`` pool at slot ``slot_idx[batch_item]``. These tests build
+minimal Graphs around each op and verify:
+
+* output shape and finiteness on the per-token tensor;
+* in-place mutation of the slots named in ``slot_idx``;
+* untouched slots elsewhere in the pool (the new invariant the
+  slot-indexed design introduces over the old gather/scatter path).
 
 GDN ops are registered in MOGGKernelAPI and are part of the built-in engine
-kernel library — no custom_extensions are needed.
-
-Kernel op signatures
---------------------
-gated_delta_conv1d_fwd (no parameters):
-  inputs:  qkv_input_ragged [T, C], conv_weight [C, K],
-           conv_state_in [B, C, K-1], input_row_offsets [B+1] uint32
-  outputs: conv_output_ragged [T, C], conv_state_out [B, C, K-1]
-  note:    only K=4 is compiled in the current build
-
-gated_delta_recurrence_fwd (parameter delta_softplus: Bool = False):
-  inputs:  qkv_conv_output [T, D], decay_per_token [T, H],
-           beta_per_token [T, H], recurrent_state_in [B, H, KD, VD],
-           input_row_offsets [B+1] uint32
-  outputs: recurrence_output [T, H*VD], recurrent_state_out [B, H, KD, VD]
-  note:    only (KD, VD) = (128, 128) is compiled in the current build
-           D = H*VD + 2*(num_key_heads*KD)
+kernel library — no ``custom_extensions`` are needed.
 """
 
 from __future__ import annotations
 
 import max.driver as md
 import numpy as np
+import pytest
 import torch
+from max.driver import accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import DeviceRef, Graph, TensorType, ops
+from max.graph import BufferType, DeviceRef, Graph, TensorType, ops
 
-# ── Conv1d test dimensions ────────────────────────────────────────────────────
-_CONV1D_BATCH = 2
-_CONV1D_TOTAL_SEQ_LEN = 8
-_CONV1D_CONV_DIM = 128  # multiple of CONV1D_BLOCK_DIM (128)
-_CONV1D_KERNEL_SIZE = 4  # only supported size in current build
-# Two equal-length sequences: [4, 4] → exclusive prefix offsets [0, 4, 8]
-_CONV1D_OFFSETS = np.array([0, 4, 8], dtype=np.uint32)
+# Single supported kernel size for K (compiled in MOGGKernelAPI).
+_KERNEL_SIZE = 4
 
-# ── Recurrence test dimensions ────────────────────────────────────────────────
-_RECUR_BATCH = 2
-_RECUR_TOTAL_SEQ_LEN = 8
-_RECUR_NUM_VALUE_HEADS = 2
-_RECUR_KEY_HEAD_DIM = 128  # only (128,128) compiled in current build
-_RECUR_VALUE_HEAD_DIM = 128
-_RECUR_NUM_KEY_HEADS = 2
-# conv_dim = H*VD + 2*(num_key_heads*KD)
-_RECUR_VALUE_DIM = _RECUR_NUM_VALUE_HEADS * _RECUR_VALUE_HEAD_DIM  # 256
-_RECUR_KEY_DIM = _RECUR_NUM_KEY_HEADS * _RECUR_KEY_HEAD_DIM  # 256
-_RECUR_CONV_DIM = _RECUR_VALUE_DIM + 2 * _RECUR_KEY_DIM  # 768
-# Two equal-length sequences: [4, 4] → exclusive prefix offsets [0, 4, 8]
-_RECUR_OFFSETS = np.array([0, 4, 8], dtype=np.uint32)
+# Single supported (KD, VD) for the recurrence kernel.
+_KEY_HEAD_DIM = 128
+_VALUE_HEAD_DIM = 128
 
 
-def test_gated_delta_conv1d_fwd_shapes(
+@pytest.mark.skipif(accelerator_count() == 0, reason="Requires GPU")
+def test_gated_delta_conv1d_fwd_shapes_and_in_place(
     session: InferenceSession,
 ) -> None:
-    """gated_delta_conv1d_fwd: output shapes and finiteness via the Graph API."""
+    """conv1d slot-indexed pool: shape, finiteness, and slot-isolation.
+
+    Two sequences map to slots 1 and 3 of a 4-slot pool. After execute,
+    those two slots must change relative to the initial random fill, and
+    slots 0 and 2 must be byte-identical to the initial fill.
+    """
     gpu = DeviceRef.GPU()
-    T = _CONV1D_TOTAL_SEQ_LEN
-    C = _CONV1D_CONV_DIM
-    K = _CONV1D_KERNEL_SIZE
-    B = _CONV1D_BATCH
+    batch = 2
+    total_seq_len = 8
+    conv_dim = 128  # multiple of CONV1D_BLOCK_DIM (128)
+    max_slots = 4
+    state_len = _KERNEL_SIZE - 1
+    referenced_slots = [1, 3]
+    untouched_slots = [s for s in range(max_slots) if s not in referenced_slots]
+    # Two equal-length sequences: [4, 4] -> exclusive prefix offsets [0, 4, 8].
+    offsets_np = np.array([0, 4, total_seq_len], dtype=np.uint32)
+    slot_idx_np = np.asarray(referenced_slots, dtype=np.uint32)
 
     with Graph(
-        "gdn_conv1d_shape_test",
+        "gdn_conv1d_slot_indexed_test",
         input_types=[
-            TensorType(DType.float32, [T, C], device=gpu),  # qkv_input_ragged
-            TensorType(DType.float32, [C, K], device=gpu),  # conv_weight
-            TensorType(
-                DType.float32, [B, C, K - 1], device=gpu
-            ),  # conv_state_in
-            TensorType(DType.uint32, [B + 1], device=gpu),  # input_row_offsets
+            TensorType(DType.float32, [total_seq_len, conv_dim], device=gpu),
+            TensorType(DType.float32, [conv_dim, _KERNEL_SIZE], device=gpu),
+            BufferType(
+                DType.float32,
+                [max_slots, conv_dim, state_len],
+                device=gpu,
+            ),
+            TensorType(DType.uint32, [batch], device=gpu),
+            TensorType(DType.uint32, [batch + 1], device=gpu),
         ],
     ) as graph:
-        qkv_in, conv_w, state_in, offsets = [inp.tensor for inp in graph.inputs]
-        results = ops.custom(
+        qkv_in = graph.inputs[0].tensor
+        conv_w = graph.inputs[1].tensor
+        conv_state = graph.inputs[2].buffer
+        slot_idx = graph.inputs[3].tensor
+        offsets = graph.inputs[4].tensor
+
+        results = ops.inplace_custom(
             "gated_delta_conv1d_fwd",
             device=gpu,
-            values=[qkv_in, conv_w, state_in, offsets],
+            values=[qkv_in, conv_w, conv_state, slot_idx, offsets],
             out_types=[
-                TensorType(DType.float32, [T, C], device=gpu),
-                TensorType(DType.float32, [B, C, K - 1], device=gpu),
+                TensorType(DType.float32, [total_seq_len, conv_dim], device=gpu)
             ],
         )
-        graph.output(results[0], results[1])
+        graph.output(results[0])
 
     model = session.load(graph)
+    gpu_device = model.input_devices[0]
 
     rng = np.random.default_rng(42)
-    gpu_device = model.input_devices[0]
+    qkv_np = rng.standard_normal((total_seq_len, conv_dim)).astype(np.float32)
+    conv_w_np = rng.standard_normal((conv_dim, _KERNEL_SIZE)).astype(np.float32)
+    pool_initial_np = rng.standard_normal(
+        (max_slots, conv_dim, state_len)
+    ).astype(np.float32)
+
+    pool_buf = md.Buffer.from_numpy(pool_initial_np.copy()).to(gpu_device)
     outputs = model.execute(
-        md.Buffer.from_numpy(rng.standard_normal((T, C)).astype(np.float32)).to(
-            gpu_device
-        ),
-        md.Buffer.from_numpy(rng.standard_normal((C, K)).astype(np.float32)).to(
-            gpu_device
-        ),
-        md.Buffer.from_numpy(np.zeros((B, C, K - 1), dtype=np.float32)).to(
-            gpu_device
-        ),
-        md.Buffer.from_numpy(_CONV1D_OFFSETS).to(gpu_device),
+        md.Buffer.from_numpy(qkv_np).to(gpu_device),
+        md.Buffer.from_numpy(conv_w_np).to(gpu_device),
+        pool_buf,
+        md.Buffer.from_numpy(slot_idx_np).to(gpu_device),
+        md.Buffer.from_numpy(offsets_np).to(gpu_device),
     )
 
     conv_out = torch.from_dlpack(outputs[0])
-    state_out = torch.from_dlpack(outputs[1])
+    assert conv_out.shape == torch.Size([total_seq_len, conv_dim])
+    assert torch.all(torch.isfinite(conv_out))
 
-    assert conv_out.shape == torch.Size([T, C]), (
-        f"conv_output_ragged: expected ({T}, {C}), got {tuple(conv_out.shape)}"
-    )
-    assert state_out.shape == torch.Size([B, C, K - 1]), (
-        f"conv_state_out: expected ({B}, {C}, {K - 1}),"
-        f" got {tuple(state_out.shape)}"
-    )
-    assert torch.all(torch.isfinite(conv_out)), (
-        "conv_output_ragged contains non-finite values"
-    )
-    assert torch.all(torch.isfinite(state_out)), (
-        "conv_state_out contains non-finite values"
-    )
+    pool_after_np = torch.from_dlpack(pool_buf).cpu().numpy()
+    for s in referenced_slots:
+        assert not np.array_equal(pool_after_np[s], pool_initial_np[s]), (
+            f"conv_state slot {s} should have been mutated"
+        )
+    for s in untouched_slots:
+        np.testing.assert_array_equal(
+            pool_after_np[s],
+            pool_initial_np[s],
+            err_msg=f"conv_state slot {s} must be untouched",
+        )
 
 
-def test_gated_delta_recurrence_fwd_shapes(
+@pytest.mark.skipif(accelerator_count() == 0, reason="Requires GPU")
+def test_gated_delta_recurrence_fwd_shapes_and_in_place(
     session: InferenceSession,
 ) -> None:
-    """gated_delta_recurrence_fwd: output shapes and finiteness via Graph API."""
+    """recurrence slot-indexed pool: shape, finiteness, and slot-isolation.
+
+    Mirrors the conv1d test for the recurrence kernel: two sequences map
+    to slots 1 and 3 of a 4-slot pool; only those slots may be mutated.
+    """
     gpu = DeviceRef.GPU()
-    T = _RECUR_TOTAL_SEQ_LEN
-    B = _RECUR_BATCH
-    H = _RECUR_NUM_VALUE_HEADS
-    KD = _RECUR_KEY_HEAD_DIM
-    VD = _RECUR_VALUE_HEAD_DIM
-    D = _RECUR_CONV_DIM
+    batch = 2
+    total_seq_len = 8
+    num_value_heads = 2
+    num_key_heads = 2
+    kd = _KEY_HEAD_DIM
+    vd = _VALUE_HEAD_DIM
+    value_dim = num_value_heads * vd
+    key_dim = num_key_heads * kd
+    conv_dim = value_dim + 2 * key_dim
+    max_slots = 4
+    referenced_slots = [1, 3]
+    untouched_slots = [s for s in range(max_slots) if s not in referenced_slots]
+    offsets_np = np.array([0, 4, total_seq_len], dtype=np.uint32)
+    slot_idx_np = np.asarray(referenced_slots, dtype=np.uint32)
 
     with Graph(
-        "gdn_recurrence_shape_test",
+        "gdn_recurrence_slot_indexed_test",
         input_types=[
-            TensorType(DType.float32, [T, D], device=gpu),  # qkv_conv_output
-            TensorType(DType.float32, [T, H], device=gpu),  # decay_per_token
-            TensorType(DType.float32, [T, H], device=gpu),  # beta_per_token
+            TensorType(DType.float32, [total_seq_len, conv_dim], device=gpu),
             TensorType(
-                DType.float32, [B, H, KD, VD], device=gpu
-            ),  # recurrent_state_in
-            TensorType(DType.uint32, [B + 1], device=gpu),  # input_row_offsets
+                DType.float32, [total_seq_len, num_value_heads], device=gpu
+            ),
+            TensorType(
+                DType.float32, [total_seq_len, num_value_heads], device=gpu
+            ),
+            BufferType(
+                DType.float32,
+                [max_slots, num_value_heads, kd, vd],
+                device=gpu,
+            ),
+            TensorType(DType.uint32, [batch], device=gpu),
+            TensorType(DType.uint32, [batch + 1], device=gpu),
         ],
     ) as graph:
-        qkv, decay, beta, r_state, offsets = [
-            inp.tensor for inp in graph.inputs
-        ]
-        results = ops.custom(
+        qkv_conv_out = graph.inputs[0].tensor
+        decay = graph.inputs[1].tensor
+        beta = graph.inputs[2].tensor
+        rec_state = graph.inputs[3].buffer
+        slot_idx = graph.inputs[4].tensor
+        offsets = graph.inputs[5].tensor
+
+        results = ops.inplace_custom(
             "gated_delta_recurrence_fwd",
             device=gpu,
-            values=[qkv, decay, beta, r_state, offsets],
+            values=[qkv_conv_out, decay, beta, rec_state, slot_idx, offsets],
             out_types=[
-                TensorType(DType.float32, [T, H * VD], device=gpu),
-                TensorType(DType.float32, [B, H, KD, VD], device=gpu),
+                TensorType(
+                    DType.float32, [total_seq_len, value_dim], device=gpu
+                )
             ],
         )
-        graph.output(results[0], results[1])
+        graph.output(results[0])
 
     model = session.load(graph)
+    gpu_device = model.input_devices[0]
 
     rng = np.random.default_rng(42)
-    # decay and beta should be in (0, 1) for numerical stability
+    qkv_np = rng.standard_normal((total_seq_len, conv_dim)).astype(np.float32)
+    # decay and beta in (0, 1) for numerical stability.
     decay_np = (
-        np.abs(rng.standard_normal((T, H)).astype(np.float32)) * 0.5
-    ).clip(0.0, 1.0)
+        (np.abs(rng.standard_normal((total_seq_len, num_value_heads))) * 0.5)
+        .clip(0.0, 1.0)
+        .astype(np.float32)
+    )
     beta_np = (
-        np.abs(rng.standard_normal((T, H)).astype(np.float32)) * 0.5
-    ).clip(0.0, 1.0)
+        (np.abs(rng.standard_normal((total_seq_len, num_value_heads))) * 0.5)
+        .clip(0.0, 1.0)
+        .astype(np.float32)
+    )
+    pool_initial_np = rng.standard_normal(
+        (max_slots, num_value_heads, kd, vd)
+    ).astype(np.float32)
 
-    gpu_device = model.input_devices[0]
+    pool_buf = md.Buffer.from_numpy(pool_initial_np.copy()).to(gpu_device)
     outputs = model.execute(
-        md.Buffer.from_numpy(rng.standard_normal((T, D)).astype(np.float32)).to(
-            gpu_device
-        ),
+        md.Buffer.from_numpy(qkv_np).to(gpu_device),
         md.Buffer.from_numpy(decay_np).to(gpu_device),
         md.Buffer.from_numpy(beta_np).to(gpu_device),
-        md.Buffer.from_numpy(np.zeros((B, H, KD, VD), dtype=np.float32)).to(
-            gpu_device
-        ),
-        md.Buffer.from_numpy(_RECUR_OFFSETS).to(gpu_device),
+        pool_buf,
+        md.Buffer.from_numpy(slot_idx_np).to(gpu_device),
+        md.Buffer.from_numpy(offsets_np).to(gpu_device),
     )
 
     rec_out = torch.from_dlpack(outputs[0])
-    state_out = torch.from_dlpack(outputs[1])
+    assert rec_out.shape == torch.Size([total_seq_len, value_dim])
+    assert torch.all(torch.isfinite(rec_out))
 
-    assert rec_out.shape == torch.Size([T, H * VD]), (
-        f"recurrence_output: expected ({T}, {H * VD}),"
-        f" got {tuple(rec_out.shape)}"
-    )
-    assert state_out.shape == torch.Size([B, H, KD, VD]), (
-        f"recurrent_state_out: expected ({B}, {H}, {KD}, {VD}),"
-        f" got {tuple(state_out.shape)}"
-    )
-    assert torch.all(torch.isfinite(rec_out)), (
-        "recurrence_output contains non-finite values"
-    )
-    assert torch.all(torch.isfinite(state_out)), (
-        "recurrent_state_out contains non-finite values"
-    )
+    pool_after_np = torch.from_dlpack(pool_buf).cpu().numpy()
+    for s in referenced_slots:
+        assert not np.array_equal(pool_after_np[s], pool_initial_np[s]), (
+            f"recurrent_state slot {s} should have been mutated"
+        )
+    for s in untouched_slots:
+        np.testing.assert_array_equal(
+            pool_after_np[s],
+            pool_initial_np[s],
+            err_msg=f"recurrent_state slot {s} must be untouched",
+        )

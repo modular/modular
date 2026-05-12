@@ -480,14 +480,12 @@ def test_heterogeneous_mla_prefill_src_replica_maps_to_first_shard() -> None:
     # After prefill.run_iteration(), the transfer request is recorded in
     # active_transfers. Grab it and assert src_replica_idx was translated.
     assert len(prefill.active_transfers) == 1
-    _context, model_src_replica_idx, transfer_req = next(
-        iter(prefill.active_transfers.values())
-    )
+    active = next(iter(prefill.active_transfers.values()))
     # Scheduler-level (model) replica is always 0 for DP=1 prefill.
-    assert model_src_replica_idx == 0
+    assert active.replica_idx == 0
     # Engine-level src_replica_idx is the RR-selected flattened index.
     # For the first request (counter=0 → offset 0), it's the first TP shard.
-    assert transfer_req.src_replica_idx == 0
+    assert active.transfer.src_replica_idx == 0
 
 
 def test_di_with_dp2_requests_distributed_to_different_replicas() -> None:
@@ -822,8 +820,8 @@ def test_prefix_caching_prefill_skips_cached_blocks_in_transfer() -> None:
 
     # Transfer should only cover the non-cached pages
     assert len(prefill.active_transfers) == 1
-    _, _, transfer_data = next(iter(prefill.active_transfers.values()))
-    transferred_pages = len(transfer_data.src_idxs)
+    active = next(iter(prefill.active_transfers.values()))
+    transferred_pages = len(active.transfer.src_idxs)
     assert transferred_pages < num_total_pages, (
         f"Expected fewer than {num_total_pages} pages transferred, "
         f"got {transferred_pages}"

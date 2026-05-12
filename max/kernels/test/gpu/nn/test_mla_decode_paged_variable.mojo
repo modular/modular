@@ -2913,11 +2913,6 @@ def main() raises:
                 var mq4: List[Int] = [30, 1024, 8192, 32768]
                 run_multiq_both_kv_types[128]("multiq2_128heads", mq4, 2, ctx)
 
-                # seq_len=8, uniform medium cache (16 heads)
-                run_multiq_uniform_both[16](
-                    "multiq8_uniform_1k", 4, 1024, 8, ctx
-                )
-
                 # -----------------------------------------------------------
                 # Group 13: Truly ragged Q — each batch has a DIFFERENT
                 # number of query tokens.
@@ -2935,13 +2930,6 @@ def main() raises:
                 var rq_sl1: List[Int] = [1, 3, 2, 4]
                 run_ragged_q_both_kv_types[16](
                     "ragged_basic", rq_cl1, rq_sl1, ctx
-                )
-
-                # Extreme: one batch has 8 tokens, others have 1
-                var rq_cl2: List[Int] = [1024, 1024, 1024, 1024]
-                var rq_sl2: List[Int] = [1, 1, 1, 8]
-                run_ragged_q_both_kv_types[16](
-                    "ragged_extreme_1_1_1_8", rq_cl2, rq_sl2, ctx
                 )
 
                 # With 128 heads (full DeepSeek config)

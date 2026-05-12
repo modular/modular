@@ -804,10 +804,36 @@ struct Attention[
         #  - 32×32: the MFMA permutation iterates over 4-register groups;
         #    elem_size must be 4 so `store_mfma32` reads one group at a
         #    time, not the full 16-register fragment.
-        writer.store[mfma32=Self.mma_shape[0] == 32](
-            output_warp_tile.vectorize[1, 4](),
-            self.out_reg_buffer.reg_tile,
-        )
+        #
+        # `out_reg_buffer.reg_tile` is laid out m_mma-INNER (row =
+        # `n_mma * num_m_mmas + m_mma`) to match the MMA accumulator
+        # convention from `mma.mojo` (`c_idx = m_mma + n_mma * num_m_mmas`),
+        # whereas `RegTileWriter.store[mfma32]` reads its source tile
+        # row-by-row assuming m_mma-OUTER. Materialize the m_mma-th strided
+        # slice into a contiguous (num_n_mmas_output, output_frag_size)
+        # temp tile and store one 32-row sub-tile per m_mma. For
+        # num_m_mmas == 1 the inner copy is an identity that the compiler
+        # folds, so a single path covers BM=32 and BM=64.
+        comptime sub_layout = row_major[
+            Self.num_n_mmas_output, Self.output_frag_size
+        ]()
+        comptime for m_mma in range(Self.num_m_mmas):
+            var sub_warp_tile = output_warp_tile.tile[
+                Self.mma_shape[0],
+                Self.output_depth // Self.num_warps_n,
+            ](m_mma, 0)
+            var sub_reg = tt_stack_allocation[
+                Self.accum_type, address_space=AddressSpace.LOCAL
+            ](sub_layout)
+            comptime for n_mma in range(Self.num_n_mmas_output):
+                comptime for k in range(Self.output_frag_size):
+                    sub_reg[n_mma, k] = self.out_reg_buffer.reg_tile[
+                        n_mma * Self.num_m_mmas + m_mma, k
+                    ]
+            writer.store[mfma32=Self.mma_shape[0] == 32](
+                sub_warp_tile.vectorize[1, 4](),
+                sub_reg,
+            )
 
     # --- Decode-specific methods ---
 
@@ -825,7 +851,14 @@ struct Attention[
         exp_sum_ptr: UnsafePointer[Scalar[Self.accum_type], MutAnyOrigin],
         qk_max_ptr: UnsafePointer[Scalar[Self.accum_type], MutAnyOrigin],
     ):
-        """Write softmax stats for split-K reduction (decode only)."""
+        """Write softmax stats for split-K reduction (decode only).
+
+        With BM > MMA_M (e.g. MLA decode at BM=64, MMA_M=32), each warp
+        covers `num_m_mmas = BM/MMA_M` row tiles of the score matrix; row
+        stats live in `softmax.rowsum_tensor[m_mma, 0]` per tile. Filter
+        to lane_col=0 of warp 0 (the only lanes that hold reduced row
+        stats post-softmax) and write one entry per m_mma.
+        """
         comptime if not Self.token_gen:
             return
 
@@ -834,7 +867,10 @@ struct Attention[
 
         # `q_head_idx()` is per-thread for both MHA and MLA: it folds
         # `lane_id % MMA_M` into the tile base, so we just gate on the
-        # filter and write.
+        # filter and write. m_mma=0 covers the lane's "natural" head row
+        # (rows 0..MMA_M-1 of the BM tile); m_mma=k>0 covers rows k*MMA_M
+        # onward, which the same lane also owns when num_m_mmas>1
+        # (only happens for MLA decode at BM>=64).
         var head_idx = self.q_head_idx()
         if (
             thread_idx.x < Self.amd_structured_config.heads_per_tile()
@@ -842,3 +878,13 @@ struct Attention[
         ):
             exp_sum_ptr[head_idx] = self.softmax.rowsum_tensor[0, 0][0]
             qk_max_ptr[head_idx] = self.softmax.rowmax_tensor[0, 0][0]
+
+            comptime for m_mma in range(1, Self.num_m_mmas):
+                var head_idx_m = head_idx + m_mma * Self.mma_shape[0]
+                if head_idx_m < Self.num_heads:
+                    exp_sum_ptr[head_idx_m] = self.softmax.rowsum_tensor[
+                        m_mma, 0
+                    ][0]
+                    qk_max_ptr[head_idx_m] = self.softmax.rowmax_tensor[
+                        m_mma, 0
+                    ][0]

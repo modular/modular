@@ -336,7 +336,81 @@ def _set_output_param_decls(op: Operation, params: dict[str, None]) -> None:
         )
 
 
-Module = mlir.Module
+class Module:
+    """A container for one or more :class:`Graph` instances compiled together.
+
+    A ``Module`` holds an MLIR module that may contain multiple ``mo.graph``
+    ops — for example a vision encoder and a language model that should be
+    handed to :meth:`max.engine.InferenceSession.load_all` as a single
+    compilation unit. Constructing several :class:`Graph` instances with the
+    same ``module=`` argument adds each graph as a top-level op in this
+    module.
+
+    Example:
+
+    .. code-block:: python
+
+        module = Module()
+        with Graph("encoder", input_types=encoder_inputs, module=module) as encoder:
+            ...
+        with Graph("decoder", input_types=decoder_inputs, module=module) as decoder:
+            ...
+        models = session.load_all(module, weights_registry=weights)
+        encoder = models[encoder.name]
+        decoder = models[decoder.name]
+
+    The wrapped MLIR module is exposed as :attr:`mlir_module` for code that
+    must reach the underlying representation (graph compiler internals,
+    serializers, etc.); routine users should not need it.
+    """
+
+    mlir_module: mlir.Module
+    """The wrapped MLIR module. Internal callers may reach through this to
+    the cmlir bindings; user code should prefer the methods on this class."""
+
+    def __init__(self, mlir_module: mlir.Module | None = None) -> None:
+        """Create a new, empty module, or wrap an existing :class:`mlir.Module`.
+
+        Args:
+            mlir_module: An existing MLIR module to wrap. When ``None``
+                (the default), a new empty module is created. The
+                wrap-existing form is intended for code inside the graph
+                package (for example, :class:`Graph`'s subgraph plumbing
+                and the :attr:`Graph.module` property) that already holds
+                an ``mlir.Module`` and needs to expose it through the
+                public :class:`Module` surface; routine users should leave
+                this argument unset.
+        """
+        if mlir_module is not None:
+            self.mlir_module = mlir_module
+            return
+
+        with _location():
+            self.mlir_module = mlir.Module.create()
+
+    def top_level_graph_names(self) -> list[str]:
+        """Return the name of every top-level (non-subgraph) graph in this module.
+
+        Walks the wrapped module's body, casts each op to :class:`_mo.GraphOp`,
+        and skips any that have ``is_subgraph`` set (subgraphs are inlined
+        callees, not loaded as standalone models). Non-graph ops are skipped
+        rather than raising. The resulting order matches MEF model order,
+        which is the order
+        :func:`max.engine.InferenceSession.load_all` returns models in.
+
+        Returns:
+            The names of the top-level graphs, in MEF order. The list is
+            empty for a freshly constructed :class:`Module`.
+        """
+        names: list[str] = []
+        for op in self.mlir_module.body.operations:
+            graph_op = Operation._from_cmlir(op)
+            if not isinstance(graph_op, _mo.GraphOp):
+                continue
+            if graph_op.is_subgraph:
+                continue
+            names.append(graph_op.sym_name)
+        return names
 
 
 class GraphDebugConfig:
@@ -477,7 +551,7 @@ class Graph:
         *args,
         custom_extensions: Iterable[Path] = [],
         kernel_library: KernelLibrary | None = None,
-        module: mlir.Module | None = None,
+        module: Module | None = None,
         strict_device_placement: DevicePlacementPolicy = DevicePlacementPolicy.Warn,
         **kwargs,
     ) -> None:
@@ -498,8 +572,13 @@ class Graph:
         self._should_verify_ops = True
 
         with _location() as loc:
-            # Create the top level module op.
-            self._module = module or mlir.Module.create()
+            # Create the top level module op. ``Module`` is the public
+            # wrapper; ``self._module`` keeps the underlying ``mlir.Module``
+            # so internal MLIR access in this file does not have to thread
+            # through ``.mlir_module`` everywhere.
+            self._module = (
+                module.mlir_module if module else mlir.Module.create()
+            )
             _module: builtin.ModuleOp = Operation._from_cmlir(  # type: ignore
                 self._module.operation
             )
@@ -670,7 +749,7 @@ class Graph:
             path=path,
             # *args,
             custom_extensions=custom_extensions,
-            module=self._module,
+            module=Module(mlir_module=self._module),
             # **kwargs,
         )
 
@@ -888,11 +967,16 @@ class Graph:
         assert current
         return current
 
-    @staticmethod
-    def empty_module() -> mlir.Module:
-        """Create a new module to hold one or more graphs."""
-        with _location():
-            return mlir.Module.create()
+    @property
+    def module(self) -> Module:
+        """The :class:`Module` that owns this graph.
+
+        Multiple :class:`Graph` instances built with the same ``module=``
+        argument share the same underlying ``Module``; that shared object
+        is what you pass to :meth:`max.engine.InferenceSession.load_all`
+        when compiling several graphs together.
+        """
+        return Module(mlir_module=self._module)
 
     @property
     def _body(self) -> mlir.Block:

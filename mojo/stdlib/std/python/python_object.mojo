@@ -29,7 +29,6 @@ from std.reflection import reflect
 from ._cpython import CPython, GILAcquired, PyObject, PyObjectPtr, PyTypeObject
 from .bindings import PyMojoObject, _get_type_name, lookup_py_type_object
 from .python import Python
-from .conversions import ConvertibleToPython
 
 
 struct _PyIter(ImplicitlyCopyable, Iterable, Iterator):
@@ -88,7 +87,6 @@ struct _PyIter(ImplicitlyCopyable, Iterable, Iterator):
 
 struct PythonObject(
     Boolable,
-    ConvertibleToPython,
     Defaultable,
     Identifiable,
     ImplicitlyCopyable,
@@ -151,6 +149,19 @@ struct PythonObject(
         #   count to convert this to a "strong reference".
         cpy.Py_IncRef(from_borrowed)
         self._obj_ptr = from_borrowed
+
+    @implicit
+    def __init__(out self, var source: Some[ConvertibleToPython]) raises:
+        """Initialize this object from a value of some type that can be
+        custom converted to a PythonObject.
+
+        Args:
+            source: The value to convert to a PythonObject.
+
+        Raises:
+            If the conversion to a PythonObject fails.
+        """
+        self = source^.to_python_object()
 
     @always_inline
     def __init__[
@@ -306,13 +317,10 @@ struct PythonObject(
         self = Self(from_owned=_slice_to_py_object_ptr(slice))
 
     @always_inline
-    def __init__[
-        *Ts: ConvertibleToPython & Copyable
-    ](out self, var *values: *Ts, __list_literal__: NoneType) raises:
+    def __init__(
+        out self, var *values: PythonObject, __list_literal__: NoneType
+    ) raises:
         """Construct an Python list of objects.
-
-        Parameters:
-            Ts: The types of the input values.
 
         Args:
             values: The values to initialize the list with.
@@ -327,13 +335,10 @@ struct PythonObject(
         self = Python.list(*values^)
 
     @always_inline
-    def __init__[
-        *Ts: ConvertibleToPython & Copyable
-    ](out self, var *values: *Ts, __set_literal__: NoneType) raises:
+    def __init__(
+        out self, var *values: PythonObject, __set_literal__: NoneType
+    ) raises:
         """Construct an Python set of objects.
-
-        Parameters:
-            Ts: The types of the input values.
 
         Args:
             values: The values to initialize the set with.
@@ -348,9 +353,8 @@ struct PythonObject(
         ref cpy = Python().cpython()
         var set_ptr = cpy.PySet_New({})
 
-        comptime for i in range(Ts.size):
-            var obj = values[i].copy().to_python_object()
-            var errno = cpy.PySet_Add(set_ptr, obj.steal_data())
+        for i in range(len(values)):
+            var errno = cpy.PySet_Add(set_ptr, values[i].steal_data())
             if errno == -1:
                 raise cpy.unsafe_get_error()
         return PythonObject(from_owned=set_ptr)
@@ -437,13 +441,8 @@ struct PythonObject(
             raise cpy.unsafe_get_error()
         return PythonObject(from_owned=attr_ptr)
 
-    def __setattr__[
-        V: ConvertibleToPython, //
-    ](self, var name: String, var value: V) raises:
+    def __setattr__(self, var name: String, var value: PythonObject) raises:
         """Set the given value for the object attribute with the given name.
-
-        Parameters:
-            V: Attribute value that can be converted to a `PythonObject`.
 
         Args:
             name: The name of the object attribute to set.
@@ -452,12 +451,10 @@ struct PythonObject(
         Raises:
             If setting the attribute fails.
         """
-        var value_obj = value^.to_python_object()
         ref cpy = Python().cpython()
         var errno = cpy.PyObject_SetAttrString(
-            self._obj_ptr, name^, value_obj._obj_ptr
+            self._obj_ptr, name^, value.steal_data()
         )
-        _ = value_obj^
         if errno == -1:
             raise cpy.unsafe_get_error()
 
@@ -486,8 +483,6 @@ struct PythonObject(
         ref cpy = Python().cpython()
         return cpy.Py_Is(self._obj_ptr, other._obj_ptr) != 0
 
-    # TODO(MOCO-2924): This should take a `*Ts: ConvertibleToPython` like other
-    #   methods, however this currently runs into a spurious inference warning.
     def __getitem__(self, *args: PythonObject) raises -> PythonObject:
         """Return the value for the given key or keys.
 
@@ -545,15 +540,8 @@ struct PythonObject(
             raise cpy.unsafe_get_error()
         return PythonObject(from_owned=res_ptr)
 
-    def __setitem__[
-        *Ks: ConvertibleToPython & Copyable,
-        V: ConvertibleToPython,
-    ](self, *args: *Ks, var value: V) raises:
+    def __setitem__(self, *args: PythonObject, var value: PythonObject) raises:
         """Set the value with the given key or keys.
-
-        Parameters:
-            Ks: Index types that can be converted to `PythonObject`s.
-            V: Element value that can be converted to a `PythonObject`
 
         Args:
             args: The key or keys to set on this object.
@@ -563,25 +551,21 @@ struct PythonObject(
             If setting the item fails.
         """
         ref cpy = Python().cpython()
-        comptime size = Ks.size
+        var size = len(args)
         var key_ptr: PyObjectPtr
         if size == 1:
-            var single = args[0].copy().to_python_object()
-            key_ptr = cpy.Py_NewRef(single._obj_ptr)
-            _ = single^
+            key_ptr = cpy.Py_NewRef(args[0].steal_data())
         else:
             key_ptr = cpy.PyTuple_New(size)
 
-            comptime for i in range(size):
-                var arg = args[i].copy().to_python_object()
-                _ = cpy.PyTuple_SetItem(key_ptr, i, cpy.Py_NewRef(arg._obj_ptr))
-                _ = arg^
+            for i in range(size):
+                _ = cpy.PyTuple_SetItem(
+                    key_ptr, i, cpy.Py_NewRef(args[i].steal_data())
+                )
 
-        var value_obj = value^.to_python_object()
         var errno = cpy.PyObject_SetItem(
-            self._obj_ptr, key_ptr, value_obj._obj_ptr
+            self._obj_ptr, key_ptr, value.steal_data()
         )
-        _ = value_obj^
         cpy.Py_DecRef(key_ptr)
         if errno == -1:
             raise cpy.unsafe_get_error()
@@ -600,15 +584,10 @@ struct PythonObject(
         else:
             self = callable_obj(rhs)
 
-    def __mul__[
-        T: ConvertibleToPython, //
-    ](self, var rhs: T) raises -> PythonObject:
+    def __mul__(self, var rhs: PythonObject) raises -> PythonObject:
         """Multiplication.
 
         Calls the underlying object's `__mul__` method.
-
-        Parameters:
-            T: Argument type that can be converted to `PythonObject`.
 
         Args:
             rhs: Right hand value.
@@ -619,18 +598,12 @@ struct PythonObject(
         Raises:
             If the operation is not supported.
         """
-        var rhs_obj = rhs^.to_python_object()
-        return self.__getattr__("__mul__")(rhs_obj)
+        return self.__getattr__("__mul__")(rhs^)
 
-    def __rmul__[
-        T: ConvertibleToPython, //
-    ](self, var lhs: T) raises -> PythonObject:
+    def __rmul__(self, var lhs: PythonObject) raises -> PythonObject:
         """Reverse multiplication.
 
         Calls the underlying object's `__rmul__` method.
-
-        Parameters:
-            T: Argument type that can be converted to `PythonObject`.
 
         Args:
             lhs: The left-hand-side value that is multiplied by this object.
@@ -641,16 +614,12 @@ struct PythonObject(
         Raises:
             If the operation is not supported.
         """
-        var lhs_obj = lhs^.to_python_object()
-        return self.__getattr__("__rmul__")(lhs_obj)
+        return self.__getattr__("__rmul__")(lhs^)
 
-    def __imul__[T: ConvertibleToPython, //](mut self, var rhs: T) raises:
+    def __imul__(mut self, var rhs: PythonObject) raises:
         """In-place multiplication.
 
         Calls the underlying object's `__imul__` method.
-
-        Parameters:
-            T: Argument type that can be converted to `PythonObject`.
 
         Args:
             rhs: The right-hand-side value by which this object is multiplied.
@@ -658,18 +627,12 @@ struct PythonObject(
         Raises:
             If the operation is not supported.
         """
-        var rhs_obj = rhs^.to_python_object()
-        return self.__call_single_arg_inplace_method__("__mul__", rhs_obj)
+        return self.__call_single_arg_inplace_method__("__mul__", rhs^)
 
-    def __add__[
-        T: ConvertibleToPython, //
-    ](self, var rhs: T) raises -> PythonObject:
+    def __add__(self, var rhs: PythonObject) raises -> PythonObject:
         """Addition and concatenation.
 
         Calls the underlying object's `__add__` method.
-
-        Parameters:
-            T: Argument type that can be converted to `PythonObject`.
 
         Args:
             rhs: Right hand value.
@@ -680,18 +643,12 @@ struct PythonObject(
         Raises:
             If the operation is not supported.
         """
-        var rhs_obj = rhs^.to_python_object()
-        return self.__getattr__("__add__")(rhs_obj)
+        return self.__getattr__("__add__")(rhs^)
 
-    def __radd__[
-        T: ConvertibleToPython, //
-    ](self, var lhs: T) raises -> PythonObject:
+    def __radd__(self, var lhs: PythonObject) raises -> PythonObject:
         """Reverse addition and concatenation.
 
         Calls the underlying object's `__radd__` method.
-
-        Parameters:
-            T: Argument type that can be converted to `PythonObject`.
 
         Args:
             lhs: The left-hand-side value to which this object is added or
@@ -703,18 +660,10 @@ struct PythonObject(
         Raises:
             If the operation is not supported.
         """
-        var lhs_obj = lhs^.to_python_object()
-        return self.__getattr__("__radd__")(lhs_obj)
+        return self.__getattr__("__radd__")(lhs^)
 
-    # Note: `T = PythonObject` default helps `foo += [1, 2]` succeed, by helping
-    #   the compiler see that `[1, 2]` can instantiate a PythonObject.
-    def __iadd__[
-        T: ConvertibleToPython = PythonObject
-    ](mut self, var rhs: T) raises:
+    def __iadd__(mut self, var rhs: PythonObject) raises:
         """Immediate addition and concatenation.
-
-        Parameters:
-            T: Argument type that can be converted to `PythonObject`.
 
         Args:
             rhs: The right-hand-side value that is added to this object.
@@ -722,18 +671,12 @@ struct PythonObject(
         Raises:
             If the operation is not supported.
         """
-        var rhs_obj = rhs^.to_python_object()
-        return self.__call_single_arg_inplace_method__("__add__", rhs_obj)
+        return self.__call_single_arg_inplace_method__("__add__", rhs^)
 
-    def __sub__[
-        T: ConvertibleToPython, //
-    ](self, var rhs: T) raises -> PythonObject:
+    def __sub__(self, var rhs: PythonObject) raises -> PythonObject:
         """Subtraction.
 
         Calls the underlying object's `__sub__` method.
-
-        Parameters:
-            T: Argument type that can be converted to `PythonObject`.
 
         Args:
             rhs: Right hand value.
@@ -744,18 +687,12 @@ struct PythonObject(
         Raises:
             If the operation is not supported.
         """
-        var rhs_obj = rhs^.to_python_object()
-        return self.__getattr__("__sub__")(rhs_obj)
+        return self.__getattr__("__sub__")(rhs^)
 
-    def __rsub__[
-        T: ConvertibleToPython, //
-    ](self, var lhs: T) raises -> PythonObject:
+    def __rsub__(self, var lhs: PythonObject) raises -> PythonObject:
         """Reverse subtraction.
 
         Calls the underlying object's `__rsub__` method.
-
-        Parameters:
-            T: Argument type that can be converted to `PythonObject`.
 
         Args:
             lhs: The left-hand-side value from which this object is subtracted.
@@ -766,14 +703,10 @@ struct PythonObject(
         Raises:
             If the operation is not supported.
         """
-        var lhs_obj = lhs^.to_python_object()
-        return self.__getattr__("__rsub__")(lhs_obj)
+        return self.__getattr__("__rsub__")(lhs^)
 
-    def __isub__[T: ConvertibleToPython, //](mut self, var rhs: T) raises:
+    def __isub__(mut self, var rhs: PythonObject) raises:
         """Immediate subtraction.
-
-        Parameters:
-            T: Argument type that can be converted to `PythonObject`.
 
         Args:
             rhs: The right-hand-side value that is subtracted from this object.
@@ -781,19 +714,13 @@ struct PythonObject(
         Raises:
             If the operation is not supported.
         """
-        var rhs_obj = rhs^.to_python_object()
-        return self.__call_single_arg_inplace_method__("__sub__", rhs_obj)
+        return self.__call_single_arg_inplace_method__("__sub__", rhs^)
 
-    def __floordiv__[
-        T: ConvertibleToPython, //
-    ](self, var rhs: T) raises -> PythonObject:
+    def __floordiv__(self, var rhs: PythonObject) raises -> PythonObject:
         """Return the division of self and rhs rounded down to the nearest
         integer.
 
         Calls the underlying object's `__floordiv__` method.
-
-        Parameters:
-            T: Argument type that can be converted to `PythonObject`.
 
         Args:
             rhs: The right-hand-side value by which this object is divided.
@@ -805,18 +732,12 @@ struct PythonObject(
         Raises:
             If the operation fails.
         """
-        var rhs_obj = rhs^.to_python_object()
-        return self.__getattr__("__floordiv__")(rhs_obj)
+        return self.__getattr__("__floordiv__")(rhs^)
 
-    def __rfloordiv__[
-        T: ConvertibleToPython, //
-    ](self, var lhs: T) raises -> PythonObject:
+    def __rfloordiv__(self, var lhs: PythonObject) raises -> PythonObject:
         """Reverse floor division.
 
         Calls the underlying object's `__rfloordiv__` method.
-
-        Parameters:
-            T: Argument type that can be converted to `PythonObject`.
 
         Args:
             lhs: The left-hand-side value that is divided by this object.
@@ -828,14 +749,10 @@ struct PythonObject(
         Raises:
             If the operation fails.
         """
-        var lhs_obj = lhs^.to_python_object()
-        return self.__getattr__("__rfloordiv__")(lhs_obj)
+        return self.__getattr__("__rfloordiv__")(lhs^)
 
-    def __ifloordiv__[T: ConvertibleToPython, //](mut self, var rhs: T) raises:
+    def __ifloordiv__(mut self, var rhs: PythonObject) raises:
         """Immediate floor division.
-
-        Parameters:
-            T: Argument type that can be converted to `PythonObject`.
 
         Args:
             rhs: The value by which this object is divided.
@@ -843,18 +760,12 @@ struct PythonObject(
         Raises:
             If the operation fails.
         """
-        var rhs_obj = rhs^.to_python_object()
-        return self.__call_single_arg_inplace_method__("__floordiv__", rhs_obj)
+        return self.__call_single_arg_inplace_method__("__floordiv__", rhs^)
 
-    def __truediv__[
-        T: ConvertibleToPython, //
-    ](self, var rhs: T) raises -> PythonObject:
+    def __truediv__(self, var rhs: PythonObject) raises -> PythonObject:
         """Division.
 
         Calls the underlying object's `__truediv__` method.
-
-        Parameters:
-            T: Argument type that can be converted to `PythonObject`.
 
         Args:
             rhs: The right-hand-side value by which this object is divided.
@@ -865,18 +776,12 @@ struct PythonObject(
         Raises:
             If the operation fails.
         """
-        var rhs_obj = rhs^.to_python_object()
-        return self.__getattr__("__truediv__")(rhs_obj)
+        return self.__getattr__("__truediv__")(rhs^)
 
-    def __rtruediv__[
-        T: ConvertibleToPython, //
-    ](self, var lhs: T) raises -> PythonObject:
+    def __rtruediv__(self, var lhs: PythonObject) raises -> PythonObject:
         """Reverse division.
 
         Calls the underlying object's `__rtruediv__` method.
-
-        Parameters:
-            T: Argument type that can be converted to `PythonObject`.
 
         Args:
             lhs: The left-hand-side value that is divided by this object.
@@ -887,14 +792,10 @@ struct PythonObject(
         Raises:
             If the operation fails.
         """
-        var lhs_obj = lhs^.to_python_object()
-        return self.__getattr__("__rtruediv__")(lhs_obj)
+        return self.__getattr__("__rtruediv__")(lhs^)
 
-    def __itruediv__[T: ConvertibleToPython, //](mut self, var rhs: T) raises:
+    def __itruediv__(mut self, var rhs: PythonObject) raises:
         """Immediate division.
-
-        Parameters:
-            T: Argument type that can be converted to `PythonObject`.
 
         Args:
             rhs: The value by which this object is divided.
@@ -902,18 +803,12 @@ struct PythonObject(
         Raises:
             If the operation fails.
         """
-        var rhs_obj = rhs^.to_python_object()
-        return self.__call_single_arg_inplace_method__("__truediv__", rhs_obj)
+        return self.__call_single_arg_inplace_method__("__truediv__", rhs^)
 
-    def __mod__[
-        T: ConvertibleToPython, //
-    ](self, var rhs: T) raises -> PythonObject:
+    def __mod__(self, var rhs: PythonObject) raises -> PythonObject:
         """Return the remainder of self divided by rhs.
 
         Calls the underlying object's `__mod__` method.
-
-        Parameters:
-            T: Argument type that can be converted to `PythonObject`.
 
         Args:
             rhs: The value to divide on.
@@ -924,18 +819,12 @@ struct PythonObject(
         Raises:
             If the operation fails.
         """
-        var rhs_obj = rhs^.to_python_object()
-        return self.__getattr__("__mod__")(rhs_obj)
+        return self.__getattr__("__mod__")(rhs^)
 
-    def __rmod__[
-        T: ConvertibleToPython, //
-    ](self, var lhs: T) raises -> PythonObject:
+    def __rmod__(self, var lhs: PythonObject) raises -> PythonObject:
         """Reverse modulo.
 
         Calls the underlying object's `__rmod__` method.
-
-        Parameters:
-            T: Argument type that can be converted to `PythonObject`.
 
         Args:
             lhs: The left-hand-side value that is divided by this object.
@@ -946,14 +835,10 @@ struct PythonObject(
         Raises:
             If the operation fails.
         """
-        var lhs_obj = lhs^.to_python_object()
-        return self.__getattr__("__rmod__")(lhs_obj)
+        return self.__getattr__("__rmod__")(lhs^)
 
-    def __imod__[T: ConvertibleToPython, //](mut self, var rhs: T) raises:
+    def __imod__(mut self, var rhs: PythonObject) raises:
         """Immediate modulo.
-
-        Parameters:
-            T: Argument type that can be converted to `PythonObject`.
 
         Args:
             rhs: The right-hand-side value that is used to divide this object.
@@ -961,16 +846,10 @@ struct PythonObject(
         Raises:
             If the operation fails.
         """
-        var rhs_obj = rhs^.to_python_object()
-        return self.__call_single_arg_inplace_method__("__mod__", rhs_obj)
+        return self.__call_single_arg_inplace_method__("__mod__", rhs^)
 
-    def __xor__[
-        T: ConvertibleToPython, //
-    ](self, var rhs: T) raises -> PythonObject:
+    def __xor__(self, var rhs: PythonObject) raises -> PythonObject:
         """Exclusive OR.
-
-        Parameters:
-            T: Argument type that can be converted to `PythonObject`.
 
         Args:
             rhs: The right-hand-side value with which this object is exclusive
@@ -982,16 +861,10 @@ struct PythonObject(
         Raises:
             If the operation fails.
         """
-        var rhs_obj = rhs^.to_python_object()
-        return self.__getattr__("__xor__")(rhs_obj)
+        return self.__getattr__("__xor__")(rhs^)
 
-    def __rxor__[
-        T: ConvertibleToPython, //
-    ](self, var lhs: T) raises -> PythonObject:
+    def __rxor__(self, var lhs: PythonObject) raises -> PythonObject:
         """Reverse exclusive OR.
-
-        Parameters:
-            T: Argument type that can be converted to `PythonObject`.
 
         Args:
             lhs: The left-hand-side value that is exclusive OR'ed with this
@@ -1003,14 +876,10 @@ struct PythonObject(
         Raises:
             If the operation fails.
         """
-        var lhs_obj = lhs^.to_python_object()
-        return self.__getattr__("__rxor__")(lhs_obj)
+        return self.__getattr__("__rxor__")(lhs^)
 
-    def __ixor__[T: ConvertibleToPython, //](mut self, var rhs: T) raises:
+    def __ixor__(mut self, var rhs: PythonObject) raises:
         """Immediate exclusive OR.
-
-        Parameters:
-            T: Argument type that can be converted to `PythonObject`.
 
         Args:
             rhs: The right-hand-side value with which this object is
@@ -1019,16 +888,10 @@ struct PythonObject(
         Raises:
             If the operation fails.
         """
-        var rhs_obj = rhs^.to_python_object()
-        return self.__call_single_arg_inplace_method__("__xor__", rhs_obj)
+        return self.__call_single_arg_inplace_method__("__xor__", rhs^)
 
-    def __or__[
-        T: ConvertibleToPython, //
-    ](self, var rhs: T) raises -> PythonObject:
+    def __or__(self, var rhs: PythonObject) raises -> PythonObject:
         """Bitwise OR.
-
-        Parameters:
-            T: Argument type that can be converted to `PythonObject`.
 
         Args:
             rhs: The right-hand-side value with which this object is bitwise
@@ -1040,16 +903,10 @@ struct PythonObject(
         Raises:
             If the operation fails.
         """
-        var rhs_obj = rhs^.to_python_object()
-        return self.__getattr__("__or__")(rhs_obj)
+        return self.__getattr__("__or__")(rhs^)
 
-    def __ror__[
-        T: ConvertibleToPython, //
-    ](self, var lhs: T) raises -> PythonObject:
+    def __ror__(self, var lhs: PythonObject) raises -> PythonObject:
         """Reverse bitwise OR.
-
-        Parameters:
-            T: Argument type that can be converted to `PythonObject`.
 
         Args:
             lhs: The left-hand-side value that is bitwise OR'ed with this
@@ -1061,14 +918,10 @@ struct PythonObject(
         Raises:
             If the operation fails.
         """
-        var lhs_obj = lhs^.to_python_object()
-        return self.__getattr__("__ror__")(lhs_obj)
+        return self.__getattr__("__ror__")(lhs^)
 
-    def __ior__[T: ConvertibleToPython, //](mut self, var rhs: T) raises:
+    def __ior__(mut self, var rhs: PythonObject) raises:
         """Immediate bitwise OR.
-
-        Parameters:
-            T: Argument type that can be converted to `PythonObject`.
 
         Args:
             rhs: The right-hand-side value with which this object is bitwise
@@ -1077,16 +930,10 @@ struct PythonObject(
         Raises:
             If the operation fails.
         """
-        var rhs_obj = rhs^.to_python_object()
-        return self.__call_single_arg_inplace_method__("__or__", rhs_obj)
+        return self.__call_single_arg_inplace_method__("__or__", rhs^)
 
-    def __and__[
-        T: ConvertibleToPython, //
-    ](self, var rhs: T) raises -> PythonObject:
+    def __and__(self, var rhs: PythonObject) raises -> PythonObject:
         """Bitwise AND.
-
-        Parameters:
-            T: Argument type that can be converted to `PythonObject`.
 
         Args:
             rhs: The right-hand-side value with which this object is bitwise
@@ -1098,16 +945,10 @@ struct PythonObject(
         Raises:
             If the operation fails.
         """
-        var rhs_obj = rhs^.to_python_object()
-        return self.__getattr__("__and__")(rhs_obj)
+        return self.__getattr__("__and__")(rhs^)
 
-    def __rand__[
-        T: ConvertibleToPython, //
-    ](self, var lhs: T) raises -> PythonObject:
+    def __rand__(self, var lhs: PythonObject) raises -> PythonObject:
         """Reverse bitwise and.
-
-        Parameters:
-            T: Argument type that can be converted to `PythonObject`.
 
         Args:
             lhs: The left-hand-side value that is bitwise AND'ed with this
@@ -1119,14 +960,10 @@ struct PythonObject(
         Raises:
             If the operation fails.
         """
-        var lhs_obj = lhs^.to_python_object()
-        return self.__getattr__("__rand__")(lhs_obj)
+        return self.__getattr__("__rand__")(lhs^)
 
-    def __iand__[T: ConvertibleToPython, //](mut self, var rhs: T) raises:
+    def __iand__(mut self, var rhs: PythonObject) raises:
         """Immediate bitwise AND.
-
-        Parameters:
-            T: Argument type that can be converted to `PythonObject`.
 
         Args:
             rhs: The right-hand-side value with which this object is bitwise
@@ -1135,16 +972,10 @@ struct PythonObject(
         Raises:
             If the operation fails.
         """
-        var rhs_obj = rhs^.to_python_object()
-        return self.__call_single_arg_inplace_method__("__and__", rhs_obj)
+        return self.__call_single_arg_inplace_method__("__and__", rhs^)
 
-    def __rshift__[
-        T: ConvertibleToPython, //
-    ](self, var rhs: T) raises -> PythonObject:
+    def __rshift__(self, var rhs: PythonObject) raises -> PythonObject:
         """Bitwise right shift.
-
-        Parameters:
-            T: Argument type that can be converted to `PythonObject`.
 
         Args:
             rhs: The right-hand-side value by which this object is bitwise
@@ -1156,16 +987,10 @@ struct PythonObject(
         Raises:
             If the operation fails.
         """
-        var rhs_obj = rhs^.to_python_object()
-        return self.__getattr__("__rshift__")(rhs_obj)
+        return self.__getattr__("__rshift__")(rhs^)
 
-    def __rrshift__[
-        T: ConvertibleToPython, //
-    ](self, var lhs: T) raises -> PythonObject:
+    def __rrshift__(self, var lhs: PythonObject) raises -> PythonObject:
         """Reverse bitwise right shift.
-
-        Parameters:
-            T: Argument type that can be converted to `PythonObject`.
 
         Args:
             lhs: The left-hand-side value that is bitwise shifted to the right
@@ -1177,14 +1002,10 @@ struct PythonObject(
         Raises:
             If the operation fails.
         """
-        var lhs_obj = lhs^.to_python_object()
-        return self.__getattr__("__rrshift__")(lhs_obj)
+        return self.__getattr__("__rrshift__")(lhs^)
 
-    def __irshift__[T: ConvertibleToPython, //](mut self, var rhs: T) raises:
+    def __irshift__(mut self, var rhs: PythonObject) raises:
         """Immediate bitwise right shift.
-
-        Parameters:
-            T: Argument type that can be converted to `PythonObject`.
 
         Args:
             rhs: The right-hand-side value by which this object is bitwise
@@ -1193,16 +1014,10 @@ struct PythonObject(
         Raises:
             If the operation fails.
         """
-        var rhs_obj = rhs^.to_python_object()
-        return self.__call_single_arg_inplace_method__("__rshift__", rhs_obj)
+        return self.__call_single_arg_inplace_method__("__rshift__", rhs^)
 
-    def __lshift__[
-        T: ConvertibleToPython, //
-    ](self, var rhs: T) raises -> PythonObject:
+    def __lshift__(self, var rhs: PythonObject) raises -> PythonObject:
         """Bitwise left shift.
-
-        Parameters:
-            T: Argument type that can be converted to `PythonObject`.
 
         Args:
             rhs: The right-hand-side value by which this object is bitwise
@@ -1214,16 +1029,10 @@ struct PythonObject(
         Raises:
             If the operation fails.
         """
-        var rhs_obj = rhs^.to_python_object()
-        return self.__getattr__("__lshift__")(rhs_obj)
+        return self.__getattr__("__lshift__")(rhs^)
 
-    def __rlshift__[
-        T: ConvertibleToPython, //
-    ](self, var lhs: T) raises -> PythonObject:
+    def __rlshift__(self, var lhs: PythonObject) raises -> PythonObject:
         """Reverse bitwise left shift.
-
-        Parameters:
-            T: Argument type that can be converted to `PythonObject`.
 
         Args:
             lhs: The left-hand-side value that is bitwise shifted to the left
@@ -1235,14 +1044,10 @@ struct PythonObject(
         Raises:
             If the operation fails.
         """
-        var lhs_obj = lhs^.to_python_object()
-        return self.__getattr__("__rlshift__")(lhs_obj)
+        return self.__getattr__("__rlshift__")(lhs^)
 
-    def __ilshift__[T: ConvertibleToPython, //](mut self, var rhs: T) raises:
+    def __ilshift__(mut self, var rhs: PythonObject) raises:
         """Immediate bitwise left shift.
-
-        Parameters:
-            T: Argument type that can be converted to `PythonObject`.
 
         Args:
             rhs: The right-hand-side value by which this object is bitwise
@@ -1251,16 +1056,10 @@ struct PythonObject(
         Raises:
             If the operation fails.
         """
-        var rhs_obj = rhs^.to_python_object()
-        return self.__call_single_arg_inplace_method__("__lshift__", rhs_obj)
+        return self.__call_single_arg_inplace_method__("__lshift__", rhs^)
 
-    def __pow__[
-        T: ConvertibleToPython, //
-    ](self, var exp: T) raises -> PythonObject:
+    def __pow__(self, var exp: PythonObject) raises -> PythonObject:
         """Raises this object to the power of the given value.
-
-        Parameters:
-            T: Argument type that can be converted to `PythonObject`.
 
         Args:
             exp: The exponent.
@@ -1271,16 +1070,10 @@ struct PythonObject(
         Raises:
             If the operation fails.
         """
-        var exp_obj = exp^.to_python_object()
-        return self.__getattr__("__pow__")(exp_obj)
+        return self.__getattr__("__pow__")(exp^)
 
-    def __rpow__[
-        T: ConvertibleToPython, //
-    ](self, var lhs: T) raises -> PythonObject:
+    def __rpow__(self, var lhs: PythonObject) raises -> PythonObject:
         """Reverse power of.
-
-        Parameters:
-            T: Argument type that can be converted to `PythonObject`.
 
         Args:
             lhs: The number that is raised to the power of this object.
@@ -1291,14 +1084,10 @@ struct PythonObject(
         Raises:
             If the operation fails.
         """
-        var lhs_obj = lhs^.to_python_object()
-        return self.__getattr__("__rpow__")(lhs_obj)
+        return self.__getattr__("__rpow__")(lhs^)
 
-    def __ipow__[T: ConvertibleToPython, //](mut self, var rhs: T) raises:
+    def __ipow__(mut self, var rhs: PythonObject) raises:
         """Immediate power of.
-
-        Parameters:
-            T: Argument type that can be converted to `PythonObject`.
 
         Args:
             rhs: The exponent.
@@ -1306,16 +1095,10 @@ struct PythonObject(
         Raises:
             If the operation fails.
         """
-        var rhs_obj = rhs^.to_python_object()
-        return self.__call_single_arg_inplace_method__("__pow__", rhs_obj)
+        return self.__call_single_arg_inplace_method__("__pow__", rhs^)
 
-    def __lt__[
-        T: ConvertibleToPython, //
-    ](self, var rhs: T) raises -> PythonObject:
+    def __lt__(self, var rhs: PythonObject) raises -> PythonObject:
         """Less than (rich) comparison operator.
-
-        Parameters:
-            T: Argument type that can be converted to `PythonObject`.
 
         Args:
             rhs: The value of the right hand side of the comparison.
@@ -1326,16 +1109,10 @@ struct PythonObject(
         Raises:
             If the object doesn't implement the `__lt__` method, or if it fails.
         """
-        var rhs_obj = rhs^.to_python_object()
-        return self.__getattr__("__lt__")(rhs_obj)
+        return self.__getattr__("__lt__")(rhs^)
 
-    def __le__[
-        T: ConvertibleToPython, //
-    ](self, var rhs: T) raises -> PythonObject:
+    def __le__(self, var rhs: PythonObject) raises -> PythonObject:
         """Less than or equal (rich) comparison operator.
-
-        Parameters:
-            T: Argument type that can be converted to `PythonObject`.
 
         Args:
             rhs: The value of the right hand side of the comparison.
@@ -1346,16 +1123,10 @@ struct PythonObject(
         Raises:
             If the object doesn't implement the `__le__` method, or if it fails.
         """
-        var rhs_obj = rhs^.to_python_object()
-        return self.__getattr__("__le__")(rhs_obj)
+        return self.__getattr__("__le__")(rhs^)
 
-    def __gt__[
-        T: ConvertibleToPython, //
-    ](self, var rhs: T) raises -> PythonObject:
+    def __gt__(self, var rhs: PythonObject) raises -> PythonObject:
         """Greater than (rich) comparison operator.
-
-        Parameters:
-            T: Argument type that can be converted to `PythonObject`.
 
         Args:
             rhs: The value of the right hand side of the comparison.
@@ -1366,16 +1137,10 @@ struct PythonObject(
         Raises:
             If the object doesn't implement the `__gt__` method, or if it fails.
         """
-        var rhs_obj = rhs^.to_python_object()
-        return self.__getattr__("__gt__")(rhs_obj)
+        return self.__getattr__("__gt__")(rhs^)
 
-    def __ge__[
-        T: ConvertibleToPython, //
-    ](self, var rhs: T) raises -> PythonObject:
+    def __ge__(self, var rhs: PythonObject) raises -> PythonObject:
         """Greater than or equal (rich) comparison operator.
-
-        Parameters:
-            T: Argument type that can be converted to `PythonObject`.
 
         Args:
             rhs: The value of the right hand side of the comparison.
@@ -1386,16 +1151,10 @@ struct PythonObject(
         Raises:
             If the object doesn't implement the `__ge__` method, or if it fails.
         """
-        var rhs_obj = rhs^.to_python_object()
-        return self.__getattr__("__ge__")(rhs_obj)
+        return self.__getattr__("__ge__")(rhs^)
 
-    def __eq__[
-        T: ConvertibleToPython, //
-    ](self, var rhs: T) raises -> PythonObject:
+    def __eq__(self, var rhs: PythonObject) raises -> PythonObject:
         """Equality (rich) comparison operator.
-
-        Parameters:
-            T: Argument type that can be converted to `PythonObject`.
 
         Args:
             rhs: The value of the right hand side of the comparison.
@@ -1406,16 +1165,10 @@ struct PythonObject(
         Raises:
             If the object doesn't implement the `__eq__` method, or if it fails.
         """
-        var rhs_obj = rhs^.to_python_object()
-        return self.__getattr__("__eq__")(rhs_obj)
+        return self.__getattr__("__eq__")(rhs^)
 
-    def __ne__[
-        T: ConvertibleToPython, //
-    ](self, var rhs: T) raises -> PythonObject:
+    def __ne__(self, var rhs: PythonObject) raises -> PythonObject:
         """Inequality (rich) comparison operator.
-
-        Parameters:
-            T: Argument type that can be converted to `PythonObject`.
 
         Args:
             rhs: The value of the right hand side of the comparison.
@@ -1426,8 +1179,7 @@ struct PythonObject(
         Raises:
             If the object doesn't implement the `__ne__` method, or if it fails.
         """
-        var rhs_obj = rhs^.to_python_object()
-        return self.__getattr__("__ne__")(rhs_obj)
+        return self.__getattr__("__ne__")(rhs^)
 
     def __pos__(self) raises -> PythonObject:
         """Positive.
@@ -1471,16 +1223,10 @@ struct PythonObject(
         """
         return self.__getattr__("__invert__")()
 
-    def __contains__[
-        RHS: ConvertibleToPython, //
-    ](self, var rhs: RHS) raises -> Bool:
+    def __contains__(self, var rhs: PythonObject) raises -> Bool:
         """Contains dunder.
 
         Calls the underlying object's `__contains__` method.
-
-        Parameters:
-            RHS: Type of value that can be converted to `PythonObject` to check
-              for membership.
 
         Args:
             rhs: Right hand value.
@@ -1494,23 +1240,19 @@ struct PythonObject(
         # TODO: replace/optimize with c-python function.
         # TODO: implement __getitem__ step for cpython membership test operator.
         ref cpy = Python().cpython()
-        var rhs_obj = rhs^.to_python_object()
         if cpy.PyObject_HasAttrString(self._obj_ptr, "__contains__"):
-            return self.__getattr__("__contains__")(rhs_obj).__bool__()
+            return self.__getattr__("__contains__")(rhs^).__bool__()
         for v in self:
-            if v == rhs_obj:
+            if v == rhs:
                 return True
         return False
 
     # see https://github.com/python/cpython/blob/main/Objects/call.c
     # for decrement rules
-    def __call__[
-        *Ts: ConvertibleToPython & Copyable,
-    ](self, *args: *Ts, **kwargs: PythonObject) raises -> PythonObject:
+    def __call__(
+        self, *args: PythonObject, **kwargs: PythonObject
+    ) raises -> PythonObject:
         """Call the underlying object as if it were a function.
-
-        Parameters:
-            Ts: Types of the positional arguments.
 
         Args:
             args: Positional arguments to the function.
@@ -1522,17 +1264,14 @@ struct PythonObject(
         Returns:
             The return value from the called object.
         """
-        comptime size = Ts.size
-
+        var size = len(args)
         ref cpy = Python().cpython()
         var args_ptr = cpy.PyTuple_New(size)
 
-        comptime for i in range(size):
-            var arg = args[i].copy().to_python_object()
-
-            _ = cpy.PyTuple_SetItem(args_ptr, i, cpy.Py_NewRef(arg._obj_ptr))
-
-            _ = arg^
+        for i in range(size):
+            _ = cpy.PyTuple_SetItem(
+                args_ptr, i, cpy.Py_NewRef(args[i].steal_data())
+            )
         var kwargs_ptr = Python._dict(kwargs)
         var res_ptr = cpy.PyObject_Call(self._obj_ptr, args_ptr, kwargs_ptr)
         cpy.Py_DecRef(args_ptr)
@@ -1646,17 +1385,6 @@ struct PythonObject(
     # ===-------------------------------------------------------------------===#
     # Methods
     # ===-------------------------------------------------------------------===#
-
-    def to_python_object(var self) raises -> PythonObject:
-        """Convert this value to a PythonObject.
-
-        Returns:
-            A PythonObject representing the value.
-
-        Raises:
-            If the conversion to Python object fails.
-        """
-        return self^
 
     def steal_data(var self) -> PyObjectPtr:
         """Take ownership of the underlying pointer from the Python object.

@@ -1240,6 +1240,10 @@ def produce[
     comptime kv_bytes_pp = padded_depth * KVPagedRows.eff_page * size_of[
         qkv_type
     ]()
+    # Alignment of `kv_tile_row` produced by mask-driven iteration.
+    comptime base_alignment: Int = MaskType.start_column_alignment[
+        BM, BN, page_size
+    ]()
 
     @parameter
     @always_inline("nodebug")
@@ -1272,7 +1276,9 @@ def produce[
             p_mbar.expect_bytes(Int32(bytes))
 
         comptime stage_sz = BN * padded_depth
-        var paged_rows = kv_lut.populate[BN](prompt_idx, kv_tile_row)
+        var paged_rows = kv_lut.populate[BN, base_alignment](
+            prompt_idx, kv_tile_row
+        )
         # SM90's producer runs only on thread 0 (gated by `if thread_idx.x == 0:`
         # in `sm90/mha.mojo`), so we hard-code `elect=1` — the lone producer
         # thread is always "elected" and must issue the TMA.
@@ -1324,7 +1330,9 @@ def produce[
 
         comptime stage_sz = BN * padded_depth
         # See `produce_kv`: SM90 producer is single-threaded, so `elect=1`.
-        var paged_rows = kv_lut.populate[BN](prompt_idx, kv_tile_row)
+        var paged_rows = kv_lut.populate[BN, base_alignment](
+            prompt_idx, kv_tile_row
+        )
         comptime if is_k_side:
             paged_rows.tma_copy_k[needs_partial=True](
                 tma_op,

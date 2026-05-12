@@ -187,6 +187,64 @@ def create_task(
     _async_execute[handle.type](task._handle._handle, desired_worker_id=-1)
 
 
+@always_inline("nodebug")
+def task_id_for_device(device_id: Int) -> Int:
+    """Maps a device ID to a preferred AsyncRT worker thread ID for CPU affinity.
+
+    Delegates to the shared C++ implementation in DeviceAffinity.cpp which
+    handles explicit MODULAR_RUNTIME_DEVICE_TASK_CPU_IDS config,
+    NUMA-inferred GPU-to-CPU core mapping, and round-robin fallback.
+
+    Intended for use by affinity-aware task launchers such as
+    `_create_task` and `_launch_device_collective`. Pass -1 when no affinity
+    hint is needed.
+
+    Args:
+        device_id: The integer device ID (e.g. the ordinal of a GPU device).
+
+    Returns:
+        An AsyncRT worker thread index to use as `desired_worker_id`, or -1
+        if no affinity mapping is configured.
+    """
+    return Int(
+        external_call["KGEN_CompilerRT_TaskIdForDevice", Int32](
+            Int32(device_id),
+        )
+    )
+
+
+def _create_task(
+    var handle: Coroutine[...],
+    *,
+    desired_worker_id: Int,
+    out task: Task[handle.type, handle.origins],
+):
+    """Run the coroutine as a task on the AsyncRT Runtime with a worker affinity hint.
+
+    Package-private variant of `create_task` that accepts a `desired_worker_id`
+    so that callers can pin the task to a CPU worker with affinity for a
+    particular device. Pass the return value of `task_id_for_device` here;
+    pass -1 to get the same behavior as the public `create_task`.
+
+    This is intentionally not part of the public API. Use `create_task` for
+    unaffinitized launches. Use this function only when you have a concrete
+    reason to pin to a specific worker (e.g. NUMA-aware GPU collective dispatch).
+
+    Args:
+        handle: The coroutine to execute as a task. Ownership is transferred.
+        desired_worker_id: A preferred AsyncRT worker thread index. The runtime
+            may ignore this hint if the requested worker is unavailable.
+
+    Returns:
+        The `task` output parameter is initialized with the created task.
+    """
+    var ctx = handle._get_ctx[_AsyncContext]()
+    _init_asyncrt_chain(_AsyncContext.get_chain(ctx))
+    ctx[].callback = _AsyncContext.complete
+    task = Task(handle^)
+    _async_execute[handle.type](task._handle._handle, desired_worker_id)
+
+
 @always_inline
 def _run(var handle: Coroutine[...], out result: handle.type):
     """Executes a coroutine and waits for its completion.

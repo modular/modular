@@ -22,7 +22,7 @@ _EXTRA_CONSTRAINTS = {
     "test_kv_cache_store_ragged.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: MOCO-3187
     "test_kv_cache_2m_iadd.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: MOCO-3187
     "test_mha_gemma4_sink_repro.mojo": ["//:amd_gpu"],  # gfx950 AGPR-Copy-MFMA regression check
-    "test_mha_gemma4_shapes.mojo": ["//:amd_gpu"],  # gfx950 gemma4 prefill/decode regression check
+    # test_mha_gemma4_shapes.mojo is split into per-(page_size, mask_kind) targets below; the AMD-only crash repro is one of them.
 }
 
 [
@@ -45,7 +45,7 @@ _EXTRA_CONSTRAINTS = {
                 "test_batch_kv_cache_flash_attention.mojo",  # KERN-2339: bounds check reveals flash attention kernel bug
                 "test_batch_kv_cache_flash_attention_causal_mask.mojo",  # KERN-2339: bounds check reveals flash attention kernel bug
                 "test_mha_gemma4_sink_repro.mojo",  # gfx950: ASSERT=all inflates VGPR pressure enough to re-trip the AGPR-Copy-MFMA pass that this test reproduces (commit 0da7baf2baf already chunks the K reg tile down to BK)
-                "test_mha_gemma4_shapes.mojo",  # gfx950: ASSERT=all inflates VGPR pressure enough to cause register spills that mask the prefill/decode regression this test checks for (commit 0da7baf2baf already chunks the K reg tile down to BK)
+                # test_mha_gemma4_shapes.mojo: split into per-(page_size, mask_kind) targets below; assertions handled per-target.
             ],
         }),
         exec_properties = {
@@ -67,8 +67,11 @@ _EXTRA_CONSTRAINTS = {
         ["**/*.mojo"],
         exclude = [
             "kv_cache_test_utils.mojo",  # Imported source, not a test
-            "test_mha_inflight_batching_gemma3_hang.mojo",  # KERN-2734: manual repro test
+            "test_mha_inflight_batching_gemma3_hang.mojo",  # KERN-2734: manual repro test, split by page_size below
             "test_batch_kv_cache_flash_attention_causal_mask_ragged_paged.mojo",  # Split by page_size below
+            "test_mha_gemma4_shapes.mojo",  # Split by (page_size, mask_kind) below
+            "test_paged_lut_load_boundary.mojo",  # Split by page_size below (B200 LUT-load OOB regression)
+            "test_mha_paged_kv_oob_canary.mojo",  # Split by page_size below (B200 NaN canary)
         ],
     )
 ]
@@ -304,28 +307,195 @@ _PAGED_FA_CONFIGS = [
 ]
 
 # TODO(KERN-2734): Remove "manual" tag once the FA4 TMA barrier deadlock is fixed.
-mojo_test(
-    name = "test_mha_inflight_batching_gemma3_hang.mojo.test",
-    size = "large",
-    srcs = [
-        "test_mha_inflight_batching_gemma3_hang.mojo",
-    ],
-    enable_assertions = True,
-    exec_properties = {
-        "test.resources:gpu-memory": "8",
-    },
-    main = "test_mha_inflight_batching_gemma3_hang.mojo",
-    tags = [
-        "gpu",
-        "manual",
-    ],
-    target_compatible_with = ["//:has_gpu"] + _APPLE_GPU_INCOMPATIBLE,
-    deps = [
-        "//max:internal_utils",
-        "//max:kv_cache",
-        "//max:linalg",
-        "//max:nn",
-        "//max:quantization",
-        "@mojo//:std",
-    ],
-)
+[
+    mojo_test(
+        name = "test_mha_inflight_batching_gemma3_hang_ps{}.mojo.test".format(page_size),
+        size = "large",
+        srcs = [
+            "kv_cache_test_utils.mojo",
+            "test_mha_inflight_batching_gemma3_hang.mojo",
+        ],
+        copts = [
+            "-D",
+            "page_size={}".format(page_size),
+        ],
+        enable_assertions = True,
+        exec_properties = {
+            "test.resources:gpu-memory": "8",
+        },
+        main = "test_mha_inflight_batching_gemma3_hang.mojo",
+        tags = [
+            "gpu",
+            "manual",
+        ],
+        target_compatible_with = ["//:has_gpu"] + _APPLE_GPU_INCOMPATIBLE,
+        deps = [
+            "//max:internal_utils",
+            "//max:kv_cache",
+            "//max:linalg",
+            "//max:nn",
+            "//max:quantization",
+            "@mojo//:std",
+        ],
+    )
+    for page_size in (64, 128, 256)
+]
+
+# test_mha_gemma4_shapes.mojo
+# split by (page_size, mask_kind) via -D defines.
+#
+# AMD-only "amd_repro" target (page_size=256, mask_kind=causal): preserves
+# the gfx950 prefill/decode register-pressure crash regression. Assertions
+# stay disabled there because ASSERT=all inflates VGPR pressure enough to
+# mask the regression that commit 0da7baf2baf chunks K register tiles to
+# avoid (see _AMD_ONLY_TESTS comment above).
+#
+# B200 targets (rest): page_size in {64, 128, 256} x mask_kind in
+# {0=causal, 1=sliding_1024} drive a paged-LUT NaN regression sweep that
+# reproduces KERN-2861 (CUDA_ERROR_ILLEGAL_ADDRESS / NaN at page_size=128
+# on Gemma-4 production shapes). Sliding-window=1024 matches Gemma-4's
+# `sliding_window` per testdata config.
+_GEMMA4_SHAPES_B200_ONLY = select({
+    "//:b200_gpu": [],
+    "//conditions:default": ["@platforms//:incompatible"],
+})
+
+_GEMMA4_SHAPES_CONFIGS = [
+    # (suffix, page_size, mask_kind, target_compatible_with, enable_assertions)
+    (
+        "amd_repro",
+        "256",
+        "0",
+        ["//:amd_gpu"],
+        False,
+    ),
+    ("ps64_causal", "64", "0", _GEMMA4_SHAPES_B200_ONLY, True),
+    ("ps64_sliding_1024", "64", "1", _GEMMA4_SHAPES_B200_ONLY, True),
+    ("ps128_causal", "128", "0", _GEMMA4_SHAPES_B200_ONLY, True),
+    ("ps128_sliding_1024", "128", "1", _GEMMA4_SHAPES_B200_ONLY, True),
+    ("ps256_causal", "256", "0", _GEMMA4_SHAPES_B200_ONLY, True),
+    ("ps256_sliding_1024", "256", "1", _GEMMA4_SHAPES_B200_ONLY, True),
+]
+
+[
+    mojo_test(
+        name = "test_mha_gemma4_shapes_{}.mojo.test".format(suffix),
+        size = "large",
+        srcs = [
+            "kv_cache_test_utils.mojo",
+            "test_mha_gemma4_shapes.mojo",
+        ],
+        copts = [
+            "-D",
+            "page_size={}".format(page_size),
+            "-D",
+            "mask_kind={}".format(mask_kind),
+        ],
+        enable_assertions = enable_assertions,
+        exec_properties = {
+            "test.resources:gpu-memory": "5",
+        },
+        main = "test_mha_gemma4_shapes.mojo",
+        tags = ["gpu"],
+        target_compatible_with = ["//:has_gpu"] + constraints,
+        deps = [
+            "//max:internal_utils",
+            "//max:kv_cache",
+            "//max:linalg",
+            "//max:nn",
+            "//max:quantization",
+            "@mojo//:std",
+        ],
+    )
+    for suffix, page_size, mask_kind, constraints, enable_assertions in _GEMMA4_SHAPES_CONFIGS
+]
+
+# test_paged_lut_load_boundary.mojo
+# Direct unit test for `PagedKVCache.populate` / `_simd_load_lut`. Sweeps
+# page_size via `-D page_size=N`; BN x base_alignment x base_kv_row are
+# inlined comptime sweeps inside the test. B200-only (sm100 SIMD path).
+[
+    mojo_test(
+        name = "test_paged_lut_load_boundary_ps{}.mojo.test".format(page_size),
+        size = "medium",
+        srcs = [
+            "kv_cache_test_utils.mojo",
+            "test_paged_lut_load_boundary.mojo",
+        ],
+        copts = [
+            "-D",
+            "page_size={}".format(page_size),
+        ],
+        enable_assertions = True,
+        exec_properties = {
+            "test.resources:gpu-memory": "2",
+        },
+        main = "test_paged_lut_load_boundary.mojo",
+        tags = ["gpu"],
+        target_compatible_with = ["//:has_gpu"] + select({
+            "//:b200_gpu": [],
+            "//conditions:default": ["@platforms//:incompatible"],
+        }),
+        deps = [
+            "//max:internal_utils",
+            "//max:kv_cache",
+            "//max:linalg",
+            "//max:nn",
+            "//max:quantization",
+            "@mojo//:std",
+        ],
+    )
+    for page_size in (16, 32, 64, 128, 256)
+]
+
+# test_mha_paged_kv_oob_canary.mojo
+# Stress test: gemma4 production shapes with KV padding pre-filled with
+# +inf. Sweeps page_size and mask_kind. B200-only.
+_OOB_CANARY_CONFIGS = [
+    # (page_size, mask_kind, mask_label)
+    ("64", "0", "causal"),
+    ("64", "1", "sliding_1024"),
+    ("128", "0", "causal"),
+    ("128", "1", "sliding_1024"),
+    ("256", "0", "causal"),
+    ("256", "1", "sliding_1024"),
+]
+
+[
+    mojo_test(
+        name = "test_mha_paged_kv_oob_canary_ps{}_{}.mojo.test".format(
+            page_size,
+            mask_label,
+        ),
+        size = "medium",
+        srcs = [
+            "kv_cache_test_utils.mojo",
+            "test_mha_paged_kv_oob_canary.mojo",
+        ],
+        copts = [
+            "-D",
+            "page_size={}".format(page_size),
+            "-D",
+            "mask_kind={}".format(mask_kind),
+        ],
+        enable_assertions = True,
+        exec_properties = {
+            "test.resources:gpu-memory": "5",
+        },
+        main = "test_mha_paged_kv_oob_canary.mojo",
+        tags = ["gpu"],
+        target_compatible_with = ["//:has_gpu"] + select({
+            "//:b200_gpu": [],
+            "//conditions:default": ["@platforms//:incompatible"],
+        }),
+        deps = [
+            "//max:internal_utils",
+            "//max:kv_cache",
+            "//max:linalg",
+            "//max:nn",
+            "//max:quantization",
+            "@mojo//:std",
+        ],
+    )
+    for page_size, mask_kind, mask_label in _OOB_CANARY_CONFIGS
+]

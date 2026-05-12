@@ -75,6 +75,10 @@ modular_py_test(
     name = "test_pipeline_config_model_override",
     size = "small",
     srcs = ["test_pipeline_config_model_override.py"],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2411
     deps = [
         "//max/python/max/pipelines",
     ],

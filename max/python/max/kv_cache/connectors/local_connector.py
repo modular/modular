@@ -23,7 +23,6 @@ from __future__ import annotations
 import logging
 
 from max.driver import Buffer
-from max.interfaces import RequestID, TextGenerationContext
 from max.kv_cache.memory_tier import MemoryTier
 from max.nn.kv_cache import KVCacheParams
 from max.nn.kv_cache.metrics import KVCacheMetrics
@@ -31,7 +30,6 @@ from max.profiler import traced
 
 from ..paged_kv_cache.block_copy_engine import BlockOffloadEngine
 from ..paged_kv_cache.block_pool import BlockPool
-from ..paged_kv_cache.block_utils import KVCacheBlock
 
 logger = logging.getLogger("max.pipelines")
 
@@ -78,9 +76,6 @@ class LocalConnector:
         # Pending saves to host (accumulated between step() and flush())
         self._pending_saves: list[tuple[int, int]] = []  # (block_id, hash)
 
-        # Lookup state for pending loads (keyed by request_id)
-        self._pending_loads: dict[str, list[tuple[KVCacheBlock, int]]] = {}
-
         # Metrics tracking
         self._h2d_blocks_copied: int = 0
         self._d2h_blocks_copied: int = 0
@@ -101,64 +96,32 @@ class LocalConnector:
         return len(self._host_block_pool.hash_to_committed_block)
 
     @traced
-    def lookup(
-        self,
-        ctx: TextGenerationContext,
-        block_hashes: list[int],
-    ) -> int:
-        """Look up blocks in host prefix cache. Returns tokens available."""
-        if not block_hashes:
-            return 0
-
-        request_id = str(ctx.request_id)
-
-        # Clear any previous lookup state for this request
-        self._pending_loads.pop(request_id, None)
-
-        host_cache = self._host_block_pool.hash_to_committed_block
-
-        hits: list[tuple[KVCacheBlock, int]] = []
-        for block_hash in block_hashes:
-            if block_hash not in host_cache:
-                break
-            host_block = host_cache[block_hash]
-            hits.append((host_block, block_hash))
-            self._host_block_pool.touch(host_block)
-
-        if hits:
-            self._pending_loads[request_id] = hits
-
-        return len(hits) * self._block_size
-
-    @traced
     def load(
         self,
-        ctx: TextGenerationContext,
-        target_block_ids: list[int],
-    ) -> list[int]:
+        device_block_ids: list[int],
+        block_hashes: list[int],
+    ) -> int:
         """Load data from host cache into device blocks.
 
         Returns:
-            List of block hashes for the loaded blocks.
+            Number of blocks loaded from host cache.
         """
-        request_id = str(ctx.request_id)
-        pending = self._pending_loads.pop(request_id, None)
-
-        if not pending:
-            return []
-
-        loaded_hashes: list[int] = []
-        for (host_block, block_hash), device_block_id in zip(
-            pending, target_block_ids, strict=False
+        hit = 0
+        host_cache = self._host_block_pool.hash_to_committed_block
+        for block_hash, device_block_id in zip(
+            block_hashes, device_block_ids, strict=True
         ):
-            self._block_copy_engine.memcpy_h2d(device_block_id, host_block.bid)
-            self._h2d_blocks_copied += 1
-            loaded_hashes.append(block_hash)
-            # Balance the touch() in lookup() so the block returns to the
-            # free queue and can be evicted when the host pool is full.
-            self._host_block_pool.free_block(host_block)
+            if block_hash in host_cache:
+                host_block = host_cache[block_hash]
+                self._block_copy_engine.memcpy_h2d(
+                    device_block_id, host_block.bid
+                )
+                self._h2d_blocks_copied += 1
+                hit += 1
+            else:
+                break
 
-        return loaded_hashes
+        return hit
 
     @traced
     def save(
@@ -187,25 +150,11 @@ class LocalConnector:
 
         self._pending_saves.clear()
 
-    def on_request_complete(
-        self,
-        request_id: RequestID,
-        block_ids: list[int],
-    ) -> None:
-        """Clean up request-specific state."""
-        # Free host blocks that were touched in lookup() but never consumed
-        # by load() (e.g. if the request was cancelled before load()).
-        pending = self._pending_loads.pop(str(request_id), None)
-        if pending:
-            for host_block, _hash in pending:
-                self._host_block_pool.free_block(host_block)
-
     def shutdown(self) -> None:
         """Clean shutdown of connector resources."""
         # Wait for any pending transfers
         self._block_copy_engine.wait_for_completion()
         self._pending_saves.clear()
-        self._pending_loads.clear()
 
     def reset_prefix_cache(self) -> None:
         """Reset the host prefix cache."""

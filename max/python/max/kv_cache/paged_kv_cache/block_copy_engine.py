@@ -84,15 +84,8 @@ class BlockOffloadEngine:
         offset = 0
         for device_buffer in self.device_buffers:
             bytes_per_page = device_buffer.shape[1]
-            aux_stream = self.d2h_auxiliary_streams[device_buffer.device.id]
-            # WAR: with overlap scheduling, the previous batch's writes to
-            # the source block may still be in flight on the main stream
-            # when this d2h is queued.
-            aux_stream.wait_for(self.main_streams[device_buffer.device.id])
-
-            host_block = self.host_buffer[
-                dst, offset : offset + bytes_per_page
-            ].to(aux_stream)
+            # TODO(SERVOPT-1389): issue d2h on auxiliary stream after fixing driver bugs
+            host_block = self.host_buffer[dst, offset : offset + bytes_per_page]
             host_block.inplace_copy_from(device_buffer[src, :])
             offset += bytes_per_page
 
@@ -102,6 +95,9 @@ class BlockOffloadEngine:
         This ensures that the d2h copies from BatchN completes before
         BatchN+1 begins. This is needed because BatchN+1 may write to the
         same blocks as BatchN is reading from.
+
+        Additionally, ensure that d2h offload of BatchN starts after BatchN
+        completes. As such this needs to be a duplex sync.
         """
         for main_stream, d2h_auxiliary_stream in zip(
             self.main_streams.values(),
@@ -109,3 +105,4 @@ class BlockOffloadEngine:
             strict=True,
         ):
             main_stream.wait_for(d2h_auxiliary_stream)
+            d2h_auxiliary_stream.wait_for(main_stream)

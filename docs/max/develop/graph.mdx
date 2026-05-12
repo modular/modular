@@ -105,14 +105,14 @@ result = model.execute(input_data)
 print(np.from_dlpack(result[0]))
 ```
 
-### Eager-like execution
+### Eager execution
 
 With [`max.experimental`](/max/api/python/experimental), you write code that
 you can run directly. You define your model computation with operations on
 [`Tensor`](/max/api/python/generated/max.experimental.tensor.Tensor) objects
 and execute that computation immediately without explicitly creating a graph:
 
-This pattern is eager-like because every operation returns a result right away,
+This pattern is eager because every operation returns a result right away,
 even though MAX is still building and running graphs under the hood.
 
 In fact, `max.experimental` stages operations into graphs (the same kind you'd
@@ -137,10 +137,10 @@ print(y)  # Result is available immediately
 
 ### API comparison
 
-The two patterns use parallel but separate APIs that aren't interchangeable.
-Review the following table to see the API separation:
+The two patterns use parallel but separate APIs. Review the following table to
+see the API separation:
 
-|                          | Explicit graph construction                                                 | Eager-like execution                                                                         |
+|                          | Explicit graph construction                                                 | Eager execution                                                                              |
 |--------------------------|-----------------------------------------------------------------------------|----------------------------------------------------------------------------------------------|
 | **Primary data object**  | [`max.graph.TensorValue`](/max/api/python/generated/max.graph.TensorValue/) | [`max.experimental.tensor.Tensor`](/max/api/python/generated/max.experimental.tensor.Tensor) |
 | **Built-in operations**  | [`max.graph.ops`](/max/api/python/graph/ops)                                | [`max.experimental.functional`](/max/api/python/experimental.functional)                     |

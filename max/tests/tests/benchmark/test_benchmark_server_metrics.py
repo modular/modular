@@ -19,11 +19,12 @@ from unittest.mock import patch
 
 import pytest
 from max.benchmark.benchmark_shared.metrics import (
-    BenchmarkMetrics,
     RatePercentileMetrics,
+    ServingBenchmarkMetrics,
     SpecDecodeMetrics,
     SpecDecodeStats,
     StandardPercentileMetrics,
+    TextGenAggregates,
     ThroughputMetrics,
     calculate_spec_decode_stats,
 )
@@ -75,34 +76,37 @@ maxserve_batch_execution_time_milliseconds_count{batch_type="TG"} 100.0
 
 def _make_metrics(
     metrics_by_endpoint: dict[str, ParsedMetrics],
-) -> BenchmarkMetrics:
-    """Minimal BenchmarkMetrics carrying only the fields under test."""
-    return BenchmarkMetrics(
-        duration=10.0,
-        completed=100,
-        failures=0,
-        total_input=1000,
-        total_output=500,
-        nonempty_response_chunks=500,
+) -> ServingBenchmarkMetrics:
+    """Minimal text-gen ServingBenchmarkMetrics carrying only the fields under test."""
+    return ServingBenchmarkMetrics(
+        task_type="text",
         max_concurrency=10,
-        request_throughput=10.0,
-        input_throughput=ThroughputMetrics([1.0]),
-        output_throughput=ThroughputMetrics([1.0]),
-        ttft_ms=StandardPercentileMetrics([0.1]),
-        tpot_ms=StandardPercentileMetrics([0.01]),
-        itl_ms=StandardPercentileMetrics([0.01]),
-        latency_ms=StandardPercentileMetrics([1.0]),
-        max_input=100,
-        max_output=50,
-        max_total=150,
-        global_cached_token_rate=0.35,
-        per_turn_cached_token_rate=RatePercentileMetrics(
-            [0.35], as_percent=True
-        ),
         peak_gpu_memory_mib=[],
         available_gpu_memory_mib=[],
         gpu_utilization=[],
         metrics_by_endpoint=metrics_by_endpoint,
+        text_data=TextGenAggregates(
+            duration=10.0,
+            completed=100,
+            failures=0,
+            request_throughput=10.0,
+            latency_ms=StandardPercentileMetrics([1.0]),
+            total_input=1000,
+            total_output=500,
+            nonempty_response_chunks=500,
+            input_throughput=ThroughputMetrics([1.0]),
+            output_throughput=ThroughputMetrics([1.0]),
+            ttft_ms=StandardPercentileMetrics([0.1]),
+            tpot_ms=StandardPercentileMetrics([0.01]),
+            itl_ms=StandardPercentileMetrics([0.01]),
+            max_input=100,
+            max_output=50,
+            max_total=150,
+            global_cached_token_rate=0.35,
+            per_turn_cached_token_rate=RatePercentileMetrics(
+                [0.35], as_percent=True
+            ),
+        ),
     )
 
 

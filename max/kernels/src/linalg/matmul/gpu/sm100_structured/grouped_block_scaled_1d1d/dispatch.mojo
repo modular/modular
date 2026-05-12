@@ -51,8 +51,13 @@ from std.utils.index import Index
 from layout import TileTensor
 
 from linalg.fp4_utils import NVFP4_SF_DTYPE, MXFP4_SF_DTYPE, MXFP8_SF_DTYPE
+from structured_kernels.trace_buf import NullTrace, TraceBuf
 from ..structured_kernels.config import BlockScaledMatmulConfig, GEMMKind
 from .grouped_1d1d_matmul import grouped_matmul_block_scaled
+from .grouped_1d1d_matmul_kernel import (
+    NullSwiGLUOutput,
+    SwiGLUOutput,
+)
 
 
 # Regime thresholds on avg_m = estimated_total_m / num_active_experts. Rows
@@ -84,6 +89,13 @@ def _launch_grouped_block_scaled[
     num_pipeline_stages: Optional[Int] = None,
     scaling_kind: UMMAKind = UMMAKind.KIND_MXF4NVF4,
     pdl_level: PDLLevel = PDLLevel(1),
+    fuse_swiglu_nvfp4: Bool = False,
+    SwiGLUOutputT: SwiGLUOutput = NullSwiGLUOutput,
+    swiglu_match_bf16: Bool = True,
+    swiglu_disable_compute: Bool = False,
+    swiglu_enable_trace: Bool = False,
+    TraceBufT: TraceBuf = NullTrace,
+    swiglu_use_inplace: Bool = False,
 ](
     c: TileTensor[...],
     a: TileTensor[...],
@@ -96,6 +108,8 @@ def _launch_grouped_block_scaled[
     expert_scales: TileTensor[...],
     num_active_experts: Int,
     ctx: DeviceContext,
+    swiglu_out: SwiGLUOutputT = NullSwiGLUOutput(),
+    trace_buf: TraceBufT = NullTrace(),
 ) raises:
     """Build config and launch grouped block-scaled matmul kernel.
 
@@ -107,6 +121,23 @@ def _launch_grouped_block_scaled[
         num_pipeline_stages: Pipeline depth override. None = auto-compute.
         scaling_kind: Block-scaling format (NVFP4, MXFP4, or MXFP8).
         pdl_level: Programmatic dependent launch level.
+        fuse_swiglu_nvfp4: When True, the kernel fuses SwiGLU + NVFP4 quant
+            into the epilogue (caller pre-permutes W with σ).
+        SwiGLUOutputT: Trait impl for the fused-output sink. Defaults to
+            zero-sized `NullSwiGLUOutput` when `fuse_swiglu_nvfp4=False`.
+        swiglu_match_bf16: When True, the SwiGLU+NVFP4 epilogue applies an
+            fp32 -> bf16 -> fp32 round-trip on the SMEM scratchpad to match
+            the chained reference's BF16 GMEM precision (byte-exact).
+        swiglu_disable_compute: Diagnostic only. When True, the cooperative
+            SwiGLU+quant body is skipped while keeping the EPI structure
+            intact. Output is invalid; do not use in production.
+        swiglu_enable_trace: When True, the kernel records per-tile
+            timestamps into `trace_buf`. DCEs to a no-op when False.
+        TraceBufT: Trait impl for the per-CTA timestamp buffer. Defaults to
+            zero-sized `NullTrace` when `swiglu_enable_trace=False`.
+        swiglu_use_inplace: When True, the fused SwiGLU+NVFP4 epilogue
+            uses the in-place register-only path (no SMEM scratch).
+            Default False keeps the original scatter+cooperative path.
     """
     comptime a_type = a.dtype
     comptime b_type = b.dtype
@@ -131,8 +162,26 @@ def _launch_grouped_block_scaled[
         gemm_kind=GEMMKind.GMM,
     )
 
+    # Gate the in-place register-only epilogue path: it wins on the
+    # small-BN / decode regime (mma_bn <= 8) where the SMEM scratchpad
+    # round-trip dominates, but loses on the prefill regime (mma_bn >=
+    # 64) because the per-tile cross-lane shuffles cost more than the
+    # cooperative loop's SMEM-amortized work pattern. The user-level
+    # opt-in (`swiglu_use_inplace=True`) is honored only on shapes the
+    # path is known to win on.
+    comptime _swiglu_use_inplace = swiglu_use_inplace and (mma_bn <= 8)
+
     grouped_matmul_block_scaled[
-        transpose_b=transpose_b, config=config, pdl_level=pdl_level
+        transpose_b=transpose_b,
+        config=config,
+        pdl_level=pdl_level,
+        fuse_swiglu_nvfp4=fuse_swiglu_nvfp4,
+        SwiGLUOutputT=SwiGLUOutputT,
+        swiglu_match_bf16=swiglu_match_bf16,
+        swiglu_disable_compute=swiglu_disable_compute,
+        swiglu_enable_trace=swiglu_enable_trace,
+        TraceBufT=TraceBufT,
+        swiglu_use_inplace=_swiglu_use_inplace,
     ](
         c,
         a,
@@ -145,6 +194,8 @@ def _launch_grouped_block_scaled[
         expert_scales,
         num_active_experts,
         ctx,
+        swiglu_out,
+        trace_buf,
     )
 
 
@@ -158,6 +209,13 @@ def _dispatch_regime[
     stages_7168_2048: Optional[Int],
     stages_7168_256: Optional[Int],
     pdl_level: PDLLevel = PDLLevel(1),
+    fuse_swiglu_nvfp4: Bool = False,
+    SwiGLUOutputT: SwiGLUOutput = NullSwiGLUOutput,
+    swiglu_match_bf16: Bool = True,
+    swiglu_disable_compute: Bool = False,
+    swiglu_enable_trace: Bool = False,
+    TraceBufT: TraceBuf = NullTrace,
+    swiglu_use_inplace: Bool = False,
 ](
     c: TileTensor[...],
     a: TileTensor[...],
@@ -170,6 +228,8 @@ def _dispatch_regime[
     expert_scales: TileTensor[...],
     num_active_experts: Int,
     ctx: DeviceContext,
+    swiglu_out: SwiGLUOutputT = NullSwiGLUOutput(),
+    trace_buf: TraceBufT = NullTrace(),
 ) raises:
     """Dispatch with shape-specific pipeline stages.
 
@@ -189,6 +249,13 @@ def _dispatch_regime[
         cta_group,
         num_pipeline_stages=stages,
         pdl_level=pdl_level,
+        fuse_swiglu_nvfp4=fuse_swiglu_nvfp4,
+        SwiGLUOutputT=SwiGLUOutputT,
+        swiglu_match_bf16=swiglu_match_bf16,
+        swiglu_disable_compute=swiglu_disable_compute,
+        swiglu_enable_trace=swiglu_enable_trace,
+        TraceBufT=TraceBufT,
+        swiglu_use_inplace=swiglu_use_inplace,
     ](
         c,
         a,
@@ -201,6 +268,8 @@ def _dispatch_regime[
         expert_scales,
         num_active_experts,
         ctx,
+        swiglu_out,
+        trace_buf,
     )
 
 
@@ -213,6 +282,13 @@ def grouped_matmul_nvfp4_dispatch[
     cta_group: Int = 1,
     num_pipeline_stages: Int = -1,
     pdl_level: PDLLevel = PDLLevel(1),
+    fuse_swiglu_nvfp4: Bool = False,
+    SwiGLUOutputT: SwiGLUOutput = NullSwiGLUOutput,
+    swiglu_match_bf16: Bool = True,
+    swiglu_disable_compute: Bool = False,
+    swiglu_enable_trace: Bool = False,
+    TraceBufT: TraceBuf = NullTrace,
+    swiglu_use_inplace: Bool = False,
 ](
     c: TileTensor[...],
     a: TileTensor[...],
@@ -226,6 +302,8 @@ def grouped_matmul_nvfp4_dispatch[
     num_active_experts: Int,
     estimated_total_m: Int,
     ctx: DeviceContext,
+    swiglu_out: SwiGLUOutputT = NullSwiGLUOutput(),
+    trace_buf: TraceBufT = NullTrace(),
 ) raises:
     """Dispatch grouped NVFP4 matmul with shape-tuned configuration.
 
@@ -247,6 +325,23 @@ def grouped_matmul_nvfp4_dispatch[
         num_pipeline_stages: Pipeline depth (only used when override=True).
             -1 = auto-compute.
         pdl_level: Programmatic dependent launch level.
+        fuse_swiglu_nvfp4: When True, the kernel fuses SwiGLU + NVFP4 quant
+            into the epilogue (caller pre-permutes W with σ).
+        SwiGLUOutputT: Trait impl for the fused-output sink. Defaults to
+            zero-sized `NullSwiGLUOutput` when `fuse_swiglu_nvfp4=False`.
+        swiglu_match_bf16: When True, the SwiGLU+NVFP4 epilogue applies an
+            fp32 -> bf16 -> fp32 round-trip on the SMEM scratchpad to match
+            the chained reference's BF16 GMEM precision (byte-exact).
+        swiglu_disable_compute: Diagnostic only. When True, the cooperative
+            SwiGLU+quant body is skipped while keeping the EPI structure
+            intact. Output is invalid; do not use in production.
+        swiglu_enable_trace: When True, the kernel records per-tile
+            timestamps into `trace_buf`. DCEs to a no-op when False.
+        TraceBufT: Trait impl for the per-CTA timestamp buffer. Defaults to
+            zero-sized `NullTrace` when `swiglu_enable_trace=False`.
+        swiglu_use_inplace: When True, the fused SwiGLU+NVFP4 epilogue
+            uses the in-place register-only path (no SMEM scratch).
+            Default False keeps the original scatter+cooperative path.
 
     Args:
         c: Output tensor (total_tokens, N).
@@ -261,6 +356,10 @@ def grouped_matmul_nvfp4_dispatch[
         num_active_experts: Number of active experts.
         estimated_total_m: Estimated number of total non-padded tokens.
         ctx: Device context.
+        swiglu_out: Sink carrier when `fuse_swiglu_nvfp4=True` (packed
+            NVFP4 + E4M3 SF tile). `NullSwiGLUOutput()` otherwise.
+        trace_buf: Per-CTA timestamp buffer when `swiglu_enable_trace=True`.
+            `NullTrace()` otherwise.
     """
     comptime if override:
         # Ablation/benchmarking: use caller's explicit parameters.
@@ -274,6 +373,13 @@ def grouped_matmul_nvfp4_dispatch[
             cta_group,
             num_pipeline_stages=_stages,
             pdl_level=pdl_level,
+            fuse_swiglu_nvfp4=fuse_swiglu_nvfp4,
+            SwiGLUOutputT=SwiGLUOutputT,
+            swiglu_match_bf16=swiglu_match_bf16,
+            swiglu_disable_compute=swiglu_disable_compute,
+            swiglu_enable_trace=swiglu_enable_trace,
+            TraceBufT=TraceBufT,
+            swiglu_use_inplace=swiglu_use_inplace,
         ](
             c,
             a,
@@ -286,6 +392,8 @@ def grouped_matmul_nvfp4_dispatch[
             expert_scales,
             num_active_experts,
             ctx,
+            swiglu_out,
+            trace_buf,
         )
     else:
         # Production: tuning table keyed on (N, K).
@@ -307,6 +415,13 @@ def grouped_matmul_nvfp4_dispatch[
                     2,
                     num_pipeline_stages=6,
                     pdl_level=pdl_level,
+                    fuse_swiglu_nvfp4=fuse_swiglu_nvfp4,
+                    SwiGLUOutputT=SwiGLUOutputT,
+                    swiglu_match_bf16=swiglu_match_bf16,
+                    swiglu_disable_compute=swiglu_disable_compute,
+                    swiglu_enable_trace=swiglu_enable_trace,
+                    TraceBufT=TraceBufT,
+                    swiglu_use_inplace=swiglu_use_inplace,
                 ](
                     c,
                     a,
@@ -319,6 +434,8 @@ def grouped_matmul_nvfp4_dispatch[
                     expert_scales,
                     num_active_experts,
                     ctx,
+                    swiglu_out,
+                    trace_buf,
                 )
             else:
                 _launch_grouped_block_scaled[
@@ -328,6 +445,13 @@ def grouped_matmul_nvfp4_dispatch[
                     2,
                     num_pipeline_stages=6,
                     pdl_level=pdl_level,
+                    fuse_swiglu_nvfp4=fuse_swiglu_nvfp4,
+                    SwiGLUOutputT=SwiGLUOutputT,
+                    swiglu_match_bf16=swiglu_match_bf16,
+                    swiglu_disable_compute=swiglu_disable_compute,
+                    swiglu_enable_trace=swiglu_enable_trace,
+                    TraceBufT=TraceBufT,
+                    swiglu_use_inplace=swiglu_use_inplace,
                 ](
                     c,
                     a,
@@ -340,6 +464,8 @@ def grouped_matmul_nvfp4_dispatch[
                     expert_scales,
                     num_active_experts,
                     ctx,
+                    swiglu_out,
+                    trace_buf,
                 )
         else:
             if estimated_total_m <= num_active_experts * DECODE_AVG_M:
@@ -353,6 +479,13 @@ def grouped_matmul_nvfp4_dispatch[
                     stages_7168_2048=4,
                     stages_7168_256=None,
                     pdl_level=pdl_level,
+                    fuse_swiglu_nvfp4=fuse_swiglu_nvfp4,
+                    SwiGLUOutputT=SwiGLUOutputT,
+                    swiglu_match_bf16=swiglu_match_bf16,
+                    swiglu_disable_compute=swiglu_disable_compute,
+                    swiglu_enable_trace=swiglu_enable_trace,
+                    TraceBufT=TraceBufT,
+                    swiglu_use_inplace=swiglu_use_inplace,
                 ](
                     c,
                     a,
@@ -365,6 +498,8 @@ def grouped_matmul_nvfp4_dispatch[
                     expert_scales,
                     num_active_experts,
                     ctx,
+                    swiglu_out,
+                    trace_buf,
                 )
             elif estimated_total_m <= num_active_experts * SMALL_PREFILL_AVG_M:
                 _dispatch_regime[
@@ -377,6 +512,13 @@ def grouped_matmul_nvfp4_dispatch[
                     stages_7168_2048=6,
                     stages_7168_256=None,
                     pdl_level=pdl_level,
+                    fuse_swiglu_nvfp4=fuse_swiglu_nvfp4,
+                    SwiGLUOutputT=SwiGLUOutputT,
+                    swiglu_match_bf16=swiglu_match_bf16,
+                    swiglu_disable_compute=swiglu_disable_compute,
+                    swiglu_enable_trace=swiglu_enable_trace,
+                    TraceBufT=TraceBufT,
+                    swiglu_use_inplace=swiglu_use_inplace,
                 ](
                     c,
                     a,
@@ -389,6 +531,8 @@ def grouped_matmul_nvfp4_dispatch[
                     expert_scales,
                     num_active_experts,
                     ctx,
+                    swiglu_out,
+                    trace_buf,
                 )
             else:
                 _dispatch_regime[
@@ -401,6 +545,13 @@ def grouped_matmul_nvfp4_dispatch[
                     stages_7168_2048=6,
                     stages_7168_256=6,
                     pdl_level=pdl_level,
+                    fuse_swiglu_nvfp4=fuse_swiglu_nvfp4,
+                    SwiGLUOutputT=SwiGLUOutputT,
+                    swiglu_match_bf16=swiglu_match_bf16,
+                    swiglu_disable_compute=swiglu_disable_compute,
+                    swiglu_enable_trace=swiglu_enable_trace,
+                    TraceBufT=TraceBufT,
+                    swiglu_use_inplace=swiglu_use_inplace,
                 ](
                     c,
                     a,
@@ -413,6 +564,8 @@ def grouped_matmul_nvfp4_dispatch[
                     expert_scales,
                     num_active_experts,
                     ctx,
+                    swiglu_out,
+                    trace_buf,
                 )
 
 

@@ -345,9 +345,11 @@ async def _run_reasoning_pipeline(
     mock_request.sampling_params.stop = stop or []
 
     pipeline = Mock()
-    pipeline.tokenizer.new_context = AsyncMock(
-        return_value=Mock(request_id=test_request_id, tokens=mock_tokens)
-    )
+    mock_context = Mock(request_id=test_request_id, tokens=mock_tokens)
+    # Explicitly set grammar/json_schema to None so getattr doesn't return Mock
+    mock_context.grammar = None
+    mock_context.json_schema = None
+    pipeline.tokenizer.new_context = AsyncMock(return_value=mock_context)
     pipeline.tokenizer.decode = decode or AsyncMock(return_value="decoded_text")
     pipeline.model_worker.stream = mock_stream
     pipeline.debug_logging = False

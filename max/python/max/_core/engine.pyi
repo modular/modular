@@ -117,6 +117,17 @@ class Model:
         """
 
     @property
+    def name(self) -> str:
+        """
+        The symbol name of this model.
+
+        Mirrors the ``sym_name`` of the model's ``mo.graph`` op, preserved
+        through MEF serialization. Used by
+        :meth:`InferenceSession.load_all` to key the returned dict by graph
+        name.
+        """
+
+    @property
     def signature(self) -> inspect.Signature:
         """Get input signature for model."""
 

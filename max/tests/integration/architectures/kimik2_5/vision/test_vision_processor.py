@@ -29,12 +29,14 @@ from max.pipelines.architectures.kimik2_5.vision_processor import (
     KimiK2_5Processor,
     KimiK2_5VisionProcessor,
     MediaProcConfig,
+    _to_pil,
     navit_patchify,
     navit_resize_image,
     navit_resize_video,
     normalize,
     timestamp_as_str,
 )
+from max.pipelines.core.exceptions import InputError
 from PIL import Image
 from transformers import AutoImageProcessor
 
@@ -87,6 +89,16 @@ def _download_video_frames(url: str, num_frames: int = 4) -> list[Image.Image]:
 
     indices = np.linspace(0, total - 1, num_frames).round().astype(int)
     return [all_frames[i] for i in indices]
+
+
+class TestImageLoading:
+    """Tests for image byte decoding."""
+
+    def test_to_pil_rejects_malformed_image_bytes(self) -> None:
+        with pytest.raises(
+            InputError, match="image bytes could not be decoded"
+        ):
+            _to_pil(b"not a valid image")
 
 
 # ---------------------------------------------------------------------------

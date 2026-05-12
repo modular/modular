@@ -510,35 +510,75 @@ var s = String("Items in list: ", 5)
 print(s) # Items in list: 5
 ```
 
-### Emoji
+### Emoji and grapheme clusters
 
-Mojo strings provide Unicode-aware emoji support. You can count the number
-of bytes, code points, and graphemes in a string using the `byte_length()`,
-`codepoints()`, and `count_graphemes()` methods, respectively:
+Mojo source files are UTF-8, letting you write emoji and other non-ASCII
+characters directly inside string literals.
+
+```mojo
+var wave = "👋"
+```
+
+The standard library counts emoji three different ways, and the answers
+usually disagree:
+
+- `byte_length()` returns the number of UTF-8 bytes.
+- `count_codepoints()` counts the Unicode code points.
+- `count_graphemes()` returns the number of user-perceived characters
+  (grapheme clusters), following
+  [UAX #29](https://www.unicode.org/reports/tr29/).
+
+The grapheme count is what matches what a human would tell you if you
+asked them to "count characters." A family emoji, a flag, and a waving
+hand with a skin tone are each one grapheme, even though each is built
+from several joined code points:
 
 ```mojo
 def show(label: StaticString, s: StringSlice):
     print(
         label,
         "bytes=", s.byte_length(),
-        "codepoints=", len(s.codepoints()),
+        "codepoints=", s.count_codepoints(),
         "graphemes=", s.count_graphemes(),
     )
-```
 
-Mojo uses colon-delimited
-[emoji shortcodes](https://www.unicode.org/emoji/charts/full-emoji-list.html),
-also known as the "CLDR Short Name", which are human-readable names for
-emoji:
-
-```mojo
 def main():
-    show("family    ", ":man-woman-girl-boy:")  # 🧑‍🧑‍🧒‍🧒
-    show("flag      ", ":us:")  # 🇺🇸
-    show("wave      ", ":wave::skin-tone-4:")  # 👋🏽
-    show("café      ", "café")   # NFD: e + U+0301
+    show("family    ", "👨‍👩‍👧‍👦")
+    show("flag      ", "🇺🇸")
+    show("wave      ", "👋🏽")
     show("namaste   ", "नमस्ते")
 ```
+
+Output:
+
+```text
+family     bytes=25  codepoints=7  graphemes=1
+flag       bytes=8   codepoints=2  graphemes=1
+wave       bytes=8   codepoints=2  graphemes=1
+namaste    bytes=18  codepoints=6  graphemes=3
+```
+
+If you'd rather not embed non-ASCII bytes in your source, for example, in
+ASCII-only codebases, you can spell the code point with a hex escape or
+`chr()`:
+
+```mojo
+var wave = "\U0001F44B"   # 8-digit hex escape
+var wave2 = chr(0x1F44B)  # chr() function
+
+var copy   = "\u00A9"   # 4-digit hex escape, ©
+var euro   = "\u20AC"   # 4-digit hex escape, €
+```
+
+Mojo's 4-digit `\uHHHH` escape spells code points up to U+FFFF. The
+8-digit `\U` form extends to U+10FFFF, Unicode's upper limit, covering
+emoji like 👋 (U+1F44B) and other characters above the Basic Multilingual
+Plane. The `chr()` function works for the full range too.
+
+Both forms reject surrogate code points (U+D800 to U+DFFF). Surrogates
+are reserved for UTF-16 encoding and aren't valid on their own. To
+escape a character above U+FFFF, write its full code point with `\U`.
+Don't use a UTF-16 surrogate pair.
 
 ### String formatting
 
