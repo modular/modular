@@ -854,7 +854,7 @@ logit_verification_pipelines:
     pipeline: "amd/MiniMax-M2.7-MXFP4"
     compatible_with: [gpu]
     encoding: float4_e2m1fnx2
-    tags: [amd-multi, 8xmi355]
+    tags: [amd-only, 8xmi355]
     pregenerated_torch_goldens:
       tar_file: "s3://modular-bazel-artifacts-public/artifacts/amd_MiniMax-M2.7-MXFP4_golden/1/1ba298cb/vllm_amd_MiniMax-M2.7-MXFP4_float4_e2m1fnx2_golden.json.tar.gz"
       json_file: "vllm_amd_MiniMax-M2.7-MXFP4_float4_e2m1fnx2_golden.json"
