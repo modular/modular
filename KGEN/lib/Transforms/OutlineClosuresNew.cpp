@@ -66,6 +66,29 @@ static Value allocateHeapMemory(PointerType ptrType, OpBuilder &b,
                                      ValueRange{alignOf, sizeOf});
 }
 
+static std::optional<std::pair<TypeGeneratorRefAttr, StructInstanceType>>
+getTypeValuePathData(ClosureInitOp closureInit,
+                     StructGeneratorOp structGeneratorOp) {
+  auto typeValue = closureInit->getAttrOfType<TypedAttr>("typeValue");
+  if (!typeValue)
+    return std::nullopt;
+  auto typeParam = dyn_cast<TypeParamAttr>(typeValue);
+  if (!typeParam)
+    return std::nullopt;
+  auto typeValueType = dyn_cast<TypeValueType>(typeParam.getTypeValue());
+  if (!typeValueType)
+    return std::nullopt;
+  auto typeGeneratorRef =
+      dyn_cast<TypeGeneratorRefAttr>(typeValueType.getTypeValue());
+  if (!typeGeneratorRef)
+    return std::nullopt;
+  auto structInstanceType =
+      dyn_cast<StructInstanceType>(structGeneratorOp.getValueDomainType());
+  if (!structInstanceType)
+    return std::nullopt;
+  return std::make_pair(typeGeneratorRef, structInstanceType);
+}
+
 /// Stack lifetime markers are valid only for pointers produced by
 /// pop.stack_allocation. When outlining closures, captured values are rewritten
 /// to closure storage (struct fields), so any lifetime markers attached to the
@@ -967,16 +990,7 @@ ClosureLifter::liftClosureInit(ClosureInitOp closureInit, GeneratorOp generator,
   if (violatedCapturePolicy)
     return failure();
 
-  llvm::SetVector<ParamDeclAttr> capturedParamDecls =
-      collectCapturedParams(captureToSymbol, generator, region, uses);
-
-  if (auto hoistedCaptures = closureInit.getHoistedCaptures())
-    for (ParamDeclAttr hoisted : *hoistedCaptures)
-      capturedParamDecls.insert(hoisted);
-
-  // Create the capture struct type and collect symbols.
-  // In order to create the move constructor, we need the move constructors of
-  // all capture by copy/move values.
+  // Build capture mechanisms and copy/move symbols.
   SmallVector<TypedAttr> moveSymbols;
   SmallVector<TypedAttr> copySymbols;
   bool allCopySymbolsAvailable = true;
@@ -1009,32 +1023,41 @@ ClosureLifter::liftClosureInit(ClosureInitOp closureInit, GeneratorOp generator,
     fieldTypes.push_back(capture.getType());
     captureMechanisms.push_back({{}, {}, capture});
   }
-  bool isThin = fieldTypes.empty();
   std::optional<SmallVector<TypedAttr>> copiesMaybe;
   if (allCopySymbolsAvailable)
-    copiesMaybe = std::move(copySymbols);
+    copiesMaybe = copySymbols;
+  llvm::SetVector<ParamDeclAttr> capturedParamDecls;
+  auto [closureInitData, loweredClosureInstType, loweredClosureType] =
+      [&]() -> std::tuple<ClosureInitData, StructInstanceType, Type> {
+    // If the type value attribute is set, use its genref bindings as captured
+    // params and use the struct generator's value domain type as the struct
+    // instance type.
+    if (auto typeValueData =
+            getTypeValuePathData(closureInit, structGeneratorOp)) {
+      auto [typeGeneratorRef, structInstanceType] = *typeValueData;
+      SmallVector<Type> structFieldTypes;
+      structFieldTypes.reserve(structInstanceType.getFields().size());
+      for (StructDefFieldAttr field : structInstanceType.getFields()) {
+        TypedAttr fieldTypeValue = field.getTypeValue();
+        if (auto fieldTypeParam = dyn_cast<TypeParamAttr>(fieldTypeValue))
+          structFieldTypes.push_back(fieldTypeParam.getMlirType());
+        else
+          structFieldTypes.push_back(fieldTypeValue.getType());
+      }
+      Type structType = StructType::get(
+          b.getContext(), structFieldTypes,
+          cast<BoolAttr>(structInstanceType.getIsMemoryOnly()).getValue());
+      for (TypedAttr binding : typeGeneratorRef.getParamValues())
+        if (auto ref = dyn_cast<ParamDeclRefAttr>(binding))
+          capturedParamDecls.insert(
+              ParamDeclAttr::get(ref.getName(), ref.getType()));
 
-  ClosureInitData closureInitData(std::move(capturedParamDecls), closureType,
-                                  closureInit, structGeneratorOp, generator,
-                                  std::move(moveSymbols),
-                                  std::move(copiesMaybe));
-  // Replace runtime abstractions.
-  Value replacement;
-  if (isThin) {
-    replacement = liftThinClosure(b, closureInitData,
-                                  /*isRegisterPassable=*/memoryKind ==
-                                      ClosureMemoryKind::TRIVIAL);
-  } else {
-
-    Type loweredClosureType =
-        StructType::get(b.getContext(), fieldTypes,
-                        memoryKind != ClosureMemoryKind::TRIVIAL &&
-                            memoryKind != ClosureMemoryKind::REGISTER_PASSABLE);
-
-    // Build StructInstanceType with named fields. Both the name and type value
-    // are looked up by Value so the ordering matches captureMechanisms (which
-    // may differ from closureInit.getCaptures() due to
-    // getUsedValuesDefinedAbove ordering).
+      return {ClosureInitData(std::move(capturedParamDecls), closureType,
+                              closureInit, structGeneratorOp, generator,
+                              std::move(moveSymbols), std::move(copiesMaybe)),
+              structInstanceType, structType};
+    }
+    // Otherwise, fallback to computing the struct type from the metadata
     DenseMap<Value, std::pair<StringAttr, TypedAttr>> captureToNameAndType;
     ArrayAttr captureNamesArr = closureInit.getCaptureNames();
     ArrayAttr captureTypesArr = closureInit.getCaptureTypes();
@@ -1057,11 +1080,39 @@ ClosureLifter::liftClosureInit(ClosureInitOp closureInit, GeneratorOp generator,
     bool isMemoryOnly = memoryKind != ClosureMemoryKind::TRIVIAL &&
                         memoryKind != ClosureMemoryKind::REGISTER_PASSABLE;
 
-    Type loweredClosureInstType = StructInstanceType::get(
+    auto structInstanceType = StructInstanceType::get(
         structGeneratorOp.getSymNameAttr(),
         /*paramNames=*/{},
         /*paramValues=*/{}, fieldDecls, BoolAttr::get(ctx, isMemoryOnly));
+    Type mlirType;
+    if (fieldTypes.empty()) {
+      mlirType = KGEN::NoneType::get(ctx);
+    } else {
+      mlirType = StructType::get(b.getContext(), fieldTypes,
+                                 memoryKind != ClosureMemoryKind::TRIVIAL &&
+                                     memoryKind !=
+                                         ClosureMemoryKind::REGISTER_PASSABLE);
+    }
+    capturedParamDecls =
+        collectCapturedParams(captureToSymbol, generator, region, uses);
+    if (auto hoistedCaptures = closureInit.getHoistedCaptures())
+      for (ParamDeclAttr hoisted : *hoistedCaptures)
+        capturedParamDecls.insert(hoisted);
 
+    return {ClosureInitData(std::move(capturedParamDecls), closureType,
+                            closureInit, structGeneratorOp, generator,
+                            std::move(moveSymbols), std::move(copiesMaybe)),
+            structInstanceType, mlirType};
+  }();
+  bool isThin = fieldTypes.empty();
+
+  // Replace runtime abstractions.
+  Value replacement;
+  if (isThin) {
+    replacement = liftThinClosure(b, closureInitData,
+                                  /*isRegisterPassable=*/memoryKind ==
+                                      ClosureMemoryKind::TRIVIAL);
+  } else {
     switch (memoryKind) {
     case ClosureMemoryKind::TRIVIAL:
       replacement =
