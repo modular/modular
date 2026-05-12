@@ -19,6 +19,7 @@ Base classes
    :toctree: generated
    :template: autosummary/class.rst
 
+   CompiledModel
    Module
    ModuleList
    PinnedDeviceTensor
