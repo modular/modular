@@ -37,6 +37,10 @@ protected:
   FailureOr<ResolvedStructHandle> resolveStructOp(TypedAttr typeValue,
                                                   bool acceptAsync) override;
 
+  /// Resolve a function symbol via the parser's `DeclResolver` to its
+  /// underlying `lit.fn`.
+  FuncInterface resolveFunctionDecl(SymbolRefAttr symbol) override;
+
   /// Resolve conformance using ASTDecl lookup in the parser context.
   Operation *resolveConformanceForStruct(ResolvedStructHandle resolved,
                                          StringAttr traitName) override;

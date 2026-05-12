@@ -1287,6 +1287,15 @@ Operation *LITSymTabEvaluationContext::resolveConformanceForStruct(
                                                               traitName);
 }
 
+FuncInterface
+LITSymTabEvaluationContext::resolveFunctionDecl(SymbolRefAttr symbol) {
+  // Functions in the LIT phase are `lit.fn` ops; if not yet lowered to a
+  // `kgen.generator`, fall back to the base lookup.
+  if (auto fn = symtab.lookupSymbolIn<FnOp>(module, symbol))
+    return fn;
+  return SymTabEvaluationContext::resolveFunctionDecl(symbol);
+}
+
 FailureOr<TypedAttr> LITSymTabEvaluationContext::evaluateContextSpecific(
     ContextuallyEvaluatedAttrInterface attr) {
   TypedAttr typedAttr = dyn_cast<TypedAttr>((Attribute)attr);

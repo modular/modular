@@ -438,6 +438,21 @@ def GetSourceNameAttr : DialectAttribute<(attr
   Type:$type
 )>;
 
+def GetFunctionParameterCountAttr : DialectAttribute<(attr
+  TypedAttr:$func,
+  ConcreteType<"IndexType">:$type
+)>;
+
+def GetFunctionParameterNamesAttr : DialectAttribute<(attr
+  TypedAttr:$func,
+  ConcreteType<"ParamListType">:$type
+)>;
+
+def GetFunctionIsRaisingAttr : DialectAttribute<(attr
+  TypedAttr:$func,
+  ConcreteType<"IntegerType">:$type
+)>;
+
 def CompileAssemblyAttr : DialectAttribute<(attr
   TypedAttr:$target,
   TypedAttr:$emissionKind,
@@ -591,6 +606,9 @@ def KGENDialectAttributes : DialectAttributes<"kgen"> {
     CompileOffloadClosureAttr,
     GetLinkageNameAttr,
     GetSourceNameAttr,
+    GetFunctionParameterCountAttr,
+    GetFunctionParameterNamesAttr,
+    GetFunctionIsRaisingAttr,
     CompileAssemblyAttr,
     GetTypeNameAttr,
     StructFieldTypesAttr,

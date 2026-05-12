@@ -135,8 +135,14 @@ kgen.generator @"LinkedList::__bool__(::LinkedList)"<T: type, x: !kgen.param<T>>
   e = #kgen.compile_offload_closure<#kgen.target<triple = "unknown", arch = "", simd_bit_width = 128>, #kgen.symbol.constant<@return_one> : !kgen.generator<() -> index>> : !kgen.string,
   // CHECK-SAME: f = #kgen.compile_assembly<#kgen.target<triple = "unknown", arch = "", simd_bit_width = 128>, =llvm, "", false, :() -> index @return_one> : !kgen.string,
   f = #kgen.compile_assembly<#kgen.target<triple = "unknown", arch = "", simd_bit_width = 128>, =llvm, "", false, :() -> index @return_one> : !kgen.string,
-  // CHECK-SAME: g = #kgen.get_source_name<#kgen.symbol.constant<@return_one> : !kgen.generator<() -> index>> : !kgen.string
-  g = #kgen.get_source_name<#kgen.symbol.constant<@return_one> : !kgen.generator<() -> index>> : !kgen.string
+  // CHECK-SAME: g = #kgen.get_source_name<#kgen.symbol.constant<@return_one> : !kgen.generator<() -> index>> : !kgen.string,
+  g = #kgen.get_source_name<#kgen.symbol.constant<@return_one> : !kgen.generator<() -> index>> : !kgen.string,
+  // CHECK-SAME: h = #kgen.get_function_parameter_count<#kgen.symbol.constant<@return_one> : !kgen.generator<() -> index>> : index,
+  h = #kgen.get_function_parameter_count<#kgen.symbol.constant<@return_one> : !kgen.generator<() -> index>> : index,
+  // CHECK-SAME: i = #kgen.get_function_parameter_names<#kgen.symbol.constant<@return_one> : !kgen.generator<() -> index>> : !kgen.param_list<string>,
+  i = #kgen.get_function_parameter_names<#kgen.symbol.constant<@return_one> : !kgen.generator<() -> index>> : !kgen.param_list<string>,
+  // CHECK-SAME: j = #kgen.get_function_is_raising<#kgen.symbol.constant<@return_one> : !kgen.generator<() -> index>> : i1
+  j = #kgen.get_function_is_raising<#kgen.symbol.constant<@return_one> : !kgen.generator<() -> index>> : i1
 } : () -> ()
 
 !BaseTrait = !lit.trait<@BaseTrait>

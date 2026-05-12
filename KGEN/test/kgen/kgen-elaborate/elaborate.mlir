@@ -1340,6 +1340,48 @@ kgen.generator export @get_linkage_name() {
 
 // -----
 
+// COM: Function-reflection attributes evaluate against `kgen.generator` decls
+// COM: post-elaboration, returning structural metadata: parameter count, names,
+// COM: and the raising flag.
+
+kgen.generator @no_parameters() {
+  kgen.return
+}
+
+kgen.generator @two_parameters<a, b: index>() -> index {
+  %0 = kgen.param.constant = <a>
+  %1 = kgen.param.constant = <b>
+  %2 = index.add %0, %1
+  kgen.return %2 : index
+}
+
+kgen.generator @raising_func() throws {
+  kgen.return
+}
+
+// CHECK-LABEL: kgen.func export @get_function_reflection
+kgen.generator export @get_function_reflection() {
+  // CHECK-NEXT: kgen.param.constant = <0>
+  kgen.param.constant: index = <#kgen.get_function_parameter_count<#kgen.symbol.constant<@no_parameters> : !kgen.generator<() -> ()>>>
+  // CHECK-NEXT: kgen.param.constant: param_list<string> = <[]>
+  kgen.param.constant: !kgen.param_list<!kgen.string> = <#kgen.get_function_parameter_names<#kgen.symbol.constant<@no_parameters> : !kgen.generator<() -> ()>>>
+  // CHECK-NEXT: kgen.param.constant: i1 = <0>
+  kgen.param.constant: i1 = <#kgen.get_function_is_raising<#kgen.symbol.constant<@no_parameters> : !kgen.generator<() -> ()>>>
+
+  // CHECK-NEXT: kgen.param.constant = <2>
+  kgen.param.constant: index = <#kgen.get_function_parameter_count<#kgen.symbol.constant<@two_parameters<1, 2>> : !kgen.generator<() -> index>>>
+  // CHECK-NEXT: kgen.param.constant: param_list<string> = <["a", "b"]>
+  kgen.param.constant: !kgen.param_list<!kgen.string> = <#kgen.get_function_parameter_names<#kgen.symbol.constant<@two_parameters<1, 2>> : !kgen.generator<() -> index>>>
+  // CHECK-NEXT: kgen.param.constant: i1 = <0>
+  kgen.param.constant: i1 = <#kgen.get_function_is_raising<#kgen.symbol.constant<@two_parameters<1, 2>> : !kgen.generator<() -> index>>>
+
+  // CHECK-NEXT: kgen.param.constant: i1 = <1>
+  kgen.param.constant: i1 = <#kgen.get_function_is_raising<#kgen.symbol.constant<@raising_func> : !kgen.generator<() throws -> ()>>>
+  kgen.return
+}
+
+// -----
+
 kgen.struct.generator @NonParametric = struct_inst<
   "NonParametric"(data: index)>
 

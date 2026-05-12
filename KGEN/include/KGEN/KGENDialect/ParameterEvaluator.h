@@ -164,6 +164,17 @@ public:
   /// Returns the target info for the context, which may not be available in all
   /// contexts. If target info is not available, returns null.
   virtual TargetInfoAttr getTargetInfo() const { return {}; }
+
+  /// Resolve a function symbol to its defining op as a `FuncInterface`
+  /// handle. Reflection-side evaluators access signature info through the
+  /// returned op via `FuncInterface`, `DeclInterface`, and
+  /// `ExportInterface`. The concrete op is the elaborator-stage
+  /// `kgen.generator` or the parser-stage `lit.fn`; both implement all
+  /// three interfaces, which is what lets reflection work in both phases.
+  ///
+  /// Returns null if the symbol does not resolve to a function in this
+  /// context.
+  virtual FuncInterface resolveFunctionDecl(SymbolRefAttr symbol) = 0;
 };
 
 /// An evaluation context that exposes a LockedSymbolTableCollection.
@@ -184,6 +195,9 @@ protected:
   /// Resolve conformance using the struct's symbol table.
   Operation *resolveConformanceForStruct(ResolvedStructHandle resolved,
                                          StringAttr traitName) override;
+
+  /// Resolve a function symbol via the symbol table.
+  FuncInterface resolveFunctionDecl(SymbolRefAttr symbol) override;
 
   /// Provide a ParameterEvaluator configured for the struct parameters.
   void withEvaluator(

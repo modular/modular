@@ -226,6 +226,12 @@ protected:
   /// a struct type.
   StringAttr getBaseTypeName(TypedAttr typeRef);
 
+  /// Expose `getGenerator` for the function-reflection attrs that run
+  /// through `evaluateWithContext` and need symbol-table access.
+  FuncInterface resolveFunctionDecl(SymbolRefAttr symbol) override {
+    return getGenerator(symbol);
+  }
+
 private:
   MLIRContext *mlirCtx = nullptr;
 
