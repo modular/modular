@@ -1071,3 +1071,27 @@ kgen.generator @prune() {
   } : (!kgen.pointer<index>), !kgen.pointer<!kgen.closure<@prune, "fn" nonescaping>>
   kgen.return
 }
+
+// -----
+
+// CHECK: kgen.struct.generator @"foo::fn"<C: type, mut: i1> = struct_inst<"foo::fn"[C, mut]<:type C, :i1 mut>(cap: index) memoryOnly>
+kgen.struct.generator @"foo::fn"<C: type, mut: i1> =
+    struct_inst<"foo::fn"[C, mut]<:type C, :i1 mut>(cap: index) memoryOnly> {
+  kgen.conformance @"closure_trait" {
+    kgen.witness "__call__" :
+        (!kgen.pointer<struct_inst<"foo::fn"[C, mut]<:type C, :i1 mut>(cap: index) memoryOnly>> read_mem) ->
+            index = #kgen.closure.symbol<@"foo", "fn",
+                    #kgen.closure_method<call>, <:type C, :i1 mut>>
+  }
+}
+
+// CHECK: kgen.generator @foo_fn<C: type, mut: i1>(%arg0: !kgen.pointer<struct<(index) memoryOnly>> read_mem) -> index
+kgen.generator @foo<C: type>(%arg0: index) {
+  // COM: when the type value is provided, the outline closures new pass does not compute the struct instance type
+  %3 = kgen.closure.init(%arg0)() -> index {
+    kgen.return %arg0 : index
+  } : (index), !kgen.pointer<!kgen.closure<@foo, "fn" nonescaping>> {
+    typeValue = #kgen.type<typevalue<#kgen.genref<@"foo::fn"<:type C, :i1 mut>>>, pointer<pointer<none>>> : !kgen.type
+  }
+  kgen.return
+}
