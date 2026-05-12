@@ -307,6 +307,8 @@ class DiskTier:
             path.unlink(missing_ok=True)
         meta_path = self._cache_dir / "_metadata.json"
         meta_path.unlink(missing_ok=True)
+        for tmp in self._cache_dir.glob("_metadata.json.*.tmp"):
+            tmp.unlink(missing_ok=True)
 
     # -- sync I/O (runs on worker threads) --
 
@@ -438,14 +440,18 @@ class DiskTier:
         """Persist hash index to disk for warm restarts.
 
         Uses write-to-temp + atomic rename to avoid corrupt JSON if
-        the process crashes mid-write.
+        the process crashes mid-write. Each caller uses a unique temp
+        file (incorporating PID and thread ID) to prevent races when
+        multiple processes or threads save metadata concurrently.
         """
         with self._lock:
             meta = {
                 "block_nbytes": self._block_nbytes,
                 "hashes": list(self._saved_hashes.keys()),
             }
-        tmp_path = self._cache_dir / "_metadata.json.tmp"
+        pid = os.getpid()
+        tid = threading.get_ident()
+        tmp_path = self._cache_dir / f"_metadata.json.{pid}.{tid}.tmp"
         final_path = self._cache_dir / "_metadata.json"
         tmp_path.write_text(json.dumps(meta))
         os.replace(tmp_path, final_path)
