@@ -129,6 +129,33 @@ This version is still a work in progress.
   free(ptr, layout)
   ```
 
+- Added `PythonModuleBuilder.def_typed_function`, a fast-path registration
+  for Python bindings whose Mojo signature uses concrete types instead of
+  `PythonObject`. The trampoline unwraps positional arguments with the
+  matching CPython C API directly (e.g. `PyLong_AsSsize_t` for `Int`),
+  skipping the `PythonObject` wrap and the `__int__()` -> `PyNumber_Long`
+  allocation that `Int(py=...)` would otherwise pay. Initial shapes
+  supported: `def f(a: Int) -> Int` and `def f(a: Int, b: Int) -> Int`
+  (with or without `raises`).
+
+  ```mojo
+  from python import PythonObject
+  from python.bindings import PythonModuleBuilder
+
+  def add(a: Int, b: Int) -> Int:
+      return a + b
+
+  @export
+  def PyInit_my_mod() -> PythonObject:
+      var m = PythonModuleBuilder("my_mod")
+      m.def_typed_function[add]("add")
+      return m.finalize()
+  ```
+
+  On `add(Int, Int) -> Int`, the typed fast path measures ~71% faster than
+  the equivalent `def_function` registration with `PythonObject` args
+  (see `mojo/stdlib/benchmarks/python/bench_python_ffi_typed.mojo`).
+
 ## Tooling changes
 
 ## GPU programming
