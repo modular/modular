@@ -15,6 +15,8 @@
 
 MiniMax M2 uses an XML-style format for tool calls:
 
+.. code-block:: xml
+
     <minimax:tool_call>
     <invoke name="function_name">
     <parameter name="param1">value1</parameter>

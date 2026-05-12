@@ -17,5 +17,5 @@ Contains implementations for several types of key-value caches.
 key-value tensors output from self-attention layers.
 
 These APIs are used in the higher-level functions in the
-[`nn`](/mojo/kernels/nn) package.
+[`nn`](../nn/) package.
 """

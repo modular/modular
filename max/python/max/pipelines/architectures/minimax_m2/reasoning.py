@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""MiniMax-M2 reasoning parser for <think>...</think> sections."""
+"""MiniMax-M2 reasoning parser for sections framed by ``<think>`` and ``</think>``."""
 
 from __future__ import annotations
 
@@ -30,13 +30,13 @@ from max.pipelines.lib.tokenizer import convert_token_to_id
 
 @register("minimax_m2")
 class MiniMaxM2ReasoningParser(ReasoningParser):
-    """MiniMax-M2 reasoning parser for <think>...</think> sections.
+    """MiniMax-M2 reasoning parser for sections framed by ``<think>`` and ``</think>``.
 
     Reasoning may end implicitly when a tool call begins
-    (<minimax:tool_call>).
+    (``<minimax:tool_call>``).
 
-    Reasoning may begin implicitly, without an explicit <think> token
-    (the chat template appends <think> to the assistant turn).
+    Reasoning may begin implicitly, without an explicit ``<think>`` token
+    (the chat template appends ``<think>`` to the assistant turn).
     """
 
     def __init__(
