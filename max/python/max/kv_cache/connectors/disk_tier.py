@@ -333,7 +333,12 @@ class DiskTier:
             self._read_file_direct(path, dest)
         else:
             with open(path, "rb") as f:
-                f.readinto(dest)  # type: ignore[arg-type]
+                assert dest.data.contiguous
+                n = f.readinto(dest.data)
+                if n != dest.nbytes:
+                    raise OSError(
+                        f"Short read: got {n}, expected {dest.nbytes}"
+                    )
 
     def _write_block_sync(
         self,
@@ -350,6 +355,7 @@ class DiskTier:
             self._write_file_direct(path, src)
         else:
             with open(path, "wb") as f:
+                assert src.data.contiguous
                 f.write(src.data)
 
         with self._lock:
@@ -390,7 +396,8 @@ class DiskTier:
         """
         buf = self._get_aligned_buf()
         buf.seek(0)
-        buf.write(src.tobytes())
+        assert src.data.contiguous
+        buf.write(src.data)
         total = buf.tell()
 
         fd = os.open(
@@ -414,11 +421,13 @@ class DiskTier:
         """
         nbytes = array.nbytes
         buf = self._get_aligned_buf()
+        assert len(buf) == nbytes
+        assert array.data.contiguous
 
         fd = os.open(str(path), os.O_RDONLY | os.O_DIRECT)
         try:
             # Read the whole file in one aligned read.
-            n = os.readv(fd, [memoryview(buf)[:nbytes]])
+            n = os.readv(fd, [memoryview(buf)])
             if n != nbytes:
                 raise OSError(
                     f"Short O_DIRECT read: got {n}, expected {nbytes}"
@@ -426,10 +435,11 @@ class DiskTier:
         finally:
             os.close(fd)
 
-        # Using np.copyto ensures that the gil is released.
+        # np.copyto releases the GIL during the memcpy.
+        # np.frombuffer on the mmap directly is zero-copy (buffer protocol);
         np.copyto(
             array.reshape(-1),
-            np.frombuffer(buf[:nbytes], dtype=array.dtype),
+            np.frombuffer(buf, dtype=array.dtype),
         )
 
     # -- file paths --

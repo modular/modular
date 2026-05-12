@@ -31,7 +31,7 @@ from max.dtype import DType
 from max.kv_cache.memory_tier import MemoryTier
 from max.nn.kv_cache import KVCacheParams
 from max.nn.kv_cache.metrics import KVCacheMetrics
-from max.profiler import traced
+from max.profiler import Tracer, traced
 
 from ..paged_kv_cache.block_copy_engine import BlockOffloadEngine
 from ..paged_kv_cache.block_manager import (
@@ -167,6 +167,7 @@ class TieredConnector:
 
         host_cache = self._host_block_pool.hash_to_committed_block
         hits: list[_CacheHit] = []
+        disk_reads = 0
 
         for device_block_id, block_hash in zip(
             device_block_ids, block_hashes, strict=True
@@ -199,12 +200,14 @@ class TieredConnector:
                 )
 
                 self._disk_blocks_read += 1
+                disk_reads += 1
 
             else:
                 break  # prefix chain broken
 
         # Wait for async disk reads to complete
-        wait(hit.future for hit in hits if hit.future is not None)
+        with Tracer(f"Waiting for {disk_reads} disk reads"):
+            wait(hit.future for hit in hits if hit.future is not None)
 
         # Unpin the host blocks now that the disk reads have completed.
         for hit in hits:
