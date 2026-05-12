@@ -41,6 +41,12 @@ from std.python._cpython import (
     PyTypeObjectPtr,
 )
 from std.python._python_func import PyObjectFunction
+from std.python._python_func_typed import (
+    _FnIntToInt,
+    _FnIntIntToInt,
+    _trampoline_int_to_int,
+    _trampoline_int_int_to_int,
+)
 from std.python.python_object import _unsafe_alloc, _unsafe_init
 
 from std.utils import Variant
@@ -463,6 +469,36 @@ struct PythonModuleBuilder:
         """
         self._generic_def_py_function[_py_function_wrapper[func]()](
             func_name, docstring
+        )
+
+    # ===-------------------------------------------------------------------===#
+    # Typed-argument fast-path API
+    # ===-------------------------------------------------------------------===#
+    # Users who declare their function with concrete Mojo types like
+    # `def f(a: Int, b: Int) -> Int` can register via `def_typed_function`
+    # to get a trampoline that converts via `PyLong_AsSsize_t` /
+    # `PyLong_FromSsize_t` directly, bypassing the `PythonObject` wrap
+    # and the `__int__()` -> `PyNumber_Long` allocation chain. See issue
+    # #6521 item 6.
+
+    def def_typed_function[
+        func: _FnIntToInt
+    ](mut self, func_name: StaticString, docstring: StaticString = ""):
+        """Register a typed fast-path binding for `def f(a: Int) -> Int`
+        (or its `raises` variant). Non-raising functions are implicitly
+        compatible with this raising signature."""
+        self.def_py_c_function(
+            _trampoline_int_to_int[func], func_name, docstring
+        )
+
+    def def_typed_function[
+        func: _FnIntIntToInt
+    ](mut self, func_name: StaticString, docstring: StaticString = ""):
+        """Register a typed fast-path binding for `def f(a: Int, b: Int) -> Int`
+        (or its `raises` variant). Non-raising functions are implicitly
+        compatible with this raising signature."""
+        self.def_py_c_function(
+            _trampoline_int_int_to_int[func], func_name, docstring
         )
 
     def finalize(mut self) raises -> PythonObject:
