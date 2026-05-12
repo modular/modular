@@ -29,6 +29,27 @@ Every `bench_*.mojo` source produces two Bazel targets:
 There is also a `//mojo/stdlib/benchmarks:all_benchmarks` `test_suite` that
 expands to every `.bench` target.
 
+### Cross-language benchmarks
+
+Some stdlib surfaces are only reachable from another language — for example,
+`stdlib/std/python/bindings.mojo` is the Mojo side of the Python -> Mojo FFI
+and can only be measured from a CPython process. Those benchmarks do not fit
+the pure-Mojo `bench_*.mojo` template above; instead they live in their own
+Bazel subpackage and define their own targets (typically a
+`mojo_shared_library` for the extension module plus a `modular_py_test` for
+the driver script).
+
+See `python/bench_bindings/` for an example. Conventions for these:
+
+- One directory per benchmark, named after the source module being measured
+  (e.g. `bench_bindings/` for `std/python/bindings.mojo`).
+- Declaring a `BUILD.bazel` makes the directory its own Bazel subpackage, so
+  the top-level `glob` in `benchmarks/BUILD.bazel` will not try to compile
+  any extension-module `.mojo` files as standalone `mojo_test` binaries.
+- Tag the bench driver target `manual` + `stdlib-benchmark` to match the
+  pure-Mojo convention above; keep a separate correctness-smoke `test_*`
+  target untagged so `//...` keeps the bench surface from bitrotting.
+
 ## How to run the benchmarks
 
 Run a single benchmark with full measurements:
