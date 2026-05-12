@@ -140,7 +140,12 @@ from nn.argmaxmin import argmax, argmin
 from nn.argmaxmin_gpu import argmax_gpu, argmin_gpu
 from nn.argsort import argsort
 from nn.bicubic import resize_bicubic
-from nn.concat import concat, fused_concat
+from nn.concat import (
+    concat,
+    fused_concat,
+    _fused_dual_concat_gpu,
+    elementwise_epilogue_type as concat_elementwise_epilogue_type,
+)
 from nn.conv.conv import ConvInfoStatic, conv_gpu, conv_nhwc_direct, conv_shape
 from nn.conv.conv import pack_filter as _pack_conv_filter
 from nn.conv.conv import pack_filter_from_fcrs as _pack_conv_filter_from_fcrs
@@ -4787,6 +4792,192 @@ struct FusedConcatSlice:
             input_shapes,
             concat_output.to_tile_tensor[DType.int64](),
             ctx,
+        )
+
+
+@compiler.register("mo.dual_fused_concat_slice")
+struct DualFusedConcatSlice:
+    @staticmethod
+    def execute[
+        dtype: DType,
+        rank: Int,
+        target: StaticString,
+        num_inputs_0: Int,
+        static_starts_0: IntTuple,
+        static_steps_0: IntTuple,
+        static_starts_1: IntTuple,
+        static_steps_1: IntTuple,
+    ](
+        concat_output_0: FusedOutputTensor[dtype=dtype, rank=rank, ...],
+        slice_output_0: FusedOutputTensor[dtype=dtype, rank=rank, ...],
+        concat_output_1: FusedOutputTensor[dtype=dtype, rank=rank, ...],
+        slice_output_1: FusedOutputTensor[dtype=dtype, rank=rank, ...],
+        axis: Scalar,
+        inputs: FusedInputVariadicTensors[dtype=dtype, rank=rank, ...],
+        ctx: DeviceContextPtr,
+    ) capturing raises:
+        comptime num_inputs_1 = inputs.size - num_inputs_0
+
+        var input_shapes_0 = StaticTuple[IndexList[rank], num_inputs_0]()
+        comptime for i in range(num_inputs_0):
+            input_shapes_0[i] = inputs[i].shape()
+
+        var input_shapes_1 = StaticTuple[IndexList[rank], num_inputs_1]()
+        comptime for i in range(num_inputs_1):
+            input_shapes_1[i] = inputs[num_inputs_0 + i].shape()
+
+        @always_inline
+        @parameter
+        def inputs_lambda_0[
+            input_index: Int,
+            width: Int,
+            _rank: Int,
+            alignment: Int = 1,
+        ](indices: IndexList[_rank]) -> SIMD[dtype, width]:
+            comptime assert (
+                input_index < num_inputs_0
+            ), "concat 0: tensor index out of bounds"
+            return inputs[input_index]._lambda_load[
+                width=width, element_alignment=alignment
+            ](rebind[IndexList[rank]](indices))
+
+        @always_inline
+        @parameter
+        def inputs_lambda_1[
+            input_index: Int,
+            width: Int,
+            _rank: Int,
+            alignment: Int = 1,
+        ](indices: IndexList[_rank]) -> SIMD[dtype, width]:
+            comptime assert (
+                input_index < num_inputs_1
+            ), "concat 1: tensor index out of bounds"
+            return inputs[num_inputs_0 + input_index]._lambda_load[
+                width=width, element_alignment=alignment
+            ](rebind[IndexList[rank]](indices))
+
+        @always_inline
+        @parameter
+        def epilogue_0[
+            _dtype: DType, _rank: Int, width: Int, *, alignment: Int = 1
+        ](indices: IndexList[_rank], value: SIMD[_dtype, width]):
+            var concat_indices = rebind[IndexList[rank]](indices)
+
+            concat_output_0._lambda_store[
+                width=width, element_alignment=alignment
+            ](
+                concat_indices,
+                rebind[SIMD[concat_output_0.dtype, width]](value),
+            )
+
+            var slice_indices = IndexList[rank]()
+            comptime slice_in_shape = concat_output_0._static_shape_tuple
+            comptime slice_out_shape = slice_output_0._static_shape_tuple
+
+            comptime for i in range(rank):
+                comptime start = Int(static_starts_0[i])
+                comptime step = Int(static_steps_0[i])
+
+                comptime dim_not_sliced = i == rank - 1 or (
+                    start == 0
+                    and step == 1
+                    and Int(slice_in_shape[i]) != UNKNOWN_VALUE
+                    and Int(slice_in_shape[i]) == Int(slice_out_shape[i])
+                )
+
+                comptime if dim_not_sliced:
+                    slice_indices[i] = concat_indices[i]
+                else:
+                    var start_norm = (
+                        start if start
+                        >= 0 else start + concat_output_0.dim_size[i]()
+                    )
+                    if (indices[i] - start_norm) % step != 0:
+                        return
+                    var slice_idx = (indices[i] - start_norm) // step
+                    if (
+                        slice_idx < 0
+                        or slice_idx >= slice_output_0.dim_size[i]()
+                    ):
+                        return
+                    slice_indices[i] = slice_idx
+
+            slice_output_0._lambda_store[
+                width=width, element_alignment=alignment
+            ](
+                slice_indices,
+                rebind[SIMD[slice_output_0.dtype, width]](value),
+            )
+
+        @always_inline
+        @parameter
+        def epilogue_1[
+            _dtype: DType, _rank: Int, width: Int, *, alignment: Int = 1
+        ](indices: IndexList[_rank], value: SIMD[_dtype, width]):
+            var concat_indices = rebind[IndexList[rank]](indices)
+
+            concat_output_1._lambda_store[
+                width=width, element_alignment=alignment
+            ](
+                concat_indices,
+                rebind[SIMD[concat_output_1.dtype, width]](value),
+            )
+
+            var slice_indices = IndexList[rank]()
+            comptime slice_in_shape = concat_output_1._static_shape_tuple
+            comptime slice_out_shape = slice_output_1._static_shape_tuple
+
+            comptime for i in range(rank):
+                comptime start = Int(static_starts_1[i])
+                comptime step = Int(static_steps_1[i])
+
+                comptime dim_not_sliced = i == rank - 1 or (
+                    start == 0
+                    and step == 1
+                    and Int(slice_in_shape[i]) != UNKNOWN_VALUE
+                    and Int(slice_in_shape[i]) == Int(slice_out_shape[i])
+                )
+
+                comptime if dim_not_sliced:
+                    slice_indices[i] = concat_indices[i]
+                else:
+                    var start_norm = (
+                        start if start
+                        >= 0 else start + concat_output_1.dim_size[i]()
+                    )
+                    if (indices[i] - start_norm) % step != 0:
+                        return
+                    var slice_idx = (indices[i] - start_norm) // step
+                    if (
+                        slice_idx < 0
+                        or slice_idx >= slice_output_1.dim_size[i]()
+                    ):
+                        return
+                    slice_indices[i] = slice_idx
+
+            slice_output_1._lambda_store[
+                width=width, element_alignment=alignment
+            ](
+                slice_indices,
+                rebind[SIMD[slice_output_1.dtype, width]](value),
+            )
+
+        _fused_dual_concat_gpu[
+            rank,
+            dtype,
+            inputs_lambda_0,
+            epilogue_0,
+            num_inputs_0,
+            inputs_lambda_1,
+            epilogue_1,
+            num_inputs_1,
+        ](
+            normalize_neg_index(Int(axis), rank),
+            input_shapes_0,
+            concat_output_0.to_tile_tensor[DType.int64](),
+            input_shapes_1,
+            concat_output_1.to_tile_tensor[DType.int64](),
+            ctx.get_device_context(),
         )
 
 
