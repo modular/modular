@@ -1160,11 +1160,11 @@ def test_list_can_infer_iterable_element_type() raises:
     assert_equal(
         l,
         [
-            Codepoint.ord("M"),
-            Codepoint.ord("o"),
-            Codepoint.ord("j"),
-            Codepoint.ord("o"),
-            Codepoint.ord("🔥"),
+            Codepoint("M"),
+            Codepoint("o"),
+            Codepoint("j"),
+            Codepoint("o"),
+            Codepoint("🔥"),
         ],
     )
 

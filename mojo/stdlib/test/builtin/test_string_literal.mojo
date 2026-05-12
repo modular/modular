@@ -246,11 +246,11 @@ def test_iter() raises:
     i = 0
     for c in "one".codepoints():
         if i == 0:
-            assert_equal(c, Codepoint.ord("o"))
+            assert_equal(c, Codepoint("o"))
         elif i == 1:
-            assert_equal(c, Codepoint.ord("n"))
+            assert_equal(c, Codepoint("n"))
         elif i == 2:
-            assert_equal(c, Codepoint.ord("e"))
+            assert_equal(c, Codepoint("e"))
         i += 1
 
 
