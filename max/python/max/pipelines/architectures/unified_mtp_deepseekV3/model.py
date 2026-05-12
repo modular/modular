@@ -167,6 +167,16 @@ class UnifiedMTPDeepseekV3Model(DeepseekV3Model):
                 for k, v in state_dict.items()
                 if k.startswith("draft.")
             }
+            # Some checkpoints share shared_head_norm with
+            # the base model's final norm and don't emit it as a draft weight.
+            # Copy the value from target.norm.weight so load_state_dict finds it.
+            if (
+                "shared_head_norm.weight" not in draft_state_dict
+                and "target.norm.weight" in state_dict
+            ):
+                draft_state_dict["shared_head_norm.weight"] = state_dict[
+                    "target.norm.weight"
+                ]
             draft_config = self._create_draft_config(draft_state_dict)
 
             if (
