@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Tests for Click config file precedence."""
+"""Tests for Click config file precedence and recipe path resolution."""
 
 from __future__ import annotations
 
@@ -18,8 +18,10 @@ from pathlib import Path
 from typing import Any
 
 import click
+import pytest
 from click.testing import CliRunner
 from max.config import ConfigFileModel
+from max.config.config_file_model import _resolve_config_file
 from max.entrypoints.cli.config import config_to_flag, pipeline_config_options
 from pydantic import Field
 from pytest import MonkeyPatch
@@ -157,3 +159,40 @@ def test_explicit_devices_inherited_by_draft_devices(
 
     assert result.exit_code == 0, result.output
     assert result.output.strip() == "device_specs|draft_device_specs"
+
+
+def test_resolve_config_file_passthrough_for_plain_paths() -> None:
+    """Non-prefixed paths are returned unchanged."""
+    assert _resolve_config_file("/tmp/my_config.yaml") == "/tmp/my_config.yaml"
+    assert _resolve_config_file("relative/path.yaml") == "relative/path.yaml"
+
+
+def test_resolve_config_file_resolves_builtin_recipe() -> None:
+    """Paths with the max/pipelines/architectures/ prefix resolve to the package."""
+    resolved = _resolve_config_file(
+        "max/pipelines/architectures/llama3_modulev3/recipes/llama32_1b.yaml"
+    )
+    assert Path(resolved).is_file()
+    assert resolved.endswith(
+        "pipelines/architectures/llama3_modulev3/recipes/llama32_1b.yaml"
+    )
+
+
+def test_resolve_config_file_raises_for_missing_recipe() -> None:
+    """Non-existent recipe under the prefix raises FileNotFoundError."""
+    with pytest.raises(FileNotFoundError, match="Built-in recipe not found"):
+        _resolve_config_file(
+            "max/pipelines/architectures/no_such/recipes/missing.yaml"
+        )
+
+
+def test_config_file_with_builtin_recipe_prefix() -> None:
+    """ConfigFileModel resolves and opens a built-in recipe via the prefix path."""
+    import yaml
+
+    resolved = _resolve_config_file(
+        "max/pipelines/architectures/llama3_modulev3/recipes/llama32_1b.yaml"
+    )
+    with open(resolved) as f:
+        data = yaml.safe_load(f)
+    assert data["model"]["model_path"] == "meta-llama/Llama-3.2-1B-Instruct"

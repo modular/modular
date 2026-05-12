@@ -61,7 +61,6 @@ from pydantic import BaseModel, ConfigDict, Field
 from requests.structures import CaseInsensitiveDict
 
 URL = "http://127.0.0.1:8000/v1/chat/completions"
-RECIPE_ROOT = "max/python/max/pipelines/architectures"
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -69,38 +68,43 @@ logger = logging.getLogger(__name__)
 
 # Maps alias model names to reusable MAX recipe configs. Aliases let the same
 # weights be tested under different configurations while keeping results
-# separate in dashboards.
+# separate in dashboards. Paths use the portable ``max/pipelines/architectures/``
+# prefix so they are resolved by the MAX CLI config loader against the installed
+# package, avoiding hard-coded repo roots.
+#
+# Values are fully spelled-out so they can be copy-pasted into a CLI invocation:
+#   max serve --config-file max/pipelines/architectures/deepseekV3/recipes/nvfp4_8x_b200.yaml
 # fmt: off
 MODEL_RECIPES = CaseInsensitiveDict({
-    "deepseek-ai/DeepSeek-R1-0528": "deepseekV3/recipes/r1_0528_8x_b200.yaml",
-    "deepseek-ai/DeepSeek-V3.1-Terminus": "deepseekV3/recipes/terminus_8x_b200.yaml",
-    "google/gemma-4-26B-A4B-it__no_dgc": "gemma4/recipes/gemma4_26b_a4b_no_dgc.yaml",
-    "nvidia/Gemma-4-26B-A4B-NVFP4__no_dgc": "gemma4/recipes/gemma4_26b_a4b_nvfp4_no_dgc.yaml",
-    "google/gemma-3-27b-it__modulev3": "gemma3_modulev3/recipes/gemma3_27b.yaml",
-    "MiniMaxAI/MiniMax-M2.7": "minimax_m2/recipes/minimax_m2_8x_b200.yaml",
-    "amd/MiniMax-M2.7-MXFP4": "minimax_m2/recipes/minimax_m2_mxfp4_8x_mi355.yaml",
-    "lukealonso/MiniMax-M2.7-NVFP4": "minimax_m2/recipes/minimax_m2_nvfp4_8x_b200.yaml",
-    "meta-llama/Llama-3.1-8B-Instruct__eagle": "llama3/recipes/llama31_8b_eagle.yaml",
-    "meta-llama/Llama-3.1-8B-Instruct__eagle_local_kvconnector": "llama3/recipes/llama31_8b_eagle_local_kvconnector.yaml",
-    "meta-llama/Llama-3.1-8B-Instruct__local_kvconnector": "llama3/recipes/llama31_8b_local_kvconnector.yaml",
-    "meta-llama/Llama-3.1-8B-Instruct__modulev3": "llama3_modulev3/recipes/llama31_8b.yaml",
-    "meta-llama/Llama-3.1-8B-Instruct__tiered_kvconnector": "llama3/recipes/llama31_8b_tiered_kvconnector.yaml",
-    "microsoft/Phi-3.5-mini-instruct__modulev3": "phi3_modulev3/recipes/phi35_mini.yaml",
-    "microsoft/phi-4__modulev3": "phi3_modulev3/recipes/phi4.yaml",
-    "nvidia/DeepSeek-V3.1-NVFP4": "deepseekV3/recipes/nvfp4_8x_b200.yaml",
-    "nvidia/DeepSeek-V3.1-NVFP4__fp8kv": "deepseekV3/recipes/nvfp4_fp8kv_8x_b200.yaml",
-    "nvidia/DeepSeek-V3.1-NVFP4__mtp": "deepseekV3/recipes/nvfp4_mtp_8x_b200.yaml",
-    "nvidia/DeepSeek-V3.1-NVFP4__mtp_tpep": "deepseekV3/recipes/nvfp4_mtp_tpep_8x_b200.yaml",
-    "nvidia/DeepSeek-V3.1-NVFP4__tpep": "deepseekV3/recipes/nvfp4_tpep_8x_b200.yaml",
-    "nvidia/DeepSeek-V3.1-NVFP4__tpep_ar": "deepseekV3/recipes/nvfp4_tpep_ar_8x_b200.yaml",
-    "nvidia/DeepSeek-V3.1-NVFP4__tptp": "deepseekV3/recipes/nvfp4_tptp_8x_b200.yaml",
-    "nvidia/Kimi-K2.5-NVFP4": "kimik2_5/recipes/nvfp4_with_vision_8x_b200.yaml",
-    "Qwen/Qwen3-235B-A22B-Instruct-2507": "qwen3/recipes/qwen3_235b_a22b_8x_b200.yaml",
-    "unsloth/gpt-oss-20b-BF16__modulev3": "gpt_oss_modulev3/recipes/gpt_oss_20b.yaml",
-    "austinpowers/Kimi-K2.5-NVFP4-DeepseekV3__eagle": "kimik2_5/recipes/nvfp4_eagle_8x_b200.yaml",
-    "austinpowers/Kimi-K2.5-NVFP4-DeepseekV3__eagle_tiered_kvconnector_tpep": "kimik2_5/recipes/nvfp4_eagle_tiered_kvconnector_tpep_8x_b200.yaml",
-    "austinpowers/Kimi-K2.5-NVFP4-DeepseekV3__local_kvconnector_tpep": "kimik2_5/recipes/nvfp4_local_kvconnector_tpep_8x_b200.yaml",
-    "austinpowers/Kimi-K2.5-NVFP4-DeepseekV3__tiered_kvconnector_tpep": "kimik2_5/recipes/nvfp4_tiered_kvconnector_tpep_8x_b200.yaml",
+    "deepseek-ai/DeepSeek-R1-0528": "max/pipelines/architectures/deepseekV3/recipes/r1_0528_8x_b200.yaml",
+    "deepseek-ai/DeepSeek-V3.1-Terminus": "max/pipelines/architectures/deepseekV3/recipes/terminus_8x_b200.yaml",
+    "google/gemma-4-26B-A4B-it__no_dgc": "max/pipelines/architectures/gemma4/recipes/gemma4_26b_a4b_no_dgc.yaml",
+    "nvidia/Gemma-4-26B-A4B-NVFP4__no_dgc": "max/pipelines/architectures/gemma4/recipes/gemma4_26b_a4b_nvfp4_no_dgc.yaml",
+    "google/gemma-3-27b-it__modulev3": "max/pipelines/architectures/gemma3_modulev3/recipes/gemma3_27b.yaml",
+    "MiniMaxAI/MiniMax-M2.7": "max/pipelines/architectures/minimax_m2/recipes/minimax_m2_8x_b200.yaml",
+    "amd/MiniMax-M2.7-MXFP4": "max/pipelines/architectures/minimax_m2/recipes/minimax_m2_mxfp4_8x_mi355.yaml",
+    "lukealonso/MiniMax-M2.7-NVFP4": "max/pipelines/architectures/minimax_m2/recipes/minimax_m2_nvfp4_8x_b200.yaml",
+    "meta-llama/Llama-3.1-8B-Instruct__eagle": "max/pipelines/architectures/llama3/recipes/llama31_8b_eagle.yaml",
+    "meta-llama/Llama-3.1-8B-Instruct__eagle_local_kvconnector": "max/pipelines/architectures/llama3/recipes/llama31_8b_eagle_local_kvconnector.yaml",
+    "meta-llama/Llama-3.1-8B-Instruct__local_kvconnector": "max/pipelines/architectures/llama3/recipes/llama31_8b_local_kvconnector.yaml",
+    "meta-llama/Llama-3.1-8B-Instruct__modulev3": "max/pipelines/architectures/llama3_modulev3/recipes/llama31_8b.yaml",
+    "meta-llama/Llama-3.1-8B-Instruct__tiered_kvconnector": "max/pipelines/architectures/llama3/recipes/llama31_8b_tiered_kvconnector.yaml",
+    "microsoft/Phi-3.5-mini-instruct__modulev3": "max/pipelines/architectures/phi3_modulev3/recipes/phi35_mini.yaml",
+    "microsoft/phi-4__modulev3": "max/pipelines/architectures/phi3_modulev3/recipes/phi4.yaml",
+    "nvidia/DeepSeek-V3.1-NVFP4": "max/pipelines/architectures/deepseekV3/recipes/nvfp4_8x_b200.yaml",
+    "nvidia/DeepSeek-V3.1-NVFP4__fp8kv": "max/pipelines/architectures/deepseekV3/recipes/nvfp4_fp8kv_8x_b200.yaml",
+    "nvidia/DeepSeek-V3.1-NVFP4__mtp": "max/pipelines/architectures/deepseekV3/recipes/nvfp4_mtp_8x_b200.yaml",
+    "nvidia/DeepSeek-V3.1-NVFP4__mtp_tpep": "max/pipelines/architectures/deepseekV3/recipes/nvfp4_mtp_tpep_8x_b200.yaml",
+    "nvidia/DeepSeek-V3.1-NVFP4__tpep": "max/pipelines/architectures/deepseekV3/recipes/nvfp4_tpep_8x_b200.yaml",
+    "nvidia/DeepSeek-V3.1-NVFP4__tpep_ar": "max/pipelines/architectures/deepseekV3/recipes/nvfp4_tpep_ar_8x_b200.yaml",
+    "nvidia/DeepSeek-V3.1-NVFP4__tptp": "max/pipelines/architectures/deepseekV3/recipes/nvfp4_tptp_8x_b200.yaml",
+    "nvidia/Kimi-K2.5-NVFP4": "max/pipelines/architectures/kimik2_5/recipes/nvfp4_with_vision_8x_b200.yaml",
+    "Qwen/Qwen3-235B-A22B-Instruct-2507": "max/pipelines/architectures/qwen3/recipes/qwen3_235b_a22b_8x_b200.yaml",
+    "unsloth/gpt-oss-20b-BF16__modulev3": "max/pipelines/architectures/gpt_oss_modulev3/recipes/gpt_oss_20b.yaml",
+    "austinpowers/Kimi-K2.5-NVFP4-DeepseekV3__eagle": "max/pipelines/architectures/kimik2_5/recipes/nvfp4_eagle_8x_b200.yaml",
+    "austinpowers/Kimi-K2.5-NVFP4-DeepseekV3__eagle_tiered_kvconnector_tpep": "max/pipelines/architectures/kimik2_5/recipes/nvfp4_eagle_tiered_kvconnector_tpep_8x_b200.yaml",
+    "austinpowers/Kimi-K2.5-NVFP4-DeepseekV3__local_kvconnector_tpep": "max/pipelines/architectures/kimik2_5/recipes/nvfp4_local_kvconnector_tpep_8x_b200.yaml",
+    "austinpowers/Kimi-K2.5-NVFP4-DeepseekV3__tiered_kvconnector_tpep": "max/pipelines/architectures/kimik2_5/recipes/nvfp4_tiered_kvconnector_tpep_8x_b200.yaml",
 })
 # fmt: on
 
@@ -193,14 +197,15 @@ def _load_hf_repo_lock() -> dict[str, str]:
     return db
 
 
-def _resolve_recipe_path(recipe_path: str) -> Path:
-    build_workspace = os.getenv("BUILD_WORKSPACE_DIRECTORY")
-    if build_workspace:
-        repo_root = Path(build_workspace)
-    else:
-        repo_root = Path(__file__).resolve().parents[5]
+def _resolve_recipe_path(recipe_path: str) -> str:
+    """Resolve a recipe path to an absolute file path.
 
-    return repo_root / RECIPE_ROOT / recipe_path
+    Recipe paths use the ``max/pipelines/architectures/`` prefix and are
+    resolved by the shared config resolver against the installed package.
+    """
+    from max.config.config_file_model import _resolve_config_file
+
+    return _resolve_config_file(recipe_path)
 
 
 @cache
@@ -313,17 +318,14 @@ def get_server_cmd(
     gpu_model, gpu_count = get_gpu_name_and_count()
     if recipe_path is None:
         recipe_path = MODEL_RECIPES.get(model)
-    resolved_recipe_path = (
-        _resolve_recipe_path(recipe_path) if recipe_path else None
-    )
     recipe = _load_recipe(recipe_path) if recipe_path else None
-    recipe_config: tuple[Path, RecipeConfig] | None = None
+    recipe_config: tuple[str, RecipeConfig] | None = None
     if (
         recipe is not None
-        and resolved_recipe_path is not None
+        and recipe_path is not None
         and framework in ["max-ci", "max"]
     ):
-        recipe_config = (resolved_recipe_path, recipe)
+        recipe_config = (recipe_path, recipe)
 
     sglang_backend = "triton" if "b200" in gpu_model.lower() else "fa3"
     SGLANG = [
@@ -412,10 +414,10 @@ def get_server_cmd(
 
     cmd = cmd + ["--port", "8000"]
     if recipe_config is not None:
-        resolved_recipe_path, recipe = recipe_config
+        config_file_path, recipe = recipe_config
         cmd += [
             "--config-file",
-            str(resolved_recipe_path),
+            config_file_path,
             *_recipe_gpu_overrides(recipe, gpu_count),
         ]
     else:

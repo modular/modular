@@ -10,6 +10,7 @@ filegroup(
 modular_py_library(
     name = "architectures",
     srcs = glob(["**/*.py"]),
+    data = [":recipe_configs"],
     ignore_extra_deps = [
         # Hooks added for convenience for when we want to print the model layers
         "//max/python/max/nn/hooks",
