@@ -406,7 +406,7 @@ struct PyMethodDef(Defaultable, ImplicitlyCopyable):
             static_method: Whether the function is a static method.
 
         Arguments:
-            func: The fastcall-shaped trampoline.
+            func: The fastcall-shaped wrapper.
             func_name: The name of the function as exposed to Python.
             docstring: The docstring for the function.
         """
