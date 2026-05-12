@@ -30,7 +30,7 @@ def need_i1_pred[x: Int]() where i1_pred(x):
 
 # We should see an 'and' operator, instead of 'cond'.
 # CHECK-LABEL: lit.fn @"test_and_bool[
-# CHECK-SAME: where {<#kgen.cast_from_builtin<#kgen<sugar preserved, i1,
+# CHECK-SAME: {<#kgen.cast_from_builtin<#kgen<sugar preserved, i1,
 # CHECK-SAME: and(#lit.struct.extract<:!Bool apply(:!lit.generator<("x": !Int) -> !Bool> @where_clause_and_operator::@"bool_pred(::Int)"
 def test_and_bool[
     x: Int, y: Int, z: Int
@@ -58,7 +58,7 @@ def call_test_and_bool_nested():
 
 
 # CHECK-LABEL: lit.fn @"test_and_i1[
-# CHECK-SAME: where {<#kgen.cast_from_builtin<#kgen<sugar preserved, i1,
+# CHECK-SAME: {<#kgen.cast_from_builtin<#kgen<sugar preserved, i1,
 # CHECK-SAME: and(apply(:!lit.generator<("x": !Int) -> i1> @where_clause_and_operator::@"i1_pred(::Int)"
 def test_and_i1[x: Int, y: Int]() where i1_pred(x) and i1_pred(y):
     need_i1_pred[x]()
@@ -66,7 +66,7 @@ def test_and_i1[x: Int, y: Int]() where i1_pred(x) and i1_pred(y):
 
 
 # CHECK-LABEL: lit.fn @"test_and_i1_bool[
-# CHECK-SAME: where {<#kgen.cast_from_builtin<#kgen<sugar preserved, i1,
+# CHECK-SAME: {<#kgen.cast_from_builtin<#kgen<sugar preserved, i1,
 # CHECK-SAME: and(apply(:!lit.generator<("x": !Int) -> i1> @where_clause_and_operator::@"i1_pred(::Int)"
 def test_and_i1_bool[x: Int, y: Int]() where i1_pred(x) and bool_pred(y):
     need_i1_pred[x]()
@@ -74,7 +74,7 @@ def test_and_i1_bool[x: Int, y: Int]() where i1_pred(x) and bool_pred(y):
 
 
 # CHECK-LABEL: lit.fn @"test_and_bool_i1[
-# CHECK-SAME: where {<#kgen.cast_from_builtin<#kgen<sugar preserved, i1,
+# CHECK-SAME: {<#kgen.cast_from_builtin<#kgen<sugar preserved, i1,
 # CHECK-SAME: and(apply(:!lit.generator<("x": !Int) -> i1> @where_clause_and_operator::@"i1_pred(::Int)"
 def test_and_bool_i1[x: Int, y: Int]() where bool_pred(x) and i1_pred(y):
     need_bool_pred[x]()
@@ -83,7 +83,7 @@ def test_and_bool_i1[x: Int, y: Int]() where bool_pred(x) and i1_pred(y):
 
 # Test with `or` operator as well.
 # CHECK-LABEL: lit.fn @"test_or_bool[
-# CHECK-SAME: where {<#kgen.cast_from_builtin<#kgen<sugar preserved, i1,
+# CHECK-SAME: {<#kgen.cast_from_builtin<#kgen<sugar preserved, i1,
 # CHECK-SAME: or(#lit.struct.extract<:!Bool apply(:!lit.generator<("x": !Int) -> !Bool> @where_clause_and_operator::@"bool_pred(::Int)"
 def test_or_bool[x: Int, y: Int]() where bool_pred(x) or bool_pred(y):
     # With `or`, we can't unconditionally call need_one or need_two

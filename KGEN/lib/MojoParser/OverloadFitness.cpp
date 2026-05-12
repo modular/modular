@@ -913,8 +913,8 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
   SmallVector<ConstraintAttr> fnUnprovableConstraints;
   checkConstraints(callable.paramBindings.declScope,
                    originalSignature.getMetadata(),
-                   signature.getFnMetadata().getConstraints(),
-                   originalSignature.getFnMetadata().getConstraints(),
+                   signature.getMetadata().getBodyConstraints(),
+                   originalSignature.getMetadata().getBodyConstraints(),
                    inference.diag.getDiag(), &fnUnprovableConstraints,
                    /*evaluator=*/nullptr);
   if (inference.diag.hasErrorEmitted())

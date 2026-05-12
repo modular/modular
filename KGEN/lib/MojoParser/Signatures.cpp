@@ -1064,6 +1064,7 @@ std::optional<TypeCheckedParamList>
 TypeCheckedParamList::create(ParsedParamList &parsedParams,
                              ASTDecl &declScope) {
   TypeCheckedParamList result(declScope);
+  result.bodyConstraints = std::move(parsedParams.bodyConstraints);
 
   // Resolve each of the parameter declarations.
   IREmitter emitter(declScope, EC_Type);
@@ -1214,7 +1215,8 @@ TypeCheckedParamList::create(ParsedParamList &parsedParams,
   return result;
 }
 
-PogListAttr TypeCheckedParamList::getParamListAttr() const {
+PogListAttr TypeCheckedParamList::getParamListAttr(
+    ArrayRef<ConstraintAttr> bodyConstraints) const {
   assert(allParamConstraints.size() == names.size() &&
          "constraints array has different size than parameter arrays");
   // In a parameter list, any variadic list is claimed to be ReadMem.
@@ -1226,7 +1228,7 @@ PogListAttr TypeCheckedParamList::getParamListAttr() const {
 
   return PogListAttr::get(shared.getContext(), names, passingKinds,
                           variadicKinds, defaults, origVariadicConvention,
-                          allParamConstraints, /*bodyConstraints=*/{});
+                          allParamConstraints, bodyConstraints);
 }
 
 //===----------------------------------------------------------------------===//
@@ -1263,6 +1265,17 @@ ParsedParamList::parseParametersIfPresent(ParserBase &p, ArgListKind kind,
     return failure();
 
   return p.parseToken(Token::r_square, "expected ']' for parameter list");
+}
+
+ParseResult ParsedParamList::parseTrailingConstraintsIfPresent(ParserBase &p) {
+  while (p.consumeIfSoftIdentifier("where")) {
+    ParsedConstraint constraint;
+    if (constraint.parse(p))
+      return failure();
+
+    bodyConstraints.push_back(constraint);
+  }
+  return success();
 }
 
 //===----------------------------------------------------------------------===//
@@ -1554,17 +1567,6 @@ void ParsedArgumentList::parseResultIfPresent(
   // Indicate a present result by setting its convention to 'out' or 'ref'.
   resultArg.convention = isRefResult ? ParsedArgument::kConventionRef
                                      : ParsedArgument::kConventionOut;
-}
-
-ParseResult ParsedArgumentList::parseConstraintsIfPresent(ParserBase &p) {
-  while (p.consumeIfSoftIdentifier("where")) {
-    ParsedConstraint constraint;
-    if (constraint.parse(p))
-      return failure();
-
-    fnConstraints.push_back(constraint);
-  }
-  return success();
 }
 
 /// This function creates a new anonymous origin decl for the specified
@@ -2431,7 +2433,7 @@ TypeCheckedFnSignature::TypeCheckedFnSignature(TypeCheckedParamList &paramList,
 
   // Type check the constraints.
   IREmitter constraintEmitter(paramList.declScope, EC_Requires);
-  for (const ParsedConstraint &constraint : argList.fnConstraints) {
+  for (const ParsedConstraint &constraint : paramList.bodyConstraints) {
     RValue propI1 =
         constraintEmitter.emitExprI1(constraint.propExpr, EC_Requires);
     if (!propI1) {
@@ -2451,7 +2453,7 @@ TypeCheckedFnSignature::TypeCheckedFnSignature(TypeCheckedParamList &paramList,
 
     // Translate location without any DebugInfo scope since this metadata is
     // purely frontend use and never ends up in DWARF.
-    fnConstraints.push_back(ConstraintAttr::get(
+    bodyConstraints.push_back(ConstraintAttr::get(
         propVal, shared.diags.translateLocation(constraint.loc)));
   }
 }
@@ -2782,14 +2784,14 @@ FnTypeGeneratorType TypeCheckedFnSignature::getFnTypeGeneratorType() const {
   }
   assert(numVariadics <= 1 && "There can be at most one variadic argument");
 
-  PogListAttr paramListAttr = paramList.getParamListAttr();
+  PogListAttr paramListAttr = paramList.getParamListAttr(bodyConstraints);
   auto metadata = FnMetadataAttr::get(
       PogListAttr::get(ctx, argPogs, /*bodyConstraints=*/{},
                        argVariadicOrigConvention),
       implicitOriginDecls.size(),
       getOriginsAccessibleByParams(paramListAttr, paramList.paramDeclAttrs,
                                    paramList.shared, captureOrigins),
-      isNestedOriginExclusivityCheckingDisabled, fnConstraints);
+      isNestedOriginExclusivityCheckingDisabled, /*constraints=*/{});
 
   /// We shouldn't have internal verifier errors here, but if we do, try to
   /// emit them at some location of merit because something snuck through

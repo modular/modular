@@ -1435,7 +1435,7 @@ void PublicFunctionDecl::initFromSignature(MojoASTDeclRef declRef,
   ArrayRef<ArgConvention> argConventions = signature.getArgConventions();
   ArrayRef<Type> paramTypes = signature.getInputParamTypes();
   ArrayRef<ConstraintAttr> sigConstraints =
-      signature.getFnMetadata().getConstraints();
+      signature.getMetadata().getBodyConstraints();
   ArrayRef<PogMetadataAttr> paramMetaAttribs =
       signature.getMetadata().getPogs();
 

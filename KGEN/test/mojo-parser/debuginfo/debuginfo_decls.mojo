@@ -60,7 +60,7 @@ def testImplicitVarDeclScopeNoDebug() raises:
 # // -----
 
 
-# CHECK-DAG: lit.fn @"fn_where_clause{{.*}}, #[[LOC_WHERE_FN:loc[0-9]+]]>} attributes
+# CHECK-DAG: lit.fn @"fn_where_clause{{.*}}, #[[LOC_WHERE_FN:loc[0-9]+]]>}{{.*}} attributes
 def fn_where_clause[x: Int]() where x:
     pass
 

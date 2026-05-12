@@ -182,6 +182,8 @@ def LIT_PogListAttr : LITAttr<"PogList", "pog_list",
   let builders = [
     AttrBuilder<(ins)>,
     AttrBuilder<(ins "size_t":$numPogs)>,
+    AttrBuilder<(ins "size_t":$numPogs,
+                     "ArrayRef<ConstraintAttr>":$bodyConstraints)>,
     AttrBuilder<(ins "ArrayRef<PogMetadataAttr>":$pogs)>,
     AttrBuilder<(ins "ArrayRef<StringAttr>":$names,
                      "ArrayRef<PassingKind>":$passingKinds)>,

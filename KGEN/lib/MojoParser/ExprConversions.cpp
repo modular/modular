@@ -186,7 +186,7 @@ static FnType getReducedFnType(FnType sig) {
       // Don't keep the capture origins, thunks don't care about those. Only the
       // parameter-value passed in at the callsite cares about those.
       {}, sig.getIsNestedOriginExclusivityCheckingDisabled(),
-      sig.getMetadata().getConstraints());
+      /*constraints=*/{});
   return FuncType::get(sig.getValues(), sig.getArgConventions(),
                        sig.getFnEffects(), metadata);
 }
@@ -197,9 +197,12 @@ static GeneratorType getReducedGeneratorType(GeneratorType gen) {
   if (auto fnType = sugarDynCast<FnType>(bodyType))
     bodyType = getReducedFnType(fnType);
 
-  return GeneratorType::get(
-      gen.getInputParamTypes(), bodyType,
-      PogListAttr::get(gen.getContext(), gen.getInputParamTypes().size()));
+  ArrayRef<ConstraintAttr> bodyConstraints;
+  if (auto pogs = dyn_cast_or_null<PogListAttr>(gen.getMetadata()))
+    bodyConstraints = pogs.getBodyConstraints();
+  auto metadata = PogListAttr::get(
+      gen.getContext(), gen.getInputParamTypes().size(), bodyConstraints);
+  return GeneratorType::get(gen.getInputParamTypes(), bodyType, metadata);
 }
 
 static std::string generateThunkName(Type expected, Type actual) {
@@ -286,19 +289,19 @@ static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl,
   auto reboundCalleeType =
       sugarCast<FnTypeGeneratorType>(evaluator.getReboundType(actualSignature));
   ArrayRef<ConstraintAttr> remappedConstraints =
-      reboundCalleeType.getBody().getMetadata().getConstraints();
+      reboundCalleeType.getMetadata().getBodyConstraints();
 
   // Declare the function at the bottom of the decl.
   b = ImplicitLocOpBuilder(mlirLoc, moduleDecl.getDeclEndBuilder());
   FunctionEmitter structEmitter(shared);
+  auto paramListAttrs = PogListAttr::get(
+      ctx, thunkSignature.getInputParamTypes().size() + 1, remappedConstraints);
   auto [thunk, thunkDecl] = structEmitter.synthesizeFunction(
-      moduleDecl, name, paramDecls,
-      PogListAttr::get(ctx, thunkSignature.getInputParamTypes().size() + 1),
-      functionType.getInputs(), thunkSignature.getArgConventions(),
+      moduleDecl, name, paramDecls, paramListAttrs, functionType.getInputs(),
+      thunkSignature.getArgConventions(),
       PogListAttr::get(ctx, thunkSignature.getNumArguments()),
       functionType.getResults().front(), SpecialFunctionKind::kNormal,
-      moduleDecl.getLoc(), b, remappedConstraints,
-      thunkSignature.getFnEffects(),
+      moduleDecl.getLoc(), b, thunkSignature.getFnEffects(),
       /*suffix=*/"", /*synthetic=*/true, InlineLevel::Automatic);
 
   // Annotate the function as a thunk by adding the conversion types.
@@ -610,16 +613,23 @@ static CValue convertFunctionGeneratorValue(CValue value, const ExprNode *expr,
       reducedExpected.getNumImplicitOriginDecls(),
       reducedExpected.getCaptureOrigins(),
       reducedExpected.getIsNestedOriginExclusivityCheckingDisabled(),
-      reducedExpected.getFnMetadata().getConstraints());
+      /*constraints=*/{});
   auto thunkFuncType = sugarCast<FunctionType>(
       paramRefsReplacer.getReboundType(reducedExpected.getValues()));
+  SmallVector<ConstraintAttr> thunkBodyConstraints;
+  for (ConstraintAttr constraint :
+       reducedExpected.getMetadata().getBodyConstraints()) {
+    thunkBodyConstraints.push_back(cast<ConstraintAttr>(
+        paramRefsReplacer.getReboundAttribute(constraint)));
+  }
   auto thunkSignature = FuncTypeGeneratorType::get(
       /*inputParamTypes=*/thunkParamTypes,
       /*values=*/thunkFuncType,
       /*argConvs=*/reducedExpected.getArgConventions(),
       /*effects=*/reducedExpected.getFnEffects(),
       /*fnMetadata=*/thunkMetadata,
-      /*genMetadata=*/PogListAttr::get(ctx, thunkParamTypes.size()));
+      /*genMetadata=*/
+      PogListAttr::get(ctx, thunkParamTypes.size(), thunkBodyConstraints));
 
   // There shouldn't be any ParamDeclRefAttr in the thunk signature, because
   // there's no parent scope param-decls for them to refer to.
