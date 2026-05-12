@@ -723,10 +723,10 @@ def _is_amd_gcn() -> Bool:
 
 
 comptime _AMD_RDNA1_ARCHS: List[String] = [
-    "amdgpu:gfx1010",  # Navi 10 (RX 5700 XT/5700)
-    "amdgpu:gfx1011",  # Navi 12
-    "amdgpu:gfx1012",  # Navi 14 (RX 5500 XT/5500)
-    "amdgpu:gfx1013",  # Navi 14
+    "gfx1010",  # Navi 10 (RX 5700 XT/5700)
+    "gfx1011",  # Navi 12
+    "gfx1012",  # Navi 14 (RX 5500 XT/5500)
+    "gfx1013",  # Navi 14
 ]
 
 
@@ -736,10 +736,10 @@ def _is_amd_rdna1() -> Bool:
     and we are compiling for the any of the Radeon RX 5000 series
     sub-architectures:
 
-        amdgpu:gfx1010: Navi 10 (RX 5700 XT/5700)
-        amdgpu:gfx1011: Navi 12
-        amdgpu:gfx1012: Navi 14 (RX 5500 XT/5500)
-        amdgpu:gfx1013: Navi 14
+        gfx1010: Navi 10 (RX 5700 XT/5700)
+        gfx1011: Navi 12
+        gfx1012: Navi 14 (RX 5500 XT/5500)
+        gfx1013: Navi 14
 
     Returns:
         True if the RDNA1 and False otherwise.
@@ -751,13 +751,13 @@ def _is_amd_rdna1() -> Bool:
 
 
 comptime _AMD_RDNA2_ARCHS: List[String] = [
-    "amdgpu:gfx1030",  # Navi 21 (RX 6900/6800)
-    "amdgpu:gfx1031",  # Navi 22 (RX 6700)
-    "amdgpu:gfx1032",  # Navi 23 (RX 6600)
-    "amdgpu:gfx1033",  # Navi 24
-    "amdgpu:gfx1034",  # Navi 24
-    "amdgpu:gfx1035",  # Rembrandt APU
-    "amdgpu:gfx1036",  # Raphael APU
+    "gfx1030",  # Navi 21 (RX 6900/6800)
+    "gfx1031",  # Navi 22 (RX 6700)
+    "gfx1032",  # Navi 23 (RX 6600)
+    "gfx1033",  # Navi 24
+    "gfx1034",  # Navi 24
+    "gfx1035",  # Rembrandt APU
+    "gfx1036",  # Raphael APU
 ]
 
 
@@ -767,13 +767,13 @@ def _is_amd_rdna2() -> Bool:
     and we are compiling for the any of the Radeon RX 6000 series
     sub-architectures:
 
-        amdgpu:gfx1030: Navi 21 (RX 6900/6800)
-        amdgpu:gfx1031: Navi 22 (RX 6700)
-        amdgpu:gfx1032: Navi 23 (RX 6600)
-        amdgpu:gfx1033: Navi 24
-        amdgpu:gfx1034: Navi 24
-        amdgpu:gfx1035: Rembrandt APU
-        amdgpu:gfx1036: Raphael APU
+        gfx1030: Navi 21 (RX 6900/6800)
+        gfx1031: Navi 22 (RX 6700)
+        gfx1032: Navi 23 (RX 6600)
+        gfx1033: Navi 24
+        gfx1034: Navi 24
+        gfx1035: Rembrandt APU
+        gfx1036: Raphael APU
 
     Returns:
         True if the RDNA2 and False otherwise.
@@ -785,14 +785,14 @@ def _is_amd_rdna2() -> Bool:
 
 
 comptime _AMD_RDNA3_ARCHS: List[String] = [
-    "amdgpu:gfx1100",  # Navi 31
-    "amdgpu:gfx1101",  # Navi 32
-    "amdgpu:gfx1102",  # Navi 33
-    "amdgpu:gfx1103",  # Navi 34
-    "amdgpu:gfx1150",  # Navi 41
-    "amdgpu:gfx1151",  # Navi 42
-    "amdgpu:gfx1152",  # Navi 43
-    "amdgpu:gfx1153",  # Navi 44
+    "gfx1100",  # Navi 31
+    "gfx1101",  # Navi 32
+    "gfx1102",  # Navi 33
+    "gfx1103",  # Navi 34
+    "gfx1150",  # Navi 41
+    "gfx1151",  # Navi 42
+    "gfx1152",  # Navi 43
+    "gfx1153",  # Navi 44
 ]
 
 
@@ -802,14 +802,14 @@ def _is_amd_rdna3() -> Bool:
     and we are compiling for the any of the Radeon RX 7000 series
     sub-architectures:
 
-        amdgpu:gfx1100: Navi 31
-        amdgpu:gfx1101: Navi 32
-        amdgpu:gfx1102: Navi 33
-        amdgpu:gfx1103: Navi 34
-        amdgpu:gfx1150: Navi 41
-        amdgpu:gfx1151: Navi 42
-        amdgpu:gfx1152: Navi 43
-        amdgpu:gfx1153: Navi 44
+        gfx1100: Navi 31
+        gfx1101: Navi 32
+        gfx1102: Navi 33
+        gfx1103: Navi 34
+        gfx1150: Navi 41
+        gfx1151: Navi 42
+        gfx1152: Navi 43
+        gfx1153: Navi 44
 
     Returns:
         True if the RDNA3 and False otherwise.
