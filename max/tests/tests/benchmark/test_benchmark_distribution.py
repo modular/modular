@@ -318,6 +318,27 @@ def test_burr12_string_missing_param_raises() -> None:
         BaseDistribution.from_distribution_parameter("Burr12(1, 2)")
 
 
+def test_burr12_sample_is_stable_for_tiny_u(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # For u below ~2^-53, (1 - u) rounds to 1.0 and the naive form
+    # (1 - u)**(-1/d) - 1.0 collapses to 0.0. The expm1/log1p form preserves
+    # precision: the true value is ~u/d for small u.
+    tiny_u = 1e-18
+    d = 0.569
+    monkeypatch.setattr(np.random, "uniform", lambda low=0.0, high=1.0: tiny_u)
+
+    # Sanity check: the naive form is broken at this u.
+    assert (1.0 - tiny_u) ** (-1.0 / d) - 1.0 == 0.0
+
+    dist = Burr12Distribution(c=2.389, d=d, scale=214.8)
+    sample = dist.sample_value()
+    assert sample > 0.0
+    # Expected: scale * (u/d)**(1/c). Within 1% of the analytic small-u limit.
+    expected = dist.scale * (tiny_u / d) ** (1.0 / dist.c)
+    assert abs(sample - expected) / expected < 0.01
+
+
 def test_burr12_samples_positive_and_match_median() -> None:
     np.random.seed(0)
     c, d, scale = 2.389, 0.569, 214.8

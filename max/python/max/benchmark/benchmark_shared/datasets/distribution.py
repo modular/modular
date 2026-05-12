@@ -350,9 +350,10 @@ class Burr12Distribution(ContinuousDistribution):
 
         x = scale * ((1 - U)**(-1/d) - 1)**(1/c),  U ~ Uniform[0, 1)
 
-    ``np.random.uniform`` samples from ``[0, 1)``, so ``1 - U`` lies in
-    ``(0, 1]``. That keeps ``(1 - U)**(-1/d)`` well-defined and avoids the
-    divide-by-zero that ``U**(-1/d)`` would hit when ``U`` is 0.
+    The implementation rewrites ``(1 - U)**(-1/d) - 1`` as
+    ``expm1(-log1p(-U) / d)`` to avoid catastrophic cancellation when ``U``
+    is near 0 (where ``(1 - U)**(-1/d)`` is close to 1 and the naive
+    subtraction loses precision).
     """
 
     c: float
@@ -369,9 +370,9 @@ class Burr12Distribution(ContinuousDistribution):
 
     def sample_value(self) -> float:
         u = np.random.uniform(low=0.0, high=1.0)
-        return float(
-            self.scale * ((1.0 - u) ** (-1.0 / self.d) - 1.0) ** (1.0 / self.c)
-        )
+        # expm1/log1p form of (1 - u)**(-1/d) - 1; avoids cancellation when u ~ 0.
+        inner = np.expm1(-np.log1p(-u) / self.d)
+        return float(self.scale * inner ** (1.0 / self.c))
 
     @classmethod
     def parse_from_str_schema(cls, schema: str) -> Burr12Distribution:
