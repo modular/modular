@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+from concurrent.futures import wait
 from pathlib import Path
 
 import numpy as np
@@ -64,6 +65,52 @@ def test_benchmark_batch_write(
 
     benchmark.pedantic(
         write_batch,
+        rounds=ITERATIONS,
+        iterations=1,
+        warmup_rounds=WARMUP_ROUNDS,
+    )
+
+    tier.shutdown()
+
+
+@pytest.mark.parametrize("use_direct_io", [False, True])
+@pytest.mark.parametrize("num_workers", [4, 8])
+@pytest.mark.parametrize("batch_size", [512, 2048])
+def test_benchmark_batch_read(
+    benchmark: BenchmarkFixture,
+    tmp_path: Path,
+    batch_size: int,
+    num_workers: int,
+    use_direct_io: bool,
+) -> None:
+    """Measure throughput of submitting a batch of reads concurrently."""
+    tier = DiskTier(
+        cache_dir=str(tmp_path / "bench_batch_read"),
+        block_nbytes=BYTES,
+        max_disk_size_bytes=batch_size * BYTES,
+        num_workers=num_workers,
+        use_direct_io=use_direct_io,
+    )
+
+    # Pre-populate the cache with batch_size blocks.
+    src = np.zeros(BYTES, dtype=np.uint8)
+    for h in range(batch_size):
+        tier.write_block_async(block_hash=h, src=src)
+    tier.wait_for_writes()
+
+    # Pre-allocate destination buffers (reused each round).
+    dest_pool = [np.empty(BYTES, dtype=np.uint8) for _ in range(batch_size)]
+
+    def read_batch() -> None:
+        futures = []
+        for h in range(batch_size):
+            futures.append(
+                tier.read_block_async(block_hash=h, dest=dest_pool[h])
+            )
+        wait(futures)
+
+    benchmark.pedantic(
+        read_batch,
         rounds=ITERATIONS,
         iterations=1,
         warmup_rounds=WARMUP_ROUNDS,

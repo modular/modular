@@ -38,6 +38,7 @@ from typing import Any
 
 import numpy as np
 import numpy.typing as npt
+from max.profiler import Tracer
 
 logger = logging.getLogger("max.pipelines")
 
@@ -70,8 +71,8 @@ class PriorityExecutor:
         self._queue: queue.PriorityQueue[_WorkItem] = queue.PriorityQueue()
         self._counter = itertools.count()
         self._workers: list[threading.Thread] = []
-        for _ in range(num_workers):
-            t = threading.Thread(target=self._worker, daemon=True)
+        for i in range(num_workers):
+            t = threading.Thread(target=self._worker, args=(i,), daemon=True)
             t.start()
             self._workers.append(t)
 
@@ -95,14 +96,15 @@ class PriorityExecutor:
         )
         return future
 
-    def _worker(self) -> None:
+    def _worker(self, worker_id: int) -> None:
         while True:
             item = self._queue.get()
             _, _, fn, args, kwargs, future = item
             if fn is _SENTINEL:
                 break
             try:
-                result = fn(*args, **kwargs)
+                with Tracer(f"DiskWorker-{worker_id} running {fn.__name__}"):
+                    result = fn(*args, **kwargs)
                 future.set_result(result)  # type: ignore[union-attr]
             except Exception as e:
                 future.set_exception(e)  # type: ignore[union-attr]
@@ -127,6 +129,11 @@ class DiskTier:
     file. Writes are async, reads return a Future.
     LRU eviction keeps disk usage within a configurable budget.
     Metadata is persisted for warm restarts across process lifetimes.
+
+    The `use_direct_io` flag controls whether the OS page cache is bypassed.
+    This should be turned on for better performance if most local CPU memory is
+    consumed (ie: for CPU KVCache). In other cases, leaving this off will yield
+    better performance as reads and writes will be buffered by the OS page cache.
     """
 
     def __init__(
@@ -167,8 +174,7 @@ class DiskTier:
                     self._use_direct_io = False
                 else:
                     logger.info(
-                        "O_DIRECT enabled for disk cache at %s "
-                        "(FS block size=%d)",
+                        "O_DIRECT enabled for disk cache at %s (FS block size=%d)",
                         self._cache_dir,
                         self._fs_block_size,
                     )
@@ -317,6 +323,11 @@ class DiskTier:
         block_hash: int,
         dest: npt.NDArray[np.uint8],
     ) -> None:
+        """Reads a block from disk.
+
+        This method is called on a worker thread and must not contain code that
+        hogs the gil for any significant amount of time.
+        """
         path = self._hash_to_path(block_hash)
         if self._use_direct_io:
             self._read_file_direct(path, dest)
@@ -329,12 +340,17 @@ class DiskTier:
         block_hash: int,
         src: npt.NDArray[np.uint8],
     ) -> None:
+        """Writes a block out to disk.
+
+        This method is called on a worker thread and must not contain code that
+        hogs the gil for any significant amount of time.
+        """
         path = self._hash_to_path(block_hash)
         if self._use_direct_io:
             self._write_file_direct(path, src)
         else:
             with open(path, "wb") as f:
-                f.write(src.tobytes())
+                f.write(src.data)
 
         with self._lock:
             self._pending_hashes.discard(block_hash)
@@ -410,7 +426,11 @@ class DiskTier:
         finally:
             os.close(fd)
 
-        array.flat[:] = np.frombuffer(buf[:nbytes], dtype=array.dtype)
+        # Using np.copyto ensures that the gil is released.
+        np.copyto(
+            array.reshape(-1),
+            np.frombuffer(buf[:nbytes], dtype=array.dtype),
+        )
 
     # -- file paths --
 
@@ -488,7 +508,6 @@ class DiskTier:
             )
         else:
             logger.info(
-                "Disk cache cold start: metadata found but no valid "
-                "block files in %s",
+                "Disk cache cold start: metadata found but no valid block files in %s",
                 self._cache_dir,
             )
