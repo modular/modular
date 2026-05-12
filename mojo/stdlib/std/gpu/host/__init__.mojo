@@ -21,6 +21,7 @@ from .device_context import (
     DeviceEvent,
     DeviceFunction,
     DeviceMulticastBuffer,
+    DevicePointer,
     DeviceStream,
     HostBuffer,
 )

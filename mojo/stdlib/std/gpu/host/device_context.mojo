@@ -844,6 +844,342 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
         }
 
 
+struct DevicePointer[dtype: DType](
+    DevicePassable, Equatable, ImplicitlyCopyable, Writable
+):
+    """A host-side represention of a pointer to device memory that resides
+    within an owning `DeviceBuffer`.
+
+    - Supports pointer arithmetic which may result in a new `DevicePointer`
+      instance referring to the same `DeviceBuffer` with a new offset.
+    - Supports equality comparison and ordering of `DevicePointer`s pointing
+      into the same `DeviceBuffer`.
+    - May support accessing device pointer address on supported hardware.
+    - Does not support load/store operations.
+
+    At the device function execution boundry a `DevicePointer` is transformed
+    into an `UnsafePointer` on the device at the point of being handed over to
+    the device driver.
+
+    Parameters:
+        dtype: Data dtype to be stored in the pointer.
+    """
+
+    var _buffer: DeviceBuffer[Self.dtype]
+    var _offset: Int
+    var _size: Int
+
+    # ===------------------------------------------------------------------=== #
+    # Constructors
+    # ===------------------------------------------------------------------=== #
+
+    def __init__(out self, buffer: DeviceBuffer[Self.dtype]) raises:
+        """Constructs a `DevicePointer` referencing the start of `buffer`.
+
+        Args:
+            buffer: The owning `DeviceBuffer` this pointer references.
+
+        Raises:
+            If `buffer` has size 0.
+        """
+        var size = len(buffer)
+        if size == 0:
+            raise Error("DevicePointer: size of DeviceBuffer must not be 0")
+        self._buffer = buffer
+        self._offset = 0
+        self._size = size
+
+    def __init__(
+        out self, buffer: DeviceBuffer[Self.dtype], offset: Int
+    ) raises:
+        """Constructs a `DevicePointer` into `buffer` at `offset` with `size`
+        elements in range.
+
+        Args:
+            buffer: The owning `DeviceBuffer` this pointer references.
+            offset: Element offset from the start of `buffer`.
+
+        Raises:
+            If `buffer` has size 0, or if `offset` is outside the half-open
+            range `[0, len(buffer))`.
+        """
+        var size = len(buffer)
+        if size == 0:
+            raise Error("DevicePointer: invalid DeviceBuffer of size '0'")
+        if offset < 0 or offset >= size:
+            raise Error(
+                t"DevicePointer: invalid offset '{offset}' for DeviceBuffer of"
+                t" size '{size}'"
+            )
+        self._buffer = buffer
+        self._offset = offset
+        self._size = size
+
+    # ===------------------------------------------------------------------=== #
+    # Accessors
+    # ===------------------------------------------------------------------=== #
+
+    def buffer(self) -> DeviceBuffer[Self.dtype]:
+        """Returns the owning `DeviceBuffer` this pointer references.
+
+        Returns:
+            The owning `DeviceBuffer`.
+        """
+        return self._buffer
+
+    def offset(self) -> Int:
+        """Returns the element offset from the start of the owning buffer.
+
+        Returns:
+            The element offset.
+        """
+        return self._offset
+
+    @doc_hidden
+    def unsafe_ptr(
+        ref self,
+    ) -> UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]:
+        """Returns the raw device pointer, if supported by the target.
+
+        On targets that expose raw device pointers (for example CUDA and HIP),
+        this returns the underlying address adjusted by the current offset.
+        On targets that do not (for example Metal), this raises an error.
+
+        Returns:
+            The raw device pointer.
+        """
+        # TODO: GEX-3693: Assert/raise when target doesn't support raw device
+        # pointer access
+        return self._buffer.unsafe_ptr() + self._offset
+
+    # ===------------------------------------------------------------------=== #
+    # Pointer arithmetic
+    # ===------------------------------------------------------------------=== #
+
+    def __add__(self, n: Int) raises -> Self:
+        """Returns a new `DevicePointer` offset forward by `n` elements.
+
+        Args:
+            n: Number of elements to offset by.
+
+        Returns:
+            A new `DevicePointer` referencing the same `DeviceBuffer` at the
+            new offset.
+
+        Raises:
+            If the resulting offset is outside the bounds of the owning
+            `DeviceBuffer`.
+        """
+        var offset = self._offset + n
+        if offset < 0 or offset >= self._size:
+            raise Error(
+                t"DevicePointer: addition of '{n}' results in invalid offset of"
+                t" '{offset}' for DeviceBuffer of size {self._size}"
+            )
+        return DevicePointer(self._buffer, offset)
+
+    def __sub__(self, n: Int) raises -> Self:
+        """Returns a new `DevicePointer` offset backward by `n` elements.
+
+        Args:
+            n: Number of elements to offset by.
+
+        Returns:
+            A new `DevicePointer` referencing the same `DeviceBuffer` at the
+            new offset.
+
+        Raises:
+            If the resulting offset is outside the bounds of the owning
+            `DeviceBuffer`.
+        """
+        var offset = self._offset - n
+        if offset < 0 or offset >= self._size:
+            raise Error(
+                t"DevicePointer: subtraction of '{n}' results in invalid offset"
+                t" of '{offset}' for DeviceBuffer of size {self._size}"
+            )
+        return DevicePointer(self._buffer, offset)
+
+    def __iadd__(mut self, n: Int) raises:
+        """Offsets this `DevicePointer` forward by `n` elements in place.
+
+        Args:
+            n: Number of elements to offset by.
+
+        Raises:
+            If the resulting offset is outside the bounds of the owning
+            `DeviceBuffer`.
+        """
+        var offset = self._offset + n
+        if offset < 0 or offset >= self._size:
+            raise Error(
+                t"DevicePointer: addition of '{n}' results in invalid offset of"
+                t" '{offset}' for DeviceBuffer of size {self._size}"
+            )
+        self._offset = offset
+
+    def __isub__(mut self, n: Int) raises:
+        """Offsets this `DevicePointer` backward by `n` elements in place.
+
+        Args:
+            n: Number of elements to offset by.
+
+        Raises:
+            If the resulting offset is outside the bounds of the owning
+            `DeviceBuffer`.
+        """
+        var offset = self._offset - n
+        if offset < 0 or offset >= self._size:
+            raise Error(
+                t"DevicePointer: subtraction of '{n}' results in invalid offset"
+                t" of '{offset}' for DeviceBuffer of size {self._size}"
+            )
+        self._offset = offset
+
+    # ===------------------------------------------------------------------=== #
+    # Comparison
+    # ===------------------------------------------------------------------=== #
+
+    def __eq__(self, other: Self) -> Bool:
+        """Returns `True` if `self` and `other` reference the same buffer and
+        offset.
+
+        Args:
+            other: The other `DevicePointer` to compare.
+
+        Returns:
+            `True` if equal.
+        """
+        return (
+            self._buffer._handle == other._buffer._handle
+            and self._offset == other._offset
+        )
+
+    def __lt__(self, other: Self) raises -> Bool:
+        """Returns `True` if `self` precedes `other` within the same buffer.
+
+        Args:
+            other: The other `DevicePointer` to compare.
+
+        Returns:
+            `True` if `self` is ordered before `other`.
+
+        Raises:
+            If `self` and `other` reference different `DeviceBuffer`s.
+        """
+        if self._buffer._handle != other._buffer._handle:
+            raise Error(
+                "DevicePointer: less than comparison not supported when the"
+                " underlying DeviceBuffer does not match"
+            )
+        return self._offset < other._offset
+
+    def __le__(self, other: Self) raises -> Bool:
+        """Returns `True` if `self` precedes or equals `other` within the
+        same buffer.
+
+        Args:
+            other: The other `DevicePointer` to compare.
+
+        Returns:
+            `True` if `self` is ordered before or equal to `other`.
+
+        Raises:
+            If `self` and `other` reference different `DeviceBuffer`s.
+        """
+        if self._buffer._handle != other._buffer._handle:
+            raise Error(
+                "DevicePointer: less than or equal comparison not supported"
+                " when the underlying DeviceBuffer does not match"
+            )
+        return self._offset <= other._offset
+
+    def __gt__(self, other: Self) raises -> Bool:
+        """Returns `True` if `self` follows `other` within the same buffer.
+
+        Args:
+            other: The other `DevicePointer` to compare.
+
+        Returns:
+            `True` if `self` is ordered after `other`.
+
+        Raises:
+            If `self` and `other` reference different `DeviceBuffer`s.
+        """
+        if self._buffer._handle != other._buffer._handle:
+            raise Error(
+                "DevicePointer: greater than comparison not supported when the"
+                " underlying DeviceBuffer does not match"
+            )
+        return self._offset > other._offset
+
+    def __ge__(self, other: Self) raises -> Bool:
+        """Returns `True` if `self` follows or equals `other` within the same
+        buffer.
+
+        Args:
+            other: The other `DevicePointer` to compare.
+
+        Returns:
+            `True` if `self` is ordered after or equal to `other`.
+
+        Raises:
+            If `self` and `other` reference different `DeviceBuffer`s.
+        """
+        if self._buffer._handle != other._buffer._handle:
+            raise Error(
+                "DevicePointer: greater than or equal comparison not supported"
+                " when the underlying DeviceBuffer does not match"
+            )
+        return self._offset >= other._offset
+
+    # ===------------------------------------------------------------------=== #
+    # Writable
+    # ===------------------------------------------------------------------=== #
+
+    def write_to(self, mut writer: Some[Writer]):
+        """Writes a string representation of this `DevicePointer` to `writer`.
+
+        Args:
+            writer: The writer to output the formatted string to.
+        """
+        writer.write(
+            t"DevicePointer[{Self.dtype}]("
+            t"buffer=DeviceBuffer(size={len(self._buffer)}), "
+            t"offset={self._offset})"
+        )
+
+    # ===------------------------------------------------------------------=== #
+    # DevicePassable
+    # ===------------------------------------------------------------------=== #
+
+    comptime device_type: AnyType = UnsafePointer[
+        mut=True, Scalar[Self.dtype], AnyOrigin[mut=True]
+    ]
+    """`DevicePointer` is remapped to `UnsafePointer` when passed to
+    accelerator devices."""
+
+    def _to_device_type(self, target: MutOpaquePointer[_]):
+        """Device type mapping from `DevicePointer` to the device's
+        `UnsafePointer`.
+        """
+        # TODO: Use DeviceEncoder to write target specific bytes once
+        # DevicePassable is updated.
+        target.bitcast[Self.device_type]()[] = (
+            self._buffer.unsafe_ptr() + self._offset
+        )
+
+    @staticmethod
+    def get_type_name() -> String:
+        """Gets this type's name, for use in error messages when handing
+        arguments to kernels.
+
+        Returns:
+            This type's name.
+        """
+        return String(t"DevicePointer[{Self.dtype}]")
+
+
 struct DeviceBuffer[dtype: DType](
     DevicePassable, ImplicitlyCopyable, Sized, Writable
 ):
@@ -1368,6 +1704,22 @@ struct DeviceBuffer[dtype: DType](
         """
         comptime assert not is_gpu(), "DeviceBuffer is not supported on GPUs"
         return self._device_ptr
+
+    def device_ptr(self) raises -> DevicePointer[Self.dtype]:
+        """Returns a `DevicePointer` referencing the start of this buffer.
+
+        The returned `DevicePointer` preserves ownership provenance back to
+        this `DeviceBuffer`, replacing the prior `unsafe_ptr()` pattern at
+        kernel launch boundaries.
+
+        Returns:
+            A `DevicePointer` referencing offset 0 of this buffer.
+
+        Raises:
+            If this buffer has size 0.
+        """
+        comptime assert not is_gpu(), "DeviceBuffer is not supported on GPUs"
+        return DevicePointer[Self.dtype](self)
 
     def context(self) raises -> DeviceContext:
         """Returns the device context associated with this buffer.
