@@ -45,37 +45,3 @@ modular_py_test(
         requirement("pytest-benchmark"),
     ],
 )
-
-modular_py_test(
-    name = "benchmark_transformer",
-    size = "large",
-    timeout = "long",
-    srcs = [
-        "conftest.py",
-        "test_profile_transformer.py",
-    ],
-    exec_properties = {
-        "test.resources:gpu-memory": "150",
-    },
-    gpu_constraints = ["//:has_gpu"] + select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),
-    imports = ["."],
-    tags = [
-        "gpu",
-        "manual",
-        "no-sandbox",
-    ],
-    deps = [
-        "//max/python/max:tensor",
-        "//max/python/max/driver",
-        "//max/python/max/dtype",
-        "//max/python/max/graph",
-        "//max/python/max/pipelines/architectures",
-        "//max/python/max/pipelines/lib",
-        "//max/python/max/profiler",
-        requirement("numpy"),
-        requirement("pytest-benchmark"),
-    ],
-)

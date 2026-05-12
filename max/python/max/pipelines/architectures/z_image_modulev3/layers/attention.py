@@ -21,7 +21,7 @@ from max.experimental.tensor import Tensor
 from max.nn.attention.mask_config import MHAMaskVariant
 from max.nn.kernels import flash_attention_gpu as _flash_attention_gpu
 
-from ...flux2_modulev3.layers.embeddings import apply_rotary_emb
+from .embeddings import apply_rotary_emb
 
 flash_attention_gpu = F.functional(_flash_attention_gpu)
 

@@ -22,7 +22,6 @@ from .cache_mixin import (
     DenoisingCacheConfig,
     DenoisingCacheState,
     fbcache_conditional_execution,
-    teacache_conditional_execution,
 )
 from .component_model import ComponentModel
 from .diffusion_pipeline import DiffusionPipeline, DiffusionPipelineOutput
@@ -64,5 +63,4 @@ __all__ = [
     "fbcache_conditional_execution",
     "get_paged_manager",
     "run_denoising_step",
-    "teacache_conditional_execution",
 ]

@@ -86,16 +86,6 @@ class PixelProviderOptionsBase(BaseModel):
         gt=0,
     )
 
-    residual_threshold: float | None = Field(
-        None,
-        description=(
-            "Relative difference threshold for first-block cache (FBCache) "
-            "reuse during denoising. Lower values skip fewer steps (higher "
-            "quality, slower). None uses the model-specific default."
-        ),
-        gt=0.0,
-    )
-
     cfg_normalization: bool = Field(
         False,
         description=(

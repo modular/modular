@@ -828,8 +828,6 @@ class PixelContext:
     """
     output_format: str = field(default="jpeg")
     """Image encoding format for the output (e.g., 'jpeg', 'png', 'webp')."""
-    residual_threshold: float | None = field(default=None)
-    """Per-request residual threshold for FBCache. None uses pipeline default."""
     status: GenerationStatus = field(default=GenerationStatus.ACTIVE)
 
     @property

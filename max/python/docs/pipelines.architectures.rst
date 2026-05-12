@@ -28,7 +28,6 @@ family.
    pipelines.architectures.exaone
    pipelines.architectures.exaone_modulev3
    pipelines.architectures.flux2
-   pipelines.architectures.flux2_modulev3
    pipelines.architectures.gemma3
    pipelines.architectures.gemma3_modulev3
    pipelines.architectures.gemma3multimodal
@@ -146,7 +145,6 @@ Image generation
    :nosignatures:
 
    ~max.pipelines.architectures.flux2
-   ~max.pipelines.architectures.flux2_modulev3
    ~max.pipelines.architectures.qwen_image
    ~max.pipelines.architectures.qwen_image_edit
    ~max.pipelines.architectures.wan

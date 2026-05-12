@@ -351,5 +351,4 @@ class ZImageTokenizer(PixelGenerationTokenizer):
             model_name=request.body.model,
             input_image=preprocessed_image_array,
             output_format=image_specific.output_format,
-            residual_threshold=pixel_options.residual_threshold,
         )

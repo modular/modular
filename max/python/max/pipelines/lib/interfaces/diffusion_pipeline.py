@@ -26,7 +26,7 @@ from typing import TYPE_CHECKING, Any, TypeAlias, overload
 import numpy as np
 import numpy.typing as npt
 from max._core.driver import Device
-from max.driver import CPU, Accelerator, Buffer
+from max.driver import CPU, Accelerator
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.experimental.nn import Module
@@ -110,22 +110,6 @@ class DiffusionPipeline(ABC):
     Used when ``DenoisingCacheConfig.taylorseer_max_order`` is ``None``.
     """
 
-    default_teacache_rel_l1_thresh: float = 0.4
-    """Model-specific default for the TeaCache relative-L1 threshold.
-
-    Subclasses may override this to provide a model-appropriate default.
-    Used when ``DenoisingCacheConfig.teacache_rel_l1_thresh`` is ``None``.
-    """
-
-    default_teacache_coefficients: tuple[float, ...] = (
-        4.98651651e02,
-        -2.83781631e02,
-        5.58554382e01,
-        -3.82021401e00,
-        2.64230861e-01,
-    )
-    """Default TeaCache polynomial coefficients for FLUX-style rescaling."""
-
     def __init__(
         self,
         pipeline_config: PipelineConfig,
@@ -167,10 +151,6 @@ class DiffusionPipeline(ABC):
             cc.taylorseer_warmup_steps = self.default_taylorseer_warmup_steps
         if cc.taylorseer_max_order is None:
             cc.taylorseer_max_order = self.default_taylorseer_max_order
-        if cc.teacache_rel_l1_thresh is None:
-            cc.teacache_rel_l1_thresh = self.default_teacache_rel_l1_thresh
-        if cc.teacache_coefficients is None:
-            cc.teacache_coefficients = list(self.default_teacache_coefficients)
 
     @abstractmethod
     def init_remaining_components(self) -> None:
@@ -336,13 +316,6 @@ class DiffusionPipeline(ABC):
 
         state = DenoisingCacheState()
 
-        def _device_zeros(shape: tuple[int, ...]) -> Tensor:
-            return Tensor(
-                storage=Buffer.zeros(
-                    shape, self._cache_dtype, device=self._cache_device
-                )
-            )
-
         if self.cache_config.first_block_caching:
             assert self._fbc is not None
             fbc_state = self._fbc.create_state(
@@ -359,19 +332,6 @@ class DiffusionPipeline(ABC):
             state.taylor_factor_0 = ts_state.factor_0
             state.taylor_factor_1 = ts_state.factor_1
             state.taylor_factor_2 = ts_state.factor_2
-
-        if self.cache_config.teacache:
-            state.teacache_prev_modulated_input = _device_zeros(
-                (batch_size, seq_len, residual_dim)
-            )
-            state.teacache_cached_residual = _device_zeros(
-                (batch_size, seq_len, residual_dim)
-            )
-            state.teacache_accumulated_rel_l1 = Tensor(
-                storage=Buffer.from_dlpack(
-                    np.array([0.0], dtype=np.float32)
-                ).to(self._cache_device)
-            )
 
         return state
 

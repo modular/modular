@@ -219,7 +219,6 @@ The following parameters are available under `provider_options.image`:
 | `steps`              | 28      | Number of denoising steps                                                           |
 | `guidance_scale`     | 3.5     | How closely the output follows the prompt                                           |
 | `negative_prompt`    | `""`    | Content to avoid in the output                                                      |
-| `residual_threshold` | `null`  | First-block cache (FBCache) reuse threshold (see [Cache backends](#cache-backends)) |
 
 **Height and width**: You can generate images at different aspect ratios. Image
 dimensions must be a multiple of 16 and are automatically scaled to a multiple
@@ -254,10 +253,8 @@ server startup.
 
 **First-block cache (FBCache)**: enable with `--first-block-caching` on
 [`max serve`](/max/cli/serve). FBCache reuses transformer state from the
-previous step when the first-block residual is similar enough. Tune the reuse
-threshold per request with `provider_options.image.residual_threshold`. Lower
-values skip fewer steps and preserve more detail; higher values skip more
-aggressively. Leave it `null` to use the model-specific default.
+previous step when the first-block residual is similar enough, using the
+model-specific default reuse threshold.
 
 ```bash
 max serve \

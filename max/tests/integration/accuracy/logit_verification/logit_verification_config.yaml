@@ -1050,23 +1050,6 @@ logit_verification_pipelines:
     timeout: 3600
     config_params_override: {"prefer_module_v3": false}
 
-  black-forest-labs/FLUX.2-dev-t2i-bfloat16-v3:
-    pre_submit_agents: []
-    post_submit_agents: [*b200_1x, *mi355_1x]
-    pipeline: "black-forest-labs/FLUX.2-dev-t2i"
-    compatible_with: [gpu]
-    encoding: bfloat16
-    tags: [image-generation, no-h100]
-    pregenerated_torch_goldens:
-      tar_file: "s3://modular-bazel-artifacts-public/artifacts/torch_black-forest-labs_FLUX.2-dev-t2i_golden/1/09e2330e3ea8016979b145072037df30ac8a7c6a425c00d64ae340cd52455295/torch_black-forest-labs_FLUX.2-dev-t2i_golden.tar.gz"
-      json_file: "torch_black-forest-labs_FLUX.2-dev-t2i_bfloat16_golden.json"
-    # Per-prompt SSIM range: [0.761, 0.837, 0.830, 0.788, 0.764] on B200 (worst 0.761).
-    # Thresholds set with ~10% headroom below the worst-performing prompt.
-    ssim_threshold: 0.68
-    lpips_threshold: 0.30
-    timeout: 3600
-    config_params_override: {"prefer_module_v3": true}
-
   black-forest-labs/FLUX.2-dev-i2i-bfloat16-v2:
     pre_submit_agents: []
     post_submit_agents: [*b200_1x, *mi355_1x]
@@ -1081,21 +1064,6 @@ logit_verification_pipelines:
     lpips_threshold: 0.49
     timeout: 3600
     config_params_override: {"prefer_module_v3": false}
-
-  black-forest-labs/FLUX.2-dev-i2i-bfloat16-v3:
-    pre_submit_agents: []
-    post_submit_agents: [*b200_1x, *mi355_1x]
-    pipeline: "black-forest-labs/FLUX.2-dev-i2i"
-    compatible_with: [gpu]
-    encoding: bfloat16
-    tags: [image-generation, no-h100]
-    pregenerated_torch_goldens:
-      tar_file: "s3://modular-bazel-artifacts-public/artifacts/black-forest-labs_FLUX.2-dev-i2i_golden/1/11acb0fdf1fa04b468454bf887affaf04868a324a6d327c926e1818afd1749bd/black-forest-labs_FLUX.2-dev-i2i_golden.tar.gz"
-      json_file: "torch_black-forest-labs_FLUX.2-dev-i2i_bfloat16_golden.json"
-    ssim_threshold: 0.49
-    lpips_threshold: 0.49
-    timeout: 3600
-    config_params_override: {"prefer_module_v3": true}
 
   black-forest-labs/FLUX.2-klein-4B-t2i-bfloat16:
     pre_submit_agents: []

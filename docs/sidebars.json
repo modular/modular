@@ -507,7 +507,6 @@
             "max/api/python/pipelines.architectures.exaone",
             "max/api/python/pipelines.architectures.exaone_modulev3",
             "max/api/python/pipelines.architectures.flux2",
-            "max/api/python/pipelines.architectures.flux2_modulev3",
             "max/api/python/pipelines.architectures.gemma3",
             "max/api/python/pipelines.architectures.gemma3_modulev3",
             "max/api/python/pipelines.architectures.gemma3multimodal",

@@ -1574,19 +1574,6 @@ class PipelineConfig(ConfigFileModel):
                     if cache.taylorseer_max_order is not None
                     else "model-default",
                 ),
-                ("teacache", cache.teacache),
-                (
-                    "teacache_rel_l1_thresh",
-                    cache.teacache_rel_l1_thresh
-                    if cache.teacache_rel_l1_thresh is not None
-                    else "model-default",
-                ),
-                (
-                    "teacache_coefficients",
-                    cache.teacache_coefficients
-                    if cache.teacache_coefficients is not None
-                    else "model-default",
-                ),
             ]
 
             logger.info("Denoising Cache")
