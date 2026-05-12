@@ -146,6 +146,32 @@ This version is still a work in progress.
   var missing = iter(l).nth(10)   # None (Optional)
   ```
 
+- PythonObject convertibility got simplified and cleaned up. When working with
+  types that required custom conversions to `PythonObject`, we used to write
+  code like this:
+
+  ```mojo
+  struct MyCustomType(ConvertibleToPython, ImplicitlyCopyable):
+     def to_python_object(var self) raises -> PythonObject:
+        return PythonObject( ... custom logic ...)
+
+  def hi_python(a: Some[ImplicitlyCopyable & ConvertibleToPython]) raises:
+      print(t"Hi, {a.to_python_object()}!")
+
+  def example():
+      hi_python(MyCustomType())
+  ```
+
+  This approach allows custom types to implement `ConvertibleToPython` to get a
+  domain specific encoding as a Python object. Mojo has simplified this by
+  making all `ConvertibleToPython` types implicitly convert to `PythonObject`,
+  so this can/should be simplified to:
+
+  ```mojo
+  def hi_python(a: PythonObject) raises:
+      print(t"Hi, {a}!")
+  ```
+
 ## Tooling changes
 
 ## GPU programming
