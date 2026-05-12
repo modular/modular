@@ -1338,14 +1338,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         assert_true(s.nth_grapheme(3) is None)
         ```
         """
-        debug_assert[assert_mode="safe"](
-            n >= 0, "grapheme index must be non-negative"
-        )
-        var iter = self.graphemes()
-        for _ in range(n):
-            if not iter.next():
-                return None
-        return iter.next()
+        return self.graphemes().nth(n)
 
     def split_at_grapheme(
         self, n: Int
