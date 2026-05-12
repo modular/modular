@@ -29,8 +29,8 @@ def : MojoDriverDescription<
   "And you can start a REPL session by running `mojo` with no commands.\n"
   "\n"
   "You can check your current version with `mojo --version`. "
-  "For version information, see the "
-  "[Mojo changelog](https://www.mojolang.org/releases).",
+  "For version information, see all the "
+  "[Mojo releases](https://mojolang.org/releases/).",
   [
     UsageInfo<"", "command", /*variadicInput=*/false>,
     UsageInfo<"run-options", "path", /*variadicInput=*/false>,
