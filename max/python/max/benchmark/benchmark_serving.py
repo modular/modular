@@ -46,18 +46,18 @@ from transformers import PreTrainedTokenizerBase
 
 if TYPE_CHECKING:
     from max.benchmark.benchmark_shared.server_metrics import ParsedMetrics
-    from max.diagnostics.gpu import BackgroundRecorder as GPUBackgroundRecorder
-    from max.diagnostics.gpu import GPUStats
+    from max.profiler.gpu import BackgroundRecorder as GPUBackgroundRecorder
+    from max.profiler.gpu import GPUStats
 
 from max.benchmark.benchmark_shared.config import (
     CACHE_RESET_ENDPOINT_MAP,
-    PIXEL_GEN_DEFAULT_ENDPOINT,
     PIXEL_GENERATION_ENDPOINTS,
     PIXEL_GENERATION_TASKS,
     Backend,
     BenchmarkTask,
     Endpoint,
     ServingBenchmarkConfig,
+    get_pixel_gen_endpoint,
 )
 from max.benchmark.benchmark_shared.datasets.all import sample_requests
 from max.benchmark.benchmark_shared.datasets.types import (
@@ -120,12 +120,12 @@ from max.benchmark.benchmark_shared.warmup import (
     log_warmup_sampling_report,
     pick_warmup_population,
 )
-from max.diagnostics.cpu import (
+from max.profiler.cpu import (
     CPUMetrics,
     CPUMetricsCollector,
     collect_pids_for_port,
 )
-from max.diagnostics.gpu import GPUDiagContext
+from max.profiler.gpu import GPUDiagContext
 from openai.types.chat.completion_create_params import ResponseFormat
 from pydantic import TypeAdapter, ValidationError
 
@@ -504,11 +504,10 @@ async def benchmark(
         gpu_recorder: GPUBackgroundRecorder | None = None
         if args.collect_gpu_stats:
             try:
-                from max.diagnostics.gpu import BackgroundRecorder
+                from max.profiler.gpu import BackgroundRecorder
             except ImportError:
                 logger.warning(
-                    "max.diagnostics not available, skipping GPU stats"
-                    " collection"
+                    "max.profiler not available, skipping GPU stats collection"
                 )
             else:
                 gpu_recorder = benchmark_stack.enter_context(
@@ -799,12 +798,21 @@ def validate_task_and_endpoint(
     benchmark_task: BenchmarkTask, endpoint: Endpoint
 ) -> None:
     if benchmark_task == "text-generation":
-        if endpoint in ("/v1/responses", "/v1/images/generations"):
+        if endpoint in (
+            "/v1/responses",
+            "/v1/images/generations",
+            "/v1/videos/sync",
+        ):
             raise ValueError(
                 f"--benchmark-task text-generation does not support "
                 f"--endpoint {endpoint}"
             )
     elif benchmark_task in PIXEL_GENERATION_TASKS:
+        if endpoint == "/v1/videos/sync" and benchmark_task != "text-to-video":
+            raise ValueError(
+                f"--endpoint /v1/videos/sync is only valid for"
+                f" --benchmark-task text-to-video, got {benchmark_task!r}"
+            )
         if endpoint not in PIXEL_GENERATION_ENDPOINTS:
             raise ValueError(
                 f"--benchmark-task {benchmark_task} requires --endpoint"
@@ -1053,23 +1061,22 @@ def _build_session(args: ServingBenchmarkConfig) -> BenchmarkSession:
     # /v1/chat/completions). We auto-select when the current endpoint
     # doesn't match this backend's expected pixel-gen endpoint.
     if benchmark_task in PIXEL_GENERATION_TASKS:
-        backend_key = args.backend.removesuffix("-chat")
-        if backend_key in PIXEL_GEN_DEFAULT_ENDPOINT:
-            expected = PIXEL_GEN_DEFAULT_ENDPOINT[backend_key]
-            if endpoint != expected:
-                logger.info(
-                    "Auto-selected endpoint %s for backend %s"
-                    " (pixel generation task)",
-                    expected,
-                    args.backend,
-                )
-                endpoint = expected
-        else:
+        try:
+            expected = get_pixel_gen_endpoint(args.backend, benchmark_task)
+        except ValueError:
             raise ValueError(
                 f"Backend {args.backend!r} does not have a default"
                 f" pixel-generation endpoint. Explicitly pass --endpoint"
                 f" with one of {sorted(PIXEL_GENERATION_ENDPOINTS)}."
+            ) from None
+        if endpoint != expected:
+            logger.info(
+                "Auto-selected endpoint %s for backend %s (%s task)",
+                expected,
+                args.backend,
+                benchmark_task,
             )
+            endpoint = expected
 
     validate_task_and_endpoint(benchmark_task, endpoint)
     # chat is only meaningful for text-generation (enables chat template

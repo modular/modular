@@ -214,8 +214,13 @@ class KimiToolParser:
             delta: The incremental token(s) to process.
 
         Returns:
-            A list of tool call deltas if any can be extracted,
-            or None if more tokens are needed.
+            - A non-empty list of :class:`ParsedToolCallDelta` when new
+              content (tool name, id, or argument bytes) is ready to stream.
+            - An empty list ``[]`` when the parser has entered the
+              tool-calls section but has no deltas to emit yet; the caller
+              must suppress the raw structural token from flowing as text.
+            - ``None`` when more tokens are needed before anything can be
+              emitted (e.g. buffering a potential section-begin marker).
         """
         self._buffer += delta
         deltas: list[ParsedToolCallDelta] = []
@@ -268,7 +273,11 @@ class KimiToolParser:
                             )
                         )
 
-            return deltas if deltas else None
+            # Return [] (not None) while inside the tool-calls section so the
+            # streaming path knows to suppress raw structural tokens even when
+            # there are no deltas to emit yet.
+            in_tool_section = section_begin_pos != -1
+            return deltas if (deltas or in_tool_section) else None
 
         except Exception:
             logger.exception("Error parsing streaming tool call delta")
@@ -370,6 +379,10 @@ class KimiToolParser:
     ) -> tuple[str | None, str | None]:
         """Parses tool ID and name from a header like ``functions.get_weather:0``.
 
+        Delegates to :func:`_parse_function_id` which handles all known
+        Kimi header formats and always returns a valid (name, id) pair for
+        non-empty input. Returns ``(None, None)`` only when header is empty.
+
         Args:
             header: The header string to parse.
 
@@ -379,21 +392,7 @@ class KimiToolParser:
         if not header:
             return None, None
 
-        # Match pattern like "functions.name:idx" or "name:idx"
-        match = re.match(r"(.+:\d+)", header)
-        if not match:
-            return None, None
-
-        raw_id = match.group(1).strip()
-        # Extract name: split on ':' and take everything before, then after last '.'
-        name_part = raw_id.split(":")[0]
-        tool_name = name_part.split(".")[-1]
-
-        # Generate a unique call ID
-        short_uuid = str(uuid.uuid4()).replace("-", "")[:8]
-        idx = raw_id.split(":")[-1] if ":" in raw_id else "0"
-        tool_id = f"call_{short_uuid}_{idx}"
-
+        tool_name, tool_id = _parse_function_id(header)
         return tool_id, tool_name
 
     def _compute_args_diff(self, index: int, args: str) -> str | None:

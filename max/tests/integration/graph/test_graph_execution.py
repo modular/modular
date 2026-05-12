@@ -116,7 +116,7 @@ def test_max_graph_export_import_mlir(session: InferenceSession) -> None:
     with tempfile.NamedTemporaryFile(mode="w+") as mlir_file:
         graph = create_test_graph()
         compiled = session.load(graph)
-        mlir_file.write(str(graph._module))
+        mlir_file.write(graph._module.asm())
         a_np = np.ones((1, 1)).astype(np.float32)
         b_np = np.ones((1, 1)).astype(np.float32)
         a = Buffer.from_numpy(a_np).to(compiled.input_devices[0])

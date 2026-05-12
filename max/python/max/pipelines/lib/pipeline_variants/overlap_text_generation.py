@@ -1550,7 +1550,10 @@ class OverlapTextGenerationPipeline(
         if not self._structured_output.enabled:
             return None
 
-        if all(context.json_schema is None for context in batch):
+        if all(
+            context.json_schema is None and context.grammar is None
+            for context in batch
+        ):
             return None
 
         return self._structured_output.allocate_bitmask(len(batch))

@@ -435,7 +435,7 @@ struct PythonModuleBuilder:
     ](mut self, func_name: StaticString, docstring: StaticString = ""):
         """Declare a binding for a module-level function.
 
-        Accepts functions with PythonObject arguments (up to 6), can optionally
+        Accepts functions with PythonObject arguments (up to 8), can optionally
         return a PythonObject, and can raise. Functions can also accept keyword
         arguments if their last parameter is OwnedKwargsDict[PythonObject].
 
@@ -921,7 +921,7 @@ struct PythonTypeBuilder(Copyable):
     ) -> ref[self] Self:
         """Declare a binding for a static method (no self parameter).
 
-        Accepts functions with PythonObject arguments (up to 6), can optionally
+        Accepts functions with PythonObject arguments (up to 8), can optionally
         return a PythonObject, and can raise.
 
         Example signatures:

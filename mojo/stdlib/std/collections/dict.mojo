@@ -40,7 +40,8 @@ See the `Dict` docs for more details.
 from std.hashlib import Hasher, default_comp_time_hasher, default_hasher
 import std.format._utils as fmt
 
-from std.memory import alloc, memset
+from std.memory import alloc, free, memset
+from std.memory.alloc import Layout
 
 from ._swisstable import (
     CTRL_DELETED,
@@ -1503,8 +1504,8 @@ struct Dict[
         # Build old_slot -> new_slot mapping and a set of relocated old slots
         # so we can filter stale _order entries (DELETED slots won't appear
         # in relocations since resize only moves occupied entries).
-        var slot_map = alloc[Int32](old_capacity)
-        var relocated_set = alloc[UInt8](old_capacity)
+        var slot_map = alloc(Layout[Int32](count=old_capacity))
+        var relocated_set = alloc(Layout[UInt8](count=old_capacity))
         memset(relocated_set, 0, old_capacity)
         for i in range(len(relocations)):
             slot_map[relocations[i][0]] = Int32(relocations[i][1])
@@ -1521,8 +1522,8 @@ struct Dict[
             len(self._order) == self._table._len
         ), "order length doesn't match _len after resize"
 
-        slot_map.free()
-        relocated_set.free()
+        free(slot_map, {count = old_capacity})
+        free(relocated_set, {count = old_capacity})
 
     def _rehash_in_place(mut self):
         """Rehash the table in place without changing capacity."""
@@ -1546,7 +1547,7 @@ struct Dict[
             len(self._order) == self._table._len
         ), "order length doesn't match _len after in-place rehash"
 
-        slot_map.free()
+        free(slot_map, {count = self._table._capacity})
 
     def _maybe_compact_order(mut self):
         """Compact the order array if it has too many stale entries."""

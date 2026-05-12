@@ -138,6 +138,10 @@ class _WarmupSamplingReport:
     # best a no-replacement scheme can do but introduces a small residual
     # bias relative to ``target_mean``.
     cap_count: int
+    # ``main_pool_target + warmup_oversample_factor * warmup_count``.
+    ideal_total: int
+    # ``len(chat_sessions)``. If less than ``ideal_total``, both pools shrank.
+    available_total: int
 
 
 def pick_warmup_population(
@@ -174,19 +178,29 @@ def pick_warmup_population(
     if not warmup_to_steady_state or warmup_count == 0:
         return list(chat_sessions), None
 
-    # Try to oversample (factor*M candidates) without eating into the
-    # user-requested main pool. If the dataset under-produced too much for
-    # that, fall back to just M candidates (no oversampling, just
-    # randomized start turn) — we still need M sessions to seed the
-    # initial concurrent batch. Under-production isn't warned about
-    # directly: if it matters, the cap-count warning below fires.
+    if n_total < warmup_count:
+        raise ValueError(
+            f"Dataset produced {n_total} sessions but warmup needs at least"
+            f" {warmup_count}. Increase the dataset size or lower"
+            " --max-concurrency / --max-concurrent-conversations."
+        )
+
+    # When the dataset under-produces, shrink both pools by the same
+    # fraction so warmup doesn't absorb the whole shortfall. Truncating
+    # biases the warmup pool down rather than the main pool.
     ideal_candidate_pool = warmup_oversample_factor * warmup_count
-    available_for_oversampling = max(0, n_total - main_pool_target)
-    candidate_pool = min(ideal_candidate_pool, available_for_oversampling)
+    ideal_total = main_pool_target + ideal_candidate_pool
+    if n_total >= ideal_total:
+        candidate_pool = ideal_candidate_pool
+        main_count = main_pool_target
+    else:
+        shrink = n_total / ideal_total
+        candidate_pool = int(ideal_candidate_pool * shrink)
+        main_count = n_total - candidate_pool
+    # factor=0 leaves candidate_pool=0; floor it so the picker has M slots.
     if candidate_pool < warmup_count:
-        candidate_pool = min(warmup_count, n_total)
-    # Main pool gets whatever is left, up to its target.
-    main_count = min(max(0, n_total - candidate_pool), main_pool_target)
+        candidate_pool = warmup_count
+        main_count = min(main_pool_target, n_total - candidate_pool)
 
     actual_warmup_count = min(warmup_count, candidate_pool)
     candidates = chat_sessions[:candidate_pool]
@@ -259,6 +273,8 @@ def pick_warmup_population(
         realized_mean=realized_mean,
         realized_mean_stdev=realized_mean_stdev,
         cap_count=cap_count,
+        ideal_total=ideal_total,
+        available_total=n_total,
     )
     return warmup_sessions + main_sessions, report
 
@@ -296,6 +312,21 @@ def log_warmup_sampling_report(report: _WarmupSamplingReport) -> None:
         report.cap_count,
         report.warmup_pool,
     )
+
+    if report.available_total < report.ideal_total and report.ideal_total > 0:
+        deficit = report.ideal_total - report.available_total
+        pct = 100.0 * deficit / report.ideal_total
+        logger.warning(
+            "Dataset under-produced for warmup: %d sessions short of ideal"
+            " %d (%.1f%% deficit, available=%d). Shrunk both pools"
+            " proportionally to warmup_pool=%d, main_pool=%d.",
+            deficit,
+            report.ideal_total,
+            pct,
+            report.available_total,
+            report.warmup_pool,
+            report.main_pool,
+        )
 
     if report.cap_count > 0:
         logger.warning(

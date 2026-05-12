@@ -89,6 +89,32 @@ def test_takes_three_raises_returns() -> None:
     _test_takes_three_returns(def_function.takes_three_raises_returns)
 
 
+def test_takes_seven_raises_returns() -> None:
+    with pytest.raises(Exception) as cm:
+        def_function.takes_seven_raises_returns(
+            "quux", "b", "c", "d", "e", "f", "g"
+        )
+    assert cm.value.args == ("first input must be 'foo'",)
+
+    result = def_function.takes_seven_raises_returns(
+        "foo", "b", "c", "d", "e", "f", "g"
+    )
+    assert result == "foobcdefg"
+
+
+def test_takes_eight_raises_returns() -> None:
+    with pytest.raises(Exception) as cm:
+        def_function.takes_eight_raises_returns(
+            "quux", "b", "c", "d", "e", "f", "g", "h"
+        )
+    assert cm.value.args == ("first input must be 'foo'",)
+
+    result = def_function.takes_eight_raises_returns(
+        "foo", "b", "c", "d", "e", "f", "g", "h"
+    )
+    assert result == "foobcdefgh"
+
+
 def _test_takes_zero(fut: Callable[[], None]) -> None:
     setattr(sys.modules[__name__], "s", "just a python string")  # noqa: B010
     fut()

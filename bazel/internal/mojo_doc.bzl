@@ -40,18 +40,21 @@ def _mojo_doc_implementation(ctx):
     )
 
     doc_output = ctx.actions.declare_directory(ctx.label.name)
+    markdown_args = ctx.actions.args()
+    markdown_args.add("--show-stability-markers", ctx.attr.show_stability_markers)
+    markdown_args.add("-o", doc_output.path)
+    markdown_args.add(mojodoc_output.path)
+    if ctx.attr.docs_title:
+        markdown_args.add("--docs-title", ctx.attr.docs_title)
+    if ctx.attr.docs_hosted_on_mojolang:
+        markdown_args.add("--hosted-on-mojolang")
+
     ctx.actions.run(
         executable = ctx.executable._mojodoc_json_to_markdown,
         outputs = [doc_output],
         inputs = [mojodoc_output],
         mnemonic = "MojoDoc",
-        arguments = [
-            "--show-stability-markers",
-            ctx.attr.show_stability_markers,
-            "-o",
-            doc_output.path,
-            mojodoc_output.path,
-        ] + (["--docs-title", ctx.attr.docs_title] if ctx.attr.docs_title else []),
+        arguments = [markdown_args],
         use_default_shell_env = True,
     )
 
@@ -80,6 +83,14 @@ mojo_doc = rule(
         "docs_title": attr.string(
             default = "",
             doc = "Custom title for the top-level package index page",
+        ),
+        "docs_hosted_on_mojolang": attr.bool(
+            default = False,
+            doc = (
+                "True when generated Markdown is published on mojolang.org (stdlib, layout). " +
+                "Passes ``--hosted-on-mojolang`` to ``mojodoc_json_to_markdown`` so std/layout " +
+                "links stay root-relative; kernel docs on Modular omit this."
+            ),
         ),
         "show_stability_markers": attr.string(
             default = "none",

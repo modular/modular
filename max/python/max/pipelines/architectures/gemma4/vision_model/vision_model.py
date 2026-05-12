@@ -67,10 +67,11 @@ class Gemma4VisionModel(Module):
         # In the reference, the multimodal embedder is in the layer above
         # (Gemma4Model), but the image features includes this projection,
         # so it is included here.
+        vision_dtype = config.unquantized_dtype
         self.embed_vision = Gemma4MultimodalEmbedder(
             vision_config.hidden_size,
             config.text_config.hidden_size,
-            config.dtype,
+            vision_dtype,
             self.device,
             vision_config.rms_norm_eps,
         )
@@ -79,13 +80,13 @@ class Gemma4VisionModel(Module):
         if self.standardize:
             self.std_bias = Weight(
                 "std_bias",
-                config.dtype,
+                vision_dtype,
                 shape=[vision_config.hidden_size],
                 device=self.device,
             )
             self.std_scale = Weight(
                 "std_scale",
-                config.dtype,
+                vision_dtype,
                 shape=[vision_config.hidden_size],
                 device=self.device,
             )

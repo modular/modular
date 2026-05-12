@@ -24,7 +24,8 @@ from __future__ import annotations
 
 import functools
 import math
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Sequence
+from enum import Enum, auto
 
 from max.dtype import DType
 from max.graph import (
@@ -40,11 +41,14 @@ from max.graph import (
 from max.graph.quantization import QuantizationEncoding
 from max.nn.comm import Signals
 from max.nn.comm.allreduce import Allreduce
+from max.nn.comm.ep import EPBatchManager
+from max.nn.data_parallelism import split_batch_replicated
 from max.nn.embedding import VocabParallelEmbedding
 from max.nn.kv_cache import KVCacheParamInterface, PagedCacheValues
 from max.nn.layer import LayerList, Module
 from max.nn.linear import MLP, ColumnParallelLinear, Linear
 from max.nn.moe import MoE
+from max.nn.moe.expert_parallel import forward_moe_sharded_layers
 from max.nn.norm import RMSNorm
 from max.nn.rotary_embedding import (
     Llama3RopeScalingParams,
@@ -58,6 +62,49 @@ from max.nn.transformer.distributed_transformer import (
 from .layers.attention import Step3p5Attention
 from .layers.moe_gate import Step3p5MoEGate
 from .model_config import Step3p5Config
+
+
+class ParallelismMode(Enum):
+    """Parallelism strategies supported by Step-3.5-Flash.
+
+    - ``TP_TP``: tensor-parallel attention + tensor-parallel MoE (no EP).
+      Allreduce after attention and after MoE.
+    - ``TP_EP``: tensor-parallel attention + expert-parallel MoE.
+      Allreduce after attention; EP combine handles post-MoE reduction.
+    - ``DP_EP``: data-parallel (replicated) attention + expert-parallel MoE.
+      No attention allreduce; EP combine handles post-MoE reduction.
+    """
+
+    TP_TP = auto()
+    TP_EP = auto()
+    DP_EP = auto()
+
+
+def _select_parallelism_mode(
+    config: Step3p5Config, ep_manager: EPBatchManager | None
+) -> ParallelismMode:
+    """Pick a parallelism mode from ``data_parallel_degree`` and EP state.
+
+    Single-GPU degenerates to TP_TP regardless of flags.
+    """
+    num_devices = len(config.devices)
+    if num_devices <= 1:
+        return ParallelismMode.TP_TP
+    if ep_manager is not None:
+        if config.data_parallel_degree == 1:
+            return ParallelismMode.TP_EP
+        if config.data_parallel_degree == num_devices:
+            return ParallelismMode.DP_EP
+        raise ValueError(
+            "Step-3.5: data_parallel_degree must be 1 (TP+EP) or "
+            f"{num_devices} (DP+EP); got {config.data_parallel_degree}"
+        )
+    if config.data_parallel_degree != 1:
+        raise ValueError(
+            "Step-3.5: DP-attention requires --ep-size > 1; got "
+            f"data_parallel_degree={config.data_parallel_degree} with no EP."
+        )
+    return ParallelismMode.TP_TP
 
 
 class _PartialRotaryEmbedding(Llama3RotaryEmbedding):
@@ -146,7 +193,16 @@ class _PartialRotaryEmbedding(Llama3RotaryEmbedding):
 
 
 class Step3p5TransformerBlock(Module):
-    """Transformer block for Step-3.5 with mixed attention and MoE/MLP."""
+    """Transformer block for Step-3.5 with mixed attention and MoE/MLP.
+
+    Dispatches sharding and collectives based on a :class:`ParallelismMode`:
+
+    - ``TP_TP``: TP attention + TP MoE; allreduce after both.
+    - ``TP_EP``: TP attention + EP MoE; allreduce after attention; EP
+      combine handles the post-MoE reduction.
+    - ``DP_EP``: replicated attention (each rank owns its DP batch shard)
+      + EP MoE; no attention allreduce.
+    """
 
     def __init__(
         self,
@@ -155,10 +211,13 @@ class Step3p5TransformerBlock(Module):
         rope: Llama3RotaryEmbedding,
         create_norm: Callable[..., RMSNorm],
         linear_cls: Callable[..., Linear],
+        mode: ParallelismMode,
+        ep_manager: EPBatchManager | None = None,
     ) -> None:
         super().__init__()
         self.devices = config.devices
         num_devices = len(config.devices)
+        self.mode = mode
 
         # Determine if this is a sliding window layer
         is_sliding = False
@@ -191,16 +250,37 @@ class Step3p5TransformerBlock(Module):
             norm_dtype=config.norm_dtype or config.dtype,
             qk_norm_eps=config.rms_norm_eps or 1e-5,
         )
-        self.self_attn.sharding_strategy = ShardingStrategy.tensor_parallel(
-            num_devices
-        )
+        if mode == ParallelismMode.DP_EP:
+            self.self_attn.sharding_strategy = ShardingStrategy.replicate(
+                num_devices
+            )
+        else:
+            self.self_attn.sharding_strategy = ShardingStrategy.tensor_parallel(
+                num_devices
+            )
         self.self_attn_shards = self.self_attn.shard(config.devices)
 
         # Create MLP or MoE layer
-        self.mlp = self._get_mlp(config, layer_idx, linear_cls)
-        self.mlp.sharding_strategy = ShardingStrategy.tensor_parallel(
-            num_devices
+        self.mlp = self._get_mlp(config, layer_idx, linear_cls, ep_manager)
+
+        # MoE layers go EP under TP_EP / DP_EP; dense MLPs replicate under
+        # DP_EP and TP-shard otherwise. Wrapper auto-replicates share_expert
+        # when the routed strategy is ``expert_parallel``.
+        self._is_ep_moe_layer = (
+            isinstance(self.mlp, Step3p5MoEWithSharedExpert)
+            and ep_manager is not None
+            and mode in (ParallelismMode.TP_EP, ParallelismMode.DP_EP)
         )
+        if self._is_ep_moe_layer:
+            self.mlp.sharding_strategy = ShardingStrategy.expert_parallel(
+                num_devices
+            )
+        elif mode == ParallelismMode.DP_EP:
+            self.mlp.sharding_strategy = ShardingStrategy.replicate(num_devices)
+        else:
+            self.mlp.sharding_strategy = ShardingStrategy.tensor_parallel(
+                num_devices
+            )
         self.mlp_shards = self.mlp.shard(config.devices)
 
         # Layer norms (zero-centered: weight_offset=1.0)
@@ -225,6 +305,7 @@ class Step3p5TransformerBlock(Module):
         config: Step3p5Config,
         layer_idx: int,
         linear_cls: Callable[..., Linear],
+        ep_manager: EPBatchManager | None = None,
     ) -> MLP | Step3p5MoEWithSharedExpert:
         """Get MLP or MoE layer based on config and layer index."""
         if layer_idx in config.moe_layers:
@@ -244,6 +325,7 @@ class Step3p5TransformerBlock(Module):
                 linear_cls=linear_cls,
                 swiglu_limit=swiglu_limit,
                 swiglu_limit_shared=swiglu_limit_shared,
+                ep_batch_manager=ep_manager,
             )
         else:
             return MLP(
@@ -279,8 +361,13 @@ class Step3p5TransformerBlock(Module):
             for i, shard in enumerate(self.self_attn_shards)
         ]
 
-        # Allreduce attention outputs
-        if len(self.devices) > 1:
+        # Allreduce attention outputs only for TP attention; DP-replicated
+        # attention is independent per rank.
+        attn_is_tp = self.mode in (
+            ParallelismMode.TP_TP,
+            ParallelismMode.TP_EP,
+        )
+        if attn_is_tp and len(self.devices) > 1:
             attn_outs = self.allreduce(attn_outs, signal_buffers)
 
         # Residual connection
@@ -291,12 +378,17 @@ class Step3p5TransformerBlock(Module):
             self.post_attention_layernorm_shards, hs
         )
 
-        # MLP/MoE
-        mlp_outs = forward_sharded_layers(self.mlp_shards, norm_outs)
-
-        # Allreduce MLP outputs
-        if len(self.devices) > 1:
-            mlp_outs = self.allreduce(mlp_outs, signal_buffers)
+        # MLP/MoE dispatch by per-layer sharding (set in __init__):
+        # - EP MoE: EP combine handles cross-rank reduction, no allreduce.
+        # - Replicated (DP_EP dense MLP): independent per rank, no allreduce.
+        # - TP (TP_TP, or TP_EP dense MLP): partial outputs, allreduce.
+        if self._is_ep_moe_layer:
+            mlp_outs = forward_moe_sharded_layers(self.mlp_shards, norm_outs)
+        else:
+            mlp_outs = forward_sharded_layers(self.mlp_shards, norm_outs)
+            mlp_is_tp = self.mode != ParallelismMode.DP_EP
+            if mlp_is_tp and len(self.devices) > 1:
+                mlp_outs = self.allreduce(mlp_outs, signal_buffers)
 
         # Residual connection
         hs = [h + mlp_out for h, mlp_out in zip(hs, mlp_outs, strict=True)]
@@ -311,6 +403,14 @@ class Step3p5MoEWithSharedExpert(Module):
 
     Supports optional SwiGLU activation clipping (swiglu_limits from the
     paper) to prevent numerical blow-up at long contexts.
+
+    Also supports expert parallelism: when an :class:`EPBatchManager` is
+    passed, the wrapper exposes the attributes required by
+    :func:`forward_moe_sharded_layers` (``gate``, ``num_experts_per_token``,
+    ``ep_batch_manager``, ``_local_ep_compute``, ``has_shared_experts``,
+    ``shared_experts``) by forwarding to the underlying :class:`MoE` while
+    keeping the shared expert at the wrapper level so it sees the
+    layer-specific ``swiglu_limit_shared``.
     """
 
     def __init__(
@@ -322,11 +422,13 @@ class Step3p5MoEWithSharedExpert(Module):
         config: Step3p5Config | None = None,
         linear_cls: Callable[..., Linear] | None = None,
         is_sharding: bool = False,
+        ep_batch_manager: EPBatchManager | None = None,
     ) -> None:
         super().__init__()
         self.devices = devices
         self.swiglu_limit = swiglu_limit
         self.swiglu_limit_shared = swiglu_limit_shared
+        self._ep_batch_manager = ep_batch_manager
 
         if is_sharding:
             return
@@ -334,6 +436,13 @@ class Step3p5MoEWithSharedExpert(Module):
         if config is None or linear_cls is None:
             raise ValueError(
                 "config and linear_cls are required when is_sharding=False"
+            )
+
+        ep_size = 1
+        if ep_batch_manager is not None:
+            ep_size = (
+                ep_batch_manager.config.n_gpus_per_node
+                * ep_batch_manager.config.n_nodes
             )
 
         # Routed MoE
@@ -350,6 +459,8 @@ class Step3p5MoEWithSharedExpert(Module):
             ),
             dtype=config.dtype,
             swiglu_limit=swiglu_limit,
+            ep_size=ep_size,
+            ep_batch_manager=ep_batch_manager,
         )
 
         # Shared expert (always-on MLP)
@@ -364,9 +475,60 @@ class Step3p5MoEWithSharedExpert(Module):
         )
 
     def __call__(self, x: TensorValue) -> TensorValue:
+        if self._ep_batch_manager is not None:
+            # In EP mode, ``forward_moe_sharded_layers`` drives this layer
+            # via the per-shard helpers (``gate``, ``_local_ep_compute``,
+            # ``shared_experts``); the wrapper's own ``__call__`` is unused.
+            raise ValueError(
+                "Use forward_moe_sharded_layers for expert-parallel "
+                "inference instead of calling Step3p5MoEWithSharedExpert "
+                "directly."
+            )
         routed = self.moe(x)
         shared = self.share_expert(x)
         return routed + shared
+
+    # --- EP forwarding to the inner MoE -------------------------------- #
+    # ``forward_moe_sharded_layers`` treats each shard as a ``MoE``-shaped
+    # object.  The forwarders below let the wrapper stand in for that
+    # interface without changing the weight-loading hierarchy
+    # (``mlp.moe.*`` / ``mlp.share_expert.*``).
+
+    @property
+    def gate(self) -> Callable[[TensorValue], tuple[TensorValue, TensorValue]]:
+        return self.moe.gate
+
+    @property
+    def num_experts_per_token(self) -> int:
+        return self.moe.num_experts_per_token
+
+    @property
+    def ep_batch_manager(self) -> EPBatchManager:
+        assert self._ep_batch_manager is not None, (
+            "EPBatchManager must be provided to use expert-parallel forward"
+        )
+        return self._ep_batch_manager
+
+    @property
+    def has_shared_experts(self) -> bool:
+        # The shared expert is always present for Step-3.5; advertise that
+        # to the EP forward path so it adds the shared-expert output after
+        # the combine step.
+        return True
+
+    def shared_experts(self, x: TensorValue) -> TensorValue:
+        return self.share_expert(x)
+
+    def _ep_dispatch_input_scales(self) -> TensorValue | None:
+        return self.moe._ep_dispatch_input_scales()
+
+    def _local_ep_compute(
+        self,
+        expert_inputs: tuple[TensorValue, ...],
+        x: TensorValue,
+        estimated_total_m: TensorValue,
+    ) -> TensorValue:
+        return self.moe._local_ep_compute(expert_inputs, x, estimated_total_m)
 
     @property
     def sharding_strategy(self) -> ShardingStrategy | None:
@@ -375,7 +537,14 @@ class Step3p5MoEWithSharedExpert(Module):
     @sharding_strategy.setter
     def sharding_strategy(self, strategy: ShardingStrategy) -> None:
         self.moe.sharding_strategy = strategy
-        self.share_expert.sharding_strategy = strategy
+        if strategy.is_expert_parallel:
+            # Shared expert is replicated across EP ranks (every rank holds
+            # the full share_expert and runs it on its DP-attention shard).
+            self.share_expert.sharding_strategy = ShardingStrategy.replicate(
+                strategy.num_devices
+            )
+        else:
+            self.share_expert.sharding_strategy = strategy
 
     def shard(
         self, devices: Iterable[DeviceRef]
@@ -393,6 +562,7 @@ class Step3p5MoEWithSharedExpert(Module):
                 swiglu_limit=self.swiglu_limit,
                 swiglu_limit_shared=self.swiglu_limit_shared,
                 is_sharding=True,
+                ep_batch_manager=self._ep_batch_manager,
             )
             sharded.moe = moe_shards[i]
             sharded.share_expert = share_expert_shards[i]
@@ -401,13 +571,24 @@ class Step3p5MoEWithSharedExpert(Module):
 
 
 class Step3p5(DistributedLogitsPostprocessMixin, Module):
-    """Step-3.5-Flash model."""
+    """Step-3.5-Flash model.
 
-    def __init__(self, config: Step3p5Config) -> None:
+    Supports single-GPU, multi-GPU TP, and (when ``data_parallel_degree
+    > 1`` together with an :class:`EPBatchManager`) DP-attention + EP-MoE
+    inference.
+    """
+
+    def __init__(
+        self,
+        config: Step3p5Config,
+        ep_manager: EPBatchManager | None = None,
+    ) -> None:
         super().__init__()
         self.config = config
         self.devices = config.devices
         self.num_devices = len(config.devices)
+        self.mode = _select_parallelism_mode(config, ep_manager)
+        self.ep_manager = ep_manager
 
         if config.model_quantization_encoding == QuantizationEncoding.GPTQ:
             raise NotImplementedError("GPTQ Step-3.5 is not implemented yet")
@@ -510,6 +691,8 @@ class Step3p5(DistributedLogitsPostprocessMixin, Module):
                     rope=self.rope,
                     create_norm=create_norm,
                     linear_cls=linear_cls,
+                    mode=self.mode,
+                    ep_manager=ep_manager,
                 )
                 for i in range(config.num_hidden_layers)
             ]
@@ -550,6 +733,8 @@ class Step3p5(DistributedLogitsPostprocessMixin, Module):
         return_n_logits: TensorValue,
         input_row_offsets: TensorValue,
         signal_buffers: list[BufferValue],
+        host_input_row_offsets: TensorValue | None = None,
+        data_parallel_splits: TensorValue | None = None,
     ) -> tuple[TensorValue, ...]:
         # Embeddings
         h = self.embed_tokens(tokens, signal_buffers)
@@ -568,6 +753,19 @@ class Step3p5(DistributedLogitsPostprocessMixin, Module):
             input_row_offsets.to(self.devices[0]), signal_buffers
         )
 
+        # In DP mode, split the (replicated) batch across devices so each
+        # GPU only processes its own shard.
+        is_dp_ep = self.mode == ParallelismMode.DP_EP
+        if is_dp_ep and data_parallel_splits is not None:
+            assert host_input_row_offsets is not None
+            h, input_row_offsets_list = split_batch_replicated(
+                self.devices,
+                h,
+                input_row_offsets_list,
+                host_input_row_offsets.cast(DType.int64),
+                data_parallel_splits,
+            )
+
         # Transformer layers
         for idx, layer in enumerate(self.layers):
             layer_idx = ops.constant(idx, DType.uint32, device=DeviceRef.CPU())
@@ -580,9 +778,57 @@ class Step3p5(DistributedLogitsPostprocessMixin, Module):
                 signal_buffers,
             )
 
+        if is_dp_ep:
+            return self._dp_logits_postprocess(
+                h,
+                input_row_offsets_list,
+                norm_shards=self.norm_shards,
+                lm_head=self.lm_head,
+                signal_buffers=signal_buffers,
+                devices=self.devices,
+            )
+
         return self._postprocess_logits(
             h, input_row_offsets_list, return_n_logits, signal_buffers
         )
+
+    @staticmethod
+    def _dp_logits_postprocess(
+        h: list[TensorValue],
+        input_row_offsets: list[TensorValue],
+        norm_shards: Sequence[Callable[[TensorValue], TensorValue]],
+        lm_head: Callable[
+            [list[TensorValue], Sequence[BufferValue]], Sequence[TensorValue]
+        ],
+        signal_buffers: list[BufferValue],
+        devices: list[DeviceRef],
+    ) -> tuple[TensorValue, ...]:
+        """Logits post-processing for DP mode.
+
+        Each device holds the hidden states for its own batch shard. We
+        gather the last-token hidden state from every device, normalize on
+        each device, and run the vocab-parallel LM head on the gathered
+        tensor.
+        """
+        last_token_per_dev: list[TensorValue] = []
+        for dev_idx in range(len(devices)):
+            last_token_indices = input_row_offsets[dev_idx][1:] - 1
+            last_token_h = ops.gather(h[dev_idx], last_token_indices, axis=0)
+            last_token_per_dev.append(last_token_h)
+
+        last_token_distributed = ops.allgather(
+            last_token_per_dev, signal_buffers
+        )
+
+        norm_last_token = forward_sharded_layers(
+            norm_shards, last_token_distributed
+        )
+        last_logits = ops.cast(
+            lm_head(norm_last_token, signal_buffers)[0],
+            DType.float32,
+        )
+
+        return (last_logits,)
 
     def input_types(
         self, kv_params: KVCacheParamInterface
@@ -607,8 +853,38 @@ class Step3p5(DistributedLogitsPostprocessMixin, Module):
             return_n_logits_type,
         ]
 
+        # DP mode needs host-side row offsets and per-device batch splits
+        # to do the data-parallel batch slice.  TP+EP keeps the TP_TP layout.
+        if self.mode == ParallelismMode.DP_EP:
+            host_input_row_offsets_type = TensorType(
+                DType.uint32,
+                shape=["input_row_offsets_len"],
+                device=DeviceRef.CPU(),
+            )
+            data_parallel_splits_type = TensorType(
+                DType.int64,
+                shape=[self.num_devices + 1],
+                device=DeviceRef.CPU(),
+            )
+            base_inputs.extend(
+                [host_input_row_offsets_type, data_parallel_splits_type]
+            )
+
         signals = Signals(devices=self.devices)
         signal_buffer_types = signals.input_types()
 
         flattened_kv_types = kv_inputs.flatten()
-        return tuple(base_inputs + signal_buffer_types + flattened_kv_types)
+
+        # EP communication buffers are appended at the very end so the
+        # graph-builder can split off ``len(ep_manager.input_types())``
+        # tail inputs.
+        ep_input_types: list[TensorType | BufferType] = []
+        if self.ep_manager is not None:
+            ep_input_types = list(self.ep_manager.input_types())
+
+        return tuple(
+            base_inputs
+            + signal_buffer_types
+            + flattened_kv_types
+            + ep_input_types
+        )

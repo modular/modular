@@ -17,7 +17,7 @@ Carved out of :mod:`max.benchmark.benchmark_shared.metrics` so consumers
 that just need the *type definitions* (e.g. dashboards deserialising
 result rows from BigQuery) can import them without pulling in the
 benchmark runner's heavy dependency tree (``max.serve``,
-``max.diagnostics``, transformers, huggingface-hub, openai, etc.).
+``max.profiler``, transformers, huggingface-hub, openai, etc.).
 
 The full ``metrics`` module re-exports everything defined here, so
 existing ``from max.benchmark.benchmark_shared.metrics import …``

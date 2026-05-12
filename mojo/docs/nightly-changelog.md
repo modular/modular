@@ -129,6 +129,23 @@ This version is still a work in progress.
   free(ptr, layout)
   ```
 
+- The default `seed` for `random.Random`, `random.NormalRandom`, and the
+  internal `_PhiloxWrapper` has changed from `0` to `0x3D30F19CD101`
+  (67280421310721) to match PyTorch's `at::Philox4_32_10` default. Calls
+  that omitted the `seed` argument will now produce a different output
+  stream; pass `seed=0` explicitly to keep the previous behavior.
+
+- Added `nth()` as a default method on the `Iterator` trait. It advances the
+  iterator by `n` elements (destroying them) and returns the next element, or
+  `None` if the iterator runs out before reaching index `n`.
+
+  ```mojo
+  var l = [10, 20, 30, 40]
+  print(iter(l).nth(0).value())   # 10
+  print(iter(l).nth(3).value())   # 40
+  var missing = iter(l).nth(10)   # None (Optional)
+  ```
+
 ## Tooling changes
 
 ## GPU programming

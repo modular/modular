@@ -185,6 +185,8 @@ class CastFromBuiltinAttr(max._core.Attribute):
     """
 
     @overload
+    def __init__(self, arg: max._core.dialects.builtin.TypedAttr) -> None: ...
+    @overload
     def __init__(
         self, arg: max._core.dialects.builtin.TypedAttr, type: SIMDType
     ) -> None: ...
@@ -203,6 +205,8 @@ class CastToBuiltinAttr(max._core.Attribute):
     type.
     """
 
+    @overload
+    def __init__(self, arg: max._core.dialects.builtin.TypedAttr) -> None: ...
     @overload
     def __init__(
         self, arg: max._core.dialects.builtin.TypedAttr, type: max._core.Type
@@ -2126,6 +2130,24 @@ class ClosureMethod(enum.Enum):
     copy = 3
 
     none = 4
+
+class CmpPredicate(enum.Enum):
+    eq = 0
+
+    ne = 1
+
+    lt = 2
+
+    gt = 3
+
+    le = 4
+
+    ge = 5
+
+class CmpPredicateAttr(max._core.Attribute):
+    def __init__(self, value: CmpPredicate) -> None: ...
+    @property
+    def value(self) -> CmpPredicate: ...
 
 class ExportKind(enum.Enum):
     not_exported = 0
