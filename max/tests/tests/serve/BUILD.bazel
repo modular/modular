@@ -27,6 +27,8 @@ modular_py_test(
     },
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
+        # TODO: SDLC-3622, times out but isn't worth running.
+        "//:asan": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
     deps = [
