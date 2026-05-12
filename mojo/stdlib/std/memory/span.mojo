@@ -860,7 +860,7 @@ struct Span[
         """
 
         comptime simdwidth = simd_width_of[dtype]()
-        var ptr = self.unsafe_ptr()
+        var ptr = self.unsafe_ptr().as_immutable()
         var length = len(self)
         var count = 0
 
