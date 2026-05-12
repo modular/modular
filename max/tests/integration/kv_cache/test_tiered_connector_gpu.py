@@ -409,7 +409,16 @@ def test_write_locked_blocks_lifecycle() -> None:
         # Offload -> creates pending_disk_writes
         connector.offload([0, 1], [100, 200])
 
-        assert len(connector._pending_disk_writes) == 2
+        assert len(connector._pending_disk_writes) == 1
+        pending_disk_write = connector._pending_disk_writes[0]
+        assert len(pending_disk_write.host_blocks) == 2
+
+        # Ensure that the d2h copies have completed
+        for device in connector._devices:
+            device.synchronize()
+
+        # The event should be ready
+        assert pending_disk_write.d2h_copy_complete_event.is_ready()
 
         # sync() submits writes to disk and tracks in _write_locked_blocks
         connector.sync()
@@ -442,10 +451,11 @@ def test_host_blocks_pinned_during_disk_write() -> None:
         connector.offload([0, 1], [100, 200])
 
         # At this point, host blocks should be pinned (ref_cnt=1)
-        for _bid, _hash, host_block in connector._pending_disk_writes:
-            assert host_block.ref_cnt > 0, (
-                "Host block should be pinned for disk write safety"
-            )
+        for pending_disk_write in connector._pending_disk_writes:
+            for host_block in pending_disk_write.host_blocks:
+                assert host_block.ref_cnt > 0, (
+                    "Host block should be pinned for disk write safety"
+                )
 
         # After sync() + wait, blocks should eventually be released
         connector.sync()

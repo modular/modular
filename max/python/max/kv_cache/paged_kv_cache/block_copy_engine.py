@@ -20,6 +20,7 @@ from max.driver import Buffer, Device, DevicePinnedBuffer, DeviceStream
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn.comm.allreduce import Signals
+from max.profiler import traced
 
 
 def _bytes_per_page(buffer: Buffer) -> int:
@@ -153,6 +154,7 @@ class BlockOffloadEngine:
             )
             self._signal_buffers = self._signals.buffers()
 
+    @traced
     def memcpy_h2d(self, dst: int, src: int) -> None:
         """Copies a block from host to device(s)."""
         offset = 0
@@ -174,6 +176,7 @@ class BlockOffloadEngine:
                 root=0,
             )
 
+    @traced
     def memcpy_d2h(self, dst: int, src: int) -> None:
         """Copies a block from device(s) to host."""
         offset = 0
@@ -185,6 +188,7 @@ class BlockOffloadEngine:
             ].inplace_copy_from(buf[src, :])
             offset += page_bytes
 
+    @traced
     def wait_for_completion(self) -> None:
         """Synchronize main stream with the auxiliary stream.
 
