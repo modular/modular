@@ -2,6 +2,11 @@
 
 A comprehensive guide for compiler engineers new to the KGEN/Mojo codebase.
 
+**Resources:**
+[Video walkthrough](https://drive.google.com/file/d/1NAh7RpJDXbWMlapHPZce8CAVSgv8D_oX/view?usp=drive_link)
+|
+[Slides](https://docs.google.com/presentation/d/1cc9dN-7u9dS661jqIGuvGRheWrzfLb6eyMgquRWHrzs/edit?usp=drive_link)
+
 ## Table of Contents
 
 1. [Overview](#overview)
