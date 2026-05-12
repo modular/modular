@@ -19,12 +19,14 @@ from .model_config import (
     Gemma4TextConfig,
     Gemma4VisionConfig,
 )
+from .reasoning import Gemma4ReasoningParser
 from .tool_parser import Gemma4ToolParser
 
 __all__ = [
     "Gemma3MultiModalModelInputs",
     "Gemma3_MultiModalModel",
     "Gemma4ForConditionalGenerationConfig",
+    "Gemma4ReasoningParser",
     "Gemma4TextConfig",
     "Gemma4ToolParser",
     "Gemma4VisionConfig",

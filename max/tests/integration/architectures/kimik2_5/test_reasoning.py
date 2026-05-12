@@ -115,10 +115,10 @@ def test_stream_parsing(
     parser = KimiK2_5ReasoningParser(
         THINK_START_TOKEN_ID, THINK_END_TOKEN_ID, TOOL_SECTION_START_TOKEN_ID
     )
-    span, is_still_reasoning = parser.stream(tokens)
-    assert span.extract_reasoning(tokens) == expected_reasoning
-    assert span.extract_content(tokens) == expected_content
-    assert is_still_reasoning is expected_is_still_reasoning
+    delta = parser.stream(tokens)
+    assert delta.span.extract_reasoning(tokens) == expected_reasoning
+    assert delta.span.extract_content(tokens) == expected_content
+    assert delta.is_still_reasoning is expected_is_still_reasoning
 
 
 def test_stream_no_tool_start_token_id_support() -> None:
@@ -126,14 +126,14 @@ def test_stream_no_tool_start_token_id_support() -> None:
         THINK_START_TOKEN_ID, THINK_END_TOKEN_ID, None
     )
     tokens = [10, TOOL_SECTION_START_TOKEN_ID, 30]
-    span, is_still_reasoning = parser.stream(tokens)
-    assert span.extract_reasoning(tokens) == [
+    delta = parser.stream(tokens)
+    assert delta.span.extract_reasoning(tokens) == [
         10,
         TOOL_SECTION_START_TOKEN_ID,
         30,
     ]
-    assert span.extract_content(tokens) == []
-    assert is_still_reasoning
+    assert delta.span.extract_content(tokens) == []
+    assert delta.is_still_reasoning
 
 
 def test_is_prompt_in_reasoning_tool_section_token_disables_reasoning() -> None:

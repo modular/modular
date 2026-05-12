@@ -18,6 +18,7 @@ modular_py_test(
         ["**/test_*.py"],
         exclude = [
             "test_image_processor.py",
+            "test_reasoning.py",
             "test_tokenizer.py",
             "test_tool_parser.py",
             "test_video_processor.py",
@@ -87,6 +88,16 @@ modular_py_test(
         requirement("pillow"),
         requirement("pytest-asyncio"),
         requirement("pytest-mock"),
+    ],
+)
+
+modular_py_test(
+    name = "test_reasoning",
+    srcs = ["test_reasoning.py"],
+    deps = [
+        "//max/python/max/pipelines/architectures",
+        requirement("numpy"),
+        requirement("pytest-asyncio"),
     ],
 )
 

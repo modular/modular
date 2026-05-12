@@ -16,7 +16,8 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass, field
 from typing import Any, TypeVar
 
 from .tokenizer import PipelineTokenizer
@@ -80,6 +81,26 @@ class ReasoningSpan:
         return list(seq[reasoning_start:reasoning_end])
 
 
+@dataclass(frozen=True)
+class ParsedReasoningDelta:
+    """Result of applying reasoning parsing to a streaming delta chunk.
+
+    Attributes:
+        span: The :class:`ReasoningSpan` identifying the reasoning portion
+            of the chunk.
+        is_still_reasoning: Whether the reasoning section is still active.
+        reasoning_text_formatter: Optional callback to post-process decoded
+            reasoning text. Returns the formatted text, or ``None`` if the
+            text should be ignored.
+    """
+
+    span: ReasoningSpan
+    is_still_reasoning: bool
+    reasoning_text_formatter: Callable[[str], str | None] | None = field(
+        default=None
+    )
+
+
 class ReasoningParser(ABC):
     """Parser for identifying reasoning spans in model output."""
 
@@ -87,20 +108,16 @@ class ReasoningParser(ABC):
     def stream(
         self,
         delta_token_ids: Sequence[int],
-    ) -> tuple[ReasoningSpan, bool]:
+    ) -> ParsedReasoningDelta:
         """Identifies a reasoning span within a streaming delta chunk.
 
         Args:
             delta_token_ids: The token IDs of the incremental streaming chunk.
 
         Returns:
-            A tuple of ``(ReasoningSpan, is_still_reasoning)`` where
-            ``is_still_reasoning`` indicates whether the reasoning section has
-            ended. The :class:`ReasoningSpan` identifies the reasoning portion
-            of the chunk. If there is no reasoning in the chunk, the span is
-            zero-width so that :meth:`ReasoningSpan.extract_content` behaves
-            as identity and :meth:`ReasoningSpan.extract_reasoning` returns an
-            empty list.
+            A :class:`ParsedReasoningDelta` containing the reasoning span,
+            whether reasoning is still active, and an optional formatter for
+            decoded reasoning text.
         """
         ...
 
@@ -130,8 +147,15 @@ class ReasoningParser(ABC):
             ``True`` if the next generated token should be treated as
             part of a reasoning span; ``False`` otherwise.
         """
-        _, is_still_reasoning = self.stream(prompt_token_ids)
-        return is_still_reasoning
+        return self.stream(prompt_token_ids).is_still_reasoning
+
+    def reset(self) -> None:
+        """Resets per-request state.
+
+        Called at the start of each request to clear any internal state
+        accumulated during a prior request.
+        """
+        return
 
     @classmethod
     @abstractmethod

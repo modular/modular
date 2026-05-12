@@ -200,13 +200,17 @@ class Gemma4Tokenizer(TextAndVisionTokenizer):
         self,
         messages: list[TextGenerationRequestMessage],
         tools: list[TextGenerationRequestTool] | None = None,
+        chat_template_options: dict[str, Any] | None = None,
     ) -> str:
-        # Override to use the tokenizer's (not processor) apply_chat_template.
+        chat_template_options = {
+            "add_generation_prompt": True,
+            **(chat_template_options or {}),
+        }
         templated_message = self.delegate.apply_chat_template(
             [msg.model_dump() for msg in messages],
             tokenize=False,
             tools=tools,
-            add_generation_prompt=True,
+            **chat_template_options,
         )
         assert isinstance(templated_message, str)
         return templated_message
@@ -247,7 +251,11 @@ class Gemma4Tokenizer(TextAndVisionTokenizer):
         if request.prompt is not None:
             prompt = request.prompt
         elif request.messages:
-            prompt = self.apply_chat_template(request.messages, request.tools)
+            prompt = self.apply_chat_template(
+                request.messages,
+                request.tools,
+                request.chat_template_options,
+            )
             add_special_tokens = False
         else:
             raise ValueError(f"{request} does not provide messages or prompt.")

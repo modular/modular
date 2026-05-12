@@ -51,10 +51,10 @@ def test_stream_finds_think_boundaries() -> None:
     parser = _make_parser()
     # Tokens: [prefix, <think>, r1, r2, </think>, suffix]
     tokens = [10, 100, 11, 12, 200, 13]
-    span, is_still_reasoning = parser.stream(tokens)
-    assert is_still_reasoning is False
-    assert span.extract_reasoning(tokens) == [11, 12]
-    assert span.extract_content(tokens) == [10, 13]
+    delta = parser.stream(tokens)
+    assert delta.is_still_reasoning is False
+    assert delta.span.extract_reasoning(tokens) == [11, 12]
+    assert delta.span.extract_content(tokens) == [10, 13]
 
 
 def test_stream_implicit_start() -> None:
@@ -63,10 +63,10 @@ def test_stream_implicit_start() -> None:
     # first tokens are already inside a reasoning section.
     # Tokens: [r1, r2, </think>, answer]
     tokens = [11, 12, 200, 42]
-    span, is_still_reasoning = parser.stream(tokens)
-    assert is_still_reasoning is False
-    assert span.extract_reasoning(tokens) == [11, 12]
-    assert span.extract_content(tokens) == [42]
+    delta = parser.stream(tokens)
+    assert delta.is_still_reasoning is False
+    assert delta.span.extract_reasoning(tokens) == [11, 12]
+    assert delta.span.extract_content(tokens) == [42]
 
 
 def test_stream_tool_call_ends_reasoning() -> None:
@@ -74,23 +74,23 @@ def test_stream_tool_call_ends_reasoning() -> None:
     # Model jumps straight to a tool call without </think>.
     # Tokens: [<think>, r1, <minimax:tool_call>, tc1, tc2]
     tokens = [100, 11, 300, 77, 78]
-    span, is_still_reasoning = parser.stream(tokens)
-    assert is_still_reasoning is False
+    delta = parser.stream(tokens)
+    assert delta.is_still_reasoning is False
     # Reasoning excludes both the <think> start and <minimax:tool_call>.
-    assert span.extract_reasoning(tokens) == [11]
+    assert delta.span.extract_reasoning(tokens) == [11]
     # <minimax:tool_call> is NOT consumed — stays in content region.
-    assert span.extract_content(tokens) == [300, 77, 78]
+    assert delta.span.extract_content(tokens) == [300, 77, 78]
 
 
 def test_stream_no_end_still_reasoning() -> None:
     parser = _make_parser()
     # Mid-chunk during reasoning; no end marker yet.
     tokens = [11, 12, 13]
-    span, is_still_reasoning = parser.stream(tokens)
-    assert is_still_reasoning is True
+    delta = parser.stream(tokens)
+    assert delta.is_still_reasoning is True
     # Entire chunk is reasoning; nothing extracted as content.
-    assert span.extract_reasoning(tokens) == [11, 12, 13]
-    assert span.extract_content(tokens) == []
+    assert delta.span.extract_reasoning(tokens) == [11, 12, 13]
+    assert delta.span.extract_content(tokens) == []
 
 
 def test_is_prompt_in_reasoning_tool_call_token_does_not_disable_reasoning() -> (

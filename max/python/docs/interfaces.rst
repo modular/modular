@@ -94,6 +94,7 @@ Reasoning
    :toctree: generated
    :template: autosummary/class.rst
 
+   ParsedReasoningDelta
    ReasoningParser
    ReasoningSpan
 

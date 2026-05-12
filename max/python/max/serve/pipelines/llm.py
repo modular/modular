@@ -114,16 +114,13 @@ class TokenGeneratorPipeline(
     ) -> None:
         super().__init__(*args, **kwargs)
         self._reasoning_parser_name = reasoning_parser_name
-        self._cached_reasoning_parser: ReasoningParser | None = None
 
     async def _reasoning_parser(self) -> ReasoningParser | None:
         if self._reasoning_parser_name is None:
             return None
-        if self._cached_reasoning_parser is None:
-            self._cached_reasoning_parser = await reasoning.create(
-                self._reasoning_parser_name, self.tokenizer
-            )
-        return self._cached_reasoning_parser
+        return await reasoning.create(
+            self._reasoning_parser_name, self.tokenizer
+        )
 
     async def _top_log_probs(
         self,
@@ -175,6 +172,8 @@ class TokenGeneratorPipeline(
         # This is consistent with vLLM
         # TODO: (MODELS-1115) assume that the reasoning tokens are at the start of the reasoning section
         reasoning_parser = await self._reasoning_parser()
+        if reasoning_parser is not None:
+            reasoning_parser.reset()
         is_still_reasoning = reasoning_parser is not None
 
         try:
@@ -238,11 +237,15 @@ class TokenGeneratorPipeline(
                     tokens: list[int] | None = response.tokens
                     token_log_probs = response.log_probabilities
                     reasoning_tokens = None
+                    reasoning_text_formatter = None
 
                     if is_still_reasoning:
                         assert reasoning_parser is not None
-                        reasoning_span, is_still_reasoning = (
-                            reasoning_parser.stream(response.tokens)
+                        parsed = reasoning_parser.stream(response.tokens)
+                        reasoning_span = parsed.span
+                        is_still_reasoning = parsed.is_still_reasoning
+                        reasoning_text_formatter = (
+                            parsed.reasoning_text_formatter
                         )
                         tokens = (
                             reasoning_span.extract_content(response.tokens)
@@ -307,6 +310,11 @@ class TokenGeneratorPipeline(
                                     skip_special_tokens=skip_special_tokens,
                                 )
                             )
+
+                    if reasoning_text_formatter and decoded_reasoning_tokens:
+                        decoded_reasoning_tokens = reasoning_text_formatter(
+                            decoded_reasoning_tokens
+                        )
 
                     # Check for stop sequences if configured (EOSTracker)
                     status = response.final_status

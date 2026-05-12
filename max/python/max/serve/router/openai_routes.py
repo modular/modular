@@ -527,9 +527,9 @@ class OpenAIChatResponseGenerator(
 
             reasoning_message: str | None = None
             # TODO: (MODELS-1115) assume that the reasoning tokens are at the start of the chunk
-            if (
-                len(completed_outputs) > 0
-                and completed_outputs[0].decoded_reasoning_tokens is not None
+            if any(
+                chunk.decoded_reasoning_tokens is not None
+                for chunk in completed_outputs
             ):
                 reasoning_message = (
                     "".join(

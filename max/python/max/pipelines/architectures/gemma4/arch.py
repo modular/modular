@@ -52,4 +52,5 @@ gemma4_arch = SupportedArchitecture(
     context_type=Gemma4Context,
     config=Gemma4ForConditionalGenerationConfig,
     tool_parser="gemma4",
+    reasoning_parser="gemma4",
 )
