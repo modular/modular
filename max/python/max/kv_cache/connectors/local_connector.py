@@ -62,7 +62,9 @@ class LocalConnector:
 
         # Create BlockOffloadEngine for memory transfers
         self._block_copy_engine = BlockOffloadEngine(
-            total_num_host_blocks, device_buffers
+            total_num_host_blocks,
+            device_buffers,
+            replicate_kv_across_tp=params.replicates_kv_across_tp,
         )
 
         # Host block pool for managing host memory

@@ -84,7 +84,9 @@ class TieredConnector:
         self._total_num_host_blocks = total_num_host_blocks
 
         self._block_copy_engine = BlockOffloadEngine(
-            total_num_host_blocks, device_buffers
+            total_num_host_blocks,
+            device_buffers,
+            replicate_kv_across_tp=params.replicates_kv_across_tp,
         )
         self._host_buffer = self._block_copy_engine.host_buffer
 

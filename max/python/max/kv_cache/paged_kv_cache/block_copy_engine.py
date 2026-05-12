@@ -15,13 +15,45 @@
 
 from __future__ import annotations
 
-from max.driver import Buffer, DevicePinnedBuffer, DeviceStream
+from max._distributed_ops import distributed_broadcast
+from max.driver import Buffer, Device, DevicePinnedBuffer, DeviceStream
 from max.dtype import DType
+from max.graph import DeviceRef
+from max.nn.comm.allreduce import Signals
 
 
 def _bytes_per_page(buffer: Buffer) -> int:
     num_pages = buffer.shape[0]
     return buffer.num_elements * buffer.dtype.size_in_bytes // num_pages
+
+
+def _group_by_device(buffers: list[Buffer]) -> list[list[Buffer]]:
+    """Reshape a flat per-rank buffer list into per-group buffer lists.
+
+    Buckets ``buffers`` by device in first-seen order, then transposes so
+    each returned group is one buffer per device in canonical order. Every
+    device must contribute the same number of buffers.
+    """
+    by_device: dict[int, list[Buffer]] = {}
+    device_order: list[int] = []
+    for buf in buffers:
+        if buf.device.id not in by_device:
+            by_device[buf.device.id] = []
+            device_order.append(buf.device.id)
+        by_device[buf.device.id].append(buf)
+
+    counts = {len(b) for b in by_device.values()}
+    if len(counts) != 1:
+        raise ValueError(
+            f"every device must contribute the same number of buffers; got "
+            f"per-device counts {counts}"
+        )
+
+    num_groups = counts.pop()
+    return [
+        [by_device[dev_id][g] for dev_id in device_order]
+        for g in range(num_groups)
+    ]
 
 
 class BlockOffloadEngine:
@@ -32,13 +64,23 @@ class BlockOffloadEngine:
     KV cache offloading copies on a stream detached from the main kernel exec
     stream. However, it still issues the h2d transfers on the same stream as
     kernel execution which is a major limitation (SERVOPT-1036).
+
+    With ``replicate_kv_across_tp=True``, the host buffer holds a single
+    replica per logical group. ``self.device_buffers`` is the rank-0 buffer of
+    each group (the H2D/D2H endpoints) and ``self.replicated_buffers[g]`` is
+    the list of peer-rank buffers for group ``g``. H2D copies host → rank 0,
+    then fans each group out to its peers via a broadcast.
     """
 
     def __init__(
-        self, total_num_host_blocks: int, device_buffers: list[Buffer]
+        self,
+        total_num_host_blocks: int,
+        device_buffers: list[Buffer],
+        *,
+        replicate_kv_across_tp: bool = False,
     ) -> None:
         num_device_pages = device_buffers[0].shape[0]
-        self.device_buffers = [
+        viewed = [
             buffer.view(
                 dtype=DType.uint8,
                 shape=[num_device_pages, _bytes_per_page(buffer)],
@@ -51,9 +93,36 @@ class BlockOffloadEngine:
                 "KVCacheBuffer is on the CPU. Unable to allocate host"
                 " offload buffer for already-on-CPU buffers."
             )
-        bytes_per_page = sum(
-            _bytes_per_page(buffer) for buffer in device_buffers
-        )
+
+        # Sharded layout: every buffer is its own group of one. Replicated
+        # layout: bucket by device so each logical group's peers ride
+        # alongside its rank-0 buffer.
+        self.device_buffers: list[Buffer]
+        self.replicated_buffers: list[list[Buffer]]
+        if replicate_kv_across_tp:
+            groups = _group_by_device(viewed)
+            if len(groups[0]) > 1:
+                self.device_buffers = [g[0] for g in groups]
+                self.replicated_buffers = [g[1:] for g in groups]
+            else:
+                self.device_buffers = viewed
+                self.replicated_buffers = []
+        else:
+            self.device_buffers = viewed
+            self.replicated_buffers = []
+
+        for root, peers in zip(
+            self.device_buffers, self.replicated_buffers, strict=False
+        ):
+            page_bytes = _bytes_per_page(root)
+            for peer in peers:
+                if _bytes_per_page(peer) != page_bytes:
+                    raise ValueError(
+                        "replicate_kv_across_tp requires identical "
+                        "bytes_per_page across replicas within a group"
+                    )
+
+        bytes_per_page = sum(_bytes_per_page(b) for b in self.device_buffers)
         self.host_buffer = DevicePinnedBuffer(
             shape=[total_num_host_blocks, bytes_per_page],
             dtype=DType.uint8,
@@ -68,26 +137,53 @@ class BlockOffloadEngine:
             for buffer in self.device_buffers
         }
 
+        self._signals: Signals | None = None
+        self._signal_buffers: list[Buffer] = []
+        self._broadcast_devices: list[Device] = []
+        if self.replicated_buffers:
+            # Every group shares the same TP devices in the same order.
+            self._broadcast_devices = [
+                self.device_buffers[0].device,
+                *(p.device for p in self.replicated_buffers[0]),
+            ]
+            self._signals = Signals(
+                devices=[
+                    DeviceRef.GPU(id=d.id) for d in self._broadcast_devices
+                ]
+            )
+            self._signal_buffers = self._signals.buffers()
+
     def memcpy_h2d(self, dst: int, src: int) -> None:
         """Copies a block from host to device(s)."""
-        # Copy block from host to each of the devices
         offset = 0
-        for device_buffer in self.device_buffers:
-            bytes_per_page = device_buffer.shape[1]
-            dst_block = device_buffer[dst, :]
-            src_block = self.host_buffer[src, offset : offset + bytes_per_page]
-            dst_block.inplace_copy_from(src_block)
-            offset += bytes_per_page
+        for buf in self.device_buffers:
+            page_bytes = buf.shape[1]
+            buf[dst, :].inplace_copy_from(
+                self.host_buffer[src, offset : offset + page_bytes]
+            )
+            offset += page_bytes
+
+        for root, peers in zip(
+            self.device_buffers, self.replicated_buffers, strict=False
+        ):
+            distributed_broadcast(
+                input_buffer=root[dst, :],
+                output_buffers=[root[dst, :], *(p[dst, :] for p in peers)],
+                signal_buffers=self._signal_buffers,
+                devices=self._broadcast_devices,
+                root=0,
+            )
 
     def memcpy_d2h(self, dst: int, src: int) -> None:
         """Copies a block from device(s) to host."""
         offset = 0
-        for device_buffer in self.device_buffers:
-            bytes_per_page = device_buffer.shape[1]
+        for buf in self.device_buffers:
+            page_bytes = buf.shape[1]
             # TODO(SERVOPT-1389): issue d2h on auxiliary stream after fixing driver bugs
-            host_block = self.host_buffer[dst, offset : offset + bytes_per_page]
-            host_block.inplace_copy_from(device_buffer[src, :])
-            offset += bytes_per_page
+            self.host_buffer[
+                dst, offset : offset + page_bytes
+            ].inplace_copy_from(buf[src, :])
+            offset += page_bytes
 
     def wait_for_completion(self) -> None:
         """Synchronize main stream with the auxiliary stream.
