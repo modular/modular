@@ -1241,7 +1241,9 @@ def _run_benchmark_sweep(
                         args.backend, args.host, args.port, args.dry_run
                     )
 
-                args.seed = int(np.random.randint(0, 10000))
+                if args.seed is None:
+                    args.seed = int(np.random.randint(0, 10000))
+                logger.info("mc=%s seed=%d", mc, args.seed)
 
                 result = asyncio.run(benchmark(args, session, mc, rr))
                 iteration_results.append(result)

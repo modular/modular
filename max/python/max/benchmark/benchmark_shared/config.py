@@ -157,7 +157,7 @@ class BenchmarkCommonConfig(ConfigFileModel):
     num_prompts: int | None = None
     """Number of prompts to process."""
 
-    seed: int = 0
+    seed: int | None = None
     """Random seed for reproducibility."""
 
     # Control flags
@@ -229,9 +229,15 @@ class BaseBenchmarkConfig(ConfigFileModel):
         description="Number of prompts to process.",
     )
 
-    seed: int = Field(
-        default=0,
-        description="Random seed for reproducibility.",
+    seed: int | None = Field(
+        default=None,
+        description=(
+            "Random seed for reproducibility. When set, the same seed is used "
+            "for every benchmark iteration instead of drawing a fresh random "
+            "seed per concurrency level. Useful for reproducing a specific "
+            "concurrency level from a prior sweep without re-running the full "
+            "sweep."
+        ),
     )
 
     # Control flags
