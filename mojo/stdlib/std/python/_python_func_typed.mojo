@@ -19,14 +19,11 @@ directly (`PyLong_AsSsize_t`, `PyFloat_AsDouble`, ...) instead of
 routing through `PythonObject` and `Int(py=...)`. The latter goes
 through `__int__()` -> `PyNumber_Long`, which allocates a fresh `int`
 object per call.
-
-This is item 6 from issue #6521's decomposition.
-
-These wrappers use `METH_VARARGS` for now. Once the `METH_FASTCALL`
-plumbing lands (see issue #6521 / Joe's stack), switching them over is a
-single-line change of the underlying `PyMethodDef` flags.
 """
 
+# TODO: These wrappers use `METH_VARARGS` for now. Once the `METH_FASTCALL`
+# plumbing lands (see issue #6521 / Joe's stack), switching them over is a
+# single-line change of the underlying `PyMethodDef` flags.
 from std.python import Python
 from std.python._cpython import (
     CPython,

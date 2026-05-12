@@ -478,8 +478,7 @@ struct PythonModuleBuilder:
     # `def f(a: Int, b: Int) -> Int` can register via `def_typed_function`
     # to get a wrapper that converts via `PyLong_AsSsize_t` /
     # `PyLong_FromSsize_t` directly, bypassing the `PythonObject` wrap
-    # and the `__int__()` -> `PyNumber_Long` allocation chain. See issue
-    # #6521 item 6.
+    # and the `__int__()` -> `PyNumber_Long` allocation chain.
 
     def def_typed_function[
         func: _FnIntToInt
