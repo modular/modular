@@ -317,5 +317,25 @@ def test_bench_function_no_arg_unified() raises:
     assert_true(count > 0)
 
 
+def test_bench_id_list_copy() raises:
+    var bench_ids: List[BenchId] = [
+        BenchId("foo()", "123"),
+        BenchId("bar()", "456"),
+    ]
+    var copied_bench_ids = bench_ids.copy()
+
+    assert_equal(copied_bench_ids[0].func_name, bench_ids[0].func_name)
+    assert_equal(copied_bench_ids[0].input_id, bench_ids[0].input_id)
+    assert_equal(copied_bench_ids[1].func_name, bench_ids[1].func_name)
+    assert_equal(copied_bench_ids[1].input_id, bench_ids[1].input_id)
+
+    copied_bench_ids[0].func_name = "modified_foo()"
+
+    assert_not_equal(copied_bench_ids[0].func_name, bench_ids[0].func_name)
+    assert_equal(copied_bench_ids[0].input_id, bench_ids[0].input_id)
+    assert_equal(copied_bench_ids[1].func_name, bench_ids[1].func_name)
+    assert_equal(copied_bench_ids[1].input_id, bench_ids[1].input_id)
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()
