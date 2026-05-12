@@ -44,8 +44,8 @@ from std.python._python_func import PyObjectFunction
 from std.python._python_func_typed import (
     _FnIntToInt,
     _FnIntIntToInt,
-    _trampoline_int_to_int,
-    _trampoline_int_int_to_int,
+    _typed_int_to_int_wrapper,
+    _typed_int_int_to_int_wrapper,
 )
 from std.python.python_object import _unsafe_alloc, _unsafe_init
 
@@ -476,7 +476,7 @@ struct PythonModuleBuilder:
     # ===-------------------------------------------------------------------===#
     # Users who declare their function with concrete Mojo types like
     # `def f(a: Int, b: Int) -> Int` can register via `def_typed_function`
-    # to get a trampoline that converts via `PyLong_AsSsize_t` /
+    # to get a wrapper that converts via `PyLong_AsSsize_t` /
     # `PyLong_FromSsize_t` directly, bypassing the `PythonObject` wrap
     # and the `__int__()` -> `PyNumber_Long` allocation chain. See issue
     # #6521 item 6.
@@ -488,7 +488,7 @@ struct PythonModuleBuilder:
         (or its `raises` variant). Non-raising functions are implicitly
         compatible with this raising signature."""
         self.def_py_c_function(
-            _trampoline_int_to_int[func], func_name, docstring
+            _typed_int_to_int_wrapper[func], func_name, docstring
         )
 
     def def_typed_function[
@@ -498,7 +498,7 @@ struct PythonModuleBuilder:
         (or its `raises` variant). Non-raising functions are implicitly
         compatible with this raising signature."""
         self.def_py_c_function(
-            _trampoline_int_int_to_int[func], func_name, docstring
+            _typed_int_int_to_int_wrapper[func], func_name, docstring
         )
 
     def finalize(mut self) raises -> PythonObject:

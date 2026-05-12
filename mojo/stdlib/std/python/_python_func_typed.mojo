@@ -10,10 +10,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Typed-argument fast-path trampolines for `PythonModuleBuilder`.
+"""Typed-argument fast-path wrappers for `PythonModuleBuilder`.
 
 For a Mojo function whose Python-facing signature is *concrete* (e.g.
-`def f(a: Int, b: Int) -> Int`), we can build a CPython trampoline that
+`def f(a: Int, b: Int) -> Int`), we can build a CPython wrapper that
 unwraps positional arguments with the type-specific CPython API
 directly (`PyLong_AsSsize_t`, `PyFloat_AsDouble`, ...) instead of
 routing through `PythonObject` and `Int(py=...)`. The latter goes
@@ -22,7 +22,7 @@ object per call.
 
 This is item 6 from issue #6521's decomposition.
 
-The trampolines here use `METH_VARARGS` for now. Once the `METH_FASTCALL`
+These wrappers use `METH_VARARGS` for now. Once the `METH_FASTCALL`
 plumbing lands (see issue #6521 / Joe's stack), switching them over is a
 single-line change of the underlying `PyMethodDef` flags.
 """
@@ -72,7 +72,7 @@ def _get_int_arg(
 # ===-----------------------------------------------------------------------===#
 
 
-def _trampoline_int_to_int[
+def _typed_int_to_int_wrapper[
     user_func: _FnIntToInt
 ](_self: PyObjectPtr, args: PyObjectPtr) -> PyObjectPtr:
     ref cpy = Python().cpython()
@@ -91,7 +91,7 @@ def _trampoline_int_to_int[
 # ===-----------------------------------------------------------------------===#
 
 
-def _trampoline_int_int_to_int[
+def _typed_int_int_to_int_wrapper[
     user_func: _FnIntIntToInt
 ](_self: PyObjectPtr, args: PyObjectPtr) -> PyObjectPtr:
     ref cpy = Python().cpython()

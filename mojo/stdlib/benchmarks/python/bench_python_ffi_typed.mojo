@@ -1,4 +1,4 @@
-"""Benchmark typed-argument fast-path trampolines vs the standard
+"""Benchmark typed-argument fast-path wrappers vs the standard
 `def_function[user_func]` path.
 
 A: stdlib `def_function[add]` where `add` is
@@ -6,8 +6,8 @@ A: stdlib `def_function[add]` where `add` is
    does `Int(py=a) + Int(py=b)` (allocates two PyLongs internally
    via PyNumber_Long).
 
-B: typed trampoline registered via `def_py_c_function`, with `add`
-   declared as `def(Int, Int) -> Int`. The trampoline calls
+B: typed wrapper registered via `def_py_c_function`, with `add`
+   declared as `def(Int, Int) -> Int`. The wrapper calls
    `PyLong_AsSsize_t` directly on each tuple slot, skipping the
    PythonObject + PyNumber_Long round-trip.
 
@@ -33,7 +33,7 @@ def add_pyobj(a: PythonObject, b: PythonObject) raises -> PythonObject:
 
 
 # --- Variant B: typed fast-path — `def_function` overload picks the
-# right trampoline based on the user's function signature.
+# right wrapper based on the user's function signature.
 
 
 def add_int(a: Int, b: Int) -> Int:

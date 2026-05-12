@@ -624,7 +624,7 @@ through `__int__()` and allocates a fresh `PyLong` per argument per call.
 
 When a binding's signature is just simple numeric types, register it with
 [`def_typed_function()`](/docs/std/python/bindings/PythonModuleBuilder/#def_typed_function)
-instead. The trampoline calls the type-specific CPython API directly on each
+instead. The wrapper calls the type-specific CPython API directly on each
 borrowed argument (e.g. `PyLong_AsSsize_t` for `Int`), skipping the
 `PythonObject` wrap and the conversion allocation:
 

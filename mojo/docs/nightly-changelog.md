@@ -131,7 +131,7 @@ This version is still a work in progress.
 
 - Added `PythonModuleBuilder.def_typed_function`, a fast-path registration
   for Python bindings whose Mojo signature uses concrete types instead of
-  `PythonObject`. The trampoline unwraps positional arguments with the
+  `PythonObject`. The wrapper unwraps positional arguments with the
   matching CPython C API directly (e.g. `PyLong_AsSsize_t` for `Int`),
   skipping the `PythonObject` wrap and the `__int__()` -> `PyNumber_Long`
   allocation that `Int(py=...)` would otherwise pay. Initial shapes
