@@ -691,6 +691,76 @@ class GetBaseTypeNameAttr(max._core.Attribute):
     @property
     def type_value(self) -> max._core.dialects.builtin.TypedAttr: ...
 
+class GetFunctionIsRaisingAttr(max._core.Attribute):
+    """
+    The `#kgen.get_function_is_raising` attribute returns true if the function
+    value's signature declares it as raising (Mojo's `raises` keyword, or any
+    `def`), and false otherwise.
+
+    Example:
+
+    ```mlir
+    #kgen.get_function_is_raising<
+      #kgen.symbol.constant<@my_def> : !kgen.generator<...>
+    > : i1
+    ```
+    """
+
+    def __init__(
+        self,
+        func: max._core.dialects.builtin.TypedAttr,
+        type: max._core.dialects.builtin.IntegerType,
+    ) -> None: ...
+    @property
+    def func(self) -> max._core.dialects.builtin.TypedAttr: ...
+    @property
+    def type(self) -> max._core.dialects.builtin.IntegerType: ...
+
+class GetFunctionParameterCountAttr(max._core.Attribute):
+    """
+    The `#kgen.get_function_parameter_count` attribute returns the number of
+    compile-time parameters declared on a function generator, as an `index`.
+
+    Example:
+
+    ```mlir
+    #kgen.get_function_parameter_count<
+      #kgen.symbol.constant<@my_func> : !kgen.generator<...>
+    > : index
+    ```
+    """
+
+    def __init__(
+        self, func: max._core.dialects.builtin.TypedAttr, type: max._core.Type
+    ) -> None: ...
+    @property
+    def func(self) -> max._core.dialects.builtin.TypedAttr: ...
+    @property
+    def type(self) -> max._core.Type | None: ...
+
+class GetFunctionParameterNamesAttr(max._core.Attribute):
+    """
+    The `#kgen.get_function_parameter_names` attribute returns the names of
+    the compile-time parameters declared on a function generator, as a
+    `param_list` of strings, in declaration order.
+
+    Example:
+
+    ```mlir
+    #kgen.get_function_parameter_names<
+      #kgen.symbol.constant<@my_func> : !kgen.generator<...>
+    > : !kgen.param_list<!kgen.string>
+    ```
+    """
+
+    def __init__(
+        self, func: max._core.dialects.builtin.TypedAttr, type: ParamListType
+    ) -> None: ...
+    @property
+    def func(self) -> max._core.dialects.builtin.TypedAttr: ...
+    @property
+    def type(self) -> ParamListType: ...
+
 class GetLinkageNameAttr(max._core.Attribute):
     """
     The `#kgen.get_linkage_name` attribute is used to get the linkage name of
