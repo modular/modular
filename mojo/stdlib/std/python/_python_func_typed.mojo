@@ -47,9 +47,7 @@ def _set_exception(cpy: CPython, var msg: String):
 
 
 @always_inline
-def _check_arity(
-    cpy: CPython, args: PyObjectPtr, expected: Py_ssize_t
-) -> Bool:
+def _check_arity(cpy: CPython, args: PyObjectPtr, expected: Py_ssize_t) -> Bool:
     """Return True if `args` (a tuple) has exactly `expected` items.
 
     On mismatch, sets `PyExc_TypeError` and returns False so the caller

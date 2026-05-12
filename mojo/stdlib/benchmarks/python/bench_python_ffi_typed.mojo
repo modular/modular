@@ -1,3 +1,15 @@
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
 """Benchmark typed-argument fast-path wrappers vs the standard
 `def_function[user_func]` path.
 
@@ -92,7 +104,5 @@ def main() raises:
     _ = Python()
     var m = Bench(BenchConfig(num_repetitions=5, max_runtime_secs=2.0))
     m.bench_function[bench_a_def_function_add](BenchId("a_def_function_add"))
-    m.bench_function[bench_b_typed_int_int_add](
-        BenchId("b_typed_int_int_add")
-    )
+    m.bench_function[bench_b_typed_int_int_add](BenchId("b_typed_int_int_add"))
     print(m)
