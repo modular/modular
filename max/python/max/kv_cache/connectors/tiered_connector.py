@@ -84,7 +84,9 @@ class TieredConnector:
         self._total_num_host_blocks = total_num_host_blocks
 
         self._block_copy_engine = BlockOffloadEngine(
-            total_num_host_blocks, device_buffers
+            total_num_host_blocks,
+            device_buffers,
+            replicate_kv_across_tp=params.replicates_kv_across_tp,
         )
         self._host_buffer = self._block_copy_engine.host_buffer
 
@@ -117,7 +119,6 @@ class TieredConnector:
         )
 
         # -- State --
-        self._pending_saves: list[tuple[int, int]] = []  # (block_id, hash)
         # (bid, hash, host_block) — host_block kept at ref_cnt=1 for
         # zero-copy disk writes (pinned until write completes).
         self._pending_disk_writes: list[tuple[int, int, KVCacheBlock]] = []
@@ -182,7 +183,10 @@ class TieredConnector:
                 self._host_block_pool.touch(host_block)
                 hits.append(_CacheHit(block_hash, host_block, device_block_id))
 
-            elif self._disk_tier.contains(block_hash):
+            elif (
+                self._disk_tier.contains(block_hash)
+                and len(self._host_block_pool.free_block_queue) > 0
+            ):
                 # Disk hit -> async promote to CPU
                 host_block, _ = self._host_block_pool.alloc_block()
 
@@ -235,17 +239,6 @@ class TieredConnector:
         return len(successful_hits)
 
     @traced
-    def save(
-        self,
-        block_ids: list[int],
-        block_hashes: list[int],
-        parent_seq_hash: int = 0,
-    ) -> None:
-        """Queue device blocks for offload to host. Executed in flush()."""
-        for block_id, block_hash in zip(block_ids, block_hashes, strict=True):
-            self._pending_saves.append((block_id, block_hash))
-
-    @traced
     def sync(self) -> None:
         """Wait for D2H transfers, then write-through to disk.
 
@@ -292,12 +285,15 @@ class TieredConnector:
         self._write_locked_blocks = still_pending
 
     @traced
-    def flush(self) -> None:
+    def offload(
+        self,
+        block_ids: list[int],
+        block_hashes: list[int],
+    ) -> None:
         """Execute pending D2H copies and record blocks for disk write-through."""
-        if not self._pending_saves:
-            return
-
-        for device_block_id, block_hash in self._pending_saves:
+        for device_block_id, block_hash in zip(
+            block_ids, block_hashes, strict=True
+        ):
             host_block = self._maybe_offload_to_host(
                 device_block_id, block_hash
             )
@@ -305,8 +301,6 @@ class TieredConnector:
                 self._pending_disk_writes.append(
                     (host_block.bid, block_hash, host_block)
                 )
-
-        self._pending_saves.clear()
 
     def shutdown(self) -> None:
         """Clean shutdown of connector resources."""
@@ -320,7 +314,6 @@ class TieredConnector:
         # Release any host blocks still pinned in pending disk writes.
         for _, _, host_block in self._pending_disk_writes:
             self._host_block_pool.free_block(host_block)
-        self._pending_saves.clear()
         self._pending_disk_writes.clear()
 
         d2h_gb = self._d2h_blocks_copied * self._block_disk_bytes / GiB
@@ -368,7 +361,13 @@ class TieredConnector:
         caller is responsible for calling ``free_block()`` when the write
         completes (via ``_drain_completed_writes()``).
         """
+        # Skip if already in host cache
         if block_hash in self._host_block_pool.hash_to_committed_block:
+            return None
+
+        # Skip if no free host blocks are available. This is possible if there
+        # are many disk writes inflight that are holding on to host blocks.
+        if len(self._host_block_pool.free_block_queue) == 0:
             return None
 
         host_block, _ = self._host_block_pool.alloc_block()  # ref_cnt=1

@@ -60,7 +60,10 @@ from max.pipelines.lib.config.config_enums import (
 )
 from max.pipelines.lib.quant import parse_quant_config
 from max.pipelines.lib.utils import compute_data_parallel_splits
-from max.pipelines.lib.vision_encoder_cache import VisionEncoderCache
+from max.pipelines.lib.vision_encoder_cache import (
+    VisionEncoderCache,
+    concat_device_buffers,
+)
 from max.support.algorithm import flatten2d
 from max.support.human_readable_formatter import to_human_readable_bytes
 from transformers import AutoConfig
@@ -68,7 +71,7 @@ from transformers import AutoConfig
 from ..deepseekV3.model import DeepseekV3Inputs
 from .context import KimiK2_5TextAndVisionContext
 from .kimik2_5 import KimiK2_5
-from .model_config import KimiK2_5Config, KimiK2_5TextConfig
+from .model_config import KimiK2_5Config, KimiK2_5TextConfig, VisionConfig
 
 logger = logging.getLogger("max.pipelines")
 
@@ -150,6 +153,17 @@ class KimiK2_5Model(
     """A Kimi-K2.5 pipeline model for multimodal text generation."""
 
     _GRAPH_CAPTURE_HEADROOM_BYTES_PER_DEVICE = 8 * 1024**3
+
+    _VISION_PEAK_BYTES_PER_PATCH_COEFF = 20
+    """Conservative coefficient for vision encoder peak transient memory.
+
+    Per-patch peak transient working memory in the encoder, in units of
+    ``vt_hidden_size`` bytes. Captures the in-layer attention working set
+    (packed QKV bf16 + fp32 Q/K upcast in RoPE + attention output + residual)
+    which dominates the MLP working set for the Kimi-VL config. See
+    ``layers/vision/attention.py::_apply_rope`` for the fp32 upcast that drives
+    this; rounded up from ~16x to leave headroom.
+    """
 
     vision_model: Model
     """The compiled vision model for processing images."""
@@ -426,9 +440,37 @@ class KimiK2_5Model(
             n_sparse_layers * config.n_shared_experts * expert_size
         )
 
+        # The vision encoder (patch_embed + transformer encoder) is REPLICATED
+        # on every device -- see ``Transformer.__init__`` in
+        # ``layers/vision/transformer.py``. The patch_merger is tensor-parallel,
+        # so it correctly stays in the LM-attention TP pool below.
+        #
+        # Pull replicated vision bytes out of the bulk weights so they don't
+        # get scaled by ``data_parallel_degree`` (which is the wrong factor
+        # for replicated weights), then add them back at the right scale
+        # (``n_gpus_per_node``).
+        hf_vision_cfg = getattr(
+            model_config.huggingface_config, "vision_config", None
+        )
+        vision_config = (
+            VisionConfig.initialize_from_config(
+                pipeline_config,
+                hf_vision_cfg,
+                huggingface_config=model_config.huggingface_config,
+            )
+            if hf_vision_cfg is not None
+            else None
+        )
+        replicated_vision_bytes = cls._estimate_replicated_vision_weights_bytes(
+            vision_config
+        )
+
         # Estimate the size of the attention weights.
         attn_weights_size = (
-            weights_size - routing_experts_size - shared_experts_size
+            weights_size
+            - routing_experts_size
+            - shared_experts_size
+            - replicated_vision_bytes
         )
 
         # If we use DP attention, attention weights are duplicated on each DP rank.
@@ -436,6 +478,9 @@ class KimiK2_5Model(
 
         # The shared experts are duplicated on each device.
         total_size += shared_experts_size * n_gpus_per_node
+
+        # Replicated vision encoder weights live on every GPU.
+        total_size += replicated_vision_bytes * n_gpus_per_node
 
         ep_size = max(pipeline_config.runtime.ep_size, 1)
         if ep_size == 1:
@@ -449,6 +494,17 @@ class KimiK2_5Model(
 
         # Add back the lm_head/embed_tokens size, they will never be duplicated.
         total_size += lm_head_size + embed_tokens_size
+
+        if replicated_vision_bytes:
+            logger.info(
+                "Estimated replicated vision encoder weights: %s per device, "
+                "%s cluster-wide (%d devices)",
+                to_human_readable_bytes(replicated_vision_bytes),
+                to_human_readable_bytes(
+                    replicated_vision_bytes * n_gpus_per_node
+                ),
+                n_gpus_per_node,
+            )
 
         return total_size
 
@@ -568,10 +624,50 @@ class KimiK2_5Model(
                 f"{to_human_readable_bytes(ep_buffer_memory)}"
             )
 
-        # We only need to consider the maximum of the MLA and MoE activation
-        # memories, because the MLA and MoE layers are executed sequentially.
-        activation_memory = max(mla_activation_memory, moe_activation_memory)
+        # Vision encoder activation memory.
+        #
+        # The vision encoder runs during prefill in
+        # ``prepare_initial_token_inputs`` and is invisible to the LM-side
+        # activation accounting above. Its peak transient working set scales
+        # linearly with the patches in a single ``vision_model.execute``
+        # call, which is bounded by the per-call image-token budget enforced
+        # by the chunking path in ``prepare_initial_token_inputs``.
+        #
+        # See MXSERV-32 / GEX-2365 for the underlying encoder OOM and the
+        # general "estimate from compiled graph" follow-up.
+        hf_vision_cfg = getattr(huggingface_config, "vision_config", None)
+        vision_config = (
+            VisionConfig.initialize_from_config(
+                pipeline_config,
+                hf_vision_cfg,
+                huggingface_config=huggingface_config,
+            )
+            if hf_vision_cfg is not None
+            else None
+        )
+        vision_activation_memory = cls._estimate_vision_activation_memory(
+            pipeline_config=pipeline_config,
+            vision_config=vision_config,
+        )
+
+        # MLA, MoE, and vision encoder activations are all transient and
+        # mutually exclusive in time -- the vision encoder runs to
+        # completion (transients freed) before the LM graph executes; the
+        # leftover image-embedding output handed to the LM is small enough
+        # to ignore at this resolution. EP SHMEM buffers are persistent
+        # (allocated once at model init), so they stack on top.
+        activation_memory = max(
+            mla_activation_memory,
+            moe_activation_memory,
+            vision_activation_memory,
+        )
         activation_memory += ep_buffer_memory
+
+        if vision_activation_memory:
+            logger.info(
+                "Estimated vision encoder activation memory: %s",
+                to_human_readable_bytes(vision_activation_memory),
+            )
 
         if pipeline_config.runtime.device_graph_capture:
             graph_capture_headroom = (
@@ -590,6 +686,131 @@ class KimiK2_5Model(
             )
 
         return activation_memory
+
+    @classmethod
+    def _estimate_replicated_vision_weights_bytes(
+        cls, vision_config: VisionConfig | None
+    ) -> int:
+        """Estimate per-device bytes for replicated vision encoder weights.
+
+        Covers the parts of the vision tower that live on every GPU --
+        ``patch_embed`` (Conv2d projection + 2D positional grid) and the
+        transformer ``encoder`` (per-layer attention QKV/O + MLP up/down).
+        The patch merger is tensor-parallel sharded (see
+        ``Transformer.__init__``) and intentionally excluded here so it
+        stays in the LM-attention TP pool of ``estimate_weights_size``.
+
+        Returns 0 when the model has no vision config.
+
+        Approximation: ignores per-layer norms, biases, and the temporal
+        patch dimension on patch_embed (Kimi-VL uses a 2D conv, but
+        future variants may use a 3D conv with ``temporal_patch_size > 1``;
+        if that happens, this term will under-count by that factor on
+        ``patch_embed`` alone, which is a small fraction of the total).
+        Result is in bf16 bytes since that's the Kimi K2.5 default; if the
+        model later shifts to fp16/fp8 this still over-counts safely.
+        """
+        if vision_config is None:
+            return 0
+
+        # Per-layer encoder params:
+        #   wqkv: vt_hidden * 3 * vt_hidden
+        #   wo:   vt_hidden * vt_hidden
+        #   mlp:  2 * vt_hidden * vt_intermediate (up_proj + down_proj)
+        encoder_params_per_layer = (
+            4 * vision_config.vt_hidden_size * vision_config.vt_hidden_size
+            + 2
+            * vision_config.vt_hidden_size
+            * vision_config.vt_intermediate_size
+        )
+        encoder_params = (
+            vision_config.vt_num_hidden_layers * encoder_params_per_layer
+        )
+
+        # Patch embed: Conv2d(in_ch, vt_hidden, patch_size) + 2D pos grid
+        patch_embed_params = (
+            vision_config.vt_hidden_size
+            * vision_config.in_channels
+            * vision_config.patch_size
+            * vision_config.patch_size
+            + vision_config.init_pos_emb_height
+            * vision_config.init_pos_emb_width
+            * vision_config.vt_hidden_size
+        )
+
+        total_params = encoder_params + patch_embed_params
+        # vt weights are stored in vision_config.dtype; we approximate via
+        # bf16 (2 bytes) since that is the Kimi K2.5 default and what the
+        # checkpoint ships. If the model later shifts to fp16/fp8 this still
+        # over-counts safely.
+        return int(total_params * DType.bfloat16.size_in_bytes)
+
+    @classmethod
+    def _vision_merge_sq(cls, vision_config: VisionConfig) -> int:
+        """Patches-per-output-token from the vision config's merge kernel."""
+        merge_kernel_size = vision_config.merge_kernel_size
+        return max(1, merge_kernel_size[0] * merge_kernel_size[1])
+
+    @classmethod
+    def _vision_encoder_token_budget(
+        cls, pipeline_config: PipelineConfig
+    ) -> int | None:
+        """Return the per-call image-token ceiling for the vision encoder.
+
+        Returns ``max_batch_input_tokens`` so the vision encoder respects the
+        same input-token budget the LM forward pass honors under chunked
+        prefill. Mirrors how vLLM caps multimodal work via
+        ``max_num_batched_tokens`` and SGLang via ``chunked_prefill_size``:
+        the budget is denominated in **image tokens after patch merging**,
+        not raw vision-tower patches.
+
+        Returns ``None`` when ``max_batch_input_tokens`` is unset, signalling
+        that chunking should be disabled (matches the pre-MXSERV-32 behavior
+        of running the encoder on the full uncached batch in one call).
+        """
+        max_batch_input_tokens = int(
+            pipeline_config.runtime.max_batch_input_tokens or 0
+        )
+        if max_batch_input_tokens <= 0:
+            return None
+        return max_batch_input_tokens
+
+    @classmethod
+    def _estimate_vision_activation_memory(
+        cls,
+        pipeline_config: PipelineConfig,
+        vision_config: VisionConfig | None,
+    ) -> int:
+        """Estimate vision encoder peak activation memory cluster-wide.
+
+        Returns 0 when the model has no vision config or the vision encoder
+        is unbounded (i.e. ``max_batch_input_tokens`` is unset, which
+        disables chunking and removes the per-call ceiling). The bound is::
+
+            patches_per_call * vt_hidden_size * coeff
+
+        where ``patches_per_call = token_budget * merge_sq`` -- i.e. the
+        per-call work is bounded by the same image-token budget the LM
+        forward pass honors.
+        """
+        if vision_config is None:
+            return 0
+
+        token_budget = cls._vision_encoder_token_budget(pipeline_config)
+        if token_budget is None:
+            # Chunking disabled -- no per-call ceiling, can't bound activation.
+            return 0
+        merge_sq = cls._vision_merge_sq(vision_config)
+        patches_per_call = token_budget * merge_sq
+
+        per_device_bytes = (
+            patches_per_call
+            * vision_config.vt_hidden_size
+            * cls._VISION_PEAK_BYTES_PER_PATCH_COEFF
+        )
+
+        n_devices = len(pipeline_config.model.device_specs)
+        return int(per_device_bytes * n_devices)
 
     def load_model(self, session: InferenceSession) -> tuple[Model, Model]:
         """Load the model with the given weights."""
@@ -1003,9 +1224,18 @@ class KimiK2_5Model(
         self,
         context_batch: Sequence[KimiK2_5TextAndVisionContext],
         uncached_contexts: Sequence[KimiK2_5TextAndVisionContext],
-        vision_inputs: dict[str, list[Buffer]],
+        vision_input_shapes: dict[str, list[int]],
     ) -> dict[str, Any]:
-        """Collect debug metadata for a vision-encoder invocation."""
+        """Collect debug metadata for a vision-encoder invocation.
+
+        ``vision_input_shapes`` is a name->shape map for the encoder input
+        tensors as a single batch (e.g. ``{"pixel_values": [N, C, P, P],
+        "grid_thws": [n_images, 3], ...}``). When chunking is in effect, the
+        caller should pass the **batch-wide** shapes (computed once via
+        :meth:`_batch_vision_input_shapes`) so the metadata stays comparable
+        to the per-image counts above; per-chunk specifics belong in the
+        ``"chunk"`` block of the surrounding failure payload.
+        """
         patch_size = int(self.model_config.vision_config.patch_size)
         merge_cfg = self.model_config.vision_config.merge_kernel_size
         if isinstance(merge_cfg, int):
@@ -1013,7 +1243,7 @@ class KimiK2_5Model(
         else:
             merge_h = int(merge_cfg[0])
             merge_w = int(merge_cfg[1])
-        merge_sq = merge_h * merge_w
+        merge_sq = self._vision_merge_sq(self.model_config.vision_config)
 
         request_ids = [str(ctx.request_id) for ctx in context_batch]
         total_images = sum(len(ctx.images) for ctx in context_batch)
@@ -1078,10 +1308,8 @@ class KimiK2_5Model(
                 image_counter += 1
 
         images_needing_encoding = len(per_image_metadata)
-        if vision_inputs["grid_thws"]:
-            expected_from_inputs = int(vision_inputs["grid_thws"][0].shape[0])
-        else:
-            expected_from_inputs = 0
+        grid_thws_shape = vision_input_shapes.get("grid_thws") or []
+        expected_from_inputs = int(grid_thws_shape[0]) if grid_thws_shape else 0
 
         return {
             "request_ids": request_ids,
@@ -1089,10 +1317,7 @@ class KimiK2_5Model(
             "uncached_context_count": len(uncached_contexts),
             "vision_cache_enabled": bool(self._ve_cache.enabled),
             "vision_input_dtype": str(self.model_config.vision_config.dtype),
-            "vision_input_shapes": {
-                key: [int(x) for x in values[0].shape] if values else []
-                for key, values in vision_inputs.items()
-            },
+            "vision_input_shapes": vision_input_shapes,
             "images": {
                 "total_images_in_batch": total_images,
                 "next_images_total": next_images_total,
@@ -1114,28 +1339,61 @@ class KimiK2_5Model(
             "per_image_metadata": per_image_metadata,
         }
 
-    def _prepare_vision_inputs(
+    @staticmethod
+    def _batch_vision_input_shapes(
+        per_image: Sequence[dict[str, npt.NDArray[Any]]],
+    ) -> dict[str, list[int]]:
+        """Return the shapes that :meth:`_build_vision_input_buffers` would
+        produce for the full batch, without allocating any GPU buffers.
+
+        Used to feed batch-wide shape info into
+        :meth:`_collect_vision_encoder_request_metadata` even when the
+        encoder is invoked in multiple chunks, so OOM logs keep the
+        batch-vs-chunk distinction unambiguous.
+        """
+        if not per_image:
+            return {
+                "pixel_values": [],
+                "grid_thws": [],
+                "cu_seqlens": [],
+                "max_seqlen": [],
+                "vision_position_ids": [],
+            }
+        pv0 = per_image[0]["pixel_values"]
+        n_patches = sum(int(e["pixel_values"].shape[0]) for e in per_image)
+        # pixel_values: (n_patches, in_channels, patch_size, patch_size)
+        pixel_values_shape = [n_patches, *(int(d) for d in pv0.shape[1:])]
+        n_images = len(per_image)
+        n_position_ids = sum(int(e["position_ids"].shape[0]) for e in per_image)
+        return {
+            "pixel_values": pixel_values_shape,
+            "grid_thws": [n_images, 3],
+            "cu_seqlens": [n_images + 1],
+            "max_seqlen": [1],
+            "vision_position_ids": [n_position_ids],
+        }
+
+    def _collect_uncached_image_inputs(
         self,
         context_batch: Sequence[KimiK2_5TextAndVisionContext],
-    ) -> dict[str, list[Buffer]] | None:
-        """Assemble per-device vision encoder ``Buffer``s for uncached images.
+    ) -> list[dict[str, npt.NDArray[Any]]]:
+        """Collect per-image numpy inputs for images that need encoding.
 
-        Skips images already in the vision encoder cache. Prepares pixel
-        values, grid THWs, cumulative sequence lengths, max sequence
-        length, and RoPE position IDs.
+        Walks the batch and returns one entry per image that is not already
+        in the vision encoder cache. Each entry contains the per-image
+        ``pixel_values``, ``grid_thw`` row, and ``position_ids`` slice as
+        numpy arrays. The outputs are kept per-image (rather than
+        pre-concatenated) so the caller can split them into chunks for
+        memory-bounded encoder invocations.
 
         Args:
             context_batch: Contexts with at least one uncached image
                 (from ``get_uncached_contexts``).
 
         Returns:
-            Dictionary of named per-device ``Buffer`` lists, or ``None``
-            when all images are already cached.
+            List of per-image input dicts. Empty when all images are cached.
         """
-        all_pixel_values_list: list[npt.NDArray[Any]] = []
-        all_grid_thws_list: list[npt.NDArray[np.int64]] = []
-        all_position_ids_list: list[npt.NDArray[np.int64]] = []
-
+        per_image: list[dict[str, npt.NDArray[Any]]] = []
         for ctx in context_batch:
             pos_offset = 0
             for i, img in enumerate(ctx.images):
@@ -1146,19 +1404,79 @@ class KimiK2_5Model(
                     img.image_hash is not None
                     and self._ve_cache.lookup(img.image_hash) is None
                 ):
-                    all_pixel_values_list.append(img.pixel_values)
-                    all_grid_thws_list.append(thw)
-                    all_position_ids_list.append(
-                        ctx.position_ids[pos_offset : pos_offset + n_pos]
+                    per_image.append(
+                        {
+                            "pixel_values": img.pixel_values,
+                            "grid_thw": np.asarray(thw, dtype=np.int64),
+                            "position_ids": np.asarray(
+                                ctx.position_ids[
+                                    pos_offset : pos_offset + n_pos
+                                ],
+                                dtype=np.int64,
+                            ),
+                        }
                     )
 
                 pos_offset += n_pos
+        return per_image
 
-        if not all_pixel_values_list:
-            return None
+    @staticmethod
+    def _patches_in_image(entry: dict[str, npt.NDArray[Any]]) -> int:
+        """Number of patches contributed by a single image entry."""
+        thw = entry["grid_thw"]
+        return int(thw[0] * thw[1] * thw[2])
 
-        all_pixel_values = np.concatenate(all_pixel_values_list, axis=0)
-        all_grid_thws_np = np.vstack(all_grid_thws_list).astype(np.int64)
+    @staticmethod
+    def _chunk_image_inputs_by_token_budget(
+        per_image: Sequence[dict[str, npt.NDArray[Any]]],
+        token_budget: int,
+        merge_sq: int,
+    ) -> list[list[dict[str, npt.NDArray[Any]]]]:
+        """Group per-image entries into post-merge-token-bounded chunks.
+
+        ``token_budget`` is in **image tokens** (post patch-merger); each
+        image contributes ``patches // merge_sq`` tokens. A single image
+        whose own token count exceeds the budget is placed alone in its
+        own chunk -- the encoder still has to process it; the caller is
+        responsible for raising/handling the resulting OOM if that occurs.
+        """
+        chunks: list[list[dict[str, npt.NDArray[Any]]]] = []
+        current: list[dict[str, npt.NDArray[Any]]] = []
+        current_tokens = 0
+        for entry in per_image:
+            tokens = KimiK2_5Model._patches_in_image(entry) // merge_sq
+            if current and current_tokens + tokens > token_budget:
+                chunks.append(current)
+                current = []
+                current_tokens = 0
+            current.append(entry)
+            current_tokens += tokens
+        if current:
+            chunks.append(current)
+        return chunks
+
+    def _build_vision_input_buffers(
+        self,
+        per_image: Sequence[dict[str, npt.NDArray[Any]]],
+    ) -> dict[str, list[Buffer]]:
+        """Build per-device vision encoder ``Buffer``s from a chunk of images.
+
+        Args:
+            per_image: One or more per-image entries from
+                :meth:`_collect_uncached_image_inputs`.
+
+        Returns:
+            Dictionary of named per-device ``Buffer`` lists ready to feed
+            into ``vision_model.execute``.
+        """
+        assert per_image, "per_image must not be empty"
+
+        all_pixel_values = np.concatenate(
+            [e["pixel_values"] for e in per_image], axis=0
+        )
+        all_grid_thws_np = np.vstack([e["grid_thw"] for e in per_image]).astype(
+            np.int64
+        )
 
         # Cumulative patch-sequence lengths for packed full-attention.
         seq_lens = [int(np.prod(g)) for g in all_grid_thws_np]
@@ -1167,7 +1485,9 @@ class KimiK2_5Model(
 
         max_seqlen_np = np.array([max(seq_lens)], dtype=np.uint32)
 
-        position_ids_np = np.concatenate(all_position_ids_list).astype(np.int64)
+        position_ids_np = np.concatenate(
+            [e["position_ids"] for e in per_image]
+        ).astype(np.int64)
 
         device0 = self.devices[0]
         vision_dtype = self.model_config.vision_config.dtype
@@ -1193,6 +1513,140 @@ class KimiK2_5Model(
                 vision_position_ids_buf.to(d) for d in self.devices
             ],
         }
+
+    def _run_vision_encoder_chunked(
+        self,
+        context_batch: Sequence[KimiK2_5TextAndVisionContext],
+        uncached_contexts: Sequence[KimiK2_5TextAndVisionContext],
+    ) -> tuple[list[Buffer], list[int]]:
+        """Run the vision encoder in token-bounded chunks and return the
+        concatenated per-device outputs plus per-image token counts.
+
+        Bounds per-call work by the same image-token budget the LM forward
+        pass honors under chunked prefill, mirroring how vLLM caps multimodal
+        work via ``max_num_batched_tokens`` and SGLang via
+        ``chunked_prefill_size``. The per-call budget is denominated in
+        post-merge image tokens; the encoder ingests patches, so we convert
+        via the patch merger's kernel area at the input boundary only.
+
+        Each chunk runs in its own ``vision_model.execute`` call. Per-chunk
+        outputs are concatenated on-device into a single per-device tensor
+        so the downstream cache-and-split path is identical to the
+        unchunked case. On encoder failure, logs a structured payload that
+        contains both the chunk-specific stats (which call OOM'd) and the
+        batch-wide metadata (so the failure is comparable to pre-chunking
+        logs).
+
+        .. note::
+            **Temporary implementation** — invoking the vision encoder from
+            inside ``prepare_initial_token_inputs`` couples its per-call budget
+            to the LM-side ``max_batch_input_tokens``, which is sized for MoE
+            all-reduce overhead rather than vision encoder capacity. The proper
+            fix is to fully disaggregate the vision encoder into its own
+            pipeline stage with an independent budget knob. See MXSERV-56.
+        """
+        per_image = self._collect_uncached_image_inputs(uncached_contexts)
+        assert per_image, (
+            "uncached_contexts non-empty but no per-image entries collected"
+        )
+
+        token_budget = self._vision_encoder_token_budget(self.pipeline_config)
+        # patches per post-merger image token (e.g. 4 for 2x2 merge)
+        merge_sq = self._vision_merge_sq(self.model_config.vision_config)
+
+        if token_budget is None:
+            # ``max_batch_input_tokens`` unset -- skip chunking and run the
+            # encoder on the full uncached batch in a single call. Matches
+            # pre-MXSERV-32 behavior; if this OOMs the operator should set
+            # ``max_batch_input_tokens`` to engage chunking.
+            chunks = [list(per_image)]
+        else:
+            chunks = self._chunk_image_inputs_by_token_budget(
+                per_image, token_budget, merge_sq
+            )
+
+        # Build batch-wide shapes once for the failure-handler metadata so
+        # OOM logs report the original batch-wide footprint, with chunk
+        # specifics living in the separate ``"chunk"`` field. (Avoids
+        # allocating a batch-wide buffer set we wouldn't otherwise use.)
+        batch_input_shapes = self._batch_vision_input_shapes(per_image)
+        total_patches = sum(self._patches_in_image(e) for e in per_image)
+
+        if len(chunks) > 1:
+            assert token_budget is not None  # chunking implies budget is set
+            logger.info(
+                "Vision encoder splitting into %d chunks "
+                "(image_token_budget=%d, total_image_tokens=%d, "
+                "total_patches=%d, image_count=%d)",
+                len(chunks),
+                token_budget,
+                total_patches // merge_sq,
+                total_patches,
+                len(per_image),
+            )
+
+        chunk_outputs: list[list[Buffer]] = []
+        for chunk_idx, chunk in enumerate(chunks):
+            chunk_inputs = self._build_vision_input_buffers(chunk)
+
+            chunk_patches = sum(self._patches_in_image(e) for e in chunk)
+            chunk_meta = {
+                "chunk_index": chunk_idx,
+                "num_chunks": len(chunks),
+                "chunk_image_count": len(chunk),
+                "chunk_image_tokens": chunk_patches // merge_sq,
+                "chunk_total_patches": chunk_patches,
+                "image_token_budget": token_budget,
+            }
+
+            try:
+                chunk_embeds = self.vision_model.execute(
+                    *chunk_inputs["pixel_values"],
+                    *chunk_inputs["grid_thws"],
+                    *chunk_inputs["cu_seqlens"],
+                    *chunk_inputs["max_seqlen"],
+                    *chunk_inputs["vision_position_ids"],
+                    *self.signal_buffers,
+                )
+            except Exception as err:
+                vision_metadata = self._collect_vision_encoder_request_metadata(
+                    context_batch=context_batch,
+                    uncached_contexts=uncached_contexts,
+                    vision_input_shapes=batch_input_shapes,
+                )
+                failure_payload = {
+                    "stage": "prepare_initial_token_inputs",
+                    "chunk": chunk_meta,
+                    "error": {
+                        "type": type(err).__name__,
+                        "message": str(err),
+                        "repr": repr(err),
+                    },
+                    "metadata": vision_metadata,
+                }
+                logger.exception(
+                    "Vision encoder failed. Request metadata: %s",
+                    json.dumps(failure_payload, sort_keys=True),
+                )
+                raise
+            assert len(chunk_embeds) == len(self.devices)
+            chunk_outputs.append(list(chunk_embeds))
+
+        # Concatenate per-chunk outputs into a single per-device tensor so
+        # the rest of the pipeline (cache split, scatter) can treat this
+        # exactly like the unchunked path.
+        if len(chunk_outputs) == 1:
+            vision_embeds = chunk_outputs[0]
+        else:
+            vision_embeds = [
+                concat_device_buffers([chunk[d] for chunk in chunk_outputs])
+                for d in range(len(self.devices))
+            ]
+
+        token_counts = [
+            self._patches_in_image(entry) // merge_sq for entry in per_image
+        ]
+        return vision_embeds, token_counts
 
     def prepare_initial_token_inputs(
         self,
@@ -1326,49 +1780,9 @@ class KimiK2_5Model(
         uncached_contexts = self._ve_cache.get_uncached_contexts(context_batch)
 
         if uncached_contexts:
-            vision_inputs = self._prepare_vision_inputs(uncached_contexts)
-            assert vision_inputs is not None
-
-            vision_metadata = self._collect_vision_encoder_request_metadata(
-                context_batch=context_batch,
-                uncached_contexts=uncached_contexts,
-                vision_inputs=vision_inputs,
+            vision_embeds, token_counts = self._run_vision_encoder_chunked(
+                context_batch, uncached_contexts
             )
-            try:
-                vision_embeds = self.vision_model.execute(
-                    *vision_inputs["pixel_values"],
-                    *vision_inputs["grid_thws"],
-                    *vision_inputs["cu_seqlens"],
-                    *vision_inputs["max_seqlen"],
-                    *vision_inputs["vision_position_ids"],
-                    *self.signal_buffers,
-                )
-            except Exception as err:
-                failure_payload = {
-                    "stage": "prepare_initial_token_inputs",
-                    "error": {
-                        "type": type(err).__name__,
-                        "message": str(err),
-                        "repr": repr(err),
-                    },
-                    "metadata": vision_metadata,
-                }
-                logger.exception(
-                    "Vision encoder failed. Request metadata: %s",
-                    json.dumps(failure_payload, sort_keys=True),
-                )
-                raise
-            assert len(vision_embeds) == len(self.devices)
-
-            merge_size = self.model_config.vision_config.merge_kernel_size
-            merge_sq = merge_size[0] * merge_size[1]
-            token_counts = [
-                int(thw[0] * thw[1] * thw[2]) // merge_sq
-                for ctx in uncached_contexts
-                for img, thw in zip(ctx.images, ctx.grid_thws, strict=True)
-                if img.image_hash is not None
-                and self._ve_cache.lookup(img.image_hash) is None
-            ]
         else:
             vision_embeds = self._empty_image_embeddings
             token_counts = []

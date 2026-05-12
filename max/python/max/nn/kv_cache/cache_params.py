@@ -338,6 +338,15 @@ class KVCacheParams(KVCacheParamInterface):
         return self.n_devices // self.data_parallel_degree
 
     @property
+    def replicates_kv_across_tp(self) -> bool:
+        """Whether every device holds identical KV state."""
+        return (
+            self.is_mla
+            and self.data_parallel_degree == 1
+            and self.n_devices > 1
+        )
+
+    @property
     def dtype_shorthand(self) -> str:
         """Returns a shorthand textual representation of the data type.
 

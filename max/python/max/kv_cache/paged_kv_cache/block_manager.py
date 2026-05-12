@@ -42,7 +42,6 @@ from max.support.math import ceildiv
 
 from .block_pool import BlockPool
 from .block_utils import (
-    DEFAULT_PARENT_HASH,
     InsufficientBlocksError,
     KVCacheBlock,
     hash_request_tokens,
@@ -127,6 +126,9 @@ class BlockManager:
         # Connector for external cache tiers (host memory, etc.)
         # The connector owns host memory, host block pool, and H2D/D2H transfers.
         self.connector = connector
+
+        # List of block hashes that need to be offloaded to the connector.
+        self._hashes_to_offload: set[int] = set()
 
         # A pool of device blocks.
         self.device_block_pool = BlockPool(
@@ -472,25 +474,29 @@ class BlockManager:
             if new_block is not None:
                 req_blocks[block_idx] = new_block
 
+            # Add the block to the offload queue.
+            self._hashes_to_offload.add(block_hash)
+
         # Bump the committed index.
         self.req_to_committed_idx[ctx.request_id] = (
             num_computed_blocks * self.block_size
         )
 
-        # Save the blocks to the connector.
-        current_parent = (
-            req_hashes[num_committed_blocks - 1]
-            if num_committed_blocks > 0
-            else DEFAULT_PARENT_HASH
-        )
-        block_ids = [
-            block.bid
-            for block in req_blocks[num_committed_blocks:num_computed_blocks]
-        ]
-        block_hashes = req_hashes[num_committed_blocks:num_computed_blocks]
-        self.connector.save(
-            block_ids, block_hashes, parent_seq_hash=current_parent
-        )
+    def offload(self) -> None:
+        """Offload the blocks to the connector."""
+        block_ids = []
+        block_hashes = []
+        prefix_cache = self.device_block_pool.hash_to_committed_block
+        for block_hash in self._hashes_to_offload:
+            # It is possible that the hash is no longer available in the prefix
+            # cache since the corresponding block has been evicted.
+            if block_hash not in prefix_cache:
+                continue
+            block = prefix_cache[block_hash]
+            block_ids.append(block.bid)
+            block_hashes.append(block_hash)
+        self.connector.offload(block_ids, block_hashes)
+        self._hashes_to_offload.clear()
 
     def release(self, request_id: RequestID) -> None:
         """Release the blocks for the request."""

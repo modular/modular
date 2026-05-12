@@ -21,7 +21,6 @@ from .quant_strategy import (
     Nvfp4Scales,
     Nvfp4Strategy,
     QuantStrategy,
-    silu_gate,
 )
 from .stacked_moe import GateUpFormat, StackedMoE, silu_activation
 
@@ -37,5 +36,4 @@ __all__ = [
     "StackedMoE",
     "forward_moe_sharded_layers",
     "silu_activation",
-    "silu_gate",
 ]

@@ -11,18 +11,24 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""GPU diagnostics API.
+"""Deprecated: use max.profiler.gpu instead."""
 
-This module allows accessing information about GPU(s) on the system.
-Information can be accessed synchronously or collected in the background for
-later retrieval.
-"""
+import warnings
 
-from ._bgrec import BackgroundRecorder as BackgroundRecorder
-from ._multi import GPUDiagContext as GPUDiagContext
-from ._types import HARDWARE_THROTTLE_REASONS as HARDWARE_THROTTLE_REASONS
-from ._types import ClockStats as ClockStats
-from ._types import GPUStats as GPUStats
-from ._types import MemoryStats as MemoryStats
-from ._types import ThrottleReason as ThrottleReason
-from ._types import UtilizationStats as UtilizationStats
+warnings.warn(
+    "max.diagnostics.gpu is deprecated and will be removed in a future release."
+    " Use max.profiler.gpu instead.",
+    DeprecationWarning,
+    stacklevel=2,
+)
+
+from max.profiler.gpu import (
+    HARDWARE_THROTTLE_REASONS as HARDWARE_THROTTLE_REASONS,
+)
+from max.profiler.gpu import BackgroundRecorder as BackgroundRecorder
+from max.profiler.gpu import ClockStats as ClockStats
+from max.profiler.gpu import GPUDiagContext as GPUDiagContext
+from max.profiler.gpu import GPUStats as GPUStats
+from max.profiler.gpu import MemoryStats as MemoryStats
+from max.profiler.gpu import ThrottleReason as ThrottleReason
+from max.profiler.gpu import UtilizationStats as UtilizationStats

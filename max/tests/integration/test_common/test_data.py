@@ -356,9 +356,9 @@ IDEFICS3_INSTRUCT_REQUESTS = [
 # Default pixel generation prompts
 DEFAULT_PIXEL_GENERATION_PROMPTS = [
     "photography, soft natural textures, highly realistic light, editorial, A black panther stalking through the dense undergrowth of an Indian jungle, early evening with shadows from tall trees, captured with low light photography, high ISO setting to highlight the panther's muscles in motion",
-    "Dramatic news broadcast scene in a Teahupoʻo wave's where a cow surfing, mimicking pro surf rider poses. Yogis laugh and take pictures. The news banner reads: 'COW win Olympics!!'",
+    "A red fox sitting in fresh snow in a winter forest, looking directly at the camera, soft morning light filtering through the trees",
     "Full body shot of a handsome tattooed short dark haired man wearing a jean and a white tee-shirt in 'Chiaroscuro Chronicles', lost in a captivating, slate gray monochromatic realm of masterful lighting and careful shading, emphasizing the emotional depth of the narrative, abrasive authenticity, ambient occlusion",
-    "A beautiful woman in a red dress walking down a street",
+    "A lighthouse on a rocky cliff at sunset with an orange and purple sky, calm ocean in the background, photorealistic",
     'Four elements split into quadrants: top-left shows splashing water forming the word "WATER" on a water background, top-right shows soil forming "EARTH" with planet earth behind, bottom-left shows colorful clouds forming "AIR" at sunset, bottom-right shows fiery lava forming "FIRE" against the sun',
 ]
 

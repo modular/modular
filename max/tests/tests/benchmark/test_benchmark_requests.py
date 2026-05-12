@@ -38,8 +38,10 @@ from max.benchmark.benchmark_shared.request import (
     SglangPixelGenerationRequestDriver,
     TRTLLMRequestDriver,
     VllmOmniPixelGenerationRequestDriver,
+    VllmOmniVideoRequestDriver,
     _build_sglang_pixel_generation_payload,
     _build_vllm_omni_pixel_generation_payload,
+    _build_vllm_omni_video_payload,
     async_request_lora_load,
     async_request_lora_unload,
     get_request_driver_class,
@@ -705,11 +707,31 @@ class TestRequestDriverSelection:
             is SglangPixelGenerationRequestDriver
         )
 
+    def test_get_request_driver_class_pixel_gen_vllm_omni_video(self) -> None:
+        assert (
+            get_request_driver_class(
+                "http://localhost:8000/v1/videos/sync",
+                task="text-to-video",
+            )
+            is VllmOmniVideoRequestDriver
+        )
+
     def test_get_request_driver_class_pixel_gen_invalid_url(self) -> None:
         with pytest.raises(ValueError, match="pixel-generation"):
             get_request_driver_class(
                 "http://localhost:8000/v1/completions",
                 task="text-to-image",
+            )
+
+    def test_get_request_driver_class_text_gen_videos_sync_rejected(
+        self,
+    ) -> None:
+        """text-generation + /v1/videos/sync should raise, not return the
+        video driver."""
+        with pytest.raises(ValueError, match="Unsupported API URL"):
+            get_request_driver_class(
+                "http://localhost:8000/v1/videos/sync",
+                task="text-generation",
             )
 
     def test_get_request_driver_class_text_gen_chat_not_pixel(self) -> None:
@@ -817,6 +839,42 @@ class TestPixelGenerationPayloadBuilders:
         assert extra["width"] == 512
         assert "num_inference_steps" not in extra
 
+    def test_vllm_omni_video_payload_all_options(self) -> None:
+        opts = PixelGenerationImageOptions(
+            width=832,
+            height=480,
+            steps=50,
+            guidance_scale=4.0,
+            seed=42,
+            negative_prompt="blurry",
+            num_frames=81,
+        )
+        payload = _build_vllm_omni_video_payload(self._make_input(opts))
+        assert payload["prompt"] == "A beautiful sunset"
+        assert payload["model"] == "black-forest-labs/FLUX.2-dev"
+        assert payload["width"] == "832"
+        assert payload["height"] == "480"
+        assert payload["num_inference_steps"] == "50"
+        assert payload["guidance_scale"] == "4.0"
+        assert payload["seed"] == "42"
+        assert payload["negative_prompt"] == "blurry"
+        assert payload["num_frames"] == "81"
+
+    def test_vllm_omni_video_payload_no_options(self) -> None:
+        payload = _build_vllm_omni_video_payload(self._make_input(None))
+        assert payload["prompt"] == "A beautiful sunset"
+        assert payload["model"] == "black-forest-labs/FLUX.2-dev"
+        assert len(payload) == 2
+
+    def test_vllm_omni_video_payload_partial_options(self) -> None:
+        opts = PixelGenerationImageOptions(width=480, height=480, num_frames=33)
+        payload = _build_vllm_omni_video_payload(self._make_input(opts))
+        assert payload["width"] == "480"
+        assert payload["height"] == "480"
+        assert payload["num_frames"] == "33"
+        assert "num_inference_steps" not in payload
+        assert "guidance_scale" not in payload
+
 
 class TestValidateTaskAndEndpoint:
     """Tests for validate_task_and_endpoint."""
@@ -849,6 +907,21 @@ class TestValidateTaskAndEndpoint:
     def test_pixel_gen_completions_rejected(self) -> None:
         with pytest.raises(ValueError, match="requires --endpoint"):
             validate_task_and_endpoint("text-to-image", "/v1/completions")
+
+    def test_pixel_gen_videos_sync_ok(self) -> None:
+        validate_task_and_endpoint("text-to-video", "/v1/videos/sync")
+
+    def test_text_gen_videos_sync_rejected(self) -> None:
+        with pytest.raises(ValueError, match="does not support"):
+            validate_task_and_endpoint("text-generation", "/v1/videos/sync")
+
+    def test_text_to_image_videos_sync_rejected(self) -> None:
+        with pytest.raises(ValueError, match="only valid for"):
+            validate_task_and_endpoint("text-to-image", "/v1/videos/sync")
+
+    def test_image_to_image_videos_sync_rejected(self) -> None:
+        with pytest.raises(ValueError, match="only valid for"):
+            validate_task_and_endpoint("image-to-image", "/v1/videos/sync")
 
     def test_image_to_image_responses_ok(self) -> None:
         validate_task_and_endpoint("image-to-image", "/v1/responses")

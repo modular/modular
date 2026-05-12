@@ -10,6 +10,7 @@ This version is still a work in progress.
 
 ## MAX models
 
+- Added NVFP4 quantization support for Gemma 4.
 - Added MXFP4 quantization support for MiniMax-M2.
 
 ## MAX framework
@@ -30,6 +31,8 @@ This version is still a work in progress.
 ### `max` CLI
 
 - Added `--devices=gpu:all` to use every visible GPU (including MAX Serve).
+- Removed the `default` value for `--devices`; omit `--devices` to use the model
+  or config default.
 
 ### Python API
 
@@ -73,6 +76,11 @@ This version is still a work in progress.
 ## MAX kernels
 
 ## Breaking changes
+
+- GPU and CPU diagnostic tooling has moved from `max.diagnostics` to
+  `max.profiler`: `max.diagnostics.gpu` → `max.profiler.gpu` and
+  `max.diagnostics.cpu` → `max.profiler.cpu`. Update imports accordingly.
+  Deprecation shims with `DeprecationWarning` remain at the old paths.
 
 - `max/python/max/benchmark/benchmark_throughput.py`, deprecated in v0.26.3,
   has been removed.

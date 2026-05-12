@@ -119,6 +119,20 @@ PIPELINES = [
         "timeout": 120,  # 2 hours
     },
     {
+        "pipeline": "nvidia/Gemma-4-26B-A4B-NVFP4",
+        "runner": "modrunner-b200",
+        "gpu_flag": "--devices gpu:0",
+        "instance_type": "bm.gpu.b200.1",
+        "timeout": 120,  # 2 hours
+    },
+    {
+        "pipeline": "nvidia/Gemma-4-31B-IT-NVFP4",
+        "runner": "modrunner-b200",
+        "gpu_flag": "--devices gpu:0",
+        "instance_type": "bm.gpu.b200.1",
+        "timeout": 120,  # 2 hours
+    },
+    {
         "pipeline": "deepseek-ai/DeepSeek-R1",
         "runner": "modrunner-b200-8x",
         "gpu_flag": "--devices gpu:0,1,2,3,4,5,6,7",

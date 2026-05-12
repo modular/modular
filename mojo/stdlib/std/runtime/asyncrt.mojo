@@ -16,6 +16,7 @@ from std.os import abort
 from std.atomic import Atomic
 from std.ffi import _CPointer, external_call
 from std.gpu.host.device_context import _DeviceContextPtr
+from std.memory.alloc import alloc, free, Layout
 
 from std.builtin.coroutine import (
     AnyCoroutine,
@@ -430,8 +431,8 @@ struct RaisingTask[type: Movable, origins: OriginSet]:
             handle: The raising coroutine to execute. Ownership is transferred.
         """
         self._handle = handle^
-        self._result_ptr = alloc[Self.type](1)
-        self._error_ptr = alloc[Error](1)
+        self._result_ptr = alloc(Layout[Self.type].single())
+        self._error_ptr = alloc(Layout[Error].single())
         self._handle._set_result_slot(self._result_ptr, self._error_ptr)
 
     def _has_error(self) -> Bool:
@@ -486,12 +487,12 @@ struct RaisingTask[type: Movable, origins: OriginSet]:
         self^._release_coro()
         if has_error:
             var err = ep.take_pointee()
-            rp.free()
-            ep.free()
+            free(rp, {count = 1})
+            free(ep, {count = 1})
             raise err^
         result = rp.take_pointee()
-        ep.free()
-        rp.free()
+        free(ep, {count = 1})
+        free(rp, {count = 1})
 
     def wait(deinit self, out result: Self.type) raises:
         """Block until the task completes and return the result or raise.
@@ -514,12 +515,12 @@ struct RaisingTask[type: Movable, origins: OriginSet]:
         self^._release_coro()
         if has_error:
             var err = ep.take_pointee()
-            rp.free()
-            ep.free()
+            free(rp, {count = 1})
+            free(ep, {count = 1})
             raise err^
         result = rp.take_pointee()
-        ep.free()
-        rp.free()
+        free(ep, {count = 1})
+        free(rp, {count = 1})
 
     # TODO: Add force_destroy() when we have a trait that combines
     # Movable and ImplicitlyDestructible. Currently, the caller must

@@ -25,6 +25,8 @@ example_repo_ids = [
     # pt = Pre-trained.
     "google/gemma-4-31B-it",
     # "google/gemma-4-26B-A4B-it"
+    "nvidia/Gemma-4-31B-IT-NVFP4",
+    # "nvidia/Gemma-4-26B-A4B-NVFP4"
 ]
 
 gemma4_arch = SupportedArchitecture(
@@ -33,6 +35,7 @@ gemma4_arch = SupportedArchitecture(
     default_encoding="bfloat16",
     supported_encodings={
         "bfloat16",
+        "float4_e2m1fnx2",
     },
     pipeline_model=Gemma3_MultiModalModel,
     task=PipelineTask.TEXT_GENERATION,

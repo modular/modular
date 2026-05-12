@@ -298,10 +298,7 @@ def _printf[
             buf.write_string(fmt)
             _ = buf.nul_terminate()
             var s = buf.as_string_slice()
-            _metal_print_write(
-                s.unsafe_ptr().bitcast[UInt8](),
-                s.byte_length(),
-            )
+            _metal_print_write(s)
         elif not is_gpu():
             _printf_cpu[fmt](*args, file=file)
         else:
@@ -430,19 +427,6 @@ def print[
 
             # FIXME: The origin param of `_emit` should be inferred from `cstr`.
             _emit[origin_of(buffer).unsafe_mut_cast[False]()](cstr, file)
-        elif is_gpu() and is_apple_gpu():
-            # Apple GPU: same formatting path as other GPUs but output
-            # goes through Metal os_log via _metal_print_write.
-            var buffer = _WriteBufferHeap()
-            values._write_to(buffer, sep=sep, end=end)
-
-            _ = buffer.nul_terminate()
-
-            var slice = buffer.as_string_slice()
-            _metal_print_write(
-                slice.unsafe_ptr().bitcast[UInt8](),
-                slice.byte_length(),
-            )
         elif is_gpu():
             var buffer = _WriteBufferHeap()
             values._write_to(buffer, sep=sep, end=end)
@@ -456,6 +440,8 @@ def print[
             elif is_amd_gpu():
                 var msg = printf_begin()
                 _ = printf_append_string_n(msg, slice.as_bytes(), is_last=True)
+            elif is_apple_gpu():
+                _metal_print_write(slice)
             else:
                 CompilationTarget.unsupported_target_error[
                     operation=__get_current_function_name()

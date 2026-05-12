@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+import functools
 from collections.abc import Sequence
 
 from max.dtype import DType
@@ -22,6 +23,8 @@ from max.graph import BufferValue, ShardingStrategy, TensorValue, ops
 from max.nn.kv_cache import KVCacheParams, MultiKVCacheParams, PagedCacheValues
 from max.nn.layer import LayerList, Module
 from max.nn.linear import MLP, ColumnParallelLinear
+from max.nn.moe.moe import MoE
+from max.nn.moe.moe_fp8 import MoEQuantized
 from max.nn.rotary_embedding import Llama3RotaryEmbedding
 from max.nn.transformer.distributed_transformer import (
     DistributedLogitsPostprocessMixin,
@@ -33,7 +36,7 @@ from max.pipelines.lib.vlm_utils import merge_multimodal_embeddings
 
 from .layers.attention import Gemma4Attention
 from .layers.decoder_layer import Gemma4TextDecoderLayer
-from .layers.moe import Gemma4TextExperts, Gemma4TextRouter
+from .layers.moe import Gemma4MoEGate
 from .layers.rms_norm import Gemma4RMSNorm
 from .layers.rotary_embedding import ProportionalRotaryEmbedding
 from .model_config import Gemma4ForConditionalGenerationConfig
@@ -75,6 +78,8 @@ class Gemma4TextModel(DistributedLogitsPostprocessMixin, Module):
             scaling_params=text_config.global_rope_scaling,
         )
 
+        unquantized_dtype = config.unquantized_dtype
+
         embedding_output_dtype = config.dtype
         quant_config = text_config.quant_config
         if quant_config and quant_config.embedding_output_dtype:
@@ -90,7 +95,7 @@ class Gemma4TextModel(DistributedLogitsPostprocessMixin, Module):
 
         self.norm = Gemma4RMSNorm(
             text_config.hidden_size,
-            DType.bfloat16,
+            unquantized_dtype,
             text_config.rms_norm_eps,
         )
         self.norm.sharding_strategy = ShardingStrategy.replicate(
@@ -101,7 +106,7 @@ class Gemma4TextModel(DistributedLogitsPostprocessMixin, Module):
         self.lm_head = ColumnParallelLinear(
             text_config.hidden_size,
             text_config.vocab_size,
-            dtype=config.dtype,
+            dtype=unquantized_dtype,
             devices=config.devices,
             tied_weight=(
                 self.embed_tokens.weight if config.tie_word_embeddings else None
@@ -128,26 +133,46 @@ class Gemma4TextModel(DistributedLogitsPostprocessMixin, Module):
             layer_type_counts[layer_type] += 1
             is_sliding = layer_type == "sliding_attention"
 
-            router = None
-            experts = None
+            is_nvfp4 = quant_config is not None and quant_config.is_nvfp4
+            moe_nvfp4 = is_nvfp4 and text_config.enable_moe_block
+
+            moe_block: MoE | None = None
             if text_config.enable_moe_block:
-                # TODO: router and moe are not shardable (multi_gpu_supported=False).
-                router = Gemma4TextRouter(
-                    dtype=config.dtype,
-                    device=config.devices[0],
-                    hidden_dim=text_config.hidden_size,
-                    num_experts=text_config.num_experts,
-                    num_experts_per_token=text_config.top_k_experts,
+                moe_gate_cls = functools.partial(
+                    Gemma4MoEGate,
                     eps=text_config.rms_norm_eps,
                 )
-                experts = Gemma4TextExperts(
-                    dtype=config.dtype,
-                    device=config.devices[0],
-                    num_experts=text_config.num_experts,
-                    num_experts_per_token=text_config.top_k_experts,
-                    hidden_dim=text_config.hidden_size,
-                    intermediate_dim=text_config.moe_intermediate_size,
+                moe_norm_cls = functools.partial(
+                    Gemma4RMSNorm,
+                    text_config.hidden_size,
+                    unquantized_dtype,
+                    eps=text_config.rms_norm_eps,
                 )
+                if is_nvfp4:
+                    moe_block = MoEQuantized(
+                        devices=config.devices,
+                        hidden_dim=text_config.hidden_size,
+                        num_experts=text_config.num_experts,
+                        num_experts_per_token=text_config.top_k_experts,
+                        moe_dim=text_config.moe_intermediate_size,
+                        gate_cls=moe_gate_cls,
+                        gate_activation="gelu_tanh",
+                        pre_expert_norm_cls=moe_norm_cls,
+                        dtype=config.dtype,
+                        quant_config=quant_config,
+                    )
+                else:
+                    moe_block = MoE(
+                        devices=config.devices,
+                        hidden_dim=text_config.hidden_size,
+                        num_experts=text_config.num_experts,
+                        num_experts_per_token=text_config.top_k_experts,
+                        moe_dim=text_config.moe_intermediate_size,
+                        gate_cls=moe_gate_cls,
+                        gate_activation="gelu_tanh",
+                        pre_expert_norm_cls=moe_norm_cls,
+                        dtype=config.dtype,
+                    )
 
             layers.append(
                 Gemma4TextDecoderLayer(
@@ -164,28 +189,27 @@ class Gemma4TextModel(DistributedLogitsPostprocessMixin, Module):
                         layer_idx=i,
                         layer_idx_in_cache=layer_idx_in_cache,
                         is_sliding=is_sliding,
-                        dtype=config.dtype,
+                        dtype=unquantized_dtype if is_nvfp4 else config.dtype,
                         devices=config.devices,
                         qk_norm_eps=text_config.rms_norm_eps,
                         local_window_size=text_config.sliding_window,
-                        quant_config=quant_config,
+                        quant_config=None if is_nvfp4 else quant_config,
                     ),
                     mlp=MLP(
-                        dtype=config.dtype,
+                        dtype=unquantized_dtype if moe_nvfp4 else config.dtype,
                         quantization_encoding=None,
                         hidden_dim=text_config.hidden_size,
                         feed_forward_length=text_config.intermediate_size,
                         devices=config.devices,
                         activation_function=text_config.hidden_activation,
-                        quant_config=quant_config,
+                        quant_config=None if moe_nvfp4 else quant_config,
                     ),
                     hidden_size=text_config.hidden_size,
                     rms_norm_eps=text_config.rms_norm_eps,
                     devices=config.devices,
-                    dtype=config.dtype,
+                    unquantized_dtype=unquantized_dtype,
                     enable_moe_block=text_config.enable_moe_block,
-                    router=router,
-                    experts=experts,
+                    moe_block=moe_block,
                 )
             )
 

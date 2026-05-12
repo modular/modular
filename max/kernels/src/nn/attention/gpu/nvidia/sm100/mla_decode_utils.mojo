@@ -35,6 +35,7 @@ from std.gpu.compute.arch.tcgen05 import (
     tcgen05_ld,
     tcgen05_load_wait,
     tcgen05_st,
+    tcgen05_store_wait,
 )
 from std.gpu.primitives.warp import _vote_nvidia_helper
 from std.gpu.compute.arch.mma_nvidia_sm100 import MMASmemDescriptorPair
@@ -3642,6 +3643,7 @@ struct MLA_SM100_Decode_Common[
                     repeat=1,
                     pack=False,
                 ](corr_scale_tmem, _scale_tuple)
+                tcgen05_store_wait()
                 #  signal to the correction warpgroup:
                 c_prod.commit()
 
@@ -4078,6 +4080,7 @@ struct MLA_SM100_Decode_Common[
                             o_tmem_subtile,
                             _o_st_corr,
                         )
+                        tcgen05_store_wait()
                 o_cons.release()
             tiles_done += 1
 

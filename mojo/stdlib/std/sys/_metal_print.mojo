@@ -48,16 +48,18 @@ def _metal_os_log_chunk(data: UnsafePointer[UInt8, MutExternalOrigin]):
 
 
 @always_inline
-def _metal_print_write(data: UnsafePointer[UInt8, _], length: Int):
+def _metal_print_write(text: StringSlice[_]):
     """Write bytes to Metal GPU output via os_log chunking.
 
     Splits the input into 64-byte chunks, zero-pads each chunk,
     and emits via the os_log sentinel.
 
     Args:
-        data: Pointer to the bytes to write.
-        length: Number of bytes to write.
+        text: Sequence of bytes to write.
     """
+    var data_ptr = text.unsafe_ptr()
+    var length = text.byte_length()
+
     if length <= 0:
         return
 
@@ -70,7 +72,7 @@ def _metal_print_write(data: UnsafePointer[UInt8, _], length: Int):
         # Copy up to 64 bytes from the source.
         var remaining = length - offset
         var copy_len = remaining if remaining < _CHUNK_SIZE else _CHUNK_SIZE
-        memcpy(dest=chunk, src=data + offset, count=copy_len)
+        memcpy(dest=chunk, src=data_ptr + offset, count=copy_len)
 
         # Emit the chunk.
         _metal_os_log_chunk(chunk)

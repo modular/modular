@@ -69,7 +69,7 @@ struct Random[rounds: Int = 10](Copyable):
     def __init__(
         out self,
         *,
-        seed: UInt64 = 0,
+        seed: UInt64 = 0x3D30F19CD101,
         subsequence: UInt64 = 0,
         offset: UInt64 = 0,
     ):
@@ -131,9 +131,13 @@ struct Random[rounds: Int = 10](Copyable):
         self._counter[0] += lo
         if self._counter[0] < lo:
             hi += 1
-        self._counter[1] += hi
-        if hi <= self._counter[1]:
-            return
+            self._counter[1] += hi
+            if hi != 0 and hi <= self._counter[1]:
+                return
+        else:
+            self._counter[1] += hi
+            if hi <= self._counter[1]:
+                return
         self._counter[2] += 1
         if self._counter[2]:
             return
@@ -183,7 +187,7 @@ struct NormalRandom[rounds: Int = 10](Copyable):
     def __init__(
         out self,
         *,
-        seed: UInt64 = 0,
+        seed: UInt64 = 0x3D30F19CD101,
         subsequence: UInt64 = 0,
         offset: UInt64 = 0,
     ):

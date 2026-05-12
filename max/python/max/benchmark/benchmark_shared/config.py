@@ -48,6 +48,7 @@ Endpoint = Literal[
     "/v2/models/ensemble/generate_stream",
     "/v1/responses",
     "/v1/images/generations",
+    "/v1/videos/sync",
 ]
 
 CACHE_RESET_ENDPOINT_MAP: Mapping[Backend, str] = {
@@ -77,16 +78,39 @@ PIXEL_GENERATION_TASKS: tuple[BenchmarkTask, ...] = (
 # NOTE: Each endpoint value here is coupled to a specific request driver in
 # get_request_driver_class() in request.py. Adding a new backend that reuses
 # an existing endpoint will route to that endpoint's existing driver.
-PIXEL_GEN_DEFAULT_ENDPOINT: Mapping[str, Endpoint] = {
+PIXEL_GEN_DEFAULT_ENDPOINT: Mapping[Backend, Endpoint] = {
     "modular": "/v1/responses",
+    "modular-chat": "/v1/responses",
     "sglang": "/v1/images/generations",
+    "sglang-chat": "/v1/images/generations",
     "vllm": "/v1/chat/completions",
+    "vllm-chat": "/v1/chat/completions",
+}
+
+# Override endpoint per backend for text-to-video tasks. For vllm-omni
+# use the dedicated /v1/videos/sync endpoint.
+VIDEO_GEN_DEFAULT_ENDPOINT: Mapping[Backend, Endpoint] = {
+    "vllm": "/v1/videos/sync",
+    "vllm-chat": "/v1/videos/sync",
 }
 
 # Valid endpoints for pixel generation tasks (union of all backend defaults).
 PIXEL_GENERATION_ENDPOINTS: frozenset[Endpoint] = frozenset(
-    PIXEL_GEN_DEFAULT_ENDPOINT.values()
+    set(PIXEL_GEN_DEFAULT_ENDPOINT.values())
+    | set(VIDEO_GEN_DEFAULT_ENDPOINT.values())
 )
+
+
+def get_pixel_gen_endpoint(backend: Backend, task: BenchmarkTask) -> Endpoint:
+    """Return the pixel-generation endpoint for a given backend and task."""
+    if task == "text-to-video" and backend in VIDEO_GEN_DEFAULT_ENDPOINT:
+        return VIDEO_GEN_DEFAULT_ENDPOINT[backend]
+    if backend in PIXEL_GEN_DEFAULT_ENDPOINT:
+        return PIXEL_GEN_DEFAULT_ENDPOINT[backend]
+    raise ValueError(
+        f"Backend {backend!r} does not have a default"
+        " pixel-generation endpoint."
+    )
 
 
 class HardwareConfig(ConfigFileModel):
