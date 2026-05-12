@@ -27,7 +27,6 @@ plumbing lands (see issue #6521 / Joe's stack), switching them over is a
 single-line change of the underlying `PyMethodDef` flags.
 """
 
-from std.ffi import c_char
 from std.python import Python
 from std.python._cpython import (
     CPython,
