@@ -141,7 +141,7 @@ class DiskTier:
         cache_dir: str,
         block_nbytes: int,
         max_disk_size_bytes: int,
-        num_workers: int = 4,
+        num_workers: int = 16,
         use_direct_io: bool = False,
     ) -> None:
         self._cache_dir = Path(cache_dir)

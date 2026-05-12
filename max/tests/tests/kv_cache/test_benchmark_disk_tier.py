@@ -30,8 +30,8 @@ BYTES = 4 * MIB  # Kimi 128 token page size is ~4MiB
 
 
 @pytest.mark.parametrize("use_direct_io", [False, True])
-@pytest.mark.parametrize("num_workers", [4, 8])
-@pytest.mark.parametrize("batch_size", [512, 2048])  # 75k tokens is ~585 pages
+@pytest.mark.parametrize("num_workers", [4, 8, 16, 64])
+@pytest.mark.parametrize("batch_size", [2048])  # 75k tokens is ~585 pages
 def test_benchmark_batch_write(
     benchmark: BenchmarkFixture,
     tmp_path: Path,
@@ -74,8 +74,8 @@ def test_benchmark_batch_write(
 
 
 @pytest.mark.parametrize("use_direct_io", [False, True])
-@pytest.mark.parametrize("num_workers", [4, 8])
-@pytest.mark.parametrize("batch_size", [512, 2048])
+@pytest.mark.parametrize("num_workers", [4, 8, 16, 64])
+@pytest.mark.parametrize("batch_size", [2048])
 def test_benchmark_batch_read(
     benchmark: BenchmarkFixture,
     tmp_path: Path,
