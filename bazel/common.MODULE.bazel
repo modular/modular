@@ -10,7 +10,7 @@ bazel_dep(name = "grpc", version = "1.76.0.bcr.1", repo_name = "com_github_grpc_
 bazel_dep(name = "imgui", version = "1.91.8")
 bazel_dep(name = "platforms", version = "1.0.0")
 bazel_dep(name = "protobuf", version = "33.5", repo_name = "com_google_protobuf")
-bazel_dep(name = "rules_cc", version = "0.2.17")
+bazel_dep(name = "rules_cc", version = "0.2.18")
 bazel_dep(name = "rules_mojo", version = "0.6.0")
 bazel_dep(name = "rules_multirun", version = "0.13.0")
 bazel_dep(name = "rules_pkg", version = "1.0.1")
@@ -24,23 +24,10 @@ bazel_dep(name = "buildifier_prebuilt", version = "8.2.1", dev_dependency = True
 
 archive_override(
     module_name = "rules_mojo",
-    integrity = "sha256-gkappMvXTJYRANGySlRe8ASrcDXHEagi5Xf0RWVcse0=",
-    strip_prefix = "rules_mojo-ca33e95f61e9c48c6036b9e7d8a31ab93c957b1f",
+    integrity = "sha256-yojOu2Dj3RZ33cSofSlhK7eyroSdce0RI+Q7xBx5/zQ=",
+    strip_prefix = "rules_mojo-37e8350d88bc36cd0f397850433daeccb16b9e0d",
     urls = [
-        "https://github.com/modular/rules_mojo/archive/ca33e95f61e9c48c6036b9e7d8a31ab93c957b1f.tar.gz",
-    ],
-)
-
-single_version_override(
-    module_name = "rules_cc",
-    patch_strip = 1,
-    patches = [
-        # https://github.com/bazelbuild/rules_cc/pull/527
-        "//bazel/public-patches:rules_cc_textual_hdrs.patch",
-        # https://github.com/bazelbuild/rules_cc/pull/578
-        "//bazel/public-patches:rules_cc_private_api.patch",
-        # https://github.com/bazelbuild/rules_cc/pull/675
-        "//bazel/public-patches:rules_cc_set_soname.patch",
+        "https://github.com/modular/rules_mojo/archive/37e8350d88bc36cd0f397850433daeccb16b9e0d.tar.gz",
     ],
 )
 
