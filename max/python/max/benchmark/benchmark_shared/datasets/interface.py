@@ -19,6 +19,7 @@ from collections.abc import Sequence
 
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
+from ._tokenizer_pool import TokenizerPool
 from .registry import DATASET_REGISTRY
 from .types import RequestSamples
 
@@ -225,6 +226,8 @@ class BenchmarkDataset(ABC):
         tokenizer: PreTrainedTokenizerBase,
         output_lengths: Sequence[int] | None = None,
         shuffle: bool = True,
+        *,
+        pool: TokenizerPool | None = None,
         **kwargs,
     ) -> RequestSamples:
         """Sample requests from the dataset.
@@ -239,6 +242,9 @@ class BenchmarkDataset(ABC):
                 If None, uses the actual completion lengths from the dataset.
                 If provided, must have length equal to num_requests.
             shuffle: Whether to shuffle the dataset before sampling. Default is True.
+            pool: Optional tokenizer process pool. Required by datasets that
+                fan tokenize work out to workers (e.g. Random/Synthetic).
+                Datasets that don't tokenize via the pool ignore it.
             **kwargs: Additional dataset-specific parameters
 
         Returns:

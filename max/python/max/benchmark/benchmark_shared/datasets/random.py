@@ -18,6 +18,7 @@ import logging
 import random
 import uuid
 from collections.abc import Sequence
+from dataclasses import dataclass, field
 
 import numpy as np
 from huggingface_hub import hf_hub_download
@@ -25,11 +26,13 @@ from PIL import Image
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 from typing_extensions import override
 
+from ._tokenizer_pool import TokenizerPool
 from .distribution import BaseDistribution, DistributionParameter
 from .local import LocalBenchmarkDataset
 from .types import (
     ChatSamples,
     ChatSession,
+    OpenAIImage,
     RequestSamples,
     SampledRequest,
     SharedContext,
@@ -42,6 +45,26 @@ logger = logging.getLogger(__name__)
 # Maximum ratio of model's max context length to use for random sequences.
 # Set to 95% to leave buffer room for other overheads, like re-tokenization and special tokens.
 MAX_CONTEXT_USAGE_RATIO = 0.95
+
+
+@dataclass
+class _SysPromptDraft:
+    """A request's system-prompt slice prior to encode-length resolution."""
+
+    idx: int
+    text: str
+    encoded_len: int = 0
+
+
+@dataclass
+class _PendingRequest:
+    """Per-request scratch built during the construction loop and finalized
+    after the post-loop batched `pool.encode_lens` call."""
+
+    prompt: str
+    images: list[OpenAIImage] = field(default_factory=list)
+    prompt_encoded_len: int = 0
+    sys_prompt: _SysPromptDraft | None = None
 
 
 def log_request_actual_length_percentiles(
@@ -76,7 +99,7 @@ class RandomBenchmarkDataset(LocalBenchmarkDataset):
         num_chat_sessions: int,
         num_turns: DistributionParameter,
         delay_between_chat_turns: DistributionParameter | None,
-        tokenizer: PreTrainedTokenizerBase,
+        pool: TokenizerPool,
         sys_prompt_ratio: float,
         max_num_unique_sys_prompt: int,
         min_input_len: int = 4,
@@ -95,12 +118,13 @@ class RandomBenchmarkDataset(LocalBenchmarkDataset):
             num_turns: Distribution parameter for number of turns per session.
             delay_between_chat_turns: Optional Distribution parameter for delay
                 between turns.
-            tokenizer: Tokenizer for encoding prompts.
+            pool: Tokenizer process pool used for parallel encode/decode work.
             sys_prompt_ratio: Ratio of system prompt to input length.
             max_num_unique_sys_prompt: Max unique system prompts.
             min_input_len: Minimum input token length.
             min_output_len: Minimum output token length.
         """
+        tokenizer = pool.tokenizer
         first_turn_input: DistributionParameter
         remaining_input: DistributionParameter
         if isinstance(input_len, str):
@@ -160,6 +184,7 @@ class RandomBenchmarkDataset(LocalBenchmarkDataset):
         first_turn_samples = self.sample_requests(
             num_requests=num_chat_sessions,
             tokenizer=tokenizer,
+            pool=pool,
             input_len=first_turn_input,
             output_len=first_turn_output,
             sys_prompt_ratio=sys_prompt_ratio,
@@ -172,6 +197,7 @@ class RandomBenchmarkDataset(LocalBenchmarkDataset):
         follow_up_turn_samples = self.sample_requests(
             num_requests=(sum(num_turns_per_session) - num_chat_sessions),
             tokenizer=tokenizer,
+            pool=pool,
             input_len=remaining_input,
             output_len=remaining_output,
             sys_prompt_ratio=0,
@@ -187,7 +213,10 @@ class RandomBenchmarkDataset(LocalBenchmarkDataset):
             assert isinstance(first_turn.prompt_formatted, str)
             messages = [
                 build_chat_message(
-                    "user", first_turn.prompt_formatted, tokenizer
+                    "user",
+                    first_turn.prompt_formatted,
+                    tokenizer,
+                    num_tokens=first_turn.prompt_len,
                 ),
                 build_chat_message(
                     "assistant",
@@ -204,7 +233,10 @@ class RandomBenchmarkDataset(LocalBenchmarkDataset):
                 follow_up_turn = follow_up_turns[follow_up_turn_idx_offset + i]
                 assert isinstance(follow_up_turn.prompt_formatted, str)
                 user_msg = build_chat_message(
-                    "user", follow_up_turn.prompt_formatted, tokenizer
+                    "user",
+                    follow_up_turn.prompt_formatted,
+                    tokenizer,
+                    num_tokens=follow_up_turn.prompt_len,
                 )
                 turn_tokens = user_msg.num_tokens + (
                     follow_up_turn.output_len or 0
@@ -359,15 +391,21 @@ class RandomBenchmarkDataset(LocalBenchmarkDataset):
         tokenizer: PreTrainedTokenizerBase,
         output_lengths: Sequence[int] | None = None,
         shuffle: bool = True,
+        *,
+        pool: TokenizerPool | None = None,
         **kwargs,
     ) -> RequestSamples:
         """Sample random benchmark requests with configurable length distributions.
 
         Args:
             num_requests: Number of requests to generate.
-            tokenizer: Tokenizer for encoding prompts.
+            tokenizer: Tokenizer for encoding prompts. Must match
+                ``pool.tokenizer``.
             output_lengths: Optional fixed output lengths per request.
             shuffle: Whether to shuffle requests.
+            pool: Tokenizer process pool used to parallelize encode work.
+                Required by this dataset; the abstract base declares it
+                optional for datasets that don't tokenize via a pool.
             **kwargs: Additional parameters:
                 input_len (str): Distribution spec for input lengths, e.g.
                     "1024", "N(1024, 200)", "U(500, 1500)", "G(2, 500)".
@@ -379,6 +417,14 @@ class RandomBenchmarkDataset(LocalBenchmarkDataset):
                 image_size (str): Image dimensions as "width,height".
                 image_count (int): Number of images per request.
         """
+        if pool is None:
+            raise ValueError(
+                "RandomBenchmarkDataset.sample_requests requires `pool`"
+            )
+        assert pool.tokenizer is tokenizer, (
+            "TokenizerPool must be constructed from the same tokenizer "
+            "passed to sample_requests"
+        )
         input_len = kwargs.get("input_len")
         output_len = kwargs.get("output_len")
         sys_prompt_ratio = kwargs.get("sys_prompt_ratio", 0.0)
@@ -470,7 +516,14 @@ class RandomBenchmarkDataset(LocalBenchmarkDataset):
         # minor token-boundary mismatches (~90-96% cache hit rate in practice).
         warmup_dict: dict[int, SharedContext] = {}
 
-        input_requests = []
+        input_requests: list[SampledRequest] = []
+        # Per-request scratch captured during construction. The slow
+        # `tokenizer.encode(prompt)` / `tokenizer.encode(sys_prompt)` calls
+        # are batched and fanned out to the shared spawn Pool below; their
+        # results are written back into these `_PendingRequest` rows.
+        pending: list[_PendingRequest] = []
+        # `image_token_len` is invariant across requests today; hoist it.
+        image_token_len = image_count * 256
         for i in range(num_requests):
             input_len_cur = input_lens[i]
             output_len_cur = (
@@ -533,53 +586,70 @@ class RandomBenchmarkDataset(LocalBenchmarkDataset):
             ]
             prompt = tokenizer.decode(prompt_ids)
 
+            sys_prompt_draft: _SysPromptDraft | None = None
             if sys_prompt_ratio > 0:
                 sys_prompt_ids = [
                     replacement if id in special_ids else id
                     for id in sys_prompt_ids
                 ]
-                sys_prompt = tokenizer.decode(sys_prompt_ids)
-                sys_prompt_len = len(
-                    tokenizer.encode(sys_prompt, add_special_tokens=False)
+                sys_prompt_draft = _SysPromptDraft(
+                    idx=sys_prompt_idx,
+                    text=tokenizer.decode(sys_prompt_ids),
                 )
-                prev = warmup_dict.get(sys_prompt_idx)
-                if sys_prompt_len > 0 and (
-                    prev is None or sys_prompt_len > prev.num_tokens
-                ):
-                    warmup_dict[sys_prompt_idx] = SharedContext(
-                        text=sys_prompt, num_tokens=sys_prompt_len
-                    )
 
-            images = []
-            image_token_len = 0
+            images: list[OpenAIImage] = []
             for _ in range(image_count):
                 assert image_height is not None
                 assert image_width is not None
                 raw_image = self._generate_random_image(
                     image_height, image_width
                 )
-                images.append(encode_image(raw_image))
                 # TODO: figure out how to account for image tokens and chat prompts in this length.
                 # For now, just hardcoding to the internvl 512x512 image token count.
-                image_token_len += 256
+                images.append(encode_image(raw_image))
 
-            # We change to use the tokenizer to count the actual number of
-            # input tokens encoded on the serving backends instead of looking at
-            # int(input_lens[i]) that we randomly generated since multiple
-            # input tokens may be bundled together in one pass
-            input_len_actual = (
-                len(tokenizer.encode(prompt, add_special_tokens=False))
-                + image_token_len
+            pending.append(
+                _PendingRequest(
+                    prompt=prompt,
+                    images=images,
+                    sys_prompt=sys_prompt_draft,
+                )
             )
+
+        # Batch every encode round-trip through the shared spawn Pool so the
+        # slow tokenizer is exercised in parallel across all CPU cores.
+        # Prompts come first; sys-prompt slices for requests that have one
+        # follow, in pending order.
+        texts = [p.prompt for p in pending]
+        texts.extend(
+            p.sys_prompt.text for p in pending if p.sys_prompt is not None
+        )
+        lens = pool.encode_lens(texts)
+
+        sys_lens_iter = iter(lens[len(pending) :])
+        for p, plen in zip(pending, lens[: len(pending)], strict=True):
+            p.prompt_encoded_len = plen
+            if p.sys_prompt is not None:
+                p.sys_prompt.encoded_len = next(sys_lens_iter)
+
+        for i, p in enumerate(pending):
             input_requests.append(
                 SampledRequest(
-                    prompt_formatted=prompt,
-                    prompt_len=input_len_actual,
+                    prompt_formatted=p.prompt,
+                    prompt_len=p.prompt_encoded_len + image_token_len,
                     output_len=int(output_lens[i]),
-                    encoded_images=images,
+                    encoded_images=p.images,
                     ignore_eos=(output_lens[i] is not None),
                 )
             )
+            sys = p.sys_prompt
+            if sys is None or sys.encoded_len <= 0:
+                continue
+            prev = warmup_dict.get(sys.idx)
+            if prev is None or sys.encoded_len > prev.num_tokens:
+                warmup_dict[sys.idx] = SharedContext(
+                    text=sys.text, num_tokens=sys.encoded_len
+                )
 
         log_request_actual_length_percentiles(input_requests)
 

@@ -39,6 +39,9 @@ from max.benchmark.benchmark_shared.datasets import (
     SyntheticPixelBenchmarkDataset,
     VisionArenaBenchmarkDataset,
 )
+from max.benchmark.benchmark_shared.datasets._tokenizer_pool import (
+    TokenizerPool,
+)
 
 # Import the module under test
 from max.benchmark.benchmark_shared.datasets.multiturn_distribution_fit import (
@@ -46,6 +49,42 @@ from max.benchmark.benchmark_shared.datasets.multiturn_distribution_fit import (
 )
 from PIL import Image
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
+
+
+class _FakeTokenizer:
+    """Picklable stand-in for `PreTrainedTokenizerBase` used by unit tests.
+
+    `_fake_loader` constructs one per spawn worker; the parent uses an
+    instance of this class directly. Behavior is deterministic so tests
+    can assert on outputs (no Mock call-count plumbing).
+    """
+
+    name_or_path = "_fake_"
+    vocab_size = 1000
+    unk_token_id = None
+    all_special_ids: frozenset[int] = frozenset({0, 1, 2})
+
+    def __init__(self, model_max_length: int = 4096) -> None:
+        self.model_max_length = model_max_length
+
+    def encode(
+        self, text: str, add_special_tokens: bool = False, **_: object
+    ) -> list[int]:
+        return [100]
+
+    def decode(
+        self, ids: list[int], skip_special_tokens: bool = False, **_: object
+    ) -> str:
+        return "random text"
+
+    def convert_tokens_to_ids(self, token: str) -> int:
+        return 223
+
+
+def _fake_loader(
+    name_or_path: str, model_max_length: int | None, trust_remote_code: bool
+) -> _FakeTokenizer:
+    return _FakeTokenizer(model_max_length=model_max_length or 4096)
 
 
 def test_dataset_registry_structure() -> None:
@@ -316,86 +355,62 @@ def test_random_from_flags() -> None:
 
 def test_random_sample_requests() -> None:
     """Test sampling random requests."""
-    # Mock tokenizer
-    mock_tokenizer = Mock(spec=PreTrainedTokenizerBase)
-    mock_tokenizer.vocab_size = 1000
-    mock_tokenizer.model_max_length = 50
-    mock_tokenizer.all_special_ids = {0, 1, 2}
-    mock_tokenizer.encode.return_value = [100]
-    mock_tokenizer.decode.return_value = "random text"
-    mock_tokenizer.return_value.input_ids = [100, 101, 102]
-    mock_tokenizer.convert_tokens_to_ids = Mock(return_value=223)
-    mock_tokenizer.unk_token_id = None
-
+    tok = _FakeTokenizer(model_max_length=50)
     dataset = BenchmarkDataset.from_flags(dataset_name="random")
     assert isinstance(dataset, RandomBenchmarkDataset)
 
-    samples = dataset.sample_requests(
-        num_requests=2,
-        tokenizer=mock_tokenizer,
-        input_len="N(50, 5)",
-        output_len="N(20, 2)",
-        sys_prompt_ratio=0.1,
-        max_num_unique_sys_prompt=1,
-    )
+    with TokenizerPool(tok, loader=_fake_loader) as pool:
+        samples = dataset.sample_requests(
+            num_requests=2,
+            tokenizer=tok,
+            pool=pool,
+            input_len="N(50, 5)",
+            output_len="N(20, 2)",
+            sys_prompt_ratio=0.1,
+            max_num_unique_sys_prompt=1,
+        )
 
     assert len(samples.requests) == 2
     for request in samples.requests:
         assert isinstance(request, SampledRequest)
 
 
-def _make_mock_tokenizer(
-    vocab_size: int = 1000,
-    model_max_length: int = 4096,
-    input_ids: list[int] | None = None,
-) -> Mock:
-    """Return a minimal mock tokenizer for random-dataset unit tests."""
-    tok = Mock(spec=PreTrainedTokenizerBase)
-    tok.vocab_size = vocab_size
-    tok.model_max_length = model_max_length
-    tok.all_special_ids = {0, 1, 2}
-    tok.encode.return_value = [100]
-    tok.decode.return_value = "random text"
-    tok.convert_tokens_to_ids = Mock(return_value=223)
-    tok.unk_token_id = None
-    result = Mock()
-    result.input_ids = input_ids if input_ids is not None else [100, 101, 102]
-    tok.return_value = result
-    return tok
-
-
 def test_shared_contexts_empty_when_no_sys_prompt() -> None:
     """shared_contexts is empty when sys_prompt_ratio is 0."""
-    tok = _make_mock_tokenizer()
+    tok = _FakeTokenizer()
     dataset = BenchmarkDataset.from_flags(dataset_name="random")
     assert isinstance(dataset, RandomBenchmarkDataset)
 
-    samples = dataset.sample_requests(
-        num_requests=5,
-        tokenizer=tok,
-        input_len="50",
-        output_len="10",
-        sys_prompt_ratio=0.0,
-        max_num_unique_sys_prompt=1,
-    )
+    with TokenizerPool(tok, loader=_fake_loader) as pool:
+        samples = dataset.sample_requests(
+            num_requests=5,
+            tokenizer=tok,
+            pool=pool,
+            input_len="50",
+            output_len="10",
+            sys_prompt_ratio=0.0,
+            max_num_unique_sys_prompt=1,
+        )
 
     assert samples.shared_contexts == []
 
 
 def test_shared_contexts_one_entry_per_unique_idx() -> None:
     """shared_contexts has exactly one SharedContext per unique sys_prompt_idx."""
-    tok = _make_mock_tokenizer()
+    tok = _FakeTokenizer()
     dataset = BenchmarkDataset.from_flags(dataset_name="random")
     assert isinstance(dataset, RandomBenchmarkDataset)
 
-    samples = dataset.sample_requests(
-        num_requests=10,
-        tokenizer=tok,
-        input_len="50",
-        output_len="10",
-        sys_prompt_ratio=0.3,
-        max_num_unique_sys_prompt=1,
-    )
+    with TokenizerPool(tok, loader=_fake_loader) as pool:
+        samples = dataset.sample_requests(
+            num_requests=10,
+            tokenizer=tok,
+            pool=pool,
+            input_len="50",
+            output_len="10",
+            sys_prompt_ratio=0.3,
+            max_num_unique_sys_prompt=1,
+        )
 
     assert len(samples.shared_contexts) == 1
     assert isinstance(samples.shared_contexts[0], SharedContext)
@@ -403,19 +418,21 @@ def test_shared_contexts_one_entry_per_unique_idx() -> None:
 
 def test_shared_contexts_at_most_max_unique() -> None:
     """shared_contexts has at most max_num_unique_sys_prompt entries."""
-    tok = _make_mock_tokenizer()
+    tok = _FakeTokenizer()
     dataset = BenchmarkDataset.from_flags(dataset_name="random")
     assert isinstance(dataset, RandomBenchmarkDataset)
 
     max_unique = 3
-    samples = dataset.sample_requests(
-        num_requests=30,
-        tokenizer=tok,
-        input_len="50",
-        output_len="10",
-        sys_prompt_ratio=0.3,
-        max_num_unique_sys_prompt=max_unique,
-    )
+    with TokenizerPool(tok, loader=_fake_loader) as pool:
+        samples = dataset.sample_requests(
+            num_requests=30,
+            tokenizer=tok,
+            pool=pool,
+            input_len="50",
+            output_len="10",
+            sys_prompt_ratio=0.3,
+            max_num_unique_sys_prompt=max_unique,
+        )
 
     assert len(samples.shared_contexts) <= max_unique
     for entry in samples.shared_contexts:
@@ -798,30 +815,20 @@ def test_synthetic_pixel_dataset_sample_requests_for_image_to_image() -> None:
 def test_random_multiturn_emits_zero_prefix_turns() -> None:
     """gen_multiturn_random_requests always emits prefix_turns=0; the runner
     owns warmup prefix-turn assignment via _pick_warmup_population."""
-    mock_tokenizer = Mock(spec=PreTrainedTokenizerBase)
-    mock_tokenizer.vocab_size = 1000
-    mock_tokenizer.model_max_length = 4096
-    mock_tokenizer.all_special_ids = {0, 1, 2}
-    mock_tokenizer.encode.return_value = [100]
-    mock_tokenizer.decode.return_value = "random text"
-    mock_tokenizer.convert_tokens_to_ids = Mock(return_value=223)
-    mock_tokenizer.unk_token_id = None
-    mock_result = Mock()
-    mock_result.input_ids = list(range(32))
-    mock_tokenizer.return_value = mock_result
-
+    tok = _FakeTokenizer()
     dataset = BenchmarkDataset.from_flags(dataset_name="random")
     assert isinstance(dataset, RandomBenchmarkDataset)
-    samples = dataset.gen_multiturn_random_requests(
-        input_len=32,
-        output_len=16,
-        num_chat_sessions=20,
-        num_turns=3,
-        delay_between_chat_turns=500,
-        tokenizer=mock_tokenizer,
-        sys_prompt_ratio=0.0,
-        max_num_unique_sys_prompt=1,
-    )
+    with TokenizerPool(tok, loader=_fake_loader) as pool:
+        samples = dataset.gen_multiturn_random_requests(
+            input_len=32,
+            output_len=16,
+            num_chat_sessions=20,
+            num_turns=3,
+            delay_between_chat_turns=500,
+            pool=pool,
+            sys_prompt_ratio=0.0,
+            max_num_unique_sys_prompt=1,
+        )
 
     assert all(s.prefix_turns == 0 for s in samples.chat_sessions)
 

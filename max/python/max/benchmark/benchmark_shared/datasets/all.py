@@ -23,6 +23,9 @@ from max.benchmark.benchmark_shared.config import (
     BenchmarkTask,
     ServingBenchmarkConfig,
 )
+from max.benchmark.benchmark_shared.datasets._tokenizer_pool import (
+    TokenizerPool,
+)
 from max.benchmark.benchmark_shared.datasets.agentic_code import (
     AgenticCodeBenchmarkDataset,
 )
@@ -245,31 +248,37 @@ def sample_requests(
                 max_output_len=args.max_output_len,
             )
         elif isinstance(benchmark_dataset, RandomBenchmarkDataset):
-            if args.num_chat_sessions:
-                return benchmark_dataset.gen_multiturn_random_requests(
-                    input_len=args.random_input_len,
-                    output_len=args.random_output_len,
-                    num_chat_sessions=_inflated_chat_session_count(
-                        args, args.num_chat_sessions
-                    ),
-                    num_turns=args.random_num_turns,
-                    delay_between_chat_turns=args.delay_between_chat_turns,
-                    tokenizer=tokenizer,
-                    sys_prompt_ratio=args.random_sys_prompt_ratio,
-                    max_num_unique_sys_prompt=args.random_max_num_unique_sys_prompt,
-                )
-            else:
-                assert args.num_prompts is not None
-                return benchmark_dataset.sample_requests(
-                    num_requests=args.num_prompts,
-                    tokenizer=tokenizer,
-                    input_len=args.random_input_len,
-                    output_len=args.random_output_len,
-                    sys_prompt_ratio=args.random_sys_prompt_ratio,
-                    max_num_unique_sys_prompt=args.random_max_num_unique_sys_prompt,
-                    image_size=args.random_image_size,
-                    image_count=args.random_image_count,
-                )
+            # `with` ensures the spawn pool joins cleanly when the random
+            # dataset's encode/decode fan-out is done; workers spawn lazily
+            # on first use, so this is free when none of the methods below
+            # actually exercise the pool.
+            with TokenizerPool(tokenizer) as pool:
+                if args.num_chat_sessions:
+                    return benchmark_dataset.gen_multiturn_random_requests(
+                        input_len=args.random_input_len,
+                        output_len=args.random_output_len,
+                        num_chat_sessions=_inflated_chat_session_count(
+                            args, args.num_chat_sessions
+                        ),
+                        num_turns=args.random_num_turns,
+                        delay_between_chat_turns=args.delay_between_chat_turns,
+                        pool=pool,
+                        sys_prompt_ratio=args.random_sys_prompt_ratio,
+                        max_num_unique_sys_prompt=args.random_max_num_unique_sys_prompt,
+                    )
+                else:
+                    assert args.num_prompts is not None
+                    return benchmark_dataset.sample_requests(
+                        num_requests=args.num_prompts,
+                        tokenizer=tokenizer,
+                        pool=pool,
+                        input_len=args.random_input_len,
+                        output_len=args.random_output_len,
+                        sys_prompt_ratio=args.random_sys_prompt_ratio,
+                        max_num_unique_sys_prompt=args.random_max_num_unique_sys_prompt,
+                        image_size=args.random_image_size,
+                        image_count=args.random_image_count,
+                    )
         elif isinstance(benchmark_dataset, AxolotlBenchmarkDataset):
             assert args.num_prompts is not None
             return benchmark_dataset.sample_requests(
