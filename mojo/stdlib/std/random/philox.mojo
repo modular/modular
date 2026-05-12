@@ -39,7 +39,7 @@ from std.random.philox import Random
 
 from std.sys import is_little_endian
 
-from std.math import cos, log, sin, sqrt
+from std.math import cos, fma, log, pi, sin, sqrt
 
 from std.memory import bitcast
 
@@ -114,6 +114,28 @@ struct Random[rounds: Int = 10](Copyable):
         # maximum value such that `MAX_INT * scale < 1.0` (with float rounding)
         comptime SCALE = 4.6566127342e-10
         return (self.step() & 0x7FFFFFFF).cast[DType.float32]() * SCALE
+
+    @always_inline
+    def step_uniform_unbiased(mut self) -> SIMD[DType.float32, 4]:
+        """Generate 4 uniform float32 values in (0, 1), unbiased.
+
+        Uses all 32 raw bits of each Philox output via the conversion
+        `u = (raw + 0.5) / 2^32`, which is fused into a single FMA. The
+        resulting range is `(2^-33, 1 - 2^-33)` — never exactly 0 or 1.
+        Compared to `step_uniform`, this uses one extra bit of randomness
+        and is bounded away from 0, which removes the need for a `1.0 - u`
+        guard before `log(u)` in Box-Muller transforms.
+
+        Returns:
+            SIMD vector containing 4 random float32 values in (0, 1).
+        """
+        comptime SCALE = Float32(2.3283064e-10)  # 1 / 2^32
+        comptime SCALE_HALF = SCALE * Float32(0.5)
+        return fma(
+            self.step().cast[DType.float32](),
+            SIMD[DType.float32, 4](SCALE),
+            SIMD[DType.float32, 4](SCALE_HALF),
+        )
 
     @always_inline
     def _incrn(mut self, n: Int64):
@@ -229,3 +251,60 @@ struct NormalRandom[rounds: Int = 10](Copyable):
 
         # Combine z0 and z1 into a single SIMD[DType.float32, 8]
         return z0.join(z1)
+
+    @always_inline
+    def step_normal_4(
+        mut self, mean: Float32 = 0.0, stddev: Float32 = 1.0
+    ) -> SIMD[DType.float32, 4]:
+        """Generate 4 normal floats from a single Philox step.
+
+        Pairs adjacent uint32 outputs `(raw[0], raw[1])` and
+        `(raw[2], raw[3])` into Box-Muller pairs (one Philox step total,
+        vs two for `step_normal`). Uses the unbiased
+        `(raw + 0.5) / 2^32` uniform conversion, which is bounded away
+        from 0 — no `1.0 - u` guard before `log(u)` is needed.
+
+        Result lane order: `(sin(v_0)*s_0, cos(v_0)*s_0, sin(v_1)*s_1,
+        cos(v_1)*s_1)` — sin/cos interleaved per pair, matching the
+        natural output of a single Box-Muller call.
+
+        Args:
+            mean: Mean of the normal distribution.
+            stddev: Standard deviation of the normal distribution.
+
+        Returns:
+            SIMD vector of 4 normal float32 values.
+        """
+        comptime SCALE = Float32(1.0) / Float32(UInt64(1) << 32)
+        comptime SCALE_2PI = SCALE * Float32(2.0) * Float32(pi)
+        comptime SCALE_HALF = SCALE * Float32(0.5)
+        comptime SCALE_2PI_HALF = SCALE_2PI * Float32(0.5)
+
+        var raw = self._rng.step().cast[DType.float32]()
+
+        # Pair 0 → (raw[0], raw[1]); Pair 1 → (raw[2], raw[3]).
+        # u from even lanes, v (angle) from odd lanes.
+        var u_raw = SIMD[DType.float32, 2](raw[0], raw[2])
+        var v_raw = SIMD[DType.float32, 2](raw[1], raw[3])
+
+        var u = fma(
+            u_raw,
+            SIMD[DType.float32, 2](SCALE),
+            SIMD[DType.float32, 2](SCALE_HALF),
+        )
+        var v = fma(
+            v_raw,
+            SIMD[DType.float32, 2](SCALE_2PI),
+            SIMD[DType.float32, 2](SCALE_2PI_HALF),
+        )
+        var s = sqrt(log(u) * Float32(-2.0))
+        var sin_v = sin(v)
+        var cos_v = cos(v)
+
+        var result = SIMD[DType.float32, 4](
+            s[0] * sin_v[0],
+            s[0] * cos_v[0],
+            s[1] * sin_v[1],
+            s[1] * cos_v[1],
+        )
+        return result * stddev + mean
