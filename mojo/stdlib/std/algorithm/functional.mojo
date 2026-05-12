@@ -19,6 +19,7 @@ from std.algorithm import map
 ```
 """
 
+from std._plugin import CurrentPlugin
 from std.collections.string.string_slice import get_static_string
 from std.gpu import PDLLevel
 from std.math import ceildiv
@@ -26,6 +27,7 @@ from std.gpu.host import DeviceContext
 from std.gpu.host.info import is_cpu, is_gpu
 from std.runtime.asyncrt import DeviceContextPtr
 from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
+from std.sys.info import CompilationTarget
 
 from std.utils.index import Index, IndexList
 
@@ -404,6 +406,54 @@ def elementwise[
 
 
 @always_inline
+def elementwise[
+    rank: Int,
+    //,
+    FuncType: def[width: Int, rank: Int, alignment: Int = 1](
+        IndexList[rank]
+    ) register_passable -> None,
+    simd_width: Int,
+    *,
+    use_blocking_impl: Bool = False,
+    target: StaticString = "cpu",
+    pdl_level: PDLLevel = PDLLevel(1),
+    _trace_description: StaticString = "elementwise",
+](func: FuncType, shape: IndexList[rank, ...], context: DeviceContext,) raises:
+    """Unified-closure entry point for `elementwise`.
+
+    Accepts a parametric `register_passable` body (already in
+    unified-closure form, with explicit captures) and dispatches to
+    `_elementwise_impl`.
+
+    Parameters:
+        rank: The rank of the buffer.
+        FuncType: A parametric `register_passable` callable taking
+            `IndexList[rank]` and template parameters `width`, `rank`,
+            `alignment`.
+        simd_width: The SIMD vector width to use.
+        use_blocking_impl: Do not invoke the function asynchronously.
+        target: The target to run on.
+        pdl_level: The PDL level controlling GPU kernel overlap behavior.
+        _trace_description: Description of the trace.
+
+    Args:
+        func: The body closure value.
+        shape: The shape of the buffer.
+        context: The device context to use.
+
+    Raises:
+        If the operation fails.
+    """
+    _elementwise_impl[
+        simd_width,
+        use_blocking_impl=use_blocking_impl,
+        target=target,
+        pdl_level=pdl_level,
+        trace_description=_trace_description,
+    ](func, shape, context)
+
+
+@always_inline
 def _elementwise_impl[
     rank: Int,
     //,
@@ -435,17 +485,29 @@ def _elementwise_impl[
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
         task_id=get_safe_task_id(context),
     ):
-        comptime if is_cpu[target]():
+        comptime if CurrentPlugin.elementwise_fn[target]:
+            return comptime (CurrentPlugin.elementwise_fn[target].value())[
+                rank,
+                FuncType,
+                simd_width,
+                use_blocking_impl=use_blocking_impl,
+                pdl_level=pdl_level,
+            ](func, shape, context)
+        elif is_cpu[target]():
             _elementwise_impl_cpu[
                 simd_width=simd_width,
                 use_blocking_impl=use_blocking_impl,
                 trace_description=trace_description,
             ](func, shape=shape, ctx=Optional(context))
-        else:
+        elif is_gpu[target]():
             _elementwise_impl_gpu[
                 simd_width=simd_width,
                 trace_description=trace_description,
             ](func, shape=shape, ctx=context)
+        else:
+            CompilationTarget.unsupported_target_error[
+                operation=__get_current_function_name()
+            ]()
 
 
 # ===-----------------------------------------------------------------------===#

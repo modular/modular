@@ -15,6 +15,8 @@ from std.reflection.location import SourceLocation
 from std.sys.info import _TargetType, _current_target
 from std.io import FileDescriptor
 from std.ffi import CStringSlice
+from std.gpu import PDLLevel
+from std.gpu.host import DeviceContext
 
 from std.utils.index import Index, IndexList, StaticTuple
 
@@ -102,6 +104,13 @@ trait PluginHooks:
     back through `_debug_assert_msg` and deadlocks instantiation when
     assertions are enabled."""
 
+    comptime elementwise_fn[target: StaticString]: Optional[ElementwiseFnType]
+    """Per-target plugin hook for `elementwise[..., target=target]`.
+
+    Consulted before the built-in cpu/gpu paths in `_elementwise_impl`,
+    so a plugin can override dispatch for any target (including `"cpu"`
+    and `"gpu"`) by populating this hook."""
+
 
 # FIXME(MOCO-3871): Alias is to workaround function type comparision bug.
 comptime PrintEmitFnType = def[O: Origin](
@@ -128,6 +137,24 @@ comptime ReduceGeneratorFnType = (
         init: StaticTuple[Scalar[init_type], num_reductions],
         reduce_dim: Int,
     ) thin
+)
+
+
+comptime ElementwiseFnType = (
+    def[
+        rank: Int,
+        FuncType: def[width: Int, rank: Int, alignment: Int = 1](
+            IndexList[rank]
+        ) register_passable -> None,
+        simd_width: Int,
+        *,
+        use_blocking_impl: Bool = False,
+        pdl_level: PDLLevel = PDLLevel(1),
+    ](
+        func: FuncType,
+        shape: IndexList[rank, ...],
+        ctx: DeviceContext,
+    ) capturing raises -> None
 )
 
 
@@ -174,3 +201,7 @@ struct DefaultPlugin(PluginHooks):
         pass
 
     comptime _handles_debug_assert: Bool = False
+
+    comptime elementwise_fn[target: StaticString]: Optional[
+        ElementwiseFnType
+    ] = None
