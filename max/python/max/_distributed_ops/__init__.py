@@ -20,9 +20,15 @@ from collections.abc import Sequence
 import mojo.importer
 from max.driver import Buffer, Device
 
-from .distributed_ops import (  # type: ignore[import-not-found]
-    broadcast_kernel as _broadcast_kernel,
-)
+# The mojo source comptime-instantiates a GPU kernel, which fails to JIT on
+# hosts without a GPU toolchain. Defer the failure to call time so dependents
+# can still import this module for introspection.
+try:
+    from .distributed_ops import (  # type: ignore[import-not-found]
+        broadcast_kernel as _broadcast_kernel,
+    )
+except ImportError:
+    _broadcast_kernel = None
 
 
 def distributed_broadcast(
@@ -105,6 +111,12 @@ def distributed_broadcast(
                 f"output_buffers[{i}].dtype={out.dtype} must equal "
                 f"input_buffer.dtype={dtype}"
             )
+
+    if _broadcast_kernel is None:
+        raise RuntimeError(
+            "distributed_broadcast is unavailable: the mojo extension could "
+            "not be loaded. This typically means the host has no GPU toolchain."
+        )
 
     num_bytes = input_buffer.num_elements * dtype.size_in_bytes
     _broadcast_kernel(
