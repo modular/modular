@@ -357,6 +357,15 @@ bool LegalizePOPOperations::conversionRequiresLegalization(
     return false;
   }
 
+  // On Metal, int<->float casts go through AIR intrinsics and don't need
+  // legalization here. fp8 types still do.
+  if (isMetalTriple(target.getTriple()) &&
+      fromDType.isFloat() != toDType.isFloat()) {
+    KGENDType floatDType = fromDType.isFloat() ? fromDType : toDType;
+    if (floatDType.getWidthInBits() > 8)
+      return false;
+  }
+
   auto targetConversionsIt = targetLegalConversion.find(getTargetKey());
   if (targetConversionsIt == targetLegalConversion.end()) {
     // Conservatively assume that all fp8 and smaller types do require
