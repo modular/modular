@@ -407,6 +407,47 @@ def test_direct_io_roundtrip(cache_dir: str) -> None:
     tier.shutdown()
 
 
+def test_concurrent_metadata_saves(cache_dir: str) -> None:
+    """Multiple threads saving metadata simultaneously must not crash."""
+    tier = DiskTier(
+        cache_dir=cache_dir,
+        block_nbytes=16,
+        max_disk_size_bytes=10_000,
+        num_workers=8,
+    )
+    # Force metadata_save_interval=1 so every write triggers a save,
+    # maximizing the chance of concurrent _save_metadata calls.
+    tier._metadata_save_interval = 1
+
+    num_blocks = 64
+    futures = []
+    for h in range(num_blocks):
+        src = _make_block(16, seed=h)
+        f = tier.write_block_async(block_hash=h, src=src)
+        if f is not None:
+            futures.append(f)
+
+    # All writes (and their metadata saves) must complete without error.
+    for f in futures:
+        f.result()
+
+    # Verify all blocks persisted correctly.
+    for h in range(num_blocks):
+        assert tier.contains(h)
+
+    tier.shutdown()
+
+    # Verify metadata reload works after concurrent saves.
+    tier2 = DiskTier(
+        cache_dir=cache_dir,
+        block_nbytes=16,
+        max_disk_size_bytes=10_000,
+    )
+    for h in range(num_blocks):
+        assert tier2.contains(h)
+    tier2.shutdown()
+
+
 def test_direct_io_disabled_on_unaligned_blocks(cache_dir: str) -> None:
     """Verify O_DIRECT is disabled when block size is not FS-aligned."""
     tier = DiskTier(

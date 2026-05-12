@@ -28,7 +28,7 @@ from max.benchmark.benchmark_shared.serving_metrics import (
     calculate_metrics,
     calculate_pixel_generation_metrics,
 )
-from max.diagnostics.cpu import CPUMetrics
+from max.profiler.cpu import CPUMetrics
 
 _EMPTY_CPU_METRICS = CPUMetrics(
     user=0.0, user_percent=0.0, system=0.0, system_percent=0.0, elapsed=0.0

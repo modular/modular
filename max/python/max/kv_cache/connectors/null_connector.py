@@ -19,7 +19,6 @@ All operations are no-ops that return immediately.
 
 from __future__ import annotations
 
-from max.interfaces import RequestID
 from max.nn.kv_cache.metrics import KVCacheMetrics
 
 
@@ -37,25 +36,14 @@ class NullConnector:
     ) -> int:
         return 0
 
-    def save(
+    def offload(
         self,
         block_ids: list[int],
         block_hashes: list[int],
-        parent_seq_hash: int = 0,
     ) -> None:
         pass
 
     def sync(self) -> None:
-        pass
-
-    def flush(self) -> None:
-        pass
-
-    def on_request_complete(
-        self,
-        request_id: RequestID,
-        block_ids: list[int],
-    ) -> None:
         pass
 
     def shutdown(self) -> None:

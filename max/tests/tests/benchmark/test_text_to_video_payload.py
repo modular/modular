@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from max.benchmark.benchmark_shared.config import (
     PIXEL_GENERATION_TASKS,
+    get_pixel_gen_endpoint,
 )
 from max.benchmark.benchmark_shared.datasets.pixel_synthetic import (
     SyntheticPixelBenchmarkDataset,
@@ -100,3 +101,18 @@ def test_pixel_generation_payload_routes_image_when_no_num_frames() -> None:
     image = payload["provider_options"]["image"]
     assert "num_frames" not in image
     assert image["width"] == 1024
+
+
+def test_get_pixel_gen_endpoint_vllm_video() -> None:
+    assert get_pixel_gen_endpoint("vllm", "text-to-video") == "/v1/videos/sync"
+
+
+def test_get_pixel_gen_endpoint_vllm_image() -> None:
+    assert (
+        get_pixel_gen_endpoint("vllm", "text-to-image")
+        == "/v1/chat/completions"
+    )
+
+
+def test_get_pixel_gen_endpoint_modular_video() -> None:
+    assert get_pixel_gen_endpoint("modular", "text-to-video") == "/v1/responses"

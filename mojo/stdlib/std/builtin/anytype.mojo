@@ -153,17 +153,20 @@ trait ImplicitlyDestructible:
     Example:
 
     ```mojo
-    from std.memory import UnsafePointer, alloc
+    from std.memory import UnsafePointer
+    from std.memory.alloc import alloc, free, Layout
 
     struct ResourceOwner(ImplicitlyDestructible):
         var ptr: UnsafePointer[Int, MutAnyOrigin]
+        var size: Int
 
         def __init__(out self, size: Int):
-            self.ptr = alloc[Int](size)
+            self.size = size
+            self.ptr = alloc(Layout[Int](count=size))
 
         def __del__(deinit self):
             # Clean up owned resources
-            self.ptr.free()
+            free(self.ptr, Layout[Int](count=size))
     ```
 
     Best practices:

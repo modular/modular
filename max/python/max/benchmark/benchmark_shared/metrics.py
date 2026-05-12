@@ -50,7 +50,7 @@ __all__ = [
 ]
 
 if TYPE_CHECKING:
-    from max.diagnostics.cpu import CPUMetrics
+    from max.profiler.cpu import CPUMetrics
 
     from .server_metrics import HistogramData, ParsedMetrics
 
@@ -1120,7 +1120,7 @@ def calculate_spec_decode_stats(
 # import (``server_metrics`` imports ``SpecDecodeMetrics`` from this module),
 # so we re-import them here once all of this module's classes are defined and
 # call ``model_rebuild()`` so pydantic can resolve the annotations.
-from max.diagnostics.cpu import CPUMetrics
+from max.profiler.cpu import CPUMetrics
 
 from .server_metrics import ParsedMetrics
 

@@ -164,6 +164,7 @@
     "docs/reference/struct-declarations",
     "docs/reference/trait-declarations",
     "docs/reference/inline-mlir",
+    "docs/reference/docstrings",
     {
       "label": "Decorators",
       "type": "category",

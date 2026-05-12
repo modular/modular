@@ -1389,7 +1389,7 @@ struct SIMD[dtype: DType, size: Int](
             `i` is the value of `self[i] == rhs[i]`.
         """
 
-        var res = __mlir_op.`pop.cmp`[pred=__mlir_attr.`#pop<cmp_pred eq>`](
+        var res = __mlir_op.`pop.cmp`[pred=__mlir_attr.`#kgen<cmp_pred eq>`](
             self._mlir_value, rhs._mlir_value
         )
         return Self._Mask(mlir_value=res)
@@ -1406,7 +1406,7 @@ struct SIMD[dtype: DType, size: Int](
             `i` is the value of `self[i] != rhs[i]`.
         """
 
-        var res = __mlir_op.`pop.cmp`[pred=__mlir_attr.`#pop<cmp_pred ne>`](
+        var res = __mlir_op.`pop.cmp`[pred=__mlir_attr.`#kgen<cmp_pred ne>`](
             self._mlir_value, rhs._mlir_value
         )
         return Self._Mask(mlir_value=res)
@@ -1423,7 +1423,7 @@ struct SIMD[dtype: DType, size: Int](
             `i` is the value of `self[i] > rhs[i]`.
         """
 
-        var res = __mlir_op.`pop.cmp`[pred=__mlir_attr.`#pop<cmp_pred gt>`](
+        var res = __mlir_op.`pop.cmp`[pred=__mlir_attr.`#kgen<cmp_pred gt>`](
             self._mlir_value, rhs._mlir_value
         )
         return Self._Mask(mlir_value=res)
@@ -1441,7 +1441,7 @@ struct SIMD[dtype: DType, size: Int](
             `i` is the value of `self[i] >= rhs[i]`.
         """
 
-        var res = __mlir_op.`pop.cmp`[pred=__mlir_attr.`#pop<cmp_pred ge>`](
+        var res = __mlir_op.`pop.cmp`[pred=__mlir_attr.`#kgen<cmp_pred ge>`](
             self._mlir_value, rhs._mlir_value
         )
         return Self._Mask(mlir_value=res)
@@ -1458,7 +1458,7 @@ struct SIMD[dtype: DType, size: Int](
             `i` is the value of `self[i] < rhs[i]`.
         """
 
-        var res = __mlir_op.`pop.cmp`[pred=__mlir_attr.`#pop<cmp_pred lt>`](
+        var res = __mlir_op.`pop.cmp`[pred=__mlir_attr.`#kgen<cmp_pred lt>`](
             self._mlir_value, rhs._mlir_value
         )
         return Self._Mask(mlir_value=res)
@@ -1476,7 +1476,7 @@ struct SIMD[dtype: DType, size: Int](
             `i` is the value of `self[i] <= rhs[i]`.
         """
 
-        var res = __mlir_op.`pop.cmp`[pred=__mlir_attr.`#pop<cmp_pred le>`](
+        var res = __mlir_op.`pop.cmp`[pred=__mlir_attr.`#kgen<cmp_pred le>`](
             self._mlir_value, rhs._mlir_value
         )
         return Self._Mask(mlir_value=res)
@@ -1854,9 +1854,9 @@ struct SIMD[dtype: DType, size: Int](
             True if the SIMD scalar is non-zero and False otherwise.
         """
 
-        var ne_zero = __mlir_op.`pop.cmp`[pred=__mlir_attr.`#pop<cmp_pred ne>`](
-            self._mlir_value, Self(0)._mlir_value
-        )
+        var ne_zero = __mlir_op.`pop.cmp`[
+            pred=__mlir_attr.`#kgen<cmp_pred ne>`
+        ](self._mlir_value, Self(0)._mlir_value)
         return Bool(mlir_value=__mlir_op.`pop.simd.reduce_or`(ne_zero))
 
     @always_inline("nodebug")

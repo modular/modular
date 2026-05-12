@@ -39,7 +39,7 @@ from max.benchmark.sweep_benchmark_serving_result_utils import (
     format_float,
     validate_sweep_serving_percentiles,
 )
-from max.diagnostics.cpu import CPUMetrics
+from max.profiler.cpu import CPUMetrics
 
 
 def test_supported_percentiles_frozen_set() -> None:

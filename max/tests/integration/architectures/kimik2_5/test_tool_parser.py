@@ -387,13 +387,38 @@ def test_parse_delta_accumulates() -> None:
     """Test that parse_delta accumulates tokens in buffer."""
     parser = KimiToolParser()
 
-    # parse_delta should accumulate tokens
+    # parse_delta should accumulate tokens; before any section marker lands,
+    # result is None
     result1 = parser.parse_delta("<|tool_calls")
-    result2 = parser.parse_delta("_section_begin|>")
-
     assert result1 is None
-    assert result2 is None
+
+    # Once the section-begin marker is complete, returns [] (not None) so the
+    # streaming path knows to suppress structural tokens even with no deltas yet
+    result2 = parser.parse_delta("_section_begin|>")
+    assert result2 == []
     assert parser._buffer == "<|tool_calls_section_begin|>"
+
+
+def test_parse_delta_returns_empty_list_inside_tool_section() -> None:
+    """Test that parse_delta returns [] (not None) inside the tool-calls section.
+
+    [] signals the caller to suppress raw structural tokens from being emitted
+    as content, even when there are no tool-call deltas ready to stream yet.
+    """
+    parser = KimiToolParser()
+
+    # Tokens that don't start/complete a section marker and have no sendable
+    # content return None (more context needed before anything can be emitted)
+    result_pre = parser.parse_delta("<|tool_calls")
+    assert result_pre is None
+
+    # Once the section-begin marker completes, returns [] even with no deltas
+    result_in_section = parser.parse_delta("_section_begin|>")
+    assert result_in_section == []
+
+    # Structural tokens mid-section also return [] while parsing
+    result_mid = parser.parse_delta("<|tool_call_begin|>")
+    assert result_mid == []
 
 
 def test_parse_delta_single_tool_call_streaming() -> None:

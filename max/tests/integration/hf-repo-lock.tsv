@@ -109,6 +109,8 @@ modularai/replit-code-1.5	5613bc2a56586347736c8825e5287659b1a17794
 neubla/tiny-random-LlamaForCausalLM	1c81a3fba044af78df253edc66bdbab183184932
 nvidia/DeepSeek-R1-0528-NVFP4-v2	25a138f28f49022958b9f2d205f9b7de0cdb6e18
 nvidia/DeepSeek-V3.1-NVFP4	68b4a17cce1482e94030ca00dacda3dec4c6359d
+nvidia/Gemma-4-26B-A4B-NVFP4	bbf84e07ec612504a2ad296b3c7ab2e1712f7ea2
+nvidia/Gemma-4-31B-IT-NVFP4	e5ef03afa233c35cb000323ff098d4291e1dd07c
 nvidia/Kimi-K2.5-NVFP4	e4e908c073784de20ad3af0be653421f1088922d
 nvidia/Llama-3.1-405B-Instruct-NVFP4	8ddfc523e75da0cd52d8d486895aa984282f6db9
 nvidia/Llama-3.1-8B-Instruct-NVFP4	bdb54e24298451af785c0ac63c1b485e9b7400a2

@@ -568,8 +568,8 @@ class PagedKVCacheManager:
             max_prompt_len = max(max_prompt_len, prompt_tokens)
             max_cached_len = max(max_cached_len, cache_length + prompt_tokens)
 
-        # Initiate any pending async saves to external cache tiers.
-        replica.connector.flush()
+        # Initiate saves to external cache tiers.
+        replica.block_manager.offload()
 
         # Build a tensor of maximum lengths. Each step slices the first row to
         # advance to the values for the next row. This should not be allocated

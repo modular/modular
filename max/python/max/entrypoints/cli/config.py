@@ -424,7 +424,7 @@ def pipeline_config_options(func: Callable[_P, _R]) -> Callable[_P, _R]:
         is_flag=False,
         type=DevicesOptionType(),
         show_default=False,
-        default="default",
+        default=None,
         help=(
             "Whether to run the model on CPU (``--devices=cpu``), GPU (``--devices=gpu``),"
             " every visible GPU (``--devices=gpu:all``), or a list of GPUs"
@@ -447,7 +447,7 @@ def pipeline_config_options(func: Callable[_P, _R]) -> Callable[_P, _R]:
     )
     @functools.wraps(func)
     def wrapper(*args: _P.args, **kwargs: _P.kwargs) -> _R:
-        def is_str_or_list_of_int(value: Any) -> TypeGuard[str | list[int]]:
+        def is_device_handle(value: Any) -> TypeGuard[str | list[int]]:
             return isinstance(value, str) or (
                 isinstance(value, list)
                 and all(isinstance(x, int) for x in value)
@@ -456,12 +456,11 @@ def pipeline_config_options(func: Callable[_P, _R]) -> Callable[_P, _R]:
         # Remove the options from kwargs and replace with unified device_specs.
         devices = kwargs.pop("devices")
         draft_devices = kwargs.pop("draft_devices")
-        assert is_str_or_list_of_int(devices)
-
-        # Inherit draft_devices from devices if not explicitly specified
-        if draft_devices is None:
+        assert devices is None or is_device_handle(devices)
+        # Inherit draft_devices from devices if the target devices were explicit.
+        if draft_devices is None and devices is not None:
             draft_devices = devices
-        assert is_str_or_list_of_int(draft_devices)
+        assert draft_devices is None or is_device_handle(draft_devices)
 
         # Enable virtual device mode if target is set.
         # This must happen BEFORE calling device_specs() which does validation.
@@ -479,18 +478,24 @@ def pipeline_config_options(func: Callable[_P, _R]) -> Callable[_P, _R]:
             )
             set_virtual_device_api(api)
             set_virtual_device_target_arch(target_arch)
+            target_devices = [] if devices is None else devices
+            target_draft_devices = (
+                [] if draft_devices is None else draft_devices
+            )
 
             virtual_count = calculate_virtual_device_count_from_cli(
-                devices, draft_devices
+                target_devices, target_draft_devices
             )
             set_virtual_device_count(virtual_count)
 
         # The type ignores are necessary because "devices" is a str, but in
         # device_specs() we accept them as a DeviceHandle.
-        kwargs["device_specs"] = DevicesOptionType.device_specs(devices)  # type: ignore[arg-type]
-        kwargs["draft_device_specs"] = DevicesOptionType.device_specs(
-            draft_devices  # type: ignore[arg-type]
-        )
+        if devices is not None:
+            kwargs["device_specs"] = DevicesOptionType.device_specs(devices)  # type: ignore[arg-type]
+        if draft_devices is not None:
+            kwargs["draft_device_specs"] = DevicesOptionType.device_specs(
+                draft_devices  # type: ignore[arg-type]
+            )
 
         return func(*args, **kwargs)
 

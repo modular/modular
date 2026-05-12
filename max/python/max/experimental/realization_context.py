@@ -273,7 +273,7 @@ def _eager_model_cache_key(
     Returns:
         A tuple of ``(asm_hex_digest, ((resolved_path, content_hash), ...))``.
     """
-    module_asm = graph._module.operation.get_asm(
+    module_asm = graph._module.asm(
         assume_verified=True,
         enable_debug_info=False,
         pretty_debug_info=False,
@@ -398,13 +398,9 @@ class EagerRealizationContext(RealizationContext):
                 s._graph_value for t in outputs for s in t.local_shards
             ]
             self.graph.output(*flat_values)
-        # Remove dead values and inputs
-        module: builtin.ModuleOp = _core.Operation._from_cmlir(
-            self.graph._module.operation
-        )  # type: ignore
         # Remove sources that no longer exist from the graph
         _core.lower(
-            module,
+            self.graph._module,
             [
                 builtin.passes.RemoveDeadValuesPass(),
                 rmo.passes.LegalizeRMOOps(),

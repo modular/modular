@@ -20,6 +20,7 @@ from typing import Protocol
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, ops
 
+from ..activation import activation_function_from_name
 from ..comm.ep.ep_kernels import fused_silu_quantized
 from ..kernels import (
     block_scales_interleave,
@@ -385,9 +386,14 @@ class Mxfp4Strategy:
         )
 
 
-def silu_gate(gate_up_projs: TensorValue, moe_dim: int) -> TensorValue:
-    """Applies SiLU-gated activation: silu(gate) * up."""
-    return ops.silu(gate_up_projs[:, :moe_dim]) * gate_up_projs[:, moe_dim:]
+def gated_activation(
+    gate_up: TensorValue, moe_dim: int, activation: str
+) -> TensorValue:
+    """Applies gated activation: activation(gate) * up."""
+    activation_fn = activation_function_from_name(activation)
+    gate = activation_fn(gate_up[:, :moe_dim])
+    up = gate_up[:, moe_dim:]
+    return gate * up
 
 
 def _interleave_nvfp4_scales(

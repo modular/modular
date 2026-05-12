@@ -27,7 +27,7 @@ from .quant_strategy import (
     Nvfp4Scales,
     Nvfp4Strategy,
     QuantStrategy,
-    silu_gate,
+    gated_activation,
 )
 
 _T = TypeVar("_T")
@@ -272,6 +272,9 @@ class MoEQuantized(MoE):
         )
         scales_offset = create_indices_result[5] if nvfp4 else None
 
+        if self.pre_expert_norm is not None:
+            x = self.pre_expert_norm(x)
+
         permuted = ops.gather(
             x,
             ops.cast(token_order // self.num_experts_per_token, DType.int32),
@@ -324,7 +327,7 @@ class MoEQuantized(MoE):
             estimated_total_m=total_m,
         )
 
-        if self.swiglu_limit > 0:
+        if self.gate_activation == "silu" and self.swiglu_limit > 0:
             gate = ops.silu(gate_up[:, : self.moe_dim])
             up = gate_up[:, self.moe_dim :]
             lim = ops.constant(
@@ -337,7 +340,9 @@ class MoEQuantized(MoE):
             up = ops.min(ops.max(up, neg_lim), lim)
             gate_up = gate * up
         else:
-            gate_up = silu_gate(gate_up, self.moe_dim)
+            gate_up = gated_activation(
+                gate_up, self.moe_dim, self.gate_activation
+            )
 
         if nvfp4:
             assert scales_offset is not None

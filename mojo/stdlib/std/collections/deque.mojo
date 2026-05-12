@@ -26,6 +26,7 @@ from std.bit import next_power_of_two
 import std.format._utils as fmt
 from std.hashlib import Hasher
 from std.collections import check_bounds
+from std.memory.alloc import alloc, free, Layout
 
 # ===-----------------------------------------------------------------------===#
 # Deque
@@ -143,7 +144,7 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
             deque_capacity = min(deque_capacity, max_deque_capacity)
 
         self._capacity = deque_capacity
-        self._data = alloc[Self.ElementType](deque_capacity)
+        self._data = alloc(Layout[Self.ElementType](count=deque_capacity))
         self._head = 0
         self._tail = 0
         self._min_capacity = min_deque_capacity
@@ -206,7 +207,7 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         for i in range(len(self)):
             offset = self._physical_index(self._head + i)
             (self._data + offset).destroy_pointee()
-        self._data.free()
+        free(self._data, {count = self._capacity})
 
     # ===-------------------------------------------------------------------===#
     # Operator dunders
@@ -500,9 +501,9 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         for i in range(len(self)):
             offset = self._physical_index(self._head + i)
             (self._data + offset).destroy_pointee()
-        self._data.free()
+        free(self._data, {count = self._capacity})
         self._capacity = self._min_capacity
-        self._data = alloc[Self.ElementType](self._capacity)
+        self._data = alloc(Layout[Self.ElementType](count=self._capacity))
         self._head = 0
         self._tail = 0
 
@@ -544,6 +545,7 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
             self._prepare_for_new_elements(n_move_total, n_move_self)
 
         # we will consume all elements of `values`
+        var values_capacity = values.capacity
         values_data = values.steal_data()
 
         # pop excess elements from `values`
@@ -557,7 +559,7 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
             self._tail = self._physical_index(self._tail + 1)
 
         # free the list backing buffer
-        values_data.free()
+        free(values_data, {count = values_capacity})
 
     def extendleft(mut self, var values: List[Self.ElementType]):
         """Extends the left side of the deque by consuming elements from the list argument.
@@ -581,6 +583,7 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
             self._prepare_for_new_elements(n_move_total, n_move_self)
 
         # we will consume all elements of `values`
+        var values_capacity = values.capacity
         values_data = values.steal_data()
 
         # pop excess elements from `values`
@@ -593,7 +596,7 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
             self._head = self._physical_index(self._head - 1)
             (self._data + self._head).init_pointee_move_from(src + i)
 
-        values_data.free()
+        free(values_data, {count = values_capacity})
 
     def index(
         self,
@@ -895,14 +898,14 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         if new_capacity == n_total:
             new_capacity <<= 1
 
-        new_data = alloc[Self.ElementType](new_capacity)
+        new_data = alloc(Layout[Self.ElementType](count=new_capacity))
 
         for i in range(n_retain):
             offset = self._physical_index(self._head + i)
             (new_data + i).init_pointee_move_from(self._data + offset)
 
         if self._capacity > 0:
-            self._data.free()
+            free(self._data, {count = self._capacity})
 
         self._data = new_data
         self._capacity = new_capacity
@@ -927,7 +930,7 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
             head_len = deque_len
             tail_len = 0
 
-        new_data = alloc[Self.ElementType](new_capacity)
+        new_data = alloc(Layout[Self.ElementType](count=new_capacity))
 
         src = self._data + self._head
         dsc = new_data
@@ -943,7 +946,7 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         self._tail = deque_len
 
         if self._capacity > 0:
-            self._data.free()
+            free(self._data, {count = self._capacity})
         self._data = new_data
         self._capacity = new_capacity
 

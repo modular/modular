@@ -40,12 +40,12 @@ from max.benchmark.benchmark_shared.request import (
     measured_window_duration,
 )
 from max.benchmark.benchmark_shared.steady_state import detect_steady_state
-from max.diagnostics.cpu import CPUMetrics
+from max.profiler.cpu import CPUMetrics
 from transformers import PreTrainedTokenizerBase
 
 if TYPE_CHECKING:
     from max.benchmark.benchmark_shared.server_metrics import ParsedMetrics
-    from max.diagnostics.gpu import GPUStats
+    from max.profiler.gpu import GPUStats
 
 logger = logging.getLogger(__name__)
 
