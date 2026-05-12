@@ -24,6 +24,7 @@ the registered module from Python instead.
 """
 
 from std.benchmark import Bench, BenchConfig, Bencher, BenchId, keep
+from std.os import abort
 from std.python import Python, PythonObject
 from std.python.bindings import PythonModuleBuilder
 
@@ -44,17 +45,19 @@ def bench_def_function_add(mut b: Bencher) raises:
     var arg_b = PythonObject(2)
 
     @always_inline
-    @parameter
-    def call_fn() raises:
-        for _ in range(1000):
-            var r = f(arg_a, arg_b)
-            keep(r)
+    def call_fn() {read}:
+        try:
+            for _ in range(1000):
+                var r = f(arg_a, arg_b)
+                keep(r)
+        except e:
+            abort(String(e))
 
-    b.iter[call_fn]()
-    keep(mod)
-    keep(arg_a)
-    keep(arg_b)
-    keep(f)
+    b.iter(call_fn)
+    _ = mod^
+    _ = arg_a^
+    _ = arg_b^
+    _ = f^
 
 
 def main() raises:

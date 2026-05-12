@@ -23,6 +23,7 @@ their handler body says `Int(py=arg)`.
 """
 
 from std.benchmark import Bench, BenchConfig, Bencher, BenchId, keep
+from std.os import abort
 from std.python import Python, PythonObject
 
 
@@ -34,14 +35,16 @@ def bench_int_from_pyint(mut b: Bencher) raises:
     var py_int = PythonObject(42)
 
     @always_inline
-    @parameter
-    def call_fn() raises:
-        for _ in range(1000):
-            var x = Int(py=py_int)
-            keep(x)
+    def call_fn() {read}:
+        try:
+            for _ in range(1000):
+                var x = Int(py=py_int)
+                keep(x)
+        except e:
+            abort(String(e))
 
-    b.iter[call_fn]()
-    keep(py_int)
+    b.iter(call_fn)
+    _ = py_int^
 
 
 def main() raises:
