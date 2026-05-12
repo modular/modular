@@ -108,10 +108,13 @@ mojo_filecheck_test(
     name = "test_function_error_sync_mode.mojo.test",
     srcs = ["test_function_error_sync_mode.mojo"],
     env = {
-        "MODULAR_DEVICE_CONTEXT_SYNC_MODE": "1",
+        "MODULAR_DEBUG": "device-sync-mode",
     },
     expect_crash = True,
     tags = ["gpu"],
+    # B200 does not propagate the CUDA error through `synchronize()` even
+    # with sync mode; the abort fires at DeviceContext destruction so the
+    # except block never runs.
     target_compatible_with = ["//:nvidia_gpu"] + select({
         "//:b200_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
