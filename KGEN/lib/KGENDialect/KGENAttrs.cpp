@@ -589,14 +589,15 @@ static TypedAttr getCastAttr(Type type, TypedAttr inputTypeValue) {
     if (auto upcast = sugarDynCast<UpcastAttr>(inputTypeValue))
       return CastAttr::get(type, upcast.getInputTypeValue());
 
-    // If we are upcasting an downcasted type value, we can not guarantee that
-    // the outcome is an upcast. However, we can still fold it to a downcast,
-    // and downcast knows how to fold it back to an upcast when it is provable.
-    if (auto upcast = sugarDynCast<UpcastAttr>(inputTypeValue))
-      return DowncastAttr::get(type, upcast.getInputTypeValue());
+    // NOTE, we don't fold upcast(downcast(x) : ft) : tt to `downcast(x) : tt`:
+    // We need to preserve the intended downcast information.
   }
 
   if constexpr (std::is_same_v<CastAttr, DowncastAttr>) {
+    // TODO: Maybe we should combine two downcast with a combined trait type and
+    // then wrapped in a upcast as well. But the folding seems good enough for
+    // now.
+
     // downcast(downcast(x)) = downcast(x)
     if (auto downcast = sugarDynCast<DowncastAttr>(inputTypeValue))
       return DowncastAttr::get(type, downcast.getInputTypeValue());
