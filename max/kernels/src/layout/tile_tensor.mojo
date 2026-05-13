@@ -39,7 +39,7 @@ from .tile_layout import (
     _RowMajor,
     row_major,
 )
-from .coord import (
+from layout.coord import (
     ComptimeInt,
     RuntimeInt,
     Idx,
@@ -48,9 +48,7 @@ from .coord import (
     _All,
     _IntToComptimeInt,
     coord,
-    coord_to_int_tuple,
     coord_to_index_list,
-    _IntTupleToCoordLike,
     _CoordToDynamic,
     _Multiply,
     _Divide,
@@ -58,6 +56,7 @@ from .coord import (
     _Flattened,
     DynamicCoord,
 )
+from .int_tuple import coord_to_int_tuple, _IntTupleToCoordLike
 
 
 @always_inline

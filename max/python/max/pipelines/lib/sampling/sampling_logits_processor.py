@@ -22,7 +22,13 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import numpy.typing as npt
-from max.driver import Buffer, Device, DeviceEvent, DevicePinnedBuffer
+from max.driver import (
+    Buffer,
+    Device,
+    DeviceEvent,
+    DevicePinnedBuffer,
+    is_virtual_device_mode,
+)
 from max.dtype import DType
 from max.engine import Model
 from max.interfaces import BatchProcessorInputs, TextGenerationContextType
@@ -91,6 +97,28 @@ class FusedSamplingProcessor:
     generated_tokens: Buffer
     """The generated tokens that have been sampled so far."""
 
+    @staticmethod
+    def allocate_identity_logit_offsets(
+        pipeline_config: PipelineConfig, device: Device
+    ) -> Buffer | None:
+        """Returns a preallocated ``[0, 1, ..., max_batch_size]`` index buffer.
+
+        Used by `logits_for_sampling` when sampling from ``next_token_logits``
+        with a variable-logit sampler. Returns ``None`` when the buffer is not
+        needed (variable-logit sampling disabled, or running in virtual-device
+        mode).
+        """
+        if (
+            not pipeline_config.sampling.enable_variable_logits
+            or is_virtual_device_mode()
+        ):
+            return None
+        max_batch_size = pipeline_config.runtime.max_batch_size
+        assert max_batch_size is not None, "max_batch_size must be set"
+        return Buffer.from_numpy(
+            np.arange(max_batch_size + 1, dtype=np.uint32)
+        ).to(device)
+
     @traced
     def __init__(
         self,
@@ -102,12 +130,14 @@ class FusedSamplingProcessor:
         bitmask: npt.NDArray[np.int32] | None = None,
         vocab_size: int | None = None,
         pinned_new_tokens: Buffer | None = None,
+        identity_logit_offsets: Buffer | None = None,
     ):
         self.sampler = sampler
         self.batch_size = len(context_batch)
         self.device = device
         self.bitmask = bitmask
         self.vocab_size = vocab_size
+        self._identity_logit_offsets = identity_logit_offsets
 
         # If a structured decoding bitmask was provided, unpack packed-int masks
         # and store in pinned memory for efficient per-step updates.
@@ -200,6 +230,35 @@ class FusedSamplingProcessor:
         )
 
         self.step_counter = 0
+
+    def logits_for_sampling(
+        self,
+        *,
+        logits: Buffer,
+        next_token_logits: Buffer | None,
+        logit_offsets: Buffer | None,
+    ) -> tuple[Buffer, Buffer | None]:
+        """Returns the logits and offsets to pass to logits processors."""
+        if next_token_logits is None:
+            return logits, logit_offsets
+
+        if logit_offsets is None:
+            return next_token_logits, None
+
+        offsets_len = self.batch_size + 1
+        if self._identity_logit_offsets is None:
+            raise AssertionError(
+                "identity_logit_offsets is required when sampling from "
+                "next_token_logits with variable-logit sampler offsets."
+            )
+        if int(self._identity_logit_offsets.shape[0]) < offsets_len:
+            raise AssertionError(
+                "identity_logit_offsets is smaller than the current batch: "
+                f"offsets_len={self._identity_logit_offsets.shape[0]}, "
+                f"required={offsets_len}."
+            )
+
+        return next_token_logits, self._identity_logit_offsets[:offsets_len]
 
     def __call__(self, inputs: BatchProcessorInputs) -> None:
         """Processes the batch logits and updates generated tokens and seed."""

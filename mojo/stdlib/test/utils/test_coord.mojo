@@ -10,19 +10,22 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Tests for the unified LayoutLike system."""
+"""Tests for `std.utils.coord` (`Coord`, `idx2crd`, `crd2idx`, etc.)."""
 
 from std.sys import size_of
 from std.sys.intrinsics import _type_is_eq
-
-from layout import ComptimeInt, Coord, CoordLike, Idx, RuntimeInt, coord
-from layout.coord import (
-    coord_to_int_tuple,
+from std.testing import TestSuite, assert_equal, assert_true
+from std.utils.coord import (
+    ComptimeInt,
+    Coord,
+    CoordLike,
+    Idx,
+    RuntimeInt,
+    _Idx2CrdResultTypes,
+    coord,
     crd2idx,
     idx2crd,
-    _Idx2CrdResultTypes,
 )
-from std.testing import assert_equal, assert_true, TestSuite
 
 
 def test_nested_layouts() raises:
@@ -34,14 +37,6 @@ def test_nested_layouts() raises:
     assert_equal(nested[1].value(), 4)
     assert_equal(size_of[type_of(inner)](), size_of[Int]())
     assert_equal(size_of[type_of(nested)](), size_of[Int]())
-
-
-def test_int_tuple_conversion() raises:
-    var t = Coord(Coord(Idx[2](), Idx(3)), Idx[4]())
-    var t2 = coord_to_int_tuple(t)
-    assert_equal(t2[0][0], 2)
-    assert_equal(t2[0][1], 3)
-    assert_equal(t2[1], 4)
 
 
 def test_list_literal_construction() raises:
@@ -509,7 +504,7 @@ def test_crd2idx_default_int64_over_32_bits() raises:
     Narrow-`out_type` wraparound is not tested here. The old
     `Scalar[out_type](Int(a) * Int(b))` and the new
     `Scalar[out_type](a) * Scalar[out_type](b)` yield the same runtime
-    value under standard two's-complement narrowing (both equal
+    value under standard two's complement narrowing (both equal
     `(a * b) mod 2^width`), so the behavioral change between the two
     implementations is not value-observable — the win is that the new
     form keeps the multiply at the narrow IR width, avoiding a hidden

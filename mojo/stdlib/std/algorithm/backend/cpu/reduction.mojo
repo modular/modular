@@ -43,7 +43,6 @@ def _reduce_generator_cpu[
         SIMD[ty, width], SIMD[ty, width]
     ) capturing[_] -> SIMD[ty, width],
     /,
-    single_thread_blocking_override: Bool = False,
 ](
     shape: IndexList[_, element_type=DType.int64],
     init: StaticTuple[Scalar[init_type], num_reductions],
@@ -60,8 +59,6 @@ def _reduce_generator_cpu[
         input_0_fn: The lambda to use to access the incoming tensor.
         output_0_fn: The lambda to use to storing to the output tensor.
         reduce_function: The lambda implementing the reduction.
-        single_thread_blocking_override: If True, then the operation is run
-          synchronously using a single thread.
 
     Args:
         shape: The shape of the tensor we are reducing.
@@ -82,7 +79,6 @@ def _reduce_generator_cpu[
             input_0_fn,
             output_0_fn,
             reduce_function,
-            single_thread_blocking_override=single_thread_blocking_override,
         ](shape, init, reduce_dim_normalized)
     else:
         if rank - 1 == reduce_dim_normalized:
@@ -92,7 +88,6 @@ def _reduce_generator_cpu[
                 input_0_fn,
                 output_0_fn,
                 reduce_function,
-                single_thread_blocking_override=single_thread_blocking_override,
             ](shape, init, reduce_dim_normalized)
         else:
             _reduce_along_outer_dimension[
@@ -101,7 +96,6 @@ def _reduce_generator_cpu[
                 input_0_fn,
                 output_0_fn,
                 reduce_function,
-                single_thread_blocking_override=single_thread_blocking_override,
             ](shape, init, reduce_dim_normalized)
 
 
@@ -118,7 +112,6 @@ def _reduce_along_inner_dimension[
         SIMD[ty, width], SIMD[ty, width]
     ) capturing[_] -> SIMD[ty, width],
     /,
-    single_thread_blocking_override: Bool = False,
 ](
     shape: IndexList[_, element_type=DType.int64],
     init_value: StaticTuple[Scalar[init_type], num_reductions],
@@ -133,8 +126,6 @@ def _reduce_along_inner_dimension[
         input_0_fn: The lambda to use to access the incoming tensor.
         output_0_fn: The lambda to use to store to the output tensor.
         reduce_function: The lambda implementing the reduction.
-        single_thread_blocking_override: If True, the operation runs
-          synchronously using a single thread.
 
     Args:
         shape: The shape of the tensor being reduced.
@@ -149,12 +140,7 @@ def _reduce_along_inner_dimension[
 
     var parallelism_size: Int = total_size // reduce_dim_size
 
-    var num_workers: Int
-
-    comptime if single_thread_blocking_override:
-        num_workers = 1
-    else:
-        num_workers = _get_num_workers(total_size)
+    var num_workers = _get_num_workers(total_size)
 
     var chunk_size = ceildiv(parallelism_size, num_workers)
 
@@ -279,10 +265,7 @@ def _reduce_along_inner_dimension[
 
         reduce_rows_unrolled(start_parallel_offset, end_parallel_offset)
 
-    comptime if single_thread_blocking_override:
-        reduce_rows_unrolled(0, parallelism_size)
-    else:
-        sync_parallelize[reduce_rows](num_workers)
+    sync_parallelize[reduce_rows](num_workers)
     _ = reduce_dim_size
     _ = parallelism_size
     _ = chunk_size
@@ -303,7 +286,6 @@ def _reduce_along_outer_dimension[
         SIMD[ty, width], SIMD[ty, width]
     ) capturing[_] -> SIMD[ty, width],
     /,
-    single_thread_blocking_override: Bool = False,
 ](
     shape: IndexList[_, element_type=DType.int64],
     init: StaticTuple[Scalar[init_type], num_reductions],
@@ -320,8 +302,6 @@ def _reduce_along_outer_dimension[
         input_0_fn: The lambda to use to access the incoming tensor.
         output_0_fn: The lambda to use to storing to the output tensor.
         reduce_function: The lambda implementing the reduction.
-        single_thread_blocking_override: If True, then the operation is run
-          synchronously using a single thread.
 
     Args:
         shape: The shape of the tensor we are reducing
@@ -348,12 +328,7 @@ def _reduce_along_outer_dimension[
     # and accumulation
     var parallelism_size: Int = total_size // (reduce_dim_size * inner_dim)
 
-    var num_workers: Int
-
-    comptime if single_thread_blocking_override:
-        num_workers = 1
-    else:
-        num_workers = _get_num_workers(total_size)
+    var num_workers = _get_num_workers(total_size)
 
     var chunk_size = ceildiv(parallelism_size, num_workers)
 
@@ -400,7 +375,4 @@ def _reduce_along_outer_dimension[
 
             vectorize[simd_width](inner_dim, reduce_chunk)
 
-    comptime if single_thread_blocking_override:
-        reduce_slices(0)
-    else:
-        sync_parallelize[reduce_slices](num_workers)
+    sync_parallelize[reduce_slices](num_workers)

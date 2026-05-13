@@ -289,13 +289,10 @@ def test_text_batch_constructor__batch_construction_no_room_in_cache(
         target_tokens_per_batch_ce=30,
     )
     kv_cache = Mock()
-    kv_cache.alloc = Mock()
-    kv_cache.alloc.return_value = False
-    kv_cache.alloc.side_effect = InsufficientBlocksError
+    kv_cache.alloc = Mock(side_effect=InsufficientBlocksError)
     kv_cache.claim = Mock()
     kv_cache.contains = Mock()
-    kv_cache.get_pct_used_blocks_after_allocation = Mock()
-    kv_cache.get_pct_used_blocks_after_allocation.return_value = 0.0
+    kv_cache.get_pct_used_blocks_after_allocation = Mock(return_value=0.0)
 
     batch_constructor = TextBatchConstructor(
         scheduler_config=scheduler_config,
@@ -303,18 +300,73 @@ def test_text_batch_constructor__batch_construction_no_room_in_cache(
         kv_cache=kv_cache,
     )
 
-    contexts = {}
     for _ in range(2):
         context = TextContext(
             request_id=RequestID(),
             tokens=TokenBuffer(np.ones(9, dtype=np.int64)),
             max_length=100,
         )
-        contexts[context.request_id] = context
         batch_constructor.enqueue_new_request(context)
 
+    # With no TG, no active batch, and no in-flight KV transfers, there is
+    # nothing that will free blocks — InsufficientBlocksError propagates.
     with pytest.raises(InsufficientBlocksError):
         batch_constructor.construct_batch()
+
+
+def test_text_batch_constructor__insufficient_blocks_defers_then_retries(
+    pipeline: Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput],
+) -> None:
+    """CE requests deferred by InsufficientBlocksError are admitted once
+    blocks free up (e.g. after in-flight KV transfers complete).
+
+    Simulates the case with in-flight KV transfers: get_inflight_kv_transfer_count
+    returns 1 (transfers in flight, safe to defer), then 0 (transfers drained,
+    blocks freed, admission proceeds).
+    """
+    scheduler_config = TokenGenerationSchedulerConfig(
+        max_batch_size=5,
+        max_batch_total_tokens=None,
+        max_forward_steps_tg=10,
+        enable_in_flight_batching=False,
+        enable_chunked_prefill=False,
+        target_tokens_per_batch_ce=30,
+    )
+    kv_cache = Mock()
+    # First alloc call fails; subsequent calls succeed (blocks freed).
+    kv_cache.alloc = Mock(side_effect=[InsufficientBlocksError, 0, 0])
+    kv_cache.claim = Mock()
+    kv_cache.contains = Mock()
+    kv_cache.get_pct_used_blocks_after_allocation = Mock(return_value=0.0)
+
+    inflight_count = [1]  # mutable so the lambda can be updated between calls
+    batch_constructor = TextBatchConstructor(
+        scheduler_config=scheduler_config,
+        pipeline=pipeline,
+        kv_cache=kv_cache,
+        get_inflight_kv_transfer_count=lambda: inflight_count[0],
+    )
+
+    for _ in range(2):
+        context = TextContext(
+            request_id=RequestID(),
+            tokens=TokenBuffer(np.ones(9, dtype=np.int64)),
+            max_length=100,
+        )
+        batch_constructor.enqueue_new_request(context)
+
+    # First call: alloc fails, but inflight transfers are present → defer.
+    inputs = batch_constructor.construct_batch()
+    assert len(inputs.batches[0]) == 0
+    assert len(batch_constructor.replicas[0].ce_reqs) == 2
+
+    # Transfers complete, blocks freed.
+    inflight_count[0] = 0
+
+    # Second call: alloc succeeds → both requests admitted.
+    inputs = batch_constructor.construct_batch()
+    assert len(inputs.batches[0]) == 2
+    assert len(batch_constructor.replicas[0].ce_reqs) == 0
 
 
 def test_text_batch_constructor__batch_construction_with_chunked_prefill_and_preemption(

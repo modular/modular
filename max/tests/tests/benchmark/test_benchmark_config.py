@@ -323,7 +323,7 @@ def test_tts_serving_config_defaults() -> None:
     assert config.top_k == 75
     assert config.temperature == 1.1
     assert config.workload_config == "workload.yaml"
-    assert config.seed == 0
+    assert config.seed is None
 
 
 def test_tts_serving_config_requires_workload_config() -> None:

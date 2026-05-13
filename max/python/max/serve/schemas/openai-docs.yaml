@@ -57,10 +57,9 @@ paths:
       operationId: createResponse
       summary: Create response
       description: |
-        Creates a response for the given input using the
-        [Responses API](/max/inference/image-generation), which supports
-        multi-modal AI tasks including text-to-image and image-to-image
-        generation. This endpoint follows the
+        Creates a response for the given input. Supports image generation
+        (text-to-image, image-to-image) and video generation (text-to-video,
+        image-to-video). This endpoint follows the
         [Open Responses](https://huggingface.co/blog/open-responses)
         specification.
 
@@ -72,37 +71,8 @@ paths:
         ```
 
         For detailed usage examples, see the
-        [image generation guide](/max/inference/image-generation).
-      x-codeSamples:
-        - lang: curl
-          label: Text-to-image
-          source: |
-            curl -X POST http://localhost:8000/v1/responses \
-              -H "Content-Type: application/json" \
-              -d '{
-                "model": "black-forest-labs/FLUX.2-dev",
-                "input": "A serene mountain landscape at sunset",
-                "provider_options": {
-                  "image": {"height": 1024, "width": 1024, "steps": 50}
-                }
-              }' | jq -r '.output[0].content[0].image_data' | base64 -d > output.png
-        - lang: curl
-          label: Image-to-image
-          source: |
-            curl -X POST http://localhost:8000/v1/responses \
-              -H "Content-Type: application/json" \
-              -d '{
-                "model": "black-forest-labs/FLUX.2-dev",
-                "input": [
-                  {"role": "user", "content": [
-                    {"type": "input_image", "image_url": "https://example.com/input.jpg"},
-                    {"type": "input_text", "text": "Transform this into a watercolor painting"}
-                  ]}
-                ],
-                "provider_options": {
-                  "image": {"height": 1024, "width": 1024, "steps": 50}
-                }
-              }' | jq -r '.output[0].content[0].image_data' | base64 -d > output.png
+        [image generation guide](/max/inference/image-generation) and the
+        [video generation guide](/max/inference/video-generation).
       requestBody:
         required: true
         content:
@@ -115,43 +85,264 @@ paths:
               properties:
                 model:
                   type: string
-                  description: ID of the model to use.
+                  description: |
+                    ID of the model to use. Determines whether image or video
+                    provider options apply.
                 input:
                   description: |
-                    The input for the response. Can be a string for text-to-image,
-                    or a structured message array for image-to-image.
+                    Input for the request. Use a plain string for text-only
+                    generation. Use a structured message array to include an
+                    image (for image-to-image or image-to-video workflows).
                   oneOf:
                     - type: string
+                      description: Text prompt for text-to-image or text-to-video generation.
                     - type: array
+                      description: |
+                        Structured message array for image input workflows.
+                        Each message has a `role` and a `content` array of
+                        typed content parts.
                       items:
                         type: object
+                        required:
+                          - role
+                          - content
+                        properties:
+                          role:
+                            type: string
+                            enum: [user]
+                          content:
+                            type: array
+                            items:
+                              type: object
+                              required:
+                                - type
+                              properties:
+                                type:
+                                  type: string
+                                  enum: [input_image, input_text]
+                                image_url:
+                                  type: string
+                                  description: |
+                                    URL or base64 data URI of the input image.
+                                    Required when `type` is `input_image`.
+                                    Format: `https://…` or
+                                    `data:<mime-type>;base64,<data>`.
+                                text:
+                                  type: string
+                                  description: |
+                                    Text prompt or transformation instruction.
+                                    Required when `type` is `input_text`.
                 provider_options:
                   type: object
                   description: |
-                    Provider-specific options for image generation.
+                    Provider-specific generation options. Use the `image` key
+                    for image generation models and the `video` key for video
+                    generation models. The `max` key applies to all models.
                   properties:
                     image:
                       type: object
+                      description: Options for image generation models.
                       properties:
                         height:
                           type: integer
-                          description: Output image height in pixels (must be a multiple of 16).
-                          default: 1024
+                          description: |
+                            Output image height in pixels. Must be at least 128
+                            and a multiple of 16. Defaults to the model's
+                            native resolution.
+                          minimum: 128
                         width:
                           type: integer
-                          description: Output image width in pixels (must be a multiple of 16).
-                          default: 1024
+                          description: |
+                            Output image width in pixels. Must be at least 128
+                            and a multiple of 16. Defaults to the model's
+                            native resolution.
+                          minimum: 128
                         steps:
                           type: integer
-                          description: Number of denoising steps.
-                          default: 28
+                          description: |
+                            Number of denoising steps. More steps produce
+                            higher quality but take longer. Defaults to the
+                            model's recommended value.
+                          minimum: 1
                         guidance_scale:
                           type: number
-                          description: Prompt adherence strength.
+                          description: |
+                            Prompt adherence strength. Higher values (7–10)
+                            follow the prompt more closely; lower values (1–3)
+                            allow more creative variation.
                           default: 3.5
+                          minimum: 0.0
                         negative_prompt:
                           type: string
-                          description: What to avoid generating.
+                          description: |
+                            Text describing what to avoid in the output. Best
+                            practice is to put all negative guidance here
+                            rather than in the main prompt.
+                        secondary_prompt:
+                          type: string
+                          description: |
+                            Second text prompt passed to the second text
+                            encoder. Supported by FLUX and Z-Image models;
+                            ignored by others.
+                        secondary_negative_prompt:
+                          type: string
+                          description: |
+                            Second negative prompt passed to the second text
+                            encoder. Supported by FLUX and Z-Image models;
+                            ignored by others.
+                        num_images:
+                          type: integer
+                          description: Number of images to generate per request.
+                          default: 1
+                          minimum: 1
+                        strength:
+                          type: number
+                          description: |
+                            Image-to-image denoising strength in the range
+                            (0, 1]. Higher values add more noise and preserve
+                            less of the input image. Ignored for text-to-image
+                            requests.
+                          default: 0.6
+                          exclusiveMinimum: 0.0
+                          maximum: 1.0
+                        output_format:
+                          type: string
+                          description: Encoding format for the output image.
+                          default: jpeg
+                          enum: [jpeg, png, webp]
+                        true_cfg_scale:
+                          type: number
+                          description: |
+                            True classifier-free guidance scale. Enabled when
+                            greater than 1.0 and `negative_prompt` is set.
+                          default: 1.0
+                          exclusiveMinimum: 0.0
+                        cfg_normalization:
+                          type: boolean
+                          description: |
+                            Clip the guided prediction norm to the positive
+                            prediction norm during CFG.
+                          default: false
+                        cfg_truncation:
+                          type: number
+                          description: |
+                            Disable CFG for timesteps where the normalized
+                            time `t_norm` exceeds this value.
+                          default: 1.0
+                          exclusiveMinimum: 0.0
+                        residual_threshold:
+                          type: number
+                          description: |
+                            First-block cache (FBCache) reuse threshold.
+                            Lower values skip fewer denoising steps (higher
+                            quality, slower). Uses the model default when
+                            omitted. Requires `--first-block-caching` at
+                            server startup.
+                          exclusiveMinimum: 0.0
+                        response_format:
+                          type: string
+                          description: |
+                            How the generated image is returned.
+                            `b64_json` — base64-encoded image data returned
+                            inline in `output[0].content[0].image_data`.
+                            `url` — the server saves the image and returns a
+                            download URL.
+                          default: b64_json
+                          enum: [b64_json, url]
+                    video:
+                      type: object
+                      description: Options for video generation models.
+                      properties:
+                        height:
+                          type: integer
+                          description: |
+                            Output video height in pixels. Defaults to the
+                            model's native resolution.
+                          minimum: 1
+                        width:
+                          type: integer
+                          description: |
+                            Output video width in pixels. Defaults to the
+                            model's native resolution.
+                          minimum: 1
+                        num_frames:
+                          type: integer
+                          description: |
+                            Number of frames to generate. Total duration equals
+                            `num_frames / frames_per_second`. Defaults to the
+                            model's recommended clip length.
+                          minimum: 1
+                        frames_per_second:
+                          type: integer
+                          description: Frame rate of the output video in fps.
+                          default: 16
+                          minimum: 1
+                        steps:
+                          type: integer
+                          description: |
+                            Number of denoising steps. More steps produce
+                            higher quality but take longer. Defaults to the
+                            model's recommended value.
+                          minimum: 1
+                        guidance_scale:
+                          type: number
+                          description: |
+                            Prompt adherence strength. Higher values (7–10)
+                            follow the prompt more closely; lower values (1–3)
+                            allow more creative variation.
+                          default: 3.5
+                          minimum: 0.0
+                        guidance_scale_2:
+                          type: number
+                          description: |
+                            Secondary guidance scale applied at a boundary
+                            timestep. Supported by Wan models; ignored by
+                            others.
+                          exclusiveMinimum: 0.0
+                        negative_prompt:
+                          type: string
+                          description: |
+                            Text describing what to avoid in the output.
+                        true_cfg_scale:
+                          type: number
+                          description: |
+                            True classifier-free guidance scale. Enabled when
+                            greater than 1.0 and `negative_prompt` is set.
+                          default: 1.0
+                          exclusiveMinimum: 0.0
+                        cfg_normalization:
+                          type: boolean
+                          description: |
+                            Clip the guided prediction norm to the positive
+                            prediction norm during CFG.
+                          default: false
+                        cfg_truncation:
+                          type: number
+                          description: |
+                            Disable CFG for timesteps where the normalized
+                            time `t_norm` exceeds this value.
+                          default: 1.0
+                          exclusiveMinimum: 0.0
+                        residual_threshold:
+                          type: number
+                          description: |
+                            First-block cache (FBCache) reuse threshold.
+                            Lower values skip fewer denoising steps (higher
+                            quality, slower). Uses the model default when
+                            omitted. Requires `--first-block-caching` at
+                            server startup.
+                          exclusiveMinimum: 0.0
+                        response_format:
+                          type: string
+                          description: |
+                            How the generated video is returned.
+                            `url` — the server saves the video to a temporary
+                            file and returns a download URL at
+                            `/v1/videos/{video_id}/content`.
+                            `b64_json` — base64-encoded mp4 data returned
+                            inline in `output[0].content[0].video_data`.
+                          default: url
+                          enum: [url, b64_json]
             examples:
               textToImage:
                 summary: Text-to-image generation
@@ -162,7 +353,55 @@ paths:
                     image:
                       height: 1024
                       width: 1024
-                      steps: 50
+                      steps: 28
+              imageToImage:
+                summary: Image-to-image generation
+                value:
+                  model: "black-forest-labs/FLUX.2-dev"
+                  input:
+                    - role: user
+                      content:
+                        - type: input_image
+                          image_url: "https://example.com/input.jpg"
+                        - type: input_text
+                          text: "Transform this into a watercolor painting"
+                  provider_options:
+                    image:
+                      height: 1024
+                      width: 1024
+                      steps: 28
+              textToVideo:
+                summary: Text-to-video generation
+                value:
+                  model: "Wan-AI/Wan2.2-T2V-A14B-Diffusers"
+                  input: "A campfire crackles in a forest clearing at night, sparks spiraling upward into a star-filled sky"
+                  provider_options:
+                    video:
+                      height: 512
+                      width: 512
+                      steps: 28
+                      num_frames: 81
+                      frames_per_second: 16
+                      response_format: b64_json
+              imageToVideo:
+                summary: Image-to-video generation
+                value:
+                  model: "Wan-AI/Wan2.2-I2V-A14B-Diffusers"
+                  input:
+                    - role: user
+                      content:
+                        - type: input_image
+                          image_url: "data:image/png;base64,<base64-encoded-image>"
+                        - type: input_text
+                          text: "The campfire grows larger, sparks spiraling upward"
+                  provider_options:
+                    video:
+                      height: 512
+                      width: 512
+                      steps: 28
+                      num_frames: 81
+                      frames_per_second: 16
+                      response_format: b64_json
       responses:
         '200':
           description: OK
@@ -171,11 +410,32 @@ paths:
               schema:
                 type: object
                 properties:
+                  id:
+                    type: string
+                    description: Unique identifier for the response.
+                  object:
+                    type: string
+                    description: Always `response`.
+                  created_at:
+                    type: integer
+                    description: Unix timestamp of when the response was created.
+                  model:
+                    type: string
+                    description: Model used to generate the response.
+                  status:
+                    type: string
+                    description: Completion status of the response.
                   output:
                     type: array
+                    description: |
+                      List of output messages. Each message has a `content`
+                      array containing one or more generated items.
                     items:
                       type: object
                       properties:
+                        role:
+                          type: string
+                          description: Always `assistant`.
                         content:
                           type: array
                           items:
@@ -183,7 +443,24 @@ paths:
                             properties:
                               image_data:
                                 type: string
-                                description: Base64-encoded image data.
+                                description: |
+                                  Base64-encoded image data. Present when
+                                  `provider_options.image.response_format` is
+                                  `b64_json` (the default for image models).
+                              video_data:
+                                type: string
+                                description: |
+                                  Base64-encoded mp4 video data. Present when
+                                  `provider_options.video.response_format` is
+                                  `b64_json`.
+                              video_url:
+                                type: string
+                                description: |
+                                  URL to download the generated video. Present
+                                  when `provider_options.video.response_format`
+                                  is `url` (the default for video models).
+                                  Download from
+                                  `GET /v1/videos/{video_id}/content`.
         '400':
           description: Bad request
           content:

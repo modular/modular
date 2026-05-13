@@ -9,8 +9,8 @@ in the [/stdlib/std](../stdlib/std) directory.
 
 ## Standard library API doc generation
 
-The published stdlib reference under `/docs/std/` on
-[mojolang.org](https://www.mojolang.org/docs/std/) is built by Bazel from the
+The standard library docs at
+[mojolang.org](https://mojolang.org/docs/std/) are built by Bazel from the
 sources in [`stdlib/std`](../stdlib/std) as follows:
 
 1. **`mojo_library`** (see

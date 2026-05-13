@@ -252,6 +252,6 @@ from algorithm import map
 
 Which modules in the standard library are imported to the package
 scope varies, and is subject to change. Refer to the [documentation for each
-module](/docs/lib) to see how you can import its members.
+module](/docs/std/) to see how you can import its members.
 
 :::

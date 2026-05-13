@@ -416,7 +416,7 @@ class TestPipelineConfigUtilityMethods:
         even when runtime kwargs are also present.
 
         The CLI ``serve`` flow flattens every flag into ``PipelineConfig``
-        kwargs, so taylorseer/FBC/teacache fields and runtime fields like
+        kwargs, so taylorseer/FBC fields and runtime fields like
         ``max_batch_size`` arrive together. Cache fields must not be wiped
         when the runtime config gets reconstructed from the runtime kwargs.
         """

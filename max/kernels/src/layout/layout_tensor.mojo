@@ -8088,11 +8088,14 @@ struct LayoutTensorIter[
                 not Self.circular
             ), "Circular use case is not supported if an axis is defined."
 
+        # TODO: Temporary stop-gap to avoid refactoring all `LayoutTensor`s
+        # to expect a non-null pointer. Do NOT copy this pattern; new code
+        # should use a properly-initialized `UnsafePointer` instead.
         self.ptr = UnsafePointer[
             Scalar[Self.dtype],
             address_space=Self.address_space,
             origin=Self.origin,
-        ](_unsafe_null=())
+        ](unsafe_from_address=0)
         self.offset = 0
         self.stride = 0
         self.bound = 0

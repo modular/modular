@@ -22,6 +22,7 @@ import msgspec
 from huggingface_hub import hf_hub_download
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
+from ._tokenizer_pool import TokenizerPool
 from .distribution import DistributionParameter
 from .huggingface import HuggingFaceBenchmarkDataset
 from .multiturn_distribution_fit import build_chat_samples_from_user_text_pool
@@ -243,6 +244,7 @@ class AgenticCodeBenchmarkDataset(HuggingFaceBenchmarkDataset):
         max_turns_per_session: int | None = None,
         shuffle: bool = True,
         *,
+        pool: TokenizerPool | None = None,
         fit_length_distributions: bool = False,
         num_turns: DistributionParameter | None = None,
         input_len: DistributionParameter | None = None,
@@ -290,9 +292,9 @@ class AgenticCodeBenchmarkDataset(HuggingFaceBenchmarkDataset):
         )
 
         if fit_length_distributions:
-            if tokenizer is None:
+            if pool is None:
                 raise ValueError(
-                    "tokenizer is required for agentic-code when "
+                    "pool is required for agentic-code when "
                     "fit_length_distributions=True"
                 )
             assert num_turns is not None
@@ -302,7 +304,7 @@ class AgenticCodeBenchmarkDataset(HuggingFaceBenchmarkDataset):
             if shuffle:
                 random.shuffle(user_texts)
             return build_chat_samples_from_user_text_pool(
-                tokenizer=tokenizer,
+                pool=pool,
                 user_text_pool=user_texts,
                 num_sessions=num_sessions,
                 num_turns=num_turns,

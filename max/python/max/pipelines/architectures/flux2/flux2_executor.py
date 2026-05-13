@@ -65,7 +65,6 @@ class Flux2ExecutorInputs(TensorStruct):
 
         inputs = Flux2ExecutorInputs(tokens=..., latents=..., ...)
         inputs = inputs.with_image(image_tensor)
-        inputs = inputs.with_residual_threshold(threshold_tensor)
     """
 
     # -- Core (always present) ------------------------------------------------
@@ -120,10 +119,6 @@ class Flux2ExecutorInputs(TensorStruct):
     """Input image for image-to-image generation, shape ``(H, W, C)`` uint8.
     ``None`` when running in text-to-image mode."""
 
-    residual_threshold: Buffer | None = None
-    """Scalar float32 threshold for FBCache residual gating.
-    ``None`` when first-block caching is not enabled."""
-
     # -- Device transfer -------------------------------------------------------
 
     _CPU_FIELDS: ClassVar[frozenset[str]] = frozenset(
@@ -154,10 +149,6 @@ class Flux2ExecutorInputs(TensorStruct):
     def with_image(self, input_image: Buffer) -> Self:
         """Enable image-to-image mode with the given input image."""
         return replace(self, input_image=input_image)
-
-    def with_residual_threshold(self, residual_threshold: Buffer) -> Self:
-        """Enable FBCache with a per-request residual threshold."""
-        return replace(self, residual_threshold=residual_threshold)
 
 
 @dataclass(frozen=True)
@@ -221,10 +212,6 @@ class Flux2Executor(
     default_num_inference_steps: int = 28
     """Default number of denoising steps when the user does not specify one."""
 
-    # Default residual threshold when FBCache is enabled but the request
-    # does not specify one.
-    _DEFAULT_RESIDUAL_THRESHOLD: float = 0.06
-
     # Fallback VAE scale factor when not derivable from the manifest.
     _DEFAULT_VAE_SCALE_FACTOR: int = 8
 
@@ -238,7 +225,7 @@ class Flux2Executor(
         self._session = session
         self._runtime_config = runtime_config
 
-        # Cache configuration (TaylorSeer / FBCache / TeaCache).
+        # Cache configuration (TaylorSeer).
         self._cache_config: DenoisingCacheConfig = (
             runtime_config.denoising_cache
         )
@@ -256,7 +243,6 @@ class Flux2Executor(
             if block_out_channels
             else self._DEFAULT_VAE_SCALE_FACTOR
         )
-        self._default_residual_threshold = self._DEFAULT_RESIDUAL_THRESHOLD
 
         # Extract transformer config for helper methods.
         transformer_config = manifest["transformer"]
@@ -373,12 +359,6 @@ class Flux2Executor(
         if context.input_image is not None:
             input_image = Buffer.from_dlpack(context.input_image)
 
-        residual_threshold: Buffer | None = None
-        if context.residual_threshold is not None:
-            residual_threshold = Buffer.from_dlpack(
-                np.array(context.residual_threshold, dtype=np.float32)
-            )
-
         return Flux2ExecutorInputs(
             tokens=tokens,
             text_ids=text_ids,
@@ -395,7 +375,6 @@ class Flux2Executor(
             num_inference_steps=num_inference_steps,
             num_images_per_prompt=num_images_per_prompt,
             input_image=input_image,
-            residual_threshold=residual_threshold,
         )
 
     @traced(message="execute")
@@ -435,7 +414,6 @@ class Flux2Executor(
             dts=inputs.dts,
             guidance=inputs.guidance,
             num_inference_steps=inputs.num_inference_steps,
-            residual_threshold=inputs.residual_threshold,
         )
 
         # 4) Decode final latents into images (Graph 4).
@@ -580,7 +558,6 @@ class Flux2Executor(
         dts: Buffer,
         guidance: Buffer,
         num_inference_steps: Buffer,
-        residual_threshold: Buffer | None,
     ) -> Buffer:
         """Orchestrate the N-step denoising loop.
 
@@ -611,8 +588,6 @@ class Flux2Executor(
             dts: Precomputed step deltas, shape ``(num_steps,)`` (float32).
             guidance: Guidance scale, shape ``(B,)``.
             num_inference_steps: 1-element int64 tensor.
-            residual_threshold: FBCache residual threshold scalar, or
-                ``None`` when first-block caching is disabled.
 
         Returns:
             Final denoised latents, shape ``(B, seq, C)``.

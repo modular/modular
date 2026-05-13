@@ -54,7 +54,6 @@ Modules
    pipelines.architectures.exaone
    pipelines.architectures.exaone_modulev3
    pipelines.architectures.flux2
-   pipelines.architectures.flux2_modulev3
    pipelines.architectures.gemma3
    pipelines.architectures.gemma3_modulev3
    pipelines.architectures.gemma3multimodal

@@ -516,7 +516,6 @@ def test_fused_concat_gpu(ctx: DeviceContext) raises:
     fused_concat[
         dtype,
         rank,
-        False,
         input_fn,
         output_fn,
         output_dyn.LayoutType,

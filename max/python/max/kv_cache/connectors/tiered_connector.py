@@ -22,16 +22,17 @@ eviction is always safe and disk coverage is maximised for warm restarts.
 from __future__ import annotations
 
 import logging
+from collections import deque
 from collections.abc import Sequence
 from concurrent.futures import Future, wait
 from dataclasses import dataclass
 
-from max.driver import Buffer, Device
+from max.driver import Buffer, Device, DeviceEvent
 from max.dtype import DType
 from max.kv_cache.memory_tier import MemoryTier
 from max.nn.kv_cache import KVCacheParams
 from max.nn.kv_cache.metrics import KVCacheMetrics
-from max.profiler import traced
+from max.profiler import Tracer, traced
 
 from ..paged_kv_cache.block_copy_engine import BlockOffloadEngine
 from ..paged_kv_cache.block_manager import (
@@ -52,6 +53,12 @@ class _CacheHit:
     host_block: KVCacheBlock
     device_block_id: int
     future: Future[None] | None = None
+
+
+@dataclass
+class _PendingDiskWrite:
+    d2h_copy_complete_event: DeviceEvent
+    host_blocks: list[KVCacheBlock]
 
 
 class TieredConnector:
@@ -119,10 +126,9 @@ class TieredConnector:
         )
 
         # -- State --
-        # (bid, hash, host_block) — host_block kept at ref_cnt=1 for
-        # zero-copy disk writes (pinned until write completes).
-        self._pending_disk_writes: list[tuple[int, int, KVCacheBlock]] = []
-        # Blocks with in-flight disk writes.  Holds ref_cnt=1 until the
+        # host_block kept at ref_cnt=1 (pinned until disk write completes).
+        self._pending_disk_writes: deque[_PendingDiskWrite] = deque()
+        # Blocks with in-flight disk writes. Holds ref_cnt=1 until the
         # write Future completes so the host memory can't be evicted.
         self._write_locked_blocks: list[tuple[Future[None], KVCacheBlock]] = []
 
@@ -167,6 +173,7 @@ class TieredConnector:
 
         host_cache = self._host_block_pool.hash_to_committed_block
         hits: list[_CacheHit] = []
+        disk_reads = 0
 
         for device_block_id, block_hash in zip(
             device_block_ids, block_hashes, strict=True
@@ -199,48 +206,63 @@ class TieredConnector:
                 )
 
                 self._disk_blocks_read += 1
+                disk_reads += 1
 
             else:
                 break  # prefix chain broken
 
-        # Wait for async disk reads to complete
-        wait(hit.future for hit in hits if hit.future is not None)
-
-        # Unpin the host blocks now that the disk reads have completed.
+        # Unpin the host blocks now that we stopped allocating them and there
+        # is no more risk of accidently evicting one.
         for hit in hits:
             self._host_block_pool.free_block(hit.host_block)
 
-        # Filter to successful hits, stopping at the first failure.
-        successful_hits: list[_CacheHit] = []
-        for hit in hits:
-            if hit.future is not None and hit.future.exception():
-                logger.error(
-                    "Disk read failed for hash %s: %s",
-                    hit.block_hash,
-                    hit.future.exception(),
-                )
-                break
-            successful_hits.append(hit)
+        # Process hits in FIFO order: wait on each disk read individually,
+        # then immediately enqueue H2D + broadcast.  Disk reads complete in
+        # submission order, so this pipelines GPU DMA with remaining I/O.
+        num_loaded = 0
+        with Tracer(f"{disk_reads} disk reads + H2D"):
+            for i, hit in enumerate(hits):
+                if hit.future is not None:
+                    try:
+                        with Tracer(f"Sync on disk read {i}"):
+                            hit.future.result()
+                    except Exception as exc:
+                        logger.error(
+                            "Disk read failed for hash %s: %s",
+                            hit.block_hash,
+                            exc,
+                        )
+                        break  # prefix chain broken
 
-        # For all successful hits, commit to host cache and copy to GPU.
-        for hit in successful_hits:
-            if (
-                hit.block_hash
-                not in self._host_block_pool.hash_to_committed_block
-            ):
-                self._host_block_pool.commit_into_prefix_cache(
-                    hit.block_hash, hit.host_block
-                )
-            self._block_copy_engine.memcpy_h2d(
-                hit.device_block_id, hit.host_block.bid
-            )
-            self._h2d_blocks_copied += 1
+                    if (
+                        hit.block_hash
+                        not in self._host_block_pool.hash_to_committed_block
+                    ):
+                        self._host_block_pool.commit_into_prefix_cache(
+                            hit.block_hash, hit.host_block
+                        )
 
-        return len(successful_hits)
+                self._block_copy_engine.memcpy_h2d(
+                    hit.device_block_id, hit.host_block.bid
+                )
+                self._h2d_blocks_copied += 1
+                num_loaded += 1
+
+        # Wait for in-flight disk reads on unprocessed hits so their
+        # worker threads finish writing into the host buffer before we return.
+        # This is only triggered if there is a failed disk read that breaks
+        # the prefix chain.
+        remaining = [
+            h.future for h in hits[num_loaded:] if h.future is not None
+        ]
+        if remaining:
+            wait(remaining)
+
+        return num_loaded
 
     @traced
     def sync(self) -> None:
-        """Wait for D2H transfers, then write-through to disk.
+        """Wait for pending loads/offloads to complete and post disk writes.
 
         Uses zero-copy: host blocks are kept pinned (ref_cnt=1) from D2H
         through disk write completion.  Numpy views (no ``.copy()``) are
@@ -253,21 +275,17 @@ class TieredConnector:
         # 1. Release blocks from previously completed disk writes.
         self._drain_completed_writes()
 
-        # 2. Submit new writes with numpy.
-        for bid, block_hash, host_block in self._pending_disk_writes:
-            # Zero-copy: pass numpy view directly. Safe because
-            # ref_cnt=1 prevents the block from being evicted.
-            src = self._host_buffer.to_numpy()[bid]
-            future = self._disk_tier.write_block_async(block_hash, src)
-            if future is not None:
-                self._disk_blocks_written += 1
-                self._write_locked_blocks.append((future, host_block))
-            else:
-                # write_block_async returned None (already on disk / pending)
-                self._host_block_pool.free_block(host_block)
+        # 2. Submit new writes with numpy for any pending disk writes that
+        # have completed.
+        while self._pending_disk_writes:
+            pending_disk_write = self._pending_disk_writes[-1]
+            if not pending_disk_write.d2h_copy_complete_event.is_ready():
+                break
+            self._pending_disk_writes.pop()
+            for host_block in pending_disk_write.host_blocks:
+                self._write_block_to_disk(host_block)
 
-        self._pending_disk_writes.clear()
-
+    @traced
     def _drain_completed_writes(self) -> None:
         """Release host blocks whose disk writes have completed.
 
@@ -290,7 +308,10 @@ class TieredConnector:
         block_ids: list[int],
         block_hashes: list[int],
     ) -> None:
-        """Execute pending D2H copies and record blocks for disk write-through."""
+        """Offload the device blocks to the external cache."""
+        self._block_copy_engine.wait_for_completion()
+
+        host_blocks: list[KVCacheBlock] = []
         for device_block_id, block_hash in zip(
             block_ids, block_hashes, strict=True
         ):
@@ -298,9 +319,15 @@ class TieredConnector:
                 device_block_id, block_hash
             )
             if host_block is not None:
-                self._pending_disk_writes.append(
-                    (host_block.bid, block_hash, host_block)
-                )
+                host_blocks.append(host_block)
+
+        if host_blocks:
+            event = DeviceEvent(self._devices[0])
+            pending_disk_write = _PendingDiskWrite(
+                d2h_copy_complete_event=event,
+                host_blocks=host_blocks,
+            )
+            self._pending_disk_writes.appendleft(pending_disk_write)
 
     def shutdown(self) -> None:
         """Clean shutdown of connector resources."""
@@ -312,8 +339,9 @@ class TieredConnector:
         self._write_locked_blocks.clear()
         self._disk_tier.shutdown()
         # Release any host blocks still pinned in pending disk writes.
-        for _, _, host_block in self._pending_disk_writes:
-            self._host_block_pool.free_block(host_block)
+        for pending_disk_write in self._pending_disk_writes:
+            for host_block in pending_disk_write.host_blocks:
+                self._host_block_pool.free_block(host_block)
         self._pending_disk_writes.clear()
 
         d2h_gb = self._d2h_blocks_copied * self._block_disk_bytes / GiB
@@ -380,3 +408,22 @@ class TieredConnector:
         # evicted while the disk write thread reads from its memory.
 
         return host_block
+
+    @traced
+    def _write_block_to_disk(self, host_block: KVCacheBlock) -> None:
+        """Write a host block to disk.
+
+        Args:
+            host_block: The host block to write to disk. We should have already
+            bumped the ref_cnt by 1 prior to calling this method.
+        """
+        block_hash = host_block.block_hash
+        assert block_hash is not None
+        src = self._host_buffer.to_numpy()[host_block.bid]
+        future = self._disk_tier.write_block_async(block_hash, src)
+        if future is not None:
+            self._disk_blocks_written += 1
+            self._write_locked_blocks.append((future, host_block))
+        else:
+            # write_block_async returned None (already on disk / pending)
+            self._host_block_pool.free_block(host_block)

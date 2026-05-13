@@ -45,6 +45,10 @@ logger = logging.getLogger(__name__)
 SKIP_MODELS: set[str] = {
     "black-forest-labs/flux.2-dev",
     "black-forest-labs/flux.2-klein-4b",
+    "liquidai/lfm2.5-1.2b-instruct",
+    "qwen/qwen3-embedding-0.6b",
+    "amd/minimax-m2.7-mxfp4",
+    "wan-ai/wan2.1-t2v-14b-diffusers",
 }
 
 

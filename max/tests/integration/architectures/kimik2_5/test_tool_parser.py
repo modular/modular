@@ -68,7 +68,7 @@ def test_single_tool_call_parsing() -> None:
 
     tool_call = result.tool_calls[0]
     assert isinstance(tool_call, ParsedToolCall)
-    assert tool_call.id.startswith("call_")
+    assert tool_call.id.startswith("get_weather:")
     assert tool_call.name == "get_weather"
     assert json.loads(tool_call.arguments) == {
         "location": "New York",
@@ -165,7 +165,7 @@ def test_function_id_without_prefix() -> None:
     assert len(result.tool_calls) == 1
     tool_call = result.tool_calls[0]
     assert tool_call.name == "search"
-    assert "_2" in tool_call.id  # Index should be in the ID
+    assert tool_call.id.startswith("search:")
 
 
 def test_function_id_without_index() -> None:
@@ -183,7 +183,7 @@ def test_function_id_without_index() -> None:
     assert len(result.tool_calls) == 1
     tool_call = result.tool_calls[0]
     assert tool_call.name == "calculate"
-    assert tool_call.id.startswith("call_")
+    assert tool_call.id.startswith("calculate:")
 
 
 def test_plain_function_name() -> None:
@@ -309,11 +309,7 @@ def test_tool_call_id_format() -> None:
     result = parser.parse_complete(response)
     tool_call_id = result.tool_calls[0].id
 
-    # Should start with "call_"
-    assert tool_call_id.startswith("call_")
-
-    # Should contain the index
-    assert "_5" in tool_call_id
+    assert tool_call_id.startswith("test:")
 
 
 def test_response_structure() -> None:
@@ -336,7 +332,7 @@ def test_response_structure() -> None:
     tool_call = result.tool_calls[0]
     assert isinstance(tool_call, ParsedToolCall)
     assert tool_call.name == "calculate"
-    assert tool_call.id.startswith("call_")
+    assert tool_call.id.startswith("calculate:")
 
 
 def test_whitespace_handling() -> None:
@@ -452,7 +448,7 @@ def test_parse_delta_single_tool_call_streaming() -> None:
         assert all_deltas == [
             ParsedToolCallDelta(
                 index=0,
-                id="call_12345678_0",
+                id="get_weather:12345678",
                 name="get_weather",
             ),
             ParsedToolCallDelta(index=0, arguments='{"loc'),
@@ -487,7 +483,7 @@ def test_parse_delta_multiple_tool_calls_streaming() -> None:
         assert result == [
             ParsedToolCallDelta(
                 index=0,
-                id="call_11111111_0",
+                id="get_weather:11111111",
                 name="get_weather",
             ),
             ParsedToolCallDelta(
@@ -496,7 +492,7 @@ def test_parse_delta_multiple_tool_calls_streaming() -> None:
             ),
             ParsedToolCallDelta(
                 index=1,
-                id="call_22222222_1",
+                id="get_time:22222222",
                 name="get_time",
             ),
             ParsedToolCallDelta(
@@ -538,7 +534,7 @@ def test_parse_delta_with_content_before_tools() -> None:
             ),
             ParsedToolCallDelta(
                 index=0,
-                id="call_12345678_0",
+                id="get_weather:12345678",
                 name="get_weather",
             ),
             ParsedToolCallDelta(

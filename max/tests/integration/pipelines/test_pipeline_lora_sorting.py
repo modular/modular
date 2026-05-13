@@ -201,6 +201,17 @@ class MockSamplingProcessor:
             return Buffer.from_numpy(tokens.astype(np.int64))
         return Buffer.from_numpy(np.zeros(self._batch_size, dtype=np.int64))
 
+    def logits_for_sampling(
+        self,
+        *,
+        logits: Buffer,
+        next_token_logits: Buffer | None,
+        logit_offsets: Buffer | None,
+    ) -> tuple[Buffer, Buffer | None]:
+        if next_token_logits is None:
+            return logits, logit_offsets
+        return next_token_logits, None
+
 
 def create_context(
     pipeline_type: PipelineType,
@@ -308,6 +319,7 @@ def create_pipeline_with_lora(
             self._sampler_with_bitmask = None
             self._kv_manager = MagicMock()
             self._pinned_new_tokens = None
+            self._identity_logit_offsets = None
             self._structured_output = StructuredOutputHelper(enabled=False)
 
         with patch.object(TextGenerationPipeline, "__init__", mock_text_init):

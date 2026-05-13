@@ -293,9 +293,7 @@ def run_denoising_step(
         compute_fn: Callable that runs the transformer and returns the
             result tuple.  The tuple format depends on the cache mode:
             ``(noise_pred,)`` for standard,
-            ``(new_residual, noise_pred)`` for FBCache,
-            ``(prev_mod_input, cached_residual, accum_rel_l1, noise_pred)``
-            for TeaCache.
+            ``(new_residual, noise_pred)`` for FBCache.
         taylorseer: Optional TaylorSeer instance.  Required when
             ``cache_config.taylorseer`` is True.
 
@@ -350,14 +348,7 @@ def run_denoising_step(
 
     # 4. Full compute path
     result = compute_fn()
-    if cache_config.teacache:
-        (
-            cache_state.teacache_prev_modulated_input,
-            cache_state.teacache_cached_residual,
-            cache_state.teacache_accumulated_rel_l1,
-            noise_pred,
-        ) = result
-    elif cache_config.first_block_caching:
+    if cache_config.first_block_caching:
         new_residual, noise_pred = result
         cache_state.prev_residual = new_residual
         cache_state.prev_output = noise_pred

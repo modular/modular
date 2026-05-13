@@ -1,4 +1,4 @@
-# ===----------------------------------------------------------------------=== #
+##===----------------------------------------------------------------------===##
 # Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
@@ -9,20 +9,16 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-# ===----------------------------------------------------------------------=== #
+##===----------------------------------------------------------------------===##
+model:
+  model_path: amd/Kimi-K2.5-MXFP4
+  device_specs: [0, 1, 2, 3, 4, 5, 6, 7]
+  data_parallel_degree: 8
+  max_length: 262144
+  trust_remote_code: true
+  kv_cache:
+    device_memory_utilization: 0.8
 
-from .flux2_attention import (
-    Flux2Attention,
-    Flux2FeedForward,
-    Flux2ParallelSelfAttention,
-    Flux2PosEmbed,
-    Flux2SwiGLU,
-)
-
-__all__ = [
-    "Flux2Attention",
-    "Flux2FeedForward",
-    "Flux2ParallelSelfAttention",
-    "Flux2PosEmbed",
-    "Flux2SwiGLU",
-]
+runtime:
+  ep_size: 8
+  max_batch_input_tokens: 1024

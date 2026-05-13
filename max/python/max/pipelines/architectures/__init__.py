@@ -43,10 +43,6 @@ def register_all_models() -> None:
     from .exaone import exaone_arch
     from .exaone_modulev3 import exaone_modulev3_arch
     from .flux2 import flux2_arch, flux2_klein_arch
-    from .flux2_modulev3 import (
-        flux2_klein_modulev3_arch,
-        flux2_modulev3_arch,
-    )
     from .gemma3 import gemma3_arch
     from .gemma3_modulev3 import gemma3_modulev3_arch
     from .gemma3multimodal import gemma3_multimodal_arch
@@ -104,8 +100,6 @@ def register_all_models() -> None:
         eagle_llama_arch,
         flux2_arch,
         flux2_klein_arch,
-        flux2_modulev3_arch,
-        flux2_klein_modulev3_arch,
         gemma3_arch,
         gemma3_modulev3_arch,
         gemma3_multimodal_arch,

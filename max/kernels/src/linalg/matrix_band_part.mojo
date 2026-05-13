@@ -30,7 +30,6 @@ def matrix_band_part[
         _
     ] -> SIMD[dtype, width],
     simd_width: Int,
-    single_thread_blocking_override: Bool,
     target: StaticString = "cpu",
 ](
     input_shape: IndexList[rank],
@@ -55,7 +54,6 @@ def matrix_band_part[
             rank,
             input_0_fn,
             simd_width,
-            single_thread_blocking_override,
             exclude=exclude,
             target=target,
         ](input_shape, lower_diagonal_index, upper_diagonal_index, output, ctx)
@@ -73,7 +71,6 @@ def _matrix_band_part_impl[
         _
     ] -> SIMD[dtype, width],
     simd_width: Int,
-    single_thread_blocking_override: Bool,
     exclude: Bool,
     target: StaticString = "cpu",
 ](
@@ -113,6 +110,5 @@ def _matrix_band_part_impl[
     elementwise[
         func,
         simd_width=1,
-        use_blocking_impl=single_thread_blocking_override,
         target=target,
     ](input_shape, context=ctx)

@@ -25,7 +25,12 @@ from typing import TYPE_CHECKING, Any, Generic
 
 import numpy as np
 import numpy.typing as npt
-from max.driver import Buffer, Device, DevicePinnedBuffer, load_devices
+from max.driver import (
+    Buffer,
+    Device,
+    DevicePinnedBuffer,
+    load_devices,
+)
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef
@@ -276,6 +281,12 @@ class TextGenerationPipeline(
                 dtype=DType.int64,
                 device=self._devices[0],
             )
+
+        self._identity_logit_offsets = (
+            FusedSamplingProcessor.allocate_identity_logit_offsets(
+                pipeline_config, self._devices[0]
+            )
+        )
 
     @property
     def pipeline_config(self) -> PipelineConfig:
@@ -547,6 +558,7 @@ class TextGenerationPipeline(
                     num_steps=num_steps,
                     device=device0,
                     pinned_new_tokens=self._pinned_new_tokens,
+                    identity_logit_offsets=self._identity_logit_offsets,
                     bitmask=bitmask,
                     vocab_size=self.vocab_size,
                 )
@@ -579,10 +591,17 @@ class TextGenerationPipeline(
 
             # Sample next token.
             with Tracer("sample_next_token_step_{i}"):
+                sample_logits, sample_offsets = (
+                    sampling_processor.logits_for_sampling(
+                        logits=model_outputs.logits,
+                        next_token_logits=model_outputs.next_token_logits,
+                        logit_offsets=model_outputs.logit_offsets,
+                    )
+                )
                 apply_logits_processors(
                     context_batch=flat_batch,
-                    batch_logits=model_outputs.logits,
-                    batch_logit_offsets=model_outputs.logit_offsets,
+                    batch_logits=sample_logits,
+                    batch_logit_offsets=sample_offsets,
                     batch_processors=batch_processors,
                 )
                 new_tokens = sampling_processor.new_tokens

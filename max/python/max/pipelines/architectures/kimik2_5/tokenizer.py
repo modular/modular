@@ -182,7 +182,7 @@ class KimiK2_5VLTokenizer(TextAndVisionTokenizer):
     ) -> str:
         """Applies the tokenizer's chat template to messages."""
         templated = self.delegate.apply_chat_template(
-            [msg.model_dump() for msg in messages],
+            [msg.model_dump(exclude_none=True) for msg in messages],
             tokenize=False,
             tools=tools,
             add_generation_prompt=True,

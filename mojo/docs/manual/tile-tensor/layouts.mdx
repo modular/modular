@@ -15,7 +15,7 @@ for `TileTensor`. In particular, it discusses the following types:
   a set of logical coordinates (like (*x*, *y*) in a two-dimensional array) to a
   linear index value. Layouts can also describe more complex organizations, like
   a matrix subdivided into tiles.
-- [`Coord`](/docs/layout/coord/Coord/) is a tuple-like container for
+- [`Coord`](/docs/std/utils/coord/Coord/) is a tuple-like container for
   storing integer coordinates that supports both compile-time and run-time
   values. It's used for defining logical coordinates and layout shapes, among
   other things.
@@ -151,12 +151,12 @@ representation of the layout in the form of a (*shape*:*stride*) pair.
 ### `Coord` and `Idx`: representing multidimensional coordinates {#coord-and-idx}
 
 Logical coordinates—and a layout's shape and size—are represented using the
-[`Coord`](/docs/layout/coord/Coord/) type, a tuple-like structure that
+[`Coord`](/docs/std/utils/coord/Coord/) type, a tuple-like structure that
 can hold both compile-time and run-time integer values. Each element of a
 `Coord` is either an integer value or a nested tuple.
 
 You can create a simple `Coord` with all compile-time values or all run-time
-values using the [`coord()`](/docs/layout/coord/coord-function/) function:
+values using the [`coord()`](/docs/std/utils/coord/coord/) function:
 
 ```mojo
 var comptime_coords = coord[4, 4]()
@@ -164,7 +164,7 @@ var runtime_coords = coord[DType.int32]((a, b, c))
 ```
 
 When you need to mix compile-time and run-time values, you can use the
-[`Idx()`](/docs/layout/coord/Idx/)
+[`Idx()`](/docs/std/utils/coord/Idx/)
 function to generate a compile-time or run-time integer.
 
 ```mojo
@@ -190,7 +190,7 @@ print(shape3)
 ((6, 8), ((2, 2), (3, 4)))
 ```
 
-The [`coord`](/docs/layout/coord/) package provides a number of
+The [`coord`](/docs/std/utils/coord/) module provides a number of
 functions for working with `Coords`.
 
 ### Modes

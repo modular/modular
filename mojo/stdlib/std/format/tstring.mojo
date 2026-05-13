@@ -225,9 +225,11 @@ def _encode_format_string(format: StringSlice) raises -> List[Byte]:
     var bytes = format.as_bytes()
     var i = 0
 
+    var immut_bytes = bytes.get_immutable()
+
     @always_inline
     def peek_next_is(byte: Byte) {read} -> Bool:
-        return i + 1 < len(bytes) and bytes[i + 1] == byte
+        return i + 1 < len(immut_bytes) and immut_bytes[i + 1] == byte
 
     while i < len(bytes):
         var byte = bytes[i]

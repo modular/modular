@@ -220,7 +220,7 @@ _PAGED_FA_CONFIGS = [
         "512",
         False,
         select({
-            "//:b200_gpu": [],
+            "//:b200_gpu": ["@platforms//:incompatible"],  # KERN-2890: disabled on B200 due to timeout
             "//conditions:default": ["@platforms//:incompatible"],
         }),
     ),

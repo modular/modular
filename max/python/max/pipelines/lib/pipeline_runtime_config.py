@@ -311,7 +311,7 @@ class PipelineRuntimeConfig(ConfigFileModel):
         default_factory=DenoisingCacheConfig,
         description=(
             "Cache configuration for diffusion model denoising "
-            "(FBCache, TaylorSeer, TeaCache)."
+            "(FBCache, TaylorSeer)."
         ),
     )
 

@@ -103,24 +103,23 @@ def _parse_function_id(function_id: str) -> tuple[str, str]:
             _, rest = function_id.split(".", 1)
             # Split on ':' to separate name from index
             if ":" in rest:
-                name, idx = rest.rsplit(":", 1)
+                name, _ = rest.rsplit(":", 1)
             else:
                 name = rest
-                idx = "0"
             short_uuid = str(uuid.uuid4()).replace("-", "")[:8]
-            return name, f"call_{short_uuid}_{idx}"
+            return name, f"{name}:{short_uuid}"
         except (ValueError, IndexError):
             pass
 
     # Fallback for non-prefixed IDs like "search:2"
     if ":" in function_id:
-        name, idx = function_id.rsplit(":", 1)
+        name, _ = function_id.rsplit(":", 1)
         short_uuid = str(uuid.uuid4()).replace("-", "")[:8]
-        return name, f"call_{short_uuid}_{idx}"
+        return name, f"{name}:{short_uuid}"
 
     # Last resort: use whole string as name
     short_uuid = str(uuid.uuid4()).replace("-", "")[:8]
-    return function_id, f"call_{short_uuid}"
+    return function_id, f"{function_id}:{short_uuid}"
 
 
 @dataclass

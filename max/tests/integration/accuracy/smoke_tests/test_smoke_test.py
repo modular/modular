@@ -94,7 +94,7 @@ def test_recipe_aliases_preserve_key_model_path_and_speculation() -> None:
 
 def test_recipe_gpu_overrides_scale_matching_parallelism() -> None:
     recipe = smoke_test._load_recipe(
-        "deepseekV3/recipes/nvfp4_fp8kv_8x_b200.yaml"
+        "max/pipelines/architectures/deepseekV3/recipes/nvfp4_fp8kv_8x_b200.yaml"
     )
 
     args = smoke_test._recipe_gpu_overrides(recipe, gpu_count=4)
@@ -111,7 +111,7 @@ def test_recipe_gpu_overrides_scale_matching_parallelism() -> None:
 
 def test_recipe_gpu_overrides_preserve_intentional_fixed_parallelism() -> None:
     recipe = smoke_test._load_recipe(
-        "deepseekV3/recipes/nvfp4_tpep_8x_b200.yaml"
+        "max/pipelines/architectures/deepseekV3/recipes/nvfp4_tpep_8x_b200.yaml"
     )
 
     args = smoke_test._recipe_gpu_overrides(recipe, gpu_count=4)
@@ -120,7 +120,9 @@ def test_recipe_gpu_overrides_preserve_intentional_fixed_parallelism() -> None:
 
 
 def test_recipe_gpu_overrides_preserve_single_gpu_recipes() -> None:
-    recipe = smoke_test._load_recipe("llama3/recipes/llama31_8b_eagle.yaml")
+    recipe = smoke_test._load_recipe(
+        "max/pipelines/architectures/llama3/recipes/llama31_8b_eagle.yaml"
+    )
 
     args = smoke_test._recipe_gpu_overrides(recipe, gpu_count=4)
 

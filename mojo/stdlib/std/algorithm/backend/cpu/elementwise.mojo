@@ -18,7 +18,6 @@ from std.utils.index import IndexList
 
 from std.gpu.host import DeviceContext
 
-from .map import map
 from .parallelize import _get_num_workers, sync_parallelize
 from ..vectorize import vectorize
 from std.algorithm.functional import _get_start_indices_of_nth_subvolume
@@ -38,7 +37,6 @@ def _elementwise_impl_cpu[
         IndexList[rank]
     ) register_passable -> None,
     *,
-    use_blocking_impl: Bool = False,
     trace_description: StaticString = "",
 ](
     func: FuncType,
@@ -53,7 +51,6 @@ def _elementwise_impl_cpu[
         rank: The rank of the buffer.
         simd_width: The SIMD vector width to use.
         FuncType: The body function type.
-        use_blocking_impl: If true the function executes without sub-tasks.
         trace_description: Description of the trace.
 
     Args:
@@ -63,7 +60,7 @@ def _elementwise_impl_cpu[
     """
 
     comptime impl = _elementwise_impl_cpu_1d if rank == 1 else _elementwise_impl_cpu_nd
-    impl[simd_width, use_blocking_impl=use_blocking_impl](func, shape, ctx)
+    impl[simd_width](func, shape, ctx)
 
 
 @always_inline
@@ -71,8 +68,6 @@ def _elementwise_impl_cpu_1d[
     rank: Int,
     //,
     simd_width: Int,
-    *,
-    use_blocking_impl: Bool,
     FuncType: def[width: Int, rank: Int, alignment: Int = 1](
         IndexList[rank]
     ) register_passable -> None,
@@ -88,7 +83,6 @@ def _elementwise_impl_cpu_1d[
     Parameters:
         rank: The rank of the buffer.
         simd_width: The SIMD vector width to use.
-        use_blocking_impl: If true the functions execute without sub-tasks.
         FuncType: The body function type.
 
     Args:
@@ -101,19 +95,6 @@ def _elementwise_impl_cpu_1d[
     comptime unroll_factor = 8  # TODO: Comeup with a cost heuristic.
 
     var problem_size = shape.flattened_length()
-
-    comptime if use_blocking_impl:
-
-        @always_inline
-        def blocking_task_fun[
-            simd_width: Int
-        ](idx: Int) {read func,}:
-            func[simd_width, rank](IndexList[rank](idx))
-
-        vectorize[simd_width, unroll_factor=unroll_factor](
-            problem_size, blocking_task_fun
-        )
-        return
 
     var num_workers = _get_num_workers(problem_size, ctx=ctx)
     var chunk_size = ceildiv(problem_size, num_workers)
@@ -142,8 +123,6 @@ def _elementwise_impl_cpu_nd[
     rank: Int,
     //,
     simd_width: Int,
-    *,
-    use_blocking_impl: Bool,
     FuncType: def[width: Int, rank: Int, alignment: Int = 1](
         IndexList[rank]
     ) register_passable -> None,
@@ -159,7 +138,6 @@ def _elementwise_impl_cpu_nd[
     Parameters:
         rank: The rank of the buffer.
         simd_width: The SIMD vector width to use.
-        use_blocking_impl: If true this is a blocking op.
         FuncType: The body function type.
 
     Args:
@@ -182,29 +160,6 @@ def _elementwise_impl_cpu_nd[
     # Compute the number of workers to allocate based on ALL work, not just
     # the dimensions we split across.
     var total_size: Int = shape.flattened_length()
-
-    comptime if use_blocking_impl:
-
-        @always_inline
-        @parameter
-        def blocking_task_fn(i: Int):
-            var indices = _get_start_indices_of_nth_subvolume(i, shape)
-
-            @always_inline
-            def func_wrapper[
-                simd_width: Int
-            ](idx: Int) {mut indices, read func,}:
-                indices[rank - 1] = idx
-                func[simd_width, rank](indices.canonicalize())
-
-            # We vectorize over the innermost dimension.
-            vectorize[simd_width, unroll_factor=unroll_factor](
-                shape[rank - 1], func_wrapper
-            )
-
-        map[blocking_task_fn](total_size // shape[rank - 1])
-
-        return
 
     var num_workers = _get_num_workers(total_size, ctx=ctx)
     var parallelism_size = total_size // shape[rank - 1]

@@ -6,7 +6,7 @@ agreed upon with a maintainer. For anything beyond a trivial fix (typo,
 one-line bug fix, doc tweak), we ask that you first open a GitHub issue or
 proposal and get a maintainer's go-ahead. This helps us avoid situations
 where a PR sits unreviewed because the change isn't aligned with the
-team's direction. See our [contributor guide](../CONTRIBUTING.md) for
+team's direction. See our [contributor guide](https://github.com/modular/modular/blob/main/CONTRIBUTING.md) for
 details.
 -->
 
@@ -70,9 +70,9 @@ Describe how you validated your changes.
       approval
 - [ ] PR is small and focused — I've split larger changes into a sequence of
       smaller PRs where possible (see
-      [pull request sizes](../mojo/CONTRIBUTING.md#about-pull-request-sizes))
+      [pull request sizes](https://github.com/modular/modular/blob/main/mojo/CONTRIBUTING.md#about-pull-request-sizes))
 - [ ] I ran `./bazelw run format` to format my changes
 - [ ] I added or updated tests to cover my changes
 - [ ] If AI tools assisted with this contribution, I have included an
-      `Assisted-by:` trailer in my commit message or this PR description
-      (see [AI Tool Use Policy](../AI_TOOL_POLICY.md))
+      `Assisted-by:` trailer in my commit message or this PR description (see
+      [AI Tool Use Policy](https://github.com/modular/modular/blob/main/AI_TOOL_POLICY.md))

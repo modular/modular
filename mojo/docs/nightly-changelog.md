@@ -46,6 +46,13 @@ This version is still a work in progress.
 
 ## Library changes
 
+- `Coord`, `coord()`, `Idx`, `ComptimeInt`, `RuntimeInt`, and related coordinate
+  helpers now live in the standard library module
+  [`std.utils.coord`](/docs/std/utils/coord/). The
+  [`layout.coord`](/mojo/layout/coord/) module re-exports the same symbols for
+  layout and kernel code; `layout` also hoists the common names at package
+  scope for convenience.
+
 - Added `TileTensor.copy_from()` and `TileTensor.split()` for copying between
   compatible tile views and splitting tiles into static or runtime-sized
   partitions.
@@ -148,6 +155,32 @@ This version is still a work in progress.
 
 - `String` and `StringSlice` now have a keyword only `string[codepoint=...]`
   that indexes by unicode codepoint offsets.
+  
+- PythonObject convertibility got simplified and cleaned up. When working with
+  types that required custom conversions to `PythonObject`, we used to write
+  code like this:
+
+  ```mojo
+  struct MyCustomType(ConvertibleToPython, ImplicitlyCopyable):
+     def to_python_object(var self) raises -> PythonObject:
+        return PythonObject( ... custom logic ...)
+
+  def hi_python(a: Some[ImplicitlyCopyable & ConvertibleToPython]) raises:
+      print(t"Hi, {a.to_python_object()}!")
+
+  def example():
+      hi_python(MyCustomType())
+  ```
+
+  This approach allows custom types to implement `ConvertibleToPython` to get a
+  domain specific encoding as a Python object. Mojo has simplified this by
+  making all `ConvertibleToPython` types implicitly convert to `PythonObject`,
+  so this can/should be simplified to:
+
+  ```mojo
+  def hi_python(a: PythonObject) raises:
+      print(t"Hi, {a}!")
+  ```
 
 ## Tooling changes
 
@@ -171,6 +204,14 @@ This version is still a work in progress.
   ```
 
 ## Removed
+
+- The `use_blocking_impl` parameter has been removed from `elementwise` (in
+  `std.algorithm.functional`), and the analogous
+  `single_thread_blocking_override` parameter has been removed from the
+  reduction APIs (`reduce`, `max`, `min`, `sum`, `product`, `mean` in
+  `std.algorithm.reduction`). These operations now always dispatch work the same
+  way, with a single worker used automatically when the problem size is small,
+  so the blocking variants are no longer needed.
 
 - The legacy `fn` keyword now produces an error instead of a warning. Please
   move to `def`.

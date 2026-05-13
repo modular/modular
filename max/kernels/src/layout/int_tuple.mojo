@@ -64,6 +64,7 @@ from std.sys.intrinsics import _type_is_eq_parse_time
 from std.collections import check_bounds
 from std.utils.numerics import max_finite
 from std.utils import IndexList
+from layout.coord import ComptimeInt, Coord, CoordLike, RuntimeInt
 
 
 def _get_index_type(address_space: AddressSpace) -> DType:
@@ -2910,3 +2911,115 @@ def to_index_list[
         res[i] = Int(flattened_t[i])
 
     return res
+
+
+def coord_to_int_tuple[
+    element_types: TypeList[Trait=CoordLike, ...],
+    //,
+](value: Coord[*element_types]) -> IntTuple:
+    """Convert a `Coord` to an `IntTuple`, preserving the nested structure.
+
+    This function recursively traverses the `Coord` and converts each element:
+    - Value elements (`ComptimeInt`, `RuntimeInt`) become integer values in the `IntTuple`
+    - Tuple elements (nested `Coord`) become nested `IntTuple`s
+
+    Parameters:
+        element_types: The list of element types in the `Coord`.
+
+    Args:
+        value: The `Coord` to convert.
+
+    Returns:
+        An `IntTuple` with the same structure and values as the input `Coord`.
+    """
+    var result = IntTuple()
+
+    comptime for i in range(type_of(value).__len__()):
+        comptime T = element_types[i]
+
+        comptime if T.is_tuple:
+            # Recursively convert nested tuples
+            result.append(coord_to_int_tuple(value[i].tuple()))
+        else:
+            # Convert value elements to integers
+            result.append(IntTuple(Int(value[i].value())))
+
+    return result
+
+
+def coord_to_int_tuple[*element_types: CoordLike]() -> IntTuple:
+    """Convert a `Coord` to an `IntTuple`, preserving the nested structure.
+
+    This function recursively traverses the `Coord` and converts each element:
+    - Value elements (`ComptimeInt`, `RuntimeInt`) become integer values in the `IntTuple`
+    - Tuple elements (nested `Coord`) become nested `IntTuple`s
+
+    Parameters:
+        element_types: The list of element types in the `Coord`.
+
+    Returns:
+        An `IntTuple` with the same structure and values as the input `Coord`.
+    """
+    var result = IntTuple()
+
+    comptime for i in range(element_types.size):
+        comptime T = element_types[i]
+
+        comptime if T.is_tuple:
+            # Recursively convert nested tuples
+            result.append(coord_to_int_tuple[element_types[i]]())
+        else:
+            comptime if T.is_static_value:
+                result.append(IntTuple(T.static_value))
+            else:
+                result.append(UNKNOWN_VALUE)
+
+    return result
+
+
+comptime _IntTupleToCoordLikeTabulator[
+    dtype: DType,
+    tuple: IntTuple,
+    idx: Int,
+]: CoordLike = ComptimeInt[Int(tuple[idx])] if Int(
+    tuple[idx]
+) != UNKNOWN_VALUE else RuntimeInt[
+    dtype
+]
+"""Maps a single IntTuple element to a CoordLike type.
+
+If the value is known, produces ComptimeInt[value].
+If UNKNOWN_VALUE, produces RuntimeInt.
+"""
+
+comptime _IntTupleToCoordLike[
+    dtype: DType, tuple: IntTuple
+] = TypeList.tabulate[
+    len(tuple),
+    _IntTupleToCoordLikeTabulator[dtype, tuple, _],
+]()
+"""Converts an IntTuple to a variadic of CoordLike types.
+
+Note:
+    This transformation is a value-to-type mapper that is meant to be
+    used in the parameter domain.
+
+For each element in the IntTuple:
+- If the value is known (not UNKNOWN_VALUE), produces `ComptimeInt[value]`
+- If the value is UNKNOWN_VALUE, produces `RuntimeInt`
+
+Example:
+    ```mojo
+    from layout.coord import Coord
+    from layout import IntTuple
+    from layout.int_tuple import _IntTupleToCoordLike
+
+    # Known values become ComptimeInt, UNKNOWN_VALUE becomes RuntimeInt
+    comptime shape = IntTuple(3, -1, 5)
+    comptime coord_types = _IntTupleToCoordLike[DType.int32, shape]
+    # coord_types is equivalent to TypeList.of[Trait=CoordLike, ComptimeInt[3], RuntimeInt, ComptimeInt[5]]()
+
+    # Can be used to create a Coord type
+    comptime my_coords = Coord[*coord_types]
+    ```
+"""

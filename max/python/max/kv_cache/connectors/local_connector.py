@@ -128,13 +128,15 @@ class LocalConnector:
         block_ids: list[int],
         block_hashes: list[int],
     ) -> None:
-        """Queue device blocks for offload to host. Executed in flush()."""
+        """Offload the device blocks to the external cache."""
+        self._block_copy_engine.wait_for_completion()
+
         for block_id, block_hash in zip(block_ids, block_hashes, strict=True):
             self._maybe_offload_to_host(block_id, block_hash)
 
     @traced
     def sync(self) -> None:
-        """Wait for pending H2D transfers to complete."""
+        """Wait for pending loads/offloads to complete."""
         self._block_copy_engine.wait_for_completion()
 
     def shutdown(self) -> None:

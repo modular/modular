@@ -57,10 +57,13 @@ check out our
 Yes. MAX has support for MacOS and ARM hardware, meaning it can be run on your
 local laptop for exploration and testing purposes.
 
-### Will MAX support distributed inference of large models?
+### Does MAX support distributed inference of large models?
 
-Yes, it will support executing large models that do not fit into the memory of
-a single device. This isn't available yet, so stay tuned!
+Yes. MAX runs tensor-parallel inference across multiple GPUs using the
+distributed layers in `max.nn` and distributed ops in `max.graph`. Production
+pipelines such as Llama 3, DeepSeek, and Mistral ship with multi-GPU
+implementations, and you can serve them across multiple GPUs by passing
+`--devices=gpu:0,1` (or `--devices=gpu:all`) to `max serve`.
 
 ### What if my BF16 results differ slightly from PyTorch? {#bf16-precision}
 

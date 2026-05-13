@@ -162,7 +162,7 @@ def test_text_generation_request_message_dict_roundtrip() -> None:
     }
 
     message = TextGenerationRequestMessage.model_validate(messages_dict)
-    assert messages_dict == message.model_dump()
+    assert messages_dict == message.model_dump(exclude_none=True)
 
     # Test with images
     messages_dict_with_images = {
@@ -177,7 +177,67 @@ def test_text_generation_request_message_dict_roundtrip() -> None:
     message_with_images = TextGenerationRequestMessage.model_validate(
         messages_dict_with_images
     )
-    assert messages_dict_with_images == message_with_images.model_dump()
+    assert messages_dict_with_images == message_with_images.model_dump(
+        exclude_none=True
+    )
+
+
+def test_text_generation_request_message_tool_call_roundtrip() -> None:
+    """Assistant ``tool_calls`` and tool ``tool_call_id`` survive roundtripping.
+
+    Regression test for a silent drop where the chat-completion router only
+    forwarded ``role``/``content`` to the chat template, so multi-turn
+    tool-use prompts rendered with empty ``<think>`` blocks and a bare
+    ``## Return of`` header instead of the originating tool name.
+    """
+    assistant_dict = {
+        "role": "assistant",
+        "content": "",
+        "reasoning_content": "Need to call the read tool.",
+        "tool_calls": [
+            {
+                "id": "call_abc123",
+                "type": "function",
+                "function": {
+                    "name": "read",
+                    "arguments": '{"filePath":"/tmp/x.py"}',
+                },
+            }
+        ],
+    }
+    assistant = TextGenerationRequestMessage.model_validate(assistant_dict)
+    assert assistant.tool_calls is not None
+    assert assistant.tool_calls[0]["id"] == "call_abc123"
+    assert assistant.reasoning_content == "Need to call the read tool."
+    assert assistant.model_dump(exclude_none=True) == assistant_dict
+
+    tool_dict = {
+        "role": "tool",
+        "tool_call_id": "call_abc123",
+        "content": "file contents",
+    }
+    tool_message = TextGenerationRequestMessage.model_validate(tool_dict)
+    assert tool_message.tool_call_id == "call_abc123"
+    assert tool_message.model_dump(exclude_none=True) == tool_dict
+
+
+def test_text_generation_request_message_assistant_content_none() -> None:
+    """OpenAI permits ``content=None`` on assistant messages with tool_calls."""
+    msg = TextGenerationRequestMessage.model_validate(
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                {
+                    "id": "call_1",
+                    "type": "function",
+                    "function": {"name": "f", "arguments": "{}"},
+                }
+            ],
+        }
+    )
+    assert msg.content == ""
+    assert msg.tool_calls is not None
 
 
 def test_text_generation_request_message_flatten_content() -> None:
@@ -236,6 +296,50 @@ def test_text_generation_request_message_flatten_content() -> None:
     )
     with pytest.raises(ValueError, match="only text content can be flattened"):
         message_only_image.flatten_content()
+
+
+def test_text_generation_request_message_flatten_content_tool_calls() -> None:
+    """``flatten_content`` preserves OpenAI tool-calling metadata."""
+    assistant = TextGenerationRequestMessage(
+        role="assistant",
+        content="",
+        reasoning_content="planning the call",
+        tool_calls=[
+            {
+                "id": "call_xyz",
+                "type": "function",
+                "function": {"name": "search", "arguments": '{"q":"max"}'},
+            }
+        ],
+    )
+    assert assistant.flatten_content() == {
+        "role": "assistant",
+        "content": "",
+        "reasoning_content": "planning the call",
+        "tool_calls": [
+            {
+                "id": "call_xyz",
+                "type": "function",
+                "function": {"name": "search", "arguments": '{"q":"max"}'},
+            }
+        ],
+    }
+
+    tool_message = TextGenerationRequestMessage(
+        role="tool",
+        content="search results",
+        tool_call_id="call_xyz",
+    )
+    assert tool_message.flatten_content() == {
+        "role": "tool",
+        "content": "search results",
+        "tool_call_id": "call_xyz",
+    }
+
+    # Unset optional fields stay absent so chat templates can rely on
+    # ``message.get("tool_calls")`` returning ``None`` for plain turns.
+    plain = TextGenerationRequestMessage(role="user", content="hi")
+    assert plain.flatten_content() == {"role": "user", "content": "hi"}
 
 
 def test_video_content_part_creation() -> None:

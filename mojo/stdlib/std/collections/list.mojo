@@ -1103,7 +1103,7 @@ struct List[T: Copyable](
         """
         if len(self) < new_size:
             abort(
-                "You are calling List.resize with a new_size bigger than the"
+                "You are calling List.shrink with a new_size bigger than the"
                 " current size. If you want to make the List bigger, provide a"
                 " value to fill the new slots with. If not, make sure the new"
                 " size is smaller than the current size."
@@ -1119,7 +1119,6 @@ struct List[T: Copyable](
         var old_size: Int = self._len
         self._len = new_size
         self._annotate_shrink(old_size)
-        self.reserve(new_size)
 
     def reverse(mut self):
         """Reverses the elements of the list.

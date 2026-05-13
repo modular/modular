@@ -132,6 +132,16 @@ class KVCacheParamInterface(Protocol):
         """Returns the symbolic inputs for the KV cache."""
         ...
 
+    @property
+    def replicates_kv_across_tp(self) -> bool:
+        """Whether every device holds identical KV state."""
+        ...
+
+    @property
+    def tensor_parallel_degree(self) -> int:
+        """Returns the tensor parallel degree."""
+        ...
+
 
 @dataclass
 class KVCacheParams(KVCacheParamInterface):
@@ -473,7 +483,11 @@ class KVCacheParams(KVCacheParamInterface):
         )
 
     def _get_symbolic_inputs_for_replica(
-        self, devices: Sequence[DeviceRef], replica_idx: int, prefix: str = ""
+        self,
+        devices: Sequence[DeviceRef],
+        replica_idx: int,
+        prefix: str = "",
+        draft_attention_group: KVCacheParams | None = None,
     ) -> list[KVCacheInputsPerDevice[TensorType, BufferType]]:
         """Computes the symbolic inputs for a single replica.
 
@@ -485,6 +499,13 @@ class KVCacheParams(KVCacheParamInterface):
         kv_cache_scale_dtype = DType.float32
         if self.quantized_kv_cache and self.kvcache_quant_config is not None:
             kv_cache_scale_dtype = self.kvcache_quant_config.scale_dtype
+
+        draft_params: KVCacheParams | None = (
+            draft_attention_group
+            if draft_attention_group is not None
+            else (self if self.num_eagle_speculative_tokens > 0 else None)
+        )
+
         return [
             KVCacheInputsPerDevice(
                 kv_blocks=BufferType(
@@ -529,22 +550,29 @@ class KVCacheParams(KVCacheParamInterface):
                 ),
                 draft_attention_dispatch_metadata=TensorType(
                     DType.int64,
-                    shape=[3] if self.is_mla else [4],
-                    device=device if self.is_mla else DeviceRef.CPU(),
+                    shape=[3] if draft_params.is_mla else [4],
+                    device=device if draft_params.is_mla else DeviceRef.CPU(),
                 )
-                if self.num_eagle_speculative_tokens > 0
+                if draft_params is not None
                 else None,
             )
             for device in devices
         ]
 
     def get_symbolic_inputs(
-        self, prefix: str = ""
+        self,
+        prefix: str = "",
+        *,
+        draft_attention_group: KVCacheParams | None = None,
     ) -> KVCacheInputs[TensorType, BufferType]:
         """Computes the symbolic inputs for the KV cache.
 
-        This method returns a list of KVCacheInputs for each replica.
-        This is used when constructing the model graph.
+        Args:
+            prefix: Prefix for dynamic dim names.
+            draft_attention_group: When set, sizes
+                ``draft_attention_dispatch_metadata`` by the drafter's
+                ``is_mla`` rather than ``self``'s. Use for unified spec-dec
+                graphs with asymmetric attention types.
 
         Returns:
             The symbolic inputs for the KV cache.
@@ -558,6 +586,7 @@ class KVCacheParams(KVCacheParamInterface):
                 devices,
                 replica_idx,
                 prefix,
+                draft_attention_group=draft_attention_group,
             )
             input_symbols.extend(symbols)
         return KVCacheInputs(inputs=input_symbols)
@@ -711,6 +740,16 @@ class MultiKVCacheParams(KVCacheParamInterface):
         for i, p in enumerate(self.params):
             inputs.extend(p.get_symbolic_inputs(f"{prefix}cache{i}_").inputs)
         return KVCacheInputs(inputs=inputs)
+
+    @property
+    def replicates_kv_across_tp(self) -> bool:
+        """Whether every device holds identical KV state."""
+        return self.params[0].replicates_kv_across_tp
+
+    @property
+    def tensor_parallel_degree(self) -> int:
+        """Returns the tensor parallel degree."""
+        return self.params[0].tensor_parallel_degree
 
 
 def compute_num_device_blocks(
@@ -867,7 +906,13 @@ def compute_num_host_blocks(params: KVCacheParamInterface) -> int:
     GiB = 1024 * 1024 * 1024
     host_gb_per_replica = params.host_kvcache_swap_space_gb
     host_bytes_per_replica = host_gb_per_replica * GiB
-    num_host_blocks = int(host_bytes_per_replica // params.bytes_per_block)
+
+    bytes_per_block = params.bytes_per_block
+    if params.replicates_kv_across_tp:
+        # On cpu/disk, we don't need multiple replicas of the same KV state.
+        assert bytes_per_block % params.tensor_parallel_degree == 0
+        bytes_per_block = bytes_per_block // params.tensor_parallel_degree
+    num_host_blocks = int(host_bytes_per_replica // bytes_per_block)
 
     if num_host_blocks == 0:
         raise RuntimeError(

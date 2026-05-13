@@ -441,7 +441,7 @@ class Qwen3VLTokenizer(TextAndVisionTokenizer):
     ) -> str:
         """Apply chat template using tokenizer directly (not processor)."""
         templated_message = self.delegate.apply_chat_template(
-            [msg.model_dump() for msg in messages],
+            [msg.model_dump(exclude_none=True) for msg in messages],
             tokenize=False,
             tools=tools,
             add_generation_prompt=True,

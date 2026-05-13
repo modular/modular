@@ -81,7 +81,7 @@ def test_concat() raises:
             rebind[SIMD[dtype, width]](val + 1),
         )
 
-    concat[dtype, False, epilogue_fn=epilogue_plus_one](
+    concat[dtype, epilogue_fn=epilogue_plus_one](
         output.make_dynamic[DType.int64](), concat_axis, input_tuple
     )
 

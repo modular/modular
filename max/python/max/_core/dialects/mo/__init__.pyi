@@ -195,9 +195,9 @@ class TensorType(max._core.Type):
     This type represents the shape and element type of a tensor, an optional
     device ref, and an optional dictionary of metadata (e.g., layout, etc.).
 
-    The `shapeAttr` is one of:
-    1. `KGEN::ParamDeclRefAttr` for a a shape parameter, e.g., `Sh0`.
-    2. `MOSH::ShapeAttr` for a shape of known rank, e.g., `[D0, 42, ?]`.
+    The `shapeAttr` is always a `MOSH::ShapeAttr` (e.g., `[D0, 42, N]`). Rank
+    is statically known; individual dimensions may be concrete integers or
+    parametric.
 
     The element type is an M::DType, with `invalid` denoting an unknown type.
     The type implements a subset of the methods in ShapedTypeInterface.
@@ -208,11 +208,8 @@ class TensorType(max._core.Type):
     ```mlir
     !mo.tensor<[4, 16], f32>           // static shape
     !mo.tensor<[N, N, 6], i32>         // parameterized shape
-    !mo.tensor<[?, ?], i32>            // unknown shape of known rank
-    !mo.tensor<[1, ?, N], i32>         // partially known and parameterized shape
-    !mo.tensor<?, invalid>             // unknown shape of unknown rank
-    !mo.tensor<Sh, invalid>            // shape parameter reference
-    !mo.tensor<[4, 16], f32>    // optional device
+    !mo.tensor<[1, M, N], i32>         // partially known and parameterized shape
+    !mo.tensor<[4, 16], f32, gpu:0>    // optional device
     ```
     """
 

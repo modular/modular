@@ -11,27 +11,32 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""MiniMax-M2 reasoning parser for <think>...</think> sections."""
+"""MiniMax-M2 reasoning parser for sections framed by ``<think>`` and ``</think>``."""
 
 from __future__ import annotations
 
 from collections.abc import Sequence
 from typing import Any
 
-from max.interfaces import PipelineTokenizer, ReasoningParser, ReasoningSpan
+from max.interfaces import (
+    ParsedReasoningDelta,
+    PipelineTokenizer,
+    ReasoningParser,
+    ReasoningSpan,
+)
 from max.pipelines.lib.reasoning import register
 from max.pipelines.lib.tokenizer import convert_token_to_id
 
 
 @register("minimax_m2")
 class MiniMaxM2ReasoningParser(ReasoningParser):
-    """MiniMax-M2 reasoning parser for <think>...</think> sections.
+    """MiniMax-M2 reasoning parser for sections framed by ``<think>`` and ``</think>``.
 
     Reasoning may end implicitly when a tool call begins
-    (<minimax:tool_call>).
+    (``<minimax:tool_call>``).
 
-    Reasoning may begin implicitly, without an explicit <think> token
-    (the chat template appends <think> to the assistant turn).
+    Reasoning may begin implicitly, without an explicit ``<think>`` token
+    (the chat template appends ``<think>`` to the assistant turn).
     """
 
     def __init__(
@@ -47,7 +52,7 @@ class MiniMaxM2ReasoningParser(ReasoningParser):
     def stream(
         self,
         delta_token_ids: Sequence[int],
-    ) -> tuple[ReasoningSpan, bool]:
+    ) -> ParsedReasoningDelta:
         """Identify a reasoning span within a streaming delta chunk."""
         end_token_ids = (
             (self.think_end_token_id, self.tool_call_start_token_id)
@@ -100,7 +105,10 @@ class MiniMaxM2ReasoningParser(ReasoningParser):
             reasoning=(start_reasoning, end_reasoning),
         )
         is_still_reasoning = end_token_idx is None
-        return span, is_still_reasoning
+        return ParsedReasoningDelta(
+            span=span,
+            is_still_reasoning=is_still_reasoning,
+        )
 
     def is_prompt_in_reasoning(self, prompt_token_ids: Sequence[int]) -> bool:
         """Decide whether the next generated token is in a reasoning span.

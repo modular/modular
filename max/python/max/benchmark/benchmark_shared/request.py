@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import logging
 import math
@@ -33,6 +34,7 @@ from openai.types.chat.completion_create_params import ResponseFormat
 from pydantic import BaseModel
 from tqdm.asyncio import tqdm
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
+from typing_extensions import NotRequired, TypedDict
 
 from .config import PIXEL_GENERATION_TASKS, BenchmarkTask, SamplingConfig
 from .datasets.types import (
@@ -990,6 +992,160 @@ class SglangPixelGenerationRequestDriver(RequestDriver):
                 return output
 
 
+class SglangVideoPayload(TypedDict):
+    model: str
+    prompt: str
+    width: NotRequired[int]
+    height: NotRequired[int]
+    num_inference_steps: NotRequired[int]
+    guidance_scale: NotRequired[float]
+    seed: NotRequired[int]
+    negative_prompt: NotRequired[str]
+    num_frames: NotRequired[int]
+
+
+def _build_sglang_video_payload(
+    request_func_input: PixelGenerationRequestFuncInput,
+) -> SglangVideoPayload:
+    """Build JSON payload for sglang's POST /v1/videos endpoint."""
+    payload = SglangVideoPayload(
+        model=request_func_input.model,
+        prompt=request_func_input.prompt,
+    )
+
+    if request_func_input.image_options is not None:
+        opts = request_func_input.image_options
+        if opts.width is not None:
+            payload["width"] = opts.width
+        if opts.height is not None:
+            payload["height"] = opts.height
+        if opts.steps is not None:
+            payload["num_inference_steps"] = opts.steps
+        if opts.guidance_scale is not None:
+            payload["guidance_scale"] = opts.guidance_scale
+        if opts.seed is not None:
+            payload["seed"] = opts.seed
+        if opts.negative_prompt is not None:
+            payload["negative_prompt"] = opts.negative_prompt
+        if opts.num_frames is not None:
+            payload["num_frames"] = opts.num_frames
+
+    return payload
+
+
+_SGLANG_VIDEO_POLL_INTERVAL_S = 1.0
+
+
+class SglangVideoRequestDriver(RequestDriver):
+    """Request driver for sglang's async /v1/videos endpoint.
+
+    POST /v1/videos queues a job, then poll GET /v1/videos/{id} until done.
+    Ref: https://github.com/sgl-project/sglang/blob/v0.5.10.post1/python/sglang/multimodal_gen/benchmarks/bench_serving.py#L224
+    """
+
+    async def request(
+        self, request_func_input: BaseRequestFuncInput
+    ) -> PixelGenerationRequestFuncOutput:
+        if not isinstance(request_func_input, PixelGenerationRequestFuncInput):
+            raise TypeError(
+                "SglangVideoRequestDriver requires"
+                " PixelGenerationRequestFuncInput."
+            )
+        api_url = request_func_input.api_url
+        if not api_url.rstrip("/").endswith("/videos"):
+            raise ValueError("Sglang video URL must end with '/videos'.")
+        base_url = api_url.rstrip("/")
+
+        payload = _build_sglang_video_payload(request_func_input)
+
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {os.environ.get('OPENAI_API_KEY')}",
+        }
+
+        output = PixelGenerationRequestFuncOutput()
+        start = time.perf_counter()
+        output.request_submit_time = start
+
+        async with aiohttp.ClientSession(timeout=AIOHTTP_TIMEOUT) as session:
+            try:
+                async with session.post(
+                    url=base_url, json=payload, headers=headers
+                ) as response:
+                    if response.status != 200:
+                        body = await response.text()
+                        output.latency = time.perf_counter() - start
+                        output.error = (
+                            f"HTTP {response.status}: {body}"
+                            if body
+                            else (response.reason or "")
+                        )
+                        output.success = False
+                        return output
+
+                    body = await response.json()
+                    job_id = body.get("id")
+                    if not job_id:
+                        output.latency = time.perf_counter() - start
+                        output.error = (
+                            "No job id in sglang video POST response."
+                        )
+                        output.success = False
+                        return output
+
+                poll_url = f"{base_url}/{job_id}"
+                while True:
+                    async with session.get(
+                        url=poll_url, headers=headers
+                    ) as poll_response:
+                        if poll_response.status != 200:
+                            body = await poll_response.text()
+                            output.latency = time.perf_counter() - start
+                            output.error = (
+                                f"Poll HTTP {poll_response.status}: {body}"
+                                if body
+                                else (poll_response.reason or "")
+                            )
+                            output.success = False
+                            return output
+
+                        poll_body = await poll_response.json()
+                        status = poll_body.get("status", "")
+
+                        if status == "completed":
+                            output.latency = time.perf_counter() - start
+                            output.num_generated_outputs = 1
+                            output.success = True
+
+                            inference_time = poll_body.get("inference_time_s")
+                            if inference_time:
+                                logger.debug(
+                                    "sglang video: inference_time=%s s",
+                                    inference_time,
+                                )
+                            return output
+
+                        if status == "failed":
+                            output.latency = time.perf_counter() - start
+                            error_info = poll_body.get("error", {})
+                            output.error = (
+                                error_info.get("message", "")
+                                if isinstance(error_info, dict)
+                                else str(error_info)
+                            )
+                            output.success = False
+                            return output
+
+                        await asyncio.sleep(_SGLANG_VIDEO_POLL_INTERVAL_S)
+
+            except Exception:
+                output.latency = time.perf_counter() - start
+                output.success = False
+                exc_info = sys.exc_info()
+                output.error = "".join(traceback.format_exception(*exc_info))
+                return output
+
+
 def _build_vllm_omni_pixel_generation_payload(
     request_func_input: PixelGenerationRequestFuncInput,
 ) -> dict[str, Any]:
@@ -1340,6 +1496,7 @@ def get_request_driver_class(
       /v1/responses          -> OpenResponsesRequestDriver (modular)
       /v1/images/generations -> SglangPixelGenerationRequestDriver
       /v1/videos/sync        -> VllmOmniVideoRequestDriver
+      /v1/videos             -> SglangVideoRequestDriver
       /v1/chat/completions   -> VllmOmniPixelGenerationRequestDriver
     The correct endpoint is typically auto-selected by PIXEL_GEN_DEFAULT_ENDPOINT
     (or VIDEO_GEN_DEFAULT_ENDPOINT for text-to-video) in benchmark_serving.py
@@ -1352,12 +1509,14 @@ def get_request_driver_class(
             return SglangPixelGenerationRequestDriver
         if api_url.endswith("videos/sync"):
             return VllmOmniVideoRequestDriver
+        if api_url.endswith("/videos"):
+            return SglangVideoRequestDriver
         if api_url.endswith("chat/completions"):
             return VllmOmniPixelGenerationRequestDriver
         raise ValueError(
             "Unsupported API URL for pixel-generation driver selection: "
             f"'{api_url}'. Expected /v1/responses, /v1/images/generations,"
-            " /v1/videos/sync, or /v1/chat/completions."
+            " /v1/videos/sync, /v1/videos, or /v1/chat/completions."
         )
 
     # for text generation task

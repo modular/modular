@@ -527,9 +527,9 @@ class OpenAIChatResponseGenerator(
 
             reasoning_message: str | None = None
             # TODO: (MODELS-1115) assume that the reasoning tokens are at the start of the chunk
-            if (
-                len(completed_outputs) > 0
-                and completed_outputs[0].decoded_reasoning_tokens is not None
+            if any(
+                chunk.decoded_reasoning_tokens is not None
+                for chunk in completed_outputs
             ):
                 reasoning_message = (
                     "".join(
@@ -811,6 +811,18 @@ async def openai_parse_chat_completion_request(
         # ``ChatCompletionMessageParam`` TypedDicts (plus a MAX-specific
         # ``video_url`` content part); access via dict keys.
         content = m.get("content")
+        # OpenAI tool-calling metadata that the chat template needs to faithfully
+        # reconstruct multi-turn tool-use prompts. Without these, the templated
+        # prompt silently loses the assistant's previous ``tool_calls`` and the
+        # ``tool_call_id`` reference on tool responses (so for example Kimi-K2
+        # renders ``## Return of`` with no function name).
+        raw_tool_calls = m.get("tool_calls")
+        tool_calls: list[dict[str, Any]] | None = (
+            [dict(tc) for tc in raw_tool_calls] if raw_tool_calls else None
+        )
+        tool_call_id = m.get("tool_call_id")
+        reasoning_content = m.get("reasoning_content")
+
         if isinstance(content, list):
             # ``TextGenerationRequestMessage`` accepts plain dicts here and
             # coerces them into ``MessageContent`` parts via a field
@@ -841,6 +853,9 @@ async def openai_parse_chat_completion_request(
                 TextGenerationRequestMessage(
                     role=m["role"],
                     content=cast(list[MessageContent], message_content),
+                    tool_calls=tool_calls,
+                    tool_call_id=tool_call_id,
+                    reasoning_content=reasoning_content,
                 )
             )
         else:
@@ -848,6 +863,9 @@ async def openai_parse_chat_completion_request(
                 TextGenerationRequestMessage(
                     role=m["role"],
                     content=content if content else "",
+                    tool_calls=tool_calls,
+                    tool_call_id=tool_call_id,
+                    reasoning_content=reasoning_content,
                 )
             )
 

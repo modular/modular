@@ -119,7 +119,6 @@ def _reduce_generator[
         SIMD[ty, width], SIMD[ty, width]
     ) capturing[_] -> SIMD[ty, width],
     /,
-    single_thread_blocking_override: Bool = False,
     target: StaticString = "cpu",
 ](
     shape: IndexList[_, element_type=DType.int64],
@@ -138,8 +137,6 @@ def _reduce_generator[
         input_0_fn: The lambda to use to access the incoming tensor.
         output_0_fn: The lambda to use to storing to the output tensor.
         reduce_function: The lambda implementing the reduction.
-        single_thread_blocking_override: If True, then the operation is run
-          synchronously using a single thread.
         target: The target to run on.
 
     Args:
@@ -161,7 +158,6 @@ def _reduce_generator[
             input_0_fn,
             output_0_fn,
             reduce_function,
-            single_thread_blocking_override,
         ](shape, init, reduce_dim)
     elif CurrentPlugin.reduce_generator_fn[target]:
         return comptime (CurrentPlugin.reduce_generator_fn[target].value())[
@@ -178,7 +174,6 @@ def _reduce_generator[
             input_0_fn,
             output_0_fn,
             reduce_function,
-            single_thread_blocking_override,
         ](shape, init, reduce_dim, context.get_device_context())
 
 
@@ -195,7 +190,6 @@ def _reduce_generator_wrapper[
         SIMD[dtype, width], SIMD[dtype, width]
     ) capturing[_] -> SIMD[dtype, width],
     /,
-    single_thread_blocking_override: Bool = False,
     target: StaticString = "cpu",
 ](
     shape: IndexList[_, element_type=DType.int64],
@@ -234,7 +228,6 @@ def _reduce_generator_wrapper[
         output_fn_wrapper,
         reduce_fn,
         target=target,
-        single_thread_blocking_override=single_thread_blocking_override,
     ](shape, init, reduce_dim, context)
 
 
@@ -250,7 +243,6 @@ def _reduce_generator[
         SIMD[ty, width], SIMD[ty, width]
     ) capturing[_] -> SIMD[ty, width],
     /,
-    single_thread_blocking_override: Bool = False,
     target: StaticString = "cpu",
 ](
     shape: IndexList[_, element_type=DType.int64],
@@ -267,8 +259,6 @@ def _reduce_generator[
         input_0_fn: The lambda to use to access the incoming tensor.
         output_0_fn: The lambda to use to storing to the output tensor.
         reduce_function: The lambda implementing the reduction.
-        single_thread_blocking_override: If True, then the operation is run
-          synchronously using a single thread.
         target: The target to run on.
 
     Args:
@@ -307,7 +297,6 @@ def _reduce_generator[
         input_0_fn,
         output_fn_wrapper,
         reduce_fn_wrapper,
-        single_thread_blocking_override,
         target,
     ](shape, init_wrapped, reduce_dim, context)
 
@@ -327,7 +316,6 @@ def max[
         IndexList[rank], SIMD[dtype, width]
     ) capturing[_] -> None,
     /,
-    single_thread_blocking_override: Bool = False,
     target: StaticString = "cpu",
 ](
     input_shape: IndexList[_, element_type=DType.int64],
@@ -344,8 +332,6 @@ def max[
         dtype: The dtype of the input and output.
         input_fn: The function to load the input.
         output_fn: The function to store the output.
-        single_thread_blocking_override: If True, then the operation is run
-          synchronously using a single thread.
         target: The target to run on.
 
     Args:
@@ -383,7 +369,6 @@ def max[
         output_fn_wrapper,
         reduce_impl,
         target=target,
-        single_thread_blocking_override=single_thread_blocking_override,
     ](input_shape, Scalar[dtype].MIN, reduce_dim, context=context)
 
 
@@ -397,7 +382,6 @@ def min[
         IndexList[rank], SIMD[dtype, width]
     ) capturing[_] -> None,
     /,
-    single_thread_blocking_override: Bool = False,
     target: StaticString = "cpu",
 ](
     input_shape: IndexList[_, element_type=DType.int64],
@@ -414,8 +398,6 @@ def min[
         dtype: The dtype of the input and output.
         input_fn: The function to load the input.
         output_fn: The function to store the output.
-        single_thread_blocking_override: If True, then the operation is run
-          synchronously using a single thread.
         target: The target to run on.
 
     Args:
@@ -453,7 +435,6 @@ def min[
         output_fn_wrapper,
         reduce_impl,
         target=target,
-        single_thread_blocking_override=single_thread_blocking_override,
     ](input_shape, Scalar[dtype].MAX, reduce_dim, context=context)
 
 
@@ -467,7 +448,6 @@ def sum[
         IndexList[rank], SIMD[dtype, width]
     ) capturing[_] -> None,
     /,
-    single_thread_blocking_override: Bool = False,
     target: StaticString = "cpu",
 ](
     input_shape: IndexList[_, element_type=DType.int64],
@@ -484,8 +464,6 @@ def sum[
         dtype: The dtype of the input and output.
         input_fn: The function to load the input.
         output_fn: The function to store the output.
-        single_thread_blocking_override: If True, then the operation is run
-          synchronously using a single thread.
         target: The target to run on.
 
     Args:
@@ -523,7 +501,6 @@ def sum[
         output_fn_wrapper,
         reduce_impl,
         target=target,
-        single_thread_blocking_override=single_thread_blocking_override,
     ](input_shape, Scalar[dtype](0), reduce_dim, context=context)
 
 
@@ -537,7 +514,6 @@ def product[
         IndexList[rank], SIMD[dtype, width]
     ) capturing[_] -> None,
     /,
-    single_thread_blocking_override: Bool = False,
     target: StaticString = "cpu",
 ](
     input_shape: IndexList[_, element_type=DType.int64],
@@ -553,8 +529,6 @@ def product[
         dtype: The dtype of the input and output.
         input_fn: The function to load the input.
         output_fn: The function to store the output.
-        single_thread_blocking_override: If True, then the operation is run
-          synchronously using a single thread.
         target: The target to run on.
 
     Args:
@@ -592,7 +566,6 @@ def product[
         output_fn_wrapper,
         reduce_impl,
         target=target,
-        single_thread_blocking_override=single_thread_blocking_override,
     ](input_shape, Scalar[dtype](1), reduce_dim, context=context)
 
 
@@ -606,7 +579,6 @@ def mean[
         IndexList[rank], SIMD[dtype, width]
     ) capturing[_] -> None,
     /,
-    single_thread_blocking_override: Bool = False,
     target: StaticString = "cpu",
 ](
     input_shape: IndexList[_, element_type=DType.int64],
@@ -624,8 +596,6 @@ def mean[
         dtype: The dtype of the input and output.
         input_fn: The function to load the input.
         output_fn: The function to store the output.
-        single_thread_blocking_override: If True, then the operation is run
-          synchronously using a single thread.
         target: The target to run on.
 
     Args:
@@ -693,7 +663,6 @@ def mean[
                 input_fn_wrapper,
                 wrapped_output_mul,
                 reduce_impl,
-                single_thread_blocking_override=single_thread_blocking_override,
                 target=target,
             ](
                 input_shape,
@@ -721,7 +690,6 @@ def mean[
                 input_fn_wrapper,
                 wrapped_output_div,
                 reduce_impl,
-                single_thread_blocking_override=single_thread_blocking_override,
                 target=target,
             ](
                 input_shape,
@@ -933,7 +901,6 @@ def reduce[
         input_fn,
         output_fn,
         reduce_fn_wrapper,
-        single_thread_blocking_override=True,
     ](shape, init=init, reduce_dim=0)
 
     return out
@@ -1198,7 +1165,6 @@ def sum[
         input_fn_nd,
         output_fn,
         reduce_fn_wrapper,
-        single_thread_blocking_override=True,
     ](
         shape,
         init=Scalar[dtype](0),
@@ -1434,7 +1400,6 @@ def variance[
         input_fn_nd,
         output_fn,
         reduce_fn_wrapper,
-        single_thread_blocking_override=True,
     ](
         shape,
         init=Scalar[mean_value.dtype](0),

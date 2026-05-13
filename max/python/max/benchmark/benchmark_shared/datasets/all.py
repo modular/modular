@@ -23,6 +23,9 @@ from max.benchmark.benchmark_shared.config import (
     BenchmarkTask,
     ServingBenchmarkConfig,
 )
+from max.benchmark.benchmark_shared.datasets._tokenizer_pool import (
+    TokenizerPool,
+)
 from max.benchmark.benchmark_shared.datasets.agentic_code import (
     AgenticCodeBenchmarkDataset,
 )
@@ -34,6 +37,9 @@ from max.benchmark.benchmark_shared.datasets.axolotl import (
 )
 from max.benchmark.benchmark_shared.datasets.batch_job import (
     BatchJobBenchmarkDataset,
+)
+from max.benchmark.benchmark_shared.datasets.chat_judge import (
+    ChatJudgeBenchmarkDataset,
 )
 from max.benchmark.benchmark_shared.datasets.code_debug import (
     CodeDebugBenchmarkDataset,
@@ -245,31 +251,37 @@ def sample_requests(
                 max_output_len=args.max_output_len,
             )
         elif isinstance(benchmark_dataset, RandomBenchmarkDataset):
-            if args.num_chat_sessions:
-                return benchmark_dataset.gen_multiturn_random_requests(
-                    input_len=args.random_input_len,
-                    output_len=args.random_output_len,
-                    num_chat_sessions=_inflated_chat_session_count(
-                        args, args.num_chat_sessions
-                    ),
-                    num_turns=args.random_num_turns,
-                    delay_between_chat_turns=args.delay_between_chat_turns,
-                    tokenizer=tokenizer,
-                    sys_prompt_ratio=args.random_sys_prompt_ratio,
-                    max_num_unique_sys_prompt=args.random_max_num_unique_sys_prompt,
-                )
-            else:
-                assert args.num_prompts is not None
-                return benchmark_dataset.sample_requests(
-                    num_requests=args.num_prompts,
-                    tokenizer=tokenizer,
-                    input_len=args.random_input_len,
-                    output_len=args.random_output_len,
-                    sys_prompt_ratio=args.random_sys_prompt_ratio,
-                    max_num_unique_sys_prompt=args.random_max_num_unique_sys_prompt,
-                    image_size=args.random_image_size,
-                    image_count=args.random_image_count,
-                )
+            # `with` ensures the spawn pool joins cleanly when the random
+            # dataset's encode/decode fan-out is done; workers spawn lazily
+            # on first use, so this is free when none of the methods below
+            # actually exercise the pool.
+            with TokenizerPool(tokenizer) as pool:
+                if args.num_chat_sessions:
+                    return benchmark_dataset.gen_multiturn_random_requests(
+                        input_len=args.random_input_len,
+                        output_len=args.random_output_len,
+                        num_chat_sessions=_inflated_chat_session_count(
+                            args, args.num_chat_sessions
+                        ),
+                        num_turns=args.random_num_turns,
+                        delay_between_chat_turns=args.delay_between_chat_turns,
+                        pool=pool,
+                        sys_prompt_ratio=args.random_sys_prompt_ratio,
+                        max_num_unique_sys_prompt=args.random_max_num_unique_sys_prompt,
+                    )
+                else:
+                    assert args.num_prompts is not None
+                    return benchmark_dataset.sample_requests(
+                        num_requests=args.num_prompts,
+                        tokenizer=tokenizer,
+                        pool=pool,
+                        input_len=args.random_input_len,
+                        output_len=args.random_output_len,
+                        sys_prompt_ratio=args.random_sys_prompt_ratio,
+                        max_num_unique_sys_prompt=args.random_max_num_unique_sys_prompt,
+                        image_size=args.random_image_size,
+                        image_count=args.random_image_count,
+                    )
         elif isinstance(benchmark_dataset, AxolotlBenchmarkDataset):
             assert args.num_prompts is not None
             return benchmark_dataset.sample_requests(
@@ -286,18 +298,20 @@ def sample_requests(
                     args, args.num_chat_sessions
                 )
                 if args.fit_distributions:
-                    return benchmark_dataset.gen_multiturn_sessions(
-                        num_sessions=inflated_n,
-                        tokenizer=tokenizer,
-                        shuffle=(not args.record_output_lengths),
-                        fit_length_distributions=True,
-                        num_turns=args.random_num_turns,
-                        input_len=args.random_input_len,
-                        output_len=args.random_output_len,
-                        delay_between_turns_dist=args.delay_between_chat_turns,
-                        sys_prompt_ratio=args.random_sys_prompt_ratio,
-                        max_num_unique_sys_prompt=args.random_max_num_unique_sys_prompt,
-                    )
+                    with TokenizerPool(tokenizer) as pool:
+                        return benchmark_dataset.gen_multiturn_sessions(
+                            num_sessions=inflated_n,
+                            tokenizer=tokenizer,
+                            pool=pool,
+                            shuffle=(not args.record_output_lengths),
+                            fit_length_distributions=True,
+                            num_turns=args.random_num_turns,
+                            input_len=args.random_input_len,
+                            output_len=args.random_output_len,
+                            delay_between_turns_dist=args.delay_between_chat_turns,
+                            sys_prompt_ratio=args.random_sys_prompt_ratio,
+                            max_num_unique_sys_prompt=args.random_max_num_unique_sys_prompt,
+                        )
                 else:
                     return benchmark_dataset.gen_multiturn_sessions(
                         num_sessions=inflated_n,
@@ -354,25 +368,41 @@ def sample_requests(
                 ),
                 image_dir=args.batch_job_image_dir,
             )
+        elif isinstance(benchmark_dataset, ChatJudgeBenchmarkDataset):
+            if not args.num_chat_sessions:
+                raise ValueError(
+                    "chat-judge dataset requires --num-chat-sessions; "
+                    "single-turn mode is not supported."
+                )
+            return benchmark_dataset.gen_chat_sessions(
+                num_sessions=_inflated_chat_session_count(
+                    args, args.num_chat_sessions
+                ),
+                tokenizer=tokenizer,
+                shuffle=(not args.record_output_lengths),
+                seed=args.seed,
+            )
         elif isinstance(benchmark_dataset, AgenticCodeBenchmarkDataset):
             if args.num_chat_sessions:
                 inflated_n = _inflated_chat_session_count(
                     args, args.num_chat_sessions
                 )
                 if args.fit_distributions:
-                    return benchmark_dataset.gen_multiturn_sessions(
-                        num_sessions=inflated_n,
-                        tokenizer=tokenizer,
-                        shuffle=(not args.record_output_lengths),
-                        fit_length_distributions=True,
-                        num_turns=args.random_num_turns,
-                        input_len=args.random_input_len,
-                        output_len=args.random_output_len,
-                        delay_between_turns_dist=args.delay_between_chat_turns,
-                        sys_prompt_ratio=args.random_sys_prompt_ratio,
-                        max_num_unique_sys_prompt=args.random_max_num_unique_sys_prompt,
-                        enable_tool_calls=args.tool_calls,
-                    )
+                    with TokenizerPool(tokenizer) as pool:
+                        return benchmark_dataset.gen_multiturn_sessions(
+                            num_sessions=inflated_n,
+                            tokenizer=tokenizer,
+                            pool=pool,
+                            shuffle=(not args.record_output_lengths),
+                            fit_length_distributions=True,
+                            num_turns=args.random_num_turns,
+                            input_len=args.random_input_len,
+                            output_len=args.random_output_len,
+                            delay_between_turns_dist=args.delay_between_chat_turns,
+                            sys_prompt_ratio=args.random_sys_prompt_ratio,
+                            max_num_unique_sys_prompt=args.random_max_num_unique_sys_prompt,
+                            enable_tool_calls=args.tool_calls,
+                        )
                 else:
                     return benchmark_dataset.gen_multiturn_sessions(
                         num_sessions=inflated_n,

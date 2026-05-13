@@ -560,14 +560,9 @@ def mgp_buffer_concat[
             .as_any_origin()
             .as_immut()
         )
-    if output.size() < 4096:
-        concat[DType.int8, True, bDevice, None](
-            output_lt, 0, input_tensors, context=call_ctx
-        )
-    else:
-        concat[DType.int8, False, bDevice, None](
-            output_lt, 0, input_tensors, context=call_ctx
-        )
+    concat[DType.int8, bDevice, None](
+        output_lt, 0, input_tensors, context=call_ctx
+    )
 
 
 @register_internal("mgp.buffer.device_to_host")

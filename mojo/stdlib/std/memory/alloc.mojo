@@ -106,6 +106,8 @@ def free[
     Example:
 
     ```mojo
+    from std.memory.alloc import alloc, free, Layout
+
     var layout = Layout[String].single()
     var ptr = alloc(layout)
 

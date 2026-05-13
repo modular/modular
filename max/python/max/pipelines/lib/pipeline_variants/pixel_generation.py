@@ -79,7 +79,7 @@ class PixelGenerationPipeline(
 
         if issubclass(pipeline_model, PipelineExecutor):
             # Merge CLI-supplied cache_config into runtime so the executor
-            # receives TaylorSeer / FBCache / TeaCache settings.
+            # receives TaylorSeer / FBCache settings.
             if cache_config is not None:
                 pipeline_config.runtime.denoising_cache = cache_config
             self._use_executor = True

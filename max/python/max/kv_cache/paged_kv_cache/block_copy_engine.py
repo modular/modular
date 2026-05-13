@@ -20,6 +20,7 @@ from max.driver import Buffer, Device, DevicePinnedBuffer, DeviceStream
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn.comm.allreduce import Signals
+from max.profiler import Tracer, traced
 
 
 def _bytes_per_page(buffer: Buffer) -> int:
@@ -136,6 +137,10 @@ class BlockOffloadEngine:
             buffer.device.id: DeviceStream(buffer.device)
             for buffer in self.device_buffers
         }
+        self.device_buffers_on_aux_stream: list[Buffer] = [
+            buffer.to(self.d2h_auxiliary_streams[buffer.device.id])
+            for buffer in self.device_buffers
+        ]
 
         self._signals: Signals | None = None
         self._signal_buffers: list[Buffer] = []
@@ -153,38 +158,54 @@ class BlockOffloadEngine:
             )
             self._signal_buffers = self._signals.buffers()
 
+    @traced
     def memcpy_h2d(self, dst: int, src: int) -> None:
         """Copies a block from host to device(s)."""
+        # h2d on auxiliary stream.
         offset = 0
-        for buf in self.device_buffers:
+        for buf in self.device_buffers_on_aux_stream:
             page_bytes = buf.shape[1]
             buf[dst, :].inplace_copy_from(
                 self.host_buffer[src, offset : offset + page_bytes]
             )
             offset += page_bytes
 
+        if not self.replicated_buffers:
+            return
+
+        # main stream waits for completion of d2h on auxiliary stream.
+        for main_stream, d2h_auxiliary_stream in zip(
+            self.main_streams.values(),
+            self.d2h_auxiliary_streams.values(),
+            strict=True,
+        ):
+            main_stream.wait_for(d2h_auxiliary_stream)
+
+        # Broadcast the block to the other devices on main stream.
         for root, peers in zip(
             self.device_buffers, self.replicated_buffers, strict=False
         ):
-            distributed_broadcast(
-                input_buffer=root[dst, :],
-                output_buffers=[root[dst, :], *(p[dst, :] for p in peers)],
-                signal_buffers=self._signal_buffers,
-                devices=self._broadcast_devices,
-                root=0,
-            )
+            with Tracer("distributed_broadcast"):
+                distributed_broadcast(
+                    input_buffer=root[dst, :],
+                    output_buffers=[root[dst, :], *(p[dst, :] for p in peers)],
+                    signal_buffers=self._signal_buffers,
+                    devices=self._broadcast_devices,
+                    root=0,
+                )
 
+    @traced
     def memcpy_d2h(self, dst: int, src: int) -> None:
         """Copies a block from device(s) to host."""
         offset = 0
-        for buf in self.device_buffers:
+        for buf in self.device_buffers_on_aux_stream:
             page_bytes = buf.shape[1]
-            # TODO(SERVOPT-1389): issue d2h on auxiliary stream after fixing driver bugs
             self.host_buffer[
                 dst, offset : offset + page_bytes
             ].inplace_copy_from(buf[src, :])
             offset += page_bytes
 
+    @traced
     def wait_for_completion(self) -> None:
         """Synchronize main stream with the auxiliary stream.
 

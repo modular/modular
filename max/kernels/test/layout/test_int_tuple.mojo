@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from layout.coord import Coord, Idx
 from layout.int_tuple import *
 from layout.int_tuple import abs  # override builtin abs and min
 from std.testing import assert_equal, assert_false, assert_true, assert_raises
@@ -495,6 +496,15 @@ def test_value_nested_tuple() raises:
     assert_equal(Int(stride[1]), 1)
 
 
+def test_coord_to_int_tuple_conversion() raises:
+    """`Coord` round-trips to `IntTuple` preserving nested structure."""
+    var t = Coord(Coord(Idx[2](), Idx(3)), Idx[4]())
+    var t2 = coord_to_int_tuple(t)
+    assert_equal(t2[0][0], 2)
+    assert_equal(t2[0][1], 3)
+    assert_equal(t2[1], 4)
+
+
 def main() raises:
     test_tuple_basic()
     test_tuple_slicing()
@@ -520,3 +530,5 @@ def main() raises:
 
     test_iter()
     test_value_nested_tuple()
+
+    test_coord_to_int_tuple_conversion()

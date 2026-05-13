@@ -460,27 +460,6 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
-        "--teacache",
-        action="store_true",
-        help="Enable TeaCache optimization for the MAX pipeline.",
-    )
-    parser.add_argument(
-        "--teacache-rel-l1-thresh",
-        type=float,
-        default=None,
-        help="TeaCache relative-L1 threshold (model default if unset).",
-    )
-    parser.add_argument(
-        "--teacache-coefficients",
-        type=float,
-        action="append",
-        default=None,
-        help=(
-            "TeaCache polynomial coefficients. Repeat this flag once per "
-            "coefficient to override the model defaults (5 for FLUX)."
-        ),
-    )
-    parser.add_argument(
         "--no-output",
         action="store_true",
         help="Skip saving generated images to disk.",
@@ -639,12 +618,6 @@ def _build_image_filename(
         warmup = args.taylorseer_warmup_steps or "default"
         order = args.taylorseer_max_order or "default"
         parts.append(f"taylorseer_i{interval}_w{warmup}_o{order}")
-    if args.teacache:
-        thresh = args.teacache_rel_l1_thresh or "default"
-        coeffs = (
-            "custom" if args.teacache_coefficients is not None else "default"
-        )
-        parts.append(f"teacache_t{thresh}_c{coeffs}")
     return "_".join(parts) + ".png"
 
 
@@ -924,9 +897,6 @@ def _load_max_pipeline(args: argparse.Namespace) -> tuple[Any, Any, Any]:
         taylorseer_cache_interval=args.taylorseer_cache_interval,
         taylorseer_warmup_steps=args.taylorseer_warmup_steps,
         taylorseer_max_order=args.taylorseer_max_order,
-        teacache=args.teacache,
-        teacache_rel_l1_thresh=args.teacache_rel_l1_thresh,
-        teacache_coefficients=args.teacache_coefficients,
     )
 
     pipeline_model = cast(type[DiffusionPipeline], arch.pipeline_model)
@@ -1297,19 +1267,6 @@ def main(argv: list[str] | None = None) -> int:
         print(
             f"  ts max order     : {args.taylorseer_max_order or 'model-default'}"
         )
-    print(f"  teacache         : {args.teacache}")
-    if args.teacache:
-        print(
-            f"  tc rel_l1 thresh : {args.teacache_rel_l1_thresh or 'model-default'}"
-        )
-        print(
-            "  tc coefficients  : "
-            + (
-                "user-specified"
-                if args.teacache_coefficients is not None
-                else "model-default"
-            )
-        )
     print(f"  warmup runs      : {args.num_warmups}")
     print(f"  timed iterations : {len(requests)}")
     print()
@@ -1331,15 +1288,6 @@ def main(argv: list[str] | None = None) -> int:
         )
     if args.taylorseer:
         caching_parts.append("taylorseer")
-    if args.teacache:
-        caching_parts.append(
-            "teacache"
-            + (
-                f" (threshold: {args.teacache_rel_l1_thresh})"
-                if args.teacache_rel_l1_thresh is not None
-                else " (threshold: model-default)"
-            )
-        )
     print(f"    caching        : {', '.join(caching_parts) or 'none'}")
     print()
 

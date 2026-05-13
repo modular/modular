@@ -85,12 +85,10 @@ def elementwise_epilogue_c_tile[
 ](
     offset: GemmShape,
     tile_len: GemmShape,
-    c: TileTensor[mut=True, c_type, address_space=AddressSpace.GENERIC, ...],
+    c: TileTensor[mut=False, c_type, address_space=AddressSpace.GENERIC, ...],
 ):
     @always_inline
-    def activation_on_col_chunk[
-        col_chunk_size: Int
-    ](idx_n: Int) {c, offset, tile_len, mut}:
+    def activation_on_col_chunk[col_chunk_size: Int](idx_n: Int) {read}:
         var n_coord = idx_n + offset.N
         for idx_m in range(tile_len.M):
             var m_coord = idx_m + offset.M
@@ -113,7 +111,11 @@ def tiled_matmul_run[
     kernel_id: InnerKernelID,
     algorithm: InnerMatmulKernel,
     ElementwiseEpilogueFnType: ImplicitlyCopyable
-    & def(GemmShape, GemmShape) -> None,
+    & def(
+        GemmShape,
+        GemmShape,
+        TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
+    ) -> None,
 ](
     alg: algorithm,
     c: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
@@ -191,7 +193,11 @@ struct TiledMatmul[
     c_origin: MutOrigin,
     algorithm: InnerMatmulKernel,
     ElementwiseEpilogueFnType: ImplicitlyCopyable
-    & def(GemmShape, GemmShape) -> None,
+    & def(
+        GemmShape,
+        GemmShape,
+        TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
+    ) -> None,
 ](ImplicitlyCopyable):
     """Tiled matmul implementation integrating packing, inner loop and tile
     partitions.
@@ -292,6 +298,7 @@ struct TiledMatmul[
                     GemmShape(
                         tile_kernel_rows, sub_tile_n_k[0], sub_tile_n_k[1]
                     ),
+                    self.c.as_immut(),
                 )
 
         comptime if Self.kernel_id == InnerKernelID.I8MM:
@@ -711,17 +718,21 @@ def _submatmul_sequential_sync[
 ):
     comptime simd_size = config.simd_size
 
-    def elementwise_closure(offset: GemmShape, shape: GemmShape) {read c}:
+    def elementwise_closure(
+        offset: GemmShape,
+        shape: GemmShape,
+        c_read: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
+    ):
         comptime if elementwise_lambda_fn:
             comptime func = elementwise_lambda_fn.value()
             elementwise_epilogue_c_tile[
                 simd_size,
-                c.dtype,
+                c_read.dtype,
                 func,
             ](
                 offset,
                 shape,
-                c,
+                c_read,
             )
         else:
             pass

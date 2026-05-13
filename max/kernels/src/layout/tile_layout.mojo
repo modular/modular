@@ -42,7 +42,7 @@ from layout.tile_layout import Layout, TensorLayout, row_major, col_major
 
 from std.math.uutils import udivmod_unchecked
 
-from .coord import (
+from layout.coord import (
     ComptimeInt,
     Idx,
     Coord,
@@ -51,7 +51,6 @@ from .coord import (
     DynamicCoord,
     crd2idx,
     idx2crd,
-    coord_to_int_tuple,
     _IntToComptimeInt,
     _CoordToDynamic,
     _NestedDynamicCoord,
@@ -60,7 +59,8 @@ from .coord import (
     _MultiplyByScalar,
     _Flattened,
 )
-from .int_tuple import IntTuple
+from .int_tuple import IntTuple, coord_to_int_tuple
+
 from .layout import Layout as LegacyLayout
 
 

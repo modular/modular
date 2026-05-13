@@ -38,15 +38,11 @@ from internvl import torch_utils as internvl_torch_utils
 from max import driver, pipelines
 from max.interfaces import PipelineTask, PipelineTokenizer
 from max.pipelines import TextGenerationPipelineInterface
-from max.pipelines.architectures.flux2_modulev3.pipeline_flux2 import (
-    Flux2Pipeline,
+from max.pipelines.architectures.flux2.flux2_executor import Flux2Executor
+from max.pipelines.architectures.flux2.flux2_klein_executor import (
+    Flux2KleinExecutor,
 )
-from max.pipelines.architectures.flux2_modulev3.pipeline_flux2_klein import (
-    Flux2KleinPipeline,
-)
-from max.pipelines.architectures.flux2_modulev3.tokenizer import (
-    Flux2Tokenizer,
-)
+from max.pipelines.architectures.flux2.tokenizer import Flux2Tokenizer
 from max.pipelines.architectures.internvl.tokenizer import InternVLProcessor
 from max.pipelines.architectures.wan.context import WanContext
 from max.pipelines.architectures.wan.tokenizer import WanTokenizer
@@ -1220,7 +1216,7 @@ class ImageGenerationOracle(PipelineOracle):
     ) -> MaxPipelineAndTokenizer:
         """Create MAX FLUX pixel generation pipeline."""
 
-        prefer_module_v3 = self.config_params.get("prefer_module_v3", True)
+        prefer_module_v3 = self.config_params.get("prefer_module_v3", False)
 
         models = ModelManifest.from_model_path(
             self.model_path,
@@ -1235,9 +1231,9 @@ class ImageGenerationOracle(PipelineOracle):
         )
 
         pipeline_model_cls = (
-            Flux2KleinPipeline
+            Flux2KleinExecutor
             if self.model_path.startswith("black-forest-labs/FLUX.2-klein")
-            else Flux2Pipeline
+            else Flux2Executor
         )
         tokenizer = Flux2Tokenizer(
             model_path=self.model_path,

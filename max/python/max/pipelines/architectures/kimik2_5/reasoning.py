@@ -18,7 +18,12 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any
 
-from max.interfaces import PipelineTokenizer, ReasoningParser, ReasoningSpan
+from max.interfaces import (
+    ParsedReasoningDelta,
+    PipelineTokenizer,
+    ReasoningParser,
+    ReasoningSpan,
+)
 from max.pipelines.lib.reasoning import register
 from max.pipelines.lib.tokenizer import convert_token_to_id
 
@@ -62,7 +67,7 @@ class KimiK2_5ReasoningParser(ReasoningParser):
     def stream(
         self,
         delta_token_ids: Sequence[int],
-    ) -> tuple[ReasoningSpan, bool]:
+    ) -> ParsedReasoningDelta:
         """Identify a reasoning span within a streaming delta chunk."""
         start_token_idx: int | None = None
         end_token_idx: int | None = None
@@ -100,7 +105,10 @@ class KimiK2_5ReasoningParser(ReasoningParser):
             reasoning=(start_reasoning, end_reasoning),
         )
         is_still_reasoning = end_token_idx is None
-        return span, is_still_reasoning
+        return ParsedReasoningDelta(
+            span=span,
+            is_still_reasoning=is_still_reasoning,
+        )
 
     def is_prompt_in_reasoning(
         self,

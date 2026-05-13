@@ -92,6 +92,8 @@ struct ReflectedFn[func_type: AnyType, //, func: func_type]:
 
         Example:
             ```mojo
+            from std.reflection import reflect_fn
+
             def my_func(): pass
             print(reflect_fn[my_func].display_name())  # "my_func"
             ```

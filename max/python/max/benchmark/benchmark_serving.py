@@ -60,6 +60,9 @@ from max.benchmark.benchmark_shared.config import (
     get_pixel_gen_endpoint,
 )
 from max.benchmark.benchmark_shared.datasets.all import sample_requests
+from max.benchmark.benchmark_shared.datasets.chat_judge import (
+    ChatJudgeChatSamples,
+)
 from max.benchmark.benchmark_shared.datasets.types import (
     ChatSamples,
     ChatSession,
@@ -76,6 +79,7 @@ from max.benchmark.benchmark_shared.metrics import (
 )
 from max.benchmark.benchmark_shared.multi_turn import (
     prerun_warmup_turns,
+    run_chat_judge_benchmark,
     run_kv_cache_stress_benchmark,
     run_multiturn_benchmark,
 )
@@ -342,6 +346,13 @@ async def benchmark(
         if args.random_sys_prompt_ratio <= 0:
             raise ValueError(
                 "--warm-shared-prefix requires --random-sys-prompt-ratio > 0."
+            )
+
+    if isinstance(session.samples, ChatJudgeChatSamples):
+        if args.warmup_to_steady_state:
+            raise NotImplementedError(
+                "--warmup-to-steady-state is not yet implemented for"
+                " chat-judge."
             )
 
     logger.info("Starting benchmark run")
@@ -626,6 +637,27 @@ async def benchmark(
             all_outputs = [
                 out for outs in outputs_by_session.values() for out in outs
             ]
+        elif isinstance(session.samples, ChatJudgeChatSamples):
+            # chat-judge: each turn already has its history inlined in the
+            # user message, so the driver sends [system, user] per turn
+            # and never accumulates assistant responses.
+            outputs_by_session = await run_chat_judge_benchmark(
+                chat_sessions=session.samples.chat_sessions,
+                max_output_tokens=args.max_output_len or 32,
+                max_requests=args.num_prompts,
+                semaphore=semaphore,
+                benchmark_should_end_time=benchmark_should_end_time,
+                request_driver=request_driver,
+                model_id=session.model_id,
+                api_url=session.api_url,
+                lora_manager=session.lora_manager,
+                warmup_delay_ms=args.chat_warmup_delay_ms,
+                max_concurrency=max_concurrency,
+                sampling=args.sampling,
+            )
+            all_outputs = [
+                out for outs in outputs_by_session.values() for out in outs
+            ]
         else:
             # multi-turn chat scenario
             assert chat_sessions is not None
@@ -802,15 +834,19 @@ def validate_task_and_endpoint(
             "/v1/responses",
             "/v1/images/generations",
             "/v1/videos/sync",
+            "/v1/videos",
         ):
             raise ValueError(
                 f"--benchmark-task text-generation does not support "
                 f"--endpoint {endpoint}"
             )
     elif benchmark_task in PIXEL_GENERATION_TASKS:
-        if endpoint == "/v1/videos/sync" and benchmark_task != "text-to-video":
+        if (
+            endpoint in ("/v1/videos/sync", "/v1/videos")
+            and benchmark_task != "text-to-video"
+        ):
             raise ValueError(
-                f"--endpoint /v1/videos/sync is only valid for"
+                f"--endpoint {endpoint} is only valid for"
                 f" --benchmark-task text-to-video, got {benchmark_task!r}"
             )
         if endpoint not in PIXEL_GENERATION_ENDPOINTS:
@@ -1241,7 +1277,9 @@ def _run_benchmark_sweep(
                         args.backend, args.host, args.port, args.dry_run
                     )
 
-                args.seed = int(np.random.randint(0, 10000))
+                if args.seed is None:
+                    args.seed = int(np.random.randint(0, 10000))
+                logger.info("mc=%s seed=%d", mc, args.seed)
 
                 result = asyncio.run(benchmark(args, session, mc, rr))
                 iteration_results.append(result)

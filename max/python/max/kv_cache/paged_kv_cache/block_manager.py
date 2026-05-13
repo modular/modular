@@ -582,8 +582,12 @@ class BlockManager:
 
         # Check that we have enough free blocks to allocate the new blocks.
         if num_new_blocks > len(self.device_block_pool.free_block_queue):
+            free = len(self.device_block_pool.free_block_queue)
+            in_use = self.total_num_blocks - free
             raise InsufficientBlocksError(
-                f"Cannot get {num_new_blocks} free blocks from the free block queue (only {len(self.device_block_pool.free_block_queue)} available)"
+                f"Cannot get {num_new_blocks} free blocks from the free block queue"
+                f" (only {free} available; {in_use}/{self.total_num_blocks} blocks"
+                f" currently in use)"
             )
 
         # Allocate new blocks.

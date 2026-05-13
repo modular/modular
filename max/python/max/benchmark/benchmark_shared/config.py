@@ -49,6 +49,7 @@ Endpoint = Literal[
     "/v1/responses",
     "/v1/images/generations",
     "/v1/videos/sync",
+    "/v1/videos",
 ]
 
 CACHE_RESET_ENDPOINT_MAP: Mapping[Backend, str] = {
@@ -92,6 +93,8 @@ PIXEL_GEN_DEFAULT_ENDPOINT: Mapping[Backend, Endpoint] = {
 VIDEO_GEN_DEFAULT_ENDPOINT: Mapping[Backend, Endpoint] = {
     "vllm": "/v1/videos/sync",
     "vllm-chat": "/v1/videos/sync",
+    "sglang": "/v1/videos",
+    "sglang-chat": "/v1/videos",
 }
 
 # Valid endpoints for pixel generation tasks (union of all backend defaults).
@@ -157,7 +160,7 @@ class BenchmarkCommonConfig(ConfigFileModel):
     num_prompts: int | None = None
     """Number of prompts to process."""
 
-    seed: int = 0
+    seed: int | None = None
     """Random seed for reproducibility."""
 
     # Control flags
@@ -229,9 +232,15 @@ class BaseBenchmarkConfig(ConfigFileModel):
         description="Number of prompts to process.",
     )
 
-    seed: int = Field(
-        default=0,
-        description="Random seed for reproducibility.",
+    seed: int | None = Field(
+        default=None,
+        description=(
+            "Random seed for reproducibility. When set, the same seed is used "
+            "for every benchmark iteration instead of drawing a fresh random "
+            "seed per concurrency level. Useful for reproducing a specific "
+            "concurrency level from a prior sweep without re-running the full "
+            "sweep."
+        ),
     )
 
     # Control flags
