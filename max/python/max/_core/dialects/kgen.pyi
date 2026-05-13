@@ -4697,6 +4697,10 @@ class SIMDType(max._core.Type):
     ) -> None: ...
     @overload
     def __init__(
+        self, size: max._core.dialects.builtin.TypedAttr, dtype: _KGENDType
+    ) -> None: ...
+    @overload
+    def __init__(
         self,
         size: max._core.dialects.builtin.TypedAttr,
         d_type: max._core.dialects.builtin.TypedAttr,
