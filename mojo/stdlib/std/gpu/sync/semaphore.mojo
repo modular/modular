@@ -22,7 +22,7 @@ Examples:
     ```mojo
     from std.gpu import Semaphore
 
-    var lock = UnsafePointer[Int32, MutAnyOrigin]()
+    var lock = UnsafePointer[Int32, MutAnyOrigin](unsafe_from_address=0)
     var thread_id = 0
     var sem = Semaphore(lock, thread_id)
 

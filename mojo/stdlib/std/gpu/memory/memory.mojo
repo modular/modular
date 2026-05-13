@@ -3201,7 +3201,7 @@ def multimem_st[
     from std.gpu.memory.memory import multimem_st, Consistency
     from std.gpu.intrinsics import Scope
     from std.utils import StaticTuple
-    var addr = UnsafePointer[Float32, MutAnyOrigin, address_space=AddressSpace.GLOBAL]()
+    var addr = UnsafePointer[Float32, MutAnyOrigin, address_space=AddressSpace.GLOBAL](unsafe_from_address=0)
     %# val1, val2 = Float32(0), Float32(0)
     %# vec1, vec2, vec3, vec4 = Float16(0), Float16(0), Float16(0), Float16(0)
 

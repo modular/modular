@@ -72,15 +72,15 @@ struct TypeList[
     from std.testing import assert_equal
 
     # Create a type list
-    comptime tl = TypeList[Trait=AnyType, Int, String, Float64]()
+    comptime tl = TypeList.of[Trait=AnyType, Int, String, Float64]()
 
-    def main():
+    def main() raises:
         # Query size
         assert_equal(tl.size, 3)
 
         # Check membership
-        comptime assert tl.contains[Int]
-        comptime assert not tl.contains[Bool]
+        comptime assert tl.contains[Int]()
+        comptime assert not tl.contains[Bool]()
 
         # Index into the list
         comptime assert _type_is_eq[tl[0], Int]()
@@ -690,7 +690,7 @@ struct ParameterList[type: AnyType, //, values: _MLIR.KGENParamListType[type]](
         var total = 0
 
         # Can use regular for loop because args is a ParameterList
-        comptime for i in range(ParameterList[args].size):
+        comptime for i in range(args.size):
             total += args[i]  # All elements are Int, so uniform access
 
         return total
