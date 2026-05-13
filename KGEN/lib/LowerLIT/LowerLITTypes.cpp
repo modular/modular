@@ -266,7 +266,6 @@ static void populateReplacer(StructDecls &decls, LowerLITReplacer &replacer,
       },
       TypeDomain::AsValue);
 
-  // The param types of a GeneratorType are always types, not values.
   for (TypeDomain domain : {TypeDomain::AsType, TypeDomain::AsValue}) {
     // Simply report the error after cycle detected.
     replacer.addCycleBreaker(
@@ -281,34 +280,6 @@ static void populateReplacer(StructDecls &decls, LowerLITReplacer &replacer,
           // Should be unreachable? must be a aggregated type in order to have
           // recursive reference.
           return std::nullopt;
-        },
-        domain);
-
-    auto replaceAsType = [&replacer](Type type) {
-      return replacer.replace(type, TypeDomain::AsType);
-    };
-    replacer.addNonRecursiveReplacement(
-        [domain, replaceAsType,
-         &replacer](GeneratorType gen) -> FailureOr<Type> {
-          SmallVector<FailureOr<Type>> inputParamTypesOr(
-              map_range(gen.getInputParamTypes(), replaceAsType));
-          if (llvm::any_of(inputParamTypesOr, failed))
-            return failure();
-
-          SmallVector<Type> inputParamTypes(map_range(
-              inputParamTypesOr, [](FailureOr<Type> t) { return *t; }));
-          Attribute metadata = gen.getMetadata();
-          if (metadata) {
-            auto metadataOr = replacer.replace(metadata, domain);
-            if (failed(metadataOr))
-              return failure();
-            metadata = *metadataOr;
-          }
-          auto bodyOr = replacer.replace(gen.getBody(), domain);
-          if (failed(bodyOr))
-            return failure();
-
-          return GeneratorType::get(inputParamTypes, *bodyOr, metadata);
         },
         domain);
   }
