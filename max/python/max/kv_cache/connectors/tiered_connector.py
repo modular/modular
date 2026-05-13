@@ -249,7 +249,7 @@ class TieredConnector:
 
     @traced
     def sync(self) -> None:
-        """Wait for D2H transfers, then write-through to disk.
+        """Wait for pending loads/offloads to complete and post disk writes.
 
         Uses zero-copy: host blocks are kept pinned (ref_cnt=1) from D2H
         through disk write completion.  Numpy views (no ``.copy()``) are
@@ -295,7 +295,9 @@ class TieredConnector:
         block_ids: list[int],
         block_hashes: list[int],
     ) -> None:
-        """Execute pending D2H copies and record blocks for disk write-through."""
+        """Offload the device blocks to the external cache."""
+        self._block_copy_engine.wait_for_completion()
+
         host_blocks: list[KVCacheBlock] = []
         for device_block_id, block_hash in zip(
             block_ids, block_hashes, strict=True

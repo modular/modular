@@ -29,9 +29,10 @@ class KVConnector(Protocol):
     via load/offload methods.
 
     Required call ordering per inference step:
-      1. connector.sync()   — wait for H2D loads before model execution
+      1. connector.load() # on main stream
+      1. connector.offload() # sync main + aux stream, kick off prev batch offloads
       2. [model executes]
-      3. connector.offload()  — initiate D2H offloads after execution
+      3. connector.sync() # sync main + aux stream
     """
 
     @property
@@ -69,7 +70,7 @@ class KVConnector(Protocol):
         ...
 
     def sync(self) -> None:
-        """Wait for pending loads to complete."""
+        """Wait for pending loads/offloads to complete."""
         ...
 
     def shutdown(self) -> None:

@@ -447,9 +447,7 @@ class PagedKVCacheManager:
                 if ``batch`` exceeds preallocated runtime capacity, or if
                 ``max_cache_length`` implies a LUT shape that is invalid.
         """
-        # Wait for any pending connector operations (H2D loads from host cache).
         replica = self._replica[replica_idx]
-        replica.connector.sync()
 
         max_seq_len = 0
         for ctx in batch:
@@ -807,6 +805,7 @@ class PagedKVCacheManager:
     def step(self, batches: Sequence[Sequence[TextGenerationContext]]) -> None:
         """Commits new tokens into the prefix cache for per-replica batches."""
         for replica, ctxs in zip(self._replica, batches, strict=True):
+            replica.connector.sync()
             for ctx in ctxs:
                 replica.block_manager.step(ctx)
 
