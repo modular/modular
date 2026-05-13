@@ -6,10 +6,10 @@
 # Verify that ASAN stack traces on macOS include inlined function source
 # locations. At O3, user functions are inlined into main and the DWARF has
 # proper DW_TAG_inlined_subroutine entries. This test ensures the ASAN runtime
-# uses llvm-symbolizer (via the embedded __asan_default_options) so that
+# uses atos -i (supported since LLVM 22, llvm/llvm-project#170815) so that
 # inlined frames are reported.
 # This turns on asan itself
-# UNSUPPORTED: asan, system-linux, macos-26+
+# UNSUPPORTED: asan, system-linux
 
 # Build at O3 (default) where step_b is inlined into main.
 # RUN: %mojo-build --sanitize address %s -o %t

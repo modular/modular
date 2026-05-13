@@ -409,6 +409,9 @@ modular_cc_library(
     name = "Profiling",
     srcs = glob(["lib/Profiling/*.cpp"]),
     hdrs = glob(["include/Support/Profiling/*.h"]),
+    # TracyRocm.cpp uses a constructor to promote Tracy symbols to RTLD_GLOBAL
+    # so that the rocprofiler-sdk plugin can resolve them via dlsym.
+    copts = ["-Wno-global-constructors"],
     # NOTE: Passed as defines to propagate to dependents.
     # TRACY_CUDA_ENABLE is propagated so consumers (e.g. CUDADeviceContext.cpp)
     # see the same define and the no-op vs. real initTracyCuda() are consistent.
