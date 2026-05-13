@@ -45,6 +45,9 @@ speculative:
   speculative_method: eagle
   num_speculative_tokens: 3
 
+sampling:
+  enable_structured_output: true
+
 runtime:
   ep_size: 8
   max_batch_input_tokens: 4096
