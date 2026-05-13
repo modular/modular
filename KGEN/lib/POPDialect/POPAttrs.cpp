@@ -1561,17 +1561,17 @@ TypedAttr SIMDFloorDivAttr::get(MLIRContext *ctx, TypedAttr lhs,
 
 TypedAttr SIMDCmpAttr::get(MLIRContext *ctx, NormalizedCmpPredicate cc,
                            TypedAttr lhs, TypedAttr rhs, SIMDType outType) {
-  if (TypedAttr fold = tryFoldAttr(
-          {
-              getCanonicalAttr(lhs),
-              getCanonicalAttr(rhs),
-          },
-          [&](FoldValues ops, TargetInfoAttr target) {
-            return foldSIMDCmp(toCmpPredicate(cc), ops, target);
-          }))
-    return fold;
-
-  return Base::get(ctx, cc, lhs, rhs, outType);
+  auto toPOC = [cc]() {
+    switch (cc) {
+    case NormalizedCmpPredicate::EQ:
+      return POC::EQ;
+    case NormalizedCmpPredicate::LT:
+      return POC::LT;
+    case NormalizedCmpPredicate::LE:
+      return POC::LE;
+    }
+  };
+  return ParamOperatorAttr::get(toPOC(), {lhs, rhs});
 }
 
 TypedAttr SIMDCmpAttr::getChecked(function_ref<InFlightDiagnostic()> emitError,

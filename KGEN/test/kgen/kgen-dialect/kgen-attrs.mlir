@@ -480,7 +480,7 @@ kgen.generator @witnessed_mem_del(%arg0: !kgen.pointer<struct<(index)>> owned_in
 } : () -> ()
 
 "some.op"() {
-  // CHECK: a = #pop.simd_cmp<eq, #kgen.unknown : !kgen.scalar<si32>, #kgen<simd 2> : !kgen.scalar<si32>> : !kgen.scalar<bool>
+  // CHECK: a = #kgen<simd false> : !kgen.scalar<bool>
   a = #pop.simd_cmp<eq, #kgen.unknown : !kgen.scalar<si32>, #kgen<simd 2> : !kgen.scalar<si32>> : !kgen.scalar<bool>,
   // CHECK: b = #kgen<simd false> : !kgen.scalar<bool>
   b = #pop.simd_cmp<eq, #kgen<simd 1> : !kgen.scalar<si32>, #kgen<simd 2> : !kgen.scalar<si32>> : !kgen.scalar<bool>,
@@ -528,7 +528,7 @@ kgen.generator @witnessed_mem_del(%arg0: !kgen.pointer<struct<(index)>> owned_in
 "some.op"() {
   // CHECK: a = #kgen<simd true> : !kgen.scalar<bool>
   a = #pop.simd_cmp<eq, #kgen<simd 5> : !kgen.scalar<index>, #kgen<simd 5> : !kgen.scalar<index>> : !kgen.scalar<bool>,
-  // CHECK: b = #pop.simd_cmp<lt, #kgen<simd 3000000000> : !kgen.scalar<index>, #kgen<simd 0> : !kgen.scalar<index>> : !kgen.scalar<bool>
+  // CHECK: b = #kgen.param.expr<lt, #kgen<simd 3000000000> : !kgen.scalar<index>, #kgen<simd 0> : !kgen.scalar<index>> : !kgen.scalar<bool>
   b = #pop.simd_cmp<lt, #kgen<simd 3000000000> : !kgen.scalar<index>, #kgen<simd 0> : !kgen.scalar<index>> : !kgen.scalar<bool>
 } : () -> ()
 

@@ -2189,6 +2189,16 @@ SIMDType SIMDType::getChecked(function_ref<InFlightDiagnostic()> emitError,
                     dtype);
 }
 
+SIMDType SIMDType::get(TypedAttr size, KGENDType dtype) {
+  return get(size, DTypeConstantAttr::get(size.getContext(), dtype));
+}
+
+SIMDType SIMDType::getChecked(function_ref<InFlightDiagnostic()> emitError,
+                              TypedAttr size, KGENDType dtype) {
+  return getChecked(emitError, size,
+                    DTypeConstantAttr::get(size.getContext(), dtype));
+}
+
 SIMDType SIMDType::get(MLIRContext *ctx, int64_t size, KGENDType dtype) {
   return get(size, DTypeConstantAttr::get(ctx, dtype));
 }
