@@ -147,16 +147,16 @@ def b64decode[
     var data = str.as_bytes()
     var n = str.byte_length()
 
-    comptime if validate:
-        if n % 4 != 0:
-            raise Error(
-                "ValueError: Input length '", n, "' must be divisible by 4"
-            )
+    if n % 4 != 0:
+        raise Error("ValueError: Input length '", n, "' must be divisible by 4")
+
+    if n == 0:
+        return List[Byte]()
 
     var output_len = (n // 4) * 3
-    if n >= 1 and data[n - 1] == `=`:
+    if data[n - 1] == `=`:
         output_len -= 1
-    if n >= 2 and data[n - 2] == `=`:
+    if data[n - 2] == `=`:
         output_len -= 1
 
     var result = List[Byte](capacity=output_len)
@@ -215,7 +215,7 @@ def b16encode(str: StringSlice[mut=False, _]) -> String:
 # ===-----------------------------------------------------------------------===#
 
 
-def b16decode(str: StringSlice[mut=False, _]) -> List[Byte]:
+def b16decode(str: StringSlice[mut=False, _]) raises -> List[Byte]:
     """Performs base16 decoding on the input string.
 
     Args:
@@ -247,7 +247,8 @@ def b16decode(str: StringSlice[mut=False, _]) -> List[Byte]:
 
     var data = str.as_bytes()
     var n = str.byte_length()
-    debug_assert(n % 2 == 0, "Input length '", n, "' must be divisible by 2")
+    if n % 2 != 0:
+        raise Error("ValueError: Input length '", n, "' must be divisible by 2")
 
     var result = List[Byte](capacity=n // 2)
 
