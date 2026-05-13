@@ -42,7 +42,7 @@ ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> openMojoInputFile(StringRef path);
 /// error occurs, return an error message.
 ///
 /// Note that this function considers it an error if the given `path` does not
-/// end in a Mojo file extension (`.mojo` or `.mojopkg`), even if
+/// end in a Mojo file extension (`.mojo`, `.mojoc`, or `.mojopkg`), even if
 /// the `path` refers to `stdin` ("-").
 ErrorOr<std::filesystem::path> resolveMojoInputFileOrPackage(StringRef path);
 

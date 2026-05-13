@@ -85,11 +85,11 @@ M::resolveMojoInputFileOrPackage(StringRef path) {
   }
 
   std::string ext = fullPath.extension().string();
-  if (!llvm::is_contained({".mojo", ".mojopkg"}, ext) &&
+  if (!llvm::is_contained({".mojo", ".mojoc", ".mojopkg"}, ext) &&
       !Filesystem::isMojoSourcePackagePath(fullPath)) {
     return Error(llvm::formatv(
         "cannot open '{0}', since it does not appear to be a Mojo file "
-        "(it does not end in '.mojo' or '.mojopkg') or a Mojo "
+        "(it does not end in '.mojo', '.mojoc' or '.mojopkg') or a Mojo "
         "source package",
         path));
   }

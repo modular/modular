@@ -11,7 +11,7 @@
 # NO-FIXIT: No fixits to apply.
 
 # After applying the fixits, the build should succeed.
-# RUN: mojo package %S/test_package_fixit -o test_package_fixit.mojopkg
+# RUN: mojo package %S/test_package_fixit -o test_package_fixit.mojoc
 
 # The `grep` is used to remove the `CHECK` lines from the output so FileCheck
 # doesn't match on its own directives.

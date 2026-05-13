@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 # RUN: mkdir -p %t.packaged-trait
-# RUN: mojo package %S/inputs/test_package -o %t.packaged-trait/test_package_trait.mojopkg
+# RUN: mojo package %S/inputs/test_package -o %t.packaged-trait/test_package_trait.mojoc
 # RUN: kgen-translate --mojo-enable-prebuilt-packages -import-mojo -I %t.packaged-trait %s --kgen-print-inline-type-values | FileCheck %s
 
 from test_package_trait.module import (

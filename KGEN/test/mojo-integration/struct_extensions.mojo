@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 # RUN: mkdir -p %t.simple-struct
-# RUN: mojo package %S/inputs/simple_struct_package -o %t.simple-struct/simple_struct_package.mojopkg
+# RUN: mojo package %S/inputs/simple_struct_package -o %t.simple-struct/simple_struct_package.mojoc
 # RUN: kgen-translate --mojo-enable-prebuilt-packages -import-mojo -I%t.simple-struct %s --kgen-print-inline-type-values | kgen-opt -lower-semantic-cf -check-lifetimes -lower-lit | FileCheck %s
 
 from simple_struct_package.simple import PlainStruct

@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 # RUN: mkdir -p %t.contains-dupe-dir
-# RUN: mojo package %S/inputs/containsDupe -o %t.contains-dupe-dir/containsDupe.mojopkg
+# RUN: mojo package %S/inputs/containsDupe -o %t.contains-dupe-dir/containsDupe.mojoc
 # RUN: mojo -I %t.contains-dupe-dir %s 2>&1
 
 # Ensure the identical wrapper defined in containsDupe

@@ -372,8 +372,8 @@ static std::optional<int> parseArgs(State &state, llvm::opt::InputArgList &args,
       .disableWarnings = options::OPT_disable_warnings,
       .warningsAsErrors = options::OPT_werror,
       .noWarningsAsErrors = options::OPT_wno_error,
-      .ignoreIncompatiblePackageErrors =
-          options::OPT_ignore_incompatible_package_errors,
+      .ignoreIncompatiblePrecompiledFileErrors =
+          options::OPT_ignore_incompatible_precompiled_file_errors,
       .unknown = options::OPT_UNKNOWN,
       .input = options::OPT_INPUT,
       .includeDirs = options::OPT_I,

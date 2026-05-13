@@ -6,19 +6,19 @@
 
 #include "Config/include/Config/Version.h"
 #include "KGEN/DialectChecksum/DialectChecksum.h"
-#include "KGEN/include/KGEN/Support/MojoPackage.h"
+#include "KGEN/include/KGEN/Support/MojoPrecompiledFile.h"
 #include "gtest/gtest.h"
 
 using M::ProjectVersion;
-using M::KGEN::MojoPackageVersion;
+using M::KGEN::MojoPrecompiledFileVersion;
 
 TEST(MojoVersionTest, testNotEmpty) {
   llvm::StringRef checksum = M::getMojoMlirDialectChecksum();
   ASSERT_FALSE(checksum.empty());
 }
-static MojoPackageVersion makeVersion(int maj, int min, int patch,
-                                      const char *label) {
-  return MojoPackageVersion(ProjectVersion{
+static MojoPrecompiledFileVersion makeVersion(int maj, int min, int patch,
+                                              const char *label) {
+  return MojoPrecompiledFileVersion(ProjectVersion{
       maj, min, patch, label, /*revision=*/nullptr, /*buildType=*/nullptr});
 }
 
@@ -28,7 +28,7 @@ TEST(MojoVersionTest, testLabelParsing) {
     EXPECT_EQ(mojoVer.major, 1);
     EXPECT_EQ(mojoVer.minor, 8);
     EXPECT_EQ(mojoVer.patch, 9);
-    EXPECT_EQ(mojoVer.abrc, MojoPackageVersion::ABRC::None);
+    EXPECT_EQ(mojoVer.abrc, MojoPrecompiledFileVersion::ABRC::None);
     EXPECT_FALSE(mojoVer.nABRC);
     EXPECT_FALSE(mojoVer.postN);
     EXPECT_FALSE(mojoVer.devN);
@@ -39,7 +39,7 @@ TEST(MojoVersionTest, testLabelParsing) {
     EXPECT_EQ(mojoVer.major, 1);
     EXPECT_EQ(mojoVer.minor, 8);
     EXPECT_EQ(mojoVer.patch, 9);
-    EXPECT_EQ(mojoVer.abrc, MojoPackageVersion::ABRC::Alpha);
+    EXPECT_EQ(mojoVer.abrc, MojoPrecompiledFileVersion::ABRC::Alpha);
     EXPECT_EQ(mojoVer.nABRC, 0);
     EXPECT_EQ(mojoVer.postN, 3);
     EXPECT_EQ(mojoVer.devN, 4);
@@ -50,7 +50,7 @@ TEST(MojoVersionTest, testLabelParsing) {
     EXPECT_EQ(mojoVer.major, 1);
     EXPECT_EQ(mojoVer.minor, 8);
     EXPECT_EQ(mojoVer.patch, 9);
-    EXPECT_EQ(mojoVer.abrc, MojoPackageVersion::ABRC::Beta);
+    EXPECT_EQ(mojoVer.abrc, MojoPrecompiledFileVersion::ABRC::Beta);
     EXPECT_EQ(mojoVer.nABRC, 2);
     EXPECT_EQ(mojoVer.postN, 3);
     EXPECT_EQ(mojoVer.devN, 4);
@@ -61,7 +61,7 @@ TEST(MojoVersionTest, testLabelParsing) {
     EXPECT_EQ(mojoVer.major, 1);
     EXPECT_EQ(mojoVer.minor, 8);
     EXPECT_EQ(mojoVer.patch, 9);
-    EXPECT_EQ(mojoVer.abrc, MojoPackageVersion::ABRC::RC);
+    EXPECT_EQ(mojoVer.abrc, MojoPrecompiledFileVersion::ABRC::RC);
     EXPECT_EQ(mojoVer.nABRC, 0);
     EXPECT_EQ(mojoVer.postN, 3);
     EXPECT_EQ(mojoVer.devN, 4);
@@ -72,7 +72,7 @@ TEST(MojoVersionTest, testLabelParsing) {
     EXPECT_EQ(mojoVer.major, 1);
     EXPECT_EQ(mojoVer.minor, 8);
     EXPECT_EQ(mojoVer.patch, 9);
-    EXPECT_EQ(mojoVer.abrc, MojoPackageVersion::ABRC::Beta);
+    EXPECT_EQ(mojoVer.abrc, MojoPrecompiledFileVersion::ABRC::Beta);
     EXPECT_EQ(mojoVer.nABRC, 0);
     EXPECT_FALSE(mojoVer.postN);
     EXPECT_FALSE(mojoVer.devN);
@@ -83,7 +83,7 @@ TEST(MojoVersionTest, testLabelParsing) {
     EXPECT_EQ(mojoVer.major, 1);
     EXPECT_EQ(mojoVer.minor, 8);
     EXPECT_EQ(mojoVer.patch, 9);
-    EXPECT_EQ(mojoVer.abrc, MojoPackageVersion::ABRC::Beta);
+    EXPECT_EQ(mojoVer.abrc, MojoPrecompiledFileVersion::ABRC::Beta);
     EXPECT_EQ(mojoVer.nABRC, 0);
     EXPECT_EQ(mojoVer.postN, 0);
     EXPECT_FALSE(mojoVer.devN);
@@ -94,7 +94,7 @@ TEST(MojoVersionTest, testLabelParsing) {
     EXPECT_EQ(mojoVer.major, 1);
     EXPECT_EQ(mojoVer.minor, 8);
     EXPECT_EQ(mojoVer.patch, 9);
-    EXPECT_EQ(mojoVer.abrc, MojoPackageVersion::ABRC::Beta);
+    EXPECT_EQ(mojoVer.abrc, MojoPrecompiledFileVersion::ABRC::Beta);
     EXPECT_EQ(mojoVer.nABRC, 0);
     EXPECT_FALSE(mojoVer.postN);
     EXPECT_EQ(mojoVer.devN, 4);
@@ -105,7 +105,7 @@ TEST(MojoVersionTest, testLabelParsing) {
     EXPECT_EQ(mojoVer.major, 1);
     EXPECT_EQ(mojoVer.minor, 8);
     EXPECT_EQ(mojoVer.patch, 9);
-    EXPECT_EQ(mojoVer.abrc, MojoPackageVersion::ABRC::None);
+    EXPECT_EQ(mojoVer.abrc, MojoPrecompiledFileVersion::ABRC::None);
     EXPECT_FALSE(mojoVer.nABRC);
     EXPECT_EQ(mojoVer.postN, 3);
     EXPECT_EQ(mojoVer.devN, 4);
@@ -116,7 +116,7 @@ TEST(MojoVersionTest, testLabelParsing) {
     EXPECT_EQ(mojoVer.major, 1);
     EXPECT_EQ(mojoVer.minor, 8);
     EXPECT_EQ(mojoVer.patch, 9);
-    EXPECT_EQ(mojoVer.abrc, MojoPackageVersion::ABRC::None);
+    EXPECT_EQ(mojoVer.abrc, MojoPrecompiledFileVersion::ABRC::None);
     EXPECT_FALSE(mojoVer.nABRC);
     EXPECT_FALSE(mojoVer.postN);
     EXPECT_EQ(mojoVer.devN, 4);
@@ -130,7 +130,7 @@ TEST(MojoVersionTest, testInvalidLabelParsing) {
     EXPECT_EQ(mojoVer.minor, 8);
     EXPECT_EQ(mojoVer.patch, 9);
     // The label parsing will have bailed out and reset the label field.
-    EXPECT_EQ(mojoVer.abrc, MojoPackageVersion::ABRC::None);
+    EXPECT_EQ(mojoVer.abrc, MojoPrecompiledFileVersion::ABRC::None);
     EXPECT_FALSE(mojoVer.nABRC);
     EXPECT_FALSE(mojoVer.postN);
     EXPECT_FALSE(mojoVer.devN);
@@ -168,9 +168,9 @@ TEST(MojoVersionTest, testVersionOrdering) {
   auto ver12 = makeVersion(1, 0, 0, ".post1");
   auto ver13 = makeVersion(1, 1, 0, "");
 
-  std::vector<MojoPackageVersion> versions = {ver0,  ver1,  ver2,  ver3, ver4,
-                                              ver5,  ver6,  ver7,  ver8, ver9,
-                                              ver10, ver11, ver12, ver13};
+  std::vector<MojoPrecompiledFileVersion> versions = {
+      ver0, ver1, ver2, ver3,  ver4,  ver5,  ver6,
+      ver7, ver8, ver9, ver10, ver11, ver12, ver13};
 
   for (unsigned i = 0, e = versions.size() - 1; i != e; i++) {
     EXPECT_NE(versions[i], versions[i + 1]);

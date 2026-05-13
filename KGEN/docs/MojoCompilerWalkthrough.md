@@ -17,7 +17,7 @@ A comprehensive guide for compiler engineers new to the KGEN/Mojo codebase.
 6. [Phase 4: Elaboration (Monomorphization)](#phase-4-elaboration-monomorphization)
 7. [Phase 5: Post-Elaboration Lowering & Optimization](#phase-5-post-elaboration-lowering--optimization)
 8. [Phase 6: Lowering to LLVM](#phase-6-lowering-to-llvm)
-9. [Mojo Packages](#mojo-packages)
+9. [Mojo Packages and Precompiled Files](#mojo-packages-and-precompiled-files)
 10. [Debug Information](#debug-information)
     - [Parametric Debug Info](#parametric-debug-info)
     - [How Passes Preserve Debug Info](#how-passes-preserve-debug-info)
@@ -568,11 +568,11 @@ After lowering to `llvm` dialect:
 
 ---
 
-## Mojo Packages
+## Mojo Packages and Precompiled Files
 
-> **Key Insight**: Mojo packages (`.mojopkg` files) are precompiled MLIR
-> bytecode that contains the post-parse IR. When imported, ops from packages
-> are loaded lazily.
+> **Key Insight**: Mojo precompiled files (`.mojoc` files) are precompiled MLIR
+> bytecode that contains the post-parse IR. When imported, ops from these
+> files are loaded lazily.
 
 ### What is a Mojo Package?
 
@@ -598,9 +598,11 @@ from .module1 import MyStruct, my_function
 from .module2 import helper
 ```
 
-A **binary package** (`.mojopkg` file) is the precompiled form of a source
-package, created by the `mojo package` command. Binary packages can be
-distributed and imported without the original source code.
+A **precompiled file** or **binary package** (`.mojoc` file) is the
+precompiled form of a source package, created by the `mojo package` command.
+Binary packages are tied to the specific version of the compiler that produced
+them so it is not advised to use these as a distributable form; they act as a
+sort of cache file.
 
 ### Location in Codebase
 
@@ -627,7 +629,7 @@ checking), then stops before elaboration:
    - Serialize the full post-semantic-checking IR into a
      `postParseModuleAttr` (bytecode blob)
    - Record package dependencies and attach any external bitcode libraries
-4. **Output** - Emits a `.mojopkg` file containing MLIR bytecode with the
+4. **Output** - Emits a `.mojoc` file containing MLIR bytecode with the
    stripped `lit.package` stub and the full IR in the attribute
 
 **Key Difference**: Package creation stops after semantic checking (Phase 2)
@@ -641,7 +643,7 @@ the importing code.
 | Aspect          | Normal Compilation            | Package Creation             |
 |-----------------|-------------------------------|------------------------------|
 | **Input**       | `.mojo` file                  | Source directory             |
-| **Output**      | Executable/object file        | `.mojopkg` bytecode          |
+| **Output**      | Precompiled file file         | `.mojoc` bytecode            |
 | **Pipeline**    | Full pipeline to machine code | Parse + semantics check only |
 | **Elaboration** | Yes                           | No                           |
 
@@ -679,7 +681,7 @@ When the parser encounters an import statement, it resolves the module through
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │  IMPORT RESOLUTION (importModuleState)                                      │
 │  • Search import paths for the module name                                  │
-│  • Find: foo.mojo, foo/ (source package), or foo.mojopkg (binary)           │
+│  • Find: foo.mojo, foo/ (source package), or foo.mojoc (binary)             │
 └─────────────────────────────────────────────────────────────────────────────┘
                     │                      │                      │
         Source File │           Source Pkg │           Binary Pkg │
@@ -694,7 +696,7 @@ When the parser encounters an import statement, it resolves the module through
 
 ### Binary Package Import Details
 
-When importing a `.mojopkg` file (`createBinaryPackageState`):
+When importing a `.mojoc` file (`createBinaryPackageState`):
 
 1. **Lazy Loading**: The bytecode is read using `mlir::BytecodeReader` with
    lazy loading enabled
@@ -710,14 +712,14 @@ When importing a `.mojopkg` file (`createBinaryPackageState`):
 ### Command-Line Usage
 
 ```bash
-# Create a .mojopkg from a source directory
-mojo package my_package/ -o my_package.mojopkg
+# Create a .mojoc from a source directory
+mojo package my_package/ -o my_package.mojoc
 
 # Create a kgen module (full pre-elaboration IR)
 mojo package my_package/ --kgen-module -o my_package.mlirbc
 
-# Compile code that imports the package
-mojo build main.mojo -I .  # Finds my_package.mojopkg in search paths
+# Compile code that imports the precompiled package
+mojo build main.mojo -I .  # Finds my_package.mojoc in search paths
 ```
 
 ### Key Implementation Details

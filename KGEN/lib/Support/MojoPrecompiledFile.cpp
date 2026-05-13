@@ -4,11 +4,11 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This file provides utilities for reading/writing Mojo package files.
+// This file provides utilities for reading/writing Mojo precompiled files.
 //
 //===----------------------------------------------------------------------===//
 
-#include "KGEN/Support/MojoPackage.h"
+#include "KGEN/Support/MojoPrecompiledFile.h"
 #include "KGEN/DialectChecksum/DialectChecksum.h"
 #include "Support/Error.h"
 #include "mlir/Bytecode/BytecodeWriter.h"
@@ -26,26 +26,28 @@ static llvm::ArrayRef<uint8_t> asBytes(llvm::StringRef s) {
   return {reinterpret_cast<const uint8_t *>(s.data()), s.size()};
 }
 
-/// Returns whether the Mojo package (represented by its header) is compatible
-/// with the current compiler.
-ErrorOrSuccess M::KGEN::checkCompatiblePackage(const MojoPackageHeader &header,
-                                               StringRef packageName) {
-  // Check whether the MLIR checksums match. If they do, assume the package is
-  // okay.
+/// Returns whether the Mojo precompiled file (represented by its header) is
+/// compatible with the current compiler.
+ErrorOrSuccess
+M::KGEN::checkCompatiblePrecompiledFile(const MojoPrecompiledFileHeader &header,
+                                        StringRef packageName) {
+  // Check whether the MLIR checksums match. If they do, assume the precompiled
+  // file is okay.
   if (header.mlirChecksum == M::getMojoMlirDialectChecksum())
     return success();
 
   // We have a mismatch. Since MLIR checksums aren't meaningful to users, prefer
   // to return an error containing version information as a proxy.
-  MojoPackageVersion currentVer = M::getMojoVersion();
+  MojoPrecompiledFileVersion currentVer = M::getMojoVersion();
 
-  std::string errMsg = "Mojo package is incompatible with the current version "
-                       "of the Mojo compiler";
+  std::string errMsg =
+      "Mojo precompiled file is incompatible with the current version "
+      "of the Mojo compiler";
 
-  // The most common case (for end users) is that both the package and compiler
-  // have version information. Report that.
+  // The most common case (for end users) is that both the precompiled file
+  // and compiler have version information. Report that.
   if (currentVer && header.modularVersion) {
-    std::string packageVerStr = ". Package";
+    std::string packageVerStr = ". Precompiled file";
     if (!packageName.empty())
       packageVerStr += (Twine(" '") + packageName + "'").str();
     packageVerStr += " version";
@@ -62,17 +64,18 @@ ErrorOrSuccess M::KGEN::checkCompatiblePackage(const MojoPackageHeader &header,
         " matches the compiler version, but has incompatible MLIR bytecode");
   }
 
-  // Otherwise one or both of the package and compiler are missing version
-  // information, so was either built using, or is, an internal compiler build.
+  // Otherwise one or both of the precompiled file and compiler are missing
+  // version information, so was either built using, or is, an internal compiler
+  // build.
 
   if (currentVer) {
-    errMsg += " (" + currentVer.toString() + "). Package";
+    errMsg += " (" + currentVer.toString() + "). Precompiled file";
     if (!packageName.empty())
       errMsg += (Twine(" '") + packageName + "'").str();
     return Error(errMsg + " is missing version information");
   }
 
-  errMsg += ". Package";
+  errMsg += ". Precompiled file";
   if (!packageName.empty())
     errMsg += (Twine(" '") + packageName + "'").str();
   return Error(errMsg + " was built with version " +
@@ -80,8 +83,8 @@ ErrorOrSuccess M::KGEN::checkCompatiblePackage(const MojoPackageHeader &header,
                " but the compiler is missing version information");
 }
 
-ErrorOrSuccess M::KGEN::checkVersion(const MojoPackageVersion &base,
-                                     const MojoPackageVersion &other,
+ErrorOrSuccess M::KGEN::checkVersion(const MojoPrecompiledFileVersion &base,
+                                     const MojoPrecompiledFileVersion &other,
                                      llvm::StringRef baseName,
                                      llvm::StringRef otherName) {
   // Note: these comparisons ignore labels
@@ -93,8 +96,9 @@ ErrorOrSuccess M::KGEN::checkVersion(const MojoPackageVersion &base,
                (otherName.empty() ? "" : " ") + other.toString());
 }
 
-bool M::KGEN::isCompatiblePackage(const MojoPackageHeader &header) {
-  return !checkCompatiblePackage(header).isError();
+bool M::KGEN::isCompatiblePrecompiledFile(
+    const MojoPrecompiledFileHeader &header) {
+  return !checkCompatiblePrecompiledFile(header).isError();
 }
 
 template <typename T>
@@ -105,7 +109,8 @@ static void writeInt(llvm::raw_ostream &os, uint64_t x) {
   os << buffer;
 }
 
-static void writeVersion(MojoPackageVersion version, llvm::raw_ostream &os) {
+static void writeVersion(MojoPrecompiledFileVersion version,
+                         llvm::raw_ostream &os) {
   writeInt<uint8_t>(os, version.major);
   writeInt<uint8_t>(os, version.minor);
   writeInt<uint16_t>(os, version.patch);
@@ -113,11 +118,11 @@ static void writeVersion(MojoPackageVersion version, llvm::raw_ostream &os) {
   os << version.label << '\0';
 }
 
-LogicalResult M::KGEN::writeBinaryPackage(Operation *op,
-                                          MojoPackageVersion &mojoVer,
-                                          MojoPackageVersion &maxVer,
-                                          StringRef mlirChecksum,
-                                          llvm::raw_ostream &os) {
+LogicalResult M::KGEN::writePrecompiledFile(Operation *op,
+                                            MojoPrecompiledFileVersion &mojoVer,
+                                            MojoPrecompiledFileVersion &maxVer,
+                                            StringRef mlirChecksum,
+                                            llvm::raw_ostream &os) {
   // Serialize the MLIR bytecode to a temporary buffer first so we can compress
   // it before writing.
   std::string mlirBuf;
@@ -133,7 +138,8 @@ LogicalResult M::KGEN::writeBinaryPackage(Operation *op,
 
   [[maybe_unused]] auto streamPos = os.tell();
   os << "MPKG";
-  writeInt<uint8_t>(os, static_cast<uint8_t>(MojoPackageFormatVersion::V2));
+  writeInt<uint8_t>(os,
+                    static_cast<uint8_t>(MojoPrecompiledFileFormatVersion::V2));
   os << "..."; // plus 3 reserved bytes.
 
   writeVersion(mojoVer, os);
@@ -158,16 +164,16 @@ LogicalResult M::KGEN::writeBinaryPackage(Operation *op,
   return success();
 }
 
-LogicalResult M::KGEN::writeBinaryPackage(Operation *op,
-                                          llvm::raw_ostream &os) {
-  MojoPackageVersion mojoVersion = M::getMojoVersion();
-  MojoPackageVersion maxVersion = M::getMAXVersion();
+LogicalResult M::KGEN::writePrecompiledFile(Operation *op,
+                                            llvm::raw_ostream &os) {
+  MojoPrecompiledFileVersion mojoVersion = M::getMojoVersion();
+  MojoPrecompiledFileVersion maxVersion = M::getMAXVersion();
   // The MLIR checksum
   StringRef mlirChecksum = M::getMojoMlirDialectChecksum();
-  return writeBinaryPackage(op, mojoVersion, maxVersion, mlirChecksum, os);
+  return writePrecompiledFile(op, mojoVersion, maxVersion, mlirChecksum, os);
 }
 
-bool M::KGEN::isMojoPackage(llvm::MemoryBufferRef buffer) {
+bool M::KGEN::isMojoPrecompiledFile(llvm::MemoryBufferRef buffer) {
   return buffer.getBuffer().starts_with("MPKG");
 }
 
@@ -181,9 +187,9 @@ ErrorOr<std::pair<T, llvm::StringRef>> readInt(llvm::StringRef buffer) {
       buffer.drop_front(sizeof(T)));
 }
 
-static ErrorOr<std::pair<MojoPackageVersion, llvm::StringRef>>
+static ErrorOr<std::pair<MojoPrecompiledFileVersion, llvm::StringRef>>
 readVersion(llvm::StringRef buffer) {
-  MojoPackageVersion version;
+  MojoPrecompiledFileVersion version;
 
   // Major
   if (auto err = readInt<uint8_t>(buffer))
@@ -212,18 +218,18 @@ readVersion(llvm::StringRef buffer) {
   return std::make_pair(version, remaining.drop_front());
 }
 
-ErrorOr<MojoPackageHeader>
-M::KGEN::readBinaryPackageHeader(llvm::MemoryBufferRef buffer) {
+ErrorOr<MojoPrecompiledFileHeader>
+M::KGEN::readPrecompiledFileHeader(llvm::MemoryBufferRef buffer) {
   llvm::StringRef bufferStr = buffer.getBuffer();
-  if (!isMojoPackage(buffer))
+  if (!isMojoPrecompiledFile(buffer))
     return Error("invalid magic bytes");
 
-  // A package header must be at least 8 bytes, to begin with. We'll keep
-  // checking as we go.
+  // A precompiled file header must be at least 8 bytes, to begin with. We'll
+  // keep checking as we go.
   if (bufferStr.size() < 8)
     return Error("invalid header size");
 
-  MojoPackageHeader header;
+  MojoPrecompiledFileHeader header;
   // Skip past the 4 magic bytes
   bufferStr = bufferStr.drop_front(4);
 
@@ -233,7 +239,7 @@ M::KGEN::readBinaryPackageHeader(llvm::MemoryBufferRef buffer) {
     return err.takeError();
   else
     std::tie(rawVersion, bufferStr) = *err;
-  header.version = static_cast<MojoPackageFormatVersion>(rawVersion);
+  header.version = static_cast<MojoPrecompiledFileFormatVersion>(rawVersion);
 
   // Skip past the 3 currently unused bytes.
   bufferStr = bufferStr.drop_front(3);
@@ -257,7 +263,7 @@ M::KGEN::readBinaryPackageHeader(llvm::MemoryBufferRef buffer) {
   bufferStr = bufferStr.drop_front(1);
 
   // Version 2 adds zstd compression with an uncompressed size field.
-  if (header.version == MojoPackageFormatVersion::V2) {
+  if (header.version == MojoPrecompiledFileFormatVersion::V2) {
     if (auto sizeOrErr = readInt<uint64_t>(bufferStr))
       return sizeOrErr.takeError();
     else
@@ -272,19 +278,20 @@ M::KGEN::readBinaryPackageHeader(llvm::MemoryBufferRef buffer) {
   return header;
 }
 
-// Return a buffer from a Mojo package, skipping the header bytes and
+// Return a buffer from a Mojo precompiled file, skipping the header bytes and
 // decompressing if necessary.
-ErrorOr<std::pair<MojoPackageHeader, MojoPackageMLIRBuffer>>
-M::KGEN::getMLIRBufferAndHeaderFromPackage(llvm::MemoryBufferRef buffer) {
-  auto header = readBinaryPackageHeader(buffer);
+ErrorOr<std::pair<MojoPrecompiledFileHeader, MojoPrecompiledFileMLIRBuffer>>
+M::KGEN::getMLIRBufferAndHeaderFromPrecompiledFile(
+    llvm::MemoryBufferRef buffer) {
+  auto header = readPrecompiledFileHeader(buffer);
   if (header.isError())
-    return Error("invalid Mojo package '" + buffer.getBufferIdentifier() +
-                 "': " + header.getError());
+    return Error("invalid Mojo precompiled file '" +
+                 buffer.getBufferIdentifier() + "': " + header.getError());
 
   auto mlirData = buffer.getBuffer().drop_front(header->getSizeInBytes());
-  MojoPackageMLIRBuffer result;
+  MojoPrecompiledFileMLIRBuffer result;
 
-  if (header->version == MojoPackageFormatVersion::V2) {
+  if (header->version == MojoPrecompiledFileFormatVersion::V2) {
     // Decompress zstd-compressed MLIR section.
     auto writableBuf = llvm::WritableMemoryBuffer::getNewUninitMemBuffer(
         header->uncompressedSize, buffer.getBufferIdentifier());
@@ -293,7 +300,7 @@ M::KGEN::getMLIRBufferAndHeaderFromPackage(llvm::MemoryBufferRef buffer) {
             asBytes(mlirData),
             reinterpret_cast<uint8_t *>(writableBuf->getBufferStart()),
             uncompSize)) {
-      return Error("failed to decompress Mojo package '" +
+      return Error("failed to decompress Mojo precompiled file '" +
                    buffer.getBufferIdentifier() +
                    "': " + llvm::toString(std::move(err)));
     }
@@ -308,27 +315,28 @@ M::KGEN::getMLIRBufferAndHeaderFromPackage(llvm::MemoryBufferRef buffer) {
   return std::make_pair(*header, std::move(result));
 }
 
-ErrorOr<MojoPackageMLIRBuffer>
-M::KGEN::getMLIRBufferFromPackage(llvm::MemoryBufferRef buffer,
-                                  bool ignoreIncompatiblePackageErrs) {
-  auto mlirBufferAndHeaderOrErr = getMLIRBufferAndHeaderFromPackage(buffer);
+ErrorOr<MojoPrecompiledFileMLIRBuffer>
+M::KGEN::getMLIRBufferFromPrecompiledFile(
+    llvm::MemoryBufferRef buffer, bool ignoreIncompatiblePrecompiledFileErrs) {
+  auto mlirBufferAndHeaderOrErr =
+      getMLIRBufferAndHeaderFromPrecompiledFile(buffer);
   if (mlirBufferAndHeaderOrErr.isError())
     return mlirBufferAndHeaderOrErr.takeError();
   auto &[header, mlirResult] = *mlirBufferAndHeaderOrErr;
   if (!llvm::sys::Process::GetEnv("MOJO_NO_VALIDATE_MOJOPKG") &&
-      !ignoreIncompatiblePackageErrs) {
-    if (auto err = KGEN::checkCompatiblePackage(header,
-                                                buffer.getBufferIdentifier())) {
-      return Error(
-          std::string(err.getError()) +
-          ". To proceed, recreate the package with `mojo package`, or use "
-          "the version of the compiler it was created with.");
+      !ignoreIncompatiblePrecompiledFileErrs) {
+    if (auto err = KGEN::checkCompatiblePrecompiledFile(
+            header, buffer.getBufferIdentifier())) {
+      return Error(std::string(err.getError()) +
+                   ". To proceed, recreate the precompiled file with `mojo "
+                   "package`, or use "
+                   "the version of the compiler it was created with.");
     }
   }
   return std::move(mlirResult);
 }
 
-void MojoPackageHeader::dump() const {
+void MojoPrecompiledFileHeader::dump() const {
   llvm::dbgs() << "Encoding ver " << static_cast<int>(version) << "\n";
   llvm::dbgs() << "Mojo Version: " << mojoVersion.major << "."
                << mojoVersion.minor << "." << mojoVersion.patch
@@ -338,7 +346,7 @@ void MojoPackageHeader::dump() const {
                << modularVersion.label << "\n";
   llvm::dbgs() << "MLIR Checksum: "
                << (mlirChecksum.empty() ? "<none>" : mlirChecksum) << "\n";
-  if (version == MojoPackageFormatVersion::V2)
+  if (version == MojoPrecompiledFileFormatVersion::V2)
     llvm::dbgs() << "Compression: zstd (uncompressed size: " << uncompressedSize
                  << ")\n";
 }

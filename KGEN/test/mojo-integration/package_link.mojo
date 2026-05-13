@@ -17,8 +17,8 @@
 # ===----------------------------------------------------------------------=== #
 
 # RUN: rm -rf %t.package-link && mkdir -p %t.package-link
-# RUN: mojo package %S/inputs/test_package -o %t.package-link/test_package.mojopkg
-# RUN: mojo package -I %t.package-link %S/inputs/test_package_2 -o %t.package-link/test_package_2.mojopkg
+# RUN: mojo package %S/inputs/test_package -o %t.package-link/test_package.mojoc
+# RUN: mojo package -I %t.package-link %S/inputs/test_package_2 -o %t.package-link/test_package_2.mojoc
 # RUN: %mojo -I %t.package-link %s | FileCheck %s
 
 from test_package_2.module import dont_inline_me_either

@@ -8,8 +8,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef KGEN_SUPPORT_MOJOPACKAGE_H
-#define KGEN_SUPPORT_MOJOPACKAGE_H
+#ifndef KGEN_SUPPORT_MOJOPRECOMPILEDFILE_H
+#define KGEN_SUPPORT_MOJOPRECOMPILEDFILE_H
 
 #include "Config/Version.h"
 #include "Support/ErrorOr.h"
@@ -18,7 +18,7 @@
 
 namespace M::KGEN {
 
-struct MojoPackageVersion final {
+struct MojoPrecompiledFileVersion final {
   int major = 0;
   int minor = 0;
   int patch = 0;
@@ -35,11 +35,11 @@ struct MojoPackageVersion final {
   std::optional<int> postN;
   std::optional<int> devN;
 
-  MojoPackageVersion() = default;
-  MojoPackageVersion(int maj, int min, int pat)
+  MojoPrecompiledFileVersion() = default;
+  MojoPrecompiledFileVersion(int maj, int min, int pat)
       : major(maj), minor(min), patch(pat) {}
 
-  MojoPackageVersion(const M::ProjectVersion &version)
+  MojoPrecompiledFileVersion(const M::ProjectVersion &version)
       : major(version.major), minor(version.minor), patch(version.patch),
         label(version.label) {
     if (!(hasValidLabel = parseLabel())) {
@@ -87,7 +87,7 @@ struct MojoPackageVersion final {
     return labelRef.empty();
   }
 
-  static auto makeVersionCmpKey(const MojoPackageVersion &ver) {
+  static auto makeVersionCmpKey(const MojoPrecompiledFileVersion &ver) {
     // The "abrc" slot normally sorts by enum value. But a `.dev` on a no-pre
     // version is pre-pre-release, so it must sort *below* every explicit pre.
     int preClass = (ver.abrc == ABRC::None && !ver.postN && ver.devN)
@@ -103,15 +103,15 @@ struct MojoPackageVersion final {
                       iDevN);
   }
 
-  bool operator<(const MojoPackageVersion &other) const {
+  bool operator<(const MojoPrecompiledFileVersion &other) const {
     return makeVersionCmpKey(*this) < makeVersionCmpKey(other);
   }
 
-  bool operator>(const MojoPackageVersion &other) const {
+  bool operator>(const MojoPrecompiledFileVersion &other) const {
     return makeVersionCmpKey(*this) > makeVersionCmpKey(other);
   }
 
-  bool operator==(const MojoPackageVersion &other) const {
+  bool operator==(const MojoPrecompiledFileVersion &other) const {
     return std::tie(major, minor, patch, abrc, nABRC, postN, devN) ==
            std::tie(other.major, other.minor, other.patch, other.abrc,
                     other.nABRC, other.postN, other.devN);
@@ -132,7 +132,7 @@ struct MojoPackageVersion final {
 };
 
 /// Format version of the Mojo package binary encoding.
-enum class MojoPackageFormatVersion : uint8_t {
+enum class MojoPrecompiledFileFormatVersion : uint8_t {
   /// Version 1: uncompressed MLIR bytecode.
   V1 = 1,
   /// Version 2: zstd-compressed MLIR bytecode with uncompressed size in header.
@@ -141,11 +141,12 @@ enum class MojoPackageFormatVersion : uint8_t {
 
 /// Represents the header section of a Mojo package file, coming before the MLIR
 /// section.
-struct MojoPackageHeader {
-  MojoPackageVersion mojoVersion;
-  MojoPackageVersion modularVersion;
+struct MojoPrecompiledFileHeader {
+  MojoPrecompiledFileVersion mojoVersion;
+  MojoPrecompiledFileVersion modularVersion;
   std::string mlirChecksum;
-  MojoPackageFormatVersion version = MojoPackageFormatVersion::V2;
+  MojoPrecompiledFileFormatVersion version =
+      MojoPrecompiledFileFormatVersion::V2;
   uint64_t uncompressedSize = 0;
   size_t headerSize;
 
@@ -156,68 +157,70 @@ struct MojoPackageHeader {
 /// Write the bytecode for the given operation to the provided output stream as
 /// a Mojo package file. For streams where it matters, the given stream should
 /// be in "binary" mode.
-LogicalResult writeBinaryPackage(Operation *op, raw_ostream &os);
+LogicalResult writePrecompiledFile(Operation *op, raw_ostream &os);
 
 /// Write the bytecode for the given operation to the provided output stream as
 /// a Mojo package file. For streams where it matters, the given stream should
 /// be in "binary" mode.
 /// Note: public visibility, intended only for round-trip unit testing
-LogicalResult writeBinaryPackage(Operation *op, MojoPackageVersion &mojoVer,
-                                 MojoPackageVersion &maxVer,
-                                 StringRef mlirChecksum, raw_ostream &os);
+LogicalResult writePrecompiledFile(Operation *op,
+                                   MojoPrecompiledFileVersion &mojoVer,
+                                   MojoPrecompiledFileVersion &maxVer,
+                                   StringRef mlirChecksum, raw_ostream &os);
 
 /// Holds the MLIR buffer extracted from a Mojo package. For compressed (v2+)
 /// packages, `ownedData` holds the decompressed data and `buffer` references
 /// it. For uncompressed (v1) packages, `ownedData` is null and `buffer`
 /// references the original package file.
-struct MojoPackageMLIRBuffer {
+struct MojoPrecompiledFileMLIRBuffer {
   llvm::MemoryBufferRef buffer;
   std::unique_ptr<llvm::MemoryBuffer> ownedData;
 };
 
-/// Returns whether the memory buffer points to a valid Mojo package
-/// (.mojopkg) file. Checks only the magic bytes at the beginning of the
-/// buffer.
-bool isMojoPackage(llvm::MemoryBufferRef buffer);
+/// Returns whether the memory buffer points to a valid Mojo pre-compiled File
+/// (.mojoc) file. Checks only the magic bytes at the beginning of the buffer.
+bool isMojoPrecompiledFile(llvm::MemoryBufferRef buffer);
 
 /// Returns whether the Mojo package (represented by its header) is compatible
 /// with the current compiler.
-bool isCompatiblePackage(const MojoPackageHeader &header);
+bool isCompatiblePrecompiledFile(const MojoPrecompiledFileHeader &header);
 
 /// Returns whether the Mojo package (represented by its header) is compatible
 /// with the current compiler, and returns a message explaining any cause of
 /// incompatibility.
-ErrorOrSuccess checkCompatiblePackage(const MojoPackageHeader &header,
-                                      StringRef packageName = "");
+ErrorOrSuccess
+checkCompatiblePrecompiledFile(const MojoPrecompiledFileHeader &header,
+                               StringRef packageName = "");
 
 /// Compares two (package) versions and returns how 'other' compares to the
 /// 'base' with a human-readable message on inequality. Optionally takes
 /// human-readable names for each version and will add those to the message.
-ErrorOrSuccess checkVersion(const MojoPackageVersion &base,
-                            const MojoPackageVersion &other,
+ErrorOrSuccess checkVersion(const MojoPrecompiledFileVersion &base,
+                            const MojoPrecompiledFileVersion &other,
                             llvm::StringRef baseName = "",
                             llvm::StringRef otherName = "");
 
 /// Reads and returns the Mojo package header section of a Mojo package file.
 /// Returns an Error on failure. The buffer is read-only; the pointer to
 /// the MLIR section can be computed by offsetting the buffer by the size of the
-/// returned header (MojoPackageHeader::getSizeInBytes).
-ErrorOr<MojoPackageHeader>
-readBinaryPackageHeader(llvm::MemoryBufferRef buffer);
+/// returned header (MojoPrecompiledFileHeader::getSizeInBytes).
+ErrorOr<MojoPrecompiledFileHeader>
+readPrecompiledFileHeader(llvm::MemoryBufferRef buffer);
 
 // Read a Mojo package, returning both the header and the MLIR buffer.
-// For compressed packages, the returned MojoPackageMLIRBuffer owns the
-// decompressed data.
-ErrorOr<std::pair<MojoPackageHeader, MojoPackageMLIRBuffer>>
-getMLIRBufferAndHeaderFromPackage(llvm::MemoryBufferRef buffer);
+// For compressed packages, the returned MojoPrecompiledFileMLIRBuffer owns
+// the decompressed data.
+ErrorOr<std::pair<MojoPrecompiledFileHeader, MojoPrecompiledFileMLIRBuffer>>
+getMLIRBufferAndHeaderFromPrecompiledFile(llvm::MemoryBufferRef buffer);
 
 // Read a Mojo package, returning the MLIR buffer if the header is compatible,
-// or else an error if ignoreIncompatiblePackages is false. For compressed
-// packages, the returned MojoPackageMLIRBuffer owns the decompressed data.
-ErrorOr<MojoPackageMLIRBuffer>
-getMLIRBufferFromPackage(llvm::MemoryBufferRef buffer,
-                         bool ignoreIncompatiblePackages);
+// or else an error if ignoreIncompatiblePrecompiledFiles is false. For
+// compressed packages, the returned MojoPrecompiledFileMLIRBuffer owns the
+// decompressed data.
+ErrorOr<MojoPrecompiledFileMLIRBuffer>
+getMLIRBufferFromPrecompiledFile(llvm::MemoryBufferRef buffer,
+                                 bool ignoreIncompatiblePrecompiledFiles);
 
 } // namespace M::KGEN
 
-#endif // KGEN_SUPPORT_MOJOPACKAGE_H
+#endif // KGEN_SUPPORT_MOJOPRECOMPILEDFILE_H

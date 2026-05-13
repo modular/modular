@@ -12,7 +12,7 @@
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/Support/CompilerProfiling.h"
-#include "KGEN/Support/MojoPackage.h"
+#include "KGEN/Support/MojoPrecompiledFile.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
 #include "MLRT/AsyncRT/Runtime/Runtime.h"
 #include "Support/Compiler/BytecodeReaderWriter.h"
@@ -433,9 +433,9 @@ loadStrippedBinaryPackage(MLRT::CPUDevice &cpuDevice,
   const llvm::MemoryBuffer *packageMemoryBuf =
       sourceMgr->getMemoryBuffer(bufferId);
 
-  // Parse just the top-level binary package operation and extract out the post
-  // parse module.
-  auto mlirBufOrErr = getMLIRBufferFromPackage(
+  // Parse just the top-level package operation from the precompiled file and
+  // extract out the post-parse module.
+  auto mlirBufOrErr = getMLIRBufferFromPrecompiledFile(
       *packageMemoryBuf, /*ignoreIncompatiblePackages=*/false);
   if (mlirBufOrErr.isError()) {
     sourceMgr->PrintMessage({}, llvm::SourceMgr::DK_Error,

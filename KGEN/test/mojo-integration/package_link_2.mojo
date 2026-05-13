@@ -21,8 +21,8 @@
 # ===----------------------------------------------------------------------=== #
 
 # RUN: rm -rf %t.package-link-2 && mkdir -p %t.package-link-2
-# RUN: mojo package %S/inputs/test_package -o %t.package-link-2/test_package.mojopkg
-# RUN: mojo package -I %t.package-link-2 %S/inputs/test_package_2 -o %t.package-link-2/test_package_2.mojopkg
+# RUN: mojo package %S/inputs/test_package -o %t.package-link-2/test_package.mojoc
+# RUN: mojo package -I %t.package-link-2 %S/inputs/test_package_2 -o %t.package-link-2/test_package_2.mojoc
 # RUN: %mojo -I %t.package-link-2 %s | FileCheck %s
 
 from test_package.module import dont_inline_me
