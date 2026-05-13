@@ -54,4 +54,4 @@ def foo[T: Movable & ToCastInto](l: List[T]):
     var iter = l.iter()
     # Make sure ToCastInfo conformance survives the downcast.
     # CHECK: lit.call @{{.*}}::@"sink{{.*}}
-    sink(iter.t)  # does not work :(
+    sink(iter.t)
