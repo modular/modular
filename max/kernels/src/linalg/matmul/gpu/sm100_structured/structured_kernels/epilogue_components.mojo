@@ -813,14 +813,14 @@ struct EpilogueApplier[
                         )
             else:
                 comptime if is_in_bounds:
-                    elem01 = compute_lambda_fn[epilogue_dtype, 2](
+                    elem01 = compute_lambda_fn[epilogue_dtype, 2, alignment=2](
                         IndexList[2](Int(top_row), Int(top_col)),
                         SIMD[epilogue_dtype, 2](
                             rebind[Scalar[epilogue_dtype]](elem0),
                             rebind[Scalar[epilogue_dtype]](elem1),
                         ),
                     )
-                    elem23 = compute_lambda_fn[epilogue_dtype, 2](
+                    elem23 = compute_lambda_fn[epilogue_dtype, 2, alignment=2](
                         IndexList[2](Int(bot_row), Int(bot_col)),
                         SIMD[epilogue_dtype, 2](
                             rebind[Scalar[epilogue_dtype]](elem2),
@@ -839,7 +839,9 @@ struct EpilogueApplier[
                     var valid_bot_row = bot_row < self.M
 
                     if valid_top_row:
-                        elem01 = compute_lambda_fn[epilogue_dtype, 2](
+                        elem01 = compute_lambda_fn[
+                            epilogue_dtype, 2, alignment=2
+                        ](
                             IndexList[2](Int(top_row), Int(top_col)),
                             SIMD[epilogue_dtype, 2](
                                 rebind[Scalar[epilogue_dtype]](elem0),
@@ -850,7 +852,9 @@ struct EpilogueApplier[
                         frag[offset + 1] = elem01[1]
 
                     if valid_bot_row:
-                        elem23 = compute_lambda_fn[epilogue_dtype, 2](
+                        elem23 = compute_lambda_fn[
+                            epilogue_dtype, 2, alignment=2
+                        ](
                             IndexList[2](Int(bot_row), Int(bot_col)),
                             SIMD[epilogue_dtype, 2](
                                 rebind[Scalar[epilogue_dtype]](elem2),
