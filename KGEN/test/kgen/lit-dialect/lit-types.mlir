@@ -181,8 +181,6 @@ kgen.generator @fn_types<x: index, y: index>() {
   kgen.param.declare type2: type = <!kgen.func<!lit.fn<(index, i8) -> ()>>>
   // CHECK-NEXT: type = <!lit.fn<("a": index, "b": i8 = 2) -> none>>
   kgen.param.declare type3: type = <!lit.fn<("a": index, "b": i8 = 2) -> none>>
-  // CHECK-NEXT: type = <!lit.fn<("a": index, "b": i8 = 2) -> none where {<{{.*}}lt{{.*}}x{{.*}}2{{.*}}, {{.*}}>, <{{.*}}lt{{.*}}x{{.*}}10{{.*}}, {{.*}}>}>>
-  kgen.param.declare type4: type = <!lit.fn<("a": index, "b": i8 = 2) -> none where {<#kgen.param.expr<xor, #kgen.cast_from_builtin<#kgen.param.expr<lt, #kgen.param.decl.ref<"x"> : index, 2 : index> : i1> : !kgen.scalar<bool>, #kgen<simd true> : !kgen.scalar<bool>> : !kgen.scalar<bool>, loc("test.mlir":1:2)>, <#kgen.cast_from_builtin<#kgen.param.expr<lt, #kgen.param.decl.ref<"x"> : index, 10 : index> : i1> : !kgen.scalar<bool>, loc("test.mlir":3:4)>}>>
   kgen.return
 }
 

@@ -683,10 +683,6 @@ static ParseResult parseLITFunctionSignature(
                                   /*optionalResultList=*/true)))
     return failure();
 
-  SmallVector<ConstraintAttr> constraints;
-  if (failed(parseOptionalWhereClauses(p, constraints)))
-    return failure();
-
   SmallVector<PassingKind> argPassingKinds;
   passingKindParser.populatePassingKinds(argPassingKinds);
 
@@ -695,7 +691,7 @@ static ParseResult parseLITFunctionSignature(
                        defaults, origVariadicConvention,
                        /*paramConstraints=*/{}, /*bodyConstraints=*/{}),
       originDecls.size(), captureOrigins,
-      isNestedOriginExclusivityCheckingDisabled, constraints);
+      isNestedOriginExclusivityCheckingDisabled);
   signature = FuncTypeGeneratorType::remapToFuncTypeGenerator(
       params, functionType, argConventions, effects, metadata, paramListAttr,
       [&] { return p.emitError(startLoc); });
@@ -789,9 +785,6 @@ static void printLITFunctionSignature(OpAsmPrinter &p, Region *region,
   printSignatureValues(p, printElt, functionType, signature.getArgConventions(),
                        signature.getFnEffects(),
                        /*optionalResultList=*/true);
-
-  printOptionalWhereClauses(p, signature.getFnMetadata().getConstraints(),
-                            &evaluator);
 }
 
 /// Parses a LIT Generator.

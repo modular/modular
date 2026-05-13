@@ -114,11 +114,6 @@ void printOptionalConstraintsList(AsmPrinter &p,
                                   ArrayRef<ConstraintAttr> constraints,
                                   ParameterEvaluator *evaluator = nullptr);
 
-/// Parse an optional 'where' clause containing constraint attributes.
-ParseResult
-parseOptionalWhereClauses(AsmParser &p,
-                          SmallVectorImpl<ConstraintAttr> &constraints);
-
 /// Print an optional 'where' clause containing constraint attributes. The
 /// ParameterEvaluator is used to rebind references in the constraints.
 void printOptionalWhereClauses(AsmPrinter &p,

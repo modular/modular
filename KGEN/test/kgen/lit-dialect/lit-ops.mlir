@@ -601,20 +601,12 @@ lit.fn @"bar"<PARAM: index>[mut R](?, %__result__: !lit.ref<@Foo<:index PARAM>, 
 
 // -----
 
-// COM: Where clauses on functions
+// COM: Where clauses on parameters
 
 // CHECK-DAG: #[[LOC1:.+]] = loc("test.mlir":1:2)
 #loc = loc("test.mlir":1:2)
 // CHECK-DAG: #[[LOC2:.+]] = loc("test.mlir":3:4)
 #loc1 = loc("test.mlir":3:4)
-
-// CHECK-LABEL: lit.fn @has_where
-// CHECK-SAME: where {<{{.*}}lt{{.*}}x{{.*}}2{{.*}}, #loc>, <{{.*}}lt{{.*}}x{{.*}}10{{.*}}, #loc1>}
-lit.fn @has_where<x: index>() -> !kgen.none where {<#kgen.param.expr<xor, #kgen.cast_from_builtin<#kgen.param.expr<lt, #kgen.param.decl.ref<"x"> : index, 2 : index> : i1> : !kgen.scalar<bool>, #kgen<simd true> : !kgen.scalar<bool>> : !kgen.scalar<bool>, #loc>, <#kgen.cast_from_builtin<#kgen.param.expr<lt, #kgen.param.decl.ref<"x"> : index, 10 : index> : i1> : !kgen.scalar<bool>, #loc1>} attributes {sourceName = "has_where"} {
-  %none = kgen.param.constant: none = <#kgen.none>
-  lit.return %none : !kgen.none
-  lit.end_fn
-}
 
 // CHECK-LABEL: lit.fn @has_pogs_requires
 // CHECK-SAME: x {<{{.*}}lt{{.*}}x{{.*}}2{{.*}}, #loc>},

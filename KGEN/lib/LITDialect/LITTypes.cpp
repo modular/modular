@@ -1350,17 +1350,13 @@ static OptionalParseResult parseOptionalLITFuncType(AsmParser &p,
   SmallVector<PassingKind> argPassingKinds;
   passingKindParser.populatePassingKinds(argPassingKinds);
 
-  SmallVector<ConstraintAttr> constraints;
-  if (failed(parseOptionalWhereClauses(p, constraints)))
-    return failure();
-
   MLIRContext *ctx = p.getContext();
   auto metadata = FnMetadataAttr::get(
       PogListAttr::get(ctx, argNames, argPassingKinds, argVariadics,
                        defaultValues, origVariadicConvention,
                        /*paramConstraints=*/{}, /*bodyConstraints=*/{}),
-      numOriginDecls, captureOrigins, isNestedOriginExclusivityCheckingDisabled,
-      constraints);
+      numOriginDecls, captureOrigins,
+      isNestedOriginExclusivityCheckingDisabled);
   signature =
       FuncType::getChecked([&] { return p.emitError(startLoc); }, functionType,
                            argConventions, effects, metadata);
@@ -1543,8 +1539,7 @@ FunctionType FnType::substituteImplicitOriginsIntoValues(
 FnType FnType::getWithCaptureOrigins(TypedAttr origins) {
   return getWithMetadata(FnMetadataAttr::get(
       getArgListAttrs(), getNumImplicitOriginDecls(), origins,
-      getIsNestedOriginExclusivityCheckingDisabled(),
-      getMetadata().getConstraints()));
+      getIsNestedOriginExclusivityCheckingDisabled()));
 }
 
 bool FnType::isAnyVarArg(size_t index) {

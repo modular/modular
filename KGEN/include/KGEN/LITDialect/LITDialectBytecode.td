@@ -148,8 +148,7 @@ def FnMetadataAttr : DialectAttribute<(attr
   ConcreteAttribute<"PogListAttr">:$argListAttrs,
   VarInt:$numImplicitOriginDecls,
   TypedAttr:$captureOrigins,
-  Bool:$isNestedOriginExclusivityCheckingDisabled,
-  ConcreteAttrArray<"ConstraintAttr">:$constraints
+  Bool:$isNestedOriginExclusivityCheckingDisabled
 )> {
   let cBuilder = "get<$_resultType>(context, $_args)";
 }
