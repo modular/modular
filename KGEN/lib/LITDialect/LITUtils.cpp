@@ -350,15 +350,6 @@ void LIT::printOptionalConstraintsList(AsmPrinter &p,
   p << "}";
 }
 
-void LIT::printOptionalWhereClauses(AsmPrinter &p,
-                                    ArrayRef<ConstraintAttr> constraints,
-                                    ParameterEvaluator *evaluator) {
-  if (constraints.empty())
-    return;
-  p << " where";
-  printOptionalConstraintsList(p, constraints, evaluator);
-}
-
 ParseResult LIT::parseConventionAndVariadicness(
     AsmParser &p, ArgConvention &convention, VariadicKind &variadic,
     std::optional<ArgConvention> &origVariadicConvention, size_t idx) {
