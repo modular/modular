@@ -16,6 +16,7 @@ from __future__ import annotations
 import logging
 import time
 from collections import OrderedDict, deque
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
 
@@ -404,11 +405,13 @@ class TextBatchConstructor:
         kv_cache: PagedKVCacheManager,
         batch_scheduling_strategy: BatchSchedulingStrategy = BatchSchedulingStrategy.PER_REPLICA,
         dp_padder: DPBatchPadder | None = None,
+        get_inflight_kv_transfer_count: Callable[[], int] | None = None,
     ) -> None:
         self.scheduler_config = scheduler_config
         self.pipeline = pipeline
         self.kv_cache = kv_cache
         self.batch_scheduling_strategy = batch_scheduling_strategy
+        self._get_inflight_kv_transfer_count = get_inflight_kv_transfer_count
 
         self._lora_manager: LoRAManager | None = LoRAManager.get_lora_manager(
             pipeline
@@ -720,6 +723,11 @@ class TextBatchConstructor:
         # Otherwise, prioritize CE
         return RequestType.CE
 
+    def _inflight_kv_transfer_count(self) -> int:
+        if self._get_inflight_kv_transfer_count is not None:
+            return self._get_inflight_kv_transfer_count()
+        return 0
+
     def _add_ce_requests(self, batch: ReplicaBatch, replica_idx: int) -> None:
         replica_requests = self.replicas[replica_idx]
         max_batch_size = self.scheduler_config.max_batch_size
@@ -770,7 +778,11 @@ class TextBatchConstructor:
                 if (
                     pct_blocks_used_after_ce_request
                     > self.scheduler_config.kvcache_ce_watermark
-                ) and (len(batch) != 0 or len(replica_requests.tg_reqs) != 0):
+                ) and (
+                    len(batch) != 0
+                    or len(replica_requests.tg_reqs) != 0
+                    or self._inflight_kv_transfer_count() > 0
+                ):
                     self._return_to_request_queue(ctx, replica_idx)
                     break
 
@@ -779,10 +791,12 @@ class TextBatchConstructor:
                         ctx, replica_idx=replica_idx, num_steps=1
                     )
                 except InsufficientBlocksError:
-                    if len(replica_requests.tg_reqs) == 0 and len(batch) == 0:
+                    if (
+                        len(replica_requests.tg_reqs) == 0
+                        and len(batch) == 0
+                        and self._inflight_kv_transfer_count() == 0
+                    ):
                         raise
-
-                    # Return the Object to the request queue
                     self._return_to_request_queue(ctx, replica_idx)
                     break
 

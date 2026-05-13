@@ -744,6 +744,18 @@ class PagedKVCacheManager:
             request_id, sentinel_request_id
         )
 
+    def num_free_blocks(self, replica_idx: int = 0) -> int:
+        """Returns the number of free KV cache blocks on the given replica."""
+        return len(
+            self._replica[
+                replica_idx
+            ].block_manager.device_block_pool.free_block_queue
+        )
+
+    def total_num_blocks(self, replica_idx: int = 0) -> int:
+        """Returns the total number of KV cache blocks on the given replica."""
+        return self._replica[replica_idx].block_manager.total_num_blocks
+
     def release(self, request_id: RequestID, replica_idx: int) -> None:
         """Releases blocks for the request on the given replica."""
         replica = self._replica[replica_idx]
