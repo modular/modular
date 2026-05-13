@@ -219,6 +219,64 @@ def test_openai_chat_completion_accepts_prompt_tokens() -> None:
     assert request.prompt_tokens == [101, 202, 303]
 
 
+async def test_openai_parse_forwards_tool_call_metadata() -> None:
+    """Multi-turn tool-use messages must keep ``tool_calls`` and ``tool_call_id``.
+
+    The router previously dropped these fields when building the internal
+    ``TextGenerationRequestMessage`` list, so the chat-templated prompt
+    rendered with an empty ``<think>`` block and a bare ``## Return of``
+    header instead of the originating function name (for example Kimi-K2).
+    """
+    request_data = {
+        "model": "test",
+        "messages": [
+            {"role": "user", "content": "search for cats"},
+            {
+                "role": "assistant",
+                "content": "",
+                "reasoning_content": "I'll call the search tool.",
+                "tool_calls": [
+                    {
+                        "id": "call_9e53d2d2_0",
+                        "type": "function",
+                        "function": {
+                            "name": "search",
+                            "arguments": '{"q":"cats"}',
+                        },
+                    }
+                ],
+            },
+            {
+                "role": "tool",
+                "tool_call_id": "call_9e53d2d2_0",
+                "content": "1. fluffy cat\n2. orange cat",
+            },
+        ],
+    }
+    request = CreateChatCompletionRequest.model_validate(request_data)
+    settings = Settings()
+
+    messages, _images, _videos = await openai_parse_chat_completion_request(
+        request, wrap_content=False, settings=settings
+    )
+
+    assert len(messages) == 3
+    assert messages[0].role == "user"
+    assert messages[0].tool_calls is None
+    assert messages[0].tool_call_id is None
+
+    assert messages[1].role == "assistant"
+    assert messages[1].tool_calls is not None
+    assert len(messages[1].tool_calls) == 1
+    assert messages[1].tool_calls[0]["id"] == "call_9e53d2d2_0"
+    assert messages[1].tool_calls[0]["function"]["name"] == "search"
+    assert messages[1].reasoning_content == "I'll call the search tool."
+
+    assert messages[2].role == "tool"
+    assert messages[2].tool_call_id == "call_9e53d2d2_0"
+    assert messages[2].content == "1. fluffy cat\n2. orange cat"
+
+
 def test_openai_user_message_content_nullable_schema() -> None:
     """Test that the CreateChatCompletionRequest schema accepts null user content."""
     # Test with explicit null content in user message

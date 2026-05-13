@@ -60,7 +60,7 @@ def test_pipelines_cli__smollm_float32(
                 "--quantization-encoding=float32",
                 "--top-k=1",
                 "--max-new-tokens=10",
-                "--max-length=256",
+                "--max-length=128",
             ]
         )
     captured = capsys.readouterr()
@@ -86,7 +86,7 @@ def test_pipelines_cli__invalid_quantization_encoding(
                 "--quantization-encoding=q4_k",
                 "--top-k=1",
                 "--max-new-tokens=10",
-                "--max-length=256",
+                "--max-length=128",
             ]
         )
 
@@ -114,7 +114,7 @@ def test_pipelines_cli__model_and_model_path_conflict(
                 "--quantization-encoding=float32",
                 "--top-k=1",
                 "--max-new-tokens=10",
-                "--max-length=256",
+                "--max-length=128",
             ]
         )
 
@@ -139,7 +139,7 @@ def test_pipelines_cli__set_kv_cache_dtype(
                 "--quantization-encoding=float32",
                 "--top-k=1",
                 "--max-new-tokens=1",
-                "--max-length=256",
+                "--max-length=128",
                 "--kv-cache-format=float8_e4m3fn",
             ]
         )
@@ -160,7 +160,7 @@ def test_pipelines_cli__set_kv_cache_dtype(
                 "--quantization-encoding=float32",
                 "--top-k=1",
                 "--max-new-tokens=1",
-                "--max-length=256",
+                "--max-length=128",
                 "--kv-cache-format=bfloat16",
             ]
         )

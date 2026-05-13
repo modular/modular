@@ -322,8 +322,7 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
         tools: list[TextGenerationRequestTool] | None = None,
     ) -> str:
         """Apply chat template using tokenizer directly (not processor)."""
-
-        messages_dicts = [msg.model_dump() for msg in messages]
+        messages_dicts = [msg.model_dump(exclude_none=True) for msg in messages]
         templated_message = self.delegate.apply_chat_template(
             messages_dicts,
             tokenize=False,

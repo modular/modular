@@ -207,7 +207,7 @@ class Gemma4Tokenizer(TextAndVisionTokenizer):
             **(chat_template_options or {}),
         }
         templated_message = self.delegate.apply_chat_template(
-            [msg.model_dump() for msg in messages],
+            [msg.model_dump(exclude_none=True) for msg in messages],
             tokenize=False,
             tools=tools,
             **chat_template_options,

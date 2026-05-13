@@ -53,7 +53,7 @@ class Qwen3_5Tokenizer(Qwen3VLTokenizer):
         enable_thinking = chat_template_options.get("enable_thinking", True)
 
         return self.delegate.apply_chat_template(
-            [msg.model_dump() for msg in messages],
+            [msg.model_dump(exclude_none=True) for msg in messages],
             tools=tools,
             tokenize=False,
             add_generation_prompt=True,

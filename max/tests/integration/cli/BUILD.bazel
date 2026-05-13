@@ -22,6 +22,7 @@ modular_py_test(
         ),
     },
     tags = [
+        "manual",  # TODO(MXTOOLS-187): Fails due to lack of CPU memory.
         "no-sandbox",
     ],
     target_compatible_with = select({

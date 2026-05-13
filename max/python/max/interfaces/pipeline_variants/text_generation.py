@@ -128,11 +128,51 @@ MessageRole = Literal["system", "user", "assistant", "tool", "function"]
 class TextGenerationRequestMessage(BaseModel):
     """A single message in a text generation request conversation."""
 
+    # Follows the openai spec
+
     role: MessageRole = Field(
         ..., description="Text role of the message sender"
     )
 
-    content: str | list[MessageContent]
+    content: str | list[MessageContent] = Field(
+        default="",
+        description=(
+            "Message text/multimodal content. Defaults to the empty string for "
+            "assistant messages that only carry ``tool_calls``."
+        ),
+    )
+
+    # Tool call fields from:
+    # https://github.com/openai/openai-python/blob/38d75d74a5626472cd7d1be9705ea8aba29a6b22/src/openai/types/chat/chat_completion_message_function_tool_call_param.py
+    # The KimiK2.5 chat template uses these fields:
+    # https://huggingface.co/moonshotai/Kimi-K2.5/blob/main/chat_template.jinja
+    tool_calls: list[dict[str, Any]] | None = Field(
+        default=None,
+        description=(
+            "Tool calls emitted by an assistant turn in the conversation "
+            "history. Each entry follows the OpenAI shape "
+            "``{id, type, function: {name, arguments}}``. Passed through "
+            "verbatim to the chat template so multi-turn tool-use prompts "
+            "render correctly."
+        ),
+    )
+
+    tool_call_id: str | None = Field(
+        default=None,
+        description=(
+            "Identifier of the assistant ``tool_calls`` entry that this tool "
+            "message is responding to. Required by chat templates that emit a "
+            "tool-response header referencing the originating call."
+        ),
+    )
+
+    reasoning_content: str | None = Field(
+        default=None,
+        description=(
+            "Reasoning/thinking content produced alongside an assistant turn."
+        ),
+    )
+
     model_config = ConfigDict(
         frozen=True,
         from_attributes=True,
@@ -142,6 +182,11 @@ class TextGenerationRequestMessage(BaseModel):
     @classmethod
     def validate_content_format(cls, v: Any) -> str | list[MessageContent]:
         """Normalizes message content to a string or list of content parts."""
+        if v is None:
+            # OpenAI permits ``content=None`` for assistant messages whose
+            # payload is carried entirely by ``tool_calls``; collapse to the
+            # empty string so the chat template still has something to render.
+            return ""
         if isinstance(v, str):
             return v
 
@@ -198,23 +243,36 @@ class TextGenerationRequestMessage(BaseModel):
 
         return normalized
 
-    def flatten_content(self) -> dict[str, str]:
-        """Flattens message content to a single role/content dict for text-only messages."""
+    def flatten_content(self) -> dict[str, Any]:
+        """Flattens message content to a role/content dict for text-only messages.
+
+        Preserves OpenAI-style tool-calling metadata (``tool_calls``,
+        ``tool_call_id``, ``reasoning_content``) when set so chat templates
+        that consume conversation history with tool use receive a faithful
+        representation of each turn.
+        """
         if isinstance(self.content, str):
-            return {"role": str(self.role), "content": self.content}
+            content_str = self.content
+        else:
+            parts: list[str] = []
+            for content in self.content:
+                if isinstance(content, TextContentPart):
+                    parts.append(content.text)
+                else:
+                    raise ValueError("only text content can be flattened.")
+            content_str = "\n".join(parts)
 
-        content_str = ""
-        for content in self.content:
-            if isinstance(content, TextContentPart):
-                if content_str != "":
-                    content_str += "\n"
-
-                content_str += content.text
-
-            else:
-                raise ValueError("only text content can be flattened.")
-
-        return {"role": str(self.role), "content": content_str}
+        flattened: dict[str, Any] = {
+            "role": str(self.role),
+            "content": content_str,
+        }
+        if self.tool_calls is not None:
+            flattened["tool_calls"] = self.tool_calls
+        if self.tool_call_id is not None:
+            flattened["tool_call_id"] = self.tool_call_id
+        if self.reasoning_content is not None:
+            flattened["reasoning_content"] = self.reasoning_content
+        return flattened
 
     @cached_property
     def number_of_images(self) -> int:
