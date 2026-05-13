@@ -1032,6 +1032,7 @@ def KGEN_SIMDType : KGENType<"SIMD", "simd", [
   let builders = [
     TypeBuilderWithInferredContext<(ins "TypedAttr":$size, "TypedAttr":$dtype)>,
     TypeBuilderWithInferredContext<(ins "int64_t":$size, "TypedAttr":$dtype)>,
+    TypeBuilderWithInferredContext<(ins "TypedAttr":$size, "KGENDType":$dtype)>,
     TypeBuilder<(ins "int64_t":$size, "KGENDType":$dtype)>
   ];
 

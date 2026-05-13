@@ -2048,21 +2048,25 @@ LogicalResult ParamOperatorAttr::verify(
   case POC::EQ:
     if (operands.size() != 2)
       return emitError() << "comparison operators must have two operands";
-    if (!type.isInteger(1))
-      return emitError() << "comparisons return i1";
+    if (!type.isInteger(1) && !sugarIsa<SIMDType>(type))
+      return emitError() << "comparisons return i1/scalar<bool>";
+    break;
+  case POC::In:
+    if (operands.empty())
+      return emitError() << "operator requires at least one operand";
+    if (!type.isInteger(1) && !sugarIsa<SIMDType>(type))
+      return emitError() << "in return i1/scalar<bool>";
     break;
   case POC::LT:
   case POC::LE:
     if (operands.size() != 2)
       return emitError() << "comparison operators must have two operands";
 
-    if (!type.isInteger(1))
-      return emitError() << "comparisons return i1";
+    if (!type.isInteger(1) && !sugarIsa<SIMDType>(type))
+      return emitError() << "comparisons return i1/scalar<bool>";
 
-    // Relational operations only work on index types.
-    if (!operands[0].getType().isIntOrIndex())
-      return emitError() << "relational comparisons only allowed on index or "
-                            "integer values";
+    // Allows almost every thing (index/float/bool/simd) for the operands.
+    // TODO: restrict to simd after fully migrated.
     break;
   case POC::CurrentTarget:
     if (!operands.empty())
@@ -2090,12 +2094,6 @@ LogicalResult ParamOperatorAttr::verify(
       return emitError() << "'accelerator_arch' expected no operands";
     if (!llvm::isa<StringType>(type))
       return emitError() << "'accelerator_arch' must return a string type";
-    break;
-  case POC::In:
-    if (operands.empty())
-      return emitError() << "operator requires at least one operand";
-    if (!type.isInteger(1))
-      return emitError() << "comparisons return i1";
     break;
   case POC::GetSizeOf:
   case POC::GetAlignOf:
@@ -2242,59 +2240,6 @@ static ParamOperatorAttr dyn_castPE(POC opcode, TypedAttr value) {
     if (expr.getOpcode() == opcode)
       return expr;
   return {};
-}
-
-/// Treat `index` and signed integers as signed. Treat signless and unsigned
-/// integers as unsigned.
-static bool isSignedIntType(Type type) {
-  return type.isIndex() || type.isSignedInteger();
-}
-
-/// Given a function_ref from `(APInt,APInt)->T` and two APInt's, compute the
-/// result value T and return it.
-///
-/// Note that this function has special behavior when 'valueTy' (the MLIR type
-/// of the two operand values) is 'index' type. In this case, it does extra work
-/// to make sure that a 32-bit and 64-bit target will compute the same result
-/// using the same approach as the index dialect.  If they differ, this refuses
-/// to fold the operation, returning a null IntegerAttr.
-template <typename ResultTy>
-static IntegerAttr foldBinaryValues(
-    const llvm::function_ref<ResultTy(const APInt &, const APInt &)>
-        &unsignedCalculateFn,
-    const llvm::function_ref<ResultTy(const APInt &, const APInt &)>
-        &signedCalculateFn,
-    const APInt &lhs, const APInt &rhs, Type valueTy, Type resultTy = {}) {
-  const auto &calculateFn =
-      isSignedIntType(valueTy) ? signedCalculateFn : unsignedCalculateFn;
-
-  // Clients can specify resultTy if it differs from valueTy (e.g. for
-  // compares), but not specifying it defaults to the result being the same type
-  // as the operands.
-  if (!resultTy)
-    resultTy = valueTy;
-
-  auto result1 = calculateFn(lhs, rhs);
-  if (!llvm::isa<IndexType>(valueTy))
-    return IntegerAttr::get(resultTy, result1);
-
-  // If this is an index computation, then we just did the 64-bit computation,
-  // see what would happen on a 32-bit host.
-  assert(lhs.getBitWidth() == 64);
-
-  // We require that the computation satisfy the invariant that:
-  //   trunc(f(a, b)) = f(trunc(a), trunc(b))
-  auto result2 = calculateFn(lhs.trunc(32), rhs.trunc(32));
-
-  // If not bool result (e.g. a compare), truncate the LHS for our check.
-  auto result1test = result1;
-  if constexpr (!std::is_same_v<bool, ResultTy>)
-    result1test = result1.trunc(result2.getBitWidth());
-
-  // We can use the full 64-bit folded result if they match, otherwise leave
-  // unfolded.
-  return result1test == result2 ? IntegerAttr::get(resultTy, result1)
-                                : IntegerAttr();
 }
 
 /// Duplicate the operands in-place for ops like `min` and `max`.
@@ -2603,9 +2548,6 @@ static Attribute simplifyXor(SmallVectorImpl<TypedAttr> &operands) {
 }
 
 /// Returns true if the integer is at its max value.
-static bool intIsMaxValue(Type type, const APInt &value) {
-  return isSignedIntType(type) ? value.isMaxSignedValue() : value.isMaxValue();
-}
 static bool intIsMaxValue(const APSInt &value) {
   return value.isSigned() ? value.isMaxSignedValue() : value.isMaxValue();
 }
@@ -2700,20 +2642,13 @@ static Attribute foldBinaryOp(ArrayRef<TypedAttr> operands, OpFns &&...ops) {
 
 /// Folds constants given a comparison function that returns bool.  The client
 /// must handle signedness etc.
-static IntegerAttr foldCompareOp(
-    TypedAttr lhs, TypedAttr rhs,
-    llvm::function_ref<bool(const APInt &, const APInt &)> unsignedCompareFn,
-    llvm::function_ref<bool(const APInt &, const APInt &)> signedCompareFn =
-        {}) {
-  if (auto lhsInt = sugarDynCast<IntegerAttr>(lhs))
-    if (auto rhsInt = sugarDynCast<IntegerAttr>(rhs)) {
-      if (auto resultConstant = foldBinaryValues(
-              unsignedCompareFn,
-              signedCompareFn ? signedCompareFn : unsignedCompareFn,
-              lhsInt.getValue(), rhsInt.getValue(), lhsInt.getType(),
-              IntegerType::get(rhs.getContext(), 1)))
-        return resultConstant;
-    }
+static SIMDAttr foldCompareOp(TypedAttr lhs, TypedAttr rhs, POC opcode) {
+  if (auto lhsInt = sugarDynCast<SIMDAttr>(lhs))
+    if (auto rhsInt = sugarDynCast<SIMDAttr>(rhs))
+      return foldSIMDCmp(toCmpPredicate(opcode), FoldValues({lhsInt, rhsInt}),
+                         nullptr)
+          .getAttr<SIMDAttr>();
+
   return {};
 }
 
@@ -2748,24 +2683,31 @@ static Type getTypeValueAsType(TypedAttr a) {
 /// index truncation issue but otherwise relying on MLIR's canonicalization of
 /// attributes to do the job for us.  Both operands may be null, and this
 /// returns null if no folding is possible.
-static IntegerAttr foldEquality(TypedAttr lhs, TypedAttr rhs) {
+static TypedAttr foldEquality(TypedAttr lhs, TypedAttr rhs) {
   // This depends on pointer comparison, so sure to strip all sugar.
   lhs = getCanonicalAttr(lhs);
   rhs = getCanonicalAttr(rhs);
 
-  // foldCompareOp handles 32-bit truncation of input values correctly.
-  if (lhs.getType().isIndex() && isa<IntegerAttr>(lhs) && isa<IntegerAttr>(rhs))
-    return foldCompareOp(lhs, rhs, [](auto a, auto b) { return a == b; });
+  // both are simd attrs, fold it differently, `foldCompareOp` handles 32-bit
+  // truncation of input values + float value correctly.
+  if (isa<SIMDAttr>(lhs) && isa<SIMDAttr>(rhs))
+    return foldCompareOp(lhs, rhs, POC::EQ);
 
   // Folding to True is easy: If the values have pointer equality, we know they
   // are equal.
-  if (lhs == rhs)
-    return BoolAttr::get(rhs.getContext(), true);
+  if (lhs == rhs) {
+    if (auto simdOperand = sugarDynCast<SIMDType>(lhs.getType())) {
+      auto retType = SIMDType::get(simdOperand.getSize(), KGENDType::kBool);
+      return splatIntLiteralToSIMD(true, retType);
+    }
+
+    return getScalarBoolConstant(rhs.getContext(), true);
+  }
 
   Type lhsTypeVal = getTypeValueAsType(stripUpcast(lhs));
   Type rhsTypeVal = getTypeValueAsType(stripUpcast(rhs));
   if (lhsTypeVal && rhsTypeVal && isEqualCanon(lhsTypeVal, rhsTypeVal))
-    return BoolAttr::get(rhs.getContext(), true);
+    return getScalarBoolConstant(rhs.getContext(), true);
 
   // Folding to False is a lot harder:
   // If either side contains expression nodes that still need to be evaluated,
@@ -2774,8 +2716,14 @@ static IntegerAttr foldEquality(TypedAttr lhs, TypedAttr rhs) {
   // evaluated & contains no parameter references).
   bool lhsSimpleConstant = ParameterAttr::isSimpleConstant(lhs);
   bool rhsSimpleConstant = ParameterAttr::isSimpleConstant(rhs);
-  if (lhsSimpleConstant && rhsSimpleConstant)
-    return BoolAttr::get(rhs.getContext(), lhs == rhs);
+  if (lhsSimpleConstant && rhsSimpleConstant) {
+    if (auto simdOperand = sugarDynCast<SIMDType>(lhs.getType())) {
+      auto retType = SIMDType::get(simdOperand.getSize(), KGENDType::kBool);
+      return splatIntLiteralToSIMD(lhs == rhs, retType);
+    }
+
+    return getScalarBoolConstant(rhs.getContext(), lhs == rhs);
+  }
 
   // Type inequality is a bit stronger due to nominality of struct types.
   // If both sides are type values and they point to different type references,
@@ -2788,7 +2736,7 @@ static IntegerAttr foldEquality(TypedAttr lhs, TypedAttr rhs) {
         // Both sides are struct types. If the referenced symbols are different,
         // they are never equal.
         if (lhsStructRef != rhsStructRef)
-          return BoolAttr::get(rhs.getContext(), false);
+          return getScalarBoolConstant(rhs.getContext(), false);
       } else if (static_cast<bool>(lhsStructRef) !=
                  static_cast<bool>(rhsStructRef)) {
         // If one side is a struct type and the other is not, we can only fold
@@ -2796,9 +2744,9 @@ static IntegerAttr foldEquality(TypedAttr lhs, TypedAttr rhs) {
         // we do not yet know whether the non-struct side will evaluate to a
         // struct.
         if (lhsStructRef && rhsSimpleConstant)
-          return BoolAttr::get(rhs.getContext(), false);
+          return getScalarBoolConstant(rhs.getContext(), false);
         if (rhsStructRef && lhsSimpleConstant)
-          return BoolAttr::get(rhs.getContext(), false);
+          return getScalarBoolConstant(rhs.getContext(), false);
       }
     }
   }
@@ -2835,7 +2783,7 @@ static Attribute simplifyShl(SmallVectorImpl<TypedAttr> &operands) {
 
 static Attribute simplifyShr(SmallVectorImpl<TypedAttr> &operands) {
   if (auto rhs = sugarDynCast<SIMDAttr>(operands[1]))
-    if (isAllIntZero(rhs))
+    if (isAllIntLikeZero(rhs))
       return operands[0]; // `x >> 0 = x`.
   // TODO: 0 >> x, -1 >>> x
 
@@ -2980,14 +2928,14 @@ struct DivOperandInfo {
     }
 
     // Cancel out the constant terms
-    if (isAllIntZero(numerator.constant)) {
+    if (isAllIntLikeZero(numerator.constant)) {
       numerator.symOccurrences.clear();
     }
-    if (isAllIntZero(denominator.constant)) {
+    if (isAllIntLikeZero(denominator.constant)) {
       denominator.symOccurrences.clear();
     }
-    if (!isAllIntZero(numerator.constant) &&
-        !isAllIntZero(denominator.constant)) {
+    if (!isAllIntLikeZero(numerator.constant) &&
+        !isAllIntLikeZero(denominator.constant)) {
 
       SmallVector<DTypeValue> nC, dC;
       for (auto [n, d] : llvm::zip_equal(numerator.constant.getValues(),
@@ -3045,7 +2993,7 @@ static bool tryDistributeDivOverAdd(SmallVectorImpl<TypedAttr> &operands) {
 
     // Only distribute if this term fully cancels the denominator.
     auto denomConst = sugarDynCast<SIMDAttr>(denomInfo.getExpression());
-    if (!denomConst || !isAllIntOne(denomConst))
+    if (!denomConst || !isAllIntLikeOne(denomConst))
       return false;
 
     quotients.push_back(numInfo.getExpression());
@@ -3094,9 +3042,9 @@ static Attribute simplifyDiv(SmallVectorImpl<TypedAttr> &operands) {
 
   // Implement support for identities like `x/1 = x` and guard against `x/0`
   if (auto rhs = sugarDynCast<SIMDAttr>(operands[1])) {
-    if (isAllIntOne(rhs))
+    if (isAllIntLikeOne(rhs))
       return operands[0];
-    if (isAllIntZero(rhs))
+    if (isAllIntLikeZero(rhs))
       return {};
   }
 
@@ -3134,9 +3082,9 @@ static Attribute simplifyCeilDiv(SmallVectorImpl<TypedAttr> &operands) {
 
   // Implement support for identities like `x/1 = x` and guard against `x/0`
   if (auto rhs = sugarDynCast<SIMDAttr>(operands[1])) {
-    if (isAllIntOne(rhs))
+    if (isAllIntLikeOne(rhs))
       return operands[0];
-    if (isAllIntZero(rhs))
+    if (isAllIntLikeZero(rhs))
       return {};
   }
 
@@ -3161,9 +3109,9 @@ static Attribute simplifyFloorDiv(SmallVectorImpl<TypedAttr> &operands) {
 
   // Implement support for identities like `x/1 = x` and guard against `x/0`
   if (auto rhs = sugarDynCast<SIMDAttr>(operands[1])) {
-    if (isAllIntOne(rhs))
+    if (isAllIntLikeOne(rhs))
       return operands[0];
-    if (isAllIntZero(rhs))
+    if (isAllIntLikeZero(rhs))
       return {};
   }
 
@@ -3212,9 +3160,9 @@ static Attribute simplifyMod(SmallVectorImpl<TypedAttr> &operands) {
 
   // Implement support for identities like `x%1 = 0`
   if (auto rhs = sugarDynCast<SIMDAttr>(operands[1])) {
-    if (isAllIntOne(rhs))
+    if (isAllIntLikeOne(rhs))
       return splatIntLiteralToSIMD(0, rhs.getType());
-    if (isAllIntZero(rhs))
+    if (isAllIntLikeZero(rhs))
       return {};
   }
 
@@ -3237,41 +3185,56 @@ static Attribute simplifyEQ(SmallVectorImpl<TypedAttr> &operands) {
 /// Simplify the < and <= operations.
 static Attribute
 simplifyRelationalCompare(POC opcode, SmallVectorImpl<TypedAttr> &operands) {
-  auto rhs = sugarDynCast<IntegerAttr>(operands[1]);
-  auto lhs = sugarDynCast<IntegerAttr>(operands[0]);
+  auto rhs = sugarDynCast<SIMDAttr>(operands[1]);
+  auto lhs = sugarDynCast<SIMDAttr>(operands[0]);
 
-  if (rhs && !lhs) {
-    // If this is a `(le x, RHS)` and RHS is a constant, canonicalize to `lt`.
-    if (opcode == POC::LE) {
-      if (intIsMaxValue(rhs.getType(), rhs.getValue())) // x <= 127 --> TRUE.
-        return BoolAttr::get(rhs.getContext(), true);
-      return ParamOperatorAttr::get(
-          POC::LT, operands[0],
-          IntegerAttr::get(rhs.getType(), rhs.getValue() + 1));
+  auto simdType = sugarCast<SIMDType>(operands[0].getType());
+  std::optional<KGENDType> dtypeOr = simdType.getResolvedDType();
+  // Should we generalize the pattern to float DType as well?
+  if (dtypeOr.has_value() && dtypeOr->isIntLike()) {
+    // TODO: this probably does not handle target dependent types correctly.
+    auto isAllMaxValue = [](SIMDAttr val) {
+      return llvm::all_of(val.getValues(), [](const DTypeValue &v) {
+        return v.getDType().isIntLike() && intIsMaxValue(v.getIntVal());
+      });
+    };
+
+    if (rhs && !lhs) {
+      // If this is a `(le x, RHS)` and RHS is a constant, canonicalize to `lt`.
+      if (opcode == POC::LE) {
+        if (isAllMaxValue(rhs)) { // x <= 127 --> TRUE.
+          auto retType = SIMDType::get(simdType.getSize(), KGENDType::kBool);
+          return splatIntLiteralToSIMD(true, retType);
+        }
+
+        SmallVector<DTypeValue> values =
+            llvm::map_to_vector(rhs.getValues(), [](const DTypeValue &v) {
+              return DTypeValue(v.getIntVal() + 1, v.getDType());
+            });
+
+        return ParamOperatorAttr::get(POC::LT, operands[0],
+                                      SIMDAttr::get(values, rhs.getType()));
+      }
+      // If this is (x < MAXCST) canonicalize to (x != MAXCST).
+      if (isAllMaxValue(rhs))
+        return ParamOperatorAttr::getNE(operands[0], rhs);
     }
-    // If this is (x < MAXCST) canonicalize to (x != MAXCST).
-    if (intIsMaxValue(rhs.getType(), rhs.getValue()))
-      return ParamOperatorAttr::getNE(operands[0], rhs);
-  }
 
-  if (lhs && !rhs) {
-    // (le cst, x) -> !(lt x, cst)
-    if (opcode == POC::LE)
+    if (lhs && !rhs) {
+      // (le cst, x) -> !(lt x, cst)
+      if (opcode == POC::LE)
+        return ParamOperatorAttr::getNot(
+            ParamOperatorAttr::get(POC::LT, operands[1], operands[0]));
+      // (lt cst, x) -> !(le x, cst)
       return ParamOperatorAttr::getNot(
-          ParamOperatorAttr::get(POC::LT, operands[1], operands[0]));
-    // (lt cst, x) -> !(le x, cst)
-    return ParamOperatorAttr::getNot(
-        ParamOperatorAttr::get(POC::LE, operands[1], operands[0]));
+          ParamOperatorAttr::get(POC::LE, operands[1], operands[0]));
+    }
   }
 
   if (opcode == POC::LT)
-    return foldCompareOp(
-        operands[0], operands[1], [](auto a, auto b) { return a.ult(b); },
-        [](auto a, auto b) { return a.slt(b); });
+    return foldCompareOp(operands[0], operands[1], POC::LT);
   assert(opcode == POC::LE);
-  return foldCompareOp(
-      operands[0], operands[1], [](auto a, auto b) { return a.ule(b); },
-      [](auto a, auto b) { return a.sle(b); });
+  return foldCompareOp(operands[0], operands[1], POC::LE);
 }
 
 static Attribute simplifyHasFeature(SmallVectorImpl<TypedAttr> &operands) {
@@ -3331,7 +3294,7 @@ static Attribute simplifyIn(SmallVectorImpl<TypedAttr> &operands) {
 
   // If there are no trailing operands, fold to false.
   if (trailing.empty())
-    return b.getBoolAttr(false);
+    return getScalarBoolConstant(b.getContext(), false);
 
   // If there is only one trailing operand, canonicalize to an `eq` operator.
   if (trailing.size() == 1)
@@ -3341,11 +3304,12 @@ static Attribute simplifyIn(SmallVectorImpl<TypedAttr> &operands) {
   for (TypedAttr operand : trailing) {
     // Fold to true if a match was found by value.
     if (auto knownEq = foldEquality(lhs, operand)) {
-      if (knownEq.getValue().isOne())
-        return knownEq;
+      if (auto simdEq = sugarDynCast<SIMDAttr>(knownEq);
+          simdEq && isAllIntLikeOne(simdEq))
+        return getScalarBoolConstant(b.getContext(), true);
     } else if (lhs == operand) {
       // Fold to true if they match symbolically, like "x+1" and "x+1".
-      return b.getBoolAttr(true);
+      return getScalarBoolConstant(b.getContext(), true);
     } else {
       // If this is a symbolic comparison like "x == 5", then we cannot fold the
       // non-containment case.
@@ -3357,7 +3321,7 @@ static Attribute simplifyIn(SmallVectorImpl<TypedAttr> &operands) {
   // they might be symbolic.  If we know for sure that LHS *isn't* equal to any
   // of the elements in the set then we can fold to false.
   if (allKnownFalse)
-    return b.getBoolAttr(false);
+    return getScalarBoolConstant(b.getContext(), false);
 
   // Sort and unique the trailing operands.
   llvm::stable_sort(trailing, ParameterAttr::compare);
@@ -3728,11 +3692,12 @@ static TypedAttr simplifyFunctionGetArgTypes(MLIRContext *ctx,
   return ParamListAttr::get(results, variadicType);
 }
 
-#define MIGRATED_POC                                                           \
-  {POC::Add,       POC::Mul,  POC::MulNoWrap, POC::And,      POC::Or,          \
-   POC::Xor,       POC::Max,  POC::Min,       POC::Shl,      POC::Shr,         \
-   POC::Div,       POC::DivS, POC::DivU,      POC::CeilDivS, POC::CeilDivU,    \
-   POC::FloorDivS, POC::RemS, POC::RemU,      POC::Mod}
+constexpr POC migratedPOCs[] = {
+    POC::Add,       POC::Mul,  POC::MulNoWrap, POC::And,      POC::Or,
+    POC::Xor,       POC::Max,  POC::Min,       POC::Shl,      POC::Shr,
+    POC::Div,       POC::DivS, POC::DivU,      POC::CeilDivS, POC::CeilDivU,
+    POC::FloorDivS, POC::RemS, POC::RemU,      POC::Mod,      POC::EQ,
+    POC::LT,        POC::LE,   POC::In};
 
 /// Construct a arithmetic parameter operator attribute, folding it (in the form
 /// of SIMD) if possible. Return nullptr if the opcode is not an arithmetic
@@ -3740,8 +3705,28 @@ static TypedAttr simplifyFunctionGetArgTypes(MLIRContext *ctx,
 static TypedAttr getArithParamOperator(MLIRContext *ctx, POC opcode,
                                        ArrayRef<TypedAttr> operandsIn,
                                        Type origResultType) {
-  if (!llvm::is_contained(MIGRATED_POC, opcode))
+  if (!llvm::is_contained(migratedPOCs, opcode))
     return {};
+
+  bool needSIMDConv =
+      getEquivalentSIMDType(operandsIn.front().getType()) != nullptr;
+
+  if (llvm::is_contained({POC::LE, POC::LT, POC::EQ, POC::In}, opcode)) {
+    origResultType = [&]() -> Type {
+      // LT, LE, EQ, IN are all boolean expressions
+      if (auto simdType = dyn_cast<SIMDType>(origResultType)) {
+        auto dtype = DTypeConstantAttr::get(ctx, KGENDType::kBool);
+        // POC::In always returns a bool scalar.
+        if (opcode == POC::In)
+          return SIMDType::get(1, dtype);
+
+        // otherwise, it is a lane-wise comparison.
+        return SIMDType::get(simdType.getSize(), dtype);
+      }
+
+      return IntegerType::get(ctx, 1);
+    }();
+  }
 
   // We turn `(poc x, y)` into
   // cast_to_builtin(
@@ -3753,17 +3738,17 @@ static TypedAttr getArithParamOperator(MLIRContext *ctx, POC opcode,
   // unification
   SmallVector<TypedAttr, 4> operands =
       llvm::map_to_vector(operandsIn, [&](TypedAttr operand) -> TypedAttr {
-        if (sugarIsa<SIMDType>(operand.getType()))
+        if (!needSIMDConv)
           return operand;
         return CastFromBuiltinAttr::get(operand);
       });
 
-  SIMDType resultType = getEquivalentSIMDType(origResultType);
-  if (!resultType)
-    resultType = cast<SIMDType>(origResultType);
+  SIMDType resultSIMDType = getEquivalentSIMDType(origResultType);
+  if (!resultSIMDType)
+    resultSIMDType = cast<SIMDType>(origResultType);
 
   Attribute result;
-  if (resultType.getResolvedDType() && resultType.getResolvedSize()) {
+  if (resultSIMDType.getResolvedDType() && resultSIMDType.getResolvedSize()) {
     // Fold only if the simd type is not parametric.
     switch (opcode) {
     case POC::Add:
@@ -3822,7 +3807,17 @@ static TypedAttr getArithParamOperator(MLIRContext *ctx, POC opcode,
     case POC::Mod:
       result = simplifyMod(operands);
       break;
-    // TODO: migrate and fold in SIMD forms.
+    case POC::LT:
+    case POC::LE:
+      result = simplifyRelationalCompare(opcode, operands);
+      break;
+    // TODO: Fold all POCs above in SIMD forms.
+    case POC::EQ:
+      result = simplifyEQ(operands);
+      break;
+    case POC::In:
+      result = simplifyIn(operands);
+      break;
     default:
       llvm_unreachable("unhandled opcode");
     }
@@ -3837,7 +3832,7 @@ static TypedAttr getArithParamOperator(MLIRContext *ctx, POC opcode,
   // back to builtin type instead of cast the top expression directly, otherwise
   // cast_to_builtin sink will recurse.
   TypedAttr ret = llvm::cast_if_present<TypedAttr>(result);
-  if (ret && resultType != origResultType) {
+  if (ret && !sugarIsa<SIMDType>(origResultType)) {
     if (auto expr = sugarDynCast<ParamOperatorAttr>(ret)) {
       // instead of a concrete result, we might fold the expression to a canon
       // form. We need to convert the expression back to non-SIMD form as well.
@@ -3846,14 +3841,16 @@ static TypedAttr getArithParamOperator(MLIRContext *ctx, POC opcode,
       // Unset the result.
       ret = nullptr;
     } else {
-      ret = CastToBuiltinAttr::get(ret, origResultType);
+      return CastToBuiltinAttr::get(ret, origResultType);
     }
   }
 
   if (!ret) {
-    if (resultType != origResultType) {
-      for (TypedAttr &operand : operands)
+    if (needSIMDConv) {
+      for (TypedAttr &operand : operands) {
         operand = CastToBuiltinAttr::get(operand);
+        assert(operand);
+      }
     }
     ret = ParamOperatorAttr::Base::get(ctx, opcode, operands, origResultType);
   }
@@ -3886,19 +3883,11 @@ static TypedAttr getParamOperator(MLIRContext *ctx, POC opcode,
   // Verify and canonicalize parameter expressions.
   Attribute result;
   switch (opcode) {
-  case POC::EQ:
-    result = simplifyEQ(operands);
-    resultType = IntegerType::get(ctx, 1);
-    break;
-  case POC::LT:
-  case POC::LE:
-    result = simplifyRelationalCompare(opcode, operands);
-    resultType = IntegerType::get(ctx, 1);
-    break;
   case POC::Cond:
     result = simplifyCond(operands);
     break;
-  // TODO: Fold all POCs above in SIMD forms.
+  // For Cond, we probably just want to change the condition operand to
+  // scalar<bool> after fully migrated.
   case POC::CurrentTarget:
     resultType = TargetType::get(ctx);
     break;
@@ -3927,10 +3916,6 @@ static TypedAttr getParamOperator(MLIRContext *ctx, POC opcode,
     break;
   case POC::FunctionGetArgTypes:
     result = simplifyFunctionGetArgTypes(ctx, operands[0], resultType);
-    break;
-  case POC::In:
-    result = simplifyIn(operands);
-    resultType = IntegerType::get(ctx, 1);
     break;
   case POC::GetSizeOf:
     result = simplifyGetSizeOf(operands, resultType);
@@ -4337,6 +4322,27 @@ ConstraintAttr ConstraintAttr::get(TypedAttr proposition, LocationAttr loc) {
 // CastFromBuiltinAttr / CastToBuiltinAttr
 //===----------------------------------------------------------------------===//
 
+static bool shouldSinkCast(POC opcode, ArrayRef<TypedAttr> operandsIn) {
+  if (!llvm::is_contained(migratedPOCs, opcode))
+    return false;
+
+  // We know all migrated POC have operands of the same type.
+  Type operandType = operandsIn.front().getType();
+
+#if 1
+  if (auto simdType = sugarDynCast<SIMDType>(operandType)) {
+    // cast to builtin, dtype must be resolved in order to sink (for LE, EQ,
+    // LT, otherwise we can not infer the builtin type to be casted to).
+    //
+    // FIXME: cast to sink should not be needed after fixing GC.
+    return simdType.getResolvedDType().has_value();
+  }
+#endif
+  // FIXME: this is because EQ/IN can be used to test type equality, yet we
+  // can not have a simd of type values.
+  return getEquivalentSIMDType(operandType) != nullptr;
+}
+
 TypedAttr CastFromBuiltinAttr::get(MLIRContext *ctx, TypedAttr arg,
                                    SIMDType out_type) {
   if (auto fold = KGEN::foldCastFromBuiltin(arg, out_type))
@@ -4347,7 +4353,7 @@ TypedAttr CastFromBuiltinAttr::get(MLIRContext *ctx, TypedAttr arg,
   // s.t.,
   // cast_from_builtin(i * j) -> cast_from_builtin(i) * cast_from_builtin(j)
   if (auto expr = dyn_cast<ParamOperatorAttr>(arg);
-      expr && llvm::is_contained(MIGRATED_POC, expr.getOpcode())) {
+      expr && shouldSinkCast(expr.getOpcode(), expr.getOperands())) {
     auto operands = llvm::map_to_vector(expr.getOperands(), [&](auto operand) {
       return splatBuiltinToSIMD(operand, out_type.getSize());
     });
@@ -4384,7 +4390,10 @@ CastFromBuiltinAttr::getChecked(function_ref<InFlightDiagnostic()> emitError,
   return getChecked(emitError, arg.getContext(), arg, simdType);
 }
 
-bool CastFromBuiltinAttr::isConstant() const { return false; }
+bool CastFromBuiltinAttr::isConstant() const {
+  // We can not fold cast_from/to kgen.unknown, yet kgen.unknown is a constant.
+  return ParameterAttr::isSimpleConstant(getArg());
+}
 
 LogicalResult
 CastFromBuiltinAttr::verify(function_ref<InFlightDiagnostic()> emitError,
@@ -4407,7 +4416,7 @@ TypedAttr CastToBuiltinAttr::get(MLIRContext *ctx, TypedAttr arg,
   // to do it now because GC use a scalar `si64` for DimType, which need to be
   // migrated first.
   if (auto expr = dyn_cast<ParamOperatorAttr>(arg);
-      expr && llvm::is_contained(MIGRATED_POC, expr.getOpcode())) {
+      expr && shouldSinkCast(expr.getOpcode(), expr.getOperands())) {
     auto operands = llvm::map_to_vector(expr.getOperands(), [&](auto operand) {
       return CastToBuiltinAttr::get(operand);
     });
@@ -4470,7 +4479,9 @@ CastToBuiltinAttr::getChecked(function_ref<InFlightDiagnostic()> emitError,
   return getChecked(emitError, arg.getContext(), arg, builtinType);
 }
 
-bool CastToBuiltinAttr::isConstant() const { return false; }
+bool CastToBuiltinAttr::isConstant() const {
+  return ParameterAttr::isSimpleConstant(getArg());
+}
 
 LogicalResult
 CastToBuiltinAttr::verify(function_ref<InFlightDiagnostic()> emitError,

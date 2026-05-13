@@ -565,17 +565,17 @@ TypedAttr splatFloatLiteralToSIMD(double literal, SIMDType target);
 TypedAttr splatIntLiteralToSIMD(uint64_t literal, SIMDType target);
 
 // Whether all elements of the SIMD attribute are zero/one.
-inline bool isAllIntZero(SIMDAttr simdAttr) {
-  return llvm::all_of(simdAttr.getValues(), [](const DTypeValue &v) {
-    return v.getData().isZero() && v.getDType().isIntLike() &&
-           v.getDType().isArithmetic();
-  });
+inline bool isAllIntLikeZero(SIMDAttr simdAttr) {
+  if (!simdAttr.getType().getResolvedDType()->isIntLike())
+    return false;
+  return llvm::all_of(simdAttr.getValues(),
+                      [](const DTypeValue &v) { return v.getData().isZero(); });
 }
-inline bool isAllIntOne(SIMDAttr simdAttr) {
-  return llvm::all_of(simdAttr.getValues(), [](const DTypeValue &v) {
-    return v.getData().isOne() && v.getDType().isIntLike() &&
-           v.getDType().isArithmetic();
-  });
+inline bool isAllIntLikeOne(SIMDAttr simdAttr) {
+  if (!simdAttr.getType().getResolvedDType()->isIntLike())
+    return false;
+  return llvm::all_of(simdAttr.getValues(),
+                      [](const DTypeValue &v) { return v.getData().isOne(); });
 }
 
 //===----------------------------------------------------------------------===//
@@ -611,7 +611,7 @@ inline bool isTriviallyFalseConstraint(ConstraintAttr constraint) {
 }
 
 /// Get a constant value of scalar<bool> type.
-inline TypedAttr getScalarBoolConstant(MLIRContext *ctx, bool value) {
+inline SIMDAttr getScalarBoolConstant(MLIRContext *ctx, bool value) {
   return SIMDAttr::get(DTypeValue(value, KGENDType::kBool),
                        SIMDType::get(ctx, 1, KGENDType::kBool));
 }

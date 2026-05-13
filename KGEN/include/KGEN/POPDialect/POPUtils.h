@@ -36,19 +36,6 @@ OpFoldResult foldSIMDReduceOr(Value vectorVal, Attribute vectorAttr,
 OpFoldResult foldSIMDReduceAnd(Value vectorVal, Attribute vectorAttr,
                                SIMDType vectorType);
 
-/// Convert a NormalizedCmpPredicate to the full CmpPredicate.
-inline CmpPredicate toCmpPredicate(NormalizedCmpPredicate cc) {
-  switch (cc) {
-  case NormalizedCmpPredicate::EQ:
-    return CmpPredicate::EQ;
-  case NormalizedCmpPredicate::LT:
-    return CmpPredicate::LT;
-  case NormalizedCmpPredicate::LE:
-    return CmpPredicate::LE;
-  }
-  llvm_unreachable("invalid NormalizedCmpPredicate");
-}
-
 /// Fold a SIMD left-shift operation.
 FoldValue foldSIMDShl(FoldValues operands, TargetInfoAttr target = {});
 

@@ -47,7 +47,7 @@ kgen.generator @param_expr<p1, p2, int1: i1, int2: i1, type: dtype, type2: dtype
   // CHECK: = kgen.param.constant: i1 = <0>
   %7 = kgen.param.constant: i1 = <eq(:dtype bf16, f16)>
 
-  // CHECK: = kgen.param.constant: i1 = <in(p1, [add(p2, 1), p2, 1, 3])>
+  // CHECK: = kgen.param.constant: i1 = <in(p1, [add(p2, 1), p2, 3, 1])>
   %8 = kgen.param.constant: i1 = <in(p1, [3, 1, p2, add(p2, 1), 1])>
 
   // CHECK: = kgen.param.constant: i1 = <0>
@@ -409,7 +409,7 @@ kgen.generator @int1_aliases<p1, p2, int1: i1, type: dtype>()  {
   // CHECK: = kgen.param.constant = <8589934592>
   %9 = kgen.param.constant = <shl(1, 33)>
 
-  // CHECK: = kgen.param.constant: i1 = <not(in(p1, [add(p2, 1), p2, 1, 3]))>
+  // CHECK: = kgen.param.constant: i1 = <not(in(p1, [add(p2, 1), p2, 3, 1]))>
   %10 = kgen.param.constant: i1 = <not_in(p1, [3, 1, p2, add(p2, 1), 1])>
 
   // CHECK: = kgen.param.constant: i1 = <1>

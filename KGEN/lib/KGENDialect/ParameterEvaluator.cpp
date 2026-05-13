@@ -275,10 +275,20 @@ std::pair<IntegerAttr, bool>
 ParameterEvaluator::narrowCondOp(Attribute attr, size_t rootDepth) {
   if (auto op = dyn_cast<ParamOperatorAttr>(attr);
       op && op.getOpcode() == POC::Cond) {
-    Attribute cond = replaceImpl(op.getOperands().front(), rootDepth);
+    TypedAttr typedCond = op.getOperands().front();
+    // We need to convert the condition to a scalar<bool> because all the cmp
+    // poc has been migrated to fold in SIMD form.
+    //
+    // TODO: upon fully migration, make POC::Cond to take a `scalar<bool>`
+    // condition? Or this cast should be inserted in the library code.
+    assert(typedCond.getType().isSignlessInteger(1));
+    typedCond = CastFromBuiltinAttr::get(typedCond);
+    Attribute cond = replaceImpl(typedCond, rootDepth);
     if (!cond)
       return {nullptr, true};
-    return {dyn_cast<IntegerAttr>(cond), false};
+    return {
+        dyn_cast<IntegerAttr>(CastToBuiltinAttr::get(cast<TypedAttr>(cond))),
+        false};
   }
   return {nullptr, false};
 }

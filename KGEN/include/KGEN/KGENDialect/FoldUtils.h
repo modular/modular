@@ -508,6 +508,20 @@ SIMDAttr foldBitwiseSIMDReduceOp(Attribute operand, OpFns &&...ops) {
                                          std::forward<OpFns>(ops)...);
 }
 
+/// Convert a NormalizedCmpPredicate to the full CmpPredicate.
+inline CmpPredicate toCmpPredicate(POC cc) {
+  switch (cc) {
+  case POC::EQ:
+    return CmpPredicate::EQ;
+  case POC::LT:
+    return CmpPredicate::LT;
+  case POC::LE:
+    return CmpPredicate::LE;
+  default:
+    llvm_unreachable("invalid POC");
+  }
+}
+
 /// Fold a SIMD comparison operation. Handles constant folding, bool identity
 /// folds (eq(true, x) -> x), and unsigned comparisons with zero. Returns null
 /// if no fold applies.

@@ -609,6 +609,20 @@ FailureOr<TypedAttr> ParametricIREvaluator::evaluateContextSpecific(
     Attribute operands[] = {op.getOperands()[0], op.getOperands()[1]};
     return foldAttrWithTarget(*this, operands, POP::foldSIMDShl);
   }
+  case POC::EQ:
+    // Non-SIMD equality check (type equality)
+    if (!isa<SIMDType>(op.getOperands()[0].getType()))
+      return failure();
+    [[fallthrough]];
+  case POC::LT:
+  case POC::LE: {
+    auto pred = KGEN::toCmpPredicate(op.getOpcode());
+    Attribute operands[] = {op.getOperands()[0], op.getOperands()[1]};
+    return foldAttrWithTarget(*this, operands,
+                              [&](FoldValues ops, TargetInfoAttr target) {
+                                return foldSIMDCmp(pred, ops, target);
+                              });
+  }
   default:
     return failure();
   }
