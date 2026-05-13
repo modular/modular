@@ -45,6 +45,14 @@ public:
   void getParserImportPaths(SmallVectorImpl<StringRef> &paths);
 
   //===--------------------------------------------------------------------===//
+  // Plugin Configurations
+  //===--------------------------------------------------------------------===//
+
+  /// Return the list of plugin file paths to load, parsed from a
+  /// semicolon-separated config value.
+  SmallVector<StringRef> getPluginPaths();
+
+  //===--------------------------------------------------------------------===//
   // LLDB Configurations
   //===--------------------------------------------------------------------===//
 
