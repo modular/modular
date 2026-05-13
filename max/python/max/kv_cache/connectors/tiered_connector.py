@@ -211,41 +211,54 @@ class TieredConnector:
             else:
                 break  # prefix chain broken
 
-        # Wait for async disk reads to complete
-        with Tracer(f"Waiting for {disk_reads} disk reads"):
-            wait(hit.future for hit in hits if hit.future is not None)
-
-        # Unpin the host blocks now that the disk reads have completed.
+        # Unpin the host blocks now that we stopped allocating them and there
+        # is no more risk of accidently evicting one.
         for hit in hits:
             self._host_block_pool.free_block(hit.host_block)
 
-        # Filter to successful hits, stopping at the first failure.
-        successful_hits: list[_CacheHit] = []
-        for hit in hits:
-            if hit.future is not None and hit.future.exception():
-                logger.error(
-                    "Disk read failed for hash %s: %s",
-                    hit.block_hash,
-                    hit.future.exception(),
-                )
-                break
-            successful_hits.append(hit)
+        # Process hits in FIFO order: wait on each disk read individually,
+        # then immediately enqueue H2D + broadcast.  Disk reads complete in
+        # submission order, so this pipelines GPU DMA with remaining I/O.
+        num_loaded = 0
+        with Tracer(f"{disk_reads} disk reads + H2D"):
+            for i, hit in enumerate(hits):
+                if hit.future is not None:
+                    try:
+                        with Tracer(f"Sync on disk read {i}"):
+                            hit.future.result()
+                    except Exception as exc:
+                        logger.error(
+                            "Disk read failed for hash %s: %s",
+                            hit.block_hash,
+                            exc,
+                        )
+                        break  # prefix chain broken
 
-        # For all successful hits, commit to host cache and copy to GPU.
-        for hit in successful_hits:
-            if (
-                hit.block_hash
-                not in self._host_block_pool.hash_to_committed_block
-            ):
-                self._host_block_pool.commit_into_prefix_cache(
-                    hit.block_hash, hit.host_block
-                )
-            self._block_copy_engine.memcpy_h2d(
-                hit.device_block_id, hit.host_block.bid
-            )
-            self._h2d_blocks_copied += 1
+                    if (
+                        hit.block_hash
+                        not in self._host_block_pool.hash_to_committed_block
+                    ):
+                        self._host_block_pool.commit_into_prefix_cache(
+                            hit.block_hash, hit.host_block
+                        )
 
-        return len(successful_hits)
+                self._block_copy_engine.memcpy_h2d(
+                    hit.device_block_id, hit.host_block.bid
+                )
+                self._h2d_blocks_copied += 1
+                num_loaded += 1
+
+        # Wait for in-flight disk reads on unprocessed hits so their
+        # worker threads finish writing into the host buffer before we return.
+        # This is only triggered if there is a failed disk read that breaks
+        # the prefix chain.
+        remaining = [
+            h.future for h in hits[num_loaded:] if h.future is not None
+        ]
+        if remaining:
+            wait(remaining)
+
+        return num_loaded
 
     @traced
     def sync(self) -> None:

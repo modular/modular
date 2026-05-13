@@ -161,7 +161,7 @@ class BlockOffloadEngine:
     @traced
     def memcpy_h2d(self, dst: int, src: int) -> None:
         """Copies a block from host to device(s)."""
-        # d2h on auxiliary stream.
+        # h2d on auxiliary stream.
         offset = 0
         for buf in self.device_buffers_on_aux_stream:
             page_bytes = buf.shape[1]
