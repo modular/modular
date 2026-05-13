@@ -1340,13 +1340,29 @@ FailureOr<TypedAttr> LITSymTabEvaluationContext::evaluateContextSpecific(
 
     llvm::SmallPtrSet<SymbolRefAttr, 16> fromSymbols(fromTraitSymbols.begin(),
                                                      fromTraitSymbols.end());
-    for (auto symbol : toTraitsSymbols)
-      if (!fromSymbols.contains(symbol))
-        return failure();
+    bool fromImpliesTo =
+        llvm::all_of(toTraitsSymbols, [&](SymbolRefAttr symbol) {
+          return fromSymbols.contains(symbol);
+        });
+    if (fromImpliesTo) {
+      // If we are downcasting a more-refined trait to a less-refined trait,
+      // this is actually an upcast.
+      return UpcastAttr::get(downcast.getType(), downcast.getInputTypeValue());
+    } else {
+      // We can not reuse fromTraitSymbols above as those are canonicalized :(
+      // FIXME: ensure all trait type contains a canonicalized list of symbols.
+      SmallVector<SymbolRefAttr> allTraitSymbols(fromTrait.getSymbols());
+      llvm::append_range(allTraitSymbols, toTrait.getSymbols());
+      sortAndDeduplicateSymbols(allTraitSymbols);
 
-    // If we are downcasting a more-refined trait to a less-refined trait, this
-    // is actually an upcast.
-    return UpcastAttr::get(downcast.getType(), downcast.getInputTypeValue());
+      auto allTraits = TraitType::get(attr.getContext(), allTraitSymbols, {});
+
+      auto ret = UpcastAttr::get(
+          downcast.getType(),
+          DowncastAttr::get(allTraits, downcast.getInputTypeValue()));
+
+      return ret;
+    }
   }
 
   // Delegate to parent class for other context-specific handling.

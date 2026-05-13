@@ -168,6 +168,21 @@ FailureOr<TypedAttr> ParserEvaluationContext::evaluateContextSpecific(
       if (fromImpliesTo)
         return UpcastAttr::get(downcast.getType(),
                                downcast.getInputTypeValue());
+      // canonicalize downcast<:ft T, tt> into
+      // upcast<:tt, downcast<:ft T, tt & ft>
+      if (auto from = sugarDynCast<TraitType>(fromType.extractMetaType())) {
+        SmallVector<SymbolRefAttr> symbols(from.getSymbols());
+        llvm::append_range(symbols, toTrait.getSymbols());
+        sortAndDeduplicateSymbols(symbols);
+
+        auto allTraits = TraitType::get(from.getContext(), symbols, {});
+
+        auto ret = UpcastAttr::get(
+            downcast.getType(),
+            DowncastAttr::get(allTraits, downcast.getInputTypeValue()));
+
+        return ret;
+      }
     }
   }
 
