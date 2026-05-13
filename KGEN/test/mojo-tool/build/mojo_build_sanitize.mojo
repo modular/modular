@@ -4,8 +4,6 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# FIXME(#18380): Renable this test.
-# REQUIRES: DISABLED
 
 # Note: Don't run with pre-existing sanitizers to ensure sanitizers work in a
 #       clean environment.
@@ -31,4 +29,5 @@
 
 
 def main():
+    print("sanitizer")
     return

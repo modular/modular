@@ -204,6 +204,13 @@ void MCLinker::prepareMachineModuleInfo(
         std::unique_ptr<llvm::MachineFunction> mf =
             std::move(mfPtrIter->second);
 
+        // Each split module lives in its own LLVMContext, so the same
+        // personality function is a different GlobalValue* across splits.
+        // Redirect to the linked-module's canonical pointer so pointer-based
+        // deduplication in DwarfCFIException::addPersonality works correctly.
+        if (fn.hasPersonalityFn())
+          origFn.setPersonalityFn(fn.getPersonalityFn());
+
         const auto &renamedGVs = mcInfo.get()->renamedPrivateSymbol;
         if (!renamedGVs.empty()) {
           foreachGAMachineOperand(*mf, [&](llvm::MachineOperand &mo) {
