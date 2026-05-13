@@ -21,7 +21,6 @@ from std.algorithm import map
 
 from std._plugin import CurrentPlugin
 from std.collections.string.string_slice import get_static_string
-from std.gpu import PDLLevel
 from std.math import ceildiv
 from std.gpu.host import DeviceContext
 from std.gpu.host.info import is_cpu, is_gpu
@@ -234,7 +233,6 @@ def elementwise[
     simd_width: Int,
     *,
     target: StaticString = "cpu",
-    pdl_level: PDLLevel = PDLLevel(1),
     _trace_description: StaticString = "elementwise",
 ](shape: Int, context: DeviceContext) raises:
     """Executes `func[width, rank](indices)`, possibly as sub-tasks, for a
@@ -245,7 +243,6 @@ def elementwise[
         func: The body function.
         simd_width: The SIMD vector width to use.
         target: The target to run on.
-        pdl_level: The PDL level controlling GPU kernel overlap behavior.
         _trace_description: Description of the trace.
 
     Args:
@@ -260,7 +257,6 @@ def elementwise[
         func,
         simd_width=simd_width,
         target=target,
-        pdl_level=pdl_level,
         _trace_description=_trace_description,
     ](Index(shape), context)
 
@@ -275,7 +271,6 @@ def elementwise[
     simd_width: Int,
     *,
     target: StaticString = "cpu",
-    pdl_level: PDLLevel = PDLLevel(1),
     _trace_description: StaticString = "elementwise",
 ](shape: IndexList[rank, ...], context: DeviceContext) raises:
     """Executes `func[width, rank](indices)`, possibly as sub-tasks, for a
@@ -287,7 +282,6 @@ def elementwise[
         func: The body function.
         simd_width: The SIMD vector width to use.
         target: The target to run on.
-        pdl_level: The PDL level controlling GPU kernel overlap behavior.
         _trace_description: Description of the trace.
 
     Args:
@@ -306,7 +300,6 @@ def elementwise[
     _elementwise_impl[
         simd_width,
         target=target,
-        pdl_level=pdl_level,
         trace_description=_trace_description,
     ](func_unified, shape, context)
 
@@ -321,7 +314,6 @@ def elementwise[
     simd_width: Int,
     *,
     target: StaticString = "cpu",
-    pdl_level: PDLLevel = PDLLevel(1),
     _trace_description: StaticString = "elementwise",
 ](shape: IndexList[rank, ...], context: DeviceContextPtr) raises:
     """Executes `func[width, rank](indices)`, possibly as sub-tasks, for a
@@ -333,7 +325,6 @@ def elementwise[
         func: The body function.
         simd_width: The SIMD vector width to use.
         target: The target to run on.
-        pdl_level: The PDL level controlling GPU kernel overlap behavior.
         _trace_description: Description of the trace.
 
     Args:
@@ -370,7 +361,6 @@ def elementwise[
 
             _elementwise_impl_gpu[
                 simd_width=simd_width,
-                pdl_level=pdl_level,
                 trace_description=kind,
             ](gpu_func_unified, shape=shape, ctx=context[])
         else:
@@ -400,7 +390,6 @@ def elementwise[
     simd_width: Int,
     *,
     target: StaticString = "cpu",
-    pdl_level: PDLLevel = PDLLevel(1),
     _trace_description: StaticString = "elementwise",
 ](func: FuncType, shape: IndexList[rank, ...], context: DeviceContext,) raises:
     """Unified-closure entry point for `elementwise`.
@@ -416,7 +405,6 @@ def elementwise[
             `alignment`.
         simd_width: The SIMD vector width to use.
         target: The target to run on.
-        pdl_level: The PDL level controlling GPU kernel overlap behavior.
         _trace_description: Description of the trace.
 
     Args:
@@ -430,7 +418,6 @@ def elementwise[
     _elementwise_impl[
         simd_width,
         target=target,
-        pdl_level=pdl_level,
         trace_description=_trace_description,
     ](func, shape, context)
 
@@ -446,7 +433,6 @@ def _elementwise_impl[
     /,
     *,
     target: StaticString = "cpu",
-    pdl_level: PDLLevel = PDLLevel(1),
     trace_description: StaticString = "elementwise",
 ](func: FuncType, shape: IndexList[rank, ...], context: DeviceContext) raises:
     @always_inline
@@ -471,7 +457,6 @@ def _elementwise_impl[
                 rank,
                 FuncType,
                 simd_width,
-                pdl_level=pdl_level,
             ](func, shape, context)
         elif is_cpu[target]():
             _elementwise_impl_cpu[
@@ -507,7 +492,6 @@ def dual_elementwise[
     simd_width: Int,
     *,
     target: StaticString = "gpu",
-    pdl_level: PDLLevel = PDLLevel(1),
     _trace_description: StaticString = "dual_elementwise",
 ](
     shape_0: IndexList[rank],
@@ -524,7 +508,6 @@ def dual_elementwise[
         func_1: The second body function.
         simd_width: The SIMD vector width to use.
         target: The target to run on (must be GPU).
-        pdl_level: The PDL level controlling GPU kernel overlap behavior.
         _trace_description: Description of the trace.
 
     Args:
@@ -549,7 +532,6 @@ def dual_elementwise[
     _dual_elementwise_impl[
         simd_width,
         target=target,
-        pdl_level=pdl_level,
         trace_description=_trace_description,
     ](func_0_unified, func_1_unified, shape_0, shape_1, context)
 
@@ -568,7 +550,6 @@ def _dual_elementwise_impl[
     /,
     *,
     target: StaticString = "gpu",
-    pdl_level: PDLLevel = PDLLevel(1),
     trace_description: StaticString = "dual_elementwise",
 ](
     func_0: Func0Type,
@@ -599,7 +580,6 @@ def _dual_elementwise_impl[
         ](), "dual_elementwise only supports GPU target"
         _dual_elementwise_impl_gpu[
             simd_width=simd_width,
-            pdl_level=pdl_level,
             trace_description=kind,
         ](
             func_0,
