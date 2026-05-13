@@ -27,6 +27,7 @@ from dataclasses import dataclass
 import numpy as np
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
+from ._tokenizer_pool import TokenizerPool, worker_tokenizer
 from .distribution import BaseDistribution, DistributionParameter
 from .types import (
     ChatSamples,
@@ -35,6 +36,38 @@ from .types import (
     SharedContext,
     estimate_num_tokens,
 )
+
+
+@dataclass(frozen=True)
+class _TurnSpec:
+    """Pre-sampled inputs for one turn in a multiturn session."""
+
+    prompt_text: str
+    target_in: int
+    target_out: int
+    sys_variant: int
+    delay_ms: float | None
+
+
+@dataclass(frozen=True)
+class _SessionArgs:
+    """Per-session payload dispatched to a worker."""
+
+    session_id: int
+    turns: list[_TurnSpec]
+    sys_prompt_ratio: float
+    min_input_len: int
+    max_context_length: int
+    log_prefix: str
+
+
+@dataclass
+class _SessionResult:
+    """What a `_build_session` worker returns to the parent."""
+
+    session: ChatSession | None
+    observations: list[tuple[int, SharedContext]]
+
 
 logger = logging.getLogger(__name__)
 
@@ -126,8 +159,7 @@ def _text_scaled_to_token_length(
         ids = [rep] * min_len
     scaled_ids = _repeat_truncate_token_ids(ids, target_len)
     text = tokenizer.decode(scaled_ids, skip_special_tokens=False)
-    n_tokens = estimate_num_tokens(tokenizer, text)
-    return text, n_tokens
+    return text, estimate_num_tokens(tokenizer, text)
 
 
 def _split_sys_user_token_targets(
@@ -212,8 +244,72 @@ def _register_longest_sys_prompt(
         warmup_dict[variant_idx] = sys_prefix
 
 
+def _build_session(args: _SessionArgs) -> _SessionResult:
+    """Worker-side per-session build, run in spawn Pool processes.
+
+    Uses the worker-local tokenizer loaded by `_tokenizer_pool._init_encoder`
+    so the slow Kimi tokenizer is exercised in parallel across cores. The
+    initializer also replays the parent's logging config, so the overflow
+    log below lands in the same handlers as the rest of the benchmark output.
+    """
+    tokenizer = worker_tokenizer()
+    messages: list[SessionMessage] = []
+    context_tokens = 0
+    observations: list[tuple[int, SharedContext]] = []
+
+    for turn_i, turn in enumerate(args.turns):
+        msg = build_scaled_user_message(
+            tokenizer,
+            turn.prompt_text,
+            turn.target_in,
+            args.sys_prompt_ratio,
+            turn.sys_variant,
+            args.min_input_len,
+        )
+        if (
+            context_tokens + msg.num_tokens + turn.target_out
+            > args.max_context_length
+        ):
+            logger.info(
+                "%s session %s: stopping at turn %s (planned %s): "
+                "context %s + turn %s+%s exceeds max %s",
+                args.log_prefix,
+                args.session_id,
+                turn_i,
+                len(args.turns),
+                context_tokens,
+                msg.num_tokens,
+                turn.target_out,
+                args.max_context_length,
+            )
+            break
+        if msg.sys_prefix is not None:
+            observations.append((turn.sys_variant, msg.sys_prefix))
+        messages.append(
+            SessionMessage(
+                source="user",
+                content=msg.content,
+                num_tokens=msg.num_tokens,
+            )
+        )
+        messages.append(
+            SessionMessage(
+                source="assistant",
+                content="",
+                num_tokens=turn.target_out,
+                delay_until_next_message=turn.delay_ms,
+            )
+        )
+        context_tokens += msg.num_tokens + turn.target_out
+
+    session = (
+        ChatSession(args.session_id, messages) if len(messages) >= 2 else None
+    )
+    return _SessionResult(session=session, observations=observations)
+
+
 def build_chat_samples_from_user_text_pool(
-    tokenizer: PreTrainedTokenizerBase,
+    pool: TokenizerPool,
     user_text_pool: list[str],
     num_sessions: int,
     num_turns: DistributionParameter,
@@ -236,7 +332,8 @@ def build_chat_samples_from_user_text_pool(
     pooled string, optionally prefixed with a scaled synthetic system block.
 
     Args:
-        tokenizer: Tokenizer used for counting and scaling.
+        pool: Tokenizer process pool used for batched pre-filter encodes
+            and per-session worker dispatch.
         user_text_pool: Candidate user message bodies (one per underlying turn).
         num_sessions: Target number of chat sessions.
         num_turns: Distribution for turns per session (>= 1 after rounding).
@@ -272,13 +369,18 @@ def build_chat_samples_from_user_text_pool(
     assert out_first_dist is not None
     assert out_rest_dist is not None
 
-    model_max_length = min(tokenizer.model_max_length, np.iinfo(np.int64).max)
+    model_max_length = min(
+        pool.tokenizer.model_max_length, np.iinfo(np.int64).max
+    )
     max_context_length = int(model_max_length * MAX_CONTEXT_USAGE_RATIO)
 
-    filtered: list[str] = []
-    for text in user_text_pool:
-        if estimate_num_tokens(tokenizer, text) >= min_input_len:
-            filtered.append(text)
+    # Batch the pre-filter encode through the shared spawn pool.
+    pool_lens = pool.encode_lens(list(user_text_pool))
+    filtered = [
+        t
+        for t, n in zip(user_text_pool, pool_lens, strict=False)
+        if n >= min_input_len
+    ]
 
     if shuffle_pool:
         random.shuffle(filtered)
@@ -304,95 +406,56 @@ def build_chat_samples_from_user_text_pool(
             len(filtered),
         )
 
-    sessions: list[ChatSession] = []
     warmup_dict: dict[int, SharedContext] = {}
-    idx = 0
     max_variant = max(1, max_num_unique_sys_prompt)
-
+    session_args_list: list[_SessionArgs] = []
+    cursor = 0
     for session_id in range(num_sessions):
-        if idx >= len(filtered):
+        if cursor >= len(filtered):
             break
+        n_planned = num_turns_per_session[session_id]
+        n_actual = min(n_planned, len(filtered) - cursor)
 
-        n_turns = num_turns_per_session[session_id]
-        messages: list[SessionMessage] = []
-        context_tokens = 0
-
-        for turn_i in range(n_turns):
-            if idx >= len(filtered):
-                break
-
-            prompt_text = filtered[idx]
-
-            if turn_i == 0:
-                in_dist, out_dist = in_first_dist, out_first_dist
-            else:
-                in_dist, out_dist = in_rest_dist, out_rest_dist
-
+        turns: list[_TurnSpec] = []
+        for turn_i in range(n_actual):
+            in_dist = in_first_dist if turn_i == 0 else in_rest_dist
+            out_dist = out_first_dist if turn_i == 0 else out_rest_dist
             target_in = max(round(in_dist.sample_value()), min_input_len)
             target_out = max(round(out_dist.sample_value()), min_output_len)
-
             sys_variant = (session_id + turn_i) % max_variant
-            msg = build_scaled_user_message(
-                tokenizer,
-                prompt_text,
-                target_in,
-                sys_prompt_ratio,
-                sys_variant,
-                min_input_len,
-            )
-
-            if (
-                context_tokens + msg.num_tokens + target_out
-                > max_context_length
-            ):
-                logger.info(
-                    "%s session %s: stopping at turn %s (planned %s): "
-                    "context %s + turn %s+%s exceeds max %s",
-                    log_prefix,
-                    session_id,
-                    turn_i,
-                    n_turns,
-                    context_tokens,
-                    msg.num_tokens,
-                    target_out,
-                    max_context_length,
-                )
-                break
-
-            # Register after the context-length check; that bound check also
-            # implicitly ensures sys_prefix stays within max_context_length.
-            if msg.sys_prefix is not None:
-                _register_longest_sys_prompt(
-                    warmup_dict, sys_variant, msg.sys_prefix
-                )
-
-            idx += 1
-
             delay_ms = (
                 max(float(delay_dist.sample_value()), 0.0)
                 if delay_dist
                 else None
             )
-
-            messages.append(
-                SessionMessage(
-                    source="user",
-                    content=msg.content,
-                    num_tokens=msg.num_tokens,
+            turns.append(
+                _TurnSpec(
+                    prompt_text=filtered[cursor + turn_i],
+                    target_in=target_in,
+                    target_out=target_out,
+                    sys_variant=sys_variant,
+                    delay_ms=delay_ms,
                 )
             )
-            messages.append(
-                SessionMessage(
-                    source="assistant",
-                    content="",
-                    num_tokens=target_out,
-                    delay_until_next_message=delay_ms,
-                )
-            )
-            context_tokens += msg.num_tokens + target_out
 
-        if len(messages) >= 2:
-            sessions.append(ChatSession(session_id, messages))
+        session_args_list.append(
+            _SessionArgs(
+                session_id=session_id,
+                turns=turns,
+                sys_prompt_ratio=sys_prompt_ratio,
+                min_input_len=min_input_len,
+                max_context_length=max_context_length,
+                log_prefix=log_prefix,
+            )
+        )
+        cursor += n_actual
+
+    sessions: list[ChatSession] = []
+    for result in pool.map(_build_session, session_args_list):
+        if result.session is not None:
+            sessions.append(result.session)
+        for sys_variant, sys_prefix in result.observations:
+            _register_longest_sys_prompt(warmup_dict, sys_variant, sys_prefix)
 
     if len(sessions) < num_sessions:
         logger.warning(

@@ -70,12 +70,15 @@ class _FakeTokenizer:
     def encode(
         self, text: str, add_special_tokens: bool = False, **_: object
     ) -> list[int]:
-        return [100]
+        # Length-aware so multiturn-fit tests that scale messages to a
+        # target token count round-trip through encode→decode→encode and
+        # see a meaningful encoded length.
+        return list(range(max(4, len(text))))
 
     def decode(
         self, ids: list[int], skip_special_tokens: bool = False, **_: object
     ) -> str:
-        return "random text"
+        return "Z" * len(ids)
 
     def convert_tokens_to_ids(self, token: str) -> int:
         return 223
@@ -848,35 +851,23 @@ def test_instruct_coder_multiturn_fit_distributions(
     body = "hello world " * 80
     mock_load_pairs.return_value = [(body, "line\n" * 60)] * 400
 
-    mock_tokenizer = Mock(spec=PreTrainedTokenizerBase)
-    mock_tokenizer.model_max_length = 50_000
-    mock_tokenizer.vocab_size = 1000
-    mock_tokenizer.all_special_ids = {0, 1}
-    mock_tokenizer.unk_token_id = None
-    mock_tokenizer.convert_tokens_to_ids = Mock(return_value=99)
-
-    def _tok(text: str, add_special_tokens: bool = False) -> list[int]:
-        return list(range(max(4, len(text))))
-
-    mock_tokenizer.encode = Mock(side_effect=_tok)
-    mock_tokenizer.decode = Mock(
-        side_effect=lambda ids, skip_special_tokens=False: "Z" * len(ids)
-    )
-
+    tok = _FakeTokenizer(model_max_length=50_000)
     dataset = InstructCoderBenchmarkDataset()
     dataset.dataset_path = "/tmp/instruct_coder_mock.json"
 
-    samples = dataset.gen_multiturn_sessions(
-        num_sessions=4,
-        tokenizer=mock_tokenizer,
-        shuffle=False,
-        fit_length_distributions=True,
-        num_turns="DU(3,3)",
-        input_len="80",
-        output_len="20",
-        delay_between_turns_dist="100",
-        sys_prompt_ratio=0.0,
-    )
+    with TokenizerPool(tok, loader=_fake_loader) as pool:
+        samples = dataset.gen_multiturn_sessions(
+            num_sessions=4,
+            tokenizer=tok,
+            pool=pool,
+            shuffle=False,
+            fit_length_distributions=True,
+            num_turns="DU(3,3)",
+            input_len="80",
+            output_len="20",
+            delay_between_turns_dist="100",
+            sys_prompt_ratio=0.0,
+        )
 
     assert len(samples.chat_sessions) == 4
     for session in samples.chat_sessions:

@@ -298,18 +298,20 @@ def sample_requests(
                     args, args.num_chat_sessions
                 )
                 if args.fit_distributions:
-                    return benchmark_dataset.gen_multiturn_sessions(
-                        num_sessions=inflated_n,
-                        tokenizer=tokenizer,
-                        shuffle=(not args.record_output_lengths),
-                        fit_length_distributions=True,
-                        num_turns=args.random_num_turns,
-                        input_len=args.random_input_len,
-                        output_len=args.random_output_len,
-                        delay_between_turns_dist=args.delay_between_chat_turns,
-                        sys_prompt_ratio=args.random_sys_prompt_ratio,
-                        max_num_unique_sys_prompt=args.random_max_num_unique_sys_prompt,
-                    )
+                    with TokenizerPool(tokenizer) as pool:
+                        return benchmark_dataset.gen_multiturn_sessions(
+                            num_sessions=inflated_n,
+                            tokenizer=tokenizer,
+                            pool=pool,
+                            shuffle=(not args.record_output_lengths),
+                            fit_length_distributions=True,
+                            num_turns=args.random_num_turns,
+                            input_len=args.random_input_len,
+                            output_len=args.random_output_len,
+                            delay_between_turns_dist=args.delay_between_chat_turns,
+                            sys_prompt_ratio=args.random_sys_prompt_ratio,
+                            max_num_unique_sys_prompt=args.random_max_num_unique_sys_prompt,
+                        )
                 else:
                     return benchmark_dataset.gen_multiturn_sessions(
                         num_sessions=inflated_n,
@@ -386,19 +388,21 @@ def sample_requests(
                     args, args.num_chat_sessions
                 )
                 if args.fit_distributions:
-                    return benchmark_dataset.gen_multiturn_sessions(
-                        num_sessions=inflated_n,
-                        tokenizer=tokenizer,
-                        shuffle=(not args.record_output_lengths),
-                        fit_length_distributions=True,
-                        num_turns=args.random_num_turns,
-                        input_len=args.random_input_len,
-                        output_len=args.random_output_len,
-                        delay_between_turns_dist=args.delay_between_chat_turns,
-                        sys_prompt_ratio=args.random_sys_prompt_ratio,
-                        max_num_unique_sys_prompt=args.random_max_num_unique_sys_prompt,
-                        enable_tool_calls=args.tool_calls,
-                    )
+                    with TokenizerPool(tokenizer) as pool:
+                        return benchmark_dataset.gen_multiturn_sessions(
+                            num_sessions=inflated_n,
+                            tokenizer=tokenizer,
+                            pool=pool,
+                            shuffle=(not args.record_output_lengths),
+                            fit_length_distributions=True,
+                            num_turns=args.random_num_turns,
+                            input_len=args.random_input_len,
+                            output_len=args.random_output_len,
+                            delay_between_turns_dist=args.delay_between_chat_turns,
+                            sys_prompt_ratio=args.random_sys_prompt_ratio,
+                            max_num_unique_sys_prompt=args.random_max_num_unique_sys_prompt,
+                            enable_tool_calls=args.tool_calls,
+                        )
                 else:
                     return benchmark_dataset.gen_multiturn_sessions(
                         num_sessions=inflated_n,

@@ -77,6 +77,16 @@ def _encode_len(text: str) -> int:
     return len(_WORKER_TOK.encode(text, add_special_tokens=False))
 
 
+def _encode_ids(text: str) -> list[int]:
+    """Worker callable: full `tokenizer.encode(text)` (ids, not lengths).
+
+    Pass to `pool.map(_encode_ids, texts)` when callers need the actual
+    token IDs and not just the count.
+    """
+    assert _WORKER_TOK is not None
+    return _WORKER_TOK.encode(text)
+
+
 def _decode_text(ids: list[int]) -> str:
     assert _WORKER_TOK is not None
     return _WORKER_TOK.decode(ids, skip_special_tokens=False)

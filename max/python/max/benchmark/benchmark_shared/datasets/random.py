@@ -26,7 +26,7 @@ from PIL import Image
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 from typing_extensions import override
 
-from ._tokenizer_pool import TokenizerPool
+from ._tokenizer_pool import TokenizerPool, _encode_ids
 from .distribution import BaseDistribution, DistributionParameter
 from .local import LocalBenchmarkDataset
 from .types import (
@@ -49,20 +49,31 @@ MAX_CONTEXT_USAGE_RATIO = 0.95
 
 @dataclass
 class _SysPromptDraft:
-    """A request's system-prompt slice prior to encode-length resolution."""
+    """A request's system-prompt slice prior to decode/encode resolution.
+
+    `ids` is populated during the construction loop; `text` is filled by
+    the post-loop batched `pool.decode_texts` call, and `encoded_len` by
+    the subsequent batched `pool.encode_lens` call.
+    """
 
     idx: int
-    text: str
+    ids: list[int]
+    text: str = ""
     encoded_len: int = 0
 
 
 @dataclass
 class _PendingRequest:
-    """Per-request scratch built during the construction loop and finalized
-    after the post-loop batched `pool.encode_lens` call."""
+    """Per-request scratch built during the construction loop.
 
-    prompt: str
+    `prompt_ids` and `images` are populated in the loop. `prompt` is
+    filled by the post-loop batched `pool.decode_texts` call, and
+    `prompt_encoded_len` by the subsequent batched `pool.encode_lens`.
+    """
+
+    prompt_ids: list[int]
     images: list[OpenAIImage] = field(default_factory=list)
+    prompt: str = ""
     prompt_encoded_len: int = 0
     sys_prompt: _SysPromptDraft | None = None
 
@@ -277,6 +288,7 @@ class RandomBenchmarkDataset(LocalBenchmarkDataset):
     def _load_sharegpt_prompts_limited(
         self,
         tokenizer: PreTrainedTokenizerBase,
+        pool: TokenizerPool,
         max_num_unique_sys_prompt: int,
         num_requests: int,
     ) -> tuple[list[list[int]], list[list[int]]]:
@@ -321,20 +333,16 @@ class RandomBenchmarkDataset(LocalBenchmarkDataset):
         # Shuffle the prompts.
         random.shuffle(prompts)
 
-        # Tokenize prompts and filter out too short ones.
-        # Stop early when the number of required prompts is reached.
-        tokenized_prompts: list[list[int]] = []
+        # Fan the slow `tokenizer.encode` calls out to the shared spawn
+        # pool. We trim to a comfortable headroom over `required_prompts`
+        # (entries shorter than 4 tokens get filtered post-encode) so we
+        # don't tokenize the full ~25k ShareGPT pool on every benchmark run.
         required_prompts = max_num_unique_sys_prompt + num_requests
-        for prompt in prompts:
-            if len(tokenized_prompts) == required_prompts:
-                break
-
-            token_ids = tokenizer.encode(prompt)
-            if len(token_ids) < 4:
-                # Prune too short sequences.
-                continue
-
-            tokenized_prompts.append(token_ids)
+        candidate_pool = prompts[: max(required_prompts * 4, 64)]
+        encoded = pool.map(_encode_ids, candidate_pool)
+        tokenized_prompts: list[list[int]] = [
+            ids for ids in encoded if len(ids) >= 4
+        ][:required_prompts]
 
         if len(tokenized_prompts) < required_prompts:
             raise ValueError(
@@ -491,7 +499,7 @@ class RandomBenchmarkDataset(LocalBenchmarkDataset):
         if self.use_synthetic_tokens:
             sys_prompt_pool, user_prompt_pool = (
                 self._load_sharegpt_prompts_limited(
-                    tokenizer, max_num_unique_sys_prompt, num_requests
+                    tokenizer, pool, max_num_unique_sys_prompt, num_requests
                 )
             )
         elif not self.use_synthetic_tokens and max_num_unique_sys_prompt > 0:
@@ -518,9 +526,9 @@ class RandomBenchmarkDataset(LocalBenchmarkDataset):
 
         input_requests: list[SampledRequest] = []
         # Per-request scratch captured during construction. The slow
-        # `tokenizer.encode(prompt)` / `tokenizer.encode(sys_prompt)` calls
-        # are batched and fanned out to the shared spawn Pool below; their
-        # results are written back into these `_PendingRequest` rows.
+        # tokenizer decode/encode round-trips are batched and fanned out to
+        # the shared spawn Pool below; their results are written back into
+        # these `_PendingRequest` rows.
         pending: list[_PendingRequest] = []
         # `image_token_len` is invariant across requests today; hoist it.
         image_token_len = image_count * 256
@@ -584,7 +592,6 @@ class RandomBenchmarkDataset(LocalBenchmarkDataset):
             prompt_ids = [
                 replacement if id in special_ids else id for id in prompt_ids
             ]
-            prompt = tokenizer.decode(prompt_ids)
 
             sys_prompt_draft: _SysPromptDraft | None = None
             if sys_prompt_ratio > 0:
@@ -593,8 +600,7 @@ class RandomBenchmarkDataset(LocalBenchmarkDataset):
                     for id in sys_prompt_ids
                 ]
                 sys_prompt_draft = _SysPromptDraft(
-                    idx=sys_prompt_idx,
-                    text=tokenizer.decode(sys_prompt_ids),
+                    idx=sys_prompt_idx, ids=sys_prompt_ids
                 )
 
             images: list[OpenAIImage] = []
@@ -610,16 +616,31 @@ class RandomBenchmarkDataset(LocalBenchmarkDataset):
 
             pending.append(
                 _PendingRequest(
-                    prompt=prompt,
+                    prompt_ids=prompt_ids,
                     images=images,
                     sys_prompt=sys_prompt_draft,
                 )
             )
 
-        # Batch every encode round-trip through the shared spawn Pool so the
-        # slow tokenizer is exercised in parallel across all CPU cores.
-        # Prompts come first; sys-prompt slices for requests that have one
-        # follow, in pending order.
+        # Batch decode in one shared-pool fan-out, then batch the encode
+        # round-trip in another, so the slow tokenizer's decode and encode
+        # both run in parallel across all CPU cores. Prompts come first in
+        # each batch; sys-prompt slices for requests that have one follow,
+        # in pending order.
+        id_lists = [p.prompt_ids for p in pending]
+        id_lists.extend(
+            p.sys_prompt.ids for p in pending if p.sys_prompt is not None
+        )
+        decoded = pool.decode_texts(id_lists)
+
+        sys_decoded_iter = iter(decoded[len(pending) :])
+        for p, prompt_text in zip(
+            pending, decoded[: len(pending)], strict=True
+        ):
+            p.prompt = prompt_text
+            if p.sys_prompt is not None:
+                p.sys_prompt.text = next(sys_decoded_iter)
+
         texts = [p.prompt for p in pending]
         texts.extend(
             p.sys_prompt.text for p in pending if p.sys_prompt is not None
