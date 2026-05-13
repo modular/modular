@@ -132,6 +132,16 @@ class KVCacheParamInterface(Protocol):
         """Returns the symbolic inputs for the KV cache."""
         ...
 
+    @property
+    def replicates_kv_across_tp(self) -> bool:
+        """Whether every device holds identical KV state."""
+        ...
+
+    @property
+    def tensor_parallel_degree(self) -> int:
+        """Returns the tensor parallel degree."""
+        ...
+
 
 @dataclass
 class KVCacheParams(KVCacheParamInterface):
@@ -731,6 +741,16 @@ class MultiKVCacheParams(KVCacheParamInterface):
             inputs.extend(p.get_symbolic_inputs(f"{prefix}cache{i}_").inputs)
         return KVCacheInputs(inputs=inputs)
 
+    @property
+    def replicates_kv_across_tp(self) -> bool:
+        """Whether every device holds identical KV state."""
+        return self.params[0].replicates_kv_across_tp
+
+    @property
+    def tensor_parallel_degree(self) -> int:
+        """Returns the tensor parallel degree."""
+        return self.params[0].tensor_parallel_degree
+
 
 def compute_num_device_blocks(
     params: KVCacheParamInterface,
@@ -886,7 +906,13 @@ def compute_num_host_blocks(params: KVCacheParamInterface) -> int:
     GiB = 1024 * 1024 * 1024
     host_gb_per_replica = params.host_kvcache_swap_space_gb
     host_bytes_per_replica = host_gb_per_replica * GiB
-    num_host_blocks = int(host_bytes_per_replica // params.bytes_per_block)
+
+    bytes_per_block = params.bytes_per_block
+    if params.replicates_kv_across_tp:
+        # On cpu/disk, we don't need multiple replicas of the same KV state.
+        assert bytes_per_block % params.tensor_parallel_degree == 0
+        bytes_per_block = bytes_per_block // params.tensor_parallel_degree
+    num_host_blocks = int(host_bytes_per_replica // bytes_per_block)
 
     if num_host_blocks == 0:
         raise RuntimeError(

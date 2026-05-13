@@ -17,7 +17,9 @@ from max.graph import DeviceRef
 from max.nn.kv_cache import (
     KVCacheParams,
     KVCacheQuantizationConfig,
+    KVConnectorType,
     compute_num_device_blocks,
+    compute_num_host_blocks,
     estimated_memory_size,
 )
 
@@ -261,3 +263,59 @@ def test_quantized_kv_cache() -> None:
     )
     # Nearly ~4x more blocks can be allocated when using FP8 KVCache (compared to FP32).
     assert fp8_num_device_blocks > fp32_num_device_blocks
+
+
+def _create_mla_params(tp: int, is_mla: bool = True) -> KVCacheParams:
+    """Create KVCacheParams for MLA with local connector and host swap space."""
+    return KVCacheParams(
+        dtype=DType.float32,
+        n_kv_heads=8,
+        head_dim=128,
+        num_layers=1,
+        page_size=128,
+        data_parallel_degree=1,
+        devices=[DeviceRef.GPU(i) for i in range(tp)],
+        is_mla=is_mla,
+        num_q_heads=32 if is_mla else None,
+        enable_prefix_caching=True,
+        kv_connector=KVConnectorType.local,
+        host_kvcache_swap_space_gb=1,
+    )
+
+
+def test_host_blocks_mla_tp_scaling() -> None:
+    """With TP MLA, host block count should be independent of TP degree."""
+    params_tp1 = _create_mla_params(tp=1)
+    params_tp8 = _create_mla_params(tp=8)
+
+    # TP=1 MLA doesn't replicate (only 1 device), so no adjustment.
+    assert not params_tp1.replicates_kv_across_tp
+    # TP=8 MLA replicates KV on every device.
+    assert params_tp8.replicates_kv_across_tp
+
+    # bytes_per_block grows with TP (each device holds full KV), but the fix
+    # divides it back out for the host where only one copy is needed.
+    assert params_tp8.bytes_per_block == params_tp1.bytes_per_block * 8
+
+    host_blocks_tp1 = compute_num_host_blocks(params_tp1)
+    host_blocks_tp8 = compute_num_host_blocks(params_tp8)
+
+    # Despite bytes_per_block being 8x larger, host blocks should be the same
+    # because on CPU/disk we only store one copy of the KV state.
+    assert host_blocks_tp8 == host_blocks_tp1
+
+
+def test_host_blocks_non_mla_tp_no_scaling() -> None:
+    """Without MLA, host blocks should NOT scale by TP degree."""
+    params_tp1 = _create_mla_params(tp=1, is_mla=False)
+    params_tp8 = _create_mla_params(tp=8, is_mla=False)
+
+    assert not params_tp1.replicates_kv_across_tp
+    assert not params_tp8.replicates_kv_across_tp
+
+    host_blocks_tp1 = compute_num_host_blocks(params_tp1)
+    host_blocks_tp8 = compute_num_host_blocks(params_tp8)
+
+    # Non-MLA shards KV across TP, so bytes_per_block is constant regardless
+    # of TP and the host block count stays the same.
+    assert host_blocks_tp1 == host_blocks_tp8
