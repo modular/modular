@@ -11,8 +11,8 @@
 # absolute paths. But the usage of `constrained_method` in the outer package
 # will use relative paths, and result in a mismatch in def metadata.
 
-# RUN: mojo package %S/inputs/where_package -o %S/where_package.mojoc
-# RUN: mojo package %S/inputs/wrapper_where_package -o %S/wrapper_where_package.mojoc -strip-file-prefix=%S/inputs
+# RUN: mojo precompile %S/inputs/where_package -o %S/where_package.mojoc
+# RUN: mojo precompile %S/inputs/wrapper_where_package -o %S/wrapper_where_package.mojoc -strip-file-prefix=%S/inputs
 # RUN: mojo %s -I %S | FileCheck %s
 
 from where_package import constrained_method

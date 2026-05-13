@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 #
-# Test packaging external bitcode libraries into a mojo package.
+# Test packaging external bitcode libraries into a mojo precompile.
 #
 # ===----------------------------------------------------------------------=== #
 
@@ -13,7 +13,7 @@
 # RUN: llvm-as %t.ll -o %t.bc
 
 # Create a test package that includes the bitcode library
-# RUN: mojo package %S/test_package --bitcode-libs=%t.bc -o %t_with_bitcode.mojoc
+# RUN: mojo precompile %S/test_package --bitcode-libs=%t.bc -o %t_with_bitcode.mojoc
 
 # Verify the package was created and contains the externLLVMBitcodeModules attribute
 # RUN: kgen-opt -mlir-print-debuginfo %t_with_bitcode.mojoc | FileCheck %s

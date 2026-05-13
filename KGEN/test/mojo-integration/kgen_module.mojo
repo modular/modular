@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: mojo package -kgenModule -disable-builtins -I %S/inputs/test_dependency %S/inputs/target -o %t.target.mlirbc
+# RUN: mojo precompile -kgenModule -disable-builtins -I %S/inputs/test_dependency %S/inputs/target -o %t.target.mlirbc
 # RUN: kgen-opt %t.target.mlirbc | FileCheck %s
 
 # CHECK: kgen.generator export @"kgen_module.mojo.tmp.target::impl::anchor()"() -> index

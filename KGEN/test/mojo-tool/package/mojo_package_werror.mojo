@@ -4,10 +4,10 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: mojo package -Wno-error %S/test_package_werror 2>&1 | FileCheck %s --check-prefix=WNO-ERROR
-# RUN: not mojo package -Werror %S/test_package_werror 2>&1 | FileCheck %s --check-prefix=WERROR
-# RUN: mojo package -Werror -Wno-error %S/test_package_werror 2>&1 | FileCheck %s --check-prefix=WERROR-THEN-WNO
-# RUN: not mojo package -Wno-error -Werror %S/test_package_werror 2>&1 | FileCheck %s --check-prefix=WNO-THEN-WERROR
+# RUN: mojo precompile -Wno-error %S/test_package_werror 2>&1 | FileCheck %s --check-prefix=WNO-ERROR
+# RUN: not mojo precompile -Werror %S/test_package_werror 2>&1 | FileCheck %s --check-prefix=WERROR
+# RUN: mojo precompile -Werror -Wno-error %S/test_package_werror 2>&1 | FileCheck %s --check-prefix=WERROR-THEN-WNO
+# RUN: not mojo precompile -Wno-error -Werror %S/test_package_werror 2>&1 | FileCheck %s --check-prefix=WNO-THEN-WERROR
 
 # WNO-ERROR: warning: assignment to 'foo' was never used
 # WNO-ERROR-NOT: error: assignment to 'foo' was never used

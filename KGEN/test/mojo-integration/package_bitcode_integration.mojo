@@ -20,7 +20,7 @@
 # RUN: llvm-as %t_impl.ll -o %t_impl.bc
 
 # Step 2: Package the bitcode_package with the bitcode library
-# RUN: mojo package %S/inputs/bitcode_package --bitcode-libs=%t_impl.bc -o %S/bitcode_package.mojoc
+# RUN: mojo precompile %S/inputs/bitcode_package --bitcode-libs=%t_impl.bc -o %S/bitcode_package.mojoc
 
 # Step 3: Verify the package was created and contains bitcode modules
 # RUN: kgen-opt %S/bitcode_package.mojoc | FileCheck %s --check-prefix=CHECK-PACKAGE

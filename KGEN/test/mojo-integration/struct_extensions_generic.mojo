@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 # RUN: mkdir -p %t.generic-struct
-# RUN: mojo package %S/inputs/generic_struct_package -o %t.generic-struct/generic_struct_package.mojoc
+# RUN: mojo precompile %S/inputs/generic_struct_package -o %t.generic-struct/generic_struct_package.mojoc
 # RUN: kgen-translate --mojo-enable-prebuilt-packages -import-mojo -I %t.generic-struct %s --kgen-print-inline-type-values | kgen-opt -lower-semantic-cf -check-lifetimes -lower-lit | FileCheck %s
 
 from generic_struct_package import Container

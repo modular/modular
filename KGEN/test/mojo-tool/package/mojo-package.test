@@ -1,5 +1,5 @@
-// RUN: mojo package %S/test_package -o - | kgen-opt -mlir-print-debuginfo | FileCheck %s
-// RUN: not mojo package %S/test_package_with_main -o - 2>&1 | FileCheck %s --check-prefix=MAIN_IN_PACKAGE
+// RUN: mojo precompile %S/test_package -o - | kgen-opt -mlir-print-debuginfo | FileCheck %s
+// RUN: not mojo precompile %S/test_package_with_main -o - 2>&1 | FileCheck %s --check-prefix=MAIN_IN_PACKAGE
 
 // MAIN_IN_PACKAGE: defining 'main' within a package is not yet supported
 

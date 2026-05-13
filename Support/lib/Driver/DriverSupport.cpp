@@ -205,18 +205,25 @@ void State::assertNoUnusedArguments(const llvm::opt::InputArgList &args) const {
 //===----------------------------------------------------------------------===//
 
 void SubcommandRegistry::addCallback(StringRef subcommand,
-                                     SubcommandRegistry::Callback callback) {
+                                     SubcommandRegistry::Callback callback,
+                                     std::optional<StringRef> deprecatedFor) {
   std::string cmd = subcommand.str();
   assert(callbacks.count(cmd) == 0 && "subcommand already registered");
   assert(callback && "callback cannot be empty");
-  callbacks.insert({cmd, callback});
+  callbacks.insert({cmd, {callback, deprecatedFor}});
 }
 
 ErrorOr<SubcommandRegistry::Callback>
 SubcommandRegistry::getCallback(StringRef subcommand) {
   auto it = callbacks.find(subcommand.str());
-  if (it != callbacks.end())
-    return it->second;
+  if (it != callbacks.end()) {
+    if (std::optional<StringRef> deprecatedFor = it->second.second) {
+      llvm::errs() << "warning: '" << subcommand << "' is deprecated";
+      if (!deprecatedFor->empty())
+        llvm::errs() << "; use '" << *deprecatedFor << "' instead\n";
+    }
+    return it->second.first;
+  }
 
   // The user provided a subcommand name we don't recognize; return an error
   // message.

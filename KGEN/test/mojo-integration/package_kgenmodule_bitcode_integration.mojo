@@ -16,7 +16,7 @@
 # RUN: llvm-as %t_impl.ll -o %t_impl.bc
 
 # Step 2: Package the bitcode_package with the bitcode library
-# RUN: mojo package %S/inputs/bitcode_package -kgenModule --bitcode-libs=%t_impl.bc -o %S/bitcode_package.mlirbc
+# RUN: mojo precompile %S/inputs/bitcode_package -kgenModule --bitcode-libs=%t_impl.bc -o %S/bitcode_package.mlirbc
 
 # Step 3: Verify the package was created and contains bitcode modules
 # RUN: kgen-opt %S/bitcode_package.mlirbc | FileCheck %s --check-prefix=CHECK-MODULE
