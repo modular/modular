@@ -1,11 +1,6 @@
 // RUN: kgen-opt %s -allow-unregistered-dialect -verify-parameters | kgen-opt -allow-unregistered-dialect | FileCheck %s
 // RUN: kgen-opt %s -emit-bytecode -allow-unregistered-dialect | kgen-opt -allow-unregistered-dialect | FileCheck %s
 
-// CHECK-DAG: #[[LOC1:.+]] = loc("test.mojo":5:10)
-#loc1 = loc("test.mojo":5:10)
-// CHECK-DAG: #[[LOC2:.+]] = loc("test.mojo":6:15)
-#loc2 = loc("test.mojo":6:15)
-
 // CHECK-LABEL: "pog.metadata"
 // CHECK-SAME: pog1 = #lit.pog_metadata<"some_keyword_param", pos_or_kw, not_vararg>,
 // CHECK-SAME: pog2 = #lit.pog_metadata<"some_variadic_param", pos_or_kw, pos_vararg>
@@ -92,27 +87,6 @@
 "some.metadata4"() {metadata = #lit.fn_metadata<
   <[<"someRef", pos, not_vararg, default :index 13>, <"v", kw, not_vararg, default :i64 17>]>,
   2, false
->} : () -> ()
-
-// CHECK-LABEL: "some.metadata5"
-// CHECK-SAME: 2 where {<true, #[[LOC1]]>, <false, #[[LOC2]]>}
-"some.metadata5"() {metadata = #lit.fn_metadata<
-  <[<"someRef", pos, not_vararg, default :index 13>, <"v", kw, not_vararg, default :i64 17>]>,
-  2 where {<true, #loc1>, <false, #loc2>}
->} : () -> ()
-
-// CHECK-LABEL: "some.metadata6"
-// CHECK-SAME: 2, false where {<true, #[[LOC1]]>, <false, #[[LOC2]]>}
-"some.metadata6"() {metadata = #lit.fn_metadata<
-  <[<"someRef", pos, not_vararg, default :index 13>, <"v", kw, not_vararg, default :i64 17>]>,
-  2, false where {<true, #loc1>, <false, #loc2>}
->} : () -> ()
-
-// CHECK-LABEL: "some.metadata7"
-// CHECK-SAME: 2, {mut lt} where {<true, #[[LOC1]]>, <false, #[[LOC2]]>}
-"some.metadata7"() {metadata = #lit.fn_metadata<
-  <[<"someRef", pos, not_vararg, default :index 13>, <"v", kw, not_vararg, default :i64 17>]>,
-  2, {mut lt} where {<true, #loc1>, <false, #loc2>}
 >} : () -> ()
 
 // CHECK-LABEL: "none.type"

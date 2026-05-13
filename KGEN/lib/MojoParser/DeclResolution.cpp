@@ -1720,8 +1720,7 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
   // Parse the result type if present.
   fnSignature.parseResultIfPresent(p);
 
-  // Parse trailing body constraints if present. Keep these with the parameter
-  // list because body constraints are stored on the generator metadata.
+  // Parse trailing body constraints if present.
   if (failed(parsedParamList.parseTrailingConstraintsIfPresent(p)))
     return failure();
 

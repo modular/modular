@@ -353,8 +353,7 @@ addClosureSelfArgToFunctionSignature(Type closureType, ArgConvention convention,
   auto metadata = FnMetadataAttr::get(
       argListAttr.cloneWith(argPogs), oldFnMetadata.getNumImplicitOriginDecls(),
       oldFnMetadata.getCaptureOrigins(),
-      oldFnMetadata.getIsNestedOriginExclusivityCheckingDisabled(),
-      /*constraints=*/{});
+      oldFnMetadata.getIsNestedOriginExclusivityCheckingDisabled());
   return FuncTypeGeneratorType::get(
       sig.getInputParamTypes(),
       FunctionType::get(ctx, signatureInputs, sig.getResults()), argConventions,

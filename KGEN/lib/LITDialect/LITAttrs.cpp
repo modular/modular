@@ -359,7 +359,7 @@ FnMetadataAttr FnMetadataAttr::get(MLIRContext *context) {
   auto list = PogListAttr::get(context);
   return FnMetadataAttr::get(
       list, /*numImplicitOriginDecls=*/0, /*captureOrigins=*/nullptr,
-      /*isNestedOriginExclusivityCheckingDisabled=*/false, /*constraints=*/{});
+      /*isNestedOriginExclusivityCheckingDisabled=*/false);
 }
 
 FnMetadataAttr FnMetadataAttr::get(MLIRContext *ctx, size_t numArgs,
@@ -370,27 +370,24 @@ FnMetadataAttr FnMetadataAttr::get(MLIRContext *ctx, size_t numArgs,
   args.resize(numArgs, normal);
   return get(PogListAttr::get(ctx, args), numImplicitOriginDecls,
              /*captureOrigins=*/nullptr,
-             /*isNestedOriginExclusivityCheckingDisabled=*/false,
-             /*constraints=*/{});
+             /*isNestedOriginExclusivityCheckingDisabled=*/false);
 }
 
 FnMetadataAttr FnMetadataAttr::get(PogListAttr argListAttrs,
                                    size_t numImplicitOriginDecls,
                                    TypedAttr captureOrigins,
-                                   bool nestedOriginFlag,
-                                   ArrayRef<ConstraintAttr> constraints) {
+                                   bool nestedOriginFlag) {
   MLIRContext *ctx = argListAttrs.getContext();
   if (!captureOrigins)
     captureOrigins = OriginSetAttr::get(ctx, {});
   return get(ctx, argListAttrs, numImplicitOriginDecls, captureOrigins,
-             nestedOriginFlag, constraints);
+             nestedOriginFlag);
 }
 
 FnMetadataAttr FnMetadataAttr::get(PogListAttr argListAttrs,
                                    size_t numImplicitOriginDecls) {
   return get(argListAttrs, numImplicitOriginDecls, /*captureOrigins=*/nullptr,
-             /*isNestedOriginExclusivityCheckingDisabled=*/false,
-             /*constraints=*/{});
+             /*isNestedOriginExclusivityCheckingDisabled=*/false);
 }
 
 FnMetadataAttrInterface
@@ -407,7 +404,7 @@ FnMetadataAttr::getWithBoundPosArgs(size_t numBound) const {
       PogListAttr::get(getContext(), newPogs, argListAttrs.getBodyConstraints(),
                        argListAttrs.getOrigVariadicConvention());
   return get(newArgListAttrs, getNumImplicitOriginDecls(), getCaptureOrigins(),
-             getIsNestedOriginExclusivityCheckingDisabled(), getConstraints());
+             getIsNestedOriginExclusivityCheckingDisabled());
 }
 
 SmallVector<VariadicKind>
@@ -475,7 +472,7 @@ FnMetadataAttr FnMetadataAttr::addCaptureOrigins(TypedAttr origins) {
       OriginSetUnionAttr::get(origins, type)};
   return get(getArgListAttrs(), getNumImplicitOriginDecls(),
              OriginSetAttr::get(getContext(), originUnion),
-             getIsNestedOriginExclusivityCheckingDisabled(), getConstraints());
+             getIsNestedOriginExclusivityCheckingDisabled());
 }
 
 size_t FnMetadataAttr::getNumArgs() const {
@@ -523,15 +520,6 @@ bool FnMetadataAttr::equals(FnMetadataAttrInterface otherMetadata) const {
   auto other = ::dyn_cast<FnMetadataAttr>(otherMetadata);
   if (!other)
     return false;
-
-  // Check that constraints are equal (ignoring the locations).
-  auto thisConstraints = getConstraints();
-  auto otherConstraints = other.getConstraints();
-  if (thisConstraints.size() != otherConstraints.size())
-    return false;
-  for (auto [lhs, rhs] : llvm::zip_equal(thisConstraints, otherConstraints))
-    if (lhs.getProposition() != rhs.getProposition())
-      return false;
 
   return getArgListAttrs() == other.getArgListAttrs() &&
          getNumImplicitOriginDecls() == other.getNumImplicitOriginDecls() &&

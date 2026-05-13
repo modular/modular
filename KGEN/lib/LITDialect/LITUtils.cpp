@@ -350,14 +350,6 @@ void LIT::printOptionalConstraintsList(AsmPrinter &p,
   p << "}";
 }
 
-ParseResult
-LIT::parseOptionalWhereClauses(AsmParser &p,
-                               SmallVectorImpl<ConstraintAttr> &constraints) {
-  if (succeeded(p.parseOptionalKeyword("where")))
-    return parseOptionalConstraintsList(p, constraints);
-  return success();
-}
-
 void LIT::printOptionalWhereClauses(AsmPrinter &p,
                                     ArrayRef<ConstraintAttr> constraints,
                                     ParameterEvaluator *evaluator) {
@@ -710,7 +702,6 @@ void LIT::printFnType(AsmPrinter &p, FnType signature) {
   assert(llvm::all_of(argListAttr.getPogs(), [](PogMetadataAttr pog) {
     return pog.getConstraints().empty();
   }));
-  printOptionalWhereClauses(p, metadata.getConstraints());
 }
 
 //===----------------------------------------------------------------------===//

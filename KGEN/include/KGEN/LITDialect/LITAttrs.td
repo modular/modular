@@ -292,14 +292,12 @@ def LIT_FnMetadataAttr : LITAttr<"FnMetadata", "fn_metadata",
     "TypedAttr":$captureOrigins,
     // TODO: Generalize this to a set of origin parameters that are guaranteed
     // to not be dereferenced.
-    OptionalParameter<"bool">:$isNestedOriginExclusivityCheckingDisabled,
-    OptionalArrayRefParameter<"ConstraintAttr">:$constraints
+    OptionalParameter<"bool">:$isNestedOriginExclusivityCheckingDisabled
   );
   let assemblyFormat = [{
     `<` $argListAttrs `,` $numImplicitOriginDecls
     `` custom<FnMetadataOrigins>($captureOrigins)
-    (`,` $isNestedOriginExclusivityCheckingDisabled^)?
-    `` custom<OptionalWhereClauses>($constraints) `>`
+    (`,` $isNestedOriginExclusivityCheckingDisabled^)? `>`
   }];
 
   let builders = [
@@ -311,8 +309,7 @@ def LIT_FnMetadataAttr : LITAttr<"FnMetadata", "fn_metadata",
       CArg<"size_t", "0">:$numImplicitOriginDecls)>,
     AttrBuilderWithInferredContext<(ins
       "PogListAttr":$argListAttrs, "size_t":$numImplicitOriginDecls,
-      "TypedAttr":$captureOrigins, "bool":$nestedOriginFlag,
-      "ArrayRef<ConstraintAttr>":$constraints)>,
+      "TypedAttr":$captureOrigins, "bool":$nestedOriginFlag)>,
   ];
 
   let extraClassDeclaration = [{
