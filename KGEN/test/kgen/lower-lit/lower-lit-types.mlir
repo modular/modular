@@ -1,4 +1,4 @@
-// RUN: kgen-opt %s -lower-lit -allow-unregistered-dialect -split-input-file | kgen-opt -verify-parameters -split-input-file | FileCheck %s
+// RUN: kgen-opt %s -lower-lit -allow-unregistered-dialect -split-input-file | kgen-opt -verify-parameters -split-input-file -kgen-print-inline-type-values  | FileCheck %s
 
 //===----------------------------------------------------------------------===//
 // Parametric Structs
@@ -584,4 +584,34 @@ lit.fn @x() {
 // CHECK: -> !kgen.struct<() memoryOnly>
 lit.fn @example<T: trait<@Bar>>() -> !lit.struct<@Thing<:trait<@Foo> [!kgen.param<:trait<@Bar> T>]>> {
   kgen.unreachable
+}
+
+// -----
+
+//===----------------------------------------------------------------------===//
+// Func & Gen Type value domain lowering
+//===----------------------------------------------------------------------===//
+
+lit.struct.decl @Int register_passable {
+  lit.struct.field value : index
+}
+
+lit.struct.decl @StaticTuple<size, ty: type> register_passable {
+  lit.struct.field array : !pop.array<size, ty>
+}
+
+kgen.generator @type_values() {
+  // CHECK: kgen.param.declare func_type: type = <[
+  // CHECK-SAME: (index, !kgen.typevalue<#kgen.genref<@Int>>) -> !kgen.typevalue<#kgen.genref<@StaticTuple<2, :type [typevalue<#kgen.genref<@Int>>, index]>>>
+  // CHECK-SAME: (index, index) -> !pop.array<2, index>
+  // CHECK-SAME: ]>
+  kgen.param.declare func_type: type = <#kgen.type<(index, !lit.struct<@Int>) -> !lit.struct<@StaticTuple<2, :type #kgen.type<@Int>>>>>
+
+  // CHECK-NEXT: kgen.param.declare gen_type: type = <[
+  // CHECK-SAME: <index, typevalue<#kgen.genref<@Int>>>typevalue<#kgen.genref<@StaticTuple<2, :type [typevalue<#kgen.genref<@Int>>, index]>>>
+  // CHECK-SAME: <index, index>array<2, index>
+  // CHECK-SAME: ]>
+  kgen.param.declare gen_type: type = <#kgen.type<<index, !lit.struct<@Int>> !lit.struct<@StaticTuple<2, :type #kgen.type<@Int>>>>>
+
+  kgen.return
 }

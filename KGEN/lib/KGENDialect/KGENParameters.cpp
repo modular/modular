@@ -208,7 +208,10 @@ void ParameterCollector::collectUsesFromAttrImpl(
           Type type = types[indexRef.getIndex()];
           IndexDepthAdjuster adjuster(indexRef.getDepth());
           Type expectedType = adjuster.replace(type);
-          if (!isEqualCanon(expectedType, indexRef.getType())) {
+          // If the expected type is a TypeValueType adaptor, this is a
+          // generator scope inside the value domain type. No need to verify.
+          if (!isa<TypeValueType>(expectedType) &&
+              !isEqualCanon(expectedType, indexRef.getType())) {
             return emitError()
                    << "type of index reference " << indexRef
                    << " does not match parameter type " << expectedType;
