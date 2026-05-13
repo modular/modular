@@ -121,6 +121,9 @@ struct LITLowerer {
   /// Lower lit.struct.decl and its nested structures.
   LogicalResult lowerStructDecl(StructDeclOp structDecl,
                                 Block::iterator mainSymbolTablePosIter);
+  /// Lower an existing kgen.struct.generator in the input.
+  LogicalResult lowerStructGenerator(StructGeneratorOp structGen,
+                                     Block::iterator mainSymbolTablePosIter);
   /// Lower lit.extension.decl and its nested structures.
   LogicalResult lowerExtensionDecl(ExtensionDeclOp extensionDecl,
                                    Block::iterator mainSymbolTablePosIter);
@@ -141,6 +144,12 @@ struct LITLowerer {
   LogicalResult lowerAllStructs(Block *moduleBody,
                                 Block::iterator mainSymbolTablePosIter,
                                 bool isTopLevel);
+  /// Recursively process all existing struct generator ops in the module
+  /// hierarchy.
+  LogicalResult
+  lowerAllStructGeneratorOps(Block *moduleBody,
+                             Block::iterator mainSymbolTablePosIter,
+                             bool isTopLevel);
 
   /// Recursively process all extensions in the module hierarchy.
   LogicalResult lowerAllExtensions(Block *moduleBody,
@@ -224,7 +233,8 @@ void LITLowerer::lowerLITOps(FnOp func) {
           closureInit.getCaptures(),
           ArrayAttr::get(b.getContext(), captureConventions), parameters,
           closureInit.getInlineLevel(), closureInit.getCaptureTypesAttr(),
-          closureInit.getCaptureNamesAttr(), closureInit.getNestedFnScopeAttr(),
+          closureInit.getCaptureNamesAttr(), closureInit.getTypeValue(),
+          closureInit.getNestedFnScopeAttr(),
           closureInit.getLLVMMetadataArray(),
           closureInit.getLLVMArgMetadataArray(),
           closureInit.getHoistedCapturesAttr());
@@ -464,6 +474,25 @@ LITLowerer::lowerStructDecl(StructDeclOp structDecl,
 }
 
 LogicalResult
+LITLowerer::lowerStructGenerator(StructGeneratorOp structGen,
+                                 Block::iterator mainSymbolTablePosIter) {
+  ParamDeclArrayAttr inputParams = ParamDeclArrayAttr::get(
+      structGen.getContext(), structGen.getInputParams());
+  SmallVector<ParamDeclAttr> params(inputParams.begin(), inputParams.end());
+  ParamDeclDropMask dropped =
+      removeSingletonParamDecls(singletonTypeHelper, params);
+  inputParams = ParamDeclArrayAttr::get(inputParams.getContext(), params);
+  if (dropped.any())
+    structGen.setInputParams(inputParams);
+
+  StringAttr newName = flattenNameAndReinsertOp(
+      structGen, getTopLevelSymbolTable(), mainSymbolTablePosIter);
+  if (dropped.any())
+    symbolDroppedParamDecls[newName] = dropped;
+  return success();
+}
+
+LogicalResult
 LITLowerer::lowerExtensionDecl(ExtensionDeclOp extensionDecl,
                                Block::iterator mainSymbolTablePosIter) {
   SymbolRefAttr targetStructRef = extensionDecl.getTargetStruct().value();
@@ -594,6 +623,35 @@ LITLowerer::lowerAllStructs(Block *moduleBody,
                                                       : mainSymbolTablePosIter;
       if (failed(lowerAllStructs(package.getBody(), childMainSymbolTablePos,
                                  /*isTopLevel=*/false)))
+        return failure();
+    }
+  }
+  return success();
+}
+
+LogicalResult
+LITLowerer::lowerAllStructGeneratorOps(Block *moduleBody,
+                                       Block::iterator mainSymbolTablePosIter,
+                                       bool isTopLevel) {
+  for (Operation &op : llvm::make_early_inc_range(*moduleBody)) {
+    if (auto structGen = dyn_cast<StructGeneratorOp>(op)) {
+      Block::iterator childMainSymbolTablePos =
+          isTopLevel ? op.getIterator() : mainSymbolTablePosIter;
+      if (failed(lowerStructGenerator(structGen, childMainSymbolTablePos)))
+        return failure();
+    } else if (auto fileModule = dyn_cast<LIT::FileModuleOp>(op)) {
+      Block::iterator childMainSymbolTablePos =
+          isTopLevel ? op.getIterator() : mainSymbolTablePosIter;
+      if (failed(lowerAllStructGeneratorOps(fileModule.getBody(),
+                                            childMainSymbolTablePos,
+                                            /*isTopLevel=*/false)))
+        return failure();
+    } else if (auto package = dyn_cast<LIT::PackageOp>(op)) {
+      Block::iterator childMainSymbolTablePos =
+          isTopLevel ? op.getIterator() : mainSymbolTablePosIter;
+      if (failed(lowerAllStructGeneratorOps(package.getBody(),
+                                            childMainSymbolTablePos,
+                                            /*isTopLevel=*/false)))
         return failure();
     }
   }
@@ -830,6 +888,39 @@ static LogicalResult lowerAttributesAndTypes(
     return replaceGeneratorAttrType(singletonTypeHelper, replacer, gen);
   });
 
+  replacer.addReplacement([&](StructInstanceType structInstType) {
+    auto it = symbolDroppedParamDecls.find(structInstType.getName());
+    if (it == symbolDroppedParamDecls.end() ||
+        it->second.size() != structInstType.getParamValues().size())
+      return std::make_pair(Type(structInstType), WalkResult::advance());
+
+    SmallVector<StringAttr> remainingParamNames;
+    SmallVector<TypedAttr> remainingParamValues;
+    for (auto [idx, nameAndValue] :
+         llvm::enumerate(llvm::zip(structInstType.getParamNames(),
+                                   structInstType.getParamValues()))) {
+      if (it->second[idx])
+        continue;
+      auto [name, value] = nameAndValue;
+      remainingParamNames.push_back(name);
+      remainingParamValues.push_back(cast<TypedAttr>(replacer.replace(value)));
+    }
+
+    SmallVector<StructDefFieldAttr> fields;
+    fields.reserve(structInstType.getFields().size());
+    for (StructDefFieldAttr field : structInstType.getFields()) {
+      fields.push_back(StructDefFieldAttr::get(
+          field.getName(),
+          cast<TypedAttr>(replacer.replace(field.getTypeValue()))));
+    }
+
+    return std::make_pair(
+        Type(StructInstanceType::get(structInstType.getName(),
+                                     remainingParamNames, remainingParamValues,
+                                     fields, structInstType.getIsMemoryOnly())),
+        WalkResult::skip());
+  });
+
   // Sugar attr is turned into canonical form.
   replacer.addReplacement(
       [&](SugarAttr sugar) { return replacer.replace(sugar.getCanonical()); });
@@ -877,23 +968,24 @@ static LogicalResult lowerAttributesAndTypes(
           if (auto newFuncSym = removeSingletonParams(funcSym))
             return std::make_pair(newFuncSym, WalkResult::skip());
 
+        // Remove singleton parameter values from TypeGeneratorRefAttr.
         if (auto genRef = dyn_cast<TypeGeneratorRefAttr>(attr)) {
-          SmallVector<TypedAttr> newBindings;
-          bool changed = false;
-          for (TypedAttr binding : genRef.getParamValues()) {
-            if (singletonTypeHelper.isSingletonType(binding.getType())) {
-              changed = true;
-              continue;
-            }
-            newBindings.push_back(cast<TypedAttr>(replacer.replace(binding)));
-          }
-          if (changed)
+          SymbolRefAttr flatRef =
+              cast<SymbolRefAttr>(replacer.replace(genRef.getSymbol()));
+          if (auto it =
+                  symbolDroppedParamDecls.find(flatRef.getLeafReference());
+              it != symbolDroppedParamDecls.end() &&
+              it->second.size() == genRef.getParamValues().size()) {
+            SmallVector<TypedAttr> remainingParams;
+            for (auto [idx, value] : llvm::enumerate(genRef.getParamValues()))
+              if (!it->second[idx])
+                remainingParams.push_back(
+                    cast<TypedAttr>(replacer.replace(value)));
             return std::make_pair(
-                TypeGeneratorRefAttr::get(
-                    attr.getContext(),
-                    cast<SymbolRefAttr>(replacer.replace(genRef.getSymbol())),
-                    newBindings, genRef.getType()),
+                TypeGeneratorRefAttr::get(attr.getContext(), flatRef,
+                                          remainingParams, genRef.getType()),
                 WalkResult::skip());
+          }
         }
 
         // Remove singleton parameter values from BindParamsAttr.
@@ -967,6 +1059,12 @@ struct LowerLITPass : public KGEN::impl::LowerLITBase<LowerLITPass> {
           module, symtab.getTopLevelSymbolTable(), structDecls);
       LITLowerer lowerer(symtab, renamedSymbols, singletonTypeHelper,
                          structDecls);
+      // Lower existing input struct generators before lowering struct decls.
+      if (failed(lowerer.lowerAllStructGeneratorOps(module.getBody(),
+                                                    Block::iterator(),
+                                                    /*isTopLevel=*/true)))
+        return signalPassFailure();
+
       // Lower all structs first, so that extensions can find them when they
       // need to look up struct info.
       if (failed(lowerer.lowerAllStructs(module.getBody(), Block::iterator(),
