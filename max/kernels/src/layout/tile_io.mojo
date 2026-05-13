@@ -18,7 +18,7 @@ from std.gpu import block_dim, lane_id, thread_idx
 from std.gpu.memory import AddressSpace, CacheEviction, async_copy
 from std.sys import align_of, size_of
 
-from .coord import Idx
+from layout import Idx
 from .layout_tensor import ThreadScope
 from .swizzle import Swizzle
 from .tile_layout import Layout

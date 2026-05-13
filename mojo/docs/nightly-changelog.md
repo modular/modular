@@ -46,6 +46,13 @@ This version is still a work in progress.
 
 ## Library changes
 
+- `Coord`, `coord()`, `Idx`, `ComptimeInt`, `RuntimeInt`, and related coordinate
+  helpers now live in the standard library module
+  [`std.utils.coord`](/docs/std/utils/coord/). The
+  [`layout.coord`](/mojo/layout/coord/) module re-exports the same symbols for
+  layout and kernel code; `layout` also hoists the common names at package
+  scope for convenience.
+
 - Added `TileTensor.copy_from()` and `TileTensor.split()` for copying between
   compatible tile views and splitting tiles into static or runtime-sized
   partitions.

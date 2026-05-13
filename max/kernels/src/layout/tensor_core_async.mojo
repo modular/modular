@@ -45,8 +45,8 @@ from std.gpu.compute.mma import (
     wgmma_fence_aligned,
     wgmma_wait_group_sync,
 )
-from layout import IntTuple, Layout, LayoutTensor
 from layout.coord import Coord, Idx
+from layout import IntTuple, Layout, LayoutTensor
 from layout.layout import (
     MakeLayoutList,
     composition,

@@ -14,18 +14,17 @@
 from std.sys import align_of
 from std.sys.intrinsics import _type_is_eq
 
-from layout import IntTuple, Layout
 from layout.coord import (
     ComptimeInt,
     CoordLike,
     RuntimeInt,
     _IntToComptimeInt,
-    _IntTupleToCoordLike,
-    coord_to_int_tuple,
 )
-from layout.tile_layout import Layout as TileLayout, TensorLayout, _RowMajor
-
 from std.utils import IndexList
+
+from layout.int_tuple import _IntTupleToCoordLike, coord_to_int_tuple
+from layout.tile_layout import Layout as TileLayout, TensorLayout, _RowMajor
+from layout import IntTuple, Layout
 
 
 # ===----------------------------------------------------------------------=== #

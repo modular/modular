@@ -82,7 +82,8 @@ from layout import (
     coord_to_index_list,
     row_major,
 )
-from layout.coord import DynamicCoord, _IntTupleToCoordLike
+from layout.int_tuple import _IntTupleToCoordLike
+from layout.coord import DynamicCoord
 from layout.tile_layout import Layout as TileLayout
 from linalg.bmm import batched_matmul, batched_matmul_shape
 from linalg.bmm import (
