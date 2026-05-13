@@ -59,6 +59,7 @@ MojoConfig MojoConfig::fromContext(ContextRef ctx) {
 
 //===----------------------------------------------------------------------===//
 // Parser Configurations
+//===----------------------------------------------------------------------===//
 
 void MojoConfig::getParserImportPaths(SmallVectorImpl<StringRef> &paths) {
   StringRef importPaths = getValue(STRINGIFY_MOJO_CONFIG(".import_path"));
@@ -66,7 +67,19 @@ void MojoConfig::getParserImportPaths(SmallVectorImpl<StringRef> &paths) {
 }
 
 //===----------------------------------------------------------------------===//
+// Plugin Configurations
+//===----------------------------------------------------------------------===//
+
+SmallVector<StringRef> MojoConfig::getPluginPaths() {
+  SmallVector<StringRef> paths;
+  StringRef pluginPaths = getValue(STRINGIFY_MOJO_CONFIG(".mojo_plugin_paths"));
+  pluginPaths.split(paths, ';', /*MaxSplit=*/-1, /*KeepEmpty=*/false);
+  return paths;
+}
+
+//===----------------------------------------------------------------------===//
 // LLDB Configurations
+//===----------------------------------------------------------------------===//
 
 #ifdef __APPLE__
 #define EXT ".dylib"
@@ -85,6 +98,7 @@ StringRef MojoConfig::getLLDBPath() {
 
 //===----------------------------------------------------------------------===//
 // JIT Configurations
+//===----------------------------------------------------------------------===//
 
 StringRef MojoConfig::getCompilerRTPath() {
   return getPath(STRINGIFY_MOJO_CONFIG(".compilerrt_path"),
@@ -97,6 +111,7 @@ StringRef MojoConfig::getMGPRTPath() {
 
 //===----------------------------------------------------------------------===//
 // Driver Configurations
+//===----------------------------------------------------------------------===//
 
 StringRef MojoConfig::getDriverPath() {
   return getPath(STRINGIFY_MOJO_CONFIG(".driver_path"), "bin/mojo");
