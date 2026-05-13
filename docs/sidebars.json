@@ -29,6 +29,7 @@
         "max/inference/text-to-text",
         "max/inference/image-to-text",
         "max/inference/image-generation",
+        "max/inference/video-generation",
         "max/inference/embeddings",
         "max/serve/function-calling",
         "max/serve/structured-output",

@@ -6,7 +6,8 @@ description: Generate images from text prompts or transform existing images usin
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
-import MDXListing from '@site/src/components/Listing/MDXListing';
+import ListingCard from '@site/src/components/Listing/ListingCard';
+import ListingCards from '@site/src/components/Listing/ListingCards';
 import InstallModular from '../../_includes/install-modular.mdx';
 import InstallOpenAI from '../../_includes/install-openai.mdx';
 import Requirements from '@site/src/components/Requirements';
@@ -211,18 +212,32 @@ spec that lets each API provider expose parameters beyond the standard request
 fields. MAX uses it to surface image generation controls such as dimensions and
 denoising steps.
 
-The following parameters are available under `provider_options.image`:
+The following are some commonly used parameters under `provider_options.image`.
+This is not an exhaustive list. For the complete reference, see
+[`provider_options`](/max/rest-api/#POST/v1/responses.body.provider_options).
 
-| Parameter            | Default | Description                                                                         |
-|----------------------|---------|-------------------------------------------------------------------------------------|
-| `height` / `width`   | 1024    | Output dimensions in pixels (must be multiples of 16)                               |
-| `steps`              | 28      | Number of denoising steps                                                           |
-| `guidance_scale`     | 3.5     | How closely the output follows the prompt                                           |
-| `negative_prompt`    | `""`    | Content to avoid in the output                                                      |
+| Parameter         | Type    | Default       | Description                                                                                                                                    |
+|-------------------|---------|---------------|------------------------------------------------------------------------------------------------------------------------------------------------|
+| `height`          | integer | model default | Output height in pixels. Must be at least 128 and a multiple of 16.                                                                            |
+| `width`           | integer | model default | Output width in pixels. Must be at least 128 and a multiple of 16.                                                                             |
+| `steps`           | integer | model default | Number of denoising steps. More steps generally produce higher quality but take longer.                                                        |
+| `guidance_scale`  | number  | `3.5`         | How closely the output follows the prompt. Higher values (7–10) increase prompt adherence; lower values (1–3) allow more creative variation.   |
+| `negative_prompt` | string  | `null`        | Content to avoid in the output.                                                                                                                |
+| `num_images`      | integer | `1`           | Number of images to generate per request.                                                                                                      |
+| `output_format`   | string  | `jpeg`        | Encoding format for the output image: `jpeg`, `png`, or `webp`.                                                                                |
+
+Some parameters apply only to specific model families:
+
+- `secondary_prompt` and `secondary_negative_prompt` — FLUX and Z-Image models
+  only (dual text-encoder architecture)
+- `strength` (image-to-image denoising strength) — FLUX and Z-Image models only
+
+For the full parameter list including `strength`, `response_format`,
+dual-encoder prompts, and CFG controls, see
+[`provider_options`](/max/rest-api/#POST/v1/responses.body.provider_options).
 
 **Height and width**: You can generate images at different aspect ratios. Image
-dimensions must be a multiple of 16 and are automatically scaled to a multiple
-of 16 if an incompatible integer is provided.
+dimensions must be a multiple of 16 and at least 128 pixels in each dimension.
 
 **Steps**: `steps` has the greatest effect on generation time.
 Diffusion models work by iteratively refining a noisy image. More steps
@@ -539,10 +554,14 @@ Your output should look similar to the following:
 Now that you can generate images, explore other inference capabilities and
 deployment options.
 
-export const docs = [
-  '../../inference/image-to-text.mdx',
-  '../../serve/structured-output.mdx',
-  '../../deploy/local-to-cloud.mdx',
-];
-
-<MDXListing mdxList={docs} />
+<ListingCards>
+  <ListingCard title="Image and video to text"
+    url="/max/inference/image-to-text"
+    description="Use the MAX chat completions endpoint with image or video input to generate descriptions and answer questions about visual content" />
+  <ListingCard title="Structured output"
+    url="/max/serve/structured-output"
+    description="Enable structured output with your GenAI deployments for predictable responses" />
+  <ListingCard title="Deploy MAX on GPU with self-hosted endpoints"
+    url="/max/deploy/local-to-cloud"
+    description="Learn how to deploy MAX pipelines to cloud" />
+</ListingCards>
