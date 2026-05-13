@@ -161,14 +161,27 @@ class BlockOffloadEngine:
     @traced
     def memcpy_h2d(self, dst: int, src: int) -> None:
         """Copies a block from host to device(s)."""
+        # d2h on auxiliary stream.
         offset = 0
-        for buf in self.device_buffers:
+        for buf in self.device_buffers_on_aux_stream:
             page_bytes = buf.shape[1]
             buf[dst, :].inplace_copy_from(
                 self.host_buffer[src, offset : offset + page_bytes]
             )
             offset += page_bytes
 
+        if not self.replicated_buffers:
+            return
+
+        # main stream waits for completion of d2h on auxiliary stream.
+        for main_stream, d2h_auxiliary_stream in zip(
+            self.main_streams.values(),
+            self.d2h_auxiliary_streams.values(),
+            strict=True,
+        ):
+            main_stream.wait_for(d2h_auxiliary_stream)
+
+        # Broadcast the block to the other devices on main stream.
         for root, peers in zip(
             self.device_buffers, self.replicated_buffers, strict=False
         ):
