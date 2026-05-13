@@ -17,9 +17,9 @@ include "Run/RunDescription.td"
 def : MojoDriverDescription<
   "The Mojo🔥 command line interface.",
   "The `mojo` CLI provides all the tools you need for Mojo development, such "
-  "as commands to run, compile, and package Mojo code. A list of all commands "
+  "as commands to run, compile, and precompile Mojo code. A list of all commands "
   "are listed below, and you can learn more about each one by adding the "
-  "`--help` option to the command (for example, `mojo package --help`).\n"
+  "`--help` option to the command (for example, `mojo precompile --help`).\n"
   "\n"
   "However, you may omit the `run` and `repl` commands. That is, you can run "
   "a Mojo file by simply passing the filename to `mojo`:\n"

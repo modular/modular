@@ -599,7 +599,7 @@ from .module2 import helper
 ```
 
 A **precompiled file** or **binary package** (`.mojoc` file) is the
-precompiled form of a source package, created by the `mojo package` command.
+precompiled form of a source package, created by the `mojo precompile` command.
 Binary packages are tied to the specific version of the compiler that produced
 them so it is not advised to use these as a distributable form; they act as a
 sort of cache file.
@@ -613,7 +613,7 @@ sort of cache file.
 
 ### Package Creation Flow
 
-The `mojo package` command follows the first two phases of the
+The `mojo precompile` command follows the first two phases of the
 [High-Level Architecture](#high-level-architecture) (parsing and semantic
 checking), then stops before elaboration:
 
@@ -713,10 +713,10 @@ When importing a `.mojoc` file (`createBinaryPackageState`):
 
 ```bash
 # Create a .mojoc from a source directory
-mojo package my_package/ -o my_package.mojoc
+mojo precompile my_package/ -o my_package.mojoc
 
 # Create a kgen module (full pre-elaboration IR)
-mojo package my_package/ --kgen-module -o my_package.mlirbc
+mojo precompile my_package/ --kgen-module -o my_package.mlirbc
 
 # Compile code that imports the precompiled package
 mojo build main.mojo -I .  # Finds my_package.mojoc in search paths

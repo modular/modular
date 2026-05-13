@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 # RUN: mkdir -p %t.closure-dir
-# RUN: mojo package %S/inputs/closure -o %t.closure-dir/closure.mojoc
+# RUN: mojo precompile %S/inputs/closure -o %t.closure-dir/closure.mojoc
 # RUN: mojo -I %t.closure-dir %s 4 | FileCheck %s
 # RUN: kgen-opt %t.closure-dir/closure.mojoc | FileCheck %s -check-prefix=CHECK-PACK
 

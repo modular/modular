@@ -11,7 +11,7 @@
 # ===----------------------------------------------------------------------=== #
 
 # RUN: rm -rf %t.package-rename && mkdir -p %t.package-rename
-# RUN: mojo package %S/inputs/test_package -o %t.package-rename/renamed-package.mojoc
+# RUN: mojo precompile %S/inputs/test_package -o %t.package-rename/renamed-package.mojoc
 # RUN: %mojo -I %t.package-rename %s | FileCheck %s
 
 from `renamed-package`.module import identity

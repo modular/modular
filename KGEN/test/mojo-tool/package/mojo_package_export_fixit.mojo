@@ -7,7 +7,7 @@
 # Test that --experimental-export-fixit generates a YAML file and continues
 # normal execution. Since the package has deprecation warnings with fix-its,
 # the package build will fail, but the YAML file should still be written.
-# RUN: not mojo package --experimental-export-fixit=%t.yaml %S/test_package_fixit 2>&1 | FileCheck %s
+# RUN: not mojo precompile --experimental-export-fixit=%t.yaml %S/test_package_fixit 2>&1 | FileCheck %s
 # RUN: FileCheck %s --input-file=%t.yaml --check-prefix=YAML
 
 # CHECK: error: use of unknown declaration '__origin_of'; did you mean 'origin_of'?
@@ -25,5 +25,5 @@
 # YAML: ...
 
 # Test mutual exclusion of --experimental-fixit and --experimental-export-fixit.
-# RUN: not mojo package --experimental-fixit --experimental-export-fixit=%t2.yaml %S/test_package_fixit 2>&1 | FileCheck %s --check-prefix=ERROR
+# RUN: not mojo precompile --experimental-fixit --experimental-export-fixit=%t2.yaml %S/test_package_fixit 2>&1 | FileCheck %s --check-prefix=ERROR
 # ERROR: cannot use both --experimental-fixit and --experimental-export-fixit simultaneously

@@ -4,10 +4,10 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# Test that -Werror takes precedence over --disable-warnings for `mojo package`
+# Test that -Werror takes precedence over --disable-warnings for `mojo precompile`
 
-# RUN: not mojo package -Werror --disable-warnings %S/test_package_werror 2>&1 | FileCheck %s --check-prefix=BOTH-FLAGS
-# RUN: not mojo package -Werror %S/test_package_werror 2>&1 | FileCheck %s --check-prefix=ONLY-WERROR
+# RUN: not mojo precompile -Werror --disable-warnings %S/test_package_werror 2>&1 | FileCheck %s --check-prefix=BOTH-FLAGS
+# RUN: not mojo precompile -Werror %S/test_package_werror 2>&1 | FileCheck %s --check-prefix=ONLY-WERROR
 
 # BOTH-FLAGS: error: assignment to 'foo' was never used
 # BOTH-FLAGS-NOT: warning: assignment to 'foo' was never used

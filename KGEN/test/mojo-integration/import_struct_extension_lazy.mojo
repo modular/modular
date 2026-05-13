@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 # RUN: mkdir -p %t.lazy-test
-# RUN: mojo package %S/inputs/struct_and_extension_lazy -o %t.lazy-test/lazy_test.mojoc
+# RUN: mojo precompile %S/inputs/struct_and_extension_lazy -o %t.lazy-test/lazy_test.mojoc
 # RUN: kgen-translate --mojo-enable-prebuilt-packages -import-mojo -I %t.lazy-test %s | FileCheck %s
 
 # This imports a precompiled file's sub-package's extension.

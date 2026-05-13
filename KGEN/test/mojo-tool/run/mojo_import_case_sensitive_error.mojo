@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 # RUN: mkdir -p %t.dir
-# RUN: mojo package %S/../package/test_package -o %t.dir/test_binary_package.mojoc
+# RUN: mojo precompile %S/../package/test_package -o %t.dir/test_binary_package.mojoc
 # RUN: not mojo run -I %t.dir %s 2>&1 | FileCheck %s
 
 # COM: This will import a package with the wrong case, so we expect an error.

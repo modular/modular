@@ -581,5 +581,7 @@ static int precompile(const State &subcommandState) {
 }
 
 void M::registerPrecompileSubcommand(SubcommandRegistry &registry) {
+  registry.addCallback("precompile", precompile);
+  // TODO: Add deprecatedFor "precompile"
   registry.addCallback("package", precompile);
 }

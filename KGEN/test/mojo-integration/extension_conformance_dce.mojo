@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 # RUN: mkdir -p %t.struct-and-conforming-extension
-# RUN: mojo package %S/inputs/struct_and_conforming_extension_package -o %t.struct-and-conforming-extension/struct_and_conforming_extension_package.mojoc
+# RUN: mojo precompile %S/inputs/struct_and_conforming_extension_package -o %t.struct-and-conforming-extension/struct_and_conforming_extension_package.mojoc
 # RUN: kgen-translate --mojo-enable-prebuilt-packages -import-mojo -I %t.struct-and-conforming-extension %s --kgen-print-inline-type-values | kgen-opt -lower-semantic-cf -check-lifetimes -lower-lit | FileCheck %s
 
 # This test verifies that extensions with trait conformances survive DCE and

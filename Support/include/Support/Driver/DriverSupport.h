@@ -140,14 +140,15 @@ public:
   using Callback = std::function<int(const State &)>;
 
   /// Registers a subcommand and its callback.
-  void addCallback(StringRef subcommand, Callback callback);
+  void addCallback(StringRef subcommand, Callback callback,
+                   std::optional<StringRef> deprecatedFor = std::nullopt);
   /// Attempts to return the callback function associated with the given
   /// subcommand name, or an error if no match can be found.
   ErrorOr<Callback> getCallback(StringRef subcommand);
 
 private:
   /// The backing store for subcommands and their callback functions.
-  llvm::StringMap<Callback> callbacks;
+  llvm::StringMap<std::pair<Callback, std::optional<StringRef>>> callbacks;
 };
 } // namespace M
 
