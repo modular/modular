@@ -22,14 +22,21 @@ This is the per-arg cost that `def_function`-style bindings pay when
 their handler body says `Int(py=arg)`.
 """
 
-from std.benchmark import Bench, BenchConfig, Bencher, BenchId, keep
+from std.benchmark import (
+    Bench,
+    BenchConfig,
+    Bencher,
+    BenchId,
+    black_box,
+    keep,
+)
 from std.os import abort
 from std.python import Python, PythonObject
 
 
 @parameter
 def bench_int_from_pyint(mut b: Bencher) raises:
-    """Isolated `Int(py=...)` conversion — measures the primitive
+    """Isolated `Int(py=...)` conversion. Measures the primitive
     that the fast path optimizes."""
     _ = Python()
     var py_int = PythonObject(42)
@@ -38,7 +45,7 @@ def bench_int_from_pyint(mut b: Bencher) raises:
     def call_fn() {read}:
         try:
             for _ in range(1000):
-                var x = Int(py=py_int)
+                var x = Int(py=black_box(py_int))
                 keep(x)
         except e:
             abort(String(e))
