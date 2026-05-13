@@ -20,10 +20,10 @@
 # RUN: llvm-as %t_impl.ll -o %t_impl.bc
 
 # Step 2: Package the bitcode_package with the bitcode library
-# RUN: mojo package %S/inputs/bitcode_package --bitcode-libs=%t_impl.bc -o %S/bitcode_package.mojopkg
+# RUN: mojo package %S/inputs/bitcode_package --bitcode-libs=%t_impl.bc -o %S/bitcode_package.mojoc
 
 # Step 3: Verify the package was created and contains bitcode modules
-# RUN: kgen-opt %S/bitcode_package.mojopkg | FileCheck %s --check-prefix=CHECK-PACKAGE
+# RUN: kgen-opt %S/bitcode_package.mojoc | FileCheck %s --check-prefix=CHECK-PACKAGE
 # CHECK-PACKAGE: lit.package
 # CHECK-PACKAGE-SAME: externLLVMBitcodeModules = #lit<dense_resource_elements_array[dense_resource<[[LLVM_BITCODE_NAME:llvm_bitcode_[[:alnum:]]+]]
 # CHECK-PACKAGE: dialect_resources:

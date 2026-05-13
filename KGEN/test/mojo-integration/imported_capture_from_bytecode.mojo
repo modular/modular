@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 # RUN: mkdir -p %t.closure-dir
-# RUN: mojo package %S/inputs/closure -o %t.closure-dir/closure.mojopkg
+# RUN: mojo package %S/inputs/closure -o %t.closure-dir/closure.mojoc
 # RUN: kgen-translate --mojo-enable-prebuilt-packages -import-mojo -I %t.closure-dir %s | FileCheck %s
 
 

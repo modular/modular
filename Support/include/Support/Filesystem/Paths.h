@@ -16,7 +16,7 @@ namespace M::Filesystem {
 bool isMojoSourcePackagePath(const std::filesystem::path &path);
 
 /// Returns true if the given path is a Mojo binary package (i.e. a
-/// `.mojopkg` file).
+/// `.mojoc` or `.mojopkg` file).
 bool isMojoBinaryPackagePath(const std::filesystem::path &path);
 
 /// Return if the given file path defines a mojo source file.

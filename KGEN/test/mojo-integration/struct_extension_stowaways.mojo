@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 # RUN: mkdir -p %t.transitive-extension
-# RUN: mojo package %S/inputs/transitive_extension_package -o %t.transitive-extension/transitive_extension_package.mojopkg
+# RUN: mojo package %S/inputs/transitive_extension_package -o %t.transitive-extension/transitive_extension_package.mojoc
 # RUN: kgen-translate --mojo-enable-prebuilt-packages -import-mojo -I %t.transitive-extension %s --kgen-print-inline-type-values | kgen-opt -lower-semantic-cf -check-lifetimes -lower-lit | FileCheck %s
 
 # Note how we're importing IntConfig, not MyStruct here.

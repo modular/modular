@@ -113,7 +113,7 @@ ErrorOr<CommonParseResult> M::parseCommonMojoArguments(
           optionIDs.elaborationErrorLimit,
           optionIDs.elaborationErrorIncludePrelude,
           optionIDs.elaborationErrorVerbose, optionIDs.elaborationMaxDepth,
-          optionIDs.ignoreIncompatiblePackageErrors))
+          optionIDs.ignoreIncompatiblePrecompiledFileErrors))
     return err.takeError();
 
   // Parse target options.
@@ -153,7 +153,7 @@ ErrorOrSuccess M::parseCompilationOptions(
     llvm::opt::OptSpecifier elaborationErrorIncludePreludeId,
     llvm::opt::OptSpecifier elaborationErrorVerboseId,
     llvm::opt::OptSpecifier elaborationMaxDepthId,
-    llvm::opt::OptSpecifier ignoreIncompatiblePackageErrorsId) {
+    llvm::opt::OptSpecifier ignoreIncompatiblePrecompiledFileErrorsId) {
 
   // Process the sanitizers.
   if (sanitizeId.isValid()) {
@@ -356,8 +356,8 @@ ErrorOrSuccess M::parseCompilationOptions(
     }
   }
 
-  compilationOptions.ignoreIncompatiblePackageErrors =
-      args.hasArg(ignoreIncompatiblePackageErrorsId);
+  compilationOptions.ignoreIncompatiblePrecompiledFileErrors =
+      args.hasArg(ignoreIncompatiblePrecompiledFileErrorsId);
 
   // Unike other command line options, disableWarnings is parsed
   // in State::parseDiagnosticFormatArguments(), because there is another

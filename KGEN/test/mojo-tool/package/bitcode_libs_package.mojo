@@ -13,10 +13,10 @@
 # RUN: llvm-as %t.ll -o %t.bc
 
 # Create a test package that includes the bitcode library
-# RUN: mojo package %S/test_package --bitcode-libs=%t.bc -o %t_with_bitcode.mojopkg
+# RUN: mojo package %S/test_package --bitcode-libs=%t.bc -o %t_with_bitcode.mojoc
 
 # Verify the package was created and contains the externLLVMBitcodeModules attribute
-# RUN: kgen-opt -mlir-print-debuginfo %t_with_bitcode.mojopkg | FileCheck %s
+# RUN: kgen-opt -mlir-print-debuginfo %t_with_bitcode.mojoc | FileCheck %s
 
 # CHECK: lit.package @{{.*}}_with_bitcode
 # CHECK-SAME: externLLVMBitcodeModules = #lit<dense_resource_elements_array[dense_resource<[[LLVM_BITCODE_NAME:llvm_bitcode_[[:alnum:]]+]]
@@ -24,7 +24,7 @@
 # CHECK: [[LLVM_BITCODE_NAME]]
 
 # Clean up
-# RUN: rm %t_with_bitcode.mojopkg
+# RUN: rm %t_with_bitcode.mojoc
 
 # ===----------------------------------------------------------------------=== #
 # Mojo function that will be compiled to bitcode and packaged

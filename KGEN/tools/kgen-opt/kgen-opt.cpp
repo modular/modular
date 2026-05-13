@@ -11,7 +11,7 @@
 #include "Init/Init.h"
 #include "KGEN/Support/CompilerProfiling.h"
 #include "KGEN/Support/ForceLinkMLIRC.h"
-#include "KGEN/Support/MojoPackage.h"
+#include "KGEN/Support/MojoPrecompiledFile.h"
 #include "KGEN/ToolCommon/CLOptions.h"
 #include "KGEN/ToolCommon/Debug.h"
 #include "KGEN/ToolCommon/InitAllDialects.h"
@@ -48,7 +48,7 @@ LogicalResult runMlirOptMain(int argc, char **argv,
                              llvm::StringRef inputFilename,
                              llvm::StringRef outputFilename,
                              DialectRegistry &registry,
-                             bool ignoreIncompatiblePackageErrs) {
+                             bool ignoreIncompatiblePrecompiledFileErrs) {
   llvm::InitLLVM y(argc, argv);
   mlir::MlirOptMainConfig config =
       mlir::MlirOptMainConfig::createFromCLOptions();
@@ -69,13 +69,13 @@ LogicalResult runMlirOptMain(int argc, char **argv,
     return failure();
   }
 
-  // If this is a Mojo package file, verify the header and skip past it to get
-  // to the MLIR within.
+  // If this is a Mojo precompiled file, verify the header and skip past it to
+  // get to the MLIR within.
   llvm::MemoryBufferRef mlirBuffer = *file;
   std::unique_ptr<llvm::MemoryBuffer> decompressedPkgData;
-  if (KGEN::isMojoPackage(*file)) {
-    auto mlirBufOrErr =
-        M::KGEN::getMLIRBufferFromPackage(*file, ignoreIncompatiblePackageErrs);
+  if (KGEN::isMojoPrecompiledFile(*file)) {
+    auto mlirBufOrErr = M::KGEN::getMLIRBufferFromPrecompiledFile(
+        *file, ignoreIncompatiblePrecompiledFileErrs);
     if (mlirBufOrErr.isError()) {
       llvm::errs() << mlirBufOrErr.takeError().get() << "\n";
       return failure();
@@ -171,10 +171,10 @@ int main(int argc, char **argv) {
                      "traced by time profiler."),
       llvm::cl::init(0)};
 
-  static llvm::cl::opt<bool> ignoreIncompatiblePackageErrs{
-      "ignore-incompatible-package-errors",
-      llvm::cl::desc(
-          "Ignore errors encountered when loading incompatible Mojo packages."),
+  static llvm::cl::opt<bool> ignoreIncompatiblePrecompiledFileErrs{
+      "ignore-incompatible-precompiled-file-errors",
+      llvm::cl::desc("Ignore errors encountered when loading incompatible Mojo "
+                     "precompiled files."),
       llvm::cl::init(false)};
 
   KGEN::registerKGENCommandLineOptions();
@@ -192,5 +192,6 @@ int main(int argc, char **argv) {
   KGEN::TraceProfiler tracer(timeTrace, timeTraceGranularity);
 
   return failed(runMlirOptMain(argc, argv, inputFilename, outputFilename,
-                               registry, ignoreIncompatiblePackageErrs));
+                               registry,
+                               ignoreIncompatiblePrecompiledFileErrs));
 }

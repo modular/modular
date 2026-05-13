@@ -79,9 +79,9 @@ struct ParserConfig {
   /// If true, this will diagnose missing pieces of documentation strings.
   bool diagnoseMissingDocStrings = false;
 
-  /// If true, ignore any already-compiled `foo.mojopkg` that appear in
-  /// its import search paths. Doing so results in Mojo source packages named
-  /// `foo/` being found instead, and those source packages being parsed anew.
+  /// If true, ignore any already-compiled `foo.mojoc` that appear in its import
+  /// search paths. Doing so results in Mojo source packages named `foo/` being
+  /// found instead, and those source packages being parsed anew.
   bool disablePrebuiltPackages = false;
 
   /// If true, auto-import the builtin package.

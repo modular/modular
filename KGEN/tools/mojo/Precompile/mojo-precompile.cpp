@@ -14,7 +14,7 @@
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LITDialect/LITUtils.h"
 #include "KGEN/MojoParser/EntryPoint.h"
-#include "KGEN/Support/MojoPackage.h"
+#include "KGEN/Support/MojoPrecompiledFile.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
 #include "KGEN/ToolCommon/InitAllDialects.h"
 #include "MLRT/AsyncRT/CompilerSupport/Context.h"
@@ -72,7 +72,7 @@ struct PrecompileOptTable : public llvm::opt::PrecomputedOptTable {
 
 /// This function takes a parsed `lit.package` op and creates  a new
 /// `lit.package` op. This new `lit.package` op is one that can be serialized
-/// into MLIR bytecode and written to disk, as a `.mojopkg` file. The generated
+/// into MLIR bytecode and written to disk, as a `.mojoc` file. The generated
 /// package only contains stubs of the original package's contents, and is
 /// suitable for importing into other Mojo programs.
 static std::pair<OwningOpRef<ModuleOp>, LIT::PackageOp>
@@ -187,7 +187,7 @@ struct PrecompileArgs {
   /// The output should be a serialized kgen module run until before
   /// elaboration.
   bool exportKgenModule;
-  /// The path to which to output a `.mojopkg` file.
+  /// The path to which to output a `.mojoc` file.
   std::string outputPath;
   /// Compilation options common to all Mojo builds.
   CompilationOptions compileOptions;
@@ -234,9 +234,9 @@ static ErrorOrSuccess parsePrecompileArgs(const State &state,
                  "' does not correspond to a Mojo package");
   }
   pkgArgs.exportKgenModule = args.hasArg(options::OPT_kgenModule);
-  std::string extension = pkgArgs.exportKgenModule ? ".mlirbc" : ".mojopkg";
+  std::string extension = pkgArgs.exportKgenModule ? ".mlirbc" : ".mojoc";
   // Use the output path the user specified, or if none was specified, output
-  // "input-directory-name.mojopkg".
+  // "input-directory-name.mojoc".
   std::string inputDirName =
       std::filesystem::path(pkgArgs.inputPath).filename().string();
 
@@ -251,7 +251,7 @@ static ErrorOrSuccess parsePrecompileArgs(const State &state,
       std::filesystem::path outputPath(pkgArgs.outputPath);
 
       // If the user has specified a directory, output an
-      // "input-directory-name.mojopkg" within that directory.
+      // "input-directory-name.mojoc" within that directory.
       ErrorOr<bool> isDirectoryOr = isExistingDirectory(outputPath);
       if (isDirectoryOr.isError())
         return isDirectoryOr.takeError();
@@ -260,8 +260,12 @@ static ErrorOrSuccess parsePrecompileArgs(const State &state,
         pkgArgs.outputPath = outputPath;
       }
 
-      if (!pkgArgs.exportKgenModule && outputPath.extension() != ".mojopkg")
-        return Error("output path must have a '.mojopkg' extension");
+      if (!pkgArgs.exportKgenModule && outputPath.extension() != ".mojoc") {
+        // TODO: Add a warning here on the old 'mojopkg' file extension, once
+        // everything is switched over to the new nomenclature.
+        if (outputPath.extension() != ".mojopkg")
+          return Error("output path must have a '.mojoc' extension");
+      }
       if (pkgArgs.exportKgenModule && outputPath.extension() != ".mlirbc")
         return Error("output path must have a '.mlirbc' extension.");
 
@@ -288,11 +292,11 @@ static ErrorOrSuccess parsePrecompileArgs(const State &state,
           /*elaborationErrorLimitId=*/{},
           /*elaborationErrorIncludePreludeId=*/{},
           /*elaborationErrorVerbose=*/{}, /*elaborationMaxDepth=*/{},
-          /*ignoreIncompatiblePackageErrorsId=*/
-          options::OPT_ignore_incompatible_package_errors))
+          /*ignoreIncompatiblePrecompiledFileErrorsId=*/
+          options::OPT_ignore_incompatible_precompiled_file_errors))
     return err.takeError();
 
-  // Packages are built with the intention of being agnostic, so use
+  // Precompiled files are built with the intention of being agnostic, so use
   // conservative compilation settings as a default.
   pkgArgs.compileOptions.debugLevel = CompilationOptions::kFullDebugInfo;
   pkgArgs.compileOptions.optimizationLevel = 0;
@@ -360,8 +364,8 @@ internalizeBitcodeLibs(LLVMBitcodeLibArrayAttr bitcodeLibsAttr,
 
 /// Given parsed module and package ops, builds a new module and package op. The
 /// newly build package op is suitable for serialization as MLIR bytecode; it
-/// may be written to a `.mojopkg` file that can be deserialized and imported
-/// into Mojo programs.
+/// may be written to a `.mojoc` file that can be deserialized and imported into
+/// Mojo programs.
 static ErrorOr<OwningOpRef<ModuleOp>>
 buildPackage(const PrecompileArgs &precompileArgs, ModuleOp theModule,
              LIT::PackageOp parsedPackageOp, MLRT::CPUDevice &cpuDevice) {
@@ -544,7 +548,7 @@ static int precompile(const State &subcommandState) {
         return state.reportError(res.getError());
     }
 
-    if (failed(writeBinaryPackage(**module, out->os())))
+    if (failed(writePrecompiledFile(**module, out->os())))
       return state.reportError("serialization failed");
     out->keep();
 
@@ -564,7 +568,7 @@ static int precompile(const State &subcommandState) {
   OwningOpRef<ModuleOp> builtPackageModule = builtOrErr.takeValue();
 
   // Write the new package op as serialized bytecode to the output file.
-  if (failed(writeBinaryPackage(&**builtPackageModule, out->os())))
+  if (failed(writePrecompiledFile(&**builtPackageModule, out->os())))
     return state.reportError("failed to write package bytecode to a file");
 
   out->keep();

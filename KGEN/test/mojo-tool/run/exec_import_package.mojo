@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 # RUN: mkdir -p %t.dir
-# RUN: mojo package %S/../package/test_package -o %t.dir/test_binary_package.mojopkg
+# RUN: mojo package %S/../package/test_package -o %t.dir/test_binary_package.mojoc
 # RUN: mojo run -I %t.dir %s | FileCheck %s
 
 from test_binary_package.inner1.myfile import print10

@@ -169,7 +169,7 @@ public:
   bool disableWarnings = false;
   bool warningsAsErrors = false;
   bool warnOnUnstableAPIs = false;
-  bool ignoreIncompatiblePackageErrors = false;
+  bool ignoreIncompatiblePrecompiledFileErrors = false;
 
   // Extra handle name to separate cache base between mojo, kgen, kgen-opt,
   // to avoid internal test cache pruning races caused by different binary IDs.

@@ -33,7 +33,7 @@
 #include "KGEN/POPDialect/POPTypes.h"
 #include "KGEN/Support/CompilerProfiling.h"
 #include "KGEN/Support/Configuration.h"
-#include "KGEN/Support/MojoPackage.h"
+#include "KGEN/Support/MojoPrecompiledFile.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
 #include "KGEN/ToolCommon/InitAllDialects.h"
 
@@ -967,9 +967,8 @@ static std::optional<std::string> resolveModulePath(SharedState &shared,
 
   // Find a path in `includeDir` that is a mojo package for `moduleName`. This
   // is either a directory with an `__init__.mojo` file inside it, a
-  // `moduleName.mojo` file, or a `moduleName.mojopkg` file. Make
-  // sure to ignore other `moduleName.*` files that are definitely not mojo
-  // packages.
+  // `moduleName.mojo` file, or a precompiled `moduleName.mojoc` file. Make sure
+  // to ignore other `moduleName.*` files that are definitely not mojo packages.
   std::error_code ec;
   auto iter = directory_iterator(includeDir.str(), ec);
   if (ec)
@@ -989,7 +988,7 @@ static std::optional<std::string> resolveModulePath(SharedState &shared,
     }
 
     path ext = entry.path().filename().extension();
-    if (!ignorePrebuilt && ext == ".mojopkg") {
+    if (!ignorePrebuilt && (ext == ".mojoc" || ext == ".mojopkg")) {
       return std::filesystem::absolute(entry.path());
     }
     if (ext == ".mojo") {
@@ -1161,9 +1160,9 @@ SharedState::importSubModuleState(StringRef name, ASTDecl *parentDecl,
     return createPackageState(declName, *modulePath, *parentState, fileLoc);
   }
 
-  // Check if the path is a binary package.
+  // Check if the path is a precompiled file or binary package.
   StringRef pathRef(*modulePath);
-  if (pathRef.ends_with(".mojopkg"))
+  if (pathRef.ends_with(".mojoc") || pathRef.ends_with(".mojopkg"))
     return createBinaryPackageState(loc, declName, *modulePath, *parentState);
 
   // Open the module file within the source manager. Reuse an existing file if
@@ -1579,8 +1578,8 @@ SharedState::createBinaryPackageState(SMLoc loc, StringAttr declName,
     const llvm::MemoryBuffer *memoryBuf =
         sourceMgr->getMemoryBuffer(sourceMgr->getMainFileID());
 
-    auto mlirBufOrErr = getMLIRBufferFromPackage(
-        *memoryBuf, options.ignoreIncompatiblePackageErrors);
+    auto mlirBufOrErr = getMLIRBufferFromPrecompiledFile(
+        *memoryBuf, options.ignoreIncompatiblePrecompiledFileErrors);
     if (mlirBufOrErr.isError())
       return makeError(mlirBufOrErr.takeError().get());
     auto mlirResult = std::move(*mlirBufOrErr);

@@ -14,7 +14,7 @@
 # verifySymbolUses to fail.
 
 # RUN: mkdir -p %t.moco-3814
-# RUN: mojo package %S/inputs/moco_3814_package -o %t.moco-3814/moco_3814_package.mojopkg
+# RUN: mojo package %S/inputs/moco_3814_package -o %t.moco-3814/moco_3814_package.mojoc
 # RUN: kgen-translate --mojo-enable-prebuilt-packages -import-mojo -I %t.moco-3814 %s | FileCheck %s
 
 from moco_3814_package import Container
