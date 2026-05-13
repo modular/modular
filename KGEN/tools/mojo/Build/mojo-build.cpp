@@ -831,13 +831,6 @@ static int linkOutput(OutputType outputType, const State &state,
     } else {
       linkerArgs.emplace_back(options.externalLibasan);
     }
-    // FIXME(MOTO-1516): Force the linker to keep __asan_default_options
-    // (emitted in ObjectCompiler.cpp) so the ASAN cpuDevice can find it via
-    // dlsym. Without this, -dead_strip removes the unreferenced symbol. Gate
-    // on Mach-O target to stay aligned with the emission check in
-    // attachInstrumentationAttributes.
-    if (llvm::Triple(options.targetTriple).isOSBinFormatMachO())
-      linkerArgs.emplace_back("-Wl,-u,___asan_default_options");
   }
   if (options.sanitizers.has(Sanitizers::kThread))
     linkerArgs.emplace_back("-fsanitize=thread");
