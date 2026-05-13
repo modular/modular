@@ -460,92 +460,12 @@ def _concat_serial[
 
 
 @always_inline
-def _concat_small[
-    input_origin: ImmutOrigin,
-    InputLayoutType: TensorLayout,
-    //,
-    dtype: DType,
-    epilogue_fn: Optional[elementwise_epilogue_type],
-](
-    output: TileTensor[
-        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
-    ],
-    axis: Int,
-    inputs: List[TileTensor[dtype, InputLayoutType, input_origin]],
-) raises:
-    comptime single_thread_blocking_override = True
-    comptime simd_width = simd_width_of[dtype]()
-
-    @parameter
-    @always_inline
-    def concat_lambda[
-        simd_width: Int, rank: Int, alignment: Int = 1
-    ](out_index: IndexList[rank]):
-        # Concatenating [:, 10, :], [:, 20, :], [:, 30, :] results in shape
-        # [:, 60, :] so when the target dim is:
-        #   0 >= target_dim < 10: We are loading from first input.
-        #   10 >= target_dim < 20: We are loading from second input.
-        #   20 >= target_dim < 30: We are loading from third input.
-        # The output will always be storing to the full index but we load from
-        # an offset.
-
-        var target_dim = out_index[axis]
-
-        # Iterate through the inputs to find the one we should be storing to.
-        for i in range(len(inputs)):
-            var input = inputs[i]
-            # This is the input we should be loading/storing.
-            if target_dim < Int(input.dim(axis)):
-                var in_index = out_index
-                in_index[axis] = target_dim
-                var coord = Coord(in_index)
-                var load = input.load[width=simd_width, alignment=1](coord)
-
-                comptime if epilogue_fn:
-                    comptime func = epilogue_fn.value()
-                    func[dtype, rank, simd_width](out_index, load)
-                else:
-                    var coord = Coord(out_index)
-                    output.store[width=simd_width, alignment=1](coord, load)
-                return
-            else:
-                # Keep looking...
-                target_dim -= Int(input.dim(axis))
-
-    # We need to check it's safe to simd_load from each input.
-    var inputs_simd_aligned = True
-    for i in range(len(inputs)):
-        if (
-            inputs[i].dim(output.rank - 1)
-            % Scalar[inputs.T.linear_idx_type](simd_width)
-            != 0
-        ):
-            inputs_simd_aligned = False
-
-    # If we are concat'ing along the last dimension we can do a simd load.
-    if axis == output.rank - 1 and inputs_simd_aligned:
-        elementwise[
-            concat_lambda,
-            simd_width=simd_width,
-            use_blocking_impl=single_thread_blocking_override,
-        ](coord_to_index_list(output.layout.shape_coord()))
-    else:
-        # Otherwise we must run scalar.
-        elementwise[
-            concat_lambda,
-            simd_width=1,
-            use_blocking_impl=single_thread_blocking_override,
-        ](coord_to_index_list(output.layout.shape_coord()))
-
-
-@always_inline
 def _concat_cpu[
     input_origin: ImmutOrigin,
     InputLayoutType: TensorLayout,
     //,
     dtype: DType,
     epilogue_fn: Optional[elementwise_epilogue_type],
-    single_thread_blocking_override: Bool,
 ](
     output: TileTensor[
         mut=True, dtype, address_space=AddressSpace.GENERIC, ...
@@ -554,9 +474,6 @@ def _concat_cpu[
     inputs: List[TileTensor[dtype, InputLayoutType, input_origin]],
     ctx: Optional[DeviceContext] = None,
 ) raises:
-    comptime if single_thread_blocking_override:
-        return _concat_small[dtype, epilogue_fn](output, axis, inputs)
-
     _check_input_consistency[dtype](axis, inputs)
 
     @always_inline
@@ -583,7 +500,6 @@ def concat_shape[
     InputLayoutType: TensorLayout,
     //,
     input_type: DType,
-    single_thread_blocking_override: Bool,
 ](
     input_bufs: List[TileTensor[input_type, InputLayoutType, input_origin]],
     axis: Int,
@@ -596,8 +512,6 @@ def concat_shape[
         input_origin: Origin of the input tensor.
         InputLayoutType: Layout type of the input tensor.
         input_type: Type of the input tensor.
-        single_thread_blocking_override: If True, then the operation is run
-          synchronously using a single thread.
 
     Args:
         input_bufs: The input tensors list.
@@ -651,7 +565,6 @@ def concat[
     InputLayoutType: TensorLayout,
     //,
     dtype: DType,
-    single_thread_blocking_override: Bool,
     target: StaticString = "cpu",
     epilogue_fn: Optional[elementwise_epilogue_type] = None,
 ](
@@ -685,7 +598,7 @@ def concat[
             # TODO: Should we just provide a separate implementation for
             # `concat_from_list`, since dynamic input size does not work with
             # static sized input lambda tuple.
-            _concat_cpu[dtype, epilogue_fn, single_thread_blocking_override](
+            _concat_cpu[dtype, epilogue_fn](
                 output,
                 axis,
                 inputVec,
@@ -1054,7 +967,6 @@ def _concat_gpu[
 def _fused_concat_cpu[
     rank: Int,
     dtype: DType,
-    single_thread_blocking_override: Bool,
     input_fn: def[input_index: Int, width: Int, rank: Int, alignment: Int = 1](
         IndexList[rank]
     ) capturing -> SIMD[dtype, width],
@@ -1090,7 +1002,6 @@ def _fused_concat_cpu[
         elementwise[
             elementwise_wrapper,
             1,
-            use_blocking_impl=single_thread_blocking_override,
             _trace_description="concat_fused",
         ](input_shape, ctx)
         offset = offset + input_shape[axis]
@@ -1652,7 +1563,6 @@ def _fused_dual_concat_gpu[
 def fused_concat[
     dtype: DType,
     rank: Int,
-    single_thread_blocking_override: Bool,
     input_fn: def[input_index: Int, width: Int, _rank: Int, alignment: Int = 1](
         IndexList[_rank]
     ) capturing -> SIMD[dtype, width],
@@ -1677,7 +1587,6 @@ def fused_concat[
             return _fused_concat_cpu[
                 rank,
                 dtype,
-                single_thread_blocking_override,
                 input_fn,
                 output_0_fn,
             ](axis, input_shapes, output, ctx)

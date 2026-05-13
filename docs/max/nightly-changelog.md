@@ -75,6 +75,14 @@ This version is still a work in progress.
 
 ## MAX kernels
 
+- The `use_blocking_impl` parameter has been removed from the `foreach` custom
+  op helper (and the underlying `elementwise` primitive), and the analogous
+  `single_thread_blocking_override` parameter has been removed from the `concat`
+  and `concat_shape` kernels and the reduction-based kernels. Work is always
+  dispatched the same way, with a single worker used automatically when the
+  problem size is small. The dedicated small-tensor `concat` fast path has been
+  removed in favor of the existing serial/parallel dispatch.
+
 ## Breaking changes
 
 - GPU and CPU diagnostic tooling has moved from `max.diagnostics` to

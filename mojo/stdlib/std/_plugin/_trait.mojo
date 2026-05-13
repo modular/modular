@@ -148,7 +148,6 @@ comptime ElementwiseFnType = (
         ) register_passable -> None,
         simd_width: Int,
         *,
-        use_blocking_impl: Bool = False,
         pdl_level: PDLLevel = PDLLevel(1),
     ](
         func: FuncType,

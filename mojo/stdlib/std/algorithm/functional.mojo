@@ -150,7 +150,6 @@ def elementwise[
     ) capturing[_] -> None,
     simd_width: Int,
     *,
-    use_blocking_impl: Bool = False,
     target: StaticString = "cpu",
     _trace_description: StaticString = "elementwise",
 ](shape: Int, ctx: Optional[DeviceContext] = None) raises:
@@ -161,7 +160,6 @@ def elementwise[
     Parameters:
         func: The body function.
         simd_width: The SIMD vector width to use.
-        use_blocking_impl: Do not invoke the function using asynchronous calls.
         target: The target to run on.
         _trace_description: Description of the trace.
 
@@ -176,7 +174,6 @@ def elementwise[
     elementwise[
         func,
         simd_width=simd_width,
-        use_blocking_impl=use_blocking_impl,
         target=target,
         _trace_description=_trace_description,
     ](Index(shape), ctx)
@@ -191,7 +188,6 @@ def elementwise[
     ) capturing[_] -> None,
     simd_width: Int,
     *,
-    use_blocking_impl: Bool = False,
     target: StaticString = "cpu",
     _trace_description: StaticString = "elementwise",
 ](shape: IndexList[rank, ...], ctx: Optional[DeviceContext] = None) raises:
@@ -203,7 +199,6 @@ def elementwise[
         rank: The rank of the buffer.
         func: The body function.
         simd_width: The SIMD vector width to use.
-        use_blocking_impl: Do not invoke the function using asynchronous calls.
         target: The target to run on.
         _trace_description: Description of the trace.
 
@@ -227,7 +222,6 @@ def elementwise[
 
     _elementwise_impl_cpu[
         simd_width=simd_width,
-        use_blocking_impl=use_blocking_impl,
         trace_description=_trace_description,
     ](func_unified, shape=shape, ctx=ctx)
 
@@ -239,7 +233,6 @@ def elementwise[
     ) capturing[_] -> None,
     simd_width: Int,
     *,
-    use_blocking_impl: Bool = False,
     target: StaticString = "cpu",
     pdl_level: PDLLevel = PDLLevel(1),
     _trace_description: StaticString = "elementwise",
@@ -251,7 +244,6 @@ def elementwise[
     Parameters:
         func: The body function.
         simd_width: The SIMD vector width to use.
-        use_blocking_impl: Do not invoke the function using asynchronous calls.
         target: The target to run on.
         pdl_level: The PDL level controlling GPU kernel overlap behavior.
         _trace_description: Description of the trace.
@@ -267,7 +259,6 @@ def elementwise[
     elementwise[
         func,
         simd_width=simd_width,
-        use_blocking_impl=use_blocking_impl,
         target=target,
         pdl_level=pdl_level,
         _trace_description=_trace_description,
@@ -283,7 +274,6 @@ def elementwise[
     ) capturing[_] -> None,
     simd_width: Int,
     *,
-    use_blocking_impl: Bool = False,
     target: StaticString = "cpu",
     pdl_level: PDLLevel = PDLLevel(1),
     _trace_description: StaticString = "elementwise",
@@ -296,7 +286,6 @@ def elementwise[
         rank: The rank of the buffer.
         func: The body function.
         simd_width: The SIMD vector width to use.
-        use_blocking_impl: Do not invoke the function using asynchronous calls.
         target: The target to run on.
         pdl_level: The PDL level controlling GPU kernel overlap behavior.
         _trace_description: Description of the trace.
@@ -316,7 +305,6 @@ def elementwise[
 
     _elementwise_impl[
         simd_width,
-        use_blocking_impl=use_blocking_impl,
         target=target,
         pdl_level=pdl_level,
         trace_description=_trace_description,
@@ -332,7 +320,6 @@ def elementwise[
     ) capturing[_] -> None,
     simd_width: Int,
     *,
-    use_blocking_impl: Bool = False,
     target: StaticString = "cpu",
     pdl_level: PDLLevel = PDLLevel(1),
     _trace_description: StaticString = "elementwise",
@@ -345,7 +332,6 @@ def elementwise[
         rank: The rank of the buffer.
         func: The body function.
         simd_width: The SIMD vector width to use.
-        use_blocking_impl: Do not invoke the function using asynchronous calls.
         target: The target to run on.
         pdl_level: The PDL level controlling GPU kernel overlap behavior.
         _trace_description: Description of the trace.
@@ -396,7 +382,6 @@ def elementwise[
 
             _elementwise_impl_cpu[
                 simd_width=simd_width,
-                use_blocking_impl=use_blocking_impl,
                 trace_description=_trace_description,
             ](
                 cpu_func_unified,
@@ -414,7 +399,6 @@ def elementwise[
     ) register_passable -> None,
     simd_width: Int,
     *,
-    use_blocking_impl: Bool = False,
     target: StaticString = "cpu",
     pdl_level: PDLLevel = PDLLevel(1),
     _trace_description: StaticString = "elementwise",
@@ -431,7 +415,6 @@ def elementwise[
             `IndexList[rank]` and template parameters `width`, `rank`,
             `alignment`.
         simd_width: The SIMD vector width to use.
-        use_blocking_impl: Do not invoke the function asynchronously.
         target: The target to run on.
         pdl_level: The PDL level controlling GPU kernel overlap behavior.
         _trace_description: Description of the trace.
@@ -446,7 +429,6 @@ def elementwise[
     """
     _elementwise_impl[
         simd_width,
-        use_blocking_impl=use_blocking_impl,
         target=target,
         pdl_level=pdl_level,
         trace_description=_trace_description,
@@ -463,7 +445,6 @@ def _elementwise_impl[
     ) register_passable -> None,
     /,
     *,
-    use_blocking_impl: Bool = False,
     target: StaticString = "cpu",
     pdl_level: PDLLevel = PDLLevel(1),
     trace_description: StaticString = "elementwise",
@@ -490,13 +471,11 @@ def _elementwise_impl[
                 rank,
                 FuncType,
                 simd_width,
-                use_blocking_impl=use_blocking_impl,
                 pdl_level=pdl_level,
             ](func, shape, context)
         elif is_cpu[target]():
             _elementwise_impl_cpu[
                 simd_width=simd_width,
-                use_blocking_impl=use_blocking_impl,
                 trace_description=trace_description,
             ](func, shape=shape, ctx=Optional(context))
         elif is_gpu[target]():

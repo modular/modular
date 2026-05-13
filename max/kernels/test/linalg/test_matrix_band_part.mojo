@@ -87,7 +87,6 @@ def matrix_band_part[
         rank,
         input_fn,
         simd_width=1,
-        single_thread_blocking_override=True,
     ](
         input_shape,
         num_lower_tt,

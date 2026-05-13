@@ -1184,7 +1184,6 @@ def gemv[
         input_fn,
         output_fn,
         reduce_impl,
-        single_thread_blocking_override=not parallelize,
     ](
         Index(M, K),
         init=Scalar[c_type](0),

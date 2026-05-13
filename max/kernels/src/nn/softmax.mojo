@@ -441,7 +441,6 @@ def _softmax_3_pass_base[
         input_fn,
         output_fn,
         reduce_impl,
-        single_thread_blocking_override=True,
     ](
         IndexList[1](output.num_elements()),
         init=Scalar[dtype].MIN,

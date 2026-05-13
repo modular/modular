@@ -30,7 +30,6 @@ def index_tensor_shape[
     input_type: DType,
     indices_type: DType,
     batch_dims: Int,
-    single_thread_blocking_override: Bool = True,
 ](
     input_buf: TileTensor[input_type, ...],
     indices_buf: TileTensor[indices_type, ...],
@@ -44,8 +43,6 @@ def index_tensor_shape[
         input_type: Type of the input tensor.
         indices_type: Type of the indices tensor.
         batch_dims: Batch dimensions.
-        single_thread_blocking_override: If True, then reduction is run
-          synchronously using a single thread.
 
     Args:
         input_buf: The input tensor.
@@ -145,7 +142,6 @@ def index_tensor[
     indices_type: DType,
     batch_dims: Int,
     target: StaticString = "cpu",
-    single_thread_blocking_override: Bool = False,
 ](
     data: TileTensor[dtype, ...],
     indices: TileTensor[indices_type, ...],
@@ -161,8 +157,6 @@ def index_tensor[
         batch_dims: Number of batch dimensions. The gather of indexing
                     starts from dimension of data[batch_dims:].
         target: The target architecture to execute on.
-        single_thread_blocking_override: If True, then the operation is run
-          synchronously using a single thread.
 
     Args:
         data: Tensor of rank data_rank >= 1.
@@ -178,13 +172,11 @@ def index_tensor[
         return _index_tensor_1d[
             batch_dims,
             target=target,
-            single_thread_blocking_override=single_thread_blocking_override,
         ](data, indices, output, ctx.get_optional_device_context())
     else:
         return _index_tensor_impl[
             batch_dims,
             target=target,
-            single_thread_blocking_override=single_thread_blocking_override,
         ](data, indices, output, ctx.get_device_context())
 
 
@@ -197,7 +189,6 @@ def _index_tensor_1d[
     //,
     batch_dims: Int,
     target: StaticString = "cpu",
-    single_thread_blocking_override: Bool = False,
 ](
     data: TileTensor[dtype, ...],
     indices: TileTensor[indices_type, ...],
@@ -281,7 +272,6 @@ def _index_tensor_impl[
     //,
     batch_dims: Int,
     target: StaticString = "cpu",
-    single_thread_blocking_override: Bool = False,
 ](
     data: TileTensor[dtype, ...],
     indices: TileTensor[indices_type, ...],
@@ -357,14 +347,12 @@ def _index_tensor_impl[
             elementwise[
                 index_tensor_elementwise_fn,
                 target_simd_width,
-                use_blocking_impl=single_thread_blocking_override,
                 target=target,
             ](coord_to_index_list(output.layout.shape_coord()))
         else:
             elementwise[
                 index_tensor_elementwise_fn,
                 1,
-                use_blocking_impl=single_thread_blocking_override,
                 target=target,
             ](coord_to_index_list(output.layout.shape_coord()))
     else:
@@ -374,14 +362,12 @@ def _index_tensor_impl[
             elementwise[
                 index_tensor_elementwise_fn,
                 target_simd_width,
-                use_blocking_impl=single_thread_blocking_override,
                 target=target,
             ](coord_to_index_list(output.layout.shape_coord()), cuda_ctx)
         else:
             elementwise[
                 index_tensor_elementwise_fn,
                 1,
-                use_blocking_impl=single_thread_blocking_override,
                 target=target,
             ](coord_to_index_list(output.layout.shape_coord()), cuda_ctx)
 
@@ -429,7 +415,6 @@ def advanced_indexing_getitem[
     start_axis: Int,
     num_index_tensors: Int,
     target: StaticString,
-    single_thread_blocking_override: Bool,
     trace_description: StaticString,
     input_tensor_fn: def[width: Int](IndexList[input_rank]) capturing -> SIMD[
         input_type, width
@@ -479,8 +464,6 @@ def advanced_indexing_getitem[
             consecutive dimensions.
         num_index_tensors: The number of indexing tensors.
         target: The target architecture to operation on.
-        single_thread_blocking_override: If True, then the operation is run
-            synchronously using a single thread.
         trace_description: For profiling, the trace name the operation will
             appear under.
         input_tensor_fn: Fusion lambda for the input tensor.
@@ -552,7 +535,6 @@ def advanced_indexing_getitem[
         elementwise[
             elementwise_fn_wrapper,
             target_simd_width,
-            use_blocking_impl=single_thread_blocking_override,
             target=target,
             _trace_description=trace_description,
         ](coord_to_index_list(out_tensor.layout.shape_coord()), ctx)
@@ -560,7 +542,6 @@ def advanced_indexing_getitem[
         elementwise[
             elementwise_fn_wrapper,
             1,
-            use_blocking_impl=single_thread_blocking_override,
             target=target,
             _trace_description=trace_description,
         ](coord_to_index_list(out_tensor.layout.shape_coord()), ctx)
@@ -615,7 +596,6 @@ def advanced_indexing_setitem_inplace[
     start_axis: Int,
     num_index_tensors: Int,
     target: StaticString,
-    single_thread_blocking_override: Bool,
     trace_description: StaticString,
     updates_tensor_fn: def[width: Int](
         IndexList[updates_rank]
@@ -685,8 +665,6 @@ def advanced_indexing_setitem_inplace[
             consecutive dimensions.
         num_index_tensors: The number of indexing tensors.
         target: The target architecture to operation on.
-        single_thread_blocking_override: If True, then the operation is run
-            synchronously using a single thread.
         trace_description: For profiling, the trace name the operation will
             appear under.
         updates_tensor_fn: Fusion lambda for the update tensor.
@@ -777,7 +755,6 @@ def advanced_indexing_setitem_inplace[
         elementwise[
             elementwise_fn_wrapper,
             target_simd_width,
-            use_blocking_impl=single_thread_blocking_override,
             target=target,
             _trace_description=trace_description,
         ](iteration_shape, ctx)
@@ -785,7 +762,6 @@ def advanced_indexing_setitem_inplace[
         elementwise[
             elementwise_fn_wrapper,
             1,
-            use_blocking_impl=single_thread_blocking_override,
             target=target,
             _trace_description=trace_description,
         ](iteration_shape, ctx)

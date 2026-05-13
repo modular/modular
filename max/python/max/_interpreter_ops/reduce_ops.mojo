@@ -77,7 +77,6 @@ comptime ReduceFn = def[
         IndexList[rank], SIMD[dtype, width]
     ) capturing[_] -> None,
     /,
-    single_thread_blocking_override: Bool = False,
     target: StaticString = "cpu",
 ](
     input_shape: IndexList[_, element_type=DType.int64],
@@ -95,7 +94,6 @@ def _reduce_max[
         IndexList[rank], SIMD[dtype, width]
     ) capturing[_] -> None,
     /,
-    single_thread_blocking_override: Bool = False,
     target: StaticString = "cpu",
 ](
     input_shape: IndexList[_, element_type=DType.int64],
@@ -107,7 +105,6 @@ def _reduce_max[
         dtype,
         input_fn,
         output_fn,
-        single_thread_blocking_override=single_thread_blocking_override,
         target=target,
     ](input_shape, reduce_dim, context)
 
@@ -121,7 +118,6 @@ def _reduce_min[
         IndexList[rank], SIMD[dtype, width]
     ) capturing[_] -> None,
     /,
-    single_thread_blocking_override: Bool = False,
     target: StaticString = "cpu",
 ](
     input_shape: IndexList[_, element_type=DType.int64],
@@ -133,7 +129,6 @@ def _reduce_min[
         dtype,
         input_fn,
         output_fn,
-        single_thread_blocking_override=single_thread_blocking_override,
         target=target,
     ](input_shape, reduce_dim, context)
 
@@ -147,7 +142,6 @@ def _reduce_sum[
         IndexList[rank], SIMD[dtype, width]
     ) capturing[_] -> None,
     /,
-    single_thread_blocking_override: Bool = False,
     target: StaticString = "cpu",
 ](
     input_shape: IndexList[_, element_type=DType.int64],
@@ -159,7 +153,6 @@ def _reduce_sum[
         dtype,
         input_fn,
         output_fn,
-        single_thread_blocking_override=single_thread_blocking_override,
         target=target,
     ](input_shape, reduce_dim, context)
 
@@ -173,7 +166,6 @@ def _reduce_mean[
         IndexList[rank], SIMD[dtype, width]
     ) capturing[_] -> None,
     /,
-    single_thread_blocking_override: Bool = False,
     target: StaticString = "cpu",
 ](
     input_shape: IndexList[_, element_type=DType.int64],
@@ -191,7 +183,6 @@ def _reduce_mean[
         dtype,
         input_fn,
         output_fn,
-        single_thread_blocking_override=single_thread_blocking_override,
         target=target,
     ](input_shape, reduce_dim, output_shape, context)
 
@@ -205,7 +196,6 @@ def _reduce_mul[
         IndexList[rank], SIMD[dtype, width]
     ) capturing[_] -> None,
     /,
-    single_thread_blocking_override: Bool = False,
     target: StaticString = "cpu",
 ](
     input_shape: IndexList[_, element_type=DType.int64],
@@ -217,7 +207,6 @@ def _reduce_mul[
         dtype,
         input_fn,
         output_fn,
-        single_thread_blocking_override=single_thread_blocking_override,
         target=target,
     ](input_shape, reduce_dim, context)
 

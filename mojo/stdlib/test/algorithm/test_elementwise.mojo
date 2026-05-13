@@ -38,7 +38,6 @@ def test_elementwise() raises:
     def run_elementwise[
         numelems: Int,
         outer_rank: Int,
-        is_blocking: Bool,
         shape: IndexList[outer_rank],
     ]() raises:
         var memory1 = InlineArray[Float32, numelems](uninitialized=True)
@@ -71,7 +70,7 @@ def test_elementwise() raises:
                 linear_idx, in1 * in2
             )
 
-        elementwise[func, simd_width=1, use_blocking_impl=is_blocking](
+        elementwise[func, simd_width=1](
             shape,
         )
 
@@ -80,18 +79,12 @@ def test_elementwise() raises:
                 (out_buffer.unsafe_ptr() + i2).load(), Float32(2 * (i2 + 1))
             )
 
-    run_elementwise[16, 1, False, Index(16)]()
-    run_elementwise[16, 1, True, Index(16)]()
-    run_elementwise[16, 2, False, Index(4, 4)]()
-    run_elementwise[16, 2, True, Index(4, 4)]()
-    run_elementwise[16, 3, False, Index(4, 2, 2)]()
-    run_elementwise[16, 3, True, Index(4, 2, 2)]()
-    run_elementwise[32, 4, False, Index(4, 2, 2, 2)]()
-    run_elementwise[32, 4, True, Index(4, 2, 2, 2)]()
-    run_elementwise[32, 5, False, Index(4, 2, 1, 2, 2)]()
-    run_elementwise[32, 5, True, Index(4, 2, 1, 2, 2)]()
-    run_elementwise[131072, 2, False, Index(1024, 128)]()
-    run_elementwise[131072, 2, True, Index(1024, 128)]()
+    run_elementwise[16, 1, Index(16)]()
+    run_elementwise[16, 2, Index(4, 4)]()
+    run_elementwise[16, 3, Index(4, 2, 2)]()
+    run_elementwise[32, 4, Index(4, 2, 2, 2)]()
+    run_elementwise[32, 5, Index(4, 2, 1, 2, 2)]()
+    run_elementwise[131072, 2, Index(1024, 128)]()
 
 
 def test_elementwise_implicit_runtime() raises:

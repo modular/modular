@@ -202,6 +202,14 @@ This version is still a work in progress.
 
 ## Removed
 
+- The `use_blocking_impl` parameter has been removed from `elementwise` (in
+  `std.algorithm.functional`), and the analogous
+  `single_thread_blocking_override` parameter has been removed from the
+  reduction APIs (`reduce`, `max`, `min`, `sum`, `product`, `mean` in
+  `std.algorithm.reduction`). These operations now always dispatch work the same
+  way, with a single worker used automatically when the problem size is small,
+  so the blocking variants are no longer needed.
+
 - The legacy `fn` keyword now produces an error instead of a warning. Please
   move to `def`.
 

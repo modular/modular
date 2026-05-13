@@ -454,7 +454,6 @@ struct Range:
         dtype: DType,
         target: StaticString,
         _trace_name: StaticString,
-        use_blocking_impl: Bool = False,
     ](
         output: FusedOutputTensor[dtype=dtype, rank=1, ...],
         start: Scalar[dtype],
@@ -473,7 +472,6 @@ struct Range:
             func,
             target=target,
             _trace_name=_trace_name,
-            use_blocking_impl=use_blocking_impl,
         ](output, ctx)
 
     @staticmethod
@@ -1895,7 +1893,6 @@ struct StaticBroadcastTo:
         in_rank: Int,
         out_rank: Int,
         _trace_name: StaticString,
-        use_blocking_impl: Bool = False,
     ](
         z: OutputTensor[dtype=dtype, rank=out_rank, ...],
         x: InputTensor[dtype=dtype, rank=in_rank, ...],
@@ -1912,7 +1909,6 @@ struct StaticBroadcastTo:
         view_copy_impl[
             _trace_name=_trace_name,
             target=target,
-            use_blocking_impl=use_blocking_impl,
         ](z, x_view, ctx)
 
 
@@ -2245,7 +2241,6 @@ struct Slice:
         static_steps: IntTuple,
         dtype: DType,
         rank: Int,
-        use_blocking_impl: Bool = False,
     ](
         output: OutputTensor[dtype=dtype, rank=rank, ...],
         input: InputTensor[dtype=dtype, rank=rank, ...],
@@ -2261,7 +2256,6 @@ struct Slice:
         view_copy_impl[
             _trace_name=_trace_name,
             target=target,
-            use_blocking_impl=use_blocking_impl,
         ](output, view_tensor, ctx)
 
     @staticmethod
@@ -4109,7 +4103,6 @@ struct LinalgBandPart:
         matrix_band_part[
             input_0_fn=input_fn,
             simd_width=simd_width_of[dtype](),
-            single_thread_blocking_override=False,
             target=target,
         ](
             input.shape(),
@@ -4669,7 +4662,6 @@ struct Concat:
         fused_concat[
             dtype,
             rank,
-            False,
             inputs_lambda,
             epilogue_wrapper,
             target=target,
@@ -4784,7 +4776,6 @@ struct FusedConcatSlice:
         fused_concat[
             dtype,
             rank,
-            False,
             inputs_lambda,
             epilogue_wrapper,
             target=target,
@@ -11905,7 +11896,6 @@ struct AdvancedIndexingGetItem:
             input_rank=input_rank,
             start_axis=start_axis,
             num_index_tensors=num_index_tensors,
-            single_thread_blocking_override=False,
             target=target,
             trace_description=_trace_name,
             input_tensor_fn=input_tensor_fn,
@@ -11985,7 +11975,6 @@ struct AdvancedIndexingSetItemInplace:
         advanced_indexing_setitem_inplace[
             start_axis=start_axis,
             num_index_tensors=num_index_tensors,
-            single_thread_blocking_override=False,
             target=target,
             trace_description=_trace_name,
             updates_tensor_fn=updates_tensor_fn,

@@ -1675,7 +1675,6 @@ def foreach[
     target: StaticString = "cpu",
     simd_width: Int = get_kernel_simd_width[dtype, target](),
     _trace_name: StaticString = "mogg.for_each",
-    use_blocking_impl: Bool = False,
 ](
     tensor: ManagedTensorSlice[mut=True, dtype=dtype, rank=rank, ...],
     ctx: DeviceContextPtr = DeviceContextPtr(),
@@ -1689,7 +1688,6 @@ def foreach[
         target: Indicates the type of the target device (e.g. "cpu", "gpu").
         simd_width: The SIMD width for the target (usually leave this as its default value).
         _trace_name: Name of the executed operation displayed in the trace_description.
-        use_blocking_impl: If the impl should use this thread for doing the work.
 
     Args:
         tensor: The output tensor slice which receives the return values from `func`.
@@ -1712,7 +1710,6 @@ def foreach[
     std.algorithm.functional.elementwise[
         elementwise_fn_wrapper,
         simd_width,
-        use_blocking_impl=use_blocking_impl,
         target=target,
         _trace_description=_trace_name,
     ](tensor.shape(), ctx)
@@ -1729,7 +1726,6 @@ def foreach[
     target: StaticString = "cpu",
     simd_width: Int = get_kernel_simd_width[dtype, target](),
     _trace_name: StaticString = "mogg.for_each",
-    use_blocking_impl: Bool = False,
 ](
     tensor: ManagedTensorSlice[mut=True, dtype=dtype, rank=rank, ...],
     elem: E,
@@ -1744,7 +1740,6 @@ def foreach[
         target: Indicates the type of the target device (e.g. "cpu", "gpu").
         simd_width: The SIMD width for the target.
         _trace_name: Name of the executed operation displayed in the trace.
-        use_blocking_impl: If the impl should use this thread for doing the work.
 
     Args:
         tensor: The output tensor slice which receives the computed values.
@@ -1764,7 +1759,6 @@ def foreach[
         target=target,
         simd_width=simd_width,
         _trace_name=_trace_name,
-        use_blocking_impl=use_blocking_impl,
     ](tensor, ctx)
 
 
@@ -1781,7 +1775,6 @@ def foreach[
     target: StaticString = "cpu",
     simd_width: Int = get_kernel_simd_width[dtype, target](),
     _trace_name: StaticString = "mogg.for_each",
-    use_blocking_impl: Bool = False,
 ](
     tensor: ManagedTensorSlice[dtype=dtype, rank=rank, ...],
     ctx: DeviceContextPtr = DeviceContextPtr(),
@@ -1796,7 +1789,6 @@ def foreach[
         target: Indicates the type of the target device (e.g. "cpu", "gpu").
         simd_width: The SIMD width for the target (usually leave this as its default value).
         _trace_name: Name of the executed operation displayed in the trace_description.
-        use_blocking_impl: If the impl should use this thread for doing the work.
 
     Args:
         tensor: The input tensor slice which the consumed values.
@@ -1817,7 +1809,6 @@ def foreach[
     std.algorithm.functional.elementwise[
         out_func_shim,
         simd_width,
-        use_blocking_impl=use_blocking_impl,
         target=target,
         _trace_description=_trace_name,
     ](tensor.shape(), ctx)
@@ -1832,7 +1823,6 @@ def foreach[
     target: StaticString = "cpu",
     simd_width: Int = get_kernel_simd_width[dtype, target](),
     _trace_name: StaticString = "mogg.for_each",
-    use_blocking_impl: Bool = False,
 ](
     tensor: ManagedTensorSlice[mut=True, dtype=dtype, rank=rank, ...],
     ctx: DeviceContextPtr = DeviceContextPtr(),
@@ -1846,7 +1836,6 @@ def foreach[
         target: Indicates the type of the target device (e.g. "cpu", "gpu").
         simd_width: The SIMD width for the target (usually leave this as its default value).
         _trace_name: Name of the executed operation displayed in the trace_description.
-        use_blocking_impl: If the impl should use this thread for doing the work.
 
     Args:
         tensor: The output tensor slice which receives the return values from `func`.
@@ -1867,7 +1856,6 @@ def foreach[
         target=target,
         simd_width=simd_width,
         _trace_name=_trace_name,
-        use_blocking_impl=use_blocking_impl,
     ](tensor, ctx)
 
 
@@ -1887,7 +1875,6 @@ def view_copy_impl[
     *,
     target: StaticString,
     _trace_name: StaticString = "mogg.view_copy_impl",
-    use_blocking_impl: Bool = False,
 ](
     z: ManagedTensorSlice[mut=True, dtype=dtype, rank=rank, ...],
     x: ManagedTensorSlice[static_spec=spec, ...],
@@ -1913,7 +1900,6 @@ def view_copy_impl[
         func,
         target=target,
         _trace_name=_trace_name,
-        use_blocking_impl=use_blocking_impl,
     ](z, ctx)
 
 
