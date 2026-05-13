@@ -2484,6 +2484,7 @@ class ClosureInitOp(max._core.Operation):
         inline_level: InlineLevelAttr,
         capture_types: max._core.dialects.builtin.ArrayAttr,
         capture_names: max._core.dialects.builtin.ArrayAttr,
+        type_value: max._core.dialects.builtin.TypedAttr,
         nested_fn_scope: max._core.Attribute,
         _llvm_metadata_array: max._core.dialects.builtin.ArrayAttr,
         _llvm_arg_metadata_array: max._core.dialects.builtin.ArrayAttr,
@@ -2503,6 +2504,7 @@ class ClosureInitOp(max._core.Operation):
         inline_level: InlineLevel,
         capture_types: max._core.dialects.builtin.ArrayAttr,
         capture_names: max._core.dialects.builtin.ArrayAttr,
+        type_value: max._core.dialects.builtin.TypedAttr,
     ) -> None: ...
     @property
     def func_type_generator(self) -> FuncTypeGeneratorType: ...
@@ -2545,6 +2547,12 @@ class ClosureInitOp(max._core.Operation):
     @capture_names.setter
     def capture_names(
         self, arg: max._core.dialects.builtin.ArrayAttr, /
+    ) -> None: ...
+    @property
+    def type_value(self) -> max._core.dialects.builtin.TypedAttr | None: ...
+    @type_value.setter
+    def type_value(
+        self, arg: max._core.dialects.builtin.TypedAttr, /
     ) -> None: ...
     @property
     def nested_fn_scope(self) -> max._core.Attribute | None: ...
