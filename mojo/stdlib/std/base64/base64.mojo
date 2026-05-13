@@ -223,6 +223,9 @@ def b16decode(str: StringSlice[mut=False, _]) raises -> List[Byte]:
 
     Returns:
         The decoded bytes.
+
+    Raises:
+        If the input length is not divisible by 2.
     """
 
     comptime `A` = Byte(ord("A"))
