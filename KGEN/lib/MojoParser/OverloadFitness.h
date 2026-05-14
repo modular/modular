@@ -149,14 +149,6 @@ private:
                   OperandsNeedingOriginsList &&operandsNeedingOrigins)
       : paramBindings(paramBindings),
         operandsNeedingOrigins(std::move(operandsNeedingOrigins)) {}
-
-  /// Check the expected type against the provided operand, returning a
-  /// diagnostic if there is an error.
-  std::optional<MojoInflightDiag>
-  checkOneOperand(ASTExprAnd<AnyValue> operand, size_t operandIdx,
-                  ArgConvention expectedConvention, ASTType expectedType,
-                  bool allowImplicitConversions, const OverloadSet &callable,
-                  PogListAttr argListAttr);
 };
 
 } // namespace M::KGEN::LIT
