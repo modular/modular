@@ -57,6 +57,7 @@ CValue DiscardDLValue::emitStore(ASTExprAnd<CValue> value,
   // don't load/copy lvalues in expressions like "_ = someVariable".  We do emit
   // an ownership use to extend the origin of the value to here and disable
   // "unused value" warnings.
+  value.ir = maybeEmitRefinementRebind(value, emitter);
   if (auto mlirValue = value.ir.getMlirValue()) {
     OwnershipUseOp::create(*emitter.builder, value.expr->getLocation(emitter),
                            mlirValue);
