@@ -19,27 +19,87 @@
 using namespace M;
 using namespace KGEN;
 
-Plugin::Plugin() {
+template <typename FnType>
+ErrorOr<FnType> getFunction(void *hdl, llvm::StringRef symbolName) {
+  // Resolve the symbol
+  auto fnPtr = reinterpret_cast<FnType>(dlsym(hdl, symbolName.str().c_str()));
+
+  if (!fnPtr) {
+    return Error(llvm::StringRef("failed to resolve ") + symbolName +
+                 dlerror());
+  }
+  return fnPtr;
+}
+
+Plugin::Plugin(StringRef targetTriple, ArrayRef<StringRef> pluginPaths) {
+  // Try plugin paths first
+  for (auto path : pluginPaths) {
+    void *hdl = dlopen(path.str().c_str(), RTLD_NOW | RTLD_LOCAL);
+    if (!hdl)
+      continue;
+    if (!targetTriple.empty()) {
+      ErrorOr<IsPluginForTargetFn> fnOr =
+          getFunction<IsPluginForTargetFn>(hdl, "M_KGEN_isPluginForTarget");
+      if (fnOr.isError())
+        continue;
+      if ((*fnOr)(targetTriple)) {
+        soHandles.push_back(hdl);
+        currHandle = hdl;
+      }
+    }
+    soPaths.push_back(path.str());
+    soHandles.push_back(hdl);
+  }
+
+  if (!soHandles.empty())
+    return;
+
   // Load the plugin. MODULAR_COMPILER_PLUGINS overrides the path,
   // e.g. when running from a Bazel-built binary where the .so lives
   // in the runfiles tree rather than on LD_LIBRARY_PATH.
-  soPath = "libmojo-compiler-plugin.so";
+  std::string soPath = "libmojo-compiler-plugin.so";
   if (auto envPath = llvm::sys::Process::GetEnv("MODULAR_COMPILER_PLUGINS"))
     soPath = *envPath;
-  soHandle = dlopen(soPath.c_str(), RTLD_NOW | RTLD_LOCAL);
+
+  currHandle = dlopen(soPath.c_str(), RTLD_NOW | RTLD_LOCAL);
+  if (currHandle) {
+    soHandles.push_back(currHandle);
+    soPaths.push_back(std::move(soPath));
+  }
+}
+
+Plugin::Plugin(const std::vector<std::string> &paths) {
+  soPaths = paths;
+  for (auto path : soPaths) {
+    void *hdl = dlopen(path.c_str(), RTLD_NOW | RTLD_LOCAL);
+    soHandles.push_back(hdl);
+  }
+
+  if (!soHandles.empty())
+    currHandle = soHandles.front();
 }
 
 Plugin::~Plugin() {
-  if (soHandle)
-    dlclose(soHandle);
+  for (auto hdl : soHandles) {
+    dlclose(hdl);
+  }
 }
 
 ErrorOrSuccess Plugin::isLoaded() const {
-  if (soHandle) {
+  if (currHandle) {
     return success();
   } else {
-    return Error(llvm::StringRef("failed to load " + soPath + ": ") +
-                 dlerror());
+    std::string pathStr;
+    llvm::raw_string_ostream ss(pathStr);
+    llvm::interleaveComma(soPaths, ss);
+    if (soHandles.empty()) {
+      return Error(llvm::StringRef("failed to load plugin(s) from path(s): " +
+                                   pathStr + ": ") +
+                   dlerror());
+    } else {
+      return Error(llvm::StringRef("failed to set plugin for a target ") +
+                   dlerror());
+    }
   }
 }
 
@@ -48,15 +108,7 @@ ErrorOr<FnType> getFunction(const Plugin *plugin, llvm::StringRef symbolName) {
   if (auto loadError = plugin->isLoaded()) {
     return loadError.takeError();
   }
-  // Resolve the symbol
-  auto fnPtr = reinterpret_cast<FnType>(
-      dlsym(plugin->getHandle(), symbolName.str().c_str()));
-
-  if (!fnPtr) {
-    return Error(llvm::StringRef("failed to resolve ") + symbolName +
-                 dlerror());
-  }
-  return fnPtr;
+  return getFunction<FnType>(plugin->getHandle(), symbolName);
 }
 
 ErrorOr<Plugin::CreateSharedObjectFn> Plugin::getCreateSharedObjectFn() const {

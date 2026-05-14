@@ -113,9 +113,11 @@ ObjectCompiler::create(StringRef basePath, CompilationOptions options,
 
   // Read the mojo configuration.
   ErrorOr<MojoConfig> configOr = MojoConfig::open();
-  if (failed(configOr))
+  if (failed(configOr)) {
     return Error(Twine("failed to parse 'modular.cfg': ") +
                  configOr.getError());
+  }
+
   MojoConfig config = std::move(*configOr);
 
   StringRef linkerFileName = "ld.lld";
@@ -135,10 +137,12 @@ ObjectCompiler::create(StringRef basePath, CompilationOptions options,
 
   std::string linker = *lldPath;
 
+  SmallVector<StringRef> pluginPaths = config.getPluginPaths();
+
   // Load the plugin if compiling to a plugin backend.
   std::unique_ptr<Plugin> plugin = nullptr;
   if (isPluginBackend(options)) {
-    plugin = std::make_unique<Plugin>();
+    plugin = std::make_unique<Plugin>(options.targetTriple, pluginPaths);
   }
 
   return std::unique_ptr<ObjectCompiler>(new ObjectCompiler(

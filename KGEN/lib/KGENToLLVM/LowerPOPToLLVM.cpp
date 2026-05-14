@@ -3374,17 +3374,20 @@ struct LowerPOPToLLVMPass
       : passLocalPlugin(std::make_unique<Plugin>()),
         plugin(passLocalPlugin.get()) {}
 
-  LowerPOPToLLVMPass(const Plugin *plugin)
-      : passLocalPlugin(plugin ? nullptr : std::make_unique<Plugin>()),
-        plugin(plugin ? plugin : passLocalPlugin.get()) {}
-
   LowerPOPToLLVMPass(const LowerPOPToLLVMPass &other)
-      : passLocalPlugin(std::make_unique<Plugin>()),
-        plugin(passLocalPlugin.get()) {}
+      : passLocalPlugin(
+            other.passLocalPlugin
+                ? std::make_unique<Plugin>(other.passLocalPlugin->getSoPaths())
+                : nullptr),
+        plugin(other.passLocalPlugin ? passLocalPlugin.get() : other.plugin) {}
 
   LowerPOPToLLVMPass(LowerPOPToLLVMPass &&other)
       : passLocalPlugin(std::move(other.passLocalPlugin)),
-        plugin(passLocalPlugin.get()) {}
+        plugin(other.plugin ? other.plugin : passLocalPlugin.get()) {}
+
+  LowerPOPToLLVMPass(const Plugin *plugin)
+      : passLocalPlugin(plugin ? nullptr : std::make_unique<Plugin>()),
+        plugin(plugin ? plugin : passLocalPlugin.get()) {}
 
   void runOnOperation() override;
 
@@ -3897,12 +3900,15 @@ struct LowerGlobalPOPToLLVMPass
         plugin(passLocalPlugin.get()) {}
 
   LowerGlobalPOPToLLVMPass(const LowerGlobalPOPToLLVMPass &other)
-      : passLocalPlugin(std::make_unique<Plugin>()),
-        plugin(passLocalPlugin.get()) {}
+      : passLocalPlugin(
+            other.passLocalPlugin
+                ? std::make_unique<Plugin>(other.passLocalPlugin->getSoPaths())
+                : nullptr),
+        plugin(other.passLocalPlugin ? passLocalPlugin.get() : other.plugin) {}
 
   LowerGlobalPOPToLLVMPass(LowerGlobalPOPToLLVMPass &&other)
       : passLocalPlugin(std::move(other.passLocalPlugin)),
-        plugin(passLocalPlugin.get()) {}
+        plugin(other.plugin ? other.plugin : passLocalPlugin.get()) {}
 
   LowerGlobalPOPToLLVMPass(const Plugin *plugin)
       : passLocalPlugin(plugin ? nullptr : std::make_unique<Plugin>()),
