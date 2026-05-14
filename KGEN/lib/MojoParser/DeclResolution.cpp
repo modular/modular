@@ -543,151 +543,6 @@ static bool trySetLinkageName(SMLoc loc, ASTDecl &decl,
   return false;
 }
 
-/// Apply `@export("linkageName")` or `@__name("linkageName")` to a declaration,
-/// optionally mark it external, and register it with the shared state to ensure
-/// no duplicate linkage names.
-static void applyExportLike(SMLoc loc, ASTDecl &decl, bool isExport,
-                            StringRef unmangledName, const CallNode *node,
-                            TypeCheckedParamList &paramList,
-                            ExportInterface itf, IREmitter &emitter) {
-  auto &shared = decl.getShared();
-  ArrayRef<Operand> operands;
-  if (node)
-    operands = node->operands;
-  StringRef spelling = isExport ? "@export" : "@__name";
-  if (!isExport && operands.empty()) {
-    shared.emitError(loc, spelling) << " must have at least 1 argument";
-    return;
-  }
-  if (operands.size() > 2) {
-    shared.emitError(loc, spelling) << " requires at most 2 arguments";
-    return;
-  }
-  SMLoc nodeLoc = node ? node->getLoc() : loc;
-
-  // TODO: Consider extracting the operand-parsing loop below into a helper
-  // (e.g. parseDecoratorArgs) that returns a struct {TypedAttr rawName,
-  // std::optional<std::string> exportABI, std::optional<bool> mangle}, to
-  // separate argument parsing from the semantic actions that follow.
-  TypedAttr linkageName;
-  // TODO: deprecate and remove the ABI= specification here, in favor of the
-  // abi() effect on the function declaration.
-  std::optional<std::string> exportABI;
-  std::optional<bool> mangle;
-  for (const Operand &operand : operands) {
-    auto strNode = dyn_cast<StringLiteralNode>(operand.expr);
-    if (strNode && operand.isKeyword() && operand.name == "ABI") {
-      exportABI = strNode->getValue();
-      if (*exportABI != "C") {
-        shared.emitError(operand.getLoc(),
-                         "only \"C\" ABI is supported at the moment");
-        return;
-      }
-    } else if (!isExport && operand.isKeyword() && operand.name == "mangle") {
-      auto *boolNode = dyn_cast<BoolLiteralNode>(operand.expr);
-      if (!boolNode) {
-        shared.emitError(operand.getLoc())
-            << "'mangle' argument to " << spelling << " must be True or False";
-        return;
-      }
-      mangle = boolNode->value;
-    } else if (strNode && operand.isPositional()) {
-      if (linkageName) {
-        shared.emitError(nodeLoc, spelling)
-            << " must have at most 1 name argument";
-        return;
-      }
-      linkageName = StringAttr::get(strNode->getValue(),
-                                    KGEN::StringType::get(decl.getContext()));
-    } else if (operand.isPositional() && !isExport) { // Not @export for now
-      auto paramEmitter = emitter.getParamEmitter(EC_Decorator);
-      CValue linkageNameVal =
-          paramEmitter.emitExprCValue(operand.expr, EC_Decorator);
-      if (!linkageNameVal) {
-        shared.emitError(nodeLoc, spelling)
-            << " requires a string specifying the linkage name of the symbol";
-        return;
-      }
-
-      linkageName = paramEmitter.emitStringExprAsDataToStr(
-          linkageNameVal, operand.expr, nodeLoc, EC_Decorator);
-      if (!linkageName) {
-        shared.emitError(nodeLoc) << "failure to create linkage name";
-        return;
-      }
-    } else {
-      shared.emitError(nodeLoc, spelling)
-          << " requires a string specifying the name of the exported symbol";
-      return;
-    }
-  }
-
-  // Always wrap the linkage name in LinkageNameAttr so every decorator-set
-  // name carries the mangle flag explicitly. For @export mangle is always
-  // false (it is never parsed for @export). For @__name it defaults to false.
-  if (mangle.has_value() && !linkageName) {
-    shared.emitError(nodeLoc, spelling)
-        << " requires a name argument when 'mangle' is specified";
-    return;
-  }
-  LinkageNameAttr wrappedName;
-  if (linkageName)
-    wrappedName =
-        KGEN::LinkageNameAttr::get(linkageName, mangle.value_or(false));
-
-  // Handle the unique case of main. We implicitly export main, so this is
-  // simply checking that the user didn't try to export it as something else.
-  std::optional<StringRef> simpleLinkageName = unmangledName;
-  if (wrappedName)
-    if (auto strAttr = dyn_cast<StringAttr>(wrappedName.getName()))
-      simpleLinkageName = strAttr.getValue();
-
-  if (simpleLinkageName == kMainSymbolName) {
-    if (unmangledName != kMainSymbolName)
-      shared.emitError(loc, "only 'main' can be exported as 'main'");
-    if (!isa<FnOp>(decl.getIfOperation()))
-      shared.emitError(loc, "exported 'main' must be a function");
-    return;
-  }
-  if (unmangledName == kMainSymbolName) {
-    shared.emitError(loc, "'main' can only be exported as 'main'");
-    return;
-  }
-
-  if (wrappedName) {
-    if (trySetLinkageName(loc, decl, wrappedName))
-      return;
-  }
-  if (!isExport)
-    return;
-
-  bool isCExport = exportABI.has_value();
-  if (!isCExport)
-    itf.setExported();
-  else {
-    itf.setCExported();
-
-    // Validate the linkage name is a valid C identifer. We don't permit
-    // non-literal identifiers for these functions.
-    if (wrappedName && !simpleLinkageName) {
-      shared.emitError(loc)
-          << " \"C\" ABI functions must have literal identifiers";
-      return;
-    }
-
-    if (!isCIdentifier(*simpleLinkageName)) {
-      shared.emitError(loc, *simpleLinkageName)
-          << " is not a valid C identifier";
-      return;
-    }
-  }
-
-  // FIXME: This is an incomplete check as doesn't handle complex
-  // non-literal expressions. Should we just defer it all until later?
-  if (simpleLinkageName)
-    shared.declResolver->registerAndCheckExport(*simpleLinkageName, loc);
-}
-
 namespace {
 struct FnSigDecorators : public SharedStateUser {
   FnSigDecorators(ASTDecl &decl, ASTDecl &sigDecl, SharedState &shared,
@@ -709,6 +564,8 @@ private:
   void applyCopyOrMoveCapture(SMLoc decoratorLoc, const CallNode *callNode,
                               bool isMove, StringRef decorator);
   void applyExtern(SMLoc decoratorLoc, const CallNode *node);
+  void applyExportLike(SMLoc loc, bool isExport, const CallNode *node,
+                       IREmitter &emitter);
   void applyAlwaysInline(const CallNode *node);
   void applyLLVMMetadata(SMLoc decoratorLoc, const CallNode *node);
 
@@ -795,12 +652,10 @@ LogicalResult FnSigDecorators::applyOne(ExprNode *decorator) {
     // TODO: bool isCExport = tcSignature.argList.effects.isCABI();
     // TODO: if (!tcSignature.argList.hasExplicitABI) { error }
     IREmitter emitter(sigDecl, EC_Decorator);
-    applyExportLike(decorator->getLoc(), decl, /*isExport=*/true, baseName,
-                    callNode, tcSignature.paramList, funcOp, emitter);
+    applyExportLike(decorator->getLoc(), /*isExport=*/true, callNode, emitter);
   } else if (spelling == "__name") {
     IREmitter emitter(sigDecl, EC_Decorator);
-    applyExportLike(decorator->getLoc(), decl, /*isExport=*/false, baseName,
-                    callNode, tcSignature.paramList, funcOp, emitter);
+    applyExportLike(decorator->getLoc(), /*isExport=*/false, callNode, emitter);
   } else if (spelling == "staticmethod") {
     applyArgumentless(spelling, callNode, [&]() {
       if (!decl.tryGetMethodParentDecl()) {
@@ -1053,6 +908,150 @@ void FnSigDecorators::applyExtern(SMLoc decoratorLoc,
   }
 
   funcOp.setExternal(true);
+}
+
+/// Apply `@export("linkageName")` or `@__name("linkageName")` to a declaration,
+/// optionally mark it external, and register it with the shared state to ensure
+/// no duplicate linkage names.
+void FnSigDecorators::applyExportLike(SMLoc loc, bool isExport,
+                                      const CallNode *node,
+                                      IREmitter &emitter) {
+  auto &shared = decl.getShared();
+  ArrayRef<Operand> operands;
+  if (node)
+    operands = node->operands;
+  StringRef spelling = isExport ? "@export" : "@__name";
+  if (!isExport && operands.empty()) {
+    shared.emitError(loc, spelling) << " must have at least 1 argument";
+    return;
+  }
+  if (operands.size() > 2) {
+    shared.emitError(loc, spelling) << " requires at most 2 arguments";
+    return;
+  }
+  SMLoc nodeLoc = node ? node->getLoc() : loc;
+
+  // TODO: Consider extracting the operand-parsing loop below into a helper
+  // (e.g. parseDecoratorArgs) that returns a struct {TypedAttr rawName,
+  // std::optional<std::string> exportABI, std::optional<bool> mangle}, to
+  // separate argument parsing from the semantic actions that follow.
+  TypedAttr linkageName;
+  // TODO: deprecate and remove the ABI= specification here, in favor of the
+  // abi() effect on the function declaration.
+  std::optional<std::string> exportABI;
+  std::optional<bool> mangle;
+  for (const Operand &operand : operands) {
+    auto strNode = dyn_cast<StringLiteralNode>(operand.expr);
+    if (strNode && operand.isKeyword() && operand.name == "ABI") {
+      exportABI = strNode->getValue();
+      if (*exportABI != "C") {
+        shared.emitError(operand.getLoc(),
+                         "only \"C\" ABI is supported at the moment");
+        return;
+      }
+    } else if (!isExport && operand.isKeyword() && operand.name == "mangle") {
+      auto *boolNode = dyn_cast<BoolLiteralNode>(operand.expr);
+      if (!boolNode) {
+        shared.emitError(operand.getLoc())
+            << "'mangle' argument to " << spelling << " must be True or False";
+        return;
+      }
+      mangle = boolNode->value;
+    } else if (strNode && operand.isPositional()) {
+      if (linkageName) {
+        shared.emitError(nodeLoc, spelling)
+            << " must have at most 1 name argument";
+        return;
+      }
+      linkageName = StringAttr::get(strNode->getValue(),
+                                    KGEN::StringType::get(decl.getContext()));
+    } else if (operand.isPositional() && !isExport) { // Not @export for now
+      auto paramEmitter = emitter.getParamEmitter(EC_Decorator);
+      CValue linkageNameVal =
+          paramEmitter.emitExprCValue(operand.expr, EC_Decorator);
+      if (!linkageNameVal) {
+        shared.emitError(nodeLoc, spelling)
+            << " requires a string specifying the linkage name of the symbol";
+        return;
+      }
+
+      linkageName = paramEmitter.emitStringExprAsDataToStr(
+          linkageNameVal, operand.expr, nodeLoc, EC_Decorator);
+      if (!linkageName) {
+        shared.emitError(nodeLoc) << "failure to create linkage name";
+        return;
+      }
+    } else {
+      shared.emitError(nodeLoc, spelling)
+          << " requires a string specifying the name of the exported symbol";
+      return;
+    }
+  }
+
+  // Always wrap the linkage name in LinkageNameAttr so every decorator-set
+  // name carries the mangle flag explicitly. For @export mangle is always
+  // false (it is never parsed for @export). For @__name it defaults to false.
+  if (mangle.has_value() && !linkageName) {
+    shared.emitError(nodeLoc, spelling)
+        << " requires a name argument when 'mangle' is specified";
+    return;
+  }
+  LinkageNameAttr wrappedName;
+  if (linkageName)
+    wrappedName =
+        KGEN::LinkageNameAttr::get(linkageName, mangle.value_or(false));
+
+  // Handle the unique case of main. We implicitly export main, so this is
+  // simply checking that the user didn't try to export it as something else.
+  std::optional<StringRef> simpleLinkageName = baseName;
+  if (wrappedName)
+    if (auto strAttr = dyn_cast<StringAttr>(wrappedName.getName()))
+      simpleLinkageName = strAttr.getValue();
+
+  if (simpleLinkageName == kMainSymbolName) {
+    if (baseName != kMainSymbolName)
+      shared.emitError(loc, "only 'main' can be exported as 'main'");
+    if (!isa<FnOp>(decl.getIfOperation()))
+      shared.emitError(loc, "exported 'main' must be a function");
+    return;
+  }
+  if (baseName == kMainSymbolName) {
+    shared.emitError(loc, "'main' can only be exported as 'main'");
+    return;
+  }
+
+  if (wrappedName) {
+    if (trySetLinkageName(loc, decl, wrappedName))
+      return;
+  }
+  if (!isExport)
+    return;
+
+  bool isCExport = exportABI.has_value();
+  if (!isCExport)
+    funcOp.setExported();
+  else {
+    funcOp.setCExported();
+
+    // Validate the linkage name is a valid C identifer. We don't permit
+    // non-literal identifiers for these functions.
+    if (wrappedName && !simpleLinkageName) {
+      shared.emitError(loc)
+          << " \"C\" ABI functions must have literal identifiers";
+      return;
+    }
+
+    if (!isCIdentifier(*simpleLinkageName)) {
+      shared.emitError(loc, *simpleLinkageName)
+          << " is not a valid C identifier";
+      return;
+    }
+  }
+
+  // FIXME: This is an incomplete check as doesn't handle complex
+  // non-literal expressions. Should we just defer it all until later?
+  if (simpleLinkageName)
+    shared.declResolver->registerAndCheckExport(*simpleLinkageName, loc);
 }
 
 void FnSigDecorators::applyAlwaysInline(const CallNode *callNode) {
