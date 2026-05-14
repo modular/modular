@@ -2063,11 +2063,15 @@ Value ClosureEmitter::emitClosureOp(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
     Value value = capture.getValue().getMlirValue();
     captureValues.push_back(value);
 
+    Type captureMLIRType = value.getType();
+    if (auto refType = dyn_cast<LIT::RefType>(captureMLIRType))
+      captureMLIRType = refType.getElementType();
+
     SyntheticNode synthNode(nestedFnDecl.getLoc());
     ExprDest dest(anyType, EC_Type);
     PValue captureTypeValue =
         emitter
-            .emitImplicitConversionToType({value.getType(), synthNode}, anyType,
+            .emitImplicitConversionToType({captureMLIRType, synthNode}, anyType,
                                           dest)
             .getIfPValue();
     captureTypes.push_back(captureTypeValue.get());
