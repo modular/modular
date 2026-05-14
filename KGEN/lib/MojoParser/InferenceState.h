@@ -89,6 +89,11 @@ public:
   // Debug util.
   void dump() const;
 
+  /// The number of implicit conversions required.  Normal implicit
+  /// conversions count as 2 each, nonmaterializable value conversions count
+  /// as 1.
+  size_t numImplicitConversions = 0;
+
 protected:
   friend class ParamMatcher;
 

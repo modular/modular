@@ -394,17 +394,8 @@ std::optional<MojoInflightDiag> OverloadFitness::checkOneOperand(
 
   if (auto nonmaterializableTarget =
           argType.getNonmaterializableTarget(shared)) {
-    if (nonmaterializableTarget.isEqualCanon(expectedRVType)) {
-#if 1
-      // Implicit conversion for nonmaterializable types to their target
-      // type is allowed even if !allowImplicitConversions and count as half
-      // as much of a mismatch as a normal implicit conversion.  This enables
-      // exact matches to be more specific, and literals to be more compatible
-      // than an actual conversion.
-      ++payload.numImplicitConversions;
-#endif
+    if (nonmaterializableTarget.isEqualCanon(expectedRVType))
       return {}; // Success.
-    }
   }
 
   // If implicit conversions are possible and one will work, then we succeed

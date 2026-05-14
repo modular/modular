@@ -274,14 +274,12 @@ LogicalResult ParamInf::inferFromRVType(ASTExprAnd<AnyValue> operand,
     // Infer the parameters of this overload candidate against the computed
     // result type of the initializer.
     if (succeeded(matcher.matchTypes(nonmaterializableTarget, expectedType))) {
-#if 0
       // Implicit conversion for nonmaterializable types to their target
       // type is allowed even if !allowImplicitConversions and count as half
       // as much of a mismatch as a normal implicit conversion.  This enables
       // exact matches to be more specific, and literals to be more compatible
       // than an actual conversion.
       ++numImplicitConversions;
-#endif
       return success();
     }
 
