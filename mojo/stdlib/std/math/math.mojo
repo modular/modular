@@ -950,12 +950,7 @@ def log[
 
     comptime if is_nvidia_gpu() and dtype == DType.float32:
         comptime ln2 = 0.69314718055966295651160180568695068359375
-        return (
-            _call_ptx_intrinsic[
-                instruction="lg2.approx.f32", constraints="=f,f"
-            ](x)
-            * ln2
-        )
+        return ln2 * log2(x)
 
     return _log_base[27](x)
 
@@ -990,7 +985,7 @@ def log2[
 
     comptime if is_nvidia_gpu() and dtype == DType.float32:
         return _call_ptx_intrinsic[
-            instruction="lg2.approx.f32", constraints="=f,f"
+            instruction="lg2.approx.ftz.f32", constraints="=f,f"
         ](x)
     elif is_amd_gpu() and dtype in (DType.float32, DType.float16):
         return _call_amdgcn_intrinsic[
