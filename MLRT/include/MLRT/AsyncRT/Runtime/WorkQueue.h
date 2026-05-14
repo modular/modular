@@ -25,6 +25,7 @@
 
 #include <chrono>
 #include <memory>
+#include <vector>
 
 /// This is the default taskId for all tasks not originating from
 /// async_parallelize. We set it to -1 to indicate that the task
@@ -236,10 +237,26 @@ std::unique_ptr<WorkQueue> createThreadPoolWorkQueue(
     std::chrono::microseconds threadBusyWaitTime, std::string_view poolName);
 
 /// Creates a partitioned thread pool WorkQueue whose worker threads are
-/// restricted to the CPU cores of a single NUMA node.
+/// restricted to the CPU cores of a single NUMA node. Partitioned queues must
+/// always be owned by a DelegateThreadPoolWorkQueue. Each worker thread records
+/// its local worker ID as well as its global worker ID (global worker ID
+/// offset + local worker ID), this is used so it can be identified when
+/// delegating.
 std::unique_ptr<WorkQueue> createPartitionedThreadPoolWorkQueue(
     CompactCPUDevicePtr cpuDevicePtr, int numaNode,
-    std::chrono::microseconds threadBusyWaitTime, std::string_view poolName);
+    std::chrono::microseconds threadBusyWaitTime, std::string_view poolName,
+    size_t globalWorkerIdOffset);
+
+/// Returns the global worker ID recorded by the current thread at startup, or
+/// SIZE_MAX if the current thread is not a worker of a
+/// DelegateThreadPoolWorkQueue.
+size_t getCurrentGlobalWorkerID();
+
+/// Creates a WorkQueue that delegates to a set of partitioned WorkQueues,
+/// emulating a single unified queue. Each delegate must be created with a
+/// mutually exclusive, contiguous range of global worker IDs.
+std::unique_ptr<WorkQueue> createDelegateThreadPoolWorkQueue(
+    std::vector<std::unique_ptr<WorkQueue>> delegates);
 
 } // namespace M::MLRT
 

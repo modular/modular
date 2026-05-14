@@ -339,9 +339,12 @@ PartitionedHarness makeHarness(int numaNode) {
   options.withSingleThreaded(); // Minimal "host" cpuDevice just to supply ptr.
   CPUDeviceRef cpuDevice = getOrCreateCPUDevice(CPUDeviceSource::Test, options);
   CompactCPUDevicePtr ptr = cpuDevice->getCompactPtr();
-  std::unique_ptr<WorkQueue> wq = createPartitionedThreadPoolWorkQueue(
-      ptr, numaNode, std::chrono::microseconds(200), "🔥 NumaTest");
-  return {std::move(cpuDevice), ptr, std::move(wq)};
+  std::vector<std::unique_ptr<WorkQueue>> partitions;
+  partitions.push_back(createPartitionedThreadPoolWorkQueue(
+      ptr, numaNode, std::chrono::microseconds(200), "NumaTest",
+      /*globalWorkerIdOffset=*/0));
+  return {std::move(cpuDevice), ptr,
+          createDelegateThreadPoolWorkQueue(std::move(partitions))};
 }
 
 } // namespace
@@ -353,8 +356,9 @@ TEST(WorkQueueTest, PartitionedReportsPartition) {
   int node = *nodeOr;
 
   PartitionedHarness h = makeHarness(node);
-  EXPECT_EQ(h.workQueue->getNumaNode(), node);
-
+  // The delegate wrapping the partition reports kAnyNumaNode; the partition's
+  // CPU set is still surfaced through getCpuIds().
+  EXPECT_EQ(h.workQueue->getNumaNode(), kAnyNumaNode);
   std::vector<size_t> expected =
       NUMATopology::get()->getCpuIdsForNumaNode(node);
   ArrayRef<size_t> reported = h.workQueue->getCpuIds();
@@ -389,14 +393,15 @@ TEST(WorkQueueTest, PartitionedRunsOnlyOnSelectedCpus) {
   const size_t numWorkers = cpuIds.size();
   std::vector<AsyncValueRef<int>> observed;
   observed.reserve(numWorkers);
-  for (size_t workerID = 0; workerID < numWorkers; ++workerID) {
+  for (size_t workerPartitionID = 0; workerPartitionID < numWorkers;
+       ++workerPartitionID) {
     observed.emplace_back(AsyncValueRef<int>::allocate(*h.cpuDevice));
     AsyncValueRef<int> &slot = observed.back();
     WorkItem probe([slot = slot.copy()]() mutable {
       // sched_getcpu may return -1 on failure; store as int for inspection.
       slot.copy().emplace(::sched_getcpu());
     });
-    h.workQueue->addTask(std::move(probe), static_cast<int>(workerID));
+    h.workQueue->addTask(std::move(probe), static_cast<int>(workerPartitionID));
   }
 
   for (AsyncValueRef<int> &slot : observed)
@@ -438,10 +443,171 @@ TEST(WorkQueueTest, PartitionedRejectsUnknownNumaNode) {
       {
         auto wq = createPartitionedThreadPoolWorkQueue(
             ptr, /*numaNode=*/INT_MAX, std::chrono::microseconds(200),
-            "NumaTest");
+            "NumaTest", /*globalWorkerIdOffset=*/0);
         (void)wq;
       },
       "no CPUs for requested NUMA node");
 }
+
+//===----------------------------------------------------------------------===//
+// DelegateThreadPoolWorkQueue tests
+//===----------------------------------------------------------------------===//
+
+/// Verify that a DelegateThreadPoolWorkQueue created from NUMA partitions
+/// correctly sets global worker IDs so that addLocalTask from a worker thread
+/// routes to the right partition, shouldRunInlineForTask returns true when
+/// called from the matching worker, and foreign-thread behavior is correct:
+/// kDefaultTaskId/negative IDs are always inlineable, positive global worker
+/// IDs are not, and addLocalTask from a foreign thread completes work.
+TEST(WorkQueueTest, DelegateNUMAWorkerRouting) {
+  const ErrorOr<NUMATopology> &topologyOr = NUMATopology::get();
+  if (topologyOr.isError())
+    GTEST_SKIP() << "host has no NUMA topology available";
+  const std::vector<int> &nodes = topologyOr->getNumaNodes();
+  if (nodes.size() < 1)
+    GTEST_SKIP() << "no usable NUMA nodes on this host";
+
+  CPUDeviceOptions options;
+  options.withSingleThreaded();
+  CPUDeviceRef cpuDevice = getOrCreateCPUDevice(CPUDeviceSource::Test, options);
+  CompactCPUDevicePtr ptr = cpuDevice->getCompactPtr();
+
+  auto busyWait = std::chrono::microseconds(200);
+  std::vector<std::unique_ptr<WorkQueue>> partitions;
+  size_t globalWorkerIdOffset = 0;
+  for (int node : nodes) {
+    if (topologyOr->getCpuIdsForNumaNode(node).empty())
+      continue;
+    partitions.push_back(createPartitionedThreadPoolWorkQueue(
+        ptr, node, busyWait, "DelegateNUMA", globalWorkerIdOffset));
+    globalWorkerIdOffset += partitions.back()->getParallelismLevel();
+  }
+  if (partitions.empty())
+    GTEST_SKIP() << "no usable NUMA nodes with CPUs";
+
+  auto delegateWQ = createDelegateThreadPoolWorkQueue(std::move(partitions));
+  const size_t totalWorkers = delegateWQ->getParallelismLevel();
+
+  // Foreign-thread checks: kDefaultTaskId/negative always inlineable, positive
+  // global worker IDs are not owned by this (foreign) thread.
+  EXPECT_TRUE(delegateWQ->shouldRunInlineForTask(kDefaultTaskId));
+  EXPECT_TRUE(delegateWQ->shouldRunInlineForTask(-5));
+  EXPECT_FALSE(delegateWQ->shouldRunInlineForTask(0));
+  EXPECT_FALSE(
+      delegateWQ->shouldRunInlineForTask(static_cast<int>(totalWorkers - 1)));
+
+  // addLocalTask from a foreign thread falls back to round-robin addTask.
+  auto localResult = AsyncValueRef<int>::allocate(*cpuDevice);
+  delegateWQ->addLocalTask(
+      [slot = localResult.copy()]() mutable { slot.copy().emplace(42); });
+  await(localResult);
+  EXPECT_EQ(localResult.get(), 42);
+
+  // Dispatch one task per global worker ID and verify that:
+  //   1) shouldRunInlineForTask(globalId) returns true from that worker, and
+  //   2) getCurrentGlobalWorkerID() returns the expected global ID.
+  std::vector<AsyncValueRef<bool>> inlineResults(totalWorkers);
+  std::vector<AsyncValueRef<size_t>> globalIdResults(totalWorkers);
+  for (size_t globalId = 0; globalId < totalWorkers; ++globalId) {
+    inlineResults[globalId] = AsyncValueRef<bool>::allocate(*cpuDevice);
+    globalIdResults[globalId] = AsyncValueRef<size_t>::allocate(*cpuDevice);
+    delegateWQ->addTask(
+        [&delegateWQ, globalId, inlineSlot = inlineResults[globalId].copy(),
+         idSlot = globalIdResults[globalId].copy()]() mutable {
+          inlineSlot.copy().emplace(
+              delegateWQ->shouldRunInlineForTask(static_cast<int>(globalId)));
+          idSlot.copy().emplace(getCurrentGlobalWorkerID());
+        },
+        static_cast<int>(globalId));
+  }
+
+  for (size_t i = 0; i < totalWorkers; ++i) {
+    await(inlineResults[i]);
+    await(globalIdResults[i]);
+    EXPECT_TRUE(inlineResults[i].get())
+        << "shouldRunInlineForTask returned false for global worker " << i;
+    EXPECT_EQ(globalIdResults[i].get(), i)
+        << "globalWorkerIDInTLS mismatch for global worker " << i;
+  }
+
+  delegateWQ->shutdown();
+}
+
+#if defined(__linux__)
+/// Verifies that each worker in a DelegateThreadPoolWorkQueue runs on exactly
+/// the CPU at its local-index position within its partition's CPU list,
+/// regardless of whether those CPU IDs are contiguous.
+///
+/// For example, with NUMA 0: CPUs {0, 2, 4, 6} and global offset 0:
+///   global=0, local=0 → must run on CPU 0  (getCpuIds()[0])
+///   global=1, local=1 → must run on CPU 2  (getCpuIds()[1])
+///   global=2, local=2 → must run on CPU 4  (getCpuIds()[2])
+///   global=3, local=3 → must run on CPU 6  (getCpuIds()[3])
+///
+/// NUMA 1: CPUs {1, 3, 5, 7} and global offset 4:
+///   global=4, local=0 → must run on CPU 1  (getCpuIds()[0])
+///   global=5, local=1 → must run on CPU 3  (getCpuIds()[1])
+///   ...
+TEST(WorkQueueTest, DelegateWorkerCpuAffinityMatchesLocalIndex) {
+  const ErrorOr<NUMATopology> &topologyOr = NUMATopology::get();
+  if (topologyOr.isError())
+    GTEST_SKIP() << "host has no NUMA topology available";
+
+  CPUDeviceOptions options;
+  options.withSingleThreaded();
+  CPUDeviceRef cpuDevice = getOrCreateCPUDevice(CPUDeviceSource::Test, options);
+  CompactCPUDevicePtr ptr = cpuDevice->getCompactPtr();
+
+  auto busyWait = std::chrono::microseconds(200);
+
+  // Build partitions and record the expected CPU for each global worker ID.
+  // expectedCpu[globalId] = partition.getCpuIds()[localId]
+  std::vector<std::unique_ptr<WorkQueue>> partitions;
+  std::vector<size_t> expectedCpu;
+  size_t globalWorkerIdOffset = 0;
+  for (int node : topologyOr->getNumaNodes()) {
+    std::vector<size_t> cpuIds = topologyOr->getCpuIdsForNumaNode(node);
+    if (cpuIds.empty())
+      continue;
+    partitions.push_back(createPartitionedThreadPoolWorkQueue(
+        ptr, node, busyWait, "DelegateCpuAffinity", globalWorkerIdOffset));
+    // getCpuIds() is ordered by local worker index, matching
+    // cpuIDs[workerPartitionID].
+    for (size_t localId = 0; localId < cpuIds.size(); ++localId)
+      expectedCpu.push_back(cpuIds[localId]);
+    globalWorkerIdOffset += partitions.back()->getParallelismLevel();
+  }
+  if (partitions.empty())
+    GTEST_SKIP() << "no usable NUMA nodes with CPUs";
+
+  auto delegateWQ = createDelegateThreadPoolWorkQueue(std::move(partitions));
+  const size_t totalWorkers = delegateWQ->getParallelismLevel();
+  ASSERT_EQ(expectedCpu.size(), totalWorkers);
+
+  // Dispatch one task per global worker and record which CPU sched_getcpu()
+  // reports. The task is pinned to its global worker via addTask(globalId).
+  std::vector<AsyncValueRef<int>> cpuResults(totalWorkers);
+  for (size_t globalId = 0; globalId < totalWorkers; ++globalId) {
+    cpuResults[globalId] = AsyncValueRef<int>::allocate(*cpuDevice);
+    delegateWQ->addTask(
+        [slot = cpuResults[globalId].copy()]() mutable {
+          slot.copy().emplace(::sched_getcpu());
+        },
+        static_cast<int>(globalId));
+  }
+
+  for (size_t globalId = 0; globalId < totalWorkers; ++globalId) {
+    await(cpuResults[globalId]);
+    int observedCpu = cpuResults[globalId].get();
+    ASSERT_GE(observedCpu, 0)
+        << "sched_getcpu() failed for global worker " << globalId;
+    EXPECT_EQ(static_cast<size_t>(observedCpu), expectedCpu[globalId])
+        << "global worker " << globalId << " ran on CPU " << observedCpu
+        << " but expected CPU " << expectedCpu[globalId];
+  }
+
+  delegateWQ->shutdown();
+}
+#endif // defined(__linux__)
 
 } // namespace
