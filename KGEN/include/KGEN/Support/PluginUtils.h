@@ -23,12 +23,15 @@ class CompilationOptions;
 /// functionality.
 class Plugin {
 public:
-  Plugin();
+  Plugin(StringRef targetTriple = {}, ArrayRef<StringRef> pluginPaths = {});
+  Plugin(const std::vector<std::string> &paths);
   ~Plugin();
 
-  void *getHandle() const { return soHandle; }
+  void *getHandle() const { return currHandle; }
 
   /// Plugin API for create shared object file.
+  using IsPluginForTargetFn = M::ErrorOr<bool> (*)(llvm::StringRef);
+
   using CreateSharedObjectFn = M::ErrorOr<M::BufferRef> (*)(
       M::BufferRef, CompilationOptions, llvm::StringRef, const std::string &);
   ErrorOr<CreateSharedObjectFn> getCreateSharedObjectFn() const;
@@ -50,13 +53,16 @@ public:
   /// Check if the plugin was successfully loaded.
   ErrorOrSuccess isLoaded() const;
 
+  const std::vector<std::string> &getSoPaths() const { return soPaths; }
+
 private:
   /// Handle to the loaded plugin shared object. nullptr if the plugin failed to
   /// load.
-  void *soHandle = nullptr;
+  std::vector<void *> soHandles;
+  void *currHandle = nullptr;
 
   /// Plugin path.
-  std::string soPath;
+  std::vector<std::string> soPaths;
 };
 
 } // namespace M::KGEN
