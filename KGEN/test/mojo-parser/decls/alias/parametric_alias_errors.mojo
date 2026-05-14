@@ -68,7 +68,7 @@ struct FieldWithUnboundAlias:
 
 def test_variable_type_parameterization():
     # Store an unparameterized struct type in a variable...
-    # expected-error @below {{dynamic type values not permitted yet; try creating an `alias` instead of a `var`}}
+    # expected-error @below {{dynamic type values not permitted yet; try creating a 'comptime' instead of a 'var'}}
     var struct_type = Dep
 
     # .. and try to parameterize it.

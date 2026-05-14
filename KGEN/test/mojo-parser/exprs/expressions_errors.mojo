@@ -59,12 +59,12 @@ struct SomeType:
 
 
 def mem_type_var():
-    # expected-error @below {{dynamic type values not permitted yet; try creating an `alias` instead of a `var}}
+    # expected-error @below {{dynamic type values not permitted yet; try creating a 'comptime' instead of a 'var}}
     var type = SomeType
 
 
 def reg_type_var():
-    # expected-error @below {{dynamic type values not permitted yet; try creating an `alias` instead of a `var}}
+    # expected-error @below {{dynamic type values not permitted yet; try creating a 'comptime' instead of a 'var}}
     var type = Int
 
 
@@ -73,7 +73,7 @@ trait SomeTrait:
 
 
 def trait_var():
-    # expected-error @below {{dynamic type values not permitted yet; try creating an `alias` instead of a `var}}
+    # expected-error @below {{dynamic type values not permitted yet; try creating a 'comptime' instead of a 'var}}
     var type = SomeTrait
 
 

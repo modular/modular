@@ -356,7 +356,7 @@ static LogicalResult emitErrorIfUnmaterializableValue(IREmitter &emitter,
     MojoInflightDiag diag = emitter.emitError(
         expr->getLoc(), "dynamic type values not permitted yet");
     if (context == EC_VarInit)
-      diag << "; try creating an `alias` instead of a `var`";
+      diag << "; try creating a 'comptime' instead of a 'var'";
     else if (context == EC_CallArgValue)
       diag << "; try passing types as a parameters instead of arguments";
     diag << expr->getRange();
