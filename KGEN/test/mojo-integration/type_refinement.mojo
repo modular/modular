@@ -958,11 +958,23 @@ def greet_and_describe_nested[
     return elem.greet() + " | " + elem.describe()
 
 
+def discard_associated_iterator_element[
+    C: SimpleIterable
+](container: C) -> String where conforms_to(
+    C.IterType.Element, ImplicitlyDestructible & Movable
+):
+    var it = container.iter()
+    _ = it.next()
+    return "discarded"
+
+
 def test_associated_type_chains():
     # CHECK: Woof! I'm Ziggy
     print(any_greetable(DogContainer(Dog("Ziggy"))))
     # CHECK: Woof! I'm Nova | Dog(Nova)
     print(greet_and_describe_nested(DogContainer(Dog("Nova"))))
+    # CHECK: discarded
+    print(discard_associated_iterator_element(DogContainer(Dog("Buddy"))))
 
 
 def call_greet_ptr[
