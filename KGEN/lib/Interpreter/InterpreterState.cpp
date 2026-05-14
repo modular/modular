@@ -338,6 +338,54 @@ ErrorOr<const void *> InterpreterState::getReadableMemory(int64_t addr,
   return (uint8_t *)blob.getMemory() + offset;
 }
 
+ErrorOrSuccess InterpreterState::copyMarkedRegions(int64_t srcAddr,
+                                                   int64_t dstAddr,
+                                                   size_t len) {
+  if (!len)
+    return success();
+  // No need to copy non-heap allocated blobs because they
+  // will not be materialized as new allocations at LLVM lowering time.
+  if (!getTable(MemoryKind::Heap).contains(srcAddr))
+    return success();
+
+  ErrorOr<std::pair<MemoryBlob &, int64_t>> srcResult = getMemory(srcAddr, len);
+  if (srcResult.isError())
+    return srcResult.takeError();
+
+  auto [srcBlob, srcOff] = srcResult.takeValue();
+  if (!srcBlob.pointerRegions && !srcBlob.symbolRegions)
+    return success();
+
+  ErrorOr<std::pair<MemoryBlob &, int64_t>> dstResult = getMemory(dstAddr, len);
+  if (dstResult.isError())
+    return dstResult.takeError();
+  auto [dstBlob, dstOff] = dstResult.takeValue();
+
+  int64_t pointerSize = target.getDataLayout().getPointerSize();
+  auto copyBits = [&](std::optional<llvm::BitVector> &srcBits,
+                      std::optional<llvm::BitVector> &dstBits) {
+    if (!srcBits)
+      return;
+    if (!dstBits)
+      dstBits.emplace(dstBlob.size);
+
+    // Only propagate a pointer-region bit when the full pointer-sized region
+    // fits within the copy. A partial-pointer copy (e.g. a 1-byte raw-byte
+    // copy that happens to start at the same offset as a pointer field)
+    // should not mark the destination as a pointer region.
+    for (int64_t i = 0, e = static_cast<int64_t>(len) - pointerSize; i <= e;
+         ++i) {
+      int64_t srcBit = srcOff + i;
+      if (srcBit < static_cast<int64_t>(srcBits->size()) && (*srcBits)[srcBit])
+        dstBits->set(dstOff + i);
+    }
+  };
+
+  copyBits(srcBlob.pointerRegions, dstBlob.pointerRegions);
+  copyBits(srcBlob.symbolRegions, dstBlob.symbolRegions);
+  return success();
+}
+
 ErrorOrSuccess InterpreterState::writeAttributeToMemory(int64_t addr,
                                                         TypedAttr value) {
   if (!target)
