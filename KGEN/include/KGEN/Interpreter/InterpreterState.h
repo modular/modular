@@ -193,6 +193,12 @@ public:
   /// Get readable memory for the given address to interpreter memory.
   ErrorOr<const void *> getReadableMemory(int64_t addr, size_t size);
 
+  /// Copy pointer and symbol region markings from [srcAddr, srcAddr+len) to
+  /// [dstAddr, dstAddr+len). Must be called after a raw memcpy so that
+  /// pointer-region tracking stays in sync with the copied bytes.
+  ErrorOrSuccess copyMarkedRegions(int64_t srcAddr, int64_t dstAddr,
+                                   size_t len);
+
   /// Write an attribute value of a given type to the provided chunk of memory.
   ErrorOrSuccess writeAttributeToMemory(int64_t addr, TypedAttr value);
 
