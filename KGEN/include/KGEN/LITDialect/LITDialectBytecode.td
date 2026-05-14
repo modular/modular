@@ -132,8 +132,8 @@ def SymbolAttr : DialectAttribute<(attr
 
 def PogMetadataAttr : DialectAttribute<(attr
   StringAttr:$name,
-  EnumAttr<"PassingKind">:$passingKind,
-  EnumAttr<"VariadicKind">:$variadic,
+  EnumAttr<"::M::KGEN::PassingKind">:$passingKind,
+  EnumAttr<"::M::KGEN::VariadicKind">:$variadic,
   OptionalAttribute<"TypedAttr">:$defaultValue,
   ConcreteAttrArray<"ConstraintAttr">:$constraints
 )>;

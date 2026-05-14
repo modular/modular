@@ -26,13 +26,15 @@ namespace M {
 
 using KGEN::TypeMetadata;
 
-namespace KGEN::LIT {
+namespace KGEN {
+enum class PassingKind : uint32_t;
+enum class VariadicKind : uint32_t;
+namespace LIT {
 class ASTDecl;
 class SharedState;
 class FnTypeGeneratorType;
-enum class PassingKind : uint32_t;
-enum class VariadicKind : uint32_t;
-} // namespace KGEN::LIT
+} // namespace LIT
+} // namespace KGEN
 
 class MojoASTDeclRef;
 class MojoParserContext;
@@ -348,12 +350,11 @@ public:
   PublicParameterDecl(StringRef name, StringRef type,
                       const MojoASTTypeRef &astType,
                       KGEN::LIT::SharedState &sharedState,
-                      KGEN::LIT::PassingKind passingKind,
-                      KGEN::LIT::VariadicKind variadicKind,
-                      TypedAttr defaultValue,
+                      KGEN::PassingKind passingKind,
+                      KGEN::VariadicKind variadicKind, TypedAttr defaultValue,
                       const MojoASTDeclRef *currentDeclContext = nullptr);
 
-  KGEN::LIT::PassingKind getPassingKind() const { return passingKind; }
+  KGEN::PassingKind getPassingKind() const { return passingKind; }
 
   std::string getDeclarationSnippet(MojoParserContext &ctx) const override;
 
@@ -409,8 +410,8 @@ private:
   TypeMetadata typeMetadata;
   std::string constraints;
   SmallVector<TypeMetadata, kTypicalTraitCompositionSize> traitMetadata;
-  KGEN::LIT::PassingKind passingKind;
-  KGEN::LIT::VariadicKind variadicKind;
+  KGEN::PassingKind passingKind;
+  KGEN::VariadicKind variadicKind;
   TypedAttr defaultValue;
 
   //===----------------------------------------------------------------------===//
@@ -437,9 +438,9 @@ public:
   PublicArgumentDecl(StringRef name, std::string prefix, std::string type,
                      const MojoASTTypeRef &astType,
                      KGEN::LIT::SharedState &sharedState,
-                     KGEN::LIT::PassingKind passingKind,
-                     KGEN::LIT::VariadicKind variadicKind,
-                     TypedAttr defaultValue, Convention convention, bool isSelf,
+                     KGEN::PassingKind passingKind,
+                     KGEN::VariadicKind variadicKind, TypedAttr defaultValue,
+                     Convention convention, bool isSelf,
                      const MojoASTDeclRef *currentDeclContext = nullptr);
 
   std::string getDeclarationSnippet(MojoParserContext &ctx) const override;
@@ -452,8 +453,8 @@ public:
 
   Convention getConvention() const { return convention; }
 
-  KGEN::LIT::PassingKind getPassingKind() const { return passingKind; }
-  void setPassingKind(KGEN::LIT::PassingKind kind) { passingKind = kind; }
+  KGEN::PassingKind getPassingKind() const { return passingKind; }
+  void setPassingKind(KGEN::PassingKind kind) { passingKind = kind; }
 
   /// Set the description of this decl.
   void setDescription(StringRef desc) { description = desc; }
@@ -491,8 +492,8 @@ private:
   std::string type;
   TypeMetadata typeMetadata;
   SmallVector<TypeMetadata, kTypicalTraitCompositionSize> traitMetadata;
-  KGEN::LIT::PassingKind passingKind;
-  KGEN::LIT::VariadicKind variadicKind;
+  KGEN::PassingKind passingKind;
+  KGEN::VariadicKind variadicKind;
   TypedAttr defaultValue;
   Convention convention;
   bool isSelf; // self argument of a method.
