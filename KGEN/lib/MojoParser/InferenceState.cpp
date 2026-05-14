@@ -65,6 +65,7 @@ LogicalResult InferenceState::setInferredValue(size_t paramIdx,
         paramVal = emitter.emitPValue({nmTargetAttr, &expr}, EC_TypeParamValue,
                                       targetType);
         assert(paramVal && "must be convertible");
+        ++numImplicitConversions;
       }
     }
   }

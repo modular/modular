@@ -624,3 +624,11 @@ def test_var_varargs_inference():
     # The list ctor has a 'var' varargs, forcing a copy of x/y.  The copy result
     # has a different origin than x/y.
     var z = [x, y]
+
+def nonmat_callee(x: Int): pass
+def nonmat_callee[T: AnyType](x: T): pass
+# CHECK-LABEL: lit.fn @"test_nonmat_callee
+def test_nonmat_callee():
+    # This should call the concrete nonmat_callee, not the generic one.
+    # CHECK: lit.call {{.*}}@"nonmat_callee(::Int)"
+    nonmat_callee(1)
