@@ -273,6 +273,7 @@ LogicalResult ParamInf::inferFromRVType(ASTExprAnd<AnyValue> operand,
     ParamMatcher::FailableScope failableScope(matcher);
     // Infer the parameters of this overload candidate against the computed
     // result type of the initializer.
+
     if (succeeded(matcher.matchTypes(nonmaterializableTarget, expectedType))) {
       // Implicit conversion for nonmaterializable types to their target
       // type is allowed even if !allowImplicitConversions and count as half
@@ -1223,9 +1224,6 @@ CallParamInf::CallParamInf(const ParamBindings &paramBinding,
 /// argIdx indicates which declared argument this corresponds to.  Note that
 /// these may differ when using keyword arguments, and variadics have multiple
 /// values that fulfill the same declared argument.
-///
-/// TODO: This is a more general mirror of 'OverloadFitness::checkOneOperand':
-/// unify it into this.
 LogicalResult CallParamInf::inferOneOperand(ASTExprAnd<AnyValue> operand,
                                             size_t operandIdx, size_t argIdx,
                                             ASTType expectedType,
@@ -1944,6 +1942,12 @@ LogicalResult CallParamInf::inferForCall() {
         const auto &operand = callOperands[posOperandIdx++];
         if (operand.keyword) // Ignore keyword operands.
           continue;
+
+        if (operand.isUnpackedPositional()) {
+          getMojoDiag(operand.expr->getLoc())
+              << "concatenating unpacked positional arguments is not supported";
+          return failure();
+        }
 
         // Remember the first argument expression for the pack.
         if (packArgExpr == nullptr)
