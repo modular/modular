@@ -27,7 +27,7 @@ RUNNERS = {
     "2xMI355": "modrunner-mi355-2x",
     "8xB200": "modrunner-b200-8x",
     "8xMI355": "modrunner-mi355-8x",
-    "8xB200_internal": "modrunner-internal-b200-8x",
+    "8xB200_internal": "modrunner-prod-2-b200-8x",
 }
 
 # Framework → GPUs that framework cannot run on.
