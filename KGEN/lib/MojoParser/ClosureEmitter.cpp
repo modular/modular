@@ -1710,7 +1710,7 @@ static SymbolRefAttr getFullyResolvedSymbolRefUpTo(mlir::SymbolOpInterface op) {
 TypedAttr ClosureEmitter::addWitnessTablesToClosure(
     ASTDecl &moduleDecl, SMLoc smLoc, FnOp parent, ClosureType closureType,
     SmallVector<ClosureParent> &closureParents, SymbolRefAttr parentSymbolRef,
-    llvm::MapVector<StringRef, Type> const &aliases) {
+    llvm::MapVector<StringAttr, Type> const &aliases) {
   // create kgen.struct.generator
   Location location = shared.translateLocation(smLoc);
   MLIRContext *ctx = shared.getContext();
@@ -1726,7 +1726,7 @@ TypedAttr ClosureEmitter::addWitnessTablesToClosure(
   paramBindings.push_back(packedParamCaptures);
 
   for (auto [name, type] : aliases) {
-    auto param = ParamDeclAttr::get(StringAttr::get(ctx, name), type);
+    auto param = ParamDeclAttr::get(name, type);
     closureParams.push_back(param);
     paramBindings.push_back(ParamDeclRefAttr::get(param));
   }
@@ -1796,9 +1796,7 @@ TypedAttr ClosureEmitter::addWitnessTablesToClosure(
     // add the alias entries
     if (closureParent.getClosureMethod() == ClosureMethod::CALL) {
       for (auto [name, type] : aliases)
-        WitnessOp::create(
-            builder, name,
-            ParamDeclRefAttr::get(StringAttr::get(ctx, name), type));
+        WitnessOp::create(builder, name, ParamDeclRefAttr::get(name, type));
     }
   };
 
@@ -2112,12 +2110,16 @@ Value ClosureEmitter::emitClosureOp(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
             highestCaptureConvention, captureConventionMet);
         captureInfo.push_back(memTriple);
         break;
-      } else if (auto traitType = dyn_cast<TraitType>(mlirType)) {
+      }
+
+      if (auto traitType = dyn_cast<TraitType>(mlirType)) {
         shared.emitError(nestedFnDecl.getLoc(),
                          "cannot capture a value of trait type yet because "
                          "existentials are not implemented.");
         return {};
-      } else if (auto paramType = dyn_cast<ParamType>(mlirType)) {
+      }
+
+      if (auto paramType = dyn_cast<ParamType>(mlirType)) {
         auto [memTriple, captureConventionMet] = buildParamCaptureInfo(
             paramType, capture, captureConvention, requestedConvention, isMove,
             nestedFnDecl, moduleDecl);
@@ -2127,9 +2129,9 @@ Value ClosureEmitter::emitClosureOp(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
             highestCaptureConvention, captureConventionMet);
         captureInfo.push_back(memTriple);
         break;
-      } else {
-        captureInfo.push_back(UnitAttr::get(ctx));
       }
+
+      captureInfo.push_back(UnitAttr::get(ctx));
       break;
     }
     }
@@ -2168,10 +2170,10 @@ Value ClosureEmitter::emitClosureOp(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
       original.getFnMetadata(), original.getMetadata());
   auto [capturedRefs, _] =
       DeclResolver::createSelfContainedSignature(closureBodySignature);
-  llvm::MapVector<StringRef, Type> aliases;
+  llvm::MapVector<StringAttr, Type> aliases;
   for (ParamDeclRefAttr reference : capturedRefs) {
     auto [_, inserted] =
-        aliases.insert({reference.getName().getValue(), reference.getType()});
+        aliases.insert({reference.getName(), reference.getType()});
     (void)inserted;
   }
   TypedAttr witnessTable = addWitnessTablesToClosure(
@@ -2193,13 +2195,13 @@ Value ClosureEmitter::emitClosureOp(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
     auto newSubroutineType = DebugInfo::DISubroutineType::get(
         ctx, subroutineType.getCallingConvention(), updatedArgTypes,
         subroutineType.getResultTypes());
+
     closureSubprogram = DebugInfo::DISubprogramAttr::get(
         closureSubprogram.getCompileUnit(), closureSubprogram.getScope(),
         closureSubprogram.getSourceName(), closureSubprogram.getLinkageName(),
         closureSubprogram.getFile(), closureSubprogram.getLine(),
         closureSubprogram.getScopeLine(),
-        closureSubprogram.getSubprogramFlags(),
-        cast<DebugInfo::DISubroutineType>(newSubroutineType));
+        closureSubprogram.getSubprogramFlags(), newSubroutineType);
   }
 
   auto closure = LIT::ClosureInitOp::create(

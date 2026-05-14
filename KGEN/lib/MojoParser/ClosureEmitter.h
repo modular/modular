@@ -226,7 +226,7 @@ private:
   TypedAttr addWitnessTablesToClosure(
       ASTDecl &moduleDecl, SMLoc smLoc, FnOp parent, ClosureType closureType,
       SmallVector<ClosureParent> &closureParents, SymbolRefAttr parentSymbolRef,
-      llvm::MapVector<StringRef, Type> const &aliases);
+      llvm::MapVector<StringAttr, Type> const &aliases);
 
   /// Given a trait function, specialize it and add it to the struct.
   /// Returns
