@@ -1284,6 +1284,42 @@ comptime RTX2060 = GPUInfo.from_family(
 
 
 # ===-----------------------------------------------------------------------===#
+# RTX2070 SUPER
+# ===-----------------------------------------------------------------------===#
+
+
+def _get_rtx2070super_target() -> _TargetType:
+    """Creates an MLIR target configuration for NVIDIA RTX 2070 SUPER GPU.
+
+    Returns:
+        MLIR target configuration for RTX 2070 SUPER.
+    """
+    return __mlir_attr[
+        `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
+        `arch = "sm_75", `,
+        `features = "+ptx63,+sm_75", `,
+        `tune_cpu = "sm_75", `,
+        `data_layout = "e-p3:32:32-p4:32:32-p5:32:32-p6:32:32-p7:32:32-i64:64-i128:128-i256:256-v16:16-v32:32-n16:32:64",`,
+        `index_bit_width = 64,`,
+        `simd_bit_width = 128`,
+        `> : !kgen.target`,
+    ]
+
+
+comptime RTX2070SUPER = GPUInfo.from_family(
+    family=NvidiaTuringFamily,
+    name="RTX2070SUPER",
+    vendor=Vendor.NVIDIA_GPU,
+    api="cuda",
+    arch_name="turing",
+    compute=7.5,
+    version="sm_75",
+    sm_count=40,
+)
+"""NVIDIA RTX 2070 SUPER GPU configuration."""
+
+
+# ===-----------------------------------------------------------------------===#
 # MI250X
 # ===-----------------------------------------------------------------------===#
 
@@ -1751,6 +1787,8 @@ struct GPUInfo(Equatable, RegisterPassable, Writable):
             return _get_gtx970_target()
         if self.name == "RTX2060":
             return _get_rtx2060_target()
+        if self.name == "RTX2070SUPER":
+            return _get_rtx2070super_target()
         if self.name == "NVIDIA GeForce RTX 3090":
             return _get_rtx3090_target()
         if self.name == "A100":
@@ -2114,7 +2152,9 @@ def _get_info_from_target[target_arch0: StaticString]() -> GPUInfo:
         # return materialize[GTX1060]()
         return materialize[GTX1080Ti]()
     elif target_arch == "sm_75":
-        return materialize[RTX2060]()
+        # FIXME RTX2060 and RTX2070SUPER architecture wise are different (sm_count is different). We need to differentiate between them here at compile time.
+        # return materialize[RTX2060]()
+        return materialize[RTX2070SUPER]()
     elif target_arch == "sm_80":
         return materialize[A100]()
     elif target_arch == "sm_86":
