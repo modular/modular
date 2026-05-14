@@ -94,6 +94,16 @@ class LocalConnector:
         """Get the number of host blocks currently in use."""
         return len(self._host_block_pool.hash_to_committed_block)
 
+    @property
+    def num_disk_blocks(self) -> int:
+        """LocalConnector has no disk tier."""
+        return 0
+
+    @property
+    def num_used_disk_blocks(self) -> int:
+        """LocalConnector has no disk tier."""
+        return 0
+
     @traced
     def load(
         self,

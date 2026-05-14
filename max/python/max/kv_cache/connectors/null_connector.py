@@ -57,6 +57,14 @@ class NullConnector:
     def num_used_host_blocks(self) -> int:
         return 0
 
+    @property
+    def num_disk_blocks(self) -> int:
+        return 0
+
+    @property
+    def num_used_disk_blocks(self) -> int:
+        return 0
+
     def reset_prefix_cache(self) -> None:
         pass
 

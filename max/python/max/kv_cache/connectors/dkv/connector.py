@@ -598,6 +598,15 @@ class DKVConnector:
     def num_used_host_blocks(self) -> int:
         return 0
 
+    @property
+    def num_disk_blocks(self) -> int:
+        # dKV does not expose a disk tier through this manager.
+        return 0
+
+    @property
+    def num_used_disk_blocks(self) -> int:
+        return 0
+
     @traced
     def lookup(
         self,

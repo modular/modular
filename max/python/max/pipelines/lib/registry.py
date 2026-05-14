@@ -339,15 +339,22 @@ class SupportedArchitecture:
     the max sequence length of the model.
     """
 
-    tool_parser: str | None = None
-    """Optional default tool parser name for this architecture.
+    tool_parser: str | Callable[[HuggingFaceRepo], str] | None = None
+    """Optional default tool parser for this architecture.
 
-    The name must correspond to a parser registered via
-    :func:`max.pipelines.lib.tool_parsing.register`. When set, the pipeline
-    config will fall back to this value for ``runtime.tool_parser`` if
-    the user did not explicitly configure one. Different model architectures
-    emit tool calls in different formats (e.g., Kimi K2.5 uses structural
-    tags), so the appropriate default is architecture-specific.
+    Either a registered parser name (str), or a callable that takes the
+    model's :class:`HuggingFaceRepo` handle (carrying ``repo_id``,
+    ``revision``, ``subfolder``, and ``trust_remote_code``) and returns a
+    registered parser name. Use the callable form when one architecture
+    name covers multiple checkpoint revisions with different tool-call
+    grammars (for example, DeepSeek V3 vs V3.1). The callable is invoked
+    once during pipeline config resolution and the resulting string is
+    stored on ``runtime.tool_parser``.
+
+    The returned name must correspond to a parser registered via
+    :func:`max.pipelines.lib.tool_parsing.register`. When set, the
+    pipeline config falls back to this value for ``runtime.tool_parser``
+    if the user did not explicitly configure one.
 
     If None, no tool parser is enabled by default and the serving layer
     falls back to its baseline parser.

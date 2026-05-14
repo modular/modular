@@ -246,6 +246,18 @@ class MAXModelConfig(MAXModelConfigBase):
     )
     """The RoPE type to use, forced regardless of model defaults."""
 
+    sliding_window: int | None = Field(
+        default=None,
+        description=(
+            "If set, overrides the model's attention to use a "
+            "sliding-window causal mask of this many tokens. ``None`` "
+            "(the default) defers to the HuggingFace config's "
+            "``sliding_window`` field, or full causal attention if the "
+            "model doesn't advertise one."
+        ),
+    )
+    """Override the attention sliding-window size in tokens."""
+
     enable_echo: bool = Field(
         default=False,
         description="Whether the model should be built with echo capabilities.",

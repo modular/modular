@@ -72,14 +72,7 @@ __extension Attention:
         ), "depth must be a multiple of BK"
         comptime assert Self.BN % Self.BK == 0, "BN must be a multiple of BK"
 
-        # MLA-alias mode: load K unswizzled so PV can read V from K's SMEM
-        # without a V DMA. QK reads then take LDS bank conflicts on K.
-        # TODO(KERN-2875): try to recover the K-side swizzle for QK reads.
-        comptime k_swizzle = (
-            Optional[Swizzle](None) if Self.mla_kv_alias else _get_k_swizzle[
-                Self.mma_shape[0], Self.BK
-            ]()
-        )
+        comptime k_swizzle = _get_k_swizzle[Self.mma_shape[0], Self.BK]()
 
         var warp_id = UInt32(
             readfirstlane(bitcast[DType.int32](UInt32(get_warp_id())))
@@ -175,10 +168,18 @@ __extension Attention:
             v_col_start, Self.BK
         ) * Self.BN * Self.BK + umod(v_col_start, Self.BK)
 
+        # In mla_kv_alias mode, V reads from K's swizzled SMEM, so V's
+        # `ds_read_tr8_b64` addressing must apply the same swizzle K uses.
+        # `load_v_fp8_strip` consumes this and XORs the byte offset at vec
+        # granularity to land on the writer's permuted slot.
+        comptime v_swizzle = (
+            k_swizzle if Self.mla_kv_alias else Optional[Swizzle](None)
+        )
+
         comptime VBufT = KVBuffer[
             kv_t=Self.v_t,
             mma_shape=Self.mma_shape,
-            swizzle=None,
+            swizzle=v_swizzle,
             BN=Self.BN,
             WN=Self.BN,
             BK=Self.BK,

@@ -685,9 +685,9 @@ def _run_impl(opts: _RunOptions) raises -> Report:
     report.warmup_duration = 0
     var num_warmup_iters = opts.num_warmup_iters
     if num_warmup_iters:
-        prev_dur += opts.timing_fn(num_warmup_iters)
-        prev_iters += num_warmup_iters
-        report.warmup_duration += prev_dur
+        prev_dur = opts.timing_fn(num_warmup_iters)
+        prev_iters = num_warmup_iters
+        report.warmup_duration = prev_dur
 
     var total_iters: Int = 0
     var time_elapsed: Int = 0
@@ -704,12 +704,13 @@ def _run_impl(opts: _RunOptions) raises -> Report:
     while time_elapsed < max_time_ns:
         var n = Float64(opts.max_batch_size)
         if opts.max_batch_size == 0:
-            # We now count the next batchSize. A user might run the benchmark
-            # with no warmup phase, so we need to make sure the divisor is not
-            # zero.
+            # We now compute the next batch size. A user might run the
+            # benchmark with no warmup phase, so we need to make sure the
+            # divisor is not zero.
             if prev_dur > 0:
-                # Propose batch size which lasts at least min_time_ns or opts.max_iters
-                n = Float64(opts.max_iters)
+                # Propose a batch size that lasts at least min_time_ns. With
+                # min_time_ns == 0, fall back to opts.max_iters and let the
+                # 10x growth cap below ramp us up gradually.
                 if min_time_ns > 0:
                     n = (
                         1.2
@@ -717,17 +718,21 @@ def _run_impl(opts: _RunOptions) raises -> Report:
                         * Float64(prev_iters)
                         / Float64(prev_dur)
                     )
+                else:
+                    n = Float64(opts.max_iters)
 
             # We should not grow too fast, so we cap it to only 10x the growth
             # from the prior iteration. Fast growth can happen when the function
             # is too fast.
             n = min(n, Float64(10 * prev_iters))
-            # We have to increase the batchSize each time. So, we make sure we
+            # We have to increase the batch size each time. So, we make sure we
             # advance the number of iterations regardless of the prior logic.
             n = max(n, Float64(prev_iters + 1))
             # The batch size should not be larger than 1.0e9.
             n = min(n, 1.0e9)
-            # Process at least one batch. i.e. Ensure n does not exceed opts.max_iters on the first iteration
+            # On the first iteration, clamp n to opts.max_iters: the max_iters
+            # check below only fires once min_time_ns has elapsed, so without
+            # this clamp a single first batch could overshoot max_iters.
             if total_iters == 0:
                 n = min(n, Float64(opts.max_iters))
 

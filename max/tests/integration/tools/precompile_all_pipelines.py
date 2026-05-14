@@ -49,6 +49,8 @@ SKIP_MODELS: set[str] = {
     "qwen/qwen3-embedding-0.6b",
     "amd/minimax-m2.7-mxfp4",
     "wan-ai/wan2.1-t2v-14b-diffusers",
+    "nvidia/kimi-k2.5-nvfp4",
+    "austinpowers/kimi-k2.5-nvfp4-deepseekv3",
 }
 
 

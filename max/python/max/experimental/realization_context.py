@@ -300,7 +300,7 @@ def _load_eager_model(graph: Graph) -> engine.Model:
 
     The compiled ``Model`` is keyed by a hash of the graph IR plus the
     resolved kernel library paths and content hashes so that recompiling
-    a ``.mojopkg`` automatically invalidates the cache.
+    a ``.mojoc``/``.mojopkg`` automatically invalidates the cache.
 
     Returns:
         A compiled ``engine.Model`` ready for execution.

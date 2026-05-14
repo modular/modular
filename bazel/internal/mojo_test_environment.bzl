@@ -57,8 +57,8 @@ def _extract_linker_variables(ctx):
 def _mojo_test_environment_implementation(ctx):
     mojo_toolchain = ctx.toolchains["@rules_mojo//:toolchain_type"].mojo_toolchain_info
 
-    _, transitive_mojopkgs = collect_mojoinfo(ctx.attr.data)
-    if not transitive_mojopkgs:
+    _, transitive_mojodeps = collect_mojoinfo(ctx.attr.data)
+    if not transitive_mojodeps:
         return [
             CcInfo(),  # Requirement of py_test
             PyInfo(transitive_sources = depset()),  # Requirement of py_test
@@ -75,7 +75,7 @@ def _mojo_test_environment_implementation(ctx):
 
     # The import_paths when used as runfiles like this differs from the standard ones
     import_paths = sets.make()
-    for pkg in transitive_mojopkgs.to_list():
+    for pkg in transitive_mojodeps.to_list():
         if ctx.attr.short_path:
             sets.insert(import_paths, paths.dirname(pkg.short_path))
         else:
@@ -133,7 +133,7 @@ def _mojo_test_environment_implementation(ctx):
         PyInfo(transitive_sources = depset()),  # Requirement of py_test
         DefaultInfo(
             runfiles = ctx.runfiles(
-                transitive_files = depset(transitive = [transitive_mojopkgs] + transitive_files + [extra_files]),
+                transitive_files = depset(transitive = [transitive_mojodeps] + transitive_files + [extra_files]),
             ).merge_all(transitive_runfiles),
         ),
         platform_common.TemplateVariableInfo({

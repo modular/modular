@@ -117,6 +117,7 @@ from max.benchmark.benchmark_shared.utils import (
     get_tokenizer,
     is_castable_to_int,
     print_section,
+    resolve_revision,
     set_ulimit,
     wait_for_server_ready,
 )
@@ -1132,6 +1133,7 @@ def _build_session(args: ServingBenchmarkConfig) -> BenchmarkSession:
         logger.info(f"getting tokenizer. api url: {api_url}")
         tokenizer = get_tokenizer(
             tokenizer_id,
+            revision=resolve_revision(tokenizer_id),
             model_max_length=args.model_max_length,
             trust_remote_code=args.trust_remote_code,
         )

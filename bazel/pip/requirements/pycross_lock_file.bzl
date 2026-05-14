@@ -74,6 +74,7 @@ PINS = {
     "ipython": "ipython@8.18.1",
     "jinja2": "jinja2@3.1.6",
     "jiwer": "jiwer@3.0.5",
+    "jsonschema": "jsonschema@4.23.0",
     "kaleido": "kaleido@0.2.1",
     "kepler": "kepler@0.3.0",
     "levenshtein": "levenshtein@0.27.3",

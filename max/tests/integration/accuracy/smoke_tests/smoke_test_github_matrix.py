@@ -27,6 +27,7 @@ RUNNERS = {
     "2xMI355": "modrunner-mi355-2x",
     "8xB200": "modrunner-b200-8x",
     "8xMI355": "modrunner-mi355-8x",
+    "8xB200_internal": "modrunner-internal-b200-8x",
 }
 
 # Framework → GPUs that framework cannot run on.
@@ -36,10 +37,12 @@ HW_EX = {
 }
 
 # Tags: skip model on multi-GPU runners.
-XL = {"8xB200", "8xMI355"}
+XL = {"8xB200", "8xMI355", "8xB200_internal"}
 MULTI = {"2xB200", "2xMI355"} | XL
-NON_XL = set(RUNNERS) - XL
+NON_XL = (set(RUNNERS) - XL) | {"8xB200_internal"}
 DISABLE = set(RUNNERS)
+# Runs only on the dedicated internal 8xB200 runner; everything else excluded.
+INTERNAL_ONLY = set(RUNNERS) - {"8xB200_internal"}
 
 # Model → set of exclusion tags:
 #   - framework        (e.g. "max")
@@ -91,9 +94,10 @@ HF_MODELS: dict[str, set[str]] = {
     "Qwen/Qwen3-8B": MULTI,
     "Qwen/Qwen3-VL-4B-Instruct": XL | {"vllm@B200"},  # MODELS-1020
     "Qwen/Qwen3-VL-4B-Instruct-FP8": XL | {"MI355", "2xMI355"},  # MI355: no FP8
-    "Qwen/Qwen3-VL-30B-A3B-Instruct-FP8": XL | {"MI355", "2xMI355", "max-ci@B200", "sglang@B200"},  # MI355: no FP8, B200: MODELS-1020
+    "Qwen/Qwen3-VL-30B-A3B-Instruct-FP8": DISABLE,  # MODELS-1442
     "Qwen/Qwen3-VL-30B-A3B-Thinking": XL | {"max"},
     "Qwen/Qwen3.5-9B": MULTI | {"max", "max-ci@MI355"},
+    "Qwen/Qwen3.6-27B": MULTI | {"max", "max-ci@MI355"},
     "RedHatAI/gemma-3-27b-it-FP8-dynamic": MULTI,  # TODO(MODELS-1021)
     "nvidia/Llama-3.1-405B-Instruct-NVFP4": NON_XL | {"max", "8xMI355"},
     "RedHatAI/Meta-Llama-3.1-405B-Instruct-FP8-dynamic": NON_XL,
@@ -127,6 +131,10 @@ CUSTOM_MODELS: dict[str, set[str]] = {
     "austinpowers/Kimi-K2.5-NVFP4-DeepseekV3__local_kvconnector_tpep": NON_XL | {"8xMI355"},
     "austinpowers/Kimi-K2.5-NVFP4-DeepseekV3__tiered_kvconnector_tpep": NON_XL | {"8xMI355"},
     "austinpowers/Kimi-K2.5-NVFP4-DeepseekV3__eagle_tiered_kvconnector_tpep": NON_XL | {"8xMI355"},
+    # Runs exclusively on the dedicated internal 8xB200 runner. The recipe
+    # loads weights pre-staged on the runner; see the matching MODEL_RECIPES
+    # entry in smoke_test.py.
+    "nvidia/Kimi-K2.5-NVFP4__internal": INTERNAL_ONLY,
 }
 
 MODELS = {**HF_MODELS, **CUSTOM_MODELS}
@@ -166,6 +174,7 @@ def parse_override(raw: str | None) -> list[str]:
 @click.option("--run-on-2xmi355", is_flag=True)
 @click.option("--run-on-8xb200", is_flag=True)
 @click.option("--run-on-8xmi355", is_flag=True)
+@click.option("--run-on-8xb200-internal", is_flag=True)
 def main(
     framework: str,
     models_override: str | None,
@@ -175,6 +184,7 @@ def main(
     run_on_2xmi355: bool,
     run_on_8xb200: bool,
     run_on_8xmi355: bool,
+    run_on_8xb200_internal: bool,
 ) -> None:
     flags = {
         "B200": run_on_b200,
@@ -183,6 +193,7 @@ def main(
         "2xMI355": run_on_2xmi355,
         "8xB200": run_on_8xb200,
         "8xMI355": run_on_8xmi355,
+        "8xB200_internal": run_on_8xb200_internal,
     }
     gpus = [gpu for gpu, ok in flags.items() if ok]
     models = parse_override(models_override) or list(MODELS)

@@ -1185,6 +1185,20 @@ def test_list_hash() raises:
     assert_true(conforms_to(List[String], Hashable))
 
 
+@fieldwise_init
+struct MoveOnlyInt(Equatable, Movable, Writable):
+    var n: Int
+
+
+def test_list_move_only() raises:
+    var l = [MoveOnlyInt(0), MoveOnlyInt(1)]
+    assert_equal(l[0], MoveOnlyInt(0))
+    assert_equal(l[1], MoveOnlyInt(1))
+
+    l.append(MoveOnlyInt(2))
+    assert_equal(l[2], MoveOnlyInt(2))
+
+
 # ===-------------------------------------------------------------------===#
 # main
 # ===-------------------------------------------------------------------===#

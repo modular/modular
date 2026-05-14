@@ -23,7 +23,7 @@ mojo_shared_library(
         "@mojo//:python",
     ],
     shared_lib_name = "distributed_ops.so",
-    target_compatible_with = ["//:has_gpu"],
+    target_compatible_with = [":linux_has_gpu"],
     deps = [
         "//max:comm",
         "//max:layout",
@@ -41,12 +41,7 @@ modular_py_library(
     srcs = ["__init__.py"],
     data = select({
         ":linux_has_gpu": [":distributed_ops"],
-        "//conditions:default": [
-            ":_mojo_srcs",
-            "//max:comm",
-            "//max:layout",
-            "@mojo//:std",
-        ],
+        "//conditions:default": [":_mojo_srcs"],
     }),
     ignore_unresolved_imports = [
         # mojo.importer registers this symbol at runtime; not visible to pydeps.

@@ -129,6 +129,11 @@ class SamplingConfig(ConfigFileModel):
     temperature: float | None = Field(default=None)
     """Sampling temperature. Default: None (use model / pipeline defaults)."""
 
+    thinking_temperature: float | None = Field(default=None)
+    """Sampling temperature override for tokens inside a ``<think>...</think>``
+    block. MAX-only OpenAI extension; other backends will ignore or reject
+    the field. Default: None (request omits the field)."""
+
     top_p: float | None = Field(default=None)
     """Nucleus sampling cumulative probability threshold. Default: None (use defaults)."""
 
@@ -472,6 +477,16 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
     temperature: float | None = Field(
         default=None,
         description="Temperature for sampling.",
+        json_schema_extra={"group": "Output Control"},
+    )
+
+    thinking_temperature: float | None = Field(
+        default=None,
+        description=(
+            "Temperature override for tokens inside a ``<think>...</think>`` "
+            "block. MAX-only OpenAI extension; other backends will ignore or "
+            "reject the field."
+        ),
         json_schema_extra={"group": "Output Control"},
     )
 
@@ -885,11 +900,12 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
 
     @property
     def sampling(self) -> SamplingConfig:
-        """OpenAI-style completion sampling from flat ``temperature`` / ``top_p`` / ``top_k``."""
+        """OpenAI-style completion sampling from flat ``temperature`` / ``top_p`` / ``top_k`` / ``thinking_temperature``."""
         # TODO: We should just embed SamplingConfig directly.  This may change
         # the CLI interface, so we'd need to find all callers to update them.
         return SamplingConfig(
             temperature=self.temperature,
+            thinking_temperature=self.thinking_temperature,
             top_p=self.top_p,
             top_k=self.top_k,
         )

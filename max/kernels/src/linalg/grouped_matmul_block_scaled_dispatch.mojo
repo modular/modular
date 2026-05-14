@@ -30,7 +30,7 @@ from linalg.matmul.gpu.sm100_structured.grouped_block_scaled_1d1d import (
 def grouped_matmul_block_scaled_dispatch[
     transpose_b: Bool = True,
     target: StaticString = "cpu",
-    pdl_level: PDLLevel = PDLLevel(1),
+    pdl_level: PDLLevel = PDLLevel.ON,
 ](
     c: TileTensor[...],
     a: TileTensor[...],

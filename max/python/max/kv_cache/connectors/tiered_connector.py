@@ -27,14 +27,17 @@ from collections.abc import Sequence
 from concurrent.futures import Future, wait
 from dataclasses import dataclass
 
-from max.driver import Buffer, Device, DeviceEvent
+from max.driver import Buffer, Device
 from max.dtype import DType
 from max.kv_cache.memory_tier import MemoryTier
 from max.nn.kv_cache import KVCacheParams
 from max.nn.kv_cache.metrics import KVCacheMetrics
 from max.profiler import Tracer, traced
 
-from ..paged_kv_cache.block_copy_engine import BlockOffloadEngine
+from ..paged_kv_cache.block_copy_engine import (
+    BlockOffloadEngine,
+    DeviceEventBundle,
+)
 from ..paged_kv_cache.block_manager import (
     _resolve_only_use_kv_connector_last_level_cache,
 )
@@ -57,7 +60,7 @@ class _CacheHit:
 
 @dataclass
 class _PendingDiskWrite:
-    d2h_copy_complete_event: DeviceEvent
+    d2h_copy_complete_event: DeviceEventBundle
     host_blocks: list[KVCacheBlock]
 
 
@@ -78,6 +81,7 @@ class TieredConnector:
         disk_cache_dir: str,
         max_disk_size_gb: float,
         use_direct_io: bool = False,
+        synchronous_d2h_copy_mode: bool = False,
     ) -> None:
         if not params.enable_prefix_caching:
             raise ValueError(
@@ -128,6 +132,9 @@ class TieredConnector:
         # -- State --
         # host_block kept at ref_cnt=1 (pinned until disk write completes).
         self._pending_disk_writes: deque[_PendingDiskWrite] = deque()
+        # If True, the d2h copies will be synchronous. This is primarily useful
+        # for writing tests.
+        self._synchronous_d2h_copy_mode = synchronous_d2h_copy_mode
         # Blocks with in-flight disk writes. Holds ref_cnt=1 until the
         # write Future completes so the host memory can't be evicted.
         self._write_locked_blocks: list[tuple[Future[None], KVCacheBlock]] = []
@@ -158,6 +165,16 @@ class TieredConnector:
     def num_used_host_blocks(self) -> int:
         """Get the number of host blocks currently in use."""
         return len(self._host_block_pool.hash_to_committed_block)
+
+    @property
+    def num_disk_blocks(self) -> int:
+        """Get the total number of disk blocks."""
+        return self._disk_tier.num_blocks
+
+    @property
+    def num_used_disk_blocks(self) -> int:
+        """Get the number of disk blocks currently in use."""
+        return self._disk_tier.num_used_blocks
 
     @traced
     def load(
@@ -322,12 +339,15 @@ class TieredConnector:
                 host_blocks.append(host_block)
 
         if host_blocks:
-            event = DeviceEvent(self._devices[0])
             pending_disk_write = _PendingDiskWrite(
-                d2h_copy_complete_event=event,
+                d2h_copy_complete_event=self._block_copy_engine.record_d2h_event(),
                 host_blocks=host_blocks,
             )
             self._pending_disk_writes.appendleft(pending_disk_write)
+
+            # If flag is set, immediately synchronize the event.
+            if self._synchronous_d2h_copy_mode:
+                pending_disk_write.d2h_copy_complete_event.synchronize()
 
     def shutdown(self) -> None:
         """Clean shutdown of connector resources."""

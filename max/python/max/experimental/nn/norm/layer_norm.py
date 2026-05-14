@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Layer normalization."""
+"""Provides layer normalization for experimental tensors."""
 
 from __future__ import annotations
 
@@ -29,17 +29,26 @@ def layer_norm(
     eps: float,
     keep_dtype: bool,
 ) -> Tensor:
-    """Applies Layer Normalization to an input tensor.
+    """Applies layer normalization to ``x`` over its last dimension.
+
+    When ``keep_dtype`` is ``True``, the reduction runs in the input dtype.
+    When ``keep_dtype`` is ``False``, ``x``, ``gamma``, and ``beta`` are
+    cast to float32, the normalization runs in float32, and the result is
+    cast back to the dtype of ``x``.
 
     Args:
-        x: Input tensor to normalize.
-        gamma: Scale tensor for elementwise affine transform.
-        beta: Bias tensor for elementwise affine transform.
-        eps: Numerical stability constant.
-        keep_dtype: Whether to preserve input dtype in computation.
+        x: The tensor to normalize. Reduction runs over the last axis.
+        gamma: The scale applied after normalization. A 1-D tensor whose
+            length matches the last dimension of ``x``.
+        beta: The bias added after scaling. A 1-D tensor with the same
+            shape as ``gamma``.
+        eps: A small positive constant added to the variance for numerical
+            stability.
+        keep_dtype: Whether to run the reduction in the input dtype. Pass
+            ``False`` to upcast to float32 for the reduction and cast back.
 
     Returns:
-        A layer-normalized tensor with the same shape and type as `x`.
+        A tensor with the same shape and dtype as ``x``.
     """
     if keep_dtype:
         return F.layer_norm(x, gamma=gamma, beta=beta, epsilon=eps)
@@ -53,10 +62,61 @@ def layer_norm(
 
 
 class LayerNorm(Module[[Tensor], Tensor]):
-    """Layer normalization over the last dimension."""
+    """Layer normalization over the last dimension of the input.
+
+    Takes an integer ``dim`` and always reduces over the last axis. By
+    default the reduction runs in the input dtype. Pass ``keep_dtype=False``
+    to upcast to float32 for the reduction and cast back, which trades a
+    small amount of throughput for numerical stability on float16 or
+    bfloat16 inputs.
+
+    For example:
+
+    .. code-block:: python
+
+        from max.dtype import DType
+        from max.experimental.nn.norm import LayerNorm
+        from max.experimental.realization_context import (
+            GraphRealizationContext,
+            realization_context,
+        )
+        from max.experimental.tensor import Tensor
+        from max.graph import DeviceRef, Graph, TensorType
+
+        graph = Graph(
+            "ln",
+            input_types=[
+                TensorType(DType.float32, ("batch", "seq", 2048), DeviceRef.GPU()),
+            ],
+        )
+        ctx = GraphRealizationContext(graph)
+        with realization_context(ctx), ctx:
+            x = Tensor.from_graph_value(graph.inputs[0])
+            norm = LayerNorm(2048)
+            y = norm(x)
+            graph.output(y)
+
+    Args:
+        dim: The size of the last dimension of the input.
+        eps: A small positive constant added to the variance for numerical
+            stability. Defaults to ``1e-5``.
+        keep_dtype: Whether to run the reduction in the input dtype. Pass
+            ``False`` to upcast to float32 for the reduction and cast back.
+            Defaults to ``True``.
+        elementwise_affine: Whether to learn a per-element scale (and
+            optional bias). When ``False``, no parameters are created and
+            the normalized output is returned directly. Defaults to ``True``.
+        use_bias: Whether to learn an additive bias. Only effective when
+            ``elementwise_affine`` is ``True``. Defaults to ``True``.
+    """
 
     weight: Tensor | None
+    """The learned per-element scale of shape ``[dim]``, or ``None`` when
+    ``elementwise_affine`` is ``False``."""
+
     bias: Tensor | None
+    """The learned per-element bias of shape ``[dim]``, or ``None`` when
+    ``elementwise_affine`` is ``False`` or ``use_bias`` is ``False``."""
 
     def __init__(
         self,
@@ -67,15 +127,6 @@ class LayerNorm(Module[[Tensor], Tensor]):
         elementwise_affine: bool = True,
         use_bias: bool = True,
     ) -> None:
-        """Initialize LayerNorm.
-
-        Args:
-            dim: Size of the last dimension to normalize.
-            eps: Numerical stability constant.
-            keep_dtype: Whether to preserve input dtype in computation.
-            elementwise_affine: Whether to apply learned scale.
-            use_bias: Whether to apply a bias. It's only effective if elementwise_affine is True.
-        """
         super().__init__()
         self.dim = dim
         self.eps = eps
@@ -90,7 +141,7 @@ class LayerNorm(Module[[Tensor], Tensor]):
             self.bias = None
 
     def __rich_repr__(self):
-        """Repr matching the Linear constructor."""
+        """Yields fields for the rich debug repr."""
         yield "dim", self.dim
         yield "eps", self.eps, 1e-5
 
@@ -114,6 +165,6 @@ class LayerNorm(Module[[Tensor], Tensor]):
         return gamma, beta
 
     def forward(self, x: Tensor) -> Tensor:
-        """Applies layer normalization to the input."""
+        """Returns ``x`` normalized over its last dimension."""
         gamma, beta = self._affine_params(x)
         return layer_norm(x, gamma, beta, self.eps, self.keep_dtype)

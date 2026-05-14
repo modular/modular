@@ -290,7 +290,9 @@ def MergeDuplicateShapeMaterializations() -> max._core.Pass:
     Canonicalization and CSE can take this one step further and eliminate a number of additional operations.
     """
 
-def NanCheckPass(kernel_library_paths: Sequence[str] = []) -> max._core.Pass:
+def NanCheckPass(
+    kernel_library_paths: Sequence[str] = [], stride: int = 20
+) -> max._core.Pass:
     """
     This pass inserts nan_check ops after each floating-point tensor output
     in the graph and lowers them to MOGG kernels in-place. Each nan_check
@@ -299,6 +301,16 @@ def NanCheckPass(kernel_library_paths: Sequence[str] = []) -> max._core.Pass:
     For debugging only — activated via the `max-debug.nan-check` config
     key (for example, `InferenceSession.debug.nan_check = True` or
     `MODULAR_DEBUG=nan-check`) or the `--nan-check` compiler flag.
+
+    The `stride` option samples one of every N floating-point kernel
+    outputs rather than checking all of them. Models with many compiled
+    regions (e.g. gemma-4-31b-it produces ~920 float kernel results) make
+    checking every tensor prohibitively expensive — the single-threaded
+    Mojo/KGEN compile path can't absorb hundreds of extra MOGG kernel
+    call sites in a usable amount of time (GEX-3703). The default of 20
+    keeps NaN/Inf checking usable on large models; set stride=1 to
+    restore the original "check every tensor" behaviour (only practical
+    on small graphs, e.g. lit tests).
     """
 
 def PropagateShapes() -> max._core.Pass:

@@ -94,6 +94,55 @@ def _swap_adaln_weight_halves(value: WeightData) -> WeightData:
     return WeightData(swapped_buf, value.name, value.dtype, value.shape)
 
 
+def _deinterleave_scales(value: WeightData) -> WeightData:
+    """Convert BFL TCGEN5-pre-interleaved scales back to true ``[M, K//16]``.
+
+    BFL ships ``weight_scale`` with shape ``(M, K//16)`` but the underlying
+    memory is the TCGEN5 5D layout ``(M//128, K//64, 32, 4, 4)`` flattened
+    in row-major. Per ``fp4_utils.mojo`` ``set_scale_factor``, the mapping
+    is::
+
+        row  -> (i0, i2, i3) = (row // 128, row % 32, (row % 128) // 32)
+        nblk -> (i1, i4)     = (nblk // 4, nblk % 4)
+
+    So storage ``[i_M, i_N]`` does **not** index ``[row, nblk]`` directly —
+    slicing axis 1 of the storage to shard K produces a jagged, semantically
+    incorrect K-slice that mixes rows across the M-tile.
+
+    Reinterpret the storage as 5D, transpose to ``(i0, i3, i2, i1, i4)``,
+    and reshape back to ``(M, K//16)`` to yield a true row-major scale
+    tensor that shards cleanly along axis 1. The runtime
+    ``block_scales_interleave`` op then re-interleaves per-shard for the
+    matmul.
+    """
+    SF_MN_GROUP_SIZE = 128
+    SF_ATOM_M0 = 32
+    SF_ATOM_K = 4
+
+    M, K_div16 = int(value.shape[0]), int(value.shape[1])
+    if M % SF_MN_GROUP_SIZE != 0 or K_div16 % SF_ATOM_K != 0:
+        return value
+
+    # View FP8 bytes as uint8 so numpy can permute them.
+    buf = value.to_buffer()
+    buf_u8 = buf.view(DType.uint8)
+    arr = buf_u8.to_numpy()
+    scales_5d = arr.reshape(
+        M // SF_MN_GROUP_SIZE,
+        K_div16 // SF_ATOM_K,
+        SF_ATOM_M0,
+        SF_MN_GROUP_SIZE // SF_ATOM_M0,
+        SF_ATOM_K,
+    )
+    deinterleaved = np.ascontiguousarray(
+        scales_5d.transpose(0, 3, 2, 1, 4).reshape(M, K_div16)
+    )
+    deinterleaved_buf = Buffer.from_numpy(deinterleaved).view(
+        value.dtype, buf.shape
+    )
+    return WeightData(deinterleaved_buf, value.name, value.dtype, value.shape)
+
+
 def convert_nvfp4_state_dict(
     state_dict: dict[str, WeightData],
 ) -> dict[str, WeightData]:
@@ -112,6 +161,17 @@ def convert_nvfp4_state_dict(
         # what cuBLAS / PTX expect.  Swap them at load time.
         if value.dtype == DType.uint8:
             value = _swap_fp4_nibbles(value)
+
+        # BFL ships block-scaled weight scales in 5D TCGEN5 interleaved
+        # layout flattened to 2D. That storage cannot be K-sharded by
+        # slicing axis 1, so deinterleave to true row-major here and let
+        # the runtime re-interleave per shard.
+        if (
+            max_name.endswith(".weight_scale")
+            and value.dtype == DType.float8_e4m3fn
+            and len(value.shape) == 2
+        ):
+            value = _deinterleave_scales(value)
 
         # BFL's LastLayer uses ``shift, scale = chunk(2)`` but our
         # AdaLayerNormContinuous uses ``scale, shift = chunk(2)``.

@@ -1856,7 +1856,7 @@ struct Struct_ep_fused_silu:
                 row_offsets_tensor,
                 grid_dim=hw_info.sm_count,
                 block_dim=hw_info.max_thread_block_size,
-                attributes=pdl_launch_attributes(PDLLevel(1)),
+                attributes=pdl_launch_attributes(PDLLevel.ON),
             )
 
 
@@ -1940,7 +1940,7 @@ struct Struct_ep_fused_silu_fp8:
                 row_offsets_tensor,
                 grid_dim=hw_info.sm_count,
                 block_dim=hw_info.max_thread_block_size,
-                attributes=pdl_launch_attributes(PDLLevel(1)),
+                attributes=pdl_launch_attributes(PDLLevel.ON),
             )
 
 
@@ -2019,7 +2019,7 @@ struct Struct_ep_fused_silu_mxfp4:
                 row_offsets_tensor,
                 grid_dim=hw_info.sm_count,
                 block_dim=hw_info.max_thread_block_size,
-                attributes=pdl_launch_attributes(PDLLevel(1)),
+                attributes=pdl_launch_attributes(PDLLevel.ON),
             )
 
 
@@ -2111,5 +2111,5 @@ struct Struct_ep_fused_silu_nvfp4:
                 input_scales_tensor,
                 grid_dim=hw_info.sm_count,
                 block_dim=hw_info.max_thread_block_size,
-                attributes=pdl_launch_attributes(PDLLevel(1)),
+                attributes=pdl_launch_attributes(PDLLevel.ON),
             )

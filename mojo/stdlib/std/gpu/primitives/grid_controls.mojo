@@ -140,7 +140,10 @@ struct PDLLevel(Defaultable, TrivialRegisterPassable):
     comptime OFF = PDLLevel(0)
     """PDL disabled."""
 
-    comptime OVERLAP_AT_END = PDLLevel(1)
+    comptime ON = PDLLevel(1)
+    """PDL enabled with default behavior."""
+
+    comptime OVERLAP_AT_END = PDLLevel.ON
     """PDL overlap at end of kernel."""
 
     comptime OVERLAP_AT_BEGINNING = PDLLevel(2)

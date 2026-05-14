@@ -69,8 +69,9 @@ logger = logging.getLogger(__name__)
 # Maps alias model names to reusable MAX recipe configs. Aliases let the same
 # weights be tested under different configurations while keeping results
 # separate in dashboards. Paths use the portable ``max/pipelines/architectures/``
-# prefix so they are resolved by the MAX CLI config loader against the installed
-# package, avoiding hard-coded repo roots.
+# prefix (same convention as the MAX CLI config loader). The smoke driver
+# resolves them from the checkout for YAML parsing; ``max serve`` still loads
+# the same paths from the installed package in ``.venv-serve``.
 #
 # Values are fully spelled-out so they can be copy-pasted into a CLI invocation:
 #   max serve --config-file max/pipelines/architectures/deepseekV3/recipes/nvfp4_8x_b200.yaml
@@ -108,6 +109,17 @@ MODEL_RECIPES = CaseInsensitiveDict({
     "austinpowers/Kimi-K2.5-NVFP4-DeepseekV3__tiered_kvconnector_tpep": "max/pipelines/architectures/kimik2_5/recipes/nvfp4_tiered_kvconnector_tpep_8x_b200.yaml",
 })
 # fmt: on
+
+# Aliases whose recipe may not be present in every checkout. Register
+# only when the YAML exists on disk so unit tests that iterate
+# ``MODEL_RECIPES`` don't try to open a file that isn't there.
+_OPTIONAL_MODEL_RECIPES = {
+    "nvidia/Kimi-K2.5-NVFP4__internal": "max/pipelines/architectures/kimik2_5/recipes/internal/nvfp4_8x_b200.yaml",
+}
+_max_dir = Path(__file__).resolve().parents[4]
+for _alias, _path in _OPTIONAL_MODEL_RECIPES.items():
+    if (_max_dir / "python" / _path).is_file():
+        MODEL_RECIPES[_alias] = _path
 
 
 class RecipeConfig(BaseModel):
@@ -157,6 +169,7 @@ def is_vision_model(model: str) -> bool:
             "__eagle",
             "__mtp",
             "_kvconnector",
+            "__internal",
             "gemma-3-1b",
         )
     ):
@@ -200,13 +213,18 @@ def _load_hf_repo_lock() -> dict[str, str]:
 
 def _resolve_recipe_path(recipe_path: str) -> str:
     """Resolve a recipe path to an absolute file path.
-
     Recipe paths use the ``max/pipelines/architectures/`` prefix and are
     resolved by the shared config resolver against the installed package.
     """
-    from max.config.config_file_model import _resolve_config_file
-
-    return _resolve_config_file(recipe_path)
+    if not recipe_path.startswith("max/pipelines/architectures/"):
+        return recipe_path
+    max_dir = Path(__file__).resolve().parents[4]
+    resolved = max_dir / "python" / recipe_path
+    if not resolved.is_file():
+        raise FileNotFoundError(
+            f"Built-in recipe not found: {recipe_path} (resolved to {resolved})"
+        )
+    return str(resolved)
 
 
 @cache

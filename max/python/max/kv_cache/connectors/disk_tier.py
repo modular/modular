@@ -209,6 +209,19 @@ class DiskTier:
         # Rebuild from persisted metadata if available
         self._load_existing()
 
+    @property
+    def num_blocks(self) -> int:
+        """Total disk block capacity (max_disk_size_bytes / block_nbytes)."""
+        if self._block_nbytes == 0:
+            return 0
+        return self._max_disk_size_bytes // self._block_nbytes
+
+    @property
+    def num_used_blocks(self) -> int:
+        """Number of blocks currently saved on disk."""
+        with self._lock:
+            return len(self._saved_hashes)
+
     def contains(self, block_hash: int) -> bool:
         """Check if a block hash is saved on disk and eligible for cache hit.
 

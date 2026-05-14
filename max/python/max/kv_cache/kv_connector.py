@@ -88,6 +88,16 @@ class KVConnector(Protocol):
         """Number of used host blocks. Returns 0 if not applicable."""
         return 0
 
+    @property
+    def num_disk_blocks(self) -> int:
+        """Number of disk blocks. Returns 0 if not applicable."""
+        return 0
+
+    @property
+    def num_used_disk_blocks(self) -> int:
+        """Number of used disk blocks. Returns 0 if not applicable."""
+        return 0
+
     def reset_prefix_cache(self) -> None:
         """Reset prefix cache. No-op by default."""
         return None

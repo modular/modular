@@ -29,7 +29,6 @@ from max.nn.kv_cache import KVCacheInputs, KVCacheParams
 from max.nn.transformer import ReturnLogits
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
-    CompilationTimer,
     KVCacheConfig,
     ModelInputs,
     ModelOutputs,
@@ -183,55 +182,53 @@ class GptOssModel(PipelineModelWithKVCache[TextContext]):
             )
         ).to(self.devices[0])
 
-        with CompilationTimer("model") as timer:
-            device0 = self.devices[0]
-            device_ref = DeviceRef(device0.label, device0.id)
-            tokens_type = TensorType(
-                DType.int64, shape=["total_seq_len"], device=device_ref
-            )
-            # NOTE: input_row_offsets_len should be batch_size + 1.
-            # Create input_row_offsets_type for each device
-            input_row_offsets_type = TensorType(
-                DType.uint32,
-                shape=["input_row_offsets_len"],
-                device=device0,
-            )
-            return_n_logits_type = TensorType(
-                DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
-            )
+        device0 = self.devices[0]
+        device_ref = DeviceRef(device0.label, device0.id)
+        tokens_type = TensorType(
+            DType.int64, shape=["total_seq_len"], device=device_ref
+        )
+        # NOTE: input_row_offsets_len should be batch_size + 1.
+        # Create input_row_offsets_type for each device
+        input_row_offsets_type = TensorType(
+            DType.uint32,
+            shape=["input_row_offsets_len"],
+            device=device0,
+        )
+        return_n_logits_type = TensorType(
+            DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
+        )
 
-            huggingface_config = self.huggingface_config
-            if self.adapter:
-                state_dict = self.adapter(
-                    dict(self.weights.items()),
-                    huggingface_config=huggingface_config,
-                    pipeline_config=self.pipeline_config,
-                )
-            else:
-                state_dict = {
-                    key: value.data() for key, value in self.weights.items()
-                }
-            model_config = GptOssConfig.initialize(self.pipeline_config)
-            model_config.finalize(
+        huggingface_config = self.huggingface_config
+        if self.adapter:
+            state_dict = self.adapter(
+                dict(self.weights.items()),
                 huggingface_config=huggingface_config,
-                state_dict=state_dict,
-                return_logits=self.return_logits,
+                pipeline_config=self.pipeline_config,
             )
-            with F.lazy():
-                nn_model = GptOss(model_config, self.kv_params)
-                nn_model.to(self.devices[0])
+        else:
+            state_dict = {
+                key: value.data() for key, value in self.weights.items()
+            }
+        model_config = GptOssConfig.initialize(self.pipeline_config)
+        model_config.finalize(
+            huggingface_config=huggingface_config,
+            state_dict=state_dict,
+            return_logits=self.return_logits,
+        )
+        with F.lazy():
+            nn_model = GptOss(model_config, self.kv_params)
+            nn_model.to(self.devices[0])
 
-            kv_inputs = self.kv_params.get_symbolic_inputs()
-            flattened_kv_types = kv_inputs.flatten()
+        kv_inputs = self.kv_params.get_symbolic_inputs()
+        flattened_kv_types = kv_inputs.flatten()
 
-            timer.mark_build_complete()
-            compiled_model = nn_model.compile(
-                tokens_type,
-                return_n_logits_type,
-                input_row_offsets_type,
-                *flattened_kv_types,
-                weights=state_dict,
-            )
+        compiled_model = nn_model.compile(
+            tokens_type,
+            return_n_logits_type,
+            input_row_offsets_type,
+            *flattened_kv_types,
+            weights=state_dict,
+        )
 
         return compiled_model
 

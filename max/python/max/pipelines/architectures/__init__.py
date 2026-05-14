@@ -38,8 +38,11 @@ def register_all_models() -> None:
     from .deepseekV3 import deepseekV3_arch
     from .deepseekV3_2 import deepseekV3_2_arch
     from .deepseekV3_nextn import deepseekV3_nextn_arch
-    from .eagle3_deepseekV3 import eagle3_deepseekV3_arch
-    from .eagle_llama3 import eagle_llama_arch
+    from .eagle3_deepseekV3 import (
+        eagle3_deepseekV3_arch,
+        eagle3_mha_deepseekV3_arch,
+    )
+    from .eagle_llama3 import eagle3_llama_arch, eagle_llama_arch
     from .exaone import exaone_arch
     from .exaone_modulev3 import exaone_modulev3_arch
     from .flux2 import flux2_arch, flux2_klein_arch
@@ -55,7 +58,12 @@ def register_all_models() -> None:
     from .idefics3 import idefics3_arch
     from .idefics3_modulev3 import idefics3_modulev3_arch
     from .internvl import internvl_arch
-    from .kimik2_5 import eagle3_kimik25_arch, kimik2_5_arch, kimivl_arch
+    from .kimik2_5 import (
+        eagle3_kimik25_arch,
+        eagle3_mha_kimik25_arch,
+        kimik2_5_arch,
+        kimivl_arch,
+    )
     from .lfm2 import lfm2_arch
     from .llama3 import llama_arch
     from .llama3_modulev3 import llama_modulev3_arch
@@ -97,6 +105,8 @@ def register_all_models() -> None:
         deepseekV3_2_arch,
         deepseekV3_nextn_arch,
         eagle3_deepseekV3_arch,
+        eagle3_mha_deepseekV3_arch,
+        eagle3_llama_arch,
         eagle_llama_arch,
         flux2_arch,
         flux2_klein_arch,
@@ -113,6 +123,7 @@ def register_all_models() -> None:
         idefics3_arch,
         idefics3_modulev3_arch,
         eagle3_kimik25_arch,
+        eagle3_mha_kimik25_arch,
         kimik2_5_arch,
         kimivl_arch,
         llama_arch,
@@ -156,6 +167,12 @@ def register_all_models() -> None:
 
     for arch in architectures:
         PIPELINE_REGISTRY.register(arch)
+
+    # Optional: pull in private tool parsers.
+    try:
+        import tool_parsers  # type: ignore[import-not-found]
+    except ModuleNotFoundError:
+        pass
 
     _MODELS_ALREADY_REGISTERED = True
 

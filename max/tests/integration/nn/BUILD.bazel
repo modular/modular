@@ -58,7 +58,7 @@ modular_py_test(
     },
     per_test_tags = {
         "test_conv.py": ["skip-external-ci"],
-        "test_mlp.py": ["manual"],
+        "test_mlp.py": ["skip-external-ci"],
     },
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],  # FIXME: MOCO-2411
@@ -110,6 +110,7 @@ modular_py_test(
     ],
     deps = [
         ":shared_conv_impl",
+        "//max/python/max:tensor",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",

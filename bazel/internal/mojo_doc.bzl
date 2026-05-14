@@ -6,7 +6,7 @@ load("@rules_mojo//mojo/private:utils.bzl", "MOJO_EXTENSIONS", "collect_mojoinfo
 def _mojo_doc_implementation(ctx):
     mojo_toolchain = ctx.toolchains["@rules_mojo//:toolchain_type"].mojo_toolchain_info
 
-    import_paths, transitive_mojopkgs = collect_mojoinfo(ctx.attr.deps + mojo_toolchain.implicit_deps)
+    import_paths, transitive_mojodeps = collect_mojoinfo(ctx.attr.deps + mojo_toolchain.implicit_deps)
     root_directory = ctx.files.srcs[0].dirname
 
     file_args = ctx.actions.args()
@@ -20,7 +20,7 @@ def _mojo_doc_implementation(ctx):
     mojodoc_output = ctx.actions.declare_file(ctx.label.name + ".mojodoc.json")
     ctx.actions.run(
         executable = mojo_toolchain.mojo,
-        inputs = depset(ctx.files.srcs, transitive = [transitive_mojopkgs]),
+        inputs = depset(ctx.files.srcs, transitive = [transitive_mojodeps]),
         tools = mojo_toolchain.all_tools,
         outputs = [mojodoc_output],
         mnemonic = "MojoDoc",

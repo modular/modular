@@ -378,13 +378,38 @@ struct TiledMmaLoader[
         comptime d_in_blk = depth_offset % BK
         var block_base = v_base + blk * BN * BK
 
+        # Match K's swizzle on V reads.  In `mla_kv_alias` mode K and V
+        # share one SMEM image: K writes via `SubTileLoaderLDS.load`,
+        # which permutes write positions by `swizzle(vec_idx) * simd_w`
+        # where `vec_idx = byte_offset / simd_w` (16B for FP8) and
+        # `swizzle` XORs bits 4..6 of `vec_idx` into bits 0..2.  To read
+        # the same element back, V must apply the same permutation.
+        #
+        # An element at logical `byte_offset` was written to
+        #     swizzle(byte_offset / simd_w) * simd_w + (byte_offset % simd_w)
+        # because the swizzle operates only on the vec-aligned part —
+        # the low `log2(simd_w)` bits (here 0..3) are the within-vec
+        # byte position, which is the same for writer and reader.
+        # Paired V lanes use `depth_base ∈ {0, 8, 16, 24}`, i.e. an
+        # 8-byte sub-vec offset, so preserving the low 4 bits is
+        # required for the 8-byte `ds_read_tr8_b64` to land correctly.
+        comptime simd_w = simd_width_of[Self.in_type]()
+
         @always_inline
         @parameter
         def _load_keys[key_base: Int]() -> SIMD[Self.in_type, 8]:
             var key = row_offset + key_base + rel_key + hw_key_shift
-            return ds_read_tr8_b64(
-                block_base + key * BK + d_in_blk + depth_base
-            )
+            var byte_offset = key * BK + d_in_blk + depth_base
+            comptime if Self.swizzle:
+                # Decompose byte_offset = vec_idx * simd_w + sub_vec,
+                # permute vec_idx, then reassemble.
+                var vec_idx = byte_offset // simd_w
+                var sub_vec = byte_offset & (simd_w - 1)
+                var swizzled_vec = Self.swizzle.value()(vec_idx)
+                var addr = block_base + swizzled_vec * simd_w + sub_vec
+                return ds_read_tr8_b64(addr)
+            else:
+                return ds_read_tr8_b64(block_base + byte_offset)
 
         var r0 = _load_keys[0]()
         var r1 = _load_keys[16]()

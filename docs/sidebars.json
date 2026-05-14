@@ -563,29 +563,29 @@
             "id": "max/api/python/profiler"
           },
           "items": [
-            "__AUTOGEN:max.profiler__",
-            {
-              "type": "category",
-              "label": "max.profiler.cpu",
-              "link": {
-                "type": "doc",
-                "id": "max/api/python/profiler.cpu"
-              },
-              "items": [
-                "__AUTOGEN:max.profiler.cpu__"
-              ]
-            },
-            {
-              "type": "category",
-              "label": "max.profiler.gpu",
-              "link": {
-                "type": "doc",
-                "id": "max/api/python/profiler.gpu"
-              },
-              "items": [
-                "__AUTOGEN:max.profiler.gpu__"
-              ]
-            }
+            "__AUTOGEN:max.profiler__"
+          ]
+        },
+        {
+          "type": "category",
+          "label": "max.profiler.cpu",
+          "link": {
+            "type": "doc",
+            "id": "max/api/python/profiler.cpu"
+          },
+          "items": [
+            "__AUTOGEN:max.profiler.cpu__"
+          ]
+        },
+        {
+          "type": "category",
+          "label": "max.profiler.gpu",
+          "link": {
+            "type": "doc",
+            "id": "max/api/python/profiler.gpu"
+          },
+          "items": [
+            "__AUTOGEN:max.profiler.gpu__"
           ]
         }
       ]

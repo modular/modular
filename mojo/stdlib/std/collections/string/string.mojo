@@ -821,6 +821,23 @@ struct String(
         """
         return StringSlice(self)[byte=byte]
 
+    def __getitem__[
+        I: Indexer, //
+    ](self, *, codepoint: I) -> StringSlice[origin_of(self)]:
+        """Gets the character at the specified position.
+
+        Parameters:
+            I: A type that can be used as an index.
+
+        Args:
+            codepoint: The codepoint index.
+
+        Returns:
+            A `StringSlice` view containing the unicode codepoint at the
+            specified position.
+        """
+        return StringSlice(self)[codepoint=codepoint]
+
     def __eq__(self, rhs: String) -> Bool:
         """Compares two Strings if they have the same values.
 

@@ -1927,26 +1927,19 @@ def _handle_concat(
     Uses a Mojo memcpy kernel to copy contiguous slices from each input into
     the output buffer, supporting both CPU and GPU.
 
-    The axis operand is the first input (a scalar tensor on CPU), followed
-    by the variadic tensor inputs to concatenate.
-
     Args:
         op: The concat operation.
-        inputs: Input buffers - first is the axis tensor (scalar si64 on CPU),
-            remaining are the tensors to concatenate.
+        inputs: Input buffers to concatenate.
 
     Returns:
         List containing the concatenated tensor buffer.
     """
     target_device = _get_target_device(op)
 
-    # First operand is the axis (scalar tensor on CPU)
-    assert isinstance(inputs[0], Buffer)
-    axis = int(inputs[0].to_numpy().item())
+    axis = op.axis
 
-    # Remaining operands are the tensors to concatenate
     tensor_inputs: list[Buffer] = []
-    for buf in inputs[1:]:
+    for buf in inputs:
         assert isinstance(buf, Buffer)
         tensor_inputs.append(buf)
     assert len(tensor_inputs) >= 1, (

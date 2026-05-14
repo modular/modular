@@ -20,8 +20,8 @@ def _collect_venv_files_impl(ctx):
             external_python_files |= set([x.short_path for x in dep[PyInfo].transitive_sources.to_list() if x.short_path.startswith("../")])
 
         for file in dep[DefaultInfo].default_runfiles.files.to_list():
-            # Only collect binaries, shared libraries (including versioned .so.*), and mojopkgs.
-            if not file.extension in ("", "so", "dylib", "mojopkg") or ".so." in file.basename:
+            # Only collect binaries, shared libraries (including versioned .so.*), and Mojo precompiled files.
+            if not file.extension in ("", "so", "dylib", "mojoc", "mojopkg") or ".so." in file.basename:
                 continue
 
             # Directories only matter if they have files in them.

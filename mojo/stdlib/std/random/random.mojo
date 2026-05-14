@@ -185,15 +185,12 @@ def randint[
 
     ```mojo
     from std.random import randint, seed
-    from std.memory.alloc import alloc, free, Layout
     seed()
     var size: Int = 10
-    var layout = Layout[Int32](count=size)
-    var ptr = alloc(layout)
-    randint[DType.int32](ptr, size, -50, 50)
+    var data = List(length=size, fill=Int32(0))
+    randint(data, -50, 50)
     for i in range(size):
-        print(ptr[i])  # Random Int32 between -50 and 50
-    free(ptr, layout)
+        print(data[i])  # Random Int32 between -50 and 50
     ```
     """
 
@@ -268,16 +265,13 @@ def rand[
 
     ```mojo
     from std.random import rand, seed
-    from std.memory.alloc import alloc, free, Layout
 
     seed()
     var size: Int = 10
-    var layout = Layout[Float32](count=size)
-    var ptr = alloc(layout)
-    rand[DType.float32](ptr, size, min=0.0, max=1.0, int_scale=16)
+    var data = List(length=size, fill=Float32(0))
+    rand(data, min=0.0, max=1.0, int_scale=16)
     for i in range(size):
-        print(ptr[i])  # Random Float32 between 0.0 and 1.0
-    free(ptr, layout)
+        print(data[i])  # Random Float32 between 0.0 and 1.0
     ```
     """
     var scale_val = int_scale.or_else(-1)
@@ -391,16 +385,13 @@ def randn[
 
     ```mojo
     from std.random import randn, seed
-    from std.memory.alloc import alloc, free, Layout
 
     seed()
     var size: Int = 10
-    var layout = Layout[Float64](count=size)
-    var ptr = alloc(layout)
-    randn[DType.float64](ptr, size, mean=0.0, standard_deviation=1.0)
+    var data = List(length=size, fill=Float64(0))
+    randn(data, mean=0.0, standard_deviation=1.0)
     for i in range(size):
-        print(ptr[i])  # Random Float64 from Normal(0.0, 1.0)
-    free(ptr, layout)
+        print(data[i])  # Random Float64 from Normal(0.0, 1.0)
     ```
     """
 

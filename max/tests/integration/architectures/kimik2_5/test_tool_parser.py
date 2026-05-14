@@ -24,6 +24,7 @@ from max.interfaces import (
     ParsedToolResponse,
 )
 from max.pipelines.architectures.kimik2_5.tool_parser import KimiToolParser
+from max.pipelines.lib.tool_parsing import StreamingToolCallState
 
 
 class _MinimalTokenizer:
@@ -361,16 +362,13 @@ def test_whitespace_handling() -> None:
 
 def test_reset_clears_buffer() -> None:
     """Test that reset() clears the internal buffer and streaming state."""
-    from max.pipelines.architectures.kimik2_5.tool_parser import (
-        _StreamingToolCallState,
-    )
 
     parser = KimiToolParser()
 
     # Simulate accumulating some data
     parser._buffer = "some accumulated data"
     parser._state.sent_content_idx = 10
-    parser._state.tool_calls.append(_StreamingToolCallState())
+    parser._state.tool_calls.append(StreamingToolCallState())
 
     parser.reset()
 

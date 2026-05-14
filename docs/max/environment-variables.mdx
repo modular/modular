@@ -99,19 +99,20 @@ export MODULAR_DEBUG=nan-check,assert-level=all
 
 This table includes all options you can add to `MODULAR_DEBUG`:
 
-| Option                     | Description                                                  | Type    | Accepted values                                          | Default   |
-|----------------------------|--------------------------------------------------------------|---------|----------------------------------------------------------|-----------|
-| `sensible`                 | Enable a curated default debugging set                       | Boolean | N/A                                                      | `false`   |
-| `nan-check`                | Insert NaN/Inf checks after each fused set of ops            | Boolean | N/A                                                      | `false`   |
-| `uninitialized-read-check` | Detect reads of uninitialized memory                         | Boolean | N/A                                                      | `false`   |
-| `device-sync-mode`         | Force synchronous GPU execution for debugging                | Boolean | N/A                                                      | `false`   |
-| `stack-trace-on-error`     | Show Mojo stack traces on runtime errors                     | Boolean | N/A                                                      | `false`   |
-| `stack-trace-on-crash`     | Show Mojo stack traces on crashes                            | Boolean | N/A                                                      | `false`   |
-| `source-tracebacks`        | Include Python source locations in error messages            | Boolean | N/A                                                      | `false`   |
-| `op-log-level`             | Log level for op-level execution tracing                     | String  | `trace`, `debug`, `info`, `warning`, `error`, `critical` | `off`     |
-| `assert-level`             | Assertion level for the Mojo standard library                | String  | `none`, `warn`, `safe`, `all`                            | `none`    |
-| `print-style`              | Output format for tensor debug printing                      | String  | `compact`, `full`, `binary`, `binary_max_checkpoint`     | `compact` |
-| `ir-output-dir`            | Directory where MAX dumps intermediate compiler IR           | Path    | Filesystem path                                          | `unset`   |
+| Option                     | Description                                                                                                   | Type    | Accepted values                                          | Default   |
+|----------------------------|---------------------------------------------------------------------------------------------------------------|---------|----------------------------------------------------------|-----------|
+| `sensible`                 | Enable a curated default debugging set                                                                        | Boolean | N/A                                                      | `false`   |
+| `nan-check`                | Insert NaN/Inf checks on a sampled subset of floating-point kernel outputs (see `nan-check-stride`)           | Boolean | N/A                                                      | `false`   |
+| `nan-check-stride`         | When `nan-check` is enabled, check one of every N floating-point kernel outputs. Set to `1` for full coverage | Integer | Positive integer (≥1)                                    | `20`      |
+| `uninitialized-read-check` | Detect reads of uninitialized memory                                                                          | Boolean | N/A                                                      | `false`   |
+| `device-sync-mode`         | Force synchronous GPU execution for debugging                                                                 | Boolean | N/A                                                      | `false`   |
+| `stack-trace-on-error`     | Show Mojo stack traces on runtime errors                                                                      | Boolean | N/A                                                      | `false`   |
+| `stack-trace-on-crash`     | Show Mojo stack traces on crashes                                                                             | Boolean | N/A                                                      | `false`   |
+| `source-tracebacks`        | Include Python source locations in error messages                                                             | Boolean | N/A                                                      | `false`   |
+| `op-log-level`             | Log level for op-level execution tracing                                                                      | String  | `trace`, `debug`, `info`, `warning`, `error`, `critical` | `off`     |
+| `assert-level`             | Assertion level for the Mojo standard library                                                                 | String  | `none`, `warn`, `safe`, `all`                            | `none`    |
+| `print-style`              | Output format for tensor debug printing                                                                       | String  | `compact`, `full`, `binary`, `binary_max_checkpoint`     | `compact` |
+| `ir-output-dir`            | Directory where MAX dumps intermediate compiler IR                                                            | Path    | Filesystem path                                          | `unset`   |
 
 ## Profiling
 

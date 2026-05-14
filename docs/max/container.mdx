@@ -205,9 +205,9 @@ MAX](/max/packages#gpu-compatibility).
 
 - `--devices`: When deploying MAX on multiple GPUs, you must specify the ID of
 the GPUs to use. For example, to use four available GPUs, you should include the
-following: `--devices gpu:0,1,2,3`. When you don't specify a `--devices` option,
-MAX defaults to using the first available GPU it discovers (equivalent to
-`--devices gpu:0`). You can also optionally specify `--devices cpu`.
+following: `--devices gpu:0,1,2,3`. You can also use `--devices gpu:all` to use
+every visible GPU, or `--devices cpu` to run on CPU. If you omit `--devices`,
+MAX uses the model or config default.
 
 - `-v`: We use the [`-v`
 option](https://docs.docker.com/reference/cli/docker/container/run/#volume) to

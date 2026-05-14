@@ -14,17 +14,21 @@
 
 from __future__ import annotations
 
-import contextlib
 import logging
-import threading
-import time
 from collections import OrderedDict
-from collections.abc import Generator, Sequence
-from types import TracebackType
+from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, TypeVar
 
 import numpy as np
 import numpy.typing as npt
+
+# Re-exported for back-compat with callers that import CompilationTimer from
+# max.pipelines.lib.utils. The canonical home is max.experimental.nn so that
+# Module.compile() can use it without max.experimental depending on
+# max.pipelines.
+from max.experimental.nn._compilation_timer import (  # noqa: F401
+    CompilationTimer,
+)
 from max.graph.weights import WeightData, Weights, WeightsAdapter
 from transformers import AutoConfig
 
@@ -87,104 +91,6 @@ def compute_data_parallel_splits(
     splits_summed = np.cumsum(splits)
 
     return splits_summed
-
-
-class CompilationTimer:
-    """Timer for logging graph build and compilation phases.
-
-    Use as a context manager. Starts timing on entry. Call
-    ``mark_build_complete()`` after graph building; timings are logged on exit.
-
-    Args:
-        name: The name to use in log messages (e.g., "model", "vision model").
-
-    Example:
-        >>> with CompilationTimer("model") as timer:
-        ...     graph = self._build_graph(self.weights, self.adapter)
-        ...     timer.mark_build_complete()
-        ...     model = session.load(graph, weights_registry=self.state_dict)
-    """
-
-    def __init__(self, name: str) -> None:
-        self.name = name
-        self._start_time: float | None = None
-        self._build_end_time: float | None = None
-        self._ctx: (
-            contextlib.AbstractContextManager[CompilationTimer] | None
-        ) = None
-
-    def mark_build_complete(self) -> None:
-        """Marks the end of the build phase and logs build time."""
-        assert self._start_time is not None
-        self._build_end_time = time.perf_counter()
-        logger.info(
-            f"Building {self.name} graph took "
-            f"{self._build_end_time - self._start_time:.1f} seconds"
-        )
-
-    @contextlib.contextmanager
-    def _run_timer(self) -> Generator[CompilationTimer, None, None]:
-        self._start_time = time.perf_counter()
-        self._build_end_time = None
-        logger.info(f"Building and compiling {self.name}...")
-        finish_event = threading.Event()
-        reminder_thread = threading.Thread(
-            target=self._reminder_thread_func,
-            args=(finish_event,),
-            daemon=True,
-        )
-        reminder_thread.start()
-        try:
-            yield self
-        finally:
-            end_time = time.perf_counter()
-            finish_event.set()
-            reminder_thread.join()
-            if self._build_end_time is not None:
-                logger.info(
-                    f"Compiling {self.name} took "
-                    f"{end_time - self._build_end_time:.1f} seconds"
-                )
-            logger.info(
-                f"Building and compiling {self.name} took "
-                f"{end_time - self._start_time:.1f} seconds"
-            )
-            self._start_time = None
-            self._build_end_time = None
-
-    def _reminder_thread_func(self, finish_event: threading.Event) -> None:
-        assert self._start_time is not None
-        while not finish_event.wait(timeout=60):
-            if self._build_end_time is None:
-                current_activity = "building"
-                activity_start_time = self._start_time
-            else:
-                current_activity = "compiling"
-                activity_start_time = self._build_end_time
-            elapsed = time.perf_counter() - activity_start_time
-            logger.info(
-                f"Still {current_activity} {self.name} ({elapsed:.1f}s elapsed)"
-            )
-
-    def __enter__(self) -> CompilationTimer:
-        if self._ctx is not None:
-            raise RuntimeError(
-                f"CompilationTimer({self.name!r}) is already active"
-            )
-        self._ctx = self._run_timer()
-        return self._ctx.__enter__()
-
-    def __exit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc_val: BaseException | None,
-        exc_tb: TracebackType | None,
-    ) -> None:
-        assert self._ctx is not None
-        try:
-            self._ctx.__exit__(exc_type, exc_val, exc_tb)
-        finally:
-            self._ctx = None
 
 
 def upper_bounded_default(upper_bound: int, default: int | None) -> int:

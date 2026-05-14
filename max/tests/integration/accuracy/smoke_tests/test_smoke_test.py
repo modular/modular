@@ -54,6 +54,10 @@ def test_all_recipe_hf_model_paths_in_hf_repo_lock() -> None:
         recipe = smoke_test._load_recipe(recipe_path)
         model_path = recipe.model.model_path
         assert model_path is not None
+        # Local filesystem paths (e.g. pre-staged weights on a dedicated
+        # runner) can't be pinned in hf-repo-lock.tsv.
+        if model_path.startswith(("/", "./", "../")):
+            continue
         if model_path.casefold() not in lock:
             missing.append((recipe_path, model_path))
 
@@ -234,3 +238,39 @@ def test_sglang_uses_recipe_memory_cap(monkeypatch: MonkeyPatch) -> None:
 
     assert "--mem-fraction-static" in cmd
     assert "0.75" in cmd
+
+
+def test_max_get_server_cmd_recipe_alias_resolves_yaml(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    """``get_server_cmd`` must load built-in recipe YAML without importing ``max``.
+
+    Serve smoke CI runs the driver under ``uv run`` without the Modular package;
+    this path used to fail with ``ModuleNotFoundError: max`` when resolving
+    ``MODEL_RECIPES`` aliases.
+    """
+    monkeypatch.setattr(
+        smoke_test,
+        "get_gpu_name_and_count",
+        lambda: ("NVIDIA L40S", 1),
+    )
+    monkeypatch.setattr(smoke_test, "_inside_bazel", lambda: False)
+    monkeypatch.setattr(smoke_test, "_load_hf_repo_lock", lambda: {})
+
+    alias = "microsoft/phi-4__modulev3"
+    recipe_path = MODEL_RECIPES[alias]
+    cmd = smoke_test.get_server_cmd("max", alias)
+
+    assert cmd[:5] == [
+        ".venv-serve/bin/python",
+        "-m",
+        "max.entrypoints.pipelines",
+        "serve",
+        "--pretty-print-config",
+    ]
+    assert "--port" in cmd
+    assert cmd[cmd.index("--port") + 1] == "8000"
+    assert "--config-file" in cmd
+    cfg_idx = cmd.index("--config-file")
+    assert cmd[cfg_idx + 1] == recipe_path
+    assert "--trust-remote-code" not in cmd

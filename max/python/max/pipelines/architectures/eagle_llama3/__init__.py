@@ -12,10 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 """EAGLE speculative decoding draft model for Llama 3."""
 
-from .arch import eagle_llama_arch
+from .arch import eagle3_llama_arch, eagle_llama_arch
 from .model import EagleLlama3Model
 
 __all__ = [
     "EagleLlama3Model",
+    "eagle3_llama_arch",
     "eagle_llama_arch",
 ]

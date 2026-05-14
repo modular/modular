@@ -10,12 +10,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 ##===----------------------------------------------------------------------===##
-model:
-  model_path: meta-llama/Llama-3.1-8B-Instruct
 
-draft_model:
-  model_path: atomicapple0/EAGLE-LLaMA3.1-Instruct-8B
+# Minimal kbench config used by the ubsan-only e2e tests.
+#
+# Points at tests/minimal_fixture.mojo (no kernel imports) so the under-ubsan
+# compile fits well under the test shard timeout. Three runtime $x variants
+# share one compiled .so so the test still exercises the kbench multi-instance
+# scheduling path.
 
-speculative:
-  speculative_method: eagle
-  num_speculative_tokens: 1
+name: minimal
+file: $KERNEL_BENCHMARKS_ROOT/autotune/tests/minimal_fixture.mojo
+
+params:
+  - $x: "[i for i in range(3)]"

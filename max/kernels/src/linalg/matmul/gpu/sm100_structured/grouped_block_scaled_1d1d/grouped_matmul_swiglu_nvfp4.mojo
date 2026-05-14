@@ -39,7 +39,7 @@ from .grouped_1d1d_matmul_kernel import RealSwiGLUOutput
 def grouped_matmul_swiglu_nvfp4_dispatch[
     transpose_b: Bool = True,
     target: StaticString = "cpu",
-    pdl_level: PDLLevel = PDLLevel(1),
+    pdl_level: PDLLevel = PDLLevel.ON,
     # When True (default), the in-tile fused epilogue casts fp32 → bf16
     # → fp32 in the SMEM scatter so its output is byte-identical to the
     # chained reference (matmul → bf16 GMEM → SwiGLU+quant). When False,

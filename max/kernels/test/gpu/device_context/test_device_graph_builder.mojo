@@ -13,7 +13,7 @@
 
 from std.math import ceildiv
 from std.gpu import global_idx
-from std.gpu.host import DeviceContext
+from std.gpu.host import DeviceContext, DeviceGraphNode
 from std.testing import assert_equal
 
 
@@ -27,6 +27,17 @@ def vec_add(
     if tid >= length:
         return
     output[tid] = in0[tid] + in1[tid]
+
+
+def fill_constant(
+    output: UnsafePointer[Float32, MutAnyOrigin],
+    val: Int,
+    length: Int,
+):
+    var tid = global_idx.x
+    if tid >= length:
+        return
+    output[tid] = Float32(val)
 
 
 def test_vec_add_kernel_node(ctx: DeviceContext) raises:
@@ -45,7 +56,7 @@ def test_vec_add_kernel_node(ctx: DeviceContext) raises:
 
     var func = ctx.compile_function[vec_add]()
     var builder = ctx.create_graph_builder()
-    builder.add_function(
+    _ = builder.add_function(
         func,
         out_dev,
         in0_dev,
@@ -53,6 +64,7 @@ def test_vec_add_kernel_node(ctx: DeviceContext) raises:
         length,
         grid_dim=ceildiv(length, block_dim),
         block_dim=block_dim,
+        dependencies=[],
     )
     var graph = builder^.instantiate()
     graph.replay()
@@ -99,10 +111,11 @@ def test_closure_node(ctx: DeviceContext) raises:
         out_ptr[tid] = (in0_ptr[tid] + in1_ptr[tid]) * scale
 
     var builder = ctx.create_graph_builder()
-    builder.add_function(
+    _ = builder.add_function(
         scaled_vec_add,
         grid_dim=ceildiv(length, block_dim),
         block_dim=block_dim,
+        dependencies=[],
     )
     var graph = builder^.instantiate()
     graph.replay()
@@ -122,7 +135,7 @@ def test_add_copy_to_device(ctx: DeviceContext) raises:
     var dev_buf = ctx.enqueue_create_buffer[DType.float32](length)
 
     var builder = ctx.create_graph_builder()
-    builder.add_copy(dev_buf, host_src)
+    _ = builder.add_copy(dev_buf, host_src, dependencies=[])
     var graph = builder^.instantiate()
     graph.replay()
     ctx.synchronize()
@@ -147,7 +160,7 @@ def test_add_copy_from_device(ctx: DeviceContext) raises:
         host_dst[i] = 0.0
 
     var builder = ctx.create_graph_builder()
-    builder.add_copy(host_dst, dev_buf)
+    _ = builder.add_copy(host_dst, dev_buf, dependencies=[])
     var graph = builder^.instantiate()
     graph.replay()
     ctx.synchronize()
@@ -168,7 +181,7 @@ def test_add_copy_device_to_device(ctx: DeviceContext) raises:
             src_host[i] = Float32(i * i)
 
     var builder = ctx.create_graph_builder()
-    builder.add_copy(dst_dev, src_dev)
+    _ = builder.add_copy(dst_dev, src_dev, dependencies=[])
     var graph = builder^.instantiate()
     graph.replay()
     ctx.synchronize()
@@ -188,12 +201,14 @@ def test_add_memset(ctx: DeviceContext) raises:
     var buf_u64 = ctx.enqueue_create_buffer[DType.uint64](length)
 
     var builder = ctx.create_graph_builder()
-    builder.add_memset(buf_u8, UInt8(123))
-    builder.add_memset(buf_u16, UInt16(0xBEEF))
-    builder.add_memset(buf_u32, UInt32(0xDEADBEEF))
+    # The four memsets target disjoint buffers, so each can be an
+    # independent graph root.
+    _ = builder.add_memset(buf_u8, UInt8(123), dependencies=[])
+    _ = builder.add_memset(buf_u16, UInt16(0xBEEF), dependencies=[])
+    _ = builder.add_memset(buf_u32, UInt32(0xDEADBEEF), dependencies=[])
     # Symmetric high/low halves so the graph builder can express it as a
     # single node.
-    builder.add_memset(buf_u64, UInt64(0x0101010101010101))
+    _ = builder.add_memset(buf_u64, UInt64(0x0101010101010101), dependencies=[])
     var graph = builder^.instantiate()
     graph.replay()
     ctx.synchronize()
@@ -215,6 +230,176 @@ def test_add_memset(ctx: DeviceContext) raises:
             assert_equal(host_u64[i], UInt64(0x0101010101010101))
 
 
+def test_add_function_with_dependencies(ctx: DeviceContext) raises:
+    print(
+        "Test add_function with explicit dependencies for two independent"
+        " kernel chains."
+    )
+    comptime length = 1024
+    comptime block_dim = 256
+    comptime grid_dim = ceildiv(length, block_dim)
+
+    var buf_a = ctx.enqueue_create_buffer[DType.float32](length)
+    var buf_b = ctx.enqueue_create_buffer[DType.float32](length)
+
+    var func = ctx.compile_function[fill_constant]()
+    var builder = ctx.create_graph_builder()
+
+    # Sequence A on `buf_a`: write 1, then 2, then 3, internally chained via
+    # explicit dependencies. The first node is rooted with an empty deps
+    # list; downstream nodes name their predecessor explicitly.
+    var a0 = builder.add_function(
+        func,
+        buf_a,
+        1,
+        length,
+        grid_dim=grid_dim,
+        block_dim=block_dim,
+        dependencies=[],
+    )
+    var a1 = builder.add_function(
+        func,
+        buf_a,
+        2,
+        length,
+        grid_dim=grid_dim,
+        block_dim=block_dim,
+        dependencies=[a0],
+    )
+    _ = builder.add_function(
+        func,
+        buf_a,
+        3,
+        length,
+        grid_dim=grid_dim,
+        block_dim=block_dim,
+        dependencies=[a1],
+    )
+
+    # Sequence B on `buf_b`: write 4, then 5, then 6. Independent of
+    # sequence A — also rooted explicitly.
+    var b0 = builder.add_function(
+        func,
+        buf_b,
+        4,
+        length,
+        grid_dim=grid_dim,
+        block_dim=block_dim,
+        dependencies=[],
+    )
+    var b1 = builder.add_function(
+        func,
+        buf_b,
+        5,
+        length,
+        grid_dim=grid_dim,
+        block_dim=block_dim,
+        dependencies=[b0],
+    )
+    _ = builder.add_function(
+        func,
+        buf_b,
+        6,
+        length,
+        grid_dim=grid_dim,
+        block_dim=block_dim,
+        dependencies=[b1],
+    )
+
+    var graph = builder^.instantiate()
+    graph.replay()
+    ctx.synchronize()
+
+    with buf_a.map_to_host() as host_a:
+        for i in range(length):
+            assert_equal(host_a[i], Float32(3))
+    with buf_b.map_to_host() as host_b:
+        for i in range(length):
+            assert_equal(host_b[i], Float32(6))
+
+
+def test_add_memset_with_dependencies(ctx: DeviceContext) raises:
+    print(
+        "Test add_memset with explicit dependencies for two independent"
+        " memset chains."
+    )
+    comptime length = 64
+
+    var buf_a = ctx.enqueue_create_buffer[DType.uint8](length)
+    var buf_b = ctx.enqueue_create_buffer[DType.uint8](length)
+
+    var builder = ctx.create_graph_builder()
+
+    # Sequence A on `buf_a`: 0x11 -> 0x22 -> 0x33, internally chained.
+    # First node is rooted with an empty deps list; sequences A and B are
+    # independent because neither names a predecessor in the other chain.
+    var a0 = builder.add_memset(buf_a, UInt8(0x11), dependencies=[])
+    var a1 = builder.add_memset(buf_a, UInt8(0x22), dependencies=[a0])
+    _ = builder.add_memset(buf_a, UInt8(0x33), dependencies=[a1])
+
+    # Sequence B on `buf_b`: 0xAA -> 0xBB -> 0xCC. Independent of sequence A.
+    var b0 = builder.add_memset(buf_b, UInt8(0xAA), dependencies=[])
+    var b1 = builder.add_memset(buf_b, UInt8(0xBB), dependencies=[b0])
+    _ = builder.add_memset(buf_b, UInt8(0xCC), dependencies=[b1])
+
+    var graph = builder^.instantiate()
+    graph.replay()
+    ctx.synchronize()
+
+    with buf_a.map_to_host() as host_a:
+        for i in range(length):
+            assert_equal(host_a[i], UInt8(0x33))
+    with buf_b.map_to_host() as host_b:
+        for i in range(length):
+            assert_equal(host_b[i], UInt8(0xCC))
+
+
+def test_add_copy_with_dependencies(ctx: DeviceContext) raises:
+    print(
+        "Test add_copy with explicit dependencies for two independent copy"
+        " chains."
+    )
+    comptime length = 64
+
+    var buf_a = ctx.enqueue_create_buffer[DType.uint32](length)
+    var buf_b = ctx.enqueue_create_buffer[DType.uint32](length)
+
+    # Distinct host-side payloads for each step. Pinned via
+    # enqueue_create_host_buffer so the graph builder can reference them
+    # directly via add_copy.
+    var host_a1 = ctx.enqueue_create_host_buffer[DType.uint32](length)
+    var host_a2 = ctx.enqueue_create_host_buffer[DType.uint32](length)
+    var host_b1 = ctx.enqueue_create_host_buffer[DType.uint32](length)
+    var host_b2 = ctx.enqueue_create_host_buffer[DType.uint32](length)
+    for i in range(length):
+        host_a1[i] = UInt32(0x11111111)
+        host_a2[i] = UInt32(0x22222222)
+        host_b1[i] = UInt32(0xAAAAAAAA)
+        host_b2[i] = UInt32(0xBBBBBBBB)
+
+    var builder = ctx.create_graph_builder()
+
+    # Sequence A: HtoD(host_a1) -> HtoD(host_a2). Final state of `buf_a` is
+    # the second copy's payload (host_a2). First node rooted explicitly.
+    var a0 = builder.add_copy(buf_a, host_a1, dependencies=[])
+    _ = builder.add_copy(buf_a, host_a2, dependencies=[a0])
+
+    # Sequence B: HtoD(host_b1) -> HtoD(host_b2). Independent of sequence A.
+    var b0 = builder.add_copy(buf_b, host_b1, dependencies=[])
+    _ = builder.add_copy(buf_b, host_b2, dependencies=[b0])
+
+    var graph = builder^.instantiate()
+    graph.replay()
+    ctx.synchronize()
+
+    with buf_a.map_to_host() as host_a:
+        for i in range(length):
+            assert_equal(host_a[i], UInt32(0x22222222))
+    with buf_b.map_to_host() as host_b:
+        for i in range(length):
+            assert_equal(host_b[i], UInt32(0xBBBBBBBB))
+
+
 def main() raises:
     with DeviceContext() as ctx:
         test_vec_add_kernel_node(ctx)
@@ -223,3 +408,6 @@ def main() raises:
         test_add_copy_from_device(ctx)
         test_add_copy_device_to_device(ctx)
         test_add_memset(ctx)
+        test_add_function_with_dependencies(ctx)
+        test_add_memset_with_dependencies(ctx)
+        test_add_copy_with_dependencies(ctx)

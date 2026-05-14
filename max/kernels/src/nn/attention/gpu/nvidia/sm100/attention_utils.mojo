@@ -25,6 +25,7 @@ from std.math import ceildiv, exp2, align_up, iota
 from std.math.constants import log2e
 from std.sys import size_of
 from std.sys._assembly import inlined_assembly
+from std.sys.intrinsics import llvm_intrinsic
 from std.bit import prev_power_of_two, pop_count
 from std.gpu.globals import WARP_SIZE
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
@@ -1067,6 +1068,13 @@ def elect() -> Int32:
         Int32,
         constraints="=r,r",
     ](-1)
+
+
+@always_inline
+def llvm_opaque_tid() -> UInt32:
+    return llvm_intrinsic[
+        "llvm.nvvm.read.ptx.sreg.tid.x", UInt32, has_side_effect=True
+    ]()
 
 
 @always_inline

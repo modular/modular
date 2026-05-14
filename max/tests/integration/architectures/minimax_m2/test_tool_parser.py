@@ -22,8 +22,11 @@ from max.interfaces import (
     ParsedToolResponse,
 )
 from max.pipelines.architectures.minimax_m2.tool_parser import (
-    _TOOL_CALL_ID_LENGTH,
     MinimaxM2ToolParser,
+)
+from max.pipelines.lib.tool_parsing import (
+    _TOOL_CALL_ID_LENGTH,
+    StreamingToolCallState,
 )
 
 
@@ -400,15 +403,11 @@ def test_numeric_parameter_values() -> None:
 
 def test_reset_clears_buffer() -> None:
     """Test that reset() clears the internal buffer and streaming state."""
-    from max.pipelines.architectures.minimax_m2.tool_parser import (
-        _StreamingToolCallState,
-    )
-
     parser = MinimaxM2ToolParser()
 
     parser._buffer = "some accumulated data"
     parser._state.sent_content_idx = 10
-    parser._state.tool_calls.append(_StreamingToolCallState())
+    parser._state.tool_calls.append(StreamingToolCallState())
 
     parser.reset()
 
@@ -421,11 +420,14 @@ def test_parse_delta_accumulates() -> None:
     """Test that parse_delta accumulates tokens in buffer."""
     parser = MinimaxM2ToolParser()
 
+    # Before the section marker fully lands, the result is None.
     result1 = parser.parse_delta("<minimax:")
-    result2 = parser.parse_delta("tool_call>")
-
     assert result1 is None
-    assert result2 is None
+
+    # Once the marker completes, returns [] (not None) so the streaming
+    # path knows to suppress raw structural tokens even with no deltas yet.
+    result2 = parser.parse_delta("tool_call>")
+    assert result2 == []
     assert parser._buffer == "<minimax:tool_call>"
 
 
@@ -433,7 +435,7 @@ def test_parse_delta_single_tool_call_streaming() -> None:
     """Test streaming a single tool call token by token."""
     fixed_uuid = uuid.UUID("12345678-1234-5678-9abc-def012345678")
     with patch(
-        "max.pipelines.architectures.minimax_m2.tool_parser.uuid.uuid4",
+        "max.pipelines.lib.tool_parsing.uuid.uuid4",
         return_value=fixed_uuid,
     ):
         parser = MinimaxM2ToolParser()
@@ -469,7 +471,7 @@ def test_parse_delta_multiple_tool_calls_streaming() -> None:
     uuid_first = uuid.UUID("11111111-1111-1111-1111-111111111111")
     uuid_second = uuid.UUID("22222222-2222-2222-2222-222222222222")
     with patch(
-        "max.pipelines.architectures.minimax_m2.tool_parser.uuid.uuid4",
+        "max.pipelines.lib.tool_parsing.uuid.uuid4",
         side_effect=[uuid_first, uuid_second],
     ):
         parser = MinimaxM2ToolParser()
@@ -513,7 +515,7 @@ def test_parse_delta_with_content_before_tools() -> None:
     """Test streaming when there's content before tool calls section."""
     fixed_uuid = uuid.UUID("12345678-1234-5678-9abc-def012345678")
     with patch(
-        "max.pipelines.architectures.minimax_m2.tool_parser.uuid.uuid4",
+        "max.pipelines.lib.tool_parsing.uuid.uuid4",
         return_value=fixed_uuid,
     ):
         parser = MinimaxM2ToolParser()
@@ -602,7 +604,9 @@ def test_parse_delta_partial_marker_handling() -> None:
 
     result2 = parser.parse_delta("tool_call>")
 
-    assert result2 is None
+    # Once the section marker is complete, the parser is inside the
+    # tool-calls section and returns [] to signal suppression.
+    assert result2 == []
     assert "<minimax:tool_call>" in parser._buffer
 
 
@@ -610,7 +614,7 @@ def test_parse_delta_mid_token_splits() -> None:
     """Test streaming with tokens that split mid-tag."""
     fixed_uuid = uuid.UUID("12345678-1234-5678-9abc-def012345678")
     with patch(
-        "max.pipelines.architectures.minimax_m2.tool_parser.uuid.uuid4",
+        "max.pipelines.lib.tool_parsing.uuid.uuid4",
         return_value=fixed_uuid,
     ):
         parser = MinimaxM2ToolParser()
@@ -655,7 +659,7 @@ def test_parse_delta_ignores_invoke_after_end_tag() -> None:
     """Test that invoke blocks after </minimax:tool_call> are not parsed."""
     fixed_uuid = uuid.UUID("12345678-1234-5678-9abc-def012345678")
     with patch(
-        "max.pipelines.architectures.minimax_m2.tool_parser.uuid.uuid4",
+        "max.pipelines.lib.tool_parsing.uuid.uuid4",
         return_value=fixed_uuid,
     ):
         parser = MinimaxM2ToolParser()
@@ -680,7 +684,7 @@ def test_parse_delta_multiple_tool_call_blocks() -> None:
     uuid_first = uuid.UUID("11111111-1111-1111-1111-111111111111")
     uuid_second = uuid.UUID("22222222-2222-2222-2222-222222222222")
     with patch(
-        "max.pipelines.architectures.minimax_m2.tool_parser.uuid.uuid4",
+        "max.pipelines.lib.tool_parsing.uuid.uuid4",
         side_effect=[uuid_first, uuid_second],
     ):
         parser = MinimaxM2ToolParser()
@@ -735,7 +739,7 @@ def test_parse_delta_no_content_after_end_tag() -> None:
     """Test that text after </minimax:tool_call> produces no content deltas."""
     fixed_uuid = uuid.UUID("12345678-1234-5678-9abc-def012345678")
     with patch(
-        "max.pipelines.architectures.minimax_m2.tool_parser.uuid.uuid4",
+        "max.pipelines.lib.tool_parsing.uuid.uuid4",
         return_value=fixed_uuid,
     ):
         parser = MinimaxM2ToolParser()
@@ -774,7 +778,7 @@ def test_parse_delta_streaming_empty_invoke() -> None:
     """Test that a streaming invoke with no parameters produces a {} argument delta."""
     fixed_uuid = uuid.UUID("12345678-1234-5678-9abc-def012345678")
     with patch(
-        "max.pipelines.architectures.minimax_m2.tool_parser.uuid.uuid4",
+        "max.pipelines.lib.tool_parsing.uuid.uuid4",
         return_value=fixed_uuid,
     ):
         parser = MinimaxM2ToolParser()

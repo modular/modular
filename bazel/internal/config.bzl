@@ -10,8 +10,8 @@ GPU_TEST_ENV = {
 }
 
 RUNTIME_SANITIZER_DATA = select({
-    "@@//:asan_linux_x86_64": ["@clang-linux-x86_64//:lib/clang/20/lib/x86_64-unknown-linux-gnu/libclang_rt.asan.so"],
-    "@@//:asan_linux_aarch64": ["@clang-linux-aarch64//:lib/clang/20/lib/aarch64-unknown-linux-gnu/libclang_rt.asan.so"],
+    "@@//:asan_linux_x86_64": ["@clang-linux-x86_64//:lib/clang/22/lib/x86_64-unknown-linux-gnu/libclang_rt.asan.so"],
+    "@@//:asan_linux_aarch64": ["@clang-linux-aarch64//:lib/clang/22/lib/aarch64-unknown-linux-gnu/libclang_rt.asan.so"],
     "//conditions:default": [],
 }) + select({
     "@@//:asan": ["@@//bazel/internal:lsan-suppressions.txt"],
@@ -28,10 +28,10 @@ def runtime_sanitizer_env(*, preload = True, location_specifier = "location"):
     if preload:
         env |= select({
             "@@//:asan_linux_x86_64": {
-                "LD_PRELOAD": "$({} @clang-linux-x86_64//:lib/clang/20/lib/x86_64-unknown-linux-gnu/libclang_rt.asan.so)".format(location_specifier),
+                "LD_PRELOAD": "$({} @clang-linux-x86_64//:lib/clang/22/lib/x86_64-unknown-linux-gnu/libclang_rt.asan.so)".format(location_specifier),
             },
             "@@//:asan_linux_aarch64": {
-                "LD_PRELOAD": "$({} @clang-linux-aarch64//:lib/clang/20/lib/aarch64-unknown-linux-gnu/libclang_rt.asan.so)".format(location_specifier),
+                "LD_PRELOAD": "$({} @clang-linux-aarch64//:lib/clang/22/lib/aarch64-unknown-linux-gnu/libclang_rt.asan.so)".format(location_specifier),
             },
             "//conditions:default": {},
         })

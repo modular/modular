@@ -104,8 +104,8 @@ built and tested. There are a few common rules that are used.
 
 ### `mojo_library`
 
-To produce a `mojopkg` that can be consumed by other Mojo code, you can
-use the `mojo_library` rule. For example:
+To produce a precompiled Mojo file (`.mojoc`) that can be consumed by other
+Mojo code, you can use the `mojo_library` rule. For example:
 
 ```bzl
 load("//bazel:api.bzl", "mojo_library")

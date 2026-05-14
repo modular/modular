@@ -35,7 +35,6 @@ from max.nn.kv_cache import KVCacheInputs, KVCacheParams
 from max.nn.transformer import ReturnLogits
 from max.pipelines.core import TextAndVisionContext
 from max.pipelines.lib import (
-    CompilationTimer,
     KVCacheConfig,
     ModelInputs,
     ModelOutputs,
@@ -416,73 +415,69 @@ class PixtralModel(PipelineModelWithKVCache[TextAndVisionContext]):
         device_ref = DeviceRef.from_device(self.devices[0])
 
         # ---- Build and compile vision model ----
-        with CompilationTimer("vision model") as timer:
-            with F.lazy(), default_dtype(model_config.dtype):
-                vision_nn = PixtralVision(model_config)
-                vision_nn.to(self.devices[0])
+        with F.lazy(), default_dtype(model_config.dtype):
+            vision_nn = PixtralVision(model_config)
+            vision_nn.to(self.devices[0])
 
-            pixel_patches_type = TensorType(
-                DType.float32,
-                shape=["total_patches", patch_dim],
-                device=DeviceRef.GPU(),
-            )
-            attention_mask_type = TensorType(
-                DType.float32,
-                shape=[1, 1, "total_patches", "total_patches"],
-                device=DeviceRef.GPU(),
-            )
-            position_ids_type = TensorType(
-                DType.int64,
-                shape=["total_patches"],
-                device=DeviceRef.GPU(),
-            )
+        pixel_patches_type = TensorType(
+            DType.float32,
+            shape=["total_patches", patch_dim],
+            device=DeviceRef.GPU(),
+        )
+        attention_mask_type = TensorType(
+            DType.float32,
+            shape=[1, 1, "total_patches", "total_patches"],
+            device=DeviceRef.GPU(),
+        )
+        position_ids_type = TensorType(
+            DType.int64,
+            shape=["total_patches"],
+            device=DeviceRef.GPU(),
+        )
 
-            timer.mark_build_complete()
-            compiled_vision = vision_nn.compile(
-                pixel_patches_type,
-                attention_mask_type,
-                position_ids_type,
-                weights=vision_state_dict,
-            )
+        compiled_vision = vision_nn.compile(
+            pixel_patches_type,
+            attention_mask_type,
+            position_ids_type,
+            weights=vision_state_dict,
+        )
 
         # ---- Build and compile language model ----
-        with CompilationTimer("language model") as timer:
-            with F.lazy(), default_dtype(model_config.dtype):
-                language_nn = PixtralLanguage(model_config)
-                language_nn.kv_params = self.kv_params
-                language_nn.to(self.devices[0])
+        with F.lazy(), default_dtype(model_config.dtype):
+            language_nn = PixtralLanguage(model_config)
+            language_nn.kv_params = self.kv_params
+            language_nn.to(self.devices[0])
 
-            input_ids_type = TensorType(
-                DType.int64, shape=["total_seq_len"], device=DeviceRef.GPU()
-            )
-            input_row_offsets_type = TensorType(
-                DType.uint32, shape=["input_row_offsets_len"], device=device_ref
-            )
-            return_n_logits_type = TensorType(
-                DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
-            )
-            image_embeddings_type = TensorType(
-                model_config.dtype,
-                shape=["total_image_tokens", model_config.hidden_size],
-                device=DeviceRef.GPU(),
-            )
-            image_token_indices_type = TensorType(
-                DType.int32,
-                shape=["num_image_token_indices"],
-                device=device_ref,
-            )
+        input_ids_type = TensorType(
+            DType.int64, shape=["total_seq_len"], device=DeviceRef.GPU()
+        )
+        input_row_offsets_type = TensorType(
+            DType.uint32, shape=["input_row_offsets_len"], device=device_ref
+        )
+        return_n_logits_type = TensorType(
+            DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
+        )
+        image_embeddings_type = TensorType(
+            model_config.dtype,
+            shape=["total_image_tokens", model_config.hidden_size],
+            device=DeviceRef.GPU(),
+        )
+        image_token_indices_type = TensorType(
+            DType.int32,
+            shape=["num_image_token_indices"],
+            device=device_ref,
+        )
 
-            kv_inputs = self.kv_params.get_symbolic_inputs().flatten()
+        kv_inputs = self.kv_params.get_symbolic_inputs().flatten()
 
-            timer.mark_build_complete()
-            compiled_language = language_nn.compile(
-                input_ids_type,
-                input_row_offsets_type,
-                return_n_logits_type,
-                image_embeddings_type,
-                image_token_indices_type,
-                *kv_inputs,
-                weights=language_state_dict,
-            )
+        compiled_language = language_nn.compile(
+            input_ids_type,
+            input_row_offsets_type,
+            return_n_logits_type,
+            image_embeddings_type,
+            image_token_indices_type,
+            *kv_inputs,
+            weights=language_state_dict,
+        )
 
         return compiled_vision, compiled_language

@@ -1092,5 +1092,18 @@ def test_merge() raises:
     _ = cond(True, a, b)
 
 
+def test_codepoint_indexing() raises:
+    assert_equal(StringSlice("abc")[codepoint=0], "a")
+    assert_equal(StringSlice("abc")[codepoint=2], "c")
+    assert_equal(EVERY_CODEPOINT_LENGTH_STR[codepoint=0], "߷")
+    assert_equal(EVERY_CODEPOINT_LENGTH_STR[codepoint=1], "ക")
+    assert_equal(EVERY_CODEPOINT_LENGTH_STR[codepoint=2], "ൈ")
+    assert_equal(EVERY_CODEPOINT_LENGTH_STR[codepoint=3], "🔄")
+    assert_equal(EVERY_CODEPOINT_LENGTH_STR[codepoint=4], "!")
+    assert_equal(StringSlice("🔄🔥🔄")[codepoint=0], "🔄")
+    assert_equal(StringSlice("🔄🔥🔄")[codepoint=1], "🔥")
+    assert_equal(StringSlice("🔄🔥🔄")[codepoint=2], "🔄")
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

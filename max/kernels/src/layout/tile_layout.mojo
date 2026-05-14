@@ -18,19 +18,19 @@ definitions while maintaining performance through compile-time specialization.
 
 Key components:
 
-- [`TensorLayout`](/mojo/layout/tile_layout/TensorLayout): Trait
+- [`TensorLayout`](/docs/layout/tile_layout/TensorLayout): Trait
   defining the interface for all mixed layouts.
-- [`Layout`](/mojo/layout/tile_layout/Layout): Primary struct
+- [`Layout`](/docs/layout/tile_layout/Layout): Primary struct
   implementing a layout with mixed compile-time and runtime dimensions.
-- [`row_major`](/mojo/layout/tile_layout/row_major): Create a
+- [`row_major`](/docs/layout/tile_layout/row_major): Create a
   row-major layout from a shape.
-- [`col_major`](/mojo/layout/tile_layout/col_major): Create a
+- [`col_major`](/docs/layout/tile_layout/col_major): Create a
   column-major layout from a shape.
-- [`blocked_product`](/mojo/layout/tile_layout/blocked_product):
+- [`blocked_product`](/docs/layout/tile_layout/blocked_product):
   Create a hierarchical blocked layout from block and tiler layouts.
-- [`zipped_divide`](/mojo/layout/tile_layout/zipped_divide): Divide
+- [`zipped_divide`](/docs/layout/tile_layout/zipped_divide): Divide
   a layout into inner and outer components by a tile shape.
-- [`coalesce`](/mojo/layout/tile_layout/coalesce): Simplify a
+- [`coalesce`](/docs/layout/tile_layout/coalesce): Simplify a
   layout by merging dimensions with contiguous strides.
 
 You can import these APIs from the `layout` package:

@@ -430,6 +430,10 @@ modular_py_test(
         "//max/python/max/graph",
         requirement("numpy"),
     ],
+    target_compatible_with = select({
+        "//:asan": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     deps = [
         "//max/python/max/driver",
         "//max/python/max/dtype",

@@ -74,6 +74,7 @@ flux2_klein_arch = SupportedArchitecture(
         "black-forest-labs/FLUX.2-klein-9B",
         "black-forest-labs/FLUX.2-klein-base-4B",
         "black-forest-labs/FLUX.2-klein-base-9B",
+        "black-forest-labs/FLUX.2-klein-4b-nvfp4",
         "black-forest-labs/FLUX.2-klein-9b-nvfp4",
     ],
     pipeline_model=Flux2KleinExecutor,

@@ -22,7 +22,7 @@ tests, and writes out a `.conda` file ready to upload to a package index.
 The recipe is a declarative description of your package that specifies:
 
 - The source code location (a git commit or tarball URL)
-- The build process (a `mojo package` command)
+- The build process (a `mojo precompile` command)
 - Package dependencies
 - Test commands to verify the build
 
@@ -116,7 +116,7 @@ source:
 build:
   number: 0
   script:
-    - mojo package src/my_mojo_lib -o ${{ PREFIX }}/lib/mojo/my_mojo_lib.mojopkg
+    - mojo precompile src/my_mojo_lib -o ${{ PREFIX }}/lib/mojo/my_mojo_lib.mojoc
 
 requirements:
   build:
@@ -166,22 +166,22 @@ the version.
 
 #### Specify the install location
 
-In the above recipe, look at the `mojo package` command in the `build.script`
-section. It's important that this command outputs the `.mojopkg` file into
+In the above recipe, look at the `mojo precompile` command in the `build.script`
+section. It's important that this command outputs the `.mojoc` file into
 `$PREFIX/lib/mojo/`, because this path is what makes the package
 auto-discoverable by the Mojo compiler.
 
 When `rattler-build` runs your build script, it sets a `$PREFIX` environment
 variable pointing to the root of an isolated installation directory. Any files
 your script places under `$PREFIX` become part of the conda package—a file
-written to `$PREFIX/lib/mojo/foo.mojopkg` during the build is extracted into
-your actual environment when you run `pixi add foo`. Think of `$PREFIX` as a
+written to `$PREFIX/lib/mojo/foo.mojoc` during the build is extracted into your
+actual environment when you run `pixi add foo`. Think of `$PREFIX` as a
 stand-in for wherever your environment lives on your machine.
 
 #### Pin the Mojo compiler version
 
-Mojo packages compile against a specific compiler version and might not be
-compatible with other versions. The required `mojo-compiler` version must be
+Precompiled Mojo files compile against a specific compiler version and might not
+be compatible with other versions. The required `mojo-compiler` version must be
 specified in the `requirements.build` section of your recipe, which must conform
 to the
 [conda package match syntax](https://docs.conda.io/projects/conda/en/latest/user-guide/concepts/pkg-specs.html#package-match-specifications).
@@ -216,7 +216,7 @@ When you run `rattler-build build`, it:
 
 1. Creates an isolated build environment
 2. Fetches your source code
-3. Runs your build script to compile the `.mojopkg` file
+3. Runs your build script to compile the `.mojoc` file
 4. Bundles the result into a `.conda` archive
 5. Runs your test commands to verify the package works
 

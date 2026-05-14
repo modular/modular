@@ -296,6 +296,34 @@ struct RawDriver(Movable):
             )
 
     # ===-------------------------------------------------------------------===#
+    # Context lifecycle
+    # ===-------------------------------------------------------------------===#
+
+    def destroy_context(self, context: ContextHandle) raises HALError:
+        var status = self._raw.context_destroy.f(context)
+        if status != STATUS_SUCCESS:
+            var err = self.get_status_message(status)
+            raise HALError(
+                err.status,
+                message=String(t"failed to destroy context: {err.message}"),
+            )
+
+    # ===-------------------------------------------------------------------===#
+    # Bundle lifecycle
+    # ===-------------------------------------------------------------------===#
+
+    def unload_bundle(
+        self, context: ContextHandle, bundle: RuntimeBundleHandle
+    ) raises HALError:
+        var status = self._raw.bundle_unload.f(context, bundle)
+        if status != STATUS_SUCCESS:
+            var err = self.get_status_message(status)
+            raise HALError(
+                err.status,
+                message=String(t"failed to unload bundle: {err.message}"),
+            )
+
+    # ===-------------------------------------------------------------------===#
     # Memory operations
     # ===-------------------------------------------------------------------===#
 

@@ -15,19 +15,19 @@
 
 from __future__ import annotations
 
+import sys
 from collections.abc import Sequence
 
 import mojo.importer
-from max.driver import Buffer, Device
+from max.driver import Buffer, Device, accelerator_count
 
 # The mojo source comptime-instantiates a GPU kernel, which fails to JIT on
-# hosts without a GPU toolchain. Defer the failure to call time so dependents
-# can still import this module for introspection.
-try:
+# hosts without a GPU toolchain.
+if sys.platform == "linux" and accelerator_count() > 0:
     from .distributed_ops import (  # type: ignore[import-not-found]
         broadcast_kernel as _broadcast_kernel,
     )
-except ImportError:
+else:
     _broadcast_kernel = None
 
 

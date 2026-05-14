@@ -297,3 +297,60 @@ def convert_eagle3_draft_state_dict(
             result[name] = weight.data()
 
     return result
+
+
+# ---------------------------------------------------------------------------
+# Llama-style Eagle3 draft checkpoint adapter
+# ---------------------------------------------------------------------------
+
+# Llama Eagle3 checkpoint key prefix -> Eagle3MHAKimiK25 module path.
+# The MHA draft module's layer is flat (single block, no ``decoder_layer``
+# namespace), so the mapping strips the single-layer prefix and inlines
+# norms.
+#
+# Checkpoints in the wild use different single-layer prefix conventions
+# (``midlayer.``, ``model.layers.0.``, ``layers.0.``). Handle all three.
+_LLAMA_EAGLE3_KEY_MAP: dict[str, str] = {
+    "midlayer.hidden_norm.": "hidden_norm.",
+    "midlayer.input_layernorm.": "input_layernorm.",
+    "midlayer.self_attn.": "self_attn.",
+    "midlayer.post_attention_layernorm.": "post_attention_layernorm.",
+    "midlayer.mlp.": "mlp.",
+    "model.layers.0.hidden_norm.": "hidden_norm.",
+    "model.layers.0.input_layernorm.": "input_layernorm.",
+    "model.layers.0.self_attn.": "self_attn.",
+    "model.layers.0.post_attention_layernorm.": "post_attention_layernorm.",
+    "model.layers.0.mlp.": "mlp.",
+    "model.norm.": "norm.",
+    "model.embed_tokens.": "embed_tokens.",
+    "layers.0.hidden_norm.": "hidden_norm.",
+    "layers.0.input_layernorm.": "input_layernorm.",
+    "layers.0.self_attn.": "self_attn.",
+    "layers.0.post_attention_layernorm.": "post_attention_layernorm.",
+    "layers.0.mlp.": "mlp.",
+}
+
+
+def convert_llama_eagle3_draft_state_dict(
+    state_dict: dict[str, Weights],
+    **unused_kwargs,
+) -> dict[str, WeightData]:
+    """Convert a ``LlamaForCausalLMEagle3`` checkpoint to ``Eagle3MHAKimiK25``.
+
+    Handles both ``model.*``-prefixed (standard HF Llama) and
+    ``layers.0.*``-prefixed (EAGLE-export) checkpoints. ``fc.*``,
+    ``norm.*``, and ``lm_head.*`` pass through.
+    """
+    result: dict[str, WeightData] = {}
+    for name, weight in state_dict.items():
+        mapped = False
+        for before, after in _LLAMA_EAGLE3_KEY_MAP.items():
+            if name.startswith(before):
+                new_name = after + name[len(before) :]
+                result[new_name] = weight.data()
+                mapped = True
+                break
+        if not mapped:
+            # fc.*, norm.*, lm_head.* and any other top-level keys.
+            result[name] = weight.data()
+    return result

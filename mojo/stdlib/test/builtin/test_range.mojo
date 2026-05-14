@@ -317,7 +317,7 @@ def test_scalar_range() raises:
     assert_equal(r.end, 16)
     assert_equal(r.step, 4)
 
-    def append_many(mut list: List, *values: list.T):
+    def append_many[T: Copyable, //](mut list: List[T], *values: T):
         for value in values:
             list.append(value.copy())
 

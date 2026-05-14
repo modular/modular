@@ -330,17 +330,44 @@ class SpecDecodeState:
         multi_kv_params = MultiKVCacheParams.from_params(
             target_kv_params, draft_kv_params
         )
-        target_kv_mgr, draft_kv_mgr = load_multi_kv_managers(
+        target_kv_manager, draft_kv_manager = load_multi_kv_managers(
             params=multi_kv_params,
             max_batch_size=pipeline_config.runtime.max_batch_size,
             max_seq_len=model.max_seq_len,
             session=session,
             available_cache_memory=pipeline_config.model.kv_cache._available_cache_memory,
         )
-        target_kv_manager = target_kv_mgr
+
+        # Asymmetric attention (e.g. MLA target + MHA draft): each manager
+        # is single-cache from ``load_multi_kv_managers`` so the target
+        # manager's ``__init__`` skipped its draft-resolver branch
+        # (gated on ``num_caches > 1``). Inject the draft resolver here
+        # so ``runtime_inputs`` populates target_kv's
+        # ``draft_attention_dispatch_metadata`` slot with MHA geometry.
+        if target_kv_params.is_mla != draft_kv_params.is_mla:
+            from max.graph import DeviceRef
+            from max.nn.kv_cache import AttentionDispatchResolver
+            from max.nn.kv_cache.data_parallelism_utils import (
+                split_into_groups,
+            )
+
+            devices_per_replica = split_into_groups(
+                [d.to_device() for d in target_kv_params.devices],
+                groups=target_kv_params.data_parallel_degree,
+            )
+            for replica_idx, replica_devices in enumerate(devices_per_replica):
+                target_kv_manager._replica[
+                    replica_idx
+                ].draft_attention_dispatch_resolver = AttentionDispatchResolver(
+                    devices=[DeviceRef.from_device(d) for d in replica_devices],
+                    is_mla=draft_kv_params.is_mla,
+                    n_kv_heads_per_device=draft_kv_params.n_kv_heads_per_device,
+                    num_q_heads_per_device=draft_kv_params.num_q_heads_per_device,
+                    is_fp8_kv=draft_kv_params.is_fp8_kv_dtype,
+                )
 
         draft_kv_blocks = _get_draft_kv_blocks(
-            draft_kv_mgr, multi_kv_params.data_parallel_degree
+            draft_kv_manager, multi_kv_params.data_parallel_degree
         )
         assert len(draft_kv_blocks) == target_kv_params.n_devices
 
@@ -1736,11 +1763,14 @@ class OverlapTextGenerationPipeline(
             if self._spec_decode_state is not None
             else 0
         )
-        draft_kv_params = (
-            self._kv_manager.cache_params(1)
-            if self._kv_manager.num_caches > 1
-            else None
-        )
+
+        draft_kv_params = None
+        if self._kv_manager.num_caches > 1:
+            draft_kv_params = self._kv_manager.cache_params(1)
+        elif self._spec_decode_state is not None and hasattr(
+            self._pipeline_model, "_draft_kv_params"
+        ):
+            draft_kv_params = self._pipeline_model._draft_kv_params
         graph_capture_runner = ServeGraphCaptureRunner(
             model=self._pipeline_model.model,
             execute_model=self._pipeline_model.execute,

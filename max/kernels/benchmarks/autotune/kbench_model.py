@@ -41,6 +41,16 @@ from subprocess import list2cmdline
 from time import time
 from typing import Any
 
+# Under ubsan, force the `spawn` start method so the libubsan-preloaded
+# parent never forks. With fork, the child inherits libubsan's runtime
+# state plus any queue feeder threads from the parent and intermittently
+# wedges in popen_fork._launch. Spawn launches a fresh interpreter via
+# execve, sidestepping both interactions. Gated on KBENCH_LIBUBSAN_PATH,
+# which the kbench bazel rules export only under --config=ubsan
+# (MOTO-1576).
+if os.environ.get("KBENCH_LIBUBSAN_PATH"):
+    multiprocessing.set_start_method("spawn", force=True)
+
 
 @contextlib.contextmanager
 def _redirect_output(

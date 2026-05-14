@@ -18,7 +18,6 @@ from std.memory import bitcast
 from std.sys import size_of, get_defined_int
 from std.sys.info import _accelerator_arch
 import std.gpu.primitives.warp as warp
-from std.gpu import thread_idx
 from std.gpu.globals import WARPGROUP_SIZE, WARP_SIZE
 from std.gpu.memory import AddressSpace, fence_async_view_proxy
 from std.gpu.sync import (
@@ -62,6 +61,7 @@ from nn.attention.gpu.nvidia.sm100.attention_utils import (
     STMatrixOffsets,
     break_into_powers_of_two,
     elect,
+    llvm_opaque_tid,
     add_ftz,
     sub_ftz,
     mul_ftz,
@@ -397,7 +397,8 @@ def fa4_softmax[
     )
     var s_tmem: UInt32 = tmem_addr + UInt32(config.TMEM_S0)
 
-    var tid = UInt32(thread_idx.x)
+    # var tid = UInt32(thread_idx.x)
+    var tid = llvm_opaque_tid()
     var row = tid % 128
     var warp_idx: UInt32 = warp.broadcast(tid // 32)
     var warp_group_idx: UInt32 = warp.broadcast(tid // 128)

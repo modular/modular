@@ -841,6 +841,88 @@ class KimiK2_5DeepseekV3PipelineOracle(_KimiK2_5BaseOracle):
         ]
 
 
+class AmdKimiK2_5MXFP4PipelineOracle(PipelineOracle):
+    """Pipeline oracle for AMD MXFP4 Kimi K2.5."""
+
+    def __init__(self, model_path: str) -> None:
+        super().__init__()
+        self.model_path = model_path
+        self.trust_remote_code = True
+
+    @property
+    def device_encoding_map(self) -> dict[str, list[str]]:
+        return {"gpu": ["float4_e2m1fnx2"]}
+
+    @property
+    def inputs(self) -> list[MockTextGenerationRequest]:
+        text_only_requests = [
+            MockTextGenerationRequest.with_messages(
+                prompt=prompt,
+                messages=[{"role": "user", "content": prompt}],
+                is_multimodal=False,
+            )
+            for prompt in test_data.SHORT_TEXT_PROMPTS
+        ]
+        return test_data.KIMIK2_5_REQUESTS + text_only_requests
+
+    def create_max_pipeline(
+        self,
+        *,
+        encoding: pipelines.SupportedEncoding,
+        device_specs: list[driver.DeviceSpec],
+    ) -> MaxPipelineAndTokenizer:
+        revision = hf_repo_lock.revision_for_hf_repo(self.model_path)
+        gpu_count = max(
+            1, sum(1 for d in device_specs if d.device_type == "gpu")
+        )
+        config = pipelines.PipelineConfig.model_validate(
+            {
+                "defer_resolve": True,
+                "device_specs": device_specs,
+                "quantization_encoding": encoding,
+                "model_path": self.model_path,
+                "huggingface_model_revision": revision,
+                "huggingface_weight_revision": revision,
+                "max_num_steps": 1,
+                "max_length": 4096,
+                "trust_remote_code": self.trust_remote_code,
+                "max_batch_input_tokens": 4096,
+                "ep_size": gpu_count,
+                "data_parallel_degree": gpu_count,
+            }
+        )
+        hf_repo_lock.apply_to_config(config)
+        config.resolve()
+        tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
+        assert isinstance(pipeline, TextGenerationPipelineInterface)
+        return MaxPipelineAndTokenizer(pipeline, tokenizer)
+
+    def create_torch_pipeline(
+        self,
+        *,
+        encoding: pipelines.SupportedEncoding | None,
+        device: torch.device | str,
+    ) -> TorchModelAndDataProcessor:
+        raise NotImplementedError(
+            "Kimi K2.5 is 1T params (MoE) — torch golden generation is not"
+            " practical. Use --framework vllm instead."
+        )
+
+    def create_vllm_pipeline(
+        self,
+        *,
+        encoding: pipelines.SupportedEncoding | None,
+        device_specs: list[driver.DeviceSpec],
+    ) -> VLLMPipeline:
+        gpu_count = sum(1 for d in device_specs if d.device_type == "gpu")
+        return VLLMPipeline(
+            model_path=self.model_path,
+            trust_remote_code=self.trust_remote_code,
+            encoding=encoding,
+            tensor_parallel_size=max(1, gpu_count),
+        )
+
+
 class GenericOracle(PipelineOracle):
     def __init__(
         self,
@@ -1217,11 +1299,23 @@ class ImageGenerationOracle(PipelineOracle):
         """Create MAX FLUX pixel generation pipeline."""
 
         prefer_module_v3 = self.config_params.get("prefer_module_v3", False)
+        transformer_weight_path = self.config_params.get(
+            "transformer_weight_path"
+        )
 
         models = ModelManifest.from_model_path(
             self.model_path,
             device_specs=device_specs,
         )
+        if transformer_weight_path:
+            # Two-repo layout: the transformer's weights live in a separate
+            # single-file checkpoint (e.g. FLUX.2-dev + FLUX.2-dev-NVFP4)
+            # while the rest of the pipeline keeps the base repo.
+            models = models.with_override(
+                "transformer",
+                weight_path=[Path(p) for p in transformer_weight_path],
+                quantization_encoding=encoding,
+            )
 
         config = pipelines.PipelineConfig(
             models=models,
@@ -1928,6 +2022,9 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         device_encoding_map={"gpu": ["float4_e2m1fnx2"]},
     ),
     "nvidia/Kimi-K2.5-NVFP4": KimiK2_5PipelineOracle("nvidia/Kimi-K2.5-NVFP4"),
+    "amd/Kimi-K2.5-MXFP4": AmdKimiK2_5MXFP4PipelineOracle(
+        "amd/Kimi-K2.5-MXFP4"
+    ),
     "austinpowers/Kimi-K2.5-NVFP4-DeepseekV3": KimiK2_5DeepseekV3PipelineOracle(
         "austinpowers/Kimi-K2.5-NVFP4-DeepseekV3"
     ),

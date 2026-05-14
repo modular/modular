@@ -37,9 +37,9 @@ from std.gpu import global_idx, grid_dim, block_dim, thread_idx, block_idx
 from std.gpu.host import DeviceBuffer, DeviceContext
 from std.gpu.host.info import _is_sm10x_gpu
 from std.gpu.primitives import block
-from std.memory import alloc
 from internal_utils import (
     CacheBustingBuffer,
+    ScalarArray,
     arg_parse,
     pytorch_like_tolerances_for,
 )
@@ -148,8 +148,8 @@ def _check_verification_result[
         block_dim=BLOCK_SIZE,
     )
 
-    var result_host = alloc[Scalar[DType.float32]](NUM_BLOCKS * 5)
-    ctx.enqueue_copy(result_host, result_device)
+    var result_host = ScalarArray[DType.float32](count=NUM_BLOCKS * 5)
+    ctx.enqueue_copy(result_host.unsafe_ptr(), result_device)
     ctx.synchronize()
 
     var total_abs_diff: Float32 = 0
@@ -165,8 +165,6 @@ def _check_verification_result[
         worst_violation = max(worst_violation, result_host[base + 2])
         any_out_nz = max(any_out_nz, result_host[base + 3])
         any_ref_nz = max(any_ref_nz, result_host[base + 4])
-
-    result_host.free()
 
     if any_out_nz == 0:
         raise String(label, ": kernel output is all zeros")
@@ -449,10 +447,10 @@ def bench_matmul_tma_epilogue[
 
         comptime if variant != "plain":
             # Add epilogue tensor to reference output on the host.
-            var epilogue_host = alloc[Scalar[dtype]](c_size)
-            var c_ref_host = alloc[Scalar[dtype]](c_size)
-            ctx.enqueue_copy(epilogue_host, epilogue_ver_dev)
-            ctx.enqueue_copy(c_ref_host, c_ref_dev)
+            var epilogue_host = ScalarArray[dtype](count=c_size)
+            var c_ref_host = ScalarArray[dtype](count=c_size)
+            ctx.enqueue_copy(epilogue_host.unsafe_ptr(), epilogue_ver_dev)
+            ctx.enqueue_copy(c_ref_host.unsafe_ptr(), c_ref_dev)
             ctx.synchronize()
 
             for i in range(c_size):
@@ -461,9 +459,8 @@ def bench_matmul_tma_epilogue[
                     + epilogue_host[i].cast[DType.float32]()
                 ).cast[dtype]()
 
-            ctx.enqueue_copy(c_ref_dev, c_ref_host)
-            epilogue_host.free()
-            c_ref_host.free()
+            ctx.enqueue_copy(c_ref_dev, c_ref_host.unsafe_ptr())
+            _ = (epilogue_host^, c_ref_host^)
 
         comptime NUM_BLOCKS = 32
         comptime BLOCK_SIZE = 256

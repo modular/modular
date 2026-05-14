@@ -290,6 +290,27 @@ class PipelineRuntimeConfig(ConfigFileModel):
         ),
     )
 
+    temperature: float | None = Field(
+        default=None,
+        description=(
+            "Default sampling temperature. Controls randomness of token selection—"
+            "higher values (e.g. 1.0) produce more random outputs, lower values "
+            "(e.g. 0.2) produce more deterministic outputs. When set, this "
+            "server-level default applies to all requests that do not explicitly "
+            "provide ``temperature``."
+        ),
+    )
+
+    thinking_temperature: float | None = Field(
+        default=None,
+        description=(
+            "Default temperature override for tokens inside ``<think>...</think>`` "
+            "blocks. When set, this server-level default applies to all requests "
+            "that do not explicitly provide ``thinking_temperature``. Requires "
+            "a reasoning parser to be configured; ignored otherwise."
+        ),
+    )
+
     # TODO(SERVSYS-1096): Remove this field once we've reworked how required
     # config fields are validated.
     defer_resolve: bool = Field(

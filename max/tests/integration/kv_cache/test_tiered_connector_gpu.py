@@ -73,6 +73,7 @@ def create_tiered_connector(
         total_num_host_blocks=num_host_blocks,
         disk_cache_dir=disk_cache_dir,
         max_disk_size_gb=max_disk_size_gb,
+        synchronous_d2h_copy_mode=True,
     )
 
 

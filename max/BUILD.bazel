@@ -17,6 +17,7 @@ package_group(
         "//docs/...",
         "//examples/...",  # OSS only
         "//max/...",
+        "//max_private/...",  # private-only entrypoints + tool parsers
         "//oss/...",
         "//oss/modular/max/...",
         "//utils/...",

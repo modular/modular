@@ -86,11 +86,11 @@ APIs to be imported and used in other Mojo programs.
 A Mojo package is just a collection of Mojo modules in a directory that
 includes an `__init__.mojo` file. By organizing modules together in a
 directory, you can then import all the modules together or individually.
-Optionally, you can also compile the package into a `.mojopkg` file
-that's easier to share and still compatible with other system architectures.
+Optionally, you can also compile the package into a precompiled `.mojoc` file
+that's quicker to load when used as a dependency to another Mojo compile.
 
 You can import a package and its modules either directly from source files or
-from a compiled `.mojopkg` file. It makes no real difference to Mojo
+from a compiled `.mojoc` file. It makes no real difference to Mojo
 which way you import a package. When importing from source files, the directory
 name works as the package name, whereas when importing from a compiled package,
 the filename is the package name (which you specify with the [`mojo
@@ -138,17 +138,22 @@ mojo main.mojo
 ```
 
 However, if you don't want the `mypackage` source code in the same location
-as `main.mojo`, you can compile it into a package file like this:
+as `main.mojo`, you can compile it into a precompiled file like this:
 
 ```sh
-mojo package mypackage -o mypack.mojopkg
+mojo precompile mypackage -o mypack.mojoc
 ```
 
 :::note
 
-A `.mojopkg` file contains non-elaborated code, so you can share it across
+A `.mojoc` file contains non-elaborated code, so you _can_ share it across
 systems. The code becomes an architecture-specific executable only after it's
 imported into a Mojo program that's then compiled with `mojo build`.
+
+The `.mojoc` format is not intended as a generic distributable format, however,
+as it is tied to the exact version of the compiler that produced it. Loading a
+`.mojoc` file produced by one version of the compiler into another version of
+the compiler will result in a compiler error.
 
 :::
 
@@ -157,7 +162,7 @@ now look like this:
 
 ```ini
 main.mojo
-mypack.mojopkg
+mypack.mojoc
 ```
 
 Because we named the package `mypack`, we need to fix
@@ -180,8 +185,8 @@ mojo main.mojo
 :::note
 
 If you want to rename your package, you cannot simply edit the
-`.mojopkg` filename, because the package name is encoded in the file.
-You must instead run `mojo package` again to specify a new name.
+`.mojoc` filename, because the package name is encoded in the file.
+You must instead run `mojo precompile` again to specify a new name.
 
 :::
 

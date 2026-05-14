@@ -1359,7 +1359,7 @@ struct Grouped1D1DMatmulKernel[
         fence_mbarrier_init()
         cluster_sync()
 
-        # SAFE (PDLLevel(1)) tier: block-wide PDL fence fires after all SMEM
+        # SAFE (PDLLevel.ON) tier: block-wide PDL fence fires after all SMEM
         # / barrier init but before any warp touches GMEM. Orders every
         # warp's subsequent _compute_iter0_ctx read of a_offsets /
         # expert_ids / expert_scales, the scheduler's direct reads, and all
@@ -1367,7 +1367,7 @@ struct Grouped1D1DMatmulKernel[
         # this fence and lets the Load warp's split-then-wait handle PDL
         # ordering, at the cost of letting the scheduler and iter-0 ctx
         # reads race ahead of the previous grid's writes.
-        comptime if Self.pdl_level == PDLLevel(1):
+        comptime if Self.pdl_level == PDLLevel.ON:
             wait_on_dependent_grids()
 
         var mma_op = Self.MmaOp()

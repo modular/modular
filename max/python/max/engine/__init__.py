@@ -14,6 +14,7 @@
 
 from max._core import __version__
 
+from .api import CompiledModel as CompiledModel
 from .api import (
     CustomExtensionsType,
     DebugConfig,

@@ -36,6 +36,19 @@ This version is still a work in progress.
 
 ### Python API
 
+- `max.experimental.nn.Module.compile()` now emits the same
+  `Building and compiling {ClassName}... / Still building... / Building
+  {ClassName} graph took Ns / Compiling {ClassName} took Ms / Building and
+  compiling {ClassName} took Ts` log sequence that pipeline-level
+  `CompilationTimer` produces today, and wraps the compile body in
+  `max.profiler.Tracer` spans (`Module.compile({ClassName})`,
+  `Module.compile.trace`, `Module.compile.session_load`) so an `nsys` capture
+  with `MODULAR_ENABLE_PROFILING=1` shows compilation as named ranges.
+  Every ModuleV3 caller — including pixel-generation pipelines that previously
+  compiled silently — now gets this observability for free. The outer
+  `CompilationTimer("model")` wrappers in `*_modulev3` architectures have been
+  removed to avoid nested timing logs.
+
 - `CPUMetricsCollector` in `max.diagnostics.cpu` is now used as a context
   manager instead of `start`/`stop` and now exposes `get_stats()` instead of
   `dump_stats()`, matching the interface of `GPUDiagContext`.

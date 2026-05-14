@@ -18,7 +18,7 @@ from .plugin import (
     ContextHandle,
 )
 from .status import HALError
-from std.memory import ArcPointer, ImmutPointer
+from std.memory import ArcPointer
 
 # ===-----------------------------------------------------------------------===#
 #  Flags
@@ -55,12 +55,12 @@ trait Waitable:
 
 
 @fieldwise_init
-struct _EventInner[context_origin: ImmutOrigin](Movable):
+struct _EventInner(ImplicitlyDestructible, Movable):
     """Internal event state, ref-counted via ArcPointer."""
 
     var _handle: EventHandle
     var _context_handle: ContextHandle
-    var _raw: ImmutPointer[RawDriver, Self.context_origin]
+    var _raw: ArcPointer[RawDriver]
 
     def __del__(deinit self):
         """Destroys the underlying plugin event handle."""
@@ -73,9 +73,8 @@ struct _EventInner[context_origin: ImmutOrigin](Movable):
 
 
 struct Event[
-    context_origin: ImmutOrigin,
     flags: EventFlags = EVENT_FLAG_NONE,
-](ImplicitlyCopyable, Movable, Waitable):
+](ImplicitlyCopyable, ImplicitlyDestructible, Movable, Waitable):
     """A synchronization event tied to a context.
 
     Created via `Queue.record_event[flags]()` or `Stream.record_event[flags]()`.
@@ -84,15 +83,14 @@ struct Event[
     reference goes out of scope.
 
     Parameters:
-        context_origin: The origin of the parent Context pointer.
         flags: Capability bitmask the event was created with.
     """
 
-    var _inner: ArcPointer[_EventInner[Self.context_origin]]
+    var _inner: ArcPointer[_EventInner]
 
     def __init__(
         out self,
-        var inner: _EventInner[Self.context_origin],
+        var inner: _EventInner,
     ):
         self._inner = ArcPointer(inner^)
 

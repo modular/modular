@@ -121,11 +121,15 @@ class PostprocessAndDecode(Module):
         # x255 multiplication doesn't amplify bfloat16 rounding errors
         # into +-1-2 pixel differences.  This matches the precision path
         # used by diffusers (AutoencoderKL outputs float32 by default).
+        # Round before the uint8 cast so the truncating cast doesn't bias
+        # every pixel down by ~0.5; diffusers' image processor does
+        # `(x * 255).round().astype(uint8)`.
         decoded = ops.cast(decoded, DType.float32)
         decoded = decoded * 0.5 + 0.5
         decoded = ops.max(decoded, 0.0)
         decoded = ops.min(decoded, 1.0)
         decoded = decoded * 255.0
+        decoded = ops.round(decoded)
 
         return ops.transfer_to(ops.cast(decoded, DType.uint8), DeviceRef.CPU())
 

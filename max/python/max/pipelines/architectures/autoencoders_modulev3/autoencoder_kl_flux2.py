@@ -156,10 +156,14 @@ class PostprocessAndDecode(Module[..., Tensor]):
         # Keeping in the decoder's native dtype (bfloat16/float16): all values
         # in [0, 255] are exactly representable, and avoiding the float32 upcast
         # reduces GPU compute and memory bandwidth for the post-processing ops.
+        # Round before the uint8 cast so the truncating cast doesn't bias every
+        # pixel down by ~0.5; diffusers' image processor does
+        # `(x * 255).round().astype(uint8)`.
         decoded = decoded * 0.5 + 0.5
         decoded = F.max(decoded, 0.0)
         decoded = F.min(decoded, 1.0)
         decoded = decoded * 255.0
+        decoded = F.round(decoded)
         return F.transfer_to(F.cast(decoded, DType.uint8), DeviceRef.CPU())
 
     def input_types(self) -> tuple[TensorType, ...]:

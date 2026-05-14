@@ -129,13 +129,13 @@ def _mojo_source_package_root_file(path: Path) -> Path | None:
 
 def is_mojo_binary_package_path(path: Path) -> bool:
     """Returns True if the given path is a Mojo binary package file, i.e.
-    a file ending in ".mojopkg".
+    a file ending in ".mojoc" or ".mojopkg".
     """
 
     if not path.is_file():
         return False
 
-    return path.suffix == ".mojopkg"
+    return path.suffix in (".mojoc", ".mojopkg")
 
 
 def _build_mojo_source_package(path: Path) -> Path:
@@ -149,7 +149,7 @@ def _build_mojo_source_package(path: Path) -> Path:
         Path(tempfile.gettempdir())
         / f".modular_{os.getuid()}"
         / "mojo_pkg"
-        / f"mojo_pkg_{path_hash}.mojopkg"
+        / f"mojo_pkg_{path_hash}.mojoc"
     )
 
     # Ensure parent directories exist

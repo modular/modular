@@ -15,12 +15,44 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+from dataclasses import dataclass
+
 from max._distributed_ops import distributed_broadcast
-from max.driver import Buffer, Device, DevicePinnedBuffer, DeviceStream
+from max.driver import (
+    Buffer,
+    Device,
+    DeviceEvent,
+    DevicePinnedBuffer,
+    DeviceStream,
+)
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn.comm.allreduce import Signals
 from max.profiler import Tracer, traced
+
+
+@dataclass
+class DeviceEventBundle:
+    """A bundle of device events."""
+
+    events: list[DeviceEvent]
+
+    @classmethod
+    def record_on_streams(
+        cls, streams: Sequence[DeviceStream]
+    ) -> DeviceEventBundle:
+        """Record an event on the given streams."""
+        return cls(events=[stream.record_event() for stream in streams])
+
+    def is_ready(self) -> bool:
+        """Check if all events are ready."""
+        return all(event.is_ready() for event in self.events)
+
+    def synchronize(self) -> None:
+        """Synchronize all events."""
+        for event in self.events:
+            event.synchronize()
 
 
 def _bytes_per_page(buffer: Buffer) -> int:
@@ -223,3 +255,10 @@ class BlockOffloadEngine:
         ):
             main_stream.wait_for(d2h_auxiliary_stream)
             d2h_auxiliary_stream.wait_for(main_stream)
+
+    @traced
+    def record_d2h_event(self) -> DeviceEventBundle:
+        """Record an event on all the d2h auxiliary streams."""
+        return DeviceEventBundle.record_on_streams(
+            list(self.d2h_auxiliary_streams.values())
+        )

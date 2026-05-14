@@ -869,6 +869,16 @@ class PagedKVCacheManager:
         replica = self._replica[replica_idx]
         return replica.connector.num_used_host_blocks
 
+    def get_num_disk_pages(self, replica_idx: int) -> int:
+        """Returns number of disk pages for the replica."""
+        replica = self._replica[replica_idx]
+        return replica.connector.num_disk_blocks
+
+    def get_num_used_disk_pages(self, replica_idx: int) -> int:
+        """Returns number of used disk pages for the replica."""
+        replica = self._replica[replica_idx]
+        return replica.connector.num_used_disk_blocks
+
     def get_device_buffer(
         self, replica_idx: int, cache_idx: int = 0
     ) -> KVCacheBuffer:

@@ -593,7 +593,7 @@ def layer_norm_gpu[
                 epsilon,
                 grid_dim=grid_dim,
                 block_dim=warp_tiling_block_dim(simd_width * 2),
-                attributes=pdl_launch_attributes(PDLLevel(1)),
+                attributes=pdl_launch_attributes(PDLLevel.ON),
             )
         elif cols <= (WARP_SIZE * simd_width * max_warps_per_block):
             comptime kernel = layer_norm_gpu_warp_tiling[
@@ -612,7 +612,7 @@ def layer_norm_gpu[
                 epsilon,
                 grid_dim=grid_dim,
                 block_dim=warp_tiling_block_dim(simd_width),
-                attributes=pdl_launch_attributes(PDLLevel(1)),
+                attributes=pdl_launch_attributes(PDLLevel.ON),
             )
         else:
             comptime kernel = layer_norm_gpu_block[
@@ -630,7 +630,7 @@ def layer_norm_gpu[
                 epsilon,
                 grid_dim=grid_dim,
                 block_dim=warp_tiling_block_dim(simd_width),
-                attributes=pdl_launch_attributes(PDLLevel(1)),
+                attributes=pdl_launch_attributes(PDLLevel.ON),
             )
     else:
         comptime kernel = layer_norm_gpu_block[
@@ -648,7 +648,7 @@ def layer_norm_gpu[
             epsilon,
             grid_dim=grid_dim,
             block_dim=warp_tiling_block_dim(1),
-            attributes=pdl_launch_attributes(PDLLevel(1)),
+            attributes=pdl_launch_attributes(PDLLevel.ON),
         )
 
 
@@ -1197,7 +1197,7 @@ def rms_norm_gpu[
         IndexList[rank], SIMD[dtype, width]
     ) capturing -> None,
     multiply_before_cast: Bool,
-    pdl_level: PDLLevel = PDLLevel(1),
+    pdl_level: PDLLevel = PDLLevel.ON,
 ](
     shape: IndexList[rank, ...],
     gamma: TileTensor[dtype, ...],
@@ -2139,7 +2139,7 @@ def rms_norm_fused_residual_add_gpu[
                 cols,
                 grid_dim=grid_dim,
                 block_dim=block_dim,
-                attributes=pdl_launch_attributes(PDLLevel(1)),
+                attributes=pdl_launch_attributes(PDLLevel.ON),
             )
         else:
             comptime if has_apple_gpu_accelerator():
@@ -2172,7 +2172,7 @@ def rms_norm_fused_residual_add_gpu[
                     cols,
                     grid_dim=ceildiv(rows, max_warps_per_block),
                     block_dim=WARP_SIZE * max_warps_per_block,
-                    attributes=pdl_launch_attributes(PDLLevel(1)),
+                    attributes=pdl_launch_attributes(PDLLevel.ON),
                 )
             else:
                 var shared_mem_size = (
@@ -2204,7 +2204,7 @@ def rms_norm_fused_residual_add_gpu[
                     cols,
                     grid_dim=grid_dim,
                     block_dim=block_dim,
-                    attributes=pdl_launch_attributes(PDLLevel(1)),
+                    attributes=pdl_launch_attributes(PDLLevel.ON),
                     shared_mem_bytes=shared_mem_size,
                     func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
                         UInt32(shared_mem_size)
@@ -2242,7 +2242,7 @@ def rms_norm_fused_residual_add_gpu[
                 cols,
                 grid_dim=ceildiv(rows, max_warps_per_block),
                 block_dim=WARP_SIZE * max_warps_per_block,
-                attributes=pdl_launch_attributes(PDLLevel(1)),
+                attributes=pdl_launch_attributes(PDLLevel.ON),
             )
         else:
             var shared_mem_size = cols * size_of[dtype]()
@@ -2272,7 +2272,7 @@ def rms_norm_fused_residual_add_gpu[
                 cols,
                 grid_dim=grid_dim,
                 block_dim=block_dim,
-                attributes=pdl_launch_attributes(PDLLevel(1)),
+                attributes=pdl_launch_attributes(PDLLevel.ON),
                 shared_mem_bytes=shared_mem_size,
                 func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
                     UInt32(
@@ -2845,7 +2845,7 @@ def rms_norm_rope_gpu[
         IndexList[rank], SIMD[input_dtype, width]
     ) capturing -> None,
     multiply_before_cast: Bool,
-    pdl_level: PDLLevel = PDLLevel(1),
+    pdl_level: PDLLevel = PDLLevel.ON,
 ](
     shape: IndexList[rank, ...],
     gamma: TileTensor[input_dtype, ...],
@@ -3790,7 +3790,7 @@ def group_norm_gpu[
                 spatial,
                 grid_dim=grid_dim,
                 block_dim=block_dim,
-                attributes=pdl_launch_attributes(PDLLevel(1)),
+                attributes=pdl_launch_attributes(PDLLevel.ON),
             )
         else:
             # Use multi-block reduction when the grid is too small for
@@ -3856,7 +3856,7 @@ def group_norm_gpu[
                     group_size,
                     grid_dim=mb_grid_dim,
                     block_dim=mb_block_dim,
-                    attributes=pdl_launch_attributes(PDLLevel(1)),
+                    attributes=pdl_launch_attributes(PDLLevel.ON),
                 )
 
                 # Kernel 2: reduce stats and normalize each chunk.
@@ -3882,7 +3882,7 @@ def group_norm_gpu[
                     group_size,
                     grid_dim=mb_grid_dim,
                     block_dim=mb_block_dim,
-                    attributes=pdl_launch_attributes(PDLLevel(1)),
+                    attributes=pdl_launch_attributes(PDLLevel.ON),
                 )
 
                 _ = stats_buf^
@@ -3904,7 +3904,7 @@ def group_norm_gpu[
                     spatial,
                     grid_dim=grid_dim,
                     block_dim=block_dim,
-                    attributes=pdl_launch_attributes(PDLLevel(1)),
+                    attributes=pdl_launch_attributes(PDLLevel.ON),
                 )
     else:
         comptime kernel = group_norm_gpu_block[
@@ -3924,7 +3924,7 @@ def group_norm_gpu[
             spatial,
             grid_dim=grid_dim,
             block_dim=block_dim,
-            attributes=pdl_launch_attributes(PDLLevel(1)),
+            attributes=pdl_launch_attributes(PDLLevel.ON),
         )
 
 

@@ -24,9 +24,9 @@ This proposal is meant to:
 ## Motivation
 
 No project manifest format exists for Mojo as of Mojo SDK v0.7.0. In the present
-situation, Mojo projects can be built by invoking `mojo package` (to produce a
-`.mojopkg` library) or `mojo build` (to produce an executable) on the command
-line.
+situation, Mojo projects can be built by invoking `mojo precompile` (to produce
+a precompiled `.mojoc` file) or `mojo build` (to produce an executable) on the
+command line.
 
 This status quo has several drawbacks:
 
@@ -34,9 +34,9 @@ This status quo has several drawbacks:
    popular Mojo projects hosted on GitHub today, some are built via `docker`,
    where the Dockerfile invokes `mojo run` to execute the Mojo source file. Some
    are built via CMake, where project maintainers have used `add_custom_command`
-   to invoke `mojo build` and `mojo package`. Some are built via a
-   `mojo package` command that is documented only in the README. Some have build
-   instructions that are only known to the maintainers. The lack of
+   to invoke `mojo build` and `mojo precompile`. Some are built via a
+   `mojo precompile` command that is documented only in the README. Some have
+   build instructions that are only known to the maintainers. The lack of
    standardization makes it difficult to download and build a Mojo source
    repository, which inhibits collaboration among the Mojo community of
    developers.

@@ -75,6 +75,7 @@ from layout import (
     IntTuple,
     Layout,
     LayoutTensor,
+    RowMajorLayout,
     RuntimeInt,
     RuntimeLayout,
     TileTensor,
@@ -121,6 +122,7 @@ from linalg.bmm import batched_matmul_dynamic_scaled_fp8
 from linalg.grouped_matmul import grouped_matmul
 from linalg.lora import shrink_qkv_permute_3mn_sm100
 from linalg.matmul import matmul
+from linalg.matmul.gpu import _matmul_gpu
 from linalg.matrix_band_part import matrix_band_part
 from linalg.packing import _pack_b_ndbuffer_impl, pack_matmul_b_shape_func
 from linalg.utils import (
@@ -4075,6 +4077,56 @@ struct BatchMatmul:
         )
 
 
+@compiler.register("mo.fused_matmul_add")
+struct FusedMatmulAdd:
+    @staticmethod
+    def execute[
+        transpose_b: Bool,
+        target: StaticString,
+        _trace_name: StaticString,
+    ](
+        c: OutputTensor[rank=2, ...],
+        a: InputTensor[rank=2, ...],
+        b: InputTensor[rank=2, ...],
+        residual: InputTensor[dtype=c.dtype, ...],
+        ctx: DeviceContextPtr,
+    ) capturing raises:
+        comptime assert (
+            residual.rank == 1 or residual.rank == 2
+        ), "residual must be rank 1 (bias) or rank 2"
+        comptime epilogue_is_1d = residual.rank == 1
+        var epi_m: RuntimeInt[DType.int64]
+        var epi_n: RuntimeInt[DType.int64]
+        comptime if epilogue_is_1d:
+            epi_m = RuntimeInt[DType.int64](Scalar[DType.int64](1))
+            epi_n = RuntimeInt[DType.int64](
+                Scalar[DType.int64](residual.dim_size(0))
+            )
+        else:
+            epi_m = RuntimeInt[DType.int64](
+                Scalar[DType.int64](residual.dim_size(0))
+            )
+            epi_n = RuntimeInt[DType.int64](
+                Scalar[DType.int64](residual.dim_size(1))
+            )
+        var epilogue = TileTensor(
+            residual.unsafe_ptr(), row_major(Coord(epi_m, epi_n))
+        ).as_immut()
+
+        _matmul_gpu[
+            use_tensor_core=True,
+            transpose_b=transpose_b,
+            has_epilogue_tensor=True,
+            epilogue_is_1d=epilogue_is_1d,
+        ](
+            c.to_tile_tensor[DType.int64](),
+            a.to_tile_tensor[DType.int64](),
+            b.to_tile_tensor[DType.int64](),
+            ctx.get_device_context(),
+            epilogue_tensor=epilogue,
+        )
+
+
 @compiler.register("mo.linalg.band_part")
 struct LinalgBandPart:
     @staticmethod
@@ -4626,9 +4678,9 @@ struct Concat:
         dtype: DType,
         rank: Int,
         target: StaticString,
+        axis: Int,
     ](
         output: FusedOutputTensor[dtype=dtype, rank=rank, ...],
-        axis: Scalar,
         inputs: FusedInputVariadicTensors[dtype=dtype, rank=rank, ...],
         ctx: DeviceContextPtr,
     ) capturing raises:
@@ -4666,7 +4718,7 @@ struct Concat:
             epilogue_wrapper,
             target=target,
         ](
-            normalize_neg_index(Int(axis), rank),
+            normalize_neg_index(axis, rank),
             input_shapes,
             output.to_tile_tensor[DType.int64](),
             ctx,
@@ -4676,10 +4728,11 @@ struct Concat:
     def shape[
         dtype: DType,
         rank: Int,
+        axis: Int,
     ](
-        axis: Scalar, inputs: InputVariadicTensors[dtype=dtype, rank=rank, ...]
+        inputs: InputVariadicTensors[dtype=dtype, rank=rank, ...]
     ) raises -> IndexList[rank]:
-        return concat_shape_impl(Int(axis), inputs)
+        return concat_shape_impl(axis, inputs)
 
 
 @compiler.register("mo.fused_concat_slice")
@@ -4691,10 +4744,10 @@ struct FusedConcatSlice:
         target: StaticString,
         static_starts: IntTuple,
         static_steps: IntTuple,
+        axis: Int,
     ](
         concat_output: FusedOutputTensor[dtype=dtype, rank=rank, ...],
         slice_output: FusedOutputTensor[dtype=dtype, rank=rank, ...],
-        axis: Scalar,
         inputs: FusedInputVariadicTensors[dtype=dtype, rank=rank, ...],
         ctx: DeviceContextPtr,
     ) capturing raises:
@@ -4780,7 +4833,7 @@ struct FusedConcatSlice:
             epilogue_wrapper,
             target=target,
         ](
-            normalize_neg_index(Int(axis), rank),
+            normalize_neg_index(axis, rank),
             input_shapes,
             concat_output.to_tile_tensor[DType.int64](),
             ctx,
@@ -4799,12 +4852,12 @@ struct DualFusedConcatSlice:
         static_steps_0: IntTuple,
         static_starts_1: IntTuple,
         static_steps_1: IntTuple,
+        axis: Int,
     ](
         concat_output_0: FusedOutputTensor[dtype=dtype, rank=rank, ...],
         slice_output_0: FusedOutputTensor[dtype=dtype, rank=rank, ...],
         concat_output_1: FusedOutputTensor[dtype=dtype, rank=rank, ...],
         slice_output_1: FusedOutputTensor[dtype=dtype, rank=rank, ...],
-        axis: Scalar,
         inputs: FusedInputVariadicTensors[dtype=dtype, rank=rank, ...],
         ctx: DeviceContextPtr,
     ) capturing raises:
@@ -4964,7 +5017,7 @@ struct DualFusedConcatSlice:
             epilogue_1,
             num_inputs_1,
         ](
-            normalize_neg_index(Int(axis), rank),
+            normalize_neg_index(axis, rank),
             input_shapes_0,
             concat_output_0.to_tile_tensor[DType.int64](),
             input_shapes_1,
@@ -11811,6 +11864,92 @@ struct DistributedAllReduceAddRMSNormQuantFP8:
             )
 
         _launch_device_collective[num_devices](launch_fused_allreduce, dev_ctxs)
+
+
+@compiler.register("mo.bundled.allreduce_add_rms_norm_quant_fp8")
+struct BundledAllReduceAddRMSNormQuantFP8:
+    @staticmethod
+    def execute[
+        dtype: DType,
+        output_type: DType,
+        scales_type: DType,
+        rank: Int,
+        target: StaticString,
+        _trace_name: StaticString,
+    ](
+        output: OutputTensor[dtype=output_type, rank=rank, ...],
+        out_scale: OutputTensor[dtype=scales_type, rank=rank, ...],
+        out_residual: OutputTensor[dtype=dtype, rank=rank, ...],
+        inputs: InputVariadicTensors[dtype=dtype, rank=rank, ...],
+        signal_buffers: MutableInputVariadicTensors[
+            dtype=DType.uint8, rank=1, ...
+        ],
+        residual: InputTensor[dtype=dtype, rank=rank, ...],
+        gamma: InputTensor[dtype=dtype, rank=1, ...],
+        epsilon: InputTensor[dtype=dtype, ...],
+        weight_offset: InputTensor[dtype=dtype, ...],
+        scale_ub: InputTensor[dtype=DType.float32, ...],
+        ctx: DeviceContextPtr,
+    ) capturing raises:
+        """Per-device fused allreduce.sum + add + rms_norm + fp8 quantize.
+
+        Single-device analog of `DistributedAllReduceAddRMSNormQuantFP8`, for
+        use inside `mo.parallel`.  The parallel framework launches one
+        instance per GPU; this kernel invokes the same underlying primitive
+        (`allreduce_residual_rmsnorm_fp8`) that the distributed variant calls
+        from within `_launch_device_collective`, but for a single device.
+
+        Args:
+            output: FP8 quantized output tensor for THIS GPU.
+            out_scale: Per-token scale tensor for THIS GPU.
+            out_residual: Post-add residual tensor for THIS GPU.
+            inputs: Input tensors from ALL participating GPUs.
+            signal_buffers: Signal buffers for ALL participating GPUs.
+            residual: Residual tensor for THIS GPU.
+            gamma: RMSNorm weight for THIS GPU.
+            epsilon: RMSNorm epsilon scalar (host).
+            weight_offset: RMSNorm weight offset scalar (host).
+            scale_ub: Quantization scale upper bound scalar (host).
+            ctx: Device context for THIS GPU.
+        """
+        comptime num_devices = inputs.size
+        comptime assert signal_buffers.size == num_devices, (
+            "expected allreduce inputs and signal buffers to have"
+            " the same number of elements"
+        )
+
+        var input_size_bytes = inputs[0].size() * size_of[dtype]()
+        _check_signal_buffer_size(signal_buffers[0].size(), input_size_bytes)
+
+        comptime InputTensorType = type_of(
+            inputs[0].to_tile_tensor[DType.int64]().as_immut()
+        )
+        var in_tensors = InlineArray[InputTensorType, num_devices](
+            uninitialized=True
+        )
+        var rank_sigs = InlineArray[
+            UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
+        ](uninitialized=True)
+
+        comptime for i in range(num_devices):
+            in_tensors[i] = rebind[InputTensorType](
+                inputs[i].to_tile_tensor[DType.int64]().as_immut()
+            )
+            rank_sigs[i] = signal_buffers[i]._ptr.bitcast[Signal]()
+
+        allreduce_residual_rmsnorm_fp8(
+            in_tensors,
+            residual.to_tile_tensor[DType.int64]().as_immut(),
+            output.to_tile_tensor[DType.int64](),
+            out_residual.to_tile_tensor[DType.int64](),
+            gamma.to_tile_tensor[DType.int64](),
+            epsilon.unsafe_ptr()[],
+            weight_offset.unsafe_ptr()[],
+            scale_ub.unsafe_ptr()[],
+            out_scale.to_tile_tensor[DType.int64](),
+            rank_sigs,
+            ctx[],
+        )
 
 
 # Note: this is not a "real" index_tensor op that covers all cases, but rather

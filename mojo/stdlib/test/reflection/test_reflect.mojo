@@ -364,5 +364,120 @@ def test_field_offset_iteration() raises:
     assert_equal(offsets[3], 20)
 
 
+# ===----------------------------------------------------------------------=== #
+# Closure capture reflection
+# ===----------------------------------------------------------------------=== #
+
+
+struct StructToCapture(ImplicitlyCopyable):
+    var x: Int
+    var y: Int
+
+    def __init__(out self: Self):
+        self.x = 27
+        self.y = 42
+
+    def __init__(out self, *, copy: Self):
+        self.x = copy.x
+        self.y = copy.y
+
+
+def test_closure_capture_struct_reflection() raises:
+    """A closure captures a struct."""
+    var s = StructToCapture()
+
+    def closure() {var s} -> None:
+        pass
+
+    closure()
+
+    # field_types()[0] of the wrapper struct is the capture struct.
+    comptime captures = reflect[reflect[type_of(closure)].field_types()[0]]
+    # closure captures s — one field.
+    assert_equal(captures.field_count(), 1)
+
+    # capture s is itself a struct containing x and y.
+    comptime s_type = captures.field_types()[0]
+    assert_true(reflect[s_type].is_struct())
+    assert_equal(reflect[s_type].field_count(), 2)
+
+
+def test_nested_closure_capture_reflection() raises:
+    """A closure captured by another closure is reflectable as a struct."""
+    var x = UInt32(1)
+    var y = UInt32(2)
+    var z = UInt32(3)
+
+    def inner() {var x} -> None:
+        pass
+
+    def outer() {var y, var z, var inner} -> None:
+        pass
+
+    outer()
+
+    # field_types()[0] of the wrapper struct is the capture struct.
+    comptime outer_captures = reflect[reflect[type_of(outer)].field_types()[0]]
+    # outer captures y, z, inner — three fields.
+    assert_equal(outer_captures.field_count(), 3)
+
+    # inner is the third capture; its type must be a reflectable struct.
+    comptime inner_type = outer_captures.field_types()[2]
+    assert_true(reflect[inner_type].is_struct())
+
+    # inner's wrapper struct has one field: its capture struct.
+    comptime inner_r = reflect[inner_type]
+    assert_equal(inner_r.field_count(), 1)
+
+    # inner's capture struct is itself a struct containing x (UInt32).
+    comptime inner_captures = inner_r.field_types()[0]
+    assert_true(reflect[inner_captures].is_struct())
+    assert_equal(reflect[inner_captures].field_count(), 1)
+
+
+def test_deeply_nested_closure_capture_reflection() raises:
+    """Reflection works transitively: A captured by B captured by C."""
+    var x = UInt32(1)
+    var y = UInt32(2)
+    var z = UInt32(3)
+    var w = UInt32(4)
+
+    def a() {var x} -> None:
+        pass
+
+    def b() {var y, var a} -> None:
+        pass
+
+    def c() {var z, var w, var b} -> None:
+        pass
+
+    c()
+
+    # Navigate into c's capture struct.
+    comptime c_captures = reflect[reflect[type_of(c)].field_types()[0]]
+    # c captures z, w, b — three fields.
+    assert_equal(c_captures.field_count(), 3)
+
+    # b is c's third capture.
+    comptime b_type = reflect[c_captures.field_types()[2]]
+    assert_true(b_type.is_struct())
+    assert_equal(b_type.field_count(), 1)
+
+    # b's capture struct is itself a struct containing y and a.
+    comptime b_captures = reflect[b_type.field_types()[0]]
+    assert_true(b_captures.is_struct())
+    assert_equal(b_captures.field_count(), 2)
+
+    # a is b's second capture and is a struct.
+    comptime a_type = reflect[b_captures.field_types()[1]]
+    assert_true(a_type.is_struct())
+    assert_equal(a_type.field_count(), 1)
+
+    # a's capture struct is itself a struct containing x.
+    comptime a_captures = reflect[a_type.field_types()[0]]
+    assert_true(a_captures.is_struct())
+    assert_equal(a_captures.field_count(), 1)
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

@@ -10,17 +10,24 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 ##===----------------------------------------------------------------------===##
-model:
-  model_path: nvidia/Kimi-K2.5-NVFP4
-  device_specs: [0, 1, 2, 3, 4, 5, 6, 7]
-  data_parallel_degree: 8
-  trust_remote_code: true
-  kv_cache:
-    device_memory_utilization: 0.8
-    enable_prefix_caching: true
 
-runtime:
-  ep_size: 8
-  max_batch_input_tokens: 1024
-  max_num_steps: 1
-  enable_chunked_prefill: true
+# shellcheck disable=SC2034  # Variables are used when sourced
+
+batch_size=64
+max_length=262144
+
+extra_pipelines_args=(
+  --device-memory-utilization=0.8
+  --ep-size 8
+  --data-parallel-degree 1
+  --max-batch-input-tokens 8192
+  --max-num-steps 1
+  --enable-prefix-caching
+  --kv-cache-format float8_e4m3fn
+  --trust-remote-code
+)
+
+# llm-fuzz knobs. Empty scenarios runs the tool's full default suite.
+model_profile=kimi-k2.5
+scenarios=
+k2vv_mode=full

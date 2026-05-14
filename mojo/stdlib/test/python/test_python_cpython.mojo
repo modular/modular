@@ -25,6 +25,7 @@ from std.python._cpython import (
     Py_TPFLAGS_LIST_SUBCLASS,
 )
 from std.ffi import _CPointer
+from std.memory import alloc, free, Layout
 from std.testing import (
     assert_equal,
     assert_false,
@@ -350,7 +351,8 @@ def _test_capsule_api(cpy: CPython) raises:
     with assert_raises(contains="called with invalid PyCapsule object"):
         _ = cpy.PyCapsule_GetPointer(o, "some_name")
 
-    var capsule_impl = alloc[UInt64](1)
+    var capsule_impl_layout = Layout[UInt64].single()
+    var capsule_impl = alloc(capsule_impl_layout)
 
     def empty_dtor(capsule: PyObjectPtr):
         pass
@@ -364,7 +366,7 @@ def _test_capsule_api(cpy: CPython) raises:
     with assert_raises(contains="called with incorrect name"):
         _ = cpy.PyCapsule_GetPointer(capsule, "some_other_name")
 
-    capsule_impl.free()
+    free(capsule_impl, capsule_impl_layout)
 
 
 def _test_memory_management_api(cpy: CPython) raises:

@@ -79,6 +79,14 @@ class DummyKVCache(PagedKVCacheManager):
         """Returns 1."""
         return 1
 
+    def get_num_disk_pages(self, replica_idx: int) -> int:
+        """Returns 1."""
+        return 1
+
+    def get_num_used_disk_pages(self, replica_idx: int) -> int:
+        """Returns 1."""
+        return 1
+
     def get_metrics(self, replica_idx: int) -> KVCacheMetrics:
         """Returns empty metrics."""
         return KVCacheMetrics()

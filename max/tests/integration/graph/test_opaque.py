@@ -114,7 +114,7 @@ def test_opaque_introspection(bumper_model: Model, reader_model: Model) -> None:
 )
 def test_opaque_type_parameterization(
     session: InferenceSession,
-    custom_ops_mojopkg: Path,
+    custom_ops_mojoc: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     result_type = TensorType(DType.int32, [12], device=DeviceRef.CPU())
@@ -122,7 +122,7 @@ def test_opaque_type_parameterization(
     with Graph(
         "test_opaque_type_parameterization",
         input_types=[],
-        custom_extensions=[custom_ops_mojopkg],
+        custom_extensions=[custom_ops_mojoc],
     ) as graph:
         simd_pair_type = _OpaqueType("SIMDPair", {"S0": 4, "S1": 8})
 

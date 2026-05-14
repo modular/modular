@@ -884,7 +884,7 @@ def _softmax_gpu[
                 ](),
                 grid_dim=num_blocks,
                 block_dim=BLOCK_SIZE,
-                attributes=pdl_launch_attributes(PDLLevel(1)),
+                attributes=pdl_launch_attributes(PDLLevel.ON),
             )
 
         unswitch[dispatch](
@@ -915,7 +915,7 @@ def _softmax_gpu[
             sink_weights.unsafe_value(),
             grid_dim=num_blocks,
             block_dim=BLOCK_SIZE,
-            attributes=pdl_launch_attributes(PDLLevel(1)),
+            attributes=pdl_launch_attributes(PDLLevel.ON),
         )
 
 
@@ -1192,7 +1192,7 @@ def softmax_with_temperature[
         temp_ptr,
         grid_dim=num_blocks,
         block_dim=BLOCK_SIZE,
-        attributes=pdl_launch_attributes(PDLLevel(1)),
+        attributes=pdl_launch_attributes(PDLLevel.ON),
     )
 
 

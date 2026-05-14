@@ -93,6 +93,9 @@ def modular_py_test(
     if len(set(per_test_shard_count.keys()) - set(srcs)) != 0:
         fail("keys specified in per_test_shard_count that are not source files: {}".format(set(per_test_shard_count.keys()) - set(srcs)))
 
+    if "gpu" in tags and "enable-sanitizers" in tags:
+        fail("gpu + sanitizers are able to be run manually, but not in CI. remove `enable-sanitizers`.")
+
     validate_gpu_tags(tags, target_compatible_with + gpu_constraints)
     toolchains = [
         "//bazel/internal:current_gpu_toolchain",
@@ -286,6 +289,12 @@ def modular_py_test(
                 "@rules_python//python/runfiles",
             ],
             ignore_unresolved_imports = ignore_unresolved_imports,
+            target_compatible_with = select({
+                # No point in running these, causes "error replanting symlinks" failures
+                "//:asan": ["@platforms//:incompatible"],
+                "//:ubsan": ["@platforms//:incompatible"],
+                "//conditions:default": [],
+            }),
             imports = imports,
             deps = deps + [
                 requirement("pytest"),

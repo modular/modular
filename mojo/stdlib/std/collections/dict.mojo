@@ -745,7 +745,7 @@ struct Dict[
         return self._table._capacity
 
     @staticmethod
-    def fromkeys(keys: List[Self.K, ...], value: Self.V) -> Self:
+    def fromkeys(keys: List[Self.K], value: Self.V) -> Self:
         """Create a new dictionary with keys from list and values set to value.
 
         Args:
@@ -770,7 +770,7 @@ struct Dict[
 
     @staticmethod
     def fromkeys(
-        keys: List[Self.K, ...], value: Optional[Self.V] = None
+        keys: List[Self.K], value: Optional[Self.V] = None
     ) -> Dict[Self.K, Optional[Self.V], Self.H]:
         """Create a new dictionary with keys from list and values set to value.
 

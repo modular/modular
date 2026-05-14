@@ -36,7 +36,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import ceildiv
-from std.memory import UnsafePointer, alloc
+from std.memory import UnsafePointer
 from std.sys import get_defined_bool, get_defined_int, size_of
 
 from std.benchmark import (
@@ -50,7 +50,7 @@ from std.gpu.host import DeviceBuffer, DeviceContext
 from std.gpu.primitives.grid_controls import PDLLevel, pdl_launch_attributes
 from layout import Coord, Idx, RuntimeInt, TileTensor, row_major
 
-from internal_utils import arg_parse
+from internal_utils import arg_parse, ScalarArray
 from internal_utils._cache_busting import CacheBustingBuffer
 from internal_utils._utils import InitializationType
 from linalg.fp4_utils import (
@@ -324,13 +324,17 @@ def main() raises:
         ctx.enqueue_memset(s_buf, Scalar[scales_dtype](0))
 
         # Per-expert offsets / IDs (small, host-built once).
-        var a_offsets_host = alloc[Scalar[DType.uint32]](num_active_experts + 1)
-        var a_scale_offsets_host = alloc[Scalar[DType.uint32]](
-            num_active_experts
+        var a_offsets_host = ScalarArray[DType.uint32](
+            count=num_active_experts + 1
         )
-        var expert_ids_host = alloc[Scalar[DType.int32]](num_active_experts)
-        var expert_scales_host = alloc[Scalar[DType.float32]](num_experts)
-        var input_scales_host = alloc[Scalar[DType.float32]](num_active_experts)
+        var a_scale_offsets_host = ScalarArray[DType.uint32](
+            count=num_active_experts
+        )
+        var expert_ids_host = ScalarArray[DType.int32](count=num_active_experts)
+        var expert_scales_host = ScalarArray[DType.float32](count=num_experts)
+        var input_scales_host = ScalarArray[DType.float32](
+            count=num_active_experts
+        )
 
         a_offsets_host[0] = 0
         var sf_acc = 0
@@ -363,11 +367,11 @@ def main() raises:
             num_active_experts
         )
 
-        ctx.enqueue_copy(a_offsets_dev, a_offsets_host)
-        ctx.enqueue_copy(a_scale_offsets_dev, a_scale_offsets_host)
-        ctx.enqueue_copy(expert_ids_dev, expert_ids_host)
-        ctx.enqueue_copy(expert_scales_dev, expert_scales_host)
-        ctx.enqueue_copy(input_scales_dev, input_scales_host)
+        ctx.enqueue_copy(a_offsets_dev, a_offsets_host.unsafe_ptr())
+        ctx.enqueue_copy(a_scale_offsets_dev, a_scale_offsets_host.unsafe_ptr())
+        ctx.enqueue_copy(expert_ids_dev, expert_ids_host.unsafe_ptr())
+        ctx.enqueue_copy(expert_scales_dev, expert_scales_host.unsafe_ptr())
+        ctx.enqueue_copy(input_scales_dev, input_scales_host.unsafe_ptr())
 
         # Trace buffer: per-CTA timestamp slots. B200 has 132 SMs and the
         # persistent matmul launches at most num_sms blocks. Last-tile-wins
@@ -677,7 +681,7 @@ def main() raises:
                             input_scales_immut,
                             grid_dim=hw_info.sm_count,
                             block_dim=hw_info.max_thread_block_size,
-                            attributes=pdl_launch_attributes(PDLLevel(1)),
+                            attributes=pdl_launch_attributes(PDLLevel.ON),
                         )
 
         @parameter
@@ -694,11 +698,13 @@ def main() raises:
             ],
         )
 
-        a_offsets_host.free()
-        a_scale_offsets_host.free()
-        expert_ids_host.free()
-        expert_scales_host.free()
-        input_scales_host.free()
+        _ = (
+            a_offsets_host^,
+            a_scale_offsets_host^,
+            expert_ids_host^,
+            expert_scales_host^,
+            input_scales_host^,
+        )
 
         # Dump per-CTA per-tile pipeline trace. Schema (see
         # grouped_1d1d_matmul_kernel.mojo): for each output tile i in
@@ -733,8 +739,8 @@ def main() raises:
         # Issue latency = X_S − X_D. Real-work span = X_E − X_S.
         # Slot 0 (= L0_D) is the kernel-never-ran sentinel.
         if trace and fused:
-            var trace_host = alloc[Scalar[DType.uint64]](trace_buf_size)
-            ctx.enqueue_copy(trace_host, trace_buf_dev)
+            var trace_host = ScalarArray[DType.uint64](count=trace_buf_size)
+            ctx.enqueue_copy(trace_host.unsafe_ptr(), trace_buf_dev)
             ctx.synchronize()
             comptime max_tiles = 8  # mirrors SWIGLU_MAX_TRACED_TILES
             print("TRACE_CSV_BEGIN")
@@ -766,6 +772,5 @@ def main() raises:
                     row += String(t",{Int(trace_host[base + 120 + i])}")
                 print(row)
             print("TRACE_CSV_END")
-            trace_host.free()
 
         m.dump_report()

@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 import std.math
+from std.memory import alloc, free, Layout
 from std.random import randint
 from std.time import sleep
 
@@ -289,8 +290,9 @@ def test_custom() raises:
     comptime N = 1024
     comptime alignment = 64
     comptime dtype = DType.int32
-    var x = alloc[Scalar[dtype]](N, alignment=alignment)
-    var y = alloc[Scalar[dtype]](N, alignment=alignment)
+    var xy_layout = Layout[Scalar[dtype]](count=N, alignment=alignment)
+    var x = alloc(xy_layout)
+    var y = alloc(xy_layout)
     randint[dtype](x, N, 0, 255)
     randint[dtype](y, N, 0, 255)
 
@@ -316,8 +318,8 @@ def test_custom() raises:
     )
 
     qb.dump_report()
-    x.free()
-    y.free()
+    free(x, xy_layout)
+    free(y, xy_layout)
 
 
 def test_all() raises:

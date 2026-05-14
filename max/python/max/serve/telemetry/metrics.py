@@ -810,6 +810,16 @@ class _AsyncMetrics:
             MetricLevel.DETAILED,
         )
 
+    def cache_used_disk_kv_pct(self, ratio: float) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.cache.used_disk_kv_pct",
+                ratio,
+                self.extra_attributes,
+            ),
+            MetricLevel.DETAILED,
+        )
+
     def spec_decode_avg_acceptance_length(self, length: float) -> None:
         self.client.send_measurement(
             MaxMeasurement(
