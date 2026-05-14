@@ -29,25 +29,6 @@ def LIT_ImplicitConversionKind : I32EnumAttr<
 }
 
 //===----------------------------------------------------------------------===//
-// VariadicKind
-//===----------------------------------------------------------------------===//
-
-def LIT_VariadicKind : I32EnumAttr<"VariadicKind",
-    "Whether an argument is a homogenous variadic or pack", [
-  /// Not a variadic argument, e.g. `x: Int`.
-  I32EnumAttrCase<"None", 0, "not_vararg">,
-  /// A homogeneously typed variadic argument, e.g. `*x` or `*x: Int`.
-  I32EnumAttrCase<"PosVarArg", 1, "pos_vararg">,
-  /// A heterogeneously typed variadic argument, e.g. `*x: *Ts`.
-  I32EnumAttrCase<"PackVarArg", 2, "pack_vararg">,
-  /// A variadic keywords argument, e.g. `**x: Int`.
-  I32EnumAttrCase<"KwVarArg", 3, "kw_vararg">
-]> {
-  let cppNamespace = "M::KGEN::LIT";
-  let genSpecializedAttr = 0;
-}
-
-//===----------------------------------------------------------------------===//
 // TypeConvention
 //===----------------------------------------------------------------------===//
 
@@ -58,25 +39,6 @@ def LIT_TypeConvention : I32EnumAttr<"TypeConvention",
   // TODO(#14086): Trivial should be a separate thing.
   I32EnumAttrCase<"RegisterPassableTrivial", 2, "register_passable_trivial">,
   I32EnumAttrCase<"Unspecified", 3, "unspecified">
-]> {
-  let cppNamespace = "M::KGEN::LIT";
-  let genSpecializedAttr = 0;
-}
-
-//===----------------------------------------------------------------------===//
-// PassingKind
-//===----------------------------------------------------------------------===//
-
-/// Defines how an argument/parameter is allowed (by declaratopm) to be passed.
-def LIT_PassingKind : I32EnumAttr<"PassingKind",
-    "How an argument or parameter is allowed to be passed", [
-  I32EnumAttrCase<"PosOrKw", 0, "pos_or_kw">,
-  I32EnumAttrCase<"PosOnly", 1, "pos">,
-  I32EnumAttrCase<"KwOnly", 2, "kw">,
-  // Things like byref results/errors and _Self in Traits.
-  I32EnumAttrCase<"Implicit", 3, "implicit">,
-  // User-declared inferred-only params like: def x[a: Bool, //, b: Int](...
-  I32EnumAttrCase<"Inferred", 4, "inferred">,
 ]> {
   let cppNamespace = "M::KGEN::LIT";
   let genSpecializedAttr = 0;

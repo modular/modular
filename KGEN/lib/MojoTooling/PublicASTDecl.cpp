@@ -871,8 +871,8 @@ std::string PublicParameterDecl::getMarkdownDocString() const {
 
 PublicParameterDecl::PublicParameterDecl(
     StringRef name, StringRef type, const MojoASTTypeRef &astType,
-    KGEN::LIT::SharedState &sharedState, KGEN::LIT::PassingKind passingKind,
-    KGEN::LIT::VariadicKind variadicKind, TypedAttr defaultValue,
+    KGEN::LIT::SharedState &sharedState, KGEN::PassingKind passingKind,
+    KGEN::VariadicKind variadicKind, TypedAttr defaultValue,
     const MojoASTDeclRef *currentDeclContext)
     : PublicDecl(PublicDeclKind::DK_PublicParameterDecl, name), type(type),
       typeMetadata(::KGEN::TypeExtractionUtils::extractLibraryInfo(
@@ -956,7 +956,7 @@ llvm::json::Object PublicParameterDecl::toJSON(MojoParserContext &ctx) const {
 PublicArgumentDecl::PublicArgumentDecl(
     StringRef name, std::string prefix, std::string type,
     const MojoASTTypeRef &astType, KGEN::LIT::SharedState &sharedState,
-    KGEN::LIT::PassingKind passingKind, KGEN::LIT::VariadicKind variadicKind,
+    KGEN::PassingKind passingKind, KGEN::VariadicKind variadicKind,
     TypedAttr defaultValue, Convention convention, bool isSelf,
     const MojoASTDeclRef *currentDeclContext)
     : PublicDecl(PublicDeclKind::DK_PublicArgumentDecl, name),
@@ -1334,12 +1334,12 @@ std::string PublicFunctionDecl::getSignature(
     args = argTmp;
 
     // Avoid weird punctuation in the signature if possible.
-    auto passingKind = LIT::PassingKind::PosOrKw;
+    auto passingKind = PassingKind::PosOrKw;
     if (args.size() != 1) {
       // Rotate arg list so output is the first argument
       std::rotate(argTmp.rbegin(), argTmp.rbegin() + 1, argTmp.rend());
-      if (argTmp[1].getPassingKind() == LIT::PassingKind::PosOnly)
-        passingKind = LIT::PassingKind::PosOnly;
+      if (argTmp[1].getPassingKind() == PassingKind::PosOnly)
+        passingKind = PassingKind::PosOnly;
     }
     argTmp[0].setPassingKind(passingKind);
   }
@@ -1524,7 +1524,7 @@ void PublicFunctionDecl::initFromSignature(MojoASTDeclRef declRef,
       // previous or default PassingKind.
       declConvention = PublicArgumentDecl::Convention::kOut;
       if (args.empty())
-        passingKind = LIT::PassingKind::PosOrKw;
+        passingKind = PassingKind::PosOrKw;
       else
         passingKind = args.back().getPassingKind();
       break;

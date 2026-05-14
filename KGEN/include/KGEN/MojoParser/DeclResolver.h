@@ -23,6 +23,7 @@ namespace M::KGEN {
 class ParamDeclAttr;
 class ConformanceOp;
 class StructGeneratorOp;
+enum class PassingKind : uint32_t;
 } // namespace M::KGEN
 
 namespace M::KGEN::LIT {
@@ -41,7 +42,6 @@ class TraitDeclOp;
 class ExtensionDeclOp;
 struct ParsedArgument;
 class BaseDLValue;
-enum class PassingKind : uint32_t;
 
 //===----------------------------------------------------------------------===//
 // DeclResolver

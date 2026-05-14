@@ -38,10 +38,11 @@ class ParamDeclArrayAttr;
 class ParameterEvaluator;
 class ParameterExprArrayAttr;
 enum class ArgConvention : uint32_t;
+enum class PassingKind : uint32_t;
+enum class VariadicKind : uint32_t;
 
 namespace LIT {
 class FnType;
-enum class PassingKind : uint32_t;
 
 /// Returns whether the given type is a LIT meta type.
 bool isMetaType(Type type);
