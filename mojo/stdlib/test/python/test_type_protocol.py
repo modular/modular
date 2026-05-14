@@ -13,10 +13,13 @@
 
 """Integration test for TypeProtocolBuilder (tp_richcompare — all six operators)."""
 
+from collections.abc import Callable
+from typing import Any
+
 import type_protocol_mojo_module as mojo_module  # type: ignore[import-not-found]
 
 
-def _run_richcompare_assertions(new_fn) -> None:
+def _run_richcompare_assertions(new_fn: Callable[..., Any]) -> None:
     lo = new_fn(1.0)
     hi = new_fn(5.0)
     eq = new_fn(1.0)
@@ -33,11 +36,11 @@ def _run_richcompare_assertions(new_fn) -> None:
 
     # __eq__ (Py_EQ)
     assert lo == eq
-    assert not lo == hi
+    assert not lo == hi  # noqa: SIM201
 
     # __ne__ (Py_NE)
     assert lo != hi
-    assert not lo != eq
+    assert not lo != eq  # noqa: SIM202
 
     # __gt__ (Py_GT)
     assert hi > lo

@@ -16,7 +16,7 @@
 import sequence_mojo_module as mojo_module  # type: ignore[import-not-found]
 
 
-def _run_sequence_assertions(cls) -> None:
+def _run_sequence_assertions(cls: type) -> None:
     obj = cls.from_list([10, 20, 30])
 
     # __len__ (sq_length)

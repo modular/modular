@@ -14,11 +14,15 @@
 """Integration test for NumberProtocolBuilder (unary, bool, conversion, binary, ternary slots)."""
 
 import operator
+from collections.abc import Callable
+from typing import Any
 
 import number_mojo_module as mojo_module  # type: ignore[import-not-found]
 
 
-def _run_number_assertions(new_fn, val_fn) -> None:
+def _run_number_assertions(
+    new_fn: Callable[..., Any], val_fn: Callable[..., Any]
+) -> None:
     n = new_fn
 
     # __neg__ (nb_negative)
@@ -94,7 +98,9 @@ def _run_number_assertions(new_fn, val_fn) -> None:
     assert val_fn(n(3) ** n(3)) == 27
 
 
-def _run_inplace_assertions(new_fn, val_fn) -> None:
+def _run_inplace_assertions(
+    new_fn: Callable[..., Any], val_fn: Callable[..., Any]
+) -> None:
     n = new_fn(10)
     m = new_fn(3)
 
