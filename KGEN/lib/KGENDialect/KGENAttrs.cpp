@@ -3834,7 +3834,8 @@ static TypedAttr getArithParamOperator(MLIRContext *ctx, POC opcode,
   // cast_to_builtin sink will recurse.
   TypedAttr ret = llvm::cast_if_present<TypedAttr>(result);
   if (ret && !sugarIsa<SIMDType>(origResultType)) {
-    if (auto expr = sugarDynCast<ParamOperatorAttr>(ret)) {
+    if (auto expr = sugarDynCast<ParamOperatorAttr>(ret);
+        expr && llvm::is_contained(migratedPOCs, expr.getOpcode())) {
       // instead of a concrete result, we might fold the expression to a canon
       // form. We need to convert the expression back to non-SIMD form as well.
       operands.assign(expr.getOperands().begin(), expr.getOperands().end());
