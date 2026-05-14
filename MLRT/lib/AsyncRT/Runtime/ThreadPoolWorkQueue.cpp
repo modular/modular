@@ -86,16 +86,15 @@ enum WorkType : uint8_t { kLocal = 0, kAffinity = 1, kGlobal = 2 };
 /// For example for a 128 cpu machine, bit 0 represents {worker0, worker1}.
 /// If bit0 is set, it means either worker0 | worker1 is suspended.
 /// This results in ambiguity when we query the bit-vec for addTask()/await()
-/// to wakeup threads because the exact sleeping workerID is unknown to post
-/// the appropriate semaphore. We handle this in the following way,
-/// 1) when workerId is unknown, we will wakeup all the threads
-/// represented by the bit-vec bit. For example, 0 -> {worker0->post(),
-/// worker1->post()} This can be expensive, but hopefully, we do not have to
-/// sleep/wake up threads often during model execution.
-/// 2) when workerID is known, we always post the semaphore since bit-vec
-/// information may have interference from other threads. This can lead to
-/// spurious posts() but nonetheless ensures, the threads wake up to execute
-/// the task.
+/// to wakeup threads because the exact sleeping localWorkerID is unknown to
+/// post the appropriate semaphore. We handle this in the following way, 1) when
+/// workerId is unknown, we will wakeup all the threads represented by the
+/// bit-vec bit. For example, 0 -> {worker0->post(), worker1->post()} This can
+/// be expensive, but hopefully, we do not have to sleep/wake up threads often
+/// during model execution. 2) when localWorkerID is known, we always post
+/// the semaphore since bit-vec information may have interference from other
+/// threads. This can lead to spurious posts() but nonetheless ensures, the
+/// threads wake up to execute the task.
 
 /// Bit index i is true if any thread in the workedGroupID i is suspended.
 using SuspendedThreadsBitvec = uint64_t;
@@ -110,8 +109,9 @@ struct SharedThreadState {
                 "suspendedThreads should always be lock free");
 
   SharedThreadState(CompactCPUDevicePtr cpuDevicePtr, bool mainWillDonate,
-                    size_t numWorkers)
-      : cpuDevicePtr(cpuDevicePtr), mainWillDonate(mainWillDonate) {
+                    size_t numWorkers, int numaNode = kAnyNumaNode)
+      : cpuDevicePtr(cpuDevicePtr), mainWillDonate(mainWillDonate),
+        numaNode(numaNode) {
     // Keeping numWorkers in a workerGroup a power of 2 to simplify arithmetic.
     multicastFactor =
         numWorkers > bitVectorWidth
@@ -131,6 +131,10 @@ struct SharedThreadState {
   /// Otherwise there is no 'main' thread, just 'worker' and 'foreign' threads.
   bool mainWillDonate;
 
+  /// NUMA node this queue is partitioned to, or kAnyNumaNode if unpartitioned.
+  /// Used by runOnThread() to decide whether to initialise globalWorkerIDInTLS.
+  int numaNode;
+
   /// Track when the overall work queue is entering or exited the shutdown
   /// quiescence period.
   std::atomic<WorkQueueState> state = kReady;
@@ -140,10 +144,10 @@ struct SharedThreadState {
   std::atomic<bool> doneFlag = false;
   /// computed so that number of workers per groups is 2^multicastFactor.
   size_t multicastFactor;
-  /// This keeps a bitset of suspended threads, indexed by workerID.  This will
-  /// thrash around a lot when the workqueue is close to empty and threads are
-  /// starting and stopping themselves, but should stay zero and read-only when
-  /// there is a lot of work to do.
+  /// This keeps a bitset of suspended threads, indexed by localWorkerID.
+  /// This will thrash around a lot when the workqueue is close to empty and
+  /// threads are starting and stopping themselves, but should stay zero and
+  /// read-only when there is a lot of work to do.
   ///
   /// This is aligned because the state above is immutable or (in the case of
   /// doneFlag) almost never changing. We don't want doneFlag to be on the same
@@ -153,21 +157,21 @@ struct SharedThreadState {
   /// When a worker is about to go to sleep, it calls this method so andThenSync
   /// can know to wake it up when more work materializes. We set the bit of the
   /// corresponding workerGroupID
-  void markSuspended(size_t workerID) {
+  void markSuspended(size_t localWorkerID) {
     // number of workers per groups is 2^multicastFactor.
-    auto workerGroupID = workerID >> multicastFactor;
+    auto workerGroupID = localWorkerID >> multicastFactor;
     suspendedThreads.fetch_or(getSuspendedThreadIdMask(workerGroupID),
                               std::memory_order_seq_cst);
   }
 
-  /// If the specified workerID is suspended, take its bit out of the
+  /// If the specified localWorkerID is suspended, take its bit out of the
   /// suspendedThreads bitset and return true.  Otherwise return false.
   /// NOTE: takeSuspended may unset even if some other threads in the
   /// same workerGroup are suspended. This is fine since, we will always call
-  /// the workerID->sema.post().
-  bool takeSuspendedThread(size_t workerID) {
+  /// the localWorkerID->sema.post().
+  bool takeSuspendedThread(size_t localWorkerID) {
     // number of workers per groups is 2^multicastFactor.
-    auto workerGroupID = workerID >> multicastFactor;
+    auto workerGroupID = localWorkerID >> multicastFactor;
     SuspendedThreadsBitvec workerBit = getSuspendedThreadIdMask(workerGroupID);
     auto oldValue =
         suspendedThreads.fetch_and(~workerBit, std::memory_order_seq_cst);
@@ -175,9 +179,9 @@ struct SharedThreadState {
   }
 
   /// If there are any workerGroup's with suspended threads, return the id for
-  /// one of them. Otherwise return -1. Since we do not know the workerID which
-  /// is suspended, we assume all worker's are suspended and hence will post
-  /// all the semaphores.
+  /// one of them. Otherwise return -1. Since we do not know the
+  /// localWorkerID which is suspended, we assume all worker's are suspended
+  /// and hence will post all the semaphores.
   int takeAnySuspendedThread() {
     SuspendedThreadsBitvec loadedSuspendedThreads =
         suspendedThreads.load(std::memory_order_seq_cst);
@@ -195,7 +199,8 @@ struct SharedThreadState {
       if (suspendedThreads.compare_exchange_weak(loadedSuspendedThreads,
                                                  newSuspendedThreads)) {
         // When we succeed, that means we were successful in clearing the
-        // lowermost bit.  Map that bit back into a workerID and return it.
+        // lowermost bit.  Map that bit back into a localWorkerID and return
+        // it.
         return llvm::countr_zero(loadedSuspendedThreads ^ newSuspendedThreads);
       }
 
@@ -216,7 +221,11 @@ namespace {
 
 /// The index of the current thread within the WorkQueueThread workers
 /// vector. Will be left zero for 'main' and 'foreign' threads.
-static thread_local size_t workerIDInTLS = 0;
+static thread_local size_t localWorkerIDInTLS = 0;
+
+/// The global worker ID assigned to this thread by a DelegateWorkQueue, or
+/// SIZE_MAX if this thread is not a worker of a DelegateWorkQueue.
+static thread_local size_t globalWorkerIDInTLS = SIZE_MAX;
 
 /// Wrapper around an std::thread created for each worker thread, or
 /// a placeholder for the 'main' thread.
@@ -257,7 +266,7 @@ struct WorkQueueThread {
   std::mutex localSpillQueueMutex; // Protects localSpillQueue
   SmallVector<WorkItem> localSpillQueue;
   /// Unique index for this thread.
-  size_t workerID;
+  size_t localWorkerID;
 
   /// The CPU we'd prefer this worker to have affinity for, or ~0 if no
   /// affinity is intended for this worker.
@@ -284,6 +293,9 @@ struct WorkQueueThread {
   std::optional<std::thread> thread;
   // The thread identifier prefix used to name the threads
   std::string_view poolName;
+  /// Global worker ID for this thread within a DelegateWorkQueue, or SIZE_MAX
+  /// if not owned by a DelegateWorkQueue.
+  const size_t globalWorkerId;
 #if ASYNCRT_WORKER_STATS
   uint64_t affinityAccessCount = 0;
   uint64_t globalAccessCount = 0;
@@ -310,21 +322,23 @@ struct WorkQueueThread {
   std::chrono::duration<double, std::micro> sleepTime =
       std::chrono::microseconds(0);
 #endif
-  /// Create a WorkQueueThread representing the worker with workerID. If
-  /// necessary, the underlying worker thread will be created and it will
+  /// Create a WorkQueueThread representing the worker with localWorkerID.
+  /// If necessary, the underlying worker thread will be created and it will
   /// enter its runItems loop.
   WorkQueueThread(SharedThreadState &sharedState,
                   MoodyCamel::ConcurrentQueue<WorkItem> &taskList,
                   std::mutex &overflowMutex,
-                  SmallVectorImpl<WorkItem> &overflowTaskList, size_t workerID,
-                  size_t cpuID, std::chrono::microseconds busyWaitTime,
-                  std::string_view poolName)
+                  SmallVectorImpl<WorkItem> &overflowTaskList,
+                  size_t localWorkerID, size_t cpuID,
+                  std::chrono::microseconds busyWaitTime,
+                  std::string_view poolName, size_t globalWorkerId = SIZE_MAX)
       : sharedState(sharedState), affinityTaskList(kTaskListSlotsPerThread),
         taskList(taskList), overflowMutex(overflowMutex),
-        overflowTaskList(overflowTaskList), workerID(workerID), cpuID(cpuID),
-        busyWaitTime(busyWaitTime), poolName(poolName) {
-    if (sharedState.mainWillDonate && workerID == 0) {
-      // We can leave workerIDInTLS as zero.
+        overflowTaskList(overflowTaskList), localWorkerID(localWorkerID),
+        cpuID(cpuID), busyWaitTime(busyWaitTime), poolName(poolName),
+        globalWorkerId(globalWorkerId) {
+    if (sharedState.mainWillDonate && localWorkerID == 0) {
+      // We can leave localWorkerIDInTLS as zero.
       // Remember the caller is to be our 'main' thread, and will call
       // await to process work items.
       threadID = llvm::get_threadid();
@@ -336,7 +350,7 @@ struct WorkQueueThread {
   }
 
   ~WorkQueueThread() {
-    if (workerID == 0) {
+    if (localWorkerID == 0) {
       ASYNCRT_PRINT_WORKER_STATS(
           llvm::dbgs() << "WorkerID,schedulerTasks(us),affinityQueueAccess(us),"
                           "affinityQueueWork(us),affinityAccessCount,"
@@ -345,7 +359,7 @@ struct WorkQueueThread {
     }
     ASYNCRT_PRINT_WORKER_STATS(
         llvm::dbgs()
-        << "Thread" << workerID << "," << (localWorkTime).count() << ","
+        << "Thread" << localWorkerID << "," << (localWorkTime).count() << ","
         << (affinityListAccessTime - affinityWorkTime).count() +
                (spinAffinityListAccessTime - spinAffinityWorkTime).count()
         << "," << (affinityWorkTime).count() + (spinAffinityWorkTime).count()
@@ -454,12 +468,17 @@ private:
 } // namespace
 
 void WorkQueueThread::runOnThread() {
-  assert((!sharedState.mainWillDonate || workerID != 0) &&
+  assert((!sharedState.mainWillDonate || localWorkerID != 0) &&
          "the WorkQueueThread for the main thread should not be run");
 
-  // Set the current workerID in thread local storage so we can find it later
-  // when re-entering.
-  workerIDInTLS = workerID;
+  // Set the current localWorkerID in thread local storage so we can find it
+  // later when re-entering.
+  localWorkerIDInTLS = localWorkerID;
+  // Set global worker ID in TLS for NUMA-partitioned queues owned by a
+  // DelegateThreadPoolWorkQueue. Non-NUMA queues leave globalWorkerIDInTLS
+  // at its sentinel value (SIZE_MAX).
+  if (sharedState.numaNode != kAnyNumaNode)
+    globalWorkerIDInTLS = globalWorkerId;
 
   // Set the current cpuDevice in thread local storage.
   CompactCPUDevicePtr::setCurrentCPUDevice(sharedState.cpuDevicePtr);
@@ -471,7 +490,7 @@ void WorkQueueThread::runOnThread() {
 
   // On systems that support it, give the thread a symbolic name that will show
   // up in profilers and debuggers.
-  llvm::set_thread_name(poolName + llvm::Twine(workerID));
+  llvm::set_thread_name(poolName + llvm::Twine(localWorkerID));
 
   // On systems that support it, give the thread affinity for one CPU.
   MLRT::setThreadAffinity(cpuID);
@@ -495,7 +514,7 @@ void WorkQueueThread::runItemsOnOwningThread(
     EarlyStopPredicateFn earlyStopPredicate,
     LateStopPredicateFn lateStopPredicate, bool waitForTasks,
     StringLiteral spinningLabel, StringLiteral sleepingLabel) {
-  if (sharedState.mainWillDonate && workerID == 0) {
+  if (sharedState.mainWillDonate && localWorkerID == 0) {
     // Temporarily set the main thread's affinity while it is processing work.
     MLRT::runWithThreadAffinity(cpuID, [&]() {
       runItemsImpl<EarlyStopPredicateFn, LateStopPredicateFn>(
@@ -591,7 +610,7 @@ void WorkQueueThread::runItemsImpl(EarlyStopPredicateFn earlyStopPredicate,
 
     {
       auto spinning =
-          InternalProfilerEntry::create(spinningLabel, (uint64_t)workerID);
+          InternalProfilerEntry::create(spinningLabel, (uint64_t)localWorkerID);
 
       // If we've run out of work to do, we need to quiesce and ultimately block
       // in the kernel on the semaphore.  However, we don't want to immediately
@@ -690,7 +709,7 @@ void WorkQueueThread::runItemsImpl(EarlyStopPredicateFn earlyStopPredicate,
     // and yield the thread to the OS so we don't burn power and starve other
     // tasks on the system.
 
-    sharedState.markSuspended(workerID);
+    sharedState.markSuspended(localWorkerID);
     // Lets reason about ordering of markSuspended here and takeSuspended in
     // addTask.
     // T0(scheduler)                            T1(worker)
@@ -759,8 +778,8 @@ void WorkQueueThread::runItemsImpl(EarlyStopPredicateFn earlyStopPredicate,
     {
       start = std::chrono::high_resolution_clock::now();
       // Ok, finally block.
-      TimeTraceScope scope(
-          InternalProfilerEntry::create(sleepingLabel, (uint64_t)workerID));
+      TimeTraceScope scope(InternalProfilerEntry::create(
+          sleepingLabel, (uint64_t)localWorkerID));
       sema.wait();
 #if ASYNCRT_WORKER_STATS
       auto end = std::chrono::high_resolution_clock::now();
@@ -796,7 +815,8 @@ public:
   ThreadPoolWorkQueue(CompactCPUDevicePtr cpuDevicePtr, ArrayRef<size_t> cpuIDs,
                       size_t taskListCapacity, bool mainWillDonate,
                       std::chrono::microseconds threadBusyWaitTime,
-                      std::string_view poolName, int numaNode = kAnyNumaNode);
+                      std::string_view poolName, int numaNode = kAnyNumaNode,
+                      size_t globalWorkerIdOffset = SIZE_MAX);
 
   ~ThreadPoolWorkQueue() override;
 
@@ -830,7 +850,7 @@ public:
     if (!current)
       return false;
 
-    return current->workerID == static_cast<size_t>(taskId);
+    return current->localWorkerID == static_cast<size_t>(taskId);
   }
 
 private:
@@ -839,13 +859,13 @@ private:
   /// caller is a 'foreign' thread (including workers from other work queues)
   /// then return null.
   WorkQueueThread *getOwningWorkQueueThread() const {
-    size_t workerID = workerIDInTLS;
+    size_t localWorkerID = localWorkerIDInTLS;
 
-    if (workerID >= numWorkers)
+    if (localWorkerID >= numWorkers)
       // Presumably a 'worker' thread from some other work queue.
       return nullptr;
 
-    WorkQueueThread *worker = workers + workerID;
+    WorkQueueThread *worker = workers + localWorkerID;
 
     if (worker->threadID != llvm::get_threadid())
       // A 'foreign' thread.
@@ -855,10 +875,10 @@ private:
     return worker;
   }
 
-  /// Returns the WorkQueueThread for workerID.
-  WorkQueueThread *getWorkQueueThread(size_t workerID) const {
-    assert(workerID < numWorkers && "invalid worker id");
-    return workers + workerID;
+  /// Returns the WorkQueueThread for localWorkerID.
+  WorkQueueThread *getWorkQueueThread(size_t localWorkerID) const {
+    assert(localWorkerID < numWorkers && "invalid worker id");
+    return workers + localWorkerID;
   }
 
   /// This is the set of WorkQueueThread objects in the WorkQueue. If in
@@ -901,9 +921,9 @@ ThreadPoolWorkQueue::ThreadPoolWorkQueue(
     CompactCPUDevicePtr cpuDevicePtr, ArrayRef<size_t> cpuIDs,
     size_t taskListCapacity, bool mainWillDonate,
     std::chrono::microseconds threadBusyWaitTime, std::string_view poolName,
-    int numaNode)
+    int numaNode, size_t globalWorkerIdOffset)
     : numWorkers(cpuIDs.size()), numaNode(numaNode), partitionCpuIds(cpuIDs),
-      sharedState(cpuDevicePtr, mainWillDonate, numWorkers),
+      sharedState(cpuDevicePtr, mainWillDonate, numWorkers, numaNode),
       taskList(taskListCapacity), poolName(poolName) {
   assert(numWorkers <= kMaxWorkers && "too many workers for bitvec width");
 
@@ -918,10 +938,17 @@ ThreadPoolWorkQueue::ThreadPoolWorkQueue(
   workers = static_cast<WorkQueueThread *>(M::alignedAlloc(
       alignof(WorkQueueThread), sizeof(WorkQueueThread) * numWorkers));
   assert(workers && "Allocation of workers failed");
-  for (size_t workerID = 0; workerID < numWorkers; ++workerID)
-    new (workers + workerID) WorkQueueThread(
-        sharedState, taskList, overflowMutex, overflowTaskList, workerID,
-        cpuIDs[workerID], threadBusyWaitTime, this->poolName);
+  assert((numaNode == kAnyNumaNode) == (globalWorkerIdOffset == SIZE_MAX) &&
+         "globalWorkerIdOffset must be provided iff queue is a NUMA partition");
+  for (size_t localWorkerID = 0; localWorkerID < numWorkers; ++localWorkerID) {
+    size_t globalWorkerId = numaNode != kAnyNumaNode
+                                ? globalWorkerIdOffset + localWorkerID
+                                : SIZE_MAX;
+    new (workers + localWorkerID)
+        WorkQueueThread(sharedState, taskList, overflowMutex, overflowTaskList,
+                        localWorkerID, cpuIDs[localWorkerID],
+                        threadBusyWaitTime, this->poolName, globalWorkerId);
+  }
 
   // Mojo code that is run via Max can be run either asynchronously via threads
   // of the work queue or synchronously in the main thread, therefore the
@@ -959,7 +986,7 @@ void ThreadPoolWorkQueue::shutdown() {
   WorkQueueThread *callingWorker = getOwningWorkQueueThread();
 
   if (sharedState.mainWillDonate) {
-    assert(callingWorker && callingWorker->workerID == 0 &&
+    assert(callingWorker && callingWorker->localWorkerID == 0 &&
            "must shutdown from the 'main' thread in mainWillDonate mode");
   } else {
     assert(
@@ -1222,7 +1249,8 @@ std::unique_ptr<WorkQueue> M::MLRT::createThreadPoolWorkQueue(
 
 std::unique_ptr<WorkQueue> M::MLRT::createPartitionedThreadPoolWorkQueue(
     CompactCPUDevicePtr cpuDevicePtr, int numaNode,
-    std::chrono::microseconds threadBusyWaitTime, std::string_view poolName) {
+    std::chrono::microseconds threadBusyWaitTime, std::string_view poolName,
+    size_t globalWorkerIdOffset) {
   assert(numaNode != kAnyNumaNode &&
          "partitioned WorkQueue requires a specific NUMA node");
 
@@ -1246,5 +1274,7 @@ std::unique_ptr<WorkQueue> M::MLRT::createPartitionedThreadPoolWorkQueue(
 
   return std::make_unique<ThreadPoolWorkQueue>(
       cpuDevicePtr, cpuIDs, taskListCapacity, /*mainWillDonate=*/false,
-      threadBusyWaitTime, poolName, numaNode);
+      threadBusyWaitTime, poolName, numaNode, globalWorkerIdOffset);
 }
+
+size_t M::MLRT::getCurrentGlobalWorkerID() { return globalWorkerIDInTLS; }

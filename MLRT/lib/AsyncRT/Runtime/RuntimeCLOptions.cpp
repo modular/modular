@@ -21,6 +21,7 @@ bool CPUDeviceOptions::operator==(const CPUDeviceOptions &other) const {
          profilingAllocator == other.profilingAllocator &&
          useAfterFreeAllocator == other.useAfterFreeAllocator &&
          workQueueType == other.workQueueType &&
+         numaPartitioned == other.numaPartitioned &&
          allocatorType == other.allocatorType &&
          profilerDebuginfo == other.profilerDebuginfo;
 }

@@ -11,6 +11,7 @@
 #include "llvm/Support/ErrorHandling.h"
 
 #include <mutex>
+#include <string>
 
 namespace M::MLRT {
 
@@ -40,11 +41,33 @@ CPUDeviceRef getOrCreateCPUDevice(CPUDeviceSource source,
     workQueue = createSingleThreadWorkQueue(cpuDevicePtr);
     break;
   case CPUDeviceOptions::WorkQueueType::kThreadPool:
-    workQueue = createThreadPoolWorkQueue(
-        cpuDevicePtr, options.numThreads, options.maxThreads,
-        options.mainWillDonate, options.withAffinity,
-        std::chrono::microseconds(options.threadBusyWaitTime),
-        options.poolName);
+    if (options.numaPartitioned) {
+      // If NUMA partitioning is enabled create a partitioned work queue per
+      // NUMA node and create a delegate work queue owning them.
+      const ErrorOr<NUMATopology> &topologyOr = NUMATopology::get();
+      if (topologyOr.isError())
+        llvm::report_fatal_error(topologyOr.getError());
+      const std::vector<int> &numaNodes = topologyOr->getNumaNodes();
+      std::vector<std::unique_ptr<WorkQueue>> partitions;
+      partitions.reserve(numaNodes.size());
+      size_t globalWorkerIdOffset = 0;
+      auto busyWait = std::chrono::microseconds(options.threadBusyWaitTime);
+      for (size_t i = 0; i < numaNodes.size(); ++i) {
+        std::string partitionName =
+            options.poolName + " (NUMA " + std::to_string(i) + ")";
+        partitions.push_back(createPartitionedThreadPoolWorkQueue(
+            cpuDevicePtr, numaNodes[i], busyWait, partitionName,
+            globalWorkerIdOffset));
+        globalWorkerIdOffset += partitions.back()->getParallelismLevel();
+      }
+      workQueue = createDelegateThreadPoolWorkQueue(std::move(partitions));
+    } else {
+      workQueue = createThreadPoolWorkQueue(
+          cpuDevicePtr, options.numThreads, options.maxThreads,
+          options.mainWillDonate, options.withAffinity,
+          std::chrono::microseconds(options.threadBusyWaitTime),
+          options.poolName);
+    }
     break;
   }
   CPUDeviceRef newCPUDevice = CPUDeviceRef::take(new CPUDevice(

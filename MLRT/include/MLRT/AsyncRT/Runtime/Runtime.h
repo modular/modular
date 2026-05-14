@@ -133,6 +133,9 @@ struct CPUDeviceOptions {
   bool profilingAllocator = false;
   bool useAfterFreeAllocator = false;
   WorkQueueType workQueueType{CPUDeviceOptions::WorkQueueType::kThreadPool};
+  /// When true and workQueueType is kThreadPool, creates a partitioned
+  /// WorkQueue per NUMA node and wraps them in a DelegateThreadPoolWorkQueue.
+  bool numaPartitioned = false;
 
   AllocatorType allocatorType{
 #ifdef MODULAR_DEBUG
