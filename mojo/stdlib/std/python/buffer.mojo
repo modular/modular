@@ -119,7 +119,7 @@ struct _PyBuffer:
     var shape: UnsafePointer[Int, MutAnyOrigin]
     var strides: UnsafePointer[Int, MutAnyOrigin]
     var suboffsets: UnsafePointer[Int, MutAnyOrigin]
-    var internal: OpaquePointer[MutAnyOrigin]
+    var internal: Optional[OpaquePointer[MutAnyOrigin]]
 
 
 # ===----------------------------------------------------------------------=== #
