@@ -2130,10 +2130,10 @@ LogicalResult ParamOperatorAttr::verify(
       return emitError() << "conditional expressions must have three operands";
     if (!operands[0].getType().isInteger(1))
       return emitError() << "conditional expression operand 0 must be i1";
-    if (operands[1].getType() != operands[2].getType())
+    if (!isEqualCanon(operands[1].getType(), operands[2].getType()))
       return emitError() << "conditional expression operands 1 and 2 must have "
                             "the same type";
-    if (operands[1].getType() != type)
+    if (!isEqualCanon(operands[1].getType(), type))
       return emitError() << "result type should match operands 1 and 2 types";
     break;
   case POC::GetEnv:
@@ -3991,8 +3991,9 @@ ErrorOr<Type> inferParamOperatorResultType(POC opcode,
                            POC::GetAlignOf, POC::GetEnv, POC::VariadicPtrMap,
                            POC::VariadicPtrRemoveMap, POC::StringAddress},
                           opcode) &&
-      !llvm::all_of(operandsIn.drop_front(),
-                    [&](auto op) { return op.getType() == resultType; })) {
+      !llvm::all_of(operandsIn.drop_front(), [&](auto op) {
+        return isEqualCanon(op.getType(), resultType);
+      })) {
     return Error(llvm::formatv(
         "POC opcode {}: Operands must have same type, got [{}]", opcode,
         llvm::join(llvm::map_range(operandsIn,
