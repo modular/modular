@@ -31,6 +31,7 @@
 #include "llvm/Support/Process.h"
 
 #include <atomic>
+#include <map>
 #include <memory>
 #include <string>
 
@@ -283,7 +284,17 @@ struct CPUDeviceOptions {
   }
 };
 
-/// Indicates how the Runtime was created, for diagnostics and tracing.
+/// Indicates the type of CPUDevice with regards to partitioning.
+enum class CPUDeviceType {
+  /// Top-level device with no NUMA partitioning.
+  kGlobal,
+  /// Top-level device with per-NUMA-node partitioning.
+  kGlobalPartitioned,
+  /// Per-NUMA-node partition owned by a kGlobalPartitioned CPUDevice.
+  kNUMAPartition,
+};
+
+/// Indicates how a CPUDevice was created, for diagnostics and tracing.
 enum class CPUDeviceSource {
   /// Created by M::Context.
   MaxContext,
@@ -308,20 +319,25 @@ public:
   /// created allocator and workQueue. The work queue must have been constructed
   /// with the same cpuDevicePtr.
   ///
-  /// \p source indicates how the cpuDevice was created (for diagnostics).
+  /// \p source indicates how a CPUDevice was created (for diagnostics).
   /// If profileFilename is non-empty then time profiling will be activated
   /// and the profile JSON and text will be written to files with that prefix.
   CPUDevice(CompactCPUDevicePtr cpuDevicePtr,
             std::unique_ptr<Allocator> allocator,
             std::unique_ptr<WorkQueue> workQueue, CPUDeviceSource source,
+            CPUDeviceType type, int numaNode = kAnyNumaNode,
             StringRef profileFilename = {},
             uint64_t runtimeProfilingTypeMask = Trace::kFullyEnabled,
             CPUDeviceOptions::ProfilerDebuginfo profilerDebuginfo =
-                CPUDeviceOptions::ProfilerDebuginfo::kNoProfiler);
+                CPUDeviceOptions::ProfilerDebuginfo::kNoProfiler,
+            std::map<int, CPUDevice *> &&numaDevices = {});
   ~CPUDevice();
 
-  /// How this cpuDevice was created (for diagnostics).
+  /// How this device was created (for diagnostics).
   CPUDeviceSource getSource() const { return source; }
+
+  /// Returns the type of device with regards to partitioning.
+  CPUDeviceType getType() const { return type; }
 
   /// Return a CompactCPUDevicePtr that identifies this Runtime instance.
   CompactCPUDevicePtr getCompactPtr() const {
@@ -379,6 +395,19 @@ public:
   /// interface with the higher level algorithms in Algorithms.h.
   WorkQueue *getWorkQueue() { return workQueue.get(); }
 
+  /// Returns the NUMA node this device is targeting if the type is
+  /// kNUMAPartition, otherwise returns kAnyNumaNode.
+  int getNumaNode() const { return numaNode; }
+
+  /// Returns the number of NUMA node partitioned sub-devices owned by this
+  /// device if the type is kGlobalPartitioned, otherwise returns 0.
+  size_t numNumaDevices() const { return numaDevices.size(); }
+
+  /// Returns a non-owning pointer to the NUMA node partitioned device for
+  /// \p numaNode owned by this device if the type is kGlobalPartitioned or
+  /// an error if no such device exists or the type is not kGlobalPartitioned.
+  ErrorOr<CPUDevice *> getNumaDevice(int numaNode) const;
+
 private:
   CPUDevice(const CPUDevice &) = delete;
   void operator=(const CPUDevice &) = delete;
@@ -405,12 +434,23 @@ private:
   /// CompactCPUDevicePtr.
   uint8_t runtimeIndex;
 
-  /// How this cpuDevice was created (for diagnostics).
+  /// How this device was created (for diagnostics).
   CPUDeviceSource source;
+
+  /// Topological role of this device.
+  CPUDeviceType type;
+
+  /// NUMA node this device is targeting if the type is kNUMAPartition,
+  /// otherwise kAnyNumaNode.
+  int numaNode;
 
   /// This is a preallocated Chain value that is marked as ready, for use by
   /// getReadyChain.
   AsyncValueRef<Chain> readyChain;
+
+  /// NUMA node partitioned sub-devices owned by this device if the type is
+  /// kGlobalPartitioned, keyed by NUMA node ID.
+  std::map<int, CPUDevice *> numaDevices;
 
   friend void checkUniqueCPUDevice(const CPUDevice &cpuDevice);
 };

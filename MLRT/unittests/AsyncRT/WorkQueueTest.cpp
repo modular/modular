@@ -326,11 +326,16 @@ std::optional<int> firstUsableNumaNode() {
 struct PartitionedHarness {
   CPUDeviceRef cpuDevice;
   CompactCPUDevicePtr cpuDevicePtr;
+
+  std::vector<std::unique_ptr<WorkQueue>> ownedPartitions;
   std::unique_ptr<WorkQueue> workQueue;
 
   ~PartitionedHarness() {
     if (workQueue)
       workQueue->shutdown();
+    for (auto &partition : ownedPartitions)
+      if (partition)
+        partition->shutdown();
   }
 };
 
@@ -339,12 +344,14 @@ PartitionedHarness makeHarness(int numaNode) {
   options.withSingleThreaded(); // Minimal "host" cpuDevice just to supply ptr.
   CPUDeviceRef cpuDevice = getOrCreateCPUDevice(CPUDeviceSource::Test, options);
   CompactCPUDevicePtr ptr = cpuDevice->getCompactPtr();
-  std::vector<std::unique_ptr<WorkQueue>> partitions;
-  partitions.push_back(createPartitionedThreadPoolWorkQueue(
+  auto partWQ = createPartitionedThreadPoolWorkQueue(
       ptr, numaNode, std::chrono::microseconds(200), "NumaTest",
-      /*globalWorkerIdOffset=*/0));
-  return {std::move(cpuDevice), ptr,
-          createDelegateThreadPoolWorkQueue(std::move(partitions))};
+      /*globalWorkerIdOffset=*/0);
+  std::vector<WorkQueue *> rawPtrs = {partWQ.get()};
+  std::vector<std::unique_ptr<WorkQueue>> owned;
+  owned.push_back(std::move(partWQ));
+  return {std::move(cpuDevice), ptr, std::move(owned),
+          createDelegateThreadPoolWorkQueue(ptr, std::move(rawPtrs))};
 }
 
 } // namespace
@@ -473,19 +480,21 @@ TEST(WorkQueueTest, DelegateNUMAWorkerRouting) {
   CompactCPUDevicePtr ptr = cpuDevice->getCompactPtr();
 
   auto busyWait = std::chrono::microseconds(200);
-  std::vector<std::unique_ptr<WorkQueue>> partitions;
+  std::vector<std::unique_ptr<WorkQueue>> ownedPartitions;
+  std::vector<WorkQueue *> rawPtrs;
   size_t globalWorkerIdOffset = 0;
   for (int node : nodes) {
     if (topologyOr->getCpuIdsForNumaNode(node).empty())
       continue;
-    partitions.push_back(createPartitionedThreadPoolWorkQueue(
+    ownedPartitions.push_back(createPartitionedThreadPoolWorkQueue(
         ptr, node, busyWait, "DelegateNUMA", globalWorkerIdOffset));
-    globalWorkerIdOffset += partitions.back()->getParallelismLevel();
+    globalWorkerIdOffset += ownedPartitions.back()->getParallelismLevel();
+    rawPtrs.push_back(ownedPartitions.back().get());
   }
-  if (partitions.empty())
+  if (ownedPartitions.empty())
     GTEST_SKIP() << "no usable NUMA nodes with CPUs";
 
-  auto delegateWQ = createDelegateThreadPoolWorkQueue(std::move(partitions));
+  auto delegateWQ = createDelegateThreadPoolWorkQueue(ptr, std::move(rawPtrs));
   const size_t totalWorkers = delegateWQ->getParallelismLevel();
 
   // Foreign-thread checks: kDefaultTaskId/negative always inlineable, positive
@@ -531,6 +540,8 @@ TEST(WorkQueueTest, DelegateNUMAWorkerRouting) {
   }
 
   delegateWQ->shutdown();
+  for (auto &p : ownedPartitions)
+    p->shutdown();
 }
 
 #if defined(__linux__)
@@ -562,25 +573,27 @@ TEST(WorkQueueTest, DelegateWorkerCpuAffinityMatchesLocalIndex) {
 
   // Build partitions and record the expected CPU for each global worker ID.
   // expectedCpu[globalId] = partition.getCpuIds()[localId]
-  std::vector<std::unique_ptr<WorkQueue>> partitions;
+  std::vector<std::unique_ptr<WorkQueue>> ownedPartitions;
+  std::vector<WorkQueue *> rawPtrs;
   std::vector<size_t> expectedCpu;
   size_t globalWorkerIdOffset = 0;
   for (int node : topologyOr->getNumaNodes()) {
     std::vector<size_t> cpuIds = topologyOr->getCpuIdsForNumaNode(node);
     if (cpuIds.empty())
       continue;
-    partitions.push_back(createPartitionedThreadPoolWorkQueue(
+    ownedPartitions.push_back(createPartitionedThreadPoolWorkQueue(
         ptr, node, busyWait, "DelegateCpuAffinity", globalWorkerIdOffset));
     // getCpuIds() is ordered by local worker index, matching
     // cpuIDs[workerPartitionID].
     for (size_t localId = 0; localId < cpuIds.size(); ++localId)
       expectedCpu.push_back(cpuIds[localId]);
-    globalWorkerIdOffset += partitions.back()->getParallelismLevel();
+    globalWorkerIdOffset += ownedPartitions.back()->getParallelismLevel();
+    rawPtrs.push_back(ownedPartitions.back().get());
   }
-  if (partitions.empty())
+  if (ownedPartitions.empty())
     GTEST_SKIP() << "no usable NUMA nodes with CPUs";
 
-  auto delegateWQ = createDelegateThreadPoolWorkQueue(std::move(partitions));
+  auto delegateWQ = createDelegateThreadPoolWorkQueue(ptr, std::move(rawPtrs));
   const size_t totalWorkers = delegateWQ->getParallelismLevel();
   ASSERT_EQ(expectedCpu.size(), totalWorkers);
 
@@ -607,7 +620,85 @@ TEST(WorkQueueTest, DelegateWorkerCpuAffinityMatchesLocalIndex) {
   }
 
   delegateWQ->shutdown();
+  for (auto &p : ownedPartitions)
+    p->shutdown();
 }
 #endif // defined(__linux__)
+
+//===----------------------------------------------------------------------===//
+// CPUDevice NUMA-partitioned tests
+//===----------------------------------------------------------------------===//
+
+/// Verify that a CPUDevice created with numaPartitioned=true has type
+/// kGlobalPartitioned, owns one kNUMAPartition sub-device per NUMA node, and
+/// that getNumaDevice() returns the right device or nullptr.
+TEST(WorkQueueTest, NUMAPartitionedCPUDeviceStructure) {
+  const ErrorOr<NUMATopology> &topologyOr = NUMATopology::get();
+  if (topologyOr.isError())
+    GTEST_SKIP() << "host has no NUMA topology available";
+
+  CPUDeviceOptions options;
+  options.numaPartitioned = true;
+  options.mainWillDonate = false;
+  CPUDeviceRef cpuDevice = getOrCreateCPUDevice(CPUDeviceSource::Test, options);
+
+  EXPECT_EQ(cpuDevice->getType(), CPUDeviceType::kGlobalPartitioned);
+  EXPECT_EQ(cpuDevice->getNumaNode(), M::kAnyNumaNode);
+
+  const std::vector<int> &numaNodes = topologyOr->getNumaNodes();
+  EXPECT_EQ(cpuDevice->numNumaDevices(), numaNodes.size());
+
+  for (int node : numaNodes) {
+    ErrorOr<CPUDevice *> numaDeviceOr = cpuDevice->getNumaDevice(node);
+    ASSERT_FALSE(numaDeviceOr.isError())
+        << "missing NUMA device for node " << node;
+    CPUDevice *numaDevice = *numaDeviceOr;
+    EXPECT_EQ(numaDevice->getType(), CPUDeviceType::kNUMAPartition);
+    EXPECT_EQ(numaDevice->getNumaNode(), node);
+    EXPECT_EQ(numaDevice->numNumaDevices(), 0u);
+  }
+
+  EXPECT_TRUE(cpuDevice->getNumaDevice(INT_MAX).isError());
+}
+
+/// Verify that work dispatched through a kGlobalPartitioned CPUDevice completes
+/// correctly.
+TEST(WorkQueueTest, NUMAPartitionedCPUDeviceDispatchesWork) {
+  const ErrorOr<NUMATopology> &topologyOr = NUMATopology::get();
+  if (topologyOr.isError())
+    GTEST_SKIP() << "host has no NUMA topology available";
+
+  CPUDeviceOptions options;
+  options.numaPartitioned = true;
+  options.mainWillDonate = false;
+  CPUDeviceRef cpuDevice = getOrCreateCPUDevice(CPUDeviceSource::Test, options);
+
+  constexpr int numTasks = 16;
+  std::vector<AsyncValueRef<int>> results;
+  results.reserve(numTasks);
+  for (int i = 0; i < numTasks; ++i) {
+    results.emplace_back(AsyncValueRef<int>::allocate(*cpuDevice));
+    cpuDevice->getWorkQueue()->addTask(
+        [i, slot = results.back().copy()]() mutable {
+          slot.copy().emplace(i);
+        });
+  }
+  for (int i = 0; i < numTasks; ++i) {
+    await(results[i]);
+    EXPECT_EQ(results[i].get(), i);
+  }
+}
+
+/// Verify that a non-partitioned CPUDevice has type kGlobal with no NUMA
+/// sub-devices.
+TEST(WorkQueueTest, UnpartitionedCPUDeviceIsKGlobal) {
+  CPUDeviceOptions options;
+  options.mainWillDonate = false;
+  CPUDeviceRef cpuDevice = getOrCreateCPUDevice(CPUDeviceSource::Test, options);
+  EXPECT_EQ(cpuDevice->getType(), CPUDeviceType::kGlobal);
+  EXPECT_EQ(cpuDevice->getNumaNode(), M::kAnyNumaNode);
+  EXPECT_EQ(cpuDevice->numNumaDevices(), 0u);
+  EXPECT_TRUE(cpuDevice->getNumaDevice(0).isError());
+}
 
 } // namespace

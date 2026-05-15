@@ -950,11 +950,12 @@ ThreadPoolWorkQueue::ThreadPoolWorkQueue(
                         threadBusyWaitTime, this->poolName, globalWorkerId);
   }
 
-  // Mojo code that is run via Max can be run either asynchronously via threads
-  // of the work queue or synchronously in the main thread, therefore the
-  // thread-local Runtime pointer must be set for the main thread regardless of
-  // the value of mainWillDonate.
-  CompactCPUDevicePtr::setCurrentCPUDevice(cpuDevicePtr);
+  // Set the main thread's TLS pointer for non-partition work queues. Mojo code
+  // can run synchronously on the main thread, so TLS must reflect the current
+  // device regardless of mainWillDonate. NUMA partition work queues skip this:
+  // their parent global device sets the TLS pointer.
+  if (numaNode == kAnyNumaNode)
+    CompactCPUDevicePtr::setCurrentCPUDevice(cpuDevicePtr);
 }
 
 ThreadPoolWorkQueue::~ThreadPoolWorkQueue() {
