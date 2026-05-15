@@ -802,7 +802,7 @@ struct InMemStruct: pass
 # expected-error @+1 {{all members of 'RegisterPassable' struct must themselves be 'RegisterPassable'}}
 struct InRegStruct(RegisterPassable):
   var x: Int # ok
-  # expected-error @+1 {{cannot synthesize move constructor because field 'y' has non-copyable and non-movable type 'InMemStruct'}}
+  # expected-error @+1 {{cannot synthesize move constructor because field 'y' has non-movable and non-implicitly-copyable type 'InMemStruct'}}
   var y: InMemStruct # expected-note {{'y' declared with type 'InMemStruct'}}
 
 struct OtherInMemStruct:
@@ -860,8 +860,8 @@ def test_deinit_fn_types():
 @fieldwise_init
 struct CantSynthesize(ImplicitlyCopyable):
 # expected-error @below {{cannot synthesize fieldwise init because field 'x' has non-copyable and non-movable type 'InMemStruct'}}
-# expected-error @below {{cannot synthesize move constructor because field 'x' has non-copyable and non-movable type 'InMemStruct'}}
-# expected-error @below {{cannot synthesize copy constructor because field 'x' has non-copyable type 'InMemStruct'}}
+# expected-error @below {{cannot synthesize move constructor because field 'x' has non-movable and non-implicitly-copyable type 'InMemStruct'}}
+# expected-error @below {{cannot synthesize implicit copy constructor because field 'x' has non-implicitly-copyable type 'InMemStruct'}}
   var x : InMemStruct
 
 
@@ -909,7 +909,7 @@ struct NotRegisterPassable:
 
 @fieldwise_init
 struct Outer34551(ImplicitlyCopyable, RegisterPassable): # expected-error {{all members of 'RegisterPassable' struct must themselves be 'RegisterPassable'}}
-    # expected-error @below {{cannot synthesize move constructor because field '_inner' has non-copyable and non-movable type 'NotRegisterPassable'}}
+    # expected-error @below {{cannot synthesize move constructor because field '_inner' has non-movable and non-implicitly-copyable type 'NotRegisterPassable'}}
     # expected-error @below {{cannot synthesize copy constructor because field '_inner' has non-copyable type 'NotRegisterPassable'}}
     # expected-note @below {{'_inner' declared with type 'NotRegisterPassable'}}
     var _inner: NotRegisterPassable
@@ -925,7 +925,7 @@ struct StructWithoutBody(RegisterPassable):
 
 @fieldwise_init
 struct OkayStruct(ImplicitlyCopyable, RegisterPassable):
-# expected-error @below {{cannot synthesize copy constructor because field 'begin' has non-copyable type 'StructWithoutBody'}}
+# expected-error @below {{cannot synthesize implicit copy constructor because field 'begin' has non-implicitly-copyable type 'StructWithoutBody'}}
     var begin: StructWithoutBody
 
 
@@ -940,8 +940,17 @@ struct ExplicitlyCopyableStructWithoutBody(Copyable, RegisterPassable):
 
 @fieldwise_init
 struct ImplicitCopyableStructWithExplicitBody(ImplicitlyCopyable, RegisterPassable):
-  # expected-error @below {{cannot synthesize copy constructor because field 'begin' has non-copyable type 'ExplicitlyCopyableStructWithoutBody'}}
+  # expected-error @below {{cannot synthesize implicit copy constructor because field 'begin' has non-implicitly-copyable type 'ExplicitlyCopyableStructWithoutBody'}}
     var begin: ExplicitlyCopyableStructWithoutBody
+
+
+# A parameterized struct declaring `ImplicitlyCopyable` whose field is a type
+# parameter constrained only to `Copyable` must not synthesize an implicit copy
+# ctor.
+@fieldwise_init
+struct OnlyCopyableField[T: Copyable](ImplicitlyCopyable where conforms_to(T, Copyable)):
+    # expected-error @below {{cannot synthesize implicit copy constructor because field 'f' has non-implicitly-copyable type 'T'}}
+    var f: Self.T
 
 
 # MOCO-2186: Initializer syntax should reject incorrect result type
@@ -1098,15 +1107,15 @@ struct Inner:
 
 @fieldwise_init
 struct Outer(RegisterPassable): # expected-error {{all members of 'RegisterPassable' struct must themselves be 'RegisterPassable'}}
-    # expected-error @+1{{cannot synthesize move constructor because field 'inner' has non-copyable and non-movable type 'Inner'}}
+    # expected-error @+1{{cannot synthesize move constructor because field 'inner' has non-movable and non-implicitly-copyable type 'Inner'}}
     var inner: Inner # expected-note {{'inner' declared with type 'Inner'}}
 
 
 @fieldwise_init
 struct AnyTypeMember[T: AnyType](ImplicitlyCopyable):
 # expected-error @below {{cannot synthesize fieldwise init because field 'value' has non-copyable and non-movable type 'T'}}
-# expected-error @below {{cannot synthesize move constructor because field 'value' has non-copyable and non-movable type 'T'}}
-# expected-error @below {{cannot synthesize copy constructor because field 'value' has non-copyable type 'T'}}
+# expected-error @below {{cannot synthesize move constructor because field 'value' has non-movable and non-implicitly-copyable type 'T'}}
+# expected-error @below {{cannot synthesize implicit copy constructor because field 'value' has non-implicitly-copyable type 'T'}}
     var value: Self.T
 
 
