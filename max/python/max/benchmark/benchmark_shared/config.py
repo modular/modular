@@ -459,7 +459,7 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
     )
 
     # Output control (serving-specific extensions)
-    output_lengths: str | None = Field(
+    output_lengths: str | int | None = Field(
         default=None,
         description="Path to YAML file with output lengths or int.",
         json_schema_extra={
