@@ -139,11 +139,9 @@ ObjectCompiler::create(StringRef basePath, CompilationOptions options,
 
   SmallVector<StringRef> pluginPaths = config.getPluginPaths();
 
-  // Load the plugin if compiling to a plugin backend.
-  std::unique_ptr<Plugin> plugin = nullptr;
-  if (isPluginBackend(options)) {
-    plugin = std::make_unique<Plugin>(options.targetTriple, pluginPaths);
-  }
+  // Load the plugins.
+  std::unique_ptr<Plugin> plugin =
+      std::make_unique<Plugin>(options.targetTriple, pluginPaths);
 
   return std::unique_ptr<ObjectCompiler>(new ObjectCompiler(
       std::move(*transformCache), std::move(options), isJIT, context, linker,
@@ -2021,7 +2019,7 @@ static AnyAsyncValueRef lowerLLVMModuleToObject(
             name = llvm::sys::path::filename(moduleLoc.getFilename());
           std::string moduleName = (name + Twine(moduleIdx)).str();
 
-          if (isPluginBackend(options)) {
+          if (plugin->isPluginForTarget(options.targetTriple)) {
             auto createSharedObjectFn = plugin->getCreateSharedObjectFn();
             if (createSharedObjectFn.isError()) {
               return std::move(output).setToError(MLRT::getMLIRDiagnostic(

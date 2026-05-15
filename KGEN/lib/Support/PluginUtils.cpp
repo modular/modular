@@ -37,15 +37,10 @@ Plugin::Plugin(StringRef targetTriple, ArrayRef<StringRef> pluginPaths) {
     void *hdl = dlopen(path.str().c_str(), RTLD_NOW | RTLD_LOCAL);
     if (!hdl)
       continue;
-    if (!targetTriple.empty()) {
-      ErrorOr<IsPluginForTargetFn> fnOr =
-          getFunction<IsPluginForTargetFn>(hdl, "M_KGEN_isPluginForTarget");
-      if (fnOr.isError())
-        continue;
-      if ((*fnOr)(targetTriple)) {
-        soHandles.push_back(hdl);
-        currHandle = hdl;
-      }
+    if (!targetTriple.empty() && isPluginForTarget(hdl, targetTriple)) {
+      soHandles.push_back(hdl);
+      currHandle = hdl;
+      return;
     }
     soPaths.push_back(path.str());
     soHandles.push_back(hdl);
@@ -83,6 +78,40 @@ Plugin::~Plugin() {
   for (auto hdl : soHandles) {
     dlclose(hdl);
   }
+}
+
+bool Plugin::isPluginForTarget(void *hdl, StringRef targetTriple) const {
+  if (!hdl)
+    return false;
+
+  ErrorOr<Plugin::IsPluginForTargetFn> fnOr =
+      getFunction<IsPluginForTargetFn>(hdl, "M_KGEN_isPluginForTarget");
+  if (fnOr.isError())
+    return false;
+
+  ErrorOr<bool> resultOr = (*fnOr)(targetTriple);
+  if (resultOr.isError())
+    return false;
+  return *resultOr;
+}
+
+bool Plugin::isPluginForTarget(StringRef targetTriple) const {
+
+  if (soHandles.empty())
+    return false;
+  if (currHandle && isPluginForTarget(currHandle, targetTriple))
+    return true;
+
+  for (auto hdl : soHandles) {
+    if (isPluginForTarget(hdl, targetTriple)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool Plugin::isPluginForTarget(const llvm::Triple &targetTriple) const {
+  return isPluginForTarget(targetTriple.str());
 }
 
 ErrorOrSuccess Plugin::isLoaded() const {

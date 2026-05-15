@@ -3495,7 +3495,7 @@ void LowerPOPToLLVMPass::runOnOperation() {
   patterns.insert<ConvertPOPStackAllocation, ConvertPOPStackAllocLifetimeStart,
                   ConvertPOPStackAllocLifetimeEnd>(typeConverter, targetInfo);
 
-  if (isPluginBackend(targetInfo.getTriple())) {
+  if (plugin && plugin->isPluginForTarget(targetInfo.getTriple().str())) {
     auto populatePatternsFn = plugin->getPopulateLowerPOPToLLVMPatternsFn();
     // Don't fail if plugin is not loaded or doesn't provide the pattern
     // population function, just keep continuing with the default patterns. We
@@ -3987,7 +3987,7 @@ void LowerGlobalPOPToLLVMPass::runOnOperation() {
   // pop.compiler.* are all illegal.
   target.addIllegalOp<CompilerGlobalLoadOp, CompilerGlobalStoreOp>();
 
-  if (isPluginBackend(targetInfo.getTriple())) {
+  if (plugin && plugin->isPluginForTarget(targetInfo.getTriple().str())) {
     auto populatePatternsFn =
         plugin->getPopulateLowerGlobalPOPToLLVMPatternsFn();
     if (!populatePatternsFn.isError()) {
