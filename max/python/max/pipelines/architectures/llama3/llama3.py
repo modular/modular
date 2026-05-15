@@ -236,6 +236,7 @@ class Llama3(Transformer):
             return_hidden_states=config.return_hidden_states,
             embedding_multiplier=config.embedding_multiplier,
             logits_scaling=config.logits_scaling,
+            target_layer_ids=config.target_layer_ids,
         )
 
     def input_types(

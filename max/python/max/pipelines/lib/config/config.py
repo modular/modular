@@ -138,6 +138,7 @@ _AUTO_ENABLE_OVERLAP_SCHEDULER_ARCHITECTURES = (
     "KimiK25ForConditionalGeneration",
     "Gemma4ForConditionalGeneration",
     "UnifiedEagleLlama3ForCausalLM",
+    "UnifiedDflashLlama3ForCausalLM",
     "UnifiedMTPDeepseekV3ForCausalLM",
     "Eagle3DeepseekV2ForCausalLM",
     "Eagle3DeepseekV3ForCausalLM",
@@ -599,6 +600,21 @@ class PipelineConfig(ConfigFileModel):
                 self.draft_model.huggingface_config.architectures[0] = (
                     "LlamaForCausalLMEagle"
                 )
+        # DFlash drafts ship with architectures: ["DFlashDraftModel"],
+        # which isn't registered as a standalone MAX architecture (the draft
+        # is only ever invoked through UnifiedDflashLlama3). Override to
+        # LlamaForCausalLM.
+        if self.speculative.is_dflash() and self.draft_model is not None:
+            if len(self.draft_model.huggingface_config.architectures) != 1:
+                raise ValueError(
+                    f"Expected exactly 1 architecture in draft model config, "
+                    f"got {len(self.draft_model.huggingface_config.architectures)}"
+                )
+            hf_arch = self.draft_model.huggingface_config.architectures[0]
+            if hf_arch == "DFlashDraftModel":
+                self.draft_model.huggingface_config.architectures[0] = (
+                    "LlamaForCausalLM"
+                )
 
     # Explicit type mapping for config classes that are processed from
     # unmatched kwargs.  "model" is handled separately in
@@ -926,11 +942,14 @@ class PipelineConfig(ConfigFileModel):
         if self.lora and self.lora.enable_lora:
             self.model.validate_lora_compatibility()
 
-        # Override target architecture for unified EAGLE pipeline.
+        # Override target architecture for unified EAGLE / DFlash pipelines.
         if self.speculative:
             target_archs = self.model.huggingface_config.architectures
             if target_archs[0] == "LlamaForCausalLM":
-                target_archs[0] = "UnifiedEagleLlama3ForCausalLM"
+                if self.speculative.is_dflash():
+                    target_archs[0] = "UnifiedDflashLlama3ForCausalLM"
+                else:
+                    target_archs[0] = "UnifiedEagleLlama3ForCausalLM"
             if target_archs[0] == "DeepseekV3ForCausalLM":
                 # Choose between MTP (NextN layer baked into target ckpt) and
                 # Eagle3 (separate draft ckpt with arch

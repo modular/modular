@@ -128,6 +128,7 @@ class Llama3Config(ArchConfigWithKVCache):
     longrope_scaling_params: LongRoPEScalingParams | None = None
     logits_scaling: float = 1.0
     return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE
+    target_layer_ids: list[int] | None = None
     use_subgraphs: bool = True
     data_parallel_degree: int = 1
 

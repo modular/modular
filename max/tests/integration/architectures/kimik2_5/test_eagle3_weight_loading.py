@@ -78,7 +78,7 @@ def _target_config() -> DeepseekV3Config:
         data_parallel_degree=1,
         kv_params=_kv_params(num_layers=2),
         return_logits=ReturnLogits.VARIABLE,
-        return_hidden_states=ReturnHiddenStates.EAGLE3,
+        return_hidden_states=ReturnHiddenStates.SELECTED_LAYERS,
         eagle_aux_hidden_state_layer_ids=[0, 1],
     )
 

@@ -139,7 +139,7 @@ class Eagle3KimiK25Model(KimiK2_5Model):
 
     def __init__(self, *args, **kwargs):
         kwargs["return_logits"] = ReturnLogits.VARIABLE
-        kwargs["return_hidden_states"] = ReturnHiddenStates.EAGLE3
+        kwargs["return_hidden_states"] = ReturnHiddenStates.SELECTED_LAYERS
         super().__init__(*args, **kwargs)
 
     @override

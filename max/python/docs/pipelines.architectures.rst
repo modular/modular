@@ -23,6 +23,7 @@ family.
    pipelines.architectures.deepseekV3
    pipelines.architectures.deepseekV3_2
    pipelines.architectures.deepseekV3_nextn
+   pipelines.architectures.dflash_llama3
    pipelines.architectures.eagle3_deepseekV3
    pipelines.architectures.eagle_llama3
    pipelines.architectures.exaone
@@ -69,6 +70,7 @@ family.
    pipelines.architectures.qwen_image
    pipelines.architectures.qwen_image_edit
    pipelines.architectures.step3p5
+   pipelines.architectures.unified_dflash_llama3
    pipelines.architectures.unified_eagle_llama3
    pipelines.architectures.unified_mtp_deepseekV3
    pipelines.architectures.wan
@@ -84,6 +86,7 @@ Text generation
    ~max.pipelines.architectures.deepseekV3
    ~max.pipelines.architectures.deepseekV3_2
    ~max.pipelines.architectures.deepseekV3_nextn
+   ~max.pipelines.architectures.dflash_llama3
    ~max.pipelines.architectures.eagle3_deepseekV3
    ~max.pipelines.architectures.eagle_llama3
    ~max.pipelines.architectures.exaone
@@ -123,6 +126,7 @@ Text generation
    ~max.pipelines.architectures.qwen3_5
    ~max.pipelines.architectures.qwen3vl_moe
    ~max.pipelines.architectures.step3p5
+   ~max.pipelines.architectures.unified_dflash_llama3
    ~max.pipelines.architectures.unified_eagle_llama3
    ~max.pipelines.architectures.unified_mtp_deepseekV3
 

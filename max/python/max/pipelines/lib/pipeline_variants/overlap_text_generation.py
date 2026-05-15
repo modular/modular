@@ -164,7 +164,7 @@ _MAGIC_DRAFT_TOKEN_ID = 42
 
 
 @runtime_checkable
-class _UnifiedEagleInputs(Protocol):
+class _UnifiedSpecDecodeInputs(Protocol):
     tokens: Buffer
     input_row_offsets: Buffer
     kv_cache_inputs: KVCacheInputs[Buffer, Buffer]
@@ -1283,7 +1283,7 @@ class RealizeFutureTokenProcessor:
         device = model_inputs.tokens.device
 
         if self._num_speculative_tokens > 0:
-            assert isinstance(model_inputs, _UnifiedEagleInputs)
+            assert isinstance(model_inputs, _UnifiedSpecDecodeInputs)
             assert prev_batch.spec_decode is not None
             assert model_inputs.kv_cache_inputs is not None
 
@@ -1354,7 +1354,7 @@ class RealizeFutureTokenProcessor:
 
         # Execute the realize_future_tokens kernel.
         if my_inputs.spec_decode is not None:
-            assert isinstance(model_inputs, _UnifiedEagleInputs)
+            assert isinstance(model_inputs, _UnifiedSpecDecodeInputs)
             (tokens, draft_tokens, *cache_lengths) = out
             model_inputs.tokens = tokens
             # This is pretty subtle. We copy the realized tokens into the original
@@ -1761,7 +1761,7 @@ class OverlapTextGenerationPipeline(
                 )
 
             if self._spec_decode_state is not None:
-                assert isinstance(model_inputs, _UnifiedEagleInputs)
+                assert isinstance(model_inputs, _UnifiedSpecDecodeInputs)
                 draft_tokens = Buffer.from_numpy(
                     np.zeros(
                         (batch_size * dp_size, num_speculative_tokens),
@@ -2109,7 +2109,7 @@ class OverlapTextGenerationPipeline(
         # Wrap the model inputs when speculative decoding is enabled.
         if draft_tokens is not None:
             assert self._spec_decode_state is not None
-            assert isinstance(model_inputs, _UnifiedEagleInputs)
+            assert isinstance(model_inputs, _UnifiedSpecDecodeInputs)
             model_inputs.draft_tokens = draft_tokens
             model_inputs.draft_kv_blocks = (
                 self._spec_decode_state.draft_kv_blocks

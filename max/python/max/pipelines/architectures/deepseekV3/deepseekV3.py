@@ -155,7 +155,7 @@ def deepseek_logits_postprocess(
     return_logits: ReturnLogits,
     return_hidden_states: ReturnHiddenStates,
     logits_scaling: float = 1.0,
-    eagle3_captured_hs: list[list[TensorValue]] | None = None,
+    capture_hidden_states: list[list[TensorValue]] | None = None,
 ) -> tuple[TensorValue, ...]:
     """Logits postprocessing for DeepseekV3 and DeepseekV3NextN.
 
@@ -309,7 +309,7 @@ def deepseek_logits_postprocess(
         last_token_hs_distributed=last_token_distributed,
         all_hs_distributed=h,
         normalizer=norm_shards,
-        eagle3_captured_hs=eagle3_captured_hs,
+        capture_hidden_states=capture_hidden_states,
     )
 
     return ret_val
@@ -877,7 +877,7 @@ class DeepseekV3(Module):
         # For EAGLE3 mode, capture hidden states
         eagle3_captured: list[list[TensorValue]] = []
         eagle3_capture_ids: set[int] = set()
-        if self.return_hidden_states == ReturnHiddenStates.EAGLE3:
+        if self.return_hidden_states == ReturnHiddenStates.SELECTED_LAYERS:
             assert self.config.eagle_aux_hidden_state_layer_ids is not None, (
                 "EAGLE3 hidden-state capture requires "
                 "eagle_aux_hidden_state_layer_ids on the target config. "
@@ -939,7 +939,7 @@ class DeepseekV3(Module):
             return_logits=self.return_logits,
             return_hidden_states=self.return_hidden_states,
             logits_scaling=self.logits_scaling,
-            eagle3_captured_hs=eagle3_captured if eagle3_captured else None,
+            capture_hidden_states=eagle3_captured if eagle3_captured else None,
         )
 
     def input_types(

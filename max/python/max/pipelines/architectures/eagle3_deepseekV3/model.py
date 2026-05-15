@@ -89,7 +89,7 @@ class Eagle3DeepseekV3Inputs(DeepseekV3Inputs):
     in_thinking_phase: Buffer | None = None
     """Per-batch ``bool`` flag set by the pipeline for relaxed acceptance
     during thinking. Not consumed by the eagle3_deepseekV3 graph today, but
-    the field is required to satisfy the ``_UnifiedEagleInputs`` protocol
+    the field is required to satisfy the ``_UnifiedSpecDecodeInputs`` protocol
     used by ``OverlapTextGenerationPipeline``."""
 
     token_bitmasks: Buffer | None = None
@@ -146,7 +146,7 @@ class Eagle3DeepseekV3Model(DeepseekV3Model):
         weights: Weights,
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.VARIABLE,
-        return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.EAGLE3,
+        return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.SELECTED_LAYERS,
     ) -> None:
         super().__init__(
             pipeline_config,

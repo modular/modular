@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Unified EAGLE Llama3 PipelineModel: target + draft in one graph."""
+"""Unified DFlash Llama3 PipelineModel: target + draft in one graph."""
 
 from __future__ import annotations
 
@@ -41,16 +41,29 @@ from max.pipelines.lib.utils import parse_state_dict_from_weights
 
 from ..llama3.model_config import Llama3Config
 from ..llama3.weight_adapters import _convert_safetensor_with_model_config
-from .model_config import UnifiedEagleLlama3Config
-from .unified_eagle_llama3 import UnifiedEagleLlama3 as UnifiedEagleLlama3Module
-from .weight_adapters import convert_unified_safetensor_state_dict
+from ..unified_eagle_llama3.weight_adapters import (
+    convert_unified_safetensor_state_dict,
+)
+from .model_config import (
+    UnifiedDflashLlama3Config,
+    parse_dflash_draft_hf_config,
+)
+from .unified_dflash_llama3 import (
+    UnifiedDflashLlama3 as UnifiedDflashLlama3Module,
+)
 
 logger = logging.getLogger("max.pipelines")
 
 
 @dataclass
-class UnifiedEagleLlama3Inputs(ModelInputs):
-    """Inputs for the unified EAGLE Llama3 model."""
+class UnifiedDflashLlama3Inputs(ModelInputs):
+    """Inputs for the unified DFlash Llama3 graph.
+
+    Carries the buffers consumed by a single execute of the unified graph:
+    the merged tokens / ragged offsets, the draft tokens to verify
+    (None on prefill), the persistent draft KV pool, and the sampling
+    parameters used by the in-graph acceptance sampler.
+    """
 
     tokens: Buffer
     input_row_offsets: Buffer
@@ -59,30 +72,16 @@ class UnifiedEagleLlama3Inputs(ModelInputs):
     draft_tokens: Buffer | None = None
     draft_kv_blocks: list[Buffer] | None = None
     seed: Buffer | None = None
-
     temperature: Buffer | None = None
     top_k: Buffer | None = None
     max_k: Buffer | None = None
     top_p: Buffer | None = None
     min_top_p: Buffer | None = None
-    """Per-batch sampling parameters consumed by the stochastic acceptance
-    sampler. ``max_k`` and ``min_top_p`` are 0-d CPU scalars; the rest are
-    ``[batch_size]`` tensors on the primary device."""
-
+    # Set by ``OverlapTextGenerationPipeline`` and required by the
+    # ``_UnifiedSpecDecodeInputs`` runtime-checkable Protocol; not consumed
+    # by the DFlash graph today.
     in_thinking_phase: Buffer | None = None
-    """Per-batch ``bool`` flag set by the pipeline for relaxed acceptance
-    during thinking. Not consumed by the unified_eagle_llama3 graph today,
-    but the field is required to satisfy the ``_UnifiedSpecDecodeInputs`` protocol
-    used by ``OverlapTextGenerationPipeline``."""
     token_bitmasks: Buffer | None = None
-    """Grammar constraint bitmask for structured output.
-
-    Shape: [batch_size, num_speculative_tokens + 1, vocab_size].
-    Position i contains valid token mask given FSM state after consuming
-    draft[0:i-1]. Position num_speculative_tokens is for the bonus token.
-    None when structured output is not enabled (in this case an all-True
-    bitmask is passed to the graph).
-    """
 
     @property
     def buffers(self) -> tuple[Buffer, ...]:
@@ -111,11 +110,6 @@ class UnifiedEagleLlama3Inputs(ModelInputs):
                 self.top_p,
                 self.min_top_p,
             )
-        # token_bitmasks is only included when structured output is enabled.
-        # The graph is compiled with or without this input based on the
-        # enable_structured_output config flag.
-        if self.token_bitmasks is not None:
-            buffers += (self.token_bitmasks,)
         return buffers
 
 
@@ -138,8 +132,8 @@ class PersistentInputBuffers:
         return cls(tokens, input_row_offsets)
 
 
-class UnifiedEagleLlama3Model(PipelineModelWithKVCache[TextContext]):
-    """Unified EAGLE Llama3: target + draft in one compiled graph."""
+class UnifiedDflashLlama3Model(PipelineModelWithKVCache[TextContext]):
+    """Unified DFlash Llama3: target + draft in one compiled graph."""
 
     model: Model
 
@@ -162,7 +156,7 @@ class UnifiedEagleLlama3Model(PipelineModelWithKVCache[TextContext]):
             weights,
             adapter,
             return_logits=ReturnLogits.VARIABLE,
-            return_hidden_states=ReturnHiddenStates.ALL_NORMALIZED,
+            return_hidden_states=ReturnHiddenStates.SELECTED_LAYERS,
         )
         self.model = self.load_model(session)
 
@@ -199,7 +193,7 @@ class UnifiedEagleLlama3Model(PipelineModelWithKVCache[TextContext]):
         )
 
     def load_model(self, session: InferenceSession) -> Model:
-        with CompilationTimer("unified_eagle_llama3_model") as timer:
+        with CompilationTimer("unified_dflash_llama3_model") as timer:
             target_state_dict = parse_state_dict_from_weights(
                 self.pipeline_config, self.weights, self.adapter
             )
@@ -217,23 +211,26 @@ class UnifiedEagleLlama3Model(PipelineModelWithKVCache[TextContext]):
                 draft_model_config,
             )
 
+            dflash_hf = parse_dflash_draft_hf_config(draft_hf_config)
             target_hf_config = self.huggingface_config
             assert target_hf_config is not None
+            assert self.pipeline_config.speculative is not None
 
             target_config = Llama3Config.initialize(self.pipeline_config)
             target_config.finalize(
                 huggingface_config=target_hf_config,
                 state_dict=target_state_dict,
                 return_logits=ReturnLogits.VARIABLE,
-                return_hidden_states=ReturnHiddenStates.ALL_NORMALIZED,
+                return_hidden_states=ReturnHiddenStates.SELECTED_LAYERS,
             )
+            target_config.target_layer_ids = list(dflash_hf.target_layer_ids)
 
             draft_config = Llama3Config.initialize_from_config(
                 self.pipeline_config, draft_hf_config, draft_model_config
             )
-            # The draft model config may default to gpu:0. Override its
-            # devices to match the target so weights land on the correct GPU
-            # (e.g. when pipeline_role=prefill_only assigns a non-zero GPU).
+            # ``initialize_from_config`` defaults the draft to ``gpu:0``;
+            # pin to the target's device(s) so the weights co-locate
+            # whenever the target lives on a non-zero GPU.
             draft_config.devices = target_config.devices
             draft_config.kv_params = replace(
                 draft_config.kv_params, devices=target_config.devices
@@ -245,32 +242,29 @@ class UnifiedEagleLlama3Model(PipelineModelWithKVCache[TextContext]):
                 return_hidden_states=ReturnHiddenStates.LAST,
             )
 
-            assert self.pipeline_config.speculative is not None
-
-            unified_config = UnifiedEagleLlama3Config(
+            unified_config = UnifiedDflashLlama3Config(
                 target=target_config,
                 draft=draft_config,
                 speculative_config=self.pipeline_config.speculative,
-                enable_structured_output=self.pipeline_config.sampling.enable_structured_output,
+                target_layer_ids=list(dflash_hf.target_layer_ids),
+                mask_token_id=int(dflash_hf.mask_token_id),
+                block_size=int(dflash_hf.block_size or 0),
             )
+            unified_config.validate_dflash_fields()
 
-            nn_model = UnifiedEagleLlama3Module(unified_config)
+            nn_model = UnifiedDflashLlama3Module(unified_config)
 
-            # Share embed_tokens and lm_head BEFORE loading so state_dict()
-            # deduplicates them.
+            # DFlash drafts have no embed_tokens / lm_head; alias the
+            # target's BEFORE the state-dict walk.
             nn_model.draft.embed_tokens = nn_model.target.embed_tokens
             nn_model.draft.lm_head = nn_model.target.lm_head
 
-            # --- Merge and load weights at top level ---
-            # Load with "target.*" and "draft.*" prefixed keys so the graph
-            # sees unique weight names (both models have layers.0.*).
             unified_state_dict = convert_unified_safetensor_state_dict(
                 target_state_dict, draft_state_dict
             )
 
-            # strict=False: shared weights (embed_tokens, lm_head) are aliased
-            # to target's and won't have draft.* copies. EAGLE also replaces
-            # some norms with Identity. rope_freqs.weight is unused.
+            # strict=False: shared embed_tokens / lm_head are aliased,
+            # rotary cache keys from the adapter may be unused.
             nn_model.load_state_dict(
                 unified_state_dict,
                 override_quantization_encoding=True,
@@ -280,13 +274,12 @@ class UnifiedEagleLlama3Model(PipelineModelWithKVCache[TextContext]):
             self.state_dict = nn_model.state_dict()
 
             assert isinstance(self.kv_params, KVCacheParams)
-            draft_num_layers = draft_config.num_hidden_layers
             self._draft_kv_params = replace(
-                self.kv_params, num_layers=draft_num_layers
+                self.kv_params, num_layers=draft_config.num_hidden_layers
             )
 
             with Graph(
-                "unified_eagle_llama3",
+                "unified_dflash_llama3",
                 input_types=nn_model.input_types(),
             ) as graph:
                 inputs = nn_model._unflatten_graph_inputs(graph.inputs)
@@ -302,9 +295,7 @@ class UnifiedEagleLlama3Model(PipelineModelWithKVCache[TextContext]):
         self,
         model_inputs: ModelInputs,
     ) -> UnifiedEagleOutputs:
-        """Execute and return all graph outputs for speculative decoding."""
         model_outputs = self.model.execute(*model_inputs.buffers)
-
         return UnifiedEagleOutputs(
             num_accepted_draft_tokens=model_outputs[0],
             next_tokens=model_outputs[1],
@@ -316,7 +307,7 @@ class UnifiedEagleLlama3Model(PipelineModelWithKVCache[TextContext]):
         replica_batches: Sequence[Sequence[TextContext]],
         kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
-    ) -> UnifiedEagleLlama3Inputs:
+    ) -> UnifiedDflashLlama3Inputs:
         context_batch = [ctx for batch in replica_batches for ctx in batch]
         device0 = self.devices[0]
         buffer_type = Buffer if device0.is_host else DevicePinnedBuffer
@@ -360,7 +351,7 @@ class UnifiedEagleLlama3Model(PipelineModelWithKVCache[TextContext]):
             np.array([return_n_logits], dtype=np.int64)
         )
 
-        return UnifiedEagleLlama3Inputs(
+        return UnifiedDflashLlama3Inputs(
             tokens=persistent_tokens,
             input_row_offsets=persistent_input_row_offsets,
             return_n_logits=return_n_logits_buf,
@@ -372,10 +363,11 @@ class UnifiedEagleLlama3Model(PipelineModelWithKVCache[TextContext]):
         self,
         next_tokens: Buffer,
         prev_model_inputs: ModelInputs,
-    ) -> UnifiedEagleLlama3Inputs:
+    ) -> UnifiedDflashLlama3Inputs:
         raise NotImplementedError(
-            "Multistep execution is not supported for UnifiedEagleLlama3Model. "
-            "The unified pipeline handles iteration internally."
+            "Multistep execution is not supported for"
+            " UnifiedDflashLlama3Model. The unified pipeline handles"
+            " iteration internally."
         )
 
     @classmethod
