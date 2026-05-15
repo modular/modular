@@ -68,7 +68,8 @@ anything. Most structs don't require a custom destructor, and Mojo automatically
 adds a no-op destructor if you don't define one.
 
 The `__del__()` method takes its argument using the `deinit`
-[argument convention](/docs/manual/values/ownership/#argument-conventions),
+[argument passing
+convention](/docs/manual/values/ownership/#argument-passing-conventions),
 which indicates that the value is being deinitialized.
 
 ## Default destruction behavior
@@ -216,7 +217,7 @@ destructor is called at a specific point, use the discard pattern described in
 It's important to notice that the `__del__()` method is an "extra" cleanup
 event, and your implementation does not override any default destruction
 behaviors. For example, Mojo still destroys all the fields in `Balloons` even
-if you add a `__del__()` method that to do nothing:
+if you add a `__del__()` method that does nothing:
 
 ```mojo
 @fieldwise_init

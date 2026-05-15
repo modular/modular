@@ -252,7 +252,7 @@ struct Pair[T: Copyable & ImplicitlyDestructible](
 
 The compiler automatically conforms every struct to `AnyType` and
 `ImplicitlyDestructible` when all members are also implicitly destructible.
-With generics, the parameter's bounds must include `ImplicitlyDestructible`
+With generics, the parameter's traits must include `ImplicitlyDestructible`
 for this to apply:
 
 ```mojo
@@ -267,8 +267,8 @@ def main():
     print(box.item)  # OK
 ```
 
-Without `ImplicitlyDestructible` in the bound, the compiler
-can't verify that the struct is safe to destroy implicitly:
+Without `ImplicitlyDestructible`, the compiler can't verify that the struct
+is safe to destroy using the built-in `__del__()` destructor:
 
 ```mojo
 @fieldwise_init
@@ -354,9 +354,9 @@ struct Box[T: Copyable](
 ### Conditional conformance and compile-time values
 
 Conditional conformance can depend only on information known at compile
-time. While it often uses trait bounds, it is not limited to traits. A
-condition can use any compile-time value that can be evaluated in a clear
-and consistent way.
+time. While it often uses traits to constrain conformance, conditional
+conformance is not limited to traits. A condition can use any compile-time
+value that can be evaluated in a clear and consistent way.
 
 For example, a type might conform to a trait only on a specific platform,
 (such as NVIDIA GPUs or Apple Silicon with Metal) or when a compile-time
@@ -446,7 +446,7 @@ struct Pair[T: Copyable & ImplicitlyDestructible](
 Instance methods take `self` as the first argument. The convention on
 `self` determines access:
 
-- Bare `self` -- immutable.
+- Bare `self` -- immutable reference.
 - `mut self` -- allows modification.
 - `out`, `deinit` -- used by lifecycle methods.
 - `out` -- also used to specify a named result slot.

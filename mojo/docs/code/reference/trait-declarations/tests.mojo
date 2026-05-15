@@ -251,7 +251,7 @@ def test_trait_refinement() raises:
     assert_equal(Box_2("hello").to_pretty_string(), "Box with value: hello")
 
 
-# --- Parameter-level trait bounds ---
+# --- Parameter-level trait constraints ---
 
 
 def print_twice[T: Writable & Copyable](value: T):
@@ -263,7 +263,7 @@ def test_parameter_level_bounds():
     print_twice("hi")  # hi hi
 
 
-# --- Struct-level trait bounds ---
+# --- Struct-level trait constraints ---
 
 
 @fieldwise_init
@@ -280,7 +280,7 @@ def test_struct_level_bounds() raises:
     assert_equal(String(p), "(1, 2)")
 
 
-# --- Fieldwise trait bounds ---
+# --- Fieldwise trait constraints ---
 
 
 @fieldwise_init

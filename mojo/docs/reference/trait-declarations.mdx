@@ -4,7 +4,7 @@ sidebar_label: Trait declarations
 sidebar_position: 8
 description: >
   Reference for Mojo trait declarations, required and
-  provided methods, associated types, trait inheritance,
+  provided methods, associated types, trait refinement,
   trait composition, and conformance rules.
 ---
 
@@ -335,7 +335,7 @@ compile-time constant that varies across conforming types. For example, a
 `Measurable` trait might require a `unit` string and an `always_positive`
 boolean to validate measurements.
 
-In this example, the trait requires requires conforming types to provide a
+In this example, the trait requires conforming types to provide a
 `unit` string, an `always_positive` boolean, and a `get_value()` method.
 The `validate()` function uses those requirements to check that the value
 is positive when `always_positive` is `True`:
@@ -373,7 +373,7 @@ validation for `DegreesCentigrade` and fail for `Pascals`.
 
 ## Trait refinement
 
-When a trait refines another, its bound implies the parent's bound:
+When a trait refines another, its constraint implies the parent's constraint:
 
 ```mojo
 trait Printable:
@@ -404,18 +404,18 @@ def main():
 ```
 
 A function requiring `T: PrettyPrintable` can call any method
-from `Printable` without naming it in the bound.
+from `Printable` without naming it in the constraint.
 
-### Bound resolution order
+### Constraint resolution order
 
-When the compiler resolves a trait bound:
+When the compiler resolves a trait constraint:
 
 - The parameter's declared traits are checked first.
 - Parent traits are included transitively.
-- If the bound uses `&`, all composed traits must be
+- If the constraint uses `&`, all composed traits must be
   satisfied.
 - If a `where` clause is present, its constraints are checked
-  after parameter-level bounds.
+  after parameter-level constraints.
 
 If any check fails, the compiler reports which trait the type doesn't
 conform to.
