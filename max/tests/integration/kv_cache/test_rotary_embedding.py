@@ -23,7 +23,6 @@ from max.driver import Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Dim, Graph, TensorType, TensorValueLike, ops
-from max.kv_cache import PagedKVCacheManager
 from max.nn import (
     DynamicRotaryEmbedding,
     Llama3RopeScalingParams,
@@ -39,6 +38,7 @@ from max.nn.kernels import (
     rope_split_store_ragged,
 )
 from max.nn.kv_cache import KVCacheParams, PagedCacheValues
+from max.pipelines.kv_cache import PagedKVCacheManager
 from modular_graph_test import are_all_tensor_values, modular_graph_test
 from test_common.context_utils import create_text_context
 

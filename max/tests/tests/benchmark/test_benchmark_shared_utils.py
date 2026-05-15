@@ -14,7 +14,7 @@
 from __future__ import annotations
 
 import resource
-from unittest.mock import MagicMock, sentinel
+from unittest.mock import MagicMock
 
 import numpy as np
 import pytest
@@ -36,7 +36,6 @@ def test_get_tokenizer_passes_model_max_length_when_provided(
 ) -> None:
     from_pretrained = mocker.patch(
         "transformers.AutoTokenizer.from_pretrained",
-        return_value=sentinel.tokenizer,
     )
     mocker.patch(
         "transformers.AutoConfig.from_pretrained",
@@ -45,15 +44,18 @@ def test_get_tokenizer_passes_model_max_length_when_provided(
 
     tokenizer = get_tokenizer(
         "repo/model",
+        revision="abc123",
         model_max_length=4096,
         trust_remote_code=True,
     )
 
-    assert tokenizer is sentinel.tokenizer
+    assert tokenizer is from_pretrained.return_value
+    assert tokenizer._resolved_revision == "abc123"
     from_pretrained.assert_called_once_with(
         "repo/model",
         model_max_length=4096,
         trust_remote_code=True,
+        revision="abc123",
     )
 
 
@@ -62,19 +64,22 @@ def test_get_tokenizer_omits_model_max_length_when_unspecified(
 ) -> None:
     from_pretrained = mocker.patch(
         "transformers.AutoTokenizer.from_pretrained",
-        return_value=sentinel.tokenizer,
     )
     mocker.patch(
         "transformers.AutoConfig.from_pretrained",
         return_value=MagicMock(architectures=[]),
     )
 
-    tokenizer = get_tokenizer("repo/model", trust_remote_code=False)
+    tokenizer = get_tokenizer(
+        "repo/model", revision=None, trust_remote_code=False
+    )
 
-    assert tokenizer is sentinel.tokenizer
+    assert tokenizer is from_pretrained.return_value
+    assert tokenizer._resolved_revision is None
     from_pretrained.assert_called_once_with(
         "repo/model",
         trust_remote_code=False,
+        revision=None,
     )
 
 

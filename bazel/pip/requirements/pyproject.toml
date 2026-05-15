@@ -36,6 +36,7 @@ dependencies = [
   "ipython",
   "jinja2",
   "jiwer",
+  "jsonschema",
   "kaleido==0.2.1",
   "kepler",
   "libcst",

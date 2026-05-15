@@ -12,6 +12,10 @@ modular_py_test(
     size = "large",
     srcs = glob(
         ["*.py"],
+        exclude = [
+            "test_tokenizer.py",
+            "test_tool_parser.py",
+        ],
     ),
     exec_properties = {
         "test.resources:gpu-memory": "1",
@@ -33,5 +37,23 @@ modular_py_test(
         "//max/python/max/pipelines/lib",
         requirement("numpy"),
         requirement("transformers"),
+    ],
+)
+
+modular_py_test(
+    name = "test_tool_parser",
+    srcs = ["test_tool_parser.py"],
+    deps = [
+        "//max/python/max/interfaces",
+        "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/lib",
+    ],
+)
+
+modular_py_test(
+    name = "test_tokenizer",
+    srcs = ["test_tokenizer.py"],
+    deps = [
+        "//max/python/max/pipelines/architectures",
     ],
 )

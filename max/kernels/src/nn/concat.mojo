@@ -15,7 +15,7 @@ from std.collections import Optional
 from std.math import align_down, align_up, ceildiv, divmod
 
 from std.sys._build import is_debug_build
-from std.sys.info import simd_width_of, size_of
+from std.sys.info import CompilationTarget, simd_width_of, size_of
 
 from std.algorithm.functional import (
     _get_start_indices_of_nth_subvolume,
@@ -45,6 +45,22 @@ from .gather_scatter import normalize_neg_index
 comptime elementwise_epilogue_type = def[
     c_type: DType, rank: Int, width: SIMDSize = 1, *, alignment: Int = 1
 ](IndexList[rank], SIMD[c_type, width]) capturing -> None
+
+
+@always_inline
+@parameter
+def preferred_simd_width[dtype: DType]() -> Int:
+    """SIMD scalar count for fused GPU concat vectorization.
+
+    Uses 32-byte global loads on ``sm_100a``; otherwise the target's native
+    ``simd_width_of`` for ``dtype`` on the active GPU compilation target.
+    """
+    return (
+        32
+        // size_of[dtype]() if CompilationTarget[get_gpu_target()]._is_arch[
+            "sm_100a"
+        ]() else simd_width_of[dtype, target=get_gpu_target()]()
+    )
 
 
 # ===-----------------------------------------------------------------------===#
@@ -695,7 +711,12 @@ def _concat_inner_most_single_dim[
     ],
 ):
     var idx = block_idx.x * block_size + thread_idx.x
-    if idx >= output.num_elements():
+    # One thread per "row" of the concat inputs (last dim is 1 on each input).
+    # `output.num_elements()` includes the stacked concat axis and must not be
+    # used here; extra tail threads from `ceildiv` in `_concat_gpu` must exit
+    # before subvolume indexing.
+    var row_count = inputs[0].num_elements()
+    if idx >= row_count:
         return
 
     var index = _get_start_indices_of_nth_subvolume[1](
@@ -956,7 +977,7 @@ def _concat_gpu[
             return ctx.enqueue_function[kernel](
                 output,
                 inputs,
-                grid_dim=(inputs[0].num_elements() // block_size),
+                grid_dim=(ceildiv(inputs[0].num_elements(), block_size),),
                 block_dim=(block_size),
             )
 
@@ -1214,12 +1235,9 @@ def _fused_concat_gpu_elementwise[
             in_index[axis] -= input_shape[axis]
 
     # When axis != rank-1, the SIMD group spans the innermost (non-concat)
-    # dimension, so we can safely use vectorized loads/stores. Target 128-bit
-    # (16-byte) transactions per thread for full HBM utilization, falling back
-    # to a narrower width if the inner extent isn't divisible.
+    # dimension, so we can use vectorized 32B loads/stores on sm_100a
     comptime if axis != rank - 1:
-        # 16 bytes per thread = full 128-bit coalesced transaction.
-        comptime _vec_width = simd_width_of[dtype, target=get_gpu_target()]()
+        comptime _vec_width = preferred_simd_width[dtype]()
         var inner_size = 1
         comptime for dim_idx in range(axis + 1, rank):
             inner_size *= Int(input_shapes[0][dim_idx])
@@ -1246,7 +1264,7 @@ def _fused_concat_gpu_elementwise[
                 _trace_description="concat_fused",
             ](coord_to_index_list(output.layout.shape_coord()), ctx)
     else:
-        comptime simd_width = simd_width_of[dtype, target=get_gpu_target()]()
+        comptime simd_width = preferred_simd_width[dtype]()
 
         # Check if all inputs are aligned to the target SIMD width.
         var use_simd_width = True
@@ -1351,7 +1369,7 @@ def _fused_dual_concat_gpu_elementwise[
         output_shape_1[d] = Int(_s1[d])
 
     comptime if axis != rank - 1:
-        comptime _vec_width = simd_width_of[dtype, target=get_gpu_target()]()
+        comptime _vec_width = preferred_simd_width[dtype]()
         var inner_size = 1
         comptime for dim_idx in range(axis + 1, rank):
             inner_size *= Int(input_shapes_0[0][dim_idx])
@@ -1381,7 +1399,7 @@ def _fused_dual_concat_gpu_elementwise[
                 _trace_description="dual_concat_fused",
             ](output_shape_0, output_shape_1, ctx)
     else:
-        comptime simd_width = simd_width_of[dtype, target=get_gpu_target()]()
+        comptime simd_width = preferred_simd_width[dtype]()
 
         # All inputs from both sets must be aligned for vectorized access.
         var use_simd_width = True

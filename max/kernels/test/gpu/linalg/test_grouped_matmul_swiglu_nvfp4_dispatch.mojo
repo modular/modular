@@ -632,7 +632,7 @@ def _test_swiglu_dispatch[
         input_scales_immut,
         grid_dim=hw_info.sm_count,
         block_dim=hw_info.max_thread_block_size,
-        attributes=pdl_launch_attributes(PDLLevel(1)),
+        attributes=pdl_launch_attributes(PDLLevel.ON),
     )
 
     # ============================================================

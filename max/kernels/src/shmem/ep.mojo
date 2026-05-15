@@ -577,7 +577,7 @@ def ep_fused_dispatch_kernel_api[
             grid_dim=hw_info.sm_count,
             block_dim=hw_info.max_thread_block_size,
             shared_mem_bytes=Int(smem_size),
-            attributes=pdl_launch_attributes(PDLLevel(1)),
+            attributes=pdl_launch_attributes(PDLLevel.ON),
         )
 
 
@@ -1066,5 +1066,5 @@ def ep_fused_combine_kernel_api[
             my_rank,
             grid_dim=hw_info.sm_count,
             block_dim=hw_info.max_thread_block_size,
-            attributes=pdl_launch_attributes(PDLLevel(1)),
+            attributes=pdl_launch_attributes(PDLLevel.ON),
         )

@@ -371,17 +371,6 @@
         },
         {
           "type": "category",
-          "label": "max.kv_cache",
-          "link": {
-            "type": "doc",
-            "id": "max/api/python/kv_cache"
-          },
-          "items": [
-            "__AUTOGEN:max.kv_cache__"
-          ]
-        },
-        {
-          "type": "category",
           "label": "max.nn",
           "link": {
             "type": "doc",
@@ -433,6 +422,17 @@
           },
           "items": [
             "__AUTOGEN:max.pipelines__"
+          ]
+        },
+        {
+          "type": "category",
+          "label": "max.pipelines.kv_cache",
+          "link": {
+            "type": "doc",
+            "id": "max/api/python/pipelines.kv_cache"
+          },
+          "items": [
+            "__AUTOGEN:max.pipelines.kv_cache__"
           ]
         },
         {
@@ -563,29 +563,29 @@
             "id": "max/api/python/profiler"
           },
           "items": [
-            "__AUTOGEN:max.profiler__",
-            {
-              "type": "category",
-              "label": "max.profiler.cpu",
-              "link": {
-                "type": "doc",
-                "id": "max/api/python/profiler.cpu"
-              },
-              "items": [
-                "__AUTOGEN:max.profiler.cpu__"
-              ]
-            },
-            {
-              "type": "category",
-              "label": "max.profiler.gpu",
-              "link": {
-                "type": "doc",
-                "id": "max/api/python/profiler.gpu"
-              },
-              "items": [
-                "__AUTOGEN:max.profiler.gpu__"
-              ]
-            }
+            "__AUTOGEN:max.profiler__"
+          ]
+        },
+        {
+          "type": "category",
+          "label": "max.profiler.cpu",
+          "link": {
+            "type": "doc",
+            "id": "max/api/python/profiler.cpu"
+          },
+          "items": [
+            "__AUTOGEN:max.profiler.cpu__"
+          ]
+        },
+        {
+          "type": "category",
+          "label": "max.profiler.gpu",
+          "link": {
+            "type": "doc",
+            "id": "max/api/python/profiler.gpu"
+          },
+          "items": [
+            "__AUTOGEN:max.profiler.gpu__"
           ]
         }
       ]

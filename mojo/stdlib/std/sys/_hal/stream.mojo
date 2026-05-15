@@ -17,35 +17,47 @@ from .queue import Queue
 from .event import Event, EventFlags, EVENT_FLAG_NONE, Waitable
 from .device import DeviceSpec
 from .status import STATUS_SUCCESS, HALError
-from std.memory import UnsafePointer, UnsafeMaybeUninit
+from std.memory import (
+    ArcPointer,
+    UnsafePointer,
+    UnsafeMaybeUninit,
+)
+from std.memory.arc_pointer import WeakPointer
 
 
-struct Stream[context_origin: ImmutOrigin, device_spec: DeviceSpec](Movable):
+@fieldwise_init
+struct Stream[device_spec: DeviceSpec](ImplicitlyDestructible, Movable):
     """An in-order command stream bound to a context.
 
     Operations submitted to a Stream complete in submission order. Each op
     implicitly waits for the previous one to finish.
 
     Parameters:
-        context_origin: The origin of the parent Context pointer.
         device_spec: The compilation target this stream is set up for.
     """
 
-    var _queue: Queue[Self.context_origin, Self.device_spec]
-    var _chain_event: Optional[Event[Self.context_origin, EVENT_FLAG_NONE]]
+    var _queue: ArcPointer[Queue[Self.device_spec]]
+    var _chain_event: Optional[Event[EVENT_FLAG_NONE]]
     var _queue_is_stream: Bool
+    var _self_ref: WeakPointer[Self]
 
-    def __init__[
-        o1: ImmutOrigin, o2: ImmutOrigin
-    ](
-        out self: Stream[origin_of(o1, o2), Self.device_spec],
-        ref[o1] context: Context[o2, Self.device_spec],
+    @staticmethod
+    def _create(
+        out _self: ArcPointer[Self], context: Context[Self.device_spec]
+    ) raises HALError:
+        _self = ArcPointer(Self(context))
+        _self[]._self_ref = WeakPointer(downgrade=_self)
+
+    @doc_hidden
+    def __init__(
+        out self: Stream[Self.device_spec],
+        ref context: Context[Self.device_spec],
     ) raises HALError:
         self._queue = context.create_queue()
 
         var is_stream = UnsafeMaybeUninit[Bool]()
         var status = context._raw[]._raw.queue_is_stream.f(
-            self._queue._handle, OutParam[Bool](to=is_stream)
+            self._queue[]._handle, OutParam[Bool](to=is_stream)
         )
         if status != STATUS_SUCCESS:
             var err = context._raw[].get_status_message(status)
@@ -57,6 +69,7 @@ struct Stream[context_origin: ImmutOrigin, device_spec: DeviceSpec](Movable):
             )
         self._queue_is_stream = is_stream.unsafe_assume_init_ref()
         self._chain_event = None
+        self._self_ref = WeakPointer[Self]()
 
     # ===-------------------------------------------------------------------===#
     # Internal helpers
@@ -66,13 +79,13 @@ struct Stream[context_origin: ImmutOrigin, device_spec: DeviceSpec](Movable):
         """Waits on the chain event if a previous op has recorded one."""
         if self._queue_is_stream or not self._chain_event:
             return
-        self._queue.wait_for_events(self._chain_event.value())
+        self._queue[].wait_for_events(self._chain_event.value())
 
     def _chain_signal(mut self) raises HALError:
         """Records a fresh chain event after the just-submitted op."""
         if self._queue_is_stream:
             return
-        self._chain_event = Optional(self._queue.record_event())
+        self._chain_event = Optional(self._queue[].record_event())
 
     # ===-------------------------------------------------------------------===#
     # Stream operations
@@ -89,7 +102,7 @@ struct Stream[context_origin: ImmutOrigin, device_spec: DeviceSpec](Movable):
     ) raises HALError:
         """Enqueues a function execution. Runs after all previous Stream ops."""
         self._chain_wait()
-        self._queue.execute(func, grid, block, args, arg_sizes, num_args)
+        self._queue[].execute(func, grid, block, args, arg_sizes, num_args)
         self._chain_signal()
 
     def copy_to_device(
@@ -100,7 +113,7 @@ struct Stream[context_origin: ImmutOrigin, device_spec: DeviceSpec](Movable):
     ) raises HALError:
         """Host-to-device copy. Runs after all previous Stream ops."""
         self._chain_wait()
-        self._queue.copy_to_device(dst, src, size)
+        self._queue[].copy_to_device(dst, src, size)
         self._chain_signal()
 
     def copy_from_device(
@@ -111,7 +124,7 @@ struct Stream[context_origin: ImmutOrigin, device_spec: DeviceSpec](Movable):
     ) raises HALError:
         """Device-to-host copy. Runs after all previous Stream ops."""
         self._chain_wait()
-        self._queue.copy_from_device(dst, src, size)
+        self._queue[].copy_from_device(dst, src, size)
         self._chain_signal()
 
     def copy_intra_device(
@@ -122,12 +135,12 @@ struct Stream[context_origin: ImmutOrigin, device_spec: DeviceSpec](Movable):
     ) raises HALError:
         """Same-device buffer copy. Runs after all previous Stream ops."""
         self._chain_wait()
-        self._queue.copy_intra_device(dst, src, size)
+        self._queue[].copy_intra_device(dst, src, size)
         self._chain_signal()
 
     def record_event[
         flags: EventFlags = EVENT_FLAG_NONE,
-    ](mut self,) raises HALError -> Event[Self.context_origin, flags]:
+    ](mut self,) raises HALError -> Event[flags]:
         """Returns an event signaled when all previous stream ops complete.
 
         Parameters:
@@ -135,7 +148,7 @@ struct Stream[context_origin: ImmutOrigin, device_spec: DeviceSpec](Movable):
                 only. Pass `EVENT_FLAG_CPU_VISIBLE` to enable host-side
                 synchronization on the returned event.
         """
-        return self._queue.record_event[flags]()
+        return self._queue[].record_event[flags]()
 
     def wait_for_events[
         *EventTypes: Waitable,
@@ -144,9 +157,9 @@ struct Stream[context_origin: ImmutOrigin, device_spec: DeviceSpec](Movable):
 
         Accepts any combination of events with different flag combos.
         """
-        self._queue.wait_for_events(*events)
+        self._queue[].wait_for_events(*events)
         self._chain_signal()
 
     def synchronize(self) raises HALError:
         """Blocks the host until all submitted ops on this stream complete."""
-        self._queue.synchronize()
+        self._queue[].synchronize()

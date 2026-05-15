@@ -190,8 +190,8 @@ different repeat counts.
 [infer-only parameter](#infer-only-parameters). The compiler infers
 the type from `msg`, so you only pass `count` explicitly.
 
-For more on generics—trait bounds, conditional conformance, and value
-generics—see [generics](/docs/manual/generics/).
+For more on generics, including trait conformance, conditional conformance,
+and value generics, see [generics](/docs/manual/generics/).
 
 ## Parameterized structs
 
@@ -318,8 +318,11 @@ The difference between parameters and `comptime` members is that parameter
 values are specified by the user, but `comptime` members represent either
 constant values or values derived from the input parameters.
 
-A trait can declare a `comptime` member, which must be defined by all conforming
-structs.
+A required value is a `comptime` member without an initializer. Conforming
+types must provide a value for it. This is useful when the trait needs a
+compile-time constant that varies across conforming types. For example, a
+Measurable trait might require a `unit` string and an `always_positive`
+boolean to validate measurements.
 
 Referencing `comptime` members works just like referencing struct parameters—you
 can reference a member using dot syntax (such as `Self.IteratorType`).
@@ -1011,7 +1014,7 @@ var instance1 = UseDefault()  # instance of HasDefault[10, 0]
 ```
 
 When defining parameterized APIs, you can use partially-bound and unbound types
-to express type bounds with less boilerplate, a feature called
+to express type constraints with less boilerplate, a feature called
 [automatic parameterization](#automatic-parameterization):
 
 ```mojo no-test

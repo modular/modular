@@ -189,7 +189,7 @@ struct BoxedString:
 ```
 
 Note that the `as_ptr()` method takes its `self` argument as `mut self`. If it
-used the default `read` argument convention, it would be immutable, and the
+used the default argument convention, it would be immutable, and the
 derived origin (`origin_of(self.o_ptr)`) would also be immutable.
 
 You can also pass multiple expressions to `origin_of()` to express the union
@@ -246,11 +246,8 @@ You can use the `ref` keyword with arguments and return values to specify a
 reference with parametric mutability. That is, they can be either mutable or
 immutable.
 
-From inside the called function, a `ref` argument looks like a `read` or
-`mut` argument.
-
 A `ref` return value looks like any other return value to the calling function,
-but it is a *reference* to an existing value, not a copy.
+but it's a *reference* to an existing value, not a copy.
 
 ### `ref` arguments
 

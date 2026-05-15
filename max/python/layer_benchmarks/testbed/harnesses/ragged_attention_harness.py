@@ -31,9 +31,9 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef
 from max.interfaces import RequestID, TextGenerationContext, TokenBuffer
-from max.kv_cache import PagedKVCacheManager
 from max.nn.kv_cache import KVCacheParams
 from max.pipelines.core import TextContext
+from max.pipelines.kv_cache import PagedKVCacheManager
 from typing_extensions import TypeVar
 
 from testbed.harness import CompiledLayerBundle, LayerTestHarness

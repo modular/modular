@@ -87,12 +87,12 @@ def grayscale(pic: torch.Tensor):
     return output
 ```
 
-The `CustomOpLibrary` loads operations from a compiled Mojo package file
-(`.mojopkg`). Once loaded, you can call these operations just like any other
-PyTorch function. The operations automatically handle data movement between
-PyTorch and MAX, and integrate with PyTorch when needed.
+The `CustomOpLibrary` loads operations from a precompiled Mojo package file
+(`.mojoc` or `.mojopkg`). Once loaded, you can call these operations just like
+any other PyTorch function. The operations automatically handle data movement
+between PyTorch and MAX, and integrate with PyTorch when needed.
 
-The compilation of your Mojo code into a `.mojopkg` file is handled when you run
+The compilation of your Mojo code into a `.mojoc` file is handled when you run
 your Python script. You don't need to manually invoke the Mojo compiler or
 manage build steps.
 

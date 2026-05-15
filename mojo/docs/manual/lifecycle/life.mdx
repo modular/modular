@@ -438,8 +438,8 @@ Two other things to note from the copy constructor:
 
 - The `copy` argument is immutable because the default [argument
   convention](/docs/manual/values/ownership#argument-conventions) is
-  `read`—this is a good thing because this function should not modify the
-  contents of the value being copied.
+  an immutable reference. This is a good thing because this function
+  shouldn't modify the contents of the value being copied.
 
 :::note
 
@@ -559,7 +559,7 @@ def __init__(out self, *, deinit take: Self):
 ```
 
 The move constructor takes its `take` argument using the `deinit`
-[argument convention](/docs/manual/values/ownership/#argument-conventions),
+[passing convention](/docs/manual/values/ownership/#argument-passing-conventions),
 which grants exclusive ownership of the value and marks it as destroyed at the
 end of the function. (For more information on the `deinit` convention, see
 [Field lifetimes during destruct and move](/docs/manual/lifecycle/death/#field-lifetimes-during-destruct-and-move)).
@@ -624,8 +624,8 @@ lifetime actually ends at the point of transfer.
 
 To ensure your type can't be implicitly copied, you can make it "move-only" by
 making it `Movable` but not `Copyable`. A move-only type can be
-passed to other variables and passed into functions with any argument convention
-(`read`, `mut`, and `var`)—the only catch is that you must use the `^`
+passed to other variables and passed into functions with any passing convention
+(like `mut` or `var`.) The only catch is that you must use the `^`
 transfer sigil to end the lifetime of a move-only type when assigning it to a
 new variable or when passing it as a `var` argument. The
 [`OwnedPointer`](/docs/std/memory/owned_pointer/OwnedPointer/) is an

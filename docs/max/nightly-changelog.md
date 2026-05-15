@@ -36,6 +36,27 @@ This version is still a work in progress.
 
 ### Python API
 
+- Increased the default allreduce signal buffer size from 513 MiB to 1025 MiB
+  per GPU (`max.nn.comm.allreduce.Signals.NUM_BYTES` and the matching constant
+  in `max.experimental.realization_context`). The previous 512 MiB scratch
+  could not hold the per-peer allgather intermediate for models with large
+  hidden dimensions (for example, Kimi-K2.5 at `hidden_dim=20480` with
+  `max-batch-input-tokens=16384` needs 640 MiB in bf16). This adds ~512 MiB
+  of per-GPU memory use for any multi-GPU model.
+
+- `max.experimental.nn.Module.compile()` now emits the same
+  `Building and compiling {ClassName}... / Still building... / Building
+  {ClassName} graph took Ns / Compiling {ClassName} took Ms / Building and
+  compiling {ClassName} took Ts` log sequence that pipeline-level
+  `CompilationTimer` produces today, and wraps the compile body in
+  `max.profiler.Tracer` spans (`Module.compile({ClassName})`,
+  `Module.compile.trace`, `Module.compile.session_load`) so an `nsys` capture
+  with `MODULAR_ENABLE_PROFILING=1` shows compilation as named ranges.
+  Every ModuleV3 caller — including pixel-generation pipelines that previously
+  compiled silently — now gets this observability for free. The outer
+  `CompilationTimer("model")` wrappers in `*_modulev3` architectures have been
+  removed to avoid nested timing logs.
+
 - `CPUMetricsCollector` in `max.diagnostics.cpu` is now used as a context
   manager instead of `start`/`stop` and now exposes `get_stats()` instead of
   `dump_stats()`, matching the interface of `GPUDiagContext`.
@@ -84,6 +105,19 @@ This version is still a work in progress.
   removed in favor of the existing serial/parallel dispatch.
 
 ## Breaking changes
+
+- KV cache management has moved from `max.kv_cache` to `max.pipelines.kv_cache`.
+  Update imports accordingly:
+
+  ```python
+  # Before
+  from max.kv_cache import PagedKVCacheManager, DummyKVCache
+
+  # After
+  from max.pipelines.kv_cache import PagedKVCacheManager, DummyKVCache
+  ```
+
+  Deprecation shims with `DeprecationWarning` remain at the old path.
 
 - GPU and CPU diagnostic tooling has moved from `max.diagnostics` to
   `max.profiler`: `max.diagnostics.gpu` → `max.profiler.gpu` and

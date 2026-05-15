@@ -691,6 +691,41 @@ maxserve_spec_decode_acceptance_rate_per_position_count{position="1"} 100
     assert parsed.per_pos_rate_count == {0: 100, 1: 100}
 
 
+def test_parse_spec_decode_metrics_handles_maxserve_avg_acceptance_length() -> (
+    None
+):
+    """MAX Serve's avg acceptance length histogram is parsed for bench deltas."""
+    metrics_text = """# HELP maxserve_spec_decode_avg_acceptance_length Avg len.
+# TYPE maxserve_spec_decode_avg_acceptance_length histogram
+maxserve_spec_decode_avg_acceptance_length_sum 25.0
+maxserve_spec_decode_avg_acceptance_length_count 5
+"""
+
+    parsed = parse_spec_decode_metrics(metrics_text)
+
+    assert parsed is not None
+    assert parsed.avg_acceptance_length_sum == 25.0
+    assert parsed.avg_acceptance_length_count == 5.0
+
+
+def test_calculate_spec_decode_stats_from_maxserve_avg_length_histogram_only() -> (
+    None
+):
+    """Acceptance length is derived from the avg-acceptance-length histogram delta."""
+    before = SpecDecodeMetrics(
+        avg_acceptance_length_sum=10.0, avg_acceptance_length_count=2.0
+    )
+    after = SpecDecodeMetrics(
+        avg_acceptance_length_sum=30.0, avg_acceptance_length_count=5.0
+    )
+
+    stats = calculate_spec_decode_stats(before, after)
+
+    assert stats is not None
+    assert stats.acceptance_rate is None
+    assert stats.acceptance_length == pytest.approx((30.0 - 10.0) / (5.0 - 2.0))
+
+
 def test_calculate_spec_decode_stats_matches_vllm_math() -> None:
     """Acceptance math uses benchmark-window deltas like vLLM bench serve."""
     before = SpecDecodeMetrics(
@@ -738,7 +773,7 @@ def test_calculate_spec_decode_stats_from_maxserve_histogram_only() -> None:
     assert stats.num_drafts is None
     assert stats.draft_tokens is None
     assert stats.accepted_tokens is None
-    assert stats.acceptance_rate is None
+    assert stats.acceptance_rate == pytest.approx(69.0)
     assert stats.acceptance_length is None
 
 

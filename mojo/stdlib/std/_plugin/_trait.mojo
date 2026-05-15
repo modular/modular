@@ -148,7 +148,7 @@ comptime ElementwiseFnType = (
         ) register_passable -> None,
         simd_width: Int,
         *,
-        pdl_level: PDLLevel = PDLLevel(1),
+        pdl_level: PDLLevel = PDLLevel.ON,
     ](
         func: FuncType,
         shape: IndexList[rank, ...],

@@ -48,8 +48,10 @@ def _make_metrics(**overrides: Any) -> BatchMetrics:
         total_host_kv_blocks=21,
         h2d_blocks_copied=22,
         d2h_blocks_copied=23,
-        disk_blocks_written=0,
         disk_blocks_read=0,
+        disk_blocks_written=0,
+        used_disk_kv_pct=0.0,
+        total_disk_kv_blocks=0,
         draft_tokens_generated=0,
         draft_tokens_accepted=0,
         avg_acceptance_length=0.0,
@@ -92,8 +94,10 @@ def test_metric_to_string() -> None:
         total_host_kv_blocks=21,
         h2d_blocks_copied=22,
         d2h_blocks_copied=23,
-        disk_blocks_written=0,
         disk_blocks_read=0,
+        disk_blocks_written=0,
+        used_disk_kv_pct=0.0,
+        total_disk_kv_blocks=0,
         draft_tokens_generated=0,
         draft_tokens_accepted=0,
         avg_acceptance_length=0.0,
@@ -135,6 +139,25 @@ def test_metric_to_string() -> None:
     )
 
 
+def test_metric_to_string_with_disk_kv() -> None:
+    # When the tiered connector is active, the log line shows Disk: read/written
+    # counts inside the host clause and a separate Disk KVCache Usage clause.
+    metrics = _make_metrics(
+        disk_blocks_read=24,
+        disk_blocks_written=25,
+        used_disk_kv_pct=0.30,
+        total_disk_kv_blocks=100,
+    )
+
+    formatted = metrics.pretty_format()
+    assert (
+        "Host KVCache Usage: 20.0% of 21 blocks, "
+        "Blocks copied: 22 H2D, 23 D2H, "
+        "Disk: 24 read, 25 written | "
+        "Disk KVCache Usage: 30.0% of 100 blocks |"
+    ) in formatted
+
+
 def test_metric_to_string_overlap_scheduler() -> None:
     # When the overlap scheduler is active, the measured batch execution
     # time belongs to the previous batch, not the current one. The log
@@ -166,8 +189,10 @@ def test_metric_to_string_overlap_scheduler() -> None:
         total_host_kv_blocks=0,
         h2d_blocks_copied=0,
         d2h_blocks_copied=0,
-        disk_blocks_written=0,
         disk_blocks_read=0,
+        disk_blocks_written=0,
+        used_disk_kv_pct=0.0,
+        total_disk_kv_blocks=0,
         draft_tokens_generated=0,
         draft_tokens_accepted=0,
         avg_acceptance_length=0.0,
@@ -222,8 +247,10 @@ def test_metric_to_string_continuation_only_ce_batch() -> None:
         total_host_kv_blocks=0,
         h2d_blocks_copied=0,
         d2h_blocks_copied=0,
-        disk_blocks_written=0,
         disk_blocks_read=0,
+        disk_blocks_written=0,
+        used_disk_kv_pct=0.0,
+        total_disk_kv_blocks=0,
         draft_tokens_generated=0,
         draft_tokens_accepted=0,
         avg_acceptance_length=0.0,

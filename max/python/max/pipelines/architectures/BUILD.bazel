@@ -4,7 +4,7 @@ package(default_visibility = ["//max:consumers"])
 
 filegroup(
     name = "recipe_configs",
-    srcs = glob(["**/recipes/*.yaml"]),
+    srcs = glob(["**/recipes/**/*.yaml"]),
 )
 
 modular_py_library(
@@ -20,6 +20,8 @@ modular_py_library(
     ignore_unresolved_imports = [
         # Comes from vendored qwen_vl_utils package, we cannot use this since it isn't in conda-forge
         "decord",
+        # Private tool parsers are imported at runtime, not directly
+        "tool_parsers",
     ],
     deps = [
         requirement("av"),  # For Kimi2.5 video reader
@@ -41,7 +43,7 @@ modular_py_library(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/kv_cache",
+        "//max/python/max/pipelines/kv_cache",
         "//max/python/max/pipelines/lib",
         "//max/python/max/pipelines/core",
         "//max/python/max/pipelines/dataprocessing",

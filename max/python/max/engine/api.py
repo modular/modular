@@ -48,7 +48,7 @@ CustomExtensionsType = Sequence[CustomExtensionType] | CustomExtensionType
 :class:`InferenceSession`.
 
 It may be a single path or a sequence of paths, where each path is a ``str``
-or :class:`~pathlib.Path` pointing to a compiled ``.mojopkg`` custom ops
+or :class:`~pathlib.Path` pointing to a compiled ``.mojoc``/``.mojopkg`` custom ops
 library or a ``.mojo`` source file. When a ``.mojo`` source path is provided,
 it's automatically compiled into a package before loading.
 """
@@ -313,7 +313,7 @@ def _process_custom_extensions_object(
     custom_extension: CustomExtensionType,
 ) -> CustomExtensionType:
     if is_mojo_source_package_path(Path(custom_extension)):
-        # Builds the source directory into a .mojopkg file.
+        # Builds the source directory into a .mojoc file.
         return _build_mojo_source_package(Path(custom_extension))
 
     # Pass the path through as is.
@@ -371,6 +371,41 @@ class LogLevel(str, Enum):
     CRITICAL = "critical"
 
 
+class CompiledModel:
+    """A compiled model artifact, ready for initialization with weights.
+
+    Returned by :meth:`InferenceSession.compile`. Pass it to
+    :meth:`InferenceSession.init` or :meth:`InferenceSession.init_all` to
+    produce executable :class:`Model` instances.
+
+    A :class:`CompiledModel` is not directly executable: compilation is
+    independent of the device-memory allocations performed during
+    initialization, so a single artifact can be initialized more than once.
+    """
+
+    _handle: Model
+    _expected_weights: dict[str, Any] | None
+    # Top-level graph names captured from the source MLIR module when known.
+    # Empty for path-compiled artifacts (no module to inspect). Used by the
+    # virtual-device-mode short-circuit in ``init_all``; the non-virtual path
+    # derives keys from each runtime ``Model.name`` instead.
+    _graph_names: tuple[str, ...]
+
+    def __init__(
+        self,
+        handle: Model,
+        expected_weights: dict[str, Any] | None,
+    ) -> None:
+        # Internal constructor; users obtain instances from
+        # :meth:`InferenceSession.compile`.
+        self._handle = handle
+        self._expected_weights = expected_weights
+        self._graph_names = ()
+
+    def __repr__(self) -> str:
+        return "CompiledModel()"
+
+
 class InferenceSession:
     """Manages an inference session in which you can load and run models.
 
@@ -382,6 +417,10 @@ class InferenceSession:
         session = engine.InferenceSession(devices=[CPU()])
         model_path = Path('bert-base-uncased')
         model = session.load(model_path)
+
+    For workflows that need to separate compilation from weight binding,
+    use :meth:`compile` followed by
+    :meth:`init` or :meth:`init_all` instead of :meth:`load`.
     """
 
     _impl: _InferenceSession
@@ -408,7 +447,7 @@ class InferenceSession:
             devices: A list of devices on which to run inference. The host CPU
               is always included automatically.
             custom_extensions: The extensions to load for the model.
-              Supports paths to a `.mojopkg` custom ops library or a `.mojo`
+              Supports paths to a `.mojoc`/`.mojopkg` custom ops library or a `.mojo`
               source file.
         """
         self.num_threads = num_threads
@@ -510,7 +549,7 @@ class InferenceSession:
             model: Path to a model.
 
             custom_extensions: The extensions to load for the model.
-              Supports paths to `.mojopkg` custom ops.
+              Supports paths to `.mojoc`/`.mojopkg` custom ops.
 
             weights_registry: Model weight names mapped to
               their values. The values should be dlpack
@@ -559,7 +598,7 @@ class InferenceSession:
               ops, or a :class:`Graph`.
 
             custom_extensions: The extensions to load for the model.
-              Supports paths to `.mojopkg` custom ops.
+              Supports paths to `.mojoc`/`.mojopkg` custom ops.
 
             weights_registry: Model weight names mapped to
               their values. The values should be dlpack
@@ -575,23 +614,52 @@ class InferenceSession:
         Raises:
             RuntimeError: If the path provided is invalid.
         """
-        weights_registry_real: Mapping[str, DLPackArray] = (
-            weights_registry or {}
-        )
+        compiled = self.compile(model, custom_extensions=custom_extensions)
+        return self.init_all(compiled, weights_registry=weights_registry)
 
-        custom_extensions_final = []
+    def compile(
+        self,
+        model: str | Path | Module | Graph,
+        *,
+        custom_extensions: CustomExtensionsType | None = None,
+    ) -> CompiledModel:
+        """Compiles a model without binding weights or device memory.
 
+        Use this when you want to separate compilation from initialization,
+        for example to populate a compile cache ahead of time,
+        including in cross-compilation scenarios where the target device may
+        not be attached. The returned :class:`CompiledModel` is not directly
+        executable; pass it to :meth:`init` or :meth:`init_all` to produce an
+        executable :class:`Model`.
+
+        Args:
+            model: Path to a compiled model artifact, a
+              :class:`max.graph.Module` containing one or more ``mo.graph``
+              ops, or a :class:`Graph`.
+
+            custom_extensions: The extensions to load for the model.
+              Supports paths to `.mojopkg` custom ops.
+
+        Returns:
+            A :class:`CompiledModel` artifact ready to be initialized.
+
+        Raises:
+            RuntimeError: If the path provided is invalid or compilation
+              fails.
+        """
+        custom_extensions_final: list[CustomExtensionType] = []
         if custom_extensions is not None:
             custom_extensions_final = _process_custom_extensions_objects(
                 custom_extensions
             )
 
-        # Track the MLIR module if we have one so we can derive a diagnostic
-        # pipeline name and (in virtual-device mode) enumerate graph names.
+        # Track the MLIR module if we have one so we can enumerate graph
+        # names and capture expected-weight metadata for init-time validation.
         module: Module | None = None
+        expected_weights: dict[str, Any] | None = None
 
         if isinstance(model, Path | str):
-            _model = self._impl.compile_from_path(
+            handle = self._impl.compile_from_path(
                 model, custom_extensions_final
             )
         elif isinstance(model, Graph):
@@ -600,34 +668,112 @@ class InferenceSession:
                 _process_custom_extensions_objects(model.kernel_libraries_paths)
             )
 
-            # TODO: if the model has been loaded from a serialized MLIR file, we don't have
-            # the _weights attribute available to us
+            # TODO: if the model has been loaded from a serialized MLIR file,
+            # we don't have the _weights attribute available to us
             if hasattr(model, "_weights"):
-                for weight_name, weight in model._weights.items():
-                    if weight_name not in weights_registry_real:
-                        raise ValueError(
-                            f"Weight '{weight_name}' is not in the weights registry."
-                        )
+                expected_weights = {
+                    name: weight.value.device
+                    for name, weight in model._weights.items()
+                }
 
-                    registered_weight = weights_registry_real[weight_name]
-                    expected_device = weight.value.device
-                    if (
-                        expected_device is None
-                        or expected_device.device_type.value == "cpu"
-                    ) != (
-                        # 1 is the value of DLDeviceType::kDLCPU
-                        registered_weight.__dlpack_device__()[0] == 1
-                    ):
-                        raise ValueError(
-                            f"Mismatch in device type for weight '{weight_name}'. Expected {expected_device} but weight is {registered_weight}"
-                        )
-
-            _model = self._compile_module(module, custom_extensions_final)
+            handle = self._compile_module(module, custom_extensions_final)
         elif isinstance(model, Module):
             module = model
-            _model = self._compile_module(module, custom_extensions_final)
+            handle = self._compile_module(module, custom_extensions_final)
         else:
             raise RuntimeError("The model is not a valid path or module.")
+
+        compiled = CompiledModel(
+            handle=handle, expected_weights=expected_weights
+        )
+        if module is not None:
+            compiled._graph_names = tuple(module.top_level_graph_names())
+        return compiled
+
+    def init(
+        self,
+        compiled: CompiledModel,
+        *,
+        weights_registry: Mapping[str, DLPackArray] | None = None,
+    ) -> Model:
+        """Initializes a compiled model with weights for execution.
+
+        Use this to complete the second half of a :meth:`compile`/:meth:`init`
+        pair when the artifact contains a single model. For artifacts with
+        more than one model, use :meth:`init_all`.
+
+        Args:
+            compiled: The compiled artifact returned by :meth:`compile`.
+
+            weights_registry: Model weight names mapped to their values. The
+              values should be dlpack arrays. If an array is a read-only numpy
+              array, you must ensure that its lifetime extends beyond the
+              lifetime of the model. Although ``weights_registry`` is
+              technically optional, you'll always need to load weights in
+              practice.
+
+        Returns:
+            The initialized :class:`Model`, ready to execute.
+        """
+        models = self.init_all(compiled, weights_registry=weights_registry)
+        if len(models) != 1:
+            raise ValueError(
+                f"Expected exactly one model in the compiled artifact, but "
+                f"got {len(models)}. Use init_all() to initialize multi-model "
+                f"artifacts."
+            )
+        return next(iter(models.values()))
+
+    def init_all(
+        self,
+        compiled: CompiledModel,
+        *,
+        weights_registry: Mapping[str, DLPackArray] | None = None,
+    ) -> dict[str, Model]:
+        """Initializes all models in a compiled artifact for execution.
+
+        Use this to complete the second half of a :meth:`compile`/:meth:`init`
+        pair. Returns one :class:`Model` per top-level graph in the artifact,
+        keyed by ``sym_name``.
+
+        Args:
+            compiled: The compiled artifact returned by :meth:`compile`.
+
+            weights_registry: Model weight names mapped to their values. See
+              :meth:`init` for details.
+
+        Returns:
+            A mapping from each model's ``sym_name`` to its initialized
+            :class:`Model`, ready to execute.
+        """
+        weights_registry_real: Mapping[str, DLPackArray] = (
+            weights_registry or {}
+        )
+
+        # Validate the registry against the expected weights captured at
+        # compile time (only available when the source was a Graph with a
+        # `_weights` attribute).
+        if compiled._expected_weights is not None:
+            for (
+                weight_name,
+                expected_device,
+            ) in compiled._expected_weights.items():
+                if weight_name not in weights_registry_real:
+                    raise ValueError(
+                        f"Weight '{weight_name}' is not in the weights registry."
+                    )
+
+                registered_weight = weights_registry_real[weight_name]
+                if (
+                    expected_device is None
+                    or expected_device.device_type.value == "cpu"
+                ) != (
+                    # 1 is the value of DLDeviceType::kDLCPU
+                    registered_weight.__dlpack_device__()[0] == 1
+                ):
+                    raise ValueError(
+                        f"Mismatch in device type for weight '{weight_name}'. Expected {expected_device} but weight is {registered_weight}"
+                    )
 
         for weight_name, weight_value in weights_registry_real.items():
             try:
@@ -647,14 +793,16 @@ class InferenceSession:
             # devices don't support. Return one handle per top-level graph in
             # the module (skipping subgraphs, which are inlined callees) so
             # callers that key by graph name still work.
-            if module is not None:
-                return {name: _model for name in module.top_level_graph_names()}
-            # Path input has no MLIR module to inspect; return a single
-            # entry under a placeholder key. Real execution paths use the
-            # non-virtual branch below, which keys by Model.name.
-            return {"<unknown>": _model}
+            if not compiled._graph_names:
+                raise ValueError(
+                    "Cannot initialize a path-compiled artifact in "
+                    "virtual-device mode: graph names are unknown without "
+                    "an MLIR module to inspect. Initialize on a real device "
+                    "instead, or compile from a Graph/Module."
+                )
+            return {name: compiled._handle for name in compiled._graph_names}
 
-        models = self._impl._load_all(_model, weights_registry_real)
+        models = self._impl._load_all(compiled._handle, weights_registry_real)
         result = {m.name: m for m in models}
         if len(result) != len(models):
             raise RuntimeError(

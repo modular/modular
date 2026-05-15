@@ -20,13 +20,11 @@ from .plugin import (
 from .status import STATUS_SUCCESS, STATUS_INVALID_ARG, HALError
 
 from std.memory import (
-    ImmutPointer,
-    MutPointer,
     ArcPointer,
     UnsafeMaybeUninit,
 )
+from std.memory.arc_pointer import WeakPointer
 
-from std.sys.info import _TargetType
 from std.gpu.host.compile import get_gpu_target
 
 
@@ -48,34 +46,39 @@ def get_device_spec[
 
 
 @fieldwise_init
-struct Device[driver_origin: ImmutOrigin, spec: DeviceSpec](Movable):
+struct Device[spec: DeviceSpec](ImplicitlyDestructible, Movable):
     """A device retrieved from a Driver.
 
     Does not own the device handle — the plugin manages device lifetime
     internally. The Device is only valid while the parent Driver is alive.
 
     Parameters:
-        driver_origin: The origin of the parent Driver pointer.
         spec: The DeviceSpec that describes the architecture and other characteristics
                 of this device.
     """
 
     var _handle: DeviceHandle
-    var _driver: ImmutPointer[Driver, Self.driver_origin]
-    var _raw: ImmutPointer[RawDriver, Self.driver_origin]
+    var _driver: ArcPointer[Driver]
+    var _raw: ArcPointer[RawDriver]
+    var _self_ref: WeakPointer[Self]
     var id: Int64
 
-    def __init__[
-        o1: ImmutOrigin
-    ](
-        out self: Device[o1, Self.spec],
-        ref[o1] driver: Driver,
-        id: Int64,
+    @staticmethod
+    def _create(
+        out _self: ArcPointer[Self], driver: Driver, id: Int64
+    ) raises HALError:
+        _self = ArcPointer(Self(driver, id))
+        _self[]._self_ref = WeakPointer(downgrade=_self)
+
+    @doc_hidden
+    def __init__(
+        out self: Device[Self.spec], driver: Driver, id: Int64
     ) raises HALError:
         self.id = id
 
-        self._driver = ImmutPointer(to=driver)
-        self._raw = rebind[type_of(self._raw)](ImmutPointer(to=driver._raw))
+        self._raw = driver._raw
+        self._driver = driver._self_ref.try_upgrade().value()
+        self._self_ref = WeakPointer[Self]()
 
         ref raw = self._raw[]
 
@@ -107,7 +110,5 @@ struct Device[driver_origin: ImmutOrigin, spec: DeviceSpec](Movable):
 
     def get_context(
         self,
-    ) raises HALError -> Context[
-        origin_of(self, Self.driver_origin), Self.spec
-    ]:
-        return Context[origin_of(self, Self.driver_origin), Self.spec](self)
+    ) raises HALError -> ArcPointer[Context[Self.spec]]:
+        return Context[Self.spec]._create(self)

@@ -135,6 +135,7 @@ Submodules
 
    pipelines.architectures
    pipelines.core
+   pipelines.kv_cache
    pipelines.lib
    pipelines.lib.interfaces
    pipelines.lib.log_probabilities

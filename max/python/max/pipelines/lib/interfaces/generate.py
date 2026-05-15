@@ -33,7 +33,7 @@ from max.interfaces import (
     TextGenerationInputs,
     TextGenerationOutput,
 )
-from max.kv_cache.paged_kv_cache import PagedKVCacheManager
+from max.pipelines.kv_cache.paged_kv_cache import PagedKVCacheManager
 
 from .pipeline_model import PipelineModelWithKVCache
 

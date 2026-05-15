@@ -30,7 +30,6 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, Shape, TensorType, ops
 from max.graph.weights import WeightData
-from max.kv_cache import PagedKVCacheManager
 from max.nn.attention.mask_config import MHAMaskVariant
 from max.nn.attention.multi_latent_attention import MLAPrefillMetadata
 from max.nn.attention.multi_latent_attention_fp8 import (
@@ -58,6 +57,7 @@ from max.nn.rotary_embedding import (
 from max.pipelines.architectures.deepseekV3_2.layers.sparse_mla import (
     SparseLatentAttentionWithRopeFp8,
 )
+from max.pipelines.kv_cache import PagedKVCacheManager
 from test_common.context_utils import create_text_context
 from test_common.graph_utils import is_b100_b200
 from torch.utils.dlpack import from_dlpack

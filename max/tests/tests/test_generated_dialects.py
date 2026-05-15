@@ -128,6 +128,130 @@ def test_regions_and_blocks(mlir_context) -> None:  # noqa: ANN001
     assert isinstance(ip, InsertPoint)
 
 
+def test_free_standing_block_allocation(mlir_context: mlir.Context) -> None:
+    """A `Block(arg_types, arg_locs)` allocated via the constructor is owned
+    by the Python wrapper. Dropping the wrapper frees the block — we can't
+    directly observe the destructor, but a double-free or leak in the
+    binding would surface under ASAN.
+    """
+    loc = mlir.Location.current
+    assert loc
+    int64 = builtin.IntegerType(64, builtin.SignednessSemantics.signed)
+    block = Block(arg_types=[int64, int64], arg_locs=[loc, loc])
+    args = list(block.arguments)
+    assert len(args) == 2
+    assert all(arg.type == int64 for arg in args)
+    del block  # Python owns; this should free without error.
+
+
+def test_block_append_transfers_ownership(mlir_context: mlir.Context) -> None:
+    """`Region.append` splices the block into the region's intrusive block
+    list and marks the Python wrapper as non-owning. The wrapper remains a
+    valid view: attribute access continues to work both before and after
+    append, and dropping the wrapper does NOT double-free the block.
+    """
+    loc = mlir.Location.current
+    assert loc
+    int64 = builtin.IntegerType(64, builtin.SignednessSemantics.signed)
+
+    module = builtin.ModuleOp(loc)
+    builder = OpBuilder(module.body.end)
+    graph = mo.GraphOp(builder, loc, "host", [], [], is_subgraph=False)
+    region = graph.regions[0]
+
+    block = Block(arg_types=[int64], arg_locs=[loc])
+    assert len(list(block.arguments)) == 1
+
+    region.append(block)
+
+    # Wrapper is still usable as a non-owning view.
+    assert len(list(block.arguments)) == 1
+
+    # nanobind's instance cache returns the same wrapper for the same C++
+    # pointer, so re-fetching via the region yields the same object.
+    assert region.back is block
+
+
+def test_block_outlives_dropped_region_via_keep_alive(
+    mlir_context: mlir.Context,
+) -> None:
+    """After `Region.append`, the block wrapper holds a `keep_alive` on the
+    region, which transitively keeps the parent op chain alive. So even
+    after callers drop every Python reference to the region, module, and
+    builder, the original block reference remains valid — both the
+    Python wrapper and the underlying MLIR block survive because the
+    wrapper is rooted in the live op tree.
+    """
+    loc = mlir.Location.current
+    assert loc
+    int64 = builtin.IntegerType(64, builtin.SignednessSemantics.signed)
+
+    module = builtin.ModuleOp(loc)
+    builder = OpBuilder(module.body.end)
+    graph = mo.GraphOp(builder, loc, "host", [], [], is_subgraph=False)
+    region = graph.regions[0]
+    block = Block(arg_types=[int64], arg_locs=[loc])
+    region.append(block)
+
+    del region
+    del graph
+    del builder
+    del module
+
+    assert len(list(block.arguments)) == 1
+
+
+def test_block_append_rejects_already_attached_block(
+    mlir_context: mlir.Context,
+) -> None:
+    """`Region.append` rejects blocks already attached to another region.
+    The underlying `mlir::Region::push_back` is backed by
+    `llvm::iplist::push_back`, which asserts the node isn't already in
+    another list — in debug builds that's a process abort, and in release
+    builds it silently corrupts both intrusive lists. The binding catches
+    the case early and raises ``ValueError`` (nanobind's mapping for
+    ``std::invalid_argument``).
+    """
+    loc = mlir.Location.current
+    assert loc
+    int64 = builtin.IntegerType(64, builtin.SignednessSemantics.signed)
+
+    module = builtin.ModuleOp(loc)
+    builder = OpBuilder(module.body.end)
+    graph1 = mo.GraphOp(builder, loc, "host1", [], [], is_subgraph=False)
+    graph2 = mo.GraphOp(builder, loc, "host2", [], [], is_subgraph=False)
+
+    block = Block(arg_types=[int64], arg_locs=[loc])
+    graph1.regions[0].append(block)
+    with pytest.raises(ValueError, match="already attached"):
+        graph2.regions[0].append(block)
+
+
+def test_block_drop_after_append_does_not_double_free(
+    mlir_context: mlir.Context,
+) -> None:
+    """After `Region.append`, the region owns the block (and frees it via
+    the region's destructor / parent op tear-down). Dropping the Python
+    wrapper must NOT also delete the block — otherwise the region
+    destructor would double-free.
+
+    Observed indirectly: this test simply allocates, appends, drops the
+    wrapper, and then lets the parent op chain go out of scope. A
+    double-free would surface under ASAN.
+    """
+    loc = mlir.Location.current
+    assert loc
+    int64 = builtin.IntegerType(64, builtin.SignednessSemantics.signed)
+
+    module = builtin.ModuleOp(loc)
+    builder = OpBuilder(module.body.end)
+    graph = mo.GraphOp(builder, loc, "host", [], [], is_subgraph=False)
+    region = graph.regions[0]
+    block = Block(arg_types=[int64], arg_locs=[loc])
+    region.append(block)
+    del block  # Wrapper drop must not delete the block (region owns it).
+
+
 def test_block_contents(mlir_context: mlir.Context) -> None:
     loc = mlir.Location.current
     assert loc

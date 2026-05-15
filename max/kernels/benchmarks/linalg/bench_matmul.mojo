@@ -17,6 +17,7 @@ from std.utils.numerics import get_accum_type
 
 from std.benchmark import *
 from std.benchmark import keep
+from internal_utils import ScalarArray
 from layout import Coord, RuntimeInt, TileTensor, row_major
 from linalg.matmul import matmul
 from linalg.packing import pack_b_ndbuffer, pack_matmul_b_shape_func
@@ -88,14 +89,20 @@ def bench_matmul[
     comptime c_type = spec.static_info.c_type
     comptime b_packed = spec.static_info.b_packed
     comptime alignment = 64
-    var a_ptr = alloc[Scalar[a_type],](spec.m * spec.k, alignment=alignment)
-    var b_ptr = alloc[Scalar[b_type],](spec.k * spec.n, alignment=alignment)
-    var c_ptr = alloc[Scalar[c_type],](spec.m * spec.n, alignment=alignment)
-    var a = TileTensor(a_ptr, row_major(Coord(_ri(spec.m), _ri(spec.k))))
-    var b = TileTensor(b_ptr, row_major(Coord(_ri(spec.k), _ri(spec.n))))
-    var c = TileTensor(c_ptr, row_major(Coord(_ri(spec.m), _ri(spec.n))))
-    rand[a_type](a_ptr, spec.m * spec.k)
-    rand[b_type](b_ptr, spec.k * spec.n)
+    var a_ptr = ScalarArray[a_type](count=spec.m * spec.k, alignment=alignment)
+    var b_ptr = ScalarArray[b_type](count=spec.k * spec.n, alignment=alignment)
+    var c_ptr = ScalarArray[c_type](count=spec.m * spec.n, alignment=alignment)
+    var a = TileTensor(
+        a_ptr.unsafe_ptr(), row_major(Coord(_ri(spec.m), _ri(spec.k)))
+    )
+    var b = TileTensor(
+        b_ptr.unsafe_ptr(), row_major(Coord(_ri(spec.k), _ri(spec.n)))
+    )
+    var c = TileTensor(
+        c_ptr.unsafe_ptr(), row_major(Coord(_ri(spec.m), _ri(spec.n)))
+    )
+    rand(a_ptr.as_span())
+    rand(b_ptr.as_span())
     _ = c.fill(Scalar[c_type](0))
 
     var padded_n_k = pack_matmul_b_shape_func[a_type, c_type, False](b)
@@ -103,10 +110,12 @@ def bench_matmul[
     var padded_n = padded_n_k[1] if b_packed else spec.n
     var padded_k = padded_n_k[0] if b_packed else spec.k
 
-    var bp_ptr = alloc[Scalar[b_type],](
-        padded_k * padded_n, alignment=alignment
+    var bp_ptr = ScalarArray[b_type](
+        count=padded_k * padded_n, alignment=alignment
     )
-    var bp = TileTensor(bp_ptr, row_major(Coord(_ri(padded_k), _ri(padded_n))))
+    var bp = TileTensor(
+        bp_ptr.unsafe_ptr(), row_major(Coord(_ri(padded_k), _ri(padded_n)))
+    )
 
     if b_packed:
         pack_b_ndbuffer[a_type, c_type](b, bp)
@@ -119,16 +128,13 @@ def bench_matmul[
             transpose_b=False,
             b_packed=b_packed,
             saturated_vnni=False,
-        ](c, a, bp if b_packed else b)
+        ](c, a, bp.as_any_origin() if b_packed else b.as_any_origin())
         keep(c.ptr)
 
     bencher.iter[bench_fn]()
     verify(a, b, c)
 
-    a_ptr.free()
-    b_ptr.free()
-    bp_ptr.free()
-    c_ptr.free()
+    _ = bp_ptr^
 
 
 @fieldwise_init

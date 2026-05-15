@@ -37,7 +37,6 @@ Modules
    graph.quantization
    graph.weights
    interfaces
-   kv_cache
    nn
    nn.attention
    nn.kernels
@@ -100,6 +99,7 @@ Modules
    pipelines.architectures.wan
    pipelines.architectures.z_image_modulev3
    pipelines.core
+   pipelines.kv_cache
    pipelines.lib
    pipelines.lib.interfaces
    pipelines.lib.log_probabilities

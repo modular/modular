@@ -232,6 +232,10 @@ class MockPixelGenerationRequest:
                     steps=self.num_inference_steps,
                     guidance_scale=self.guidance_scale,
                     true_cfg_scale=self.true_cfg_scale,
+                    # Use PNG (lossless) for verification so MAE/RMSE/SSIM/LPIPS
+                    # compare actual VAE output, not JPEG-compressed bytes.  The
+                    # serving default is still JPEG.
+                    output_format="png",
                 )
             ),
         )

@@ -28,17 +28,17 @@ def kernel_verification_ops_path() -> Path:
 
 
 def test_kernel_library(
-    counter_mojopkg: Path, kernel_verification_ops_path: Path
+    counter_mojoc: Path, kernel_verification_ops_path: Path
 ) -> None:
     with Graph("test_kernel_library") as graph:
         kernels = graph._kernel_library
-        kernels.add_path(counter_mojopkg)
+        kernels.add_path(counter_mojoc)
 
         assert "make_counter" in kernels
         assert "my_add" not in kernels
 
         with pytest.raises(ValueError) as err:
-            kernels.add_path(Path("/path/to/invalid.mojopkg"))
+            kernels.add_path(Path("/path/to/invalid.mojoc"))
         assert "No such file or directory" in str(
             err.value
         ) or "failed to load Mojo package" in str(err.value)

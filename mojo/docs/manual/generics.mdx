@@ -46,7 +46,7 @@ adapts at compile time to the types and values you use, including types
 from libraries you didn't write.
 
 Type generics let one function, method, or struct work across many
-types. You declare requirements once using trait bounds, and the
+types. You declare requirements once using trait conformance, and the
 compiler enforces them. You avoid near-identical implementations and fix
 bugs in one place.
 
@@ -70,18 +70,19 @@ Type generics let you write code that works across many types. You define
 behavior once, and the compiler specializes it for each concrete type at
 the call site.
 
-### Setting generic parameter bounds
+### Setting generic parameter constraint annotations
 
-_Bounds_ define what a type must do. You express them as traits that
-restrict which types your generic code accepts.
+_Constraints_ define what a type must do. You express the annotations
+as traits or trait compositions. These annotations use trait requirements
+to restrict which types your generic code accepts.
 
-Always constrain generic parameters with trait bounds. Traits define the
+You must always constrain generic parameters. Traits define the
 operations and guarantees your code relies on. They also expose associated
 types (compile-time aliases) that your implementation can use. With these
 constraints in place, the compiler can check correctness and report
 missing requirements early.
 
-- The most permissive bound is
+- The most permissive conformance is
   [`AnyType`](/docs/std/builtin/anytype/AnyType/). It places no behavioral
   requirements on a type and serves as the least restrictive option.
 
@@ -90,8 +91,8 @@ missing requirements early.
   cleanup when they go out of scope. Generic code that stores or owns
   values often requires it.
 
-Without bounds, generic code can't do meaningful work. The compiler has no
-guarantees about what operations are valid.
+Without a fixed set of required features, generic code can't do meaningful
+work. The compiler has no guarantees about what operations are valid.
 
 Examples on this page use trait composition (such as
 `Equatable & Copyable`) to declare the exact capabilities an algorithm
@@ -202,7 +203,7 @@ T: Equatable & Copyable
 
 The ampersand (`&`) composes traits. It means both requirements apply.
 
-Use the fewest bounds your code needs. That keeps your function usable
+Use the fewest constraints your code needs. That keeps your function usable
 with more types. For example, if you remove `Equatable` from
 `all_equal()`, the code fails to compile because the compiler can't
 guarantee that `!=` exists for all `T`.
@@ -211,22 +212,22 @@ guarantee that `!=` exists for all `T`.
 A type supports `!=` by implementing `__ne__()`.
 :::
 
-When your code uses an operation not covered by the bounds, the
+When your code uses an operation not covered by the constraints, the
 compiler reports an error. The type is _underspecified_. Required
-behavior isn't guaranteed by the current bounds.
+behavior isn't guaranteed by the current constraints.
 
 Fix this by adding the trait that provides the missing behavior. Use
-trait composition to extend the bounds.
+trait composition to extend the constraints.
 
-Adding bounds restricts which types you accept, but expands what your
+Adding constraints restricts which types you accept, but expands what your
 code can do. Each trait adds guaranteed operations, which lets the
 compiler check correctness and reason about lifetimes and effects.
 
-In practice, generic errors mean your bounds don't include the
+In practice, generic errors mean your constraints don't include the
 behavior your code uses. Add the missing trait.
 
 :::note
-Bounds make your code sound: every operation you use is guaranteed to
+Constraints make your code sound: every operation you use is guaranteed to
 exist for any type that satisfies them.
 :::
 
@@ -252,7 +253,7 @@ def my_generic_fn[T: AnyType](value: T):
 
 This function accepts any type, because its only limit is `AnyType`.
 `AnyType` is the root of the trait hierarchy. It's the baseline
-that all types extend. Using `AnyType` means the value has no guaranteed
+that all types conform to. Using `AnyType` means the value has no guaranteed
 destructor or lifetime management. Outside of
 [_reflection_](/docs/manual/metaprogramming/reflection/) (type introspection),
 this function is effectively useless.
@@ -286,17 +287,17 @@ difference is that a generic type uses those parameters in its storage
 as well as in its methods. Here, `Pair` stores two values of the same
 element type and implements equality by comparing its fields.
 
-Traits are what make generic types practical. Those bounds describe
+Traits are what make generic types practical. Those constraints describe
 the requirements the type definition depends on.
 In this example, `Pair` needs to compare values,
 so `T` must be equatable. It also needs to assign and copy values in common
-operations, so it applies a trait composition bound to `T`:
+operations, so it applies a trait composition constraint on `T`:
 
 ```mojo
 comptime ComparableValue = Equatable & ImplicitlyCopyable
 ```
 
-The `Pair` definition applies this bound in two places: to the type
+The `Pair` definition applies this constraint in two places: to the type
 itself (in parentheses) and to the type parameter (in square brackets),
 which is used to define its fields.
 
@@ -305,9 +306,9 @@ struct Pair[T: ComparableValue](ComparableValue):
 ```
 
 - For the parentheses after the type, you can say the struct "conforms to"
-  or "implements" this bound. This is a promise.
+  or "implements" this constraint. This is a promise.
   The `Pair` type is saying, "I am a `ComparableValue`."
-- For the square brackets, the trait bound restricts which values
+- For the square brackets, the conformance restricts which values
   callers can pass. This is a requirement: "Any value used with `Pair`
   must have type `T`, and `T` must be a `ComparableValue`."
 
@@ -340,8 +341,8 @@ parameters. This visually distinguishes them from type parameters.
 
 ## Downcasting safely: `conforms_to` + `trait_downcast()`
 
-Sometimes a generic bound is broader than what you need. You may want
-operations from a specific trait that the bound doesn't guarantee. Use
+Sometimes a generic constraint is broader than what you need. You may want
+operations from a specific trait that the constraint doesn't guarantee. Use
 a guarded downcast with `conforms_to()` and `trait_downcast()`.
 
 Downcast only when the underlying type implements the target trait.
@@ -369,9 +370,9 @@ Key points:
 
 Only call `trait_downcast()` inside the guarded branch. Handle the
 fallback in the `else` branch. If you always need the trait, add it as
-a bound (for example, `T: Writable`) instead of downcasting.
+a constraint (for example, `T: Writable`) instead of downcasting.
 
-Use this pattern when you can't express the requirement as a bound.
+Use this pattern when you can't express the requirement as a constraint.
 It's common in reflection-style code that handles values based on
 their traits. See [reflection](/docs/manual/metaprogramming/reflection/).
 
@@ -403,7 +404,7 @@ Think comparisons, predicates, and other pure operations.
 
 Rule of thumb: if your generic code needs to own, copy, or control
 when a value dies, avoid explicitly destroyed types. Add an
-`ImplicitlyDestructible` bound to keep things working.
+`ImplicitlyDestructible` constraint to keep things working.
 
 ## Value generics
 
@@ -501,8 +502,8 @@ larger APIs, you'll run into a few additional patterns:
   containers, and performance-critical loops where the compiler
   generates different code paths for different values.
 
-These topics build on the same core ideas: type parameters, bounds,
-and specialization. You can apply bounds to functions, methods,
+These topics build on the same core ideas: type parameters, constraints,
+and specialization. You can apply constraints to functions, methods,
 types, or `comptime` aliases to keep requirements close to where they
 matter.
 

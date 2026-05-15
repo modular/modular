@@ -24,10 +24,10 @@ bazel_dep(name = "buildifier_prebuilt", version = "8.2.1", dev_dependency = True
 
 archive_override(
     module_name = "rules_mojo",
-    integrity = "sha256-yojOu2Dj3RZ33cSofSlhK7eyroSdce0RI+Q7xBx5/zQ=",
-    strip_prefix = "rules_mojo-37e8350d88bc36cd0f397850433daeccb16b9e0d",
+    integrity = "sha256-Q38la8EJMBNo0P7+iRYkqq1TUWba8qxfkTMsyDws9Qg=",
+    strip_prefix = "rules_mojo-0c89faae749fee676426ed2981642faa27919835",
     urls = [
-        "https://github.com/modular/rules_mojo/archive/37e8350d88bc36cd0f397850433daeccb16b9e0d.tar.gz",
+        "https://github.com/modular/rules_mojo/archive/0c89faae749fee676426ed2981642faa27919835.tar.gz",
     ],
 )
 
@@ -188,7 +188,7 @@ http_archive(
 
 package(default_visibility = ["//visibility:public"])
 
-# This is the device-side bitcode that is linked into shmem.mojopkg.
+# This is the device-side bitcode that is linked into shmem.mojoc.
 filegroup(
     name = "device",
     srcs = ["lib/librocshmem_device.bc"],
@@ -220,7 +220,7 @@ http_archive(
     build_file_content = """
 package(default_visibility = ["//visibility:public"])
 
-# This is the device-side bitcode that is linked into shmem.mojopkg.
+# This is the device-side bitcode that is linked into shmem.mojoc.
 filegroup(
     name = "device",
     srcs = ["lib/libnvshmem_device.bc"],
@@ -287,10 +287,10 @@ mojo.gpu_toolchains(
         "AMD Radeon Pro W7900": "W7900",
         "Phoenix3": "780M",
         "Strix Halo": "strixhalo",
-        "Metal 1": "",  # Unsupported, macOS updates on any hardware get you to Metal 3+
-        "Metal 2": "",  # Unsupported, macOS updates on any hardware get you to Metal 3+
-        "Metal 3": "metal3",  # macOS 15
-        "Metal 4": "metal4",  # macOS 26
+        "Metal 1": "",  # M1. Officially is not supported
+        "Metal 2": "metal2",  # M2 + macOS 15
+        "Metal 3": "metal3",  # M3 + macOS 15
+        "Metal 4": "metal4",  # M4 + macOS 26
     },
     # GPU name -> target accelerator
     supported_gpus = {
@@ -318,6 +318,7 @@ mojo.gpu_toolchains(
         "gb10": "nvidia:sm_121",
         "rx6900xt": "amdgpu:gfx1030",
         "strixhalo": "amdgpu:gfx1151",
+        "metal2": "metal:2",
         "metal3": "metal:3",
         "metal4": "metal:4",
     },
@@ -375,23 +376,29 @@ archive_override(
 
 http_archive(
     name = "clang-linux-x86_64",
-    build_file = "//bazel/public-patches:clang.BUILD",  # TODO: Delete next bump
-    sha256 = "4ec4349717c3e6c7ffa0777b6f7e8987af039e05f0a32af5316c3dd730496651",
-    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/llvm-linux-x86_64/20.1.8/4ec4349717c3e6c7ffa0777b6f7e8987af039e05f0a32af5316c3dd730496651/llvm-linux-x86_64.tar.xz",
+    # Override adds: include_dir (directory rule), resource_directory_filegroup,
+    # and exports_files for direct file refs (bin/llvm-strip, libclang_rt.*).
+    build_file = "//bazel/public-patches:clang.BUILD",
+    sha256 = "2b3ce493f43c2206275ac34cdfd9d42450bccd79ce725df570bfdc4b7674e29b",
+    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/llvm-linux-x86_64/22.1.4/2b3ce493f43c2206275ac34cdfd9d42450bccd79ce725df570bfdc4b7674e29b/llvm-linux-x86_64.tar.xz",
 )
 
 http_archive(
     name = "clang-linux-aarch64",
-    build_file = "//bazel/public-patches:clang.BUILD",  # TODO: Delete next bump
-    sha256 = "5bda1756f6cfb7a3472b5a885acb8d747040662305922eb809154481f1222189",
-    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/llvm-linux-aarch64/20.1.8/5bda1756f6cfb7a3472b5a885acb8d747040662305922eb809154481f1222189/llvm-linux-aarch64.tar.xz",
+    # Override adds: include_dir (directory rule), resource_directory_filegroup,
+    # and exports_files for direct file refs (bin/llvm-strip, libclang_rt.*).
+    build_file = "//bazel/public-patches:clang.BUILD",
+    sha256 = "474ff5052ccff6c676ad43f48da1385822bc8ec0120caaacd891c21d813475ab",
+    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/llvm-linux-aarch64/22.1.4/474ff5052ccff6c676ad43f48da1385822bc8ec0120caaacd891c21d813475ab/llvm-linux-aarch64.tar.xz",
 )
 
 http_archive(
     name = "clang-macos",
-    build_file = "//bazel/public-patches:clang.BUILD",  # TODO: Delete next bump
-    sha256 = "a871653a114657136ae0dc25d979046a800aa30d8951e82b00eb5720caf9b4a8",
-    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/llvm-macos/20.1.8/a871653a114657136ae0dc25d979046a800aa30d8951e82b00eb5720caf9b4a8/llvm-macos.tar.xz",
+    # Override adds: include_dir (directory rule), resource_directory_filegroup,
+    # and exports_files for direct file refs (bin/llvm-strip, libclang_rt.*).
+    build_file = "//bazel/public-patches:clang.BUILD",
+    sha256 = "ea118e41dfffd5027b378ec932fff70a06be1ab054ffbdaf8209f64579aeee1c",
+    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/llvm-macos/22.1.4/ea118e41dfffd5027b378ec932fff70a06be1ab054ffbdaf8209f64579aeee1c/llvm-macos.tar.xz",
 )
 
 SHELLCHECK_VERSION = "v0.11.0"

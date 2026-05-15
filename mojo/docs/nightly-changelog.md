@@ -61,6 +61,10 @@ This version is still a work in progress.
   reflect that writing invalid UTF-8 to the resulting `Span[Byte]` can lead to
   later issues like out of bounds access.
 
+- `List[T]` no longer requires its type to be `Copyable`, but now works with
+  `Movable`-only types. Iteration still requires `Copyable` and will emit
+  a `comptime assert` if not satisfied.
+
 - `reflect[T]` is now a `comptime` alias for the `Reflected[T]` handle type
   rather than a function returning a zero-sized handle instance. All methods on
   `Reflected[T]` are `@staticmethod`s, and the type is no longer constructible.
@@ -121,6 +125,7 @@ This version is still a work in progress.
   def main():
       print(reflect_fn[my_func].display_name())  # "my_func"
       print(reflect_fn[my_func].linkage_name())  # mangled symbol name
+  ```
 
 - Added `alloc`, `free`, and `Layout` in `memory.alloc` for layout-aware memory
   allocation. A `Layout[T]` bundles an element count and alignment into a
@@ -153,6 +158,9 @@ This version is still a work in progress.
   var missing = iter(l).nth(10)   # None (Optional)
   ```
 
+- `String` and `StringSlice` now have a keyword only `string[codepoint=...]`
+  that indexes by unicode codepoint offsets.
+
 - PythonObject convertibility got simplified and cleaned up. When working with
   types that required custom conversions to `PythonObject`, we used to write
   code like this:
@@ -180,6 +188,18 @@ This version is still a work in progress.
   ```
 
 ## Tooling changes
+
+- The `mojo package` command has renamed to `mojo precompile`. Similarly, the
+  `.mojopkg` file extension has been deprecated; favor the `.mojoc` file
+  extension instead.
+
+  ```text
+  # Before
+  mojo package my_package -o my_package.mojopkg
+
+  # After
+  mojo precompile my_package -o my_package.mojoc
+  ```
 
 ## GPU programming
 

@@ -2241,7 +2241,7 @@ def blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         elementwise_compute_lambda_type
     ] = None,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
-    pdl_level: PDLLevel = PDLLevel(1),
+    pdl_level: PDLLevel = PDLLevel.ON,
     max_profiled_tiles_per_SM: Optional[UInt32] = None,
 ](
     c_tensor: TileTensor,

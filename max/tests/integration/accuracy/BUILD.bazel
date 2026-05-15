@@ -1,4 +1,4 @@
-load("//bazel:api.bzl", "modular_py_binary", "modular_py_test", "requirement")
+load("//bazel:api.bzl", "modular_py_binary", "modular_py_library", "modular_py_test", "requirement")
 
 package(default_visibility = [
     "//:__pkg__",
@@ -351,11 +351,18 @@ modular_py_test(
     ],
 )
 
+modular_py_library(
+    name = "pipeline_matrix",
+    srcs = ["pipeline_matrix.py"],
+    imports = ["."],
+)
+
 modular_py_binary(
     name = "dataset_eval_matrix",
     srcs = ["dataset_eval_matrix.py"],
     imports = ["."],
     deps = [
+        ":pipeline_matrix",
         requirement("click"),
     ],
 )
@@ -368,6 +375,64 @@ modular_py_test(
     deps = [
         ":dataset_eval_matrix",
         requirement("click"),
+    ],
+)
+
+modular_py_binary(
+    name = "llm_fuzz_matrix",
+    srcs = ["llm_fuzz_matrix.py"],
+    imports = ["."],
+    deps = [
+        ":pipeline_matrix",
+        requirement("click"),
+    ],
+)
+
+modular_py_test(
+    name = "test_llm_fuzz_matrix",
+    size = "small",
+    srcs = ["test_llm_fuzz_matrix.py"],
+    imports = ["."],
+    deps = [
+        ":llm_fuzz_matrix",
+        requirement("click"),
+    ],
+)
+
+modular_py_binary(
+    name = "llm-fuzz",
+    testonly = True,
+    srcs = glob(
+        ["llm_fuzz/**/*.py"],
+        exclude = ["llm_fuzz/.venv/**"],
+    ),
+    imports = ["llm_fuzz"],
+    main = "llm_fuzz/fuzz.py",
+    deps = [
+        requirement("openai"),
+        requirement("jsonschema"),
+    ],
+)
+
+modular_py_binary(
+    name = "pipelines-llm-fuzz",
+    testonly = True,
+    srcs = ["pipelines_llm_fuzz.py"],
+    data = [
+        ":llm-fuzz",
+        "//max/python/max/entrypoints:pipelines",
+    ],
+    env = {
+        # required by models that use Expert Parallelism.
+        "MODULAR_SHMEM_LIB_DIR": "../+http_archive+nvshmem_prebuilt",
+    },
+    imports = ["."],
+    main = "pipelines_llm_fuzz.py",
+    deps = [
+        ":pipelines-lm-eval",
+        "@rules_python//python/runfiles",
+        requirement("click"),
+        requirement("requests"),
     ],
 )
 

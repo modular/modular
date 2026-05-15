@@ -2351,6 +2351,17 @@ class POCAttr(max._core.Attribute):
     @property
     def value(self) -> POC: ...
 
+class PassingKind(enum.Enum):
+    pos_or_kw = 0
+
+    pos = 1
+
+    kw = 2
+
+    implicit = 3
+
+    inferred = 4
+
 class SugarKind(enum.Enum):
     aibuiltin = 0
 
@@ -2368,6 +2379,15 @@ class TailKind(enum.Enum):
     notail = 2
 
     tail = 3
+
+class VariadicKind(enum.Enum):
+    not_vararg = 0
+
+    pos_vararg = 1
+
+    pack_vararg = 2
+
+    kw_vararg = 3
 
 class CallIndirectOp(max._core.Operation):
     """

@@ -352,6 +352,12 @@ class IOKindAttr(max._core.Attribute):
     @property
     def value(self) -> IOKind: ...
 
+class MOBundledCollectiveInterface(Protocol):
+    """
+    Marks an op that is a per-launch entry point for a bundled collective and
+    is only valid inside an `mo.parallel` body.
+    """
+
 class MOConditionallyInPlaceInterface(Protocol):
     """
     Interface that ops that can conditionally represent an in-place computation
@@ -1946,6 +1952,54 @@ class BufferTransferOp(max._core.Operation):
     @property
     def in_chain(self) -> max._core.Value[ChainType]: ...
 
+class BundledAllreduceAddRmsNormQuantFp8Op(max._core.Operation):
+    """
+    Per-device entry point for the fused `allreduce.sum` +
+    residual add + RMS norm + dynamic-scaled FP8 quantize chain, used inside
+    an `mo.parallel` region.  Takes N peer tensor inputs (from
+    `mo.bundled.expand`), N signal buffers (captured from graph scope),
+    per-device residual and gamma tensors, the epsilon / weight offset /
+    scale-upper-bound scalars, and a chain.
+
+    Returns the FP8 quantized output for this device, its scale tensor, the
+    intermediate residual (post-add) tensor, and an output chain.  This is
+    the bundled analog of `mo.distributed.allreduce_add_rms_norm_quant_fp8`.
+    """
+
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        output: TensorType,
+        out_scale: TensorType,
+        out_residual: TensorType,
+        out_chain: ChainType,
+        inputs: Sequence[max._core.Value[max._core.Type]],
+        signal_buffers: Sequence[max._core.Value[max._core.Type]],
+        residual: max._core.Value[TensorType],
+        gamma: max._core.Value[TensorType],
+        epsilon: max._core.Value[TensorType],
+        weight_offset: max._core.Value[TensorType],
+        scale_ub: max._core.Value[TensorType],
+        in_chain: max._core.Value[ChainType],
+    ) -> None: ...
+    @property
+    def inputs(self) -> Sequence[max._core.Value[max._core.Type]]: ...
+    @property
+    def signal_buffers(self) -> Sequence[max._core.Value[max._core.Type]]: ...
+    @property
+    def residual(self) -> max._core.Value[TensorType]: ...
+    @property
+    def gamma(self) -> max._core.Value[TensorType]: ...
+    @property
+    def epsilon(self) -> max._core.Value[TensorType]: ...
+    @property
+    def weight_offset(self) -> max._core.Value[TensorType]: ...
+    @property
+    def scale_ub(self) -> max._core.Value[TensorType]: ...
+    @property
+    def in_chain(self) -> max._core.Value[ChainType]: ...
+
 class BundledAllreduceSumOp(max._core.Operation):
     """
     Per-device entry point for allreduce sum, used inside an `mo.parallel`
@@ -2179,9 +2233,7 @@ class ConcatOp(max._core.Operation):
     ```mlir
       %arg0: !mo.tensor<[2, 3], f32>
       %arg1: !mo.tensor<[2, 5], f32>
-      %axis = mo.constant {
-        value = #M.dense_array<1> : tensor<1xsi64>} : !mo.tensor<[], si64>
-      %res = mo.concat[%axis: !mo.tensor<[], si64>](%arg0, %arg1) : (
+      %res = mo.concat[1](%arg0, %arg1) : (
         !mo.tensor<[2, 3], f32>, !mo.tensor<[2, 5], f32>
       ) -> !mo.tensor<[2, 8], f32>
     ```
@@ -2192,12 +2244,14 @@ class ConcatOp(max._core.Operation):
         builder: max._core.OpBuilder,
         location: Location,
         result: TensorType,
-        axis: max._core.Value[TensorType],
+        axis: max._core.dialects.builtin.IntegerAttr,
         inputs: Sequence[max._core.Value[max._core.Type]],
         output_param_decls: max._core.dialects.kgen.ParamDeclArrayAttr,
     ) -> None: ...
     @property
-    def axis(self) -> max._core.Value[TensorType]: ...
+    def axis(self) -> int: ...
+    @axis.setter
+    def axis(self, arg: max._core.dialects.builtin.IntegerAttr, /) -> None: ...
     @property
     def inputs(self) -> Sequence[max._core.Value[max._core.Type]]: ...
     @property
@@ -3556,14 +3610,16 @@ class FusedConcatSliceOp(max._core.Operation):
         location: Location,
         concat_result: TensorType,
         slice_result: TensorType,
-        axis: max._core.Value[TensorType],
+        axis: max._core.dialects.builtin.IntegerAttr,
         inputs: Sequence[max._core.Value[max._core.Type]],
         static_starts: max._core.dialects.builtin.ArrayAttr,
         static_steps: max._core.dialects.builtin.ArrayAttr,
         output_param_decls: max._core.dialects.kgen.ParamDeclArrayAttr,
     ) -> None: ...
     @property
-    def axis(self) -> max._core.Value[TensorType]: ...
+    def axis(self) -> int: ...
+    @axis.setter
+    def axis(self, arg: max._core.dialects.builtin.IntegerAttr, /) -> None: ...
     @property
     def inputs(self) -> Sequence[max._core.Value[max._core.Type]]: ...
     @property
@@ -3585,6 +3641,61 @@ class FusedConcatSliceOp(max._core.Operation):
     @output_param_decls.setter
     def output_param_decls(
         self, arg: max._core.dialects.kgen.ParamDeclArrayAttr, /
+    ) -> None: ...
+
+class FusedMatmulAddOp(max._core.Operation):
+    """
+    Computes C = A @ B (optionally transposed) + residual, fusing the matmul
+    and the residual addition into a single kernel call.
+
+    `residual` may be rank-2 (same shape as the output, element-wise add) or
+    rank-1 (broadcast along the row dimension, i.e. a bias vector).
+
+    This operation is currently only lowered for SM100 (B200) targets, where
+    the residual is passed directly to the matmul kernel as an epilogue tensor.
+
+    Example (2-D residual):
+
+    ```mlir
+      %res = mo.matmul_add(%a, %b, %residual) {transpose_b = true} : (
+        !mo.tensor<[4, 512], bf16>,
+        !mo.tensor<[1536, 512], bf16>,
+        !mo.tensor<[4, 1536], bf16>
+      ) -> !mo.tensor<[4, 1536], bf16>
+    ```
+
+    Example (1-D bias broadcast):
+
+    ```mlir
+      %res = mo.matmul_add(%a, %b, %bias) {transpose_b = true} : (
+        !mo.tensor<[4, 512], bf16>,
+        !mo.tensor<[1536, 512], bf16>,
+        !mo.tensor<[1536], bf16>
+      ) -> !mo.tensor<[4, 1536], bf16>
+    ```
+    """
+
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        result: TensorType,
+        input_a: max._core.Value[TensorType],
+        input_b: max._core.Value[TensorType],
+        residual: max._core.Value[TensorType],
+        transpose_b: max._core.dialects.builtin.BoolAttr,
+    ) -> None: ...
+    @property
+    def input_a(self) -> max._core.Value[TensorType]: ...
+    @property
+    def input_b(self) -> max._core.Value[TensorType]: ...
+    @property
+    def residual(self) -> max._core.Value[TensorType]: ...
+    @property
+    def transpose_b(self) -> bool: ...
+    @transpose_b.setter
+    def transpose_b(
+        self, arg: max._core.dialects.builtin.BoolAttr, /
     ) -> None: ...
 
 class GatherNdOp(max._core.Operation):

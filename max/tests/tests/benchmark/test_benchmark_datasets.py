@@ -85,7 +85,10 @@ class _FakeTokenizer:
 
 
 def _fake_loader(
-    name_or_path: str, model_max_length: int | None, trust_remote_code: bool
+    name_or_path: str,
+    model_max_length: int | None,
+    trust_remote_code: bool,
+    revision: str | None,
 ) -> _FakeTokenizer:
     return _FakeTokenizer(model_max_length=model_max_length or 4096)
 

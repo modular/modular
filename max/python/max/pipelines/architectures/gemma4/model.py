@@ -26,12 +26,12 @@ from max.engine import InferenceSession, Model
 from max.graph import BufferType, DeviceRef, Graph, Module, TensorType
 from max.graph.weights import WeightData, Weights, WeightsAdapter
 from max.interfaces import RequestID
-from max.kv_cache.paged_kv_cache.increment_cache_lengths import (
-    IncrementCacheLengthsProcessor,
-)
 from max.nn.comm import Signals
 from max.nn.kv_cache import KVCacheInputs, MultiKVCacheParams
 from max.nn.transformer import ReturnLogits
+from max.pipelines.kv_cache.paged_kv_cache.increment_cache_lengths import (
+    IncrementCacheLengthsProcessor,
+)
 from max.pipelines.lib import (
     AlwaysSignalBuffersMixin,
     CompilationTimer,

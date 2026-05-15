@@ -98,6 +98,8 @@ def _apply_sampling_to_request_payload(
     """Merge non-None OpenAI-style sampling fields from *sampling* into *payload*."""
     if sampling.temperature is not None:
         payload["temperature"] = sampling.temperature
+    if sampling.thinking_temperature is not None:
+        payload["thinking_temperature"] = sampling.thinking_temperature
     if sampling.top_k is not None:
         payload["top_k"] = sampling.top_k
     if sampling.top_p is not None:

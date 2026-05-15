@@ -76,6 +76,7 @@ class AttentionWithRope(Module, Shardable):
         clip_qkv: float | None = None,
         use_qk_norm: bool = False,
         rms_norm_eps: float = 1e-6,
+        sliding_window: int | None = None,
         _fuse_rope_and_store: bool = True,
     ) -> None:
         """Initializes the attention layer.
@@ -98,6 +99,10 @@ class AttentionWithRope(Module, Shardable):
             clip_qkv: If provided, clamp Q/K/V weights to [-clip_qkv, clip_qkv].
             use_qk_norm: Whether to use RMSNorm on Q/K.
             rms_norm_eps: Value to use for numerical stability in RMSNorm.
+            sliding_window: If set, switches the attention mask to
+                ``SLIDING_WINDOW_CAUSAL_MASK`` with a local window of this
+                size (in tokens). ``None`` keeps the default full causal
+                mask.
             _fuse_rope_and_store: If True (default), emit a single fused
                 rope+split+store custom op. If False, emit separate rope, split,
                 and store ops to test graph compiler fusion.
@@ -120,6 +125,7 @@ class AttentionWithRope(Module, Shardable):
         self.stacked_qkv = stacked_qkv
         self.use_qk_norm = use_qk_norm
         self.rms_norm_eps = rms_norm_eps
+        self.sliding_window = sliding_window
         self._fuse_rope_and_store = _fuse_rope_and_store
         self._sharding_strategy: ShardingStrategy | None = None
 
@@ -280,6 +286,7 @@ class AttentionWithRope(Module, Shardable):
                     has_bias=self.has_bias,
                     quant_config=self.quant_config,
                     clip_qkv=self.clip_qkv,
+                    sliding_window=self.sliding_window,
                 )
 
                 layer.qkv_proj = qkv_proj_shards[n]
@@ -330,6 +337,7 @@ class AttentionWithRope(Module, Shardable):
                     has_bias=self.has_bias,
                     quant_config=self.quant_config,
                     clip_qkv=self.clip_qkv,
+                    sliding_window=self.sliding_window,
                 )
                 replica.qkv_proj = qkv_proj_replicas[i]
                 replica.o_proj = o_proj_replicas[i]
@@ -528,14 +536,22 @@ class AttentionWithRope(Module, Shardable):
         )
         xq = xq.reshape((-1, self.n_heads, self.kv_params.head_dim))
 
+        local_window_size = -1
+        if self.sliding_window is not None:
+            mask_variant = MHAMaskVariant.SLIDING_WINDOW_CAUSAL_MASK
+            local_window_size = self.sliding_window
+        else:
+            mask_variant = MHAMaskVariant.CAUSAL_MASK
+
         attn_out = flash_attention_ragged(
             self.kv_params,
             input=xq,
             kv_collection=kv_collection,
             layer_idx=layer_idx,
             input_row_offsets=input_row_offsets,
-            mask_variant=MHAMaskVariant.CAUSAL_MASK,
+            mask_variant=mask_variant,
             scale=self.scale,
+            local_window_size=local_window_size,
         )
         attn_out = ops.reshape(
             attn_out, shape=[total_seq_len, self.q_weight_dim]
@@ -935,6 +951,7 @@ class TensorParallelAttentionWithRope(
         clip_qkv: float | None = None,
         use_qk_norm: bool = False,
         rms_norm_eps: float = 1e-6,
+        sliding_window: int | None = None,
     ) -> None:
         """Initializes the distributed (tensor parallel) attention layer.
 
@@ -973,6 +990,7 @@ class TensorParallelAttentionWithRope(
             clip_qkv=clip_qkv,
             use_qk_norm=use_qk_norm,
             rms_norm_eps=rms_norm_eps,
+            sliding_window=sliding_window,
         )
         if DeviceRef.CPU() in self.devices:
             raise ValueError(
@@ -1057,6 +1075,7 @@ class DataParallelAttentionWithRope(AttentionWithRope):
         clip_qkv: float | None = None,
         use_qk_norm: bool = False,
         rms_norm_eps: float = 1e-6,
+        sliding_window: int | None = None,
     ) -> None:
         super().__init__(
             rope=rope,
@@ -1075,6 +1094,7 @@ class DataParallelAttentionWithRope(AttentionWithRope):
             clip_qkv=clip_qkv,
             use_qk_norm=use_qk_norm,
             rms_norm_eps=rms_norm_eps,
+            sliding_window=sliding_window,
         )
         if not self.devices:
             raise ValueError("devices cannot be None or empty")
@@ -1123,6 +1143,7 @@ class DataParallelAttentionWithRope(AttentionWithRope):
                 has_bias=self.has_bias,
                 quant_config=self.quant_config,
                 clip_qkv=self.clip_qkv,
+                sliding_window=self.sliding_window,
             )
             replica.qkv_proj = qkv_proj_replicas[i]
             replica.o_proj = o_proj_replicas[i]

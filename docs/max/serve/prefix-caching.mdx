@@ -55,9 +55,8 @@ computation. By default, the following flags are applied:
 
 Prefix caching with PagedAttention works on both CPU and GPU. To deploy a model
 with prefix caching using the `max` CLI, you can use the flag `--devices cpu`
-for CPU or `--devices gpu` for GPU workloads. If no flag is provided, the model
-runs on the first available GPU, or on the first available CPU if no GPUs are
-available.
+for CPU or `--devices gpu` for GPU workloads. If you omit `--devices`, MAX uses
+the model or config default.
 
 ## Quickstart
 

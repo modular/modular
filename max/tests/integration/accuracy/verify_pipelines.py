@@ -186,7 +186,9 @@ def _to_uint8_image(image: np.ndarray) -> np.ndarray:
         )
     if image_array.dtype == np.uint8:
         return image_array
-    return (np.clip(image_array, 0.0, 1.0) * 255.0).astype(np.uint8)
+    # Round before cast: `.astype(uint8)` truncates, which biases every pixel
+    # down by ~0.5.  Matches diffusers' `(x * 255).round().astype(uint8)`.
+    return np.round(np.clip(image_array, 0.0, 1.0) * 255.0).astype(np.uint8)
 
 
 def _save_pixel_outputs(
@@ -550,7 +552,15 @@ def detect_infra_errors() -> Generator[None, None, None]:
                 or "cuInit failed with 802" in exc_str
                 or "CUDA_ERROR_SYSTEM_NOT_INITIALIZED" in exc_str
             )
-        ):
+            # e.g. "ValueError: GPU id 4 requested but only GPU IDs [0, 1, 2, 3] are available."
+        ) or "requested but only GPU IDs" in exc_str:
+            raise InfraError(
+                "GPU device seems to have fallen off from runner"
+            ) from exc
+        raise
+    except Exception as exc:
+        exc_str = str(exc)
+        if "Error 802: system not yet initialized" in exc_str:
             raise InfraError(
                 "GPU device seems to have fallen off from runner"
             ) from exc

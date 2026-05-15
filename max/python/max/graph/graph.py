@@ -141,7 +141,7 @@ class KernelLibrary:
     """Manages custom kernel libraries and operations for a graph.
 
     A kernel library provides access to custom operations and kernels that can
-    be loaded from various sources including Mojo binary packages (``.mojopkg``)
+    be loaded from various sources including Mojo pre-compiled packages (``.mojoc``)
     and Mojo source directories. The library handles verification and registration
     of custom operations within the MLIR context.
     """
@@ -180,7 +180,7 @@ class KernelLibrary:
         libraries in additional formats. The loading logic supports the
         following formats:
 
-        - Compiled Mojo binary packages with ``.mojopkg`` extension
+        - Compiled Mojo binary packages with ``.mojoc`` extension
         - Mojo source directory with custom operations
 
         The loaded libraries are added to the current kernel library.
@@ -192,7 +192,7 @@ class KernelLibrary:
             if is_mojo_binary_package_path(ext_path):
                 self.add_path(ext_path)
             elif is_mojo_source_package_path(ext_path):
-                # Builds the source directory into a .mojopkg file.
+                # Builds the source directory into a precompiled Mojo file.
                 self.add_path(_build_mojo_source_package(ext_path))
             else:
                 raise ValueError(
@@ -500,7 +500,7 @@ class Graph:
             include :class:`BufferType` instances for mutable in-place inputs.
         path: The path to a saved graph (internal use only).
         custom_extensions: The extensions to load for the model. Supports paths
-            to ``.mojopkg`` or ``.mojo`` sources with custom ops.
+            to ``.mojoc``/``.mojopkg`` or ``.mojo`` sources with custom ops.
         kernel_library: Optional pre-built kernel library to use. Defaults to
             ``None`` (a new library is created from ``custom_extensions`` if
             needed).
@@ -724,7 +724,7 @@ class Graph:
                 type is added automatically for operation sequencing.
             path: An optional path to a saved subgraph definition to load
                 from disk.
-            custom_extensions: Paths to custom op libraries (``.mojopkg``
+            custom_extensions: Paths to custom op libraries (``.mojoc``/``.mojopkg``
                 files or Mojo source directories) to load for the subgraph.
             devices: Devices this subgraph targets.
 

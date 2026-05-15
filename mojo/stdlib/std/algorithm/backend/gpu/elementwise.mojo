@@ -53,10 +53,10 @@ from std.algorithm.functional import _get_start_indices_of_nth_subvolume
 # ===-----------------------------------------------------------------------===#
 
 comptime _USE_CLC_WORK_STEALING = get_defined_bool[
-    "USE_CLC_WORK_STEALING", True
+    "USE_CLC_WORK_STEALING", False
 ]()
 
-comptime _PDL_LEVEL = PDLLevel(1)
+comptime _PDL_LEVEL = PDLLevel.ON
 
 
 @always_inline("nodebug")

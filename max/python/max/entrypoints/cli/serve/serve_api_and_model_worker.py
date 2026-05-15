@@ -83,6 +83,8 @@ def serve_api_server_and_model_worker(
         tokenizer=tokenizer,
         pipeline_task=pipeline_task,
         reasoning_parser_name=pipeline_config.runtime.reasoning_parser,
+        temperature=pipeline_config.runtime.temperature,
+        thinking_temperature=pipeline_config.runtime.thinking_temperature,
     )
 
     # Initialize and serve webserver.

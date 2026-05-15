@@ -203,7 +203,7 @@ def main():
 ## Write once, reuse everywhere with traits
 
 Reflection is powerful when used in traits with provided methods. The
-method runs for any conforming struct that meets the trait constraints.
+method runs for any conforming struct that meets the trait requirements.
 
 `MakeCopyable` duplicates every copyable field from one instance to another:
 
@@ -303,7 +303,7 @@ def main():
 **`origin_of(x)`** captures the origin (lifetime and mutability) of a
 reference.
 
-In Mojo, every reference has an _origin_ that tracks which value it borrows
+In Mojo, every reference has an _origin_ that tracks which value it reads
 from and whether it can mutate that value. `origin_of(x)` captures this
 information at compile time so you can thread it through function
 signatures.

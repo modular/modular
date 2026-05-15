@@ -23,6 +23,7 @@ from collections.abc import Callable
 from typing import Any, TypeVar
 
 import numpy as np
+from huggingface_hub import HfApi
 from transformers import (
     AutoConfig,
     AutoTokenizer,
@@ -62,24 +63,52 @@ def wait_for_server_ready(
         time.sleep(interval_s)
 
 
+def resolve_revision(pretrained_model_name_or_path: str) -> str | None:
+    """Resolve the HuggingFace Hub commit SHA for a repo id.
+
+    Returns ``None`` for local paths, private/gated repos without auth, and
+    other lookup failures so callers fall back to revision-less loading.
+    Used to pin worker tokenizer loads to a specific snapshot so they hit
+    the local cache without re-checking the Hub on every spawn.
+    """
+    try:
+        return HfApi().model_info(pretrained_model_name_or_path).sha
+    except Exception:
+        return None
+
+
 def get_tokenizer(
     pretrained_model_name_or_path: str,
+    *,
+    revision: str | None,
     model_max_length: int | None = None,
     trust_remote_code: bool = False,
 ) -> PreTrainedTokenizer | PreTrainedTokenizerFast:
-    """Load a tokenizer for a benchmark model."""
-    tokenizer_kwargs: dict[str, bool | int] = {
+    """Load a tokenizer for a benchmark model.
+
+    ``revision`` is explicit; callers should resolve it once via
+    :func:`resolve_revision` (or reuse a previously resolved value) so that
+    repeated loads across worker processes hit the same cached snapshot.
+    """
+    tokenizer_kwargs: dict[str, bool | int | str | None] = {
         "trust_remote_code": trust_remote_code,
+        "revision": revision,
     }
     if model_max_length is not None:
         tokenizer_kwargs["model_max_length"] = model_max_length
     tokenizer = AutoTokenizer.from_pretrained(
-        pretrained_model_name_or_path,
-        **tokenizer_kwargs,
+        pretrained_model_name_or_path, **tokenizer_kwargs
     )
+    # Stash the resolved revision so downstream consumers (e.g. the worker
+    # tokenizer pool) can pin worker loads to the same snapshot without
+    # re-resolving against the Hub. Transformers does not expose this on
+    # the tokenizer instance itself.
+    tokenizer._resolved_revision = revision
     try:
         config = AutoConfig.from_pretrained(
-            pretrained_model_name_or_path, trust_remote_code=trust_remote_code
+            pretrained_model_name_or_path,
+            trust_remote_code=trust_remote_code,
+            revision=revision,
         )
         architectures = getattr(config, "architectures", None) or []
     except (ValueError, OSError) as exc:

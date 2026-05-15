@@ -473,11 +473,11 @@ def grid_str(rows: Int, cols: Int, grid: List[List[Int]]) -> String:
 ```
 
 When we pass a value to a Mojo function, the default behavior is that an
-argument is treated as a *read-only reference* to the value. This is
+argument is treated as an immutable reference to the value. This is
 particularly useful for values like `List`s, where copying them could be
 expensive. As we'll see later, we can specify different behavior by including an
-explicit [argument
-convention](/docs/manual/values/ownership#argument-conventions).
+explicit [argument passing
+convention](/docs/manual/values/ownership#argument-passing-conventions).
 
 Each argument name is followed by a type annotation indicating the type of value
 you can pass to the argument. Just like when assigning a value to a variable,
@@ -947,11 +947,11 @@ The body of `__setitem__()` is similarly straightforward. We just take the given
 `value` and store it in the corresponding `row` and `col` in `data`. One new
 thing in the declaration is that we set the return type to `None` to indicate
 that the method doesn't have a return value. More notable is that we've added
-the `mut`
-[argument convention](/docs/manual/values/ownership/#argument-conventions) to
+the `mut` [argument passing
+convention](/docs/manual/values/ownership/#argument-passing-conventions) to
 the `self` argument to explicitly tell the Mojo compiler that we want to mutate
 the state of the current instance. If we were to omit `mut`, we would get an
-error because the compiler would default to read-only access for the argument.
+error because the compiler would default to immutable access for the argument.
 
 Now that we've implemented these methods, we can update `write_to()` to use
 indexing syntax to access the cell value.
@@ -1211,15 +1211,14 @@ Notice that `run_display()` declares `raises` because it calls `input()`, which
 can raise an error. Since `main()` calls `run_display()` without handling the
 error, it also needs `raises`.
 
-Also note that `run_display()` declares the `grid` argument with the
-`var` argument convention to take ownership of the `Grid` instance. If
-we used the default
-`read` argument convention instead, `grid` would be an immutable reference
-binding to the original `Grid` instance. In that case, we'd get a compile-time
-error when we tried to assign the result of `grid.evolve()` to `grid` because
-Mojo doesn't allow you to re-bind a reference to a different value. See
-[Reference bindings](/docs/manual/variables/#reference-bindings) for more
-information.
+Also note that `run_display()` declares the `grid` argument with the `var`
+argument convention to take ownership of the `Grid` instance. If we used
+the default argument convention instead, `grid` would be an immutable
+reference binding to the original `Grid` instance. In that case, we'd get a
+compile-time error when we tried to assign the result of `grid.evolve()` to
+`grid` because Mojo doesn't allow you to re-bind a reference to a different
+value. See [Reference bindings](/docs/manual/variables/#reference-bindings)
+for more information.
 
 Then we'll update `main()` to create a random initial `Grid` and pass it to
 `run_display()`, transferring ownership with the `^` sigil. Here's

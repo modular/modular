@@ -18,7 +18,7 @@ modular_py_test(
     ],
     deps = [
         "//max/python/max/driver",
-        "//max/python/max/kv_cache",
+        "//max/python/max/pipelines/kv_cache",
         requirement("numpy"),
     ],
 )
@@ -37,7 +37,7 @@ modular_py_test(
     ],
     deps = [
         "//max/python/max/driver",
-        "//max/python/max/kv_cache",
+        "//max/python/max/pipelines/kv_cache",
         requirement("numpy"),
     ],
 )
@@ -56,7 +56,7 @@ modular_py_test(
     ],
     deps = [
         "//max/python/max/driver",
-        "//max/python/max/kv_cache",
+        "//max/python/max/pipelines/kv_cache",
         requirement("numpy"),
     ],
 )
@@ -71,7 +71,7 @@ modular_py_test(
     ],
     deps = [
         "//max/python/max/driver",
-        "//max/python/max/kv_cache",
+        "//max/python/max/pipelines/kv_cache",
         requirement("numpy"),
     ],
 )
@@ -105,7 +105,7 @@ modular_py_test(
     deps = [
         "//max/python/max/driver",
         "//max/python/max/dtype",
-        "//max/python/max/kv_cache",
+        "//max/python/max/pipelines/kv_cache",
         requirement("numpy"),
     ],
 )
@@ -126,7 +126,7 @@ modular_py_test(
     tags = ["gpu"],
     deps = [
         "//max/python/max/driver",
-        "//max/python/max/kv_cache",
+        "//max/python/max/pipelines/kv_cache",
         requirement("numpy"),
     ],
 )

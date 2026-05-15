@@ -567,7 +567,7 @@ def moe_create_indices[
             expert_usage_stats.ptr,
             grid_dim=(1,),
             block_dim=(1,),
-            attributes=pdl_launch_attributes(PDLLevel(1)),
+            attributes=pdl_launch_attributes(PDLLevel.ON),
         )
 
         var lock = TileTensor(lock_buffer, row_major[1]())
@@ -952,7 +952,7 @@ def router_group_limited[
             routed_scaling_factor,
             grid_dim=expert_scores.dim(0),
             block_dim=num_threads,
-            attributes=pdl_launch_attributes(PDLLevel(1)),
+            attributes=pdl_launch_attributes(PDLLevel.ON),
         )
 
 
@@ -1250,5 +1250,5 @@ def single_group_router[
             routed_scaling_factor,
             grid_dim=expert_scores.dim(0),
             block_dim=num_threads,
-            attributes=pdl_launch_attributes(PDLLevel(1)),
+            attributes=pdl_launch_attributes(PDLLevel.ON),
         )

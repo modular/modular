@@ -23,9 +23,9 @@ from max.interfaces import (
     Pipeline,
     RequestID,
 )
-from max.kv_cache import PagedKVCacheManager
 from max.nn.transformer import ReturnLogits
 from max.pipelines.core import TTSContext
+from max.pipelines.kv_cache import PagedKVCacheManager
 
 if TYPE_CHECKING:
     from .config import PipelineConfig

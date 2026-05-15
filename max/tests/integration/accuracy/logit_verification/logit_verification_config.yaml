@@ -1043,12 +1043,38 @@ logit_verification_pipelines:
     pregenerated_torch_goldens:
       tar_file: "s3://modular-bazel-artifacts-public/artifacts/torch_black-forest-labs_FLUX.2-dev-t2i_golden/1/09e2330e3ea8016979b145072037df30ac8a7c6a425c00d64ae340cd52455295/torch_black-forest-labs_FLUX.2-dev-t2i_golden.tar.gz"
       json_file: "torch_black-forest-labs_FLUX.2-dev-t2i_bfloat16_golden.json"
-    # Per-prompt SSIM range: [0.761, 0.837, 0.830, 0.788, 0.764] on B200 (worst 0.761).
-    # Thresholds set with ~10% headroom below the worst-performing prompt.
-    ssim_threshold: 0.68
-    lpips_threshold: 0.30
+    # Per-prompt SSIM range: [0.809, 0.854, 0.835, 0.814, 0.776] on B200 (worst 0.776).
+    # Per-prompt LPIPS range: [0.126, 0.177, 0.173, 0.106, 0.132] on B200 (worst 0.177).
+    # Thresholds set with ~10% headroom from the worst-performing prompt.
+    ssim_threshold: 0.70
+    lpips_threshold: 0.20
     timeout: 3600
     config_params_override: {"prefer_module_v3": false}
+
+  # NVFP4 quantized FLUX.2-dev (two-repo layout: FLUX.2-dev base + the
+  # FLUX.2-dev-NVFP4 single-file safetensors override for the transformer).
+  # Compared against the bf16 torch goldens with quantization-aware
+  # thresholds.
+  black-forest-labs/FLUX.2-dev-NVFP4-t2i:
+    pre_submit_agents: []
+    post_submit_agents: [*b200_1x, *b200_2x]
+    pipeline: "black-forest-labs/FLUX.2-dev-t2i"
+    compatible_with: [gpu]
+    encoding: float4_e2m1fnx2
+    tags: [image-generation, nvidia-only, no-h100]
+    pregenerated_torch_goldens:
+      tar_file: "s3://modular-bazel-artifacts-public/artifacts/torch_black-forest-labs_FLUX.2-dev-t2i_golden/1/09e2330e3ea8016979b145072037df30ac8a7c6a425c00d64ae340cd52455295/torch_black-forest-labs_FLUX.2-dev-t2i_golden.tar.gz"
+      json_file: "torch_black-forest-labs_FLUX.2-dev-t2i_bfloat16_golden.json"
+    # Per-prompt SSIM on 2xB200: [0.807, 0.862, 0.830, 0.810, 0.763].
+    # Per-prompt LPIPS on 2xB200: [0.133, 0.164, 0.179, 0.114, 0.134].
+    # Thresholds set with ~10% headroom from the worst-performing prompt.
+    ssim_threshold: 0.65
+    lpips_threshold: 0.22
+    timeout: 3600
+    config_params_override:
+      prefer_module_v3: false
+      transformer_weight_path:
+        - "black-forest-labs/FLUX.2-dev-NVFP4/flux2-dev-nvfp4.safetensors"
 
   black-forest-labs/FLUX.2-dev-i2i-bfloat16-v2:
     pre_submit_agents: []

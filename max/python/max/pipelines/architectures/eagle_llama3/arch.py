@@ -46,3 +46,27 @@ eagle_llama_arch = SupportedArchitecture(
     task=PipelineTask.TEXT_GENERATION,
     config=Llama3Config,
 )
+
+eagle3_llama_arch = SupportedArchitecture(
+    name="LlamaForCausalLMEagle3",
+    example_repo_ids=[
+        "modularai/kimi-k2.5-eagle3",
+    ],
+    default_encoding="bfloat16",
+    supported_encodings={
+        "bfloat16",
+        "float32",
+    },
+    pipeline_model=EagleLlama3Model,
+    context_type=TextContext,
+    tokenizer=TextTokenizer,
+    rope_type="normal",
+    default_weights_format=WeightsFormat.safetensors,
+    multi_gpu_supported=True,
+    weight_adapters={
+        WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
+        WeightsFormat.gguf: weight_adapters.convert_gguf_state_dict,
+    },
+    task=PipelineTask.TEXT_GENERATION,
+    config=Llama3Config,
+)

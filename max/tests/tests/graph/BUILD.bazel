@@ -54,6 +54,9 @@ modular_py_test(
         "//max/tests/integration/Inputs/test_user_op",
         "@mojo//:std",
     ],
+    tags = [
+        "enable-sanitizers",
+    ],
     deps = [
         "//max/python/max:_core",
         "//max/python/max:_mlir_context",
@@ -88,6 +91,7 @@ modular_py_test(
         "//conditions:default": [],
     }),  # FIXME: MOCO-2411
     deps = [
+        "//max/python/max:_core",
         "//max/python/max:_mlir_context",
         "//max/python/max/driver",
         "//max/python/max/dtype",

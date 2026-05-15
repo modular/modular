@@ -32,7 +32,6 @@ from max.nn.kv_cache import KVCacheInputs, KVCacheParams
 from max.nn.transformer import ReturnLogits
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
-    CompilationTimer,
     KVCacheConfig,
     ModelInputs,
     ModelOutputs,
@@ -143,65 +142,63 @@ class Gemma3Model(
             )
         ).to(self.devices[0])
 
-        with CompilationTimer("model") as timer:
-            n_devices = len(self.devices)
-            mesh = DeviceMesh(tuple(self.devices), (n_devices,), ("tp",))
+        n_devices = len(self.devices)
+        mesh = DeviceMesh(tuple(self.devices), (n_devices,), ("tp",))
 
-            tokens_type = TensorType(
-                DType.int64, shape=["total_seq_len"], device=self.devices[0]
-            )
+        tokens_type = TensorType(
+            DType.int64, shape=["total_seq_len"], device=self.devices[0]
+        )
 
-            input_row_offsets_type = TensorType(
-                DType.uint32,
-                shape=["input_row_offsets_len"],
-                device=self.devices[0],
-            )
+        input_row_offsets_type = TensorType(
+            DType.uint32,
+            shape=["input_row_offsets_len"],
+            device=self.devices[0],
+        )
 
-            return_n_logits_type = TensorType(
-                DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
-            )
+        return_n_logits_type = TensorType(
+            DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
+        )
 
-            text_config = (
-                self.huggingface_config.text_config
-                if self._is_multimodal
-                else self.huggingface_config
-            )
+        text_config = (
+            self.huggingface_config.text_config
+            if self._is_multimodal
+            else self.huggingface_config
+        )
 
-            if self.adapter:
-                state_dict = self.adapter(
-                    dict(self.weights.items()),
-                    huggingface_config=text_config,
-                    pipeline_config=self.pipeline_config,
-                )
-            else:
-                state_dict = {
-                    key: value.data() for key, value in self.weights.items()
-                }
-
-            model_config = Gemma3Config.initialize_from_config(
-                self.pipeline_config, text_config
-            )
-            model_config.finalize(
+        if self.adapter:
+            state_dict = self.adapter(
+                dict(self.weights.items()),
                 huggingface_config=text_config,
-                state_dict=state_dict,
-                return_logits=self.return_logits,
+                pipeline_config=self.pipeline_config,
             )
+        else:
+            state_dict = {
+                key: value.data() for key, value in self.weights.items()
+            }
 
-            with F.lazy():
-                nn_model = Gemma3(model_config, self.kv_params)
-                nn_model.to(mesh)
+        model_config = Gemma3Config.initialize_from_config(
+            self.pipeline_config, text_config
+        )
+        model_config.finalize(
+            huggingface_config=text_config,
+            state_dict=state_dict,
+            return_logits=self.return_logits,
+        )
 
-            kv_inputs = self.kv_params.get_symbolic_inputs()
-            flattened_kv_types = kv_inputs.flatten()
+        with F.lazy():
+            nn_model = Gemma3(model_config, self.kv_params)
+            nn_model.to(mesh)
 
-            timer.mark_build_complete()
-            compiled_model = nn_model.compile(
-                tokens_type,
-                return_n_logits_type,
-                input_row_offsets_type,
-                *flattened_kv_types,
-                weights=state_dict,
-            )
+        kv_inputs = self.kv_params.get_symbolic_inputs()
+        flattened_kv_types = kv_inputs.flatten()
+
+        compiled_model = nn_model.compile(
+            tokens_type,
+            return_n_logits_type,
+            input_row_offsets_type,
+            *flattened_kv_types,
+            weights=state_dict,
+        )
 
         return compiled_model
 

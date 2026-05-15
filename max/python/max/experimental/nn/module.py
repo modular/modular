@@ -41,6 +41,7 @@ if TYPE_CHECKING:
 _P = ParamSpec("_P")
 _R = TypeVar("_R")
 
+from max.experimental.nn._compilation_timer import CompilationTimer
 from max.experimental.nn._compile_utils import (
     InputType,
     _detect_signals,
@@ -57,6 +58,7 @@ from max.experimental.nn._compile_utils import (
     flatten_input_buffers,
 )
 from max.nn.comm.allreduce import Signals
+from max.profiler import Tracer
 
 
 class CompiledModel:
@@ -973,7 +975,7 @@ class Module(Generic[_P, _R]):
             module = CustomModule()
             compiled = module.compile(
                 input_type,
-                custom_extensions=[Path("my_ops.mojopkg")],
+                custom_extensions=[Path("my_ops.mojoc")],
             )
 
         Args:
@@ -989,7 +991,7 @@ class Module(Generic[_P, _R]):
                 of model initialization. If not passed, the model's parameters
                 will be used as the weights.
             custom_extensions: Paths to custom Mojo kernel libraries
-                (``.mojopkg`` files or Mojo source directories) to load into
+                (``.mojoc`` files or Mojo source directories) to load into
                 the graph before tracing. Required when ``forward`` uses
                 :func:`~max.experimental.functional.custom` or
                 :func:`~max.experimental.functional.inplace_custom` with
@@ -1009,33 +1011,47 @@ class Module(Generic[_P, _R]):
             RuntimeError: If graph construction fails due to incompatible
                 operations or parameter access issues.
         """
-        graph, input_slots, output_slots, unary, signals = self._trace(
-            input_types, custom_extensions=custom_extensions
-        )
+        compile_name = type(self).__name__
+        with (
+            Tracer(f"Module.compile({compile_name})"),
+            CompilationTimer(compile_name) as timer,
+        ):
+            with Tracer("Module.compile.trace"):
+                graph, input_slots, output_slots, unary, signals = self._trace(
+                    input_types, custom_extensions=custom_extensions
+                )
 
-        # Compile the graph with module parameters as weights
-        session = _session()
+            with Tracer("Module.compile.weights_registry"):
+                # Compile the graph with module parameters as weights
+                session = _session()
 
-        # Build weights registry from parameters.
-        if weights is None:
-            weights_registry = _flatten_named_buffers(self.parameters)
-        else:
-            weights_registry = _process_provided_weights(
-                weights, self.parameters
-            )
+                # Build weights registry from parameters.
+                if weights is None:
+                    weights_registry = _flatten_named_buffers(self.parameters)
+                else:
+                    weights_registry = _process_provided_weights(
+                        weights, self.parameters
+                    )
 
-        session_model = session.load(graph, weights_registry=weights_registry)
+            timer.mark_build_complete()
+            with Tracer("Module.compile.session_load"):
+                session_model = session.load(
+                    graph, weights_registry=weights_registry
+                )
 
-        # Allocate signal buffers once for all future invocations.
-        cached_sig_bufs = signals.buffers() if signals is not None else []
+            with Tracer("Module.compile.finalize"):
+                # Allocate signal buffers once for all future invocations.
+                cached_sig_bufs = (
+                    signals.buffers() if signals is not None else []
+                )
 
-        return CompiledModel(
-            engine_model=session_model,
-            input_slots=input_slots,
-            output_slots=output_slots,
-            signal_buffers=cached_sig_bufs,
-            unary=unary,
-        )
+                return CompiledModel(
+                    engine_model=session_model,
+                    input_slots=input_slots,
+                    output_slots=output_slots,
+                    signal_buffers=cached_sig_bufs,
+                    unary=unary,
+                )
 
     def __rich_repr__(self):
         yield from self.children

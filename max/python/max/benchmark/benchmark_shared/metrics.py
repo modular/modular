@@ -475,6 +475,11 @@ class TextGenAggregates(_CompletedRunBase):
     tpot_ms: StandardPercentileMetrics = Field(
         json_schema_extra={"phase": "decode"}
     )
+    # Per-step TPOT: ITL / tokens_per_step for each decode step.
+    # Only populated when chunk-level text is available for re-tokenization.
+    step_tpot_ms: StandardPercentileMetrics | None = Field(
+        default=None, json_schema_extra={"phase": "decode"}
+    )
     itl_ms: StandardPercentileMetrics = Field(
         json_schema_extra={"phase": "decode"}
     )
@@ -531,6 +536,9 @@ class TextGenAggregates(_CompletedRunBase):
         ]:
             d.update(spm.to_flat_dict(name))
             d.update(spm.confidence_to_flat_dict(name))
+        if self.step_tpot_ms is not None:
+            d.update(self.step_tpot_ms.to_flat_dict("step_tpot_ms"))
+            d.update(self.step_tpot_ms.confidence_to_flat_dict("step_tpot_ms"))
         if self.per_turn_cached_token_rate is not None:
             d.update(
                 self.per_turn_cached_token_rate.to_flat_dict(
@@ -550,12 +558,16 @@ class TextGenAggregates(_CompletedRunBase):
             errors.append(
                 f"No output tokens generated (total_output={self.total_output})"
             )
+        optional_metrics: list[tuple[str, StandardPercentileMetrics]] = []
+        if self.step_tpot_ms is not None:
+            optional_metrics.append(("step_tpot_ms", self.step_tpot_ms))
         for name, m in [
             ("input_throughput", self.input_throughput),
             ("output_throughput", self.output_throughput),
             ("ttft_ms", self.ttft_ms),
             ("tpot_ms", self.tpot_ms),
             ("itl_ms", self.itl_ms),
+            *optional_metrics,
         ]:
             ok, sub_errors = m.validate_metrics()
             if not ok:
@@ -585,10 +597,14 @@ class TextGenAggregates(_CompletedRunBase):
 
     def confidence_warnings(self) -> list[str]:
         warns: list[str] = []
+        optional_pairs: list[tuple[str, StandardPercentileMetrics]] = []
+        if self.step_tpot_ms is not None:
+            optional_pairs.append(("step_tpot_ms", self.step_tpot_ms))
         for name, metric in [
             ("ttft_ms", self.ttft_ms),
             ("tpot_ms", self.tpot_ms),
             ("output_throughput", self.output_throughput),
+            *optional_pairs,
         ]:
             ci = getattr(metric, "confidence_info", None)
             if ci and ci.confidence in ("low", "insufficient_data"):
@@ -972,6 +988,9 @@ class SpecDecodeMetrics:
       ``per_pos_rate_sum`` / ``per_pos_rate_count`` give running sums and counts
       of observed acceptance-rate samples per position. Window averages are
       computed via deltas.
+    - MAX-style histogram (``maxserve_spec_decode_avg_acceptance_length``):
+      ``avg_acceptance_length_sum`` / ``avg_acceptance_length_count`` track
+      observations of per-batch average acceptance length (tokens).
 
     A backend may populate either group; missing values default to 0/empty.
     """
@@ -982,6 +1001,8 @@ class SpecDecodeMetrics:
     accepted_per_pos: dict[int, int] = field(default_factory=dict)
     per_pos_rate_sum: dict[int, float] = field(default_factory=dict)
     per_pos_rate_count: dict[int, int] = field(default_factory=dict)
+    avg_acceptance_length_sum: float = 0.0
+    avg_acceptance_length_count: float = 0.0
 
 
 @dataclass
@@ -1012,9 +1033,8 @@ class SpecDecodeStats:
     def to_result_dict(self) -> dict[str, object]:
         """Return a flat dict of spec-decode keys for the benchmark result.
 
-        Only fields the backend actually exposed are emitted; missing
-        aggregates (e.g. when only a per-position histogram is available, as
-        with MAX Serve) are omitted rather than written as ``None``.
+        Only fields the backend actually exposed are emitted; missing aggregates
+        are omitted rather than written as ``None``.
         """
         result: dict[str, object] = {}
         if self.acceptance_rate is not None:
@@ -1047,14 +1067,19 @@ def calculate_spec_decode_stats(
     ``maxserve_spec_decode_acceptance_rate_per_position`` histogram, whichever
     is available.
 
+    When only MAX histograms are present (no vLLM-style counters), an aggregate
+    **acceptance_rate** (0--100, matching the printed benchmark column) is the
+    count-weighted mean of per-position acceptance-rate observations pooled
+    across positions. **acceptance_length** can additionally be taken from the
+    ``maxserve_spec_decode_avg_acceptance_length`` histogram delta mean.
+
     Args:
         metrics_before: Snapshot taken before the benchmark window.
         metrics_after: Snapshot taken after the benchmark window.
 
     Returns:
         A ``SpecDecodeStats`` with whatever fields are derivable, or ``None``
-        when neither aggregate counters nor per-position data moved during
-        the window.
+        when no spec-decode metrics moved during the window.
     """
     delta_drafts = metrics_after.num_drafts - metrics_before.num_drafts
     delta_draft_tokens = (
@@ -1065,6 +1090,7 @@ def calculate_spec_decode_stats(
     )
 
     per_pos_rates: list[float] = []
+    pooled_acceptance_rate_percent: float | None = None
     if delta_drafts > 0 and (
         metrics_before.accepted_per_pos or metrics_after.accepted_per_pos
     ):
@@ -1081,6 +1107,8 @@ def calculate_spec_decode_stats(
             set(metrics_before.per_pos_rate_sum.keys())
             | set(metrics_after.per_pos_rate_sum.keys())
         )
+        total_sum_delta = 0.0
+        total_count_delta = 0.0
         for pos in positions:
             sum_delta = metrics_after.per_pos_rate_sum.get(
                 pos, 0.0
@@ -1089,12 +1117,33 @@ def calculate_spec_decode_stats(
                 pos, 0
             ) - metrics_before.per_pos_rate_count.get(pos, 0)
             if count_delta > 0:
+                total_sum_delta += sum_delta
+                total_count_delta += count_delta
                 # Histogram observations are recorded as percentages (0-100);
                 # normalize to a 0-1 fraction for parity with the vLLM path.
                 per_pos_rates.append((sum_delta / count_delta) / 100.0)
+        if total_count_delta > 0:
+            pooled_acceptance_rate_percent = total_sum_delta / total_count_delta
+
+    al_sum_delta = (
+        metrics_after.avg_acceptance_length_sum
+        - metrics_before.avg_acceptance_length_sum
+    )
+    al_count_delta = (
+        metrics_after.avg_acceptance_length_count
+        - metrics_before.avg_acceptance_length_count
+    )
+    acceptance_length_from_max_hist: float | None = None
+    if al_count_delta > 0:
+        acceptance_length_from_max_hist = al_sum_delta / al_count_delta
 
     has_aggregates = delta_draft_tokens > 0
-    if not has_aggregates and not per_pos_rates:
+    if (
+        not has_aggregates
+        and not per_pos_rates
+        and pooled_acceptance_rate_percent is None
+        and acceptance_length_from_max_hist is None
+    ):
         return None
 
     if has_aggregates:
@@ -1111,6 +1160,8 @@ def calculate_spec_decode_stats(
             per_position_acceptance_rates=per_pos_rates,
         )
     return SpecDecodeStats(
+        acceptance_rate=pooled_acceptance_rate_percent,
+        acceptance_length=acceptance_length_from_max_hist,
         per_position_acceptance_rates=per_pos_rates,
     )
 

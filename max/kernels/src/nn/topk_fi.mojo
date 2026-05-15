@@ -424,7 +424,7 @@ def topk_mask_logits[
                 d,
                 grid_dim=batch_size,
                 block_dim=block_size,
-                attributes=pdl_launch_attributes(PDLLevel(1)),
+                attributes=pdl_launch_attributes(PDLLevel.ON),
             )
 
         # Runtime dispatch to compile-time parameter.
@@ -995,7 +995,7 @@ def topk_sampling_from_prob[
                 rng_offset,
                 grid_dim=batch_size,
                 block_dim=block_size,
-                attributes=pdl_launch_attributes(PDLLevel(1)),
+                attributes=pdl_launch_attributes(PDLLevel.ON),
             )
 
         # Runtime dispatch to compile-time parameter.
@@ -1429,7 +1429,7 @@ def topk_topp_sampling_from_prob[
                 rng_offset,
                 grid_dim=batch_size,
                 block_dim=block_size,
-                attributes=pdl_launch_attributes(PDLLevel(1)),
+                attributes=pdl_launch_attributes(PDLLevel.ON),
             )
 
         @parameter
@@ -1816,7 +1816,7 @@ def topk_softmax_sample[
                 grid_dim=batch_size,
                 block_dim=block_size,
                 shared_mem_bytes=shared_mem_bytes,
-                attributes=pdl_launch_attributes(PDLLevel(1)),
+                attributes=pdl_launch_attributes(PDLLevel.ON),
             )
 
         # Runtime dispatch to compile-time parameter.

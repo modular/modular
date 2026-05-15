@@ -35,7 +35,6 @@ from std.math.constants import log2e
 from std.memory import bitcast
 from std.sys import size_of
 import std.gpu.primitives.warp as warp
-from std.gpu import thread_idx
 from std.gpu.globals import WARPGROUP_SIZE, WARP_SIZE
 from std.gpu.memory import AddressSpace, fence_async_view_proxy
 from std.gpu.sync import (
@@ -67,6 +66,7 @@ from nn.attention.gpu.nvidia.sm100.attention_utils import (
     SharedMemPointer,
     MBarType,
     TMemTile,
+    llvm_opaque_tid,
     add_ftz,
     sub_ftz,
     mul_ftz,
@@ -269,7 +269,7 @@ def depth512_softmax[
     comptime max_unroll = 8
 
     # ---- Thread identity -------------------------------------------------
-    var tid = UInt32(thread_idx.x)
+    var tid = llvm_opaque_tid()
     var row = tid % 128  # TMEM row (0-127)
     var m_row = row % UInt32(BM)  # M row index
     # split_o (d512): is_lower distinguishes paired threads (row<64 vs >=64)

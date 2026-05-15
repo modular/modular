@@ -635,14 +635,13 @@ name. Each `__mlir_region` defines a single block.
 
 ### Region arguments
 
-Region arguments look like function arguments, but they don't
-support Mojo argument conventions like `borrowed`, `owned`,
-`ref`, `out`, or `mut`. The operation provides the argument
-values directly as raw MLIR values:
+Region arguments look like function arguments, but they don't support Mojo
+passing conventions like `ref`, `var`, or `mut`. The operation provides
+the argument values directly as raw MLIR values:
 
 ```mojo
 # Region arguments receive raw MLIR values from the enclosing
-# operation. No Mojo argument conventions apply.
+# operation. Mojo conventions don't apply.
 __mlir_region my_region(
     x: __mlir_type.index,              # Raw index from the operation
     y: __mlir_type.`!kgen.scalar<f32>`, # Raw f32 scalar

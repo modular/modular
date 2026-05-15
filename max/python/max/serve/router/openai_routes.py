@@ -1183,13 +1183,24 @@ async def openai_create_chat_completion(
             parser=parser,
             parse_tool_calls=parse_tool_calls,
         )
+        # Use request-level temperature/thinking_temperature if provided, else server defaults.
+        temp = (
+            completion_request.temperature
+            if completion_request.temperature is not None
+            else request.app.state.pipeline_config.runtime.temperature
+        )
+        thinking_temp = (
+            completion_request.thinking_temperature
+            if completion_request.thinking_temperature is not None
+            else request.app.state.pipeline_config.runtime.thinking_temperature
+        )
         sampling_params = SamplingParams.from_input_and_generation_config(
             SamplingParamsInput(
                 top_k=completion_request.top_k,
                 top_p=completion_request.top_p,
                 min_p=completion_request.min_p,
-                temperature=completion_request.temperature,
-                thinking_temperature=completion_request.thinking_temperature,
+                temperature=temp,
+                thinking_temperature=thinking_temp,
                 frequency_penalty=completion_request.frequency_penalty,
                 presence_penalty=completion_request.presence_penalty,
                 repetition_penalty=completion_request.repetition_penalty,
@@ -1862,6 +1873,17 @@ async def openai_create_completion(
         response_generator = OpenAICompletionResponseGenerator(pipeline)
         prompts = get_prompts_from_openai_request(completion_request.prompt)
         token_requests = []
+        # Use request-level temperature/thinking_temperature if provided, else server defaults.
+        temp = (
+            completion_request.temperature
+            if completion_request.temperature is not None
+            else pipeline_config.runtime.temperature
+        )
+        thinking_temp = (
+            completion_request.thinking_temperature
+            if completion_request.thinking_temperature is not None
+            else pipeline_config.runtime.thinking_temperature
+        )
         for i, prompt in enumerate(prompts):
             prompt = cast(str | Sequence[int], prompt)
             sampling_params = SamplingParams.from_input_and_generation_config(
@@ -1869,8 +1891,8 @@ async def openai_create_completion(
                     top_k=completion_request.top_k,
                     top_p=completion_request.top_p,
                     min_p=completion_request.min_p,
-                    temperature=completion_request.temperature,
-                    thinking_temperature=completion_request.thinking_temperature,
+                    temperature=temp,
+                    thinking_temperature=thinking_temp,
                     frequency_penalty=completion_request.frequency_penalty,
                     presence_penalty=completion_request.presence_penalty,
                     repetition_penalty=completion_request.repetition_penalty,

@@ -51,7 +51,7 @@ def _make_mock_tokenizer(token_counts: dict[str, int]) -> MagicMock:
 
 
 def test_per_chunk_tpot_collected_from_outputs() -> None:
-    """Per-chunk TPOT values are correctly collected from outputs."""
+    """Per-chunk TPOT values are collected into step_tpot_ms."""
     output = RequestFuncOutput(
         success=True,
         latency=1.0,
@@ -79,14 +79,18 @@ def test_per_chunk_tpot_collected_from_outputs() -> None:
 
     assert metrics.text_data is not None
 
-    # TPOT percentiles should be based on the per-chunk values [0.05, 0.1, 0.15]
-    # scaled by 1000 (to ms)
-    assert math.isclose(metrics.text_data.tpot_ms.p50, 100.0, rel_tol=1e-3)
+    # Per-chunk values [0.05, 0.1, 0.15] now live in step_tpot_ms.
+    assert metrics.text_data.step_tpot_ms is not None
+    assert math.isclose(metrics.text_data.step_tpot_ms.p50, 100.0, rel_tol=1e-3)
+    # tpot_ms is per-request: (latency - ttft) / (output_len - 1)
+    #                       = (1.0 - 0.1) / (5 - 1) = 0.225 s -> 225 ms.
+    assert math.isclose(metrics.text_data.tpot_ms.p50, 225.0, rel_tol=1e-3)
 
 
-def test_tpot_weighted_mean() -> None:
-    """TPOT mean = sum(ITL) / decode_tokens * 1000 ms."""
-    # Request 1: 10 output tokens, ITL sum = 0.9s
+def test_tpot_both_definitions() -> None:
+    """Both TPOT definitions are computed: per-request tpot_ms and per-step step_tpot_ms."""
+    # Request 1: 10 output tokens, latency 1.0s, ttft 0.1s
+    #   -> per-request tpot = 0.9 / 9 = 0.1 s
     output1 = RequestFuncOutput(
         success=True,
         latency=1.0,
@@ -97,7 +101,8 @@ def test_tpot_weighted_mean() -> None:
         tpot=[0.1] * 9,
     )
 
-    # Request 2: 4 output tokens, ITL sum = 0.6s
+    # Request 2: 4 output tokens, latency 0.8s, ttft 0.2s
+    #   -> per-request tpot = 0.6 / 3 = 0.2 s
     output2 = RequestFuncOutput(
         success=True,
         latency=0.8,
@@ -126,14 +131,13 @@ def test_tpot_weighted_mean() -> None:
 
     assert metrics.text_data is not None
 
-    # total_output = 10 + 4 = 14
-    # completed = 2
-    # decode_tokens = 14 - 2 = 12
-    # sum(itl) = 0.9 + 0.6 = 1.5
-    # weighted mean TPOT = 1.5 / 12 * 1000 = 125.0 ms
-    expected_mean = 1.5 / 12 * 1000.0
+    # Per-request tpots = [0.1, 0.2]; mean = 0.15 s -> 150 ms.
+    assert math.isclose(metrics.text_data.tpot_ms.mean, 150.0, rel_tol=1e-6)
+
+    # Per-step step_tpots = [0.1]*9 + [0.2]*3; mean = 1.5/12 s -> 125 ms.
+    assert metrics.text_data.step_tpot_ms is not None
     assert math.isclose(
-        metrics.text_data.tpot_ms.mean, expected_mean, rel_tol=1e-6
+        metrics.text_data.step_tpot_ms.mean, 125.0, rel_tol=1e-6
     )
 
 
@@ -269,8 +273,11 @@ def test_failed_requests_excluded() -> None:
     # Only successful request's TPOT should be used
     assert metrics.text_data.completed == 1
     assert metrics.text_data.failures == 1
-    # TPOT values should only include [0.1, 0.2], not [999.0]
+    # Per-request tpot_ms uses only the successful request, not [999.0].
     assert metrics.text_data.tpot_ms.p50 < 500.0
+    # Per-step step_tpot_ms uses only [0.1, 0.2] from the successful request.
+    assert metrics.text_data.step_tpot_ms is not None
+    assert metrics.text_data.step_tpot_ms.p50 < 500.0
 
 
 def test_skip_last_n_requests() -> None:
@@ -1026,7 +1033,7 @@ def test_skip_first_overlaps_with_skip_last_drops_both() -> None:
 def _make_tokenizer_mock(tokens_per_output: int = 5) -> MagicMock:
     """Return a tokenizer mock whose encode call returns a fixed token count."""
     tokenizer = MagicMock()
-    tokenizer.return_value = MagicMock(input_ids=list(range(tokens_per_output)))
+    tokenizer.encode.return_value = list(range(tokens_per_output))
     return tokenizer
 
 
