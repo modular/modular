@@ -57,6 +57,19 @@ This version is still a work in progress.
   `CompilationTimer("model")` wrappers in `*_modulev3` architectures have been
   removed to avoid nested timing logs.
 
+- `max.experimental.nn.Module.load_state_dict` and
+  `Module.compile(weights=...)` now accept an `auto_cast` keyword
+  (default `False`). The framework remains strict by default. When
+  `auto_cast=True` is passed, loaded weights are automatically cast
+  between `float32` and `bfloat16` when shapes match, logging a single
+  summary message per load instead of raising. Other dtype mismatches
+  (`float16`, `fp8`, `fp4`, integers, etc.) continue to raise as before.
+  This removes the need for per-adapter `astype` shims when checkpoint
+  dtypes differ from the module's declared parameter dtype. MAX
+  pipelines opt in via the `MODULAR_AUTO_CAST_WEIGHTS` environment
+  variable (default `true`, parsed by
+  `max.pipelines.lib.weight_loading.auto_cast_weights_from_env`).
+
 - `CPUMetricsCollector` in `max.diagnostics.cpu` is now used as a context
   manager instead of `start`/`stop` and now exposes `get_stats()` instead of
   `dump_stats()`, matching the interface of `GPUDiagContext`.

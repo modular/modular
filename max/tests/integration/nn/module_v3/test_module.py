@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import logging
 import re
 import weakref
 
@@ -367,6 +368,197 @@ def test_load_state_dict_valid_types() -> None:
     assert module.weight[0, 0].item() == 1.0
 
 
+_AUTO_CAST_LOGGER = "max.experimental.nn._compile_utils"
+
+
+def _auto_cast_logs(
+    caplog: pytest.LogCaptureFixture,
+) -> list[logging.LogRecord]:
+    return [
+        r
+        for r in caplog.records
+        if r.name == _AUTO_CAST_LOGGER and "auto-cast" in r.getMessage()
+    ]
+
+
+def test_load_state_dict_safe_cast_float32_to_bfloat16(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """float32 -> bfloat16 auto-casts with a summary log flagged lossy."""
+
+    @module_dataclass
+    class SimpleModule(Module[[Tensor], Tensor]):
+        weight: Tensor
+
+        def forward(self, x: Tensor) -> Tensor:
+            return x + self.weight
+
+    module = SimpleModule(weight=Tensor.zeros([3, 3], dtype=DType.bfloat16))
+    weights = {"weight": Tensor.ones([3, 3], dtype=DType.float32)}
+
+    with caplog.at_level(logging.WARNING, logger=_AUTO_CAST_LOGGER):
+        module.load_state_dict(weights, auto_cast=True)
+
+    assert module.weight.dtype == DType.bfloat16
+    assert module.weight[0, 0].item() == 1.0
+    # Narrowing cast must be flagged so users can tell precision was lost.
+    logs = _auto_cast_logs(caplog)
+    assert len(logs) == 1
+    assert "precision loss" in logs[0].getMessage()
+
+
+def test_load_state_dict_safe_cast_bfloat16_to_float32(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """bfloat16 -> float32 auto-casts with a summary log (lossless)."""
+
+    @module_dataclass
+    class SimpleModule(Module[[Tensor], Tensor]):
+        weight: Tensor
+
+        def forward(self, x: Tensor) -> Tensor:
+            return x + self.weight
+
+    module = SimpleModule(weight=Tensor.zeros([3, 3], dtype=DType.float32))
+    weights = {"weight": Tensor.ones([3, 3], dtype=DType.bfloat16)}
+
+    with caplog.at_level(logging.WARNING, logger=_AUTO_CAST_LOGGER):
+        module.load_state_dict(weights, auto_cast=True)
+
+    assert module.weight.dtype == DType.float32
+    assert module.weight[0, 0].item() == 1.0
+    # Widening cast: must not be flagged as lossy.
+    logs = _auto_cast_logs(caplog)
+    assert len(logs) == 1
+    assert "precision loss" not in logs[0].getMessage()
+
+
+def test_load_state_dict_no_warning_when_dtypes_match(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Matching-dtype loads must not emit an auto-cast log."""
+
+    @module_dataclass
+    class SimpleModule(Module[[Tensor], Tensor]):
+        weight: Tensor
+
+        def forward(self, x: Tensor) -> Tensor:
+            return x + self.weight
+
+    module = SimpleModule(weight=Tensor.zeros([3, 3], dtype=DType.float32))
+    weights = {"weight": Tensor.ones([3, 3], dtype=DType.float32)}
+
+    with caplog.at_level(logging.WARNING, logger=_AUTO_CAST_LOGGER):
+        module.load_state_dict(weights)
+
+    assert not _auto_cast_logs(caplog)
+
+
+def test_load_state_dict_safe_cast_summary_aggregates(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A single summary log aggregates counts across all cast parameters."""
+
+    @module_dataclass
+    class TwoWeightModule(Module[[Tensor], Tensor]):
+        a: Tensor
+        b: Tensor
+
+        def forward(self, x: Tensor) -> Tensor:
+            return x + self.a + self.b
+
+    module = TwoWeightModule(
+        a=Tensor.zeros([3, 3], dtype=DType.bfloat16),
+        b=Tensor.zeros([3, 3], dtype=DType.bfloat16),
+    )
+    weights = {
+        "a": Tensor.ones([3, 3], dtype=DType.float32),
+        "b": Tensor.ones([3, 3], dtype=DType.float32),
+    }
+
+    with caplog.at_level(logging.WARNING, logger=_AUTO_CAST_LOGGER):
+        module.load_state_dict(weights, auto_cast=True)
+
+    logs = _auto_cast_logs(caplog)
+    assert len(logs) == 1
+    assert "2 parameter(s)" in logs[0].getMessage()
+
+
+def test_load_state_dict_default_does_not_auto_cast() -> None:
+    """``auto_cast`` defaults to False; safe-cast pairs still raise unless opted in."""
+
+    @module_dataclass
+    class SimpleModule(Module[[Tensor], Tensor]):
+        weight: Tensor
+
+        def forward(self, x: Tensor) -> Tensor:
+            return x + self.weight
+
+    module = SimpleModule(weight=Tensor.zeros([3, 3], dtype=DType.bfloat16))
+    weights = {"weight": Tensor.ones([3, 3], dtype=DType.float32)}
+
+    with pytest.raises(ValueError, match="not assignable"):
+        module.load_state_dict(weights)
+
+
+def test_load_state_dict_auto_cast_false_arg_disables(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Passing ``auto_cast=False`` reverts to hard-fail on dtype mismatch."""
+
+    @module_dataclass
+    class SimpleModule(Module[[Tensor], Tensor]):
+        weight: Tensor
+
+        def forward(self, x: Tensor) -> Tensor:
+            return x + self.weight
+
+    module = SimpleModule(weight=Tensor.zeros([3, 3], dtype=DType.bfloat16))
+    weights = {"weight": Tensor.ones([3, 3], dtype=DType.float32)}
+
+    with caplog.at_level(logging.WARNING, logger=_AUTO_CAST_LOGGER):
+        with pytest.raises(ValueError, match="not assignable"):
+            module.load_state_dict(weights, auto_cast=False)
+    # No auto-cast log line should fire when the feature is disabled.
+    assert not _auto_cast_logs(caplog)
+
+
+def test_compile_with_weights_auto_cast_false_arg_disables() -> None:
+    """Passing ``auto_cast=False`` to ``compile`` raises on dtype mismatch."""
+
+    @module_dataclass
+    class SimpleModule(Module[[Tensor], Tensor]):
+        weight: Tensor
+
+        def forward(self, x: Tensor) -> Tensor:
+            return x + self.weight
+
+    module = SimpleModule(weight=Tensor.zeros([3, 3], dtype=DType.bfloat16))
+    _, device = defaults()
+    input_type = TensorType(DType.bfloat16, [3, 3], device=device)
+    weights = {"weight": Tensor.ones([3, 3], dtype=DType.float32)}
+
+    with pytest.raises(ValueError, match="not assignable"):
+        module.compile(input_type, weights=weights, auto_cast=False)
+
+
+def test_load_state_dict_unwhitelisted_float_dtype_still_raises() -> None:
+    """Float dtypes outside the safe set (e.g. float16) still hard-fail."""
+
+    @module_dataclass
+    class SimpleModule(Module[[Tensor], Tensor]):
+        weight: Tensor
+
+        def forward(self, x: Tensor) -> Tensor:
+            return x + self.weight
+
+    module = SimpleModule(weight=Tensor.zeros([3, 3], dtype=DType.float32))
+    weights = {"weight": Tensor.zeros([3, 3], dtype=DType.float16)}
+
+    with pytest.raises(ValueError, match="not assignable"):
+        module.load_state_dict(weights)
+
+
 @pytest.mark.skipif(not accelerator_count(), reason="requires multiple devices")
 def test_to(test_module: TestModule) -> None:
     assert all(t.device == Accelerator() for _, t in test_module.parameters)
@@ -505,6 +697,31 @@ def test_compile_with_weights_dtype_mismatch() -> None:
 
     with pytest.raises(ValueError, match="not assignable"):
         module.compile(type, weights=weights)
+
+
+def test_compile_with_weights_safe_cast(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """compile(weights=...) auto-casts safe dtypes and logs a summary."""
+
+    @module_dataclass
+    class SimpleModule(Module[[Tensor], Tensor]):
+        weight: Tensor
+
+        def forward(self, x: Tensor) -> Tensor:
+            return x + self.weight
+
+    module = SimpleModule(weight=Tensor.zeros([3, 3], dtype=DType.bfloat16))
+    _, device = defaults()
+    input_type = TensorType(DType.bfloat16, [3, 3], device=device)
+    weights = {"weight": Tensor.ones([3, 3], dtype=DType.float32)}
+
+    with caplog.at_level(logging.WARNING, logger=_AUTO_CAST_LOGGER):
+        module.compile(input_type, weights=weights, auto_cast=True)
+
+    logs = _auto_cast_logs(caplog)
+    assert len(logs) == 1
+    assert "precision loss" in logs[0].getMessage()
 
 
 def test_compile_with_weights_missing_parameter_raises() -> None:

@@ -19,11 +19,13 @@ extracted from ``module.py`` to keep the public-facing module lean.
 from __future__ import annotations
 
 import dataclasses
+import logging
 from collections.abc import Iterable, Mapping, Sequence
 from typing import Any
 
 from max import driver, graph
 from max.driver import Accelerator, Buffer, DLPackArray
+from max.dtype import DType
 from max.engine import Model
 from max.experimental.functional import transfer_to
 from max.experimental.sharding import (
@@ -36,9 +38,18 @@ from max.experimental.tensor import GraphValue, Tensor
 from max.graph import DeviceRef, Value
 from max.nn.comm.allreduce import Signals
 
+_logger = logging.getLogger(__name__)
+
 # ─── Type aliases ──────────────────────────────────────────────────────
 
 InputType = graph.Type[Any] | DistributedType[Any]
+
+CastRecord = tuple[DType, DType]
+
+# Dtypes between which the Module loader will silently auto-cast loaded
+# weights when the parameter dtype differs. Intentionally narrow; expand as
+# new safe pairs are validated.
+_SAFE_CAST_DTYPES: frozenset[DType] = frozenset({DType.float32, DType.bfloat16})
 
 
 # ─── Validation ────────────────────────────────────────────────────────
@@ -241,22 +252,32 @@ def _prepare_weight_for_parameter(
     name: str,
     weight: DLPackArray | Tensor,
     param: Tensor,
-) -> Tensor:
+    *,
+    auto_cast: bool,
+) -> tuple[Tensor, CastRecord | None]:
     """Validates and prepares a weight for a parameter.
 
     Handles conversion, validation, and sharding:
 
     1. Converts DLPack array to Tensor if needed
-    2. Validates shape and dtype match the parameter
-    3. For distributed parameters: validates mapping or shards single-device weights
+    2. When ``auto_cast`` is true, auto-casts dtype when both loaded and
+       parameter dtypes are in the safe-cast whitelist (see
+       ``_SAFE_CAST_DTYPES``)
+    3. Validates shape and dtype match the parameter
+    4. For distributed parameters: validates mapping or shards single-device weights
 
     Args:
         name: Parameter name for error messages.
         weight: User-provided weight (DLPack array or Tensor).
         param: The target parameter tensor.
+        auto_cast: Whether to apply safe-cast-set dtype coercion.
 
     Returns:
-        A Tensor ready to be assigned to the parameter.
+        A tuple ``(prepared, cast_record)`` where ``prepared`` is a Tensor
+        ready to be assigned to the parameter and ``cast_record`` is
+        ``(from_dtype, to_dtype)`` when a safe auto-cast was applied,
+        otherwise ``None``. Callers may aggregate ``cast_record`` values to
+        emit a single summary warning per load.
 
     Raises:
         ValueError: If shape, dtype, or distribution doesn't match.
@@ -266,10 +287,21 @@ def _prepare_weight_for_parameter(
     else:
         weight_tensor = Tensor.from_dlpack(weight)
 
+    cast_record: CastRecord | None = None
+    if (
+        auto_cast
+        and weight_tensor.shape == param.shape
+        and weight_tensor.dtype != param.dtype
+        and weight_tensor.dtype in _SAFE_CAST_DTYPES
+        and param.dtype in _SAFE_CAST_DTYPES
+    ):
+        cast_record = (weight_tensor.dtype, param.dtype)
+        weight_tensor = weight_tensor.cast(param.dtype)
+
     _validate_loaded_parameter(name, param, weight_tensor)
 
     if not param.is_distributed:
-        return weight_tensor
+        return weight_tensor, cast_record
 
     assert param._mapping is not None
 
@@ -279,14 +311,36 @@ def _prepare_weight_for_parameter(
                 f"Weight '{name}' has incompatible distribution. "
                 f"Expected {param._mapping}, got {weight_tensor._mapping}."
             )
-        return weight_tensor
+        return weight_tensor, cast_record
 
-    return transfer_to(weight_tensor, param._mapping)
+    return transfer_to(weight_tensor, param._mapping), cast_record
+
+
+def _emit_cast_summary(cast_counts: Mapping[CastRecord, int]) -> None:
+    """Logs a single summary message for a batch of auto-casts.
+
+    Called once per ``load_state_dict`` (or ``compile(weights=...)``) after
+    all parameters have been processed, so users see one log line per load
+    rather than one per parameter.
+    """
+    if not cast_counts:
+        return
+    parts = []
+    for (src, dst), count in cast_counts.items():
+        # Narrowing casts (e.g. float32 -> bfloat16) truncate precision; flag
+        # them so users aren't silently surprised when accuracy regresses.
+        qualifier = (
+            " (precision loss)" if dst.size_in_bytes < src.size_in_bytes else ""
+        )
+        parts.append(f"{count} parameter(s) from {src} to {dst}{qualifier}")
+    _logger.warning("load_state_dict auto-cast: %s.", "; ".join(parts))
 
 
 def _process_provided_weights(
     weights: Mapping[str, DLPackArray],
     parameters: Iterable[tuple[str, Tensor]],
+    *,
+    auto_cast: bool,
 ) -> dict[str, DLPackArray]:
     """Processes user-provided weights based on parameter distribution.
 
@@ -300,11 +354,14 @@ def _process_provided_weights(
     Args:
         weights: User-provided weight buffers keyed by parameter name.
         parameters: Module parameters with distribution metadata.
+        auto_cast: Whether to permit safe-cast-set dtype coercion when
+            shapes match (see :func:`_prepare_weight_for_parameter`).
 
     Returns:
         A weights registry suitable for ``session.load(..., weights_registry=...)``.
     """
     result: dict[str, DLPackArray] = {}
+    cast_counts: dict[CastRecord, int] = {}
 
     for name, param in parameters:
         if name not in weights:
@@ -312,7 +369,11 @@ def _process_provided_weights(
                 f"Weight '{name}' is missing from the provided weights mapping."
             )
 
-        prepared = _prepare_weight_for_parameter(name, weights[name], param)
+        prepared, cast_record = _prepare_weight_for_parameter(
+            name, weights[name], param, auto_cast=auto_cast
+        )
+        if cast_record is not None:
+            cast_counts[cast_record] = cast_counts.get(cast_record, 0) + 1
         shards = prepared.local_shards
 
         if not param.is_distributed:
@@ -321,6 +382,7 @@ def _process_provided_weights(
             for i, shard in enumerate(shards):
                 result[f"{name}._shard.{i}"] = shard
 
+    _emit_cast_summary(cast_counts)
     return result
 
 

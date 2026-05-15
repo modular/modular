@@ -45,6 +45,7 @@ from max.pipelines.lib import (
     PipelineConfig,
     PipelineModelWithKVCache,
 )
+from max.pipelines.lib.weight_loading import auto_cast_weights_from_env
 from transformers.models.auto.configuration_auto import AutoConfig
 
 from .model_config import Idefics3Config
@@ -265,7 +266,11 @@ class Idefics3Model(PipelineModelWithKVCache[TextAndVisionContext]):
             nn_vision = Idefics3VisionModel(config.vision_config)
             nn_vision.to(self.devices[0])
 
-        compiled = nn_vision.compile(pixel_values_type, weights=state_dict)
+        compiled = nn_vision.compile(
+            pixel_values_type,
+            weights=state_dict,
+            auto_cast=auto_cast_weights_from_env(),
+        )
 
         return compiled
 
