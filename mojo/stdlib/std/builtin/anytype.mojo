@@ -166,7 +166,7 @@ trait ImplicitlyDestructible:
 
         def __del__(deinit self):
             # Clean up owned resources
-            free(self.ptr, Layout[Int](count=size))
+            free(self.ptr, Layout[Int](count=self.size))
     ```
 
     Best practices:
