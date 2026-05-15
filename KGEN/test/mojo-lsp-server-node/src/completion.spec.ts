@@ -56,12 +56,12 @@ import p
       server,
       "test:///test.mojo",
       `
-import builtin.
+import std.builtin.
 `
     );
     await doc.open();
 
-    let completions = await doc.complete(Position.create(1, 15));
+    let completions = await doc.complete(Position.create(1, 19));
     assert.ok(completions);
     assert.ok(
       completions.some(
