@@ -17,6 +17,7 @@
 
 import json
 import re
+from pathlib import Path
 
 import click
 
@@ -131,14 +132,23 @@ CUSTOM_MODELS: dict[str, set[str]] = {
     "austinpowers/Kimi-K2.5-NVFP4-DeepseekV3__local_kvconnector_tpep": NON_XL | {"8xMI355"},
     "austinpowers/Kimi-K2.5-NVFP4-DeepseekV3__tiered_kvconnector_tpep": NON_XL | {"8xMI355"},
     "austinpowers/Kimi-K2.5-NVFP4-DeepseekV3__eagle_tiered_kvconnector_tpep": NON_XL | {"8xMI355"},
-    # Runs exclusively on the dedicated internal 8xB200 runner. The recipe
-    # loads weights pre-staged on the runner; see the matching MODEL_RECIPES
-    # entry in smoke_test.py.
-    "nvidia/Kimi-K2.5-NVFP4__internal": INTERNAL_ONLY,
 }
 
 MODELS = {**HF_MODELS, **CUSTOM_MODELS}
 # fmt: on
+
+# Aliases whose recipe may not be present in every checkout. Mirror the
+# _OPTIONAL_MODEL_RECIPES guard in smoke_test.py so both dicts stay in sync.
+_max_dir = Path(__file__).resolve().parents[4]
+if (
+    _max_dir
+    / "python/max/pipelines/architectures/kimik2_5/recipes/internal/nvfp4_8x_b200.yaml"
+).is_file():
+    # Runs exclusively on the dedicated internal 8xB200 runner. The recipe
+    # loads weights pre-staged on the runner; see the matching MODEL_RECIPES
+    # entry in smoke_test.py.
+    CUSTOM_MODELS["nvidia/Kimi-K2.5-NVFP4__internal"] = INTERNAL_ONLY
+    MODELS["nvidia/Kimi-K2.5-NVFP4__internal"] = INTERNAL_ONLY
 
 
 def excluded(framework: str, gpu: str, model: str) -> bool:
