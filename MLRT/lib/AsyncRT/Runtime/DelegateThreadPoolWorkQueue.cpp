@@ -11,7 +11,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "MLRT/AsyncRT/Runtime/AnyAsyncValueRef.h"
-#include "MLRT/AsyncRT/Runtime/CompactRuntimePtr.h"
+#include "MLRT/AsyncRT/Runtime/CompactCPUDevicePtr.h"
 #include "MLRT/AsyncRT/Runtime/WorkQueue.h"
 #include "MLRT/AsyncRT/Support/Semaphore.h"
 

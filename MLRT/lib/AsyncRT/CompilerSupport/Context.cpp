@@ -7,7 +7,7 @@
 #include "Support/Context.h"
 #include "MLRT/AsyncRT/CompilerSupport/Context.h"
 #include "MLRT/AsyncRT/CompilerSupport/LLVMThreadPool.h"
-#include "MLRT/AsyncRT/Runtime/Runtime.h"
+#include "MLRT/AsyncRT/Runtime/CPUDevice.h"
 #include "Support/MDialect/MDialect.h"
 
 using namespace M;

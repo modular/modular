@@ -12,7 +12,7 @@
 #ifndef MLRT_ASYNCRT_RUNTIME_ASYNCVALUE_H
 #define MLRT_ASYNCRT_RUNTIME_ASYNCVALUE_H
 
-#include "MLRT/AsyncRT/Runtime/CompactRuntimePtr.h"
+#include "MLRT/AsyncRT/Runtime/CompactCPUDevicePtr.h"
 #include "MLRT/AsyncRT/Runtime/Globals/Globals.h"
 #include "MLRT/AsyncRT/Runtime/WorkQueue.h"
 #include "MLRT/AsyncRT/Support/Diagnostic.h"

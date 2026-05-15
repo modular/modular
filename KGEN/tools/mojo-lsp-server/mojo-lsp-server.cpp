@@ -9,7 +9,7 @@
 #include "KGEN/Support/Debugging.h"
 #include "KGEN/ToolCommon/OOMHandler.h"
 #include "LSPServer.h"
-#include "MLRT/AsyncRT/Runtime/Runtime.h"
+#include "MLRT/AsyncRT/Runtime/CPUDevice.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/InitLLVM.h"
 #include "llvm/Support/LSP/Logging.h"

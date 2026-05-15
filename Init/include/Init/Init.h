@@ -7,7 +7,7 @@
 #ifndef ASYNCRT_INIT_INIT_H
 #define ASYNCRT_INIT_INIT_H
 
-#include "MLRT/AsyncRT/Runtime/Runtime.h"
+#include "MLRT/AsyncRT/Runtime/CPUDevice.h"
 #include "Support/Context.h"
 #include "Support/ErrorOr.h"
 

@@ -14,7 +14,7 @@
 #include "KGEN/Support/CompilerProfiling.h"
 #include "KGEN/Support/MojoPrecompiledFile.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
-#include "MLRT/AsyncRT/Runtime/Runtime.h"
+#include "MLRT/AsyncRT/Runtime/CPUDevice.h"
 #include "Support/Compiler/BytecodeReaderWriter.h"
 #include "Support/Filesystem/Paths.h"
 #include "Support/Telemetry/Telemetry.h"

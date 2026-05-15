@@ -13,7 +13,7 @@
 #include "KGEN/ToolCommon/InitAllDialects.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
 #include "MLRT/AsyncRT/CompilerSupport/Context.h"
-#include "MLRT/AsyncRT/Runtime/Runtime.h"
+#include "MLRT/AsyncRT/Runtime/CPUDevice.h"
 #include "Support/Driver/DiagnosticFormat.h"
 #include "Support/MDialect/MDialect.h"
 #include "mlir/Bytecode/BytecodeWriter.h"

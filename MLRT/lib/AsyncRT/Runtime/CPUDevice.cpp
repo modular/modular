@@ -8,10 +8,10 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "MLRT/AsyncRT/Runtime/Runtime.h"
+#include "MLRT/AsyncRT/Runtime/CPUDevice.h"
 #include "MLRT/AsyncRT/Runtime/Allocator.h"
 #include "MLRT/AsyncRT/Runtime/AsyncValueRef.h"
-#include "MLRT/AsyncRT/Runtime/CompactRuntimePtr.h"
+#include "MLRT/AsyncRT/Runtime/CompactCPUDevicePtr.h"
 #include "MLRT/AsyncRT/Runtime/Globals/RuntimeGlobal.h"
 #include "MLRT/AsyncRT/Runtime/WorkQueue.h"
 #include "MLRT/AsyncRT/Support/Chain.h"

@@ -12,7 +12,7 @@
 #ifndef MLRT_ASYNCRT_RUNTIME_RUNTIMECLOPTIONS_H
 #define MLRT_ASYNCRT_RUNTIME_RUNTIMECLOPTIONS_H
 
-#include "MLRT/AsyncRT/Runtime/Runtime.h"
+#include "MLRT/AsyncRT/Runtime/CPUDevice.h"
 #include "Support/ADT/GenericUniquePtrSet.h"
 #include "Support/CommandLine.h"
 #include "Support/Profiling/TimeProfiler.h"

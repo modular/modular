@@ -25,7 +25,7 @@
 #include "KGEN/POPDialect/POPTypes.h"
 #include "KGEN/ToolCommon/InitAllDialects.h"
 #include "MLRT/AsyncRT/CompilerSupport/Context.h"
-#include "MLRT/AsyncRT/Runtime/Runtime.h"
+#include "MLRT/AsyncRT/Runtime/CPUDevice.h"
 #include "MojoTypeDataLayout.h"
 #include "Plugins/SymbolFile/DWARF/DWARFDIE.h"
 #include "Support/Compiler/MLIRDType.h"

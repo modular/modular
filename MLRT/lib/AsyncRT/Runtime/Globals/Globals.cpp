@@ -15,7 +15,7 @@
 #pragma GCC diagnostic pop
 #endif
 
-#include "MLRT/AsyncRT/Runtime/CompactRuntimePtr.h"
+#include "MLRT/AsyncRT/Runtime/CompactCPUDevicePtr.h"
 #include "MLRT/AsyncRT/Runtime/Globals/Globals.h"
 #include "Support/BinaryID.h"
 

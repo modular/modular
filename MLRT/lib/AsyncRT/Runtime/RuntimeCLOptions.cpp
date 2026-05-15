@@ -5,7 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "MLRT/AsyncRT/Runtime/RuntimeCLOptions.h"
-#include "MLRT/AsyncRT/Runtime/Runtime.h"
+#include "MLRT/AsyncRT/Runtime/CPUDevice.h"
 
 using namespace M::MLRT;
 

@@ -18,7 +18,7 @@
 #include "MLRT/AsyncRT/Runtime/Allocator.h"
 #include "MLRT/AsyncRT/Runtime/AnyAsyncValueRef.h"
 #include "MLRT/AsyncRT/Runtime/AsyncValueRef.h"
-#include "MLRT/AsyncRT/Runtime/CompactRuntimePtr.h"
+#include "MLRT/AsyncRT/Runtime/CompactCPUDevicePtr.h"
 #include "MLRT/AsyncRT/Runtime/WorkQueue.h"
 #include "MLRT/AsyncRT/Support/Chain.h"
 #include "Support/RCRef.h"

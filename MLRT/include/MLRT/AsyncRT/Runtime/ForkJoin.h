@@ -8,7 +8,7 @@
 #define MLRT_ASYNCRT_SUPPORT_FORKJOIN_H
 
 #include "MLRT/AsyncRT/Runtime/Algorithms.h"
-#include "MLRT/AsyncRT/Runtime/Runtime.h"
+#include "MLRT/AsyncRT/Runtime/CPUDevice.h"
 
 namespace M::MLRT {
 /// This class can be used to track completion of various tasks dispatched to

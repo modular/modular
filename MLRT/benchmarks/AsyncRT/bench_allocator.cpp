@@ -15,8 +15,8 @@
 //===----------------------------------------------------------------------===//
 
 #include "MLRT/AsyncRT/Runtime/Allocator.h"
-#include "MLRT/AsyncRT/Runtime/Runtime.h"
-#include "MLRT/AsyncRT/Runtime/RuntimeManager.h"
+#include "MLRT/AsyncRT/Runtime/CPUDevice.h"
+#include "MLRT/AsyncRT/Runtime/HostSystem.h"
 #include "Support/MicroBenchmark.h"
 #include "llvm/Support/raw_ostream.h"
 

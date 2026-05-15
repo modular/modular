@@ -14,7 +14,7 @@
 #define MLRT_ASYNCRT_RUNTIME_WORKQUEUE_H
 
 #include "MLRT/AsyncRT/ForwardDecls.h"
-#include "MLRT/AsyncRT/Runtime/CompactRuntimePtr.h"
+#include "MLRT/AsyncRT/Runtime/CompactCPUDevicePtr.h"
 #include "MLRT/AsyncRT/Runtime/Globals/Globals.h"
 #include "Support/LLVMForwardDecls.h"
 #include "Support/Profiling/TimeProfiler.h"

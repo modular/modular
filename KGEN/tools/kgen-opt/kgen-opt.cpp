@@ -17,7 +17,7 @@
 #include "KGEN/ToolCommon/InitAllDialects.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
 #include "MLRT/AsyncRT/CompilerSupport/Context.h"
-#include "MLRT/AsyncRT/Runtime/Runtime.h"
+#include "MLRT/AsyncRT/Runtime/CPUDevice.h"
 #include "Support/Context.h"
 #include "Support/DebugInfoDialect/Transforms/Passes.h"
 #include "mlir/IR/BuiltinOps.h"

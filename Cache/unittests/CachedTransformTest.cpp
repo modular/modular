@@ -6,8 +6,8 @@
 
 #include "Cache/CachedTransform.h"
 #include "MLRT/AsyncRT/Runtime/Algorithms.h"
-#include "MLRT/AsyncRT/Runtime/Runtime.h"
-#include "MLRT/AsyncRT/Runtime/RuntimeManager.h"
+#include "MLRT/AsyncRT/Runtime/CPUDevice.h"
+#include "MLRT/AsyncRT/Runtime/HostSystem.h"
 #include "MLRT/AsyncRT/Support/UnknownLocationDecoder.h"
 #include "Support/FileSystemExtras.h"
 #include "Support/Preprocessor.h"

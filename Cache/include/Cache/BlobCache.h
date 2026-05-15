@@ -9,7 +9,7 @@
 
 #include "MLRT/AsyncRT/ForwardDecls.h"
 #include "MLRT/AsyncRT/Runtime/AsyncValueRef.h"
-#include "MLRT/AsyncRT/Runtime/Runtime.h"
+#include "MLRT/AsyncRT/Runtime/CPUDevice.h"
 #include "MLRT/AsyncRT/Support/Chain.h"
 #include "Support/Buffer.h"
 #include "Support/ErrorOr.h"

@@ -7,7 +7,7 @@
 #ifndef MLRT_ASYNCRT_RUNTIME_HOST_SYSTEM_H
 #define MLRT_ASYNCRT_RUNTIME_HOST_SYSTEM_H
 
-#include "MLRT/AsyncRT/Runtime/Runtime.h"
+#include "MLRT/AsyncRT/Runtime/CPUDevice.h"
 #include "Support/SymbolExport.h"
 
 namespace M::MLRT {
