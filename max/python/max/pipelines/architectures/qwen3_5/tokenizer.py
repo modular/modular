@@ -36,20 +36,20 @@ class Qwen3_5Tokenizer(Qwen3VLTokenizer):
         self,
         messages: list[TextGenerationRequestMessage],
         tools: list[TextGenerationRequestTool] | None = None,
-        chat_template_options: dict[str, Any] | None = None,
+        **chat_template_options: Any,
     ) -> str:
         """Apply chat template with thinking enabled by default.
 
         Args:
             messages: List of messages for the chat template.
             tools: Optional tools available for the model to invoke.
-            chat_template_options: Optional dictionary of template options. Set
-                `{"enable_thinking": True}` to enable thinking mode (default is True).
+            **chat_template_options: Template options to forward to the Jinja
+                template. Merged with ``add_generation_prompt=True`` and
+                ``enable_thinking=True`` defaults.
 
         Returns:
             The templated chat message as a string.
         """
-        chat_template_options = chat_template_options or {}
         enable_thinking = chat_template_options.get("enable_thinking", True)
 
         return self.delegate.apply_chat_template(

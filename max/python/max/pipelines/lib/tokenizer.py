@@ -454,12 +454,12 @@ class TextTokenizer(
         self,
         messages: list[TextGenerationRequestMessage],
         tools: list[TextGenerationRequestTool] | None,
-        chat_template_options: dict[str, Any] | None = None,
+        **chat_template_options: Any,
     ) -> str:
         """Applies the delegate chat template to messages (and optional tools)."""
         chat_template_options = {
             "add_generation_prompt": True,
-            **(chat_template_options or {}),
+            **chat_template_options,
         }
 
         try:
@@ -561,7 +561,7 @@ class TextTokenizer(
         prompt: Sequence[int] | str | None,
         messages: list[TextGenerationRequestMessage],
         tools: list[TextGenerationRequestTool] | None = None,
-        chat_template_options: dict[str, Any] | None = None,
+        **chat_template_options: Any,
     ) -> tuple[str | list[int], npt.NDArray[np.integer[Any]]]:
         if isinstance(prompt, str):
             return prompt, await self.encode(prompt, add_special_tokens=True)
@@ -569,7 +569,7 @@ class TextTokenizer(
             return prompt, await self.encode(prompt, add_special_tokens=True)
         elif isinstance(messages, list):
             prompt = self.apply_chat_template(
-                messages, tools, chat_template_options
+                messages, tools, **chat_template_options
             )
             return prompt, await self.encode(prompt, add_special_tokens=False)
         else:
@@ -622,7 +622,7 @@ class TextTokenizer(
             prompt=request.prompt,
             messages=request.messages,
             tools=request.tools,
-            chat_template_options=request.chat_template_options,
+            **(request.chat_template_options or {}),
         )
 
         json_schema = (
@@ -786,15 +786,28 @@ class TextAndVisionTokenizer(
         self,
         messages: list[TextGenerationRequestMessage],
         tools: list[TextGenerationRequestTool] | None = None,
+        **chat_template_options: Any,
     ) -> str:
-        """Applies the processor's chat template to the messages."""
-        # This converts between the Pydantic TextGenerationRequestMessage
-        # to a dict for the HF delegate
+        """Applies the processor's chat template to the messages.
+
+        Args:
+            messages: List of messages for the chat template.
+            tools: Optional tools available for the model to invoke.
+            **chat_template_options: Template options to forward to the Jinja
+                template. Merged with ``add_generation_prompt=True`` default.
+
+        Returns:
+            The templated chat message as a string.
+        """
+        chat_template_options = {
+            "add_generation_prompt": True,
+            **chat_template_options,
+        }
         templated_message = self.processor.apply_chat_template(
             [msg.model_dump(exclude_none=True) for msg in messages],
             tokenize=False,
             tools=tools,
-            add_generation_prompt=True,
+            **chat_template_options,
         )
         assert isinstance(templated_message, str)
         return templated_message
@@ -872,7 +885,11 @@ class TextAndVisionTokenizer(
         if request.prompt is not None:
             prompt = request.prompt
         elif request.messages:
-            prompt = self.apply_chat_template(request.messages, request.tools)
+            prompt = self.apply_chat_template(
+                request.messages,
+                request.tools,
+                **(request.chat_template_options or {}),
+            )
             add_special_tokens = False
         else:
             raise ValueError(f"{request} does not provide messages or prompt.")

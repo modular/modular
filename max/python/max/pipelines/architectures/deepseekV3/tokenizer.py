@@ -67,7 +67,7 @@ class DeepseekV3Tokenizer(TextTokenizer):
         self,
         messages: list[TextGenerationRequestMessage],
         tools: list[TextGenerationRequestTool] | None,
-        chat_template_options: dict[str, Any] | None = None,
+        **chat_template_options: Any,
     ) -> str:
         normalized_messages: list[TextGenerationRequestMessage] = []
         for message in messages:
@@ -84,5 +84,5 @@ class DeepseekV3Tokenizer(TextTokenizer):
             else:
                 normalized_messages.append(message)
         return super().apply_chat_template(
-            normalized_messages, tools, chat_template_options
+            normalized_messages, tools, **chat_template_options
         )

@@ -320,14 +320,29 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
         self,
         messages: list[TextGenerationRequestMessage],
         tools: list[TextGenerationRequestTool] | None = None,
+        **chat_template_options: Any,
     ) -> str:
-        """Apply chat template using tokenizer directly (not processor)."""
+        """Apply chat template using tokenizer directly (not processor).
+
+        Args:
+            messages: List of messages for the chat template.
+            tools: Optional tools available for the model to invoke.
+            **chat_template_options: Template options to forward to the Jinja
+                template. Merged with ``add_generation_prompt=True`` default.
+
+        Returns:
+            The templated chat message as a string.
+        """
+        chat_template_options = {
+            "add_generation_prompt": True,
+            **chat_template_options,
+        }
         messages_dicts = [msg.model_dump(exclude_none=True) for msg in messages]
         templated_message = self.delegate.apply_chat_template(
             messages_dicts,
             tokenize=False,
             tools=tools,
-            add_generation_prompt=True,
+            **chat_template_options,
         )
         assert isinstance(templated_message, str)
         return templated_message
@@ -391,7 +406,11 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
             return request.prompt
 
         if request.messages:
-            return self.apply_chat_template(request.messages)
+            return self.apply_chat_template(
+                request.messages,
+                request.tools,
+                **(request.chat_template_options or {}),
+            )
 
         raise ValueError(f"{request} does not provide messages or prompt.")
 

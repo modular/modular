@@ -200,11 +200,11 @@ class Gemma4Tokenizer(TextAndVisionTokenizer):
         self,
         messages: list[TextGenerationRequestMessage],
         tools: list[TextGenerationRequestTool] | None = None,
-        chat_template_options: dict[str, Any] | None = None,
+        **chat_template_options: Any,
     ) -> str:
         chat_template_options = {
             "add_generation_prompt": True,
-            **(chat_template_options or {}),
+            **chat_template_options,
         }
         templated_message = self.delegate.apply_chat_template(
             [msg.model_dump(exclude_none=True) for msg in messages],
@@ -254,7 +254,7 @@ class Gemma4Tokenizer(TextAndVisionTokenizer):
             prompt = self.apply_chat_template(
                 request.messages,
                 request.tools,
-                request.chat_template_options,
+                **(request.chat_template_options or {}),
             )
             add_special_tokens = False
         else:

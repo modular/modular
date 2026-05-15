@@ -107,12 +107,16 @@ class Idefics3Tokenizer(TextAndVisionTokenizer):
         self,
         messages: list[TextGenerationRequestMessage],
         tools: list[TextGenerationRequestTool] | None = None,
+        **chat_template_options: Any,
     ) -> str:
         """Apply the chat template to the messages.
 
         Args:
             messages: List of message dictionaries with 'role' and 'content' keys.
                      Content can be a string or list of multimodal content parts.
+            tools: Optional tools available for the model to invoke.
+            **chat_template_options: Template options to forward to the Jinja
+                template. Merged with ``add_generation_prompt=True`` default.
 
         Returns:
             The formatted prompt string with chat template applied.
@@ -120,6 +124,10 @@ class Idefics3Tokenizer(TextAndVisionTokenizer):
         Raises:
             ValueError: If template application fails.
         """
+        chat_template_options = {
+            "add_generation_prompt": True,
+            **chat_template_options,
+        }
 
         text_messages: list[dict[str, Any]] = []
         for message in messages:
@@ -153,7 +161,7 @@ class Idefics3Tokenizer(TextAndVisionTokenizer):
             text_messages,
             tokenize=False,
             tools=tools,
-            add_generation_prompt=True,
+            **chat_template_options,
         )
 
     async def new_context(
@@ -166,7 +174,11 @@ class Idefics3Tokenizer(TextAndVisionTokenizer):
         if request.prompt is not None:
             prompt = request.prompt
         elif request.messages:
-            prompt = self.apply_chat_template(request.messages)
+            prompt = self.apply_chat_template(
+                request.messages,
+                request.tools,
+                **(request.chat_template_options or {}),
+            )
             add_special_tokens = False
         else:
             raise ValueError(f"{request} does not provide messages or prompt.")
