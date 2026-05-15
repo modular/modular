@@ -157,6 +157,6 @@ def replicated_mapping(
     """Create a new DeviceMapping with all placements replicated."""
     placements = current.to_placements()
     new_p = replicated_placements(placements)
-    if new_p == placements:
+    if new_p == placements and (mesh is None or mesh == current.mesh):
         return current
     return PlacementMapping(mesh or current.mesh, new_p)
