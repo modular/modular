@@ -58,6 +58,15 @@ This version is still a work in progress.
   layout and kernel code; `layout` also hoists the common names at package
   scope for convenience.
 
+- `PythonObject.__del__` now skips the `PyGILState_Ensure` /
+  `PyGILState_Release` round-trip when the current thread already holds
+  the GIL (checked via `PyGILState_Check`). The public contract is
+  unchanged - dropping a `PythonObject` from a thread that does not
+  hold the GIL is still safe, and the destructor still acquires the GIL
+  in that case. The fast path significantly reduces per-call overhead
+  for Python -> Mojo FFI calls, where CPython hands the callee an
+  already-held GIL.
+
 - Added `TileTensor.copy_from()` and `TileTensor.split()` for copying between
   compatible tile views and splitting tiles into static or runtime-sized
   partitions.

@@ -396,13 +396,22 @@ struct PythonObject(
     def __del__(deinit self):
         """Destroy the object.
 
-        This decrements the underlying refcount of the pointed-to object.
+        Decrements the underlying refcount of the pointed-to object.
+        Safe to call from any thread; the GIL is acquired if not
+        already held.
         """
         ref cpy = Python().cpython()
-        # Acquire GIL such that __del__ can be called safely for cases where the
-        # PyObject is handled in non-python contexts.
-        with GILAcquired(Python(cpy)):
+        # Skip the PyGILState_Ensure / PyGILState_Release round-trip
+        # when the current thread already holds the GIL.
+        # PyGILState_Check is a TLS read, much cheaper than the full
+        # ensure/release pair, so on the common Python -> Mojo FFI hot
+        # path (CPython hands the callee an already-held GIL) the
+        # destructor pays just the check.
+        if cpy.PyGILState_Check():
             cpy.Py_DecRef(self._obj_ptr)
+        else:
+            with GILAcquired(Python(cpy)):
+                cpy.Py_DecRef(self._obj_ptr)
 
     # ===-------------------------------------------------------------------===#
     # Operator dunders
