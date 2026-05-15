@@ -258,6 +258,125 @@ destructor or lifetime management. Outside of
 [_reflection_](/docs/manual/metaprogramming/reflection/) (type introspection),
 this function is effectively useless.
 
+## Simplified conformance syntax with `Some`
+
+You can replace explicit type parameters and conformances with concise
+`Some[Trait(s)]` and `SomeTypeList[Trait(s)]` syntax in your
+declarations. These forms support both a single trait and trait
+compositions.
+
+This syntax lets you conform types where you use them instead of declaring
+a type parameter in one place and using it in another place.
+
+For example:
+
+```mojo
+def my_generic_fn[T: Trait(s)](value: T):
+```
+
+becomes:
+
+```mojo
+def my_generic_fn(value: Some[Trait(s)]):
+```
+
+You can use `Some` with any trait or trait composition, under any passing
+convention, and in the code where you've been using type parameters. There
+are no restrictions on whether a conformed type is inferred or explicit.
+You can use any passing convention your arguments require. If the compiler
+can't infer a concrete type, it errors and asks you to use explicit type
+parameters instead.
+
+### Arguments
+
+You can call `__int__()` on `x` with either style. The `Some` version is
+shorter and places the trait requirement directly on the argument:
+
+```mojo
+# Before
+def foo[T: Intable, //](x: T) -> Int:
+    return x.__int__()
+
+# After
+def foo(x: Some[Intable]) -> Int:
+    return x.__int__()
+```
+
+### Function types
+
+Mojo supports `Some` with function types. This example moves a closure
+parameter conformance to an argument `Some` type:
+
+```mojo
+# Before
+def sync_parallelize[
+    FuncType: def(Int) -> None,
+](func: FuncType):
+    ...
+
+# After
+def sync_parallelize(func: Some[def(Int) -> None]):
+    ...
+```
+
+### Variadics
+
+This example uses `*SomeTypeList` to conform a variadic parameter pack
+instead of a single type parameter:
+
+```mojo
+# Before
+def show[*Ts: Writable](*pack: *Ts):
+    ...
+
+# After
+def show(*pack: *SomeTypeList[Writable]):
+    ...
+```
+
+### Operator overloads
+
+Operator overloads are a great use case for `Some` syntax because they
+place the trait that enables the operator directly on the declaration.
+
+```mojo
+# Before
+def __getitem__[I: Indexer, //](self, idx: I) -> ref[self.x] Self.T:
+    ...
+
+# After
+def __getitem__(self, idx: Some[Indexer]) -> ref[self.x] Self.T:
+    ...
+```
+
+### Where `Some` won't work
+
+`Some` cannot replace type parameters in all cases. In the following
+example, Mojo cannot infer a concrete type from the context and errors:
+
+```mojo
+@fieldwise_init
+struct Struct(Writable):
+    var x: Some[Copyable & ImplicitlyDestructible & Writable]
+    # comptime[T: Copyable & ImplicitlyDestructible & Writable] T' is not
+    # a concrete type, use '[]' to bind missing parameters
+def main():
+    var s = Struct(1)
+    print(s)
+```
+
+Move the conformances back to a generic type parameter to fix this:
+
+```mojo
+@fieldwise_init
+struct Struct[T: Copyable & ImplicitlyDestructible & Writable](Writable):
+    var x: Self.T
+
+def main():
+    var s = Struct(1)
+    print(s)  # Struct[Int](x=1)
+```
+
 ## Generic types
 
 So far, you've seen generics applied to methods and functions. Mojo
@@ -287,17 +406,17 @@ difference is that a generic type uses those parameters in its storage
 as well as in its methods. Here, `Pair` stores two values of the same
 element type and implements equality by comparing its fields.
 
-Traits are what make generic types practical. Those constraints describe
+Traits are what make generic types practical. Those conformances describe
 the requirements the type definition depends on.
 In this example, `Pair` needs to compare values,
 so `T` must be equatable. It also needs to assign and copy values in common
-operations, so it applies a trait composition constraint on `T`:
+operations, so it applies a trait composition conformance on `T`:
 
 ```mojo
 comptime ComparableValue = Equatable & ImplicitlyCopyable
 ```
 
-The `Pair` definition applies this constraint in two places: to the type
+The `Pair` definition applies this conformance in two places: to the type
 itself (in parentheses) and to the type parameter (in square brackets),
 which is used to define its fields.
 
@@ -341,8 +460,8 @@ parameters. This visually distinguishes them from type parameters.
 
 ## Downcasting safely: `conforms_to` + `trait_downcast()`
 
-Sometimes a generic constraint is broader than what you need. You may want
-operations from a specific trait that the constraint doesn't guarantee. Use
+Sometimes a generic conformance is broader than what you need. You may want
+operations from a specific trait that the conformance doesn't guarantee. Use
 a guarded downcast with `conforms_to()` and `trait_downcast()`.
 
 Downcast only when the underlying type implements the target trait.
