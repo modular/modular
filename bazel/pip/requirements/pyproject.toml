@@ -95,7 +95,6 @@ dependencies = [
   "tokenicer",
   "tomli",
   "tqdm",
-  "transformers>=4.57",
   "types-aioboto3[essential]",
   "types-boto3[essential,sts]",
   "typing-extensions",
@@ -157,7 +156,7 @@ dependencies = [
   "opencv-python",
 
   # Have torch dependencies, but are otherwise not platform specific
-  "accelerate",
+  "accelerate>=1.1.0",  # transformers v5 requires >=1.1.0 (ACCELERATE_MIN_VERSION)
   "lm-eval[api,ifeval,math]>=0.4.11",
   "mteb",
   "optimum",
@@ -171,6 +170,16 @@ dependencies = [
 # Common dependencies for amd/nvidia/cpu groups that conflict with vllm or sglang's deps
 common = [
   "llguidance==1.3.0",
+  # Pin <5.3.0: v5.3.0 has a tokenizer regression where LlamaTokenizer
+  # overwrites the ByteLevel decoder from tokenizer.json with Metaspace,
+  # breaking decode for Llama/DeepSeek models
+  # (huggingface/transformers#44462).
+  # Also avoids a PydanticUserError at >=5.5.0 where PretrainedConfig
+  # gained a `dtype: Union[str, "torch.dtype"]` field that pydantic tries
+  # to resolve before torch is imported (see SDLC-3497). MAX is not yet
+  # 5.5+ compatible; vllm/sglang groups resolve transformers from their
+  # own transitive requirements.
+  "transformers>=5.0.0,<5.3.0",
 ]
 
 amd = [
@@ -179,6 +188,7 @@ amd = [
   "torchaudio; sys_platform == 'linux' and platform_machine == 'x86_64'",
   "torchvision==0.25.0",
   "triton==3.6.0; sys_platform == 'linux' and platform_machine == 'x86_64'",
+  "tilelang==0.1.8",
 
   "gptqmodel; sys_platform == 'linux' and platform_machine == 'x86_64'",
 
@@ -199,11 +209,16 @@ nvidia = [
   "torchaudio",
   "torchvision==0.25.0",
   "triton==3.6.0; sys_platform == 'linux' and platform_machine == 'x86_64'",
+  # Pinned to 0.1.8 (not 0.1.9) because 0.1.9's wheel metadata gates its
+  # transitive deps (apache-tvm-ffi, cloudpickle, etc.) on uv group extras
+  # that don't fire for MAX-side resolutions on AMD/CPU. 0.1.8 declares
+  # them unconditionally. vLLM 0.20.0 hard-pins 0.1.9 transitively and
+  # picks it up via its own group; see template.py tilelang@multiple.
   "tilelang==0.1.8",
   "gptqmodel; sys_platform == 'linux' and platform_machine == 'x86_64'",
-  "compressed-tensors==0.13.0; sys_platform == 'linux' and platform_machine == 'x86_64'",
+  "compressed-tensors==0.15.0.1; sys_platform == 'linux' and platform_machine == 'x86_64'",
 
-  "flashinfer-cubin==0.6.7.post3",  # Pin to match sglang's version
+  "flashinfer-cubin==0.6.8.post1",  # Pin to match sglang's version
   "flashinfer-python>=0.6.4; sys_platform == 'linux'",
 
   "nvidia-cudnn-frontend>=1.13.0; sys_platform == 'linux' and platform_machine == 'x86_64'",
@@ -213,10 +228,10 @@ nvidia = [
 # Separate dependency groups for large dependencies used in a few places,
 # to avoid conflicts with the other groups (mainly torch versions).
 nvidia-vllm = [
-  "vllm==0.17.0; sys_platform == 'linux' and platform_machine == 'x86_64' and python_version >= '3.11'",
-  "torch",
-  "torchaudio",
-  "torchvision",
+  "vllm==0.20.0; sys_platform == 'linux' and platform_machine == 'x86_64' and python_version >= '3.11'",
+  "torch; sys_platform == 'linux' and platform_machine == 'x86_64' and python_version >= '3.11'",
+  "torchaudio; sys_platform == 'linux' and platform_machine == 'x86_64' and python_version >= '3.11'",
+  "torchvision; sys_platform == 'linux' and platform_machine == 'x86_64' and python_version >= '3.11'",
   "triton; sys_platform == 'linux' and platform_machine == 'x86_64'",
 ]
 
@@ -257,15 +272,13 @@ environments = [
 override-dependencies = [
   "numba==0.63.1",
   "numpy>=2.2.0",
-  # Override vllm's `transformers` constraint.
-  # Pin <5.3.0: v5.3.0 has a tokenizer regression where LlamaTokenizer
-  # overwrites the ByteLevel decoder from tokenizer.json with Metaspace,
-  # breaking decode for Llama/DeepSeek models (huggingface/transformers#44462).
-  "transformers>=5.0.0,<5.3.0",
-  # Pin packages to avoid duplicates after vllm 0.16.0 update
+  # Pin packages to avoid duplicates between dependency groups
   "aiohttp==3.13.3",
   "apache-tvm-ffi==0.1.9",
+  "compressed-tensors==0.15.0.1",
+  "flashinfer-cubin==0.6.8.post1",
   "flashinfer-python==0.6.3",
+  "mistral-common==1.11.1",
   "nvidia-cutlass-dsl==4.4.1",
 
   # Various duplicates between groups

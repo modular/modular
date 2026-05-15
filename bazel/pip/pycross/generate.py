@@ -46,8 +46,12 @@ _ALLOWED_DUPLICATE_PACKAGES = (
         # resolvable in `override-dependencies` (i.e. we
         # are required to diverge).
         "llguidance",  # We use >1.0, sglang pins to 0.7.30
+        "nvidia-cudnn-cu12",  # Differs between dependency groups' torch/CUDA versions
+        "nvidia-nccl-cu12",  # Differs between dependency groups' torch/CUDA versions
         "nvidia-nvshmem-cu12",  # Differs between torch 2.9.1 and 2.10.0 for cuda
         "outlines-core",  # Conflicts between vllm and sglang
+        "tilelang",  # MAX itself doesn't use tilelang, but the default environment group does; vllm 0.20.0 hard-pins 0.1.9
+        "transformers",  # MAX pins <5.3.0; vllm/sglang require >=5.5.0
         "vllm",
         "sglang",
     }

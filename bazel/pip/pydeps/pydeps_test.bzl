@@ -45,12 +45,6 @@ def _pydeps_test_impl(ctx):
             if str(dep.label) == "@@//max/python/max:max":
                 env["DEP_SOURCES"][label] = []
                 continue
-            elif str(dep.label) in [
-                "@@//max/tests/integration/tools:transformers_v4",
-                "@@//max/tests/integration/tools:huggingface_hub_v0",
-            ]:
-                # Silently ignore these, temporary hack
-                continue
 
             fail("Error: Dependency {} has no source files.".format(dep.label))
 

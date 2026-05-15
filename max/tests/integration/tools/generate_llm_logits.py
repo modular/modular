@@ -21,9 +21,20 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, get_args
 
+# Polyfill for transformers v5: `is_torch_fx_available` was removed from
+# transformers.utils.import_utils, but some `trust_remote_code` modeling
+# files (e.g. deepseek-ai/DeepSeek-V2-Lite-Chat's modeling_deepseek.py)
+# still import it. torch.fx is unconditionally available in our deps
+# (torch >= 2.9), so always return True. Mirrors the inline patch in
+# max/tests/integration/architectures/deepseekV2/torch_reference/
+# modeling_deepseek.py.
+import transformers.utils.import_utils as _tui
+
+if not hasattr(_tui, "is_torch_fx_available"):
+    _tui.is_torch_fx_available = lambda: True
+
 import click
 import torch
-import transformers
 from create_pipelines import PIPELINE_ORACLES, GenericOracle
 from max import driver, pipelines
 from max.entrypoints.cli import DevicesOptionType
@@ -151,15 +162,6 @@ def main(
     mini: bool,
     generate_logprobs: bool,
 ) -> None:
-    # This version is detached from the one pulled from rules_pycross,
-    # assert that the override is working. Checked here rather than at
-    # module level so that transitive importers (e.g. precompile_all_pipelines)
-    # that never use transformers don't fail.
-    assert transformers.__version__ == "4.57.6", (
-        f"Expected transformers 4.57.6 but got {transformers.__version__}."
-        " The v4 wheel override may not be wired into this target's deps."
-    )
-
     if "gemma3" in pipeline_name:
         # Running into dynamo error:
         # https://huggingface.co/google/gemma-3-4b-it/discussions/51

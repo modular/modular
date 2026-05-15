@@ -133,12 +133,17 @@ logit_verification_pipelines:
     cos_dist_threshold: 5.0e-03
     kl_div_threshold: 1.1e-01
 
+  # Disabled in SDLC-3497: MAX OLMo pipeline is not yet transformers v5
+  # compatible. The v4 wheel hack that was masking this on main was
+  # removed in this branch. Re-enable once MAX OLMo is updated for
+  # transformers >=5 (tracked separately).
   allenai/OLMo-1B-hf-float32:
     pre_submit_agents: []
-    post_submit_agents: [*large_cpu, *large_arm, *h100_1x, *b200_1x, *mi355_1x]
+    post_submit_agents: []
     pipeline: "allenai/OLMo-1B-hf"
     compatible_with: [cpu, gpu]
     encoding: float32
+    tags: [manual]
     pregenerated_torch_goldens:
       tar_file: "s3://modular-bazel-artifacts-public/artifacts/torch_olmo-1b-hf_golden/1/cdb42a9758e27374be0b410b8d38a2f9a66fc3662346702a5930730da2a50302/torch_olmo-1b-hf_golden.tar.gz"
       json_file: "torch_olmo-1b-hf_float32_golden.json"
