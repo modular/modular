@@ -452,12 +452,10 @@ def _elementwise_impl[
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
         task_id=get_safe_task_id(context),
     ):
-        comptime if CurrentPlugin.elementwise_fn[target]:
-            return comptime (CurrentPlugin.elementwise_fn[target].value())[
-                rank,
-                FuncType,
-                simd_width,
-            ](func, shape, context)
+        comptime if CurrentPlugin._handles_elementwise[target]:
+            return CurrentPlugin.elementwise_fn[target, rank, simd_width](
+                func, shape, context
+            )
         elif is_cpu[target]():
             _elementwise_impl_cpu[
                 simd_width=simd_width,
