@@ -44,6 +44,12 @@ This version is still a work in progress.
   `max-batch-input-tokens=16384` needs 640 MiB in bf16). This adds ~512 MiB
   of per-GPU memory use for any multi-GPU model.
 
+- `max.experimental.functional.while_loop` now passes `Tensor` (not
+  `TensorValue`) into its `predicate` and `body` callbacks. Callbacks can
+  use ordinary `Tensor` operations directly, without wrapping arguments
+  via `Tensor.from_graph_value(...)` or reaching for the
+  underscore-prefixed `_graph_value` attribute on returns.
+
 - `max.experimental.nn.Module.compile()` now emits the same
   `Building and compiling {ClassName}... / Still building... / Building
   {ClassName} graph took Ns / Compiling {ClassName} took Ms / Building and
