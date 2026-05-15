@@ -1365,7 +1365,6 @@ struct BlackwellMatmulSM100Kernel[
         + StaticString(
             "_fused_epi" if Self.elementwise_lambda_fn is not None else ""
         ),
-        mangle=True,
     )
     def run(
         a_tma_op: Self.ATmaOp,
@@ -1775,7 +1774,6 @@ struct BlackwellMatmulSM100Kernel[
         + StaticString(
             "_fused_epi" if Self.elementwise_lambda_fn is not None else ""
         ),
-        mangle=True,
     )
     def run_splitk[
         reduction_layout: TensorLayout,

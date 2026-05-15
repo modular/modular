@@ -190,7 +190,7 @@ def cpu_bicubic_kernel(
         )
 
 
-@__name(t"gpu_bicubic_{dtype}", mangle=True)
+@__name(t"gpu_bicubic_{dtype}")
 def gpu_bicubic_kernel[
     dtype: DType,
     OutputLayoutType: TensorLayout,

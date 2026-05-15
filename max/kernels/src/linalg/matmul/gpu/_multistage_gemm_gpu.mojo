@@ -696,7 +696,6 @@ def multistage_mma[
 
 @__name(
     t"multistage_gemm_kernel_{c_type}_{a_type}_{b_type}_{transpose_b}",
-    mangle=True,
 )
 def multistage_gemm_kernel[
     c_type: DType,
@@ -1078,7 +1077,6 @@ def multistage_gemm_kernel[
 )
 @__name(
     t"multistage_gemm_split_k_kernel_{c_type}_{a_type}_{b_type}_{transpose_b}",
-    mangle=True,
 )
 def multistage_gemm_split_k_kernel[
     c_type: DType,

@@ -77,7 +77,7 @@ comptime MLA_DECODE_MAX_SEQ_LEN = 6
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(block_size))
 )
-@__name(t"fused_rope_rmsnorm_{dtype}", mangle=True)
+@__name(t"fused_rope_rmsnorm_{dtype}")
 def fused_rope_rmsnorm_kernel[
     dtype: DType,
     freq_dtype: DType,
@@ -261,9 +261,7 @@ def fused_rope_rmsnorm_kernel[
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(block_size))
 )
-@__name(
-    t"fused_rope_rmsnorm_quantization_{dtype}_{out_rope_dtype}", mangle=True
-)
+@__name(t"fused_rope_rmsnorm_quantization_{dtype}_{out_rope_dtype}")
 def fused_rope_rmsnorm_quantization_kernel[
     dtype: DType,
     freq_dtype: DType,

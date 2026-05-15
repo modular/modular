@@ -1001,7 +1001,6 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
     )
     @__name(
         t"sm100_mla_decode_qkv_fp8_layout_g_{Self.q_type}_{Self.kv_type}_{Self.output_type}_nqh{Self.config.num_q_heads}_nkvh{Self.config.num_kv_heads}",
-        mangle=True,
     )
     def kernel(
         # Q/K/O TMA tile types must use the exact symbolic forms below —

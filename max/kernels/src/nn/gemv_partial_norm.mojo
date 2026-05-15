@@ -126,7 +126,6 @@ through 15 are reserved for future per-iteration instrumentation."""
 )
 @__name(
     t"gemv_partial_norm_kernel_{c_type}_{a_type}_{b_type}_{num_threads}_{tile_n}",
-    mangle=True,
 )
 def gemv_partial_norm_kernel[
     c_type: DType,

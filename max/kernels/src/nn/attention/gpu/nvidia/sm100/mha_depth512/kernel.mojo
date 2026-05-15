@@ -141,7 +141,6 @@ struct SM100MHADepth512[
     @__llvm_metadata(`nvvm.minctasm`=Int(1))
     @__name(
         t"sm100_mha_depth{Self.config.qk_depth}_{Self.qkv_type}_{Self.output_type}_nqh{Self.config.num_q_heads}_nkvh{Self.config.num_kv_heads}",
-        mangle=True,
     )
     def kernel(
         q_tma_op: QTMATile[

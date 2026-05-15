@@ -1186,7 +1186,6 @@ struct GroupedBlockScaledMatmulKernel[
             "_fused_compute_epi" if Self.elementwise_compute_lambda_fn
             is not None else ""
         ),
-        mangle=True,
     )
     def run(
         # Template tensormaps for SMEM initialization
@@ -1689,7 +1688,6 @@ struct GroupedBlockScaledMatmulKernel[
             + "_fused_compute_epi" if Self.elementwise_compute_lambda_fn
             is not None else ""
         ),
-        mangle=True,
     )
     def run_2sm(
         # Template tensormaps for SMEM initialization

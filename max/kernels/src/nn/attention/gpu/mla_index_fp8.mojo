@@ -41,7 +41,7 @@ from std.utils.index import Index
 # ===----------------------------------------------------------------------=== #
 
 
-@__name(t"mla_apply_mask", mangle=True)
+@__name(t"mla_apply_mask")
 def apply_mask_kernel[
     mask_t: MHAMask,
     ScoresLayoutType: TensorLayout,
@@ -79,7 +79,7 @@ def apply_mask_kernel[
     output.raw_store(Int(global_seq_idx) * max_num_keys + key_idx, masked_val)
 
 
-@__name(t"mla_fill_invalid_topk_{use_causal_mask}", mangle=True)
+@__name(t"mla_fill_invalid_topk_{use_causal_mask}")
 def fill_invalid_topk_kernel[
     IROLayoutType: TensorLayout,
     iro_origin: ImmutOrigin,

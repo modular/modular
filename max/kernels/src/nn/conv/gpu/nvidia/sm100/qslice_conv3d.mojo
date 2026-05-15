@@ -84,7 +84,7 @@ from .dispatch import dispatch_sm100_conv2d, test_alignment_sm100_conv2d
 # =========================================================================
 
 
-@__name(t"qslice_accum_bf16_to_fp32_{dtype}", mangle=True)
+@__name(t"qslice_accum_bf16_to_fp32_{dtype}")
 def _accum_bf16_to_fp32_kernel[
     dtype: DType,
     output_simd_width: Int,
@@ -114,7 +114,7 @@ def _accum_bf16_to_fp32_kernel[
     )
 
 
-@__name(t"qslice_fp32_to_dtype_plain_{dtype}", mangle=True)
+@__name(t"qslice_fp32_to_dtype_plain_{dtype}")
 def _fp32_to_dtype_plain_kernel[
     dtype: DType,
     output_simd_width: Int,
@@ -136,7 +136,7 @@ def _fp32_to_dtype_plain_kernel[
     )
 
 
-@__name(t"qslice_fp32_to_dtype_epilogue_{dtype}", mangle=True)
+@__name(t"qslice_fp32_to_dtype_epilogue_{dtype}")
 def _fp32_to_dtype_epilogue_kernel[
     dtype: DType,
     C_out: Int,

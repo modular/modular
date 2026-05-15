@@ -655,7 +655,6 @@ struct Conv2dFpropKernel[
     @__llvm_arg_metadata(out_tma_op, `nvvm.grid_constant`)
     @__name(
         t"sm100_conv2d_fprop_{Self.act_type}_{Self.filter_type}_{Self.out_type}",
-        mangle=True,
     )
     def run(
         act_tma_op: Self.ActTmaOp,
@@ -697,7 +696,6 @@ struct Conv2dFpropKernel[
     @__llvm_arg_metadata(src_tma_op, `nvvm.grid_constant`)
     @__name(
         t"sm100_conv2d_fprop_with_residual_{Self.act_type}_{Self.filter_type}_{Self.out_type}",
-        mangle=True,
     )
     def run_with_residual(
         act_tma_op: Self.ActTmaOp,

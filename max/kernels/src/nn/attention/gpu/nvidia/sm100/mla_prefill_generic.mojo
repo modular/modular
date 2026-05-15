@@ -119,7 +119,6 @@ __extension SM100MLA:
     @__llvm_metadata(`nvvm.minctasm`=SIMDSize(1))
     @__name(
         t"sm100_mla_prefill_generic_{Self.qkv_dtype}_{Self.output_dtype}_nqh{Self.config.num_q_heads}_nkvh{Self.config.num_kv_heads}",
-        mangle=True,
     )
     def mla_prefill_kernel_generic(
         q_tma_op: QTMATile[

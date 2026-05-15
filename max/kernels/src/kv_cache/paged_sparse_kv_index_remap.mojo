@@ -91,7 +91,7 @@ def _find_batch_for_row(
     return UInt32(0)
 
 
-@__name(t"paged_sparse_kv_index_remap_row_offs_kernel", mangle=True)
+@__name(t"paged_sparse_kv_index_remap_row_offs_kernel")
 def _paged_sparse_kv_index_remap_row_offs_kernel(
     logical: UnsafePointer[Int32, MutAnyOrigin],
     row_offsets: UnsafePointer[UInt32, MutAnyOrigin],

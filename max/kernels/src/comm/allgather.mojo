@@ -162,7 +162,7 @@ def _allgather_naive[
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(BLOCK_SIZE))
 )
-@__name(t"allgather_p2p_{dtype}", mangle=True)
+@__name(t"allgather_p2p_{dtype}")
 def _allgather_p2p_kernel[
     dtype: DType,
     rank: Int,
@@ -247,7 +247,7 @@ def _allgather_p2p_kernel[
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(BLOCK_SIZE))
 )
-@__name(t"allgather_p2p_tma_{dtype}", mangle=True)
+@__name(t"allgather_p2p_tma_{dtype}")
 def _allgather_tma_kernel[
     dtype: DType,
     ngpus: Int,

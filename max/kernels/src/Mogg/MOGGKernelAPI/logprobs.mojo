@@ -176,7 +176,7 @@ struct LogProbabilitiesRagged:
 
             @parameter
             @__copy_capture(num_output_tokens)
-            @__name(t"log_probabilities_l{levels}", mangle=True)
+            @__name(t"log_probabilities_l{levels}")
             def raw_lp_kernel():
                 var output_token_index = global_idx.x
                 if output_token_index < num_output_tokens:

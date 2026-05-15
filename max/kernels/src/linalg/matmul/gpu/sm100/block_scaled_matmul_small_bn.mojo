@@ -907,7 +907,6 @@ def _sfb_cpasync_produce_tile_warpwide[
         is not None else ""
     )
     + StaticString("_fused_epi" if elementwise_lambda_fn is not None else ""),
-    mangle=True,
 )
 def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
     a_type: DType,

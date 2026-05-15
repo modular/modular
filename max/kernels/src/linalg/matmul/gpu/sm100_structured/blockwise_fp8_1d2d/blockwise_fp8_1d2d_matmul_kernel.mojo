@@ -424,7 +424,7 @@ struct BlockwiseFP8_1D2DMatmulKernel[
     @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(a_scales_tma_op, `nvvm.grid_constant`)
-    @__name(StaticString(Self.config.get_kernal_name()), mangle=True)
+    @__name(StaticString(Self.config.get_kernal_name()))
     def run(
         # Grid-constant TMA descriptors
         a_tma_op: Self.ATmaOp,

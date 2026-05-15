@@ -262,7 +262,6 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
     )
     @__name(
         t"sm100_mla_decode_qkv_fp8_per_token_scale_rope_aware_{Self.fp8_type}_{Self.bf16_type}_{Self.output_type}_nqh{Self.config.num_q_heads}_nkvh{Self.config.num_kv_heads}",
-        mangle=True,
     )
     def kernel(
         # Q_nope TMA: FP8, 64×512, SWIZZLE_64B

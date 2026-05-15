@@ -88,7 +88,7 @@ from .sm100_structured.default.matmul import matmul_sm100_fallback
 comptime logger = Logger()
 
 
-@__name(t"matmul_kernel_{c_type}_{a_type}_{b_type}_{tile_size}", mangle=True)
+@__name(t"matmul_kernel_{c_type}_{a_type}_{b_type}_{tile_size}")
 def matmul_kernel[
     c_type: DType,
     a_type: DType,
@@ -214,7 +214,6 @@ def matmul_kernel[
 
 @__name(
     t"matmul_kernel_naive_{c_type}_{a_type}_{b_type}_{transpose_b}_{BLOCK_DIM}",
-    mangle=True,
 )
 def matmul_kernel_naive[
     c_type: DType,
