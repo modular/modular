@@ -637,6 +637,9 @@ class TestBuildBitmaskCallback:
         draft_np = np.zeros((1, 2), dtype=np.int64)
         next_draft_np = np.zeros((1, 2), dtype=np.int64)
         bitmask_np = np.full((1, 3, 2), -1, dtype=np.int32)
+        # Bool unpacked output target — populated by the callback after the
+        # int32 advance_fsm_and_compute_bitmasks call returns.
+        bitmask_bool_np = np.zeros((1, 3, 64), dtype=np.bool_)
 
         callback = pipeline._build_bitmask_callback(
             context_batch=[ctx],
@@ -645,6 +648,7 @@ class TestBuildBitmaskCallback:
             accepted_draft_tokens_np=draft_np,
             next_draft_tokens_np=next_draft_np,
             bitmask_pinned_np=bitmask_np,
+            bitmask_bool_pinned_np=bitmask_bool_np,
         )
 
         callback()
@@ -676,6 +680,7 @@ class TestBuildBitmaskCallback:
             accepted_draft_tokens_np=np.zeros((0, 0), dtype=np.int64),
             next_draft_tokens_np=np.zeros((0, 0), dtype=np.int64),
             bitmask_pinned_np=np.zeros((0, 0, 0), dtype=np.int32),
+            bitmask_bool_pinned_np=np.zeros((0, 0, 0), dtype=np.bool_),
         )
 
         # Must not raise — exceptions are caught and logged
@@ -703,10 +708,8 @@ class TestEnqueueAsyncBitmaskCallback:
 
         result = pipeline._enqueue_async_bitmask_callback(
             context_batch=[],
-            next_tokens_host=MagicMock(),
-            num_accepted_draft_tokens_host=MagicMock(),
-            draft_tokens_host=MagicMock(),
-            next_draft_tokens_host=MagicMock(),
+            num_draft_tokens_to_verify=2,
+            next_draft_k=2,
             verify_draft_tokens=True,
         )
 
@@ -719,10 +722,8 @@ class TestEnqueueAsyncBitmaskCallback:
 
         result = pipeline._enqueue_async_bitmask_callback(
             context_batch=[],
-            next_tokens_host=MagicMock(),
-            num_accepted_draft_tokens_host=MagicMock(),
-            draft_tokens_host=MagicMock(),
-            next_draft_tokens_host=MagicMock(),
+            num_draft_tokens_to_verify=2,
+            next_draft_k=2,
             verify_draft_tokens=True,
         )
 
@@ -732,15 +733,23 @@ class TestEnqueueAsyncBitmaskCallback:
         """Returns False without enqueueing when verify_draft_tokens=False (prefill)."""
         pipeline = self._make_pipeline()
         mock_spec_state = MagicMock()
-        mock_spec_state.persistent_bitmask_pinned = MagicMock()
+        # All persistent pinned buffers present so the prefill-only short-circuit
+        # is the one that fires (not the buffer-missing one).
+        for name in (
+            "persistent_bitmask_pinned",
+            "persistent_bitmask_bool_pinned",
+            "persistent_bonus_tokens_pinned",
+            "persistent_num_accepted_pinned",
+            "persistent_accepted_draft_tokens_pinned",
+            "persistent_next_draft_tokens_pinned",
+        ):
+            setattr(mock_spec_state, name, MagicMock())
         pipeline._spec_decode_state = mock_spec_state
 
         result = pipeline._enqueue_async_bitmask_callback(
             context_batch=[],
-            next_tokens_host=MagicMock(),
-            num_accepted_draft_tokens_host=MagicMock(),
-            draft_tokens_host=MagicMock(),
-            next_draft_tokens_host=MagicMock(),
+            num_draft_tokens_to_verify=0,
+            next_draft_k=2,
             verify_draft_tokens=False,
         )
 
@@ -749,43 +758,80 @@ class TestEnqueueAsyncBitmaskCallback:
     def test_returns_true_and_enqueues_for_decode_batch(self) -> None:
         """Returns True and calls __unsafe_enqueue_py_host_func for a decode batch."""
         pipeline = self._make_pipeline()
+        # The pipeline's structured_output also drives any nested behavior the
+        # callback closure may invoke at construction time.
+        pipeline._structured_output.vocab_size = 64
+
+        batch_size = 1
+        num_draft = 2
+        num_positions = num_draft + 1
+        packed_vocab = 4
+        vocab_size = 64
 
         mock_spec_state = MagicMock()
-        mock_spec_state.persistent_bitmask_pinned = MagicMock()
-        mock_spec_state.persistent_bitmask_pinned.to_numpy.return_value = (
-            np.full((2, 3, 4), -1, dtype=np.int32)
+        # Configure each persistent pinned buffer so `to_numpy()` returns a
+        # writable numpy array of the right shape/dtype.
+        bitmask_pinned = MagicMock()
+        bitmask_pinned.to_numpy.return_value = np.full(
+            (batch_size, num_positions, packed_vocab),
+            -1,
+            dtype=np.int32,
         )
-        mock_spec_state.bitmask_ready_event = None
+        bitmask_bool_pinned = MagicMock()
+        bitmask_bool_pinned.to_numpy.return_value = np.zeros(
+            (batch_size, num_positions, vocab_size),
+            dtype=np.bool_,
+        )
+        bonus_tokens_pinned = MagicMock()
+        bonus_tokens_pinned.to_numpy.return_value = np.array(
+            [5], dtype=np.int64
+        )
+        num_accepted_pinned = MagicMock()
+        num_accepted_pinned.to_numpy.return_value = np.zeros(1, dtype=np.int64)
+        accepted_draft_tokens_pinned = MagicMock()
+        accepted_draft_tokens_pinned.to_numpy.return_value = np.zeros(
+            (batch_size, num_draft), dtype=np.int64
+        )
+        next_draft_tokens_pinned = MagicMock()
+        next_draft_tokens_pinned.to_numpy.return_value = np.zeros(
+            (batch_size, num_draft), dtype=np.int64
+        )
+
+        mock_spec_state.persistent_bitmask_pinned = bitmask_pinned
+        mock_spec_state.persistent_bitmask_bool_pinned = bitmask_bool_pinned
+        mock_spec_state.persistent_bonus_tokens_pinned = bonus_tokens_pinned
+        mock_spec_state.persistent_num_accepted_pinned = num_accepted_pinned
+        mock_spec_state.persistent_accepted_draft_tokens_pinned = (
+            accepted_draft_tokens_pinned
+        )
+        mock_spec_state.persistent_next_draft_tokens_pinned = (
+            next_draft_tokens_pinned
+        )
         mock_spec_state.has_precomputed_bitmask = False
         pipeline._spec_decode_state = mock_spec_state
 
         mock_device = MagicMock()
         pipeline._devices = [mock_device]
+        pipeline._disable_overlap = False
 
-        next_draft_np = np.zeros((1, 2), dtype=np.int64)
-        mock_next_draft = MagicMock()
-        mock_next_draft.to_numpy.return_value = next_draft_np
-
-        result = pipeline._enqueue_async_bitmask_callback(
-            context_batch=[
-                TextContext(
-                    request_id=RequestID("r"),
-                    max_length=100,
-                    tokens=TokenBuffer(np.array([1])),
-                )
-            ],
-            next_tokens_host=MagicMock(
-                **{"to_numpy.return_value": np.array([5], dtype=np.int64)}
-            ),
-            num_accepted_draft_tokens_host=MagicMock(
-                **{"to_numpy.return_value": np.zeros(1, dtype=np.int32)}
-            ),
-            draft_tokens_host=MagicMock(
-                **{"to_numpy.return_value": np.zeros((1, 2), dtype=np.int64)}
-            ),
-            next_draft_tokens_host=mock_next_draft,
-            verify_draft_tokens=True,
+        rid = RequestID("r")
+        ctx = TextContext(
+            request_id=rid,
+            max_length=100,
+            tokens=TokenBuffer(np.array([1])),
         )
+
+        with patch.object(
+            pipeline,
+            "_build_bitmask_callback",
+            return_value=lambda: None,
+        ):
+            result = pipeline._enqueue_async_bitmask_callback(
+                context_batch=[ctx],
+                num_draft_tokens_to_verify=num_draft,
+                next_draft_k=num_draft,
+                verify_draft_tokens=True,
+            )
 
         assert result is True
         # Production code uses getattr(device, "__unsafe_enqueue_py_host_func")

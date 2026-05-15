@@ -352,8 +352,18 @@ class SpecDecodeState:
     None when structured output is disabled globally.
     """
 
-    bitmask_ready_event: DeviceEvent | None = None
-    """CUDA event signaled when the async bitmask callback completes."""
+    persistent_bitmask_bool_pinned: DevicePinnedBuffer | None = None
+    """Pinned memory for the unpacked bool bitmask written by the async callback.
+
+    The CUDA host callback computes the packed int32 bitmask (into
+    persistent_bitmask_pinned), then immediately unpacks it to bool here.
+    _compute_speculative_bitmasks can then H2D-copy directly from this buffer
+    without any CPU synchronization: same-stream ordering guarantees the
+    callback has written the data before the H2D copy DMA starts.
+
+    Shape: [total_max_batch, num_speculative_tokens + 1, vocab_size]. DType bool.
+    None when structured output is disabled globally.
+    """
 
     has_precomputed_bitmask: bool = False
     """True when a CUDA host callback has computed a bitmask for the next batch."""
@@ -469,6 +479,7 @@ class SpecDecodeState:
         # Position num_speculative_tokens is for the bonus token.
         persistent_bitmask: Buffer | None = None
         persistent_bitmask_pinned: DevicePinnedBuffer | None = None
+        persistent_bitmask_bool_pinned: DevicePinnedBuffer | None = None
         persistent_bonus_tokens_pinned: DevicePinnedBuffer | None = None
         persistent_num_accepted_pinned: DevicePinnedBuffer | None = None
         persistent_next_draft_tokens_pinned: DevicePinnedBuffer | None = None
@@ -488,6 +499,15 @@ class SpecDecodeState:
                     total_max_batch,
                     num_speculative_tokens + 1,
                     packed_vocab_size,
+                ),
+                device=model.devices[0],
+            )
+            persistent_bitmask_bool_pinned = DevicePinnedBuffer(
+                dtype=DType.bool,
+                shape=(
+                    total_max_batch,
+                    num_speculative_tokens + 1,
+                    vocab_size,
                 ),
                 device=model.devices[0],
             )
@@ -528,6 +548,7 @@ class SpecDecodeState:
             persistent_top_p=persistent_top_p,
             persistent_bitmask=persistent_bitmask,
             persistent_bitmask_pinned=persistent_bitmask_pinned,
+            persistent_bitmask_bool_pinned=persistent_bitmask_bool_pinned,
             persistent_bonus_tokens_pinned=persistent_bonus_tokens_pinned,
             persistent_num_accepted_pinned=persistent_num_accepted_pinned,
             persistent_next_draft_tokens_pinned=persistent_next_draft_tokens_pinned,
@@ -757,7 +778,6 @@ class AsyncBatch(Generic[TextGenerationContextType]):
                 all(draft_tokens_np[i, :] == _MAGIC_DRAFT_TOKEN_ID)
                 for i in range(batch_size)
             ]
-
             outputs = update_spec_decode_context_and_prepare_responses(
                 draft_tokens=draft_tokens_np,
                 next_draft_tokens=next_draft_tokens,
@@ -2014,7 +2034,7 @@ class OverlapTextGenerationPipeline(
         inputs: TextGenerationInputs[TextGenerationContextType],
         draft_tokens: Buffer | None = None,
         sampling_buffers: _SpecDecodeSamplingBuffers | None = None,
-        token_bitmasks: Buffer | None = None,
+        draft_tokens_np: npt.NDArray[np.int64] | None = None,
     ) -> ModelOutputs:
         """Runs the forward pass for the provided inputs and returns the ModelOutputs.
 
@@ -2027,9 +2047,10 @@ class OverlapTextGenerationPipeline(
             draft_tokens: Optional draft tokens for speculative decoding.
             sampling_buffers: Optional persistent sampling buffers for
                 speculative decoding. Required when ``draft_tokens`` is set.
-            token_bitmasks: Grammar constraint bitmask for structured output.
-                Shape: [batch_size, num_speculative_tokens + 1, vocab_size].
-                Required when ``draft_tokens`` is set.
+            draft_tokens_np: CPU view of the draft token buffer, used to
+                compute the speculative bitmask for structured output just
+                before graph replay. Required when ``draft_tokens`` is set
+                and structured output is enabled.
 
         Returns:
             The model outputs containing logits and other inference results.
@@ -2122,21 +2143,6 @@ class OverlapTextGenerationPipeline(
             model_inputs.min_top_p = sampling_buffers.min_top_p
             model_inputs.seed = sampling_buffers.seed
             model_inputs.in_thinking_phase = sampling_buffers.in_thinking_phase
-            # token_bitmasks is only required when structured output is enabled.
-            # The graph is compiled with or without bitmask input accordingly.
-            if self._structured_output.enabled:
-                assert token_bitmasks is not None, (
-                    "token_bitmasks must be provided when structured output is enabled"
-                )
-                # Verify bitmask positions match draft tokens + 1 (for bonus token)
-                num_bitmask_positions = token_bitmasks.shape[1]
-                num_draft_tokens = draft_tokens.shape[1]
-                assert num_bitmask_positions == num_draft_tokens + 1, (
-                    f"Bitmask shape mismatch: got {num_bitmask_positions} positions "
-                    f"but expected {num_draft_tokens + 1} (num_draft_tokens + 1)"
-                )
-                model_inputs.token_bitmasks = token_bitmasks
-
         if (
             self._prev_batch is not None
             and self._realize_future_token_processor is not None
@@ -2148,6 +2154,23 @@ class OverlapTextGenerationPipeline(
             )
             if debug_verify_model_inputs is not None:
                 debug_verify_model_inputs.tokens = model_inputs.tokens
+
+        # Compute speculative bitmasks here, as late as possible before graph
+        # replay, so that all model-input preparation above can overlap with
+        # the CUDA host callback computing the bitmask on the driver thread.
+        # No CPU synchronize is needed: same-stream ordering guarantees the
+        # callback's bool data is valid when the H2D copy DMA starts.
+        if draft_tokens is not None and self._structured_output.enabled:
+            assert draft_tokens_np is not None, (
+                "draft_tokens_np must be provided when structured output is enabled"
+            )
+            token_bitmasks = self._compute_speculative_bitmasks(
+                context_batch=inputs.flat_batch,
+                draft_tokens_np=draft_tokens_np,
+                num_draft_tokens_to_verify=num_draft_tokens_to_verify,
+            )
+            assert token_bitmasks is not None
+            model_inputs.token_bitmasks = token_bitmasks
 
         # Execute the model and get next tokens.
         try:
@@ -2397,35 +2420,36 @@ class OverlapTextGenerationPipeline(
             not any_needs_matcher
             and any_has_constraint
             and spec_state.has_precomputed_bitmask
-            and spec_state.persistent_bitmask_pinned is not None
-            and spec_state.bitmask_ready_event is not None
+            and spec_state.persistent_bitmask_bool_pinned is not None
         ):
-            # Wait for the CUDA host callback to finish writing the bitmask.
-            with Tracer("wait_bitmask_callback"):
-                spec_state.bitmask_ready_event.synchronize()
-
-            with Tracer("unpack_bitmask_to_bool"):
-                # Unpack packed int32 bitmask from pinned memory to bool, then H2D.
-                pinned_np = spec_state.persistent_bitmask_pinned.to_numpy()
-                packed_slice = pinned_np[:batch_size, :num_positions, :]
-                bits = 2 ** np.arange(32, dtype=np.int32)
-                unpacked = (packed_slice[..., np.newaxis] & bits) != 0
-                bitmask_np = unpacked.reshape(batch_size, num_positions, -1)[
-                    :, :, : self.vocab_size
-                ].astype(np.bool_)
-                spec_state.has_precomputed_bitmask = False
-        else:
-            # Clear any stale precomputed flag so the next call doesn't incorrectly
-            # consume a bitmask computed for a different (prior) request.
+            # The CUDA host callback (enqueued for the previous batch) has
+            # computed and unpacked the bool bitmask into persistent_bitmask_bool_pinned.
+            # No CPU synchronize is needed: the callback was enqueued on the same
+            # CUDA stream before this H2D copy, so stream ordering guarantees the
+            # bool data is valid when the DMA starts.
             spec_state.has_precomputed_bitmask = False
-            bitmask_np = self._structured_output.compute_speculative_bitmasks(
-                context_batch=context_batch,
-                draft_tokens=draft_tokens_np,
-                num_positions=num_positions,
+            bool_flat = spec_state.persistent_bitmask_bool_pinned.view(
+                DType.bool,
+                (spec_state.persistent_bitmask_bool_pinned.num_elements,),
             )
+            bitmask_bool_slice = bool_flat[
+                : batch_size * num_positions * vocab_size_dim
+            ].view(DType.bool, (batch_size, num_positions, vocab_size_dim))
+            with Tracer("inplace_copy_bitmask"):
+                bitmask_device.inplace_copy_from(bitmask_bool_slice)
+            return bitmask_device
+
+        # Clear any stale precomputed flag so the next call doesn't incorrectly
+        # consume a bitmask computed for a different (prior) request.
+        spec_state.has_precomputed_bitmask = False
+        bitmask_np = self._structured_output.compute_speculative_bitmasks(
+            context_batch=context_batch,
+            draft_tokens=draft_tokens_np,
+            num_positions=num_positions,
+        )
 
         with Tracer("copy_bitmask_to_device"):
-            # Copy to device via pinned memory.
+            # Sync path: copy to device via a fresh per-call pinned buffer.
             bitmask_host = DevicePinnedBuffer(
                 dtype=DType.bool,
                 shape=bitmask_np.shape,
@@ -2444,6 +2468,7 @@ class OverlapTextGenerationPipeline(
         accepted_draft_tokens_np: npt.NDArray[np.int64],
         next_draft_tokens_np: npt.NDArray[np.int64],
         bitmask_pinned_np: npt.NDArray[np.int32],
+        bitmask_bool_pinned_np: npt.NDArray[np.bool_],
     ) -> Callable[[], None]:
         """Build a callback closure that advances FSM then computes bitmasks.
 
@@ -2461,11 +2486,15 @@ class OverlapTextGenerationPipeline(
             accepted_draft_tokens_np: Draft tokens verified, shape [batch, K].
             next_draft_tokens_np: Draft tokens for next batch, shape [batch, K].
             bitmask_pinned_np: Packed int32 bitmask output view, shape [batch, K+1, packed_vocab].
+            bitmask_bool_pinned_np: Unpacked bool bitmask output view, shape [batch, K+1, vocab_size].
+                Written after the int32 computation so the main thread can H2D-copy
+                from it without a CPU synchronize (same-stream ordering suffices).
 
         Returns:
             A zero-argument callable for use with __unsafe_enqueue_py_host_func.
         """
         structured_output = self._structured_output
+        vocab_size = bitmask_bool_pinned_np.shape[2]
 
         def callback() -> None:
             try:
@@ -2477,6 +2506,19 @@ class OverlapTextGenerationPipeline(
                     next_draft_tokens=next_draft_tokens_np,
                     bitmask_out=bitmask_pinned_np,
                 )
+                with Tracer("unpack_bitmask_in_callback"):
+                    # Unpack int32 → bool in-callback so _compute_speculative_bitmasks
+                    # can H2D-copy without any CPU synchronize. CUDA callbacks cannot
+                    # call CUDA API, so the actual H2D copy must be submitted by the
+                    # main thread — but same-stream ordering guarantees it starts only
+                    # after this callback has written the bool data.
+                    bits = 2 ** np.arange(32, dtype=np.int32)
+                    unpacked = (bitmask_pinned_np[..., np.newaxis] & bits) != 0
+                    bitmask_bool_pinned_np[:] = unpacked.reshape(
+                        bitmask_pinned_np.shape[0],
+                        bitmask_pinned_np.shape[1],
+                        -1,
+                    )[:, :, :vocab_size]
             except Exception as e:
                 logger.error(
                     "Async bitmask callback failed: %s", e, exc_info=True
@@ -2488,18 +2530,16 @@ class OverlapTextGenerationPipeline(
     def _enqueue_async_bitmask_callback(
         self,
         context_batch: list[TextGenerationContextType],
-        next_tokens_host: Buffer,
-        num_accepted_draft_tokens_host: Buffer,
-        draft_tokens_host: Buffer,
-        next_draft_tokens_host: Buffer,
+        num_draft_tokens_to_verify: int,
+        next_draft_k: int,
         verify_draft_tokens: bool,
     ) -> bool:
         """Enqueue a CUDA host callback to advance FSM and compute bitmasks.
 
-        Extracts numpy views from pinned buffers BEFORE enqueueing (so the
-        callback closure captures views into persistent buffers), then schedules
-        the callback on the device's default stream. A CUDA event is recorded
-        afterwards so the main thread can wait for completion.
+        Extracts numpy views from persistent DevicePinnedBuffers BEFORE enqueueing
+        (so the callback closure captures live views into persistent buffers), then
+        schedules the callback on the device's default stream. A CUDA event is
+        recorded afterwards so the main thread can wait for completion.
 
         Only enqueued for decode batches (verify_draft_tokens=True). For prefill,
         the bitmask is computed synchronously on the next decode iteration.
@@ -2509,18 +2549,10 @@ class OverlapTextGenerationPipeline(
 
         Args:
             context_batch: Generation contexts for the current batch.
-            next_tokens_host: View into persistent bonus-token pinned buffer,
-                shape [batch]. D2H copy must be enqueued before this call.
-            num_accepted_draft_tokens_host: View into persistent acceptance-count
-                pinned buffer, shape [batch].
-            draft_tokens_host: View into persistent_accepted_draft_tokens_pinned,
-                shape [batch, K]. The GPU acceptance sampler writes verified
-                accepted tokens back to draft_tokens_device; the caller D2Hs
-                this into the persistent buffer on the same CUDA stream before
-                enqueueing the callback, so the view is valid when the callback
-                fires.
-            next_draft_tokens_host: View into persistent next-draft-token pinned
-                buffer, shape [batch, K].
+            num_draft_tokens_to_verify: Number of draft tokens verified this step,
+                used to slice the accepted-draft numpy view.
+            next_draft_k: Number of next draft tokens (K), used to slice the
+                next-draft numpy view and compute the bitmask position count.
             verify_draft_tokens: True when draft tokens are being verified (decode
                 mode). When False (prefill), the callback is not enqueued.
 
@@ -2532,7 +2564,15 @@ class OverlapTextGenerationPipeline(
             return False
 
         spec_state = self._spec_decode_state
-        if spec_state is None or spec_state.persistent_bitmask_pinned is None:
+        if (
+            spec_state is None
+            or spec_state.persistent_bitmask_pinned is None
+            or spec_state.persistent_bitmask_bool_pinned is None
+            or spec_state.persistent_bonus_tokens_pinned is None
+            or spec_state.persistent_num_accepted_pinned is None
+            or spec_state.persistent_accepted_draft_tokens_pinned is None
+            or spec_state.persistent_next_draft_tokens_pinned is None
+        ):
             return False
 
         # Only enqueue the FSM-advancing callback during decode iterations.
@@ -2541,54 +2581,60 @@ class OverlapTextGenerationPipeline(
         if not verify_draft_tokens:
             return False
 
-        # Capture numpy views (no .copy()) into the persistent pinned buffers.
-        # These views are just pointers into pinned memory; no data is read here.
-        # The callback body runs after D2H completes (enqueued on the same CUDA
-        # stream after the D2H ops), so the views will contain valid data when
-        # the callback executes.
-        #
-        # DLPack safety: the numpy views hold a DLPack reference back to the
-        # Buffer slice objects. When the callback closure is destroyed, those
-        # DLPack references are released, which may free the slice Buffer objects.
-        # However, the underlying pinned memory is owned by the persistent
-        # DevicePinnedBuffers in SpecDecodeState, which outlive every callback.
-        # So cuMemFreeHost is never called from within a CUDA host callback.
-        #
-        # draft_tokens_host is now a slice of persistent_accepted_draft_tokens_pinned
-        # (D2H'd from draft_tokens_device after the forward pass on the same stream),
-        # so a view is safe — no copy needed.
-        next_tokens_np = next_tokens_host.to_numpy()
-        num_accepted_np = num_accepted_draft_tokens_host.to_numpy()
-        draft_tokens_np = draft_tokens_host.to_numpy()
-        next_draft_tokens_np = next_draft_tokens_host.to_numpy()
-
+        # Capture numpy views directly from the DevicePinnedBuffer objects.
+        # DevicePinnedBuffer.to_numpy() does not synchronize (documented). Using
+        # Buffer.to_numpy() on a view/slice goes through the base Buffer path,
+        # which may synchronize before reading device-associated memory.
+        # The D2H copies into these buffers were enqueued earlier on the same CUDA
+        # stream; stream ordering guarantees the data is valid when the callback fires.
         batch_size = len(context_batch)
-        num_positions = next_draft_tokens_np.shape[1] + 1
-        bitmask_pinned_np = spec_state.persistent_bitmask_pinned.to_numpy()
+        num_positions = next_draft_k + 1
+        with Tracer("convert_buffers_to_np_views"):
+            next_tokens_np = (
+                spec_state.persistent_bonus_tokens_pinned.to_numpy()[
+                    :batch_size
+                ]
+            )
+            num_accepted_np = (
+                spec_state.persistent_num_accepted_pinned.to_numpy()[
+                    :batch_size
+                ]
+            )
+            draft_tokens_np = (
+                spec_state.persistent_accepted_draft_tokens_pinned.to_numpy()[
+                    :batch_size, :num_draft_tokens_to_verify
+                ]
+            )
+            next_draft_tokens_np = (
+                spec_state.persistent_next_draft_tokens_pinned.to_numpy()[
+                    :batch_size, :next_draft_k
+                ]
+            )
+            bitmask_pinned_np = spec_state.persistent_bitmask_pinned.to_numpy()
+            bitmask_bool_pinned_np = (
+                spec_state.persistent_bitmask_bool_pinned.to_numpy()[
+                    :batch_size, :num_positions, :
+                ]
+            )
 
-        callback = self._build_bitmask_callback(
-            context_batch=context_batch,
-            bonus_tokens_np=next_tokens_np,
-            num_accepted_np=num_accepted_np,
-            accepted_draft_tokens_np=draft_tokens_np,
-            next_draft_tokens_np=next_draft_tokens_np,
-            bitmask_pinned_np=bitmask_pinned_np[:batch_size, :num_positions, :],
-        )
+        with Tracer("build_bitmask_callback"):
+            callback = self._build_bitmask_callback(
+                context_batch=context_batch,
+                bonus_tokens_np=next_tokens_np,
+                num_accepted_np=num_accepted_np,
+                accepted_draft_tokens_np=draft_tokens_np,
+                next_draft_tokens_np=next_draft_tokens_np,
+                bitmask_pinned_np=bitmask_pinned_np[
+                    :batch_size, :num_positions, :
+                ],
+                bitmask_bool_pinned_np=bitmask_bool_pinned_np,
+            )
 
         device = self._devices[0]
         # Use getattr to avoid Python name mangling: inside a class body,
         # identifiers with a double-underscore prefix are rewritten to
         # _ClassName__attr, which the C extension does not expose.
         getattr(device, "__unsafe_enqueue_py_host_func")(callback)
-
-        # Record an event so _compute_speculative_bitmasks can wait for the
-        # callback to finish before reading the pinned buffer.
-        if spec_state.bitmask_ready_event is None:
-            spec_state.bitmask_ready_event = (
-                device.default_stream.record_event()
-            )
-        else:
-            device.default_stream.record_event(spec_state.bitmask_ready_event)
 
         spec_state.has_precomputed_bitmask = True
         return True
@@ -2613,8 +2659,16 @@ class OverlapTextGenerationPipeline(
             num_speculative_tokens if verify_draft_tokens else 0
         )
 
+        # The bitmask callback is only ever enqueued for decode batches
+        # (verify_draft_tokens=True).  Any has_precomputed_bitmask=True seen
+        # here when verify_draft_tokens=False was set by a previous request's
+        # decode callback and is stale for this batch.  Clearing it forces
+        # _compute_speculative_bitmasks onto the sync path, which initialises
+        # ctx.matcher for new contexts and computes the bitmask from the
+        # correct initial FSM state.
         # Delete the saved draft tokens if we are not verifying them.
         if not verify_draft_tokens:
+            self._spec_decode_state.has_precomputed_bitmask = False
             for ctx in context_batch:
                 if len(ctx.spec_decoding_state.draft_tokens_to_verify):
                     ctx.spec_decoding_state.draft_tokens_to_verify = []
@@ -2650,21 +2704,11 @@ class OverlapTextGenerationPipeline(
             context_batch
         )
 
-        # Compute speculative bitmasks for structured output.
-        # For each draft position, we advance the FSM and fill the bitmask.
-        # Position i contains valid tokens given FSM state after consuming
-        # draft[0:i-1]. The last position is for the bonus token.
-        bitmask_device = self._compute_speculative_bitmasks(
-            context_batch=context_batch,
-            draft_tokens_np=draft_tokens_np,
-            num_draft_tokens_to_verify=num_draft_tokens_to_verify,
-        )
-
         outputs = self._run_forward(
             inputs,
             draft_tokens=draft_tokens_device,
             sampling_buffers=sampling_buffers,
-            token_bitmasks=bitmask_device,
+            draft_tokens_np=draft_tokens_np,
         )
         assert isinstance(outputs, UnifiedEagleOutputs)
 
@@ -2698,6 +2742,7 @@ class OverlapTextGenerationPipeline(
             # Both sets of D2H ops are enqueued on the same CUDA stream before
             # copy_event is recorded, so copy_event.synchronize() in the sync
             # path guarantees both copies are complete before any read.
+            next_draft_k = next_draft_tokens_device.shape[1]
             spec_state = self._spec_decode_state
             if (
                 spec_state is not None
@@ -2707,36 +2752,34 @@ class OverlapTextGenerationPipeline(
                 and spec_state.persistent_accepted_draft_tokens_pinned
                 is not None
             ):
-                # Persistent views captured by the callback closure.
-                next_draft_k = next_draft_tokens_device.shape[1]
-                p_num_accepted = _contiguous_prefix_2d(
+                # D2H into persistent pinned buffers. The callback reads numpy
+                # views from these directly (via DevicePinnedBuffer.to_numpy()),
+                # which avoids the stream sync that Buffer.to_numpy() on a
+                # view/slice can trigger.
+                _contiguous_prefix_2d(
                     spec_state.persistent_num_accepted_pinned,
                     batch_size,
                     1,
-                ).view(DType.int64, (batch_size,))
-                p_num_accepted.inplace_copy_from(
+                ).view(DType.int64, (batch_size,)).inplace_copy_from(
                     num_accepted_draft_tokens_device
                 )
-                p_bonus = _contiguous_prefix_2d(
+                _contiguous_prefix_2d(
                     spec_state.persistent_bonus_tokens_pinned,
                     batch_size,
                     1,
-                ).view(DType.int64, (batch_size,))
-                p_bonus.inplace_copy_from(next_tokens_device)
-                p_next_draft = _contiguous_prefix_2d(
+                ).view(DType.int64, (batch_size,)).inplace_copy_from(
+                    next_tokens_device
+                )
+                _contiguous_prefix_2d(
                     spec_state.persistent_next_draft_tokens_pinned,
                     batch_size,
                     next_draft_k,
-                )
-                p_next_draft.inplace_copy_from(next_draft_tokens_device)
-                accepted_draft_tokens_host: Buffer = _contiguous_prefix_2d(
+                ).inplace_copy_from(next_draft_tokens_device)
+                _contiguous_prefix_2d(
                     spec_state.persistent_accepted_draft_tokens_pinned,
                     batch_size,
                     num_draft_tokens_to_verify,
-                )
-                accepted_draft_tokens_host.inplace_copy_from(
-                    draft_tokens_device
-                )
+                ).inplace_copy_from(draft_tokens_device)
 
                 # Fresh per-batch allocations for the sync path — immune to
                 # the next batch's writes into the persistent buffers above.
@@ -2785,12 +2828,6 @@ class OverlapTextGenerationPipeline(
                 next_draft_tokens_host.inplace_copy_from(
                     next_draft_tokens_device
                 )
-                # Structured output disabled; callback returns False immediately
-                # so accepted_draft_tokens_host is never read from.
-                accepted_draft_tokens_host = draft_tokens_pinned
-                p_num_accepted = num_accepted_draft_tokens_host
-                p_bonus = next_tokens_host
-                p_next_draft = next_draft_tokens_host
 
             # Record an event to track the completion of the d2h copies.
             # This will ensure that the subsequent synchronize() call will
@@ -2802,15 +2839,10 @@ class OverlapTextGenerationPipeline(
             # Must be enqueued AFTER copy_event so the callback sees complete
             # D2H data. Returns True when the FSM advance is delegated to the
             # callback (skip_fsm_advance must be set on the batch accordingly).
-            # Pass the persistent views (p_*) to the callback so its closure
-            # holds safe DLPack references; the sync path uses the fresh
-            # per-batch buffers stored on AsyncSpecDecodeBatch.
             fsm_advanced_by_callback = self._enqueue_async_bitmask_callback(
                 context_batch=context_batch,
-                next_tokens_host=p_bonus,
-                num_accepted_draft_tokens_host=p_num_accepted,
-                draft_tokens_host=accepted_draft_tokens_host,
-                next_draft_tokens_host=p_next_draft,
+                num_draft_tokens_to_verify=num_draft_tokens_to_verify,
+                next_draft_k=next_draft_k,
                 verify_draft_tokens=verify_draft_tokens,
             )
 
