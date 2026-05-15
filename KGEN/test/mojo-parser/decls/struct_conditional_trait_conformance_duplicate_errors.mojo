@@ -25,7 +25,7 @@ trait DupTraitA:
 
 struct DupUnconditionalAndConditional[T: Movable](
     DupTraitA,
-    # expected-error @below {{trait ''DupTraitA'' appears multiple times in the inheritance list with different constraints}}
+    # expected-error @below {{trait ''DupTraitA'' appears multiple times in the conformance list with different constraints}}
     DupTraitA where conforms_to(T, Copyable),
     Movable,
 ):
@@ -46,7 +46,7 @@ trait DupTraitB:
 
 struct DupDifferentConstraints[T: Movable](
     DupTraitB where conforms_to(T, Copyable),
-    # expected-error @below {{trait ''DupTraitB'' appears multiple times in the inheritance list with different constraints}}
+    # expected-error @below {{trait ''DupTraitB'' appears multiple times in the conformance list with different constraints}}
     DupTraitB where conforms_to(T, Intable),
     Movable,
 ):
@@ -73,7 +73,7 @@ trait CompB:
 
 struct CompositionConflictsWithStandalone[T: Movable](
     CompA & CompB where conforms_to(T, Copyable),
-    # expected-error @below {{trait ''CompA'' appears multiple times in the inheritance list with different constraints}}
+    # expected-error @below {{trait ''CompA'' appears multiple times in the conformance list with different constraints}}
     CompA,
     Movable,
 ):
