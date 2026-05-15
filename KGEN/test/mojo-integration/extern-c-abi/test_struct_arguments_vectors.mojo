@@ -8,7 +8,7 @@
 # RUN: mojo build -Xlinker $(dirname %s)/libc_abi_reference.lo %s -o %t.dir/test_vectors
 # RUN: %t.dir/test_vectors | FileCheck %s
 
-from ffi import external_call
+from std.ffi import external_call
 
 
 # ============================================================================

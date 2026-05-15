@@ -26,7 +26,7 @@
 # RUN: mojo build -Xlinker $(dirname %s)/libc_effect_reference.lo %s -o %t.dir/test_mojo_defined_extern_c
 # RUN: %t.dir/test_mojo_defined_extern_c | FileCheck %s
 
-from ffi import external_call
+from std.ffi import external_call
 
 
 @fieldwise_init

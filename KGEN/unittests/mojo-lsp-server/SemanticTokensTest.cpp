@@ -12,8 +12,8 @@ using namespace M::Mojo::LSP;
 
 TEST(SemanticTokensTest, testSemanticTokens) {
   Document doc("test:///foo.mojo", R"(
-import builtin
-alias builtin_alias = builtin
+import std.builtin
+alias builtin_alias = std.builtin
 
 struct Struct:
   var field: Int

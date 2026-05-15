@@ -63,11 +63,11 @@ zaz()
 
 # Will test a multiline alias with imports and a function that uses this alias
 
-from memory import (
+from std.memory import (
   UnsafePointer
 )
 
-from runtime.asyncrt import DeviceContextPtr
+from std.runtime.asyncrt import DeviceContextPtr
 
 comptime unary_fn_type = __mlir_type[
     `(`,

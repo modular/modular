@@ -2117,7 +2117,7 @@ size_t MojoNotebookDocument::parseDocumentImpl() {
     // imported symbols.
     std::string pythonCell;
     llvm::raw_string_ostream os(pythonCell);
-    os << "from python import PythonObject\n\n";
+    os << "from std.python import PythonObject\n\n";
     for (auto &symbol : *symbolsOr)
       os << "var " << symbol->getName() << ": PythonObject\n";
     int pythonCellId = getSourceMgr().AddNewSourceBuffer(

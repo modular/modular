@@ -75,7 +75,7 @@ var another_bool = False
 # CHECK:   (Int) [1] = 2
 # CHECK:   (Int) [2] = 3
 # CHECK: }
-from collections import List
+from std.collections import List
 var z = List[Int](capacity=2)
 z.append(1)
 z.append(2)
