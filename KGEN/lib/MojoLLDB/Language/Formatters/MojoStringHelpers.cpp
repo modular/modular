@@ -47,7 +47,6 @@ bool dumpMojoString(ValueObject &context, const MojoStringHeader &header,
     printOpts.SetPrefixToken(nullptr);
     printOpts.SetQuote('"');
     printOpts.SetSourceSize(length);
-    printOpts.SetBinaryZeroIsTerminator(true);
     return StringPrinter::ReadBufferAndDumpToStream<
         StringPrinter::StringElementType::ASCII>(printOpts);
   }
@@ -93,8 +92,6 @@ bool dumpMojoString(ValueObject &context, const MojoStringHeader &header,
   printOpts.SetSourceSize(size + 1);
   printOpts.SetHasSourceSize(true);
   printOpts.SetIgnoreMaxLength(true);
-  printOpts.SetNeedsZeroTermination(false);
-  printOpts.SetBinaryZeroIsTerminator(true);
   if (!StringPrinter::ReadStringAndDumpToStream<
           StringPrinter::StringElementType::ASCII>(printOpts))
     return false;

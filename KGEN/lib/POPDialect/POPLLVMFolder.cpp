@@ -191,14 +191,8 @@ getOverloadedDeclaration(ArrayRef<llvm::Type *> operandTypes,
   llvm::FunctionType *ft =
       llvm::FunctionType::get(resType, operandTypes, false);
 
-  SmallVector<llvm::Intrinsic::IITDescriptor, 8> table;
-  getIntrinsicInfoTableEntries(id, table);
-  ArrayRef<llvm::Intrinsic::IITDescriptor> tableRef = table;
-
   SmallVector<llvm::Type *, 8> overloadedArgTys;
-  if (llvm::Intrinsic::matchIntrinsicSignature(ft, tableRef,
-                                               overloadedArgTys) !=
-      llvm::Intrinsic::MatchIntrinsicTypesResult::MatchIntrinsicTypes_Match) {
+  if (!llvm::Intrinsic::isSignatureValid(id, ft, overloadedArgTys)) {
     return {};
   }
 
@@ -318,8 +312,7 @@ ErrorTreeOrSuccess CallLLVMIntrinsicOp::interpret(ArrayRef<Attribute> operands,
   llvm::Constant *result = nullptr;
   if (loweredOperands.size() == 2) {
     result = ConstantFoldBinaryIntrinsic(id, loweredOperandsCst[0],
-                                         loweredOperandsCst[1], resultTy,
-                                         /*FMFSource*/ nullptr);
+                                         loweredOperandsCst[1], resultTy);
   }
 
   if (!result) {
@@ -443,8 +436,7 @@ CallLLVMIntrinsicOp::parametric_interpret(ArrayRef<Attribute> operands,
   llvm::Constant *result = nullptr;
   if (loweredOperands.size() == 2) {
     result = ConstantFoldBinaryIntrinsic(id, loweredOperandsCst[0],
-                                         loweredOperandsCst[1], resultTy,
-                                         /*FMFSource*/ nullptr);
+                                         loweredOperandsCst[1], resultTy);
   }
 
   if (!result) {

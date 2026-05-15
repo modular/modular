@@ -289,7 +289,7 @@ LLVM::DITypeAttr MetadataConverter::convertTypeImpl(DIArrayType type) {
       /*scope=*/nullptr, convertType(type.getElementType()),
       LLVM::DIFlags::Zero, type.getSizeInBits(), /*alignInBits=*/0,
       /*dataLocation=*/{}, /*rank=*/{}, /*allocated=*/{}, /*associated=*/{},
-      element);
+      /*identifier=*/{}, /*discriminator=*/{}, element);
 }
 
 LLVM::DIBasicTypeAttr MetadataConverter::convertTypeImpl(DIBasicType type) {
@@ -338,7 +338,8 @@ LLVM::DITypeAttr MetadataConverter::convertTypeImpl(DIStructType type) {
       /*file=*/nullptr, /*line=*/0, /*scope=*/nullptr, /*baseType=*/nullptr,
       LLVM::DIFlags::Zero, structSize, structAlign,
       /*dataLocation=*/{}, /*rank=*/{},
-      /*allocated=*/{}, /*associated=*/{}, elementTypes);
+      /*allocated=*/{}, /*associated=*/{}, /*identifier=*/{},
+      /*discriminator=*/{}, elementTypes);
 }
 
 LLVM::DISubroutineTypeAttr
@@ -394,7 +395,8 @@ LLVM::DITypeAttr MetadataConverter::convertTypeImpl(DIVariantType type) {
       context, llvm::dwarf::DW_TAG_variant_part, StringAttr::get(context),
       nullptr, 0, nullptr, nullptr, LLVM::DIFlags::Zero, type.getSizeInBits(),
       type.getAlignInBits(), /*dataLocation=*/{}, /*rank=*/{},
-      /*allocated=*/{}, /*associated=*/{}, variantTypes);
+      /*allocated=*/{}, /*associated=*/{}, /*identifier=*/{},
+      /*discriminator=*/{}, variantTypes);
 }
 
 LLVM::DITypeAttr MetadataConverter::convertTypeImpl(DIVectorType type) {
@@ -408,7 +410,8 @@ LLVM::DITypeAttr MetadataConverter::convertTypeImpl(DIVectorType type) {
       convertType(type.getElementType()), LLVM::DIFlags::Vector,
       type.getSizeInBits(), /*alignInBits=*/0, /*dataLocation=*/{},
       /*rank=*/{},
-      /*allocated=*/{}, /*associated=*/{}, element);
+      /*allocated=*/{}, /*associated=*/{}, /*identifier=*/{},
+      /*discriminator=*/{}, element);
 }
 
 //===----------------------------------------------------------------------===//

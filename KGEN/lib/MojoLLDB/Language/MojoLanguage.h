@@ -94,8 +94,7 @@ public:
       const lldb_private::SymbolContext &sym_ctx) const override {
     return {};
   }
-
-  llvm::StringRef GetInstanceVariableName() override { return "self"; }
+  llvm::StringRef GetInstanceName() override { return "self"; }
 
   // PluginInterface protocol
   llvm::StringRef GetPluginName() override { return GetPluginNameStatic(); }

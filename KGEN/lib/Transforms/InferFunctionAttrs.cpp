@@ -70,7 +70,7 @@ bool CallGraph::doAnalysis(CallGraphNode *node) {
   llvm::LLVMContext llvmCtx;
   func.walk([&](Operation *op) -> WalkResult {
     // TODO: Use trait when it's available in upstream
-    if (auto barrier = dyn_cast<mlir::NVVM::Barrier0Op>(op)) {
+    if (auto barrier = dyn_cast<mlir::NVVM::BarrierOp>(op)) {
       node->attrs.isConvergent = true;
       changed = true;
       return WalkResult::interrupt();

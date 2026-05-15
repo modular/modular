@@ -370,9 +370,6 @@ stringSliceSummaryProvider(ValueObject &valobj, Stream &stream,
   options.SetPrefixToken(nullptr);
   options.SetQuote('"');
   options.SetSourceSize(size);
-  // Match String / C-string display style: truncate at the first embedded \0
-  // even when the slice length says the buffer is longer.
-  options.SetBinaryZeroIsTerminator(true);
   return StringPrinter::ReadBufferAndDumpToStream<
       StringPrinter::StringElementType::ASCII>(options);
 }

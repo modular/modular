@@ -14,7 +14,7 @@ kgen.func @array_constant() -> !pop.array<2, i32> {
 // CHECK-LABEL: @simd_constant
 kgen.func @simd_constant() -> (!kgen.simd<2, bool>, !kgen.simd<2, si8>, !kgen.scalar<bf16>) {
   // CHECK-NEXT: { <2 x i1>, <2 x i8>, bfloat }
-  // CHECK-SAME: { <2 x i1> <i1 true, i1 false>, <2 x i8> <i8 -3, i8 3>, bfloat 0xR3FA0 }
+  // CHECK-SAME: { <2 x i1> <i1 true, i1 false>, <2 x i8> <i8 -3, i8 3>, bfloat 1.250000e+00 }
   %0 = kgen.param.constant: simd<2, bool> = <<true, false>>
   %1 = kgen.param.constant: simd<2, si8> = <<-3, 3>>
   %2 = kgen.param.constant: scalar<bf16> = <<"1.25">>
