@@ -6,8 +6,8 @@
 #
 # Regression test: a host program with a parameterized function and a custom
 # linkage name. The linkage name is not a product of the function's parameters
-# so will clash on repeated instantiations. Test that with 'mangle=True', we
-# are able to handle this with uniqueness suffixes.
+# so will clash on repeated instantiations. Test that we are able to handle
+# this with uniqueness suffixes.
 #
 # ===----------------------------------------------------------------------=== #
 
@@ -16,13 +16,13 @@
 
 
 @no_inline
-@__name("0this_name_is_long_and_will_clash_so_mangle_it", mangle=True)
+@__name("0this_name_is_long_and_will_clash_so_mangle_it")
 def make_me_unique[n: Int]():
     print("hello", n)
 
 
 # The two instantiations of the function 'make_me_unique' are separate concrete
-# functions whose linkage names would clash if it weren't for mangle=True.
+# functions whose linkage names would clash if we didn't mangle.
 # Check that the output assembly contains both functions with unique suffixes.
 # Check also that the names are not sanitized or shortened, as this is not a
 # GPU target.

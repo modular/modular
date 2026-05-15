@@ -222,8 +222,7 @@ def test_long_fstring_with_operator_in_interpolation_not_wrapped(prefix):
     # It should be left as-is, not wrapped in (t"...").
     source = (
         "@__name(\n"
-        f'    {prefix}"mha_depth{{config.depth}}_{{q_type}}_{{output_type}}_{{ragged}}_{{is_shared_kv}}_nqh{{config.num_heads}}_nkvh{{config.num_heads // group}}",\n'
-        "    mangle=True,\n"
+        f'    {prefix}"mha_depth{{config.depth}}_{{q_type}}_{{output_type}}_{{ragged}}_{{is_shared_kv}}_nqh{{config.num_heads}}_nkvh{{config.num_heads // group}}"\n'
         ")\n"
         "def kernel():\n"
         "    pass\n"
