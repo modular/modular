@@ -79,12 +79,22 @@ comptime PyCFunction = def(PyObjectPtr, PyObjectPtr) thin -> PyObjectPtr
 comptime PyCFunctionWithKeywords = def(
     PyObjectPtr, PyObjectPtr, PyObjectPtr
 ) thin -> PyObjectPtr
+# `METH_FASTCALL` signature, no kwargs:
+#   PyObject* (*)(PyObject *self, PyObject *const *args, Py_ssize_t nargs)
+# Skips the per-call tuple allocation that `METH_VARARGS` requires.
+# ref: https://docs.python.org/3/c-api/structures.html#c.PyCFunctionFast
+comptime PyCFunctionFast = def(
+    PyObjectPtr,
+    UnsafePointer[PyObjectPtr, ImmutAnyOrigin],
+    Py_ssize_t,
+) thin -> PyObjectPtr
 
 # Flag passed to newmethodobject
 # ref: https://github.com/python/cpython/blob/main/Include/methodobject.h
 comptime METH_VARARGS = 0x01
 comptime METH_KEYWORDS = 0x02
 comptime METH_STATIC = 0x20
+comptime METH_FASTCALL = 0x80
 
 
 # GIL
@@ -374,6 +384,38 @@ struct PyMethodDef(Defaultable, ImplicitlyCopyable):
         return PyMethodDef(
             func_name.unsafe_ptr().bitcast[c_char](),
             func_ptr,
+            flags,
+            docstring.unsafe_ptr().bitcast[c_char](),
+        )
+
+    @staticmethod
+    def function_fastcall[
+        static_method: Bool = False
+    ](
+        func: PyCFunctionFast,
+        func_name: StaticString,
+        docstring: StaticString = StaticString(),
+    ) -> Self:
+        """Create a `PyMethodDef` for a `METH_FASTCALL` function.
+
+        `METH_FASTCALL` lets CPython hand us the positional arguments as a
+        pointer-and-length pair instead of allocating a tuple per call,
+        which saves ~30-50 ns/call on small functions.
+
+        Parameters:
+            static_method: Whether the function is a static method.
+
+        Arguments:
+            func: The fastcall-shaped wrapper.
+            func_name: The name of the function as exposed to Python.
+            docstring: The docstring for the function.
+        """
+        var flags = c_int(
+            METH_FASTCALL | (METH_STATIC if static_method else 0)
+        )
+        return PyMethodDef(
+            func_name.unsafe_ptr().bitcast[c_char](),
+            rebind[OpaquePointer[MutAnyOrigin]](func),
             flags,
             docstring.unsafe_ptr().bitcast[c_char](),
         )
@@ -856,6 +898,11 @@ comptime PyGILState_Release = ExternalFunction[
     "PyGILState_Release",
     # void PyGILState_Release(PyGILState_STATE)
     def(PyGILState_STATE) thin -> None,
+]
+comptime PyGILState_Check = ExternalFunction[
+    "PyGILState_Check",
+    # int PyGILState_Check()
+    def() thin -> c_int,
 ]
 
 # Importing Modules
@@ -1342,6 +1389,7 @@ struct CPython(Defaultable, Movable):
     var _PyEval_RestoreThread: PyEval_RestoreThread.type
     var _PyGILState_Ensure: PyGILState_Ensure.type
     var _PyGILState_Release: PyGILState_Release.type
+    var _PyGILState_Check: PyGILState_Check.type
     # Importing Modules
     var _PyImport_ImportModule: PyImport_ImportModule.type
     var _PyImport_AddModule: PyImport_AddModule.type
@@ -1507,6 +1555,7 @@ struct CPython(Defaultable, Movable):
         )
         self._PyGILState_Ensure = PyGILState_Ensure.load(self.lib.borrow())
         self._PyGILState_Release = PyGILState_Release.load(self.lib.borrow())
+        self._PyGILState_Check = PyGILState_Check.load(self.lib.borrow())
         # Importing Modules
         self._PyImport_ImportModule = PyImport_ImportModule.load(
             self.lib.borrow()
@@ -2022,6 +2071,19 @@ struct CPython(Defaultable, Movable):
         - https://docs.python.org/3/c-api/init.html#c.PyGILState_Release
         """
         self._PyGILState_Release(state)
+
+    @always_inline
+    def PyGILState_Check(self) -> Bool:
+        """Returns True if the GIL is currently held by the calling thread.
+
+        Useful for avoiding redundant `PyGILState_Ensure`/`PyGILState_Release`
+        pairs in hot paths that are known to run while another part of the
+        program already holds the GIL (e.g. inside CPython method dispatch).
+
+        References:
+        - https://docs.python.org/3/c-api/init.html#c.PyGILState_Check
+        """
+        return self._PyGILState_Check() != 0
 
     # ===-------------------------------------------------------------------===#
     # Importing Modules

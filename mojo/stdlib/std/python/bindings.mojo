@@ -31,6 +31,7 @@ from std.python._cpython import (
     GILAcquired,
     Py_TPFLAGS_DEFAULT,
     PyCFunction,
+    PyCFunctionFast,
     PyCFunctionWithKeywords,
     PyMethodDef,
     PyObject,
@@ -386,6 +387,35 @@ struct PythonModuleBuilder:
         """
 
         self.functions.append(PyMethodDef.function(func, func_name, docstring))
+
+    def def_py_c_fastcall_function(
+        mut self,
+        func: PyCFunctionFast,
+        func_name: StaticString,
+        docstring: StaticString = "",
+    ):
+        """Declare a binding for a `METH_FASTCALL` wrapper.
+
+        `METH_FASTCALL` skips the per-call positional-tuple allocation that
+        `METH_VARARGS` requires; CPython hands the wrapper a pointer +
+        length pair instead. Typical wins on small functions are
+        ~30-50 ns/call (~15-30% of the FFI overhead measured in #6521).
+
+        The wrapper must match `PyCFunctionFast`:
+        `def(PyObjectPtr, UnsafePointer[PyObjectPtr], Py_ssize_t) -> PyObjectPtr`.
+        It owns enforcing argument arity and converting borrowed-pointer
+        args into whatever shape the user logic expects.
+
+        Args:
+            func: The fastcall-shaped wrapper.
+            func_name: The name with which the function will be exposed in
+                the module.
+            docstring: The docstring for the function in the module.
+        """
+
+        self.functions.append(
+            PyMethodDef.function_fastcall(func, func_name, docstring)
+        )
 
     def def_py_function[
         func: PyFunctionRaising
@@ -1076,28 +1106,35 @@ def _py_c_function_wrapper[
     # SAFETY:
     #   Call the user provided function, and take ownership of the
     #   PyObjectPtr of the returned PythonObject.
+    #
+    # NOTE:
+    #   The GIL is already held when we are called via the CPython method
+    #   dispatch (METH_VARARGS / METH_VARARGS | METH_KEYWORDS). PyO3,
+    #   pybind11 and nanobind all rely on this invariant. We therefore
+    #   skip an explicit PyGILState_Ensure/Release pair, which would only
+    #   bump CPython's internal counter and cost two extra C calls per
+    #   Mojo function invocation.
 
     ref cpython = Python().cpython()
 
-    with GILAcquired(Python(cpython)):
-        try:
-            if user_func.isa[PyFunctionRaising]():
-                return user_func[PyFunctionRaising](py_self, args).steal_data()
-            else:
-                var kwargs = PythonObject(from_borrowed=kwargs_ptr)
-                return user_func[PyFunctionWithKeywordsRaising](
-                    py_self, args, kwargs
-                ).steal_data()
-        except e:
-            var error_message = String(e)
-            var error_type = cpython.get_error_global("PyExc_Exception")
+    try:
+        if user_func.isa[PyFunctionRaising]():
+            return user_func[PyFunctionRaising](py_self, args).steal_data()
+        else:
+            var kwargs = PythonObject(from_borrowed=kwargs_ptr)
+            return user_func[PyFunctionWithKeywordsRaising](
+                py_self, args, kwargs
+            ).steal_data()
+    except e:
+        var error_message = String(e)
+        var error_type = cpython.get_error_global("PyExc_Exception")
 
-            cpython.PyErr_SetString(
-                error_type, error_message.as_c_string_slice().unsafe_ptr()
-            )
+        cpython.PyErr_SetString(
+            error_type, error_message.as_c_string_slice().unsafe_ptr()
+        )
 
-            # Return a NULL `PyObject*`.
-            return PyObjectPtr()
+        # Return a NULL `PyObject*`.
+        return PyObjectPtr()
 
 
 @always_inline

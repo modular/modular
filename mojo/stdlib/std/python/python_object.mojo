@@ -399,10 +399,18 @@ struct PythonObject(
         This decrements the underlying refcount of the pointed-to object.
         """
         ref cpy = Python().cpython()
-        # Acquire GIL such that __del__ can be called safely for cases where the
-        # PyObject is handled in non-python contexts.
-        with GILAcquired(Python(cpy)):
+        # PythonObject may be destroyed in arbitrary Mojo contexts. The
+        # common case, by far, is destruction from code that already holds
+        # the GIL (e.g. inside a CPython→Mojo wrapper, or under a
+        # `with Python()` block). In that case PyGILState_Ensure/Release
+        # is just an unnecessary pair of C calls (~25 ns/pair). Test once
+        # with the cheap PyGILState_Check and only fall through to the
+        # full acquire when we genuinely need to.
+        if cpy.PyGILState_Check():
             cpy.Py_DecRef(self._obj_ptr)
+        else:
+            with GILAcquired(Python(cpy)):
+                cpy.Py_DecRef(self._obj_ptr)
 
     # ===-------------------------------------------------------------------===#
     # Operator dunders
