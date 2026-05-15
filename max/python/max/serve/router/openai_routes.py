@@ -472,10 +472,8 @@ class OpenAIChatResponseGenerator(
                     str(e),
                 )
             elif isinstance(e, ValueError):
-                status_code = 400
-                logger.warning(
-                    "Value error in request %s: %s", request.request_id, str(e)
-                )
+                status_code = 500
+                logger.exception("Exception in request %s", request.request_id)
             else:
                 status_code = 500
                 logger.exception("Exception in request %s", request.request_id)
@@ -1416,6 +1414,7 @@ async def openai_create_embeddings(
 ) -> CreateEmbeddingResponse | Response:
     request_id = request.state.request_id
 
+    # First try-catch: request parsing (client fault → 400)
     try:
         embeddings_request = CreateEmbeddingRequest.model_validate_json(
             await request.body()
@@ -1457,17 +1456,14 @@ async def openai_create_embeddings(
             )
             for idx, input_text in enumerate(embedding_inputs)
         ]
-
-        response = await response_generator.encode(embedding_requests)
-        return response
     except _ClientDisconnectedError:
         logger.info("Client disconnected for request %s", request_id)
         return Response(status_code=_CLIENT_DISCONNECTED_STATUS_CODE)
     except JSONDecodeError as e:
-        logger.exception("JSONDecodeError in request %s", request_id)
+        logger.warning("JSONDecodeError in request %s: %s", request_id, e)
         raise HTTPException(status_code=400, detail="Missing JSON.") from e
     except KeyError as e:
-        logger.exception("KeyError in request %s", request_id)
+        logger.warning("KeyError in request %s: %s", request_id, e)
         raise HTTPException(status_code=400, detail="Invalid JSON.") from e
     except ValidationError as e:
         logger.warning(
@@ -1475,7 +1471,7 @@ async def openai_create_embeddings(
         )
         raise HTTPException(status_code=400, detail=str(e)) from e
     except TypeError as e:
-        logger.exception("TypeError in request %s", request_id)
+        logger.warning("TypeError in request %s: %s", request_id, e)
         raise HTTPException(status_code=400, detail="Invalid JSON.") from e
     except InputError as e:
         logger.warning(
@@ -1484,10 +1480,22 @@ async def openai_create_embeddings(
         raise HTTPException(status_code=400, detail=str(e)) from e
     except ValueError as e:
         logger.warning("Value error in request %s: %s", request_id, str(e))
-        # NOTE(SI-722): These errors need to return more helpful details,
-        # but we don't necessarily want to expose the full error description
-        # to the user. There are many different ValueErrors that can be raised.
         raise HTTPException(status_code=400, detail="Value error.") from e
+
+    # Second try-catch: response generation (server fault → 500)
+    try:
+        response = await response_generator.encode(embedding_requests)
+        return response
+    except _ClientDisconnectedError:
+        logger.info("Client disconnected for request %s", request_id)
+        return Response(status_code=_CLIENT_DISCONNECTED_STATUS_CODE)
+    except Exception as e:
+        logger.exception(
+            "Exception during response generation in request %s", request_id
+        )
+        raise HTTPException(
+            status_code=500, detail="Internal server error."
+        ) from e
 
 
 class CompletionResponseStreamChoice(BaseModel):
@@ -1711,12 +1719,10 @@ class OpenAICompletionResponseGenerator(
                 content={"detail": "Input validation error", "message": str(e)},
             )
         except ValueError as e:
-            logger.warning(
-                "Value error in request %s: %s", request.request_id, str(e)
-            )
+            logger.exception("Exception in request %s", request.request_id)
             # TODO (SI-722) - propagate better errors back.
             yield JSONResponse(
-                status_code=400,
+                status_code=500,
                 content={"detail": "Value error", "message": str(e)},
             )
         finally:
