@@ -939,7 +939,6 @@ void FnSigDecorators::applyExportLike(SMLoc loc, bool isExport,
   // TODO: deprecate and remove the ABI= specification here, in favor of the
   // abi() effect on the function declaration.
   std::optional<std::string> exportABI;
-  std::optional<bool> mangle;
   for (const Operand &operand : operands) {
     auto strNode = dyn_cast<StringLiteralNode>(operand.expr);
     if (strNode && operand.isKeyword() && operand.name == "ABI") {
@@ -949,14 +948,6 @@ void FnSigDecorators::applyExportLike(SMLoc loc, bool isExport,
                          "only \"C\" ABI is supported at the moment");
         return;
       }
-    } else if (!isExport && operand.isKeyword() && operand.name == "mangle") {
-      auto *boolNode = dyn_cast<BoolLiteralNode>(operand.expr);
-      if (!boolNode) {
-        shared.emitError(operand.getLoc())
-            << "'mangle' argument to " << spelling << " must be True or False";
-        return;
-      }
-      mangle = boolNode->value;
     } else if (strNode && operand.isPositional()) {
       if (linkageName) {
         shared.emitError(nodeLoc, spelling)
@@ -988,18 +979,9 @@ void FnSigDecorators::applyExportLike(SMLoc loc, bool isExport,
     }
   }
 
-  // Always wrap the linkage name in LinkageNameAttr so every decorator-set
-  // name carries the mangle flag explicitly. For @export mangle is always
-  // false (it is never parsed for @export). For @__name it defaults to false.
-  if (mangle.has_value() && !linkageName) {
-    shared.emitError(nodeLoc, spelling)
-        << " requires a name argument when 'mangle' is specified";
-    return;
-  }
   LinkageNameAttr wrappedName;
   if (linkageName)
-    wrappedName =
-        KGEN::LinkageNameAttr::get(linkageName, mangle.value_or(false));
+    wrappedName = KGEN::LinkageNameAttr::get(linkageName, /*mangle=*/!isExport);
 
   // Handle the unique case of main. We implicitly export main, so this is
   // simply checking that the user didn't try to export it as something else.

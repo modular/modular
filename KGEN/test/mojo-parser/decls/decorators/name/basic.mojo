@@ -10,7 +10,7 @@
 
 
 # CHECK: lit.fn @"my_func()"
-# CHECK-SAME: linkageName = #kgen.linkage_name<"custom_name" : !kgen.string, false>
+# CHECK-SAME: linkageName = #kgen.linkage_name<"custom_name" : !kgen.string, true>
 # CHECK-NOT: export
 @__name("custom_name")
 def my_func():
@@ -29,23 +29,13 @@ def parametric_name[T: Int]():
     pass
 
 
-# Test that mangle=True is stored in the IR as the boolean true.
+# Test that the mangle option is stored in the IR as the boolean true.
 
 
 # CHECK: lit.fn @"mangle_true()"
 # CHECK-SAME: linkageName = #kgen.linkage_name<"my_mangled" : !kgen.string, true>
-@__name("my_mangled", mangle=True)
+@__name("my_mangled")
 def mangle_true():
-    pass
-
-
-# Test that explicit mangle=False is identical to omitting the argument.
-
-
-# CHECK: lit.fn @"mangle_false()"
-# CHECK-SAME: linkageName = #kgen.linkage_name<"my_unmangled" : !kgen.string, false>
-@__name("my_unmangled", mangle=False)
-def mangle_false():
     pass
 
 
@@ -54,7 +44,7 @@ def mangle_false():
 
 
 # CHECK: lit.fn export @"name_then_export()"
-# CHECK-SAME: linkageName = #kgen.linkage_name<"my_export" : !kgen.string, false>
+# CHECK-SAME: linkageName = #kgen.linkage_name<"my_export" : !kgen.string, true>
 @__name("my_export")
 @export
 def name_then_export():
@@ -62,7 +52,7 @@ def name_then_export():
 
 
 # CHECK: lit.fn export C @"name_then_c_export()"
-# CHECK-SAME: linkageName = #kgen.linkage_name<"my_c_export" : !kgen.string, false>
+# CHECK-SAME: linkageName = #kgen.linkage_name<"my_c_export" : !kgen.string, true>
 @export(ABI="C")
 @__name("my_c_export")
 def name_then_c_export():
@@ -73,7 +63,7 @@ def name_then_c_export():
 
 
 # CHECK: lit.fn export @"export_then_name()"
-# CHECK-SAME: linkageName = #kgen.linkage_name<"my_export2" : !kgen.string, false>
+# CHECK-SAME: linkageName = #kgen.linkage_name<"my_export2" : !kgen.string, true>
 @export
 @__name("my_export2")
 def export_then_name():
@@ -81,7 +71,7 @@ def export_then_name():
 
 
 # CHECK: lit.fn export C @"c_export_then_name()"
-# CHECK-SAME: linkageName = #kgen.linkage_name<"my_c_export2" : !kgen.string, false>
+# CHECK-SAME: linkageName = #kgen.linkage_name<"my_c_export2" : !kgen.string, true>
 @export(ABI="C")
 @__name("my_c_export2")
 def c_export_then_name():
