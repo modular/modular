@@ -102,6 +102,35 @@ class DeviceMesh:
         idx = self._resolve_axis(axis)
         return self.mesh_shape[idx]
 
+    def device_coord(self, device_idx: int, axis: str | int) -> int:
+        """Returns *device_idx*'s coordinate along the given mesh axis.
+
+        For a mesh shaped ``(2, 3)`` with row-major device ordering, the
+        device at flat index ``4`` has coords ``(1, 1)`` — so
+        ``mesh.device_coord(4, 0) == 1`` and
+        ``mesh.device_coord(4, 1) == 1``.
+
+        Args:
+            device_idx: The flat device index in row-major order.
+            axis: The mesh axis to query, by name or integer index.
+
+        Returns:
+            The device's coordinate along *axis*, in ``[0, axis_size)``.
+
+        Raises:
+            IndexError: If ``device_idx`` is out of range, or if ``axis``
+                is an integer outside ``[0, ndim)``.
+            ValueError: If ``axis`` is a name not present on the mesh.
+        """
+        if device_idx < 0 or device_idx >= self.num_devices:
+            raise IndexError(
+                f"device_idx {device_idx} out of range for mesh with "
+                f"{self.num_devices} devices"
+            )
+        idx = self._resolve_axis(axis)
+        stride = math.prod(self.mesh_shape[idx + 1 :])
+        return (device_idx // stride) % self.mesh_shape[idx]
+
     def _resolve_axis(self, axis: str | int) -> int:
         """Converts an axis name or index to a validated integer index."""
         if isinstance(axis, str):
