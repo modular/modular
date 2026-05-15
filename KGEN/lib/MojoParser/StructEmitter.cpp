@@ -895,7 +895,8 @@ LogicalResult StructEmitter::populateMoveCopy(ASTDecl &fnDecl, bool isMove) {
           return emitError(fieldASTDecl.getLoc())
                  << "cannot synthesize move constructor because field '"
                  << fieldOp.getName()
-                 << "' has non-copyable and non-movable type " << fieldType;
+                 << "' has non-movable and non-implicitly-copyable type "
+                 << fieldType;
       }
     } else {
       // We only synthesize copy ctor for `ImplicitlyCopyable` object iff all
@@ -908,13 +909,18 @@ LogicalResult StructEmitter::populateMoveCopy(ASTDecl &fnDecl, bool isMove) {
       if (!fieldType.isCopyable(fieldASTDecl.getLoc(), shared,
                                 isImplicitlyCopyableStruct, &fnDecl)) {
         conditionalTraitOp = fieldConditionallyConformsToBuiltin(
-            fieldType.mlirType, "Copyable", shared, structDecl,
-            bodyConstraints);
-        if (!conditionalTraitOp)
+            fieldType.mlirType,
+            isImplicitlyCopyableStruct ? "ImplicitlyCopyable" : "Copyable",
+            shared, structDecl, bodyConstraints);
+        if (!conditionalTraitOp) {
           return emitError(fieldASTDecl.getLoc())
-                 << "cannot synthesize copy constructor because field '"
-                 << fieldOp.getName() << "' has non-copyable type "
-                 << fieldType;
+                 << "cannot synthesize "
+                 << (isImplicitlyCopyableStruct ? "implicit " : "")
+                 << "copy constructor because field '" << fieldOp.getName()
+                 << "' has non-"
+                 << (isImplicitlyCopyableStruct ? "implicitly-" : "")
+                 << "copyable type " << fieldType;
+        }
       }
     }
 
