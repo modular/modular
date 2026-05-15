@@ -213,6 +213,11 @@ void M::KGEN::LIT::checkStableTraitMemberImplementation(
   if (hasStableDecorator(structMemberDecl))
     return; // All good - stable implementation.
 
+  if (auto fnOp =
+          dyn_cast_if_present<FnOp>(structMemberDecl.getIfOperation())) {
+    if (fnOp.isSynthetic())
+      return;
+  }
   // Determine member kind from the trait member's operation type.
   StringRef memberKind =
       isa<AliasDeclOp>(traitMemberDecl.getIfOperation()) ? "alias" : "method";

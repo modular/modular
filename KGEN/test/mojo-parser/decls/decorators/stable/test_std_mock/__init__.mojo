@@ -172,6 +172,10 @@ struct StableStructWithUnstableImpl(TraitWithStableMethod):
     def stable_required_method(self) -> Int:
         return 2
 
+@stable
+struct StableStructWithMovable(Movable):
+    var val: Int
+
 
 # For testing stable function return type check.
 # This stable function returns an unstable type - should warn API author.
