@@ -31,6 +31,7 @@ from std.gpu import (
     lane_id,
     thread_idx,
 )
+from std.gpu.host import DeviceContext
 from std.gpu.primitives.grid_controls import (
     PDL,
     PDLLevel,
@@ -45,7 +46,6 @@ from layout import (
     row_major,
     stack_allocation as tensor_alloc,
 )
-from std.runtime.asyncrt import DeviceContextPtr
 from std.runtime.tracing import Trace, TraceLevel
 
 from std.utils.index import IndexList, StaticTuple
@@ -538,17 +538,17 @@ def moe_create_indices[
     expert_ids: TileTensor[mut=True, DType.int32, ...],
     expert_usage_stats: TileTensor[mut=True, DType.uint32, ...],
     topk_ids: TileTensor[input_type, ...],
-    context: DeviceContextPtr,
+    context: DeviceContext,
     scales_offset_p: Optional[UnsafePointer[UInt32, MutAnyOrigin]] = None,
 ) raises:
     comptime assert is_gpu[
         target
     ](), "Creating MoE indices is only supported on GPU"
 
-    var cuda_ctx = context.get_device_context()
+    var cuda_ctx = context
 
     with Trace[TraceLevel.OP, target=target](
-        "mo.moe.create_indices", task_id=Int(context.get_device_context().id())
+        "mo.moe.create_indices", task_id=Int(context.id())
     ):
         var lock_buffer = cuda_ctx.enqueue_create_buffer[DType.uint64](1)
 
@@ -878,7 +878,7 @@ def router_group_limited[
     expert_scores: TileTensor[scores_type, ...],
     expert_bias: TileTensor[bias_type, ...],
     routed_scaling_factor: Float32,
-    context: DeviceContextPtr,
+    context: DeviceContext,
 ) raises:
     """
     A manually fused MoE router with the group-limited strategy.
@@ -905,7 +905,7 @@ def router_group_limited[
             [num_tokens, n_routed_experts].
         expert_bias: The bias for each expert. Shape: [n_routed_experts].
         routed_scaling_factor: The scaling factor for the routed expert weights.
-        context: DeviceContextPtr.
+        context: The device context.
     """
     comptime assert is_gpu[
         target
@@ -914,7 +914,7 @@ def router_group_limited[
     if expert_scores.dim(0) == 0:
         return
 
-    var gpu_ctx = context.get_device_context()
+    var gpu_ctx = context
 
     with Trace[TraceLevel.OP, target=target](
         "mo.moe.router_group_limited", task_id=Int(gpu_ctx.id())
@@ -1175,7 +1175,7 @@ def single_group_router[
     expert_scores: TileTensor[scores_type, ...],
     expert_bias: TileTensor[bias_type, ...],
     routed_scaling_factor: Float32,
-    context: DeviceContextPtr,
+    context: DeviceContext,
 ) raises:
     """Launch the single-group MoE router on GPU.
 
@@ -1201,7 +1201,7 @@ def single_group_router[
         expert_scores: Input routing scores. Shape: [num_tokens, n_routed_experts].
         expert_bias: Per-expert correction bias used for selection only.
         routed_scaling_factor: Scalar multiplied into every output weight.
-        context: DeviceContextPtr.
+        context: The device context.
     """
     comptime assert is_gpu[
         target
@@ -1210,7 +1210,7 @@ def single_group_router[
     if expert_scores.dim(0) == 0:
         return
 
-    var gpu_ctx = context.get_device_context()
+    var gpu_ctx = context
 
     with Trace[TraceLevel.OP, target=target](
         "mo.moe.router_single_group", task_id=Int(gpu_ctx.id())

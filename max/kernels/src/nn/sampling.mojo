@@ -17,10 +17,10 @@ from std.sys.info import simd_width_of
 import std.gpu.primitives.block as block
 from std.algorithm.functional import elementwise
 from std.gpu import block_idx, thread_idx
+from std.gpu.host import DeviceContext
 from std.gpu.host.info import is_gpu
 from layout import TensorLayout, TileTensor
 from nn._ragged_utils import get_batch_from_row_offsets
-from std.runtime.asyncrt import DeviceContextPtr
 
 from std.utils import IndexList
 
@@ -37,7 +37,7 @@ def apply_penalties_to_logits[
     frequency_penalty: TileTensor[penalty_type, ...],
     presence_penalty: TileTensor[penalty_type, ...],
     repetition_penalty: TileTensor[penalty_type, ...],
-    ctx: DeviceContextPtr,
+    ctx: DeviceContext,
 ) raises:
     """
     Apply penalties to the logits based on the frequency of the tokens in the batch.
@@ -201,7 +201,7 @@ def update_frequency_data[
         DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
     new_tokens: TileTensor[token_type, address_space=AddressSpace.GENERIC, ...],
-    ctx: DeviceContextPtr,
+    ctx: DeviceContext,
 ) raises:
     """
     Update the frequency data for the given new tokens.
@@ -218,7 +218,7 @@ def update_frequency_data[
     comptime if is_gpu[target]():
         comptime block_size = 128
 
-        dev_ctx = ctx.get_device_context()
+        dev_ctx = ctx
         comptime kernel = update_frequency_data_kernel[
             freq_data_origin=compressed_frequency_data.origin,
             FreqDataLayoutType=compressed_frequency_data.LayoutType,

@@ -14,6 +14,7 @@
 """Mojo kernel wrappers for softmax MO interpreter operations."""
 
 from std.os import abort
+from std.gpu.host import DeviceContext
 from std.python import PythonObject
 from std.python.bindings import PythonModuleBuilder
 from std.sys.info import has_accelerator, simd_width_of
@@ -23,7 +24,7 @@ from std.algorithm.functional import IndexList
 from std.memory import OpaquePointer
 from layout import Idx, TileTensor, row_major
 from nn.softmax import softmax as nn_softmax, logsoftmax as nn_logsoftmax
-from std.runtime.asyncrt import DeviceContextPtr
+
 
 from op_utils import _get_dtype, _get_buffer_ptr, _get_ctx, _get_shape, MAX_RANK
 
@@ -160,7 +161,7 @@ def softmax_op[
                     row_major(Idx(batch_dim), Idx(axis_dim)),
                 )
 
-                var device_ctx = DeviceContextPtr(ctx.unsafe_value())
+                var device_ctx = DeviceContext(ctx.unsafe_value())
 
                 comptime if is_logsoftmax:
                     nn_logsoftmax[

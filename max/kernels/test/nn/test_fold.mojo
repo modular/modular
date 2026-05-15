@@ -51,9 +51,10 @@ run_fold((5,6), (3,2), stride=1, dilation=1, padding=0)
 ```
 """
 
+from std.gpu.host import DeviceContext
 from layout import Coord, TileTensor, row_major
 from nn.fold import fold
-from std.runtime.asyncrt import DeviceContextPtr
+
 
 from std.utils.index import Index, IndexList
 
@@ -105,7 +106,7 @@ def test[
         output=output,
         output_size=output_size,
         kernel_size=kernel_size,
-        ctx=DeviceContextPtr(),
+        ctx=DeviceContext(api="cpu"),
     )
 
     # Check results, return on the first failed comparison.

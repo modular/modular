@@ -13,6 +13,7 @@
 
 
 from layout import Coord, Idx, TensorLayout, TileTensor, row_major
+from std.gpu.host import DeviceContext
 from nn.concat import _concat_parallel, _concat_serial, concat
 
 from std.utils import IndexList, StaticTuple
@@ -82,7 +83,10 @@ def test_concat() raises:
         )
 
     concat[dtype, epilogue_fn=epilogue_plus_one](
-        output.make_dynamic[DType.int64](), concat_axis, input_tuple
+        output.make_dynamic[DType.int64](),
+        concat_axis,
+        input_tuple,
+        DeviceContext(api="cpu"),
     )
 
     # CHECK: == test_concat

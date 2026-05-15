@@ -20,7 +20,7 @@ from layout import (
     row_major,
 )
 from std.memory import bitcast
-from std.runtime.asyncrt import DeviceContextPtr
+
 from std.utils.index import Index, IndexList
 from std.math import rsqrt
 from std.utils.numerics import max_finite, min_finite
@@ -224,7 +224,7 @@ def test_dynamic[
         gamma_tensor,
         epsilon_id,
         weight_offset_id,
-        DeviceContextPtr(ctx),
+        ctx,
         scale_ub,
         scale_tile,
     )

@@ -119,6 +119,16 @@ This version is still a work in progress.
 
   Deprecation shims with `DeprecationWarning` remain at the old path.
 
+- Custom Mojo ops used through `max.experimental.torch.CustomOpLibrary` (and
+  the rest of the graph-compiler custom-op path) must now declare their
+  `ctx` parameter as `DeviceContext` instead of `DeviceContextPtr`. The
+  `DeviceContextPtr` type has been removed from the Mojo standard library;
+  see the [Mojo nightly
+  changelog](https://docs.modular.com/mojo/changelog/) entry under
+  *Removed* for the full migration. Multi-device ops should declare their
+  variadic context argument as `DeviceContextList[N]` (also new — see the
+  Mojo changelog *GPU programming* section).
+
 - GPU and CPU diagnostic tooling has moved from `max.diagnostics` to
   `max.profiler`: `max.diagnostics.gpu` → `max.profiler.gpu` and
   `max.diagnostics.cpu` → `max.profiler.cpu`. Update imports accordingly.
