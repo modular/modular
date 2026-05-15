@@ -122,7 +122,9 @@ def barrier():
     """
 
     comptime if is_nvidia_gpu():
-        __mlir_op.`nvvm.barrier0`()
+        _ = __mlir_op.`nvvm.barrier`[
+            _properties=__mlir_attr.`{operandSegmentSizes = array<i32: 0, 0, 0>}`,
+        ]()
     elif _USE_EXPERIMENTAL_AMD_BLOCK_SYNC_LDS_WITHOUT_SYNC_VMEM:
         comptime assert is_amd_gpu()
         llvm_intrinsic["llvm.amdgcn.s.waitcnt", NoneType](Int32(0xC07F))
