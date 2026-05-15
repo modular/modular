@@ -824,6 +824,11 @@ LOGIT_VERIFICATION_GOLDENS = [
         "sha256": "11acb0fdf1fa04b468454bf887affaf04868a324a6d327c926e1818afd1749bd",
         "url": "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/black-forest-labs_FLUX.2-dev-i2i_golden/1/11acb0fdf1fa04b468454bf887affaf04868a324a6d327c926e1818afd1749bd/black-forest-labs_FLUX.2-dev-i2i_golden.tar.gz",
     },
+    {
+        "name": "black-forest-labs_FLUX.2-klein-4B_golden.tar.gz",
+        "sha256": "5b646894a0ed1765d717c8d37b44a4a7fda24fec68d50f45c837295eaad468d8",
+        "url": "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/black-forest-labs_FLUX.2-klein-4B_golden/1/5b646894a0ed1765d717c8d37b44a4a7fda24fec68d50f45c837295eaad468d8/black-forest-labs_FLUX.2-klein-4B_golden.tar.gz",
+    },
 ]
 
 [

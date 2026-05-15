@@ -1093,11 +1093,14 @@ logit_verification_pipelines:
 
   black-forest-labs/FLUX.2-klein-4B-t2i-bfloat16:
     pre_submit_agents: []
-    post_submit_agents: []
+    post_submit_agents: [*b200_1x]
     pipeline: "black-forest-labs/FLUX.2-klein-4B"
     compatible_with: [gpu]
     encoding: bfloat16
-    tags: [nvidia-only, image-generation, manual]
+    tags: [nvidia-only, image-generation]
+    pregenerated_torch_goldens:
+      tar_file: "s3://modular-bazel-artifacts-public/artifacts/black-forest-labs_FLUX.2-klein-4B_golden/1/5b646894a0ed1765d717c8d37b44a4a7fda24fec68d50f45c837295eaad468d8/black-forest-labs_FLUX.2-klein-4B_golden.tar.gz"
+      json_file: "torch_black-forest-labs_FLUX.2-klein-4B_bfloat16_golden.json"
     ssim_threshold: 0.60
     lpips_threshold: 0.35
     timeout: 3600
