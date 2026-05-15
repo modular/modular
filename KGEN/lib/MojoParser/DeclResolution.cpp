@@ -2344,16 +2344,6 @@ ParseResult DeclResolver::resolveBody(LIT::PackageOp op, ASTDecl &decl) {
         /*destNameLoc=*/LocationAttr());
     getDeclResolver().addDecl(importDecl, decl.loc, boundName, &decl,
                               LexerCursor(), LexerCursor(), /*indentation=*/-1);
-
-    // Create an alias for the unmangled module name to allow for simplified
-    // indexing into this module.
-    boundName = builder.getStringAttr(name);
-    importDecl = LIT::UnresolvedImportOp::create(
-        builder, op->getLoc(), importName, boundName, /*declName=*/StringAttr(),
-        /*importNameLoc=*/LocationAttr(),
-        /*declNameLoc=*/LocationAttr());
-    getDeclResolver().addDecl(importDecl, decl.loc, boundName, &decl,
-                              LexerCursor(), LexerCursor(), /*indentation=*/-1);
   }
 
   // Create a full wildcard import from the __init__, as the symbols defined
