@@ -270,11 +270,88 @@ async def test_openai_parse_forwards_tool_call_metadata() -> None:
     assert len(messages[1].tool_calls) == 1
     assert messages[1].tool_calls[0]["id"] == "call_9e53d2d2_0"
     assert messages[1].tool_calls[0]["function"]["name"] == "search"
+    # ``function.arguments`` is decoded from the OpenAI JSON-string wire
+    # format into a mapping so tool-use chat templates can iterate it.
+    assert messages[1].tool_calls[0]["function"]["arguments"] == {"q": "cats"}
     assert messages[1].reasoning_content == "I'll call the search tool."
 
     assert messages[2].role == "tool"
     assert messages[2].tool_call_id == "call_9e53d2d2_0"
     assert messages[2].content == "1. fluffy cat\n2. orange cat"
+
+
+async def test_openai_parse_drops_empty_tool_calls() -> None:
+    """Empty assistant ``tool_calls`` lists must be dropped (vLLM parity).
+
+    Some clients echo back ``"tool_calls": []`` on assistant turns even
+    when the assistant did not call any tools. Letting an empty list reach
+    the chat template causes tool-use branches to fire with no entries,
+    which renders broken multi-turn prompts.
+    """
+    request_data = {
+        "model": "test",
+        "messages": [
+            {
+                "role": "assistant",
+                "content": "ok",
+                "tool_calls": [],
+            },
+        ],
+    }
+    request = CreateChatCompletionRequest.model_validate(request_data)
+    settings = Settings()
+
+    messages, _images, _videos = await openai_parse_chat_completion_request(
+        request, wrap_content=False, settings=settings
+    )
+
+    assert len(messages) == 1
+    assert messages[0].role == "assistant"
+    assert messages[0].tool_calls is None
+    assert messages[0].content == "ok"
+
+
+async def test_openai_parse_coerces_empty_tool_call_arguments() -> None:
+    """Empty or missing ``function.arguments`` are coerced to ``{}``.
+
+    Mirrors vLLM's ``_postprocess_messages``: clients that send no-arg
+    tool calls (for example a ``get_time()`` invocation) emit
+    ``"arguments": ""`` over the wire. Chat templates that iterate the
+    mapping must see an empty dict, not the empty string.
+    """
+    request_data = {
+        "model": "test",
+        "messages": [
+            {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [
+                    {
+                        "id": "call_1",
+                        "type": "function",
+                        "function": {"name": "get_time", "arguments": ""},
+                    },
+                    {
+                        "id": "call_2",
+                        "type": "function",
+                        "function": {"name": "get_date"},
+                    },
+                ],
+            },
+        ],
+    }
+    request = CreateChatCompletionRequest.model_validate(request_data)
+    settings = Settings()
+
+    messages, _images, _videos = await openai_parse_chat_completion_request(
+        request, wrap_content=False, settings=settings
+    )
+
+    assert len(messages) == 1
+    assert messages[0].tool_calls is not None
+    assert len(messages[0].tool_calls) == 2
+    assert messages[0].tool_calls[0]["function"]["arguments"] == {}
+    assert messages[0].tool_calls[1]["function"]["arguments"] == {}
 
 
 def test_openai_user_message_content_nullable_schema() -> None:

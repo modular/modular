@@ -13,7 +13,6 @@ modular_py_test(
     srcs = glob(
         ["*.py"],
         exclude = [
-            "test_tokenizer.py",
             "test_tool_parser.py",
         ],
     ),
@@ -47,13 +46,5 @@ modular_py_test(
         "//max/python/max/interfaces",
         "//max/python/max/pipelines/architectures",
         "//max/python/max/pipelines/lib",
-    ],
-)
-
-modular_py_test(
-    name = "test_tokenizer",
-    srcs = ["test_tokenizer.py"],
-    deps = [
-        "//max/python/max/pipelines/architectures",
     ],
 )

@@ -61,7 +61,12 @@ from max.pipelines.lib import PipelineConfig
 from max.pipelines.lib.tool_parsing import create as create_tool_parser
 from max.profiler import traced
 from max.serve.config import Settings
-from max.serve.parser import LlamaToolParser, ToolParser, parse_json_from_text
+from max.serve.parser import (
+    LlamaToolParser,
+    ToolParser,
+    normalize_tool_call_arguments,
+    parse_json_from_text,
+)
 from max.serve.pipelines.llm import (
     AudioGeneratorPipeline,
     TokenGeneratorOutput,
@@ -813,14 +818,11 @@ async def openai_parse_chat_completion_request(
         # ``ChatCompletionMessageParam`` TypedDicts (plus a MAX-specific
         # ``video_url`` content part); access via dict keys.
         content = m.get("content")
-        # OpenAI tool-calling metadata that the chat template needs to faithfully
-        # reconstruct multi-turn tool-use prompts. Without these, the templated
-        # prompt silently loses the assistant's previous ``tool_calls`` and the
-        # ``tool_call_id`` reference on tool responses (so for example Kimi-K2
-        # renders ``## Return of`` with no function name).
         raw_tool_calls = m.get("tool_calls")
         tool_calls: list[dict[str, Any]] | None = (
-            [dict(tc) for tc in raw_tool_calls] if raw_tool_calls else None
+            normalize_tool_call_arguments([dict(tc) for tc in raw_tool_calls])
+            if isinstance(raw_tool_calls, list) and raw_tool_calls
+            else None
         )
         tool_call_id = m.get("tool_call_id")
         reasoning_content = m.get("reasoning_content")
