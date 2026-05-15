@@ -54,7 +54,7 @@ kgen.func @byref_error(%arg0: !kgen.pointer<i32> byref_error, %arg1: !kgen.point
 
 // CHECK: @convergent_call() #[[X:.*]] {
 kgen.func @convergent_call() attributes {convergent} {
-  nvvm.barrier0
+  nvvm.barrier
   kgen.return
 }
 
