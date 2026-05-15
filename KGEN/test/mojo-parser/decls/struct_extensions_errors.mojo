@@ -66,6 +66,18 @@ def foo(ship: Spaceship) -> Int:  # shouldn't crash here
 # // -----
 
 
+struct ExtensionWhereTarget:
+    pass
+
+
+# @expected-error @below {{'where' clauses in conformance lists are only supported on structs}}
+__extension ExtensionWhereTarget(AnyType where True):
+    pass
+
+
+# // -----
+
+
 # Tests we can call a constructor defined in an extension.
 
 

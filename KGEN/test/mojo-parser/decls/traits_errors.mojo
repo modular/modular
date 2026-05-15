@@ -25,6 +25,11 @@ trait FooTrait:
         ...
 
 
+# expected-error @below {{'where' clauses in conformance lists are only supported on structs}}
+trait WhereClauseInTraitConformanceList(FooTrait where True):
+    pass
+
+
 struct ParamType[x: Int](FooTrait):
     def foo(self):
         pass

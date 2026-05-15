@@ -34,7 +34,7 @@ trait DiamondDerivedB(DiamondBase):
 
 
 struct DiamondMissingExplicitBase[T: Movable](
-    # expected-error @below {{ancestor trait 'DiamondBase' is reached via multiple inheritance paths with different constraints; it must be explicitly listed in the inheritance list with the desired constraint}}
+    # expected-error @below {{ancestor trait 'DiamondBase' is reached via multiple inheritance paths with different constraints; it must be explicitly listed in the conformance list with the desired constraint}}
     DiamondDerivedA where conforms_to(T, Copyable),
     DiamondDerivedB where conforms_to(T, Intable),
     Movable,

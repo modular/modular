@@ -2580,8 +2580,19 @@ struct ParsedTraitConstraint {
   SymbolRefAttr traitSymbol;
   ConstraintAttr constraint;
   /// Whether this constraint was for an explicitly listed trait in the
-  /// inheritance list (vs propagated from an ancestor).
+  /// conformance list (vs propagated from an ancestor).
   bool isExplicit;
+};
+
+/// A single entry in a parsed conformance list: a type expression naming a
+/// parent trait, plus an optional `where` constraint expression for
+/// conditional conformance. Used as the intermediate representation between
+/// `parseOptionalConformanceListSyntax` (parsing) and `resolveConformanceList`
+/// (type resolution + IR emission).
+struct ParsedConformanceEntry {
+  ExprNode *typeExpr = nullptr;
+  SMLoc loc;
+  std::optional<ParsedConstraint> constraint;
 };
 
 /// Verify that each explicitly listed derived trait's constraint implies its
@@ -2688,7 +2699,7 @@ static LogicalResult resolvePropagatedConstraints(
     shared.emitError(paths.front().second)
         << "ancestor trait " << symbol.getLeafReference()
         << " is reached via multiple inheritance paths with different "
-           "constraints; it must be explicitly listed in the inheritance "
+           "constraints; it must be explicitly listed in the conformance "
            "list with the desired constraint";
     hasErrors = true;
   }
@@ -2700,7 +2711,7 @@ static LogicalResult resolvePropagatedConstraints(
 /// derived->ancestor implication for explicit traits, and resolves propagated
 /// constraints for ancestor traits.
 ///
-/// Given an inheritance list like:
+/// Given a conformance list like:
 ///
 ///   trait Base: ...
 ///   trait Mid(Base): ...
@@ -2753,7 +2764,7 @@ static LogicalResult buildTraitConstraintsMap(
                            getCanonicalAttr(prop)) {
         shared.emitError(pc.constraint.getLoc())
             << "trait '" << pc.traitSymbol.getLeafReference()
-            << "' appears multiple times in the inheritance list with "
+            << "' appears multiple times in the conformance list with "
                "different constraints";
         hasErrors = true;
       }
@@ -2792,9 +2803,64 @@ static LogicalResult buildTraitConstraintsMap(
   return failure(hasErrors);
 }
 
-/// For a struct or trait declaration, parse an optional list of parent traits
-/// to inherit from. `immediateParents` will be populated with the smallest set
-/// of equivalent parent trait decls.
+//===----------------------------------------------------------------------===//
+// Conformance list processing
+//
+// Conformance list processing happens in two phases:
+//   1. `parseOptionalConformanceListSyntax` consumes the tokens of the
+//      conformance list and stores each entry as a `ParsedConformanceEntry`
+//      (type expression + optional `where` constraint expression). No types
+//      are resolved and no IR is emitted in this phase.
+//   2. `resolveConformanceList` walks the parsed entries, resolves each type
+//      expression, emits any `where`-clause constraints, and populates the
+//      caller's parent / constraint / lineage tables.
+// Callers are expected to invoke them in order on the same `ASTDecl`.
+//===----------------------------------------------------------------------===//
+
+/// For a struct or trait declaration, parse an optional conformance list
+/// without resolving the trait types or emitting constraints.
+///
+/// Set `allowConformanceConstraints` to `false` for declarations that don't
+/// support conditional conformance (traits and extensions).
+static ParseResult parseOptionalConformanceListSyntax(
+    ParserBase &p, SmallVectorImpl<ParsedConformanceEntry> &parsedConformances,
+    std::optional<size_t> stmtIndent, bool allowConformanceConstraints) {
+  if (!p.consumeIf(Token::l_paren) || p.consumeIf(Token::r_paren))
+    return success();
+
+  auto parseConformance = [&]() -> ParseResult {
+    ParsedConformanceEntry conformance;
+    if (p.getLocation(conformance.loc) ||
+        p.parseExpression(conformance.typeExpr, stmtIndent))
+      return failure();
+
+    SMLoc whereLoc = p.getToken().getLoc();
+    if (p.consumeIfSoftIdentifier("where")) {
+      if (!allowConformanceConstraints) {
+        return p.emitError(
+            whereLoc,
+            "'where' clauses in conformance lists are only supported on "
+            "structs");
+      }
+      ParsedConstraint constraint;
+      constraint.loc = whereLoc;
+      if (p.parseExpression(constraint.propExpr, stmtIndent))
+        return failure();
+      conformance.constraint = constraint;
+    }
+
+    parsedConformances.push_back(conformance);
+    return success();
+  };
+  if (p.parseCommaSeparatedList(parseConformance, Token::r_paren) ||
+      p.parseToken(Token::r_paren, "expected ')' for conformance list"))
+    return failure();
+  return success();
+}
+
+/// For a parsed conformance list, resolve parent trait types and emit
+/// conformance-local constraints. `immediateParents` will be populated with
+/// the smallest set of equivalent parent trait decls.
 ///
 /// For struct declarations with parameters already in scope,
 /// `traitConstraints` will be populated with a constraint entry for every
@@ -2802,50 +2868,50 @@ static LogicalResult buildTraitConstraintsMap(
 /// clauses carry the emitted constraint; entries without a `where` clause
 /// carry the trivially-true (unconditional) constraint. Parameters must be in
 /// scope in declScope for constraint emission to work correctly.
-/// Note: Trait declarations cannot have where clauses on their inheritance
-/// lists - only struct declarations support conditional conformance.
 ///
 /// `explicitTraits` (if provided) will be populated with all traits that are
-/// explicitly listed in the inheritance list (regardless of whether they have
+/// explicitly listed in the conformance list (regardless of whether they have
 /// a where clause). This is used to give explicit constraints precedence over
 /// propagated ones during constraint map building.
-static ParseResult parseOptionalInheritanceList(
-    ParserBase &p, ASTDecl &declScope, ASTDecl &decl, StringRef declName,
-    SharedState &shared, DenseSet<SymbolRefAttr> &immediateParents,
+static ParseResult resolveConformanceList(
+    ArrayRef<ParsedConformanceEntry> parsedConformances, ASTDecl &declScope,
+    ASTDecl &decl, SharedState &shared,
+    DenseSet<SymbolRefAttr> &immediateParents,
     SmallVectorImpl<ParsedTraitConstraint> *traitConstraints = nullptr,
     DenseSet<SymbolRefAttr> *explicitTraits = nullptr) {
-  if (!p.consumeIf(Token::l_paren) || p.consumeIf(Token::r_paren))
+  if (parsedConformances.empty())
     return success();
 
   DenseMap<SymbolRefAttr, std::pair<SymbolRefAttr, SMLoc>> *inheritedFrom =
       decl.getTraitConformanceLineage(/*createIfMissing=*/true);
 
-  auto parseParent = [&]() -> ParseResult {
-    ASTType type;
-    SMLoc loc;
-    if (p.getLocation(loc) ||
-        parseType(p, type, declScope, declScope.getIndentation(),
-                  /*allowUnbound=*/false))
+  for (const ParsedConformanceEntry &conformance : parsedConformances) {
+    IREmitter typeEmitter(declScope, EC_Type);
+    ASTType type = typeEmitter.emitExprType(conformance.typeExpr,
+                                            /*allowUnbound=*/false);
+    if (!type)
       return failure();
 
     // Reject inheriting from types we don't support yet.
     auto traitType = sugarDynCast<TraitType>(type);
     if (!traitType) {
       if (sugarIsa<LIT::StructType>(type)) {
-        p.emitError(loc) << "inheriting from structs is not allowed";
+        shared.emitError(conformance.loc)
+            << "inheriting from structs is not allowed";
       } else if (sugarIsa<ParamType>(type)) {
-        p.emitError(loc)
+        shared.emitError(conformance.loc)
             << "inheriting from a parameter expression is not allowed";
       } else {
-        p.emitError(loc) << "don't know how to inherit from this type";
+        shared.emitError(conformance.loc)
+            << "don't know how to inherit from this type";
       }
       if (!traitType) {
         declScope.setErroneous();
-        return success();
+        continue;
       }
     }
 
-    // Parse and emit optional where clause for conditional conformance.
+    // Emit optional where clause for conditional conformance.
     // Parameters must already be in scope in declScope for this to work.
     // Defaults to the trivially-true (unconditional) constraint with the
     // trait's source location (for diagnostic accuracy).
@@ -2853,28 +2919,25 @@ static ParseResult parseOptionalInheritanceList(
         traitConstraints
             ? ConstraintAttr::get(
                   IntegerAttr::get(IntegerType::get(shared.getContext(), 1), 1),
-                  shared.diags.translateLocation(loc))
+                  shared.diags.translateLocation(conformance.loc))
             : ConstraintAttr();
-    if (traitConstraints && p.consumeIfSoftIdentifier("where")) {
-      ExprNode *constraintExpr = nullptr;
-      if (p.parseExpression(constraintExpr, declScope.getIndentation()))
-        return failure();
-
+    if (traitConstraints && conformance.constraint) {
       IREmitter constraintEmitter(declScope, EC_Requires);
-      RValue propI1 = constraintEmitter.emitExprI1(constraintExpr, EC_Requires);
+      RValue propI1 = constraintEmitter.emitExprI1(
+          conformance.constraint->propExpr, EC_Requires);
       if (!propI1) {
-        constraintEmitter.emitError(loc,
+        constraintEmitter.emitError(conformance.loc,
                                     "failed to emit constraint expression");
         return failure();
       }
       PValue propVal = propI1.getIfPValue();
       if (!propVal) {
-        constraintEmitter.emitErrorForDynamicValueInParameter(loc);
+        constraintEmitter.emitErrorForDynamicValueInParameter(conformance.loc);
         return failure();
       }
       TypedAttr simplifiedProp = LIT::deShortCircuitCond(propVal);
-      constraint = ConstraintAttr::get(simplifiedProp,
-                                       shared.diags.translateLocation(loc));
+      constraint = ConstraintAttr::get(
+          simplifiedProp, shared.diags.translateLocation(conformance.loc));
     }
 
     // Successively flatten the parent list so we always have all the parents
@@ -2911,30 +2974,27 @@ static ParseResult parseOptionalInheritanceList(
           cast_or_null<TraitDeclOp>(traitDecl.getIfOperation())
               .getCanonicalTrait();
 
-      for (SymbolRefAttr parent : canonicalParent.getSymbols()) {
-        inheritedFrom->try_emplace(parent, std::make_pair(symbol, loc));
+      for (SymbolRefAttr ancestor : canonicalParent.getSymbols()) {
+        inheritedFrom->try_emplace(ancestor,
+                                   std::make_pair(symbol, conformance.loc));
         // Any immediate parent that is actually a parent of this `symbol` is no
         // longer an immediate parent.
-        immediateParents.erase(parent);
+        immediateParents.erase(ancestor);
 
         // Propagate the constraint to ancestor traits (the immediate symbol
         // was already added above as an explicit entry).
         // Each path's constraint is collected; the final constraint map
         // builder checks that all paths to the same ancestor agree, or
         // requires explicit listing if they disagree (diamond case).
-        if (traitConstraints && parent != symbol)
+        if (traitConstraints && ancestor != symbol)
           traitConstraints->push_back(
-              {parent, constraint, /*isExplicit=*/false});
+              {ancestor, constraint, /*isExplicit=*/false});
       }
       // Insert this `symbol` as an immediate parent. This must happen after the
       // loop, because this symbol itself is part of `canonicalParent` too.
       immediateParents.insert(symbol);
     }
-    return success();
-  };
-  if (p.parseCommaSeparatedList(parseParent, Token::r_paren) ||
-      p.parseToken(Token::r_paren, "expected ')' for parameter list"))
-    return failure();
+  }
   return success();
 }
 
@@ -3101,21 +3161,25 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
     return failure();
 
   // Type-check parameters first so they're in scope for constraint emission
-  // in the inheritance list.
+  // in the conformance list.
   std::optional<TypeCheckedParamList> paramSignatureOrError =
       TypeCheckedParamList::create(parsedParams, sigDecl);
   if (!paramSignatureOrError.has_value())
     return failure();
   TypeCheckedParamList &paramSignature = *paramSignatureOrError;
 
-  // Now parse the inheritance list. Parameters are in scope in sigDecl,
+  // Now parse the conformance list. Parameters are in scope in sigDecl,
   // so where clause constraints can be emitted immediately.
   DenseSet<SymbolRefAttr> immediateParents; // unused.
+  SmallVector<ParsedConformanceEntry> parsedConformances;
   SmallVector<ParsedTraitConstraint> parsedConstraints;
   DenseSet<SymbolRefAttr> explicitTraits;
-  if (parseOptionalInheritanceList(p, sigDecl, decl, structOp.getSymName(),
-                                   shared, immediateParents, &parsedConstraints,
-                                   &explicitTraits) ||
+  if (parseOptionalConformanceListSyntax(
+          p, parsedConformances, sigDecl.getIndentation(),
+          /*allowConformanceConstraints=*/true) ||
+      resolveConformanceList(parsedConformances, sigDecl, decl, shared,
+                             immediateParents, &parsedConstraints,
+                             &explicitTraits) ||
       p.parseToken(Token::colon, "expected ':' in struct definition") ||
       decl.isErroneous())
     return failure();
@@ -4017,9 +4081,12 @@ LogicalResult DeclResolver::resolveSignature(TraitDeclOp traitOp, Lexer &lexer,
 
   // Map from each symbol to the first symbol that explicitly inherits from it.
   DenseSet<SymbolRefAttr> immediateParents;
-  if (parseOptionalInheritanceList(p, *decl.getParentDecl(), decl,
-                                   traitOp.getSymName(), shared,
-                                   immediateParents))
+  SmallVector<ParsedConformanceEntry> parsedConformances;
+  if (parseOptionalConformanceListSyntax(
+          p, parsedConformances, decl.getParentDecl()->getIndentation(),
+          /*allowConformanceConstraints=*/false) ||
+      resolveConformanceList(parsedConformances, *decl.getParentDecl(), decl,
+                             shared, immediateParents))
     return failure();
   SmallVector<SymbolRefAttr> parentTraits;
   bool definesClosure = traitOp.getDefinesClosure();
@@ -4641,13 +4708,16 @@ LogicalResult DeclResolver::resolveSignature(ExtensionDeclOp extensionDeclOp,
   // figure out the self type they can use.
   decl.setTypeDeclSelf(ASTDecl::computeSelfTypeForStruct(structDeclOp));
 
-  // Use the parent scope to resolve the traits in the inheritance list.
+  // Use the parent scope to resolve the traits in the conformance list.
   // TODO(MOCO-522): This might need to change once we have parametric traits,
   // we might want to resolve from the extension's scope at that point.
   DenseSet<SymbolRefAttr> immediateParents;
-  if (failed(parseOptionalInheritanceList(p, *parentDecl, decl,
-                                          extensionDeclOp.getSymName(), shared,
-                                          immediateParents)))
+  SmallVector<ParsedConformanceEntry> parsedConformances;
+  if (failed(parseOptionalConformanceListSyntax(
+          p, parsedConformances, parentDecl->getIndentation(),
+          /*allowConformanceConstraints=*/false)) ||
+      failed(resolveConformanceList(parsedConformances, *parentDecl, decl,
+                                    shared, immediateParents)))
     return failure();
 
   // Store the immediate parent traits in the extension
