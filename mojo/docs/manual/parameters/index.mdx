@@ -324,8 +324,12 @@ compile-time constant that varies across conforming types. For example, a
 Measurable trait might require a `unit` string and an `always_positive`
 boolean to validate measurements.
 
-Referencing `comptime` members works just like referencing struct parameters—you
-can reference a member using dot syntax (such as `Self.IteratorType`).
+Common trait-provided values include constants (like seeds), and trait
+compositions for refinements.
+
+Referencing `comptime` members works just like referencing struct
+parameters. You can reference a member using dot syntax (such as
+`Self.IteratorType`).
 
 #### `comptime` members as enumerations
 

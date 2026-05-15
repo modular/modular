@@ -126,10 +126,28 @@ trait Quackable:
 For more information, see
 [Default method implementations](#default-method-implementations).
 
-A trait can also include `comptime` members—compile-time constant values that
-must be defined by conforming structs. `comptime` members are useful for writing
-traits that describe generic types. For more information, see
-[`comptime` members for generics](#comptime-members-for-generics).
+A trait can also include `comptime` members. These are compile-time
+constant values. You can define them directly in the trait or require
+conforming structs to define them.
+
+A required value is a `comptime` member without an initializer. Conforming
+types must provide a value for it. Use required values when each conforming
+type needs its own compile-time constant. This lets trait methods adapt
+accordingly.
+
+Associated types are a common use for required `comptime`
+members. An associated type is a subordinate type used by the trait,
+most often in collections and generic data structures.
+
+Provided values can include constants, trait compositions, or types.
+You define them once in the trait, and every conforming type has
+access to them.
+
+Use required and provided `comptime` members to describe generic
+families of types.
+
+For more information, see [`comptime` members for
+generics](#comptime-members-for-generics).
 
 ### Adding traits to structs
 
@@ -660,7 +678,7 @@ Building generic containers is an advanced topic. For an introduction, see the
 section on
 [parameterized structs](/docs/manual/parameters/#parameterized-structs).
 
-### `comptime` members for generics
+### `comptime` members for generics {#comptime-members-for-generics}
 
 In addition to methods, a trait can include `comptime` members, which must be
 defined by any conforming struct. For example:
