@@ -136,10 +136,6 @@ const redirects = [
     to: '/max/develop/custom-ops-matmul',
   },
   {
-    from: '/max/tutorials/custom-kernels-pytorch',
-    to: '/max/develop/custom-kernels-pytorch',
-  },
-  {
     from: '/mammoth/disaggregated-inference',
     to: '/glossary/ai/disaggregated-inference',
   },
