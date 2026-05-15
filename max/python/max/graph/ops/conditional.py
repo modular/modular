@@ -160,13 +160,8 @@ def cond(
         else_block=else_block.mlir_block,
     )
 
-    user_results, out_chain, device_chains = (
-        results[:num_values],
-        results[num_values],
-        results[num_values + 1 :],
-    )
-
-    graph._update_chain(out_chain)
+    user_results = results[:num_values]
+    device_chains = results[num_values:]
     for i, device in enumerate(graph.device_chains):
         new_chain = device_chains[i]
         assert isinstance(new_chain, _ChainValue)

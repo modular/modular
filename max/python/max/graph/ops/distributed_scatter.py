@@ -26,7 +26,7 @@ from max._core.dialects import mo
 from max._core.dialects.builtin import IntegerAttr, IntegerType
 
 from ..graph import Graph
-from ..type import TensorType, _ChainType
+from ..type import DeviceRef, TensorType, _ChainType
 from ..value import BufferValueLike, TensorValue, TensorValueLike
 from .utils import _buffer_values, _tensor_values
 
@@ -116,7 +116,10 @@ def distributed_scatter(
 
     # Merge all device chains into one input chain.
     in_chain = graph._merge_chains(
-        [graph._current_chain, *(graph.device_chains[d] for d in devices)]
+        [
+            graph.device_chains[DeviceRef.CPU()],
+            *(graph.device_chains[d] for d in devices),
+        ]
     )
 
     # Stage a single scatter op across all devices.

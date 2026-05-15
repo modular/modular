@@ -97,7 +97,9 @@ class _DeviceChainMap(OrderedDict[DeviceRef, _ChainValue]):
                 # parent scope via block arguments. Any device chains that
                 # exist prior to the control flow op will be used as expected.
                 and self._graph._graph_body == self._graph._current_block
-                else self._graph._current_chain
+                # Seed new device chains from the host (``DeviceRef.CPU()``)
+                # chain, which is pre-populated at graph construction.
+                else super().__getitem__(DeviceRef.CPU())
             )
         return super().__getitem__(device)
 
@@ -520,12 +522,14 @@ class Graph:
     _module: builtin.ModuleOp
     _context_state: list[contextlib.AbstractContextManager[Graph]]
     _weights: dict[str, _GraphWeight]
-    # A global sequence of chains that is updated by side-effecting ops.
-    _current_chain: _ChainValue
     _current_block: mlir.Block
     _should_verify_ops: bool
     _has_chain_input: bool
     # Per-device chains that ensure the correct sequence of device execution.
+    # ``device_chains[DeviceRef.CPU()]`` is the host orchestration chain (the
+    # chain advanced by host-side ops like ``debug.print``, ``mo.call``, and
+    # the host side of collectives); all other entries are per-device compute
+    # chains. New device entries are seeded from the host chain.
     device_chains: _DeviceChainMap
 
     _kernel_library: KernelLibrary
@@ -595,15 +599,14 @@ class Graph:
         self._has_chain_input = False
         self.device_chains = _DeviceChainMap(self)
 
+        host_chain: _ChainValue | None = None
         if self._graph_body.arguments:
             mlir_maybe_chain_value = _Value._from_cmlir(
                 self._graph_body.arguments[-1]
             )
             if _is_chain_value(mlir_maybe_chain_value):
                 self._has_chain_input = True
-                self._current_chain = _ChainValue.from_mlir(
-                    mlir_maybe_chain_value
-                )
+                host_chain = _ChainValue.from_mlir(mlir_maybe_chain_value)
 
         # Create an always-ready chain that is never advanced by the graph.
         # Use it for operations that are safe to schedule without per-device
@@ -612,12 +615,14 @@ class Graph:
             self._add_op(mo.chain_create, [])[0]
         )
 
-        if not self._has_chain_input:
-            # Start the graph's mutable sequencing chain from the always-ready
-            # chain by default; the always-ready chain itself remains immutable.
-            self._current_chain = self._always_ready_chain
+        if host_chain is None:
+            # Start the graph's host chain from the always-ready chain by
+            # default; the always-ready chain itself remains immutable.
+            host_chain = self._always_ready_chain
 
-        assert isinstance(self._current_chain, _ChainValue)
+        # Pre-populate the host chain so subsequent `device_chains[other_device]`
+        # lookups can seed from it without recursion.
+        self.device_chains[DeviceRef.CPU()] = host_chain
 
         # Initialize the kernel library and load custom extensions paths.
         self._kernel_library = kernel_library or KernelLibrary()
@@ -651,9 +656,7 @@ class Graph:
             chain values.
         """
         body_args = self._graph_body.arguments
-        chain_count = 0
-        if self._has_chain_input:
-            chain_count = 1 + len(self.device_chains)
+        chain_count = len(self.device_chains) if self._has_chain_input else 0
         if body_args and chain_count:
             body_args = body_args[:-chain_count]
 
@@ -757,13 +760,19 @@ class Graph:
             [kgen.ParamDeclAttr(name, si64) for name in union_names]
         )
         subgraph._params = dict.fromkeys(union_names)
+        # ``input_types`` already ends with an explicit ``_ChainType()`` that
+        # seeds ``device_chains[DeviceRef.CPU()]`` (the host chain). Add chain
+        # block args only for non-CPU devices to avoid duplicating the host
+        # chain.
         for device in devices:
+            if device == DeviceRef.CPU():
+                continue
             subgraph.device_chains[device] = subgraph._add_chain_block_arg()
         self._subgraphs[name] = subgraph
         return subgraph
 
     def _update_chain(self, new_chain: _ChainValue) -> None:
-        self._current_chain = new_chain
+        self.device_chains[DeviceRef.CPU()] = new_chain
 
     def _merge_chains(self, chains: Sequence[_ChainValue]) -> _ChainValue:
         unique_chains = list(dict.fromkeys(chains))
@@ -772,8 +781,8 @@ class Graph:
 
         chain = self._add_op(mo.chain_create, unique_chains)[0]
         assert isinstance(chain, _ChainValue)
-        self._current_chain = chain
-        return self._current_chain
+        self.device_chains[DeviceRef.CPU()] = chain
+        return chain
 
     def _add_chain_block_arg(self) -> _ChainValue:
         """Add a new chain as a graph block argument."""
@@ -815,22 +824,22 @@ class Graph:
                 with task():
                     ops.buffer_store(buffer2, tensor)
         """
-        old_chain = Graph.current._current_chain
+        old_host_chain = Graph.current.device_chains[DeviceRef.CPU()]
         old_device_chains = Graph.current.device_chains.copy()
-        new_chains = []
-        new_device_chains = []
+        new_host_chains: list[_ChainValue] = []
+        new_device_chains: list[_DeviceChainMap] = []
 
         class Async:
             def __enter__(self):
-                Graph.current._update_chain(old_chain)
-                Graph.current.device_chains = old_device_chains
+                Graph.current.device_chains = old_device_chains.copy()
                 return self
 
             def __exit__(self, *exc):
-                new_chains.append(Graph.current._current_chain)
+                new_host_chains.append(
+                    Graph.current.device_chains[DeviceRef.CPU()]
+                )
                 new_device_chains.append(Graph.current.device_chains.copy())
-                Graph.current._update_chain(old_chain)
-                Graph.current.device_chains = old_device_chains
+                Graph.current.device_chains = old_device_chains.copy()
 
             def __call__(self):
                 return self
@@ -843,12 +852,15 @@ class Graph:
         try:
             yield Async()
         finally:
-            current = Graph.current._current_chain
-            if current not in new_chains and current != old_chain:
-                new_chains.append(current)
+            current_host = Graph.current.device_chains[DeviceRef.CPU()]
+            if (
+                current_host not in new_host_chains
+                and current_host != old_host_chain
+            ):
+                new_host_chains.append(current_host)
 
-            if new_chains:
-                Graph.current._merge_chains(new_chains)
+            if new_host_chains:
+                Graph.current._merge_chains(new_host_chains)
                 Graph.current.device_chains._merge_chains(new_device_chains)
 
     def __enter__(self) -> Graph:
@@ -884,13 +896,11 @@ class Graph:
         within isolated blocks where state changes should not persist.
         """
         weights = self._weights.copy()
-        current_chain = self._current_chain
         device_chains = self.device_chains.copy()
         try:
             yield
         finally:
             self._weights = weights
-            self._current_chain = current_chain
             self.device_chains = device_chains
 
     @contextlib.contextmanager
@@ -1131,11 +1141,7 @@ class Graph:
 
             _ = self._add_op(
                 block_terminator_op,
-                [
-                    *results,
-                    self._current_chain,
-                    *self.device_chains.ordered_values(),
-                ],
+                [*results, *self.device_chains.ordered_values()],
             )
 
     def output(self, *outputs: Value[Any] | TensorValueLike) -> None:
@@ -1173,11 +1179,10 @@ class Graph:
         graph_body_args = self._graph_body.arguments
         mlir_values: list[_Value[Any]] = [o._mlir_value for o in outputs]
         if self._has_chain_input:
-            chain_values = [self._current_chain]
-            chain_values.extend(
-                self.device_chains[device] for device in self.device_chains
+            mlir_values.extend(
+                self.device_chains[device]._mlir_value
+                for device in self.device_chains
             )
-            mlir_values.extend(chain._mlir_value for chain in chain_values)
 
         # We have a type mismatch now, these are MLIR types
         # Convert from max._core.Type to mlir.Type using CAPI bridge
@@ -1386,8 +1391,8 @@ class GraphBlock:
     Within a ``with`` context, the active :class:`Graph`'s ``_current_block``
     points at this block, so the usual ``ops.*`` calls insert into this
     block instead of the graph's main body. Chain state is isolated (the
-    block runs with its own ``_current_chain`` / ``device_chains``) so
-    block-local side effects don't leak into the outer graph.
+    block runs with its own ``device_chains``) so block-local side effects
+    don't leak into the outer graph.
 
     Pass the block's :attr:`mlir_block` to an op wrapper that accepts a
     pre-built block (e.g., ``mo.if_(..., then_block=...)``); the wrapper
@@ -1505,22 +1510,21 @@ class GraphBlock:
         surrounding control-flow op (e.g., ``mo.if``) is created.
         """
         graph = self._graph
-        # Fold new per-device chains back into the global chain so the
-        # yield's chain count matches what the surrounding scope expects.
+        # Fold new per-device chains back into the host chain so the yield's
+        # chain count matches what the surrounding scope expects.
         for device in tuple(graph.device_chains):
             if device in self._live_devices_on_entry:
                 continue
             graph._merge_chains(
-                [graph._current_chain, graph.device_chains[device]]
+                [
+                    graph.device_chains[DeviceRef.CPU()],
+                    graph.device_chains[device],
+                ]
             )
             del graph.device_chains[device]
 
         with graph._pause_verification():
             graph._add_op(
                 terminator,
-                [
-                    *values,
-                    graph._current_chain,
-                    *graph.device_chains.ordered_values(),
-                ],
+                [*values, *graph.device_chains.ordered_values()],
             )

@@ -262,16 +262,16 @@ def test_inplace_custom(custom_ops_path: Path) -> None:
         buffer: BufferValue = graph.inputs[0].buffer
         tensor: TensorValue = graph.inputs[1].tensor
 
-        chain_0 = graph._current_chain
+        chain_0 = graph.device_chains[DeviceRef.CPU()]
 
         ops.inplace_custom("foo", device=buffer.device, values=[buffer])
-        chain_1 = graph._current_chain
+        chain_1 = graph.device_chains[DeviceRef.CPU()]
 
         ops.buffer_store(buffer, tensor)
-        chain_2 = graph._current_chain
+        chain_2 = graph.device_chains[DeviceRef.CPU()]
 
         ops.inplace_custom("bar", device=buffer.device, values=[buffer])
-        chain_3 = graph._current_chain
+        chain_3 = graph.device_chains[DeviceRef.CPU()]
 
         with pytest.raises(TypeError):
             ops.inplace_custom("baz", device=tensor.device, values=[tensor])

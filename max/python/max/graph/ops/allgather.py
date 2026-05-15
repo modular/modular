@@ -21,7 +21,7 @@ from typing import TypeVar
 from max._core.dialects import mo
 
 from ..graph import Graph
-from ..type import TensorType, _ChainType
+from ..type import DeviceRef, TensorType, _ChainType
 from ..value import BufferValueLike, TensorValue, TensorValueLike
 from .concat import concat
 from .utils import _buffer_values, _tensor_values
@@ -121,7 +121,10 @@ def allgather(
     # Get the current chain for synchronization.
     graph = Graph.current
     in_chain = graph._merge_chains(
-        [graph._current_chain, *(graph.device_chains[d] for d in devices)]
+        [
+            graph.device_chains[DeviceRef.CPU()],
+            *(graph.device_chains[d] for d in devices),
+        ]
     )
 
     # Stage the allgather op with signal buffers and chain.

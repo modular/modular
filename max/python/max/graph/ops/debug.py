@@ -17,6 +17,7 @@ from __future__ import annotations
 from max.mlir.dialects import mo
 
 from ..graph import Graph
+from ..type import DeviceRef
 from ..value import TensorValue
 
 
@@ -55,9 +56,9 @@ def print(value: str | TensorValue, label: str = "debug_tensor") -> None:
         label: A label to identify the printed value. Defaults to
           ``debug_tensor``.
     """
-    in_chain = Graph.current._current_chain
+    in_chain = Graph.current.device_chains[DeviceRef.CPU()]
 
     op = mo.debug_print if isinstance(value, str) else mo.debug_tensor_print
 
     output = Graph.current._add_op(op, in_chain, value, label=label)[0]
-    Graph.current._update_chain(output)
+    Graph.current.device_chains[DeviceRef.CPU()] = output

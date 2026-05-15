@@ -330,27 +330,28 @@ def test_prints_with_buffer_ops(
         buffer: BufferValue = graph.inputs[0].buffer
         tensor: TensorValue = graph.inputs[1].tensor
 
-        chain_0 = graph._current_chain
+        chain_0 = graph.device_chains[DeviceRef.CPU()]
 
         tensor.print()
-        chain_1 = graph._current_chain
+        chain_1 = graph.device_chains[DeviceRef.CPU()]
 
-        # Buffer load op goes onto the corresponding device chain, which
-        # should leave the global chain unchanged.
+        # Buffer load on a CPU buffer shares the host chain (HOST ==
+        # ``DeviceRef.CPU()``), so it also advances chain_1 forward.
         x = buffer[...]
-        chain_2 = graph._current_chain
+        chain_2 = graph.device_chains[DeviceRef.CPU()]
 
         x.print()
-        chain_3 = graph._current_chain
+        chain_3 = graph.device_chains[DeviceRef.CPU()]
 
         ops.buffer_store(buffer, tensor)
-        chain_3 = graph._current_chain
+        chain_4 = graph.device_chains[DeviceRef.CPU()]
 
         graph.output()
 
         assert chain_0 != chain_1
-        assert chain_1 == chain_2
+        assert chain_1 != chain_2
         assert chain_2 != chain_3
+        assert chain_3 != chain_4
 
 
 def test_buffer_ops_sequence_after_inplace_custom() -> None:

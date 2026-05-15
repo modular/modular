@@ -103,15 +103,15 @@ def call(graph: Graph, *args: Value[Any], prefix: str = "") -> list[Value[Any]]:
             f"\n    {graph.name}{tuple(input_types)}"
         )
 
-    # Collect all device chains into the call args and output type.
+    # Collect all device chains (including the host chain at
+    # ``DeviceRef.CPU()``) into the call args and output type.
     chain_devices: tuple[DeviceRef, ...] = ()
     chain_args: list[_ChainValue] = []
     if graph._has_chain_input:
         chain_devices = tuple(graph.device_chains)
-        chain_args = [current_graph._current_chain]
-        chain_args.extend(
+        chain_args = [
             current_graph.device_chains[device] for device in chain_devices
-        )
+        ]
         output_types.extend(_ChainType() for _ in chain_args)
         call_args.extend(chain_args)
 
@@ -130,11 +130,10 @@ def call(graph: Graph, *args: Value[Any], prefix: str = "") -> list[Value[Any]]:
 
     # Update the device chains.
     chain_results = call_results[-chain_result_count:]
-    current_graph._current_chain = _ChainValue(chain_results[0])
     current_graph.device_chains.update(
         (device, _ChainValue(chain_value))
         for device, chain_value in zip(
-            chain_devices, chain_results[1:], strict=True
+            chain_devices, chain_results, strict=True
         )
     )
     return call_results[:-chain_result_count]

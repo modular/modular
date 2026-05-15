@@ -114,14 +114,11 @@ def while_loop(
     num_initial_values = len(initial_values)
     graph = Graph.current
 
-    # Loop-carried values are: the user's initial values, then the global
-    # execution chain, then per-device chains. The same shape is what the
-    # cond/body blocks receive as block arguments and what they yield.
-    carried = [
-        *initial_values,
-        graph._current_chain,
-        *graph.device_chains.ordered_values(),
-    ]
+    # Loop-carried values are: the user's initial values, then the per-device
+    # chains (including the host chain at ``DeviceRef.CPU()``). The same
+    # shape is what the cond/body blocks receive as block arguments and what
+    # they yield.
+    carried = [*initial_values, *graph.device_chains.ordered_values()]
     carried_types = [v.type for v in carried]
 
     def adopt_block_args(args: Iterable[Any]) -> list[Value[Any]]:
@@ -131,11 +128,9 @@ def while_loop(
         """
         all_args = [Value.from_mlir(_Value._from_cmlir(a)) for a in args]
         loop_vars = all_args[:num_initial_values]
-        execution_chain = all_args[num_initial_values]
-        device_chains = all_args[num_initial_values + 1 :]
+        device_chains = all_args[num_initial_values:]
         assert len(device_chains) == len(graph.device_chains)
 
-        graph._update_chain(execution_chain)
         for i, device in enumerate(graph.device_chains):
             new_chain = device_chains[i]
             assert isinstance(new_chain, _ChainValue)
@@ -183,12 +178,8 @@ def while_loop(
         body_block=body_block.mlir_block,
     )
 
-    user_results, out_chain, device_chains = (
-        results[:num_initial_values],
-        results[num_initial_values],
-        results[num_initial_values + 1 :],
-    )
-    graph._update_chain(out_chain)
+    user_results = results[:num_initial_values]
+    device_chains = results[num_initial_values:]
     for i, device in enumerate(graph.device_chains):
         new_chain = device_chains[i]
         assert isinstance(new_chain, _ChainValue)

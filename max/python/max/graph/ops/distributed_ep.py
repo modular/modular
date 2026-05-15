@@ -25,7 +25,7 @@ from max._core.dialects.builtin import (
 )
 
 from ..graph import Graph
-from ..type import _ChainType
+from ..type import DeviceRef, _ChainType
 from ..value import BufferValue, TensorType, TensorValue, Value
 
 
@@ -107,7 +107,10 @@ def dispatch_bf16(
     graph = Graph.current
     devices = [t.device for t in input_tokens]
     in_chain = graph._merge_chains(
-        [graph._current_chain, *(graph.device_chains[d] for d in devices)]
+        [
+            graph.device_chains[DeviceRef.CPU()],
+            *(graph.device_chains[d] for d in devices),
+        ]
     )
 
     *results, out_chain = graph._add_op_generated(
@@ -187,7 +190,10 @@ def dispatch_fp8(
     graph = Graph.current
     devices = [t.device for t in input_tokens]
     in_chain = graph._merge_chains(
-        [graph._current_chain, *(graph.device_chains[d] for d in devices)]
+        [
+            graph.device_chains[DeviceRef.CPU()],
+            *(graph.device_chains[d] for d in devices),
+        ]
     )
 
     *results, out_chain = graph._add_op_generated(
@@ -271,7 +277,10 @@ def dispatch_nvfp4(
     graph = Graph.current
     devices = [t.device for t in input_tokens]
     in_chain = graph._merge_chains(
-        [graph._current_chain, *(graph.device_chains[d] for d in devices)]
+        [
+            graph.device_chains[DeviceRef.CPU()],
+            *(graph.device_chains[d] for d in devices),
+        ]
     )
 
     *results, out_chain = graph._add_op_generated(
@@ -353,7 +362,10 @@ def dispatch_mxfp4(
     graph = Graph.current
     devices = [t.device for t in input_tokens]
     in_chain = graph._merge_chains(
-        [graph._current_chain, *(graph.device_chains[d] for d in devices)]
+        [
+            graph.device_chains[DeviceRef.CPU()],
+            *(graph.device_chains[d] for d in devices),
+        ]
     )
 
     *results, out_chain = graph._add_op_generated(
@@ -443,7 +455,10 @@ def combine(
     graph = Graph.current
     devices = [t.device for t in input_tokens]
     in_chain = graph._merge_chains(
-        [graph._current_chain, *(graph.device_chains[d] for d in devices)]
+        [
+            graph.device_chains[DeviceRef.CPU()],
+            *(graph.device_chains[d] for d in devices),
+        ]
     )
 
     *results, out_chain = graph._add_op_generated(
