@@ -515,6 +515,13 @@ class TextGenAggregates(_CompletedRunBase):
         d = super().to_result_dict()
         d["total_input_tokens"] = self.total_input
         d["total_output_tokens"] = self.total_output
+        # Aggregate across the entire benchmark run (not per-GPU): sum of
+        # input + output tokens divided by wall-clock duration, in tokens/min.
+        d["aggregate_tokens_per_minute"] = (
+            (self.total_input + self.total_output) * 60.0 / self.duration
+            if self.duration > 0
+            else float("nan")
+        )
         d["max_concurrent_conversations"] = self.max_concurrent_conversations
         d["skip_first_n_requests"] = self.skip_first_n_requests
         d["skip_last_n_requests"] = self.skip_last_n_requests
