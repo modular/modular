@@ -198,7 +198,7 @@ def _cached_signal_buffers(
 ) -> tuple[list[driver.Buffer], list[BufferType]]:
     """Returns (runtime_buffers, buffer_types) for the given GPU device IDs.
 
-    Signal buffers are 513 MB each — far too expensive to re-allocate per
+    Signal buffers are 1025 MB each — far too expensive to re-allocate per
     eager graph.  ``lru_cache`` ensures they are allocated once for each
     unique device set and reused for all subsequent graphs.
 
@@ -206,9 +206,12 @@ def _cached_signal_buffers(
     and avoids mutable module-level state.  In pytest-xdist each worker is
     a separate process, so there are no cross-worker conflicts.
     """
-    # Signal buffers: 1 MB signal + 512 MB communication scratch per GPU.
-    # Must stay in sync with the Mojo ``Signal`` struct size.
-    _NUM_BYTES = (1 + 512) * 1024 * 1024
+    # Signal buffers: 1 MB signal + 1024 MB communication scratch per GPU.
+    # Must stay in sync with ``Signals.NUM_BYTES`` in ``max.nn.comm.allreduce``
+    # and the Mojo ``Signal`` struct size. 1 GiB scratch supports
+    # hidden_dim * max_batch_input_tokens * dtype_bytes up to ~1 GiB
+    # (e.g., Kimi-K2.5 at hidden_dim=20480, max_batch_input_tokens=16384).
+    _NUM_BYTES = (1 + 1024) * 1024 * 1024
 
     try:
         driver.enable_all_peer_access()
@@ -578,7 +581,7 @@ class EagerRealizationContext(RealizationContext):
         resulting ``BufferValue`` list so subsequent collectives in the
         same graph reuse the same buffers.
 
-        The runtime ``driver.Buffer`` objects (513 MB each) are allocated
+        The runtime ``driver.Buffer`` objects (1025 MB each) are allocated
         once per device set via :func:`_cached_signal_buffers` and shared
         across all eager contexts to avoid repeated allocation.
 
@@ -599,7 +602,7 @@ class EagerRealizationContext(RealizationContext):
         if len(gpu_ids) < 2:
             return None
 
-        # Get or allocate shared runtime buffers (expensive — 513 MB each).
+        # Get or allocate shared runtime buffers (expensive — 1025 MB each).
         runtime_bufs, buf_types = _cached_signal_buffers(tuple(gpu_ids))
 
         # Add signal buffer types as new graph inputs (per-graph, cheap).
