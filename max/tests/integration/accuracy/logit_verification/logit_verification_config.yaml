@@ -44,6 +44,10 @@ agent_anchors:
     queue: ephemeral
     pool: mi355
     resource_class: "1x"
+  mi355_4x: &mi355_4x
+    queue: ephemeral
+    pool: mi355
+    resource_class: "4x"
   mi355_8x: &mi355_8x
     queue: ephemeral
     pool: mi355
@@ -821,6 +825,19 @@ logit_verification_pipelines:
       json_file: "vllm_kimik2_5_nvfp4_golden.json"
     cos_dist_threshold: 2.0e-03
     kl_div_threshold: 3.0e-01
+
+  amd/Kimi-K2.5-MXFP4:
+    pre_submit_agents: []
+    post_submit_agents: [*mi355_4x]
+    pipeline: "amd/Kimi-K2.5-MXFP4"
+    compatible_with: [gpu]
+    encoding: float4_e2m1fnx2
+    tags: [4xmi355]
+    pregenerated_torch_goldens:
+      tar_file: "s3://modular-bazel-artifacts-public/artifacts/vllm_amd_kimi-k2_5-mxfp4_golden/1/a40f3192fabd8d61290dc32786271980d83902b4dce73c95d25d05d1a17cc11b/vllm_amd_kimi-k2_5-mxfp4_golden.tar.gz"
+      json_file: "vllm_amd_kimi-k2_5-mxfp4_golden.json"
+    cos_dist_threshold: 1.7e-02
+    kl_div_threshold: 2.2e+01
 
   MiniMaxAI/MiniMax-M2.7:
     pre_submit_agents: []
