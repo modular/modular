@@ -1076,28 +1076,36 @@ def _py_c_function_wrapper[
     # SAFETY:
     #   Call the user provided function, and take ownership of the
     #   PyObjectPtr of the returned PythonObject.
+    #
+    # CPython holds the GIL across the lifetime of an extension-function
+    # call (PEP 311; CPython's call protocol always enters with the GIL
+    # held), so we do not acquire it here. Acquiring it would just cost
+    # an extra PyGILState_Ensure/Release round-trip per call.
 
     ref cpython = Python().cpython()
 
-    with GILAcquired(Python(cpython)):
-        try:
-            if user_func.isa[PyFunctionRaising]():
-                return user_func[PyFunctionRaising](py_self, args).steal_data()
-            else:
-                var kwargs = PythonObject(from_borrowed=kwargs_ptr)
-                return user_func[PyFunctionWithKeywordsRaising](
-                    py_self, args, kwargs
-                ).steal_data()
-        except e:
-            var error_message = String(e)
-            var error_type = cpython.get_error_global("PyExc_Exception")
+    try:
+        comptime if user_func.isa[PyFunctionRaising]():
+            return user_func.unsafe_get[PyFunctionRaising]()(
+                py_self, args
+            ).steal_data()
+        elif user_func.isa[PyFunctionWithKeywordsRaising]():
+            var kwargs = PythonObject(from_borrowed=kwargs_ptr)
+            return user_func.unsafe_get[PyFunctionWithKeywordsRaising]()(
+                py_self, args, kwargs
+            ).steal_data()
+        else:
+            comptime assert False, "unknown `GenericPyFunction` variant"
+    except e:
+        var error_message = String(e)
+        var error_type = cpython.get_error_global("PyExc_Exception")
 
-            cpython.PyErr_SetString(
-                error_type, error_message.as_c_string_slice().unsafe_ptr()
-            )
+        cpython.PyErr_SetString(
+            error_type, error_message.as_c_string_slice().unsafe_ptr()
+        )
 
-            # Return a NULL `PyObject*`.
-            return PyObjectPtr()
+        # Return a NULL `PyObject*`.
+        return PyObjectPtr()
 
 
 @always_inline
