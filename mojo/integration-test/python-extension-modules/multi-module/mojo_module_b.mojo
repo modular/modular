@@ -34,6 +34,6 @@ def print_test_struct(s: PythonObject) -> None:
     self_ptr[].print()
 
 
-def add(s: PythonObject) -> PythonObject:
+def add(s: PythonObject) raises -> PythonObject:
     var self_ptr = TestStruct._get_self_ptr(s)
     return self_ptr[].a + self_ptr[].b
