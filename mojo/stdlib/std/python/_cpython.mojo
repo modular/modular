@@ -857,6 +857,11 @@ comptime PyGILState_Release = ExternalFunction[
     # void PyGILState_Release(PyGILState_STATE)
     def(PyGILState_STATE) thin -> None,
 ]
+comptime PyGILState_Check = ExternalFunction[
+    "PyGILState_Check",
+    # int PyGILState_Check()
+    def() thin -> c_int,
+]
 
 # Importing Modules
 comptime PyImport_ImportModule = ExternalFunction[
@@ -1342,6 +1347,7 @@ struct CPython(Defaultable, Movable):
     var _PyEval_RestoreThread: PyEval_RestoreThread.type
     var _PyGILState_Ensure: PyGILState_Ensure.type
     var _PyGILState_Release: PyGILState_Release.type
+    var _PyGILState_Check: PyGILState_Check.type
     # Importing Modules
     var _PyImport_ImportModule: PyImport_ImportModule.type
     var _PyImport_AddModule: PyImport_AddModule.type
@@ -1507,6 +1513,7 @@ struct CPython(Defaultable, Movable):
         )
         self._PyGILState_Ensure = PyGILState_Ensure.load(self.lib.borrow())
         self._PyGILState_Release = PyGILState_Release.load(self.lib.borrow())
+        self._PyGILState_Check = PyGILState_Check.load(self.lib.borrow())
         # Importing Modules
         self._PyImport_ImportModule = PyImport_ImportModule.load(
             self.lib.borrow()
@@ -2022,6 +2029,15 @@ struct CPython(Defaultable, Movable):
         - https://docs.python.org/3/c-api/init.html#c.PyGILState_Release
         """
         self._PyGILState_Release(state)
+
+    @always_inline
+    def PyGILState_Check(self) -> Bool:
+        """Returns True if the GIL is currently held by the calling thread.
+
+        References:
+        - https://docs.python.org/3/c-api/init.html#c.PyGILState_Check
+        """
+        return self._PyGILState_Check() != 0
 
     # ===-------------------------------------------------------------------===#
     # Importing Modules
