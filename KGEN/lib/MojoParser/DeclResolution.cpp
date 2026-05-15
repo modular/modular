@@ -916,17 +916,16 @@ void FnSigDecorators::applyExtern(SMLoc decoratorLoc,
 void FnSigDecorators::applyExportLike(SMLoc loc, bool isExport,
                                       const CallNode *node,
                                       IREmitter &emitter) {
-  auto &shared = decl.getShared();
   ArrayRef<Operand> operands;
   if (node)
     operands = node->operands;
   StringRef spelling = isExport ? "@export" : "@__name";
   if (!isExport && operands.empty()) {
-    shared.emitError(loc, spelling) << " must have at least 1 argument";
+    emitError(loc, spelling) << " must have at least 1 argument";
     return;
   }
   if (operands.size() > 2) {
-    shared.emitError(loc, spelling) << " requires at most 2 arguments";
+    emitError(loc, spelling) << " requires at most 2 arguments";
     return;
   }
   SMLoc nodeLoc = node ? node->getLoc() : loc;
@@ -944,14 +943,13 @@ void FnSigDecorators::applyExportLike(SMLoc loc, bool isExport,
     if (strNode && operand.isKeyword() && operand.name == "ABI") {
       exportABI = strNode->getValue();
       if (*exportABI != "C") {
-        shared.emitError(operand.getLoc(),
-                         "only \"C\" ABI is supported at the moment");
+        emitError(operand.getLoc(),
+                  "only \"C\" ABI is supported at the moment");
         return;
       }
     } else if (strNode && operand.isPositional()) {
       if (linkageName) {
-        shared.emitError(nodeLoc, spelling)
-            << " must have at most 1 name argument";
+        emitError(nodeLoc, spelling) << " must have at most 1 name argument";
         return;
       }
       linkageName = StringAttr::get(strNode->getValue(),
@@ -961,7 +959,7 @@ void FnSigDecorators::applyExportLike(SMLoc loc, bool isExport,
       CValue linkageNameVal =
           paramEmitter.emitExprCValue(operand.expr, EC_Decorator);
       if (!linkageNameVal) {
-        shared.emitError(nodeLoc, spelling)
+        emitError(nodeLoc, spelling)
             << " requires a string specifying the linkage name of the symbol";
         return;
       }
@@ -969,11 +967,11 @@ void FnSigDecorators::applyExportLike(SMLoc loc, bool isExport,
       linkageName = paramEmitter.emitStringExprAsDataToStr(
           linkageNameVal, operand.expr, nodeLoc, EC_Decorator);
       if (!linkageName) {
-        shared.emitError(nodeLoc) << "failure to create linkage name";
+        emitError(nodeLoc) << "failure to create linkage name";
         return;
       }
     } else {
-      shared.emitError(nodeLoc, spelling)
+      emitError(nodeLoc, spelling)
           << " requires a string specifying the name of the exported symbol";
       return;
     }
@@ -992,13 +990,13 @@ void FnSigDecorators::applyExportLike(SMLoc loc, bool isExport,
 
   if (simpleLinkageName == kMainSymbolName) {
     if (baseName != kMainSymbolName)
-      shared.emitError(loc, "only 'main' can be exported as 'main'");
+      emitError(loc, "only 'main' can be exported as 'main'");
     if (!isa<FnOp>(decl.getIfOperation()))
-      shared.emitError(loc, "exported 'main' must be a function");
+      emitError(loc, "exported 'main' must be a function");
     return;
   }
   if (baseName == kMainSymbolName) {
-    shared.emitError(loc, "'main' can only be exported as 'main'");
+    emitError(loc, "'main' can only be exported as 'main'");
     return;
   }
 
@@ -1018,14 +1016,12 @@ void FnSigDecorators::applyExportLike(SMLoc loc, bool isExport,
     // Validate the linkage name is a valid C identifer. We don't permit
     // non-literal identifiers for these functions.
     if (wrappedName && !simpleLinkageName) {
-      shared.emitError(loc)
-          << " \"C\" ABI functions must have literal identifiers";
+      emitError(loc) << " \"C\" ABI functions must have literal identifiers";
       return;
     }
 
     if (!isCIdentifier(*simpleLinkageName)) {
-      shared.emitError(loc, *simpleLinkageName)
-          << " is not a valid C identifier";
+      emitError(loc, *simpleLinkageName) << " is not a valid C identifier";
       return;
     }
   }
@@ -1033,7 +1029,7 @@ void FnSigDecorators::applyExportLike(SMLoc loc, bool isExport,
   // FIXME: This is an incomplete check as doesn't handle complex
   // non-literal expressions. Should we just defer it all until later?
   if (simpleLinkageName)
-    shared.declResolver->registerAndCheckExport(*simpleLinkageName, loc);
+    getDeclResolver().registerAndCheckExport(*simpleLinkageName, loc);
 }
 
 void FnSigDecorators::applyAlwaysInline(const CallNode *callNode) {
