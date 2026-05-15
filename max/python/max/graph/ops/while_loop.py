@@ -17,14 +17,12 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable
 from typing import Any
 
-from max import mlir
 from max._core import Value as _Value
-from max.dtype import DType
 from max.mlir.dialects import mo
 
-from ..graph import DeviceRef, Graph
-from ..type import TensorType
+from ..graph import Graph, GraphBlock
 from ..value import BufferValue, TensorValue, Value, _ChainValue
+from .support import as_iterable, as_values
 
 
 def while_loop(
@@ -108,162 +106,92 @@ def while_loop(
     )
     if not initial_values:
         raise ValueError("While loops must have at least one iteration value.")
-
-    num_initial_values = len(initial_values)
-
-    # Add execution chain to initial values to track side effects across iterations
-    initial_values = [
-        *initial_values,
-        Graph.current._current_chain,
-        *(
-            Graph.current.device_chains[device]
-            for device in Graph.current.device_chains
-        ),
-    ]
-
-    # Temporary restriction until buffer support is implemented
     if any(isinstance(arg, BufferValue) for arg in initial_values):
         raise NotImplementedError(
             "Buffer operations are currently not supported in while loops"
         )
 
-    # Determine output types including the execution chain as last element
-    # Chain is required for sequencing side-effecting operations like buffer accesses
-    out_types = [arg.type for arg in initial_values]
-    out_mlir_types = [t.to_mlir() for t in out_types]
+    num_initial_values = len(initial_values)
+    graph = Graph.current
 
-    def wrap_while_block_function(  # noqa: ANN202
-        user_func,  # noqa: ANN001
-        block_args: Iterable[mlir.BlockArgument],  # type: ignore
-        is_cond_block: bool = False,
-    ):
-        """Adapts a user-provided loop function to handle execution chain state.
+    # Loop-carried values are: the user's initial values, then the global
+    # execution chain, then per-device chains. The same shape is what the
+    # cond/body blocks receive as block arguments and what they yield.
+    carried = [
+        *initial_values,
+        graph._current_chain,
+        *graph.device_chains.ordered_values(),
+    ]
+    carried_types = [v.type for v in carried]
 
-        This wrapper handles the implicit execution chain that tracks operation
-        ordering in while loops. The chain is always passed as the last argument
-        to loop blocks but should not be exposed to users writing loop logic.
+    def adopt_block_args(args: Iterable[Any]) -> list[Value[Any]]:
+        """Rebind graph chain state from the block's arguments.
 
-        Args:
-            user_func: The user's predicate or body function that operates on
-                loop variables only.
-            block_args: The block arguments from the while loop operation, which
-                include both loop variables and the execution chain as the last
-                element.
-            is_cond_block: If True, this is the condition block; the wrapper
-                yields [condition] + loop_vars for the cond block.
-
-        Returns:
-            A function that properly manages the execution chain state before
-            invoking the user's function with just the loop variables.
-
-        .. note::
-            The execution chain is tracked differently in while loops vs conds:
-            - While loops are re-entrant and must pass the chain through iterations.
-            - Cond blocks create new chain SSAs from the parent scope.
-            This chain management ensures proper ordering of side-effecting ops
-            across loop iterations.
+        Returns the user-visible loop variables.
         """
+        all_args = [Value.from_mlir(_Value._from_cmlir(a)) for a in args]
+        loop_vars = all_args[:num_initial_values]
+        execution_chain = all_args[num_initial_values]
+        device_chains = all_args[num_initial_values + 1 :]
+        assert len(device_chains) == len(graph.device_chains)
 
-        def chain_aware_wrapper():  # noqa: ANN202
-            # Separate loop variables from the execution chain
-            loop_vars: list[Value[Any]]
-            execution_chain: Value[Any]
-            all_results = [
-                Value.from_mlir(_Value._from_cmlir(arg)) for arg in block_args
-            ]
+        graph._update_chain(execution_chain)
+        for i, device in enumerate(graph.device_chains):
+            new_chain = device_chains[i]
+            assert isinstance(new_chain, _ChainValue)
+            graph.device_chains[device] = new_chain
+        return loop_vars
 
-            loop_vars, execution_chain, device_chains = (
-                all_results[:num_initial_values],
-                all_results[num_initial_values],
-                all_results[num_initial_values + 1 :],
+    def while_condition_terminator(args: list[Any]):  # noqa: ANN202
+        """Build ``mo.while.condition`` from a flat ``[cond, *yielded]`` arg list.
+
+        ``mo.while.condition`` takes its first operand as the condition and
+        the rest as yielded values, but ``GraphBlock.output`` passes
+        everything as one flat list.
+        """
+        condition, *yielded = args
+        return mo.WhileConditionOp(condition, yielded)
+
+    with GraphBlock(arg_types=carried_types) as pred_block:
+        loop_vars = adopt_block_args(pred_block.arguments)
+        condition = predicate(*loop_vars)
+        if not condition.device.is_cpu():
+            raise ValueError(
+                "The predicate for `ops.while_loop` must reside on CPU,"
+                f" but got a tensor on {condition.device}. Transfer it"
+                " explicitly with `ops.transfer_to(pred, CPU())`."
             )
-
-            assert len(device_chains) == len(Graph.current.device_chains)
-
-            # Update the graph's chain state before running user code
-            Graph.current._update_chain(execution_chain)
-            for i, device in enumerate(Graph.current.device_chains):
-                new_chain = device_chains[i]
-                assert isinstance(new_chain, _ChainValue)
-                Graph.current.device_chains[device] = new_chain
-
-            # Invoke user function with only the loop variables
-            result = user_func(*loop_vars)
-
-            # The cond block function returns a boolean tensor, but mo.while
-            # expects the cond block's yield operation to yield all loop
-            # carried values, so add loop_vars to the result list when building
-            # the cond block.
-            if is_cond_block:
-                if not result.device.is_cpu():
-                    raise ValueError(
-                        "The predicate for `ops.while_loop` must reside on"
-                        f" CPU, but got a tensor on {result.device}. Transfer"
-                        " it explicitly with `ops.transfer_to(pred, CPU())`."
-                    )
-                return [result] + loop_vars
-            else:
-                return result
-
-        return chain_aware_wrapper
-
-    # Create while loop operation with chain-aware signature
-    # The chain is passed as implicit final operand/result for state management
-    with Graph.current._pause_verification():
-        results, while_op = Graph.current._add_op_get_op_with_results(
-            mo.while_, out_mlir_types, initial_values
+        pred_block.output(
+            condition, *loop_vars, terminator=while_condition_terminator
         )
 
-    # Separate actual loop results from the execution chain
-    results, out_chain, device_chains = (
+    user_carry_types = [v.type for v in initial_values]
+    with GraphBlock(arg_types=carried_types) as body_block:
+        loop_vars = adopt_block_args(body_block.arguments)
+        body_block.output(
+            *as_values(as_iterable(body(*loop_vars)), user_carry_types)
+        )
+
+    # The body's output types are what mo.while yields (loop vars + chains);
+    # the condition block's first operand is the bool, so its output_types
+    # would be wrong here.
+    results = graph._add_op(
+        mo.while_,
+        body_block.output_types,
+        carried,
+        cond_block=pred_block.mlir_block,
+        body_block=body_block.mlir_block,
+    )
+
+    user_results, out_chain, device_chains = (
         results[:num_initial_values],
         results[num_initial_values],
         results[num_initial_values + 1 :],
     )
+    graph._update_chain(out_chain)
+    for i, device in enumerate(graph.device_chains):
+        new_chain = device_chains[i]
+        assert isinstance(new_chain, _ChainValue)
+        graph.device_chains[device] = new_chain
 
-    assert len(device_chains) == len(Graph.current.device_chains)
-
-    def while_condition_op(args) -> mlir.OpView:  # noqa: ANN001
-        """Adaptor for ``mo.WhileConditionOp``.
-
-        The constructor takes the condition value and the list of yielded values.
-        """
-        condition, *results = args
-        return mo.WhileConditionOp(condition, results)
-
-    try:
-        pred_block = while_op.condRegion.blocks[0]
-        pred_wrapped_fn = wrap_while_block_function(
-            predicate, pred_block.arguments, is_cond_block=True
-        )
-
-        Graph.current._build_block(
-            pred_block,
-            pred_wrapped_fn,
-            while_condition_op,
-            "pred_block",
-            [TensorType(DType.bool, [], DeviceRef.CPU())]
-            + out_types[:num_initial_values],
-        )
-
-        body_block = while_op.bodyRegion.blocks[0]
-        body_wrapped_fn = wrap_while_block_function(body, body_block.arguments)
-        Graph.current._build_block(
-            body_block,
-            body_wrapped_fn,
-            mo.YieldOp,
-            "body_block",
-            out_types[:num_initial_values],
-        )
-
-        Graph.current._update_chain(out_chain)
-        for i, device in enumerate(Graph.current.device_chains):
-            new_chain = device_chains[i]
-            assert isinstance(new_chain, _ChainValue)
-            Graph.current.device_chains[device] = new_chain
-
-        Graph.current._verify_op(while_op)
-        return results
-    except Exception as e:
-        while_op.erase()
-        raise e
+    return user_results

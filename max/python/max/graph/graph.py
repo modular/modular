@@ -912,7 +912,7 @@ class Graph:
         finally:
             self._should_verify_ops = old_value
 
-    def _verify_op(self, op: mlir.Operation | mlir.OpView) -> None:
+    def _verify_op(self, op: mlir.Operation | mlir.OpView | Operation) -> None:
         if self._should_verify_ops:
             with self._capturing_mlir_diagnostics():
                 op.verify()
@@ -978,7 +978,7 @@ class Graph:
         with _location() as location:
             builder = OpBuilder(Block._from_cmlir(self._current_block).end)
             op = op_type(builder, location, *_to_mlir(args), **_to_mlir(kwargs))  # type: ignore
-            op.verify()
+            self._verify_op(op)
         _set_output_param_decls(op, self._params)
         return [Value.from_mlir(result) for result in op.results]
 
@@ -1360,3 +1360,154 @@ class Graph:
     def kernel_libraries_paths(self) -> list[Path]:
         """Returns the list of extra kernel libraries paths for the custom ops."""
         return self._kernel_library.library_paths()
+
+
+class GraphBlock:
+    """An MLIR block that can be populated with ops before its owning op exists.
+
+    Use this to build a region's body before creating the op that will own
+    the region. This avoids the "create op with empty regions → populate →
+    verify" pattern that requires verification pausing and manual erase on
+    failure — if block construction raises, no user-visible op exists.
+
+    Within a ``with`` context, the active :class:`Graph`'s ``_current_block``
+    points at this block, so the usual ``ops.*`` calls insert into this
+    block instead of the graph's main body. Chain state is isolated (the
+    block runs with its own ``_current_chain`` / ``device_chains``) so
+    block-local side effects don't leak into the outer graph.
+
+    Pass the block's :attr:`mlir_block` to an op wrapper that accepts a
+    pre-built block (e.g., ``mo.if_(..., then_block=...)``); the wrapper
+    moves the block into the op's region.
+
+    Implementation note: the MLIR upstream Python binding requires every
+    ``mlir.Block`` to have a parent op (``PyBlock`` holds a ``PyOperation``
+    reference for lifetime/context, and ``mlir.InsertionPoint`` reads
+    ``block.getParentOperation()`` for validation). To satisfy that
+    invariant, each :class:`GraphBlock` owns a private scratch
+    ``mo.graph`` op (inside a throwaway ``builtin.module``) that hosts its
+    block until it's moved into its real owning op. The scratch op is
+    deallocated when the :class:`GraphBlock` Python wrapper is.
+    """
+
+    def __init__(self, arg_types: Sequence[Type[Any]] = ()) -> None:
+        self._graph = Graph.current
+        # `mlir.Block.create_at_start` wants upstream `mlir.Type`, but
+        # `Type.to_mlir()` returns `_core.Type`. Bridge across the CAPI.
+        mlir_arg_types = [
+            mlir.Type._CAPICreate(t.to_mlir()._CAPIPtr)  # type: ignore[attr-defined]
+            for t in arg_types
+        ]
+        with _location() as loc:
+            arg_locs = [loc for _ in mlir_arg_types]
+            self._scratch_module = builtin.ModuleOp(location=loc)
+            scratch_builder = OpBuilder(self._scratch_module.body.end)
+            self._scratch_graph_op = _mo.GraphOp(
+                scratch_builder,
+                loc,
+                name="__graph_block_scratch",
+                input_types=[],
+                result_types=[],
+            )
+            scratch_region = mlir.Operation._CAPICreate(
+                self._scratch_graph_op._CAPIPtr
+            ).regions[0]
+            self._mlir_block = mlir.Block.create_at_start(
+                scratch_region, mlir_arg_types, arg_locs
+            )
+        self._block_ctx: (
+            contextlib.AbstractContextManager[mlir.Block] | None
+        ) = None
+        self._live_devices_on_entry: dict[DeviceRef, None] = {}
+
+    @property
+    def mlir_block(self) -> mlir.Block:
+        """The underlying ``mlir.Block``.
+
+        Pass this to op wrappers that accept a pre-built block (e.g.,
+        ``mo.IfOp(..., then_block=...)``).
+        """
+        return self._mlir_block
+
+    @property
+    def arguments(self) -> Sequence[mlir.Value[Any]]:
+        """The block's MLIR arguments, in the order declared via ``arg_types``."""
+        return self._mlir_block.arguments
+
+    @property
+    def output_types(self) -> list[mlir.Type]:
+        """Types of the values yielded by this block's terminator.
+
+        Reads from the block's last op. Available after :meth:`output` has
+        been called. Callers wiring up the enclosing control-flow op can
+        use this directly as that op's result types — it already includes
+        the global chain and per-device chain types alongside the
+        user-visible outputs.
+        """
+        operations = self._mlir_block.operations
+        if not operations:
+            raise RuntimeError(
+                "GraphBlock.output_types is only available after output() "
+                "has been called."
+            )
+        terminator = operations[-1]
+        return [operand.type for operand in terminator.operands]
+
+    def __enter__(self) -> GraphBlock:
+        self._block_ctx = self._graph._block(self._mlir_block)
+        self._block_ctx.__enter__()
+        # Snapshot the set of devices with live chains at the moment we
+        # enter the block. `output()` uses this to detect *new* device
+        # chains introduced inside the block (so it can fold them into the
+        # global chain before yielding).
+        self._live_devices_on_entry = dict.fromkeys(self._graph.device_chains)
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> bool | None:  # noqa: ANN001
+        assert self._block_ctx is not None
+        ctx = self._block_ctx
+        self._block_ctx = None
+        return ctx.__exit__(exc_type, exc_val, exc_tb)
+
+    def output(
+        self,
+        *values: Value[Any] | TensorValueLike,
+        terminator: Callable[..., Any] = mo.YieldOp,
+    ) -> None:
+        """Terminate this block, yielding ``values`` plus the active chain state.
+
+        Folds any per-device chains introduced inside the block into the
+        global chain before emitting the terminator, so the yielded chain
+        count matches the device-chain layout of the surrounding scope.
+
+        ``terminator`` defaults to ``mo.YieldOp``. Pass a different
+        terminator (or an adapter callable) when the block's owning op
+        expects a non-yield terminator — e.g., ``mo.while``'s condition
+        block uses ``mo.WhileConditionOp(condition, operands)``, which
+        splits its first operand off from the rest.
+
+        Verification is paused around the terminator's construction because
+        the block is still parked in scratch — ``mo.yield``'s parent-type
+        check will run later, against the real owning op, when the
+        surrounding control-flow op (e.g., ``mo.if``) is created.
+        """
+        graph = self._graph
+        # Fold new per-device chains back into the global chain so the
+        # yield's chain count matches what the surrounding scope expects.
+        for device in tuple(graph.device_chains):
+            if device in self._live_devices_on_entry:
+                continue
+            graph._merge_chains(
+                [graph._current_chain, graph.device_chains[device]]
+            )
+            del graph.device_chains[device]
+
+        with graph._pause_verification():
+            graph._add_op(
+                terminator,
+                [
+                    *values,
+                    graph._current_chain,
+                    *graph.device_chains.ordered_values(),
+                ],
+            )

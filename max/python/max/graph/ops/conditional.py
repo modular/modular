@@ -19,9 +19,10 @@ from typing import Any
 
 from max.mlir.dialects import mo
 
-from ..graph import Graph
-from ..type import Type, _ChainType
+from ..graph import Graph, GraphBlock
+from ..type import Type
 from ..value import TensorValue, TensorValueLike, Value, _ChainValue
+from .support import as_iterable, as_values
 
 
 def cond(
@@ -42,7 +43,7 @@ def cond(
         | None,
     ],
 ) -> list[TensorValue]:
-    """Conditionally execute one of two branches based on a boolean predicate.
+    r"""Conditionally execute one of two branches based on a boolean predicate.
 
     This function provides conditional execution in the computation graph, where
     one of two branches is executed based on the runtime value of a boolean
@@ -53,6 +54,11 @@ def cond(
     The predicate is evaluated at runtime to determine which branch to execute.
     Both branches are compiled but only the selected branch is executed based
     on the predicate value.
+
+    Branch bodies are populated into :class:`GraphBlock`\ s before the
+    enclosing ``mo.if`` op is created. If a branch body raises, the partial
+    block never becomes visible to the surrounding verifier and no cleanup
+    is needed.
 
     This example shows a basic conditional with return values:
 
@@ -132,83 +138,38 @@ def cond(
             f" tensor on {pred.device}. Transfer it explicitly with"
             " `ops.transfer_to(pred, CPU())`."
         )
-    out_types_actual = [
-        *(t.to_mlir() for t in out_types or []),
-        _ChainType().to_mlir(),
-        *(_ChainType().to_mlir() for _ in Graph.current.device_chains),
-    ]
 
-    # Pause verification until the operation is fully constructed
-    with Graph.current._pause_verification():
-        results, if_op = Graph.current._add_op_get_op_with_results(
-            mo.if_, pred, out_types_actual
-        )
+    out_types_list = list(out_types) if out_types is not None else []
+    num_values = len(out_types_list)
 
-    num_values = len(list(out_types)) if out_types is not None else 0
+    graph = Graph.current
 
-    results, out_chain, device_chains = (
+    with GraphBlock() as then_block:
+        then_block.output(*as_values(as_iterable(then_fn()), out_types_list))
+    with GraphBlock() as else_block:
+        else_block.output(*as_values(as_iterable(else_fn()), out_types_list))
+
+    # Both blocks are fully populated. Now create the mo.if op with them
+    # attached; verification runs normally and recursively re-verifies the
+    # yields against the real parent.
+    results = graph._add_op(
+        mo.if_,
+        pred,
+        then_block.output_types,
+        then_block=then_block.mlir_block,
+        else_block=else_block.mlir_block,
+    )
+
+    user_results, out_chain, device_chains = (
         results[:num_values],
         results[num_values],
         results[num_values + 1 :],
     )
 
-    def wrap_region_func(  # noqa: ANN202
-        user_func,  # noqa: ANN001
-    ):
-        # Capture the set of live devices before and after constructing the
-        # body region. If new per-device chains were introduced, merge them
-        # back into the global chain (guaranteed to exist).
-        def handle_chains(*args, **kwargs):  # noqa: ANN202
-            live_devices_on_entry = dict.fromkeys(Graph.current.device_chains)
+    graph._update_chain(out_chain)
+    for i, device in enumerate(graph.device_chains):
+        new_chain = device_chains[i]
+        assert isinstance(new_chain, _ChainValue)
+        graph.device_chains[device] = new_chain
 
-            results = user_func(*args, **kwargs)
-
-            live_devices_on_exit = tuple(Graph.current.device_chains)
-
-            for device in live_devices_on_exit:
-                if device in live_devices_on_entry:
-                    continue
-
-                # Merge this chain with the global chain
-                Graph.current._merge_chains(
-                    [
-                        Graph.current._current_chain,
-                        Graph.current.device_chains[device],
-                    ]
-                )
-
-                # Remove the new device chain from the map
-                del Graph.current.device_chains[device]
-
-            return results
-
-        return handle_chains
-
-    try:
-        Graph.current._build_block(
-            if_op.thenRegion.blocks[0],
-            wrap_region_func(then_fn),
-            mo.YieldOp,
-            "then_block",
-            out_types,
-        )
-
-        Graph.current._build_block(
-            if_op.elseRegion.blocks[0],
-            wrap_region_func(else_fn),
-            mo.YieldOp,
-            "else_block",
-            out_types,
-        )
-
-        Graph.current._update_chain(out_chain)
-        for i, device in enumerate(Graph.current.device_chains):
-            new_chain = device_chains[i]
-            assert isinstance(new_chain, _ChainValue)
-            Graph.current.device_chains[device] = new_chain
-
-        Graph.current._verify_op(if_op)
-        return results
-    except Exception as e:
-        if_op.erase()
-        raise e
+    return user_results
