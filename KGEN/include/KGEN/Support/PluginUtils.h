@@ -29,6 +29,9 @@ public:
 
   void *getHandle() const { return currHandle; }
 
+  bool isPluginForTarget(StringRef targetTriple) const;
+  bool isPluginForTarget(const llvm::Triple &targetTriple) const;
+
   /// Plugin API for create shared object file.
   using IsPluginForTargetFn = M::ErrorOr<bool> (*)(llvm::StringRef);
 
@@ -63,6 +66,8 @@ private:
 
   /// Plugin path.
   std::vector<std::string> soPaths;
+
+  bool isPluginForTarget(void *hdl, StringRef targetTriple) const;
 };
 
 } // namespace M::KGEN
