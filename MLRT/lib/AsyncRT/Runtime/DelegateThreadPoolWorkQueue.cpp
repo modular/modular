@@ -11,6 +11,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "MLRT/AsyncRT/Runtime/AnyAsyncValueRef.h"
+#include "MLRT/AsyncRT/Runtime/CompactRuntimePtr.h"
 #include "MLRT/AsyncRT/Runtime/WorkQueue.h"
 #include "MLRT/AsyncRT/Support/Semaphore.h"
 
@@ -34,10 +35,10 @@ struct WorkerIdMapping {
 /// per NUMA node), emulating a single unified queue.
 class DelegateThreadPoolWorkQueue : public WorkQueue {
 public:
-  explicit DelegateThreadPoolWorkQueue(
-      std::vector<std::unique_ptr<WorkQueue>> delegates);
+  DelegateThreadPoolWorkQueue(CompactCPUDevicePtr cpuDevicePtr,
+                              std::vector<WorkQueue *> delegates);
 
-  ~DelegateThreadPoolWorkQueue() override = default;
+  ~DelegateThreadPoolWorkQueue() override;
 
   void addTask(WorkItem &&work, int taskId = kDefaultTaskId) override;
 
@@ -45,8 +46,8 @@ public:
 
   void await(ArrayRef<AnyAsyncValueRef> values) override;
 
-  // Shuts down all delegates.
-  void shutdown() override;
+  // No-op, as delegate work queues are not owned.
+  void shutdown() override {}
 
   /// Returns the total parallelism across all delegates.
   size_t getParallelismLevel() const override { return totalParallelism; }
@@ -68,7 +69,7 @@ public:
   }
 
 private:
-  std::vector<std::unique_ptr<WorkQueue>> delegateWorkQueues;
+  std::vector<WorkQueue *> delegateWorkQueues;
   SmallVector<WorkerIdMapping> workerMappings;
   SmallVector<size_t> allCpuIds;
   size_t totalParallelism = 0;
@@ -76,7 +77,7 @@ private:
 };
 
 DelegateThreadPoolWorkQueue::DelegateThreadPoolWorkQueue(
-    std::vector<std::unique_ptr<WorkQueue>> delegates)
+    CompactCPUDevicePtr cpuDevicePtr, std::vector<WorkQueue *> delegates)
     : delegateWorkQueues(std::move(delegates)) {
   // Initialise the CPU ids, total parallelism and worker mappings for the
   // delegates.
@@ -89,6 +90,14 @@ DelegateThreadPoolWorkQueue::DelegateThreadPoolWorkQueue(
     for (size_t cpuId : q.getCpuIds())
       allCpuIds.push_back(cpuId);
   }
+
+  // Set the calling thread's TLS to the top-level global device.
+  CompactCPUDevicePtr::setCurrentCPUDevice(cpuDevicePtr);
+}
+
+DelegateThreadPoolWorkQueue::~DelegateThreadPoolWorkQueue() {
+  // Clear the calling thread's TLS pointer.
+  CompactCPUDevicePtr::setCurrentCPUDevice({});
 }
 
 void DelegateThreadPoolWorkQueue::addTask(WorkItem &&work, int taskId) {
@@ -148,17 +157,13 @@ void DelegateThreadPoolWorkQueue::await(ArrayRef<AnyAsyncValueRef> values) {
   sema.wait();
 }
 
-void DelegateThreadPoolWorkQueue::shutdown() {
-  for (auto &q : delegateWorkQueues)
-    q->shutdown();
-}
-
 } // namespace
 
 std::unique_ptr<WorkQueue> M::MLRT::createDelegateThreadPoolWorkQueue(
-    std::vector<std::unique_ptr<WorkQueue>> delegateWorkQueues) {
+    CompactCPUDevicePtr cpuDevicePtr,
+    std::vector<WorkQueue *> delegateWorkQueues) {
   assert(!delegateWorkQueues.empty() &&
          "DelegateThreadPoolWorkQueue requires at least one delegate");
   return std::make_unique<DelegateThreadPoolWorkQueue>(
-      std::move(delegateWorkQueues));
+      cpuDevicePtr, std::move(delegateWorkQueues));
 }

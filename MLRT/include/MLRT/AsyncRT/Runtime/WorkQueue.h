@@ -255,8 +255,9 @@ size_t getCurrentGlobalWorkerID();
 /// Creates a WorkQueue that delegates to a set of partitioned WorkQueues,
 /// emulating a single unified queue. Each delegate must be created with a
 /// mutually exclusive, contiguous range of global worker IDs.
-std::unique_ptr<WorkQueue> createDelegateThreadPoolWorkQueue(
-    std::vector<std::unique_ptr<WorkQueue>> delegates);
+std::unique_ptr<WorkQueue>
+createDelegateThreadPoolWorkQueue(CompactCPUDevicePtr cpuDevicePtr,
+                                  std::vector<WorkQueue *> delegates);
 
 } // namespace M::MLRT
 

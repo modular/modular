@@ -10,6 +10,7 @@
 
 #include "llvm/Support/ErrorHandling.h"
 
+#include <map>
 #include <mutex>
 #include <string>
 
@@ -36,31 +37,47 @@ CPUDeviceRef getOrCreateCPUDevice(CPUDeviceSource source,
   std::unique_ptr<Allocator> allocator =
       getAllocator(options.getAllocatorOptions());
   std::unique_ptr<WorkQueue> workQueue;
+  std::map<int, CPUDevice *> numaDevices;
+  CPUDeviceType topLevelType = CPUDeviceType::kGlobal;
   switch (options.workQueueType) {
   case CPUDeviceOptions::WorkQueueType::kSingleThread:
     workQueue = createSingleThreadWorkQueue(cpuDevicePtr);
     break;
   case CPUDeviceOptions::WorkQueueType::kThreadPool:
     if (options.numaPartitioned) {
-      // If NUMA partitioning is enabled create a partitioned work queue per
-      // NUMA node and create a delegate work queue owning them.
+      // For each NUMA node, create a separate CPUDevice with its own
+      // CompactCPUDevicePtr and partitioned ThreadPoolWorkQueue. The top-level
+      // CPUDevice owns these NUMA node partitioned devices; its
+      // DelegateThreadPoolWorkQueue has pointers to the delegate
+      // ThreadPoolWorkQueues.
       const ErrorOr<NUMATopology> &topologyOr = NUMATopology::get();
       if (topologyOr.isError())
         llvm::report_fatal_error(topologyOr.getError());
       const std::vector<int> &numaNodes = topologyOr->getNumaNodes();
-      std::vector<std::unique_ptr<WorkQueue>> partitions;
-      partitions.reserve(numaNodes.size());
+      std::vector<WorkQueue *> delegateWorkQueues;
+      delegateWorkQueues.reserve(numaNodes.size());
       size_t globalWorkerIdOffset = 0;
       auto busyWait = std::chrono::microseconds(options.threadBusyWaitTime);
       for (size_t i = 0; i < numaNodes.size(); ++i) {
         std::string partitionName =
             options.poolName + " (NUMA " + std::to_string(i) + ")";
-        partitions.push_back(createPartitionedThreadPoolWorkQueue(
-            cpuDevicePtr, numaNodes[i], busyWait, partitionName,
-            globalWorkerIdOffset));
-        globalWorkerIdOffset += partitions.back()->getParallelismLevel();
+        CompactCPUDevicePtr numaDevicePtr = CompactCPUDevicePtr::reserve();
+        std::unique_ptr<Allocator> partitionAllocator =
+            getAllocator(options.getAllocatorOptions());
+        std::unique_ptr<WorkQueue> partitionWorkQueue =
+            createPartitionedThreadPoolWorkQueue(numaDevicePtr, numaNodes[i],
+                                                 busyWait, partitionName,
+                                                 globalWorkerIdOffset);
+        globalWorkerIdOffset += partitionWorkQueue->getParallelismLevel();
+        delegateWorkQueues.push_back(partitionWorkQueue.get());
+        numaDevices[numaNodes[i]] =
+            new CPUDevice(numaDevicePtr, std::move(partitionAllocator),
+                          std::move(partitionWorkQueue), source,
+                          CPUDeviceType::kNUMAPartition, numaNodes[i]);
       }
-      workQueue = createDelegateThreadPoolWorkQueue(std::move(partitions));
+      workQueue = createDelegateThreadPoolWorkQueue(
+          cpuDevicePtr, std::move(delegateWorkQueues));
+      topLevelType = CPUDeviceType::kGlobalPartitioned;
     } else {
       workQueue = createThreadPoolWorkQueue(
           cpuDevicePtr, options.numThreads, options.maxThreads,
@@ -70,10 +87,11 @@ CPUDeviceRef getOrCreateCPUDevice(CPUDeviceSource source,
     }
     break;
   }
-  CPUDeviceRef newCPUDevice = CPUDeviceRef::take(new CPUDevice(
-      cpuDevicePtr, std::move(allocator), std::move(workQueue), source,
-      options.profileFilename, options.runtimeProfilingTypeMask,
-      options.profilerDebuginfo));
+  CPUDeviceRef newCPUDevice = CPUDeviceRef::take(
+      new CPUDevice(cpuDevicePtr, std::move(allocator), std::move(workQueue),
+                    source, topLevelType, kAnyNumaNode, options.profileFilename,
+                    options.runtimeProfilingTypeMask, options.profilerDebuginfo,
+                    std::move(numaDevices)));
 
   getStoredGlobalCPUDeviceCreationOptions() = options;
 

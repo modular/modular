@@ -66,13 +66,37 @@ CPUDevice *CPUDevice::getCurrentCPUDeviceOrNull() {
 CPUDevice::CPUDevice(CompactCPUDevicePtr cpuDevicePtr,
                      std::unique_ptr<Allocator> allocator,
                      std::unique_ptr<WorkQueue> workQueue,
-                     CPUDeviceSource source, StringRef profileFilename,
+                     CPUDeviceSource source, CPUDeviceType type, int numaNode,
+                     StringRef profileFilename,
                      uint64_t runtimeProfilingTypeMask,
-                     CPUDeviceOptions::ProfilerDebuginfo profilerDebuginfo)
+                     CPUDeviceOptions::ProfilerDebuginfo profilerDebuginfo,
+                     std::map<int, CPUDevice *> &&numaDevices)
     : signature(TypeID::getSignature() ^ CompactCPUDevicePtr::getSignature()),
       allocator(std::move(allocator)), workQueue(std::move(workQueue)),
       profilerDebuginfo(profilerDebuginfo), runtimeIndex(cpuDevicePtr.index),
-      source(source), readyChain(createReadyChain(*this)) {
+      source(source), type(type), numaNode(numaNode),
+      readyChain(createReadyChain(*this)), numaDevices(std::move(numaDevices)) {
+  switch (this->type) {
+  case CPUDeviceType::kGlobal:
+    assert(this->numaNode == kAnyNumaNode &&
+           "kGlobal CPUDevice must not have NUMA affinity");
+    assert(this->numaDevices.empty() &&
+           "kGlobal CPUDevice must not own NUMA sub-devices");
+    break;
+  case CPUDeviceType::kGlobalPartitioned:
+    assert(this->numaNode == kAnyNumaNode &&
+           "kGlobalPartitioned CPUDevice must not have NUMA affinity");
+    assert(!this->numaDevices.empty() &&
+           "kGlobalPartitioned CPUDevice must own at least one NUMA device");
+    break;
+  case CPUDeviceType::kNUMAPartition:
+    assert(this->numaNode != kAnyNumaNode &&
+           "kNUMAPartition CPUDevice must have a valid NUMA node");
+    assert(this->numaDevices.empty() &&
+           "kNUMAPartition CPUDevice must not own sub-partitions");
+    break;
+  }
+
   // Establish association of cpuDevice to cpuDevice index.
   Detail::CPUDeviceTable::getSingleton().setCPUDevice(cpuDevicePtr.index, this);
 
@@ -90,6 +114,12 @@ CPUDevice::~CPUDevice() {
   // off before invalidating the workQueue pointer.
   workQueue->shutdown();
 
+  // Delete owned NUMA sub-devices, each partition device's destructor shuts
+  // down its own work queue, draining all remaining work before this destructor
+  // continues.
+  for (auto &[node, device] : numaDevices)
+    CPUDeviceRef::take(device);
+
   // Remove association of cpuDevice to cpuDevice index.
   Detail::CPUDeviceTable::getSingleton().clearCPUDevice(runtimeIndex);
 
@@ -102,6 +132,17 @@ CPUDevice::~CPUDevice() {
     if (auto e = profiler->write("-"))
       llvm::report_fatal_error("unable to write time trace profile");
   }
+}
+
+ErrorOr<CPUDevice *> CPUDevice::getNumaDevice(int numaNode) const {
+  if (type != CPUDeviceType::kGlobalPartitioned)
+    return Error("Request NUMA node sub-device from non partitioned CPUDevice");
+
+  auto it = numaDevices.find(numaNode);
+  if (it != numaDevices.end())
+    return it->second;
+  else
+    return Error("Requested NUMA node device not found");
 }
 
 std::unique_ptr<Allocator> MLRT::getAllocator(const AllocatorOptions &options) {
