@@ -32,6 +32,12 @@ _SANITIZER_INCOMPATIBLE = select({
 # CI quickly while the underlying bug is investigated. It should normally be
 # empty — do not add files that merely produce diagnostics.
 _NO_RUN_LIST = [
+    # FIXME: MOCO-3977 - LSP bug: parsing paramfor_has_next triggers a
+    # recursive reference error ("attempt to resolve a recursive reference to
+    # declaration 'paramfor_has_next'"), causing cascade failures in all stdlib
+    # files that use comptime for.  Introduced by the trait_downcast_var
+    # removal in MOCO-3729.  Remove once the LSP parsing cycle is fixed.
+    "builtin/_stubs.mojo",
 ]
 
 # Files with known docstring example errors. These run against the LSP server
