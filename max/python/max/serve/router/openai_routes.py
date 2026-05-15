@@ -468,7 +468,9 @@ class OpenAIChatResponseGenerator(
                 )
             elif isinstance(e, ValueError):
                 status_code = 400
-                logger.exception("Exception in request %s", request.request_id)
+                logger.warning(
+                    "Value error in request %s: %s", request.request_id, str(e)
+                )
             else:
                 status_code = 500
                 logger.exception("Exception in request %s", request.request_id)
@@ -1292,7 +1294,7 @@ async def openai_create_chat_completion(
         )
         raise HTTPException(status_code=400, detail=str(e)) from e
     except ValueError as e:
-        logger.exception("ValueError in request %s", request_id)
+        logger.warning("Value error in request %s: %s", request_id, str(e))
         # NOTE(SI-722): These errors need to return more helpful details,
         # but we don't necessarily want to expose the full error description
         # to the user. There are many different ValueErrors that can be raised.
@@ -1479,7 +1481,7 @@ async def openai_create_embeddings(
         )
         raise HTTPException(status_code=400, detail=str(e)) from e
     except ValueError as e:
-        logger.exception("ValueError in request %s", request_id)
+        logger.warning("Value error in request %s: %s", request_id, str(e))
         # NOTE(SI-722): These errors need to return more helpful details,
         # but we don't necessarily want to expose the full error description
         # to the user. There are many different ValueErrors that can be raised.
@@ -1707,10 +1709,12 @@ class OpenAICompletionResponseGenerator(
                 content={"detail": "Input validation error", "message": str(e)},
             )
         except ValueError as e:
-            logger.exception("ValueError in request %s", request.request_id)
+            logger.warning(
+                "Value error in request %s: %s", request.request_id, str(e)
+            )
             # TODO (SI-722) - propagate better errors back.
             yield JSONResponse(
-                status_code=500,
+                status_code=400,
                 content={"detail": "Value error", "message": str(e)},
             )
         finally:
@@ -1962,7 +1966,7 @@ async def openai_create_completion(
         logger.exception("Validation error for request %s", http_req_id)
         raise HTTPException(status_code=400, detail="Invalid JSON.") from e
     except ValueError as e:
-        logger.exception("ValueError for request %s", http_req_id)
+        logger.warning("Value error in request %s: %s", http_req_id, str(e))
         # NOTE(SI-722): These errors need to return more helpful details,
         # but we don't necessarily want to expose the full error description
         # to the user. There are many different ValueErrors that can be raised.
@@ -2078,7 +2082,7 @@ async def create_streaming_audio_speech(
         )
         raise HTTPException(status_code=400, detail=str(e)) from e
     except ValueError as e:
-        logger.exception("ValueError in request %s", request_id)
+        logger.warning("Value error in request %s: %s", request_id, str(e))
         # NOTE(SI-722): These errors need to return more helpful details,
         # but we don't necessarily want to expose the full error description
         # to the user. There are many different ValueErrors that can be raised.
@@ -2153,7 +2157,7 @@ async def load_lora_adapter(
         logger.exception("Validation error in request %s", request_id)
         raise HTTPException(status_code=400, detail="Invalid JSON.") from e
     except ValueError as e:
-        logger.exception("ValueError in request %s", request_id)
+        logger.warning("Value error in request %s: %s", request_id, str(e))
         raise HTTPException(status_code=400, detail=str(e)) from e
     except HTTPException:
         raise
@@ -2221,7 +2225,7 @@ async def unload_lora_adapter(
         logger.exception("Validation error in request %s", request_id)
         raise HTTPException(status_code=400, detail="Invalid JSON.") from e
     except ValueError as e:
-        logger.exception("ValueError in request %s", request_id)
+        logger.warning("Value error in request %s: %s", request_id, str(e))
         raise HTTPException(status_code=400, detail=str(e)) from e
     except HTTPException:
         raise
