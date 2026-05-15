@@ -22,14 +22,17 @@ fi
 set_nvidia_gpu_config() {
   echo "set_nvidia_gpu_config: Setting NVidia GPU config".
 
-  nvidia-smi --auto-boost-permission=0
-  nvidia-smi -pm 1
-  nvidia-smi --auto-boost-default=0
-  nvidia-smi --auto-boost-permission=1
   nvidia-smi --persistence-mode=1
+  nvidia-smi --auto-boost-default=0
   nvidia-smi -acp 0
   for i in $(seq 0 $(( $(nvidia-smi -L | wc -l) - 1 ))); do
     nvidia-smi -ac "$(nvidia-smi --query-gpu=clocks.max.memory,clocks.max.sm --format=csv,noheader,nounits -i "$i" | sed 's/\ //')" -i "$i"
+
+    max_power_limit=$(nvidia-smi --query-gpu=power.max_limit --format=csv,noheader,nounits -i "$i")
+    nvidia-smi -pl "$max_power_limit" -i "$i"
+
+    max_vboost=$(nvidia-smi boost-slider --list -i "$i" | awk '/vboost/{print $4; exit}')
+    nvidia-smi boost-slider --vboost "$max_vboost" -i "$i"
   done
 }
 
