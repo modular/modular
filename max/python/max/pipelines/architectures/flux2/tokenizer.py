@@ -426,15 +426,31 @@ class Flux2Tokenizer(PixelGenerationTokenizer):
             request.body.seed,
         )
 
+        # Emit ``text_ids`` at the canonical padded length so the
+        # executor can left-pad the encoder output to match before the
+        # denoiser sees it. The Flux2 denoiser was trained with the
+        # full padded ``text_seq_len`` (typically 512) present in joint
+        # attention. Fall back to the token-buffer length if no
+        # ``max_length`` is configured.
+        text_seq_len = (
+            int(self.max_length)
+            if self.max_length is not None
+            else int(token_buffer.array.shape[0])
+        )
         text_ids = self._build_text_ids(
             image_specific.num_images,
-            int(token_buffer.array.shape[0]),
+            text_seq_len,
         )
         negative_text_ids: npt.NDArray[np.int64] = np.array([], dtype=np.int64)
         if negative_token_buffer is not None:
+            negative_text_seq_len = (
+                int(self.max_length)
+                if self.max_length is not None
+                else int(negative_token_buffer.array.shape[0])
+            )
             negative_text_ids = self._build_text_ids(
                 image_specific.num_images,
-                int(negative_token_buffer.array.shape[0]),
+                negative_text_seq_len,
             )
 
         return PixelContext(

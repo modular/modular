@@ -28,6 +28,7 @@ from max.profiler import traced
 # ModuleV2 imports only.
 from ...mistral3.text_encoder.mistral3 import Mistral3TextEncoderTransformer
 from ...mistral3.text_encoder.model_config import Mistral3TextEncoderConfig
+from ..arch import FLUX2_TEXT_SEQ_LEN
 
 
 class TextEncoder(CompiledComponent):
@@ -60,6 +61,8 @@ class TextEncoder(CompiledComponent):
         mistral_config = Mistral3TextEncoderConfig.initialize_from_config(
             config_dict, encoding, devices
         )
+        # Pad outputs to static sequence length expected by denoiser.
+        mistral_config.output_seq_len = FLUX2_TEXT_SEQ_LEN
 
         paths = config.resolved_weight_paths()
         weights = load_weights(paths)

@@ -23,6 +23,12 @@ from max.pipelines.lib.config import MAXModelConfig, PipelineConfig
 from max.pipelines.lib.interfaces import ArchConfig
 from typing_extensions import Self
 
+# Text sequence length for FLUX.2 pipelines.
+# Note: Text embeddings sent to the denoiser must be padded to this length even
+# when the given prompt(s) are shorter. The denoiser uses unmasked non-causal
+# attention and the padding tokens function as "registers" or "scratch pad".
+FLUX2_TEXT_SEQ_LEN: int = 512
+
 from .flux2_executor import Flux2Executor
 from .flux2_klein_executor import Flux2KleinExecutor
 from .tokenizer import Flux2Tokenizer
@@ -35,7 +41,7 @@ class Flux2ArchConfig(ArchConfig):
     pipeline_config: PipelineConfig
 
     def get_max_seq_len(self) -> int:
-        return 512
+        return FLUX2_TEXT_SEQ_LEN
 
     @classmethod
     def initialize(
