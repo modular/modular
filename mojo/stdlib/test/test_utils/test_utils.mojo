@@ -13,6 +13,7 @@
 """Provides general test utility functions for the Mojo standard library tests."""
 
 from std.ffi import external_call
+from std.python import ConvertibleToPython, PythonObject
 
 from std.builtin.simd import _simd_apply
 from std.testing import assert_equal, assert_true
@@ -107,3 +108,31 @@ def libm_call[
         return _simd_apply[_float32_dispatch, result_dtype=dtype](arg)
     else:
         return _simd_apply[_float64_dispatch, result_dtype=dtype](arg)
+
+
+def check_convertible_to_python(
+    var value: Some[ConvertibleToPython], expected: String
+) raises:
+    """Check that the value can be converted to a Python object and equals the expected string.
+
+    Args:
+        value: The value to check.
+        expected: The expected string representation of the Python object.
+
+    Raises:
+        Error: if the converted Python object does not equal `expected`.
+    """
+    assert_equal(String(value^.to_python_object()), expected)
+
+
+def check_python_object(var value: PythonObject, expected: String) raises:
+    """Check that the value can be converted to a Python object and equals the expected string.
+
+    Args:
+        value: The value to check.
+        expected: The expected string representation of the Python object.
+
+    Raises:
+        Error: if the converted Python object does not equal `expected`.
+    """
+    assert_equal(String(value), expected)

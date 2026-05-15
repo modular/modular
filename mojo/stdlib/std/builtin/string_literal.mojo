@@ -23,6 +23,7 @@ from std.collections.string.string_slice import (
 )
 from std.os import PathLike
 from std.ffi import c_char, CStringSlice
+from std.python import ConvertibleToPython, PythonObject
 
 # ===-----------------------------------------------------------------------===#
 # StringLiteral
@@ -261,6 +262,17 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
             A StaticString after merging with the specified `other_type`.
         """
         return self
+
+    def to_python_object(var self) raises -> PythonObject:
+        """Convert this value to a `PythonObject`.
+
+        Returns:
+            A PythonObject representing this value.
+
+        Raises:
+            If the Python runtime is not initialized or conversion fails.
+        """
+        return StringSlice(self).to_python_object()
 
     # ===-------------------------------------------------------------------===#
     # Methods
