@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import logging
 
-from max.kv_cache.memory_tier import MemoryTier
+from max.pipelines.kv_cache.memory_tier import MemoryTier
 from max.profiler import traced
 
 from .block_utils import FreeKVCacheBlockQueue, KVCacheBlock

@@ -52,13 +52,13 @@ from max.interfaces import (
     TextGenerationOutput,
     TextGenerationRequest,
 )
-from max.kv_cache import (
+from max.nn import ReturnLogits
+from max.nn.kv_cache import KVCacheParams, MultiKVCacheParams
+from max.pipelines.kv_cache import (
     IncrementCacheLengthsProcessor,
     PagedKVCacheManager,
     load_kv_manager,
 )
-from max.nn import ReturnLogits
-from max.nn.kv_cache import KVCacheParams, MultiKVCacheParams
 from max.profiler import Tracer, traced
 from max.support.algorithm import flatten2d
 

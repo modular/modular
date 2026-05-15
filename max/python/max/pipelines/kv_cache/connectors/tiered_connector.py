@@ -29,9 +29,9 @@ from dataclasses import dataclass
 
 from max.driver import Buffer, Device
 from max.dtype import DType
-from max.kv_cache.memory_tier import MemoryTier
 from max.nn.kv_cache import KVCacheParams
 from max.nn.kv_cache.metrics import KVCacheMetrics
+from max.pipelines.kv_cache.memory_tier import MemoryTier
 from max.profiler import Tracer, traced
 
 from ..paged_kv_cache.block_copy_engine import (
@@ -187,7 +187,6 @@ class TieredConnector:
         Returns:
             Number of blocks loaded from host cache.
         """
-
         host_cache = self._host_block_pool.hash_to_committed_block
         hits: list[_CacheHit] = []
         disk_reads = 0

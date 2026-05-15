@@ -22,8 +22,8 @@ import pytest
 from max.driver import Accelerator, Buffer, accelerator_count
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.kv_cache.connectors.tiered_connector import TieredConnector
 from max.nn.kv_cache import KVCacheBuffer, KVCacheParams, KVConnectorType
+from max.pipelines.kv_cache.connectors.tiered_connector import TieredConnector
 
 
 def create_tiered_connector(

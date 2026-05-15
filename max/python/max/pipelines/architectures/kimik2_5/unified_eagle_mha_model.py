@@ -36,9 +36,6 @@ from max.graph import (
     Value,
     ops,
 )
-from max.kv_cache.paged_kv_cache.increment_cache_lengths import (
-    increment_cache_lengths_from_counts,
-)
 from max.nn.comm import Signals
 from max.nn.kernels import eagle_prefill_shift_tokens
 from max.nn.kv_cache import (
@@ -53,6 +50,9 @@ from max.nn.sampling.rejection_sampler import (
     _reshape_target_logits,
 )
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
+from max.pipelines.kv_cache.paged_kv_cache.increment_cache_lengths import (
+    increment_cache_lengths_from_counts,
+)
 from max.pipelines.lib.config import SpeculativeConfig
 from max.pipelines.lib.speculative_decoding.ragged_token_merger import (
     RaggedTokenMerger,

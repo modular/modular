@@ -23,9 +23,9 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef
 from max.interfaces import BatchType, RequestID, TextGenerationInputs
-from max.kv_cache import PagedKVCacheManager
 from max.nn.kv_cache import KVCacheParams
 from max.pipelines.core import TextContext
+from max.pipelines.kv_cache import PagedKVCacheManager
 from max.serve.scheduler.batch_constructor.text_batch_constructor import (
     TextBatchConstructor,
 )

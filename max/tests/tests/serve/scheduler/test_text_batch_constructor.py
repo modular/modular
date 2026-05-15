@@ -23,8 +23,8 @@ from max.interfaces import (
     TextGenerationOutput,
     TokenBuffer,
 )
-from max.kv_cache import InsufficientBlocksError
 from max.pipelines.core import TextContext
+from max.pipelines.kv_cache import InsufficientBlocksError
 from max.serve.scheduler.batch_constructor.text_batch_constructor import (
     TextBatchConstructor,
 )

@@ -114,12 +114,14 @@ from max.interfaces import (
     TextGenerationRequest,
 )
 from max.interfaces.tokens import TokenBuffer
-from max.kv_cache import PagedKVCacheManager, load_multi_kv_managers
-from max.kv_cache.paged_kv_cache.cache_manager import _contiguous_prefix_2d
 from max.nn import kernels
 from max.nn.kv_cache import KVCacheInputs, KVCacheParams, MultiKVCacheParams
 from max.nn.transformer import ReturnLogits
 from max.pipelines.core import TextContext
+from max.pipelines.kv_cache import PagedKVCacheManager, load_multi_kv_managers
+from max.pipelines.kv_cache.paged_kv_cache.cache_manager import (
+    _contiguous_prefix_2d,
+)
 from max.pipelines.lib.speculative_decoding.ragged_token_merger import (
     shape_to_scalar,
 )

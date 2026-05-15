@@ -98,6 +98,19 @@ This version is still a work in progress.
 
 ## Breaking changes
 
+- KV cache management has moved from `max.kv_cache` to `max.pipelines.kv_cache`.
+  Update imports accordingly:
+
+  ```python
+  # Before
+  from max.kv_cache import PagedKVCacheManager, DummyKVCache
+
+  # After
+  from max.pipelines.kv_cache import PagedKVCacheManager, DummyKVCache
+  ```
+
+  Deprecation shims with `DeprecationWarning` remain at the old path.
+
 - GPU and CPU diagnostic tooling has moved from `max.diagnostics` to
   `max.profiler`: `max.diagnostics.gpu` → `max.profiler.gpu` and
   `max.diagnostics.cpu` → `max.profiler.cpu`. Update imports accordingly.

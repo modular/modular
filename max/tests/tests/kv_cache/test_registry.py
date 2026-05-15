@@ -20,9 +20,9 @@ from unittest.mock import MagicMock, Mock, patch
 import pytest
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.kv_cache import load_kv_manager
-from max.kv_cache.registry import load_multi_kv_managers
 from max.nn.kv_cache import KVCacheParams, MultiKVCacheParams
+from max.pipelines.kv_cache import load_kv_manager
+from max.pipelines.kv_cache.registry import load_multi_kv_managers
 
 
 def create_kv_params(
@@ -46,7 +46,7 @@ def create_kv_params(
 class TestLoadKvManager:
     """Tests for load_kv_manager function."""
 
-    @patch("max.kv_cache.registry.PagedKVCacheManager")
+    @patch("max.pipelines.kv_cache.registry.PagedKVCacheManager")
     def test_load_kv_manager_creates_manager(
         self, mock_paged_manager_cls: MagicMock
     ) -> None:
@@ -68,7 +68,7 @@ class TestLoadKvManager:
         assert result == mock_manager
         mock_paged_manager_cls.assert_called_once()
 
-    @patch("max.kv_cache.registry.PagedKVCacheManager")
+    @patch("max.pipelines.kv_cache.registry.PagedKVCacheManager")
     def test_load_kv_manager_passes_correct_params(
         self, mock_paged_manager_cls: MagicMock
     ) -> None:
@@ -121,7 +121,7 @@ class TestLoadKvManager:
                 available_cache_memory=1024 * 1024 * 1024,
             )
 
-    @patch("max.kv_cache.registry.PagedKVCacheManager")
+    @patch("max.pipelines.kv_cache.registry.PagedKVCacheManager")
     def test_load_kv_manager_rejects_invalid_page_size(
         self, mock_paged_manager_cls: MagicMock
     ) -> None:
@@ -150,7 +150,7 @@ class TestLoadKvManager:
 class TestLoadKvManagers:
     """Tests for load_kv_managers function (plural - supports MultiKVCacheParams)."""
 
-    @patch("max.kv_cache.registry.PagedKVCacheManager")
+    @patch("max.pipelines.kv_cache.registry.PagedKVCacheManager")
     def test_load_kv_managers_single_params(
         self, mock_paged_manager_cls: MagicMock
     ) -> None:
@@ -171,7 +171,7 @@ class TestLoadKvManagers:
 
         assert result == mock_manager
 
-    @patch("max.kv_cache.registry.PagedKVCacheManager")
+    @patch("max.pipelines.kv_cache.registry.PagedKVCacheManager")
     def test_load_kv_managers_multi_params(
         self, mock_paged_manager_cls: MagicMock
     ) -> None:
@@ -198,7 +198,7 @@ class TestLoadKvManagers:
         assert result[0] == mock_manager1
         assert result[1] == mock_manager2
 
-    @patch("max.kv_cache.registry.PagedKVCacheManager")
+    @patch("max.pipelines.kv_cache.registry.PagedKVCacheManager")
     def test_load_kv_managers_shares_total_pages(
         self, mock_paged_manager_cls: MagicMock
     ) -> None:
@@ -239,7 +239,7 @@ class TestLoadKvManagers:
                 available_cache_memory=1024 * 1024 * 1024,
             )
 
-    @patch("max.kv_cache.registry.PagedKVCacheManager")
+    @patch("max.pipelines.kv_cache.registry.PagedKVCacheManager")
     def test_load_kv_managers_nested_multi_params(
         self, mock_paged_manager_cls: MagicMock
     ) -> None:
@@ -267,7 +267,10 @@ class TestLoadKvManagers:
 class TestLoadKvManagerVirtualDevice:
     """Tests for virtual device mode behavior."""
 
-    @patch("max.kv_cache.registry.is_virtual_device_mode", return_value=True)
+    @patch(
+        "max.pipelines.kv_cache.registry.is_virtual_device_mode",
+        return_value=True,
+    )
     def test_load_kv_manager_returns_mock_in_virtual_mode(
         self, mock_is_virtual: MagicMock
     ) -> None:

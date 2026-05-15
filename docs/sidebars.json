@@ -371,17 +371,6 @@
         },
         {
           "type": "category",
-          "label": "max.kv_cache",
-          "link": {
-            "type": "doc",
-            "id": "max/api/python/kv_cache"
-          },
-          "items": [
-            "__AUTOGEN:max.kv_cache__"
-          ]
-        },
-        {
-          "type": "category",
           "label": "max.nn",
           "link": {
             "type": "doc",
@@ -433,6 +422,17 @@
           },
           "items": [
             "__AUTOGEN:max.pipelines__"
+          ]
+        },
+        {
+          "type": "category",
+          "label": "max.pipelines.kv_cache",
+          "link": {
+            "type": "doc",
+            "id": "max/api/python/pipelines.kv_cache"
+          },
+          "items": [
+            "__AUTOGEN:max.pipelines.kv_cache__"
           ]
         },
         {

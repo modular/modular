@@ -227,7 +227,8 @@ class DiskTier:
 
         Note that block hashes that have active in-flight writes are not eligible
         for cache hit from the disk tier. Instead, the caller should serve the cache
-        hit from the cpu tier instead."""
+        hit from the cpu tier instead.
+        """
         with self._lock:
             return block_hash in self._saved_hashes
 

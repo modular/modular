@@ -21,7 +21,6 @@ from max.driver import Accelerator, Buffer, accelerator_api
 from max.dtype import DType
 from max.engine.api import InferenceSession
 from max.graph import BufferType, DeviceRef, Graph, TensorType, ops
-from max.kv_cache import PagedKVCacheManager
 from max.nn.attention.multi_latent_attention import (
     DataParallelLatentAttentionWithRope,
 )
@@ -30,6 +29,7 @@ from max.nn.rotary_embedding import (
     DeepseekYarnRopeScalingParams,
     DeepseekYarnRotaryEmbedding,
 )
+from max.pipelines.kv_cache import PagedKVCacheManager
 from test_common.context_utils import create_text_context
 from torch.utils.dlpack import from_dlpack
 from torch_reference.configuration_deepseek import DeepseekV2Config

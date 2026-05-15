@@ -17,8 +17,8 @@ import pytest
 from max.driver import Accelerator, Buffer, accelerator_count
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.kv_cache.connectors.local_connector import LocalConnector
 from max.nn.kv_cache import KVCacheBuffer, KVCacheParams, KVConnectorType
+from max.pipelines.kv_cache.connectors.local_connector import LocalConnector
 
 
 def create_local_connector(

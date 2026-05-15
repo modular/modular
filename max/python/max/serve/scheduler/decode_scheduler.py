@@ -30,14 +30,14 @@ from max.interfaces import (
     TextGenerationOutput,
 )
 from max.interfaces.queue import drain_queue
-from max.kv_cache import (
+from max.pipelines.core import TextAndVisionContext, TextContext
+from max.pipelines.kv_cache import (
     InsufficientBlocksError,
     KVTransferEngine,
     KVTransferEngineMetadata,
     PagedKVCacheManager,
     TransferReqData,
 )
-from max.pipelines.core import TextAndVisionContext, TextContext
 from max.pipelines.lib import PipelineConfig, TextGenerationPipeline
 from max.profiler import Tracer, traced
 from max.serve.config import Settings

@@ -23,13 +23,13 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.experimental.torch import torch_dtype_to_max
 from max.graph import DeviceRef, Graph, TensorType, ops
-from max.kv_cache import PagedKVCacheManager
 from max.nn.kernels import masked_flash_attention_gpu
 from max.nn.kv_cache import KVCacheParams
 from max.nn.rotary_embedding import Llama3RotaryEmbedding
 from max.pipelines.architectures.qwen3.layers.attention import (
     Qwen3Attention as MaxQwen3Attention,
 )
+from max.pipelines.kv_cache import PagedKVCacheManager
 from test_common.context_utils import create_text_context
 from torch.utils.dlpack import from_dlpack
 from transformers.models.qwen3.configuration_qwen3 import Qwen3Config

@@ -145,10 +145,10 @@ def _parse_dkv_cache_hint(
 
     # Lazy import to avoid pulling dkv deps when dKV is not configured.
     from max._core import nixl
-    from max.kv_cache.connectors.dkv.connector import (
+    from max.pipelines.kv_cache.connectors.dkv.connector import (
         DKVExternalBlockMetadata,
     )
-    from max.kv_cache.paged_kv_cache.transfer_engine import (
+    from max.pipelines.kv_cache.paged_kv_cache.transfer_engine import (
         KVTransferEngineMetadata,
         TensorAgentMetadata,
     )

@@ -27,8 +27,8 @@ from max.interfaces import (
     TextGenerationOutput,
 )
 from max.interfaces.tokens import TokenBuffer
-from max.kv_cache import PagedKVCacheManager
 from max.pipelines.core import TextContext
+from max.pipelines.kv_cache import PagedKVCacheManager
 
 
 @dataclass

@@ -20,12 +20,12 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.experimental.torch import max_dtype_to_torch
 from max.graph import DeviceRef, Graph, TensorType, ops
-from max.kv_cache import PagedKVCacheManager
 from max.nn.kv_cache import KVCacheParams
 from max.nn.rotary_embedding import Llama3RotaryEmbedding
 from max.pipelines.architectures.olmo2.layers.attention import (
     Olmo2Attention as MaxOlmo2Attention,
 )
+from max.pipelines.kv_cache import PagedKVCacheManager
 from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
 from test_common.context_utils import create_text_context
 from torch.utils.dlpack import from_dlpack

@@ -1,0 +1,24 @@
+load("//bazel:api.bzl", "modular_py_library", "requirement")
+
+package(default_visibility = ["//max:consumers"])
+
+modular_py_library(
+    name = "kv_cache",
+    srcs = glob(["**/*.py"]),
+    deps = [
+        requirement("numpy"),
+        requirement("msgspec"),
+        "//max/python/max:_core",
+        "//max/python/max/_core_mojo",
+        "//max/python/max/_distributed_ops",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/interfaces",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/kv_cache/connectors/dkv",
+        "//max/python/max/profiler",
+        "//max/python/max/support",
+    ],
+)

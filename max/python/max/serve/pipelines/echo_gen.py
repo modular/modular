@@ -29,8 +29,8 @@ from max.interfaces import (
     TokenBuffer,
     TokenSlice,
 )
-from max.kv_cache import DummyKVCache, PagedKVCacheManager
 from max.pipelines.core import TextContext
+from max.pipelines.kv_cache import DummyKVCache, PagedKVCacheManager
 from max.pipelines.lib import build_eos_tracker_for_request
 
 

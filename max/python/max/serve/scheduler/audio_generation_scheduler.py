@@ -32,8 +32,8 @@ from max.interfaces import (
     SchedulerResult,
 )
 from max.interfaces.queue import drain_queue
-from max.kv_cache import PagedKVCacheManager
 from max.pipelines.core import TTSContext
+from max.pipelines.kv_cache import PagedKVCacheManager
 from max.pipelines.lib import LoRAManager
 from max.pipelines.lib.audio_generator_pipeline import (
     AudioGeneratorPipelineType,

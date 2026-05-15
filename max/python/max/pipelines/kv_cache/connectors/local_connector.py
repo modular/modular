@@ -23,9 +23,9 @@ from __future__ import annotations
 import logging
 
 from max.driver import Buffer
-from max.kv_cache.memory_tier import MemoryTier
 from max.nn.kv_cache import KVCacheParams
 from max.nn.kv_cache.metrics import KVCacheMetrics
+from max.pipelines.kv_cache.memory_tier import MemoryTier
 from max.profiler import traced
 
 from ..paged_kv_cache.block_copy_engine import BlockOffloadEngine

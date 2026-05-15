@@ -26,8 +26,6 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef
 from max.interfaces import RequestID, TextGenerationContext
-from max.kv_cache.kv_connector import KVConnector
-from max.kv_cache.memory_tier import MemoryTier
 from max.nn.kv_cache import (
     KVCacheBuffer,
     KVCacheInputs,
@@ -42,6 +40,8 @@ from max.nn.kv_cache.utils import (
     AttentionDispatchResolver,
     build_max_lengths_tensor,
 )
+from max.pipelines.kv_cache.kv_connector import KVConnector
+from max.pipelines.kv_cache.memory_tier import MemoryTier
 from max.profiler import traced
 from max.support.math import ceildiv
 

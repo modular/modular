@@ -19,7 +19,6 @@ from max.dtype import DType
 from max.engine.api import InferenceSession
 from max.graph import DeviceRef, Graph, Shape, TensorType, ops
 from max.graph.weights import WeightData
-from max.kv_cache import PagedKVCacheManager
 from max.nn import (
     InputScaleSpec,
     QuantConfig,
@@ -31,6 +30,7 @@ from max.nn.attention.attention_with_rope import AttentionWithRope
 from max.nn.kv_cache import KVCacheParams, PagedCacheValues
 from max.nn.quant_config import WeightScaleSpec
 from max.nn.rotary_embedding import RotaryEmbedding
+from max.pipelines.kv_cache import PagedKVCacheManager
 from test_common.context_utils import create_text_context
 
 

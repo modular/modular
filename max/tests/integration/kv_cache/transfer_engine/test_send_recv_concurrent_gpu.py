@@ -25,7 +25,7 @@ import time
 import numpy as np
 from max.driver import Accelerator
 from max.driver.buffer import Buffer
-from max.kv_cache import KVTransferEngine, TransferReqData
+from max.pipelines.kv_cache import KVTransferEngine, TransferReqData
 
 
 def transfer_routine_sender(

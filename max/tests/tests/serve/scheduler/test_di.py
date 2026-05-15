@@ -31,10 +31,12 @@ from max.interfaces import (
     TextGenerationOutput,
     TokenBuffer,
 )
-from max.kv_cache.paged_kv_cache.transfer_engine import KVTransferEngineMetadata
 from max.nn.kv_cache import KVConnectorType
 from max.pipelines.core import TextContext
 from max.pipelines.core.context import FUTURE_TOKEN
+from max.pipelines.kv_cache.paged_kv_cache.transfer_engine import (
+    KVTransferEngineMetadata,
+)
 from max.pipelines.lib import OverlapTextGenerationPipeline
 from max.pipelines.lib.config.speculative_config import SpeculativeConfig
 from max.pipelines.lib.pipeline_variants.utils import (

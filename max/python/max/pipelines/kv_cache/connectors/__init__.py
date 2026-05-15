@@ -25,9 +25,9 @@ import logging
 from collections.abc import Sequence
 
 from max.driver import Buffer, Device
-from max.kv_cache.kv_connector import KVConnector
 from max.nn.kv_cache import KVCacheParams
 from max.nn.kv_cache.cache_params import KVConnectorType
+from max.pipelines.kv_cache.kv_connector import KVConnector
 
 from .local_connector import LocalConnector
 from .null_connector import NullConnector

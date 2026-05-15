@@ -34,9 +34,9 @@ from max.interfaces import (
     TextGenerationContext,
     VLMTextGenerationContext,
 )
-from max.kv_cache.kv_connector import KVConnector
-from max.kv_cache.memory_tier import MemoryTier
 from max.nn.kv_cache.metrics import KVCacheMetrics
+from max.pipelines.kv_cache.kv_connector import KVConnector
+from max.pipelines.kv_cache.memory_tier import MemoryTier
 from max.profiler import traced
 from max.support.math import ceildiv
 

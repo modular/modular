@@ -30,11 +30,14 @@ from max.graph.weights import (
     weights_format,
 )
 from max.interfaces import PipelineTokenizer, RequestID, TextGenerationRequest
-from max.kv_cache import IncrementCacheLengthsProcessor, PagedKVCacheManager
-from max.kv_cache.registry import load_multi_kv_managers
 from max.nn.kv_cache import KVCacheParams, MultiKVCacheParams
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.core import TextContext
+from max.pipelines.kv_cache import (
+    IncrementCacheLengthsProcessor,
+    PagedKVCacheManager,
+)
+from max.pipelines.kv_cache.registry import load_multi_kv_managers
 from max.pipelines.lib.sampling import (
     RejectionRunner,
     SyntheticRunner,

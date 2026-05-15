@@ -1,15 +1,15 @@
-:title: max.kv_cache
+:title: max.pipelines.kv_cache
 :type: module
 :lang: python
 :wrapper_class: rst-module-autosummary
 
-max.kv_cache
-============
+max.pipelines.kv_cache
+======================
 
-.. automodule:: max.kv_cache
+.. automodule:: max.pipelines.kv_cache
    :no-members:
 
-.. currentmodule:: max.kv_cache
+.. currentmodule:: max.pipelines.kv_cache
 
 Cache manager
 -------------
@@ -20,6 +20,7 @@ Cache manager
    :template: autosummary/class.rst
 
    DummyKVCache
+   IncrementCacheLengthsProcessor
    InsufficientBlocksError
    PagedKVCacheManager
 

@@ -21,7 +21,9 @@ can connect to a decode worker at (DP=m*n, TP=1).
 from __future__ import annotations
 
 import pytest
-from max.kv_cache.paged_kv_cache.transfer_engine import resolve_peer_view
+from max.pipelines.kv_cache.paged_kv_cache.transfer_engine import (
+    resolve_peer_view,
+)
 
 
 @pytest.mark.parametrize(
