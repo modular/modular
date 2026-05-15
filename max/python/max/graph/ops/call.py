@@ -103,19 +103,19 @@ def call(graph: Graph, *args: Value[Any], prefix: str = "") -> list[Value[Any]]:
             f"\n    {graph.name}{tuple(input_types)}"
         )
 
-    # Collect all device chains (including the host chain at
-    # ``DeviceRef.CPU()``) into the call args and output type.
+    # Plumb chains through the call: the callee declared a specific set of
+    # device chains in its signature, so we pull the corresponding chain
+    # values from the caller's ``device_chains`` and add matching chain
+    # result types. Caller's and callee's chain sets may differ, so we
+    # can't use ``device_chains.pack``/``unpack`` here.
     chain_devices: tuple[DeviceRef, ...] = ()
-    chain_args: list[_ChainValue] = []
     if graph._has_chain_input:
         chain_devices = tuple(graph.device_chains)
-        chain_args = [
+        call_args.extend(
             current_graph.device_chains[device] for device in chain_devices
-        ]
-        output_types.extend(_ChainType() for _ in chain_args)
-        call_args.extend(chain_args)
+        )
+        output_types.extend(_ChainType() for _ in chain_devices)
 
-    # Add a call operation to the current graph
     call_results = current_graph._add_op(
         mo.call_,
         callee=graph.name,
@@ -124,16 +124,13 @@ def call(graph: Graph, *args: Value[Any], prefix: str = "") -> list[Value[Any]]:
         prefix=prefix,
     )
 
-    chain_result_count = len(chain_args)
-    if not chain_result_count:
+    if not chain_devices:
         return call_results
 
-    # Update the device chains.
-    chain_results = call_results[-chain_result_count:]
-    current_graph.device_chains.update(
-        (device, _ChainValue(chain_value))
-        for device, chain_value in zip(
-            chain_devices, chain_results, strict=True
-        )
-    )
-    return call_results[:-chain_result_count]
+    chain_count = len(chain_devices)
+    for device, chain in zip(
+        chain_devices, call_results[-chain_count:], strict=True
+    ):
+        assert isinstance(chain, _ChainValue)
+        current_graph.device_chains[device] = chain
+    return call_results[:-chain_count]

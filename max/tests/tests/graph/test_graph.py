@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 """Test the max.graph Python bindings."""
 
-import re
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from unittest import mock
@@ -23,7 +22,7 @@ from hypothesis import assume, given
 from hypothesis import strategies as st
 from max import mlir
 from max.dtype import DType
-from max.graph import BufferType, DeviceRef, Graph, TensorType, TensorValue, ops
+from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
 from max.graph.graph import _location
 from max.mlir.dialects import rmo
 
@@ -185,54 +184,3 @@ def test_load_from_file() -> None:
     assert isinstance(loaded_graph._mlir_op, mlir.Operation | mlir.OpView) and (
         str(loaded_graph) == str(graph)
     )
-
-
-def test_parfor() -> None:
-    buffer_type = BufferType(DType.int64, [1], device=DeviceRef.CPU())
-    tensor_type = TensorType(DType.int64, [1], device=DeviceRef.CPU())
-
-    with Graph(
-        "test_parfor",
-        input_types=[tensor_type, buffer_type, buffer_type, buffer_type],
-    ) as graph:
-        tensor, *buffers = graph.inputs
-
-        with Graph._async_region() as parallel:
-            for buffer in parallel.each(buffers):
-                ops.buffer_store(buffer.buffer, tensor.tensor)
-
-        graph.output()
-
-    # There should be a 3 operand mo.chain.create merging the 3 buffer store
-    # chains.
-    matches = re.findall(
-        r"mo\.chain\.create\([^,)]+,[^,)]+,[^,)]+\)", str(graph), re.MULTILINE
-    )
-    assert matches
-
-
-def test_fork_join() -> None:
-    buffer_type = BufferType(DType.int64, [1], device=DeviceRef.CPU())
-    tensor_type = TensorType(DType.int64, [1], device=DeviceRef.CPU())
-
-    with Graph(
-        "test_fork_join",
-        input_types=[tensor_type, buffer_type, buffer_type, buffer_type],
-    ) as graph:
-        tensor, *buffers = graph.inputs
-
-        with Graph._async_region() as parallel:
-            for buffer in buffers[:-1]:
-                with parallel:
-                    ops.buffer_store(buffer, tensor)  # type: ignore
-
-            ops.buffer_store(buffers[-1], tensor)  # type: ignore
-
-        graph.output()
-
-    # There should be a 3 operand mo.chain.create merging the 3 buffer store
-    # chains.
-    matches = re.findall(
-        r"mo\.chain\.create\([^,)]+,[^,)]+,[^,)]+\)", str(graph), re.MULTILINE
-    )
-    assert matches

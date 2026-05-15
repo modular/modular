@@ -19,7 +19,7 @@ from collections.abc import Iterable
 from max._core.dialects import mo
 
 from ..graph import Graph
-from ..type import DeviceRef, _ChainType
+from ..type import _ChainType
 from ..value import BufferValue, BufferValueLike, TensorValue, TensorValueLike
 from .parallel import parallel
 from .utils import _buffer_values, _tensor_values
@@ -53,12 +53,7 @@ def sum(
     devices = [inp.device for inp in inputs]
     graph = Graph.current
 
-    in_chain = graph._merge_chains(
-        [
-            graph.device_chains[DeviceRef.CPU()],
-            *(graph.device_chains[d] for d in devices),
-        ]
-    )
+    in_chain = graph.device_chains.merge_for(devices)
 
     input_types = [inp.type for inp in inputs]
 

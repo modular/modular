@@ -21,7 +21,8 @@ from max._core import Value as _Value
 from max.mlir.dialects import mo
 
 from ..graph import Graph, GraphBlock
-from ..value import BufferValue, TensorValue, Value, _ChainValue
+from ..type import DeviceRef
+from ..value import BufferValue, TensorValue, Value
 from .support import as_iterable, as_values
 
 
@@ -111,14 +112,13 @@ def while_loop(
             "Buffer operations are currently not supported in while loops"
         )
 
-    num_initial_values = len(initial_values)
     graph = Graph.current
 
     # Loop-carried values are: the user's initial values, then the per-device
     # chains (including the host chain at ``DeviceRef.CPU()``). The same
     # shape is what the cond/body blocks receive as block arguments and what
     # they yield.
-    carried = [*initial_values, *graph.device_chains.ordered_values()]
+    carried = graph.device_chains.pack(initial_values)
     carried_types = [v.type for v in carried]
 
     def adopt_block_args(args: Iterable[Any]) -> list[Value[Any]]:
@@ -127,15 +127,7 @@ def while_loop(
         Returns the user-visible loop variables.
         """
         all_args = [Value.from_mlir(_Value._from_cmlir(a)) for a in args]
-        loop_vars = all_args[:num_initial_values]
-        device_chains = all_args[num_initial_values:]
-        assert len(device_chains) == len(graph.device_chains)
-
-        for i, device in enumerate(graph.device_chains):
-            new_chain = device_chains[i]
-            assert isinstance(new_chain, _ChainValue)
-            graph.device_chains[device] = new_chain
-        return loop_vars
+        return graph.device_chains.unpack(all_args)
 
     def while_condition_terminator(args: list[Any]):  # noqa: ANN202
         """Build ``mo.while.condition`` from a flat ``[cond, *yielded]`` arg list.
@@ -147,7 +139,14 @@ def while_loop(
         condition, *yielded = args
         return mo.WhileConditionOp(condition, yielded)
 
+    def fold_new_chains(live_on_entry: set[DeviceRef]) -> None:
+        new_devices = set(graph.device_chains) - live_on_entry
+        graph.device_chains.merge_for(new_devices)
+        for device in new_devices:
+            del graph.device_chains[device]
+
     with GraphBlock(arg_types=carried_types) as pred_block:
+        live_on_entry = set(graph.device_chains)
         loop_vars = adopt_block_args(pred_block.arguments)
         condition = predicate(*loop_vars)
         if not condition.device.is_cpu():
@@ -156,16 +155,21 @@ def while_loop(
                 f" but got a tensor on {condition.device}. Transfer it"
                 " explicitly with `ops.transfer_to(pred, CPU())`."
             )
+        fold_new_chains(live_on_entry)
         pred_block.output(
-            condition, *loop_vars, terminator=while_condition_terminator
+            *graph.device_chains.pack([condition, *loop_vars]),
+            terminator=while_condition_terminator,
         )
 
     user_carry_types = [v.type for v in initial_values]
     with GraphBlock(arg_types=carried_types) as body_block:
+        live_on_entry = set(graph.device_chains)
         loop_vars = adopt_block_args(body_block.arguments)
-        body_block.output(
-            *as_values(as_iterable(body(*loop_vars)), user_carry_types)
+        body_results = as_values(
+            as_iterable(body(*loop_vars)), user_carry_types
         )
+        fold_new_chains(live_on_entry)
+        body_block.output(*graph.device_chains.pack(body_results))
 
     # The body's output types are what mo.while yields (loop vars + chains);
     # the condition block's first operand is the bool, so its output_types
@@ -177,12 +181,4 @@ def while_loop(
         cond_block=pred_block.mlir_block,
         body_block=body_block.mlir_block,
     )
-
-    user_results = results[:num_initial_values]
-    device_chains = results[num_initial_values:]
-    for i, device in enumerate(graph.device_chains):
-        new_chain = device_chains[i]
-        assert isinstance(new_chain, _ChainValue)
-        graph.device_chains[device] = new_chain
-
-    return user_results
+    return graph.device_chains.unpack(results)

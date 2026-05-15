@@ -21,7 +21,7 @@ from max.mlir.dialects import mo
 
 from ..graph import Graph, GraphBlock
 from ..type import Type
-from ..value import TensorValue, TensorValueLike, Value, _ChainValue
+from ..value import TensorValue, TensorValueLike, Value
 from .support import as_iterable, as_values
 
 
@@ -140,14 +140,26 @@ def cond(
         )
 
     out_types_list = list(out_types) if out_types is not None else []
-    num_values = len(out_types_list)
 
     graph = Graph.current
 
+    def _build_branch(block: GraphBlock, fn: Callable[..., Any]) -> None:
+        # Snapshot the device set on entry so we can detect new device
+        # chains introduced inside the branch and fold them into the host
+        # chain before yielding — otherwise the yield's chain count would
+        # exceed what the surrounding scope expects.
+        live_on_entry = set(graph.device_chains)
+        results = as_values(as_iterable(fn()), out_types_list)
+        new_devices = set(graph.device_chains) - live_on_entry
+        graph.device_chains.merge_for(new_devices)
+        for device in new_devices:
+            del graph.device_chains[device]
+        block.output(*graph.device_chains.pack(results))
+
     with GraphBlock() as then_block:
-        then_block.output(*as_values(as_iterable(then_fn()), out_types_list))
+        _build_branch(then_block, then_fn)
     with GraphBlock() as else_block:
-        else_block.output(*as_values(as_iterable(else_fn()), out_types_list))
+        _build_branch(else_block, else_fn)
 
     # Both blocks are fully populated. Now create the mo.if op with them
     # attached; verification runs normally and recursively re-verifies the
@@ -160,11 +172,4 @@ def cond(
         else_block=else_block.mlir_block,
     )
 
-    user_results = results[:num_values]
-    device_chains = results[num_values:]
-    for i, device in enumerate(graph.device_chains):
-        new_chain = device_chains[i]
-        assert isinstance(new_chain, _ChainValue)
-        graph.device_chains[device] = new_chain
-
-    return user_results
+    return graph.device_chains.unpack(results)

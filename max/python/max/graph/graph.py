@@ -117,22 +117,62 @@ class _DeviceChainMap(OrderedDict[DeviceRef, _ChainValue]):
         for device in self:
             yield self._value(device)
 
+    def pack(self, values: Iterable[Any] = ()) -> list[Any]:
+        """Append the current chain state to ``values``.
+
+        Returns ``[*values, *self.ordered_values()]`` — useful for bundling
+        user values with the chain state for control-flow op operands /
+        block-arg signatures / terminator operands.
+        """
+        return [*values, *self.ordered_values()]
+
+    def unpack(self, values: Sequence[Any]) -> list[Any]:
+        """Take trailing chain values off ``values`` and return user values.
+
+        Inverse of :meth:`pack`: assumes the last ``len(self)`` entries of
+        ``values`` are chain values in the same order as iteration over
+        ``self``, assigns them back to ``self[device]``, and returns the
+        rest. Side-effecting on ``self``.
+        """
+        chain_count = len(self)
+        user_values = list(values[:-chain_count] if chain_count else values)
+        chain_values = values[-chain_count:] if chain_count else ()
+        for device, chain in zip(self, chain_values, strict=True):
+            assert isinstance(chain, _ChainValue)
+            self[device] = chain
+        return user_values
+
+    def merge_for(self, devices: Iterable[DeviceRef]) -> _ChainValue:
+        """Merge the host chain and per-device chains for ``devices`` into one.
+
+        Multi-device collective ops need a single combined input chain that
+        depends on the host orchestration chain and on each participating
+        device's compute chain. This emits the ``mo.chain.create`` that
+        combines them, updates the host chain to the merged result, and
+        returns it.
+
+        Duplicates are removed (e.g., if ``DeviceRef.CPU()`` appears in
+        ``devices``, the host chain isn't listed twice).
+        """
+        keys = list(dict.fromkeys((DeviceRef.CPU(), *devices)))
+        chains = [self[device] for device in keys]
+        unique_chains = list(dict.fromkeys(chains))
+
+        if len(unique_chains) == 1:
+            [chain] = unique_chains
+            assert chain == self[DeviceRef.CPU()]
+            return chain
+
+        merged = self._graph._add_op(mo.chain_create, unique_chains)[0]
+        assert isinstance(merged, _ChainValue)
+        self[DeviceRef.CPU()] = merged
+        return merged
+
     def copy(self) -> _DeviceChainMap:
         result = _DeviceChainMap(self._graph)
         for device in self:
             result[device] = self._value(device)
         return result
-
-    def _merge_chains(self, others: Sequence[_DeviceChainMap]) -> None:
-        for device in self:
-            # Collect all chains for this device
-            chains = [self[device]] + [other[device] for other in others]
-            # Unique them
-            chains = list(dict.fromkeys(chains).keys())
-            # Create the new chain
-            chain = self._graph._add_op(mo.chain_create, chains)[0]
-            assert isinstance(chain, _ChainValue)
-            self[device] = chain
 
     def __repr__(self) -> str:
         items = ", ".join(f"{device}: {self._value(device)}" for device in self)
@@ -599,30 +639,23 @@ class Graph:
         self._has_chain_input = False
         self.device_chains = _DeviceChainMap(self)
 
-        host_chain: _ChainValue | None = None
-        if self._graph_body.arguments:
-            mlir_maybe_chain_value = _Value._from_cmlir(
-                self._graph_body.arguments[-1]
-            )
-            if _is_chain_value(mlir_maybe_chain_value):
-                self._has_chain_input = True
-                host_chain = _ChainValue.from_mlir(mlir_maybe_chain_value)
-
         # Create an always-ready chain that is never advanced by the graph.
         # Use it for operations that are safe to schedule without per-device
         # ordering constraints (e.g., host→device transfers for staging).
         self._always_ready_chain = _ChainValue(
             self._add_op(mo.chain_create, [])[0]
         )
+        self._update_chain(self._always_ready_chain)
 
-        if host_chain is None:
-            # Start the graph's host chain from the always-ready chain by
-            # default; the always-ready chain itself remains immutable.
-            host_chain = self._always_ready_chain
-
-        # Pre-populate the host chain so subsequent `device_chains[other_device]`
-        # lookups can seed from it without recursion.
-        self.device_chains[DeviceRef.CPU()] = host_chain
+        if self._graph_body.arguments:
+            mlir_maybe_chain_value = _Value._from_cmlir(
+                self._graph_body.arguments[-1]
+            )
+            if _is_chain_value(mlir_maybe_chain_value):
+                self._has_chain_input = True
+                self._update_chain(
+                    _ChainValue.from_mlir(mlir_maybe_chain_value)
+                )
 
         # Initialize the kernel library and load custom extensions paths.
         self._kernel_library = kernel_library or KernelLibrary()
@@ -774,16 +807,6 @@ class Graph:
     def _update_chain(self, new_chain: _ChainValue) -> None:
         self.device_chains[DeviceRef.CPU()] = new_chain
 
-    def _merge_chains(self, chains: Sequence[_ChainValue]) -> _ChainValue:
-        unique_chains = list(dict.fromkeys(chains))
-        if len(unique_chains) == 1:
-            return unique_chains[0]
-
-        chain = self._add_op(mo.chain_create, unique_chains)[0]
-        assert isinstance(chain, _ChainValue)
-        self.device_chains[DeviceRef.CPU()] = chain
-        return chain
-
     def _add_chain_block_arg(self) -> _ChainValue:
         """Add a new chain as a graph block argument."""
         with _location() as loc:
@@ -803,65 +826,6 @@ class Graph:
         per-device ordering (for example, host→device transfers for staging).
         """
         return self._always_ready_chain
-
-    @staticmethod
-    @contextlib.contextmanager
-    def _async_region():  # noqa: ANN205
-        """Create a region of the graph with tasks guaranteed to execute independently.
-
-        Overrides the implicit chaining of the graph to allow for asynchronous
-        execution of operations which might mutate state.
-
-        Returns:
-            A context manager which can be used to denote task boundaries.
-
-        .. code-block:: python
-
-            with Graph._async_region() as task:
-                with task():
-                    ops.buffer_store(buffer1, tensor)
-
-                with task():
-                    ops.buffer_store(buffer2, tensor)
-        """
-        old_host_chain = Graph.current.device_chains[DeviceRef.CPU()]
-        old_device_chains = Graph.current.device_chains.copy()
-        new_host_chains: list[_ChainValue] = []
-        new_device_chains: list[_DeviceChainMap] = []
-
-        class Async:
-            def __enter__(self):
-                Graph.current.device_chains = old_device_chains.copy()
-                return self
-
-            def __exit__(self, *exc):
-                new_host_chains.append(
-                    Graph.current.device_chains[DeviceRef.CPU()]
-                )
-                new_device_chains.append(Graph.current.device_chains.copy())
-                Graph.current.device_chains = old_device_chains.copy()
-
-            def __call__(self):
-                return self
-
-            def each(self, vals: Iterable[T]) -> Generator[T]:
-                for val in vals:
-                    with self:
-                        yield val
-
-        try:
-            yield Async()
-        finally:
-            current_host = Graph.current.device_chains[DeviceRef.CPU()]
-            if (
-                current_host not in new_host_chains
-                and current_host != old_host_chain
-            ):
-                new_host_chains.append(current_host)
-
-            if new_host_chains:
-                Graph.current._merge_chains(new_host_chains)
-                Graph.current.device_chains._merge_chains(new_device_chains)
 
     def __enter__(self) -> Graph:
         self._context_state.append(state := self._enter())
@@ -1140,8 +1104,7 @@ class Graph:
                 )
 
             _ = self._add_op(
-                block_terminator_op,
-                [*results, *self.device_chains.ordered_values()],
+                block_terminator_op, self.device_chains.pack(results)
             )
 
     def output(self, *outputs: Value[Any] | TensorValueLike) -> None:
@@ -1177,12 +1140,10 @@ class Graph:
         outputs = cast(tuple[Value[Any], ...], outputs)
         # mo.output doesn't support infer_type
         graph_body_args = self._graph_body.arguments
-        mlir_values: list[_Value[Any]] = [o._mlir_value for o in outputs]
+        output_values: list[Value[Any]] = list(outputs)
         if self._has_chain_input:
-            mlir_values.extend(
-                self.device_chains[device]._mlir_value
-                for device in self.device_chains
-            )
+            output_values = self.device_chains.pack(output_values)
+        mlir_values: list[_Value[Any]] = [v._mlir_value for v in output_values]
 
         # We have a type mismatch now, these are MLIR types
         # Convert from max._core.Type to mlir.Type using CAPI bridge
@@ -1436,7 +1397,6 @@ class GraphBlock:
         self._block_ctx: (
             contextlib.AbstractContextManager[mlir.Block] | None
         ) = None
-        self._live_devices_on_entry: dict[DeviceRef, None] = {}
 
     @property
     def mlir_block(self) -> mlir.Block:
@@ -1457,10 +1417,7 @@ class GraphBlock:
         """Types of the values yielded by this block's terminator.
 
         Reads from the block's last op. Available after :meth:`output` has
-        been called. Callers wiring up the enclosing control-flow op can
-        use this directly as that op's result types — it already includes
-        the global chain and per-device chain types alongside the
-        user-visible outputs.
+        been called.
         """
         operations = self._mlir_block.operations
         if not operations:
@@ -1474,11 +1431,6 @@ class GraphBlock:
     def __enter__(self) -> GraphBlock:
         self._block_ctx = self._graph._block(self._mlir_block)
         self._block_ctx.__enter__()
-        # Snapshot the set of devices with live chains at the moment we
-        # enter the block. `output()` uses this to detect *new* device
-        # chains introduced inside the block (so it can fold them into the
-        # global chain before yielding).
-        self._live_devices_on_entry = dict.fromkeys(self._graph.device_chains)
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb) -> bool | None:  # noqa: ANN001
@@ -1492,11 +1444,12 @@ class GraphBlock:
         *values: Value[Any] | TensorValueLike,
         terminator: Callable[..., Any] = mo.YieldOp,
     ) -> None:
-        """Terminate this block, yielding ``values`` plus the active chain state.
+        """Terminate this block by emitting ``terminator(*values)``.
 
-        Folds any per-device chains introduced inside the block into the
-        global chain before emitting the terminator, so the yielded chain
-        count matches the device-chain layout of the surrounding scope.
+        Bare emit — no chain plumbing. Callers that need to bundle device
+        chain operands into the yield (control-flow ops like ``mo.if`` /
+        ``mo.while``) should do so explicitly via
+        :meth:`~_DeviceChainMap.pack` before calling :meth:`output`.
 
         ``terminator`` defaults to ``mo.YieldOp``. Pass a different
         terminator (or an adapter callable) when the block's owning op
@@ -1510,21 +1463,5 @@ class GraphBlock:
         surrounding control-flow op (e.g., ``mo.if``) is created.
         """
         graph = self._graph
-        # Fold new per-device chains back into the host chain so the yield's
-        # chain count matches what the surrounding scope expects.
-        for device in tuple(graph.device_chains):
-            if device in self._live_devices_on_entry:
-                continue
-            graph._merge_chains(
-                [
-                    graph.device_chains[DeviceRef.CPU()],
-                    graph.device_chains[device],
-                ]
-            )
-            del graph.device_chains[device]
-
         with graph._pause_verification():
-            graph._add_op(
-                terminator,
-                [*values, *graph.device_chains.ordered_values()],
-            )
+            graph._add_op(terminator, list(values))
