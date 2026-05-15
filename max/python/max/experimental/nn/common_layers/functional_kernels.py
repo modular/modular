@@ -26,6 +26,8 @@ from max.experimental.sharding import (
     Replicated,
     Sharded,
 )
+from max.experimental.sharding.rules import RuleSignature
+from max.experimental.sharding.types import TensorLayout
 from max.experimental.tensor import Tensor
 from max.graph import TensorValue, ops
 from max.nn.kernels import (
@@ -40,10 +42,49 @@ from max.nn.kernels import (
     rope_split_store_ragged as _rope_split_store_ragged,
 )
 
-grouped_matmul_ragged = F.functional(_grouped_matmul_ragged)
-moe_create_indices = F.functional(_moe_create_indices)
+# Define placement for independent tensors, representing a bundle of tensors
+# on different devices, with the same shape and dtype, but will not have the
+# same values.
+# This placement uses "replicated" operation semantics, but they are not really
+# replicated.
+Independent = Replicated
+
+
+def grouped_matmul_ragged_rule(
+    hidden_states: TensorLayout,
+    weight: TensorLayout,
+    expert_start_indices: TensorLayout,
+    expert_ids: TensorLayout,
+    expert_usage_stats_host: TensorLayout,
+) -> RuleSignature:
+    return (
+        (
+            hidden_states,
+            weight,
+            expert_start_indices,
+            expert_ids,
+            expert_usage_stats_host,
+        ),
+        (weight.mapping,),
+    )
+
+
+grouped_matmul_ragged = F.functional(
+    _grouped_matmul_ragged, rule=grouped_matmul_ragged_rule
+)
+
+
+def _moe_create_indices_rule(lhs: TensorLayout, *args: object) -> RuleSignature:
+    mesh = lhs.mapping.mesh
+    return ((lhs, *args), (PlacementMapping(mesh, (Independent(),)),))
+
+
+moe_create_indices = F.functional(
+    _moe_create_indices, rule=_moe_create_indices_rule
+)
 
 inplace_custom = F.functional(ops.inplace_custom)
+shard_and_stack = F.functional(ops.shard_and_stack)
 
 
 # ─── KVCache Operations ─────────────────────────────────────
@@ -59,7 +100,7 @@ def _wrap_kvcache_op(
         op: The underlying kernel function.
         output_sharded_axis: If set, the output tensor's axis that is
             sharded across devices (e.g. 1 for column-parallel QKV).
-            If ``None``, the output uses a Replicated placement.
+            If ``None``, the output uses a Independent placement.
     """
 
     @functools.wraps(op)
@@ -76,7 +117,7 @@ def _wrap_kvcache_op(
             if output_sharded_axis is not None:
                 placements = (Sharded(output_sharded_axis),)
             else:
-                placements = (Replicated(),)
+                placements = (Independent(),)
             return Tensor.from_shard_values(
                 results, PlacementMapping(mesh, placements)
             )
