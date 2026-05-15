@@ -44,6 +44,11 @@ This version is still a work in progress.
   setter. This eliminates a class of bugs determining the effective element
   type.
 
+- Implicit `std` imports are now an error, following a period of deprecation.
+  Imports from the standard library must now be fully qualified. The compiler
+  thus no longer squats on these module names, paving the way for user modules
+  named `algorithm`, `memory`, etc.
+
 ## Library changes
 
 - `Coord`, `coord()`, `Idx`, `ComptimeInt`, `RuntimeInt`, and related coordinate
