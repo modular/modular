@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 import numpy as np
 import pytest
@@ -32,6 +32,7 @@ from max.pipelines.lib.pipeline_variants.overlap_text_generation import (
     _MAX_GRAPH_CAPTURE_BATCH_SIZE,
     AsyncBatch,
 )
+from max.pipelines.lib.pipeline_variants.utils import StructuredOutputHelper
 from max.pipelines.lib.registry import get_pipeline_for_task
 
 
@@ -459,6 +460,342 @@ class TestSyncAndProcessOutputsStructuredOutput:
 
             # FSM should NOT be advanced for actively chunked context
             mock_matcher.consume_token.assert_not_called()
+
+
+class TestAdvanceFsmAndComputeBitmasks:
+    """Tests for StructuredOutputHelper.advance_fsm_and_compute_bitmasks."""
+
+    def _make_helper(self, vocab_size: int = 64) -> StructuredOutputHelper:
+        return StructuredOutputHelper(enabled=True, vocab_size=vocab_size)
+
+    def _make_context_with_matcher(
+        self, always_accept: bool = True
+    ) -> tuple[TextContext, MagicMock]:
+        ctx = TextContext(
+            request_id=RequestID("req"),
+            max_length=1000,
+            tokens=TokenBuffer(np.array([1, 2, 3])),
+        )
+        mock_matcher = MagicMock()
+        mock_matcher.try_consume_tokens = MagicMock(
+            return_value=1 if always_accept else 0
+        )
+        ctx._matcher = mock_matcher
+        return ctx, mock_matcher
+
+    def test_unconstrained_context_bitmask_stays_all_minus_one(self) -> None:
+        """Context with no matcher keeps all bitmask slots at -1 (unconstrained)."""
+        helper = self._make_helper()
+        ctx = TextContext(
+            request_id=RequestID("req"),
+            max_length=1000,
+            tokens=TokenBuffer(np.array([1, 2, 3])),
+        )
+        assert ctx.matcher is None
+
+        bitmask_out = np.zeros((1, 3, 2), dtype=np.int32)
+
+        with patch("llguidance.numpy.fill_next_token_bitmask") as mock_fill:
+            helper.advance_fsm_and_compute_bitmasks(
+                context_batch=[ctx],
+                accepted_draft_tokens=np.zeros((1, 2), dtype=np.int64),
+                num_accepted=np.zeros(1, dtype=np.int32),
+                bonus_tokens=np.array([5], dtype=np.int64),
+                next_draft_tokens=np.array([[10, 11]], dtype=np.int64),
+                bitmask_out=bitmask_out,
+            )
+
+        mock_fill.assert_not_called()
+        assert np.all(bitmask_out == -1)
+
+    def test_part1_advances_through_accepted_drafts_and_bonus(self) -> None:
+        """Part 1 advances FSM through accepted draft tokens then bonus (no rollback)."""
+        helper = self._make_helper()
+        ctx, mock_matcher = self._make_context_with_matcher()
+        bitmask_out = np.full((1, 3, 2), -1, dtype=np.int32)
+
+        with patch("llguidance.numpy.fill_next_token_bitmask"):
+            helper.advance_fsm_and_compute_bitmasks(
+                context_batch=[ctx],
+                accepted_draft_tokens=np.array([[7, 8]], dtype=np.int64),
+                num_accepted=np.array([2], dtype=np.int32),
+                bonus_tokens=np.array([9], dtype=np.int64),
+                next_draft_tokens=np.array([[10, 11]], dtype=np.int64),
+                bitmask_out=bitmask_out,
+            )
+
+        all_calls = mock_matcher.try_consume_tokens.call_args_list
+        # First Part 1 call: accepted draft tokens [7, 8]
+        assert all_calls[0] == call([7, 8])
+        # Second Part 1 call: bonus token [9]
+        assert all_calls[1] == call([9])
+
+    def test_part1_skips_accepted_drafts_when_zero_accepted(self) -> None:
+        """When n_accepted=0, only the bonus token is consumed in Part 1."""
+        helper = self._make_helper()
+        ctx, mock_matcher = self._make_context_with_matcher()
+        bitmask_out = np.full((1, 2, 2), -1, dtype=np.int32)
+
+        with patch("llguidance.numpy.fill_next_token_bitmask"):
+            helper.advance_fsm_and_compute_bitmasks(
+                context_batch=[ctx],
+                accepted_draft_tokens=np.array([[7, 8]], dtype=np.int64),
+                num_accepted=np.array([0], dtype=np.int32),
+                bonus_tokens=np.array([9], dtype=np.int64),
+                next_draft_tokens=np.array([[10]], dtype=np.int64),
+                bitmask_out=bitmask_out,
+            )
+
+        all_calls = mock_matcher.try_consume_tokens.call_args_list
+        # No batch call for accepted drafts; bonus is the first call
+        assert call([7, 8]) not in all_calls
+        assert call([9]) in all_calls
+
+    def test_part2_fills_position_0_bitmask_after_part1(self) -> None:
+        """Position 0 of bitmask is filled with current FSM state (after Part 1 advance)."""
+        helper = self._make_helper(vocab_size=64)
+        ctx, _ = self._make_context_with_matcher()
+        bitmask_out = np.full((1, 3, 2), -1, dtype=np.int32)
+
+        with patch("llguidance.numpy.fill_next_token_bitmask") as mock_fill:
+            helper.advance_fsm_and_compute_bitmasks(
+                context_batch=[ctx],
+                accepted_draft_tokens=np.zeros((1, 0), dtype=np.int64),
+                num_accepted=np.zeros(1, dtype=np.int32),
+                bonus_tokens=np.array([5], dtype=np.int64),
+                next_draft_tokens=np.array([[10, 11]], dtype=np.int64),
+                bitmask_out=bitmask_out,
+            )
+
+        # fill_next_token_bitmask called at least once (position 0)
+        assert mock_fill.call_count >= 1
+        # First call is for position 0
+        first_kwargs = mock_fill.call_args_list[0][1]
+        assert first_kwargs["index"] == 0
+
+    def test_part2_speculative_advance_then_rollback(self) -> None:
+        """Part 2 speculatively advances through next draft tokens then rolls back."""
+        helper = self._make_helper()
+        ctx, mock_matcher = self._make_context_with_matcher(always_accept=True)
+        bitmask_out = np.full((1, 3, 2), -1, dtype=np.int32)
+
+        with patch("llguidance.numpy.fill_next_token_bitmask"):
+            helper.advance_fsm_and_compute_bitmasks(
+                context_batch=[ctx],
+                accepted_draft_tokens=np.zeros((1, 0), dtype=np.int64),
+                num_accepted=np.zeros(1, dtype=np.int32),
+                bonus_tokens=np.array([5], dtype=np.int64),
+                next_draft_tokens=np.array([[10, 11]], dtype=np.int64),
+                bitmask_out=bitmask_out,
+            )
+
+        # Both next draft tokens consumed → rollback(2)
+        mock_matcher.rollback.assert_called_once_with(2)
+
+    def test_part2_stops_and_no_rollback_when_fsm_rejects_first_draft(
+        self,
+    ) -> None:
+        """When FSM rejects the first next draft token, rollback is not called."""
+        helper = self._make_helper()
+        ctx, mock_matcher = self._make_context_with_matcher()
+        # Bonus token accepted (Part 1), first next_draft rejected (Part 2)
+        mock_matcher.try_consume_tokens.side_effect = [1, 0]
+        bitmask_out = np.full((1, 3, 2), -1, dtype=np.int32)
+
+        with patch("llguidance.numpy.fill_next_token_bitmask"):
+            helper.advance_fsm_and_compute_bitmasks(
+                context_batch=[ctx],
+                accepted_draft_tokens=np.zeros((1, 0), dtype=np.int64),
+                num_accepted=np.zeros(1, dtype=np.int32),
+                bonus_tokens=np.array([5], dtype=np.int64),
+                next_draft_tokens=np.array([[10, 11]], dtype=np.int64),
+                bitmask_out=bitmask_out,
+            )
+
+        # No tokens consumed in Part 2 → no rollback
+        mock_matcher.rollback.assert_not_called()
+
+
+class TestBuildBitmaskCallback:
+    """Tests for OverlapTextGenerationPipeline._build_bitmask_callback."""
+
+    def test_callback_calls_advance_fsm_and_compute_bitmasks(self) -> None:
+        """The returned callback delegates to advance_fsm_and_compute_bitmasks."""
+        pipeline = OverlapTextGenerationPipeline.__new__(
+            OverlapTextGenerationPipeline
+        )
+        mock_so = MagicMock()
+        pipeline._structured_output = mock_so
+
+        ctx = TextContext(
+            request_id=RequestID("r"),
+            max_length=100,
+            tokens=TokenBuffer(np.array([1])),
+        )
+        bonus_np = np.array([5], dtype=np.int64)
+        num_acc_np = np.zeros(1, dtype=np.int64)
+        draft_np = np.zeros((1, 2), dtype=np.int64)
+        next_draft_np = np.zeros((1, 2), dtype=np.int64)
+        bitmask_np = np.full((1, 3, 2), -1, dtype=np.int32)
+
+        callback = pipeline._build_bitmask_callback(
+            context_batch=[ctx],
+            bonus_tokens_np=bonus_np,
+            num_accepted_np=num_acc_np,
+            accepted_draft_tokens_np=draft_np,
+            next_draft_tokens_np=next_draft_np,
+            bitmask_pinned_np=bitmask_np,
+        )
+
+        callback()
+
+        mock_so.advance_fsm_and_compute_bitmasks.assert_called_once_with(
+            context_batch=[ctx],
+            accepted_draft_tokens=draft_np,
+            num_accepted=num_acc_np,
+            bonus_tokens=bonus_np,
+            next_draft_tokens=next_draft_np,
+            bitmask_out=bitmask_np,
+        )
+
+    def test_callback_logs_error_on_exception(self) -> None:
+        """Callback catches exceptions and logs them instead of propagating."""
+        pipeline = OverlapTextGenerationPipeline.__new__(
+            OverlapTextGenerationPipeline
+        )
+        mock_so = MagicMock()
+        mock_so.advance_fsm_and_compute_bitmasks.side_effect = RuntimeError(
+            "boom"
+        )
+        pipeline._structured_output = mock_so
+
+        callback = pipeline._build_bitmask_callback(
+            context_batch=[],
+            bonus_tokens_np=np.array([], dtype=np.int64),
+            num_accepted_np=np.array([], dtype=np.int64),
+            accepted_draft_tokens_np=np.zeros((0, 0), dtype=np.int64),
+            next_draft_tokens_np=np.zeros((0, 0), dtype=np.int64),
+            bitmask_pinned_np=np.zeros((0, 0, 0), dtype=np.int32),
+        )
+
+        # Must not raise — exceptions are caught and logged
+        callback()
+
+
+class TestEnqueueAsyncBitmaskCallback:
+    """Tests for OverlapTextGenerationPipeline._enqueue_async_bitmask_callback."""
+
+    def _make_pipeline(
+        self, structured_output_enabled: bool = True
+    ) -> OverlapTextGenerationPipeline[TextContext]:
+        pipeline = OverlapTextGenerationPipeline.__new__(
+            OverlapTextGenerationPipeline
+        )
+        mock_so = MagicMock()
+        mock_so.enabled = structured_output_enabled
+        pipeline._structured_output = mock_so
+        return pipeline
+
+    def test_returns_false_when_structured_output_disabled(self) -> None:
+        """Returns False immediately when structured output is not enabled."""
+        pipeline = self._make_pipeline(structured_output_enabled=False)
+        pipeline._spec_decode_state = MagicMock()
+
+        result = pipeline._enqueue_async_bitmask_callback(
+            context_batch=[],
+            next_tokens_host=MagicMock(),
+            num_accepted_draft_tokens_host=MagicMock(),
+            draft_tokens_host=MagicMock(),
+            next_draft_tokens_host=MagicMock(),
+            verify_draft_tokens=True,
+        )
+
+        assert result is False
+
+    def test_returns_false_when_spec_decode_state_is_none(self) -> None:
+        """Returns False when spec decode state is not initialized."""
+        pipeline = self._make_pipeline()
+        pipeline._spec_decode_state = None
+
+        result = pipeline._enqueue_async_bitmask_callback(
+            context_batch=[],
+            next_tokens_host=MagicMock(),
+            num_accepted_draft_tokens_host=MagicMock(),
+            draft_tokens_host=MagicMock(),
+            next_draft_tokens_host=MagicMock(),
+            verify_draft_tokens=True,
+        )
+
+        assert result is False
+
+    def test_returns_false_for_prefill_batch(self) -> None:
+        """Returns False without enqueueing when verify_draft_tokens=False (prefill)."""
+        pipeline = self._make_pipeline()
+        mock_spec_state = MagicMock()
+        mock_spec_state.persistent_bitmask_pinned = MagicMock()
+        pipeline._spec_decode_state = mock_spec_state
+
+        result = pipeline._enqueue_async_bitmask_callback(
+            context_batch=[],
+            next_tokens_host=MagicMock(),
+            num_accepted_draft_tokens_host=MagicMock(),
+            draft_tokens_host=MagicMock(),
+            next_draft_tokens_host=MagicMock(),
+            verify_draft_tokens=False,
+        )
+
+        assert result is False
+
+    def test_returns_true_and_enqueues_for_decode_batch(self) -> None:
+        """Returns True and calls __unsafe_enqueue_py_host_func for a decode batch."""
+        pipeline = self._make_pipeline()
+
+        mock_spec_state = MagicMock()
+        mock_spec_state.persistent_bitmask_pinned = MagicMock()
+        mock_spec_state.persistent_bitmask_pinned.to_numpy.return_value = (
+            np.full((2, 3, 4), -1, dtype=np.int32)
+        )
+        mock_spec_state.bitmask_ready_event = None
+        mock_spec_state.has_precomputed_bitmask = False
+        pipeline._spec_decode_state = mock_spec_state
+
+        mock_device = MagicMock()
+        pipeline._devices = [mock_device]
+
+        next_draft_np = np.zeros((1, 2), dtype=np.int64)
+        mock_next_draft = MagicMock()
+        mock_next_draft.to_numpy.return_value = next_draft_np
+
+        result = pipeline._enqueue_async_bitmask_callback(
+            context_batch=[
+                TextContext(
+                    request_id=RequestID("r"),
+                    max_length=100,
+                    tokens=TokenBuffer(np.array([1])),
+                )
+            ],
+            next_tokens_host=MagicMock(
+                **{"to_numpy.return_value": np.array([5], dtype=np.int64)}
+            ),
+            num_accepted_draft_tokens_host=MagicMock(
+                **{"to_numpy.return_value": np.zeros(1, dtype=np.int32)}
+            ),
+            draft_tokens_host=MagicMock(
+                **{"to_numpy.return_value": np.zeros((1, 2), dtype=np.int64)}
+            ),
+            next_draft_tokens_host=mock_next_draft,
+            verify_draft_tokens=True,
+        )
+
+        assert result is True
+        # Production code uses getattr(device, "__unsafe_enqueue_py_host_func")
+        # to avoid Python name mangling, so the mock records the call under the
+        # unmangled name. The test also uses getattr to avoid the same mangling
+        # that would occur with a bare identifier inside a class body.
+        getattr(
+            mock_device, "__unsafe_enqueue_py_host_func"
+        ).assert_called_once()
+        assert mock_spec_state.has_precomputed_bitmask is True
 
 
 class TestInitializeBitmaskWithGrammar:

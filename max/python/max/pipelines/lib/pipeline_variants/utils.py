@@ -245,6 +245,7 @@ def update_spec_decode_context_and_prepare_responses(
     max_seq_len: int,
     think_start_token_id: int | None = None,
     think_end_token_id: int | None = None,
+    skip_fsm_advance: bool = False,
 ) -> dict[RequestID, TextGenerationOutput]:
     """Updates context objects and prepares response objects after speculative decoding.
 
@@ -252,6 +253,18 @@ def update_spec_decode_context_and_prepare_responses(
     ``ctx.in_reasoning_phase`` from the just-committed tokens, in commit
     order so a ``<think>...</think>`` pair within one accept set ends
     correctly.
+
+    Args:
+        draft_tokens: Draft tokens verified this batch.
+        next_draft_tokens: Next batch's draft tokens.
+        num_accepted_draft_tokens: Count of accepted draft tokens per request.
+        next_tokens: Bonus tokens per request.
+        context_batch: List of generation contexts.
+        max_seq_len: Maximum sequence length.
+        think_start_token_id: Token ID that starts a reasoning phase.
+        think_end_token_id: Token ID that ends a reasoning phase.
+        skip_fsm_advance: When True, skip FSM advancement because a CUDA host
+            callback already advanced the FSM. Token buffer is still updated.
     """
     num_draft_tokens_to_verify = draft_tokens.shape[1]
     num_speculative_tokens = next_draft_tokens.shape[1]
@@ -291,12 +304,20 @@ def update_spec_decode_context_and_prepare_responses(
                 ctx.realize_future_token(token)
                 # For structured output, advance FSM with the realized token.
                 # realize_future_token only updates the token buffer, not the FSM.
-                if ctx.matcher is not None:
+                # Skip when a CUDA host callback already advanced the FSM.
+                if ctx.matcher is not None and not skip_fsm_advance:
                     ctx.advance_fsm(token)
             elif ctx.is_done:
                 break
             else:
-                ctx.update(token)
+                if skip_fsm_advance and ctx.matcher is not None:
+                    # Token buffer must still advance; FSM was already advanced
+                    # by the CUDA host callback. Only skip ctx.update() when
+                    # there is a matcher — unconstrained contexts must still
+                    # call ctx.update() so EOS detection fires normally.
+                    ctx.advance_token_buffer(token)
+                else:
+                    ctx.update(token)
 
         if track_phase:
             for token in tokens:
@@ -520,6 +541,82 @@ class StructuredOutputHelper:
             llguidance.numpy.fill_next_token_bitmask(
                 context.matcher, bitmask, index=index
             )
+
+    @traced
+    def advance_fsm_and_compute_bitmasks(
+        self,
+        context_batch: list[TextGenerationContextType],
+        accepted_draft_tokens: npt.NDArray[np.int64],
+        num_accepted: npt.NDArray[np.int64],
+        bonus_tokens: npt.NDArray[np.int64],
+        next_draft_tokens: npt.NDArray[np.int64],
+        bitmask_out: npt.NDArray[np.int32],
+    ) -> None:
+        """Advance FSM through accepted tokens, then compute bitmasks for the next batch.
+
+        Combines FSM advancement (Part 1) with bitmask computation (Part 2) for
+        use in a CUDA host callback. Must NOT call any CUDA APIs.
+
+        Part 1 permanently advances the FSM through committed tokens from the
+        current batch (accepted draft tokens followed by the bonus token). This
+        mirrors what sync_and_process_outputs would do for structured output.
+
+        Part 2 speculatively advances through the next batch's draft tokens to
+        compute bitmasks, then rolls back to restore the FSM to the state after
+        Part 1.
+
+        Args:
+            context_batch: List of generation contexts.
+            accepted_draft_tokens: Draft tokens verified this batch, shape [batch, K].
+            num_accepted: Count of accepted draft tokens per request, shape [batch].
+            bonus_tokens: Bonus (target) tokens per request, shape [batch].
+            next_draft_tokens: Draft tokens for the next batch, shape [batch, K].
+            bitmask_out: Packed int32 bitmask output, shape [batch, K+1, packed_vocab].
+                Initialized to -1 (unconstrained) per context before filling.
+        """
+        num_draft = next_draft_tokens.shape[1] if next_draft_tokens.size else 0
+        for ctx_idx, ctx in enumerate(context_batch):
+            bitmask_out[ctx_idx, :, :] = -1
+
+            if ctx.matcher is None:
+                continue
+
+            # Part 1: Advance FSM through committed tokens (no rollback).
+            n_accepted = int(num_accepted[ctx_idx])
+            bonus_token = int(bonus_tokens[ctx_idx])
+            if n_accepted > 0:
+                tokens_to_consume = [
+                    int(accepted_draft_tokens[ctx_idx, j])
+                    for j in range(n_accepted)
+                ]
+                ctx.matcher.try_consume_tokens(tokens_to_consume)
+
+            ctx.matcher.try_consume_tokens([bonus_token])
+
+            # Part 2: Speculative advance through next draft tokens + rollback.
+            llguidance.numpy.fill_next_token_bitmask(
+                ctx.matcher,
+                bitmask_out[ctx_idx, 0, :].reshape(1, -1),
+                index=0,
+            )
+
+            tokens_consumed = 0
+            for i in range(num_draft):
+                draft_token = int(next_draft_tokens[ctx_idx, i])
+                if draft_token < 0 or draft_token >= (self.vocab_size or 0):
+                    break
+                if ctx.matcher.try_consume_tokens([draft_token]) == 1:
+                    tokens_consumed += 1
+                    llguidance.numpy.fill_next_token_bitmask(
+                        ctx.matcher,
+                        bitmask_out[ctx_idx, i + 1, :].reshape(1, -1),
+                        index=0,
+                    )
+                else:
+                    break
+
+            if tokens_consumed > 0:
+                ctx.matcher.rollback(tokens_consumed)
 
     @traced
     def compute_speculative_bitmasks(

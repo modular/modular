@@ -1960,6 +1960,72 @@ def test_update_spec_decode_skips_draft_tokens_when_is_done() -> None:
     )
 
 
+def test_update_spec_decode_skip_fsm_advance_does_not_call_advance_fsm() -> (
+    None
+):
+    """With skip_fsm_advance=True, advance_fsm is never called for committed tokens.
+
+    When a CUDA host callback has already advanced the FSM, the Python-side
+    update should skip FSM calls to avoid double-advancing.
+    """
+    ctx = TextContext(
+        request_id=RequestID(),
+        max_length=2048,
+        tokens=TokenBuffer(np.ones(10, dtype=np.int64)),
+    )
+    ctx.update_with_future_token()  # sets generated_length=1 so the loop runs
+
+    mock_matcher = MagicMock()
+    ctx._matcher = mock_matcher
+
+    with patch.object(ctx, "advance_fsm") as mock_advance_fsm:
+        update_spec_decode_context_and_prepare_responses(
+            draft_tokens=np.array([[1, 2]], dtype=np.int32),
+            next_draft_tokens=np.array([[3, 4]], dtype=np.int32),
+            num_accepted_draft_tokens=np.array([1], dtype=np.int32),
+            next_tokens=np.array([5], dtype=np.int32),
+            context_batch=[ctx],
+            max_seq_len=2048,
+            skip_fsm_advance=True,
+        )
+
+    mock_advance_fsm.assert_not_called()
+
+
+def test_update_spec_decode_without_skip_fsm_advance_calls_advance_fsm() -> (
+    None
+):
+    """Without skip_fsm_advance, advance_fsm is called for each committed token.
+
+    Verifies the baseline (skip_fsm_advance=False) so the skip test has
+    a meaningful contrast.
+    """
+    ctx = TextContext(
+        request_id=RequestID(),
+        max_length=2048,
+        tokens=TokenBuffer(np.ones(10, dtype=np.int64)),
+    )
+    ctx.update_with_future_token()
+
+    mock_matcher = MagicMock()
+    ctx._matcher = mock_matcher
+
+    with patch.object(ctx, "advance_fsm") as mock_advance_fsm:
+        update_spec_decode_context_and_prepare_responses(
+            draft_tokens=np.array([[1, 2]], dtype=np.int32),
+            next_draft_tokens=np.array([[3, 4]], dtype=np.int32),
+            num_accepted_draft_tokens=np.array([1], dtype=np.int32),
+            next_tokens=np.array([5], dtype=np.int32),
+            context_batch=[ctx],
+            max_seq_len=2048,
+            skip_fsm_advance=False,
+        )
+
+    # advance_fsm called for the first token (realize_future_token path)
+    # and subsequent tokens go through update() which also calls advance_fsm
+    assert mock_advance_fsm.call_count >= 1
+
+
 # ---------------------------------------------------------------------------
 # Stall watchdog tests
 # ---------------------------------------------------------------------------
