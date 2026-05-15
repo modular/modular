@@ -424,6 +424,16 @@ class PipelineConfig(ConfigFileModel):
                     revision=revision,
                     **non_default_kwargs,
                 )
+            elif "main" in self.models:
+                # The main model came from a YAML recipe (or a pre-built
+                # manifest via ``models=``). Still let CLI flags such as
+                # --devices override the recipe so the same YAML can be
+                # reused across different multi-GPU setups.
+                non_default_kwargs = _strip_default_model_kwargs(model_kwargs)
+                if non_default_kwargs:
+                    self.models = self.models.with_override(
+                        "main", **non_default_kwargs
+                    )
 
         # Apply KV cache config to main model
         if kv_cache_kwargs and "main" in self.models:

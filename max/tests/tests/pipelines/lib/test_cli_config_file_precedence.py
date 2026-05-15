@@ -22,7 +22,9 @@ import pytest
 from click.testing import CliRunner
 from max.config import ConfigFileModel
 from max.config.config_file_model import _resolve_config_file
+from max.driver import DeviceSpec
 from max.entrypoints.cli.config import config_to_flag, pipeline_config_options
+from max.pipelines.lib import PipelineConfig
 from pydantic import Field
 from pytest import MonkeyPatch
 
@@ -184,6 +186,36 @@ def test_resolve_config_file_raises_for_missing_recipe() -> None:
         _resolve_config_file(
             "max/pipelines/architectures/no_such/recipes/missing.yaml"
         )
+
+
+def test_cli_overrides_yaml_recipe_values(tmp_path: Path) -> None:
+    """Regression: CLI flags must override values set in a YAML recipe,
+    covering both the ``model:`` section (``--devices``,
+    ``--data-parallel-degree``) and the ``runtime:`` section
+    (``--ep-size``)."""
+    config_path = tmp_path / "recipe.yaml"
+    config_path.write_text(
+        "model:\n"
+        "  model_path: fake/model\n"
+        "  device_specs: [0, 1, 2, 3, 4, 5, 6, 7]\n"
+        "  data_parallel_degree: 8\n"
+        "runtime:\n"
+        "  ep_size: 8\n",
+        encoding="utf-8",
+    )
+
+    config = PipelineConfig(  # type: ignore[call-arg]
+        config_file=str(config_path),
+        device_specs=[DeviceSpec(i, "gpu") for i in range(4)],
+        data_parallel_degree=4,
+        ep_size=4,
+        defer_resolve=True,
+    )
+
+    main = config.models["main"]
+    assert len(main.device_specs) == 4
+    assert main.data_parallel_degree == 4
+    assert config.runtime.ep_size == 4
 
 
 def test_config_file_with_builtin_recipe_prefix() -> None:
