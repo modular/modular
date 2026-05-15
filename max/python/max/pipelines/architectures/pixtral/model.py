@@ -16,6 +16,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import Any, ClassVar
 
 import numpy as np
 from max.driver import Buffer, Device, DLPackArray
@@ -28,7 +29,7 @@ from max.graph.weights import (
     Weights,
     WeightsAdapter,
 )
-from max.nn.kv_cache import KVCacheInputs, KVCacheParams
+from max.nn.kv_cache import KVCacheInputs
 from max.nn.transformer import ReturnLogits
 from max.pipelines.core import TextAndVisionContext
 from max.pipelines.lib import (
@@ -71,6 +72,8 @@ class PixtralInputs(ModelInputs):
 
 class PixtralModel(PipelineModelWithKVCache[TextAndVisionContext]):
     """Pixtral pipeline model with separate vision and language graphs."""
+
+    model_config_cls: ClassVar[type[Any]] = PixtralConfig
 
     vision_model: Model
     language_model: Model
@@ -288,23 +291,6 @@ class PixtralModel(PipelineModelWithKVCache[TextAndVisionContext]):
             input_row_offsets=next_row_offsets,
             return_n_logits=prev_model_inputs.return_n_logits,
             kv_cache_inputs=prev_model_inputs.kv_cache_inputs,
-        )
-
-    @classmethod
-    def get_kv_params(
-        cls,
-        huggingface_config: AutoConfig,
-        pipeline_config: PipelineConfig,
-        devices: list[DeviceRef],
-        kv_cache_config: KVCacheConfig,
-        cache_dtype: DType,
-    ) -> KVCacheParams:
-        return PixtralConfig.construct_kv_params(
-            huggingface_config=huggingface_config,
-            pipeline_config=pipeline_config,
-            devices=devices,
-            kv_cache_config=kv_cache_config,
-            cache_dtype=cache_dtype,
         )
 
     @classmethod

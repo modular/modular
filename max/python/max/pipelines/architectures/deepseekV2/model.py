@@ -17,7 +17,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, ClassVar
 
 import numpy as np
 from max.driver import Buffer, Device, DeviceSpec
@@ -74,6 +74,8 @@ class DeepseekV2Inputs(ModelInputs):
 class DeepseekV2Model(
     LogProbabilitiesMixin, PipelineModelWithKVCache[TextContext]
 ):
+    model_config_cls: ClassVar[type[Any]] = DeepseekV2Config
+
     def __init__(
         self,
         pipeline_config: PipelineConfig,
@@ -178,23 +180,6 @@ class DeepseekV2Model(
             signal_buffers=self.signal_buffers,
             kv_cache_inputs=prev_model_inputs.kv_cache_inputs,
             return_n_logits=prev_model_inputs.return_n_logits,
-        )
-
-    @classmethod
-    def get_kv_params(
-        cls,
-        huggingface_config: AutoConfig,
-        pipeline_config: PipelineConfig,
-        devices: list[DeviceRef],
-        kv_cache_config: KVCacheConfig,
-        cache_dtype: DType,
-    ) -> KVCacheParamInterface:
-        return DeepseekV2Config.construct_kv_params(
-            huggingface_config=huggingface_config,
-            pipeline_config=pipeline_config,
-            devices=devices,
-            kv_cache_config=kv_cache_config,
-            cache_dtype=cache_dtype,
         )
 
     @classmethod

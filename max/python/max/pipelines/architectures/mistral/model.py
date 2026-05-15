@@ -16,6 +16,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import Any, ClassVar
 
 import numpy as np
 from max.driver import Buffer, Device
@@ -24,7 +25,7 @@ from max.engine import InferenceSession, Model
 from max.graph import BufferType, DeviceRef, Graph, TensorType
 from max.graph.weights import SafetensorWeights, Weights, WeightsAdapter
 from max.nn.comm import Signals
-from max.nn.kv_cache import KVCacheInputs, KVCacheParams
+from max.nn.kv_cache import KVCacheInputs
 from max.nn.layer import Module
 from max.nn.transformer import ReturnLogits
 from max.pipelines.core import TextContext
@@ -66,6 +67,8 @@ class MistralInputs(ModelInputs):
 
 
 class MistralModel(PipelineModelWithKVCache[TextContext]):
+    model_config_cls: ClassVar[type[Any]] = MistralConfig
+
     model: Model
     """Compiled and initialized model ready for inference."""
 
@@ -174,23 +177,6 @@ class MistralModel(PipelineModelWithKVCache[TextContext]):
             signal_buffers=self.signal_buffers,
             return_n_logits=prev_model_inputs.return_n_logits,
             kv_cache_inputs=prev_model_inputs.kv_cache_inputs,
-        )
-
-    @classmethod
-    def get_kv_params(
-        cls,
-        huggingface_config: AutoConfig,
-        pipeline_config: PipelineConfig,
-        devices: list[DeviceRef],
-        kv_cache_config: KVCacheConfig,
-        cache_dtype: DType,
-    ) -> KVCacheParams:
-        return MistralConfig.construct_kv_params(
-            huggingface_config=huggingface_config,
-            pipeline_config=pipeline_config,
-            devices=devices,
-            kv_cache_config=kv_cache_config,
-            cache_dtype=cache_dtype,
         )
 
     @classmethod

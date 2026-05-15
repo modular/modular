@@ -18,7 +18,7 @@ import math
 from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, ClassVar
 
 import numpy as np
 import numpy.typing as npt
@@ -33,7 +33,7 @@ from max.graph.weights import (
     WeightsAdapter,
 )
 from max.nn.comm import Signals
-from max.nn.kv_cache import KVCacheInputs, KVCacheParams
+from max.nn.kv_cache import KVCacheInputs
 from max.nn.transformer import ReturnLogits
 from max.pipelines.core import TextAndVisionContext
 from max.pipelines.lib import (
@@ -184,6 +184,8 @@ class InternVLModel(
 ):
     """An InternVL pipeline model for multimodal text generation."""
 
+    model_config_cls: ClassVar[type[Any]] = InternVLConfig
+
     vision_model: Model
     """The compiled vision model for processing images."""
 
@@ -234,24 +236,6 @@ class InternVLModel(
             huggingface_config, "llm_config", huggingface_config
         )
         return getattr(llm_config, "max_position_embeddings", 4096)
-
-    @classmethod
-    def get_kv_params(
-        cls,
-        huggingface_config: AutoConfig,
-        pipeline_config: PipelineConfig,
-        devices: list[DeviceRef],
-        kv_cache_config: KVCacheConfig,
-        cache_dtype: DType,
-    ) -> KVCacheParams:
-        """Gets the parameters required to configure the KV cache for InternVL."""
-        return InternVLConfig.construct_kv_params(
-            huggingface_config,
-            pipeline_config,
-            devices,
-            kv_cache_config,
-            cache_dtype,
-        )
 
     @classmethod
     def estimate_activation_memory(

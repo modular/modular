@@ -23,7 +23,7 @@ import math
 from collections.abc import Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import Any, ClassVar, cast
 
 import numpy as np
 import numpy.typing as npt
@@ -35,7 +35,7 @@ from max.experimental.tensor import default_dtype
 from max.graph import DeviceRef, TensorType
 from max.graph.buffer_utils import cast_dlpack_to
 from max.graph.weights import SafetensorWeights, Weights, WeightsAdapter
-from max.nn.kv_cache import KVCacheInputs, KVCacheParams
+from max.nn.kv_cache import KVCacheInputs
 from max.nn.transformer import ReturnLogits
 from max.pipelines.core import TextAndVisionContext
 from max.pipelines.lib import (
@@ -135,6 +135,8 @@ class Idefics3Inputs(ModelInputs):
 class Idefics3Model(PipelineModelWithKVCache[TextAndVisionContext]):
     """An Idefics3 pipeline model using the ModuleV3 API."""
 
+    model_config_cls: ClassVar[type[Any]] = Idefics3Config
+
     vision_model: Callable[..., Any]
     """The compiled vision model."""
 
@@ -178,23 +180,6 @@ class Idefics3Model(PipelineModelWithKVCache[TextAndVisionContext]):
             huggingface_config, "text_config", huggingface_config
         )
         return getattr(text_config, "max_position_embeddings", 4096)
-
-    @classmethod
-    def get_kv_params(
-        cls,
-        huggingface_config: AutoConfig,
-        pipeline_config: PipelineConfig,
-        devices: list[DeviceRef],
-        kv_cache_config: KVCacheConfig,
-        cache_dtype: DType,
-    ) -> KVCacheParams:
-        return Idefics3Config.construct_kv_params(
-            huggingface_config,
-            pipeline_config,
-            devices,
-            kv_cache_config,
-            cache_dtype,
-        )
 
     def load_model(self) -> tuple[Callable[..., Any], Callable[..., Any]]:
         """Compile vision and language models using the V3 API.

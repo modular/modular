@@ -15,19 +15,18 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, ClassVar
 
 import numpy as np
 from max.driver import Buffer
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import DeviceRef, Graph
+from max.graph import Graph
 from max.graph.weights import WeightData
 from max.nn.comm.ep import EPCommInitializer, EPConfig
-from max.nn.kv_cache import KVCacheParamInterface, MultiKVCacheParams
-from max.pipelines.lib import CompilationTimer, KVCacheConfig, PipelineConfig
+from max.nn.kv_cache import MultiKVCacheParams
+from max.pipelines.lib import CompilationTimer, PipelineConfig
 from max.pipelines.lib.quant import parse_quant_config
-from transformers import AutoConfig
 from typing_extensions import override
 
 from ..deepseekV3.model import DeepseekV3Model
@@ -40,6 +39,8 @@ logger = logging.getLogger("max.pipelines")
 class DeepseekV3_2Model(DeepseekV3Model):
     """A DeepseekV3.2 model."""
 
+    model_config_cls: ClassVar[type[Any]] = DeepseekV3_2Config
+
     @classmethod
     @override
     def _ep_max_rank_send_tokens_for_pipeline(
@@ -47,23 +48,6 @@ class DeepseekV3_2Model(DeepseekV3Model):
     ) -> int:
         """Each rank holds full-length activations before EP MoE (no RS like V3 TP_EP)."""
         return pipeline_config.runtime.max_batch_input_tokens
-
-    @classmethod
-    def get_kv_params(
-        cls,
-        huggingface_config: AutoConfig,
-        pipeline_config: PipelineConfig,
-        devices: list[DeviceRef],
-        kv_cache_config: KVCacheConfig,
-        cache_dtype: DType,
-    ) -> KVCacheParamInterface:
-        return DeepseekV3_2Config.construct_kv_params(
-            huggingface_config=huggingface_config,
-            pipeline_config=pipeline_config,
-            devices=devices,
-            kv_cache_config=kv_cache_config,
-            cache_dtype=cache_dtype,
-        )
 
     def _create_model_config(
         self, state_dict: dict[str, WeightData]

@@ -17,7 +17,7 @@ import logging
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from functools import cached_property
-from typing import Any
+from typing import Any, ClassVar
 
 import numpy as np
 from max.driver import Buffer, Device
@@ -32,7 +32,7 @@ from max.graph.weights import (
     WeightsAdapter,
 )
 from max.nn.comm import Signals
-from max.nn.kv_cache import KVCacheInputs, KVCacheParams
+from max.nn.kv_cache import KVCacheInputs
 from max.nn.layer import Module
 from max.nn.parallel import ParallelArrayOps
 from max.nn.transformer import ReturnLogits
@@ -128,6 +128,8 @@ class Qwen3VLModel(
 ):
     """A Qwen3VL pipeline model for multimodal text generation."""
 
+    model_config_cls: ClassVar[type[Any]] = Qwen3VLConfig
+
     vision_model: Model
     """The compiled vision model for processing images."""
 
@@ -191,25 +193,6 @@ class Qwen3VLModel(
         """Calculates the maximum sequence length for the Qwen3VL model."""
         return Qwen3VLConfig.calculate_max_seq_len(
             pipeline_config, huggingface_config
-        )
-
-    # TODO: Seems like a common pattern. Implement in a base class?
-    @classmethod
-    def get_kv_params(
-        cls,
-        huggingface_config: AutoConfig,
-        pipeline_config: PipelineConfig,
-        devices: list[DeviceRef],
-        kv_cache_config: KVCacheConfig,
-        cache_dtype: DType,
-    ) -> KVCacheParams:
-        """Gets the parameters required to configure the KV cache for Qwen3VL."""
-        return Qwen3VLConfig.construct_kv_params(
-            huggingface_config,
-            pipeline_config,
-            devices,
-            kv_cache_config,
-            cache_dtype,
         )
 
     def load_model(self, session: InferenceSession) -> tuple[Model, Model]:

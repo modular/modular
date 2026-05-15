@@ -17,6 +17,7 @@ import logging
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from functools import cached_property
+from typing import Any, ClassVar
 
 import numpy as np
 import numpy.typing as npt
@@ -33,7 +34,7 @@ from max.graph.weights import (
     WeightsAdapter,
 )
 from max.nn.comm import Signals
-from max.nn.kv_cache import KVCacheInputs, KVCacheParams
+from max.nn.kv_cache import KVCacheInputs
 from max.nn.layer import Module
 from max.nn.parallel import ParallelArrayOps
 from max.nn.transformer import ReturnLogits
@@ -128,6 +129,8 @@ class Qwen2_5VLModel(
 ):
     """A Qwen2.5VL pipeline model for multimodal text generation."""
 
+    model_config_cls: ClassVar[type[Any]] = Qwen2_5VLConfig
+
     vision_model: Model
     """The compiled vision model for processing images."""
 
@@ -177,24 +180,6 @@ class Qwen2_5VLModel(
         """Calculates the maximum sequence length for the Qwen2.5VL model."""
         return Qwen2_5VLConfig.calculate_max_seq_len(
             pipeline_config, huggingface_config
-        )
-
-    @classmethod
-    def get_kv_params(
-        cls,
-        huggingface_config: AutoConfig,
-        pipeline_config: PipelineConfig,
-        devices: list[DeviceRef],
-        kv_cache_config: KVCacheConfig,
-        cache_dtype: DType,
-    ) -> KVCacheParams:
-        """Gets the parameters required to configure the KV cache for Qwen2.5VL."""
-        return Qwen2_5VLConfig.construct_kv_params(
-            huggingface_config,
-            pipeline_config,
-            devices,
-            kv_cache_config,
-            cache_dtype,
         )
 
     def load_model(self, session: InferenceSession) -> tuple[Model, Model]:
