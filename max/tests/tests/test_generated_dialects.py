@@ -481,3 +481,71 @@ def test_get_context_from_cpp(mlir_context) -> None:  # noqa: ANN001
     assert loc
     module = builtin.ModuleOp(loc)
     assert module.context is mlir_context
+
+
+# ===----------------------------------------------------------------------=== #
+# InferTypeOp-overload binding path (codegen'd state population +
+# `finalize_checked`)
+# ===----------------------------------------------------------------------=== #
+
+
+def test_integer_attr_with_index_type(mlir_context) -> None:  # noqa: ANN001
+    """`IntegerAttr` accepts `IndexType` (MLIR's `IndexAttr` pattern)."""
+    index_type = builtin.IndexType()
+    attr = builtin.IntegerAttr(index_type, 5)
+    assert attr.type == index_type
+    assert attr.value == 5
+    # Default value is 0.
+    assert builtin.IntegerAttr(index_type).value == 0
+
+
+def test_infer_type_op_overload_infers_result_type() -> None:
+    """The InferTypeOp overload of an `InferTypeOpAdaptor` op runs
+    `Op::inferReturnTypes` and produces the right result type."""
+    input_type = TensorType(DType.float32, [4], DeviceRef.GPU())
+    with Graph("infer_type_op", input_types=[input_type, input_type]) as graph:
+        with mlir.Location.unknown() as location:
+            builder = OpBuilder(Block._from_cmlir(graph._current_block).end)
+            x, y = graph.inputs
+            params = kgen.ParamDeclArrayAttr([])
+            # The 5-arg form (no `result=`) is the InferTypeOp overload.
+            op = rmo.AddOp(builder, location, x.to_mlir(), y.to_mlir(), params)
+            op.verify()
+            [result] = op.results
+            assert result.type == input_type.to_mlir()
+
+
+def test_infer_type_op_overload_sets_properties() -> None:
+    """The codegen'd state population assigns into `Op::Properties` so
+    `inferReturnTypes` reads attributes that are stored as properties
+    (not in the discardable attribute dict)."""
+    input_type = TensorType(DType.float32, [2, 3], DeviceRef.CPU())
+    output_shape = mosh.ShapeAttr([3, 2], mosh.ShapeType())
+    with Graph("reshape_props", input_types=[input_type]) as graph:
+        with mlir.Location.unknown() as location:
+            builder = OpBuilder(Block._from_cmlir(graph._current_block).end)
+            (x,) = graph.inputs
+            # InferTypeOp overload (no `result=`); the helper must populate
+            # `newShape` in `Properties` for inferReturnTypes to read it.
+            op = rmo.ReshapeOp(builder, location, x.to_mlir(), output_shape)
+            op.verify()
+            assert op.new_shape == output_shape
+            [result] = op.results
+            expected = TensorType(DType.float32, [3, 2], DeviceRef.CPU())
+            assert result.type == expected.to_mlir()
+
+
+def test_infer_type_op_overload_failure_raises_value_error() -> None:
+    """A failing `inferReturnTypes` surfaces as a `ValueError` instead of
+    aborting the interpreter via `report_fatal_error`."""
+    input_type = TensorType(DType.float32, [2, 3], DeviceRef.CPU())
+    # 2x3 has 6 elements; reshape to 3x3 (9 elements) is invalid.
+    bad_shape = mosh.ShapeAttr([3, 3], mosh.ShapeType())
+    with Graph("reshape_bad", input_types=[input_type]) as graph:
+        with mlir.Location.unknown() as location:
+            builder = OpBuilder(Block._from_cmlir(graph._current_block).end)
+            (x,) = graph.inputs
+            with pytest.raises(
+                ValueError, match=r"infer result type.*rmo\.reshape"
+            ):
+                rmo.ReshapeOp(builder, location, x.to_mlir(), bad_shape)

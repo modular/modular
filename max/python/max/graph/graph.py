@@ -975,10 +975,23 @@ class Graph:
         self, op_type: type[Operation], *args, **kwargs
     ) -> list[Value[Any]]:
         """Wrapper for clients that only require the op results."""
-        with _location() as location:
-            builder = OpBuilder(Block._from_cmlir(self._current_block).end)
-            op = op_type(builder, location, *_to_mlir(args), **_to_mlir(kwargs))  # type: ignore
-            self._verify_op(op)
+        try:
+            with _location() as location, self._capturing_mlir_diagnostics():
+                builder = OpBuilder(Block._from_cmlir(self._current_block).end)
+                op = op_type(
+                    builder, location, *_to_mlir(args), **_to_mlir(kwargs)
+                )  # type: ignore
+                self._verify_op(op)
+        except (mlir.MLIRError, ValueError) as e:
+            positional = {f"args[{i}]": v for i, v in enumerate(args)}
+            raise ValueError(
+                f"Failed to create op '{op_type.__name__}':\nInputs:\n"
+                + "".join(
+                    f"    {k} = {v!r}\n"
+                    for k, v in {**positional, **kwargs}.items()
+                )
+                + f"\n{e}"
+            ) from None
         _set_output_param_decls(op, self._params)
         return [Value.from_mlir(result) for result in op.results]
 
