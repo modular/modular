@@ -751,7 +751,10 @@ class OpenAIChatCompletionsRequestDriver(RequestDriver):
         )
 
 
-def _count_output_images(data: dict[str, Any]) -> int:
+_GENERATED_MEDIA_TYPES = frozenset({"output_image", "output_video"})
+
+
+def _count_generated_media(data: dict[str, Any]) -> int:
     output = data.get("output")
     if not isinstance(output, list):
         logger.warning(
@@ -780,7 +783,7 @@ def _count_output_images(data: dict[str, Any]) -> int:
                     f"Skipping output[{message_idx}].content[{item_idx}]: expected dict, got {type(item)}."
                 )
                 continue
-            if item.get("type") == "output_image":
+            if item.get("type") in _GENERATED_MEDIA_TYPES:
                 count += 1
 
     return count
@@ -883,11 +886,11 @@ class OpenResponsesRequestDriver(RequestDriver):
                         return output
 
                     body = await response.json()
-                    output.num_generated_outputs = _count_output_images(body)
+                    output.num_generated_outputs = _count_generated_media(body)
                     if output.num_generated_outputs <= 0:
                         output.error = (
-                            "No output_image content found in OpenResponses "
-                            "response body."
+                            "No output_image or output_video content found in"
+                            " OpenResponses response body."
                         )
                         output.success = False
                         return output
