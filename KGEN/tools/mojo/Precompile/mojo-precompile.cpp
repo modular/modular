@@ -18,7 +18,7 @@
 #include "KGEN/ToolCommon/CompilationOptions.h"
 #include "KGEN/ToolCommon/InitAllDialects.h"
 #include "MLRT/AsyncRT/CompilerSupport/Context.h"
-#include "MLRT/AsyncRT/Runtime/Runtime.h"
+#include "MLRT/AsyncRT/Runtime/CPUDevice.h"
 #include "Support/Compiler/BytecodeReaderWriter.h"
 #include "Support/Compiler/Diags.h"
 #include "Support/Compiler/MLIRDenseAttr.h"

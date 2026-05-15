@@ -9,7 +9,7 @@
 #include "../TypeSystem/MojoTypeSystem.h"
 #include "KGEN/MojoTooling/REPLPythonExprUtils.h"
 #include "Logging.h"
-#include "MLRT/AsyncRT/Runtime/Runtime.h"
+#include "MLRT/AsyncRT/Runtime/CPUDevice.h"
 #include "MojoDiagnostic.h"
 #include "MojoExpressionParser.h"
 #include "MojoExpressionVariable.h"

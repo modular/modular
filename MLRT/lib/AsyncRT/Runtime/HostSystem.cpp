@@ -4,7 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "MLRT/AsyncRT/Runtime/RuntimeManager.h"
+#include "MLRT/AsyncRT/Runtime/HostSystem.h"
 #include "MLRT/AsyncRT/Runtime/Globals/RuntimeGlobal.h"
 #include "Support/Threading/HWInfo.h"
 

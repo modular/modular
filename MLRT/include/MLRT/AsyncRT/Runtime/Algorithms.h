@@ -11,7 +11,7 @@
 #ifndef MLRT_ASYNCRT_RUNTIME_ALGORITHMS_H
 #define MLRT_ASYNCRT_RUNTIME_ALGORITHMS_H
 
-#include "MLRT/AsyncRT/Runtime/Runtime.h"
+#include "MLRT/AsyncRT/Runtime/CPUDevice.h"
 #include "MLRT/AsyncRT/Support/Chain.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/Twine.h"

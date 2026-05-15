@@ -9,7 +9,7 @@
 #include "KGEN/Compiler/ObjectCompiler.h"
 #include "KGEN/ToolCommon/InitAllDialects.h"
 #include "MLRT/AsyncRT/CompilerSupport/Context.h"
-#include "MLRT/AsyncRT/Runtime/Runtime.h"
+#include "MLRT/AsyncRT/Runtime/CPUDevice.h"
 #include "Support/Context.h"
 #include "mlir/Parser/Parser.h"
 #include "llvm/Support/Base64.h"

@@ -27,7 +27,7 @@
 #include "KGEN/ToolCommon/KGENPasses.h"
 #include "MLRT/AsyncRT/Runtime/Algorithms.h"
 #include "MLRT/AsyncRT/Runtime/AnyAsyncValueRef.h"
-#include "MLRT/AsyncRT/Runtime/Runtime.h"
+#include "MLRT/AsyncRT/Runtime/CPUDevice.h"
 #include "Support/Config.h"
 #include "Support/Context.h"
 #include "Support/LLVMCompilerForwardDecls.h"

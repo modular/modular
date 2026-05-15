@@ -6,7 +6,7 @@
 
 #include "Init/Init.h"
 #include "Init/DevelopmentSignalHandler.h"
-#include "MLRT/AsyncRT/Runtime/RuntimeManager.h"
+#include "MLRT/AsyncRT/Runtime/HostSystem.h"
 #include "Support/Configuration.h"
 #include "Support/ContextGlobal.h"
 #include "Support/CrashReporting/CrashReporting.h"

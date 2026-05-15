@@ -9,7 +9,7 @@
 #include "Init/Init.h"
 #include "MLRT/AsyncRT/ForwardDecls.h"
 #include "MLRT/AsyncRT/Runtime/Algorithms.h"
-#include "MLRT/AsyncRT/Runtime/Runtime.h"
+#include "MLRT/AsyncRT/Runtime/CPUDevice.h"
 #include "MLRT/AsyncRT/Support/UnknownLocationDecoder.h"
 #include "Support/ADT/SmartVariant.h"
 #include "Support/Buffer.h"

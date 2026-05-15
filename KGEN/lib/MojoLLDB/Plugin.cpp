@@ -15,7 +15,7 @@
 #include "Init/Init.h"
 #include "Language/MojoLanguage.h"
 #include "Language/MojoLanguageRuntime.h"
-#include "MLRT/AsyncRT/Runtime/Runtime.h"
+#include "MLRT/AsyncRT/Runtime/CPUDevice.h"
 #include "REPL/MojoREPL.h"
 #include "Support/CrashReporting/CrashReporting.h"
 #include "Support/SymbolExport.h"

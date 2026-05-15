@@ -4,7 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "MLRT/AsyncRT/Runtime/CompactRuntimePtr.h"
+#include "MLRT/AsyncRT/Runtime/CompactCPUDevicePtr.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/Support/raw_os_ostream.h"
 

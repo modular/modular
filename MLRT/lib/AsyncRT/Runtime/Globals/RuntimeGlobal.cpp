@@ -5,7 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "MLRT/AsyncRT/Runtime/Globals/RuntimeGlobal.h"
-#include "MLRT/AsyncRT/Runtime/Runtime.h"
+#include "MLRT/AsyncRT/Runtime/CPUDevice.h"
 
 #include <mutex>
 

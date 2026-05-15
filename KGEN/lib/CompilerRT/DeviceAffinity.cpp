@@ -5,7 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "MLRT/AsyncRT/DeviceAffinity.h"
-#include "MLRT/AsyncRT/Runtime/Runtime.h"
+#include "MLRT/AsyncRT/Runtime/CPUDevice.h"
 #include "MLRT/AsyncRT/Runtime/WorkQueue.h"
 #include "Support/SymbolExport.h"
 

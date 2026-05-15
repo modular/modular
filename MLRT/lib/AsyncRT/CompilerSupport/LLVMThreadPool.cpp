@@ -6,7 +6,7 @@
 
 #include "MLRT/AsyncRT/CompilerSupport/LLVMThreadPool.h"
 #include "MLRT/AsyncRT/Runtime/Algorithms.h"
-#include "MLRT/AsyncRT/Runtime/Runtime.h"
+#include "MLRT/AsyncRT/Runtime/CPUDevice.h"
 
 using namespace M;
 using namespace MLRT;

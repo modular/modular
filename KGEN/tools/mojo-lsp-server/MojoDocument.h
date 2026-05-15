@@ -13,7 +13,7 @@
 #include "KGEN/MojoTooling/PublicASTDecl.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
 #include "KGEN/tools/mojo-lsp-server/LSPTelemetryContext.h"
-#include "MLRT/AsyncRT/Runtime/Runtime.h"
+#include "MLRT/AsyncRT/Runtime/CPUDevice.h"
 #include "MojoServer.h"
 #include "Support/LLVMForwardDecls.h"
 #include "Support/ReferenceCounted.h"

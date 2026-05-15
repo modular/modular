@@ -8,7 +8,7 @@
 #include "Config/Version.h"
 #include "MLRT/AsyncRT/ForwardDecls.h"
 #include "MLRT/AsyncRT/Runtime/Algorithms.h"
-#include "MLRT/AsyncRT/Runtime/Runtime.h"
+#include "MLRT/AsyncRT/Runtime/CPUDevice.h"
 #include "MLRT/AsyncRT/Support/UnknownLocationDecoder.h"
 #include "Support/Base64.h"
 #include "Support/Buffer.h"

@@ -5,7 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "MLRT/AsyncRT/Runtime/AsyncValue.h"
-#include "MLRT/AsyncRT/Runtime/Runtime.h"
+#include "MLRT/AsyncRT/Runtime/CPUDevice.h"
 #include "MLRT/AsyncRT/Support/Chain.h"
 #include "Support/ADT/ConcurrentAppendingVector.h"
 #include "Support/Threading/SpinWaiter.h"

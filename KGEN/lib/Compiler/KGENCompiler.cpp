@@ -18,7 +18,7 @@
 #include "MLRT/AsyncRT/CompilerSupport/Context.h"
 #include "MLRT/AsyncRT/CompilerSupport/MLIRLocationDecoder.h"
 #include "MLRT/AsyncRT/Runtime/Algorithms.h"
-#include "MLRT/AsyncRT/Runtime/Runtime.h"
+#include "MLRT/AsyncRT/Runtime/CPUDevice.h"
 #include "ObjectCompiler/KGENToLLVMPipeline.h"
 #include "Pipeline/Pipeline.h"
 #include "Support/ADT/DenseStringMap.h"
