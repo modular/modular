@@ -21,6 +21,7 @@ from .context import KimiK2_5TextAndVisionContext
 from .model import KimiK2_5Model
 from .model_config import KimiK2_5Config, KimiK2_5TextConfig
 from .tokenizer import KimiK2_5VLTokenizer
+from .unified_eagle_mha_pipeline_model import Eagle3MHAKimiK25Model
 from .unified_eagle_pipeline_model import Eagle3KimiK25Model
 
 
@@ -107,6 +108,31 @@ eagle3_kimik25_arch = SupportedArchitecture(
     },
     multi_gpu_supported=True,
     pipeline_model=Eagle3KimiK25Model,
+    tokenizer=KimiK2_5VLTokenizer,
+    context_type=KimiK2_5TextAndVisionContext,
+    default_weights_format=WeightsFormat.safetensors,
+    weight_adapters={
+        WeightsFormat.safetensors: weight_adapters.convert_kimik2_5_safetensor_state_dict,
+    },
+    supports_empty_batches=True,
+    requires_max_batch_context_length=True,
+    config=KimiK2_5TextConfig,
+    tool_parser="kimik2_5",
+    reasoning_parser="kimik2_5",
+)
+
+eagle3_mha_kimik25_arch = SupportedArchitecture(
+    name="Eagle3MHAKimiK25ForCausalLM",
+    task=PipelineTask.TEXT_GENERATION,
+    example_repo_ids=["nvidia/Kimi-K2.5-NVFP4"],
+    default_encoding="bfloat16",
+    supported_encodings={
+        "bfloat16",
+        "float8_e4m3fn",
+        "float4_e2m1fnx2",
+    },
+    multi_gpu_supported=True,
+    pipeline_model=Eagle3MHAKimiK25Model,
     tokenizer=KimiK2_5VLTokenizer,
     context_type=KimiK2_5TextAndVisionContext,
     default_weights_format=WeightsFormat.safetensors,

@@ -282,7 +282,6 @@ def rms_norm_fused_residual_cpu[
 
 @__name(
     t"rms_norm_fused_residual_gpu_block_{dtype}_{multiply_before_cast}",
-    mangle=True,
 )
 def rms_norm_fused_residual_gpu_block[
     dtype: DType,
@@ -497,7 +496,7 @@ def rms_norm_fused_residual_gpu[
         seed,
         grid_dim=grid_dim,
         block_dim=block_dim,
-        attributes=pdl_launch_attributes(PDLLevel(1)),
+        attributes=pdl_launch_attributes(PDLLevel.ON),
         shared_mem_bytes=shared_mem_size,
         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
             UInt32(

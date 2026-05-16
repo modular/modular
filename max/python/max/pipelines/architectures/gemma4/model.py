@@ -16,7 +16,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import Any, ClassVar, cast
 
 import numpy as np
 import numpy.typing as npt
@@ -26,12 +26,12 @@ from max.engine import InferenceSession, Model
 from max.graph import BufferType, DeviceRef, Graph, Module, TensorType
 from max.graph.weights import WeightData, Weights, WeightsAdapter
 from max.interfaces import RequestID
-from max.kv_cache.paged_kv_cache.increment_cache_lengths import (
-    IncrementCacheLengthsProcessor,
-)
 from max.nn.comm import Signals
 from max.nn.kv_cache import KVCacheInputs, MultiKVCacheParams
 from max.nn.transformer import ReturnLogits
+from max.pipelines.kv_cache.paged_kv_cache.increment_cache_lengths import (
+    IncrementCacheLengthsProcessor,
+)
 from max.pipelines.lib import (
     AlwaysSignalBuffersMixin,
     CompilationTimer,
@@ -140,6 +140,8 @@ class Gemma3_MultiModalModel(
             execution.
     """
 
+    model_config_cls: ClassVar[type[Any]] = Gemma4ForConditionalGenerationConfig
+
     language_model: Model
     """The compiled and initialized MAX Engine model ready for inference."""
 
@@ -223,24 +225,6 @@ class Gemma3_MultiModalModel(
         """Calculates the maximum sequence length for the InternVL model."""
         return Gemma4ForConditionalGenerationConfig.calculate_max_seq_len(
             pipeline_config, huggingface_config
-        )
-
-    @classmethod
-    def get_kv_params(
-        cls,
-        huggingface_config: AutoConfig,
-        pipeline_config: PipelineConfig,
-        devices: list[DeviceRef],
-        kv_cache_config: KVCacheConfig,
-        cache_dtype: DType,
-    ) -> MultiKVCacheParams:
-        """Gets the parameters required to configure the KV cache for InternVL."""
-        return Gemma4ForConditionalGenerationConfig.construct_kv_params(
-            huggingface_config,
-            pipeline_config,
-            devices,
-            kv_cache_config,
-            cache_dtype,
         )
 
     def load_model(self, session: InferenceSession) -> tuple[Model, Model]:

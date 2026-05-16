@@ -20,7 +20,7 @@ from conftest import MAX_INT32, GraphBuilder, static_dims, tensor_types
 from hypothesis import assume, given, reject
 from hypothesis import strategies as st
 from max.dtype import DType
-from max.graph import DeviceRef, TensorType, Weight, ops
+from max.graph import DeviceRef, Graph, TensorType, Weight, ops
 from max.graph.type import FilterLayout
 
 shared_dtypes = st.shared(st.from_type(DType))
@@ -241,3 +241,52 @@ def test_conv_mismatched_devices(
         tensor, filter = graph.inputs
         with pytest.raises(ValueError, match="same device"):
             ops.conv2d(tensor.tensor, filter.tensor)
+
+
+def test_mo_conv_non_rank1_stride_error() -> None:
+    """Constructing rmo.mo.conv directly with a rank-2 stride must raise
+    TypeError, not abort. The op's MO_Rank1IndexTensor operand constraint is
+    enforced by the verifier, which surfaces as a Python exception."""
+    from max._core.dialects import builtin, kgen
+    from max._core.dialects import rmo as _rmo
+
+    x_type = TensorType(DType.float32, [1, 8, 8, 4], device=DeviceRef.CPU())
+    filter_type = TensorType(
+        DType.float32, [3, 3, 4, 8], device=DeviceRef.CPU()
+    )
+    result_type = TensorType(
+        DType.float32, [1, 6, 6, 8], device=DeviceRef.CPU()
+    )
+    with Graph(
+        "mo_conv_bad_stride", input_types=[x_type, filter_type]
+    ) as graph:
+        bad_stride = ops.constant(
+            np.array([[1, 1], [1, 1]], dtype=np.int64),
+            DType.int64,
+            DeviceRef.CPU(),
+        )
+        dilations = ops.constant(
+            np.array([1, 1], dtype=np.int64), DType.int64, DeviceRef.CPU()
+        )
+        paddings = ops.constant(
+            np.array([0, 0, 0, 0], dtype=np.int64),
+            DType.int64,
+            DeviceRef.CPU(),
+        )
+        num_groups = ops.constant(
+            np.array(1, dtype=np.int64), DType.int64, DeviceRef.CPU()
+        )
+        with pytest.raises(TypeError, match="rank-1 tensor with indices"):
+            graph._add_op_generated(
+                _rmo.MoConvOp,
+                result_type,
+                graph.inputs[0].tensor,
+                graph.inputs[1].tensor,
+                bad_stride,
+                dilations,
+                paddings,
+                num_groups,
+                builtin.StringAttr("NHWC"),
+                builtin.StringAttr(""),
+                kgen.ParamDeclArrayAttr([]),
+            )

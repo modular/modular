@@ -16,7 +16,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import Any, Literal, cast
+from typing import Any, ClassVar, Literal, cast
 
 import numpy as np
 from max.driver import Buffer, Device
@@ -26,11 +26,10 @@ from max.experimental import functional as F
 from max.experimental.tensor import default_dtype
 from max.graph import DeviceRef, TensorType
 from max.graph.weights import Weights, WeightsAdapter
-from max.nn.kv_cache import KVCacheInputs, KVCacheParams
+from max.nn.kv_cache import KVCacheInputs
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
-    CompilationTimer,
     KVCacheConfig,
     ModelInputs,
     ModelOutputs,
@@ -77,6 +76,8 @@ class Llama3Inputs(ModelInputs):
 class Llama3Model(LogProbabilitiesMixin, PipelineModelWithKVCache[TextContext]):
     """Llama3 pipeline model using the ModuleV3 API."""
 
+    model_config_cls: ClassVar[type[Any]] = Llama3Config
+
     config_class: type[Llama3Config] = Llama3Config
     norm_method: Literal["rms_norm"] | Literal["layer_norm"] = "rms_norm"
     attention_bias: bool = False
@@ -112,23 +113,6 @@ class Llama3Model(LogProbabilitiesMixin, PipelineModelWithKVCache[TextContext]):
             pipeline_config, huggingface_config
         )
 
-    @classmethod
-    def get_kv_params(
-        cls,
-        huggingface_config: AutoConfig,
-        pipeline_config: PipelineConfig,
-        devices: list[DeviceRef],
-        kv_cache_config: KVCacheConfig,
-        cache_dtype: DType,
-    ) -> KVCacheParams:
-        return Llama3Config.construct_kv_params(
-            huggingface_config,
-            pipeline_config,
-            devices,
-            kv_cache_config,
-            cache_dtype,
-        )
-
     def load_model(self) -> Callable[..., Any]:
         assert self.pipeline_config.runtime.max_batch_size, (
             "Expected max_batch_size to be set"
@@ -139,56 +123,54 @@ class Llama3Model(LogProbabilitiesMixin, PipelineModelWithKVCache[TextContext]):
             )
         ).to(self.devices[0])
 
-        with CompilationTimer("model") as timer:
-            device0 = self.devices[0]
-            device_ref = DeviceRef(device0.label, device0.id)
-            tokens_type = TensorType(
-                DType.int64, shape=["total_seq_len"], device=device_ref
-            )
-            input_row_offsets_type = TensorType(
-                DType.uint32,
-                shape=["input_row_offsets_len"],
-                device=device0,
-            )
-            return_n_logits_type = TensorType(
-                DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
-            )
+        device0 = self.devices[0]
+        device_ref = DeviceRef(device0.label, device0.id)
+        tokens_type = TensorType(
+            DType.int64, shape=["total_seq_len"], device=device_ref
+        )
+        input_row_offsets_type = TensorType(
+            DType.uint32,
+            shape=["input_row_offsets_len"],
+            device=device0,
+        )
+        return_n_logits_type = TensorType(
+            DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
+        )
 
-            huggingface_config = self.huggingface_config
-            if self.adapter:
-                state_dict = self.adapter(
-                    dict(self.weights.items()),
-                    huggingface_config=huggingface_config,
-                    pipeline_config=self.pipeline_config,
-                )
-            else:
-                state_dict = {
-                    key: value.data() for key, value in self.weights.items()
-                }
-            model_config = self.config_class.initialize(self.pipeline_config)
-            model_config.finalize(
+        huggingface_config = self.huggingface_config
+        if self.adapter:
+            state_dict = self.adapter(
+                dict(self.weights.items()),
                 huggingface_config=huggingface_config,
-                state_dict=state_dict,
-                norm_method=self.norm_method,
-                attention_bias=self.attention_bias,
-                return_logits=self.return_logits,
-                return_hidden_states=self.return_hidden_states,
+                pipeline_config=self.pipeline_config,
             )
-            with F.lazy(), default_dtype(model_config.dtype):
-                nn_model = Llama3(model_config, self.kv_params)
-                nn_model.to(self.devices[0])
+        else:
+            state_dict = {
+                key: value.data() for key, value in self.weights.items()
+            }
+        model_config = self.config_class.initialize(self.pipeline_config)
+        model_config.finalize(
+            huggingface_config=huggingface_config,
+            state_dict=state_dict,
+            norm_method=self.norm_method,
+            attention_bias=self.attention_bias,
+            return_logits=self.return_logits,
+            return_hidden_states=self.return_hidden_states,
+        )
+        with F.lazy(), default_dtype(model_config.dtype):
+            nn_model = Llama3(model_config, self.kv_params)
+            nn_model.to(self.devices[0])
 
-            kv_inputs = self.kv_params.get_symbolic_inputs()
-            flattened_kv_types = kv_inputs.flatten()
+        kv_inputs = self.kv_params.get_symbolic_inputs()
+        flattened_kv_types = kv_inputs.flatten()
 
-            timer.mark_build_complete()
-            compiled_model = nn_model.compile(
-                tokens_type,
-                return_n_logits_type,
-                input_row_offsets_type,
-                *flattened_kv_types,
-                weights=state_dict,
-            )
+        compiled_model = nn_model.compile(
+            tokens_type,
+            return_n_logits_type,
+            input_row_offsets_type,
+            *flattened_kv_types,
+            weights=state_dict,
+        )
 
         return compiled_model
 

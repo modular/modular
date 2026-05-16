@@ -860,7 +860,6 @@ def _mha_sm90_enqueue[
 )
 @__name(
     t"sm90_mha_depth{config.depth}_{KVLUTType.dtype}_{output_type}_nqh{config.num_heads}_nkvh{config.num_heads // group}",
-    mangle=True,
 )
 def _mha_sm90[
     KVLUTType: MHAOperand,

@@ -102,9 +102,7 @@ def _sentinel_val[dtype: DType, ascending: Bool]() -> Scalar[dtype]:
 
 
 @__llvm_metadata(MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](256))
-@__name(
-    t"bitonic_local_sort_{input_dtype}_{indices_dtype}_{ascending}", mangle=True
-)
+@__name(t"bitonic_local_sort_{input_dtype}_{indices_dtype}_{ascending}")
 def _bitonic_local_sort_kernel[
     input_dtype: DType,
     indices_dtype: DType,
@@ -182,7 +180,6 @@ def _bitonic_local_sort_kernel[
 @__llvm_metadata(MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](256))
 @__name(
     t"bitonic_merge_local_{input_dtype}_{indices_dtype}_{ascending}",
-    mangle=True,
 )
 def _bitonic_merge_local_kernel[
     input_dtype: DType,
@@ -293,7 +290,7 @@ def _argsort_gpu_impl[
     @__llvm_metadata(
         MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](BLOCK_SIZE)
     )
-    @__name(t"bitonic_global_step_{ascending}", mangle=True)
+    @__name(t"bitonic_global_step_{ascending}")
     def bitonic_global_step(
         indices_arg: TileTensor[
             indices.dtype, indices.LayoutType, indices.origin

@@ -12,41 +12,27 @@
 # ===----------------------------------------------------------------------=== #
 """HAL Driver — entry point for interacting with hardware via a plugin."""
 
-from .plugin import (
-    RawDriver,
-    OutParam,
-    DriverHandle,
-    DeviceHandle,
-    DriverVersion,
-)
-from .device import (
-    Device,
-    get_device_spec,
-)
-
-from .status import STATUS_SUCCESS, STATUS_INVALID_ARG, HALError
-from std.memory import (
-    ArcPointer,
-    ImmutPointer,
-    MutPointer,
-    UnsafePointer,
-    UnsafeMaybeUninit,
-)
+from .plugin import RawDriver
+from .device import Device, get_device_spec
+from .status import HALError
+from std.memory import ArcPointer
+from std.memory.arc_pointer import WeakPointer
 
 
 @fieldwise_init
-struct Driver(Movable):
+struct Driver(ImplicitlyDestructible, Movable):
     """Top-level driver that owns a loaded plugin and the driver handle.
 
     Lifecycle: create via `Driver.create(plugin_spec)`, then call methods.
     The driver handle is destroyed when the Driver is destroyed.
     """
 
-    var _raw: RawDriver
+    var _raw: ArcPointer[RawDriver]
+    var _self_ref: WeakPointer[Self]
     var _device_count: Int64
 
     @staticmethod
-    def create(plugin_spec: String) raises HALError -> Self:
+    def create(plugin_spec: String) raises HALError -> ArcPointer[Self]:
         """Create a Driver by loading a plugin and initialising the backend.
 
         Args:
@@ -56,20 +42,28 @@ struct Driver(Movable):
         # If `get_device_count` raises, `raw`'s destructor cleans up the
         # loaded plugin and initialised driver handle.
         var device_count = raw.get_device_count()
-        return Driver(_raw=raw^, _device_count=device_count)
+        var arc = ArcPointer[Self](
+            Driver(
+                _raw=ArcPointer(raw^),
+                _device_count=device_count,
+                _self_ref=WeakPointer[Driver](),
+            )
+        )
+        arc[]._self_ref = WeakPointer(downgrade=arc)
+        return arc
 
     # ===-------------------------------------------------------------------===#
     # Queries
     # ===-------------------------------------------------------------------===#
 
     def get_name(self) -> String:
-        return self._raw._raw.name
+        return self._raw[]._raw.name
 
     def get_device_count(self) -> Int64:
         return self._device_count
 
     def get_device[
         id: Int64
-    ](self) raises HALError -> Device[origin_of(self), get_device_spec[id]()]:
-        # """Retrieve a device by ID."""
-        return Device[origin_of(self), get_device_spec[id]()](self, id)
+    ](self) raises HALError -> ArcPointer[Device[get_device_spec[id]()]]:
+        """Retrieve a device by ID."""
+        return Device[get_device_spec[id]()]._create(self, id)

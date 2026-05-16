@@ -18,29 +18,15 @@
 
 from __future__ import annotations
 
-import dataclasses
 import json
-import subprocess
-import sys
-from dataclasses import dataclass
 from pathlib import Path
 
 import click
+from pipeline_matrix import PipelineEntry, entries_to_matrix, filter_entries
 
 CONFIGS_DIR = Path("max/tests/integration/accuracy/dataset_eval_configs")
 # Switch to llama once llama is fixed in dataset eval.
 SMOKE_TEST_PIPELINE = "sentence-transformers/all-mpnet-base-v2"
-
-
-@dataclass(frozen=True)
-class PipelineEntry:
-    """A pipeline-eval matrix entry consumed by the GH Actions workflow."""
-
-    pipeline: str
-    runner: str
-    gpu_flag: str
-    instance_type: str
-    timeout: int  # minutes
 
 
 PIPELINES: list[PipelineEntry] = [
@@ -233,67 +219,20 @@ PIPELINES: list[PipelineEntry] = [
 ]
 
 
-def _changed_pipelines(base_ref: str) -> set[str]:
-    """Return pipeline names whose config .sh files changed vs base_ref."""
-    result = subprocess.run(
-        ["git", "diff", "--name-only", f"origin/{base_ref}...HEAD"],
-        capture_output=True,
-        text=True,
-        check=True,
-    )
-    changed: set[str] = set()
-    for line in result.stdout.strip().splitlines():
-        p = Path(line)
-        if p.suffix == ".sh":
-            try:
-                relative = p.relative_to(CONFIGS_DIR)
-            except ValueError:
-                continue
-            changed.add(str(relative.with_suffix("")))
-    return changed
-
-
 def generate_matrix(
     event_name: str,
     selected_pipeline: str,
     base_ref: str | None,
 ) -> list[PipelineEntry]:
     """Return the filtered list of pipeline entries for the GH Actions matrix."""
-    if event_name == "pull_request":
-        assert base_ref is not None
-        changed = _changed_pipelines(base_ref)
-        if changed:
-            final = [p for p in PIPELINES if p.pipeline in changed]
-            if not final:
-                print(
-                    f"::warning::Changed configs {changed} not found in"
-                    " matrix, running smoke test",
-                    file=sys.stderr,
-                )
-                final = [
-                    p for p in PIPELINES if p.pipeline == SMOKE_TEST_PIPELINE
-                ]
-        else:
-            print(
-                f"::notice::No pipeline configs changed, running smoke test"
-                f" only ({SMOKE_TEST_PIPELINE})",
-                file=sys.stderr,
-            )
-            final = [p for p in PIPELINES if p.pipeline == SMOKE_TEST_PIPELINE]
-
-    elif selected_pipeline and selected_pipeline != "all":
-        final = [p for p in PIPELINES if p.pipeline == selected_pipeline]
-        if not final:
-            print(
-                f"::error::Pipeline '{selected_pipeline}' not found!",
-                file=sys.stderr,
-            )
-            sys.exit(1)
-    else:
-        # schedule or workflow_dispatch with "all"
-        final = list(PIPELINES)
-
-    return final
+    return filter_entries(
+        PIPELINES,
+        event_name=event_name,
+        selected_pipeline=selected_pipeline,
+        base_ref=base_ref,
+        configs_dir=CONFIGS_DIR,
+        smoke_test_pipeline=SMOKE_TEST_PIPELINE,
+    )
 
 
 @click.command()
@@ -307,8 +246,7 @@ def generate_matrix(
 def main(event_name: str, selected_pipeline: str, base_ref: str | None) -> None:
     """Generate the GitHub Actions matrix for Pipeline Dataset Evaluation."""
     final = generate_matrix(event_name, selected_pipeline, base_ref)
-    matrix = {"include": [dataclasses.asdict(p) for p in final]}
-    click.echo(json.dumps(matrix))
+    click.echo(json.dumps(entries_to_matrix(final)))
 
 
 if __name__ == "__main__":

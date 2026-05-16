@@ -42,7 +42,7 @@ from nn.conv.conv_utils import elementwise_simd_epilogue_type
 # =========================================================================
 
 
-@__name(t"conv2d_im2col_nhwc_{dtype}", mangle=True)
+@__name(t"conv2d_im2col_nhwc_{dtype}")
 def _im2col_nhwc_kernel[
     dtype: DType,
 ](
@@ -111,7 +111,7 @@ def _im2col_nhwc_kernel[
         k += block_dim.x
 
 
-@__name(t"conv2d_transpose_filter_to_nk_{dtype}_{filter_is_fcrs}", mangle=True)
+@__name(t"conv2d_transpose_filter_to_nk_{dtype}_{filter_is_fcrs}")
 def _transpose_filter_to_nk[
     dtype: DType,
     filter_is_fcrs: Bool,

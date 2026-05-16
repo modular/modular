@@ -916,7 +916,8 @@ class TextGenerationInputs(PipelineInputs, Generic[TextGenerationContextType]):
         return (
             "TextGenerationInputs("
             f"batch_size={len(self.flat_batch)}, "
-            f"num_steps={self.num_steps}"
+            f"num_steps={self.num_steps}, "
+            f"batch_type={self.batch_type.value}"
             ")"
         )
 

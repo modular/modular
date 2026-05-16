@@ -44,6 +44,11 @@ This version is still a work in progress.
   setter. This eliminates a class of bugs determining the effective element
   type.
 
+- Implicit `std` imports are now an error, following a period of deprecation.
+  Imports from the standard library must now be fully qualified. The compiler
+  thus no longer squats on these module names, paving the way for user modules
+  named `algorithm`, `memory`, etc.
+
 ## Library changes
 
 - `Coord`, `coord()`, `Idx`, `ComptimeInt`, `RuntimeInt`, and related coordinate
@@ -53,6 +58,15 @@ This version is still a work in progress.
   layout and kernel code; `layout` also hoists the common names at package
   scope for convenience.
 
+- `PythonObject.__del__` now skips the `PyGILState_Ensure` /
+  `PyGILState_Release` round-trip when the current thread already holds
+  the GIL (checked via `PyGILState_Check`). The public contract is
+  unchanged - dropping a `PythonObject` from a thread that does not
+  hold the GIL is still safe, and the destructor still acquires the GIL
+  in that case. The fast path significantly reduces per-call overhead
+  for Python -> Mojo FFI calls, where CPython hands the callee an
+  already-held GIL.
+
 - Added `TileTensor.copy_from()` and `TileTensor.split()` for copying between
   compatible tile views and splitting tiles into static or runtime-sized
   partitions.
@@ -60,6 +74,10 @@ This version is still a work in progress.
 - `String.as_bytes_mut()` has been renamed to `String.unsafe_as_bytes_mut()`, to
   reflect that writing invalid UTF-8 to the resulting `Span[Byte]` can lead to
   later issues like out of bounds access.
+
+- `List[T]` no longer requires its type to be `Copyable`, but now works with
+  `Movable`-only types. Iteration still requires `Copyable` and will emit
+  a `comptime assert` if not satisfied.
 
 - `reflect[T]` is now a `comptime` alias for the `Reflected[T]` handle type
   rather than a function returning a zero-sized handle instance. All methods on
@@ -121,6 +139,7 @@ This version is still a work in progress.
   def main():
       print(reflect_fn[my_func].display_name())  # "my_func"
       print(reflect_fn[my_func].linkage_name())  # mangled symbol name
+  ```
 
 - Added `alloc`, `free`, and `Layout` in `memory.alloc` for layout-aware memory
   allocation. A `Layout[T]` bundles an element count and alignment into a
@@ -153,6 +172,9 @@ This version is still a work in progress.
   var missing = iter(l).nth(10)   # None (Optional)
   ```
 
+- `String` and `StringSlice` now have a keyword only `string[codepoint=...]`
+  that indexes by unicode codepoint offsets.
+
 - PythonObject convertibility got simplified and cleaned up. When working with
   types that required custom conversions to `PythonObject`, we used to write
   code like this:
@@ -180,6 +202,18 @@ This version is still a work in progress.
   ```
 
 ## Tooling changes
+
+- The `mojo package` command has renamed to `mojo precompile`. Similarly, the
+  `.mojopkg` file extension has been deprecated; favor the `.mojoc` file
+  extension instead.
+
+  ```text
+  # Before
+  mojo package my_package -o my_package.mojopkg
+
+  # After
+  mojo precompile my_package -o my_package.mojoc
+  ```
 
 ## GPU programming
 

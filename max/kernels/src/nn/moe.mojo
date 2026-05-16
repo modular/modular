@@ -370,9 +370,7 @@ def _copy_tokens_to_gmem[
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_threads))
 )
-@__name(
-    t"moe_create_indices_bucket_group_{input_type}_t{num_threads}", mangle=True
-)
+@__name(t"moe_create_indices_bucket_group_{input_type}_t{num_threads}")
 def moe_create_indices_bucket_group_kernel[
     input_type: DType,
     TokenExpertOrderLayoutType: TensorLayout,
@@ -567,7 +565,7 @@ def moe_create_indices[
             expert_usage_stats.ptr,
             grid_dim=(1,),
             block_dim=(1,),
-            attributes=pdl_launch_attributes(PDLLevel(1)),
+            attributes=pdl_launch_attributes(PDLLevel.ON),
         )
 
         var lock = TileTensor(lock_buffer, row_major[1]())
@@ -672,7 +670,6 @@ def _warp_bitonic_sort[
 )
 @__name(
     t"group_limited_router_{scores_type}_{bias_type}_t{num_threads}",
-    mangle=True,
 )
 def group_limited_router_kernel[
     scores_type: DType,
@@ -952,16 +949,14 @@ def router_group_limited[
             routed_scaling_factor,
             grid_dim=expert_scores.dim(0),
             block_dim=num_threads,
-            attributes=pdl_launch_attributes(PDLLevel(1)),
+            attributes=pdl_launch_attributes(PDLLevel.ON),
         )
 
 
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_threads))
 )
-@__name(
-    t"single_group_router_{scores_type}_{bias_type}_t{num_threads}", mangle=True
-)
+@__name(t"single_group_router_{scores_type}_{bias_type}_t{num_threads}")
 def single_group_router_kernel[
     scores_type: DType,
     bias_type: DType,
@@ -1250,5 +1245,5 @@ def single_group_router[
             routed_scaling_factor,
             grid_dim=expert_scores.dim(0),
             block_dim=num_threads,
-            attributes=pdl_launch_attributes(PDLLevel(1)),
+            attributes=pdl_launch_attributes(PDLLevel.ON),
         )

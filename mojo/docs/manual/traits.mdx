@@ -126,10 +126,28 @@ trait Quackable:
 For more information, see
 [Default method implementations](#default-method-implementations).
 
-A trait can also include `comptime` members—compile-time constant values that
-must be defined by conforming structs. `comptime` members are useful for writing
-traits that describe generic types. For more information, see
-[`comptime` members for generics](#comptime-members-for-generics).
+A trait can also include `comptime` members. These are compile-time
+constant values. You can define them directly in the trait or require
+conforming structs to define them.
+
+A required value is a `comptime` member without an initializer. Conforming
+types must provide a value for it. Use required values when each conforming
+type needs its own compile-time constant. This lets trait methods adapt
+accordingly.
+
+Associated types are a common use for required `comptime`
+members. An associated type is a subordinate type used by the trait,
+most often in collections and generic data structures.
+
+Provided values can include constants, trait compositions, or types.
+You define them once in the trait, and every conforming type has
+access to them.
+
+Use required and provided `comptime` members to describe generic
+families of types.
+
+For more information, see [`comptime` members for
+generics](#comptime-members-for-generics).
 
 ### Adding traits to structs
 
@@ -157,7 +175,7 @@ The struct needs to implement any methods that are declared in the trait. The
 compiler enforces conformance: if a struct says it conforms to a trait, it must
 implement everything required by the trait, or the code won't compile.
 
-### Using a trait as a type bound
+### Using a trait as a type constraint
 
 Finally, you can define a function that takes a `Quackable` like this:
 
@@ -174,10 +192,9 @@ def make_it_quack2(maybe_a_duck: Some[Quackable]):
 ```
 
 This syntax may look a little unfamiliar if you haven't dealt with Mojo
-[parameters](/docs/manual/parameters/) before. What the first signature means is
-that `maybe_a_duck` is an argument of type `DuckType`, where `DuckType` is a
-type that must conform to the `Quackable` trait. `Quackable` is called the *type
-bound* for `DuckType`.
+[parameters](/docs/manual/parameters/) before. What the first signature
+means is that `maybe_a_duck` is an argument of type `DuckType`, where
+`DuckType` is a type that must conform to the `Quackable` trait.
 
 The `Some[Quackable]` form expresses the same idea: the type of `maybe_a_duck`
 is some concrete type that conforms to the trait `Quackable`.
@@ -608,8 +625,9 @@ print(repr(p))  # 1.5 : 2.7
 
 Mojo provides two core traits for managing value lifetimes:
 
-- [`AnyType`](/docs/std/builtin/anytype/AnyType/): The base trait that all types
-extend. Types conforming only to `AnyType` may require explicit destruction.
+- [`AnyType`](/docs/std/builtin/anytype/AnyType/): The base trait that all
+types conform to. Types conforming only to `AnyType` may require explicit
+destruction.
 
 - [`ImplicitlyDestructible`](/docs/std/builtin/anytype/ImplicitlyDestructible/):
 Types that can be automatically destroyed by calling `__del__()` when their
@@ -660,7 +678,7 @@ Building generic containers is an advanced topic. For an introduction, see the
 section on
 [parameterized structs](/docs/manual/parameters/#parameterized-structs).
 
-### `comptime` members for generics
+### `comptime` members for generics {#comptime-members-for-generics}
 
 In addition to methods, a trait can include `comptime` members, which must be
 defined by any conforming struct. For example:

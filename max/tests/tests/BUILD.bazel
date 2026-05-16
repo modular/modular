@@ -143,7 +143,7 @@ modular_py_test(
         "MODULAR_TORCH_MEMORY_PERCENT": "0.6",
     },
     exec_properties = {
-        "test.resources:gpu-memory": "2",
+        "test.resources:gpu-memory": "4",
     },
     tags = ["gpu"],
     target_compatible_with = ["//:nvidia_gpu"],

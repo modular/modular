@@ -52,6 +52,12 @@ class KVConnectorConfig(ConfigFileModel):
     )
     """Directory for disk-based KV cache offloading."""
 
+    use_debug_tiered_mode: bool = Field(
+        default=False,
+        description="Whether to use the debug tiered mode.",
+    )
+    """Whether to use the debug tiered mode."""
+
     disk_offload_max_gb: float = Field(
         default=50.0,
         description="Maximum disk space (GB) for KV cache offloading.",

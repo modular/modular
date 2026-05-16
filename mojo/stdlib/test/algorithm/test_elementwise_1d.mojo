@@ -23,9 +23,9 @@ from std.utils.index import IndexList
 
 def test_elementwise_1d() raises:
     comptime num_elements = 64
-    var ptr = alloc[Float32](num_elements)
+    var data = List(length=num_elements, fill=Float32(0))
 
-    var vector = Span(ptr=ptr, length=num_elements)
+    var vector = Span(data)
 
     for i in range(len(vector)):
         vector[i] = Float32(i)
@@ -45,8 +45,6 @@ def test_elementwise_1d() raises:
     )
 
     assert_almost_equal(vector[0], 2.051446)
-
-    ptr.free()
 
 
 def main() raises:

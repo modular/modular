@@ -574,7 +574,6 @@ def multistage_mma_q[
 
 @__name(
     t"multistage_qgemm_{a_type}_{b_packed_type}_{c_type}_g{group_size}",
-    mangle=True,
 )
 def multistage_qgemm_kernel[
     c_type: DType,
@@ -1050,7 +1049,7 @@ def unpack_4bit_int(val: SIMD[DType.uint32, _], idx: Int) -> UInt8:
 
 
 @__llvm_metadata(MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](128))
-@__name(t"repack_Q4_0_for_sm8x_{scales_type}", mangle=True)
+@__name(t"repack_Q4_0_for_sm8x_{scales_type}")
 def repack_Q4_0_for_sm8x[
     q_layout: Layout,
     repack_layout: Layout,
@@ -1238,9 +1237,7 @@ def repack_Q4_0_for_sm8x[
 # [K_groups, N]. The input is a uint8 tensor of shape
 # [K_groups * group_bytes, N].
 @__llvm_metadata(MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](128))
-@__name(
-    t"repack_GPTQ_for_sm8x_{scales_type}_g{group_size}_{has_perm}", mangle=True
-)
+@__name(t"repack_GPTQ_for_sm8x_{scales_type}_g{group_size}_{has_perm}")
 def repack_GPTQ_for_sm8x[
     in_layout: Layout,
     out_layout: Layout,

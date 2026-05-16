@@ -61,7 +61,12 @@ from max.pipelines.lib import PipelineConfig
 from max.pipelines.lib.tool_parsing import create as create_tool_parser
 from max.profiler import traced
 from max.serve.config import Settings
-from max.serve.parser import LlamaToolParser, ToolParser, parse_json_from_text
+from max.serve.parser import (
+    LlamaToolParser,
+    ToolParser,
+    normalize_tool_call_arguments,
+    parse_json_from_text,
+)
 from max.serve.pipelines.llm import (
     AudioGeneratorPipeline,
     TokenGeneratorOutput,
@@ -467,7 +472,7 @@ class OpenAIChatResponseGenerator(
                     str(e),
                 )
             elif isinstance(e, ValueError):
-                status_code = 400
+                status_code = 500
                 logger.exception("Exception in request %s", request.request_id)
             else:
                 status_code = 500
@@ -811,14 +816,11 @@ async def openai_parse_chat_completion_request(
         # ``ChatCompletionMessageParam`` TypedDicts (plus a MAX-specific
         # ``video_url`` content part); access via dict keys.
         content = m.get("content")
-        # OpenAI tool-calling metadata that the chat template needs to faithfully
-        # reconstruct multi-turn tool-use prompts. Without these, the templated
-        # prompt silently loses the assistant's previous ``tool_calls`` and the
-        # ``tool_call_id`` reference on tool responses (so for example Kimi-K2
-        # renders ``## Return of`` with no function name).
         raw_tool_calls = m.get("tool_calls")
         tool_calls: list[dict[str, Any]] | None = (
-            [dict(tc) for tc in raw_tool_calls] if raw_tool_calls else None
+            normalize_tool_call_arguments([dict(tc) for tc in raw_tool_calls])
+            if isinstance(raw_tool_calls, list) and raw_tool_calls
+            else None
         )
         tool_call_id = m.get("tool_call_id")
         reasoning_content = m.get("reasoning_content")
@@ -1183,13 +1185,24 @@ async def openai_create_chat_completion(
             parser=parser,
             parse_tool_calls=parse_tool_calls,
         )
+        # Use request-level temperature/thinking_temperature if provided, else server defaults.
+        temp = (
+            completion_request.temperature
+            if completion_request.temperature is not None
+            else request.app.state.pipeline_config.runtime.temperature
+        )
+        thinking_temp = (
+            completion_request.thinking_temperature
+            if completion_request.thinking_temperature is not None
+            else request.app.state.pipeline_config.runtime.thinking_temperature
+        )
         sampling_params = SamplingParams.from_input_and_generation_config(
             SamplingParamsInput(
                 top_k=completion_request.top_k,
                 top_p=completion_request.top_p,
                 min_p=completion_request.min_p,
-                temperature=completion_request.temperature,
-                thinking_temperature=completion_request.thinking_temperature,
+                temperature=temp,
+                thinking_temperature=thinking_temp,
                 frequency_penalty=completion_request.frequency_penalty,
                 presence_penalty=completion_request.presence_penalty,
                 repetition_penalty=completion_request.repetition_penalty,
@@ -1281,7 +1294,7 @@ async def openai_create_chat_completion(
         )
         raise HTTPException(status_code=400, detail=str(e)) from e
     except ValueError as e:
-        logger.exception("ValueError in request %s", request_id)
+        logger.warning("Value error in request %s: %s", request_id, str(e))
         # NOTE(SI-722): These errors need to return more helpful details,
         # but we don't necessarily want to expose the full error description
         # to the user. There are many different ValueErrors that can be raised.
@@ -1401,6 +1414,7 @@ async def openai_create_embeddings(
 ) -> CreateEmbeddingResponse | Response:
     request_id = request.state.request_id
 
+    # First try-catch: request parsing (client fault → 400)
     try:
         embeddings_request = CreateEmbeddingRequest.model_validate_json(
             await request.body()
@@ -1442,17 +1456,14 @@ async def openai_create_embeddings(
             )
             for idx, input_text in enumerate(embedding_inputs)
         ]
-
-        response = await response_generator.encode(embedding_requests)
-        return response
     except _ClientDisconnectedError:
         logger.info("Client disconnected for request %s", request_id)
         return Response(status_code=_CLIENT_DISCONNECTED_STATUS_CODE)
     except JSONDecodeError as e:
-        logger.exception("JSONDecodeError in request %s", request_id)
+        logger.warning("JSONDecodeError in request %s: %s", request_id, e)
         raise HTTPException(status_code=400, detail="Missing JSON.") from e
     except KeyError as e:
-        logger.exception("KeyError in request %s", request_id)
+        logger.warning("KeyError in request %s: %s", request_id, e)
         raise HTTPException(status_code=400, detail="Invalid JSON.") from e
     except ValidationError as e:
         logger.warning(
@@ -1460,7 +1471,7 @@ async def openai_create_embeddings(
         )
         raise HTTPException(status_code=400, detail=str(e)) from e
     except TypeError as e:
-        logger.exception("TypeError in request %s", request_id)
+        logger.warning("TypeError in request %s: %s", request_id, e)
         raise HTTPException(status_code=400, detail="Invalid JSON.") from e
     except InputError as e:
         logger.warning(
@@ -1468,11 +1479,23 @@ async def openai_create_embeddings(
         )
         raise HTTPException(status_code=400, detail=str(e)) from e
     except ValueError as e:
-        logger.exception("ValueError in request %s", request_id)
-        # NOTE(SI-722): These errors need to return more helpful details,
-        # but we don't necessarily want to expose the full error description
-        # to the user. There are many different ValueErrors that can be raised.
+        logger.warning("Value error in request %s: %s", request_id, str(e))
         raise HTTPException(status_code=400, detail="Value error.") from e
+
+    # Second try-catch: response generation (server fault → 500)
+    try:
+        response = await response_generator.encode(embedding_requests)
+        return response
+    except _ClientDisconnectedError:
+        logger.info("Client disconnected for request %s", request_id)
+        return Response(status_code=_CLIENT_DISCONNECTED_STATUS_CODE)
+    except Exception as e:
+        logger.exception(
+            "Exception during response generation in request %s", request_id
+        )
+        raise HTTPException(
+            status_code=500, detail="Internal server error."
+        ) from e
 
 
 class CompletionResponseStreamChoice(BaseModel):
@@ -1696,7 +1719,7 @@ class OpenAICompletionResponseGenerator(
                 content={"detail": "Input validation error", "message": str(e)},
             )
         except ValueError as e:
-            logger.exception("ValueError in request %s", request.request_id)
+            logger.exception("Exception in request %s", request.request_id)
             # TODO (SI-722) - propagate better errors back.
             yield JSONResponse(
                 status_code=500,
@@ -1862,6 +1885,17 @@ async def openai_create_completion(
         response_generator = OpenAICompletionResponseGenerator(pipeline)
         prompts = get_prompts_from_openai_request(completion_request.prompt)
         token_requests = []
+        # Use request-level temperature/thinking_temperature if provided, else server defaults.
+        temp = (
+            completion_request.temperature
+            if completion_request.temperature is not None
+            else pipeline_config.runtime.temperature
+        )
+        thinking_temp = (
+            completion_request.thinking_temperature
+            if completion_request.thinking_temperature is not None
+            else pipeline_config.runtime.thinking_temperature
+        )
         for i, prompt in enumerate(prompts):
             prompt = cast(str | Sequence[int], prompt)
             sampling_params = SamplingParams.from_input_and_generation_config(
@@ -1869,8 +1903,8 @@ async def openai_create_completion(
                     top_k=completion_request.top_k,
                     top_p=completion_request.top_p,
                     min_p=completion_request.min_p,
-                    temperature=completion_request.temperature,
-                    thinking_temperature=completion_request.thinking_temperature,
+                    temperature=temp,
+                    thinking_temperature=thinking_temp,
                     frequency_penalty=completion_request.frequency_penalty,
                     presence_penalty=completion_request.presence_penalty,
                     repetition_penalty=completion_request.repetition_penalty,
@@ -1940,7 +1974,7 @@ async def openai_create_completion(
         logger.exception("Validation error for request %s", http_req_id)
         raise HTTPException(status_code=400, detail="Invalid JSON.") from e
     except ValueError as e:
-        logger.exception("ValueError for request %s", http_req_id)
+        logger.warning("Value error in request %s: %s", http_req_id, str(e))
         # NOTE(SI-722): These errors need to return more helpful details,
         # but we don't necessarily want to expose the full error description
         # to the user. There are many different ValueErrors that can be raised.
@@ -2056,7 +2090,7 @@ async def create_streaming_audio_speech(
         )
         raise HTTPException(status_code=400, detail=str(e)) from e
     except ValueError as e:
-        logger.exception("ValueError in request %s", request_id)
+        logger.warning("Value error in request %s: %s", request_id, str(e))
         # NOTE(SI-722): These errors need to return more helpful details,
         # but we don't necessarily want to expose the full error description
         # to the user. There are many different ValueErrors that can be raised.
@@ -2131,7 +2165,7 @@ async def load_lora_adapter(
         logger.exception("Validation error in request %s", request_id)
         raise HTTPException(status_code=400, detail="Invalid JSON.") from e
     except ValueError as e:
-        logger.exception("ValueError in request %s", request_id)
+        logger.warning("Value error in request %s: %s", request_id, str(e))
         raise HTTPException(status_code=400, detail=str(e)) from e
     except HTTPException:
         raise
@@ -2199,7 +2233,7 @@ async def unload_lora_adapter(
         logger.exception("Validation error in request %s", request_id)
         raise HTTPException(status_code=400, detail="Invalid JSON.") from e
     except ValueError as e:
-        logger.exception("ValueError in request %s", request_id)
+        logger.warning("Value error in request %s: %s", request_id, str(e))
         raise HTTPException(status_code=400, detail=str(e)) from e
     except HTTPException:
         raise

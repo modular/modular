@@ -99,6 +99,8 @@ class ServingTokenGeneratorSettings:
     tokenizer: PipelineTokenizer[Any, Any, Any]
     pipeline_task: PipelineTask = PipelineTask.TEXT_GENERATION
     reasoning_parser_name: str | None = None
+    temperature: float | None = None
+    thinking_temperature: float | None = None
 
 
 @asynccontextmanager

@@ -160,6 +160,7 @@ def calculate_metrics(
     failed_responses: list[RequestFuncOutput] = []
     itls: list[float] = []
     tpots: list[float] = []
+    step_tpots: list[float] = []
     ttfts: list[float] = []
     latencies: list[float] = []
     input_throughputs: list[float] = []
@@ -234,7 +235,9 @@ def calculate_metrics(
         max_output = max(max_output, output_len)
         max_total = max(max_total, o.prompt_len + output_len)
 
-        tpots += o.tpot
+        if output_len > 1:
+            tpots.append((o.latency - o.ttft) / (output_len - 1))
+        step_tpots += o.tpot
         itls += o.itl
         ttfts.append(o.ttft)
         if o.ttft > 0:
@@ -359,6 +362,11 @@ def calculate_metrics(
         tpot_ms=StandardPercentileMetrics(
             tpots or [float("nan")], scale_factor=1000.0, unit="ms"
         ),
+        step_tpot_ms=StandardPercentileMetrics(
+            step_tpots, scale_factor=1000.0, unit="ms"
+        )
+        if step_tpots
+        else None,
         itl_ms=StandardPercentileMetrics(
             itls or [float("nan")], scale_factor=1000.0, unit="ms"
         ),
@@ -374,13 +382,6 @@ def calculate_metrics(
         ttfts=[o.ttft for o in outputs],
         per_turn_cached_token_rates=per_turn_cached_token_rates,
     )
-
-    # Override TPOT mean with weighted average: sum(ITL) / decode_tokens.
-    # Decode tokens = measured output - measured count, since each
-    # request's first token is prefill (TTFT), not decode.
-    decode_tokens = total_output - measured_count
-    if decode_tokens > 0 and itls:
-        text_data.tpot_ms._metrics.mean = sum(itls) / decode_tokens * 1000.0
 
     return ServingBenchmarkMetrics(
         task_type="text",

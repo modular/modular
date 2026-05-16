@@ -25,13 +25,13 @@ from max.interfaces import (
     TextGenerationInputs,
     TextGenerationOutput,
 )
-from max.kv_cache import (
+from max.pipelines.core import TextContext
+from max.pipelines.kv_cache import (
     KVTransferEngine,
     KVTransferEngineMetadata,
     PagedKVCacheManager,
     TransferReqData,
 )
-from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     PipelineConfig,
     TextGenerationPipeline,

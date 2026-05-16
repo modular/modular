@@ -47,6 +47,7 @@ from std.gpu import (
     warp_id,
 )
 from std.gpu.host import DeviceContext
+from std.gpu.host.info import MI355X
 from std.gpu.sync import schedule_barrier, s_waitcnt
 
 from layout import TensorLayout, TileTensor
@@ -431,10 +432,12 @@ struct AMD4WaveMatmul[
     )
     """SMEM footprint per workgroup (bytes), derived from BM/BN/BK/in_type."""
 
-    # CDNA4 default LDS budget per workgroup is 64 KB without
-    # `MAX_DYNAMIC_SHARED_SIZE_BYTES`, which the 4-wave kernel does not
-    # request. If you raise this, also wire the FuncAttribute through.
-    comptime _SMEM_LIMIT_BYTES = 65536
+    # Cap at the MI355X / gfx950 per-CU LDS budget (160 KB on CDNA4);
+    # tile-shape picks should stay well under to leave headroom for
+    # register allocation. Static `stack_allocation` works up to the
+    # full 160 KB on CDNA4 — `amd_ping_pong_matmul` already runs at
+    # 128 KB without `MAX_DYNAMIC_SHARED_SIZE_BYTES`.
+    comptime _SMEM_LIMIT_BYTES = MI355X.shared_memory_per_multiprocessor
 
     @staticmethod
     def is_valid_config() -> Bool:
@@ -968,12 +971,26 @@ struct AMD4WaveMatmul[
             # `_sched_barrier()` calls in the hand-tuned body. At
             # BM=64 the mini-iter is too small for the fences to help
             # (LLVM's default scheduler already does well there).
-            comptime SCHED_MASK = 0xFF if Self.BM >= 128 else 0
+            # FP8 takes the split-LDS path (`use_split_lds=True` in
+            # `_build_geometry`): each MMA fragment is split across two
+            # ds_reads of 16-byte chunks. The dense fence hints below
+            # (calibrated for bf16/fp16's single-frag mini-iter) confuse
+            # ROCm 7.2.3's machine scheduler on that split pattern,
+            # producing wrong output at tall-skinny shapes (e.g. M=4096
+            # N=128 K=256 fp8 — 1006/524288 cells wrong). bf16 and fp16
+            # at the same shape pass cleanly, confirming the issue is
+            # fp8 + split-LDS-specific. Drop the fence hints for fp8 so
+            # the scheduler treats it like the BM<128 path (no hints,
+            # default LLVM scheduling).
+            comptime _scheduled_use_fences = (
+                Self.BM >= 128 and not Self.in_type.is_float8()
+            )
+            comptime SCHED_MASK = 0xFF if _scheduled_use_fences else 0
             comptime sched_config = ScheduleConfig(
                 scheduling=SchedulingStrategy.IDENTITY,
                 auto_waits=True,
                 sched_barrier_mask=SCHED_MASK,
-                wrap_waits_with_sched_barrier=Self.BM >= 128,
+                wrap_waits_with_sched_barrier=_scheduled_use_fences,
             )
             comptime target = mi355x_target(
                 vm_per_load_a=Self.VMCNT_PER_LOAD_A,
@@ -1175,9 +1192,11 @@ def amd_4wave_matmul[
         An error if device enqueue fails.
     """
     comptime assert a_type == b_type, "A and B must have the same type"
-    comptime assert (
-        a_type.is_float8()
-    ), "4-wave currently only supports float8_e4m3fn"
+    comptime assert a_type.is_float8(), (
+        "The hand-written 4-wave body is FP8-only (its hardcoded vmcnt"
+        " values are tuned for FP8). Use `amd_4wave_scheduled_matmul` for"
+        " bfloat16/float16."
+    )
 
     var N = Int(c.dim[1]())
     var M = Int(c.dim[0]())
@@ -1281,7 +1300,9 @@ def amd_4wave_scheduled_matmul[
     enable_swizzle: Bool = True,
     block_m_override: Int = 0,
     block_n_override: Int = 0,
+    block_k_override: Int = 0,
     dump_asm_path: StaticString = "",
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     a: TileTensor[mut=False, a_type, ...],
     b: TileTensor[mut=False, b_type, ...],
@@ -1290,24 +1311,57 @@ def amd_4wave_scheduled_matmul[
 ) raises:
     """Launches the schedule-compiler-driven 4-wave matmul on the device.
 
-    Identical dispatch to `amd_4wave_matmul` (same auto-pick
-    heuristic, same override gates, same chiplet/L2 swizzle, 1D launch
-    grid), but invokes `AMD4WaveMatmul.run` with the
-    `use_framework_schedule=True` comptime flag. Use this as the
-    framework arm of an A/B against the inline arm to attribute perf
-    gaps to op ordering vs scaffolding.
+    Production callers go through a higher-level dispatcher (e.g.
+    `AMDMatmul`) that knows the shape, dtype, and which other kernels
+    are available — it should set `block_{m,n,k}_override` explicitly
+    based on its own policy. The internal auto-pick below is a
+    convenience default for direct/ad-hoc/benchmark callers; do not
+    rely on it from a production dispatcher.
+
+    Recommended tile shapes (measured on MI355X, bf16 N=K=8192):
+
+      M = 1         : use a dedicated GEMV kernel (`linalg/gemv.mojo`),
+                      not 4-wave — single-row matvec has its own
+                      hardware-aligned dispatch.
+      2 ≤ M ≤  64   : use `amd_4wave_split_k_matmul` with
+                      `num_splits=4` and BK=128 (the plain kernel
+                      under-fills the GPU with too few M-blocks).
+      64 < M ≤ 512  : BM=128, BN=128, BK=128  (~1.2× hipBLASLt at
+                      M=128; within ~15% at M=512).
+      M ≥ 1024      : BM=128, BN=128, BK=64   (BK=128 register-
+                      pressure-limits ILP at large M; BK=64 leaves
+                      ~88 VGPRs of scheduling headroom).
+
+    These were chosen on raw matmul throughput. The dispatcher may
+    legitimately route through 4-wave even when raw matmul is a bit
+    slower than a non-fusable vendor BLAS, because
+    `elementwise_lambda_fn` can fuse epilogues (bias, GELU, scale,
+    residual) and save a separate elementwise kernel launch.
+
+    FP8 keeps the original auto-pick (BM=64 for M ≤ 512, BM=128
+    otherwise) and `BK=128` / `mma_shape=(16,16,128)`.
 
     Parameters:
         a_type: Element type of `a`.
         b_type: Element type of `b`.
         c_type: Element type of `c`.
         enable_swizzle: Enable LDS bank-conflict avoidance.
-        block_m_override: If > 0, force BM to this value (must be 64 or
-            128).
+        block_m_override: If > 0, force BM to this value (must be 64
+            or 128). Set this and `block_n_override` together to pin
+            the tile shape from a dispatcher.
         block_n_override: If > 0, force BN to this value (must be 64,
             128, or 256). Default 0 uses BM=BN.
-        dump_asm_path: If non-empty, dumps the compiled GCN assembly to
-            the given file path. Only used for ASM-level diff-debugging.
+        block_k_override: If > 0, force BK to this value. Must be a
+            multiple of MMA_K (32 for bf16/fp16, 128 for FP8) and must
+            satisfy K % (2*BK) == 0. Valid: 32, 64, 128 for bf16/fp16;
+            128 for FP8.
+        dump_asm_path: If non-empty, dumps the compiled GCN assembly
+            to the given file path. Only used for ASM-level
+            diff-debugging.
+        elementwise_lambda_fn: Optional fused epilogue. When set, the
+            kernel's output store calls the lambda with global
+            `(m_global, n_global)` coords and a SIMD-of-`c_frag_size`
+            instead of writing to `c` directly.
 
     Args:
         a: Input tile-tensor for A.
@@ -1321,7 +1375,31 @@ def amd_4wave_scheduled_matmul[
     comptime assert a_type == b_type, "A and B must have the same type"
     comptime assert (
         a_type.is_float8()
-    ), "4-wave-scheduled currently only supports float8_e4m3fn"
+        or a_type == DType.bfloat16
+        or a_type == DType.float16
+    ), "4-wave-scheduled supports float8_e4m3fn, bfloat16, or float16"
+
+    # MMA K-dim selection: FP8 uses MFMA 16x16x128; bf16/fp16 use MFMA
+    # 16x16x32. The scheduled MMA op fires `num_k_mmas = BK/MMA_K`
+    # MFMAs along K internally via `QuadrantMmaOp`, so BK > MMA_K is
+    # transparent to the schedule.
+    #
+    # SMEM footprint = 2*(BM+BN)*BK*elem_bytes. MI355X has 160 KB LDS.
+    # bf16 BM=BN=128, BK=128: 128 KB (fits with headroom for register
+    # allocation).
+    comptime _is_fp8 = a_type.is_float8()
+    comptime _mma_k = 128 if _is_fp8 else 32
+    # Default BK=128 for both FP8 and bf16/fp16 (different `num_k_mmas`
+    # but same K-tile size). For bf16/fp16 large square (M ≥ 1024) the
+    # dispatcher should set `block_k_override=64`.
+    comptime _bk = block_k_override if block_k_override > 0 else 128
+    # block_k_override validation (BK=0 falls through to the default).
+    comptime assert block_k_override == 0 or (
+        block_k_override % _mma_k == 0 and block_k_override in (32, 64, 128)
+    ), (
+        "block_k_override must be 0 (auto) or a multiple of MMA_K in"
+        " {32, 64, 128}"
+    )
 
     var N = Int(c.dim[1]())
     var M = Int(c.dim[0]())
@@ -1335,6 +1413,7 @@ def amd_4wave_scheduled_matmul[
             c_type,
             config,
             enable_swizzle,
+            elementwise_lambda_fn=elementwise_lambda_fn,
         ].run[
             a.LayoutType,
             b.LayoutType,
@@ -1373,26 +1452,36 @@ def amd_4wave_scheduled_matmul[
         comptime assert (
             BN_o >= BM_o
         ), "block_n_override must be >= block_m_override (BN < BM is broken)"
+
         comptime config_override = KernelConfig(
-            block_shape=Index(BM_o, BN_o, 128),
-            warp_shape=Index(BM_o // 2, BN_o // 2, 128),
-            mma_shape=Index(16, 16, 128),
+            block_shape=Index(BM_o, BN_o, _bk),
+            warp_shape=Index(BM_o // 2, BN_o // 2, _bk),
+            mma_shape=Index(16, 16, _mma_k),
         )
         run_kernel[config_override]()
         return
 
+    # Convenience defaults — production dispatchers should set the
+    # overrides above. FP8 uses the N=K=4096-tuned cutoff (BM=64 below
+    # M=512, BM=128 above). bf16/fp16 default to BM=BN=128 with the
+    # comptime-defaulted BK=128, which dominates M ≤ 512 (the prefill
+    # regime). For M ≥ 1024 the dispatcher should pass
+    # `block_m_override=128, block_n_override=128, block_k_override=64`.
     comptime config_64 = KernelConfig(
-        block_shape=Index(64, 64, 128),
-        warp_shape=Index(32, 32, 128),
-        mma_shape=Index(16, 16, 128),
+        block_shape=Index(64, 64, _bk),
+        warp_shape=Index(32, 32, _bk),
+        mma_shape=Index(16, 16, _mma_k),
     )
     comptime config_128 = KernelConfig(
-        block_shape=Index(128, 128, 128),
-        warp_shape=Index(64, 64, 128),
-        mma_shape=Index(16, 16, 128),
+        block_shape=Index(128, 128, _bk),
+        warp_shape=Index(64, 64, _bk),
+        mma_shape=Index(16, 16, _mma_k),
     )
 
-    if M <= 512:
-        run_kernel[config_64]()
+    comptime if _is_fp8:
+        if M <= 512:
+            run_kernel[config_64]()
+        else:
+            run_kernel[config_128]()
     else:
         run_kernel[config_128]()

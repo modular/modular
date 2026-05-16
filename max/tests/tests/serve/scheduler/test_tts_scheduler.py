@@ -33,9 +33,9 @@ from max.interfaces import (
     SchedulerResult,
     TokenBuffer,
 )
-from max.kv_cache import PagedKVCacheManager
 from max.nn.kv_cache import KVCacheParams, KVConnectorType
 from max.pipelines.core import TTSContext
+from max.pipelines.kv_cache import PagedKVCacheManager
 from max.pipelines.lib.audio_generator_pipeline import (
     AudioGeneratorPipelineType,
 )

@@ -369,6 +369,16 @@ def print_benchmark_summary(
                 prefix="output token throughput", unit="tok/s"
             )
         )
+        total_tpm = (
+            (t.total_input + t.total_output) * 60.0 / agg.duration
+            if agg.duration > 0
+            else float("nan")
+        )
+        print(
+            "{:<40} {:<10.2f}".format(
+                "Total TPM (input+output, whole bench):", total_tpm
+            )
+        )
         print(
             "{:<40} {:<10.2f}".format(
                 "Global Cached Token Rate:",
@@ -378,8 +388,15 @@ def print_benchmark_summary(
         )
         print_section(title="Time to First Token")
         print(t.ttft_ms.format_with_prefix(prefix="TTFT", unit="ms"))
-        print_section(title="Time per Output Token (excl. 1st token)")
+        print_section(title="Time per Output Token")
+        print("[(latency - TTFT) / (output_tokens - 1), per request]")
         print(t.tpot_ms.format_with_prefix(prefix="TPOT", unit="ms"))
+        if t.step_tpot_ms is not None:
+            print_section(title="Time per Output Token (step-based)")
+            print("[ITL / tokens_per_step, per decode step]")
+            print(
+                t.step_tpot_ms.format_with_prefix(prefix="Step TPOT", unit="ms")
+            )
         print_section(title="Inter-token Latency")
         print(t.itl_ms.format_with_prefix(prefix="ITL", unit="ms"))
         if t.per_turn_cached_token_rate is not None:

@@ -855,7 +855,6 @@ struct BlackwellBlockScaledMatmulKernel[
             "_fused_compute_epi" if Self.elementwise_compute_lambda_fn
             is not None else ""
         ),
-        mangle=True,
     )
     def run(
         a_tma_op: Self.ATmaOp,

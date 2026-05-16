@@ -20,7 +20,7 @@ deallocates those resources in its destructor. Mojo's ownership system ensures
 that destructors are called promptly.
 
 On this page, we'll explain the rules that govern this ownership model, and how
-to specify different argument conventions that define how values are passed into
+to specify different passing conventions that define how values are passed into
 functions.
 
 ## Ownership summary
@@ -48,7 +48,7 @@ can use a reference binding:
 ref value_ref = list[0]
 ```
 
-## Argument conventions
+## Argument passing conventions
 
 In all programming languages, code quality and performance is heavily dependent
 upon how functions treat argument values. That is, whether a value received by
@@ -63,14 +63,14 @@ also need to offer full control over memory optimizations, which generally
 requires reference semantics. The trick is to introduce reference semantics in
 a way that ensures all code is memory safe by tracking the lifetime of every
 value and destroying each one at the right time (and only once). All of this is
-made possible in Mojo through the use of argument conventions that ensure every
+made possible in Mojo through the use of passing conventions that ensure every
 value has only one owner at a time.
 
-An argument convention specifies whether an argument is mutable or immutable,
+A passing convention specifies whether an argument is mutable or immutable,
 and whether the function owns the value. Each convention is defined by a
 keyword at the beginning of an argument declaration:
 
-- `read`: The function receives an **immutable reference**. This means the
+- default: The function receives an **immutable reference**. This means the
   function can read the original value (it's *not* a copy), but it can't
   mutate (modify) it.
 
@@ -84,8 +84,7 @@ keyword at the beginning of an argument declaration:
   existing value.
 
 - `ref`: The function gets a reference with a parametric mutability: that is,
-  the reference is either mutable or immutable. You can think of `ref`
-  arguments as a generalization of the `read` and `mut` conventions.
+  it follows the mutability of the referenced value.
   `ref` arguments are an advanced topic, and they're described in more detail in
   [Lifetimes, origins, and references](/docs/manual/values/lifetimes/).
 
@@ -104,7 +103,7 @@ For example, this function has one argument that's a mutable
 reference and one that's immutable:
 
 ```mojo
-def add(mut x: Int, read y: Int):
+def add(mut x: Int, y: Int):
     x += y
 
 def main():
@@ -119,14 +118,14 @@ def main():
 ```
 
 You've probably already seen some function arguments that don't declare a
-convention. By default, all arguments are `read`.
-In the following sections, we'll explain each of these argument conventions in
-more detail.
+convention. By default, all arguments use the default convention of an
+immutable read-only reference. In the following sections, we'll explain
+each of these conventions in more detail.
 
-## Immutable arguments (`read`)
+## Immutable arguments (default)
 
-The `read` convention is the default for all arguments. The callee receives an
-immutable reference to the argument value.
+The default convention is an immutable read-only reference. The callee
+receives an immutable reference to the argument value.
 
 For example:
 
@@ -149,13 +148,13 @@ copy.
 
 In general, passing an immutable reference is much more efficient
 when handling large or expensive-to-copy values, because the copy constructor
-and destructor aren't invoked for a `read` argument.
+and destructor aren't invoked for a default (immutable reference) argument.
 
 ### Compared to C++ and Rust
 
-Mojo's read argument convention is similar in some ways to passing an
+Mojo's default passing convention is similar in some ways to passing an
 argument by `const&` in C++, which also avoids a copy of the value and disables
-mutability in the callee. However, the read convention differs from
+mutability in the callee. However, the default convention differs from
 `const&` in C++ in two important ways:
 
 - The Mojo compiler implements a lifetime checker that ensures that values are
@@ -165,11 +164,11 @@ mutability in the callee. However, the read convention differs from
   machine registers. This provides a significant performance enhancement
   compared to languages like C++ and Rust.
 
-The major difference between Rust and Mojo is that Mojo doesn't require a sigil
-on the caller side to pass by immutable reference. Also, Mojo is more efficient
-when passing small values, and Rust defaults to moving values instead of passing
-them around by borrow. These policy and syntax decisions allow Mojo to provide
-an easier-to-use programming model.
+The major difference between Rust and Mojo is that Mojo doesn't require a
+sigil on the caller side to pass by immutable reference. Also, Mojo is more
+efficient when passing small values, and Rust defaults to moving values
+instead of passing them around as a read-only reference. These policy and
+syntax decisions allow Mojo to provide an easier-to-use programming model.
 
 ## Mutable arguments (`mut`)
 
@@ -224,7 +223,7 @@ Although the code using `mut` isn't that much shorter, it's more memory
 efficient because it doesn't make a copy of the value.
 
 However, remember that the values passed as `mut` must already be mutable.
-For example, if you try to take a `read` value and pass it to another
+For example, if you try to take an immutable reference and pass it to another
 function as `mut`, you'll get a compiler error because Mojo can't form a
 mutable reference from an immutable reference.
 
@@ -255,7 +254,7 @@ def invalid_access():
   var my_string = "o"  # Create a run-time String value
 
   # error: passing `my_string` mut is invalid since it's also passed
-  # read.
+  # as an immutable reference
   append_twice(my_string, my_string)
   print(my_string)
 ```

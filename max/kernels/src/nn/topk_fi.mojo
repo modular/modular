@@ -196,7 +196,7 @@ def get_min_max_value[
     return Tuple[Float32, Float32](min_val, max_val)
 
 
-@__name(t"topk_mask_logits_{dtype}_{out_idx_type}", mangle=True)
+@__name(t"topk_mask_logits_{dtype}_{out_idx_type}")
 def TopKMaskLogitsKernel[
     block_size: Int,
     vec_size: Int,
@@ -424,7 +424,7 @@ def topk_mask_logits[
                 d,
                 grid_dim=batch_size,
                 block_dim=block_size,
-                attributes=pdl_launch_attributes(PDLLevel(1)),
+                attributes=pdl_launch_attributes(PDLLevel.ON),
             )
 
         # Runtime dispatch to compile-time parameter.
@@ -673,7 +673,6 @@ def _block_reduce_value_count[
 
 @__name(
     t"topk_sampling_from_prob_{dtype}_{out_idx_type}_{deterministic}",
-    mangle=True,
 )
 def TopKSamplingFromProbKernel[
     ProbsLayoutType: TensorLayout,
@@ -995,7 +994,7 @@ def topk_sampling_from_prob[
                 rng_offset,
                 grid_dim=batch_size,
                 block_dim=block_size,
-                attributes=pdl_launch_attributes(PDLLevel(1)),
+                attributes=pdl_launch_attributes(PDLLevel.ON),
             )
 
         # Runtime dispatch to compile-time parameter.
@@ -1012,7 +1011,7 @@ def topk_sampling_from_prob[
             dispatch_vec_size[False]()
 
 
-@__name(t"apply_min_p_mask_{dtype}_{block_size}", mangle=True)
+@__name(t"apply_min_p_mask_{dtype}_{block_size}")
 def apply_min_p_mask_kernel[
     dtype: DType,
     block_size: Int,
@@ -1057,7 +1056,6 @@ def apply_min_p_mask_kernel[
 
 @__name(
     t"topk_topp_sampling_from_prob_{dtype}_{out_idx_type}_{deterministic}",
-    mangle=True,
 )
 def TopKTopPSamplingFromProbKernel[
     ProbsLayoutType: TensorLayout,
@@ -1429,7 +1427,7 @@ def topk_topp_sampling_from_prob[
                 rng_offset,
                 grid_dim=batch_size,
                 block_dim=block_size,
-                attributes=pdl_launch_attributes(PDLLevel(1)),
+                attributes=pdl_launch_attributes(PDLLevel.ON),
             )
 
         @parameter
@@ -1444,7 +1442,7 @@ def topk_topp_sampling_from_prob[
             dispatch_vec_size[False]()
 
 
-@__name(t"topk_softmax_sample_{dtype}_{out_idx_type}", mangle=True)
+@__name(t"topk_softmax_sample_{dtype}_{out_idx_type}")
 def topk_softmax_sample_kernel[
     block_size: Int,
     vec_size: Int,
@@ -1816,7 +1814,7 @@ def topk_softmax_sample[
                 grid_dim=batch_size,
                 block_dim=block_size,
                 shared_mem_bytes=shared_mem_bytes,
-                attributes=pdl_launch_attributes(PDLLevel(1)),
+                attributes=pdl_launch_attributes(PDLLevel.ON),
             )
 
         # Runtime dispatch to compile-time parameter.

@@ -20,7 +20,7 @@ from pathlib import Path
 import numpy as np
 import numpy.typing as npt
 import pytest
-from max.kv_cache.connectors.disk_tier import DiskTier
+from max.pipelines.kv_cache.connectors.disk_tier import DiskTier
 
 
 @pytest.fixture()

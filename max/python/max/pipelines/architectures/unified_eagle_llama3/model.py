@@ -17,12 +17,13 @@ from __future__ import annotations
 import logging
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
+from typing import Any, ClassVar
 
 import numpy as np
 from max.driver import Buffer, Device, DevicePinnedBuffer
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import DeviceRef, Graph
+from max.graph import Graph
 from max.graph.weights import Weights, WeightsAdapter, load_weights
 from max.nn.kv_cache import KVCacheInputs, KVCacheParams
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
@@ -72,7 +73,7 @@ class UnifiedEagleLlama3Inputs(ModelInputs):
     in_thinking_phase: Buffer | None = None
     """Per-batch ``bool`` flag set by the pipeline for relaxed acceptance
     during thinking. Not consumed by the unified_eagle_llama3 graph today,
-    but the field is required to satisfy the ``_UnifiedEagleInputs`` protocol
+    but the field is required to satisfy the ``_UnifiedSpecDecodeInputs`` protocol
     used by ``OverlapTextGenerationPipeline``."""
     token_bitmasks: Buffer | None = None
     """Grammar constraint bitmask for structured output.
@@ -141,6 +142,8 @@ class PersistentInputBuffers:
 class UnifiedEagleLlama3Model(PipelineModelWithKVCache[TextContext]):
     """Unified EAGLE Llama3: target + draft in one compiled graph."""
 
+    model_config_cls: ClassVar[type[Any]] = Llama3Config
+
     model: Model
 
     def __init__(
@@ -180,23 +183,6 @@ class UnifiedEagleLlama3Model(PipelineModelWithKVCache[TextContext]):
         return Buffer.from_numpy(
             np.array([self._seed_counter], dtype=np.uint64)
         ).to(self.devices[0])
-
-    @classmethod
-    def get_kv_params(
-        cls,
-        huggingface_config: AutoConfig,
-        pipeline_config: PipelineConfig,
-        devices: list[DeviceRef],
-        kv_cache_config: KVCacheConfig,
-        cache_dtype: DType,
-    ) -> KVCacheParams:
-        return Llama3Config.construct_kv_params(
-            huggingface_config,
-            pipeline_config,
-            devices,
-            kv_cache_config,
-            cache_dtype,
-        )
 
     def load_model(self, session: InferenceSession) -> Model:
         with CompilationTimer("unified_eagle_llama3_model") as timer:

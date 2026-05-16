@@ -2351,6 +2351,17 @@ class POCAttr(max._core.Attribute):
     @property
     def value(self) -> POC: ...
 
+class PassingKind(enum.Enum):
+    pos_or_kw = 0
+
+    pos = 1
+
+    kw = 2
+
+    implicit = 3
+
+    inferred = 4
+
 class SugarKind(enum.Enum):
     aibuiltin = 0
 
@@ -2368,6 +2379,15 @@ class TailKind(enum.Enum):
     notail = 2
 
     tail = 3
+
+class VariadicKind(enum.Enum):
+    not_vararg = 0
+
+    pos_vararg = 1
+
+    pack_vararg = 2
+
+    kw_vararg = 3
 
 class CallIndirectOp(max._core.Operation):
     """
@@ -2837,6 +2857,23 @@ class CreateClosureOp(max._core.Operation):
         location: Location,
         callee: max._core.dialects.builtin.TypedAttr,
         captures: Sequence[max._core.Value[max._core.Type]],
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        operands: Sequence[max._core.Value[max._core.Type]],
+        attributes: max._core.dialects.builtin.DictionaryAttr = ...,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        operands: Sequence[max._core.Value[max._core.Type]],
+        properties: max._core.dialects.builtin.DictionaryAttr = ...,
+        discardable_attributes: max._core.dialects.builtin.DictionaryAttr = ...,
     ) -> None: ...
     @overload
     def __init__(
@@ -3928,6 +3965,23 @@ class StructExtractOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
+        operands: Sequence[max._core.Value[max._core.Type]],
+        attributes: max._core.dialects.builtin.DictionaryAttr = ...,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        operands: Sequence[max._core.Value[max._core.Type]],
+        properties: max._core.dialects.builtin.DictionaryAttr = ...,
+        discardable_attributes: max._core.dialects.builtin.DictionaryAttr = ...,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
         container: max._core.Value,
         index: int,
     ) -> None: ...
@@ -4113,6 +4167,14 @@ class StructLoadIndirectOp(max._core.Operation):
         location: Location,
         struct_value: max._core.Value[StructType],
     ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        operands: Sequence[max._core.Value[max._core.Type]],
+        attributes: max._core.dialects.builtin.DictionaryAttr = ...,
+    ) -> None: ...
     @property
     def struct_value(self) -> max._core.Value[StructType]: ...
 
@@ -4250,6 +4312,31 @@ class VariantGetOp(max._core.Operation):
         location: Location,
         variant: max._core.Value[VariantType],
         index: max._core.dialects.builtin.IntegerAttr,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        variant: max._core.Value[VariantType],
+        index: int,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        operands: Sequence[max._core.Value[max._core.Type]],
+        attributes: max._core.dialects.builtin.DictionaryAttr = ...,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        operands: Sequence[max._core.Value[max._core.Type]],
+        properties: max._core.dialects.builtin.DictionaryAttr = ...,
+        discardable_attributes: max._core.dialects.builtin.DictionaryAttr = ...,
     ) -> None: ...
     @property
     def variant(self) -> max._core.Value[VariantType]: ...

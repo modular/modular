@@ -48,7 +48,7 @@ from std.sys import get_defined_int
 from std.sys.info import simd_width_of
 
 
-comptime _PDL_LEVEL = PDLLevel(1)
+comptime _PDL_LEVEL = PDLLevel.ON
 
 
 @always_inline

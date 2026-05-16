@@ -13,7 +13,10 @@
 
 from std.gpu.compute.mma import mma as gpu_mma
 from std.gpu import lane_id, WARP_SIZE
+from std.gpu.intrinsics import ds_read_tr16_b64
+from std.math.uutils import ufloordiv, umod
 from std.memory import AddressSpace
+from std.sys import simd_width_of
 from std.utils import IndexList
 from std.utils.numerics import get_accum_type
 from layout import TileTensor
@@ -95,12 +98,20 @@ struct TiledMmaOp[
                 var c_frag_vec = c.tile[1, c_frag](c_idx, 0).vectorize[
                     1, c_frag
                 ]()
-                gpu_mma(
-                    c_frag_vec[0, 0],
-                    b_k[n_mma, 0],
-                    a_k[m_mma, 0],
-                    c_frag_vec[0, 0],
-                )
+                comptime if swap_a_b:
+                    gpu_mma(
+                        c_frag_vec[0, 0],
+                        b_k[n_mma, 0],
+                        a_k[m_mma, 0],
+                        c_frag_vec[0, 0],
+                    )
+                else:
+                    gpu_mma(
+                        c_frag_vec[0, 0],
+                        a_k[m_mma, 0],
+                        b_k[n_mma, 0],
+                        c_frag_vec[0, 0],
+                    )
 
     @staticmethod
     @always_inline
@@ -337,25 +348,83 @@ struct KVMmaOp[
             Coord[ComptimeInt[Self.BK], ComptimeInt[1]].element_types,
         ]
 
-        comptime for k in range(Self.num_k_mmas):
-            comptime for i in range(Self.num_mmas):
-                var offset = smem_mma_subtile_offset[
-                    Self.MMA_K, Self.MMA_M, Self.BN, Self.BK
-                ](bk_tile, Int(k), Int(i))
-                var mma_smem = TileTensor[
-                    Self.in_type,
-                    _MmaTileLayout,
-                    MutAnyOrigin,
-                    address_space=AddressSpace.SHARED,
-                ](smem_base + offset, _MmaTileLayout())
-                var frag = TiledMmaLoader[
-                    Self.in_type, Self.mma_shape
-                ].load_b_tr(mma_smem)
+        # mla_kv_alias mode: V reads from K's swizzled SMEM, so V's
+        # `ds_read_tr16_b64` per-lane addresses must apply the same
+        # swizzle K's writer applies.  `load_b_tr` /
+        # `ds_read_tr16_b64_warp` / `ds_read_tr16_b64_row` only know
+        # about `tile.ptr` and have no `block_base` to swizzle relative
+        # to, so we inline the addressing here and call the bare
+        # `ds_read_tr16_b64` intrinsic with a swizzled per-lane address.
+        # Mirrors `load_v_fp8_strip`'s swizzle path.  No-swizzle case
+        # keeps the original helper-based load.
+        comptime if Self.swizzle:
+            # Per-lane element offset within a (4, 16) shared_b_tile
+            # (inside a (16, 16) half of the (MMA_K, MMA_N) sub-tile).
+            # Stride along the K-dim of the tile is `BK` elements.
+            # `ds_read_tr16_b64_row` distributes 16 lanes over a
+            # `row_major[4, 4]` grid of (1, 4)-vectorized cells.
+            comptime simd_w_elem = simd_width_of[Self.in_type]()
+            var lid = lane_id()
+            var row_idx = ufloordiv(lid, 16)  # 0..3 (within warp's 4-row split)
+            var lane_in_row = umod(lid, 16)
+            var lir_row = ufloordiv(lane_in_row, 4)  # 0..3
+            var lir_col = umod(lane_in_row, 4)  # 0..3
+            var lane_off_in_half = (
+                Int(row_idx) * 4 * Self.BK
+                + Int(lir_row) * Self.BK
+                + Int(lir_col) * 4
+            )
 
-                var dst = self.mma_tile_at[bk_tile, Int(k)]().vectorize[
-                    1, Self.input_frag_size
-                ]()
-                dst[Int(i), 0] = rebind[type_of(dst[Int(i), 0])](frag)
+            comptime for k in range(Self.num_k_mmas):
+                comptime for i in range(Self.num_mmas):
+                    var mma_tile_off = smem_mma_subtile_offset[
+                        Self.MMA_K, Self.MMA_M, Self.BN, Self.BK
+                    ](bk_tile, Int(k), Int(i))
+
+                    @parameter
+                    def _read_half[half_idx: Int]() -> SIMD[Self.in_type, 4]:
+                        comptime half_off = (
+                            half_idx * (Self.MMA_K // 2) * Self.BK
+                        )
+                        var total_elem = (
+                            mma_tile_off + half_off + lane_off_in_half
+                        )
+                        var vec_idx = total_elem // simd_w_elem
+                        var sub_vec = total_elem & (simd_w_elem - 1)
+                        var swizzled_elem = (
+                            Self.swizzle.value()(vec_idx) * simd_w_elem
+                            + sub_vec
+                        )
+                        return ds_read_tr16_b64(smem_base + swizzled_elem)
+
+                    var part_1 = _read_half[0]()
+                    var part_2 = _read_half[1]()
+                    var frag = part_1.join(part_2)
+
+                    var dst = self.mma_tile_at[bk_tile, Int(k)]().vectorize[
+                        1, Self.input_frag_size
+                    ]()
+                    dst[Int(i), 0] = rebind[type_of(dst[Int(i), 0])](frag)
+        else:
+            comptime for k in range(Self.num_k_mmas):
+                comptime for i in range(Self.num_mmas):
+                    var offset = smem_mma_subtile_offset[
+                        Self.MMA_K, Self.MMA_M, Self.BN, Self.BK
+                    ](bk_tile, Int(k), Int(i))
+                    var mma_smem = TileTensor[
+                        Self.in_type,
+                        _MmaTileLayout,
+                        MutAnyOrigin,
+                        address_space=AddressSpace.SHARED,
+                    ](smem_base + offset, _MmaTileLayout())
+                    var frag = TiledMmaLoader[
+                        Self.in_type, Self.mma_shape
+                    ].load_b_tr(mma_smem)
+
+                    var dst = self.mma_tile_at[bk_tile, Int(k)]().vectorize[
+                        1, Self.input_frag_size
+                    ]()
+                    dst[Int(i), 0] = rebind[type_of(dst[Int(i), 0])](frag)
 
     @always_inline
     def load_v_fp8_strip[
@@ -396,7 +465,7 @@ struct KVMmaOp[
         ]()
         comptime for dt in range(Self.num_mmas):
             var joined = TiledMmaLoader[
-                Self.in_type, Self.mma_shape
+                Self.in_type, Self.mma_shape, swizzle=Self.swizzle
             ].load_v_fp8_strip[Self.BN, Self.BK, bk_tile, Int(dt)](
                 smem_base, rel_key, hw_key_shift, depth_base
             )

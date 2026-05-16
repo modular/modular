@@ -110,7 +110,7 @@ def _symlink_files(
         assert not src.is_dir(), (
             f"error: data_files cannot be directories: '{src}'"
         )
-        if src.suffix == ".mojopkg":
+        if src.suffix in (".mojoc", ".mojopkg"):
             _create_symlink(src, venv_path / "lib/mojo" / src.name)
         elif _is_shared_lib(src):
             _create_symlink(src, venv_path / "lib" / src.name)

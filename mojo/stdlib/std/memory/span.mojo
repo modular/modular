@@ -236,7 +236,7 @@ struct Span[
     @always_inline
     @implicit
     def __init__(
-        out self, ref[Self.origin] list: List[downcast[Self.T, Copyable]]
+        out self, ref[Self.origin] list: List[downcast[Self.T, Movable]]
     ):
         """Construct a `Span` from a `List`.
 

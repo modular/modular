@@ -466,7 +466,6 @@ def _batched_matmul_cpu[
 
 @__name(
     t"naive_batched_matmul_kernel_{c_type}_{a_type}_{b_type}_{transpose_b}",
-    mangle=True,
 )
 def naive_batched_matmul_kernel[
     rank: Int,
@@ -526,7 +525,6 @@ def naive_batched_matmul_kernel[
 
 @__name(
     t"batched_matmul_kernel_gpu_{c_type}_{a_type}_{b_type}_{transpose_b}",
-    mangle=True,
 )
 def batched_matmul_kernel_gpu[
     c_type: DType,
@@ -1036,9 +1034,7 @@ comptime _2D_layout[layout: Layout] = Layout(
 @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(a_scales_tma_op, `nvvm.grid_constant`)
-@__name(
-    t"bmm_sm100_blockwise_scaled_fp8_{a_type}_{b_type}_{c_type}", mangle=True
-)
+@__name(t"bmm_sm100_blockwise_scaled_fp8_{a_type}_{b_type}_{c_type}")
 def _bmm_sm100_blockwise_scaled_fp8_kernel[
     a_type: DType,
     b_type: DType,

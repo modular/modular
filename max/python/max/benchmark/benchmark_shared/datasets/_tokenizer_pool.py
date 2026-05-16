@@ -27,6 +27,8 @@ test mocks out the dataset method) is free.
 
 from __future__ import annotations
 
+import logging
+import logging.handlers
 import multiprocessing as mp
 import os
 from collections.abc import Callable, Iterable
@@ -47,29 +49,46 @@ def _default_loader(
     name_or_path: str,
     model_max_length: int | None,
     trust_remote_code: bool,
+    revision: str | None,
 ) -> PreTrainedTokenizerBase:
     """Production worker loader: re-loads the real tokenizer by name."""
     from max.benchmark.benchmark_shared.utils import get_tokenizer
 
     return get_tokenizer(
         name_or_path,
+        revision=revision,
         model_max_length=model_max_length,
         trust_remote_code=trust_remote_code,
     )
 
 
-_LoaderFn = Callable[[str, "int | None", bool], PreTrainedTokenizerBase]
+_LoaderFn = Callable[
+    [str, "int | None", bool, "str | None"], PreTrainedTokenizerBase
+]
 
 
 def _init_encoder(
     name_or_path: str,
     model_max_length: int | None,
     trust_remote_code: bool,
+    revision: str | None,
     loader: _LoaderFn,
+    log_queue: mp.Queue[logging.LogRecord],
+    log_level: int,
 ) -> None:
-    """Worker initializer: build a tokenizer and stash it for the worker."""
+    """Worker initializer: wire logs back to the parent, then build a tokenizer."""
+    # The standard multiprocessing-logging pattern: workers push records
+    # into a queue; a `QueueListener` thread in the parent dispatches them
+    # through the parent's real handlers. See Python docs, "Logging to a
+    # single file from multiple processes".
+    root = logging.getLogger()
+    root.setLevel(log_level)
+    root.handlers.clear()
+    root.addHandler(logging.handlers.QueueHandler(log_queue))
     global _WORKER_TOK
-    _WORKER_TOK = loader(name_or_path, model_max_length, trust_remote_code)
+    _WORKER_TOK = loader(
+        name_or_path, model_max_length, trust_remote_code, revision
+    )
 
 
 def _encode_len(text: str) -> int:
@@ -139,6 +158,7 @@ class TokenizerPool:
         self._workers = nproc
         self._loader = loader if loader is not None else _default_loader
         self._pool: mp.pool.Pool | None = None
+        self._log_listener: logging.handlers.QueueListener | None = None
 
     def __enter__(self) -> TokenizerPool:
         return self
@@ -157,20 +177,49 @@ class TokenizerPool:
         self._pool.close()
         self._pool.join()
         self._pool = None
+        if self._log_listener is not None:
+            self._log_listener.stop()
+            self._log_listener = None
 
     def _ensure_pool(self) -> mp.pool.Pool:
         if self._pool is None:
             ctx = mp.get_context("spawn")
-            self._pool = ctx.Pool(
-                processes=self._workers,
-                initializer=_init_encoder,
-                initargs=(
-                    self.tokenizer.name_or_path,
-                    self.tokenizer.model_max_length,
-                    True,
-                    self._loader,
-                ),
+            # Standard multiprocessing-logging plumbing: workers push log
+            # records into the queue via a `QueueHandler`; a listener
+            # thread in the parent dispatches them through the parent's
+            # real handlers. See Python docs, `logging.handlers.QueueListener`.
+            log_queue: mp.Queue[logging.LogRecord] = ctx.Queue(-1)
+            root = logging.getLogger()
+            self._log_listener = logging.handlers.QueueListener(
+                log_queue, *root.handlers, respect_handler_level=True
             )
+            self._log_listener.start()
+            revision = getattr(self.tokenizer, "_resolved_revision", None)
+            # huggingface_hub caches HF_HUB_OFFLINE at import time, so set it
+            # before spawning workers (not inside the initializer — too late).
+            # Restore the parent's env afterward so we don't leak this global
+            # into the rest of the program.
+            prev_hf_offline = os.environ.get("HF_HUB_OFFLINE")
+            os.environ["HF_HUB_OFFLINE"] = "1"
+            try:
+                self._pool = ctx.Pool(
+                    processes=self._workers,
+                    initializer=_init_encoder,
+                    initargs=(
+                        self.tokenizer.name_or_path,
+                        self.tokenizer.model_max_length,
+                        True,
+                        revision,
+                        self._loader,
+                        log_queue,
+                        root.level,
+                    ),
+                )
+            finally:
+                if prev_hf_offline is None:
+                    os.environ.pop("HF_HUB_OFFLINE", None)
+                else:
+                    os.environ["HF_HUB_OFFLINE"] = prev_hf_offline
         return self._pool
 
     def _chunksize(self, n: int) -> int:

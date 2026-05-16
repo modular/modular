@@ -31,6 +31,7 @@ from max.graph import (
     ops,
 )
 from max.graph.quantization import QuantizationConfig, QuantizationEncoding
+from max.graph.weight import Segment
 from max.nn.quant_config import QuantConfig, ScaleGranularity, fp4_packed_k
 from max.nn.quant_ops import quantized_matmul
 from max.support.math import ceildiv
@@ -331,6 +332,47 @@ class Linear(Module, Shardable):
                         self.weight_scale.sharding_strategy = (
                             ShardingStrategy.columnwise(strategy.num_devices)
                         )
+                elif strategy.is_segmented and strategy.sharded_axis == 1:
+                    # Segmented sharding along K: weight_scale's K is reduced
+                    # by block_size_k, so each segment's size shrinks by the
+                    # same factor. Head-aware segments shrink their head_dim;
+                    # even segments shrink their total size.
+                    assert self.quant_config.weight_scale.block_size is not None
+                    block_size_k = self.quant_config.weight_scale.block_size[1]
+                    assert isinstance(strategy.shard, partial)
+                    segments = strategy.shard.keywords["segments"]
+                    scale_segments: list[Segment] = []
+                    for seg in segments:
+                        if seg.size % block_size_k != 0:
+                            raise ValueError(
+                                f"Segmented sharding: segment size {seg.size} "
+                                f"is not divisible by block_size_k "
+                                f"({block_size_k}) for block-wise scaling."
+                            )
+                        if seg.num_heads is not None:
+                            head_dim = seg.size // seg.num_heads
+                            if head_dim % block_size_k != 0:
+                                raise ValueError(
+                                    f"Segmented sharding: head_dim {head_dim} "
+                                    f"is not divisible by block_size_k "
+                                    f"({block_size_k}) for block-wise scaling."
+                                )
+                            scale_segments.append(
+                                Segment.head_aware(
+                                    seg.num_heads, head_dim // block_size_k
+                                )
+                            )
+                        else:
+                            scale_segments.append(
+                                Segment.even(seg.size // block_size_k)
+                            )
+                    self.weight_scale.sharding_strategy = (
+                        ShardingStrategy.segmented(
+                            strategy.num_devices,
+                            axis=1,
+                            segments=scale_segments,
+                        )
+                    )
                 else:
                     self.weight_scale.sharding_strategy = strategy
             else:
@@ -412,13 +454,19 @@ class Linear(Module, Shardable):
 
             # Handle bias sharding
             if self.bias is not None:
-                # For columnwise sharding with allreduce.sum, only add bias on device 0
-                # to avoid adding it multiple times.
-                is_colwise = (
+                # When the K axis is sharded (axis=1 of [N, K]) the per-device
+                # outputs are partial sums summed by allreduce, so the bias
+                # must only be added once — on device 0 — to avoid being
+                # multiplied by num_devices.
+                k_sharded = (
                     self.weight.sharding_strategy.is_colwise
                     or self.weight.sharding_strategy.is_head_aware_colwise
+                    or (
+                        self.weight.sharding_strategy.is_segmented
+                        and self.weight.sharding_strategy.sharded_axis == 1
+                    )
                 )
-                if is_colwise and (shard_idx > 0):
+                if k_sharded and (shard_idx > 0):
                     sharded.bias = None
                 else:
                     sharded.bias = sharded_biases[shard_idx]

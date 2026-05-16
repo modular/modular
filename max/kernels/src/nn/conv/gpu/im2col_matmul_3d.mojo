@@ -39,7 +39,7 @@ from nn.conv.conv_utils import elementwise_simd_epilogue_type
 # =========================================================================
 
 
-@__name(t"conv3d_im2col_ndhwc_{input_dtype}", mangle=True)
+@__name(t"conv3d_im2col_ndhwc_{input_dtype}")
 def _im2col_ndhwc_kernel[
     input_dtype: DType,
     filter_dtype: DType,
@@ -149,7 +149,7 @@ def _im2col_ndhwc_kernel[
         k += block_dim.x * simd_width
 
 
-@__name(t"conv3d_transpose_qrscf_to_nk_{dtype}", mangle=True)
+@__name(t"conv3d_transpose_qrscf_to_nk_{dtype}")
 def _transpose_qrscf_to_nk[
     dtype: DType,
     filter_layout_type: TensorLayout,
@@ -184,7 +184,7 @@ def _transpose_qrscf_to_nk[
     dst_ptr.store(tid, filter.ptr.load(src_idx))
 
 
-@__name(t"conv3d_transpose_fcqrs_to_nk_{dtype}", mangle=True)
+@__name(t"conv3d_transpose_fcqrs_to_nk_{dtype}")
 def _transpose_fcqrs_to_nk[
     dtype: DType,
     filter_layout_type: TensorLayout,

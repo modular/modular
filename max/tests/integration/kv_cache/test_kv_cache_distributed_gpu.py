@@ -19,9 +19,9 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef
 from max.interfaces import TextGenerationContext
-from max.kv_cache import PagedKVCacheManager
-from max.kv_cache.connectors.local_connector import LocalConnector
 from max.nn.kv_cache import KVCacheParams, KVConnectorType
+from max.pipelines.kv_cache import PagedKVCacheManager
+from max.pipelines.kv_cache.connectors.local_connector import LocalConnector
 from test_common.context_utils import create_text_context
 
 

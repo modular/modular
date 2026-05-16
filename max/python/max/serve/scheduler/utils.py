@@ -26,8 +26,8 @@ from max.interfaces import (
     TextGenerationInputs,
 )
 from max.interfaces.queue import drain_queue
-from max.kv_cache import PagedKVCacheManager
 from max.pipelines.core import TextContext
+from max.pipelines.kv_cache import PagedKVCacheManager
 from max.pipelines.lib.speculative_decoding.utils import (
     SpeculativeDecodingMetrics,
 )
@@ -73,8 +73,12 @@ class BatchMetrics:
     total_host_kv_blocks: int
     h2d_blocks_copied: int
     d2h_blocks_copied: int
-    disk_blocks_written: int
     disk_blocks_read: int
+    disk_blocks_written: int
+    inflight_disk_ops: int
+
+    used_disk_kv_pct: float
+    total_disk_kv_blocks: int
 
     draft_tokens_generated: int
     draft_tokens_accepted: int
@@ -132,8 +136,11 @@ class BatchMetrics:
         total_host_kv_blocks = 0
         h2d_blocks_copied = 0
         d2h_blocks_copied = 0
-        disk_blocks_written = 0
         disk_blocks_read = 0
+        disk_blocks_written = 0
+        inflight_disk_ops = 0
+        used_disk_kv_pct = 0.0
+        total_disk_kv_blocks = 0
         nixl_read_latency_avg_ms = 0.0
         nixl_write_latency_avg_ms = 0.0
         rpc_acquire_latency_avg_ms = 0.0
@@ -180,6 +187,20 @@ class BatchMetrics:
                     kv_cache.get_metrics(replica_idx).disk_blocks_read
                     for replica_idx in range(num_replicas)
                 )
+                inflight_disk_ops = sum(
+                    kv_cache.get_metrics(replica_idx).inflight_disk_ops
+                    for replica_idx in range(num_replicas)
+                )
+            total_disk_kv_blocks = sum(
+                kv_cache.get_num_disk_pages(replica_idx)
+                for replica_idx in range(num_replicas)
+            )
+            if total_disk_kv_blocks > 0:
+                used_disk_kv_blocks = sum(
+                    kv_cache.get_num_used_disk_pages(replica_idx)
+                    for replica_idx in range(num_replicas)
+                )
+                used_disk_kv_pct = used_disk_kv_blocks / total_disk_kv_blocks
 
             # dKV latency metrics: sum across replicas then average.
             agg = sum(
@@ -279,8 +300,11 @@ class BatchMetrics:
             total_host_kv_blocks=total_host_kv_blocks,
             h2d_blocks_copied=h2d_blocks_copied,
             d2h_blocks_copied=d2h_blocks_copied,
-            disk_blocks_written=disk_blocks_written,
             disk_blocks_read=disk_blocks_read,
+            disk_blocks_written=disk_blocks_written,
+            used_disk_kv_pct=used_disk_kv_pct,
+            total_disk_kv_blocks=total_disk_kv_blocks,
+            inflight_disk_ops=inflight_disk_ops,
             draft_tokens_generated=draft_tokens_generated,
             draft_tokens_accepted=draft_tokens_accepted,
             avg_acceptance_length=avg_acceptance_length,
@@ -321,14 +345,22 @@ class BatchMetrics:
         host_kv_str = ""
         if self.total_host_kv_blocks != 0:
             disk_str = ""
-            if self.disk_blocks_written > 0 or self.disk_blocks_read > 0:
+            if self.disk_blocks_read > 0 or self.disk_blocks_written > 0:
                 disk_str = (
-                    f", Disk: {self.disk_blocks_written} written, "
-                    f"{self.disk_blocks_read} read"
+                    f", Disk: {self.disk_blocks_read} read, "
+                    f"{self.disk_blocks_written} written"
                 )
             host_kv_str = (
                 f"Host KVCache Usage: {self.used_host_kv_pct:.1%} of {self.total_host_kv_blocks} blocks, "
                 f"Blocks copied: {self.h2d_blocks_copied} H2D, {self.d2h_blocks_copied} D2H{disk_str} | "
+            )
+
+        disk_kv_str = ""
+        if self.total_disk_kv_blocks != 0:
+            disk_kv_str = (
+                f"Disk KVCache Usage: {self.used_disk_kv_pct:.1%} of "
+                f"{self.total_disk_kv_blocks} blocks, "
+                f"Inflight Disk Ops: {self.inflight_disk_ops} | "
             )
 
         if self.draft_tokens_generated > 0:
@@ -383,6 +415,7 @@ class BatchMetrics:
             f"{exec_label}: {to_human_readable_latency(self.batch_execution_time_s)} | "
             f"{kv_str}"
             f"{host_kv_str}"
+            f"{disk_kv_str}"
             f"{dkv_str}"
             f"{spec_decode_str}"
             f"All Preemptions: {self.total_preemption_count} reqs"
@@ -429,6 +462,12 @@ class BatchMetrics:
             extra["used_host_kv_pct"] = self.used_host_kv_pct
             extra["h2d_blocks_copied"] = self.h2d_blocks_copied
             extra["d2h_blocks_copied"] = self.d2h_blocks_copied
+
+        if self.total_disk_kv_blocks != 0:
+            extra["total_disk_kv_blocks"] = self.total_disk_kv_blocks
+            extra["used_disk_kv_pct"] = self.used_disk_kv_pct
+            extra["disk_blocks_read"] = self.disk_blocks_read
+            extra["disk_blocks_written"] = self.disk_blocks_written
 
         if self.draft_tokens_generated > 0:
             extra["draft_tokens_generated"] = self.draft_tokens_generated
@@ -491,6 +530,9 @@ class BatchMetrics:
             METRICS.cache_used_host_kv_pct(self.used_host_kv_pct * 100)
             METRICS.cache_h2d_blocks_copied(self.h2d_blocks_copied)
             METRICS.cache_d2h_blocks_copied(self.d2h_blocks_copied)
+
+        if self.total_disk_kv_blocks != 0:
+            METRICS.cache_used_disk_kv_pct(self.used_disk_kv_pct * 100)
 
         if self.nixl_read_latency_avg_ms > 0:
             METRICS.dkv_nixl_read_latency(self.nixl_read_latency_avg_ms)

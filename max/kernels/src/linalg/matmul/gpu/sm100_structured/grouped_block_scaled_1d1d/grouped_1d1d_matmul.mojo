@@ -75,7 +75,7 @@ def grouped_matmul_block_scaled[
     config: BlockScaledMatmulConfig[
         a_type, b_type, c_type, sfa_dtype, sfb_dtype, transpose_b
     ],
-    pdl_level: PDLLevel = PDLLevel(1),
+    pdl_level: PDLLevel = PDLLevel.ON,
     # When True, the kernel emits packed NVFP4 + a 5D FP8-E4M3 scale tile
     # in place of the BF16 GMEM C store, fusing SwiGLU + per-block quant
     # into the matmul epilogue. Caller must:

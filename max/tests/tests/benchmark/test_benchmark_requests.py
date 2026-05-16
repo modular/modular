@@ -44,6 +44,7 @@ from max.benchmark.benchmark_shared.request import (
     _build_sglang_video_payload,
     _build_vllm_omni_pixel_generation_payload,
     _build_vllm_omni_video_payload,
+    _count_generated_media,
     async_request_lora_load,
     async_request_lora_unload,
     get_request_driver_class,
@@ -931,6 +932,76 @@ class TestPixelGenerationPayloadBuilders:
         assert payload["num_frames"] == 81
         assert "num_inference_steps" not in payload
         assert "guidance_scale" not in payload
+
+
+class TestCountGeneratedMedia:
+    """Tests for _count_generated_media (OpenResponses response parser)."""
+
+    @staticmethod
+    def _wrap(content: list[dict[str, Any]]) -> dict[str, Any]:
+        """Wrap content items in the OpenResponses message envelope."""
+        return {
+            "output": [
+                {
+                    "id": "msg_test_0",
+                    "role": "assistant",
+                    "content": content,
+                    "status": "completed",
+                }
+            ]
+        }
+
+    def test_counts_output_image(self) -> None:
+        body = self._wrap(
+            [{"type": "output_image", "image_url": "http://x/img.png"}]
+        )
+        assert _count_generated_media(body) == 1
+
+    def test_counts_output_video(self) -> None:
+        # Regression: video responses were previously miscounted as 0, causing
+        # every text-to-video request to fail with "No output_image content
+        # found in OpenResponses response body." (PERF-2518).
+        body = self._wrap(
+            [
+                {
+                    "type": "output_video",
+                    "video_url": "http://x/vid.mp4",
+                    "format": "mp4",
+                    "frames_per_second": 16,
+                    "num_frames": 81,
+                }
+            ]
+        )
+        assert _count_generated_media(body) == 1
+
+    def test_counts_mixed_image_and_video(self) -> None:
+        body = self._wrap(
+            [
+                {"type": "output_image", "image_url": "http://x/a.png"},
+                {"type": "output_video", "video_url": "http://x/b.mp4"},
+                {"type": "output_image", "image_url": "http://x/c.png"},
+            ]
+        )
+        assert _count_generated_media(body) == 3
+
+    def test_ignores_non_media_content_types(self) -> None:
+        body = self._wrap(
+            [
+                {"type": "output_text", "text": "hello"},
+                {"type": "refusal", "refusal": "no"},
+                {"type": "reasoning_summary", "summary": "thinking"},
+            ]
+        )
+        assert _count_generated_media(body) == 0
+
+    def test_empty_output(self) -> None:
+        assert _count_generated_media({"output": []}) == 0
+
+    def test_missing_output_key(self) -> None:
+        assert _count_generated_media({}) == 0
+
+    def test_malformed_output_not_a_list(self) -> None:
+        assert _count_generated_media({"output": "not a list"}) == 0
 
 
 class TestValidateTaskAndEndpoint:

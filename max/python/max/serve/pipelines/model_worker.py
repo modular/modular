@@ -37,7 +37,7 @@ from max.interfaces import (
     PipelineOutputType,
     PipelinesFactory,
 )
-from max.kv_cache import DummyKVCache, PagedKVCacheManager
+from max.pipelines.kv_cache import DummyKVCache, PagedKVCacheManager
 from max.pipelines.lib import PipelineConfig, PipelineModel
 from max.profiler import Tracer, traced
 from max.serve.config import MetricRecordingMethod, Settings

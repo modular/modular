@@ -36,8 +36,8 @@ from max.interfaces import (
     TextGenerationOutput,
 )
 from max.interfaces.generation import GenerationOutput
-from max.kv_cache import PagedKVCacheManager
 from max.pipelines.core import TextContext, TTSContext
+from max.pipelines.kv_cache import PagedKVCacheManager
 from max.pipelines.lib import (
     EmbeddingsPipelineType,
     PipelineConfig,

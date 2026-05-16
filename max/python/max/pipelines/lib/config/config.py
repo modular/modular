@@ -138,9 +138,12 @@ _AUTO_ENABLE_OVERLAP_SCHEDULER_ARCHITECTURES = (
     "KimiK25ForConditionalGeneration",
     "Gemma4ForConditionalGeneration",
     "UnifiedEagleLlama3ForCausalLM",
+    "UnifiedDflashLlama3ForCausalLM",
     "UnifiedMTPDeepseekV3ForCausalLM",
     "Eagle3DeepseekV2ForCausalLM",
     "Eagle3DeepseekV3ForCausalLM",
+    "Eagle3MHADeepseekV3ForCausalLM",
+    "Eagle3MHAKimiK25ForCausalLM",
     "MiniMaxM2ForCausalLM",
 )
 
@@ -156,6 +159,8 @@ _AUTO_ENABLE_DEVICE_GRAPH_CAPTURE_ARCHITECTURES = (
     "UnifiedMTPDeepseekV3ForCausalLM",
     "Eagle3DeepseekV2ForCausalLM",
     "Eagle3DeepseekV3ForCausalLM",
+    "Eagle3MHADeepseekV3ForCausalLM",
+    "Eagle3MHAKimiK25ForCausalLM",
     "MiniMaxM2ForCausalLM",
 )
 
@@ -419,6 +424,16 @@ class PipelineConfig(ConfigFileModel):
                     revision=revision,
                     **non_default_kwargs,
                 )
+            elif "main" in self.models:
+                # The main model came from a YAML recipe (or a pre-built
+                # manifest via ``models=``). Still let CLI flags such as
+                # --devices override the recipe so the same YAML can be
+                # reused across different multi-GPU setups.
+                non_default_kwargs = _strip_default_model_kwargs(model_kwargs)
+                if non_default_kwargs:
+                    self.models = self.models.with_override(
+                        "main", **non_default_kwargs
+                    )
 
         # Apply KV cache config to main model
         if kv_cache_kwargs and "main" in self.models:
@@ -594,6 +609,21 @@ class PipelineConfig(ConfigFileModel):
             if hf_arch == "LlamaForCausalLM":
                 self.draft_model.huggingface_config.architectures[0] = (
                     "LlamaForCausalLMEagle"
+                )
+        # DFlash drafts ship with architectures: ["DFlashDraftModel"],
+        # which isn't registered as a standalone MAX architecture (the draft
+        # is only ever invoked through UnifiedDflashLlama3). Override to
+        # LlamaForCausalLM.
+        if self.speculative.is_dflash() and self.draft_model is not None:
+            if len(self.draft_model.huggingface_config.architectures) != 1:
+                raise ValueError(
+                    f"Expected exactly 1 architecture in draft model config, "
+                    f"got {len(self.draft_model.huggingface_config.architectures)}"
+                )
+            hf_arch = self.draft_model.huggingface_config.architectures[0]
+            if hf_arch == "DFlashDraftModel":
+                self.draft_model.huggingface_config.architectures[0] = (
+                    "LlamaForCausalLM"
                 )
 
     # Explicit type mapping for config classes that are processed from
@@ -922,11 +952,14 @@ class PipelineConfig(ConfigFileModel):
         if self.lora and self.lora.enable_lora:
             self.model.validate_lora_compatibility()
 
-        # Override target architecture for unified EAGLE pipeline.
+        # Override target architecture for unified EAGLE / DFlash pipelines.
         if self.speculative:
             target_archs = self.model.huggingface_config.architectures
             if target_archs[0] == "LlamaForCausalLM":
-                target_archs[0] = "UnifiedEagleLlama3ForCausalLM"
+                if self.speculative.is_dflash():
+                    target_archs[0] = "UnifiedDflashLlama3ForCausalLM"
+                else:
+                    target_archs[0] = "UnifiedEagleLlama3ForCausalLM"
             if target_archs[0] == "DeepseekV3ForCausalLM":
                 # Choose between MTP (NextN layer baked into target ckpt) and
                 # Eagle3 (separate draft ckpt with arch
@@ -943,22 +976,36 @@ class PipelineConfig(ConfigFileModel):
                     and draft_archs[0] == "Eagle3DeepseekV2ForCausalLM"
                 ):
                     target_archs[0] = "Eagle3DeepseekV3ForCausalLM"
+                elif draft_archs and draft_archs[0] == "LlamaForCausalLMEagle3":
+                    target_archs[0] = "Eagle3MHADeepseekV3ForCausalLM"
                 else:
                     if not draft_archs:
                         raise ValueError(
                             "Draft model HF config has empty"
                             " ``architectures=[]``. Expected"
-                            " 'Eagle3DeepseekV2ForCausalLM' (Eagle3 draft) or"
-                            " no draft model (MTP path)."
+                            " 'Eagle3DeepseekV2ForCausalLM' (Eagle3 draft),"
+                            " 'LlamaForCausalLMEagle3' (Llama MHA Eagle3"
+                            " draft), or no draft model (MTP path)."
                         )
                     raise ValueError(
                         "Unrecognized draft architecture for DeepseekV3"
                         f" target: {draft_archs[0]!r}. Expected"
-                        " 'Eagle3DeepseekV2ForCausalLM' (Eagle3 draft) or no"
-                        " draft model (MTP path)."
+                        " 'Eagle3DeepseekV2ForCausalLM' (Eagle3 draft),"
+                        " 'LlamaForCausalLMEagle3' (Llama MHA Eagle3 draft),"
+                        " or no draft model (MTP path)."
                     )
             if target_archs[0] == "KimiK25ForConditionalGeneration":
-                target_archs[0] = "Eagle3DeepseekV2ForCausalLM"
+                draft_archs = (
+                    self.draft_model.huggingface_config.architectures
+                    if self.draft_model is not None
+                    else None
+                )
+                if draft_archs and draft_archs[0] == "LlamaForCausalLMEagle3":
+                    # MLA target + MHA (Llama-style) Eagle3 draft.
+                    target_archs[0] = "Eagle3MHAKimiK25ForCausalLM"
+                else:
+                    # MLA target + MLA Eagle3 draft (existing path).
+                    target_archs[0] = "Eagle3DeepseekV2ForCausalLM"
 
         # Validate KV connector configuration
         _resolve_kvconnector_config(self.model.kv_cache)
@@ -1022,11 +1069,16 @@ class PipelineConfig(ConfigFileModel):
         if arch is None or arch.tool_parser is None:
             return
 
-        self.runtime.tool_parser = arch.tool_parser
+        if callable(arch.tool_parser):
+            parser_name = arch.tool_parser(self.model.huggingface_model_repo)
+        else:
+            parser_name = arch.tool_parser
+
+        self.runtime.tool_parser = parser_name
         logger.info(
             "Defaulting tool parser to %r for architecture %s. "
             "Override with --tool-parser.",
-            arch.tool_parser,
+            parser_name,
             arch.name,
         )
 

@@ -50,6 +50,14 @@ from std.utils.index import Index, IndexList
 
 comptime logger = Logger()
 
+# Q-sequence fold bounds for speculative decoding dispatch.
+# When q_max_seq_len is in [MIN_FOLD_Q, MAX_FOLD_Q], the kernel folds q-tokens
+# into the head dimension. MAX_FOLD_Q is the largest supported q_seq for fold
+# (1 actual + 7 spec tokens). The fold loop iterates over
+# range(MIN_FOLD_Q, MAX_FOLD_Q + 1).
+comptime MIN_FOLD_Q = 2
+comptime MAX_FOLD_Q = 8
+
 # TODO: Remove once stdlib's SwitchedFunction2 supports `raises`.
 # The stdlib unswitch 2-predicate overload uses SwitchedFunction2 which
 # is `def[sw0: Bool, sw1: Bool]() capturing[_] -> None` (no raises).
@@ -1925,11 +1933,11 @@ def mla_decode_sm100_sink_split_k[
 
         # Dispatch is routed at comptime by num_q_heads × q_max_seq_len.
         # q_max_seq_len > 1 implies spec decoding (1 actual + N spec ahead),
-        # capped at 6 (DFlash future-proof: 1 actual + 5 spec). For each q in
-        # {2..6}: num_heads × q ≤ 32 → Layout-G fold (BM=32),
-        # ≤ 64 → Layout-E fold (BM=64), > 64 → non-fold (kernel handles q in
-        # grid dim). For q=1 (regular decode), num_heads ≤ 32 → Layout-G
-        # non-fold, else → Layout-E non-fold.
+        # capped at MAX_FOLD_Q (1 actual + (MAX_FOLD_Q - 1) spec). For each q
+        # in {MIN_FOLD_Q..MAX_FOLD_Q}: num_heads × q ≤ 32 → Layout-G fold
+        # (BM=32), ≤ 64 → Layout-E fold (BM=64), > 64 → non-fold (kernel
+        # handles q in grid dim). For q=1 (regular decode), num_heads ≤ 32 →
+        # Layout-G non-fold, else → Layout-E non-fold.
 
         if ragged:
             comptime ValidLengthType = NonNullPointer[DType.uint32]
@@ -2004,8 +2012,9 @@ def mla_decode_sm100_sink_split_k[
                         ctx,
                     )
 
-            # Spec decoding implied by q > 1; cap at 6 (DFlash future-proof).
-            comptime for n in range(2, 7):
+            # Spec decoding implied by q > 1; cap at MAX_FOLD_Q (1 actual +
+            # (MAX_FOLD_Q - 1) spec).
+            comptime for n in range(MIN_FOLD_Q, MAX_FOLD_Q + 1):
                 comptime if mla_config.num_q_heads * n <= 32:
                     if q_max_seq_len == n:
                         _launch_r[True, n, True]()  # Layout-G fold (BM=32)
@@ -2021,8 +2030,8 @@ def mla_decode_sm100_sink_split_k[
                         _launch_r[False, 1, False]()  # non-fold
                         return
 
-            # q_max_seq_len == 1 (regular decode) or > 6 (shouldn't happen,
-            # fallback).
+            # q_max_seq_len == 1 (regular decode) or > MAX_FOLD_Q (shouldn't
+            # happen, fallback).
             comptime if mla_config.num_q_heads <= 32:
                 _launch_r[False, 1, True]()  # Layout-G non-fold
             else:
@@ -2101,8 +2110,9 @@ def mla_decode_sm100_sink_split_k[
                         ctx,
                     )
 
-            # Spec decoding implied by q > 1; cap at 6 (DFlash future-proof).
-            comptime for n in range(2, 7):
+            # Spec decoding implied by q > 1; cap at MAX_FOLD_Q (1 actual +
+            # (MAX_FOLD_Q - 1) spec).
+            comptime for n in range(MIN_FOLD_Q, MAX_FOLD_Q + 1):
                 comptime if mla_config.num_q_heads * n <= 32:
                     if q_max_seq_len == n:
                         _launch_n[True, n, True]()  # Layout-G fold (BM=32)
@@ -2118,8 +2128,8 @@ def mla_decode_sm100_sink_split_k[
                         _launch_n[False, 1, False]()  # non-fold
                         return
 
-            # q_max_seq_len == 1 (regular decode) or > 6 (shouldn't happen,
-            # fallback).
+            # q_max_seq_len == 1 (regular decode) or > MAX_FOLD_Q (shouldn't
+            # happen, fallback).
             comptime if mla_config.num_q_heads <= 32:
                 _launch_n[False, 1, True]()  # Layout-G non-fold
             else:

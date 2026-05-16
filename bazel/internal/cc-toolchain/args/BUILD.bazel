@@ -67,6 +67,7 @@ cc_args(
         "-Wno-builtin-macro-redefined",
         "-Wno-c++17-attribute-extensions",
         "-Wno-c++20-attribute-extensions",
+        "-Wno-c2y-extensions",
         "-Wno-dollar-in-identifier-extension",
         "-Wno-gcc-compat",
         "-Wno-gnu-statement-expression-from-macro-expansion",

@@ -22,8 +22,8 @@ import pytest
 from max.driver import Accelerator, Buffer, accelerator_count
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.kv_cache.connectors.tiered_connector import TieredConnector
 from max.nn.kv_cache import KVCacheBuffer, KVCacheParams, KVConnectorType
+from max.pipelines.kv_cache.connectors.tiered_connector import TieredConnector
 
 
 def create_tiered_connector(
@@ -73,6 +73,7 @@ def create_tiered_connector(
         total_num_host_blocks=num_host_blocks,
         disk_cache_dir=disk_cache_dir,
         max_disk_size_gb=max_disk_size_gb,
+        synchronous_d2h_copy_mode=True,
     )
 
 

@@ -25,8 +25,8 @@ from max.interfaces import (
     TextGenerationOutput,
     TokenBuffer,
 )
-from max.kv_cache import DummyKVCache
 from max.pipelines.core import TextAndVisionContext, TextContext
+from max.pipelines.kv_cache import DummyKVCache
 from max.serve.scheduler.config import TokenGenerationSchedulerConfig
 from max.serve.scheduler.text_generation_scheduler import (
     TokenGenerationScheduler,

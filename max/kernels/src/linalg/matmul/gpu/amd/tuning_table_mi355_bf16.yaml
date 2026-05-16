@@ -1,0 +1,82 @@
+##===----------------------------------------------------------------------===##
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+##===----------------------------------------------------------------------===##
+#
+# kbench autotune sweep for bf16 matmul on AMD MI355X (CDNA4).
+#
+# Mirrors `tuning_table_mi355_fp8.yaml`. The in-gate sweep drives the
+# 4-wave kernel family via TUNE_4WAVE_KERNEL + TUNE_4WAVE_BM / BN / BK
+# / SWIZZLE (when AUTOTUNING_MODE=True). For bf16, TUNE_4WAVE_KERNEL=3
+# routes to `amd_4wave_scheduled_matmul` (the hand-written body is
+# FP8-only); the BK knob distinguishes BK=64 vs BK=128.
+#
+# Run: `python kbench.py tuning_table_mi355_bf16.yaml`. The output CSV
+# is consumed by kdiff to pick the per-(N, K, M) winner; the winners
+# inform the closed-form M cutoffs in `_matmul_gpu`'s bf16/fp16 dispatch.
+
+name: bench_matmul
+file: $KERNEL_BENCHMARKS_ROOT/gpu/linalg/bench_matmul.mojo
+
+# Pruning rules:
+#   - in-gate kernels need symmetric tiles: BN must equal BM.
+#   - split-K(N) requires K / N to be a multiple of 2*BK. At BK=128
+#     that's K/N % 256 == 0; at BK=64 K/N % 128 == 0. Production K
+#     values (8192, 13312, 16384, ...) are all sufficiently aligned.
+#   - bf16/fp16 supports BK in {32, 64, 128}; pick 64 and 128 (BK=32
+#     can't satisfy half_BM >= rows_per_iter at BM=64 — covered by an
+#     assert in the launcher).
+rules:
+  - "TUNE_4WAVE_BM == TUNE_4WAVE_BN"
+
+common: &common
+  - name: bench_matmul
+    AUTOTUNING_MODE: True
+    dtype: DType.bfloat16
+
+params:
+
+# === In-gate shapes (4-wave kernel knobs) ===
+
+# Hippo Attn QKV — skinny-N (N < 4096 in the dispatch gate).
+- <<: *common
+  N: 2304
+  K: 16384
+  $M: [1, 16, 64, 128, 256, 512, 1024, 2048, 4096, 8192]
+  TUNE_4WAVE_KERNEL: [1, 2, 3]   # 1=split_k_4, 2=split_k_2, 3=non-split
+  TUNE_4WAVE_BM: [64, 128]
+  TUNE_4WAVE_BN: [64, 128]
+  TUNE_4WAVE_BK: [64, 128]
+  TUNE_4WAVE_SWIZZLE: [True]
+
+# Kimi K2.5 Attn output — wide-N, the regression cell that motivated
+# the wide-N split in the FP8 closed-form heuristic.
+- <<: *common
+  N: 7168
+  K: 8192
+  $M: [1, 16, 64, 128, 256, 512, 1024, 2048, 4096, 8192]
+  TUNE_4WAVE_KERNEL: [1, 2, 3]
+  TUNE_4WAVE_BM: [64, 128]
+  TUNE_4WAVE_BN: [64, 128]
+  TUNE_4WAVE_BK: [64, 128]
+  TUNE_4WAVE_SWIZZLE: [True]
+
+# Symmetric large square — N=K=8192. Verifies the in-gate kernels
+# can compete with the multistage fall-through at the upper M end.
+- <<: *common
+  N: 8192
+  K: 8192
+  $M: [64, 128, 256, 512, 1024, 2048, 4096, 8192]
+  TUNE_4WAVE_KERNEL: [1, 2, 3]
+  TUNE_4WAVE_BM: [64, 128]
+  TUNE_4WAVE_BN: [64, 128]
+  TUNE_4WAVE_BK: [64, 128]
+  TUNE_4WAVE_SWIZZLE: [True]

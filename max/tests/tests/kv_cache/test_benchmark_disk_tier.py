@@ -20,7 +20,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-from max.kv_cache.connectors.disk_tier import DiskTier
+from max.pipelines.kv_cache.connectors.disk_tier import DiskTier
 from pytest_benchmark.fixture import BenchmarkFixture
 
 ITERATIONS = 5

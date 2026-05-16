@@ -267,24 +267,17 @@ def test_reshape_needs_rebind_error_message() -> None:
     # line's leading spaces that would otherwise be required for a literal
     # match.
     expected_error = (
-        r"Failed to create op 'reshape':\n"
+        r"(?s)Failed to create op 'ReshapeOp':\n"
         r"Inputs:\n"
         r"    input = TensorValue\(dtype=float32, "
         r"shape=\[Dim\('n_patches'\), Dim\(2048\)\], device=cpu:0\)\n"
         r"    new_shape = ShapeAttr\("
         r"\#mosh<ape\[div\(n_patches, 4\), 4, 2048\]> : !mosh\.ape\)\n"
-        r"\nDiagnostics:\n\s*\n"
-        r"Operation creation failed:\n"
-        r"error: unknown: \[reshape\] input and output number of elements "
-        r"must match: \#mosh<ape\[n_patches, 2048\]> : !mosh\.ape != "
-        r"\#mosh<ape\[div\(n_patches, 4\), 4, 2048\]> : !mosh\.ape\n"
-        r"  If you are confident this is correct, consider a rebind to "
-        r"assert that the reshape is valid\.\n"
-        r"  Ex: ```\n"
-        r"      n, m = x\.shape\n"
-        r"      x = x\.rebind\(\[\(n // 4\) \* 4, m\]\)\n"
-        r"      x\.reshape\(\[n // 4, 4, m\]\)\n"
-        r"  ```"
+        r"\nDiagnostics:\n"
+        r".*\[reshape\] input and output number of elements "
+        r"must match.*"
+        r"If you are confident this is correct, consider a rebind to "
+        r"assert that the reshape is valid"
     )
     with Graph("test_MAXPLAT_329", input_types=[input_type]) as graph:
         (x,) = graph.inputs

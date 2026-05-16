@@ -53,10 +53,10 @@ from std.algorithm.functional import _get_start_indices_of_nth_subvolume
 # ===-----------------------------------------------------------------------===#
 
 comptime _USE_CLC_WORK_STEALING = get_defined_bool[
-    "USE_CLC_WORK_STEALING", True
+    "USE_CLC_WORK_STEALING", False
 ]()
 
-comptime _PDL_LEVEL = PDLLevel(1)
+comptime _PDL_LEVEL = PDLLevel.ON
 
 
 @always_inline("nodebug")
@@ -158,8 +158,7 @@ def _elementwise_impl_gpu_clc[
         MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(block_size))
     )
     @__name(
-        t"{trace_description}_r{rank}_w{simd_width}_b{block_size}.clc.{handle_uneven_simd}",
-        mangle=True,
+        t"{trace_description}_r{rank}_w{simd_width}_b{block_size}.clc.{handle_uneven_simd}"
     )
     def _kernel[*, handle_uneven_simd: Bool]():
         var result = stack_allocation[
@@ -368,8 +367,7 @@ def _elementwise_impl_gpu_grid_stride[
         MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(block_size))
     )
     @__name(
-        t"{trace_description}_r{rank}_w{simd_width}_b{block_size}.gs.{handle_uneven_simd}",
-        mangle=True,
+        t"{trace_description}_r{rank}_w{simd_width}_b{block_size}.gs.{handle_uneven_simd}"
     )
     def _kernel[*, handle_uneven_simd: Bool]():
         # process the packed region — each thread handles multiple packed
@@ -530,8 +528,7 @@ def _dual_elementwise_impl_gpu_grid_stride[
         MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(block_size))
     )
     @__name(
-        t"{trace_description}_r{rank}_w{simd_width}_b{block_size}.dual_gs.{handle_uneven_simd}",
-        mangle=True,
+        t"{trace_description}_r{rank}_w{simd_width}_b{block_size}.dual_gs.{handle_uneven_simd}"
     )
     def _kernel[*, handle_uneven_simd: Bool]():
         var tid = thread_idx.x + block_size * block_idx.x

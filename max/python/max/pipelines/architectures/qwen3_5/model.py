@@ -16,7 +16,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Any, ClassVar, Literal
 
 import numpy as np
 from max.driver import Buffer, DLPackArray, is_virtual_device_mode
@@ -27,7 +27,7 @@ from max.graph.buffer_utils import cast_tensors_to
 from max.graph.weights import Weights, WeightsAdapter
 from max.interfaces import RequestID
 from max.nn.comm import Signals
-from max.nn.kv_cache import KVCacheInputs, KVCacheParams
+from max.nn.kv_cache import KVCacheInputs
 from max.pipelines.architectures.qwen3vl_moe.context import (
     Qwen3VLTextAndVisionContext,
     VisionEncodingData,
@@ -35,7 +35,6 @@ from max.pipelines.architectures.qwen3vl_moe.context import (
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     CompilationTimer,
-    KVCacheConfig,
     ModelInputs,
     ModelOutputs,
     PipelineConfig,
@@ -144,6 +143,8 @@ class Qwen3_5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
     for full attention layers and conv/recurrent states for linear layers.
     """
 
+    model_config_cls: ClassVar[type[Any]] = Qwen3_5Config
+
     model: Model
     norm_method: Literal["rms_norm"] | Literal["layer_norm"] = "rms_norm"
     attention_bias: bool = False
@@ -174,23 +175,6 @@ class Qwen3_5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
     # Used for decode/text-only steps so that buffers() always has the right input count.
     _empty_lm_image_embeddings: Buffer | None = None
     _empty_lm_image_token_indices: Buffer | None = None
-
-    @classmethod
-    def get_kv_params(
-        cls,
-        huggingface_config: AutoConfig,
-        pipeline_config: PipelineConfig,
-        devices: list[DeviceRef],
-        kv_cache_config: KVCacheConfig,
-        cache_dtype: DType,
-    ) -> KVCacheParams:
-        return Qwen3_5Config.construct_kv_params(
-            huggingface_config,
-            pipeline_config,
-            devices,
-            kv_cache_config,
-            cache_dtype,
-        )
 
     @classmethod
     def calculate_max_seq_len(

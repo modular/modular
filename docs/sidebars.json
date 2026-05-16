@@ -371,17 +371,6 @@
         },
         {
           "type": "category",
-          "label": "max.kv_cache",
-          "link": {
-            "type": "doc",
-            "id": "max/api/python/kv_cache"
-          },
-          "items": [
-            "__AUTOGEN:max.kv_cache__"
-          ]
-        },
-        {
-          "type": "category",
           "label": "max.nn",
           "link": {
             "type": "doc",
@@ -433,6 +422,17 @@
           },
           "items": [
             "__AUTOGEN:max.pipelines__"
+          ]
+        },
+        {
+          "type": "category",
+          "label": "max.pipelines.kv_cache",
+          "link": {
+            "type": "doc",
+            "id": "max/api/python/pipelines.kv_cache"
+          },
+          "items": [
+            "__AUTOGEN:max.pipelines.kv_cache__"
           ]
         },
         {
@@ -503,6 +503,7 @@
             "max/api/python/pipelines.architectures.deepseekV3",
             "max/api/python/pipelines.architectures.deepseekV3_2",
             "max/api/python/pipelines.architectures.deepseekV3_nextn",
+            "max/api/python/pipelines.architectures.dflash_llama3",
             "max/api/python/pipelines.architectures.eagle3_deepseekV3",
             "max/api/python/pipelines.architectures.eagle_llama3",
             "max/api/python/pipelines.architectures.exaone",
@@ -549,6 +550,7 @@
             "max/api/python/pipelines.architectures.qwen_image",
             "max/api/python/pipelines.architectures.qwen_image_edit",
             "max/api/python/pipelines.architectures.step3p5",
+            "max/api/python/pipelines.architectures.unified_dflash_llama3",
             "max/api/python/pipelines.architectures.unified_eagle_llama3",
             "max/api/python/pipelines.architectures.unified_mtp_deepseekV3",
             "max/api/python/pipelines.architectures.wan",
@@ -563,29 +565,29 @@
             "id": "max/api/python/profiler"
           },
           "items": [
-            "__AUTOGEN:max.profiler__",
-            {
-              "type": "category",
-              "label": "max.profiler.cpu",
-              "link": {
-                "type": "doc",
-                "id": "max/api/python/profiler.cpu"
-              },
-              "items": [
-                "__AUTOGEN:max.profiler.cpu__"
-              ]
-            },
-            {
-              "type": "category",
-              "label": "max.profiler.gpu",
-              "link": {
-                "type": "doc",
-                "id": "max/api/python/profiler.gpu"
-              },
-              "items": [
-                "__AUTOGEN:max.profiler.gpu__"
-              ]
-            }
+            "__AUTOGEN:max.profiler__"
+          ]
+        },
+        {
+          "type": "category",
+          "label": "max.profiler.cpu",
+          "link": {
+            "type": "doc",
+            "id": "max/api/python/profiler.cpu"
+          },
+          "items": [
+            "__AUTOGEN:max.profiler.cpu__"
+          ]
+        },
+        {
+          "type": "category",
+          "label": "max.profiler.gpu",
+          "link": {
+            "type": "doc",
+            "id": "max/api/python/profiler.gpu"
+          },
+          "items": [
+            "__AUTOGEN:max.profiler.gpu__"
           ]
         }
       ]

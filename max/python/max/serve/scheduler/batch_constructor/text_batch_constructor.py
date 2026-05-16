@@ -26,8 +26,8 @@ from max.interfaces import (
     TextGenerationInputs,
     TextGenerationOutput,
 )
-from max.kv_cache import InsufficientBlocksError, PagedKVCacheManager
 from max.pipelines.core.context import TextContext
+from max.pipelines.kv_cache import InsufficientBlocksError, PagedKVCacheManager
 from max.pipelines.lib import LoRAManager
 from max.profiler import traced
 from max.serve.telemetry.metrics import METRICS

@@ -32,6 +32,7 @@ from max.pipelines.dataprocessing.causal_attention_mask import (
 )
 from max.pipelines.lib import SupportedEncoding
 from max.pipelines.lib.interfaces.component_model import ComponentModel
+from max.pipelines.lib.weight_loading import auto_cast_weights_from_env
 
 from .model_config import Qwen3TextEncoderConfig
 from .qwen3 import Qwen3TextEncoderTransformer
@@ -142,7 +143,11 @@ class Qwen3TextEncoderModel(ComponentModel):
             model = Qwen3TextEncoderTransformer(self.config)
             model.to(self.devices[0])
 
-        self.model = model.compile(*model.input_types(), weights=state_dict)
+        self.model = model.compile(
+            *model.input_types(),
+            weights=state_dict,
+            auto_cast=auto_cast_weights_from_env(),
+        )
         return self.model
 
     @staticmethod

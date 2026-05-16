@@ -37,7 +37,6 @@ Modules
    graph.quantization
    graph.weights
    interfaces
-   kv_cache
    nn
    nn.attention
    nn.kernels
@@ -49,6 +48,7 @@ Modules
    pipelines.architectures.deepseekV3
    pipelines.architectures.deepseekV3_2
    pipelines.architectures.deepseekV3_nextn
+   pipelines.architectures.dflash_llama3
    pipelines.architectures.eagle3_deepseekV3
    pipelines.architectures.eagle_llama3
    pipelines.architectures.exaone
@@ -95,11 +95,13 @@ Modules
    pipelines.architectures.qwen_image
    pipelines.architectures.qwen_image_edit
    pipelines.architectures.step3p5
+   pipelines.architectures.unified_dflash_llama3
    pipelines.architectures.unified_eagle_llama3
    pipelines.architectures.unified_mtp_deepseekV3
    pipelines.architectures.wan
    pipelines.architectures.z_image_modulev3
    pipelines.core
+   pipelines.kv_cache
    pipelines.lib
    pipelines.lib.interfaces
    pipelines.lib.log_probabilities

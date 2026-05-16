@@ -16,8 +16,6 @@ from .plugin import (
     RawDriver,
     OutParam,
     ContextHandle,
-    DeviceHandle,
-    QueueHandle,
     FunctionHandle,
     MemoryHandle,
     RuntimeBundleHandle,
@@ -35,29 +33,21 @@ from .status import STATUS_SUCCESS, HALError
 
 from std.memory import (
     ImmutPointer,
-    MutPointer,
     ArcPointer,
-    OpaquePointer,
     UnsafePointer,
     UnsafeMaybeUninit,
 )
+from std.memory.arc_pointer import WeakPointer
 
-from std.compile import (
-    CompiledFunctionInfo,
-)
+from std.compile import CompiledFunctionInfo
 
-from std.compile.compile import (
-    _Info,
-    _get_emission_kind_id,
-)
-
-from std.ffi import CStringSlice
+from std.compile.compile import _Info, _get_emission_kind_id
 
 from std.reflection import get_linkage_name
 
 from std.collections.string.string_slice import _get_kgen_string
 
-from std.sys.info import CompilationTarget, is_triple, _TargetType
+from std.sys.info import is_triple, _TargetType
 
 
 #
@@ -71,7 +61,7 @@ def _bundle_file_type[target: _TargetType]() -> StaticString:
 
 
 @fieldwise_init
-struct Context[device_origin: ImmutOrigin, device_spec: DeviceSpec](Movable):
+struct Context[device_spec: DeviceSpec](ImplicitlyDestructible, Movable):
     """A context loaded on a specific device.
 
     Represents a runtime handle to an initialized
@@ -83,28 +73,29 @@ struct Context[device_origin: ImmutOrigin, device_spec: DeviceSpec](Movable):
     a Context.
 
     Parameters:
-        device_origin: The origin of the parent Device pointer.
         device_spec: The compilation target this context is set up for.
     """
 
     var _handle: ContextHandle
-    var _device: ImmutPointer[
-        Device[Self.device_origin, Self.device_spec], Self.device_origin
-    ]
-    var _raw: ImmutPointer[RawDriver, Self.device_origin]
+    var _device: ArcPointer[Device[Self.device_spec]]
+    var _raw: ArcPointer[RawDriver]
+    var _self_ref: WeakPointer[Self]
 
-    def __init__[
-        o1: ImmutOrigin, o2: ImmutOrigin
-    ](
-        out self: Context[origin_of(o1, o2), Self.device_spec],
-        ref[o1] device: Device[o2, Self.device_spec],
+    @staticmethod
+    def _create(
+        out _self: ArcPointer[Self], device: Device[Self.device_spec]
     ) raises HALError:
-        # This is a horrible hack that should be revisited as soon as
-        # we can express subtyping relations between origins and/or
-        # inferred/unbound inner origin params for arguments.
-        # See MOCO-3661, MOCO-3326.
-        self._device = rebind[type_of(self._device)](Pointer(to=device))
-        self._raw = rebind[type_of(self._raw)](device._raw)
+        _self = ArcPointer(Self(device))
+        _self[]._self_ref = WeakPointer(downgrade=_self)
+
+    @doc_hidden
+    def __init__(
+        out self: Self,
+        ref device: Device[Self.device_spec],
+    ) raises HALError:
+        self._device = device._self_ref.try_upgrade().value()
+        self._raw = device._raw
+        self._self_ref = WeakPointer[Self]()
 
         ref raw = self._raw[]
 
@@ -123,6 +114,12 @@ struct Context[device_origin: ImmutOrigin, device_spec: DeviceSpec](Movable):
             )
 
         self._handle = context_handle_uninit.unsafe_assume_init_ref()
+
+    def __del__(deinit self):
+        try:
+            self._raw[].destroy_context(self._handle)
+        except e:
+            print("warning: destroy_context failed:", e)
 
     def _compile_inner[
         fn_type: TrivialRegisterPassable,
@@ -206,6 +203,8 @@ struct Context[device_origin: ImmutOrigin, device_spec: DeviceSpec](Movable):
         return (
             RuntimeBundle(
                 _handle=runtime_bundle.unsafe_assume_init_ref(),
+                _context_handle=self._handle,
+                _raw=self._raw,
             ),
             compiled_info.function_name,
         )
@@ -216,12 +215,8 @@ struct Context[device_origin: ImmutOrigin, device_spec: DeviceSpec](Movable):
 
     def create_queue(
         self,
-    ) raises HALError -> Queue[
-        origin_of(self, Self.device_origin), Self.device_spec
-    ]:
-        return Queue[origin_of(self, Self.device_origin), Self.device_spec](
-            self
-        )
+    ) raises HALError -> ArcPointer[Queue[Self.device_spec]]:
+        return Queue[Self.device_spec]._create(self)
 
     # ===-------------------------------------------------------------------===#
     # Stream operations
@@ -229,12 +224,8 @@ struct Context[device_origin: ImmutOrigin, device_spec: DeviceSpec](Movable):
 
     def create_stream(
         self,
-    ) raises HALError -> Stream[
-        origin_of(self, Self.device_origin), Self.device_spec
-    ]:
-        return Stream[origin_of(self, Self.device_origin), Self.device_spec](
-            self
-        )
+    ) raises HALError -> ArcPointer[Stream[Self.device_spec]]:
+        return Stream[Self.device_spec]._create(self)
 
     # ===-------------------------------------------------------------------===#
     # Memory operations
@@ -272,6 +263,11 @@ struct Buffer(Movable):
     Tracks the allocation mode and byte size.
     """
 
+    # TODO(Sawyer): decide Buffer ownership. Currently leaks unless the user
+    # calls `Context.free_sync`. Either give Buffer a destructor (requires
+    # carrying `ContextHandle` + `ArcPointer[RawDriver]`) or document it as a
+    # non-owning view and remove `Movable`.
+
     var _handle: MemoryHandle
     var byte_size: UInt64
 
@@ -279,3 +275,11 @@ struct Buffer(Movable):
 @fieldwise_init
 struct RuntimeBundle(Movable):
     var _handle: RuntimeBundleHandle
+    var _context_handle: ContextHandle
+    var _raw: ArcPointer[RawDriver]
+
+    def __del__(deinit self):
+        try:
+            self._raw[].unload_bundle(self._context_handle, self._handle)
+        except e:
+            print("warning: unload_bundle failed:", e)

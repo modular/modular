@@ -481,6 +481,47 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         )
         return Self(unsafe_from_utf8=self._slice[byte])
 
+    def __getitem__(self, *, codepoint: Some[Indexer]) -> Self:
+        """Gets the character at the specified position.
+
+        Args:
+            codepoint: The codepoint index.
+
+        Returns:
+            A `StringSlice` view containing the unicode codepoint at the
+            specified position.
+        """
+
+        var c_idx = index(codepoint)
+        debug_assert[assert_mode="safe"](
+            c_idx >= 0, "negative indexing is not supported"
+        )
+        # NOTE: Edge case: when the element at idx 0 in a string is fetched and
+        # it's a multi-byte sequence, the code would assume it's an ascii
+        # sequence. Fetch 1 more byte (when not OOB) just to have a continuation
+        # byte and force the code to go into the clipped branch
+        var i0_multi_case = Int(c_idx == 0 and self.byte_length() > 1)
+        var ptr = self.unsafe_ptr()
+        var span = self._slice[: c_idx + 1 + i0_multi_case]
+        var c_count = len(span) - _count_utf8_continuation_bytes(span)
+        if likely(c_count == len(span)):  # ASCII
+            return Self(ptr=ptr + c_idx, length=1)
+        elif c_count == c_idx + 1:  # clipped the multi-byte sequence
+            var b_idx = c_idx
+            while _is_utf8_continuation_byte(ptr[b_idx]):
+                b_idx -= 1
+            var length = Int(_utf8_first_byte_sequence_length(ptr[b_idx]))
+            return self[byte = b_idx : b_idx + length]
+        else:  # keep going forward
+            var b_idx = c_idx + 1
+            while _is_utf8_continuation_byte(ptr[b_idx]):
+                b_idx += 1
+            for s in self[byte=b_idx:].codepoint_slices():
+                if c_count == c_idx:
+                    return s
+                c_count += 1
+            abort(String("codepoint index is out of bounds: ", c_idx))
+
     @doc_hidden
     def __init__(
         out self: StringSlice[ImmutAnyOrigin],

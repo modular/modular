@@ -17,6 +17,7 @@ from .dim import AlgebraicDim, Dim, DimLike, StaticDim, SymbolicDim
 from .graph import (
     DevicePlacementPolicy,
     Graph,
+    GraphBlock,
     GraphDebugConfig,
     KernelLibrary,
     Module,

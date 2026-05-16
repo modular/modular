@@ -155,7 +155,6 @@ struct CombineParams[
 # ===----------------------------------------------------------------------=== #
 @__name(
     t"sm100_mla_decode_combine_{output_type}_{accum_type}_{num_splits}_{ragged}",
-    mangle=True,
 )
 def mla_combine_kernel[
     output_type: DType,
@@ -527,7 +526,6 @@ struct SplitParallelCombineParams[
 
 @__name(
     t"sm100_mla_decode_combine_split_parallel_{output_type}_{accum_type}_{num_splits}_{ragged}",
-    mangle=True,
 )
 def mla_combine_kernel_split_parallel[
     output_type: DType,

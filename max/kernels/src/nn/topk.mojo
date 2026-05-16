@@ -908,7 +908,7 @@ def _block_reduce_topk[
     return _warp_reduce_topk[T, ascending](block_accum)
 
 
-@__name(t"topk_stage1_old_no_shmem_{T}_{out_idx_type}_{largest}", mangle=True)
+@__name(t"topk_stage1_old_no_shmem_{T}_{out_idx_type}_{largest}")
 def _topk_stage1_old_no_shmem[
     T: DType,
     out_idx_type: DType,
@@ -989,7 +989,7 @@ def _topk_stage1_old_no_shmem[
                 ](-1)
 
 
-@__name(t"topk_stage1_old_{T}_{out_idx_type}_{largest}", mangle=True)
+@__name(t"topk_stage1_old_{T}_{out_idx_type}_{largest}")
 def _topk_stage1_old[
     T: DType,
     out_idx_type: DType,
@@ -1097,7 +1097,7 @@ def _topk_stage1_old[
                 ](-1)
 
 
-@__name(t"topk_stage1_no_shmem_{T}_{out_idx_type}_{largest}", mangle=True)
+@__name(t"topk_stage1_no_shmem_{T}_{out_idx_type}_{largest}")
 def _topk_stage1_no_shmem[
     T: DType,
     out_idx_type: DType,
@@ -1207,7 +1207,7 @@ def _topk_stage1_no_shmem[
                 out_idxs[remaining_k] = Scalar[out_idx_type](-1)
 
 
-@__name(t"topk_stage1_{T}_{out_idx_type}_{largest}", mangle=True)
+@__name(t"topk_stage1_{T}_{out_idx_type}_{largest}")
 def _topk_stage1[
     T: DType,
     out_idx_type: DType,
@@ -1348,7 +1348,7 @@ def _get_shmem_size_stg_1[dtype: DType](block_size: Int) -> Int:
     return block_size * size_of[TopK_2[dtype]]()
 
 
-@__name(t"topk_stage2_{T}_{out_idx_type}_{sampling}_{largest}", mangle=True)
+@__name(t"topk_stage2_{T}_{out_idx_type}_{sampling}_{largest}")
 def _topk_stage2[
     T: DType,
     out_idx_type: DType,
@@ -1736,7 +1736,7 @@ def _topk_gpu[
                 device_local_topk_idxs.to_device_buffer(ctx),
                 grid_dim=grid_dim_stage1,
                 block_dim=block_dim_stage1,
-                attributes=pdl_launch_attributes(PDLLevel(1)),
+                attributes=pdl_launch_attributes(PDLLevel.ON),
             )
         else:
             var shared_mem_bytes_1 = _get_shmem_size_stg_1[dtype](block_size)
@@ -1752,7 +1752,7 @@ def _topk_gpu[
                 grid_dim=grid_dim_stage1,
                 block_dim=block_dim_stage1,
                 shared_mem_bytes=shared_mem_bytes_1,
-                attributes=pdl_launch_attributes(PDLLevel(1)),
+                attributes=pdl_launch_attributes(PDLLevel.ON),
             )
     else:
         var input_buf_tmp = ctx.enqueue_create_buffer[dtype](batch_size * N)
@@ -1772,7 +1772,7 @@ def _topk_gpu[
                 device_local_topk_idxs.to_device_buffer(ctx),
                 grid_dim=grid_dim_stage1,
                 block_dim=block_dim_stage1,
-                attributes=pdl_launch_attributes(PDLLevel(1)),
+                attributes=pdl_launch_attributes(PDLLevel.ON),
             )
         else:
             comptime kernel_1 = _topk_stage1[dtype, out_idx_type, largest]
@@ -1786,7 +1786,7 @@ def _topk_gpu[
                 device_local_topk_idxs.to_device_buffer(ctx),
                 grid_dim=grid_dim_stage1,
                 block_dim=block_dim_stage1,
-                attributes=pdl_launch_attributes(PDLLevel(1)),
+                attributes=pdl_launch_attributes(PDLLevel.ON),
             )
         _ = input_buf_tmp^
 
@@ -1860,7 +1860,7 @@ def _topk_gpu[
         grid_dim=grid_dim_stage2,
         block_dim=block_dim_stage2,
         shared_mem_bytes=shared_mem_bytes_2,
-        attributes=pdl_launch_attributes(PDLLevel(1)),
+        attributes=pdl_launch_attributes(PDLLevel.ON),
     )
 
 
@@ -2347,7 +2347,7 @@ def fused_token_sampling_gpu[
 # ===-----------------------------------------------------------------------===#
 
 
-@__name(t"apply_gumbel_noise_{dtype}", mangle=True)
+@__name(t"apply_gumbel_noise_{dtype}")
 def apply_gumbel_noise_kernel[
     dtype: DType,
     OutputLayoutType: TensorLayout,
@@ -2528,7 +2528,7 @@ def gumbel_sampling_gpu[
             seed_ptr,
             grid_dim=hw_info.sm_count,
             block_dim=hw_info.max_thread_block_size,
-            attributes=pdl_launch_attributes(PDLLevel(1)),
+            attributes=pdl_launch_attributes(PDLLevel.ON),
         )
 
         # Extract argmax after Gumbel noise application.

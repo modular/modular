@@ -19,6 +19,7 @@ from max.pipelines.lib import SupportedArchitecture, TextTokenizer
 from . import weight_adapters
 from .model import DeepseekV3Model
 from .model_config import DeepseekV3Config
+from .tool_parser import resolve_deepseekv3_tool_parser
 
 deepseekV3_arch = SupportedArchitecture(
     name="DeepseekV3ForCausalLM",
@@ -43,4 +44,5 @@ deepseekV3_arch = SupportedArchitecture(
     supports_empty_batches=True,
     requires_max_batch_context_length=True,
     config=DeepseekV3Config,
+    tool_parser=resolve_deepseekv3_tool_parser,
 )

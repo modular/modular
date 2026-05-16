@@ -31,6 +31,7 @@ from layout import Coord, RuntimeInt, TileTensor, row_major
 from std.builtin.range import _StridedRange
 from std.compile import compile_info
 from std.memory import bitcast, stack_allocation
+from internal_utils import ScalarArray
 
 
 def _ri(v: Int) -> RuntimeInt[DType.int64]:
@@ -72,8 +73,8 @@ def bench_unary[
     dtype: DType,
 ](mut m: Bench, size: Int, op_name: String) raises:
     comptime alignment = 64
-    var input_ptr = alloc[Scalar[dtype],](size, alignment=alignment)
-    var output_ptr = alloc[Scalar[dtype],](size, alignment=alignment)
+    var input_ptr = ScalarArray[dtype](count=size, alignment=alignment)
+    var output_ptr = ScalarArray[dtype](count=size, alignment=alignment)
 
     var linspace = range(0x3000_0000, 0x42B0_0000, 1)
     for i in range(size):
@@ -85,8 +86,10 @@ def bench_unary[
         @parameter
         def iter_fn():
             apply[func](
-                TileTensor(input_ptr, row_major(Coord(_ri(size)))),
-                TileTensor(output_ptr, row_major(Coord(_ri(size)))),
+                TileTensor(input_ptr.unsafe_ptr(), row_major(Coord(_ri(size)))),
+                TileTensor(
+                    output_ptr.unsafe_ptr(), row_major(Coord(_ri(size)))
+                ),
             )
             keep(output_ptr)
 
@@ -102,8 +105,7 @@ def bench_unary[
         [elements],
     )
 
-    input_ptr.free()
-    output_ptr.free()
+    _ = (input_ptr^, output_ptr^)
 
 
 def ldexp2kf_opt[
