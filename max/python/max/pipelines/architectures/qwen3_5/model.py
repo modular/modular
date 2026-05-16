@@ -22,7 +22,14 @@ import numpy as np
 from max.driver import Buffer, DLPackArray, is_virtual_device_mode
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import BufferValue, DeviceRef, Graph, TensorType, TensorValue
+from max.graph import (
+    BufferValue,
+    DeviceRef,
+    Graph,
+    Module,
+    TensorType,
+    TensorValue,
+)
 from max.graph.buffer_utils import cast_tensors_to
 from max.graph.weights import Weights, WeightsAdapter
 from max.interfaces import RequestID
@@ -251,9 +258,23 @@ class Qwen3_5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
             ).to(self.devices[0])
 
         with CompilationTimer("model") as timer:
-            graph = self._build_graph(self.weights, self.adapter)
+            # Share one MLIR module so language and vision compile together.
+            module = Module()
+            language_graph = self._build_language_graph(
+                self.weights, self.adapter, module=module
+            )
+            assert self._vision_state_dict is not None
+            vision_graph = self._build_vision_graph(module=module)
             timer.mark_build_complete()
-            model = session.load(graph, weights_registry=self.state_dict)
+            models = session.load_all(
+                module,
+                weights_registry={
+                    **self.state_dict,
+                    **self._vision_state_dict,
+                },
+            )
+            model = models[language_graph.name]
+            self.vision_model = models[vision_graph.name]
 
         # Initialize per-request state cache for linear attention layers.
         # _num_linear_layers is populated by _build_graph, so this and the
@@ -286,16 +307,10 @@ class Qwen3_5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
             self._empty_lm_image_token_indices = Buffer.zeros(
                 shape=[0], dtype=DType.int32
             ).to(self.devices[0])
-            with CompilationTimer("vision model") as timer:
-                vision_graph = self._build_vision_graph()
-                timer.mark_build_complete()
-                self.vision_model = session.load(
-                    vision_graph, weights_registry=self._vision_state_dict
-                )
 
         return model
 
-    def _build_vision_graph(self) -> Graph:
+    def _build_vision_graph(self, module: Module) -> Graph:
         """Build the vision encoder graph for processing images."""
         assert isinstance(self._nn_model, Qwen3_5), (
             "_build_vision_graph called before _build_graph"
@@ -384,6 +399,7 @@ class Qwen3_5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
                     *signals.input_types(),
                 ]
             ),
+            module=module,
         ) as graph:
             all_inputs = graph.inputs
             n = len(self.devices)
@@ -418,10 +434,11 @@ class Qwen3_5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
             graph.output(*image_embeddings)
             return graph
 
-    def _build_graph(
+    def _build_language_graph(
         self,
         weights: Weights,
-        adapter: WeightsAdapter | None = None,
+        adapter: WeightsAdapter | None,
+        module: Module,
     ) -> Graph:
         full_state_dict = parse_state_dict_from_weights(
             self.pipeline_config, weights, adapter
@@ -510,6 +527,7 @@ class Qwen3_5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
         with Graph(
             "qwen3_5",
             input_types=graph_inputs,
+            module=module,
         ) as graph:
             tokens, input_row_offsets, return_n_logits, *variadic_args = (
                 graph.inputs
