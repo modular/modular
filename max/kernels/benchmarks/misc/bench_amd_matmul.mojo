@@ -38,7 +38,7 @@ per shape, so the comparison is apples-to-apples (same RNG, same
 cache-bust rotation, same warmup state).
 
 Compile-time defines (`-D`):
-  - dtype             : DType, default float8_e4m3fn (asserted FP8)
+  - dtype             : DType, default float8_e4m3fn (float8, bf16, or fp16)
   - N, K              : Int, static GEMM dims (default 4096)
   - shape_set_id      : Int, M sweep bucket
                           0 = large    (M = N)
@@ -48,12 +48,16 @@ Compile-time defines (`-D`):
                           4 = single   (use --M only)
   - run_default       : Bool, default True
   - run_ping_pong     : Bool, default True
-  - run_4wave         : Bool, default True
+  - run_4wave         : Bool, default True   (FP8-only)
   - run_4wave_sched   : Bool, default True
   - run_4wave_split_k : Bool, default False
   - num_splits        : Int, default 4 (only used when run_4wave_split_k)
   - run_vendor        : Bool, default True
   - enable_swizzle    : Bool, default True (4wave + ping_pong)
+  - bm_4wave, bn_4wave, bk_4wave : Int, default 0 (auto-pick). Override the
+                          4-wave / split-K (BM, BN, BK) tile. Valid BK is
+                          32, 64, or 128 (bf16/fp16); 128 (FP8). See
+                          `amd_4wave_scheduled_matmul` for tile recipes.
 
 Runtime args:
   - --M=<int>         : single M when shape_set_id=4
@@ -241,6 +245,7 @@ def _bench_one_kernel[
     enable_swizzle: Bool,
     bm_4wave: Int = 0,
     bn_4wave: Int = 0,
+    bk_4wave: Int = 0,
     num_splits: Int = 1,
 ](
     ctx: DeviceContext,
@@ -295,6 +300,7 @@ def _bench_one_kernel[
                     tensor_a, tensor_b, tensor_c, ctx
                 )
             elif kernel_id == KERNEL_4WAVE:
+                # Hand-written 4-wave is FP8-only; ignore bk_4wave here.
                 amd_4wave_matmul[
                     enable_swizzle=enable_swizzle,
                     block_m_override=bm_4wave,
@@ -305,10 +311,15 @@ def _bench_one_kernel[
                     enable_swizzle=enable_swizzle,
                     block_m_override=bm_4wave,
                     block_n_override=bn_4wave,
+                    block_k_override=bk_4wave,
                 ](tensor_a, tensor_b, tensor_c, ctx)
             elif kernel_id == KERNEL_4WAVE_SPLIT_K:
                 amd_4wave_split_k_matmul[
-                    num_splits=num_splits, enable_swizzle=enable_swizzle
+                    num_splits=num_splits,
+                    enable_swizzle=enable_swizzle,
+                    block_m_override=bm_4wave,
+                    block_n_override=bn_4wave,
+                    block_k_override=bk_4wave,
                 ](
                     tensor_a,
                     tensor_b,
@@ -366,6 +377,7 @@ def bench_shape[
     num_splits: Int,
     bm_4wave: Int,
     bn_4wave: Int,
+    bk_4wave: Int,
 ](
     ctx: DeviceContext,
     mut b: Bench,
@@ -445,6 +457,7 @@ def bench_shape[
             enable_swizzle=enable_swizzle,
             bm_4wave=bm_4wave,
             bn_4wave=bn_4wave,
+            bk_4wave=bk_4wave,
         ](ctx, b, cb_a, cb_b, cb_c, shape_c, shape_a, shape_b)
 
     comptime if run_4wave_sched:
@@ -459,6 +472,7 @@ def bench_shape[
             enable_swizzle=enable_swizzle,
             bm_4wave=bm_4wave,
             bn_4wave=bn_4wave,
+            bk_4wave=bk_4wave,
         ](ctx, b, cb_a, cb_b, cb_c, shape_c, shape_a, shape_b)
 
     comptime if run_vendor:
@@ -484,6 +498,9 @@ def bench_shape[
             transpose_b=transpose_b,
             cache_busting=cache_busting,
             enable_swizzle=enable_swizzle,
+            bm_4wave=bm_4wave,
+            bn_4wave=bn_4wave,
+            bk_4wave=bk_4wave,
             num_splits=num_splits,
         ](ctx, b, cb_a, cb_b, cb_c, shape_c, shape_a, shape_b)
 
@@ -523,10 +540,9 @@ def _shape_set_m_values(shape_set_id: Int, N: Int, single_M: Int) -> List[Int]:
 
 def main() raises:
     comptime dtype = get_defined_dtype["dtype", DType.float8_e4m3fn]()
-    comptime assert dtype.is_float8(), (
-        "bench_amd_matmul currently only supports float8 (the 4wave kernels are"
-        " FP8-only)"
-    )
+    comptime assert (
+        dtype.is_float8() or dtype == DType.bfloat16 or dtype == DType.float16
+    ), "bench_amd_matmul supports float8_e4m3fn, bfloat16, or float16"
 
     comptime N = get_defined_int["N", 4096]()
     comptime K = get_defined_int["K", 4096]()
@@ -549,10 +565,15 @@ def main() raises:
     # Enable with `-D run_4wave_split_k=True -D num_splits=4`.
     comptime run_4wave_split_k = get_defined_bool["run_4wave_split_k", False]()
     comptime num_splits = get_defined_int["num_splits", 4]()
-    # 4-wave (BM, BN) override: 0 = use kernel's auto-pick (BM=BN, sized
-    # by M). Set both to non-zero to pin a specific block shape.
+    # 4-wave (BM, BN, BK) overrides: 0 = use kernel's auto-pick. Set
+    # bm_4wave + bn_4wave together to pin the spatial tile; set bk_4wave
+    # to pin the K-tile (32, 64, or 128). Valid combos: see the docstring
+    # in `amd_4wave_scheduled_matmul`. Typical sweep recipe for bf16:
+    #   bm_4wave=128 bn_4wave=128 bk_4wave=128   (M ≤ 512)
+    #   bm_4wave=128 bn_4wave=128 bk_4wave=64    (M ≥ 1024)
     comptime bm_4wave = get_defined_int["bm_4wave", 0]()
     comptime bn_4wave = get_defined_int["bn_4wave", 0]()
+    comptime bk_4wave = get_defined_int["bk_4wave", 0]()
 
     var init_type = InitializationType.from_str(
         arg_parse("init_type", "uniform_distribution")
@@ -577,7 +598,9 @@ def main() raises:
         "4wave_sched " if run_4wave_sched else "",
         "vendor " if run_vendor else "",
         String("4wave_split_k(", num_splits, ") ") if run_4wave_split_k else "",
-        String(" bm/bn=", bm_4wave, "/", bn_4wave) if bm_4wave > 0 else "",
+        String(" bm/bn/bk=", bm_4wave, "/", bn_4wave, "/", bk_4wave) if bm_4wave
+        > 0
+        or bk_4wave > 0 else "",
         "] M sweep=",
         len(ms),
         " values",
@@ -621,6 +644,7 @@ def main() raises:
                 num_splits=num_splits,
                 bm_4wave=bm_4wave,
                 bn_4wave=bn_4wave,
+                bk_4wave=bk_4wave,
             ](
                 ctx,
                 m,

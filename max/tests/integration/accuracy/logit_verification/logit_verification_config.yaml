@@ -608,7 +608,14 @@ logit_verification_pipelines:
       tar_file: "s3://modular-bazel-artifacts-public/artifacts/torch_qwen3_embedding_0.6b_bfloat16_golden/1/98f263166b17cbc486f6709903c35ab1126f938efc0ea07289abd0419d6b9b48/torch_qwen3_embedding_0.6b_bfloat16_golden.tar.gz"
       json_file: "torch_qwen3_embedding_0.6b_bfloat16_golden.json"
     relative_tolerance: 1.0e-04
-    absolute_tolerance: 4.0e-03
+    # 5e-3 (was 4e-3) to absorb the bf16 rounding wobble introduced when
+    # MI355X bf16 matmuls route to the 4-wave kernel family (the K-loop
+    # iteration order and warp-K partitioning differ from AMDMatmul, so
+    # single-cell rounding lands a few bf16 ULPs differently — aggregate
+    # RMSE/MAE actually *improved* vs the legacy path). 5e-3 still tightly
+    # bounds real precision regressions while accommodating valid rounding-
+    # order variance between bf16 GEMM implementations.
+    absolute_tolerance: 5.0e-03
     cos_dist_threshold: 5.0e-04
     kl_div_threshold: 2.8e-07
 

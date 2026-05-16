@@ -76,6 +76,7 @@ from .amd import (
     AMDPingPongMatmul,
     KernelConfig,
     amd_4wave_matmul,
+    amd_4wave_scheduled_matmul,
     amd_4wave_split_k_matmul,
     SplitKWorkspace,
 )
@@ -678,15 +679,24 @@ def _matmul_gpu[
                 comptime if not transpose_b:
                     return kernel_helper[128, 128, num_pipeline_stages=2]()
 
-                # FP8 transpose_b on MI355X: route to the 4-wave kernel
-                # family in its bench-validated regime. The 4-wave
-                # kernels' fixed BM/BN auto-pick (64 or 128) outperforms
-                # the prior auto-tuned `multistage_gemm` dispatch on
-                # small-to-medium square shapes (N=K up to 8192) and on
-                # skinny-N shapes (N <= 4096 with large K). At very
-                # large N=K (>= 16384) and at large M, the existing
-                # auto-tuned generic block selection wins, so we fall
-                # through to it.
+                # FP8 / bf16 / fp16 transpose_b on MI355X: route to the
+                # 4-wave kernel family in its bench-validated regime.
+                # The 4-wave kernels' fixed BM/BN auto-pick (64 or 128)
+                # outperforms the prior auto-tuned `multistage_gemm`
+                # dispatch on small-to-medium square shapes (N=K up to
+                # 8192) and on skinny-N shapes (N <= 4096 with large K).
+                # At very large N=K (>= 16384) and at large M, the
+                # existing auto-tuned generic block selection wins, so
+                # we fall through to it.
+                #
+                # bf16 / fp16 reuse the FP8 M cutoffs as a first cut
+                # (verified against `bench_amd_matmul` at bf16 N=K=8192:
+                # split-K(4) beats ping_pong by ~4.5–5x at M ≤ 128 and
+                # plain 4-wave wins M=256–1024 by 1.1–2.2x; M > 1024
+                # falls through to ping_pong). The numerical thresholds
+                # were tuned for FP8 and may want a kbench sweep for
+                # bf16-specific tuning, but the directional behavior
+                # ports cleanly.
                 #
                 # Routing inside the gate (derived from the kbench
                 # autotune sweep in `tuning_table_mi355_fp8.yaml`,
@@ -721,8 +731,13 @@ def _matmul_gpu[
                 #     since K_per_split = K/4 must be a multiple of
                 #     2*BK = 256; production K values are all
                 #     1024-aligned.
-                comptime if (
+                comptime _4wave_dtype_ok = (
                     a_type.is_float8()
+                    or a_type == DType.bfloat16
+                    or a_type == DType.float16
+                )
+                comptime if (
+                    _4wave_dtype_ok
                     and transpose_b
                     and ctx.default_device_info == MI355X
                 ):
@@ -739,6 +754,12 @@ def _matmul_gpu[
                         # exact kernel + (BM, BN) the autotune driver
                         # picked. `TUNE_4WAVE_KERNEL=0` (default) keeps
                         # the closed-form heuristic.
+                        #
+                        # FP8 dispatches the hand-written body for the
+                        # non-split case; bf16/fp16 use the scheduled
+                        # body. TUNE_4WAVE_BK selects BK (32/64/128 for
+                        # bf16/fp16, 128 for FP8 — the FP8 kernel
+                        # asserts).
                         comptime _tune_4wave = get_defined_int[
                             "TUNE_4WAVE_KERNEL", 0
                         ]()
@@ -749,13 +770,20 @@ def _matmul_gpu[
                             comptime _tune_bn = get_defined_int[
                                 "TUNE_4WAVE_BN", 0
                             ]()
+                            comptime _tune_bk = get_defined_int[
+                                "TUNE_4WAVE_BK", 0
+                            ]()
                             comptime _tune_swizzle = get_defined_bool[
                                 "TUNE_4WAVE_SWIZZLE", True
                             ]()
+                            comptime _dtype_str = (
+                                "FP8" if a_type.is_float8() else "bf16/fp16"
+                            )
                             comptime if _tune_4wave == 1:
                                 logger.info(
-                                    "Autotune: AMD 4-wave + split-K(4) FP8"
-                                    " matmul"
+                                    "Autotune: AMD 4-wave + split-K(4) ",
+                                    _dtype_str,
+                                    " matmul",
                                 )
                                 var sk_ws_4 = SplitKWorkspace[4](
                                     ctx, m * static_N
@@ -765,14 +793,16 @@ def _matmul_gpu[
                                     enable_swizzle=_tune_swizzle,
                                     block_m_override=_tune_bm,
                                     block_n_override=_tune_bn,
+                                    block_k_override=_tune_bk,
                                     elementwise_lambda_fn=elementwise_lambda_wrapper,
                                 ](a, b, c, ctx, workspace=sk_ws_4)
                                 _ = sk_ws_4^
                                 return
                             elif _tune_4wave == 2:
                                 logger.info(
-                                    "Autotune: AMD 4-wave + split-K(2) FP8"
-                                    " matmul"
+                                    "Autotune: AMD 4-wave + split-K(2) ",
+                                    _dtype_str,
+                                    " matmul",
                                 )
                                 var sk_ws_2 = SplitKWorkspace[2](
                                     ctx, m * static_N
@@ -782,21 +812,35 @@ def _matmul_gpu[
                                     enable_swizzle=_tune_swizzle,
                                     block_m_override=_tune_bm,
                                     block_n_override=_tune_bn,
+                                    block_k_override=_tune_bk,
                                     elementwise_lambda_fn=elementwise_lambda_wrapper,
                                 ](a, b, c, ctx, workspace=sk_ws_2)
                                 _ = sk_ws_2^
                                 return
                             else:
+                                # FP8 path uses the hand-written body
+                                # (FP8-tuned waitcnts); bf16/fp16 use
+                                # the schedule-driven body.
                                 logger.info(
-                                    "Autotune: AMD 4-wave (no split-K) FP8"
-                                    " matmul"
+                                    "Autotune: AMD 4-wave (no split-K) ",
+                                    _dtype_str,
+                                    " matmul",
                                 )
-                                return amd_4wave_matmul[
-                                    enable_swizzle=_tune_swizzle,
-                                    block_m_override=_tune_bm,
-                                    block_n_override=_tune_bn,
-                                    elementwise_lambda_fn=elementwise_lambda_wrapper,
-                                ](a, b, c, ctx)
+                                comptime if a_type.is_float8():
+                                    return amd_4wave_matmul[
+                                        enable_swizzle=_tune_swizzle,
+                                        block_m_override=_tune_bm,
+                                        block_n_override=_tune_bn,
+                                        elementwise_lambda_fn=elementwise_lambda_wrapper,
+                                    ](a, b, c, ctx)
+                                else:
+                                    return amd_4wave_scheduled_matmul[
+                                        enable_swizzle=_tune_swizzle,
+                                        block_m_override=_tune_bm,
+                                        block_n_override=_tune_bn,
+                                        block_k_override=_tune_bk,
+                                        elementwise_lambda_fn=elementwise_lambda_wrapper,
+                                    ](a, b, c, ctx)
 
                         # The cutoffs and tile shapes below come from the
                         # `tuning_table_mi355_fp8.yaml` autotune sweep on
@@ -828,18 +872,40 @@ def _matmul_gpu[
                         comptime sk2_128_max = 2048 if is_skinny_n else 256
                         comptime fwave_max = 0 if is_skinny_n else 1024
                         if m <= sk4_64_max:
-                            logger.info(
-                                "Executing: AMD 4-wave + split-K(4) FP8 matmul"
-                            )
-                            var sk_ws_4_64 = SplitKWorkspace[4](
-                                ctx, m * static_N
-                            )
-                            amd_4wave_split_k_matmul[
-                                num_splits=4,
-                                elementwise_lambda_fn=elementwise_lambda_wrapper,
-                            ](a, b, c, ctx, workspace=sk_ws_4_64)
-                            _ = sk_ws_4_64^
-                            return
+                            # FP8 always wants split-K(4) here. bf16/fp16
+                            # splits by shape: skinny-N wants split-K(4)
+                            # (autotune: +24.5% at M=64 N=2304 K=16384);
+                            # wide-N wants split-K(2) (autotune: +4.8%
+                            # at M=64 N=K=8192) because bf16's higher
+                            # arithmetic intensity makes split-K(4)
+                            # over-split the K-dim at wide N.
+                            comptime if a_type.is_float8() or is_skinny_n:
+                                logger.info(
+                                    "Executing: AMD 4-wave + split-K(4) matmul"
+                                )
+                                var sk_ws_4_64 = SplitKWorkspace[4](
+                                    ctx, m * static_N
+                                )
+                                amd_4wave_split_k_matmul[
+                                    num_splits=4,
+                                    elementwise_lambda_fn=elementwise_lambda_wrapper,
+                                ](a, b, c, ctx, workspace=sk_ws_4_64)
+                                _ = sk_ws_4_64^
+                                return
+                            else:
+                                logger.info(
+                                    "Executing: AMD 4-wave + split-K(2)"
+                                    " scheduled matmul"
+                                )
+                                var sk_ws_2_64 = SplitKWorkspace[2](
+                                    ctx, m * static_N
+                                )
+                                amd_4wave_split_k_matmul[
+                                    num_splits=2,
+                                    elementwise_lambda_fn=elementwise_lambda_wrapper,
+                                ](a, b, c, ctx, workspace=sk_ws_2_64)
+                                _ = sk_ws_2_64^
+                                return
                         elif m <= sk4_128_max:
                             logger.info(
                                 "Executing: AMD 4-wave + split-K(4) FP8"
@@ -857,8 +923,43 @@ def _matmul_gpu[
                             _ = sk_ws_4_128^
                             return
                         elif m <= sk2_128_max:
+                            # FP8 always picks split-K(2) BK=128 here.
+                            # bf16/fp16 skinny-N at M > 512 prefers
+                            # split-K(4) BK=64 (autotune: +7% at
+                            # M=1024 and +5% at M=2048 over split-K(2);
+                            # at M=512 split-K(2) still wins). Wide-N
+                            # uses the same split-K(2) as FP8.
+                            comptime _bf16_skinny_high_m = (
+                                not a_type.is_float8() and is_skinny_n
+                            )
+                            # `comptime if` is required here, not just
+                            # `if`: `block_k_override=64` fails the
+                            # split-K launcher's `BK % MMA_K == 0`
+                            # constraint when MMA_K=128 (FP8). Without
+                            # the comptime gate, Mojo eagerly
+                            # type-checks the body for the FP8
+                            # instantiation and CI fails.
+                            comptime if _bf16_skinny_high_m:
+                                if m > 512:
+                                    logger.info(
+                                        "Executing: AMD 4-wave +"
+                                        " split-K(4) bf16/fp16"
+                                        " skinny-N (BM=BN=128, BK=64)"
+                                    )
+                                    var sk_ws_4_sk = SplitKWorkspace[4](
+                                        ctx, m * static_N
+                                    )
+                                    amd_4wave_split_k_matmul[
+                                        num_splits=4,
+                                        block_m_override=128,
+                                        block_n_override=128,
+                                        block_k_override=64,
+                                        elementwise_lambda_fn=elementwise_lambda_wrapper,
+                                    ](a, b, c, ctx, workspace=sk_ws_4_sk)
+                                    _ = sk_ws_4_sk^
+                                    return
                             logger.info(
-                                "Executing: AMD 4-wave + split-K(2) FP8"
+                                "Executing: AMD 4-wave + split-K(2)"
                                 " matmul (BM=BN=128)"
                             )
                             var sk_ws_2_128 = SplitKWorkspace[2](
@@ -873,14 +974,47 @@ def _matmul_gpu[
                             _ = sk_ws_2_128^
                             return
                         elif m <= fwave_max:
-                            logger.info(
-                                "Executing: AMD 4-wave FP8 matmul (BM=BN=128)"
-                            )
-                            return amd_4wave_matmul[
-                                block_m_override=128,
-                                block_n_override=128,
-                                elementwise_lambda_fn=elementwise_lambda_wrapper,
-                            ](a, b, c, ctx)
+                            # FP8 uses the hand-written body; bf16/fp16
+                            # use the schedule-driven body (the
+                            # hand-written body's vmcnt constants are
+                            # FP8-tuned and not applicable).
+                            comptime if a_type.is_float8():
+                                logger.info(
+                                    "Executing: AMD 4-wave FP8 matmul"
+                                    " (BM=BN=128)"
+                                )
+                                return amd_4wave_matmul[
+                                    block_m_override=128,
+                                    block_n_override=128,
+                                    elementwise_lambda_fn=elementwise_lambda_wrapper,
+                                ](a, b, c, ctx)
+                            else:
+                                # bf16/fp16: BK=128 wins M ≤ ~768; above
+                                # that BK=128 register-pressure-limits
+                                # ILP and BK=64 takes over. Split the
+                                # bracket; the FP8 dispatcher needs no
+                                # such split because FP8 only has BK=128.
+                                if m <= 768:
+                                    logger.info(
+                                        "Executing: AMD 4-wave scheduled"
+                                        " matmul (BM=BN=128, BK=128)"
+                                    )
+                                    return amd_4wave_scheduled_matmul[
+                                        block_m_override=128,
+                                        block_n_override=128,
+                                        elementwise_lambda_fn=elementwise_lambda_wrapper,
+                                    ](a, b, c, ctx)
+                                else:
+                                    logger.info(
+                                        "Executing: AMD 4-wave scheduled"
+                                        " matmul (BM=BN=128, BK=64)"
+                                    )
+                                    return amd_4wave_scheduled_matmul[
+                                        block_m_override=128,
+                                        block_n_override=128,
+                                        block_k_override=64,
+                                        elementwise_lambda_fn=elementwise_lambda_wrapper,
+                                    ](a, b, c, ctx)
                         # else: fall through to existing dispatch.
 
                 comptime if get_defined_bool["AUTOTUNING_MODE", False]():
