@@ -255,13 +255,14 @@ constexpr StringLiteral MOJO_FUSED_OUTPUT_VARIADIC_TENSORS_NAME =
     "tensor::_FusedOutputVariadicTensors";
 
 // The stored mojo type symbol name of device contexts in extensibility kernels.
-constexpr StringLiteral MOJO_EXTENSIBILITY_API_DEVICE_CONTEXT_TYPE_NAME =
-    "std::DeviceContext";
+constexpr StringLiteral MOJO_EXTENSIBILITY_API_DEVICE_CONTEXT_PTR_TYPE_NAME =
+    "std::DeviceContextPtr";
 
-// The stored mojo type symbol name of device-context lists in extensibility
-// kernels (used by multi-device custom ops).
-constexpr StringLiteral MOJO_EXTENSIBILITY_API_DEVICE_CONTEXT_LIST_TYPE_NAME =
-    "std::DeviceContextList";
+// The stored mojo type symbol name of device contexts list in extensibility
+// kernels.
+constexpr StringLiteral
+    MOJO_EXTENSIBILITY_API_DEVICE_CONTEXT_PTR_LIST_TYPE_NAME =
+        "std::DeviceContextPtrList";
 
 // These type names can be confusing. Inside the Graph Compiler code, the
 // types show up like this:

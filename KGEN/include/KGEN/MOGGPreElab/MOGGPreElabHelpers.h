@@ -29,11 +29,8 @@ inline bool isDPSTensor(LIT::StructType maybeTensor) {
          maybeTensor.getSymbol().getLeafReference() == "ManagedTensorSlice";
 }
 
-inline bool isMojoDeviceContext(LIT::StructType maybeCallContextPtr) {
-  // The public `std::DeviceContext` is the kernel-launch context type.
-  // Kernel `execute` methods that declare it have this argument skipped
-  // when matching execute against the shape function.
-  return isXType(maybeCallContextPtr, "std", "DeviceContext");
+inline bool isMojoDeviceContextPtr(LIT::StructType maybeCallContextPtr) {
+  return isXType(maybeCallContextPtr, "std", "DeviceContextPtr");
 }
 
 inline bool fnNeedsConformances(LIT::FnOp fnOp) {

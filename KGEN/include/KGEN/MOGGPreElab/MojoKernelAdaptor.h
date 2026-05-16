@@ -61,18 +61,18 @@ struct ScalarOperandAdaptor {
   bool operator==(const ScalarOperandAdaptor &other) const { return true; }
 };
 
-struct DeviceContextOperandAdaptor {
+struct DevicesContextPtrOperandAdaptor {
   static constexpr StringLiteral typeName =
-      MOJO_EXTENSIBILITY_API_DEVICE_CONTEXT_TYPE_NAME;
-  bool operator==(const DeviceContextOperandAdaptor &other) const {
+      MOJO_EXTENSIBILITY_API_DEVICE_CONTEXT_PTR_TYPE_NAME;
+  bool operator==(const DevicesContextPtrOperandAdaptor &other) const {
     return true;
   }
 };
 
-struct DeviceContextListOperandAdaptor {
+struct DevicesContextPtrListOperandAdaptor {
   static constexpr StringLiteral typeName =
-      MOJO_EXTENSIBILITY_API_DEVICE_CONTEXT_LIST_TYPE_NAME;
-  bool operator==(const DeviceContextListOperandAdaptor &other) const {
+      MOJO_EXTENSIBILITY_API_DEVICE_CONTEXT_PTR_LIST_TYPE_NAME;
+  bool operator==(const DevicesContextPtrListOperandAdaptor &other) const {
     return true;
   }
 };
@@ -111,11 +111,10 @@ struct MojoKernelOperandSourceDescriptor {
   bool isByRefResult;
 };
 
-using MojoKernelOperandVariant =
-    std::variant<TensorOperandAdaptor, VariadicTensorOperandAdaptor,
-                 ScalarOperandAdaptor, OpaqueOperandAdaptor,
-                 DeviceContextOperandAdaptor, DeviceContextListOperandAdaptor,
-                 UnsupportedOperandAdaptor>;
+using MojoKernelOperandVariant = std::variant<
+    TensorOperandAdaptor, VariadicTensorOperandAdaptor, ScalarOperandAdaptor,
+    OpaqueOperandAdaptor, DevicesContextPtrOperandAdaptor,
+    DevicesContextPtrListOperandAdaptor, UnsupportedOperandAdaptor>;
 
 struct MojoKernelOperandAdaptor {
   MojoKernelOperandAdaptor() = default;
@@ -172,14 +171,14 @@ struct MojoKernelOperandAdaptor {
   }
 
   bool isContextType() const {
-    return std::holds_alternative<DeviceContextOperandAdaptor>(
+    return std::holds_alternative<DevicesContextPtrOperandAdaptor>(
                underlyingType) ||
-           std::holds_alternative<DeviceContextListOperandAdaptor>(
+           std::holds_alternative<DevicesContextPtrListOperandAdaptor>(
                underlyingType);
   }
 
   bool isVariadicContextType() const {
-    return std::holds_alternative<DeviceContextListOperandAdaptor>(
+    return std::holds_alternative<DevicesContextPtrListOperandAdaptor>(
         underlyingType);
   }
 
@@ -519,14 +518,15 @@ StreamType &operator<<(StreamType &os, const ScalarOperandAdaptor &) {
 }
 
 template <typename StreamType>
-StreamType &operator<<(StreamType &os, const DeviceContextOperandAdaptor &) {
+StreamType &operator<<(StreamType &os,
+                       const DevicesContextPtrOperandAdaptor &) {
   os << "Context";
   return os;
 }
 
 template <typename StreamType>
 StreamType &operator<<(StreamType &os,
-                       const DeviceContextListOperandAdaptor &) {
+                       const DevicesContextPtrListOperandAdaptor &) {
   os << "*Context";
   return os;
 }
