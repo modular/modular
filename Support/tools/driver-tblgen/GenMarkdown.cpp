@@ -73,10 +73,13 @@ static void genSubcommandsSection(raw_ostream &os,
     return;
 
   os << "## Commands\n\n";
-  for (const llvm::Record *sub : subcommands)
-    os << "[`" << sub->getValueAsString("subcommand") << "`]("
-       << sub->getValueAsString("subcommand") << ".md) — "
+  for (const llvm::Record *sub : subcommands) {
+    StringRef name = sub->getValueAsString("subcommand");
+    // TODO: Remove this "package" replacement once MOCO-3819 is fixed.
+    StringRef linkStem = name == "package" ? "precompile" : name;
+    os << "[`" << name << "`](" << linkStem << ".md) — "
        << sub->getValueAsString("summary") << "\n\n";
+  }
 }
 
 /// Output the given LLVM `Option` record's prefix and name, followed by its
