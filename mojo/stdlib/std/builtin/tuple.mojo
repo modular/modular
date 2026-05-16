@@ -218,6 +218,10 @@ struct Tuple[*element_types: Movable](
         Returns:
             A reference to the specified element.
         """
+        comptime assert (
+            idx >= 0
+        ), "negative indexing is not supported, use e.g. `x[len(x) - 1]`"
+        comptime assert idx < Self.__len__(), "index is out of bounds"
         # Return a reference to an element at the specified index, propagating
         # mutability of self.
         var storage_kgen_ptr = UnsafePointer(to=self._mlir_value).address
