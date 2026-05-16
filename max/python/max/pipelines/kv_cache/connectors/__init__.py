@@ -29,6 +29,7 @@ from max.nn.kv_cache import KVCacheParams
 from max.nn.kv_cache.cache_params import KVConnectorType
 from max.pipelines.kv_cache.kv_connector import KVConnector
 
+from .debug_tiered_connector import DebugTieredConnector
 from .local_connector import LocalConnector
 from .null_connector import NullConnector
 from .tiered_connector import TieredConnector
@@ -98,15 +99,26 @@ def create_connector(
             f"disk_dir={cfg.disk_offload_dir}, "
             f"disk_max_gb={cfg.disk_offload_max_gb}"
         )
-        return TieredConnector(
-            params=params,
-            devices=devices,
-            device_buffers=device_buffers,
-            total_num_host_blocks=total_num_host_blocks,
-            disk_cache_dir=cfg.disk_offload_dir,
-            max_disk_size_gb=cfg.disk_offload_max_gb,
-            use_direct_io=cfg.disk_offload_direct_io,
-        )
+
+        if cfg.use_debug_tiered_mode:
+            return DebugTieredConnector(
+                params=params,
+                devices=devices,
+                device_buffers=device_buffers,
+                total_num_host_blocks=total_num_host_blocks,
+                disk_cache_dir=cfg.disk_offload_dir,
+                max_disk_size_gb=cfg.disk_offload_max_gb,
+            )
+        else:
+            return TieredConnector(
+                params=params,
+                devices=devices,
+                device_buffers=device_buffers,
+                total_num_host_blocks=total_num_host_blocks,
+                disk_cache_dir=cfg.disk_offload_dir,
+                max_disk_size_gb=cfg.disk_offload_max_gb,
+                use_direct_io=cfg.disk_offload_direct_io,
+            )
 
     if connector == KVConnectorType.local:
         logger.debug(

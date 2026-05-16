@@ -130,8 +130,10 @@ CUSTOM_MODELS: dict[str, set[str]] = {
     "meta-llama/Llama-3.1-8B-Instruct__local_kvconnector": MULTI | {"vllm", "sglang", "MI355"},
     "meta-llama/Llama-3.1-8B-Instruct__eagle_local_kvconnector": MULTI | {"vllm", "sglang", "MI355"},
     "meta-llama/Llama-3.1-8B-Instruct__tiered_kvconnector": MULTI | {"vllm", "sglang", "MI355"},
+    "meta-llama/Llama-3.1-8B-Instruct__debug_tiered_kvconnector": MULTI | {"vllm", "sglang", "MI355"},
     "austinpowers/Kimi-K2.5-NVFP4-DeepseekV3__local_kvconnector_tpep": NON_XL | {"8xMI355"},
     "austinpowers/Kimi-K2.5-NVFP4-DeepseekV3__tiered_kvconnector_tpep": NON_XL | {"8xMI355"},
+    "austinpowers/Kimi-K2.5-NVFP4-DeepseekV3__debug_tiered_kvconnector_tpep": NON_XL | {"8xMI355"},
     "austinpowers/Kimi-K2.5-NVFP4-DeepseekV3__eagle_tiered_kvconnector_tpep": NON_XL | {"8xMI355"},
 }
 
