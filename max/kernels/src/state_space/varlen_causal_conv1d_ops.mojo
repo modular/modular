@@ -21,9 +21,8 @@ This module registers operations for variable-length causal 1D convolution:
 from std.math import ceildiv
 
 import compiler_internal as compiler
-from std.gpu.host import DeviceContext
 from std.gpu.host.info import is_cpu, is_gpu
-
+from std.runtime.asyncrt import DeviceContextPtr
 from tensor import InputTensor, OutputTensor
 from std.utils.index import IndexList
 
@@ -77,7 +76,7 @@ struct CausalConv1DVarlenFwd[activation: StaticString]:
         query_start_loc: InputTensor[dtype=DType.int32, rank=1, ...],
         cache_indices: InputTensor[dtype=DType.int32, rank=1, ...],
         has_initial_state: InputTensor[dtype=DType.bool, rank=1, ...],
-        ctx: DeviceContext,
+        ctx: DeviceContextPtr,
     ) capturing raises:
         var dim = x.dim_size(0)
         var total_seqlen = x.dim_size(1)
@@ -166,7 +165,7 @@ struct CausalConv1DVarlenFwd[activation: StaticString]:
                 has_bias,
             )
         elif is_gpu[target]():
-            var gpu_ctx = ctx
+            var gpu_ctx = ctx.get_device_context()
             comptime BLOCK_DIM = 128
             comptime BLOCK_SEQ = 1
             var silu_activation_int8 = Int8(silu_activation)
@@ -454,7 +453,7 @@ struct CausalConv1DVarlenUpdate[activation: StaticString]:
         bias: InputTensor[dtype=dtype, rank=1, ...],
         cache_seqlens: InputTensor[dtype=DType.int32, rank=1, ...],
         conv_state_indices: InputTensor[dtype=DType.int32, rank=1, ...],
-        ctx: DeviceContext,
+        ctx: DeviceContextPtr,
     ) capturing raises:
         var batch = x.dim_size(0)
         var dim = x.dim_size(1)
@@ -536,7 +535,7 @@ struct CausalConv1DVarlenUpdate[activation: StaticString]:
                 has_bias,
             )
         elif is_gpu[target]():
-            var gpu_ctx = ctx
+            var gpu_ctx = ctx.get_device_context()
             comptime BLOCK_DIM = 128
             var silu_activation_int8 = Int8(silu_activation)
 
@@ -803,7 +802,7 @@ struct CausalConv1DVarlenStates:
         states: OutputTensor[dtype=dtype, rank=3, ...],
         x: InputTensor[dtype=dtype, rank=2, ...],
         cu_seqlens: InputTensor[dtype=DType.int32, rank=1, ...],
-        ctx: DeviceContext,
+        ctx: DeviceContextPtr,
     ) capturing raises:
         var total_tokens = x.dim_size(0)
         var dim = x.dim_size(1)
@@ -843,7 +842,7 @@ struct CausalConv1DVarlenStates:
                 states_seqlen_stride,
             )
         elif is_gpu[target]():
-            var gpu_ctx = ctx
+            var gpu_ctx = ctx.get_device_context()
             comptime BLOCK_DIM = 128
             var compiled_func = gpu_ctx.compile_function[
                 causal_conv1d_varlen_states_gpu[

@@ -44,7 +44,7 @@ from std.gpu.host.info import is_gpu as _is_gpu
 from layout import Coord, LayoutTensor, TileTensor
 from layout.tile_layout import Layout as TileLayout, TensorLayout
 from register import register_internal
-
+from std.runtime.asyncrt import DeviceContextPtr
 from std.runtime.tracing import trace_arg
 from tensor import RuntimeTensorSpec
 
@@ -1677,7 +1677,7 @@ def foreach[
     _trace_name: StaticString = "mogg.for_each",
 ](
     tensor: ManagedTensorSlice[mut=True, dtype=dtype, rank=rank, ...],
-    ctx: DeviceContext,
+    ctx: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
     """Apply the function `func` to each element of the tensor slice.
 
@@ -1693,6 +1693,9 @@ def foreach[
         tensor: The output tensor slice which receives the return values from `func`.
         ctx: The call context (forward this from the custom operation).
     """
+    assert (
+        ctx._handle or is_cpu[target]()
+    ), "Expecting non-null device ctx for GPU kernels"
 
     @parameter
     @always_inline
@@ -1726,7 +1729,7 @@ def foreach[
 ](
     tensor: ManagedTensorSlice[mut=True, dtype=dtype, rank=rank, ...],
     elem: E,
-    ctx: DeviceContext,
+    ctx: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
     """Apply a pure elementwise fusion to each element of the tensor slice.
 
@@ -1774,7 +1777,7 @@ def foreach[
     _trace_name: StaticString = "mogg.for_each",
 ](
     tensor: ManagedTensorSlice[dtype=dtype, rank=rank, ...],
-    ctx: DeviceContext,
+    ctx: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
     """Apply the function `func` to each element of the tensor slice.
 
@@ -1791,6 +1794,9 @@ def foreach[
         tensor: The input tensor slice which the consumed values.
         ctx: The call context (forward this from the custom operation).
     """
+    assert (
+        ctx._handle or is_cpu[target]()
+    ), "Expecting non-null device ctx for GPU kernels"
 
     @parameter
     @always_inline
@@ -1819,7 +1825,7 @@ def foreach[
     _trace_name: StaticString = "mogg.for_each",
 ](
     tensor: ManagedTensorSlice[mut=True, dtype=dtype, rank=rank, ...],
-    ctx: DeviceContext,
+    ctx: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
     """Apply the function `func` to each element of the tensor slice.
 
@@ -1872,7 +1878,7 @@ def view_copy_impl[
 ](
     z: ManagedTensorSlice[mut=True, dtype=dtype, rank=rank, ...],
     x: ManagedTensorSlice[static_spec=spec, ...],
-    ctx: DeviceContext,
+    ctx: DeviceContextPtr,
 ) raises:
     comptime assert _shape_types_compatible[
         x.static_spec.static_layout._shape_types,

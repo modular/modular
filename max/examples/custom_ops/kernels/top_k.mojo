@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu.host import DeviceContext
 from std.math import iota
 from std.sys import align_of, size_of
 
@@ -28,7 +27,7 @@ from std.gpu import (
 from std.gpu.primitives import warp
 from std.gpu.memory import AddressSpace, external_memory
 from std.memory import Span
-
+from std.runtime.asyncrt import DeviceContextPtr
 from tensor import InputTensor, OutputTensor
 
 from std.utils.numerics import min_or_neg_inf
@@ -68,7 +67,7 @@ struct TopK:
         out_vals: OutputTensor[dtype=dtype, rank=rank, ...],
         out_idxs: OutputTensor[dtype=DType.int32, rank=rank, ...],
         in_vals: InputTensor[dtype=dtype, rank=rank, ...],
-        ctx: DeviceContext,
+        ctx: DeviceContextPtr,
     ) raises:
         comptime assert rank == 2, "rank must be 2"
         comptime assert not (
@@ -77,7 +76,7 @@ struct TopK:
 
         var shape = in_vals.shape()
         var batch_size = shape[0]
-        var dev_ctx = ctx
+        var dev_ctx = ctx.get_device_context()
 
         var out_vals_tensor = out_vals.to_layout_tensor()
         var out_idxs_tensor = out_idxs.to_layout_tensor()

@@ -38,6 +38,7 @@ from layout import (
 from nn._ragged_utils import get_batch_from_row_offsets
 from nn.fused_qk_rope import rope_value
 from nn.rope import get_safetensors_idx
+from std.runtime.asyncrt import DeviceContextPtr
 from std.utils.index import IndexList
 
 
@@ -361,7 +362,7 @@ def rope_split_store_paged_ragged[
     kv_collection: PagedKVCacheCollection,
     layer_idx: UInt32,
     q_output: TileTensor[mut=True, dtype, ...],
-    ctx: DeviceContext,
+    ctx: DeviceContextPtr,
 ) raises:
     """Rope+split+store with paged KV cache collection."""
     var cuda_ctx: Optional[DeviceContext] = None
@@ -372,7 +373,7 @@ def rope_split_store_paged_ragged[
     )
 
     comptime if is_gpu[target]():
-        cuda_ctx = ctx
+        cuda_ctx = ctx.get_device_context()
 
     return _rope_split_store_ragged[
         target=target,
@@ -502,7 +503,7 @@ def rope_split_store_paged_ragged_with_position_ids[
     position_ids: TileTensor[DType.uint32, PositionIdsLayoutType, ...],
     layer_idx: UInt32,
     q_output: TileTensor[mut=True, dtype, ...],
-    ctx: DeviceContext,
+    ctx: DeviceContextPtr,
 ) raises:
     """Rope+split+store with paged KV cache and explicit position IDs."""
     var cuda_ctx: Optional[DeviceContext] = None
@@ -513,7 +514,7 @@ def rope_split_store_paged_ragged_with_position_ids[
     )
 
     comptime if is_gpu[target]():
-        cuda_ctx = ctx
+        cuda_ctx = ctx.get_device_context()
 
     return _rope_split_store_ragged_with_position_ids[
         target=target,

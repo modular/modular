@@ -15,9 +15,10 @@ from std.sys.info import _current_target, simd_width_of
 from std.math.uutils import ufloordiv
 
 from std.algorithm.functional import elementwise
-from std.gpu.host import DeviceContext, get_gpu_target
+from std.gpu.host import get_gpu_target
 from std.gpu.host.info import is_cpu
 from layout import LayoutTensor, TileTensor
+from std.runtime.asyncrt import DeviceContextPtr
 from layout import Coord, Idx
 
 from std.utils import IndexList
@@ -99,7 +100,7 @@ def merge_ragged_tensors[
     a_row_offsets: TileTensor[DType.uint32, ...],
     b: TileTensor[dtype, ...],
     b_row_offsets: TileTensor[DType.uint32, ...],
-    ctx: DeviceContext,
+    ctx: DeviceContextPtr,
 ) raises:
     comptime assert c.flat_rank == rank, "c.flat_rank must equal rank"
     comptime assert a.flat_rank == rank, "a.flat_rank must equal rank"
@@ -208,7 +209,7 @@ def eagle_prefill_shift_tokens[
     tokens: TileTensor[dtype, ...],
     offsets: TileTensor[DType.uint32, ...],
     shift_next_tokens: TileTensor[dtype, ...],
-    ctx: DeviceContext,
+    ctx: DeviceContextPtr,
 ) raises:
     """Shift ragged tokens left by 1 per request, appending bonus tokens."""
     comptime assert output.flat_rank == 1

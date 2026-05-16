@@ -16,7 +16,7 @@ from std.sys import get_defined_int
 
 from std.benchmark import Bench, BenchConfig, Bencher, BenchId
 from std.gpu.host import DeviceContext
-
+from std.runtime.asyncrt import DeviceContextPtr
 from layout import TileTensor, row_major
 from nn.moe import moe_create_indices, router_group_limited, single_group_router
 
@@ -56,7 +56,7 @@ def bench_moe_create_indices[
     var expert_usage_stats = TileTensor(expert_usage_stats_d, row_major[2]())
     var topk_ids = TileTensor(topk_d, row_major[num_tokens]())
 
-    var context = ctx
+    var context = DeviceContextPtr(ctx)
 
     @always_inline
     @__copy_capture(
@@ -66,6 +66,7 @@ def bench_moe_create_indices[
         expert_ids,
         expert_usage_stats,
         topk_ids,
+        context,
     )
     @parameter
     def bench_fn(mut b: Bencher) raises:
@@ -147,7 +148,7 @@ def bench_router_group_limited[
     var expert_bias = TileTensor(bias_d, row_major[n_routed_experts]())
     var routed_scaling_factor = Float32(1.0)
 
-    var context = ctx
+    var context = DeviceContextPtr(ctx)
 
     @always_inline
     @__copy_capture(
@@ -156,6 +157,7 @@ def bench_router_group_limited[
         expert_scores,
         expert_bias,
         routed_scaling_factor,
+        context,
     )
     @parameter
     def bench_fn(mut b: Bencher) raises:
@@ -246,7 +248,7 @@ def bench_single_group_router[
     var expert_bias = TileTensor(bias_d, row_major[n_routed_experts]())
     var routed_scaling_factor = Float32(1.0)
 
-    var context = ctx
+    var context = DeviceContextPtr(ctx)
 
     @always_inline
     @__copy_capture(
@@ -255,6 +257,7 @@ def bench_single_group_router[
         expert_scores,
         expert_bias,
         routed_scaling_factor,
+        context,
     )
     @parameter
     def bench_fn(mut b: Bencher) raises:

@@ -16,10 +16,9 @@ from std.math import ceildiv, exp, inf, log
 from std.algorithm.functional import parallelize
 from compiler_internal import register
 from std.gpu import global_idx
-from std.gpu.host import DeviceContext
 from std.gpu.host.info import is_cpu, is_gpu
 from nn._ragged_utils import get_batch_from_row_offsets
-
+from std.runtime.asyncrt import DeviceContextPtr
 from tensor import InputTensor, OutputTensor
 
 from std.utils.index import IndexList
@@ -144,7 +143,7 @@ struct LogProbabilitiesRagged:
         token_row_offsets: InputTensor[dtype=offset_dtype, rank=1, ...],
         lp_output_offsets: InputTensor[dtype=offset_dtype, rank=1, ...],
         lp_output_offsets_host: InputTensor[dtype=offset_dtype, rank=1, ...],
-        ctx: DeviceContext,
+        ctx: DeviceContextPtr,
     ) raises -> None:
         var num_output_tokens = lp_logits.shape()[0]
         if lp_tokens.shape()[0] != num_output_tokens:
@@ -171,7 +170,7 @@ struct LogProbabilitiesRagged:
                 )
 
             parallelize[lp_idx_kernel](
-                num_output_tokens, ctx=Optional[DeviceContext](ctx)
+                num_output_tokens, ctx=ctx.get_optional_device_context()
             )
         elif is_gpu[target]():
 
@@ -194,7 +193,7 @@ struct LogProbabilitiesRagged:
                     )
 
             comptime block_size = 64
-            ctx.enqueue_function[raw_lp_kernel](
+            ctx.get_device_context().enqueue_function[raw_lp_kernel](
                 grid_dim=ceildiv(num_output_tokens, block_size),
                 block_dim=block_size,
             )

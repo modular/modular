@@ -62,7 +62,7 @@ from layout import (
 )
 from layout.tensor_core import get_fragment_size
 from std.memory import stack_allocation
-from std.runtime.asyncrt import parallelism_level
+from std.runtime.asyncrt import DeviceContextPtr, parallelism_level
 from std.runtime.tracing import Trace, TraceLevel, trace_arg
 
 from std.utils import IndexList, StaticTuple
@@ -553,7 +553,7 @@ def logsoftmax[
     shape: IndexList[rank],
     output: TileTensor[mut=True, dtype, ...],
     axis: Int,
-    context: Optional[DeviceContext] = None,
+    context: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
     softmax[dtype, simd_width, rank, input_fn, target, logsoftmax=True](
         shape, output, axis, context
@@ -569,7 +569,7 @@ def logsoftmax[
     input: TileTensor[dtype, ...],
     output: TileTensor[mut=True, dtype, ...],
     axis: Int,
-    context: Optional[DeviceContext] = None,
+    context: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
     @parameter
     @always_inline
@@ -932,7 +932,7 @@ def softmax[
     shape: IndexList[rank],
     output: TileTensor[mut=True, dtype, ...],
     axis: Int,
-    context: Optional[DeviceContext] = None,
+    context: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
     @parameter
     def trace_information() -> String:
@@ -953,7 +953,7 @@ def softmax[
                 origin_of()._mlir_origin,
                 input_fn,
                 logsoftmax=logsoftmax,
-            ](shape, output, axis, context)
+            ](shape, output, axis, context.get_optional_device_context())
         elif is_gpu[target]():
             _softmax_gpu[
                 dtype,
@@ -965,7 +965,7 @@ def softmax[
                 shape,
                 output,
                 axis,
-                context.value(),
+                context.get_device_context(),
             )
         else:
             comptime assert False, String("unsupported target ", target)

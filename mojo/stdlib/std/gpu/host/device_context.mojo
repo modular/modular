@@ -4249,16 +4249,18 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
         ctx.synchronize()
     ```
 
-    A custom operation receives a `DeviceContext` directly:
+    A custom operation receives an opaque `DeviceContextPtr`, which provides
+    a `get_device_context()` method to retrieve the device context:
 
     ```text
-    from std.gpu.host import DeviceContext
+    from std.runtime.asyncrt import DeviceContextPtr
     from compiler import register
 
     @register("custom_op")
     struct CustomOp:
         @staticmethod
-        def execute(ctx: DeviceContext) raises:
+        def execute(ctx_ptr: DeviceContextPtr) raises:
+            var ctx = ctx_ptr.get_device_context()
             ctx.enqueue_function[kernel, kernel](grid_dim=1, block_dim=(2, 2, 2))
             ctx.synchronize()
     ```
@@ -4388,21 +4390,6 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
     def __init__(out self, ctx_ptr: _DeviceContextPtr[mut=True]):
         """Create a Mojo DeviceContext from a pointer to an existing C++ object.
         """
-        self._handle = ctx_ptr
-        self._owning = False
-
-    @doc_hidden
-    def __init__(out self, handle: OpaquePointer[ExternalOrigin[mut=True]]):
-        """Create a non-owning Mojo `DeviceContext` from a raw, type-erased
-        pointer to an existing C++ `DeviceContext`.
-
-        Used at the Python/C ABI boundary (for example,
-        `max._interpreter_ops`) where the pointer comes in as an opaque
-        `void*` and needs to be retyped before construction.
-        """
-        var ctx_ptr = UnsafePointer(to=handle).bitcast[
-            _DeviceContextPtr[mut=True]
-        ]()[]
         self._handle = ctx_ptr
         self._owning = False
 
@@ -8363,95 +8350,6 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
             )
         )
         return DeviceGraphBuilder(result, self)
-
-
-struct DeviceContextList[size: Int](Copyable, ImplicitlyCopyable, Sized):
-    """A fixed-size collection of `DeviceContext` values.
-
-    Used by multi-device custom-op `execute` methods to receive one
-    `DeviceContext` per participating device. The graph compiler
-    recognizes this type and synthesizes it from the per-device contexts
-    discovered on the operation, so kernels can index into it like a
-    homogeneous array without the compiler having to introspect a generic
-    `InlineArray` parameter.
-
-    Parameters:
-        size: The number of `DeviceContext` values in the collection.
-    """
-
-    var device_contexts: InlineArray[DeviceContext, Self.size]
-    """The underlying storage for the per-device contexts."""
-
-    @always_inline
-    def __init__(
-        out self, device_contexts: InlineArray[DeviceContext, Self.size]
-    ):
-        """Initialize from an `InlineArray` of `DeviceContext` values.
-
-        Args:
-            device_contexts: The per-device contexts to store.
-        """
-        self.device_contexts = device_contexts
-
-    @always_inline
-    def __init__(
-        out self,
-        var *device_contexts: DeviceContext,
-        __list_literal__: NoneType = None,
-    ):
-        """Initialize from a variadic sequence of `DeviceContext` values.
-
-        The graph compiler's multi-device lowering path uses this
-        constructor: it synthesizes `DeviceContextList[size=N](ctx0, ctx1,
-        ..., ctxN-1)` directly from the per-device contexts attached to
-        the kernel, so the wrapper avoids forcing callers to assemble an
-        `InlineArray` themselves.
-
-        Args:
-            device_contexts: One `DeviceContext` per device, exactly
-                `size` of them.
-            __list_literal__: Marker that lets this constructor accept
-                list-literal syntax (`var l: DeviceContextList[N] = [c0, c1]`).
-        """
-        assert (
-            len(device_contexts) == Self.size
-        ), "mismatch in the number of elements"
-        self.device_contexts = InlineArray[DeviceContext, Self.size](
-            *device_contexts^, __list_literal__=None
-        )
-
-    def __getitem_param__[index: Int](self) -> DeviceContext:
-        """Access a `DeviceContext` at a compile-time known index.
-
-        Parameters:
-            index: A compile-time integer index.
-
-        Returns:
-            The `DeviceContext` at the specified index.
-        """
-        return self.device_contexts[index]
-
-    def __getitem__[I: Indexer, //](self, idx: I) -> DeviceContext:
-        """Access a `DeviceContext` using a runtime index value.
-
-        Parameters:
-            I: A type that conforms to the `Indexer` trait.
-
-        Args:
-            idx: A runtime index value that conforms to the `Indexer` trait.
-
-        Returns:
-            The `DeviceContext` at the specified index.
-        """
-        return self.device_contexts[idx]
-
-    def __len__(self) -> Int:
-        """Get the number of `DeviceContext` values in the collection.
-
-        Returns:
-            The size of the collection as specified by the `size` parameter.
-        """
-        return Self.size
 
 
 struct DeviceMulticastBuffer[dtype: DType]:

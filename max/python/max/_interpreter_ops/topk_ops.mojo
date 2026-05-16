@@ -24,14 +24,13 @@ accepted but currently ignored since the implementation always sorts.
 """
 
 from std.os import abort
-from std.gpu.host import DeviceContext
 from std.python import PythonObject
 from std.python.bindings import PythonModuleBuilder
 from std.sys.info import has_accelerator
 
 from std.algorithm.functional import elementwise, IndexList
 from std.memory import OpaquePointer
-
+from std.runtime.asyncrt import DeviceContextPtr
 
 from op_utils import (
     _get_dtype,
@@ -130,7 +129,7 @@ def topk_op[
         elementwise[func, simd_width=1](IndexList[1](total))
     else:
         comptime if has_accelerator():
-            var device_ctx = DeviceContext(ctx.unsafe_value())
+            var device_ctx = DeviceContextPtr(ctx.unsafe_value())
             elementwise[func, simd_width=1, target="gpu"](
                 IndexList[1](total), device_ctx
             )

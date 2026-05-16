@@ -60,7 +60,7 @@ from layout.layout_tensor import (
 from layout.math import outer_product_acc
 from layout.swizzle import Swizzle
 from layout.tensor_core import TensorCore
-
+from std.runtime.asyncrt import DeviceContextPtr
 from tensor import InputTensor, ManagedTensorSlice, OutputTensor
 
 from std.utils import StaticTuple
@@ -88,7 +88,7 @@ struct TensorCoreMMA[algorithm: StaticString]:
         b: InputTensor[dtype=DType.float16, rank=2, ...],
         perform_validation: Bool,
         # the context is needed for some GPU calls
-        ctx: DeviceContext,
+        ctx: DeviceContextPtr,
     ) raises:
         # At graph compilation time, we will know what device we are compiling
         # this operation for, so we can specialize it for the target hardware.
@@ -96,7 +96,7 @@ struct TensorCoreMMA[algorithm: StaticString]:
             a_layout = a.to_layout_tensor()
             b_layout = b.to_layout_tensor()
 
-            gpu_ctx = ctx
+            gpu_ctx = ctx.get_device_context()
 
             var b_ptr_to_use: UnsafePointer[Float16, MutAnyOrigin]
 

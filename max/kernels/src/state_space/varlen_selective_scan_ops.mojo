@@ -20,9 +20,8 @@ This module registers operations for variable-length selective scan:
 from std.math import ceildiv
 
 import compiler_internal as compiler
-from std.gpu.host import DeviceContext
 from std.gpu.host.info import is_cpu, is_gpu
-
+from std.runtime.asyncrt import DeviceContextPtr
 from tensor import InputTensor, OutputTensor
 from std.utils.index import IndexList
 
@@ -90,7 +89,7 @@ struct VarlenSelectiveScanFwd[delta_softplus: Bool = False]:
         query_start_loc: InputTensor[dtype=DType.int32, rank=1, ...],
         cache_indices: InputTensor[dtype=DType.int32, rank=1, ...],
         has_initial_state: InputTensor[dtype=DType.bool, rank=1, ...],
-        ctx: DeviceContext,
+        ctx: DeviceContextPtr,
     ) capturing raises:
         var dim = u.dim_size(0)
         var dstate = A.dim_size(1)
@@ -184,7 +183,7 @@ struct VarlenSelectiveScanFwd[delta_softplus: Bool = False]:
                     delta_bias_strides,
                     ssm_states_strides,
                     out_strides,
-                    Optional[DeviceContext](ctx),
+                    ctx.get_optional_device_context(),
                 )
             elif dstate == 8:
                 varlen_selective_scan_fwd_cpu[
@@ -253,10 +252,10 @@ struct VarlenSelectiveScanFwd[delta_softplus: Bool = False]:
                     delta_bias_strides,
                     ssm_states_strides,
                     out_strides,
-                    Optional[DeviceContext](ctx),
+                    ctx.get_optional_device_context(),
                 )
         elif is_gpu[target]():
-            var gpu_ctx = ctx
+            var gpu_ctx = ctx.get_device_context()
             comptime BLOCK_SIZE = 128
             var num_dim_blocks = ceildiv(dim, BLOCK_SIZE)
 
@@ -488,7 +487,7 @@ struct VarlenSelectiveStateUpdate[dt_softplus: Bool = False]:
         z: InputTensor[dtype=dtype, rank=3, ...],
         dt_bias: InputTensor[dtype=dtype, rank=2, ...],
         state_batch_indices: InputTensor[dtype=DType.int32, rank=1, ...],
-        ctx: DeviceContext,
+        ctx: DeviceContextPtr,
     ) capturing raises:
         var batch = x.dim_size(0)
         var nheads = x.dim_size(1)
@@ -597,7 +596,7 @@ struct VarlenSelectiveStateUpdate[dt_softplus: Bool = False]:
                     D_strides,
                     z_strides,
                     out_strides,
-                    Optional[DeviceContext](ctx),
+                    ctx.get_optional_device_context(),
                 )
             elif dstate == 8:
                 varlen_selective_state_update_cpu[
@@ -666,10 +665,10 @@ struct VarlenSelectiveStateUpdate[dt_softplus: Bool = False]:
                     D_strides,
                     z_strides,
                     out_strides,
-                    Optional[DeviceContext](ctx),
+                    ctx.get_optional_device_context(),
                 )
         elif is_gpu[target]():
-            var gpu_ctx = ctx
+            var gpu_ctx = ctx.get_device_context()
             comptime BLOCK_SIZE_M = 4
             var total_threads = batch * nheads * ceildiv(dim, BLOCK_SIZE_M)
 

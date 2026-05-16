@@ -73,14 +73,14 @@ arguments:
 
 - Any arguments of type [`Scalar`](/docs/manual/types/#scalar-values).
 
-- A single argument of type `DeviceContext`. This is required for GPU
-  support and is also provided for CPU execution (via `CpuDeviceContext`).
+- A single argument of type `DeviceContextPtr`. This opaque pointer is
+  currently required for GPU support.
 
 ```mojo
 import compiler
 from std.utils.index import IndexList
 from max.tensor import OutputTensor, InputTensor, foreach, ManagedTensorSlice
-from std.gpu.host import DeviceContext
+from std.runtime.asyncrt import DeviceContextPtr
 
 @compiler.register("add_vectors_custom")
 struct AddVectorsCustom:
@@ -95,7 +95,7 @@ struct AddVectorsCustom:
         x: InputTensor[dtype = out.dtype, rank = out.rank],
         y: InputTensor[dtype = out.dtype, rank = out.rank],
         # the context is needed for some GPU calls
-        ctx: DeviceContext,
+        ctx: DeviceContextPtr,
     ):
 
         @parameter
@@ -115,7 +115,7 @@ determine the shape of the output tensor(s), and you don't manually annotate the
 output shapes when building a graph.
 
 The function takes the same arguments as the `execute()` function, minus the
-output tensors and `DeviceContext`. It must return an
+output tensors and `DeviceContextPtr`. It must return an
 [`IndexList`](/docs/std/utils/index_/IndexList/) specifying the dimensions of
 the output tensor.
 

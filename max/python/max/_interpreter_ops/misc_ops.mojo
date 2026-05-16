@@ -17,7 +17,6 @@ Contains range and random operations.
 """
 
 from std.os import abort
-from std.gpu.host import DeviceContext
 from std.python import PythonObject
 from std.python.bindings import PythonModuleBuilder
 from std.sys.info import has_accelerator
@@ -26,7 +25,7 @@ from std.math import iota
 from std.random import NormalRandom, Random
 from std.algorithm.functional import elementwise, IndexList
 from std.memory import OpaquePointer
-
+from std.runtime.asyncrt import DeviceContextPtr
 from tensor.managed_tensor_slice import (
     ManagedTensorSlice,
 )
@@ -199,7 +198,7 @@ def range_op[
             dtype=dtype,
             target="cpu",
             _trace_name="interpreter.range",
-        ](output_tensor, start, stop, step, DeviceContext(api="cpu"))
+        ](output_tensor, start, stop, step, DeviceContextPtr())
     else:
         comptime if has_accelerator():
             comptime if dtype != DType.float64:
@@ -219,7 +218,7 @@ def range_op[
                     )
                     out_ptr.store[width=width](i, result)
 
-                var device_ctx = DeviceContext(ctx.unsafe_value())
+                var device_ctx = DeviceContextPtr(ctx.unsafe_value())
                 elementwise[range_func, simd_width=1, target="gpu"](
                     IndexList[1](size), device_ctx
                 )
@@ -340,7 +339,7 @@ def random_normal_op[
     else:
         comptime if has_accelerator():
             comptime if dtype != DType.float64:
-                var device_ctx = DeviceContext(ctx.unsafe_value())
+                var device_ctx = DeviceContextPtr(ctx.unsafe_value())
                 elementwise[func, simd_width=8, target="gpu"](
                     IndexList[1](size), device_ctx
                 )
@@ -464,7 +463,7 @@ def random_uniform_op[
     else:
         comptime if has_accelerator():
             comptime if dtype != DType.float64:
-                var device_ctx = DeviceContext(ctx.unsafe_value())
+                var device_ctx = DeviceContextPtr(ctx.unsafe_value())
                 elementwise[func, simd_width=4, target="gpu"](
                     IndexList[1](size), device_ctx
                 )

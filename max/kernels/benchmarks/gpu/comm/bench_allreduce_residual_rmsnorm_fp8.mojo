@@ -51,7 +51,7 @@ from internal_utils import CacheBustingBuffer, arg_parse
 
 from layout import Coord, TileTensor, coord_to_index_list, row_major
 from nn.normalization import rms_norm_fused_fp8
-
+from std.runtime.asyncrt import DeviceContextPtr
 from std.utils import IndexList
 from std.utils.index import Index
 from std.utils.numerics import max_finite
@@ -156,7 +156,7 @@ def _verify_results[
         gamma_tensor,
         epsilon,
         weight_offset,
-        ctx0,
+        DeviceContextPtr(ctx0),
         scale_ub,
         TileTensor(
             v_fused_scales_dev,
@@ -416,7 +416,7 @@ def _verify_add_results[
         gamma_tensor,
         epsilon,
         weight_offset,
-        ctx0,
+        DeviceContextPtr(ctx0),
         scale_ub,
         TileTensor(
             v_ep_scales_dev,
@@ -824,7 +824,7 @@ def bench_allreduce_rmsnorm_fp8[
                 gamma_tensor,
                 epsilon,
                 weight_offset,
-                ctx_inner,
+                DeviceContextPtr(ctx_inner),
                 scale_ub,
                 TileTensor(
                     fused_scales_ptrs[ctx_idx],
@@ -967,7 +967,7 @@ def bench_allreduce_rmsnorm_fp8[
                 gamma_tensor,
                 epsilon,
                 weight_offset,
-                ctx_inner,
+                DeviceContextPtr(ctx_inner),
                 scale_ub,
                 TileTensor(
                     fused_add_scales_ptrs[ctx_idx],

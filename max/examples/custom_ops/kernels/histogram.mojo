@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu.host import DeviceContext
 from std.math import ceildiv
 from std.atomic import Atomic
 
@@ -20,7 +19,7 @@ from std.gpu.host.info import is_cpu
 from std.gpu.host import DeviceBuffer
 from std.gpu.memory import AddressSpace
 from std.memory import stack_allocation
-
+from std.runtime.asyncrt import DeviceContextPtr
 from tensor import InputTensor, ManagedTensorSlice, OutputTensor
 
 from std.utils import StaticTuple
@@ -39,7 +38,7 @@ def _histogram_cpu(output: ManagedTensorSlice, input: ManagedTensorSlice):
 def _histogram_gpu(
     output: ManagedTensorSlice,
     input: ManagedTensorSlice,
-    ctx_ptr: DeviceContext,
+    ctx_ptr: DeviceContextPtr,
 ) raises:
     comptime bin_width = Int(UInt8.MAX) + 1
     comptime block_dim = bin_width
@@ -83,7 +82,7 @@ def _histogram_gpu(
 
     var grid_dim = ceildiv(n, block_dim)
 
-    var ctx = ctx_ptr
+    var ctx = ctx_ptr.get_device_context()
 
     var output_device = output.to_device_buffer(ctx)
     var input_device = input.to_device_buffer(ctx)
@@ -108,7 +107,7 @@ struct Histogram:
     ](
         output: OutputTensor[dtype=DType.int64, rank=1, ...],
         input: InputTensor[dtype=DType.uint8, rank=1, ...],
-        ctx: DeviceContext,
+        ctx: DeviceContextPtr,
     ) raises:
         comptime if is_cpu[target]():
             _histogram_cpu(output, input)

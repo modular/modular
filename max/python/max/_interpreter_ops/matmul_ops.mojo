@@ -22,7 +22,7 @@ from std.algorithm.functional import IndexList
 from std.memory import OpaquePointer
 from linalg.matmul import matmul
 from layout import Coord, Idx, TileTensor, row_major
-from std.gpu.host import DeviceContext
+from std.runtime.asyncrt import DeviceContextPtr
 from tensor.managed_tensor_slice import (
     ManagedTensorSlice,
 )
@@ -279,7 +279,7 @@ def matmul_op[
         # GPU execution - check GPU availability and dtype support
         comptime if has_accelerator():
             comptime if _is_gpu_allowed_matmul_dtype[dtype]():
-                var device_ctx = DeviceContext(ctx.unsafe_value())
+                var device_ctx = DeviceContextPtr(ctx.unsafe_value())
                 matmul[target="gpu"](
                     c,
                     a,
@@ -287,7 +287,7 @@ def matmul_op[
                     device_ctx,
                 )
                 # TODO(MXF-108): Remove device sync
-                device_ctx.synchronize()
+                device_ctx.get_device_context().synchronize()
             else:
                 raise Error(
                     "GPU execution not supported for matmul with dtype "
@@ -653,11 +653,11 @@ def batch_matmul_op[
             lambdas_have_fusion=False,
             transpose_b=False,
             target="cpu",
-        ](c, a, b, DeviceContext(api="cpu"))
+        ](c, a, b, DeviceContextPtr())
     else:
         comptime if has_accelerator():
             comptime if _is_gpu_allowed_matmul_dtype[dtype]():
-                var device_ctx = DeviceContext(ctx.unsafe_value())
+                var device_ctx = DeviceContextPtr(ctx.unsafe_value())
                 BatchMatmulKernel.execute[
                     rank=3,
                     lambdas_have_fusion=False,

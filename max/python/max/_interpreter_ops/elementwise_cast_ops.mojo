@@ -19,7 +19,6 @@ memory usage during compilation.
 """
 
 from std.os import abort
-from std.gpu.host import DeviceContext
 from std.python import PythonObject
 from std.python.bindings import PythonModuleBuilder
 from std.sys.info import has_accelerator, simd_width_of
@@ -27,7 +26,7 @@ from std.sys.info import has_accelerator, simd_width_of
 from std.algorithm.functional import elementwise, IndexList
 from std.memory import OpaquePointer
 from std.reflection import reflect
-
+from std.runtime.asyncrt import DeviceContextPtr
 from std.sys.info import has_apple_gpu_accelerator
 from tensor import ElementwiseUnaryMixedOp
 from MOGGKernelAPI.MOGGKernelAPI import Cast
@@ -273,7 +272,7 @@ def unary_mixed_op[
             comptime if _is_gpu_allowed_mixed_unary_op[
                 op
             ]() and dtype != DType.float64:
-                var device_ctx = DeviceContext(ctx.unsafe_value())
+                var device_ctx = DeviceContextPtr(ctx.unsafe_value())
                 elementwise[func, simd_width=1, target="gpu"](
                     IndexList[1](size), device_ctx
                 )

@@ -14,9 +14,8 @@
 
 
 from std.algorithm.functional import elementwise, unswitch
-from std.gpu.host import DeviceContext
 from layout import TileTensor
-
+from std.runtime.asyncrt import DeviceContextPtr
 
 from std.utils.index import IndexList
 
@@ -38,7 +37,7 @@ def matrix_band_part[
     num_upper: TileTensor[dtype=int_type, ...],
     exclude: TileTensor[dtype=cond_type, ...],
     output: TileTensor[mut=True, dtype=dtype, ...],
-    ctx: DeviceContext,
+    ctx: DeviceContextPtr,
 ) raises:
     var lower_diagonal_index = Int(num_lower.load_linear[1](IndexList[1](0)))
     var upper_diagonal_index = Int(num_upper.load_linear[1](IndexList[1](0)))
@@ -79,7 +78,7 @@ def _matrix_band_part_impl[
     lower_diagonal_index: Int,
     upper_diagonal_index: Int,
     output: TileTensor[mut=True, dtype=dtype, ...],
-    ctx: DeviceContext,
+    ctx: DeviceContextPtr,
 ) raises:
     comptime assert rank >= 2, "Matrix band only supports rank >=2"
 

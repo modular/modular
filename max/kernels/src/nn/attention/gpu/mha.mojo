@@ -126,6 +126,7 @@ from nn.attention.mha_utils import (
     _kernel_mask,
     get_start_and_end_for_partitions,
 )
+from std.runtime.asyncrt import DeviceContextPtr
 from std.runtime.tracing import Trace, TraceLevel, trace_arg
 
 from std.utils.index import Index, IndexList
@@ -166,7 +167,7 @@ def flash_attention[
     v: LayoutTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
     mask: LayoutTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
     scale: Float32,
-    context: DeviceContext,
+    context: DeviceContextPtr = DeviceContextPtr(),
     num_partitions: Optional[Int] = None,
     sink_weights: OptionalReg[
         LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
@@ -187,12 +188,14 @@ def flash_attention[
             )
         )
 
-    with Trace[TraceLevel.OP, target=context.default_device_info.api](
+    var ctx = context.get_device_context()
+
+    with Trace[TraceLevel.OP, target=ctx.default_device_info.api](
         "flash_attention",
         Trace[
-            TraceLevel.OP, target=context.default_device_info.api
+            TraceLevel.OP, target=ctx.default_device_info.api
         ]._get_detail_str[description_fn](),
-        task_id=Int(context.id()),
+        task_id=Int(ctx.id()),
     ):
         return flash_attention[
             config=config,
@@ -217,7 +220,7 @@ def flash_attention[
                 )
             ),
             scale,
-            context,
+            context.get_device_context(),
             num_partitions,
             sink_weights=sink_weights,
         )

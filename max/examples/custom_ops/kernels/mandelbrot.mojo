@@ -14,10 +14,8 @@
 from std.math import iota
 
 import compiler
-
-from std.gpu.host import DeviceContext
 from std.complex import ComplexSIMD
-
+from std.runtime.asyncrt import DeviceContextPtr
 from tensor import OutputTensor, foreach
 
 from std.utils.index import IndexList
@@ -40,7 +38,7 @@ struct Mandelbrot:
         scale_y: Float32,
         max_iterations: Int32,
         # the context is needed for some GPU calls
-        ctx: DeviceContext,
+        ctx: DeviceContextPtr,
     ) raises:
         @parameter
         @always_inline

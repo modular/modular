@@ -34,7 +34,7 @@ from std.gpu.primitives.grid_controls import (
 )
 from layout import TensorLayout, TileTensor
 from std.random import Random
-
+from std.runtime.asyncrt import DeviceContextPtr
 from std.runtime.tracing import Trace, TraceLevel, trace_arg
 
 from std.utils.index import IndexList
@@ -529,7 +529,7 @@ def _rms_norm_fused_residual_impl[
     gamma: TileTensor[dtype, ...],
     epsilon: Scalar[dtype],
     weight_offset: Scalar[dtype],
-    ctx: DeviceContext,
+    ctx: DeviceContextPtr,
     dropout_p: Scalar[dtype] = Scalar[dtype](0.0),
     seed: UInt64 = 0,
 ) raises:
@@ -561,7 +561,7 @@ def _rms_norm_fused_residual_impl[
             gamma,
             epsilon,
             weight_offset,
-            ctx,
+            ctx.get_device_context(),
             dropout_p,
             seed,
         )
@@ -647,7 +647,7 @@ def rms_norm_fused_residual[
     gamma: TileTensor[dtype, ...],
     epsilon: Scalar[dtype],
     weight_offset: Scalar[dtype],
-    ctx: DeviceContext,
+    ctx: DeviceContextPtr,
     dropout_p: Scalar[dtype] = Scalar[dtype](0.0),
     seed: UInt64 = 0,
 ) raises:
@@ -675,7 +675,7 @@ def rms_norm_fused_residual[
     with Trace[TraceLevel.OP, target=target](
         "rms_norm_fused_residual",
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
-        task_id=Int(ctx.id()),
+        task_id=Int(ctx.get_device_context().id()),
     ):
         _rms_norm_fused_residual_impl[
             dtype,

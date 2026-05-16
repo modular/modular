@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from layout import TileTensor, row_major
-from std.gpu.host import DeviceContext
 from nn.gather_scatter import scatter_nd_generator
 from std.testing import assert_equal
 
@@ -223,7 +222,7 @@ def main() raises:
         ]
 
         scatter_nd_generator[reduce_fn=use_update](
-            data, indices, updates, output, DeviceContext(api="cpu")
+            data, indices, updates, output
         )
 
         for i in range(64):
@@ -435,9 +434,7 @@ def main() raises:
         ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
             return v1 + v2
 
-        scatter_nd_generator[reduce_fn=_add](
-            data, indices, updates, output, DeviceContext(api="cpu")
-        )
+        scatter_nd_generator[reduce_fn=_add](data, indices, updates, output)
 
         for i in range(64):
             assert_equal(output_ptr[i], expected[i])
@@ -648,9 +645,7 @@ def main() raises:
         ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
             return max(v1, v2)
 
-        scatter_nd_generator[reduce_fn=_max](
-            data, indices, updates, output, DeviceContext(api="cpu")
-        )
+        scatter_nd_generator[reduce_fn=_max](data, indices, updates, output)
 
         for i in range(64):
             assert_equal(output_ptr[i], expected[i])
@@ -861,9 +856,7 @@ def main() raises:
         ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
             return min(v1, v2)
 
-        scatter_nd_generator[reduce_fn=_min](
-            data, indices, updates, output, DeviceContext(api="cpu")
-        )
+        scatter_nd_generator[reduce_fn=_min](data, indices, updates, output)
 
         for i in range(64):
             assert_equal(output_ptr[i], expected[i])
@@ -1074,9 +1067,7 @@ def main() raises:
         ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
             return v1 * v2
 
-        scatter_nd_generator[reduce_fn=_mul](
-            data, indices, updates, output, DeviceContext(api="cpu")
-        )
+        scatter_nd_generator[reduce_fn=_mul](data, indices, updates, output)
 
         for i in range(64):
             assert_equal(output_ptr[i], expected[i])

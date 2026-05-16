@@ -31,7 +31,7 @@ from layout import (
     row_major,
 )
 from nn.normalization import rms_norm_fused_fp8
-
+from std.runtime.asyncrt import DeviceContextPtr
 from std.testing import assert_true
 from std.utils import IndexList
 from std.utils.index import Index
@@ -262,7 +262,7 @@ def test_fused_allreduce_rmsnorm_fp8[
         gamma_tensor,
         epsilon,
         weight_offset,
-        ctx,
+        DeviceContextPtr(ctx),
         scale_ub,
         ref_scales_tile,
     )
@@ -471,7 +471,7 @@ def test_fused_allreduce_residual_rmsnorm_fp8[
         gamma_tensor,
         epsilon,
         weight_offset,
-        ctx,
+        DeviceContextPtr(ctx),
         scale_ub,
         ref_scales_tile,
     )

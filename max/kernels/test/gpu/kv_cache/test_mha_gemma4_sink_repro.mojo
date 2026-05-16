@@ -40,7 +40,7 @@ from std.random import random_ui64, seed
 from std.collections import OptionalReg, Set
 from layout._utils import ManagedLayoutTensor
 from std.gpu.host import DeviceContext
-
+from std.runtime.asyncrt import DeviceContextPtr
 from kv_cache.types import (
     KVCacheStaticParams,
     PagedKVCacheCollection,
@@ -226,7 +226,7 @@ def execute_sink_prefill_repro[
     # `unswitch[call_flash_attention](Bool(sink_weights))`, forcing BOTH
     # sink=True and sink=False specializations to compile — which is the
     # distinguishing property of the gemma4 graph compile.
-    var ctx_ptr = ctx
+    var ctx_ptr = DeviceContextPtr(ctx)
     generic_flash_attention_kv_cache_ragged[
         target="gpu",
         mask_str="causal",

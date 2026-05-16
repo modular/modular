@@ -13,8 +13,7 @@
 """RMSNorm fused residual op registration for state space models."""
 
 import compiler_internal as compiler
-
-from std.gpu.host import DeviceContext
+from std.runtime.asyncrt import DeviceContextPtr
 from tensor import InputTensor, OutputTensor
 
 from std.utils.index import IndexList
@@ -69,7 +68,7 @@ struct RMSNormFusedResidual:
         weight_offset: Scalar[dtype=dtype],
         dropout_p: Scalar[dtype=dtype],
         seed: Scalar[dtype=DType.uint64],
-        ctx: DeviceContext,
+        ctx: DeviceContextPtr,
     ) capturing raises:
         # Validate shapes
         if output.shape() != input.shape():

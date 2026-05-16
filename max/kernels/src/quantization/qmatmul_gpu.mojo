@@ -60,7 +60,7 @@ from linalg.matmul.gpu._multistage_gemm_gpu import warp_split_k_reduction
 from linalg.utils import GemmShape, apply_epilogue, elementwise_epilogue_type
 from linalg.utils_gpu import MatmulConfig, block_swizzle
 from std.memory.unsafe import bitcast
-
+from std.runtime.asyncrt import DeviceContextPtr
 
 from std.utils.index import Index
 from std.utils.numerics import get_accum_type
@@ -1617,7 +1617,7 @@ def matmul_gpu_qint4[
     c_tt: TileTensor[mut=True, c_type, address_space=AddressSpace.GENERIC, ...],
     a_tt: TileTensor[a_type, address_space=AddressSpace.GENERIC, ...],
     b_tt: TileTensor[DType.uint8, address_space=AddressSpace.GENERIC, ...],
-    ctx: Optional[DeviceContext] = None,
+    ctx: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
     var c = c_tt.to_layout_tensor()
     var a = a_tt.to_layout_tensor()
@@ -1626,7 +1626,7 @@ def matmul_gpu_qint4[
     comptime assert a.rank == 2
     comptime assert b.rank == 2
     comptime assert is_gpu[target](), "unsupported target"
-    var cuda_ctx = ctx.value()
+    var cuda_ctx = ctx.get_device_context()
 
     matmul_gpu_qint4_impl[group_size, target, elementwise_lambda_fn](
         c, a, b, cuda_ctx
@@ -2143,12 +2143,12 @@ def gpu_qint4_repack_Q4_0[
     b_packed: LayoutTensor[
         mut=True, DType.uint8, address_space=AddressSpace.GENERIC, ...
     ],
-    ctx: Optional[DeviceContext] = None,
+    ctx: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
     comptime assert b.rank == 2
     comptime assert b_packed.rank == 2
     comptime assert is_gpu[target](), "unsupported target"
-    var cuda_ctx = ctx.value()
+    var cuda_ctx = ctx.get_device_context()
 
     comptime pack_factor = 8
     comptime group_size = 32
@@ -2192,12 +2192,12 @@ def gpu_qint4_repack_GPTQ[
             ImmutAnyOrigin,
         ]
     ] = None,
-    ctx: Optional[DeviceContext] = None,
+    ctx: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
     comptime assert b.rank == 2
     comptime assert b_packed.rank == 2
     comptime assert is_gpu[target](), "unsupported target"
-    var cuda_ctx = ctx.value()
+    var cuda_ctx = ctx.get_device_context()
 
     comptime pack_factor = 8
     comptime group_bytes = 2 + (group_size // 2)

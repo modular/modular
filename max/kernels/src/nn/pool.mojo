@@ -17,6 +17,7 @@ from std.algorithm import stencil, stencil_gpu
 from std.gpu.host import DeviceContext
 from std.gpu.host.info import is_cpu, is_gpu
 from layout import Coord, TileTensor, coord_to_index_list
+from std.runtime.asyncrt import DeviceContextPtr
 
 from std.utils.index import IndexList
 from std.utils.numerics import min_or_neg_inf
@@ -1103,22 +1104,16 @@ def avg_pool[
     paddings: TileTensor[int_type, ...],
     output: TileTensor[mut=True, dtype, ...],
     ceil_mode: Bool = False,
-    ctx: Optional[DeviceContext] = None,
+    ctx_ptr: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
     comptime if is_cpu[target]():
         avg_pool_cpu[count_boundary=count_boundary](
             input, filter, strides, dilations, paddings, output, ceil_mode
         )
     elif is_gpu[target]():
+        ctx = ctx_ptr.get_device_context()
         avg_pool_gpu[count_boundary=count_boundary](
-            ctx.value(),
-            input,
-            filter,
-            strides,
-            dilations,
-            paddings,
-            output,
-            ceil_mode,
+            ctx, input, filter, strides, dilations, paddings, output, ceil_mode
         )
     else:
         comptime assert False, "Unknown target " + target
@@ -1137,22 +1132,16 @@ def max_pool[
     paddings: TileTensor[int_type, ...],
     output: TileTensor[mut=True, dtype, ...],
     ceil_mode: Bool = False,
-    ctx: Optional[DeviceContext] = None,
+    ctx_ptr: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
     comptime if is_cpu[target]():
         max_pool_cpu(
             input, filter, strides, dilations, paddings, output, ceil_mode
         )
     elif is_gpu[target]():
+        ctx = ctx_ptr.get_device_context()
         max_pool_gpu(
-            ctx.value(),
-            input,
-            filter,
-            strides,
-            dilations,
-            paddings,
-            output,
-            ceil_mode,
+            ctx, input, filter, strides, dilations, paddings, output, ceil_mode
         )
     else:
         comptime assert False, "Unknown target " + target

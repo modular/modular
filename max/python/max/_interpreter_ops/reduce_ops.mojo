@@ -14,7 +14,6 @@
 """Mojo kernel wrappers for reduce MO interpreter operations."""
 
 from std.os import abort
-from std.gpu.host import DeviceContext
 from std.python import PythonObject
 from std.python.bindings import PythonModuleBuilder
 from std.sys.info import has_accelerator
@@ -26,7 +25,7 @@ from std.algorithm import mean as reduce_mean
 from std.algorithm import product as reduce_product
 from std.algorithm.functional import IndexList
 from std.memory import OpaquePointer
-
+from std.runtime.asyncrt import DeviceContextPtr
 from std.sys.info import has_apple_gpu_accelerator
 
 from op_utils import _get_dtype, _get_buffer_ptr, _get_ctx, _get_shape, MAX_RANK
@@ -82,7 +81,7 @@ comptime ReduceFn = def[
 ](
     input_shape: IndexList[_, element_type=DType.int64],
     reduce_dim: Int,
-    context: DeviceContext,
+    context: DeviceContextPtr,
 ) capturing raises -> None
 
 
@@ -99,7 +98,7 @@ def _reduce_max[
 ](
     input_shape: IndexList[_, element_type=DType.int64],
     reduce_dim: Int,
-    context: DeviceContext,
+    context: DeviceContextPtr,
 ) raises:
     """Non-overloaded wrapper around algorithm.max for use with ReduceFn."""
     reduce_max[
@@ -123,7 +122,7 @@ def _reduce_min[
 ](
     input_shape: IndexList[_, element_type=DType.int64],
     reduce_dim: Int,
-    context: DeviceContext,
+    context: DeviceContextPtr,
 ) raises:
     """Non-overloaded wrapper around algorithm.min for use with ReduceFn."""
     reduce_min[
@@ -147,7 +146,7 @@ def _reduce_sum[
 ](
     input_shape: IndexList[_, element_type=DType.int64],
     reduce_dim: Int,
-    context: DeviceContext,
+    context: DeviceContextPtr,
 ) raises:
     """Non-overloaded wrapper around algorithm.sum for use with ReduceFn."""
     reduce_sum[
@@ -171,7 +170,7 @@ def _reduce_mean[
 ](
     input_shape: IndexList[_, element_type=DType.int64],
     reduce_dim: Int,
-    context: DeviceContext,
+    context: DeviceContextPtr,
 ) raises:
     """Wrapper around algorithm.mean matching the reduce_max/min/sum signature.
 
@@ -201,7 +200,7 @@ def _reduce_mul[
 ](
     input_shape: IndexList[_, element_type=DType.int64],
     reduce_dim: Int,
-    context: DeviceContext,
+    context: DeviceContextPtr,
 ) raises:
     """Non-overloaded wrapper around algorithm.product for use with ReduceFn."""
     reduce_product[
@@ -435,7 +434,7 @@ def reduce_op[
             input_fn,
             output_fn,
             target="cpu",
-        ](normalized_shape, 1, DeviceContext(api="cpu"))
+        ](normalized_shape, 1, DeviceContextPtr())
     else:
         comptime if has_accelerator():
             comptime if dtype in (
@@ -447,7 +446,7 @@ def reduce_op[
                 DType.int64,
                 DType.uint64,
             ):
-                var device_ctx = DeviceContext(ctx.unsafe_value())
+                var device_ctx = DeviceContextPtr(ctx.unsafe_value())
                 reduce_fn[
                     dtype,
                     input_fn,

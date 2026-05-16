@@ -217,33 +217,6 @@ This version is still a work in progress.
 
 ## GPU programming
 
-- Added `DeviceContextList[size]` in `std.gpu.host`: a fixed-size,
-  `Copyable`/`ImplicitlyCopyable`/`Sized` collection of `DeviceContext` values.
-  Multi-device custom-op `execute` methods now receive a `DeviceContextList[N]`
-  — the graph compiler synthesizes one from the per-device contexts attached to
-  the op via a variadic constructor. Kernels can index into it with
-  `dev_ctxs[i]` (runtime) or `dev_ctxs.__getitem_param__[i]()` (comptime), and
-  iterate with `len()`. This replaces the previous `DeviceContextPtrList`
-  pattern.
-
-  ```mojo
-  from gpu.host import DeviceContext, DeviceContextList
-
-  @compiler.register("mo.distributed.allreduce.sum")
-  struct DistributedAllReduceSum:
-      @staticmethod
-      def execute[
-          dtype: DType, rank: Int, target: StaticString, _trace_name: StaticString,
-      ](
-          outputs: FusedOutputVariadicTensors[dtype=dtype, rank=rank, ...],
-          inputs: InputVariadicTensors[dtype=dtype, rank=rank, ...],
-          signal_buffers: MutableInputVariadicTensors[dtype=DType.uint8, rank=1, ...],
-          dev_ctxs: DeviceContextList,
-      ) capturing raises:
-          comptime num_devices = inputs.size
-          # ... use dev_ctxs[i] per device ...
-  ```
-
 - `DeviceContext.enqueue_function[func]` and
   `DeviceContext.compile_function[func]` now accept a single kernel argument
   instead of requiring it to be passed twice. The previous two-argument forms
@@ -262,45 +235,6 @@ This version is still a work in progress.
   ```
 
 ## Removed
-
-- The `DeviceContextPtr` and `DeviceContextPtrList` types have been removed
-  from `std.runtime.asyncrt`. Custom-op `execute` methods now take
-  `DeviceContext` directly (or `Optional[DeviceContext]` where the context is
-  genuinely optional), and multi-device ops take `DeviceContextList[N]` (see
-  the new entry under *Library changes*). The helpers `get_device_context()`
-  and `get_optional_device_context()` are no longer needed — pass the
-  `DeviceContext` through directly. The `CpuDeviceContext` runtime always
-  supplies a real context for the CPU path, so the nullable wrapper is no
-  longer required.
-
-  ```mojo
-  # Before
-  from runtime.asyncrt import DeviceContextPtr, DeviceContextPtrList
-
-  @compiler.register("my_op")
-  struct MyOp:
-      @staticmethod
-      def execute[target: StaticString](
-          output: OutputTensor,
-          input: InputTensor,
-          ctx: DeviceContextPtr,
-      ) raises:
-          var gpu_ctx = ctx.get_device_context()
-          ...
-
-  # After
-  from gpu.host import DeviceContext
-
-  @compiler.register("my_op")
-  struct MyOp:
-      @staticmethod
-      def execute[target: StaticString](
-          output: OutputTensor,
-          input: InputTensor,
-          ctx: DeviceContext,
-      ) raises:
-          ...
-  ```
 
 - The `use_blocking_impl` parameter has been removed from `elementwise` (in
   `std.algorithm.functional`), and the analogous

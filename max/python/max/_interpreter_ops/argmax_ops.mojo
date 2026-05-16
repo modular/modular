@@ -20,14 +20,13 @@ index of the extreme value.
 """
 
 from std.os import abort
-from std.gpu.host import DeviceContext
 from std.python import PythonObject
 from std.python.bindings import PythonModuleBuilder
 from std.sys.info import has_accelerator
 
 from std.algorithm.functional import elementwise, IndexList
 from std.memory import OpaquePointer
-
+from std.runtime.asyncrt import DeviceContextPtr
 from std.sys.info import has_apple_gpu_accelerator
 
 from op_utils import _get_dtype, _get_ctx, _make_ptr
@@ -116,7 +115,7 @@ def argminmax_reduce_op[
         elementwise[func, simd_width=1](IndexList[1](total))
     else:
         comptime if has_accelerator():
-            var device_ctx = DeviceContext(ctx.unsafe_value())
+            var device_ctx = DeviceContextPtr(ctx.unsafe_value())
             elementwise[func, simd_width=1, target="gpu"](
                 IndexList[1](total), device_ctx
             )

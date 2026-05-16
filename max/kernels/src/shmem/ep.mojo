@@ -17,10 +17,11 @@ Helper functions for Expert Parallelism (EP) Communication Kernels.
 """
 
 from std.gpu.primitives.grid_controls import PDLLevel, pdl_launch_attributes
-from std.gpu.host import DeviceContext, FuncAttribute
+from std.gpu.host import FuncAttribute
 from std.gpu.host.info import is_gpu
 from layout import TensorLayout, TileTensor, Idx
 from layout.tile_tensor import row_major
+from std.runtime.asyncrt import DeviceContextPtr
 from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id
 from std.sys.info import size_of
 from std.ffi import external_call, _get_global_or_null
@@ -106,7 +107,7 @@ def ep_dispatch_async_kernel_api[
     send_ptrs: TileTensor[DType.uint64, ...],
     recv_ptrs: TileTensor[DType.uint64, ...],
     recv_count_ptrs: TileTensor[DType.uint64, ...],
-    context: DeviceContext,
+    context: DeviceContextPtr,
 ) raises:
     """Execute the Expert Parallelism async dispatch kernel.
 
@@ -154,7 +155,7 @@ def ep_dispatch_async_kernel_api[
         max_token_per_rank,
     )
 
-    var gpu_ctx = context
+    var gpu_ctx = context.get_device_context()
 
     comptime n_ranks = n_gpus_per_node * n_nodes
     comptime hw_info = gpu_ctx.default_device_info
@@ -265,7 +266,7 @@ def ep_dispatch_wait_kernel_api[
     recv_ptrs: TileTensor[DType.uint64, ...],
     recv_count_ptrs: TileTensor[DType.uint64, ...],
     atomic_counters: TileTensor[DType.int32, ...],
-    context: DeviceContext,
+    context: DeviceContextPtr,
 ) raises:
     """Execute the Expert Parallelism dispatch completion kernel.
 
@@ -303,7 +304,7 @@ def ep_dispatch_wait_kernel_api[
         recv_count_ptrs.flat_rank == 1
     ), "Receive count pointers must be a 1D tensor."
 
-    var gpu_ctx = context
+    var gpu_ctx = context.get_device_context()
     var gpu_id = Int(gpu_ctx.id())
     var my_rank = Int32(gpu_id)
 
@@ -407,7 +408,7 @@ def ep_fused_dispatch_kernel_api[
     send_ptrs: TileTensor[DType.uint64, ...],
     recv_ptrs: TileTensor[DType.uint64, ...],
     recv_count_ptrs: TileTensor[DType.uint64, ...],
-    context: DeviceContext,
+    context: DeviceContextPtr,
 ) raises:
     """Execute the fused Expert Parallelism dispatch kernel.
 
@@ -472,7 +473,7 @@ def ep_fused_dispatch_kernel_api[
         max_token_per_rank,
     )
 
-    var gpu_ctx = context
+    var gpu_ctx = context.get_device_context()
     var gpu_id = Int(gpu_ctx.id())
     var my_rank = Int32(gpu_id)
 
@@ -603,7 +604,7 @@ def ep_combine_async_kernel_api[
     send_ptrs: TileTensor[DType.uint64, ...],
     recv_ptrs: TileTensor[DType.uint64, ...],
     recv_count_ptrs: TileTensor[DType.uint64, ...],
-    context: DeviceContext,
+    context: DeviceContextPtr,
 ) raises:
     """Execute the Expert Parallelism combine kernel.
 
@@ -646,7 +647,7 @@ def ep_combine_async_kernel_api[
         send_ptrs.flat_rank == 1
     ), "Send pointers must be a 1D tensor."
 
-    var gpu_ctx = context
+    var gpu_ctx = context.get_device_context()
     var gpu_id = Int(gpu_ctx.id())
     var my_rank = Int32(gpu_id)
 
@@ -759,7 +760,7 @@ def ep_combine_wait_kernel_api[
     atomic_counters: TileTensor[DType.int32, ...],
     recv_ptrs: TileTensor[DType.uint64, ...],
     recv_count_ptrs: TileTensor[DType.uint64, ...],
-    context: DeviceContext,
+    context: DeviceContextPtr,
 ) raises:
     """Execute the Expert Parallelism combine completion kernel.
 
@@ -803,7 +804,7 @@ def ep_combine_wait_kernel_api[
         recv_count_ptrs.flat_rank == 1
     ), "Receive count pointers must be a 1D tensor."
 
-    var gpu_ctx = context
+    var gpu_ctx = context.get_device_context()
     var gpu_id = Int(gpu_ctx.id())
     var my_rank = Int32(gpu_id)
 
@@ -902,7 +903,7 @@ def ep_fused_combine_kernel_api[
     send_ptrs: TileTensor[DType.uint64, ...],
     recv_ptrs: TileTensor[DType.uint64, ...],
     recv_count_ptrs: TileTensor[DType.uint64, ...],
-    context: DeviceContext,
+    context: DeviceContextPtr,
     topk_ids_p: Optional[UnsafePointer[Int32, ImmutExternalOrigin]] = None,
 ) raises:
     """Execute the fused Expert Parallelism combine kernel.
@@ -959,7 +960,7 @@ def ep_fused_combine_kernel_api[
         send_ptrs.flat_rank == 1
     ), "Send pointers must be a 1D tensor."
 
-    var gpu_ctx = context
+    var gpu_ctx = context.get_device_context()
     var gpu_id = Int(gpu_ctx.id())
     var my_rank = Int32(gpu_id)
 

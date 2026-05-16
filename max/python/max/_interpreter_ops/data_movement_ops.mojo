@@ -18,14 +18,13 @@ operations.
 """
 
 from std.os import abort
-from std.gpu.host import DeviceContext
 from std.python import PythonObject
 from std.python.bindings import PythonModuleBuilder
 from std.sys.info import has_accelerator, simd_width_of
 
 from std.algorithm.functional import elementwise, IndexList
 from std.memory import OpaquePointer
-
+from std.runtime.asyncrt import DeviceContextPtr
 from tensor import ManagedTensorSlice
 from tensor.io_spec import Input, MutableInput, Output
 from compiler_internal import StaticTensorSpec
@@ -144,11 +143,11 @@ def static_broadcast_to_op[
             in_rank=MAX_RANK,
             out_rank=MAX_RANK,
             _trace_name="interpreter.static_broadcast_to",
-        ](output_tensor, input_tensor, out_shape, DeviceContext(api="cpu"))
+        ](output_tensor, input_tensor, out_shape, DeviceContextPtr())
     else:
         comptime if has_accelerator():
             comptime if dtype != DType.float64:
-                var device_ctx = DeviceContext(ctx.unsafe_value())
+                var device_ctx = DeviceContextPtr(ctx.unsafe_value())
                 StaticBroadcastTo.execute[
                     target="gpu",
                     dtype=dtype,
@@ -284,11 +283,11 @@ def transpose_op[
             static_permutations=create_unknown_int_tuple(MAX_RANK),
             dtype=dtype,
             rank=MAX_RANK,
-        ](output_tensor, input_tensor, perm_tensor, DeviceContext(api="cpu"))
+        ](output_tensor, input_tensor, perm_tensor, DeviceContextPtr())
     else:
         comptime if has_accelerator():
             comptime if dtype != DType.float64:
-                var device_ctx = DeviceContext(ctx.unsafe_value())
+                var device_ctx = DeviceContextPtr(ctx.unsafe_value())
                 Transpose.execute[
                     target="gpu",
                     _trace_name="interpreter.transpose",
@@ -497,7 +496,7 @@ def memcpy_op[
         # GPU execution
         comptime if has_accelerator():
             comptime if dtype != DType.float64:
-                var device_ctx = DeviceContext(ctx.unsafe_value())
+                var device_ctx = DeviceContextPtr(ctx.unsafe_value())
                 elementwise[func, simd_width=1, target="gpu"](
                     IndexList[1](count), device_ctx
                 )
@@ -581,12 +580,12 @@ def slice_op[
             starts_tensor,
             stops_tensor,
             steps_tensor,
-            DeviceContext(api="cpu"),
+            DeviceContextPtr(),
         )
     else:
         comptime if has_accelerator():
             comptime if dtype != DType.float64:
-                var device_ctx = DeviceContext(ctx.unsafe_value())
+                var device_ctx = DeviceContextPtr(ctx.unsafe_value())
                 Slice.execute[
                     target="gpu",
                     _trace_name="interpreter.slice",
@@ -770,12 +769,12 @@ def mutable_store_slice_op[
             starts_tensor,
             stops_tensor,
             steps_tensor,
-            DeviceContext(api="cpu"),
+            DeviceContextPtr(),
         )
     else:
         comptime if has_accelerator():
             comptime if dtype != DType.float64:
-                var device_ctx = DeviceContext(ctx.unsafe_value())
+                var device_ctx = DeviceContextPtr(ctx.unsafe_value())
                 MutableStoreSlice.execute[
                     target="gpu", dtype=dtype, rank=MAX_RANK
                 ](

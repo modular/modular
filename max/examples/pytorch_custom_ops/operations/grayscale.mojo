@@ -14,8 +14,7 @@
 # DOC: max/develop/custom-kernels-pytorch.mdx
 
 import compiler
-
-from std.gpu.host import DeviceContext
+from std.runtime.asyncrt import DeviceContextPtr
 from tensor import InputTensor, OutputTensor, foreach
 
 from std.utils.index import IndexList
@@ -31,7 +30,7 @@ struct Grayscale:
     ](
         img_out: OutputTensor[dtype=DType.uint8, rank=2, ...],
         img_in: InputTensor[dtype=DType.uint8, rank=3, ...],
-        ctx: DeviceContext,
+        ctx: DeviceContextPtr,
     ) raises:
         """Execute grayscale conversion on the input image tensor.
 

@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu.host import DeviceContext
 from layout import (
     Coord,
     Layout,
@@ -22,7 +21,7 @@ from layout import (
 )
 from layout.int_tuple import to_index_list
 from linalg.matrix_band_part import matrix_band_part as _matrix_band_part
-
+from std.runtime.asyncrt import DeviceContextPtr
 from std.testing import assert_equal
 
 from std.utils import IndexList
@@ -94,7 +93,7 @@ def matrix_band_part[
         num_upper_tt,
         exclude_tt,
         output_tt,
-        DeviceContext(api="cpu"),
+        DeviceContextPtr(),
     )
 
 

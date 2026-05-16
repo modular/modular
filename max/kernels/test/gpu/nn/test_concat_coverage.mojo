@@ -32,7 +32,7 @@ from nn.concat import (
     elementwise_epilogue_type,
     fused_concat,
 )
-
+from std.runtime.asyncrt import DeviceContextPtr
 from std.testing import assert_equal
 
 from std.utils import IndexList, StaticTuple
@@ -524,7 +524,7 @@ def test_fused_concat_gpu(ctx: DeviceContext) raises:
         axis,
         StaticTuple[IndexList[rank], 2](input_shape_0, input_shape_1),
         output_dyn.as_any_origin(),
-        ctx,
+        DeviceContextPtr(ctx),
     )
 
     ctx.enqueue_copy(output_host_buffer, output_device_buffer)

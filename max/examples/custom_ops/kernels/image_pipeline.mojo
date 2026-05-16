@@ -12,10 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from std.gpu.host import DeviceContext
 from std.builtin.simd import SIMD
 from compiler import register
-
+from std.runtime.asyncrt import DeviceContextPtr
 from tensor import InputTensor, OutputTensor, foreach
 
 from std.utils.index import IndexList
@@ -30,7 +29,7 @@ struct Grayscale:
     ](
         img_out: OutputTensor[dtype=DType.uint8, rank=2, ...],
         img_in: InputTensor[dtype=DType.uint8, rank=3, ...],
-        ctx: DeviceContext,
+        ctx: DeviceContextPtr,
     ) raises:
         @parameter
         @always_inline
@@ -64,7 +63,7 @@ struct Brightness:
         img_out: OutputTensor[dtype=DType.uint8, rank=2, ...],
         img_in: InputTensor[dtype=DType.uint8, rank=2, ...],
         brightness: Float32,
-        ctx: DeviceContext,
+        ctx: DeviceContextPtr,
     ) raises:
         @parameter
         @always_inline  # Added for consistency
@@ -89,7 +88,7 @@ struct Blur:
         img_out: OutputTensor[dtype=DType.uint8, rank=2, ...],
         img_in: InputTensor[dtype=DType.uint8, rank=2, ...],
         blur_size: Int64,
-        ctx: DeviceContext,
+        ctx: DeviceContextPtr,
     ) raises:
         @parameter
         @always_inline

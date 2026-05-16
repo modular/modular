@@ -40,10 +40,9 @@ the output slot is written ``-1``.
 
 from std.math import ceildiv
 from std.gpu import block_dim, block_idx, thread_idx
-from std.gpu.host import DeviceContext
 from std.gpu.host.info import is_cpu
 from std.memory import UnsafePointer
-
+from std.runtime.asyncrt import DeviceContextPtr
 from tensor import InputTensor
 from tensor.managed_tensor_slice import (
     _MutableInputTensor as MutableInputTensor,
@@ -142,7 +141,7 @@ def paged_sparse_kv_logical_to_physical_indices_from_row_offsets_dispatch[
     num_batches: Int,
     logical_stride0: Int,
     logical_stride1: Int,
-    ctx: DeviceContext,
+    ctx: DeviceContextPtr,
 ) raises:
     """Remap logical sparse slots using ragged ``input_row_offsets`` (not per-slot batch ids).
 
@@ -170,7 +169,7 @@ def paged_sparse_kv_logical_to_physical_indices_from_row_offsets_dispatch[
     else:
         if num_indices == 0:
             return
-        var gpu_ctx = ctx
+        var gpu_ctx = ctx.get_device_context()
         comptime BLOCK = 256
         var grid = ceildiv(num_indices, BLOCK)
         comptime kernel = _paged_sparse_kv_index_remap_row_offs_kernel
@@ -205,7 +204,7 @@ def paged_sparse_kv_index_remap[
     input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
     kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
     kv_blocks: MutableInputTensor[dtype=cache_dtype, rank=6, ...],
-    ctx: DeviceContext,
+    ctx: DeviceContextPtr,
 ) raises:
     """High-level remap for sparse MLA MOGG ops (logical indices → physical rows).
 

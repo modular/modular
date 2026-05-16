@@ -21,9 +21,8 @@ This module registers the following ops:
 from std.math import ceildiv
 
 import compiler_internal as compiler
-from std.gpu.host import DeviceContext
 from std.gpu.host.info import is_cpu, is_gpu
-
+from std.runtime.asyncrt import DeviceContextPtr
 from tensor import InputTensor, OutputTensor
 from std.utils.index import IndexList
 
@@ -77,7 +76,7 @@ struct SelectiveScanFwd[delta_softplus: Bool = False]:
         D: InputTensor[dtype=dtype, rank=1, ...],
         z: InputTensor[dtype=dtype, rank=3, ...],
         delta_bias: InputTensor[dtype=dtype, rank=1, ...],
-        ctx: DeviceContext,
+        ctx: DeviceContextPtr,
     ) capturing raises:
         if output.shape() != u.shape():
             raise Error("Output shape must match input u shape")
@@ -157,7 +156,7 @@ struct SelectiveScanFwd[delta_softplus: Bool = False]:
                     D_strides,
                     z_strides,
                     delta_bias_strides,
-                    Optional[DeviceContext](ctx),
+                    ctx.get_optional_device_context(),
                 )
             else:
                 selective_scan_fwd_cpu[
@@ -191,10 +190,10 @@ struct SelectiveScanFwd[delta_softplus: Bool = False]:
                     D_strides,
                     z_strides,
                     delta_bias_strides,
-                    Optional[DeviceContext](ctx),
+                    ctx.get_optional_device_context(),
                 )
         elif is_gpu[target]():
-            var gpu_ctx = ctx
+            var gpu_ctx = ctx.get_device_context()
             var total_batch_dim = batch * dim
             comptime BLOCK_SIZE = 128
             var num_blocks = ceildiv(total_batch_dim, BLOCK_SIZE)
@@ -354,7 +353,7 @@ struct SelectiveScanFwdMinimal[delta_softplus: Bool = False]:
         A: InputTensor[dtype=dtype, rank=2, ...],
         B: InputTensor[dtype=dtype, rank=4, ...],
         C: InputTensor[dtype=dtype, rank=4, ...],
-        ctx: DeviceContext,
+        ctx: DeviceContextPtr,
     ) capturing raises:
         if output.shape() != u.shape():
             raise Error("Output shape must match input u shape")
@@ -416,7 +415,7 @@ struct SelectiveScanFwdMinimal[delta_softplus: Bool = False]:
                     A_strides,
                     B_strides,
                     C_strides,
-                    Optional[DeviceContext](ctx),
+                    ctx.get_optional_device_context(),
                 )
             else:
                 selective_scan_fwd_cpu_minimal[
@@ -442,10 +441,10 @@ struct SelectiveScanFwdMinimal[delta_softplus: Bool = False]:
                     A_strides,
                     B_strides,
                     C_strides,
-                    Optional[DeviceContext](ctx),
+                    ctx.get_optional_device_context(),
                 )
         elif is_gpu[target]():
-            var gpu_ctx = ctx
+            var gpu_ctx = ctx.get_device_context()
             var total_batch_dim = batch * dim
             comptime BLOCK_SIZE = 128
             var num_blocks = ceildiv(total_batch_dim, BLOCK_SIZE)
@@ -585,7 +584,7 @@ struct SelectiveScanUpdate[delta_softplus: Bool = False]:
         D: InputTensor[dtype=dtype, rank=1, ...],
         z: InputTensor[dtype=dtype, rank=2, ...],
         dt_bias: InputTensor[dtype=dtype, rank=1, ...],
-        ctx: DeviceContext,
+        ctx: DeviceContextPtr,
     ) capturing raises:
         var batch = state_out.dim_size(0)
         var dim = state_out.dim_size(1)
@@ -658,7 +657,7 @@ struct SelectiveScanUpdate[delta_softplus: Bool = False]:
                     D_strides,
                     z_strides,
                     dt_bias_strides,
-                    Optional[DeviceContext](ctx),
+                    ctx.get_optional_device_context(),
                 )
             else:
                 selective_scan_update_cpu[
@@ -691,10 +690,10 @@ struct SelectiveScanUpdate[delta_softplus: Bool = False]:
                     D_strides,
                     z_strides,
                     dt_bias_strides,
-                    Optional[DeviceContext](ctx),
+                    ctx.get_optional_device_context(),
                 )
         elif is_gpu[target]():
-            var gpu_ctx = ctx
+            var gpu_ctx = ctx.get_device_context()
             var total_batch_dim = batch * dim
             comptime BLOCK_SIZE = 128
             var num_blocks = ceildiv(total_batch_dim, BLOCK_SIZE)

@@ -18,6 +18,7 @@ from std.gpu.host import DeviceContext, get_gpu_target
 from layout import Coord, TileTensor, coord_to_index_list
 from layout.coord import DynamicCoord
 from layout.tile_layout import Layout
+from std.runtime.asyncrt import DeviceContextPtr
 from std.sys.info import simd_width_of, _current_target
 
 from std.utils._select import _select_register_value as select
@@ -176,7 +177,7 @@ def copy_to_slice[
     start: TileTensor[start_type, ...],
     end: TileTensor[end_type, ...],
     step: TileTensor[step_type, ...],
-    context: DeviceContext,
+    context: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
     var expected_shape = slice_shape(buffer, start, end, step)
 

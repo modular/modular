@@ -12,8 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.algorithm.functional import elementwise
-from std.gpu.host import DeviceContext
 from std.random import Random
+from std.runtime.asyncrt import DeviceContextPtr
 from tensor._indexing import _dot_prod
 
 from std.utils import IndexList
@@ -32,7 +32,7 @@ def random_uniform[
     lower_bound: Scalar[dtype],
     upper_bound: Scalar[dtype],
     seed_ptr: UnsafePointer[Scalar[DType.uint64], ImmutAnyOrigin],
-    ctx: DeviceContext,
+    ctx: DeviceContextPtr,
 ) raises:
     """Call `output_fn` with values generated from a uniform distribution on
     [lower_bound, upper_bound] for floating-point types or

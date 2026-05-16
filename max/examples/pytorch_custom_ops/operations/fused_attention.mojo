@@ -62,7 +62,7 @@ from std.gpu.sync import barrier
 from layout import Layout, LayoutTensor
 from layout.math import max, sum
 from layout.tensor_core import TensorCore
-
+from std.runtime.asyncrt import DeviceContextPtr
 from tensor import InputTensor, OutputTensor
 
 from std.utils import Index
@@ -87,7 +87,7 @@ struct FusedAttention:
         query: InputTensor[dtype=dtype, rank=rank, ...],
         key: InputTensor[dtype=dtype, rank=rank, ...],
         value: InputTensor[dtype=dtype, rank=rank, ...],
-        ctx: DeviceContext,
+        ctx: DeviceContextPtr,
     ) raises:
         comptime assert rank == 2, "rank must be 2"
 
@@ -104,7 +104,7 @@ struct FusedAttention:
             print("Running on CPU")
             fused_attention_cpu[BN, BD](Q, K, V, O)
         else:
-            dev_ctx = ctx
+            dev_ctx = ctx.get_device_context()
             print("Running on GPU")
             fused_attention_gpu[BN, BD](dev_ctx, Q, K, V, O)
 
@@ -126,7 +126,7 @@ struct FusedAttentionAlias:
         query: InputTensor[dtype=dtype, rank=rank, ...],
         key: InputTensor[dtype=dtype, rank=rank, ...],
         value: InputTensor[dtype=dtype, rank=rank, ...],
-        ctx: DeviceContext,
+        ctx: DeviceContextPtr,
     ) raises:
         FusedAttention.execute[BN=BN, BD=BD, target=target](
             output, query, key, value, ctx

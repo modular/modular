@@ -78,7 +78,7 @@ def mojo(line, cell) -> None:  # noqa: ANN001
             ```mojo
             %%mojo precompile -o kernels.mojoc
 
-            from gpu.host import DeviceContext
+            from runtime.asyncrt import DeviceContextPtr
             from tensor import InputTensor, ManagedTensorSlice, OutputTensor
 
             @compiler.register("histogram")
@@ -89,7 +89,7 @@ def mojo(line, cell) -> None:  # noqa: ANN001
                 ](
                     output: OutputTensor[dtype = DType.int64, rank=1],
                     input: InputTensor[dtype = DType.uint8, rank=1],
-                    ctx: DeviceContext,
+                    ctx: DeviceContextPtr,
                 ) raises:
                     ...
             ```

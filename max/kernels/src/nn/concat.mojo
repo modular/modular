@@ -35,6 +35,7 @@ from layout import (
     row_major,
 )
 from std.memory import memcpy
+from std.runtime.asyncrt import DeviceContextPtr
 from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id
 
 from std.utils import IndexList, StaticTuple, product
@@ -591,7 +592,7 @@ def concat[
         TileTensor[dtype, InputLayoutType, input_origin],
         ...,
     ],
-    context: DeviceContext,
+    context: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
     comptime assert is_valid_target[target](), "not a valid target"
 
@@ -617,7 +618,7 @@ def concat[
                 output,
                 axis,
                 inputVec,
-                ctx=Optional[DeviceContext](context),
+                ctx=context.get_optional_device_context(),
             )
         else:
             _concat_gpu[dtype, epilogue_fn](
@@ -626,7 +627,7 @@ def concat[
                 output,
                 axis,
                 inputs,
-                context,
+                context.get_device_context(),
             )
 
 
@@ -998,7 +999,7 @@ def _fused_concat_cpu[
     output: TileTensor[
         mut=True, dtype, address_space=AddressSpace.GENERIC, ...
     ],
-    ctx: Optional[DeviceContext],
+    ctx: DeviceContextPtr,
 ) raises:
     var offset = 0
 
@@ -1590,7 +1591,7 @@ def fused_concat[
     axis: Int,
     input_shapes: StaticTuple[IndexList[rank], _],
     output: TileTensor[mut=True, dtype, output_layout, _],
-    ctx: DeviceContext,
+    ctx: DeviceContextPtr,
 ) raises:
     comptime assert is_valid_target[target](), "not a valid target"
 
@@ -1606,11 +1607,11 @@ def fused_concat[
                 dtype,
                 input_fn,
                 output_0_fn,
-            ](axis, input_shapes, output, Optional[DeviceContext](ctx))
+            ](axis, input_shapes, output, ctx)
         else:
             return _fused_concat_gpu[rank, dtype, input_fn, output_0_fn](
                 axis,
                 input_shapes,
                 output.as_any_origin(),
-                ctx,
+                ctx.get_device_context(),
             )

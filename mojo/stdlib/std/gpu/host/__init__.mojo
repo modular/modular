@@ -18,7 +18,6 @@ from .device_attribute import DeviceAttribute
 from .device_context import (
     DeviceBuffer,
     DeviceContext,
-    DeviceContextList,
     DeviceEvent,
     DeviceFunction,
     DeviceGraph,

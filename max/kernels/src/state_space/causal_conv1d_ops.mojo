@@ -23,7 +23,7 @@ import compiler_internal as compiler
 from std.gpu.host import DeviceContext
 from std.gpu.host.info import is_cpu, is_gpu
 from std.memory import memcpy
-
+from std.runtime.asyncrt import DeviceContextPtr
 
 from state_space.causal_conv1d import (
     causal_conv1d_channel_first_fwd_cpu,
@@ -71,7 +71,7 @@ struct CausalConv1D[activation: StaticString]:
         input: InputTensor[dtype=dtype, rank=rank, ...],
         weight: InputTensor[dtype=dtype, rank=2, ...],
         bias: InputTensor[dtype=dtype, rank=1, ...],
-        ctx: DeviceContext,
+        ctx: DeviceContextPtr,
     ) capturing raises:
         if rank != 3:
             raise Error("Input tensor must be rank 3 (batch, channels, seqlen)")
@@ -128,10 +128,10 @@ struct CausalConv1D[activation: StaticString]:
                 out_l_stride,
                 bias_stride,
                 silu_activation,
-                Optional[DeviceContext](ctx),
+                ctx.get_optional_device_context(),
             )
         elif is_gpu[target]():
-            var gpu_ctx: DeviceContext = ctx
+            var gpu_ctx: DeviceContext = ctx.get_device_context()
             comptime kNThreads = 128
             comptime kNElts = 4
             if width == 1:
@@ -373,7 +373,7 @@ struct CausalConv1DUpdate[activation: StaticString]:
         conv_state_in: InputTensor[dtype=dtype, rank=rank, ...],
         weight: InputTensor[dtype=dtype, rank=2, ...],
         bias: InputTensor[dtype=dtype, rank=1, ...],
-        ctx: DeviceContext,
+        ctx: DeviceContextPtr,
     ) capturing raises:
         if rank != 3:
             raise Error("Input tensor must be rank 3 (batch, channels, seqlen)")
@@ -453,7 +453,7 @@ struct CausalConv1DUpdate[activation: StaticString]:
                 silu_activation,
             )
         elif is_gpu[target]():
-            var gpu_ctx: DeviceContext = ctx
+            var gpu_ctx: DeviceContext = ctx.get_device_context()
             gpu_ctx.enqueue_copy(CS.ptr, CS_IN.ptr, total_state_elements)
             comptime kNThreads = 128
             var compiled_func = gpu_ctx.compile_function[

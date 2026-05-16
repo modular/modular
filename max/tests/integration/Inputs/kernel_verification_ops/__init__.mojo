@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 import compiler_internal as compiler
-from std.gpu.host import DeviceContext
 from std.gpu.host.device_context import DeviceExternalFunction
 from std.os import abort, getenv
 from tensor import (
@@ -28,6 +27,7 @@ from tensor.managed_tensor_slice import (
     _MutableInputTensor as MutableInputTensor,
 )
 from std.utils.index import IndexList
+from std.runtime.asyncrt import DeviceContextPtr
 
 
 @compiler.register("my_add")
@@ -54,7 +54,7 @@ struct OpWidthDeviceContext:
     def execute(
         output: OutputTensor,
         x: InputTensor[dtype=output.dtype, rank=output.rank, ...],
-        ctx: DeviceContext,
+        ctx: DeviceContextPtr,
     ):
         output[0] = x[0]
 
@@ -247,10 +247,10 @@ struct ExternalCubinVecAdd:
         output: OutputTensor[rank=1, ...],
         lhs: InputTensor[dtype=output.dtype, rank=output.rank, ...],
         rhs: InputTensor[dtype=output.dtype, rank=output.rank, ...],
-        ctx: DeviceContext,
+        ctx: DeviceContextPtr,
     ) raises:
         comptime assert target == "gpu"
-        gpu_ctx = ctx
+        gpu_ctx = ctx.get_device_context()
 
         with open(getenv("CUBIN_PATH"), "r") as file:
             cubin_data = file.read_bytes()
@@ -295,10 +295,10 @@ struct IntentionalGpuCrash:
     ](
         output: OutputTensor[rank=1, ...],
         x: InputTensor[dtype=output.dtype, rank=1, ...],
-        ctx: DeviceContext,
+        ctx: DeviceContextPtr,
     ) raises:
         comptime assert target == "gpu"
-        gpu_ctx = ctx
+        gpu_ctx = ctx.get_device_context()
 
         def crash_kernel():
             abort()

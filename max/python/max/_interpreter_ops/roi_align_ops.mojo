@@ -16,12 +16,11 @@
 Implements ROI Align pooling over NHWC input with configurable spatial scale,
 sampling ratio, alignment mode (aligned/unaligned), and pooling mode (AVG/MAX).
 
-CPU-only via the elementwise + DeviceContext pattern.
+CPU-only via the elementwise + DeviceContextPtr pattern.
 """
 
 from std.math import ceil
 from std.os import abort
-from std.gpu.host import DeviceContext
 from std.python import PythonObject
 from std.python.bindings import PythonModuleBuilder
 from std.sys.info import has_accelerator
@@ -29,7 +28,7 @@ from std.utils.numerics import min_or_neg_inf
 
 from std.algorithm.functional import elementwise, IndexList
 from std.memory import OpaquePointer
-
+from std.runtime.asyncrt import DeviceContextPtr
 
 from op_utils import (
     _get_dtype,
@@ -265,7 +264,7 @@ def roi_align_op[
         elementwise[func, simd_width=1](IndexList[1](total))
     else:
         comptime if has_accelerator():
-            var device_ctx = DeviceContext(ctx.unsafe_value())
+            var device_ctx = DeviceContextPtr(ctx.unsafe_value())
             elementwise[func, simd_width=1, target="gpu"](
                 IndexList[1](total), device_ctx
             )

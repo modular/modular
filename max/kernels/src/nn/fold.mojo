@@ -14,8 +14,8 @@
 
 
 from std.algorithm import elementwise
-from std.gpu.host import DeviceContext
 from layout import TileTensor
+from std.runtime.asyncrt import DeviceContextPtr
 
 from std.utils.index import IndexList
 
@@ -31,7 +31,7 @@ def fold[
     output: TileTensor[mut=True, dtype, ...],
     output_size: IndexList[2],
     kernel_size: IndexList[2],
-    ctx: DeviceContext,
+    ctx: DeviceContextPtr,
 ) raises:
     """Folds array of sliding local blocks into a single output tensor.
 
@@ -47,7 +47,7 @@ def fold[
         output: Output tensor to write to, shape [N, C, H, W].
         output_size: Spatial shape of the output tensor (H, W).
         kernel_size: Size of the sliding blocks.
-        ctx: The device context.
+        ctx: DeviceContextPtr.
     """
 
     comptime assert stride[0] > 0 and stride[1] > 0, "Stride must be positive"

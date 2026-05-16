@@ -21,7 +21,7 @@ from internal_utils import (
     int_list_to_tuple,
     CacheBustingBuffer,
 )
-
+from std.runtime.asyncrt import DeviceContextPtr
 from layout import (
     Coord,
     Idx,
@@ -272,8 +272,8 @@ def bench_rms_norm_fused_fp8[
                 row_major(Coord(fused_scale_shape)),
             )
 
-            # DeviceContext is passed directly
-            var ctx_ptr = ctx_
+            # DeviceContextPtr has an @implicit constructor from DeviceContext
+            var ctx_ptr = DeviceContextPtr(ctx_)
             rms_norm_fused_fp8[
                 in_dtype,
                 out_dtype,
@@ -410,7 +410,7 @@ def bench_rms_norm_fused_fp8[
         row_major(Coord(verify_scale_shape)),
     )
 
-    var ctx_ptr_verify = ctx
+    var ctx_ptr_verify = DeviceContextPtr(ctx)
     rms_norm_fused_fp8[
         in_dtype,
         out_dtype,

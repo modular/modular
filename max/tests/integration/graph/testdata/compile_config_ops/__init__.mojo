@@ -14,10 +14,9 @@
 from std.sys import get_defined_int
 
 import compiler
-from std.gpu.host import DeviceContext
 from std.logger import Logger
 from tensor import foreach, OutputTensor, InputTensor
-
+from std.runtime.asyncrt import DeviceContextPtr
 
 from std.utils.index import IndexList
 
@@ -54,7 +53,7 @@ struct AddOneCustom:
     ](
         output: OutputTensor,
         x: InputTensor[dtype=output.dtype, rank=output.rank, ...],
-        ctx: DeviceContext,
+        ctx: DeviceContextPtr,
     ) raises:
         @parameter
         def add_one[width: Int](idx: IndexList[x.rank]) -> SIMD[x.dtype, width]:

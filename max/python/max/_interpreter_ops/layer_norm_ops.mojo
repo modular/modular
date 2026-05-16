@@ -14,7 +14,6 @@
 """Mojo kernel wrappers for layer_norm MO interpreter operations."""
 
 from std.os import abort
-from std.gpu.host import DeviceContext
 from std.python import PythonObject
 from std.python.bindings import PythonModuleBuilder
 from std.sys.info import has_accelerator
@@ -22,7 +21,7 @@ from std.sys.info import has_accelerator
 from std.algorithm.functional import IndexList
 from std.math import sqrt
 from std.memory import OpaquePointer
-
+from std.runtime.asyncrt import DeviceContextPtr
 from tensor import ManagedTensorSlice
 from tensor.io_spec import Input
 from compiler_internal import StaticTensorSpec
@@ -205,7 +204,7 @@ def layer_norm_op[
                     io_spec=Input, static_spec=beta_spec
                 ](beta_ptr, gamma_shape)
 
-                var device_ctx = DeviceContext(ctx.unsafe_value())
+                var device_ctx = DeviceContextPtr(ctx.unsafe_value())
 
                 nn_layer_norm[
                     dtype,

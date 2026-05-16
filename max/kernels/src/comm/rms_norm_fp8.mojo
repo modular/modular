@@ -33,7 +33,7 @@ from std.gpu.primitives.grid_controls import (
 from layout import Coord, Idx, TensorLayout, TileTensor, row_major
 from std.utils import IndexList, StaticTuple
 from std.utils.numerics import get_accum_type
-
+from std.runtime.asyncrt import DeviceContextPtr
 from std.runtime.tracing import Trace, TraceLevel, trace_arg
 
 from .fp8_utils import compute_dynamic_fp8_scale, fp8_quantize
@@ -90,7 +90,7 @@ def rms_norm_fused_fp8[
     gamma: TileTensor[in_dtype, ...],
     epsilon: Scalar[in_dtype],
     weight_offset: Scalar[in_dtype],
-    ctx: DeviceContext,
+    ctx: DeviceContextPtr,
     scale_ub: Float32,
     scale_output: TileTensor[mut=True, scales_dtype, ...],
 ) raises:
@@ -151,7 +151,7 @@ def rms_norm_fused_fp8[
     with Trace[TraceLevel.OP, target=target](
         "rms_norm_fused_fp8",
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
-        task_id=Int(ctx.id()),
+        task_id=Int(ctx.get_device_context().id()),
     ):
         if target == "gpu":
             _rms_norm_fused_fp8_gpu[
@@ -169,7 +169,7 @@ def rms_norm_fused_fp8[
                 weight_offset,
                 scale_ub,
                 scale_output,
-                ctx,
+                ctx.get_device_context(),
             )
         else:
             raise Error("CPU implementation not yet supported")

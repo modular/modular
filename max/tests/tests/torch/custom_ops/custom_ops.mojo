@@ -25,13 +25,12 @@
 # ===----------------------------------------------------------------------=== #
 
 from compiler_internal import register
-from std.gpu.host import DeviceContext
 from tensor import (
     InputTensor,
     OutputTensor,
     foreach,
 )
-
+from std.runtime.asyncrt import DeviceContextPtr
 from std.utils.index import IndexList
 
 
@@ -44,7 +43,7 @@ struct Grayscale:
     ](
         img_out: OutputTensor[dtype=DType.uint8, rank=2, ...],
         img_in: InputTensor[dtype=DType.uint8, rank=3, ...],
-        ctx: DeviceContext,
+        ctx: DeviceContextPtr,
     ) raises:
         @parameter
         @always_inline
@@ -78,7 +77,7 @@ struct MyAdd:
         C: OutputTensor[dtype=type, rank=rank, ...],
         A: InputTensor[dtype=type, rank=rank, ...],
         B: InputTensor[dtype=type, rank=rank, ...],
-        ctx: DeviceContext,
+        ctx: DeviceContextPtr,
     ) raises:
         @parameter
         @always_inline
@@ -100,7 +99,7 @@ struct ParameterIncrement:
     ](
         B: OutputTensor[dtype=type, rank=rank, ...],
         A: InputTensor[dtype=type, rank=rank, ...],
-        ctx: DeviceContext,
+        ctx: DeviceContextPtr,
     ) raises:
         @parameter
         @always_inline
@@ -135,7 +134,6 @@ struct UnsupportedTypeOp:
         output: OutputTensor[dtype=dtype, rank=rank, ...],
         input: InputTensor[dtype=dtype, rank=rank, ...],
         message: String,  # String is not a supported type for PyTorch custom ops
-        ctx: DeviceContext,
     ) raises:
         # This operation is for testing error handling only
         # The String parameter should cause a validation error
@@ -146,4 +144,4 @@ struct UnsupportedTypeOp:
         ](idx: IndexList[output.rank]) -> SIMD[output.dtype, simd_width]:
             return input.load[simd_width](idx)
 
-        foreach[copy, target="cpu"](output, ctx)
+        foreach[copy, target="cpu"](output)

@@ -56,7 +56,7 @@ from layout import (
 from layout.coord import DynamicCoord
 from layout.tile_layout import Layout
 from std.memory import stack_allocation
-from std.runtime.asyncrt import parallelism_level
+from std.runtime.asyncrt import DeviceContextPtr, parallelism_level
 from std.runtime.tracing import Trace, TraceLevel, trace_arg
 
 from std.utils.index import Index, IndexList
@@ -843,7 +843,7 @@ def layer_norm[
     gamma_shape: IndexList[1],
     beta: TileTensor[dtype, ...],
     epsilon: Scalar[dtype],
-    ctx: DeviceContext,
+    ctx: DeviceContextPtr,
 ) raises:
     comptime assert beta.rank == 1, "beta must have rank 1"
     # Note: we only support reduction along the last dimension
@@ -861,21 +861,21 @@ def layer_norm[
     with Trace[TraceLevel.OP, target=target](
         "layer_norm",
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
-        task_id=Int(ctx.id()),
+        task_id=Int(ctx.get_device_context().id()),
     ):
         comptime if is_cpu[target]():
             layer_norm_cpu[input_0_fn, input_1_fn, output_0_fn](
                 shape.canonicalize(),
                 beta,
                 epsilon,
-                Optional[DeviceContext](ctx),
+                ctx.get_optional_device_context(),
             )
         elif is_gpu[target]():
             layer_norm_gpu[input_0_fn, input_1_fn, output_0_fn](
                 shape.canonicalize(),
                 beta,
                 epsilon,
-                ctx=ctx,
+                ctx=ctx.get_device_context(),
             )
         else:
             comptime assert False, "unsupported target " + target
@@ -1520,7 +1520,7 @@ def _rms_norm_impl[
     gamma: TileTensor[dtype, ...],
     epsilon: Scalar[dtype],
     weight_offset: Scalar[dtype],
-    ctx: DeviceContext,
+    ctx: DeviceContextPtr,
 ) raises:
     comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
 
@@ -1546,7 +1546,7 @@ def _rms_norm_impl[
             gamma,
             epsilon,
             weight_offset,
-            Optional[DeviceContext](ctx),
+            ctx.get_optional_device_context(),
         )
     elif is_gpu[target]():
         rms_norm_gpu[
@@ -1556,7 +1556,7 @@ def _rms_norm_impl[
             gamma,
             epsilon,
             weight_offset,
-            ctx,
+            ctx.get_device_context(),
         )
     else:
         comptime assert False, "unsupported target " + target
@@ -3058,7 +3058,7 @@ def rms_norm[
     gamma: TileTensor[dtype, ...],
     epsilon: Scalar[dtype],
     weight_offset: Scalar[dtype],
-    ctx: DeviceContext,
+    ctx: DeviceContextPtr,
 ) raises:
     comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
 
@@ -3077,7 +3077,7 @@ def rms_norm[
     with Trace[TraceLevel.OP, target=target](
         "rms_norm",
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
-        task_id=Int(ctx.id()),
+        task_id=Int(ctx.get_device_context().id()),
     ):
         _rms_norm_impl[
             dtype,
@@ -3115,7 +3115,7 @@ def _rms_norm_fused_residual_add_impl[
     gamma2: TileTensor[dtype, ...],
     epsilon2: Scalar[dtype],
     weight_offset2: Scalar[dtype],
-    ctx: DeviceContext,
+    ctx: DeviceContextPtr,
 ) raises:
     comptime assert gamma1.rank == 1, "gamma1 must have rank 1"
     comptime assert gamma2.rank == 1, "gamma2 must have rank 1"
@@ -3158,7 +3158,7 @@ def _rms_norm_fused_residual_add_impl[
             gamma2,
             epsilon2,
             weight_offset2,
-            ctx,
+            ctx.get_device_context(),
         )
     else:
         rms_norm_fused_residual_add_cpu[
@@ -3206,7 +3206,7 @@ def rms_norm_fused_residual_add[
     gamma2: TileTensor[dtype, ...],
     epsilon2: Scalar[dtype],
     weight_offset2: Scalar[dtype],
-    ctx: DeviceContext,
+    ctx: DeviceContextPtr,
 ) raises:
     comptime assert gamma1.rank == 1, "gamma1 must have rank 1"
     comptime assert gamma2.rank == 1, "gamma2 must have rank 1"
@@ -3233,7 +3233,7 @@ def rms_norm_fused_residual_add[
     with Trace[TraceLevel.OP, target=target](
         "rms_norm_fused_residual_add",
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
-        task_id=Int(ctx.id()),
+        task_id=Int(ctx.get_device_context().id()),
     ):
         _rms_norm_fused_residual_add_impl[
             dtype,
@@ -3939,7 +3939,7 @@ def group_norm[
     epsilon: Scalar[dtype],
     groups: Int32,
     output: TileTensor[mut=True, dtype, ...],
-    ctx: DeviceContext,
+    ctx: DeviceContextPtr,
 ) raises:
     comptime assert output.rank == rank, "output.rank must be the same as rank"
     comptime assert (
@@ -3974,7 +3974,7 @@ def group_norm[
     with Trace[TraceLevel.OP, target=target](
         "group_norm",
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
-        task_id=Int(ctx.id()),
+        task_id=Int(ctx.get_device_context().id()),
     ):
         group_norm_gpu[
             dtype=dtype,
@@ -3987,5 +3987,5 @@ def group_norm[
             epsilon,
             output,
             num_groups,
-            ctx=ctx,
+            ctx=ctx.get_device_context(),
         )
