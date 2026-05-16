@@ -411,6 +411,8 @@ def test_publish_metrics_default_path() -> None:
     mock_metrics.dkv_nixl_write_gib_per_s.assert_not_called()
     mock_metrics.dkv_rpc_acquire_latency.assert_not_called()
     mock_metrics.dkv_rpc_read_latency.assert_not_called()
+    # Disk KV gated off (total_disk_kv_blocks=0).
+    mock_metrics.cache_used_disk_kv_pct.assert_not_called()
 
 
 def test_publish_metrics_subsystem_gating() -> None:
@@ -469,3 +471,16 @@ def test_publish_metrics_subsystem_gating() -> None:
     # RPC inactive (rpc_*_avg_ms=0.0).
     mock_metrics.dkv_rpc_acquire_latency.assert_not_called()
     mock_metrics.dkv_rpc_read_latency.assert_not_called()
+    # Disk KV gated off (total_disk_kv_blocks=0).
+    mock_metrics.cache_used_disk_kv_pct.assert_not_called()
+
+
+def test_publish_metrics_disk_kv_active() -> None:
+    """Batch with disk KV cache active emits the disk usage metric."""
+    metrics = _make_metrics(
+        total_disk_kv_blocks=100,
+        used_disk_kv_pct=0.30,
+    )
+    with patch("max.serve.scheduler.utils.METRICS") as mock_metrics:
+        metrics.publish_metrics()
+    mock_metrics.cache_used_disk_kv_pct.assert_called_once_with(30.0)

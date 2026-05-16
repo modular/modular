@@ -290,6 +290,11 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
         unit="GiB/s",
         description="NIXL WRITE throughput.",
     ),  # type: ignore
+    "maxserve.cache.used_disk_kv_pct": _meter.create_histogram(
+        "maxserve.cache.used_disk_kv_pct",
+        unit="percent",
+        description="Percentage of disk KV cache blocks in use (0-100%), sampled once per scheduler batch when disk paging is enabled.",
+    ),  # type: ignore
 }
 
 
