@@ -52,6 +52,7 @@ def _make_metrics(**overrides: Any) -> BatchMetrics:
         disk_blocks_written=0,
         used_disk_kv_pct=0.0,
         total_disk_kv_blocks=0,
+        inflight_disk_ops=0,
         draft_tokens_generated=0,
         draft_tokens_accepted=0,
         avg_acceptance_length=0.0,
@@ -98,6 +99,7 @@ def test_metric_to_string() -> None:
         disk_blocks_written=0,
         used_disk_kv_pct=0.0,
         total_disk_kv_blocks=0,
+        inflight_disk_ops=0,
         draft_tokens_generated=0,
         draft_tokens_accepted=0,
         avg_acceptance_length=0.0,
@@ -147,6 +149,7 @@ def test_metric_to_string_with_disk_kv() -> None:
         disk_blocks_written=25,
         used_disk_kv_pct=0.30,
         total_disk_kv_blocks=100,
+        inflight_disk_ops=99,
     )
 
     formatted = metrics.pretty_format()
@@ -154,7 +157,8 @@ def test_metric_to_string_with_disk_kv() -> None:
         "Host KVCache Usage: 20.0% of 21 blocks, "
         "Blocks copied: 22 H2D, 23 D2H, "
         "Disk: 24 read, 25 written | "
-        "Disk KVCache Usage: 30.0% of 100 blocks |"
+        "Disk KVCache Usage: 30.0% of 100 blocks, "
+        "Inflight Disk Ops: 99 |"
     ) in formatted
 
 
@@ -193,6 +197,7 @@ def test_metric_to_string_overlap_scheduler() -> None:
         disk_blocks_written=0,
         used_disk_kv_pct=0.0,
         total_disk_kv_blocks=0,
+        inflight_disk_ops=0,
         draft_tokens_generated=0,
         draft_tokens_accepted=0,
         avg_acceptance_length=0.0,
@@ -249,6 +254,7 @@ def test_metric_to_string_continuation_only_ce_batch() -> None:
         d2h_blocks_copied=0,
         disk_blocks_read=0,
         disk_blocks_written=0,
+        inflight_disk_ops=0,
         used_disk_kv_pct=0.0,
         total_disk_kv_blocks=0,
         draft_tokens_generated=0,

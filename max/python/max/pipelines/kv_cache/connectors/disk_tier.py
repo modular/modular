@@ -121,6 +121,11 @@ class PriorityExecutor:
             for t in self._workers:
                 t.join()
 
+    @property
+    def inflight_disk_ops(self) -> int:
+        """Number of in-flight disk operations."""
+        return self._queue.qsize()
+
 
 class DiskTier:
     """Flat-file disk cache for KV blocks.
@@ -535,3 +540,8 @@ class DiskTier:
                 "Disk cache cold start: metadata found but no valid block files in %s",
                 self._cache_dir,
             )
+
+    @property
+    def inflight_disk_ops(self) -> int:
+        """Number of in-flight disk operations."""
+        return self._executor.inflight_disk_ops

@@ -394,6 +394,7 @@ class TieredConnector:
             d2h_blocks_copied=self._d2h_blocks_copied,
             disk_blocks_written=self._disk_blocks_written,
             disk_blocks_read=self._disk_blocks_read,
+            inflight_disk_ops=self._disk_tier.inflight_disk_ops,
         )
 
     @traced
