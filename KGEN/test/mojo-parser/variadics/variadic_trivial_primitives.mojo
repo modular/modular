@@ -7,7 +7,7 @@
 # RUN: %parse-mojo-isolated %s -split-input-file | FileCheck %s
 
 # CHECK-LABEL: lit.alias.decl *"T`0x": meta<!lit.struct<#Tuple <:param_list<!Movable>
-# CHECH-SAME: [!Int, !Int, !Int, !Int, !Int, !Int, !Int, !Int, !Int, !Int]
+# CHECK-SAME: [!Int, !Int, !Int, !Int, !Int, !Int, !Int, !Int, !Int, !Int]
 comptime T = Tuple[*TypeList.splat[Trait=Movable, 10, Int]()]
 
 
