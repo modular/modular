@@ -37,6 +37,7 @@ from max.profiler import Tracer, traced
 from ..paged_kv_cache.block_copy_engine import (
     BlockOffloadEngine,
     DeviceEventBundle,
+    PinnedHostKVCacheBuffer,
 )
 from ..paged_kv_cache.block_manager import (
     _resolve_only_use_kv_connector_last_level_cache,
@@ -99,7 +100,9 @@ class TieredConnector:
             device_buffers,
             replicate_kv_across_tp=params.replicates_kv_across_tp,
         )
-        self._host_buffer = self._block_copy_engine.host_buffer
+        self._host_buffer: PinnedHostKVCacheBuffer = (
+            self._block_copy_engine.host_buffer
+        )
 
         if self._host_buffer.dtype != DType.uint8:
             raise ValueError("TieredConnector requires uint8 host buffer")
@@ -213,9 +216,8 @@ class TieredConnector:
                 # Disk hit -> async promote to CPU
                 host_block, _ = self._host_block_pool.alloc_block()
 
-                # Use uint8 view to avoid bfloat16 numpy incompatibility
                 assert self._host_buffer.dtype == DType.uint8
-                dest = self._host_buffer.to_numpy()[host_block.bid]
+                dest = self._host_buffer.numpy_page_view(host_block.bid)
                 future = self._disk_tier.read_block_async(block_hash, dest)
                 hits.append(
                     _CacheHit(block_hash, host_block, device_block_id, future)
@@ -439,7 +441,7 @@ class TieredConnector:
         """
         block_hash = host_block.block_hash
         assert block_hash is not None
-        src = self._host_buffer.to_numpy()[host_block.bid]
+        src = self._host_buffer.numpy_page_view(host_block.bid)
         future = self._disk_tier.write_block_async(block_hash, src)
         if future is not None:
             self._disk_blocks_written += 1
