@@ -26,7 +26,6 @@ from __future__ import annotations
 
 import copy
 import logging
-import sys
 import time
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Sequence
@@ -413,9 +412,7 @@ class ServeGraphCaptureRunner:
         # Disable progress bar in non-interactive environments (CI) where
         # carriage return doesn't work and each update prints a new line.
         for batch_size in tqdm(
-            batch_sizes,
-            desc="Capturing device graph shapes",
-            disable=not sys.stderr.isatty(),
+            batch_sizes, desc="Capturing device graph shapes"
         ):
             dispatch_entries = sorted(
                 self.dispatch_metadata(batch_size, q_max_seq_len),
