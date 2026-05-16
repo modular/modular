@@ -171,8 +171,10 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
         else:
             if ep_size % len(self.devices) != 0:
                 raise ValueError(
-                    "If you are running with expert parallelism, ep_size must"
-                    " be set to the total number of GPUs across nodes."
+                    f"ep_size={ep_size} is not divisible by the number of GPUs"
+                    f" on this node ({len(self.devices)}). ep_size must equal"
+                    f" n_gpus_per_node * n_nodes. For a single-node deployment"
+                    f" set ep_size={len(self.devices)}."
                 )
             # TODO: Support TP attention for FP8 Deepseek-V3 models.
             if quant_config is not None and not quant_config.is_nvfp4:

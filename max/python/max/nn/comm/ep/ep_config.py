@@ -13,6 +13,7 @@
 
 """Expert Parallelism (EP) Communication Configuration."""
 
+import os
 from dataclasses import dataclass
 
 from max.dtype import DType
@@ -148,6 +149,27 @@ class EPConfig:
             raise ValueError(
                 "Using allreduce as communication backend is not supported when n_nodes > 1"
             )
+
+        if self.n_nodes > 1:
+            # Multi-node EP initializes NVSHMEM via MPI at kernel launch time.
+            # A common misconfiguration is setting ep_size larger than the number
+            # of GPUs actually assigned to this pod/node — e.g. ep_size=8 but the
+            # container only receives 1 GPU. This makes n_nodes=8, triggering NVSHMEM
+            # for a phantom 8-node cluster that doesn't exist, and fails with
+            # NVSHMEMX_ERROR_INTERNAL (status:1).
+            #
+            # Multi-node launches via mpirun always set OMPI_COMM_WORLD_SIZE (the
+            # only MPI launcher used in this codebase — see utils/bmpirun.sh).
+            if "OMPI_COMM_WORLD_SIZE" not in os.environ:
+                ep_size = self.n_gpus_per_node * self.n_nodes
+                raise ValueError(
+                    f"ep_size={ep_size} with {self.n_gpus_per_node} GPU(s) on"
+                    f" this node implies {self.n_nodes}-node multi-node EP, which"
+                    f" requires NVSHMEM initialized via MPI — but"
+                    f" OMPI_COMM_WORLD_SIZE is not set. For a single-node"
+                    f" deployment set ep_size={self.n_gpus_per_node} (the number"
+                    f" of GPUs on this node)."
+                )
 
 
 def estimate_ep_memory_usage(
