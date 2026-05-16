@@ -845,36 +845,29 @@ class Graph:
                 CURRENT_GRAPH.reset(token)
 
     @contextlib.contextmanager
-    def _local_weights_and_chain(self):  # noqa: ANN202
-        """Creates a local scope for weights and chain state modifications.
-
-        Provides a context manager that creates an isolated scope where the
-        graph's weights dictionary and current chain state can be modified
-        without affecting the parent scope. Upon entering the context, the
-        current weights and chain state are saved. Any modifications made
-        within the context are automatically reverted when exiting the context,
-        restoring the original state.
-
-        This is particularly useful for operations that need to temporarily
-        modify graph state, such as building subgraphs or executing operations
-        within isolated blocks where state changes should not persist.
-        """
-        weights = self._weights.copy()
-        device_chains = self.device_chains.copy()
-        try:
-            yield
-        finally:
-            self._weights = weights
-            self.device_chains = device_chains
-
-    @contextlib.contextmanager
     def _block(self, block: mlir.Block):  # noqa: ANN202
-        with self._local_weights_and_chain():
-            current_block, self._current_block = self._current_block, block
-            try:
-                yield self._current_block
-            finally:
-                self._current_block = current_block
+        """Push ``block`` as the current insertion target, isolating per-block state.
+
+        Snapshots ``device_chains`` and the ``_weights`` dedup cache on entry
+        and restores them on exit so that block-local side effects don't leak
+        into the outer graph's chain timeline. ``_weights`` is snapshotted
+        because :meth:`add_weight` keys its cache by Python identity:
+        same-name weights with different ``Weight`` instances across blocks
+        (e.g., separate ``Weight("w", ...)`` calls in the ``true_fn`` and
+        ``false_fn`` of an ``ops.cond``) need each block to start with an
+        empty cache so each branch creates its own ``mo.constant.external``
+        op (the graph compiler resolves both to the same registry entry).
+        """
+        previous_block = self._current_block
+        previous_weights = self._weights.copy()
+        previous_chains = self.device_chains.copy()
+        self._current_block = block
+        try:
+            yield self._current_block
+        finally:
+            self._current_block = previous_block
+            self._weights = previous_weights
+            self.device_chains = previous_chains
 
     @contextlib.contextmanager
     def _pause_verification(self):  # noqa: ANN202
@@ -1054,58 +1047,6 @@ class Graph:
             ]
 
         return results, staged_op
-
-    def _build_block(
-        self,
-        block: mlir.Block,
-        block_fn: Callable[[], Iterable[Value[Any]] | Value[Any] | None],
-        block_terminator_op: mlir.Operation | mlir.OpView,
-        block_name: str,
-        expected_output_types: list[Type[Any]] | None,
-    ) -> None:
-        """Builds and verifies a block within the graph.
-
-        Args:
-            block: The MLIR block to build into
-            block_fn: Callable that generates the block's operations and returns results
-            block_terminator_op: The operation to terminate the block (for example, ``mo.YieldOp``)
-            block_name: Name of the block for error reporting
-            expected_output_types: List of expected output types for the block
-            add_chain: Whether to append the current chain to block results
-
-        Raises:
-            ValueError: If the number of results doesn't match expected outputs
-            ValueError: If any result type doesn't match the expected type
-
-        Note:
-            Manages the chain state automatically, restoring the parent chain after
-            block construction. The chain is used to track operation ordering.
-
-            It is the caller's responsibility to update the graph chain after
-            the block is built.
-        """
-        with self._block(block), _location():
-            expected_output_types = expected_output_types or []
-
-            results = block_fn()
-            if results is None:
-                results = []
-
-            results = (
-                list(results) if isinstance(results, Iterable) else [results]
-            )
-            results = [
-                r if isinstance(r, Value) else TensorValue(r) for r in results
-            ]
-            result_types = [result.type for result in results]
-            if result_types != expected_output_types:
-                raise TypeError(
-                    f"Results don't match expected types: \n{result_types=}, \n{expected_output_types=}"
-                )
-
-            _ = self._add_op(
-                block_terminator_op, self.device_chains.pack(results)
-            )
 
     def output(self, *outputs: Value[Any] | TensorValueLike) -> None:
         """Sets the output values of the graph and finalizes construction.
