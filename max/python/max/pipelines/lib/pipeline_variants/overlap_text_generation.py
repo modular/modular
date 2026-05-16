@@ -2942,6 +2942,48 @@ class OverlapTextGenerationPipeline(
 
         return async_batch
 
+    def _should_early_sync_prev_batch(self) -> bool:
+        """Return True iff the previous batch must be early-synced.
+
+        Sync happens before this iteration's CUDA host callback is enqueued
+        in `_execute_spec_decode`.
+
+        Fires only on the prefill→decode transition when structured output is
+        enabled. Prevents a race where the new callback (running on the CUDA
+        driver thread, outside the Python GIL) would call
+        `ctx.matcher.try_consume_tokens` concurrently with this thread's
+        `ctx.advance_fsm` during the normal sync path. Concurrent
+        unsynchronized access produces "doesn't satisfy the grammar" errors
+        and matcher state corruption.
+
+        All subsequent decode batches have `fsm_advanced_by_callback=True`
+        (the callback already advanced the FSM), so their sync paths never
+        touch `ctx.matcher` and full overlap is preserved — the guard does
+        not fire for them.
+
+        Gated on `structured_output.enabled`: when SO is disabled, no
+        callback is ever enqueued, so `fsm_advanced_by_callback` is always
+        False. Without this gate the guard would fire every decode step.
+
+        IMPORTANT: even when this returns True, `_prev_batch` is NOT cleared
+        by the caller. `_run_forward` needs it so `realize_future_tokens` can
+        scatter the previous batch's GPU-side EAGLE draft tokens into the
+        current batch's `draft_tokens` input. Clearing `_prev_batch` would
+        leave MAGIC placeholder tokens (42) in `model_inputs.draft_tokens`,
+        which the EAGLE model would treat as real context — its next-draft
+        predictions become garbage, propagating through every subsequent
+        `realize_future_tokens` call and keeping EAGLE acceptance near zero
+        for the entire generation (apparent hang). The early-sync result is
+        instead saved so the normal sync path below can skip re-syncing the
+        same batch.
+        """
+        return (
+            self._structured_output.enabled
+            and self._prev_batch is not None
+            and self._prev_batch.spec_decode is not None
+            and not self._prev_batch.spec_decode.fsm_advanced_by_callback
+        )
+
     @traced
     def execute(
         self,
@@ -2992,42 +3034,8 @@ class OverlapTextGenerationPipeline(
             # Spec-decode handles sampling internally.
             # Remove the condition below when SERVOPT-992 is resolved.
             if self._spec_decode_state is not None:
-                # Race-condition guard: if _prev_batch will call advance_fsm
-                # on the main thread (fsm_advanced_by_callback=False), sync it
-                # BEFORE _execute_spec_decode enqueues the new CUDA host
-                # callback.  The callback runs on the CUDA driver thread
-                # (outside the Python GIL) and calls try_consume_tokens on the
-                # same ctx.matcher objects that advance_fsm accesses on the
-                # main thread; concurrent unsynchronized access causes
-                # "doesn't satisfy the grammar" errors and matcher corruption.
-                # This only applies to the prefill→decode transition; all
-                # subsequent decode batches have fsm_advanced_by_callback=True
-                # (callback already advanced the FSM) so their sync paths
-                # never touch ctx.matcher — full overlap is preserved.
-                #
-                # The guard is gated on structured_output.enabled: when SO is
-                # disabled, no callback is ever enqueued so fsm_advanced_by_callback
-                # is always False — without this gate the guard would fire every
-                # decode step, and the MAGIC-token cascade described below would
-                # persist for the entire generation.
-                #
-                # IMPORTANT: _prev_batch is intentionally NOT cleared here.
-                # _run_forward needs it so realize_future_tokens can scatter the
-                # previous batch's GPU-side EAGLE draft tokens into the current
-                # batch's draft_tokens input.  Clearing _prev_batch here would
-                # leave MAGIC placeholder tokens (42) in model_inputs.draft_tokens,
-                # which the EAGLE model treats as real context — its next-draft
-                # predictions become garbage, and those garbage predictions
-                # propagate through every subsequent realize_future_tokens call,
-                # keeping EAGLE acceptance near zero for the entire generation
-                # (apparent hang).  The result is saved so the normal sync path
-                # below can skip re-syncing the same batch.
-                if (
-                    self._structured_output.enabled
-                    and self._prev_batch is not None
-                    and self._prev_batch.spec_decode is not None
-                    and not self._prev_batch.spec_decode.fsm_advanced_by_callback
-                ):
+                if self._should_early_sync_prev_batch():
+                    assert self._prev_batch is not None
                     _early_sync_outputs = (
                         self._prev_batch.sync_and_process_outputs()
                     )
