@@ -216,3 +216,100 @@ Binary slots (each has an `def_i<name>` in-place counterpart):
 | `def_and` / `def_iand` | [`nb_and`](https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_and) / [`nb_inplace_and`](https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_and) | `a & b` / `a &= b` |
 | `def_or` / `def_ior` | [`nb_or`](https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_or) / [`nb_inplace_or`](https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_or) | <code>a &#124; b</code> / <code>a &#124;= b</code> |
 | `def_xor` / `def_ixor` | [`nb_xor`](https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_xor) / [`nb_inplace_xor`](https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_xor) | `a ^ b` / `a ^= b` |
+
+## Implementation support code
+
+The number protocol alone has ~30 slots, and every builder method admits
+multiple user-signature flavors (pointer-receiver vs. value-receiver vs.
+mut-receiver, raising vs. non-raising, returning `PythonObject` vs. any
+`ConvertibleToPython` type). To keep that combinatorial explosion off the
+public API, an internal `_SlotInstaller` struct in `adapters.mojo` hosts
+all installation helpers as static methods (`_SlotInstaller.binary`,
+`_SlotInstaller.unary_val`, `_SlotInstaller.ternary_conv_nr`, …), and a
+sibling `_BfSlotInstaller` in `buffer.mojo` does the same for the buffer
+protocol. The handful of builder `def_*` methods then each reduce to one
+line that picks the right installer variant and forwards the user's
+function as a template parameter.
+
+### Adapter wrappers
+
+Each CPython type slot has a fixed C function signature that the
+interpreter calls directly (e.g. `tp_richcompare` is
+`PyObject *(*)(PyObject *, PyObject *, int)`). Mojo cannot register a
+user method against those signatures directly — methods take typed
+receivers, raise `PySlotError`, and return `PythonObject` rather than a
+raw `PyObjectPtr`. The adapter wrappers (`_unaryfunc_wrapper`,
+`_binaryfunc_wrapper`, `_ternaryfunc_wrapper`, `_richcompare_wrapper`,
+`_inquiry_wrapper`, `_mp_length_wrapper`, `_mp_subscript_wrapper`,
+`_mp_ass_subscript_wrapper`, `_ssizeargfunc_wrapper`,
+`_ssizeobjargproc_wrapper`, `_objobjproc_wrapper`, and
+`_bf_getbuffer_wrapper`) sit between the two worlds: each is a small
+`abi("C")` function that takes the raw `PyObjectPtr` arguments CPython
+hands it, calls `_unwrap_self` to downcast `self`, invokes the
+user-supplied `method` template parameter, and translates the result
+back to whatever C type the slot's signature requires.
+
+The wrappers also encode the per-slot error contract. For all slots, a
+typed `except e: PySlotError` block branches on `e._variant` and either
+calls `PyErr_SetString` with the matching `PyExc_*` global or — for
+binary, ternary, and rich-compare slots, where the `not_implemented`
+variant has Python-visible meaning — returns
+`Py_NewRef(Py_NotImplemented())` so CPython falls back to the reflected
+operation. Binary/ternary/richcompare wrappers also map any *prep-block*
+failure (e.g. `_unwrap_self` failing because the LHS isn't our type
+during a reflected call) to `Py_NotImplemented` rather than
+`RuntimeError`, matching CPython's expectation for reflected dispatch.
+
+### `_lift_*` and `_conv_*` helpers
+
+User slot methods come in several shapes. A handler can take a
+`UnsafePointer[T, MutAnyOrigin]` (the canonical form), a value receiver
+`T`, or a `mut T`; it can be raising or non-raising; and number-protocol
+return values can be either `PythonObject` or any type conforming to
+`ConvertibleToPython`. Multiplying these axes out would force every
+adapter wrapper to ship in a dozen variants. Instead, a single canonical
+wrapper consumes a `def(UnsafePointer[T, MutAnyOrigin], …) raises
+PySlotError -> PythonObject` shape, and a family of tiny `_lift_*` /
+`_conv_*` template functions adapts each user signature to that shape
+before the wrapper sees it.
+
+The `_lift_*` helpers handle receiver and raising-ness — for example
+`_lift_val_int_to_obj` takes a value-receiver, integer-arg, raising
+method and produces a pointer-receiver version that calls
+`method(ptr[], index)`. The `_conv_*` helpers handle the return type —
+`_conv_ptr_r_binary` takes a method returning `R: ConvertibleToPython`
+and produces one returning `PythonObject` by routing through `_to_py[R]`
+(which itself translates `to_python_object`'s plain `Error` into
+`PySlotError.value_error`). The builder `def_*` overloads then become
+one-liners: `_SlotInstaller.binary_val[…]` already knows it needs
+`_lift_val_obj_to_obj`, `binary_conv_r[…]` knows it needs
+`_conv_ptr_r_binary`, and so on.
+
+### `PySlotError` — the Mojo-native slot error type
+
+CPython slots have a richer error contract than a single `Error` type can
+express: a `tp_richcompare` slot may want to *raise* `TypeError`, *raise*
+`ValueError`, or *return* `Py_NotImplemented`; a `sq_ass_item` slot picks
+between `IndexError` and `TypeError`; and so on. Mojo today allows only
+one error type per `raises` clause and only one `except` clause per `try`
+block (see [Representing multiple error conditions](https://docs.modular.com/mojo/manual/errors#representing-multiple-error-conditions)),
+so we collapse the contract into a single enumerated type. User slot
+methods declare `raises PySlotError` and construct values via static
+factories:
+
+```mojo
+raise PySlotError.index_error("index out of range")
+raise PySlotError.type_error("expected int")
+raise PySlotError.not_implemented()
+```
+
+The wrapper's `except e:` block infers `e: PySlotError`, branches on
+`e._variant`, and either calls `cpython.PyErr_SetString(e.pyexc_global_name(), e.msg)`
+for the real-exception variants or returns `Py_NewRef(cpython.Py_NotImplemented())`
+for the `not_implemented` variant. The variants currently supported are
+`index_error`, `type_error`, `value_error`, `key_error`,
+`attribute_error`, `overflow_error`, `runtime_error`, and
+`not_implemented`; extending the set is a localized change in
+`utils.mojo` plus one branch in `pyexc_global_name()`.
+
+
