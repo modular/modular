@@ -378,7 +378,7 @@ LogicalResult ParamInf::inferFromRVType(ASTExprAnd<AnyValue> operand,
   // be any of these things, so we need to emit an error.  If out failure is
   // due to an uninferred parameter, and if that parameter had a default, then
   // we can bind it.
-  if (savedFailureInfo.first.getIfDependentOnUnresolved()) {
+  if (savedFailureInfo.failureReason.getIfDependentOnUnresolved()) {
     // If we're in the parameter binding list *for a call* then we can
     // re-evaluate this binding after the arguments of the call are resolved.
     //
@@ -408,7 +408,7 @@ LogicalResult ParamInf::inferFromRVType(ASTExprAnd<AnyValue> operand,
     // Otherwise, check to see if this is due to an uninferred param with a
     // default value.  If so, bind the default and try again.
     size_t paramIdx =
-        savedFailureInfo.first.getIfDependentOnUnresolved().value();
+        savedFailureInfo.failureReason.getIfDependentOnUnresolved().value();
     if (auto value = declaredParamPogs.getDefault(paramIdx)) {
       assert(!evaluator.getIndexBindings()[paramIdx] &&
              "shouldn't have inferred this if we failed because of it");
