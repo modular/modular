@@ -115,7 +115,8 @@ ParamMatcher::ParamMatcher(const ExprNode *expr, InferenceState &state,
 
 ParamMatcher::FailableScope::FailableScope(ParamMatcher &matcher)
     : matcher(matcher),
-      inferredIdx(matcher.state.evaluator.getNumIndexBindings()) {
+      inferredIdx(matcher.state.evaluator.getNumIndexBindings()),
+      numImplicitConversions(matcher.state.numImplicitConversions) {
   // Keep track of which bindings are inferred at the start of the scope.
   for (unsigned i = 0, e = inferredIdx.size(); i != e; ++i)
     if (matcher.state.evaluator.getIndexBindings()[i])
@@ -157,7 +158,7 @@ void ParamMatcher::FailableScope::revert() {
   for (unsigned i = 0, e = inferredIdx.size(); i != e; ++i)
     if (!inferredIdx[i])
       matcher.state.evaluator.overwriteIndexBinding(i, nullptr);
-
+  matcher.state.numImplicitConversions = numImplicitConversions;
   matcher.failureReason.reset();
 }
 

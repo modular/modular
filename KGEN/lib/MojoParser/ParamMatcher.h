@@ -133,6 +133,7 @@ public:
   /// out - making sure to remove any bindings that were tentatively inferred.
   struct FailableScope {
     FailableScope(ParamMatcher &matcher);
+    FailableScope(const FailableScope &other) = default;
 
     /// This reverts the error code and any matches that were formed between the
     /// creation of the FailableScope and its call.
@@ -140,22 +141,29 @@ public:
 
     /// Save the current state of the matcher in an error state so we can
     /// reapply it later.
-    using SavedStateTy = std::pair<MatchFailure, SmallVector<TypedAttr, 8>>;
+    struct SavedStateTy {
+      MatchFailure failureReason;
+      SmallVector<TypedAttr, 8> values;
+      size_t numImplicitConversions;
+    };
     SavedStateTy saveState() {
       assert(matcher.failureReason && "not in error state");
-      return {*matcher.failureReason,
-              SmallVector<TypedAttr, 8>(
-                  matcher.state.evaluator.getIndexBindings())};
+      return {
+          *matcher.failureReason,
+          SmallVector<TypedAttr, 8>(matcher.state.evaluator.getIndexBindings()),
+          matcher.state.numImplicitConversions};
     }
     static void restore(SavedStateTy savedState, ParamMatcher &matcher) {
-      matcher.failureReason = savedState.first;
-      for (auto [idx, binding] : llvm::enumerate(savedState.second))
+      matcher.failureReason = savedState.failureReason;
+      for (auto [idx, binding] : llvm::enumerate(savedState.values))
         matcher.state.evaluator.overwriteIndexBinding(idx, binding);
+      matcher.state.numImplicitConversions = savedState.numImplicitConversions;
     }
 
   private:
     ParamMatcher &matcher;
     llvm::BitVector inferredIdx;
+    size_t numImplicitConversions;
   };
 
 private:

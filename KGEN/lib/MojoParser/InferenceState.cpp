@@ -49,6 +49,10 @@ LogicalResult InferenceState::setInferredValue(size_t paramIdx,
   paramVal = evaluator.getReboundAttribute(paramVal);
   ASTType targetType = evaluator.getReboundType(declaredParamTypes[paramIdx]);
 
+  // If the parameter being inferred is a type, and if the source value is
+  // non-mterializable, infer to the materialized type. This ensures that things
+  // like `def foo[T: AnyType](a: T):` infer `foo(1)` to T=Int instead of
+  // IntLiteral.
   if (!isDefaulted && LIT::isTypeExpr(paramVal)) {
     IREmitter emitter(declScope, EC_TypeParamValue);
     if (auto nmTarget = ASTType(paramVal).getNonmaterializableTarget(shared)) {
