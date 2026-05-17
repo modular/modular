@@ -1147,6 +1147,14 @@ async def openai_create_chat_completion(
         # generate constrained decoding grammars for tool calls and/or
         # response_format.
         parser = get_tool_parser(request.app)
+        # Signal the parser about tool_choice so it stays aligned with
+        # any tokens the tokenizer injected into the prompt.
+        if (
+            parser is not None
+            and completion_request.tool_choice is not None
+            and hasattr(parser, "apply_tool_choice")
+        ):
+            parser.apply_tool_choice(completion_request.tool_choice)
         has_grammar_parser = parser is not None and hasattr(
             parser, "generate_tool_call_grammar"
         )
@@ -1255,6 +1263,13 @@ async def openai_create_chat_completion(
         # exclusive on TextGenerationRequest, so omit ``messages`` in that
         # case. If both are sent on the wire, ``prompt_tokens`` wins.
         prompt_token_ids = completion_request.prompt_tokens
+        chat_template_options = dict(
+            completion_request.chat_template_kwargs or {}
+        )
+        if completion_request.tool_choice is not None:
+            chat_template_options["tool_choice"] = (
+                completion_request.tool_choice
+            )
         token_request = TextGenerationRequest(
             request_id=RequestID(request_id),
             model_name=completion_request.model,
@@ -1272,7 +1287,7 @@ async def openai_create_chat_completion(
                 request, completion_request.target_endpoint
             ),
             dkv_cache_hint=completion_request.dkv_cache_hint,
-            chat_template_options=completion_request.chat_template_kwargs,
+            chat_template_options=chat_template_options or None,
         )
 
         if completion_request.stream:

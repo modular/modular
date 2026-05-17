@@ -27,6 +27,8 @@ from max.interfaces import (
 from max.pipelines.lib.reasoning import register
 from max.pipelines.lib.tokenizer import convert_token_to_id
 
+EMPTY_THINKING_BLOCK = "<|channel>thought\n<channel|>"
+
 
 @register("gemma4")
 class Gemma4ReasoningParser(ReasoningParser):

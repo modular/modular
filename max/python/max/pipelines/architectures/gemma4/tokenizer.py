@@ -40,10 +40,12 @@ from transformers import AutoTokenizer, GenerationConfig
 from .context import Gemma4Context
 from .image_processor import Gemma4ImageProcessor
 from .processing_utils import load_processor_config
+from .reasoning import EMPTY_THINKING_BLOCK
 from .tool_parser import (
     STRING_DELIM,
     TOOL_CALL_END,
     TOOL_CALL_START,
+    prompt_for_tool_choice,
 )
 from .video_processor import Gemma4VideoProcessor, VideoMetadata
 
@@ -238,6 +240,7 @@ class Gemma4Tokenizer(TextAndVisionTokenizer):
         tools: list[TextGenerationRequestTool] | None = None,
         **chat_template_options: Any,
     ) -> str:
+        tool_choice = chat_template_options.pop("tool_choice", None)
         chat_template_options = {
             "add_generation_prompt": True,
             **chat_template_options,
@@ -249,6 +252,23 @@ class Gemma4Tokenizer(TextAndVisionTokenizer):
             **chat_template_options,
         )
         assert isinstance(templated_message, str)
+
+        tool_choice_prompt = (
+            prompt_for_tool_choice(tool_choice) if tool_choice else None
+        )
+        if tool_choice_prompt is None:
+            return templated_message
+
+        # TODO(MXSERV-86): Support tool_choice=required with thinking.
+        # When thinking is enabled the template does NOT pre-fill a
+        # closed thinking block, so the model tries to reason first
+        # and never produces the expected tool-call continuation.
+        # Inject an empty closed channel to suppress thinking.
+        thinking_enabled = chat_template_options.get("enable_thinking", True)
+        if thinking_enabled:
+            templated_message += EMPTY_THINKING_BLOCK
+
+        templated_message += tool_choice_prompt
         return templated_message
 
     async def decode(

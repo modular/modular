@@ -37,6 +37,32 @@ TOOL_CALL_PATTERN = re.compile(
 )
 
 
+def forced_tool_name(tool_choice: str | dict[str, Any]) -> str | None:
+    """Return the function name if *tool_choice* forces a specific tool."""
+    if not isinstance(tool_choice, dict):
+        return None
+    choice_type = tool_choice.get("type")
+    if choice_type != "function":
+        return None
+    function = tool_choice.get("function")
+    if not isinstance(function, dict):
+        return None
+    name = function.get("name")
+    if not name:
+        return None
+    return name
+
+
+def prompt_for_tool_choice(tool_choice: str | dict[str, Any]) -> str | None:
+    """Return the prompt prefix implied by *tool_choice*, or ``None``."""
+    if tool_choice == "required":
+        return TOOL_CALL_START
+    name = forced_tool_name(tool_choice)
+    if name:
+        return f"{TOOL_CALL_START}call:{name}" + "{"
+    return None
+
+
 def _parse_gemma4_value(value_str: str) -> object:
     """Parse a single Gemma4 value (after key:) into a Python object."""
     value_str = value_str.strip()
@@ -279,10 +305,14 @@ def _tool_call_id() -> str:
     return str(uuid.uuid4()).replace("-", "")[:8]
 
 
+# TODO(MODELS-1456): Implement generate_tool_call_grammar for Gemma 4 so
+# tool_choice can use grammar-based constrained decoding instead of prompt
+# prefilling.
 @register("gemma4")
 class Gemma4ToolParser:
     def __init__(self) -> None:
         self._buffer: str = ""
+        self._prefill: str = ""
         # Walking cursor into ``_buffer``. Everything before this has either
         # been emitted as content or consumed as a complete tool call.
         self._sent_idx: int = 0
@@ -296,9 +326,19 @@ class Gemma4ToolParser:
         # between complete calls.
         self._in_tool_section: bool = False
 
+    def apply_tool_choice(self, tool_choice: str | dict[str, Any]) -> None:
+        """Aligns the parser with any tokens the tokenizer injected for *tool_choice*."""
+        tool_choice_prompt = prompt_for_tool_choice(tool_choice)
+        if tool_choice_prompt is not None:
+            self._buffer = tool_choice_prompt
+            self._prefill = tool_choice_prompt
+
     def parse_complete(self, response: str) -> ParsedToolResponse:
         """Parses a complete response into tool calls."""
         tool_calls: list[ParsedToolCall] = []
+
+        # Prepend any prefilled prompt tokens so the regex can match.
+        response = self._prefill + response
 
         # Check if response contains tool calls section
         if TOOL_CALL_START not in response:
@@ -421,7 +461,7 @@ class Gemma4ToolParser:
 
     def reset(self) -> None:
         """Resets internal state for a new streaming session."""
-        self._buffer = ""
+        self._buffer = self._prefill
         self._sent_idx = 0
         self._next_call_index = 0
         self._in_tool_section = False
