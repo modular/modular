@@ -411,9 +411,14 @@ class Gemma4Tokenizer(TextAndVisionTokenizer):
             encoded_prompt.shape[0], self.max_length, max_new_tokens
         )
 
-        json_schema = (
-            json.dumps(request.response_format.get("json_schema", None))
+        response_format_schema = (
+            request.response_format.get("json_schema")
             if request.response_format
+            else None
+        )
+        json_schema = (
+            json.dumps(response_format_schema)
+            if response_format_schema
             else None
         )
 
