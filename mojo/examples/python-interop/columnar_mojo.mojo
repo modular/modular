@@ -36,12 +36,23 @@ from std.python import Python, PythonObject
 from std.python.bindings import PythonModuleBuilder
 from std.ffi import _Global
 
-from std.python.utils import NotImplementedError, RichCompareOps
+from std.python.utils import PySlotError, RichCompareOps
 from std.python.builders import (
     TypeProtocolBuilder,
     MappingProtocolBuilder,
     NumberProtocolBuilder,
 )
+
+
+def _alloc[
+    T: Movable & ImplicitlyDestructible
+](var value: T) raises PySlotError -> PythonObject:
+    """Translate `PythonObject(alloc=...)`'s plain `Error` into `PySlotError`.
+    """
+    try:
+        return PythonObject(alloc=value^)
+    except e:
+        raise PySlotError.runtime_error(String(e))
 
 comptime Coord1DColumn = List[Float64]
 
@@ -149,29 +160,45 @@ struct DataFrame(Defaultable, Movable, Writable):
     # Mapping protocol
     # ------------------------------------------------------------------
 
-    def py__len__(self) raises -> Int:
+    def py__len__(self) raises PySlotError -> Int:
         return len(self.pos_x)
 
-    def py__getitem__(self, index: PythonObject) raises -> PythonObject:
-        var i = Int(py=index)
+    def py__getitem__(
+        self, index: PythonObject
+    ) raises PySlotError -> PythonObject:
+        var i: Int
+        try:
+            i = Int(py=index)
+        except e:
+            raise PySlotError.type_error(String(e))
         var length = len(self.pos_x)
         if i < 0 or i >= length:
-            raise Error("index out of range")
-        return Python().tuple(self.pos_x[i], self.pos_y[i])
+            raise PySlotError.index_error("index out of range")
+        try:
+            return Python().tuple(self.pos_x[i], self.pos_y[i])
+        except e:
+            raise PySlotError.runtime_error(String(e))
 
     def py__setitem__(
         mut self,
         index: PythonObject,
         value: Variant[PythonObject, Int],
-    ) raises -> None:
-        var i = Int(py=index)
+    ) raises PySlotError -> None:
+        var i: Int
+        try:
+            i = Int(py=index)
+        except e:
+            raise PySlotError.type_error(String(e))
         var length = len(self.pos_x)
         if i < 0 or i >= length:
-            raise Error("index out of range")
+            raise PySlotError.index_error("index out of range")
         if value.isa[PythonObject]():
             # Assignment: value is a (x, y) tuple.
-            self.pos_x[i] = Float64(py=value[PythonObject][0])
-            self.pos_y[i] = Float64(py=value[PythonObject][1])
+            try:
+                self.pos_x[i] = Float64(py=value[PythonObject][0])
+                self.pos_y[i] = Float64(py=value[PythonObject][1])
+            except e:
+                raise PySlotError.type_error(String(e))
         else:
             # Deletion (value is null / Int(0)).
             _ = self.pos_x.pop(i)
@@ -185,23 +212,28 @@ struct DataFrame(Defaultable, Movable, Writable):
         self,
         other: PythonObject,
         op: Int,
-    ) raises -> Bool:
+    ) raises PySlotError -> Bool:
         """Compare DataFrames by bounding-box area.
 
         Only LT and EQ are implemented; all other operations raise
-        NotImplementedError so Python falls back to the reflected call.
+        `PySlotError.not_implemented()` so Python falls back to the reflected
+        call.
         """
         var invocation = "{}rich_compare[{}]".format(
             Int(UnsafePointer(to=self)), op
         )
         var call_count = _get_global_call_count()
         call_count[][invocation] = call_count[].get(invocation, 0) + 1
-        var other_df = other.downcast_value_ptr[Self]()
+        var other_df: UnsafePointer[Self, MutAnyOrigin]
+        try:
+            other_df = other.downcast_value_ptr[Self]()
+        except e:
+            raise PySlotError.type_error(String(e))
         if op == RichCompareOps.Py_LT:
             return self._bounding_box_area < other_df[]._bounding_box_area
         if op == RichCompareOps.Py_EQ:
             return self._bounding_box_area == other_df[]._bounding_box_area
-        raise NotImplementedError()
+        raise PySlotError.not_implemented()
 
     # ------------------------------------------------------------------
     # Number protocol — unary
@@ -210,33 +242,35 @@ struct DataFrame(Defaultable, Movable, Writable):
     @staticmethod
     def py__neg__(
         self_ptr: UnsafePointer[Self, MutAnyOrigin]
-    ) raises -> PythonObject:
+    ) raises PySlotError -> PythonObject:
         var result_x = Coord1DColumn(capacity=len(self_ptr[].pos_x))
         var result_y = Coord1DColumn(capacity=len(self_ptr[].pos_y))
         for v in self_ptr[].pos_x:
             result_x.append(-v)
         for v in self_ptr[].pos_y:
             result_y.append(-v)
-        return PythonObject(alloc=DataFrame(result_x^, result_y^))
+        return _alloc(DataFrame(result_x^, result_y^))
 
     @staticmethod
     def py__abs__(
         self_ptr: UnsafePointer[Self, MutAnyOrigin]
-    ) raises -> PythonObject:
+    ) raises PySlotError -> PythonObject:
         var result_x = Coord1DColumn(capacity=len(self_ptr[].pos_x))
         var result_y = Coord1DColumn(capacity=len(self_ptr[].pos_y))
         for v in self_ptr[].pos_x:
             result_x.append(abs(v))
         for v in self_ptr[].pos_y:
             result_y.append(abs(v))
-        return PythonObject(alloc=DataFrame(result_x^, result_y^))
+        return _alloc(DataFrame(result_x^, result_y^))
 
     # ------------------------------------------------------------------
     # Number protocol — bool
     # ------------------------------------------------------------------
 
     @staticmethod
-    def py__bool__(self_ptr: UnsafePointer[Self, MutAnyOrigin]) raises -> Bool:
+    def py__bool__(
+        self_ptr: UnsafePointer[Self, MutAnyOrigin]
+    ) raises PySlotError -> Bool:
         return len(self_ptr[].pos_x) > 0
 
     # ------------------------------------------------------------------
@@ -246,7 +280,7 @@ struct DataFrame(Defaultable, Movable, Writable):
     @staticmethod
     def py__add__(
         self_ptr: UnsafePointer[Self, MutAnyOrigin], other: PythonObject
-    ) raises -> PythonObject:
+    ) raises PySlotError -> PythonObject:
         """Concatenate two DataFrames row-wise. Returns NotImplemented for non-DataFrames.
         """
         try:
@@ -264,12 +298,12 @@ struct DataFrame(Defaultable, Movable, Writable):
                 result_y.append(v)
             return PythonObject(alloc=DataFrame(result_x^, result_y^))
         except:
-            raise NotImplementedError()
+            raise PySlotError.not_implemented()
 
     @staticmethod
     def py__mul__(
         self_ptr: UnsafePointer[Self, MutAnyOrigin], other: PythonObject
-    ) raises -> PythonObject:
+    ) raises PySlotError -> PythonObject:
         """Scale all coordinates by a numeric scalar. Returns NotImplemented otherwise.
         """
         try:
@@ -282,7 +316,7 @@ struct DataFrame(Defaultable, Movable, Writable):
                 result_y.append(v * scale)
             return PythonObject(alloc=DataFrame(result_x^, result_y^))
         except:
-            raise NotImplementedError()
+            raise PySlotError.not_implemented()
 
     # ------------------------------------------------------------------
     # Number protocol — ternary
@@ -293,16 +327,20 @@ struct DataFrame(Defaultable, Movable, Writable):
         self_ptr: UnsafePointer[Self, MutAnyOrigin],
         exp: PythonObject,
         mod: PythonObject,
-    ) raises -> PythonObject:
+    ) raises PySlotError -> PythonObject:
         """Raise all coordinates to a power. The `mod` argument is ignored."""
-        var e = Float64(py=exp)
+        var e: Float64
+        try:
+            e = Float64(py=exp)
+        except err:
+            raise PySlotError.type_error(String(err))
         var result_x = Coord1DColumn(capacity=len(self_ptr[].pos_x))
         var result_y = Coord1DColumn(capacity=len(self_ptr[].pos_y))
         for v in self_ptr[].pos_x:
             result_x.append(v**e)
         for v in self_ptr[].pos_y:
             result_y.append(v**e)
-        return PythonObject(alloc=DataFrame(result_x^, result_y^))
+        return _alloc(DataFrame(result_x^, result_y^))
 
     def write_to(self, mut writer: Some[Writer]):
         writer.write("DataFrame( length=", len(self.pos_x), ")")

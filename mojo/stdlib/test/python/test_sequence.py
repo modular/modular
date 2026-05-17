@@ -40,6 +40,14 @@ def _run_sequence_assertions(cls: type) -> None:
     assert obj[0] == 10  # neighbours unchanged
     assert obj[2] == 30
 
+    # __setitem__ out-of-range raises IndexError specifically (the
+    # ssizeobjargproc wrapper maps PySlotError.index_error -> PyExc_IndexError).
+    try:
+        obj[99] = 0
+        raise Exception("Expected IndexError for out-of-range setitem")
+    except IndexError as ex:
+        assert "range" in str(ex)
+
     # __delitem__ (sq_ass_item — deletion)
     d = cls.from_list([1, 2, 3])
     del d[0]

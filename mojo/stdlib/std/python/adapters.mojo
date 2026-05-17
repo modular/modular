@@ -29,45 +29,55 @@ from std.python.bindings import PythonTypeBuilder
 from std.python.conversions import ConvertibleToPython
 from std.utils import Variant
 
-from .utils import NotImplementedError
+from .utils import PySlotError
 
 
 @always_inline
 def _unwrap_self[
     T: ImplicitlyDestructible
-](py_self: PyObjectPtr) -> UnsafePointer[T, MutAnyOrigin]:
-    """Downcast a raw PyObjectPtr to a typed Mojo pointer, aborting on failure.
+](py_self: PyObjectPtr) raises -> UnsafePointer[T, MutAnyOrigin]:
+    """Downcast a raw PyObjectPtr to a typed Mojo pointer.
     """
-    try:
-        return PythonObject(from_borrowed=py_self).downcast_value_ptr[T]()
-    except e:
-        abort(
-            String("Python method receiver did not have the expected type: ", e)
-        )
+    return PythonObject(from_borrowed=py_self).downcast_value_ptr[T]()
 
 
 def _mp_length_wrapper[
     self_type: ImplicitlyDestructible,
-    method: def(UnsafePointer[self_type, MutAnyOrigin]) thin raises -> Int,
+    method: def(
+        UnsafePointer[self_type, MutAnyOrigin]
+    ) thin raises PySlotError -> Int,
 ](py_self: PyObjectPtr) abi("C") -> Py_ssize_t:
     """CPython `lenfunc` adapter for the `mp_length` slot (__len__).
 
+    `method` declares `raises PySlotError`; the wrapper dispatches on the
+    variant to the matching `PyExc_*` global. `not_implemented` has no
+    Python meaning here and maps to `RuntimeError`.
+
     Parameters:
         self_type: The Mojo struct type whose instances back the Python object.
-        method: User function `def(self: UnsafePointer[self_type, MutAnyOrigin]) raises -> Int`.
+        method: User function
+            `def(self: UnsafePointer[self_type, MutAnyOrigin]) raises PySlotError -> Int`.
 
     Returns:
         Length as `Py_ssize_t`, or -1 with an exception set on error.
     """
     ref cpython = Python().cpython()
+    var self_ptr: UnsafePointer[self_type, MutAnyOrigin]
     try:
-        var result = method(_unwrap_self[self_type](py_self))
-        return Py_ssize_t(result)
+        self_ptr = _unwrap_self[self_type](py_self)
     except e:
-        var error_type = cpython.get_error_global("PyExc_Exception")
+        var error_type = cpython.get_error_global("PyExc_RuntimeError")
         var msg = String(e)
         cpython.PyErr_SetString(
             error_type, msg.as_c_string_slice().unsafe_ptr()
+        )
+        return Py_ssize_t(-1)
+    try:
+        return Py_ssize_t(method(self_ptr))
+    except e:
+        var error_type = cpython.get_error_global(e.pyexc_global_name())
+        cpython.PyErr_SetString(
+            error_type, e.msg.as_c_string_slice().unsafe_ptr()
         )
         return Py_ssize_t(-1)
 
@@ -76,29 +86,36 @@ def _mp_subscript_wrapper[
     self_type: ImplicitlyDestructible,
     method: def(
         UnsafePointer[self_type, MutAnyOrigin], PythonObject
-    ) thin raises -> PythonObject,
+    ) thin raises PySlotError -> PythonObject,
 ](py_self: PyObjectPtr, key: PyObjectPtr) abi("C") -> PyObjectPtr:
     """CPython `binaryfunc` adapter for the `mp_subscript` slot (__getitem__).
 
     Parameters:
         self_type: The Mojo struct type whose instances back the Python object.
-        method: User function `def(self: UnsafePointer[self_type, MutAnyOrigin], key: PythonObject) raises -> PythonObject`.
+        method: User function
+            `def(self: UnsafePointer[self_type, MutAnyOrigin], key: PythonObject) raises PySlotError -> PythonObject`.
 
     Returns:
         New reference to the result, or null with an exception set on error.
     """
     ref cpython = Python().cpython()
+    var self_ptr: UnsafePointer[self_type, MutAnyOrigin]
     try:
-        var result = method(
-            _unwrap_self[self_type](py_self),
-            PythonObject(from_borrowed=key),
-        )
-        return result.steal_data()
+        self_ptr = _unwrap_self[self_type](py_self)
     except e:
-        var error_type = cpython.get_error_global("PyExc_Exception")
+        var error_type = cpython.get_error_global("PyExc_RuntimeError")
         var msg = String(e)
         cpython.PyErr_SetString(
             error_type, msg.as_c_string_slice().unsafe_ptr()
+        )
+        return PyObjectPtr()
+    try:
+        var result = method(self_ptr, PythonObject(from_borrowed=key))
+        return result.steal_data()
+    except e:
+        var error_type = cpython.get_error_global(e.pyexc_global_name())
+        cpython.PyErr_SetString(
+            error_type, e.msg.as_c_string_slice().unsafe_ptr()
         )
         return PyObjectPtr()
 
@@ -109,7 +126,7 @@ def _mp_ass_subscript_wrapper[
         UnsafePointer[self_type, MutAnyOrigin],
         PythonObject,
         Variant[PythonObject, Int],
-    ) thin raises -> None,
+    ) thin raises PySlotError -> None,
 ](py_self: PyObjectPtr, key: PyObjectPtr, value: PyObjectPtr) abi("C") -> c_int:
     """CPython `objobjargproc` adapter for the `mp_ass_subscript` slot.
 
@@ -121,28 +138,36 @@ def _mp_ass_subscript_wrapper[
     Parameters:
         self_type: The Mojo struct type whose instances back the Python object.
         method: User function with signature
-            `def(self, key, value: Variant[PythonObject, Int]) raises -> None`.
+            `def(self, key, value: Variant[PythonObject, Int]) raises PySlotError -> None`.
 
     Returns:
         0 on success, -1 with an exception set on error.
     """
     comptime PassedValue = Variant[PythonObject, Int]
     ref cpython = Python().cpython()
+    var self_ptr: UnsafePointer[self_type, MutAnyOrigin]
+    var key_obj: PythonObject
+    var passed_value: PassedValue
     try:
-        var passed_value = PassedValue(
+        self_ptr = _unwrap_self[self_type](py_self)
+        key_obj = PythonObject(from_borrowed=key)
+        passed_value = PassedValue(
             PythonObject(from_borrowed=value)
         ) if value else PassedValue(Int(0))
-        method(
-            _unwrap_self[self_type](py_self),
-            PythonObject(from_borrowed=key),
-            passed_value,
-        )
-        return c_int(0)
     except e:
-        var error_type = cpython.get_error_global("PyExc_Exception")
+        var error_type = cpython.get_error_global("PyExc_RuntimeError")
         var msg = String(e)
         cpython.PyErr_SetString(
             error_type, msg.as_c_string_slice().unsafe_ptr()
+        )
+        return c_int(-1)
+    try:
+        method(self_ptr, key_obj, passed_value)
+        return c_int(0)
+    except e:
+        var error_type = cpython.get_error_global(e.pyexc_global_name())
+        cpython.PyErr_SetString(
+            error_type, e.msg.as_c_string_slice().unsafe_ptr()
         )
         return c_int(-1)
 
@@ -151,26 +176,36 @@ def _unaryfunc_wrapper[
     self_type: ImplicitlyDestructible,
     method: def(
         UnsafePointer[self_type, MutAnyOrigin]
-    ) thin raises -> PythonObject,
+    ) thin raises PySlotError -> PythonObject,
 ](py_self: PyObjectPtr) abi("C") -> PyObjectPtr:
     """CPython `unaryfunc` adapter for unary nb_ slots (__neg__, __abs__, etc.).
 
     Parameters:
         self_type: The Mojo struct type whose instances back the Python object.
-        method: User function `def(self: UnsafePointer[self_type, MutAnyOrigin]) raises -> PythonObject`.
+        method: User function
+            `def(self: UnsafePointer[self_type, MutAnyOrigin]) raises PySlotError -> PythonObject`.
 
     Returns:
         New reference to the result, or null with an exception set on error.
     """
     ref cpython = Python().cpython()
+    var self_ptr: UnsafePointer[self_type, MutAnyOrigin]
     try:
-        var result = method(_unwrap_self[self_type](py_self))
-        return result.steal_data()
+        self_ptr = _unwrap_self[self_type](py_self)
     except e:
-        var error_type = cpython.get_error_global("PyExc_Exception")
+        var error_type = cpython.get_error_global("PyExc_RuntimeError")
         var msg = String(e)
         cpython.PyErr_SetString(
             error_type, msg.as_c_string_slice().unsafe_ptr()
+        )
+        return PyObjectPtr()
+    try:
+        var result = method(self_ptr)
+        return result.steal_data()
+    except e:
+        var error_type = cpython.get_error_global(e.pyexc_global_name())
+        cpython.PyErr_SetString(
+            error_type, e.msg.as_c_string_slice().unsafe_ptr()
         )
         return PyObjectPtr()
 
@@ -179,38 +214,44 @@ def _binaryfunc_wrapper[
     self_type: ImplicitlyDestructible,
     method: def(
         UnsafePointer[self_type, MutAnyOrigin], PythonObject
-    ) thin raises -> PythonObject,
+    ) thin raises PySlotError -> PythonObject,
 ](lhs: PyObjectPtr, rhs: PyObjectPtr) abi("C") -> PyObjectPtr:
     """CPython `binaryfunc` adapter for binary nb_ slots (__add__, __mul__, etc.).
 
-    If `method` raises `NotImplementedError` (by name), the wrapper returns
+    If `method` raises `PySlotError.not_implemented()` the wrapper returns
     `Py_NotImplemented`, signalling Python to try the reflected operation.
+    Other variants map to the corresponding `PyExc_*`.
 
     Parameters:
         self_type: The Mojo struct type whose instances back the Python object.
         method: User function
-            `def(self: UnsafePointer[self_type, MutAnyOrigin], other: PythonObject) raises -> PythonObject`.
+            `def(self: UnsafePointer[self_type, MutAnyOrigin], other: PythonObject) raises PySlotError -> PythonObject`.
 
     Returns:
         New reference to the result, `Py_NotImplemented`, or null on error.
     """
     ref cpython = Python().cpython()
+    var self_ptr: UnsafePointer[self_type, MutAnyOrigin]
+    var rhs_obj: PythonObject
     try:
-        var result = method(
-            _unwrap_self[self_type](lhs),
-            PythonObject(from_borrowed=rhs),
-        )
-        return result.steal_data()
+        self_ptr = _unwrap_self[self_type](lhs)
+        rhs_obj = PythonObject(from_borrowed=rhs)
     except e:
+        var error_type = cpython.get_error_global("PyExc_RuntimeError")
         var msg = String(e)
-        if NotImplementedError.name == msg:
-            var not_implemented = cpython.lib.call[
-                "Py_GetConstantBorrowed", PyObjectPtr
-            ](4)
-            return cpython.Py_NewRef(not_implemented)
-        var error_type = cpython.get_error_global("PyExc_Exception")
         cpython.PyErr_SetString(
             error_type, msg.as_c_string_slice().unsafe_ptr()
+        )
+        return PyObjectPtr()
+    try:
+        var result = method(self_ptr, rhs_obj)
+        return result.steal_data()
+    except e:
+        if e._variant == PySlotError._NOT_IMPLEMENTED:
+            return cpython.Py_NewRef(cpython.Py_NotImplemented())
+        var error_type = cpython.get_error_global(e.pyexc_global_name())
+        cpython.PyErr_SetString(
+            error_type, e.msg.as_c_string_slice().unsafe_ptr()
         )
         return PyObjectPtr()
 
@@ -219,19 +260,20 @@ def _ternaryfunc_wrapper[
     self_type: ImplicitlyDestructible,
     method: def(
         UnsafePointer[self_type, MutAnyOrigin], PythonObject, PythonObject
-    ) thin raises -> PythonObject,
+    ) thin raises PySlotError -> PythonObject,
 ](py_self: PyObjectPtr, other: PyObjectPtr, mod: PyObjectPtr) abi(
     "C"
 ) -> PyObjectPtr:
     """CPython `ternaryfunc` adapter for nb_power / nb_inplace_power (__pow__).
 
-    If `method` raises `NotImplementedError` (by name), the wrapper returns
+    If `method` raises `PySlotError.not_implemented()` the wrapper returns
     `Py_NotImplemented`, signalling Python to try the reflected operation.
+    Other variants map to the corresponding `PyExc_*`.
 
     Parameters:
         self_type: The Mojo struct type whose instances back the Python object.
         method: User function
-            `def(self, other, mod: PythonObject) raises -> PythonObject`
+            `def(self, other, mod: PythonObject) raises PySlotError -> PythonObject`
             where `mod` is typically `None` unless the three-argument form
             `pow(base, exp, mod)` is used.
 
@@ -239,49 +281,67 @@ def _ternaryfunc_wrapper[
         New reference to the result, `Py_NotImplemented`, or null on error.
     """
     ref cpython = Python().cpython()
+    var self_ptr: UnsafePointer[self_type, MutAnyOrigin]
+    var other_obj: PythonObject
+    var mod_obj: PythonObject
     try:
-        var result = method(
-            _unwrap_self[self_type](py_self),
-            PythonObject(from_borrowed=other),
-            PythonObject(from_borrowed=mod),
-        )
-        return result.steal_data()
+        self_ptr = _unwrap_self[self_type](py_self)
+        other_obj = PythonObject(from_borrowed=other)
+        mod_obj = PythonObject(from_borrowed=mod)
     except e:
+        var error_type = cpython.get_error_global("PyExc_RuntimeError")
         var msg = String(e)
-        if NotImplementedError.name == msg:
-            var not_implemented = cpython.lib.call[
-                "Py_GetConstantBorrowed", PyObjectPtr
-            ](4)
-            return cpython.Py_NewRef(not_implemented)
-        var error_type = cpython.get_error_global("PyExc_Exception")
         cpython.PyErr_SetString(
             error_type, msg.as_c_string_slice().unsafe_ptr()
+        )
+        return PyObjectPtr()
+    try:
+        var result = method(self_ptr, other_obj, mod_obj)
+        return result.steal_data()
+    except e:
+        if e._variant == PySlotError._NOT_IMPLEMENTED:
+            return cpython.Py_NewRef(cpython.Py_NotImplemented())
+        var error_type = cpython.get_error_global(e.pyexc_global_name())
+        cpython.PyErr_SetString(
+            error_type, e.msg.as_c_string_slice().unsafe_ptr()
         )
         return PyObjectPtr()
 
 
 def _inquiry_wrapper[
     self_type: ImplicitlyDestructible,
-    method: def(UnsafePointer[self_type, MutAnyOrigin]) thin raises -> Bool,
+    method: def(
+        UnsafePointer[self_type, MutAnyOrigin]
+    ) thin raises PySlotError -> Bool,
 ](py_self: PyObjectPtr) abi("C") -> c_int:
     """CPython `inquiry` adapter for the `nb_bool` slot (__bool__).
 
     Parameters:
         self_type: The Mojo struct type whose instances back the Python object.
-        method: User function `def(self: UnsafePointer[self_type, MutAnyOrigin]) raises -> Bool`.
+        method: User function
+            `def(self: UnsafePointer[self_type, MutAnyOrigin]) raises PySlotError -> Bool`.
 
     Returns:
         1 for True, 0 for False, -1 with an exception set on error.
     """
     ref cpython = Python().cpython()
+    var self_ptr: UnsafePointer[self_type, MutAnyOrigin]
     try:
-        var result = method(_unwrap_self[self_type](py_self))
-        return c_int(1) if result else c_int(0)
+        self_ptr = _unwrap_self[self_type](py_self)
     except e:
-        var error_type = cpython.get_error_global("PyExc_Exception")
+        var error_type = cpython.get_error_global("PyExc_RuntimeError")
         var msg = String(e)
         cpython.PyErr_SetString(
             error_type, msg.as_c_string_slice().unsafe_ptr()
+        )
+        return c_int(-1)
+    try:
+        var result = method(self_ptr)
+        return c_int(1) if result else c_int(0)
+    except e:
+        var error_type = cpython.get_error_global(e.pyexc_global_name())
+        cpython.PyErr_SetString(
+            error_type, e.msg.as_c_string_slice().unsafe_ptr()
         )
         return c_int(-1)
 
@@ -290,26 +350,36 @@ def _ssizeargfunc_wrapper[
     self_type: ImplicitlyDestructible,
     method: def(
         UnsafePointer[self_type, MutAnyOrigin], Int
-    ) thin raises -> PythonObject,
+    ) thin raises PySlotError -> PythonObject,
 ](py_self: PyObjectPtr, index: Py_ssize_t) abi("C") -> PyObjectPtr:
     """CPython `ssizeargfunc` adapter for sq_item, sq_repeat, sq_inplace_repeat.
 
     Parameters:
         self_type: The Mojo struct type whose instances back the Python object.
-        method: User function `def(self: UnsafePointer[self_type, MutAnyOrigin], index: Int) raises -> PythonObject`.
+        method: User function
+            `def(self: UnsafePointer[self_type, MutAnyOrigin], index: Int) raises PySlotError -> PythonObject`.
 
     Returns:
         New reference to the result, or null with an exception set on error.
     """
     ref cpython = Python().cpython()
+    var self_ptr: UnsafePointer[self_type, MutAnyOrigin]
     try:
-        var result = method(_unwrap_self[self_type](py_self), Int(index))
-        return result.steal_data()
+        self_ptr = _unwrap_self[self_type](py_self)
     except e:
-        var error_type = cpython.get_error_global("PyExc_Exception")
+        var error_type = cpython.get_error_global("PyExc_RuntimeError")
         var msg = String(e)
         cpython.PyErr_SetString(
             error_type, msg.as_c_string_slice().unsafe_ptr()
+        )
+        return PyObjectPtr()
+    try:
+        var result = method(self_ptr, Int(index))
+        return result.steal_data()
+    except e:
+        var error_type = cpython.get_error_global(e.pyexc_global_name())
+        cpython.PyErr_SetString(
+            error_type, e.msg.as_c_string_slice().unsafe_ptr()
         )
         return PyObjectPtr()
 
@@ -318,7 +388,7 @@ def _ssizeobjargproc_wrapper[
     self_type: ImplicitlyDestructible,
     method: def(
         UnsafePointer[self_type, MutAnyOrigin], Int, Variant[PythonObject, Int]
-    ) thin raises -> None,
+    ) thin raises PySlotError -> None,
 ](py_self: PyObjectPtr, index: Py_ssize_t, value: PyObjectPtr) abi(
     "C"
 ) -> c_int:
@@ -328,27 +398,49 @@ def _ssizeobjargproc_wrapper[
     `Variant[PythonObject, Int](Int(0))` as the third argument.  Otherwise
     the operation is an assignment and `method` receives the value object.
 
+    The user method declares `raises PySlotError`; the wrapper dispatches on
+    the variant to the matching `PyExc_*` global. Raising
+    `PySlotError.not_implemented()` from this slot has no Python meaning
+    (`sq_ass_item` cannot return `NotImplemented`), so it is mapped to
+    `RuntimeError`.
+
     Parameters:
         self_type: The Mojo struct type whose instances back the Python object.
         method: User function with signature
-            `def(self, index: Int, value: Variant[PythonObject, Int]) raises -> None`.
+            `def(self, index: Int, value: Variant[PythonObject, Int]) raises PySlotError -> None`.
 
     Returns:
         0 on success, -1 with an exception set on error.
     """
     comptime PassedValue = Variant[PythonObject, Int]
     ref cpython = Python().cpython()
+    # Compute args outside the typed `try` so the only call that can raise
+    # inside it is `method(...)`, which lets the compiler infer
+    # `except e:` as `PySlotError`. `_unwrap_self` and `PythonObject(...)`
+    # construction raise plain `Error`; wrap them in their own block.
+    var self_ptr: UnsafePointer[self_type, MutAnyOrigin]
+    var passed_value: PassedValue
     try:
-        var passed_value = PassedValue(
+        self_ptr = _unwrap_self[self_type](py_self)
+        passed_value = PassedValue(
             PythonObject(from_borrowed=value)
         ) if value else PassedValue(Int(0))
-        method(_unwrap_self[self_type](py_self), Int(index), passed_value)
-        return c_int(0)
     except e:
-        var error_type = cpython.get_error_global("PyExc_Exception")
+        var error_type = cpython.get_error_global("PyExc_RuntimeError")
         var msg = String(e)
         cpython.PyErr_SetString(
             error_type, msg.as_c_string_slice().unsafe_ptr()
+        )
+        return c_int(-1)
+    try:
+        method(self_ptr, Int(index), passed_value)
+        return c_int(0)
+    except e:
+        # `not_implemented` has no meaning for sq_ass_item; it falls through
+        # to RuntimeError via PySlotError.pyexc_global_name().
+        var error_type = cpython.get_error_global(e.pyexc_global_name())
+        cpython.PyErr_SetString(
+            error_type, e.msg.as_c_string_slice().unsafe_ptr()
         )
         return c_int(-1)
 
@@ -357,29 +449,38 @@ def _objobjproc_wrapper[
     self_type: ImplicitlyDestructible,
     method: def(
         UnsafePointer[self_type, MutAnyOrigin], PythonObject
-    ) thin raises -> Bool,
+    ) thin raises PySlotError -> Bool,
 ](py_self: PyObjectPtr, other: PyObjectPtr) abi("C") -> c_int:
     """CPython `objobjproc` adapter for the `sq_contains` slot (__contains__).
 
     Parameters:
         self_type: The Mojo struct type whose instances back the Python object.
-        method: User function `def(self: UnsafePointer[self_type, MutAnyOrigin], item: PythonObject) raises -> Bool`.
+        method: User function
+            `def(self: UnsafePointer[self_type, MutAnyOrigin], item: PythonObject) raises PySlotError -> Bool`.
 
     Returns:
         1 if contained, 0 if not, -1 with an exception set on error.
     """
     ref cpython = Python().cpython()
+    var self_ptr: UnsafePointer[self_type, MutAnyOrigin]
+    var other_obj: PythonObject
     try:
-        var result = method(
-            _unwrap_self[self_type](py_self),
-            PythonObject(from_borrowed=other),
-        )
-        return c_int(1) if result else c_int(0)
+        self_ptr = _unwrap_self[self_type](py_self)
+        other_obj = PythonObject(from_borrowed=other)
     except e:
-        var error_type = cpython.get_error_global("PyExc_Exception")
+        var error_type = cpython.get_error_global("PyExc_RuntimeError")
         var msg = String(e)
         cpython.PyErr_SetString(
             error_type, msg.as_c_string_slice().unsafe_ptr()
+        )
+        return c_int(-1)
+    try:
+        var result = method(self_ptr, other_obj)
+        return c_int(1) if result else c_int(0)
+    except e:
+        var error_type = cpython.get_error_global(e.pyexc_global_name())
+        cpython.PyErr_SetString(
+            error_type, e.msg.as_c_string_slice().unsafe_ptr()
         )
         return c_int(-1)
 
@@ -388,45 +489,47 @@ def _richcompare_wrapper[
     self_type: ImplicitlyDestructible,
     method: def(
         UnsafePointer[self_type, MutAnyOrigin], PythonObject, Int
-    ) thin raises -> Bool,
+    ) thin raises PySlotError -> Bool,
 ](py_self: PyObjectPtr, py_other: PyObjectPtr, op: c_int) abi(
     "C"
 ) -> PyObjectPtr:
     """CPython `richcmpfunc` adapter for the `tp_richcompare` slot.
 
-    If `method` raises `NotImplementedError` (by name), the wrapper returns
+    If `method` raises `PySlotError.not_implemented()` the wrapper returns
     `Py_NotImplemented`, signalling Python to try the reflected operation.
-    Any other exception sets a Python exception and returns null.
+    Other variants map to the corresponding `PyExc_*`.
 
     Parameters:
         self_type: The Mojo struct type whose instances back the Python object.
         method: User function
-            `def(self, other: PythonObject, op: Int) raises -> Bool`
+            `def(self, other: PythonObject, op: Int) raises PySlotError -> Bool`
             where `op` is one of `RichCompareOps.Py_LT` … `Py_GE`.
 
     Returns:
         `Py_True`/`Py_False`, `Py_NotImplemented`, or null on error.
     """
     ref cpython = Python().cpython()
+    var self_ptr: UnsafePointer[self_type, MutAnyOrigin]
+    var other_obj: PythonObject
     try:
-        var result = method(
-            _unwrap_self[self_type](py_self),
-            PythonObject(from_borrowed=py_other),
-            Int(op),
-        )
-        return cpython.PyBool_FromLong(c_long(Int(result)))
+        self_ptr = _unwrap_self[self_type](py_self)
+        other_obj = PythonObject(from_borrowed=py_other)
     except e:
-        # Mojo lacks multiple except branches; dispatch on the error name.
+        var error_type = cpython.get_error_global("PyExc_RuntimeError")
         var msg = String(e)
-        if NotImplementedError.name == msg:
-            # Py_CONSTANT_NOT_IMPLEMENTED = 4 (CPython 3.13+ stable ABI)
-            var not_implemented = cpython.lib.call[
-                "Py_GetConstantBorrowed", PyObjectPtr
-            ](4)
-            return cpython.Py_NewRef(not_implemented)
-        var error_type = cpython.get_error_global("PyExc_Exception")
         cpython.PyErr_SetString(
             error_type, msg.as_c_string_slice().unsafe_ptr()
+        )
+        return PyObjectPtr()
+    try:
+        var result = method(self_ptr, other_obj, Int(op))
+        return cpython.PyBool_FromLong(c_long(Int(result)))
+    except e:
+        if e._variant == PySlotError._NOT_IMPLEMENTED:
+            return cpython.Py_NewRef(cpython.Py_NotImplemented())
+        var error_type = cpython.get_error_global(e.pyexc_global_name())
+        cpython.PyErr_SetString(
+            error_type, e.msg.as_c_string_slice().unsafe_ptr()
         )
         return PyObjectPtr()
 
@@ -544,7 +647,7 @@ def _install_unary[
     self_type: ImplicitlyDestructible,
     method: def(
         UnsafePointer[self_type, MutAnyOrigin]
-    ) thin raises -> PythonObject,
+    ) thin raises PySlotError -> PythonObject,
     slot: Int32,
 ](ptr: UnsafePointer[mut=True, PythonTypeBuilder, MutAnyOrigin]):
     """Insert a `unaryfunc` slot into the builder pointed to by `ptr`."""
@@ -559,7 +662,7 @@ def _install_binary[
     self_type: ImplicitlyDestructible,
     method: def(
         UnsafePointer[self_type, MutAnyOrigin], PythonObject
-    ) thin raises -> PythonObject,
+    ) thin raises PySlotError -> PythonObject,
     slot: Int32,
 ](ptr: UnsafePointer[mut=True, PythonTypeBuilder, MutAnyOrigin]):
     """Insert a `binaryfunc` slot into the builder pointed to by `ptr`."""
@@ -576,7 +679,7 @@ def _install_ternary[
     self_type: ImplicitlyDestructible,
     method: def(
         UnsafePointer[self_type, MutAnyOrigin], PythonObject, PythonObject
-    ) thin raises -> PythonObject,
+    ) thin raises PySlotError -> PythonObject,
     slot: Int32,
 ](ptr: UnsafePointer[mut=True, PythonTypeBuilder, MutAnyOrigin]):
     """Insert a `ternaryfunc` slot into the builder pointed to by `ptr`."""
@@ -591,7 +694,9 @@ def _install_ternary[
 
 def _install_inquiry[
     self_type: ImplicitlyDestructible,
-    method: def(UnsafePointer[self_type, MutAnyOrigin]) thin raises -> Bool,
+    method: def(
+        UnsafePointer[self_type, MutAnyOrigin]
+    ) thin raises PySlotError -> Bool,
     slot: Int32,
 ](ptr: UnsafePointer[mut=True, PythonTypeBuilder, MutAnyOrigin]):
     """Insert an `inquiry` slot into the builder pointed to by `ptr`."""
@@ -606,7 +711,7 @@ def _install_richcompare[
     self_type: ImplicitlyDestructible,
     method: def(
         UnsafePointer[self_type, MutAnyOrigin], PythonObject, Int
-    ) thin raises -> Bool,
+    ) thin raises PySlotError -> Bool,
 ](ptr: UnsafePointer[mut=True, PythonTypeBuilder, MutAnyOrigin]):
     """Insert a `richcmpfunc` slot (`tp_richcompare`) into the builder pointed to by `ptr`.
     """
@@ -624,7 +729,9 @@ def _install_richcompare[
 
 def _install_lenfunc[
     self_type: ImplicitlyDestructible,
-    method: def(UnsafePointer[self_type, MutAnyOrigin]) thin raises -> Int,
+    method: def(
+        UnsafePointer[self_type, MutAnyOrigin]
+    ) thin raises PySlotError -> Int,
 ](ptr: UnsafePointer[mut=True, PythonTypeBuilder, MutAnyOrigin]):
     """Insert a `lenfunc` slot (`mp_length`) into the builder pointed to by `ptr`.
     """
@@ -641,7 +748,7 @@ def _install_mp_getitem[
     self_type: ImplicitlyDestructible,
     method: def(
         UnsafePointer[self_type, MutAnyOrigin], PythonObject
-    ) thin raises -> PythonObject,
+    ) thin raises PySlotError -> PythonObject,
 ](ptr: UnsafePointer[mut=True, PythonTypeBuilder, MutAnyOrigin]):
     """Insert a `binaryfunc` slot (`mp_subscript`) into the builder pointed to by `ptr`.
     """
@@ -662,7 +769,7 @@ def _install_objobjargproc[
         UnsafePointer[self_type, MutAnyOrigin],
         PythonObject,
         Variant[PythonObject, Int],
-    ) thin raises -> None,
+    ) thin raises PySlotError -> None,
 ](ptr: UnsafePointer[mut=True, PythonTypeBuilder, MutAnyOrigin]):
     """Insert an `objobjargproc` slot (`mp_ass_subscript`) into the builder pointed to by `ptr`.
     """
@@ -681,7 +788,7 @@ def _install_ssizeargfunc[
     self_type: ImplicitlyDestructible,
     method: def(
         UnsafePointer[self_type, MutAnyOrigin], Int
-    ) thin raises -> PythonObject,
+    ) thin raises PySlotError -> PythonObject,
     slot: Int32,
 ](ptr: UnsafePointer[mut=True, PythonTypeBuilder, MutAnyOrigin]):
     """Insert a `ssizeargfunc` slot into the builder pointed to by `ptr`."""
@@ -698,7 +805,7 @@ def _install_ssizeobjargproc[
     self_type: ImplicitlyDestructible,
     method: def(
         UnsafePointer[self_type, MutAnyOrigin], Int, Variant[PythonObject, Int]
-    ) thin raises -> None,
+    ) thin raises PySlotError -> None,
 ](ptr: UnsafePointer[mut=True, PythonTypeBuilder, MutAnyOrigin]):
     """Insert the `ssizeobjargproc` slot (`sq_ass_item`) into the builder pointed to by `ptr`.
     """
@@ -718,7 +825,7 @@ def _install_objobjproc[
     self_type: ImplicitlyDestructible,
     method: def(
         UnsafePointer[self_type, MutAnyOrigin], PythonObject
-    ) thin raises -> Bool,
+    ) thin raises PySlotError -> Bool,
     slot: Int32,
 ](ptr: UnsafePointer[mut=True, PythonTypeBuilder, MutAnyOrigin]):
     """Insert an `objobjproc` slot into the builder pointed to by `ptr`."""
@@ -737,21 +844,21 @@ def _install_objobjproc[
 def _lift_to_int[
     T: ImplicitlyDestructible,
     method: def(UnsafePointer[T, MutAnyOrigin]) thin -> Int,
-](ptr: UnsafePointer[T, MutAnyOrigin]) raises -> Int:
+](ptr: UnsafePointer[T, MutAnyOrigin]) raises PySlotError -> Int:
     return method(ptr)
 
 
 def _lift_to_obj[
     T: ImplicitlyDestructible,
     method: def(UnsafePointer[T, MutAnyOrigin]) thin -> PythonObject,
-](ptr: UnsafePointer[T, MutAnyOrigin]) raises -> PythonObject:
+](ptr: UnsafePointer[T, MutAnyOrigin]) raises PySlotError -> PythonObject:
     return method(ptr)
 
 
 def _lift_to_bool[
     T: ImplicitlyDestructible,
     method: def(UnsafePointer[T, MutAnyOrigin]) thin -> Bool,
-](ptr: UnsafePointer[T, MutAnyOrigin]) raises -> Bool:
+](ptr: UnsafePointer[T, MutAnyOrigin]) raises PySlotError -> Bool:
     return method(ptr)
 
 
@@ -762,14 +869,16 @@ def _lift_obj_to_obj[
     ) thin -> PythonObject,
 ](
     ptr: UnsafePointer[T, MutAnyOrigin], other: PythonObject
-) raises -> PythonObject:
+) raises PySlotError -> PythonObject:
     return method(ptr, other)
 
 
 def _lift_obj_to_bool[
     T: ImplicitlyDestructible,
     method: def(UnsafePointer[T, MutAnyOrigin], PythonObject) thin -> Bool,
-](ptr: UnsafePointer[T, MutAnyOrigin], other: PythonObject) raises -> Bool:
+](
+    ptr: UnsafePointer[T, MutAnyOrigin], other: PythonObject
+) raises PySlotError -> Bool:
     return method(ptr, other)
 
 
@@ -782,14 +891,16 @@ def _lift_obj_var_to_none[
     ptr: UnsafePointer[T, MutAnyOrigin],
     key: PythonObject,
     val: Variant[PythonObject, Int],
-) raises -> None:
+) raises PySlotError -> None:
     method(ptr, key, val)
 
 
 def _lift_int_to_obj[
     T: ImplicitlyDestructible,
     method: def(UnsafePointer[T, MutAnyOrigin], Int) thin -> PythonObject,
-](ptr: UnsafePointer[T, MutAnyOrigin], index: Int) raises -> PythonObject:
+](
+    ptr: UnsafePointer[T, MutAnyOrigin], index: Int
+) raises PySlotError -> PythonObject:
     return method(ptr, index)
 
 
@@ -802,7 +913,7 @@ def _lift_int_var_to_none[
     ptr: UnsafePointer[T, MutAnyOrigin],
     index: Int,
     val: Variant[PythonObject, Int],
-) raises -> None:
+) raises PySlotError -> None:
     method(ptr, index, val)
 
 
@@ -811,7 +922,7 @@ def _lift_obj_int_to_bool[
     method: def(UnsafePointer[T, MutAnyOrigin], PythonObject, Int) thin -> Bool,
 ](
     ptr: UnsafePointer[T, MutAnyOrigin], other: PythonObject, op: Int
-) raises -> Bool:
+) raises PySlotError -> Bool:
     return method(ptr, other, op)
 
 
@@ -822,7 +933,7 @@ def _lift_obj_obj_to_obj[
     ) thin -> PythonObject,
 ](
     ptr: UnsafePointer[T, MutAnyOrigin], a: PythonObject, b: PythonObject
-) raises -> PythonObject:
+) raises PySlotError -> PythonObject:
     return method(ptr, a, b)
 
 
@@ -833,38 +944,40 @@ def _lift_obj_obj_to_obj[
 
 def _lift_val_to_int[
     T: ImplicitlyDestructible,
-    method: def(T) thin raises -> Int,
-](ptr: UnsafePointer[T, MutAnyOrigin]) raises -> Int:
+    method: def(T) thin raises PySlotError -> Int,
+](ptr: UnsafePointer[T, MutAnyOrigin]) raises PySlotError -> Int:
     return method(ptr[])
 
 
 def _lift_val_to_obj[
     T: ImplicitlyDestructible,
-    method: def(T) thin raises -> PythonObject,
-](ptr: UnsafePointer[T, MutAnyOrigin]) raises -> PythonObject:
+    method: def(T) thin raises PySlotError -> PythonObject,
+](ptr: UnsafePointer[T, MutAnyOrigin]) raises PySlotError -> PythonObject:
     return method(ptr[])
 
 
 def _lift_val_to_bool[
     T: ImplicitlyDestructible,
-    method: def(T) thin raises -> Bool,
-](ptr: UnsafePointer[T, MutAnyOrigin]) raises -> Bool:
+    method: def(T) thin raises PySlotError -> Bool,
+](ptr: UnsafePointer[T, MutAnyOrigin]) raises PySlotError -> Bool:
     return method(ptr[])
 
 
 def _lift_val_obj_to_obj[
     T: ImplicitlyDestructible,
-    method: def(T, PythonObject) thin raises -> PythonObject,
+    method: def(T, PythonObject) thin raises PySlotError -> PythonObject,
 ](
     ptr: UnsafePointer[T, MutAnyOrigin], other: PythonObject
-) raises -> PythonObject:
+) raises PySlotError -> PythonObject:
     return method(ptr[], other)
 
 
 def _lift_val_obj_to_bool[
     T: ImplicitlyDestructible,
-    method: def(T, PythonObject) thin raises -> Bool,
-](ptr: UnsafePointer[T, MutAnyOrigin], other: PythonObject) raises -> Bool:
+    method: def(T, PythonObject) thin raises PySlotError -> Bool,
+](
+    ptr: UnsafePointer[T, MutAnyOrigin], other: PythonObject
+) raises PySlotError -> Bool:
     return method(ptr[], other)
 
 
@@ -872,12 +985,12 @@ def _lift_val_obj_var_to_none[
     T: ImplicitlyDestructible,
     method: def(
         T, PythonObject, Variant[PythonObject, Int]
-    ) thin raises -> None,
+    ) thin raises PySlotError -> None,
 ](
     ptr: UnsafePointer[T, MutAnyOrigin],
     key: PythonObject,
     val: Variant[PythonObject, Int],
-) raises -> None:
+) raises PySlotError -> None:
     method(ptr[], key, val)
 
 
@@ -885,77 +998,87 @@ def _lift_mut_obj_var_to_none[
     T: ImplicitlyDestructible,
     method: def(
         mut T, PythonObject, Variant[PythonObject, Int]
-    ) thin raises -> None,
+    ) thin raises PySlotError -> None,
 ](
     ptr: UnsafePointer[T, MutAnyOrigin],
     key: PythonObject,
     val: Variant[PythonObject, Int],
-) raises -> None:
+) raises PySlotError -> None:
     method(ptr[], key, val)
 
 
 def _lift_val_int_to_obj[
     T: ImplicitlyDestructible,
-    method: def(T, Int) thin raises -> PythonObject,
-](ptr: UnsafePointer[T, MutAnyOrigin], index: Int) raises -> PythonObject:
+    method: def(T, Int) thin raises PySlotError -> PythonObject,
+](
+    ptr: UnsafePointer[T, MutAnyOrigin], index: Int
+) raises PySlotError -> PythonObject:
     return method(ptr[], index)
 
 
 def _lift_val_int_var_to_none[
     T: ImplicitlyDestructible,
-    method: def(T, Int, Variant[PythonObject, Int]) thin raises -> None,
+    method: def(
+        T, Int, Variant[PythonObject, Int]
+    ) thin raises PySlotError -> None,
 ](
     ptr: UnsafePointer[T, MutAnyOrigin],
     index: Int,
     val: Variant[PythonObject, Int],
-) raises -> None:
+) raises PySlotError -> None:
     method(ptr[], index, val)
 
 
 def _lift_mut_int_var_to_none[
     T: ImplicitlyDestructible,
-    method: def(mut T, Int, Variant[PythonObject, Int]) thin raises -> None,
+    method: def(
+        mut T, Int, Variant[PythonObject, Int]
+    ) thin raises PySlotError -> None,
 ](
     ptr: UnsafePointer[T, MutAnyOrigin],
     index: Int,
     val: Variant[PythonObject, Int],
-) raises -> None:
+) raises PySlotError -> None:
     method(ptr[], index, val)
 
 
 def _lift_val_obj_int_to_bool[
     T: ImplicitlyDestructible,
-    method: def(T, PythonObject, Int) thin raises -> Bool,
+    method: def(T, PythonObject, Int) thin raises PySlotError -> Bool,
 ](
     ptr: UnsafePointer[T, MutAnyOrigin], other: PythonObject, op: Int
-) raises -> Bool:
+) raises PySlotError -> Bool:
     return method(ptr[], other, op)
 
 
 def _lift_val_obj_obj_to_obj[
     T: ImplicitlyDestructible,
-    method: def(T, PythonObject, PythonObject) thin raises -> PythonObject,
+    method: def(
+        T, PythonObject, PythonObject
+    ) thin raises PySlotError -> PythonObject,
 ](
     ptr: UnsafePointer[T, MutAnyOrigin], a: PythonObject, b: PythonObject
-) raises -> PythonObject:
+) raises PySlotError -> PythonObject:
     return method(ptr[], a, b)
 
 
 def _lift_mut_obj_to_obj[
     T: ImplicitlyDestructible,
-    method: def(mut T, PythonObject) thin raises -> PythonObject,
+    method: def(mut T, PythonObject) thin raises PySlotError -> PythonObject,
 ](
     ptr: UnsafePointer[T, MutAnyOrigin], other: PythonObject
-) raises -> PythonObject:
+) raises PySlotError -> PythonObject:
     return method(ptr[], other)
 
 
 def _lift_mut_obj_obj_to_obj[
     T: ImplicitlyDestructible,
-    method: def(mut T, PythonObject, PythonObject) thin raises -> PythonObject,
+    method: def(
+        mut T, PythonObject, PythonObject
+    ) thin raises PySlotError -> PythonObject,
 ](
     ptr: UnsafePointer[T, MutAnyOrigin], a: PythonObject, b: PythonObject
-) raises -> PythonObject:
+) raises PySlotError -> PythonObject:
     return method(ptr[], a, b)
 
 
@@ -966,38 +1089,53 @@ def _lift_mut_obj_obj_to_obj[
 comptime _CPython = ConvertibleToPython & ImplicitlyCopyable
 
 
+def _to_py[R: _CPython](var value: R) raises PySlotError -> PythonObject:
+    """Call `to_python_object` and translate failures to `PySlotError`.
+
+    `ConvertibleToPython.to_python_object` raises plain `Error`; this shim
+    re-raises as `PySlotError.value_error` so it composes with the
+    typed-raises chain inside `_conv_*` helpers.
+    """
+    try:
+        return value^.to_python_object()
+    except e:
+        raise PySlotError.value_error(String(e))
+
+
 def _conv_ptr_r_unary[
     T: ImplicitlyDestructible,
     R: _CPython,
-    method: def(UnsafePointer[T, MutAnyOrigin]) thin raises -> R,
-](ptr: UnsafePointer[T, MutAnyOrigin]) raises -> PythonObject:
-    return method(ptr).to_python_object()
+    method: def(UnsafePointer[T, MutAnyOrigin]) thin raises PySlotError -> R,
+](ptr: UnsafePointer[T, MutAnyOrigin]) raises PySlotError -> PythonObject:
+    return _to_py[R](method(ptr))
 
 
 def _conv_ptr_nr_unary[
     T: ImplicitlyDestructible,
     R: _CPython,
     method: def(UnsafePointer[T, MutAnyOrigin]) thin -> R,
-](ptr: UnsafePointer[T, MutAnyOrigin]) raises -> PythonObject:
-    return method(ptr).to_python_object()
+](ptr: UnsafePointer[T, MutAnyOrigin]) raises PySlotError -> PythonObject:
+    return _to_py[R](method(ptr))
 
 
 def _conv_val_r_unary[
     T: ImplicitlyDestructible,
     R: _CPython,
-    method: def(T) thin raises -> R,
-](ptr: UnsafePointer[T, MutAnyOrigin]) raises -> PythonObject:
-    return method(ptr[]).to_python_object()
+    method: def(T) thin raises PySlotError -> R,
+](ptr: UnsafePointer[T, MutAnyOrigin]) raises PySlotError -> PythonObject:
+    return _to_py[R](method(ptr[]))
 
 
 def _conv_ptr_r_binary[
     T: ImplicitlyDestructible,
     R: _CPython,
-    method: def(UnsafePointer[T, MutAnyOrigin], PythonObject) thin raises -> R,
+    method: def(
+        UnsafePointer[T, MutAnyOrigin], PythonObject
+    ) thin raises PySlotError -> R,
 ](
     ptr: UnsafePointer[T, MutAnyOrigin], other: PythonObject
-) raises -> PythonObject:
-    return method(ptr, other).to_python_object()
+) raises PySlotError -> PythonObject:
+    return _to_py[R](method(ptr, other))
 
 
 def _conv_ptr_nr_binary[
@@ -1006,42 +1144,48 @@ def _conv_ptr_nr_binary[
     method: def(UnsafePointer[T, MutAnyOrigin], PythonObject) thin -> R,
 ](
     ptr: UnsafePointer[T, MutAnyOrigin], other: PythonObject
-) raises -> PythonObject:
-    return method(ptr, other).to_python_object()
+) raises PySlotError -> PythonObject:
+    return _to_py[R](method(ptr, other))
 
 
 def _conv_val_r_binary[
     T: ImplicitlyDestructible,
     R: _CPython,
-    method: def(T, PythonObject) thin raises -> R,
+    method: def(T, PythonObject) thin raises PySlotError -> R,
 ](
     ptr: UnsafePointer[T, MutAnyOrigin], other: PythonObject
-) raises -> PythonObject:
-    return method(ptr[], other).to_python_object()
+) raises PySlotError -> PythonObject:
+    return _to_py[R](method(ptr[], other))
 
 
 def _conv_ptr_r_int_arg[
     T: ImplicitlyDestructible,
     R: _CPython,
-    method: def(UnsafePointer[T, MutAnyOrigin], Int) thin raises -> R,
-](ptr: UnsafePointer[T, MutAnyOrigin], index: Int) raises -> PythonObject:
-    return method(ptr, index).to_python_object()
+    method: def(UnsafePointer[T, MutAnyOrigin], Int) thin raises PySlotError -> R,
+](
+    ptr: UnsafePointer[T, MutAnyOrigin], index: Int
+) raises PySlotError -> PythonObject:
+    return _to_py[R](method(ptr, index))
 
 
 def _conv_ptr_nr_int_arg[
     T: ImplicitlyDestructible,
     R: _CPython,
     method: def(UnsafePointer[T, MutAnyOrigin], Int) thin -> R,
-](ptr: UnsafePointer[T, MutAnyOrigin], index: Int) raises -> PythonObject:
-    return method(ptr, index).to_python_object()
+](
+    ptr: UnsafePointer[T, MutAnyOrigin], index: Int
+) raises PySlotError -> PythonObject:
+    return _to_py[R](method(ptr, index))
 
 
 def _conv_val_r_int_arg[
     T: ImplicitlyDestructible,
     R: _CPython,
-    method: def(T, Int) thin raises -> R,
-](ptr: UnsafePointer[T, MutAnyOrigin], index: Int) raises -> PythonObject:
-    return method(ptr[], index).to_python_object()
+    method: def(T, Int) thin raises PySlotError -> R,
+](
+    ptr: UnsafePointer[T, MutAnyOrigin], index: Int
+) raises PySlotError -> PythonObject:
+    return _to_py[R](method(ptr[], index))
 
 
 def _conv_ptr_r_ternary[
@@ -1049,11 +1193,11 @@ def _conv_ptr_r_ternary[
     R: _CPython,
     method: def(
         UnsafePointer[T, MutAnyOrigin], PythonObject, PythonObject
-    ) thin raises -> R,
+    ) thin raises PySlotError -> R,
 ](
     ptr: UnsafePointer[T, MutAnyOrigin], a: PythonObject, b: PythonObject
-) raises -> PythonObject:
-    return method(ptr, a, b).to_python_object()
+) raises PySlotError -> PythonObject:
+    return _to_py[R](method(ptr, a, b))
 
 
 def _conv_ptr_nr_ternary[
@@ -1064,18 +1208,18 @@ def _conv_ptr_nr_ternary[
     ) thin -> R,
 ](
     ptr: UnsafePointer[T, MutAnyOrigin], a: PythonObject, b: PythonObject
-) raises -> PythonObject:
-    return method(ptr, a, b).to_python_object()
+) raises PySlotError -> PythonObject:
+    return _to_py[R](method(ptr, a, b))
 
 
 def _conv_val_r_ternary[
     T: ImplicitlyDestructible,
     R: _CPython,
-    method: def(T, PythonObject, PythonObject) thin raises -> R,
+    method: def(T, PythonObject, PythonObject) thin raises PySlotError -> R,
 ](
     ptr: UnsafePointer[T, MutAnyOrigin], a: PythonObject, b: PythonObject
-) raises -> PythonObject:
-    return method(ptr[], a, b).to_python_object()
+) raises PySlotError -> PythonObject:
+    return _to_py[R](method(ptr[], a, b))
 
 
 # ===----------------------------------------------------------------------=== #
@@ -1099,7 +1243,7 @@ def _install_unary_nr[
 
 def _install_unary_val[
     self_type: ImplicitlyDestructible,
-    method: def(self_type) thin raises -> PythonObject,
+    method: def(self_type) thin raises PySlotError -> PythonObject,
     slot: Int32,
 ](ptr: UnsafePointer[mut=True, PythonTypeBuilder, MutAnyOrigin]):
     """Insert a `unaryfunc` slot from a value-receiver method."""
@@ -1109,7 +1253,9 @@ def _install_unary_val[
 def _install_unary_conv_r[
     self_type: ImplicitlyDestructible,
     R: _CPython,
-    method: def(UnsafePointer[self_type, MutAnyOrigin]) thin raises -> R,
+    method: def(
+        UnsafePointer[self_type, MutAnyOrigin]
+    ) thin raises PySlotError -> R,
     slot: Int32,
 ](ptr: UnsafePointer[mut=True, PythonTypeBuilder, MutAnyOrigin]):
     """Insert a `unaryfunc` slot from a raising ConvertibleToPython method."""
@@ -1134,7 +1280,7 @@ def _install_unary_conv_nr[
 def _install_unary_conv_val[
     self_type: ImplicitlyDestructible,
     R: _CPython,
-    method: def(self_type) thin raises -> R,
+    method: def(self_type) thin raises PySlotError -> R,
     slot: Int32,
 ](ptr: UnsafePointer[mut=True, PythonTypeBuilder, MutAnyOrigin]):
     """Insert a `unaryfunc` slot from a value-receiver ConvertibleToPython method.
@@ -1158,7 +1304,7 @@ def _install_inquiry_nr[
 
 def _install_inquiry_val[
     self_type: ImplicitlyDestructible,
-    method: def(self_type) thin raises -> Bool,
+    method: def(self_type) thin raises PySlotError -> Bool,
     slot: Int32,
 ](ptr: UnsafePointer[mut=True, PythonTypeBuilder, MutAnyOrigin]):
     """Insert an `inquiry` slot from a value-receiver method."""
@@ -1181,7 +1327,7 @@ def _install_binary_nr[
 
 def _install_binary_val[
     self_type: ImplicitlyDestructible,
-    method: def(self_type, PythonObject) thin raises -> PythonObject,
+    method: def(self_type, PythonObject) thin raises PySlotError -> PythonObject,
     slot: Int32,
 ](ptr: UnsafePointer[mut=True, PythonTypeBuilder, MutAnyOrigin]):
     """Insert a `binaryfunc` slot from a value-receiver method."""
@@ -1192,7 +1338,9 @@ def _install_binary_val[
 
 def _install_binary_mut[
     self_type: ImplicitlyDestructible,
-    method: def(mut self_type, PythonObject) thin raises -> PythonObject,
+    method: def(
+        mut self_type, PythonObject
+    ) thin raises PySlotError -> PythonObject,
     slot: Int32,
 ](ptr: UnsafePointer[mut=True, PythonTypeBuilder, MutAnyOrigin]):
     """Insert a `binaryfunc` slot from a mut-receiver method."""
@@ -1206,7 +1354,7 @@ def _install_binary_conv_r[
     R: _CPython,
     method: def(
         UnsafePointer[self_type, MutAnyOrigin], PythonObject
-    ) thin raises -> R,
+    ) thin raises PySlotError -> R,
     slot: Int32,
 ](ptr: UnsafePointer[mut=True, PythonTypeBuilder, MutAnyOrigin]):
     """Insert a `binaryfunc` slot from a raising ConvertibleToPython method."""
@@ -1231,7 +1379,7 @@ def _install_binary_conv_nr[
 def _install_binary_conv_val[
     self_type: ImplicitlyDestructible,
     R: _CPython,
-    method: def(self_type, PythonObject) thin raises -> R,
+    method: def(self_type, PythonObject) thin raises PySlotError -> R,
     slot: Int32,
 ](ptr: UnsafePointer[mut=True, PythonTypeBuilder, MutAnyOrigin]):
     """Insert a `binaryfunc` slot from a value-receiver ConvertibleToPython method.
@@ -1261,7 +1409,7 @@ def _install_ternary_val[
     self_type: ImplicitlyDestructible,
     method: def(
         self_type, PythonObject, PythonObject
-    ) thin raises -> PythonObject,
+    ) thin raises PySlotError -> PythonObject,
     slot: Int32,
 ](ptr: UnsafePointer[mut=True, PythonTypeBuilder, MutAnyOrigin]):
     """Insert a `ternaryfunc` slot from a value-receiver method."""
@@ -1274,7 +1422,7 @@ def _install_ternary_mut[
     self_type: ImplicitlyDestructible,
     method: def(
         mut self_type, PythonObject, PythonObject
-    ) thin raises -> PythonObject,
+    ) thin raises PySlotError -> PythonObject,
     slot: Int32,
 ](ptr: UnsafePointer[mut=True, PythonTypeBuilder, MutAnyOrigin]):
     """Insert a `ternaryfunc` slot from a mut-receiver method."""
@@ -1288,7 +1436,7 @@ def _install_ternary_conv_r[
     R: _CPython,
     method: def(
         UnsafePointer[self_type, MutAnyOrigin], PythonObject, PythonObject
-    ) thin raises -> R,
+    ) thin raises PySlotError -> R,
     slot: Int32,
 ](ptr: UnsafePointer[mut=True, PythonTypeBuilder, MutAnyOrigin]):
     """Insert a `ternaryfunc` slot from a raising ConvertibleToPython method."""
@@ -1315,7 +1463,9 @@ def _install_ternary_conv_nr[
 def _install_ternary_conv_val[
     self_type: ImplicitlyDestructible,
     R: _CPython,
-    method: def(self_type, PythonObject, PythonObject) thin raises -> R,
+    method: def(
+        self_type, PythonObject, PythonObject
+    ) thin raises PySlotError -> R,
     slot: Int32,
 ](ptr: UnsafePointer[mut=True, PythonTypeBuilder, MutAnyOrigin]):
     """Insert a `ternaryfunc` slot from a value-receiver ConvertibleToPython method.

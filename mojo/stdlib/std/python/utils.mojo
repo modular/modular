@@ -15,8 +15,8 @@
 # Standalone implementations of types introduced in:
 # https://github.com/modular/modular/pull/5562
 #
-# Provides NotImplementedError and RichCompareOps for use with Python extension
-# modules that require the rich comparison protocol.
+# Provides PySlotError and RichCompareOps for use with Python extension
+# modules that require the rich comparison or number/sequence protocols.
 # ===----------------------------------------------------------------------=== #
 
 
@@ -40,27 +40,111 @@ struct RichCompareOps:
 
 
 @fieldwise_init
-struct NotImplementedError(TrivialRegisterPassable, Writable):
-    """Raise this from a rich compare handler to signal Python's NotImplemented.
+struct PySlotError(Copyable, Movable, Writable):
+    """Mojo-native error type for Python type-slot handlers.
 
-    When caught by the `_richcompare_wrapper`, this causes the wrapper to
-    return `Py_NotImplemented` to Python rather than setting an exception,
-    allowing Python to try the reflected operation on the other operand.
+    Raise a variant of this type from a Mojo function bound to a CPython type
+    slot; adapter wrappers that take `raises PySlotError` translate it into
+    the corresponding Python exception (or into `NotImplemented` for the
+    `not_implemented` variant).
 
-    Example:
-        ```mojo
-        @staticmethod
-        def rich_compare(
-            self_ptr: PythonObject, other: PythonObject, op: Int
-        ) raises -> Bool:
-            if op == RichCompareOps.Py_EQ:
-                ...
-            raise NotImplementedError()
-        ```
+    Construct via the staticmethod factories rather than the synthesized
+    fieldwise initializer:
+
+    ```mojo
+    raise PySlotError.index_error("index out of range")
+    raise PySlotError.not_implemented()
+    ```
     """
 
-    comptime name: String = "NotImplementedError"
-    """Well-known name used by `_richcompare_wrapper` for dispatch."""
+    var _variant: Int
+    """Variant tag; one of the `_*` codes below."""
+
+    var msg: String
+    """Human-readable message; ignored for `not_implemented`."""
+
+    # Variant codes — kept private; users go through the factories.
+    comptime _NOT_IMPLEMENTED = 0
+    comptime _INDEX_ERROR = 1
+    comptime _TYPE_ERROR = 2
+    comptime _VALUE_ERROR = 3
+    comptime _KEY_ERROR = 4
+    comptime _ATTRIBUTE_ERROR = 5
+    comptime _OVERFLOW_ERROR = 6
+    comptime _RUNTIME_ERROR = 7
+
+    @staticmethod
+    def not_implemented() -> Self:
+        """Signal Python's `NotImplemented` to the wrapper.
+
+        For binary/ternary/rich-compare slots, this causes the adapter to
+        return `Py_NotImplemented`, prompting Python to try the reflected
+        operation on the other operand.
+        """
+        return Self(_variant=Self._NOT_IMPLEMENTED, msg=String())
+
+    @staticmethod
+    def index_error(var msg: String) -> Self:
+        """Map to Python's `IndexError`."""
+        return Self(_variant=Self._INDEX_ERROR, msg=msg^)
+
+    @staticmethod
+    def type_error(var msg: String) -> Self:
+        """Map to Python's `TypeError`."""
+        return Self(_variant=Self._TYPE_ERROR, msg=msg^)
+
+    @staticmethod
+    def value_error(var msg: String) -> Self:
+        """Map to Python's `ValueError`."""
+        return Self(_variant=Self._VALUE_ERROR, msg=msg^)
+
+    @staticmethod
+    def key_error(var msg: String) -> Self:
+        """Map to Python's `KeyError`."""
+        return Self(_variant=Self._KEY_ERROR, msg=msg^)
+
+    @staticmethod
+    def attribute_error(var msg: String) -> Self:
+        """Map to Python's `AttributeError`."""
+        return Self(_variant=Self._ATTRIBUTE_ERROR, msg=msg^)
+
+    @staticmethod
+    def overflow_error(var msg: String) -> Self:
+        """Map to Python's `OverflowError`."""
+        return Self(_variant=Self._OVERFLOW_ERROR, msg=msg^)
+
+    @staticmethod
+    def runtime_error(var msg: String) -> Self:
+        """Map to Python's `RuntimeError`."""
+        return Self(_variant=Self._RUNTIME_ERROR, msg=msg^)
 
     def write_to(self, mut writer: Some[Writer]):
-        writer.write(Self.name)
+        if self._variant == Self._NOT_IMPLEMENTED:
+            writer.write("PySlotError.not_implemented")
+        else:
+            writer.write(self.msg)
+
+    def pyexc_global_name(self) -> StaticString:
+        """Return the CPython `PyExc_*` symbol name for this variant.
+
+        Used by adapter wrappers to fetch the matching Python exception
+        global via `cpython.get_error_global(...)`. The `not_implemented`
+        variant has no Python-exception counterpart and maps to
+        `PyExc_RuntimeError` — callers that want the `Py_NotImplemented`
+        singleton must check `_variant == _NOT_IMPLEMENTED` first.
+        """
+        if self._variant == Self._INDEX_ERROR:
+            return "PyExc_IndexError"
+        elif self._variant == Self._TYPE_ERROR:
+            return "PyExc_TypeError"
+        elif self._variant == Self._VALUE_ERROR:
+            return "PyExc_ValueError"
+        elif self._variant == Self._KEY_ERROR:
+            return "PyExc_KeyError"
+        elif self._variant == Self._ATTRIBUTE_ERROR:
+            return "PyExc_AttributeError"
+        elif self._variant == Self._OVERFLOW_ERROR:
+            return "PyExc_OverflowError"
+        else:
+            # _RUNTIME_ERROR or _NOT_IMPLEMENTED
+            return "PyExc_RuntimeError"

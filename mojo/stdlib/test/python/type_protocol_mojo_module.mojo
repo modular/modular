@@ -30,7 +30,7 @@ from std.python import PythonObject
 from std.python.bindings import PythonModuleBuilder
 
 from std.python.builders import TypeProtocolBuilder
-from std.python.utils import NotImplementedError, RichCompareOps
+from std.python.utils import PySlotError, RichCompareOps
 
 
 struct Box(Defaultable, Movable, Writable):
@@ -64,9 +64,13 @@ struct Box(Defaultable, Movable, Writable):
         self,
         other: PythonObject,
         op: Int,
-    ) raises -> Bool:
+    ) raises PySlotError -> Bool:
         var a = self.value
-        var b = other.downcast_value_ptr[Self]()[].value
+        var b: Float64
+        try:
+            b = other.downcast_value_ptr[Self]()[].value
+        except e:
+            raise PySlotError.type_error(String(e))
         if op == RichCompareOps.Py_LT:
             return a < b
         if op == RichCompareOps.Py_LE:
@@ -79,7 +83,7 @@ struct Box(Defaultable, Movable, Writable):
             return a > b
         if op == RichCompareOps.Py_GE:
             return a >= b
-        raise NotImplementedError()
+        raise PySlotError.not_implemented()
 
     def write_to(self, mut writer: Some[Writer]):
         writer.write("Box(", self.value, ")")
@@ -113,9 +117,15 @@ struct BoxV(Defaultable, Movable, Writable):
         return PythonObject(Self._get_self_ptr(py_self)[].value)
 
     # Raising value-receiver rich_compare
-    def rich_compare(self, other: PythonObject, op: Int) raises -> Bool:
+    def rich_compare(
+        self, other: PythonObject, op: Int
+    ) raises PySlotError -> Bool:
         var a = self.value
-        var b = other.downcast_value_ptr[Self]()[].value
+        var b: Float64
+        try:
+            b = other.downcast_value_ptr[Self]()[].value
+        except e:
+            raise PySlotError.type_error(String(e))
         if op == RichCompareOps.Py_LT:
             return a < b
         if op == RichCompareOps.Py_LE:
@@ -128,7 +138,7 @@ struct BoxV(Defaultable, Movable, Writable):
             return a > b
         if op == RichCompareOps.Py_GE:
             return a >= b
-        raise NotImplementedError()
+        raise PySlotError.not_implemented()
 
     def write_to(self, mut writer: Some[Writer]):
         writer.write("BoxV(", self.value, ")")

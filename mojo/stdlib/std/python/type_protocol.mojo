@@ -15,6 +15,8 @@ from std.memory import UnsafePointer
 from std.python import PythonObject
 from std.python.bindings import PythonTypeBuilder
 
+from .utils import PySlotError
+
 from .adapters import (
     _install_richcompare,
     _lift_obj_int_to_bool,
@@ -59,13 +61,13 @@ struct TypeProtocolBuilder[self_type: ImplicitlyDestructible]:
     def def_richcompare[
         method: def(
             UnsafePointer[Self.self_type, MutAnyOrigin], PythonObject, Int
-        ) thin raises -> Bool
+        ) thin raises PySlotError ->Bool
     ](mut self) -> ref[self] Self:
         """Install rich comparison via the `tp_richcompare` slot.
 
         Called by `obj < other`, `obj == other`, etc.
 
-        Raise `NotImplementedError()` from `method` to return
+        Raise `PySlotError.not_implemented()` from `method` to return
         `Py_NotImplemented` to Python (triggering the reflected operation).
 
         Parameters:
@@ -93,7 +95,7 @@ struct TypeProtocolBuilder[self_type: ImplicitlyDestructible]:
         return self
 
     def def_richcompare[
-        method: def(Self.self_type, PythonObject, Int) thin raises -> Bool
+        method: def(Self.self_type, PythonObject, Int) thin raises PySlotError ->Bool
     ](mut self) -> ref[self] Self:
         """Install rich comparison via the `tp_richcompare` slot (value-receiver overload).
 

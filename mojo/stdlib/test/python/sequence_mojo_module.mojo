@@ -31,6 +31,18 @@ from std.python import PythonObject
 from std.python.bindings import PythonModuleBuilder
 
 from std.python.builders import SequenceProtocolBuilder
+from std.python.utils import PySlotError
+
+
+def _alloc[
+    T: Movable & ImplicitlyDestructible
+](var value: T) raises PySlotError -> PythonObject:
+    """Translate `PythonObject(alloc=...)`'s plain `Error` into `PySlotError`.
+    """
+    try:
+        return PythonObject(alloc=value^)
+    except e:
+        raise PySlotError.runtime_error(String(e))
 
 
 struct Seq(Defaultable, Movable, Writable):
@@ -47,35 +59,47 @@ struct Seq(Defaultable, Movable, Writable):
         return PythonObject(alloc=result^)
 
     @staticmethod
-    def py__len__(self_ptr: UnsafePointer[Self, MutAnyOrigin]) raises -> Int:
+    def py__len__(
+        self_ptr: UnsafePointer[Self, MutAnyOrigin]
+    ) raises PySlotError -> Int:
         return len(self_ptr[].data)
 
     @staticmethod
     def py__getitem__(
         self_ptr: UnsafePointer[Self, MutAnyOrigin], index: Int
-    ) raises -> PythonObject:
+    ) raises PySlotError -> PythonObject:
         if index < 0 or index >= len(self_ptr[].data):
-            raise Error("index out of range")
-        return PythonObject(self_ptr[].data[index])
+            raise PySlotError.index_error("index out of range")
+        try:
+            return PythonObject(self_ptr[].data[index])
+        except e:
+            raise PySlotError.runtime_error(String(e))
 
     @staticmethod
     def py__setitem__(
         self_ptr: UnsafePointer[Self, MutAnyOrigin],
         index: Int,
         value: Variant[PythonObject, Int],
-    ) raises -> None:
+    ) raises PySlotError -> None:
         if index < 0 or index >= len(self_ptr[].data):
-            raise Error("index out of range")
+            raise PySlotError.index_error("index out of range")
         if value.isa[PythonObject]():
-            self_ptr[].data[index] = Int(py=value[PythonObject])
+            try:
+                self_ptr[].data[index] = Int(py=value[PythonObject])
+            except e:
+                raise PySlotError.type_error(String(e))
         else:
             _ = self_ptr[].data.pop(index)
 
     @staticmethod
     def py__contains__(
         self_ptr: UnsafePointer[Self, MutAnyOrigin], item: PythonObject
-    ) raises -> Bool:
-        var v = Int(py=item)
+    ) raises PySlotError -> Bool:
+        var v: Int
+        try:
+            v = Int(py=item)
+        except e:
+            raise PySlotError.type_error(String(e))
         for elem in self_ptr[].data:
             if elem == v:
                 return True
@@ -84,24 +108,28 @@ struct Seq(Defaultable, Movable, Writable):
     @staticmethod
     def py__concat__(
         self_ptr: UnsafePointer[Self, MutAnyOrigin], other: PythonObject
-    ) raises -> PythonObject:
-        var other_ptr = other.downcast_value_ptr[Self]()
+    ) raises PySlotError -> PythonObject:
+        var other_ptr: UnsafePointer[Self, MutAnyOrigin]
+        try:
+            other_ptr = other.downcast_value_ptr[Self]()
+        except e:
+            raise PySlotError.type_error(String(e))
         var result = Seq()
         for v in self_ptr[].data:
             result.data.append(v)
         for v in other_ptr[].data:
             result.data.append(v)
-        return PythonObject(alloc=result^)
+        return _alloc(result^)
 
     @staticmethod
     def py__repeat__(
         self_ptr: UnsafePointer[Self, MutAnyOrigin], count: Int
-    ) raises -> PythonObject:
+    ) raises PySlotError -> PythonObject:
         var result = Seq()
         for _ in range(count):
             for v in self_ptr[].data:
                 result.data.append(v)
-        return PythonObject(alloc=result^)
+        return _alloc(result^)
 
     def write_to(self, mut writer: Some[Writer]):
         writer.write("Seq(len=", len(self.data), ")")
@@ -127,10 +155,13 @@ struct SeqV(Defaultable, Movable, Writable):
         return len(self.data)
 
     # Raising value receiver
-    def py__getitem__(self, index: Int) raises -> PythonObject:
+    def py__getitem__(self, index: Int) raises PySlotError -> PythonObject:
         if index < 0 or index >= len(self.data):
-            raise Error("index out of range")
-        return PythonObject(self.data[index])
+            raise PySlotError.index_error("index out of range")
+        try:
+            return PythonObject(self.data[index])
+        except e:
+            raise PySlotError.runtime_error(String(e))
 
     # Mutation uses pointer receiver
     @staticmethod
@@ -138,39 +169,52 @@ struct SeqV(Defaultable, Movable, Writable):
         self_ptr: UnsafePointer[Self, MutAnyOrigin],
         index: Int,
         value: Variant[PythonObject, Int],
-    ) raises -> None:
+    ) raises PySlotError -> None:
         if index < 0 or index >= len(self_ptr[].data):
-            raise Error("index out of range")
+            raise PySlotError.index_error("index out of range")
         if value.isa[PythonObject]():
-            self_ptr[].data[index] = Int(py=value[PythonObject])
+            try:
+                self_ptr[].data[index] = Int(py=value[PythonObject])
+            except e:
+                raise PySlotError.type_error(String(e))
         else:
             _ = self_ptr[].data.pop(index)
 
-    # Non-raising value receiver for contains
-    def py__contains__(self, item: PythonObject) raises -> Bool:
-        var v = Int(py=item)
+    # Raising value receiver for contains
+    def py__contains__(self, item: PythonObject) raises PySlotError -> Bool:
+        var v: Int
+        try:
+            v = Int(py=item)
+        except e:
+            raise PySlotError.type_error(String(e))
         for elem in self.data:
             if elem == v:
                 return True
         return False
 
     # Raising value receiver for concat
-    def py__concat__(self, other: PythonObject) raises -> PythonObject:
-        var other_ptr = other.downcast_value_ptr[Self]()
+    def py__concat__(
+        self, other: PythonObject
+    ) raises PySlotError -> PythonObject:
+        var other_ptr: UnsafePointer[Self, MutAnyOrigin]
+        try:
+            other_ptr = other.downcast_value_ptr[Self]()
+        except e:
+            raise PySlotError.type_error(String(e))
         var result = SeqV()
         for v in self.data:
             result.data.append(v)
         for v in other_ptr[].data:
             result.data.append(v)
-        return PythonObject(alloc=result^)
+        return _alloc(result^)
 
-    # Non-raising value receiver for repeat
-    def py__repeat__(self, count: Int) raises -> PythonObject:
+    # Raising value receiver for repeat
+    def py__repeat__(self, count: Int) raises PySlotError -> PythonObject:
         var result = SeqV()
         for _ in range(count):
             for v in self.data:
                 result.data.append(v)
-        return PythonObject(alloc=result^)
+        return _alloc(result^)
 
     def write_to(self, mut writer: Some[Writer]):
         writer.write("SeqV(len=", len(self.data), ")")
