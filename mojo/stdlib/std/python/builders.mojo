@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from .buffer import BufferInfo, BufferProtocolBuilder
 from .mapping import MappingProtocolBuilder
 from .number import NumberProtocolBuilder
 from .sequence import SequenceProtocolBuilder

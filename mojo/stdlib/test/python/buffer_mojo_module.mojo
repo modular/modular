@@ -23,7 +23,7 @@ from std.os import abort
 from std.python import PythonObject
 from std.python.bindings import PythonModuleBuilder
 
-from std.python.buffer import BufferInfo, BufferProtocolBuilder
+from std.python.builders import BufferInfo, BufferProtocolBuilder
 
 
 struct FloatBuffer(Defaultable, Movable, Writable):
