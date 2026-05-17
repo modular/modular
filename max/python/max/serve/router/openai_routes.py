@@ -173,21 +173,48 @@ def record_request_end(
 
 @overload
 def get_finish_reason_from_status(
-    status: GenerationStatus, allow_none: Literal[True] = True
+    status: GenerationStatus,
+    allow_none: Literal[True] = True,
+    *,
+    has_tool_calls: Literal[False] = False,
 ) -> Literal["stop", "length"] | None: ...
 
 
 @overload
 def get_finish_reason_from_status(
-    status: GenerationStatus, allow_none: Literal[False]
+    status: GenerationStatus,
+    allow_none: Literal[True] = True,
+    *,
+    has_tool_calls: bool = False,
+) -> Literal["stop", "length", "tool_calls"] | None: ...
+
+
+@overload
+def get_finish_reason_from_status(
+    status: GenerationStatus,
+    allow_none: Literal[False],
+    *,
+    has_tool_calls: Literal[False] = False,
 ) -> Literal["stop", "length"]: ...
 
 
+@overload
 def get_finish_reason_from_status(
-    status: GenerationStatus, allow_none: bool = True
-) -> Literal["stop", "length"] | None:
+    status: GenerationStatus,
+    allow_none: Literal[False],
+    *,
+    has_tool_calls: bool = False,
+) -> Literal["stop", "length", "tool_calls"]: ...
+
+
+def get_finish_reason_from_status(
+    status: GenerationStatus,
+    allow_none: bool = True,
+    *,
+    has_tool_calls: bool = False,
+) -> Literal["stop", "length", "tool_calls"] | None:
     if status == GenerationStatus.END_OF_SEQUENCE:
-        return "stop"
+        return "tool_calls" if has_tool_calls else "stop"
     elif status == GenerationStatus.MAXIMUM_LENGTH:
         return "length"
     else:
@@ -368,6 +395,11 @@ class OpenAIChatResponseGenerator(
                     elif tool_call_chunks:
                         content = None
 
+                    finish_reason = get_finish_reason_from_status(
+                        chunk.status,
+                        allow_none=True,
+                        has_tool_calls=has_emitted_tool_calls,
+                    )
                     choices = [
                         ChatCompletionStreamResponseChoice(
                             index=0,
@@ -382,23 +414,17 @@ class OpenAIChatResponseGenerator(
                                 else None,
                             ),
                             logprobs=logprobs_response,
-                            finish_reason=get_finish_reason_from_status(
-                                chunk.status, allow_none=True
-                            ),
+                            finish_reason=finish_reason,
                         )
                     ]
                 elif chunk.status.is_done:
                     # Terminal chunk with no visible delta — emit the final
-                    # choice carrying the finish_reason. If tool calls were
-                    # emitted earlier this turn, override "stop" with
-                    # "tool_calls".
-                    finish_reason: Literal["stop", "length", "tool_calls"] = (
-                        get_finish_reason_from_status(
-                            chunk.status, allow_none=False
-                        )
+                    # choice carrying the finish_reason.
+                    finish_reason = get_finish_reason_from_status(
+                        chunk.status,
+                        allow_none=False,
+                        has_tool_calls=has_emitted_tool_calls,
                     )
-                    if has_emitted_tool_calls and finish_reason == "stop":
-                        finish_reason = "tool_calls"
 
                     choices = [
                         ChatCompletionStreamResponseChoice(
