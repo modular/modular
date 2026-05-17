@@ -1382,6 +1382,8 @@ struct CPython(Defaultable, Movable):
     var _PyType_FromSpec: PyType_FromSpec.type
     # The None Object
     var _Py_None: PyObjectPtr
+    # The NotImplemented Object
+    var _Py_NotImplemented: PyObjectPtr
     # Integer Objects
     var _PyLong_Type: PyTypeObjectPtr
     var _PyLong_FromSsize_t: PyLong_FromSsize_t.type
@@ -1568,11 +1570,20 @@ struct CPython(Defaultable, Movable):
             self._Py_None = self.lib.call[
                 "Py_GetConstantBorrowed", PyObjectPtr
             ](0)
+            self._Py_NotImplemented = self.lib.call[
+                "Py_GetConstantBorrowed", PyObjectPtr
+            ](4)
         else:
             # PyObject *Py_None
             self._Py_None = PyObjectPtr(
                 upcast_from=self.lib.get_symbol[PyObject](
                     "_Py_NoneStruct"
+                ).value()
+            )
+            # PyObject *Py_NotImplemented
+            self._Py_NotImplemented = PyObjectPtr(
+                upcast_from=self.lib.get_symbol[PyObject](
+                    "_Py_NotImplementedStruct"
                 ).value()
             )
         # Integer Objects
@@ -2408,6 +2419,21 @@ struct CPython(Defaultable, Movable):
         - https://docs.python.org/3/c-api/none.html#c.Py_None
         """
         return self._Py_None
+
+    # ===-------------------------------------------------------------------===#
+    # The NotImplemented Object
+    # ref: https://docs.python.org/3/c-api/object.html#c.Py_NotImplemented
+    # ===-------------------------------------------------------------------===#
+
+    def Py_NotImplemented(self) -> PyObjectPtr:
+        """The Python `NotImplemented` singleton, returned from binary special
+        methods to indicate the operation is not supported for the given
+        operands.
+
+        References:
+        - https://docs.python.org/3/c-api/object.html#c.Py_NotImplemented
+        """
+        return self._Py_NotImplemented
 
     # ===-------------------------------------------------------------------===#
     # Integer Objects
