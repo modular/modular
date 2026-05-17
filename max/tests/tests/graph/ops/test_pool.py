@@ -27,9 +27,10 @@ def _i64_const(values: list[int]) -> object:
 
 
 def test_mo_max_pool_non_rank1_filter_shape_error() -> None:
-    """Constructing rmo.mo.max_pool with a rank-2 filter_shape must raise
-    TypeError, not abort. The op's MO_Rank1IndexTensor operand constraint is
-    enforced by the verifier and surfaces as a Python exception."""
+    """Constructing rmo.mo.max_pool with a rank-2 filter_shape must raise a
+    Python exception (not abort). The op's MO_Rank1IndexTensor operand
+    constraint is enforced by the verifier; `_add_op_generated` surfaces
+    verifier failures as ValueError."""
     x_type = TensorType(DType.float32, [1, 8, 8, 4], device=DeviceRef.CPU())
     result_type = TensorType(
         DType.float32, [1, 4, 4, 4], device=DeviceRef.CPU()
@@ -40,7 +41,7 @@ def test_mo_max_pool_non_rank1_filter_shape_error() -> None:
             DType.int64,
             DeviceRef.CPU(),
         )
-        with pytest.raises(TypeError, match="rank-1 tensor with indices"):
+        with pytest.raises(ValueError, match="rank-1 tensor with indices"):
             graph._add_op_generated(
                 _rmo.MoMaxPoolOp,
                 result_type,
@@ -54,8 +55,9 @@ def test_mo_max_pool_non_rank1_filter_shape_error() -> None:
 
 
 def test_mo_avg_pool_float_strides_error() -> None:
-    """Constructing rmo.mo.avg_pool with float strides must raise TypeError;
-    the MO_Rank1IndexTensor constraint requires integer/index elements."""
+    """Constructing rmo.mo.avg_pool with float strides must raise a Python
+    exception; the MO_Rank1IndexTensor constraint requires integer/index
+    elements. `_add_op_generated` surfaces verifier failures as ValueError."""
     x_type = TensorType(DType.float32, [1, 8, 8, 4], device=DeviceRef.CPU())
     result_type = TensorType(
         DType.float32, [1, 4, 4, 4], device=DeviceRef.CPU()
@@ -66,7 +68,7 @@ def test_mo_avg_pool_float_strides_error() -> None:
             DType.float32,
             DeviceRef.CPU(),
         )
-        with pytest.raises(TypeError, match="rank-1 tensor with indices"):
+        with pytest.raises(ValueError, match="rank-1 tensor with indices"):
             graph._add_op_generated(
                 _rmo.MoAvgPoolOp,
                 result_type,

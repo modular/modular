@@ -19,8 +19,8 @@ from collections.abc import Iterable, Sequence
 from typing import TypeGuard, Union
 
 import numpy as np
+from max._core.dialects import kgen, rmo
 from max.dtype import DType
-from max.mlir.dialects import rmo
 
 from ..dim import Dim, DimLike, StaticDim
 from ..graph import Graph
@@ -382,12 +382,12 @@ def _slice_symbolic_tensor(
 
     starts, stops, steps = slice_arguments(indices, x.shape)
 
-    sliced_tensor = Graph.current._add_op(
-        rmo.slice,
-        x,
-        Shape(starts).to_mlir(),
-        Shape(stops).to_mlir(),
-        Shape(steps).to_mlir(),
+    sliced_tensor = Graph.current._add_op_generated(
+        rmo.SliceOp,
+        input=x,
+        starts=Shape(starts),
+        stops=Shape(stops),
+        steps=Shape(steps),
     )[0].tensor
 
     # Account for None entries in the slice indices by unsqueezing those dims.
@@ -436,6 +436,12 @@ def slice_tensor(x: TensorValue, indices: SliceIndices) -> TensorValue:
     assert_on_host(starts=starts, stops=stops, steps=steps)
 
     unsqueezed_type = TensorType(x.dtype, unsqueezed_shape, x.device)
-    return Graph.current._add_op(
-        rmo.mo_slice, unsqueezed_type.to_mlir(), x, starts, stops, steps
+    return Graph.current._add_op_generated(
+        rmo.MoSliceOp,
+        result=unsqueezed_type,
+        input=x,
+        start=starts,
+        stop=stops,
+        step=steps,
+        output_param_decls=kgen.ParamDeclArrayAttr([]),
     )[0].tensor.reshape(squeezed_shape)

@@ -12,12 +12,13 @@
 # ===----------------------------------------------------------------------=== #
 """Op implementation for conv2d."""
 
-from max.mlir.dialects import rmo
+from max._core.dialects import rmo
 
 from .. import dtype_promotion
 from ..graph import Graph
 from ..type import ConvInputLayout, FilterLayout, Shape
 from ..value import TensorValue, TensorValueLike
+from .elementwise import add
 from .permute import permute
 from .validation import assert_same_device
 
@@ -125,15 +126,15 @@ def conv2d_transpose(
 
     assert_same_device(x=x, filter=filter)
 
-    out = Graph.current._add_op(
-        rmo.conv_transpose,
+    out = Graph.current._add_op_generated(
+        rmo.ConvTransposeOp,
         input=x,
         filter=filter._with_layout(filter_layout),
-        strides=Shape(stride).to_mlir(),
-        dilations=Shape(dilation).to_mlir(),
-        paddings=Shape(padding).to_mlir(),
-        output_paddings=Shape(output_paddings).to_mlir(),
-        input_layout=input_layout.to_mlir(),
+        strides=Shape(stride),
+        dilations=Shape(dilation),
+        paddings=Shape(padding),
+        output_paddings=Shape(output_paddings),
+        input_layout=input_layout,
     )[0].tensor
 
     # out = out.to(original_device)
@@ -142,8 +143,7 @@ def conv2d_transpose(
         # Convert from NCHW to NHWC for bias broadcasting.
         # TODO: There should be a better way without transpose.
         out = permute(out, [0, 2, 3, 1])
-        out = Graph.current._add_op(rmo.add, out, bias)[0].tensor
+        out = add(out, bias)
         # Convert back from NHWC to NCHW.
         return permute(out, [0, 3, 1, 2])
-        # return Graph.current._add_op(rmo.add, out, bias)[0].tensor
     return out

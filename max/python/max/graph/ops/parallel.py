@@ -20,14 +20,15 @@ from max._core import Block as _CBlock
 from max._core import OpBuilder
 from max._core import Value as _CValue
 from max._core import graph as _graph
+from max._core.dialects import kgen
 from max._core.dialects.mo import (
     BundleType,
     ChainType,
     ParallelOp,
     TensorBundleOp,
     TensorUnbundleOp,
+    YieldOp,
 )
-from max.mlir.dialects import mo
 
 from ..graph import Graph, _location
 from ..value import (
@@ -181,7 +182,11 @@ def parallel(
                     f"expected {len(output_bundles)} (one per output bundle)"
                 )
 
-            graph._add_op(mo.YieldOp, body_result)
+            graph._add_op_generated(
+                YieldOp,
+                operands=body_result,
+                parameters=kgen.ParameterExprArrayAttr([]),
+            )
 
     graph._verify_op(parallel_op)
 

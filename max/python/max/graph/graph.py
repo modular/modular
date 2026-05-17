@@ -163,7 +163,9 @@ class _DeviceChainMap(OrderedDict[DeviceRef, _ChainValue]):
             assert chain == self[DeviceRef.CPU()]
             return chain
 
-        merged = self._graph._add_op(mo.chain_create, unique_chains)[0]
+        merged = self._graph._add_op_generated(
+            _mo.ChainCreateOp, result=_mo.ChainType(), inputs=unique_chains
+        )[0]
         assert isinstance(merged, _ChainValue)
         self[DeviceRef.CPU()] = merged
         return merged
@@ -643,7 +645,9 @@ class Graph:
         # Use it for operations that are safe to schedule without per-device
         # ordering constraints (e.g., host→device transfers for staging).
         self._always_ready_chain = _ChainValue(
-            self._add_op(mo.chain_create, [])[0]
+            self._add_op_generated(
+                _mo.ChainCreateOp, result=_mo.ChainType(), inputs=[]
+            )[0]
         )
         self._update_chain(self._always_ready_chain)
 
@@ -949,7 +953,11 @@ class Graph:
                     builder, location, *_to_mlir(args), **_to_mlir(kwargs)
                 )  # type: ignore
                 self._verify_op(op)
-        except (mlir.MLIRError, ValueError) as e:
+        except (mlir.MLIRError, ValueError, TypeError) as e:
+            # `TypeError` covers verifier diagnostics, which surface from
+            # `RaisingScopedEmitFn` via `PyExc_TypeError`; re-raise everything
+            # as `ValueError` so callers don't have to know about MLIR-internal
+            # exception types.
             positional = {f"args[{i}]": v for i, v in enumerate(args)}
             raise ValueError(
                 f"Failed to create op '{op_type.__name__}':\nInputs:\n"

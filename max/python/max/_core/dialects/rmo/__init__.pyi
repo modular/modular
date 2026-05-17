@@ -4895,7 +4895,9 @@ class AddOp(max._core.Operation):
         location: Location,
         input_x: max._core.Value[max._core.dialects.mo.TensorType],
         input_y: max._core.Value[max._core.dialects.mo.TensorType],
-        output_param_decls: Sequence[max._core.dialects.kgen.ParamDeclAttr],
+        output_param_decls: Sequence[
+            max._core.dialects.kgen.ParamDeclAttr
+        ] = [],
     ) -> None: ...
     @overload
     def __init__(
@@ -4970,7 +4972,9 @@ class AndOp(max._core.Operation):
         location: Location,
         input_x: max._core.Value[max._core.dialects.mo.TensorType],
         input_y: max._core.Value[max._core.dialects.mo.TensorType],
-        output_param_decls: Sequence[max._core.dialects.kgen.ParamDeclAttr],
+        output_param_decls: Sequence[
+            max._core.dialects.kgen.ParamDeclAttr
+        ] = [],
     ) -> None: ...
     @overload
     def __init__(
@@ -5321,7 +5325,7 @@ class ConvOp(max._core.Operation):
         dilations: max._core.dialects.mosh.ShapeAttr,
         paddings: max._core.dialects.mosh.ShapeAttr,
         num_groups: int,
-        input_layout: str,
+        input_layout: str = "NHWC",
     ) -> None: ...
     @overload
     def __init__(
@@ -5469,7 +5473,7 @@ class ConvTransposeOp(max._core.Operation):
         dilations: max._core.dialects.mosh.ShapeAttr,
         paddings: max._core.dialects.mosh.ShapeAttr,
         output_paddings: max._core.dialects.mosh.ShapeAttr,
-        input_layout: str,
+        input_layout: str = "NHWC",
     ) -> None: ...
     @overload
     def __init__(
@@ -5548,7 +5552,9 @@ class DivOp(max._core.Operation):
         location: Location,
         input_x: max._core.Value[max._core.dialects.mo.TensorType],
         input_y: max._core.Value[max._core.dialects.mo.TensorType],
-        output_param_decls: Sequence[max._core.dialects.kgen.ParamDeclAttr],
+        output_param_decls: Sequence[
+            max._core.dialects.kgen.ParamDeclAttr
+        ] = [],
     ) -> None: ...
     @overload
     def __init__(
@@ -5623,7 +5629,9 @@ class EqualOp(max._core.Operation):
         location: Location,
         input_x: max._core.Value[max._core.dialects.mo.TensorType],
         input_y: max._core.Value[max._core.dialects.mo.TensorType],
-        output_param_decls: Sequence[max._core.dialects.kgen.ParamDeclAttr],
+        output_param_decls: Sequence[
+            max._core.dialects.kgen.ParamDeclAttr
+        ] = [],
     ) -> None: ...
     @overload
     def __init__(
@@ -5698,7 +5706,9 @@ class GreaterEqualOp(max._core.Operation):
         location: Location,
         input_x: max._core.Value[max._core.dialects.mo.TensorType],
         input_y: max._core.Value[max._core.dialects.mo.TensorType],
-        output_param_decls: Sequence[max._core.dialects.kgen.ParamDeclAttr],
+        output_param_decls: Sequence[
+            max._core.dialects.kgen.ParamDeclAttr
+        ] = [],
     ) -> None: ...
     @overload
     def __init__(
@@ -5773,7 +5783,9 @@ class GreaterOp(max._core.Operation):
         location: Location,
         input_x: max._core.Value[max._core.dialects.mo.TensorType],
         input_y: max._core.Value[max._core.dialects.mo.TensorType],
-        output_param_decls: Sequence[max._core.dialects.kgen.ParamDeclAttr],
+        output_param_decls: Sequence[
+            max._core.dialects.kgen.ParamDeclAttr
+        ] = [],
     ) -> None: ...
     @overload
     def __init__(
@@ -5893,7 +5905,9 @@ class MaxOp(max._core.Operation):
         location: Location,
         input_x: max._core.Value[max._core.dialects.mo.TensorType],
         input_y: max._core.Value[max._core.dialects.mo.TensorType],
-        output_param_decls: Sequence[max._core.dialects.kgen.ParamDeclAttr],
+        output_param_decls: Sequence[
+            max._core.dialects.kgen.ParamDeclAttr
+        ] = [],
     ) -> None: ...
     @overload
     def __init__(
@@ -6069,7 +6083,9 @@ class MinOp(max._core.Operation):
         location: Location,
         input_x: max._core.Value[max._core.dialects.mo.TensorType],
         input_y: max._core.Value[max._core.dialects.mo.TensorType],
-        output_param_decls: Sequence[max._core.dialects.kgen.ParamDeclAttr],
+        output_param_decls: Sequence[
+            max._core.dialects.kgen.ParamDeclAttr
+        ] = [],
     ) -> None: ...
     @overload
     def __init__(
@@ -6132,7 +6148,9 @@ class ModOp(max._core.Operation):
         location: Location,
         input_x: max._core.Value[max._core.dialects.mo.TensorType],
         input_y: max._core.Value[max._core.dialects.mo.TensorType],
-        output_param_decls: Sequence[max._core.dialects.kgen.ParamDeclAttr],
+        output_param_decls: Sequence[
+            max._core.dialects.kgen.ParamDeclAttr
+        ] = [],
     ) -> None: ...
     @overload
     def __init__(
@@ -6195,7 +6213,9 @@ class MulOp(max._core.Operation):
         location: Location,
         input_x: max._core.Value[max._core.dialects.mo.TensorType],
         input_y: max._core.Value[max._core.dialects.mo.TensorType],
-        output_param_decls: Sequence[max._core.dialects.kgen.ParamDeclAttr],
+        output_param_decls: Sequence[
+            max._core.dialects.kgen.ParamDeclAttr
+        ] = [],
     ) -> None: ...
     @overload
     def __init__(
@@ -6270,7 +6290,9 @@ class NotEqualOp(max._core.Operation):
         location: Location,
         input_x: max._core.Value[max._core.dialects.mo.TensorType],
         input_y: max._core.Value[max._core.dialects.mo.TensorType],
-        output_param_decls: Sequence[max._core.dialects.kgen.ParamDeclAttr],
+        output_param_decls: Sequence[
+            max._core.dialects.kgen.ParamDeclAttr
+        ] = [],
     ) -> None: ...
     @overload
     def __init__(
@@ -6345,7 +6367,9 @@ class OrOp(max._core.Operation):
         location: Location,
         input_x: max._core.Value[max._core.dialects.mo.TensorType],
         input_y: max._core.Value[max._core.dialects.mo.TensorType],
-        output_param_decls: Sequence[max._core.dialects.kgen.ParamDeclAttr],
+        output_param_decls: Sequence[
+            max._core.dialects.kgen.ParamDeclAttr
+        ] = [],
     ) -> None: ...
     @overload
     def __init__(
@@ -6408,7 +6432,9 @@ class PowOp(max._core.Operation):
         location: Location,
         input_x: max._core.Value[max._core.dialects.mo.TensorType],
         input_y: max._core.Value[max._core.dialects.mo.TensorType],
-        output_param_decls: Sequence[max._core.dialects.kgen.ParamDeclAttr],
+        output_param_decls: Sequence[
+            max._core.dialects.kgen.ParamDeclAttr
+        ] = [],
     ) -> None: ...
     @overload
     def __init__(
@@ -6693,7 +6719,9 @@ class SliceOp(max._core.Operation):
         starts: max._core.dialects.mosh.ShapeAttr,
         stops: max._core.dialects.mosh.ShapeAttr,
         steps: max._core.dialects.mosh.ShapeAttr,
-        output_param_decls: Sequence[max._core.dialects.kgen.ParamDeclAttr],
+        output_param_decls: Sequence[
+            max._core.dialects.kgen.ParamDeclAttr
+        ] = [],
     ) -> None: ...
     @overload
     def __init__(
@@ -6766,7 +6794,9 @@ class SubOp(max._core.Operation):
         location: Location,
         input_x: max._core.Value[max._core.dialects.mo.TensorType],
         input_y: max._core.Value[max._core.dialects.mo.TensorType],
-        output_param_decls: Sequence[max._core.dialects.kgen.ParamDeclAttr],
+        output_param_decls: Sequence[
+            max._core.dialects.kgen.ParamDeclAttr
+        ] = [],
     ) -> None: ...
     @overload
     def __init__(
@@ -6847,7 +6877,9 @@ class TopKOp(max._core.Operation):
         input: max._core.Value[max._core.dialects.mo.TensorType],
         k: int,
         axis: int,
-        output_param_decls: Sequence[max._core.dialects.kgen.ParamDeclAttr],
+        output_param_decls: Sequence[
+            max._core.dialects.kgen.ParamDeclAttr
+        ] = [],
     ) -> None: ...
     @overload
     def __init__(
@@ -6928,7 +6960,9 @@ class XorOp(max._core.Operation):
         location: Location,
         input_x: max._core.Value[max._core.dialects.mo.TensorType],
         input_y: max._core.Value[max._core.dialects.mo.TensorType],
-        output_param_decls: Sequence[max._core.dialects.kgen.ParamDeclAttr],
+        output_param_decls: Sequence[
+            max._core.dialects.kgen.ParamDeclAttr
+        ] = [],
     ) -> None: ...
     @overload
     def __init__(

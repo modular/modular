@@ -12,9 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 """Op implementation for cumsum."""
 
-from max import mlir
+from max._core.dialects import builtin, kgen, rmo
 from max.dtype import DType
-from max.mlir.dialects import rmo
 
 from ..graph import Graph
 from ..type import DeviceRef
@@ -72,13 +71,15 @@ def cumsum(
         _check_device_placement("ops.cumsum", "TODO(KERN-1095).")
         x = transfer_to(x, DeviceRef.CPU())
     # TODO(KERN-1095): Add GPU kernel support for cumsum.
-    result = Graph.current._add_op(
-        rmo.mo_cumsum,
-        x.type.to_mlir(),
-        x,
-        constant(axis, DType.int64, DeviceRef.CPU()),
-        exclusive=mlir.IntegerAttr.get(mlir.IndexType.get(), int(exclusive)),
-        reverse=mlir.IntegerAttr.get(mlir.IndexType.get(), int(reverse)),
+    index_type = builtin.IndexType()
+    result = Graph.current._add_op_generated(
+        rmo.MoCumsumOp,
+        result=x.type,
+        input=x,
+        axis=constant(axis, DType.int64, DeviceRef.CPU()),
+        exclusive=builtin.IntegerAttr(index_type, int(exclusive)),
+        reverse=builtin.IntegerAttr(index_type, int(reverse)),
+        output_param_decls=kgen.ParamDeclArrayAttr([]),
     )[0].tensor
     if old_device is not None:
         return transfer_to(result, old_device)

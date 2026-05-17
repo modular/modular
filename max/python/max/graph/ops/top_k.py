@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Op implementation for top_k."""
 
-from max.mlir.dialects import rmo
+from max._core.dialects import rmo
 
 from ..graph import Graph
 from ..value import TensorValue, TensorValueLike
@@ -31,8 +31,8 @@ def top_k(
     Returns:
         Top K values, Top K indices
     """
-    topk_weight, topk_idx = Graph.current._add_op(
-        rmo.top_k, TensorValue(input), k, axis
+    topk_weight, topk_idx = Graph.current._add_op_generated(
+        rmo.TopKOp, input=TensorValue(input), k=k, axis=axis
     )
 
     return topk_weight.tensor, topk_idx.tensor

@@ -116,6 +116,10 @@ def call(graph: Graph, *args: Value[Any], prefix: str = "") -> list[Value[Any]]:
         )
         output_types.extend(_ChainType() for _ in chain_devices)
 
+    # TODO: migrate to _add_op_generated(mo.CallOp, ...). Blocked on
+    # max._core.dialects.builtin.FlatSymbolRefAttr having no Python
+    # constructor bound (see builtin.cpp); the legacy mo.call_ factory
+    # builds it for us from the str callee.
     call_results = current_graph._add_op(
         mo.call_,
         callee=graph.name,

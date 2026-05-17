@@ -19,9 +19,9 @@ from typing import Any, TypeAlias, cast
 
 import numpy as np
 from max.dtype import DType
-from max.mlir.dialects import mo
 
 from ..._core import graph as _graph
+from ..._core.dialects import builtin as _builtin
 from ..._core.dialects import mo as _mo
 from ...driver import CPU, Buffer, Device, DLPackArray
 from ..graph import Graph
@@ -139,12 +139,17 @@ def constant_external(name: str, type: TensorType) -> TensorValue:
         A tensor value of the specified type, representing the weight value
         associated with the name at compile time.
     """
-    return Graph.current._add_op(
-        mo.constant_external,
+    return Graph.current._add_op_generated(
+        _mo.ConstantExternalOp,
         result=type,
         name=name,
-        device=type.device.to_mlir(),
-        align=type.dtype.align,
+        align=_builtin.IntegerAttr(
+            _builtin.IntegerType(64, _builtin.SignednessSemantics.unsigned),
+            type.dtype.align,
+        ),
+        device=type.device,
+        has_alias=False,
+        is_placeholder=False,
     )[0]
 
 

@@ -12,10 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 """Op implementation for shape_to_tensor."""
 
-from max.mlir.dialects import rmo
+from max._core.dialects import rmo
+from max.dtype import DType
 
 from ..graph import Graph
-from ..type import Shape, ShapeLike
+from ..type import DeviceRef, Shape, ShapeLike, TensorType
 from ..value import TensorValue
 
 
@@ -40,8 +41,7 @@ def shape_to_tensor(shape: ShapeLike) -> TensorValue:
         TensorValue(dtype=int64, shape=[StaticDim(dim=2), StaticDim(dim=1)])
     """
     shape = Shape(shape)
-    result = Graph.current._add_op(rmo.shape_to_tensor, shape.to_mlir())[
-        0
-    ].tensor
-
-    return result
+    result_type = TensorType(DType.int64, [len(shape)], device=DeviceRef.CPU())
+    return Graph.current._add_op_generated(
+        rmo.ShapeToTensorOp, result=result_type, shape=shape
+    )[0].tensor

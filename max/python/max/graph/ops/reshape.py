@@ -74,7 +74,5 @@ def reshape(x: TensorValueLike, shape: ShapeLike) -> TensorValue:
         shape[shape.index(Dim(-1))] = total // known
 
     return Graph.current._add_op_generated(
-        rmo.ReshapeOp,
-        input=x,
-        new_shape=shape.to_mlir(),
+        rmo.ReshapeOp, input=x, new_shape=shape
     )[0].tensor
