@@ -236,13 +236,12 @@ def _binaryfunc_wrapper[
     try:
         self_ptr = _unwrap_self[self_type](lhs)
         rhs_obj = PythonObject(from_borrowed=rhs)
-    except e:
-        var error_type = cpython.get_error_global("PyExc_RuntimeError")
-        var msg = String(e)
-        cpython.PyErr_SetString(
-            error_type, msg.as_c_string_slice().unsafe_ptr()
-        )
-        return PyObjectPtr()
+    except:
+        # CPython invokes binary `nb_*` slots in reflected dispatch with the
+        # original `(v, w)` order — so the LHS may not be our type. Treat
+        # any prep failure as `NotImplemented` so CPython can try the other
+        # operand or raise `TypeError`.
+        return cpython.Py_NewRef(cpython.Py_NotImplemented())
     try:
         var result = method(self_ptr, rhs_obj)
         return result.steal_data()
@@ -288,13 +287,10 @@ def _ternaryfunc_wrapper[
         self_ptr = _unwrap_self[self_type](py_self)
         other_obj = PythonObject(from_borrowed=other)
         mod_obj = PythonObject(from_borrowed=mod)
-    except e:
-        var error_type = cpython.get_error_global("PyExc_RuntimeError")
-        var msg = String(e)
-        cpython.PyErr_SetString(
-            error_type, msg.as_c_string_slice().unsafe_ptr()
-        )
-        return PyObjectPtr()
+    except:
+        # See `_binaryfunc_wrapper`: reflected dispatch may call this slot
+        # with a LHS that isn't our type.
+        return cpython.Py_NewRef(cpython.Py_NotImplemented())
     try:
         var result = method(self_ptr, other_obj, mod_obj)
         return result.steal_data()
@@ -514,13 +510,11 @@ def _richcompare_wrapper[
     try:
         self_ptr = _unwrap_self[self_type](py_self)
         other_obj = PythonObject(from_borrowed=py_other)
-    except e:
-        var error_type = cpython.get_error_global("PyExc_RuntimeError")
-        var msg = String(e)
-        cpython.PyErr_SetString(
-            error_type, msg.as_c_string_slice().unsafe_ptr()
-        )
-        return PyObjectPtr()
+    except:
+        # `tp_richcompare` is symmetric in CPython; if the LHS isn't our
+        # type, return `NotImplemented` so the interpreter can try the
+        # reflected comparison on the other operand.
+        return cpython.Py_NewRef(cpython.Py_NotImplemented())
     try:
         var result = method(self_ptr, other_obj, Int(op))
         return cpython.PyBool_FromLong(c_long(Int(result)))

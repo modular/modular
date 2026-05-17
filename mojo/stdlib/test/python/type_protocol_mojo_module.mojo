@@ -66,11 +66,17 @@ struct Box(Defaultable, Movable, Writable):
         op: Int,
     ) raises PySlotError -> Bool:
         var a = self.value
+        # Magic value 42 on the LHS returns NotImplemented from
+        # tp_richcompare, exercising CPython's reflected-comparison fallback.
+        if a == 42.0:
+            raise PySlotError.not_implemented()
         var b: Float64
         try:
             b = other.downcast_value_ptr[Self]()[].value
-        except e:
-            raise PySlotError.type_error(String(e))
+        except:
+            # Cross-type compare: returning NotImplemented lets CPython try
+            # the reflected operation rather than raising TypeError.
+            raise PySlotError.not_implemented()
         if op == RichCompareOps.Py_LT:
             return a < b
         if op == RichCompareOps.Py_LE:
@@ -121,11 +127,17 @@ struct BoxV(Defaultable, Movable, Writable):
         self, other: PythonObject, op: Int
     ) raises PySlotError -> Bool:
         var a = self.value
+        # Magic value 42 on the LHS returns NotImplemented from
+        # tp_richcompare, exercising CPython's reflected-comparison fallback.
+        if a == 42.0:
+            raise PySlotError.not_implemented()
         var b: Float64
         try:
             b = other.downcast_value_ptr[Self]()[].value
-        except e:
-            raise PySlotError.type_error(String(e))
+        except:
+            # Cross-type compare: returning NotImplemented lets CPython try
+            # the reflected operation rather than raising TypeError.
+            raise PySlotError.not_implemented()
         if op == RichCompareOps.Py_LT:
             return a < b
         if op == RichCompareOps.Py_LE:

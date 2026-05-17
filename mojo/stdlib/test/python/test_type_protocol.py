@@ -59,6 +59,33 @@ def _run_richcompare_assertions(new_fn: Callable[..., Any]) -> None:
     assert boxes[1].get_value() == 2.0
     assert boxes[2].get_value() == 3.0
 
+    # NotImplemented from tp_richcompare. The Box rich_compare implementation
+    # returns NotImplemented when self.value == 42, so CPython tries the
+    # reflected comparison on the other operand with the operator swapped
+    # (e.g. `LT` becomes `GT`). Same-type two-Box case: the reflected slot
+    # is called with `(other, magic)`, where `other.value == 1` so the
+    # magic check doesn't fire — comparison succeeds with a normal answer.
+    magic = new_fn(42.0)
+    other = new_fn(1.0)
+    # `magic < other`: LHS NotImplemented, reflected `other > magic` returns
+    # `1.0 > 42.0` == False.
+    assert not (magic < other)
+    # Symmetrically `magic > other` is reflected to `other < magic` →
+    # `1.0 < 42.0` == True.
+    assert magic > other
+
+    # Cross-type comparison: both sides return NotImplemented (LHS magic
+    # fires OR downcast fails; RHS is `int` which doesn't know `Box`).
+    # CPython falls back to identity for `==`/`!=`; ordering operators
+    # raise TypeError.
+    assert not (new_fn(1.0) == 5)  # downcast failure → NotImplemented → identity
+    assert new_fn(1.0) != 5
+    try:
+        _ = magic < 5
+        raise Exception("TypeError expected for magic < 5")
+    except TypeError:
+        pass
+
 
 def test_type_protocol() -> None:
     print("Testing type protocol (rich comparison)...")

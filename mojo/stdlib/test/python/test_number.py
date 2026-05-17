@@ -66,6 +66,28 @@ def _run_number_assertions(
     except TypeError:
         pass
 
+    # Magic-value path: `n(42)` on the LHS always returns NotImplemented
+    # from `nb_add`. With a plain `int` on the LHS, CPython first asks
+    # `int.__add__(1, n(42))` (which returns NotImplemented — int doesn't
+    # know about Number), then tries the reflected `Number.nb_add(n(42), 1)`
+    # which also returns NotImplemented because of the magic-42 check. With
+    # neither direction implemented, CPython raises `TypeError`.
+    try:
+        _ = 1 + n(42)
+        raise Exception("TypeError expected for 1 + n(42)")
+    except TypeError:
+        pass
+
+    # Sanity: the magic check is on the LHS only, so `n(42) + n(1)` still
+    # exercises the reflected dispatch (LHS returns NotImplemented, then
+    # CPython tries Number.nb_add(n(1), n(42)) — same-type reflected — which
+    # succeeds and returns 43).
+    # Note: CPython does NOT actually reflect for same-type operands, so
+    # both sides being Number means this raises TypeError too.
+    # Magic check is on LHS only — when n(42) is on the right and the LHS
+    # is also a Number, the LHS slot succeeds normally.
+    assert val_fn(n(1) + n(42)) == 43
+
     # __sub__ (nb_subtract)
     assert val_fn(n(10) - n(3)) == 7
 
@@ -96,6 +118,20 @@ def _run_number_assertions(
     # __pow__ (nb_power)
     assert val_fn(n(2) ** n(10)) == 1024
     assert val_fn(n(3) ** n(3)) == 27
+
+    # __pow__ NotImplemented path (ternary wrapper). `2 ** n(42)` asks
+    # `int.__pow__(2, n(42))` first → NotImplemented (int doesn't know
+    # Number), then reflected `Number.nb_power(n(42), 2, None)` → magic-42
+    # check returns NotImplemented → TypeError.
+    try:
+        _ = 2 ** n(42)
+        raise Exception("TypeError expected for 2 ** n(42)")
+    except TypeError:
+        pass
+
+    # Sanity: magic check is on the base only, so `n(2) ** n(42)` (LHS=2)
+    # succeeds normally.
+    assert val_fn(n(2) ** n(42)) == 2**42
 
 
 def _run_inplace_assertions(

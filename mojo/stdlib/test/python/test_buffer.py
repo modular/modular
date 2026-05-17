@@ -69,6 +69,27 @@ def test_buffer_protocol() -> None:
     assert len(mv_empty) == 0
     print("  empty buffer: ok")
 
+    # Writable-rejection branch in `_getbufferproc_wrapper`: requesting
+    # PyBUF_WRITABLE on a read-only FloatBuffer must raise BufferError.
+    # Mutating a memoryview surfaces the rejection as TypeError (memoryview
+    # itself enforces readonly before reaching our slot), so we exercise
+    # the wrapper directly via the PEP 688 `__buffer__` API (3.12+).
+    import sys
+
+    if sys.version_info >= (3, 12):
+        import inspect
+
+        try:
+            obj.__buffer__(inspect.BufferFlags.WRITABLE)
+            raise Exception("BufferError expected for PyBUF_WRITABLE request")
+        except BufferError as ex:
+            assert "not writable" in str(ex), (
+                f"expected 'not writable' message, got {ex!r}"
+            )
+        print("  writable-rejection: ok")
+    else:
+        print("  writable-rejection: skipped (requires Python 3.12+)")
+
     print("Buffer protocol tests passed!")
 
 

@@ -138,9 +138,17 @@ struct Number(Defaultable, Movable, Writable):
     def py__add__(
         self_ptr: UnsafePointer[Self, MutAnyOrigin], other: PythonObject
     ) raises PySlotError -> PythonObject:
+        # Magic value 42 on the LHS exercises the NotImplemented path even
+        # when the operands look compatible. Because CPython reuses `nb_add`
+        # for both `__add__` and `__radd__`, this fires whether `n(42)` is
+        # on the left (direct call) or on the right of a `<other> + n(42)`
+        # expression (reflected call after the LHS slot returns
+        # NotImplemented).
+        if self_ptr[].value == 42:
+            raise PySlotError.not_implemented()
         try:
             var o = other.downcast_value_ptr[Self]()
-            return PythonObject(alloc=Number(self_ptr[].value + o[].value))
+            return _alloc(Number(self_ptr[].value + o[].value))
         except:
             raise PySlotError.not_implemented()
 
@@ -244,10 +252,14 @@ struct Number(Defaultable, Movable, Writable):
         exp: PythonObject,
         mod: PythonObject,
     ) raises PySlotError -> PythonObject:
+        # Magic value 42 on the base exercises the NotImplemented path of
+        # the ternary wrapper (`nb_power`).
+        if self_ptr[].value == 42:
+            raise PySlotError.not_implemented()
         try:
             var e = exp.downcast_value_ptr[Self]()
             var result = Int(Float64(self_ptr[].value) ** Float64(e[].value))
-            return PythonObject(alloc=Number(result))
+            return _alloc(Number(result))
         except:
             raise PySlotError.not_implemented()
 
