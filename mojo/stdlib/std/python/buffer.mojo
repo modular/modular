@@ -24,15 +24,16 @@
 from std.ffi import c_int
 from std.memory import OpaquePointer, UnsafePointer
 from std.python import Python, PythonObject
-from std.python._cpython import PyObjectPtr, Py_ssize_t, PyType_Slot
+from std.python._cpython import (
+    PyObjectPtr,
+    Py_ssize_t,
+    PySlotIndex,
+    PyType_Slot,
+)
 from std.python.bindings import PythonTypeBuilder
 
 from .adapters import _unwrap_self
 
-
-# Slot indices for the buffer protocol (from CPython Include/typeslots.h).
-comptime _BF_GETBUFFER = Int32(1)
-comptime _BF_RELEASEBUFFER = Int32(2)
 
 # PyBUF_ flag constants (from CPython Include/cpython/object.h).
 comptime _PyBUF_WRITABLE = Int32(0x0001)
@@ -269,7 +270,7 @@ struct _BfSlotInstaller:
         ) thin abi("C") -> c_int
         var fn_ptr: _getbufferproc = _bf_getbuffer_wrapper[self_type, method]
         ptr[]._insert_slot(
-            PyType_Slot(_BF_GETBUFFER, rebind[OpaquePointer[MutAnyOrigin]](fn_ptr))
+            PyType_Slot(PySlotIndex.bf_getbuffer, rebind[OpaquePointer[MutAnyOrigin]](fn_ptr))
         )
 
     @staticmethod
@@ -284,7 +285,7 @@ struct _BfSlotInstaller:
         var fn_ptr: _releasebufferproc = _bf_releasebuffer_impl
         ptr[]._insert_slot(
             PyType_Slot(
-                _BF_RELEASEBUFFER, rebind[OpaquePointer[MutAnyOrigin]](fn_ptr)
+                PySlotIndex.bf_releasebuffer, rebind[OpaquePointer[MutAnyOrigin]](fn_ptr)
             )
         )
 

@@ -13,7 +13,7 @@
 
 from std.memory import OpaquePointer, UnsafePointer
 from std.python import PythonObject
-from std.python._cpython import PyObjectPtr, Py_ssize_t, PyType_Slot
+from std.python._cpython import PyObjectPtr, Py_ssize_t, PySlotIndex, PyType_Slot
 from std.python.bindings import PythonTypeBuilder
 from std.utils import Variant
 
@@ -21,7 +21,6 @@ from .utils import PySlotError
 
 from .adapters import (
     _CPython,
-    _PySlotIndex,
     _SlotInstaller,
     _conv_ptr_nr_int_arg,
     _conv_ptr_r_int_arg,
@@ -85,7 +84,7 @@ struct SequenceProtocolBuilder[self_type: ImplicitlyDestructible]:
         var fn_ptr: _lenfunc = _mp_length_wrapper[Self.self_type, method]
         self._ptr[]._insert_slot(
             PyType_Slot(
-                _PySlotIndex.sq_length,
+                PySlotIndex.sq_length,
                 rebind[OpaquePointer[MutAnyOrigin]](fn_ptr),
             )
         )
@@ -101,7 +100,7 @@ struct SequenceProtocolBuilder[self_type: ImplicitlyDestructible]:
         Called by `obj[index]`.
         See: https://docs.python.org/3/c-api/typeobj.html#c.PySequenceMethods.sq_item
         """
-        _SlotInstaller.ssizeargfunc[Self.self_type, method, _PySlotIndex.sq_item](
+        _SlotInstaller.ssizeargfunc[Self.self_type, method, PySlotIndex.sq_item](
             self._ptr
         )
         return self
@@ -140,7 +139,7 @@ struct SequenceProtocolBuilder[self_type: ImplicitlyDestructible]:
         Called by `item in obj`.
         See: https://docs.python.org/3/c-api/typeobj.html#c.PySequenceMethods.sq_contains
         """
-        _SlotInstaller.objobjproc[Self.self_type, method, _PySlotIndex.sq_contains](
+        _SlotInstaller.objobjproc[Self.self_type, method, PySlotIndex.sq_contains](
             self._ptr
         )
         return self
@@ -155,7 +154,7 @@ struct SequenceProtocolBuilder[self_type: ImplicitlyDestructible]:
         Called by `obj + other`.
         See: https://docs.python.org/3/c-api/typeobj.html#c.PySequenceMethods.sq_concat
         """
-        _SlotInstaller.binary[Self.self_type, method, _PySlotIndex.sq_concat](
+        _SlotInstaller.binary[Self.self_type, method, PySlotIndex.sq_concat](
             self._ptr
         )
         return self
@@ -170,7 +169,7 @@ struct SequenceProtocolBuilder[self_type: ImplicitlyDestructible]:
         Called by `obj * count`.
         See: https://docs.python.org/3/c-api/typeobj.html#c.PySequenceMethods.sq_repeat
         """
-        _SlotInstaller.ssizeargfunc[Self.self_type, method, _PySlotIndex.sq_repeat](
+        _SlotInstaller.ssizeargfunc[Self.self_type, method, PySlotIndex.sq_repeat](
             self._ptr
         )
         return self
@@ -185,7 +184,7 @@ struct SequenceProtocolBuilder[self_type: ImplicitlyDestructible]:
         Called by `obj += other`.
         See: https://docs.python.org/3/c-api/typeobj.html#c.PySequenceMethods.sq_inplace_concat
         """
-        _SlotInstaller.binary[Self.self_type, method, _PySlotIndex.sq_inplace_concat](
+        _SlotInstaller.binary[Self.self_type, method, PySlotIndex.sq_inplace_concat](
             self._ptr
         )
         return self
@@ -201,7 +200,7 @@ struct SequenceProtocolBuilder[self_type: ImplicitlyDestructible]:
         See: https://docs.python.org/3/c-api/typeobj.html#c.PySequenceMethods.sq_inplace_repeat
         """
         _SlotInstaller.ssizeargfunc[
-            Self.self_type, method, _PySlotIndex.sq_inplace_repeat
+            Self.self_type, method, PySlotIndex.sq_inplace_repeat
         ](self._ptr)
         return self
 
@@ -220,7 +219,7 @@ struct SequenceProtocolBuilder[self_type: ImplicitlyDestructible]:
         ]
         self._ptr[]._insert_slot(
             PyType_Slot(
-                _PySlotIndex.sq_length,
+                PySlotIndex.sq_length,
                 rebind[OpaquePointer[MutAnyOrigin]](fn_ptr),
             )
         )
@@ -238,7 +237,7 @@ struct SequenceProtocolBuilder[self_type: ImplicitlyDestructible]:
         _SlotInstaller.ssizeargfunc[
             Self.self_type,
             _lift_int_to_obj[Self.self_type, method],
-            _PySlotIndex.sq_item,
+            PySlotIndex.sq_item,
         ](self._ptr)
         return self
 
@@ -270,7 +269,7 @@ struct SequenceProtocolBuilder[self_type: ImplicitlyDestructible]:
         _SlotInstaller.objobjproc[
             Self.self_type,
             _lift_obj_to_bool[Self.self_type, method],
-            _PySlotIndex.sq_contains,
+            PySlotIndex.sq_contains,
         ](self._ptr)
         return self
 
@@ -283,7 +282,7 @@ struct SequenceProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PySequenceMethods.sq_concat
         """
-        _SlotInstaller.binary_nr[Self.self_type, method, _PySlotIndex.sq_concat](
+        _SlotInstaller.binary_nr[Self.self_type, method, PySlotIndex.sq_concat](
             self._ptr
         )
         return self
@@ -300,7 +299,7 @@ struct SequenceProtocolBuilder[self_type: ImplicitlyDestructible]:
         _SlotInstaller.ssizeargfunc[
             Self.self_type,
             _lift_int_to_obj[Self.self_type, method],
-            _PySlotIndex.sq_repeat,
+            PySlotIndex.sq_repeat,
         ](self._ptr)
         return self
 
@@ -314,7 +313,7 @@ struct SequenceProtocolBuilder[self_type: ImplicitlyDestructible]:
         See: https://docs.python.org/3/c-api/typeobj.html#c.PySequenceMethods.sq_inplace_concat
         """
         _SlotInstaller.binary_nr[
-            Self.self_type, method, _PySlotIndex.sq_inplace_concat
+            Self.self_type, method, PySlotIndex.sq_inplace_concat
         ](self._ptr)
         return self
 
@@ -330,7 +329,7 @@ struct SequenceProtocolBuilder[self_type: ImplicitlyDestructible]:
         _SlotInstaller.ssizeargfunc[
             Self.self_type,
             _lift_int_to_obj[Self.self_type, method],
-            _PySlotIndex.sq_inplace_repeat,
+            PySlotIndex.sq_inplace_repeat,
         ](self._ptr)
         return self
 
@@ -349,7 +348,7 @@ struct SequenceProtocolBuilder[self_type: ImplicitlyDestructible]:
         ]
         self._ptr[]._insert_slot(
             PyType_Slot(
-                _PySlotIndex.sq_length,
+                PySlotIndex.sq_length,
                 rebind[OpaquePointer[MutAnyOrigin]](fn_ptr),
             )
         )
@@ -365,7 +364,7 @@ struct SequenceProtocolBuilder[self_type: ImplicitlyDestructible]:
         _SlotInstaller.ssizeargfunc[
             Self.self_type,
             _lift_val_int_to_obj[Self.self_type, method],
-            _PySlotIndex.sq_item,
+            PySlotIndex.sq_item,
         ](self._ptr)
         return self
 
@@ -407,7 +406,7 @@ struct SequenceProtocolBuilder[self_type: ImplicitlyDestructible]:
         _SlotInstaller.objobjproc[
             Self.self_type,
             _lift_val_obj_to_bool[Self.self_type, method],
-            _PySlotIndex.sq_contains,
+            PySlotIndex.sq_contains,
         ](self._ptr)
         return self
 
@@ -418,7 +417,7 @@ struct SequenceProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PySequenceMethods.sq_concat
         """
-        _SlotInstaller.binary_val[Self.self_type, method, _PySlotIndex.sq_concat](
+        _SlotInstaller.binary_val[Self.self_type, method, PySlotIndex.sq_concat](
             self._ptr
         )
         return self
@@ -433,7 +432,7 @@ struct SequenceProtocolBuilder[self_type: ImplicitlyDestructible]:
         _SlotInstaller.ssizeargfunc[
             Self.self_type,
             _lift_val_int_to_obj[Self.self_type, method],
-            _PySlotIndex.sq_repeat,
+            PySlotIndex.sq_repeat,
         ](self._ptr)
         return self
 
@@ -445,7 +444,7 @@ struct SequenceProtocolBuilder[self_type: ImplicitlyDestructible]:
         See: https://docs.python.org/3/c-api/typeobj.html#c.PySequenceMethods.sq_inplace_concat
         """
         _SlotInstaller.binary_val[
-            Self.self_type, method, _PySlotIndex.sq_inplace_concat
+            Self.self_type, method, PySlotIndex.sq_inplace_concat
         ](self._ptr)
         return self
 
@@ -459,7 +458,7 @@ struct SequenceProtocolBuilder[self_type: ImplicitlyDestructible]:
         _SlotInstaller.ssizeargfunc[
             Self.self_type,
             _lift_val_int_to_obj[Self.self_type, method],
-            _PySlotIndex.sq_inplace_repeat,
+            PySlotIndex.sq_inplace_repeat,
         ](self._ptr)
         return self
 
@@ -478,7 +477,7 @@ struct SequenceProtocolBuilder[self_type: ImplicitlyDestructible]:
         _SlotInstaller.ssizeargfunc[
             Self.self_type,
             _conv_ptr_r_int_arg[Self.self_type, R, method],
-            _PySlotIndex.sq_item,
+            PySlotIndex.sq_item,
         ](self._ptr)
         return self
 
@@ -493,7 +492,7 @@ struct SequenceProtocolBuilder[self_type: ImplicitlyDestructible]:
         _SlotInstaller.ssizeargfunc[
             Self.self_type,
             _conv_ptr_nr_int_arg[Self.self_type, R, method],
-            _PySlotIndex.sq_item,
+            PySlotIndex.sq_item,
         ](self._ptr)
         return self
 
@@ -508,7 +507,7 @@ struct SequenceProtocolBuilder[self_type: ImplicitlyDestructible]:
         _SlotInstaller.ssizeargfunc[
             Self.self_type,
             _conv_val_r_int_arg[Self.self_type, R, method],
-            _PySlotIndex.sq_item,
+            PySlotIndex.sq_item,
         ](self._ptr)
         return self
 
@@ -523,7 +522,7 @@ struct SequenceProtocolBuilder[self_type: ImplicitlyDestructible]:
         See: https://docs.python.org/3/c-api/typeobj.html#c.PySequenceMethods.sq_concat
         """
         _SlotInstaller.binary_conv_r[
-            Self.self_type, R, method, _PySlotIndex.sq_concat
+            Self.self_type, R, method, PySlotIndex.sq_concat
         ](self._ptr)
         return self
 
@@ -538,7 +537,7 @@ struct SequenceProtocolBuilder[self_type: ImplicitlyDestructible]:
         See: https://docs.python.org/3/c-api/typeobj.html#c.PySequenceMethods.sq_concat
         """
         _SlotInstaller.binary_conv_nr[
-            Self.self_type, R, method, _PySlotIndex.sq_concat
+            Self.self_type, R, method, PySlotIndex.sq_concat
         ](self._ptr)
         return self
 
@@ -551,7 +550,7 @@ struct SequenceProtocolBuilder[self_type: ImplicitlyDestructible]:
         See: https://docs.python.org/3/c-api/typeobj.html#c.PySequenceMethods.sq_concat
         """
         _SlotInstaller.binary_conv_val[
-            Self.self_type, R, method, _PySlotIndex.sq_concat
+            Self.self_type, R, method, PySlotIndex.sq_concat
         ](self._ptr)
         return self
 
@@ -568,7 +567,7 @@ struct SequenceProtocolBuilder[self_type: ImplicitlyDestructible]:
         _SlotInstaller.ssizeargfunc[
             Self.self_type,
             _conv_ptr_r_int_arg[Self.self_type, R, method],
-            _PySlotIndex.sq_repeat,
+            PySlotIndex.sq_repeat,
         ](self._ptr)
         return self
 
@@ -583,7 +582,7 @@ struct SequenceProtocolBuilder[self_type: ImplicitlyDestructible]:
         _SlotInstaller.ssizeargfunc[
             Self.self_type,
             _conv_ptr_nr_int_arg[Self.self_type, R, method],
-            _PySlotIndex.sq_repeat,
+            PySlotIndex.sq_repeat,
         ](self._ptr)
         return self
 
@@ -598,7 +597,7 @@ struct SequenceProtocolBuilder[self_type: ImplicitlyDestructible]:
         _SlotInstaller.ssizeargfunc[
             Self.self_type,
             _conv_val_r_int_arg[Self.self_type, R, method],
-            _PySlotIndex.sq_repeat,
+            PySlotIndex.sq_repeat,
         ](self._ptr)
         return self
 
@@ -613,7 +612,7 @@ struct SequenceProtocolBuilder[self_type: ImplicitlyDestructible]:
         See: https://docs.python.org/3/c-api/typeobj.html#c.PySequenceMethods.sq_inplace_concat
         """
         _SlotInstaller.binary_conv_r[
-            Self.self_type, R, method, _PySlotIndex.sq_inplace_concat
+            Self.self_type, R, method, PySlotIndex.sq_inplace_concat
         ](self._ptr)
         return self
 
@@ -628,7 +627,7 @@ struct SequenceProtocolBuilder[self_type: ImplicitlyDestructible]:
         See: https://docs.python.org/3/c-api/typeobj.html#c.PySequenceMethods.sq_inplace_concat
         """
         _SlotInstaller.binary_conv_nr[
-            Self.self_type, R, method, _PySlotIndex.sq_inplace_concat
+            Self.self_type, R, method, PySlotIndex.sq_inplace_concat
         ](self._ptr)
         return self
 
@@ -641,7 +640,7 @@ struct SequenceProtocolBuilder[self_type: ImplicitlyDestructible]:
         See: https://docs.python.org/3/c-api/typeobj.html#c.PySequenceMethods.sq_inplace_concat
         """
         _SlotInstaller.binary_conv_val[
-            Self.self_type, R, method, _PySlotIndex.sq_inplace_concat
+            Self.self_type, R, method, PySlotIndex.sq_inplace_concat
         ](self._ptr)
         return self
 
@@ -658,7 +657,7 @@ struct SequenceProtocolBuilder[self_type: ImplicitlyDestructible]:
         _SlotInstaller.ssizeargfunc[
             Self.self_type,
             _conv_ptr_r_int_arg[Self.self_type, R, method],
-            _PySlotIndex.sq_inplace_repeat,
+            PySlotIndex.sq_inplace_repeat,
         ](self._ptr)
         return self
 
@@ -673,7 +672,7 @@ struct SequenceProtocolBuilder[self_type: ImplicitlyDestructible]:
         _SlotInstaller.ssizeargfunc[
             Self.self_type,
             _conv_ptr_nr_int_arg[Self.self_type, R, method],
-            _PySlotIndex.sq_inplace_repeat,
+            PySlotIndex.sq_inplace_repeat,
         ](self._ptr)
         return self
 
@@ -688,6 +687,6 @@ struct SequenceProtocolBuilder[self_type: ImplicitlyDestructible]:
         _SlotInstaller.ssizeargfunc[
             Self.self_type,
             _conv_val_r_int_arg[Self.self_type, R, method],
-            _PySlotIndex.sq_inplace_repeat,
+            PySlotIndex.sq_inplace_repeat,
         ](self._ptr)
         return self
