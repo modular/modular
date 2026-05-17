@@ -248,36 +248,45 @@ def _bf_releasebuffer_impl(
 # ===----------------------------------------------------------------------=== #
 
 
-def _install_bf_getbuffer[
-    self_type: ImplicitlyDestructible,
-    method: def(
-        UnsafePointer[self_type, MutAnyOrigin], Int32
-    ) thin raises -> BufferInfo,
-](ptr: UnsafePointer[mut=True, PythonTypeBuilder, MutAnyOrigin]):
-    """Insert the `bf_getbuffer` slot into the builder pointed to by `ptr`."""
-    comptime _getbufferproc = def(
-        PyObjectPtr, UnsafePointer[_PyBuffer, MutAnyOrigin], c_int
-    ) thin abi("C") -> c_int
-    var fn_ptr: _getbufferproc = _bf_getbuffer_wrapper[self_type, method]
-    ptr[]._insert_slot(
-        PyType_Slot(_BF_GETBUFFER, rebind[OpaquePointer[MutAnyOrigin]](fn_ptr))
-    )
-
-
-def _install_bf_releasebuffer(
-    ptr: UnsafePointer[mut=True, PythonTypeBuilder, MutAnyOrigin]
-):
-    """Insert the default `bf_releasebuffer` slot into the builder pointed to by `ptr`.
+struct _BfSlotInstaller:
+    """Static-method namespace for inserting CPython buffer-protocol slot
+    function pointers (`bf_getbuffer`, `bf_releasebuffer`) into a
+    `PythonTypeBuilder`. Kept local to `buffer.mojo` so the generic
+    `_SlotInstaller` in `adapters.mojo` doesn't need to reach into this
+    module's private types.
     """
-    comptime _releasebufferproc = def(
-        PyObjectPtr, UnsafePointer[_PyBuffer, MutAnyOrigin]
-    ) thin abi("C") -> None
-    var fn_ptr: _releasebufferproc = _bf_releasebuffer_impl
-    ptr[]._insert_slot(
-        PyType_Slot(
-            _BF_RELEASEBUFFER, rebind[OpaquePointer[MutAnyOrigin]](fn_ptr)
+
+    @staticmethod
+    def getbuffer[
+        self_type: ImplicitlyDestructible,
+        method: def(
+            UnsafePointer[self_type, MutAnyOrigin], Int32
+        ) thin raises -> BufferInfo,
+    ](ptr: UnsafePointer[mut=True, PythonTypeBuilder, MutAnyOrigin]):
+        """Insert the `bf_getbuffer` slot into the builder pointed to by `ptr`."""
+        comptime _getbufferproc = def(
+            PyObjectPtr, UnsafePointer[_PyBuffer, MutAnyOrigin], c_int
+        ) thin abi("C") -> c_int
+        var fn_ptr: _getbufferproc = _bf_getbuffer_wrapper[self_type, method]
+        ptr[]._insert_slot(
+            PyType_Slot(_BF_GETBUFFER, rebind[OpaquePointer[MutAnyOrigin]](fn_ptr))
         )
-    )
+
+    @staticmethod
+    def releasebuffer(
+        ptr: UnsafePointer[mut=True, PythonTypeBuilder, MutAnyOrigin]
+    ):
+        """Insert the default `bf_releasebuffer` slot into the builder pointed to by `ptr`.
+        """
+        comptime _releasebufferproc = def(
+            PyObjectPtr, UnsafePointer[_PyBuffer, MutAnyOrigin]
+        ) thin abi("C") -> None
+        var fn_ptr: _releasebufferproc = _bf_releasebuffer_impl
+        ptr[]._insert_slot(
+            PyType_Slot(
+                _BF_RELEASEBUFFER, rebind[OpaquePointer[MutAnyOrigin]](fn_ptr)
+            )
+        )
 
 
 # ===----------------------------------------------------------------------=== #
@@ -340,7 +349,7 @@ struct BufferProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyBufferProcs.bf_getbuffer
         """
-        _install_bf_getbuffer[Self.self_type, method](self._ptr)
+        _BfSlotInstaller.getbuffer[Self.self_type, method](self._ptr)
         return self
 
     def def_releasebuffer(mut self) -> ref[self] Self:
@@ -352,5 +361,5 @@ struct BufferProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyBufferProcs.bf_releasebuffer
         """
-        _install_bf_releasebuffer(self._ptr)
+        _BfSlotInstaller.releasebuffer(self._ptr)
         return self

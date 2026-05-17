@@ -632,202 +632,6 @@ struct _PySlotIndex:
     comptime tp_token = Int32(83)  # Python 3.14+
 
 
-# ===----------------------------------------------------------------------=== #
-# Slot-install helpers — insert a typed C function pointer into a builder
-# ===----------------------------------------------------------------------=== #
-
-
-def _install_unary[
-    self_type: ImplicitlyDestructible,
-    method: def(
-        UnsafePointer[self_type, MutAnyOrigin]
-    ) thin raises PySlotError -> PythonObject,
-    slot: Int32,
-](ptr: UnsafePointer[mut=True, PythonTypeBuilder, MutAnyOrigin]):
-    """Insert a `unaryfunc` slot into the builder pointed to by `ptr`."""
-    comptime _unaryfunc = def(PyObjectPtr) thin abi("C") -> PyObjectPtr
-    var fn_ptr: _unaryfunc = _unaryfunc_wrapper[self_type, method]
-    ptr[]._insert_slot(
-        PyType_Slot(slot, rebind[OpaquePointer[MutAnyOrigin]](fn_ptr))
-    )
-
-
-def _install_binary[
-    self_type: ImplicitlyDestructible,
-    method: def(
-        UnsafePointer[self_type, MutAnyOrigin], PythonObject
-    ) thin raises PySlotError -> PythonObject,
-    slot: Int32,
-](ptr: UnsafePointer[mut=True, PythonTypeBuilder, MutAnyOrigin]):
-    """Insert a `binaryfunc` slot into the builder pointed to by `ptr`."""
-    comptime _binaryfunc = def(PyObjectPtr, PyObjectPtr) thin abi(
-        "C"
-    ) -> PyObjectPtr
-    var fn_ptr: _binaryfunc = _binaryfunc_wrapper[self_type, method]
-    ptr[]._insert_slot(
-        PyType_Slot(slot, rebind[OpaquePointer[MutAnyOrigin]](fn_ptr))
-    )
-
-
-def _install_ternary[
-    self_type: ImplicitlyDestructible,
-    method: def(
-        UnsafePointer[self_type, MutAnyOrigin], PythonObject, PythonObject
-    ) thin raises PySlotError -> PythonObject,
-    slot: Int32,
-](ptr: UnsafePointer[mut=True, PythonTypeBuilder, MutAnyOrigin]):
-    """Insert a `ternaryfunc` slot into the builder pointed to by `ptr`."""
-    comptime _ternaryfunc = def(PyObjectPtr, PyObjectPtr, PyObjectPtr) thin abi(
-        "C"
-    ) -> PyObjectPtr
-    var fn_ptr: _ternaryfunc = _ternaryfunc_wrapper[self_type, method]
-    ptr[]._insert_slot(
-        PyType_Slot(slot, rebind[OpaquePointer[MutAnyOrigin]](fn_ptr))
-    )
-
-
-def _install_inquiry[
-    self_type: ImplicitlyDestructible,
-    method: def(
-        UnsafePointer[self_type, MutAnyOrigin]
-    ) thin raises PySlotError -> Bool,
-    slot: Int32,
-](ptr: UnsafePointer[mut=True, PythonTypeBuilder, MutAnyOrigin]):
-    """Insert an `inquiry` slot into the builder pointed to by `ptr`."""
-    comptime _inquiry = def(PyObjectPtr) thin abi("C") -> c_int
-    var fn_ptr: _inquiry = _inquiry_wrapper[self_type, method]
-    ptr[]._insert_slot(
-        PyType_Slot(slot, rebind[OpaquePointer[MutAnyOrigin]](fn_ptr))
-    )
-
-
-def _install_richcompare[
-    self_type: ImplicitlyDestructible,
-    method: def(
-        UnsafePointer[self_type, MutAnyOrigin], PythonObject, Int
-    ) thin raises PySlotError -> Bool,
-](ptr: UnsafePointer[mut=True, PythonTypeBuilder, MutAnyOrigin]):
-    """Insert a `richcmpfunc` slot (`tp_richcompare`) into the builder pointed to by `ptr`.
-    """
-    comptime _richcmpfunc = def(PyObjectPtr, PyObjectPtr, c_int) thin abi(
-        "C"
-    ) -> PyObjectPtr
-    var fn_ptr: _richcmpfunc = _richcompare_wrapper[self_type, method]
-    ptr[]._insert_slot(
-        PyType_Slot(
-            _PySlotIndex.tp_richcompare,
-            rebind[OpaquePointer[MutAnyOrigin]](fn_ptr),
-        )
-    )
-
-
-def _install_lenfunc[
-    self_type: ImplicitlyDestructible,
-    method: def(
-        UnsafePointer[self_type, MutAnyOrigin]
-    ) thin raises PySlotError -> Int,
-](ptr: UnsafePointer[mut=True, PythonTypeBuilder, MutAnyOrigin]):
-    """Insert a `lenfunc` slot (`mp_length`) into the builder pointed to by `ptr`.
-    """
-    comptime _lenfunc = def(PyObjectPtr) thin abi("C") -> Py_ssize_t
-    var fn_ptr: _lenfunc = _mp_length_wrapper[self_type, method]
-    ptr[]._insert_slot(
-        PyType_Slot(
-            _PySlotIndex.mp_length, rebind[OpaquePointer[MutAnyOrigin]](fn_ptr)
-        )
-    )
-
-
-def _install_mp_getitem[
-    self_type: ImplicitlyDestructible,
-    method: def(
-        UnsafePointer[self_type, MutAnyOrigin], PythonObject
-    ) thin raises PySlotError -> PythonObject,
-](ptr: UnsafePointer[mut=True, PythonTypeBuilder, MutAnyOrigin]):
-    """Insert a `binaryfunc` slot (`mp_subscript`) into the builder pointed to by `ptr`.
-    """
-    comptime _binaryfunc = def(PyObjectPtr, PyObjectPtr) thin abi(
-        "C"
-    ) -> PyObjectPtr
-    var fn_ptr: _binaryfunc = _mp_subscript_wrapper[self_type, method]
-    ptr[]._insert_slot(
-        PyType_Slot(
-            _PySlotIndex.mp_getitem, rebind[OpaquePointer[MutAnyOrigin]](fn_ptr)
-        )
-    )
-
-
-def _install_objobjargproc[
-    self_type: ImplicitlyDestructible,
-    method: def(
-        UnsafePointer[self_type, MutAnyOrigin],
-        PythonObject,
-        Variant[PythonObject, Int],
-    ) thin raises PySlotError -> None,
-](ptr: UnsafePointer[mut=True, PythonTypeBuilder, MutAnyOrigin]):
-    """Insert an `objobjargproc` slot (`mp_ass_subscript`) into the builder pointed to by `ptr`.
-    """
-    comptime _objobjargproc = def(
-        PyObjectPtr, PyObjectPtr, PyObjectPtr
-    ) thin abi("C") -> c_int
-    var fn_ptr: _objobjargproc = _mp_ass_subscript_wrapper[self_type, method]
-    ptr[]._insert_slot(
-        PyType_Slot(
-            _PySlotIndex.mp_setitem, rebind[OpaquePointer[MutAnyOrigin]](fn_ptr)
-        )
-    )
-
-
-def _install_ssizeargfunc[
-    self_type: ImplicitlyDestructible,
-    method: def(
-        UnsafePointer[self_type, MutAnyOrigin], Int
-    ) thin raises PySlotError -> PythonObject,
-    slot: Int32,
-](ptr: UnsafePointer[mut=True, PythonTypeBuilder, MutAnyOrigin]):
-    """Insert a `ssizeargfunc` slot into the builder pointed to by `ptr`."""
-    comptime _ssizeargfunc = def(PyObjectPtr, Py_ssize_t) thin abi(
-        "C"
-    ) -> PyObjectPtr
-    var fn_ptr: _ssizeargfunc = _ssizeargfunc_wrapper[self_type, method]
-    ptr[]._insert_slot(
-        PyType_Slot(slot, rebind[OpaquePointer[MutAnyOrigin]](fn_ptr))
-    )
-
-
-def _install_ssizeobjargproc[
-    self_type: ImplicitlyDestructible,
-    method: def(
-        UnsafePointer[self_type, MutAnyOrigin], Int, Variant[PythonObject, Int]
-    ) thin raises PySlotError -> None,
-](ptr: UnsafePointer[mut=True, PythonTypeBuilder, MutAnyOrigin]):
-    """Insert the `ssizeobjargproc` slot (`sq_ass_item`) into the builder pointed to by `ptr`.
-    """
-    comptime _ssizeobjargproc = def(
-        PyObjectPtr, Py_ssize_t, PyObjectPtr
-    ) thin abi("C") -> c_int
-    var fn_ptr: _ssizeobjargproc = _ssizeobjargproc_wrapper[self_type, method]
-    ptr[]._insert_slot(
-        PyType_Slot(
-            _PySlotIndex.sq_ass_item,
-            rebind[OpaquePointer[MutAnyOrigin]](fn_ptr),
-        )
-    )
-
-
-def _install_objobjproc[
-    self_type: ImplicitlyDestructible,
-    method: def(
-        UnsafePointer[self_type, MutAnyOrigin], PythonObject
-    ) thin raises PySlotError -> Bool,
-    slot: Int32,
-](ptr: UnsafePointer[mut=True, PythonTypeBuilder, MutAnyOrigin]):
-    """Insert an `objobjproc` slot into the builder pointed to by `ptr`."""
-    comptime _objobjproc = def(PyObjectPtr, PyObjectPtr) thin abi("C") -> c_int
-    var fn_ptr: _objobjproc = _objobjproc_wrapper[self_type, method]
-    ptr[]._insert_slot(
-        PyType_Slot(slot, rebind[OpaquePointer[MutAnyOrigin]](fn_ptr))
-    )
 
 
 # ===----------------------------------------------------------------------=== #
@@ -1216,254 +1020,484 @@ def _conv_val_r_ternary[
     return _to_py[R](method(ptr[], a, b))
 
 
-# ===----------------------------------------------------------------------=== #
-# Wrapped slot-install helpers — variants that compose a lift/conv helper
-# around the caller's method so per-protocol builder call sites become a
-# single line instead of a multi-line `_install_X[..., _lift_Y[...], slot]`.
-# ===----------------------------------------------------------------------=== #
 
 
 # Unary
 
 
-def _install_unary_nr[
-    self_type: ImplicitlyDestructible,
-    method: def(UnsafePointer[self_type, MutAnyOrigin]) thin -> PythonObject,
-    slot: Int32,
-](ptr: UnsafePointer[mut=True, PythonTypeBuilder, MutAnyOrigin]):
-    """Insert a `unaryfunc` slot from a non-raising method."""
-    _install_unary[self_type, _lift_to_obj[self_type, method], slot](ptr)
+# ===----------------------------------------------------------------------=== #
+# Slot-install helpers — insert typed C function pointers into a builder
+# ===----------------------------------------------------------------------=== #
 
 
-def _install_unary_val[
-    self_type: ImplicitlyDestructible,
-    method: def(self_type) thin raises PySlotError -> PythonObject,
-    slot: Int32,
-](ptr: UnsafePointer[mut=True, PythonTypeBuilder, MutAnyOrigin]):
-    """Insert a `unaryfunc` slot from a value-receiver method."""
-    _install_unary[self_type, _lift_val_to_obj[self_type, method], slot](ptr)
-
-
-def _install_unary_conv_r[
-    self_type: ImplicitlyDestructible,
-    R: _CPython,
-    method: def(
-        UnsafePointer[self_type, MutAnyOrigin]
-    ) thin raises PySlotError -> R,
-    slot: Int32,
-](ptr: UnsafePointer[mut=True, PythonTypeBuilder, MutAnyOrigin]):
-    """Insert a `unaryfunc` slot from a raising ConvertibleToPython method."""
-    _install_unary[self_type, _conv_ptr_r_unary[self_type, R, method], slot](
-        ptr
-    )
-
-
-def _install_unary_conv_nr[
-    self_type: ImplicitlyDestructible,
-    R: _CPython,
-    method: def(UnsafePointer[self_type, MutAnyOrigin]) thin -> R,
-    slot: Int32,
-](ptr: UnsafePointer[mut=True, PythonTypeBuilder, MutAnyOrigin]):
-    """Insert a `unaryfunc` slot from a non-raising ConvertibleToPython method.
+struct _SlotInstaller:
+    """Static-method namespace for inserting CPython type-slot function
+    pointers into a `PythonTypeBuilder`. Each method wraps a method
+    template parameter in the matching adapter and registers the result.
     """
-    _install_unary[self_type, _conv_ptr_nr_unary[self_type, R, method], slot](
-        ptr
-    )
+
+    @staticmethod
+    def unary[
+        self_type: ImplicitlyDestructible,
+        method: def(
+            UnsafePointer[self_type, MutAnyOrigin]
+        ) thin raises PySlotError -> PythonObject,
+        slot: Int32,
+    ](ptr: UnsafePointer[mut=True, PythonTypeBuilder, MutAnyOrigin]):
+        """Insert a `unaryfunc` slot into the builder pointed to by `ptr`."""
+        comptime _unaryfunc = def(PyObjectPtr) thin abi("C") -> PyObjectPtr
+        var fn_ptr: _unaryfunc = _unaryfunc_wrapper[self_type, method]
+        ptr[]._insert_slot(
+            PyType_Slot(slot, rebind[OpaquePointer[MutAnyOrigin]](fn_ptr))
+        )
 
 
-def _install_unary_conv_val[
-    self_type: ImplicitlyDestructible,
-    R: _CPython,
-    method: def(self_type) thin raises PySlotError -> R,
-    slot: Int32,
-](ptr: UnsafePointer[mut=True, PythonTypeBuilder, MutAnyOrigin]):
-    """Insert a `unaryfunc` slot from a value-receiver ConvertibleToPython method.
-    """
-    _install_unary[self_type, _conv_val_r_unary[self_type, R, method], slot](
-        ptr
-    )
+    @staticmethod
+    def binary[
+        self_type: ImplicitlyDestructible,
+        method: def(
+            UnsafePointer[self_type, MutAnyOrigin], PythonObject
+        ) thin raises PySlotError -> PythonObject,
+        slot: Int32,
+    ](ptr: UnsafePointer[mut=True, PythonTypeBuilder, MutAnyOrigin]):
+        """Insert a `binaryfunc` slot into the builder pointed to by `ptr`."""
+        comptime _binaryfunc = def(PyObjectPtr, PyObjectPtr) thin abi(
+            "C"
+        ) -> PyObjectPtr
+        var fn_ptr: _binaryfunc = _binaryfunc_wrapper[self_type, method]
+        ptr[]._insert_slot(
+            PyType_Slot(slot, rebind[OpaquePointer[MutAnyOrigin]](fn_ptr))
+        )
 
 
-# Inquiry
+    @staticmethod
+    def ternary[
+        self_type: ImplicitlyDestructible,
+        method: def(
+            UnsafePointer[self_type, MutAnyOrigin], PythonObject, PythonObject
+        ) thin raises PySlotError -> PythonObject,
+        slot: Int32,
+    ](ptr: UnsafePointer[mut=True, PythonTypeBuilder, MutAnyOrigin]):
+        """Insert a `ternaryfunc` slot into the builder pointed to by `ptr`."""
+        comptime _ternaryfunc = def(PyObjectPtr, PyObjectPtr, PyObjectPtr) thin abi(
+            "C"
+        ) -> PyObjectPtr
+        var fn_ptr: _ternaryfunc = _ternaryfunc_wrapper[self_type, method]
+        ptr[]._insert_slot(
+            PyType_Slot(slot, rebind[OpaquePointer[MutAnyOrigin]](fn_ptr))
+        )
 
 
-def _install_inquiry_nr[
-    self_type: ImplicitlyDestructible,
-    method: def(UnsafePointer[self_type, MutAnyOrigin]) thin -> Bool,
-    slot: Int32,
-](ptr: UnsafePointer[mut=True, PythonTypeBuilder, MutAnyOrigin]):
-    """Insert an `inquiry` slot from a non-raising method."""
-    _install_inquiry[self_type, _lift_to_bool[self_type, method], slot](ptr)
+    @staticmethod
+    def inquiry[
+        self_type: ImplicitlyDestructible,
+        method: def(
+            UnsafePointer[self_type, MutAnyOrigin]
+        ) thin raises PySlotError -> Bool,
+        slot: Int32,
+    ](ptr: UnsafePointer[mut=True, PythonTypeBuilder, MutAnyOrigin]):
+        """Insert an `inquiry` slot into the builder pointed to by `ptr`."""
+        comptime _inquiry = def(PyObjectPtr) thin abi("C") -> c_int
+        var fn_ptr: _inquiry = _inquiry_wrapper[self_type, method]
+        ptr[]._insert_slot(
+            PyType_Slot(slot, rebind[OpaquePointer[MutAnyOrigin]](fn_ptr))
+        )
 
 
-def _install_inquiry_val[
-    self_type: ImplicitlyDestructible,
-    method: def(self_type) thin raises PySlotError -> Bool,
-    slot: Int32,
-](ptr: UnsafePointer[mut=True, PythonTypeBuilder, MutAnyOrigin]):
-    """Insert an `inquiry` slot from a value-receiver method."""
-    _install_inquiry[self_type, _lift_val_to_bool[self_type, method], slot](ptr)
+    @staticmethod
+    def richcompare[
+        self_type: ImplicitlyDestructible,
+        method: def(
+            UnsafePointer[self_type, MutAnyOrigin], PythonObject, Int
+        ) thin raises PySlotError -> Bool,
+    ](ptr: UnsafePointer[mut=True, PythonTypeBuilder, MutAnyOrigin]):
+        """Insert a `richcmpfunc` slot (`tp_richcompare`) into the builder pointed to by `ptr`.
+        """
+        comptime _richcmpfunc = def(PyObjectPtr, PyObjectPtr, c_int) thin abi(
+            "C"
+        ) -> PyObjectPtr
+        var fn_ptr: _richcmpfunc = _richcompare_wrapper[self_type, method]
+        ptr[]._insert_slot(
+            PyType_Slot(
+                _PySlotIndex.tp_richcompare,
+                rebind[OpaquePointer[MutAnyOrigin]](fn_ptr),
+            )
+        )
 
 
-# Binary
+    @staticmethod
+    def lenfunc[
+        self_type: ImplicitlyDestructible,
+        method: def(
+            UnsafePointer[self_type, MutAnyOrigin]
+        ) thin raises PySlotError -> Int,
+    ](ptr: UnsafePointer[mut=True, PythonTypeBuilder, MutAnyOrigin]):
+        """Insert a `lenfunc` slot (`mp_length`) into the builder pointed to by `ptr`.
+        """
+        comptime _lenfunc = def(PyObjectPtr) thin abi("C") -> Py_ssize_t
+        var fn_ptr: _lenfunc = _mp_length_wrapper[self_type, method]
+        ptr[]._insert_slot(
+            PyType_Slot(
+                _PySlotIndex.mp_length, rebind[OpaquePointer[MutAnyOrigin]](fn_ptr)
+            )
+        )
 
 
-def _install_binary_nr[
-    self_type: ImplicitlyDestructible,
-    method: def(
-        UnsafePointer[self_type, MutAnyOrigin], PythonObject
-    ) thin -> PythonObject,
-    slot: Int32,
-](ptr: UnsafePointer[mut=True, PythonTypeBuilder, MutAnyOrigin]):
-    """Insert a `binaryfunc` slot from a non-raising method."""
-    _install_binary[self_type, _lift_obj_to_obj[self_type, method], slot](ptr)
+    @staticmethod
+    def mp_getitem[
+        self_type: ImplicitlyDestructible,
+        method: def(
+            UnsafePointer[self_type, MutAnyOrigin], PythonObject
+        ) thin raises PySlotError -> PythonObject,
+    ](ptr: UnsafePointer[mut=True, PythonTypeBuilder, MutAnyOrigin]):
+        """Insert a `binaryfunc` slot (`mp_subscript`) into the builder pointed to by `ptr`.
+        """
+        comptime _binaryfunc = def(PyObjectPtr, PyObjectPtr) thin abi(
+            "C"
+        ) -> PyObjectPtr
+        var fn_ptr: _binaryfunc = _mp_subscript_wrapper[self_type, method]
+        ptr[]._insert_slot(
+            PyType_Slot(
+                _PySlotIndex.mp_getitem, rebind[OpaquePointer[MutAnyOrigin]](fn_ptr)
+            )
+        )
 
 
-def _install_binary_val[
-    self_type: ImplicitlyDestructible,
-    method: def(self_type, PythonObject) thin raises PySlotError -> PythonObject,
-    slot: Int32,
-](ptr: UnsafePointer[mut=True, PythonTypeBuilder, MutAnyOrigin]):
-    """Insert a `binaryfunc` slot from a value-receiver method."""
-    _install_binary[self_type, _lift_val_obj_to_obj[self_type, method], slot](
-        ptr
-    )
+    @staticmethod
+    def objobjargproc[
+        self_type: ImplicitlyDestructible,
+        method: def(
+            UnsafePointer[self_type, MutAnyOrigin],
+            PythonObject,
+            Variant[PythonObject, Int],
+        ) thin raises PySlotError -> None,
+    ](ptr: UnsafePointer[mut=True, PythonTypeBuilder, MutAnyOrigin]):
+        """Insert an `objobjargproc` slot (`mp_ass_subscript`) into the builder pointed to by `ptr`.
+        """
+        comptime _objobjargproc = def(
+            PyObjectPtr, PyObjectPtr, PyObjectPtr
+        ) thin abi("C") -> c_int
+        var fn_ptr: _objobjargproc = _mp_ass_subscript_wrapper[self_type, method]
+        ptr[]._insert_slot(
+            PyType_Slot(
+                _PySlotIndex.mp_setitem, rebind[OpaquePointer[MutAnyOrigin]](fn_ptr)
+            )
+        )
 
 
-def _install_binary_mut[
-    self_type: ImplicitlyDestructible,
-    method: def(
-        mut self_type, PythonObject
-    ) thin raises PySlotError -> PythonObject,
-    slot: Int32,
-](ptr: UnsafePointer[mut=True, PythonTypeBuilder, MutAnyOrigin]):
-    """Insert a `binaryfunc` slot from a mut-receiver method."""
-    _install_binary[self_type, _lift_mut_obj_to_obj[self_type, method], slot](
-        ptr
-    )
+    @staticmethod
+    def ssizeargfunc[
+        self_type: ImplicitlyDestructible,
+        method: def(
+            UnsafePointer[self_type, MutAnyOrigin], Int
+        ) thin raises PySlotError -> PythonObject,
+        slot: Int32,
+    ](ptr: UnsafePointer[mut=True, PythonTypeBuilder, MutAnyOrigin]):
+        """Insert a `ssizeargfunc` slot into the builder pointed to by `ptr`."""
+        comptime _ssizeargfunc = def(PyObjectPtr, Py_ssize_t) thin abi(
+            "C"
+        ) -> PyObjectPtr
+        var fn_ptr: _ssizeargfunc = _ssizeargfunc_wrapper[self_type, method]
+        ptr[]._insert_slot(
+            PyType_Slot(slot, rebind[OpaquePointer[MutAnyOrigin]](fn_ptr))
+        )
 
 
-def _install_binary_conv_r[
-    self_type: ImplicitlyDestructible,
-    R: _CPython,
-    method: def(
-        UnsafePointer[self_type, MutAnyOrigin], PythonObject
-    ) thin raises PySlotError -> R,
-    slot: Int32,
-](ptr: UnsafePointer[mut=True, PythonTypeBuilder, MutAnyOrigin]):
-    """Insert a `binaryfunc` slot from a raising ConvertibleToPython method."""
-    _install_binary[self_type, _conv_ptr_r_binary[self_type, R, method], slot](
-        ptr
-    )
+    @staticmethod
+    def ssizeobjargproc[
+        self_type: ImplicitlyDestructible,
+        method: def(
+            UnsafePointer[self_type, MutAnyOrigin], Int, Variant[PythonObject, Int]
+        ) thin raises PySlotError -> None,
+    ](ptr: UnsafePointer[mut=True, PythonTypeBuilder, MutAnyOrigin]):
+        """Insert the `ssizeobjargproc` slot (`sq_ass_item`) into the builder pointed to by `ptr`.
+        """
+        comptime _ssizeobjargproc = def(
+            PyObjectPtr, Py_ssize_t, PyObjectPtr
+        ) thin abi("C") -> c_int
+        var fn_ptr: _ssizeobjargproc = _ssizeobjargproc_wrapper[self_type, method]
+        ptr[]._insert_slot(
+            PyType_Slot(
+                _PySlotIndex.sq_ass_item,
+                rebind[OpaquePointer[MutAnyOrigin]](fn_ptr),
+            )
+        )
 
 
-def _install_binary_conv_nr[
-    self_type: ImplicitlyDestructible,
-    R: _CPython,
-    method: def(UnsafePointer[self_type, MutAnyOrigin], PythonObject) thin -> R,
-    slot: Int32,
-](ptr: UnsafePointer[mut=True, PythonTypeBuilder, MutAnyOrigin]):
-    """Insert a `binaryfunc` slot from a non-raising ConvertibleToPython method.
-    """
-    _install_binary[self_type, _conv_ptr_nr_binary[self_type, R, method], slot](
-        ptr
-    )
+    @staticmethod
+    def objobjproc[
+        self_type: ImplicitlyDestructible,
+        method: def(
+            UnsafePointer[self_type, MutAnyOrigin], PythonObject
+        ) thin raises PySlotError -> Bool,
+        slot: Int32,
+    ](ptr: UnsafePointer[mut=True, PythonTypeBuilder, MutAnyOrigin]):
+        """Insert an `objobjproc` slot into the builder pointed to by `ptr`."""
+        comptime _objobjproc = def(PyObjectPtr, PyObjectPtr) thin abi("C") -> c_int
+        var fn_ptr: _objobjproc = _objobjproc_wrapper[self_type, method]
+        ptr[]._insert_slot(
+            PyType_Slot(slot, rebind[OpaquePointer[MutAnyOrigin]](fn_ptr))
+        )
 
 
-def _install_binary_conv_val[
-    self_type: ImplicitlyDestructible,
-    R: _CPython,
-    method: def(self_type, PythonObject) thin raises PySlotError -> R,
-    slot: Int32,
-](ptr: UnsafePointer[mut=True, PythonTypeBuilder, MutAnyOrigin]):
-    """Insert a `binaryfunc` slot from a value-receiver ConvertibleToPython method.
-    """
-    _install_binary[self_type, _conv_val_r_binary[self_type, R, method], slot](
-        ptr
-    )
+    @staticmethod
+    def unary_nr[
+        self_type: ImplicitlyDestructible,
+        method: def(UnsafePointer[self_type, MutAnyOrigin]) thin -> PythonObject,
+        slot: Int32,
+    ](ptr: UnsafePointer[mut=True, PythonTypeBuilder, MutAnyOrigin]):
+        """Insert a `unaryfunc` slot from a non-raising method."""
+        Self.unary[self_type, _lift_to_obj[self_type, method], slot](ptr)
 
 
-# Ternary
+    @staticmethod
+    def unary_val[
+        self_type: ImplicitlyDestructible,
+        method: def(self_type) thin raises PySlotError -> PythonObject,
+        slot: Int32,
+    ](ptr: UnsafePointer[mut=True, PythonTypeBuilder, MutAnyOrigin]):
+        """Insert a `unaryfunc` slot from a value-receiver method."""
+        Self.unary[self_type, _lift_val_to_obj[self_type, method], slot](ptr)
 
 
-def _install_ternary_nr[
-    self_type: ImplicitlyDestructible,
-    method: def(
-        UnsafePointer[self_type, MutAnyOrigin], PythonObject, PythonObject
-    ) thin -> PythonObject,
-    slot: Int32,
-](ptr: UnsafePointer[mut=True, PythonTypeBuilder, MutAnyOrigin]):
-    """Insert a `ternaryfunc` slot from a non-raising method."""
-    _install_ternary[self_type, _lift_obj_obj_to_obj[self_type, method], slot](
-        ptr
-    )
+    @staticmethod
+    def unary_conv_r[
+        self_type: ImplicitlyDestructible,
+        R: _CPython,
+        method: def(
+            UnsafePointer[self_type, MutAnyOrigin]
+        ) thin raises PySlotError -> R,
+        slot: Int32,
+    ](ptr: UnsafePointer[mut=True, PythonTypeBuilder, MutAnyOrigin]):
+        """Insert a `unaryfunc` slot from a raising ConvertibleToPython method."""
+        Self.unary[self_type, _conv_ptr_r_unary[self_type, R, method], slot](
+            ptr
+        )
 
 
-def _install_ternary_val[
-    self_type: ImplicitlyDestructible,
-    method: def(
-        self_type, PythonObject, PythonObject
-    ) thin raises PySlotError -> PythonObject,
-    slot: Int32,
-](ptr: UnsafePointer[mut=True, PythonTypeBuilder, MutAnyOrigin]):
-    """Insert a `ternaryfunc` slot from a value-receiver method."""
-    _install_ternary[
-        self_type, _lift_val_obj_obj_to_obj[self_type, method], slot
-    ](ptr)
+    @staticmethod
+    def unary_conv_nr[
+        self_type: ImplicitlyDestructible,
+        R: _CPython,
+        method: def(UnsafePointer[self_type, MutAnyOrigin]) thin -> R,
+        slot: Int32,
+    ](ptr: UnsafePointer[mut=True, PythonTypeBuilder, MutAnyOrigin]):
+        """Insert a `unaryfunc` slot from a non-raising ConvertibleToPython method.
+        """
+        Self.unary[self_type, _conv_ptr_nr_unary[self_type, R, method], slot](
+            ptr
+        )
 
 
-def _install_ternary_mut[
-    self_type: ImplicitlyDestructible,
-    method: def(
-        mut self_type, PythonObject, PythonObject
-    ) thin raises PySlotError -> PythonObject,
-    slot: Int32,
-](ptr: UnsafePointer[mut=True, PythonTypeBuilder, MutAnyOrigin]):
-    """Insert a `ternaryfunc` slot from a mut-receiver method."""
-    _install_ternary[
-        self_type, _lift_mut_obj_obj_to_obj[self_type, method], slot
-    ](ptr)
+    @staticmethod
+    def unary_conv_val[
+        self_type: ImplicitlyDestructible,
+        R: _CPython,
+        method: def(self_type) thin raises PySlotError -> R,
+        slot: Int32,
+    ](ptr: UnsafePointer[mut=True, PythonTypeBuilder, MutAnyOrigin]):
+        """Insert a `unaryfunc` slot from a value-receiver ConvertibleToPython method.
+        """
+        Self.unary[self_type, _conv_val_r_unary[self_type, R, method], slot](
+            ptr
+        )
 
 
-def _install_ternary_conv_r[
-    self_type: ImplicitlyDestructible,
-    R: _CPython,
-    method: def(
-        UnsafePointer[self_type, MutAnyOrigin], PythonObject, PythonObject
-    ) thin raises PySlotError -> R,
-    slot: Int32,
-](ptr: UnsafePointer[mut=True, PythonTypeBuilder, MutAnyOrigin]):
-    """Insert a `ternaryfunc` slot from a raising ConvertibleToPython method."""
-    _install_ternary[
-        self_type, _conv_ptr_r_ternary[self_type, R, method], slot
-    ](ptr)
+    # Inquiry
 
 
-def _install_ternary_conv_nr[
-    self_type: ImplicitlyDestructible,
-    R: _CPython,
-    method: def(
-        UnsafePointer[self_type, MutAnyOrigin], PythonObject, PythonObject
-    ) thin -> R,
-    slot: Int32,
-](ptr: UnsafePointer[mut=True, PythonTypeBuilder, MutAnyOrigin]):
-    """Insert a `ternaryfunc` slot from a non-raising ConvertibleToPython method.
-    """
-    _install_ternary[
-        self_type, _conv_ptr_nr_ternary[self_type, R, method], slot
-    ](ptr)
+    @staticmethod
+    def inquiry_nr[
+        self_type: ImplicitlyDestructible,
+        method: def(UnsafePointer[self_type, MutAnyOrigin]) thin -> Bool,
+        slot: Int32,
+    ](ptr: UnsafePointer[mut=True, PythonTypeBuilder, MutAnyOrigin]):
+        """Insert an `inquiry` slot from a non-raising method."""
+        Self.inquiry[self_type, _lift_to_bool[self_type, method], slot](ptr)
 
 
-def _install_ternary_conv_val[
-    self_type: ImplicitlyDestructible,
-    R: _CPython,
-    method: def(
-        self_type, PythonObject, PythonObject
-    ) thin raises PySlotError -> R,
-    slot: Int32,
-](ptr: UnsafePointer[mut=True, PythonTypeBuilder, MutAnyOrigin]):
-    """Insert a `ternaryfunc` slot from a value-receiver ConvertibleToPython method.
-    """
-    _install_ternary[
-        self_type, _conv_val_r_ternary[self_type, R, method], slot
-    ](ptr)
+    @staticmethod
+    def inquiry_val[
+        self_type: ImplicitlyDestructible,
+        method: def(self_type) thin raises PySlotError -> Bool,
+        slot: Int32,
+    ](ptr: UnsafePointer[mut=True, PythonTypeBuilder, MutAnyOrigin]):
+        """Insert an `inquiry` slot from a value-receiver method."""
+        Self.inquiry[self_type, _lift_val_to_bool[self_type, method], slot](ptr)
+
+
+    # Binary
+
+
+    @staticmethod
+    def binary_nr[
+        self_type: ImplicitlyDestructible,
+        method: def(
+            UnsafePointer[self_type, MutAnyOrigin], PythonObject
+        ) thin -> PythonObject,
+        slot: Int32,
+    ](ptr: UnsafePointer[mut=True, PythonTypeBuilder, MutAnyOrigin]):
+        """Insert a `binaryfunc` slot from a non-raising method."""
+        Self.binary[self_type, _lift_obj_to_obj[self_type, method], slot](ptr)
+
+
+    @staticmethod
+    def binary_val[
+        self_type: ImplicitlyDestructible,
+        method: def(self_type, PythonObject) thin raises PySlotError -> PythonObject,
+        slot: Int32,
+    ](ptr: UnsafePointer[mut=True, PythonTypeBuilder, MutAnyOrigin]):
+        """Insert a `binaryfunc` slot from a value-receiver method."""
+        Self.binary[self_type, _lift_val_obj_to_obj[self_type, method], slot](
+            ptr
+        )
+
+
+    @staticmethod
+    def binary_mut[
+        self_type: ImplicitlyDestructible,
+        method: def(
+            mut self_type, PythonObject
+        ) thin raises PySlotError -> PythonObject,
+        slot: Int32,
+    ](ptr: UnsafePointer[mut=True, PythonTypeBuilder, MutAnyOrigin]):
+        """Insert a `binaryfunc` slot from a mut-receiver method."""
+        Self.binary[self_type, _lift_mut_obj_to_obj[self_type, method], slot](
+            ptr
+        )
+
+
+    @staticmethod
+    def binary_conv_r[
+        self_type: ImplicitlyDestructible,
+        R: _CPython,
+        method: def(
+            UnsafePointer[self_type, MutAnyOrigin], PythonObject
+        ) thin raises PySlotError -> R,
+        slot: Int32,
+    ](ptr: UnsafePointer[mut=True, PythonTypeBuilder, MutAnyOrigin]):
+        """Insert a `binaryfunc` slot from a raising ConvertibleToPython method."""
+        Self.binary[self_type, _conv_ptr_r_binary[self_type, R, method], slot](
+            ptr
+        )
+
+
+    @staticmethod
+    def binary_conv_nr[
+        self_type: ImplicitlyDestructible,
+        R: _CPython,
+        method: def(UnsafePointer[self_type, MutAnyOrigin], PythonObject) thin -> R,
+        slot: Int32,
+    ](ptr: UnsafePointer[mut=True, PythonTypeBuilder, MutAnyOrigin]):
+        """Insert a `binaryfunc` slot from a non-raising ConvertibleToPython method.
+        """
+        Self.binary[self_type, _conv_ptr_nr_binary[self_type, R, method], slot](
+            ptr
+        )
+
+
+    @staticmethod
+    def binary_conv_val[
+        self_type: ImplicitlyDestructible,
+        R: _CPython,
+        method: def(self_type, PythonObject) thin raises PySlotError -> R,
+        slot: Int32,
+    ](ptr: UnsafePointer[mut=True, PythonTypeBuilder, MutAnyOrigin]):
+        """Insert a `binaryfunc` slot from a value-receiver ConvertibleToPython method.
+        """
+        Self.binary[self_type, _conv_val_r_binary[self_type, R, method], slot](
+            ptr
+        )
+
+
+    # Ternary
+
+
+    @staticmethod
+    def ternary_nr[
+        self_type: ImplicitlyDestructible,
+        method: def(
+            UnsafePointer[self_type, MutAnyOrigin], PythonObject, PythonObject
+        ) thin -> PythonObject,
+        slot: Int32,
+    ](ptr: UnsafePointer[mut=True, PythonTypeBuilder, MutAnyOrigin]):
+        """Insert a `ternaryfunc` slot from a non-raising method."""
+        Self.ternary[self_type, _lift_obj_obj_to_obj[self_type, method], slot](
+            ptr
+        )
+
+
+    @staticmethod
+    def ternary_val[
+        self_type: ImplicitlyDestructible,
+        method: def(
+            self_type, PythonObject, PythonObject
+        ) thin raises PySlotError -> PythonObject,
+        slot: Int32,
+    ](ptr: UnsafePointer[mut=True, PythonTypeBuilder, MutAnyOrigin]):
+        """Insert a `ternaryfunc` slot from a value-receiver method."""
+        Self.ternary[
+            self_type, _lift_val_obj_obj_to_obj[self_type, method], slot
+        ](ptr)
+
+
+    @staticmethod
+    def ternary_mut[
+        self_type: ImplicitlyDestructible,
+        method: def(
+            mut self_type, PythonObject, PythonObject
+        ) thin raises PySlotError -> PythonObject,
+        slot: Int32,
+    ](ptr: UnsafePointer[mut=True, PythonTypeBuilder, MutAnyOrigin]):
+        """Insert a `ternaryfunc` slot from a mut-receiver method."""
+        Self.ternary[
+            self_type, _lift_mut_obj_obj_to_obj[self_type, method], slot
+        ](ptr)
+
+
+    @staticmethod
+    def ternary_conv_r[
+        self_type: ImplicitlyDestructible,
+        R: _CPython,
+        method: def(
+            UnsafePointer[self_type, MutAnyOrigin], PythonObject, PythonObject
+        ) thin raises PySlotError -> R,
+        slot: Int32,
+    ](ptr: UnsafePointer[mut=True, PythonTypeBuilder, MutAnyOrigin]):
+        """Insert a `ternaryfunc` slot from a raising ConvertibleToPython method."""
+        Self.ternary[
+            self_type, _conv_ptr_r_ternary[self_type, R, method], slot
+        ](ptr)
+
+
+    @staticmethod
+    def ternary_conv_nr[
+        self_type: ImplicitlyDestructible,
+        R: _CPython,
+        method: def(
+            UnsafePointer[self_type, MutAnyOrigin], PythonObject, PythonObject
+        ) thin -> R,
+        slot: Int32,
+    ](ptr: UnsafePointer[mut=True, PythonTypeBuilder, MutAnyOrigin]):
+        """Insert a `ternaryfunc` slot from a non-raising ConvertibleToPython method.
+        """
+        Self.ternary[
+            self_type, _conv_ptr_nr_ternary[self_type, R, method], slot
+        ](ptr)
+
+
+    @staticmethod
+    def ternary_conv_val[
+        self_type: ImplicitlyDestructible,
+        R: _CPython,
+        method: def(
+            self_type, PythonObject, PythonObject
+        ) thin raises PySlotError -> R,
+        slot: Int32,
+    ](ptr: UnsafePointer[mut=True, PythonTypeBuilder, MutAnyOrigin]):
+        """Insert a `ternaryfunc` slot from a value-receiver ConvertibleToPython method.
+        """
+        Self.ternary[
+            self_type, _conv_val_r_ternary[self_type, R, method], slot
+        ](ptr)
+

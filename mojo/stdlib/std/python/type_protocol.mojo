@@ -18,7 +18,7 @@ from std.python.bindings import PythonTypeBuilder
 from .utils import PySlotError
 
 from .adapters import (
-    _install_richcompare,
+    _SlotInstaller,
     _lift_obj_int_to_bool,
     _lift_val_obj_int_to_bool,
 )
@@ -77,7 +77,7 @@ struct TypeProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyTypeObject.tp_richcompare
         """
-        _install_richcompare[Self.self_type, method](self._ptr)
+        _SlotInstaller.richcompare[Self.self_type, method](self._ptr)
         return self
 
     def def_richcompare[
@@ -89,7 +89,7 @@ struct TypeProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyTypeObject.tp_richcompare
         """
-        _install_richcompare[
+        _SlotInstaller.richcompare[
             Self.self_type, _lift_obj_int_to_bool[Self.self_type, method]
         ](self._ptr)
         return self
@@ -101,7 +101,7 @@ struct TypeProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyTypeObject.tp_richcompare
         """
-        _install_richcompare[
+        _SlotInstaller.richcompare[
             Self.self_type, _lift_val_obj_int_to_bool[Self.self_type, method]
         ](self._ptr)
         return self

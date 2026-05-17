@@ -20,29 +20,7 @@ from .utils import PySlotError
 from .adapters import (
     _CPython,
     _PySlotIndex,
-    _install_binary,
-    _install_binary_conv_nr,
-    _install_binary_conv_r,
-    _install_binary_conv_val,
-    _install_binary_mut,
-    _install_binary_nr,
-    _install_binary_val,
-    _install_inquiry,
-    _install_inquiry_nr,
-    _install_inquiry_val,
-    _install_ternary,
-    _install_ternary_conv_nr,
-    _install_ternary_conv_r,
-    _install_ternary_conv_val,
-    _install_ternary_mut,
-    _install_ternary_nr,
-    _install_ternary_val,
-    _install_unary,
-    _install_unary_conv_nr,
-    _install_unary_conv_r,
-    _install_unary_conv_val,
-    _install_unary_nr,
-    _install_unary_val,
+    _SlotInstaller,
 )
 
 
@@ -93,7 +71,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
         Called by `abs(obj)`.
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_absolute
         """
-        _install_unary[Self.self_type, method, _PySlotIndex.nb_absolute](
+        _SlotInstaller.unary[Self.self_type, method, _PySlotIndex.nb_absolute](
             self._ptr
         )
         return self
@@ -108,7 +86,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
         Called by `float(obj)`.
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_float
         """
-        _install_unary[Self.self_type, method, _PySlotIndex.nb_float](self._ptr)
+        _SlotInstaller.unary[Self.self_type, method, _PySlotIndex.nb_float](self._ptr)
         return self
 
     def def_index[
@@ -121,7 +99,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
         Called by `operator.index(obj)`.
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_index
         """
-        _install_unary[Self.self_type, method, _PySlotIndex.nb_index](self._ptr)
+        _SlotInstaller.unary[Self.self_type, method, _PySlotIndex.nb_index](self._ptr)
         return self
 
     def def_int[
@@ -134,7 +112,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
         Called by `int(obj)`.
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_int
         """
-        _install_unary[Self.self_type, method, _PySlotIndex.nb_int](self._ptr)
+        _SlotInstaller.unary[Self.self_type, method, _PySlotIndex.nb_int](self._ptr)
         return self
 
     def def_invert[
@@ -147,7 +125,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
         Called by `~obj`.
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_invert
         """
-        _install_unary[Self.self_type, method, _PySlotIndex.nb_invert](
+        _SlotInstaller.unary[Self.self_type, method, _PySlotIndex.nb_invert](
             self._ptr
         )
         return self
@@ -162,7 +140,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
         Called by `-obj`.
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_negative
         """
-        _install_unary[Self.self_type, method, _PySlotIndex.nb_negative](
+        _SlotInstaller.unary[Self.self_type, method, _PySlotIndex.nb_negative](
             self._ptr
         )
         return self
@@ -177,7 +155,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
         Called by `+obj`.
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_positive
         """
-        _install_unary[Self.self_type, method, _PySlotIndex.nb_positive](
+        _SlotInstaller.unary[Self.self_type, method, _PySlotIndex.nb_positive](
             self._ptr
         )
         return self
@@ -193,7 +171,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_absolute
         """
-        _install_unary_nr[Self.self_type, method, _PySlotIndex.nb_absolute](
+        _SlotInstaller.unary_nr[Self.self_type, method, _PySlotIndex.nb_absolute](
             self._ptr
         )
         return self
@@ -207,7 +185,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_float
         """
-        _install_unary_nr[Self.self_type, method, _PySlotIndex.nb_float](
+        _SlotInstaller.unary_nr[Self.self_type, method, _PySlotIndex.nb_float](
             self._ptr
         )
         return self
@@ -221,7 +199,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_index
         """
-        _install_unary_nr[Self.self_type, method, _PySlotIndex.nb_index](
+        _SlotInstaller.unary_nr[Self.self_type, method, _PySlotIndex.nb_index](
             self._ptr
         )
         return self
@@ -235,7 +213,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_int
         """
-        _install_unary_nr[Self.self_type, method, _PySlotIndex.nb_int](
+        _SlotInstaller.unary_nr[Self.self_type, method, _PySlotIndex.nb_int](
             self._ptr
         )
         return self
@@ -249,7 +227,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_invert
         """
-        _install_unary_nr[Self.self_type, method, _PySlotIndex.nb_invert](
+        _SlotInstaller.unary_nr[Self.self_type, method, _PySlotIndex.nb_invert](
             self._ptr
         )
         return self
@@ -263,7 +241,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_negative
         """
-        _install_unary_nr[Self.self_type, method, _PySlotIndex.nb_negative](
+        _SlotInstaller.unary_nr[Self.self_type, method, _PySlotIndex.nb_negative](
             self._ptr
         )
         return self
@@ -277,7 +255,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_positive
         """
-        _install_unary_nr[Self.self_type, method, _PySlotIndex.nb_positive](
+        _SlotInstaller.unary_nr[Self.self_type, method, _PySlotIndex.nb_positive](
             self._ptr
         )
         return self
@@ -291,7 +269,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_absolute
         """
-        _install_unary_val[Self.self_type, method, _PySlotIndex.nb_absolute](
+        _SlotInstaller.unary_val[Self.self_type, method, _PySlotIndex.nb_absolute](
             self._ptr
         )
         return self
@@ -304,7 +282,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_float
         """
 
-        _install_unary_val[Self.self_type, method, _PySlotIndex.nb_float](
+        _SlotInstaller.unary_val[Self.self_type, method, _PySlotIndex.nb_float](
             self._ptr
         )
         return self
@@ -316,7 +294,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_index
         """
-        _install_unary_val[Self.self_type, method, _PySlotIndex.nb_index](
+        _SlotInstaller.unary_val[Self.self_type, method, _PySlotIndex.nb_index](
             self._ptr
         )
         return self
@@ -328,7 +306,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_int
         """
-        _install_unary_val[Self.self_type, method, _PySlotIndex.nb_int](
+        _SlotInstaller.unary_val[Self.self_type, method, _PySlotIndex.nb_int](
             self._ptr
         )
         return self
@@ -340,7 +318,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_invert
         """
-        _install_unary_val[Self.self_type, method, _PySlotIndex.nb_invert](
+        _SlotInstaller.unary_val[Self.self_type, method, _PySlotIndex.nb_invert](
             self._ptr
         )
         return self
@@ -352,7 +330,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_negative
         """
-        _install_unary_val[Self.self_type, method, _PySlotIndex.nb_negative](
+        _SlotInstaller.unary_val[Self.self_type, method, _PySlotIndex.nb_negative](
             self._ptr
         )
         return self
@@ -364,7 +342,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_positive
         """
-        _install_unary_val[Self.self_type, method, _PySlotIndex.nb_positive](
+        _SlotInstaller.unary_val[Self.self_type, method, _PySlotIndex.nb_positive](
             self._ptr
         )
         return self
@@ -383,7 +361,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
         Called by `bool(obj)`.
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_bool
         """
-        _install_inquiry[Self.self_type, method, _PySlotIndex.nb_bool](
+        _SlotInstaller.inquiry[Self.self_type, method, _PySlotIndex.nb_bool](
             self._ptr
         )
         return self
@@ -395,7 +373,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_bool
         """
-        _install_inquiry_nr[Self.self_type, method, _PySlotIndex.nb_bool](
+        _SlotInstaller.inquiry_nr[Self.self_type, method, _PySlotIndex.nb_bool](
             self._ptr
         )
         return self
@@ -407,7 +385,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_bool
         """
-        _install_inquiry_val[Self.self_type, method, _PySlotIndex.nb_bool](
+        _SlotInstaller.inquiry_val[Self.self_type, method, _PySlotIndex.nb_bool](
             self._ptr
         )
         return self
@@ -427,7 +405,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
         Called by `obj + other`.
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_add
         """
-        _install_binary[Self.self_type, method, _PySlotIndex.nb_add](self._ptr)
+        _SlotInstaller.binary[Self.self_type, method, _PySlotIndex.nb_add](self._ptr)
         return self
 
     def def_and[
@@ -440,7 +418,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
         Called by `obj & other`.
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_and
         """
-        _install_binary[Self.self_type, method, _PySlotIndex.nb_and](self._ptr)
+        _SlotInstaller.binary[Self.self_type, method, _PySlotIndex.nb_and](self._ptr)
         return self
 
     def def_divmod[
@@ -453,7 +431,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
         Called by `divmod(obj, other)`.
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_divmod
         """
-        _install_binary[Self.self_type, method, _PySlotIndex.nb_divmod](
+        _SlotInstaller.binary[Self.self_type, method, _PySlotIndex.nb_divmod](
             self._ptr
         )
         return self
@@ -468,7 +446,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
         Called by `obj // other`.
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_floor_divide
         """
-        _install_binary[Self.self_type, method, _PySlotIndex.nb_floor_divide](
+        _SlotInstaller.binary[Self.self_type, method, _PySlotIndex.nb_floor_divide](
             self._ptr
         )
         return self
@@ -483,7 +461,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
         Called by `obj << other`.
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_lshift
         """
-        _install_binary[Self.self_type, method, _PySlotIndex.nb_lshift](
+        _SlotInstaller.binary[Self.self_type, method, _PySlotIndex.nb_lshift](
             self._ptr
         )
         return self
@@ -498,7 +476,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
         Called by `obj @ other`.
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_matrix_multiply
         """
-        _install_binary[
+        _SlotInstaller.binary[
             Self.self_type, method, _PySlotIndex.nb_matrix_multiply
         ](self._ptr)
         return self
@@ -513,7 +491,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
         Called by `obj % other`.
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_remainder
         """
-        _install_binary[Self.self_type, method, _PySlotIndex.nb_remainder](
+        _SlotInstaller.binary[Self.self_type, method, _PySlotIndex.nb_remainder](
             self._ptr
         )
         return self
@@ -528,7 +506,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
         Called by `obj * other`.
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_multiply
         """
-        _install_binary[Self.self_type, method, _PySlotIndex.nb_multiply](
+        _SlotInstaller.binary[Self.self_type, method, _PySlotIndex.nb_multiply](
             self._ptr
         )
         return self
@@ -543,7 +521,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
         Called by `obj | other`.
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_or
         """
-        _install_binary[Self.self_type, method, _PySlotIndex.nb_or](self._ptr)
+        _SlotInstaller.binary[Self.self_type, method, _PySlotIndex.nb_or](self._ptr)
         return self
 
     def def_rshift[
@@ -556,7 +534,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
         Called by `obj >> other`.
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_rshift
         """
-        _install_binary[Self.self_type, method, _PySlotIndex.nb_rshift](
+        _SlotInstaller.binary[Self.self_type, method, _PySlotIndex.nb_rshift](
             self._ptr
         )
         return self
@@ -571,7 +549,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
         Called by `obj - other`.
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_subtract
         """
-        _install_binary[Self.self_type, method, _PySlotIndex.nb_subtract](
+        _SlotInstaller.binary[Self.self_type, method, _PySlotIndex.nb_subtract](
             self._ptr
         )
         return self
@@ -586,7 +564,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
         Called by `obj / other`.
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_true_divide
         """
-        _install_binary[Self.self_type, method, _PySlotIndex.nb_true_divide](
+        _SlotInstaller.binary[Self.self_type, method, _PySlotIndex.nb_true_divide](
             self._ptr
         )
         return self
@@ -601,7 +579,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
         Called by `obj ^ other`.
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_xor
         """
-        _install_binary[Self.self_type, method, _PySlotIndex.nb_xor](self._ptr)
+        _SlotInstaller.binary[Self.self_type, method, _PySlotIndex.nb_xor](self._ptr)
         return self
 
     # In-place binary slots
@@ -616,7 +594,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
         Called by `obj += other`.
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_add
         """
-        _install_binary[Self.self_type, method, _PySlotIndex.nb_inplace_add](
+        _SlotInstaller.binary[Self.self_type, method, _PySlotIndex.nb_inplace_add](
             self._ptr
         )
         return self
@@ -631,7 +609,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
         Called by `obj &= other`.
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_and
         """
-        _install_binary[Self.self_type, method, _PySlotIndex.nb_inplace_and](
+        _SlotInstaller.binary[Self.self_type, method, _PySlotIndex.nb_inplace_and](
             self._ptr
         )
         return self
@@ -646,7 +624,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
         Called by `obj //= other`.
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_floor_divide
         """
-        _install_binary[
+        _SlotInstaller.binary[
             Self.self_type, method, _PySlotIndex.nb_inplace_floor_divide
         ](self._ptr)
         return self
@@ -661,7 +639,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
         Called by `obj <<= other`.
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_lshift
         """
-        _install_binary[Self.self_type, method, _PySlotIndex.nb_inplace_lshift](
+        _SlotInstaller.binary[Self.self_type, method, _PySlotIndex.nb_inplace_lshift](
             self._ptr
         )
         return self
@@ -676,7 +654,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
         Called by `obj @= other`.
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_matrix_multiply
         """
-        _install_binary[
+        _SlotInstaller.binary[
             Self.self_type, method, _PySlotIndex.nb_inplace_matrix_multiply
         ](self._ptr)
         return self
@@ -691,7 +669,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
         Called by `obj %= other`.
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_remainder
         """
-        _install_binary[
+        _SlotInstaller.binary[
             Self.self_type, method, _PySlotIndex.nb_inplace_remainder
         ](self._ptr)
         return self
@@ -706,7 +684,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
         Called by `obj *= other`.
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_multiply
         """
-        _install_binary[
+        _SlotInstaller.binary[
             Self.self_type, method, _PySlotIndex.nb_inplace_multiply
         ](self._ptr)
         return self
@@ -721,7 +699,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
         Called by `obj |= other`.
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_or
         """
-        _install_binary[Self.self_type, method, _PySlotIndex.nb_inplace_or](
+        _SlotInstaller.binary[Self.self_type, method, _PySlotIndex.nb_inplace_or](
             self._ptr
         )
         return self
@@ -736,7 +714,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
         Called by `obj >>= other`.
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_rshift
         """
-        _install_binary[Self.self_type, method, _PySlotIndex.nb_inplace_rshift](
+        _SlotInstaller.binary[Self.self_type, method, _PySlotIndex.nb_inplace_rshift](
             self._ptr
         )
         return self
@@ -751,7 +729,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
         Called by `obj -= other`.
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_subtract
         """
-        _install_binary[
+        _SlotInstaller.binary[
             Self.self_type, method, _PySlotIndex.nb_inplace_subtract
         ](self._ptr)
         return self
@@ -766,7 +744,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
         Called by `obj /= other`.
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_true_divide
         """
-        _install_binary[
+        _SlotInstaller.binary[
             Self.self_type, method, _PySlotIndex.nb_inplace_true_divide
         ](self._ptr)
         return self
@@ -781,7 +759,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
         Called by `obj ^= other`.
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_xor
         """
-        _install_binary[Self.self_type, method, _PySlotIndex.nb_inplace_xor](
+        _SlotInstaller.binary[Self.self_type, method, _PySlotIndex.nb_inplace_xor](
             self._ptr
         )
         return self
@@ -797,7 +775,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_add
         """
-        _install_binary_nr[Self.self_type, method, _PySlotIndex.nb_add](
+        _SlotInstaller.binary_nr[Self.self_type, method, _PySlotIndex.nb_add](
             self._ptr
         )
         return self
@@ -811,7 +789,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_and
         """
-        _install_binary_nr[Self.self_type, method, _PySlotIndex.nb_and](
+        _SlotInstaller.binary_nr[Self.self_type, method, _PySlotIndex.nb_and](
             self._ptr
         )
         return self
@@ -825,7 +803,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_divmod
         """
-        _install_binary_nr[Self.self_type, method, _PySlotIndex.nb_divmod](
+        _SlotInstaller.binary_nr[Self.self_type, method, _PySlotIndex.nb_divmod](
             self._ptr
         )
         return self
@@ -839,7 +817,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_floor_divide
         """
-        _install_binary_nr[
+        _SlotInstaller.binary_nr[
             Self.self_type, method, _PySlotIndex.nb_floor_divide
         ](self._ptr)
         return self
@@ -853,7 +831,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_lshift
         """
-        _install_binary_nr[Self.self_type, method, _PySlotIndex.nb_lshift](
+        _SlotInstaller.binary_nr[Self.self_type, method, _PySlotIndex.nb_lshift](
             self._ptr
         )
         return self
@@ -867,7 +845,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_matrix_multiply
         """
-        _install_binary_nr[
+        _SlotInstaller.binary_nr[
             Self.self_type, method, _PySlotIndex.nb_matrix_multiply
         ](self._ptr)
         return self
@@ -881,7 +859,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_remainder
         """
-        _install_binary_nr[Self.self_type, method, _PySlotIndex.nb_remainder](
+        _SlotInstaller.binary_nr[Self.self_type, method, _PySlotIndex.nb_remainder](
             self._ptr
         )
         return self
@@ -895,7 +873,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_multiply
         """
-        _install_binary_nr[Self.self_type, method, _PySlotIndex.nb_multiply](
+        _SlotInstaller.binary_nr[Self.self_type, method, _PySlotIndex.nb_multiply](
             self._ptr
         )
         return self
@@ -909,7 +887,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_or
         """
-        _install_binary_nr[Self.self_type, method, _PySlotIndex.nb_or](
+        _SlotInstaller.binary_nr[Self.self_type, method, _PySlotIndex.nb_or](
             self._ptr
         )
         return self
@@ -923,7 +901,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_rshift
         """
-        _install_binary_nr[Self.self_type, method, _PySlotIndex.nb_rshift](
+        _SlotInstaller.binary_nr[Self.self_type, method, _PySlotIndex.nb_rshift](
             self._ptr
         )
         return self
@@ -937,7 +915,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_subtract
         """
-        _install_binary_nr[Self.self_type, method, _PySlotIndex.nb_subtract](
+        _SlotInstaller.binary_nr[Self.self_type, method, _PySlotIndex.nb_subtract](
             self._ptr
         )
         return self
@@ -951,7 +929,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_true_divide
         """
-        _install_binary_nr[Self.self_type, method, _PySlotIndex.nb_true_divide](
+        _SlotInstaller.binary_nr[Self.self_type, method, _PySlotIndex.nb_true_divide](
             self._ptr
         )
         return self
@@ -965,7 +943,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_xor
         """
-        _install_binary_nr[Self.self_type, method, _PySlotIndex.nb_xor](
+        _SlotInstaller.binary_nr[Self.self_type, method, _PySlotIndex.nb_xor](
             self._ptr
         )
         return self
@@ -979,7 +957,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_add
         """
-        _install_binary_nr[Self.self_type, method, _PySlotIndex.nb_inplace_add](
+        _SlotInstaller.binary_nr[Self.self_type, method, _PySlotIndex.nb_inplace_add](
             self._ptr
         )
         return self
@@ -993,7 +971,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_and
         """
-        _install_binary_nr[Self.self_type, method, _PySlotIndex.nb_inplace_and](
+        _SlotInstaller.binary_nr[Self.self_type, method, _PySlotIndex.nb_inplace_and](
             self._ptr
         )
         return self
@@ -1007,7 +985,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_floor_divide
         """
-        _install_binary_nr[
+        _SlotInstaller.binary_nr[
             Self.self_type, method, _PySlotIndex.nb_inplace_floor_divide
         ](self._ptr)
         return self
@@ -1021,7 +999,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_lshift
         """
-        _install_binary_nr[
+        _SlotInstaller.binary_nr[
             Self.self_type, method, _PySlotIndex.nb_inplace_lshift
         ](self._ptr)
         return self
@@ -1035,7 +1013,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_matrix_multiply
         """
-        _install_binary_nr[
+        _SlotInstaller.binary_nr[
             Self.self_type, method, _PySlotIndex.nb_inplace_matrix_multiply
         ](self._ptr)
         return self
@@ -1049,7 +1027,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_remainder
         """
-        _install_binary_nr[
+        _SlotInstaller.binary_nr[
             Self.self_type, method, _PySlotIndex.nb_inplace_remainder
         ](self._ptr)
         return self
@@ -1063,7 +1041,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_multiply
         """
-        _install_binary_nr[
+        _SlotInstaller.binary_nr[
             Self.self_type, method, _PySlotIndex.nb_inplace_multiply
         ](self._ptr)
         return self
@@ -1077,7 +1055,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_or
         """
-        _install_binary_nr[Self.self_type, method, _PySlotIndex.nb_inplace_or](
+        _SlotInstaller.binary_nr[Self.self_type, method, _PySlotIndex.nb_inplace_or](
             self._ptr
         )
         return self
@@ -1091,7 +1069,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_rshift
         """
-        _install_binary_nr[
+        _SlotInstaller.binary_nr[
             Self.self_type, method, _PySlotIndex.nb_inplace_rshift
         ](self._ptr)
         return self
@@ -1105,7 +1083,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_subtract
         """
-        _install_binary_nr[
+        _SlotInstaller.binary_nr[
             Self.self_type, method, _PySlotIndex.nb_inplace_subtract
         ](self._ptr)
         return self
@@ -1119,7 +1097,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_true_divide
         """
-        _install_binary_nr[
+        _SlotInstaller.binary_nr[
             Self.self_type, method, _PySlotIndex.nb_inplace_true_divide
         ](self._ptr)
         return self
@@ -1133,7 +1111,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_xor
         """
-        _install_binary_nr[Self.self_type, method, _PySlotIndex.nb_inplace_xor](
+        _SlotInstaller.binary_nr[Self.self_type, method, _PySlotIndex.nb_inplace_xor](
             self._ptr
         )
         return self
@@ -1147,7 +1125,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_add
         """
-        _install_binary_val[Self.self_type, method, _PySlotIndex.nb_add](
+        _SlotInstaller.binary_val[Self.self_type, method, _PySlotIndex.nb_add](
             self._ptr
         )
         return self
@@ -1159,7 +1137,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_and
         """
-        _install_binary_val[Self.self_type, method, _PySlotIndex.nb_and](
+        _SlotInstaller.binary_val[Self.self_type, method, _PySlotIndex.nb_and](
             self._ptr
         )
         return self
@@ -1171,7 +1149,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_divmod
         """
-        _install_binary_val[Self.self_type, method, _PySlotIndex.nb_divmod](
+        _SlotInstaller.binary_val[Self.self_type, method, _PySlotIndex.nb_divmod](
             self._ptr
         )
         return self
@@ -1183,7 +1161,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_floor_divide
         """
-        _install_binary_val[
+        _SlotInstaller.binary_val[
             Self.self_type, method, _PySlotIndex.nb_floor_divide
         ](self._ptr)
         return self
@@ -1195,7 +1173,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_lshift
         """
-        _install_binary_val[Self.self_type, method, _PySlotIndex.nb_lshift](
+        _SlotInstaller.binary_val[Self.self_type, method, _PySlotIndex.nb_lshift](
             self._ptr
         )
         return self
@@ -1207,7 +1185,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_matrix_multiply
         """
-        _install_binary_val[
+        _SlotInstaller.binary_val[
             Self.self_type, method, _PySlotIndex.nb_matrix_multiply
         ](self._ptr)
         return self
@@ -1219,7 +1197,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_remainder
         """
-        _install_binary_val[Self.self_type, method, _PySlotIndex.nb_remainder](
+        _SlotInstaller.binary_val[Self.self_type, method, _PySlotIndex.nb_remainder](
             self._ptr
         )
         return self
@@ -1231,7 +1209,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_multiply
         """
-        _install_binary_val[Self.self_type, method, _PySlotIndex.nb_multiply](
+        _SlotInstaller.binary_val[Self.self_type, method, _PySlotIndex.nb_multiply](
             self._ptr
         )
         return self
@@ -1243,7 +1221,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_or
         """
-        _install_binary_val[Self.self_type, method, _PySlotIndex.nb_or](
+        _SlotInstaller.binary_val[Self.self_type, method, _PySlotIndex.nb_or](
             self._ptr
         )
         return self
@@ -1255,7 +1233,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_rshift
         """
-        _install_binary_val[Self.self_type, method, _PySlotIndex.nb_rshift](
+        _SlotInstaller.binary_val[Self.self_type, method, _PySlotIndex.nb_rshift](
             self._ptr
         )
         return self
@@ -1267,7 +1245,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_subtract
         """
-        _install_binary_val[Self.self_type, method, _PySlotIndex.nb_subtract](
+        _SlotInstaller.binary_val[Self.self_type, method, _PySlotIndex.nb_subtract](
             self._ptr
         )
         return self
@@ -1279,7 +1257,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_true_divide
         """
-        _install_binary_val[
+        _SlotInstaller.binary_val[
             Self.self_type, method, _PySlotIndex.nb_true_divide
         ](self._ptr)
         return self
@@ -1291,7 +1269,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_xor
         """
-        _install_binary_val[Self.self_type, method, _PySlotIndex.nb_xor](
+        _SlotInstaller.binary_val[Self.self_type, method, _PySlotIndex.nb_xor](
             self._ptr
         )
         return self
@@ -1314,7 +1292,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
         Called by `obj ** exp`.
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_power
         """
-        _install_ternary[Self.self_type, method, _PySlotIndex.nb_power](
+        _SlotInstaller.ternary[Self.self_type, method, _PySlotIndex.nb_power](
             self._ptr
         )
         return self
@@ -1331,7 +1309,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
         Called by `obj **= exp`.
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_power
         """
-        _install_ternary[Self.self_type, method, _PySlotIndex.nb_inplace_power](
+        _SlotInstaller.ternary[Self.self_type, method, _PySlotIndex.nb_inplace_power](
             self._ptr
         )
         return self
@@ -1349,7 +1327,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_power
         """
-        _install_ternary_nr[Self.self_type, method, _PySlotIndex.nb_power](
+        _SlotInstaller.ternary_nr[Self.self_type, method, _PySlotIndex.nb_power](
             self._ptr
         )
         return self
@@ -1365,7 +1343,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_power
         """
-        _install_ternary_nr[
+        _SlotInstaller.ternary_nr[
             Self.self_type, method, _PySlotIndex.nb_inplace_power
         ](self._ptr)
         return self
@@ -1379,7 +1357,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_power
         """
-        _install_ternary_val[Self.self_type, method, _PySlotIndex.nb_power](
+        _SlotInstaller.ternary_val[Self.self_type, method, _PySlotIndex.nb_power](
             self._ptr
         )
         return self
@@ -1395,7 +1373,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_add
         """
-        _install_binary_mut[
+        _SlotInstaller.binary_mut[
             Self.self_type, method, _PySlotIndex.nb_inplace_add
         ](self._ptr)
         return self
@@ -1409,7 +1387,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_and
         """
-        _install_binary_mut[
+        _SlotInstaller.binary_mut[
             Self.self_type, method, _PySlotIndex.nb_inplace_and
         ](self._ptr)
         return self
@@ -1423,7 +1401,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_floor_divide
         """
-        _install_binary_mut[
+        _SlotInstaller.binary_mut[
             Self.self_type, method, _PySlotIndex.nb_inplace_floor_divide
         ](self._ptr)
         return self
@@ -1437,7 +1415,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_lshift
         """
-        _install_binary_mut[
+        _SlotInstaller.binary_mut[
             Self.self_type, method, _PySlotIndex.nb_inplace_lshift
         ](self._ptr)
         return self
@@ -1451,7 +1429,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_matrix_multiply
         """
-        _install_binary_mut[
+        _SlotInstaller.binary_mut[
             Self.self_type, method, _PySlotIndex.nb_inplace_matrix_multiply
         ](self._ptr)
         return self
@@ -1465,7 +1443,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_remainder
         """
-        _install_binary_mut[
+        _SlotInstaller.binary_mut[
             Self.self_type, method, _PySlotIndex.nb_inplace_remainder
         ](self._ptr)
         return self
@@ -1479,7 +1457,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_multiply
         """
-        _install_binary_mut[
+        _SlotInstaller.binary_mut[
             Self.self_type, method, _PySlotIndex.nb_inplace_multiply
         ](self._ptr)
         return self
@@ -1493,7 +1471,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_or
         """
-        _install_binary_mut[Self.self_type, method, _PySlotIndex.nb_inplace_or](
+        _SlotInstaller.binary_mut[Self.self_type, method, _PySlotIndex.nb_inplace_or](
             self._ptr
         )
         return self
@@ -1507,7 +1485,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_rshift
         """
-        _install_binary_mut[
+        _SlotInstaller.binary_mut[
             Self.self_type, method, _PySlotIndex.nb_inplace_rshift
         ](self._ptr)
         return self
@@ -1521,7 +1499,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_subtract
         """
-        _install_binary_mut[
+        _SlotInstaller.binary_mut[
             Self.self_type, method, _PySlotIndex.nb_inplace_subtract
         ](self._ptr)
         return self
@@ -1535,7 +1513,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_true_divide
         """
-        _install_binary_mut[
+        _SlotInstaller.binary_mut[
             Self.self_type, method, _PySlotIndex.nb_inplace_true_divide
         ](self._ptr)
         return self
@@ -1549,7 +1527,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_xor
         """
-        _install_binary_mut[
+        _SlotInstaller.binary_mut[
             Self.self_type, method, _PySlotIndex.nb_inplace_xor
         ](self._ptr)
         return self
@@ -1563,7 +1541,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_power
         """
-        _install_ternary_mut[
+        _SlotInstaller.ternary_mut[
             Self.self_type, method, _PySlotIndex.nb_inplace_power
         ](self._ptr)
         return self
@@ -1580,7 +1558,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_absolute
         """
-        _install_unary_conv_r[
+        _SlotInstaller.unary_conv_r[
             Self.self_type, R, method, _PySlotIndex.nb_absolute
         ](self._ptr)
         return self
@@ -1593,7 +1571,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_absolute
         """
-        _install_unary_conv_nr[
+        _SlotInstaller.unary_conv_nr[
             Self.self_type, R, method, _PySlotIndex.nb_absolute
         ](self._ptr)
         return self
@@ -1606,7 +1584,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_absolute
         """
-        _install_unary_conv_val[
+        _SlotInstaller.unary_conv_val[
             Self.self_type, R, method, _PySlotIndex.nb_absolute
         ](self._ptr)
         return self
@@ -1621,7 +1599,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_float
         """
-        _install_unary_conv_r[Self.self_type, R, method, _PySlotIndex.nb_float](
+        _SlotInstaller.unary_conv_r[Self.self_type, R, method, _PySlotIndex.nb_float](
             self._ptr
         )
         return self
@@ -1634,7 +1612,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_float
         """
-        _install_unary_conv_nr[
+        _SlotInstaller.unary_conv_nr[
             Self.self_type, R, method, _PySlotIndex.nb_float
         ](self._ptr)
         return self
@@ -1647,7 +1625,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_float
         """
-        _install_unary_conv_val[
+        _SlotInstaller.unary_conv_val[
             Self.self_type, R, method, _PySlotIndex.nb_float
         ](self._ptr)
         return self
@@ -1662,7 +1640,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_index
         """
-        _install_unary_conv_r[Self.self_type, R, method, _PySlotIndex.nb_index](
+        _SlotInstaller.unary_conv_r[Self.self_type, R, method, _PySlotIndex.nb_index](
             self._ptr
         )
         return self
@@ -1675,7 +1653,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_index
         """
-        _install_unary_conv_nr[
+        _SlotInstaller.unary_conv_nr[
             Self.self_type, R, method, _PySlotIndex.nb_index
         ](self._ptr)
         return self
@@ -1688,7 +1666,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_index
         """
-        _install_unary_conv_val[
+        _SlotInstaller.unary_conv_val[
             Self.self_type, R, method, _PySlotIndex.nb_index
         ](self._ptr)
         return self
@@ -1703,7 +1681,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_int
         """
-        _install_unary_conv_r[Self.self_type, R, method, _PySlotIndex.nb_int](
+        _SlotInstaller.unary_conv_r[Self.self_type, R, method, _PySlotIndex.nb_int](
             self._ptr
         )
         return self
@@ -1716,7 +1694,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_int
         """
-        _install_unary_conv_nr[Self.self_type, R, method, _PySlotIndex.nb_int](
+        _SlotInstaller.unary_conv_nr[Self.self_type, R, method, _PySlotIndex.nb_int](
             self._ptr
         )
         return self
@@ -1729,7 +1707,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_int
         """
-        _install_unary_conv_val[Self.self_type, R, method, _PySlotIndex.nb_int](
+        _SlotInstaller.unary_conv_val[Self.self_type, R, method, _PySlotIndex.nb_int](
             self._ptr
         )
         return self
@@ -1744,7 +1722,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_invert
         """
-        _install_unary_conv_r[
+        _SlotInstaller.unary_conv_r[
             Self.self_type, R, method, _PySlotIndex.nb_invert
         ](self._ptr)
         return self
@@ -1757,7 +1735,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_invert
         """
-        _install_unary_conv_nr[
+        _SlotInstaller.unary_conv_nr[
             Self.self_type, R, method, _PySlotIndex.nb_invert
         ](self._ptr)
         return self
@@ -1770,7 +1748,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_invert
         """
-        _install_unary_conv_val[
+        _SlotInstaller.unary_conv_val[
             Self.self_type, R, method, _PySlotIndex.nb_invert
         ](self._ptr)
         return self
@@ -1785,7 +1763,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_negative
         """
-        _install_unary_conv_r[
+        _SlotInstaller.unary_conv_r[
             Self.self_type, R, method, _PySlotIndex.nb_negative
         ](self._ptr)
         return self
@@ -1798,7 +1776,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_negative
         """
-        _install_unary_conv_nr[
+        _SlotInstaller.unary_conv_nr[
             Self.self_type, R, method, _PySlotIndex.nb_negative
         ](self._ptr)
         return self
@@ -1811,7 +1789,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_negative
         """
-        _install_unary_conv_val[
+        _SlotInstaller.unary_conv_val[
             Self.self_type, R, method, _PySlotIndex.nb_negative
         ](self._ptr)
         return self
@@ -1826,7 +1804,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_positive
         """
-        _install_unary_conv_r[
+        _SlotInstaller.unary_conv_r[
             Self.self_type, R, method, _PySlotIndex.nb_positive
         ](self._ptr)
         return self
@@ -1839,7 +1817,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_positive
         """
-        _install_unary_conv_nr[
+        _SlotInstaller.unary_conv_nr[
             Self.self_type, R, method, _PySlotIndex.nb_positive
         ](self._ptr)
         return self
@@ -1852,7 +1830,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_positive
         """
-        _install_unary_conv_val[
+        _SlotInstaller.unary_conv_val[
             Self.self_type, R, method, _PySlotIndex.nb_positive
         ](self._ptr)
         return self
@@ -1867,7 +1845,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_add
         """
-        _install_binary_conv_r[Self.self_type, R, method, _PySlotIndex.nb_add](
+        _SlotInstaller.binary_conv_r[Self.self_type, R, method, _PySlotIndex.nb_add](
             self._ptr
         )
         return self
@@ -1882,7 +1860,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_add
         """
-        _install_binary_conv_nr[Self.self_type, R, method, _PySlotIndex.nb_add](
+        _SlotInstaller.binary_conv_nr[Self.self_type, R, method, _PySlotIndex.nb_add](
             self._ptr
         )
         return self
@@ -1895,7 +1873,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_add
         """
-        _install_binary_conv_val[
+        _SlotInstaller.binary_conv_val[
             Self.self_type, R, method, _PySlotIndex.nb_add
         ](self._ptr)
         return self
@@ -1910,7 +1888,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_and
         """
-        _install_binary_conv_r[Self.self_type, R, method, _PySlotIndex.nb_and](
+        _SlotInstaller.binary_conv_r[Self.self_type, R, method, _PySlotIndex.nb_and](
             self._ptr
         )
         return self
@@ -1925,7 +1903,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_and
         """
-        _install_binary_conv_nr[Self.self_type, R, method, _PySlotIndex.nb_and](
+        _SlotInstaller.binary_conv_nr[Self.self_type, R, method, _PySlotIndex.nb_and](
             self._ptr
         )
         return self
@@ -1938,7 +1916,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_and
         """
-        _install_binary_conv_val[
+        _SlotInstaller.binary_conv_val[
             Self.self_type, R, method, _PySlotIndex.nb_and
         ](self._ptr)
         return self
@@ -1953,7 +1931,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_divmod
         """
-        _install_binary_conv_r[
+        _SlotInstaller.binary_conv_r[
             Self.self_type, R, method, _PySlotIndex.nb_divmod
         ](self._ptr)
         return self
@@ -1968,7 +1946,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_divmod
         """
-        _install_binary_conv_nr[
+        _SlotInstaller.binary_conv_nr[
             Self.self_type, R, method, _PySlotIndex.nb_divmod
         ](self._ptr)
         return self
@@ -1981,7 +1959,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_divmod
         """
-        _install_binary_conv_val[
+        _SlotInstaller.binary_conv_val[
             Self.self_type, R, method, _PySlotIndex.nb_divmod
         ](self._ptr)
         return self
@@ -1996,7 +1974,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_floor_divide
         """
-        _install_binary_conv_r[
+        _SlotInstaller.binary_conv_r[
             Self.self_type, R, method, _PySlotIndex.nb_floor_divide
         ](self._ptr)
         return self
@@ -2011,7 +1989,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_floor_divide
         """
-        _install_binary_conv_nr[
+        _SlotInstaller.binary_conv_nr[
             Self.self_type, R, method, _PySlotIndex.nb_floor_divide
         ](self._ptr)
         return self
@@ -2024,7 +2002,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_floor_divide
         """
-        _install_binary_conv_val[
+        _SlotInstaller.binary_conv_val[
             Self.self_type, R, method, _PySlotIndex.nb_floor_divide
         ](self._ptr)
         return self
@@ -2039,7 +2017,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_lshift
         """
-        _install_binary_conv_r[
+        _SlotInstaller.binary_conv_r[
             Self.self_type, R, method, _PySlotIndex.nb_lshift
         ](self._ptr)
         return self
@@ -2054,7 +2032,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_lshift
         """
-        _install_binary_conv_nr[
+        _SlotInstaller.binary_conv_nr[
             Self.self_type, R, method, _PySlotIndex.nb_lshift
         ](self._ptr)
         return self
@@ -2067,7 +2045,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_lshift
         """
-        _install_binary_conv_val[
+        _SlotInstaller.binary_conv_val[
             Self.self_type, R, method, _PySlotIndex.nb_lshift
         ](self._ptr)
         return self
@@ -2082,7 +2060,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_matrix_multiply
         """
-        _install_binary_conv_r[
+        _SlotInstaller.binary_conv_r[
             Self.self_type, R, method, _PySlotIndex.nb_matrix_multiply
         ](self._ptr)
         return self
@@ -2097,7 +2075,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_matrix_multiply
         """
-        _install_binary_conv_nr[
+        _SlotInstaller.binary_conv_nr[
             Self.self_type, R, method, _PySlotIndex.nb_matrix_multiply
         ](self._ptr)
         return self
@@ -2110,7 +2088,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_matrix_multiply
         """
-        _install_binary_conv_val[
+        _SlotInstaller.binary_conv_val[
             Self.self_type, R, method, _PySlotIndex.nb_matrix_multiply
         ](self._ptr)
         return self
@@ -2125,7 +2103,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_remainder
         """
-        _install_binary_conv_r[
+        _SlotInstaller.binary_conv_r[
             Self.self_type, R, method, _PySlotIndex.nb_remainder
         ](self._ptr)
         return self
@@ -2140,7 +2118,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_remainder
         """
-        _install_binary_conv_nr[
+        _SlotInstaller.binary_conv_nr[
             Self.self_type, R, method, _PySlotIndex.nb_remainder
         ](self._ptr)
         return self
@@ -2153,7 +2131,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_remainder
         """
-        _install_binary_conv_val[
+        _SlotInstaller.binary_conv_val[
             Self.self_type, R, method, _PySlotIndex.nb_remainder
         ](self._ptr)
         return self
@@ -2168,7 +2146,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_multiply
         """
-        _install_binary_conv_r[
+        _SlotInstaller.binary_conv_r[
             Self.self_type, R, method, _PySlotIndex.nb_multiply
         ](self._ptr)
         return self
@@ -2183,7 +2161,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_multiply
         """
-        _install_binary_conv_nr[
+        _SlotInstaller.binary_conv_nr[
             Self.self_type, R, method, _PySlotIndex.nb_multiply
         ](self._ptr)
         return self
@@ -2196,7 +2174,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_multiply
         """
-        _install_binary_conv_val[
+        _SlotInstaller.binary_conv_val[
             Self.self_type, R, method, _PySlotIndex.nb_multiply
         ](self._ptr)
         return self
@@ -2211,7 +2189,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_or
         """
-        _install_binary_conv_r[Self.self_type, R, method, _PySlotIndex.nb_or](
+        _SlotInstaller.binary_conv_r[Self.self_type, R, method, _PySlotIndex.nb_or](
             self._ptr
         )
         return self
@@ -2226,7 +2204,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_or
         """
-        _install_binary_conv_nr[Self.self_type, R, method, _PySlotIndex.nb_or](
+        _SlotInstaller.binary_conv_nr[Self.self_type, R, method, _PySlotIndex.nb_or](
             self._ptr
         )
         return self
@@ -2239,7 +2217,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_or
         """
-        _install_binary_conv_val[Self.self_type, R, method, _PySlotIndex.nb_or](
+        _SlotInstaller.binary_conv_val[Self.self_type, R, method, _PySlotIndex.nb_or](
             self._ptr
         )
         return self
@@ -2254,7 +2232,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_rshift
         """
-        _install_binary_conv_r[
+        _SlotInstaller.binary_conv_r[
             Self.self_type, R, method, _PySlotIndex.nb_rshift
         ](self._ptr)
         return self
@@ -2269,7 +2247,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_rshift
         """
-        _install_binary_conv_nr[
+        _SlotInstaller.binary_conv_nr[
             Self.self_type, R, method, _PySlotIndex.nb_rshift
         ](self._ptr)
         return self
@@ -2282,7 +2260,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_rshift
         """
-        _install_binary_conv_val[
+        _SlotInstaller.binary_conv_val[
             Self.self_type, R, method, _PySlotIndex.nb_rshift
         ](self._ptr)
         return self
@@ -2297,7 +2275,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_subtract
         """
-        _install_binary_conv_r[
+        _SlotInstaller.binary_conv_r[
             Self.self_type, R, method, _PySlotIndex.nb_subtract
         ](self._ptr)
         return self
@@ -2312,7 +2290,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_subtract
         """
-        _install_binary_conv_nr[
+        _SlotInstaller.binary_conv_nr[
             Self.self_type, R, method, _PySlotIndex.nb_subtract
         ](self._ptr)
         return self
@@ -2325,7 +2303,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_subtract
         """
-        _install_binary_conv_val[
+        _SlotInstaller.binary_conv_val[
             Self.self_type, R, method, _PySlotIndex.nb_subtract
         ](self._ptr)
         return self
@@ -2340,7 +2318,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_true_divide
         """
-        _install_binary_conv_r[
+        _SlotInstaller.binary_conv_r[
             Self.self_type, R, method, _PySlotIndex.nb_true_divide
         ](self._ptr)
         return self
@@ -2355,7 +2333,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_true_divide
         """
-        _install_binary_conv_nr[
+        _SlotInstaller.binary_conv_nr[
             Self.self_type, R, method, _PySlotIndex.nb_true_divide
         ](self._ptr)
         return self
@@ -2368,7 +2346,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_true_divide
         """
-        _install_binary_conv_val[
+        _SlotInstaller.binary_conv_val[
             Self.self_type, R, method, _PySlotIndex.nb_true_divide
         ](self._ptr)
         return self
@@ -2383,7 +2361,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_xor
         """
-        _install_binary_conv_r[Self.self_type, R, method, _PySlotIndex.nb_xor](
+        _SlotInstaller.binary_conv_r[Self.self_type, R, method, _PySlotIndex.nb_xor](
             self._ptr
         )
         return self
@@ -2398,7 +2376,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_xor
         """
-        _install_binary_conv_nr[Self.self_type, R, method, _PySlotIndex.nb_xor](
+        _SlotInstaller.binary_conv_nr[Self.self_type, R, method, _PySlotIndex.nb_xor](
             self._ptr
         )
         return self
@@ -2411,7 +2389,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_xor
         """
-        _install_binary_conv_val[
+        _SlotInstaller.binary_conv_val[
             Self.self_type, R, method, _PySlotIndex.nb_xor
         ](self._ptr)
         return self
@@ -2426,7 +2404,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_add
         """
-        _install_binary_conv_r[
+        _SlotInstaller.binary_conv_r[
             Self.self_type, R, method, _PySlotIndex.nb_inplace_add
         ](self._ptr)
         return self
@@ -2441,7 +2419,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_add
         """
-        _install_binary_conv_nr[
+        _SlotInstaller.binary_conv_nr[
             Self.self_type, R, method, _PySlotIndex.nb_inplace_add
         ](self._ptr)
         return self
@@ -2454,7 +2432,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_add
         """
-        _install_binary_conv_val[
+        _SlotInstaller.binary_conv_val[
             Self.self_type, R, method, _PySlotIndex.nb_inplace_add
         ](self._ptr)
         return self
@@ -2469,7 +2447,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_and
         """
-        _install_binary_conv_r[
+        _SlotInstaller.binary_conv_r[
             Self.self_type, R, method, _PySlotIndex.nb_inplace_and
         ](self._ptr)
         return self
@@ -2484,7 +2462,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_and
         """
-        _install_binary_conv_nr[
+        _SlotInstaller.binary_conv_nr[
             Self.self_type, R, method, _PySlotIndex.nb_inplace_and
         ](self._ptr)
         return self
@@ -2497,7 +2475,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_and
         """
-        _install_binary_conv_val[
+        _SlotInstaller.binary_conv_val[
             Self.self_type, R, method, _PySlotIndex.nb_inplace_and
         ](self._ptr)
         return self
@@ -2512,7 +2490,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_floor_divide
         """
-        _install_binary_conv_r[
+        _SlotInstaller.binary_conv_r[
             Self.self_type, R, method, _PySlotIndex.nb_inplace_floor_divide
         ](self._ptr)
         return self
@@ -2527,7 +2505,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_floor_divide
         """
-        _install_binary_conv_nr[
+        _SlotInstaller.binary_conv_nr[
             Self.self_type, R, method, _PySlotIndex.nb_inplace_floor_divide
         ](self._ptr)
         return self
@@ -2540,7 +2518,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_floor_divide
         """
-        _install_binary_conv_val[
+        _SlotInstaller.binary_conv_val[
             Self.self_type, R, method, _PySlotIndex.nb_inplace_floor_divide
         ](self._ptr)
         return self
@@ -2555,7 +2533,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_lshift
         """
-        _install_binary_conv_r[
+        _SlotInstaller.binary_conv_r[
             Self.self_type, R, method, _PySlotIndex.nb_inplace_lshift
         ](self._ptr)
         return self
@@ -2570,7 +2548,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_lshift
         """
-        _install_binary_conv_nr[
+        _SlotInstaller.binary_conv_nr[
             Self.self_type, R, method, _PySlotIndex.nb_inplace_lshift
         ](self._ptr)
         return self
@@ -2583,7 +2561,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_lshift
         """
-        _install_binary_conv_val[
+        _SlotInstaller.binary_conv_val[
             Self.self_type, R, method, _PySlotIndex.nb_inplace_lshift
         ](self._ptr)
         return self
@@ -2598,7 +2576,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_matrix_multiply
         """
-        _install_binary_conv_r[
+        _SlotInstaller.binary_conv_r[
             Self.self_type, R, method, _PySlotIndex.nb_inplace_matrix_multiply
         ](self._ptr)
         return self
@@ -2613,7 +2591,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_matrix_multiply
         """
-        _install_binary_conv_nr[
+        _SlotInstaller.binary_conv_nr[
             Self.self_type, R, method, _PySlotIndex.nb_inplace_matrix_multiply
         ](self._ptr)
         return self
@@ -2626,7 +2604,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_matrix_multiply
         """
-        _install_binary_conv_val[
+        _SlotInstaller.binary_conv_val[
             Self.self_type, R, method, _PySlotIndex.nb_inplace_matrix_multiply
         ](self._ptr)
         return self
@@ -2641,7 +2619,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_remainder
         """
-        _install_binary_conv_r[
+        _SlotInstaller.binary_conv_r[
             Self.self_type, R, method, _PySlotIndex.nb_inplace_remainder
         ](self._ptr)
         return self
@@ -2656,7 +2634,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_remainder
         """
-        _install_binary_conv_nr[
+        _SlotInstaller.binary_conv_nr[
             Self.self_type, R, method, _PySlotIndex.nb_inplace_remainder
         ](self._ptr)
         return self
@@ -2669,7 +2647,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_remainder
         """
-        _install_binary_conv_val[
+        _SlotInstaller.binary_conv_val[
             Self.self_type, R, method, _PySlotIndex.nb_inplace_remainder
         ](self._ptr)
         return self
@@ -2684,7 +2662,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_multiply
         """
-        _install_binary_conv_r[
+        _SlotInstaller.binary_conv_r[
             Self.self_type, R, method, _PySlotIndex.nb_inplace_multiply
         ](self._ptr)
         return self
@@ -2699,7 +2677,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_multiply
         """
-        _install_binary_conv_nr[
+        _SlotInstaller.binary_conv_nr[
             Self.self_type, R, method, _PySlotIndex.nb_inplace_multiply
         ](self._ptr)
         return self
@@ -2712,7 +2690,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_multiply
         """
-        _install_binary_conv_val[
+        _SlotInstaller.binary_conv_val[
             Self.self_type, R, method, _PySlotIndex.nb_inplace_multiply
         ](self._ptr)
         return self
@@ -2727,7 +2705,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_or
         """
-        _install_binary_conv_r[
+        _SlotInstaller.binary_conv_r[
             Self.self_type, R, method, _PySlotIndex.nb_inplace_or
         ](self._ptr)
         return self
@@ -2742,7 +2720,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_or
         """
-        _install_binary_conv_nr[
+        _SlotInstaller.binary_conv_nr[
             Self.self_type, R, method, _PySlotIndex.nb_inplace_or
         ](self._ptr)
         return self
@@ -2755,7 +2733,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_or
         """
-        _install_binary_conv_val[
+        _SlotInstaller.binary_conv_val[
             Self.self_type, R, method, _PySlotIndex.nb_inplace_or
         ](self._ptr)
         return self
@@ -2770,7 +2748,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_rshift
         """
-        _install_binary_conv_r[
+        _SlotInstaller.binary_conv_r[
             Self.self_type, R, method, _PySlotIndex.nb_inplace_rshift
         ](self._ptr)
         return self
@@ -2785,7 +2763,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_rshift
         """
-        _install_binary_conv_nr[
+        _SlotInstaller.binary_conv_nr[
             Self.self_type, R, method, _PySlotIndex.nb_inplace_rshift
         ](self._ptr)
         return self
@@ -2798,7 +2776,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_rshift
         """
-        _install_binary_conv_val[
+        _SlotInstaller.binary_conv_val[
             Self.self_type, R, method, _PySlotIndex.nb_inplace_rshift
         ](self._ptr)
         return self
@@ -2813,7 +2791,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_subtract
         """
-        _install_binary_conv_r[
+        _SlotInstaller.binary_conv_r[
             Self.self_type, R, method, _PySlotIndex.nb_inplace_subtract
         ](self._ptr)
         return self
@@ -2828,7 +2806,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_subtract
         """
-        _install_binary_conv_nr[
+        _SlotInstaller.binary_conv_nr[
             Self.self_type, R, method, _PySlotIndex.nb_inplace_subtract
         ](self._ptr)
         return self
@@ -2841,7 +2819,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_subtract
         """
-        _install_binary_conv_val[
+        _SlotInstaller.binary_conv_val[
             Self.self_type, R, method, _PySlotIndex.nb_inplace_subtract
         ](self._ptr)
         return self
@@ -2856,7 +2834,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_true_divide
         """
-        _install_binary_conv_r[
+        _SlotInstaller.binary_conv_r[
             Self.self_type, R, method, _PySlotIndex.nb_inplace_true_divide
         ](self._ptr)
         return self
@@ -2871,7 +2849,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_true_divide
         """
-        _install_binary_conv_nr[
+        _SlotInstaller.binary_conv_nr[
             Self.self_type, R, method, _PySlotIndex.nb_inplace_true_divide
         ](self._ptr)
         return self
@@ -2884,7 +2862,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_true_divide
         """
-        _install_binary_conv_val[
+        _SlotInstaller.binary_conv_val[
             Self.self_type, R, method, _PySlotIndex.nb_inplace_true_divide
         ](self._ptr)
         return self
@@ -2899,7 +2877,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_xor
         """
-        _install_binary_conv_r[
+        _SlotInstaller.binary_conv_r[
             Self.self_type, R, method, _PySlotIndex.nb_inplace_xor
         ](self._ptr)
         return self
@@ -2914,7 +2892,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_xor
         """
-        _install_binary_conv_nr[
+        _SlotInstaller.binary_conv_nr[
             Self.self_type, R, method, _PySlotIndex.nb_inplace_xor
         ](self._ptr)
         return self
@@ -2927,7 +2905,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_xor
         """
-        _install_binary_conv_val[
+        _SlotInstaller.binary_conv_val[
             Self.self_type, R, method, _PySlotIndex.nb_inplace_xor
         ](self._ptr)
         return self
@@ -2944,7 +2922,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_power
         """
-        _install_ternary_conv_r[
+        _SlotInstaller.ternary_conv_r[
             Self.self_type, R, method, _PySlotIndex.nb_power
         ](self._ptr)
         return self
@@ -2961,7 +2939,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_power
         """
-        _install_ternary_conv_nr[
+        _SlotInstaller.ternary_conv_nr[
             Self.self_type, R, method, _PySlotIndex.nb_power
         ](self._ptr)
         return self
@@ -2976,7 +2954,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_power
         """
-        _install_ternary_conv_val[
+        _SlotInstaller.ternary_conv_val[
             Self.self_type, R, method, _PySlotIndex.nb_power
         ](self._ptr)
         return self
@@ -2993,7 +2971,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_power
         """
-        _install_ternary_conv_r[
+        _SlotInstaller.ternary_conv_r[
             Self.self_type, R, method, _PySlotIndex.nb_inplace_power
         ](self._ptr)
         return self
@@ -3010,7 +2988,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_power
         """
-        _install_ternary_conv_nr[
+        _SlotInstaller.ternary_conv_nr[
             Self.self_type, R, method, _PySlotIndex.nb_inplace_power
         ](self._ptr)
         return self
@@ -3025,7 +3003,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_power
         """
-        _install_ternary_conv_val[
+        _SlotInstaller.ternary_conv_val[
             Self.self_type, R, method, _PySlotIndex.nb_inplace_power
         ](self._ptr)
         return self

@@ -20,12 +20,10 @@ from .utils import PySlotError
 
 from .adapters import (
     _CPython,
+    _SlotInstaller,
     _conv_ptr_nr_binary,
     _conv_ptr_r_binary,
     _conv_val_r_binary,
-    _install_lenfunc,
-    _install_mp_getitem,
-    _install_objobjargproc,
     _lift_mut_obj_var_to_none,
     _lift_obj_to_obj,
     _lift_obj_var_to_none,
@@ -73,7 +71,7 @@ struct MappingProtocolBuilder[self_type: ImplicitlyDestructible]:
         Called by `len(obj)`.
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyMappingMethods.mp_length
         """
-        _install_lenfunc[Self.self_type, method](self._ptr)
+        _SlotInstaller.lenfunc[Self.self_type, method](self._ptr)
         return self
 
     def def_getitem[
@@ -86,7 +84,7 @@ struct MappingProtocolBuilder[self_type: ImplicitlyDestructible]:
         Called by `obj[key]`.
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyMappingMethods.mp_subscript
         """
-        _install_mp_getitem[Self.self_type, method](self._ptr)
+        _SlotInstaller.mp_getitem[Self.self_type, method](self._ptr)
         return self
 
     def def_setitem[
@@ -105,7 +103,7 @@ struct MappingProtocolBuilder[self_type: ImplicitlyDestructible]:
         - `Variant[PythonObject, Int](Int(0))` for deletion (null C pointer).
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyMappingMethods.mp_ass_subscript
         """
-        _install_objobjargproc[Self.self_type, method](self._ptr)
+        _SlotInstaller.objobjargproc[Self.self_type, method](self._ptr)
         return self
 
     # Non-raising overloads
@@ -117,7 +115,7 @@ struct MappingProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyMappingMethods.mp_length
         """
-        _install_lenfunc[Self.self_type, _lift_to_int[Self.self_type, method]](
+        _SlotInstaller.lenfunc[Self.self_type, _lift_to_int[Self.self_type, method]](
             self._ptr
         )
         return self
@@ -131,7 +129,7 @@ struct MappingProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyMappingMethods.mp_subscript
         """
-        _install_mp_getitem[
+        _SlotInstaller.mp_getitem[
             Self.self_type, _lift_obj_to_obj[Self.self_type, method]
         ](self._ptr)
         return self
@@ -147,7 +145,7 @@ struct MappingProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyMappingMethods.mp_ass_subscript
         """
-        _install_objobjargproc[
+        _SlotInstaller.objobjargproc[
             Self.self_type, _lift_obj_var_to_none[Self.self_type, method]
         ](self._ptr)
         return self
@@ -161,7 +159,7 @@ struct MappingProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyMappingMethods.mp_length
         """
-        _install_lenfunc[
+        _SlotInstaller.lenfunc[
             Self.self_type, _lift_val_to_int[Self.self_type, method]
         ](self._ptr)
         return self
@@ -173,7 +171,7 @@ struct MappingProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyMappingMethods.mp_subscript
         """
-        _install_mp_getitem[
+        _SlotInstaller.mp_getitem[
             Self.self_type, _lift_val_obj_to_obj[Self.self_type, method]
         ](self._ptr)
         return self
@@ -187,7 +185,7 @@ struct MappingProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyMappingMethods.mp_ass_subscript
         """
-        _install_objobjargproc[
+        _SlotInstaller.objobjargproc[
             Self.self_type, _lift_mut_obj_var_to_none[Self.self_type, method]
         ](self._ptr)
         return self
@@ -204,7 +202,7 @@ struct MappingProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyMappingMethods.mp_subscript
         """
-        _install_mp_getitem[
+        _SlotInstaller.mp_getitem[
             Self.self_type, _conv_ptr_r_binary[Self.self_type, R, method]
         ](self._ptr)
         return self
@@ -219,7 +217,7 @@ struct MappingProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyMappingMethods.mp_subscript
         """
-        _install_mp_getitem[
+        _SlotInstaller.mp_getitem[
             Self.self_type, _conv_ptr_nr_binary[Self.self_type, R, method]
         ](self._ptr)
         return self
@@ -232,7 +230,7 @@ struct MappingProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyMappingMethods.mp_subscript
         """
-        _install_mp_getitem[
+        _SlotInstaller.mp_getitem[
             Self.self_type, _conv_val_r_binary[Self.self_type, R, method]
         ](self._ptr)
         return self
