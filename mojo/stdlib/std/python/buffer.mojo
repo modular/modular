@@ -38,8 +38,6 @@ from .adapters import _unwrap_self
 # PyBUF_ flag constants (from CPython Include/cpython/object.h).
 comptime _PyBUF_WRITABLE = Int32(0x0001)
 comptime _PyBUF_FORMAT = Int32(0x0004)
-comptime _PyBUF_ND = Int32(0x0008)
-comptime _PyBUF_STRIDES = Int32(0x0018)  # 0x0010 | PyBUF_ND
 
 
 struct BufferInfo:
