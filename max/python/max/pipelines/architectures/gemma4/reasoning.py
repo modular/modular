@@ -84,6 +84,7 @@ class Gemma4ReasoningParser(ReasoningParser):
     def stream(
         self,
         delta_token_ids: Sequence[int],
+        is_currently_reasoning: bool = True,
     ) -> ParsedReasoningDelta:
         """Identifies a reasoning span within a streaming delta chunk.
 
@@ -93,9 +94,16 @@ class Gemma4ReasoningParser(ReasoningParser):
           *delta_token_ids* — ``reasoning`` (content only) and
           ``reasoning_with_delimiters`` (includes boundary tokens).
         - ``is_still_reasoning``: ``True`` when no end delimiter was found
-          in this chunk.
+          in this chunk *and* the chunk contained a reasoning section.
         - ``reasoning_text_formatter``: callback that strips the
           ``"thought\\n"`` prefix from decoded reasoning text.
+
+        When ``is_currently_reasoning=False`` and no ``<|channel>`` start
+        delimiter appears in the chunk, the parser returns an empty
+        reasoning span — Gemma 4 emits ``<|channel>thought\\n...<channel|>``
+        even when ``enable_thinking`` is off, so callers should pass every
+        chunk through here and let the parser dynamically detect mid-stream
+        reasoning sections (mirroring vLLM's behavior).
         """
         end_token_ids = (
             (self.channel_end_token_id, self.tool_call_start_token_id)
@@ -112,8 +120,27 @@ class Gemma4ReasoningParser(ReasoningParser):
             ):
                 start_token_idx = i
             elif token_id in end_token_ids:
-                end_token_idx = i
-                break
+                # Only treat this as a reasoning-end if we have an active
+                # span — either pre-seeded via is_currently_reasoning or
+                # opened by a <|channel> in this chunk. Otherwise it's a
+                # stray closer from prior content and should not pull
+                # content tokens into the reasoning region.
+                if is_currently_reasoning or start_token_idx is not None:
+                    end_token_idx = i
+                    break
+
+        if start_token_idx is None and not is_currently_reasoning:
+            # No reasoning section in this chunk and we weren't already
+            # inside one. Empty span, all tokens are content.
+            empty_span = ReasoningSpan(
+                reasoning_with_delimiters=(0, 0),
+                reasoning=(0, 0),
+            )
+            return ParsedReasoningDelta(
+                span=empty_span,
+                is_still_reasoning=False,
+                reasoning_text_formatter=self._format_reasoning_text,
+            )
 
         if start_token_idx is None:
             start_reasoning = 0
@@ -153,14 +180,34 @@ class Gemma4ReasoningParser(ReasoningParser):
     ) -> bool:
         """Decide whether the next generated token is in a reasoning span.
 
-        The Gemma 4 chat template does not prefill ``<|channel>`` at the
-        assistant turn — the model self-generates it. Instead, the template
-        injects ``<|think|>`` in the system message when thinking is enabled.
-        Detect that token to know reasoning will start with the first
-        generated token.
+        Gemma 4 chat templates can prefill multiple
+        ``<|channel>thought\\n...<channel|>`` blocks across a multi-turn
+        conversation, and ``<|think|>`` lives in the *system* message
+        merely to enable the behavior globally — its mere presence does
+        not mean the current assistant turn is mid-reasoning.
+
+        Scan right-to-left and return based on the first delimiter seen:
+
+        * ``<|channel>`` → reasoning is currently open → ``True``.
+        * ``<channel|>`` (or ``<|tool_call>``) → reasoning is currently
+          closed → ``False``.
+        * No delimiters → the model will self-generate ``<|channel>`` if
+          it wants to reason; we are not yet in reasoning → ``False``.
         """
-        if self.think_token_id is not None:
-            return self.think_token_id in prompt_token_ids
+        end_token_ids: tuple[int, ...]
+        if self.tool_call_start_token_id is not None:
+            end_token_ids = (
+                self.channel_end_token_id,
+                self.tool_call_start_token_id,
+            )
+        else:
+            end_token_ids = (self.channel_end_token_id,)
+
+        for token_id in reversed(prompt_token_ids):
+            if token_id == self.channel_start_token_id:
+                return True
+            if token_id in end_token_ids:
+                return False
         return False
 
     @classmethod

@@ -20,7 +20,7 @@ from max.interfaces import (
     ParsedToolCallDelta,
     ParsedToolResponse,
 )
-from max.pipelines.lib.tool_parsing import register
+from max.pipelines.lib.tool_parsing import partial_tag_overlap, register
 
 # Gemma4 special tokens for tool calls
 TOOL_CALL_START = "<|tool_call>"
@@ -283,6 +283,18 @@ def _tool_call_id() -> str:
 class Gemma4ToolParser:
     def __init__(self) -> None:
         self._buffer: str = ""
+        # Walking cursor into ``_buffer``. Everything before this has either
+        # been emitted as content or consumed as a complete tool call.
+        self._sent_idx: int = 0
+        # Index of the next tool call we will emit. Gemma 4 emits each tool
+        # call atomically (all of id/name/arguments together) when its
+        # ``<tool_call|>`` close marker arrives.
+        self._next_call_index: int = 0
+        # Sticky flag: once we've seen ``<|tool_call>`` we stay in
+        # suppression mode (return ``[]`` rather than ``None``) so the
+        # streaming layer keeps raw bytes out of the content channel even
+        # between complete calls.
+        self._in_tool_section: bool = False
 
     def parse_complete(self, response: str) -> ParsedToolResponse:
         """Parses a complete response into tool calls."""
@@ -321,13 +333,95 @@ class Gemma4ToolParser:
     def parse_delta(self, delta: str) -> list[ParsedToolCallDelta] | None:
         """Parses incremental deltas for streaming tool calls.
 
-        Note: Streaming tool call parsing for Gemma4 is not yet implemented.
-        This method accumulates tokens but does not emit chunks.
+        Gemma 4 has no outer section wrapper — tool calls appear as
+        consecutive ``<|tool_call>...<tool_call|>`` blocks. Each complete
+        block is emitted as a single :class:`ParsedToolCallDelta` carrying
+        id/name/arguments; the streaming layer suppresses the raw wrapper
+        bytes via the empty-list signal until a closer arrives.
         """
         self._buffer += delta
-        # TODO(SERVOPT-1180): Implement streaming delta parsing
+        deltas: list[ParsedToolCallDelta] = []
+
+        while self._sent_idx < len(self._buffer):
+            next_open = self._buffer.find(TOOL_CALL_START, self._sent_idx)
+
+            if next_open == -1:
+                # No (full) opener visible after the cursor. Emit pending
+                # content up to a potential partial opener at the tail so
+                # we never leak ``<|tool_call`` bytes as text.
+                tail = self._buffer[self._sent_idx :]
+                overlap = partial_tag_overlap(tail, TOOL_CALL_START)
+                sendable_end = len(self._buffer) - overlap
+                if sendable_end > self._sent_idx:
+                    content = self._buffer[self._sent_idx : sendable_end]
+                    if content:
+                        deltas.append(
+                            ParsedToolCallDelta(index=0, content=content)
+                        )
+                    self._sent_idx = sendable_end
+                break
+
+            # Emit any plain content sitting between the cursor and the
+            # next opener.
+            if next_open > self._sent_idx:
+                content = self._buffer[self._sent_idx : next_open]
+                if content:
+                    deltas.append(ParsedToolCallDelta(index=0, content=content))
+                self._sent_idx = next_open
+
+            self._in_tool_section = True
+
+            body_start = next_open + len(TOOL_CALL_START)
+            close = self._buffer.find(TOOL_CALL_END, body_start)
+            if close == -1:
+                # Tool call still streaming. Hold the cursor at the open
+                # marker so we don't leak partial body bytes, and let the
+                # caller suppress this chunk via the empty-list signal.
+                break
+
+            # Complete ``<|tool_call>BODY<tool_call|>`` block. Parse and
+            # emit it atomically; Gemma 4 doesn't benefit from argument
+            # diffing because its arg syntax (``<|"|>...<|"|>``) isn't
+            # token-incrementally parseable.
+            body = self._buffer[body_start:close]
+            match = re.match(
+                r"\s*call:([\w\-\.]+)\{(.*)\}\s*$", body, re.DOTALL
+            )
+            if match:
+                func_name = match.group(1)
+                args_str = match.group(2)
+                try:
+                    args_obj = _parse_gemma4_args(args_str)
+                    arguments_json = json.dumps(args_obj, ensure_ascii=False)
+                except Exception:
+                    # Fall back to the raw arg text rather than dropping
+                    # the call entirely — better to surface a malformed
+                    # tool call upstream than to silently drop it.
+                    arguments_json = "{}"
+                deltas.append(
+                    ParsedToolCallDelta(
+                        index=self._next_call_index,
+                        id=_tool_call_id(),
+                        name=func_name,
+                        arguments=arguments_json,
+                    )
+                )
+                self._next_call_index += 1
+
+            self._sent_idx = close + len(TOOL_CALL_END)
+
+        if deltas:
+            return deltas
+        # Inside a tool call section but nothing emittable yet — suppress
+        # the raw chunk via the empty-list signal so wrapper bytes don't
+        # show up in the assistant content.
+        if self._in_tool_section:
+            return []
         return None
 
     def reset(self) -> None:
         """Resets internal state for a new streaming session."""
         self._buffer = ""
+        self._sent_idx = 0
+        self._next_call_index = 0
+        self._in_tool_section = False

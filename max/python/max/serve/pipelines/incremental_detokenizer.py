@@ -84,6 +84,7 @@ class IncrementalDetokenizer:
         tokenizer: PreTrainedTokenizerBase,
         prompt_token_ids: TokenIDSequence,
         skip_special_tokens: bool = True,
+        skipped_special_token_ids: set[int] | None = None,
     ) -> None:
         """Initializes the incremental detokenizer.
 
@@ -97,11 +98,19 @@ class IncrementalDetokenizer:
                 This establishes context for proper decoding.
             skip_special_tokens: Whether to skip special tokens during
                 decoding (e.g., EOS tokens like <|im_end|>).
+            skipped_special_token_ids: Optional explicit set of special-token
+                ids to skip. When provided alongside
+                ``skip_special_tokens=True``, the underlying ``DecodeStream``
+                runs with ``skip_special_tokens=False`` and these ids are
+                filtered out of the input stream instead, so that special
+                tokens not in this set (e.g. tool-call delimiters like
+                ``<|tool_call>``) reach the parser intact.
 
         Raises:
             TypeError: If the tokenizer is not a fast tokenizer.
         """
         self.skip_special_tokens = skip_special_tokens
+        self.skipped_special_token_ids = skipped_special_token_ids
 
         if not is_fast_tokenizer(tokenizer):
             raise TypeError(
@@ -113,12 +122,21 @@ class IncrementalDetokenizer:
         # Get the underlying tokenizers.Tokenizer from the HF tokenizer
         self._tokenizer: Tokenizer = tokenizer._tokenizer
 
+        # When the caller supplies an explicit exclusion set, we keep the
+        # DecodeStream in skip_special_tokens=False mode and apply the filter
+        # ourselves in ``decode``. ``DecodeStream`` only supports an all-or-
+        # nothing flag, so this is the only way to preserve *some* specials
+        # (e.g. tool tokens) while still stripping others (e.g. EOS).
+        stream_skip_special = skip_special_tokens and (
+            skipped_special_token_ids is None
+        )
+
         # Initialize DecodeStream with native prefill (tokenizers >= 0.22.0)
         # This primes the decoder with prompt context for proper whitespace
         # handling and establishes the decode stream state.
         self.stream = DecodeStream(
             ids=list(prompt_token_ids),
-            skip_special_tokens=skip_special_tokens,
+            skip_special_tokens=stream_skip_special,
         )
 
     def decode(self, token_ids: TokenIDSequence) -> str:
@@ -135,8 +153,17 @@ class IncrementalDetokenizer:
             UTF-8 sequences that are buffered for later completion.
         """
         result_parts: list[str] = []
+        excluded = self.skipped_special_token_ids
 
         for token_id in token_ids:
+            if (
+                self.skip_special_tokens
+                and excluded is not None
+                and token_id in excluded
+            ):
+                # Mirror DecodeStream's skip_special_tokens=True behavior for
+                # this specific id: don't advance the stream for it.
+                continue
             text = self._protected_step(token_id)
             if text:
                 result_parts.append(text)
@@ -174,8 +201,11 @@ class IncrementalDetokenizer:
                 logger.debug(
                     "Resetting decode stream due to invalid prefix error"
                 )
+                stream_skip_special = self.skip_special_tokens and (
+                    self.skipped_special_token_ids is None
+                )
                 self.stream = DecodeStream(
-                    skip_special_tokens=self.skip_special_tokens
+                    skip_special_tokens=stream_skip_special
                 )
         return ""
 
@@ -217,6 +247,11 @@ def create_incremental_detokenizer(
     IncrementalDetokenizer from a PipelineTokenizer. It extracts the underlying
     HuggingFace tokenizer and creates the IncrementalDetokenizer if possible.
 
+    If the pipeline tokenizer exposes ``skipped_special_token_ids`` (a set of
+    special-token ids to strip), that set is forwarded so the detokenizer can
+    preserve other specials — e.g. Gemma 4's ``<|tool_call>`` and
+    ``<tool_call|>`` wrappers, which the downstream tool parser needs.
+
     Note: TikToken-based tokenizers (used by DeepSeek, Kimi K2.5) are supported
     as long as they are loaded via AutoTokenizer, which provides a fast tokenizer
     with the required `_tokenizer` attribute.
@@ -236,6 +271,10 @@ def create_incremental_detokenizer(
     except ValueError:
         return None
 
+    skipped_special_token_ids: set[int] | None = getattr(
+        tokenizer, "skipped_special_token_ids", None
+    )
+
     if not is_fast_tokenizer(hf_tokenizer):
         return None
 
@@ -243,4 +282,5 @@ def create_incremental_detokenizer(
         tokenizer=hf_tokenizer,
         prompt_token_ids=prompt_token_ids,
         skip_special_tokens=skip_special_tokens,
+        skipped_special_token_ids=skipped_special_token_ids,
     )

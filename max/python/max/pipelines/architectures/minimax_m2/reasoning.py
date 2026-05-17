@@ -52,8 +52,16 @@ class MiniMaxM2ReasoningParser(ReasoningParser):
     def stream(
         self,
         delta_token_ids: Sequence[int],
+        is_currently_reasoning: bool = True,
     ) -> ParsedReasoningDelta:
-        """Identify a reasoning span within a streaming delta chunk."""
+        """Identify a reasoning span within a streaming delta chunk.
+
+        When ``is_currently_reasoning=False`` and the chunk contains no
+        ``<think>`` opener, returns an empty span so non-reasoning chunks
+        (turns where the chat template prefilled ``</think>``, or any
+        chunk after reasoning ended in a prior chunk) aren't misclassified
+        as reasoning.
+        """
         end_token_ids = (
             (self.think_end_token_id, self.tool_call_start_token_id)
             if self.tool_call_start_token_id is not None
@@ -70,9 +78,26 @@ class MiniMaxM2ReasoningParser(ReasoningParser):
                 # Take the earliest start token
                 start_token_idx = i
             elif token_id in end_token_ids:
-                # Take the earliest end token
-                end_token_idx = i
-                break
+                # Only consume an end token if we have an active reasoning
+                # span — either pre-seeded via ``is_currently_reasoning`` or
+                # opened by a ``<think>`` earlier in this chunk. A stray
+                # ``</think>``/``<minimax:tool_call>`` from prior content
+                # should not pull content tokens into the reasoning region.
+                if is_currently_reasoning or start_token_idx is not None:
+                    end_token_idx = i
+                    break
+
+        if start_token_idx is None and not is_currently_reasoning:
+            # No reasoning section in this chunk and we weren't already
+            # inside one — empty span, all tokens are content.
+            empty_span = ReasoningSpan(
+                reasoning_with_delimiters=(0, 0),
+                reasoning=(0, 0),
+            )
+            return ParsedReasoningDelta(
+                span=empty_span,
+                is_still_reasoning=False,
+            )
 
         if start_token_idx is None:
             # Implicit start: chat template pre-fills <think>, so reasoning

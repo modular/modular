@@ -287,6 +287,99 @@ class TestCreateIncrementalDetokenizer:
 
         assert detokenizer is None
 
+    def test_forwards_skipped_special_token_ids(
+        self, llama_tokenizer: PreTrainedTokenizerFast
+    ) -> None:
+        """Pipeline tokenizers exposing ``skipped_special_token_ids`` should
+        have that set forwarded to the detokenizer so streaming can preserve
+        a subset of specials while still stripping others.
+
+        Regression coverage for the Gemma 4 streaming tool-call leak: the
+        detokenizer used to call ``DecodeStream(skip_special_tokens=True)``
+        which stripped every special uniformly, including the
+        ``<|tool_call>`` / ``<tool_call|>`` wrappers the parser needs.
+        """
+        eos_id = llama_tokenizer.eos_token_id
+        assert eos_id is not None
+
+        class WrapperWithExcluded:
+            def __init__(
+                self, delegate: PreTrainedTokenizerFast, excluded: set[int]
+            ) -> None:
+                self.delegate = delegate
+                self.skipped_special_token_ids = excluded
+
+        wrapper = WrapperWithExcluded(llama_tokenizer, {eos_id})
+
+        detokenizer = create_incremental_detokenizer(
+            tokenizer=wrapper,
+            prompt_token_ids=[],
+            skip_special_tokens=True,
+        )
+
+        assert detokenizer is not None
+        assert detokenizer.skipped_special_token_ids == {eos_id}
+
+
+class TestIncrementalDetokenizerExcludedSpecials:
+    """Tests for ``skipped_special_token_ids`` filtering behavior."""
+
+    def test_excluded_ids_are_filtered_other_specials_preserved(
+        self, llama_tokenizer: PreTrainedTokenizerFast
+    ) -> None:
+        """Tokens in ``skipped_special_token_ids`` are dropped; other
+        special tokens reach the decoder so their literal text appears in
+        the output. The ``DecodeStream`` runs with
+        ``skip_special_tokens=False`` when an exclusion set is provided.
+        """
+        eos_id = llama_tokenizer.eos_token_id
+        bos_id = llama_tokenizer.bos_token_id
+        assert eos_id is not None and bos_id is not None
+        # Sanity check: the two ids should be distinct so we can verify
+        # that the filter is per-id rather than all-or-nothing.
+        assert eos_id != bos_id
+
+        hello_ids = llama_tokenizer.encode("Hello", add_special_tokens=False)
+
+        # Exclude EOS, preserve everything else (including BOS).
+        detokenizer = IncrementalDetokenizer(
+            tokenizer=llama_tokenizer,
+            prompt_token_ids=[],
+            skip_special_tokens=True,
+            skipped_special_token_ids={eos_id},
+        )
+
+        result = detokenizer.decode([bos_id, *hello_ids, eos_id])
+
+        assert "Hello" in result
+        # BOS text survives because it's not in the excluded set and the
+        # underlying DecodeStream is now running with
+        # skip_special_tokens=False.
+        assert llama_tokenizer.bos_token in result
+        # EOS text is suppressed because its id is in the excluded set.
+        assert llama_tokenizer.eos_token not in result
+
+    def test_no_excluded_set_falls_back_to_decodestream_default(
+        self, llama_tokenizer: PreTrainedTokenizerFast
+    ) -> None:
+        """With ``skipped_special_token_ids=None`` and
+        ``skip_special_tokens=True``, the detokenizer delegates to
+        ``DecodeStream(skip_special_tokens=True)`` and strips every special
+        unconditionally (the legacy behavior)."""
+        eos_id = llama_tokenizer.eos_token_id
+        assert eos_id is not None
+        hello_ids = llama_tokenizer.encode("Hello", add_special_tokens=False)
+
+        detokenizer = IncrementalDetokenizer(
+            tokenizer=llama_tokenizer,
+            prompt_token_ids=[],
+            skip_special_tokens=True,
+        )
+
+        result = detokenizer.decode([*hello_ids, eos_id])
+        assert "Hello" in result
+        assert llama_tokenizer.eos_token not in result
+
 
 class TestGetHfTokenizer:
     """Tests for the get_hf_tokenizer helper function."""

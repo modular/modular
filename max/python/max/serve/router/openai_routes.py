@@ -387,9 +387,11 @@ class OpenAIChatResponseGenerator(
                             ),
                         )
                     ]
-                else:
-                    # If we do not have output tokens, we should guarantee we have a finish_reason.
-                    # If tool calls were emitted, use "tool_calls" as finish_reason
+                elif chunk.status.is_done:
+                    # Terminal chunk with no visible delta — emit the final
+                    # choice carrying the finish_reason. If tool calls were
+                    # emitted earlier this turn, override "stop" with
+                    # "tool_calls".
                     finish_reason: Literal["stop", "length", "tool_calls"] = (
                         get_finish_reason_from_status(
                             chunk.status, allow_none=False
@@ -407,6 +409,17 @@ class OpenAIChatResponseGenerator(
                             finish_reason=finish_reason,
                         )
                     ]
+                else:
+                    # Reasoning-capable models (e.g. Gemma 4, Kimi K2.5) can
+                    # emit intermediate chunks with no user-visible content
+                    # while still ACTIVE — for example, a parser that
+                    # consumed every token in the chunk as a structural
+                    # delimiter. Skip those chunks instead of forcing a
+                    # terminal finish_reason (which would raise because
+                    # ACTIVE has no associated finish_reason).
+                    n_reasoning_tokens += chunk.reasoning_token_count or 0
+                    n_tokens += chunk.token_count
+                    continue
 
                 # Each chunk is expected to have the same id
                 # https://platform.openai.com/docs/api-reference/chat/streaming

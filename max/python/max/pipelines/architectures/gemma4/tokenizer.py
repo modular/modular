@@ -35,7 +35,7 @@ from max.pipelines.lib import TextAndVisionTokenizer, max_tokens_to_generate
 from max.pipelines.lib.config import PipelineConfig
 from max.support.image import find_contiguous_ranges, hash_image
 from PIL import Image
-from transformers import AutoTokenizer
+from transformers import AutoTokenizer, GenerationConfig
 
 from .context import Gemma4Context
 from .image_processor import Gemma4ImageProcessor
@@ -44,10 +44,6 @@ from .tool_parser import (
     STRING_DELIM,
     TOOL_CALL_END,
     TOOL_CALL_START,
-    TOOL_END,
-    TOOL_RESPONSE_END,
-    TOOL_RESPONSE_START,
-    TOOL_START,
 )
 from .video_processor import Gemma4VideoProcessor, VideoMetadata
 
@@ -92,6 +88,32 @@ class Gemma4Tokenizer(TextAndVisionTokenizer):
                 self._default_eos_token_ids.add(eos_token_id)
             elif isinstance(eos_token_id, list):
                 self._default_eos_token_ids.update(eos_token_id)
+
+        # Gemma 4 ships an ``eos_token_id`` list in ``generation_config.json``
+        # that extends what ``config.json`` declares — for the 31B-IT release
+        # it adds ``<|tool_response>`` (id 50) alongside ``<eos>`` and
+        # ``<turn|>``. Google uses ``<|tool_response>`` as the assistant's
+        # tool-call-turn terminator, so without picking it up the model can
+        # emit token 50 and keep generating past the tool call. Mirror
+        # vLLM's ``update_from_generation_config`` behavior by reading
+        # ``generation_config.json`` here.
+        try:
+            gen_config = GenerationConfig.from_pretrained(
+                model_path,
+                revision=revision,
+                trust_remote_code=trust_remote_code,
+            )
+        except Exception:
+            # ``generation_config.json`` is optional and HF may raise for a
+            # variety of reasons (missing file, malformed JSON, hub
+            # connection error). None of those should fail tokenizer init.
+            gen_config = None
+        if gen_config is not None:
+            gen_eos = getattr(gen_config, "eos_token_id", None)
+            if isinstance(gen_eos, int):
+                self._default_eos_token_ids.add(gen_eos)
+            elif isinstance(gen_eos, list):
+                self._default_eos_token_ids.update(gen_eos)
 
         self.enable_prefix_caching = (
             pipeline_config.model.kv_cache.enable_prefix_caching
@@ -143,23 +165,37 @@ class Gemma4Tokenizer(TextAndVisionTokenizer):
 
         self._patch_chat_template_for_video()
 
-        # Pre-compute special token IDs that should be skipped during decoding
-        # Gemma4 marks tool tokens as special, but we need to preserve them
+        # Pre-compute special token IDs that should be skipped during decoding.
+        # Gemma4 marks tool tokens as special, but we need to preserve them so
+        # downstream tool parsing can match ``<|tool_call>...<tool_call|>``.
+        # Only preserve tokens the model legitimately emits as part of a
+        # tool-call *body* — ``<|tool_call>``, ``<tool_call|>``, and the
+        # ``<|"|>`` string delimiter — so downstream tool parsing can match
+        # ``<|tool_call>call:NAME{...}<tool_call|>``.
+        #
+        # ``<|tool>``/``<tool|>`` (tool declarations) and
+        # ``<|tool_response>``/``<tool_response|>`` (tool result feedback)
+        # are prompt-only: they're injected by the chat template, never by
+        # the model in well-formed output. Token 50 (``<|tool_response>``)
+        # additionally acts as EOS via Google's generation_config, so if
+        # the model emits it we want it silenced rather than leaked as
+        # text. Strip them.
         tool_token_strings = [
             TOOL_CALL_START,
             TOOL_CALL_END,
-            TOOL_START,
-            TOOL_END,
-            TOOL_RESPONSE_START,
-            TOOL_RESPONSE_END,
             STRING_DELIM,
         ]
         tool_token_ids = {
             self.delegate.convert_tokens_to_ids(token)
             for token in tool_token_strings
         }
-        # Skip all special tokens except tool-related ones
-        self._skipped_token_ids = (
+        # Skip all special tokens except tool-related ones.
+        # Exposed publicly so the streaming detokenizer can apply the same
+        # filter — the HuggingFace ``DecodeStream`` API only supports an all-
+        # or-nothing ``skip_special_tokens`` flag, so the streaming path
+        # consults this set to preserve tool tokens while still stripping
+        # other specials like ``<|im_end|>``.
+        self.skipped_special_token_ids: set[int] = (
             set(self.delegate.all_special_ids) - tool_token_ids
         )
 
@@ -234,7 +270,7 @@ class Gemma4Tokenizer(TextAndVisionTokenizer):
         filtered_ids = [
             token_id
             for token_id in encoded.tolist()
-            if token_id not in self._skipped_token_ids
+            if token_id not in self.skipped_special_token_ids
         ]
 
         # Decode with skip_special_tokens=False since we already filtered
