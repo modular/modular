@@ -9520,7 +9520,7 @@ struct Struct_grouped_matmul_swiglu_nvfp4:
         c_input_scales: InputTensor[dtype=DType.float32, rank=1, ...],
         estimated_total_m: UInt32,
         num_active_experts: UInt32,
-        context: DeviceContextPtr,
+        context: DeviceContext,
     ) raises:
         """Executes fused grouped NVFP4 matmul + SwiGLU + NVFP4 quant.
 
@@ -9558,7 +9558,6 @@ struct Struct_grouped_matmul_swiglu_nvfp4:
         ](), "fused SwiGLU+NVFP4 grouped matmul only supports GPUs"
         if num_active_experts == 0:
             return
-        var cuda_ctx = context.get_device_context()
         grouped_matmul_swiglu_nvfp4_dispatch[transpose_b=True, target=target](
             c_packed.to_tile_tensor[DType.int64](),
             c_swiglu_scales.to_tile_tensor[DType.int64](),
@@ -9573,7 +9572,7 @@ struct Struct_grouped_matmul_swiglu_nvfp4:
             c_input_scales.to_tile_tensor[DType.int64](),
             Int(num_active_experts),
             Int(estimated_total_m),
-            cuda_ctx,
+            context,
         )
 
 
