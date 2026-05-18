@@ -36,6 +36,8 @@ Parameters:
 
 comptime _IsCopyablePredicate[T: AnyType]: Bool = conforms_to(T, Copyable)
 
+comptime AllCopyable[*Ts: Copyable]: Bool = True
+
 comptime AllCopyable[*Ts: AnyType]: Bool = Ts.all_satisfies[
     _IsCopyablePredicate,
 ]()
