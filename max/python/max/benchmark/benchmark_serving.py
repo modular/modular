@@ -313,7 +313,9 @@ async def benchmark(
     session: BenchmarkSession,
     max_concurrency: int | None,
     request_rate: float,
-) -> TextGenerationBenchmarkResult | PixelGenerationBenchmarkResult:
+) -> tuple[
+    TextGenerationBenchmarkResult | PixelGenerationBenchmarkResult, bool
+]:
     """Run a single benchmark invocation.
 
     ``session.orig_skip_first`` / ``session.orig_skip_last`` are the
@@ -821,10 +823,9 @@ async def benchmark(
         for err in validation_errors:
             logger.error(f"Benchmark result validation failed: {err}")
         logger.info("finished benchmark run: Failed.")
-        sys.exit(1)
-
+        return result, False
     logger.info("finished benchmark run: Success.")
-    return result
+    return result, True
 
 
 def validate_task_and_endpoint(
@@ -1273,6 +1274,7 @@ def _run_benchmark_sweep(
             iteration_results: list[
                 TextGenerationBenchmarkResult | PixelGenerationBenchmarkResult
             ] = []
+            validation_passed = True
             for _iteration in range(args.num_iters):
                 if args.flush_prefix_cache:
                     flush_prefix_cache(
@@ -1283,8 +1285,10 @@ def _run_benchmark_sweep(
                     args.seed = int(np.random.randint(0, 10000))
                 logger.info("mc=%s seed=%d", mc, args.seed)
 
-                result = asyncio.run(benchmark(args, session, mc, rr))
+                result, ok = asyncio.run(benchmark(args, session, mc, rr))
                 iteration_results.append(result)
+                if not ok:
+                    validation_passed = False
 
             # Median selection when running multiple iterations.
             if len(iteration_results) > 1:
@@ -1300,29 +1304,34 @@ def _run_benchmark_sweep(
                 idx = 0
             best_result = iteration_results[idx]
 
-            # JSON result file (for the median iteration).
-            save_result_json(
-                args.result_filename,
-                args,
-                best_result,
-                benchmark_task=session.benchmark_task,
-                model_id=session.model_id,
-                tokenizer_id=session.tokenizer_id,
-                request_rate=rr,
-                record_max_concurrency=mc,
-            )
-
-            # Output lengths recording (for the median iteration).
-            save_output_lengths(
-                args,
-                best_result,
-                session.benchmark_task,
-                iteration_config=(mc, rr),
-            )
+            save = validation_passed or args.always_save_result
+            if save:
+                save_result_json(
+                    args.result_filename,
+                    args,
+                    best_result,
+                    benchmark_task=session.benchmark_task,
+                    model_id=session.model_id,
+                    tokenizer_id=session.tokenizer_id,
+                    request_rate=rr,
+                    record_max_concurrency=mc,
+                )
+                save_output_lengths(
+                    args,
+                    best_result,
+                    session.benchmark_task,
+                    iteration_config=(mc, rr),
+                )
 
             yield BenchmarkRunResult(
-                mc, rr, args.num_prompts or 0, result=best_result
+                mc,
+                rr,
+                args.num_prompts or 0,
+                result=best_result if save else None,
             )
+
+            if not validation_passed:
+                sys.exit(1)
 
 
 def main_with_parsed_args(

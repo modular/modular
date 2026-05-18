@@ -783,6 +783,12 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
         json_schema_extra={"group": "Result Saving"},
     )
 
+    always_save_result: bool = Field(
+        default=False,
+        description="Save result files even when benchmark validation fails (e.g. some requests errored). The process still exits with code 1 on failure.",
+        json_schema_extra={"group": "Result Saving"},
+    )
+
     metadata: list[str] = Field(
         default_factory=list,
         description="Key-value pairs (e.g, --metadata version=0.3.3 tp=1) for metadata of this run to be saved in the result JSON file for record keeping purposes.",
