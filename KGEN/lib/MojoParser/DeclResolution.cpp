@@ -1014,7 +1014,7 @@ void FnSigDecorators::applyExportLike(SMLoc loc, bool isExport,
   else {
     funcOp.setCExported();
 
-    // Validate the linkage name is a valid C identifer. We don't permit
+    // Validate the linkage name is a valid C identifier. We don't permit
     // non-literal identifiers for these functions.
     if (wrappedName && !simpleLinkageName) {
       emitError(loc) << " \"C\" ABI functions must have literal identifiers";

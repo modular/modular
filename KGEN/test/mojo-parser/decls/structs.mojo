@@ -294,7 +294,7 @@ def nmTargetNoop(x: NmTarget):
     pass
 
 
-def explict_non_nm_target[T: NmStruct]():
+def explicit_non_nm_target[T: NmStruct]():
     pass
 
 
@@ -335,8 +335,8 @@ def useNonmaterializable(p: Bool):
     tail_types(NmStruct(5), NmStruct(6))
 
     # However, if the type is the explicitly not the nm-target, it should also work
-    # CHECK: call {{.*}}explict_non_nm_target{{.*}}<:!NmStruct {{.*}}>
-    explict_non_nm_target[NmStruct(5)]()
+    # CHECK: call {{.*}}explicit_non_nm_target{{.*}}<:!NmStruct {{.*}}>
+    explicit_non_nm_target[NmStruct(5)]()
 
     # CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}nmResult{{.*}}()
     # CHECK: %nmResult = lit.var.decl

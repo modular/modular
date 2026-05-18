@@ -112,7 +112,7 @@ collectFunctionsAndTypes(Operation *module) {
 
     // Collect structs.
     else if (auto structOp = dyn_cast<LIT::StructDeclOp>(op)) {
-      // Find the conformance to ImplcitlyDestructible if it exists.
+      // Find the conformance to ImplicitlyDestructible if it exists.
       ConformanceOp implicitlyDestructibleConformance;
       if (implicitlyDestructibleSymbol) {
         for (auto conformance : structOp.getFields().getOps<ConformanceOp>()) {

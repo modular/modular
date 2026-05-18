@@ -282,7 +282,7 @@ inferLoopCount(LoopOp loop, ContinueOp continueOp, BreakOp breakOp,
     }
   } else if (auto castOp = dyn_cast_if_present<POP::CastToBuiltinOp>(
                  ifCond.getDefiningOp())) {
-    // Because hlcf.if expectes `i1` type, also check if there's a sequence
+    // Because hlcf.if expects `i1` type, also check if there's a sequence
     // `pop.cast_to_builtin(pop.cmp)`. That's a special case, because `pop.cmp`
     // produces `!kgen.scalar<bool>`, i.e. IR looks like
     //

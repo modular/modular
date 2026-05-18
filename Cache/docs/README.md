@@ -2,7 +2,7 @@
 
 ## Glossary of Terms
 
-`CAS` - **C**ontent **A**ddressible **S**tore
+`CAS` - **C**ontent **A**ddressible **S**tore # spellchecker:disable-line
 
 `delegate` - Higher-level cache backend to fault to. For example, the delegate
 for the in-memory backend is often the filesystem backend.

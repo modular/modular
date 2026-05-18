@@ -63,7 +63,7 @@ FailureOr<TypedAttr> SIMDFloorDivAttr::evaluateWithContext(
 
 FailureOr<TypedAttr>
 SIMDShlAttr::evaluateWithContext(ParameterEvaluationContext &context) const {
-  Attribute operands[] = {getVal(), getShft()};
+  Attribute operands[] = {getVal(), getShft()}; // spellchecker:disable-line
   return foldAttrWithTarget(context, operands, foldSIMDShl);
 }
 
@@ -73,6 +73,6 @@ SIMDShlAttr::evaluateWithContext(ParameterEvaluationContext &context) const {
 
 FailureOr<TypedAttr>
 SIMDShrAttr::evaluateWithContext(ParameterEvaluationContext &context) const {
-  Attribute operands[] = {getVal(), getShft()};
+  Attribute operands[] = {getVal(), getShft()}; // spellchecker:disable-line
   return foldAttrWithTarget(context, operands, foldSIMDShr);
 }

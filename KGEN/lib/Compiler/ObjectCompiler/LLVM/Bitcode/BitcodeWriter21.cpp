@@ -5778,7 +5778,7 @@ private:
 
 } // end anonymous namespace
 
-// This function writes a simpilified module info for thin link bitcode file.
+// This function writes a simplified module info for thin link bitcode file.
 // It only contains the source file name along with the name(the offset and
 // size in strtab) and linkage for global values. For the global value info
 // entry, in order to keep linkage at offset 5, there are three zeros used
