@@ -54,7 +54,7 @@ This version is still a work in progress.
 - `Coord`, `coord()`, `Idx`, `ComptimeInt`, `RuntimeInt`, and related coordinate
   helpers now live in the standard library module
   [`std.utils.coord`](/docs/std/utils/coord/). The
-  [`layout.coord`](/mojo/layout/coord/) module re-exports the same symbols for
+  [`layout.coord`](/docs/layout/coord/) module re-exports the same symbols for
   layout and kernel code; `layout` also hoists the common names at package
   scope for convenience.
 

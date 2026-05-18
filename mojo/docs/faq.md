@@ -159,7 +159,7 @@ Mojo from Python](/docs/manual/python/mojo-from-python).
 Mojo code is interoperable with C code. For information, see the docs for the
 [`ffi`](/docs/std/ffi/) module, the
 [`@export`](/docs/reference/decorators/export/) decorator, and the
-[`abi("C")` function effect](/docs/reference/mojo-function-declarations/#abi-c).
+[`abi("C")` function effect](/docs/reference/function-declarations/#abi-c).
 
 Mojo code is also interoperable with C++ code that uses `extern "C"`. We
 believe we can deliver better C++ interoperability in the future.

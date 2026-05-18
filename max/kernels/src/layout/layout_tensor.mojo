@@ -2379,7 +2379,7 @@ struct LayoutTensor[
         Returns:
             A SIMD vector containing 'width' consecutive elements from the tensor.
 
-        Performance (copied from 'aligned_load[width](m,n)'):
+        Performance (copied from `aligned_load[width](m,n)`):
 
         - Uses aligned memory access which is faster than unaligned access on
             most architectures.
