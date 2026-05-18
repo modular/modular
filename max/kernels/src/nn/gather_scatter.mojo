@@ -13,7 +13,7 @@
 
 from std.collections.string.string_slice import get_static_string
 from std.math import align_down, ceildiv
-from std.sys import simd_width_of, size_of
+from std.sys import align_of, simd_width_of, size_of
 from std.sys.info import CompilationTarget, _current_target
 
 from std.algorithm import elementwise, parallel_memcpy, sync_parallelize
@@ -354,11 +354,13 @@ def gather[
     @parameter
     @always_inline
     def input_fn[
-        width: Int, _rank: Int
+        width: Int, _rank: Int, element_alignment: Int
     ](index: IndexList[_rank]) -> SIMD[dtype, width]:
         var coords = Coord(index)
         comptime assert input.flat_rank >= coords.flat_rank
-        return input.load[width=width, alignment=1](coords)
+        return input.load[
+            width=width, alignment=element_alignment * align_of[dtype]()
+        ](coords)
 
     @parameter
     @always_inline
@@ -367,22 +369,22 @@ def gather[
     ](index: IndexList[_rank]) -> SIMD[indices_type, width]:
         var coords = Coord(index)
         comptime assert indices.flat_rank >= coords.flat_rank
-        return indices.load[width=width, alignment=1](coords)
+        return indices.load[width=width, alignment=align_of[indices_type]()](
+            coords
+        )
 
     @parameter
     @always_inline
     def output_fn[
-        width: SIMDSize, _rank: Int
+        width: SIMDSize, _rank: Int, element_alignment: Int
     ](index: IndexList[_rank], val: SIMD[dtype, width]):
         var coords = Coord(index)
         comptime assert output.flat_rank >= coords.flat_rank
-        output.store[width=width, alignment=1](
-            coords, rebind[SIMD[dtype, width]](val)
-        )
+        output.store[
+            width=width, alignment=element_alignment * align_of[dtype]()
+        ](coords, rebind[SIMD[dtype, width]](val))
 
     gather[
-        dtype=dtype,
-        indices_type=indices_type,
         input_fn=input_fn,
         indices_fn=indices_fn,
         output_fn=output_fn,
@@ -460,11 +462,13 @@ def gather[
     @parameter
     @always_inline
     def input_fn[
-        width: Int, _rank: Int
+        width: Int, _rank: Int, element_alignment: Int
     ](index: IndexList[_rank]) -> SIMD[dtype, width]:
         var coords = Coord(index)
         comptime assert input.flat_rank >= coords.flat_rank
-        return input.load[width=width, alignment=1](coords)
+        return input.load[
+            width=width, alignment=element_alignment * align_of[dtype]()
+        ](coords)
 
     @parameter
     @always_inline
@@ -473,22 +477,22 @@ def gather[
     ](index: IndexList[_rank]) -> SIMD[indices_type, width]:
         var coords = Coord(index)
         comptime assert indices.flat_rank >= coords.flat_rank
-        return indices.load[width=width, alignment=1](coords)
+        return indices.load[width=width, alignment=align_of[indices_type]()](
+            coords
+        )
 
     @parameter
     @always_inline
     def output_fn[
-        width: SIMDSize, _rank: Int
+        width: SIMDSize, _rank: Int, element_alignment: Int
     ](index: IndexList[_rank], val: SIMD[dtype, width]):
         var coords = Coord(index)
         comptime assert output.flat_rank >= coords.flat_rank
-        output.store[width=width, alignment=1](
-            coords, rebind[SIMD[dtype, width]](val)
-        )
+        output.store[
+            width=width, alignment=element_alignment * align_of[dtype]()
+        ](coords, rebind[SIMD[dtype, width]](val))
 
     gather[
-        dtype=dtype,
-        indices_type=indices_type,
         input_fn=input_fn,
         indices_fn=indices_fn,
         output_fn=output_fn,
@@ -542,13 +546,13 @@ def gather_elementwise_fn_wrapper[
     indices_type: DType,
     //,
     *,
-    input_fn: def[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
-        dtype, width
-    ],
+    input_fn: def[width: Int, rank: Int, element_alignment: Int](
+        IndexList[rank]
+    ) capturing -> SIMD[dtype, width],
     indices_fn: def[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
         indices_type, width
     ],
-    output_fn: def[width: SIMDSize, rank: Int](
+    output_fn: def[width: SIMDSize, rank: Int, element_alignment: Int](
         IndexList[rank], SIMD[dtype, width]
     ) capturing -> None,
     simd_width: Int,
@@ -558,6 +562,7 @@ def gather_elementwise_fn_wrapper[
         ](IndexList[input_rank], IndexList[indices_rank]) capturing -> None
     ] = None,
     error_index_fn: Optional[error_index_fn_type] = None,
+    element_alignment: Int = 1,
 ](
     axis: Axis,
     input_shape: IndexList,
@@ -629,10 +634,12 @@ def gather_elementwise_fn_wrapper[
             func[input_shape.size, indices_shape.size](
                 data_indices, indices_index
             )
-        var data = input_fn[simd_width, input_shape.size](data_indices)
+        var data = input_fn[simd_width, input_shape.size, element_alignment](
+            data_indices
+        )
 
         # Store it to the original index.
-        output_fn[simd_width, rank](idx.canonicalize(), data)
+        output_fn[simd_width, rank, element_alignment](idx.canonicalize(), data)
 
     gather_elementwise_fn[simd_width](coords)
 
@@ -640,16 +647,17 @@ def gather_elementwise_fn_wrapper[
 # TODO: Delete / for testing purposes (test_gather.mojo)
 @always_inline
 def gather[
-    *,
     dtype: DType,
     indices_type: DType,
-    input_fn: def[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
-        dtype, width
-    ],
+    //,
+    *,
+    input_fn: def[width: Int, rank: Int, element_alignment: Int](
+        IndexList[rank]
+    ) capturing -> SIMD[dtype, width],
     indices_fn: def[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
         indices_type, width
     ],
-    output_fn: def[width: SIMDSize, rank: Int](
+    output_fn: def[width: SIMDSize, rank: Int, element_alignment: Int](
         IndexList[rank], SIMD[dtype, width]
     ) capturing -> None,
     prefetch_fn: OptionalReg[
@@ -671,6 +679,10 @@ def gather[
     Note that this is NOT the same as the default PyTorch gather (which is equivalent to
     https://github.com/onnx/onnx/blob/main/docs/Operators.md#gatherelements).
     """
+    comptime compile_target = _current_target() if is_cpu[
+        target
+    ]() else get_gpu_target()
+
     gather_guards(axis, input_shape, indices_shape, output_shape)
     with Trace[TraceLevel.OP, target=target](
         "gather", task_id=get_safe_task_id(context)
@@ -705,6 +717,7 @@ def gather[
                 simd_width=simd_width,
                 prefetch_fn=prefetch_fn,
                 error_index_fn=error_fn,
+                element_alignment=alignment,
             ](
                 axis,
                 input_shape.canonicalize(),
@@ -719,6 +732,7 @@ def gather[
                 gather_elementwise_fn,
                 simd_width=1,
                 target=target,
+                _trace_description="gather",
             ](
                 output_shape.canonicalize(),
                 context,
@@ -726,8 +740,9 @@ def gather[
         else:
             elementwise[
                 gather_elementwise_fn,
-                simd_width=simd_width_of[dtype](),
+                simd_width=simd_width_of[dtype, target=compile_target](),
                 target=target,
+                _trace_description="gather",
             ](
                 output_shape.canonicalize(),
                 context,
@@ -747,16 +762,17 @@ def gather[
 
 @always_inline
 def gather[
-    *,
     dtype: DType,
     indices_type: DType,
-    input_fn: def[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
-        dtype, width
-    ],
+    //,
+    *,
+    input_fn: def[width: Int, rank: Int, element_alignment: Int](
+        IndexList[rank]
+    ) capturing -> SIMD[dtype, width],
     indices_fn: def[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
         indices_type, width
     ],
-    output_fn: def[width: SIMDSize, rank: Int](
+    output_fn: def[width: SIMDSize, rank: Int, element_alignment: Int](
         IndexList[rank], SIMD[dtype, width]
     ) capturing -> None,
     prefetch_fn: OptionalReg[
@@ -816,6 +832,7 @@ def gather[
                 simd_width=simd_width,
                 prefetch_fn=prefetch_fn,
                 error_index_fn=error_fn,
+                element_alignment=alignment,
             ](
                 axis,
                 input_shape.canonicalize(),
@@ -830,12 +847,14 @@ def gather[
                 gather_elementwise_fn,
                 simd_width=1,
                 target=target,
+                _trace_description="gather",
             ](output_shape, context)
         else:
             elementwise[
                 gather_elementwise_fn,
                 simd_width=simd_width_of[dtype, target=compile_target](),
                 target=target,
+                _trace_description="gather",
             ](output_shape, context)
 
         # Check for bounds errors after elementwise operation completes (CPU only)

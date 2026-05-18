@@ -3064,11 +3064,11 @@ struct Gather:
         @parameter
         @always_inline
         def input_fn[
-            width: Int, _rank: Int
+            width: Int, _rank: Int, element_alignment: Int
         ](coords: IndexList[_rank]) -> SIMD[output.dtype, width]:
-            return input._lambda_load[width=width](
-                rebind[IndexList[input.rank]](coords)
-            )
+            return input._lambda_load[
+                width=width, element_alignment=element_alignment
+            ](rebind[IndexList[input.rank]](coords))
 
         @parameter
         @always_inline
@@ -3082,16 +3082,16 @@ struct Gather:
         @parameter
         @always_inline
         def output_fn[
-            width: SIMDSize, _rank: Int
+            width: SIMDSize, _rank: Int, element_alignment: Int
         ](coords: IndexList[_rank], val: SIMD[output.dtype, width]):
-            output._lambda_store[width=width](
+            output._lambda_store[
+                width=width, element_alignment=element_alignment
+            ](
                 rebind[IndexList[output.rank]](coords),
                 rebind[SIMD[output.dtype, width]](val),
             )
 
         gather[
-            dtype=output.dtype,
-            indices_type=indices.dtype,
             input_fn=input_fn,
             indices_fn=indices_fn,
             output_fn=output_fn,
