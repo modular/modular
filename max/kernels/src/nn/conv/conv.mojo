@@ -340,7 +340,7 @@ def _m_to_n_ho_wo_nhwc(m: Int, HO: Int, WO: Int) -> IndexList[3]:
 
         Returns (IndexList):
             The translated 3d indices in (N, Hout, Wout) format.
-    TODO(Fixel): This utility should be generalized into a im2col util
+    TODO: This utility should be generalized into a im2col util
     class with some additional layout agnostic logic.
     """
     var n, rem = divmod(m, HO * WO)

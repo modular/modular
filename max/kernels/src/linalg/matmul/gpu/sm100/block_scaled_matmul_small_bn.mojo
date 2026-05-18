@@ -901,7 +901,7 @@ def _sfb_cpasync_produce_tile_warpwide[
 @__llvm_arg_metadata(c_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(sfa_tma_op, `nvvm.grid_constant`)
 @__name(
-    StaticString(config.get_kernal_name())
+    StaticString(config.get_kernel_name())
     + StaticString(
         "_fused_compute_epi" if elementwise_compute_lambda_fn
         is not None else ""

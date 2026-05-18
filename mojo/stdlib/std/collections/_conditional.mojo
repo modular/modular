@@ -15,12 +15,12 @@
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.utils.type_functions import ConditionalType
 
-comptime _ComptimeConditonalType = ImplicitlyCopyable & ImplicitlyDestructible & RegisterPassable
+comptime _ComptimeConditionalType = ImplicitlyCopyable & ImplicitlyDestructible & RegisterPassable
 
 
 # TODO: If this ever goes public, there is likely a better name for this...
 struct _ComptimeConditional[
-    T: DevicePassable & _ComptimeConditonalType,
+    T: DevicePassable & _ComptimeConditionalType,
     *,
     engaged: Bool,
 ](DevicePassable, ImplicitlyCopyable, RegisterPassable):
@@ -41,7 +41,7 @@ struct _ComptimeConditional[
     """
 
     var _value: ConditionalType[
-        Trait=_ComptimeConditonalType,
+        Trait=_ComptimeConditionalType,
         If=Self.engaged,
         Then=Self.T,
         Else=NoneType,

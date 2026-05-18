@@ -347,7 +347,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
             value: The string value.
         """
         comptime if Self.origin.mut:
-            # FIXME(MOCO-3906): Needs `unsafe_mut_cast()` because type refinment
+            # FIXME(MOCO-3906): Needs `unsafe_mut_cast()` because type refinement
             #   based on the `if origin.mut` knowledge is not supported.
             ref value_mut = UnsafePointer(to=value).unsafe_mut_cast[True]()[]
 

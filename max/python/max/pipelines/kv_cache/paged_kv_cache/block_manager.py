@@ -82,7 +82,7 @@ def _resolve_only_use_kv_connector_last_level_cache() -> bool:
     """Resolve whether to only use the KVConnector last level cache.
 
     When this is set, the device prefix cache will be disabled. All KVCache hits
-    will stricly be served from the KVConnector. This is primarily used for
+    will strictly be served from the KVConnector. This is primarily used for
     testing and benchmarking the performance of the KVConnector. Do NOT use this
     flag in production.
 

@@ -511,10 +511,10 @@ struct _DLHandle(Boolable, ImplicitlyCopyable, RegisterPassable):
         var handle = dlopen(file, Int32(flags))
         if not handle:
             var error_message = dlerror()
-            var mesage = StringSlice(
+            var message = StringSlice(
                 unsafe_from_utf8_ptr=error_message.value()
             ) if error_message else {}
-            raise Error("dlopen failed: ", mesage)
+            raise Error("dlopen failed: ", message)
         return _DLHandle(handle)
 
     def check_symbol(self, var name: String) -> Bool:

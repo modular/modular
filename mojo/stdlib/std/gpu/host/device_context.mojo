@@ -850,7 +850,7 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
 struct DevicePointer[dtype: DType](
     DevicePassable, Equatable, ImplicitlyCopyable, Writable
 ):
-    """A host-side represention of a pointer to device memory that resides
+    """A host-side representation of a pointer to device memory that resides
     within an owning `DeviceBuffer`.
 
     - Supports pointer arithmetic which may result in a new `DevicePointer`
@@ -860,7 +860,7 @@ struct DevicePointer[dtype: DType](
     - May support accessing device pointer address on supported hardware.
     - Does not support load/store operations.
 
-    At the device function execution boundry a `DevicePointer` is transformed
+    At the device function execution boundary a `DevicePointer` is transformed
     into an `UnsafePointer` on the device at the point of being handed over to
     the device driver.
 

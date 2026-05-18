@@ -140,7 +140,7 @@ trait PluginHooks:
     `elementwise_fn[target, ...]`."""
 
 
-# FIXME(MOCO-3871): Alias is to workaround function type comparision bug.
+# FIXME(MOCO-3871): Alias is to workaround function type comparison bug.
 comptime PrintEmitFnType = def[O: Origin](
     cstr: CStringSlice[O],
     file_value: FileDescriptor,

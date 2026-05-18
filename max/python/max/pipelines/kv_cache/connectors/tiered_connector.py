@@ -232,7 +232,7 @@ class TieredConnector:
                 break  # prefix chain broken
 
         # Unpin the host blocks now that we stopped allocating them and there
-        # is no more risk of accidently evicting one.
+        # is no more risk of accidentally evicting one.
         for hit in hits:
             self._host_block_pool.free_block(hit.host_block)
 

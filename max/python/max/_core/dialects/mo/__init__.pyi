@@ -3598,7 +3598,7 @@ class FloorOp(max._core.Operation):
 
 class FusedConcatSliceOp(max._core.Operation):
     """
-    This operation peforms two operations at once:
+    This operation performs two operations at once:
     %concat = mo.concat[axis](inputs)
     %slice = mo.slice(%concat)
     And returns both the concat and the slice result.

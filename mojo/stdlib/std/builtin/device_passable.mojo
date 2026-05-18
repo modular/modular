@@ -81,7 +81,7 @@ trait DeviceTypeEncoder:
         the storage pointed to by `target`.
 
         Parameters:
-            ValueType: The type of `value`, see constraits.
+            ValueType: The type of `value`, see constraints.
 
         Args:
             value: The variable to encode.

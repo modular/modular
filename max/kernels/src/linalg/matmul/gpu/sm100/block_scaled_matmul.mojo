@@ -511,7 +511,7 @@ def consumer_main_loop[
 @__llvm_arg_metadata(sfa_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(sfb_tma_op, `nvvm.grid_constant`)
 @__name(
-    StaticString(config.get_kernal_name())
+    StaticString(config.get_kernel_name())
     + StaticString(
         "_fused_compute_epi" if elementwise_compute_lambda_fn
         is not None else ""

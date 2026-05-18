@@ -75,7 +75,7 @@ def create_connector(
         )
         # DKVConnector is temporarily disabled. We need to implement proper support
         # later down the line. For now, we raise an error.
-        # Note that mantaining backward compatibility is hard since we are
+        # Note that maintaining backward compatibility is hard since we are
         # changing the core KVConnector protocol in order to better support
         # the other connectors.
         raise NotImplementedError("DKVConnector is not implemented")

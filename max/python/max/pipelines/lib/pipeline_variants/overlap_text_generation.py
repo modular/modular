@@ -1125,13 +1125,13 @@ def build_realize_future_token_graph(
                 indices=prev_to_curr_map,
             )
 
-            curr_cache_lenghts = spec_decode.curr_cache_lengths
+            curr_cache_lengths = spec_decode.curr_cache_lengths
 
             # realize the cache lengths
             realized_cache_lengths: list[TensorValue] = []
             if len(devices) == 1:
                 cache_length_u32 = ops.rebind(
-                    curr_cache_lenghts[0], ["curr_batch_size"]
+                    curr_cache_lengths[0], ["curr_batch_size"]
                 )
                 cache_length_adjusted = (
                     cache_length_u32.cast(DType.int64) + batch_increments_i64
@@ -1165,7 +1165,7 @@ def build_realize_future_token_graph(
                         ],
                     )
                     replica_cache_length = (
-                        curr_cache_lenghts[i].cast(DType.int64)
+                        curr_cache_lengths[i].cast(DType.int64)
                         + batch_increments_local
                     )
                     realized_cache_lengths.append(
@@ -1175,7 +1175,7 @@ def build_realize_future_token_graph(
                 # TP > 1
                 assert spec_decode.signal_buffers is not None
                 cache_length_u32 = ops.rebind(
-                    curr_cache_lenghts[0], ["curr_batch_size"]
+                    curr_cache_lengths[0], ["curr_batch_size"]
                 )
                 cache_length_adjusted = (
                     cache_length_u32.cast(DType.int64) + batch_increments_i64

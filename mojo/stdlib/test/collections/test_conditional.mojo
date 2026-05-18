@@ -35,7 +35,7 @@ def test_engaged_getitem_returns_ref() raises:
     assert_equal(c[], 20)
 
 
-def test_disengaged_defalut_construction() raises:
+def test_disengaged_default_construction() raises:
     var _c = _ComptimeConditional[Int, engaged=False]()
 
 

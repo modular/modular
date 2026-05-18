@@ -1251,7 +1251,7 @@ def grouped_quantize_dynamic_scaled_fp4_async_kernel[
         row_major(Coord(scales_tile_shape)),
     )
 
-    # We can safetly prefetch the row_offsets and scales_offsets before
+    # We can safely prefetch the row_offsets and scales_offsets before
     # `wait_on_dependent_grids()`.
     with PDL():
         if scale_tile_idx >= expert_tiles_start + expert_num_tiles:
