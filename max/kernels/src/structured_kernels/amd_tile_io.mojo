@@ -73,12 +73,14 @@ from std.memory import AddressSpace
 from std.memory.unsafe import bitcast
 from std.math import min
 from std.math.uutils import umod, ufloordiv
+from std.sys._assembly import inlined_assembly
 from std.sys.intrinsics import readfirstlane
 from std.utils import IndexList
 from layout import Coord, Idx, TileTensor, TensorLayout
 from layout._utils import make_amd_buffer_resource
 from layout.tile_layout import Layout, row_major, col_major
 from layout.swizzle import Swizzle
+from layout.tile_tensor import stack_allocation as tt_stack_allocation
 from std.itertools import product
 
 
@@ -179,8 +181,7 @@ def ds_read_tr16_b64_warp[
     comptime assert type_of(tile).static_shape[1] == row_dim1 * 16
 
     var row_idx = ufloordiv(lane_id(), 16)
-    var coord0 = row_idx // row_dim1
-    var coord1 = row_idx % row_dim1
+    var coord0, coord1 = divmod(row_idx, row_dim1)
     var shared_b_tile = tile.tile[4, 16](coord0, coord1)
     return ds_read_tr16_b64_row(shared_b_tile)
 
@@ -194,6 +195,7 @@ struct TiledMmaLoader[
     in_type: DType,
     mma_shape: IndexList[3],
     swizzle: Optional[Swizzle] = Optional[Swizzle](),
+    swizzle2: Optional[Swizzle] = Optional[Swizzle](),
 ]:
     """SMEM→register loader expert for MFMA operand fragments.
 
@@ -221,6 +223,10 @@ struct TiledMmaLoader[
         in_type: Operand element type.
         mma_shape: MMA instruction shape [M, N, K].
         swizzle: Optional vector-space swizzle for `load_b`.
+        swizzle2: Optional second vector-space swizzle, applied AFTER
+            `swizzle`. Use to compose two-XOR swizzles (e.g., HK's
+            `st_32x32` `bit5^=bit9` + `bit4^=bit10` byte-level pair, which
+            are not expressible as a single Swizzle).
     """
 
     @staticmethod
@@ -228,6 +234,7 @@ struct TiledMmaLoader[
     def load_b[
         num_mmas: Int,
         simd_width: Int,
+        imm_offset_bytes: Int = 0,
     ](
         src: TileTensor[
             Self.in_type, _, address_space=AddressSpace.SHARED, ...
@@ -241,6 +248,11 @@ struct TiledMmaLoader[
         Parameters:
             num_mmas: Number of MMA tiles to load.
             simd_width: SIMD vector width for the element type.
+            imm_offset_bytes: Comptime byte offset added to each ds_read
+                via the `n` (numeric immediate) constraint, bypassing
+                the AMDGPU instruction selector for the address-fold
+                step. See `_load_from_lds[imm_offset_bytes]`. Cost:
+                per-read `s_waitcnt lgkmcnt(0)` serializes LDS reads.
 
         Args:
             src: A WN x BK TileTensor in shared memory.
@@ -268,7 +280,11 @@ struct TiledMmaLoader[
                     # BF16: single load covers the full fragment.
                     result[Int(i) + Int(j) * M] = rebind[
                         SIMD[Self.in_type, simd_width]
-                    ](Self._load_b_tile[Self.mma_shape, Int(j)](src_row))
+                    ](
+                        Self._load_b_tile[
+                            Self.mma_shape, Int(j), imm_offset_bytes
+                        ](src_row)
+                    )
                 else:
                     # FP8: MMA K (128) = 2 * SMEM load width (64 elements
                     # per 16-element lane SIMD). Load two [MMA_M, MMA_K/2]
@@ -276,12 +292,12 @@ struct TiledMmaLoader[
                     comptime half_k_shape = IndexList[3](
                         MMA_M, Self.mma_shape[1], MMA_K // 2
                     )
-                    var lo = Self._load_b_tile[half_k_shape, Int(j) * 2](
-                        src_row
-                    )
-                    var hi = Self._load_b_tile[half_k_shape, Int(j) * 2 + 1](
-                        src_row
-                    )
+                    var lo = Self._load_b_tile[
+                        half_k_shape, Int(j) * 2, imm_offset_bytes
+                    ](src_row)
+                    var hi = Self._load_b_tile[
+                        half_k_shape, Int(j) * 2 + 1, imm_offset_bytes
+                    ](src_row)
                     result[Int(i) + Int(j) * M] = rebind[
                         SIMD[Self.in_type, simd_width]
                     ](lo.join(hi))
@@ -422,6 +438,7 @@ struct TiledMmaLoader[
     def _load_b_tile[
         tile_mma_shape: IndexList[3],
         k_tile_idx: Int,
+        imm_offset_bytes: Int = 0,
     ](
         src: TileTensor[
             Self.in_type, _, address_space=AddressSpace.SHARED, ...
@@ -471,8 +488,14 @@ struct TiledMmaLoader[
             offset = Self.swizzle.value()(
                 offset // Scalar[idx_type](simd_width)
             ) * Scalar[idx_type](simd_width)
+        comptime if Self.swizzle2:
+            offset = Self.swizzle2.value()(
+                offset // Scalar[idx_type](simd_width)
+            ) * Scalar[idx_type](simd_width)
 
-        return _load_from_lds[width=simd_width](src.ptr + offset)
+        return _load_from_lds[
+            width=simd_width, imm_offset_bytes=imm_offset_bytes
+        ](src.ptr + offset)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -485,12 +508,36 @@ def _load_from_lds[
     dtype: DType,
     //,
     width: Int = 1,
+    imm_offset_bytes: Int = 0,
 ](
     shared_ptr: UnsafePointer[
         Scalar[dtype], _, address_space=AddressSpace.SHARED
     ],
 ) -> SIMD[dtype, width]:
-    """Alias-scoped LDS load via LLVM intrinsic with noalias annotations."""
+    """Alias-scoped LDS load via LLVM intrinsic with noalias annotations.
+
+    When `imm_offset_bytes != 0`, routes through `ds_read_b128_imm_u32x4`
+    inline-asm path with `s_waitcnt lgkmcnt(0)` baked in. This forces
+    a comptime byte offset into ds_read's `offset:imm` field — the
+    compiler's instruction selector sometimes fails to fold buried
+    comptime offsets (e.g., K SMEM stage stride 0x4000 hidden inside
+    `select(stage, k_smem_0, k_smem_1)`).
+
+    Trade-off: the inline-asm path serializes LDS reads (per-read
+    lgkmcnt(0) defeats pipelining). Use only when the missed offset
+    fold cost > the serialization cost.
+    """
+    comptime if imm_offset_bytes != 0:
+        comptime if dtype == DType.bfloat16 and width == 8:
+            var bf16_ptr = shared_ptr.bitcast[Scalar[DType.bfloat16]]()
+            var raw = ds_read_b128_imm_u32x4[offset_bytes=imm_offset_bytes](
+                bf16_ptr
+            )
+            return rebind[SIMD[dtype, width]](bitcast[DType.bfloat16, 8](raw))
+        else:
+            comptime assert (
+                False
+            ), "_load_from_lds[imm_offset_bytes != 0]: only BF16 width=8"
     comptime alias_scope_attr = __mlir_attr.`[#llvm.alias_scope<id= "amdgpu.AsyncCopies", domain=#llvm.alias_scope_domain<id = "amdgpu.AsyncOps">>]`
     comptime no_alias_scope_attr = __mlir_attr.`[#llvm.alias_scope<id= "amdgpu.LocalLoads", domain=#llvm.alias_scope_domain<id = "amdgpu.AsyncOps">>]`
 
@@ -604,6 +651,70 @@ def _load_from_lds[
         return bitcast[dtype, width](uint8_vec)
     else:
         comptime assert False, "Unsupported dtype/width for _load_from_lds"
+
+
+# ===----------------------------------------------------------------------=== #
+# ds_read_b128_imm: ds_read with comptime imm offset, hazards + lgkmcnt wait
+# ===----------------------------------------------------------------------=== #
+#
+# Inline-asm `ds_read_b128 ... offset:imm` with three guards baked in:
+#   1. Pre-issue `s_nop 15 + s_nop 4` (21 cycles, > worst-case 20-cycle
+#      XDL→LDS hazard, §7.6).
+#   2. Post-issue `s_waitcnt lgkmcnt(0)` so the result VGPRs are
+#      definitively populated when the asm returns. INLINEASM is
+#      opaque to `SIInsertWaitcnts`, so it may not insert this
+#      waitcnt before downstream consumers — bake it in to be safe.
+#   3. Pre-issue `s_waitcnt vmcnt(0)` to ensure any pending DMA-to-LDS
+#      writes have committed before we read.
+# Returns native `<4 x i32>` (the natural ds_read_b128 destination
+# layout); caller bitcasts.
+
+
+@always_inline
+def ds_read_b128_imm_u32x4[
+    offset_bytes: Int,
+](
+    base_ptr: UnsafePointer[
+        Scalar[DType.bfloat16], _, address_space=AddressSpace.SHARED
+    ],
+) -> SIMD[DType.uint32, 4]:
+    """Issues `ds_read_b128` with a comptime immediate offset and returns the
+    loaded 128 bits as `SIMD[DType.uint32, 4]`.
+
+    Includes pre-issue `s_nop` hazard guard, pre-issue `s_waitcnt vmcnt(0)`
+    (DMA completion), and POST-issue `s_waitcnt lgkmcnt(0)` (LDS read
+    completion). Caller bitcasts the i32 result.
+    """
+    comptime assert (
+        offset_bytes >= 0 and offset_bytes <= 65535
+    ), "ds_read_b128 offset:imm is u16 (0..65535)"
+    var shared_ptr3 = __mlir_op.`builtin.unrealized_conversion_cast`[
+        _type=__mlir_type.`!llvm.ptr<3>`
+    ](base_ptr)
+    var addr_i32_raw = __mlir_op.`llvm.ptrtoint`[_type=__mlir_type.i32](
+        shared_ptr3
+    )
+    var addr_i32 = Int32(
+        mlir_value=__mlir_op.`pop.cast_from_builtin`[_type=Int32._mlir_type](
+            addr_i32_raw
+        )
+    )
+    # Per-read `s_waitcnt lgkmcnt(0)` baked in: required because
+    # GCNHazardRecognizer treats INLINEASM as opaque and cannot see
+    # the MFMA-write → ds_read-write WAR hazards that would arise
+    # when the compiler reuses VGPRs across consecutive reads. A
+    # coarser waitcnt (one per load_b call) lets the compiler
+    # pipeline reads (using lgkmcnt(N)) but breaks correctness
+    # when the destination VGPRs of a new ds_read overlap with the
+    # source VGPRs of a still-in-flight MFMA. Tested empirically
+    # 2026-04-30 — fine-grained per-read waitcnt is the correct
+    # trade-off for kernels with concurrent MFMA + LDS-read flows.
+    return inlined_assembly[
+        "ds_read_b128 $0, $1 offset:$2",
+        SIMD[DType.uint32, 4],
+        constraints="=v,v,n",
+        has_side_effect=True,
+    ](addr_i32, Int32(offset_bytes))
 
 
 # ===----------------------------------------------------------------------=== #
@@ -1051,6 +1162,7 @@ struct TileLoaderLDS[
 struct SubTileLoaderLDS[
     dtype: DType,
     swizzle: Optional[Swizzle] = Optional[Swizzle](),
+    swizzle2: Optional[Swizzle] = Optional[Swizzle](),
 ](TrivialRegisterPassable):
     """DRAM→LDS DMA expert for single-sub-tile TileTensor-indexed loads.
 
@@ -1091,6 +1203,10 @@ struct SubTileLoaderLDS[
     Parameters:
         dtype: Element data type.
         swizzle: Optional swizzle for bank conflict reduction.
+        swizzle2: Optional second swizzle, applied AFTER `swizzle`. Use
+            to compose two-XOR swizzles (e.g., HK's `st_32x32`
+            `bit5^=bit9` + `bit4^=bit10` byte-level pair, which are not
+            expressible as a single Swizzle).
     """
 
     var bc: AMDBufferResource
@@ -1129,7 +1245,12 @@ struct SubTileLoaderLDS[
         """
         comptime M = type_of(src).static_shape[0]
         comptime N = type_of(src).static_shape[1]
-        comptime BM = 32
+        # `BM` is the outer warp-strip height in rows. Default is 32
+        # (one HK `st_32x32_s` sub-block). For half-sub-block loads
+        # (N-warps-per-subblock partition at depths < 128), the caller
+        # passes M=16 — clamp BM accordingly so the outer
+        # `range(M // BM)` is 1 instead of 0.
+        comptime BM = 32 if M >= 32 else M
         comptime BN = N
         # Adapt thread layout to keep bytes/lane ≤ 16
         # (buffer_load_dwordx4_lds limit).  bf16 BK=64 and fp8 BK=128
@@ -1140,7 +1261,7 @@ struct SubTileLoaderLDS[
         comptime thread_cols = 4 if raw_load_bytes <= 16 else 8
         comptime thread_layout = row_major[thread_rows, thread_cols]()
         comptime load_width = BN // thread_cols
-        comptime BM_SUB = thread_rows
+        comptime BM_SUB = thread_rows if BM >= thread_rows else BM
 
         var worker_idx = lane_id()
         var dram_base = self.bc.get_base_ptr()
@@ -1162,16 +1283,14 @@ struct SubTileLoaderLDS[
                 BM_SUB, BN
             ](m_sub_tile, 0)
             var worker_idx_with_offset = worker_idx + m_sub_tile * WARP_SIZE
+            var swizzled_worker_idx = worker_idx_with_offset
+            comptime if Self.swizzle:
+                swizzled_worker_idx = Self.swizzle.value()(swizzled_worker_idx)
+            comptime if Self.swizzle2:
+                swizzled_worker_idx = Self.swizzle2.value()(swizzled_worker_idx)
             var src_dist = src_partitions.vectorize[1, load_width]().distribute[
                 thread_layout
-            ](
-                umod(
-                    Self.swizzle.value()(
-                        worker_idx_with_offset
-                    ) if Self.swizzle else worker_idx_with_offset,
-                    WARP_SIZE,
-                )
-            )
+            ](umod(swizzled_worker_idx, WARP_SIZE))
             var dst_ptr = dst_partitions.ptr.address_space_cast[
                 AddressSpace.SHARED
             ]()
@@ -1218,6 +1337,193 @@ struct SubTileLoaderLDS[
 
 
 # ===----------------------------------------------------------------------=== #
+# SubTileLoaderLDS_HK_st_8x32: HK kittens st_8x32_s-aligned cooperative DMA
+# ===----------------------------------------------------------------------=== #
+
+
+struct SubTileLoaderLDS_HK_st_8x32[
+    dtype: DType,
+    BN: Int,
+    depth: Int,
+    BK: Int,
+    num_threads: Int,
+](TrivialRegisterPassable):
+    """DRAM→LDS DMA for HK kittens' `st_8x32_s` SMEM layout (V operand).
+
+    Mirrors the group-level cooperative `load()` in
+    `~/HipKittens/include/ops/group/memory/tile/global_to_shared.cuh`:
+
+      * Each thread (laneid 0..63 across all `num_threads / 64` warps)
+        writes `bytes_per_thread = 16` bytes per iteration directly to
+        LDS at the natural byte offset
+        `lane_byte_offset = thread_id * 16 + iter * num_threads * 16`.
+      * `thread_id` is `warp_id * WARP_SIZE + lane_id`, so the LDS bytes
+        cover successive subtiles in HK's row-major-by-block-col
+        ordering (`subtile_id = subtile_row * subtiles_per_row +
+        subtile_col`, with subtile shape 8×BK BF16).
+      * Each lane reads its source position in DRAM via the swizzle ↔
+        position bijection: subtile_lane_byte_offset → (row, col)
+        within the 8×BK subtile, which then unpacks back into a
+        (global_row, global_col) DRAM byte address. For HK st_8x32
+        BF16 the swizzle is the identity, so the global position is
+        just the natural subtile-local position.
+      * Writes go via `rocdl.raw.ptr.buffer.load.lds` with the same
+        `_alias_scope_attr` SubTileLoaderLDS uses, so consumer-side
+        `ds_read_tr*` LDS reads tagged `noalias_scopes=_alias_scope_attr`
+        can skip `s_waitcnt vmcnt(0)` (LLVM PR #74537's
+        `SIInsertWaitcnts` vmcnt-relaxation handshake), provided the
+        kernel maintains an explicit `s_waitcnt vmcnt(0) + s_barrier`
+        fence at DMA/compute boundaries.
+
+    The layout is hard-coded to HK's BF16 `st_8x32_s`:
+      * `subtile_rows = 8`
+      * `subtile_cols = BK` (32 for HKMHAExact)
+      * No swizzle (st_8x32 BF16 returns offset unchanged in HK)
+
+    For the K operand (HK uses `st_32x32_s` with two-XOR swizzle), see
+    `SubTileLoaderLDS` + `swizzle/swizzle2` plumbing instead.
+
+    Parameters:
+        dtype: Element data type (must be BF16 — HK's `st_8x32_s`
+            specialization assumes 2-byte elements; FP32 would use a
+            different shape).
+        BN: KV block height in elements (= 64 for HKMHAExact).
+        depth: V tile column span in elements (= D for the model's
+            head_dim; 64, 128, or 256 for HKMHAExact).
+        BK: Subtile column span in elements (= 32 for HK st_8x32_s).
+        num_threads: Total threads in the cooperative load (= 8 warps ×
+            64 lanes = 512 for HKMHAExact). Used to compute
+            `bytes_per_iter`.
+    """
+
+    var bc: AMDBufferResource
+    """The 128-bit buffer resource descriptor for DRAM access."""
+
+    @always_inline
+    def __init__(out self, gmem_tile: TileTensor[Self.dtype, ...]):
+        """Create a loader from a DRAM tile.
+
+        Args:
+            gmem_tile: The full DRAM tile from KVCacheIterator (carries
+                a RuntimeInt valid_rows for clamping bounds).
+        """
+        self.bc = make_amd_buffer_resource(gmem_tile)
+
+    @always_inline
+    def load(
+        self,
+        v_smem_slot: SMemTile[Self.dtype, ...],
+        v_gmem_tile: TileTensor[Self.dtype, ...],
+        warp_id_uniform: Int,
+        lane_id_local: Int,
+    ):
+        """Cooperatively DMA one V tile from DRAM into LDS.
+
+        Args:
+            v_smem_slot: Destination V SMEM tile (must hold at least
+                `BN * depth * size_of[dtype]` bytes; the loader uses
+                `.ptr` as the LDS base).
+            v_gmem_tile: TileTensor view of the BN × depth source tile
+                in DRAM. Used to derive the DRAM-tile-to-bc-base byte
+                offset (the `scalar_offset` of `buffer_load_lds`).
+            warp_id_uniform: Wave-uniform warp index (0..num_warps-1).
+                Caller must pass an SGPR-class value (e.g.,
+                `readfirstlane(warp_id())`).
+            lane_id_local: Per-lane index (0..WARP_SIZE-1) from
+                `lane_id()`.
+        """
+        var v_smem_base = v_smem_slot.ptr
+        comptime _bytes_per_thread = 16
+        comptime _bytes_per_warp_iter = _bytes_per_thread * Int(WARP_SIZE)
+        comptime _bytes_per_iter = _bytes_per_thread * Self.num_threads
+        comptime _subtile_rows = 8
+        comptime _subtile_cols = Self.BK
+        comptime _subtile_bytes = (
+            _subtile_rows * _subtile_cols * size_of[Self.dtype]()
+        )
+        comptime _subtiles_per_row = Self.depth // _subtile_cols
+        comptime _subtile_row_bytes = _subtile_cols * size_of[Self.dtype]()
+        comptime _total_bytes = (Self.BN * Self.depth * size_of[Self.dtype]())
+        comptime _num_iters = _total_bytes // _bytes_per_iter
+
+        comptime assert (
+            Self.dtype == DType.bfloat16
+        ), "SubTileLoaderLDS_HK_st_8x32 is BF16-only"
+        comptime assert (
+            _total_bytes % _bytes_per_iter == 0
+        ), "BN*depth*sizeof(dtype) must be a multiple of bytes_per_iter"
+
+        var dram_base = self.bc.get_base_ptr()
+        var tile_byte_offset = Int(v_gmem_tile.ptr) - dram_base
+        var thread_id = warp_id_uniform * Int(WARP_SIZE) + lane_id_local
+
+        comptime aux = 0
+
+        comptime for i in range(_num_iters):
+            var lane_byte_offset = (
+                thread_id * _bytes_per_thread + Int(i) * _bytes_per_iter
+            )
+            var subtile_id, subtile_lane_byte_offset = divmod(
+                lane_byte_offset, _subtile_bytes
+            )
+            var subtile_row, subtile_col = divmod(subtile_id, _subtiles_per_row)
+            var row_in_subtile, col_byte_in_subtile = divmod(
+                subtile_lane_byte_offset, _subtile_row_bytes
+            )
+            var col_in_subtile = col_byte_in_subtile // size_of[Self.dtype]()
+            # st_8x32 BF16 swizzle = identity (no XOR). Global position
+            # is just the natural subtile-local position.
+            var global_row = subtile_row * _subtile_rows + row_in_subtile
+            var global_col = subtile_col * _subtile_cols + col_in_subtile
+            var global_byte_in_tile = (
+                global_row * Self.depth + global_col
+            ) * size_of[Self.dtype]()
+
+            var lds_warp_byte = (
+                warp_id_uniform * _bytes_per_warp_iter
+                + Int(i) * _bytes_per_iter
+            )
+            var v_smem_warp_ptr = (
+                v_smem_base + lds_warp_byte // size_of[Self.dtype]()
+            )
+
+            var shared_ptr3 = __mlir_op.`builtin.unrealized_conversion_cast`[
+                _type=__mlir_type.`!llvm.ptr<3>`
+            ](v_smem_warp_ptr)
+
+            var desc_ptr_ = UnsafePointer[
+                Scalar[DType.bfloat16],
+                MutAnyOrigin,
+                address_space=AddressSpace.BUFFER_RESOURCE,
+            ].unsafe_dangling()
+            var ptr_to_ptr = UnsafePointer(to=desc_ptr_)
+            var ptr_to_simd = UnsafePointer(to=self.bc.desc)
+            ptr_to_ptr[0] = ptr_to_simd.bitcast[
+                UnsafePointer[
+                    Scalar[DType.bfloat16],
+                    MutAnyOrigin,
+                    address_space=AddressSpace.BUFFER_RESOURCE,
+                ]
+            ]()[0]
+            var desc_ptr_llvm = __mlir_op.`builtin.unrealized_conversion_cast`[
+                _type=__mlir_type.`!llvm.ptr<8>`
+            ](desc_ptr_)
+
+            __mlir_op.`rocdl.raw.ptr.buffer.load.lds`[
+                alias_scopes=_alias_scope_attr,
+                _type=None,
+            ](
+                desc_ptr_llvm,
+                shared_ptr3,
+                to_i32(Int32(_bytes_per_thread)),
+                to_i32(Int32(global_byte_in_tile)),
+                to_i32(Int32(tile_byte_offset)),
+                to_i32(0),
+                to_i32(aux),
+            )
+
+
+# ===----------------------------------------------------------------------=== #
 # RegTileLoader
 # ===----------------------------------------------------------------------=== #
 
@@ -1255,7 +1561,16 @@ struct RegTileLoader[
     var bc: AMDBufferResource
     """The 128-bit buffer resource descriptor for DRAM loads."""
     var base_ptr_as_int: Int
-    """Integer address of the DRAM tile base pointer."""
+    """Integer address of the DRAM tile base pointer.
+
+    Captured at construction so the per-thread base offset in
+    `_buffer_load_impl` is computed relative to the buffer resource's
+    base — not relative to `src.ptr`. `src` passed to `load()` may be
+    a sub-tile of `gmem_tile` (matmul iterates `a_blockrow.tile[BK,
+    BM](k, 0)` over k); the offset between the two pointers must
+    fold into the per-thread `vector_offset` for buffer_load to
+    address the correct rows.
+    """
 
     @always_inline
     def __init__(out self, gmem_tile: TileTensor[Self.dtype, ...]):
@@ -1642,6 +1957,16 @@ def _buffer_load_impl[
     into registers; `RegTileLoader` pairs row_major dst with
     `RegTileWriterLDS.copy`'s row-major reads.
 
+    The per-thread base offset is computed via pointer subtraction
+    `Int(dist.ptr) - base_ptr_as_int` — which captures BOTH the
+    `src.ptr - gmem_tile.ptr` sub-tile offset (when callers pass a sliced
+    sub-tile to `load()`) AND the per-thread distribute offset. The
+    AMDGPU backend folds this to i32 ops via algebraic simplification
+    (both pointers share the same gmem base), so there is no carry-chain
+    cost. Recomputing the offset from `dist_tup[2]` alone would drop the
+    sub-tile offset and silently produce wrong loads for matmul-style
+    callers that iterate over `gmem_tile.tile[...](...)` slices.
+
     Parameters:
         thread_layout: Thread distribution layout (row_major or col_major).
         num_threads: Total threads; threads beyond layout size are idle.
@@ -1651,7 +1976,10 @@ def _buffer_load_impl[
         dst: Destination register tile (LOCAL).
         src: Source DRAM tile (vectorized).
         bc: AMD buffer resource descriptor with OOB bounds.
-        base_ptr_as_int: Integer address of the DRAM tile base pointer.
+        base_ptr_as_int: Integer address of the buffer-resource base
+            pointer (= the `gmem_tile` passed to `RegTileLoader.__init__`).
+            All per-thread offsets are relative to this base, NOT to
+            `src.ptr` — which may be a slice with a different pointer.
         dst_layout: Layout controlling register storage order. Shape must
             match the per-thread fragment dimensions (M, N).
     """
@@ -1850,15 +2178,13 @@ struct RegTileWriterLDS[
         # Distribute thread ID → (row, vcol) using UInt32 bitwise ops.
         # All grid dimensions are power-of-2 so divmod compiles to shift/mask.
         var tid = UInt32(thread_idx.x)
-        var base_row = tid // UInt32(tgc)
-        var base_vcol = tid % UInt32(tgc)
+        var base_row, base_vcol = divmod(tid, UInt32(tgc))
 
         # blocked_product base address: compute within-block super-element
         # index, apply swizzle once, then use compile-time row deltas for
         # subsequent stores.  Inter-row stride bits are above the swizzle
         # range, so swz(base + delta) == swz(base) + delta.
-        var blk = base_vcol // UInt32(cols_per_blk)
-        var col_in_blk = base_vcol % UInt32(cols_per_blk)
+        var blk, col_in_blk = divmod(base_vcol, UInt32(cols_per_blk))
         var local_idx = base_row * UInt32(cols_per_blk) + col_in_blk
         comptime if Self.swizzle:
             comptime swizzle_fn = Self.swizzle.value()
@@ -1911,3 +2237,43 @@ comptime RegTile[
     origin: Origin[mut=mut],
 ] = TileTensor[dtype, LayoutType, origin, address_space=AddressSpace.LOCAL]
 """Register tile. Alias for TileTensor in LOCAL address space."""
+
+
+# ===----------------------------------------------------------------------=== #
+# Stack allocators — thin specializations of layout.tile_tensor's
+# stack_allocation with address_space pre-set. The returned origin is
+# always MutExternalOrigin (the only origin tt_stack_allocation can
+# produce), so callers don't need to spell it.
+# ===----------------------------------------------------------------------=== #
+
+
+@always_inline("nodebug")
+def reg_alloc[
+    LayoutType: TensorLayout,
+    //,
+    dtype: DType,
+    alignment: Int = align_of[dtype](),
+](var layout: LayoutType) -> RegTile[
+    dtype, LayoutType, MutExternalOrigin
+] where LayoutType.all_dims_known:
+    """Stack-allocate a register tile (LOCAL address space) with the given layout.
+    """
+    return tt_stack_allocation[
+        dtype, address_space=AddressSpace.LOCAL, alignment=alignment
+    ](layout)
+
+
+@always_inline("nodebug")
+def smem_alloc[
+    LayoutType: TensorLayout,
+    //,
+    dtype: DType,
+    alignment: Int = align_of[dtype](),
+](var layout: LayoutType) -> SMemTile[
+    dtype, LayoutType, MutExternalOrigin
+] where LayoutType.all_dims_known:
+    """Stack-allocate a shared memory tile (SHARED address space) with the given layout.
+    """
+    return tt_stack_allocation[
+        dtype, address_space=AddressSpace.SHARED, alignment=alignment
+    ](layout)

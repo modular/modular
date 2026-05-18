@@ -2880,6 +2880,7 @@ def stack_allocation[
     //,
     dtype: DType,
     address_space: AddressSpace = AddressSpace.GENERIC,
+    alignment: Int = align_of[dtype](),
 ](var layout: LayoutType) -> TileTensor[
     dtype,
     LayoutType,
@@ -2896,6 +2897,12 @@ def stack_allocation[
         LayoutType: The layout type (inferred from layout argument).
         dtype: The data type of tensor elements.
         address_space: Memory address space (default: GENERIC).
+        alignment: Allocation alignment in bytes (default: natural type
+            alignment from `align_of[dtype]()`). Pass an explicit value
+            when downstream loads/stores require larger alignment (for
+            example, AMD `ds_read_b128` requires 16 B, and sub-block
+            swizzles can require alignment up to the sub-block size).
+            Forwarded to the underlying `std.memory.stack_allocation`.
 
     Args:
         layout: The layout instance defining shape and strides.
@@ -2915,6 +2922,7 @@ def stack_allocation[
         _std_stack_allocation[
             Coord[*LayoutType._shape_types].static_product,
             Scalar[dtype],
+            alignment=alignment,
             address_space=address_space,
         ](),
         layout,

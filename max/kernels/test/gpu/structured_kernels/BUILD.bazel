@@ -2,18 +2,39 @@ load("//bazel:api.bzl", "mojo_test")
 
 package(default_visibility = ["//max:consumers"])
 
-mojo_test(
-    name = "test_sub_tile_loader_lds_smoke.mojo.test",
-    size = "medium",
-    srcs = ["test_sub_tile_loader_lds_smoke.mojo"],
-    tags = ["gpu"],
-    target_compatible_with = [
+# Per-file constraint overrides. Default is `//:has_gpu` + `//:amd_gpu`
+# (any AMD GPU); HKMhaPrefill kernels target gfx950-specific MFMA
+# intrinsics and need the mi355x constraint.
+_EXTRA_CONSTRAINTS = {
+    "inspect_hk_mha_prefill_asm.mojo": ["//:mi355_gpu"],
+    "test_hk_mha_prefill.mojo": ["//:mi355_gpu"],
+    "test_hk_mha_prefill_causal.mojo": ["//:mi355_gpu"],
+    "test_hk_mha_prefill_rescale.mojo": ["//:mi355_gpu"],
+    "test_sub_tile_loader_lds_smoke.mojo": [
         "//:has_gpu",
         "//:amd_gpu",
     ],
-    deps = [
-        "//max:layout",
-        "//max:structured_kernels",
-        "@mojo//:std",
-    ],
-)
+}
+
+[
+    mojo_test(
+        name = src + ".test",
+        size = "medium",
+        srcs = [src],
+        tags = ["gpu"],
+        target_compatible_with = _EXTRA_CONSTRAINTS.get(
+            src,
+            [
+                "//:has_gpu",
+                "//:amd_gpu",
+            ],
+        ),
+        deps = [
+            "//max:layout",
+            "//max:nn",
+            "//max:structured_kernels",
+            "@mojo//:std",
+        ],
+    )
+    for src in glob(["**/*.mojo"])
+]
