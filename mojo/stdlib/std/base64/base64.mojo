@@ -258,7 +258,39 @@ def b64decode[
 
 
 # ===-----------------------------------------------------------------------===#
-# b16encode - Layer 1: Span -> String (zero-copy)
+# b16encode - Core implementation (with comptime append function)
+# ===-----------------------------------------------------------------------===#
+
+
+@no_inline
+def _b16encode[
+    append_byte: def(UInt8) capturing -> None
+](input_bytes: Span[mut=False, Byte, _]):
+    """Performs base16 encoding on input bytes using a comptime-parameterized append function.
+
+    This is the core encoding function that uses a comptime function to output each byte.
+    This allows flexibility in how the output is stored (String, Span, List, etc.).
+
+    Parameters:
+        append_byte: A comptime callable that takes a UInt8 and performs the append operation.
+
+    Args:
+        input_bytes: The input bytes to encode.
+    """
+    comptime lookup = "0123456789ABCDEF"
+    var b16chars = lookup.unsafe_ptr()
+
+    var length = len(input_bytes)
+    for i in range(length):
+        var byte = input_bytes[i]
+        var hi = byte >> 4
+        var lo = byte & 0b1111
+        append_byte(b16chars[hi])
+        append_byte(b16chars[lo])
+
+
+# ===-----------------------------------------------------------------------===#
+# b16encode - Layer 1: Span -> String
 # ===-----------------------------------------------------------------------===#
 
 
@@ -271,19 +303,14 @@ def b16encode[origin: Origin](input_bytes: Span[UInt8, origin]) -> String:
     Returns:
         Base16 encoding of the input bytes.
     """
-    comptime lookup = "0123456789ABCDEF"
-    var b16chars = lookup.unsafe_ptr()
-
     var length = len(input_bytes)
     var result = String(capacity=length * 2)
 
-    for i in range(length):
-        var byte = input_bytes[i]
-        var hi = byte >> 4
-        var lo = byte & 0b1111
-        result._unsafe_append_byte(b16chars[hi])
-        result._unsafe_append_byte(b16chars[lo])
+    @parameter
+    def append_byte(b: UInt8):
+        result._unsafe_append_byte(b)
 
+    _b16encode[append_byte](input_bytes)
     return result^
 
 
