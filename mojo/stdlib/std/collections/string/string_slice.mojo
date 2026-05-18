@@ -522,6 +522,22 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
                 c_count += 1
             abort(String("codepoint index is out of bounds: ", c_idx))
 
+    @always_inline
+    def __getitem__(self, *, grapheme: Some[Indexer]) -> Self:
+        """Gets the character at the specified position.
+
+        Args:
+            grapheme: The grapheme index.
+
+        Returns:
+            A `StringSlice` view containing the unicode grapheme at the
+            specified position.
+        """
+
+        var char = self.graphemes().nth(index(grapheme))
+        debug_assert[assert_mode="safe"](Bool(char), "Invalid grapheme index")
+        return char.take()
+
     @doc_hidden
     def __init__(
         out self: StringSlice[ImmutAnyOrigin],
@@ -1357,29 +1373,6 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         ```
         """
         return GraphemeIndicesIter[Self.origin](self)
-
-    def nth_grapheme(self, n: Int) -> Optional[Self]:
-        """Return the `n`-th grapheme cluster (0-indexed), or `None` if out
-        of range.
-
-        Args:
-            n: The zero-based grapheme index. Must be non-negative.
-
-        Returns:
-            The `n`-th grapheme cluster, or `None` if `n` is out of range.
-
-        Example:
-
-        ```mojo
-        from std.testing import assert_equal, assert_true
-
-        var s = StringSlice("abc")
-        assert_equal(s.nth_grapheme(0).value(), "a")
-        assert_equal(s.nth_grapheme(2).value(), "c")
-        assert_true(s.nth_grapheme(3) is None)
-        ```
-        """
-        return self.graphemes().nth(n)
 
     def split_at_grapheme(
         self, n: Int

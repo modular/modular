@@ -1105,5 +1105,17 @@ def test_codepoint_indexing() raises:
     assert_equal(StringSlice("🔄🔥🔄")[codepoint=2], "🔄")
 
 
+def test_grapheme_indexing() raises:
+    assert_equal(StringSlice("abc")[grapheme=0], "a")
+    assert_equal(StringSlice("abc")[grapheme=1], "b")
+    assert_equal(StringSlice("abc")[grapheme=2], "c")
+    assert_equal(StringSlice("🔄🔥🔄")[grapheme=0], "🔄")
+    assert_equal(StringSlice("🔄🔥🔄")[grapheme=1], "🔥")
+    assert_equal(StringSlice("🔄🔥🔄")[grapheme=2], "🔄")
+    assert_equal(StringSlice("👨‍🚀🧑‍🌾क्षि")[grapheme=0], "👨‍🚀")
+    assert_equal(StringSlice("👨‍🚀🧑‍🌾क्षि")[grapheme=1], "🧑‍🌾")
+    assert_equal(StringSlice("👨‍🚀🧑‍🌾क्षि")[grapheme=2], "क्षि")
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

@@ -604,16 +604,16 @@ def test_grapheme_indices_crlf() raises:
 
 def test_nth_grapheme_ascii() raises:
     var s = StringSlice("abc")
-    assert_equal(s.nth_grapheme(0).value(), "a")
-    assert_equal(s.nth_grapheme(1).value(), "b")
-    assert_equal(s.nth_grapheme(2).value(), "c")
-    assert_true(s.nth_grapheme(3) is None)
-    assert_true(s.nth_grapheme(99) is None)
+    assert_equal(s.graphemes().nth(0).value(), "a")
+    assert_equal(s.graphemes().nth(1).value(), "b")
+    assert_equal(s.graphemes().nth(2).value(), "c")
+    assert_true(s.graphemes().nth(3) is None)
+    assert_true(s.graphemes().nth(99) is None)
 
 
 def test_nth_grapheme_empty() raises:
     var s = StringSlice("")
-    assert_true(s.nth_grapheme(0) is None)
+    assert_true(s.graphemes().nth(0) is None)
 
 
 def test_nth_grapheme_combining_mark() raises:
@@ -621,18 +621,18 @@ def test_nth_grapheme_combining_mark() raises:
     var e_acute = _string_from_codepoints(0x65, 0x0301)
     var s = String("caf") + e_acute
     var slc = StringSlice(s)
-    assert_equal(slc.nth_grapheme(3).value(), e_acute)
-    assert_true(slc.nth_grapheme(4) is None)
+    assert_equal(slc.graphemes().nth(3).value(), e_acute)
+    assert_true(slc.graphemes().nth(4) is None)
 
 
 def test_nth_grapheme_flag_emoji() raises:
     var flag = _string_from_codepoints(0x1F1FA, 0x1F1F8)
     var s = String("A") + flag + String("B")
     var slc = StringSlice(s)
-    assert_equal(slc.nth_grapheme(0).value(), "A")
-    assert_equal(slc.nth_grapheme(1).value(), flag)
-    assert_equal(slc.nth_grapheme(2).value(), "B")
-    assert_true(slc.nth_grapheme(3) is None)
+    assert_equal(slc.graphemes().nth(0).value(), "A")
+    assert_equal(slc.graphemes().nth(1).value(), flag)
+    assert_equal(slc.graphemes().nth(2).value(), "B")
+    assert_true(slc.graphemes().nth(3) is None)
 
 
 # ===----------------------------------------------------------------------=== #
