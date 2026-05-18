@@ -340,6 +340,9 @@ from tensor import (
     foreach,
     simd_load_from_managed_tensor_slice,
     simd_store_into_managed_tensor_slice,
+)
+from MOGGPrimitives.MOGGPrimitives import (
+    foreach,
     view_copy_impl,
 )
 from tensor.managed_tensor_slice import _FusedComputeOutputTensor
