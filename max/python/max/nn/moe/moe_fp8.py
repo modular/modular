@@ -146,18 +146,33 @@ class MoEQuantized(MoE):
         gate_scales = self._with_shared_expert(gate_scales, gate_shared)
         up_scales = self._with_shared_expert(up_scales, up_shared)
 
+        scale_k_dim = gate_scales[0].shape[-1]
+
         # Interleave gate and up scales: [g0, u0, g1, u1, ...]
         interleaved = [
             s for pair in zip(gate_scales, up_scales, strict=True) for s in pair
         ]
 
-        scale_k_dim = gate_scales[0].shape[-1]
         if self.shard_devices:
             shard = ops.shard_and_stack(
                 interleaved, devices=self.shard_devices
             )[self.shard_index]
         else:
             shard = ops.stack(interleaved, axis=0)
+
+        # Matching sigma-permutation when fused SwiGLU+NVFP4 is enabled.
+        # The stacked [2E, scale_m, scale_k] tensor splits to
+        # [E, 2, scale_m, scale_k], then permute axes 1,2 → collapse to
+        # [E, 2*scale_m, scale_k] with rows row-interleaved (g_0, u_0, ...).
+        # This sits BEFORE _interleave_nvfp4_scales (in
+        # Nvfp4Strategy.prepare_weight_scales) lifts to the 5D tcgen05
+        # layout the kernel expects.
+        if self.quant_config.can_use_fused_swiglu_nvfp4:
+            shard = shard.reshape([len(gate_scales), 2, -1, scale_k_dim])
+            shard = ops.permute(shard, [0, 2, 1, 3])
+            return shard.reshape([len(gate_scales), -1, scale_k_dim]).to(
+                self.devices[0]
+            )
 
         return shard.reshape([len(gate_scales), -1, scale_k_dim]).to(
             self.devices[0]
@@ -185,6 +200,29 @@ class MoEQuantized(MoE):
     def _is_nvfp4(self) -> bool:
         """Whether the current quant config uses NVFP4."""
         return self.quant_config is not None and self.quant_config.is_nvfp4
+
+    def _can_fuse_swiglu_nvfp4(self) -> bool:
+        """Whether the fused SwiGLU+NVFP4 grouped matmul kernel should fire.
+
+        Gated on the NVFP4 :class:`QuantConfig` flag and
+        ``swiglu_limit == 0`` (the kernel cannot clamp). The
+        ``MAX_DISABLE_FUSED_SWIGLU_NVFP4=1`` env-var kill-switch is read
+        at :class:`QuantConfig` setup time (see
+        ``max/python/max/pipelines/lib/quant.py``), which flips the flag
+        so the model's ``gate_up_proj`` sigma-permutation stays consistent
+        with the kernel choice.
+
+        SM100 device-arch gating is handled by the kernel's own dispatch.
+        TP-MoE would break the sigma-permuted layout, but Kimi-K2.5 uses
+        EP exclusively; a future TP-MoE consumer must update the TP
+        sharding strategy first.
+        """
+        return (
+            self._is_nvfp4
+            and self.swiglu_limit == 0
+            and self.quant_config is not None
+            and self.quant_config.can_use_fused_swiglu_nvfp4
+        )
 
     def _ep_dispatch_input_scales(self) -> TensorValue | None:
         """Returns NVFP4 input scales for EP dispatch, or ``None``."""
@@ -217,20 +255,32 @@ class MoEQuantized(MoE):
             self.gate_up_proj_scales, self.down_proj_scales, x.device
         )
 
-        gate_up = strategy.grouped_matmul(
-            self.gate_up_proj,
-            gate_up_scales,
-            expert_scales=nvfp4.gate_up_expert if nvfp4 else None,
-            tokens_padded_per_expert=True,
-            expert_inputs=expert_inputs,
-            estimated_total_m=estimated_total_m,
-        )
+        if self._can_fuse_swiglu_nvfp4():
+            assert isinstance(strategy, Nvfp4Strategy)
+            assert nvfp4 is not None
+            down_in, silu_scales = strategy.grouped_matmul_swiglu(
+                self.gate_up_proj,
+                gate_up_scales,
+                expert_scales=nvfp4.gate_up_expert,
+                input_scales=nvfp4.down_input,
+                expert_inputs=expert_inputs,
+                estimated_total_m=estimated_total_m,
+            )
+        else:
+            gate_up = strategy.grouped_matmul(
+                self.gate_up_proj,
+                gate_up_scales,
+                expert_scales=nvfp4.gate_up_expert if nvfp4 else None,
+                tokens_padded_per_expert=True,
+                expert_inputs=expert_inputs,
+                estimated_total_m=estimated_total_m,
+            )
 
-        down_in, silu_scales = strategy.fused_silu_quantize(
-            gate_up,
-            input_scales=nvfp4.down_input if nvfp4 else None,
-            expert_inputs=expert_inputs,
-        )
+            down_in, silu_scales = strategy.fused_silu_quantize(
+                gate_up,
+                input_scales=nvfp4.down_input if nvfp4 else None,
+                expert_inputs=expert_inputs,
+            )
 
         down_inputs = (down_in, silu_scales) + expert_inputs[2:]
         return strategy.grouped_matmul(

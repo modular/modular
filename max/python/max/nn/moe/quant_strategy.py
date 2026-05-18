@@ -23,6 +23,7 @@ from max.graph import DeviceRef, TensorValue, ops
 from ..activation import activation_function_from_name
 from ..comm.ep.ep_kernels import fused_silu_quantized
 from ..kernels import (
+    _grouped_matmul_swiglu_nvfp4,
     block_scales_interleave,
     grouped_dynamic_scaled_fp8_matmul,
     grouped_dynamic_scaled_mxfp4_matmul,
@@ -298,6 +299,79 @@ class Nvfp4Strategy:
             self.dtype,
             input_scales,
             scales_offsets,
+        )
+
+    def grouped_matmul_swiglu(
+        self,
+        weight: TensorValue,
+        weight_scales: TensorValue,
+        *,
+        expert_scales: TensorValue,
+        input_scales: TensorValue,
+        expert_inputs: tuple[TensorValue, ...],
+        estimated_total_m: TensorValue | None = None,
+    ) -> tuple[TensorValue, TensorValue]:
+        """Runs the fused NVFP4 grouped matmul + SwiGLU + NVFP4 quant kernel.
+
+        Equivalent to ``grouped_matmul`` followed by ``fused_silu_quantize``,
+        but folds both into a single SM100 kernel. The caller must pass a
+        sigma-permuted ``weight`` and ``weight_scales`` (see
+        ``max.nn.kernels._grouped_matmul_swiglu_nvfp4``); the layout is
+        produced by :meth:`MoE.gate_up_proj` and
+        :meth:`MoEQuantized.gate_up_proj_scales` when
+        ``quant_config.can_use_fused_swiglu_nvfp4`` is set.
+
+        Args:
+            weight: Sigma-permuted gate/up projection weights.
+            weight_scales: Sigma-permuted gate/up projection scales (6D).
+            expert_scales: Per-expert matmul-epilogue scaling factors.
+                Typically ``nvfp4.gate_up_expert``.
+            input_scales: Raw per-expert SiLU-output scale (``nvfp4.down_input``).
+                The fused kernel consumes the inverted scale internally; this
+                method inverts here to match the chained
+                :meth:`fused_silu_quantize` convention.
+            expert_inputs: Same tuple shape as :meth:`grouped_matmul`:
+                ``(hidden, hidden_scales, expert_start, scales_offsets,
+                expert_ids, usage_stats)``.
+            estimated_total_m: Estimated total non-padded token count.
+
+        Returns:
+            Tuple ``(c_packed, c_swiglu_scales)`` matching the chained
+            reference path byte-for-byte under the kernel's default
+            ``match_bf16=True`` setting.
+        """
+        (
+            hidden,
+            hidden_scales,
+            expert_start,
+            scales_offsets,
+            expert_ids,
+            usage_stats,
+        ) = expert_inputs
+
+        # Replace gpu usage stats with a dummy cpu usage stats (same as
+        # grouped_matmul above).
+        if usage_stats.device.is_gpu():
+            usage_stats = ops.constant(
+                [8192, int(expert_ids.shape[0])],
+                dtype=DType.uint32,
+                device=DeviceRef.CPU(),
+            )
+
+        c_input_scales = (1.0 / input_scales).to(hidden.device)
+
+        return _grouped_matmul_swiglu_nvfp4(
+            hidden,
+            weight,
+            hidden_scales,
+            weight_scales,
+            expert_start,
+            scales_offsets,
+            expert_ids,
+            expert_scales.to(hidden.device),
+            c_input_scales,
+            usage_stats,
+            estimated_total_m=estimated_total_m,
         )
 
 

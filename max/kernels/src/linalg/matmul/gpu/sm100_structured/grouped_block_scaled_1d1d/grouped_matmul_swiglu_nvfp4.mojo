@@ -12,9 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 """Unified dispatch for SwiGLU + NVFP4 grouped matmul.
 
-Caller pre-permutes the weight `W` on the N axis with `σ(2i)=i, σ(2i+1)=H+i`
-(see `docs/internal/SwiGLUNvfp4Fusion.md` for the math). This dispatch
-produces packed NVFP4 + a 5D FP8-E4M3 scale tile in one entry point.
+Caller pre-permutes the weight `W` on the N axis with `σ(2i)=i, σ(2i+1)=D+i`
+(`D = moe_dim`, `N = 2D`; see `docs/internal/SwiGLUNvfp4Fusion.md` for the
+math). This dispatch produces packed NVFP4 + a 5D FP8-E4M3 scale tile in
+one entry point.
 
 The implementation routes through `grouped_matmul_nvfp4_dispatch` with
 `fuse_swiglu_nvfp4=True`, which selects the in-tile-fused epilogue
@@ -85,15 +86,15 @@ def grouped_matmul_swiglu_nvfp4_dispatch[
     in a single entry point.
 
     Args:
-        c_packed: Output, packed NVFP4 (uint8). Shape `(M_total, H/2)` where
-            `H = N/2` and `N` is the matmul's N dim (= 2H).
+        c_packed: Output, packed NVFP4 (uint8). Shape `(M_total, D/2)` where
+            `D = moe_dim` and `N = 2D` is the matmul's N dim.
         c_swiglu_scales: Output 5D FP8-E4M3 scale tile, shape
-            `(c_scale_dim0, ceildiv(H, 64), 32, 4, 4)`. Indexed via
+            `(c_scale_dim0, ceildiv(D, 64), 32, 4, 4)`. Indexed via
             `set_scale_factor[SF_VECTOR_SIZE=NVFP4_SF_VECTOR_SIZE]` against
             (token, k_block) coords.
         a: Input A (NVFP4-packed uint8, shape `(M_total, K/2)`).
         b: Pre-permuted weight (NVFP4-packed uint8, shape
-            `(num_experts, 2H, K/2)`).
+            `(num_experts, 2D, K/2)`).
         a_scales: A's 5D FP8-E4M3 scale tile.
         b_scales: B's 6D FP8-E4M3 scale tile, **with the matching σ
             permutation already applied on its N axis**.
@@ -128,11 +129,11 @@ def grouped_matmul_swiglu_nvfp4_dispatch[
     var dummy_c_tensor = TileTensor(dummy_c_buffer, dummy_c_shape)
 
     # Wrap the three real destinations in a RealSwiGLUOutput carrier.
-    # c_packed shape: (M_total, H/2). Row stride = H/2 = N/4 (since N is
-    # the matmul's N dim and H = N/2, so H/2 = N/4 bytes per row).
+    # c_packed shape: (M_total, D/2). Row stride = D/2 = N/4 (since N is
+    # the matmul's N dim and D = N/2, so D/2 = N/4 bytes per row).
     comptime c_packed_row_stride = type_of(c_packed).static_shape[1]
     # SF tile shape (n_blocks, sf_dim1, SF_ATOM_M[0], SF_ATOM_M[1], SF_ATOM_K).
-    # The static dim1 is ceildiv(H, NVFP4_SF_VECTOR_SIZE * SF_ATOM_K).
+    # The static dim1 is ceildiv(D, NVFP4_SF_VECTOR_SIZE * SF_ATOM_K).
     comptime sf_dim1 = type_of(c_swiglu_scales).static_shape[1]
     var c_packed_ptr = rebind[UnsafePointer[UInt8, MutAnyOrigin]](c_packed.ptr)
     var c_swiglu_scales_ptr = rebind[

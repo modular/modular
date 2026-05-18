@@ -118,6 +118,9 @@ from linalg.grouped_matmul_sm100_blockwise_fp8 import (
 from linalg.grouped_matmul_block_scaled_dispatch import (
     grouped_matmul_block_scaled_dispatch,
 )
+from linalg.matmul.gpu.sm100_structured.grouped_block_scaled_1d1d import (
+    grouped_matmul_swiglu_nvfp4_dispatch,
+)
 from linalg.bmm import batched_matmul_dynamic_scaled_fp8
 from linalg.grouped_matmul import grouped_matmul
 from linalg.lora import shrink_qkv_permute_3mn_sm100
@@ -9481,6 +9484,95 @@ struct Struct_grouped_matmul_block_scaled:
             a_scale_offsets.to_tile_tensor[DType.int64](),
             expert_ids.to_tile_tensor[DType.int64](),
             expert_scales.to_tile_tensor[DType.int64](),
+            Int(num_active_experts),
+            Int(estimated_total_m),
+            cuda_ctx,
+        )
+
+
+@compiler.register("mo.grouped.matmul.swiglu.nvfp4")
+struct Struct_grouped_matmul_swiglu_nvfp4:
+    """MOGG wrapper for fused grouped NVFP4 matmul + SwiGLU + NVFP4 quant.
+
+    Fuses the MoE gate/up grouped matmul, SwiGLU activation, and per-block
+    NVFP4 quantization into a single SM100 kernel. The caller must pre-permute
+    the weight `b` and its scale tile `b_scales` on the N axis with
+    `sigma(2i)=i, sigma(2i+1)=D+i` (where `D = moe_dim`, `N = 2D`).
+    """
+
+    @always_inline
+    @staticmethod
+    def execute[
+        a_type: DType,
+        b_type: DType,
+        scales_type: DType,
+        //,
+        target: StaticString,
+    ](
+        c_packed: OutputTensor[dtype=DType.uint8, rank=2, ...],
+        c_swiglu_scales: OutputTensor[dtype=scales_type, rank=5, ...],
+        a: InputTensor[dtype=a_type, rank=2, ...],
+        b: InputTensor[dtype=b_type, rank=3, ...],
+        a_scales: InputTensor[dtype=scales_type, rank=5, ...],
+        b_scales: InputTensor[dtype=scales_type, rank=6, ...],
+        expert_start_indices: InputTensor[dtype=DType.uint32, rank=1, ...],
+        expert_ids: InputTensor[dtype=DType.int32, rank=1, ...],
+        a_scale_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        expert_scales: InputTensor[dtype=DType.float32, rank=1, ...],
+        c_input_scales: InputTensor[dtype=DType.float32, rank=1, ...],
+        estimated_total_m: UInt32,
+        num_active_experts: UInt32,
+        context: DeviceContextPtr,
+    ) raises:
+        """Executes fused grouped NVFP4 matmul + SwiGLU + NVFP4 quant.
+
+        Computes `(c_packed, c_swiglu_scales) =
+        quantize_nvfp4(silu(C[..., even]) * C[..., odd], c_input_scales)`
+        where `C = A @ B^T` for multiple expert groups. Because `B` is
+        sigma-permuted on N, adjacent matmul-output columns carry
+        `(gate, up)` pairs that the epilogue consumes in-place.
+
+        Parameters:
+            a_type: The input A data type. Constraints: Must be `uint8`.
+            b_type: The input B data type. Constraints: Must be `uint8`.
+            scales_type: The scale factor data type.
+                Constraints: Must be `float8_e4m3fn`.
+            target: The target GPU device.
+
+        Args:
+            c_packed: Packed NVFP4 output of shape (total_tokens, D // 2).
+            c_swiglu_scales: 5D FP8 SF tile in tcgen05 layout for the output.
+            a: The input tensor of shape (total_tokens, K // 2).
+            b: The sigma-permuted weight of shape (num_experts, 2D, K // 2).
+            a_scales: The A scale factors in tcgen05 5D layout.
+            b_scales: The sigma-permuted B scale factors in tcgen05 6D layout.
+            expert_start_indices: The starting token index for each expert.
+            expert_ids: The expert ID for each group.
+            a_scale_offsets: The starting scale index for each expert.
+            expert_scales: The per-expert scaling factors for the epilogue.
+            c_input_scales: Per-expert SiLU input scale (= 1/output_inv_scale).
+            estimated_total_m: The estimated total number of tokens.
+            num_active_experts: The number of active experts.
+            context: The device context pointer.
+        """
+        comptime assert is_gpu[
+            target
+        ](), "fused SwiGLU+NVFP4 grouped matmul only supports GPUs"
+        if num_active_experts == 0:
+            return
+        var cuda_ctx = context.get_device_context()
+        grouped_matmul_swiglu_nvfp4_dispatch[transpose_b=True, target=target](
+            c_packed.to_tile_tensor[DType.int64](),
+            c_swiglu_scales.to_tile_tensor[DType.int64](),
+            a.to_tile_tensor[DType.int64](),
+            b.to_tile_tensor[DType.int64](),
+            a_scales.to_tile_tensor[DType.int64](),
+            b_scales.to_tile_tensor[DType.int64](),
+            expert_start_indices.to_tile_tensor[DType.int64](),
+            a_scale_offsets.to_tile_tensor[DType.int64](),
+            expert_ids.to_tile_tensor[DType.int64](),
+            expert_scales.to_tile_tensor[DType.int64](),
+            c_input_scales.to_tile_tensor[DType.int64](),
             Int(num_active_experts),
             Int(estimated_total_m),
             cuda_ctx,

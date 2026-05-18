@@ -250,6 +250,14 @@ class QuantConfig:
     can_use_fused_mlp: bool = False
     """Whether the quantization scales can be used with fused MLP operations."""
 
+    can_use_fused_swiglu_nvfp4: bool = False
+    """Whether to use the fused NVFP4 grouped matmul + SwiGLU + NVFP4 quant
+    SM100 kernel for the MoE gate/up projection. When ``True``, the MoE layer
+    pre-permutes ``gate_up_proj`` and its scales on the N axis
+    (``sigma(2i)=i, sigma(2i+1)=D+i``) and dispatches the internal
+    ``_grouped_matmul_swiglu_nvfp4`` kernel wrapper. Defaults to ``False``
+    so the chained (matmul -> BF16 -> SwiGLU+quant) path is unchanged."""
+
     scales_pre_interleaved: bool = False
     """Whether weight scales in the checkpoint are already stored in the 5D
     TCGEN-interleaved layout expected by the FP4 matmul kernel (NVFP4 only).

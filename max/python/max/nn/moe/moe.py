@@ -427,12 +427,13 @@ class MoE(Module, Shardable):
                 self.shared_experts.up_proj.weight,
             ] + up_list
 
+        # Use the actual weight K dimension to support packed formats (e.g. NVFP4).
+        k_dim = gate_list[0].shape[1]
+
         gate_up_list: list[TensorValue] = []
         for tensors in zip(gate_list, up_list, strict=True):
             gate_up_list.extend(tensors)
 
-        # Use the actual weight K dimension to support packed formats (e.g. NVFP4).
-        k_dim = gate_list[0].shape[1]
         if not self.shard_devices:
             shard = ops.stack(gate_up_list, axis=0)
         else:
@@ -442,6 +443,21 @@ class MoE(Module, Shardable):
                 gate_up_list,
                 devices=self.shard_devices,
             )[self.shard_index]
+
+        # The fused SwiGLU+NVFP4 grouped matmul kernel requires the per-expert
+        # N axis to be sigma-permuted: rows 2i = gate row i, rows 2i+1 = up
+        # row i. Reshape the stacked [2E, D, K] tensor to [E, 2, D, K], permute
+        # axes 1 and 2 to [E, D, 2, K], then collapse to [E, 2D, K] — the
+        # innermost rows are now interleaved (g_0, u_0, g_1, u_1, ...). One
+        # bulk permute replaces E per-expert stacks to keep the graph small
+        # and the constant-folding tractable.
+        if (
+            self.quant_config is not None
+            and self.quant_config.can_use_fused_swiglu_nvfp4
+        ):
+            shard = shard.reshape([len(gate_list), 2, -1, k_dim])
+            shard = ops.permute(shard, [0, 2, 1, 3])
+            return shard.reshape([len(gate_list), -1, k_dim])
 
         return shard.reshape([len(gate_list), -1, k_dim])
 
