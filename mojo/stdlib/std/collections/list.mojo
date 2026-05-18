@@ -430,11 +430,10 @@ struct List[T: Movable](
         self._annotate_increase(length)
 
         # Transfer all of the elements into the List.
-        @parameter
-        def init_elt(idx: Int, var elt: Self.T):
+        def init_elt(idx: Int, var elt: Self.T) {ref}:
             (self._data + idx).init_pointee_move(elt^)
 
-        values^.consume_elements[init_elt]()
+        values^.consume_elements(init_elt)
 
         # Remember how many values we have.
         self._len = length
