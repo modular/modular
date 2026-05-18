@@ -29,7 +29,6 @@ lit.struct.decl @SomeStruct {
   // CHECK-LABEL: lit.fn @calls_unreachable_in_deinit
   lit.fn @calls_unreachable_in_deinit[mut *"self"](%self: !lit.ref<!lit.struct<@SomeStruct>, mut *"self"> deinit_mem) -> !kgen.none {
     // CHECK: lit.call tail @my_abort()
-    // CHECK: lit.ownership.mark_destroyed %self
     // CHECK: kgen.unreachable {isAfterUnreachableCall = true}
     %0 = lit.call tail @my_abort() : !lit.generator<() -> !kgen.never>
     lit.end_fn

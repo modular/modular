@@ -633,6 +633,26 @@ def test_linear_type() raises:
 
     tok2^.consume()
 
+def test_linear_no_return_complex_lifetime(a: LinearType, mut b: LinearType, mut c: LinearType):
+    _ = a
+    b^.consume()
+    abort()   # Doesn't require 'a' or 'c' to be destroyed.
+
+# Hard case for conditional lifetime analysis on abort.  This should compile.
+@explicit_destroy
+struct ReducedVariant:
+    var _storage: ReducedStorage
+    def take[T: Movable](deinit self, cond: Bool) -> T:
+        if cond:
+            abort()
+        return self._storage^.take[T]()
+@explicit_destroy
+struct ReducedStorage:
+    def take[U: Movable](deinit self) -> U:
+        abort()
+
+
+
 
 # ===----------------------------------------------------------------------=== #
 # Trait-bound fields
