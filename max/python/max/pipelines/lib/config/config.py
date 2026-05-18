@@ -1095,7 +1095,7 @@ class PipelineConfig(ConfigFileModel):
                 and arch is not None
                 and arch.name in _AUTO_ENABLE_DEVICE_GRAPH_CAPTURE_ARCHITECTURES
                 and max_batch_size is not None
-                and accelerator_api() == "cuda"
+                and accelerator_api() in ("cuda", "hip")
                 and self._is_eligible_for_overlap_serve_optimizations()
                 # Device graph capture is not supported for prefill-only workers.
                 and self.runtime.pipeline_role != "prefill_only"
