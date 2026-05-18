@@ -82,6 +82,10 @@ struct Queue[device_spec: DeviceSpec](ImplicitlyDestructible, Movable):
         except e:
             print("warning: destroy_queue failed:", e)
 
+        # Keep the context alive until after destroy_queue has finished so its
+        # underlying handle is not invalidated. Related to MOCO-3980.
+        _ = self._context^
+
     # TODO: revisit all of these when we get to queue dependency ordering
     def execute(
         self,

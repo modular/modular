@@ -10,16 +10,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Hardware Abstraction Layer (HAL) — Mojo bindings.
 
-Provides a Mojo-native library layer around the HAL C plugin API.
-"""
+from std.gpu.host._device_context_hal import DeviceContext
+from std.testing import assert_equal
 
-from .status import HALError, STATUS_SUCCESS
-from .plugin import RawDriver
-from .driver import Driver, get_device_spec
-from .device import Device
-from .context import Context, Buffer, RuntimeBundle
-from .event import Event
-from .queue import Queue
-from .stream import Stream
+
+def main() raises:
+    with DeviceContext() as ctx:
+        assert_equal(ctx.id(), 0)
+        ctx.synchronize()
