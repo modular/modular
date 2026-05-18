@@ -61,7 +61,7 @@ struct TypeProtocolBuilder[self_type: ImplicitlyDestructible]:
     def def_richcompare[
         method: def(
             UnsafePointer[Self.self_type, MutAnyOrigin], PythonObject, Int
-        ) thin raises PySlotError ->Bool
+        ) thin raises PySlotError -> Bool
     ](mut self) -> ref[self] Self:
         """Install rich comparison via the `tp_richcompare` slot.
 
@@ -95,7 +95,9 @@ struct TypeProtocolBuilder[self_type: ImplicitlyDestructible]:
         return self
 
     def def_richcompare[
-        method: def(Self.self_type, PythonObject, Int) thin raises PySlotError ->Bool
+        method: def(
+            Self.self_type, PythonObject, Int
+        ) thin raises PySlotError -> Bool
     ](mut self) -> ref[self] Self:
         """Install rich comparison via the `tp_richcompare` slot (value-receiver overload).
 

@@ -13,7 +13,12 @@
 
 from std.memory import OpaquePointer, UnsafePointer
 from std.python import PythonObject
-from std.python._cpython import PyObjectPtr, Py_ssize_t, PySlotIndex, PyType_Slot
+from std.python._cpython import (
+    PyObjectPtr,
+    Py_ssize_t,
+    PySlotIndex,
+    PyType_Slot,
+)
 from std.python.bindings import PythonTypeBuilder
 from std.utils import Variant
 
@@ -73,7 +78,7 @@ struct SequenceProtocolBuilder[self_type: ImplicitlyDestructible]:
     def def_len[
         method: def(
             UnsafePointer[Self.self_type, MutAnyOrigin]
-        ) thin raises PySlotError ->Int
+        ) thin raises PySlotError -> Int
     ](mut self) -> ref[self] Self:
         """Install `__len__` via the `sq_length` slot.
 
@@ -93,16 +98,16 @@ struct SequenceProtocolBuilder[self_type: ImplicitlyDestructible]:
     def def_getitem[
         method: def(
             UnsafePointer[Self.self_type, MutAnyOrigin], Int
-        ) thin raises PySlotError ->PythonObject
+        ) thin raises PySlotError -> PythonObject
     ](mut self) -> ref[self] Self:
         """Install `__getitem__` via the `sq_item` slot (integer index).
 
         Called by `obj[index]`.
         See: https://docs.python.org/3/c-api/typeobj.html#c.PySequenceMethods.sq_item
         """
-        _SlotInstaller.ssizeargfunc[Self.self_type, method, PySlotIndex.sq_item](
-            self._ptr
-        )
+        _SlotInstaller.ssizeargfunc[
+            Self.self_type, method, PySlotIndex.sq_item
+        ](self._ptr)
         return self
 
     def def_setitem[
@@ -132,22 +137,22 @@ struct SequenceProtocolBuilder[self_type: ImplicitlyDestructible]:
     def def_contains[
         method: def(
             UnsafePointer[Self.self_type, MutAnyOrigin], PythonObject
-        ) thin raises PySlotError ->Bool
+        ) thin raises PySlotError -> Bool
     ](mut self) -> ref[self] Self:
         """Install `__contains__` via the `sq_contains` slot.
 
         Called by `item in obj`.
         See: https://docs.python.org/3/c-api/typeobj.html#c.PySequenceMethods.sq_contains
         """
-        _SlotInstaller.objobjproc[Self.self_type, method, PySlotIndex.sq_contains](
-            self._ptr
-        )
+        _SlotInstaller.objobjproc[
+            Self.self_type, method, PySlotIndex.sq_contains
+        ](self._ptr)
         return self
 
     def def_concat[
         method: def(
             UnsafePointer[Self.self_type, MutAnyOrigin], PythonObject
-        ) thin raises PySlotError ->PythonObject
+        ) thin raises PySlotError -> PythonObject
     ](mut self) -> ref[self] Self:
         """Install `__add__` (concatenation) via the `sq_concat` slot.
 
@@ -162,37 +167,37 @@ struct SequenceProtocolBuilder[self_type: ImplicitlyDestructible]:
     def def_repeat[
         method: def(
             UnsafePointer[Self.self_type, MutAnyOrigin], Int
-        ) thin raises PySlotError ->PythonObject
+        ) thin raises PySlotError -> PythonObject
     ](mut self) -> ref[self] Self:
         """Install `__mul__` (repetition) via the `sq_repeat` slot.
 
         Called by `obj * count`.
         See: https://docs.python.org/3/c-api/typeobj.html#c.PySequenceMethods.sq_repeat
         """
-        _SlotInstaller.ssizeargfunc[Self.self_type, method, PySlotIndex.sq_repeat](
-            self._ptr
-        )
+        _SlotInstaller.ssizeargfunc[
+            Self.self_type, method, PySlotIndex.sq_repeat
+        ](self._ptr)
         return self
 
     def def_iconcat[
         method: def(
             UnsafePointer[Self.self_type, MutAnyOrigin], PythonObject
-        ) thin raises PySlotError ->PythonObject
+        ) thin raises PySlotError -> PythonObject
     ](mut self) -> ref[self] Self:
         """Install `__iadd__` (in-place concatenation) via the `sq_inplace_concat` slot.
 
         Called by `obj += other`.
         See: https://docs.python.org/3/c-api/typeobj.html#c.PySequenceMethods.sq_inplace_concat
         """
-        _SlotInstaller.binary[Self.self_type, method, PySlotIndex.sq_inplace_concat](
-            self._ptr
-        )
+        _SlotInstaller.binary[
+            Self.self_type, method, PySlotIndex.sq_inplace_concat
+        ](self._ptr)
         return self
 
     def def_irepeat[
         method: def(
             UnsafePointer[Self.self_type, MutAnyOrigin], Int
-        ) thin raises PySlotError ->PythonObject
+        ) thin raises PySlotError -> PythonObject
     ](mut self) -> ref[self] Self:
         """Install `__imul__` (in-place repetition) via the `sq_inplace_repeat` slot.
 
@@ -336,7 +341,7 @@ struct SequenceProtocolBuilder[self_type: ImplicitlyDestructible]:
     # Value-receiver overloads
 
     def def_len[
-        method: def(Self.self_type) thin raises PySlotError ->Int
+        method: def(Self.self_type) thin raises PySlotError -> Int
     ](mut self) -> ref[self] Self:
         """Install `__len__` via the `sq_length` slot (value-receiver overload).
 
@@ -355,7 +360,7 @@ struct SequenceProtocolBuilder[self_type: ImplicitlyDestructible]:
         return self
 
     def def_getitem[
-        method: def(Self.self_type, Int) thin raises PySlotError ->PythonObject
+        method: def(Self.self_type, Int) thin raises PySlotError -> PythonObject
     ](mut self) -> ref[self] Self:
         """Install `__getitem__` via the `sq_item` slot (value-receiver overload).
 
@@ -397,7 +402,9 @@ struct SequenceProtocolBuilder[self_type: ImplicitlyDestructible]:
         return self
 
     def def_contains[
-        method: def(Self.self_type, PythonObject) thin raises PySlotError ->Bool
+        method: def(
+            Self.self_type, PythonObject
+        ) thin raises PySlotError -> Bool
     ](mut self) -> ref[self] Self:
         """Install `__contains__` via the `sq_contains` slot (value-receiver overload).
 
@@ -411,19 +418,21 @@ struct SequenceProtocolBuilder[self_type: ImplicitlyDestructible]:
         return self
 
     def def_concat[
-        method: def(Self.self_type, PythonObject) thin raises PySlotError ->PythonObject
+        method: def(
+            Self.self_type, PythonObject
+        ) thin raises PySlotError -> PythonObject
     ](mut self) -> ref[self] Self:
         """Install `__add__` (concatenation) via the `sq_concat` slot (value-receiver overload).
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PySequenceMethods.sq_concat
         """
-        _SlotInstaller.binary_val[Self.self_type, method, PySlotIndex.sq_concat](
-            self._ptr
-        )
+        _SlotInstaller.binary_val[
+            Self.self_type, method, PySlotIndex.sq_concat
+        ](self._ptr)
         return self
 
     def def_repeat[
-        method: def(Self.self_type, Int) thin raises PySlotError ->PythonObject
+        method: def(Self.self_type, Int) thin raises PySlotError -> PythonObject
     ](mut self) -> ref[self] Self:
         """Install `__mul__` (repetition) via the `sq_repeat` slot (value-receiver overload).
 
@@ -437,7 +446,9 @@ struct SequenceProtocolBuilder[self_type: ImplicitlyDestructible]:
         return self
 
     def def_iconcat[
-        method: def(Self.self_type, PythonObject) thin raises PySlotError ->PythonObject
+        method: def(
+            Self.self_type, PythonObject
+        ) thin raises PySlotError -> PythonObject
     ](mut self) -> ref[self] Self:
         """Install `__iadd__` (in-place concatenation) via the `sq_inplace_concat` slot (value-receiver overload).
 
@@ -449,7 +460,7 @@ struct SequenceProtocolBuilder[self_type: ImplicitlyDestructible]:
         return self
 
     def def_irepeat[
-        method: def(Self.self_type, Int) thin raises PySlotError ->PythonObject
+        method: def(Self.self_type, Int) thin raises PySlotError -> PythonObject
     ](mut self) -> ref[self] Self:
         """Install `__imul__` (in-place repetition) via the `sq_inplace_repeat` slot (value-receiver overload).
 
@@ -468,7 +479,7 @@ struct SequenceProtocolBuilder[self_type: ImplicitlyDestructible]:
         R: _CPython,
         method: def(
             UnsafePointer[Self.self_type, MutAnyOrigin], Int
-        ) thin raises PySlotError ->R,
+        ) thin raises PySlotError -> R,
     ](mut self) -> ref[self] Self:
         """Install `__getitem__` via the `sq_item` slot (ConvertibleToPython return overload).
 
@@ -498,7 +509,7 @@ struct SequenceProtocolBuilder[self_type: ImplicitlyDestructible]:
 
     def def_getitem[
         R: _CPython,
-        method: def(Self.self_type, Int) thin raises PySlotError ->R,
+        method: def(Self.self_type, Int) thin raises PySlotError -> R,
     ](mut self) -> ref[self] Self:
         """Install `__getitem__` via the `sq_item` slot (ConvertibleToPython return, value-receiver overload).
 
@@ -515,7 +526,7 @@ struct SequenceProtocolBuilder[self_type: ImplicitlyDestructible]:
         R: _CPython,
         method: def(
             UnsafePointer[Self.self_type, MutAnyOrigin], PythonObject
-        ) thin raises PySlotError ->R,
+        ) thin raises PySlotError -> R,
     ](mut self) -> ref[self] Self:
         """Install `__add__` via the `sq_concat` slot (ConvertibleToPython return overload).
 
@@ -543,7 +554,7 @@ struct SequenceProtocolBuilder[self_type: ImplicitlyDestructible]:
 
     def def_concat[
         R: _CPython,
-        method: def(Self.self_type, PythonObject) thin raises PySlotError ->R,
+        method: def(Self.self_type, PythonObject) thin raises PySlotError -> R,
     ](mut self) -> ref[self] Self:
         """Install `__add__` via the `sq_concat` slot (ConvertibleToPython return, value-receiver overload).
 
@@ -558,7 +569,7 @@ struct SequenceProtocolBuilder[self_type: ImplicitlyDestructible]:
         R: _CPython,
         method: def(
             UnsafePointer[Self.self_type, MutAnyOrigin], Int
-        ) thin raises PySlotError ->R,
+        ) thin raises PySlotError -> R,
     ](mut self) -> ref[self] Self:
         """Install `__mul__` via the `sq_repeat` slot (ConvertibleToPython return overload).
 
@@ -588,7 +599,7 @@ struct SequenceProtocolBuilder[self_type: ImplicitlyDestructible]:
 
     def def_repeat[
         R: _CPython,
-        method: def(Self.self_type, Int) thin raises PySlotError ->R,
+        method: def(Self.self_type, Int) thin raises PySlotError -> R,
     ](mut self) -> ref[self] Self:
         """Install `__mul__` via the `sq_repeat` slot (ConvertibleToPython return, value-receiver overload).
 
@@ -605,7 +616,7 @@ struct SequenceProtocolBuilder[self_type: ImplicitlyDestructible]:
         R: _CPython,
         method: def(
             UnsafePointer[Self.self_type, MutAnyOrigin], PythonObject
-        ) thin raises PySlotError ->R,
+        ) thin raises PySlotError -> R,
     ](mut self) -> ref[self] Self:
         """Install `__iadd__` via the `sq_inplace_concat` slot (ConvertibleToPython return overload).
 
@@ -633,7 +644,7 @@ struct SequenceProtocolBuilder[self_type: ImplicitlyDestructible]:
 
     def def_iconcat[
         R: _CPython,
-        method: def(Self.self_type, PythonObject) thin raises PySlotError ->R,
+        method: def(Self.self_type, PythonObject) thin raises PySlotError -> R,
     ](mut self) -> ref[self] Self:
         """Install `__iadd__` via the `sq_inplace_concat` slot (ConvertibleToPython return, value-receiver overload).
 
@@ -648,7 +659,7 @@ struct SequenceProtocolBuilder[self_type: ImplicitlyDestructible]:
         R: _CPython,
         method: def(
             UnsafePointer[Self.self_type, MutAnyOrigin], Int
-        ) thin raises PySlotError ->R,
+        ) thin raises PySlotError -> R,
     ](mut self) -> ref[self] Self:
         """Install `__imul__` via the `sq_inplace_repeat` slot (ConvertibleToPython return overload).
 
@@ -678,7 +689,7 @@ struct SequenceProtocolBuilder[self_type: ImplicitlyDestructible]:
 
     def def_irepeat[
         R: _CPython,
-        method: def(Self.self_type, Int) thin raises PySlotError ->R,
+        method: def(Self.self_type, Int) thin raises PySlotError -> R,
     ](mut self) -> ref[self] Self:
         """Install `__imul__` via the `sq_inplace_repeat` slot (ConvertibleToPython return, value-receiver overload).
 

@@ -44,7 +44,8 @@ is a foundational representation in data analytics and machine learning. It
 underpins formats like Arrow and Parquet, DataFrame libraries such as pandas,
 Polars, and cuDF, and the dense numeric tensors that most ML pipelines consume.
 
-Under this proposal a `DataFrame` library would use the following Type Objects protocols.
+Under this proposal a `DataFrame` library would use the following Type Objects
+protocols.
 
 - **Mapping protocol** — `len(df)`, `df[i]`, `df[i] = (x, y)`, `del df[i]`
   via `mp_length` / `mp_subscript` / `mp_ass_subscript`.
@@ -56,9 +57,7 @@ Under this proposal a `DataFrame` library would use the following Type Objects p
   `nb_add` / `nb_multiply` / `nb_power`. Operations against incompatible
   types return `NotImplemented`, letting Python raise `TypeError` naturally.
 
-
 The code below is just for illustration purposes.
-
 
 ```mojo
 struct DataFrame(Defaultable, Movable, Writable):
@@ -138,10 +137,11 @@ Top-level `PyTypeObject` slots that apply to every type. In this branch the
 builder exposes rich comparison; other `tp_*` slots (init, dealloc, repr, hash,
 …) are already populated in the Mojo stdlib.
 
-See [`PyTypeObject`](https://docs.python.org/3/c-api/typeobj.html#c.PyTypeObject).
+See
+[`PyTypeObject`](https://docs.python.org/3/c-api/typeobj.html#c.PyTypeObject).
 
-| Builder method | CPython slot | Python operator |
-|---|---|---|
+| Builder method    | CPython slot                                                                                   | Python operator                  |
+|-------------------|------------------------------------------------------------------------------------------------|----------------------------------|
 | `def_richcompare` | [`tp_richcompare`](https://docs.python.org/3/c-api/typeobj.html#c.PyTypeObject.tp_richcompare) | `<`, `<=`, `==`, `!=`, `>`, `>=` |
 
 ### Mapping protocol
@@ -149,13 +149,14 @@ See [`PyTypeObject`](https://docs.python.org/3/c-api/typeobj.html#c.PyTypeObject
 Slots that make a type behave like a dict-like mapping keyed by arbitrary
 Python objects.
 
-See [`PyMappingMethods`](https://docs.python.org/3/c-api/typeobj.html#c.PyMappingMethods).
+See
+[`PyMappingMethods`](https://docs.python.org/3/c-api/typeobj.html#c.PyMappingMethods).
 
-| Builder method | CPython slot | Python operator |
-|---|---|---|
-| `def_len` | [`mp_length`](https://docs.python.org/3/c-api/typeobj.html#c.PyMappingMethods.mp_length) | `len(obj)` |
-| `def_getitem` | [`mp_subscript`](https://docs.python.org/3/c-api/typeobj.html#c.PyMappingMethods.mp_subscript) | `obj[key]` |
-| `def_setitem` | [`mp_ass_subscript`](https://docs.python.org/3/c-api/typeobj.html#c.PyMappingMethods.mp_ass_subscript) | `obj[key] = v`, `del obj[key]` |
+| Builder method | CPython slot                                                                                           | Python operator                |
+|----------------|--------------------------------------------------------------------------------------------------------|--------------------------------|
+| `def_len`      | [`mp_length`](https://docs.python.org/3/c-api/typeobj.html#c.PyMappingMethods.mp_length)               | `len(obj)`                     |
+| `def_getitem`  | [`mp_subscript`](https://docs.python.org/3/c-api/typeobj.html#c.PyMappingMethods.mp_subscript)         | `obj[key]`                     |
+| `def_setitem`  | [`mp_ass_subscript`](https://docs.python.org/3/c-api/typeobj.html#c.PyMappingMethods.mp_ass_subscript) | `obj[key] = v`, `del obj[key]` |
 
 ### Sequence protocol
 
@@ -163,18 +164,19 @@ Slots for list/tuple-like types indexed by `Py_ssize_t`. Assignment with a
 `null` value indicates deletion, so `def_setitem` covers both `__setitem__`
 and `__delitem__`.
 
-See [`PySequenceMethods`](https://docs.python.org/3/c-api/typeobj.html#c.PySequenceMethods).
+See
+[`PySequenceMethods`](https://docs.python.org/3/c-api/typeobj.html#c.PySequenceMethods).
 
-| Builder method | CPython slot | Python operator |
-|---|---|---|
-| `def_len` | [`sq_length`](https://docs.python.org/3/c-api/typeobj.html#c.PySequenceMethods.sq_length) | `len(obj)` |
-| `def_getitem` | [`sq_item`](https://docs.python.org/3/c-api/typeobj.html#c.PySequenceMethods.sq_item) | `obj[i]` |
-| `def_setitem` | [`sq_ass_item`](https://docs.python.org/3/c-api/typeobj.html#c.PySequenceMethods.sq_ass_item) | `obj[i] = v`, `del obj[i]` |
-| `def_contains` | [`sq_contains`](https://docs.python.org/3/c-api/typeobj.html#c.PySequenceMethods.sq_contains) | `x in obj` |
-| `def_concat` | [`sq_concat`](https://docs.python.org/3/c-api/typeobj.html#c.PySequenceMethods.sq_concat) | `obj + other` |
-| `def_repeat` | [`sq_repeat`](https://docs.python.org/3/c-api/typeobj.html#c.PySequenceMethods.sq_repeat) | `obj * n` |
-| `def_iconcat` | [`sq_inplace_concat`](https://docs.python.org/3/c-api/typeobj.html#c.PySequenceMethods.sq_inplace_concat) | `obj += other` |
-| `def_irepeat` | [`sq_inplace_repeat`](https://docs.python.org/3/c-api/typeobj.html#c.PySequenceMethods.sq_inplace_repeat) | `obj *= n` |
+| Builder method | CPython slot                                                                                              | Python operator            |
+|----------------|-----------------------------------------------------------------------------------------------------------|----------------------------|
+| `def_len`      | [`sq_length`](https://docs.python.org/3/c-api/typeobj.html#c.PySequenceMethods.sq_length)                 | `len(obj)`                 |
+| `def_getitem`  | [`sq_item`](https://docs.python.org/3/c-api/typeobj.html#c.PySequenceMethods.sq_item)                     | `obj[i]`                   |
+| `def_setitem`  | [`sq_ass_item`](https://docs.python.org/3/c-api/typeobj.html#c.PySequenceMethods.sq_ass_item)             | `obj[i] = v`, `del obj[i]` |
+| `def_contains` | [`sq_contains`](https://docs.python.org/3/c-api/typeobj.html#c.PySequenceMethods.sq_contains)             | `x in obj`                 |
+| `def_concat`   | [`sq_concat`](https://docs.python.org/3/c-api/typeobj.html#c.PySequenceMethods.sq_concat)                 | `obj + other`              |
+| `def_repeat`   | [`sq_repeat`](https://docs.python.org/3/c-api/typeobj.html#c.PySequenceMethods.sq_repeat)                 | `obj * n`                  |
+| `def_iconcat`  | [`sq_inplace_concat`](https://docs.python.org/3/c-api/typeobj.html#c.PySequenceMethods.sq_inplace_concat) | `obj += other`             |
+| `def_irepeat`  | [`sq_inplace_repeat`](https://docs.python.org/3/c-api/typeobj.html#c.PySequenceMethods.sq_inplace_repeat) | `obj *= n`                 |
 
 ### Number protocol
 
@@ -183,39 +185,40 @@ in-place counterpart (`def_iadd`, …) that backs the augmented assignment
 operators. Binary slots may raise `PySlotError.not_implemented()` to return
 `NotImplemented` so CPython tries the reflected operation on the other operand.
 
-See [`PyNumberMethods`](https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods).
+See
+[`PyNumberMethods`](https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods).
 
 Unary, conversion, and predicate slots:
 
-| Builder method | CPython slot | Python operator |
-|---|---|---|
-| `def_neg` | [`nb_negative`](https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_negative) | `-obj` |
-| `def_pos` | [`nb_positive`](https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_positive) | `+obj` |
-| `def_abs` | [`nb_absolute`](https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_absolute) | `abs(obj)` |
-| `def_invert` | [`nb_invert`](https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_invert) | `~obj` |
-| `def_bool` | [`nb_bool`](https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_bool) | `bool(obj)` |
-| `def_int` | [`nb_int`](https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_int) | `int(obj)` |
-| `def_float` | [`nb_float`](https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_float) | `float(obj)` |
-| `def_index` | [`nb_index`](https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_index) | `operator.index(obj)` |
+| Builder method | CPython slot                                                                                | Python operator       |
+|----------------|---------------------------------------------------------------------------------------------|-----------------------|
+| `def_neg`      | [`nb_negative`](https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_negative) | `-obj`                |
+| `def_pos`      | [`nb_positive`](https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_positive) | `+obj`                |
+| `def_abs`      | [`nb_absolute`](https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_absolute) | `abs(obj)`            |
+| `def_invert`   | [`nb_invert`](https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_invert)     | `~obj`                |
+| `def_bool`     | [`nb_bool`](https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_bool)         | `bool(obj)`           |
+| `def_int`      | [`nb_int`](https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_int)           | `int(obj)`            |
+| `def_float`    | [`nb_float`](https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_float)       | `float(obj)`          |
+| `def_index`    | [`nb_index`](https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_index)       | `operator.index(obj)` |
 
 Binary slots (each has an `def_i<name>` in-place counterpart):
 
-| Builder method | CPython slot | Python operator |
-|---|---|---|
-| `def_add` / `def_iadd` | [`nb_add`](https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_add) / [`nb_inplace_add`](https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_add) | `a + b` / `a += b` |
-| `def_sub` / `def_isub` | [`nb_subtract`](https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_subtract) / [`nb_inplace_subtract`](https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_subtract) | `a - b` / `a -= b` |
-| `def_mul` / `def_imul` | [`nb_multiply`](https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_multiply) / [`nb_inplace_multiply`](https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_multiply) | `a * b` / `a *= b` |
-| `def_truediv` / `def_itruediv` | [`nb_true_divide`](https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_true_divide) / [`nb_inplace_true_divide`](https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_true_divide) | `a / b` / `a /= b` |
-| `def_floordiv` / `def_ifloordiv` | [`nb_floor_divide`](https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_floor_divide) / [`nb_inplace_floor_divide`](https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_floor_divide) | `a // b` / `a //= b` |
-| `def_mod` / `def_imod` | [`nb_remainder`](https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_remainder) / [`nb_inplace_remainder`](https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_remainder) | `a % b` / `a %= b` |
-| `def_divmod` | [`nb_divmod`](https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_divmod) | `divmod(a, b)` |
-| `def_pow` / `def_ipow` | [`nb_power`](https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_power) / [`nb_inplace_power`](https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_power) | `a ** b` / `a **= b` |
-| `def_matmul` / `def_imatmul` | [`nb_matrix_multiply`](https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_matrix_multiply) / [`nb_inplace_matrix_multiply`](https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_matrix_multiply) | `a @ b` / `a @= b` |
-| `def_lshift` / `def_ilshift` | [`nb_lshift`](https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_lshift) / [`nb_inplace_lshift`](https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_lshift) | `a << b` / `a <<= b` |
-| `def_rshift` / `def_irshift` | [`nb_rshift`](https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_rshift) / [`nb_inplace_rshift`](https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_rshift) | `a >> b` / `a >>= b` |
-| `def_and` / `def_iand` | [`nb_and`](https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_and) / [`nb_inplace_and`](https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_and) | `a & b` / `a &= b` |
-| `def_or` / `def_ior` | [`nb_or`](https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_or) / [`nb_inplace_or`](https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_or) | <code>a &#124; b</code> / <code>a &#124;= b</code> |
-| `def_xor` / `def_ixor` | [`nb_xor`](https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_xor) / [`nb_inplace_xor`](https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_xor) | `a ^ b` / `a ^= b` |
+| Builder method                   | CPython slot                                                                                                                                                                                                                          | Python operator                                    |
+|----------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------|
+| `def_add` / `def_iadd`           | [`nb_add`](https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_add) / [`nb_inplace_add`](https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_add)                                                 | `a + b` / `a += b`                                 |
+| `def_sub` / `def_isub`           | [`nb_subtract`](https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_subtract) / [`nb_inplace_subtract`](https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_subtract)                             | `a - b` / `a -= b`                                 |
+| `def_mul` / `def_imul`           | [`nb_multiply`](https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_multiply) / [`nb_inplace_multiply`](https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_multiply)                             | `a * b` / `a *= b`                                 |
+| `def_truediv` / `def_itruediv`   | [`nb_true_divide`](https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_true_divide) / [`nb_inplace_true_divide`](https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_true_divide)                 | `a / b` / `a /= b`                                 |
+| `def_floordiv` / `def_ifloordiv` | [`nb_floor_divide`](https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_floor_divide) / [`nb_inplace_floor_divide`](https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_floor_divide)             | `a // b` / `a //= b`                               |
+| `def_mod` / `def_imod`           | [`nb_remainder`](https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_remainder) / [`nb_inplace_remainder`](https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_remainder)                         | `a % b` / `a %= b`                                 |
+| `def_divmod`                     | [`nb_divmod`](https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_divmod)                                                                                                                                               | `divmod(a, b)`                                     |
+| `def_pow` / `def_ipow`           | [`nb_power`](https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_power) / [`nb_inplace_power`](https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_power)                                         | `a ** b` / `a **= b`                               |
+| `def_matmul` / `def_imatmul`     | [`nb_matrix_multiply`](https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_matrix_multiply) / [`nb_inplace_matrix_multiply`](https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_matrix_multiply) | `a @ b` / `a @= b`                                 |
+| `def_lshift` / `def_ilshift`     | [`nb_lshift`](https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_lshift) / [`nb_inplace_lshift`](https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_lshift)                                     | `a << b` / `a <<= b`                               |
+| `def_rshift` / `def_irshift`     | [`nb_rshift`](https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_rshift) / [`nb_inplace_rshift`](https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_rshift)                                     | `a >> b` / `a >>= b`                               |
+| `def_and` / `def_iand`           | [`nb_and`](https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_and) / [`nb_inplace_and`](https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_and)                                                 | `a & b` / `a &= b`                                 |
+| `def_or` / `def_ior`             | [`nb_or`](https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_or) / [`nb_inplace_or`](https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_or)                                                     | <code>a &#124; b</code> / <code>a &#124;= b</code> |
+| `def_xor` / `def_ixor`           | [`nb_xor`](https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_xor) / [`nb_inplace_xor`](https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_xor)                                                 | `a ^ b` / `a ^= b`                                 |
 
 ## Implementation support code
 
@@ -290,12 +293,11 @@ one-liners: `_SlotInstaller.binary_val[…]` already knows it needs
 CPython slots have a richer error contract than a single `Error` type can
 express: a `tp_richcompare` slot may want to *raise* `TypeError`, *raise*
 `ValueError`, or *return* `Py_NotImplemented`; a `sq_ass_item` slot picks
-between `IndexError` and `TypeError`; and so on. Mojo today allows only
-one error type per `raises` clause and only one `except` clause per `try`
-block (see [Representing multiple error conditions](https://docs.modular.com/mojo/manual/errors#representing-multiple-error-conditions)),
-so we collapse the contract into a single enumerated type. User slot
-methods declare `raises PySlotError` and construct values via static
-factories:
+between `IndexError` and `TypeError`; and so on. Mojo today allows only one
+error type per `raises` clause and only one `except` clause per `try` block (see
+[Representing multiple error conditions](https://docs.modular.com/mojo/manual/errors#representing-multiple-error-conditions)),
+so we collapse the contract into a single enumerated type. User slot methods
+declare `raises PySlotError` and construct values via static factories:
 
 ```mojo
 raise PySlotError.index_error("index out of range")
@@ -304,12 +306,10 @@ raise PySlotError.not_implemented()
 ```
 
 The wrapper's `except e:` block infers `e: PySlotError`, branches on
-`e._variant`, and either calls `cpython.PyErr_SetString(e.pyexc_global_name(), e.msg)`
-for the real-exception variants or returns `Py_NewRef(cpython.Py_NotImplemented())`
-for the `not_implemented` variant. The variants currently supported are
-`index_error`, `type_error`, `value_error`, `key_error`,
-`attribute_error`, `overflow_error`, `runtime_error`, and
-`not_implemented`; extending the set is a localized change in
-`utils.mojo` plus one branch in `pyexc_global_name()`.
-
-
+`e._variant`, and either calls
+`cpython.PyErr_SetString(e.pyexc_global_name(), e.msg)` for the real-exception
+variants or returns `Py_NewRef(cpython.Py_NotImplemented())` for the
+`not_implemented` variant. The variants currently supported are `index_error`,
+`type_error`, `value_error`, `key_error`, `attribute_error`, `overflow_error`,
+`runtime_error`, and `not_implemented`; extending the set is a localized change
+in `utils.mojo` plus one branch in `pyexc_global_name()`.

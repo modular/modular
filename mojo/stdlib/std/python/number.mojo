@@ -65,7 +65,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
     def def_abs[
         method: def(
             UnsafePointer[Self.self_type, MutAnyOrigin]
-        ) thin raises PySlotError ->PythonObject
+        ) thin raises PySlotError -> PythonObject
     ](mut self) -> ref[self] Self:
         """Install `__abs__` via the `nb_absolute` slot.
 
@@ -80,46 +80,52 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
     def def_float[
         method: def(
             UnsafePointer[Self.self_type, MutAnyOrigin]
-        ) thin raises PySlotError ->PythonObject
+        ) thin raises PySlotError -> PythonObject
     ](mut self) -> ref[self] Self:
         """Install `__float__` via the `nb_float` slot.
 
         Called by `float(obj)`.
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_float
         """
-        _SlotInstaller.unary[Self.self_type, method, PySlotIndex.nb_float](self._ptr)
+        _SlotInstaller.unary[Self.self_type, method, PySlotIndex.nb_float](
+            self._ptr
+        )
         return self
 
     def def_index[
         method: def(
             UnsafePointer[Self.self_type, MutAnyOrigin]
-        ) thin raises PySlotError ->PythonObject
+        ) thin raises PySlotError -> PythonObject
     ](mut self) -> ref[self] Self:
         """Install `__index__` via the `nb_index` slot.
 
         Called by `operator.index(obj)`.
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_index
         """
-        _SlotInstaller.unary[Self.self_type, method, PySlotIndex.nb_index](self._ptr)
+        _SlotInstaller.unary[Self.self_type, method, PySlotIndex.nb_index](
+            self._ptr
+        )
         return self
 
     def def_int[
         method: def(
             UnsafePointer[Self.self_type, MutAnyOrigin]
-        ) thin raises PySlotError ->PythonObject
+        ) thin raises PySlotError -> PythonObject
     ](mut self) -> ref[self] Self:
         """Install `__int__` via the `nb_int` slot.
 
         Called by `int(obj)`.
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_int
         """
-        _SlotInstaller.unary[Self.self_type, method, PySlotIndex.nb_int](self._ptr)
+        _SlotInstaller.unary[Self.self_type, method, PySlotIndex.nb_int](
+            self._ptr
+        )
         return self
 
     def def_invert[
         method: def(
             UnsafePointer[Self.self_type, MutAnyOrigin]
-        ) thin raises PySlotError ->PythonObject
+        ) thin raises PySlotError -> PythonObject
     ](mut self) -> ref[self] Self:
         """Install `__invert__` via the `nb_invert` slot.
 
@@ -134,7 +140,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
     def def_neg[
         method: def(
             UnsafePointer[Self.self_type, MutAnyOrigin]
-        ) thin raises PySlotError ->PythonObject
+        ) thin raises PySlotError -> PythonObject
     ](mut self) -> ref[self] Self:
         """Install `__neg__` via the `nb_negative` slot.
 
@@ -149,7 +155,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
     def def_pos[
         method: def(
             UnsafePointer[Self.self_type, MutAnyOrigin]
-        ) thin raises PySlotError ->PythonObject
+        ) thin raises PySlotError -> PythonObject
     ](mut self) -> ref[self] Self:
         """Install `__pos__` via the `nb_positive` slot.
 
@@ -172,9 +178,9 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_absolute
         """
-        _SlotInstaller.unary_nr[Self.self_type, method, PySlotIndex.nb_absolute](
-            self._ptr
-        )
+        _SlotInstaller.unary_nr[
+            Self.self_type, method, PySlotIndex.nb_absolute
+        ](self._ptr)
         return self
 
     def def_float[
@@ -242,9 +248,9 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_negative
         """
-        _SlotInstaller.unary_nr[Self.self_type, method, PySlotIndex.nb_negative](
-            self._ptr
-        )
+        _SlotInstaller.unary_nr[
+            Self.self_type, method, PySlotIndex.nb_negative
+        ](self._ptr)
         return self
 
     def def_pos[
@@ -256,27 +262,27 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_positive
         """
-        _SlotInstaller.unary_nr[Self.self_type, method, PySlotIndex.nb_positive](
-            self._ptr
-        )
+        _SlotInstaller.unary_nr[
+            Self.self_type, method, PySlotIndex.nb_positive
+        ](self._ptr)
         return self
 
     # Value-receiver unary overloads
 
     def def_abs[
-        method: def(Self.self_type) thin raises PySlotError ->PythonObject
+        method: def(Self.self_type) thin raises PySlotError -> PythonObject
     ](mut self) -> ref[self] Self:
         """Install `__abs__` via the `nb_absolute` slot (value-receiver overload).
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_absolute
         """
-        _SlotInstaller.unary_val[Self.self_type, method, PySlotIndex.nb_absolute](
-            self._ptr
-        )
+        _SlotInstaller.unary_val[
+            Self.self_type, method, PySlotIndex.nb_absolute
+        ](self._ptr)
         return self
 
     def def_float[
-        method: def(Self.self_type) thin raises PySlotError ->PythonObject
+        method: def(Self.self_type) thin raises PySlotError -> PythonObject
     ](mut self) -> ref[self] Self:
         """Install `__float__` via the `nb_float` slot (value-receiver overload).
 
@@ -289,7 +295,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
         return self
 
     def def_index[
-        method: def(Self.self_type) thin raises PySlotError ->PythonObject
+        method: def(Self.self_type) thin raises PySlotError -> PythonObject
     ](mut self) -> ref[self] Self:
         """Install `__index__` via the `nb_index` slot (value-receiver overload).
 
@@ -301,7 +307,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
         return self
 
     def def_int[
-        method: def(Self.self_type) thin raises PySlotError ->PythonObject
+        method: def(Self.self_type) thin raises PySlotError -> PythonObject
     ](mut self) -> ref[self] Self:
         """Install `__int__` via the `nb_int` slot (value-receiver overload).
 
@@ -313,7 +319,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
         return self
 
     def def_invert[
-        method: def(Self.self_type) thin raises PySlotError ->PythonObject
+        method: def(Self.self_type) thin raises PySlotError -> PythonObject
     ](mut self) -> ref[self] Self:
         """Install `__invert__` via the `nb_invert` slot (value-receiver overload).
 
@@ -325,27 +331,27 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
         return self
 
     def def_neg[
-        method: def(Self.self_type) thin raises PySlotError ->PythonObject
+        method: def(Self.self_type) thin raises PySlotError -> PythonObject
     ](mut self) -> ref[self] Self:
         """Install `__neg__` via the `nb_negative` slot (value-receiver overload).
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_negative
         """
-        _SlotInstaller.unary_val[Self.self_type, method, PySlotIndex.nb_negative](
-            self._ptr
-        )
+        _SlotInstaller.unary_val[
+            Self.self_type, method, PySlotIndex.nb_negative
+        ](self._ptr)
         return self
 
     def def_pos[
-        method: def(Self.self_type) thin raises PySlotError ->PythonObject
+        method: def(Self.self_type) thin raises PySlotError -> PythonObject
     ](mut self) -> ref[self] Self:
         """Install `__pos__` via the `nb_positive` slot (value-receiver overload).
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_positive
         """
-        _SlotInstaller.unary_val[Self.self_type, method, PySlotIndex.nb_positive](
-            self._ptr
-        )
+        _SlotInstaller.unary_val[
+            Self.self_type, method, PySlotIndex.nb_positive
+        ](self._ptr)
         return self
 
     # ------------------------------------------------------------------
@@ -355,7 +361,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
     def def_bool[
         method: def(
             UnsafePointer[Self.self_type, MutAnyOrigin]
-        ) thin raises PySlotError ->Bool
+        ) thin raises PySlotError -> Bool
     ](mut self) -> ref[self] Self:
         """Install `__bool__` via the `nb_bool` slot.
 
@@ -380,7 +386,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
         return self
 
     def def_bool[
-        method: def(Self.self_type) thin raises PySlotError ->Bool
+        method: def(Self.self_type) thin raises PySlotError -> Bool
     ](mut self) -> ref[self] Self:
         """Install `__bool__` via the `nb_bool` slot (value-receiver overload).
 
@@ -399,33 +405,37 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
     def def_add[
         method: def(
             UnsafePointer[Self.self_type, MutAnyOrigin], PythonObject
-        ) thin raises PySlotError ->PythonObject
+        ) thin raises PySlotError -> PythonObject
     ](mut self) -> ref[self] Self:
         """Install `__add__` via the `nb_add` slot.
 
         Called by `obj + other`.
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_add
         """
-        _SlotInstaller.binary[Self.self_type, method, PySlotIndex.nb_add](self._ptr)
+        _SlotInstaller.binary[Self.self_type, method, PySlotIndex.nb_add](
+            self._ptr
+        )
         return self
 
     def def_and[
         method: def(
             UnsafePointer[Self.self_type, MutAnyOrigin], PythonObject
-        ) thin raises PySlotError ->PythonObject
+        ) thin raises PySlotError -> PythonObject
     ](mut self) -> ref[self] Self:
         """Install `__and__` via the `nb_and` slot.
 
         Called by `obj & other`.
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_and
         """
-        _SlotInstaller.binary[Self.self_type, method, PySlotIndex.nb_and](self._ptr)
+        _SlotInstaller.binary[Self.self_type, method, PySlotIndex.nb_and](
+            self._ptr
+        )
         return self
 
     def def_divmod[
         method: def(
             UnsafePointer[Self.self_type, MutAnyOrigin], PythonObject
-        ) thin raises PySlotError ->PythonObject
+        ) thin raises PySlotError -> PythonObject
     ](mut self) -> ref[self] Self:
         """Install `__divmod__` via the `nb_divmod` slot.
 
@@ -440,22 +450,22 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
     def def_floordiv[
         method: def(
             UnsafePointer[Self.self_type, MutAnyOrigin], PythonObject
-        ) thin raises PySlotError ->PythonObject
+        ) thin raises PySlotError -> PythonObject
     ](mut self) -> ref[self] Self:
         """Install `__floordiv__` via the `nb_floor_divide` slot.
 
         Called by `obj // other`.
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_floor_divide
         """
-        _SlotInstaller.binary[Self.self_type, method, PySlotIndex.nb_floor_divide](
-            self._ptr
-        )
+        _SlotInstaller.binary[
+            Self.self_type, method, PySlotIndex.nb_floor_divide
+        ](self._ptr)
         return self
 
     def def_lshift[
         method: def(
             UnsafePointer[Self.self_type, MutAnyOrigin], PythonObject
-        ) thin raises PySlotError ->PythonObject
+        ) thin raises PySlotError -> PythonObject
     ](mut self) -> ref[self] Self:
         """Install `__lshift__` via the `nb_lshift` slot.
 
@@ -470,7 +480,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
     def def_matmul[
         method: def(
             UnsafePointer[Self.self_type, MutAnyOrigin], PythonObject
-        ) thin raises PySlotError ->PythonObject
+        ) thin raises PySlotError -> PythonObject
     ](mut self) -> ref[self] Self:
         """Install `__matmul__` via the `nb_matrix_multiply` slot.
 
@@ -485,7 +495,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
     def def_mod[
         method: def(
             UnsafePointer[Self.self_type, MutAnyOrigin], PythonObject
-        ) thin raises PySlotError ->PythonObject
+        ) thin raises PySlotError -> PythonObject
     ](mut self) -> ref[self] Self:
         """Install `__mod__` via the `nb_remainder` slot.
 
@@ -500,7 +510,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
     def def_mul[
         method: def(
             UnsafePointer[Self.self_type, MutAnyOrigin], PythonObject
-        ) thin raises PySlotError ->PythonObject
+        ) thin raises PySlotError -> PythonObject
     ](mut self) -> ref[self] Self:
         """Install `__mul__` via the `nb_multiply` slot.
 
@@ -515,20 +525,22 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
     def def_or[
         method: def(
             UnsafePointer[Self.self_type, MutAnyOrigin], PythonObject
-        ) thin raises PySlotError ->PythonObject
+        ) thin raises PySlotError -> PythonObject
     ](mut self) -> ref[self] Self:
         """Install `__or__` via the `nb_or` slot.
 
         Called by `obj | other`.
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_or
         """
-        _SlotInstaller.binary[Self.self_type, method, PySlotIndex.nb_or](self._ptr)
+        _SlotInstaller.binary[Self.self_type, method, PySlotIndex.nb_or](
+            self._ptr
+        )
         return self
 
     def def_rshift[
         method: def(
             UnsafePointer[Self.self_type, MutAnyOrigin], PythonObject
-        ) thin raises PySlotError ->PythonObject
+        ) thin raises PySlotError -> PythonObject
     ](mut self) -> ref[self] Self:
         """Install `__rshift__` via the `nb_rshift` slot.
 
@@ -543,7 +555,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
     def def_sub[
         method: def(
             UnsafePointer[Self.self_type, MutAnyOrigin], PythonObject
-        ) thin raises PySlotError ->PythonObject
+        ) thin raises PySlotError -> PythonObject
     ](mut self) -> ref[self] Self:
         """Install `__sub__` via the `nb_subtract` slot.
 
@@ -558,29 +570,31 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
     def def_truediv[
         method: def(
             UnsafePointer[Self.self_type, MutAnyOrigin], PythonObject
-        ) thin raises PySlotError ->PythonObject
+        ) thin raises PySlotError -> PythonObject
     ](mut self) -> ref[self] Self:
         """Install `__truediv__` via the `nb_true_divide` slot.
 
         Called by `obj / other`.
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_true_divide
         """
-        _SlotInstaller.binary[Self.self_type, method, PySlotIndex.nb_true_divide](
-            self._ptr
-        )
+        _SlotInstaller.binary[
+            Self.self_type, method, PySlotIndex.nb_true_divide
+        ](self._ptr)
         return self
 
     def def_xor[
         method: def(
             UnsafePointer[Self.self_type, MutAnyOrigin], PythonObject
-        ) thin raises PySlotError ->PythonObject
+        ) thin raises PySlotError -> PythonObject
     ](mut self) -> ref[self] Self:
         """Install `__xor__` via the `nb_xor` slot.
 
         Called by `obj ^ other`.
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_xor
         """
-        _SlotInstaller.binary[Self.self_type, method, PySlotIndex.nb_xor](self._ptr)
+        _SlotInstaller.binary[Self.self_type, method, PySlotIndex.nb_xor](
+            self._ptr
+        )
         return self
 
     # In-place binary slots
@@ -588,37 +602,37 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
     def def_iadd[
         method: def(
             UnsafePointer[Self.self_type, MutAnyOrigin], PythonObject
-        ) thin raises PySlotError ->PythonObject
+        ) thin raises PySlotError -> PythonObject
     ](mut self) -> ref[self] Self:
         """Install `__iadd__` via the `nb_inplace_add` slot.
 
         Called by `obj += other`.
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_add
         """
-        _SlotInstaller.binary[Self.self_type, method, PySlotIndex.nb_inplace_add](
-            self._ptr
-        )
+        _SlotInstaller.binary[
+            Self.self_type, method, PySlotIndex.nb_inplace_add
+        ](self._ptr)
         return self
 
     def def_iand[
         method: def(
             UnsafePointer[Self.self_type, MutAnyOrigin], PythonObject
-        ) thin raises PySlotError ->PythonObject
+        ) thin raises PySlotError -> PythonObject
     ](mut self) -> ref[self] Self:
         """Install `__iand__` via the `nb_inplace_and` slot.
 
         Called by `obj &= other`.
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_and
         """
-        _SlotInstaller.binary[Self.self_type, method, PySlotIndex.nb_inplace_and](
-            self._ptr
-        )
+        _SlotInstaller.binary[
+            Self.self_type, method, PySlotIndex.nb_inplace_and
+        ](self._ptr)
         return self
 
     def def_ifloordiv[
         method: def(
             UnsafePointer[Self.self_type, MutAnyOrigin], PythonObject
-        ) thin raises PySlotError ->PythonObject
+        ) thin raises PySlotError -> PythonObject
     ](mut self) -> ref[self] Self:
         """Install `__ifloordiv__` via the `nb_inplace_floor_divide` slot.
 
@@ -633,22 +647,22 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
     def def_ilshift[
         method: def(
             UnsafePointer[Self.self_type, MutAnyOrigin], PythonObject
-        ) thin raises PySlotError ->PythonObject
+        ) thin raises PySlotError -> PythonObject
     ](mut self) -> ref[self] Self:
         """Install `__ilshift__` via the `nb_inplace_lshift` slot.
 
         Called by `obj <<= other`.
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_lshift
         """
-        _SlotInstaller.binary[Self.self_type, method, PySlotIndex.nb_inplace_lshift](
-            self._ptr
-        )
+        _SlotInstaller.binary[
+            Self.self_type, method, PySlotIndex.nb_inplace_lshift
+        ](self._ptr)
         return self
 
     def def_imatmul[
         method: def(
             UnsafePointer[Self.self_type, MutAnyOrigin], PythonObject
-        ) thin raises PySlotError ->PythonObject
+        ) thin raises PySlotError -> PythonObject
     ](mut self) -> ref[self] Self:
         """Install `__imatmul__` via the `nb_inplace_matrix_multiply` slot.
 
@@ -663,7 +677,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
     def def_imod[
         method: def(
             UnsafePointer[Self.self_type, MutAnyOrigin], PythonObject
-        ) thin raises PySlotError ->PythonObject
+        ) thin raises PySlotError -> PythonObject
     ](mut self) -> ref[self] Self:
         """Install `__imod__` via the `nb_inplace_remainder` slot.
 
@@ -678,7 +692,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
     def def_imul[
         method: def(
             UnsafePointer[Self.self_type, MutAnyOrigin], PythonObject
-        ) thin raises PySlotError ->PythonObject
+        ) thin raises PySlotError -> PythonObject
     ](mut self) -> ref[self] Self:
         """Install `__imul__` via the `nb_inplace_multiply` slot.
 
@@ -693,37 +707,37 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
     def def_ior[
         method: def(
             UnsafePointer[Self.self_type, MutAnyOrigin], PythonObject
-        ) thin raises PySlotError ->PythonObject
+        ) thin raises PySlotError -> PythonObject
     ](mut self) -> ref[self] Self:
         """Install `__ior__` via the `nb_inplace_or` slot.
 
         Called by `obj |= other`.
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_or
         """
-        _SlotInstaller.binary[Self.self_type, method, PySlotIndex.nb_inplace_or](
-            self._ptr
-        )
+        _SlotInstaller.binary[
+            Self.self_type, method, PySlotIndex.nb_inplace_or
+        ](self._ptr)
         return self
 
     def def_irshift[
         method: def(
             UnsafePointer[Self.self_type, MutAnyOrigin], PythonObject
-        ) thin raises PySlotError ->PythonObject
+        ) thin raises PySlotError -> PythonObject
     ](mut self) -> ref[self] Self:
         """Install `__irshift__` via the `nb_inplace_rshift` slot.
 
         Called by `obj >>= other`.
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_rshift
         """
-        _SlotInstaller.binary[Self.self_type, method, PySlotIndex.nb_inplace_rshift](
-            self._ptr
-        )
+        _SlotInstaller.binary[
+            Self.self_type, method, PySlotIndex.nb_inplace_rshift
+        ](self._ptr)
         return self
 
     def def_isub[
         method: def(
             UnsafePointer[Self.self_type, MutAnyOrigin], PythonObject
-        ) thin raises PySlotError ->PythonObject
+        ) thin raises PySlotError -> PythonObject
     ](mut self) -> ref[self] Self:
         """Install `__isub__` via the `nb_inplace_subtract` slot.
 
@@ -738,7 +752,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
     def def_itruediv[
         method: def(
             UnsafePointer[Self.self_type, MutAnyOrigin], PythonObject
-        ) thin raises PySlotError ->PythonObject
+        ) thin raises PySlotError -> PythonObject
     ](mut self) -> ref[self] Self:
         """Install `__itruediv__` via the `nb_inplace_true_divide` slot.
 
@@ -753,16 +767,16 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
     def def_ixor[
         method: def(
             UnsafePointer[Self.self_type, MutAnyOrigin], PythonObject
-        ) thin raises PySlotError ->PythonObject
+        ) thin raises PySlotError -> PythonObject
     ](mut self) -> ref[self] Self:
         """Install `__ixor__` via the `nb_inplace_xor` slot.
 
         Called by `obj ^= other`.
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_xor
         """
-        _SlotInstaller.binary[Self.self_type, method, PySlotIndex.nb_inplace_xor](
-            self._ptr
-        )
+        _SlotInstaller.binary[
+            Self.self_type, method, PySlotIndex.nb_inplace_xor
+        ](self._ptr)
         return self
 
     # Non-raising binary overloads
@@ -860,9 +874,9 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_remainder
         """
-        _SlotInstaller.binary_nr[Self.self_type, method, PySlotIndex.nb_remainder](
-            self._ptr
-        )
+        _SlotInstaller.binary_nr[
+            Self.self_type, method, PySlotIndex.nb_remainder
+        ](self._ptr)
         return self
 
     def def_mul[
@@ -874,9 +888,9 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_multiply
         """
-        _SlotInstaller.binary_nr[Self.self_type, method, PySlotIndex.nb_multiply](
-            self._ptr
-        )
+        _SlotInstaller.binary_nr[
+            Self.self_type, method, PySlotIndex.nb_multiply
+        ](self._ptr)
         return self
 
     def def_or[
@@ -916,9 +930,9 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_subtract
         """
-        _SlotInstaller.binary_nr[Self.self_type, method, PySlotIndex.nb_subtract](
-            self._ptr
-        )
+        _SlotInstaller.binary_nr[
+            Self.self_type, method, PySlotIndex.nb_subtract
+        ](self._ptr)
         return self
 
     def def_truediv[
@@ -930,9 +944,9 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_true_divide
         """
-        _SlotInstaller.binary_nr[Self.self_type, method, PySlotIndex.nb_true_divide](
-            self._ptr
-        )
+        _SlotInstaller.binary_nr[
+            Self.self_type, method, PySlotIndex.nb_true_divide
+        ](self._ptr)
         return self
 
     def def_xor[
@@ -958,9 +972,9 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_add
         """
-        _SlotInstaller.binary_nr[Self.self_type, method, PySlotIndex.nb_inplace_add](
-            self._ptr
-        )
+        _SlotInstaller.binary_nr[
+            Self.self_type, method, PySlotIndex.nb_inplace_add
+        ](self._ptr)
         return self
 
     def def_iand[
@@ -972,9 +986,9 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_and
         """
-        _SlotInstaller.binary_nr[Self.self_type, method, PySlotIndex.nb_inplace_and](
-            self._ptr
-        )
+        _SlotInstaller.binary_nr[
+            Self.self_type, method, PySlotIndex.nb_inplace_and
+        ](self._ptr)
         return self
 
     def def_ifloordiv[
@@ -1056,9 +1070,9 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_or
         """
-        _SlotInstaller.binary_nr[Self.self_type, method, PySlotIndex.nb_inplace_or](
-            self._ptr
-        )
+        _SlotInstaller.binary_nr[
+            Self.self_type, method, PySlotIndex.nb_inplace_or
+        ](self._ptr)
         return self
 
     def def_irshift[
@@ -1112,15 +1126,17 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_xor
         """
-        _SlotInstaller.binary_nr[Self.self_type, method, PySlotIndex.nb_inplace_xor](
-            self._ptr
-        )
+        _SlotInstaller.binary_nr[
+            Self.self_type, method, PySlotIndex.nb_inplace_xor
+        ](self._ptr)
         return self
 
     # Value-receiver binary overloads
 
     def def_add[
-        method: def(Self.self_type, PythonObject) thin raises PySlotError ->PythonObject
+        method: def(
+            Self.self_type, PythonObject
+        ) thin raises PySlotError -> PythonObject
     ](mut self) -> ref[self] Self:
         """Install `__add__` via the `nb_add` slot (value-receiver overload).
 
@@ -1132,7 +1148,9 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
         return self
 
     def def_and[
-        method: def(Self.self_type, PythonObject) thin raises PySlotError ->PythonObject
+        method: def(
+            Self.self_type, PythonObject
+        ) thin raises PySlotError -> PythonObject
     ](mut self) -> ref[self] Self:
         """Install `__and__` via the `nb_and` slot (value-receiver overload).
 
@@ -1144,19 +1162,23 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
         return self
 
     def def_divmod[
-        method: def(Self.self_type, PythonObject) thin raises PySlotError ->PythonObject
+        method: def(
+            Self.self_type, PythonObject
+        ) thin raises PySlotError -> PythonObject
     ](mut self) -> ref[self] Self:
         """Install `__divmod__` via the `nb_divmod` slot (value-receiver overload).
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_divmod
         """
-        _SlotInstaller.binary_val[Self.self_type, method, PySlotIndex.nb_divmod](
-            self._ptr
-        )
+        _SlotInstaller.binary_val[
+            Self.self_type, method, PySlotIndex.nb_divmod
+        ](self._ptr)
         return self
 
     def def_floordiv[
-        method: def(Self.self_type, PythonObject) thin raises PySlotError ->PythonObject
+        method: def(
+            Self.self_type, PythonObject
+        ) thin raises PySlotError -> PythonObject
     ](mut self) -> ref[self] Self:
         """Install `__floordiv__` via the `nb_floor_divide` slot (value-receiver overload).
 
@@ -1168,19 +1190,23 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
         return self
 
     def def_lshift[
-        method: def(Self.self_type, PythonObject) thin raises PySlotError ->PythonObject
+        method: def(
+            Self.self_type, PythonObject
+        ) thin raises PySlotError -> PythonObject
     ](mut self) -> ref[self] Self:
         """Install `__lshift__` via the `nb_lshift` slot (value-receiver overload).
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_lshift
         """
-        _SlotInstaller.binary_val[Self.self_type, method, PySlotIndex.nb_lshift](
-            self._ptr
-        )
+        _SlotInstaller.binary_val[
+            Self.self_type, method, PySlotIndex.nb_lshift
+        ](self._ptr)
         return self
 
     def def_matmul[
-        method: def(Self.self_type, PythonObject) thin raises PySlotError ->PythonObject
+        method: def(
+            Self.self_type, PythonObject
+        ) thin raises PySlotError -> PythonObject
     ](mut self) -> ref[self] Self:
         """Install `__matmul__` via the `nb_matrix_multiply` slot (value-receiver overload).
 
@@ -1192,31 +1218,37 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
         return self
 
     def def_mod[
-        method: def(Self.self_type, PythonObject) thin raises PySlotError ->PythonObject
+        method: def(
+            Self.self_type, PythonObject
+        ) thin raises PySlotError -> PythonObject
     ](mut self) -> ref[self] Self:
         """Install `__mod__` via the `nb_remainder` slot (value-receiver overload).
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_remainder
         """
-        _SlotInstaller.binary_val[Self.self_type, method, PySlotIndex.nb_remainder](
-            self._ptr
-        )
+        _SlotInstaller.binary_val[
+            Self.self_type, method, PySlotIndex.nb_remainder
+        ](self._ptr)
         return self
 
     def def_mul[
-        method: def(Self.self_type, PythonObject) thin raises PySlotError ->PythonObject
+        method: def(
+            Self.self_type, PythonObject
+        ) thin raises PySlotError -> PythonObject
     ](mut self) -> ref[self] Self:
         """Install `__mul__` via the `nb_multiply` slot (value-receiver overload).
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_multiply
         """
-        _SlotInstaller.binary_val[Self.self_type, method, PySlotIndex.nb_multiply](
-            self._ptr
-        )
+        _SlotInstaller.binary_val[
+            Self.self_type, method, PySlotIndex.nb_multiply
+        ](self._ptr)
         return self
 
     def def_or[
-        method: def(Self.self_type, PythonObject) thin raises PySlotError ->PythonObject
+        method: def(
+            Self.self_type, PythonObject
+        ) thin raises PySlotError -> PythonObject
     ](mut self) -> ref[self] Self:
         """Install `__or__` via the `nb_or` slot (value-receiver overload).
 
@@ -1228,31 +1260,37 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
         return self
 
     def def_rshift[
-        method: def(Self.self_type, PythonObject) thin raises PySlotError ->PythonObject
+        method: def(
+            Self.self_type, PythonObject
+        ) thin raises PySlotError -> PythonObject
     ](mut self) -> ref[self] Self:
         """Install `__rshift__` via the `nb_rshift` slot (value-receiver overload).
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_rshift
         """
-        _SlotInstaller.binary_val[Self.self_type, method, PySlotIndex.nb_rshift](
-            self._ptr
-        )
+        _SlotInstaller.binary_val[
+            Self.self_type, method, PySlotIndex.nb_rshift
+        ](self._ptr)
         return self
 
     def def_sub[
-        method: def(Self.self_type, PythonObject) thin raises PySlotError ->PythonObject
+        method: def(
+            Self.self_type, PythonObject
+        ) thin raises PySlotError -> PythonObject
     ](mut self) -> ref[self] Self:
         """Install `__sub__` via the `nb_subtract` slot (value-receiver overload).
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_subtract
         """
-        _SlotInstaller.binary_val[Self.self_type, method, PySlotIndex.nb_subtract](
-            self._ptr
-        )
+        _SlotInstaller.binary_val[
+            Self.self_type, method, PySlotIndex.nb_subtract
+        ](self._ptr)
         return self
 
     def def_truediv[
-        method: def(Self.self_type, PythonObject) thin raises PySlotError ->PythonObject
+        method: def(
+            Self.self_type, PythonObject
+        ) thin raises PySlotError -> PythonObject
     ](mut self) -> ref[self] Self:
         """Install `__truediv__` via the `nb_true_divide` slot (value-receiver overload).
 
@@ -1264,7 +1302,9 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
         return self
 
     def def_xor[
-        method: def(Self.self_type, PythonObject) thin raises PySlotError ->PythonObject
+        method: def(
+            Self.self_type, PythonObject
+        ) thin raises PySlotError -> PythonObject
     ](mut self) -> ref[self] Self:
         """Install `__xor__` via the `nb_xor` slot (value-receiver overload).
 
@@ -1286,7 +1326,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
             UnsafePointer[Self.self_type, MutAnyOrigin],
             PythonObject,
             PythonObject,
-        ) thin raises PySlotError ->PythonObject
+        ) thin raises PySlotError -> PythonObject
     ](mut self) -> ref[self] Self:
         """Install `__pow__` via the `nb_power` slot.
 
@@ -1303,16 +1343,16 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
             UnsafePointer[Self.self_type, MutAnyOrigin],
             PythonObject,
             PythonObject,
-        ) thin raises PySlotError ->PythonObject
+        ) thin raises PySlotError -> PythonObject
     ](mut self) -> ref[self] Self:
         """Install `__ipow__` via the `nb_inplace_power` slot.
 
         Called by `obj **= exp`.
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_power
         """
-        _SlotInstaller.ternary[Self.self_type, method, PySlotIndex.nb_inplace_power](
-            self._ptr
-        )
+        _SlotInstaller.ternary[
+            Self.self_type, method, PySlotIndex.nb_inplace_power
+        ](self._ptr)
         return self
 
     # Non-raising ternary overloads
@@ -1352,15 +1392,15 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
     def def_pow[
         method: def(
             Self.self_type, PythonObject, PythonObject
-        ) thin raises PySlotError ->PythonObject
+        ) thin raises PySlotError -> PythonObject
     ](mut self) -> ref[self] Self:
         """Install `__pow__` via the `nb_power` slot (value-receiver overload).
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_power
         """
-        _SlotInstaller.ternary_val[Self.self_type, method, PySlotIndex.nb_power](
-            self._ptr
-        )
+        _SlotInstaller.ternary_val[
+            Self.self_type, method, PySlotIndex.nb_power
+        ](self._ptr)
         return self
 
     # Mut-receiver overloads
@@ -1368,7 +1408,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
     def def_iadd[
         method: def(
             mut Self.self_type, PythonObject
-        ) thin raises PySlotError ->PythonObject
+        ) thin raises PySlotError -> PythonObject
     ](mut self) -> ref[self] Self:
         """Install `__iadd__` via the `nb_inplace_add` slot (mut-receiver overload).
 
@@ -1382,7 +1422,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
     def def_iand[
         method: def(
             mut Self.self_type, PythonObject
-        ) thin raises PySlotError ->PythonObject
+        ) thin raises PySlotError -> PythonObject
     ](mut self) -> ref[self] Self:
         """Install `__iand__` via the `nb_inplace_and` slot (mut-receiver overload).
 
@@ -1396,7 +1436,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
     def def_ifloordiv[
         method: def(
             mut Self.self_type, PythonObject
-        ) thin raises PySlotError ->PythonObject
+        ) thin raises PySlotError -> PythonObject
     ](mut self) -> ref[self] Self:
         """Install `__ifloordiv__` via the `nb_inplace_floor_divide` slot (mut-receiver overload).
 
@@ -1410,7 +1450,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
     def def_ilshift[
         method: def(
             mut Self.self_type, PythonObject
-        ) thin raises PySlotError ->PythonObject
+        ) thin raises PySlotError -> PythonObject
     ](mut self) -> ref[self] Self:
         """Install `__ilshift__` via the `nb_inplace_lshift` slot (mut-receiver overload).
 
@@ -1424,7 +1464,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
     def def_imatmul[
         method: def(
             mut Self.self_type, PythonObject
-        ) thin raises PySlotError ->PythonObject
+        ) thin raises PySlotError -> PythonObject
     ](mut self) -> ref[self] Self:
         """Install `__imatmul__` via the `nb_inplace_matrix_multiply` slot (mut-receiver overload).
 
@@ -1438,7 +1478,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
     def def_imod[
         method: def(
             mut Self.self_type, PythonObject
-        ) thin raises PySlotError ->PythonObject
+        ) thin raises PySlotError -> PythonObject
     ](mut self) -> ref[self] Self:
         """Install `__imod__` via the `nb_inplace_remainder` slot (mut-receiver overload).
 
@@ -1452,7 +1492,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
     def def_imul[
         method: def(
             mut Self.self_type, PythonObject
-        ) thin raises PySlotError ->PythonObject
+        ) thin raises PySlotError -> PythonObject
     ](mut self) -> ref[self] Self:
         """Install `__imul__` via the `nb_inplace_multiply` slot (mut-receiver overload).
 
@@ -1466,21 +1506,21 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
     def def_ior[
         method: def(
             mut Self.self_type, PythonObject
-        ) thin raises PySlotError ->PythonObject
+        ) thin raises PySlotError -> PythonObject
     ](mut self) -> ref[self] Self:
         """Install `__ior__` via the `nb_inplace_or` slot (mut-receiver overload).
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_inplace_or
         """
-        _SlotInstaller.binary_mut[Self.self_type, method, PySlotIndex.nb_inplace_or](
-            self._ptr
-        )
+        _SlotInstaller.binary_mut[
+            Self.self_type, method, PySlotIndex.nb_inplace_or
+        ](self._ptr)
         return self
 
     def def_irshift[
         method: def(
             mut Self.self_type, PythonObject
-        ) thin raises PySlotError ->PythonObject
+        ) thin raises PySlotError -> PythonObject
     ](mut self) -> ref[self] Self:
         """Install `__irshift__` via the `nb_inplace_rshift` slot (mut-receiver overload).
 
@@ -1494,7 +1534,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
     def def_isub[
         method: def(
             mut Self.self_type, PythonObject
-        ) thin raises PySlotError ->PythonObject
+        ) thin raises PySlotError -> PythonObject
     ](mut self) -> ref[self] Self:
         """Install `__isub__` via the `nb_inplace_subtract` slot (mut-receiver overload).
 
@@ -1508,7 +1548,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
     def def_itruediv[
         method: def(
             mut Self.self_type, PythonObject
-        ) thin raises PySlotError ->PythonObject
+        ) thin raises PySlotError -> PythonObject
     ](mut self) -> ref[self] Self:
         """Install `__itruediv__` via the `nb_inplace_true_divide` slot (mut-receiver overload).
 
@@ -1522,7 +1562,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
     def def_ixor[
         method: def(
             mut Self.self_type, PythonObject
-        ) thin raises PySlotError ->PythonObject
+        ) thin raises PySlotError -> PythonObject
     ](mut self) -> ref[self] Self:
         """Install `__ixor__` via the `nb_inplace_xor` slot (mut-receiver overload).
 
@@ -1536,7 +1576,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
     def def_ipow[
         method: def(
             mut Self.self_type, PythonObject, PythonObject
-        ) thin raises PySlotError ->PythonObject
+        ) thin raises PySlotError -> PythonObject
     ](mut self) -> ref[self] Self:
         """Install `__ipow__` via the `nb_inplace_power` slot (mut-receiver overload).
 
@@ -1553,7 +1593,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
         R: _CPython,
         method: def(
             UnsafePointer[Self.self_type, MutAnyOrigin]
-        ) thin raises PySlotError ->R,
+        ) thin raises PySlotError -> R,
     ](mut self) -> ref[self] Self:
         """Install `__abs__` via the `nb_absolute` slot (ConvertibleToPython return overload).
 
@@ -1579,7 +1619,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
     def def_abs[
         R: _CPython,
-        method: def(Self.self_type) thin raises PySlotError ->R,
+        method: def(Self.self_type) thin raises PySlotError -> R,
     ](mut self) -> ref[self] Self:
         """Install `__abs__` via the `nb_absolute` slot (ConvertibleToPython return, value-receiver overload).
 
@@ -1594,15 +1634,15 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
         R: _CPython,
         method: def(
             UnsafePointer[Self.self_type, MutAnyOrigin]
-        ) thin raises PySlotError ->R,
+        ) thin raises PySlotError -> R,
     ](mut self) -> ref[self] Self:
         """Install `__float__` via the `nb_float` slot (ConvertibleToPython return overload).
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_float
         """
-        _SlotInstaller.unary_conv_r[Self.self_type, R, method, PySlotIndex.nb_float](
-            self._ptr
-        )
+        _SlotInstaller.unary_conv_r[
+            Self.self_type, R, method, PySlotIndex.nb_float
+        ](self._ptr)
         return self
 
     def def_float[
@@ -1620,7 +1660,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
     def def_float[
         R: _CPython,
-        method: def(Self.self_type) thin raises PySlotError ->R,
+        method: def(Self.self_type) thin raises PySlotError -> R,
     ](mut self) -> ref[self] Self:
         """Install `__float__` via the `nb_float` slot (ConvertibleToPython return, value-receiver overload).
 
@@ -1635,15 +1675,15 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
         R: _CPython,
         method: def(
             UnsafePointer[Self.self_type, MutAnyOrigin]
-        ) thin raises PySlotError ->R,
+        ) thin raises PySlotError -> R,
     ](mut self) -> ref[self] Self:
         """Install `__index__` via the `nb_index` slot (ConvertibleToPython return overload).
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_index
         """
-        _SlotInstaller.unary_conv_r[Self.self_type, R, method, PySlotIndex.nb_index](
-            self._ptr
-        )
+        _SlotInstaller.unary_conv_r[
+            Self.self_type, R, method, PySlotIndex.nb_index
+        ](self._ptr)
         return self
 
     def def_index[
@@ -1661,7 +1701,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
     def def_index[
         R: _CPython,
-        method: def(Self.self_type) thin raises PySlotError ->R,
+        method: def(Self.self_type) thin raises PySlotError -> R,
     ](mut self) -> ref[self] Self:
         """Install `__index__` via the `nb_index` slot (ConvertibleToPython return, value-receiver overload).
 
@@ -1676,15 +1716,15 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
         R: _CPython,
         method: def(
             UnsafePointer[Self.self_type, MutAnyOrigin]
-        ) thin raises PySlotError ->R,
+        ) thin raises PySlotError -> R,
     ](mut self) -> ref[self] Self:
         """Install `__int__` via the `nb_int` slot (ConvertibleToPython return overload).
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_int
         """
-        _SlotInstaller.unary_conv_r[Self.self_type, R, method, PySlotIndex.nb_int](
-            self._ptr
-        )
+        _SlotInstaller.unary_conv_r[
+            Self.self_type, R, method, PySlotIndex.nb_int
+        ](self._ptr)
         return self
 
     def def_int[
@@ -1695,29 +1735,29 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_int
         """
-        _SlotInstaller.unary_conv_nr[Self.self_type, R, method, PySlotIndex.nb_int](
-            self._ptr
-        )
+        _SlotInstaller.unary_conv_nr[
+            Self.self_type, R, method, PySlotIndex.nb_int
+        ](self._ptr)
         return self
 
     def def_int[
         R: _CPython,
-        method: def(Self.self_type) thin raises PySlotError ->R,
+        method: def(Self.self_type) thin raises PySlotError -> R,
     ](mut self) -> ref[self] Self:
         """Install `__int__` via the `nb_int` slot (ConvertibleToPython return, value-receiver overload).
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_int
         """
-        _SlotInstaller.unary_conv_val[Self.self_type, R, method, PySlotIndex.nb_int](
-            self._ptr
-        )
+        _SlotInstaller.unary_conv_val[
+            Self.self_type, R, method, PySlotIndex.nb_int
+        ](self._ptr)
         return self
 
     def def_invert[
         R: _CPython,
         method: def(
             UnsafePointer[Self.self_type, MutAnyOrigin]
-        ) thin raises PySlotError ->R,
+        ) thin raises PySlotError -> R,
     ](mut self) -> ref[self] Self:
         """Install `__invert__` via the `nb_invert` slot (ConvertibleToPython return overload).
 
@@ -1743,7 +1783,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
     def def_invert[
         R: _CPython,
-        method: def(Self.self_type) thin raises PySlotError ->R,
+        method: def(Self.self_type) thin raises PySlotError -> R,
     ](mut self) -> ref[self] Self:
         """Install `__invert__` via the `nb_invert` slot (ConvertibleToPython return, value-receiver overload).
 
@@ -1758,7 +1798,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
         R: _CPython,
         method: def(
             UnsafePointer[Self.self_type, MutAnyOrigin]
-        ) thin raises PySlotError ->R,
+        ) thin raises PySlotError -> R,
     ](mut self) -> ref[self] Self:
         """Install `__neg__` via the `nb_negative` slot (ConvertibleToPython return overload).
 
@@ -1784,7 +1824,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
     def def_neg[
         R: _CPython,
-        method: def(Self.self_type) thin raises PySlotError ->R,
+        method: def(Self.self_type) thin raises PySlotError -> R,
     ](mut self) -> ref[self] Self:
         """Install `__neg__` via the `nb_negative` slot (ConvertibleToPython return, value-receiver overload).
 
@@ -1799,7 +1839,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
         R: _CPython,
         method: def(
             UnsafePointer[Self.self_type, MutAnyOrigin]
-        ) thin raises PySlotError ->R,
+        ) thin raises PySlotError -> R,
     ](mut self) -> ref[self] Self:
         """Install `__pos__` via the `nb_positive` slot (ConvertibleToPython return overload).
 
@@ -1825,7 +1865,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
     def def_pos[
         R: _CPython,
-        method: def(Self.self_type) thin raises PySlotError ->R,
+        method: def(Self.self_type) thin raises PySlotError -> R,
     ](mut self) -> ref[self] Self:
         """Install `__pos__` via the `nb_positive` slot (ConvertibleToPython return, value-receiver overload).
 
@@ -1840,15 +1880,15 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
         R: _CPython,
         method: def(
             UnsafePointer[Self.self_type, MutAnyOrigin], PythonObject
-        ) thin raises PySlotError ->R,
+        ) thin raises PySlotError -> R,
     ](mut self) -> ref[self] Self:
         """Install `__add__` via the `nb_add` slot (ConvertibleToPython return overload).
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_add
         """
-        _SlotInstaller.binary_conv_r[Self.self_type, R, method, PySlotIndex.nb_add](
-            self._ptr
-        )
+        _SlotInstaller.binary_conv_r[
+            Self.self_type, R, method, PySlotIndex.nb_add
+        ](self._ptr)
         return self
 
     def def_add[
@@ -1861,14 +1901,14 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_add
         """
-        _SlotInstaller.binary_conv_nr[Self.self_type, R, method, PySlotIndex.nb_add](
-            self._ptr
-        )
+        _SlotInstaller.binary_conv_nr[
+            Self.self_type, R, method, PySlotIndex.nb_add
+        ](self._ptr)
         return self
 
     def def_add[
         R: _CPython,
-        method: def(Self.self_type, PythonObject) thin raises PySlotError ->R,
+        method: def(Self.self_type, PythonObject) thin raises PySlotError -> R,
     ](mut self) -> ref[self] Self:
         """Install `__add__` via the `nb_add` slot (ConvertibleToPython return, value-receiver overload).
 
@@ -1883,15 +1923,15 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
         R: _CPython,
         method: def(
             UnsafePointer[Self.self_type, MutAnyOrigin], PythonObject
-        ) thin raises PySlotError ->R,
+        ) thin raises PySlotError -> R,
     ](mut self) -> ref[self] Self:
         """Install `__and__` via the `nb_and` slot (ConvertibleToPython return overload).
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_and
         """
-        _SlotInstaller.binary_conv_r[Self.self_type, R, method, PySlotIndex.nb_and](
-            self._ptr
-        )
+        _SlotInstaller.binary_conv_r[
+            Self.self_type, R, method, PySlotIndex.nb_and
+        ](self._ptr)
         return self
 
     def def_and[
@@ -1904,14 +1944,14 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_and
         """
-        _SlotInstaller.binary_conv_nr[Self.self_type, R, method, PySlotIndex.nb_and](
-            self._ptr
-        )
+        _SlotInstaller.binary_conv_nr[
+            Self.self_type, R, method, PySlotIndex.nb_and
+        ](self._ptr)
         return self
 
     def def_and[
         R: _CPython,
-        method: def(Self.self_type, PythonObject) thin raises PySlotError ->R,
+        method: def(Self.self_type, PythonObject) thin raises PySlotError -> R,
     ](mut self) -> ref[self] Self:
         """Install `__and__` via the `nb_and` slot (ConvertibleToPython return, value-receiver overload).
 
@@ -1926,7 +1966,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
         R: _CPython,
         method: def(
             UnsafePointer[Self.self_type, MutAnyOrigin], PythonObject
-        ) thin raises PySlotError ->R,
+        ) thin raises PySlotError -> R,
     ](mut self) -> ref[self] Self:
         """Install `__divmod__` via the `nb_divmod` slot (ConvertibleToPython return overload).
 
@@ -1954,7 +1994,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
     def def_divmod[
         R: _CPython,
-        method: def(Self.self_type, PythonObject) thin raises PySlotError ->R,
+        method: def(Self.self_type, PythonObject) thin raises PySlotError -> R,
     ](mut self) -> ref[self] Self:
         """Install `__divmod__` via the `nb_divmod` slot (ConvertibleToPython return, value-receiver overload).
 
@@ -1969,7 +2009,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
         R: _CPython,
         method: def(
             UnsafePointer[Self.self_type, MutAnyOrigin], PythonObject
-        ) thin raises PySlotError ->R,
+        ) thin raises PySlotError -> R,
     ](mut self) -> ref[self] Self:
         """Install `__floordiv__` via the `nb_floor_divide` slot (ConvertibleToPython return overload).
 
@@ -1997,7 +2037,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
     def def_floordiv[
         R: _CPython,
-        method: def(Self.self_type, PythonObject) thin raises PySlotError ->R,
+        method: def(Self.self_type, PythonObject) thin raises PySlotError -> R,
     ](mut self) -> ref[self] Self:
         """Install `__floordiv__` via the `nb_floor_divide` slot (ConvertibleToPython return, value-receiver overload).
 
@@ -2012,7 +2052,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
         R: _CPython,
         method: def(
             UnsafePointer[Self.self_type, MutAnyOrigin], PythonObject
-        ) thin raises PySlotError ->R,
+        ) thin raises PySlotError -> R,
     ](mut self) -> ref[self] Self:
         """Install `__lshift__` via the `nb_lshift` slot (ConvertibleToPython return overload).
 
@@ -2040,7 +2080,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
     def def_lshift[
         R: _CPython,
-        method: def(Self.self_type, PythonObject) thin raises PySlotError ->R,
+        method: def(Self.self_type, PythonObject) thin raises PySlotError -> R,
     ](mut self) -> ref[self] Self:
         """Install `__lshift__` via the `nb_lshift` slot (ConvertibleToPython return, value-receiver overload).
 
@@ -2055,7 +2095,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
         R: _CPython,
         method: def(
             UnsafePointer[Self.self_type, MutAnyOrigin], PythonObject
-        ) thin raises PySlotError ->R,
+        ) thin raises PySlotError -> R,
     ](mut self) -> ref[self] Self:
         """Install `__matmul__` via the `nb_matrix_multiply` slot (ConvertibleToPython return overload).
 
@@ -2083,7 +2123,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
     def def_matmul[
         R: _CPython,
-        method: def(Self.self_type, PythonObject) thin raises PySlotError ->R,
+        method: def(Self.self_type, PythonObject) thin raises PySlotError -> R,
     ](mut self) -> ref[self] Self:
         """Install `__matmul__` via the `nb_matrix_multiply` slot (ConvertibleToPython return, value-receiver overload).
 
@@ -2098,7 +2138,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
         R: _CPython,
         method: def(
             UnsafePointer[Self.self_type, MutAnyOrigin], PythonObject
-        ) thin raises PySlotError ->R,
+        ) thin raises PySlotError -> R,
     ](mut self) -> ref[self] Self:
         """Install `__mod__` via the `nb_remainder` slot (ConvertibleToPython return overload).
 
@@ -2126,7 +2166,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
     def def_mod[
         R: _CPython,
-        method: def(Self.self_type, PythonObject) thin raises PySlotError ->R,
+        method: def(Self.self_type, PythonObject) thin raises PySlotError -> R,
     ](mut self) -> ref[self] Self:
         """Install `__mod__` via the `nb_remainder` slot (ConvertibleToPython return, value-receiver overload).
 
@@ -2141,7 +2181,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
         R: _CPython,
         method: def(
             UnsafePointer[Self.self_type, MutAnyOrigin], PythonObject
-        ) thin raises PySlotError ->R,
+        ) thin raises PySlotError -> R,
     ](mut self) -> ref[self] Self:
         """Install `__mul__` via the `nb_multiply` slot (ConvertibleToPython return overload).
 
@@ -2169,7 +2209,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
     def def_mul[
         R: _CPython,
-        method: def(Self.self_type, PythonObject) thin raises PySlotError ->R,
+        method: def(Self.self_type, PythonObject) thin raises PySlotError -> R,
     ](mut self) -> ref[self] Self:
         """Install `__mul__` via the `nb_multiply` slot (ConvertibleToPython return, value-receiver overload).
 
@@ -2184,15 +2224,15 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
         R: _CPython,
         method: def(
             UnsafePointer[Self.self_type, MutAnyOrigin], PythonObject
-        ) thin raises PySlotError ->R,
+        ) thin raises PySlotError -> R,
     ](mut self) -> ref[self] Self:
         """Install `__or__` via the `nb_or` slot (ConvertibleToPython return overload).
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_or
         """
-        _SlotInstaller.binary_conv_r[Self.self_type, R, method, PySlotIndex.nb_or](
-            self._ptr
-        )
+        _SlotInstaller.binary_conv_r[
+            Self.self_type, R, method, PySlotIndex.nb_or
+        ](self._ptr)
         return self
 
     def def_or[
@@ -2205,29 +2245,29 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_or
         """
-        _SlotInstaller.binary_conv_nr[Self.self_type, R, method, PySlotIndex.nb_or](
-            self._ptr
-        )
+        _SlotInstaller.binary_conv_nr[
+            Self.self_type, R, method, PySlotIndex.nb_or
+        ](self._ptr)
         return self
 
     def def_or[
         R: _CPython,
-        method: def(Self.self_type, PythonObject) thin raises PySlotError ->R,
+        method: def(Self.self_type, PythonObject) thin raises PySlotError -> R,
     ](mut self) -> ref[self] Self:
         """Install `__or__` via the `nb_or` slot (ConvertibleToPython return, value-receiver overload).
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_or
         """
-        _SlotInstaller.binary_conv_val[Self.self_type, R, method, PySlotIndex.nb_or](
-            self._ptr
-        )
+        _SlotInstaller.binary_conv_val[
+            Self.self_type, R, method, PySlotIndex.nb_or
+        ](self._ptr)
         return self
 
     def def_rshift[
         R: _CPython,
         method: def(
             UnsafePointer[Self.self_type, MutAnyOrigin], PythonObject
-        ) thin raises PySlotError ->R,
+        ) thin raises PySlotError -> R,
     ](mut self) -> ref[self] Self:
         """Install `__rshift__` via the `nb_rshift` slot (ConvertibleToPython return overload).
 
@@ -2255,7 +2295,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
     def def_rshift[
         R: _CPython,
-        method: def(Self.self_type, PythonObject) thin raises PySlotError ->R,
+        method: def(Self.self_type, PythonObject) thin raises PySlotError -> R,
     ](mut self) -> ref[self] Self:
         """Install `__rshift__` via the `nb_rshift` slot (ConvertibleToPython return, value-receiver overload).
 
@@ -2270,7 +2310,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
         R: _CPython,
         method: def(
             UnsafePointer[Self.self_type, MutAnyOrigin], PythonObject
-        ) thin raises PySlotError ->R,
+        ) thin raises PySlotError -> R,
     ](mut self) -> ref[self] Self:
         """Install `__sub__` via the `nb_subtract` slot (ConvertibleToPython return overload).
 
@@ -2298,7 +2338,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
     def def_sub[
         R: _CPython,
-        method: def(Self.self_type, PythonObject) thin raises PySlotError ->R,
+        method: def(Self.self_type, PythonObject) thin raises PySlotError -> R,
     ](mut self) -> ref[self] Self:
         """Install `__sub__` via the `nb_subtract` slot (ConvertibleToPython return, value-receiver overload).
 
@@ -2313,7 +2353,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
         R: _CPython,
         method: def(
             UnsafePointer[Self.self_type, MutAnyOrigin], PythonObject
-        ) thin raises PySlotError ->R,
+        ) thin raises PySlotError -> R,
     ](mut self) -> ref[self] Self:
         """Install `__truediv__` via the `nb_true_divide` slot (ConvertibleToPython return overload).
 
@@ -2341,7 +2381,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
     def def_truediv[
         R: _CPython,
-        method: def(Self.self_type, PythonObject) thin raises PySlotError ->R,
+        method: def(Self.self_type, PythonObject) thin raises PySlotError -> R,
     ](mut self) -> ref[self] Self:
         """Install `__truediv__` via the `nb_true_divide` slot (ConvertibleToPython return, value-receiver overload).
 
@@ -2356,15 +2396,15 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
         R: _CPython,
         method: def(
             UnsafePointer[Self.self_type, MutAnyOrigin], PythonObject
-        ) thin raises PySlotError ->R,
+        ) thin raises PySlotError -> R,
     ](mut self) -> ref[self] Self:
         """Install `__xor__` via the `nb_xor` slot (ConvertibleToPython return overload).
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_xor
         """
-        _SlotInstaller.binary_conv_r[Self.self_type, R, method, PySlotIndex.nb_xor](
-            self._ptr
-        )
+        _SlotInstaller.binary_conv_r[
+            Self.self_type, R, method, PySlotIndex.nb_xor
+        ](self._ptr)
         return self
 
     def def_xor[
@@ -2377,14 +2417,14 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyNumberMethods.nb_xor
         """
-        _SlotInstaller.binary_conv_nr[Self.self_type, R, method, PySlotIndex.nb_xor](
-            self._ptr
-        )
+        _SlotInstaller.binary_conv_nr[
+            Self.self_type, R, method, PySlotIndex.nb_xor
+        ](self._ptr)
         return self
 
     def def_xor[
         R: _CPython,
-        method: def(Self.self_type, PythonObject) thin raises PySlotError ->R,
+        method: def(Self.self_type, PythonObject) thin raises PySlotError -> R,
     ](mut self) -> ref[self] Self:
         """Install `__xor__` via the `nb_xor` slot (ConvertibleToPython return, value-receiver overload).
 
@@ -2399,7 +2439,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
         R: _CPython,
         method: def(
             UnsafePointer[Self.self_type, MutAnyOrigin], PythonObject
-        ) thin raises PySlotError ->R,
+        ) thin raises PySlotError -> R,
     ](mut self) -> ref[self] Self:
         """Install `__iadd__` via the `nb_inplace_add` slot (ConvertibleToPython return overload).
 
@@ -2427,7 +2467,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
     def def_iadd[
         R: _CPython,
-        method: def(Self.self_type, PythonObject) thin raises PySlotError ->R,
+        method: def(Self.self_type, PythonObject) thin raises PySlotError -> R,
     ](mut self) -> ref[self] Self:
         """Install `__iadd__` via the `nb_inplace_add` slot (ConvertibleToPython return, value-receiver overload).
 
@@ -2442,7 +2482,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
         R: _CPython,
         method: def(
             UnsafePointer[Self.self_type, MutAnyOrigin], PythonObject
-        ) thin raises PySlotError ->R,
+        ) thin raises PySlotError -> R,
     ](mut self) -> ref[self] Self:
         """Install `__iand__` via the `nb_inplace_and` slot (ConvertibleToPython return overload).
 
@@ -2470,7 +2510,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
     def def_iand[
         R: _CPython,
-        method: def(Self.self_type, PythonObject) thin raises PySlotError ->R,
+        method: def(Self.self_type, PythonObject) thin raises PySlotError -> R,
     ](mut self) -> ref[self] Self:
         """Install `__iand__` via the `nb_inplace_and` slot (ConvertibleToPython return, value-receiver overload).
 
@@ -2485,7 +2525,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
         R: _CPython,
         method: def(
             UnsafePointer[Self.self_type, MutAnyOrigin], PythonObject
-        ) thin raises PySlotError ->R,
+        ) thin raises PySlotError -> R,
     ](mut self) -> ref[self] Self:
         """Install `__ifloordiv__` via the `nb_inplace_floor_divide` slot (ConvertibleToPython return overload).
 
@@ -2513,7 +2553,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
     def def_ifloordiv[
         R: _CPython,
-        method: def(Self.self_type, PythonObject) thin raises PySlotError ->R,
+        method: def(Self.self_type, PythonObject) thin raises PySlotError -> R,
     ](mut self) -> ref[self] Self:
         """Install `__ifloordiv__` via the `nb_inplace_floor_divide` slot (ConvertibleToPython return, value-receiver overload).
 
@@ -2528,7 +2568,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
         R: _CPython,
         method: def(
             UnsafePointer[Self.self_type, MutAnyOrigin], PythonObject
-        ) thin raises PySlotError ->R,
+        ) thin raises PySlotError -> R,
     ](mut self) -> ref[self] Self:
         """Install `__ilshift__` via the `nb_inplace_lshift` slot (ConvertibleToPython return overload).
 
@@ -2556,7 +2596,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
     def def_ilshift[
         R: _CPython,
-        method: def(Self.self_type, PythonObject) thin raises PySlotError ->R,
+        method: def(Self.self_type, PythonObject) thin raises PySlotError -> R,
     ](mut self) -> ref[self] Self:
         """Install `__ilshift__` via the `nb_inplace_lshift` slot (ConvertibleToPython return, value-receiver overload).
 
@@ -2571,7 +2611,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
         R: _CPython,
         method: def(
             UnsafePointer[Self.self_type, MutAnyOrigin], PythonObject
-        ) thin raises PySlotError ->R,
+        ) thin raises PySlotError -> R,
     ](mut self) -> ref[self] Self:
         """Install `__imatmul__` via the `nb_inplace_matrix_multiply` slot (ConvertibleToPython return overload).
 
@@ -2599,7 +2639,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
     def def_imatmul[
         R: _CPython,
-        method: def(Self.self_type, PythonObject) thin raises PySlotError ->R,
+        method: def(Self.self_type, PythonObject) thin raises PySlotError -> R,
     ](mut self) -> ref[self] Self:
         """Install `__imatmul__` via the `nb_inplace_matrix_multiply` slot (ConvertibleToPython return, value-receiver overload).
 
@@ -2614,7 +2654,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
         R: _CPython,
         method: def(
             UnsafePointer[Self.self_type, MutAnyOrigin], PythonObject
-        ) thin raises PySlotError ->R,
+        ) thin raises PySlotError -> R,
     ](mut self) -> ref[self] Self:
         """Install `__imod__` via the `nb_inplace_remainder` slot (ConvertibleToPython return overload).
 
@@ -2642,7 +2682,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
     def def_imod[
         R: _CPython,
-        method: def(Self.self_type, PythonObject) thin raises PySlotError ->R,
+        method: def(Self.self_type, PythonObject) thin raises PySlotError -> R,
     ](mut self) -> ref[self] Self:
         """Install `__imod__` via the `nb_inplace_remainder` slot (ConvertibleToPython return, value-receiver overload).
 
@@ -2657,7 +2697,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
         R: _CPython,
         method: def(
             UnsafePointer[Self.self_type, MutAnyOrigin], PythonObject
-        ) thin raises PySlotError ->R,
+        ) thin raises PySlotError -> R,
     ](mut self) -> ref[self] Self:
         """Install `__imul__` via the `nb_inplace_multiply` slot (ConvertibleToPython return overload).
 
@@ -2685,7 +2725,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
     def def_imul[
         R: _CPython,
-        method: def(Self.self_type, PythonObject) thin raises PySlotError ->R,
+        method: def(Self.self_type, PythonObject) thin raises PySlotError -> R,
     ](mut self) -> ref[self] Self:
         """Install `__imul__` via the `nb_inplace_multiply` slot (ConvertibleToPython return, value-receiver overload).
 
@@ -2700,7 +2740,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
         R: _CPython,
         method: def(
             UnsafePointer[Self.self_type, MutAnyOrigin], PythonObject
-        ) thin raises PySlotError ->R,
+        ) thin raises PySlotError -> R,
     ](mut self) -> ref[self] Self:
         """Install `__ior__` via the `nb_inplace_or` slot (ConvertibleToPython return overload).
 
@@ -2728,7 +2768,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
     def def_ior[
         R: _CPython,
-        method: def(Self.self_type, PythonObject) thin raises PySlotError ->R,
+        method: def(Self.self_type, PythonObject) thin raises PySlotError -> R,
     ](mut self) -> ref[self] Self:
         """Install `__ior__` via the `nb_inplace_or` slot (ConvertibleToPython return, value-receiver overload).
 
@@ -2743,7 +2783,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
         R: _CPython,
         method: def(
             UnsafePointer[Self.self_type, MutAnyOrigin], PythonObject
-        ) thin raises PySlotError ->R,
+        ) thin raises PySlotError -> R,
     ](mut self) -> ref[self] Self:
         """Install `__irshift__` via the `nb_inplace_rshift` slot (ConvertibleToPython return overload).
 
@@ -2771,7 +2811,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
     def def_irshift[
         R: _CPython,
-        method: def(Self.self_type, PythonObject) thin raises PySlotError ->R,
+        method: def(Self.self_type, PythonObject) thin raises PySlotError -> R,
     ](mut self) -> ref[self] Self:
         """Install `__irshift__` via the `nb_inplace_rshift` slot (ConvertibleToPython return, value-receiver overload).
 
@@ -2786,7 +2826,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
         R: _CPython,
         method: def(
             UnsafePointer[Self.self_type, MutAnyOrigin], PythonObject
-        ) thin raises PySlotError ->R,
+        ) thin raises PySlotError -> R,
     ](mut self) -> ref[self] Self:
         """Install `__isub__` via the `nb_inplace_subtract` slot (ConvertibleToPython return overload).
 
@@ -2814,7 +2854,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
     def def_isub[
         R: _CPython,
-        method: def(Self.self_type, PythonObject) thin raises PySlotError ->R,
+        method: def(Self.self_type, PythonObject) thin raises PySlotError -> R,
     ](mut self) -> ref[self] Self:
         """Install `__isub__` via the `nb_inplace_subtract` slot (ConvertibleToPython return, value-receiver overload).
 
@@ -2829,7 +2869,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
         R: _CPython,
         method: def(
             UnsafePointer[Self.self_type, MutAnyOrigin], PythonObject
-        ) thin raises PySlotError ->R,
+        ) thin raises PySlotError -> R,
     ](mut self) -> ref[self] Self:
         """Install `__itruediv__` via the `nb_inplace_true_divide` slot (ConvertibleToPython return overload).
 
@@ -2857,7 +2897,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
     def def_itruediv[
         R: _CPython,
-        method: def(Self.self_type, PythonObject) thin raises PySlotError ->R,
+        method: def(Self.self_type, PythonObject) thin raises PySlotError -> R,
     ](mut self) -> ref[self] Self:
         """Install `__itruediv__` via the `nb_inplace_true_divide` slot (ConvertibleToPython return, value-receiver overload).
 
@@ -2872,7 +2912,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
         R: _CPython,
         method: def(
             UnsafePointer[Self.self_type, MutAnyOrigin], PythonObject
-        ) thin raises PySlotError ->R,
+        ) thin raises PySlotError -> R,
     ](mut self) -> ref[self] Self:
         """Install `__ixor__` via the `nb_inplace_xor` slot (ConvertibleToPython return overload).
 
@@ -2900,7 +2940,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
 
     def def_ixor[
         R: _CPython,
-        method: def(Self.self_type, PythonObject) thin raises PySlotError ->R,
+        method: def(Self.self_type, PythonObject) thin raises PySlotError -> R,
     ](mut self) -> ref[self] Self:
         """Install `__ixor__` via the `nb_inplace_xor` slot (ConvertibleToPython return, value-receiver overload).
 
@@ -2917,7 +2957,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
             UnsafePointer[Self.self_type, MutAnyOrigin],
             PythonObject,
             PythonObject,
-        ) thin raises PySlotError ->R,
+        ) thin raises PySlotError -> R,
     ](mut self) -> ref[self] Self:
         """Install `__pow__` via the `nb_power` slot (ConvertibleToPython return overload).
 
@@ -2949,7 +2989,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
         R: _CPython,
         method: def(
             Self.self_type, PythonObject, PythonObject
-        ) thin raises PySlotError ->R,
+        ) thin raises PySlotError -> R,
     ](mut self) -> ref[self] Self:
         """Install `__pow__` via the `nb_power` slot (ConvertibleToPython return, value-receiver overload).
 
@@ -2966,7 +3006,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
             UnsafePointer[Self.self_type, MutAnyOrigin],
             PythonObject,
             PythonObject,
-        ) thin raises PySlotError ->R,
+        ) thin raises PySlotError -> R,
     ](mut self) -> ref[self] Self:
         """Install `__ipow__` via the `nb_inplace_power` slot (ConvertibleToPython return overload).
 
@@ -2998,7 +3038,7 @@ struct NumberProtocolBuilder[self_type: ImplicitlyDestructible]:
         R: _CPython,
         method: def(
             Self.self_type, PythonObject, PythonObject
-        ) thin raises PySlotError ->R,
+        ) thin raises PySlotError -> R,
     ](mut self) -> ref[self] Self:
         """Install `__ipow__` via the `nb_inplace_power` slot (ConvertibleToPython return, value-receiver overload).
 

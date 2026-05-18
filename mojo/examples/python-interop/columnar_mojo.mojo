@@ -54,6 +54,7 @@ def _alloc[
     except e:
         raise PySlotError.runtime_error(String(e))
 
+
 comptime Coord1DColumn = List[Float64]
 
 

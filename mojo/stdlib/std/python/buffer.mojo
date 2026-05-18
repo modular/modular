@@ -262,13 +262,17 @@ struct _BfSlotInstaller:
             UnsafePointer[self_type, MutAnyOrigin], Int32
         ) thin raises -> BufferInfo,
     ](ptr: UnsafePointer[mut=True, PythonTypeBuilder, MutAnyOrigin]):
-        """Insert the `bf_getbuffer` slot into the builder pointed to by `ptr`."""
+        """Insert the `bf_getbuffer` slot into the builder pointed to by `ptr`.
+        """
         comptime _getbufferproc = def(
             PyObjectPtr, UnsafePointer[_PyBuffer, MutAnyOrigin], c_int
         ) thin abi("C") -> c_int
         var fn_ptr: _getbufferproc = _bf_getbuffer_wrapper[self_type, method]
         ptr[]._insert_slot(
-            PyType_Slot(PySlotIndex.bf_getbuffer, rebind[OpaquePointer[MutAnyOrigin]](fn_ptr))
+            PyType_Slot(
+                PySlotIndex.bf_getbuffer,
+                rebind[OpaquePointer[MutAnyOrigin]](fn_ptr),
+            )
         )
 
     @staticmethod
@@ -283,7 +287,8 @@ struct _BfSlotInstaller:
         var fn_ptr: _releasebufferproc = _bf_releasebuffer_impl
         ptr[]._insert_slot(
             PyType_Slot(
-                PySlotIndex.bf_releasebuffer, rebind[OpaquePointer[MutAnyOrigin]](fn_ptr)
+                PySlotIndex.bf_releasebuffer,
+                rebind[OpaquePointer[MutAnyOrigin]](fn_ptr),
             )
         )
 

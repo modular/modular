@@ -78,7 +78,7 @@ def _run_richcompare_assertions(new_fn: Callable[..., Any]) -> None:
     # fires OR downcast fails; RHS is `int` which doesn't know `Box`).
     # CPython falls back to identity for `==`/`!=`; ordering operators
     # raise TypeError.
-    assert not (new_fn(1.0) == 5)  # downcast failure → NotImplemented → identity
+    assert not (new_fn(1.0) == 5)  # noqa: SIM201 downcast failure → NotImplemented → identity
     assert new_fn(1.0) != 5
     try:
         _ = magic < 5

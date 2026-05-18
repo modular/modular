@@ -64,7 +64,7 @@ struct MappingProtocolBuilder[self_type: ImplicitlyDestructible]:
     def def_len[
         method: def(
             UnsafePointer[Self.self_type, MutAnyOrigin]
-        ) thin raises PySlotError ->Int
+        ) thin raises PySlotError -> Int
     ](mut self) -> ref[self] Self:
         """Install `__len__` via the `mp_length` slot.
 
@@ -77,7 +77,7 @@ struct MappingProtocolBuilder[self_type: ImplicitlyDestructible]:
     def def_getitem[
         method: def(
             UnsafePointer[Self.self_type, MutAnyOrigin], PythonObject
-        ) thin raises PySlotError ->PythonObject
+        ) thin raises PySlotError -> PythonObject
     ](mut self) -> ref[self] Self:
         """Install `__getitem__` via the `mp_subscript` slot.
 
@@ -92,7 +92,7 @@ struct MappingProtocolBuilder[self_type: ImplicitlyDestructible]:
             UnsafePointer[Self.self_type, MutAnyOrigin],
             PythonObject,
             Variant[PythonObject, Int],
-        ) thin raises PySlotError ->None
+        ) thin raises PySlotError -> None
     ](mut self) -> ref[self] Self:
         """Install `__setitem__`/`__delitem__` via the `mp_ass_subscript` slot.
 
@@ -115,9 +115,9 @@ struct MappingProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyMappingMethods.mp_length
         """
-        _SlotInstaller.lenfunc[Self.self_type, _lift_to_int[Self.self_type, method]](
-            self._ptr
-        )
+        _SlotInstaller.lenfunc[
+            Self.self_type, _lift_to_int[Self.self_type, method]
+        ](self._ptr)
         return self
 
     def def_getitem[
@@ -153,7 +153,7 @@ struct MappingProtocolBuilder[self_type: ImplicitlyDestructible]:
     # Value-receiver overloads
 
     def def_len[
-        method: def(Self.self_type) thin raises PySlotError ->Int
+        method: def(Self.self_type) thin raises PySlotError -> Int
     ](mut self) -> ref[self] Self:
         """Install `__len__` via the `mp_length` slot (value-receiver overload).
 
@@ -165,7 +165,9 @@ struct MappingProtocolBuilder[self_type: ImplicitlyDestructible]:
         return self
 
     def def_getitem[
-        method: def(Self.self_type, PythonObject) thin raises PySlotError ->PythonObject
+        method: def(
+            Self.self_type, PythonObject
+        ) thin raises PySlotError -> PythonObject
     ](mut self) -> ref[self] Self:
         """Install `__getitem__` via the `mp_subscript` slot (value-receiver overload).
 
@@ -179,7 +181,7 @@ struct MappingProtocolBuilder[self_type: ImplicitlyDestructible]:
     def def_setitem[
         method: def(
             mut Self.self_type, PythonObject, Variant[PythonObject, Int]
-        ) thin raises PySlotError ->None
+        ) thin raises PySlotError -> None
     ](mut self) -> ref[self] Self:
         """Install `__setitem__`/`__delitem__` via the `mp_ass_subscript` slot (mut-receiver overload).
 
@@ -196,7 +198,7 @@ struct MappingProtocolBuilder[self_type: ImplicitlyDestructible]:
         R: _CPython,
         method: def(
             UnsafePointer[Self.self_type, MutAnyOrigin], PythonObject
-        ) thin raises PySlotError ->R,
+        ) thin raises PySlotError -> R,
     ](mut self) -> ref[self] Self:
         """Install `__getitem__` via the `mp_subscript` slot (ConvertibleToPython return overload).
 
@@ -224,7 +226,7 @@ struct MappingProtocolBuilder[self_type: ImplicitlyDestructible]:
 
     def def_getitem[
         R: _CPython,
-        method: def(Self.self_type, PythonObject) thin raises PySlotError ->R,
+        method: def(Self.self_type, PythonObject) thin raises PySlotError -> R,
     ](mut self) -> ref[self] Self:
         """Install `__getitem__` via the `mp_subscript` slot (ConvertibleToPython return, value-receiver overload).
 
