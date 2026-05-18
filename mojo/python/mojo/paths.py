@@ -157,7 +157,7 @@ def _build_mojo_source_package(path: Path) -> Path:
 
     args = [
         # `mojo` command argument is impliict.
-        "package",
+        "precompile",
         str(path),
         "-o",
         str(tmp_path),

@@ -169,7 +169,7 @@ mojo_copts_toolchain(
         "//:modular_config_ci_build": ["-Werror"],
         "//conditions:default": [],
     }),
-    package_copts = select({
+    precompile_copts = select({
         "//:modular_config_ci_build": ["-Werror"],
         "//conditions:default": [],
     }),
