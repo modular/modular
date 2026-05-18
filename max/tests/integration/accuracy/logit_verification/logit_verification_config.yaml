@@ -11,6 +11,12 @@
 # limitations under the License.
 ##===----------------------------------------------------------------------===##
 
+# Tags decide which CI runners pick up a pipeline. Runners use an opt-out
+# filter, so by default every runner whose compatible_with matches will
+# try the entry. To restrict to a vendor, tag the entry: typically mxfp4
+# models get amd-only and nvfp4 models get nvidia-only. Shape tags
+# like 4xmi355 or 8xb200 further pin to a specific runner shape.
+
 agent_anchors:
   large_intel: &large_cpu
     pool: cpu
@@ -844,7 +850,7 @@ logit_verification_pipelines:
     pipeline: "amd/Kimi-K2.5-MXFP4"
     compatible_with: [gpu]
     encoding: float4_e2m1fnx2
-    tags: [4xmi355]
+    tags: [amd-only, 4xmi355]
     pregenerated_torch_goldens:
       tar_file: "s3://modular-bazel-artifacts-public/artifacts/vllm_amd_kimi-k2_5-mxfp4_golden/1/a40f3192fabd8d61290dc32786271980d83902b4dce73c95d25d05d1a17cc11b/vllm_amd_kimi-k2_5-mxfp4_golden.tar.gz"
       json_file: "vllm_amd_kimi-k2_5-mxfp4_golden.json"
