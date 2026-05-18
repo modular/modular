@@ -50,6 +50,7 @@ from max.benchmark.benchmark_shared.request import (
     RequestDriver,
     RequestFuncInput,
 )
+from max.benchmark.benchmark_shared.utils import deadline_remaining_s
 
 logger = logging.getLogger(__name__)
 
@@ -250,7 +251,16 @@ async def run_single_turn_benchmark(
                 return request_func_input.get_output_type()(
                     cancelled=True, request_submit_time=time.perf_counter()
                 )
-            return await request_driver.request(request_func_input)
+            remaining_s = deadline_remaining_s(benchmark_should_end_time)
+            try:
+                return await asyncio.wait_for(
+                    request_driver.request(request_func_input),
+                    timeout=remaining_s,
+                )
+            except asyncio.TimeoutError:
+                return request_func_input.get_output_type()(
+                    cancelled=True, request_submit_time=time.perf_counter()
+                )
 
     tasks: list[asyncio.Task[BaseRequestFuncOutput]] = []
     request_idx = 0

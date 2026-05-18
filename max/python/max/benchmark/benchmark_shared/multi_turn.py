@@ -43,6 +43,7 @@ from max.benchmark.benchmark_shared.request import (
     RequestFuncInput,
     RequestFuncOutput,
 )
+from max.benchmark.benchmark_shared.utils import deadline_remaining_s
 from tqdm.asyncio import tqdm
 from transformers import PreTrainedTokenizerBase
 
@@ -166,12 +167,21 @@ async def chat_session_driver(
                 cancelled=True, request_submit_time=time.perf_counter()
             )
         else:
-            raw_response = await request_driver.request(request_func_input)
-            if not isinstance(raw_response, RequestFuncOutput):
-                raise TypeError(
-                    "Expected RequestFuncOutput in text-generation benchmark flow."
+            remaining_s = deadline_remaining_s(benchmark_should_end_time)
+            try:
+                raw_response = await asyncio.wait_for(
+                    request_driver.request(request_func_input),
+                    timeout=remaining_s,
                 )
-            response = raw_response
+                if not isinstance(raw_response, RequestFuncOutput):
+                    raise TypeError(
+                        "Expected RequestFuncOutput in text-generation benchmark flow."
+                    )
+                response = raw_response
+            except asyncio.TimeoutError:
+                response = RequestFuncOutput(
+                    cancelled=True, request_submit_time=time.perf_counter()
+                )
 
         if not (ignore_first_turn_stats and content_idx == prefix_end_idx):
             session_outputs.append(response)
@@ -427,7 +437,16 @@ class ConcurrentTurnsRequestDriver(RequestDriver):
                 return request_func_input.get_output_type()(
                     cancelled=True, request_submit_time=time.perf_counter()
                 )
-            return await self._request_driver.request(request_func_input)
+            remaining_s = deadline_remaining_s(self._benchmark_should_end_time)
+            try:
+                return await asyncio.wait_for(
+                    self._request_driver.request(request_func_input),
+                    timeout=remaining_s,
+                )
+            except asyncio.TimeoutError:
+                return request_func_input.get_output_type()(
+                    cancelled=True, request_submit_time=time.perf_counter()
+                )
 
 
 async def run_kv_cache_stress_benchmark(
@@ -603,12 +622,21 @@ async def chat_judge_session_driver(
                 cancelled=True, request_submit_time=time.perf_counter()
             )
         else:
-            raw_response = await request_driver.request(request_input)
-            if not isinstance(raw_response, RequestFuncOutput):
-                raise TypeError(
-                    "Expected RequestFuncOutput in chat-judge benchmark flow."
+            remaining_s = deadline_remaining_s(benchmark_should_end_time)
+            try:
+                raw_response = await asyncio.wait_for(
+                    request_driver.request(request_input),
+                    timeout=remaining_s,
                 )
-            response = raw_response
+                if not isinstance(raw_response, RequestFuncOutput):
+                    raise TypeError(
+                        "Expected RequestFuncOutput in chat-judge benchmark flow."
+                    )
+                response = raw_response
+            except asyncio.TimeoutError:
+                response = RequestFuncOutput(
+                    cancelled=True, request_submit_time=time.perf_counter()
+                )
 
         session_outputs.append(response)
 

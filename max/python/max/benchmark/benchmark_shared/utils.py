@@ -32,6 +32,13 @@ from transformers import (
 )
 
 
+def deadline_remaining_s(end_time_ns: int | None) -> float | None:
+    """Return seconds until a perf_counter_ns deadline, or None if unbounded."""
+    if end_time_ns is None:
+        return None
+    return max(0.0, (end_time_ns - time.perf_counter_ns()) / 1e9)
+
+
 def wait_for_server_ready(
     host: str,
     port: int,
