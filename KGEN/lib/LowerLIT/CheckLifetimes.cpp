@@ -1218,6 +1218,10 @@ SmallVector<ValueRef> ValueSet::getValueRefsForAccess(Value value,
 namespace {
 /// This helper class implements the second pass over a function body, which
 /// identifies and complains about uses of uninitialized values.
+///
+/// The sentinel slot #0 in the bitvector indicates whether the block is
+/// reachable from entry.  It is set to false after terminators so merge points
+/// known not to merge the values.
 struct UninitializedValueScan {
   UninitializedValueScan(ValueSet &valueSet) : valueSet(valueSet) {}
   UninitializedValueScan(const UninitializedValueScan &existing) = delete;
@@ -1872,10 +1876,20 @@ void UninitializedValueScan::checkTerminatorOp(Operation &op) {
     assert(isa<KGEN::UnreachableOp>(op) && "Unknown terminator");
   }
 
-  // Indicate that all values are live after the return so that an early
-  // return in an 'if' will get properly intersected with the other side
-  // of the branch.
-  liveValues.set();
+  // Indicate that this block is no longer live, so no values from it get merged
+  // at "if" joins etc.
+  liveValues[0] = false;
+}
+
+// When merging a control flow join, the result is the intersection of the two
+// branches, but only if they're both live. Otherwise take the live one (if
+// present).
+static void mergeLiveValues(BitVector &liveValues, const BitVector &mergeWith) {
+  // If both are dead, we don't care which one we end up with.
+  if (liveValues[0] && mergeWith[0])
+    liveValues &= mergeWith;
+  else if (mergeWith[0])
+    liveValues = mergeWith;
 }
 
 /// This is HLCF::BreakOp, HLCF::ContinueOp, LIT::TryRaiseOp, which all
@@ -1883,22 +1897,22 @@ void UninitializedValueScan::checkTerminatorOp(Operation &op) {
 void UninitializedValueScan::checkLocalControlFlowOp(Operation &op) {
   if (isa<HLCF::BreakOp, ParamForBreakOp>(op)) {
     assert(breakSet && "Not in a loop?");
-    *breakSet &= liveValues;
+    mergeLiveValues(*breakSet, liveValues);
   } else if (isa<HLCF::ContinueOp, ParamForContinueOp>(op)) {
     assert(continueSet && "Not in a loop?");
-    *continueSet &= liveValues;
+    mergeLiveValues(*continueSet, liveValues);
   } else {
     StringAttr label = cast<LIT::TryRaiseOp>(op).getLabelAttr();
     RaiseSetEntry *matchingSet = raiseEntryInfo->getMatchingRaiseSet(label);
     //  lower-semantic-cf should guarantee there is a matching set.
     assert(matchingSet && "No matching 'try'?");
     // Only merges the set with the matching label.
-    *matchingSet->raiseSet &= liveValues;
+    mergeLiveValues(*matchingSet->raiseSet, liveValues);
   }
 
   // Indicate that all values are live after the terminator so an 'if' will get
   // properly intersected with the other side of the branch.
-  liveValues.set();
+  liveValues[0] = false;
 }
 
 /// This is HLCF::IfOp or ParamIfOp, which are all if-like.
@@ -1914,7 +1928,7 @@ void UninitializedValueScan::checkIfLikeOp(Operation &op) {
   scanBlock(op.getRegion(0).front());
   liveValuesCopy.swap(liveValues);
   scanBlock(op.getRegion(1).front());
-  liveValues &= liveValuesCopy;
+  mergeLiveValues(liveValues, liveValuesCopy);
 }
 
 // This is used for the HLCF::ElifOp.
@@ -1926,9 +1940,9 @@ void UninitializedValueScan::checkElIfOp(HLCF::ElifOp op) {
   assert((ifRegions.size() % 2) == 0 && "Must have pairs of regions");
 
   // The ultimate live-out set is the intersection of each of the "then" blocks,
-  // along with the live-out set of the ultimate else.  Start with everything
-  // and wittle it down from there.
-  BitVector thenLiveOutValues(liveValues.size(), 1);
+  // along with the live-out set of the ultimate else.  Start assuming this set
+  // isn't reachable.
+  BitVector thenLiveOutValues(liveValues.size());
   BitVector scratchSet;
 
   for (size_t nextElIfRegion = 0, e = ifRegions.size(); nextElIfRegion != e;
@@ -1941,7 +1955,7 @@ void UninitializedValueScan::checkElIfOp(HLCF::ElifOp op) {
     // Scan the "then" block for this condition, the result is the exit set for
     // this case.
     scanBlock(ifRegions[nextElIfRegion + 1].front());
-    thenLiveOutValues &= liveValues;
+    mergeLiveValues(thenLiveOutValues, liveValues);
 
     // Restore the live-in set to the set of things before the 'then' block.
     std::swap(liveValues, scratchSet);
@@ -1952,7 +1966,7 @@ void UninitializedValueScan::checkElIfOp(HLCF::ElifOp op) {
 
   // The live out set of the whole 'elif' is the intersection of the output set
   // of the else as well as all the 'then' blocks.
-  liveValues &= thenLiveOutValues;
+  mergeLiveValues(liveValues, thenLiveOutValues);
 }
 
 void UninitializedValueScan::checkLoopOp(Operation &loopOp) {
@@ -1966,10 +1980,8 @@ void UninitializedValueScan::checkLoopOp(Operation &loopOp) {
   BitVector continueSet(liveValues);
   bodySets.continueSet = &continueSet;
 
-  // The 'breakSet' of the loop body will be the live outs of the loop.  We
-  // need to start it out thinking that everything is live so intersections
-  // from the body work correctly.
-  BitVector breakSet(liveValues.size(), true);
+  // The 'breakSet' of the loop body will be the live outs of the loop.
+  BitVector breakSet(liveValues.size());
   bodySets.breakSet = &breakSet;
 
   // Iteratively scan the loop body until the live-in set converges.  This is
@@ -1993,7 +2005,7 @@ void UninitializedValueScan::checkLoopOp(Operation &loopOp) {
   // because LowerSemanticCF already processed them.
   if (loopOp.getNumRegions() == 2 && !isa<ParamForOp>(loopOp)) {
     scanBlock(loopOp.getRegion(1).front());
-    liveValues &= breakSet;
+    mergeLiveValues(liveValues, breakSet);
   } else {
     liveValues = std::move(breakSet);
   }
@@ -2010,7 +2022,7 @@ void UninitializedValueScan::checkTryOp(LIT::TryOp tryOp) {
 
   // We capture all the common values live-out of raise's as being the live-in
   // to the except block.
-  BitVector exceptSet(liveValues.size(), true);
+  BitVector exceptSet(liveValues.size(), false);
   // Attach a new entry to the try scope, such that the inner try op only merge
   // the exceptSet with the matching label.
   RaiseSetEntry exceptInfo = {
@@ -2032,7 +2044,7 @@ void UninitializedValueScan::checkTryOp(LIT::TryOp tryOp) {
 
   // The fall through live values are the intersection from the except and
   // else blocks.
-  liveValues &= bodySets.liveValues;
+  mergeLiveValues(liveValues, bodySets.liveValues);
 }
 
 //===----------------------------------------------------------------------===//
