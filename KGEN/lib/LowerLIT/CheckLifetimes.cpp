@@ -22,6 +22,7 @@
 #include "Support/Compiler/Threading.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
 #include "mlir/Analysis/SymbolTableAnalysis.h"
+#include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/Dominance.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
 #include "mlir/Interfaces/SideEffectInterfaces.h"
@@ -76,14 +77,25 @@ struct FunctionLikeOp {
 } // namespace
 
 /// Find all the functions and types in the module.
-static std::tuple<std::vector<FunctionLikeOp>, DenseMap<SymbolRefAttr, FnOp>,
-                  DenseMap<SymbolRefAttr, LIT::StructDeclOp>,
-                  DenseMap<SymbolRefAttr, LIT::TraitDeclOp>>
+static std::tuple<
+    std::vector<FunctionLikeOp>, DenseMap<SymbolRefAttr, FnOp>,
+    DenseMap<SymbolRefAttr, std::pair<LIT::StructDeclOp, ConformanceOp>>,
+    DenseMap<SymbolRefAttr, LIT::TraitDeclOp>>
 collectFunctionsAndTypes(Operation *module) {
   std::vector<FunctionLikeOp> funcList;
   DenseMap<SymbolRefAttr, FnOp> funcMap;
-  DenseMap<SymbolRefAttr, LIT::StructDeclOp> structMap;
+  DenseMap<SymbolRefAttr, std::pair<LIT::StructDeclOp, ConformanceOp>>
+      structMap;
   DenseMap<SymbolRefAttr, LIT::TraitDeclOp> traitMap;
+
+  // We need to find conformances to ImplicitlyDestructible in all the types.
+  // The parser will encode this symbol on the top level MLIR module for us.
+  SymbolRefAttr implicitlyDestructibleSymbol;
+  if (auto moduleOp = dyn_cast<ModuleOp>(module))
+    if (auto attr = moduleOp->getAttrOfType<SymbolRefAttr>(
+            implicitlyDestructibleSymbolAttrName))
+      implicitlyDestructibleSymbol = attr;
+
   module->walk([&](Operation *op) {
     // Collect functions and nested functions.
     if (auto funcOp = dyn_cast<FnOp>(op)) {
@@ -100,7 +112,18 @@ collectFunctionsAndTypes(Operation *module) {
 
     // Collect structs.
     else if (auto structOp = dyn_cast<LIT::StructDeclOp>(op)) {
-      structMap[getFullyResolvedSymbolRef(structOp)] = structOp;
+      // Find the conformance to ImplcitlyDestructible if it exists.
+      ConformanceOp implicitlyDestructibleConformance;
+      if (implicitlyDestructibleSymbol) {
+        for (auto conformance : structOp.getFields().getOps<ConformanceOp>()) {
+          if (conformance.getTraitRef() == implicitlyDestructibleSymbol) {
+            implicitlyDestructibleConformance = conformance;
+            break;
+          }
+        }
+      }
+      structMap[getFullyResolvedSymbolRef(structOp)] = {
+          structOp, implicitlyDestructibleConformance};
     } else if (auto traitOp = dyn_cast<LIT::TraitDeclOp>(op)) {
       traitMap[getFullyResolvedSymbolRef(traitOp)] = traitOp;
     }
@@ -203,14 +226,17 @@ insertDebugVariableForArg(OpBuilder &builder, FunctionLikeOp func,
 /// pass. The declaration maps are immutable after construction; the counter
 /// uses atomic operations so no external lock is needed.
 struct WholeProgramState {
-  WholeProgramState(DenseMap<SymbolRefAttr, LIT::StructDeclOp> structMap,
-                    DenseMap<SymbolRefAttr, FnOp> funcMap,
-                    DenseMap<SymbolRefAttr, LIT::TraitDeclOp> traitMap)
+  WholeProgramState(
+      DenseMap<SymbolRefAttr, std::pair<LIT::StructDeclOp, ConformanceOp>>
+          structMap,
+      DenseMap<SymbolRefAttr, FnOp> funcMap,
+      DenseMap<SymbolRefAttr, LIT::TraitDeclOp> traitMap)
       : structMap(std::move(structMap)), funcMap(std::move(funcMap)),
         traitMap(std::move(traitMap)) {}
 
   /// Immutable declaration maps, populated once before threading begins.
-  DenseMap<SymbolRefAttr, LIT::StructDeclOp> structMap;
+  DenseMap<SymbolRefAttr, std::pair<LIT::StructDeclOp, ConformanceOp>>
+      structMap;
   DenseMap<SymbolRefAttr, FnOp> funcMap;
   DenseMap<SymbolRefAttr, LIT::TraitDeclOp> traitMap;
 };
@@ -244,7 +270,7 @@ struct TypeDeclInfo {
     auto it = shared->structMap.find(type.getSymbol());
     assert(it != shared->structMap.end() &&
            "reference to struct that wasn't declared");
-    return it->second;
+    return it->second.first;
   }
   /// Return the trait decls for the specified TraitType (which may be a
   /// composition).
@@ -432,9 +458,9 @@ unsigned TypeDeclInfo::getNumFieldsInType(Type type) const {
   // If not, we compute it recursively.  Structs cannot be infinitely deep, so
   // we can just do this recursively.
   auto smIt = shared->structMap.find(structType.getSymbol());
-  assert(smIt != shared->structMap.end() && smIt->second &&
+  assert(smIt != shared->structMap.end() && smIt->second.first &&
          "reference to struct that wasn't declared");
-  LIT::StructDeclOp decl = smIt->second;
+  LIT::StructDeclOp decl = smIt->second.first;
 
   // Initialize a parameter evaluator. We need to compute the resolved field
   // types to recursively compute the number of fields.
