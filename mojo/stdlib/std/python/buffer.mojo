@@ -11,15 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# ===----------------------------------------------------------------------=== #
-# BufferProtocolBuilder — bf_getbuffer / bf_releasebuffer slots
-#
-# Enables Mojo extension module types to expose their internal memory via
-# Python's buffer protocol, allowing zero-copy access from numpy, memoryview,
-# bytes(), and other consumers.
-#
-# Target: 1D C-contiguous buffers (most common use case).
-# ===----------------------------------------------------------------------=== #
+"""Implements the CPython buffer-protocol builder.
+
+Enables Mojo extension module types to expose their internal memory via
+Python's buffer protocol, allowing zero-copy access from `numpy`,
+`memoryview`, `bytes()`, and other consumers. Targets 1D C-contiguous
+buffers (the most common use case).
+"""
 
 from std.ffi import c_int
 from std.memory import OpaquePointer, UnsafePointer, alloc
@@ -89,6 +87,15 @@ struct BufferInfo(Movable):
         format: String,
         readonly: Bool = True,
     ):
+        """Initialize a `BufferInfo` describing a 1D C-contiguous buffer.
+
+        Args:
+            buf: Pointer to the first byte of the buffer data.
+            nitems: Number of elements in the buffer.
+            itemsize: Size of one element in bytes.
+            format: Python struct-module format character (e.g. `"d"`).
+            readonly: Whether the buffer is read-only.
+        """
         self.buf = buf
         self.nitems = nitems
         self.itemsize = itemsize
@@ -320,17 +327,30 @@ struct BufferProtocolBuilder[self_type: ImplicitlyDestructible]:
             .def_getbuffer[FloatBuf.get_buffer]()
             .def_releasebuffer()
         ```
+
+    Parameters:
+        self_type: The Mojo struct type whose instances back the Python object.
     """
 
     var _ptr: UnsafePointer[mut=True, PythonTypeBuilder, MutAnyOrigin]
 
     def __init__(out self, mut inner: PythonTypeBuilder):
+        """Initialize from a `PythonTypeBuilder` reference.
+
+        Args:
+            inner: The `PythonTypeBuilder` to wrap.
+        """
         self._ptr = UnsafePointer(to=inner)
 
     def __init__(
         out self,
         ptr: UnsafePointer[mut=True, PythonTypeBuilder, MutAnyOrigin],
     ):
+        """Initialize from a raw pointer to a `PythonTypeBuilder`.
+
+        Args:
+            ptr: Pointer to the `PythonTypeBuilder` to wrap.
+        """
         self._ptr = ptr
 
     def def_getbuffer[
@@ -352,6 +372,9 @@ struct BufferProtocolBuilder[self_type: ImplicitlyDestructible]:
                 `def(self_ptr: UnsafePointer[T, MutAnyOrigin], flags: Int32) raises -> BufferInfo`.
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyBufferProcs.bf_getbuffer
+
+        Returns:
+            A reference to `self` for chaining.
         """
         _BfSlotInstaller.getbuffer[Self.self_type, method](self._ptr)
         return self
@@ -364,6 +387,9 @@ struct BufferProtocolBuilder[self_type: ImplicitlyDestructible]:
         you install a getbuffer handler.
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyBufferProcs.bf_releasebuffer
+
+        Returns:
+            A reference to `self` for chaining.
         """
         _BfSlotInstaller.releasebuffer(self._ptr)
         return self

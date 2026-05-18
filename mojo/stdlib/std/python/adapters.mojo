@@ -11,14 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# ===----------------------------------------------------------------------=== #
-# CPython slot adapter functions introduced in:
-# https://github.com/modular/modular/pull/5562
-#
-# These adapt user-friendly Mojo function signatures to the low-level C ABI
-# expected by each CPython type slot.  They are passed to
-# PontoneerTypeBuilder.def_method as template parameters.
-# ===----------------------------------------------------------------------=== #
+"""Implements CPython slot adapter functions.
+
+These adapt user-friendly Mojo function signatures to the low-level C ABI
+expected by each CPython type slot. They are passed to the different type
+builders def_methods as template parameters.
+"""
 
 from std.ffi import c_int, c_long
 from std.memory import OpaquePointer, UnsafePointer

@@ -11,6 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Re-exports CPython protocol builder helpers.
+
+This module aggregates the per-protocol builder types so callers can import
+them from a single location.
+"""
+
 from .buffer import BufferInfo, BufferProtocolBuilder
 from .mapping import MappingProtocolBuilder
 from .number import NumberProtocolBuilder

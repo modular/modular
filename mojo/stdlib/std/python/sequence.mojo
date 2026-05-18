@@ -11,6 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Implements the CPython sequence-protocol builder.
+
+Provides `SequenceProtocolBuilder`, which installs the `sq_*` slots on a
+`PythonTypeBuilder` so a Mojo struct can implement Python's sequence
+dunders (`__len__`, `__getitem__`, `__setitem__`, `__contains__`,
+`__add__`, `__mul__`, etc.).
+"""
+
 from std.memory import OpaquePointer, UnsafePointer
 from std.python import PythonObject
 from std.python._cpython import (
@@ -62,17 +70,30 @@ struct SequenceProtocolBuilder[self_type: ImplicitlyDestructible]:
            .def_getitem[MyStruct.py__getitem__]()
            .def_contains[MyStruct.py__contains__]()
         ```
+
+    Parameters:
+        self_type: The Mojo struct type whose instances back the Python object.
     """
 
     var _ptr: UnsafePointer[mut=True, PythonTypeBuilder, MutAnyOrigin]
 
     def __init__(out self, mut inner: PythonTypeBuilder):
+        """Initialize from a `PythonTypeBuilder` reference.
+
+        Args:
+            inner: The `PythonTypeBuilder` to wrap.
+        """
         self._ptr = UnsafePointer(to=inner)
 
     def __init__(
         out self,
         ptr: UnsafePointer[mut=True, PythonTypeBuilder, MutAnyOrigin],
     ):
+        """Initialize from a raw pointer to a `PythonTypeBuilder`.
+
+        Args:
+            ptr: Pointer to the `PythonTypeBuilder` to wrap.
+        """
         self._ptr = ptr
 
     def def_len[
@@ -84,6 +105,12 @@ struct SequenceProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         Called by `len(obj)`.
         See: https://docs.python.org/3/c-api/typeobj.html#c.PySequenceMethods.sq_length
+
+        Parameters:
+            method: The user-supplied handler installed into the slot.
+
+        Returns:
+            A reference to `self` for chaining.
         """
         comptime _lenfunc = def(PyObjectPtr) thin abi("C") -> Py_ssize_t
         var fn_ptr: _lenfunc = _mp_length_wrapper[Self.self_type, method]
@@ -104,6 +131,12 @@ struct SequenceProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         Called by `obj[index]`.
         See: https://docs.python.org/3/c-api/typeobj.html#c.PySequenceMethods.sq_item
+
+        Parameters:
+            method: The user-supplied handler installed into the slot.
+
+        Returns:
+            A reference to `self` for chaining.
         """
         _SlotInstaller.ssizeargfunc[
             Self.self_type, method, PySlotIndex.sq_item
@@ -130,6 +163,12 @@ struct SequenceProtocolBuilder[self_type: ImplicitlyDestructible]:
         the wrapper maps it to the corresponding Python exception.
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PySequenceMethods.sq_ass_item
+
+        Parameters:
+            method: The user-supplied handler installed into the slot.
+
+        Returns:
+            A reference to `self` for chaining.
         """
         _SlotInstaller.ssizeobjargproc[Self.self_type, method](self._ptr)
         return self
@@ -143,6 +182,12 @@ struct SequenceProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         Called by `item in obj`.
         See: https://docs.python.org/3/c-api/typeobj.html#c.PySequenceMethods.sq_contains
+
+        Parameters:
+            method: The user-supplied handler installed into the slot.
+
+        Returns:
+            A reference to `self` for chaining.
         """
         _SlotInstaller.objobjproc[
             Self.self_type, method, PySlotIndex.sq_contains
@@ -158,6 +203,12 @@ struct SequenceProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         Called by `obj + other`.
         See: https://docs.python.org/3/c-api/typeobj.html#c.PySequenceMethods.sq_concat
+
+        Parameters:
+            method: The user-supplied handler installed into the slot.
+
+        Returns:
+            A reference to `self` for chaining.
         """
         _SlotInstaller.binary[Self.self_type, method, PySlotIndex.sq_concat](
             self._ptr
@@ -173,6 +224,12 @@ struct SequenceProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         Called by `obj * count`.
         See: https://docs.python.org/3/c-api/typeobj.html#c.PySequenceMethods.sq_repeat
+
+        Parameters:
+            method: The user-supplied handler installed into the slot.
+
+        Returns:
+            A reference to `self` for chaining.
         """
         _SlotInstaller.ssizeargfunc[
             Self.self_type, method, PySlotIndex.sq_repeat
@@ -188,6 +245,12 @@ struct SequenceProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         Called by `obj += other`.
         See: https://docs.python.org/3/c-api/typeobj.html#c.PySequenceMethods.sq_inplace_concat
+
+        Parameters:
+            method: The user-supplied handler installed into the slot.
+
+        Returns:
+            A reference to `self` for chaining.
         """
         _SlotInstaller.binary[
             Self.self_type, method, PySlotIndex.sq_inplace_concat
@@ -203,6 +266,12 @@ struct SequenceProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         Called by `obj *= count`.
         See: https://docs.python.org/3/c-api/typeobj.html#c.PySequenceMethods.sq_inplace_repeat
+
+        Parameters:
+            method: The user-supplied handler installed into the slot.
+
+        Returns:
+            A reference to `self` for chaining.
         """
         _SlotInstaller.ssizeargfunc[
             Self.self_type, method, PySlotIndex.sq_inplace_repeat
@@ -217,6 +286,12 @@ struct SequenceProtocolBuilder[self_type: ImplicitlyDestructible]:
         """Install `__len__` via the `sq_length` slot (non-raising overload).
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PySequenceMethods.sq_length
+
+        Parameters:
+            method: The user-supplied handler installed into the slot.
+
+        Returns:
+            A reference to `self` for chaining.
         """
         comptime _lenfunc = def(PyObjectPtr) thin abi("C") -> Py_ssize_t
         var fn_ptr: _lenfunc = _mp_length_wrapper[
@@ -238,6 +313,12 @@ struct SequenceProtocolBuilder[self_type: ImplicitlyDestructible]:
         """Install `__getitem__` via the `sq_item` slot (non-raising overload).
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PySequenceMethods.sq_item
+
+        Parameters:
+            method: The user-supplied handler installed into the slot.
+
+        Returns:
+            A reference to `self` for chaining.
         """
         _SlotInstaller.ssizeargfunc[
             Self.self_type,
@@ -256,6 +337,12 @@ struct SequenceProtocolBuilder[self_type: ImplicitlyDestructible]:
         """Install `__setitem__`/`__delitem__` via the `sq_ass_item` slot (non-raising overload).
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PySequenceMethods.sq_ass_item
+
+        Parameters:
+            method: The user-supplied handler installed into the slot.
+
+        Returns:
+            A reference to `self` for chaining.
         """
         _SlotInstaller.ssizeobjargproc[
             Self.self_type, _lift_int_var_to_none[Self.self_type, method]
@@ -270,6 +357,12 @@ struct SequenceProtocolBuilder[self_type: ImplicitlyDestructible]:
         """Install `__contains__` via the `sq_contains` slot (non-raising overload).
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PySequenceMethods.sq_contains
+
+        Parameters:
+            method: The user-supplied handler installed into the slot.
+
+        Returns:
+            A reference to `self` for chaining.
         """
         _SlotInstaller.objobjproc[
             Self.self_type,
@@ -286,6 +379,12 @@ struct SequenceProtocolBuilder[self_type: ImplicitlyDestructible]:
         """Install `__add__` (concatenation) via the `sq_concat` slot (non-raising overload).
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PySequenceMethods.sq_concat
+
+        Parameters:
+            method: The user-supplied handler installed into the slot.
+
+        Returns:
+            A reference to `self` for chaining.
         """
         _SlotInstaller.binary_nr[Self.self_type, method, PySlotIndex.sq_concat](
             self._ptr
@@ -300,6 +399,12 @@ struct SequenceProtocolBuilder[self_type: ImplicitlyDestructible]:
         """Install `__mul__` (repetition) via the `sq_repeat` slot (non-raising overload).
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PySequenceMethods.sq_repeat
+
+        Parameters:
+            method: The user-supplied handler installed into the slot.
+
+        Returns:
+            A reference to `self` for chaining.
         """
         _SlotInstaller.ssizeargfunc[
             Self.self_type,
@@ -316,6 +421,12 @@ struct SequenceProtocolBuilder[self_type: ImplicitlyDestructible]:
         """Install `__iadd__` (in-place concatenation) via the `sq_inplace_concat` slot (non-raising overload).
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PySequenceMethods.sq_inplace_concat
+
+        Parameters:
+            method: The user-supplied handler installed into the slot.
+
+        Returns:
+            A reference to `self` for chaining.
         """
         _SlotInstaller.binary_nr[
             Self.self_type, method, PySlotIndex.sq_inplace_concat
@@ -330,6 +441,12 @@ struct SequenceProtocolBuilder[self_type: ImplicitlyDestructible]:
         """Install `__imul__` (in-place repetition) via the `sq_inplace_repeat` slot (non-raising overload).
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PySequenceMethods.sq_inplace_repeat
+
+        Parameters:
+            method: The user-supplied handler installed into the slot.
+
+        Returns:
+            A reference to `self` for chaining.
         """
         _SlotInstaller.ssizeargfunc[
             Self.self_type,
@@ -346,6 +463,12 @@ struct SequenceProtocolBuilder[self_type: ImplicitlyDestructible]:
         """Install `__len__` via the `sq_length` slot (value-receiver overload).
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PySequenceMethods.sq_length
+
+        Parameters:
+            method: The user-supplied handler installed into the slot.
+
+        Returns:
+            A reference to `self` for chaining.
         """
         comptime _lenfunc = def(PyObjectPtr) thin abi("C") -> Py_ssize_t
         var fn_ptr: _lenfunc = _mp_length_wrapper[
@@ -365,6 +488,12 @@ struct SequenceProtocolBuilder[self_type: ImplicitlyDestructible]:
         """Install `__getitem__` via the `sq_item` slot (value-receiver overload).
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PySequenceMethods.sq_item
+
+        Parameters:
+            method: The user-supplied handler installed into the slot.
+
+        Returns:
+            A reference to `self` for chaining.
         """
         _SlotInstaller.ssizeargfunc[
             Self.self_type,
@@ -381,6 +510,12 @@ struct SequenceProtocolBuilder[self_type: ImplicitlyDestructible]:
         """Install `__setitem__`/`__delitem__` via the `sq_ass_item` slot (value-receiver overload).
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PySequenceMethods.sq_ass_item
+
+        Parameters:
+            method: The user-supplied handler installed into the slot.
+
+        Returns:
+            A reference to `self` for chaining.
         """
         _SlotInstaller.ssizeobjargproc[
             Self.self_type, _lift_val_int_var_to_none[Self.self_type, method]
@@ -395,6 +530,12 @@ struct SequenceProtocolBuilder[self_type: ImplicitlyDestructible]:
         """Install `__setitem__`/`__delitem__` via the `sq_ass_item` slot (mut-receiver overload).
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PySequenceMethods.sq_ass_item
+
+        Parameters:
+            method: The user-supplied handler installed into the slot.
+
+        Returns:
+            A reference to `self` for chaining.
         """
         _SlotInstaller.ssizeobjargproc[
             Self.self_type, _lift_mut_int_var_to_none[Self.self_type, method]
@@ -409,6 +550,12 @@ struct SequenceProtocolBuilder[self_type: ImplicitlyDestructible]:
         """Install `__contains__` via the `sq_contains` slot (value-receiver overload).
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PySequenceMethods.sq_contains
+
+        Parameters:
+            method: The user-supplied handler installed into the slot.
+
+        Returns:
+            A reference to `self` for chaining.
         """
         _SlotInstaller.objobjproc[
             Self.self_type,
@@ -425,6 +572,12 @@ struct SequenceProtocolBuilder[self_type: ImplicitlyDestructible]:
         """Install `__add__` (concatenation) via the `sq_concat` slot (value-receiver overload).
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PySequenceMethods.sq_concat
+
+        Parameters:
+            method: The user-supplied handler installed into the slot.
+
+        Returns:
+            A reference to `self` for chaining.
         """
         _SlotInstaller.binary_val[
             Self.self_type, method, PySlotIndex.sq_concat
@@ -437,6 +590,12 @@ struct SequenceProtocolBuilder[self_type: ImplicitlyDestructible]:
         """Install `__mul__` (repetition) via the `sq_repeat` slot (value-receiver overload).
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PySequenceMethods.sq_repeat
+
+        Parameters:
+            method: The user-supplied handler installed into the slot.
+
+        Returns:
+            A reference to `self` for chaining.
         """
         _SlotInstaller.ssizeargfunc[
             Self.self_type,
@@ -453,6 +612,12 @@ struct SequenceProtocolBuilder[self_type: ImplicitlyDestructible]:
         """Install `__iadd__` (in-place concatenation) via the `sq_inplace_concat` slot (value-receiver overload).
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PySequenceMethods.sq_inplace_concat
+
+        Parameters:
+            method: The user-supplied handler installed into the slot.
+
+        Returns:
+            A reference to `self` for chaining.
         """
         _SlotInstaller.binary_val[
             Self.self_type, method, PySlotIndex.sq_inplace_concat
@@ -465,6 +630,12 @@ struct SequenceProtocolBuilder[self_type: ImplicitlyDestructible]:
         """Install `__imul__` (in-place repetition) via the `sq_inplace_repeat` slot (value-receiver overload).
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PySequenceMethods.sq_inplace_repeat
+
+        Parameters:
+            method: The user-supplied handler installed into the slot.
+
+        Returns:
+            A reference to `self` for chaining.
         """
         _SlotInstaller.ssizeargfunc[
             Self.self_type,
@@ -484,6 +655,13 @@ struct SequenceProtocolBuilder[self_type: ImplicitlyDestructible]:
         """Install `__getitem__` via the `sq_item` slot (ConvertibleToPython return overload).
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PySequenceMethods.sq_item
+
+        Parameters:
+            R: The user-supplied return type, convertible to a `PythonObject`.
+            method: The user-supplied handler installed into the slot.
+
+        Returns:
+            A reference to `self` for chaining.
         """
         _SlotInstaller.ssizeargfunc[
             Self.self_type,
@@ -499,6 +677,13 @@ struct SequenceProtocolBuilder[self_type: ImplicitlyDestructible]:
         """Install `__getitem__` via the `sq_item` slot (ConvertibleToPython return, non-raising overload).
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PySequenceMethods.sq_item
+
+        Parameters:
+            R: The user-supplied return type, convertible to a `PythonObject`.
+            method: The user-supplied handler installed into the slot.
+
+        Returns:
+            A reference to `self` for chaining.
         """
         _SlotInstaller.ssizeargfunc[
             Self.self_type,
@@ -514,6 +699,13 @@ struct SequenceProtocolBuilder[self_type: ImplicitlyDestructible]:
         """Install `__getitem__` via the `sq_item` slot (ConvertibleToPython return, value-receiver overload).
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PySequenceMethods.sq_item
+
+        Parameters:
+            R: The user-supplied return type, convertible to a `PythonObject`.
+            method: The user-supplied handler installed into the slot.
+
+        Returns:
+            A reference to `self` for chaining.
         """
         _SlotInstaller.ssizeargfunc[
             Self.self_type,
@@ -531,6 +723,13 @@ struct SequenceProtocolBuilder[self_type: ImplicitlyDestructible]:
         """Install `__add__` via the `sq_concat` slot (ConvertibleToPython return overload).
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PySequenceMethods.sq_concat
+
+        Parameters:
+            R: The user-supplied return type, convertible to a `PythonObject`.
+            method: The user-supplied handler installed into the slot.
+
+        Returns:
+            A reference to `self` for chaining.
         """
         _SlotInstaller.binary_conv_r[
             Self.self_type, R, method, PySlotIndex.sq_concat
@@ -546,6 +745,13 @@ struct SequenceProtocolBuilder[self_type: ImplicitlyDestructible]:
         """Install `__add__` via the `sq_concat` slot (ConvertibleToPython return, non-raising overload).
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PySequenceMethods.sq_concat
+
+        Parameters:
+            R: The user-supplied return type, convertible to a `PythonObject`.
+            method: The user-supplied handler installed into the slot.
+
+        Returns:
+            A reference to `self` for chaining.
         """
         _SlotInstaller.binary_conv_nr[
             Self.self_type, R, method, PySlotIndex.sq_concat
@@ -559,6 +765,13 @@ struct SequenceProtocolBuilder[self_type: ImplicitlyDestructible]:
         """Install `__add__` via the `sq_concat` slot (ConvertibleToPython return, value-receiver overload).
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PySequenceMethods.sq_concat
+
+        Parameters:
+            R: The user-supplied return type, convertible to a `PythonObject`.
+            method: The user-supplied handler installed into the slot.
+
+        Returns:
+            A reference to `self` for chaining.
         """
         _SlotInstaller.binary_conv_val[
             Self.self_type, R, method, PySlotIndex.sq_concat
@@ -574,6 +787,13 @@ struct SequenceProtocolBuilder[self_type: ImplicitlyDestructible]:
         """Install `__mul__` via the `sq_repeat` slot (ConvertibleToPython return overload).
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PySequenceMethods.sq_repeat
+
+        Parameters:
+            R: The user-supplied return type, convertible to a `PythonObject`.
+            method: The user-supplied handler installed into the slot.
+
+        Returns:
+            A reference to `self` for chaining.
         """
         _SlotInstaller.ssizeargfunc[
             Self.self_type,
@@ -589,6 +809,13 @@ struct SequenceProtocolBuilder[self_type: ImplicitlyDestructible]:
         """Install `__mul__` via the `sq_repeat` slot (ConvertibleToPython return, non-raising overload).
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PySequenceMethods.sq_repeat
+
+        Parameters:
+            R: The user-supplied return type, convertible to a `PythonObject`.
+            method: The user-supplied handler installed into the slot.
+
+        Returns:
+            A reference to `self` for chaining.
         """
         _SlotInstaller.ssizeargfunc[
             Self.self_type,
@@ -604,6 +831,13 @@ struct SequenceProtocolBuilder[self_type: ImplicitlyDestructible]:
         """Install `__mul__` via the `sq_repeat` slot (ConvertibleToPython return, value-receiver overload).
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PySequenceMethods.sq_repeat
+
+        Parameters:
+            R: The user-supplied return type, convertible to a `PythonObject`.
+            method: The user-supplied handler installed into the slot.
+
+        Returns:
+            A reference to `self` for chaining.
         """
         _SlotInstaller.ssizeargfunc[
             Self.self_type,
@@ -621,6 +855,13 @@ struct SequenceProtocolBuilder[self_type: ImplicitlyDestructible]:
         """Install `__iadd__` via the `sq_inplace_concat` slot (ConvertibleToPython return overload).
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PySequenceMethods.sq_inplace_concat
+
+        Parameters:
+            R: The user-supplied return type, convertible to a `PythonObject`.
+            method: The user-supplied handler installed into the slot.
+
+        Returns:
+            A reference to `self` for chaining.
         """
         _SlotInstaller.binary_conv_r[
             Self.self_type, R, method, PySlotIndex.sq_inplace_concat
@@ -636,6 +877,13 @@ struct SequenceProtocolBuilder[self_type: ImplicitlyDestructible]:
         """Install `__iadd__` via the `sq_inplace_concat` slot (ConvertibleToPython return, non-raising overload).
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PySequenceMethods.sq_inplace_concat
+
+        Parameters:
+            R: The user-supplied return type, convertible to a `PythonObject`.
+            method: The user-supplied handler installed into the slot.
+
+        Returns:
+            A reference to `self` for chaining.
         """
         _SlotInstaller.binary_conv_nr[
             Self.self_type, R, method, PySlotIndex.sq_inplace_concat
@@ -649,6 +897,13 @@ struct SequenceProtocolBuilder[self_type: ImplicitlyDestructible]:
         """Install `__iadd__` via the `sq_inplace_concat` slot (ConvertibleToPython return, value-receiver overload).
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PySequenceMethods.sq_inplace_concat
+
+        Parameters:
+            R: The user-supplied return type, convertible to a `PythonObject`.
+            method: The user-supplied handler installed into the slot.
+
+        Returns:
+            A reference to `self` for chaining.
         """
         _SlotInstaller.binary_conv_val[
             Self.self_type, R, method, PySlotIndex.sq_inplace_concat
@@ -664,6 +919,13 @@ struct SequenceProtocolBuilder[self_type: ImplicitlyDestructible]:
         """Install `__imul__` via the `sq_inplace_repeat` slot (ConvertibleToPython return overload).
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PySequenceMethods.sq_inplace_repeat
+
+        Parameters:
+            R: The user-supplied return type, convertible to a `PythonObject`.
+            method: The user-supplied handler installed into the slot.
+
+        Returns:
+            A reference to `self` for chaining.
         """
         _SlotInstaller.ssizeargfunc[
             Self.self_type,
@@ -679,6 +941,13 @@ struct SequenceProtocolBuilder[self_type: ImplicitlyDestructible]:
         """Install `__imul__` via the `sq_inplace_repeat` slot (ConvertibleToPython return, non-raising overload).
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PySequenceMethods.sq_inplace_repeat
+
+        Parameters:
+            R: The user-supplied return type, convertible to a `PythonObject`.
+            method: The user-supplied handler installed into the slot.
+
+        Returns:
+            A reference to `self` for chaining.
         """
         _SlotInstaller.ssizeargfunc[
             Self.self_type,
@@ -694,6 +963,13 @@ struct SequenceProtocolBuilder[self_type: ImplicitlyDestructible]:
         """Install `__imul__` via the `sq_inplace_repeat` slot (ConvertibleToPython return, value-receiver overload).
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PySequenceMethods.sq_inplace_repeat
+
+        Parameters:
+            R: The user-supplied return type, convertible to a `PythonObject`.
+            method: The user-supplied handler installed into the slot.
+
+        Returns:
+            A reference to `self` for chaining.
         """
         _SlotInstaller.ssizeargfunc[
             Self.self_type,

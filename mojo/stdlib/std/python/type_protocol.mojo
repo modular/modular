@@ -11,6 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Implements the CPython type-protocol builder.
+
+Provides `TypeProtocolBuilder`, which installs the `tp_richcompare` slot on
+a `PythonTypeBuilder` so a Mojo struct can implement Python's rich
+comparison operators (`__lt__`, `__le__`, `__eq__`, `__ne__`, `__gt__`,
+`__ge__`).
+"""
+
 from std.memory import UnsafePointer
 from std.python import PythonObject
 from std.python.bindings import PythonTypeBuilder
@@ -44,6 +52,9 @@ struct TypeProtocolBuilder[self_type: ImplicitlyDestructible]:
             .def_setitem[MyStruct.py__setitem__]()
         NumberProtocolBuilder[MyStruct](tb).def_neg[MyStruct.py__neg__]()
         ```
+
+    Parameters:
+        self_type: The Mojo struct type whose instances back the Python object.
     """
 
     # Unsafe pointer into the module builder's type_builders list.
@@ -51,6 +62,11 @@ struct TypeProtocolBuilder[self_type: ImplicitlyDestructible]:
     var _ptr: UnsafePointer[mut=True, PythonTypeBuilder, MutAnyOrigin]
 
     def __init__(out self, mut inner: PythonTypeBuilder):
+        """Initialize from a `PythonTypeBuilder` reference.
+
+        Args:
+            inner: The `PythonTypeBuilder` to wrap.
+        """
         var ptr = UnsafePointer(to=inner)
         self._ptr = ptr
 
@@ -76,6 +92,9 @@ struct TypeProtocolBuilder[self_type: ImplicitlyDestructible]:
                 where `op` is one of `RichCompareOps.Py_LT` … `Py_GE`.
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyTypeObject.tp_richcompare
+
+        Returns:
+            A reference to `self` for chaining.
         """
         _SlotInstaller.richcompare[Self.self_type, method](self._ptr)
         return self
@@ -88,6 +107,12 @@ struct TypeProtocolBuilder[self_type: ImplicitlyDestructible]:
         """Install rich comparison via the `tp_richcompare` slot (non-raising overload).
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyTypeObject.tp_richcompare
+
+        Parameters:
+            method: The user-supplied handler installed into the slot.
+
+        Returns:
+            A reference to `self` for chaining.
         """
         _SlotInstaller.richcompare[
             Self.self_type, _lift_obj_int_to_bool[Self.self_type, method]
@@ -102,6 +127,12 @@ struct TypeProtocolBuilder[self_type: ImplicitlyDestructible]:
         """Install rich comparison via the `tp_richcompare` slot (value-receiver overload).
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyTypeObject.tp_richcompare
+
+        Parameters:
+            method: The user-supplied handler installed into the slot.
+
+        Returns:
+            A reference to `self` for chaining.
         """
         _SlotInstaller.richcompare[
             Self.self_type, _lift_val_obj_int_to_bool[Self.self_type, method]

@@ -11,6 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Implements the CPython mapping-protocol builder.
+
+Provides `MappingProtocolBuilder`, which installs the `mp_length`,
+`mp_subscript`, and `mp_ass_subscript` slots on a `PythonTypeBuilder` so a
+Mojo struct can implement Python's `__len__`, `__getitem__`,
+`__setitem__`, and `__delitem__`.
+"""
+
 from std.memory import UnsafePointer
 from std.python import PythonObject
 from std.python.bindings import PythonTypeBuilder
@@ -48,17 +56,30 @@ struct MappingProtocolBuilder[self_type: ImplicitlyDestructible]:
            .def_getitem[MyStruct.py__getitem__]()
            .def_setitem[MyStruct.py__setitem__]()
         ```
+
+    Parameters:
+        self_type: The Mojo struct type whose instances back the Python object.
     """
 
     var _ptr: UnsafePointer[mut=True, PythonTypeBuilder, MutAnyOrigin]
 
     def __init__(out self, mut inner: PythonTypeBuilder):
+        """Initialize from a `PythonTypeBuilder` reference.
+
+        Args:
+            inner: The `PythonTypeBuilder` to wrap.
+        """
         self._ptr = UnsafePointer(to=inner)
 
     def __init__(
         out self,
         ptr: UnsafePointer[mut=True, PythonTypeBuilder, MutAnyOrigin],
     ):
+        """Initialize from a raw pointer to a `PythonTypeBuilder`.
+
+        Args:
+            ptr: Pointer to the `PythonTypeBuilder` to wrap.
+        """
         self._ptr = ptr
 
     def def_len[
@@ -70,6 +91,12 @@ struct MappingProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         Called by `len(obj)`.
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyMappingMethods.mp_length
+
+        Parameters:
+            method: The user-supplied handler installed into the slot.
+
+        Returns:
+            A reference to `self` for chaining.
         """
         _SlotInstaller.lenfunc[Self.self_type, method](self._ptr)
         return self
@@ -83,6 +110,12 @@ struct MappingProtocolBuilder[self_type: ImplicitlyDestructible]:
 
         Called by `obj[key]`.
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyMappingMethods.mp_subscript
+
+        Parameters:
+            method: The user-supplied handler installed into the slot.
+
+        Returns:
+            A reference to `self` for chaining.
         """
         _SlotInstaller.mp_getitem[Self.self_type, method](self._ptr)
         return self
@@ -102,6 +135,12 @@ struct MappingProtocolBuilder[self_type: ImplicitlyDestructible]:
         - `Variant[PythonObject, Int](value)` for assignment.
         - `Variant[PythonObject, Int](Int(0))` for deletion (null C pointer).
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyMappingMethods.mp_ass_subscript
+
+        Parameters:
+            method: The user-supplied handler installed into the slot.
+
+        Returns:
+            A reference to `self` for chaining.
         """
         _SlotInstaller.objobjargproc[Self.self_type, method](self._ptr)
         return self
@@ -114,6 +153,12 @@ struct MappingProtocolBuilder[self_type: ImplicitlyDestructible]:
         """Install `__len__` via the `mp_length` slot (non-raising overload).
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyMappingMethods.mp_length
+
+        Parameters:
+            method: The user-supplied handler installed into the slot.
+
+        Returns:
+            A reference to `self` for chaining.
         """
         _SlotInstaller.lenfunc[
             Self.self_type, _lift_to_int[Self.self_type, method]
@@ -128,6 +173,12 @@ struct MappingProtocolBuilder[self_type: ImplicitlyDestructible]:
         """Install `__getitem__` via the `mp_subscript` slot (non-raising overload).
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyMappingMethods.mp_subscript
+
+        Parameters:
+            method: The user-supplied handler installed into the slot.
+
+        Returns:
+            A reference to `self` for chaining.
         """
         _SlotInstaller.mp_getitem[
             Self.self_type, _lift_obj_to_obj[Self.self_type, method]
@@ -144,6 +195,12 @@ struct MappingProtocolBuilder[self_type: ImplicitlyDestructible]:
         """Install `__setitem__`/`__delitem__` via the `mp_ass_subscript` slot (non-raising overload).
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyMappingMethods.mp_ass_subscript
+
+        Parameters:
+            method: The user-supplied handler installed into the slot.
+
+        Returns:
+            A reference to `self` for chaining.
         """
         _SlotInstaller.objobjargproc[
             Self.self_type, _lift_obj_var_to_none[Self.self_type, method]
@@ -158,6 +215,12 @@ struct MappingProtocolBuilder[self_type: ImplicitlyDestructible]:
         """Install `__len__` via the `mp_length` slot (value-receiver overload).
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyMappingMethods.mp_length
+
+        Parameters:
+            method: The user-supplied handler installed into the slot.
+
+        Returns:
+            A reference to `self` for chaining.
         """
         _SlotInstaller.lenfunc[
             Self.self_type, _lift_val_to_int[Self.self_type, method]
@@ -172,6 +235,12 @@ struct MappingProtocolBuilder[self_type: ImplicitlyDestructible]:
         """Install `__getitem__` via the `mp_subscript` slot (value-receiver overload).
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyMappingMethods.mp_subscript
+
+        Parameters:
+            method: The user-supplied handler installed into the slot.
+
+        Returns:
+            A reference to `self` for chaining.
         """
         _SlotInstaller.mp_getitem[
             Self.self_type, _lift_val_obj_to_obj[Self.self_type, method]
@@ -186,6 +255,12 @@ struct MappingProtocolBuilder[self_type: ImplicitlyDestructible]:
         """Install `__setitem__`/`__delitem__` via the `mp_ass_subscript` slot (mut-receiver overload).
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyMappingMethods.mp_ass_subscript
+
+        Parameters:
+            method: The user-supplied handler installed into the slot.
+
+        Returns:
+            A reference to `self` for chaining.
         """
         _SlotInstaller.objobjargproc[
             Self.self_type, _lift_mut_obj_var_to_none[Self.self_type, method]
@@ -203,6 +278,13 @@ struct MappingProtocolBuilder[self_type: ImplicitlyDestructible]:
         """Install `__getitem__` via the `mp_subscript` slot (ConvertibleToPython return overload).
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyMappingMethods.mp_subscript
+
+        Parameters:
+            R: The user-supplied return type, convertible to a `PythonObject`.
+            method: The user-supplied handler installed into the slot.
+
+        Returns:
+            A reference to `self` for chaining.
         """
         _SlotInstaller.mp_getitem[
             Self.self_type, _conv_ptr_r_binary[Self.self_type, R, method]
@@ -218,6 +300,13 @@ struct MappingProtocolBuilder[self_type: ImplicitlyDestructible]:
         """Install `__getitem__` via the `mp_subscript` slot (ConvertibleToPython return, non-raising overload).
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyMappingMethods.mp_subscript
+
+        Parameters:
+            R: The user-supplied return type, convertible to a `PythonObject`.
+            method: The user-supplied handler installed into the slot.
+
+        Returns:
+            A reference to `self` for chaining.
         """
         _SlotInstaller.mp_getitem[
             Self.self_type, _conv_ptr_nr_binary[Self.self_type, R, method]
@@ -231,6 +320,13 @@ struct MappingProtocolBuilder[self_type: ImplicitlyDestructible]:
         """Install `__getitem__` via the `mp_subscript` slot (ConvertibleToPython return, value-receiver overload).
 
         See: https://docs.python.org/3/c-api/typeobj.html#c.PyMappingMethods.mp_subscript
+
+        Parameters:
+            R: The user-supplied return type, convertible to a `PythonObject`.
+            method: The user-supplied handler installed into the slot.
+
+        Returns:
+            A reference to `self` for chaining.
         """
         _SlotInstaller.mp_getitem[
             Self.self_type, _conv_val_r_binary[Self.self_type, R, method]

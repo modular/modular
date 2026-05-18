@@ -11,13 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# ===----------------------------------------------------------------------=== #
-# Standalone implementations of types introduced in:
-# https://github.com/modular/modular/pull/5562
-#
-# Provides PySlotError and RichCompareOps for use with Python extension
-# modules that require the rich comparison or number/sequence protocols.
-# ===----------------------------------------------------------------------=== #
+"""Implements `PySlotError` and `RichCompareOps`.
+
+Provides the Mojo-native error type used by Python type-slot handlers and
+the rich-comparison op-code constants consumed by `tp_richcompare`
+handlers.
+"""
 
 
 struct RichCompareOps:
@@ -32,11 +31,17 @@ struct RichCompareOps:
     """
 
     comptime Py_LT = 0
+    """Less-than comparison op (`<`)."""
     comptime Py_LE = 1
+    """Less-than-or-equal comparison op (`<=`)."""
     comptime Py_EQ = 2
+    """Equality comparison op (`==`)."""
     comptime Py_NE = 3
+    """Inequality comparison op (`!=`)."""
     comptime Py_GT = 4
+    """Greater-than comparison op (`>`)."""
     comptime Py_GE = 5
+    """Greater-than-or-equal comparison op (`>=`)."""
 
 
 @fieldwise_init
@@ -80,45 +85,102 @@ struct PySlotError(Copyable, Movable, Writable):
         For binary/ternary/rich-compare slots, this causes the adapter to
         return `Py_NotImplemented`, prompting Python to try the reflected
         operation on the other operand.
+
+        Returns:
+            A `PySlotError` with the `not_implemented` variant.
         """
         return Self(_variant=Self._NOT_IMPLEMENTED, msg=String())
 
     @staticmethod
     def index_error(var msg: String) -> Self:
-        """Map to Python's `IndexError`."""
+        """Map to Python's `IndexError`.
+
+        Args:
+            msg: Human-readable error message.
+
+        Returns:
+            A `PySlotError` configured as an `IndexError`.
+        """
         return Self(_variant=Self._INDEX_ERROR, msg=msg^)
 
     @staticmethod
     def type_error(var msg: String) -> Self:
-        """Map to Python's `TypeError`."""
+        """Map to Python's `TypeError`.
+
+        Args:
+            msg: Human-readable error message.
+
+        Returns:
+            A `PySlotError` configured as a `TypeError`.
+        """
         return Self(_variant=Self._TYPE_ERROR, msg=msg^)
 
     @staticmethod
     def value_error(var msg: String) -> Self:
-        """Map to Python's `ValueError`."""
+        """Map to Python's `ValueError`.
+
+        Args:
+            msg: Human-readable error message.
+
+        Returns:
+            A `PySlotError` configured as a `ValueError`.
+        """
         return Self(_variant=Self._VALUE_ERROR, msg=msg^)
 
     @staticmethod
     def key_error(var msg: String) -> Self:
-        """Map to Python's `KeyError`."""
+        """Map to Python's `KeyError`.
+
+        Args:
+            msg: Human-readable error message.
+
+        Returns:
+            A `PySlotError` configured as a `KeyError`.
+        """
         return Self(_variant=Self._KEY_ERROR, msg=msg^)
 
     @staticmethod
     def attribute_error(var msg: String) -> Self:
-        """Map to Python's `AttributeError`."""
+        """Map to Python's `AttributeError`.
+
+        Args:
+            msg: Human-readable error message.
+
+        Returns:
+            A `PySlotError` configured as an `AttributeError`.
+        """
         return Self(_variant=Self._ATTRIBUTE_ERROR, msg=msg^)
 
     @staticmethod
     def overflow_error(var msg: String) -> Self:
-        """Map to Python's `OverflowError`."""
+        """Map to Python's `OverflowError`.
+
+        Args:
+            msg: Human-readable error message.
+
+        Returns:
+            A `PySlotError` configured as an `OverflowError`.
+        """
         return Self(_variant=Self._OVERFLOW_ERROR, msg=msg^)
 
     @staticmethod
     def runtime_error(var msg: String) -> Self:
-        """Map to Python's `RuntimeError`."""
+        """Map to Python's `RuntimeError`.
+
+        Args:
+            msg: Human-readable error message.
+
+        Returns:
+            A `PySlotError` configured as a `RuntimeError`.
+        """
         return Self(_variant=Self._RUNTIME_ERROR, msg=msg^)
 
     def write_to(self, mut writer: Some[Writer]):
+        """Write a textual representation of this error to `writer`.
+
+        Args:
+            writer: The destination writer.
+        """
         if self._variant == Self._NOT_IMPLEMENTED:
             writer.write("PySlotError.not_implemented")
         else:
@@ -132,6 +194,9 @@ struct PySlotError(Copyable, Movable, Writable):
         variant has no Python-exception counterpart and maps to
         `PyExc_RuntimeError` — callers that want the `Py_NotImplemented`
         singleton must check `_variant == _NOT_IMPLEMENTED` first.
+
+        Returns:
+            The name of the matching `PyExc_*` global as a `StaticString`.
         """
         if self._variant == Self._INDEX_ERROR:
             return "PyExc_IndexError"
