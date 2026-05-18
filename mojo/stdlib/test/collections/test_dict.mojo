@@ -36,6 +36,85 @@ def test_dict_construction() raises:
     _ = Dict[String, Int]()
 
 
+def test_dict_lazy_allocation() raises:
+    var d = Dict[Int, Int]()
+    assert_equal(d._reserved(), 0)
+    assert_equal(len(d), 0)
+    assert_false(d)
+
+    var d_zero = Dict[Int, Int](capacity=0)
+    assert_equal(d_zero._reserved(), 0)
+
+    # Empty dict literal `{}` constructs with capacity=0 and stays lazy.
+    var d_literal: Dict[Int, Int] = {}
+    assert_equal(d_literal._reserved(), 0)
+
+    # Lookups on a lazy dict must not deref the dangling buffer.
+    assert_false(1 in d)
+    assert_false(d.find(1))
+    with assert_raises(contains="DictKeyError"):
+        _ = d[1]
+
+    # `pop(key)` raises `DictKeyError` on a lazy dict.
+    with assert_raises(contains="DictKeyError"):
+        _ = d.pop(1)
+
+    # `pop(key, default)` returns the default without allocating.
+    assert_equal(d.pop(1, 42), 42)
+    assert_equal(d._reserved(), 0)
+
+    # `popitem` raises `EmptyDictError` on a lazy dict.
+    with assert_raises(contains="EmptyDictError"):
+        _ = d.popitem()
+
+    # Iteration over a lazy dict yields nothing — no buffer dereference.
+    var iter_count = 0
+    for _ in d:
+        iter_count += 1
+    assert_equal(iter_count, 0)
+
+    var keys_count = 0
+    for _ in d.keys():
+        keys_count += 1
+    assert_equal(keys_count, 0)
+
+    var values_count = 0
+    for _ in d.values():
+        values_count += 1
+    assert_equal(values_count, 0)
+
+    var items_count = 0
+    for _ in d.items():
+        items_count += 1
+    assert_equal(items_count, 0)
+
+    # Clearing a never-allocated dict is a no-op.
+    d.clear()
+    assert_equal(d._reserved(), 0)
+
+    # Copying a lazy dict yields another lazy dict.
+    var d_copy = d.copy()
+    assert_equal(d_copy._reserved(), 0)
+
+    # `setdefault` on a lazy dict allocates and inserts.
+    var d_sd = Dict[Int, Int]()
+    assert_equal(d_sd._reserved(), 0)
+    assert_equal(d_sd.setdefault(1, 99), 99)
+    assert_equal(d_sd._reserved(), 16)
+    assert_equal(d_sd[1], 99)
+
+    # First insertion triggers allocation at INITIAL_CAPACITY (16).
+    d[1] = 10
+    assert_equal(d._reserved(), 16)
+    assert_equal(d[1], 10)
+
+    # Removing the last entry must not regress to the lazy state — capacity
+    # is preserved so the next insert doesn't re-trigger the lazy path.
+    _ = d.pop(1)
+    assert_equal(len(d), 0)
+    assert_equal(d._reserved(), 16)
+
+
 def test_dict_literals() raises:
     a = {"foo": 1, "bar": 2}
     assert_equal(a["foo"], 1)
@@ -825,9 +904,9 @@ def test_order_compaction() raises:
     for i in range(90):
         _ = d.pop(i)
     assert_equal(len(d), 10)
-    # Now insert new entries. Each insert calls _maybe_resize which checks
-    # compaction (len(_order) > 2 * _len). With 100 order entries and 10
-    # live, compaction should trigger on the next insert.
+    # Now insert new entries. Each insert calls _ensure_capacity which
+    # checks compaction (len(_order) > 2 * _len). With 100 order entries
+    # and 10 live, compaction should trigger on the next insert.
     d[1000] = 1000
     assert_equal(len(d), 11)
     # Verify all live entries are intact and iteration order is correct
@@ -897,11 +976,13 @@ def test_reversed_items() raises:
 
 
 def test_minimum_capacity() raises:
-    """The minimum capacity is GROUP_WIDTH (16) for SIMD correctness."""
+    """Once allocated, the minimum capacity is GROUP_WIDTH (16) for SIMD correctness.
+    """
     var d = Dict[Int, Int](capacity=16)
     assert_true(d._reserved() >= GROUP_WIDTH)
-    # Default constructor also gets at least GROUP_WIDTH capacity
+    # Default constructor is lazy and allocates GROUP_WIDTH on first insertion.
     var d2 = Dict[Int, Int]()
+    d2[0] = 0
     assert_true(d2._reserved() >= GROUP_WIDTH)
 
 
@@ -923,7 +1004,7 @@ def test_inplace_rehash() raises:
 
     assert_equal(len(d), keep)
 
-    # Next insert triggers _maybe_resize. Since _len <= capacity*7/16,
+    # Next insert triggers _ensure_capacity. Since _len <= capacity*7/16,
     # should rehash in-place, NOT double capacity.
     d[100] = 100
     assert_equal(d._reserved(), initial_cap)
@@ -1037,7 +1118,7 @@ def test_inplace_rehash_via_setdefault() raises:
     assert_equal(len(d), 4)
     var cap_before = d._reserved()
 
-    # setdefault calls _maybe_resize, should trigger in-place rehash
+    # setdefault calls _ensure_capacity, should trigger in-place rehash
     var val = d.setdefault(200, 200)
     assert_equal(val, 200)
     assert_equal(d._reserved(), cap_before)
@@ -1085,7 +1166,7 @@ def test_compile_time_dict_with_rehash() raises:
         # Delete most entries to create tombstones
         for i in range(max_load - keep):
             _ = d.pop(String(i), -1)
-        # This insert triggers _maybe_resize -> in-place rehash at compile time
+        # This insert triggers _ensure_capacity -> in-place rehash at compile time
         d["ct"] = 42
         return d^
 

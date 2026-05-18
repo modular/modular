@@ -46,6 +46,7 @@ from std.memory.alloc import Layout
 from ._swisstable import (
     CTRL_DELETED,
     CTRL_EMPTY,
+    INITIAL_CAPACITY,
     SwissTable,
     SwissTableEntry,
     h2,
@@ -691,7 +692,7 @@ struct Dict[
     def __init__(out self):
         """Initialize an empty dictionary."""
         self._table = SwissTable[Self.K, Self.V, Self.H]()
-        self._order = List[Int32](capacity=self._table._capacity * 7 // 8)
+        self._order = List[Int32]()
 
     @always_inline
     def __init__(out self, *, capacity: Int):
@@ -1411,7 +1412,7 @@ struct Dict[
         print(my_dict)  # => {"a": 1, "b": 99}
         ```
         """
-        self._maybe_resize()
+        self._ensure_capacity()
         var h = hash[Self.H](key)
         var found, slot_idx = self._table.find_slot(h, key)
         if not found:
@@ -1464,7 +1465,7 @@ struct Dict[
         safe_context: Bool = False
     ](mut self, var entry: DictEntry[Self.K, Self.V, Self.H]):
         comptime if not safe_context:
-            self._maybe_resize()
+            self._ensure_capacity()
         var found, slot_idx = self._table.find_slot(entry.hash, entry.key)
 
         if found:
@@ -1482,10 +1483,34 @@ struct Dict[
                 self._table._growth_left >= 0
             ), "_growth_left went negative after insert"
 
-    def _maybe_resize(mut self):
-        """Resize the table if growth_left has been exhausted."""
+    def _ensure_capacity(mut self):
+        """Ensures the table has room for one more insertion.
+
+        Handles three cases:
+        - Lazy state (`_capacity == 0`): allocates `INITIAL_CAPACITY` slots
+          and initializes `_order`.
+        - Sparse occupancy with exhausted growth: rehashes in-place to
+          reclaim tombstones without growing the buffer.
+        - Otherwise, when growth budget is exhausted: doubles capacity and
+          rehashes.
+
+        If no growth is needed, opportunistically compacts `_order`.
+
+        Must be called before any insert that may store into a slot
+        returned by `find_slot`; in lazy state, `find_slot` returns a
+        meaningless slot index that is only safe to use after this call
+        has allocated the backing buffer.
+        """
         if not self._table.needs_resize():
             self._maybe_compact_order()
+            return
+
+        # First allocation from the lazy empty state: no entries to rehash and
+        # no `_order` to rebuild. Allocate INITIAL_CAPACITY directly.
+        if self._table._capacity == 0:
+            # `resize` returns the relocations list; empty here since _len == 0.
+            _ = self._table.resize(INITIAL_CAPACITY)
+            self._order = List[Int32](capacity=self._table._capacity * 7 // 8)
             return
 
         # If table is sparse (occupancy <= 7/16 ~ 44% of capacity), tombstones
