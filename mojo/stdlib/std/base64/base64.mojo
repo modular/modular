@@ -20,7 +20,7 @@ from std.base64 import b64encode
 """
 
 
-from std.memory import Span
+from std.memory import Span, memcpy
 from std.math import ceildiv
 
 from ._b64encode import _b64encode
@@ -80,38 +80,26 @@ def _ascii_to_value[validate: Bool = False](char: Byte) raises -> Byte:
 
 
 @always_inline
-def b64encode(input_bytes: Span[mut=False, Byte, _]) -> String:
-    """Performs base64 encoding on input bytes, returning a String (fastest implementation).
-
-    This uses the optimized SIMD-based encoding from _b64encode.
+def b64encode(input_bytes: Span[mut=False, Byte, _], mut result: String):
+    """Performs base64 encoding on the input string.
 
     Args:
-        input_bytes: The input bytes to encode.
+        input_bytes: The input string buffer.
+        result: The string in which to store the values.
 
-    Returns:
-        The ASCII base64 encoded string.
+    Notes:
+        This method reserves the necessary capacity. `result` can be a 0
+        capacity string.
     """
-    var result = String(capacity=4 * ceildiv(len(input_bytes), 3))
-
-    @parameter
-    def append_byte(b: UInt8):
-        result._unsafe_append_byte(b)
-
-    _b64encode[append_byte](input_bytes)
-    return result^
-
-
-# ===-----------------------------------------------------------------------===#
-# b64encode - Layer 2: Convenience overloads
-# ===-----------------------------------------------------------------------===#
+    _b64encode(input_bytes, result)
 
 
 @always_inline
 def b64encode(input_string: StringSlice[mut=False, _]) -> String:
-    """Performs base64 encoding on a string, returning a String.
+    """Performs base64 encoding on the input string.
 
     Args:
-        input_string: The input string to encode.
+        input_string: The input string buffer.
 
     Returns:
         The ASCII base64 encoded string.
@@ -120,36 +108,32 @@ def b64encode(input_string: StringSlice[mut=False, _]) -> String:
 
 
 @always_inline
-def b64encode(input_bytes: Span[mut=False, Byte, _], mut result: String):
-    """Performs base64 encoding on input bytes, writing to a String.
+def b64encode(input_bytes: Span[mut=False, Byte, _]) -> String:
+    """Performs base64 encoding on the input string.
 
     Args:
         input_bytes: The input bytes to encode.
-        result: The string in which to store the values.
 
-    Notes:
-        This method reserves the necessary capacity. `result` can be a 0
-        capacity string.
+    Returns:
+        The ASCII base64 encoded string.
+
     """
-
-    @parameter
-    def append_byte(b: UInt8):
-        result._unsafe_append_byte(b)
-
-    _b64encode[append_byte](input_bytes)
+    var result = String(capacity=ceildiv(len(input_bytes) * 4, 3))
+    b64encode(input_bytes, result)
+    return result^
 
 
 # ===-----------------------------------------------------------------------===#
-# b64decode - Core implementation (no allocations)
+# b64decode
 # ===-----------------------------------------------------------------------===#
 
 
 def b64decode[
-    *, validate: Bool = False, origin_in: Origin, origin_out: Origin
+    *, validate: Bool = False
 ](
-    input_bytes: Span[mut=False, Byte, origin_in],
+    input_bytes: Span[mut=False, Byte, _],
     mut output_bytes: Span[mut=True, Byte, _],
-) raises:
+) raises -> Int:
     """Performs base64 decoding from input bytes to output bytes (zero-copy layer).
 
     This is the core decoding function that performs no allocations.
@@ -157,12 +141,13 @@ def b64decode[
 
     Parameters:
         validate: If true, the function will validate the input.
-        origin_in: Origin of the input span.
-        origin_out: Origin of the output span.
 
     Args:
         input_bytes: The input base64 encoded bytes.
         output_bytes: The output buffer to write decoded bytes into.
+
+    Returns:
+        The number of bytes written to output_bytes.
     """
     comptime `=` = Byte(ord("="))
     var n = len(input_bytes)
@@ -196,15 +181,12 @@ def b64decode[
         output_bytes[write_pos] = ((c & 0x03) << 6) | d
         write_pos += 1
 
-
-# ===-----------------------------------------------------------------------===#
-# b64decode - Layer 1: String-based convenience API
-# ===-----------------------------------------------------------------------===#
+    return write_pos
 
 
 def b64decode[
     *, validate: Bool = False
-](str: StringSlice[mut=False, _]) raises -> List[UInt8]:
+](str: StringSlice[mut=False, _]) raises -> List[Byte]:
     """Performs base64 decoding on a string, returning decoded bytes.
 
     Parameters:
@@ -214,46 +196,17 @@ def b64decode[
         str: A base64 encoded string.
 
     Returns:
-        The decoded bytes as a List[UInt8].
+        The decoded bytes as a List[Byte].
     """
     var data = str.as_bytes()
     var n = str.byte_length()
     # Allocate buffer with maximum possible size
-    var result = List[UInt8](capacity=n * 3 // 4)
+    var result = List[Byte](capacity=n * 3 // 4)
     result.resize(n * 3 // 4, 0)
 
-    var write_pos = 0
-    comptime `=` = Byte(ord("="))
-
-    comptime if validate:
-        if n % 4 != 0:
-            raise Error(
-                "ValueError: Input length '", n, "' must be divisible by 4"
-            )
-
-    # This algorithm is based on https://arxiv.org/abs/1704.00605
-    for i in range(0, n, 4):
-        var a = _ascii_to_value[validate](data[i])
-        var b = _ascii_to_value[validate](data[i + 1])
-        var c = _ascii_to_value[validate](data[i + 2])
-        var d = _ascii_to_value[validate](data[i + 3])
-
-        result[write_pos] = (a << 2) | (b >> 4)
-        write_pos += 1
-
-        if data[i + 2] == `=`:
-            break
-
-        result[write_pos] = ((b & 0x0F) << 4) | (c >> 2)
-        write_pos += 1
-
-        if data[i + 3] == `=`:
-            break
-
-        result[write_pos] = ((c & 0x03) << 6) | d
-        write_pos += 1
-
-    result.resize(write_pos, 0)
+    var span: Span[mut=True, Byte, origin=origin_of(result)] = result
+    var count = b64decode[validate=validate](data, span)
+    result.resize(count, 0)
     return result^
 
 
