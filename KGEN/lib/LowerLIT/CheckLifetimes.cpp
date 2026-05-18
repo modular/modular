@@ -38,6 +38,8 @@ static constexpr StringRef unusedMarkDestroyName =
     ".mojo.unused.mark_destroyed";
 static constexpr StringRef selfPartiallyInitializedAttrName =
     ".mojo.self.partially.initialized";
+static constexpr StringRef liveValueIdsAfterNoReturnCallAttrName =
+    ".mojo.live.valueids.after.no.return.call";
 
 namespace {
 /// A simple raise set linked list
@@ -1637,10 +1639,9 @@ void UninitializedValueScan::handleAnyOriginUse(
 }
 
 void UninitializedValueScan::scanFunction(FunctionLikeOp func) {
-  // Initialize the BitVector with all the elements that are live-in.  We treat
-  // all values live at the start of the function (even before they are actually
-  // defined) because we know that all uses must be after them due to SSA
-  // dominance.
+  // Initialize the BitVector with all the elements that are live-in. The
+  // sentinel slot #0 is treated by OriginTrackable as live-in and dead-out
+  // which naturally works with our terminators.
   liveValues.resize(valueSet.getNumTotalBits());
   for (const ValueInfo &info : valueSet.getValueInfos())
     if (!info.startsUninit) {
@@ -1873,7 +1874,30 @@ void UninitializedValueScan::checkTerminatorOp(Operation &op) {
       checkUse(valueInfo.value, op, /*isDeref=*/valueInfo.isIndirect);
     }
   } else {
-    assert(isa<KGEN::UnreachableOp>(op) && "Unknown terminator");
+    auto unreachable = cast<KGEN::UnreachableOp>(op);
+
+    // Calls to no-return functions (like abort(), exit()) are treated
+    // specially: after the call, we allow any live values to be outstanding,
+    // because the code isn't reachable. For example, consider:
+    //    def f(mut x: Int, mut y: Int):
+    //      take(x^) # x is uninit here.
+    //      if cond:
+    //        abort()
+    //      x = "restored"
+    // At the abort() call, x is uninitialized but y is initialized.  This is
+    // fine, but we need dtor analysis to know what set of values to demand.  Do
+    // so by recording what values IDs are fully alive.
+    if (unreachable.getIsAfterUnreachableCall()) {
+      SmallVector<int32_t> liveValueIds;
+      for (unsigned i = 0, e = valueSet.getValueInfos().size(); i != e; ++i) {
+        const auto &valueInfo = valueSet.getValueInfo(i);
+        if (valueInfo.getFullValueRef(i).isAllPresent(liveValues))
+          liveValueIds.push_back(i);
+      }
+      if (!liveValueIds.empty())
+        op.setAttr(liveValueIdsAfterNoReturnCallAttrName,
+                   mlir::DenseI32ArrayAttr::get(op.getContext(), liveValueIds));
+    }
   }
 
   // Indicate that this block is no longer live, so no values from it get merged
@@ -1886,9 +1910,11 @@ void UninitializedValueScan::checkTerminatorOp(Operation &op) {
 // present).
 static void mergeLiveValues(BitVector &liveValues, const BitVector &mergeWith) {
   // If both are dead, we don't care which one we end up with.
-  if (liveValues[0] && mergeWith[0])
+  if (!mergeWith[0])
+    return;
+  if (liveValues[0])
     liveValues &= mergeWith;
-  else if (mergeWith[0])
+  else
     liveValues = mergeWith;
 }
 
@@ -2022,7 +2048,7 @@ void UninitializedValueScan::checkTryOp(LIT::TryOp tryOp) {
 
   // We capture all the common values live-out of raise's as being the live-in
   // to the except block.
-  BitVector exceptSet(liveValues.size(), false);
+  BitVector exceptSet(liveValues.size());
   // Attach a new entry to the try scope, such that the inner try op only merge
   // the exceptSet with the matching label.
   RaiseSetEntry exceptInfo = {
@@ -3219,12 +3245,22 @@ void DestructorInsertion::scanBlock(Block &block) {
 /// This is returned when the op is a return or unreachable op.
 void DestructorInsertion::checkTerminatorOp(Operation &op) {
   consumedValues.reset();
-  if (auto unreachable = dyn_cast<KGEN::UnreachableOp>(op)) {
-    // If this is a marker after a no-return call, then mark it as reachable
-    // because we want to propagate reachability across the call and potentially
-    // the "throwing" logic right after it.
-    if (unreachable.getIsAfterUnreachableCall())
-      consumedValues.set(0);
+  if (auto unreachable = dyn_cast<UnreachableOp>(op)) {
+    // If this marker indicates the entire block is unreachable, then we don't
+    // mark the block or anything else as live.
+    if (!unreachable.getIsAfterUnreachableCall())
+      return;
+
+    // If this is after a no-return call, then we do mark all the live-out
+    // values (e.g. like "read" arguments) as consumed so they don't get
+    // destroyed on this path.  This is calculated on the forward pass.
+    if (auto liveValueIds = op.getAttrOfType<mlir::DenseI32ArrayAttr>(
+            liveValueIdsAfterNoReturnCallAttrName)) {
+      // Mark all the live values as consumed so they don't get destroyed ahead
+      // of this.
+      for (int32_t valueId : liveValueIds.asArrayRef())
+        valueSet.getFullValueRef(valueId).markBits(consumedValues, true);
+    }
     return;
   }
 

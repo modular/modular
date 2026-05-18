@@ -586,15 +586,6 @@ void LowerSemanticCF::lowerBlock(Block &block, bool &doesRaise, bool &doesBreak,
       if (sugarIsa<NeverType>(calleeType.getUserResultType())) {
         auto b = handleSemanticTerminatorOp(*opAfterCall,
                                             "function that never returns");
-        // If we are in a deinit method, we should assume that we've
-        // deconstructed self enough. Mark self as destroyed so we don't get an
-        // error.
-        for (auto [conv, arg] : llvm::zip(
-                 theFunc.getFuncTypeGenerator().getBody().getArgConventions(),
-                 theFunc.getBody()->getArguments())) {
-          if (conv == ArgConvention::DeinitMem)
-            LIT::OwnershipMarkDestroyedOp::create(b, arg);
-        }
         UnreachableOp::create(b, op.getLoc(),
                               /*isAfterUnreachableCall=*/true);
         return;
