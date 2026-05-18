@@ -1663,6 +1663,7 @@ def get_kernel_simd_width[dtype: DType, target: StaticString]() -> Int:
     return simd_width_of[dtype]()
 
 
+@register_internal("mogg.elemwise_for_each")
 @__mogg_intrinsic_attr("mogg.for_each")
 @__mogg_intrinsic_attr("mogg.elemwise_for_each")
 @no_inline
@@ -1717,9 +1718,10 @@ def foreach[
     ](tensor.shape(), ctx)
 
 
+@register_internal("mogg.for_each")
 @__mogg_intrinsic_attr("mogg.for_each")
 @no_inline
-def foreach[
+def foreach_fusion[
     dtype: DType,
     rank: Int,
     //,
@@ -1764,10 +1766,11 @@ def foreach[
     ](tensor, ctx)
 
 
+@register_internal("mogg.for_each.out_func")
 @__mogg_intrinsic_attr("mogg.for_each")
 @__mogg_intrinsic_attr("mogg.for_each.out_func")
 @no_inline
-def foreach[
+def foreach_out_func[
     dtype: DType,
     rank: Int,
     //,
@@ -1863,6 +1866,7 @@ def foreach[
 
 # TensorCopy intrinsic used by view kernels.
 # z is a kernel output, and x a view of the input.
+@register_internal("mogg.view_materialize")
 @__mogg_intrinsic_attr("mogg.view_materialize")
 @doc_hidden
 @no_inline
