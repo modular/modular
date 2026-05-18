@@ -261,10 +261,10 @@ static ErrorOrSuccess parsePrecompileArgs(const State &state,
       }
 
       if (!pkgArgs.exportKgenModule && outputPath.extension() != ".mojoc") {
-        // TODO: Add a warning here on the old 'mojopkg' file extension, once
-        // everything is switched over to the new nomenclature.
         if (outputPath.extension() != ".mojopkg")
           return Error("output path must have a '.mojoc' extension");
+        llvm::errs() << "warning: creating '.mojopkg' file extensions is "
+                        "deprecated; switch to '.mojoc'\n";
       }
       if (pkgArgs.exportKgenModule && outputPath.extension() != ".mlirbc")
         return Error("output path must have a '.mlirbc' extension.");
@@ -582,6 +582,5 @@ static int precompile(const State &subcommandState) {
 
 void M::registerPrecompileSubcommand(SubcommandRegistry &registry) {
   registry.addCallback("precompile", precompile);
-  // TODO: Add deprecatedFor "precompile"
-  registry.addCallback("package", precompile);
+  registry.addCallback("package", precompile, "precompile");
 }
