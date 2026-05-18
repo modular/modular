@@ -1089,7 +1089,18 @@ struct Int(
         Raises:
             An error if the conversion failed.
         """
-        self = Python.py_long_as_ssize_t(py.__int__())
+        ref cpy = Python().cpython()
+        # Fast path for exact PyLong: skip the `py.__int__()` ->
+        # `PyNumber_Long` round trip and read the value directly.
+        # Subclasses (e.g. `bool`, `numpy.int64`) fall through so their
+        # `__int__` override is honored.
+        if cpy.PyLong_CheckExact(py._obj_ptr):
+            self = cpy.PyLong_AsSsize_t(py._obj_ptr)
+        else:
+            var int_obj = py.__int__()
+            self = cpy.PyLong_AsSsize_t(int_obj._obj_ptr)
+        if self == -1 and cpy.PyErr_Occurred():
+            raise cpy.unsafe_get_error()
 
     # ===-------------------------------------------------------------------===#
     # Methods
