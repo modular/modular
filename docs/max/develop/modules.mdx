@@ -306,10 +306,14 @@ result = compiled_model(input_data)
 print(result[0].to_numpy())
 ```
 
+<!-- rumdl-disable-next-line MD013 -->
 [`InferenceSession.load()`](/max/api/python/generated/max.engine.InferenceSession/#max.engine.InferenceSession.load)
 compiles a graph into an executable
 [`Model`](/max/api/python/generated/max.engine.Model/). It requires a graph and
 a `weights_registry`, or a dictionary that maps weight names to tensor data.
+Despite its name, `InferenceSession` is not limited to ML model inference; it can
+load MAX graphs for execution, including graphs for simple tensor operations as
+well as full models.
 
 You should have already passed this dictionary to `load_state_dict()`, which
 stored the dictionary inside the `Module` instance. Reuse it by passing
