@@ -35,6 +35,7 @@ from std.testing.prop.strategy import SIMD
 
 from std.utils import StaticTuple
 from std.utils.numerics import isfinite, isinf, isnan, nan
+from test_utils import check_convertible_to_python, check_python_object
 
 
 def test_cast() raises:
@@ -2697,6 +2698,21 @@ def test_float8_e8m0fnu_cast_from_float32() raises:
     randn(h_A.unsafe_ptr(), size=1)
     # Simply verify that cast doesn't error.
     _ = h_A[0].cast[DType.float8_e8m0fnu]()
+
+
+def test_convertible_to_python() raises:
+    check_convertible_to_python(1.5, "1.5")
+    check_convertible_to_python(Float32(1.5), "1.5")
+    check_convertible_to_python(Int32(42), "42")
+    check_convertible_to_python(
+        UInt64(12345678901234567890), "12345678901234567890"
+    )
+
+    # test implicit conversions
+    check_python_object(1.5, "1.5")
+    check_python_object(Float32(1.5), "1.5")
+    check_python_object(Int32(42), "42")
+    check_python_object(UInt64(12345678901234567890), "12345678901234567890")
 
 
 def main() raises:

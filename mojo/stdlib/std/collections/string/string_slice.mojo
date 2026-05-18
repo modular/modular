@@ -53,7 +53,7 @@ from std.memory import (
     memcpy,
     pack_bits,
 )
-from std.python import Python, PythonObject
+from std.python import ConvertibleToPython, Python, PythonObject
 from std.format._utils import _write_hex
 
 
@@ -87,6 +87,7 @@ print(format_string.format("bats", 6))     # => bats: 6
 
 struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
     Boolable,
+    ConvertibleToPython,
     Defaultable,
     Equatable,
     FloatableRaising,
@@ -546,6 +547,22 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
             )[]
         except:
             raise cpython.get_error()
+
+    def to_python_object(var self) raises -> PythonObject:
+        """Convert this value to a `PythonObject`.
+
+        Returns:
+            A `PythonObject` representing this value.
+        Raises:
+            If the Python runtime is not initialized or conversion fails.
+        """
+        ref cpy = Python().cpython()
+        # TODO: This should not be necessary, as `StringSlice` is guaranteed to
+        # be valid UTF-8.
+        var unicode = cpy.PyUnicode_DecodeUTF8(self)
+        if not unicode:
+            raise cpy.unsafe_get_error()
+        return PythonObject(from_owned=unicode)
 
     # ===------------------------------------------------------------------===#
     # Operator dunders
