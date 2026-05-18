@@ -201,8 +201,7 @@ class ModelWorker:
             any_model = next(iter(pipeline_config.models.values()))
             first_device = load_device(any_model.device_specs[0])
             _prime_pinned_memory_cache(first_device)
-            # This crashes on 8xMI355. TODO(GEX-3321)
-            if first_device.api == "cuda":
+            if first_device.api in ("cuda", "hip"):
                 for spec in any_model.device_specs[1:]:
                     _prime_pinned_memory_cache(load_device(spec))
 
