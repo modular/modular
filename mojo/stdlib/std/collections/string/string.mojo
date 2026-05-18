@@ -838,6 +838,21 @@ struct String(
         """
         return StringSlice(self)[codepoint=codepoint]
 
+    @always_inline
+    def __getitem__(
+        self, *, codepoint: ContiguousSlice
+    ) -> StringSlice[origin_of(self)]:
+        """Gets a substring at the specified codepoint positions.
+
+        Args:
+            codepoint: A slice that specifies codepoint positions of the new
+                substring.
+
+        Returns:
+            A StringSlice containing the codepoints in the specified range.
+        """
+        return StringSlice(self)[codepoint=codepoint]
+
     def __eq__(self, rhs: String) -> Bool:
         """Compares two Strings if they have the same values.
 
