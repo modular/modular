@@ -26,6 +26,7 @@ import functools
 import math
 from collections.abc import Callable, Iterable, Sequence
 from enum import Enum, auto
+from typing import Any
 
 from max.dtype import DType
 from max.graph import (
@@ -36,6 +37,7 @@ from max.graph import (
     TensorType,
     TensorValue,
     TensorValueLike,
+    Value,
     ops,
 )
 from max.graph.quantization import QuantizationEncoding
@@ -54,6 +56,7 @@ from max.nn.rotary_embedding import (
     Llama3RopeScalingParams,
     Llama3RotaryEmbedding,
 )
+from max.nn.transformer import forward_sequential_layers
 from max.nn.transformer.distributed_transformer import (
     DistributedLogitsPostprocessMixin,
     forward_sharded_layers,
@@ -62,6 +65,29 @@ from max.nn.transformer.distributed_transformer import (
 from .layers.attention import Step3p5Attention
 from .layers.moe_gate import Step3p5MoEGate
 from .model_config import Step3p5Config
+
+
+def _unpack_kv_collections(
+    kv_collections: Sequence[PagedCacheValues],
+) -> tuple[
+    list[BufferValue],
+    list[TensorValue],
+    list[TensorValue],
+    list[TensorValue],
+    list[TensorValue],
+]:
+    """Split ``PagedCacheValues`` into flat tensor lists for subgraph inputs."""
+    return (
+        [kv.kv_blocks for kv in kv_collections],
+        [kv.cache_lengths for kv in kv_collections],
+        [kv.lookup_table for kv in kv_collections],
+        [kv.max_lengths for kv in kv_collections],
+        [
+            kv.attention_dispatch_metadata
+            for kv in kv_collections
+            if kv.attention_dispatch_metadata is not None
+        ],
+    )
 
 
 class ParallelismMode(Enum):
@@ -218,11 +244,14 @@ class Step3p5TransformerBlock(Module):
         self.devices = config.devices
         num_devices = len(config.devices)
         self.mode = mode
+        self.ep_manager = ep_manager
 
         # Determine if this is a sliding window layer
         is_sliding = False
         if config.layer_types and layer_idx < len(config.layer_types):
             is_sliding = config.layer_types[layer_idx] == "sliding_attention"
+        self.is_sliding = is_sliding
+        self.is_moe = layer_idx in config.moe_layers
 
         # Select num heads based on layer type
         if is_sliding:
@@ -341,11 +370,32 @@ class Step3p5TransformerBlock(Module):
         self,
         layer_idx: TensorValue,
         xs: list[TensorValue],
-        kv_collections: list[PagedCacheValues],
+        signal_buffers: list[BufferValue],
+        kv_blocks: list[BufferValue],
+        kv_cache_lengths: list[TensorValue],
+        kv_lookup_table: list[TensorValue],
+        kv_max_lengths: list[TensorValue],
+        dispatch_metadata_tensors: list[TensorValue],
         freqs_cis: list[TensorValue],
         input_row_offsets: list[TensorValue],
-        signal_buffers: list[BufferValue],
+        ep_inputs: list[Value[Any]] | None = None,
     ) -> list[TensorValue]:
+        num_devices = len(kv_blocks)
+        kv_collections = [
+            PagedCacheValues(
+                kv_blocks=kv_blocks[i],
+                cache_lengths=kv_cache_lengths[i],
+                lookup_table=kv_lookup_table[i],
+                max_lengths=kv_max_lengths[i],
+                attention_dispatch_metadata=(
+                    dispatch_metadata_tensors[i]
+                    if dispatch_metadata_tensors
+                    else None
+                ),
+            )
+            for i in range(num_devices)
+        ]
+
         # Input layer norm
         norm_xs = forward_sharded_layers(self.input_layernorm_shards, xs)
 
@@ -377,6 +427,9 @@ class Step3p5TransformerBlock(Module):
         norm_outs = forward_sharded_layers(
             self.post_attention_layernorm_shards, hs
         )
+
+        if self.ep_manager is not None and ep_inputs is not None:
+            self.ep_manager.fetch_buffers(ep_inputs)
 
         # MLP/MoE dispatch by per-layer sharding (set in __init__):
         # - EP MoE: EP combine handles cross-rank reduction, no allreduce.
@@ -698,6 +751,17 @@ class Step3p5(DistributedLogitsPostprocessMixin, Module):
             ]
         )
 
+        self.subgraph_layer_groups: list[list[int]] = []
+        if config.use_subgraphs:
+            groups: dict[tuple[bool, bool], list[int]] = {}
+            for i, layer in enumerate(self.layers):
+                assert isinstance(layer, Step3p5TransformerBlock)
+                group_key = (layer.is_sliding, layer.is_moe)
+                groups.setdefault(group_key, []).append(i)
+            for indices in groups.values():
+                if len(indices) > 1:
+                    self.subgraph_layer_groups.append(indices)
+
         # Final norm (zero-centered)
         self.norm = create_norm()
         self.norm.sharding_strategy = ShardingStrategy.replicate(
@@ -735,6 +799,7 @@ class Step3p5(DistributedLogitsPostprocessMixin, Module):
         signal_buffers: list[BufferValue],
         host_input_row_offsets: TensorValue | None = None,
         data_parallel_splits: TensorValue | None = None,
+        ep_inputs: list[Value[Any]] | None = None,
     ) -> tuple[TensorValue, ...]:
         # Embeddings
         h = self.embed_tokens(tokens, signal_buffers)
@@ -766,17 +831,49 @@ class Step3p5(DistributedLogitsPostprocessMixin, Module):
                 data_parallel_splits,
             )
 
-        # Transformer layers
-        for idx, layer in enumerate(self.layers):
-            layer_idx = ops.constant(idx, DType.uint32, device=DeviceRef.CPU())
-            h = layer(
-                layer_idx,
-                h,
-                kv_collections,
+        (
+            kv_blocks,
+            kv_cache_lengths,
+            kv_lookup_table,
+            kv_max_lengths,
+            dispatch_metadata_tensors,
+        ) = _unpack_kv_collections(kv_collections)
+
+        def inputs_for_layer(
+            idx: int, hs: list[TensorValue]
+        ) -> list[Value[Any] | Sequence[Value[Any]]]:
+            values: list[Value[Any] | Sequence[Value[Any]]] = [
+                ops.constant(idx, DType.uint32, device=DeviceRef.CPU()),
+                hs,
+                signal_buffers,
+                kv_blocks,
+                kv_cache_lengths,
+                kv_lookup_table,
+                kv_max_lengths,
+                dispatch_metadata_tensors,
                 per_layer_freqs[idx],
                 input_row_offsets_list,
-                signal_buffers,
-            )
+            ]
+            if ep_inputs is not None:
+                values.append(ep_inputs)
+            return values
+
+        def name_for_subgraph(group_idx: int) -> str:
+            group = self.subgraph_layer_groups[group_idx]
+            first = self.layers[group[0]]
+            assert isinstance(first, Step3p5TransformerBlock)
+            attn = "sliding" if first.is_sliding else "full"
+            mlp = "moe" if first.is_moe else "mlp"
+            return f"step3p5_{attn}_{mlp}_block"
+
+        h = forward_sequential_layers(
+            list(self.layers),
+            inputs_for_layer=inputs_for_layer,
+            weight_prefix_for_layer=lambda i: f"layers.{i}.",
+            subgraph_layer_groups=self.subgraph_layer_groups or None,
+            name_for_subgraph=name_for_subgraph,
+            initial_hidden_states=h,
+        )
 
         if is_dp_ep:
             return self._dp_logits_postprocess(
