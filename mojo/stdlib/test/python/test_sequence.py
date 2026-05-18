@@ -13,10 +13,15 @@
 
 """Integration test for SequenceProtocolBuilder (sq_length, sq_item, sq_ass_item, sq_contains, sq_concat, sq_repeat)."""
 
+from typing import Any
+
 import sequence_mojo_module as mojo_module  # type: ignore[import-not-found]
 
 
-def _run_sequence_assertions(cls: type) -> None:
+def _run_sequence_assertions(cls: Any) -> None:
+    # `cls` is a Mojo-defined Python type; `from_list` is a classmethod
+    # registered via `def_staticmethod` and is not visible to mypy as a
+    # standard `type` attribute.
     obj = cls.from_list([10, 20, 30])
 
     # __len__ (sq_length)

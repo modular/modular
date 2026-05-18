@@ -28,6 +28,7 @@ from std.python import PythonObject
 from std.python.bindings import PythonModuleBuilder
 
 from std.python.builders import MappingProtocolBuilder
+from std.python.utils import PySlotError
 
 
 struct SimpleList(Defaultable, Movable, Writable):
@@ -44,29 +45,45 @@ struct SimpleList(Defaultable, Movable, Writable):
         return PythonObject(alloc=result^)
 
     @staticmethod
-    def py__len__(self_ptr: UnsafePointer[Self, MutAnyOrigin]) raises -> Int:
+    def py__len__(
+        self_ptr: UnsafePointer[Self, MutAnyOrigin]
+    ) raises PySlotError -> Int:
         return len(self_ptr[].data)
 
     @staticmethod
     def py__getitem__(
         self_ptr: UnsafePointer[Self, MutAnyOrigin], index: PythonObject
-    ) raises -> PythonObject:
-        var i = Int(py=index)
+    ) raises PySlotError -> PythonObject:
+        var i: Int
+        try:
+            i = Int(py=index)
+        except e:
+            raise PySlotError.type_error(String(e))
         if i < 0 or i >= len(self_ptr[].data):
-            raise Error("index out of range")
-        return PythonObject(self_ptr[].data[i])
+            raise PySlotError.index_error("index out of range")
+        try:
+            return PythonObject(self_ptr[].data[i])
+        except e:
+            raise PySlotError.runtime_error(String(e))
 
     @staticmethod
     def py__setitem__(
         self_ptr: UnsafePointer[Self, MutAnyOrigin],
         index: PythonObject,
         value: Variant[PythonObject, Int],
-    ) raises -> None:
-        var i = Int(py=index)
+    ) raises PySlotError -> None:
+        var i: Int
+        try:
+            i = Int(py=index)
+        except e:
+            raise PySlotError.type_error(String(e))
         if i < 0 or i >= len(self_ptr[].data):
-            raise Error("index out of range")
+            raise PySlotError.index_error("index out of range")
         if value.isa[PythonObject]():
-            self_ptr[].data[i] = Int(py=value[PythonObject])
+            try:
+                self_ptr[].data[i] = Int(py=value[PythonObject])
+            except e:
+                raise PySlotError.type_error(String(e))
         else:
             _ = self_ptr[].data.pop(i)
 
@@ -96,11 +113,20 @@ struct SimpleListV(Defaultable, Movable, Writable):
         return len(self.data)
 
     # Raising value receiver
-    def py__getitem__(self, index: PythonObject) raises -> PythonObject:
-        var i = Int(py=index)
+    def py__getitem__(
+        self, index: PythonObject
+    ) raises PySlotError -> PythonObject:
+        var i: Int
+        try:
+            i = Int(py=index)
+        except e:
+            raise PySlotError.type_error(String(e))
         if i < 0 or i >= len(self.data):
-            raise Error("index out of range")
-        return PythonObject(self.data[i])
+            raise PySlotError.index_error("index out of range")
+        try:
+            return PythonObject(self.data[i])
+        except e:
+            raise PySlotError.runtime_error(String(e))
 
     # Mutation still uses pointer receiver so changes are visible on the Python object
     @staticmethod
@@ -108,12 +134,19 @@ struct SimpleListV(Defaultable, Movable, Writable):
         self_ptr: UnsafePointer[Self, MutAnyOrigin],
         index: PythonObject,
         value: Variant[PythonObject, Int],
-    ) raises -> None:
-        var i = Int(py=index)
+    ) raises PySlotError -> None:
+        var i: Int
+        try:
+            i = Int(py=index)
+        except e:
+            raise PySlotError.type_error(String(e))
         if i < 0 or i >= len(self_ptr[].data):
-            raise Error("index out of range")
+            raise PySlotError.index_error("index out of range")
         if value.isa[PythonObject]():
-            self_ptr[].data[i] = Int(py=value[PythonObject])
+            try:
+                self_ptr[].data[i] = Int(py=value[PythonObject])
+            except e:
+                raise PySlotError.type_error(String(e))
         else:
             _ = self_ptr[].data.pop(i)
 
