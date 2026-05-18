@@ -67,7 +67,7 @@ from std.memory import (
   UnsafePointer
 )
 
-from std.runtime.asyncrt import DeviceContextPtr
+from std.gpu.host import DeviceContext
 
 comptime unary_fn_type = __mlir_type[
     `(`,
@@ -75,7 +75,7 @@ comptime unary_fn_type = __mlir_type[
     `, `,
     UnsafePointer[Int, _],
     `, `,
-    DeviceContextPtr,
+    DeviceContext,
     `) -> `,
     NoneType,
 ]
