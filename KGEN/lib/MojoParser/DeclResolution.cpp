@@ -32,6 +32,7 @@
 #include "Support/Filesystem/Paths.h"
 
 #include "KGEN/LITDialect/LITUtils.h"
+#include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
 #include "mlir/Transforms/RegionUtils.h"
 #include "llvm/ADT/ScopeExit.h"
@@ -4360,6 +4361,15 @@ ParseResult DeclResolver::resolveBody(TraitDeclOp traitOp, Lexer &lexer,
                                       ASTDecl &traitDecl) {
   // TODO: Sink this to when the body is actually resolved.
   traitDecl.resolvedness = DeclResolvedness::body;
+
+  // Notice the ImplicitlyDestructible trait and encode it into the top level
+  // MLIR module that we're processing.  CheckLifetimes will see this to find
+  // conformances to this important trait.
+  if (traitOp.getSymName() == "ImplicitlyDestructible") {
+    auto moduleOp = cast<ModuleOp>(shared.getTopLevelDecl().getIfOperation());
+    moduleOp->setAttr(implicitlyDestructibleSymbolAttrName,
+                      getFullyResolvedSymbolRef(traitOp));
+  }
 
   // Push the debug scope for this trait if necessary so that nested operations
   // have proper debug info.

@@ -6,7 +6,7 @@
 
 # RUN: %parse-mojo-isolated -verify-diagnostics %s | FileCheck %s
 
-# CHECK: module {
+# CHECK: module attributes {".mojo.implicitly.destructible.symbol" = @std::@builtin::@stubs::@ImplicitlyDestructible} {
 
 def noop(): pass
 
