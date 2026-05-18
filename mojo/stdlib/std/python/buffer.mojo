@@ -22,7 +22,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.ffi import c_int
-from std.memory import OpaquePointer, UnsafePointer
+from std.memory import OpaquePointer, UnsafePointer, alloc
 from std.python import Python, PythonObject
 from std.python._cpython import (
     PyObjectPtr,
@@ -40,13 +40,18 @@ comptime _PyBUF_WRITABLE = Int32(0x0001)
 comptime _PyBUF_FORMAT = Int32(0x0004)
 
 
-struct BufferInfo:
+struct BufferInfo(Movable):
     """User-friendly buffer descriptor returned by a `bf_getbuffer` handler.
 
     Fill this in your handler to describe a 1D C-contiguous buffer.
     The `buf` pointer must remain valid until the matching `bf_releasebuffer`
     is called.  Do **not** resize the backing allocation while a buffer view
     is active.
+
+    The wrapper heap-promotes the returned `BufferInfo` so its address is
+    stable across the `bf_getbuffer` / `bf_releasebuffer` window; the
+    `nitems` and `itemsize` fields are used directly as the single-element
+    `shape` and `strides` arrays (`Py_ssize_t *` of length 1).
 
     Example:
         ```mojo
@@ -165,58 +170,46 @@ def _bf_getbuffer_wrapper[
             )
             return c_int(-1)
 
-        # Allocate storage for: shape[0] (8 bytes) + strides[0] (8 bytes)
-        # + format string (fmt_len bytes) + null terminator (1 byte).
-        # On 64-bit platforms Int = 8 bytes, so the two Int fields occupy 16 bytes.
-        var fmt_bytes = info.format.as_bytes()
-        var fmt_len = len(fmt_bytes)
-        var alloc_size = 16 + fmt_len + 1  # 2 * sizeof(Int64) + format + NUL
-
-        # List.steal_data() gives us an owned UnsafePointer we can free later.
-        var store = List[UInt8](capacity=alloc_size)
-        store.resize(alloc_size, 0)
-        var alloc = store.steal_data()
-
-        # shape[0] = nitems  (Py_ssize_t at byte offset 0)
-        var shape_ptr = rebind[UnsafePointer[Int, MutAnyOrigin]](alloc)
-        shape_ptr[0] = info.nitems
-
-        # strides[0] = itemsize  (Py_ssize_t at byte offset 8)
-        var stride_ptr = shape_ptr + 1
-        stride_ptr[0] = info.itemsize
-
-        # format string: copy bytes then null-terminate (byte offset 16)
-        var fmt_ptr = alloc + 16  # 2 * 8 bytes past the two Int fields
-        for i in range(fmt_len):
-            fmt_ptr[i] = fmt_bytes[i]
-        fmt_ptr[fmt_len] = 0
+        # Heap-promote `info` so its address is stable across the
+        # `bf_getbuffer` / `bf_releasebuffer` window. CPython requires that
+        # `view->shape`, `view->strides`, and `view->format` remain valid
+        # until release; pointing them at fields inside the heap-allocated
+        # `BufferInfo` keeps everything alive with a single allocation
+        # (no separate metadata block, no format-string copy).
+        var heap_info = alloc[BufferInfo](1)
+        heap_info.init_pointee_move(info^)
 
         # Fill the Py_buffer view.
-        view[].buf = rebind[OpaquePointer[MutAnyOrigin]](info.buf)
+        view[].buf = rebind[OpaquePointer[MutAnyOrigin]](heap_info[].buf)
         view[].obj = cpython.Py_NewRef(raw_self)
-        view[].len = info.nitems * info.itemsize
-        view[].itemsize = info.itemsize
-        view[].readonly = Int32(1) if info.readonly else Int32(0)
+        view[].len = heap_info[].nitems * heap_info[].itemsize
+        view[].itemsize = heap_info[].itemsize
+        view[].readonly = Int32(1) if heap_info[].readonly else Int32(0)
         view[].ndim = Int32(1)
         view[].suboffsets = UnsafePointer[Int, MutAnyOrigin](
             unsafe_from_address=0
         )
 
-        # Always provide shape; strides are provided so consumers requesting
-        # PyBUF_STRIDES / PyBUF_FULL_RO (e.g. memoryview) work correctly.
-        view[].shape = shape_ptr
-        view[].strides = stride_ptr
+        # shape[0] = nitems, strides[0] = itemsize — addresses of the
+        # corresponding Int fields inside the heap BufferInfo serve as the
+        # single-element Py_ssize_t arrays CPython expects.
+        view[].shape = UnsafePointer(to=heap_info[].nitems)
+        view[].strides = UnsafePointer(to=heap_info[].itemsize)
 
-        # Provide format string only when the consumer requests it.
+        # Provide format string only when the consumer requests it. Mojo
+        # strings already store a trailing null byte, so the pointer is
+        # safe to hand to CPython directly.
         if Int32(flags) & _PyBUF_FORMAT:
-            view[].format = rebind[UnsafePointer[UInt8, MutAnyOrigin]](fmt_ptr)
+            view[].format = rebind[UnsafePointer[UInt8, MutAnyOrigin]](
+                heap_info[].format.unsafe_ptr()
+            )
         else:
             view[].format = UnsafePointer[UInt8, MutAnyOrigin](
                 unsafe_from_address=0
             )
 
-        # Stash the allocation for releasebuffer to free.
-        view[].internal = rebind[OpaquePointer[MutAnyOrigin]](alloc)
+        # Stash the heap_info pointer for releasebuffer to destroy and free.
+        view[].internal = rebind[OpaquePointer[MutAnyOrigin]](heap_info)
 
         return c_int(0)
     except e:
@@ -231,14 +224,21 @@ def _bf_getbuffer_wrapper[
 def _bf_releasebuffer_impl(
     raw_self: PyObjectPtr, view: UnsafePointer[_PyBuffer, MutAnyOrigin]
 ) abi("C") -> None:
-    """Default `releasebufferproc` that frees the shape/strides/format block.
+    """Default `releasebufferproc` that destroys and frees the heap-
+    promoted `BufferInfo` referenced by `view->internal`.
 
-    Called by CPython after a consumer is done with a buffer view.  The
-    heap block allocated by `_bf_getbuffer_wrapper` is stored in
-    `view->internal`; this function frees it and clears the field.
+    Called by CPython after a consumer is done with a buffer view. The
+    `BufferInfo` heap slot allocated by `_bf_getbuffer_wrapper` owns the
+    format `String` and serves as backing storage for the `shape` and
+    `strides` pointers, so we must run its destructor before freeing the
+    slot itself.
     """
     if view[].internal:
-        rebind[UnsafePointer[UInt8, MutAnyOrigin]](view[].internal).free()
+        var heap_info = rebind[UnsafePointer[BufferInfo, MutAnyOrigin]](
+            view[].internal
+        )
+        heap_info.destroy_pointee()
+        heap_info.free()
         view[].internal = OpaquePointer[MutAnyOrigin](unsafe_from_address=0)
 
 
