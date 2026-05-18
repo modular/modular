@@ -29,7 +29,7 @@ from std.sys.intrinsics import PrefetchOptions, readfirstlane
 import std.gpu.memory as gpu_memory
 from std.algorithm import vectorize
 from std.bit import log2_floor
-from std.builtin.device_passable import DevicePassable
+from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.builtin.dtype import _unsigned_integral_type_of
 from std.gpu.host import DeviceBuffer, HostBuffer, DeviceContext
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
@@ -327,8 +327,10 @@ struct LayoutTensor[
                 Self.OriginCastType[ImmutExternalOrigin],
             ]().contains[T]()
 
-    def _to_device_type(self, target: MutOpaquePointer[_]):
-        target.bitcast[Self.device_type]()[] = self
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
+        encoder.encode(self, target)
 
     @staticmethod
     def get_type_name() -> String:

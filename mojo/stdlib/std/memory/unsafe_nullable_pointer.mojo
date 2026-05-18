@@ -23,7 +23,7 @@ from std.sys.intrinsics import (
     unlikely,
 )
 
-from std.builtin.device_passable import DevicePassable
+from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.builtin.rebind import downcast
 from std.builtin.format_int import _write_int
 from std.builtin.simd import _simd_construction_checks
@@ -748,12 +748,14 @@ struct UnsafeNullablePointer[
     comptime device_type: AnyType = Self
     """DeviceBuffer dtypes are remapped to UnsafeNullablePointer when passed to accelerator devices."""
 
-    def _to_device_type(self, target: MutOpaquePointer[_]):
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
         """Device dtype mapping from DeviceBuffer to the device's UnsafeNullablePointer.
         """
         # TODO: Allow the low-level DeviceContext implementation to intercept
         # these translations.
-        target.bitcast[Self.device_type]()[] = self.address
+        encoder.encode(self, target)
 
     @staticmethod
     def get_type_name() -> String:

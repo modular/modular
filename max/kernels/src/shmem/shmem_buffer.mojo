@@ -23,7 +23,7 @@ from std.gpu.host import DeviceContext, HostBuffer
 from std.gpu.host.device_context import _checked, _CString, _DeviceContextPtr
 
 from .shmem_api import shmem_free, shmem_malloc
-from std.builtin.device_passable import DevicePassable
+from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 
 
 struct SHMEMBuffer[dtype: DType](DevicePassable, Sized):
@@ -35,8 +35,10 @@ struct SHMEMBuffer[dtype: DType](DevicePassable, Sized):
         Scalar[Self.dtype], MutAnyOrigin
     ]
 
-    def _to_device_type(self, target: MutOpaquePointer[_]):
-        target.bitcast[Self.device_type]()[] = self._data
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
+        encoder.encode(self._data, target)
 
     @staticmethod
     def get_type_name() -> String:

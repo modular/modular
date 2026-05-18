@@ -14,7 +14,7 @@
 from std.sys import is_gpu
 
 from asyncrt_test_utils import create_test_device_context
-from std.builtin.device_passable import DevicePassable
+from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.gpu import global_idx
 from std.gpu.host import DeviceContext
 from std.testing import TestSuite, assert_equal
@@ -35,10 +35,10 @@ struct ZeroSized(
 ):
     comptime device_type: AnyType = Self
 
-    def _to_device_type[
-        origin: MutOrigin
-    ](self, target: UnsafePointer[NoneType, origin]):
-        target.bitcast[Self.device_type]()[] = self
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
+        encoder.encode(self, target)
 
     @staticmethod
     def get_type_name() -> String:
@@ -61,10 +61,10 @@ struct NotZeroSized(
 ):
     comptime device_type: AnyType = Self
 
-    def _to_device_type[
-        origin: MutOrigin
-    ](self, target: UnsafePointer[NoneType, origin]):
-        target.bitcast[Self.device_type]()[] = self
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
+        encoder.encode(self, target)
 
     @staticmethod
     def get_type_name() -> String:

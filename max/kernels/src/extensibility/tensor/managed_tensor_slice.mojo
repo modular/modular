@@ -23,7 +23,7 @@ from std.sys.intrinsics import _type_is_eq, strided_load, strided_store
 
 import std.algorithm
 from layout import CoordLike, IntTuple
-from std.builtin.device_passable import DevicePassable
+from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from compiler_internal.directives import (
     StaticTensorSpec,
     __mogg_intrinsic_attr,
@@ -377,8 +377,10 @@ struct ManagedTensorSlice[
         Self.dtype, Self.static_spec.to_layout(), MutAnyOrigin
     ]
 
-    def _to_device_type(self, target: MutOpaquePointer[_]):
-        target.bitcast[Self.device_type]()[] = self.to_layout_tensor()
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
+        encoder.encode(self.to_layout_tensor(), target)
 
     @staticmethod
     def get_type_name() -> String:

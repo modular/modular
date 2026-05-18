@@ -51,7 +51,10 @@ from std.sys.intrinsics import _type_is_eq
 from std.sys.defines import _is_bool_like
 
 from std.reflection import call_location, SourceLocation
-from std.builtin.device_passable import DevicePassable
+from std.builtin.device_passable import (
+    DevicePassable,
+    DeviceTypeEncoder,
+)
 from std.compile.compile import CompiledFunctionInfo
 from std.reflection import get_linkage_name, reflect, reflect_fn
 from std.gpu.host.compile import (
@@ -1159,15 +1162,13 @@ struct DevicePointer[dtype: DType](
     """`DevicePointer` is remapped to `UnsafePointer` when passed to
     accelerator devices."""
 
-    def _to_device_type(self, target: MutOpaquePointer[_]):
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
         """Device type mapping from `DevicePointer` to the device's
         `UnsafePointer`.
         """
-        # TODO: Use DeviceEncoder to write target specific bytes once
-        # DevicePassable is updated.
-        target.bitcast[Self.device_type]()[] = (
-            self._buffer.unsafe_ptr() + self._offset
-        )
+        encoder.encode_device_ptr(self, target)
 
     @staticmethod
     def get_type_name() -> String:
@@ -1178,6 +1179,46 @@ struct DevicePointer[dtype: DType](
             This type's name.
         """
         return String(t"DevicePointer[{Self.dtype}]")
+
+
+@fieldwise_init
+struct DefaultDeviceTypeEncoder(DeviceTypeEncoder):
+    """Provides a default implementation of the `DeviceTypeEncoder` trait."""
+
+    def encode_device_ptr(
+        mut self, value: DevicePointer, target: MutOpaquePointer[_]
+    ):
+        """Encodes a `DevicePointer` into `target`.
+
+        By default treat `DevicePointer` as `UnsafePointer`, works for Unified
+        Memory targets such as CUDA and HIP.
+
+        Args:
+            value: The `DevicePointer` instance to encode into `target`.
+            target: The opaque destination pointer to encode into.
+        """
+        value.unsafe_ptr()._to_device_type(self, target)
+
+
+@fieldwise_init
+struct MetalDeviceTypeEncoder(DeviceTypeEncoder):
+    """Provides a Metal specific implementation of the `DeviceTypeEncoder`
+    trait."""
+
+    def encode_device_ptr(
+        mut self, value: DevicePointer, target: MutOpaquePointer[_]
+    ):
+        """Encodes a `DevicePointer` into `target`.
+
+        By default treat `DevicePointer` as `UnsafePointer`, works for USM
+        targets such as CUDA and HIP.
+
+        Args:
+            value: The `DevicePointer` instance to encode into `target`.
+            target: The opaque destination pointer to encode into.
+        """
+        # TODO: GEX-3712: Implement Metal specific encoding.
+        value.unsafe_ptr()._to_device_type(self, target)
 
 
 struct DeviceBuffer[dtype: DType](
@@ -1200,12 +1241,15 @@ struct DeviceBuffer[dtype: DType](
     ]
     """DeviceBuffer dtypes are remapped to UnsafePointer when passed to accelerator devices."""
 
-    def _to_device_type(self, target: MutOpaquePointer[_]):
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
         """Device dtype mapping from DeviceBuffer to the device's UnsafePointer.
         """
-        # TODO: Allow the low-level DeviceContext implementation to intercept
-        # these translations.
-        target.bitcast[Self.device_type]()[] = self._device_ptr
+        try:
+            encoder.encode_device_ptr(self.device_ptr(), target)
+        except:
+            pass
 
     @staticmethod
     def get_type_name() -> String:
@@ -3003,6 +3047,11 @@ struct DeviceFunction[
         # we need to know the current count of arguments pushed.
         var translated_arg_idx = 0
 
+        # The device type encoder is passed into
+        # `DevicePassable._to_device_type()` to enable target specific encoding
+        # of device types.
+        var device_type_encoder = DefaultDeviceTypeEncoder()
+
         comptime for i in range(num_passed_args):
             # If the arg offset is negative then the corresponding declared
             # dtype is zero sized and we do not push the argument to the kernel.
@@ -3014,7 +3063,8 @@ struct DeviceFunction[
                         translated_arg_offset + extra_align
                     ]
                 ).bitcast[NoneType]()
-                args[i]._to_device_type(first_word_addr)
+                args[i]._to_device_type(device_type_encoder, first_word_addr)
+
                 dense_args_addrs[translated_arg_idx] = first_word_addr
                 dense_args_sizes[translated_arg_idx] = UInt64(
                     size_of[actual_arg_type.device_type]()

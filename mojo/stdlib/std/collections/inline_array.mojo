@@ -33,7 +33,7 @@ var filled = InlineArray[Int, 5](fill=42)
 """
 
 import std.math
-from std.builtin.device_passable import DevicePassable
+from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.builtin.rebind import downcast
 from std.builtin.constrained import _constrained_conforms_to
 from std.collections import check_bounds
@@ -279,14 +279,17 @@ struct InlineArray[ElementType: Copyable, size: Int](
     ]
     """The owned iterator type for this array."""
 
-    def _to_device_type(self, target: MutOpaquePointer[_]):
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
         """Convert the host type object to a device_type and store it at the
         target address.
 
         Args:
+            encoder: Target specific device type encoder.
             target: The target address to store the device type.
         """
-        target.bitcast[Self.device_type]()[] = self.copy()
+        encoder.encode(self, target)
 
     @staticmethod
     def get_type_name() -> String:

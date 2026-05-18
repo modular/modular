@@ -84,7 +84,7 @@ from nn.attention.gpu.nvidia.sm100.attention_utils import (
     sub_ftz,
 )
 from nn.attention.gpu.nvidia.sm90.attention import KVTMATile
-from std.builtin.device_passable import DevicePassable
+from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.sys._assembly import inlined_assembly
 
 
@@ -196,8 +196,10 @@ struct MLA_Decode_Pack[
     var lse_accum_split_ptr: Self.SplitAccumType
     comptime device_type: AnyType = Self
 
-    def _to_device_type(self, target: MutOpaquePointer[_]):
-        target.bitcast[Self.device_type]()[] = self
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
+        encoder.encode(self, target)
 
     @staticmethod
     def get_type_name() -> String:

@@ -25,7 +25,7 @@ from std.math import Ceilable, CeilDivable, Floorable, Truncable
 from std.sys.info import is_32bit
 from std.sys.info import bit_width_of
 
-from std.builtin.device_passable import DevicePassable
+from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.math import Absable, DivModable, Powable
 from std.python import (
     ConvertibleFromPython,
@@ -229,9 +229,11 @@ struct Int(
     comptime device_type: AnyType = Self
     """Int is remapped to the same type when passed to accelerator devices."""
 
-    def _to_device_type(self, target: MutOpaquePointer[_]):
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
         """Device type mapping is the identity function."""
-        target.bitcast[Self.device_type]()[] = self
+        encoder.encode(self, target)
 
     @staticmethod
     def get_type_name() -> String:

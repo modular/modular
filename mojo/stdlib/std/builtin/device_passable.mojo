@@ -12,8 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 """Implements the `DevicePassable` trait for types transferable to accelerator devices."""
 
+from std.sys import size_of
 from std.sys.intrinsics import _type_is_eq
 from std.builtin.rebind import downcast
+from std.gpu.host.device_context import DeviceBuffer, DevicePointer
 
 
 trait DevicePassable:
@@ -33,7 +35,9 @@ trait DevicePassable:
         else:
             return _type_is_eq[SrcT, Self.device_type]()
 
-    def _to_device_type(self, target: MutOpaquePointer[_]):
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
         """
         Convert the host type object to a device_type and store it at the
         target address.
@@ -55,5 +59,67 @@ trait DevicePassable:
 
         Returns:
             The host type's name.
+        """
+        ...
+
+
+trait DeviceTypeEncoder:
+    """This trait marks types as capable of encoding device types.
+
+    Used in `DevicePassable._to_device_type()` to enable target specific
+    encoding of device types at the boundary where functions are enqueued for
+    execution on an accelerator device.
+    """
+
+    def encode[
+        ValueType: DevicePassable
+    ](mut self, value: ValueType, target: MutOpaquePointer[_]):
+        """Encodes `value` into `target` as its device-side representation.
+
+        This is the default implementation for types whose
+        `DevicePassable.device_type` is `Self`, it writes the value's bits into
+        the storage pointed to by `target`.
+
+        Parameters:
+            ValueType: The type of `value`, see constraits.
+
+        Args:
+            value: The variable to encode.
+            target: The opaque destination pointer to encode into. Must point
+                to uninitialized storage at least `size_of[ValueType]()` bytes
+                wide.
+
+        Constraints:
+            - `ValueType` must conform to `DevicePassable`.
+            - `ValueType` must be its own leaf `device_type` (i.e.
+              `ValueType._is_convertible_to_device_type[ValueType]()` holds).
+            - `ValueType` must conform to `ImplicitlyCopyable` or to
+              `Copyable & ImplicitlyDestructible`.
+        """
+        comptime assert ValueType._is_convertible_to_device_type[
+            ValueType
+        ](), "encode: ValueType must be its own leaf device_type"
+
+        comptime if conforms_to(ValueType, ImplicitlyCopyable):
+            comptime T = downcast[ValueType, ImplicitlyCopyable]
+            target.bitcast[T]()[] = rebind[T](value)
+        elif conforms_to(ValueType, Copyable & ImplicitlyDestructible):
+            comptime T = downcast[ValueType, Copyable & ImplicitlyDestructible]
+            target.bitcast[T]()[] = rebind[T](value).copy()
+        else:
+            # TODO: Once MOCO-3858 is fixed use abort here instead
+            comptime assert False, (
+                "encode: Type must conform to ImplicitlyCopyable or Copyable &"
+                " ImplicitlyDestructible"
+            )
+
+    def encode_device_ptr(
+        mut self, value: DevicePointer, target: MutOpaquePointer[_]
+    ):
+        """Encodes a `DevicePointer` into `target`.
+
+        Args:
+            value: The `DevicePointer` instance to encode into `target`.
+            target: The opaque destination pointer to encode into.
         """
         ...
