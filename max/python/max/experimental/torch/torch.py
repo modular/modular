@@ -135,7 +135,7 @@ class CustomOpLibrary:
             ](
                 img_out: OutputTensor[dtype = DType.uint8, rank=2],
                 img_in: InputTensor[dtype = DType.uint8, rank=3],
-                ctx: DeviceContextPtr,
+                ctx: DeviceContext,
             ) raises:
                 ...
 
@@ -757,8 +757,8 @@ def _validate_op_arg_types(io_specs: list[str], op_name: str) -> None:
 
     # Types that are ignored or implicitly supplied by the graph compiler.
     types_to_ignore = {
-        "std::DeviceContextPtr",
-        "std::DeviceContextPtrList",
+        "std::DeviceContext",
+        "std::DeviceContextList",
         "std::Error",
     }
 

@@ -12,8 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.algorithm.functional import elementwise
+from std.gpu.host import DeviceContext
 from std.random import NormalRandom
-from std.runtime.asyncrt import DeviceContextPtr
 from tensor._indexing import _dot_prod
 
 from std.utils import IndexList
@@ -32,7 +32,7 @@ def random_normal[
     mean: Float32,
     stddev: Float32,
     seed_ptr: UnsafePointer[Scalar[DType.uint64], ImmutAnyOrigin],
-    ctx: DeviceContextPtr,
+    ctx: DeviceContext,
 ) raises:
     """Call `output_fn` with values generated from a normal distribution with
     the specified mean and standard deviation.

@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from std.gpu.host import DeviceContext
 from std.random import random_ui64
 
 from layout import Coord, TileTensor, row_major
@@ -24,7 +25,7 @@ from nn.index_tensor import (
     index_tensor_shape,
 )
 from std.math import align_up
-from std.runtime.asyncrt import DeviceContextPtr
+
 from std.sys import simd_width_of
 from std.testing import assert_equal
 
@@ -341,7 +342,7 @@ def test_index_tensor_CLIPVIT() raises:
         input_dyn,
         indices_dyn,
         output_dyn,
-        DeviceContextPtr(),
+        DeviceContext(api="cpu"),
     )
 
     for i in range(dim_0):
@@ -426,6 +427,7 @@ def test_index_tensor_llama2_mistral() raises:
         output_dyn,
         input_dyn,
         index_a_dyn,
+        context=DeviceContext(api="cpu"),
     )
 
     for i in range(index_dim_0):
@@ -436,7 +438,7 @@ def test_index_tensor_llama2_mistral() raises:
 
 # CHECK-LABEL: test_advanced_indexing_getitem
 # Matches equivalent numpy: input[:, :, index_a, index_b]
-def test_advanced_indexing_getitem() raises:
+def test_advanced_indexing_getitem(ctx: DeviceContext) raises:
     print("== test_advanced_indexing_getitem")
 
     # Initialize input with sequential data for test purposes.
@@ -525,7 +527,7 @@ def test_advanced_indexing_getitem() raises:
     ](
         output_dyn,
         in_strides,
-        DeviceContextPtr(),
+        ctx,
     )
 
     var output_stack = InlineArray[
@@ -584,7 +586,7 @@ def test_advanced_indexing_getitem() raises:
 
 # CHECK-LABEL: test_advanced_indexing_setitem_inplace
 # Matches equivalent numpy: input[:, :, index_a, index_b] = updates
-def test_advanced_indexing_setitem_inplace() raises:
+def test_advanced_indexing_setitem_inplace(ctx: DeviceContext) raises:
     print("== test_advanced_indexing_setitem_inplace")
 
     # Create input vector
@@ -680,7 +682,7 @@ def test_advanced_indexing_setitem_inplace() raises:
         input_dyn,
         idx_shape,
         upd_strides,
-        DeviceContextPtr(),
+        ctx,
     )
 
     var output_stack = InlineArray[
@@ -729,5 +731,6 @@ def main() raises:
     test_index_tensor_DLRM_batch()
     test_index_tensor_CLIPVIT()
     test_index_tensor_llama2_mistral()
-    test_advanced_indexing_getitem()
-    test_advanced_indexing_setitem_inplace()
+    with DeviceContext(api="cpu") as ctx:
+        test_advanced_indexing_getitem(ctx)
+        test_advanced_indexing_setitem_inplace(ctx)

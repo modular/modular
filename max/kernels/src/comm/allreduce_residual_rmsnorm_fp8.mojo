@@ -83,7 +83,7 @@ from layout.tile_tensor import _ComptimeConditionalTileTensor
 from std.utils import IndexList, StaticTuple
 from std.utils.numerics import get_accum_type
 
-from std.runtime.asyncrt import DeviceContextPtr
+
 from .fp8_utils import compute_dynamic_fp8_scale, fp8_quantize
 
 from .rms_norm_fp8 import rms_norm_fused_fp8
@@ -941,7 +941,7 @@ def _launch_split_allreduce_rmsnorm_fp8[
         gamma,
         epsilon,
         weight_offset,
-        DeviceContextPtr(ctx),
+        ctx,
         scale_ub,
         scale_output_2d,
     )
@@ -982,7 +982,7 @@ def _launch_split_allreduce_rmsnorm_fp8[
         gamma,
         epsilon,
         weight_offset,
-        DeviceContextPtr(ctx),
+        ctx,
         scale_ub,
         scale_output_2d,
     )

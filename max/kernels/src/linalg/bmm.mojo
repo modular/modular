@@ -47,7 +47,7 @@ from layout import (
 from layout.tma_async import TMATensorTile, create_tensor_tile
 from layout.tile_layout import Layout as TileLayout
 from std.logger import Logger
-from std.runtime.asyncrt import DeviceContextPtr, parallelism_level
+from std.runtime.asyncrt import parallelism_level
 from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
 from std.gpu.host.info import H100, _is_sm10x_gpu
 from std.utils.index import Index, IndexList
@@ -902,7 +902,7 @@ def batched_matmul[
     a_buf: TileTensor[address_space=AddressSpace.GENERIC, ...],
     b_buf: TileTensor[address_space=AddressSpace.GENERIC, ...],
     *,
-    context: DeviceContextPtr = DeviceContextPtr(),
+    context: Optional[DeviceContext] = None,
 ) raises:
     """TileTensor primary implementation of `batched_matmul`."""
     comptime assert c_buf.rank >= 2, "c must be at least rank 2"
@@ -963,7 +963,7 @@ def batched_matmul[
                 transpose_b=transpose_b,
                 elementwise_epilogue_fn=elementwise_epilogue_fn,
                 saturated_vnni=saturated_vnni,
-            ](c_buf, a_buf, b_buf, ctx=context.get_optional_device_context())
+            ](c_buf, a_buf, b_buf, ctx=context)
         else:
             comptime assert (
                 saturated_vnni == False
@@ -975,7 +975,7 @@ def batched_matmul[
                 c_buf,
                 a_buf,
                 b_buf,
-                context.get_device_context(),
+                context.value(),
             )
 
 

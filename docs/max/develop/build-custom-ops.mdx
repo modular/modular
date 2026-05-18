@@ -114,7 +114,7 @@ struct AddOne:
     ](
         output: OutputTensor,
         x: InputTensor[dtype=output.dtype, rank=output.rank, ...],
-        ctx: DeviceContextPtr,
+        ctx: DeviceContext,
     ) raises:
         # See below for the rest
 ```
@@ -158,7 +158,7 @@ struct AddOne:
     ](
         output: OutputTensor,
         x: InputTensor[dtype=output.dtype, rank=output.rank, ...],
-        ctx: DeviceContextPtr,
+        ctx: DeviceContext,
     ) raises:
         @parameter
         @always_inline
@@ -313,7 +313,7 @@ struct VectorAddition:
         output: OutputTensor[rank=1, ...],
         lhs: InputTensor[dtype=output.dtype, rank=output.rank, ...],
         rhs: InputTensor[dtype=output.dtype, rank=output.rank, ...],
-        ctx: DeviceContextPtr,
+        ctx: DeviceContext,
     ) raises:
         comptime if target == "cpu":
             _vector_addition_cpu(output, lhs, rhs, ctx)
@@ -338,10 +338,9 @@ def _vector_addition_gpu(
     output: ManagedTensorSlice[mut=True, ...],
     lhs: ManagedTensorSlice[dtype=output.dtype, rank=output.rank, ...],
     rhs: ManagedTensorSlice[dtype=output.dtype, rank=output.rank, ...],
-    ctx: DeviceContextPtr,
+    ctx: DeviceContext,
 ) raises:
     alias BLOCK_SIZE = 16
-    var gpu_ctx = ctx.get_device_context()
     var vector_length = output.dim_size(0)
 
     @parameter
@@ -353,7 +352,7 @@ def _vector_addition_gpu(
             output.store[1](idx, result)
 
     var num_blocks = ceildiv(vector_length, BLOCK_SIZE)
-    gpu_ctx.enqueue_function[vector_addition_gpu_kernel](
+    ctx.enqueue_function[vector_addition_gpu_kernel](
         vector_length, grid_dim=num_blocks, block_dim=BLOCK_SIZE
     )
 ```

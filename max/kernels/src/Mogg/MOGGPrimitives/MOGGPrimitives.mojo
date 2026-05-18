@@ -18,7 +18,7 @@ from std.sys import size_of, align_of
 
 from compiler_internal import StaticTensorSpec
 from std.collections import InlineArray
-from std.gpu.host import DeviceBuffer
+from std.gpu.host import DeviceBuffer, DeviceContext
 from std.gpu.host.device_context import _DeviceContextPtr
 from std.gpu.host.info import is_cpu, is_gpu
 from layout import (
@@ -34,7 +34,6 @@ from std.memory.unsafe_pointer import unsafe_cast
 
 from nn.concat import concat
 from register import register_internal
-from std.runtime.asyncrt import DeviceContextPtr
 from tensor import (
     IOSpec,
     ManagedTensorSlice,
@@ -124,7 +123,7 @@ def create_i1_async(
 def create_buffer_ref_async(
     buffer: MutByteBuffer,
     async_ptr: OpaquePointer[MutAnyOrigin],
-    call_ctx: DeviceContextPtr,
+    call_ctx: DeviceContext,
 ):
     external_call["MGP_RT_CreateAsyncDeviceBufferRef", NoneType](
         buffer.unsafe_ptr(), buffer.size(), async_ptr, call_ctx._handle
@@ -156,13 +155,13 @@ def empty_destructor(ptr: UnsafePointer[UInt8, MutExternalOrigin]):
 @no_inline
 def unpack_device_ctx(
     async_ptr: OpaquePointer[MutAnyOrigin],
-) -> DeviceContextPtr:
+) -> DeviceContext:
     var ptr = external_call[
         "MGP_RT_UnpackDeviceContext",
         _DeviceContextPtr[mut=True],
     ](async_ptr)
 
-    return DeviceContextPtr(ptr)
+    return DeviceContext(ptr)
 
 
 @no_inline
@@ -341,14 +340,14 @@ def mgp_tensor_slice[
 @register_internal("mgp.buffer.alloc")
 @no_inline
 def mgp_buffer_alloc(
-    byte_size: Int, dev_context: DeviceContextPtr
+    byte_size: Int, dev_context: DeviceContext
 ) raises -> MutByteBuffer:
     # Default to alignment of 0 which means kPreferredMemoryAlignment if cRawAlign is kUnknownSize (SizeUtils.h).
     # alias alignment = 0 if bRawAlign == UInt64.MAX else Int(bRawAlign)
 
     # This primitive has a byte-size input, so always assume a byte format
     var shape = IndexList[1](byte_size)
-    var buf = dev_context[].enqueue_create_buffer[DType.int8](byte_size)
+    var buf = dev_context.enqueue_create_buffer[DType.int8](byte_size)
     return MutByteBuffer(buf^.take_ptr(), shape)
 
 
@@ -539,7 +538,7 @@ def mgp_buffer_concat[
 ](
     output: MutByteBuffer,
     inputs: StaticTuple[MutByteBuffer, ...],
-    call_ctx: DeviceContextPtr,
+    call_ctx: DeviceContext,
 ) raises:
     var output_lt = TileTensor(
         output.unsafe_ptr(),
@@ -573,12 +572,12 @@ def mgp_buffer_device_to_host[
 ](
     dev_buf: MutByteBuffer,
     host_buf: MutByteBuffer,
-    dev_ctx: DeviceContextPtr,
+    dev_ctx: DeviceContext,
 ) raises:
     comptime if is_cpu[dHostDevice]() and is_gpu[cOtherDevice]():
-        dev_ctx[].enqueue_copy[DType.int8](
+        dev_ctx.enqueue_copy[DType.int8](
             host_buf.unsafe_ptr(),
-            dev_buf.to_device_buffer(dev_ctx[]),
+            dev_buf.to_device_buffer(dev_ctx),
         )
     else:
         raise Error("mgp.buffer.device_to_host must be scheduled on gpu device")
@@ -592,13 +591,13 @@ def mgp_buffer_device_to_device[
 ](
     src_buf: MutByteBuffer,
     dst_buf: MutByteBuffer,
-    src_dev_ctx: DeviceContextPtr,
-    dst_dev_ctx: DeviceContextPtr,
+    src_dev_ctx: DeviceContext,
+    dst_dev_ctx: DeviceContext,
 ) raises:
     comptime if is_gpu[cSrcDevice]() and is_gpu[dDstDevice]():
-        dst_dev_ctx[].enqueue_copy[DType.int8](
-            dst_buf.to_device_buffer(dst_dev_ctx[]),
-            src_buf.to_device_buffer(src_dev_ctx[]),
+        dst_dev_ctx.enqueue_copy[DType.int8](
+            dst_buf.to_device_buffer(dst_dev_ctx),
+            src_buf.to_device_buffer(src_dev_ctx),
         )
     elif is_cpu[cSrcDevice]() and is_cpu[dDstDevice]():
         memcpy(
@@ -621,11 +620,11 @@ def mgp_buffer_host_to_device[
 ](
     host_buf: MutByteBuffer,
     dev_buf: MutByteBuffer,
-    dev_ctx: DeviceContextPtr,
+    dev_ctx: DeviceContext,
 ) raises:
     comptime if is_gpu[dOtherDevice]() and is_cpu[cHostDevice]():
-        dev_ctx[].enqueue_copy[DType.int8](
-            dev_buf.to_device_buffer(dev_ctx[]),
+        dev_ctx.enqueue_copy[DType.int8](
+            dev_buf.to_device_buffer(dev_ctx),
             host_buf.unsafe_ptr(),
         )
     else:
@@ -696,15 +695,15 @@ def mgp_tensor_spec_get_dim[
 
 
 @export
-def mgp_device_context_destroy(dev_ctx: DeviceContextPtr):
+def mgp_device_context_destroy(dev_ctx: DeviceContext):
     # DeviceContext is refcounted, we don't need to explicitly destroy it
     pass
 
 
 @register_internal("mgp.sync")
 @no_inline
-def mgp_sync(ctx: StateContext, dev_ctx: DeviceContextPtr) raises:
-    dev_ctx[].synchronize()
+def mgp_sync(ctx: StateContext, dev_ctx: DeviceContext) raises:
+    dev_ctx.synchronize()
 
 
 @register_internal("mgp.debug.print")
@@ -979,7 +978,7 @@ struct MoggAsyncPackHelper:
     def __init__(
         out self,
         data: MutByteBuffer,
-        device_ctx_ptr: DeviceContextPtr,
+        device_ctx_ptr: DeviceContext,
         async_ptr: AnyAsyncValueRefPtr,
     ):
         """

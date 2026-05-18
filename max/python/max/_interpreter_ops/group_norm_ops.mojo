@@ -14,6 +14,7 @@
 """Mojo kernel wrappers for group_norm MO interpreter operations."""
 
 from std.os import abort
+from std.gpu.host import DeviceContext
 from std.python import PythonObject
 from std.python.bindings import PythonModuleBuilder
 from std.sys.info import has_accelerator
@@ -21,7 +22,7 @@ from std.sys.info import has_accelerator
 from std.algorithm.functional import IndexList
 from std.math import sqrt
 from std.memory import OpaquePointer
-from std.runtime.asyncrt import DeviceContextPtr
+
 from tensor import ManagedTensorSlice
 from tensor.io_spec import Input, Output
 from compiler_internal import StaticTensorSpec
@@ -183,7 +184,7 @@ def _group_norm_gpu[
                 io_spec=Output, static_spec=out_spec
             ](out_ptr, shape)
 
-            var device_ctx = DeviceContextPtr(ctx.unsafe_value())
+            var device_ctx = DeviceContext(ctx.unsafe_value())
 
             nn_group_norm[
                 dtype,

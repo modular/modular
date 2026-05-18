@@ -18,6 +18,7 @@ around the target location to compute the interpolated value.
 """
 from std.math import clamp, floor
 
+from std.gpu.host import DeviceContext
 from std.gpu.host.info import is_gpu
 from std.gpu import block_dim, block_idx, thread_idx
 from layout import (
@@ -28,7 +29,6 @@ from layout import (
     coord,
     coord_to_index_list,
 )
-from std.runtime.asyncrt import DeviceContextPtr
 from std.itertools import product
 
 
@@ -286,7 +286,7 @@ def resize_bicubic[
         mut=True, dtype, address_space=AddressSpace.GENERIC, ...
     ],
     input: TileTensor[dtype, address_space=AddressSpace.GENERIC, ...],
-    ctx: DeviceContextPtr,
+    ctx: DeviceContext,
 ) raises:
     """Perform bicubic interpolation.
 
@@ -313,7 +313,7 @@ def resize_bicubic[
             input_origin=ImmutOrigin(input.origin),
             InputLayoutType=input.LayoutType,
         ]
-        ctx.get_device_context().enqueue_function[kernel](
+        ctx.enqueue_function[kernel](
             output,
             input.as_immut(),
             grid_dim=(N, C),

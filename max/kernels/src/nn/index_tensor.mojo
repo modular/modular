@@ -19,7 +19,7 @@ from std.algorithm import elementwise, sync_parallelize
 from std.gpu.host import DeviceContext, get_gpu_target
 from std.gpu.host.info import is_cpu
 from layout import Coord, Idx, TileTensor, coord_to_index_list
-from std.runtime.asyncrt import DeviceContextPtr, parallelism_level
+from std.runtime.asyncrt import parallelism_level
 
 from std.utils import IndexList
 
@@ -146,7 +146,7 @@ def index_tensor[
     data: TileTensor[dtype, ...],
     indices: TileTensor[indices_type, ...],
     output: TileTensor[mut=True, dtype, ...],
-    ctx: DeviceContextPtr,
+    ctx: DeviceContext,
 ) raises:
     """
     Index_tensor operation; based on modified implementation of gather_nd.
@@ -164,7 +164,7 @@ def index_tensor[
                  to be within bounds [-s, s-1] along axis of size s. It is an
                  error if any of the index values are out of bounds.
         output: Tensor of rank data_rank + indices_rank - indices_shape[-1] - 1 - b.
-        ctx: The DeviceContextPtr as prepared by the graph compiler.
+        ctx: The device context as prepared by the graph compiler.
 
     """
 
@@ -172,12 +172,12 @@ def index_tensor[
         return _index_tensor_1d[
             batch_dims,
             target=target,
-        ](data, indices, output, ctx.get_optional_device_context())
+        ](data, indices, output, Optional[DeviceContext](ctx))
     else:
         return _index_tensor_impl[
             batch_dims,
             target=target,
-        ](data, indices, output, ctx.get_device_context())
+        ](data, indices, output, ctx)
 
 
 # Note: this is an extremely specialized version of the kernel that only handles
@@ -425,7 +425,7 @@ def advanced_indexing_getitem[
 ](
     out_tensor: TileTensor[mut=True, input_type, ...],
     in_tensor_strides: IndexList[input_rank],
-    ctx: DeviceContextPtr,
+    ctx: DeviceContext,
 ) raises:
     """Implement basic numpy-style advanced indexing.
 
@@ -472,7 +472,7 @@ def advanced_indexing_getitem[
     Args:
         out_tensor: The output tensor to write to.
         in_tensor_strides: The strides of the input tensor.
-        ctx: The DeviceContextPtr as prepared by the graph compiler.
+        ctx: The device context as prepared by the graph compiler.
 
     TODO(GEX-1951): Support boolean tensor mask support
     TODO(GEX-1952): Support non-contiguous indexing tensor case
@@ -607,7 +607,7 @@ def advanced_indexing_setitem_inplace[
     input_tensor: TileTensor[mut=True, input_type, ...],
     index_tensor_shape: IndexList[index_rank],
     updates_tensor_strides: IndexList[updates_rank],
-    ctx: DeviceContextPtr,
+    ctx: DeviceContext,
 ) raises:
     """Implement basic numpy-style advanced indexing with assignment.
 
@@ -674,7 +674,7 @@ def advanced_indexing_setitem_inplace[
         input_tensor: The input tensor being indexed into and modified in-place.
         index_tensor_shape: The shape of each index tensor.
         updates_tensor_strides: The strides of the update tensor.
-        ctx: The DeviceContextPtr as prepared by the graph compiler.
+        ctx: The device context as prepared by the graph compiler.
 
     TODO(GEX-1951): Support boolean tensor mask support
     TODO(GEX-1952): Support non-contiguous indexing tensor case

@@ -54,7 +54,6 @@ from nn.gather_scatter import normalize_neg_index
 from nn.reshape import reshape
 from nn.softmax import softmax_with_temperature
 from nn.topk_fi import apply_min_p_mask_kernel, topk_topp_sampling_from_prob
-from std.runtime.asyncrt import DeviceContextPtr
 from std.runtime.tracing import Trace, TraceLevel, trace_arg
 
 from std.utils.index import IndexList, product
@@ -140,7 +139,7 @@ def top_k[
     out_vals: TileTensor[mut=True, dtype, ...],
     out_idxs: TileTensor[mut=True, out_idx_type, ...],
     sorted: Bool,
-    ctx: DeviceContextPtr,
+    ctx: DeviceContext,
     k: Optional[
         TileTensor[
             DType.int64,
@@ -196,7 +195,7 @@ def top_k[
     with Trace[TraceLevel.OP, target=target](
         "top_k",
         Trace[TraceLevel.OP]._get_detail_str[trace_information](),
-        task_id=Int(ctx.get_device_context().id()),
+        task_id=Int(ctx.id()),
     ):
         var normalized_axis = normalize_neg_index(Int64(axis), input.rank)
 
@@ -217,7 +216,7 @@ def top_k[
                 out_idxs,
                 grain_size,
                 sorted=sorted,
-                ctx=ctx.get_optional_device_context(),
+                ctx=Optional[DeviceContext](ctx),
                 k=k,
             )
         else:
@@ -228,9 +227,8 @@ def top_k[
                     "Warning: Unsorted top-k is not supported on GPU. Falling"
                     " back to sorted top-k."
                 )
-            var cuda_ctx = ctx.get_device_context()
             topk_gpu[sampling=False, largest=largest](
-                cuda_ctx,
+                ctx,
                 bound_max_k,
                 input,
                 out_vals,

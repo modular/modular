@@ -26,6 +26,7 @@ by the NanCheckPass compiler pass. The architecture is:
 
 from std.algorithm import elementwise
 from std.gpu import barrier, block_dim, block_idx, thread_idx
+from std.gpu.host import DeviceContext
 from std.gpu.host.info import is_cpu
 from std.memory import alloc, stack_allocation
 from std.atomic import Atomic
@@ -33,7 +34,7 @@ from std.sys import simd_width_of
 from std.utils.numerics import isinf, isnan
 
 from std.math import ceildiv
-from std.runtime.asyncrt import DeviceContextPtr
+
 from std.utils.index import IndexList
 from tensor import InputTensor, OutputTensor
 
@@ -90,7 +91,7 @@ def nan_check_count[
     nan_count_out: OutputTensor[dtype=DType.int32, rank=1, ...],
     inf_count_out: OutputTensor[dtype=DType.int32, rank=1, ...],
     input: InputTensor[dtype=dtype, rank=rank, ...],
-    ctx: DeviceContextPtr,
+    ctx: DeviceContext,
 ) raises:
     """Counts NaN/Inf values in a floating-point tensor.
 
@@ -124,7 +125,7 @@ def nan_check_count[
                 _ = Atomic.fetch_add(inf_acc, infs)
 
         elementwise[scan, simd_width_of[dtype]()](
-            total, ctx.get_optional_device_context()
+            total, Optional[DeviceContext](ctx)
         )
 
         nan_count_out.unsafe_ptr()[] = nan_acc[]
@@ -135,7 +136,7 @@ def nan_check_count[
         # GPU path: parallel reduction writing directly to output tensors.
         # Zero the output counts first via a single-thread init kernel,
         # then run the reduction that atomically accumulates into them.
-        var gpu_ctx = ctx.get_device_context()
+        var gpu_ctx = ctx
         var out_nan_ptr = rebind[
             UnsafePointer[Scalar[DType.int32], MutAnyOrigin]
         ](nan_count_out.unsafe_ptr())

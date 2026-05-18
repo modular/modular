@@ -24,7 +24,6 @@ from std.collections.string.string_slice import get_static_string
 from std.math import ceildiv
 from std.gpu.host import DeviceContext
 from std.gpu.host.info import is_cpu, is_gpu
-from std.runtime.asyncrt import DeviceContextPtr
 from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
 from std.sys.info import CompilationTarget
 
@@ -302,82 +301,6 @@ def elementwise[
         target=target,
         trace_description=_trace_description,
     ](func_unified, shape, context)
-
-
-@always_inline
-def elementwise[
-    rank: Int,
-    //,
-    func: def[width: Int, rank: Int, alignment: Int = 1](
-        IndexList[rank]
-    ) capturing[_] -> None,
-    simd_width: Int,
-    *,
-    target: StaticString = "cpu",
-    _trace_description: StaticString = "elementwise",
-](shape: IndexList[rank, ...], context: DeviceContextPtr) raises:
-    """Executes `func[width, rank](indices)`, possibly as sub-tasks, for a
-    suitable combination of width and indices so as to cover shape. Returns when
-    all sub-tasks have completed.
-
-    Parameters:
-        rank: The rank of the buffer.
-        func: The body function.
-        simd_width: The SIMD vector width to use.
-        target: The target to run on.
-        _trace_description: Description of the trace.
-
-    Args:
-        shape: The shape of the buffer.
-        context: The device context to use.
-
-    Raises:
-        If the operation fails.
-    """
-
-    @always_inline
-    @parameter
-    def description_fn() -> String:
-        var shape_str = trace_arg("shape", shape)
-        var vector_width_str = String(t"vector_width={simd_width}")
-        return ";".join(Span([shape_str^, vector_width_str^]))
-
-    # Intern the kind string as a static string so we don't allocate.
-    comptime d = _trace_description
-    comptime desc = String(t"({d})") if d else ""
-    comptime kind = get_static_string["elementwise", desc]()
-
-    with Trace[TraceLevel.OP, target=target](
-        kind,
-        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
-        task_id=get_safe_task_id(context),
-    ):
-        comptime if is_gpu[target]():
-
-            def gpu_func_unified[
-                width: Int, rank: Int, alignment: Int = 1
-            ](indices: IndexList[rank]) register_passable {}:
-                func[width, rank, alignment](indices)
-
-            _elementwise_impl_gpu[
-                simd_width=simd_width,
-                trace_description=kind,
-            ](gpu_func_unified, shape=shape, ctx=context[])
-        else:
-
-            def cpu_func_unified[
-                width: Int, rank: Int, alignment: Int = 1
-            ](indices: IndexList[rank]) register_passable {}:
-                func[width, rank, alignment](indices)
-
-            _elementwise_impl_cpu[
-                simd_width=simd_width,
-                trace_description=_trace_description,
-            ](
-                cpu_func_unified,
-                shape=shape,
-                ctx=context.get_optional_device_context(),
-            )
 
 
 @always_inline

@@ -44,7 +44,7 @@ from linalg.utils import elementwise_compute_lambda_type
 from nn.attention.gpu.mha import flash_attention, mha_gpu_naive
 from nn.attention.mha_mask import NullMask
 from nn.softmax import softmax
-from std.runtime.asyncrt import DeviceContextPtr
+
 
 from std.utils.index import Index, IndexList
 
@@ -443,7 +443,7 @@ def bench_manual[
                 transpose_b=True,
                 elementwise_compute_lambda_fn=scale_fn,
                 target="gpu",
-            ](s_2d, q_2d, k_2d, DeviceContextPtr(ctx))
+            ](s_2d, q_2d, k_2d, ctx)
 
         # Step 2: softmax over the last axis (num_keys).
         var score_3d = TileTensor(
@@ -462,7 +462,7 @@ def bench_manual[
             Index(total_heads, seq_len, num_keys),
             score_3d,
             2,
-            DeviceContextPtr(ctx),
+            ctx,
         )
 
         # Step 3: Score @ V  (per-head 2D matmul, no epilogue).
@@ -479,7 +479,7 @@ def bench_manual[
                 o_base + h * seq_len * depth,
                 row_major((Idx(seq_len), Idx[depth]())),
             )
-            matmul[target="gpu"](o_2d, s_2d, v_2d, DeviceContextPtr(ctx))
+            matmul[target="gpu"](o_2d, s_2d, v_2d, ctx)
 
     if bench:
 
