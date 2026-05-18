@@ -3117,9 +3117,9 @@ void ClosureEmitter::addConformanceToDevicePassable(
         auto [toDevice, params, result] =
             pushBackTraitFunctionImpl(function, structDecl);
         b.setInsertionPointToStart(&toDevice.getBodyRegion().front());
-        assert(toDevice.getBodyRegion().getNumArguments() == 2);
+        assert(toDevice.getBodyRegion().getNumArguments() == 3);
         // get address
-        Value targetArgument = toDevice.getBodyRegion().front().getArgument(1);
+        Value targetArgument = toDevice.getBodyRegion().front().getArgument(2);
         StructType structType = cast<StructType>(targetArgument.getType());
         assert(structType.getParamValues().size() > 2 &&
                "expected pointer to be parameterized on element type");
