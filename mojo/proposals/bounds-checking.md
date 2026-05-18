@@ -1,5 +1,7 @@
 # Bounds checking and removing negative indexing
 
+**Status**: Implemented.
+
 ## Background
 
 Negative indexing prevents us from enabling bounds checking by default. Without

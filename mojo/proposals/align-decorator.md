@@ -1,6 +1,6 @@
 # `@align(N)` Decorator for Struct Alignment
 
-**Status**: Accepted.
+**Status**: Implemented.
 
 Author: Joe Loser
 

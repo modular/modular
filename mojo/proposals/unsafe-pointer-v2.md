@@ -1,6 +1,6 @@
 # `UnsafePointer` v2
 
-**Status**: Partially Implemented.
+**Status**: Implemented.
 
 ## Motivation
 

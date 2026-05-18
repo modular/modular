@@ -27,8 +27,11 @@ These proposals have been implemented and are part of Mojo today.
 
 | Proposal                                                                        | Description                                                 |
 |---------------------------------------------------------------------------------|-------------------------------------------------------------|
+| [align-decorator](align-decorator.md)                                           | `@align(N)` decorator for struct alignment                  |
 | [always_inline_builtin](always_inline_builtin.md)                               | `@always_inline("builtin")` decorator                       |
+| [bounds-checking](bounds-checking.md)                                           | Bounds checking and removing negative indexing              |
 | [byte-as-uint8](byte-as-uint8.md)                                               | Standardize byte sequences as `UInt8`                       |
+| [canonicalize-int](canonicalize-int.md)                                         | Canonicalize APIs around `Int`                              |
 | [collection-literal-design](collection-literal-design.md)                       | Collection literal syntax and semantics                     |
 | [comptime-expr](comptime-expr.md)                                               | `comptime` expression syntax                                |
 | [copyable-refines-movable](copyable-refines-movable.md)                         | `Copyable` trait refines `Movable`                          |
@@ -49,6 +52,7 @@ These proposals have been implemented and are part of Mojo today.
 | [simd-comparable](simd-comparable.md)                                           | Making `SIMD` conform to `Comparable`                       |
 | [string-design](string-design.md)                                               | Core `String` type design                                   |
 | [trait_composition](trait_composition.md)                                       | Trait composition with `&` operator                         |
+| [unsafe-pointer-v2](unsafe-pointer-v2.md)                                       | `UnsafePointer` redesign and migration                      |
 | [upgrading-value-decorator](upgrading-value-decorator.md)                       | Trait-based replacement for `@value`                        |
 | [value-ownership](value-ownership.md)                                           | Value ownership design (historical)                         |
 | [variable-bindings](variable-bindings.md)                                       | `var` and `ref` bindings design                             |
@@ -61,7 +65,6 @@ These proposals have been accepted and are planned for implementation.
 
 | Proposal                                                        | Description                                      |
 |-----------------------------------------------------------------|--------------------------------------------------|
-| [align-decorator](align-decorator.md)                           | `@align(N)` decorator for struct alignment       |
 | [code-improvement-diagnostics](code-improvement-diagnostics.md) | Compiler-integrated code improvement diagnostics |
 | [stdlib-insider-docs](stdlib-insider-docs.md)                   | Internal documentation for stdlib developers     |
 
@@ -71,9 +74,7 @@ These proposals have been accepted and implementation is in progress.
 
 | Proposal                                                | Description                                  |
 |---------------------------------------------------------|----------------------------------------------|
-| [canonicalize-int](canonicalize-int.md)                 | Canonicalize APIs around `Int`               |
 | [lifetimes-and-provenance](lifetimes-and-provenance.md) | Provenance tracking and lifetimes            |
-| [unsafe-pointer-v2](unsafe-pointer-v2.md)               | `UnsafePointer` redesign and migration       |
 | [upgrading-trivial](upgrading-trivial.md)               | Decoupling trivial from `@register_passable` |
 
 ## Proposed (Under Discussion)
