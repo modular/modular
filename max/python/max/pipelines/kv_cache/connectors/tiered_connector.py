@@ -83,6 +83,7 @@ class TieredConnector:
         max_disk_size_gb: float,
         use_direct_io: bool = False,
         synchronous_d2h_copy_mode: bool = False,
+        non_replicated_device_buffers_to_offload: list[Buffer] | None = None,
     ) -> None:
         if not params.enable_prefix_caching:
             raise ValueError(
@@ -99,6 +100,7 @@ class TieredConnector:
             total_num_host_blocks,
             device_buffers,
             replicate_kv_across_tp=params.replicates_kv_across_tp,
+            non_replicated_device_buffers_to_offload=non_replicated_device_buffers_to_offload,
         )
         self._host_buffer: PinnedHostKVCacheBuffer = (
             self._block_copy_engine.host_buffer

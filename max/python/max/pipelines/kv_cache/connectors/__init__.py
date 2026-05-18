@@ -43,6 +43,7 @@ def create_connector(
     device_buffers: list[Buffer],
     total_num_host_blocks: int,
     total_num_blocks: int,
+    non_replicated_device_buffers_to_offload: list[Buffer] | None = None,
 ) -> KVConnector:
     """Create a KV cache connector instance based on ``params.kv_connector``.
 
@@ -52,7 +53,7 @@ def create_connector(
         device_buffer: Device buffer for KV cache (owned by manager).
         total_num_host_blocks: Total number of host blocks for swapping.
         total_num_blocks: Total number of device blocks.
-        session: Optional inference session for loading custom kernels.
+        non_replicated_device_buffers_to_offload: Device buffers that should be offloaded by the connector.
 
     Returns:
         A connector instance implementing KVConnectorProtocol.
@@ -101,6 +102,8 @@ def create_connector(
         )
 
         if cfg.use_debug_tiered_mode:
+            if non_replicated_device_buffers_to_offload:
+                device_buffers.extend(non_replicated_device_buffers_to_offload)
             return DebugTieredConnector(
                 params=params,
                 devices=devices,
@@ -118,6 +121,7 @@ def create_connector(
                 disk_cache_dir=cfg.disk_offload_dir,
                 max_disk_size_gb=cfg.disk_offload_max_gb,
                 use_direct_io=cfg.disk_offload_direct_io,
+                non_replicated_device_buffers_to_offload=non_replicated_device_buffers_to_offload,
             )
 
     if connector == KVConnectorType.local:
@@ -128,6 +132,7 @@ def create_connector(
             params=params,
             device_buffers=device_buffers,
             total_num_host_blocks=total_num_host_blocks,
+            non_replicated_device_buffers_to_offload=non_replicated_device_buffers_to_offload,
         )
 
     logger.debug("Creating NullConnector: no KV cache connector configured")

@@ -93,6 +93,17 @@ def _group_by_device(buffers: list[Buffer]) -> list[list[Buffer]]:
     ]
 
 
+def _2d_view(buffer: Buffer, num_pages: int) -> Buffer:
+    if buffer.shape[0] != num_pages:
+        raise ValueError(
+            f"Expected first dimension of buffer to be {num_pages}, got {buffer.shape[0]}"
+        )
+    return buffer.view(
+        dtype=DType.uint8,
+        shape=[num_pages, _bytes_per_page(buffer)],
+    )
+
+
 _GIB = 1024**3
 _MAX_PINNED_CHUNK_BYTES = 4 * _GIB
 
@@ -202,20 +213,25 @@ class BlockOffloadEngine:
         device_buffers: list[Buffer],
         *,
         replicate_kv_across_tp: bool = False,
+        non_replicated_device_buffers_to_offload: list[Buffer] | None = None,
     ) -> None:
         num_device_pages = device_buffers[0].shape[0]
         viewed = [
-            buffer.view(
-                dtype=DType.uint8,
-                shape=[num_device_pages, _bytes_per_page(buffer)],
-            )
-            for buffer in device_buffers
+            _2d_view(buffer, num_device_pages) for buffer in device_buffers
         ]
         gpu0 = device_buffers[0].device
         if gpu0.is_host:
             raise ValueError(
                 "KVCacheBuffer is on the CPU. Unable to allocate host"
                 " offload buffer for already-on-CPU buffers."
+            )
+
+        if (
+            non_replicated_device_buffers_to_offload
+            and not replicate_kv_across_tp
+        ):
+            raise ValueError(
+                "non_replicated_device_buffers_to_offload is only supported when replicate_kv_across_tp is True"
             )
 
         # Sharded layout: every buffer is its own group of one. Replicated
@@ -234,6 +250,14 @@ class BlockOffloadEngine:
         else:
             self.device_buffers = viewed
             self.replicated_buffers = []
+
+        # Special case for mla target + mha draft
+        if non_replicated_device_buffers_to_offload is not None:
+            non_replicated_viewed = [
+                _2d_view(b, num_device_pages)
+                for b in non_replicated_device_buffers_to_offload
+            ]
+            self.device_buffers.extend(non_replicated_viewed)
 
         for root, peers in zip(
             self.device_buffers, self.replicated_buffers, strict=False
@@ -305,8 +329,11 @@ class BlockOffloadEngine:
             main_stream.wait_for(d2h_auxiliary_stream)
 
         # Broadcast the block to the other devices on main stream.
+        num_replicated_buffers = len(self.replicated_buffers)
         for root, peers in zip(
-            self.device_buffers, self.replicated_buffers, strict=False
+            self.device_buffers[:num_replicated_buffers],
+            self.replicated_buffers,
+            strict=True,
         ):
             with Tracer("distributed_broadcast"):
                 distributed_broadcast(
