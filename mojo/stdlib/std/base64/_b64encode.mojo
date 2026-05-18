@@ -203,17 +203,26 @@ def load_incomplete_simd[
 
 
 @no_inline
-def _b64encode(input_bytes: Span[mut=False, Byte, _], mut result: String):
+def _b64encode[
+    append_byte: def(UInt8) capturing -> None
+](input_bytes: Span[mut=False, Byte, _]):
+    """Encode input_bytes to base64 using a comptime-parameterized append function.
+
+    The append_byte parameter should be a comptime-parameterized function that takes
+    a single UInt8 argument and appends/writes it to the output destination.
+
+    Parameters:
+        append_byte: A comptime callable that takes a UInt8 and performs the append operation.
+
+    Args:
+        input_bytes: The bytes to encode.
+    """
     comptime simd_width = sys.simd_byte_width()
     comptime input_simd_width = simd_width * 3 // 4
     comptime equal_vector = SIMD[DType.uint8, simd_width](ord("="))
 
-    # 4 character bytes for each 3 bytes (or less) block
-    result.resize(unsafe_uninit_length=4 * ceildiv(len(input_bytes), 3))
     var input_bytes_len = len(input_bytes)
     var input_index = 0
-    var res_ptr = result.unsafe_ptr_mut()
-    var res_offset = 0
 
     # Main loop
     while input_index + simd_width <= input_bytes_len:
@@ -222,8 +231,8 @@ def _b64encode(input_bytes: Span[mut=False, Byte, _], mut result: String):
         var input_vector = start_of_input_chunk.load[width=simd_width]()
 
         var result_vector = _to_b64_ascii(input_vector)
-        (res_ptr + res_offset).store(result_vector)
-        res_offset += result_vector.size
+        for i in range(result_vector.size):
+            append_byte(result_vector[i])
         input_index += input_simd_width
 
     # We handle the last 0, 1 or 2 chunks
@@ -259,14 +268,9 @@ def _b64encode(input_bytes: Span[mut=False, Byte, _], mut result: String):
             ](nb_of_elements_to_load)
         )
 
-        var v_ptr = UnsafePointer(to=result_vector_with_equals).bitcast[Byte]()
-        memcpy(
-            dest=res_ptr + res_offset, src=v_ptr, count=nb_of_elements_to_store
-        )
-        res_offset += nb_of_elements_to_store
+        for i in range(nb_of_elements_to_store):
+            append_byte(result_vector_with_equals[i])
         input_index += input_simd_width
-
-    result.resize(res_offset)
 
 
 # Utility functions

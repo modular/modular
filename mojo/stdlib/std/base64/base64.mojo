@@ -21,6 +21,7 @@ from std.base64 import b64encode
 
 
 from std.memory import Span
+from std.math import ceildiv
 
 from ._b64encode import _b64encode
 
@@ -74,7 +75,7 @@ def _ascii_to_value[validate: Bool = False](char: Byte) raises -> Byte:
 
 
 # ===-----------------------------------------------------------------------===#
-# b64encode - Layer 1: Span -> String (optimized SIMD)
+# b64encode
 # ===-----------------------------------------------------------------------===#
 
 
@@ -90,8 +91,13 @@ def b64encode(input_bytes: Span[mut=False, Byte, _]) -> String:
     Returns:
         The ASCII base64 encoded string.
     """
-    var result = String()
-    _b64encode(input_bytes, result)
+    var result = String(capacity=4 * ceildiv(len(input_bytes), 3))
+
+    @parameter
+    def append_byte(b: UInt8):
+        result._unsafe_append_byte(b)
+
+    _b64encode[append_byte](input_bytes)
     return result^
 
 
@@ -125,7 +131,12 @@ def b64encode(input_bytes: Span[mut=False, Byte, _], mut result: String):
         This method reserves the necessary capacity. `result` can be a 0
         capacity string.
     """
-    _b64encode(input_bytes, result)
+
+    @parameter
+    def append_byte(b: UInt8):
+        result._unsafe_append_byte(b)
+
+    _b64encode[append_byte](input_bytes)
 
 
 # ===-----------------------------------------------------------------------===#
