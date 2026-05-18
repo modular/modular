@@ -645,7 +645,7 @@ class StringMerger(StringTransformer, CustomSplitMapMixin):
 
     @staticmethod
     def _validate_msg(line: Line, string_idx: int) -> TResult[None]:
-        """Validate (M)erge (S)tring (G)roup
+        """Validate (M)erge (S)tring (G)roup # spellchecker:disable-line
 
         Transform-time string validation logic for __merge_string_group(...).
 

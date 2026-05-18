@@ -58,7 +58,7 @@ ErrorOr<ContextRef> createContextImpl(StringRef programName,
            crashReportingEnabled)
     initCrashpadForProgram(programName, &settings);
 
-  // TelemetryContext created and added to the Context here as Cofig is
+  // TelemetryContext created and added to the Context here as Config is
   // required.
   ctx->emplace<Telemetry::TelemetryContext>(settings, programName, subCommand);
 

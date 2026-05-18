@@ -18,7 +18,7 @@ kgen.func export @simple_ret_use(%arg: index) -> index {
 // COM: simple dead argument due to callee's argument being dead.
 // CHECK-LABEL: kgen.func @f_dead_arg(%arg0: index) -> index
 kgen.func @f_dead_arg(%dead_arg: !kgen.scalar<f32>, %live_arg: index) -> index {
-  // CHEKC: [[V0:%.*]] = kgen.call @g_dead_arg(): () -> index
+  // CHEKC: [[V0:%.*]] = kgen.call @g_dead_arg(): () -> index  # (FIXME: MOCO-3991)  # spellchecker:disable-line
   %0 = kgen.call @g_dead_arg(%dead_arg): (!kgen.scalar<f32>) -> index
   %1 = index.add %0, %live_arg
   kgen.return %1: index

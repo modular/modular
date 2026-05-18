@@ -130,7 +130,7 @@ def main():
             uri: document.uri,
           },
           position: { line: 2, character: 4 },
-          newName: "pront",
+          newName: "pronto",
         });
       },
       (error) => {

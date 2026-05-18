@@ -1741,7 +1741,8 @@ CValue IREmitter::emitCallUnchecked(RValue callee,
       // Example:
       //  def callee(a: String) raises Pointer[String, origin_of(a)]: ...
       //  def caller(a: String) raises Pointer[String, origin_of(a)]:
-      //      callee(a)  # calee.error type is a pointer refering to a's origin.
+      //      callee(a)  # calee.error type is a pointer referring to a's
+      //      origin.
       mlir::AttrTypeWalker walker;
       // This is overly conservative because it isn't tracking depths.
       walker.addWalk(
