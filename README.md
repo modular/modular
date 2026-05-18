@@ -9,7 +9,7 @@
 
 ---
 
-🤝 Join our [monthly community meetings][public-com-meet-doc]!
+🤝 Join our [monthly community meetings][public-com-meet-doc]! test test test
 
 # Modular Platform
 
