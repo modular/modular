@@ -733,15 +733,10 @@ struct Variant[*Ts: Movable](
         Returns:
             The underlying data to be taken out as an owned value.
         """
-        # TODO(MOCO-3336): Remove isa/storage hack.
-        # Explicitly destroyed types don't play nicely with abort
-        var isa = self.isa[T]()
-        var storage = self._storage^
-        if not isa:
-            std.memory.forget_deinit(storage^)
+        if not self.isa[T]():
             abort("taking the wrong type!")
 
-        return storage^.take[T]()
+        return self._storage^.take[T]()
 
     @always_inline
     def unsafe_take[T: Movable](deinit self) -> T:
@@ -920,15 +915,10 @@ struct Variant[*Ts: Movable](
             destroy_func: Caller-provided destructor function for destroying
                 an instance of `T`.
         """
-        # TODO(MOCO-3336): Remove isa/storage hack.
-        # Explicitly destroyed types don't play nicely with abort
-        var isa = self.isa[T]()
-        var storage = self._storage^
-        if not isa:
-            std.memory.forget_deinit(storage^)
+        if not self.isa[T]():
             abort("Variant.destroy_with: wrong variant type")
 
-        destroy_func(storage^.take[T]())
+        destroy_func(self._storage^.take[T]())
 
 
 # ===-------------------------------------------------------------------===#

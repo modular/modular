@@ -455,7 +455,6 @@ struct _ZipIterator[origin: Origin, *Ts: Iterator](
                     UnsafePointer(to=res[i]).destroy_pointee()
 
             std.memory.forget_deinit(res^)
-
             raise StopIteration
 
     def bounds(self) -> Tuple[Int, Optional[Int]]:
