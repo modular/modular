@@ -838,6 +838,21 @@ struct String(
         """
         return StringSlice(self)[codepoint=codepoint]
 
+    @always_inline
+    def __getitem__(
+        self, *, grapheme: Some[Indexer]
+    ) -> StringSlice[origin_of(self)]:
+        """Gets the character at the specified position.
+
+        Args:
+            grapheme: The grapheme index.
+
+        Returns:
+            A `StringSlice` view containing the unicode grapheme at the
+            specified position.
+        """
+        return StringSlice(self)[grapheme=grapheme]
+
     def __eq__(self, rhs: String) -> Bool:
         """Compares two Strings if they have the same values.
 
@@ -1205,18 +1220,6 @@ struct String(
             An iterator yielding `(byte_offset, grapheme)` pairs.
         """
         return StringSlice(self).grapheme_indices()
-
-    def nth_grapheme(self, n: Int) -> Optional[StringSlice[origin_of(self)]]:
-        """Return the `n`-th grapheme cluster (0-indexed), or `None` if out
-        of range.
-
-        Args:
-            n: The zero-based grapheme index. Must be non-negative.
-
-        Returns:
-            The `n`-th grapheme cluster, or `None` if `n` is out of range.
-        """
-        return StringSlice(self).nth_grapheme(n)
 
     def split_at_grapheme(
         self, n: Int
