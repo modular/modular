@@ -90,7 +90,7 @@ def test_gemv_partial_norm[
     comptime normed_shape = row_major(
         Coord(Idx[1](), Idx[NNormedType.static_value]())
     )
-    var unnormed_shape = row_major(Coord(Idx(1), Idx(N_UNNORMED)))
+    var unnormed_shape = row_major(Coord(Idx[1](), Idx(N_UNNORMED)))
     comptime gamma_shape = row_major(Idx[NNormedType.static_value]())
 
     var a_host_ptr = ctx.enqueue_create_host_buffer[a_type](M * K)

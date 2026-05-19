@@ -623,7 +623,7 @@ struct NVFP4DispatchTest[
         )
         var _scales_tensor = TileTensor[origin=MutAnyOrigin](
             ptr=host_scales_tensor.ptr_at_offset(
-                (Idx(scales_block_id), Idx(0), Idx(0), Idx(0), Idx(0))
+                (Idx(scales_block_id), Idx[0](), Idx[0](), Idx[0](), Idx[0]())
             ),
             layout=Self.output_scales_layout,
         )

@@ -236,7 +236,7 @@ def test_prefill[
                         q_bf16[Coord(Idx(i * seq_len + j), Idx(h), Idx(d))]
                     ).cast[DType.float32]()
                     q_max = max(q_max, q_abs)
-            q_scale[Coord(Idx(i * seq_len + j), Idx(0))] = max(
+            q_scale[Coord(Idx(i * seq_len + j), Idx[0]())] = max(
                 q_max / Float32(448), Float32(1e-10)
             ).cast[scale_type]()
 
@@ -249,7 +249,7 @@ def test_prefill[
                         Coord(Idx(i * seq_len + j), Idx(h), Idx(d))
                     ]
                     q_scale_value = q_scale[
-                        Coord(Idx(i * seq_len + j), Idx(0))
+                        Coord(Idx(i * seq_len + j), Idx[0]())
                     ].cast[DType.bfloat16]()
                     if d < kv_depth:
                         q_nope[Coord(Idx(i * seq_len + j), Idx(h), Idx(d))] = (
@@ -273,7 +273,7 @@ def test_prefill[
                         k_bf16[Coord(Idx(i * num_keys + j), Idx(h), Idx(d))]
                     ).cast[DType.float32]()
                     k_max = max(k_max, k_abs)
-            k_scale[Coord(Idx(i * num_keys + j), Idx(0))] = max(
+            k_scale[Coord(Idx(i * num_keys + j), Idx[0]())] = max(
                 k_max / Float32(448), Float32(1e-10)
             ).cast[scale_type]()
 
@@ -285,7 +285,7 @@ def test_prefill[
                         Coord(Idx(i * num_keys + j), Idx(h), Idx(d))
                     ]
                     k_scale_value = k_scale[
-                        Coord(Idx(i * num_keys + j), Idx(0))
+                        Coord(Idx(i * num_keys + j), Idx[0]())
                     ].cast[DType.bfloat16]()
                     k[Coord(Idx(i * num_keys + j), Idx(h), Idx(d))] = (
                         k_bf16_value / k_scale_value
@@ -311,7 +311,7 @@ def test_prefill[
                         Coord(Idx(i), Idx(j), Idx(h), Idx(d))
                     ]
                     k_scale_value = k_scale[
-                        Coord(Idx(i * num_keys + j), Idx(0))
+                        Coord(Idx(i * num_keys + j), Idx[0]())
                     ].cast[DType.bfloat16]()
                     cache[Coord(Idx(i), Idx(j), Idx(h), Idx(d))] = (
                         cache_bf16_value / k_scale_value
@@ -429,7 +429,7 @@ def test_prefill[
 
     var dangling_valid_length = TileTensor(
         UnsafePointer[UInt32, MutAnyOrigin].unsafe_dangling(),
-        row_major(Coord(Idx(0))),
+        row_major(Coord(Idx[0]())),
     )
 
     var k_ref_host_ptr = ctx.enqueue_create_host_buffer[DType.bfloat16](
@@ -486,7 +486,7 @@ def test_prefill[
     # Q_ref = [q_nope_fp8 * q_scale | q_rope_bf16 * q_scale]
     for b in range(batch_size):
         for s in range(seq_len):
-            var qs = q_scale[Coord(Idx(b * seq_len + s), Idx(0))].cast[
+            var qs = q_scale[Coord(Idx(b * seq_len + s), Idx[0]())].cast[
                 DType.bfloat16
             ]()
             for h in range(num_heads):
@@ -512,7 +512,7 @@ def test_prefill[
     # V_ref = v_fp8 dequantized to BF16 (no scaling)
     for b in range(batch_size):
         for s in range(num_keys):
-            var ks = k_scale[Coord(Idx(b * num_keys + s), Idx(0))].cast[
+            var ks = k_scale[Coord(Idx(b * num_keys + s), Idx[0]())].cast[
                 DType.bfloat16
             ]()
             for h in range(num_heads):

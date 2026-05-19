@@ -230,7 +230,7 @@ def test_tile_with_coord_shape() raises:
     var layout_tensor = TileTensor(data, row_major(Idx[4](), Idx[4]()))
 
     # Mixed tile shape: static rows, dynamic cols
-    var tile_shape = Coord(Idx[2](), Idx(2))
+    var tile_shape = Coord(Idx[2](), Idx[2]())
 
     var counter = 0
 
@@ -255,23 +255,23 @@ def test_tile_with_coord_shape() raises:
 
     # Also verify reading back through the mixed Coord-based tile.
     var t00 = layout_tensor.tile(tile_shape, (Idx[0](), Idx[0]()))
-    assert_equal(t00[(Idx(0), Idx(0))], UInt32(0))
-    assert_equal(t00[(Idx(0), Idx(1))], UInt32(1))
-    assert_equal(t00[(Idx(1), Idx(0))], UInt32(2))
-    assert_equal(t00[(Idx(1), Idx(1))], UInt32(3))
+    assert_equal(t00[(Idx[0](), Idx[0]())], UInt32(0))
+    assert_equal(t00[(Idx[0](), Idx[1]())], UInt32(1))
+    assert_equal(t00[(Idx[1](), Idx[0]())], UInt32(2))
+    assert_equal(t00[(Idx[1](), Idx[1]())], UInt32(3))
 
     var t11 = layout_tensor.tile(tile_shape, (Idx[1](), Idx[1]()))
-    assert_equal(t11[(Idx(0), Idx(0))], UInt32(12))
-    assert_equal(t11[(Idx(0), Idx(1))], UInt32(13))
-    assert_equal(t11[(Idx(1), Idx(0))], UInt32(14))
-    assert_equal(t11[(Idx(1), Idx(1))], UInt32(15))
+    assert_equal(t11[(Idx[0](), Idx[0]())], UInt32(12))
+    assert_equal(t11[(Idx[0](), Idx[1]())], UInt32(13))
+    assert_equal(t11[(Idx[1](), Idx[0]())], UInt32(14))
+    assert_equal(t11[(Idx[1](), Idx[1]())], UInt32(15))
 
 
 def test_tensor_span_constructor() raises:
     var bytes: List[UInt8] = [0, 1, 2, 3]
     var _tensor = TileTensor(
         bytes,
-        row_major(Idx(2), Idx[2]()),
+        row_major(Idx[2](), Idx[2]()),
     )
 
 
@@ -324,8 +324,8 @@ def test_slice() raises:
     assert_equal(sliced[1, 1], 10)
 
     # Test that slice is a view (modifying slice affects original)
-    sliced[(Idx(0), Idx(0))] = 99
-    assert_equal(tensor_2d[(Idx(1), Idx(1))], 99)
+    sliced[(Idx[0](), Idx[0]())] = 99
+    assert_equal(tensor_2d[(Idx[1](), Idx[1]())], 99)
 
     # Test different slice ranges
     var top_left = tensor_2d.slice[0:2, 0:2]()
@@ -371,8 +371,8 @@ def test_slice_3d() raises:
     assert_equal(sliced_3d[1, 1, 1], 42)
 
     # Test that it's a view
-    sliced_3d[(Idx(0), Idx(0), Idx(0))] = 999
-    assert_equal(tensor_3d[(Idx(1), Idx(1), Idx(1))], 999)
+    sliced_3d[(Idx[0](), Idx[0](), Idx[0]())] = 999
+    assert_equal(tensor_3d[(Idx[1](), Idx[1](), Idx[1]())], 999)
 
 
 # def test_slice_runtime_shapes() raises:
@@ -404,10 +404,10 @@ def test_slice_3d() raises:
 #
 #     # Verify values - use runtime indices
 #     # Original[1][1] = 1 * 4 + 1 = 5
-#     assert_equal(sliced[(Idx(0), Idx(0))], Float32(5))
+#     assert_equal(sliced[(Idx[0](), Idx[0]())], Float32(5))
 #
 #     # Original[2][2] = 2*4 + 2 = 10
-#     assert_equal(sliced[(Idx(1), Idx(1))], Float32(10))
+#     assert_equal(sliced[(Idx[1](), Idx[1]())], Float32(10))
 
 
 def test_slice_dynamic() raises:
@@ -447,8 +447,8 @@ def test_slice_dynamic() raises:
     assert_equal(row2[0, 3], 11)
 
     # Verify it's a view
-    sliced[(Idx(0), Idx(0))] = 99
-    assert_equal(tensor_2d[(Idx(1), Idx(1))], 99)
+    sliced[(Idx[0](), Idx[0]())] = 99
+    assert_equal(tensor_2d[(Idx[1](), Idx[1]())], 99)
 
 
 def test_vectorize() raises:
@@ -477,19 +477,19 @@ def test_vectorize() raises:
 
     # Verify that vectorized[i, j] returns a SIMD vector starting at the (i,j) block
     # Block (0, 0) starts at element 0 - check first element of the SIMD vector
-    assert_equal(vectorized[(Idx(0), Idx(0))][0], 0)
+    assert_equal(vectorized[(Idx[0](), Idx[0]())][0], 0)
 
     # Block (0, 1) starts at element 4 (column offset by vector width)
-    assert_equal(vectorized[(Idx(0), Idx(1))][0], 4)
+    assert_equal(vectorized[(Idx[0](), Idx[1]())][0], 4)
 
     # Block (1, 0) starts at element 64 (row offset by vector height * row stride)
-    assert_equal(vectorized[(Idx(1), Idx(0))][0], 64)
+    assert_equal(vectorized[(Idx[1](), Idx[0]())][0], 64)
 
     # Block (1, 1) starts at element 68
-    assert_equal(vectorized[(Idx(1), Idx(1))][0], 68)
+    assert_equal(vectorized[(Idx[1](), Idx[1]())][0], 68)
 
     # Block (3, 3) is the last block, starts at element 3*64 + 3*4 = 204
-    assert_equal(vectorized[(Idx(3), Idx(3))][0], 204)
+    assert_equal(vectorized[(Idx[3](), Idx[3]())][0], 204)
 
 
 def test_vectorize_non_square() raises:
@@ -514,13 +514,17 @@ def test_vectorize_non_square() raises:
     assert_equal(vectorized.layout.stride[1]().value(), 4)
 
     # Verify block positions - check first element of each SIMD vector
-    assert_equal(vectorized[(Idx(0), Idx(0))][0], 0)  # Block (0,0) at element 0
-    assert_equal(vectorized[(Idx(0), Idx(1))][0], 4)  # Block (0,1) at element 4
     assert_equal(
-        vectorized[(Idx(1), Idx(0))][0], 16
+        vectorized[(Idx[0](), Idx[0]())][0], 0
+    )  # Block (0,0) at element 0
+    assert_equal(
+        vectorized[(Idx[0](), Idx[1]())][0], 4
+    )  # Block (0,1) at element 4
+    assert_equal(
+        vectorized[(Idx[1](), Idx[0]())][0], 16
     )  # Block (1,0) at element 16
     assert_equal(
-        vectorized[(Idx(3), Idx(1))][0], 52
+        vectorized[(Idx[3](), Idx[1]())][0], 52
     )  # Block (3,1) at element 52
 
 
@@ -544,10 +548,10 @@ def test_vectorize_1d() raises:
     assert_equal(vectorized.layout.stride[0]().value(), 4)
 
     # Verify block positions - check first element of each SIMD vector
-    assert_equal(vectorized[(Idx(0),)][0], 0)
-    assert_equal(vectorized[(Idx(1),)][0], 4)
-    assert_equal(vectorized[(Idx(2),)][0], 8)
-    assert_equal(vectorized[(Idx(3),)][0], 12)
+    assert_equal(vectorized[(Idx[0](),)][0], 0)
+    assert_equal(vectorized[(Idx[1](),)][0], 4)
+    assert_equal(vectorized[(Idx[2](),)][0], 8)
+    assert_equal(vectorized[(Idx[3](),)][0], 12)
 
 
 def test_vectorize_runtime_dims() raises:
@@ -572,10 +576,10 @@ def test_vectorize_runtime_dims() raises:
     assert_equal(vectorized.layout.stride[1]().value(), 4)
 
     # Verify block positions.
-    assert_equal(vectorized[(Idx(0), Idx(0))][0], 0)
-    assert_equal(vectorized[(Idx(0), Idx(1))][0], 4)
-    assert_equal(vectorized[(Idx(1), Idx(0))][0], 16)
-    assert_equal(vectorized[(Idx(3), Idx(1))][0], 52)
+    assert_equal(vectorized[(Idx[0](), Idx[0]())][0], 0)
+    assert_equal(vectorized[(Idx[0](), Idx[1]())][0], 4)
+    assert_equal(vectorized[(Idx[1](), Idx[0]())][0], 16)
+    assert_equal(vectorized[(Idx[3](), Idx[1]())][0], 52)
 
 
 def test_vectorize_fully_runtime_dims() raises:
@@ -599,10 +603,10 @@ def test_vectorize_fully_runtime_dims() raises:
     assert_equal(vectorized.layout.stride[0]().value(), 64)
     assert_equal(vectorized.layout.stride[1]().value(), 4)
 
-    assert_equal(vectorized[(Idx(0), Idx(0))][0], 0)
-    assert_equal(vectorized[(Idx(0), Idx(1))][0], 4)
-    assert_equal(vectorized[(Idx(1), Idx(0))][0], 64)
-    assert_equal(vectorized[(Idx(3), Idx(3))][0], 204)
+    assert_equal(vectorized[(Idx[0](), Idx[0]())][0], 0)
+    assert_equal(vectorized[(Idx[0](), Idx[1]())][0], 4)
+    assert_equal(vectorized[(Idx[1](), Idx[0]())][0], 64)
+    assert_equal(vectorized[(Idx[3](), Idx[3]())][0], 204)
 
 
 def test_distribute_runtime_dims() raises:
@@ -923,7 +927,7 @@ def test_linear_idx_type_recomputed_after_tile() raises:
     assert_equal(type_of(tensor).linear_idx_type, DType.int32)
 
     # After tiling: new layout has smaller cosize, still int32
-    var tiled = tensor.tile[4, 4]((Idx(0), Idx(0)))
+    var tiled = tensor.tile[4, 4]((Idx[0](), Idx[0]()))
     assert_equal(type_of(tiled).linear_idx_type, DType.int32)
     _ = tiled
 
@@ -992,12 +996,12 @@ def test_transpose_is_view() raises:
     var trans = tensor.transpose()
 
     # Modify through transposed view: trans[1, 0] -> tensor[0, 1]
-    trans[(Idx(1), Idx(0))] = 42
-    assert_equal(tensor[(Idx(0), Idx(1))], 42)
+    trans[(Idx[1](), Idx[0]())] = 42
+    assert_equal(tensor[(Idx[0](), Idx[1]())], 42)
 
     # Modify through original: tensor[1, 2] -> trans[2, 1]
-    tensor[(Idx(1), Idx(2))] = 99
-    assert_equal(trans[(Idx(2), Idx(1))], 99)
+    tensor[(Idx[1](), Idx[2]())] = 99
+    assert_equal(trans[(Idx[2](), Idx[1]())], 99)
 
 
 def test_transpose_square() raises:
@@ -1066,7 +1070,7 @@ def test_select_4d_to_2d() raises:
     var tensor = TileTensor(data, row_major[2, 3, 4, 2]())
 
     # Fix batch=1 and heads=2, keep N and head_dim → 2D (3, 2)
-    var selected = tensor[Idx(1), All, Idx(2), All]
+    var selected = tensor[Idx[1](), All, Idx[2](), All]
 
     # Output should be rank 2 with shape (3, 2)
     assert_equal(selected.layout.shape[0]().value(), 3)
@@ -1082,8 +1086,8 @@ def test_select_4d_to_2d() raises:
             assert_equal(selected[n, d], Int32(28 + n * 8 + d))
 
     # Test that it's a view (modifying selected affects original)
-    selected[(Idx(0), Idx(0))] = 999
-    assert_equal(tensor[(Idx(1), Idx(0), Idx(2), Idx(0))], 999)
+    selected[(Idx[0](), Idx[0]())] = 999
+    assert_equal(tensor[(Idx[1](), Idx[0](), Idx[2](), Idx[0]())], 999)
 
 
 def test_select_preserves_comptime_dims() raises:
@@ -1091,11 +1095,11 @@ def test_select_preserves_comptime_dims() raises:
     var data = InlineArray[Int32, 48](uninitialized=True)
     var tensor = TileTensor(data, row_major[2, 3, 4, 2]())
 
-    _ = tensor[Idx(0), All, Idx(1), All]
+    _ = tensor[Idx[0](), All, Idx[1](), All]
 
     # Shape should be ComptimeInt[3] and ComptimeInt[2]
     comptime SelectedType = type_of(
-        TileTensor(data, row_major[2, 3, 4, 2]())[Idx(0), All, Idx(1), All]
+        TileTensor(data, row_major[2, 3, 4, 2]())[Idx[0](), All, Idx[1](), All]
     )
     comptime assert SelectedType.LayoutType.static_shape[0] == 3
     comptime assert SelectedType.LayoutType.static_shape[1] == 2
@@ -1116,7 +1120,7 @@ def test_select_3d_to_1d() raises:
     var tensor = TileTensor(data, row_major[2, 3, 4]())
 
     # Fix dims 0 and 1, keep dim 2 → 1D (4,)
-    var selected = tensor[Idx(1), Idx(2), All]
+    var selected = tensor[Idx[1](), Idx[2](), All]
 
     assert_equal(selected.layout.shape[0]().value(), 4)
 
@@ -1396,7 +1400,7 @@ def test_split_static_after_tile_non_contiguous() raises:
         data[i] = Int32(i)
 
     var tensor = TileTensor(data, row_major[4, 4]())
-    var tile = tensor.as_immut().tile[4, 2]((Idx(0), Idx(1)))
+    var tile = tensor.as_immut().tile[4, 2]((Idx[0](), Idx[1]()))
     var splits = tile.split[2]()
 
     assert_equal(splits[0][0, 0], 2)
@@ -1412,7 +1416,7 @@ def test_tile_after_split_static_non_contiguous() raises:
 
     var tensor = TileTensor(data, row_major[4, 4]())
     var splits = tensor.as_immut().split[2, axis=1]()
-    var tile = splits[1].tile[2, 2]((Idx(1), Idx(0)))
+    var tile = splits[1].tile[2, 2]((Idx[1](), Idx[0]()))
 
     assert_equal(tile[0, 0], 10)
     assert_equal(tile[0, 1], 11)

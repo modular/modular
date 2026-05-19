@@ -130,7 +130,7 @@ def gemm_kernel[
 
         comptime for k_j in range(BK):  # Renamed to avoid shadowing outer k_i
             var a_smem_warp_row = a_tile_sram.tile[WM, BK](
-                (Idx(warp_m), Idx(0))
+                (Idx(warp_m), Idx[0]())
             ).slice[:, k_j : k_j + 1]()
 
             var b_smem_warp_row = b_tile_sram.tile[BK, WN](

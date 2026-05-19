@@ -436,15 +436,15 @@ def main() raises:
     with DeviceContext() as ctx:
         var benchmark = is_benchmark()
         test_gemv_tma[DType.bfloat16](
-            ctx, Idx(256), Idx[1](), Idx[256](), benchmark=benchmark
+            ctx, Idx[256](), Idx[1](), Idx[256](), benchmark=benchmark
         )
         test_gemv_tma[DType.bfloat16](
-            ctx, Idx(4096), Idx[1](), Idx[4096](), benchmark=benchmark
+            ctx, Idx[4096](), Idx[1](), Idx[4096](), benchmark=benchmark
         )
 
         test_gemv_tma[DType.float32](
-            ctx, Idx(256), Idx[1](), Idx[256](), benchmark=benchmark
+            ctx, Idx[256](), Idx[1](), Idx[256](), benchmark=benchmark
         )
         test_gemv_tma[DType.float32](
-            ctx, Idx(4096), Idx[1](), Idx[4096](), benchmark=benchmark
+            ctx, Idx[4096](), Idx[1](), Idx[4096](), benchmark=benchmark
         )

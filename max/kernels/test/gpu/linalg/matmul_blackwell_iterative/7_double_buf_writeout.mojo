@@ -1124,4 +1124,4 @@ def main() raises:
             cluster_shape=StaticTuple[Int32, 3](2, 1, 1),
             a_swizzle=TensorMapSwizzle.SWIZZLE_128B,
             b_swizzle=TensorMapSwizzle.SWIZZLE_128B,
-        ](ctx, Idx(4096), Idx[4096](), Idx[4096]())
+        ](ctx, Idx[4096](), Idx[4096](), Idx[4096]())

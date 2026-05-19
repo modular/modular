@@ -327,10 +327,10 @@ def test_non_row_major_layout[
     var c_host_ref_ptr = ctx.enqueue_create_host_buffer[dtype](c_size)
 
     var a_layout = Layout(
-        (Idx[B](), Idx(m), Idx[K]()), (Idx[K](), Idx[B * K](), Idx(1))
+        (Idx[B](), Idx(m), Idx[K]()), (Idx[K](), Idx[B * K](), Idx[1]())
     )
     var c_layout = Layout(
-        (Idx[B](), Idx(m), Idx[N]()), (Idx[N](), Idx[B * N](), Idx(1))
+        (Idx[B](), Idx(m), Idx[N]()), (Idx[N](), Idx[B * N](), Idx[1]())
     )
 
     var a_host = TileTensor(a_host_ptr, a_layout)

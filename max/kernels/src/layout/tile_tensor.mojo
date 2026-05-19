@@ -538,7 +538,7 @@ struct TileTensor[
         var t = TileTensor(storage, row_major[2, 8, 4, 16]())
 
         # Fix batch=1 and heads=2, keep N and head_dim → 2D (8, 16)
-        var selected = t[Idx(1), All, Idx(2), All]
+        var selected = t[Idx[1](), All, Idx[2](), All]
         ```
         """
         # Compute pointer offset from fixed (non-All) dimensions.

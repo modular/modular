@@ -62,7 +62,7 @@ struct Inner_matmul_neon(InnerMatmulKernel, Movable):
         var global_k = global_offset.K + tile_n_k_idx[1]
 
         var b_ptr = b_packed.ptr_at_offset(
-            Coord(Idx(n_outer_idx), Idx(tile_n_k_idx[1]), Idx(0))
+            Coord(Idx(n_outer_idx), Idx(tile_n_k_idx[1]), Idx[0]())
         )
 
         var a_vals = InlineArray[SIMD[c_local.dtype, a_col_size], kernel_rows](

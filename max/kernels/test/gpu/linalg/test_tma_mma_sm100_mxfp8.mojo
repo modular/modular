@@ -924,7 +924,7 @@ def main() raises:
             Index(MMA_M, 256, MMA_K),
             transpose_b=True,
             k=BK * 3,
-        ](ctx, Idx(256), Idx[256]())
+        ](ctx, Idx[256](), Idx[256]())
         test_block_scaled_mxfp8[
             dtype,
             dtype,
@@ -933,7 +933,7 @@ def main() raises:
             Index(MMA_M, 256, MMA_K),
             transpose_b=True,
             k=BK * 3,
-        ](ctx, Idx(256), Idx[256 * 2]())
+        ](ctx, Idx[256](), Idx[256 * 2]())
         test_block_scaled_mxfp8[
             dtype,
             dtype,
@@ -942,7 +942,7 @@ def main() raises:
             Index(MMA_M, 256, MMA_K),
             transpose_b=True,
             k=BK * 3,
-        ](ctx, Idx(1000), Idx[256 * 4]())
+        ](ctx, Idx[1000](), Idx[256 * 4]())
 
         test_block_scaled_mxfp8[
             dtype,
@@ -952,7 +952,7 @@ def main() raises:
             Index(MMA_M, 128, MMA_K),
             transpose_b=True,
             k=BK * 3,
-        ](ctx, Idx(256), Idx[2 * 128]())
+        ](ctx, Idx[256](), Idx[2 * 128]())
         test_block_scaled_mxfp8[
             dtype,
             dtype,
@@ -961,7 +961,7 @@ def main() raises:
             Index(MMA_M, 128, MMA_K),
             transpose_b=True,
             k=BK * 2,
-        ](ctx, Idx(256), Idx[3 * 128]())
+        ](ctx, Idx[256](), Idx[3 * 128]())
         test_block_scaled_mxfp8[
             dtype,
             dtype,
@@ -970,4 +970,4 @@ def main() raises:
             Index(MMA_M, 128, MMA_K),
             transpose_b=True,
             k=BK * 3,
-        ](ctx, Idx(1000), Idx[3 * 128]())
+        ](ctx, Idx[1000](), Idx[3 * 128]())

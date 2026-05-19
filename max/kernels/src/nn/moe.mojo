@@ -127,7 +127,7 @@ def _count_expert_tokens[
         var g_vector: SIMD[input_type, width]
 
         if idx + width <= bg_params.topk_ids_length:
-            g_vector = topk_ids.load[width=width](Coord(Idx(0), Idx(idx)))
+            g_vector = topk_ids.load[width=width](Coord(Idx[0](), Idx(idx)))
         else:
             g_vector = SIMD[input_type, width](bg_params.expert + 1)
 
@@ -248,7 +248,7 @@ def _copy_tokens_smem_to_gmem[
     ):
         if smem_idx + width <= Int(smem_writes):
             var source_vector = smem.load[width=width](
-                Coord(Idx(0), Idx(smem_idx))
+                Coord(Idx[0](), Idx(smem_idx))
             )
 
             comptime for i in range(width):
@@ -312,7 +312,7 @@ def _copy_tokens_to_gmem[
         var g_vector: SIMD[input_type, width]
 
         if idx + width <= bg_params.topk_ids_length:
-            g_vector = topk_ids.load[width=width](Coord(Idx(0), Idx(idx)))
+            g_vector = topk_ids.load[width=width](Coord(Idx[0](), Idx(idx)))
         else:
             g_vector = SIMD[input_type, width](bg_params.expert + 1)
 
@@ -572,7 +572,7 @@ def moe_create_indices[
 
         var topk_2D = TileTensor(
             topk_ids.ptr,
-            row_major(Coord(Idx(1), Idx(Int(topk_ids.dim(0))))),
+            row_major(Coord(Idx[1](), Idx(Int(topk_ids.dim(0))))),
         )
 
         var num_experts = expert_ids.dim(0)

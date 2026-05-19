@@ -152,7 +152,7 @@ def test_tpool_patch_merger(ctx: DeviceContext) raises:
     )
     var bounds_tensor = TileTensor[mut=False](
         bounds,
-        row_major(Coord(Idx(n_videos), Idx(3))),
+        row_major(Coord(Idx(n_videos), Idx[3]())),
     )
 
     tpool_patch_merger(

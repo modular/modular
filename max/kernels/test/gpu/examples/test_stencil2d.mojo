@@ -92,7 +92,7 @@ def stencil2d_smem(
     if thread_idx.x == 0:
         var idx = tidy * num_cols + (tidx - 1)
         a_shared.store(
-            Coord(Idx(lindex_y), Idx(0)),
+            Coord(Idx(lindex_y), Idx[0]()),
             a.load[width=1](Coord(Idx(idx))) if 0 <= idx < arr_size else 0,
         )
 
@@ -106,7 +106,7 @@ def stencil2d_smem(
     if thread_idx.y == 0:
         var idx = (tidy - 1) * num_cols + tidx
         a_shared.store(
-            Coord(Idx(0), Idx(lindex_x)),
+            Coord(Idx[0](), Idx(lindex_x)),
             a.load[width=1](Coord(Idx(idx))) if 0 < idx < arr_size else 0,
         )
 

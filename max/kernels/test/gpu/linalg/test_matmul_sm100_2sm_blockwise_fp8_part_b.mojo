@@ -313,8 +313,8 @@ def main() raises:
             ](
                 ctx,
                 Idx(Int(1000)),
-                Idx(576),
-                Idx(7168),
+                Idx[576](),
+                Idx[7168](),
             )
 
             test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
@@ -330,7 +330,7 @@ def main() raises:
             ](
                 ctx,
                 Idx(Int(1000)),
-                Idx(576),
+                Idx[576](),
                 Idx[256 + 64](),
             )
 
@@ -348,8 +348,8 @@ def main() raises:
             ](
                 ctx,
                 Idx(Int(1000)),
-                Idx(32768),
-                Idx(512),
+                Idx[32768](),
+                Idx[512](),
             )
 
             test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
@@ -365,8 +365,8 @@ def main() raises:
             ](
                 ctx,
                 Idx(Int(512)),
-                Idx(4096),
-                Idx(1024),
+                Idx[4096](),
+                Idx[1024](),
             )
 
             test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
@@ -382,8 +382,8 @@ def main() raises:
             ](
                 ctx,
                 Idx(Int(500)),
-                Idx(24576),
-                Idx(1536),
+                Idx[24576](),
+                Idx[1536](),
             )
 
             test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
@@ -399,8 +399,8 @@ def main() raises:
             ](
                 ctx,
                 Idx(Int(1024)),
-                Idx(1536),
-                Idx(7168),
+                Idx[1536](),
+                Idx[7168](),
             )
 
             test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
@@ -416,9 +416,9 @@ def main() raises:
                 cta_group=2,
             ](
                 ctx,
-                Idx(1024),
-                Idx(1024),
-                Idx(2048),
+                Idx[1024](),
+                Idx[1024](),
+                Idx[2048](),
             )
 
             test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
@@ -434,6 +434,6 @@ def main() raises:
             ](
                 ctx,
                 Idx(Int(8192)),
-                Idx(2560),
-                Idx(8192),
+                Idx[2560](),
+                Idx[8192](),
             )

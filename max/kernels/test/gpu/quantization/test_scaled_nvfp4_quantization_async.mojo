@@ -203,7 +203,7 @@ def main() raises:
             SF_VECTOR_SIZE=NVFP4_SF_VECTOR_SIZE,
         ](
             ctx,
-            Idx(1),
+            Idx[1](),
             Idx(2 * 128),
             Idx[11 * 64](),
             tensor_sf=1.0,
@@ -214,8 +214,8 @@ def main() raises:
             SF_VECTOR_SIZE=NVFP4_SF_VECTOR_SIZE,
         ](
             ctx,
-            Idx(1),
-            Idx(999),
+            Idx[1](),
+            Idx[999](),
             Idx[576](),
             tensor_sf=1.0,
         )
@@ -225,8 +225,8 @@ def main() raises:
             SF_VECTOR_SIZE=NVFP4_SF_VECTOR_SIZE,
         ](
             ctx,
-            Idx(1),
-            Idx(129),
+            Idx[1](),
+            Idx[129](),
             Idx[23 * 128](),
             tensor_sf=1.0,
         )
@@ -236,7 +236,7 @@ def main() raises:
             SF_VECTOR_SIZE=NVFP4_SF_VECTOR_SIZE,
         ](
             ctx,
-            Idx(1),
+            Idx[1](),
             Idx(27 * 128),
             Idx[23 * 128](),
             tensor_sf=0.43,
@@ -247,8 +247,8 @@ def main() raises:
             SF_VECTOR_SIZE=NVFP4_SF_VECTOR_SIZE,
         ](
             ctx,
-            Idx(1),
-            Idx(13),
+            Idx[1](),
+            Idx[13](),
             Idx[17 * 128](),
             tensor_sf=0.5,
         )

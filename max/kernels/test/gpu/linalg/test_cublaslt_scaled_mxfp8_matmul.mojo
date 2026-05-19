@@ -229,19 +229,19 @@ def main() raises:
             DType.float8_e4m3fn,
             DType.bfloat16,
             True,
-        ](ctx, Idx(128), Idx[128](), Idx[128]())
+        ](ctx, Idx[128](), Idx[128](), Idx[128]())
 
         test_scaled_mxfp8_cublaslt[
             DType.float8_e4m3fn,
             DType.bfloat16,
             True,
-        ](ctx, Idx(256), Idx[256](), Idx[256]())
+        ](ctx, Idx[256](), Idx[256](), Idx[256]())
 
         test_scaled_mxfp8_cublaslt[
             DType.float8_e4m3fn,
             DType.bfloat16,
             True,
-        ](ctx, Idx(128), Idx[3 * 128](), Idx[256]())
+        ](ctx, Idx[128](), Idx[3 * 128](), Idx[256]())
 
         test_scaled_mxfp8_cublaslt[
             DType.float8_e4m3fn,
@@ -253,22 +253,22 @@ def main() raises:
             DType.float8_e4m3fn,
             DType.bfloat16,
             True,
-        ](ctx, Idx(2560), Idx[4096](), Idx[1024]())
+        ](ctx, Idx[2560](), Idx[4096](), Idx[1024]())
 
         test_scaled_mxfp8_cublaslt[
             DType.float8_e4m3fn,
             DType.bfloat16,
             True,
-        ](ctx, Idx(1000), Idx[4096](), Idx[1024]())
+        ](ctx, Idx[1000](), Idx[4096](), Idx[1024]())
 
         test_scaled_mxfp8_cublaslt[
             DType.float8_e4m3fn,
             DType.bfloat16,
             True,
-        ](ctx, Idx(1000), Idx[4096 + 64](), Idx[1024]())
+        ](ctx, Idx[1000](), Idx[4096 + 64](), Idx[1024]())
 
         test_scaled_mxfp8_cublaslt[
             DType.float8_e4m3fn,
             DType.bfloat16,
             True,
-        ](ctx, Idx(1000), Idx[4096 + 64](), Idx[1024 + 64]())
+        ](ctx, Idx[1000](), Idx[4096 + 64](), Idx[1024 + 64]())

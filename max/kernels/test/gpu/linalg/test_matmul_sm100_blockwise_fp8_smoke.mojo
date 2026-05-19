@@ -279,8 +279,8 @@ def main() raises:
         ](
             ctx,
             Idx(Int(512)),
-            Idx(576),
-            Idx(512),
+            Idx[576](),
+            Idx[512](),
         )
 
         # ============================================================
@@ -310,8 +310,8 @@ def main() raises:
         ](
             ctx,
             Idx(Int(512)),
-            Idx(576),
-            Idx(512),
+            Idx[576](),
+            Idx[512](),
         )
 
         # Additional 2SM test with larger cluster (4,4,1) from original tests
@@ -328,8 +328,8 @@ def main() raises:
         ](
             ctx,
             Idx(Int(512)),
-            Idx(4096),
-            Idx(1024),
+            Idx[4096](),
+            Idx[1024](),
         )
 
         print("\n=== ALL SMOKE TESTS PASSED ===")

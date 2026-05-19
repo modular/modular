@@ -602,10 +602,10 @@ struct TileScheduler[
             Coord(Idx(warp_id_x), Idx(warp_id_y))
         )
         var reduction_upper = reduction_frag.tile[16, REDUCTION_BN](
-            Coord(Idx(0), Idx(0))
+            Coord(Idx[0](), Idx[0]())
         )
         var reduction_lower = reduction_frag.tile[16, REDUCTION_BN](
-            Coord(Idx(1), Idx(0))
+            Coord(Idx[1](), Idx[0]())
         )
         var stage_addr = tmem  # Track address for iteration
 

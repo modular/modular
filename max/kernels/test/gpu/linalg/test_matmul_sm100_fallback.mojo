@@ -217,8 +217,8 @@ def main() raises:
                 ](
                     ctx,
                     Idx(Int(200)),
-                    Idx(128),
-                    Idx(128),
+                    Idx[128](),
+                    Idx[128](),
                 )
                 test_matmul_sm100_fallback[
                     dtype,
@@ -232,8 +232,8 @@ def main() raises:
                 ](
                     ctx,
                     Idx(Int(128)),
-                    Idx(128),
-                    Idx(128),
+                    Idx[128](),
+                    Idx[128](),
                 )
 
                 test_matmul_sm100_fallback[
@@ -247,8 +247,8 @@ def main() raises:
                 ](
                     ctx,
                     Idx(Int(400)),
-                    Idx(128),
-                    Idx(128),
+                    Idx[128](),
+                    Idx[128](),
                 )
 
                 test_matmul_sm100_fallback[
@@ -262,8 +262,8 @@ def main() raises:
                 ](
                     ctx,
                     Idx(Int(1024)),
-                    Idx(2048),
-                    Idx(2048),
+                    Idx[2048](),
+                    Idx[2048](),
                 )
 
                 comptime BK_list: List[Int] = [BK, BK * 2]
@@ -279,8 +279,8 @@ def main() raises:
                     ](
                         ctx,
                         Idx(Int(1024)),
-                        Idx(2048),
-                        Idx(2048),
+                        Idx[2048](),
+                        Idx[2048](),
                     )
 
                     test_matmul_sm100_fallback[
@@ -292,9 +292,9 @@ def main() raises:
                         BK=_BK,
                     ](
                         ctx,
-                        Idx(1024),
-                        Idx(2048),
-                        Idx(2048),
+                        Idx[1024](),
+                        Idx[2048](),
+                        Idx[2048](),
                     )
 
                     test_matmul_sm100_fallback[
@@ -307,8 +307,8 @@ def main() raises:
                     ](
                         ctx,
                         Idx(Int(100)),
-                        Idx(512),
-                        Idx(256),
+                        Idx[512](),
+                        Idx[256](),
                     )
 
                     test_matmul_sm100_fallback[
@@ -321,8 +321,8 @@ def main() raises:
                     ](
                         ctx,
                         Idx(Int(99)),
-                        Idx(1024),
-                        Idx(1024),
+                        Idx[1024](),
+                        Idx[1024](),
                     )
 
                     test_matmul_sm100_fallback[
@@ -335,6 +335,6 @@ def main() raises:
                     ](
                         ctx,
                         Idx(Int(201)),
-                        Idx(2048),
-                        Idx(256),
+                        Idx[2048](),
+                        Idx[256](),
                     )

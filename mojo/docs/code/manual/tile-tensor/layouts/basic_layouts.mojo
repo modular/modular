@@ -75,7 +75,7 @@ def dynamic_dimensions():
     comptime columns = 8
     var rows = 4
     comptime comptime_int = Idx[columns]()  # Compile-time int
-    comptime comptime_int2 = Idx(4)  # Compile-time int from Int literal
+    comptime comptime_int2 = Idx[4]()  # Compile-time int from Int literal
     var runtime_int = Idx(rows)  # Run-time int from dynamic value
     var mixed_shape = Coord((Idx(rows), Idx[columns]()))  # Define a mixed Coord
     var mixed_layout = row_major((Idx(rows), Idx[columns]()))

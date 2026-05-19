@@ -1031,7 +1031,7 @@ def main() raises:
             b_swizzle=swizzle,
             cta_group=2,
             k=3 * BK,
-        ](ctx, Idx(256), Idx[128]())
+        ](ctx, Idx[256](), Idx[128]())
 
         test_blockscaled_pair_cta_mxfp8[
             dtype,
@@ -1044,7 +1044,7 @@ def main() raises:
             b_swizzle=swizzle,
             cta_group=2,
             k=2 * BK,
-        ](ctx, Idx(256), Idx[256]())
+        ](ctx, Idx[256](), Idx[256]())
 
         test_blockscaled_pair_cta_mxfp8[
             dtype,
@@ -1057,4 +1057,4 @@ def main() raises:
             b_swizzle=swizzle,
             cta_group=2,
             k=2 * BK,
-        ](ctx, Idx(512), Idx[512]())
+        ](ctx, Idx[512](), Idx[512]())

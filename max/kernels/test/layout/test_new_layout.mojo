@@ -75,15 +75,15 @@ def test_crd2idx() raises:
 
 
 def test_row_major() raises:
-    var shape = Coord(Idx[3](), Idx(4))
+    var shape = Coord(Idx[3](), Idx[4]())
     var layout = row_major(shape)
     assert_true(layout.shape_coord() == shape)
-    assert_true(layout.stride_coord() == Coord(Idx(4), Idx[1]()))
+    assert_true(layout.stride_coord() == Coord(Idx[4](), Idx[1]()))
 
-    var shape3 = Coord(Idx[3](), Idx(4), Idx(5))
+    var shape3 = Coord(Idx[3](), Idx[4](), Idx[5]())
     var layout3 = row_major(shape3)
     assert_true(layout3.shape_coord() == shape3)
-    assert_true(layout3.stride_coord() == Coord(Idx(20), Idx(5), Idx[1]()))
+    assert_true(layout3.stride_coord() == Coord(Idx[20](), Idx[5](), Idx[1]()))
 
     var shape3_static = Coord(
         ComptimeInt[3](), ComptimeInt[4](), ComptimeInt[5]()
@@ -991,7 +991,7 @@ def test_tile_tensor_hierarchical_load_store() raises:
     # Read back using flat coord: (1, 0, 0, 2) -> same offset
     assert_equal(tensor[1, 0, 0, 2], 42.0)
 
-    # Write using rank-matching coord: (Idx(1), Idx(2))
+    # Write using rank-matching coord: (Idx[1](), Idx[2]())
     # dim 0 is scalar 1, decomposed within shape (2, 2) -> divmod(1, 2) = (0, 1)
     #   -> 0*2 + 1*1 = 1
     # dim 1 is scalar 2, decomposed within shape (2, 3) -> divmod(2, 2) = (1, 0)
@@ -1195,13 +1195,13 @@ def test_upcast_preserves_element_access() raises:
 
     # Check that the upcast layout maps indices correctly.
     # up(0, 0) = 0*2 + 0*1 = 0
-    assert_equal(Int(up(Coord(Idx(0), Idx(0)))), 0)
+    assert_equal(Int(up(Coord(Idx[0](), Idx[0]()))), 0)
     # up(0, 1) = 0*2 + 1*1 = 1
-    assert_equal(Int(up(Coord(Idx(0), Idx(1)))), 1)
+    assert_equal(Int(up(Coord(Idx[0](), Idx[1]()))), 1)
     # up(1, 0) = 1*2 + 0*1 = 2
-    assert_equal(Int(up(Coord(Idx(1), Idx(0)))), 2)
+    assert_equal(Int(up(Coord(Idx[1](), Idx[0]()))), 2)
     # up(1, 1) = 1*2 + 1*1 = 3
-    assert_equal(Int(up(Coord(Idx(1), Idx(1)))), 3)
+    assert_equal(Int(up(Coord(Idx[1](), Idx[1]()))), 3)
 
 
 def test_upcast_layout_type_level() raises:
@@ -1228,9 +1228,9 @@ def test_upcast_layout_type_level() raises:
     assert_equal(layout.stride[1]().value(), 1)
 
     # It maps coordinates correctly.
-    assert_equal(Int(layout(Coord(Idx(0), Idx(0)))), 0)
-    assert_equal(Int(layout(Coord(Idx(1), Idx(1)))), 3)
-    assert_equal(Int(layout(Coord(Idx(3), Idx(1)))), 7)
+    assert_equal(Int(layout(Coord(Idx[0](), Idx[0]()))), 0)
+    assert_equal(Int(layout(Coord(Idx[1](), Idx[1]()))), 3)
+    assert_equal(Int(layout(Coord(Idx[3](), Idx[1]()))), 7)
 
 
 def test_upcast_layout_col_major_type_level() raises:
@@ -1391,12 +1391,12 @@ def test_coalesced_blocked_product_partial() raises:
 
 
 def test_write_to_static() raises:
-    var layout = row_major(Idx(3), Idx(4))
+    var layout = row_major(Idx[3](), Idx[4]())
     check_write_to(layout, expected="((3, 4):(4, 1))", is_repr=False)
 
 
 def test_write_to_dynamic() raises:
-    var layout = row_major(Idx(Int(3)), Idx(4))
+    var layout = row_major(Idx(Int(3)), Idx[4]())
     check_write_to(layout, expected="((3, 4):(4, 1))", is_repr=False)
 
 

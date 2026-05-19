@@ -617,7 +617,7 @@ def _allreduce_rmsnorm_fp8_kernel_2stage[
 
 # --- Launcher ---
 
-comptime _ZeroSizedLayout = type_of(row_major(Coord(Idx(0), Idx(0))))
+comptime _ZeroSizedLayout = type_of(row_major(Coord(Idx[0](), Idx[0]())))
 
 
 def _allreduce_rmsnorm_fp8_launch[
@@ -926,7 +926,7 @@ def _launch_split_allreduce_rmsnorm_fp8[
 
     var shape = IndexList[2](rows, cols)
     var scale_output_2d = TileTensor(
-        scale_output_1d.ptr, row_major(Coord(Idx(rows), Idx(1)))
+        scale_output_1d.ptr, row_major(Coord(Idx(rows), Idx[1]()))
     )
 
     # Pre-compile the RMSNorm+FP8 kernel before launching allreduce.

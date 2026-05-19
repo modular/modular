@@ -432,12 +432,12 @@ def main() raises:
             DType.float8_e4m3fn,
             DType.bfloat16,
             DType.bfloat16,
-        ](ctx, Idx(800), Idx(8192))
+        ](ctx, Idx[800](), Idx[8192]())
         test_dynamic_scaled_fp8_quant[
             DType.float8_e4m3fn,
             DType.bfloat16,
             DType.bfloat16,
-        ](ctx, Idx(1000), Idx(128))
+        ](ctx, Idx[1000](), Idx[128]())
         test_dynamic_scaled_fp8_quant[
             DType.float8_e4m3fn,
             DType.bfloat16,

@@ -145,7 +145,7 @@ def test[
     )
     var c_dev = TileTensor(
         c_dev_buffer,
-        row_major(Coord(Idx(3), Idx(total_num_tokens), Idx[N]())),
+        row_major(Coord(Idx[3](), Idx(total_num_tokens), Idx[N]())),
     )
     var c_ref_dev = TileTensor(
         c_ref_dev_buffer,

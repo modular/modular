@@ -442,7 +442,7 @@ def main() raises:
                 cta_group=cta_group,
                 k_group_size=k_group_size,
                 block_swizzle_size=block_swizzle_size,
-            ](ctx, b, Idx(0), Idx[N](), Idx[K](), M)
+            ](ctx, b, Idx[0](), Idx[N](), Idx[K](), M)
         else:
             # Standalone mode: run default shapes
             print("=" * 70)

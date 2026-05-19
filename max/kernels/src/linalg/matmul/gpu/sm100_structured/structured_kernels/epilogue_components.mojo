@@ -501,7 +501,7 @@ struct TMAStoreExecutor[
         # Path C: Simple tile selection by TMA_BM
         # Note: coords are (coord_n, coord_m) - swapped for non-transpose!
         var c_smem_split = c_smem_tile.tile[Self.TMA_BM, Self.stageN](
-            Coord(Idx(store_coords.c_smem_coord_m), Idx(0))
+            Coord(Idx(store_coords.c_smem_coord_m), Idx[0]())
         )
 
         comptime if Self.batched:
@@ -581,13 +581,13 @@ struct TMAStoreExecutor[
             var c_reshaped = c_smem_tile.reshape(reshaped)
             var c_split = c_reshaped.tile[
                 Self.stageN, Self.stage_contiguous_size // 2
-            ](Coord(Idx(Int(warp_id // 2)), Idx(0)))
+            ](Coord(Idx(Int(warp_id // 2)), Idx[0]()))
 
             comptime for i in range(Self.num_c_smem_tiles):
                 var c_split_tile = c_split.tile[
                     Self.stageN // Self.num_c_smem_tiles,
                     Self.stage_contiguous_size // 2,
-                ](Coord(Idx(i), Idx(0)))
+                ](Coord(Idx(i), Idx[0]()))
 
                 comptime if Self.batched:
                     c_tma_op.async_store(
@@ -617,7 +617,7 @@ struct TMAStoreExecutor[
             comptime for i in range(Self.num_c_smem_tiles):
                 var tiled = c_smem_tile.tile[
                     tile_dim0, Self.stage_contiguous_size
-                ](Coord(Idx(i), Idx(0)))
+                ](Coord(Idx(i), Idx[0]()))
 
                 comptime reshaped = row_major[Self.stageN, Self.swizzle_width]()
                 var c_warp_tile = tiled.reshape(reshaped)
@@ -1264,7 +1264,7 @@ struct TMEMToSMemWriter[
 
                 warp_j, warp_i = divmod(Int(self.warp_id), 2)
                 var tiled = new_smem.tile[1, Self.stageN, 1, tile_width](
-                    Coord(Idx(warp_j), Idx(0), Idx(warp_i), Idx(0))
+                    Coord(Idx(warp_j), Idx[0](), Idx(warp_i), Idx[0]())
                 )
 
                 # Coalesce: (1, stageN, 1, 32) -> (stageN, 32)
@@ -1276,10 +1276,10 @@ struct TMEMToSMemWriter[
 
                 var c_smem_warp_tile_upper = c_smem_warp_tile.tile[
                     Self.stageN, Self.data_paths
-                ](Coord(Idx(0), Idx(0)))
+                ](Coord(Idx[0](), Idx[0]()))
                 var c_smem_warp_tile_lower = c_smem_warp_tile.tile[
                     Self.stageN, Self.data_paths
-                ](Coord(Idx(0), Idx(1)))
+                ](Coord(Idx[0](), Idx[1]()))
 
                 var warp_offset = warp_i * tile_width
                 store_fragment_to_smem[
@@ -1302,7 +1302,7 @@ struct TMEMToSMemWriter[
                 var new_smem = c_smem_tile.reshape(logical)
 
                 var tiled = new_smem.tile[Self.stageN, 1, tile_width](
-                    Coord(Idx(0), Idx(Int(self.warp_id)), Idx(0))
+                    Coord(Idx[0](), Idx(Int(self.warp_id)), Idx[0]())
                 )
 
                 # Coalesce: (stageN, 1, 16) -> (stageN, 16)
@@ -1328,10 +1328,10 @@ struct TMEMToSMemWriter[
             comptime if is_lower_required:
                 var c_smem_warp_tile_upper = c_smem_tile.tile[
                     tiles_per_frag, Self.stage_contiguous_size
-                ](Coord(Idx(2 * Int(self.warp_id)), Idx(0))).reshape(reshaped)
+                ](Coord(Idx(2 * Int(self.warp_id)), Idx[0]())).reshape(reshaped)
                 var c_smem_warp_tile_lower = c_smem_tile.tile[
                     tiles_per_frag, Self.stage_contiguous_size
-                ](Coord(Idx(2 * Int(self.warp_id) + 1), Idx(0))).reshape(
+                ](Coord(Idx(2 * Int(self.warp_id) + 1), Idx[0]())).reshape(
                     reshaped
                 )
 
@@ -1350,7 +1350,7 @@ struct TMEMToSMemWriter[
             else:
                 var c_smem_warp_tile_upper = c_smem_tile.tile[
                     tiles_per_frag, Self.stage_contiguous_size
-                ](Coord(Idx(Int(self.warp_id)), Idx(0))).reshape(reshaped)
+                ](Coord(Idx(Int(self.warp_id)), Idx[0]())).reshape(reshaped)
 
                 store_fragment_to_smem[
                     Self.swizzle,
@@ -1376,12 +1376,12 @@ struct TMEMToSMemWriter[
 
         comptime c_smem_tile_m = 32 if Self.cta_group == 2 else Self.BM // Self.num_output_warps
         var c_smem_warp_tile = c_smem_tile.tile[c_smem_tile_m, Self.stageN](
-            Coord(Idx(Int(self.warp_id)), Idx(0))
+            Coord(Idx(Int(self.warp_id)), Idx[0]())
         )
 
         var c_smem_warp_tile_upper = c_smem_warp_tile.tile[
             Self.data_paths, Self.stageN
-        ](Coord(Idx(0), Idx(0)))
+        ](Coord(Idx[0](), Idx[0]()))
         store_fragment_to_smem[
             Self.swizzle,
             Self.stageN,
@@ -1392,7 +1392,7 @@ struct TMEMToSMemWriter[
         comptime if is_lower_required:
             var c_smem_warp_tile_lower = c_smem_warp_tile.tile[
                 Self.data_paths, Self.stageN
-            ](Coord(Idx(1), Idx(0)))
+            ](Coord(Idx[1](), Idx[0]()))
             store_fragment_to_smem[
                 Self.swizzle,
                 Self.stageN,
@@ -1557,7 +1557,7 @@ struct SMemEpilogueWriter[
 
             warp_j, warp_i = divmod(Int(self.warp_id), 2)
             var tiled = new_smem.tile[1, Self.stageN, 1, tile_width](
-                Coord(Idx(warp_j), Idx(0), Idx(warp_i), Idx(0))
+                Coord(Idx(warp_j), Idx[0](), Idx(warp_i), Idx[0]())
             )
 
             # Coalesce: (1, stageN, 1, 32) -> (stageN, 32)
@@ -1569,10 +1569,10 @@ struct SMemEpilogueWriter[
 
             var c_smem_warp_tile_upper = c_smem_warp_tile.tile[
                 Self.stageN, Self.data_paths
-            ](Coord(Idx(0), Idx(0)))
+            ](Coord(Idx[0](), Idx[0]()))
             var c_smem_warp_tile_lower = c_smem_warp_tile.tile[
                 Self.stageN, Self.data_paths
-            ](Coord(Idx(0), Idx(1)))
+            ](Coord(Idx[0](), Idx[1]()))
 
             warp_offset = warp_i * tile_width
             store_fragment_to_smem[
@@ -1619,7 +1619,7 @@ struct SMemEpilogueWriter[
             var new_smem = c_smem_tile.reshape(logical)
 
             var tiled = new_smem.tile[Self.stageN, 1, tile_width](
-                Coord(Idx(0), Idx(Int(self.warp_id)), Idx(0))
+                Coord(Idx[0](), Idx(Int(self.warp_id)), Idx[0]())
             )
 
             # Coalesce: (stageN, 1, 16) -> (stageN, 16)
@@ -1674,19 +1674,19 @@ struct SMemEpilogueWriter[
         """Non-transpose path: tile per warp and apply epilogue."""
         comptime c_smem_tile_m = 32 if Self.cta_group == 2 else Self.BM // Self.num_output_warps
         var c_smem_warp_tile = c_smem_tile.tile[c_smem_tile_m, Self.stageN](
-            Coord(Idx(Int(self.warp_id)), Idx(0))
+            Coord(Idx(Int(self.warp_id)), Idx[0]())
         )
 
         var c_smem_warp_tile_upper = c_smem_warp_tile.tile[
             Self.data_paths, Self.stageN
-        ](Coord(Idx(0), Idx(0)))
+        ](Coord(Idx[0](), Idx[0]()))
         store_fragment_to_smem[
             Self.swizzle, Self.stageN, transpose_c=Self.transpose_c
         ](upper_frag, c_smem_warp_tile_upper)
 
         var c_smem_warp_tile_lower = c_smem_warp_tile.tile[
             Self.data_paths, Self.stageN
-        ](Coord(Idx(1), Idx(0)))
+        ](Coord(Idx[1](), Idx[0]()))
 
         comptime if Self.is_lower_frag_required:
             store_fragment_to_smem[

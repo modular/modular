@@ -1125,7 +1125,7 @@ struct NVFP4TokenFormat[
                 ](_i * SF_ATOM_K)
 
             scales_tile.store(
-                (Idx(0), Idx(_i), Idx(0), Idx(sub_warp_id * 4)),
+                (Idx[0](), Idx(_i), Idx[0](), Idx(sub_warp_id * 4)),
                 scales_simd,
             )
         syncwarp()
@@ -1673,7 +1673,7 @@ struct EPDispatchKernel[
         ),
     ](coord: Coord, out offset: Scalar[out_dtype]):
         comptime if Self.skip_a2a:
-            _coord = Coord((coord[0], Idx(0), coord[2], coord[3]))
+            _coord = Coord((coord[0], Idx[0](), coord[2], coord[3]))
             offset = Self._recv_layout[linear_idx_type=out_dtype](_coord)
         else:
             offset = Self._recv_layout[linear_idx_type=out_dtype](coord)
@@ -1682,7 +1682,7 @@ struct EPDispatchKernel[
     @always_inline
     def recv_count_layout(coord: Coord, out offset: Scalar[DType.int32]):
         comptime if Self.skip_a2a:
-            _coord = Coord((coord[0], Idx(0)))
+            _coord = Coord((coord[0], Idx[0]()))
             offset = Self._recv_count_layout[linear_idx_type=DType.int32](
                 _coord
             )
@@ -1833,10 +1833,10 @@ struct EPDispatchKernel[
             # First, all threads in the block copy the input token to the send
             # buffer.
             var curr_send_buf_ptr = send_buf_p + Self.send_buf_layout(
-                (Idx(token_idx), Idx(0))
+                (Idx(token_idx), Idx[0]())
             )
             var input_tensor_ptr = input_tokens.ptr_at_offset(
-                (Idx(token_idx), Idx(0))
+                (Idx(token_idx), Idx[0]())
             )
             Self.token_fmt_type.copy_token_to_send_buf[
                 input_type, Self.num_threads
@@ -1905,7 +1905,7 @@ struct EPDispatchKernel[
                             Idx(dst_expert_local_idx),
                             Idx(my_rank),
                             Idx(slot_idx),
-                            Idx(0),
+                            Idx[0](),
                         )
                     )
 
@@ -1961,7 +1961,7 @@ struct EPDispatchKernel[
                                 Idx(dst_expert_local_idx),
                                 Idx(my_rank),
                                 Idx(slot_idx),
-                                Idx(0),
+                                Idx[0](),
                             )
                         )
                         shmem_put_nbi[kind=SHMEMScope.default](
@@ -2279,7 +2279,7 @@ struct EPDispatchKernel[
                         Idx(local_expert_id),
                         Idx(src_rank),
                         Idx(wep - rank_base),
-                        Idx(0),
+                        Idx[0](),
                     )
                 )
 
@@ -2405,7 +2405,7 @@ struct EPDispatchKernel[
                 tok_local: Int,
             ) {read} -> UnsafePointer[UInt8, MutExternalOrigin]:
                 return send_buf_p + Self.send_buf_layout(
-                    (Idx(tile_start + tok_local), Idx(0))
+                    (Idx(tile_start + tok_local), Idx[0]())
                 )
 
             @always_inline
@@ -2739,7 +2739,7 @@ struct EPCombineKernel[
     @always_inline
     def recv_count_layout(coord: Coord) -> Scalar[DType.int32]:
         comptime if Self.skip_a2a:
-            var _coord = Coord((coord[0], Idx(0)))
+            var _coord = Coord((coord[0], Idx[0]()))
             return Self._recv_count_layout[linear_idx_type=DType.int32](_coord)
         else:
             return Self._recv_count_layout[linear_idx_type=DType.int32](coord)
@@ -2874,7 +2874,7 @@ struct EPCombineKernel[
             if dst_p2p_world == my_p2p_world:
                 for token_idx in range(token_start, token_end):
                     var src_token_info = src_info.load[width=2](
-                        (Idx(token_idx), Idx(0))
+                        (Idx(token_idx), Idx[0]())
                     )
                     var src_idx = src_token_info[0]
                     var src_topk_idx = src_token_info[1]
@@ -2882,14 +2882,14 @@ struct EPCombineKernel[
                     var dst_recv_buf_ptr = recv_buf_ptrs[
                         dst_p2p_rank
                     ] + Self.recv_buf_layout(
-                        (Idx(src_idx), Idx(src_topk_idx), Idx(0))
+                        (Idx(src_idx), Idx(src_topk_idx), Idx[0]())
                     )
                     block_memcpy[
                         hid_dim * size_of[input_type](), Self.num_threads
                     ](
                         dst_recv_buf_ptr,
                         input_tokens.ptr_at_offset(
-                            (Idx(token_idx), Idx(0))
+                            (Idx(token_idx), Idx[0]())
                         ).bitcast[UInt8](),
                         tid,
                     )
@@ -2917,7 +2917,9 @@ struct EPCombineKernel[
                         if token_idx < token_end:
                             var curr_send_buf_ptr = (
                                 send_buf_p
-                                + Self.send_buf_layout((Idx(token_idx), Idx(0)))
+                                + Self.send_buf_layout(
+                                    (Idx(token_idx), Idx[0]())
+                                )
                             )
 
                             # To use SHMEM API, we need to copy the tokens to
@@ -2927,7 +2929,7 @@ struct EPCombineKernel[
                             ](
                                 curr_send_buf_ptr,
                                 input_tokens.ptr_at_offset(
-                                    (Idx(token_idx), Idx(0))
+                                    (Idx(token_idx), Idx[0]())
                                 ).bitcast[UInt8](),
                                 lane_id(),
                             )
@@ -2945,7 +2947,7 @@ struct EPCombineKernel[
                             )
                             if token_idx < token_end:
                                 var src_token_info = src_info.load[width=2](
-                                    (Idx(token_idx), Idx(0))
+                                    (Idx(token_idx), Idx[0]())
                                 )
                                 var src_idx = src_token_info[0]
                                 var src_topk_idx = src_token_info[1]
@@ -2953,7 +2955,7 @@ struct EPCombineKernel[
                                 var curr_send_buf_ptr = (
                                     send_buf_p
                                     + Self.send_buf_layout(
-                                        (Idx(token_idx), Idx(0))
+                                        (Idx(token_idx), Idx[0]())
                                     )
                                 )
                                 var dst_recv_buf_ptr = recv_buf_ptrs[
@@ -2962,7 +2964,7 @@ struct EPCombineKernel[
                                     (
                                         Idx(Int(src_idx)),
                                         Idx(Int(src_topk_idx)),
-                                        Idx(0),
+                                        Idx[0](),
                                     )
                                 )
 
@@ -4165,7 +4167,7 @@ def fused_silu_nvfp4_kernel[
             scales_dtype, scales_layout, MutExternalOrigin
         ](
             ptr=scales_tensor.ptr_at_offset(
-                (Idx(scales_block_id), Idx(0), Idx(0), Idx(0), Idx(0))
+                (Idx(scales_block_id), Idx[0](), Idx[0](), Idx[0](), Idx[0]())
             ),
             layout=scales_tensor.layout,
         )
@@ -4347,7 +4349,7 @@ def fused_silu_nvfp4_interleaved_kernel[
             scales_dtype, scales_layout, MutExternalOrigin
         ](
             ptr=scales_tensor.ptr_at_offset(
-                (Idx(scales_block_id), Idx(0), Idx(0), Idx(0), Idx(0))
+                (Idx(scales_block_id), Idx[0](), Idx[0](), Idx[0](), Idx[0]())
             ),
             layout=scales_tensor.layout,
         )

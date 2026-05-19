@@ -171,7 +171,7 @@ To access a value in a nested tensor, you can pass the nested coordinates as a
 `Coord` struct:
 
 ```mojo
-var el1 = tensor[Coord(Coord(Idx(1), Idx(0)), Coord(Idx(0), Idx(1)))]
+var el1 = tensor[Coord(Coord(Idx[1](), Idx[0]()), Coord(Idx[0](), Idx[1]()))]
 ```
 
 You can also pass a flattened version of the coordinates, either as a single

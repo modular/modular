@@ -144,19 +144,19 @@ def test_conv1d_register_tiling() raises:
     )
 
     var actual = output.load[width=simd_size](
-        (Idx(0), Idx(wo), Idx(f_tile_size))
+        (Idx[0](), Idx(wo), Idx(f_tile_size))
     )
     var expect = SIMD[type, simd_size](R * S * c_tile_size)
     assert_equal(expect, actual)
 
     actual = output.load[width=simd_size](
-        (Idx(0), Idx(wo + micro_kernel_height - 1), Idx(f_tile_size))
+        (Idx[0](), Idx(wo + micro_kernel_height - 1), Idx(f_tile_size))
     )
 
     assert_equal(expect, actual)
 
     actual = output.load[width=simd_size](
-        (Idx(0), Idx(wo + micro_kernel_height), Idx(f_tile_size))
+        (Idx[0](), Idx(wo + micro_kernel_height), Idx(f_tile_size))
     )
 
     assert_equal(SIMD[type, simd_size](0), actual)

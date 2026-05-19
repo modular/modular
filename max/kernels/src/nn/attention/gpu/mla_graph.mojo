@@ -726,7 +726,7 @@ def mla_prefill_branch_fp8[
         q.ptr + qk_nope_head_dim,
         TileLayout(
             (Idx(seq_len), Idx[num_heads](), Idx[qk_rope_head_dim]()),
-            (Idx[num_heads * q_head_dim](), Idx[q_head_dim](), Idx(1)),
+            (Idx[num_heads * q_head_dim](), Idx[q_head_dim](), Idx[1]()),
         ),
     )
 
@@ -735,7 +735,7 @@ def mla_prefill_branch_fp8[
         q_rope.ptr.mut_cast[True](),
         TileLayout(
             (Idx(seq_len), Idx[num_heads](), Idx[qk_rope_head_dim]()),
-            (Idx[num_heads * q_head_dim](), Idx[q_head_dim](), Idx(1)),
+            (Idx[num_heads * q_head_dim](), Idx[q_head_dim](), Idx[1]()),
         ),
     )
 
@@ -1179,7 +1179,7 @@ def mla_decode_branch_fp8[
         q.ptr,
         TileLayout(
             (Idx(seq_len), Idx[num_heads](), Idx[qk_nope_head_dim]()),
-            (Idx[num_heads * q_head_dim](), Idx[q_head_dim](), Idx(1)),
+            (Idx[num_heads * q_head_dim](), Idx[q_head_dim](), Idx[1]()),
         ),
     )
 
@@ -1189,7 +1189,7 @@ def mla_decode_branch_fp8[
         mla_decode_input.ptr,
         TileLayout(
             (Idx[num_heads](), Idx(seq_len), Idx[kv_latent_dim]()),
-            (Idx[k_cache_dim](), Idx[num_heads * k_cache_dim](), Idx(1)),
+            (Idx[k_cache_dim](), Idx[num_heads * k_cache_dim](), Idx[1]()),
         ),
     )
 
@@ -1212,7 +1212,7 @@ def mla_decode_branch_fp8[
         q.ptr + qk_nope_head_dim,
         TileLayout(
             (Idx(seq_len), Idx[num_heads](), Idx[qk_rope_head_dim]()),
-            (Idx[num_heads * q_head_dim](), Idx[q_head_dim](), Idx(1)),
+            (Idx[num_heads * q_head_dim](), Idx[q_head_dim](), Idx[1]()),
         ),
     )
 
@@ -1222,7 +1222,7 @@ def mla_decode_branch_fp8[
         mla_decode_input.ptr + kv_latent_dim,
         TileLayout(
             (Idx(seq_len), Idx[num_heads](), Idx[qk_rope_head_dim]()),
-            (Idx[num_heads * k_cache_dim](), Idx[k_cache_dim](), Idx(1)),
+            (Idx[num_heads * k_cache_dim](), Idx[k_cache_dim](), Idx[1]()),
         ),
     )
 
@@ -1281,7 +1281,7 @@ def mla_decode_branch_fp8[
         output.ptr,
         TileLayout(
             (Idx[num_heads](), Idx(seq_len), Idx[v_head_dim]()),
-            (Idx[v_head_dim](), Idx[num_heads * v_head_dim](), Idx(1)),
+            (Idx[v_head_dim](), Idx[num_heads * v_head_dim](), Idx[1]()),
         ),
     )
 
@@ -1594,7 +1594,7 @@ def mla_prefill_branch_bf16[
         q.ptr + qk_nope_head_dim,
         TileLayout(
             (Idx(seq_len), Idx[num_heads](), Idx[qk_rope_head_dim]()),
-            (Idx[num_heads * q_head_dim](), Idx[q_head_dim](), Idx(1)),
+            (Idx[num_heads * q_head_dim](), Idx[q_head_dim](), Idx[1]()),
         ),
     )
 
@@ -1603,7 +1603,7 @@ def mla_prefill_branch_bf16[
         q_rope.ptr.mut_cast[True](),
         TileLayout(
             (Idx(seq_len), Idx[num_heads](), Idx[qk_rope_head_dim]()),
-            (Idx[num_heads * q_head_dim](), Idx[q_head_dim](), Idx(1)),
+            (Idx[num_heads * q_head_dim](), Idx[q_head_dim](), Idx[1]()),
         ),
     )
 
@@ -1882,7 +1882,7 @@ def mla_decode_branch_bf16[
         q.ptr + qk_nope_head_dim,
         TileLayout(
             (Idx(seq_len), Idx[num_heads](), Idx[qk_rope_head_dim]()),
-            (Idx[num_heads * q_head_dim](), Idx[q_head_dim](), Idx(1)),
+            (Idx[num_heads * q_head_dim](), Idx[q_head_dim](), Idx[1]()),
         ),
     )
 
@@ -1892,7 +1892,7 @@ def mla_decode_branch_bf16[
         mla_decode_input.ptr + kv_latent_dim,
         TileLayout(
             (Idx(seq_len), Idx[num_heads](), Idx[qk_rope_head_dim]()),
-            (Idx[num_heads * k_cache_dim](), Idx[k_cache_dim](), Idx(1)),
+            (Idx[num_heads * k_cache_dim](), Idx[k_cache_dim](), Idx[1]()),
         ),
     )
 
@@ -1919,7 +1919,7 @@ def mla_decode_branch_bf16[
         q.ptr,
         TileLayout(
             (Idx[num_heads](), Idx(seq_len), Idx[qk_nope_head_dim]()),
-            (Idx[q_head_dim](), Idx[num_heads * q_head_dim](), Idx(1)),
+            (Idx[q_head_dim](), Idx[num_heads * q_head_dim](), Idx[1]()),
         ),
     )
 
@@ -1929,7 +1929,7 @@ def mla_decode_branch_bf16[
         mla_decode_input.ptr,
         TileLayout(
             (Idx[num_heads](), Idx(seq_len), Idx[kv_latent_dim]()),
-            (Idx[k_cache_dim](), Idx[num_heads * k_cache_dim](), Idx(1)),
+            (Idx[k_cache_dim](), Idx[num_heads * k_cache_dim](), Idx[1]()),
         ),
     )
 
@@ -1967,7 +1967,7 @@ def mla_decode_branch_bf16[
         raw_output_buf,
         TileLayout(
             (Idx[num_heads](), Idx(seq_len), Idx[kv_latent_dim]()),
-            (Idx[kv_latent_dim](), Idx[num_heads * kv_latent_dim](), Idx(1)),
+            (Idx[kv_latent_dim](), Idx[num_heads * kv_latent_dim](), Idx[1]()),
         ),
     )
 
@@ -1978,7 +1978,7 @@ def mla_decode_branch_bf16[
         output.ptr,
         TileLayout(
             (Idx[num_heads](), Idx(seq_len), Idx[v_head_dim]()),
-            (Idx[v_head_dim](), Idx[num_heads * v_head_dim](), Idx(1)),
+            (Idx[v_head_dim](), Idx[num_heads * v_head_dim](), Idx[1]()),
         ),
     )
 

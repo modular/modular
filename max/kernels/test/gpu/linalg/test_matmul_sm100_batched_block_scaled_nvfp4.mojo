@@ -355,7 +355,7 @@ def main() raises:
                         ctx,
                         Idx(Int(2)),
                         Idx(Int(1000)),
-                        Idx(1024),
+                        Idx[1024](),
                         Idx[1024 + 32](),
                     )
 
@@ -377,8 +377,8 @@ def main() raises:
                         ctx,
                         Idx(Int(3)),
                         Idx(Int(500)),
-                        Idx(2048),
-                        Idx(4096),
+                        Idx[2048](),
+                        Idx[4096](),
                     )
 
                     # swapAB tests
@@ -401,7 +401,7 @@ def main() raises:
                         ctx,
                         Idx(Int(2)),
                         Idx(Int(16)),
-                        Idx(1024),
+                        Idx[1024](),
                         Idx(1024 + 32),
                     )
 
@@ -423,6 +423,6 @@ def main() raises:
                         ctx,
                         Idx(Int(17)),
                         Idx(Int(100)),
-                        Idx(2560),
-                        Idx(8192),
+                        Idx[2560](),
+                        Idx[8192](),
                     )

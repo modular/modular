@@ -57,7 +57,7 @@ def run_matmul_sm100_block_scaled_fp4_2sm_suite[
                 ](
                     ctx,
                     Idx(Int(1000)),
-                    Idx(1024),
+                    Idx[1024](),
                     Idx[1024 + 32](),
                     alpha=0.5,
                 )
@@ -78,7 +78,7 @@ def run_matmul_sm100_block_scaled_fp4_2sm_suite[
                 ](
                     ctx,
                     Idx(Int(512)),
-                    Idx(4096),
+                    Idx[4096](),
                     Idx[1024 + 32](),
                     alpha=0.135,
                 )
@@ -100,8 +100,8 @@ def run_matmul_sm100_block_scaled_fp4_2sm_suite[
                 ](
                     ctx,
                     Idx(Int(500)),
-                    Idx(2048),
-                    Idx(4096),
+                    Idx[2048](),
+                    Idx[4096](),
                 )
 
                 test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
@@ -120,8 +120,8 @@ def run_matmul_sm100_block_scaled_fp4_2sm_suite[
                 ](
                     ctx,
                     Idx(Int(999)),
-                    Idx(256),
-                    Idx(128),
+                    Idx[256](),
+                    Idx[128](),
                 )
 
                 test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
@@ -140,8 +140,8 @@ def run_matmul_sm100_block_scaled_fp4_2sm_suite[
                 ](
                     ctx,
                     Idx(Int(777)),
-                    Idx(2560),
-                    Idx(8192),
+                    Idx[2560](),
+                    Idx[8192](),
                 )
 
                 test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
@@ -160,8 +160,8 @@ def run_matmul_sm100_block_scaled_fp4_2sm_suite[
                 ](
                     ctx,
                     Idx(Int(1)),
-                    Idx(576),
-                    Idx(7168),
+                    Idx[576](),
+                    Idx[7168](),
                 )
 
                 # swapAB tests
@@ -181,7 +181,7 @@ def run_matmul_sm100_block_scaled_fp4_2sm_suite[
                 ](
                     ctx,
                     Idx(Int(16)),
-                    Idx(1024),
+                    Idx[1024](),
                     Idx(1024 + 32),
                 )
 
@@ -201,8 +201,8 @@ def run_matmul_sm100_block_scaled_fp4_2sm_suite[
                 ](
                     ctx,
                     Idx(Int(100)),
-                    Idx(2560),
-                    Idx(8192),
+                    Idx[2560](),
+                    Idx[8192](),
                 )
 
 

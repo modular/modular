@@ -61,7 +61,7 @@ struct Inner_matmul_default(InnerMatmulKernel, Movable):
         var global_k = global_offset.K + tile_n_k_idx[1]
 
         var b_ptr = b_packed.ptr_at_offset(
-            Coord(Idx(n_outer_idx), Idx(tile_n_k_idx[1]), Idx(0))
+            Coord(Idx(n_outer_idx), Idx(tile_n_k_idx[1]), Idx[0]())
         )
 
         # Prefetch B matrix.

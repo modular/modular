@@ -260,7 +260,7 @@ def gemv_partial_norm_kernel[
         comptime for i in range(tile_n):
             var vec_weight_tile = weight_tile.vectorize[1, simd_width]()
             var b_vec = vec_weight_tile[i, thread_idx.x]
-            tile_w.store(Coord(Idx(i), Idx(0)), rebind[WeightVecType](b_vec))
+            tile_w.store(Coord(Idx(i), Idx[0]()), rebind[WeightVecType](b_vec))
 
         var act_vec = act_tile.vectorize[1, simd_width]()[0, thread_idx.x]
         var act_native = rebind[NativeVecType](act_vec)
@@ -397,7 +397,7 @@ def gemv_partial_norm_kernel[
             var gamma_val = SIMD[a_type, simd_width](0)
             if idx < n_normed:
                 vec_data = rebind[CVecType](
-                    normed_output.load[simd_width](Coord(Idx(0), Idx(idx)))
+                    normed_output.load[simd_width](Coord(Idx[0](), Idx(idx)))
                 ).cast[accum_type]()
                 gamma_val = rebind[AVecType](
                     gamma.load[simd_width](Coord(Idx(idx)))
@@ -427,7 +427,7 @@ def gemv_partial_norm_kernel[
             if idx < n_normed:
                 var gamma_accum = gamma_val.cast[accum_type]()
                 var out = (vec_data * norm_factor * gamma_accum).cast[c_type]()
-                normed_output.store[simd_width](Coord(Idx(0), Idx(idx)), out)
+                normed_output.store[simd_width](Coord(Idx[0](), Idx(idx)), out)
 
             comptime if enable_trace:
                 if tid == 0:

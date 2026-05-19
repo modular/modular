@@ -65,7 +65,7 @@ struct PreshuffledBLoader[N: Int, K_BYTES: Int](TrivialRegisterPassable):
         """
         var byte_off = Int32(
             Shuffler[1].b_5d_grouped_layout[N=Self.N, K_BYTES=Self.K_BYTES](
-                Coord(Idx(0), Idx(n), Idx(k_byte))
+                Coord(Idx[0](), Idx(n), Idx(k_byte))
             )
         )
         return self.bc.load[DType.uint8, 16](byte_off)
@@ -107,7 +107,7 @@ struct PreshuffledScaleLoader[MN_padded: Int, K_SCALES: Int](
         var byte_off = Int32(
             Shuffler[1].scale_4d_grouped_layout[
                 MN_padded=Self.MN_padded, K_SCALES=Self.K_SCALES
-            ](Coord(Idx(0), Idx(mn), Idx(k_scale)))
+            ](Coord(Idx[0](), Idx(mn), Idx(k_scale)))
         )
         var v = self.bc.load[DType.uint8, 4](byte_off)
         return bitcast[DType.int32, 1](v)[0]

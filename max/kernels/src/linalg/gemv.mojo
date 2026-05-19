@@ -435,13 +435,13 @@ def gemv_split_k[
                     Coord(Idx(i), Idx(thread_idx.x * simd_width))
                 )
                 tile_w.store(
-                    Coord(Idx(i), Idx(0)), rebind[WeightVecType](b_vec)
+                    Coord(Idx(i), Idx[0]()), rebind[WeightVecType](b_vec)
                 )
             else:
                 var vec_weight_tile = weight_tile.vectorize[1, simd_width]()
                 var b_vec = vec_weight_tile[i, thread_idx.x]
                 tile_w.store(
-                    Coord(Idx(i), Idx(0)), rebind[WeightVecType](b_vec)
+                    Coord(Idx(i), Idx[0]()), rebind[WeightVecType](b_vec)
                 )
 
         # Load activations and accumulate dot products.

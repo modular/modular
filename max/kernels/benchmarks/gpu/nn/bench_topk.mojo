@@ -443,7 +443,7 @@ def bench_topk_fi[
     )
     var device_out_idxs = TileTensor(
         device_out_idxs_buffer,
-        row_major(Idx(batch_size), Idx(1)),
+        row_major(Idx(batch_size), Idx[1]()),
     )
     var temp_tt = TileTensor(device_temp_buffer, row_major(Idx(batch_size)))
 

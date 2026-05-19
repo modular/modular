@@ -81,13 +81,15 @@ def accessing_nested_tensor_elements_example() raises:
 
     # start-access-nested-tensor-example
     # start-access-nested-coord-example
-    var el1 = tensor[Coord(Coord(Idx(1), Idx(0)), Coord(Idx(0), Idx(1)))]
+    var el1 = tensor[
+        Coord(Coord(Idx[1](), Idx[0]()), Coord(Idx[0](), Idx[1]()))
+    ]
     # end-access-nested-coord-example
     # start-access-nested-flat-example
     var el2 = tensor[1, 0, 0, 1]
     # end-access-nested-flat-example
     var el3 = tensor.load[1](
-        Coord(Coord(Idx(1), Idx(0)), Coord(Idx(0), Idx(1)))
+        Coord(Coord(Idx[1](), Idx[0]()), Coord(Idx[0](), Idx[1]()))
     )
     # end-access-nested-tensor-example
     print(el1, el2, el3)

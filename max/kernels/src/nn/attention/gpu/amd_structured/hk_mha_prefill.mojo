@@ -999,7 +999,7 @@ struct HKMhaPrefill[config: HKMhaConfig]:
                 Idx[1](),
                 Idx[Self.DEPTH](),
             ),
-            Coord(Idx(batch_idx), Idx(0), Idx(head_idx), Idx(0)),
+            Coord(Idx(batch_idx), Idx[0](), Idx(head_idx), Idx[0]()),
         ).reshape(
             Self._QPerHeadLayoutT(
                 Coord(
@@ -1016,7 +1016,7 @@ struct HKMhaPrefill[config: HKMhaConfig]:
                 Idx[1](),
                 Idx[Self.DEPTH](),
             ),
-            Coord(Idx(batch_idx), Idx(0), Idx(head_idx), Idx(0)),
+            Coord(Idx(batch_idx), Idx[0](), Idx(head_idx), Idx[0]()),
         ).reshape(
             Self._QPerHeadLayoutT(
                 Coord(
@@ -1041,7 +1041,7 @@ struct HKMhaPrefill[config: HKMhaConfig]:
                 Idx[1](),
                 Idx[Self.DEPTH](),
             ),
-            Coord(Idx(batch_idx), Idx(0), Idx(kv_head_idx), Idx(0)),
+            Coord(Idx(batch_idx), Idx[0](), Idx(kv_head_idx), Idx[0]()),
         ).reshape(
             Self._KVPerHeadLayoutT(
                 Coord(
@@ -1058,7 +1058,7 @@ struct HKMhaPrefill[config: HKMhaConfig]:
                 Idx[1](),
                 Idx[Self.DEPTH](),
             ),
-            Coord(Idx(batch_idx), Idx(0), Idx(kv_head_idx), Idx(0)),
+            Coord(Idx(batch_idx), Idx[0](), Idx(kv_head_idx), Idx[0]()),
         ).reshape(
             Self._KVPerHeadLayoutT(
                 Coord(
@@ -1600,7 +1600,7 @@ struct HKMhaPrefill[config: HKMhaConfig]:
                 Idx[1](),
                 RuntimeInt[DType.int32](Int32(seq_len)),
             ),
-            Coord(Idx(batch_idx), Idx(head_idx), Idx(0)),
+            Coord(Idx(batch_idx), Idx(head_idx), Idx[0]()),
         ).reshape(
             Self._LVecPerHeadLayoutT(
                 Coord(RuntimeInt[DType.int32](Int32(seq_len)), Idx[1]()),

@@ -194,10 +194,10 @@ struct BlockwiseFP8TileWriter[
 
         comptime for stage in range(Self.num_stages):
             var upper_frag = accum.upper.load[Self.fragments_per_stage](
-                Coord(Idx(stage), Idx(0))
+                Coord(Idx(stage), Idx[0]())
             )
             var lower_frag = accum.lower.load[Self.fragments_per_stage](
-                Coord(Idx(stage), Idx(0))
+                Coord(Idx(stage), Idx[0]())
             )
 
             var c_smem_tile = c_tiles[stage % 2]  # double-buffer
@@ -346,10 +346,10 @@ struct BlockwiseFP8TileWriter[
 
         comptime for stage in range(Self.num_stages):
             var upper_frag = accum.upper.load[Self.fragments_per_stage](
-                Coord(Idx(stage), Idx(0))
+                Coord(Idx(stage), Idx[0]())
             )
             var lower_frag = accum.lower.load[Self.fragments_per_stage](
-                Coord(Idx(stage), Idx(0))
+                Coord(Idx(stage), Idx[0]())
             )
 
             # Apply expert scale

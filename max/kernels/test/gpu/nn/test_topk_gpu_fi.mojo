@@ -355,7 +355,7 @@ def test_topk_topp_sampling[
 
     # Create a 1-element seed buffer on device.
     var seed_buf = ctx.enqueue_create_buffer[DType.uint64](1)
-    var seed_layout = row_major(Idx(1))
+    var seed_layout = row_major(Idx[1]())
 
     # Run sampling trials.
     var num_passed = 0
@@ -947,7 +947,7 @@ def _cpu_softmax[
     comptime assert probs_out.flat_rank == 2, "expected rank-2 TileTensor"
     comptime assert logits.flat_rank >= 2
     for b in range(batch_size):
-        var max_val = logits.load[width=1]((Idx(b), Idx(0))).cast[
+        var max_val = logits.load[width=1]((Idx(b), Idx[0]())).cast[
             DType.float32
         ]()
         for i in range(1, N):

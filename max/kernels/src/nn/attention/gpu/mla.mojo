@@ -394,7 +394,7 @@ def flare_mla_decoding[
         UnsafePointer[
             Scalar[DType.uint32], MutExternalOrigin
         ].unsafe_dangling(),
-        row_major(Coord(Idx(0))),
+        row_major(Coord(Idx[0]())),
     )
 
     flare_mla_decoding_dispatch[

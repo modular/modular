@@ -111,32 +111,32 @@ struct Shuffler[E: Int]:
     # coords each lane passes to b_5d_grouped_layout, and the byte returned:
     #
     # (n_iter=0, k_iter=0)  warp_n_base = 0   k_byte_base = 0
-    #   lane  0 (nl=0,  kl=0):  Coord(Idx(0), Idx(0),  Idx(0..15))   → bytes    0..15
-    #   lane  1 (nl=1,  kl=0):  Coord(Idx(0), Idx(1),  Idx(0..15))   → bytes   16..31
-    #   lane 15 (nl=15, kl=0):  Coord(Idx(0), Idx(15), Idx(0..15))   → bytes  240..255
-    #   lane 16 (nl=0,  kl=1):  Coord(Idx(0), Idx(0),  Idx(16..31))  → bytes  256..271
-    #   lane 32 (nl=0,  kl=2):  Coord(Idx(0), Idx(0),  Idx(32..47))  → bytes  512..527
-    #   lane 48 (nl=0,  kl=3):  Coord(Idx(0), Idx(0),  Idx(48..63))  → bytes  768..783
-    #   lane 63 (nl=15, kl=3):  Coord(Idx(0), Idx(15), Idx(48..63))  → bytes 1008..1023
+    #   lane  0 (nl=0,  kl=0):  Coord(Idx[0](), Idx[0](),  Idx(0..15))   → bytes    0..15
+    #   lane  1 (nl=1,  kl=0):  Coord(Idx[0](), Idx[1](),  Idx(0..15))   → bytes   16..31
+    #   lane 15 (nl=15, kl=0):  Coord(Idx[0](), Idx[15](), Idx(0..15))   → bytes  240..255
+    #   lane 16 (nl=0,  kl=1):  Coord(Idx[0](), Idx[0](),  Idx(16..31))  → bytes  256..271
+    #   lane 32 (nl=0,  kl=2):  Coord(Idx[0](), Idx[0](),  Idx(32..47))  → bytes  512..527
+    #   lane 48 (nl=0,  kl=3):  Coord(Idx[0](), Idx[0](),  Idx(48..63))  → bytes  768..783
+    #   lane 63 (nl=15, kl=3):  Coord(Idx[0](), Idx[15](), Idx(48..63))  → bytes 1008..1023
     #
     # (n_iter=0, k_iter=1)  k_byte_base = 64
-    #   lane 0:  Coord(Idx(0), Idx(0), Idx(64..79))                  → bytes 1024..1039
+    #   lane 0:  Coord(Idx[0](), Idx[0](), Idx(64..79))                  → bytes 1024..1039
     #                                                                  (1 * B_STRIDE_K0)
     #
     # (n_iter=1, k_iter=0)  warp_n_base = 16
-    #   lane 0:  Coord(Idx(0), Idx(16), Idx(0..15))                  → bytes 2048..2063
+    #   lane 0:  Coord(Idx[0](), Idx[16](), Idx(0..15))                  → bytes 2048..2063
     #                                                                  (1 * K0_count * B_STRIDE_K0)
     #
     # (n_iter=1, k_iter=1)  warp_n_base = 16,  k_byte_base = 64
-    #   lane  0 (nl=0, kl=0):  Coord(Idx(0), Idx(16), Idx(64..79))   → bytes 3072..3087
+    #   lane  0 (nl=0, kl=0):  Coord(Idx[0](), Idx[16](), Idx(64..79))   → bytes 3072..3087
     #                                                                  (2048 N-stride + 1024 K-stride)
-    #   lane 17 (nl=1, kl=1):  Coord(Idx(0), Idx(17), Idx(80..95))   → bytes 3344..3359
+    #   lane 17 (nl=1, kl=1):  Coord(Idx[0](), Idx[17](), Idx(80..95))   → bytes 3344..3359
     #                                                                  (16 + 2048 + 256 + 1024 = 3344)
     #
     # The logical E (group / expert) axis is prepended with stride =
     # bytes-per-group, so a single TileTensor view spans all groups and host
     # preshuffle iterates `(e, n, k_byte)` with no per-group pointer math at
-    # the call site. Single-group consumers pass E=1 and Idx(0) for e.
+    # the call site. Single-group consumers pass E=1 and Idx[0]() for e.
     comptime b_5d_grouped_layout[N: Int, K_BYTES: Int] = Layout(
         Coord(
             Idx[Self.E](),
@@ -191,13 +191,13 @@ struct Shuffler[E: Int]:
     # Worked example — MN_padded=64, K_SCALES=16 (MN0_count=2, K0_count=2).
     # Each lane's i32 lane-load — coord passed and the 4-byte range it covers:
     #
-    #   lane  0 (ml=0,  kl=0):  Coord(Idx(0), Idx(0),  Idx(0))   → bytes   0..3
-    #   lane  1 (ml=1,  kl=0):  Coord(Idx(0), Idx(1),  Idx(0))   → bytes   4..7
-    #   lane 15 (ml=15, kl=0):  Coord(Idx(0), Idx(15), Idx(0))   → bytes  60..63
-    #   lane 16 (ml=0,  kl=1):  Coord(Idx(0), Idx(0),  Idx(1))   → bytes  64..67
-    #   lane 32 (ml=0,  kl=2):  Coord(Idx(0), Idx(0),  Idx(2))   → bytes 128..131
-    #   lane 48 (ml=0,  kl=3):  Coord(Idx(0), Idx(0),  Idx(3))   → bytes 192..195
-    #   lane 63 (ml=15, kl=3):  Coord(Idx(0), Idx(15), Idx(3))   → bytes 252..255
+    #   lane  0 (ml=0,  kl=0):  Coord(Idx[0](), Idx[0](),  Idx[0]())   → bytes   0..3
+    #   lane  1 (ml=1,  kl=0):  Coord(Idx[0](), Idx[1](),  Idx[0]())   → bytes   4..7
+    #   lane 15 (ml=15, kl=0):  Coord(Idx[0](), Idx[15](), Idx[0]())   → bytes  60..63
+    #   lane 16 (ml=0,  kl=1):  Coord(Idx[0](), Idx[0](),  Idx[1]())   → bytes  64..67
+    #   lane 32 (ml=0,  kl=2):  Coord(Idx[0](), Idx[0](),  Idx[2]())   → bytes 128..131
+    #   lane 48 (ml=0,  kl=3):  Coord(Idx[0](), Idx[0](),  Idx[3]())   → bytes 192..195
+    #   lane 63 (ml=15, kl=3):  Coord(Idx[0](), Idx[15](), Idx[3]())   → bytes 252..255
     comptime scale_4d_grouped_layout[MN_padded: Int, K_SCALES: Int] = Layout(
         Coord(
             Idx[Self.E](),

@@ -44,7 +44,7 @@ def test_preshuffle_b_round_trip[
             var src_idx = n * K_BYTES + k_byte
             var dst_idx = Int(
                 Shuffler[1].b_5d_grouped_layout[N=N, K_BYTES=K_BYTES](
-                    Coord(Idx(0), Idx(n), Idx(k_byte))
+                    Coord(Idx[0](), Idx(n), Idx(k_byte))
                 )
             )
             assert_equal(dst_hb[dst_idx], src_hb[src_idx])
@@ -58,7 +58,7 @@ def test_preshuffle_b_round_trip[
         for k_byte in range(K_BYTES):
             var dst_idx = Int(
                 Shuffler[1].b_5d_grouped_layout[N=N, K_BYTES=K_BYTES](
-                    Coord(Idx(0), Idx(n), Idx(k_byte))
+                    Coord(Idx[0](), Idx(n), Idx(k_byte))
                 )
             )
             assert_equal(seen_hb[dst_idx], UInt8(0))
@@ -95,7 +95,7 @@ def test_preshuffle_scale_round_trip[
             var dst_idx = Int(
                 Shuffler[1].scale_4d_grouped_layout[
                     MN_padded=MN_padded, K_SCALES=K_SCALES
-                ](Coord(Idx(0), Idx(mn), Idx(k_scale)))
+                ](Coord(Idx[0](), Idx(mn), Idx(k_scale)))
             )
             assert_equal(dst_hb[dst_idx], src_hb[src_idx])
 
@@ -105,7 +105,7 @@ def test_preshuffle_scale_round_trip[
             var dst_idx = Int(
                 Shuffler[1].scale_4d_grouped_layout[
                     MN_padded=MN_padded, K_SCALES=K_SCALES
-                ](Coord(Idx(0), Idx(mn), Idx(k_scale)))
+                ](Coord(Idx[0](), Idx(mn), Idx(k_scale)))
             )
             assert_equal(dst_hb[dst_idx], UInt8(0))
 
@@ -113,7 +113,7 @@ def test_preshuffle_scale_round_trip[
 def _b_offset[N: Int, K_BYTES: Int](n: Int, k_byte: Int) -> Int:
     return Int(
         Shuffler[1].b_5d_grouped_layout[N=N, K_BYTES=K_BYTES](
-            Coord(Idx(0), Idx(n), Idx(k_byte))
+            Coord(Idx[0](), Idx(n), Idx(k_byte))
         )
     )
 
@@ -122,7 +122,7 @@ def _scale_offset[MN_padded: Int, K_SCALES: Int](mn: Int, k_scale: Int) -> Int:
     return Int(
         Shuffler[1].scale_4d_grouped_layout[
             MN_padded=MN_padded, K_SCALES=K_SCALES
-        ](Coord(Idx(0), Idx(mn), Idx(k_scale)))
+        ](Coord(Idx[0](), Idx(mn), Idx(k_scale)))
     )
 
 
