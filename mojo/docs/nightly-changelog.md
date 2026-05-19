@@ -201,6 +201,11 @@ This version is still a work in progress.
       print(t"Hi, {a}!")
   ```
 
+- The `Intable` trait no longer inherits from `ImplicitlyDestructible`.
+  Generic code that relied on receiving the destructor bound transitively
+  through this trait must now spell it out explicitly, for example
+  `T: Intable & ImplicitlyDestructible`.
+
 ## Tooling changes
 
 - The `mojo package` command has renamed to `mojo precompile`. Similarly, the

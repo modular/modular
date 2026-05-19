@@ -37,7 +37,7 @@ def test_some_arg() raises:
     assert_equal(takes_some_arg(Bar[foo=Foo[5](), bar=Foo[7]()]()), 24)
 
 
-def takes_some_param[x: Some[Intable]]() -> Int:
+def takes_some_param[x: Some[Intable & ImplicitlyDestructible]]() -> Int:
     return materialize[x]().__int__()
 
 
