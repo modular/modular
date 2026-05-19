@@ -116,7 +116,7 @@ from max.experimental.sharding import (
     Placement,
     PlacementMapping,
     Replicated,
-    Sharded,
+    global_shape_from_local,
     shard_shape,
 )
 from max.experimental.support import contextvar_context, driver_tensor_type
@@ -728,6 +728,7 @@ class Tensor(DLPackArray, HasTensorValue):
         cls,
         shard_values: Sequence[GraphValue],
         mapping: DeviceMapping | None = None,
+        global_shape: ShapeLike | None = None,
     ) -> Tensor:
         """Creates a tensor from one or more per-shard graph values.
 
@@ -742,6 +743,9 @@ class Tensor(DLPackArray, HasTensorValue):
             mapping: Device mapping describing how shards map to mesh
                 devices and their placements. Required when
                 ``len(shard_values) > 1``.
+            global_shape: Optional explicit global shape. Pass this when
+                the caller already knows the logical (un-sharded) shape
+                so :attr:`Tensor.shape` does not have to reconstruct it.
 
         Returns:
             A tensor backed by the provided shard values.
@@ -764,7 +768,7 @@ class Tensor(DLPackArray, HasTensorValue):
                 (shard_values[0],)
             )
         return current_realization_context().create_unrealized(
-            tuple(shard_values), mapping=mapping
+            tuple(shard_values), mapping=mapping, global_shape=global_shape
         )
 
     @classmethod
@@ -1384,22 +1388,18 @@ class Tensor(DLPackArray, HasTensorValue):
         if self._global_shape is not None:
             return self._global_shape
         if self.is_distributed:
-            # Get the shard shape from the first shard.
+            # Reconstruct the global shape from local shard shapes.
             if self._storages is not None:
-                shard_shape = list(self._storages[0].shape)
+                shard_shapes = [list(s.shape) for s in self._storages]
             else:
                 assert self._state is not None
-                sv = self._state.values[0]
-                shard_shape = list(sv.shape)
-            # Scale sharded dims back up by mesh size.
+                shard_shapes = [list(v.shape) for v in self._state.values]
             assert self._mapping is not None
-            _placements = self._mapping.to_placements()
-            _mesh = self._mapping.mesh
-            for ax, p in enumerate(_placements):
-                if isinstance(p, Sharded):
-                    d = p.axis % len(shard_shape)
-                    shard_shape[d] = shard_shape[d] * _mesh.mesh_shape[ax]
-            return graph.Shape(shard_shape)
+            return global_shape_from_local(
+                shard_shapes,
+                self._mapping.mesh,
+                self._mapping.to_placements(),
+            )
         shape = self._backing_value.shape
         return shape if isinstance(shape, graph.Shape) else graph.Shape(shape)
 

@@ -76,6 +76,9 @@ from .creation_ops import (
     zeros_like,
 )
 
+# ── Shape ops ────────────────────────────────────────────────────────────
+from .shape_ops import broadcast_to, reshape
+
 # ── SPMD op engine + all registered ops ──────────────────────────────────
 from .spmd_ops import (
     abs,
@@ -89,7 +92,6 @@ from .spmd_ops import (
     avg_pool2d,
     band_part,
     bottom_k,
-    broadcast_to,
     buffer_store,
     buffer_store_slice,
     cast,
@@ -153,7 +155,6 @@ from .spmd_ops import (
     rebind,
     relu,
     repeat_interleave,
-    reshape,
     resize,
     resize_bicubic,
     resize_linear,

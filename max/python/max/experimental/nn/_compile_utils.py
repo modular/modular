@@ -214,7 +214,7 @@ def _reconstruct_outputs(
                 raw_results[slot.start + i] for i in range(slot.count)
             )
             gshape = global_shape_from_local(
-                buffers[0].shape,
+                [buf.shape for buf in buffers],
                 _mesh,
                 _placements,
             )

@@ -64,19 +64,16 @@ def interpolate_2d_nearest(
     target_shape = [n, c, h * scale_factor, w * scale_factor]
 
     # Reshape: [N, C, H, W] -> [N, C, H, 1, W, 1]
-    x_reshaped = F.reshape(x, [n, c, h, 1, w, 1])
+    x_reshaped = x.reshape([n, c, h, 1, w, 1])
 
     ones_scalar = F.constant(1.0, dtype=x.dtype, device=x.device)
-    ones = F.broadcast_to(
-        ones_scalar,
-        [1, 1, 1, scale_factor, 1, scale_factor],
-    )
+    ones = ones_scalar.broadcast_to([1, 1, 1, scale_factor, 1, scale_factor])
 
     # Broadcast: [N, C, H, 1, W, 1] * [1, 1, 1, 2, 1, 2] -> [N, C, H, 2, W, 2]
-    x_expanded = F.mul(x_reshaped, ones)
+    x_expanded = x_reshaped * ones
 
     # Reshape: [N, C, H, 2, W, 2] -> [N, C, H*2, W*2]
-    return F.reshape(x_expanded, target_shape)
+    return x_expanded.reshape(target_shape)
 
 
 class Upsample2D(Module[[Tensor], Tensor]):

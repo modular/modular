@@ -252,6 +252,19 @@ def any_distributed(args: Iterable[object]) -> bool:
     return False
 
 
+def collect_tensors(args: tuple[object, ...]) -> list[Tensor]:
+    """Collects every :class:`Tensor` reachable from *args* (one level of nesting)."""
+    out: list[Tensor] = []
+    for a in args:
+        if isinstance(a, Tensor):
+            out.append(a)
+        elif isinstance(a, (list, tuple)):
+            for item in a:
+                if isinstance(item, Tensor):
+                    out.append(item)
+    return out
+
+
 def is_sharded_on(t: Tensor, tensor_axis: int, exclude_mesh_axis: int) -> bool:
     """True if *tensor_axis* is already Sharded on some mesh axis other than *exclude*."""
     for ax, p in enumerate(t.placements):

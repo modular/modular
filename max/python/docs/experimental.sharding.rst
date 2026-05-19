@@ -82,3 +82,4 @@ Functions
    global_shape_from_local
    local_shard_shape_from_global
    shard_shape
+   sharded_symbolic_dim

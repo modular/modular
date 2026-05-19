@@ -77,14 +77,16 @@ class TestDistributedTensorType:
         for lt in local:
             assert list(lt.shape) == [4, 4]
 
-    def test_symbolic_dim_produces_renamed_symbolic(self) -> None:
+    def test_symbolic_dim_produces_per_coord_symbolic(self) -> None:
+        """Sharded SymbolicDim → per-coord-distinct names ``{name}_{axis}_{coord}``."""
         mesh = mesh_1d(4)
         dt = DistributedTensorType(
             DType.float32, [SymbolicDim("batch"), 16], mesh, [Sharded(0)]
         )
         local = dt.local_types
-        assert isinstance(local[0].shape[0], SymbolicDim)
-        assert local[0].shape[0].name == "batch_tp"
+        for i, lt in enumerate(local):
+            assert isinstance(lt.shape[0], SymbolicDim)
+            assert lt.shape[0].name == f"batch_tp_{i}"
 
     def test_symbolic_dim_non_sharded_unchanged(self) -> None:
         mesh = mesh_1d(4)
@@ -184,14 +186,16 @@ class TestDistributedBufferType:
         with pytest.raises(ValueError, match="not evenly divisible"):
             _ = dt.local_types
 
-    def test_symbolic_dim_produces_renamed_symbolic(self) -> None:
+    def test_symbolic_dim_produces_per_coord_symbolic(self) -> None:
+        """Sharded SymbolicDim → per-coord-distinct names ``{name}_{axis}_{coord}``."""
         mesh = mesh_1d(4)
         dt = DistributedBufferType(
             DType.float32, [SymbolicDim("batch"), 16], mesh, [Sharded(0)]
         )
         local = dt.local_types
-        assert isinstance(local[0].shape[0], SymbolicDim)
-        assert local[0].shape[0].name == "batch_tp"
+        for i, lt in enumerate(local):
+            assert isinstance(lt.shape[0], SymbolicDim)
+            assert lt.shape[0].name == f"batch_tp_{i}"
 
     def test_rank_property(self) -> None:
         mesh = mesh_1d(2)
