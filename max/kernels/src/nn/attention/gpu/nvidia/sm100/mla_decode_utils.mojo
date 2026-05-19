@@ -72,6 +72,7 @@ from std.utils.numerics import get_accum_type, min_or_neg_inf
 from std.utils.static_tuple import StaticTuple
 from linalg.arch.sm100.mma import smem_descriptor
 
+from nn.attention.gpu.nvidia.sm100.attention import SM100_RESERVED_SMEM_BYTES
 from nn.attention.gpu.nvidia.sm100.attention_utils import (
     elect,
     LocalTensor,
@@ -267,8 +268,13 @@ struct MLA_SM100_Decode_Config:
     comptime TMEM_O: Int = 0
     comptime TMEM_S0: Int = Self.TMEM_O + 256
     comptime TMEM_S1: Int = Self.TMEM_S0 + 32
-    # Reserve 6 S slots (6 * 32 = 192 columns) to accommodate up to 6 pipeline stages.
-    # TMEM_S0..TMEM_S5 occupy columns 256..447. CORR_SCALE follows at 448.
+    # Upper bound on pipeline stages — kernels pick `num_kv_stages` ≤ this
+    # at config time, and TMEM is laid out to fit the worst case so
+    # downstream offsets (CORR_SCALE etc.) stay stable across configs.
+    # 6 stages × 32 cols/stage = 192 cols, sitting in TMEM cols 256..447
+    # between TMEM_O (256 cols) and CORR_SCALE (col 448), within the 512
+    # total TMEM columns on SM100.  Bump only if a kernel needs deeper
+    # KV pipelining and the resulting layout still fits.
     comptime MAX_TMEM_S_SLOTS: Int = 6
     comptime TMEM_CORR_SCALE: Int = Self.TMEM_S0 + Self.MAX_TMEM_S_SLOTS * 32
     comptime TMEM_CORR_LI: Int = Self.TMEM_CORR_SCALE + 1
@@ -283,7 +289,9 @@ struct MLA_SM100_Decode_Config:
     var content_swizzle_mode: TensorMapSwizzle  # FP8 content: SWIZZLE_64B
     var rope_swizzle_mode: TensorMapSwizzle  # BF16 rope: SWIZZLE_128B
     comptime MMA_K = 16
-    comptime sm100_smem_carveout = B200.shared_memory_per_multiprocessor - 1024
+    comptime sm100_smem_carveout = (
+        B200.shared_memory_per_multiprocessor - SM100_RESERVED_SMEM_BYTES
+    )
     comptime sm100_tmem_cols = 512
     comptime mbar_size = size_of[DType.int64]()  # 8
     comptime cta_group = 1  # TODO: support 2
@@ -388,9 +396,9 @@ struct MLA_SM100_Decode_Config:
             and not per_token_scale_rope_aware
         )
         if _old_fp8_converter:
-            self.num_threads = 128 * 4
+            self.num_threads = WARPGROUP_SIZE * 4
         else:
-            self.num_threads = 128 * 3
+            self.num_threads = WARPGROUP_SIZE * 3
 
         # 4 bytes for the TMEM base pointer
         var smem_use = 4

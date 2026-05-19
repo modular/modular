@@ -203,6 +203,7 @@ def depth512_mma[
     e = elect()
 
     # CTA mask for multicast arrive: signal both CTAs in the pair.
+    # 0b11 = (1 << cta_group) - 1 for cta_group=2.
     comptime cta_mask = UInt16(0x3)
 
     # ---- Helper: P@V with depth-dependent commit strategy ---------------------

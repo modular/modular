@@ -273,7 +273,12 @@ struct SM100MHA2Q[
         var smem = Self.SmemType()
         var misc_mbars = smem.misc_mbars()
 
-        # https://github.com/NVIDIA/cutlass/blob/main/examples/77_blackwell_fmha/kernel/sm100_fmha_fwd_kernel_tma_warpspecialized.hpp
+        # Per-warpgroup register allocation, mirroring CUTLASS's
+        # `sm100_fmha_fwd_kernel_tma_warpspecialized.hpp`.  Softmax gets
+        # the largest slice (192), correction the next (88), and the
+        # MMA-leader/other path runs lean (40); inactive warps drop to
+        # the minimum (24).  Sum × WG size must stay ≤ the SM register
+        # file; bump together if a path starts spilling.
         comptime num_reg_softmax = 192
         comptime num_reg_correction = 88
         comptime num_reg_other = 40
@@ -290,7 +295,7 @@ struct SM100MHA2Q[
         elif warp_idx == 1:
             tcgen05_alloc[Int32(Self.cta_group)](
                 smem.tmem_addr_ptr(),
-                UInt32(512),
+                UInt32(Self.config.sm100_tmem_cols),
             )
         elif warp_idx == 2:
             e = elect()
@@ -496,7 +501,7 @@ struct SM100MHA2Q[
                         var tmem_addr = smem.tmem_addr_ptr()[]
                         tcgen05_release_allocation_lock[Int32(Self.cta_group)]()
                         tcgen05_dealloc[Int32(Self.cta_group)](
-                            tmem_addr, UInt32(512)
+                            tmem_addr, UInt32(Self.config.sm100_tmem_cols)
                         )
                         return
                 var execute: Bool = seq_info.is_valid()
@@ -521,6 +526,9 @@ struct SM100MHA2Q[
                         mask,
                     )
             else:
+                # 24 is the floor for `setmaxnreg.dec` on SM90+ — drop
+                # this warpgroup's allocation to the minimum so the
+                # active WGs can claim its share of the SM register file.
                 warpgroup_reg_dealloc[24]()
 
         # Pair-CTA: cluster_sync before dealloc so that stmatrix
@@ -533,7 +541,9 @@ struct SM100MHA2Q[
             if warp_idx == 0:
                 var tmem_addr = smem.tmem_addr_ptr()[]
                 tcgen05_release_allocation_lock[Int32(Self.cta_group)]()
-                tcgen05_dealloc[Int32(Self.cta_group)](tmem_addr, UInt32(512))
+                tcgen05_dealloc[Int32(Self.cta_group)](
+                    tmem_addr, UInt32(Self.config.sm100_tmem_cols)
+                )
 
     @staticmethod
     @always_inline

@@ -669,8 +669,19 @@ def fa4_softmax[
                 return sub_ftz(score, vrow_max)
 
         # --- Experiment parameters ---
-        comptime score_to_logit_ratio: Int = 4  # 1=interleaved, 4=4x ahead
+        # Schedule the score-to-logit conversion `ratio` iterations ahead
+        # of its corresponding exp2 to hide latency.  1 = strict
+        # interleave, 4 = ~4-iteration prefetch (current tuned value).
+        comptime score_to_logit_ratio: Int = 4
+        # Number of exp2s per pass to route through the polynomial
+        # emulation path (`exp2_emulation`) rather than hardware
+        # `ex2.approx`.  Default 16 on sm_100; disabled on sm_103 where
+        # the emulation does not pay off.
         comptime default_emulate_count: Int = 0 if "sm_103" in _accelerator_arch() else 16
+        # `default_emulate_count` is calibrated at vs_len=64; the
+        # `// 64` normalizes it back to that reference so non-default
+        # vs_len scales the count proportionally.  Override at compile
+        # time with `-D EXP2_EMULATE_COUNT=N`.
         comptime num_emulated: Int = (
             get_defined_int["EXP2_EMULATE_COUNT", default_emulate_count]()
             * vs_len
@@ -904,6 +915,14 @@ def fa4_softmax[
         else:
             row_sum[0] += exp2(sink_weight - row_max)
 
+    # Lazy-rescale gate for online softmax: only re-scale the accumulator
+    # (and adopt the new running max) when `new_row_max - old_max > 8` in
+    # log2 domain — i.e., `old_max - new_row_max < rescale_threshold`.
+    # Below that, we keep the stale max and skip the rescale; the new
+    # exp2(score - old_max) terms stay within 2^8 = 256× of the existing
+    # scale, which fp32 accumulation can absorb without meaningful loss.
+    # For FP8 inputs (`size_of < 2`), set threshold to 0 to force a
+    # rescale on every actual max update.
     comptime rescale_threshold: Float32 = Float32(-8) if size_of[
         qkv_type
     ]() >= 2 else Float32(0)
@@ -1027,4 +1046,6 @@ def fa4_softmax[
     comptime if not config.pair_cta:
         if warp_idx == 0:
             tcgen05_release_allocation_lock[Int32(cta_group)]()
-            tcgen05_dealloc[Int32(cta_group)](tmem_addr, UInt32(512))
+            tcgen05_dealloc[Int32(cta_group)](
+                tmem_addr, UInt32(config.sm100_tmem_cols)
+            )

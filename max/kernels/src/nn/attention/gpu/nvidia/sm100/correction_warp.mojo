@@ -14,6 +14,7 @@
 
 from std.sys import size_of
 from std.gpu import thread_idx
+from std.gpu.globals import WARPGROUP_SIZE
 from std.gpu.compute.arch.tcgen05 import (
     tcgen05_ld,
     tcgen05_st,
@@ -87,7 +88,9 @@ def fa4_correction[
     )
     comptime assert load_iters > 1
     comptime assert (load_remainder == batch_size) or (load_remainder == 0)
-    var correction_smem_0 = correction_smem_arg + UInt32(thread_idx.x) % 128
+    var correction_smem_0 = correction_smem_arg + UInt32(thread_idx.x) % UInt32(
+        WARPGROUP_SIZE
+    )
     var correction_smem_1 = correction_smem_0 + (BM // 2)
 
     while iter_count != 0:

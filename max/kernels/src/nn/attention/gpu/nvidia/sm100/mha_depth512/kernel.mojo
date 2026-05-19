@@ -200,6 +200,13 @@ struct SM100MHADepth512[
 
         var smem = Self.SmemType()
 
+        # Per-warpgroup register allocation.  Depth-512 widens the per-WG
+        # working set vs the depth ≤ 128 path (see `kernel.mojo`), so the
+        # softmax (256) and correction (184) WGs get more registers than
+        # the 192/88 split there; MMA + load warps run lean at "other"
+        # (64), and the spare warps drop to the floor (24).  Sum must fit
+        # in the SM register budget; bump together if a path starts
+        # spilling.
         comptime num_reg_softmax = 256
         comptime num_reg_correction = 184
         comptime num_reg_other = 64
@@ -215,7 +222,8 @@ struct SM100MHADepth512[
         elif warp_idx == 1:
             # TMEM allocation (pair-CTA cooperative).
             tcgen05_alloc[Int32(Self.cta_group)](
-                smem.tmem_addr_ptr(), UInt32(512)
+                smem.tmem_addr_ptr(),
+                UInt32(Self.config.sm100_tmem_cols),
             )
         elif warp_idx == 2:
             e = elect()
@@ -340,7 +348,9 @@ struct SM100MHADepth512[
             if not seq_info.is_valid():
                 var tmem_addr = smem.tmem_addr_ptr()[]
                 tcgen05_release_allocation_lock[Int32(Self.cta_group)]()
-                tcgen05_dealloc[Int32(Self.cta_group)](tmem_addr, UInt32(512))
+                tcgen05_dealloc[Int32(Self.cta_group)](
+                    tmem_addr, UInt32(Self.config.sm100_tmem_cols)
+                )
                 return
             var pos: PositionSummary = PositionSummary.create[
                 ragged=Self.ragged,
@@ -438,7 +448,10 @@ struct SM100MHADepth512[
                 )
 
         else:
-            # Spare warps 10-11 (no-op).
+            # Spare warps 10-11 (no-op).  24 is the floor for
+            # `setmaxnreg.dec` on SM90+ — drop these warps' allocation
+            # to the minimum so the active WGs claim their share of the
+            # SM register file.
             warpgroup_reg_dealloc[24]()
 
     @staticmethod
