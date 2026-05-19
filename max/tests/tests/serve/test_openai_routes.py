@@ -1483,3 +1483,35 @@ async def test_openai_chat_completion_tool_calling_with_content(
     assert response.usage.completion_tokens == 16  # 4 + 12
     assert response.usage.prompt_tokens == 8
     assert response.usage.total_tokens == 24
+
+
+@pytest.mark.asyncio
+async def test_chat_stream_error_yields_json(
+    patch_openai_metrics: None,
+) -> None:
+    """Regression test for MXSERV-95: errors raised mid-stream are serialized as JSON."""
+    mock_pipeline = Mock()
+    mock_pipeline.model_name = "test-model"
+
+    async def mock_next_token_chunk(request: Any) -> Any:
+        raise ValueError(
+            "Input string is larger than tokenizer's max length (264823 > 262144)."
+        )
+        yield  # makes this an async generator despite the unconditional raise
+
+    mock_pipeline.next_token_chunk = mock_next_token_chunk
+    generator = OpenAIChatResponseGenerator(mock_pipeline)
+
+    results = [p async for p in generator.stream(_make_mock_request())]
+
+    # The error path does not emit [DONE]; exactly one item should be yielded.
+    assert len(results) == 1
+    payload = results[0]
+    assert isinstance(payload, str), (
+        f"Expected a JSON string, got {type(payload).__name__}: {payload!r}"
+    )
+
+    # Must parse as JSON — not as Python repr like ErrorResponse(error=Error(...))
+    parsed = json.loads(payload)
+    assert parsed["error"]["code"] == "500"
+    assert "262144" in parsed["error"]["message"]

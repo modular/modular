@@ -295,7 +295,7 @@ class OpenAIChatResponseGenerator(
 
     async def stream(
         self, request: TextGenerationRequest
-    ) -> AsyncGenerator[str | ErrorResponse | JSONResponse, None]:
+    ) -> AsyncGenerator[str | JSONResponse, None]:
         self.logger.debug("Streaming: Start: %s", request)
         record_request_start()
         request_timer = StopWatch(start_ns=request.timestamp_ns)
@@ -522,7 +522,7 @@ class OpenAIChatResponseGenerator(
                     code=str(status_code), message=str(e), param="", type=""
                 )
             )
-            yield error_response
+            yield error_response.model_dump_json()
         finally:
             record_request_end(
                 status_code,
