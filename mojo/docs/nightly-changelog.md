@@ -208,6 +208,34 @@ This version is still a work in progress.
 
 ## Tooling changes
 
+- The `mojo` compiler will now print the filename and line number in diagnostics
+  that point to inaccessible source locations (e.g., from precompiled libraries)
+  instead of a location at the top of the main file:
+
+  ```text
+  # Before
+  $> mojo example.mojo
+  /path/to/example.mojo:33:16: error: invalid call to '__setitem__': violated constraint
+     vec[base + i] = values[i].cast[dtype]()
+     ~~~^~~~~~~~~~
+
+  /path/to/example.mojo:1:1: note: constraint declared here evaluated to False, expected 'mut'
+  from std.algorithm.functional import elementwise
+  ^
+  /path/to/example.mojo:1:1: note: function declared here
+  from std.algorithm.functional import elementwise
+  ^
+
+  # After
+  $> mojo example.mojo
+  /path/to/example.mojo:33:16: error: invalid call to '__setitem__': violated constraint
+      vec[base + i] = values[i].cast[dtype]()
+      ~~~^~~~~~~~~~
+
+  max/kernels/src/layout/layout_tensor.mojo:2092: note: constraint declared here evaluated to False, expected 'mut'
+  max/kernels/src/layout/layout_tensor.mojo:2090: note: function declared here
+  ```
+
 - The `mojo package` command has renamed to `mojo precompile`. Similarly, the
   `.mojopkg` file extension has been deprecated; favor the `.mojoc` file
   extension instead.
