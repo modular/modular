@@ -343,6 +343,9 @@ This version is still a work in progress.
   - `offset_of[T, index=...]()` → `reflect[T]().field_offset[index=...]()`
   - `ReflectedType[T]` → `Reflected[T]`
 
+- `String` and `StringSlice` can now be sliced by codepoints, e.g.
+  `String("🔄🔥🔄")[codepoint=1:2]` returns `"🔥"`.
+
 - `String` and `StringSlice` can now be indexed by graphemes, e.g.
   `String("👨‍🚀🧑‍🌾क्षि")[grapheme=1]` returns `"🧑‍🌾"`.
 

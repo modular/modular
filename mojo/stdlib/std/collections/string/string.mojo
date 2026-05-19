@@ -840,6 +840,21 @@ struct String(
 
     @always_inline
     def __getitem__(
+        self, *, codepoint: ContiguousSlice
+    ) -> StringSlice[origin_of(self)]:
+        """Gets a substring at the specified codepoint positions.
+
+        Args:
+            codepoint: A slice that specifies codepoint positions of the new
+                substring.
+
+        Returns:
+            A StringSlice containing the codepoints in the specified range.
+        """
+        return StringSlice(self)[codepoint=codepoint]
+
+    @always_inline
+    def __getitem__(
         self, *, grapheme: Some[Indexer]
     ) -> StringSlice[origin_of(self)]:
         """Gets the character at the specified position.

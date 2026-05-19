@@ -481,17 +481,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         )
         return Self(unsafe_from_utf8=self._slice[byte])
 
-    def __getitem__(self, *, codepoint: Some[Indexer]) -> Self:
-        """Gets the character at the specified position.
-
-        Args:
-            codepoint: The codepoint index.
-
-        Returns:
-            A `StringSlice` view containing the unicode codepoint at the
-            specified position.
-        """
-
+    def _get_codepoint(self, codepoint: Some[Indexer]) -> Self:
         var c_idx = index(codepoint)
         debug_assert[assert_mode="safe"](
             c_idx >= 0, "negative indexing is not supported"
@@ -520,7 +510,55 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
                 if c_count == c_idx:
                     return s
                 c_count += 1
-            abort(String("codepoint index is out of bounds: ", c_idx))
+            return {ptr = ptr + self.byte_length() - 1, length = 0}
+
+    def __getitem__(self, *, codepoint: Some[Indexer]) -> Self:
+        """Gets the character at the specified position.
+
+        Args:
+            codepoint: The codepoint index.
+
+        Returns:
+            A `StringSlice` view containing the unicode codepoint at the
+            specified position.
+        """
+        var cp = self._get_codepoint(codepoint)
+        if cp.byte_length() == 0:
+            abort(t"codepoint index is out of bounds: {index(codepoint)}")
+        return cp
+
+    def __getitem__(self, *, codepoint: ContiguousSlice) -> Self:
+        """Gets a substring at the specified codepoint positions.
+
+        Args:
+            codepoint: A slice that specifies codepoint positions of the new
+                substring.
+
+        Returns:
+            A new StringSlice containing the codepoints in the specified range.
+        """
+
+        var res: Self
+        if not codepoint.start:
+            res = self
+        else:
+            var cp = self._get_codepoint(codepoint.start.value())
+            var cp_ptr = cp.unsafe_ptr()
+            var offset = Int(cp_ptr) - Int(self.unsafe_ptr())
+            var length = self.byte_length() - offset
+            res = {ptr = cp_ptr, length = length - Int(cp.byte_length() == 0)}
+
+        if codepoint.end:
+            var idx = codepoint.end.value() - (codepoint.start.or_else(0) + 1)
+            if idx < 0:
+                res = {ptr = res.unsafe_ptr(), length = 0}
+            else:
+                var cp = res[codepoint=idx]
+                var r_ptr = res.unsafe_ptr()
+                var offset = Int(cp.unsafe_ptr()) - Int(r_ptr)
+                res = {ptr = r_ptr, length = offset + cp.byte_length()}
+
+        return res
 
     @always_inline
     def __getitem__(self, *, grapheme: Some[Indexer]) -> Self:

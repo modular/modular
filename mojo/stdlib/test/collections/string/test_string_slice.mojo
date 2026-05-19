@@ -1105,6 +1105,43 @@ def test_codepoint_indexing() raises:
     assert_equal(StringSlice("🔄🔥🔄")[codepoint=2], "🔄")
 
 
+def test_codepoint_slicing() raises:
+    assert_equal(StringSlice("abc")[codepoint=0:1], "a")
+    assert_equal(StringSlice("abc")[codepoint=2:3], "c")
+    assert_equal(EVERY_CODEPOINT_LENGTH_STR[codepoint=0:1], "߷")
+    assert_equal(EVERY_CODEPOINT_LENGTH_STR[codepoint=1:2], "ക")
+    assert_equal(EVERY_CODEPOINT_LENGTH_STR[codepoint=2:3], "ൈ")
+    assert_equal(EVERY_CODEPOINT_LENGTH_STR[codepoint=3:4], "🔄")
+    assert_equal(EVERY_CODEPOINT_LENGTH_STR[codepoint=4:5], "!")
+
+    var elems = StringSlice("🔄🔥🔄")
+    assert_equal(elems[codepoint=0:1], "🔄")
+    assert_equal(elems[codepoint=1:2], "🔥")
+    assert_equal(elems[codepoint=2:3], "🔄")
+
+    assert_equal(elems[codepoint=:1], "🔄")
+    assert_equal(elems[codepoint=:2], "🔄🔥")
+    assert_equal(elems[codepoint=:3], "🔄🔥🔄")
+
+    assert_equal(elems[codepoint=:], "🔄🔥🔄")
+
+    assert_equal(elems[codepoint=0:], "🔄🔥🔄")
+    assert_equal(elems[codepoint=1:], "🔥🔄")
+    assert_equal(elems[codepoint=2:], "🔄")
+
+    assert_equal(elems[codepoint=0:3], "🔄🔥🔄")
+    assert_equal(elems[codepoint=1:3], "🔥🔄")
+    assert_equal(elems[codepoint=0:2], "🔄🔥")
+
+    assert_equal(elems[codepoint=0:0], "")
+    assert_equal(elems[codepoint=1:1], "")
+    assert_equal(elems[codepoint=2:2], "")
+
+    assert_equal(elems[codepoint=3:], "")
+    assert_equal(elems[codepoint=3:2], "")
+    assert_equal(elems[codepoint=2:1], "")
+
+
 def test_grapheme_indexing() raises:
     assert_equal(StringSlice("abc")[grapheme=0], "a")
     assert_equal(StringSlice("abc")[grapheme=1], "b")
