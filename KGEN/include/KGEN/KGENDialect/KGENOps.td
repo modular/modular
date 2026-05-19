@@ -194,7 +194,21 @@ def KGEN_GeneratorOp : KGENOp<"generator", [
     // Each even attribute corresponds to the name of in `llvm_metadata`,
     // each odd corresponds to its value (zero index based)
     DefaultValuedAttr<ArrayAttr, "{}">:$LLVMMetadataArray,
-    DefaultValuedAttr<ArrayAttr, "{}">:$LLVMArgMetadataArray
+    DefaultValuedAttr<ArrayAttr, "{}">:$LLVMArgMetadataArray,
+    // Source-declared parameter list (names + passing kinds + variadic
+    // kinds). Captured during `LowerLIT` from the source
+    // `FuncTypeGeneratorType`'s `PogListAttr` metadata, with default values
+    // and constraints elided so the snapshot is verifiable outside a
+    // parametric scope. The live `funcTypeGenerator` and `inputParams` may
+    // be rewritten by later transformations (e.g. `RemoveUnusedParams`),
+    // but this slot is left untouched and is the intended source of truth
+    // for reflection queries such as `#kgen.get_function_parameter_names`.
+    //
+    // TODO: If future reflection clients need defaults or constraints,
+    // expand the snapshot (or add a parallel slot) and arrange for the
+    // op's attribute dictionary to establish a contextual parametric
+    // signature so `ParamIndexRefAttr`s in those fields can be verified.
+    OptionalAttr<KGEN_PogListAttr>:$sourceParamList
   );
   let regions = (region MaxSizedRegion<1>:$bodyRegion);
 
@@ -236,7 +250,7 @@ def KGEN_GeneratorOp : KGENOp<"generator", [
             symName, sourceName, type, functionType, inputParams,
             /*decorators=*/{}, inlineLevel, ExportKind::NotExported,
             /*external=*/false, inlinedForm, linkageNameAttr, llvmMetadataArray,
-            llvmArgMetadataArray);
+            llvmArgMetadataArray, /*sourceParamList=*/PogListAttr());
     }]>,
     OpBuilder<(ins "StringAttr":$symName, "FuncTypeGeneratorType":$type), [{
       build($_builder, $_state, symName, StringAttr::get(symName.getContext()),

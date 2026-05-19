@@ -110,7 +110,8 @@ lit.fn @use_struct_param(%arg0: !lit.struct<@StructParam<:@Struct #lit.struct<{}
 }
 
 // CHECK-LABEL: kgen.generator @lifetime_lower
-// CHECK-SAME: (%arg0: !kgen.struct<()>) {
+// CHECK-SAME: (%arg0: !kgen.struct<()>)
+// CHECK: sourceParamList = #kgen.pog_list<[<"p", pos_or_kw, not_vararg>]>
 lit.fn @lifetime_lower<p: !lit.origin<0>>(%a: !lit.origin<1>) {
 
   // CHECK: kgen.param.declare A: struct<()> = <{ }>
@@ -296,7 +297,8 @@ lit.fn @does_memcpy<l: !lit.origin<1>, l2: !lit.origin<1>>
 // CHECK-LABEL: kgen.generator @takes_pack<types: param_list<type>>
 lit.fn @takes_pack
 <life: !lit.origin<1>, types: !kgen.param_list<!kgen.type>>
-// CHECK-SAME: (%arg0: !kgen.struct<variadic_ptr_map(:param_list<type> types, 42) isParamPack>) {
+// CHECK-SAME: (%arg0: !kgen.struct<variadic_ptr_map(:param_list<type> types, 42) isParamPack>)
+// CHECK-SAME: sourceParamList = #kgen.pog_list<[<"life", pos_or_kw, not_vararg>, <"types", pos_or_kw, not_vararg>]>
 (%args: !lit.ref.pack<:param_list<!kgen.type> types, mut life, 42>) {
 
   // CHECK-NEXT: [[E:%.*]] = kgen.struct.extract %arg0[0] : <variadic_ptr_map(:param_list<type> types, 42) isParamPack>
