@@ -44,6 +44,51 @@ _NIXL_BACKEND_ENV_VAR = "MODULAR_NIXL_TRANSFER_BACKEND"
 _SUPPORTED_BACKENDS: set[NixlBackendType] = {"ucx", "libfabric"}
 
 
+def _warn_on_notif_overflow(
+    agent: nixl.Agent,
+    transfer_id: int,
+    *,
+    transfer_name: str,
+    remote_agent: str,
+    src_replica_idx: int,
+    dst_replica_idx: int,
+    tp_idx: int,
+    direction: str,
+) -> None:
+    """Surfaces BinaryNotification xfer_id overflow from the backend.
+
+    Queries the agent for overflow accounting on the freshly-posted
+    `transfer_id` and emits a structured warning when the backend's
+    notification format could not relay every submitted xfer_id to the
+    receiver. For backends without a fixed-capacity notification format
+    (UCX) the agent reports `dropped == 0` so this is a no-op.
+
+    The breach is not a correctness bug: the receiver still completes
+    because data lands via RDMA WRITE imm_data, and the receiver only
+    waits for the xfer_ids it was told about. This warning surfaces
+    regressions and lets ops / metrics react if a future workload
+    re-hits the cap.
+    """
+    dropped, submitted = agent.get_transfer_notif_overflow(transfer_id)
+    if dropped == 0:
+        return
+    logger.warning(
+        "[GEX-3736] NIXL BinaryNotification xfer_id capacity exceeded on "
+        "%s transfer %s to %s (src DP %d -> dst DP %d, TP shard %d): "
+        "%d of %d xfer_ids were not relayed to the receiver. Sender-side "
+        "completion tracking is unaffected; receiver may observe "
+        "stragglers. See SERVOPT-1419 for the structural fix.",
+        direction,
+        transfer_name,
+        remote_agent,
+        src_replica_idx,
+        dst_replica_idx,
+        tp_idx,
+        dropped,
+        submitted,
+    )
+
+
 def _get_nixl_backend_type() -> NixlBackendType:
     """Returns the NIXL backend type from the environment.
 
@@ -1257,6 +1302,17 @@ class KVTransferEngine:
                     f"Transfer request failed with status {status} for TP shard {tp_idx}"
                 )
 
+            _warn_on_notif_overflow(
+                ta.agent,
+                transfer_id,
+                transfer_name=transfer_name,
+                remote_agent=remote_agent_name,
+                src_replica_idx=src_replica_idx,
+                dst_replica_idx=dst_replica_idx,
+                tp_idx=tp_idx,
+                direction="write",
+            )
+
             transfer_ids.append(transfer_id)
 
         transfer_req = TransferReqData(
@@ -1422,6 +1478,17 @@ class KVTransferEngine:
                 raise ValueError(
                     f"Read transfer request failed with status {status} for TP shard {tp_idx}"
                 )
+
+            _warn_on_notif_overflow(
+                ta.agent,
+                transfer_id,
+                transfer_name=transfer_name,
+                remote_agent=remote_agent_meta.agent_name,
+                src_replica_idx=src_replica_idx,
+                dst_replica_idx=dst_replica_idx,
+                tp_idx=tp_idx,
+                direction="read",
+            )
 
             transfer_ids.append(transfer_id)
 
