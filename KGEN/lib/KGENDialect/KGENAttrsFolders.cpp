@@ -317,9 +317,22 @@ FailureOr<TypedAttr> GetFunctionParameterCountAttr::evaluateWithContext(
         "get_function_parameter_count requires a concrete function value");
     return failure();
   }
-  return cast<TypedAttr>(IntegerAttr::get(
-      IndexType::get(getContext()),
-      cast<DeclInterface>(func.getOperation()).getInputParams().size()));
+  // Prefer the source-declared parameter list snapshot on `kgen.generator`
+  // when available so reflection counts remain stable across transforms that
+  // rewrite the live `inputParams` (e.g. `RemoveUnusedParams`). Falls back to
+  // the live input params for `lit.fn` (pre-LowerLIT reflection) and for
+  // generators that don't carry a snapshot.
+  size_t count;
+  if (auto gen = dyn_cast<GeneratorOp>(func.getOperation())) {
+    if (PogListAttr snapshot = gen.getSourceParamListAttr()) {
+      count = snapshot.size();
+    } else {
+      count = gen.getInputParams().size();
+    }
+  } else {
+    count = cast<DeclInterface>(func.getOperation()).getInputParams().size();
+  }
+  return cast<TypedAttr>(IntegerAttr::get(IndexType::get(getContext()), count));
 }
 
 FailureOr<TypedAttr> GetFunctionParameterNamesAttr::evaluateWithContext(
@@ -332,12 +345,28 @@ FailureOr<TypedAttr> GetFunctionParameterNamesAttr::evaluateWithContext(
   }
   MLIRContext *ctx = getContext();
   SmallVector<TypedAttr> resultAttrs;
+
+  auto appendName = [&](StringAttr name) {
+    resultAttrs.push_back(
+        StringAttr::get(name.getValue(), StringType::get(ctx)));
+  };
+
+  // Prefer the source-declared parameter list snapshot on `kgen.generator`
+  // when available; see the comment in `GetFunctionParameterCountAttr`.
+  if (auto gen = dyn_cast<GeneratorOp>(func.getOperation())) {
+    if (PogListAttr snapshot = gen.getSourceParamListAttr()) {
+      resultAttrs.reserve(snapshot.size());
+      for (PogMetadataAttr pog : snapshot.getPogs())
+        appendName(pog.getName());
+      return cast<TypedAttr>(ParamListAttr::get(resultAttrs, getType()));
+    }
+  }
+
   ArrayRef<ParamDeclAttr> params =
       cast<DeclInterface>(func.getOperation()).getInputParams();
   resultAttrs.reserve(params.size());
   for (ParamDeclAttr param : params)
-    resultAttrs.push_back(
-        StringAttr::get(param.getName().getValue(), StringType::get(ctx)));
+    appendName(param.getName());
   return cast<TypedAttr>(ParamListAttr::get(resultAttrs, getType()));
 }
 
