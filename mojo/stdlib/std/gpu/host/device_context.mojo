@@ -1820,7 +1820,7 @@ struct DeviceBuffer[dtype: DType](
         # Initialize the input and output with known values.
         with in_dev.map_to_host() as in_host, out_dev.map_to_host() as out_host:
             for i in range(length):
-                in_host[i] = i
+                in_host[i] = Float32(i)
                 out_host[i] = 255
         ```
         """
@@ -2426,7 +2426,7 @@ struct DeviceFunction[
         pass
 
     var ctx = DeviceContext()
-    ctx.enqueue_function[my_kernel, my_kernel](grid_dim=1, block_dim=32)
+    ctx.enqueue_function[my_kernel](grid_dim=1, block_dim=32)
     ctx.synchronize()
     ```
     """
@@ -3142,7 +3142,7 @@ struct DeviceFunction[
             pass
 
         var ctx = DeviceContext()
-        var device_function = ctx.compile_function[kernel, kernel]()
+        var device_function = ctx.compile_function[kernel]()
 
         # Get the maximum number of threads per block for this function
         var max_threads = device_function.get_attribute(Attribute.MAX_THREADS_PER_BLOCK)
@@ -3623,9 +3623,9 @@ struct DeviceGraph(ImplicitlyCopyable):
             print("replaying")
 
         with DeviceContext() as ctx:
-            var compiled_fn = ctx.compile_function[kernel, kernel]()
+            var compiled_fn = ctx.compile_function[kernel]()
             var builder = ctx.create_graph_builder()
-            builder.add_function(compiled_fn, grid_dim=1, block_dim=1)
+            _ = builder.add_function(compiled_fn, grid_dim=1, block_dim=1, dependencies=[])
             var graph = builder^.instantiate()
             graph.replay()
             graph.replay()  # replay as many times as needed
@@ -3661,7 +3661,7 @@ struct DeviceGraphBuilder(Movable):
     with DeviceContext() as ctx:
         var compiled_fn = ctx.compile_function[kernel]()
         var builder = ctx.create_graph_builder()
-        builder.add_function(compiled_fn, 42, grid_dim=1, block_dim=1)
+        _ = builder.add_function(compiled_fn, 42, grid_dim=1, block_dim=1, dependencies=[])
         var graph = builder^.instantiate()
         graph.replay()
         ctx.synchronize()
@@ -3874,7 +3874,7 @@ struct DeviceGraphBuilder(Movable):
                 ptr[i] = Float32(i) * scale
 
             var builder = ctx.create_graph_builder()
-            builder.add_function(
+            _ = builder.add_function(
                 scale_kernel, grid_dim=1, block_dim=256, dependencies=[]
             )
             var graph = builder^.instantiate()
@@ -8390,7 +8390,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
         with DeviceContext() as ctx:
             var compiled_fn = ctx.compile_function[kernel]()
             var builder = ctx.create_graph_builder()
-            builder.add_function(compiled_fn, 42, grid_dim=1, block_dim=1)
+            _ = builder.add_function(compiled_fn, 42, grid_dim=1, block_dim=1, dependencies=[])
             var graph = builder^.instantiate()
             graph.replay()
             ctx.synchronize()
