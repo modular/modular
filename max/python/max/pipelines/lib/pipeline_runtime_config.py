@@ -27,6 +27,11 @@ from .interfaces.cache_mixin import DenoisingCacheConfig
 # Default max batch input tokens for chunked prefill and memory estimation.
 DEFAULT_MAX_BATCH_INPUT_TOKENS = 8192
 
+# Sentinel value users can pass to ``reasoning_parser`` / ``tool_parser`` to
+# explicitly disable the parser, overriding any architecture default. The value
+# is matched case-insensitively (e.g. ``"none"``, ``"None"``, ``"NONE"``).
+DISABLE_PARSER_SENTINEL = "none"
+
 
 class PipelineRuntimeConfig(ConfigFileModel):
     """Model-agnostic runtime settings for pipeline execution.
@@ -278,7 +283,10 @@ class PipelineRuntimeConfig(ConfigFileModel):
         description=(
             "Name of the reasoning output parser. The parser extracts "
             "thinking blocks to populate the ``reasoning`` field in chat "
-            "completion responses."
+            "completion responses. When unset, the server applies the "
+            "architecture's default reasoning parser, if any. Pass "
+            '``"none"`` (case-insensitive) to explicitly disable reasoning '
+            "parsing even when the architecture declares a default."
         ),
     )
 
@@ -286,7 +294,11 @@ class PipelineRuntimeConfig(ConfigFileModel):
         default=None,
         description=(
             "Name of the tool call parser. The parser extracts tool calls "
-            "from model output in chat completion responses."
+            "from model output in chat completion responses. When unset, "
+            "the server applies the architecture's default tool parser, "
+            'if any. Pass ``"none"`` (case-insensitive) to explicitly '
+            "disable tool parsing even when the architecture declares a "
+            "default."
         ),
     )
 

@@ -2034,3 +2034,69 @@ def test_resolve_default_tool_parser__no_arch_default_is_noop(
     )
     config._resolve_default_tool_parser()
     assert config.runtime.tool_parser is None
+
+
+@pytest.mark.parametrize("sentinel", ["none", "None", "NONE", "nOnE"])
+@prepare_registry
+@mock_pipeline_config_resolve
+def test_resolve_default_reasoning_parser__none_sentinel_disables(
+    monkeypatch: pytest.MonkeyPatch,
+    sentinel: str,
+) -> None:
+    """Passing the case-insensitive ``"none"`` sentinel explicitly disables
+    the reasoning parser, overriding the architecture default and normalizing
+    the runtime value to ``None``."""
+    arch = SimpleNamespace(
+        name="KimiK25ForConditionalGeneration",
+        reasoning_parser="kimik2_5",
+    )
+    retrieve_mock = Mock(return_value=arch)
+    monkeypatch.setattr(
+        PIPELINE_REGISTRY, "retrieve_architecture", retrieve_mock
+    )
+
+    config = PipelineConfig(
+        models=ModelManifest({"main": MAXModelConfig(model_path="test/model")}),
+        runtime=PipelineRuntimeConfig(reasoning_parser=sentinel),
+    )
+    config.models["main"]._huggingface_config = SimpleNamespace(
+        architectures=["KimiK25ForConditionalGeneration"]
+    )
+
+    config._resolve_default_reasoning_parser()
+
+    assert config.runtime.reasoning_parser is None
+    retrieve_mock.assert_not_called()
+
+
+@pytest.mark.parametrize("sentinel", ["none", "None", "NONE", "nOnE"])
+@prepare_registry
+@mock_pipeline_config_resolve
+def test_resolve_default_tool_parser__none_sentinel_disables(
+    monkeypatch: pytest.MonkeyPatch,
+    sentinel: str,
+) -> None:
+    """Passing the case-insensitive ``"none"`` sentinel explicitly disables
+    the tool parser, overriding the architecture default (including callable
+    defaults) and normalizing the runtime value to ``None``."""
+    arch = SimpleNamespace(
+        name="KimiK25ForConditionalGeneration",
+        tool_parser="kimik2_5",
+    )
+    retrieve_mock = Mock(return_value=arch)
+    monkeypatch.setattr(
+        PIPELINE_REGISTRY, "retrieve_architecture", retrieve_mock
+    )
+
+    config = PipelineConfig(
+        models=ModelManifest({"main": MAXModelConfig(model_path="test/model")}),
+        runtime=PipelineRuntimeConfig(tool_parser=sentinel),
+    )
+    config.models["main"]._huggingface_config = SimpleNamespace(
+        architectures=["KimiK25ForConditionalGeneration"]
+    )
+
+    config._resolve_default_tool_parser()
+
+    assert config.runtime.tool_parser is None
+    retrieve_mock.assert_not_called()

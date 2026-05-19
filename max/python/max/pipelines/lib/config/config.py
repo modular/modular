@@ -37,7 +37,10 @@ from max.pipelines.lib.memory_estimation import (
     to_human_readable_bytes,
 )
 from max.pipelines.lib.model_manifest import ModelManifest
-from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
+from max.pipelines.lib.pipeline_runtime_config import (
+    DISABLE_PARSER_SENTINEL,
+    PipelineRuntimeConfig,
+)
 from max.pipelines.lib.registry import (
     PIPELINE_REGISTRY,
     SupportedArchitecture,
@@ -163,6 +166,16 @@ _AUTO_ENABLE_DEVICE_GRAPH_CAPTURE_ARCHITECTURES = (
     "Eagle3MHAKimiK25ForCausalLM",
     "MiniMaxM2ForCausalLM",
 )
+
+
+def _is_disable_parser_sentinel(value: str | None) -> bool:
+    """Return ``True`` if ``value`` is the case-insensitive disable sentinel.
+
+    Users can pass the string ``"none"`` (case-insensitive) to
+    ``runtime.reasoning_parser`` or ``runtime.tool_parser`` to explicitly
+    disable the parser, overriding any architecture-declared default.
+    """
+    return isinstance(value, str) and value.lower() == DISABLE_PARSER_SENTINEL
 
 
 class PipelineConfig(ConfigFileModel):
@@ -1033,7 +1046,18 @@ class PipelineConfig(ConfigFileModel):
         If the user did not configure ``runtime.reasoning_parser`` and the
         resolved ``SupportedArchitecture`` declares a default
         ``reasoning_parser``, use it. Explicit user configuration always wins.
+
+        Passing the case-insensitive sentinel ``"none"`` explicitly disables
+        the reasoning parser; the value is normalized to ``None`` and the
+        architecture default is skipped.
         """
+        if _is_disable_parser_sentinel(self.runtime.reasoning_parser):
+            self.runtime.reasoning_parser = None
+            logger.info(
+                "Reasoning parser explicitly disabled, skipping architecture default."
+            )
+            return
+
         if self.runtime.reasoning_parser is not None:
             return
 
@@ -1047,7 +1071,8 @@ class PipelineConfig(ConfigFileModel):
         self.runtime.reasoning_parser = arch.reasoning_parser
         logger.info(
             "Defaulting reasoning parser to %r for architecture %s. "
-            "Override with --reasoning-parser.",
+            "Override with --reasoning-parser, or pass "
+            "--reasoning-parser=none to disable.",
             arch.reasoning_parser,
             arch.name,
         )
@@ -1058,7 +1083,18 @@ class PipelineConfig(ConfigFileModel):
         If the user did not configure ``runtime.tool_parser`` and the
         resolved ``SupportedArchitecture`` declares a default
         ``tool_parser``, use it. Explicit user configuration always wins.
+
+        Passing the case-insensitive sentinel ``"none"`` explicitly disables
+        the tool parser; the value is normalized to ``None`` and the
+        architecture default is skipped.
         """
+        if _is_disable_parser_sentinel(self.runtime.tool_parser):
+            self.runtime.tool_parser = None
+            logger.info(
+                "Tool parser explicitly disabled, skipping architecture default.",
+            )
+            return
+
         if self.runtime.tool_parser is not None:
             return
 
@@ -1077,7 +1113,8 @@ class PipelineConfig(ConfigFileModel):
         self.runtime.tool_parser = parser_name
         logger.info(
             "Defaulting tool parser to %r for architecture %s. "
-            "Override with --tool-parser.",
+            "Override with --tool-parser, or pass --tool-parser=none "
+            "to disable.",
             parser_name,
             arch.name,
         )

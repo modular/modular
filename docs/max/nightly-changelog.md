@@ -28,6 +28,12 @@ This version is still a work in progress.
   `len(pending_reqs) + len(prefill_reqs)`). Operators can use this metric
   to observe queue buildup during overload conditions.
 
+- Added a `"none"` option for `runtime.tool_parser` and
+  `runtime.reasoning_parser` in `PipelineConfig` (CLI flags `--tool-parser`
+  and `--reasoning-parser`). Pass `none` (case-insensitive) to explicitly
+  disable the parser, overriding any architecture-declared default. Leaving
+  the field unset still applies the architecture default as before.
+
 ### `max` CLI
 
 - Added `--devices=gpu:all` to use every visible GPU (including MAX Serve).
