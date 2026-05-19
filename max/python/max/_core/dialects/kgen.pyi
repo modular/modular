@@ -27,6 +27,266 @@ from max.mlir import Context, Location
 
 DiagnosticHandler = Callable
 
+class ComputeKind(enum.Enum):
+    addition = 0
+
+    comparison = 1
+
+    division = 2
+
+    multiplication = 3
+
+    multiply_add = 4
+
+    other = 5
+
+class EmitAs(enum.Enum):
+    asm = 0
+
+    llvm = 1
+
+    llvm_opt = 2
+
+    object = 3
+
+    llvm_bitcode = 4
+
+    llvm_opt_bitcode = 5
+
+class ArgConvention(enum.Enum):
+    read = 0
+
+    read_mem = 1
+
+    owned = 2
+
+    owned_in_mem = 3
+
+    deinit_mem = 4
+
+    mut = 5
+
+    ref = 6
+
+    mutref = 7
+
+    byref_result = 8
+
+    byref_error = 9
+
+class ArgConventionAttr(max._core.Attribute):
+    def __init__(self, arg0: Context, arg1: ArgConvention, /) -> None: ...
+    @property
+    def value(self) -> ArgConvention: ...
+
+class ClosureMemoryKind(enum.Enum):
+    escaping = 0
+
+    nonescaping = 1
+
+    trivial = 2
+
+    register_passable = 3
+
+class ClosureMethod(enum.Enum):
+    call = 0
+
+    del_ = 1
+
+    move = 2
+
+    copy = 3
+
+    none = 4
+
+class CmpPredicate(enum.Enum):
+    eq = 0
+
+    ne = 1
+
+    lt = 2
+
+    gt = 3
+
+    le = 4
+
+    ge = 5
+
+class CmpPredicateAttr(max._core.Attribute):
+    def __init__(self, value: CmpPredicate) -> None: ...
+    @property
+    def value(self) -> CmpPredicate: ...
+
+class ExportKind(enum.Enum):
+    not_exported = 0
+
+    exported = 1
+
+    c_exported = 2
+
+class FnEffects(enum.Enum):
+    none = 0
+
+    throws = 1
+
+    async_ = 2
+
+    capturing = 4
+
+    refresult = 32
+
+    register_passable = 128
+
+    cabi = 512
+
+class InlineLevel(enum.Enum):
+    automatic = 0
+
+    always = 1
+
+    always_nodebug = 2
+
+    always_builtin = 3
+
+    never = 4
+
+class InlineLevelAttr(max._core.Attribute):
+    def __init__(self, arg0: Context, arg1: InlineLevel, /) -> None: ...
+    @property
+    def value(self) -> InlineLevel: ...
+
+class POC(enum.Enum):
+    add = 0
+
+    mul = 1
+
+    mul_no_wrap = 2
+
+    and_ = 3
+
+    or_ = 4
+
+    xor = 5
+
+    max = 6
+
+    min = 7
+
+    shl = 8
+
+    shr = 9
+
+    div = 10
+
+    mod = 11
+
+    eq = 12
+
+    lt = 13
+
+    le = 14
+
+    in_ = 15
+
+    cond = 16
+
+    current_target = 17
+
+    target_has_feature = 18
+
+    target_get_field = 19
+
+    accelerator_arch = 20
+
+    cross_compilation = 21
+
+    get_env = 22
+
+    get_sizeof = 23
+
+    get_alignof = 24
+
+    apply = 25
+
+    apply_result_slot = 26
+
+    rebind = 27
+
+    ptr_bitcast = 34
+
+    load_from_mem = 35
+
+    variadic_ptr_map = 36
+
+    variadic_ptrremove_map = 37
+
+    attr_to_str = 39
+
+    data_to_str = 40
+
+    string_address = 41
+
+    str_concat = 42
+
+    function_get_arg_types = 43
+
+    div_s = 44
+
+    div_u = 45
+
+    ceil_div_s = 46
+
+    ceil_div_u = 47
+
+    floor_div_s = 48
+
+    rem_s = 49
+
+    rem_u = 50
+
+class POCAttr(max._core.Attribute):
+    def __init__(self, arg0: Context, arg1: POC, /) -> None: ...
+    @property
+    def value(self) -> POC: ...
+
+class PassingKind(enum.Enum):
+    pos_or_kw = 0
+
+    pos = 1
+
+    kw = 2
+
+    implicit = 3
+
+    inferred = 4
+
+class SugarKind(enum.Enum):
+    aibuiltin = 0
+
+    preserved = 1
+
+    member_alias = 2
+
+    alias = 3
+
+class TailKind(enum.Enum):
+    none = 0
+
+    musttail = 1
+
+    notail = 2
+
+    tail = 3
+
+class VariadicKind(enum.Enum):
+    not_vararg = 0
+
+    pos_vararg = 1
+
+    pack_vararg = 2
+
+    kw_vararg = 3
+
 class FnMetadataAttrInterface(Protocol):
     """
     This interface describes attributes that are attached to a `!kgen.func`
@@ -1430,6 +1690,122 @@ class ParameterExprArrayAttr(max._core.Attribute):
     @property
     def value(self) -> Sequence[max._core.dialects.builtin.TypedAttr]: ...
 
+class PogListAttr(max._core.Attribute):
+    """
+    The `#kgen.pog_list` attribute contains metadata about an argument or
+    parameter list of a function, including names, passing kinds, default
+    values, and information about variadic arguments.
+    The positional default values correspond to the trailing positional
+    (i.e. pos-only or pos-or-kw) args/params, and the keyword-only default
+    values similarly correspond to the trailing keyword-only args/params.
+
+    This attribute subscribes to GeneratorMetadataAttrInterface, which means it
+    gets attached to GeneratorTypes as metadata.
+
+    Example:
+
+    ```mlir
+    #kgen.pog_list<
+      ["a", "b", "c", "d"],
+      [pos, pos_or_kw, kw, kw],
+    >
+    ```
+
+    The `origVariadicConvention` indicates whether the original argument
+    convention of a VariadicList or VariadicPack, e.g. "mut *args: Int".
+
+    Optional `bodyConstraints` holds constraints that are enforced by the body
+    of the generator type that carries this list as metadata.
+    """
+
+    @overload
+    def __init__(self) -> None: ...
+    @overload
+    def __init__(self, num_pogs: int) -> None: ...
+    @overload
+    def __init__(self, pogs: Sequence[PogMetadataAttr]) -> None: ...
+    @overload
+    def __init__(
+        self, num_pogs: int, body_constraints: Sequence[ConstraintAttr]
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        names: Sequence[max._core.dialects.builtin.StringAttr],
+        passing_kinds: Sequence[PassingKind],
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        pogs: Sequence[PogMetadataAttr],
+        body_constraints: Sequence[ConstraintAttr],
+        orig_variadic_convention: ArgConvention,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        names: Sequence[max._core.dialects.builtin.StringAttr],
+        passing_kinds: Sequence[PassingKind],
+        variadics: Sequence[VariadicKind],
+        defaults: Sequence[max._core.dialects.builtin.TypedAttr],
+        orig_variadic_convention: ArgConvention | None,
+        param_constraints: Sequence[Sequence[ConstraintAttr]],
+        body_constraints: Sequence[ConstraintAttr],
+    ) -> None: ...
+    @property
+    def pogs(self) -> Sequence[PogMetadataAttr]: ...
+    @property
+    def body_constraints(self) -> Sequence[ConstraintAttr]: ...
+    @property
+    def orig_variadic_convention(self) -> ArgConvention: ...
+
+class PogMetadataAttr(max._core.Attribute):
+    """
+    The `#kgen.pog_metadata` attribute contains metadata about an argument or
+    parameter of a function, including the name, passing kind, variadicness, the
+    default value (if present) and any constraints on it.
+
+    Example:
+
+    ```mlir
+    #kgen.pog_metadata<"some_keyword_param", pos_or_kw, false, 42, {
+      <1, loc("file.mojo":10:5), "Constraint must hold">
+    }>
+    #kgen.pog_metadata<"some_variadic_param", pos_or_kw, true>
+    ```
+    """
+
+    @overload
+    def __init__(self) -> None: ...
+    @overload
+    def __init__(
+        self,
+        name: max._core.dialects.builtin.StringAttr,
+        passing_kind: PassingKind,
+        variadic: VariadicKind = VariadicKind.not_vararg,
+        default_value: max._core.dialects.builtin.TypedAttr = ...,
+        constraints: Sequence[ConstraintAttr] = [],
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        name: max._core.dialects.builtin.StringAttr,
+        passing_kind: PassingKind,
+        variadic: VariadicKind,
+        default_value: max._core.dialects.builtin.TypedAttr,
+        constraints: Sequence[ConstraintAttr],
+    ) -> None: ...
+    @property
+    def name(self) -> max._core.dialects.builtin.StringAttr: ...
+    @property
+    def passing_kind(self) -> PassingKind: ...
+    @property
+    def variadic(self) -> VariadicKind: ...
+    @property
+    def default_value(self) -> max._core.dialects.builtin.TypedAttr: ...
+    @property
+    def constraints(self) -> Sequence[ConstraintAttr]: ...
+
 class PreservedAttr(max._core.Attribute):
     """
     The `#kgen.preserved` attribute contains an attribute and isolates it from
@@ -2128,266 +2504,6 @@ class VariantAttr(max._core.Attribute):
     def index(self) -> int: ...
     @property
     def type(self) -> VariantType: ...
-
-class ComputeKind(enum.Enum):
-    addition = 0
-
-    comparison = 1
-
-    division = 2
-
-    multiplication = 3
-
-    multiply_add = 4
-
-    other = 5
-
-class EmitAs(enum.Enum):
-    asm = 0
-
-    llvm = 1
-
-    llvm_opt = 2
-
-    object = 3
-
-    llvm_bitcode = 4
-
-    llvm_opt_bitcode = 5
-
-class ArgConvention(enum.Enum):
-    read = 0
-
-    read_mem = 1
-
-    owned = 2
-
-    owned_in_mem = 3
-
-    deinit_mem = 4
-
-    mut = 5
-
-    ref = 6
-
-    mutref = 7
-
-    byref_result = 8
-
-    byref_error = 9
-
-class ArgConventionAttr(max._core.Attribute):
-    def __init__(self, arg0: Context, arg1: ArgConvention, /) -> None: ...
-    @property
-    def value(self) -> ArgConvention: ...
-
-class ClosureMemoryKind(enum.Enum):
-    escaping = 0
-
-    nonescaping = 1
-
-    trivial = 2
-
-    register_passable = 3
-
-class ClosureMethod(enum.Enum):
-    call = 0
-
-    del_ = 1
-
-    move = 2
-
-    copy = 3
-
-    none = 4
-
-class CmpPredicate(enum.Enum):
-    eq = 0
-
-    ne = 1
-
-    lt = 2
-
-    gt = 3
-
-    le = 4
-
-    ge = 5
-
-class CmpPredicateAttr(max._core.Attribute):
-    def __init__(self, value: CmpPredicate) -> None: ...
-    @property
-    def value(self) -> CmpPredicate: ...
-
-class ExportKind(enum.Enum):
-    not_exported = 0
-
-    exported = 1
-
-    c_exported = 2
-
-class FnEffects(enum.Enum):
-    none = 0
-
-    throws = 1
-
-    async_ = 2
-
-    capturing = 4
-
-    refresult = 32
-
-    register_passable = 128
-
-    cabi = 512
-
-class InlineLevel(enum.Enum):
-    automatic = 0
-
-    always = 1
-
-    always_nodebug = 2
-
-    always_builtin = 3
-
-    never = 4
-
-class InlineLevelAttr(max._core.Attribute):
-    def __init__(self, arg0: Context, arg1: InlineLevel, /) -> None: ...
-    @property
-    def value(self) -> InlineLevel: ...
-
-class POC(enum.Enum):
-    add = 0
-
-    mul = 1
-
-    mul_no_wrap = 2
-
-    and_ = 3
-
-    or_ = 4
-
-    xor = 5
-
-    max = 6
-
-    min = 7
-
-    shl = 8
-
-    shr = 9
-
-    div = 10
-
-    mod = 11
-
-    eq = 12
-
-    lt = 13
-
-    le = 14
-
-    in_ = 15
-
-    cond = 16
-
-    current_target = 17
-
-    target_has_feature = 18
-
-    target_get_field = 19
-
-    accelerator_arch = 20
-
-    cross_compilation = 21
-
-    get_env = 22
-
-    get_sizeof = 23
-
-    get_alignof = 24
-
-    apply = 25
-
-    apply_result_slot = 26
-
-    rebind = 27
-
-    ptr_bitcast = 34
-
-    load_from_mem = 35
-
-    variadic_ptr_map = 36
-
-    variadic_ptrremove_map = 37
-
-    attr_to_str = 39
-
-    data_to_str = 40
-
-    string_address = 41
-
-    str_concat = 42
-
-    function_get_arg_types = 43
-
-    div_s = 44
-
-    div_u = 45
-
-    ceil_div_s = 46
-
-    ceil_div_u = 47
-
-    floor_div_s = 48
-
-    rem_s = 49
-
-    rem_u = 50
-
-class POCAttr(max._core.Attribute):
-    def __init__(self, arg0: Context, arg1: POC, /) -> None: ...
-    @property
-    def value(self) -> POC: ...
-
-class PassingKind(enum.Enum):
-    pos_or_kw = 0
-
-    pos = 1
-
-    kw = 2
-
-    implicit = 3
-
-    inferred = 4
-
-class SugarKind(enum.Enum):
-    aibuiltin = 0
-
-    preserved = 1
-
-    member_alias = 2
-
-    alias = 3
-
-class TailKind(enum.Enum):
-    none = 0
-
-    musttail = 1
-
-    notail = 2
-
-    tail = 3
-
-class VariadicKind(enum.Enum):
-    not_vararg = 0
-
-    pos_vararg = 1
-
-    pack_vararg = 2
-
-    kw_vararg = 3
 
 class CallIndirectOp(max._core.Operation):
     """
