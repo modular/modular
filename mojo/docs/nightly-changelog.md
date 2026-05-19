@@ -58,19 +58,25 @@ This version is still a work in progress.
   layout and kernel code; `layout` also hoists the common names at package
   scope for convenience.
 
-- `PythonModuleBuilder.def_function` (and `def_method` / `def_staticmethod` on
-  `PythonTypeBuilder`) now register non-kwargs Mojo callables via CPython's
-  `METH_FASTCALL` calling convention, reducing per-call overhead. Kwargs-
-  accepting functions still use `METH_VARARGS | METH_KEYWORDS`.
+- Python -> Mojo FFI calls registered through `PythonModuleBuilder` and
+  `PythonTypeBuilder` have significantly reduced per-call overhead:
 
-- `PythonObject.__del__` now skips the `PyGILState_Ensure` /
-  `PyGILState_Release` round-trip when the current thread already holds
-  the GIL (checked via `PyGILState_Check`). The public contract is
-  unchanged - dropping a `PythonObject` from a thread that does not
-  hold the GIL is still safe, and the destructor still acquires the GIL
-  in that case. The fast path significantly reduces per-call overhead
-  for Python -> Mojo FFI calls, where CPython hands the callee an
-  already-held GIL.
+  - Non-kwargs callables registered with `def_function` / `def_method` /
+    `def_staticmethod` now use CPython's `METH_FASTCALL` calling
+    convention rather than `METH_VARARGS`. Kwargs-accepting functions
+    still use `METH_VARARGS | METH_KEYWORDS`.
+
+  - `PythonObject.__del__` skips the `PyGILState_Ensure` /
+    `PyGILState_Release` round-trip when the current thread already
+    holds the GIL (checked via `PyGILState_Check`). On the common
+    Python -> Mojo FFI path (where CPython hands the callee an
+    already-held GIL) the destructor pays just the check and a direct
+    `Py_DecRef`. The public contract is unchanged - dropping a
+    `PythonObject` from a thread that does not hold the GIL remains
+    safe.
+
+  - `Int(py=obj)` and `Scalar[IntDType](py=obj)` fast-path exact
+    Python `int` via `PyLong_AsSsize_t`.
 
 - Added `TileTensor.copy_from()` and `TileTensor.split()` for copying between
   compatible tile views and splitting tiles into static or runtime-sized

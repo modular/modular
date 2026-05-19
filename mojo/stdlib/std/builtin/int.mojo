@@ -1091,6 +1091,24 @@ struct Int(
         Raises:
             An error if the conversion failed.
         """
+        # Fast path: if the input is exactly a Python `int` (not a subclass),
+        # call `PyLong_AsSsize_t` directly on its borrowed pointer. This is
+        # the common case for any Mojo function bound through
+        # `PythonModuleBuilder.def_function` that accepts integer args, and
+        # the FFI overhead dominates if we route every conversion through
+        # `__int__()` + `PyNumber_Long`. `PyLong_CheckExact` rejects `int`
+        # subclasses with overridden `__int__` so they keep observing their
+        # override via the fallback (matching CPython's `int(x)` semantics);
+        # the fallback also handles non-int objects with an `__int__` method
+        # (e.g. `numpy.int64`). The error check is inlined rather than
+        # delegating to `Python.py_long_as_ssize_t` to avoid a second
+        # `Python().cpython()` lookup on the hot path.
+        ref cpy = Python().cpython()
+        if cpy.PyLong_CheckExact(py._obj_ptr):
+            self = cpy.PyLong_AsSsize_t(py._obj_ptr)
+            if self == -1 and cpy.PyErr_Occurred():
+                raise cpy.unsafe_get_error()
+            return
         self = Python.py_long_as_ssize_t(py.__int__())
 
     # ===-------------------------------------------------------------------===#
