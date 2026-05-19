@@ -164,7 +164,7 @@ class CustomOpLibrary:
     value in Python. Each argument corresponding to an ``OutputTensor`` in the
     Mojo operation will be modified in-place.
 
-    For more information, see the [custom ops for PyTorch](/max/tutorials/custom-kernels-pytorch) tutorial.
+    For more information, see the [custom ops for PyTorch](/max/develop/custom-kernels-pytorch) tutorial.
 
     Args:
         kernel_library: The path to a ``.mojo`` file or a ``.mojoc``/``.mojopkg`` with

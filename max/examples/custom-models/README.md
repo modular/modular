@@ -39,5 +39,5 @@ python -m max.entrypoints.pipelines serve --custom-architectures qwen2 --model Q
 ```
 
 For more information, see the
-[Serve custom model architectures](https://docs.modular.com/max/tutorials/serve-custom-model-architectures/)
+[Serve custom model architectures](https://docs.modular.com/max/develop/serve-custom-model-architectures/)
 tutorial.
