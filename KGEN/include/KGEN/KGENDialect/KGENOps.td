@@ -1981,7 +1981,8 @@ def KGEN_ClosureInitOp : KGENOp<"closure.init", [
                    OptionalAttr<AnyAttr>:$nestedFnScope,
                    DefaultValuedAttr<ArrayAttr, "{}">:$LLVMMetadataArray,
                    DefaultValuedAttr<ArrayAttr, "{}">:$LLVMArgMetadataArray,
-                   OptionalAttr<KGEN_ParamDeclArrayAttr>:$hoistedCaptures
+                   OptionalAttr<KGEN_ParamDeclArrayAttr>:$hoistedCaptures,
+                   OptionalAttr<KGEN_LinkageNameAttr>:$linkageName
                   );
 
   let regions = (region SizedRegion<1>:$bodyRegion);
@@ -2007,7 +2008,8 @@ def KGEN_ClosureInitOp : KGENOp<"closure.init", [
             inputParams, inlineLevel, captureTypes, captureNames, typeValue,
             /*nestedFnScope=*/{},
             /*LLVMMetadataArray=*/nullptr, /*LLVMArgMetadataArray=*/nullptr,
-            /*hoistedCaptures=*/::M::KGEN::ParamDeclArrayAttr{});
+            /*hoistedCaptures=*/::M::KGEN::ParamDeclArrayAttr{},
+            /*linkageName=*/::M::KGEN::LinkageNameAttr{});
     }]>
   ];
   let extraClassDeclaration = [{

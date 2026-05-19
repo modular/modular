@@ -237,7 +237,8 @@ void LITLowerer::lowerLITOps(FnOp func) {
           closureInit.getNestedFnScopeAttr(),
           closureInit.getLLVMMetadataArray(),
           closureInit.getLLVMArgMetadataArray(),
-          closureInit.getHoistedCapturesAttr());
+          closureInit.getHoistedCapturesAttr(),
+          closureInit.getLinkageNameAttr());
       closureInitKgen.getBodyRegion().takeBody(closureInit.getBodyRegion());
       b.replaceOp(closureInit, closureInitKgen);
     }

@@ -625,6 +625,8 @@ LogicalResult ClosureLifter::liftCallFunction(OpBuilder &b,
     liftedWrapper.setLLVMArgMetadataArrayAttr(
         ArrayAttr::get(b.getContext(), adjusted));
   }
+  if (LinkageNameAttr linkageName = ci.getLinkageNameAttr())
+    liftedWrapper.setLinkageNameAttr(linkageName);
 
   // Remap the symbol to not include the self param. `boundParams` order
   // matches `allParams`: captures are `ParamDeclRef` (enclosing values), then
