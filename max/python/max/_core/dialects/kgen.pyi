@@ -2509,6 +2509,7 @@ class ClosureInitOp(max._core.Operation):
         _llvm_metadata_array: max._core.dialects.builtin.ArrayAttr,
         _llvm_arg_metadata_array: max._core.dialects.builtin.ArrayAttr,
         hoisted_captures: ParamDeclArrayAttr,
+        linkage_name: LinkageNameAttr,
     ) -> None: ...
     @overload
     def __init__(
@@ -2596,6 +2597,10 @@ class ClosureInitOp(max._core.Operation):
     def hoisted_captures(self) -> Sequence[ParamDeclAttr] | None: ...
     @hoisted_captures.setter
     def hoisted_captures(self, arg: ParamDeclArrayAttr, /) -> None: ...
+    @property
+    def linkage_name(self) -> LinkageNameAttr | None: ...
+    @linkage_name.setter
+    def linkage_name(self, arg: LinkageNameAttr, /) -> None: ...
 
 class CodegenReachableOp(max._core.Operation):
     """
