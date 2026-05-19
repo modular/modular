@@ -579,21 +579,80 @@ void InflightDiag::emitAutoFixItDiagnostic() {
   emitSourceMgrDiagnostic();
 }
 
+llvm::SMDiagnostic
+InflightDiag::getAsSMDiagnostic(const InflightDiag::Message &message,
+                                const std::string &text,
+                                SourceMgr::DiagKind kind) {
+  auto loc = diags->convertLocToSMLoc(message.loc);
+
+  if (loc.isValid()) {
+    // If we've got a valid location, get a fully fledged diagnostic with
+    // location information, line text, etc.
+    return diags->sourceMgr.GetMessage(loc, kind, text, message.ranges,
+                                       message.fixIts);
+  }
+
+  // With an invalid location (e.g., the file is not available on disk), try
+  // to construct something helpful for users.
+  unsigned lineNo = -1, colNo = -1;
+  SmallVector<std::pair<unsigned, unsigned>, 4> colRanges;
+  StringRef lineStr;
+  StringRef bufferID = "<unknown>";
+
+  // Walk the location structure and return the first FileLineColLoc we see.
+  std::function<std::optional<FileLineColLoc>(Location)> visit =
+      [&](Location l) -> std::optional<FileLineColLoc> {
+    if (auto fileLoc = mlir::dyn_cast<FileLineColLoc>(l))
+      return fileLoc;
+
+    if (auto fused = dyn_cast<mlir::FusedLoc>(l)) {
+      for (Location nested : fused.getLocations()) {
+        if (auto fileLoc = visit(nested))
+          return fileLoc;
+      }
+    }
+
+    if (auto named = mlir::dyn_cast<mlir::NameLoc>(l))
+      return visit(named.getChildLoc());
+
+    if (auto call = mlir::dyn_cast<mlir::CallSiteLoc>(l)) {
+      // Prefer the callee location
+      if (auto fileLoc = visit(call.getCallee()))
+        return fileLoc;
+      return visit(call.getCaller());
+    }
+
+    return std::nullopt;
+  };
+
+  if (std::optional<FileLineColLoc> fileLoc = visit(message.loc)) {
+    if (auto name = fileLoc->getFilename().getValue(); !name.empty()) {
+      bufferID = name;
+      lineNo = fileLoc->getLine();
+      // Note: we do have a column number but here we leave it as -1.
+      // Otherwise, if both line and column are not -1, the SMDiagnostic
+      // prints a caret "into the file" which is likely unhelpful since it's
+      // probably not on disk. With this tradeoff, we lose a valid column
+      // number but get a normal-looking filename and line number without
+      // the added noise of a caret into a path the user can't access
+      // anyway:
+      //   path/to/filename.mojo:100: note: foo
+    }
+  }
+
+  return llvm::SMDiagnostic(diags->sourceMgr, loc, bufferID, lineNo, colNo,
+                            kind, text, lineStr, colRanges, message.fixIts);
+}
+
 /// Print the diagnostic + each note through SourceMgr.
 void InflightDiag::emitSourceMgrDiagnostic() {
   auto &sourceMgr = diags->sourceMgr;
 
   int nMessagesPrinted = 0;
+  // The first diagnostic in the sequence is a warning or an error.
   SourceMgr::DiagKind kind =
       isWarning ? SourceMgr::DK_Warning : SourceMgr::DK_Error;
   for (auto &message : messages) {
-    auto loc = diags->convertLocToSMLoc(message.loc);
-
-    // If we have an exotic MLIR location, give up.  Mojo shouldn't be producing
-    // these, so just pick a weird-but-valid location.
-    if (!loc.isValid())
-      loc = sourceMgr.FindLocForLineAndColumn(sourceMgr.getMainFileID(), 0, 0);
-
     // Limit number of notes to print
     ++nMessagesPrinted;
     llvm::raw_string_ostream text(message.text);
@@ -601,8 +660,10 @@ void InflightDiag::emitSourceMgrDiagnostic() {
     if (nMessagesPrinted > diags->maxNotesPerDiagnostic && nOmitted > 0)
       text << " (" << nOmitted << " more notes omitted.)";
 
-    sourceMgr.PrintMessage(loc, kind, text.str(), message.ranges,
-                           message.fixIts);
+    llvm::SMDiagnostic diag = getAsSMDiagnostic(message, text.str(), kind);
+
+    sourceMgr.PrintMessage(llvm::errs(), diag);
+
     if (nMessagesPrinted > diags->maxNotesPerDiagnostic)
       break;
 
