@@ -283,15 +283,66 @@ def test_reset_clears_buffer() -> None:
 
 
 def test_parse_delta_accumulates() -> None:
-    """Test that parse_delta accumulates tokens in buffer."""
+    """Test that parse_delta suppresses partial tool-call content."""
     parser = Gemma4ToolParser()
 
+    # Both chunks are inside an open <|tool_call> block with no closer
+    # yet, so the parser must return [] (empty list) — not None — so the
+    # streaming layer suppresses the wrapper bytes from flowing as text
+    # content.
     result1 = parser.parse_delta("<|tool_call>")
     result2 = parser.parse_delta("call:test{")
 
-    assert result1 is None
-    assert result2 is None
+    assert result1 == []
+    assert result2 == []
     assert parser._buffer == "<|tool_call>call:test{"
+
+
+def test_parse_delta_returns_none_outside_tool_section() -> None:
+    """parse_delta returns None for plain content with no tool markers."""
+    parser = Gemma4ToolParser()
+
+    result = parser.parse_delta("Just some text.")
+
+    # No tool-call markers anywhere — the chunk is plain content. We emit
+    # it via a ParsedToolCallDelta(content=...) so the streaming layer
+    # routes it to the assistant ``content`` field.
+    assert result is not None
+    assert len(result) == 1
+    assert result[0].content == "Just some text."
+    assert result[0].id is None
+    assert result[0].name is None
+
+
+def test_parse_delta_emits_complete_tool_call() -> None:
+    """parse_delta emits a ParsedToolCallDelta once the closer arrives."""
+    parser = Gemma4ToolParser()
+
+    assert parser.parse_delta("<|tool_call>") == []
+    assert parser.parse_delta('call:get_weather{location:<|"|>Paris') == []
+    result = parser.parse_delta('<|"|>}<tool_call|>')
+
+    assert result is not None
+    assert len(result) == 1
+    delta = result[0]
+    assert delta.index == 0
+    assert delta.name == "get_weather"
+    assert delta.id is not None
+    assert delta.arguments is not None
+    assert json.loads(delta.arguments) == {"location": "Paris"}
+
+
+def test_parse_delta_emits_content_before_tool_call() -> None:
+    """parse_delta emits leading plain content then enters tool mode."""
+    parser = Gemma4ToolParser()
+
+    result = parser.parse_delta("preamble<|tool_call>")
+
+    assert result is not None
+    assert len(result) == 1
+    assert result[0].content == "preamble"
+    # Next chunk inside the open tool call gets suppressed.
+    assert parser.parse_delta("call:f{}") == []
 
 
 def test_number_parameters() -> None:

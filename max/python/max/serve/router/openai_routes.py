@@ -61,7 +61,12 @@ from max.pipelines.lib import PipelineConfig
 from max.pipelines.lib.tool_parsing import create as create_tool_parser
 from max.profiler import traced
 from max.serve.config import Settings
-from max.serve.parser import LlamaToolParser, ToolParser, parse_json_from_text
+from max.serve.parser import (
+    LlamaToolParser,
+    ToolParser,
+    normalize_tool_call_arguments,
+    parse_json_from_text,
+)
 from max.serve.pipelines.llm import (
     AudioGeneratorPipeline,
     TokenGeneratorOutput,
@@ -168,21 +173,48 @@ def record_request_end(
 
 @overload
 def get_finish_reason_from_status(
-    status: GenerationStatus, allow_none: Literal[True] = True
+    status: GenerationStatus,
+    allow_none: Literal[True] = True,
+    *,
+    has_tool_calls: Literal[False] = False,
 ) -> Literal["stop", "length"] | None: ...
 
 
 @overload
 def get_finish_reason_from_status(
-    status: GenerationStatus, allow_none: Literal[False]
+    status: GenerationStatus,
+    allow_none: Literal[True] = True,
+    *,
+    has_tool_calls: bool = False,
+) -> Literal["stop", "length", "tool_calls"] | None: ...
+
+
+@overload
+def get_finish_reason_from_status(
+    status: GenerationStatus,
+    allow_none: Literal[False],
+    *,
+    has_tool_calls: Literal[False] = False,
 ) -> Literal["stop", "length"]: ...
 
 
+@overload
 def get_finish_reason_from_status(
-    status: GenerationStatus, allow_none: bool = True
-) -> Literal["stop", "length"] | None:
+    status: GenerationStatus,
+    allow_none: Literal[False],
+    *,
+    has_tool_calls: bool = False,
+) -> Literal["stop", "length", "tool_calls"]: ...
+
+
+def get_finish_reason_from_status(
+    status: GenerationStatus,
+    allow_none: bool = True,
+    *,
+    has_tool_calls: bool = False,
+) -> Literal["stop", "length", "tool_calls"] | None:
     if status == GenerationStatus.END_OF_SEQUENCE:
-        return "stop"
+        return "tool_calls" if has_tool_calls else "stop"
     elif status == GenerationStatus.MAXIMUM_LENGTH:
         return "length"
     else:
@@ -363,6 +395,11 @@ class OpenAIChatResponseGenerator(
                     elif tool_call_chunks:
                         content = None
 
+                    finish_reason = get_finish_reason_from_status(
+                        chunk.status,
+                        allow_none=True,
+                        has_tool_calls=has_emitted_tool_calls,
+                    )
                     choices = [
                         ChatCompletionStreamResponseChoice(
                             index=0,
@@ -377,21 +414,17 @@ class OpenAIChatResponseGenerator(
                                 else None,
                             ),
                             logprobs=logprobs_response,
-                            finish_reason=get_finish_reason_from_status(
-                                chunk.status, allow_none=True
-                            ),
+                            finish_reason=finish_reason,
                         )
                     ]
-                else:
-                    # If we do not have output tokens, we should guarantee we have a finish_reason.
-                    # If tool calls were emitted, use "tool_calls" as finish_reason
-                    finish_reason: Literal["stop", "length", "tool_calls"] = (
-                        get_finish_reason_from_status(
-                            chunk.status, allow_none=False
-                        )
+                elif chunk.status.is_done:
+                    # Terminal chunk with no visible delta — emit the final
+                    # choice carrying the finish_reason.
+                    finish_reason = get_finish_reason_from_status(
+                        chunk.status,
+                        allow_none=False,
+                        has_tool_calls=has_emitted_tool_calls,
                     )
-                    if has_emitted_tool_calls and finish_reason == "stop":
-                        finish_reason = "tool_calls"
 
                     choices = [
                         ChatCompletionStreamResponseChoice(
@@ -402,6 +435,17 @@ class OpenAIChatResponseGenerator(
                             finish_reason=finish_reason,
                         )
                     ]
+                else:
+                    # Reasoning-capable models (e.g. Gemma 4, Kimi K2.5) can
+                    # emit intermediate chunks with no user-visible content
+                    # while still ACTIVE — for example, a parser that
+                    # consumed every token in the chunk as a structural
+                    # delimiter. Skip those chunks instead of forcing a
+                    # terminal finish_reason (which would raise because
+                    # ACTIVE has no associated finish_reason).
+                    n_reasoning_tokens += chunk.reasoning_token_count or 0
+                    n_tokens += chunk.token_count
+                    continue
 
                 # Each chunk is expected to have the same id
                 # https://platform.openai.com/docs/api-reference/chat/streaming
@@ -467,7 +511,7 @@ class OpenAIChatResponseGenerator(
                     str(e),
                 )
             elif isinstance(e, ValueError):
-                status_code = 400
+                status_code = 500
                 logger.exception("Exception in request %s", request.request_id)
             else:
                 status_code = 500
@@ -811,14 +855,11 @@ async def openai_parse_chat_completion_request(
         # ``ChatCompletionMessageParam`` TypedDicts (plus a MAX-specific
         # ``video_url`` content part); access via dict keys.
         content = m.get("content")
-        # OpenAI tool-calling metadata that the chat template needs to faithfully
-        # reconstruct multi-turn tool-use prompts. Without these, the templated
-        # prompt silently loses the assistant's previous ``tool_calls`` and the
-        # ``tool_call_id`` reference on tool responses (so for example Kimi-K2
-        # renders ``## Return of`` with no function name).
         raw_tool_calls = m.get("tool_calls")
         tool_calls: list[dict[str, Any]] | None = (
-            [dict(tc) for tc in raw_tool_calls] if raw_tool_calls else None
+            normalize_tool_call_arguments([dict(tc) for tc in raw_tool_calls])
+            if isinstance(raw_tool_calls, list) and raw_tool_calls
+            else None
         )
         tool_call_id = m.get("tool_call_id")
         reasoning_content = m.get("reasoning_content")
@@ -1132,6 +1173,14 @@ async def openai_create_chat_completion(
         # generate constrained decoding grammars for tool calls and/or
         # response_format.
         parser = get_tool_parser(request.app)
+        # Signal the parser about tool_choice so it stays aligned with
+        # any tokens the tokenizer injected into the prompt.
+        if (
+            parser is not None
+            and completion_request.tool_choice is not None
+            and hasattr(parser, "apply_tool_choice")
+        ):
+            parser.apply_tool_choice(completion_request.tool_choice)
         has_grammar_parser = parser is not None and hasattr(
             parser, "generate_tool_call_grammar"
         )
@@ -1240,6 +1289,13 @@ async def openai_create_chat_completion(
         # exclusive on TextGenerationRequest, so omit ``messages`` in that
         # case. If both are sent on the wire, ``prompt_tokens`` wins.
         prompt_token_ids = completion_request.prompt_tokens
+        chat_template_options = dict(
+            completion_request.chat_template_kwargs or {}
+        )
+        if completion_request.tool_choice is not None:
+            chat_template_options["tool_choice"] = (
+                completion_request.tool_choice
+            )
         token_request = TextGenerationRequest(
             request_id=RequestID(request_id),
             model_name=completion_request.model,
@@ -1257,7 +1313,7 @@ async def openai_create_chat_completion(
                 request, completion_request.target_endpoint
             ),
             dkv_cache_hint=completion_request.dkv_cache_hint,
-            chat_template_options=completion_request.chat_template_kwargs,
+            chat_template_options=chat_template_options or None,
         )
 
         if completion_request.stream:
@@ -1292,7 +1348,7 @@ async def openai_create_chat_completion(
         )
         raise HTTPException(status_code=400, detail=str(e)) from e
     except ValueError as e:
-        logger.exception("ValueError in request %s", request_id)
+        logger.warning("Value error in request %s: %s", request_id, str(e))
         # NOTE(SI-722): These errors need to return more helpful details,
         # but we don't necessarily want to expose the full error description
         # to the user. There are many different ValueErrors that can be raised.
@@ -1412,6 +1468,7 @@ async def openai_create_embeddings(
 ) -> CreateEmbeddingResponse | Response:
     request_id = request.state.request_id
 
+    # First try-catch: request parsing (client fault → 400)
     try:
         embeddings_request = CreateEmbeddingRequest.model_validate_json(
             await request.body()
@@ -1453,17 +1510,14 @@ async def openai_create_embeddings(
             )
             for idx, input_text in enumerate(embedding_inputs)
         ]
-
-        response = await response_generator.encode(embedding_requests)
-        return response
     except _ClientDisconnectedError:
         logger.info("Client disconnected for request %s", request_id)
         return Response(status_code=_CLIENT_DISCONNECTED_STATUS_CODE)
     except JSONDecodeError as e:
-        logger.exception("JSONDecodeError in request %s", request_id)
+        logger.warning("JSONDecodeError in request %s: %s", request_id, e)
         raise HTTPException(status_code=400, detail="Missing JSON.") from e
     except KeyError as e:
-        logger.exception("KeyError in request %s", request_id)
+        logger.warning("KeyError in request %s: %s", request_id, e)
         raise HTTPException(status_code=400, detail="Invalid JSON.") from e
     except ValidationError as e:
         logger.warning(
@@ -1471,7 +1525,7 @@ async def openai_create_embeddings(
         )
         raise HTTPException(status_code=400, detail=str(e)) from e
     except TypeError as e:
-        logger.exception("TypeError in request %s", request_id)
+        logger.warning("TypeError in request %s: %s", request_id, e)
         raise HTTPException(status_code=400, detail="Invalid JSON.") from e
     except InputError as e:
         logger.warning(
@@ -1479,11 +1533,23 @@ async def openai_create_embeddings(
         )
         raise HTTPException(status_code=400, detail=str(e)) from e
     except ValueError as e:
-        logger.exception("ValueError in request %s", request_id)
-        # NOTE(SI-722): These errors need to return more helpful details,
-        # but we don't necessarily want to expose the full error description
-        # to the user. There are many different ValueErrors that can be raised.
+        logger.warning("Value error in request %s: %s", request_id, str(e))
         raise HTTPException(status_code=400, detail="Value error.") from e
+
+    # Second try-catch: response generation (server fault → 500)
+    try:
+        response = await response_generator.encode(embedding_requests)
+        return response
+    except _ClientDisconnectedError:
+        logger.info("Client disconnected for request %s", request_id)
+        return Response(status_code=_CLIENT_DISCONNECTED_STATUS_CODE)
+    except Exception as e:
+        logger.exception(
+            "Exception during response generation in request %s", request_id
+        )
+        raise HTTPException(
+            status_code=500, detail="Internal server error."
+        ) from e
 
 
 class CompletionResponseStreamChoice(BaseModel):
@@ -1707,7 +1773,7 @@ class OpenAICompletionResponseGenerator(
                 content={"detail": "Input validation error", "message": str(e)},
             )
         except ValueError as e:
-            logger.exception("ValueError in request %s", request.request_id)
+            logger.exception("Exception in request %s", request.request_id)
             # TODO (SI-722) - propagate better errors back.
             yield JSONResponse(
                 status_code=500,
@@ -1962,7 +2028,7 @@ async def openai_create_completion(
         logger.exception("Validation error for request %s", http_req_id)
         raise HTTPException(status_code=400, detail="Invalid JSON.") from e
     except ValueError as e:
-        logger.exception("ValueError for request %s", http_req_id)
+        logger.warning("Value error in request %s: %s", http_req_id, str(e))
         # NOTE(SI-722): These errors need to return more helpful details,
         # but we don't necessarily want to expose the full error description
         # to the user. There are many different ValueErrors that can be raised.
@@ -2078,7 +2144,7 @@ async def create_streaming_audio_speech(
         )
         raise HTTPException(status_code=400, detail=str(e)) from e
     except ValueError as e:
-        logger.exception("ValueError in request %s", request_id)
+        logger.warning("Value error in request %s: %s", request_id, str(e))
         # NOTE(SI-722): These errors need to return more helpful details,
         # but we don't necessarily want to expose the full error description
         # to the user. There are many different ValueErrors that can be raised.
@@ -2153,7 +2219,7 @@ async def load_lora_adapter(
         logger.exception("Validation error in request %s", request_id)
         raise HTTPException(status_code=400, detail="Invalid JSON.") from e
     except ValueError as e:
-        logger.exception("ValueError in request %s", request_id)
+        logger.warning("Value error in request %s: %s", request_id, str(e))
         raise HTTPException(status_code=400, detail=str(e)) from e
     except HTTPException:
         raise
@@ -2221,7 +2287,7 @@ async def unload_lora_adapter(
         logger.exception("Validation error in request %s", request_id)
         raise HTTPException(status_code=400, detail="Invalid JSON.") from e
     except ValueError as e:
-        logger.exception("ValueError in request %s", request_id)
+        logger.warning("Value error in request %s: %s", request_id, str(e))
         raise HTTPException(status_code=400, detail=str(e)) from e
     except HTTPException:
         raise

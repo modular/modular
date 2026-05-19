@@ -288,11 +288,10 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
         self = Self()
 
         # Transfer all of the elements into the list.
-        @parameter
-        def init_elt(idx: Int, var elt: Self.ElementType):
+        def init_elt(idx: Int, var elt: Self.ElementType) {ref}:
             self.append(elt^)
 
-        elements^.consume_elements[init_elt]()
+        elements^.consume_elements(init_elt)
 
     def __init__(out self, *, copy: Self):
         """Initialize this list as a copy of another list.

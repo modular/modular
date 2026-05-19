@@ -908,7 +908,7 @@ def _block_reduce_topk[
     return _warp_reduce_topk[T, ascending](block_accum)
 
 
-@__name(t"topk_stage1_old_no_shmem_{T}_{out_idx_type}_{largest}", mangle=True)
+@__name(t"topk_stage1_old_no_shmem_{T}_{out_idx_type}_{largest}")
 def _topk_stage1_old_no_shmem[
     T: DType,
     out_idx_type: DType,
@@ -989,7 +989,7 @@ def _topk_stage1_old_no_shmem[
                 ](-1)
 
 
-@__name(t"topk_stage1_old_{T}_{out_idx_type}_{largest}", mangle=True)
+@__name(t"topk_stage1_old_{T}_{out_idx_type}_{largest}")
 def _topk_stage1_old[
     T: DType,
     out_idx_type: DType,
@@ -1097,7 +1097,7 @@ def _topk_stage1_old[
                 ](-1)
 
 
-@__name(t"topk_stage1_no_shmem_{T}_{out_idx_type}_{largest}", mangle=True)
+@__name(t"topk_stage1_no_shmem_{T}_{out_idx_type}_{largest}")
 def _topk_stage1_no_shmem[
     T: DType,
     out_idx_type: DType,
@@ -1207,7 +1207,7 @@ def _topk_stage1_no_shmem[
                 out_idxs[remaining_k] = Scalar[out_idx_type](-1)
 
 
-@__name(t"topk_stage1_{T}_{out_idx_type}_{largest}", mangle=True)
+@__name(t"topk_stage1_{T}_{out_idx_type}_{largest}")
 def _topk_stage1[
     T: DType,
     out_idx_type: DType,
@@ -1348,7 +1348,7 @@ def _get_shmem_size_stg_1[dtype: DType](block_size: Int) -> Int:
     return block_size * size_of[TopK_2[dtype]]()
 
 
-@__name(t"topk_stage2_{T}_{out_idx_type}_{sampling}_{largest}", mangle=True)
+@__name(t"topk_stage2_{T}_{out_idx_type}_{sampling}_{largest}")
 def _topk_stage2[
     T: DType,
     out_idx_type: DType,
@@ -2347,7 +2347,7 @@ def fused_token_sampling_gpu[
 # ===-----------------------------------------------------------------------===#
 
 
-@__name(t"apply_gumbel_noise_{dtype}", mangle=True)
+@__name(t"apply_gumbel_noise_{dtype}")
 def apply_gumbel_noise_kernel[
     dtype: DType,
     OutputLayoutType: TensorLayout,

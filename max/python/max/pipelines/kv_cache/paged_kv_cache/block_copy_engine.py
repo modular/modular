@@ -18,6 +18,8 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 
+import numpy as np
+import numpy.typing as npt
 from max._distributed_ops import distributed_broadcast
 from max.driver import (
     Buffer,
@@ -30,6 +32,8 @@ from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn.comm.allreduce import Signals
 from max.profiler import Tracer, traced
+from max.support.math import ceildiv
+from tqdm import tqdm
 
 
 @dataclass
@@ -87,6 +91,93 @@ def _group_by_device(buffers: list[Buffer]) -> list[list[Buffer]]:
         [by_device[dev_id][g] for dev_id in device_order]
         for g in range(num_groups)
     ]
+
+
+_GIB = 1024**3
+_MAX_PINNED_CHUNK_BYTES = 4 * _GIB
+
+
+class PinnedHostKVCacheBuffer:
+    """Chunked pinned host buffer for KV cache offloading.
+
+    ``cuMemAllocHost`` can fail for very large contiguous allocations
+    (e.g. >1 TiB) even when sufficient physical memory exists. This class
+    splits the allocation into multiple ``DevicePinnedBuffer`` chunks and
+    presents a unified interface keyed by block index.
+
+    Args:
+        total_num_blocks: Total number of KV cache blocks to host.
+        bytes_per_block: Size of each block in bytes.
+        device: GPU device the pinned memory is associated with.
+        max_chunk_bytes: Upper bound on each pinned allocation in bytes.
+    """
+
+    def __init__(
+        self,
+        total_num_blocks: int,
+        bytes_per_block: int,
+        device: Device,
+        max_chunk_bytes: int = _MAX_PINNED_CHUNK_BYTES,
+    ) -> None:
+        self._total_num_blocks = total_num_blocks
+        self._bytes_per_block = bytes_per_block
+
+        blocks_per_chunk = max(1, max_chunk_bytes // bytes_per_block)
+        self._blocks_per_chunk = blocks_per_chunk
+
+        total_gib = (total_num_blocks * bytes_per_block) / _GIB
+        num_chunks = ceildiv(total_num_blocks, blocks_per_chunk)
+
+        self._chunks: list[DevicePinnedBuffer] = []
+        for i in tqdm(
+            range(num_chunks),
+            desc=f"Allocating {total_gib:.1f} GiB pinned host KV cache",
+        ):
+            start = i * blocks_per_chunk
+            n = min(blocks_per_chunk, total_num_blocks - start)
+            self._chunks.append(
+                DevicePinnedBuffer(
+                    shape=[n, bytes_per_block],
+                    dtype=DType.uint8,
+                    device=device,
+                )
+            )
+
+    def _locate(self, block_id: int) -> tuple[int, int]:
+        """Map a global *block_id* to ``(chunk_index, local_block_id)``."""
+        if block_id < 0 or block_id >= self._total_num_blocks:
+            raise IndexError(
+                f"block_id {block_id} out of range "
+                f"[0, {self._total_num_blocks})"
+            )
+        chunk_idx = block_id // self._blocks_per_chunk
+        local_id = block_id % self._blocks_per_chunk
+        return chunk_idx, local_id
+
+    def page_view(self, block_id: int) -> Buffer:
+        """Return a 1-D ``Buffer`` view of a given page."""
+        chunk_idx, local_id = self._locate(block_id)
+        return self._chunks[chunk_idx][local_id, :]
+
+    def numpy_page_view(self, block_id: int) -> npt.NDArray[np.uint8]:
+        """Return a 1-D NumPy view of a given page."""
+        chunk_idx, local_id = self._locate(block_id)
+        return self._chunks[chunk_idx].to_numpy()[local_id]
+
+    @property
+    def shape(self) -> list[int]:
+        """Virtual ``[total_num_blocks, bytes_per_block]`` shape."""
+        return [self._total_num_blocks, self._bytes_per_block]
+
+    @property
+    def dtype(self) -> DType:
+        """Always ``DType.uint8``."""
+        return DType.uint8
+
+    @property
+    def pinned(self) -> bool:
+        """Always ``True``; every chunk is device-pinned."""
+        return True
 
 
 class BlockOffloadEngine:
@@ -156,9 +247,9 @@ class BlockOffloadEngine:
                     )
 
         bytes_per_page = sum(_bytes_per_page(b) for b in self.device_buffers)
-        self.host_buffer = DevicePinnedBuffer(
-            shape=[total_num_host_blocks, bytes_per_page],
-            dtype=DType.uint8,
+        self.host_buffer = PinnedHostKVCacheBuffer(
+            total_num_blocks=total_num_host_blocks,
+            bytes_per_block=bytes_per_page,
             device=gpu0,
         )
         self.main_streams: dict[int, DeviceStream] = {
@@ -198,7 +289,7 @@ class BlockOffloadEngine:
         for buf in self.device_buffers_on_aux_stream:
             page_bytes = buf.shape[1]
             buf[dst, :].inplace_copy_from(
-                self.host_buffer[src, offset : offset + page_bytes]
+                self.host_buffer.page_view(src)[offset : offset + page_bytes]
             )
             offset += page_bytes
 
@@ -232,8 +323,8 @@ class BlockOffloadEngine:
         offset = 0
         for buf in self.device_buffers_on_aux_stream:
             page_bytes = buf.shape[1]
-            self.host_buffer[
-                dst, offset : offset + page_bytes
+            self.host_buffer.page_view(dst)[
+                offset : offset + page_bytes
             ].inplace_copy_from(buf[src, :])
             offset += page_bytes
 

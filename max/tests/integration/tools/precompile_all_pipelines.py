@@ -51,6 +51,14 @@ SKIP_MODELS: set[str] = {
     "wan-ai/wan2.1-t2v-14b-diffusers",
     "nvidia/kimi-k2.5-nvfp4",
     "austinpowers/kimi-k2.5-nvfp4-deepseekv3",
+    "minimaxai/minimax-m2.7",
+    "lukealonso/minimax-m2.7-nvfp4",
+    "deepseek-ai/deepseek-v3.2-exp",
+    "modularai/llama-3.1-405b-instruct-autofp8",
+    "deepseek-ai/deepseek-r1",
+    "deepseek-ai/deepseek-v3.1-terminus",
+    "nvidia/deepseek-r1-0528-nvfp4-v2",
+    "amd/kimi-k2.5-mxfp4",
 }
 
 

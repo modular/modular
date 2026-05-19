@@ -108,11 +108,22 @@ class ReasoningParser(ABC):
     def stream(
         self,
         delta_token_ids: Sequence[int],
+        is_currently_reasoning: bool = True,
     ) -> ParsedReasoningDelta:
-        """Identifies a reasoning span within a streaming delta chunk.
+        r"""Identifies a reasoning span within a streaming delta chunk.
 
         Args:
             delta_token_ids: The token IDs of the incremental streaming chunk.
+            is_currently_reasoning: Whether the stream was already inside a
+                reasoning span at the start of this chunk. When ``True``
+                (the default, for backward compatibility), the parser
+                treats the chunk as continuing reasoning unless/until it
+                finds an end delimiter. When ``False``, the parser only
+                enters reasoning if it actually finds a start delimiter in
+                this chunk — letting callers feed every chunk through and
+                catch mid-stream reasoning sections (e.g. Gemma 4 emitting
+                ``<|channel>thought\n...<channel|>`` even when reasoning
+                wasn't pre-seeded).
 
         Returns:
             A :class:`ParsedReasoningDelta` containing the reasoning span,

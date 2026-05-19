@@ -127,7 +127,7 @@ class Eagle3MHADeepseekV3Model(DeepseekV3Model):
         weights: Weights,
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.VARIABLE,
-        return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.EAGLE3,
+        return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.SELECTED_LAYERS,
     ) -> None:
         super().__init__(
             pipeline_config,

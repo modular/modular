@@ -43,8 +43,10 @@ _R = TypeVar("_R")
 
 from max.experimental.nn._compilation_timer import CompilationTimer
 from max.experimental.nn._compile_utils import (
+    CastRecord,
     InputType,
     _detect_signals,
+    _emit_cast_summary,
     _flatten_input_types,
     _flatten_named_buffers,
     _flatten_outputs,
@@ -556,7 +558,11 @@ class Module(Generic[_P, _R]):
         )
 
     def load_state_dict(
-        self, state: Mapping[str, DLPackArray], strict: bool = True
+        self,
+        state: Mapping[str, DLPackArray],
+        strict: bool = True,
+        *,
+        auto_cast: bool = False,
     ) -> None:
         """Loads parameter values from a dictionary into the module hierarchy.
 
@@ -595,35 +601,57 @@ class Module(Generic[_P, _R]):
             }
             model.load_state(lambda name, _: weights[name])
 
+        By default (``auto_cast=False``) any dtype mismatch between the loaded
+        tensor and the parameter raises. When ``auto_cast=True``, loaded
+        weights whose dtype is in the safe-cast set (currently ``float32`` and
+        ``bfloat16``) are automatically cast to the parameter's dtype when
+        shapes match, and a single summary message is logged at ``WARNING``
+        level per call describing how many parameters were cast. Narrowing
+        casts (e.g. ``float32`` -> ``bfloat16``) are flagged in the log
+        message as ``(precision loss)``. Dtype mismatches outside the
+        safe-cast set still raise regardless of ``auto_cast``.
+
         Args:
             state: Dictionary mapping qualified parameter names to tensor values.
                 Keys should match the names from :attr:`Module.parameters` property.
                 Values should be DLPack-compatible arrays or :class:`~max.experimental.tensor.Tensor` objects.
-                Their shapes and dtypes must match the existing parameters with the
-                corresponding name, but they may be on a different device. In the
-                case that the new value has a different device, it will be copied to
-                the same device as the existing value, and the parameter will be set
-                to the new copy.
+                Shapes must match the existing parameters with the corresponding
+                name. Dtypes must match exactly *or* both lie in the safe-cast
+                set above. Values may be on a different device; in that case the
+                tensor is copied to the existing parameter's device.
             strict: If :obj:`True` (default), verify that all keys in ``state``
                 are used (i.e., match actual parameters). If :obj:`False`, silently
                 ignore extra keys that don't match any parameters.
+            auto_cast: If :obj:`True`, permit safe dtype auto-casting between
+                ``float32`` and ``bfloat16`` when shapes match. Defaults to
+                :obj:`False` — dtype mismatches always raise. Pipelines that
+                want to opt in via ``MODULAR_AUTO_CAST_WEIGHTS`` should pass
+                ``auto_cast=max.pipelines.lib.weight_loading.auto_cast_weights_from_env()``.
 
         Raises:
             ValueError: If ``strict=True`` and some weights in ``state`` don't
                 match any model parameters (indicates architecture mismatch or
                 incorrect weight names).
-            ValueError: If a loaded tensor has a different dtype or shape than
-                the existing parameter.
+            ValueError: If a loaded tensor has a different shape than the
+                existing parameter, or a dtype mismatch that is not covered by
+                the safe-cast set (or ``auto_cast=False``).
             KeyError: If a required parameter name in the model is missing from
                 ``state`` (regardless of ``strict`` setting).
         """
         loaded = set()
+        cast_counts: dict[CastRecord, int] = {}
 
         def lookup(name: str, existing: Tensor) -> Tensor:
             loaded.add(name)
-            return _prepare_weight_for_parameter(name, state[name], existing)
+            prepared, cast_record = _prepare_weight_for_parameter(
+                name, state[name], existing, auto_cast=auto_cast
+            )
+            if cast_record is not None:
+                cast_counts[cast_record] = cast_counts.get(cast_record, 0) + 1
+            return prepared
 
         self.apply_to_parameters(lookup)
+        _emit_cast_summary(cast_counts)
 
         if strict and (unloaded := state.keys() - loaded):
             raise ValueError(
@@ -889,6 +917,7 @@ class Module(Generic[_P, _R]):
         *input_types: InputType,
         weights: Mapping[str, DLPackArray] | None = None,
         custom_extensions: Iterable[Path] = (),
+        auto_cast: bool = False,
     ) -> CompiledModel:
         """Compiles the module to an optimized executable through graph tracing.
 
@@ -997,6 +1026,10 @@ class Module(Generic[_P, _R]):
                 :func:`~max.experimental.functional.inplace_custom` with
                 custom kernels, so that kernel signatures are available for
                 validation during graph construction.
+            auto_cast: If :obj:`True`, permit safe dtype auto-casting between
+                ``float32`` and ``bfloat16`` when ``weights`` is provided.
+                Defaults to :obj:`False` — dtype mismatches always raise. See
+                :meth:`load_state_dict` for details.
 
         Returns:
             Callable[..., Any]
@@ -1030,7 +1063,7 @@ class Module(Generic[_P, _R]):
                     weights_registry = _flatten_named_buffers(self.parameters)
                 else:
                     weights_registry = _process_provided_weights(
-                        weights, self.parameters
+                        weights, self.parameters, auto_cast=auto_cast
                     )
 
             timer.mark_build_complete()

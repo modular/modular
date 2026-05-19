@@ -682,7 +682,7 @@ def softmax[
     )
 
 
-@__name(t"softmax_kernel_{dtype}_{sink}_{logsoftmax}", mangle=True)
+@__name(t"softmax_kernel_{dtype}_{sink}_{logsoftmax}")
 def softmax_kernel[
     BLOCK_SIZE: Int,
     input_fn: def[_dtype: DType, _simd_width: Int, _rank: Int](
@@ -976,7 +976,7 @@ def softmax[
 # ===----------------------------------------------------------------------=== #
 
 
-@__name(t"softmax_temperature_{dtype}_{temp_dtype}_{simd_width}", mangle=True)
+@__name(t"softmax_temperature_{dtype}_{temp_dtype}_{simd_width}")
 def _softmax_temperature_kernel[
     BLOCK_SIZE: Int,
     simd_width: Int,

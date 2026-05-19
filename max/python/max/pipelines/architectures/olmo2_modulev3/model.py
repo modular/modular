@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
-from typing import Any
+from typing import Any, ClassVar
 
 import numpy as np
 from max.driver import Buffer
@@ -23,9 +23,7 @@ from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental.tensor import default_dtype
 from max.graph import DeviceRef, TensorType
-from max.nn.kv_cache import KVCacheParams
 from max.pipelines.lib import (
-    KVCacheConfig,
     PipelineConfig,
 )
 from transformers import AutoConfig
@@ -40,29 +38,14 @@ logger = logging.getLogger("max.pipelines")
 class Olmo2Model(Llama3Model):
     """An Olmo2 pipeline model for text generation."""
 
+    model_config_cls: ClassVar[type[Any]] = Olmo2Config
+
     @classmethod
     def calculate_max_seq_len(
         cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
     ) -> int:
         return Olmo2Config.calculate_max_seq_len(
             pipeline_config, huggingface_config
-        )
-
-    @classmethod
-    def get_kv_params(
-        cls,
-        huggingface_config: AutoConfig,
-        pipeline_config: PipelineConfig,
-        devices: list[DeviceRef],
-        kv_cache_config: KVCacheConfig,
-        cache_dtype: DType,
-    ) -> KVCacheParams:
-        return Olmo2Config.construct_kv_params(
-            huggingface_config,
-            pipeline_config,
-            devices,
-            kv_cache_config,
-            cache_dtype,
         )
 
     def load_model(self) -> Callable[..., Any]:

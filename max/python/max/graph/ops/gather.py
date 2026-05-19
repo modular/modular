@@ -12,9 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 """Op implementation for gather."""
 
-from max import mlir
+from max._core.dialects import builtin, kgen, rmo
 from max.dtype import DType
-from max.mlir.dialects import rmo
 
 from ..dim import StaticDim
 from ..graph import Graph
@@ -51,12 +50,13 @@ def gather(
 
     output_shape = [*shape[:axis], *indices.shape, *shape[axis + 1 :]]
     assert_same_device(input=input, indices=indices)
-    return Graph.current._add_op(
-        rmo.mo_gather,
-        TensorType(input.dtype, output_shape, input.device),
-        input,
-        indices,
-        constant(axis, DType.int64, DeviceRef.CPU()),
+    return Graph.current._add_op_generated(
+        rmo.MoGatherOp,
+        result=TensorType(input.dtype, output_shape, input.device),
+        input=input,
+        indices=indices,
+        axis=constant(axis, DType.int64, DeviceRef.CPU()),
+        output_param_decls=kgen.ParamDeclArrayAttr([]),
     )[0].tensor
 
 
@@ -150,10 +150,11 @@ def gather_nd(
         *input.shape[batch_dims + index_size :],
     ]
 
-    return Graph.current._add_op(
-        rmo.mo_gather_nd,
-        TensorType(input.dtype, output_shape, input.device).to_mlir(),
-        input,
-        indices,
-        mlir.IntegerAttr.get(mlir.IndexType.get(), batch_dims),
+    return Graph.current._add_op_generated(
+        rmo.MoGatherNdOp,
+        result=TensorType(input.dtype, output_shape, input.device),
+        input=input,
+        indices=indices,
+        batch_dims=builtin.IntegerAttr(builtin.IndexType(), batch_dims),
+        output_param_decls=kgen.ParamDeclArrayAttr([]),
     )[0].tensor

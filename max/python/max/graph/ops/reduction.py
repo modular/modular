@@ -14,8 +14,9 @@
 
 from __future__ import annotations
 
+from max._core import Operation
+from max._core.dialects import kgen, rmo
 from max.dtype import DType
-from max.mlir.dialects import rmo
 
 from ..dim import Dim
 from ..graph import Graph
@@ -39,7 +40,7 @@ def sum(x: TensorValueLike, axis: int = -1) -> TensorValue:
         The tensor will have the same rank as the input tensor, and the same
         shape except along the ``axis`` dimension which will have size ``1``.
     """
-    return _reduce(rmo.mo_reduce_add, x, axis=axis)
+    return _reduce(rmo.MoReduceAddOp, x, axis=axis)
 
 
 def mean(x: TensorValueLike, axis: int = -1) -> TensorValue:
@@ -56,7 +57,7 @@ def mean(x: TensorValueLike, axis: int = -1) -> TensorValue:
         The tensor will have the same rank as the input tensor, and the same
         shape except along the ``axis`` dimension which will have size ``1``.
     """
-    return _reduce(rmo.mo_reduce_mean, x, axis=axis)
+    return _reduce(rmo.MoReduceMeanOp, x, axis=axis)
 
 
 def min(x: TensorValueLike, axis: int = -1) -> TensorValue:
@@ -95,7 +96,7 @@ def min(x: TensorValueLike, axis: int = -1) -> TensorValue:
         The tensor will have the same rank as the input tensor, and the same
         shape except along the ``axis`` dimension which will have size ``1``.
     """
-    return _reduce(rmo.mo_reduce_min, x, axis=axis)
+    return _reduce(rmo.MoReduceMinOp, x, axis=axis)
 
 
 def max(x: TensorValueLike, axis: int = -1) -> TensorValue:
@@ -112,7 +113,7 @@ def max(x: TensorValueLike, axis: int = -1) -> TensorValue:
         The tensor will have the same rank as the input tensor, and the same
         shape except along the ``axis`` dimension which will have size ``1``.
     """
-    return _reduce(rmo.mo_reduce_max, x, axis=axis)
+    return _reduce(rmo.MoReduceMaxOp, x, axis=axis)
 
 
 def prod(x: TensorValueLike, axis: int = -1) -> TensorValue:
@@ -131,11 +132,11 @@ def prod(x: TensorValueLike, axis: int = -1) -> TensorValue:
         The tensor will have the same rank as the input tensor, and the same
         shape except along the ``axis`` dimension which will have size ``1``.
     """
-    return _reduce(rmo.mo_reduce_mul, x, axis=axis)
+    return _reduce(rmo.MoReduceMulOp, x, axis=axis)
 
 
 def _reduce(
-    op,  # noqa: ANN001
+    op_type: type[Operation],
     x: TensorValueLike,
     axis: int = -1,
     out_dtype: DType | None = None,
@@ -143,7 +144,8 @@ def _reduce(
     """Reduces a symbolic tensor using a reduction operation.
 
     Args:
-        op: The reduction operation (for example, sum, product).
+        op_type: The reduction op class (for example,
+            :class:`~max._core.dialects.rmo.MoReduceAddOp`).
         x: The input tensor for the operation.
         axis: The axis along which to compute the reduction. If negative,
             indexes from the last dimension. For example, a value of ``-1`` will
@@ -164,9 +166,13 @@ def _reduce(
 
     shape = Shape(x.shape)
     shape[axis] = Dim(1)
-    type = TensorType(out_dtype or x.dtype, shape, x.device)
-    return Graph.current._add_op(
-        op, type.to_mlir(), x, constant(axis, DType.int64, DeviceRef.CPU())
+    result_type = TensorType(out_dtype or x.dtype, shape, x.device)
+    return Graph.current._add_op_generated(
+        op_type,
+        result=result_type,
+        input=x,
+        axis=constant(axis, DType.int64, DeviceRef.CPU()),
+        output_param_decls=kgen.ParamDeclArrayAttr([]),
     )[0].tensor
 
 
@@ -188,7 +194,7 @@ def argmin(x: TensorValueLike, axis: int = -1) -> TensorValue:
         The tensor will have the same rank as the input tensor, and the same
         shape except along the ``axis`` dimension which will have size ``1``.
     """
-    return _reduce(rmo.mo_reduce_arg_min, x, axis, out_dtype=DType.int64)
+    return _reduce(rmo.MoReduceArgMinOp, x, axis, out_dtype=DType.int64)
 
 
 def argmax(x: TensorValueLike, axis: int = -1) -> TensorValue:
@@ -209,4 +215,4 @@ def argmax(x: TensorValueLike, axis: int = -1) -> TensorValue:
         The tensor will have the same rank as the input tensor, and the same
         shape except along the ``axis`` dimension which will have size ``1``.
     """
-    return _reduce(rmo.mo_reduce_arg_max, x, axis, out_dtype=DType.int64)
+    return _reduce(rmo.MoReduceArgMaxOp, x, axis, out_dtype=DType.int64)

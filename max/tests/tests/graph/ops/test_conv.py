@@ -244,9 +244,10 @@ def test_conv_mismatched_devices(
 
 
 def test_mo_conv_non_rank1_stride_error() -> None:
-    """Constructing rmo.mo.conv directly with a rank-2 stride must raise
-    TypeError, not abort. The op's MO_Rank1IndexTensor operand constraint is
-    enforced by the verifier, which surfaces as a Python exception."""
+    """Constructing rmo.mo.conv directly with a rank-2 stride must raise a
+    Python exception (not abort). The op's MO_Rank1IndexTensor operand
+    constraint is enforced by the verifier; `_add_op_generated` surfaces
+    verifier failures as ValueError."""
     from max._core.dialects import builtin, kgen
     from max._core.dialects import rmo as _rmo
 
@@ -276,7 +277,7 @@ def test_mo_conv_non_rank1_stride_error() -> None:
         num_groups = ops.constant(
             np.array(1, dtype=np.int64), DType.int64, DeviceRef.CPU()
         )
-        with pytest.raises(TypeError, match="rank-1 tensor with indices"):
+        with pytest.raises(ValueError, match="rank-1 tensor with indices"):
             graph._add_op_generated(
                 _rmo.MoConvOp,
                 result_type,

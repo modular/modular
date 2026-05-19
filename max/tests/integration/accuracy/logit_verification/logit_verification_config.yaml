@@ -44,6 +44,10 @@ agent_anchors:
     queue: ephemeral
     pool: mi355
     resource_class: "1x"
+  mi355_4x: &mi355_4x
+    queue: ephemeral
+    pool: mi355
+    resource_class: "4x"
   mi355_8x: &mi355_8x
     queue: ephemeral
     pool: mi355
@@ -129,12 +133,17 @@ logit_verification_pipelines:
     cos_dist_threshold: 5.0e-03
     kl_div_threshold: 1.1e-01
 
+  # Disabled in SDLC-3497: MAX OLMo pipeline is not yet transformers v5
+  # compatible. The v4 wheel hack that was masking this on main was
+  # removed in this branch. Re-enable once MAX OLMo is updated for
+  # transformers >=5 (tracked separately).
   allenai/OLMo-1B-hf-float32:
     pre_submit_agents: []
-    post_submit_agents: [*large_cpu, *large_arm, *h100_1x, *b200_1x, *mi355_1x]
+    post_submit_agents: []
     pipeline: "allenai/OLMo-1B-hf"
     compatible_with: [cpu, gpu]
     encoding: float32
+    tags: [manual]
     pregenerated_torch_goldens:
       tar_file: "s3://modular-bazel-artifacts-public/artifacts/torch_olmo-1b-hf_golden/1/cdb42a9758e27374be0b410b8d38a2f9a66fc3662346702a5930730da2a50302/torch_olmo-1b-hf_golden.tar.gz"
       json_file: "torch_olmo-1b-hf_float32_golden.json"
@@ -599,7 +608,14 @@ logit_verification_pipelines:
       tar_file: "s3://modular-bazel-artifacts-public/artifacts/torch_qwen3_embedding_0.6b_bfloat16_golden/1/98f263166b17cbc486f6709903c35ab1126f938efc0ea07289abd0419d6b9b48/torch_qwen3_embedding_0.6b_bfloat16_golden.tar.gz"
       json_file: "torch_qwen3_embedding_0.6b_bfloat16_golden.json"
     relative_tolerance: 1.0e-04
-    absolute_tolerance: 4.0e-03
+    # 5e-3 (was 4e-3) to absorb the bf16 rounding wobble introduced when
+    # MI355X bf16 matmuls route to the 4-wave kernel family (the K-loop
+    # iteration order and warp-K partitioning differ from AMDMatmul, so
+    # single-cell rounding lands a few bf16 ULPs differently — aggregate
+    # RMSE/MAE actually *improved* vs the legacy path). 5e-3 still tightly
+    # bounds real precision regressions while accommodating valid rounding-
+    # order variance between bf16 GEMM implementations.
+    absolute_tolerance: 5.0e-03
     cos_dist_threshold: 5.0e-04
     kl_div_threshold: 2.8e-07
 
@@ -821,6 +837,19 @@ logit_verification_pipelines:
       json_file: "vllm_kimik2_5_nvfp4_golden.json"
     cos_dist_threshold: 2.0e-03
     kl_div_threshold: 3.0e-01
+
+  amd/Kimi-K2.5-MXFP4:
+    pre_submit_agents: []
+    post_submit_agents: [*mi355_4x]
+    pipeline: "amd/Kimi-K2.5-MXFP4"
+    compatible_with: [gpu]
+    encoding: float4_e2m1fnx2
+    tags: [4xmi355]
+    pregenerated_torch_goldens:
+      tar_file: "s3://modular-bazel-artifacts-public/artifacts/vllm_amd_kimi-k2_5-mxfp4_golden/1/a40f3192fabd8d61290dc32786271980d83902b4dce73c95d25d05d1a17cc11b/vllm_amd_kimi-k2_5-mxfp4_golden.tar.gz"
+      json_file: "vllm_amd_kimi-k2_5-mxfp4_golden.json"
+    cos_dist_threshold: 1.7e-02
+    kl_div_threshold: 2.2e+01
 
   MiniMaxAI/MiniMax-M2.7:
     pre_submit_agents: []
@@ -1093,11 +1122,14 @@ logit_verification_pipelines:
 
   black-forest-labs/FLUX.2-klein-4B-t2i-bfloat16:
     pre_submit_agents: []
-    post_submit_agents: []
+    post_submit_agents: [*b200_1x]
     pipeline: "black-forest-labs/FLUX.2-klein-4B"
     compatible_with: [gpu]
     encoding: bfloat16
-    tags: [nvidia-only, image-generation, manual]
+    tags: [nvidia-only, image-generation]
+    pregenerated_torch_goldens:
+      tar_file: "s3://modular-bazel-artifacts-public/artifacts/black-forest-labs_FLUX.2-klein-4B_golden/1/5b646894a0ed1765d717c8d37b44a4a7fda24fec68d50f45c837295eaad468d8/black-forest-labs_FLUX.2-klein-4B_golden.tar.gz"
+      json_file: "torch_black-forest-labs_FLUX.2-klein-4B_bfloat16_golden.json"
     ssim_threshold: 0.60
     lpips_threshold: 0.35
     timeout: 3600

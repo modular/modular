@@ -27,7 +27,7 @@ from pydantic import Field, field_validator
 
 logger = logging.getLogger("max.pipelines")
 
-SpeculativeMethod = Literal["standalone", "eagle", "mtp"]
+SpeculativeMethod = Literal["standalone", "eagle", "mtp", "dflash"]
 """The supported methods for speculative decoding."""
 
 RejectionSamplingStrategy = Literal[
@@ -206,6 +206,10 @@ class SpeculativeConfig(ConfigFileModel):
     def is_mtp(self) -> bool:
         """Returns whether the configured method is multi-token prediction (MTP)."""
         return self.speculative_method == "mtp"
+
+    def is_dflash(self) -> bool:
+        """Returns whether the configured method is DFlash."""
+        return self.speculative_method == "dflash"
 
     def uses_greedy_rejection(self) -> bool:
         """Returns whether the ``"greedy"`` rejection sampling strategy is selected."""

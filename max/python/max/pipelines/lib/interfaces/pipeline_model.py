@@ -19,7 +19,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Sequence
 from dataclasses import dataclass
 from functools import cached_property
-from typing import TYPE_CHECKING, Any, Generic
+from typing import TYPE_CHECKING, Any, ClassVar, Generic
 
 from max.driver import (
     Buffer,
@@ -503,6 +503,9 @@ class PipelineModelWithKVCache(PipelineModel[BaseContextType]):
 
     kv_params: KVCacheParamInterface
 
+    #: Config class implementing ``construct_kv_params`` for this model.
+    model_config_cls: ClassVar[type[Any] | None] = None
+
     def __init__(
         self,
         pipeline_config: PipelineConfig,
@@ -524,7 +527,7 @@ class PipelineModelWithKVCache(PipelineModel[BaseContextType]):
             return_logits=return_logits,
             return_hidden_states=return_hidden_states,
         )
-        self.kv_params = self.get_kv_params(
+        self.kv_params = type(self).get_kv_params(
             huggingface_config=self.huggingface_config,
             pipeline_config=self.pipeline_config,
             devices=self.device_refs,
@@ -541,9 +544,7 @@ class PipelineModelWithKVCache(PipelineModel[BaseContextType]):
             .inputs
         )
 
-    # TODO(AITLIB-265): Remove this altogether from all PipelineModels.
     @classmethod
-    @abstractmethod
     def get_kv_params(
         cls,
         huggingface_config: AutoConfig,
@@ -552,5 +553,21 @@ class PipelineModelWithKVCache(PipelineModel[BaseContextType]):
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> KVCacheParamInterface:
-        """Returns the KV cache params for the pipeline model."""
-        ...
+        """Returns the KV cache params for the pipeline model.
+
+        Delegates to ``model_config_cls.construct_kv_params(...)``.
+        Subclasses with custom KV behavior should override this method.
+        """
+        model_config_cls = cls.model_config_cls
+        if model_config_cls is None:
+            raise NotImplementedError(
+                f"{cls.__qualname__} must set `model_config_cls` "
+                "or override `get_kv_params()`."
+            )
+        return model_config_cls.construct_kv_params(
+            huggingface_config,
+            pipeline_config,
+            devices,
+            kv_cache_config,
+            cache_dtype,
+        )

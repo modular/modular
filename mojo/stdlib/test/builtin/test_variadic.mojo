@@ -339,12 +339,11 @@ def test_map_types_to_types() raises:
 def test_variadic_list_linear_type() raises:
     """Test owned variadics with a linear type (ExplicitDelOnly)."""
 
-    @parameter
-    def destroy_elem(_idx: Int, var arg: ExplicitDelOnly):
+    def destroy_elem(idx: Int, var arg: ExplicitDelOnly):
         arg^.destroy()
 
     def take_owned_linear(var *args: ExplicitDelOnly):
-        args^.consume_elements[destroy_elem]()
+        args^.consume_elements(destroy_elem)
 
     take_owned_linear(ExplicitDelOnly(5), ExplicitDelOnly(10))
 

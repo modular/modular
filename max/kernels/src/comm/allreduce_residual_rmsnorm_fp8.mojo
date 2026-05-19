@@ -113,7 +113,6 @@ from .sync import (
 )
 @__name(
     t"allreduce_rmsnorm_fp8_warp_tiling_{in_dtype}_{out_dtype}_{ngpus}_{has_residual}",
-    mangle=True,
 )
 def _allreduce_rmsnorm_fp8_kernel_warp_tiling[
     mut: Bool,
@@ -293,7 +292,6 @@ def _allreduce_rmsnorm_fp8_kernel_warp_tiling[
 )
 @__name(
     t"allreduce_rmsnorm_fp8_2stage_{in_dtype}_{out_dtype}_{ngpus}_{has_residual}",
-    mangle=True,
 )
 def _allreduce_rmsnorm_fp8_kernel_2stage[
     mut: Bool,

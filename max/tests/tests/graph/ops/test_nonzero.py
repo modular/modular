@@ -50,7 +50,7 @@ def test_nonzero_rank3_result_error() -> None:
         bad_result_type = TensorType(
             DType.int64, ["count", 2, 1], device=DeviceRef.CPU()
         )
-        with pytest.raises(TypeError, match="rank 2 signed 64 integer tensor"):
+        with pytest.raises(ValueError, match="rank 2 signed 64 integer tensor"):
             graph._add_op_generated(
                 _rmo.MoArgNonzeroOp,
                 bad_result_type,
@@ -67,7 +67,7 @@ def test_nonzero_non_si64_result_error() -> None:
         bad_result_type = TensorType(
             DType.float32, ["count", 2], device=DeviceRef.CPU()
         )
-        with pytest.raises(TypeError, match="rank 2 signed 64 integer tensor"):
+        with pytest.raises(ValueError, match="rank 2 signed 64 integer tensor"):
             graph._add_op_generated(
                 _rmo.MoArgNonzeroOp,
                 bad_result_type,

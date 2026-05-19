@@ -16,7 +16,7 @@ import operator
 from collections.abc import Iterable
 from functools import reduce
 
-from max.mlir.dialects import rmo
+from max._core.dialects import rmo
 
 from ..dim import Dim
 from ..graph import Graph
@@ -73,6 +73,6 @@ def reshape(x: TensorValueLike, shape: ShapeLike) -> TensorValue:
         # missing = total // known  (symbolic; folds when possible)
         shape[shape.index(Dim(-1))] = total // known
 
-    return Graph.current._add_op(rmo.reshape, x, new_shape=shape.to_mlir())[
-        0
-    ].tensor
+    return Graph.current._add_op_generated(
+        rmo.ReshapeOp, input=x, new_shape=shape
+    )[0].tensor

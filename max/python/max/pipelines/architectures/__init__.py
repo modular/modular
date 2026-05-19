@@ -38,6 +38,7 @@ def register_all_models() -> None:
     from .deepseekV3 import deepseekV3_arch
     from .deepseekV3_2 import deepseekV3_2_arch
     from .deepseekV3_nextn import deepseekV3_nextn_arch
+    from .dflash_llama3 import dflash_llama_arch
     from .eagle3_deepseekV3 import (
         eagle3_deepseekV3_arch,
         eagle3_mha_deepseekV3_arch,
@@ -92,6 +93,7 @@ def register_all_models() -> None:
     from .qwen_image import qwen_image_arch
     from .qwen_image_edit import qwen_image_edit_arch, qwen_image_edit_plus_arch
     from .step3p5 import step3p5_arch
+    from .unified_dflash_llama3 import unified_dflash_llama3_arch
     from .unified_eagle_llama3 import unified_eagle_llama3_arch
     from .unified_mtp_deepseekV3 import unified_mtp_deepseekV3_arch
     from .wan import wan_arch, wan_i2v_arch
@@ -104,6 +106,7 @@ def register_all_models() -> None:
         deepseekV3_arch,
         deepseekV3_2_arch,
         deepseekV3_nextn_arch,
+        dflash_llama_arch,
         eagle3_deepseekV3_arch,
         eagle3_mha_deepseekV3_arch,
         eagle3_llama_arch,
@@ -158,6 +161,7 @@ def register_all_models() -> None:
         qwen_image_edit_arch,
         qwen_image_edit_plus_arch,
         step3p5_arch,
+        unified_dflash_llama3_arch,
         unified_eagle_llama3_arch,
         unified_mtp_deepseekV3_arch,
         wan_arch,

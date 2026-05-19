@@ -44,6 +44,11 @@ This version is still a work in progress.
   setter. This eliminates a class of bugs determining the effective element
   type.
 
+- Implicit `std` imports are now an error, following a period of deprecation.
+  Imports from the standard library must now be fully qualified. The compiler
+  thus no longer squats on these module names, paving the way for user modules
+  named `algorithm`, `memory`, etc.
+
 ## Library changes
 
 - `Coord`, `coord()`, `Idx`, `ComptimeInt`, `RuntimeInt`, and related coordinate
@@ -52,6 +57,15 @@ This version is still a work in progress.
   [`layout.coord`](/mojo/layout/coord/) module re-exports the same symbols for
   layout and kernel code; `layout` also hoists the common names at package
   scope for convenience.
+
+- `PythonObject.__del__` now skips the `PyGILState_Ensure` /
+  `PyGILState_Release` round-trip when the current thread already holds
+  the GIL (checked via `PyGILState_Check`). The public contract is
+  unchanged - dropping a `PythonObject` from a thread that does not
+  hold the GIL is still safe, and the destructor still acquires the GIL
+  in that case. The fast path significantly reduces per-call overhead
+  for Python -> Mojo FFI calls, where CPython hands the callee an
+  already-held GIL.
 
 - Added `TileTensor.copy_from()` and `TileTensor.split()` for copying between
   compatible tile views and splitting tiles into static or runtime-sized

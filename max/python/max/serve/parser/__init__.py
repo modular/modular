@@ -21,6 +21,10 @@ from max.interfaces import (
 
 from .json_utils import parse_json_from_text
 from .llama_tool_parser import LlamaToolParser
+from .tool_call_normalization import (
+    normalize_message_tool_calls,
+    normalize_tool_call_arguments,
+)
 
 __all__ = [
     "LlamaToolParser",
@@ -28,5 +32,7 @@ __all__ = [
     "ParsedToolCallDelta",
     "ParsedToolResponse",
     "ToolParser",
+    "normalize_message_tool_calls",
+    "normalize_tool_call_arguments",
     "parse_json_from_text",
 ]

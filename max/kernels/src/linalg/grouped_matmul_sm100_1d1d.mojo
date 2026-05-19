@@ -1730,7 +1730,6 @@ def _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         "_fused_compute_epi" if elementwise_compute_lambda_fn
         is not None else ""
     ),
-    mangle=True,
 )
 def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
     a_type: DType,

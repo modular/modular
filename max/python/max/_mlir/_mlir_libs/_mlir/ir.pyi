@@ -2832,8 +2832,44 @@ class DynamicAttr(Attribute):
     ) -> TypeID:
         """Look up the TypeID for the given dynamic attribute name."""
 
+class Speculatability(enum.Enum):
+    NotSpeculatable = 0
+
+    Speculatable = 1
+
+    RecursivelySpeculatable = 2
+
 class MemoryEffectInstancesList:
     pass
+
+class ConditionallySpeculatable:
+    def __init__(
+        self, object: object, context: _mlir.ir.Context | None = None
+    ) -> None:
+        """
+        Creates an interface from a given operation/opview object or from a subclass of OpView. Raises ValueError if the operation does not implement the interface.
+        """
+
+    @property
+    def operation(self) -> Operation:
+        """Returns an Operation for which the interface was constructed."""
+
+    @property
+    def opview(self) -> OpView:
+        """
+        Returns an OpView subclass _instance_ for which the interface was constructed
+        """
+
+    def getSpeculatability(self) -> Speculatability:
+        """Returns the speculatability of the given operation."""
+
+    @classmethod
+    def attach(*args, **kwargs):
+        """
+        (cls: object, op_name: object, *, target: object | None = None, context: _mlir.ir.Context | None = None) -> None
+
+        Attach the interface subclass to the given operation name.
+        """
 
 class InferShapedTypeOpInterface:
     def __init__(

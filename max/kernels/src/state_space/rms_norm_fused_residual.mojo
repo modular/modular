@@ -282,7 +282,6 @@ def rms_norm_fused_residual_cpu[
 
 @__name(
     t"rms_norm_fused_residual_gpu_block_{dtype}_{multiply_before_cast}",
-    mangle=True,
 )
 def rms_norm_fused_residual_gpu_block[
     dtype: DType,

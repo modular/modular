@@ -173,13 +173,75 @@ def test_stream_no_tool_call_support() -> None:
     assert delta.is_still_reasoning
 
 
-def test_is_prompt_in_reasoning_think_token_enables() -> None:
+# ---- is_currently_reasoning=False (dynamic mid-stream detection) ----------
+# Regression coverage for the streaming-layer fix that always runs the
+# reasoning parser, gated on current state, so Gemma 4 emitting
+# ``<|channel>thought\n...<channel|>`` mid-stream (even when not pre-
+# seeded into reasoning) gets captured as reasoning instead of leaking
+# into content.
+
+
+def test_stream_not_currently_reasoning_no_channel_returns_empty() -> None:
+    parser = _make_parser()
+    tokens = [10, 20, 30]
+    delta = parser.stream(tokens, is_currently_reasoning=False)
+    assert delta.span.extract_reasoning(tokens) == []
+    assert delta.span.extract_content(tokens) == tokens
+    assert delta.is_still_reasoning is False
+
+
+def test_stream_not_currently_reasoning_with_channel_enters_reasoning() -> None:
+    parser = _make_parser()
+    tokens = [10, CHANNEL_START_TOKEN_ID, 20, 30, CHANNEL_END_TOKEN_ID, 40]
+    delta = parser.stream(tokens, is_currently_reasoning=False)
+    assert delta.span.extract_reasoning(tokens) == [20, 30]
+    assert delta.span.extract_content(tokens) == [10, 40]
+    assert delta.is_still_reasoning is False
+
+
+def test_stream_not_currently_reasoning_open_only_stays_reasoning() -> None:
+    parser = _make_parser()
+    tokens = [10, CHANNEL_START_TOKEN_ID, 20, 30]
+    delta = parser.stream(tokens, is_currently_reasoning=False)
+    assert delta.span.extract_reasoning(tokens) == [20, 30]
+    assert delta.span.extract_content(tokens) == [10]
+    assert delta.is_still_reasoning is True
+
+
+def test_stream_not_currently_reasoning_stray_end_token_ignored() -> None:
+    """When we weren't in a reasoning span, a stray ``<channel|>`` (e.g.
+    from a prior turn already in the prompt) must not pull content into
+    the reasoning region."""
+    parser = _make_parser()
+    tokens = [10, CHANNEL_END_TOKEN_ID, 20]
+    delta = parser.stream(tokens, is_currently_reasoning=False)
+    assert delta.span.extract_reasoning(tokens) == []
+    assert delta.span.extract_content(tokens) == tokens
+    assert delta.is_still_reasoning is False
+
+
+def test_stream_not_currently_reasoning_stray_tool_call_token_ignored() -> None:
+    """Same as above but with ``<|tool_call>`` — only treated as a
+    reasoning-end when we were actually inside a reasoning span."""
+    parser = _make_parser()
+    tokens = [10, TOOL_CALL_START_TOKEN_ID, 20]
+    delta = parser.stream(tokens, is_currently_reasoning=False)
+    assert delta.span.extract_reasoning(tokens) == []
+    assert delta.span.extract_content(tokens) == tokens
+    assert delta.is_still_reasoning is False
+
+
+def test_is_prompt_in_reasoning_think_alone_does_not_seed_reasoning() -> None:
+    """``<|think|>`` lives in the system message and just enables thinking
+    globally — its mere presence does not mean the current assistant turn
+    is mid-reasoning. The model self-emits ``<|channel>`` at turn start.
+    """
     parser = _make_parser()
     prompt = [THINK_TOKEN_ID, 10, 20]
-    assert parser.is_prompt_in_reasoning(prompt) is True
+    assert parser.is_prompt_in_reasoning(prompt) is False
 
 
-def test_is_prompt_in_reasoning_no_think_token_disables() -> None:
+def test_is_prompt_in_reasoning_no_markers_returns_false() -> None:
     parser = _make_parser()
     prompt = [10, 20, 30]
     assert parser.is_prompt_in_reasoning(prompt) is False
@@ -190,9 +252,13 @@ def test_is_prompt_in_reasoning_empty_prompt_defaults_false() -> None:
     assert parser.is_prompt_in_reasoning([]) is False
 
 
-def test_is_prompt_in_reasoning_multi_turn_with_think() -> None:
+def test_is_prompt_in_reasoning_multi_turn_after_close_returns_false() -> None:
+    """Right-to-left scan: most recent delimiter is ``<channel|>`` (reasoning
+    closed in a prior turn), so the new turn is not mid-reasoning. Regression
+    coverage for the case where the old behavior returned True whenever
+    ``<|think|>`` appeared anywhere in the prompt.
+    """
     parser = _make_parser()
-    # <|think|> in system, prior turn has <channel|>, new turn starts
     prompt = [
         THINK_TOKEN_ID,
         CHANNEL_START_TOKEN_ID,
@@ -200,7 +266,23 @@ def test_is_prompt_in_reasoning_multi_turn_with_think() -> None:
         CHANNEL_END_TOKEN_ID,
         20,
     ]
+    assert parser.is_prompt_in_reasoning(prompt) is False
+
+
+def test_is_prompt_in_reasoning_open_channel_returns_true() -> None:
+    """Most recent delimiter is ``<|channel>`` with no following close;
+    the prompt was cut mid-reasoning, so seed True."""
+    parser = _make_parser()
+    prompt = [10, CHANNEL_START_TOKEN_ID, 20, 30]
     assert parser.is_prompt_in_reasoning(prompt) is True
+
+
+def test_is_prompt_in_reasoning_after_tool_call_returns_false() -> None:
+    """``<|tool_call>`` ends the reasoning span without consuming a closer;
+    the new turn after a tool call is not mid-reasoning."""
+    parser = _make_parser()
+    prompt = [CHANNEL_START_TOKEN_ID, 10, TOOL_CALL_START_TOKEN_ID, 20]
+    assert parser.is_prompt_in_reasoning(prompt) is False
 
 
 def test_is_prompt_in_reasoning_no_think_token_id_configured() -> None:

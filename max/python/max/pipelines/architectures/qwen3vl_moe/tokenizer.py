@@ -437,14 +437,28 @@ class Qwen3VLTokenizer(TextAndVisionTokenizer):
         self,
         messages: list[TextGenerationRequestMessage],
         tools: list[TextGenerationRequestTool] | None = None,
-        chat_template_options: dict[str, Any] | None = None,
+        **chat_template_options: Any,
     ) -> str:
-        """Apply chat template using tokenizer directly (not processor)."""
+        """Apply chat template using tokenizer directly (not processor).
+
+        Args:
+            messages: List of messages for the chat template.
+            tools: Optional tools available for the model to invoke.
+            **chat_template_options: Template options to forward to the Jinja
+                template. Merged with ``add_generation_prompt=True`` default.
+
+        Returns:
+            The templated chat message as a string.
+        """
+        chat_template_options = {
+            "add_generation_prompt": True,
+            **chat_template_options,
+        }
         templated_message = self.delegate.apply_chat_template(
             [msg.model_dump(exclude_none=True) for msg in messages],
             tokenize=False,
             tools=tools,
-            add_generation_prompt=True,
+            **chat_template_options,
         )
         assert isinstance(templated_message, str)
         return templated_message
@@ -496,12 +510,12 @@ class Qwen3VLTokenizer(TextAndVisionTokenizer):
                 assert new_request.messages
                 prompt = self.apply_chat_template(
                     new_request.messages,
-                    chat_template_options=request.chat_template_options,
+                    **(request.chat_template_options or {}),
                 )
         elif request.messages:
             prompt = self.apply_chat_template(
                 request.messages,
-                chat_template_options=request.chat_template_options,
+                **(request.chat_template_options or {}),
             )
         else:
             raise ValueError(f"{request} does not provide messages or prompt.")

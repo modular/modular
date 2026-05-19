@@ -15,9 +15,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
-from copy import copy
-
 from max.driver import CPU
 from max.dtype import DType
 from max.experimental import functional as F
@@ -29,8 +26,6 @@ from max.experimental.nn.common_layers.functional_kernels import (
 from max.experimental.nn.common_layers.moe import MoE, MoEGate
 from max.experimental.nn.sequential import ModuleList
 from max.experimental.tensor import Tensor
-from max.graph.type import DeviceRef
-from max.graph.weight import ShardingStrategy
 
 from ..model_config import GptOssConfig
 
@@ -86,23 +81,16 @@ class GptOssMoEGate(MoEGate):
 class GptOssMoE(MoE):
     """GptOss-style MoE implementation with custom activation and biases."""
 
-    def __init__(
-        self,
-        config: GptOssConfig,
-        tp_size: int = 1,
-    ):
+    def __init__(self, config: GptOssConfig):
         """
         Args:
             config: The configuration for the GPT OSS Model.
-            tp_size: The tensor parallel size (number of devices for sharding).
         """
         # Store GptOss-specific parameters
         self.alpha = 1.702
         self.limit = 7.0
 
         self.config = config
-        self._sharding_strategy: ShardingStrategy | None = None
-        self.tp_size = tp_size
 
         # Initialize parent class
         super().__init__(
@@ -112,7 +100,6 @@ class GptOssMoE(MoE):
             moe_dim=config.intermediate_size,
             gate_cls=GptOssMoEGate,
             has_shared_experts=False,
-            ep_size=1,
             apply_router_weight_first=False,
         )
 
@@ -247,8 +234,6 @@ class GptOssMoE(MoE):
         down_bias_per_token = F.gather(
             self.down_proj_bias_stacked, expert_assignments, axis=0
         )
-        if self.tp_size > 1:
-            down_bias_per_token = down_bias_per_token / self.tp_size
 
         down_output = down_output + down_bias_per_token
 
@@ -269,119 +254,7 @@ class GptOssMoE(MoE):
                 F.sum(routed_expert_out, axis=2), axis=2
             ).cast(x.dtype)
 
-        if self.has_shared_experts:
+        if self.shared_experts is not None:
             routed_expert_out += self.shared_experts(x)
 
         return routed_expert_out
-
-    @property
-    def sharding_strategy(self) -> ShardingStrategy | None:
-        """Get the sharding strategy for the module."""
-        return self._sharding_strategy
-
-    @sharding_strategy.setter
-    def sharding_strategy(self, strategy: ShardingStrategy) -> None:
-        """Set the sharding strategy for the module."""
-        if strategy.is_tensor_parallel:
-            self._sharding_strategy = strategy
-            # TODO: Sharding support not yet implemented for eager tensor API
-            self.gate.gate_score.sharding_strategy = ShardingStrategy.replicate(  # type: ignore[attr-defined]
-                strategy.num_devices
-            )
-            if self.has_shared_experts:
-                self.shared_experts.sharding_strategy = strategy  # type: ignore[attr-defined]
-
-            # Set sharding strategy for the combined expert weights
-            self._experts_gate_up_proj_weight.sharding_strategy = (  # type: ignore[attr-defined]
-                ShardingStrategy.axiswise(
-                    axis=2, num_devices=strategy.num_devices
-                )
-            )
-            self._experts_down_proj_weight.sharding_strategy = (  # type: ignore[attr-defined]
-                ShardingStrategy.columnwise(strategy.num_devices)
-            )
-            # Bias has shape [experts, 2 * moe_dim], so we shard axis 1
-            self._experts_gate_up_proj_bias.sharding_strategy = (  # type: ignore[attr-defined]
-                ShardingStrategy.axiswise(
-                    axis=1, num_devices=strategy.num_devices
-                )
-            )
-            self._experts_down_proj_bias.sharding_strategy = (  # type: ignore[attr-defined]
-                ShardingStrategy.replicate(strategy.num_devices)
-            )
-        else:
-            raise ValueError(
-                "Only tensor parallel sharding strategy is supported for MoE"
-            )
-
-    def shard(self, devices: Iterable[DeviceRef]) -> list[GptOssMoE]:
-        """Create sharded views of this MoE module across multiple devices.
-
-        Args:
-            devices: Iterable of devices to place the shards on.
-
-        Returns:
-            List of sharded MoE instances, one for each device."""
-        if not self._sharding_strategy:
-            raise ValueError(
-                "MoE module cannot be sharded because no sharding strategy was provided."
-            )
-
-        # Get sharded weights
-        # TODO: Sharding support not yet implemented for eager tensor API
-        gate_score_shards = self.gate.gate_score.shard(devices)  # type: ignore[attr-defined]
-
-        if self.has_shared_experts:
-            shared_experts_shards = self.shared_experts.shard(devices)  # type: ignore[attr-defined]
-
-        # Shard the combined expert weight tensors
-        experts_gate_up_proj_shards = self._experts_gate_up_proj_weight.shard(  # type: ignore[attr-defined]
-            devices
-        )
-        experts_down_proj_shards = self._experts_down_proj_weight.shard(devices)  # type: ignore[attr-defined]
-        experts_gate_up_proj_bias_shards = (
-            self._experts_gate_up_proj_bias.shard(devices)  # type: ignore[attr-defined]
-        )
-        experts_down_proj_bias_shards = self._experts_down_proj_bias.shard(  # type: ignore[attr-defined]
-            devices
-        )
-
-        shards = []
-        for shard_idx, device in enumerate(devices):
-            new_config = copy(self.config)
-            new_config.devices = [device]
-            new_config.hidden_size = self.hidden_dim
-            new_config.intermediate_size = (
-                self.moe_dim // self._sharding_strategy.num_devices
-            )
-            new_config.num_local_experts = self.num_experts
-            new_config.num_experts_per_tok = self.num_experts_per_token
-            new_config.dtype = self.dtype  # type: ignore[attr-defined]
-
-            sharded = GptOssMoE(
-                config=new_config,
-                tp_size=self._sharding_strategy.num_devices,
-            )
-
-            # Replace the weights with sharded versions.
-            sharded.gate.gate_score = gate_score_shards[shard_idx]
-            if self.has_shared_experts:
-                sharded.shared_experts = shared_experts_shards[shard_idx]
-
-            # Replace the combined expert weights with sharded versions
-            sharded._experts_gate_up_proj_weight = experts_gate_up_proj_shards[
-                shard_idx
-            ]
-            sharded._experts_down_proj_weight = experts_down_proj_shards[
-                shard_idx
-            ]
-            sharded._experts_gate_up_proj_bias = (
-                experts_gate_up_proj_bias_shards[shard_idx]
-            )
-            sharded._experts_down_proj_bias = experts_down_proj_bias_shards[
-                shard_idx
-            ]
-
-            shards.append(sharded)
-
-        return shards

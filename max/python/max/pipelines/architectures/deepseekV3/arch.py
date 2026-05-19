@@ -14,12 +14,11 @@
 from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
 from max.pipelines.core import TextContext
-from max.pipelines.lib import SupportedArchitecture
+from max.pipelines.lib import SupportedArchitecture, TextTokenizer
 
 from . import weight_adapters
 from .model import DeepseekV3Model
 from .model_config import DeepseekV3Config
-from .tokenizer import DeepseekV3Tokenizer
 from .tool_parser import resolve_deepseekv3_tool_parser
 
 deepseekV3_arch = SupportedArchitecture(
@@ -36,7 +35,7 @@ deepseekV3_arch = SupportedArchitecture(
     },
     multi_gpu_supported=True,
     pipeline_model=DeepseekV3Model,
-    tokenizer=DeepseekV3Tokenizer,
+    tokenizer=TextTokenizer,
     context_type=TextContext,
     default_weights_format=WeightsFormat.safetensors,
     weight_adapters={

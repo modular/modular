@@ -75,6 +75,7 @@ class BatchMetrics:
     d2h_blocks_copied: int
     disk_blocks_read: int
     disk_blocks_written: int
+    inflight_disk_ops: int
 
     used_disk_kv_pct: float
     total_disk_kv_blocks: int
@@ -137,6 +138,7 @@ class BatchMetrics:
         d2h_blocks_copied = 0
         disk_blocks_read = 0
         disk_blocks_written = 0
+        inflight_disk_ops = 0
         used_disk_kv_pct = 0.0
         total_disk_kv_blocks = 0
         nixl_read_latency_avg_ms = 0.0
@@ -185,7 +187,10 @@ class BatchMetrics:
                     kv_cache.get_metrics(replica_idx).disk_blocks_read
                     for replica_idx in range(num_replicas)
                 )
-
+                inflight_disk_ops = sum(
+                    kv_cache.get_metrics(replica_idx).inflight_disk_ops
+                    for replica_idx in range(num_replicas)
+                )
             total_disk_kv_blocks = sum(
                 kv_cache.get_num_disk_pages(replica_idx)
                 for replica_idx in range(num_replicas)
@@ -299,6 +304,7 @@ class BatchMetrics:
             disk_blocks_written=disk_blocks_written,
             used_disk_kv_pct=used_disk_kv_pct,
             total_disk_kv_blocks=total_disk_kv_blocks,
+            inflight_disk_ops=inflight_disk_ops,
             draft_tokens_generated=draft_tokens_generated,
             draft_tokens_accepted=draft_tokens_accepted,
             avg_acceptance_length=avg_acceptance_length,
@@ -353,7 +359,8 @@ class BatchMetrics:
         if self.total_disk_kv_blocks != 0:
             disk_kv_str = (
                 f"Disk KVCache Usage: {self.used_disk_kv_pct:.1%} of "
-                f"{self.total_disk_kv_blocks} blocks | "
+                f"{self.total_disk_kv_blocks} blocks, "
+                f"Inflight Disk Ops: {self.inflight_disk_ops} | "
             )
 
         if self.draft_tokens_generated > 0:

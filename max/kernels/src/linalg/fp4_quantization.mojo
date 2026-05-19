@@ -432,9 +432,7 @@ def block_scales_interleave_fp4[
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_max_threads))
 )
-@__name(
-    t"block_scales_interleave_fp4_{scales_dtype}_{SF_VECTOR_SIZE}", mangle=True
-)
+@__name(t"block_scales_interleave_fp4_{scales_dtype}_{SF_VECTOR_SIZE}")
 def block_scales_interleave_fp4_kernel[
     scales_dtype: DType,
     input_scales_layout: Layout,
@@ -622,7 +620,7 @@ def naive_block_scaled_matmul[
     )
 
 
-@__name(t"naive_block_scaled_matmul", mangle=True)
+@__name(t"naive_block_scaled_matmul")
 def naive_block_scaled_matmul_kernel[
     c_type: DType,
     a_type: DType,
@@ -728,7 +726,7 @@ def naive_block_scaled_matmul_kernel[
 @__llvm_arg_metadata(input_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(output_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(scales_tma_op, `nvvm.grid_constant`)
-@__name("quantize_dynamic_scaled_async_fp4_kernel", mangle=True)
+@__name("quantize_dynamic_scaled_async_fp4_kernel")
 def quantize_dynamic_scaled_async_fp4_kernel[
     input_dtype: DType,
     input_tile_rank: Int,
@@ -1153,7 +1151,7 @@ def quantize_dynamic_scaled_fp4_async[
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_threads))
 )
 @__llvm_arg_metadata(scales_tma_op, `nvvm.grid_constant`)
-@__name("grouped_quantize_dynamic_scaled_async_fp4_kernel", mangle=True)
+@__name("grouped_quantize_dynamic_scaled_async_fp4_kernel")
 def grouped_quantize_dynamic_scaled_fp4_async_kernel[
     output_dtype: DType,
     scales_dtype: DType,
@@ -2028,7 +2026,7 @@ def block_scales_interleave[
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_max_threads))
 )
-@__name("quantize_mxfp4_amd_kernel", mangle=True)
+@__name("quantize_mxfp4_amd_kernel")
 def _quantize_mxfp4_amd_kernel[
     output_layout: TensorLayout,
     scales_layout: TensorLayout,
@@ -2192,7 +2190,7 @@ def quantize_mxfp4_amd[
     )
 
 
-@__name("quantize_dynamic_block_scaled_mxfp4_kernel", mangle=True)
+@__name("quantize_dynamic_block_scaled_mxfp4_kernel")
 def quantize_dynamic_block_scaled_mxfp4_kernel[
     in_dtype: DType,
     *,
@@ -2343,7 +2341,7 @@ def _mxfp4_dotprod_block_size(static_N: Int) -> Int:
     return target_block_size if (static_N % target_block_size) == 0 else 1
 
 
-@__name("matmul_dynamic_block_scaled_mxfp4_kernel", mangle=True)
+@__name("matmul_dynamic_block_scaled_mxfp4_kernel")
 def matmul_dynamic_block_scaled_mxfp4_kernel[
     out_dtype: DType, BLOCK_N: Int
 ](
@@ -2417,7 +2415,7 @@ def matmul_dynamic_block_scaled_mxfp4[
         )
 
 
-@__name("grouped_matmul_block_scaled_mxfp4_kernel", mangle=True)
+@__name("grouped_matmul_block_scaled_mxfp4_kernel")
 def grouped_matmul_block_scaled_mxfp4_kernel[
     out_dtype: DType, BLOCK_N: Int
 ](

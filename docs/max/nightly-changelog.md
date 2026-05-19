@@ -44,6 +44,12 @@ This version is still a work in progress.
   `max-batch-input-tokens=16384` needs 640 MiB in bf16). This adds ~512 MiB
   of per-GPU memory use for any multi-GPU model.
 
+- `max.experimental.functional.while_loop` now passes `Tensor` (not
+  `TensorValue`) into its `predicate` and `body` callbacks. Callbacks can
+  use ordinary `Tensor` operations directly, without wrapping arguments
+  via `Tensor.from_graph_value(...)` or reaching for the
+  underscore-prefixed `_graph_value` attribute on returns.
+
 - `max.experimental.nn.Module.compile()` now emits the same
   `Building and compiling {ClassName}... / Still building... / Building
   {ClassName} graph took Ns / Compiling {ClassName} took Ms / Building and
@@ -56,6 +62,19 @@ This version is still a work in progress.
   compiled silently — now gets this observability for free. The outer
   `CompilationTimer("model")` wrappers in `*_modulev3` architectures have been
   removed to avoid nested timing logs.
+
+- `max.experimental.nn.Module.load_state_dict` and
+  `Module.compile(weights=...)` now accept an `auto_cast` keyword
+  (default `False`). The framework remains strict by default. When
+  `auto_cast=True` is passed, loaded weights are automatically cast
+  between `float32` and `bfloat16` when shapes match, logging a single
+  summary message per load instead of raising. Other dtype mismatches
+  (`float16`, `fp8`, `fp4`, integers, etc.) continue to raise as before.
+  This removes the need for per-adapter `astype` shims when checkpoint
+  dtypes differ from the module's declared parameter dtype. MAX
+  pipelines opt in via the `MODULAR_AUTO_CAST_WEIGHTS` environment
+  variable (default `true`, parsed by
+  `max.pipelines.lib.weight_loading.auto_cast_weights_from_env`).
 
 - `CPUMetricsCollector` in `max.diagnostics.cpu` is now used as a context
   manager instead of `start`/`stop` and now exposes `get_stats()` instead of

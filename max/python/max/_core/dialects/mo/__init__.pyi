@@ -4010,6 +4010,14 @@ class GuardOp(max._core.Operation):
         chain: max._core.Value[ChainType],
         inputs: Sequence[max._core.Value[max._core.Type]],
     ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        operands: Sequence[max._core.Value[max._core.Type]],
+        attributes: max._core.dialects.builtin.DictionaryAttr = ...,
+    ) -> None: ...
     @property
     def chain(self) -> max._core.Value[ChainType]: ...
     @property

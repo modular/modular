@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Op implementation for matmul."""
 
-from max.mlir.dialects import rmo
+from max._core.dialects import rmo
 
 from ..graph import Graph
 from ..value import TensorValue, TensorValueLike
@@ -76,4 +76,6 @@ def matmul(lhs: TensorValueLike, rhs: TensorValueLike) -> TensorValue:
     lhs = TensorValue(lhs)
     rhs = TensorValue(rhs)
     assert_same_device(lhs=lhs, rhs=rhs)
-    return Graph.current._add_op(rmo.matmul, lhs, rhs)[0].tensor
+    return Graph.current._add_op_generated(
+        rmo.MatmulOp, input_x=lhs, input_y=rhs
+    )[0].tensor

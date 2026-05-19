@@ -175,11 +175,10 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         self = Self(capacity=capacity)
 
         # Transfer all of the values into the deque.
-        @parameter
-        def init_elt(idx: Int, var elt: Self.ElementType):
+        def init_elt(idx: Int, var elt: Self.ElementType) {ref}:
             (self._data + idx).init_pointee_move(elt^)
 
-        values^.consume_elements[init_elt]()
+        values^.consume_elements(init_elt)
 
         # Remember how many values we have.
         self._tail = args_length

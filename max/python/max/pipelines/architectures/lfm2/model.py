@@ -16,14 +16,15 @@ from __future__ import annotations
 import dataclasses
 from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import Any, ClassVar
 
 from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import DeviceRef, Graph
+from max.graph import Graph
 from max.graph.weights import Weights, WeightsAdapter
 from max.interfaces import RequestID
-from max.nn.kv_cache import KVCacheInputs, KVCacheParams
+from max.nn.kv_cache import KVCacheInputs
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
@@ -201,6 +202,8 @@ class ConvStateCache:
 class LFM2Model(LlamaModelBase):
     """LFM2 hybrid (full-attention + conv) pipeline model."""
 
+    model_config_cls: ClassVar[type[Any]] = LFM2Config
+
     norm_method = "rms_norm"
     attention_bias = False
 
@@ -235,23 +238,6 @@ class LFM2Model(LlamaModelBase):
             dtype=self._model_config.dtype,
             max_slots=self.pipeline_config.runtime.max_batch_size or 1,
             device=self.devices[0],
-        )
-
-    @classmethod
-    def get_kv_params(
-        cls,
-        huggingface_config: AutoConfig,
-        pipeline_config: PipelineConfig,
-        devices: list[DeviceRef],
-        kv_cache_config: KVCacheConfig,
-        cache_dtype: DType,
-    ) -> KVCacheParams:
-        return LFM2Config.construct_kv_params(
-            huggingface_config,
-            pipeline_config,
-            devices,
-            kv_cache_config,
-            cache_dtype,
         )
 
     @classmethod

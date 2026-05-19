@@ -525,6 +525,30 @@ def _load_from_lds[
                 _type=SIMD[DType.bfloat16, 8]._mlir_type
             ](llvm_res)
         )
+    elif dtype == DType.float16 and width == 4:
+        var llvm_res = __mlir_op.`llvm.load`[
+            _type=__mlir_type.`vector<4 x f16>`,
+            alignment=to_i64(Int64(alignment)),
+            noalias_scopes=alias_scope_attr,
+            alias_scopes=no_alias_scope_attr,
+        ](shared_ptr3)
+        return rebind[SIMD[dtype, width]](
+            __mlir_op.`pop.cast_from_builtin`[
+                _type=SIMD[DType.float16, 4]._mlir_type
+            ](llvm_res)
+        )
+    elif dtype == DType.float16 and width == 8:
+        var llvm_res = __mlir_op.`llvm.load`[
+            _type=__mlir_type.`vector<8 x f16>`,
+            alignment=to_i64(Int64(alignment)),
+            noalias_scopes=alias_scope_attr,
+            alias_scopes=no_alias_scope_attr,
+        ](shared_ptr3)
+        return rebind[SIMD[dtype, width]](
+            __mlir_op.`pop.cast_from_builtin`[
+                _type=SIMD[DType.float16, 8]._mlir_type
+            ](llvm_res)
+        )
     elif dtype.is_float8() and width == 8:
         var llvm_res = __mlir_op.`llvm.load`[
             _type=__mlir_type.`vector<8 x i8>`,

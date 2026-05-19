@@ -14,6 +14,7 @@
 Scenarios: Tool calling attacks
 Target: Crashes from malformed tool definitions, empty args, huge schemas.
 Known issues: vLLM #19419 (empty args crash), #27641 (streaming divergence).
+Regression coverage: MXSERV-81 (JSON-string arguments in multi-turn tool calls).
 """
 
 from __future__ import annotations
@@ -464,5 +465,224 @@ class ToolCallingAttacks(BaseScenario):
                 status_code=resp.status,
             )
         )
+
+        # ----- 10. Multi-turn with JSON-string tool_calls.arguments -----
+        # Regression test for MXSERV-81: OpenAI API sends function.arguments as
+        # a JSON-serialized string, but some chat templates iterate it as a dict.
+        # Server must normalize string args to dict before templating.
+        multi_turn_json_args = {
+            # Basic case: single tool call with JSON string arguments
+            "json_string_args_basic": {
+                "model": model,
+                "messages": [
+                    {"role": "user", "content": "What's the weather in Paris?"},
+                    {
+                        "role": "assistant",
+                        "content": None,
+                        "tool_calls": [
+                            {
+                                "id": "call_001",
+                                "type": "function",
+                                "function": {
+                                    "name": "get_weather",
+                                    "arguments": '{"location": "Paris"}',
+                                },
+                            }
+                        ],
+                    },
+                    {
+                        "role": "tool",
+                        "tool_call_id": "call_001",
+                        "content": "20°C, sunny",
+                    },
+                ],
+                "tools": [valid_tool],
+                "max_tokens": 100,
+            },
+            # Complex nested JSON string arguments
+            "json_string_args_nested": {
+                "model": model,
+                "messages": [
+                    {"role": "user", "content": "Configure the system"},
+                    {
+                        "role": "assistant",
+                        "content": None,
+                        "tool_calls": [
+                            {
+                                "id": "call_002",
+                                "type": "function",
+                                "function": {
+                                    "name": "get_weather",
+                                    "arguments": json.dumps(
+                                        {
+                                            "location": "Paris",
+                                            "options": {
+                                                "units": "celsius",
+                                                "include_forecast": True,
+                                            },
+                                        }
+                                    ),
+                                },
+                            }
+                        ],
+                    },
+                    {
+                        "role": "tool",
+                        "tool_call_id": "call_002",
+                        "content": "configured",
+                    },
+                ],
+                "tools": [valid_tool],
+                "max_tokens": 100,
+            },
+            # Multiple tool calls with JSON string arguments
+            "json_string_args_parallel": {
+                "model": model,
+                "messages": [
+                    {"role": "user", "content": "Check multiple cities"},
+                    {
+                        "role": "assistant",
+                        "content": None,
+                        "tool_calls": [
+                            {
+                                "id": "call_003a",
+                                "type": "function",
+                                "function": {
+                                    "name": "get_weather",
+                                    "arguments": '{"location": "Paris"}',
+                                },
+                            },
+                            {
+                                "id": "call_003b",
+                                "type": "function",
+                                "function": {
+                                    "name": "get_weather",
+                                    "arguments": '{"location": "London"}',
+                                },
+                            },
+                        ],
+                    },
+                    {
+                        "role": "tool",
+                        "tool_call_id": "call_003a",
+                        "content": "Paris: 20°C",
+                    },
+                    {
+                        "role": "tool",
+                        "tool_call_id": "call_003b",
+                        "content": "London: 15°C",
+                    },
+                ],
+                "tools": [valid_tool],
+                "max_tokens": 100,
+            },
+            # Empty JSON object as string (common for no-arg tools)
+            "json_string_args_empty_obj": {
+                "model": model,
+                "messages": [
+                    {"role": "user", "content": "Get the time"},
+                    {
+                        "role": "assistant",
+                        "content": None,
+                        "tool_calls": [
+                            {
+                                "id": "call_004",
+                                "type": "function",
+                                "function": {
+                                    "name": "get_weather",
+                                    "arguments": "{}",
+                                },
+                            }
+                        ],
+                    },
+                    {
+                        "role": "tool",
+                        "tool_call_id": "call_004",
+                        "content": "result",
+                    },
+                ],
+                "tools": [valid_tool],
+                "max_tokens": 100,
+            },
+            # Multi-turn: tool call → tool result → another turn requesting tools
+            "json_string_args_multi_turn": {
+                "model": model,
+                "messages": [
+                    {"role": "user", "content": "Check weather in Paris"},
+                    {
+                        "role": "assistant",
+                        "content": None,
+                        "tool_calls": [
+                            {
+                                "id": "call_005",
+                                "type": "function",
+                                "function": {
+                                    "name": "get_weather",
+                                    "arguments": '{"location": "Paris"}',
+                                },
+                            }
+                        ],
+                    },
+                    {
+                        "role": "tool",
+                        "tool_call_id": "call_005",
+                        "content": "Paris: 20°C, sunny",
+                    },
+                    {
+                        "role": "assistant",
+                        "content": "The weather in Paris is 20°C and sunny!",
+                    },
+                    {"role": "user", "content": "Now check London"},
+                ],
+                "tools": [valid_tool],
+                "tool_choice": "required",
+                "max_tokens": 150,
+            },
+        }
+
+        for name, payload in multi_turn_json_args.items():
+            resp = await client.post_json(payload)
+            results.append(
+                self.make_result(
+                    self.name,
+                    name,
+                    Verdict.FAIL
+                    if resp.status >= 500 or resp.error == "TIMEOUT"
+                    else Verdict.PASS,
+                    status_code=resp.status,
+                    detail=f"Status {resp.status}"
+                    + (f" error: {resp.error}" if resp.error else ""),
+                )
+            )
+
+        # Also test streaming variants of key cases
+        for name_suffix, payload in [
+            (
+                "json_string_args_basic",
+                multi_turn_json_args["json_string_args_basic"],
+            ),
+            (
+                "json_string_args_parallel",
+                multi_turn_json_args["json_string_args_parallel"],
+            ),
+        ]:
+            resp_stream = await client.post_streaming(payload)
+            results.append(
+                self.make_result(
+                    self.name,
+                    f"{name_suffix}_streaming",
+                    Verdict.FAIL
+                    if resp_stream.status >= 500
+                    or resp_stream.error == "TIMEOUT"
+                    else Verdict.PASS,
+                    status_code=resp_stream.status,
+                    detail=f"Status {resp_stream.status}"
+                    + (
+                        f" error: {resp_stream.error}"
+                        if resp_stream.error
+                        else ""
+                    ),
+                )
+            )
 
         return results

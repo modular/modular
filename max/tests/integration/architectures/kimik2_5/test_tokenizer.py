@@ -172,3 +172,56 @@ class TestApplyChatTemplateWithTools:
 
         call_kwargs = mock_delegate.apply_chat_template.call_args.kwargs
         assert call_kwargs["tokenize"] is False
+
+    def test_apply_chat_template_forwards_chat_template_options(
+        self, tokenizer_with_mock: KimiK2_5VLTokenizer, mock_delegate: MagicMock
+    ) -> None:
+        """Test that chat_template_options are forwarded to the delegate.
+
+        This is a regression test for MXSERV-79: chat_template_kwargs from
+        the request must be forwarded to the Jinja template. Without this
+        fix, options like ``{"thinking": false}`` were silently dropped.
+        """
+        messages = [TextGenerationRequestMessage(role="user", content="Hello")]
+
+        tokenizer_with_mock.apply_chat_template(
+            messages, tools=None, thinking=False
+        )
+
+        call_kwargs = mock_delegate.apply_chat_template.call_args.kwargs
+        # The "thinking" option should be forwarded to the delegate
+        assert "thinking" in call_kwargs
+        assert call_kwargs["thinking"] is False
+        # add_generation_prompt should still be set
+        assert call_kwargs["add_generation_prompt"] is True
+
+    def test_apply_chat_template_options_do_not_override_add_generation_prompt(
+        self, tokenizer_with_mock: KimiK2_5VLTokenizer, mock_delegate: MagicMock
+    ) -> None:
+        """Test that caller options can override add_generation_prompt if needed."""
+        messages = [TextGenerationRequestMessage(role="user", content="Hello")]
+
+        # Caller explicitly sets add_generation_prompt=False via kwargs
+        tokenizer_with_mock.apply_chat_template(
+            messages, tools=None, add_generation_prompt=False, thinking=True
+        )
+
+        call_kwargs = mock_delegate.apply_chat_template.call_args.kwargs
+        # Caller's setting should override the default
+        assert call_kwargs["add_generation_prompt"] is False
+        assert call_kwargs["thinking"] is True
+
+    def test_apply_chat_template_with_no_extra_options(
+        self, tokenizer_with_mock: KimiK2_5VLTokenizer, mock_delegate: MagicMock
+    ) -> None:
+        """Test apply_chat_template with no extra chat_template_options."""
+        messages = [TextGenerationRequestMessage(role="user", content="Hello")]
+
+        tokenizer_with_mock.apply_chat_template(messages, tools=None)
+
+        call_kwargs = mock_delegate.apply_chat_template.call_args.kwargs
+        # Only default options should be set
+        assert call_kwargs["add_generation_prompt"] is True
+        assert call_kwargs["tokenize"] is False
+        # "thinking" should not be in kwargs if not provided
+        assert "thinking" not in call_kwargs

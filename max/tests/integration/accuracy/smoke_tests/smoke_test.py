@@ -85,11 +85,13 @@ MODEL_RECIPES = CaseInsensitiveDict({
     "MiniMaxAI/MiniMax-M2.7": "max/pipelines/architectures/minimax_m2/recipes/minimax_m2_8x_b200.yaml",
     "amd/MiniMax-M2.7-MXFP4": "max/pipelines/architectures/minimax_m2/recipes/minimax_m2_mxfp4_8x_mi355.yaml",
     "lukealonso/MiniMax-M2.7-NVFP4": "max/pipelines/architectures/minimax_m2/recipes/minimax_m2_nvfp4_8x_b200.yaml",
+    "meta-llama/Llama-3.1-8B-Instruct__dflash": "max/pipelines/architectures/llama3/recipes/llama31_8b_dflash.yaml",
     "meta-llama/Llama-3.1-8B-Instruct__eagle": "max/pipelines/architectures/llama3/recipes/llama31_8b_eagle.yaml",
     "meta-llama/Llama-3.1-8B-Instruct__eagle_local_kvconnector": "max/pipelines/architectures/llama3/recipes/llama31_8b_eagle_local_kvconnector.yaml",
     "meta-llama/Llama-3.1-8B-Instruct__local_kvconnector": "max/pipelines/architectures/llama3/recipes/llama31_8b_local_kvconnector.yaml",
     "meta-llama/Llama-3.1-8B-Instruct__modulev3": "max/pipelines/architectures/llama3_modulev3/recipes/llama31_8b.yaml",
     "meta-llama/Llama-3.1-8B-Instruct__tiered_kvconnector": "max/pipelines/architectures/llama3/recipes/llama31_8b_tiered_kvconnector.yaml",
+    "meta-llama/Llama-3.1-8B-Instruct__debug_tiered_kvconnector": "max/pipelines/architectures/llama3/recipes/llama31_8b_debug_tiered_kvconnector.yaml",
     "microsoft/Phi-3.5-mini-instruct__modulev3": "max/pipelines/architectures/phi3_modulev3/recipes/phi35_mini.yaml",
     "microsoft/phi-4__modulev3": "max/pipelines/architectures/phi3_modulev3/recipes/phi4.yaml",
     "nvidia/DeepSeek-V3.1-NVFP4": "max/pipelines/architectures/deepseekV3/recipes/nvfp4_8x_b200.yaml",
@@ -107,6 +109,7 @@ MODEL_RECIPES = CaseInsensitiveDict({
     "austinpowers/Kimi-K2.5-NVFP4-DeepseekV3__eagle_tiered_kvconnector_tpep": "max/pipelines/architectures/kimik2_5/recipes/nvfp4_eagle_tiered_kvconnector_tpep_8x_b200.yaml",
     "austinpowers/Kimi-K2.5-NVFP4-DeepseekV3__local_kvconnector_tpep": "max/pipelines/architectures/kimik2_5/recipes/nvfp4_local_kvconnector_tpep_8x_b200.yaml",
     "austinpowers/Kimi-K2.5-NVFP4-DeepseekV3__tiered_kvconnector_tpep": "max/pipelines/architectures/kimik2_5/recipes/nvfp4_tiered_kvconnector_tpep_8x_b200.yaml",
+    "austinpowers/Kimi-K2.5-NVFP4-DeepseekV3__debug_tiered_kvconnector_tpep": "max/pipelines/architectures/kimik2_5/recipes/nvfp4_debug_tiered_kvconnector_tpep_8x_b200.yaml",
 })
 # fmt: on
 
@@ -168,6 +171,7 @@ def is_vision_model(model: str) -> bool:
             "no_vision",
             "__eagle",
             "__mtp",
+            "__dflash",
             "_kvconnector",
             "__internal",
             "gemma-3-1b",

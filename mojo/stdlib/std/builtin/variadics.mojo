@@ -1251,14 +1251,15 @@ struct VariadicList[
                     TDestructible
                 ]().destroy_pointee()
 
-    def consume_elements[
-        elt_handler: def(idx: Int, var elt: Self.element_type) capturing
-    ](deinit self):
+    def consume_elements(
+        deinit self,
+        elt_handler: Some[def(idx: Int, var elt: Self.element_type)],
+    ):
         """Consume the variadic list by transferring ownership of each element
         into the provided closure one at a time.  This is only valid on 'owned'
         variadic lists.
 
-        Parameters:
+        Args:
             elt_handler: A function that will be called for each element of the
                          list.
         """

@@ -18,7 +18,7 @@ import math
 from collections.abc import Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import Any, ClassVar, cast
 
 import numpy as np
 import numpy.typing as npt
@@ -33,7 +33,7 @@ from max.experimental.tensor import Tensor
 from max.graph import DeviceRef, TensorType
 from max.graph.buffer_utils import cast_dlpack_to
 from max.graph.weights import Weights, WeightsAdapter
-from max.nn.kv_cache import KVCacheInputs, KVCacheParams
+from max.nn.kv_cache import KVCacheInputs
 from max.nn.transformer import ReturnLogits
 from max.pipelines.core import TextAndVisionContext
 from max.pipelines.lib import (
@@ -116,6 +116,8 @@ class Gemma3MultiModalModelV3(
 ):
     """Gemma 3 multimodal pipeline model using the ModuleV3 API."""
 
+    model_config_cls: ClassVar[type[Any]] = Gemma3ForConditionalGenerationConfig
+
     language_model: Callable[..., Any]
     vision_model: Callable[..., Any]
 
@@ -155,23 +157,6 @@ class Gemma3MultiModalModelV3(
     ) -> int:
         return Gemma3ForConditionalGenerationConfig.calculate_max_seq_len(
             pipeline_config, huggingface_config
-        )
-
-    @classmethod
-    def get_kv_params(
-        cls,
-        huggingface_config: AutoConfig,
-        pipeline_config: PipelineConfig,
-        devices: list[DeviceRef],
-        kv_cache_config: KVCacheConfig,
-        cache_dtype: DType,
-    ) -> KVCacheParams:
-        return Gemma3ForConditionalGenerationConfig.construct_kv_params(
-            huggingface_config,
-            pipeline_config,
-            devices,
-            kv_cache_config,
-            cache_dtype,
         )
 
     @classmethod

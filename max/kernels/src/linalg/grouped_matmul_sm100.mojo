@@ -860,9 +860,7 @@ def zero_output[
 @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(c_tma_op, `nvvm.grid_constant`)
-@__name(
-    t"grouped_matmul_sm100_{a_type}_{b_type}_{c_type}_em{expert_m}", mangle=True
-)
+@__name(t"grouped_matmul_sm100_{a_type}_{b_type}_{c_type}_em{expert_m}")
 def blackwell_tma_umma_warp_specialized_kernel[
     a_type: DType,
     b_type: DType,

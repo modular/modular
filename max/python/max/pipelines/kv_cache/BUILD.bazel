@@ -8,6 +8,7 @@ modular_py_library(
     deps = [
         requirement("numpy"),
         requirement("msgspec"),
+        requirement("tqdm"),
         "//max/python/max:_core",
         "//max/python/max/_core_mojo",
         "//max/python/max/_distributed_ops",

@@ -16,7 +16,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import Any, Literal, cast
+from typing import Any, ClassVar, Literal, cast
 
 import numpy as np
 from max.driver import Buffer, Device
@@ -26,7 +26,7 @@ from max.experimental import functional as F
 from max.experimental.tensor import default_dtype
 from max.graph import DeviceRef, TensorType
 from max.graph.weights import Weights, WeightsAdapter
-from max.nn.kv_cache import KVCacheInputs, KVCacheParams
+from max.nn.kv_cache import KVCacheInputs
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
@@ -76,6 +76,8 @@ class Llama3Inputs(ModelInputs):
 class Llama3Model(LogProbabilitiesMixin, PipelineModelWithKVCache[TextContext]):
     """Llama3 pipeline model using the ModuleV3 API."""
 
+    model_config_cls: ClassVar[type[Any]] = Llama3Config
+
     config_class: type[Llama3Config] = Llama3Config
     norm_method: Literal["rms_norm"] | Literal["layer_norm"] = "rms_norm"
     attention_bias: bool = False
@@ -109,23 +111,6 @@ class Llama3Model(LogProbabilitiesMixin, PipelineModelWithKVCache[TextContext]):
     ) -> int:
         return Llama3Config.calculate_max_seq_len(
             pipeline_config, huggingface_config
-        )
-
-    @classmethod
-    def get_kv_params(
-        cls,
-        huggingface_config: AutoConfig,
-        pipeline_config: PipelineConfig,
-        devices: list[DeviceRef],
-        kv_cache_config: KVCacheConfig,
-        cache_dtype: DType,
-    ) -> KVCacheParams:
-        return Llama3Config.construct_kv_params(
-            huggingface_config,
-            pipeline_config,
-            devices,
-            kv_cache_config,
-            cache_dtype,
         )
 
     def load_model(self) -> Callable[..., Any]:

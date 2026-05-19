@@ -239,9 +239,17 @@ class TokenGeneratorPipeline(
                     reasoning_tokens = None
                     reasoning_text_formatter = None
 
-                    if is_still_reasoning:
-                        assert reasoning_parser is not None
-                        parsed = reasoning_parser.stream(response.tokens)
+                    if reasoning_parser is not None:
+                        # Always run the parser, even when we weren't seeded
+                        # into reasoning. This lets architectures like Gemma 4
+                        # — which can emit ``<|channel>thought\n...<channel|>``
+                        # mid-stream regardless of enable_thinking — detect
+                        # those reasoning sections dynamically rather than
+                        # leaking them as content.
+                        parsed = reasoning_parser.stream(
+                            response.tokens,
+                            is_currently_reasoning=is_still_reasoning,
+                        )
                         reasoning_span = parsed.span
                         is_still_reasoning = parsed.is_still_reasoning
                         reasoning_text_formatter = (

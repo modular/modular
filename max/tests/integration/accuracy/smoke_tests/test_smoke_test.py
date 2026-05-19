@@ -66,6 +66,25 @@ def test_all_recipe_hf_model_paths_in_hf_repo_lock() -> None:
     )
 
 
+def test_all_recipe_draft_model_paths_in_hf_repo_lock() -> None:
+    lock = {repo.casefold() for repo in load_db()}
+    missing = []
+    for recipe_path in MODEL_RECIPES.values():
+        recipe = smoke_test._load_recipe(recipe_path)
+        if recipe.draft_model is None:
+            continue
+        model_path = recipe.draft_model.model_path
+        assert model_path is not None
+        if model_path.startswith(("/", "./", "../")):
+            continue
+        if model_path.casefold() not in lock:
+            missing.append((recipe_path, model_path))
+
+    assert not missing, (
+        f"recipe draft_model paths missing from hf-repo-lock.tsv: {missing}"
+    )
+
+
 def test_all_model_recipes_load() -> None:
     for alias, recipe_path in MODEL_RECIPES.items():
         recipe = smoke_test._load_recipe(recipe_path)

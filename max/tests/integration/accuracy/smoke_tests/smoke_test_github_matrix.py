@@ -121,6 +121,7 @@ CUSTOM_MODELS: dict[str, set[str]] = {
     "nvidia/DeepSeek-V3.1-NVFP4__tptp": NON_XL | {"8xMI355"},
     # TODO(SERVOPT-1168): Support multi-GPU eagle llama
     "meta-llama/Llama-3.1-8B-Instruct__eagle": MULTI | {"vllm", "sglang"},
+    "meta-llama/Llama-3.1-8B-Instruct__dflash": MULTI | {"vllm", "sglang"},
     "nvidia/DeepSeek-V3.1-NVFP4__mtp": NON_XL | {"8xMI355"},
     "nvidia/DeepSeek-V3.1-NVFP4__mtp_tpep": NON_XL | {"8xMI355"},
     "austinpowers/Kimi-K2.5-NVFP4-DeepseekV3__eagle": DISABLE,  # SERVSYS-1248
@@ -129,8 +130,10 @@ CUSTOM_MODELS: dict[str, set[str]] = {
     "meta-llama/Llama-3.1-8B-Instruct__local_kvconnector": MULTI | {"vllm", "sglang", "MI355"},
     "meta-llama/Llama-3.1-8B-Instruct__eagle_local_kvconnector": MULTI | {"vllm", "sglang", "MI355"},
     "meta-llama/Llama-3.1-8B-Instruct__tiered_kvconnector": MULTI | {"vllm", "sglang", "MI355"},
+    "meta-llama/Llama-3.1-8B-Instruct__debug_tiered_kvconnector": MULTI | {"vllm", "sglang", "MI355"},
     "austinpowers/Kimi-K2.5-NVFP4-DeepseekV3__local_kvconnector_tpep": NON_XL | {"8xMI355"},
     "austinpowers/Kimi-K2.5-NVFP4-DeepseekV3__tiered_kvconnector_tpep": NON_XL | {"8xMI355"},
+    "austinpowers/Kimi-K2.5-NVFP4-DeepseekV3__debug_tiered_kvconnector_tpep": NON_XL | {"8xMI355"},
     "austinpowers/Kimi-K2.5-NVFP4-DeepseekV3__eagle_tiered_kvconnector_tpep": NON_XL | {"8xMI355"},
 }
 

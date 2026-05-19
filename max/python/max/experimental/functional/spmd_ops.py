@@ -822,33 +822,29 @@ cond = functional(_cond_graph, rule=cond_rule)
 def _while_loop_graph(
     initial_values: Iterable[TensorValueLike] | TensorValueLike,
     predicate: Callable[..., Tensor],
-    body: Callable[..., Tensor | list[Tensor]],
+    body: Callable[..., Tensor | Iterable[Tensor]],
 ) -> list[TensorValue]:
-    """Wrap predicate/body so Tensor returns are unwrapped to TensorValue.
+    """Wrap predicate/body so callbacks see :class:`Tensor`.
 
-    ``ops.while_loop`` expects predicate and body functions that return
-    :class:`TensorValue`, but our high-level API lets users return
-    :class:`Tensor`.  This wrapper calls ``__tensorvalue__()`` on each
-    returned Tensor before passing results to the graph op.
+    ``ops.while_loop`` passes :class:`TensorValue` into its predicate/body
+    and expects :class:`TensorValue` back. This wrapper wraps callback
+    args as :class:`Tensor` and coerces callback returns back to
+    :class:`TensorValue`. The outer ``functional()`` wrapper converts the
+    returned :class:`TensorValue` list back to :class:`Tensor` for the
+    public surface.
     """
 
-    def _unwrap_list(
-        vals: list[Tensor] | tuple[Tensor, ...],
-    ) -> list[TensorValue]:
-        return [v.__tensorvalue__() for v in vals]
-
     def _pred(*args: TensorValue) -> TensorValue:
-        return predicate(*args).__tensorvalue__()
+        tensors = [Tensor.from_graph_value(a) for a in args]
+        return TensorValue(predicate(*tensors))
 
     def _body(*args: TensorValue) -> list[TensorValue]:
-        result = body(*args)
+        tensors = [Tensor.from_graph_value(a) for a in args]
+        result = body(*tensors)
         if isinstance(result, Tensor):
-            return [result.__tensorvalue__()]
-        return _unwrap_list(result)
+            return [TensorValue(result)]
+        return [TensorValue(t) for t in result]
 
-    # ops.while_loop has no auto-coercion; coerce TensorValueLike (incl.
-    # Tensor via __tensorvalue__) to TensorValue the same way _cond_graph
-    # coerces its predicate.
     if isinstance(initial_values, Iterable):
         unwrapped = [TensorValue(v) for v in initial_values]
     else:

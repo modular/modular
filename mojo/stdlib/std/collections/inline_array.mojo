@@ -410,7 +410,7 @@ struct InlineArray[ElementType: Copyable, size: Int](
             runtime performance.
         """
         _inline_array_construction_checks[Self.size]()
-        __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
+        self = Self(uninitialized=True)
 
         comptime unroll_end = std.math.align_down(Self.size, batch_size)
 
@@ -457,16 +457,13 @@ struct InlineArray[ElementType: Copyable, size: Int](
             len(elems),
         )
         _inline_array_construction_checks[Self.size]()
-        __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
-
+        self = Self(uninitialized=True)
         var ptr = self.unsafe_ptr()
 
         # Move each element into the array storage.
         comptime for i in range(Self.size):
             # Safety: We own the elements in the variadic list.
-            ptr.init_pointee_move_from(
-                UnsafePointer(to=elems[i]).unsafe_mut_cast[True]()
-            )
+            ptr.init_pointee_move_from(UnsafePointer(to=elems[i]))
             ptr += 1
 
         # Do not destroy the elements when their backing storage goes away.

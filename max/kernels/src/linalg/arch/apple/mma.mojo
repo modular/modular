@@ -22,6 +22,7 @@ kernel should check once per simdgroup, not per load.
 
 from std.gpu import lane_id
 from std.gpu.compute.arch.mma_apple import _mma_apple_transposable
+from std.sys.info import align_of
 
 from layout import TileTensor
 
@@ -45,14 +46,14 @@ struct MmaOpApple[
         SIMD[Self.out_type, Self.FRAG_SIZE], Self.num_accum
     ]
 
-    var rb: UInt16
-    var cb: UInt16
+    var rb: Int
+    var cb: Int
 
     @always_inline
     def __init__(out self):
-        var lid: Int = lane_id()
-        self.rb = UInt16(((lid & 7) >> 1) + ((lid & 16) >> 2))
-        self.cb = UInt16(((lid & 1) << 2) + (lid & 8))
+        var lid = Int(lane_id())
+        self.rb = ((lid & 7) >> 1) + ((lid & 16) >> 2)
+        self.cb = ((lid & 1) << 2) + (lid & 8)
 
     @staticmethod
     @always_inline
@@ -79,27 +80,29 @@ struct MmaOpApple[
     @always_inline
     def _load_fragment[
         dtype: DType
-    ](self, tile: TileTensor[dtype, ...],) -> SIMD[dtype, 8]:
-        # UInt16 stride narrowing: on Apple GPU this fast 16-bit multiply
-        # path closes the gap with the raw `_mma_apple` intrinsic.
-        var row_stride = UInt16(Self._row_stride(tile))
-        var lo = (tile.ptr + Int(self.rb * row_stride + self.cb)).load[
-            width=4
-        ]()
-        var hi = (tile.ptr + Int((self.rb + 8) * row_stride + self.cb)).load[
-            width=4
-        ]()
+    ](
+        self,
+        tile: TileTensor[dtype, ...],
+        lo_off: Int,
+        hi_off: Int,
+    ) -> SIMD[
+        dtype, 8
+    ]:
+        # Offsets are precomputed + hoisted once per slab in `mma()`.
+        comptime alignment = 4 * align_of[Scalar[dtype]]()
+        var lo = (tile.ptr + lo_off).load[width=4, alignment=alignment]()
+        var hi = (tile.ptr + hi_off).load[width=4, alignment=alignment]()
         return lo.join(hi)
 
     @always_inline
     def _store_fragment[
         dtype: DType
     ](self, tile: TileTensor[mut=True, dtype, ...], frag: SIMD[dtype, 8],):
-        var row_stride = UInt16(Self._row_stride(tile))
+        var row_stride = Self._row_stride(tile)
         var off_lo = self.rb * row_stride + self.cb
         var off_hi = (self.rb + 8) * row_stride + self.cb
-        (tile.ptr + Int(off_lo)).store(frag.slice[4, offset=0]())
-        (tile.ptr + Int(off_hi)).store(frag.slice[4, offset=4]())
+        (tile.ptr + off_lo).store(frag.slice[4, offset=0]())
+        (tile.ptr + off_hi).store(frag.slice[4, offset=4]())
 
     @always_inline
     def _do_load[
@@ -109,12 +112,22 @@ struct MmaOpApple[
         tile: TileTensor[dtype, ...],
         valid_rows: Int,
         valid_cols: Int,
+        lo_off: Int,
+        hi_off: Int,
     ) -> SIMD[dtype, 8]:
-        """Dispatch to fast or bounded load based on comptime flag."""
+        """Dispatch fast or bounded load; swap bounds for col-major tiles."""
         comptime if bounded:
-            return self._bounded_load[dtype](tile, valid_rows, valid_cols)
+            comptime col_major = type_of(tile).static_stride[0] == 1
+            comptime if col_major:
+                return self._bounded_load[dtype](
+                    tile, valid_cols, valid_rows, lo_off, hi_off
+                )
+            else:
+                return self._bounded_load[dtype](
+                    tile, valid_rows, valid_cols, lo_off, hi_off
+                )
         else:
-            return self._load_fragment[dtype](tile)
+            return self._load_fragment[dtype](tile, lo_off, hi_off)
 
     @always_inline
     def _bounded_load[
@@ -124,6 +137,8 @@ struct MmaOpApple[
         tile: TileTensor[dtype, ...],
         valid_rows: Int,
         valid_cols: Int,
+        lo_off: Int,
+        hi_off: Int,
     ) -> SIMD[dtype, 8]:
         """Bounded path: predicated loads, zero-fill for OOB.
 
@@ -131,28 +146,25 @@ struct MmaOpApple[
         when straddling the column boundary. Zero-filled OOB elements
         contribute nothing to the dot product.
         """
-        var row_stride = Self._row_stride(tile)
-        var col = Int(self.cb)
+        var col = self.cb
         var lo = SIMD[dtype, 4](0)
         var hi = SIMD[dtype, 4](0)
 
-        if Int(self.rb) < valid_rows:
-            var off = Int(self.rb) * row_stride + col
+        if self.rb < valid_rows:
             if col + 3 < valid_cols:
-                lo = (tile.ptr + off).load[width=4]()
+                lo = (tile.ptr + lo_off).load[width=4]()
             else:
                 for i in range(4):
                     if col + i < valid_cols:
-                        lo[i] = tile.ptr[off + i]
+                        lo[i] = tile.ptr[lo_off + i]
 
-        if Int(self.rb) + 8 < valid_rows:
-            var off = (Int(self.rb) + 8) * row_stride + col
+        if self.rb + 8 < valid_rows:
             if col + 3 < valid_cols:
-                hi = (tile.ptr + off).load[width=4]()
+                hi = (tile.ptr + hi_off).load[width=4]()
             else:
                 for i in range(4):
                     if col + i < valid_cols:
-                        hi[i] = tile.ptr[off + i]
+                        hi[i] = tile.ptr[hi_off + i]
 
         return lo.join(hi)
 
@@ -172,10 +184,10 @@ struct MmaOpApple[
         when straddling the column boundary.
         """
         var row_stride = Self._row_stride(tile)
-        var col = Int(self.cb)
+        var col = self.cb
 
-        if Int(self.rb) < valid_rows:
-            var off = Int(self.rb) * row_stride + col
+        if self.rb < valid_rows:
+            var off = self.rb * row_stride + col
             if col + 3 < valid_cols:
                 (tile.ptr + off).store(frag.slice[4, offset=0]())
             else:
@@ -183,8 +195,8 @@ struct MmaOpApple[
                     if col + i < valid_cols:
                         tile.ptr[off + i] = frag[i]
 
-        if Int(self.rb) + 8 < valid_rows:
-            var off = (Int(self.rb) + 8) * row_stride + col
+        if self.rb + 8 < valid_rows:
+            var off = (self.rb + 8) * row_stride + col
             if col + 3 < valid_cols:
                 (tile.ptr + off).store(frag.slice[4, offset=4]())
             else:
@@ -274,7 +286,37 @@ struct MmaOpApple[
 
         comptime num_k_steps = a_k // Self.MMA_K
 
+        # Precompute the per-lane offsets once per slab.
+        var a_row_stride = Self._row_stride(a_tile)
+        var b_row_stride = Self._row_stride(b_tile)
+        var rb_plus_8 = self.rb + 8
+        var a_lo_off = self.rb * a_row_stride + self.cb
+        var a_hi_off = rb_plus_8 * a_row_stride + self.cb
+        var b_lo_off = self.rb * b_row_stride + self.cb
+        var b_hi_off = rb_plus_8 * b_row_stride + self.cb
+
         comptime for ki in range(num_k_steps):
+            # Pre-load B fragments for this K-step.
+            var b_frags = InlineArray[
+                SIMD[Self.b_type, Self.FRAG_SIZE], Self.num_n_mmas
+            ](uninitialized=True)
+            comptime for ni in range(Self.num_n_mmas):
+                var b_sub = b_tile.tile[16, 16](
+                    ni if Self.transpose_b else ki,
+                    ki if Self.transpose_b else ni,
+                )
+                b_frags[ni] = self._do_load[Self.b_type, bounded](
+                    b_sub,
+                    (b_valid_cols - ni * 16) if Self.transpose_b else (
+                        k_valid - ki * 16
+                    ),
+                    (k_valid - ki * 16) if Self.transpose_b else (
+                        b_valid_cols - ni * 16
+                    ),
+                    b_lo_off,
+                    b_hi_off,
+                )
+
             comptime for mi in range(Self.num_m_mmas):
                 var a_sub = a_tile.tile[16, 16](
                     ki if Self.transpose_a else mi,
@@ -288,27 +330,15 @@ struct MmaOpApple[
                     (a_valid_rows - mi * 16) if Self.transpose_a else (
                         k_valid - ki * 16
                     ),
+                    a_lo_off,
+                    a_hi_off,
                 )
 
                 comptime for ni in range(Self.num_n_mmas):
-                    var b_sub = b_tile.tile[16, 16](
-                        ni if Self.transpose_b else ki,
-                        ki if Self.transpose_b else ni,
-                    )
-                    var b_frag = self._do_load[Self.b_type, bounded](
-                        b_sub,
-                        (b_valid_cols - ni * 16) if Self.transpose_b else (
-                            k_valid - ki * 16
-                        ),
-                        (k_valid - ki * 16) if Self.transpose_b else (
-                            b_valid_cols - ni * 16
-                        ),
-                    )
-
                     _mma_apple_transposable(
                         accum[mi * Self.num_n_mmas + ni],
                         a_frag,
-                        b_frag,
+                        b_frags[ni],
                         accum[mi * Self.num_n_mmas + ni],
                         hw_transpose_a,
                         hw_transpose_b,
@@ -337,9 +367,9 @@ struct MmaOpApple[
         valid_rows: Int,
         valid_cols: Int,
     ):
-        """Store accumulators with bounds checking.
+        """Stores accumulators where `(row < valid_rows) and (col < valid_cols)`.
 
-        Only writes elements where (row < valid_rows) and (col < valid_cols).
+        Assumes row-major `d_tile`; for col-major, mirror `_do_load`'s swap.
         """
         comptime for mi in range(Self.num_m_mmas):
             comptime for ni in range(Self.num_n_mmas):

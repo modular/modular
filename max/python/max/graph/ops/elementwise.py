@@ -14,8 +14,9 @@
 
 from collections.abc import Callable
 
+from max._core import Operation
+from max._core.dialects import kgen, rmo
 from max.dtype import DType
-from max.mlir.dialects import rmo
 
 from .. import dtype_promotion
 from ..graph import Graph
@@ -56,19 +57,21 @@ def _accum_type(
 # Note: Keep alphabetized.
 
 
-def _elementwise_binary(op):  # noqa: ANN001, ANN202
+def _elementwise_binary(op_type: type[Operation], name: str):  # noqa: ANN202
     def elementwise_op(
         lhs: TensorValueLike, rhs: TensorValueLike
     ) -> TensorValue:
         lhs, rhs = dtype_promotion._promote_weak_dtypes(lhs, rhs)
         assert_same_device(lhs=lhs, rhs=rhs)
-        return Graph.current._add_op(op, lhs, rhs)[0].tensor
+        return Graph.current._add_op_generated(
+            op_type, input_x=lhs, input_y=rhs
+        )[0].tensor
 
-    elementwise_op.__name__ = op.__name__
+    elementwise_op.__name__ = name
     return elementwise_op
 
 
-add = _elementwise_binary(rmo.add)
+add = _elementwise_binary(rmo.AddOp, "add")
 """
 Adds two symbolic tensors.
 
@@ -146,10 +149,12 @@ def div(lhs: TensorValueLike, rhs: TensorValueLike) -> TensorValue:
         rhs = cast(rhs, float_dtype)
 
     assert_same_device(lhs, rhs)
-    return Graph.current._add_op(rmo.div, lhs, rhs)[0].tensor
+    return Graph.current._add_op_generated(rmo.DivOp, input_x=lhs, input_y=rhs)[
+        0
+    ].tensor
 
 
-max = _elementwise_binary(rmo.max)
+max = _elementwise_binary(rmo.MaxOp, "max")
 """
 Computes the elementwise maximum of two symbolic tensors.
 
@@ -186,7 +191,7 @@ Raises:
     Error: If one of the input values has an unsupported dtype.
     Error: If the two symbols are parts of different graphs.
 """
-min = _elementwise_binary(rmo.min)
+min = _elementwise_binary(rmo.MinOp, "min")
 """
 Computes the elementwise minimum of two symbolic tensors.
 
@@ -223,7 +228,7 @@ Raises:
     Error: If one of the input values has an unsupported dtype.
     Error: If the two symbols are parts of different graphs.
 """
-mod = _elementwise_binary(rmo.mod)
+mod = _elementwise_binary(rmo.ModOp, "mod")
 """
 Computes the elementwise modulus of two symbolic tensors.
 
@@ -251,7 +256,7 @@ Raises:
     Error: If one of the input values has an unsupported dtype.
     Error: If the two symbols are parts of different graphs.
 """
-mul = _elementwise_binary(rmo.mul)
+mul = _elementwise_binary(rmo.MulOp, "mul")
 """
 Computes the elementwise multiplication of two symbolic tensors.
 
@@ -279,7 +284,7 @@ Raises:
     Error: If one of the input values has an unsupported dtype.
     Error: If the two symbols are parts of different graphs.
 """
-pow = _elementwise_binary(rmo.pow)
+pow = _elementwise_binary(rmo.PowOp, "pow")
 """
 Computes the elementwise exponentiation of two symbolic tensors.
 
@@ -307,7 +312,7 @@ Raises:
     Error: If one of the input values has an unsupported dtype.
     Error: If the two symbols are parts of different graphs.
 """
-sub = _elementwise_binary(rmo.sub)
+sub = _elementwise_binary(rmo.SubOp, "sub")
 """
 Computes the elementwise subtraction of two symbolic tensors.
 
@@ -347,7 +352,7 @@ Raises:
     Error: If one of the input values has an unsupported dtype.
     Error: If the two symbols are parts of different graphs.
 """
-equal = _elementwise_binary(rmo.equal)
+equal = _elementwise_binary(rmo.EqualOp, "equal")
 """
 Computes the elementwise equality comparison between two symbolic tensors.
 
@@ -387,7 +392,7 @@ Raises:
     Error: If one of the input values has an unsupported dtype.
     Error: If the two symbols are parts of different graphs.
 """
-greater = _elementwise_binary(rmo.greater)
+greater = _elementwise_binary(rmo.GreaterOp, "greater")
 """
 Computes the elementwise greater than comparison between two symbolic tensors.
 
@@ -428,7 +433,7 @@ Raises:
     Error: If one of the input values has an unsupported dtype.
     Error: If the two symbols are parts of different graphs.
 """
-greater_equal = _elementwise_binary(rmo.greater_equal)
+greater_equal = _elementwise_binary(rmo.GreaterEqualOp, "greater_equal")
 """
 Computes the elementwise greater-or-equal comparison between two symbolic tensors.
 
@@ -456,7 +461,7 @@ Raises:
     Error: If one of the input values has an unsupported dtype.
     Error: If the two symbols are parts of different graphs.
 """
-not_equal = _elementwise_binary(rmo.not_equal)
+not_equal = _elementwise_binary(rmo.NotEqualOp, "not_equal")
 """
 Computes the elementwise inequality comparison between two symbolic tensors.
 
@@ -498,7 +503,7 @@ Raises:
     Error: If the two symbols are parts of different graphs.
 """
 
-logical_and = _elementwise_binary(rmo.and_)
+logical_and = _elementwise_binary(rmo.AndOp, "logical_and")
 """
 Computes the logical and between two symbolic tensors.
 
@@ -521,7 +526,7 @@ Raises:
     Error: If the two symbols are parts of different graphs.
 """
 
-logical_or = _elementwise_binary(rmo.or_)
+logical_or = _elementwise_binary(rmo.OrOp, "logical_or")
 """
 Computes the logical or between two symbolic tensors.
 
@@ -544,7 +549,7 @@ Raises:
     Error: If the two symbols are parts of different graphs.
 """
 
-logical_xor = _elementwise_binary(rmo.xor)
+logical_xor = _elementwise_binary(rmo.XorOp, "logical_xor")
 """
 Computes the logical xor between two symbolic tensors.
 
@@ -574,33 +579,37 @@ Raises:
 # Note: Keep alphabetized.
 
 
-def _elementwise_unary(op):  # noqa: ANN001, ANN202
+def _elementwise_unary(op_type: type[Operation], name: str):  # noqa: ANN202
     def elementwise_op(x: TensorValueLike) -> TensorValue:
         x = dtype_promotion._restrict_to_strong_dtypes(x)
-        return Graph.current._add_op(op, x._mlir_value.type, x)[0].tensor
+        return Graph.current._add_op_generated(
+            op_type,
+            result=x.type,
+            input=x,
+            output_param_decls=kgen.ParamDeclArrayAttr([]),
+        )[0].tensor
 
-    elementwise_op.__name__ = op.__name__
+    elementwise_op.__name__ = name
     return elementwise_op
 
 
 def _elementwise_unary_predicate(
-    op,  # noqa: ANN001
+    op_type: type[Operation], name: str
 ) -> Callable[[TensorValueLike], TensorValue]:
     def elementwise_op(x: TensorValueLike) -> TensorValue:
         x = dtype_promotion._restrict_to_strong_dtypes(x)
-        return Graph.current._add_op(
-            op,
-            TensorType(
-                dtype=DType.bool, shape=x.shape, device=x.device
-            ).to_mlir(),
-            x,
+        return Graph.current._add_op_generated(
+            op_type,
+            result=TensorType(dtype=DType.bool, shape=x.shape, device=x.device),
+            input_x=x,
+            output_param_decls=kgen.ParamDeclArrayAttr([]),
         )[0].tensor
 
-    elementwise_op.__name__ = op.__name__
+    elementwise_op.__name__ = name
     return elementwise_op
 
 
-abs = _elementwise_unary(rmo.mo_abs)
+abs = _elementwise_unary(rmo.MoAbsOp, "abs")
 """
 Computes the elementwise absolute value of a symbolic tensor.
 
@@ -631,7 +640,7 @@ Returns:
 Raises:
     Error: If the symbol doesn't represent a tensor value.
 """
-exp = _elementwise_unary(rmo.mo_exp)
+exp = _elementwise_unary(rmo.MoExpOp, "exp")
 exp.__doc__ = """
 Computes the elementwise exp (exponential) function of a symbolic tensor.
 
@@ -667,7 +676,7 @@ Returns:
 Raises:
     Error: If the symbol doesn't represent a tensor value.
 """
-erf = _elementwise_unary(rmo.mo_erf)
+erf = _elementwise_unary(rmo.MoErfOp, "erf")
 """
 Computes the elementwise error function of a symbolic tensor.
 
@@ -807,7 +816,7 @@ def gelu(x: TensorValue, approximate: str = "none"):  # noqa: ANN201
     raise ValueError(f"Invalid approximation method: {approximate}")
 
 
-log = _elementwise_unary(rmo.mo_log)
+log = _elementwise_unary(rmo.MoLogOp, "log")
 log.__doc__ = """
 Computes the elementwise natural logarithm of a symbolic tensor.
 
@@ -849,7 +858,7 @@ Raises:
     Error: If the symbol doesn't represent a tensor value.
 """
 
-log1p = _elementwise_unary(rmo.mo_log1p)
+log1p = _elementwise_unary(rmo.MoLog1pOp, "log1p")
 """
 Computes the elementwise logarithm of 1 plus a symbolic tensor.
 
@@ -878,24 +887,25 @@ Raises:
 """
 
 
-def _softmax_like(op):  # noqa: ANN001, ANN202
+def _softmax_like(op_type: type[Operation], name: str):  # noqa: ANN202
     def softmax_like_op(value: TensorValueLike, axis: int = -1) -> TensorValue:
         value = TensorValue(value)
 
         axis = value.rank - 1 if axis == -1 else axis
         value = dtype_promotion._restrict_to_strong_dtypes(value)
-        return Graph.current._add_op(
-            op,
-            value._mlir_value.type,
-            value,
-            constant(axis, DType.int64, DeviceRef.CPU()),
+        return Graph.current._add_op_generated(
+            op_type,
+            result=value.type,
+            input=value,
+            axis=constant(axis, DType.int64, DeviceRef.CPU()),
+            output_param_decls=kgen.ParamDeclArrayAttr([]),
         )[0].tensor
 
-    softmax_like_op.__name__ = op.__name__
+    softmax_like_op.__name__ = name
     return softmax_like_op
 
 
-logsoftmax = _softmax_like(rmo.mo_reduce_logsoftmax)
+logsoftmax = _softmax_like(rmo.MoReduceLogsoftmaxOp, "logsoftmax")
 """
 Computes the elementwise logsoftmax of a symbolic tensor.
 
@@ -915,7 +925,7 @@ Raises:
     Error: If the symbol doesn't represent a tensor value.
 """
 
-relu = _elementwise_unary(rmo.mo_relu)
+relu = _elementwise_unary(rmo.MoReluOp, "relu")
 relu.__doc__ = """
 Computes the elementwise ReLU (Rectified Linear Unit) of a symbolic tensor.
 
@@ -1015,7 +1025,7 @@ def silu(x: TensorValue):  # noqa: ANN201
     return mul(x_cast, sigmoid(x_cast)).cast(x.dtype)
 
 
-softmax = _softmax_like(rmo.mo_reduce_softmax)
+softmax = _softmax_like(rmo.MoReduceSoftmaxOp, "softmax")
 """
 Computes the elementwise softmax of a symbolic tensor.
 
@@ -1036,7 +1046,7 @@ Raises:
     Error: If the symbol doesn't represent a tensor value.
 """
 
-cos = _elementwise_unary(rmo.mo_cos)
+cos = _elementwise_unary(rmo.MoCosOp, "cos")
 """
 Computes the elementwise cosine of a symbolic tensor.
 
@@ -1056,7 +1066,7 @@ Raises:
     Error: If the symbol doesn't represent a tensor value.
 """
 
-floor = _elementwise_unary(rmo.mo_floor)
+floor = _elementwise_unary(rmo.MoFloorOp, "floor")
 """
 Computes the elementwise floor of a symbolic tensor.
 
@@ -1076,7 +1086,7 @@ Raises:
     Error: If the symbol doesn't represent a tensor value.
 """
 
-round = _elementwise_unary(rmo.mo_round)
+round = _elementwise_unary(rmo.MoRoundOp, "round")
 """
 Computes the elementwise round of a symbolic tensor.
 
@@ -1110,7 +1120,7 @@ Raises:
     Error: If the symbol doesn't represent a tensor value.
 """
 
-rsqrt = _elementwise_unary(rmo.mo_rsqrt)
+rsqrt = _elementwise_unary(rmo.MoRsqrtOp, "rsqrt")
 """
 Computes the elementwise inverse-square-root of a symbolic tensor.
 
@@ -1129,7 +1139,7 @@ Raises:
     Error: If the symbol doesn't represent a tensor value.
 """
 
-sqrt = _elementwise_unary(rmo.mo_sqrt)
+sqrt = _elementwise_unary(rmo.MoSqrtOp, "sqrt")
 sqrt.__doc__ = """
 Computes the elementwise square root of a symbolic tensor.
 
@@ -1170,7 +1180,7 @@ Raises:
     Error: If the symbol doesn't represent a tensor value.
 """
 
-sin = _elementwise_unary(rmo.mo_sin)
+sin = _elementwise_unary(rmo.MoSinOp, "sin")
 """
 Computes the elementwise sine of a symbolic tensor.
 
@@ -1188,7 +1198,7 @@ Returns:
 Raises:
     Error: If the symbol doesn't represent a tensor value.
 """
-tanh = _elementwise_unary(rmo.mo_tanh)
+tanh = _elementwise_unary(rmo.MoTanhOp, "tanh")
 tanh.__doc__ = """
 Computes the elementwise tanh (hyperbolic tangent) of a symbolic tensor.
 
@@ -1228,7 +1238,7 @@ Raises:
     Error: If the symbol doesn't represent a tensor value.
 """
 
-atanh = _elementwise_unary(rmo.mo_atanh)
+atanh = _elementwise_unary(rmo.MoAtanhOp, "atanh")
 """
 Computes the elementwise atanh of a symbolic tensor.
 
@@ -1247,7 +1257,7 @@ Raises:
     Error: If the symbol doesn't represent a tensor value.
 """
 
-trunc = _elementwise_unary(rmo.mo_trunc)
+trunc = _elementwise_unary(rmo.MoTruncOp, "trunc")
 """
 Computes the elementwise truncation of a symbolic tensor.
 
@@ -1267,7 +1277,7 @@ Raises:
     Error: If the symbol doesn't represent a tensor value.
 """
 
-is_nan = _elementwise_unary_predicate(rmo.mo_is_nan)
+is_nan = _elementwise_unary_predicate(rmo.MoIsNanOp, "is_nan")
 """
 Computes the elementwise is_nan of a symbolic tensor.
 
@@ -1289,7 +1299,7 @@ Raises:
 """
 
 
-is_inf = _elementwise_unary_predicate(rmo.mo_is_inf)
+is_inf = _elementwise_unary_predicate(rmo.MoIsInfOp, "is_inf")
 """
 Computes the elementwise :obj:`is_inf()` of a symbolic tensor.
 
@@ -1310,7 +1320,7 @@ Raises:
     Raises: If the symbol doesn't represent a tensor value.
 """
 
-logical_not = _elementwise_unary(rmo.mo_not)
+logical_not = _elementwise_unary(rmo.MoNotOp, "logical_not")
 """
 Computes the elementwise logical_not of a symbolic tensor.
 
@@ -1331,7 +1341,7 @@ Raises:
     Error: If the symbol doesn't represent a tensor value.
 """
 
-negate = _elementwise_unary(rmo.mo_negative)
+negate = _elementwise_unary(rmo.MoNegativeOp, "negate")
 """
 Computes the elementwise negation of a symbolic tensor.
 

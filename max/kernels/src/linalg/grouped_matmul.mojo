@@ -78,7 +78,7 @@ from std.algorithm import vectorize
 #     C[a_offsets[i]:a_offsets[i+1], :] = A[a_offsets[i]:a_offsets[i+1], :] @ B[expert_ids[i], :, :].T
 
 
-@__name(t"naive_grouped_matmul_kernel_{c_type}_{a_type}_{b_type}", mangle=True)
+@__name(t"naive_grouped_matmul_kernel_{c_type}_{a_type}_{b_type}")
 def naive_grouped_matmul_kernel[
     c_type: DType,
     a_type: DType,
@@ -172,7 +172,7 @@ def naive_epilogue[
     )
 
 
-@__name(t"naive_epilogue_kernel_{c_type}", mangle=True)
+@__name(t"naive_epilogue_kernel_{c_type}")
 def naive_epilogue_kernel[
     c_type: DType,
     CLayout: TensorLayout,
@@ -210,7 +210,6 @@ def naive_epilogue_kernel[
 @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
 @__name(
     t"grouped_matmul_kernel_sm100_{a_type}_{b_type}_{c_type}_t{num_threads}",
-    mangle=True,
 )
 def grouped_matmul_kernel_sm100[
     a_type: DType,
