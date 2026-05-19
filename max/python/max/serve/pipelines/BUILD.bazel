@@ -27,6 +27,7 @@ modular_py_library(
         ":incremental_detokenizer",
         "//max/python/max/driver",
         "//max/python/max/dtype",
+        "//max/python/max/experimental/nn",
         "//max/python/max/interfaces",
         "//max/python/max/pipelines/core",
         "//max/python/max/pipelines/kv_cache",
