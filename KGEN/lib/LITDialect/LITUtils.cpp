@@ -1409,57 +1409,6 @@ static TypedAttr decomposeConformsTo(TypedAttr prop) {
   return ParamOperatorAttr::get(POC::And, operands);
 }
 
-bool LIT::constraintImplies(TypedAttr propA, TypedAttr propB) {
-  // Canonicalize both to remove sugar and get structural forms.
-  // Then decompose multi-trait conforms_to into AND of single-trait ones so
-  // that the general conjunction rules handle subsumption uniformly.
-  propA = getCanonicalAttr(propA);
-  propB = getCanonicalAttr(propB);
-  if (TypedAttr d = decomposeConformsTo(propA))
-    propA = d;
-  if (TypedAttr d = decomposeConformsTo(propB))
-    propB = d;
-
-  // Trivially true is implied by anything.
-  if (isTriviallyTrueProposition(propB))
-    return true;
-  // Direct equality: A implies A.
-  if (propA == propB)
-    return true;
-
-  if (auto paramOpB = dyn_cast<ParamOperatorAttr>(propB)) {
-    // Weakening: A implies (A OR B) for any B.
-    if (paramOpB.getOpcode() == POC::Or) {
-      for (Attribute operand : paramOpB.getOperands()) {
-        if (constraintImplies(propA, cast<TypedAttr>(operand)))
-          return true;
-      }
-    }
-    // Conjunction introduction: A implies (B AND C) iff A implies B and
-    // A implies C.
-    if (paramOpB.getOpcode() == POC::And) {
-      if (llvm::all_of(paramOpB.getOperands(), [&](Attribute operand) {
-            return constraintImplies(propA, cast<TypedAttr>(operand));
-          }))
-        return true;
-    }
-  }
-
-  // Conjunction elimination: (A AND B) implies A, (A AND B) implies B.
-  if (auto paramOpA = dyn_cast<ParamOperatorAttr>(propA)) {
-    if (paramOpA.getOpcode() == POC::And) {
-      for (Attribute operand : paramOpA.getOperands()) {
-        if (constraintImplies(cast<TypedAttr>(operand), propB))
-          return true;
-      }
-    }
-  }
-
-  // Fallback: canonicalization trick — A implies B iff AND(A, B) == A.
-  TypedAttr combined = ParamOperatorAttr::get(POC::And, {propA, propB});
-  return combined == propA;
-}
-
 /// Check if prop is NOT(inner), i.e., XOR(inner, true). Returns inner if so.
 static TypedAttr getNotOperand(TypedAttr prop) {
   auto xorOp = dyn_cast<ParamOperatorAttr>(prop);
@@ -1477,33 +1426,86 @@ static TypedAttr getNotOperand(TypedAttr prop) {
   return {};
 }
 
-bool LIT::constraintsContradict(TypedAttr propA, TypedAttr propB) {
+ConstraintRelation LIT::inferConstraintRelation(TypedAttr propA,
+                                                TypedAttr propB) {
+  using CR = ConstraintRelation;
+
+  // Canonicalize and decompose multi-trait conforms_to into AND of single-trait
+  // ones so the general conjunction rules handle subsumption uniformly.
   propA = getCanonicalAttr(propA);
   propB = getCanonicalAttr(propB);
+  if (TypedAttr d = decomposeConformsTo(propA))
+    propA = d;
+  if (TypedAttr d = decomposeConformsTo(propB))
+    propB = d;
+
+  // Direct equality: A implies A.
+  if (propA == propB)
+    return CR::Implies;
+
+  // Trivially true is implied by anything.
+  if (isTriviallyTrueProposition(propB))
+    return CR::Implies;
+  // Trivially false constraints are violated under any assumption. This is
+  // sound because we know propA is not also trivially false at this point.
+  if (isTriviallyFalseProposition(propB))
+    return CR::Contradicts;
 
   // Negation rule: A contradicts NOT(A).
   // If B = NOT(inner) and A implies inner, then A contradicts B.
   if (TypedAttr innerB = getNotOperand(propB))
     if (constraintImplies(propA, innerB))
-      return true;
+      return CR::Contradicts;
+  // Symmetric: if A = NOT(inner) and B implies inner, then A contradicts B.
   if (TypedAttr innerA = getNotOperand(propA))
     if (constraintImplies(propB, innerA))
-      return true;
+      return CR::Contradicts;
 
-  // AND decomposition: (X AND Y) contradicts Z if any operand contradicts Z.
-  // Example: A contradicts (NOT(A) AND B) because A contradicts NOT(A).
-  if (auto andOpA = dyn_cast<ParamOperatorAttr>(propA);
-      andOpA && andOpA.getOpcode() == POC::And)
-    for (TypedAttr operand : andOpA.getOperands())
-      if (constraintsContradict(operand, propB))
-        return true;
-  if (auto andOpB = dyn_cast<ParamOperatorAttr>(propB);
-      andOpB && andOpB.getOpcode() == POC::And)
-    for (TypedAttr operand : andOpB.getOperands())
-      if (constraintsContradict(propA, operand))
-        return true;
+  if (auto paramOpB = dyn_cast<ParamOperatorAttr>(propB)) {
+    // Weakening: A implies (A OR B) for any B.
+    if (paramOpB.getOpcode() == POC::Or) {
+      for (Attribute operand : paramOpB.getOperands())
+        if (constraintImplies(propA, cast<TypedAttr>(operand)))
+          return CR::Implies;
+    }
+    // Conjunction introduction: A implies (B AND C) iff A implies every
+    // conjunct. A contradicts (B AND C) if A contradicts any conjunct.
+    if (paramOpB.getOpcode() == POC::And) {
+      CR result = CR::Implies;
+      for (Attribute operand : paramOpB.getOperands()) {
+        CR rel = inferConstraintRelation(propA, cast<TypedAttr>(operand));
+        if (rel == CR::Contradicts)
+          return CR::Contradicts;
+        if (rel == CR::Unprovable)
+          result = CR::Unprovable;
+      }
+      return result;
+    }
+  }
 
-  return false;
+  // Conjunction elimination: (A AND B) implies B if any conjunct implies B.
+  // AND decomposition: (A AND B) contradicts Z if any conjunct contradicts Z.
+  if (auto paramOpA = dyn_cast<ParamOperatorAttr>(propA)) {
+    if (paramOpA.getOpcode() == POC::And) {
+      bool anySatisfied = false;
+      for (Attribute operand : paramOpA.getOperands()) {
+        CR rel = inferConstraintRelation(cast<TypedAttr>(operand), propB);
+        if (rel == CR::Contradicts)
+          return CR::Contradicts;
+        if (rel == CR::Implies)
+          anySatisfied = true;
+      }
+      if (anySatisfied)
+        return CR::Implies;
+    }
+  }
+
+  // Fallback: A implies B iff AND(A, B) == A.
+  TypedAttr combined = ParamOperatorAttr::get(POC::And, {propA, propB});
+  if (combined == propA)
+    return CR::Implies;
+
+  return CR::Unprovable;
 }
 
 LIT::ConformanceResult
@@ -1518,9 +1520,20 @@ LIT::evaluateConstraint(ParameterEvaluator &evaluator,
   if (isTriviallyFalseProposition(rebound))
     return ConformanceResult::No;
 
-  if (llvm::any_of(callerAssumptions, [&](ConstraintAttr c) {
-        return constraintImplies(getCanonicalAttr(c.getProposition()), rebound);
-      }))
+  bool anyImplies = false;
+  for (ConstraintAttr assumption : callerAssumptions) {
+    switch (inferConstraintRelation(
+        getCanonicalAttr(assumption.getProposition()), rebound)) {
+    case ConstraintRelation::Contradicts:
+      return ConformanceResult::No;
+    case ConstraintRelation::Implies:
+      anyImplies = true;
+      break;
+    case ConstraintRelation::Unprovable:
+      break;
+    }
+  }
+  if (anyImplies)
     return ConformanceResult::Yes;
 
   return ConformanceResult::NeedsEvidence;

@@ -37,6 +37,7 @@ struct Notdef[x: Bool]:
 
 # expected-note @below {{cannot prove constraint}}
 # expected-note @below {{constraint declared here}}
+# expected-note @below {{function declared here}}
 def requires_natural[x: Int]() where x >= 0:
     pass
 
@@ -78,12 +79,13 @@ def test_assert_injects_assumption_correctly[x: Int]():
 
 
 # COM: MOCO-3725: the else branch must not inherit the positive condition.
+# COM: The else branch gets NOT(x >= 0) as an assumption, which contradicts the
+# COM: `where x >= 0` constraint, so the call is "violated", not "unprovable".
 def test_else_branch_does_not_leak_then_assumption[x: Int]():
     comptime if x >= 0:
         requires_natural[x]()
     else:
-        # expected-error @below {{invalid call to 'requires_natural': lacking evidence to prove correctness}}
-        # expected-note @below {{provide evidence for the constraint here to aid in candidate selection}}
+        # expected-error @below {{invalid call to 'requires_natural': violated constraint}}
         requires_natural[x]()
 
 

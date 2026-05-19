@@ -357,23 +357,25 @@ private:
 };
 
 //===----------------------------------------------------------------------===//
-// Constraint Implication
+// Constraint Checking
 //===----------------------------------------------------------------------===//
 
-/// Check if propA logically implies propB.
-/// Uses canonicalization, weakening rules (A implies A OR B),
-/// conjunction elimination ((A AND B) implies A), and set-containment
-/// subsumption for TypeConformsToTraitAttr (relies on conforms_to attrs
-/// being canonicalized at construction to include ancestor traits).
-/// Returns true if propA implies propB.
-bool constraintImplies(TypedAttr propA, TypedAttr propB);
+/// The logical relationship between an assumption and a proposition.
+enum class ConstraintRelation {
+  Implies,     ///< assumption implies proposition.
+  Contradicts, ///< assumption implies NOT proposition.
+  Unprovable,  ///< neither relation is provable.
+};
 
-/// Check if propA and propB are logically contradictory.
-/// Two propositions contradict if their conjunction is necessarily false.
-/// E.g., X and NOT(X) contradict, as do (X AND Y) and NOT(X).
-/// Uses canonicalization and recursive decomposition of AND/NOT expressions.
-/// Returns true if propA and propB contradict.
-bool constraintsContradict(TypedAttr propA, TypedAttr propB);
+/// Determine how propA (an assumption) relates to propB (a proposition).
+/// Returns Implies, Contradicts, or Unprovable.
+ConstraintRelation inferConstraintRelation(TypedAttr propA, TypedAttr propB);
+
+/// Returns true if propA implies propB. Thin wrapper over
+/// inferConstraintRelation.
+inline bool constraintImplies(TypedAttr propA, TypedAttr propB) {
+  return inferConstraintRelation(propA, propB) == ConstraintRelation::Implies;
+}
 
 /// Result of checking whether a type conforms to a trait.
 /// This is a 3-state result because conditional conformances may not be
@@ -385,9 +387,8 @@ enum class ConformanceResult {
 };
 
 /// Evaluate a conditional constraint using a pre-built evaluator that already
-/// has struct parameters bound.
-/// Shared by the parser's doesNominalTypeConformTo and CheckLifetimes'
-/// destructor resolution.
+/// has struct parameters bound. Caller assumptions may prove or disprove the
+/// rebound constraint via inferConstraintRelation.
 ConformanceResult
 evaluateConstraint(ParameterEvaluator &evaluator, ConstraintAttr constraint,
                    ArrayRef<ConstraintAttr> callerAssumptions = {});

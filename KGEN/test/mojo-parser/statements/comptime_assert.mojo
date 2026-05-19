@@ -61,3 +61,35 @@ def test_assert_with_tstring_message[x: Int]():
 def test_always_true_warning():
     # CHECK-NOT: kgen.param.assert
     comptime assert 2 > 1, "this assert is useless"
+
+
+##===----------------------------------------------------------------------===##
+# comptime assert contradicts where-clause: overload disambiguation
+##===----------------------------------------------------------------------===##
+# A comptime assert that proves P should cause any overload with `where not P`
+# to be treated as violated (not merely "unprovable"), so the complementary
+# overload with `where P` is selected unambiguously.
+
+# Non-builtin function whose result is opaque to the constant folder; this
+# exercises the symbolic contradiction path rather than trivial constant folding.
+def is_prime_like(x: Int) -> Bool:
+    return x > 1
+
+
+def overloaded_on_primeness[N: Int](x: Int) -> Int where is_prime_like(N):
+    return x + N
+
+
+def overloaded_on_primeness[N: Int](x: Int) -> Int where not is_prime_like(N):
+    return x - N
+
+
+# CHECK-LABEL: lit.fn @"test_assert_contradicts_where_selects_first_overload
+def test_assert_contradicts_where_selects_first_overload[N: Int](x: Int) -> Int:
+    # Assumption: is_prime_like(N) is true.
+    comptime assert is_prime_like(N)
+    # The second overload's `where not is_prime_like(N)` is contradicted by the
+    # assumption above, so it is violated (not unprovable) and the first overload
+    # is the unique candidate.
+    # CHECK: lit.call {{.*}}@"overloaded_on_primeness
+    return overloaded_on_primeness[N](x)
