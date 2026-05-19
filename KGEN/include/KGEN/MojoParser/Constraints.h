@@ -20,6 +20,7 @@
 
 namespace M::KGEN {
 class ParameterEvaluator;
+class PogListAttr;
 
 namespace LIT {
 
@@ -30,7 +31,6 @@ using llvm::SMLoc;
 class ASTDecl;
 class DeclResolver;
 class MojoInflightDiag;
-class PogListAttr;
 class SharedState;
 
 /// Emit a note explaining why a constraint is inconclusive. The incoming

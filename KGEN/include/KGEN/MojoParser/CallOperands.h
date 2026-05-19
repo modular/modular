@@ -13,8 +13,11 @@
 
 #include "KGEN/MojoParser/ExprDest.h"
 
-namespace M::KGEN::LIT {
+namespace M::KGEN {
 class PogListAttr;
+} // namespace M::KGEN
+
+namespace M::KGEN::LIT {
 
 //===----------------------------------------------------------------------===//
 // CallSyntax

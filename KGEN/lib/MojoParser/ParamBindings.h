@@ -12,6 +12,7 @@
 
 namespace M::KGEN {
 class ParameterExprArrayAttr;
+class PogListAttr;
 } // namespace M::KGEN
 
 namespace M::KGEN::LIT {
@@ -21,7 +22,6 @@ class ExprNode;
 class FnOp;
 class FnTypeGeneratorType;
 class LITGeneratorType;
-class PogListAttr;
 class PValue;
 class StructDeclOp;
 class TypeSignatureType;

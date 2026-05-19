@@ -2507,6 +2507,197 @@ def KGEN_ConstraintAttr : KGENAttr<"Constraint", "constraint"> {
 }
 
 //===----------------------------------------------------------------------===//
+// PogMetadataAttr
+//===----------------------------------------------------------------------===//
+
+def KGEN_PogMetadataAttr : KGENAttr<"PogMetadata", "pog_metadata"> {
+  let summary = "Metadata for a single argument or parameter.";
+  let description = [{
+    The `#kgen.pog_metadata` attribute contains metadata about an argument or
+    parameter of a function, including the name, passing kind, variadicness, the
+    default value (if present) and any constraints on it.
+
+    Example:
+
+    ```mlir
+    #kgen.pog_metadata<"some_keyword_param", pos_or_kw, false, 42, {
+      <1, loc("file.mojo":10:5), "Constraint must hold">
+    }>
+    #kgen.pog_metadata<"some_variadic_param", pos_or_kw, true>
+    ```
+  }];
+
+  let parameters = (ins
+    "StringAttr":$name,
+    "PassingKind":$passingKind,
+    "VariadicKind":$variadic,
+    OptionalParameter<"TypedAttr">:$defaultValue,
+    OptionalArrayRefParameter<"ConstraintAttr">:$constraints
+  );
+
+  let assemblyFormat = [{
+    `<` $name `,` $passingKind `,` $variadic
+    (`,` `default` custom<ColonTypeParamValue>($defaultValue)^)?
+    (`,` `{` $constraints^ `}`)?
+    `>`
+  }];
+
+  let builders = [
+    AttrBuilderWithInferredContext<(ins "StringAttr":$name,
+      "PassingKind":$passingKind,
+      CArg<"VariadicKind", "VariadicKind::None">:$variadic,
+      CArg<"TypedAttr", "{}">:$defaultValue,
+      CArg<"ArrayRef<ConstraintAttr>", "{}">:$constraints
+    ), [{
+      return $_get(name.getContext(), name, passingKind, variadic, defaultValue,
+                   constraints);
+    }]>,
+    AttrBuilder<(ins), [{
+      return get(StringAttr::get($_ctxt), PassingKind::PosOrKw);
+    }]>
+  ];
+
+  let extraClassDeclaration = [{
+    bool isAnyVarArg() const { return getVariadic() != VariadicKind::None; }
+    bool isPosVarArg() const { return getVariadic() == VariadicKind::PosVarArg; }
+    bool isPack() const { return getVariadic() == VariadicKind::PackVarArg; }
+    bool isKwVarArg() const { return getVariadic() == VariadicKind::KwVarArg; }
+  }];
+}
+
+//===----------------------------------------------------------------------===//
+// PogListAttr
+//===----------------------------------------------------------------------===//
+
+def KGEN_OptionalConventionParameter : OptionalParameter<"ArgConvention"> {
+  // Use ByRefError as a sentinel, since it is obviously invalid.
+  let defaultValue = "ArgConvention::ByRefError";
+}
+
+def KGEN_PogListAttr : KGENAttr<"PogList", "pog_list",
+    [DeclareAttrInterfaceMethods<GeneratorMetadataAttrInterface>]> {
+  let summary = "Argument or parameter list metadata.";
+  let description = [{
+    The `#kgen.pog_list` attribute contains metadata about an argument or
+    parameter list of a function, including names, passing kinds, default
+    values, and information about variadic arguments.
+    The positional default values correspond to the trailing positional
+    (i.e. pos-only or pos-or-kw) args/params, and the keyword-only default
+    values similarly correspond to the trailing keyword-only args/params.
+
+    This attribute subscribes to GeneratorMetadataAttrInterface, which means it
+    gets attached to GeneratorTypes as metadata.
+
+    Example:
+
+    ```mlir
+    #kgen.pog_list<
+      ["a", "b", "c", "d"],
+      [pos, pos_or_kw, kw, kw],
+    >
+    ```
+
+    The `origVariadicConvention` indicates whether the original argument
+    convention of a VariadicList or VariadicPack, e.g. "mut *args: Int".
+
+    Optional `bodyConstraints` holds constraints that are enforced by the body
+    of the generator type that carries this list as metadata.
+  }];
+
+  let parameters = (ins
+    OptionalArrayRefParameter<"PogMetadataAttr">:$pogs,
+    OptionalArrayRefParameter<"ConstraintAttr">:$bodyConstraints,
+    KGEN_OptionalConventionParameter:$origVariadicConvention
+  );
+
+  let assemblyFormat = [{
+    `<` `[` (`]`) : ($pogs^ `]`)?
+        (`{` $bodyConstraints^ `}`)?
+        (`,` custom<ArgConvention>($origVariadicConvention)^)?
+    `>`
+  }];
+
+  let builders = [
+    AttrBuilder<(ins)>,
+    AttrBuilder<(ins "size_t":$numPogs)>,
+    AttrBuilder<(ins "size_t":$numPogs,
+                     "ArrayRef<ConstraintAttr>":$bodyConstraints)>,
+    AttrBuilder<(ins "ArrayRef<PogMetadataAttr>":$pogs)>,
+    AttrBuilder<(ins "ArrayRef<StringAttr>":$names,
+                     "ArrayRef<PassingKind>":$passingKinds)>,
+    AttrBuilder<(ins "ArrayRef<StringAttr>":$names,
+                     "ArrayRef<PassingKind>":$passingKinds,
+                     "ArrayRef<VariadicKind>":$variadics,
+                     "ArrayRef<TypedAttr>":$defaults,
+                     "std::optional<ArgConvention>":$origVariadicConvention,
+                     "ArrayRef<SmallVector<ConstraintAttr>>":$paramConstraints,
+                     "ArrayRef<ConstraintAttr>":$bodyConstraints)>
+  ];
+
+  let extraClassDeclaration = [{
+    /// Create a new argument/parameter list attr with the given array of
+    /// individual argument/parameter metadata attributes.
+    PogListAttr cloneWith(ArrayRef<PogMetadataAttr> pogs) const;
+
+    /// Return the number of parameter entries.
+    size_t size() const { return getPogs().size(); }
+
+    /// Return the variadic kind for the argument/parameter at the given index.
+    VariadicKind getVariadicKind(size_t idx) const;
+
+    /// Return true if the argument/param at `idx` is a variadic.
+    bool isAnyVarArg(size_t idx) const;
+    /// Return true if the argument/param at `idx` is a pack.
+    bool isPack(size_t idx) const;
+    /// Return true if the argument/param at `idx` is a positional variadic.
+    bool isPosVarArg(size_t idx) const;
+    /// Return true if the argument/param at `idx` is a keyword variadic.
+    bool isKwVarArg(size_t idx) const;
+    /// Return true if there is a variadic (pos or keyword) argument/param.
+    bool hasAnyVarArg() const;
+    /// Return true if there is a variadic pack argument/param.
+    bool hasPackVarArg() const;
+    /// Return true if there is a variadic keyword argument/param.
+    bool hasKwVarArg() const;
+    /// Return true if there are inferred parameters.
+    bool hasInferredParams() const;
+
+    /// Return the name for the argument/parameter at the given index.
+    StringAttr getName(size_t idx) const;
+    /// Return the passing kind for the argument/parameter at the given index.
+    PassingKind getPassingKind(size_t idx) const;
+    /// Return the default value for the argument/parameter at the given index
+    /// or null if none.
+    TypedAttr getDefault(size_t idx) const {
+      return getPogs()[idx].getDefaultValue();
+    }
+
+    /// Return the number of leading "implicit" parameters by PassingKinds.
+    size_t getNumImplicit() const;
+
+    /// Create an array of PogMetadataAttr from the given names, passing kinds,
+    /// and variadic indices.
+    static SmallVector<PogMetadataAttr> toPogs(
+      ArrayRef<StringAttr> names, ArrayRef<PassingKind> passingKinds,
+      ArrayRef<VariadicKind> variadics, ArrayRef<TypedAttr> defaults,
+      ArrayRef<SmallVector<ConstraintAttr>> paramConstraints);
+
+    /// Prepend inferred parameters: `defaults` and `paramConstraints` are either
+    /// empty or the same length as `names` (use null/empty `TypedAttr` for
+    /// slots with no default). When non-empty, defaults must already be
+    /// remapped for the prepended `ParamDeclAttr` list by the caller.
+    /// `bodyConstraints` are the constraints enforced by the body that follows
+    /// the prepended parameters.
+    PogListAttr prependAsInferredParams(
+      ArrayRef<StringAttr> names, ArrayRef<TypedAttr> defaults,
+      ArrayRef<SmallVector<ConstraintAttr>> paramConstraints = {},
+      ArrayRef<ConstraintAttr> bodyConstraints = {}) const;
+  }];
+
+  let genVerifyDecl = 1;
+}
+
+//===----------------------------------------------------------------------===//
 // LLVMBitcodeLibAttr
 //===----------------------------------------------------------------------===//
 

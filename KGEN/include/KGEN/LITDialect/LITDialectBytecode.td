@@ -27,7 +27,7 @@ def ModuleType : DialectType<(type
 
 def TypeSignatureType : DialectType<(type
   TypeArray:$paramTypes,
-  ConcreteAttribute<"PogListAttr">:$paramListAttrs
+  ConcreteAttribute<"::M::KGEN::PogListAttr">:$paramListAttrs
 )>;
 
 def StructType : DialectType<(type
@@ -130,22 +130,8 @@ def SymbolAttr : DialectAttribute<(attr
   let cBuilder = "get<$_resultType>(context, $_args)";
 }
 
-def PogMetadataAttr : DialectAttribute<(attr
-  StringAttr:$name,
-  EnumAttr<"::M::KGEN::PassingKind">:$passingKind,
-  EnumAttr<"::M::KGEN::VariadicKind">:$variadic,
-  OptionalAttribute<"TypedAttr">:$defaultValue,
-  ConcreteAttrArray<"ConstraintAttr">:$constraints
-)>;
-
-def PogListAttr : DialectAttribute<(attr
-  ConcreteAttrArray<"PogMetadataAttr">:$pogs,
-  ConcreteAttrArray<"ConstraintAttr">:$bodyConstraints,
-  EnumAttr<"ArgConvention">:$origVariadicConvention
-)>;
-
 def FnMetadataAttr : DialectAttribute<(attr
-  ConcreteAttribute<"PogListAttr">:$argListAttrs,
+  ConcreteAttribute<"::M::KGEN::PogListAttr">:$argListAttrs,
   VarInt:$numImplicitOriginDecls,
   TypedAttr:$captureOrigins,
   Bool:$isNestedOriginExclusivityCheckingDisabled
@@ -292,8 +278,6 @@ def LITDialectAttributes : DialectAttributes<"lit"> {
   let elems = [
     DenseResourceElementsArrayAttr,
     SymbolAttr,
-    PogMetadataAttr,
-    PogListAttr,
     EllipsisAttr,
     FnMetadataAttr,
     DocStringAttr,

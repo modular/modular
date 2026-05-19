@@ -154,6 +154,20 @@ def ParamDeclArrayAttr : DialectAttribute<(attr
   ConcreteAttrArray<"ParamDeclAttr">:$value
 )>;
 
+def PogMetadataAttr : DialectAttribute<(attr
+  StringAttr:$name,
+  EnumAttr<"::M::KGEN::PassingKind">:$passingKind,
+  EnumAttr<"::M::KGEN::VariadicKind">:$variadic,
+  OptionalAttribute<"TypedAttr">:$defaultValue,
+  ConcreteAttrArray<"ConstraintAttr">:$constraints
+)>;
+
+def PogListAttr : DialectAttribute<(attr
+  ConcreteAttrArray<"PogMetadataAttr">:$pogs,
+  ConcreteAttrArray<"ConstraintAttr">:$bodyConstraints,
+  EnumAttr<"ArgConvention">:$origVariadicConvention
+)>;
+
 def ParameterExprArrayAttr : DialectAttribute<(attr
   TypedAttrArray:$value
 )>;
@@ -626,7 +640,9 @@ def KGENDialectAttributes : DialectAttributes<"kgen"> {
     CastFromBuiltinAttr,
     CastToBuiltinAttr,
     SIMDAttr,
-    SIMDSplatAttr
+    SIMDSplatAttr,
+    PogMetadataAttr,
+    PogListAttr
   ];
 }
 

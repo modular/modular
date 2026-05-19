@@ -17,6 +17,7 @@
 namespace M::KGEN {
 enum class ArgConvention : uint32_t;
 class ParamDeclAttr;
+class PogListAttr;
 } // namespace M::KGEN
 
 namespace M::KGEN::LIT {
@@ -31,7 +32,6 @@ class MojoInflightDiag;
 class StructMetaType;
 class ASTType;
 class OriginSetAttr;
-class PogListAttr;
 class SharedState;
 class ExprDest;
 enum class SpecialFunctionKind : uint8_t;
