@@ -1245,6 +1245,14 @@ ErrorOr<BufferRef> ObjectCompiler::emitArchive(OwningOpRef<ModuleOp> module,
                      << ", relocModel=" << options.relocModel
                      << ", verboseOutput=" << options.verboseOutput << ')';
 
+#if MODULAR_LINUX
+  KGEN_DEBUG(0, {
+    if (auto path = llvm::sys::Process::GetEnv("MODULAR_NVPTX_COMPILER_PATH")) {
+      llvm::dbgs() << "MODULAR_NVPTX_COMPILER_PATH: " << path.value();
+    }
+  });
+#endif
+
   MLRT::AnyAsyncValueRef output = cachedTransform(
       module.release(), transformCache.copy(),
       MLRT::AsyncValueRef<Chain>::createReady(cpuDevice),
@@ -1807,6 +1815,14 @@ static AnyAsyncValueRef lowerLLVMModuleToObject(
   if (!options.emissionLinkOptions.empty())
     *keyBuf << " emissionLinkOptions = " << options.emissionLinkOptions;
 
+#if MODULAR_LINUX
+  KGEN_DEBUG(0, {
+    if (auto path = llvm::sys::Process::GetEnv("MODULAR_NVPTX_COMPILER_PATH")) {
+      llvm::dbgs() << "MODULAR_NVPTX_COMPILER_PATH: " << path.value();
+    }
+  });
+#endif
+
   size_t nonBitcodeKeySize = keyBuf->getBufferSize();
 
   llvm::WriteBitcodeToFile(inputModule, *keyBuf);
@@ -1984,14 +2000,17 @@ static AnyAsyncValueRef lowerLLVMModuleToObject(
                 loc));
           }
           // Compile PTX module
-          LLVM_DEBUG(
-              llvm::dbgs()
-              << "Using the NVPTXCompiler API to compile PTX to CUBIN.\n");
-          KGEN_DEBUG(
-              0, {
+          if (!llvm::sys::Process::GetEnv("MODULAR_NVPTX_COMPILER_PATH")) {
+            // We don't use NVPTXCompiler when MODULAR_NVPTX_COMPILER_PATH is
+            // set as a way to fallback to lower version of CUDA.
+            LLVM_DEBUG(
                 llvm::dbgs()
-                    << "Using the NVPTXCompiler API to compile PTX to CUBIN.\n";
-              });
+                << "Using the NVPTXCompiler API to compile PTX to CUBIN.\n");
+            KGEN_DEBUG(0, {
+              llvm::dbgs()
+                  << "Using the NVPTXCompiler API to compile PTX to CUBIN.\n";
+            });
+          }
           ErrorOr<BufferRef> cubinOr = (*errCD)->compileFunction(
               ptx, options.getDebugLevelString(), options.optimizationLevel);
           if (cubinOr.isError()) {
@@ -2056,7 +2075,6 @@ static AnyAsyncValueRef lowerLLVMModuleToObject(
   };
 
   auto onCacheHit = [&](BufferRef buf) { return buf.copy(); };
-
   return Cache::cachedTransform(
       MLRT::MLIRLocationDecoder::getEncodedLocation(loc), transformCache.copy(),
       MLRT::AsyncValueRef<Chain>::createReady(cpuDevice), keyBuf.copy(),
