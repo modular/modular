@@ -6,11 +6,16 @@
 
 #include "Support/BinaryID.h"
 
+#include "llvm/ADT/StringExtras.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/Format.h"
+#include "llvm/Support/Process.h"
 #include "llvm/Support/raw_ostream.h"
+#include "llvm/Support/xxhash.h"
+#include <array>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <string>
 
 #if defined(__APPLE__)
@@ -36,6 +41,19 @@ std::string M::getBinaryID() {
   std::string str;
   llvm::raw_string_ostream os(str);
 
+  std::string postfix = "";
+  // This env var is used to override the CUDA toolchain location.
+  // Compiler-generated binaries depend on the toolchain,
+  // so the binary version who impacts the whole cache is toolchain-dependent.
+  if (auto path = llvm::sys::Process::GetEnv("MODULAR_NVPTX_COMPILER_PATH")) {
+    llvm::XXH128_hash_t digest =
+        llvm::xxh3_128bits(llvm::arrayRefFromStringRef<uint8_t>(path.value()));
+    std::array<uint8_t, 16> bytes;
+    memcpy(&bytes[0], &digest.low64, 8);
+    memcpy(&bytes[8], &digest.high64, 8);
+    postfix = "-" + llvm::toHex(bytes, /*LowerCase=*/true);
+  }
+
 #if defined(__APPLE__)
   // note: This code can run in a dylib or executable, we need to fetch the
   // address of whichever one it comes from
@@ -53,7 +71,7 @@ std::string M::getBinaryID() {
       const struct uuid_command *cmd = (const struct uuid_command *)command;
       for (unsigned char i : cmd->uuid)
         os << llvm::format("%02x", i);
-      return str;
+      return str + postfix;
     } else {
       command += ((const struct load_command *)command)->cmdsize;
     }
@@ -88,7 +106,7 @@ std::string M::getBinaryID() {
         const char *s = (const char *)(note) + payload;
         for (ElfW(Word) i = 0; i < note->n_descsz; ++s, ++i)
           os << llvm::format("%02hhx", *s);
-        return str;
+        return str + postfix;
       }
 
       size_t noteEndOffset = RoundUpTo(note->n_descsz, 4);

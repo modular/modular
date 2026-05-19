@@ -11,6 +11,7 @@
 #include "Support/Compiler/BytecodeReaderWriter.h"
 #include "Support/Error.h"
 #include "Support/ErrorOr.h"
+#include "Support/HashUtils.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "Support/LLVMForwardDecls.h"
 #include "Support/LogicalResult.h"
@@ -36,8 +37,6 @@
 #include <string>
 #include <utility>
 #include <vector>
-
-#include "Support/HashUtils.h"
 
 using namespace M;
 using namespace Cache;
