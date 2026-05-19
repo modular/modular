@@ -292,28 +292,28 @@ override-dependencies = [
 
 [tool.uv.sources]
 torch = [
-  { url = "https://repo.radeon.com/rocm/manylinux/rocm-rel-7.1.1/torch-2.10.0%2Brocm7.1.1.lw.gitd9556b05-cp313-cp313-linux_x86_64.whl" , group = "amd" },
+  { url = "https://repo.radeon.com/rocm/manylinux/rocm-rel-7.2.3/torch-2.10.0%2Brocm7.2.3.lw.git1a270074-cp313-cp313-linux_x86_64.whl" , group = "amd" },
   { index = "pytorch-cpu", group = "cpu" },
   { index = "pytorch-nvidia", group = "nvidia" },
   { index = "pytorch-nvidia", group = "nvidia-vllm" },
   { index = "pytorch-nvidia", group = "nvidia-sglang" },
 ]
 torchvision = [
-  { url = "https://repo.radeon.com/rocm/manylinux/rocm-rel-7.1.1/torchvision-0.25.0%2Brocm7.1.1.git82df5f59-cp313-cp313-linux_x86_64.whl" , group = "amd" },
+  { url = "https://repo.radeon.com/rocm/manylinux/rocm-rel-7.2.3/torchvision-0.25.0%2Brocm7.2.3.git82df5f59-cp313-cp313-linux_x86_64.whl" , group = "amd" },
   { index = "pytorch-cpu", group = "cpu" },
   { index = "pytorch-nvidia", group = "nvidia" },
   { index = "pytorch-nvidia", group = "nvidia-vllm" },
   { index = "pytorch-nvidia", group = "nvidia-sglang" },
 ]
 torchaudio = [
-  { url = "https://repo.radeon.com/rocm/manylinux/rocm-rel-7.1.1/torchaudio-2.10.0%2Brocm7.1.1.git5047768f-cp313-cp313-linux_x86_64.whl" , group = "amd" },
+  { url = "https://repo.radeon.com/rocm/manylinux/rocm-rel-7.2.3/torchaudio-2.10.0%2Brocm7.2.3.git5047768f-cp313-cp313-linux_x86_64.whl" , group = "amd" },
   { index = "pytorch-cpu", group = "cpu" },
   { index = "pytorch-nvidia", group = "nvidia" },
   { index = "pytorch-nvidia", group = "nvidia-vllm" },
   { index = "pytorch-nvidia", group = "nvidia-sglang" },
 ]
 triton = [
-  { url = "https://repo.radeon.com/rocm/manylinux/rocm-rel-7.1.1/triton-3.6.0%2Brocm7.1.1.gitba5c1517-cp313-cp313-linux_x86_64.whl" , group = "amd" },
+  { url = "https://repo.radeon.com/rocm/manylinux/rocm-rel-7.2.3/triton-3.6.0%2Brocm7.2.3.git4ed88892-cp313-cp313-linux_x86_64.whl" , group = "amd" },
   { index = "pytorch-cpu", group = "cpu" },
   { index = "pytorch-nvidia", group = "nvidia" },
   { index = "pytorch-nvidia", group = "nvidia-vllm" },

@@ -64,7 +64,7 @@ def targets():
         actual = select({{
             "@@//:use_sglang_setting": ":torch@2.9.1+cu128",
             "@@//:use_vllm_setting": ":torch@2.11.0+cu128",
-            "@@//:amd_gpu": ":torch@2.10.0+rocm7.1.1.lw.gitd9556b05",
+            "@@//:amd_gpu": ":torch@2.10.0+rocm7.2.3.lw.git1a270074",
             "@@//:nvidia_gpu": ":torch@2.10.0+cu128",
             "@platforms//os:macos": ":torch@2.10.0",
             "//conditions:default": ":torch@2.10.0+cpu",
@@ -76,7 +76,7 @@ def targets():
         actual = select({{
             "@@//:use_sglang_setting": ":torchaudio@2.9.1+cu128",
             "@@//:use_vllm_setting": ":torchaudio@2.11.0+cu128",
-            "@@//:amd_gpu": ":torchaudio@2.10.0+rocm7.1.1.git5047768f",
+            "@@//:amd_gpu": ":torchaudio@2.10.0+rocm7.2.3.git5047768f",
             "@@//:nvidia_gpu": ":torchaudio@2.10.0+cu128",
             "@platforms//os:macos": ":torchaudio@2.10.0",
             "@@//:linux_aarch64": ":torchaudio@2.10.0",
@@ -90,7 +90,7 @@ def targets():
         actual = select({{
             "@@//:use_sglang_setting": ":torchvision@0.24.1+cu128",
             "@@//:use_vllm_setting": ":torchvision@0.26.0+cu128",
-            "@@//:amd_gpu": ":torchvision@0.25.0+rocm7.1.1.git82df5f59",
+            "@@//:amd_gpu": ":torchvision@0.25.0+rocm7.2.3.git82df5f59",
             "@@//:nvidia_gpu": ":torchvision@0.25.0+cu128",
             "@platforms//os:macos": ":torchvision@0.25.0",
             "@@//:linux_aarch64": ":torchvision@0.25.0+cpu",
@@ -103,7 +103,7 @@ def targets():
         testonly = True,
         actual = select({{
             "@@//:use_sglang_setting": ":triton@3.5.1",
-            "@@//:amd_gpu": ":triton@3.6.0+rocm7.1.1.gitba5c1517",
+            "@@//:amd_gpu": ":triton@3.6.0+rocm7.2.3.git4ed88892",
             "//conditions:default": ":triton@3.6.0",
         }}),
     )
