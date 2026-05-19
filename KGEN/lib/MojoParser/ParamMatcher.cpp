@@ -819,6 +819,14 @@ LogicalResult ParamMatcher::matchParams(TypedAttr actualAttr,
   if (isa<UnboundAttr>(actualAttr))
     return success();
 
+  // Match two casts if the target type aligns.
+  auto actualCast = dyn_cast<CastFromBuiltinAttr>(actualAttr);
+  auto expectedCast = dyn_cast<CastFromBuiltinAttr>(expectedAttr);
+  if (actualCast && expectedCast &&
+      isEqualCanon(actualCast.getType(), expectedCast.getType())) {
+    return matchParams(actualCast.getArg(), expectedCast.getArg());
+  }
+
   // If we are dealing with two type constants, we match their values.
   auto actualTypeConst = dyn_cast<TypeParamAttr>(actualAttr);
   auto expectedTypeConst = dyn_cast<TypeParamAttr>(expectedAttr);

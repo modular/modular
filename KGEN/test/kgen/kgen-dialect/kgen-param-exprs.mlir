@@ -4,7 +4,7 @@
 #target = #kgen.target<triple="", arch="", features="", data_layout="", simd_bit_width=128> : !kgen.target
 
 // CHECK-LABEL: kgen.generator @param_expr
-kgen.generator @param_expr<p1, p2, int1: i1, int2: i1, type: dtype, type2: dtype, mlirType: type, fn: (index) -> index>()  {
+kgen.generator @param_expr<p1, p2, int1: scalar<bool>, int2: scalar<bool>, p1_scalar : scalar<index>, p2_scalar : scalar<index>, type: dtype, type2: dtype, mlirType: type, fn: (index) -> index>()  {
   // Generic attr syntax in generic ops
   // CHECK: "test.someop"() {
   "test.someop" () {
@@ -87,12 +87,11 @@ kgen.generator @param_expr<p1, p2, int1: i1, int2: i1, type: dtype, type2: dtype
   // CHECK: = kgen.param.constant: i1 = <eq(:dtype type, f32)>
   %18 = kgen.param.constant: i1 = <in(:dtype type, [f32])>
 
-  // The only binary operation that signless i1 supports is xor.
-  // CHECK: = kgen.param.constant: i1 = <not(int1)>
-  %19 = kgen.param.constant: i1 = <xor(int1, 1)>
+  // CHECK: = kgen.param.constant: scalar<bool> = <not(int1)>
+  %19 = kgen.param.constant: scalar<bool> = <xor(int1, true)>
 
-  // CHECK: = kgen.param.constant: i1 = <not(int1)>
-  %20 = kgen.param.constant: i1 = <not(int1)>
+  // CHECK: = kgen.param.constant: scalar<bool> = <not(int1)>
+  %20 = kgen.param.constant: scalar<bool> = <not(int1)>
 
   // CHECK: = kgen.param.constant: i1 = <ne(:dtype type, f32)>
   %21 = kgen.param.constant: i1 = <xor(eq(:dtype type, f32), 1)>
@@ -145,11 +144,11 @@ kgen.generator @param_expr<p1, p2, int1: i1, int2: i1, type: dtype, type2: dtype
   // CHECK: kgen.param.constant: si64 = <5>
   kgen.param.constant : si64 = <sub(9, 4)>
 
-  // CHECK: = kgen.param.constant: i1 = <1>
-  %36 = kgen.param.constant : i1 = <eq(:i1 int1, int1)>
+  // CHECK: = kgen.param.constant: scalar<bool> = <true>
+  %36 = kgen.param.constant : scalar<bool> = <eq(:scalar<bool> int1, int1)>
 
-  // CHECK: = kgen.param.constant: i1 = <eq(:i1 int1, int2)>
-  %37 = kgen.param.constant : i1 = <eq(:i1 int1, int2)>
+  // CHECK: = kgen.param.constant: scalar<bool> = <eq(:scalar<bool> int1, int2)>
+  %37 = kgen.param.constant : scalar<bool> = <eq(:scalar<bool> int1, int2)>
 
   // CHECK: = kgen.param.constant = <apply(:(index) -> index fn, p1)>
   %38 = kgen.param.constant = <apply(:(index) -> index fn, p1)>
@@ -177,32 +176,32 @@ kgen.generator @param_expr<p1, p2, int1: i1, int2: i1, type: dtype, type2: dtype
 
   // CHECK: kgen.param.constant = <cond(int1, p1, p2)>
   kgen.param.constant = <cond(int1, p1, p2)>
-  // CHECK: kgen.param.constant: i1 = <0>
-  kgen.param.constant: i1 = <cond(int1, 0, int1)>
-  // CHECK: kgen.param.constant = <p1>
-  kgen.param.constant = <cond(ne(p1, p2), p1, p2)>
+  // CHECK: kgen.param.constant: scalar<bool> = <false>
+  kgen.param.constant: scalar<bool> = <cond(int1, false, int1)>
+  // CHECK: kgen.param.constant: scalar<index> = <p1_scalar>
+  kgen.param.constant :scalar<index> = <cond(ne(:scalar<index> p1_scalar, p2_scalar), p1_scalar, p2_scalar)>
   // CHECK: kgen.param.constant = <p1>
   kgen.param.constant = <cond(int1, p1, p1)>
-  // CHECK: constant = <p1>
-  kgen.param.constant = <cond(1, p1, p2)>
-  // CHECK: constant = <p2>
-  kgen.param.constant = <cond(0, p1, p2)>
-  // CHECK: constant = <p1>
-  kgen.param.constant = <cond(eq(p1, p2), p2, p1)>
+  // CHECK: kgen.param.constant = <p1>
+  kgen.param.constant = <cond(true, p1, p2)>
+  // CHECK: kgen.param.constant = <p2>
+  kgen.param.constant = <cond(false, p1, p2)>
+  // CHECK: kgen.param.constant: scalar<index> = <p1_scalar>
+  kgen.param.constant :scalar<index> = <cond(eq(:scalar<index> p1_scalar, p2_scalar), p2_scalar, p1_scalar)>
 
-  // CHECK: constant = <cond(eq(p1, 1), 4, 5)>
-  kgen.param.constant = <cond(eq(p1, 1), add(p1, 3), 5)>
+  // CHECK: kgen.param.constant: scalar<index> = <cond(eq(:scalar<index> p1_scalar, 1), 4, 5)>
+  kgen.param.constant :scalar<index> = <cond(eq(:scalar<index> p1_scalar, 1), add(:scalar<index> p1_scalar, 3), 5)>
 
   // COM: Make sure both internal conditionals substitute into add(p1, p2)
-  // CHECK: constant = <cond(eq(p1, 1), 4, 5)>
-  kgen.param.constant = <cond(eq(p1, 1), cond(eq(p2, 3), add(p1, p2), 4), 5)>
+  // CHECK: kgen.param.constant: scalar<index> = <cond(eq(:scalar<index> p1_scalar, 1), 4, 5)>
+  kgen.param.constant :scalar<index> = <cond(eq(:scalar<index> p1_scalar, 1), cond(eq(:scalar<index> p2_scalar, 3), add(:scalar<index> p1_scalar, p2_scalar), 4), 5)>
 
-  // CHECK: constant = <1>
-  kgen.param.constant = <cond(eq(p1, 1), cond(eq(p2, 2), cond(int1, p1, 1), 1), 1)>
+  // CHECK: kgen.param.constant: scalar<index> = <1>
+  kgen.param.constant :scalar<index> = <cond(eq(:scalar<index> p1_scalar, 1), cond(eq(:scalar<index> p2_scalar, 2), cond(int1, p1_scalar, 1), 1), 1)>
 
   // COM: This hits the depth limit of recursion (3 ops deep max) but would be <1> if raised
-  // CHECK: constant = <cond(eq(p1, 1), cond(eq(p2, 2), cond(int1, cond(not(int2), 0, 1), 1), 1), 1)>
-  kgen.param.constant = <cond(eq(p1, 1), cond(eq(p2, 2), cond(int1, cond(not(int2), 0, 1), 1), 1), 1)>
+  // CHECK: kgen.param.constant: scalar<index> = <cond(eq(:scalar<index> p1_scalar, 1), cond(eq(:scalar<index> p2_scalar, 2), cond(int1, cond(not(int2), 0, 1), 1), 1), 1)>
+  kgen.param.constant:scalar<index> = <cond(eq(:scalar<index> p1_scalar, 1), cond(eq(:scalar<index> p2_scalar, 2), cond(int1, cond(not(int2), 0, 1), 1), 1), 1)>
 
   // CHECK: constant: scalar<index> = <cond(int1, 1, 2)>
   kgen.param.constant: scalar<index> = <cond(int1, #kgen.simd<1>, #kgen.simd<2>)>

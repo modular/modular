@@ -253,7 +253,7 @@ kgen.generator @witnessed_mem_del(%arg0: !kgen.pointer<struct<(index)>> owned_in
   a = 5 : index,
   // CHECK: constraint1 = #kgen.constraint<true, #[[LOC_C1]]>
   constraint1 = #kgen.constraint<true, loc("test.mojo":10:5)>,
-  // CHECK-SAME: constraint2 = #kgen.constraint<{{.*}}xor{{.*}}lt{{.*}}a{{.*}}4{{.*}}, #[[LOC_C2]]>
+  // CHECK-SAME: constraint2 = #kgen.constraint<ge({{.*}}#kgen.param.decl.ref<"a">{{.*}}4{{.*}}, #[[LOC_C2]]>
   constraint2 = #kgen.constraint<#kgen.param.expr<xor, #kgen.cast_from_builtin<#kgen.param.expr<lt, #kgen.param.decl.ref<"a"> : index, 4 : index> : i1> : !kgen.scalar<bool>, #kgen<simd true> : !kgen.scalar<bool>> : !kgen.scalar<bool>, loc("test.mojo":15:10)>,
   // CHECK-SAME: #kgen.constraint<conforms_to(:type array<1, i1>, [@trait_1, @trait_2]), #[[LOC_C3]]>
   constraint3 = #kgen.constraint<conforms_to(:type array<1, i1>, [@trait_1, @trait_2]), loc("test.mojo":20:15)>

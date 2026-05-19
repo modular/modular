@@ -591,7 +591,7 @@ def test_if_cond(var cond: Bool, memCond: MemBoolish):
 
 # CHECK-LABEL: lit.fn @"test_param_if_cond{{.*}}"<cond: !Bool>
 def test_param_if_cond[cond: Bool]() -> Int:
-  # CHECK-NEXT: lit.alias.decl [[I_ALIAS:.*]]: !Int = <cond(#lit.struct.extract<:!Bool cond, "_mlir_value">, {2}, {3})>
+  # CHECK-NEXT: lit.alias.decl [[I_ALIAS:.*]]: !Int = <cond(#kgen.cast_from_builtin<#lit.struct.extract<:!Bool cond, "_mlir_value"> : i1>, {2}, {3})>
   comptime i = 2 if cond else 3
 
   # CHECK-NEXT: lit.alias.decl *"j{{.*}} = <cond({{.*}}#lit.struct.extract<:!Bool cond, "_mlir_value">

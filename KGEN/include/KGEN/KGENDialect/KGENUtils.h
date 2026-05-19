@@ -537,6 +537,20 @@ printSimpleParamAttrValues(ArrayRef<ParamDeclAttr> params,
 // SIMD Utilities
 //===----------------------------------------------------------------------===//
 
+template <uint8_t dtype>
+bool isSIMDOf(Type type) {
+  if (auto simdType = sugarDynCast<SIMDType>(type))
+    return simdType.getResolvedDType() == dtype;
+  return false;
+}
+
+template <uint8_t dtype>
+bool isScalarOf(Type type) {
+  if (auto simdType = sugarDynCast<SIMDType>(type))
+    return simdType.getResolvedSize() == 1 && isSIMDOf<dtype>(simdType);
+  return false;
+}
+
 /// Verify a conversion between a SIMD type and an MLIR builtin type.
 /// Conversions are assumed to be bi-directional. In error messages, the
 /// direction of the conversion is controlled by the `fromSimd` parameter.

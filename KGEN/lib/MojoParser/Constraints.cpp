@@ -186,10 +186,14 @@ TypedAttr LIT::deShortCircuitCond(TypedAttr value) {
                                            extractAttr.getType());
   }
 
+  // We need to make `Bool` holding a `scalar<bool>` field to get rid of the
+  // cast, otherwise the struct_extract on a `Bool`-value always returns an i1
+  // value.
+  TypedAttr i1Cond = CastToBuiltinAttr::get(condOrig);
   POC opcode;
-  if (condOrig == falseVal) {
+  if (condOrig == falseVal || i1Cond == falseVal) {
     opcode = POC::And;
-  } else if (condOrig == trueVal) {
+  } else if (condOrig == trueVal || i1Cond == trueVal) {
     opcode = POC::Or;
   } else {
     // Not a pattern we recognize. Return unchanged.

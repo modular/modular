@@ -90,7 +90,7 @@ kgen.generator @bad() -> index {
 
 // CHECK-LABEL: kgen.generator @nohoist_cond
 kgen.generator @nohoist_cond() {
-  kgen.param.declare cond: i1 = <0>
+  kgen.param.declare cond: !kgen.scalar<bool> = <false>
   // CHECK-NOT: kgen.param.apply
   kgen.param.declare value = <cond(cond, apply(:() -> index @bad), 1)>
   kgen.return
