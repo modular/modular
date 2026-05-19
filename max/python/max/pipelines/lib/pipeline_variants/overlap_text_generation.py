@@ -1407,6 +1407,24 @@ class RealizeFutureTokenProcessor:
         return
 
 
+@dataclass
+class _CallbackInputs:
+    """Numpy views into the persistent pinned buffers for the bitmask callback.
+
+    Captured before enqueuing the async bitmask CUDA host callback.
+
+    The closure binds these views by reference; the callback body reads/writes
+    through them when it eventually fires on the CUDA driver thread.
+    """
+
+    bonus_tokens_np: npt.NDArray[np.int64]
+    num_accepted_np: npt.NDArray[np.int64]
+    accepted_draft_tokens_np: npt.NDArray[np.int64]
+    next_draft_tokens_np: npt.NDArray[np.int64]
+    bitmask_pinned_np: npt.NDArray[np.int32]
+    bitmask_bool_pinned_np: npt.NDArray[np.bool_]
+
+
 @final
 class OverlapTextGenerationPipeline(
     TextGenerationPipelineInterface[TextGenerationContextType],
@@ -2522,6 +2540,74 @@ class OverlapTextGenerationPipeline(
                 bitmask_device.inplace_copy_from(bitmask_host)
                 return bitmask_device
 
+    def _capture_callback_inputs(
+        self,
+        spec_state: SpecDecodeState,
+        batch_size: int,
+        num_positions: int,
+        num_draft_tokens_to_verify: int,
+        next_draft_k: int,
+    ) -> _CallbackInputs:
+        """Capture numpy views into the persistent pinned buffers.
+
+        Used by the async bitmask callback closure.
+
+        Must be called BEFORE the callback is enqueued so the closure binds
+        live views into persistent buffers. DevicePinnedBuffer.to_numpy()
+        does not synchronize (documented). Using Buffer.to_numpy() on a
+        view/slice would go through the base Buffer path, which may
+        synchronize before reading device-associated memory.
+
+        The D2H copies into these persistent buffers were enqueued earlier
+        on the same CUDA stream; stream ordering guarantees the data is
+        valid when the callback fires.
+        """
+        with Tracer("convert_buffers_to_np_views"):
+            assert spec_state.persistent_bonus_tokens_pinned is not None
+            assert spec_state.persistent_num_accepted_pinned is not None
+            assert (
+                spec_state.persistent_accepted_draft_tokens_pinned is not None
+            )
+            assert spec_state.persistent_next_draft_tokens_pinned is not None
+            assert spec_state.persistent_bitmask_pinned is not None
+            assert spec_state.persistent_bitmask_bool_pinned is not None
+            bonus_tokens_np = (
+                spec_state.persistent_bonus_tokens_pinned.to_numpy()[
+                    :batch_size
+                ]
+            )
+            num_accepted_np = (
+                spec_state.persistent_num_accepted_pinned.to_numpy()[
+                    :batch_size
+                ]
+            )
+            accepted_draft_tokens_np = (
+                spec_state.persistent_accepted_draft_tokens_pinned.to_numpy()[
+                    :batch_size, :num_draft_tokens_to_verify
+                ]
+            )
+            next_draft_tokens_np = (
+                spec_state.persistent_next_draft_tokens_pinned.to_numpy()[
+                    :batch_size, :next_draft_k
+                ]
+            )
+            bitmask_pinned_np = spec_state.persistent_bitmask_pinned.to_numpy()[
+                :batch_size, :num_positions, :
+            ]
+            bitmask_bool_pinned_np = (
+                spec_state.persistent_bitmask_bool_pinned.to_numpy()[
+                    :batch_size, :num_positions, :
+                ]
+            )
+        return _CallbackInputs(
+            bonus_tokens_np=bonus_tokens_np,
+            num_accepted_np=num_accepted_np,
+            accepted_draft_tokens_np=accepted_draft_tokens_np,
+            next_draft_tokens_np=next_draft_tokens_np,
+            bitmask_pinned_np=bitmask_pinned_np,
+            bitmask_bool_pinned_np=bitmask_bool_pinned_np,
+        )
+
     def _build_bitmask_callback(
         self,
         context_batch: list[TextGenerationContextType],
@@ -2643,53 +2729,25 @@ class OverlapTextGenerationPipeline(
         if not verify_draft_tokens:
             return False
 
-        # Capture numpy views directly from the DevicePinnedBuffer objects.
-        # DevicePinnedBuffer.to_numpy() does not synchronize (documented). Using
-        # Buffer.to_numpy() on a view/slice goes through the base Buffer path,
-        # which may synchronize before reading device-associated memory.
-        # The D2H copies into these buffers were enqueued earlier on the same CUDA
-        # stream; stream ordering guarantees the data is valid when the callback fires.
         batch_size = len(context_batch)
         num_positions = next_draft_k + 1
-        with Tracer("convert_buffers_to_np_views"):
-            next_tokens_np = (
-                spec_state.persistent_bonus_tokens_pinned.to_numpy()[
-                    :batch_size
-                ]
-            )
-            num_accepted_np = (
-                spec_state.persistent_num_accepted_pinned.to_numpy()[
-                    :batch_size
-                ]
-            )
-            draft_tokens_np = (
-                spec_state.persistent_accepted_draft_tokens_pinned.to_numpy()[
-                    :batch_size, :num_draft_tokens_to_verify
-                ]
-            )
-            next_draft_tokens_np = (
-                spec_state.persistent_next_draft_tokens_pinned.to_numpy()[
-                    :batch_size, :next_draft_k
-                ]
-            )
-            bitmask_pinned_np = spec_state.persistent_bitmask_pinned.to_numpy()
-            bitmask_bool_pinned_np = (
-                spec_state.persistent_bitmask_bool_pinned.to_numpy()[
-                    :batch_size, :num_positions, :
-                ]
-            )
+        callback_inputs = self._capture_callback_inputs(
+            spec_state=spec_state,
+            batch_size=batch_size,
+            num_positions=num_positions,
+            num_draft_tokens_to_verify=num_draft_tokens_to_verify,
+            next_draft_k=next_draft_k,
+        )
 
         with Tracer("build_bitmask_callback"):
             callback = self._build_bitmask_callback(
                 context_batch=context_batch,
-                bonus_tokens_np=next_tokens_np,
-                num_accepted_np=num_accepted_np,
-                accepted_draft_tokens_np=draft_tokens_np,
-                next_draft_tokens_np=next_draft_tokens_np,
-                bitmask_pinned_np=bitmask_pinned_np[
-                    :batch_size, :num_positions, :
-                ],
-                bitmask_bool_pinned_np=bitmask_bool_pinned_np,
+                bonus_tokens_np=callback_inputs.bonus_tokens_np,
+                num_accepted_np=callback_inputs.num_accepted_np,
+                accepted_draft_tokens_np=callback_inputs.accepted_draft_tokens_np,
+                next_draft_tokens_np=callback_inputs.next_draft_tokens_np,
+                bitmask_pinned_np=callback_inputs.bitmask_pinned_np,
+                bitmask_bool_pinned_np=callback_inputs.bitmask_bool_pinned_np,
             )
 
         device = self._devices[0]
