@@ -306,6 +306,13 @@ private:
   /// have any number of highlighted ranges and fixit hints.
   struct Message;
 
+  /// Format a diagnostic message into an llvm::SMDiagnostic ready for printing.
+  /// Note; the diagnostic text is provided as `text`, and not taken from
+  /// `message.text`.
+  llvm::SMDiagnostic getAsSMDiagnostic(const Message &message,
+                                       const std::string &text,
+                                       SourceMgr::DiagKind kind);
+
   // We store the primary diagnostic and any notes in this vector.  The primary
   // diagnostic is always first, and always present.  This uses a std::vector
   // so Message can be defined out of line, and to make the move operation
