@@ -924,7 +924,7 @@ static ParseResult parseOperatorOperands(AsmParser &p, uint32_t opcode,
   }
   case (uint32_t)POC::Cond:
     if (parseParamValue(p, operands.emplace_back(),
-                        IntegerType::get(p.getContext(), 1)) ||
+                        SIMDType::get(p.getContext(), 1, KGENDType::kBool)) ||
         p.parseComma() || parseParamValue(p, operands.emplace_back(), type) ||
         p.parseComma() || parseParamValue(p, operands.emplace_back(), type))
       return failure();
@@ -950,6 +950,10 @@ static ParseResult parseOperatorOperands(AsmParser &p, uint32_t opcode,
                            StringType::get(type.getContext()));
   }
   llvm_unreachable("unknown operator");
+}
+
+static bool isI1OrSIMDOfBool(Type type) {
+  return type.isSignlessInteger(1) || isSIMDOf<KGENDType::kBool>(type);
 }
 
 static uint32_t getOpcodeFromString(StringRef keyword) {
@@ -1203,8 +1207,10 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type,
       needsInvert = true;
       break;
     case (uint32_t)POCAliases::NOT:
-      if (operands.size() != 1 || !operands[0].getType().isSignlessInteger(1))
-        return p.emitError(loc, "not operator returns a single i1 operand");
+      if (operands.size() != 1 || !isI1OrSIMDOfBool(operands[0].getType()))
+        return p.emitError(
+            loc,
+            "not operator returns a single operand of `i1` or `simd<bool>`");
       value = ParamOperatorAttr::getNot(operands[0]);
       return success();
     }
@@ -1405,9 +1411,14 @@ void KGEN::printParamValue(AsmPrinter &p, TypedAttr value, Type type) {
       p << ')';
     };
 
+    auto isI1OrSIMDBoolConstant = [&](TypedAttr expr) {
+      return isI1OrSIMDOfBool(expr.getType()) &&
+             isa<IntegerAttr, SIMDAttr>(expr);
+    };
+
     // If this is a inverted boolean sugar, handle it.
-    if (expr.getOpcode() == POC::Xor && expr.getType().isSignlessInteger(1) &&
-        expr.getNumOperands() == 2 && isa<IntegerAttr>(expr.getOperand(1))) {
+    if (expr.getOpcode() == POC::Xor && expr.getNumOperands() == 2 &&
+        isI1OrSIMDBoolConstant(expr.getOperand(1))) {
       if (auto invertedExpr = dyn_cast<ParamOperatorAttr>(expr.getOperand(0))) {
         if (invertedExpr.getOpcode() == POC::EQ) {
           expr = invertedExpr;
@@ -2549,6 +2560,9 @@ static ArrayElementsAttr convertSIMDToVectorAttr(SIMDAttr simd, VectorType type,
 }
 
 OpFoldResult KGEN::foldCastToBuiltin(TypedAttr input, Type resultType) {
+  // Look through sugar to fold.
+  input = SugarAttr::strip(input);
+
   if (auto cast = sugarDynCastIfPresent<CastFromBuiltinAttr>(input))
     if (cast.getArg().getType() == resultType)
       return cast.getArg();
@@ -2593,6 +2607,8 @@ OpFoldResult KGEN::foldCastToBuiltin(TypedAttr input, Type resultType) {
 }
 
 OpFoldResult KGEN::foldCastFromBuiltin(TypedAttr val, SIMDType resultType) {
+  // Look through sugar to fold.
+  val = SugarAttr::strip(val);
   if (auto cast = sugarDynCastIfPresent<CastToBuiltinAttr>(val))
     if (cast.getArg().getType() == resultType)
       return cast.getArg();

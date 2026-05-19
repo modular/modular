@@ -912,7 +912,8 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
           [&] { os << " or "; });
       return;
     case POC::Cond: {
-      auto cond = operands[0];
+      // TODO: Cast won't be needed after making Bool holding a `scalar<bool>`.
+      auto cond = CastToBuiltinAttr::get(operands[0]);
       // Strip _mlir_value extraction for pattern matching.
       if (auto extract = dyn_cast<LIT::StructExtractAttr>(cond))
         cond = extract.getStructValue();

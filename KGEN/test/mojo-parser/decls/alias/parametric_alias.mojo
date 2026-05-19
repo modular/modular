@@ -35,7 +35,7 @@ comptime myDependentDefaultAdd[x: Int, y: Int = x] = x + y
 comptime myIntFMA[x: Int, y: Int, z: Int] = x * y + z
 
 # CHECK: lit.alias.decl *"myTypeSelector`0x7": !lit.generator<<"cond": !Bool, "t_type": !AnyType, "f_type": !AnyType>!AnyType> = <#kgen.gen<
-# CHECK-SAME: cond(#lit.struct.extract<:!Bool *(0,0), "_mlir_value">, *(0,1), *(0,2))>>
+# CHECK-SAME: cond(#kgen.cast_from_builtin<#lit.struct.extract<:!Bool *(0,0), "_mlir_value"> : i1>, *(0,1), *(0,2))>>
 comptime myTypeSelector[
     cond: Bool, t_type: AnyType, f_type: AnyType
 ] = t_type if cond else f_type
@@ -161,7 +161,7 @@ def nested_generators():
     comptime mySix = myRenamedCurriedIntAdd[2][4]
 
 
-# CHECK: lit.fn @"dependent_function_type[::Bool]()"<cond: !Bool>[mut *"__result__`"](?, %__result__: !lit.ref<:!AnyType cond(#lit.struct.extract<:!Bool cond, "_mlir_value">, !Int, !FloatDyn), mut *"__result__`"> byref_result)
+# CHECK: lit.fn @"dependent_function_type[::Bool]()"<cond: !Bool>[mut *"__result__`"](?, %__result__: !lit.ref<:!AnyType cond(#kgen.cast_from_builtin<#lit.struct.extract<:!Bool cond, "_mlir_value"> : i1>, !Int, !FloatDyn), mut *"__result__`"> byref_result)
 def dependent_function_type[
     cond: Bool
 ]() -> myTypeSelector[cond, Int, FloatDyn]:

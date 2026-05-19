@@ -1051,8 +1051,8 @@ kgen.generator @add_param<a : index>(%v : index) -> index {
 // CHECK-PARAMINTERP-NOT: kgen.func @"add_param,a=4"
 // CHECK-LABEL: kgen.func @param_cond
 kgen.generator @param_cond() -> () {
-  kgen.param.declare cond_false : i1 = <0>
-  kgen.param.declare cond_true : i1 = <1>
+  kgen.param.declare cond_false : !kgen.scalar<bool> = <false>
+  kgen.param.declare cond_true : !kgen.scalar<bool> = <true>
 
   // COM: This should NOT evaluate @add_param<2> during parameter evaluation
   // CHECK-PARAMINTERP:  kgen.param.constant = <1>
@@ -1540,7 +1540,7 @@ kgen.generator export @entry() {
 
 // During elaboration of this example, the type:
 //
-// <index>(!pop.array<cond(apply(:(index, index) -> i1 @eq, *(0,0), 0), 1, *(0,0)), index>) -> ()
+// <index>(!pop.array<cond(apply(:(index, index) -> !kgen.scalar<bool> @eq, *(0,0), 0), 1, *(0,0)), index>) -> ()
 //
 // appears in the IR. This type is actually concrete from the perspective of the
 // current frame, because it has no parameter expressions. It contains parameter
@@ -1553,19 +1553,20 @@ kgen.generator @init<T: type>(%arg0: !kgen.param<T>) -> !kgen.struct<()> {
   kgen.return %struct : !kgen.struct<()>
 }
 
-kgen.generator @eq(%arg0: index, %arg1: index) -> i1 {
-  %0 = index.cmp eq(%arg0, %arg1)
-  kgen.return %0 : i1
+kgen.generator @eq(%arg0: index, %arg1: index) -> !kgen.scalar<bool> {
+  %cmp = index.cmp eq(%arg0, %arg1)
+  %0 = pop.cast_from_builtin %cmp : i1 to !kgen.scalar<bool>
+  kgen.return %0 : !kgen.scalar<bool>
 }
 
-kgen.generator @make<x>(%arg0: !pop.array<cond(apply(:(index, index) -> i1 @eq, x, 0), 1, x), index>) {
+kgen.generator @make<x>(%arg0: !pop.array<cond(apply(:(index, index) -> !kgen.scalar<bool> @eq, x, 0), 1, x), index>) {
   kgen.return
 }
 
 // CHECK-LABEL: kgen.func export @top
 kgen.generator export @top() {
   // CHECK-NEXT: constant: struct<()> = <{ }>
-  kgen.param.apply lifted = [(!kgen.generator<<index>(!pop.array<cond(apply(:(index, index) -> i1 @eq, *(0,0), 0), 1, *(0,0)), index>) -> ()>) -> !kgen.struct<()>: @init<:type <index>(!pop.array<cond(apply(:(index, index) -> i1 @eq, *(0,0), 0), 1, *(0,0)), index>) -> ()>](@make)
+  kgen.param.apply lifted = [(!kgen.generator<<index>(!pop.array<cond(apply(:(index, index) -> !kgen.scalar<bool> @eq, *(0,0), 0), 1, *(0,0)), index>) -> ()>) -> !kgen.struct<()>: @init<:type <index>(!pop.array<cond(apply(:(index, index) -> !kgen.scalar<bool> @eq, *(0,0), 0), 1, *(0,0)), index>) -> ()>](@make)
   kgen.param.constant: struct<()> = <lifted>
   kgen.return
 }
@@ -1684,13 +1685,13 @@ kgen.generator @no_impl() -> index {
   kgen.return %index0 : index
 }
 
-kgen.generator @make_true() -> i1 {
-  %0 = kgen.param.constant: i1 = <1>
-  kgen.return %0 : i1
+kgen.generator @make_true() -> !kgen.scalar<bool> {
+  %0 = kgen.param.constant: scalar<bool> = <true>
+  kgen.return %0 : !kgen.scalar<bool>
 }
 
 kgen.generator export @conditional_alias() {
-  kgen.param.declare value = <cond(apply(:() -> i1 @make_true), 1, apply(:() -> index @no_impl))>
+  kgen.param.declare value = <cond(apply(:() -> !kgen.scalar<bool> @make_true), 1, apply(:() -> index @no_impl))>
   kgen.return
 }
 

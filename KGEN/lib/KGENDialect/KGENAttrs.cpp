@@ -2128,8 +2128,9 @@ LogicalResult ParamOperatorAttr::verify(
   case POC::Cond:
     if (operands.size() != 3)
       return emitError() << "conditional expressions must have three operands";
-    if (!operands[0].getType().isInteger(1))
-      return emitError() << "conditional expression operand 0 must be i1";
+    if (!isScalarOf<KGENDType::kBool>(operands[0].getType()))
+      return emitError() << "conditional expression operand 0 must be a "
+                         << "`scalar<bool>`";
     if (!isEqualCanon(operands[1].getType(), operands[2].getType()))
       return emitError() << "conditional expression operands 1 and 2 must have "
                             "the same type";
@@ -3478,7 +3479,7 @@ static TypedAttr simplifyRebind(ArrayRef<TypedAttr> operands, Type resultType) {
 // This substitution and walking is done in a recursive manner. The depth
 // of this recursion is bound by the initial `depth_left` parameter.
 static TypedAttr cloneOperandsWithSubstitution(
-    TypedAttr op, const DenseMap<TypedAttr, IntegerAttr> &substitutions,
+    TypedAttr op, const DenseMap<TypedAttr, TypedAttr> &substitutions,
     size_t depth_left) {
   if (substitutions.contains(op))
     return substitutions.at(op);
@@ -3509,7 +3510,16 @@ static TypedAttr cloneOperandsWithSubstitution(
   return result;
 }
 
-static TypedAttr simplifyCond(ArrayRef<TypedAttr> operands) {
+static TypedAttr simplifyCond(MutableArrayRef<TypedAttr> operands) {
+  // FIXME: make sure the cond operand is passed in as scalar<bool> when it is
+  // created instead of implicit convert here!!!
+  if (!sugarIsa<SIMDType>(operands[0].getType()))
+    operands[0] = CastFromBuiltinAttr::get(operands[0]);
+
+  // An ill-formed cond expression, refuse to fold.
+  if (!isScalarOf<KGENDType::kBool>(operands[0].getType()))
+    return {};
+
   TypedAttr condAttr = operands[0];
   TypedAttr thenAttr = operands[1];
   TypedAttr elseAttr = operands[2];
@@ -3521,8 +3531,8 @@ static TypedAttr simplifyCond(ArrayRef<TypedAttr> operands) {
   // But A != B is represented as Xor(A == B, true)
   if (auto xorAttr = dyn_castPE(POC::Xor, condAttr)) {
     auto eqAttr = dyn_castPE(POC::EQ, xorAttr.getOperand(0));
-    auto intAttr = sugarDynCast<IntegerAttr>(xorAttr.getOperand(1));
-    if (eqAttr && intAttr && intAttr.getValue().isOne() &&
+    auto simdAttr = sugarDynCast<SIMDAttr>(xorAttr.getOperand(1));
+    if (eqAttr && simdAttr && isAllIntLikeOne(simdAttr) &&
         eqAttr.getOperand(0) == thenAttr && eqAttr.getOperand(1) == elseAttr)
       return thenAttr;
   }
@@ -3532,18 +3542,17 @@ static TypedAttr simplifyCond(ArrayRef<TypedAttr> operands) {
     auto lhsEq = eqAttr.getOperand(0);
     auto rhsEq = eqAttr.getOperand(1);
     if (thenAttr == rhsEq && elseAttr == lhsEq)
-      return lhsEq;
+      return elseAttr;
 
-    auto rhsEqAsIntegral = sugarDynCast<IntegerAttr>(rhsEq);
-    auto lhsEqAsIntegral = sugarDynCast<IntegerAttr>(lhsEq);
+    bool rhsEqAsCst = sugarIsa<SIMDAttr>(rhsEq);
+    bool lhsEqAsCst = sugarIsa<SIMDAttr>(lhsEq);
 
     // If in form cond(A == 5, f(A, ...), ...)
     // Substitute all occurrences of A in the then branch with '5' up to
     // `MAX_RECURSION_DEPTH`
     const static size_t maxRecursionDepth = 3;
-    if (rhsEqAsIntegral && !lhsEqAsIntegral) {
-      DenseMap<TypedAttr, IntegerAttr> substitutions = {
-          {lhsEq, rhsEqAsIntegral}};
+    if (rhsEqAsCst && !lhsEqAsCst) {
+      DenseMap<TypedAttr, TypedAttr> substitutions = {{lhsEq, rhsEq}};
       TypedAttr newThenAttr = cloneOperandsWithSubstitution(
           thenAttr, substitutions, maxRecursionDepth);
       if (newThenAttr != thenAttr)
@@ -3553,16 +3562,16 @@ static TypedAttr simplifyCond(ArrayRef<TypedAttr> operands) {
   }
 
   // cond(X, false, X) == X
-  if (auto then = sugarDynCast<IntegerAttr>(thenAttr))
-    if (then.getValue().isZero() && condAttr == elseAttr)
+  if (auto then = sugarDynCast<SIMDAttr>(thenAttr))
+    if (isAllIntLikeZero(then) && condAttr == elseAttr)
       return thenAttr;
 
-  auto c = sugarDynCast<IntegerAttr>(condAttr);
+  auto c = sugarDynCast<SIMDAttr>(condAttr);
   if (!c)
     return {};
-  if (c.getValue().isOne())
+  if (isAllIntLikeOne(c))
     return thenAttr;
-  if (c.getValue().isZero())
+  if (isAllIntLikeZero(c))
     return elseAttr;
   return {};
 }
@@ -3743,6 +3752,14 @@ static TypedAttr getArithParamOperator(MLIRContext *ctx, POC opcode,
           return operand;
         return CastFromBuiltinAttr::get(operand);
       });
+
+#if 1
+  // FIXME: this won't be needed after fully migrated, right now, it is possible
+  // for GC to emit exprs like `eq si64, si64 -> scalar<bool>`. In those case,
+  // we don't need to convert the result back to builtin type (yet we still need
+  // to canonicalize operands to simd form above).
+  needSIMDConv = needSIMDConv && !sugarIsa<SIMDType>(origResultType);
+#endif
 
   SIMDType resultSIMDType = getEquivalentSIMDType(origResultType);
   if (!resultSIMDType)
