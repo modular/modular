@@ -90,7 +90,7 @@ def _make_layer(
 
 def _build_kv_collection(
     kv_params: KVCacheParams,
-    batch_size: int,
+    batch_size: int | str,
     n_pages: int,
     devices: Sequence[Device],
 ) -> PagedCacheValues:
@@ -103,8 +103,8 @@ def _build_kv_collection(
         "steps_remaining": 2,
     }
 
-    def resolve_shape(shape: Shape) -> list[int]:
-        result = []
+    def resolve_shape(shape: Shape) -> list[int | str]:
+        result: list[int | str] = []
         for dim in shape:
             if isinstance(dim, SymbolicDim):
                 key = next(k for k in sym_values if dim.name.endswith(k))
@@ -257,4 +257,41 @@ def test_data_parallel_layer(
         out = layer(x, kv_collection, freqs_cis, input_row_offsets)
 
     assert list(out.shape) == [total_seq_len, _HIDDEN_SIZE]
+    assert out.mapping.mesh == mesh
+
+
+@pytest.mark.parametrize("q_lora_rank", [None, _Q_LORA_RANK])
+def test_data_parallel_layer_symbolic(
+    mock_accelerator: MagicMock, q_lora_rank: int | None
+) -> None:
+    """Traces the layer in a lazy context and verifies output shape and device."""
+    max_seq_len = 6
+    n_pages = 4
+
+    with F.lazy():
+        devices = [mock_accelerator(0), mock_accelerator(1)]
+        kv_params = _make_kv_params(devices)
+
+        mesh = DeviceMesh(tuple(devices), (len(devices),), (DP,))
+        replicated_mapping = PlacementMapping(mesh, (Replicated(),))
+        data_parallel_mapping = PlacementMapping(mesh, (Sharded(0),))
+
+        layer = _make_layer(kv_params, q_lora_rank=q_lora_rank)
+
+        x = Tensor.zeros(
+            ["dynamic_size", _HIDDEN_SIZE], device=data_parallel_mapping
+        )
+        freqs_cis = Tensor.zeros(
+            [max_seq_len, _QK_ROPE_HEAD_DIM], device=replicated_mapping
+        )
+        input_row_offsets = Tensor.zeros(
+            ["dynamic_batch"], dtype=DType.uint32, device=data_parallel_mapping
+        )
+        kv_collection = _build_kv_collection(
+            kv_params, "dynamic_batch", n_pages, devices
+        )
+
+        out = layer(x, kv_collection, freqs_cis, input_row_offsets)
+
+    assert list(out.shape) == ["dynamic_size", _HIDDEN_SIZE]
     assert out.mapping.mesh == mesh
