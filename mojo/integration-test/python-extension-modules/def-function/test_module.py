@@ -208,3 +208,21 @@ def test_sum_pos_arg_and_kwargs() -> None:
 
     result = def_function.sum_pos_arg_and_kwargs(100)
     assert result == 100
+
+
+def test_fastcall_concat_direct_overload() -> None:
+    # Exercises the def_py_c_function(PyCFunctionFast, ...) overload: a
+    # hand-written METH_FASTCALL wrapper registered without the
+    # def_function generic dispatch in between. CPython routes the
+    # positional args as a borrowed `PyObject *const *` array plus nargs;
+    # an incorrect calling convention here would corrupt the stack rather
+    # than degrade gracefully, so this end-to-end call is the de facto
+    # proof that the FASTCALL flag was set on the PyMethodDef.
+    assert def_function.fastcall_concat() == ""
+    assert def_function.fastcall_concat("hello") == "hello"
+    assert def_function.fastcall_concat("a", "b", "c") == "abc"
+    # Verify the array index path works at higher arity too.
+    assert (
+        def_function.fastcall_concat("a", "b", "c", "d", "e", "f", "g", "h")
+        == "abcdefgh"
+    )

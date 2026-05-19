@@ -80,11 +80,24 @@ comptime PyCFunctionWithKeywords = def(
     PyObjectPtr, PyObjectPtr, PyObjectPtr
 ) thin -> PyObjectPtr
 
+# `METH_FASTCALL` ("vectorcall") signature. CPython hands the callee a raw
+# C array of borrowed `PyObject*` plus `nargs`, skipping the tuple-packing
+# step that `METH_VARARGS` requires. The args pointer is `PyObject *const *`
+# in CPython and is guaranteed non-null by the vectorcall protocol (PEP
+# 590); we therefore model it as a plain `UnsafePointer` rather than an
+# `OptionalUnsafePointer`. The pointer is owned by CPython, so the origin
+# is `MutExternalOrigin`.
+# ref: https://docs.python.org/3/c-api/structures.html#c.PyCFunctionFast
+comptime PyCFunctionFast = def(
+    PyObjectPtr, UnsafePointer[PyObjectPtr, MutExternalOrigin], Py_ssize_t
+) thin -> PyObjectPtr
+
 # Flag passed to newmethodobject
 # ref: https://github.com/python/cpython/blob/main/Include/methodobject.h
 comptime METH_VARARGS = 0x01
 comptime METH_KEYWORDS = 0x02
 comptime METH_STATIC = 0x20
+comptime METH_FASTCALL = 0x80
 
 
 # GIL
@@ -376,6 +389,34 @@ struct PyMethodDef(Defaultable, ImplicitlyCopyable):
             func_ptr,
             flags,
             docstring.unsafe_ptr().bitcast[c_char](),
+        )
+
+    @staticmethod
+    def function[
+        static_method: Bool = False
+    ](
+        func: PyCFunctionFast,
+        func_name: StaticString,
+        docstring: StaticString = StaticString(),
+    ) -> Self:
+        """Create a PyMethodDef for a `PyCFunctionFast` registered with
+        `METH_FASTCALL`.
+
+        Parameters:
+            static_method: Whether the function is a static method. Default is
+                False.
+
+        Arguments:
+            func: The fastcall function to wrap.
+            func_name: The name of the function.
+            docstring: The docstring for the function.
+        """
+        var flags = c_int(METH_FASTCALL | (METH_STATIC if static_method else 0))
+        return PyMethodDef(
+            func_name.as_c_string_slice().unsafe_ptr(),
+            rebind[OpaquePointer[MutAnyOrigin]](func),
+            flags,
+            docstring.as_c_string_slice().unsafe_ptr(),
         )
 
 

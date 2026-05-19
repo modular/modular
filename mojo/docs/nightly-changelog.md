@@ -58,6 +58,11 @@ This version is still a work in progress.
   layout and kernel code; `layout` also hoists the common names at package
   scope for convenience.
 
+- `PythonModuleBuilder.def_function` (and `def_method` / `def_staticmethod` on
+  `PythonTypeBuilder`) now register non-kwargs Mojo callables via CPython's
+  `METH_FASTCALL` calling convention, reducing per-call overhead. Kwargs-
+  accepting functions still use `METH_VARARGS | METH_KEYWORDS`.
+
 - `PythonObject.__del__` now skips the `PyGILState_Ensure` /
   `PyGILState_Release` round-trip when the current thread already holds
   the GIL (checked via `PyGILState_Check`). The public contract is

@@ -39,3 +39,13 @@ def test_add_def_sums_ints() -> None:
 def test_add_raw_sums_ints() -> None:
     assert mojo_module.add_raw(1, 2) == 3
     assert mojo_module.add_raw(-5, 10) == 5
+
+
+def test_noop_raw_fastcall_returns_argument() -> None:
+    assert mojo_module.noop_raw_fastcall(1) == 1
+    assert mojo_module.noop_raw_fastcall("foo") == "foo"
+
+
+def test_add_raw_fastcall_sums_ints() -> None:
+    assert mojo_module.add_raw_fastcall(1, 2) == 3
+    assert mojo_module.add_raw_fastcall(-5, 10) == 5
