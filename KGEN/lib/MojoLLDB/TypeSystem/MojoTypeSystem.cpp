@@ -1164,7 +1164,7 @@ MojoTypeSystem::getOrCreateFunctionDecl(StringRef functionName,
   // needed. We don't need it for now.
   auto metadata = LIT::FnMetadataAttr::get(getMLIRContext());
   auto signature = LIT::FnTypeGeneratorType::get(
-      {}, fnType, {}, {}, metadata, LIT::PogListAttr::get(getMLIRContext()));
+      {}, fnType, {}, {}, metadata, PogListAttr::get(getMLIRContext()));
 
   // FIXME(23810): We need to support nested functions.
 

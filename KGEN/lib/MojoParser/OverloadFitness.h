@@ -17,10 +17,13 @@
 #include "KGEN/KGENDialect/KGENEnums.h"
 #include "KGEN/MojoParser/MojoDiags.h"
 
+namespace M::KGEN {
+class PogListAttr;
+}
+
 namespace M::KGEN::LIT {
 class CallOperands;
 class FnTypeGeneratorType;
-class PogListAttr;
 
 /// This struct indicates whether a signature can be successfully applied to a
 /// parameter binding and argument list. If so, it keeps track of several

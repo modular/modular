@@ -1,59 +1,9 @@
 // RUN: kgen-opt %s -allow-unregistered-dialect -verify-parameters | kgen-opt -allow-unregistered-dialect | FileCheck %s
 // RUN: kgen-opt %s -emit-bytecode -allow-unregistered-dialect | kgen-opt -allow-unregistered-dialect | FileCheck %s
 
-// CHECK-LABEL: "pog.metadata"
-// CHECK-SAME: pog1 = #lit.pog_metadata<"some_keyword_param", pos_or_kw, not_vararg>,
-// CHECK-SAME: pog2 = #lit.pog_metadata<"some_variadic_param", pos_or_kw, pos_vararg>
-// CHECK-SAME: pog3 = #lit.pog_metadata<"some_constrained_param", pos_or_kw, not_vararg, default ?, {
-// CHECK-SAME: pog4 = #lit.pog_metadata<"some_very_constrained_param", pos_or_kw, pos_vararg, default ?, {
-"pog.metadata"() {
-  pog1 = #lit.pog_metadata<"some_keyword_param", pos_or_kw, not_vararg>,
-  pog2 = #lit.pog_metadata<"some_variadic_param", pos_or_kw, pos_vararg>,
-  pog3 = #lit.pog_metadata<"some_constrained_param", pos_or_kw, not_vararg, default :index ?, {
-    <true, loc("file.mojo":10:5)>
-  }>,
-  pog4 = #lit.pog_metadata<"some_very_constrained_param", pos_or_kw, pos_vararg, default :index ?, {
-    <true, loc("file.mojo":10:5)>,
-    <pog1, loc("file.mojo":11:5)>
-  }>
-} : () -> ()
-
-// CHECK-LABEL: "pogs.with_defaults"
-// CHECK-SAME: {pogs = #lit.pog_list<
-// CHECK-SAME: [<"a", pos, not_vararg>, <"b", pos_or_kw, not_vararg, default :f32 4.200000e+00>,
-// CHECK-SAME: <"c", kw, not_vararg>, <"d", kw, not_vararg, default :i64 1>]>}
-"pogs.with_defaults"() {pogs = #lit.pog_list<
-  [<"a", pos, not_vararg>, <"b", pos_or_kw, not_vararg, default :f32 4.2>,
-   <"c", kw, not_vararg>, <"d", kw, not_vararg, default :i64 1>]
->} : () -> ()
-
-// CHECK-LABEL: "pogs.with_variadics"
-// CHECK-SAME: {pogs = #lit.pog_list<
-// CHECK-SAME: [<"a", pos, not_vararg>, <"b", pos_or_kw, not_vararg>, <"c", kw, not_vararg>, <"d", kw, pack_vararg>],
-// CHECK-SAME: owned_in_mem>}
-"pogs.with_variadics"() {pogs = #lit.pog_list<
-  [<"a", pos, not_vararg>, <"b", pos_or_kw, not_vararg>, <"c", kw, not_vararg>, <"d", kw, pack_vararg>],
-  owned_in_mem
->} : () -> ()
-
-// CHECK-LABEL: "pogs.with_body_constraints"
-// CHECK-SAME: {pogs = #lit.pog_list<[<"a", pos, not_vararg>]{{.*}}<true, #{{loc[0-9]+}}>, <true, #{{loc[0-9]+}}>}>}
-"pogs.with_body_constraints"() {pogs = #lit.pog_list<
-  [<"a", pos, not_vararg>]
-  {<true, loc("body.mojo":1:1)>, <true, loc("body.mojo":1:2)>}
->} : () -> ()
-
-// CHECK-LABEL: "pogs.variadic_and_body"
-// CHECK-SAME: {pogs = #lit.pog_list<[<"a", pos, not_vararg>, <"b", pos_or_kw, pack_vararg>]{{.*}}<true, #{{loc[0-9]+}}>, <true, #{{loc[0-9]+}}>}{{.*}}owned_in_mem>}
-"pogs.variadic_and_body"() {pogs = #lit.pog_list<
-  [<"a", pos, not_vararg>, <"b", pos_or_kw, pack_vararg>]
-  {<true, loc("body.mojo":2:1)>, <true, loc("body.mojo":2:2)>},
-  owned_in_mem
->} : () -> ()
-
-// CHECK-LABEL: "empty.pogs"
-// CHECK-SAME: {pogs = #lit.pog_list<[]>}
-"empty.pogs"() {pogs = #lit.pog_list<[]>} : () -> ()
+// Pog metadata/list round-trip tests now live in
+// `KGEN/test/kgen/kgen-dialect/kgen-pog-attrs.mlir`; their error cases live in
+// `kgen-pog-attrs-errors.mlir`.
 
 // CHECK-LABEL: "empty.metadata"
 // CHECK-SAME: #lit.fn_metadata<<[]>, 0>
