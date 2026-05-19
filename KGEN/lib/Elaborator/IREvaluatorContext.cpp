@@ -40,6 +40,39 @@ SymbolConstantAttr KGEN::extractSymbolConstantAttr(TypedAttr attr) {
 
   return dyn_cast<SymbolConstantAttr>(attr);
 }
+
+ErrorTreeOr<OffloadFunc> KGEN::extractOffloadFunc(CompileOffloadOp op,
+                                                  mlir::SymbolTable &symtab) {
+  Location loc = op.getLoc();
+  SymbolConstantAttr symbol = extractSymbolConstantAttr(op.getFuncAttr());
+  if (!symbol) {
+    return ErrorTree(loc, "'compile_offload' func argument did not resolve to "
+                          "a concrete function");
+  }
+
+  if (!symbol.getType().isFullyBound()) {
+    std::string errMsg;
+    llvm::raw_string_ostream os(errMsg);
+    os << "'compile_offload' func is not fully bound: "
+       << symbol.getSymbol().getLeafReference().getValue() << " missing "
+       << symbol.getType().getInputParamTypes().size()
+       << " parameter binding(s)";
+    return ErrorTree(loc, errMsg);
+  }
+
+  auto generator = symtab.lookup<GeneratorOp>(
+      cast<FlatSymbolRefAttr>(symbol.getSymbol()).getAttr());
+  if (!generator) {
+    std::string errMsg;
+    llvm::raw_string_ostream os(errMsg);
+    os << "compile_offload must reference a valid GeneratorOp, but got "
+       << symbol.getSymbol().getLeafReference().getValue();
+    return ErrorTree(loc, errMsg);
+  }
+
+  return OffloadFunc{symbol, generator};
+}
+
 //===----------------------------------------------------------------------===//
 // ImplNodeBase
 //===----------------------------------------------------------------------===//
@@ -378,6 +411,56 @@ evaluateLinkageName(GeneratorOp gen, SymbolConstantAttr symbol,
   return failure();
 }
 
+std::optional<ErrorTreeOr<SymbolConstantAttr>>
+IREvaluatorContext::resolveTransparentThunkCallee(GeneratorOp generator,
+                                                  SymbolConstantAttr symbol,
+                                                  Location loc) {
+  auto calleeExpr =
+      generator->getAttrOfType<TypedAttr>(kTransparentThunkCalleeExprAttr);
+  if (!calleeExpr)
+    return std::nullopt;
+
+  // Save/restore the error-capture state. The helper may be invoked while an
+  // outer evaluation (e.g. `concretizeParameterExpr`) already has its own
+  // `emitError` lambda installed; clobbering it without restoring would
+  // leave the outer evaluation with a dangling lambda after we return.
+  std::function<void(ErrorTree)> savedEmitError = std::move(emitError);
+  std::optional<Location> savedErrorLoc = errorLoc;
+  auto restore = llvm::scope_exit([&] {
+    emitError = std::move(savedEmitError);
+    errorLoc = savedErrorLoc;
+  });
+
+  errorLoc = loc;
+  std::optional<ErrorTree> error;
+  emitError = [&](ErrorTree err) { error = std::move(err); };
+
+  // Plug `this` in as the evaluation context so the rebind dispatches
+  // parameter operators through the subclass's `evaluateContextSpecific`
+  // hook (and routes any materialization errors back through `emitError`).
+  ParameterEvaluator evaluator(generator.getInputParams(),
+                               symbol.getParamValues());
+  evaluator.setEvaluationContext(this);
+  Attribute rebound = evaluator.getReboundAttribute(calleeExpr);
+
+  if (error)
+    return ErrorTreeOr<SymbolConstantAttr>(std::move(*error));
+  if (!rebound)
+    return ErrorTreeOr<SymbolConstantAttr>(SymbolConstantAttr());
+  if (auto resolved = dyn_cast<SymbolConstantAttr>(rebound))
+    return ErrorTreeOr<SymbolConstantAttr>(resolved);
+
+  // Defensive: the callee expression rebound to a non-symbol attr. A
+  // well-formed `kgen.transparent_thunk_callee_expr` should always resolve to
+  // a `SymbolConstantAttr`; reaching this branch means the attribute is
+  // malformed (likely a compiler bug at the producer site). Surface as an
+  // internal error rather than crashing in `cast`.
+  return ErrorTreeOr<SymbolConstantAttr>(ErrorTree(
+      loc, "internal error: transparent thunk callee expression resolved to "
+           "non-symbol attr: " +
+               mlir::debugString(rebound)));
+}
+
 /// Evaluate the mangled name of a function. Returns an empty StringAttr to
 /// signal "not ready yet" (caller should retry).
 ErrorTreeOr<StringAttr>
@@ -412,13 +495,19 @@ IREvaluatorContext::evaluateMangledName(TypedAttr symCst, bool sanitize,
     return ErrorTree(errorLoc, errMsg);
   }
 
-  // For a transparent conversion thunk, look through to the wrapped function.
-  // `bundleCompileOffloadOp` does the same redirect on the GPU side — the
+  // For a transparent thunk, look through to the wrapped function.
+  // `processCompileOffload` does the same redirect on the GPU side — the
   // wrapped function is what gets compiled, so its mangled name is what the
   // host needs to look up.
-  if (SymbolConstantAttr calleeSym =
-          resolveTransparentThunkCallee(generator, symbol))
+  if (auto thunkCallee =
+          resolveTransparentThunkCallee(generator, symbol, errorLoc)) {
+    if (thunkCallee->isError())
+      return thunkCallee->takeError();
+    SymbolConstantAttr calleeSym = thunkCallee->takeValue();
+    if (!calleeSym)
+      return StringAttr(); // not ready: retry
     return evaluateMangledName(calleeSym, sanitize, errorLoc, errorContext);
+  }
 
   if (generator.getLinkageNameAttr()) {
     // @__name is present: evaluate the (possibly parametric) name expression.
@@ -490,13 +579,20 @@ FailureOr<TypedAttr> IREvaluatorContext::evaluateCompileOffloadClosureAttr(
   assert(generator &&
          "compile_offload_closure must reference a valid GeneratorOp");
 
-  // If `generator` is a transparent conversion thunk, mirror what
-  // `bundleCompileOffloadOp` does and look through it to the wrapped
-  // function. The GPU-side `writeCaptureArgs` names the populate function
-  // body after the *redirected* (user-kernel) generator, so this stub must
-  // be named the same way for the fill step to match them up.
-  if (auto calleeSym =
-          resolveTransparentThunkCallee(generator, closureSymbolForLookup)) {
+  // If `generator` is a transparent thunk, mirror what `processCompileOffload`
+  // does and look through it to the wrapped function. The GPU-side
+  // `writeCaptureArgs` names the populate function body after the *redirected*
+  // (user-kernel) generator, so this stub must be named the same way for the
+  // fill step to match them up.
+  if (auto thunkCallee = resolveTransparentThunkCallee(
+          generator, closureSymbolForLookup, *errorLoc)) {
+    if (thunkCallee->isError()) {
+      emitError(thunkCallee->takeError());
+      return failure();
+    }
+    SymbolConstantAttr calleeSym = thunkCallee->takeValue();
+    if (!calleeSym)
+      return TypedAttr(); // Not ready yet — signal retry.
     if (GeneratorOp calleeGen = getGenerator(calleeSym.getSymbol())) {
       generator = calleeGen;
       closureSymbolForLookup = calleeSym;

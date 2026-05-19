@@ -24,6 +24,7 @@
 # CHECK-NEXT: copy :
 # CHECK:  lit.struct.field field0 : !kgen.param<:[[IMPL_PARENT]] impl>
 # CHECK: lit.fn @"__call__({{.*}})"[mut *"[[L0:.*]]`"](%0[*""]: !lit.ref<!lit.struct<[[T:#.*]] <:[[IMPL_PARENT]] impl, :origin.set origin_set>>, mut *"[[L0]]`"> read_mem, |, %y: [[INT]]) capturing -> [[INT]]
+# CHECK-SAME: kgen.transparent_thunk_callee_expr = #kgen.get_witness<{{.*}}, "def(y: Int) -> Int", "__call__{{.*}}">
 # CHECK-NEXT:  [[FIELD:%.*]] = lit.ref.struct.ger %{{.*}}[field0]
 # CHECK-NEXT:  [[CLOSURE:%.*]] = lit.ref.immut [[FIELD]]
 # CHECK-NEXT:  [[RES:%.*]] = lit.call[!lit.generator<[1](!lit.ref<:[[IMPL_PARENT]] impl, mut *[0,0]> read_mem, |, "y": [[INT]]) capturing -> [[INT]]>: #kgen.get_witness<:[[IMPL_PARENT]] impl, "def(y: Int) -> Int", "__call__{{.*}}">][muttoimm *"[[L0]]`"->field0]([[CLOSURE]], %y)

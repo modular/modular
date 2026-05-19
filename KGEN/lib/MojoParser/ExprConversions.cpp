@@ -24,6 +24,7 @@
 #include "KGEN/MojoParser/ASTType.h"
 #include "KGEN/MojoParser/DeclResolver.h"
 
+#include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/LITDialect/LITAttrs.h"
 #include "KGEN/LITDialect/LITUtils.h"
@@ -442,7 +443,7 @@ static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl,
   // Stash the fully-bound-when-thunk-is-bound callee expression on the thunk so
   // we can later recover the wrapped function's SymbolConstantAttr with all its
   // compile-time params filled in (sourced from the thunk's bound paramValues).
-  thunk->setAttr("kgen.transparent_thunk_callee_expr", calleeParam);
+  thunk->setAttr(kTransparentThunkCalleeExprAttr, calleeParam);
 
   // EXPLICIT-COPY-REF-RETURN: If the callee has a ref result and we expect a
   // value result, then we need to copy out of the ref into the value result. As
@@ -688,7 +689,8 @@ static CValue convertFunctionGeneratorValue(CValue value, const ExprNode *expr,
   // Both the position (last param) and the explicit
   // `kgen.transparent_thunk_callee_param` marker (set above) are part of how
   // we recover the wrapped function downstream — see
-  // `resolveTransparentThunkCallee` in `KGENOps.cpp`.
+  // `IREvaluatorContext::resolveTransparentThunkCallee` in
+  // `IREvaluatorContext.{h,cpp}`.
   evaluator.appendIndexBinding(calleeParam);
 
   SymbolConstantAttr symbol = thunk.getBoundSymbolRef(

@@ -1891,28 +1891,11 @@ ErrorTreeOrSuccess Elaborator::bundleCompileOffloadOp(CompileOffloadOp op) {
   StringRef emissionLinkOptionsStr =
       cast<StringAttr>(op.getEmissionLinkOptionAttr()).getValue();
 
-  // compile_offload ops are compiler-generated; these invariants must hold.
-  SymbolConstantAttr symbol = extractSymbolConstantAttr(op.getFuncAttr());
-  assert(symbol && "compile_offload func must resolve to a SymbolConstantAttr");
-  assert(symbol.getType().isFullyBound() &&
-         "compile_offload func must be fully bound");
-  auto func = oldSymTab.lookup<GeneratorOp>(
-      cast<FlatSymbolRefAttr>(symbol.getSymbol()).getAttr());
-  assert(func && "compile_offload must reference a valid GeneratorOp");
+  ErrorTreeOr<OffloadFunc> offloadFuncOr = extractOffloadFunc(op, oldSymTab);
+  if (offloadFuncOr.isError())
+    return offloadFuncOr.takeError();
+  auto [symbol, func] = offloadFuncOr.takeValue();
 
-  // If `func` is a transparent conversion thunk, reroute the offload to its
-  // wrapped function so the GPU side compiles the user's kernel directly.
-  // The thunk is just a calling-convention adapter that LowerArgConventions
-  // collapses into the kernel's signature anyway, and steering around it
-  // here keeps `compileOffloads` thunk-agnostic.
-  if (auto calleeSym = resolveTransparentThunkCallee(func, symbol)) {
-    if (auto flatRef = dyn_cast<FlatSymbolRefAttr>(calleeSym.getSymbol())) {
-      if (auto calleeGen = oldSymTab.lookup<GeneratorOp>(flatRef.getAttr())) {
-        symbol = calleeSym;
-        func = calleeGen;
-      }
-    }
-  }
   // Use mangleParameterValues for the bundling name so it matches the name
   // evaluateCompileOffloadClosureAttr uses for the _populate_captures stub.
   StringAttr name = StringAttr::get(
@@ -2034,6 +2017,29 @@ ElaborationState Elaborator::processCompileOffload(ImplNode *parent,
   }
   if (changedAttrs)
     op->setAttrs(newAttrs);
+
+  ErrorTreeOr<OffloadFunc> offloadFuncOr = extractOffloadFunc(op, oldSymTab);
+  if (offloadFuncOr.isError()) {
+    parent->setToError(offloadFuncOr.takeError());
+    return ElaborationState::error();
+  }
+  auto [symbol, offloadGenerator] = offloadFuncOr.takeValue();
+
+  // If `func` is a transparent thunk, reroute the offload to its wrapped
+  // function so the GPU side compiles the user's kernel directly. Mutating
+  // the op here keeps `bundleCompileOffloadOp` thunk-agnostic.
+  if (auto thunkCallee = parent->getEvaluator().resolveTransparentThunkCallee(
+          offloadGenerator, symbol, op.getLoc())) {
+    if (thunkCallee->isError()) {
+      parent->setToError(thunkCallee->takeError());
+      return ElaborationState::error();
+    }
+    SymbolConstantAttr calleeSym = thunkCallee->takeValue();
+    if (!calleeSym)
+      return ElaborationState::skipNode();
+    symbol = calleeSym;
+    op.setFuncAttr(symbol);
+  }
 
   compileOffloadOps.modify([&](auto &set) { set.insert(op); });
 
