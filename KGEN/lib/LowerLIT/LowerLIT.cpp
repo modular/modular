@@ -310,6 +310,29 @@ LITLowerer::lowerFunction(FnOp func, ArrayRef<ParamDeclAttr> parentInputParams,
   }
   llvm::append_range(inputParams, extractImplicitOriginParams(func));
 
+  // Snapshot the source-declared parameter list (names + passing kinds +
+  // variadic kinds) before `lowerAttributesAndTypes` strips metadata from
+  // the live signature. This snapshot is the source of truth for reflection
+  // queries; the live `funcTypeGenerator` and `inputParams` may be rewritten
+  // by later transforms such as `RemoveUnusedParams`.
+  //
+  // Default values and constraints are dropped here because they can hold
+  // `ParamIndexRefAttr`s that need a contextual signature; the op's attribute
+  // dictionary doesn't establish one, so leaving them in would fail
+  // `verify-parameters`. Reflection only needs the structural names today.
+  PogListAttr sourceParamList;
+  if (auto fullList = dyn_cast_or_null<PogListAttr>(signature.getMetadata())) {
+    SmallVector<PogMetadataAttr> strippedPogs;
+    strippedPogs.reserve(fullList.getPogs().size());
+    for (PogMetadataAttr pog : fullList.getPogs()) {
+      strippedPogs.push_back(PogMetadataAttr::get(
+          pog.getName(), pog.getPassingKind(), pog.getVariadic()));
+    }
+    sourceParamList = PogListAttr::get(func->getContext(), strippedPogs,
+                                       /*bodyConstraints=*/{},
+                                       fullList.getOrigVariadicConvention());
+  }
+
   // Now that we have the full parameter list, remove any singleton parameters.
   // This ensures that the elaborator doesn't instantiate the function based on
   // lifetimes.
@@ -330,7 +353,7 @@ LITLowerer::lowerFunction(FnOp func, ArrayRef<ParamDeclAttr> parentInputParams,
                      func.getExportKindAttr(), func.getExternalAttr(),
                      /*inlinedForm=*/nullptr, func.getLinkageNameAttr(),
                      func.getLLVMMetadataArray(),
-                     func.getLLVMArgMetadataArray());
+                     func.getLLVMArgMetadataArray(), sourceParamList);
 
   for (const NamedAttribute &attr : func->getDialectAttrs())
     state.attributes.push_back(attr);
