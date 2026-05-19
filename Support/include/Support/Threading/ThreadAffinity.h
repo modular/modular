@@ -19,13 +19,13 @@ namespace M {
 /// Returns true if thread affinity is available on this target.
 bool haveThreadAffinity();
 
-/// Attempts to sets the caller's thread affinity to the given CPU id. Returns
-/// error if affinity is not supported on this target or the operation fails.
+/// Sets the execution affinity to the specified CPU core and sets the memory
+/// policy to the NUMA node that CPU core resides in if possible.
 ErrorOrSuccess setThreadAffinity(size_t cpuID);
 
-/// Attempts to runs workFn with caller's thread affinity set to the given CPU
-/// id. Returns error if thread affinity is not supported on this target
-/// or the operation fails.
+/// Executes workFn with thread execution affinity to the specified CPU core and
+/// sets the memory policy to the NUMA node that CPU core resides in if
+/// possible.
 ErrorOrSuccess runWithThreadAffinity(size_t cpuID,
                                      llvm::function_ref<void()> workFn);
 } // namespace M

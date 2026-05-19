@@ -7,6 +7,7 @@
 #include "Support/Threading/ThreadAffinity.h"
 #include "Support/Error.h"
 #include "Support/ErrorOr.h"
+#include "Support/Threading/HWInfo.h"
 #include "llvm/ADT/STLFunctionalExtras.h"
 #include "llvm/Support/DebugLog.h"
 #include <cstddef>
@@ -15,6 +16,9 @@
 
 #ifdef __linux__
 #define HAVE_LINUX_SET_AFFINITY 1
+#include <linux/mempolicy.h>
+#include <sys/syscall.h>
+#include <unistd.h>
 #else
 #define HAVE_LINUX_SET_AFFINITY 0
 #endif
@@ -27,37 +31,101 @@ using namespace M;
 
 #if HAVE_LINUX_SET_AFFINITY
 static ErrorOrSuccess setThreadAffinityLinux(size_t cpuID) {
+  // Return without setting affinity if CPU core ID is invalid.
+  if (cpuID == kNoAffinity)
+    return Error("unable to set thread affinity, invalid CPU id");
+
+  // Resolve the NUMA node for the CPU core, if topology is available.
+  int numaNode = kAnyNumaNode;
+  const ErrorOr<NUMATopology> &topologyOr = NUMATopology::get();
+  if (!topologyOr.isError())
+    numaNode = topologyOr->getNumaNodeForCpuId(cpuID);
+
+  // Set thread execution affinity to the specified CPU core ID.
   assert(cpuID < CPU_SETSIZE);
   cpu_set_t cpuset;
   CPU_ZERO(&cpuset);
   CPU_SET(cpuID, &cpuset);
   if (int rc = sched_setaffinity(0, sizeof(cpuset), &cpuset))
-    return Error("unable to set thread CPU affinity: " + std::to_string(rc));
+    return Error("unable to set thread execution affinity: " +
+                 std::to_string(rc));
+
+  // Set thread memory policy.
+  if (numaNode != kAnyNumaNode) {
+    assert(numaNode >= 0 &&
+           static_cast<size_t>(numaNode) < sizeof(unsigned long) * 8);
+    unsigned long nodemask = 1UL << numaNode;
+    if (long rc = syscall(SYS_set_mempolicy, MPOL_PREFERRED, &nodemask,
+                          sizeof(nodemask) * 8))
+      return Error("unable to set thread memory policy: " + std::to_string(rc));
+  }
+
   return success();
 }
 
-ErrorOrSuccess static runWithThreadAffinityLinux(
-    size_t cpuID, llvm::function_ref<void()> &workFn) {
+static ErrorOrSuccess
+runWithThreadAffinityLinux(size_t cpuID, llvm::function_ref<void()> &workFn) {
+  // Return without setting affinity if CPU core ID is invalid.
+  if (cpuID == kNoAffinity)
+    return Error("unable to set thread affinity, invalid CPU id");
+
+  // Resolve the NUMA node for the CPU core, if topology is available.
+  int numaNode = kAnyNumaNode;
+  const ErrorOr<NUMATopology> &topologyOr = NUMATopology::get();
+  if (!topologyOr.isError())
+    numaNode = topologyOr->getNumaNodeForCpuId(cpuID);
+
+  // Save and set thread execution affinity.
+  cpu_set_t origCpuSet;
   assert(cpuID < CPU_SETSIZE);
-  cpu_set_t origset;
-  int rc = sched_getaffinity(0, sizeof(origset), &origset);
-  if (rc != 0)
-    return Error("unable to get thread CPU affinity: " + std::to_string(rc));
-  cpu_set_t cpuset;
-  CPU_ZERO(&cpuset);
-  CPU_SET(cpuID, &cpuset);
-  rc = sched_setaffinity(0, sizeof(cpuset), &cpuset);
-  if (rc != 0)
-    return Error("unable to set thread CPU affinity: " + std::to_string(rc));
-  // We're -fno-exceptions so no need for exception handling here.
-  workFn();
-  rc = sched_setaffinity(0, sizeof(cpuset), &origset);
-  if (rc != 0) {
-    // We've run the workFn, so can't report failure.
-    LDBG() << "runWithThreadAffinityLinux: unable to restore "
-              "thread CPU affinity: "
-           << rc;
+  if (int rc = sched_getaffinity(0, sizeof(origCpuSet), &origCpuSet))
+    return Error("unable to get thread execution affinity: " +
+                 std::to_string(rc));
+  cpu_set_t cpuSet;
+  CPU_ZERO(&cpuSet);
+  CPU_SET(cpuID, &cpuSet);
+  if (int rc = sched_setaffinity(0, sizeof(cpuSet), &cpuSet))
+    return Error("unable to set thread execution affinity: " +
+                 std::to_string(rc));
+
+  // Save and set thread memory policy.
+  int origMemPolicy = 0;
+  unsigned long origNodeMask = 0;
+  if (numaNode != kAnyNumaNode) {
+    assert(numaNode >= 0 &&
+           static_cast<size_t>(numaNode) < sizeof(unsigned long) * 8);
+    if (long rc = syscall(SYS_get_mempolicy, &origMemPolicy, &origNodeMask,
+                          sizeof(origNodeMask) * 8, nullptr, 0))
+      return Error("unable to get thread memory policy: " + std::to_string(rc));
+    unsigned long nodeMask = 1UL << numaNode;
+    if (long rc = syscall(SYS_set_mempolicy, MPOL_PREFERRED, &nodeMask,
+                          sizeof(nodeMask) * 8))
+      return Error("unable to set thread memory policy: " + std::to_string(rc));
   }
+
+  // Assuming -fno-exceptions so no need for exception handling here.
+  workFn();
+
+  // Restore thread execution affinity.
+  if (int rc = sched_setaffinity(0, sizeof(origCpuSet), &origCpuSet))
+    LDBG() << "runWithThreadAffinityLinux: unable to restore "
+              "thread execution affinity: "
+           << rc;
+
+  // Restore thread memory policy.
+  if (numaNode != kAnyNumaNode) {
+    long rc = 0;
+    if (origMemPolicy == MPOL_DEFAULT)
+      rc = syscall(SYS_set_mempolicy, MPOL_DEFAULT, nullptr, 0);
+    else
+      rc = syscall(SYS_set_mempolicy, origMemPolicy, &origNodeMask,
+                   sizeof(origNodeMask) * 8);
+    if (rc != 0)
+      LDBG() << "runWithThreadAffinityLinux: unable to restore "
+                "thread memory policy: "
+             << rc;
+  }
+
   return success();
 }
 #endif

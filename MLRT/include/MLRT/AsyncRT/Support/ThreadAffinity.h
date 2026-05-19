@@ -27,12 +27,13 @@ M::ErrorOr<std::vector<size_t>> getThreadAffinityCpuIds(bool withAffinity,
                                                         size_t numThreads,
                                                         size_t maxThreads);
 
-/// Execute workFn with affinity to cpuID if it is not kNoAffinity.
-/// Gracefully and silently execute workFn directly if errors.
+/// Executes workFn with thread execution affinity to the specified CPU core and
+/// sets the memory policy to the NUMA node that CPU core resides in if
+/// possible.
 void runWithThreadAffinity(size_t cpuID, llvm::function_ref<void()> workFn);
 
-/// Set the current thread's affinity to cpuID if it is not kNoAffinity.
-/// Gracefully and silently continue if errors.
+/// Sets the execution affinity to the specified CPU core and sets the memory
+/// policy to the NUMA node that CPU core resides in if possible.
 void setThreadAffinity(size_t cpuID);
 
 } // namespace M::MLRT
