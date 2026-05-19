@@ -66,8 +66,10 @@ When `withAffinity` is enabled, worker threads are pinned to specific CPU cores:
 3. **Cgroup limits**: In containerized environments, thread count is
    automatically capped based on CPU limits (millicores / 1000).
 
-4. **Affinity setting**: Each worker thread calls `setThreadAffinity(cpuID)` at
-   startup to pin itself to its assigned CPU.
+4. **Affinity setting**: Each worker thread calls `setThreadAffinity(cpuID)`
+   at startup to bind thread execution to the specified CPU core and set the
+   memory policy to prefer memory allocation on the NUMA node that CPU core
+   resides in if possible.
 
 ### Task Queues
 

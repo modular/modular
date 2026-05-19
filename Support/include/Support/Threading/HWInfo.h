@@ -89,6 +89,7 @@ constexpr int kAnyNumaNode = -1;
 struct NUMATopology {
   std::vector<int> numaNodes;
   std::map<int, std::vector<size_t>> cpuIdsPerNumaNode;
+  std::map<size_t, int> cpuIdToNumaNode;
   std::map<int, std::vector<std::string>> pciBusesPerNumaNode;
   std::map<std::string, int> pciBusToNumaNode;
 
@@ -102,6 +103,10 @@ struct NUMATopology {
 
   /// Returns the list of CPU IDs belonging to a NUMA node.
   std::vector<size_t> getCpuIdsForNumaNode(int numaNode) const;
+
+  /// Returns the NUMA node ID for a given CPU ID, or kAnyNumaNode if the CPU
+  /// is not found in the topology.
+  int getNumaNodeForCpuId(size_t cpuId) const;
 
   /// Returns the list of PCI bus addresses belonging to a NUMA node.
   std::vector<std::string> getPciBusesForNumaNode(int numaNode) const;

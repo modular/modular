@@ -600,8 +600,11 @@ static ErrorOr<NUMATopology> queryNumaTopology() {
     auto buf = fileBuffer(cpuListPath);
     if (buf) {
       auto cpuIdsOr = parseCpuList(buf->getBuffer());
-      if (!cpuIdsOr.isError())
+      if (!cpuIdsOr.isError()) {
         topology.cpuIdsPerNumaNode[node] = std::move(*cpuIdsOr);
+        for (size_t cpuId : topology.cpuIdsPerNumaNode[node])
+          topology.cpuIdToNumaNode[cpuId] = node;
+      }
     }
   }
 
@@ -658,6 +661,11 @@ std::vector<size_t> NUMATopology::getCpuIdsForNumaNode(int numaNode) const {
   if (it != cpuIdsPerNumaNode.end())
     return it->second;
   return {};
+}
+
+int NUMATopology::getNumaNodeForCpuId(size_t cpuId) const {
+  auto it = cpuIdToNumaNode.find(cpuId);
+  return it != cpuIdToNumaNode.end() ? it->second : kAnyNumaNode;
 }
 
 std::vector<std::string>
