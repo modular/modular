@@ -40,6 +40,8 @@ from layout.tile_layout import Layout, TensorLayout, row_major, col_major
 ```
 """
 
+import std.sys
+from std.collections.string.string import _calc_initial_buffer_size_int32
 from std.math.uutils import udivmod_unchecked
 
 from layout.coord import (
@@ -2059,3 +2061,104 @@ Parameters:
     L: The layout type whose shape structure is checked.
     C: The coordinate element types to check against.
 """
+
+
+# ===----------------------------------------------------------------------=== #
+# Layout Printing Utilities
+# ===----------------------------------------------------------------------=== #
+
+
+@no_inline
+def _print_layout(layout: Layout):
+    """Prints a 2D layout to the standard output.
+
+    This function visualizes a 2D layout by printing a formatted table showing
+    the memory indices for each logical coordinate.
+
+    Args:
+        layout: The 2D layout to print.
+    """
+    comptime assert layout.rank == 2, "_print_layout only supports 2D layouts"
+    print(layout)
+    var stdout = std.sys.stdout
+    _format_layout(layout, stdout)
+
+
+@always_inline("nodebug")
+def _dim_size[T: CoordLike](dim: T) -> Int:
+    """Returns the element count for a single layout dimension.
+
+    For scalar CoordLike types (ComptimeInt, RuntimeInt), returns the value.
+    For nested Coord types, returns the product of all sub-elements.
+    """
+    comptime if T.is_tuple:
+        comptime sub_rank = T.__len__()
+        var t = dim.tuple()
+        var result: Int = 1
+        comptime for j in range(sub_rank):
+            result *= _dim_size(t[j])
+        return result
+    else:
+        return Int(dim.value())
+
+
+@no_inline
+def _format_layout[W: Writer](layout: Layout, mut writer: W):
+    """Formats a 2D layout as a table and writes it to the specified writer.
+
+    This function creates a visual representation of a 2D layout as a table
+    showing the memory indices for each logical coordinate.
+
+    Parameters:
+        W: Type parameter representing a Writer implementation.
+
+    Args:
+        layout: The 2D layout to format.
+        writer: The writer to output the formatted layout to.
+    """
+    comptime assert layout.rank == 2, "_format_layout only supports 2D layouts"
+
+    def _write_divider(column_count: Int, cell_width: Int) {mut writer}:
+        for _ in range(column_count):
+            writer.write("+")
+            for _ in range(cell_width):
+                writer.write("-")
+        writer.write("+\n")
+
+    var rows = _dim_size(layout.shape[0]())
+    var cols = _dim_size(layout.shape[1]())
+    # maximum column width is based on the width of the longest label plus 2 spaces
+    var idx_width = String(layout.cosize()).byte_length() + 2
+
+    # Print column labels
+    writer.write("    ")
+    for n in range(cols):
+        writer.write("  ")
+        n.write_padded(writer, width=idx_width - 2)
+
+        if n + 1 != cols:
+            writer.write(" ")
+
+    writer.write("\n")
+
+    for m in range(rows):
+        writer.write("    ")
+        _write_divider(cols, idx_width)
+
+        # Print row label
+        m.write_padded(writer, width=2)
+        writer.write("  ")
+
+        for n in range(cols):
+            writer.write("| ")
+            Int(layout(Coord(Idx(m), Idx(n)))).write_padded(
+                writer,
+                width=idx_width - 2,
+            )
+            writer.write(" ")
+        writer.write("|\n")
+
+    writer.write("    ")
+
+    # Write the final horizontal dividing line
+    _write_divider(cols, idx_width)
