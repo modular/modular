@@ -952,6 +952,10 @@ ASTDecl *ClosureEmitter::createStructWrapper(ASTDecl &moduleDecl,
         parentName, traitFnOp.getSymNameAttr(), implCallSig);
     TypedAttr boundSymbol =
         BindParamsAttr::get(symbol, paramArgs, &shared.getEvaluationContext());
+    // Mark `__call__` as a transparent thunk so its identity delegates to the
+    // wrapped impl (only `__call__` needs this; the other forwarders don't).
+    if (closureParent.getClosureMethod() == ClosureMethod::CALL)
+      op->setAttr(kTransparentThunkCalleeExprAttr, boundSymbol);
     auto calleeSig = cast<FnTypeGeneratorType>(boundSymbol.getType());
     if (failed(emitForwardingCall(b, structDecl, boundSymbol, calleeSig, result,
                                   operands)))
@@ -1316,6 +1320,10 @@ ClosureEmitter::createFnStructWrapper(ASTDecl &moduleDecl, ASTDecl &traitDecl,
       callee = BindParamsAttr::get(callee, paramArgs,
                                    &shared.getEvaluationContext());
     }
+
+    // Mark `__call__` as a transparent thunk so its identity delegates to the
+    // wrapped function pointer's underlying generator.
+    callMethod->setAttr(kTransparentThunkCalleeExprAttr, callee);
 
     SmallVector<Value> arguments;
     // Ignore the self field and pass the other arguments as-is.

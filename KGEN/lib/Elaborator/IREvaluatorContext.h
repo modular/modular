@@ -176,6 +176,39 @@ public:
   IREvaluatorContext(EnvAttr env, MLIRContext *mlirCtx,
                      InterpreterState *state);
 
+  // Transparent thunks
+  //
+  // A "transparent" thunk forwards to a wrapped function while delegating its
+  // public identity (linkage name, LLVM metadata) to that function. There are
+  // currently two flavors:
+  //
+  //   1. Conversion thunks (synthesized by `generateConversionThunk` in
+  //      `ExprConversions.cpp`) that bridge calling conventions.
+  //   2. Closure `__call__` methods (synthesized by `ClosureEmitter`) that
+  //      forward to the closure's underlying impl.
+  //
+  // Both carry a `kTransparentThunkCalleeExprAttr` attribute holding a
+  // parametric expression that resolves - once the thunk's paramDecls are
+  // substituted with the callsite's paramValues - to a fully-bound
+  // `SymbolConstantAttr` for the wrapped function. Substitution may involve
+  // parameter operators (e.g. `GetWitnessAttr` for closures), so resolution
+  // must run through an evaluation context.
+
+  /// Look through a transparent thunk to its wrapped function, rebinding the
+  /// thunk's `kTransparentThunkCalleeExprAttr` against `symbol`'s parameter
+  /// values. Uses `this` as the evaluation context so parameter
+  /// operators inside the callee expression are evaluated through the
+  /// concrete subclass's hooks. Returns:
+  ///   - `nullopt`: `generator` is not a transparent thunk; nothing to do.
+  ///   - error: rebinding produced an error; the caller should propagate it.
+  ///   - null `SymbolConstantAttr`: rebinding is not yet ready (a
+  ///     sub-dependency is still being elaborated); the caller should
+  ///     skip/retry.
+  ///   - non-null `SymbolConstantAttr`: the fully resolved wrapped callee.
+  std::optional<ErrorTreeOr<SymbolConstantAttr>>
+  resolveTransparentThunkCallee(GeneratorOp generator,
+                                SymbolConstantAttr symbol, Location loc);
+
 protected:
   /// Evaluate an apply-like operator.
   FailureOr<TypedAttr> evaluateGetEnv(ParamOperatorAttr op);
@@ -253,6 +286,21 @@ private:
 //===----------------------------------------------------------------------===//
 
 SymbolConstantAttr extractSymbolConstantAttr(TypedAttr attr);
+
+/// Decomposed view of a `compile_offload` op's `func` attribute. Populated by
+/// `extractOffloadFunc` when the func resolves to a fully-bound
+/// `SymbolConstantAttr` referencing a valid generator in the supplied symbol
+/// table.
+struct OffloadFunc {
+  SymbolConstantAttr symbol;
+  GeneratorOp generator;
+};
+
+/// Decompose a `compile_offload` op's `func` attribute. Returns an error if
+/// the func does not resolve to a `SymbolConstantAttr`, is not fully bound,
+/// or does not reference a valid generator in `symtab`.
+ErrorTreeOr<OffloadFunc> extractOffloadFunc(CompileOffloadOp op,
+                                            mlir::SymbolTable &symtab);
 
 } // namespace M::KGEN
 

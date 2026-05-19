@@ -58,27 +58,29 @@ private:
   SymbolTableCollection &symbolTable;
 };
 
-namespace KGEN {
-
 //===----------------------------------------------------------------------===//
-// Transparent conversion thunks
+// Attribute keys
 //===----------------------------------------------------------------------===//
-//
-// A "transparent" conversion thunk bridges calling conventions to a wrapped
-// function while delegating its public identity (linkage name, LLVM
-// metadata) to that function. The thunk carries a
-// `kgen.transparent_thunk_callee_expr` attribute holding a parametric
-// expression that resolves - once the thunk's paramDecls are substituted
-// with the callsite's paramValues - to a fully-bound SymbolConstantAttr
-// for the wrapped function.
 
-/// Look through a transparent thunk to its wrapped function. Returns the
-/// wrapped function's SymbolConstantAttr bound at `callsite`, or null if
-/// `gen` is not a transparent thunk.
-SymbolConstantAttr resolveTransparentThunkCallee(mlir::Operation *gen,
-                                                 SymbolConstantAttr callsite);
-
-} // namespace KGEN
+/// Attribute written onto a transparent-thunk `GeneratorOp` to record the
+/// parametric callee expression that names the wrapped function.
+///
+/// A "transparent" thunk forwards to a wrapped function while delegating its
+/// public identity (linkage name, LLVM metadata) to that function. The
+/// attribute value is a parametric expression — e.g. a `GetWitnessAttr` for
+/// closure `__call__` thunks — that resolves to a fully-bound
+/// `SymbolConstantAttr` once the thunk's paramDecls are substituted with the
+/// callsite's paramValues. When `compile_offload` targets such a thunk the
+/// elaborator must:
+///   1. Substitute the thunk's paramDecls with the callsite's paramValues.
+///   2. Evaluate any parameter operators in the expression (e.g.
+///      `get_witness`) against the substituted values.
+///   3. Redirect the offload to the resolved callee — surfacing its metadata
+///      (e.g. `@__llvm_metadata`) on the emitted entry.
+///
+/// Resolution runs through `IREvaluatorContext::resolveTransparentThunkCallee`.
+static constexpr llvm::StringLiteral kTransparentThunkCalleeExprAttr =
+    "kgen.transparent_thunk_callee_expr";
 
 } // namespace M
 

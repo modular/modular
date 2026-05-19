@@ -11,6 +11,7 @@
 # CHECK: lit.struct.decl @"def(x: Int) -> Int_PtrWrapper"<Impl: !lit.generator<("x": !Int1) -> !Int1>
 
 # CHECK: lit.fn @"__call__
+# CHECK-SAME: kgen.transparent_thunk_callee_expr = #kgen.param.decl.ref<"Impl">
 # CHECK: %1 = lit.call tail[!lit.generator<("x": !Int1) -> !Int1>: Impl](%x)
 # CHECK: lit.return %1 : !Int1
 # CHECK: lit.end_fn

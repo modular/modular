@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: not %mojo %s 2>&1 | FileCheck %s
 
-# CHECK: 'get_linkage_name' expected a valid generator reference, but got
+# CHECK: compile_offload must reference a valid GeneratorOp
 # CHECK-SAME: param_fn{{.*}}
 
 from std.compile import compile_info
