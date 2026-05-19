@@ -285,18 +285,6 @@ constexpr StringLiteral MOJO_INTERNAL_STRING_SLICE_TYPE_NAME = "std::Origin";
 // Parameter Inference
 //===----------------------------------------------------------------------===//
 
-// Names of common params. We use these strings as the key to a parameter ref.
-static constexpr llvm::StringLiteral kParameterMut = "mut";
-static constexpr llvm::StringLiteral kParameterInput = "input";
-static constexpr llvm::StringLiteral kParameterDType = "dtype";
-static constexpr llvm::StringLiteral kParameterRank = "rank";
-static constexpr llvm::StringLiteral kParameterIOSpec = "io_spec";
-static constexpr llvm::StringLiteral kParameterStaticSpec = "static_spec";
-
-// Used in variadics/tuple/SIMD types.
-static constexpr llvm::StringLiteral kParameterSize = "size";
-static constexpr llvm::StringLiteral kParameterStaticSpecs = "static_specs";
-
 static constexpr bool kIOSpecImmutable = false;
 static constexpr bool kIOSpecMutable = true;
 
