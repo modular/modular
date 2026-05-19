@@ -2076,7 +2076,8 @@ def LIT_ClosureInitOp : LITOp<"closure.init",
                        OptionalAttr<AnyAttr>:$nestedFnScope,
                        DefaultValuedAttr<ArrayAttr, "{}">:$LLVMMetadataArray,
                        DefaultValuedAttr<ArrayAttr, "{}">:$LLVMArgMetadataArray,
-                       OptionalAttr<KGEN_ParamDeclArrayAttr>:$hoistedCaptures
+                       OptionalAttr<KGEN_ParamDeclArrayAttr>:$hoistedCaptures,
+                       OptionalAttr<KGEN_LinkageNameAttr>:$linkageName
                        );
   let results = (outs LIT_RefType:$result);
   let regions = (region SizedRegion<1>:$bodyRegion);
@@ -2110,7 +2111,8 @@ def LIT_ClosureInitOp : LITOp<"closure.init",
             paramDecl, typeValue, captureTypes, captureNames,
             /*nestedFnScope=*/{},
             /*LLVMMetadataArray=*/nullptr, /*LLVMArgMetadataArray=*/nullptr,
-            /*hoistedCaptures=*/::M::KGEN::ParamDeclArrayAttr{});
+            /*hoistedCaptures=*/::M::KGEN::ParamDeclArrayAttr{},
+            /*linkageName=*/::M::KGEN::LinkageNameAttr{});
     }]>
   ];
 

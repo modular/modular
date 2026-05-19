@@ -2233,6 +2233,8 @@ Value ClosureEmitter::emitClosureOp(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
   if (ArrayAttr argMetadata = nestedFn.getLLVMArgMetadataArray();
       argMetadata && !argMetadata.empty())
     closure.setLLVMArgMetadataArrayAttr(argMetadata);
+  if (LinkageNameAttr linkageName = nestedFn.getLinkageNameAttr())
+    closure.setLinkageNameAttr(linkageName);
   llvm::SmallSetVector<ParamDeclAttr, 8> hoistedDecls;
   for (ParamDeclRefAttr capturedRef : paramCaptures)
     hoistedDecls.insert(ParamDeclAttr::get(capturedRef));
