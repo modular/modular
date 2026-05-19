@@ -268,6 +268,26 @@ class PipelineRuntimeConfig(ConfigFileModel):
         ),
     )
 
+    allow_unsupported_logprobs: bool = Field(
+        default=False,
+        description=(
+            "When ``True``, OpenAI-compatible requests that ask for "
+            "``logprobs`` against a runtime configuration that cannot honor "
+            "them will raise a warning, and served as if ``logprobs`` were not "
+            "requested. Each response chunk carries ``logprobs: null``. "
+            "When ``False`` (default), such requests are rejected with a 400."
+        ),
+    )
+
+    allow_extra_request_fields: bool = Field(
+        default=False,
+        description=(
+            "When ``True``, unknown top-level fields on OpenAI-compatible "
+            "request bodies are dropped with a warning before pydantic "
+            " validation, instead of producing a 400."
+        ),
+    )
+
     prefer_module_v3: bool = Field(
         default=False,
         description=(

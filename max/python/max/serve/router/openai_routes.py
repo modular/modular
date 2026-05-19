@@ -1129,8 +1129,8 @@ async def openai_create_chat_completion(
 ) -> CreateChatCompletionResponse | EventSourceResponse | Response:
     request_id = request.state.request_id
     try:
-        completion_request = CreateChatCompletionRequest.model_validate_json(
-            await request.body()
+        completion_request = await _parse_openai_request_body(
+            request, request_id, CreateChatCompletionRequest
         )
         pipeline: TokenGeneratorPipeline | AudioGeneratorPipeline = (
             get_pipeline(request, completion_request.model)
@@ -1273,15 +1273,24 @@ async def openai_create_chat_completion(
                 else 1
             )
 
-        if (
-            logprobs_count != 0
-            and request.app.state.pipeline_config.runtime.enable_overlap_scheduler
-        ):
-            raise InputError(
-                "Log probabilities are not supported with the overlap"
-                " scheduler. Start the server with"
-                " --no-enable-overlap-scheduler to use logprobs."
-            )
+        runtime_cfg = request.app.state.pipeline_config.runtime
+        if logprobs_count != 0 and runtime_cfg.enable_overlap_scheduler:
+            if runtime_cfg.allow_unsupported_logprobs:
+                logger.warning(
+                    "Request %s asked for logprobs but the overlap scheduler "
+                    "is enabled; allow_unsupported_logprobs=True, so the "
+                    "request will be served without logprobs.",
+                    request_id,
+                )
+                logprobs_count = 0
+            else:
+                raise InputError(
+                    "Log probabilities are not supported with the overlap"
+                    " scheduler. Start the server with"
+                    " --no-enable-overlap-scheduler to use logprobs, or"
+                    " --allow-unsupported-logprobs to silently ignore the"
+                    " field."
+                )
 
         # When the orchestrator has already tokenized the prompt for
         # KV cache-aware routing, pass the token IDs directly so MAX Serve
@@ -1658,6 +1667,41 @@ def get_app_pipeline_config(app: FastAPI) -> PipelineConfig:
     return pipeline_config
 
 
+_TRequest = TypeVar("_TRequest", bound="BaseModel")
+
+
+async def _parse_openai_request_body(
+    request: Request,
+    request_id: str,
+    model_cls: type[_TRequest],
+) -> _TRequest:
+    """Parse a JSON request body into a pydantic request model.
+
+    Honors ``pipeline_config.runtime.allow_extra_request_fields``: when set,
+    unknown top-level fields are dropped (with a warning) before validation
+    instead of failing pydantic's ``extra="forbid"`` check.
+    """
+    raw = await request.body()
+    pipeline_config = get_app_pipeline_config(request.app)
+    if not pipeline_config.runtime.allow_extra_request_fields:
+        return model_cls.model_validate_json(raw)
+
+    parsed = json.loads(raw)
+    if not isinstance(parsed, dict):
+        return model_cls.model_validate(parsed)
+    known = set(model_cls.model_fields)
+    extras = [k for k in parsed if k not in known]
+    if extras:
+        logger.warning(
+            "Request %s contained unknown top-level fields %s; dropping "
+            "(allow_extra_request_fields=True).",
+            request_id,
+            extras,
+        )
+        parsed = {k: v for k, v in parsed.items() if k in known}
+    return model_cls.model_validate(parsed)
+
+
 def get_tool_parser(app: FastAPI) -> ToolParser | None:
     """Gets the configured tool parser for the current model.
 
@@ -1906,8 +1950,8 @@ async def openai_create_completion(
     """
     http_req_id = request.state.request_id
     try:
-        completion_request = CreateCompletionRequest.model_validate_json(
-            await request.body()
+        completion_request = await _parse_openai_request_body(
+            request, http_req_id, CreateCompletionRequest
         )
 
         pipeline: TokenGeneratorPipeline | AudioGeneratorPipeline = (
@@ -1930,11 +1974,22 @@ async def openai_create_completion(
             and completion_request.logprobs != 0
             and pipeline_config.runtime.enable_overlap_scheduler
         ):
-            raise InputError(
-                "Log probabilities are not supported with the overlap"
-                " scheduler. Start the server with"
-                " --no-enable-overlap-scheduler to use logprobs."
-            )
+            if pipeline_config.runtime.allow_unsupported_logprobs:
+                logger.warning(
+                    "Request %s asked for logprobs but the overlap scheduler "
+                    "is enabled; allow_unsupported_logprobs=True, so the "
+                    "request will be served without logprobs.",
+                    http_req_id,
+                )
+                completion_request.logprobs = None
+            else:
+                raise InputError(
+                    "Log probabilities are not supported with the overlap"
+                    " scheduler. Start the server with"
+                    " --no-enable-overlap-scheduler to use logprobs, or"
+                    " --allow-unsupported-logprobs to silently ignore the"
+                    " field."
+                )
 
         response_generator = OpenAICompletionResponseGenerator(pipeline)
         prompts = get_prompts_from_openai_request(completion_request.prompt)
@@ -2027,6 +2082,11 @@ async def openai_create_completion(
     except TypeError as e:
         logger.exception("Validation error for request %s", http_req_id)
         raise HTTPException(status_code=400, detail="Invalid JSON.") from e
+    except InputError as e:
+        logger.warning(
+            "Input validation error in request %s: %s", http_req_id, str(e)
+        )
+        raise HTTPException(status_code=400, detail=str(e)) from e
     except ValueError as e:
         logger.warning("Value error in request %s: %s", http_req_id, str(e))
         # NOTE(SI-722): These errors need to return more helpful details,

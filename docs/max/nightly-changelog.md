@@ -17,6 +17,26 @@ This version is still a work in progress.
 
 ### Inference server
 
+- Added two opt-in server flags for accepting OpenAI-compatible requests
+  that the strict default behavior would reject:
+
+  - `--allow-unsupported-logprobs`: when a request asks for `logprobs`
+    against a runtime that cannot honor them (today, the overlap
+    scheduler), MAX Serve logs a warning and serves the request without
+    logprobs instead of returning a `400`.
+
+  - `--allow-extra-request-fields`: unknown top-level fields on
+    `/v1/chat/completions` and `/v1/completions` request bodies are
+    dropped (with a warning) before pydantic validation, instead of
+    returning a `400`. Useful when an upstream proxy sends vendor-specific
+    fields that MAX Serve does not need to honor.
+
+  Both flags default to `False`; the existing strict behavior is
+  unchanged. The corresponding `400` error messages now reference the new
+  flags. As a side effect, the legacy `/v1/completions` route now surfaces
+  `InputError` detail strings to the client instead of the generic
+  `"Value error."` message.
+
 - MAX Serve now emits the `maxserve.num_requests_queued` OTel/Prometheus
   metric (changed from an `UpDownCounter` to a synchronous `Gauge`). The
   gauge is sampled once per scheduler iteration from
