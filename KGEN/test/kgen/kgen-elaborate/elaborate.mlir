@@ -1382,6 +1382,34 @@ kgen.generator export @get_function_reflection() {
 
 // -----
 
+// COM: Reflection prefers the `sourceParamList` snapshot when present. This
+// COM: models a generator that's been through `RemoveUnusedParams`: the live
+// COM: `inputParams` only retains the surviving param, but the snapshot still
+// COM: carries the full source-declared name list.
+
+kgen.generator @snapshot_only<survivor: index>() -> index attributes {
+  sourceParamList = #kgen.pog_list<[
+    <"dropped_first", pos_or_kw, not_vararg>,
+    <"survivor", pos_or_kw, not_vararg>,
+    <"dropped_last", pos_or_kw, not_vararg>
+  ]>
+} {
+  %0 = kgen.param.constant = <survivor>
+  kgen.return %0 : index
+}
+
+// CHECK-LABEL: kgen.func export @get_function_reflection_snapshot
+kgen.generator export @get_function_reflection_snapshot() {
+  // The count reflects the snapshot's three names, not the single live param.
+  // CHECK-NEXT: kgen.param.constant = <3>
+  kgen.param.constant: index = <#kgen.get_function_parameter_count<#kgen.symbol.constant<@snapshot_only<7>> : !kgen.generator<() -> index>>>
+  // CHECK-NEXT: kgen.param.constant: param_list<string> = <["dropped_first", "survivor", "dropped_last"]>
+  kgen.param.constant: !kgen.param_list<!kgen.string> = <#kgen.get_function_parameter_names<#kgen.symbol.constant<@snapshot_only<7>> : !kgen.generator<() -> index>>>
+  kgen.return
+}
+
+// -----
+
 kgen.struct.generator @NonParametric = struct_inst<
   "NonParametric"(data: index)>
 
