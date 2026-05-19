@@ -75,7 +75,9 @@ ConstraintResult LIT::checkConstraints(
     TypedAttr canonProp = getCanonicalAttr(prop);
     overallAssumptionOperands.push_back(canonProp);
   }
-  // A null overallAssumption means no contextual assumptions.
+  // Combine contextual assumptions, or use trivial true when there are none so
+  // constant constraints still resolve via inferConstraintRelation (handles
+  // weakening rules, conjunction elimination, negation, etc.).
   TypedAttr overallAssumption;
   if (overallAssumptionOperands.size() == 1) {
     // Single assumption: no need to wrap in an AND.
@@ -83,6 +85,9 @@ ConstraintResult LIT::checkConstraints(
   } else if (!overallAssumptionOperands.empty()) {
     overallAssumption =
         ParamOperatorAttr::get(POC::And, overallAssumptionOperands);
+  } else {
+    MLIRContext *ctx = constraints.front().getContext();
+    overallAssumption = getScalarBoolConstant(ctx, true);
   }
 
   SmallVector<std::pair<size_t, ConstraintAttr>> failedConstraints;
@@ -93,19 +98,17 @@ ConstraintResult LIT::checkConstraints(
       origProp = evaluator->getReboundAttribute(origProp);
     TypedAttr canonProp = getCanonicalAttr(origProp);
 
-    // If the constraint evaluated to a constant, check its value directly.
-    if (isTriviallyTrueProposition(canonProp))
+    // If assumptions imply the constraint, skip it; if they contradict it,
+    // treat it as violated.
+    switch (inferConstraintRelation(overallAssumption, canonProp)) {
+    case ConstraintRelation::Implies:
       continue;
-    if (isTriviallyFalseProposition(canonProp)) {
+    case ConstraintRelation::Contradicts:
       failedConstraints.emplace_back(idx, constraint);
       continue;
+    case ConstraintRelation::Unprovable:
+      break;
     }
-
-    // If there are contextual assumptions, and the constraint is implied by
-    // them, skip it. Use constraintImplies for better implication checking
-    // (handles weakening rules, conjunction elimination, etc.)
-    if (overallAssumption && constraintImplies(overallAssumption, canonProp))
-      continue;
 
     // Unprovable constraint.
     localUnprovableConstraints.push_back(

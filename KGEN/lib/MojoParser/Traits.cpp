@@ -103,7 +103,7 @@ static bool isInheritedFnOp(FnOp fnOp) {
 /// Returns:
 ///   - Satisfied: conformance implies all method constraints
 ///   - Violated: method constraints contradict the conformance
-///   - Unprovable: constraints cannot be proven or disproven - error case
+///   - Unprovable: constraints cannot be proven or disproven (error case)
 static ConstraintResult
 checkMethodConstraintStatus(FnOp method, ConstraintAttr conformanceConstraint,
                             ASTDecl &structDecl) {
@@ -133,13 +133,15 @@ checkMethodConstraintStatus(FnOp method, ConstraintAttr conformanceConstraint,
       continue;
     }
 
-    // Check contradiction first (more specific), then implication.
-    if (constraintsContradict(confProp, methodProp))
+    switch (inferConstraintRelation(confProp, methodProp)) {
+    case ConstraintRelation::Contradicts:
       return ConstraintResult::Violated;
-    if (constraintImplies(confProp, methodProp))
+    case ConstraintRelation::Implies:
       continue;
-
-    hasUnprovable = true;
+    case ConstraintRelation::Unprovable:
+      hasUnprovable = true;
+      break;
+    }
   }
 
   return hasUnprovable ? ConstraintResult::Unprovable
