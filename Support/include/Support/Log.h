@@ -78,15 +78,22 @@ struct LogArg {
     Pointer
   };
 
+  // Plain POD string view: pointer + length with a guaranteed, stable layout
+  // that does not depend on any string_view-like implementation.
+  struct StrView {
+    const char *ptr;
+    size_t len;
+  };
+
   union {
     bool b;
     int64_t i64;
     uint64_t ui64;
     float fp32;
     double fp64;
-    // for short strings, stored inline (up to 15 chars + null terminator)
-    std::array<char, sizeof(std::string_view)> ssoStr;
-    std::string_view str = "";
+    // for short strings, stored inline (16 chars max)
+    std::array<char, sizeof(StrView)> ssoStr;
+    StrView str{};
     const void *ptr;
   } data;
   Type tag;
@@ -111,14 +118,17 @@ LogArg toLogArg(T &&val) {
     return LogArg{.data = {.fp64 = val}, .tag = Fp64};
   } else if constexpr (std::is_convertible_v<D, std::string_view>) {
     std::string_view sv(val);
-    if (sv.size() < sizeof(LogArg::data.ssoStr)) {
+    if (sv.size() <= sizeof(LogArg::data.ssoStr)) {
       LogArg arg;
       arg.tag = LogArg::Type::SmallString;
       std::copy(sv.data(), sv.data() + sv.size(), arg.data.ssoStr.data());
-      arg.data.ssoStr[sv.size()] = '\0';
+      // Null-terminate only when there is room; a full 16-byte string is
+      // identified by the absence of a null within the buffer.
+      if (sv.size() < sizeof(LogArg::data.ssoStr))
+        arg.data.ssoStr[sv.size()] = '\0';
       return arg;
     } else {
-      return LogArg{.data = {.str = sv}, .tag = String};
+      return LogArg{.data = {.str = {sv.data(), sv.size()}}, .tag = String};
     }
   } else if constexpr (std::is_pointer_v<D>) {
     return LogArg{.data = {.ptr = val}, .tag = Pointer};
@@ -131,6 +141,10 @@ LogArg toLogArg(T &&val) {
 struct LogRecord {
   constexpr static size_t maxArgs = 8;
   using Timestamp = std::chrono::time_point<std::chrono::system_clock>;
+  // Mojo FFI mirrors Timestamp as Int64. If this fires, the platform's
+  // system_clock uses a different rep type and the Mojo bindings need
+  // revisiting.
+  static_assert(std::is_same_v<Timestamp::clock::duration::rep, int64_t>);
   Timestamp timestamp;
   std::string_view fmtString;
   std::array<LogArg, maxArgs> args;
@@ -144,6 +158,13 @@ struct LogRecord {
         argCount(sizeof...(Args)), level(lvl) {
     static_assert(sizeof...(Args) <= maxArgs, "Too many log arguments");
   }
+
+  // Constructs from a pre-built args array. Used by the C FFI shim
+  // (LogFFI.cpp), which serializes typed arguments across the boundary itself.
+  LogRecord(Timestamp ts, LogLevel lvl, std::string_view fmt,
+            std::array<LogArg, maxArgs> prebuiltArgs, uint8_t count)
+      : timestamp(ts), fmtString(fmt), args(std::move(prebuiltArgs)),
+        argCount(count), level(lvl) {}
 };
 
 class Logger;

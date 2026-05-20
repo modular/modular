@@ -3,12 +3,32 @@
 Use this library to emit log messages from any layer of the stack to a file or
 stdout, with timestamps and severity levels.
 
-## Macros
+## Interface
+
+The logger generally expects a single formatting string and a list of arguments
+to be formatted within it. The format string uses `fmt` syntax, which is
+similar to `std::format`.
+
+### C++
 
 `MLOG_DEBUG`, `MLOG_INFO`, `MLOG_WARN`, `MLOG_ERROR`, and `MLOG_FATAL`
 are convenience wrappers around `MLOG(level, "format string", args...)`, which
-emits a message at the specified level to a file or stdout. The format string
-uses `fmt` syntax, which is similar to `std::format`.
+emits a message at the specified level to a file or stdout. `MLOG_FATAL` will
+abort the user program after logging the message.
+
+### Mojo
+
+There is a Mojo interface wrapping the C++ Log library. It uses the same `fmt`
+formatting underneath, so the same log message will produce the same output
+regardless of source (modulo timestamps etc.). The interface specifically is:
+
+```mojo
+mlog[MLOG_INFO, "format string here: {}"]("arguments here")
+mlog_info["all {} log convenience functions work"](5)
+```
+
+Arguments are captured and transformed into a form suitable for the FFI call,
+which is the LogArg class on the C++ side of the implementation.
 
 ## Environment variables
 

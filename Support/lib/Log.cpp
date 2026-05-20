@@ -18,6 +18,7 @@
 #include <atomic>
 #include <chrono>
 #include <cstdlib>
+#include <cstring>
 #include <memory>
 #include <mutex>
 #include <span>
@@ -297,10 +298,12 @@ private:
         store.push_back(arg.data.fp64);
         break;
       case LogArg::Type::SmallString:
-        store.push_back(fmt::string_view(arg.data.ssoStr.data()));
+        store.push_back(fmt::string_view(
+            arg.data.ssoStr.data(),
+            strnlen(arg.data.ssoStr.data(), arg.data.ssoStr.size())));
         break;
       case LogArg::Type::String:
-        store.push_back(arg.data.str);
+        store.push_back(fmt::string_view(arg.data.str.ptr, arg.data.str.len));
         break;
       case LogArg::Type::Pointer:
         store.push_back(fmt::ptr(arg.data.ptr));

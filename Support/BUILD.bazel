@@ -996,6 +996,16 @@ modular_cc_library(
     ],
 )
 
+modular_cc_library(
+    name = "LogFFI",
+    srcs = ["lib/LogFFI.cpp"],
+    hdrs = ["include/Support/LogFFI.h"],
+    deps = [
+        ":Log",
+        ":SymbolExport",
+    ],
+)
+
 mlir_nanobind(
     name = "MDialectNanobindInc",
     srcs = glob(["include/Support/MDialect/*.td"]),
