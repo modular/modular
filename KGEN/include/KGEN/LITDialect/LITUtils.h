@@ -400,6 +400,41 @@ ParamDeclRefAttr extractParamDeclRef(TypedAttr attr);
 
 } // namespace LIT
 
+//===----------------------------------------------------------------------===//
+// Mojo kernel decorator helpers consumed by the Mojo parser.
+//===----------------------------------------------------------------------===//
+
+/// Tracks the value witness entries of each argument and result type. A
+/// DictionaryAttr where the key is the method name and the value is the
+/// (potentially unresolved) method reference as a TypedAttr.
+constexpr StringLiteral MOGG_ARGUMENT_VALUE_WITNESSES =
+    "mogg.arg_value_witnesses";
+constexpr StringLiteral MOGG_RESULT_VALUE_WITNESSES =
+    "mogg.result_value_witnesses";
+
+// The decorator that marks a Mojo function as a registered MOGG intrinsic.
+constexpr StringLiteral MOGG_REGISTER_INTERNAL_FUNCTION = "register_internal";
+// Decorator that allows new attrs to be added without an explicit decorator.
+constexpr StringLiteral MOGG_REGISTER_INTRINSIC = "__mogg_intrinsic_attr";
+
+/// True iff `structTy` is a `tensor::ManagedTensorSlice` (the DPS tensor type
+/// used by extensibility kernels).
+inline bool isDPSTensor(LIT::StructType structTy) {
+  return structTy.getSymbol().getRootReference().strref().starts_with(
+             "tensor") &&
+         structTy.getSymbol().getLeafReference() == "ManagedTensorSlice";
+}
+
+/// True iff `structTy` is the public `std::DeviceContext` kernel-launch type.
+inline bool isMojoDeviceContext(LIT::StructType structTy) {
+  return structTy.getSymbol().getRootReference() == "std" &&
+         structTy.getSymbol().getLeafReference() == "DeviceContext";
+}
+
+inline bool fnNeedsConformances(LIT::FnOp fnOp) {
+  return fnOp.getSourceName() == "execute";
+}
+
 } // namespace KGEN
 } // namespace M
 
