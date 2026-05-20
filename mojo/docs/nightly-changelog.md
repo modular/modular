@@ -78,6 +78,11 @@ This version is still a work in progress.
   - `Int(py=obj)` and `Scalar[IntDType](py=obj)` fast-path exact
     Python `int` via `PyLong_AsSsize_t`.
 
+  - `PythonObject(value: Bool)` and `PythonObject[dtype: DType.bool]`
+    read the cached `Py_True` / `Py_False` singletons directly instead
+    of going through `PyBool_FromLong`, skipping one C-call dispatch
+    per Mojo `Bool` returned to Python.
+
 - Added `TileTensor.copy_from()` and `TileTensor.split()` for copying between
   compatible tile views and splitting tiles into static or runtime-sized
   partitions.
