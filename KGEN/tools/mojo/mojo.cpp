@@ -33,6 +33,12 @@
 #include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/InitLLVM.h"
 
+#include <algorithm>
+#include <cctype>
+#include <filesystem>
+#include <iostream>
+#include <string>
+
 using namespace M;
 
 #define DRIVER_OPTIONS_PATH "DriverOptions.inc"
@@ -123,6 +129,76 @@ int main(int argc, char **argv) {
       return 1;
     }
     llvm::outs() << (*cacheFolder / ".mojo_cache").string() << "\n";
+    return 0;
+  }
+  case options::OPT_clear_cache: {
+    // Accept '-f' / '--force' as a trailing modifier to skip the prompt.
+    // Anything else after `--clear-cache` is rejected so we don't silently
+    // ignore typos like `--forced`.
+    bool force = false;
+    for (const char *rest : arguments.slice(index)) {
+      StringRef restRef(rest);
+      if (restRef == "-f" || restRef == "--force") {
+        force = true;
+      } else {
+        llvm::errs() << "error: unexpected argument '" << restRef
+                     << "' for --clear-cache; expected '-f' or '--force'.\n";
+        return 1;
+      }
+    }
+
+    ErrorOr<Config> cfg = Config::open();
+    if (cfg.isError()) {
+      llvm::errs() << "error: failed to open Modular configuration: "
+                   << cfg.getError() << "\n";
+      return 1;
+    }
+    auto cacheFolder = cfg->getModularCacheFolderPath();
+    if (cacheFolder.isError()) {
+      llvm::errs() << "error: failed to resolve cache folder: "
+                   << cacheFolder.getError() << "\n";
+      return 1;
+    }
+    std::filesystem::path mojoCachePath = *cacheFolder / ".mojo_cache";
+
+    std::error_code ec;
+    if (!std::filesystem::exists(mojoCachePath, ec)) {
+      llvm::outs() << "Mojo cache at " << mojoCachePath.string()
+                   << " does not exist; nothing to do.\n";
+      return 0;
+    }
+
+    if (!force) {
+      llvm::outs() << "This will remove the Mojo compile cache at:\n  "
+                   << mojoCachePath.string() << "\nProceed? [y/N] ";
+      llvm::outs().flush();
+
+      std::string response;
+      if (!std::getline(std::cin, response)) {
+        llvm::errs() << "error: failed to read confirmation; aborting.\n";
+        return 1;
+      }
+      // Trim leading/trailing whitespace and lowercase.
+      auto isWS = [](unsigned char c) { return std::isspace(c) != 0; };
+      while (!response.empty() && isWS(response.front()))
+        response.erase(response.begin());
+      while (!response.empty() && isWS(response.back()))
+        response.pop_back();
+      std::transform(response.begin(), response.end(), response.begin(),
+                     [](unsigned char c) { return std::tolower(c); });
+      if (response != "y" && response != "yes") {
+        llvm::outs() << "Aborted.\n";
+        return 0;
+      }
+    }
+
+    std::filesystem::remove_all(mojoCachePath, ec);
+    if (ec) {
+      llvm::errs() << "error: failed to remove " << mojoCachePath.string()
+                   << ": " << ec.message() << "\n";
+      return 1;
+    }
+    llvm::outs() << "Removed " << mojoCachePath.string() << "\n";
     return 0;
   }
   case options::OPT_help:
