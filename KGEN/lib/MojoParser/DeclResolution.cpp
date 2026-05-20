@@ -1795,7 +1795,12 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
   }
   shared.setClosureParamCaptures(decl, std::move(closureParamCaptures));
   // Emit type equality constraints for closure external references.
-  // Add to tcSignature.bodyConstraints so they become part of the generator.
+  // These are pushed into tcSignature.paramList.emittedBodyConstraints so they
+  // appear in the generator type, and tracked separately in
+  // closureExternalRefConstraints so they can be inserted into decl's known
+  // assumptions below. Parsed `where` clauses are already in decl's known
+  // assumptions at this point.
+  SmallVector<ConstraintAttr> closureExternalRefConstraints;
   for (const ClosureExternalRef &ref : closureExternalRefs) {
     AliasDeclOp aliasOp = ref.aliasOp;
     ParamDeclAttr closureParam = ref.closureParam;
@@ -1818,15 +1823,16 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
     TypedAttr eqConstraint =
         ParamOperatorAttr::get(POC::EQ, witnessAttr, funcParamRef);
     Location loc = shared.diags.translateLocation(decl.getLoc());
-    tcSignature.bodyConstraints.push_back(
-        ConstraintAttr::get(eqConstraint, loc));
+    ConstraintAttr constraint = ConstraintAttr::get(eqConstraint, loc);
+    tcSignature.paramList.emittedBodyConstraints.push_back(constraint);
+    closureExternalRefConstraints.push_back(constraint);
   }
 
   FnTypeGeneratorType signature = tcSignature.getFnTypeGeneratorType();
   if (!signature)
     return failure();
 
-  decl.insertKnownAssumptions(tcSignature.bodyConstraints);
+  decl.insertKnownAssumptions(closureExternalRefConstraints);
 
   /// configure FnOp
 

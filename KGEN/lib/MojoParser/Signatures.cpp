@@ -1064,7 +1064,7 @@ std::optional<TypeCheckedParamList>
 TypeCheckedParamList::create(ParsedParamList &parsedParams,
                              ASTDecl &declScope) {
   TypeCheckedParamList result(declScope);
-  result.bodyConstraints = std::move(parsedParams.bodyConstraints);
+  result.stagedBodyConstraints = std::move(parsedParams.bodyConstraints);
 
   // Resolve each of the parameter declarations.
   IREmitter emitter(declScope, EC_Type);
@@ -1180,8 +1180,8 @@ TypeCheckedParamList::create(ParsedParamList &parsedParams,
           propVal, result.shared.diags.translateLocation(constraint.loc));
       paramConstraints.push_back(paramConstraint);
 
-      // Must insert the constraint into the temporary scope immediately so that
-      // the following constraint expressions may utilize it.
+      // Insert the constraint into the param-list's declScope immediately
+      // so that subsequent constraint expressions can reference it.
       declScope.insertKnownAssumptions({paramConstraint});
     }
 
@@ -1215,8 +1215,40 @@ TypeCheckedParamList::create(ParsedParamList &parsedParams,
   return result;
 }
 
-PogListAttr TypeCheckedParamList::getParamListAttr(
-    ArrayRef<ConstraintAttr> bodyConstraints) const {
+void TypeCheckedParamList::emitBodyConstraints() {
+  SharedState &shared = declScope.getShared();
+  IREmitter constraintEmitter(declScope, EC_Requires);
+  for (const ParsedConstraint &constraint : stagedBodyConstraints) {
+    RValue propI1 =
+        constraintEmitter.emitExprI1(constraint.propExpr, EC_Requires);
+    if (!propI1) {
+      constraintEmitter.emitError(constraint.loc,
+                                  "failed to emit constraint expression");
+      continue;
+    }
+
+    PValue propVal = propI1.getIfPValue();
+    if (!propVal) {
+      constraintEmitter.emitErrorForDynamicValueInParameter(constraint.loc);
+      continue;
+    }
+
+    // Convert `x and y` to `x & y` so we get better canonicalization.
+    propVal = deShortCircuitCond(propVal);
+
+    // Translate location without any DebugInfo scope since this metadata is
+    // purely frontend use and never ends up in DWARF.
+    auto bodyConstraint = ConstraintAttr::get(
+        propVal, shared.diags.translateLocation(constraint.loc));
+    emittedBodyConstraints.push_back(bodyConstraint);
+
+    // Insert the constraint into the param-list's declScope immediately
+    // so that subsequent constraint expressions can reference it.
+    declScope.insertKnownAssumptions({bodyConstraint});
+  }
+}
+
+PogListAttr TypeCheckedParamList::getParamListAttr() const {
   assert(allParamConstraints.size() == names.size() &&
          "constraints array has different size than parameter arrays");
   // In a parameter list, any variadic list is claimed to be ReadMem.
@@ -1228,7 +1260,7 @@ PogListAttr TypeCheckedParamList::getParamListAttr(
 
   return PogListAttr::get(shared.getContext(), names, passingKinds,
                           variadicKinds, defaults, origVariadicConvention,
-                          allParamConstraints, bodyConstraints);
+                          allParamConstraints, emittedBodyConstraints);
 }
 
 //===----------------------------------------------------------------------===//
@@ -2431,31 +2463,8 @@ TypeCheckedFnSignature::TypeCheckedFnSignature(TypeCheckedParamList &paramList,
     }
   }
 
-  // Type check the constraints.
-  IREmitter constraintEmitter(paramList.declScope, EC_Requires);
-  for (const ParsedConstraint &constraint : paramList.bodyConstraints) {
-    RValue propI1 =
-        constraintEmitter.emitExprI1(constraint.propExpr, EC_Requires);
-    if (!propI1) {
-      constraintEmitter.emitError(constraint.loc,
-                                  "failed to emit constraint expression");
-      continue;
-    }
-
-    PValue propVal = propI1.getIfPValue();
-    if (!propVal) {
-      constraintEmitter.emitErrorForDynamicValueInParameter(constraint.loc);
-      continue;
-    }
-
-    // Convert `x and y` to `x & y` so we get better canonicalization.
-    propVal = deShortCircuitCond(propVal);
-
-    // Translate location without any DebugInfo scope since this metadata is
-    // purely frontend use and never ends up in DWARF.
-    bodyConstraints.push_back(ConstraintAttr::get(
-        propVal, shared.diags.translateLocation(constraint.loc)));
-  }
+  // Type check & emit the constraints.
+  paramList.emitBodyConstraints();
 }
 
 /// This performs any special checks over the declaration based on its name
@@ -2784,7 +2793,7 @@ FnTypeGeneratorType TypeCheckedFnSignature::getFnTypeGeneratorType() const {
   }
   assert(numVariadics <= 1 && "There can be at most one variadic argument");
 
-  PogListAttr paramListAttr = paramList.getParamListAttr(bodyConstraints);
+  PogListAttr paramListAttr = paramList.getParamListAttr();
   auto metadata = FnMetadataAttr::get(
       PogListAttr::get(ctx, argPogs, /*bodyConstraints=*/{},
                        argVariadicOrigConvention),

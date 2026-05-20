@@ -194,9 +194,15 @@ public:
   static std::optional<TypeCheckedParamList>
   create(ParsedParamList &parsedParams, ASTDecl &declScope);
 
+  /// Emit the trailing `where` clauses parsed into `emittedBodyConstraints`.
+  /// This cannot be performed at `create` because the body constraints may
+  /// reference function arguments (in the case of a function trailing
+  /// constraint), which requires the function signature be parsed and its
+  /// arguments already registered in `declScope`.
+  void emitBodyConstraints();
+
   /// Get an PogListAttr for this parameter list.
-  PogListAttr
-  getParamListAttr(ArrayRef<ConstraintAttr> bodyConstraints = {}) const;
+  PogListAttr getParamListAttr() const;
 
   // These are the results of type checking 'params' in typeCheck.
   /// One ParamDeclAttr for each parameter being declared.
@@ -211,9 +217,12 @@ public:
 
   /// Constraints specified with 'where' clauses at each parameter position.
   SmallVector<SmallVector<ConstraintAttr>> allParamConstraints;
+  /// Constraints emitted for the body of the generator.
+  SmallVector<ConstraintAttr> emittedBodyConstraints;
 
-  /// Trailing constraints specified with 'where' clauses after the signature.
-  SmallVector<ParsedConstraint> bodyConstraints;
+  /// Un-emitted body constraints that will be processed later during
+  /// `emitBodyConstraints`.
+  SmallVector<ParsedConstraint> stagedBodyConstraints;
 };
 
 //===----------------------------------------------------------------------===//
@@ -306,9 +315,6 @@ public:
   /// origins applied, e.g. "!lit.ref<String>" or "!kgen.param_list<Int>"
   SmallVector<Type> fullArgTypes;
   SmallVector<ParamDeclAttr> implicitOriginDecls;
-
-  /// Trailing function level constraints specified with 'where' clauses.
-  SmallVector<ConstraintAttr> bodyConstraints;
 
   /// This is the result type + variant for throwing functions.  This is what
   /// finally gets treated as the ABI for the function.
