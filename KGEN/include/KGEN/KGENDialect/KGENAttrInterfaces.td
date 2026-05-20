@@ -237,6 +237,13 @@ def FnMetadataAttrInterface : AttrInterface<"FnMetadataAttrInterface"> {
       Request the custom metadata attribute print the provided FuncType.
     }], "void", "printFuncType", (ins "AsmPrinter &":$p, "FuncType":$sig)>,
     InterfaceMethod<[{
+      Print the provided FuncType inline, without any dialect prefix or
+      angle-bracket wrap. Used when the FuncType appears as the body of an
+      already-wrapped generator type, where the prefix and wrapping would be
+      redundant.
+    }], "void", "printFuncTypeInline", (ins "AsmPrinter &":$p,
+                                            "FuncType":$sig)>,
+    InterfaceMethod<[{
       Get a new metadata attribute for a FuncType where the first `numBound`
       positional arguments have been removed from the FuncType by being
       explicitly bound to values, such as in closure formation.
