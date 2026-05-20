@@ -91,7 +91,10 @@ def test_string_subclass_override_takes_fallback() raises:
     # A `str` subclass with overridden `__str__` must observe the override.
     # `PyUnicode_CheckExact` rejects subclasses, so the fast path is skipped.
     var mod = Python.evaluate(
-        "class _MyStr(str):\n    def __str__(self):\n        return 'override'\n",
+        (
+            "class _MyStr(str):\n    def __str__(self):\n        return"
+            " 'override'\n"
+        ),
         file=True,
         name="_str_subclass_test_mod",
     )
