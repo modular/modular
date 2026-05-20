@@ -104,7 +104,7 @@ struct MLASparseConfig[qkv_dtype: DType]:
     var num_kv_heads: Int
     var qk_depth: Int
     var v_depth: Int
-    var top_k: Int
+    var indices_stride: Int
     var group: Int
 
     # the leftmost q_depth is store in smem,
@@ -131,14 +131,14 @@ struct MLASparseConfig[qkv_dtype: DType]:
         num_kv_heads: Int,
         qk_depth: Int,
         v_depth: Int,
-        top_k: Int,
+        indices_stride: Int,
         group: Int,
     ):
         self.num_q_heads = num_q_heads
         self.num_kv_heads = num_kv_heads
         self.qk_depth = qk_depth
         self.v_depth = v_depth
-        self.top_k = top_k
+        self.indices_stride = indices_stride
         self.group = group
 
 

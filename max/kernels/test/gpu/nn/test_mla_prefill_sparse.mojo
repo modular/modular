@@ -542,7 +542,7 @@ def run_test_prefill_sparse[
         num_kv_heads=1,
         qk_depth=QK_DEPTH,
         v_depth=V_DEPTH,
-        top_k=topk,
+        indices_stride=topk,
         group=num_heads,
     )
 

@@ -254,6 +254,7 @@ from nn.attention.gpu.mla_index_fp8 import mla_indexer_ragged_float8_paged
 from nn.attention.gpu.nvidia.sm100.mla_decode_dispatch import (
     compute_mla_dispatch_scalars,
 )
+from nn.attention.gpu.nvidia.sm100.mla_prefill import mla_sm100_prefill_sparse
 from nn.moe import moe_create_indices, router_group_limited, single_group_router
 from nn.nms import non_max_suppression, non_max_suppression_shape_func
 from nn.gemv_partial_norm import gemv_and_partial_norm
@@ -8991,6 +8992,132 @@ struct Struct_mla_prefill_graph_decode_paged_fp8_sparse:
                 indices_stride,
                 topk_lengths_ptr,
                 attn_sink_ptr,
+            )
+
+
+# ===-----------------------------------------------------------------------===#
+# Sparse MLA prefill (DSv3.2 absorbed shape, BF16, SM100)
+#
+# Wraps `mla_prefill_sparse` (the SM100 sparse prefill attention kernel). The
+# kernel hardcodes the DSv3.2 absorbed/latent dims:
+#   qk_depth = kv_lora_rank(512) + qk_rope_head_dim(64) = 576
+#   v_depth  = kv_lora_rank(512)
+#   num_q_heads = 128, num_kv_heads = 1
+#
+# Inputs follow the existing sparse MLA MOGG convention: the indexer emits
+# logical token positions in `[0, cache_length)`; this entry point remaps them
+# to physical paged-cache rows via `paged_sparse_kv_index_remap` before
+# invoking the kernel.
+# ===-----------------------------------------------------------------------===#
+@compiler.register("mo.mla.prefill.sparse.paged")
+struct Struct_mla_prefill_sparse_paged:
+    @always_inline
+    @staticmethod
+    @parameter
+    def execute[
+        dtype: DType,
+        cache_dtype: DType,
+        //,
+        target: StaticString,
+        indices_stride: Int,
+    ](
+        output: OutputTensor[dtype=dtype, rank=3, ...],
+        q: InputTensor[dtype=dtype, rank=3, ...],
+        kv_blocks: MutableInputTensor[dtype=cache_dtype, rank=6, ...],
+        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
+        layer_idx: UInt32,
+        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        sparse_indices: InputTensor[dtype=DType.int32, rank=2, ...],
+        topk_lengths: InputTensor[dtype=DType.int32, rank=1, ...],
+        attn_sink: InputTensor[dtype=DType.float32, rank=1, ...],
+        scale: Float32,
+        context: DeviceContext,
+    ) raises:
+        comptime assert is_gpu[
+            target
+        ](), "mo.mla.prefill.sparse.paged is only supported on GPU"
+
+        var kv_collection = generic_get_paged_cache(
+            kv_blocks,
+            cache_lengths,
+            kv_lookup_table,
+            max_lengths,
+        )
+
+        # The underlying kernel asserts qk_depth == 576, num_q_heads == 128,
+        # num_kv_heads == 1; pull those from the input static shapes.
+        comptime num_q_heads = Int(q.static_spec.shape_tuple[1])
+        comptime qk_depth = Int(q.static_spec.shape_tuple[2])
+        comptime v_depth = Int(output.static_spec.shape_tuple[2])
+        comptime mla_page_size = Int(kv_blocks.static_spec.shape_tuple[3])
+
+        var dev_ctx = context
+        var num_indices_sparse = sparse_indices.size()
+
+        var attn_sink_ptr = UnsafePointer[
+            Scalar[DType.float32], origin=ImmutAnyOrigin
+        ](attn_sink.to_layout_tensor().ptr)
+
+        var k_cache = kv_collection.get_key_cache(Int(layer_idx))
+
+        with Trace[TraceLevel.OP, target=target](
+            "mo.mla.prefill.sparse.paged",
+            task_id=get_safe_task_id(context),
+        ):
+            # Logical → physical sparse index remap. The kernel expects
+            # each selected key as `Int32(physical_block_id * page_size +
+            # token_offset_within_page)`; the indexer emits logical
+            # `[0, cache_length)` positions, so we remap into a scratch
+            # buffer here.
+            var scratch_sparse_indices = dev_ctx.enqueue_create_buffer[
+                DType.int32
+            ](num_indices_sparse)
+            paged_sparse_kv_index_remap[
+                target, mla_page_size, indices_stride, cache_dtype
+            ](
+                scratch_sparse_indices.unsafe_ptr(),
+                sparse_indices,
+                input_row_offsets,
+                kv_lookup_table,
+                kv_blocks,
+                context,
+            )
+
+            # The kernel's `indices` / `topk_lengths` tile tensors are
+            # `DType.uint32`. Invalid sparse slots are encoded as `Int32(-1)`
+            # which has the same bit pattern as `UInt32(0xFFFFFFFF)`; the
+            # producer in the kernel reads them as int32 and rejects the
+            # negative ones (cf. the `idx >= 0` check in the gather4 path),
+            # so reinterpreting the bits via `bitcast` is sound.
+            var indices_tt = TileTensor(
+                scratch_sparse_indices.unsafe_ptr().bitcast[
+                    Scalar[DType.uint32]
+                ](),
+                row_major(Idx(num_indices_sparse)),
+            )
+            var topk_lengths_tt = TileTensor(
+                topk_lengths.to_layout_tensor().ptr.bitcast[
+                    Scalar[DType.uint32]
+                ](),
+                row_major(Idx(Int(topk_lengths.dim_size(0)))),
+            )
+
+            mla_sm100_prefill_sparse[
+                num_q_heads=num_q_heads,
+                qk_depth=qk_depth,
+                v_depth=v_depth,
+                indices_stride=indices_stride,
+            ](
+                output.to_tile_tensor[DType.int64](),
+                q.to_tile_tensor[DType.int64](),
+                k_cache,
+                indices_tt,
+                topk_lengths_tt,
+                attn_sink_ptr,
+                scale,
+                context,
             )
 
 
