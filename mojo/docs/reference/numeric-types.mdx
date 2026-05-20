@@ -28,9 +28,10 @@ that matches the hardware's native word size. Other numeric types are built
 on `SIMD`: `Float32`, `Int64`, `UInt8`, and even `UInt`.
 
 :::note
-This page doesn't require imports. Every type, alias, and
-function is built into the language or included in the
-Standard Library prelude, which is automatically available.
+Most types on this page require no imports. They're built into the
+language or included in the Standard Library prelude, which is
+automatically available. The exception is `Float4_e2m1fn`, which
+requires `from std.builtin.simd import Float4_e2m1fn`.
 :::
 
 ## `SIMD` {#simd}
@@ -61,7 +62,7 @@ with SIMD, which can significantly improve performance over
 scalar operations.
 
 :::note
-`SIMD` has a hard limit of 2^15 (32768) elements. This is a
+`SIMD` has a hard limit of 2**15 (32768) elements. This is a
 compile-time limit, not a runtime one.
 
 In practice, the usable width is much smaller and depends on
@@ -152,8 +153,8 @@ When you write `Float32`, you're writing `Scalar[DType.float32]`, which is
 
 ```mojo
 # DType selects a number kind, such as 32-bit float or 8-bit integer
-var x: SIMD[DType.float32, 4] = ...  # four 32-bit floats
-var y: SIMD[DType.int8, 16] = ...    # sixteen 8-bit ints
+var x: SIMD[DType.float32, 4] = # ...  # four 32-bit floats
+var y: SIMD[DType.int8, 16] = # ...    # sixteen 8-bit ints
 ```
 
 Use `DType` to write functions that work across numeric kinds:
@@ -175,7 +176,7 @@ def double[T: DType](x: Scalar[T]) -> Scalar[T]:
 | `DType.int64`  | 64-bit  | `DType.uint64`  | 64-bit  |
 | `DType.int128` | 128-bit | `DType.uint128` | 128-bit |
 | `DType.int256` | 256-bit | `DType.uint256` | 256-bit |
-| `DType.index`  | Machine | `DType.uint`    | Machine |
+| `DType.int`    | Machine | `DType.uint`    | Machine |
 
 ### Floating-point DType specifications
 
@@ -197,7 +198,7 @@ def double[T: DType](x: Scalar[T]) -> Scalar[T]:
 | Value           | Selects                     |
 |-----------------|-----------------------------|
 | `DType.bool`    | Boolean (1-bit)             |
-| `DType.invalid` | no valid DType has been set |
+| `DType.invalid` | No valid DType has been set |
 
 ## Integers
 
@@ -336,7 +337,7 @@ memory interfaces.
 
 ## Floating point types
 
-Mojo does not provide a `Float` type analogous to `Int`. Instead it
+Mojo doesn't provide a `Float` type analogous to `Int`. Instead it
 provides numerous fixed-width floating-point types. Each is an alias for a
 one-element `SIMD`:
 
@@ -349,7 +350,6 @@ one-element `SIMD`:
 | `Float64`         | 64        | IEEE 754 binary64 | `Scalar[DType.float64]`                       |
 | `BFloat16`        | 16        | Brain float       | `Scalar[DType.bfloat16]`                      |
 | `Float4_e2m1fn`   | 4         | OCP MX            | `Scalar[DType.float4_e2m1fn]`                 |
-| `Float8_e3m4`     | 8         | --                | `Scalar[DType.float8_e3m4]`                   |
 | `Float8_e4m3fn`   | 8         | OFP8              | `Scalar[DType.float8_e4m3fn]`                 |
 | `Float8_e4m3fnuz` | 8         | --                | `Scalar[DType.float8_e4m3fnuz]`               |
 | `Float8_e5m2`     | 8         | OFP8              | `Scalar[DType.float8_e5m2]`                   |
@@ -435,11 +435,13 @@ mantissa precision for the ability to fit larger models or larger
 batches on the same silicon. These formats follow the OCP
 Microscaling Formats (MX) and OFP8 specifications.
 
-There is no single `Float8` type in Mojo. It's a colloquial umbrella for
-the six 8-bit floating-point variants: `Float8_e3m4`, `Float8_e4m3fn`,
-`Float8_e4m3fnuz`, `Float8_e5m2`, `Float8_e5m2fnuz`, and `Float8_e8m0fnu`.
-Each is a distinct `Scalar` alias with its own exponent/mantissa layout and
-set of supported operations.
+There's no single `Float8` type in Mojo. It's a colloquial umbrella for
+the five 8-bit floating-point variants exposed as `Scalar` aliases:
+`Float8_e4m3fn`, `Float8_e4m3fnuz`, `Float8_e5m2`, `Float8_e5m2fnuz`,
+and `Float8_e8m0fnu`. Each has its own exponent/mantissa layout and set
+of supported operations. `DType.float8_e3m4` also exists as a dtype
+value but has no `Scalar` alias; use `Scalar[DType.float8_e3m4]`
+directly.
 
 `Float8` formats are used in machine learning workloads where memory
 bandwidth matters more than precision. These types require GPU hardware for
@@ -479,21 +481,21 @@ types support arithmetic at runtime on CPU.
 
 **Arithmetic support** (tested on ARM CPU, NVPTX sm_90a, AMDGCN gfx942):
 
-| Type              | Comptime | CPU | NVPTX | AMDGCN |
-|-------------------|----------|-----|-------|--------|
-| `Float8_e4m3fn`   | ✅       | ❌  | ✅    | ❌     |
-| `Float8_e4m3fnuz` | ✅       | ❌  | ❌    | ❌     |
-| `Float8_e5m2`     | ✅       | ❌  | ✅    | ❌     |
-| `Float8_e5m2fnuz` | ✅       | ❌  | ❌    | ❌     |
-| `Float8_e3m4`     | ❌       | ❌  | ❌    | ❌     |
+| Type                | Comptime | CPU | NVPTX | AMDGCN |
+|---------------------|----------|-----|-------|--------|
+| `Float8_e4m3fn`     | ✅       | ❌  | ✅    | ❌     |
+| `Float8_e4m3fnuz`   | ✅       | ❌  | ❌    | ❌     |
+| `Float8_e5m2`       | ✅       | ❌  | ✅    | ❌     |
+| `Float8_e5m2fnuz`   | ✅       | ❌  | ❌    | ❌     |
+| `DType.float8_e3m4` | ❌       | ❌  | ❌    | ❌     |
 
 NVPTX support for `Float8_e4m3fn` and `Float8_e5m2` is emulated by
 the compiler: operands are upconverted to a wider type, the operation
 runs in that wider type, and the result is downconverted back. There
 are no native fp8 arithmetic instructions.
 
-- `Float8_e3m4` has no arithmetic support at any stage, including
-  comptime. Most of its conversions work only at comptime.
+- `DType.float8_e3m4` has no arithmetic support at any stage,
+  including comptime. Most of its conversions work only at comptime.
 
 - `Float4_e2m1fn` requires NVIDIA Blackwell (B200) or later.
 
@@ -628,7 +630,7 @@ Variables have a fixed type and never convert implicitly.
 ## Explicit conversions
 
 Converting between numeric types always requires an explicit
-constructor or cast. Mojo does not perform implicit numeric
+constructor or cast. Mojo doesn't perform implicit numeric
 conversions between variables:
 
 ```mojo
