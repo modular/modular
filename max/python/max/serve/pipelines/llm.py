@@ -38,8 +38,8 @@ from max.pipelines.core import TextAndVisionContext, TextContext, TTSContext
 from max.pipelines.lib import reasoning
 from max.profiler import Tracer
 from max.serve.pipelines.incremental_detokenizer import (
-    IncrementalDetokenizer,
-    create_incremental_detokenizer,
+    BufferedDetokenizer,
+    create_buffered_detokenizer,
 )
 from max.serve.telemetry.metrics import METRICS
 from max.serve.telemetry.stopwatch import StopWatch, record_ms
@@ -182,21 +182,21 @@ class TokenGeneratorPipeline(
 
             METRICS.input_tokens(context.tokens.prompt_length)
 
-            # Create incremental detokenizers for proper UTF-8 handling.
+            # Create buffered detokenizers for proper UTF-8 handling.
             # These handle multi-byte UTF-8 sequences that span multiple tokens,
-            # such as emojis like 🫆 which require 4 bytes and may be split
-            # across multiple tokens. Without incremental detokenization, each
+            # such as emojis like 😊 which require 4 bytes and may be split
+            # across multiple tokens. Without buffered detokenization, each
             # token decoded separately would produce replacement characters (�).
-            # See SERVSYS-1032 for details.
-            content_detokenizer: IncrementalDetokenizer | None = (
-                create_incremental_detokenizer(
+            # See SERVSYS-1032 and MXSERV-61 for details.
+            content_detokenizer: BufferedDetokenizer = (
+                create_buffered_detokenizer(
                     self.tokenizer,
                     context.tokens.prompt,
                     skip_special_tokens=skip_special_tokens,
                 )
             )
-            reasoning_detokenizer: IncrementalDetokenizer | None = (
-                create_incremental_detokenizer(
+            reasoning_detokenizer: BufferedDetokenizer = (
+                create_buffered_detokenizer(
                     self.tokenizer,
                     context.tokens.prompt,
                     skip_special_tokens=skip_special_tokens,
@@ -293,31 +293,18 @@ class TokenGeneratorPipeline(
                     with Tracer(
                         f"tokenizer.decode_chunk({token_count + reasoning_token_count} toks)"
                     ):
-                        # Use incremental detokenizer if available for proper
-                        # UTF-8 handling, otherwise fall back to direct decode.
-                        if tokens is None:
-                            decoded_tokens = None
-                        elif content_detokenizer is not None:
-                            decoded_tokens = content_detokenizer.decode(tokens)
-                        else:
-                            decoded_tokens = await self.tokenizer.decode(
-                                np.array(tokens),
-                                skip_special_tokens=skip_special_tokens,
-                            )
-
-                        if reasoning_tokens is None:
-                            decoded_reasoning_tokens = None
-                        elif reasoning_detokenizer is not None:
-                            decoded_reasoning_tokens = (
-                                reasoning_detokenizer.decode(reasoning_tokens)
-                            )
-                        else:
-                            decoded_reasoning_tokens = (
-                                await self.tokenizer.decode(
-                                    np.array(reasoning_tokens),
-                                    skip_special_tokens=skip_special_tokens,
-                                )
-                            )
+                        # Decode tokens using the buffered detokenizer which
+                        # handles multi-byte UTF-8 sequences across chunks.
+                        decoded_tokens = (
+                            await content_detokenizer.decode(tokens)
+                            if tokens
+                            else None
+                        )
+                        decoded_reasoning_tokens = (
+                            await reasoning_detokenizer.decode(reasoning_tokens)
+                            if reasoning_tokens
+                            else None
+                        )
 
                     if reasoning_text_formatter and decoded_reasoning_tokens:
                         decoded_reasoning_tokens = reasoning_text_formatter(

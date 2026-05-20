@@ -25,6 +25,7 @@ modular_py_test(
     ],
     deps = [
         "//max/python/max/serve/pipelines:incremental_detokenizer",
+        requirement("numpy"),
         requirement("transformers"),
     ],
 )
