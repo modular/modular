@@ -198,12 +198,12 @@ This section contains common problems and how to debug them efficiently.
 The best commands here are
 
 - `kgen -elaborate --save-temps --temps-dir` to get a file containing
-   generated LLVM IR before transformation to AIR and generated AIR file.
+  generated LLVM IR before transformation to AIR and generated AIR file.
 - `xcrun -sdk macosx air-*` to see how Metal compiler behaves on a given AIR
   file
 - `kgen-llvm-opt -O3 -S` to get LLVM IR after transformation to AIR.
 - `kgen-llvm-opt --disable-optimization-passes -O3` to get AIR file from LLVM IR
-   without running any passes to transform LLVM IR to AIR-compatible LLVM IR.
+  without running any passes to transform LLVM IR to AIR-compatible LLVM IR.
 
 - ```bash
    KGEN_OPTIONS="-kgen-object-compiler-use-custom-air=<your-air-file>" mojo \

@@ -66,10 +66,10 @@ keywords (e.g. fn), and is a generally useful escape hatch.
    the expression.
 
 9) We support "dictionary subscripts" of the form
-    `expr{key: value, key2: value2}`, used for type constructors. We aim to
-    remove this over time now that initializers are more mature. We may instead
-    support `List[1,2,3]` and `Dict{key: value}` sorts of expressions to create
-    literals with a specific type, rather than having to default to one type.
+   `expr{key: value, key2: value2}`, used for type constructors. We aim to
+   remove this over time now that initializers are more mature. We may instead
+   support `List[1,2,3]` and `Dict{key: value}` sorts of expressions to create
+   literals with a specific type, rather than having to default to one type.
 
 ## Various Design notes
 

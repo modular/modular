@@ -34,28 +34,28 @@ There are a few main differences:
 
 1. When we know their lengths.
    - VariadicList’s length is a
-      [run-time value](https://www.notion.so/Run-time-Values-Can-Also-Be-Compile-Time-Values-15b1044d37bb80cea0c5c8e3f3f8ae95?pvs=21)
+     [run-time value](https://www.notion.so/Run-time-Values-Can-Also-Be-Compile-Time-Values-15b1044d37bb80cea0c5c8e3f3f8ae95?pvs=21)
      - unless **the list itself** is a parameter, at which point the length is
        known at comptime, because all the elements are too.
    - VariadicPack’s length is known at compile-time (and also run-time),
-      because the elaborator instantiates the function with each of the concrete
-      list of types for the caller (because the list of types it itself a
-      parameter).
+     because the elaborator instantiates the function with each of the concrete
+     list of types for the caller (because the list of types it itself a
+     parameter).
 2. Whether they’re homogenous vs heterogeneous:
    - Post-elaboration:
      - VariadicList is homogenous post-elaboration. It’s an array at run-time.
      - VariadicPack is heterogeneous post-elaboration. It’s a tuple of
-          pointers at run-time.
+       pointers at run-time.
    - Pre-elaboration:
      - VariadicList is homogeneous.
      - VariadicPack is *kind of* homogeneous depending on how you think of
-          it. All elements share a common trait, so they’re homogeneous in that
-          way. But conceptually they’re pointing at all sorts of objects that
-          can be different types. It makes sense if you don’t think about it.™
+       it. All elements share a common trait, so they’re homogeneous in that
+       way. But conceptually they’re pointing at all sorts of objects that
+       can be different types. It makes sense if you don’t think about it.™
 3. How we iterate over them.
    - For VariadicList, it’s easy, just use a regular for-loop.
    - For VariadicPack, since all the types might be different at run-time, one
-      must use `@parameter for` or `pack.each` or `pack.each_idx`.
+     must use `@parameter for` or `pack.each` or `pack.each_idx`.
 4. How we can index into them.
     1. For VariadicList, we can index into them at compile-time or run-time
        easily because it’s basically just a run-time array.
@@ -279,13 +279,13 @@ PPPRPCF), it's a variadic-capturing function.
 
 Here, we're doing a few things:
 
- 1. `main` is giving a `def(Int,Bool)` as a parameter-value to
-    `infer_variadic`'s input-parameter `func` which expects something of type
-    `def(*:*arg_types)`.
- 2. In doing so, the `infer_variadic` callsite is inferring that `arg_types` =
-    `variadic(Int,Bool)`.
- 3. The callsite then knows that it should return a
-    `DeviceFunction[variadic(Int,Bool)]`.
+1. `main` is giving a `def(Int,Bool)` as a parameter-value to
+   `infer_variadic`'s input-parameter `func` which expects something of type
+   `def(*:*arg_types)`.
+2. In doing so, the `infer_variadic` callsite is inferring that `arg_types` =
+   `variadic(Int,Bool)`.
+3. The callsite then knows that it should return a
+   `DeviceFunction[variadic(Int,Bool)]`.
 
 As seen on the `thing.call` line, this lets us enforce that the user's arguments
 to `call` are the correct types that `device_func` takes in.
