@@ -628,6 +628,11 @@ def LowerArgConventions : Pass<"lower-arg-conventions", "FuncOp"> {
     functions. This pass must run before inlining, but after elaboration.
   }];
 
+  let options = [
+    Option<"maxInlineSize", "mem-to-reg-size-limit", "unsigned", "256",
+           "The maximum argument size to promote, in bytes.">,
+  ];
+
   let dependentDialects = [
     "HLCF::HLCFDialect"
   ];
@@ -852,7 +857,7 @@ def ArgPromotion : Pass<"arg-promotion", "ModuleOp"> {
   }];
 
   let options = [
-    Option<"maxInlineSize", "max-inline-size", "unsigned", "256",
+    Option<"maxInlineSize", "mem-to-reg-size-limit", "unsigned", "256",
            "The maximum argument size to promote, in bytes.">,
   ];
 
