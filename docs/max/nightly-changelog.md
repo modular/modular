@@ -62,6 +62,12 @@ This version is still a work in progress.
 
 ### Python API
 
+- Reduced default signal buffer size from 1025 to 257 MiB per GPU and fixed
+  miscalculation of required space in `MOGGKernelAPI.mojo`. Calculation was
+  wrong by a factor of `1/num_devices` since each device only needs scratch
+  for its own portion of the collective problem. Reduces footprint for current
+  heaviest workload (Kimi-K2.5 with `BlockCopyEngine`) from 16GB to 4GB.
+
 - Increased the default allreduce signal buffer size from 513 MiB to 1025 MiB
   per GPU (`max.nn.comm.allreduce.Signals.NUM_BYTES` and the matching constant
   in `max.experimental.realization_context`). The previous 512 MiB scratch

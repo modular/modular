@@ -206,7 +206,7 @@ def _cached_signal_buffers(
     and avoids mutable module-level state.  In pytest-xdist each worker is
     a separate process, so there are no cross-worker conflicts.
     """
-    # Signal buffers: 1 MB signal + 1024 MB communication scratch per GPU.
+    # Signal buffers: 1 MB signal + 256 MB communication scratch per GPU.
     # Must stay in sync with ``Signals.NUM_BYTES`` in ``max.nn.comm.allreduce``
     # and the Mojo ``Signal`` struct size. 1 GiB scratch supports
     # hidden_dim * max_batch_input_tokens * dtype_bytes up to ~1 GiB
@@ -602,7 +602,7 @@ class EagerRealizationContext(RealizationContext):
         if len(gpu_ids) < 2:
             return None
 
-        # Get or allocate shared runtime buffers (expensive — 1025 MB each).
+        # Get or allocate shared runtime buffers (expensive — 1+256 MB each).
         runtime_bufs, buf_types = _cached_signal_buffers(tuple(gpu_ids))
 
         # Add signal buffer types as new graph inputs (per-graph, cheap).

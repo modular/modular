@@ -18,6 +18,7 @@
 from std.collections import OptionalReg
 from std.math import (
     acos,
+    align_up,
     atanh,
     ceil,
     ceildiv,
@@ -11301,6 +11302,20 @@ def _check_signal_buffer_size(
         )
 
 
+def _partitioned_scratch_requirement[
+    num_devices: Int, dtype: DType
+](input_elems: Int) -> Int:
+    """Calculate a trivial scratch memory requirement for comm kernels.
+
+    This applies for comm kernels which simply partition the input tensor between devices.
+    """
+    comptime pessemistic_simd_width = 32
+    var num_vecs = ceildiv(input_elems, pessemistic_simd_width)
+    var vecs_per_device = ceildiv(num_vecs, num_devices)
+
+    return vecs_per_device * pessemistic_simd_width * size_of[dtype]()
+
+
 @always_inline
 def _launch_device_collective[
     num_devices: Int,
@@ -11397,8 +11412,13 @@ struct DistributedAllReduceSum:
             " the same number of elements"
         )
 
-        var input_size_bytes = inputs[0].size() * size_of[dtype]()
-        _check_signal_buffer_size(signal_buffers[0].size(), input_size_bytes)
+        # allreduce 2-stage uses size/ngpus scratch space
+        var scratch_buffer_size_bytes = _partitioned_scratch_requirement[
+            num_devices, dtype
+        ](inputs[0].size())
+        _check_signal_buffer_size(
+            signal_buffers[0].size(), scratch_buffer_size_bytes
+        )
 
         # output_lambda writes each device's reduced output into the fused
         # epilogue output tensor.  Defined at execute scope so that
@@ -11545,8 +11565,13 @@ struct BundledAllReduceSum:
             " the same number of elements"
         )
 
-        var input_size_bytes = inputs[0].size() * size_of[dtype]()
-        _check_signal_buffer_size(signal_buffers[0].size(), input_size_bytes)
+        # allreduce 2-stage uses size/ngpus scratch space
+        var scratch_buffer_size_bytes = _partitioned_scratch_requirement[
+            num_devices, dtype
+        ](inputs[0].size())
+        _check_signal_buffer_size(
+            signal_buffers[0].size(), scratch_buffer_size_bytes
+        )
 
         comptime InputTensorType = type_of(
             inputs[0].to_tile_tensor[DType.int64]().as_immut()
@@ -11626,7 +11651,10 @@ struct DistributedReduceScatterSum:
 
         # Reduce-scatter doesn't use scratch storage, so
         # only need enough signal_buffer space for Signal struct
-        _check_signal_buffer_size(signal_buffers[0].size(), 0)
+        var scratch_buffer_size_bytes = 0
+        _check_signal_buffer_size(
+            signal_buffers[0].size(), scratch_buffer_size_bytes
+        )
 
         # Marshal input tensors into TileTensors.
         comptime InputTensorType = type_of(
@@ -11726,8 +11754,10 @@ struct DistributedAllGather:
             " num_devices"
         )
 
-        var input_size_bytes = inputs[0].size() * size_of[dtype]()
-        _check_signal_buffer_size(signal_buffers[0].size(), input_size_bytes)
+        var scratch_buffer_size_bytes = 0  # no allgather impl uses scratch
+        _check_signal_buffer_size(
+            signal_buffers[0].size(), scratch_buffer_size_bytes
+        )
 
         # Build TileTensors directly using flattened 1D layouts. Inputs can
         # have different sizes in uneven allgather; RuntimeInt dimensions give
@@ -11861,9 +11891,12 @@ struct DistributedBroadcast:
         # 2-stage broadcast stages 1/ngpus of input into each signal buffer payload.
         # 1-stage broadcast doesn't use payload at all (direct P2P from root).
         # Use 2-stage requirement as upper bound.
-        var input_size_bytes = input.size() * size_of[dtype]()
-        var payload_size = ceildiv(input_size_bytes, num_devices)
-        _check_signal_buffer_size(signal_buffers[0].size(), payload_size)
+        var scratch_buffer_size_bytes = _partitioned_scratch_requirement[
+            num_devices, dtype
+        ](input.size())
+        _check_signal_buffer_size(
+            signal_buffers[0].size(), scratch_buffer_size_bytes
+        )
 
         var in_buf = input.to_tile_tensor[DType.int64]()
 
@@ -11940,7 +11973,10 @@ struct DistributedScatter:
 
         # Scatter uses signal buffers for barriers only (no payload staging),
         # so payload_size=0. This still validates the buffer holds a Signal.
-        _check_signal_buffer_size(signal_buffers[0].size(), 0)
+        var scratch_buffer_size_bytes = 0
+        _check_signal_buffer_size(
+            signal_buffers[0].size(), scratch_buffer_size_bytes
+        )
 
         # Inputs can have different static shapes, so use make_dynamic to
         # produce a homogeneous fully-dynamic TileTensor type for InlineArray.
@@ -12017,8 +12053,28 @@ struct DistributedAllReduceAddRMSNormQuantFP8:
             " the same number of elements"
         )
 
-        var input_size_bytes = inputs[0].size() * size_of[dtype]()
-        _check_signal_buffer_size(signal_buffers[0].size(), input_size_bytes)
+        # Logic copied from kernel host code
+        # Note: this is a prime candidate for a method on a kernel
+        # struct which advertises kernel info to the GC!
+        var in_num_elems = inputs[0].size()
+        comptime last_dim_idx = type_of(inputs[0]).rank - 1
+        var cols = inputs[0].dim_size[last_dim_idx]()
+        var rows = in_num_elems // cols
+        var rows_per_rank = ceildiv(rows, num_devices)
+
+        var fp8_size_bytes = cols * rows_per_rank  # fp8 = 1byte
+        var pessimistic_simd_width = 32  # just to be safe...
+        var scales_size_bytes = align_up(
+            rows_per_rank * size_of[scales_type](), pessimistic_simd_width
+        )
+        var residual_size_bytes = cols * rows_per_rank * size_of[dtype]()
+
+        var scratch_buffer_size_bytes = (
+            fp8_size_bytes + scales_size_bytes + residual_size_bytes
+        )
+        _check_signal_buffer_size(
+            signal_buffers[0].size(), scratch_buffer_size_bytes
+        )
 
         # Filter the dev_ctxs_list to have only the GPU devices.
         # The kernel also takes CPU operands, so CPU devices must be removed.
@@ -12148,8 +12204,26 @@ struct BundledAllReduceAddRMSNormQuantFP8:
             " the same number of elements"
         )
 
-        var input_size_bytes = inputs[0].size() * size_of[dtype]()
-        _check_signal_buffer_size(signal_buffers[0].size(), input_size_bytes)
+        # Logic copied from kernel host code
+        var in_num_elems = inputs[0].size()
+        comptime last_dim_idx = type_of(inputs[0]).rank - 1
+        var cols = inputs[0].dim_size[last_dim_idx]()
+        var rows = in_num_elems // cols
+        var rows_per_rank = ceildiv(rows, num_devices)
+
+        var fp8_size_bytes = cols * rows_per_rank  # fp8 = 1byte
+        var pessimistic_simd_width = 32  # just to be safe...
+        var scales_size_bytes = align_up(
+            rows_per_rank * size_of[scales_type](), pessimistic_simd_width
+        )
+        var residual_size_bytes = cols * rows_per_rank * size_of[dtype]()
+
+        var scratch_buffer_size_bytes = (
+            fp8_size_bytes + scales_size_bytes + residual_size_bytes
+        )
+        _check_signal_buffer_size(
+            signal_buffers[0].size(), scratch_buffer_size_bytes
+        )
 
         comptime InputTensorType = type_of(
             inputs[0].to_tile_tensor[DType.int64]().as_immut()
