@@ -213,15 +213,25 @@ struct MLASparseSharedMemory[config: MLASparseConfig]:
     var p_free: InlineArray[SharedMemBarrier, Self.num_mbars]
     var so_ready: InlineArray[SharedMemBarrier, Self.num_mbars]
 
-    # TODO(PR3): k_valid_ready / k_valid_free coordinate the WG3 warp 13
-    # producer that writes the per-position validity bitmask
-    # (`is_k_valid` in phase1.cuh:97) consumed by WG0's mask step
-    # (phase1.cuh:183-210).  Both bars are declared+init'd here but the
-    # producer warp and the consumer mask read are deliberately omitted
-    # from PR2 — PR3 adds them.  Until then, `topk_lengths[i] ==
-    # indices_stride` is required (no padding, no -1 sentinels).
+    # k_valid_ready / k_valid_free coordinate the WG3 warp-13 producer
+    # that writes the per-position validity bitmask (`is_k_valid` below)
+    # consumed by WG0's mask step.  Mirrors phase1.cuh's `bar_k_valid_*`
+    # + `is_k_valid` slot.
     var k_valid_ready: InlineArray[SharedMemBarrier, Self.num_mbars]
     var k_valid_free: InlineArray[SharedMemBarrier, Self.num_mbars]
+    # Validity bitmask: 1 bit per topk position.  Packed as
+    # MASK_BYTES_PER_BUF = B_TOPK / 8 bytes per buffer; byte `j` of buffer
+    # `b` carries bits for positions [j*8 .. j*8+8).  Bit set = "this index
+    # is in range AND its absolute position is < topk_lengths[seq]".
+    # Stored flat (no nested InlineArray) so the byte-offset math at
+    # producer/consumer relies on simple array layout, not on the
+    # absence of inter-element padding in nested InlineArray.
+    comptime MASK_BYTES_PER_BUF = Self.config.B_TOPK // 8
+    # Producer parallelism: one lane per output mask byte; each lane
+    # packs INDICES_PER_LANE = 8 bits.  Coupled by definition.
+    comptime NUM_KV_VALID_LANES = Self.MASK_BYTES_PER_BUF
+    comptime INDICES_PER_LANE = 8
+    var is_k_valid: InlineArray[UInt8, Self.num_mbars * Self.MASK_BYTES_PER_BUF]
     var tmem_addr: InlineArray[UInt32, 1]
 
     # store rowwise max and sum for each threads in a warp group
@@ -573,6 +583,9 @@ struct MLAPrefillSparse[
         var so_ready_ptr = smem.so_ready.unsafe_ptr()
         var k_valid_ready_ptr = smem.k_valid_ready.unsafe_ptr()
         var k_valid_free_ptr = smem.k_valid_free.unsafe_ptr()
+        # Byte at offset `buf * MASK_BYTES_PER_BUF + j` holds bits for
+        # keys `[j*8, j*8+8)` of buffer `buf`.
+        var is_k_valid_ptr = smem.is_k_valid.unsafe_ptr()
         var tmem_addr_ptr = smem.tmem_addr.unsafe_ptr()
         var rowwise_max_ptr = smem.rowwise_max.unsafe_ptr()
         var rowwise_sum_ptr = smem.rowwise_sum.unsafe_ptr()
@@ -597,7 +610,9 @@ struct MLAPrefillSparse[
                     v_p1_ready_ptr[i].init(1)
                     p_free_ptr[i].init(Int32(WARPGROUP_SIZE * 2))
                     so_ready_ptr[i].init(Int32(WARPGROUP_SIZE * 2))
-                    k_valid_ready_ptr[i].init(16)
+                    k_valid_ready_ptr[i].init(
+                        Int32(Self.SMemType.NUM_KV_VALID_LANES)
+                    )
                     k_valid_free_ptr[i].init(Int32(WARPGROUP_SIZE))
 
                 fence_mbarrier_init()
@@ -696,6 +711,27 @@ struct MLAPrefillSparse[
                 # `bar_p_free[k%NUM_BUFS].arrive(0u)` (CUTLASS's
                 # ClusterTransactionBarrier targeting cta 0).
                 p_free_ptr[cur_buf].arrive_cluster(UInt32(0), UInt32(1))
+
+                # Mask step (phase1.cuh:182-210): wait on warp-13's
+                # validity bitmask for this k-block, then poison invalid
+                # P entries with -inf so they drop out of the softmax.
+                # Each thread owns P_PER_THREAD = B_TOPK/2 keys; thread
+                # `t<64` reads the low half of the mask, thread `t>=64`
+                # the high half.
+                comptime MASK_BYTES_PER_BUF = Self.SMemType.MASK_BYTES_PER_BUF
+                comptime MASK_BYTES_PER_THREAD = MASK_BYTES_PER_BUF // 2
+                k_valid_ready_ptr[cur_buf].wait(cur_phase)
+                var mask_byte_base = (
+                    Int(cur_buf) * MASK_BYTES_PER_BUF
+                    + Int(idx_in_wg // UInt32(64)) * MASK_BYTES_PER_THREAD
+                )
+                comptime for i in range(P_PER_THREAD):
+                    comptime byte_offset = i // 8
+                    comptime bit_idx = i % 8
+                    var mask_byte = is_k_valid_ptr[mask_byte_base + byte_offset]
+                    if ((mask_byte >> UInt8(bit_idx)) & UInt8(1)) == UInt8(0):
+                        p[i] = Float32(min_or_neg_inf[DType.float32]())
+                _ = k_valid_free_ptr[cur_buf].arrive()
 
                 # Per-thread row max over local P (scaled to log2 domain).
                 var cur_pi_max: Float32 = Float32(
@@ -1041,6 +1077,28 @@ struct MLAPrefillSparse[
                         k,
                         num_k_blocks,
                     )
+
+            # KV-valid mask producer (mirrors phase1.cuh's warp 13).
+            # `NUM_KV_VALID_LANES` active lanes, each owning
+            # `INDICES_PER_LANE = B_TOPK / NUM_KV_VALID_LANES` indices
+            # per k-block; the lane packs an 8-bit validity mask and
+            # writes it to `is_k_valid[cur_buf][lane]`.  Valid means:
+            #   (1) the index is in [0, num_kv_rows), and
+            #   (2) its absolute position k*B_TOPK + lane*8 + i is
+            #       below the per-query top_k_length (handles padding
+            #       to indices_stride for short sequences).
+            elif warp_idx == 13 and lane_idx < Self.SMemType.NUM_KV_VALID_LANES:
+                Self.kv_valid_producer(
+                    indices,
+                    is_k_valid_ptr,
+                    k_valid_ready_ptr,
+                    k_valid_free_ptr,
+                    UInt32(lane_idx),
+                    indices_base,
+                    Int32(num_kv_rows),
+                    Int32(top_k_length),
+                    Int(num_k_blocks),
+                )
 
     @always_inline
     @staticmethod
@@ -1456,6 +1514,81 @@ struct MLAPrefillSparse[
                     token_idx_v4[2],
                     token_idx_v4[3],
                 )
+
+    @always_inline
+    @staticmethod
+    def kv_valid_producer(
+        indices: TileTensor[
+            DType.uint32, address_space=AddressSpace.GENERIC, ...
+        ],
+        is_k_valid_ptr: UnsafePointer[
+            mut=True, UInt8, address_space=AddressSpace.SHARED, ...
+        ],
+        k_valid_ready_ptr: UnsafePointer[
+            mut=True, SharedMemBarrier, address_space=AddressSpace.SHARED, ...
+        ],
+        k_valid_free_ptr: UnsafePointer[
+            mut=True, SharedMemBarrier, address_space=AddressSpace.SHARED, ...
+        ],
+        lane_idx: UInt32,
+        indices_base: UInt32,
+        num_kv_rows: Int32,
+        top_k_length: Int32,
+        num_k_blocks: Int,
+    ):
+        # NUM_KV_VALID_LANES active lanes × INDICES_PER_LANE indices
+        # = B_TOPK indices/k-block.  The bit-pack matches
+        # phase1.cuh:583-598's `is_ks_valid_mask`.
+        comptime INDICES_PER_LANE = Self.SMemType.INDICES_PER_LANE
+        comptime MASK_BYTES_PER_BUF = Self.SMemType.MASK_BYTES_PER_BUF
+        for k_block in range(num_k_blocks):
+            var cur_buf = UInt32(k_block) % UInt32(Self.SMemType.num_mbars)
+            # WG0 starts in phase 0 waiting for k_valid_ready; warp 13
+            # is the producer, so it waits on k_valid_free with the
+            # XOR-flipped phase (initial wait returns immediately since
+            # the bar is fresh).  Matches phase1.cuh's
+            # `wait((k/NUM_BUFS)&1^1)`.
+            var free_phase = (
+                UInt32(k_block) // UInt32(Self.SMemType.num_mbars)
+            ) & UInt32(1) ^ UInt32(1)
+
+            # Issue the gmem indices load + mask compute BEFORE waiting on
+            # k_valid_free, so the producer overlaps gmem latency with the
+            # consumer's prior iteration.  The result sits in registers
+            # across the wait.
+            var gidx_offset = (
+                indices_base
+                + UInt32(k_block) * UInt32(Self.config.B_TOPK)
+                + lane_idx * UInt32(INDICES_PER_LANE)
+            )
+            # Sentinel-by-design: `indices` is uint32 in gmem; the cast to
+            # int32 here is what makes the padding sentinel `0xFFFFFFFF`
+            # alias to `-1` and fail the `idx_i >= 0` check below.  Assumes
+            # `num_kv_rows` fits in signed int32 (~2B rows); far above any
+            # realistic deployment.
+            var idx_v8 = indices.load[width=INDICES_PER_LANE](
+                Coord(Idx(gidx_offset))
+            ).cast[DType.int32]()
+
+            var abs_pos_base = Int32(k_block) * Int32(
+                Self.config.B_TOPK
+            ) + Int32(lane_idx) * Int32(INDICES_PER_LANE)
+            var mask: UInt8 = 0
+            comptime for i in range(INDICES_PER_LANE):
+                var idx_i = idx_v8[i]
+                var abs_pos = abs_pos_base + Int32(i)
+                if (
+                    idx_i >= Int32(0)
+                    and idx_i < num_kv_rows
+                    and abs_pos < top_k_length
+                ):
+                    mask = mask | (UInt8(1) << UInt8(i))
+
+            k_valid_free_ptr[Int(cur_buf)].wait(free_phase)
+            is_k_valid_ptr[
+                Int(cur_buf) * MASK_BYTES_PER_BUF + Int(lane_idx)
+            ] = mask
+            _ = k_valid_ready_ptr[Int(cur_buf)].arrive()
 
     @always_inline
     @staticmethod

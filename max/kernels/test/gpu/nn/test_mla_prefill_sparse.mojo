@@ -131,6 +131,7 @@ def host_reference[
     qk_depth: Int,
     v_depth: Int,
     scale: Float32,
+    valid_topk: Int = -1,
 ):
     """Compute reference MLA sparse prefill output on host.
 
@@ -152,6 +153,10 @@ def host_reference[
     representation choice in the reference itself.
     """
     var scale_log2e = Float64(scale) * Float64(log2e)
+    # `topk` is the kv_sparse stride (= indices_stride); `valid_topk` is
+    # the per-query effective key count.  When `valid_topk == -1`, treat
+    # all `topk` keys as valid (= dense full-topk).
+    var n_valid = topk if valid_topk == -1 else valid_topk
     for b in range(batch_size):
         for s in range(seq_len):
             for h in range(num_heads):
@@ -159,9 +164,9 @@ def host_reference[
                 var q_base = bs * num_heads * qk_depth + h * qk_depth
 
                 var mi = Float64(min_or_neg_inf[DType.float32]())
-                var s_buf = alloc[Float64](topk)
+                var s_buf = alloc[Float64](n_valid)
 
-                for k in range(topk):
+                for k in range(n_valid):
                     var kv_base = (bs * topk + k) * qk_depth
                     var dot = Float64(0)
                     for d in range(qk_depth):
@@ -178,17 +183,17 @@ def host_reference[
                 # s_buf[k] = exp2(P_k * scale_log2e - mi); li accumulates
                 # the sum; final softmax = s_buf[k] / li.
                 var li = Float64(0)
-                for k in range(topk):
+                for k in range(n_valid):
                     s_buf[k] = exp2(s_buf[k] - mi)
                     li += s_buf[k]
-                for k in range(topk):
+                for k in range(n_valid):
                     s_buf[k] = s_buf[k] / li
 
                 # O = P @ V (V = first v_depth columns of KV)
                 var o_base = bs * num_heads * v_depth + h * v_depth
                 for d in range(v_depth):
                     var acc = Float64(0)
-                    for k in range(topk):
+                    for k in range(n_valid):
                         var kv_base = (bs * topk + k) * qk_depth
                         acc += (
                             s_buf[k]
@@ -214,9 +219,18 @@ def run_test_prefill_sparse[
     seq_len: Int,
     num_kv_tokens: Int,
     ctx: DeviceContext,
+    *,
+    valid_topk: Int = topk,
 ) raises:
     """Test the sparse MLA prefill kernel with a paged KV cache, per-query
     indices, and the absorbed DSv3.2 dims (qk_depth=576, v_depth=512).
+
+    `topk` here is the indices buffer stride (= the indexer's `index_topk`
+    in DSv3.2 deployment).  `valid_topk` is the per-query effective count;
+    when `valid_topk < topk`, positions `[valid_topk..topk)` in the
+    indices buffer are filled with sentinel `0xFFFFFFFF` (= -1 in int32),
+    and `topk_lengths[i]` is set to `valid_topk`.  The kernel's
+    k-valid mask should poison those positions in softmax.
     """
     print(
         "test:",
@@ -360,6 +374,10 @@ def run_test_prefill_sparse[
     # -----------------------------------------------------------------------
     var out_elems = total_q_tokens * num_heads * V_DEPTH
     var ref_host = alloc[Scalar[q_type]](out_elems)
+    # Host ref iterates over only the *valid* per-query keys (the kernel
+    # masks the rest to -inf so they contribute zero).  `kv_sparse` rows
+    # `[valid_topk..topk)` exist in memory but are never read by the
+    # kernel (mask-out) or by host ref (loop bound = valid_topk).
     host_reference[q_type](
         q_host,
         kv_sparse,
@@ -371,6 +389,7 @@ def run_test_prefill_sparse[
         QK_DEPTH,
         V_DEPTH,
         scale,
+        valid_topk=valid_topk,
     )
 
     # -----------------------------------------------------------------------
@@ -408,15 +427,21 @@ def run_test_prefill_sparse[
         for s in range(seq_len):
             var bs = bi * seq_len + s
             for i in range(topk):
-                var t = selected_tokens[bs * topk + i]
-                var page_idx = t // PAGE_SIZE
-                var tok_in_page = t % PAGE_SIZE
-                var block_id = Int(
-                    lookup_table_host[bi * max_pages_per_batch + page_idx]
-                )
-                h_indices[bs * topk + i] = UInt32(
-                    block_id * PAGE_SIZE + tok_in_page
-                )
+                if i < valid_topk:
+                    var t = selected_tokens[bs * topk + i]
+                    var page_idx = t // PAGE_SIZE
+                    var tok_in_page = t % PAGE_SIZE
+                    var block_id = Int(
+                        lookup_table_host[bi * max_pages_per_batch + page_idx]
+                    )
+                    h_indices[bs * topk + i] = UInt32(
+                        block_id * PAGE_SIZE + tok_in_page
+                    )
+                else:
+                    # Padding sentinel: 0xFFFFFFFF cast to int32 inside
+                    # the kernel = -1, which fails the `idx >= 0` check
+                    # in the k-valid producer and gets masked out.
+                    h_indices[bs * topk + i] = UInt32(0xFFFFFFFF)
 
     var indices_device = ctx.enqueue_create_buffer[DType.uint32](total_indices)
     ctx.enqueue_copy(indices_device, h_indices)
@@ -425,7 +450,7 @@ def run_test_prefill_sparse[
     # topk_lengths[seq_idx] for seq_idx in [0, total_q_tokens).
     var h_topk_lengths = alloc[UInt32](total_q_tokens)
     for i in range(total_q_tokens):
-        h_topk_lengths[i] = UInt32(topk)
+        h_topk_lengths[i] = UInt32(valid_topk)
 
     var topk_lengths_device = ctx.enqueue_create_buffer[DType.uint32](
         total_q_tokens
@@ -555,10 +580,15 @@ def run_test_prefill_sparse[
 
     # Tolerance set to the observed BF16 noise floor with the cast-once
     # epilogue (#3) and log2-domain host ref.  Observed max_err is
-    # ≤0.13 across all 4 test shapes; 0.15 gives a small margin so
-    # transient fluctuations don't flake.  Tighten if/when the kernel
-    # gets closer to fp32 precision.
-    var atol = Float64(0.15)
+    # ≤0.13 across the 4 non-padded shapes and ≤0.17 across the padded
+    # cases (padded softmax concentrates over fewer valid keys, so BF16
+    # rounding noise is slightly higher; the kernel and host ref also
+    # walk different keys on padded inputs — kernel does softmax over
+    # all B_TOPK with masked-to-zero contributions, host walks only the
+    # valid ones — so the BF16/fp64 drift isn't fully self-cancelling).
+    # 0.18 gives a small margin without masking a real precision
+    # regression.  Tighten if/when the kernel gets closer to fp32.
+    var atol = Float64(0.18)
     var max_err = Float64(0)
     var max_err_low_d = Float64(0)
     var max_err_high_d = Float64(0)
@@ -700,11 +730,12 @@ def main() raises:
         comptime if has_nvidia_gpu_accelerator() and _is_sm10x_gpu(
             ctx.default_device_info
         ):
-            # Without PR3's k-valid masking, topk must be a multiple of
-            # B_TOPK=128 — the kernel reads B_TOPK indices per k-block per
-            # query unconditionally, and falling short of that walks off
-            # the per-query indices row. Phase1.cuh:628 has the same
-            # constraint (`KU_ASSERT(params.topk % B_TOPK == 0)`).
+            # `topk` (= indices_stride) must be a multiple of B_TOPK=128
+            # since the kernel reads B_TOPK indices per k-block per
+            # query unconditionally (matches phase1.cuh:628's
+            # `KU_ASSERT(params.topk % B_TOPK == 0)`).  Per-query
+            # `valid_topk < topk` is now supported via the k-valid
+            # mask (see padded test cases below).
 
             # Single k-block: topk == B_TOPK.
             run_test_prefill_sparse[DType.bfloat16, 128, 128](
@@ -745,6 +776,47 @@ def main() raises:
                 64,
                 1024,
                 ctx,
+            )
+
+            # Padded-index cases: `valid_topk < topk`.  The last
+            # `topk - valid_topk` indices per query are sentinel
+            # 0xFFFFFFFF; the k-valid mask must drop them from softmax.
+            #
+            # Single-block padded: B_TOPK=128 with the last 64 indices
+            # masked out — exercises the producer's `abs_pos <
+            # top_k_length` check on positions inside one k-block.
+            run_test_prefill_sparse[DType.bfloat16, 128, 128](
+                "b1_s32_h128_kv512_topk128_valid64",
+                1,
+                32,
+                512,
+                ctx,
+                valid_topk=64,
+            )
+
+            # Multi-block padded: indices_stride=256, second k-block
+            # entirely padded — exercises the all-invalid k-block
+            # fast-path in load_k's `skip_tma` and the producer's
+            # whole-block mask=0 case.
+            run_test_prefill_sparse[DType.bfloat16, 128, 256](
+                "b1_s32_h128_kv512_topk256_valid128",
+                1,
+                32,
+                512,
+                ctx,
+                valid_topk=128,
+            )
+
+            # Multi-block padded with partial second block:
+            # valid_topk=192 covers the full first block + 64 keys of
+            # the second block — the mask must fire mid-block.
+            run_test_prefill_sparse[DType.bfloat16, 128, 256](
+                "b1_s32_h128_kv512_topk256_valid192",
+                1,
+                32,
+                512,
+                ctx,
+                valid_topk=192,
             )
         else:
             pass
