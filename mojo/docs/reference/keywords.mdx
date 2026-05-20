@@ -176,8 +176,6 @@ names won't break, but in Mojo signatures they have fixed meaning.
 **Argument conventions** appear before argument names in function signatures.
 They control ownership and mutability:
 
-<!-- markdownlint-disable MD013 -->
-
 | Convention | Role                 | Meaning                                                     |
 |------------|----------------------|-------------------------------------------------------------|
 | (`read`)   | Argument             | Immutable reference to an existing value (default behavior) |
@@ -186,8 +184,6 @@ They control ownership and mutability:
 | `deinit`   | Argument             | Destructive transfer; end of a value's lifecycle            |
 | `var`      | Argument or variable | Independent mutable owned copy of the value                 |
 | `ref`      | Argument or variable | Reference that doesn't own the value                        |
-
-<!-- markdownlint-enable MD013 -->
 
 `var` and `ref` also appear in **variable declarations**, where `var`
 creates a scoped mutable variable and `ref` creates a scoped reference

@@ -341,8 +341,6 @@ Mojo doesn't provide a `Float` type analogous to `Int`. Instead it
 provides numerous fixed-width floating-point types. Each is an alias for a
 one-element `SIMD`:
 
-<!-- markdownlint-disable MD013 -->
-
 | Type              | Bits      | Standard          | What it is                                    |
 |-------------------|-----------|-------------------|-----------------------------------------------|
 | `Float16`         | 16        | IEEE 754 binary16 | `Scalar[DType.float16]`                       |
@@ -356,8 +354,6 @@ one-element `SIMD`:
 | `Float8_e5m2fnuz` | 8         | --                | `Scalar[DType.float8_e5m2fnuz]`               |
 | `Float8_e8m0fnu`  | 8         | OFP8 §5.4         | `Scalar[DType.float8_e8m0fnu]`                |
 | `FloatLiteral`    | arbitrary | --                | Compile-time only. Materializes to `Float64`. |
-
-<!-- markdownlint-enable MD013 -->
 
 :::note
 

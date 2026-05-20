@@ -34,7 +34,6 @@ var ptr = alloc[Int](1)
 ptr.init_pointee_copy(100)
 ```
 
-<!-- markdownlint-disable MD033 MD045 -->
 <figure>
 
 ![](../images/pointer-diagram.png#light)
@@ -42,7 +41,6 @@ ptr.init_pointee_copy(100)
 
 <figcaption><b>Figure 1.</b> Pointer and pointee</figcaption>
 </figure>
-<!-- markdownlint-enable MD033 MD045 -->
 
 Accessing the memory—to retrieve or update a value—is called
 *dereferencing* the pointer. You can dereference a pointer by following the
@@ -120,7 +118,6 @@ or point to a memory location:
 
 The following diagram shows the lifecycle of an `UnsafePointer`:
 
-<!-- markdownlint-disable MD033 MD045 -->
 <figure>
 
 ![](../images/pointer-lifecycle.png#light)
@@ -128,7 +125,6 @@ The following diagram shows the lifecycle of an `UnsafePointer`:
 
 <figcaption><b>Figure 2.</b> Lifecycle of an <code>UnsafePointer</code></figcaption>
 </figure>
-<!-- markdownlint-enable MD033 MD045 -->
 
 ### Allocating memory
 
@@ -294,7 +290,6 @@ Pointers also support subtraction, as well as in-place addition and subtraction:
 ptr += 1
 ```
 
-<!-- markdownlint-disable MD033 MD045 -->
 <figure>
 
 ![](../images/pointer-offset.png#light)
@@ -302,7 +297,6 @@ ptr += 1
 
 <figcaption><b>Figure 3.</b> Pointer arithmetic</figcaption>
 </figure>
-<!-- markdownlint-enable MD033 MD045 -->
 
 For example, the following example allocates memory to store 6 `Float64`
 values, and initializes them all to zero.
@@ -595,7 +589,6 @@ values from structured data. For example, consider the data for an RGB image,
 where each pixel is made up of three 8-bit values, for red, green, and blue. If
 you want to access just the red values, you can use a strided load or store.
 
-<!-- markdownlint-disable MD033 MD045 -->
 <figure>
 
 ![](../images/strided-load-storage.png#light)
@@ -603,7 +596,6 @@ you want to access just the red values, you can use a strided load or store.
 
 <figcaption><b>Figure 4.</b> Strided load</figcaption>
 </figure>
-<!-- markdownlint-enable MD033 MD045 -->
 
 The following function uses the
 [`strided_load()`](/docs/std/memory/unsafe_pointer/UnsafePointer/#strided_load)
@@ -629,10 +621,8 @@ The [`gather()`](/docs/std/memory/unsafe_pointer/UnsafePointer/#gather) and
 [`scatter()`](/docs/std/memory/unsafe_pointer/UnsafePointer/#scatter) methods
 let you load or store a set of values that are stored in arbitrary locations.
 You do this by passing in a SIMD vector of *offsets* to the current pointer. For
-<!-- markdownlint-disable MD033 -->
 example, when using `gather()`, the <var>n</var>th value in the vector is loaded
 from (pointer address) + <var>offset[n]</var>.
-<!-- markdownlint-enable MD033 -->
 
 ## Safety
 

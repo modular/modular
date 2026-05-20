@@ -38,11 +38,9 @@ def greet(name: String) -> String:
     return "Hello, " + name + "!"
 ```
 
-<!-- markdownlint-disable MD013 -->
 Mojo docstrings follow conventions used by
 [Python docstrings](https://peps.python.org/pep-0257/) and the
 [Google docstring style guide](https://google.github.io/styleguide/pyguide.html#38-comments-and-docstrings).
-<!-- markdownlint-enable MD013 -->
 
 ## Placement
 
@@ -88,8 +86,6 @@ package-level documentation.
 A docstring's first sentence is its summary. Summaries appear in index
 views and search results.
 
-<!-- markdownlint-disable MD013 -->
-
 | Declaration         | Pattern                           | Examples                                              |
 |---------------------|-----------------------------------|-------------------------------------------------------|
 | Function or method  | Present-tense verb                | `Clamps a value to the range [low, high].`            |
@@ -97,8 +93,6 @@ views and search results.
 | Struct or trait     | Noun phrase or present-tense verb | `A fixed-capacity circular buffer.`                   |
 |                     |                                   | `Supports hashing to a fixed-size integer digest.`    |
 | Field or `comptime` | Noun phrase                       | `The red channel, in [0, 255].`                       |
-
-<!-- markdownlint-enable MD013 -->
 
 Separate the summary from additional body text with a blank line.
 Start the summary with a capital letter and end it with a period.
@@ -205,9 +199,7 @@ It's normally the last section in a docstring. Example code is usually
 left-aligned with the label. Use fenced code blocks with the `mojo`
 language tag for syntax highlighting.
 
-<!-- markdownlint-disable MD048 -->
-
-~~~text
+````text
 Examples:
 
 ```mojo
@@ -220,9 +212,7 @@ while idx := numbers.find(3):
     _ = numbers.pop(idx.value())
 print(numbers)  # [1, 2, 4, 9]
 ```
-~~~
-
-<!-- markdownlint-enable MD048 -->
+````
 
 ### Custom labels
 
@@ -304,8 +294,6 @@ syntax, and HTML tags.
 
 For example:
 
-<!-- markdownlint-disable MD013 -->
-
 | Content                                         | Syntax                                            |
 |-------------------------------------------------|---------------------------------------------------|
 | API names (types, functions, fields, arguments) | `` `Int` ``, `` `append()` ``, `` `pop(index)` `` |
@@ -313,8 +301,6 @@ For example:
 | Inline math                                     | `$$x^y$$`                                         |
 | Block math                                      | `$$` on its own line, formula, `$$`               |
 | Literal `$$` in text                            | `<span>$$</span>`                                 |
-
-<!-- markdownlint-enable MD013 -->
 
 String escape sequences are honored everywhere, including inside
 code blocks. For example, `\n` produces a newline, while `\\t`

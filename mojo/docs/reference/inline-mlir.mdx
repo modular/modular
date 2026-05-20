@@ -68,16 +68,12 @@ Mojo provides four built-in identifiers to reference MLIR
 from source code. Each corresponds to a common MLIR
 building block:
 
-<!-- markdownlint-disable MD013 -->
-
 | Built-in            | Purpose                      | Produces                |
 |---------------------|------------------------------|-------------------------|
 | `__mlir_type`       | Reference an MLIR type       | A type                  |
 | `__mlir_attr`       | Reference an MLIR attribute  | Compile-time value      |
 | `__mlir_op`         | Invoke an MLIR operation     | Runtime value or `None` |
 | `__mlir_region`     | Define a single-block region | Statement (no value)    |
-
-<!-- markdownlint-enable MD013 -->
 
 You don't need to be an expert in MLIR basics to work through this page,
 but it helps to recognize a few core ideas: dialects, operations,
@@ -95,9 +91,7 @@ in Mojo. You can use these types in variable declarations,
 parameter lists, and `comptime` aliases, just as you'd use
 built-in types like `Float64` or `UnsafePointer[Int]`.
 
-<!-- markdownlint-disable MD024 -->
 ### Dot and backtick syntax
-<!-- markdownlint-enable MD024 -->
 
 For simple type names that are valid identifiers, use dot syntax. Use
 backticks when the name includes special characters like `!`, `<`, or `>`:
@@ -158,9 +152,7 @@ def mlir_types_in_action():
     print(Int(mlir_value=count))   # 0
 ```
 
-<!-- markdownlint-disable MD024 -->
 ### Bracket syntax
-<!-- markdownlint-enable MD024 -->
 
 Use bracket syntax when you need to build a type from values
 known at compile time. The compiler splices Mojo expressions
@@ -225,9 +217,7 @@ produces an error.
 Use `__mlir_attr` to define MLIR attributes in Mojo. An MLIR
 attribute is a compile-time constant embedded in the IR.
 
-<!-- markdownlint-disable MD024 -->
 ### Dot and backtick syntax
-<!-- markdownlint-enable MD024 -->
 
 Use dot syntax for simple attribute names. Use backticks when
 you need full MLIR literal syntax:
@@ -284,9 +274,7 @@ def main():
     print(circle_area_approx(10))  # 300
 ```
 
-<!-- markdownlint-disable MD024 -->
 ### Bracket syntax
-<!-- markdownlint-enable MD024 -->
 
 Use bracket syntax when you need to build an attribute from
 compile-time values. This follows the same rules as
@@ -410,16 +398,12 @@ def main():
 
 Four attributes have special meaning to the compiler:
 
-<!-- markdownlint-disable MD013 -->
-
 | Attribute     | Purpose                                                         |
 |---------------|-----------------------------------------------------------------|
 | `_type`       | Sets the result type when the compiler can't infer it           |
 | `_properties` | Passes MLIR operation properties as a `DictionaryAttr`          |
 | `_region`     | References a named `__mlir_region` as a region argument         |
 | `_type=None`  | Marks an operation that produces no result                      |
-
-<!-- markdownlint-enable MD013 -->
 
 ### `_type`
 
@@ -657,8 +641,6 @@ __mlir_region my_region(
 These dialect prefixes appear frequently in the stdlib and
 kernel code:
 
-<!-- markdownlint-disable MD013 -->
-
 | Prefix    | Covers                                                    |
 |-----------|-----------------------------------------------------------|
 | `pop.*`   | Mojo portable ops: arithmetic, casts, SIMD, pointers      |
@@ -668,8 +650,6 @@ kernel code:
 | `llvm.*`  | LLVM dialect: traps, inline assembly, pointer ops         |
 | `nvvm.*`  | NVIDIA GPU intrinsics: barriers, async copies, tensor ops |
 | `co.*`    | Coroutine ops: suspend, resume, destroy, await            |
-
-<!-- markdownlint-enable MD013 -->
 
 The `pop`, `kgen`, `co` and `lit` dialects are internal implementation
 details of the compiler and may change without notice.

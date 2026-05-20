@@ -74,8 +74,6 @@ about a type's properties, supporting compile-time optimizations.
 
 A trait body can contain these elements:
 
-<!-- markdownlint-disable MD013 -->
-
 | Element                           | Syntax                  | Role                                     |
 |-----------------------------------|-------------------------|------------------------------------------|
 | Required method                   | `...` body              | Conforming types must implement          |
@@ -83,8 +81,6 @@ A trait body can contain these elements:
 | Comptime member - associated type | `comptime Name: Trait`  | Conforming types provide a concrete type |
 | Comptime member - required value  | `comptime name: Type`   | Conforming types provide a value         |
 | Comptime member - constant        | `comptime name = value` | Shared across all conforming types       |
-
-<!-- markdownlint-enable MD013 -->
 
 ## Trait and member names
 
@@ -95,8 +91,6 @@ describe a capability: `Writable`, `Hashable`, `Copyable`.
 
 ### Naming conventions
 
-<!-- markdownlint-disable MD013 -->
-
 | Element            | Naming                                                             | Notes                                                                    |
 |--------------------|--------------------------------------------------------------------|--------------------------------------------------------------------------|
 | Trait name         | `PascalCase`                                                       | Capabilities gained by conformance: `Equatable`, `Copyable`, `PathLike`. |
@@ -104,8 +98,6 @@ describe a capability: `Writable`, `Hashable`, `Copyable`.
 | Static method      | `lower_snake_case()`                                               | Method's action: `get_type_name`, `get_element_bitwidth`                 |
 | `comptime` members | Trait compositions are `PascalCase`. Values are `lower_snake_case` | Describes use: `KeyElement`, `element_bitwidth`                          |
 | Associated type    | `PascalCase`                                                       | Describes use: `Element`, `Iterator`                                     |
-
-<!-- markdownlint-enable MD013 -->
 
 :::caution
 When defining traits, avoid private member names with single or double

@@ -565,8 +565,6 @@ The compiler infers the `dt` parameter based on the type of the `v`
 value passed into it, as if you wrote `rsqrt[DType.float16](v)` explicitly.
 Figure 1 shows a mental model for how parameter inference works.
 
-<!--  rumdl-disable MD033 -->
-
 <figure>
 
 ![](../images/parameters/parameter-inference.png#light)
@@ -574,8 +572,6 @@ Figure 1 shows a mental model for how parameter inference works.
 
 <figcaption><b>Figure 1.</b> Parameter inference</figcaption>
 </figure>
-
-<!--  rumdl-enable MD033 -->
 
 Parameter inference can seem a little confusing: it might seem like the compiler
 is inferring compile-time parameter values from run-time argument values. But in
@@ -1099,7 +1095,7 @@ For example, to define a function that takes any kind of `SIMD` value, you could
 write this:
 
 ```mojo no-test
-def take_simd[dtype: DType, size: Int, //](vec: SIMD[dtype, size]): 
+def take_simd[dtype: DType, size: Int, //](vec: SIMD[dtype, size]):
     pass
 ```
 

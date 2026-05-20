@@ -25,7 +25,6 @@ ptr = OwnedPointer(100)
 The `ptr` variable has a value of type `OwnedPointer[Int]`. The pointer _points
 to_ a value of type `Int`, as shown in Figure 1.
 
-<!-- markdownlint-disable MD033 MD045 -->
 <figure>
 
 ![](../images/owned-pointer-diagram.png#light)
@@ -33,7 +32,6 @@ to_ a value of type `Int`, as shown in Figure 1.
 
 <figcaption><b>Figure 1.</b> Pointer and pointee</figcaption>
 </figure>
-<!-- markdownlint-enable MD033 MD045 -->
 
 Accessing the memory—to retrieve or update a value—is called
 _dereferencing_ the pointer. You can dereference a pointer by following the
@@ -113,8 +111,6 @@ characteristics:
 
 Table 1 summarizes the different types of pointers:
 
-<!-- markdownlint-disable MD033 -->
-<!-- markdownlint-disable MD013 -->
 <figure>
 
 |                                                  | `Pointer` | `OwnedPointer`          | `ArcPointer`            | `UnsafePointer` |
@@ -139,8 +135,6 @@ the lifecycle of stored values.
 
 <sup>3</sup> `OwnedPointer` is explicitly copyable, but explicitly copying an
 `OwnedPointer` copies the _stored value_ into a new `OwnedPointer`.
-<!-- markdownlint-enable MD013 -->
-<!-- markdownlint-enable MD033 -->
 
 The following sections provide more details on each pointer type.
 
