@@ -1123,6 +1123,12 @@ def test_codepoint_slicing() raises:
     assert_equal(elems[codepoint=3:2], "")
     assert_equal(elems[codepoint=2:1], "")
 
+    assert_equal(elems[codepoint=:4], "🔄🔥🔄")
+    assert_equal(elems[codepoint=0:4], "🔄🔥🔄")
+    assert_equal(elems[codepoint=1:4], "🔥🔄")
+    assert_equal(elems[codepoint=2:4], "🔄")
+    assert_equal(elems[codepoint=3:4], "")
+
 
 def test_grapheme_indexing() raises:
     assert_equal(StringSlice("abc")[grapheme=0], "a")
@@ -1134,6 +1140,45 @@ def test_grapheme_indexing() raises:
     assert_equal(StringSlice("👨‍🚀🧑‍🌾क्षि")[grapheme=0], "👨‍🚀")
     assert_equal(StringSlice("👨‍🚀🧑‍🌾क्षि")[grapheme=1], "🧑‍🌾")
     assert_equal(StringSlice("👨‍🚀🧑‍🌾क्षि")[grapheme=2], "क्षि")
+
+
+def test_grapheme_slicing() raises:
+    assert_equal(StringSlice("abc")[grapheme=0:1], "a")
+    assert_equal(StringSlice("abc")[grapheme=1:2], "b")
+    assert_equal(StringSlice("abc")[grapheme=2:3], "c")
+
+    var elems = StringSlice("👨‍🚀🧑‍🌾क्षि")
+    assert_equal(elems[grapheme=0:1], "👨‍🚀")
+    assert_equal(elems[grapheme=1:2], "🧑‍🌾")
+    assert_equal(elems[grapheme=2:3], "क्षि")
+
+    assert_equal(elems[grapheme=:1], "👨‍🚀")
+    assert_equal(elems[grapheme=:2], "👨‍🚀🧑‍🌾")
+    assert_equal(elems[grapheme=:3], "👨‍🚀🧑‍🌾क्षि")
+
+    assert_equal(elems[grapheme=:], "👨‍🚀🧑‍🌾क्षि")
+
+    assert_equal(elems[grapheme=0:], "👨‍🚀🧑‍🌾क्षि")
+    assert_equal(elems[grapheme=1:], "🧑‍🌾क्षि")
+    assert_equal(elems[grapheme=2:], "क्षि")
+
+    assert_equal(elems[grapheme=0:3], "👨‍🚀🧑‍🌾क्षि")
+    assert_equal(elems[grapheme=1:3], "🧑‍🌾क्षि")
+    assert_equal(elems[grapheme=0:2], "👨‍🚀🧑‍🌾")
+
+    assert_equal(elems[grapheme=0:0], "")
+    assert_equal(elems[grapheme=1:1], "")
+    assert_equal(elems[grapheme=2:2], "")
+
+    assert_equal(elems[grapheme=3:], "")
+    assert_equal(elems[grapheme=3:2], "")
+    assert_equal(elems[grapheme=2:1], "")
+
+    assert_equal(elems[grapheme=:4], "👨‍🚀🧑‍🌾क्षि")
+    assert_equal(elems[grapheme=0:4], "👨‍🚀🧑‍🌾क्षि")
+    assert_equal(elems[grapheme=1:4], "🧑‍🌾क्षि")
+    assert_equal(elems[grapheme=2:4], "क्षि")
+    assert_equal(elems[grapheme=3:4], "")
 
 
 def main() raises:
