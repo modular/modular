@@ -16,7 +16,6 @@ from layout import (
     Coord,
     Layout,
     LayoutTensor,
-    RuntimeInt,
     TileTensor,
     row_major,
 )
@@ -65,20 +64,17 @@ def matrix_band_part[
         return input.load[width=width](rebind[IndexList[rank]](coords))
 
     # Create TileTensors for scalar parameters.
-    var num_lower_shape = Coord(RuntimeInt[DType.int64](Int64(1)))
+    var num_lower_shape = Coord(Int64(1))
     var num_lower_tt = TileTensor(num_lower_buf.ptr, row_major(num_lower_shape))
-    var num_upper_shape = Coord(RuntimeInt[DType.int64](Int64(1)))
+    var num_upper_shape = Coord(Int64(1))
     var num_upper_tt = TileTensor(num_upper_buf.ptr, row_major(num_upper_shape))
-    var exclude_shape = Coord(RuntimeInt[DType.int64](Int64(1)))
+    var exclude_shape = Coord(Int64(1))
     var exclude_tt = TileTensor(exclude_buf.ptr, row_major(exclude_shape))
 
     # Create TileTensor for output.
     comptime m = output_layout.shape[0].value()
     comptime n = output_layout.shape[1].value()
-    var output_shape = Coord(
-        RuntimeInt[DType.int64](Int64(m)),
-        RuntimeInt[DType.int64](Int64(n)),
-    )
+    var output_shape = Coord(Int64(m), Int64(n))
     var output_tt = TileTensor(output.ptr, row_major(output_shape))
 
     _matrix_band_part[

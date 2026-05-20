@@ -28,7 +28,6 @@ from layout import (
     Idx,
     Layout,
     LayoutTensor,
-    RuntimeInt,
     RuntimeLayout,
     TileTensor,
     UNKNOWN_VALUE,
@@ -211,8 +210,8 @@ def execute_kv_cache_ragged_flash_attention[
     var paged_lut_cols = ceildiv(max_context_length, page_size)
     var paged_lut_size = batch_size * paged_lut_cols
 
-    def _ri(v: Int) -> RuntimeInt[DType.int64]:
-        return RuntimeInt[DType.int64](Int64(v))
+    def _ri(v: Int) -> Int64:
+        return Int64(v)
 
     var paged_lut_host_ptr = List(
         length=paged_lut_size, fill=Scalar[DType.uint32](0)

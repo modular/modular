@@ -157,7 +157,7 @@ def test_fused_qk_rope[rope_dim: Int, dtype: DType]() raises -> None:
     )
 
     # Create position_ids tensor for testing explicit position encoding using TileTensor.
-    # The function expects TileTensor with RuntimeInt layout and ImmutAnyOrigin.
+    # The function expects TileTensor with Scalar layout and ImmutAnyOrigin.
     position_ids_input_buffer = position_ids_input[DType.uint32]()
     var position_ids_static = TileTensor(
         position_ids_input_buffer, position_ids_layout

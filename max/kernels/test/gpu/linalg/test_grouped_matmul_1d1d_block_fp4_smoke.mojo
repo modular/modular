@@ -21,7 +21,7 @@ from std.math import ceildiv
 from std.gpu.host import DeviceContext
 from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 from std.random import rand
-from layout import Coord, Idx, RuntimeInt, TileTensor, row_major
+from layout import Coord, Idx, TileTensor, row_major
 from std.utils.index import Index, IndexList
 
 from linalg.matmul.gpu.sm100_structured.grouped_block_scaled_1d1d import (
@@ -201,7 +201,7 @@ def _test_grouped_1d1d_block_fp4_impl[
         a_sf_buf,
         row_major(
             Coord(
-                RuntimeInt[DType.int64](Scalar[DType.int64](a_scale_dim0)),
+                Int64(a_scale_dim0),
                 Idx[k_groups](),
                 Idx[SF_ATOM_M[0]](),
                 Idx[SF_ATOM_M[1]](),
@@ -417,7 +417,7 @@ def _test_grouped_1d1d_mixed_experts[
         a_sf_buf.unsafe_ptr().bitcast[Scalar[sf_dtype]](),
         row_major(
             Coord(
-                RuntimeInt[DType.int64](Scalar[DType.int64](a_scale_dim0)),
+                Int64(a_scale_dim0),
                 Idx[k_groups](),
                 Idx[SF_ATOM_M[0]](),
                 Idx[SF_ATOM_M[1]](),

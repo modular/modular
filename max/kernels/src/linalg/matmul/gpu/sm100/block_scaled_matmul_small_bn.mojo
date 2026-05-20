@@ -55,7 +55,6 @@ from layout import (
     Idx,
     Layout,
     LayoutTensor,
-    RuntimeInt,
     RuntimeLayout,
     TileTensor,
 )
@@ -686,7 +685,7 @@ def _sfb_cpasync_produce_tile[
             var j = UInt32(jj)
             var offset = stage * UInt32(k_group_size) + j
             var sfb_smem_tile_ptr = sfb_smem_base_ptr + Int(
-                sfb_smem_stage_layout(Coord(RuntimeInt(Int64(offset))))
+                sfb_smem_stage_layout(Coord(Int64(offset)))
             )
             var k_tile_base = Int(i * UInt32(k_group_size) + j) * num_sf_k_tiles
 
@@ -718,11 +717,9 @@ def _sfb_cpasync_produce_tile[
                                 + Int(
                                     sfb_global_atom_layout(
                                         Coord(
-                                            RuntimeInt(
-                                                Int64(k_tile_base + k_atom)
-                                            ),
-                                            RuntimeInt(Int64(row_in_atom)),
-                                            RuntimeInt(Int64(sub_column)),
+                                            Int64(k_tile_base + k_atom),
+                                            Int64(row_in_atom),
+                                            Int64(sub_column),
                                         )
                                     )
                                 )
@@ -843,7 +840,7 @@ def _sfb_cpasync_produce_tile_warpwide[
             var j = UInt32(jj)
             var offset = stage * UInt32(k_group_size) + j
             var sfb_smem_tile_ptr = sfb_smem_base_ptr + Int(
-                sfb_smem_stage_layout(Coord(RuntimeInt(Int64(offset))))
+                sfb_smem_stage_layout(Coord(Int64(offset)))
             )
             var k_tile_base = Int(i * UInt32(k_group_size) + j) * num_sf_k_tiles
 
@@ -867,9 +864,9 @@ def _sfb_cpasync_produce_tile_warpwide[
                         + Int(
                             sfb_global_atom_layout(
                                 Coord(
-                                    RuntimeInt(Int64(k_tile_base + my_k_atom)),
-                                    RuntimeInt(Int64(row_in_atom)),
-                                    RuntimeInt(Int64(sub_column)),
+                                    Int64(k_tile_base + my_k_atom),
+                                    Int64(row_in_atom),
+                                    Int64(sub_column),
                                 )
                             )
                         )
@@ -1850,9 +1847,9 @@ def _create_tma_and_launch[
     ) // 2  # 512 bytes / 2 = 256 uint16 elements
 
     var sfa_4d_shape = Coord(
-        RuntimeInt[DType.int64](Int64(Int(sfa_5d_tensor.dim[0]()))),
-        RuntimeInt[DType.int64](Int64(Int(sfa_5d_tensor.dim[1]()))),
-        RuntimeInt[DType.int64](Int64(Int(sfa_5d_tensor.dim[2]()))),
+        Int64(sfa_5d_tensor.dim[0]()),
+        Int64(sfa_5d_tensor.dim[1]()),
+        Int64(sfa_5d_tensor.dim[2]()),
         Idx[sf_atom_u16](),
     )
     var sfa_4d_layout = tt_row_major(sfa_4d_shape)
@@ -2147,25 +2144,25 @@ def _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     def _scales_5d_shape(
         scales: TileTensor,
     ) -> Coord[
-        RuntimeInt[DType.int64],
-        RuntimeInt[DType.int64],
-        RuntimeInt[DType.int64],
+        Int64,
+        Int64,
+        Int64,
         ComptimeInt[SF_ATOM_M[0]],
         ComptimeInt[SF_ATOM_M[1] * SF_ATOM_K],
     ]:
         comptime if is_batched_matmul:
             return Coord(
-                RuntimeInt[DType.int64](Int64(Int(scales.dim[0]()))),
-                RuntimeInt[DType.int64](Int64(Int(scales.dim[1]()))),
-                RuntimeInt[DType.int64](Int64(Int(scales.dim[2]()))),
+                Int64(scales.dim[0]()),
+                Int64(scales.dim[1]()),
+                Int64(scales.dim[2]()),
                 Idx[SF_ATOM_M[0]](),
                 Idx[SF_ATOM_M[1] * SF_ATOM_K](),
             )
         else:
             return Coord(
-                RuntimeInt[DType.int64](Int64(1)),
-                RuntimeInt[DType.int64](Int64(Int(scales.dim[0]()))),
-                RuntimeInt[DType.int64](Int64(Int(scales.dim[1]()))),
+                Int64(1),
+                Int64(scales.dim[0]()),
+                Int64(scales.dim[1]()),
                 Idx[SF_ATOM_M[0]](),
                 Idx[SF_ATOM_M[1] * SF_ATOM_K](),
             )

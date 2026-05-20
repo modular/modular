@@ -1308,7 +1308,7 @@ struct SubTileLoaderLDS[
     async_copies=True]`.
 
     Constructs the `AMDBufferResource` once from a DRAM tile (which may
-    carry `RuntimeInt` valid_rows for bounds clamping via `MixedLayout`).
+    carry `Scalar` valid_rows for bounds clamping via `MixedLayout`).
     Each `load()` call reuses the descriptor — one shared bc per tile,
     zero per-warp overhead for buffer resource construction. SRD bounds
     computed by `make_amd_buffer_resource` via `_get_bounds`; hardware
@@ -1330,7 +1330,7 @@ struct SubTileLoaderLDS[
     def __init__(out self, gmem_tile: TileTensor[Self.dtype, ...]):
         """Create a loader from a DRAM tile.
 
-        The tile's layout carries the valid row count (via RuntimeInt
+        The tile's layout carries the valid row count (via Scalar
         dim[0] in MixedLayout). make_amd_buffer_resource reads that
         dimension to compute the SRD size.
 
@@ -1519,7 +1519,7 @@ struct SubTileLoaderLDS_HK_st_8x32[
 
         Args:
             gmem_tile: The full DRAM tile from KVCacheIterator (carries
-                a RuntimeInt valid_rows for clamping bounds).
+                a Scalar valid_rows for clamping bounds).
         """
         self.bc = make_amd_buffer_resource(gmem_tile)
 
@@ -1695,7 +1695,7 @@ struct RegTileLoader[
     def __init__(out self, gmem_tile: TileTensor[Self.dtype, ...]):
         """Creates a loader from a DRAM tile.
 
-        The TileTensor may carry RuntimeInt for any masked dimension
+        The TileTensor may carry Scalar for any masked dimension
         (e.g. valid_rows in MixedLayout) so that make_amd_buffer_resource
         computes correct OOB clamping bounds.
 
@@ -1825,7 +1825,7 @@ struct RegTileWriter[
     def __init__(out self, dst_base: TileTensor):
         """Create a writer from the full DRAM output tile.
 
-        The TileTensor must carry RuntimeInt for any masked dimension
+        The TileTensor must carry Scalar for any masked dimension
         (e.g. valid_rows) so that make_amd_buffer_resource computes
         correct OOB clamping bounds.
 

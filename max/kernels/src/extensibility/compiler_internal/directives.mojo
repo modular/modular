@@ -17,7 +17,6 @@ from std.sys.intrinsics import _type_is_eq
 from layout.coord import (
     ComptimeInt,
     CoordLike,
-    RuntimeInt,
     _IntToComptimeInt,
 )
 from std.utils import IndexList
@@ -31,16 +30,16 @@ from layout import IntTuple, Layout
 # TileLayout helper aliases
 # ===----------------------------------------------------------------------=== #
 
-comptime _AllRuntimeInt[rank: Int] = TypeList.splat[
-    Trait=CoordLike, count=rank, type=RuntimeInt[]
+comptime _AllScalar[rank: Int] = TypeList.splat[
+    Trait=CoordLike, count=rank, type=Scalar[DType.int]
 ]()
-"""A variadic of `rank` RuntimeInt types."""
+"""A variadic of `rank` Scalar types."""
 
 comptime _UnknownTileLayout[rank: Int] = TileLayout[
-    shape_types=_AllRuntimeInt[rank],
-    stride_types=_AllRuntimeInt[rank],
+    shape_types=_AllScalar[rank],
+    stride_types=_AllScalar[rank],
 ]
-"""A fully-dynamic TileLayout where all shape and stride dims are RuntimeInt."""
+"""A fully-dynamic TileLayout where all shape and stride dims are Scalar."""
 
 
 comptime _RowMajorTileLayout[
@@ -54,17 +53,17 @@ comptime _RowMajorTileLayout[
 comptime _IndexListToCoordLikeTabulator[
     list: IndexList,
     idx: SIMDSize,
-]: CoordLike = ComptimeInt[list[idx]] if list[idx] >= 0 else RuntimeInt[]
+]: CoordLike = ComptimeInt[list[idx]] if list[idx] >= 0 else Scalar[DType.int]
 
 """Maps a single IndexList element to a CoordLike type.
-Negative values (-1 = dynamic) become RuntimeInt, others become ComptimeInt."""
+Negative values (-1 = dynamic) become Scalar, others become ComptimeInt."""
 
 
 comptime _IndexListToCoordLike[list: IndexList] = TypeList.tabulate[
     list.size, _IndexListToCoordLikeTabulator[list, _]
 ]()
 """Converts a compile-time IndexList to a variadic of CoordLike types.
-Negative values become RuntimeInt, non-negative become ComptimeInt."""
+Negative values become Scalar, non-negative become ComptimeInt."""
 
 
 comptime _IndexListToTileLayout[
@@ -74,7 +73,7 @@ comptime _IndexListToTileLayout[
     stride_types=_IndexListToCoordLike[strides],
 ]
 """Convert a pair of compile-time IndexLists to a TileLayout.
-Negative values (-1) become RuntimeInt, non-negative become ComptimeInt."""
+Negative values (-1) become Scalar, non-negative become ComptimeInt."""
 
 
 comptime _RowMajorIntTupleTileLayout[

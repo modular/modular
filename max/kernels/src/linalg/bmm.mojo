@@ -37,7 +37,6 @@ from layout import (
     IntTuple,
     Layout,
     LayoutTensor,
-    RuntimeInt,
     RuntimeLayout,
     TensorLayout,
     TileTensor,
@@ -120,7 +119,7 @@ comptime _shape_types_to_3d_get_first_dim[
     dtype: DType, *coords: CoordLike
 ]: CoordLike = ComptimeInt[Coord[*coords].static_product] if Coord[
     *coords
-].all_dims_known else RuntimeInt[
+].all_dims_known else Scalar[
     dtype
 ]
 
@@ -183,11 +182,7 @@ def _reshape_tile_tensor_with_batch_to_3d(
         else:
             var stride_val = tensor.layout.stride[idx]().value()
             stride_ptr.init_pointee_copy(
-                rebind[StrideType](
-                    RuntimeInt[StrideType.DTYPE](
-                        Scalar[StrideType.DTYPE](stride_val)
-                    )
-                )
+                rebind[StrideType](Scalar[StrideType.DTYPE](stride_val))
             )
 
         # copy the shape
@@ -206,11 +201,7 @@ def _reshape_tile_tensor_with_batch_to_3d(
                     shape_val *= Int(tensor.layout.shape[batch_idx]().value())
 
             shape_ptr.init_pointee_copy(
-                rebind[ShapeType](
-                    RuntimeInt[ShapeType.DTYPE](
-                        Scalar[ShapeType.DTYPE](shape_val)
-                    )
-                )
+                rebind[ShapeType](Scalar[ShapeType.DTYPE](shape_val))
             )
 
     return type_of(result)(

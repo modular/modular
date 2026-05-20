@@ -80,6 +80,7 @@ from std.python import Python, PythonObject
 
 from std.utils import IndexList, StaticTuple
 from std.utils._visualizers import lldb_formatter_wrapping_type
+from std.utils.coord import CoordLike, Coord
 from std.utils.numerics import FPUtils
 from std.utils.numerics import inf as _inf
 from std.utils.numerics import isinf as _isinf
@@ -408,6 +409,7 @@ struct SIMD[dtype: DType, size: Int](
     CeilDivable,
     Ceilable,
     Comparable,
+    CoordLike,
     Defaultable,
     DevicePassable,
     DivModable,
@@ -3224,6 +3226,85 @@ struct SIMD[dtype: DType, size: Int](
             return res
 
         return self.shuffle[mask=indices()]()
+
+    # ===-------------------------------------------------------------------===#
+    # CoordLike
+    # ===-------------------------------------------------------------------===#
+
+    comptime ParamListType = Coord[Self].element_types
+    """The element types (Self for scalar types)."""
+
+    comptime _ParamListType = Self.ParamListType.values
+    """The low-level parameter list of element types."""
+
+    comptime static_value: Int = -1
+    """Always -1 for runtime values (not statically known)."""
+
+    comptime DTYPE = Self.dtype
+    """The data type for the runtime integer value."""
+
+    @staticmethod
+    @always_inline("nodebug")
+    def __len__() -> Int:
+        """Get the length (always 1 for scalar types).
+
+        Returns:
+            Always returns 1.
+        """
+        comptime assert (
+            Self.dtype.is_integral()
+        ), "CoordLike requires integral types"
+        comptime assert Self.size == 1, "CoordLike requires size == 1"
+        return 1
+
+    @always_inline("nodebug")
+    def product(self) -> Scalar[Self.dtype]:
+        """Calculate the product (returns the value for scalar types).
+
+        Returns:
+            The integer value.
+        """
+        comptime assert (
+            Self.dtype.is_integral()
+        ), "CoordLike requires integral types"
+        comptime assert Self.size == 1, "CoordLike requires size == 1"
+        return self[0]
+
+    @always_inline("nodebug")
+    def sum(self) -> Scalar[Self.dtype]:
+        """Calculate the sum (returns the value for scalar types).
+
+        Returns:
+            The integer value.
+        """
+        comptime assert (
+            Self.dtype.is_integral()
+        ), "CoordLike requires integral types"
+        comptime assert Self.size == 1, "CoordLike requires size == 1"
+        return self[0]
+
+    @always_inline("nodebug")
+    def value(self) -> Scalar[Self.dtype]:
+        """Get the scalar value.
+
+        Returns:
+            The runtime integer value.
+        """
+        comptime assert (
+            Self.dtype.is_integral()
+        ), "CoordLike requires integral types"
+        comptime assert Self.size == 1, "CoordLike requires size == 1"
+
+        return self[0]
+
+    @always_inline("nodebug")
+    def tuple(var self) -> Coord[*Self.ParamListType]:
+        """Get as a tuple (not valid for `Scalar` CoordLike).
+
+        Returns:
+            Never returns; aborts at compile time.
+        """
+        comptime assert False, "SIMD is not a tuple CoordLike type"
 
 
 comptime U8x16 = SIMD[DType.uint8, 16]

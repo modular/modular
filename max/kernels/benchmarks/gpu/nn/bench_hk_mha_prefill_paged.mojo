@@ -73,7 +73,7 @@ from layout import (
     Idx,
     row_major,
 )
-from layout.coord import Coord, RuntimeInt
+from layout.coord import Coord
 from layout._fillers import random as fill_random
 
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
@@ -167,8 +167,8 @@ def run_hk_mha_prefill_paged[
         paged_lut_host,
         row_major(
             Coord(
-                RuntimeInt[DType.int64](Int64(batch_size)),
-                RuntimeInt[DType.int64](Int64(paged_lut_cols)),
+                Int64(batch_size),
+                Int64(paged_lut_cols),
             )
         ),
     )
@@ -274,8 +274,8 @@ def run_hk_mha_prefill_paged[
                     q_ptr,
                     row_major(
                         Coord(
-                            RuntimeInt[DType.int32](Int32(batch_size)),
-                            RuntimeInt[DType.int32](Int32(seq_len)),
+                            Int32(batch_size),
+                            Int32(seq_len),
                             Idx[num_heads](),
                             Idx[depth](),
                         )
@@ -285,8 +285,8 @@ def run_hk_mha_prefill_paged[
                     cb_o.offset_ptr(iteration).bitcast[Scalar[DType.float32]](),
                     row_major(
                         Coord(
-                            RuntimeInt[DType.int32](Int32(batch_size)),
-                            RuntimeInt[DType.int32](Int32(seq_len)),
+                            Int32(batch_size),
+                            Int32(seq_len),
                             Idx[num_heads](),
                             Idx[depth](),
                         )

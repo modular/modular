@@ -34,7 +34,6 @@ from layout import (
     LayoutTensor,
     LTToTTLayout,
     RowMajorLayout,
-    RuntimeInt,
     RuntimeLayout,
     TileTensor,
     UNKNOWN_VALUE,
@@ -1487,26 +1486,18 @@ def _matmul_blockwise_scaled_fp8_common[
         dtype: DType,
     ](lt: LayoutTensor[dtype, _, ...]) -> TileTensor[
         dtype,
-        RowMajorLayout[
-            *Coord[
-                RuntimeInt[DType.int64], RuntimeInt[DType.int64]
-            ].element_types
-        ],
+        RowMajorLayout[*Coord[Int64, Int64].element_types],
         lt.origin,
     ]:
         var layout = row_major(
             (
-                RuntimeInt(Scalar[DType.int64](lt.dim(0))),
-                RuntimeInt(Scalar[DType.int64](lt.dim(1))),
+                Int64(lt.dim(0)),
+                Int64(lt.dim(1)),
             )
         )
         return TileTensor[
             dtype,
-            RowMajorLayout[
-                *Coord[
-                    RuntimeInt[DType.int64], RuntimeInt[DType.int64]
-                ].element_types
-            ],
+            RowMajorLayout[*Coord[Int64, Int64].element_types],
             lt.origin,
         ](
             ptr=UnsafePointer[Scalar[dtype], lt.origin](
@@ -1523,12 +1514,7 @@ def _matmul_blockwise_scaled_fp8_common[
     )
     var c_tt = TileTensor(
         scratch_buffer.unsafe_ptr(),
-        layout=row_major(
-            (
-                RuntimeInt(Scalar[DType.int64](TOTAL_SEQ_LEN)),
-                RuntimeInt(Scalar[DType.int64](N)),
-            )
-        ),
+        layout=row_major((Int64(TOTAL_SEQ_LEN), Int64(N))),
     )
 
     blockwise_scaled_fp8_with_epilogue[
@@ -1584,12 +1570,7 @@ def _matmul_blockwise_scaled_fp4_common[
     )
     var c_tt = TileTensor(
         scratch_buffer.unsafe_ptr(),
-        row_major(
-            (
-                RuntimeInt(Scalar[DType.int64](TOTAL_SEQ_LEN)),
-                RuntimeInt(Scalar[DType.int64](N)),
-            )
-        ),
+        row_major((Int64(TOTAL_SEQ_LEN), Int64(N))),
     )
 
     var a_scales_tt = lt_to_tt(input_scale)

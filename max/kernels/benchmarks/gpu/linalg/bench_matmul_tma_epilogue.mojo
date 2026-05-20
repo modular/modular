@@ -50,7 +50,6 @@ from layout import (
     Coord,
     CoordLike,
     RowMajorLayout,
-    RuntimeInt,
     row_major,
 )
 from linalg.matmul.gpu import _matmul_gpu
@@ -296,15 +295,11 @@ def bench_matmul_tma_epilogue[
             ](tensor_c, tensor_a, tensor_b, ctx)
 
         else:  # "tma_bias"
-            # Build epilogue TileTensor with RowMajorLayout[RuntimeInt[DType.int64], RuntimeInt[DType.int64]]
+            # Build epilogue TileTensor with RowMajorLayout[Int64, Int64]
             # to exactly match _matmul_gpu's epilogue_tensor parameter type. Idx(Int) returns
-            # RuntimeInt[DType.int] which mismatches; use RuntimeInt[DType.int64] directly.
-            var epi_m = RuntimeInt[DType.int64](
-                Scalar[DType.int64](Int(epilogue_shape[0].value()))
-            )
-            var epi_n = RuntimeInt[DType.int64](
-                Scalar[DType.int64](Int(epilogue_shape[1].value()))
-            )
+            # Scalar[DType.int] which mismatches; use Int64 directly.
+            var epi_m = Int64(epilogue_shape[0].value())
+            var epi_n = Int64(epilogue_shape[1].value())
             var epilogue_for_gpu = TileTensor(
                 tensor_epilogue.ptr, row_major(Coord(epi_m, epi_n))
             ).as_immut()
@@ -424,12 +419,8 @@ def bench_matmul_tma_epilogue[
             ](c_kernel_nd, a_ver_nd, b_ver_nd, ctx)
 
         else:
-            var epi_m = RuntimeInt[DType.int64](
-                Scalar[DType.int64](Int(epilogue_shape[0].value()))
-            )
-            var epi_n = RuntimeInt[DType.int64](
-                Scalar[DType.int64](Int(epilogue_shape[1].value()))
-            )
+            var epi_m = Int64(epilogue_shape[0].value())
+            var epi_n = Int64(epilogue_shape[1].value())
             var epilogue_for_ver = TileTensor(
                 epilogue_ver_dev.unsafe_ptr(), row_major(Coord(epi_m, epi_n))
             ).as_immut()

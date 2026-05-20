@@ -52,7 +52,6 @@ from layout import (
     LayoutTensor,
     LTToTTLayout,
     RowMajorLayout,
-    RuntimeInt,
     TensorLayout,
     TileTensor,
     UNKNOWN_VALUE,
@@ -1113,7 +1112,7 @@ def _softmax_temperature_kernel[
 def softmax_with_temperature[
     dtype: DType,
     temp_dtype: DType = DType.float32,
-    TempLayoutType: TensorLayout = RowMajorLayout[RuntimeInt[DType.int64]],
+    TempLayoutType: TensorLayout = RowMajorLayout[Int64],
 ](
     ctx: DeviceContext,
     input: TileTensor[dtype, ...],

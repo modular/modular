@@ -51,7 +51,6 @@ from layout import (
     Idx,
     Layout,
     LayoutTensor,
-    RuntimeInt,
     RuntimeLayout,
     TileTensor,
     UNKNOWN_VALUE,
@@ -431,7 +430,7 @@ def _test_kernel_impl_base[
             a_scales_device,
             row_major(
                 Coord(
-                    RuntimeInt[DType.int64](Scalar[DType.int64](a_scale_dim0)),
+                    Int64(a_scale_dim0),
                     Idx[k_groups](),
                     Idx[SF_ATOM_M[0]](),
                     Idx[SF_ATOM_M[1]](),
@@ -454,11 +453,7 @@ def _test_kernel_impl_base[
         ).as_any_origin()
         var expert_scales_tt = TileTensor(
             expert_scales_device,
-            row_major(
-                Coord(
-                    RuntimeInt[DType.int64](Scalar[DType.int64](num_experts)),
-                )
-            ),
+            row_major(Coord(Int64(num_experts))),
         ).as_any_origin()
 
         grouped_matmul_block_scaled[

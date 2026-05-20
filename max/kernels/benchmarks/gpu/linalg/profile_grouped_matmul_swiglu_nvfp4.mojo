@@ -48,7 +48,7 @@ from std.benchmark import (
 )
 from std.gpu.host import DeviceBuffer, DeviceContext
 from std.gpu.primitives.grid_controls import PDLLevel, pdl_launch_attributes
-from layout import Coord, Idx, RuntimeInt, TileTensor, row_major
+from layout import Coord, Idx, TileTensor, row_major
 
 from internal_utils import arg_parse, ScalarArray
 from internal_utils._cache_busting import CacheBustingBuffer
@@ -387,8 +387,8 @@ def main() raises:
 
         ctx.synchronize()
 
-        def _ri(v: Int) -> RuntimeInt[DType.int64]:
-            return RuntimeInt[DType.int64](Int64(v))
+        def _ri(v: Int) -> Int64:
+            return Int64(v)
 
         comptime b_shape = row_major(
             Coord(Idx[num_experts](), Idx[N](), Idx[packed_K]())

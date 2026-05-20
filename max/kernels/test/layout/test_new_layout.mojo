@@ -16,7 +16,6 @@ from layout import (
     Coord,
     CoordLike,
     Idx,
-    RuntimeInt,
     TileTensor,
     col_major,
     row_major,
@@ -1169,7 +1168,7 @@ def test_upcast_factor1_identity() raises:
 
 
 def test_upcast_runtime_dims() raises:
-    """Upcast with runtime dimensions produces RuntimeInt results."""
+    """Upcast with runtime dimensions produces Scalar results."""
     var layout = row_major(Int(4), Idx[8]())
     var up = upcast[factor=2](layout)
 
@@ -1409,7 +1408,7 @@ def test_weakly_compatible_scalar_coord() raises:
     ]
     comptime assert WeaklyCompatible[
         L,
-        Coord[RuntimeInt[DType.int32], RuntimeInt[DType.int32]].element_types,
+        Coord[Int32, Int32].element_types,
     ]
 
 

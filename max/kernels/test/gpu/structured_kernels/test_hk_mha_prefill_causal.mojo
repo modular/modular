@@ -32,7 +32,7 @@ from std.gpu.host import DeviceContext
 from std.testing import assert_almost_equal
 
 from layout import LayoutTensor, TileTensor
-from layout.coord import Coord, Idx, RuntimeInt
+from layout.coord import Coord, Idx
 from layout.runtime_layout import RuntimeLayout
 from layout.tile_layout import row_major
 
@@ -102,8 +102,8 @@ def test_v2_causal[depth: Int](ctx: DeviceContext) raises:
         dev_q,
         row_major(
             Coord(
-                RuntimeInt[DType.int32](Int32(BATCH)),
-                RuntimeInt[DType.int32](Int32(SEQ_LEN)),
+                Int32(BATCH),
+                Int32(SEQ_LEN),
                 Idx[NUM_HEADS](),
                 Idx[depth](),
             )
@@ -113,8 +113,8 @@ def test_v2_causal[depth: Int](ctx: DeviceContext) raises:
         dev_k,
         row_major(
             Coord(
-                RuntimeInt[DType.int32](Int32(BATCH)),
-                RuntimeInt[DType.int32](Int32(NUM_KEYS)),
+                Int32(BATCH),
+                Int32(NUM_KEYS),
                 Idx[NUM_KV_HEADS](),
                 Idx[depth](),
             )
@@ -124,8 +124,8 @@ def test_v2_causal[depth: Int](ctx: DeviceContext) raises:
         dev_v,
         row_major(
             Coord(
-                RuntimeInt[DType.int32](Int32(BATCH)),
-                RuntimeInt[DType.int32](Int32(NUM_KEYS)),
+                Int32(BATCH),
+                Int32(NUM_KEYS),
                 Idx[NUM_KV_HEADS](),
                 Idx[depth](),
             )
@@ -135,8 +135,8 @@ def test_v2_causal[depth: Int](ctx: DeviceContext) raises:
         dev_out,
         row_major(
             Coord(
-                RuntimeInt[DType.int32](Int32(BATCH)),
-                RuntimeInt[DType.int32](Int32(SEQ_LEN)),
+                Int32(BATCH),
+                Int32(SEQ_LEN),
                 Idx[NUM_HEADS](),
                 Idx[depth](),
             )

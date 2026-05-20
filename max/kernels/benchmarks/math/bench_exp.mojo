@@ -27,15 +27,15 @@ from std.benchmark import (
     ThroughputMeasure,
     keep,
 )
-from layout import Coord, RuntimeInt, TileTensor, row_major
+from layout import Coord, TileTensor, row_major
 from std.builtin.range import _StridedRange
 from std.compile import compile_info
 from std.memory import bitcast, stack_allocation
 from internal_utils import ScalarArray
 
 
-def _ri(v: Int) -> RuntimeInt[DType.int64]:
-    return RuntimeInt[DType.int64](Int64(v))
+def _ri(v: Int) -> Int64:
+    return Int64(v)
 
 
 def apply[

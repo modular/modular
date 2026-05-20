@@ -77,7 +77,6 @@ from layout import (
     Layout,
     LayoutTensor,
     RowMajorLayout,
-    RuntimeInt,
     RuntimeLayout,
     TileTensor,
     UNKNOWN_VALUE,
@@ -2004,7 +2003,7 @@ comptime _TransposeStrideTypesTabulator[
     permutations: IntTuple,
     input_stride_types: TypeList[Trait=CoordLike, ...],
     idx: Int,
-]: CoordLike = RuntimeInt[] if Int(
+]: CoordLike = Scalar[DType.int] if Int(
     permutations[idx]
 ) == UNKNOWN_VALUE else input_stride_types[
     Int(permutations[idx])
@@ -2137,7 +2136,9 @@ comptime _SliceStrideTypesTabulator[
     idx
 ].is_static_value and step_types[
     idx
-].is_static_value else RuntimeInt[]
+].is_static_value else Scalar[
+    DType.int
+]
 
 comptime _SliceStrideTypes[
     rank: Int,
@@ -4101,20 +4102,14 @@ struct FusedMatmulAdd:
             residual.rank == 1 or residual.rank == 2
         ), "residual must be rank 1 (bias) or rank 2"
         comptime epilogue_is_1d = residual.rank == 1
-        var epi_m: RuntimeInt[DType.int64]
-        var epi_n: RuntimeInt[DType.int64]
+        var epi_m: Int64
+        var epi_n: Int64
         comptime if epilogue_is_1d:
-            epi_m = RuntimeInt[DType.int64](Scalar[DType.int64](1))
-            epi_n = RuntimeInt[DType.int64](
-                Scalar[DType.int64](residual.dim_size(0))
-            )
+            epi_m = 1
+            epi_n = Int64(residual.dim_size(0))
         else:
-            epi_m = RuntimeInt[DType.int64](
-                Scalar[DType.int64](residual.dim_size(0))
-            )
-            epi_n = RuntimeInt[DType.int64](
-                Scalar[DType.int64](residual.dim_size(1))
-            )
+            epi_m = Int64(residual.dim_size(0))
+            epi_n = Int64(residual.dim_size(1))
         var epilogue = TileTensor(
             residual.unsafe_ptr(), row_major(Coord(epi_m, epi_n))
         ).as_immut()
@@ -4129,7 +4124,7 @@ struct FusedMatmulAdd:
             a.to_tile_tensor[DType.int64](),
             b.to_tile_tensor[DType.int64](),
             ctx,
-            epilogue_tensor=epilogue,
+            epilogue_tensor=OptionalReg(epilogue),
         )
 
 
@@ -5096,7 +5091,7 @@ struct Split:
         ctx: DeviceContext,
     ) raises:
         comptime shape_types = DynamicCoord[DType.int64, rank].element_types
-        # Use RuntimeInt for strides as well since make_dynamic produces all
+        # Use Scalar for strides as well since make_dynamic produces all
         # runtime strides.
         comptime stride_types = DynamicCoord[DType.int64, rank].element_types
 
@@ -11760,7 +11755,7 @@ struct DistributedAllGather:
         )
 
         # Build TileTensors directly using flattened 1D layouts. Inputs can
-        # have different sizes in uneven allgather; RuntimeInt dimensions give
+        # have different sizes in uneven allgather; Scalar dimensions give
         # a homogeneous TileTensor type for the InlineArray.
         comptime InputTensorType = type_of(
             TileTensor(
@@ -12738,7 +12733,7 @@ struct MatmulStaticScaledFloat8:
         )
         var output_scratch = TileTensor(
             scratch_buffer.unsafe_ptr(),
-            row_major(Coord(RuntimeInt[DType.int64](Int64(M)), Idx[N]())),
+            row_major(Coord(Int64(M), Idx[N]())),
         )
 
         matmul[

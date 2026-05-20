@@ -19,7 +19,7 @@ from std.sys import (
 )
 from std.sys.info import has_amd_gpu_accelerator
 
-from layout import Coord, RuntimeInt, TileTensor, row_major, CoordLike, Idx
+from layout import Coord, TileTensor, row_major, CoordLike, Idx
 import linalg.matmul.vendor.blas as vendor_blas
 from std.algorithm.functional import elementwise
 from std.benchmark import (
@@ -40,8 +40,8 @@ from linalg.bmm import _batched_matmul_gpu
 from std.utils import IndexList
 
 
-def _ri(v: Int) -> RuntimeInt[DType.int64]:
-    return RuntimeInt[DType.int64](Int64(v))
+def _ri(v: Int) -> Int64:
+    return Int64(v)
 
 
 def _get_run_name[

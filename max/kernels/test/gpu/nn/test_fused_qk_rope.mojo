@@ -234,7 +234,7 @@ def test_fused_qk_rope[dtype: DType](ctx: DeviceContext) raises -> None:
         for i in range(batch_size):
             valid_lengths_host[i] = UInt32(seq_len)
 
-    # Create valid_lengths TileTensor with RuntimeInt layout and MutAnyOrigin
+    # Create valid_lengths TileTensor with Scalar layout and MutAnyOrigin
     var valid_lengths_static = TileTensor(
         valid_lengths_device, valid_lengths_tile_layout
     )

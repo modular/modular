@@ -182,115 +182,18 @@ struct ComptimeInt[val: Int](CoordLike, TrivialRegisterPassable):
         comptime assert False, "ComptimeInt is not a tuple type"
 
 
-struct RuntimeInt[dtype: DType = DType.int](CoordLike, TrivialRegisterPassable):
-    """Runtime index value with configurable precision.
-
-    Parameters:
-        dtype: The data type for the runtime integer value. Defaults to `DType.int`.
-    """
-
-    comptime ParamListType = Coord[Self].element_types
-    """The element types (Self for scalar types)."""
-
-    comptime _ParamListType = Self.ParamListType.values
-    """The low-level parameter list of element types."""
-
-    comptime static_value: Int = -1
-    """Always -1 for runtime values (not statically known)."""
-
-    comptime DTYPE = Self.dtype
-    """The data type for the runtime integer value."""
-
-    var _value: Scalar[Self.dtype]
-    """The runtime scalar value."""
-
-    def __init__(out self):
-        """Initialize a runtime integer with value 0."""
-        self._value = 0
-
-    def __init__(out self, value: Scalar[Self.dtype]):
-        """Initialize a runtime integer with the given value.
-
-        Args:
-            value: The scalar value to store.
-        """
-        self._value = value
-
-    @staticmethod
-    @always_inline("nodebug")
-    def __len__() -> Int:
-        """Get the length (always 1 for scalar types).
-
-        Returns:
-            Always returns 1.
-        """
-        return 1
-
-    def write_to(self, mut writer: Some[Writer]):
-        """Write this runtime integer to a writer.
-
-        Args:
-            writer: The writer to write to.
-        """
-        writer.write(self.value())
-
-    def write_repr_to(self, mut writer: Some[Writer]):
-        """Write the repr of this runtime integer to a writer.
-
-        Args:
-            writer: The writer to write to.
-        """
-        t"RuntimeInt[{self.dtype}]({self.value()})".write_to(writer)
-
-    @always_inline("nodebug")
-    def product(self) -> Scalar[Self.DTYPE]:
-        """Calculate the product (returns the value for scalar types).
-
-        Returns:
-            The integer value.
-        """
-        return self.value()
-
-    @always_inline("nodebug")
-    def sum(self) -> Scalar[Self.DTYPE]:
-        """Calculate the sum (returns the value for scalar types).
-
-        Returns:
-            The integer value.
-        """
-        return self.value()
-
-    @always_inline("nodebug")
-    def value(self) -> Scalar[Self.DTYPE]:
-        """Get the scalar value.
-
-        Returns:
-            The runtime integer value.
-        """
-        return self._value
-
-    @always_inline("nodebug")
-    def tuple(var self) -> Coord[*Self.ParamListType]:
-        """Get as a tuple (not valid for `RuntimeInt`).
-
-        Returns:
-            Never returns; aborts at compile time.
-        """
-        comptime assert False, "RuntimeInt is not a tuple type"
-
-
-def Idx(value: Int) -> RuntimeInt[DType.int]:
+def Idx(value: Int) -> Scalar[DType.int]:
     """Helper to create runtime indices.
 
     Args:
         value: The integer value for the runtime index.
 
     Returns:
-        A `RuntimeInt` instance with the specified value.
+        A `Scalar` instance with the specified value.
 
-    Usage: `Idx(5)` creates a `RuntimeInt` with value 5.
+    Usage: `Idx(5)` creates a `Scalar` with value 5.
     """
-    return RuntimeInt[DType.int](Scalar[DType.int](value))
+    return Scalar[DType.int](value)
 
 
 def Idx[value: Int]() -> ComptimeInt[value]:
@@ -333,16 +236,16 @@ def Idx(
 
 def Idx(
     value: Scalar,
-) -> RuntimeInt[value.dtype] where value.dtype.is_integral():
+) -> Scalar[value.dtype] where value.dtype.is_integral():
     """Create a runtime index from a scalar value.
 
     Args:
         value: The integer value for the runtime index.
 
     Returns:
-        A `RuntimeInt` instance with the specified value.
+        A `Scalar` instance with the specified value.
     """
-    return RuntimeInt[value.dtype](value)
+    return Scalar[value.dtype](value)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -355,7 +258,7 @@ struct _All(CoordLike, TrivialRegisterPassable):
 
     Used with `TileTensor.__getitem__` to indicate that a dimension should be
     preserved in the output rather than collapsed at a specific index.
-    Uses `static_value = -2` as a sentinel distinct from `RuntimeInt`'s `-1`.
+    Uses `static_value = -2` as a sentinel distinct from `Scalar`'s `-1`.
 
     Example:
 
@@ -374,7 +277,7 @@ struct _All(CoordLike, TrivialRegisterPassable):
     """The low-level parameter list of element types."""
 
     comptime static_value: Int = -2
-    """Sentinel value distinguishing `_All` from `RuntimeInt` (-1) and `ComptimeInt` (>=0)."""
+    """Sentinel value distinguishing `_All` from `Scalar` (-1) and `ComptimeInt` (>=0)."""
 
     comptime DTYPE = DType.int
 
@@ -473,7 +376,7 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
         rank: Int, dtype: DType
     ](
         out self: Coord[
-            *TypeList.splat[Trait=CoordLike, rank, RuntimeInt[dtype]]()
+            *TypeList.splat[Trait=CoordLike, rank, Scalar[dtype]]()
         ],
         index_list: IndexList[rank, element_type=dtype],
     ):
@@ -490,9 +393,7 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
 
         comptime for i in range(rank):
             UnsafePointer(to=self[i]).init_pointee_copy(
-                rebind[type_of(self[i])](
-                    RuntimeInt[dtype](Scalar[dtype](index_list[i]))
-                )
+                rebind[type_of(self[i])](Scalar[dtype](index_list[i]))
             )
 
     @staticmethod
@@ -583,7 +484,7 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
 
         # `Coord` is a heterogeneous tuple: children may have different
         # `DTYPE`s (e.g. `CompileTimeInt` with `DType.int` alongside a
-        # `RuntimeInt[DType.int32]`). Aggregating into `Self.DTYPE` is
+        # `Int32`). Aggregating into `Self.DTYPE` is
         # intentional — callers expect a single integer answer at the
         # tuple's dtype, regardless of per-leaf dtype.
         # TODO(GPUA-12): Add comptime asserts to make sure that Coord's
@@ -822,11 +723,7 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
                     )
                 else:
                     UnsafePointer(to=flat_tuple[i]).init_pointee_copy(
-                        rebind[FlatType](
-                            RuntimeInt[FlatType.DTYPE](
-                                Scalar[FlatType.DTYPE](val)
-                            )
-                        )
+                        rebind[FlatType](Scalar[FlatType.DTYPE](val))
                     )
 
         return Coord(flat_tuple)
@@ -835,20 +732,20 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
     def make_dynamic[
         dtype: DType
     ](self) -> Coord[*_CoordToDynamic[dtype, Self.element_types]]:
-        """Convert all elements to `RuntimeInt[dtype]`.
+        """Convert all elements to `Scalar[dtype]`.
 
         Parameters:
-            dtype: The data type for the resulting `RuntimeInt` values.
+            dtype: The data type for the resulting `Scalar` values.
 
         Returns:
-            A new `Coord` where all elements are converted to `RuntimeInt[dtype]`.
+            A new `Coord` where all elements are converted to `Scalar[dtype]`.
 
         Examples:
             ```mojo
-            from std.utils.coord import Coord, ComptimeInt, RuntimeInt
-            var c = Coord(ComptimeInt[3](), RuntimeInt[DType.int32](5), ComptimeInt[7]())
+            from std.utils.coord import Coord, ComptimeInt
+            var c = Coord(ComptimeInt[3](), Int32(5), ComptimeInt[7]())
             var dynamic = c.make_dynamic[DType.int64]()
-            # dynamic is Coord(RuntimeInt[DType.int64](3), RuntimeInt[DType.int64](5), RuntimeInt[DType.int64](7))
+            # dynamic is Coord(Int64(3), Int64(5), Int64(7))
             ```
         """
         comptime ResultTypes = _CoordToDynamic[dtype, Self.element_types]
@@ -858,11 +755,9 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
         )
 
         comptime for i in range(Self.__len__()):
-            # Convert all elements to RuntimeInt[dtype]
+            # Convert all elements to Scalar[dtype]
             UnsafePointer(to=result[i]).init_pointee_copy(
-                rebind[ResultTypes[i]](
-                    RuntimeInt[dtype](Scalar[dtype](self[i].value()))
-                )
+                rebind[ResultTypes[i]](Scalar[dtype](self[i].value()))
             )
 
         return result
@@ -1053,7 +948,7 @@ def idx2crd[
 ](idx: Int, shape: Shape, stride: Stride) -> Coord[
     *_Idx2CrdResultTypes[
         out_dtype,
-        RuntimeInt[out_dtype],
+        Scalar[out_dtype],
         Stride.ParamListType,
         Shape.ParamListType,
     ]
@@ -1066,7 +961,7 @@ def idx2crd[
 
     When a shape dimension is statically known to be 1, the corresponding
     output coordinate is a `ComptimeInt[0]`. Otherwise, coordinates are
-    `RuntimeInt[out_dtype]`.
+    `Scalar[out_dtype]`.
 
     The idx, and all components of shape and stride must be non-negative.
 
@@ -1083,7 +978,7 @@ def idx2crd[
     Returns:
         A `Coord` containing the coordinate values for each dimension.
         Dimensions with static shape 1 produce `ComptimeInt[0]`, others
-        produce `RuntimeInt[out_dtype]`.
+        produce `Scalar[out_dtype]`.
 
     Examples:
         For a 2D tensor with shape (3, 4) and row-major strides (4, 1):
@@ -1106,7 +1001,7 @@ def idx2crd[
 
     comptime ResultTypes = _Idx2CrdResultTypes[
         out_dtype,
-        RuntimeInt[out_dtype],
+        Scalar[out_dtype],
         Stride.ParamListType,
         Shape.ParamListType,
     ]
@@ -1139,9 +1034,7 @@ def idx2crd[
                 var coord_val = _linear_idx_to_coord(idx, stride_val, shape_val)
 
                 UnsafePointer(to=result[i]).init_pointee_copy(
-                    rebind[ResultTypes[i]](
-                        RuntimeInt[out_dtype](Scalar[out_dtype](coord_val))
-                    )
+                    rebind[ResultTypes[i]](Scalar[out_dtype](coord_val))
                 )
     else:
         comptime if Shape.is_static_value and Shape.static_value == 1:
@@ -1155,9 +1048,7 @@ def idx2crd[
 
             comptime for i in range(shape_len):
                 UnsafePointer(to=result[i]).init_pointee_copy(
-                    rebind[ResultTypes[i]](
-                        RuntimeInt[out_dtype](Scalar[out_dtype](coord_val))
-                    )
+                    rebind[ResultTypes[i]](Scalar[out_dtype](coord_val))
                 )
 
     return result
@@ -1195,7 +1086,7 @@ def idx2crd[
     Returns:
         A `Coord` containing the coordinate values for each dimension.
         When idx, shape, and stride are all compile-time known, produces
-        `ComptimeInt` results. Otherwise produces `RuntimeInt[out_dtype]`.
+        `ComptimeInt` results. Otherwise produces `Scalar[out_dtype]`.
     """
     comptime shape_len = Shape.__len__()
     comptime stride_len = Stride.__len__()
@@ -1249,9 +1140,7 @@ def idx2crd[
                     Int(idx.value()), stride_val, shape_val
                 )
                 UnsafePointer(to=result[i]).init_pointee_copy(
-                    rebind[ResultTypes[i]](
-                        RuntimeInt[out_dtype](Scalar[out_dtype](coord_val))
-                    )
+                    rebind[ResultTypes[i]](Scalar[out_dtype](coord_val))
                 )
     else:
         comptime if Shape.is_static_value and Shape.static_value == 1:
@@ -1272,9 +1161,7 @@ def idx2crd[
 
             comptime for i in range(shape_len):
                 UnsafePointer(to=result[i]).init_pointee_copy(
-                    rebind[ResultTypes[i]](
-                        RuntimeInt[out_dtype](Scalar[out_dtype](coord_val))
-                    )
+                    rebind[ResultTypes[i]](Scalar[out_dtype](coord_val))
                 )
 
     return result
@@ -1309,7 +1196,7 @@ def coord[
     var values: Tuple[*element_types],
     out result: Coord[
         *TypeList.splat[
-            Trait=CoordLike, type_of(values).__len__(), RuntimeInt[dtype]
+            Trait=CoordLike, type_of(values).__len__(), Scalar[dtype]
         ]()
     ],
 ) where _AllEqual[Int, *element_types]:
@@ -1323,15 +1210,13 @@ def coord[
         values: The runtime integer values.
 
     Returns:
-        A `Coord` instance containing `RuntimeInt` elements for each value.
+        A `Coord` instance containing `Scalar` elements for each value.
     """
     result = {}
 
     comptime for i in range(type_of(values).__len__()):
         UnsafePointer(to=result[i]).init_pointee_copy(
-            rebind[type_of(result[i])](
-                RuntimeInt[dtype](Scalar[dtype](rebind[Int](values[i])))
-            )
+            rebind[type_of(result[i])](Scalar[dtype](rebind[Int](values[i])))
         )
 
 
@@ -1349,7 +1234,7 @@ def coord[*values: Int]() -> Coord[*_IntToComptimeInt[*values]]:
 
 
 comptime DynamicCoord[dtype: DType, size: Int] = Coord[
-    *TypeList.splat[Trait=CoordLike, size, RuntimeInt[dtype]]()
+    *TypeList.splat[Trait=CoordLike, size, Scalar[dtype]]()
 ]
 """
 Create a Coord full of `size` dynamic elements with `dtype`.
@@ -1510,25 +1395,25 @@ comptime _IntToComptimeInt[*values: Int] = values.map_to_type[
 
 comptime _CoordToDynamicMapper[
     dtype: DType, type: CoordLike
-]: CoordLike = RuntimeInt[dtype]
-"""Maps a single CoordLike element to RuntimeInt[dtype].
-All elements (ComptimeInt, RuntimeInt of any dtype) are converted to RuntimeInt[dtype].
+]: CoordLike = Scalar[dtype]
+"""Maps a single CoordLike element to Scalar[dtype].
+All elements (ComptimeInt, Scalar of any dtype) are converted to Scalar[dtype].
 """
 
 
 comptime _CoordToDynamic[
     dtype: DType, element_types: TypeList[Trait=CoordLike, ...]
 ] = element_types.map[_CoordToDynamicMapper[dtype, _]]()
-"""Converts a variadic of CoordLike types to all RuntimeInt[dtype].
-All elements are converted to RuntimeInt[dtype], regardless of their original type.
+"""Converts a variadic of CoordLike types to all Scalar[dtype].
+All elements are converted to Scalar[dtype], regardless of their original type.
 
 Example:
 
     ```mojo
-    from std.utils.coord import _CoordToDynamic, ComptimeInt, RuntimeInt, Coord
-    # All elements become RuntimeInt[DType.int64]
-    comptime types = _CoordToDynamic[DType.int64, ComptimeInt[3], RuntimeInt[DType.int32], ComptimeInt[5]]
-    # types is equivalent to TypeList.of[Trait=CoordLike, RuntimeInt[DType.int64], RuntimeInt[DType.int64], RuntimeInt[DType.int64]]()
+    from std.utils.coord import _CoordToDynamic, ComptimeInt, Coord
+    # All elements become Int64
+    comptime types = _CoordToDynamic[DType.int64, ComptimeInt[3], Int32, ComptimeInt[5]]
+    # types is equivalent to TypeList.of[Trait=CoordLike, Int64, Int64, Int64]()
     ```
 """
 
@@ -1543,13 +1428,13 @@ comptime _NestedDynamicCoordMapper[
     coord: CoordLike,
 ]: CoordLike = Coord[
     *_CoordToDynamic[dtype, coord.ParamListType]
-] if coord.is_tuple else RuntimeInt[
+] if coord.is_tuple else Scalar[
     dtype
 ]
 """Maps a CoordLike type to a nested dynamic type.
 
-Scalar types become RuntimeInt[dtype]. Nested Coord types become
-Coord[RuntimeInt[dtype], ...] preserving one level of nesting.
+Scalar types become Scalar[dtype]. Nested Coord types become
+Coord[Scalar[dtype], ...] preserving one level of nesting.
 """
 
 comptime _NestedDynamicCoord[
@@ -1557,19 +1442,19 @@ comptime _NestedDynamicCoord[
 ] = element_types.map[_NestedDynamicCoordMapper[dtype, _]]()
 """Converts a variadic of CoordLike types to dynamic types preserving nesting.
 
-Scalar types become RuntimeInt[dtype]. Nested Coord types become
-Coord[RuntimeInt[dtype], ...], preserving the hierarchical structure.
-For flat layouts, this is equivalent to _CoordToDynamic (all RuntimeInt).
+Scalar types become Scalar[dtype]. Nested Coord types become
+Coord[Scalar[dtype], ...], preserving the hierarchical structure.
+For flat layouts, this is equivalent to _CoordToDynamic (all Scalar).
 For nested layouts (e.g. from zipped_divide), the result mirrors the
-nesting with RuntimeInt leaves.
+nesting with Scalar leaves.
 
 Example:
 
     For flat types (ComptimeInt[3], ComptimeInt[4]):
-        result = (RuntimeInt[dtype], RuntimeInt[dtype])
+        result = (Scalar[dtype], Scalar[dtype])
 
     For nested types (Coord[ComptimeInt[2], ComptimeInt[2]], Coord[ComptimeInt[3], ComptimeInt[4]]):
-        result = (Coord[RuntimeInt[dtype], RuntimeInt[dtype]], Coord[RuntimeInt[dtype], RuntimeInt[dtype]])
+        result = (Coord[Scalar[dtype], Scalar[dtype]], Coord[Scalar[dtype], Scalar[dtype]])
 """
 
 
@@ -1578,7 +1463,7 @@ Example:
 # ===-----------------------------------------------------------------------===#
 # These extend _NestedDynamicCoord (depth 1) to support deeper nesting.
 # Each level uses the previous level for its nested elements:
-#   depth 1: _NestedDynamicCoord — tuples become Coord[RuntimeInt, ...]
+#   depth 1: _NestedDynamicCoord — tuples become Coord[Scalar, ...]
 #   depth 2: _DeepDynamicCoord2 — tuples become Coord[*depth1[...]]
 #   depth 3: _DeepDynamicCoord3 — tuples become Coord[*depth2[...]]
 
@@ -1588,7 +1473,7 @@ comptime _DeepDynamicCoordMapper2[
     coord: CoordLike,
 ]: CoordLike = Coord[
     *_NestedDynamicCoord[dtype, *coord.ParamListType]
-] if coord.is_tuple else RuntimeInt[
+] if coord.is_tuple else Scalar[
     dtype
 ]
 
@@ -1603,7 +1488,7 @@ comptime _DeepDynamicCoordMapper3[
     coord: CoordLike,
 ]: CoordLike = Coord[
     *_DeepDynamicCoord2[dtype, *coord.ParamListType]
-] if coord.is_tuple else RuntimeInt[
+] if coord.is_tuple else Scalar[
     dtype
 ]
 
@@ -1618,7 +1503,7 @@ comptime _DeepDynamicCoordMapper4[
     coord: CoordLike,
 ]: CoordLike = Coord[
     *_DeepDynamicCoord3[dtype, *coord.ParamListType]
-] if coord.is_tuple else RuntimeInt[
+] if coord.is_tuple else Scalar[
     dtype
 ]
 
@@ -1659,16 +1544,16 @@ comptime _Idx2CrdResultTabulator[
 ].is_static_value and stride_types[
     idx
 ].is_static_value else _as_CoordLike[
-    RuntimeInt[out_dtype]
+    Scalar[out_dtype]
 ]
 """Computes an idx2crd result type.
 
 Considers shape, stride, and index to determine the result type:
-- If shape is a nested tuple, produces a nested Coord with RuntimeInt leaves.
+- If shape is a nested tuple, produces a nested Coord with Scalar leaves.
 - If shape is statically 1, produces ComptimeInt[0].
 - If all of idx, shape, and stride are statically known, produces
   ComptimeInt[(idx // stride) % shape].
-- Otherwise produces RuntimeInt[out_dtype].
+- Otherwise produces Scalar[out_dtype].
 """
 
 
@@ -1690,14 +1575,14 @@ For each dimension:
 - If shape is statically 1, the result is ComptimeInt[0]
 - If idx, shape, and stride are all statically known, the result is
   ComptimeInt[(idx // stride) % shape]
-- Otherwise, the result is RuntimeInt[out_dtype]
+- Otherwise, the result is Scalar[out_dtype]
 
 Example:
     ```mojo
-    from std.utils.coord import _Idx2CrdResultTypes, ComptimeInt, RuntimeInt
+    from std.utils.coord import _Idx2CrdResultTypes, ComptimeInt
     comptime stride_t = TypeList.of[Trait=CoordLike, ComptimeInt[4], ComptimeInt[4], ComptimeInt[1]]()
     comptime shape_t = TypeList.of[Trait=CoordLike, ComptimeInt[3], ComptimeInt[1], ComptimeInt[4]]()
-    comptime types = _Idx2CrdResultTypes[DType.int64, RuntimeInt[DType.int64], stride_t, shape_t]
+    comptime types = _Idx2CrdResultTypes[DType.int64, Int64, stride_t, shape_t]
     ```
 """
 
@@ -1926,7 +1811,7 @@ comptime _MultiplyTabulator[
     idx
 ].is_static_value and Rhs[
     idx
-].is_static_value else RuntimeInt[
+].is_static_value else Scalar[
     Lhs[idx].DTYPE
 ]
 
@@ -1946,7 +1831,7 @@ comptime _MultiplyByScalarMapper[
     coord: CoordLike,
 ]: CoordLike = ComptimeInt[
     coord.static_value * scalar
-] if coord.is_static_value else RuntimeInt[
+] if coord.is_static_value else Scalar[
     coord.DTYPE
 ]
 
@@ -1978,7 +1863,7 @@ comptime _DivideTabulator[
     idx
 ].is_static_value and Rhs[
     idx
-].is_static_value else RuntimeInt[
+].is_static_value else Scalar[
     Lhs[idx].DTYPE
 ]
 
@@ -2002,7 +1887,7 @@ comptime _CeilDivTabulator[
     idx
 ].is_static_value and Rhs[
     idx
-].is_static_value else RuntimeInt[
+].is_static_value else Scalar[
     Lhs[idx].DTYPE
 ]
 

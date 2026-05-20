@@ -47,7 +47,6 @@ from layout import (
     Coord,
     CoordLike,
     Idx,
-    RuntimeInt,
     TensorLayout,
     TileTensor,
     coord_to_index_list,

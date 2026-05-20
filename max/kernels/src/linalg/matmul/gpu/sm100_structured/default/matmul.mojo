@@ -30,7 +30,6 @@ from layout import (
     Coord,
     Idx,
     RowMajorLayout,
-    RuntimeInt,
     TileTensor,
     row_major as tt_row_major,
 )
@@ -69,7 +68,7 @@ def _blackwell_matmul_tma_umma_warp_specialized[
     ] = None,
     pdl_level: PDLLevel = PDLLevel(),
     max_profiled_tiles_per_SM: Optional[UInt32] = None,
-    EpilogueLayoutType: TensorLayout = RowMajorLayout[RuntimeInt[DType.int64]],
+    EpilogueLayoutType: TensorLayout = RowMajorLayout[Int64],
 ](
     c_device: TileTensor,
     a_device: TileTensor,
@@ -371,9 +370,7 @@ def blackwell_matmul_tma_umma_warp_specialized[
     ] = None,
     pdl_level: PDLLevel = PDLLevel(),
     max_profiled_tiles_per_SM: Optional[UInt32] = None,
-    EpilogueLayoutType: TensorLayout = RowMajorLayout[
-        RuntimeInt[DType.int64], RuntimeInt[DType.int64]
-    ],
+    EpilogueLayoutType: TensorLayout = RowMajorLayout[Int64, Int64],
 ](
     c_device: TileTensor,
     a_device: TileTensor,
@@ -636,7 +633,7 @@ def _blackwell_matmul_tma_umma_warp_specialized_split_k[
         reduction_workspace,
         tt_row_major(
             (
-                RuntimeInt(Scalar[DType.int64](num_output_tiles)),
+                Int64(num_output_tiles),
                 Idx[BM](),
                 Idx[MMA_N](),
             )
@@ -697,9 +694,7 @@ def blackwell_batched_matmul_tma_umma_warp_specialized[
     ] = None,
     pdl_level: PDLLevel = PDLLevel(),
     max_profiled_tiles_per_SM: Optional[UInt32] = None,
-    EpilogueLayoutType: TensorLayout = RowMajorLayout[
-        RuntimeInt[DType.int64], RuntimeInt[DType.int64]
-    ],
+    EpilogueLayoutType: TensorLayout = RowMajorLayout[Int64, Int64],
 ](
     c_device: TileTensor,
     a_device: TileTensor,

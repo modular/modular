@@ -35,7 +35,7 @@ from std.python import (
 
 from std.utils._select import _select_register_value as select
 from std.utils._visualizers import lldb_formatter_wrapping_type
-from std.utils.coord import Coord, CoordLike, RuntimeInt
+from std.utils.coord import Coord, CoordLike
 
 # ===----------------------------------------------------------------------=== #
 #  Indexer
@@ -1166,7 +1166,7 @@ struct Int(
     # CoordLike
     # ===-------------------------------------------------------------------===#
 
-    comptime ParamListType = Coord[RuntimeInt[DType.int]].element_types
+    comptime ParamListType = Coord[Scalar[DType.int]].element_types
     """The element types (Self for scalar types)."""
 
     comptime _ParamListType = Self.ParamListType.values
@@ -1217,9 +1217,9 @@ struct Int(
 
     @always_inline("nodebug")
     def tuple(var self) -> Coord[*Self.ParamListType]:
-        """Get as a tuple (not valid for `RuntimeInt`).
+        """Get as a tuple (not valid for `Scalar`).
 
         Returns:
             Never returns; aborts at compile time.
         """
-        comptime assert False, "RuntimeInt is not a tuple type"
+        comptime assert False, "Int is not a tuple type"

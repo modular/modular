@@ -37,7 +37,6 @@ from layout import (
     LTToTTLayout,
     Layout,
     LayoutTensor,
-    RuntimeInt,
     TensorLayout,
     TileTensor,
     UNKNOWN_VALUE,
@@ -175,15 +174,13 @@ struct KVCacheStaticParams(Equatable, TrivialRegisterPassable):
 # bypassing the LTToTTLayout comptime alias chain where the compiler can't
 # simplify TypeList[_Flattened[...]].size to 1.
 comptime _1d_tt_layout = InternalLayout[
-    shape_types=Coord[RuntimeInt[DType.int64]].element_types,
+    shape_types=Coord[Int64].element_types,
     stride_types=Coord[ComptimeInt[1]].element_types,
 ]
 
 comptime _2d_row_major_tt_layout = InternalLayout[
-    shape_types=Coord[
-        RuntimeInt[DType.int64], RuntimeInt[DType.int64]
-    ].element_types,
-    stride_types=Coord[RuntimeInt[DType.int64], ComptimeInt[1]].element_types,
+    shape_types=Coord[Int64, Int64].element_types,
+    stride_types=Coord[Int64, ComptimeInt[1]].element_types,
 ]
 
 
@@ -1615,7 +1612,7 @@ struct PagedKVCache[
     )
     comptime scales_tt_layout = RowMajorLayout[
         *Coord[
-            RuntimeInt[DType.int64],
+            Int64,
             ComptimeInt[Self.page_size],
             ComptimeInt[Self.kv_params.num_heads],
             ComptimeInt[Self.head_dim_granularity],

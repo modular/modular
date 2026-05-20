@@ -60,7 +60,6 @@ from std.builtin.simd import _convert_f32_to_float8_scalar
 from layout import (
     Coord,
     Idx,
-    RuntimeInt,
     TileTensor,
     row_major,
 )
@@ -555,7 +554,7 @@ def _test_swiglu_dispatch[
         a_scales_device,
         row_major(
             Coord(
-                RuntimeInt[DType.int64](Scalar[DType.int64](a_scale_dim0)),
+                Int64(a_scale_dim0),
                 Idx[k_groups](),
                 Idx[SF_ATOM_M[0]](),
                 Idx[SF_ATOM_M[1]](),
@@ -579,11 +578,7 @@ def _test_swiglu_dispatch[
     ).as_any_origin()
     var expert_scales_tt = TileTensor(
         shared.expert_scales,
-        row_major(
-            Coord(
-                RuntimeInt[DType.int64](Scalar[DType.int64](num_experts)),
-            )
-        ),
+        row_major(Coord(Int64(num_experts))),
     ).as_any_origin()
 
     # ============================================================

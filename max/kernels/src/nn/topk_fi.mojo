@@ -34,7 +34,6 @@ from layout import (
     ComptimeInt,
     Coord,
     Idx,
-    RuntimeInt,
     TensorLayout,
     TileTensor,
     coord_to_index_list,
@@ -351,7 +350,7 @@ def topk_mask_logits[
     out_idx_type: DType,
     block_size: Int = 1024,
     TopKArrLayoutType: TensorLayout = Layout[
-        shape_types=Coord[RuntimeInt[DType.int64]].element_types,
+        shape_types=Coord[Int64].element_types,
         stride_types=Coord[ComptimeInt[1]].element_types,
     ],
 ](
@@ -882,11 +881,11 @@ def topk_sampling_from_prob[
     out_idx_type: DType,
     block_size: Int = 1024,
     TopKArrLayoutType: TensorLayout = Layout[
-        shape_types=Coord[RuntimeInt[DType.int64]].element_types,
+        shape_types=Coord[Int64].element_types,
         stride_types=Coord[ComptimeInt[1]].element_types,
     ],
     IndicesLayoutType: TensorLayout = Layout[
-        shape_types=Coord[RuntimeInt[DType.int64]].element_types,
+        shape_types=Coord[Int64].element_types,
         stride_types=Coord[ComptimeInt[1]].element_types,
     ],
 ](
@@ -1287,19 +1286,19 @@ def topk_topp_sampling_from_prob[
     out_idx_type: DType,
     block_size: Int = 1024,
     TopKArrLayoutType: TensorLayout = Layout[
-        shape_types=Coord[RuntimeInt[DType.int64]].element_types,
+        shape_types=Coord[Int64].element_types,
         stride_types=Coord[ComptimeInt[1]].element_types,
     ],
     IndicesLayoutType: TensorLayout = Layout[
-        shape_types=Coord[RuntimeInt[DType.int64]].element_types,
+        shape_types=Coord[Int64].element_types,
         stride_types=Coord[ComptimeInt[1]].element_types,
     ],
     TopPArrLayoutType: TensorLayout = Layout[
-        shape_types=Coord[RuntimeInt[DType.int64]].element_types,
+        shape_types=Coord[Int64].element_types,
         stride_types=Coord[ComptimeInt[1]].element_types,
     ],
     SeedLayoutType: TensorLayout = Layout[
-        shape_types=Coord[RuntimeInt[DType.int64]].element_types,
+        shape_types=Coord[Int64].element_types,
         stride_types=Coord[ComptimeInt[1]].element_types,
     ],
 ](
@@ -1659,15 +1658,15 @@ def topk_softmax_sample[
     out_idx_type: DType,
     block_size: Int = 1024,
     TopKArrLayoutType: TensorLayout = Layout[
-        shape_types=Coord[RuntimeInt[DType.int64]].element_types,
+        shape_types=Coord[Int64].element_types,
         stride_types=Coord[ComptimeInt[1]].element_types,
     ],
     TemperatureLayoutType: TensorLayout = Layout[
-        shape_types=Coord[RuntimeInt[DType.int64]].element_types,
+        shape_types=Coord[Int64].element_types,
         stride_types=Coord[ComptimeInt[1]].element_types,
     ],
     SeedLayoutType: TensorLayout = Layout[
-        shape_types=Coord[RuntimeInt[DType.int64]].element_types,
+        shape_types=Coord[Int64].element_types,
         stride_types=Coord[ComptimeInt[1]].element_types,
     ],
 ](

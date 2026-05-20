@@ -20,7 +20,6 @@ from layout import (
     CoordLike,
     Idx,
     RowMajorLayout,
-    RuntimeInt,
     TileTensor,
     row_major,
     Layout,
@@ -222,7 +221,7 @@ def test_tile() raises:
 def test_tile_with_coord_shape() raises:
     """Test tile() with a mixed static/dynamic tile shape Coord.
 
-    The tile shape has one ComptimeInt (rows) and one RuntimeInt (cols),
+    The tile shape has one ComptimeInt (rows) and one Scalar (cols),
     exercising the mixed compile-time/runtime Coord path.
     """
     # Create a 4x4 tensor with values 0..15 in row-major order
@@ -384,10 +383,10 @@ def test_slice_3d() raises:
 #
 #     # Create tensor with runtime shapes
 #     var shape = Coord(
-#         RuntimeInt[DType.int32](3), RuntimeInt[DType.int32](4)
+#         Int32(3), Int32(4)
 #     )
 #     var stride = Coord(
-#         RuntimeInt[DType.int32](4), RuntimeInt[DType.int32](1)
+#         Int32(4), Int32(1)
 #     )
 #     var layout = MixedLayout(shape^, stride^)
 #
@@ -901,7 +900,7 @@ def test_linear_idx_type_dynamic_layout_generic() raises:
     """Dynamic layouts in GENERIC address space use int64."""
     comptime TensorType = TileTensor[
         DType.float32,
-        RowMajorLayout[RuntimeInt[DType.int], ComptimeInt[4]],
+        RowMajorLayout[Scalar[DType.int], ComptimeInt[4]],
         MutAnyOrigin,
     ]
     # Not all dims known -> falls through to address_space check -> GENERIC -> int64

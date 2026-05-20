@@ -23,7 +23,7 @@ KVBufferConfig trait + K/V implementors, and three KV buffer structs:
   mirror path (parametrized by KVBufferConfig for K vs V roles).
 
 TileTensor is used throughout:
-  - DRAM tiles: TileTensor with RuntimeInt valid_rows (KVCacheIterator)
+  - DRAM tiles: TileTensor with Scalar valid_rows (KVCacheIterator)
   - SMEM sub-tiles: `.tile()` views on a strided parent TileTensor that
     mirrors the blocked (BN × BK) SMEM layout
   - DMA: SubTileLoaderLDS / RegTileLoader (both src and dst are TileTensor)
@@ -44,7 +44,6 @@ from layout import (
     Idx,
     Layout,
     MixedLayout,
-    RuntimeInt,
     TensorLayout,
     TileTensor,
 )
@@ -76,7 +75,7 @@ struct KVCacheIterator[
 ]:
     """TileTensor-based DRAM tile iterator.
 
-    Returns a TileTensor with RuntimeInt for the row dimension (valid-row
+    Returns a TileTensor with Scalar for the row dimension (valid-row
     count) and ComptimeInt for depth and strides. No RuntimeLayout storage.
 
     When cache_depth != depth, the DRAM stride uses cache_depth (e.g., MLA
@@ -85,7 +84,7 @@ struct KVCacheIterator[
     """
 
     comptime GmemTileLayout = MixedLayout[
-        Coord[RuntimeInt[DType.int64], ComptimeInt[Self.depth]].element_types,
+        Coord[Int64, ComptimeInt[Self.depth]].element_types,
         Coord[
             ComptimeInt[Self.kv_num_heads * Self.cache_depth], ComptimeInt[1]
         ].element_types,
@@ -129,7 +128,7 @@ struct KVCacheIterator[
             UInt32(self.kv_head_idx),
             Self.GmemTileLayout(
                 Coord(
-                    RuntimeInt[DType.int64](Int64(valid_rows)),
+                    Int64(valid_rows),
                     Idx[Self.depth](),
                 ),
                 Coord(
