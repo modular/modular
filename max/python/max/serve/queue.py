@@ -15,7 +15,6 @@
 
 from __future__ import annotations
 
-import logging
 import queue
 import time
 from typing import (
@@ -25,23 +24,19 @@ from typing import (
     runtime_checkable,
 )
 
-logger = logging.getLogger("max.interfaces")
+__all__ = [
+    "MAXPullQueue",
+    "MAXPushQueue",
+    "drain_queue",
+    "get_blocking",
+]
 
-PushItemType = TypeVar("PushItemType", contravariant=True)
-"""Type variable for items accepted by a push queue (contravariant).
-
-This allows the push-side interface to correctly accept supertypes of items.
-"""
-
-PullItemType = TypeVar("PullItemType", covariant=True)
-"""Type variable for items produced by a pull queue (covariant).
-
-This allows the pull-side interface to correctly produce subtypes of items.
-"""
+_PushItemType = TypeVar("_PushItemType", contravariant=True)
+_PullItemType = TypeVar("_PullItemType", covariant=True)
 
 
 @runtime_checkable
-class MAXPushQueue(Protocol, Generic[PushItemType]):
+class MAXPushQueue(Protocol, Generic[_PushItemType]):
     """Protocol for a minimal, non-blocking push queue interface in MAX.
 
     This protocol defines the contract for a queue that supports non-blocking
@@ -53,7 +48,7 @@ class MAXPushQueue(Protocol, Generic[PushItemType]):
     feedback is critical for proper flow control and error handling.
     """
 
-    def put_nowait(self, item: PushItemType) -> None:
+    def put_nowait(self, item: _PushItemType) -> None:
         """Attempt to put an item into the queue without blocking.
 
         This method is designed to immediately fail (typically by raising an exception)
@@ -70,7 +65,7 @@ class MAXPushQueue(Protocol, Generic[PushItemType]):
 
 
 @runtime_checkable
-class MAXPullQueue(Protocol, Generic[PullItemType]):
+class MAXPullQueue(Protocol, Generic[_PullItemType]):
     """Protocol for a minimal, non-blocking pull queue interface in MAX.
 
     This protocol defines the contract for a queue that supports non-blocking
@@ -82,7 +77,7 @@ class MAXPullQueue(Protocol, Generic[PullItemType]):
     feedback about queue state is critical for proper flow control and error handling.
     """
 
-    def get_nowait(self) -> PullItemType:
+    def get_nowait(self) -> _PullItemType:
         """Remove and return an item from the queue without blocking.
 
         This method is expected to raise `queue.Empty` if no item is available
@@ -98,8 +93,8 @@ class MAXPullQueue(Protocol, Generic[PullItemType]):
 
 
 def drain_queue(
-    pull_queue: MAXPullQueue[PullItemType], max_items: int | None = None
-) -> list[PullItemType]:
+    pull_queue: MAXPullQueue[_PullItemType], max_items: int | None = None
+) -> list[_PullItemType]:
     """Remove and return items from the queue without blocking.
 
     This method is expected to return an empty list if the queue is empty.
@@ -112,7 +107,7 @@ def drain_queue(
     Returns:
         List of items removed from the queue, limited by max_items if specified.
     """
-    output: list[PullItemType] = []
+    output: list[_PullItemType] = []
     while True:
         if max_items is not None and len(output) >= max_items:
             break
@@ -124,10 +119,11 @@ def drain_queue(
     return output
 
 
-def get_blocking(pull_queue: MAXPullQueue[PullItemType]) -> PullItemType:
+def get_blocking(pull_queue: MAXPullQueue[_PullItemType]) -> _PullItemType:
     """Get the next item from the queue.
 
-    If no item is available, this method will spin until one is.
+    If no item is available, this method will spin until one is,
+    sleeping 1 ms between attempts (minimum latency floor of ~1 ms).
     """
     while True:
         try:

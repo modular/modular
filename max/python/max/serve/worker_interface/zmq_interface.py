@@ -30,7 +30,7 @@ from max.interfaces import (
     SchedulerResult,
     TextGenerationContext,
 )
-from max.interfaces.queue import MAXPullQueue, MAXPushQueue
+from max.serve.queue import MAXPullQueue, MAXPushQueue
 from max.serve.worker_interface import (
     ModelWorkerInterface,
     ModelWorkerProxy,

@@ -25,16 +25,15 @@ from typing import Generic
 
 from max.interfaces import (
     BaseContextType,
-    MAXPullQueue,
-    MAXPushQueue,
     Pipeline,
     PipelineInputsType,
     PipelineOutputType,
     RequestID,
-    Scheduler,
     SchedulerResult,
 )
 from max.profiler import traced
+from max.serve.queue import MAXPullQueue, MAXPushQueue
+from max.serve.scheduler.interface import Scheduler
 
 from .base import SchedulerProgress
 

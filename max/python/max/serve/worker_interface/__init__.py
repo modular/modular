@@ -26,7 +26,7 @@ from max.interfaces import (
     RequestID,
     SchedulerResult,
 )
-from max.interfaces.queue import MAXPullQueue, MAXPushQueue
+from max.serve.queue import MAXPullQueue, MAXPushQueue
 
 logger = logging.getLogger("max.serve")
 

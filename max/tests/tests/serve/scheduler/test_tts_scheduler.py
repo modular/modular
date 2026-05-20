@@ -28,7 +28,6 @@ from max.interfaces import (
     AudioGenerationOutput,
     BatchType,
     GenerationStatus,
-    MAXPushQueue,
     RequestID,
     SchedulerResult,
     TokenBuffer,
@@ -39,6 +38,7 @@ from max.pipelines.kv_cache import PagedKVCacheManager
 from max.pipelines.lib.audio_generator_pipeline import (
     AudioGeneratorPipelineType,
 )
+from max.serve.queue import MAXPushQueue
 from max.serve.scheduler import AudioGenerationScheduler
 from max.serve.scheduler.audio_generation_scheduler import (
     AudioGenerationSchedulerConfig,

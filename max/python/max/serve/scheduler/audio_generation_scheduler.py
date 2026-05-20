@@ -25,13 +25,9 @@ from max.interfaces import (
     AudioGenerationInputs,
     AudioGenerationOutput,
     BatchType,
-    MAXPullQueue,
-    MAXPushQueue,
     RequestID,
-    Scheduler,
     SchedulerResult,
 )
-from max.interfaces.queue import drain_queue
 from max.pipelines.core import TTSContext
 from max.pipelines.kv_cache import PagedKVCacheManager
 from max.pipelines.lib import LoRAManager
@@ -39,6 +35,12 @@ from max.pipelines.lib.audio_generator_pipeline import (
     AudioGeneratorPipelineType,
 )
 from max.profiler import Tracer
+from max.serve.queue import (
+    MAXPullQueue,
+    MAXPushQueue,
+    drain_queue,
+)
+from max.serve.scheduler.interface import Scheduler
 from max.serve.telemetry.common import flush_batch_logger, get_batch_logger
 from max.serve.telemetry.metrics import METRICS
 from max.support.human_readable_formatter import to_human_readable_latency

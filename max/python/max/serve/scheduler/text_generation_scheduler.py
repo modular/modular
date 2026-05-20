@@ -17,16 +17,12 @@ import os
 import time
 
 from max.interfaces import (
-    MAXPullQueue,
-    MAXPushQueue,
     Pipeline,
     RequestID,
-    Scheduler,
     SchedulerResult,
     TextGenerationInputs,
     TextGenerationOutput,
 )
-from max.interfaces.queue import drain_queue
 from max.pipelines.core import TextAndVisionContext, TextContext
 from max.pipelines.kv_cache import PagedKVCacheManager
 from max.pipelines.lib import (
@@ -35,6 +31,12 @@ from max.pipelines.lib import (
     TextGenerationPipeline,
 )
 from max.profiler import Tracer, traced
+from max.serve.queue import (
+    MAXPullQueue,
+    MAXPushQueue,
+    drain_queue,
+)
+from max.serve.scheduler.interface import Scheduler
 
 from .base import SchedulerProgress
 from .batch_constructor import TextBatchConstructor

@@ -17,8 +17,6 @@ from unittest.mock import Mock
 import numpy as np
 import pytest
 from max.interfaces import (
-    MAXPullQueue,
-    MAXPushQueue,
     RequestID,
     SchedulerResult,
     TextGenerationInputs,
@@ -27,6 +25,7 @@ from max.interfaces import (
 )
 from max.pipelines.core import TextAndVisionContext, TextContext
 from max.pipelines.kv_cache import DummyKVCache
+from max.serve.queue import MAXPullQueue, MAXPushQueue
 from max.serve.scheduler.config import TokenGenerationSchedulerConfig
 from max.serve.scheduler.text_generation_scheduler import (
     TokenGenerationScheduler,

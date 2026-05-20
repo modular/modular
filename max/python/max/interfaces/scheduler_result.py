@@ -11,30 +11,17 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Defines the :class:`Scheduler` abstract base class and :class:`SchedulerResult` data structure."""
+"""Defines the :class:`SchedulerResult` data structure."""
 
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
 from typing import Generic
 
 import msgspec
 
 from .pipeline import PipelineOutputType
 
-
-class Scheduler(ABC):
-    """Abstract base class defining the interface for schedulers."""
-
-    @abstractmethod
-    def run_iteration(self):  # noqa: ANN201
-        """The core scheduler routine that creates and executes batches.
-
-        This method should implement the core scheduling logic including:
-        - Batch creation and management
-        - Request scheduling
-        """
-        ...
+__all__ = ["SchedulerResult"]
 
 
 class SchedulerResult(msgspec.Struct, Generic[PipelineOutputType]):

@@ -26,6 +26,11 @@ modular_py_library(
 )
 
 modular_py_library(
+    name = "queue",
+    srcs = ["queue.py"],
+)
+
+modular_py_library(
     name = "serve",
     srcs = glob(
         ["*.py"],
@@ -34,6 +39,7 @@ modular_py_library(
             "config.py",
             "debug.py",
             "exceptions.py",
+            "queue.py",
         ],
     ),
     deps = [

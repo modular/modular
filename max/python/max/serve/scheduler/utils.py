@@ -21,16 +21,15 @@ from dataclasses import dataclass, field
 from max.driver import Buffer
 from max.interfaces import (
     BatchType,
-    MAXPullQueue,
     RequestID,
     TextGenerationInputs,
 )
-from max.interfaces.queue import drain_queue
 from max.pipelines.core import TextContext
 from max.pipelines.kv_cache import PagedKVCacheManager
 from max.pipelines.lib.speculative_decoding.utils import (
     SpeculativeDecodingMetrics,
 )
+from max.serve.queue import MAXPullQueue, drain_queue
 from max.serve.telemetry.metrics import METRICS
 from max.support.human_readable_formatter import to_human_readable_latency
 

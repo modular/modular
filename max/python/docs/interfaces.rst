@@ -126,8 +126,8 @@ Context and sampling
    SamplingParamsGenerationConfigDefaults
    SamplingParamsInput
 
-Requests and scheduling
------------------------
+Requests
+--------
 
 .. autosummary::
    :nosignatures:
@@ -137,7 +137,6 @@ Requests and scheduling
    OpenResponsesRequest
    Request
    RequestID
-   Scheduler
    SchedulerResult
 
 Tokens
@@ -178,25 +177,6 @@ LoRA
    LoRAResponse
    LoRAStatus
    LoRAType
-
-Queues
-------
-
-.. autosummary::
-   :nosignatures:
-   :toctree: generated
-   :template: autosummary/class.rst
-
-   MAXPullQueue
-   MAXPushQueue
-
-.. autosummary::
-   :nosignatures:
-   :toctree: generated
-   :template: autosummary/function.rst
-
-   drain_queue
-   get_blocking
 
 Utilities
 ---------

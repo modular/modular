@@ -42,7 +42,7 @@ from enum import Enum
 from typing import Any
 
 from .request import RequestID
-from .scheduler import SchedulerResult
+from .scheduler_result import SchedulerResult
 
 
 class InputModality(str, Enum):
@@ -90,7 +90,7 @@ class PipelineTask(str, Enum):
             EmbeddingsGenerationOutput,
             TextGenerationOutput,
         )
-        from .scheduler import SchedulerResult
+        from .scheduler_result import SchedulerResult
 
         if self in [
             PipelineTask.TEXT_GENERATION,

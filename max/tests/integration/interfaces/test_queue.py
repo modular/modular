@@ -13,7 +13,7 @@
 
 import queue
 
-from max.interfaces.queue import drain_queue
+from max.serve.queue import drain_queue
 
 
 def test_drain_queue_with_integers() -> None:

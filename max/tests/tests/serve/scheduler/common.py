@@ -24,7 +24,6 @@ from max.graph import DeviceRef
 from max.interfaces import (
     BatchType,
     GenerationStatus,
-    MAXPushQueue,
     Pipeline,
     RequestID,
     SchedulerResult,
@@ -35,6 +34,7 @@ from max.interfaces import (
 from max.nn.kv_cache import KVCacheParams, KVConnectorType
 from max.pipelines.core import TextContext
 from max.pipelines.kv_cache import PagedKVCacheManager
+from max.serve.queue import MAXPushQueue
 from max.serve.scheduler.config import TokenGenerationSchedulerConfig
 from max.serve.scheduler.text_generation_scheduler import (
     TokenGenerationScheduler,
