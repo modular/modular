@@ -130,7 +130,7 @@ kgen.generator @foo(%arg0 : index) {
 
 // COM: Thin closures (todo: optimize away the none arguments MOCO 1702 and MOCO 1762)
 
-// CHECK: #type_value = #kgen.type<typevalue<#kgen.genref<@"thin::fn">>, none> : !kgen.type
+// CHECK: #type_value = #kgen.type<typevalue<#kgen.genref<@"thin::fn">>, struct<() memoryOnly>> : !kgen.type
 #type_value = #kgen.type<typevalue<#kgen.genref<@"thin::fn">>, !kgen.closure<@"thin", "fn" nonescaping>> : !kgen.type
 
 kgen.struct.generator @"thin::fn"<CAPTURES: !kgen.param_closure<@"thin" "fn">> = !kgen.closure<@"thin", "fn" nonescaping> {
@@ -140,7 +140,7 @@ kgen.struct.generator @"thin::fn"<CAPTURES: !kgen.param_closure<@"thin" "fn">> =
   kgen.conformance @"Movable" {
     kgen.witness "__moveinit__" : (!kgen.pointer<!kgen.closure<@"thin", "fn" nonescaping>> owned_in_mem, !kgen.pointer<!kgen.closure<@"thin", "fn" nonescaping>> byref_result) -> !kgen.none = #kgen.closure.symbol<@"thin", "fn", #kgen.closure_method<move>, <:!kgen.param_closure<@"thin" "fn"> CAPTURES>>
   }
-  // CHECK: kgen.witness "__call__" : (!kgen.pointer<none> read_mem, index) -> index = @thin_fn
+  // CHECK: kgen.witness "__call__" : (!kgen.pointer<struct<() memoryOnly>> read_mem, index) -> index = @thin_fn
   kgen.conformance @"closure_trait" {
 
     kgen.witness "__call__" : (!kgen.pointer<!kgen.closure<@"thin", "fn" nonescaping>> read_mem, index) -> index = #kgen.closure.symbol<@"thin", "fn", #kgen.closure_method<call>, <:!kgen.param_closure<@"thin" "fn"> CAPTURES>>
@@ -154,13 +154,13 @@ kgen.generator @consume<x: type>(%arg0: !kgen.pointer<x> read_mem) -> index {
   kgen.return %0 : index
 }
 
-// CHECK:  kgen.generator @thin_fn(%arg0: !kgen.pointer<none> read_mem, %arg1: index) -> index
+// CHECK:  kgen.generator @thin_fn(%arg0: !kgen.pointer<struct<() memoryOnly>> read_mem, %arg1: index) -> index
 // CHECK-NEXT:    kgen.return %arg1 : index
 // CHECK-NEXT:  }
 
 // CHECK-LABEL: kgen.generator @thin()
-// CHECK-NEXT: pop.stack_allocation 1 x none marked
-// CHECK-NEXT: kgen.call @consume<:type #type_value>(%{{.*}}) : (!kgen.pointer<none> read_mem) -> index
+// CHECK-NEXT: pop.stack_allocation 1 x struct<() memoryOnly> marked
+// CHECK-NEXT: kgen.call @consume<:type #type_value>(%{{.*}}) : (!kgen.pointer<struct<() memoryOnly>> read_mem) -> index
 // CHECK-NEXT: kgen.return
 kgen.generator @thin() {
   %3 = kgen.closure.init()(%arg2: index) -> index {
@@ -217,11 +217,11 @@ kgen.generator @foo(%arg0 : index) {
 
 // COM: Register Passable Thin closures (todo: MOCO 1702 and MOCO 1762)
 
-// CHECK: #type_value = #kgen.type<typevalue<#kgen.genref<@"thin::fn">>, none> : !kgen.type
+// CHECK: #type_value = #kgen.type<typevalue<#kgen.genref<@"thin::fn">>, struct<()>> : !kgen.type
 #type_value = #kgen.type<typevalue<#kgen.genref<@"thin::fn">>, !kgen.closure<@"thin", "fn" trivial>> : !kgen.type
 
 kgen.struct.generator @"thin::fn"<CAPTURES: !kgen.param_closure<@"thin" "fn">> = !kgen.closure<@"thin", "fn" trivial> {
-  // CHECK: kgen.witness "__call__" : (!kgen.none, index) -> index = @thin_fn
+  // CHECK: kgen.witness "__call__" : (!kgen.struct<()>, index) -> index = @thin_fn
   kgen.conformance @"closure_trait" {
     kgen.witness "__call__" : (!kgen.closure<@"thin", "fn" trivial>, index) -> index = #kgen.closure.symbol<@"thin", "fn", #kgen.closure_method<call>, <:!kgen.param_closure<@"thin" "fn"> CAPTURES>>
   }
@@ -233,12 +233,12 @@ kgen.generator @consume<x: type>(%arg0: !kgen.param<x>) -> index {
   kgen.return %0 : index
 }
 
-// CHECK:  kgen.generator @thin_fn(%arg0: !kgen.none, %arg1: index) -> index
+// CHECK:  kgen.generator @thin_fn(%arg0: !kgen.struct<()>, %arg1: index) -> index
 // CHECK-NEXT:    kgen.return %arg1 : index
 // CHECK-NEXT:  }
 
 // CHECK: kgen.generator @thin()
-// CHECK: kgen.call @consume<:type #type_value>(%{{.*}}) : (!kgen.none) -> index
+// CHECK: kgen.call @consume<:type #type_value>(%{{.*}}) : (!kgen.struct<()>) -> index
 // CHECK-NEXT: kgen.return
 kgen.generator @thin() {
   %3 = kgen.closure.init()(%arg2: index) -> index {

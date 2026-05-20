@@ -1477,6 +1477,10 @@ struct UnsafePointer[
         while __mlir_attr.true:
             pass
 
+    def store(self, offset: Int, value: Self.type):
+        while __mlir_attr.true:
+            pass
+
     # This returns a reference to an element with an origin specified by as a
     # unique reference from this pointer.  The returned reference is always
     # mutable.
@@ -1516,12 +1520,27 @@ struct UnsafePointer[
     ]
 
     @always_inline("builtin")
+    def unsafe_mut_cast[
+        target_mut: Bool
+    ](self) -> Self._OriginCastType[Self.origin.unsafe_mut_cast[target_mut]()]:
+        return __mlir_op.`pop.pointer.bitcast`[
+            _type=Self._OriginCastType[
+                Self.origin.unsafe_mut_cast[target_mut]()
+            ]._mlir_type,
+        ](self.address)
+
+    @always_inline("builtin")
     def unsafe_origin_cast[
         target_origin: Origin[mut=Self.mut]
     ](self) -> Self._OriginCastType[target_origin]:
         return __mlir_op.`pop.pointer.bitcast`[
             _type=Self._OriginCastType[target_origin]._mlir_type,
         ](self.address)
+
+    def as_immutable(
+        self,
+    ) -> Self._OriginCastType[Self.origin.unsafe_mut_cast[False]()]:
+        return self.unsafe_mut_cast[False]()
 
 
 comptime MutOpaquePointer[

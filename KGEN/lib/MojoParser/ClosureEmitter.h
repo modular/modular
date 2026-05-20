@@ -13,6 +13,7 @@
 
 #include "ExprNodes.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
+#include "KGEN/KGENDialect/KGENTypes.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/MojoParser/SharedState.h"
 #include "StructEmitter.h"
@@ -223,10 +224,15 @@ private:
                DenseSet<std::pair<StringAttr, StringAttr>> &functions)>
           populateTrait);
   /// Generate a witness table for a closure op.
-  TypedAttr addWitnessTablesToClosure(
-      ASTDecl &moduleDecl, SMLoc smLoc, FnOp parent, ClosureType closureType,
-      SmallVector<ClosureParent> &closureParents, SymbolRefAttr parentSymbolRef,
-      llvm::MapVector<StringAttr, Type> const &aliases);
+  TypedAttr
+  addWitnessTablesToClosure(ASTDecl &moduleDecl, SMLoc smLoc,
+                            SmallVector<ClosureParent> &closureParents,
+                            SymbolRefAttr parentSymbolRef,
+                            llvm::MapVector<StringRef, Type> const &aliases,
+                            SmallVector<StructDefFieldAttr> &&fieldDecls,
+                            SmallVector<ParamDeclAttr> &&allStructParams,
+                            SmallVector<TypedAttr> &&structParamBindings,
+                            StringAttr name, bool isRegPassable);
 
   /// Given a trait function, specialize it and add it to the struct.
   /// Returns
