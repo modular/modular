@@ -1077,11 +1077,11 @@ struct String(
             var maybe_slice = cpy.PyUnicode_AsUTF8AndSize(py._obj_ptr)
             if not maybe_slice:
                 raise cpy.unsafe_get_error()
-            self = String(maybe_slice.value())
+            self = String(unsafe_from_utf8=maybe_slice.value().as_bytes())
             return
         var str_obj = py.__str__()
         self = String(StringSlice(unsafe_borrowed_obj=str_obj))
-        _ = str_obj
+        _ = str_obj  # keep python object alive so the copy can occur
 
     # ===------------------------------------------------------------------=== #
     # Methods
