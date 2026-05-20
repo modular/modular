@@ -87,5 +87,29 @@ def test_numpy_float() raises:
     assert_equal(Float64(py=py_numpy_float), mojo_float)
 
 
+def test_string_subclass_override_takes_fallback() raises:
+    # A `str` subclass with overridden `__str__` must observe the override.
+    # `PyUnicode_CheckExact` rejects subclasses, so the fast path is skipped.
+    var mod = Python.evaluate(
+        "class _MyStr(str):\n    def __str__(self):\n        return 'override'\n",
+        file=True,
+        name="_str_subclass_test_mod",
+    )
+    var my_str = mod._MyStr("original")
+    assert_equal(String(py=my_str), "override")
+
+
+def test_string_from_non_str_object() raises:
+    # Non-str objects fall through to `py.__str__()`. Exercises the slow path
+    # with an `int` input (Python's `str(5)` returns "5").
+    assert_equal(String(py=PythonObject(5)), "5")
+
+
+def test_string_empty_and_unicode() raises:
+    # Edge cases on the fast path: empty string and non-ASCII bytes.
+    assert_equal(String(py=PythonObject("")), "")
+    assert_equal(String(py=PythonObject("héllo")), "héllo")
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()
