@@ -68,6 +68,14 @@ This version is still a work in progress.
   for its own portion of the collective problem. Reduces footprint for current
   heaviest workload (Kimi-K2.5 with `BlockCopyEngine`) from 16GB to 4GB.
 
+- Added `max.driver.CompletionFlag`, an 8-byte completion flag in pinned host
+  memory mapped into a device's address space. Lets host code signal a GPU
+  stream (or peer host observer) by writing a 64-bit value to a single
+  location visible to both. The producer/consumer methods that gate GPU
+  work on the flag (`DeviceStream.wait_for_host_value`,
+  `mo.wait_host_value` graph op) ship in follow-on changes. Currently CUDA-
+  only; constructing against any other backend raises `RuntimeError`.
+
 - Increased the default allreduce signal buffer size from 513 MiB to 1025 MiB
   per GPU (`max.nn.comm.allreduce.Signals.NUM_BYTES` and the matching constant
   in `max.experimental.realization_context`). The previous 512 MiB scratch

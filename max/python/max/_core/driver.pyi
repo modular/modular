@@ -290,6 +290,103 @@ class CPU(Device):
             CPU: A new CPU device object.
         """
 
+class CompletionFlag:
+    """
+    An 8-byte completion flag in pinned host memory mapped into a device's address space.
+
+    Lets a CPU thread signal a GPU stream (or vice versa) by
+    writing a 64-bit value to a single location that's visible to
+    both. Pair with ``DeviceStream.wait_for_host_value`` (added in
+    a follow-on PR) or the ``mo.wait_host_value`` graph op to gate
+    downstream GPU work on a host-produced result without a
+    second stream or a blocking host callback.
+
+    Currently requires a CUDA-backed ``Device``; constructing
+    against any other backend raises ``RuntimeError``.
+
+    .. code-block:: python
+
+        from max.driver import Accelerator, CompletionFlag
+
+        accel = Accelerator()
+        flag = CompletionFlag(accel)
+        assert flag.load() == 0  # initialized to zero
+
+        # Subsequent PRs add the producer/consumer methods that
+        # actually use the flag's device pointer.
+    """
+
+    def __init__(self, device: Device) -> None:
+        """
+        Allocates a fresh device-mapped pinned u64 bound to ``device``.
+
+        Args:
+            device: A CUDA-backed device. Other backends raise
+                ``RuntimeError``.
+        """
+
+    @property
+    def device_ptr(self) -> int:
+        """
+        Device-visible 64-bit address of the 8-byte slot.
+
+        Suitable for passing to graph ops or stream APIs that wait
+        on a memory value.
+        """
+
+    def reset(self) -> None:
+        """
+        Clears the flag back to ``0`` with a relaxed atomic store.
+
+        Safe to call before any consumer has observed the address.
+        """
+
+    def signal(self, value: int) -> None:
+        """
+        Release-ordered store of ``value`` to the flag.
+
+        Pairs with the GPU-side ``cuStreamWaitValue64`` (or a
+        host-side acquire ``load``).
+
+        Primary intended use is priming the flag at setup time so
+        the first captured-graph replay's ``mo.wait_host_value``
+        passes immediately, before any async kickoff has run.
+        Direct Python signalling on the hot path is usually a
+        mistake -- prefer the async-host-func trampoline which
+        signals from its AsyncRT worker.
+
+        Args:
+            value: The 64-bit value to store.
+        """
+
+    def load(self) -> int:
+        """
+        Acquire-ordered load of the current flag value.
+
+        Pairs with a release-ordered store on the producer side.
+
+        Returns:
+            int: Current 64-bit flag value.
+        """
+
+    @property
+    def _unsafe_ptr(self) -> int:
+        """
+        Raw 64-bit address of the underlying ``M::Driver::CompletionFlag``.
+
+        Intended for packing into a graph-op payload buffer
+        (e.g. for ``mo.wait_host_value``); parallels the
+        trampoline/user_data pointers returned by
+        ``__unsafe_pack_py_host_func`` for ``mo.launch_host_func``.
+
+        The caller must keep this ``CompletionFlag`` Python object
+        alive for the duration of any graph execution that
+        references the pointer; the underlying allocation is
+        freed when the last ref to the wrapper is dropped. The
+        leading underscore marks this as an escape hatch with no
+        safety net.
+        """
+
 class DeviceEvent:
     """
     Provides access to an event object.

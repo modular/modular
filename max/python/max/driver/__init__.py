@@ -13,6 +13,7 @@
 
 from max._core import __version__
 from max._core.driver import (
+    CompletionFlag,
     DeviceEvent,
     __unsafe_pack_py_host_func,
     enable_all_peer_access,
@@ -50,6 +51,7 @@ __all__ = [
     "CPU",
     "Accelerator",
     "Buffer",
+    "CompletionFlag",
     "DLPackArray",
     "Device",
     "DeviceEvent",
