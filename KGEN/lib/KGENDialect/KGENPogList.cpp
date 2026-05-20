@@ -241,7 +241,7 @@ PogListAttr::verifyGenerator(function_ref<InFlightDiagnostic()> emitError,
   return success();
 }
 
-GeneratorMetadataAttrInterface PogListAttr::getSpecializedMetadata(
+PogListAttr PogListAttr::getSpecializedMetadata(
     ParameterEvaluator &evaluator, const llvm::BitVector &boundParams,
     function_ref<InFlightDiagnostic()> emitError) const {
 
@@ -314,7 +314,7 @@ PogListAttr PogListAttr::prependAsInferredParams(
                           getOrigVariadicConvention());
 }
 
-GeneratorMetadataAttrInterface
+PogListAttr
 PogListAttr::prependContextualParamsFromOps(ArrayRef<StringAttr> newParams,
                                             ArrayRef<Operation *> ops) const {
   return prependAsInferredParams(newParams, /*defaults=*/{});

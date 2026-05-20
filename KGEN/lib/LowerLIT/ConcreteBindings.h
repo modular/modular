@@ -43,9 +43,8 @@ public:
   TypedAttr getReboundAttribute(TypedAttr attr) { return replace(attr); }
 
   /// Specialize generator metadata using this replacer's bindings.
-  GeneratorMetadataAttrInterface
-  specializeMetadata(GeneratorMetadataAttrInterface genMetadata,
-                     ArrayRef<TypedAttr> paramBindings,
+  PogListAttr
+  specializeMetadata(PogListAttr genMetadata, ArrayRef<TypedAttr> paramBindings,
                      ArrayRef<Type> paramTypes,
                      function_ref<InFlightDiagnostic()> emitErrorFn);
 

@@ -430,12 +430,13 @@ ErrorOr<TypedAttr> GeneratorType::readFrom(int64_t addr,
 GeneratorType GeneratorType::getSpecializedGenerator(
     PartiallySpecializedInputParams &specialization,
     function_ref<InFlightDiagnostic()> emitErrorFn) {
-  GeneratorMetadataAttrInterface genMetadata = getMetadata();
-  if (genMetadata) {
-    genMetadata = genMetadata.getSpecializedMetadata(
+  Attribute genMetadata = getMetadata();
+  if (auto poglist = dyn_cast_or_null<PogListAttr>(genMetadata)) {
+    PogListAttr specialized = poglist.getSpecializedMetadata(
         specialization.evaluator, specialization.boundParams, emitErrorFn);
-    if (!genMetadata)
+    if (!specialized)
       return {};
+    genMetadata = specialized;
   }
 
   return GeneratorType::get(specialization.unboundParamTypes,
@@ -690,16 +691,14 @@ FuncTypeGeneratorType::get(ArrayRef<Type> inputParamTypes, FunctionType values,
   auto sig = FuncType::get(values, argConvs, effects,
                            ::cast_or_null<FnMetadataAttrInterface>(fnMetadata));
   return FuncTypeGeneratorType(GeneratorType::get(
-      inputParamTypes, sig,
-      ::cast_or_null<GeneratorMetadataAttrInterface>(genMetadata)));
+      inputParamTypes, sig, ::cast_or_null<PogListAttr>(genMetadata)));
 }
 
 FuncTypeGeneratorType FuncTypeGeneratorType::get(ArrayRef<Type> inputParamTypes,
                                                  FuncType sig,
                                                  Attribute genMetadata) {
   return FuncTypeGeneratorType(GeneratorType::get(
-      inputParamTypes, sig,
-      ::cast_or_null<GeneratorMetadataAttrInterface>(genMetadata)));
+      inputParamTypes, sig, ::cast_or_null<PogListAttr>(genMetadata)));
 }
 
 FuncTypeGeneratorType FuncTypeGeneratorType::getSpecializedGenerator(
@@ -782,9 +781,8 @@ FuncLiteralTypeGeneratorType::get(ArrayRef<Type> inputParamTypes,
   assert(isa_and_nonnull<FuncType>(funcLiteral.getType()) &&
          "expected a func literal with FuncType");
   auto funcLiteralType = FuncLiteralType::get(funcLiteral);
-  return FuncLiteralTypeGeneratorType(GeneratorType::get(
-      inputParamTypes, funcLiteralType,
-      ::cast_or_null<GeneratorMetadataAttrInterface>(genMetadata)));
+  return FuncLiteralTypeGeneratorType(
+      GeneratorType::get(inputParamTypes, funcLiteralType, genMetadata));
 }
 
 FuncLiteralTypeGeneratorType

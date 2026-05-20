@@ -1825,7 +1825,7 @@ FnTypeGeneratorType FnTypeGeneratorType::prependParams(
         cast<ConstraintAttr>(contextRemapper.replace(constraint)));
   }
 
-  GeneratorMetadataAttrInterface genMetadata = oldMeta.prependAsInferredParams(
+  PogListAttr genMetadata = oldMeta.prependAsInferredParams(
       names, remappedParamDefaults, remappedParamConstraints,
       remappedBodyConstraints);
 
