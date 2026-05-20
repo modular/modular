@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 from copy import deepcopy
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 import torch
@@ -25,9 +26,12 @@ from max.experimental.torch import max_dtype_to_torch
 from max.graph import Shape
 from max.graph.weights import WeightData
 from max.nn.quant_config import (
+    InputScaleSpec,
+    QuantConfig,
     QuantFormat,
     ScaleGranularity,
     ScaleOrigin,
+    WeightScaleSpec,
 )
 from max.pipelines.lib.quant import parse_quant_config
 from transformers import AutoConfig
@@ -823,3 +827,94 @@ def test_parse_mxfp4_quark_quant_method(
 
     assert quant_config is not None
     assert quant_config.format == QuantFormat.MXFP4
+
+
+def _minimal_nvfp4_quant_config() -> QuantConfig:
+    """Build a tiny NVFP4 :class:`QuantConfig` for layout inference tests."""
+    input_spec = InputScaleSpec(
+        granularity=ScaleGranularity.BLOCK,
+        origin=ScaleOrigin.STATIC,
+        dtype=DType.float32,
+        block_size=(1, 16),
+    )
+    weight_spec = WeightScaleSpec(
+        granularity=ScaleGranularity.BLOCK,
+        dtype=DType.float8_e4m3fn,
+        block_size=(1, 16),
+    )
+    layers = {0, 1}
+    return QuantConfig(
+        input_scale=input_spec,
+        weight_scale=weight_spec,
+        mlp_quantized_layers=layers,
+        attn_quantized_layers=set(),
+        embedding_output_dtype=DType.bfloat16,
+        format=QuantFormat.NVFP4,
+    )
+
+
+def test_infer_kimi_nvfp4_weight_flags_k25_style() -> None:
+    """Kimi K2.5 NVFP4: dense layer 0 and shared experts carry FP4 scales."""
+    from max.pipelines.architectures.kimik2_5.kimi_nvfp4_policy import (
+        infer_kimi_nvfp4_weight_flags,
+    )
+
+    state_dict = {
+        "language_model.layers.0.mlp.gate_proj.weight": SimpleNamespace(
+            dtype=DType.uint8
+        ),
+        "language_model.layers.0.mlp.gate_proj.weight_scale": SimpleNamespace(
+            dtype=DType.float8_e4m3fn
+        ),
+        "language_model.layers.1.mlp.shared_experts.gate_proj.weight": (
+            SimpleNamespace(dtype=DType.uint8)
+        ),
+        "language_model.layers.1.mlp.shared_experts.gate_proj.weight_scale": (
+            SimpleNamespace(dtype=DType.float8_e4m3fn)
+        ),
+    }
+    shared_dtype, dense_skip = infer_kimi_nvfp4_weight_flags(
+        state_dict,
+        first_k_dense_replace=1,
+        quant_config=_minimal_nvfp4_quant_config(),
+    )
+    assert shared_dtype is None
+    assert dense_skip == frozenset()
+
+
+def test_infer_kimi_nvfp4_weight_flags_k26_style() -> None:
+    """Kimi K2.6 NVFP4: layer 0 dense + shared experts omit ModelOpt scales."""
+    from max.pipelines.architectures.kimik2_5.kimi_nvfp4_policy import (
+        infer_kimi_nvfp4_weight_flags,
+    )
+
+    state_dict = {
+        "language_model.layers.0.mlp.gate_proj.weight": SimpleNamespace(
+            dtype=DType.bfloat16
+        ),
+        "language_model.layers.1.mlp.shared_experts.gate_proj.weight": (
+            SimpleNamespace(dtype=DType.bfloat16)
+        ),
+    }
+    shared_dtype, dense_skip = infer_kimi_nvfp4_weight_flags(
+        state_dict,
+        first_k_dense_replace=1,
+        quant_config=_minimal_nvfp4_quant_config(),
+    )
+    assert shared_dtype == DType.bfloat16
+    assert dense_skip == frozenset({0})
+
+
+def test_infer_kimi_nvfp4_weight_flags_non_fp4() -> None:
+    """Without NVFP4 quant config, inference returns defaults."""
+    from max.pipelines.architectures.kimik2_5.kimi_nvfp4_policy import (
+        infer_kimi_nvfp4_weight_flags,
+    )
+
+    shared_dtype, dense_skip = infer_kimi_nvfp4_weight_flags(
+        {},
+        first_k_dense_replace=1,
+        quant_config=None,
+    )
+    assert shared_dtype is None
+    assert dense_skip == frozenset()

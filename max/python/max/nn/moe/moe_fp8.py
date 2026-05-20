@@ -101,7 +101,7 @@ class MoEQuantized(MoE):
         scales = [getattr(e, proj_name).weight_scale_2 for e in self.experts]
         shared_scale = (
             getattr(self.shared_experts, proj_name).weight_scale_2
-            if self.has_shared_experts
+            if self.has_shared_experts and self._shared_experts_use_quant
             else None
         )
         scales = self._with_shared_expert(scales, shared_scale)
@@ -115,7 +115,7 @@ class MoEQuantized(MoE):
         scales = [getattr(e, proj_name).input_scale for e in expert_collect]
         shared_scale = (
             getattr(self.shared_experts, proj_name).input_scale
-            if self.has_shared_experts
+            if self.has_shared_experts and self._shared_experts_use_quant
             else None
         )
         scales = self._with_shared_expert(scales, shared_scale)
@@ -135,12 +135,12 @@ class MoEQuantized(MoE):
         up_scales = [e.up_proj.weight_scale for e in self.experts]
         gate_shared = (
             self.shared_experts.gate_proj.weight_scale
-            if self.has_shared_experts
+            if self.has_shared_experts and self._shared_experts_use_quant
             else None
         )
         up_shared = (
             self.shared_experts.up_proj.weight_scale
-            if self.has_shared_experts
+            if self.has_shared_experts and self._shared_experts_use_quant
             else None
         )
         gate_scales = self._with_shared_expert(gate_scales, gate_shared)
@@ -184,7 +184,7 @@ class MoEQuantized(MoE):
         scales = [e.down_proj.weight_scale for e in self.experts]
         down_shared = (
             self.shared_experts.down_proj.weight_scale
-            if self.has_shared_experts
+            if self.has_shared_experts and self._shared_experts_use_quant
             else None
         )
         scales = self._with_shared_expert(scales, down_shared)

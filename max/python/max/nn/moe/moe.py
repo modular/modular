@@ -209,6 +209,11 @@ class MoE(Module, Shardable):
             SiLU kernel; use
             :func:`make_concatenated_gated_activation_fn` for custom
             activations.
+        shared_experts_dtype: Weight storage dtype for shared-expert MLPs. When
+            equal to ``dtype`` (routed experts) and ``quant_config`` is set,
+            shared experts use the same quantization as routed experts. When
+            different (e.g. BF16 shared weights with packed NVFP4 routed experts),
+            shared linears omit ``quant_config``. Defaults to ``dtype``.
         pre_expert_norm_cls: A callable that returns a normalization
             module to apply before expert computation. Defaults to
             ``None``.
@@ -253,6 +258,7 @@ class MoE(Module, Shardable):
         pre_expert_norm_cls: Callable[[], Module] | None = None,
         ep_batch_manager: EPBatchManager | None = None,
         quant_config: QuantConfig | None = None,
+        shared_experts_dtype: DType | None = None,
         is_sharding: bool = False,
     ):
         super().__init__()
@@ -282,18 +288,25 @@ class MoE(Module, Shardable):
         )
         self.num_local_experts = num_experts // ep_size
         self.quant_config = quant_config
+        self.shared_experts_dtype = (
+            shared_experts_dtype if shared_experts_dtype is not None else dtype
+        )
 
         if has_shared_experts:
             assert shared_experts_dim > 0, (
                 "shared_experts_dim must be greater than 0"
             )
+            shared_use_quant = (
+                quant_config is not None and self.shared_experts_dtype == dtype
+            )
+            shared_quant = quant_config if shared_use_quant else None
             self.shared_experts = mlp_cls(
-                dtype=dtype,
+                dtype=self.shared_experts_dtype,
                 quantization_encoding=None,
                 hidden_dim=self.hidden_dim,
                 feed_forward_length=self.shared_experts_dim,
                 devices=self.devices,
-                quant_config=self.quant_config,
+                quant_config=shared_quant,
             )
 
         if ep_batch_manager:
@@ -328,6 +341,14 @@ class MoE(Module, Shardable):
             "EPBatchManager must be provided if using expert parallel strategy"
         )
         return self._ep_batch_manager
+
+    @property
+    def _shared_experts_use_quant(self) -> bool:
+        """Whether shared experts use the same quantized weights as routed experts."""
+        return (
+            self.quant_config is not None
+            and self.shared_experts_dtype == self.dtype
+        )
 
     @property
     def sharding_strategy(self) -> ShardingStrategy | None:
@@ -410,6 +431,7 @@ class MoE(Module, Shardable):
                 gated_activation_fn=self.gated_activation_fn,
                 pre_expert_norm_cls=self.pre_expert_norm_cls,
                 quant_config=self.quant_config,
+                shared_experts_dtype=self.shared_experts_dtype,
                 is_sharding=True,
             )
 
