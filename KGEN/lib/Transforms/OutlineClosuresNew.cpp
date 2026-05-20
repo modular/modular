@@ -276,10 +276,10 @@ private:
                                Type loweredClosureType,
                                Type loweredClosureInstType);
   /// Lift a closure with no captures. We can skip the loading/storing of
-  /// captures and the self type is none or opaque pointer, depending on the
-  /// register passable flag.
+  /// captures and use the lowered closure type for the synthesized self.
   Value liftThinClosure(OpBuilder &b, ClosureInitData &data,
-                        bool isRegisterPassable);
+                        bool isRegisterPassable, Type loweredClosureType,
+                        Type loweredClosureInstType);
   /// Lift a non-register passable closure. The characterization is in the
   /// lifted signature: a non-register passable closure's lifted call function
   /// has an implicit self argument of pointer type.
@@ -806,8 +806,9 @@ Value ClosureLifter::liftNonRegPassableClosure(
 
 Value ClosureLifter::liftThinClosure(OpBuilder &b,
                                      ClosureInitData &closureInitData,
-                                     bool isRegisterPassable) {
-  Type loweredClosureType = KGEN::NoneType::get(b.getContext());
+                                     bool isRegisterPassable,
+                                     Type loweredClosureType,
+                                     Type loweredClosureInstType) {
   Type selfType = isRegisterPassable ? loweredClosureType
                                      : PointerType::get(loweredClosureType);
   Region &region = closureInitData.region();
@@ -831,17 +832,18 @@ Value ClosureLifter::liftThinClosure(OpBuilder &b,
   closureTypeToStructTypes[closureInitData.getClosureType()] =
       loweredClosureType;
   closureTypeToStructInstTypes[closureInitData.getClosureType()] =
-      loweredClosureType;
+      loweredClosureInstType;
 
   b.setInsertionPoint(closureInitData.getClosureInit());
   Location loc = closureInitData.getClosureInit()->getLoc();
-  return isRegisterPassable
-             ? ParamConstantOp::create(b, loc, NoneAttr::get(b.getContext()))
-                   .getResult()
-             : POP::StackAllocationOp::create(
-                   b, loc,
-                   /*markedLifetimes=*/true,
-                   PointerType::get(loweredClosureType));
+  if (isRegisterPassable)
+    return StructCreateOp::create(b, loc, cast<StructType>(loweredClosureType),
+                                  ValueRange())
+        .getResult();
+  return POP::StackAllocationOp::create(b, loc,
+                                        /*markedLifetimes=*/true,
+                                        PointerType::get(loweredClosureType))
+      .getResult();
 }
 
 llvm::SetVector<ParamDeclAttr>
@@ -1043,6 +1045,8 @@ ClosureLifter::liftClosureInit(ClosureInitOp closureInit, GeneratorOp generator,
         TypedAttr fieldTypeValue = field.getTypeValue();
         if (auto fieldTypeParam = dyn_cast<TypeParamAttr>(fieldTypeValue))
           structFieldTypes.push_back(fieldTypeParam.getMlirType());
+        else if (isa<ParamDeclRefAttr>(fieldTypeValue))
+          structFieldTypes.push_back(ParamType::get(fieldTypeValue));
         else
           structFieldTypes.push_back(fieldTypeValue.getType());
       }
@@ -1086,15 +1090,10 @@ ClosureLifter::liftClosureInit(ClosureInitOp closureInit, GeneratorOp generator,
         structGeneratorOp.getSymNameAttr(),
         /*paramNames=*/{},
         /*paramValues=*/{}, fieldDecls, BoolAttr::get(ctx, isMemoryOnly));
-    Type mlirType;
-    if (fieldTypes.empty()) {
-      mlirType = KGEN::NoneType::get(ctx);
-    } else {
-      mlirType = StructType::get(b.getContext(), fieldTypes,
-                                 memoryKind != ClosureMemoryKind::TRIVIAL &&
-                                     memoryKind !=
-                                         ClosureMemoryKind::REGISTER_PASSABLE);
-    }
+    Type mlirType =
+        StructType::get(b.getContext(), fieldTypes,
+                        memoryKind != ClosureMemoryKind::TRIVIAL &&
+                            memoryKind != ClosureMemoryKind::REGISTER_PASSABLE);
     capturedParamDecls =
         collectCapturedParams(captureToSymbol, generator, region, uses);
     if (auto hoistedCaptures = closureInit.getHoistedCaptures())
@@ -1113,7 +1112,8 @@ ClosureLifter::liftClosureInit(ClosureInitOp closureInit, GeneratorOp generator,
   if (isThin) {
     replacement = liftThinClosure(b, closureInitData,
                                   /*isRegisterPassable=*/memoryKind ==
-                                      ClosureMemoryKind::TRIVIAL);
+                                      ClosureMemoryKind::TRIVIAL,
+                                  loweredClosureType, loweredClosureInstType);
   } else {
     switch (memoryKind) {
     case ClosureMemoryKind::TRIVIAL:

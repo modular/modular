@@ -24,6 +24,7 @@
 #include "KGEN/Interpreter/InterpreterAttrs.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
+#include "KGEN/KGENDialect/KGENTypes.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/LITDialect/LITUtils.h"
 #include "KGEN/POPDialect/POPAttrs.h"
@@ -1715,44 +1716,162 @@ static SymbolRefAttr getFullyResolvedSymbolRefUpTo(mlir::SymbolOpInterface op) {
                             ArrayRef(symbols).drop_front());
 }
 
+static void meetOriginMutability(DenseMap<StringAttr, bool> &originMutability,
+                                 StringAttr name, bool isKnownImmutable) {
+  auto [it, isNew] = originMutability.try_emplace(name, /*mutable=*/false);
+  if (!isKnownImmutable)
+    it->second = true;
+}
+
+// Given an attribute, update origin mutability information. Returns false to
+// stop recursion for origin typed nodes so cast operands aren't counted
+// separately.
+static bool checkOriginMutableCast(DenseMap<StringAttr, bool> &originMutability,
+                                   Attribute attr) {
+  auto handleOriginValue = [&](TypedAttr originValue, bool isKnownImmutable) {
+    if (auto ref = dyn_cast<ParamDeclRefAttr>(
+            OriginType::stripMutCastAndRebind(originValue)))
+      meetOriginMutability(originMutability, ref.getName(), isKnownImmutable);
+  };
+
+  if (auto typed = dyn_cast<TypedAttr>(attr);
+      typed && isa<OriginType>(typed.getType())) {
+    handleOriginValue(typed, OriginType::isMutableKnown(typed, false));
+    return false;
+  }
+  return true;
+}
+
+// Given an attribute or type, determine if the references to an origin are a
+// net mutable or net immutable.
+template <typename AttrOrType>
+static void checkMutableImpl(DenseMap<StringAttr, bool> &originMutability,
+                             AttrOrType attrOrType) {
+
+  if constexpr (std::is_convertible_v<AttrOrType, Attribute>) {
+    if (!checkOriginMutableCast(originMutability, attrOrType))
+      return;
+  }
+  attrOrType.walkImmediateSubElements(
+      [&](Attribute attribute) {
+        checkMutableImpl(originMutability, attribute);
+      },
+      [&](Type type) { checkMutableImpl(originMutability, type); });
+}
+
+template <typename AttrOrType>
+static void checkMutable(DenseMap<StringAttr, bool> &originMutability,
+                         AttrOrType attrOrType) {
+  if constexpr (std::is_convertible_v<AttrOrType, Attribute>)
+    attrOrType = cast<AttrOrType>(getCanonicalAttr(attrOrType));
+  else
+    attrOrType = cast<AttrOrType>(getCanonicalType(attrOrType));
+  checkMutableImpl(originMutability, attrOrType);
+}
+
+static SmallPtrSet<StringAttr, 8>
+collectPromotedOrigins(MLIRContext *ctx,
+                       SmallVectorImpl<StructDefFieldAttr> &fieldDecls,
+                       SmallVectorImpl<ParamDeclAttr> &structParams,
+                       SmallVectorImpl<TypedAttr> &structBindings) {
+  DenseMap<StringAttr, bool> originMutability;
+  for (StructDefFieldAttr fieldDecl : fieldDecls)
+    checkMutable(originMutability, fieldDecl.getTypeValue());
+
+  SmallPtrSet<StringAttr, 8> promotedOriginNames;
+  for (auto [index, param] : llvm::enumerate(structParams)) {
+    StringAttr name = param.getName();
+    auto originType = dyn_cast<OriginType>(param.getType());
+    // If an origin is already immutable, no need to promote.
+    if (!originType || originType.isMutableKnown(false))
+      continue;
+    if (auto it = originMutability.find(name);
+        it != originMutability.end() && it->second)
+      continue;
+    structParams[index] = ParamDeclAttr::get(name, OriginType::get(ctx, false));
+    structBindings[index] =
+        OriginMutCastAttr::get(structBindings[index], false);
+    promotedOriginNames.insert(name);
+  }
+  return promotedOriginNames;
+}
+
+static KGEN::StructType getMlirType(MLIRContext *ctx,
+                                    StructInstanceType structInstType,
+                                    ArrayRef<ParamDeclAttr> structParams,
+                                    ArrayRef<TypedAttr> structBindings) {
+  ParameterEvaluator structEvaluator(structParams, structBindings);
+  SmallVector<Type> mlirFieldTypes;
+  for (StructDefFieldAttr field : structInstType.getFields()) {
+    TypedAttr concreteFieldAttr =
+        structEvaluator.getReboundAttribute(field.getTypeValue());
+    if (auto typeParam = dyn_cast<TypeParamAttr>(concreteFieldAttr))
+      mlirFieldTypes.push_back(typeParam.getMlirType());
+    else if (isa<ParamDeclRefAttr>(concreteFieldAttr))
+      mlirFieldTypes.push_back(ParamType::get(concreteFieldAttr));
+    else
+      mlirFieldTypes.push_back(concreteFieldAttr.getType());
+  }
+  bool isMemOnly = cast<BoolAttr>(structInstType.getIsMemoryOnly()).getValue();
+  return KGEN::StructType::get(ctx, mlirFieldTypes, isMemOnly);
+}
+
 TypedAttr ClosureEmitter::addWitnessTablesToClosure(
-    ASTDecl &moduleDecl, SMLoc smLoc, FnOp parent, ClosureType closureType,
+    ASTDecl &moduleDecl, SMLoc smLoc,
     SmallVector<ClosureParent> &closureParents, SymbolRefAttr parentSymbolRef,
-    llvm::MapVector<StringAttr, Type> const &aliases) {
-  // create kgen.struct.generator
+    llvm::MapVector<StringRef, Type> const &aliases,
+    SmallVector<StructDefFieldAttr> &&concreteFieldDecls,
+    SmallVector<ParamDeclAttr> &&concreteStructParams,
+    SmallVector<TypedAttr> &&concreteStructBindings, StringAttr name,
+    bool isRegPassable) {
   Location location = shared.translateLocation(smLoc);
   MLIRContext *ctx = shared.getContext();
-  ParamClosureType paramClosureType =
-      KGEN::ParamClosureType::get(ctx, parentSymbolRef, closureType.getName());
+  SmallPtrSet<StringAttr, 8> promotedOriginNames = collectPromotedOrigins(
+      ctx, concreteFieldDecls, concreteStructParams, concreteStructBindings);
 
-  SmallVector<ParamDeclAttr> closureParams;
-  auto capturesParam = ParamDeclAttr::get("CAPTURES", paramClosureType);
-  SmallVector<TypedAttr> paramBindings;
-  closureParams.push_back(capturesParam);
-  ClosureAttr packedParamCaptures =
-      KGEN::ClosureAttr::get(ctx, paramClosureType);
-  paramBindings.push_back(packedParamCaptures);
-
-  for (auto [name, type] : aliases) {
-    auto param = ParamDeclAttr::get(name, type);
-    closureParams.push_back(param);
-    paramBindings.push_back(ParamDeclRefAttr::get(param));
+  if (!promotedOriginNames.empty()) {
+    mlir::AttrTypeReplacer promoteOriginRefs;
+    promoteOriginRefs.addReplacement(
+        [&](TypedAttr attr) -> std::optional<TypedAttr> {
+          if (!isa<OriginType>(attr.getType()))
+            return std::nullopt;
+          auto originRef = dyn_cast<ParamDeclRefAttr>(
+              OriginType::stripMutCastAndRebind(attr));
+          if (!originRef || !promotedOriginNames.contains(originRef.getName()))
+            return std::nullopt;
+          return ParamDeclRefAttr::get(originRef.getName(),
+                                       OriginType::get(ctx, false));
+        });
+    for (StructDefFieldAttr &fieldDecl : concreteFieldDecls) {
+      auto promotedTypeValue =
+          cast<TypedAttr>(promoteOriginRefs.replace(fieldDecl.getTypeValue()));
+      fieldDecl =
+          StructDefFieldAttr::get(fieldDecl.getName(), promotedTypeValue);
+    }
   }
-  ParamDeclArrayAttr parameters = ParamDeclArrayAttr::get(ctx, closureParams);
+
+  SmallVector<TypedAttr> selfRefParamValues = llvm::map_to_vector(
+      concreteStructParams, [](ParamDeclAttr declAttr) -> TypedAttr {
+        return ParamDeclRefAttr::get(declAttr);
+      });
+  SmallVector<StringAttr> paramNames = llvm::map_to_vector(
+      concreteStructParams,
+      [](ParamDeclAttr declAttr) -> StringAttr { return declAttr.getName(); });
+  StructInstanceType structInstType = StructInstanceType::get(
+      StringAttr::get(ctx, Twine(getFlattenedSymbolName(parentSymbolRef))
+                               .concat("::")
+                               .concat(name.getValue())),
+      paramNames, selfRefParamValues, concreteFieldDecls,
+      BoolAttr::get(ctx, !isRegPassable));
+
+  ParamDeclArrayAttr parameters =
+      ParamDeclArrayAttr::get(ctx, concreteStructParams);
   ImplicitLocOpBuilder builder(location, ctx);
   builder.setInsertionPointToStart(
       &cast<FileModuleOp>(moduleDecl.getIfOperation()).getBodyRegion().front());
   TraitType traitType = getTraitType(closureParents, moduleDecl);
   auto structGen = StructGeneratorOp::create(
-      builder,
-      StringAttr::get(
-          ctx,
-          Twine(getFlattenedSymbolName(
-                    getFullyResolvedSymbolRefUpTo<FileModuleOp>(
-                        cast<mlir::SymbolOpInterface>(parent.getOperation()))))
-              .concat("::")
-              .concat(closureType.getName().getValue())),
-      parameters, closureType, traitType);
+      builder, structInstType.getName(), parameters, structInstType, traitType);
   Block *structGenBody = builder.createBlock(&structGen.getRegion());
 
   // Register the struct generator in declForTypeSymbol so it can be looked up
@@ -1783,7 +1902,7 @@ TypedAttr ClosureEmitter::addWitnessTablesToClosure(
     ClosureMethod method = closureParent.getClosureMethod();
     FnOp fnOp = closureParent.getDefiningOp(moduleDecl);
     FnTypeGeneratorType sig =
-        specializeSignature(fnOp, closureType, *shared.declResolver);
+        specializeSignature(fnOp, structInstType, *shared.declResolver);
     SmallVector<TypedAttr> paramValues;
     mlir::AttrTypeReplacer replacer;
     replacer.addReplacement([&](ParamDeclRefAttr parameterReference) {
@@ -1794,17 +1913,18 @@ TypedAttr ClosureEmitter::addWitnessTablesToClosure(
     });
     for (Type paramType : sig.getInputParamTypes())
       paramValues.push_back(UnboundAttr::get(replacer.replace(paramType)));
-    paramValues.push_back(ParamDeclRefAttr::get(capturesParam));
 
     TypedAttr symbol = ClosureSymbolAttr::get(
-        ctx, parentSymbolRef, closureType.getName(),
-        ClosureMethodAttr::get(ctx, method), paramValues, sig);
+        ctx, parentSymbolRef, name, ClosureMethodAttr::get(ctx, method),
+        paramValues, sig);
     WitnessOp::create(builder, fnOp.getSymNameAttr(), symbol);
 
     // add the alias entries
     if (closureParent.getClosureMethod() == ClosureMethod::CALL) {
       for (auto [name, type] : aliases)
-        WitnessOp::create(builder, name, ParamDeclRefAttr::get(name, type));
+        WitnessOp::create(
+            builder, name,
+            ParamDeclRefAttr::get(StringAttr::get(ctx, name), type));
     }
   };
 
@@ -1817,9 +1937,12 @@ TypedAttr ClosureEmitter::addWitnessTablesToClosure(
   // Type value contains the reference to the struct gen op with the witness
   // table.
   auto typeValue = KGEN::TypeValueType::get(
-      ctx, TypeGeneratorRefAttr::get(ctx, structGenSymbolRef, paramBindings,
-                                     traitType));
-  auto typeParamAttr = TypeParamAttr::get(typeValue, closureType, traitType);
+      ctx, TypeGeneratorRefAttr::get(ctx, structGenSymbolRef,
+                                     concreteStructBindings, traitType));
+  KGEN::StructType kgenStructType = getMlirType(
+      ctx, structInstType, concreteStructParams, concreteStructBindings);
+
+  auto typeParamAttr = TypeParamAttr::get(typeValue, kgenStructType, traitType);
   return typeParamAttr;
 }
 
@@ -2053,7 +2176,6 @@ Value ClosureEmitter::emitClosureOp(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
                                      : ClosureMemoryKind::NONESCAPING);
   SmallVector<Attribute> captureInfo;
   SmallVector<Value> captureValues;
-  SmallVector<TypedAttr> origins;
   SmallVector<Attribute> captureTypes;
   SmallVector<Attribute> captureNames;
 
@@ -2067,24 +2189,27 @@ Value ClosureEmitter::emitClosureOp(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
   TypeConvention highestCaptureConvention =
       isRegPassable ? TypeConvention::RegisterPassableTrivial
                     : TypeConvention::MemoryOnly;
+  SmallVector<StructDefFieldAttr> fieldDecls;
+  SmallVector<ParamDeclAttr> allStructParams;
+  SmallVector<TypedAttr> structParamBindings;
+
+  SmallPtrSet<StringAttr, 8> byValueCapturedOriginParamNames;
+
   for (const Capture &capture : captures) {
     Value value = capture.getValue().getMlirValue();
     captureValues.push_back(value);
-
-    Type captureMLIRType = value.getType();
-    if (auto refType = dyn_cast<LIT::RefType>(captureMLIRType))
-      captureMLIRType = refType.getElementType();
 
     SyntheticNode synthNode(nestedFnDecl.getLoc());
     ExprDest dest(anyType, EC_Type);
     PValue captureTypeValue =
         emitter
-            .emitImplicitConversionToType({captureMLIRType, synthNode}, anyType,
+            .emitImplicitConversionToType({value.getType(), synthNode}, anyType,
                                           dest)
             .getIfPValue();
-    captureTypes.push_back(captureTypeValue.get());
-    captureNames.push_back(StringAttr::get(ctx, capture.getSpelling()));
-
+    auto captureTypeAttr = cast<TypedAttr>(captureTypeValue.get());
+    captureTypes.push_back(captureTypeAttr);
+    auto captureName = StringAttr::get(ctx, capture.getSpelling());
+    captureNames.push_back(captureName);
     UnitAttr isMove;
     auto captureConvention = capture.getCaptureConvention();
     switch (captureConvention) {
@@ -2094,7 +2219,6 @@ Value ClosureEmitter::emitClosureOp(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
     case CaptureConvention::kConventionRef: {
       // Mutability casts should have been emitted during parse time.
       if (auto refType = dyn_cast<LIT::RefType>(value.getType())) {
-        origins.push_back(refType.getOrigin());
         captureInfo.push_back(refType.getOrigin());
       } else {
         captureInfo.push_back(UnitAttr::get(ctx));
@@ -2107,10 +2231,18 @@ Value ClosureEmitter::emitClosureOp(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
     case CaptureConvention::kConventionCopy:
     case CaptureConvention::kConventionMove: {
       Type mlirType;
-      if (auto refType = dyn_cast<LIT::RefType>(value.getType()))
+      if (auto refType = dyn_cast<LIT::RefType>(value.getType())) {
         mlirType = refType.getElementType();
-      else
+        if (auto captureOriginParam = dyn_cast<ParamDeclRefAttr>(
+                OriginType::stripMutCastAndRebind(refType.getOrigin())))
+          byValueCapturedOriginParamNames.insert(captureOriginParam.getName());
+      } else {
         mlirType = value.getType();
+      }
+      // Copy/move captures materialize storage for the captured value itself,
+      // not for a reference wrapper. Use the pointee as the field type.
+      if (isa<LIT::RefType>(value.getType()))
+        captureTypeAttr = TypeParamAttr::get(mlirType, anyType);
 
       if (auto structType = dyn_cast<StructType>(mlirType)) {
         auto [memTriple, captureConventionMet] =
@@ -2121,17 +2253,12 @@ Value ClosureEmitter::emitClosureOp(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
         highestCaptureConvention = meetCaptureConvention(
             highestCaptureConvention, captureConventionMet);
         captureInfo.push_back(memTriple);
-        break;
-      }
-
-      if (auto traitType = dyn_cast<TraitType>(mlirType)) {
+      } else if (auto traitType = dyn_cast<TraitType>(mlirType)) {
         shared.emitError(nestedFnDecl.getLoc(),
                          "cannot capture a value of trait type yet because "
                          "existentials are not implemented.");
         return {};
-      }
-
-      if (auto paramType = dyn_cast<ParamType>(mlirType)) {
+      } else if (auto paramType = dyn_cast<ParamType>(mlirType)) {
         auto [memTriple, captureConventionMet] = buildParamCaptureInfo(
             paramType, capture, captureConvention, requestedConvention, isMove,
             nestedFnDecl, moduleDecl);
@@ -2140,15 +2267,14 @@ Value ClosureEmitter::emitClosureOp(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
         highestCaptureConvention = meetCaptureConvention(
             highestCaptureConvention, captureConventionMet);
         captureInfo.push_back(memTriple);
-        break;
+      } else {
+        captureInfo.push_back(UnitAttr::get(ctx));
       }
-
-      captureInfo.push_back(UnitAttr::get(ctx));
       break;
     }
     }
+    fieldDecls.push_back(StructDefFieldAttr::get(captureName, captureTypeAttr));
   }
-
   ASTDecl *closureWrapperDecl = shared.getOrCreateClosureWrapper(
       nestedFnDecl.getLoc(), closureSig, &moduleDecl, isCopyable,
       highestCaptureConvention, captures.empty());
@@ -2182,15 +2308,34 @@ Value ClosureEmitter::emitClosureOp(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
       original.getFnMetadata(), original.getMetadata());
   auto [capturedRefs, _] =
       DeclResolver::createSelfContainedSignature(closureBodySignature);
-  llvm::MapVector<StringAttr, Type> aliases;
+  llvm::MapVector<StringRef, Type> aliases;
   for (ParamDeclRefAttr reference : capturedRefs) {
     auto [_, inserted] =
-        aliases.insert({reference.getName(), reference.getType()});
+        aliases.insert({reference.getName().getValue(), reference.getType()});
     (void)inserted;
   }
+
+  SmallPtrSet<StringAttr, 8> seen;
+  for (ParamDeclAttr param : allStructParams)
+    seen.insert(param.getName());
+  for (auto capturedParam : paramCaptures) {
+    if (byValueCapturedOriginParamNames.contains(capturedParam.getName()))
+      continue;
+    if (!seen.insert(capturedParam.getName()).second)
+      continue;
+    allStructParams.push_back(
+        ParamDeclAttr::get(capturedParam.getName(), capturedParam.getType()));
+    structParamBindings.push_back(capturedParam);
+  }
+
   TypedAttr witnessTable = addWitnessTablesToClosure(
-      moduleDecl, nestedFnDecl.getLoc(), parent, closureType, closureParents,
-      parentSymbolRef, aliases);
+      moduleDecl, nestedFnDecl.getLoc(), closureParents,
+      SymbolRefAttr::get(
+          ctx,
+          getFlattenedSymbolName(getFullyResolvedSymbolRefUpTo<FileModuleOp>(
+              cast<mlir::SymbolOpInterface>(parent.getOperation())))),
+      aliases, std::move(fieldDecls), std::move(allStructParams),
+      std::move(structParamBindings), closureType.getName(), isRegPassable);
 
   // The nested function's DISubroutineType only reflects user-visible
   // parameters. Add the  closure self argument.
@@ -2207,13 +2352,13 @@ Value ClosureEmitter::emitClosureOp(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
     auto newSubroutineType = DebugInfo::DISubroutineType::get(
         ctx, subroutineType.getCallingConvention(), updatedArgTypes,
         subroutineType.getResultTypes());
-
     closureSubprogram = DebugInfo::DISubprogramAttr::get(
         closureSubprogram.getCompileUnit(), closureSubprogram.getScope(),
         closureSubprogram.getSourceName(), closureSubprogram.getLinkageName(),
         closureSubprogram.getFile(), closureSubprogram.getLine(),
         closureSubprogram.getScopeLine(),
-        closureSubprogram.getSubprogramFlags(), newSubroutineType);
+        closureSubprogram.getSubprogramFlags(),
+        cast<DebugInfo::DISubroutineType>(newSubroutineType));
   }
 
   auto closure = LIT::ClosureInitOp::create(
@@ -2222,6 +2367,19 @@ Value ClosureEmitter::emitClosureOp(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
       nestedFn.getInputParams(), nestedFn.getInlineLevel(), origin,
       witnessTable, ArrayAttr::get(ctx, captureTypes),
       ArrayAttr::get(ctx, captureNames));
+
+  // TODO: remove closure type from op
+  Type concreteStructType = witnessTable.getType();
+  if (auto typeParam = dyn_cast<TypeParamAttr>(witnessTable))
+    concreteStructType = typeParam.getMlirType();
+
+  // ClosureInitOp result type still wraps ClosureType so that
+  // OutlineClosuresNew can extract the ClosureType via getClosureType().  A
+  // RebindOp inserted after the init bridges callers that expect the explicit
+  // StructInstanceType.
+  auto structRefType =
+      RefType::get(concreteStructType, ParamDeclRefAttr::get(origin));
+  auto rebind = RebindOp::create(builder, structRefType, closure.getResult());
 
   // Transfer optional attributes from the nested function to the closure
   // op.
@@ -2267,7 +2425,7 @@ Value ClosureEmitter::emitClosureOp(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
   // Create the wrapper instance by emitting a call to the Wrapper
   // constructor. The wrapper struct only has impl and origin_set parameters;
   // alias values are derived via GetWitnessAttr lookups on impl.
-  auto originSet = OriginSetAttr::get(ctx, origins);
+  auto originSet = OriginSetAttr::get(ctx, ArrayRef<TypedAttr>{});
   SmallVector<TypedAttr> paramArgs({witnessTable, originSet});
 
   LIT::StructType closureWrapperType = wrapper.bindReference(paramArgs);
@@ -2275,7 +2433,7 @@ Value ClosureEmitter::emitClosureOp(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
       builder, location, closureWrapperType, fnName.getValue(),
       nestedFnDecl.getParentDecl()->mangleParamName(fnName.getValue()),
       VarDeclKind::Var);
-  SmallVector<Value> operands({closure->getResult(0), var});
+  SmallVector<Value> operands({rebind.getResult(), var});
   SmallVector<TypedAttr> implicitOrigins(
       {ParamDeclRefAttr::get(origin), var.getType().getOrigin()});
   FnOp init = getInit(wrapper);

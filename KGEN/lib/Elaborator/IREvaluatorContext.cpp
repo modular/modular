@@ -180,6 +180,11 @@ FailureOr<TypedAttr>
 IREvaluatorContext::evaluateIsStructTypeAttr(IsStructTypeAttr attr) {
   MLIRContext *ctx = attr.getContext();
 
+  if (auto typeParam = sugarDynCast<TypeParamAttr>(attr.getTypeValue())) {
+    if (sugarDynCast<KGEN::StructType>(typeParam.getTypeValue()))
+      return {BoolAttr::get(ctx, true)};
+  }
+
   // Unwrap the type value to get the underlying reference.
   TypedAttr typeRef = getTypeRefForTypeValueIfResolved(attr.getTypeValue());
 

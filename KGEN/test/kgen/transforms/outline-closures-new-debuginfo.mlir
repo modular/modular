@@ -15,7 +15,7 @@ kgen.struct.generator @"foo::fn"<CAPTURES: !kgen.param_closure<@"foo" "fn">> = !
   }
 }
 
-// CHECK: kgen.generator @foo_fn<C>(%arg0: !kgen.pointer<none> loc({{.*}}) read_mem)
+// CHECK: kgen.generator @foo_fn<C>(%arg0: !kgen.pointer<struct<() memoryOnly>> loc({{.*}}) read_mem)
 // CHECK-NEXT:   kgen.return loc(#loc
 // CHECK-NEXT: } loc(#loc
 kgen.generator @foo<C>() {
@@ -152,7 +152,7 @@ kgen.struct.generator @"bar::fn"<CAPTURES: !kgen.param_closure<@"bar" "fn">> = !
   }
 }
 
-// CHECK: kgen.generator @bar_fn<C>(%arg0: !kgen.pointer<none> loc({{.*}}) read_mem)
+// CHECK: kgen.generator @bar_fn<C>(%arg0: !kgen.pointer<struct<() memoryOnly>> loc({{.*}}) read_mem)
 kgen.generator @bar<C>() {
   %3 = kgen.closure.init()() -> () {
     kgen.return
@@ -185,7 +185,7 @@ kgen.struct.generator @"baz::fn"<CAPTURES: !kgen.param_closure<@"baz" "fn">> = !
   }
 }
 
-// CHECK: kgen.generator @baz_fn<D: type>(%arg0: !kgen.pointer<none> loc({{.*}}) read_mem)
+// CHECK: kgen.generator @baz_fn<D: type>(%arg0: !kgen.pointer<struct<() memoryOnly>> loc({{.*}}) read_mem)
 kgen.generator @baz<D: type>() {
   %3 = kgen.closure.init()() -> () {
     kgen.return

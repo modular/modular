@@ -1433,8 +1433,10 @@ static bool allCopyable(ArrayRef<Capture> captures, SharedState &shared,
   return true;
 }
 
-static MLValue emitClosureInstance(ArrayRef<Capture> captures,
-                                   ASTDecl &nestedFnDecl, SharedState &shared) {
+static MLValue
+emitClosureInstance(ArrayRef<Capture> captures, ASTDecl &nestedFnDecl,
+                    SharedState &shared,
+                    ArrayRef<ParamDeclRefAttr> bodyParamCaptures) {
   FnOp nestedFn = cast<FnOp>(nestedFnDecl.getIfOperation());
   SMLoc loc = nestedFnDecl.getLoc();
   Location mlirLoc = shared.translateLocation(loc);
@@ -1468,6 +1470,18 @@ static MLValue emitClosureInstance(ArrayRef<Capture> captures,
   bool isCopyable = allCopyable(captures, shared, loc);
 
   ClosureEmitter &emitter = shared.getClosureEmitter();
+  // Merge in parameter captures found in the body (from runtime capture types,
+  // body ops, and locations) that are not already in capturedRefs from the
+  // signature walk.
+  {
+    SmallPtrSet<StringAttr, 8> seen;
+    for (ParamDeclRefAttr ref : capturedRefs)
+      seen.insert(ref.getName());
+    for (ParamDeclRefAttr ref : bodyParamCaptures) {
+      if (seen.insert(ref.getName()).second)
+        capturedRefs.push_back(ref);
+    }
+  }
   Value wrapperInstance =
       emitter.emitClosureOp(*moduleDecl, nestedFnDecl, captures,
                             cast<TraitDeclOp>(closureTrait->getIfOperation()),
@@ -2019,7 +2033,8 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
       return success();
     }
 
-    MLValue instance = emitClosureInstance(captures, decl, shared);
+    MLValue instance =
+        emitClosureInstance(captures, decl, shared, paramCaptures);
     if (!instance)
       return failure();
     decl.setIRValue(instance);

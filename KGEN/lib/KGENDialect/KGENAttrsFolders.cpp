@@ -220,6 +220,21 @@ rebindFieldTypes(StructDeclInterface decl, ParameterEvaluator &evaluator,
 
 FailureOr<TypedAttr> StructFieldTypesAttr::evaluateWithContext(
     ParameterEvaluationContext &context) const {
+  if (auto typeParam = dyn_cast<TypeParamAttr>(getTypeValue())) {
+    if (auto structType =
+            sugarDynCast<KGEN::StructType>(typeParam.getTypeValue())) {
+      auto elementTypes = structType.getElementTypes();
+      if (!elementTypes)
+        return failure();
+      SmallVector<TypedAttr> resultAttrs;
+      resultAttrs.reserve(elementTypes->size());
+      Type resultElemType = getType().getElementType();
+      for (Type fieldType : *elementTypes)
+        resultAttrs.push_back(TypeParamAttr::get(fieldType, resultElemType));
+      return cast<TypedAttr>(ParamListAttr::get(resultAttrs, getType()));
+    }
+  }
+
   FailureOr<ResolvedStructHandle> resolvedOr =
       context.resolveStructOp(getTypeValue(), /*acceptAsync=*/true);
   if (failed(resolvedOr)) {

@@ -153,6 +153,26 @@ def closureFromCapturedInt[a: Int, b: Int, c: Int](x: Int):
     consumeHasParamRank[a + b, b + c, type_of(nested)](nested)
 
 
+def must_be_read_only_with_origin[
+    Mut: Bool, //, o: Origin[mut=Mut], FuncType: def() -> None
+](
+    impl: FuncType,
+    ptr: UnsafePointer[Int, o, address_space=AddressSpace.GENERIC],
+):
+    impl()
+
+
+def demo_origin_closure[
+    o: Origin[mut=True]
+](ptr: UnsafePointer[Int, o, address_space=AddressSpace.GENERIC,],):
+    var immut_ptr = ptr.as_immutable()
+
+    def read() {read immut_ptr}:
+        print("read only", immut_ptr[0])
+
+    must_be_read_only_with_origin(read, immut_ptr)
+
+
 def main() raises:
     var one = atol(argv()[1])
     var four = atol(argv()[2])
@@ -184,3 +204,8 @@ def main() raises:
     # COM: Test captured closure with param expressions in sugar-only space.
     # CHECK: 10
     closureFromCapturedInt[1, 2, 3](one)
+
+    # COM: Test closure capture with pointer origins.
+    # CHECK: read only 1
+    var ptr = UnsafePointer(to=one)
+    demo_origin_closure(ptr)

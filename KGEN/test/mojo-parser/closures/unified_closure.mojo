@@ -181,9 +181,10 @@ def make_closure(x: Int):
     # CHECK-NEXT: lit.end_fn
     # CHECK-NEXT: } : ([[INT]]), !lit.ref<!kgen.closure<@{{.*}}::make_closure{{.*}}", "my_closure" nonescaping>, mut *"[[L0:.*]]">
 
+    # CHECK-NEXT: [[REBOUND_CLOSURE:%.*]] = kgen.rebind [[RAW_CLOSURE]] : !lit.ref<!kgen.closure<@{{.*}}::make_closure{{.*}}", "my_closure" nonescaping>, mut *"[[L0:.*]]"> to !lit.ref<struct<(!Int1) memoryOnly>, mut *"[[L0]]">
     # CHECK-NEXT: lit.ownership.use [[RAW_CLOSURE]]
     # CHECK-NEXT: [[WRAPPER:%.*]] = lit.var.decl "my_closure" var : !lit.ref<!lit.struct<[[T:#.*]] <:[[TRAIT]] {{.*}}, :origin.set {}>>, mut *"[[L1:.*]]">
-    # CHECK-NEXT: lit.call {{.*}}::@"def(y: Int) -> Int_{{.*}}"::@"__init__($0$)"[mut *"[[L0]]", mut *"[[L1]]"]<:[[TRAIT]] {{.*}}, :origin.set {}>([[RAW_CLOSURE]], [[WRAPPER]]) : !lit.generator<[2]("impl": !lit.ref<!kgen.closure<@{{.*}}::make_closure{{.*}}", "my_closure" nonescaping>, mut *[0,0]> owned_in_mem, |, ?, "self": !lit.ref<!lit.struct<[[T]] <:[[TRAIT]] {{.*}}, :origin.set {}>>, mut *[0,1]> byref_result) -> !kgen.none>
+    # CHECK-NEXT: lit.call {{.*}}::@"def(y: Int) -> Int_{{.*}}"::@"__init__($0$)"[mut *"[[L0]]", mut *"[[L1]]"]<:[[TRAIT]] {{.*}}, :origin.set {}>([[REBOUND_CLOSURE]], [[WRAPPER]]) : !lit.generator<[2]("impl": !lit.ref<struct<(!Int1) memoryOnly>, mut *[0,0]> owned_in_mem, |, ?, "self": !lit.ref<!lit.struct<[[T]] <:[[TRAIT]] {{.*}}, :origin.set {}>>, mut *[0,1]> byref_result) -> !kgen.none>
 
     def my_closure(y: Int) {var x} -> Int:
         return x + y
@@ -268,9 +269,8 @@ def nested[
 # CHECK: [[TRAIT:!Int_Movable_ImplicitlyDestructible_AnyType_Copyable_ImplicitlyCopyable.*]] = !lit.trait<@"def(z: Int) -> Int", @{{.*}}::@Movable, @{{.*}}::@ImplicitlyDestructible, @{{.*}}::@AnyType, @{{.*}}::@Copyable, @{{.*}}::@ImplicitlyCopyable>
 
 
-# CHECK: kgen.struct.generator @"bindIt({{.*}})::myclosure"
-# CHECK-SAME: <CAPTURES: !kgen.param_closure<@{{.*}}::bindIt(::Int,::Int)" "myclosure">>:
-# CHECK-SAME: [[TRAIT]] = !kgen.closure<@{{.*}}::bindIt({{.*}})", "myclosure" nonescaping>{
+# CHECK: kgen.struct.generator @"bindIt(::Int,::Int)::myclosure"
+# CHECK-SAME: : [[TRAIT]] = struct_inst<"bindIt(::Int,::Int)::myclosure"{{.*}}memoryOnly>{
 # CHECK: kgen.conformance @"{{.*}}::AnyType" {
 # CHECK-NEXT: }
 # CHECK: kgen.conformance @"{{.*}}::ImplicitlyDestructible" {
@@ -291,9 +291,9 @@ def bindIt(x: Int, y: Int) -> Int:
 
 # CHECK: kgen.struct.generator @"bindIt()::myclosure"
 # CHECK: kgen.witness "__call__{{.*}}" : !lit.generator<<"my_param": !AnyType>
-# CHECK-SAME: [1](!lit.ref<!kgen.closure<@{{.*}}::bindIt()", "myclosure" nonescaping>, mut *[0,0]> read_mem, |, "z": !Int) capturing -> !kgen.none
-# CHECK-SAME:> = #kgen.closure.symbol<@{{.*}}::bindIt()", "myclosure", #kgen.closure_method<call>
-# CHECK-SAME:, <:!AnyType ?, :!kgen.param_closure<@{{.*}}::bindIt()" "myclosure"> CAPTURES>>
+# CHECK-SAME: [1](!lit.ref<struct_inst<"bindIt()::myclosure" memoryOnly>, mut *[0,0]> read_mem, |, "z": !Int) capturing -> !kgen.none
+# CHECK-SAME:> = #kgen.closure.symbol<@"bindIt()", "myclosure", #kgen.closure_method<call>
+# CHECK-SAME:, <:!AnyType ?>>
 
 
 # CHECK: lit.file_module
@@ -346,7 +346,7 @@ def make_closure(x: Int) -> Int:
 
 
 def nonemptyOriginSet(mut byRefMut: String):
-    # CHECK: lit.call {{.*}}::@"def() -> None_{{.*}}"::@"__init__({{.*}})"[{{.*}}]<:[[TRAIT]] {{.*}}, :origin.set {mut *"byRefMut`"}>
+    # CHECK: lit.call {{.*}}::@"def() -> None_{{.*}}"::@"__init__($0$)"[{{.*}}]<:[[TRAIT]] {{.*}}, :origin.set {}>
     def myclosure() {mut byRefMut}:
         pass
 
@@ -538,7 +538,7 @@ def giveIt(z: Int, cm: CopyMe, var one: OneOfAKind):
 # CHECK-NEXT: lit.alias.decl T: !TrivialRegisterPassable
 
 # COM: The captured parameter becomes a parameter of the struct generator
-# CHECK: kgen.struct.generator @"makeIt{{.*}}::parametric"<{{.*}}, T: !TrivialRegisterPassable>
+# CHECK: kgen.struct.generator @"makeIt{{.*}}::parametric"<T: !TrivialRegisterPassable>
 # CHECK: kgen.witness "T" : !TrivialRegisterPassable = T
 
 
@@ -1606,3 +1606,48 @@ def top():
         pass
 
     bind[String,String,type_of(closureConcrete)](closureConcrete)
+
+# // -----
+
+# COM: Origins are properly captured and lifted into the struct generator
+
+def can_mutate[FuncType: def() -> None](impl: FuncType):
+   impl()
+
+def demo[o: Origin[mut=True]](
+   ptr: UnsafePointer[
+       Int,
+       o,
+       address_space=AddressSpace.GENERIC,
+   ],
+):
+   # CHECK: kgen.struct.generator @"demo{{.*}}::write"<*"o._mlir_origin`": origin<1>, o: !lit.struct<#Origin <:!Bool {:i1 1}, :origin<1> *"o._mlir_origin`">>>
+   # CHECK-SAME: struct_inst<"demo{{.*}}::write"[*"o._mlir_origin`", o]<:origin<1> *"o._mlir_origin`", :!lit.struct<#Origin <:!Bool {:i1 1}, :origin<1> *"o._mlir_origin`">> o>
+   def write() {read ptr}:
+       ptr.store(0, 3)
+   can_mutate(write)
+
+
+# // -----
+
+# COM: If a mutable origin is captured but only in the context of a cast to immutable, do not lift and bind a mutable origin to the closure struct
+
+def must_be_read_only[Mut: Bool, //, o: Origin[mut=Mut], FuncType: def() -> None](impl: FuncType, ptr: UnsafePointer[Int, o, address_space=AddressSpace.GENERIC]):
+   impl()
+
+def demo[o: Origin[mut=True]](
+   ptr: UnsafePointer[
+       Int,
+       o,
+       address_space=AddressSpace.GENERIC,
+   ],
+):
+   var immut_ptr = ptr.as_immutable()
+
+   # CHECK: kgen.struct.generator @"demo{{.*}}::read"<*"o._mlir_origin`": origin<0>, *"immut_ptr{{.*}}": origin<0>>
+   # CHECK-SAME: struct_inst<"demo{{.*}}::read"[*"o._mlir_origin`", *"immut_ptr{{.*}}"]<:origin<0> *"o._mlir_origin`", :origin<0> *"immut_ptr{{.*}}">
+
+   def read() {read immut_ptr}:
+       _ = immut_ptr[0]
+
+   must_be_read_only(read, immut_ptr)

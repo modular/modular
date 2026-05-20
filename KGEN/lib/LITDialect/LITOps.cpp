@@ -1467,10 +1467,10 @@ LogicalResult RefStructGEROp::verify() {
       return emitOpError("invalid origin or address space");
   } else {
     // Index access allows both StructType and ParamType
-    if (!isa<StructType, KGEN::ParamType, KGEN::ClosureType>(elementType))
+    if (!isa<StructType, KGEN::StructType, KGEN::ParamType>(elementType))
       return emitOpError(
-          "index access requires container to be a reference to a struct or "
-          "parametric type or closure type");
+          "index access requires container to be a reference to a struct "
+          "or parametric type");
   }
 
   return success();
