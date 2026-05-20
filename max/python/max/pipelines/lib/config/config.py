@@ -157,7 +157,6 @@ _AUTO_ENABLE_DEVICE_GRAPH_CAPTURE_ARCHITECTURES = (
     "DeepseekV32ForCausalLM",
     "DeepseekV3ForCausalLMNextN",
     "KimiK25ForConditionalGeneration",
-    "Gemma4ForConditionalGeneration",
     "UnifiedEagleLlama3ForCausalLM",
     "UnifiedMTPDeepseekV3ForCausalLM",
     "Eagle3DeepseekV2ForCausalLM",

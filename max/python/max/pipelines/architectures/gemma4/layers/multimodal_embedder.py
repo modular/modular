@@ -15,8 +15,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
+
 from max.dtype import DType
-from max.graph import DeviceRef, TensorValue
+from max.graph import DeviceRef, ShardingStrategy, TensorValue
 from max.nn.layer import Module
 from max.nn.linear import Linear
 from max.pipelines.architectures.gemma4.layers.rms_norm import Gemma4RMSNorm
@@ -51,6 +53,11 @@ class Gemma4MultimodalEmbedder(Module):
             eps: Epsilon for the RMS normalization.
         """
         super().__init__()
+        self.multimodal_hidden_size = multimodal_hidden_size
+        self.text_hidden_size = text_hidden_size
+        self.dtype = dtype
+        self.eps = eps
+
         self.embedding_projection = Linear(
             in_dim=multimodal_hidden_size,
             out_dim=text_hidden_size,
@@ -78,3 +85,52 @@ class Gemma4MultimodalEmbedder(Module):
         """
         normed = self.embedding_pre_projection_norm(inputs_embeds)
         return self.embedding_projection(normed)
+
+    @property
+    def sharding_strategy(self) -> ShardingStrategy | None:
+        return self.embedding_projection.sharding_strategy
+
+    @sharding_strategy.setter
+    def sharding_strategy(self, strategy: ShardingStrategy) -> None:
+        self.embedding_projection.weight.sharding_strategy = strategy
+        self.embedding_pre_projection_norm.sharding_strategy = strategy
+
+    def shard(
+        self, devices: Iterable[DeviceRef]
+    ) -> list[Gemma4MultimodalEmbedder]:
+        assert self.sharding_strategy
+
+        embedding_projection_shards = self.embedding_projection.weight.shard(
+            devices
+        )
+        embedding_pre_projection_norm_shards = (
+            self.embedding_pre_projection_norm.shard(devices)
+        )
+
+        shards = []
+        for (
+            device,
+            emb_proj_weight_shard,
+            emb_pre_proj_norm_weight_shard,
+        ) in zip(
+            devices,
+            embedding_projection_shards,
+            embedding_pre_projection_norm_shards,
+            strict=False,
+        ):
+            sharded = Gemma4MultimodalEmbedder(
+                self.multimodal_hidden_size,
+                self.text_hidden_size,
+                dtype=self.dtype,
+                device=device,
+                eps=self.eps,
+            )
+
+            sharded.embedding_projection.weight = emb_proj_weight_shard
+            sharded.embedding_pre_projection_norm = (
+                emb_pre_proj_norm_weight_shard
+            )
+
+            shards.append(sharded)
+
+        return shards
