@@ -594,11 +594,11 @@ def _hex_digits_to_hex_chars(
         comptime S = StringSlice[origin_of(items)]
         var ptr = items.unsafe_ptr()
         ptr.store(_hex_digits_to_hex_chars(UInt32(ord("🔥"))))
-        assert_equal("0001f525", S(ptr=ptr, length=8))
+        assert_equal("0001f525", S(unsafe_from_utf8=Span(ptr=ptr, length=8)))
         ptr.store(_hex_digits_to_hex_chars(UInt16(ord("你"))))
-        assert_equal("4f60", S(ptr=ptr, length=4))
+        assert_equal("4f60", S(unsafe_from_utf8=Span(ptr=ptr, length=4)))
         ptr.store(_hex_digits_to_hex_chars(UInt8(ord("Ö"))))
-        assert_equal("d6", S(ptr=ptr, length=2))
+        assert_equal("d6", S(unsafe_from_utf8=Span(ptr=ptr, length=2)))
     ```
     """
     comptime size = size_of[decimal.dtype]()

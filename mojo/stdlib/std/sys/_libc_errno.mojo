@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.ffi import c_int, external_call
+from std.ffi import CStringSlice, c_int, external_call
 from std.sys.info import CompilationTarget, platform_map
 
 
@@ -420,7 +420,11 @@ struct ErrNo(Equatable, TrivialRegisterPassable, Writable):
         var ptr = external_call[
             "strerror", UnsafePointer[Byte, MutExternalOrigin]
         ](self.value)
-        var string = StringSlice(unsafe_from_utf8_ptr=ptr)
+        var string = StringSlice(
+            unsafe_from_utf8=CStringSlice(
+                unsafe_from_ptr=ptr.bitcast[Int8]().unsafe_mut_cast[False]()
+            )
+        )
         string.write_to(writer)
 
     @always_inline

@@ -157,7 +157,9 @@ struct _fdopen[mode: StaticString = "a"](ImplicitlyCopyable, RegisterPassable):
         # Copy the buffer (excluding the delimiter itself) into a Mojo String.
         var s = String(
             StringSlice[MutExternalOrigin](
-                ptr=buffer.unsafe_value(), length=bytes_read - 1
+                unsafe_from_utf8=Span(
+                    ptr=buffer.unsafe_value(), length=bytes_read - 1
+                )
             )
         )
         # Explicitly free the buffer using free() instead of the Mojo allocator.

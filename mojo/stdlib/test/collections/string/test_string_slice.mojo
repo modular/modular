@@ -986,24 +986,6 @@ def test_count() raises:
     assert_equal(StringSlice("aaaaaa").count("aa"), 3)
 
 
-def test_string_slice_from_pointer() raises:
-    var a = StringSlice("AAA")
-    var b = StaticString(unsafe_from_utf8_ptr=a.unsafe_ptr())
-    assert_equal(3, a.byte_length())
-    assert_equal(3, b.byte_length())
-    var c = "ABCD"
-    var d = StringSlice(unsafe_from_utf8_ptr=c.as_c_string_slice().unsafe_ptr())
-    var e = StringSlice(unsafe_from_utf8_ptr=c.unsafe_ptr())
-    assert_equal(4, c.byte_length())
-    assert_equal(4, d.byte_length())
-    assert_equal(4, e.byte_length())
-    assert_equal("A", d[byte=0])
-    assert_equal("B", d[byte=1])
-    assert_equal("C", d[byte=2])
-    assert_equal("D", d[byte=3])
-    assert_equal("D", d[byte=d.byte_length() - 1])
-
-
 def test_replace() raises:
     assert_equal(StringSlice("").replace("", "hello world"), "")
     assert_equal(

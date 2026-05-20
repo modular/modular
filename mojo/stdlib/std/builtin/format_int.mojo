@@ -276,7 +276,11 @@ def _write_int[
         #   Support printing non-null-terminated strings on GPU and switch
         #   back to this code without a workaround.
         # ptr=digit_chars_array,
-        writer.write(StringSlice(ptr=zero_buf.unsafe_ptr(), length=1))
+        writer.write(
+            StringSlice(
+                unsafe_from_utf8=Span(ptr=zero_buf.unsafe_ptr(), length=1)
+            )
+        )
 
         return
 

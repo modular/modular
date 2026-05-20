@@ -186,6 +186,15 @@ This version is still a work in progress.
 - `String` and `StringSlice` now have a keyword only `string[codepoint=...]`
   that indexes by unicode codepoint offsets.
 
+- Several `StringSlice` constructors are now deprecated.
+
+  - `StringSlice(ptr=..., length=...)` is deprecated; use
+    `StringSlice(unsafe_from_utf8=Span(...))` instead.
+  - `StringSlice(unsafe_from_utf8_ptr=...)` (taking a raw nul-terminated
+    `UnsafePointer[Byte]` or `UnsafePointer[c_char]`) is deprecated; construct
+    a `CStringSlice` from the pointer and use the new
+    `StringSlice(unsafe_from_utf8=CStringSlice(...))` constructor instead.
+
 - PythonObject convertibility got simplified and cleaned up. When working with
   types that required custom conversions to `PythonObject`, we used to write
   code like this:

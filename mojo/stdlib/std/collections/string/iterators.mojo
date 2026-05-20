@@ -166,7 +166,9 @@ struct CodepointSliceIter[
             #   to contain valid UTF-8.
             var curr_ptr = self._slice.unsafe_ptr()
             var byte_len = _utf8_first_byte_sequence_length(curr_ptr[])
-            return StringSlice[Self.origin](ptr=curr_ptr, length=byte_len)
+            return StringSlice[Self.origin](
+                unsafe_from_utf8=Span(ptr=curr_ptr, length=byte_len)
+            )
         else:
             return None
 
@@ -218,7 +220,9 @@ struct CodepointSliceIter[
                 byte_len += 1
                 back_ptr -= 1
 
-            return StringSlice[Self.origin](ptr=back_ptr, length=byte_len)
+            return StringSlice[Self.origin](
+                unsafe_from_utf8=Span(ptr=back_ptr, length=byte_len)
+            )
         else:
             return None
 
@@ -670,7 +674,9 @@ struct GraphemeSliceIter[
         self._slice._slice._len -= consumed
         self._back_safe_known = False
 
-        return StringSlice[Self.origin](ptr=start_ptr, length=consumed)
+        return StringSlice[Self.origin](
+            unsafe_from_utf8=Span(ptr=start_ptr, length=consumed)
+        )
 
     def peek_back(mut self) -> Optional[StringSlice[Self.origin]]:
         """Return the last grapheme cluster without advancing the iterator.
@@ -689,8 +695,10 @@ struct GraphemeSliceIter[
             return None
         var grapheme_start = self._grapheme_start_of_last_cluster(total)
         return StringSlice[Self.origin](
-            ptr=self._slice.unsafe_ptr() + grapheme_start,
-            length=total - grapheme_start,
+            unsafe_from_utf8=Span(
+                ptr=self._slice.unsafe_ptr() + grapheme_start,
+                length=total - grapheme_start,
+            )
         )
 
     def next_back(mut self) -> Optional[StringSlice[Self.origin]]:
@@ -722,8 +730,10 @@ struct GraphemeSliceIter[
             return None
         var grapheme_start = self._grapheme_start_of_last_cluster(total)
         var result = StringSlice[Self.origin](
-            ptr=self._slice.unsafe_ptr() + grapheme_start,
-            length=total - grapheme_start,
+            unsafe_from_utf8=Span(
+                ptr=self._slice.unsafe_ptr() + grapheme_start,
+                length=total - grapheme_start,
+            )
         )
         # Shrink the range from the end. Data pointer is unchanged, so the
         # cached `_back_safe_start` (if set) remains valid for future calls

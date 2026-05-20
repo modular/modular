@@ -16,7 +16,13 @@ from std.collections.string.string_slice import _to_string_list
 from std.os import abort
 from std.pathlib import Path
 from std.ffi import _get_dylib_function as _ffi_get_dylib_function
-from std.ffi import _Global, OwnedDLHandle, _try_find_dylib, c_char
+from std.ffi import (
+    CStringSlice,
+    _Global,
+    OwnedDLHandle,
+    _try_find_dylib,
+    c_char,
+)
 
 from std.memory import stack_allocation
 
@@ -381,7 +387,7 @@ struct Device(Writable):
             ]()(driver_version_buffer, UInt32(max_length))
         )
         var driver_version_list = StringSlice(
-            unsafe_from_utf8_ptr=driver_version_buffer
+            unsafe_from_utf8=CStringSlice(unsafe_from_ptr=driver_version_buffer)
         ).split(".")
         return DriverVersion(_to_string_list(driver_version_list))
 

@@ -23,7 +23,7 @@ from std.memory import (
     memcpy,
 )
 from std.memory.alloc import alloc, Layout
-from std.ffi import external_call
+from std.ffi import CStringSlice, external_call
 import std.format._utils as fmt
 from std.sys import is_gpu
 from std.sys.info import size_of, align_of
@@ -130,7 +130,11 @@ struct StackTrace(Copyable, Movable, Writable):
             writer: The object to write to.
         """
         writer.write_string(
-            StringSlice(unsafe_from_utf8_ptr=self._data.unsafe_ptr())
+            StringSlice(
+                unsafe_from_utf8=CStringSlice(
+                    unsafe_from_ptr=self._data.unsafe_ptr().bitcast[Int8]()
+                )
+            )
         )
 
     def write_repr_to(self, mut writer: Some[Writer]):

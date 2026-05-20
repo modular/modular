@@ -512,7 +512,9 @@ struct _DLHandle(Boolable, ImplicitlyCopyable, RegisterPassable):
         if not handle:
             var error_message = dlerror()
             var message = StringSlice(
-                unsafe_from_utf8_ptr=error_message.value()
+                unsafe_from_utf8=CStringSlice(
+                    unsafe_from_ptr=error_message.value().as_immutable()
+                )
             ) if error_message else {}
             raise Error("dlopen failed: ", message)
         return _DLHandle(handle)
@@ -628,7 +630,7 @@ struct _DLHandle(Boolable, ImplicitlyCopyable, RegisterPassable):
         if not opaque_function_ptr:
             abort(
                 t"symbol not found: "
-                t"{StringSlice(unsafe_from_utf8_ptr=cstr_name)}"
+                t"{StringSlice(unsafe_from_utf8=CStringSlice(unsafe_from_ptr=cstr_name))}"
             )
 
         return UnsafePointer(to=opaque_function_ptr.value()).bitcast[
@@ -677,7 +679,9 @@ struct _DLHandle(Boolable, ImplicitlyCopyable, RegisterPassable):
         debug_assert(
             Bool(self.handle),
             "Dylib handle is null when loading symbol: ",
-            StringSlice(unsafe_from_utf8_ptr=cstr_name),
+            StringSlice(
+                unsafe_from_utf8=CStringSlice(unsafe_from_ptr=cstr_name)
+            ),
         )
 
         # Follow the dance described in
@@ -706,7 +710,7 @@ struct _DLHandle(Boolable, ImplicitlyCopyable, RegisterPassable):
             # symbols should specify a nullable pointer as the result_type.
             abort(
                 t"symbol resolved to NULL: "
-                t"{StringSlice(unsafe_from_utf8_ptr=cstr_name)}"
+                t"{StringSlice(unsafe_from_utf8=CStringSlice(unsafe_from_ptr=cstr_name))}"
             )
 
         var ptr: UnsafePointer[result_type, MutAnyOrigin] = res.value()

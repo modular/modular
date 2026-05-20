@@ -29,6 +29,7 @@ from std.ffi import (
     external_call,
     _DLHandle,
     OwnedDLHandle,
+    CStringSlice,
     c_char,
     c_double,
     c_int,
@@ -294,10 +295,12 @@ struct PythonVersion(ImplicitlyCopyable, RegisterPassable):
 
 def _py_get_version(lib: _DLHandle) -> StaticString:
     return StaticString(
-        unsafe_from_utf8_ptr=lib.call[
-            "Py_GetVersion",
-            _CPointer[c_char, StaticConstantOrigin],
-        ]().value()
+        unsafe_from_utf8=CStringSlice(
+            unsafe_from_ptr=lib.call[
+                "Py_GetVersion",
+                _CPointer[c_char, StaticConstantOrigin],
+            ]().value()
+        )
     )
 
 
@@ -1493,10 +1496,12 @@ struct CPython(Defaultable, Movable):
         # TODO(MOCO-772) Allow raises to propagate through function pointers
         # and make this initialization a raising function.
         self.init_error = StaticString(
-            unsafe_from_utf8_ptr=external_call[
-                "KGEN_CompilerRT_Python_SetPythonPath",
-                UnsafePointer[c_char, StaticConstantOrigin],
-            ]()
+            unsafe_from_utf8=CStringSlice(
+                unsafe_from_ptr=external_call[
+                    "KGEN_CompilerRT_Python_SetPythonPath",
+                    UnsafePointer[c_char, StaticConstantOrigin],
+                ]()
+            )
         )
 
         var python_lib = getenv("MOJO_PYTHON_LIBRARY")
@@ -2663,7 +2668,9 @@ struct CPython(Defaultable, Movable):
         if length == Py_ssize_t(-1):
             return None
         return StringSlice[ImmutAnyOrigin](
-            ptr=ptr.value().bitcast[Byte](), length=Int(length)
+            unsafe_from_utf8=Span(
+                ptr=ptr.value().bitcast[Byte](), length=Int(length)
+            )
         )
 
     # ===-------------------------------------------------------------------===#
