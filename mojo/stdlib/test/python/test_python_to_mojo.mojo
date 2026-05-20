@@ -106,9 +106,13 @@ def test_string_from_non_str_object() raises:
 
 
 def test_string_empty_and_unicode() raises:
-    # Edge cases on the fast path: empty string and non-ASCII bytes.
+    # Edge cases on the fast path: empty, 2-byte UTF-8, 4-byte UTF-8 (emoji),
+    # and embedded NUL (verifies the byte length from `PyUnicode_AsUTF8AndSize`
+    # is honored, not strlen).
     assert_equal(String(py=PythonObject("")), "")
     assert_equal(String(py=PythonObject("héllo")), "héllo")
+    assert_equal(String(py=PythonObject("\U0001F525")), "\U0001F525")
+    assert_equal(String(py=PythonObject("foo\0bar")).byte_length(), 7)
 
 
 def main() raises:
