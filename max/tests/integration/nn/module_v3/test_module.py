@@ -762,7 +762,7 @@ def test_compile_with_weights(lazy_test_module: TestModule) -> None:
     assert not any(param.real for param in parameters.values())
     assert not any(param.real for _, param in test_module.parameters)
 
-    input = driver.Buffer.zeros([3, 3], dtype, device)
+    input = Tensor(storage=driver.Buffer.zeros([3, 3], dtype, device))
     _ = compiled(input)
 
     assert not any(param.real for param in parameters.values())

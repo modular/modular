@@ -151,7 +151,7 @@ class MPNetPipelineModel(PipelineModel[TextContext]):
             "MPNet does not support preparing next tokens inputs."
         )
 
-    def load_model(self) -> Callable[..., list[Tensor]]:
+    def load_model(self) -> Callable[..., tuple[Tensor, ...]]:
         if self.adapter:
             state_dict = self.adapter(dict(self.weights.items()))
         else:

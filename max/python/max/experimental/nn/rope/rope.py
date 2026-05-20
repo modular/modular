@@ -87,7 +87,7 @@ def positional_embedding(
 
 
 @module_dataclass
-class RotaryEmbedding(Module[[Tensor, DimLike], Tensor]):
+class RotaryEmbedding(Module[..., Tensor]):
     """Applies Rotary Positional Embeddings (RoPE) to input tensors.
 
     RoPE encodes positional information using complex-valued rotations applied

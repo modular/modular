@@ -407,7 +407,7 @@ class TestCompiledModelAPI:
     buffer execution, and signal_buffers for multi-GPU collectives.
     """
 
-    def _compile_identity(self) -> CompiledModel:
+    def _compile_identity(self) -> CompiledModel[[Tensor], Tensor]:
         W = Tensor.ones([4], dtype=DType.float32, device=CPU())
         model = _IdentityModule(W=W)
         input_type = TensorType(DType.float32, [3, 8], CPU())
@@ -462,7 +462,7 @@ class TestCompiledModelAPI:
         """Calling with too few args raises an error."""
         compiled = self._compile_identity()
         with pytest.raises(ValueError) as excinfo:
-            compiled()  # identity needs 1 arg, gave 0
+            compiled()  # type: ignore[call-arg]
         message = str(excinfo.value)
         assert "Unable to flatten input arguments" in message
         assert "Expected 1 arguments, got 0" in message

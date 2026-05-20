@@ -63,7 +63,7 @@ from max.nn.comm.allreduce import Signals
 from max.profiler import Tracer
 
 
-class CompiledModel:
+class CompiledModel(Generic[_P, _R]):
     """Compiled model returned by :meth:`Module.compile`.
 
     Provides two execution paths:
@@ -109,8 +109,13 @@ class CompiledModel:
         """Signal buffers for multi-GPU collectives (empty for single-GPU)."""
         return self._signal_buffers
 
-    def __call__(self, *args: Any) -> Any:
+    def __call__(self, *args: _P.args, **kwargs: _P.kwargs) -> _R:
         """Tensor-in, Tensor-out execution (distributed-aware)."""
+        if kwargs:
+            raise TypeError(
+                "CompiledModel does not accept keyword arguments; "
+                f"got {sorted(kwargs)}."
+            )
         flat_args = flatten_input_buffers(args, self._input_slots)
         flat_args.extend(self._signal_buffers)
         try:
@@ -918,7 +923,7 @@ class Module(Generic[_P, _R]):
         weights: Mapping[str, DLPackArray] | None = None,
         custom_extensions: Iterable[Path] = (),
         auto_cast: bool = False,
-    ) -> CompiledModel:
+    ) -> CompiledModel[_P, _R]:
         """Compiles the module to an optimized executable through graph tracing.
 
         This method performs symbolic tracing of the module's ``forward`` method
