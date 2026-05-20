@@ -496,7 +496,7 @@ _MHA_CAUSAL_MASK_AMD_DTYPES = {
 _MLA_DECODE_PAGED_CONFIGS = [
     "256",
     "128",
-    "64",
+    # "64",  # QUA-375 / KERN-2912: disabled due to nondeterminism
 ]
 
 [
