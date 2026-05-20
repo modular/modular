@@ -16,8 +16,7 @@
 # Mirrors `tuning_table_mi355_fp8.yaml`. The in-gate sweep drives the
 # 4-wave kernel family via TUNE_4WAVE_KERNEL + TUNE_4WAVE_BM / BN / BK
 # / SWIZZLE (when AUTOTUNING_MODE=True). For bf16, TUNE_4WAVE_KERNEL=3
-# routes to `amd_4wave_scheduled_matmul` (the hand-written body is
-# FP8-only); the BK knob distinguishes BK=64 vs BK=128.
+# routes to `structured_4wave_matmul` the BK knob distinguishes BK=64 vs BK=128.
 #
 # Run: `python kbench.py tuning_table_mi355_bf16.yaml`. The output CSV
 # is consumed by kdiff to pick the per-(N, K, M) winner; the winners

@@ -4640,7 +4640,31 @@ def conv_gpu[
             ):
                 return
 
-        # AMD GPU path: use MIOpen for conv2d.
+        # AMD MI355X (CDNA4): try the 4-wave implicit-GEMM conv first;
+        # falls back to MIOpen for shapes / configs the kernel can't
+        # cover. Beats MIOpen by ~1.2-2.6x on FLUX VAE / ResNet shapes
+        # on MI355X (see `bench_amd_4wave_conv_vs_miopen.mojo`).
+        comptime if has_amd_gpu_accelerator():
+            from nn.conv.gpu.amd.dispatch import dispatch_amd_4wave_conv2d
+
+            if dispatch_amd_4wave_conv2d[
+                input_type,
+                filter_type,
+                output_type,
+                filter_is_fcrs,
+            ](
+                input,
+                filter,
+                output,
+                rebind[IndexList[2]](stride),
+                rebind[IndexList[2]](dilation),
+                rebind[IndexList[2]](symmetric_padding),
+                num_groups,
+                ctx,
+            ):
+                return
+
+        # AMD GPU path: fall back to MIOpen for conv2d.
         comptime if has_amd_gpu_accelerator():
             _conv_miopen[
                 maybe_epilogue_func=maybe_epilogue_func,

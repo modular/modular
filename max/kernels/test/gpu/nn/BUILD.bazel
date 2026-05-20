@@ -9,6 +9,11 @@ _EXTRA_CONSTRAINTS = {
     }),
     "test_cudnn_conv.mojo": ["//:nvidia_gpu"],
     "test_miopen_conv.mojo": ["//:amd_gpu"],
+    # 4-wave implicit-GEMM conv inherits the matmul's MI355X-only MFMA
+    # + chiplet/L2 swizzle; not compileable on other AMD parts.
+    "test_amd_4wave_conv_dtypes.mojo": ["//:mi355_gpu"],
+    "test_amd_4wave_conv_miopen.mojo": ["//:mi355_gpu"],
+    "test_amd_4wave_conv_rt_hw.mojo": ["//:mi355_gpu"],
     "test_conv2d_sm100.mojo": select({
         "//:b200_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
@@ -274,8 +279,49 @@ _FILECHECK_TESTS = [
             "test_mla_prefill_blockscale_paged.mojo",
             "test_mla_prefill_per_token_scale_paged.mojo",
             "_paged_prefill_test_utils.mojo",
+            # Dtype-parameterized 4-wave conv test (explicit per-dtype
+            # targets are declared below).
+            "test_amd_4wave_conv_dtypes.mojo",
         ],
     )
+]
+
+# Dtype-parameterized 4-wave conv correctness tests. Single source
+# file (`test_amd_4wave_conv_dtypes.mojo`); one `mojo_test` target per
+# dtype, each with `-D DTYPE=<dtype>`. Black-box correctness check of
+# `amd_4wave_conv` vs `structured_4wave_matmul` on a host-materialized
+# im2col matrix, asserting byte-identity across all supported dtypes
+# (FP8 + BF16 + FP16). MI355X only.
+[
+    mojo_test(
+        name = "test_amd_4wave_conv_dtypes_" + dtype + ".mojo.test",
+        size = "large",
+        srcs = ["test_amd_4wave_conv_dtypes.mojo"],
+        copts = [
+            "-D",
+            "DTYPE=" + dtype,
+        ],
+        exec_properties = {
+            "test.resources:gpu-memory": "3",
+        },
+        tags = ["gpu"],
+        target_compatible_with = [
+            "//:has_gpu",
+            "//:mi355_gpu",
+        ],
+        deps = [
+            "//max:internal_utils",
+            "//max:linalg",
+            "//max:nn",
+            "//max:testdata",
+            "@mojo//:std",
+        ],
+    )
+    for dtype in [
+        "float8_e4m3fn",
+        "bfloat16",
+        "float16",
+    ]
 ]
 
 # test_mha_causal_mask.mojo split by depth and optional pair-CTA flag.

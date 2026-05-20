@@ -335,6 +335,17 @@ def _strip_drain_fuse_blocks(
                 global_load_1=(
                     b.global_load_1 if not b.global_load_1_prefetch else OpDesc.none()
                 ),
+                # Drain lgkm before each epilogue block's `pre_op` so the
+                # MMA's input registers (loaded by prior block's frag-
+                # loads) are committed before this block's MMA reads
+                # them. The main-loop equivalent rides on
+                # `inter_block_lgkm_drain` and `entry_wait_lgkm` paired
+                # with `entry_wait`; the epilogue derivation strips
+                # entry_wait, so emit the lgkm drain explicitly here.
+                # Without it, MMA fires with stale registers on multi-
+                # K-iter shapes (caught by logit verification on Olmo /
+                # phi-4 / DeepSeek-V2-Lite / FLUX.2 BF16).
+                entry_wait_lgkm=OpDesc.wait_lgkm[0](),
                 # Carry minimal_barriers / omit_mma_set_prio flags forward
                 # from the source block so the epilogue inherits the same
                 # barrier+setprio layout as the main loop. Without this,

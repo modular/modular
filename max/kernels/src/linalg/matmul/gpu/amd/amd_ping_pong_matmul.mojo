@@ -13,7 +13,7 @@
 """Structured ping-pong matmul for AMD MI355X (CDNA4).
 
 Entry point: AMDPingPongMatmul.run()
-Host launcher: structured_ping_pong_matmul()
+Host launcher: amd_ping_pong_matmul()
 """
 
 from std.math import ceildiv
@@ -403,9 +403,17 @@ struct AMDPingPongMatmul[
         comptime use_fp8_row_major = _is_fp8
         comptime byte_swizzle = Self.byte_swizzle
 
-        var a_block_gmem = a_gmem.tile[BM, K](block_idx.y, 0)
-        var b_block_gmem = b_gmem.tile[BN, K](block_idx.x, 0)
-
+        # Pre-slice the per-block view: the SRD base advances to the
+        # block's origin, so `load_tile(m_offset, k_offset)` works in
+        # block-local coords. Avoids the +2 SGPR-uniform `m_anchor +
+        # m_offset` and `k_anchor + k_offset` add ops at every
+        # `load_tile` call site — these compound across the epilogue's
+        # post-loop drain (+6 waitcnts, +0.85% FP8 8K³ regression
+        # observed otherwise). The conv `TileLoaderLDSIm2col` sibling
+        # still uses the anchor form because conv's im2col address
+        # math can't fold the block origin into the SRD base.
+        var a_block_gmem = a_gmem.tile[BM, K](Int(block_idx.y), 0)
+        var b_block_gmem = b_gmem.tile[BN, K](Int(block_idx.x), 0)
         var a_loader = TileLoaderLDS[
             Self.in_type,
             half_BM,
@@ -470,8 +478,8 @@ struct AMDPingPongMatmul[
         def load_a[stage: Int, which: Int](k: Int):
             a_loader.load_tile(
                 a_load_tiles[stage][which],
-                src_row=which * half_BM,
-                src_col=k,
+                m_offset=which * half_BM,
+                k_offset=k,
             )
 
         @always_inline
@@ -479,8 +487,8 @@ struct AMDPingPongMatmul[
         def load_b[stage: Int, which: Int](k: Int):
             b_loader.load_tile(
                 b_load_tiles[stage][which],
-                src_row=which * half_BN,
-                src_col=k,
+                m_offset=which * half_BN,
+                k_offset=k,
             )
 
         # === MMA tile lookup: [stage][subtile] -> SMEM tile ===
@@ -644,7 +652,7 @@ struct AMDPingPongMatmul[
 
 
 @always_inline
-def structured_ping_pong_matmul[
+def amd_ping_pong_matmul[
     a_type: DType,
     b_type: DType,
     c_type: DType,

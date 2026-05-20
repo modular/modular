@@ -981,28 +981,89 @@ def smem_mma_subtile[
 
 
 # ===----------------------------------------------------------------------=== #
+# TileLoader trait
+# ===----------------------------------------------------------------------=== #
+
+
+trait TileLoader(TrivialRegisterPassable):
+    """DRAM→LDS DMA loader contract for `tile_rows × tile_cols` half-tiles.
+
+    Implementations cooperate as a warp group to fill an SMEM half-tile
+    via `buffer_load_*_lds`. The kernel walks coords in `(m_offset,
+    k_offset)` GEMM-space; the loader translates them to physical
+    addresses internally. Conformers must be `TrivialRegisterPassable`
+    so the kernel can pass them by value through closures.
+
+    Two conformers ship today:
+
+    - `TileLoaderLDS` — linear 2D source. Used by matmul A/B operands
+      and by conv's B (filter) operand. The address math is
+      `addr = (m_offset * stride) + k_offset`.
+    - `TileLoaderLDSIm2col` — NHWC + in-line im2col. Used by conv's A
+      (input) operand. The address math decomposes
+      `m_offset → (n, h_out, w_out)` and `k_offset → (kh, kw, c)` at
+      load time; conv geometry (R, S, H, W, stride, dilation, pad) is
+      loader-internal state.
+
+    The kernel doesn't have to know which loader is in use — it just
+    advances `(m_offset, k_offset)` through the K-loop. That's the
+    point of the trait: the conv body and matmul body can share
+    everything except which loader they instantiate.
+    """
+
+    comptime dtype: DType
+    comptime tile_rows: Int
+    comptime tile_cols: Int
+
+    @always_inline
+    def load_tile(
+        self,
+        dst: SMemTile[Self.dtype, _, _],
+        m_offset: Int,
+        k_offset: Int,
+    ):
+        """Loads a half-tile from global memory into the SMEM dst.
+
+        Issues `num_iterations` `buffer_load_*_lds` bursts (per lane)
+        that together fill the `tile_rows × tile_cols` SMEM half-tile.
+        Each iteration costs one vmcnt-tracked outstanding load per
+        lane — the 4-wave software pipeline relies on this exact
+        accounting.
+
+        Args:
+            dst: Destination half-tile in SHARED address space, sized
+                `tile_rows × tile_cols`.
+            m_offset: Row offset (M dimension) of the sub-tile origin
+                in GEMM space.
+            k_offset: Column offset (K dimension) of the sub-tile
+                origin in GEMM space.
+        """
+        ...
+
+
+# ===----------------------------------------------------------------------=== #
 # TileLoaderLDS: Cooperative Global→LDS loader
 # ===----------------------------------------------------------------------=== #
 
 
 struct TileLoaderLDS[
-    dtype: DType,
-    tile_rows: Int,
-    tile_cols: Int,
+    dtype_: DType,
+    tile_rows_: Int,
+    tile_cols_: Int,
     stride: Int,
     num_loading_warps: Int,
     swizzle: Optional[Swizzle] = Optional[Swizzle](),
-    load_width: Int = simd_width_of[dtype](),
+    load_width: Int = simd_width_of[dtype_](),
     use_full_tile_width: Bool = False,
-](TrivialRegisterPassable):
+](TileLoader):
     """DRAM→LDS DMA expert for warp-group cooperative coord-indexed loads.
 
     Sibling of `SubTileLoaderLDS` (single-sub-tile TileTensor-indexed).
     This one coordinates a warp group (typically 8 warps) to cooperatively
-    fill a half-tile via coord-indexed iteration: `load_tile(dst, src_row,
-    src_col)` steps through `num_iterations` BK-wide rows, optionally
-    applying a per-iteration byte-space swizzle for LDS bank-conflict
-    avoidance. Matmul's DRAM→LDS pattern (ping-pong, etc.).
+    fill a half-tile via coord-indexed iteration: `load_tile(dst,
+    m_offset, k_offset)` steps through `num_iterations` BK-wide rows,
+    optionally applying a per-iteration byte-space swizzle for LDS
+    bank-conflict avoidance. Matmul's DRAM→LDS pattern (ping-pong, etc.).
 
     Uses stdlib `AMDBufferResource.load_to_lds` directly — no alias scope
     attached. Matmul's scheduling uses `s_sched_group_barrier` hints,
@@ -1014,15 +1075,28 @@ struct TileLoaderLDS[
     `SubTileLoaderLDS` instead.
 
     Parameters:
-        dtype: Element data type.
-        tile_rows: Height of each half-tile to load.
-        tile_cols: Width (K dimension) of each half-tile.
+        dtype_: Element data type. Re-bound to `dtype` at body scope to
+            match the `TileLoader` trait alias.
+        tile_rows_: Height of each half-tile to load. Re-bound to
+            `tile_rows` at body scope.
+        tile_cols_: Width (K dimension) of each half-tile. Re-bound to
+            `tile_cols` at body scope.
         stride: Row stride of the source GMEM tensor.
         num_loading_warps: Warps cooperating on each load (typically 8).
         swizzle: Optional byte-space swizzle for LDS bank conflicts.
         load_width: Elements per load (SIMD width).
         use_full_tile_width: FP8 row-major mode.
     """
+
+    # Body-level aliases re-bind the parametric `dtype_`/`tile_rows_`/
+    # `tile_cols_` (trailing-underscore naming required to avoid the
+    # struct-param vs trait-alias name clash) to the names the trait
+    # declares. Lets the `TileLoader` conformance machinery match, and
+    # lets the rest of this struct keep its `Self.dtype` / `Self.tile_*`
+    # references unchanged.
+    comptime dtype: DType = Self.dtype_
+    comptime tile_rows: Int = Self.tile_rows_
+    comptime tile_cols: Int = Self.tile_cols_
 
     comptime subtile_cols = Self.tile_cols if Self.use_full_tile_width else 32
     comptime threads_per_row = Self.subtile_cols // Self.load_width
@@ -1055,6 +1129,16 @@ struct TileLoaderLDS[
     var thread_col: Int
     var warp_id: Int
     var lane_id: Int
+    # Block anchor in (M, K) GEMM space. Caller-supplied at construction.
+    # `load_tile(m_offset, k_offset)` addresses `(m_anchor + m_offset,
+    # k_anchor + k_offset)` against the loader's SRD. Lets callers point
+    # the SRD at the full A/B tensor and absorb the per-block origin into
+    # the loader, so the K-loop callsite is uniform across split-K /
+    # multi-block kernels and across the conv `TileLoaderLDSIm2col`
+    # sibling. Defaults to 0 — passing a per-block-sliced `src` with
+    # zero anchors yields the legacy SRD-bounds-to-block behavior.
+    var m_anchor: Int
+    var k_anchor: Int
 
     @always_inline
     def __init__(
@@ -1062,11 +1146,33 @@ struct TileLoaderLDS[
         src: GMemTile[Self.dtype, _, _],
         warp_id: Int,
         lane_id: Int,
+        *,
+        m_anchor: Int = 0,
+        k_anchor: Int = 0,
     ):
-        """Build from a GMEM tile (block-level A or B tile)."""
+        """Builds the loader.
+
+        Args:
+            src: GMEM tile to source from. Pass the full A/B tensor and
+                set `m_anchor`/`k_anchor` to the per-block origin, or
+                pass a pre-sliced block tile with zero anchors (legacy
+                behavior). The full-tensor form lets the SRD's
+                `num_records` bound the actual allocation rather than
+                the block view — required for split-K kernels and
+                for parity with `TileLoaderLDSIm2col`.
+            warp_id: Warp identifier within the loading warp group.
+            lane_id: Lane identifier within the warp.
+            m_anchor: M-coordinate (row dim) of the block origin in
+                the loader's SRD coordinate system. Added to
+                `m_offset` at load time. Defaults to 0.
+            k_anchor: K-coordinate (column dim) of the block origin.
+                Added to `k_offset` at load time. Defaults to 0.
+        """
         self.buffer = make_amd_buffer_resource(src)
         self.warp_id = warp_id
         self.lane_id = lane_id
+        self.m_anchor = m_anchor
+        self.k_anchor = k_anchor
 
         var effective_lane = lane_id
 
@@ -1092,21 +1198,29 @@ struct TileLoaderLDS[
     def load_tile(
         self,
         dst: SMemTile[Self.dtype, _, _],
-        src_row: Int,
-        src_col: Int,
+        m_offset: Int,
+        k_offset: Int,
     ):
-        """Load from GMEM at (src_row, src_col) into SMEM dst via load_to_lds.
+        """Loads a half-tile from GMEM into SMEM dst via `load_to_lds`.
+
+        The effective GEMM-space coordinate is `(m_anchor + m_offset,
+        k_anchor + k_offset)`, so callers using the legacy
+        pre-sliced-block form (anchors=0) keep their address math
+        unchanged.
 
         Args:
             dst: Destination TileTensor in SHARED (half-tile sized).
-            src_row: Row offset in the block's GMEM tile.
-            src_col: Column (K) offset.
+            m_offset: Row offset (M dim) within the block.
+            k_offset: Column (K dim) offset within the block.
         """
         comptime SmemPtr = UnsafePointer[
             Scalar[Self.dtype],
             MutAnyOrigin,
             address_space=AddressSpace.SHARED,
         ]
+
+        var m_eff = self.m_anchor + m_offset
+        var k_eff = self.k_anchor + k_offset
 
         comptime if Self._needs_per_iter_swizzle:
             var lane_byte = self.lane_id * Self.lane_load_bytes
@@ -1127,7 +1241,7 @@ struct TileLoaderLDS[
                 ]()
 
                 var lane_offset = swizzled_col + swizzled_row * Self.stride
-                var uniform_offset = src_col + src_row * Self.stride
+                var uniform_offset = k_eff + m_eff * Self.stride
 
                 self.buffer.load_to_lds[width=Self.load_width](
                     Int32(lane_offset),
@@ -1144,8 +1258,8 @@ struct TileLoaderLDS[
                 )
                 var smem_ptr = readfirstlane(rebind[SmemPtr](warp_tile.ptr))
 
-                var tile_row = src_row + i * Self.rows_per_iteration
-                var uniform_offset = src_col + tile_row * Self.stride
+                var tile_row = m_eff + i * Self.rows_per_iteration
+                var uniform_offset = k_eff + tile_row * Self.stride
 
                 self.buffer.load_to_lds[width=Self.load_width](
                     Int32(lane_offset),

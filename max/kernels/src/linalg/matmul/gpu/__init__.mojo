@@ -75,9 +75,8 @@ from .amd import (
     AMDMatmul,
     AMDPingPongMatmul,
     KernelConfig,
-    amd_4wave_matmul,
-    amd_4wave_scheduled_matmul,
     amd_4wave_split_k_matmul,
+    structured_4wave_matmul,
     SplitKWorkspace,
 )
 from .amd_rdna import gemm_kernel_rdna
@@ -707,7 +706,7 @@ def _matmul_gpu[
                 #   m <=   64          -> amd_4wave_split_k_matmul[4]   BM=BN=64
                 #     64 < m <=  128   -> amd_4wave_split_k_matmul[4]   BM=BN=128
                 #    128 < m <=  256   -> amd_4wave_split_k_matmul[2]   BM=BN=128
-                #    256 < m <= 1024   -> amd_4wave_matmul              BM=BN=128
+                #    256 < m <= 1024   -> structured_4wave_matmul              BM=BN=128
                 #          m >  1024   -> fall through (multistage's
                 #                          ping_pong picks up at
                 #                          M >= 600, N >= 4096)
@@ -755,9 +754,10 @@ def _matmul_gpu[
                         # picked. `TUNE_4WAVE_KERNEL=0` (default) keeps
                         # the closed-form heuristic.
                         #
-                        # FP8 dispatches the hand-written body for the
-                        # non-split case; bf16/fp16 use the scheduled
-                        # body. TUNE_4WAVE_BK selects BK (32/64/128 for
+                        # All dtypes (FP8 + bf16/fp16) route through the
+                        # unified schedule-driven body via
+                        # `structured_4wave_matmul`. TUNE_4WAVE_BK
+                        # selects BK (32/64/128 for
                         # bf16/fp16, 128 for FP8 — the FP8 kernel
                         # asserts).
                         comptime _tune_4wave = get_defined_int[
@@ -818,29 +818,21 @@ def _matmul_gpu[
                                 _ = sk_ws_2^
                                 return
                             else:
-                                # FP8 path uses the hand-written body
-                                # (FP8-tuned waitcnts); bf16/fp16 use
-                                # the schedule-driven body.
+                                # All dtypes go through the
+                                # schedule-driven body via the unified
+                                # `structured_4wave_matmul` entry point.
                                 logger.info(
                                     "Autotune: AMD 4-wave (no split-K) ",
                                     _dtype_str,
                                     " matmul",
                                 )
-                                comptime if a_type.is_float8():
-                                    return amd_4wave_matmul[
-                                        enable_swizzle=_tune_swizzle,
-                                        block_m_override=_tune_bm,
-                                        block_n_override=_tune_bn,
-                                        elementwise_lambda_fn=elementwise_lambda_wrapper,
-                                    ](a, b, c, ctx)
-                                else:
-                                    return amd_4wave_scheduled_matmul[
-                                        enable_swizzle=_tune_swizzle,
-                                        block_m_override=_tune_bm,
-                                        block_n_override=_tune_bn,
-                                        block_k_override=_tune_bk,
-                                        elementwise_lambda_fn=elementwise_lambda_wrapper,
-                                    ](a, b, c, ctx)
+                                return structured_4wave_matmul[
+                                    enable_swizzle=_tune_swizzle,
+                                    block_m_override=_tune_bm,
+                                    block_n_override=_tune_bn,
+                                    block_k_override=_tune_bk,
+                                    elementwise_lambda_fn=elementwise_lambda_wrapper,
+                                ](a, b, c, ctx)
 
                         # The cutoffs and tile shapes below come from the
                         # `tuning_table_mi355_fp8.yaml` autotune sweep on
@@ -894,8 +886,7 @@ def _matmul_gpu[
                                 return
                             else:
                                 logger.info(
-                                    "Executing: AMD 4-wave + split-K(2)"
-                                    " scheduled matmul"
+                                    "Executing: AMD 4-wave + split-K(2) matmul"
                                 )
                                 var sk_ws_2_64 = SplitKWorkspace[2](
                                     ctx, m * static_N
@@ -974,42 +965,40 @@ def _matmul_gpu[
                             _ = sk_ws_2_128^
                             return
                         elif m <= fwave_max:
-                            # FP8 uses the hand-written body; bf16/fp16
-                            # use the schedule-driven body (the
-                            # hand-written body's vmcnt constants are
-                            # FP8-tuned and not applicable).
+                            # All dtypes go through the schedule-driven
+                            # body via `structured_4wave_matmul`. FP8
+                            # uses BK=128 unconditionally (the only
+                            # value `block_k_override` accepts for FP8).
+                            # bf16/fp16: BK=128 wins M ≤ ~768; above
+                            # that BK=128 register-pressure-limits ILP
+                            # and BK=64 takes over.
                             comptime if a_type.is_float8():
                                 logger.info(
                                     "Executing: AMD 4-wave FP8 matmul"
                                     " (BM=BN=128)"
                                 )
-                                return amd_4wave_matmul[
+                                return structured_4wave_matmul[
                                     block_m_override=128,
                                     block_n_override=128,
                                     elementwise_lambda_fn=elementwise_lambda_wrapper,
                                 ](a, b, c, ctx)
                             else:
-                                # bf16/fp16: BK=128 wins M ≤ ~768; above
-                                # that BK=128 register-pressure-limits
-                                # ILP and BK=64 takes over. Split the
-                                # bracket; the FP8 dispatcher needs no
-                                # such split because FP8 only has BK=128.
                                 if m <= 768:
                                     logger.info(
-                                        "Executing: AMD 4-wave scheduled"
+                                        "Executing: AMD 4-wave"
                                         " matmul (BM=BN=128, BK=128)"
                                     )
-                                    return amd_4wave_scheduled_matmul[
+                                    return structured_4wave_matmul[
                                         block_m_override=128,
                                         block_n_override=128,
                                         elementwise_lambda_fn=elementwise_lambda_wrapper,
                                     ](a, b, c, ctx)
                                 else:
                                     logger.info(
-                                        "Executing: AMD 4-wave scheduled"
+                                        "Executing: AMD 4-wave"
                                         " matmul (BM=BN=128, BK=64)"
                                     )
-                                    return amd_4wave_scheduled_matmul[
+                                    return structured_4wave_matmul[
                                         block_m_override=128,
                                         block_n_override=128,
                                         block_k_override=64,

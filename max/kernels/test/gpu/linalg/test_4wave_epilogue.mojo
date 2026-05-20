@@ -10,12 +10,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""AMD 4-wave matmul fused-epilogue correctness test (FP8 only).
+"""AMD 4-wave matmul fused-epilogue correctness test.
 
-Drives the lambda branch of `amd_4wave_matmul`: each lane writes one
+Drives the lambda branch of `structured_4wave_matmul`: each lane writes one
 SIMD-of-`c_frag_size` to the lambda which forwards to a separate
 output buffer. Compares against vendor BLAS for accuracy and against
 a sentinel-filled OOB region for write safety.
+
+Iterates dtype (FP8 / BF16 / FP16) inside `main()` — single BUILD target
+per file, HK MHA-style parametrization.
 
 Compile-time configuration:
   mojo -D M=128 -D N=512 -D K=512 test_4wave_epilogue.mojo
@@ -29,7 +32,7 @@ from std.utils import IndexList
 import linalg.matmul.vendor.blas as vendor_blas
 from std.testing import assert_equal
 from std.random import random_float64
-from linalg.matmul.gpu.amd.amd_4wave_matmul import amd_4wave_matmul
+from linalg.matmul.gpu.amd.amd_4wave_matmul import structured_4wave_matmul
 
 comptime TEST_M = get_defined_int["M", 128]()
 comptime TEST_N = get_defined_int["N", 512]()
@@ -37,13 +40,13 @@ comptime TEST_K = get_defined_int["K", 512]()
 
 
 def test_4wave_epilogue[
+    in_dtype: DType,
     M: Int,
     N: Int,
     K: Int,
     enable_swizzle: Bool,
 ](ctx: DeviceContext) raises:
-    """Test 4-wave FP8 lambda path against vendor BLAS."""
-    comptime in_dtype = DType.float8_e4m3fn
+    """Test 4-wave lambda path against vendor BLAS at `in_dtype`."""
     comptime out_dtype = DType.float32
 
     var device_a = ctx.enqueue_create_buffer[in_dtype](M * K)
@@ -102,26 +105,34 @@ def test_4wave_epilogue[
             coord, rebind[SIMD[out_dtype, width]](val)
         )
 
-    amd_4wave_matmul[
+    structured_4wave_matmul[
         enable_swizzle=enable_swizzle,
         elementwise_lambda_fn=epilogue_fn,
     ](a_tt, b_tt, c_tt, ctx)
 
     with device_out.map_to_host() as host_out, device_c_ref.map_to_host() as host_c_ref, device_c.map_to_host() as host_c:
         # --- 1. Lambda accuracy: out_tt vs vendor BLAS reference ---
+        # Tolerance: PyTorch-like `|diff| <= abs_tol + rel_tol * |expected|`
+        # (matches test_4wave_matmul.mojo). The cancellation-sensitive
+        # cells in fp16 (very small |expected|) need an abs_tol floor;
+        # `diff / max(|expected|, abs_tol)` collapses to noise there.
         var errors = 0
         var printed = 0
         var max_rel_err = Float32(0.0)
-        var rel_tol = Float32(0.05)  # FP8 16x16x128 precision
-        var abs_tol = Float32(1e-5)
+        comptime rel_tol = Float32(0.05) if in_dtype.is_float8() else (
+            Float32(1.6e-2) if in_dtype == DType.bfloat16 else Float32(1e-3)
+        )
+        comptime abs_tol = Float32(0.01) if in_dtype.is_float8() else Float32(
+            1e-5
+        )
         for i in range(M * N):
             var actual = host_out[i]
             var expected = host_c_ref[i]
             var diff = abs(actual - expected)
-            var denom = max(abs(expected), abs_tol)
-            var rel_err = diff / denom
+            var threshold = abs_tol + rel_tol * abs(expected)
+            var rel_err = diff / max(abs(expected), Float32(1e-5))
             max_rel_err = max(max_rel_err, rel_err)
-            if rel_err > rel_tol:
+            if diff > threshold:
                 if printed < 10:
                     var row, col = divmod(i, N)
                     print(
@@ -133,8 +144,10 @@ def test_4wave_epilogue[
                         actual,
                         " expected=",
                         expected,
-                        " rel_err=",
-                        rel_err,
+                        " diff=",
+                        diff,
+                        " threshold=",
+                        threshold,
                     )
                     printed += 1
                 errors += 1
@@ -161,17 +174,31 @@ def test_4wave_epilogue[
         assert_equal(leaks, 0)
 
 
+def run_dtype_sweep[dtype: DType](ctx: DeviceContext) raises:
+    """Run swizzle on/off cases for one dtype."""
+    print("  Shape: M=", TEST_M, " N=", TEST_N, " K=", TEST_K, sep="")
+    print("  no swizzle...")
+    test_4wave_epilogue[dtype, TEST_M, TEST_N, TEST_K, enable_swizzle=False](
+        ctx
+    )
+    print("  PASSED: no swizzle")
+    print("  with swizzle...")
+    test_4wave_epilogue[dtype, TEST_M, TEST_N, TEST_K, enable_swizzle=True](ctx)
+    print("  PASSED: with swizzle")
+
+
 def main() raises:
     with DeviceContext() as ctx:
-        print("Running AMD 4-wave epilogue Kernel Tests (FP8)")
-        print("  Shape: M=", TEST_M, " N=", TEST_N, " K=", TEST_K, sep="")
+        print("Running AMD 4-wave epilogue Kernel Tests")
 
-        print("  Testing without swizzle...")
-        test_4wave_epilogue[TEST_M, TEST_N, TEST_K, enable_swizzle=False](ctx)
-        print("  PASSED: No swizzle")
-
-        print("  Testing with swizzle...")
-        test_4wave_epilogue[TEST_M, TEST_N, TEST_K, enable_swizzle=True](ctx)
-        print("  PASSED: With swizzle")
+        # In-main dtype iteration (HK MHA pattern). One BUILD target
+        # per file; three dtype specializations compile into one binary.
+        print("-- dtype=float8_e4m3fn --")
+        run_dtype_sweep[DType.float8_e4m3fn](ctx)
+        print("-- dtype=bfloat16 --")
+        run_dtype_sweep[DType.bfloat16](ctx)
+        print("-- dtype=float16 --")
+        run_dtype_sweep[DType.float16](ctx)
+        print("==== AMD 4-wave epilogue tests passed ====")
 
         print("==== AMD 4-wave epilogue Tests passed ====")
