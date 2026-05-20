@@ -188,7 +188,7 @@ static FnType getReducedFnType(FnType sig) {
       // parameter-value passed in at the callsite cares about those.
       {}, sig.getIsNestedOriginExclusivityCheckingDisabled());
   return FuncType::get(sig.getValues(), sig.getArgConventions(),
-                       sig.getFnEffects(), metadata);
+                       sig.getFnEffects(), metadata, newPogListAttr);
 }
 
 static GeneratorType getReducedGeneratorType(GeneratorType gen) {
@@ -628,7 +628,8 @@ static CValue convertFunctionGeneratorValue(CValue value, const ExprNode *expr,
       /*effects=*/reducedExpected.getFnEffects(),
       /*fnMetadata=*/thunkMetadata,
       /*genMetadata=*/
-      PogListAttr::get(ctx, thunkParamTypes.size(), thunkBodyConstraints));
+      PogListAttr::get(ctx, thunkParamTypes.size(), thunkBodyConstraints),
+      /*argListAttrs=*/reducedExpected.getArgListAttrs());
 
   // There shouldn't be any ParamDeclRefAttr in the thunk signature, because
   // there's no parent scope param-decls for them to refer to.

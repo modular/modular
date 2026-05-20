@@ -522,9 +522,9 @@ void DeadArgumentElimination::removeDeadStuffFromFunction(CallGraphNode *node) {
       func.getContext(), inputTypes,
       func.getFuncTypeGenerator().getBody().getValues().getResults());
 
-  FuncType newSig =
-      FuncType::get(func.getContext(), newFuncType, argConventions,
-                    currSig.getFnEffects(), currSig.getMetadata());
+  FuncType newSig = FuncType::get(
+      func.getContext(), newFuncType, argConventions, currSig.getFnEffects(),
+      currSig.getMetadata(), currSig.getArgListAttrs());
 
   Block *block = func.getBody(0);
   unsigned numArgs = block->getNumArguments();

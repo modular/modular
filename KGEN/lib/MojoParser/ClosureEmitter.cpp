@@ -351,14 +351,15 @@ addClosureSelfArgToFunctionSignature(Type closureType, ArgConvention convention,
   assert(argPogs.size() == argConventions.size());
 
   // Closure storage is carried by the inserted self argument, not by FnEffects.
+  auto newArgListAttr = argListAttr.cloneWith(argPogs);
   auto metadata = FnMetadataAttr::get(
-      argListAttr.cloneWith(argPogs), oldFnMetadata.getNumImplicitOriginDecls(),
+      newArgListAttr, oldFnMetadata.getNumImplicitOriginDecls(),
       oldFnMetadata.getCaptureOrigins(),
       oldFnMetadata.getIsNestedOriginExclusivityCheckingDisabled());
   return FuncTypeGeneratorType::get(
       sig.getInputParamTypes(),
       FunctionType::get(ctx, signatureInputs, sig.getResults()), argConventions,
-      sig.getFnEffects(), metadata, sig.getMetadata());
+      sig.getFnEffects(), metadata, sig.getMetadata(), newArgListAttr);
 }
 
 std::pair<TraitDeclOp, ASTDecl *> ClosureEmitter::createTraitOp(

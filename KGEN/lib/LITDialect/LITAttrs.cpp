@@ -233,6 +233,8 @@ bool FnMetadataAttr::equals(FnMetadataAttrInterface otherMetadata) const {
              other.getIsNestedOriginExclusivityCheckingDisabled();
 }
 
+Attribute FnMetadataAttr::getPogListAttr() const { return getArgListAttrs(); }
+
 //===----------------------------------------------------------------------===//
 // UnboundMLIROperationAttr
 //===----------------------------------------------------------------------===//

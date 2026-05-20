@@ -642,11 +642,12 @@ static FuncType lowerSignature(FuncType sig, TargetInfoAttr target,
                                unsigned maxInlineSize) {
   SignatureTransform transform(sig, target, spAttr, maxInlineSize);
   TransformResult result = lowerSignature(sig, 0, &transform);
-  FuncType newSig = FuncType::get(
-      sig.getContext(),
-      FunctionType::get(sig.getContext(), transform.newInputs,
-                        result.newResultTypes),
-      result.newArgConventions, sig.getFnEffects(), sig.getMetadata());
+  FuncType newSig =
+      FuncType::get(sig.getContext(),
+                    FunctionType::get(sig.getContext(), transform.newInputs,
+                                      result.newResultTypes),
+                    result.newArgConventions, sig.getFnEffects(),
+                    sig.getMetadata(), sig.getArgListAttrs());
   return newSig;
 }
 
@@ -751,11 +752,12 @@ static void lowerCallOpImpl(Operation *op, FuncType oldSig,
   }
 
   if (auto callOp = dyn_cast<CallOp>(op)) {
-    FuncType newSig = FuncType::get(
-        op->getContext(),
-        FunctionType::get(op->getContext(), op->getOperandTypes(),
-                          result.newResultTypes),
-        result.newArgConventions, oldSig.getFnEffects(), oldSig.getMetadata());
+    FuncType newSig =
+        FuncType::get(op->getContext(),
+                      FunctionType::get(op->getContext(), op->getOperandTypes(),
+                                        result.newResultTypes),
+                      result.newArgConventions, oldSig.getFnEffects(),
+                      oldSig.getMetadata(), oldSig.getArgListAttrs());
     callOp.setCalleeAttr(SymbolConstantAttr::get(
         callOp.getCallee().getSymbol(), GeneratorType::get({}, newSig)));
   }
@@ -818,7 +820,8 @@ static LogicalResult lowerFuncOp(FuncOp funcOp, unsigned maxInlineSize) {
       FunctionType::get(funcOp->getContext(),
                         funcOp.getBodyRegion().front().getArgumentTypes(),
                         result.newResultTypes),
-      result.newArgConventions, sig.getFnEffects(), sig.getMetadata());
+      result.newArgConventions, sig.getFnEffects(), sig.getMetadata(),
+      sig.getArgListAttrs());
   funcOp.setFuncTypeGenerator(
       GeneratorType::get(/*inputParamTypes=*/{}, newSig));
   funcOp.setLLVMArgMetadataAttr(

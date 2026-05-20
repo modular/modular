@@ -687,15 +687,16 @@ static ParseResult parseLITFunctionSignature(
   SmallVector<PassingKind> argPassingKinds;
   passingKindParser.populatePassingKinds(argPassingKinds);
 
-  auto metadata = FnMetadataAttr::get(
+  auto pogList =
       PogListAttr::get(p.getContext(), argNames, argPassingKinds, argVariadics,
                        defaults, origVariadicConvention,
-                       /*paramConstraints=*/{}, /*bodyConstraints=*/{}),
-      originDecls.size(), captureOrigins,
-      isNestedOriginExclusivityCheckingDisabled);
+                       /*paramConstraints=*/{}, /*bodyConstraints=*/{});
+  auto metadata =
+      FnMetadataAttr::get(pogList, originDecls.size(), captureOrigins,
+                          isNestedOriginExclusivityCheckingDisabled);
   signature = FuncTypeGeneratorType::remapToFuncTypeGenerator(
       params, functionType, argConventions, effects, metadata, paramListAttr,
-      [&] { return p.emitError(startLoc); });
+      [&] { return p.emitError(startLoc); }, pogList);
   if (!signature)
     return failure();
 

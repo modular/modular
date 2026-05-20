@@ -147,7 +147,7 @@ createFunction(ASTDecl &parent, StringRef name, ArrayRef<ParamDeclAttr> params,
   Location location = shared.translateLocation(loc);
   FnTypeGeneratorType sigGen = FuncTypeGeneratorType::remapToFuncTypeGenerator(
       params, functionType, argConventions, fnEffects, metadata, paramListAttrs,
-      [&] { return mlir::emitError(location); });
+      [&] { return mlir::emitError(location); }, argListAttrs);
   // Strip off the named origin decl references and replace them with indices.
   // We keep the named parameters in the ParamDeclAttr list on the FnOp and
   // in the BBArgs.

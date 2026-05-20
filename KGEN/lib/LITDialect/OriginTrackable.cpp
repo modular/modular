@@ -256,7 +256,6 @@ static void getCallOpEffects(
     // These all have the callee as a parameter, not operand.
     pogs = cast<FnTypeGeneratorType>(directCall.getCalleeType())
                .getBody()
-               .getMetadata()
                .getArgListAttrs();
     signature = directCall.getCalleeType().getBody();
     conventions = signature.getArgConventions().drop_back(

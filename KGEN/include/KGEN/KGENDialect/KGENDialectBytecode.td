@@ -41,7 +41,8 @@ def FuncType : DialectType<(type
   ConcreteType<"FunctionType">:$values,
   EnumAttrArray<"ArgConvention">:$argConventions,
   Custom<"FnEffects">:$fnEffects,
-  ConcreteOptionalAttribute<"FnMetadataAttrInterface">:$metadata
+  ConcreteOptionalAttribute<"FnMetadataAttrInterface">:$metadata,
+  ConcreteAttribute<"PogListAttr">:$argListAttrs
 )>;
 
 def FuncLiteralType : DialectType<(type

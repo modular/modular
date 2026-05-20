@@ -2001,7 +2001,8 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
         shared.cachedOriginFinder.findOriginsIn(captureTypes);
     signature = signature.getWithBody(signature.getBody().getWithMetadata(
         signature.getFnMetadata().addCaptureOrigins(
-            OriginSetAttr::get(getContext(), origins))));
+            OriginSetAttr::get(getContext(), origins)),
+        signature.getBody().getArgListAttrs()));
     funcOp.setFuncTypeGenerator(signature);
 
     funcOp.setParamDeclAttr(

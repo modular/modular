@@ -401,7 +401,8 @@ void LowerAsyncBuildContext::takeSlicedFirstStateFrom(FuncOp hotRamp,
       FunctionType::get(builder.getContext(), inputs,
                         fromFuncOp.getResultTypes()),
       conventions, fromFuncOp.getFuncTypeGenerator().getBody().getFnEffects(),
-      fromFuncOp.getFuncTypeGenerator().getBody().getMetadata());
+      fromFuncOp.getFuncTypeGenerator().getBody().getMetadata(),
+      fromFuncOp.getFuncTypeGenerator().getBody().getArgListAttrs());
   hotRamp.setFuncTypeGenerator(
       GeneratorType::get(/*inputParamTypes=*/{}, signature));
   hotRamp.getBodyRegion().takeBody(fromFuncOp.getBodyRegion());
@@ -580,7 +581,8 @@ FrameData LowerAsyncBuildContext::cloneFrameAndFirstStateTo(
       FunctionType::get(builder.getContext(), inputs,
                         PointerType::get(opaqueCoTypes.getHeaderType())),
       conventions, fromFuncOp.getFuncTypeGenerator().getBody().getFnEffects(),
-      fromFuncOp.getFuncTypeGenerator().getBody().getMetadata());
+      fromFuncOp.getFuncTypeGenerator().getBody().getMetadata(),
+      fromFuncOp.getFuncTypeGenerator().getBody().getArgListAttrs());
   hotRamp.setFuncTypeGenerator(
       GeneratorType::get(/*inputParamTypes=*/{}, signature));
 
