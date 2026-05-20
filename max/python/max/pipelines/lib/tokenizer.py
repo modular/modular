@@ -694,10 +694,17 @@ class TextTokenizer(
             else False
         )
 
+        requires_structured_output_flag = bool(
+            request.response_format.get("requires_structured_output_flag")
+            if request.response_format
+            else False
+        )
+
         # Create grammar enforcement state
         grammar_state = GrammarEnforcementState(
             grammar_enforced=grammar_enforced,
             tools_forced=tools_forced,
+            requires_structured_output_flag=requires_structured_output_flag,
         )
 
         # Calculate Max Length

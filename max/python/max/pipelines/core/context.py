@@ -103,7 +103,16 @@ class GrammarEnforcementState:
     tools_forced: bool = False
     """Whether tool calling was forced (tool_choice=required or named).
 
-    When True, --enable-structured-output flag is NOT required.
+    Controls whether grammar_enforced is True from the first generated token.
+    Independent of the --enable-structured-output server flag (which only gates
+    user-supplied schemas; see ``requires_structured_output_flag``).
+    """
+
+    requires_structured_output_flag: bool = False
+    """Whether this request requires --enable-structured-output to be set.
+
+    True when the constraint includes a user-supplied JSON schema. False for
+    pure tool-call grammars derived from the model's tool parser.
     """
 
     tool_region: StructuredOutputRegionDelimiters | None = None
@@ -407,6 +416,15 @@ class TextContext:
     @tools_forced.setter
     def tools_forced(self, value: bool) -> None:
         self.grammar_state.tools_forced = value
+
+    @property
+    def requires_structured_output_flag(self) -> bool:
+        """Whether this request requires --enable-structured-output."""
+        return self.grammar_state.requires_structured_output_flag
+
+    @requires_structured_output_flag.setter
+    def requires_structured_output_flag(self, value: bool) -> None:
+        self.grammar_state.requires_structured_output_flag = value
 
     def set_tool_region(
         self,

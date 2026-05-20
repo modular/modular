@@ -1063,15 +1063,15 @@ def _resolve_grammar_constraints(
     - tools forced (required or named function): grammar constrains to tool
       calls only, response_format is ignored, enforcement from start,
       no --enable-structured-output flag required
+    - auto mode + no response_format: grammar generated for tool calls,
+      conditional enforcement (only when tool call start token detected),
+      no --enable-structured-output flag required
     - auto mode + response_format: grammar allows either tool calls or JSON
       content matching the schema, enforcement from start,
       --enable-structured-output flag required
-    - auto mode + no response_format: grammar generated for tool calls,
-      conditional enforcement (only when tool call start token detected),
-      --enable-structured-output flag required
     - response_format only (no tools): no Kimi-specific grammar is
       generated; the caller falls through to the standard json_schema
-      flow handled by StructuredOutputHelper
+      flow handled by StructuredOutputHelper, --enable-structured-output flag required
 
     Args:
         tools: List of tool definitions from the request.
@@ -1082,8 +1082,10 @@ def _resolve_grammar_constraints(
         (grammar_tool_names, response_format_schema, tools_forced, enforce_from_start)
         - grammar_tool_names: Tool names to include in grammar, or None.
         - response_format_schema: JSON schema for response format, or None.
-        - tools_forced: True if tool_choice=required or named function. When
-          True, --enable-structured-output flag is not required.
+        - tools_forced: True if tool_choice=required or named function.
+          Controls whether grammar is enforced from the first token (True)
+          or conditionally when a tool call start token is detected (False).
+          Independent of the --enable-structured-output flag.
         - enforce_from_start: True if grammar should be enforced from the
           first token. False for auto mode without response_format (conditional
           enforcement - grammar activates when tool call start token detected).
@@ -1253,12 +1255,17 @@ async def openai_create_chat_completion(
                 # - enforce_from_start=False (auto without response_format):
                 #   Conditional enforcement - grammar activates when tool call
                 #   start token is detected.
+                # ``requires_structured_output_flag`` is True only when the
+                # grammar embeds a user-supplied schema. Pure tool-call
+                # grammars are server-generated and don't require the flag.
                 response_format = TextGenerationResponseFormat(
                     type="grammar",
                     grammar=grammar,
                     json_schema={},
                     grammar_enforced=enforce_from_start,
                     tools_forced=tools_forced,
+                    requires_structured_output_flag=response_format_schema
+                    is not None,
                 )
                 logger.debug(
                     "Successfully generated tool call grammar (length=%d, "
@@ -1520,6 +1527,7 @@ def _create_response_format(
         grammar=None,
         grammar_enforced=False,
         tools_forced=False,
+        requires_structured_output_flag=True,
     )
 
 

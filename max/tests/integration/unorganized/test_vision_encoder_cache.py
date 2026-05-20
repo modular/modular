@@ -97,6 +97,7 @@ class FakeContext:
         self.in_reasoning_phase: bool = False
         self.grammar_enforced: bool = False
         self.tools_forced: bool = False
+        self.requires_structured_output_flag: bool = False
 
     @property
     def request_id(self) -> RequestID:

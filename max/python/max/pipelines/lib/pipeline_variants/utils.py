@@ -529,11 +529,12 @@ class StructuredOutputHelper:
         grammar matcher and installs it on the context, then fills the
         per-request token bitmask.
 
-        Tool-call-only grammars (from tool_choice=required or specific function)
-        work regardless of enable_response_format_schema. For tool_choice=auto
-        without the flag, the matcher install is skipped (logged at WARNING)
-        and the request proceeds unconstrained. JSON-schema responses always
-        require enable_response_format_schema=True (--enable-structured-output).
+        tool-call grammars (with any ``tool_choice`` setting) work
+        regardless of ``enable_response_format_schema`` — the
+        ``--enable-structured-output`` flag only gates user-supplied JSON
+        schemas (via ``response_format``). Requests carrying a user schema
+        set ``requires_structured_output_flag=True`` and are rejected when
+        the flag is off.
 
         Args:
             context: Request context to update.
@@ -551,22 +552,20 @@ class StructuredOutputHelper:
                     "grammar provided but constrained decoding is not available."
                 )
 
-            # Note: Tool grammars with tools_forced=True (tool_choice=required
-            # or specific function) work without --enable-structured-output.
-            # For tool_choice=auto (tools_forced=False), the flag is currently
-            # required; skip matcher installation and let the request proceed
-            # without constraints when it isn't set.
+            # ``--enable-structured-output`` gates user-supplied schemas (passed
+            # via ``response_format``), not tool grammars.
+            # Pure tool-call grammars work regardless of the flag. The combined
+            # tool+schema case sets ``requires_structured_output_flag=True``.
             if (
-                not context.tools_forced
+                context.requires_structured_output_flag
                 and not self.enable_response_format_schema
             ):
-                logger.warning(
-                    "Tool-call grammar generated for tool_choice=auto but "
-                    "--enable-structured-output is not set; skipping "
-                    "constrained decoding for this request. Generation will "
-                    "proceed unconstrained.",
+                raise ValueError(
+                    "response_format with a JSON schema requires "
+                    "--enable-structured-output. Drop response_format to use "
+                    "tool-call constraints only, or pass the flag to allow "
+                    "schema-constrained responses."
                 )
-                return
 
             try:
                 matcher = LLMatcher(self._tokenizer_info, context.grammar)

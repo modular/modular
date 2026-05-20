@@ -40,6 +40,7 @@ from max.interfaces.request import RequestID
 from max.interfaces.status import GenerationStatus
 from max.interfaces.tokens import TokenBuffer
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+from typing_extensions import NotRequired
 
 
 class TextGenerationRequestFunction(TypedDict):
@@ -93,9 +94,21 @@ class TextGenerationResponseFormat(TypedDict):
     tools_forced: bool
     """Whether tool calling was forced (tool_choice=required or named function).
 
-    When True, the --enable-structured-output flag is NOT required - constrained
-    decoding works without it. When False (tool_choice=auto), the flag IS required
-    for grammar enforcement to work.
+    Controls whether ``grammar_enforced`` is ``True`` from the first generated
+    token. Independent of the ``--enable-structured-output`` flag (which only
+    gates user-supplied schemas; see ``requires_structured_output_flag``).
+    """
+
+    requires_structured_output_flag: NotRequired[bool]
+    """Whether this request requires ``--enable-structured-output`` to be set.
+
+    True when the constraint includes a user-supplied JSON schema (from
+    ``response_format``). False (or absent) for pure tool-call grammars
+    derived from the model's tool parser, which work without the operator
+    flag because the grammar is server-controlled, not user-controlled.
+
+    Optional (defaults to False) so existing call sites that construct
+    ``TextGenerationResponseFormat`` directly don't need to be updated.
     """
 
 
@@ -861,8 +874,17 @@ class TextGenerationContext(BaseContext, Protocol):
     tools_forced: bool
     """Whether tool calling was forced (tool_choice=required or named function).
 
-    When True, the --enable-structured-output flag is NOT required.
-    When False (tool_choice=auto), the flag IS required for grammar enforcement.
+    Controls whether ``grammar_enforced`` is ``True`` from the first generated
+    token. Independent of the ``--enable-structured-output`` flag (which only
+    gates user-supplied schemas; see ``requires_structured_output_flag``).
+    """
+
+    requires_structured_output_flag: bool
+    """Whether this request requires ``--enable-structured-output`` to be set.
+
+    True when the constraint includes a user-supplied JSON schema (from
+    ``response_format``). False for pure tool-call grammars derived from the
+    model's tool parser, which work without the operator flag.
     """
 
     def set_tool_region(
