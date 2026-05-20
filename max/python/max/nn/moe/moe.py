@@ -450,6 +450,19 @@ class MoE(Module, Shardable):
 
         return shards
 
+    def _uses_fused_swiglu_nvfp4_layout(self) -> bool:
+        # True when gate_up weights and scales are sigma-permuted to the
+        # (gate, up) interleaved N-axis layout that the fused
+        # SwiGLU+NVFP4 grouped-matmul kernel consumes. The kernel runs a
+        # fused SiLU so gated_activation_fn must be None, and the layout
+        # only makes sense under expert parallelism.
+        return (
+            self.quant_config is not None
+            and self.quant_config.can_use_fused_swiglu_nvfp4
+            and self._ep_batch_manager is not None
+            and self.gated_activation_fn is None
+        )
+
     @property
     def gate_up_proj(self) -> TensorValue:
         gate_list = [expert.gate_proj.weight for expert in self.experts]
@@ -493,10 +506,7 @@ class MoE(Module, Shardable):
         # innermost rows are now interleaved (g_0, u_0, g_1, u_1, ...). One
         # bulk permute replaces E per-expert stacks to keep the graph small
         # and the constant-folding tractable.
-        if (
-            self.quant_config is not None
-            and self.quant_config.can_use_fused_swiglu_nvfp4
-        ):
+        if self._uses_fused_swiglu_nvfp4_layout():
             shard = shard.reshape([len(gate_list), 2, -1, k_dim])
             shard = ops.permute(shard, [0, 2, 1, 3])
             return shard.reshape([len(gate_list), -1, k_dim])

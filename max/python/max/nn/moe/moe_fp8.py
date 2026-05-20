@@ -167,7 +167,7 @@ class MoEQuantized(MoE):
         # This sits BEFORE _interleave_nvfp4_scales (in
         # Nvfp4Strategy.prepare_weight_scales) lifts to the 5D tcgen05
         # layout the kernel expects.
-        if self.quant_config.can_use_fused_swiglu_nvfp4:
+        if self._uses_fused_swiglu_nvfp4_layout():
             shard = shard.reshape([len(gate_scales), 2, -1, scale_k_dim])
             shard = ops.permute(shard, [0, 2, 1, 3])
             return shard.reshape([len(gate_scales), -1, scale_k_dim]).to(
@@ -204,25 +204,21 @@ class MoEQuantized(MoE):
     def _can_fuse_swiglu_nvfp4(self) -> bool:
         """Whether the fused SwiGLU+NVFP4 grouped matmul kernel should fire.
 
-        Gated on the NVFP4 :class:`QuantConfig` flag and
+        Gated on the NVFP4 :class:`QuantConfig` flag,
         ``gated_activation_fn is None`` (the kernel cannot run a custom
-        activation). The ``MAX_DISABLE_FUSED_SWIGLU_NVFP4=1`` env-var
-        kill-switch is read at :class:`QuantConfig` setup time (see
+        activation), and an active expert-parallel batch manager. The
+        ``MAX_DISABLE_FUSED_SWIGLU_NVFP4=1`` env-var kill-switch is read
+        at :class:`QuantConfig` setup time (see
         ``max/python/max/pipelines/lib/quant.py``), which flips the flag
         so the model's ``gate_up_proj`` sigma-permutation stays consistent
         with the kernel choice.
 
         SM100 device-arch gating is handled by the kernel's own dispatch.
-        TP-MoE would break the sigma-permuted layout, but Kimi-K2.5 uses
-        EP exclusively; a future TP-MoE consumer must update the TP
-        sharding strategy first.
+        TP-MoE would break the sigma-permuted layout, so a future TP-MoE
+        consumer must update the sharding strategy before relaxing the EP
+        check.
         """
-        return (
-            self._is_nvfp4
-            and self.gated_activation_fn is None
-            and self.quant_config is not None
-            and self.quant_config.can_use_fused_swiglu_nvfp4
-        )
+        return self._is_nvfp4 and self._uses_fused_swiglu_nvfp4_layout()
 
     def _ep_dispatch_input_scales(self) -> TensorValue | None:
         """Returns NVFP4 input scales for EP dispatch, or ``None``."""
