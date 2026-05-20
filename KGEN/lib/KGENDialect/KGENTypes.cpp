@@ -430,9 +430,9 @@ ErrorOr<TypedAttr> GeneratorType::readFrom(int64_t addr,
 GeneratorType GeneratorType::getSpecializedGenerator(
     PartiallySpecializedInputParams &specialization,
     function_ref<InFlightDiagnostic()> emitErrorFn) {
-  Attribute genMetadata = getMetadata();
-  if (auto poglist = dyn_cast_or_null<PogListAttr>(genMetadata)) {
-    PogListAttr specialized = poglist.getSpecializedMetadata(
+  PogListAttr genMetadata = getMetadata();
+  if (genMetadata) {
+    PogListAttr specialized = genMetadata.getSpecializedMetadata(
         specialization.evaluator, specialization.boundParams, emitErrorFn);
     if (!specialized)
       return {};
