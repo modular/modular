@@ -2649,7 +2649,7 @@ struct CPython(Defaultable, Movable):
         is the same object as `str` in the Python layer.
 
         References:
-        - https://docs.python.org/3/c-api/unicode.html#c.PyUnicode_Type
+        - https://docs.python.org/3.10/c-api/unicode.html#c.PyUnicode_Type
         """
         return self._PyUnicode_Type
 
@@ -2661,6 +2661,7 @@ struct CPython(Defaultable, Movable):
 
         References:
         - https://docs.python.org/3/c-api/unicode.html#c.PyUnicode_CheckExact
+        - https://github.com/python/cpython/blob/main/Include/unicodeobject.h
         """
         return c_int(self.Py_TYPE(obj) == self._PyUnicode_Type)
 

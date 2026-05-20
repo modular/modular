@@ -78,6 +78,10 @@ This version is still a work in progress.
   - `Int(py=obj)` and `Scalar[IntDType](py=obj)` fast-path exact
     Python `int` via `PyLong_AsSsize_t`.
 
+  - `String(py=obj)` fast-paths exact Python `str` via
+    `PyUnicode_AsUTF8AndSize`, reading the cached UTF-8 buffer directly
+    and skipping the `py.__str__()` round trip.
+
 - Added `TileTensor.copy_from()` and `TileTensor.split()` for copying between
   compatible tile views and splitting tiles into static or runtime-sized
   partitions.
