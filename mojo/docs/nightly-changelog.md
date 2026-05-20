@@ -132,9 +132,6 @@ This version is still a work in progress.
   `struct_field_*` family (along with the `ReflectedType[T]` wrapper) have been
   removed; use the corresponding methods on `reflect[T]`:
 
-  <!-- rumdl-disable MD013 -->
-  <!-- MD013 fights with MD060 (https://github.com/rvben/rumdl/issues/636) -->
-
   | Removed                                 | Replacement                              |
   |-----------------------------------------|------------------------------------------|
   | `get_type_name[T]()`                    | `reflect[T].name()`                      |
@@ -149,8 +146,6 @@ This version is still a work in progress.
   | `offset_of[T, name=name]()`             | `reflect[T].field_offset[name=name]()`   |
   | `offset_of[T, index=index]()`           | `reflect[T].field_offset[index=index]()` |
   | `ReflectedType[T]`                      | `Reflected[T]`                           |
-
-  <!-- rumdl-enable MD013 -->
 
 - Added `ReflectedFn[func]`, a function-side reflection handle accessed via
   the `reflect_fn[func]` `comptime` alias. Exposes function introspection

@@ -169,7 +169,7 @@ pull request:
    To clarify, you're working with three repo entities:
 
    - This repo (`https://github.com/modular/modular`) is known as the upstream
-      repo. In Git terminology, it's the *upstream remote*.
+     repo. In Git terminology, it's the *upstream remote*.
    - Your fork on GitHub is known as *origin* (also remote).
    - Your local clone is stored on your computer.
 
@@ -289,18 +289,18 @@ website), a day or two after it's merged.
 
    Initial Review:
    - Maintainers will provide an initial review or feedback within 3 weeks of
-      the PR submission. At times, it may be significantly quicker, but it
-      depends on a variety of factors.
+     the PR submission. At times, it may be significantly quicker, but it
+     depends on a variety of factors.
 
    Subsequent Reviews:
    - Once a contributor addresses feedback, maintainers will review updates as
-      soon as they can, typically within 5 business days.
+     soon as they can, typically within 5 business days.
 
 1. Issue Triage Timeline
 
    New Issues:
    - Maintainers will label and acknowledge new issues within 10 days of the
-      issue submission.
+     issue submission.
 
 1. Proposals
 
