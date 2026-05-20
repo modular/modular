@@ -35,14 +35,17 @@ within a row of V. So o_reg[i, m] = mean over all k_global of
 from std.gpu.host import DeviceContext
 from std.testing import assert_almost_equal
 
-from layout import TileTensor
+from layout import LayoutTensor, TileTensor
 from layout.coord import Coord, Idx, RuntimeInt
+from layout.runtime_layout import RuntimeLayout
 from layout.tile_layout import row_major
 
 from nn.attention.gpu.amd_structured.hk_mha_prefill import (
     HKMhaConfig,
     hk_mha_prefill,
 )
+from nn.attention.mha_mask import NullMask
+from nn.attention.mha_operand import LayoutTensorMHAOperand
 
 
 comptime Q_BLOCK_SIZE = 32  # per warp
@@ -57,7 +60,10 @@ comptime NUM_KEYS = NUM_TILES * KV_BLOCK
 comptime BATCH = 1
 
 
-def test_v2_main_loop[depth: Int](ctx: DeviceContext) raises:
+def test_v2_main_loop[
+    depth: Int,
+    output_dtype: DType = DType.float32,
+](ctx: DeviceContext) raises:
     comptime SIZE_Q = BM * depth
     comptime SIZE_KV = NUM_TILES * KV_BLOCK * depth
     comptime SIZE_OUT = BM * depth
@@ -69,7 +75,7 @@ def test_v2_main_loop[depth: Int](ctx: DeviceContext) raises:
         num_heads=NUM_HEADS,
         num_kv_heads=NUM_KV_HEADS,
         num_warps=NUM_WARPS,
-        causal=False,
+        output_dtype=output_dtype,
     )
 
     print(
@@ -89,9 +95,7 @@ def test_v2_main_loop[depth: Int](ctx: DeviceContext) raises:
     var dev_q = ctx.enqueue_create_buffer[DType.bfloat16](SIZE_Q)
     var dev_k = ctx.enqueue_create_buffer[DType.bfloat16](SIZE_KV)
     var dev_v = ctx.enqueue_create_buffer[DType.bfloat16](SIZE_KV)
-    var dev_out = ctx.enqueue_create_buffer[DType.float32](SIZE_OUT)
-    # L_vec: (batch=1, num_heads=1, seq_len=BM) = BM fp32 entries.
-    var dev_lvec = ctx.enqueue_create_buffer[DType.float32](BM)
+    var dev_out = ctx.enqueue_create_buffer[output_dtype](SIZE_OUT)
 
     var total_k = NUM_TILES * KV_BLOCK
     with dev_q.map_to_host() as host_q, dev_k.map_to_host() as host_k, dev_v.map_to_host() as host_v:
@@ -149,34 +153,59 @@ def test_v2_main_loop[depth: Int](ctx: DeviceContext) raises:
             )
         ),
     )
-    var l_vec_tt = TileTensor(
-        dev_lvec,
-        row_major(
-            Coord(
-                RuntimeInt[DType.int32](Int32(BATCH)),
-                Idx[NUM_HEADS](),
-                RuntimeInt[DType.int32](Int32(SEQ_LEN)),
-            )
-        ),
+    # Wrap K/V TileTensors as LayoutTensorMHAOperand for the kernel's
+    # paged-aware signature; pattern from `mla.mojo` launcher.
+    var k_lt = k_tt.to_layout_tensor()
+    var k_op = LayoutTensorMHAOperand(
+        LayoutTensor[k_lt.dtype, k_lt.layout, k_lt.origin](
+            k_lt.ptr,
+            RuntimeLayout[k_lt.layout].row_major(
+                k_lt.runtime_layout.shape.value.canonicalize()
+            ),
+        )
+    )
+    var v_lt = v_tt.to_layout_tensor()
+    var v_op = LayoutTensorMHAOperand(
+        LayoutTensor[v_lt.dtype, v_lt.layout, v_lt.origin](
+            v_lt.ptr,
+            RuntimeLayout[v_lt.layout].row_major(
+                v_lt.runtime_layout.shape.value.canonicalize()
+            ),
+        )
     )
 
-    hk_mha_prefill[CONFIG](q_tt, k_tt, v_tt, o_tt, l_vec_tt, Float32(1.0), ctx)
+    hk_mha_prefill[CONFIG](
+        q_tt,
+        k_op,
+        v_op,
+        o_tt,
+        NullMask(),
+        Float32(1.0),
+        NUM_KEYS,
+        0,  # start_pos
+        ctx,
+    )
 
     # Uniform K means uniform softmax: o[i, m] = mean of V[k, m]
     # = mean of (0..total_K-1)/total_K = (total_K-1) / (2*total_K).
     var expected = Float32(total_k - 1) / Float32(2 * total_k)
     print("  expected per-lane =", expected)
 
+    # FP32 output preserves the per-tile accumulator precision; BF16
+    # output adds a per-element round-off at store time (~1 ULP in
+    # BF16, which at value ~0.5 is ~2e-3). Use a slightly looser
+    # tolerance for BF16 to absorb the cast.
+    comptime tol: Float32 = 0.05 if output_dtype == DType.float32 else 0.01
     var mismatches = 0
     var max_diff: Float32 = 0
     with dev_out.map_to_host() as host_out:
         for q in range(BM):
             for d in range(depth):
-                var got = host_out[q * depth + d]
+                var got = Float32(host_out[q * depth + d])
                 var diff = abs(got - expected)
                 if diff > max_diff:
                     max_diff = diff
-                if diff > 0.05:  # tolerance for BF16 + softmax round-off
+                if diff > tol:
                     mismatches += 1
                     if mismatches <= 5:
                         print(
@@ -201,8 +230,12 @@ def main() raises:
     print("=" * 60)
 
     with DeviceContext() as ctx:
+        # FP32 output (unnormalized accumulator path).
         test_v2_main_loop[128](ctx)
         test_v2_main_loop[64](ctx)
+        # BF16 output (production inference path used by the dispatcher).
+        test_v2_main_loop[128, DType.bfloat16](ctx)
+        test_v2_main_loop[64, DType.bfloat16](ctx)
 
     print("=" * 60)
     print("ALL HKMhaPrefill TESTS PASSED!")

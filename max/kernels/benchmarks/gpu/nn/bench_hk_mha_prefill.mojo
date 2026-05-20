@@ -10,27 +10,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""TFLOPS bench for HKMhaPrefill (kittens-mojo HK MHA forward port,
-TileTensor-native storage management).
+"""TFLOPS bench for `HKMhaPrefill` against contiguous (LayoutTensor) K/V.
 
-Measures `HKMhaPrefill.attend_ker` throughput at canonical HK shapes
-(causal, BF16, even num_tiles >= 4). Companion to `bench_hk_mha_exact`
-(which benches the structured-kernel `flash_attention_hk_exact`) for
-apples-to-apples comparison. The v2 kernel is the "model
-Structured-Kernel citizen" rewrite: every gmem buffer + SMEM tile +
-register tile is TileTensor-typed; helper functions extract `.ptr` at
-the kittens-mojo / structured-kernel intrinsic boundary.
-
-Calling convention: HKMhaPrefill.attend_ker takes raw pointers + the
-runtime `(num_tiles, seq_len, num_keys, scale)` tuple. The benchmark
-reconstructs the canonical TileTensor cache-busting buffers (Q/K/V/O)
-from `CacheBustingBuffer`, then offsets `.ptr` per iteration to defeat
-L2 reuse. Same flops formula as bench_hk_mha_exact (causal: half-tile
-budget).
+Measures `hk_mha_prefill` at canonical BF16 causal shapes. Q/K/V/O are
+oversized via `CacheBustingBuffer` and offset per iteration to defeat
+L2 reuse. FLOP count uses the causal half-tile budget
+(`2 * B * H * N * NK * D`).
 
 Run:
   ./bazelw run //max/kernels/benchmarks:gpu/nn/bench_hk_mha_prefill \
-      -- seq_len=8192 num_keys=8192 batch_size=1 verify=False
+      -- --seq_len=8192 --num_keys=8192 --batch_size=1 --verify=False
 """
 
 from std.math import isclose
@@ -51,8 +40,12 @@ from std.utils.numerics import min_or_neg_inf
 
 from internal_utils import CacheBustingBuffer, arg_parse
 from internal_utils._utils import InitializationType
-from layout import Idx, TileTensor, row_major
+from layout import Idx, LayoutTensor, TileTensor, row_major
 from layout.coord import Coord, RuntimeInt
+from layout.runtime_layout import RuntimeLayout
+
+from nn.attention.mha_mask import CausalMask
+from nn.attention.mha_operand import LayoutTensorMHAOperand
 
 from nn.attention.gpu.amd_structured.hk_mha_prefill import (
     HKMhaConfig,
@@ -90,7 +83,6 @@ def run_hk_mha_prefill[
     var k_size = batch_size * kv_num_heads * num_keys * depth
     var v_size = k_size
     var o_size = q_size
-    var lvec_size = batch_size * num_heads * seq_len
 
     # Cache busting: oversize allocation, defeat L2 reuse across iters.
     comptime simd_size = 4
@@ -107,9 +99,6 @@ def run_hk_mha_prefill[
     var cb_o = CacheBustingBuffer[DType.float32](
         o_size, simd_size, ctx, cache_busting
     )
-    var cb_lvec = CacheBustingBuffer[DType.float32](
-        lvec_size, simd_size, ctx, cache_busting
-    )
 
     comptime random_distribution = InitializationType.uniform_distribution
     cb_q.init_on_device(random_distribution, ctx)
@@ -125,12 +114,10 @@ def run_hk_mha_prefill[
         num_heads=num_heads,
         num_kv_heads=kv_num_heads,
         num_warps=_NUM_WARPS,
-        causal=True,
     )
 
     # Per-kernel LLVM tuning forwarded as `-mllvm` flags via the
-    # launcher's `compile_options` param. Tested 2026-05-11: +2.3%
-    # over the LLVM-default schedule.
+    # launcher's `compile_options` param:
     # - `amdgpu-igrouplp-exact-solver=true`: enable exponential solver.
     # - `...-max-branches=10000`: cap branches (avoid exponential blowup).
     # - `...-cost-heur=false`: node-order priority (over-declared hints fit better).
@@ -144,7 +131,7 @@ def run_hk_mha_prefill[
 
         @parameter
         @always_inline
-        @__copy_capture(cb_q, cb_k, cb_v, cb_o, cb_lvec)
+        @__copy_capture(cb_q, cb_k, cb_v, cb_o)
         def bench_func(mut b: Bencher):
             @parameter
             @always_inline
@@ -202,20 +189,34 @@ def run_hk_mha_prefill[
                         )
                     ),
                 )
-                var l_vec_tt = TileTensor(
-                    cb_lvec.offset_ptr(iteration).bitcast[
-                        Scalar[DType.float32]
-                    ](),
-                    row_major(
-                        Coord(
-                            RuntimeInt[DType.int32](Int32(batch_size)),
-                            Idx[num_heads](),
-                            RuntimeInt[DType.int32](Int32(seq_len)),
-                        )
-                    ),
+                var k_lt = k_tt.to_layout_tensor()
+                var k_op = LayoutTensorMHAOperand(
+                    LayoutTensor[k_lt.dtype, k_lt.layout, k_lt.origin](
+                        k_lt.ptr,
+                        RuntimeLayout[k_lt.layout].row_major(
+                            k_lt.runtime_layout.shape.value.canonicalize()
+                        ),
+                    )
+                )
+                var v_lt = v_tt.to_layout_tensor()
+                var v_op = LayoutTensorMHAOperand(
+                    LayoutTensor[v_lt.dtype, v_lt.layout, v_lt.origin](
+                        v_lt.ptr,
+                        RuntimeLayout[v_lt.layout].row_major(
+                            v_lt.runtime_layout.shape.value.canonicalize()
+                        ),
+                    )
                 )
                 hk_mha_prefill[_config, compile_options=_PREFILL_IGLP_OPTS](
-                    q_tt, k_tt, v_tt, o_tt, l_vec_tt, scale, ctx
+                    q_tt,
+                    k_op,
+                    v_op,
+                    o_tt,
+                    CausalMask(),
+                    scale,
+                    num_keys,
+                    0,  # start_pos
+                    ctx,
                 )
 
             b.iter_custom[_kernel_launch](ctx)
@@ -255,7 +256,6 @@ def run_hk_mha_prefill[
     _ = cb_k
     _ = cb_v
     _ = cb_o
-    _ = cb_lvec
 
 
 @fieldwise_init

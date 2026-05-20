@@ -42,14 +42,17 @@ consistent.
 from std.gpu.host import DeviceContext
 from std.testing import assert_almost_equal
 
-from layout import TileTensor
+from layout import LayoutTensor, TileTensor
 from layout.coord import Coord, Idx, RuntimeInt
+from layout.runtime_layout import RuntimeLayout
 from layout.tile_layout import row_major
 
 from nn.attention.gpu.amd_structured.hk_mha_prefill import (
     HKMhaConfig,
     hk_mha_prefill,
 )
+from nn.attention.mha_mask import NullMask
+from nn.attention.mha_operand import LayoutTensorMHAOperand
 
 
 comptime Q_BLOCK_SIZE = 32
@@ -76,7 +79,6 @@ def test_v2_rescale[depth: Int](ctx: DeviceContext) raises:
         num_heads=NUM_HEADS,
         num_kv_heads=NUM_KV_HEADS,
         num_warps=NUM_WARPS,
-        causal=False,
     )
 
     print(
@@ -89,7 +91,6 @@ def test_v2_rescale[depth: Int](ctx: DeviceContext) raises:
     var dev_k = ctx.enqueue_create_buffer[DType.bfloat16](SIZE_KV)
     var dev_v = ctx.enqueue_create_buffer[DType.bfloat16](SIZE_KV)
     var dev_out = ctx.enqueue_create_buffer[DType.float32](SIZE_OUT)
-    var dev_lvec = ctx.enqueue_create_buffer[DType.float32](BM)
 
     with dev_q.map_to_host() as host_q, dev_k.map_to_host() as host_k, dev_v.map_to_host() as host_v:
         for i in range(SIZE_Q):
@@ -151,18 +152,36 @@ def test_v2_rescale[depth: Int](ctx: DeviceContext) raises:
             )
         ),
     )
-    var l_vec_tt = TileTensor(
-        dev_lvec,
-        row_major(
-            Coord(
-                RuntimeInt[DType.int32](Int32(BATCH)),
-                Idx[NUM_HEADS](),
-                RuntimeInt[DType.int32](Int32(SEQ_LEN)),
-            )
-        ),
+    var k_lt = k_tt.to_layout_tensor()
+    var k_op = LayoutTensorMHAOperand(
+        LayoutTensor[k_lt.dtype, k_lt.layout, k_lt.origin](
+            k_lt.ptr,
+            RuntimeLayout[k_lt.layout].row_major(
+                k_lt.runtime_layout.shape.value.canonicalize()
+            ),
+        )
+    )
+    var v_lt = v_tt.to_layout_tensor()
+    var v_op = LayoutTensorMHAOperand(
+        LayoutTensor[v_lt.dtype, v_lt.layout, v_lt.origin](
+            v_lt.ptr,
+            RuntimeLayout[v_lt.layout].row_major(
+                v_lt.runtime_layout.shape.value.canonicalize()
+            ),
+        )
     )
 
-    hk_mha_prefill[CONFIG](q_tt, k_tt, v_tt, o_tt, l_vec_tt, Float32(1.0), ctx)
+    hk_mha_prefill[CONFIG](
+        q_tt,
+        k_op,
+        v_op,
+        o_tt,
+        NullMask(),
+        Float32(1.0),
+        NUM_KEYS,
+        0,  # start_pos
+        ctx,
+    )
 
     # Expected per-lane (HK approximation + epilogue norm dynamics).
     #

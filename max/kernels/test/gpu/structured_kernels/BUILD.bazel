@@ -6,9 +6,10 @@ package(default_visibility = ["//max:consumers"])
 # (any AMD GPU); HKMhaPrefill kernels target gfx950-specific MFMA
 # intrinsics and need the mi355x constraint.
 _EXTRA_CONSTRAINTS = {
-    "inspect_hk_mha_prefill_asm.mojo": ["//:mi355_gpu"],
     "test_hk_mha_prefill.mojo": ["//:mi355_gpu"],
     "test_hk_mha_prefill_causal.mojo": ["//:mi355_gpu"],
+    "test_hk_mha_prefill_paged.mojo": ["//:mi355_gpu"],
+    "test_hk_mha_prefill_gqa.mojo": ["//:mi355_gpu"],
     "test_hk_mha_prefill_rescale.mojo": ["//:mi355_gpu"],
     "test_sub_tile_loader_lds_smoke.mojo": [
         "//:has_gpu",

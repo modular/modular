@@ -76,15 +76,18 @@ struct HKMhaConfig(ImplicitlyCopyable, Movable):
     var num_warps: Int
     """Warps per block."""
 
-    var causal: Bool
-    """Apply causal mask on K[k] > Q[q]."""
-
     var rescale_threshold: Float32
     """Lazy-rescale threshold in log2 units of the running max. Above
     this, `o_reg` / `norm_vec` are rescaled by
     `exp2(max_prev - max_new)`; below this the rescale is deferred —
     the residual contribution from `att_block` is bounded by
     `exp2(-rescale_threshold)` of the new max."""
+
+    var output_dtype: DType
+    """Element dtype of the output tile `o`. FP32 by default; BF16 for
+    production inference where the dispatcher holds a BF16 output buffer.
+    The cast from the FP32 accumulator happens per-lane inside
+    `_store_o_to_gmem`."""
 
     def __init__(
         out self,
@@ -95,8 +98,8 @@ struct HKMhaConfig(ImplicitlyCopyable, Movable):
         num_heads: Int,
         num_kv_heads: Int,
         num_warps: Int = 8,
-        causal: Bool = True,
         rescale_threshold: Float32 = 8.0,
+        output_dtype: DType = DType.float32,
     ):
         self.q_block_size = q_block_size
         self.kv_block = kv_block
@@ -104,8 +107,8 @@ struct HKMhaConfig(ImplicitlyCopyable, Movable):
         self.num_heads = num_heads
         self.num_kv_heads = num_kv_heads
         self.num_warps = num_warps
-        self.causal = causal
         self.rescale_threshold = rescale_threshold
+        self.output_dtype = output_dtype
 
 
 struct MhaMmaOp[T: DType, config: HKMhaConfig]:

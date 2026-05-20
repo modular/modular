@@ -73,9 +73,12 @@ unconditional normalizer rescale before the `o / norm_vec` divide.
 - **Output transpose.** `col_l → row_l` is a zero-cost re-tag of the
   same register storage — no cross-lane permute, no data motion.
 
-- **GROUP_SIZE-aware head remap.** `head_idx` is `(blockIdx.x %
-  GROUP_SIZE) * GROUP_SIZE + (blockIdx.x / GROUP_SIZE)` so adjacent
-  blocks share KV-head data on adjacent CUs for `NUM_KV_HEADS > 1`.
+- **GQA-aware head remap.** `head_idx` is `(block_x % GROUP) *
+  NUM_KV_HEADS + (block_x / GROUP)` — the transpose over the
+  `(NUM_KV_HEADS, GROUP)` rectangle — so adjacent blocks visit
+  different KV heads across CUs/XCDs. Bijective for any
+  `NUM_HEADS == GROUP * NUM_KV_HEADS`; reduces to identity at MHA
+  (`GROUP=1`) and MQA (`NUM_KV_HEADS=1`).
 
 The cluster decomposition and overlap pattern are inspired by the
 HipKittens project's attention kernel
@@ -98,7 +101,7 @@ from std.gpu.sync import (
     s_waitcnt,
     schedule_group_barrier,
 )
-from std.math import exp2 as math_exp2, log as math_log
+from std.math import exp2 as math_exp2
 from std.memory import AddressSpace
 from std.sys._assembly import inlined_assembly
 from std.sys.intrinsics import (
@@ -130,7 +133,16 @@ from structured_kernels.amd_tile_io import (
     reg_alloc,
     smem_alloc,
 )
-from .hk_mha_mask import mask_kv_tile
+from nn.attention.mha_mask import (
+    CausalMask,
+    MHAMask,
+    NullMask,
+    TileMaskStatus,
+)
+from nn.attention.mha_operand import MHAOperand
+from std.sys.intrinsics import _type_is_eq
+
+from .hk_mha_mask import _apply_causal_mask_fast, apply_mask_to_att_block
 from .hk_mha_softmax import (
     col_max,
     col_max_acc,
@@ -229,7 +241,6 @@ struct HKMhaPrefill[config: HKMhaConfig]:
     comptime NUM_HEADS = Self.config.num_heads
     comptime NUM_KV_HEADS = Self.config.num_kv_heads
     comptime NUM_WARPS = Self.config.num_warps
-    comptime CAUSAL = Self.config.causal
     comptime RESCALE_THRESHOLD = Self.config.rescale_threshold
 
     comptime NUM_THREADS = Self.NUM_WARPS * 64
@@ -296,11 +307,17 @@ struct HKMhaPrefill[config: HKMhaConfig]:
         Coord[RuntimeInt[DType.int32], ComptimeInt[Self.DEPTH]].element_types,
         Coord[ComptimeInt[Self._KV_ROW_STRIDE], ComptimeInt[1]].element_types,
     ]
-    comptime _LVecPerHeadLayoutT = TileLayout[
-        Coord[RuntimeInt[DType.int32], ComptimeInt[1]].element_types,
-        Coord[ComptimeInt[1], ComptimeInt[1]].element_types,
+    # Per-tile K/V layout (KV_BLOCK x DEPTH) used by the paged path. The
+    # stride matches `_KV_ROW_STRIDE` (NUM_KV_HEADS * DEPTH) so the
+    # cooperative loaders see the same row stride as the contiguous
+    # path's `.tile[KV_BLOCK, DEPTH](t, 0)` sub-slice. Static shape +
+    # static stride = constant folds everywhere.
+    comptime _KvPerTileLayoutT = TileLayout[
+        Coord[
+            ComptimeInt[Self.KV_BLOCK], ComptimeInt[Self.DEPTH]
+        ].element_types,
+        Coord[ComptimeInt[Self._KV_ROW_STRIDE], ComptimeInt[1]].element_types,
     ]
-
     # IGLP `sched_group` IDs — one per scheduling-distinct cluster. The
     # numbers must be unique within the kernel; names document which
     # cluster each ID belongs to.
@@ -384,19 +401,94 @@ struct HKMhaPrefill[config: HKMhaConfig]:
         return q_reg
 
     # K/V DMA helpers: issue the gmem→LDS load only, with no barrier or
-    # waitcnt so the caller can overlap MFMAs with in-flight DMAs.
+    # waitcnt so the caller can overlap MFMAs with in-flight DMAs. The
+    # per-tile gmem_tile is supplied by the caller (built via
+    # `_make_k_tile` / `_make_v_tile` from the MHAOperand), so the helpers
+    # are agnostic to paged-vs-contiguous KV.
 
     @staticmethod
     @always_inline
-    def _dma_k(
+    def _make_k_tile[
+        k_t: MHAOperand,
+        //,
+    ](
+        k_op: k_t,
+        batch_idx: UInt32,
+        kv_head_idx: UInt32,
+        t: Int,
+    ) -> TileTensor[
+        DType.bfloat16, Self._KvPerTileLayoutT, ImmutAnyOrigin
+    ]:
+        """Builds the per-tile K gmem TileTensor at `(batch, t*KV_BLOCK,
+        kv_head, 0)` via `MHAOperand.block_paged_tile`. For
+        LayoutTensorMHAOperand this resolves to a pointer-arithmetic
+        offset into a contiguous buffer; for KVCacheMHAOperand it
+        resolves through the page table."""
+        comptime assert (
+            k_t.dtype == DType.bfloat16
+        ), "HKMhaPrefill: K must be BF16"
+        # rebind: comptime k_t.dtype == BF16 (asserted above), so the
+        # returned TileTensor's dtype parameter is statically BF16.
+        return rebind[
+            TileTensor[DType.bfloat16, Self._KvPerTileLayoutT, ImmutAnyOrigin]
+        ](
+            k_op.block_paged_tile[Self.KV_BLOCK](
+                batch_idx,
+                UInt32(t * Self.KV_BLOCK),
+                kv_head_idx,
+                Self._KvPerTileLayoutT(
+                    Coord(Idx[Self.KV_BLOCK](), Idx[Self.DEPTH]()),
+                    Coord(Idx[Self._KV_ROW_STRIDE](), Idx[1]()),
+                ),
+            )
+        )
+
+    @staticmethod
+    @always_inline
+    def _make_v_tile[
+        v_t: MHAOperand,
+        //,
+    ](
+        v_op: v_t,
+        batch_idx: UInt32,
+        kv_head_idx: UInt32,
+        t: Int,
+    ) -> TileTensor[
+        DType.bfloat16, Self._KvPerTileLayoutT, ImmutAnyOrigin
+    ]:
+        """Builds the per-tile V gmem TileTensor (see `_make_k_tile`)."""
+        comptime assert (
+            v_t.dtype == DType.bfloat16
+        ), "HKMhaPrefill: V must be BF16"
+        return rebind[
+            TileTensor[DType.bfloat16, Self._KvPerTileLayoutT, ImmutAnyOrigin]
+        ](
+            v_op.block_paged_tile[Self.KV_BLOCK](
+                batch_idx,
+                UInt32(t * Self.KV_BLOCK),
+                kv_head_idx,
+                Self._KvPerTileLayoutT(
+                    Coord(Idx[Self.KV_BLOCK](), Idx[Self.DEPTH]()),
+                    Coord(Idx[Self._KV_ROW_STRIDE](), Idx[1]()),
+                ),
+            )
+        )
+
+    @staticmethod
+    @always_inline
+    def _dma_k[
+        k_t: MHAOperand,
+        //,
+    ](
         k_smem_slot: SMemTile[DType.bfloat16, ...],
-        k_loader_dma: Self.KTileLoader,
-        k_2d: TileTensor[DType.bfloat16, ...],
+        k_op: k_t,
+        batch_idx: UInt32,
+        kv_head_idx: UInt32,
         t: Int,
         w_id: Int,
         l_id: Int,
     ):
-        """Issues the K[t] DMA into `k_smem_slot`.
+        """Issues the K[t] DMA into `k_smem_slot` from the MHAOperand.
 
         Partition: at d=128 the K tile holds 8 `K_SUB_ROWS x K_SUB_COLS`
         sub-blocks (2 row-tiles × 4 col-tiles), matching `NUM_WARPS=8`
@@ -405,7 +497,13 @@ struct HKMhaPrefill[config: HKMhaConfig]:
         4 sub-blocks (2 × 2) → 2 warps cooperate per sub-block, each
         loading a 16-row half-strip. The per-warp `SubTileLoaderLDS`
         bakes HK's two-XOR `st_32x32_s` swizzle into the DRAM-source
-        lane mapping; `_MmaOp.load_K` unswizzles on read."""
+        lane mapping; `_MmaOp.load_K` unswizzles on read.
+
+        Loader construction is per-tile: the buffer resource is bound
+        to this tile's pointer + bounds, so the same helper composes
+        with paged KV (where adjacent tiles live in different DRAM
+        pages) without a separate code path. Cost is ~4 SGPR ops per
+        call to materialize the SRD; negligible vs the DMA latency."""
         comptime _K_SUB_ROWS = Self._MmaOp.K_SUB_ROWS
         comptime _K_SUB_COLS = Self._MmaOp.K_SUB_COLS
         comptime _num_kv_subblocks = (
@@ -424,30 +522,39 @@ struct HKMhaPrefill[config: HKMhaConfig]:
         var subblock_id, row_strip = divmod(w_id, _warps_per_subblock)
         var sub_row, sub_col = divmod(subblock_id, _num_block_cols_k)
 
-        k_loader_dma.load(
+        var k_gmem_tile = Self._make_k_tile(k_op, batch_idx, kv_head_idx, t)
+        var k_loader = Self.KTileLoader(k_gmem_tile)
+        k_loader.load(
             k_smem_slot.tile[_K_SUB_ROWS, _K_SUB_COLS](subblock_id, 0).tile[
                 _rows_per_warp, _K_SUB_COLS
             ](row_strip, 0),
-            k_2d.tile[Self.KV_BLOCK, Self.DEPTH](t, 0)
-            .tile[_K_SUB_ROWS, _K_SUB_COLS](sub_row, sub_col)
-            .tile[_rows_per_warp, _K_SUB_COLS](row_strip, 0),
+            k_gmem_tile.tile[_K_SUB_ROWS, _K_SUB_COLS](sub_row, sub_col).tile[
+                _rows_per_warp, _K_SUB_COLS
+            ](row_strip, 0),
         )
 
     @staticmethod
     @always_inline
-    def _dma_v(
+    def _dma_v[
+        v_t: MHAOperand,
+        //,
+    ](
         v_smem_slot: SMemTile[DType.bfloat16, _, MutExternalOrigin, ...],
-        v_loader_dma: Self.VTileLoader,
-        v_2d: TileTensor[DType.bfloat16, ...],
+        v_op: v_t,
+        batch_idx: UInt32,
+        kv_head_idx: UInt32,
         t: Int,
         w_id: Int,
         l_id: Int,
     ):
-        """Issues the V[t] DMA into `v_smem_slot`. V uses identity
-        swizzle and the cooperative loader handles thread-id mapping
-        over the whole `KV_BLOCK x DEPTH` tile."""
-        var v_gmem_tile = v_2d.tile[Self.KV_BLOCK, Self.DEPTH](t, 0)
-        v_loader_dma.load(v_smem_slot, v_gmem_tile, w_id, l_id)
+        """Issues the V[t] DMA into `v_smem_slot` from the MHAOperand.
+        V uses identity swizzle and the cooperative loader handles
+        thread-id mapping over the whole `KV_BLOCK x DEPTH` tile.
+
+        Loader construction is per-tile (see `_dma_k` docstring)."""
+        var v_gmem_tile = Self._make_v_tile(v_op, batch_idx, kv_head_idx, t)
+        var v_loader = Self.VTileLoader(v_gmem_tile)
+        v_loader.load(v_smem_slot, v_gmem_tile, w_id, l_id)
 
     # Whole-tile K pre-load + consumer-side waitcnt drain. `_load_k_reg`
     # runs in a dedicated cluster; `_qk_with_kreg` consumes the result
@@ -675,21 +782,95 @@ struct HKMhaPrefill[config: HKMhaConfig]:
 
     @staticmethod
     @always_inline
+    def _maybe_apply_mask[
+        mask_t: MHAMask,
+        layout: TensorLayout,
+        //,
+    ](
+        mask_functor: mask_t,
+        mut att_block: RegTile[DType.float32, layout, MutExternalOrigin],
+        q_tile_idx: Int,
+        k_tile_idx: Int,
+        start_pos: Int,
+        head_idx: UInt32,
+        batch_idx: UInt32,
+        l_id: Int,
+    ):
+        """Comptime dispatch wrapper around the mask application.
+
+        - `CausalMask`: fast SIMD path. `q_start_pos < kv_end_pos`
+          runtime check, then `_apply_causal_mask_fast`. The
+          `start_pos` shift is folded into the q position.
+        - `NullMask`: comptime no-op (the status would always be
+          `NO_MASK` and the branch is unconditionally elided).
+        - Any other `MHAMask`: generic path via
+          `mask_functor.status(...)` + `apply_mask_to_att_block`. The
+          runtime `status()` call + enum branching adds a few SGPR
+          ops per tile; acceptable for the less-common masks where
+          there is no comptime-specialized fast path.
+        """
+        comptime if _type_is_eq[mask_t, NullMask]():
+            return
+        elif _type_is_eq[mask_t, CausalMask]():
+            var q_start_pos = q_tile_idx * Self.Q_BLOCK_SIZE + start_pos
+            var kv_end_pos = (k_tile_idx + 1) * Self.KV_BLOCK
+            if unlikely(q_start_pos < kv_end_pos):
+                _apply_causal_mask_fast[
+                    Q_BLOCK_SIZE=Self.Q_BLOCK_SIZE,
+                    KV_BLOCK_SIZE=Self.KV_BLOCK,
+                ](
+                    att_block,
+                    Int32(q_tile_idx),
+                    Int32(k_tile_idx),
+                    Int32(start_pos),
+                    Int32(l_id),
+                )
+        else:
+            var status = mask_functor.status(
+                IndexList[2, element_type=DType.uint32](
+                    Int(q_tile_idx * Self.Q_BLOCK_SIZE + start_pos),
+                    Int(k_tile_idx * Self.KV_BLOCK),
+                ),
+                IndexList[2, element_type=DType.uint32](
+                    Int(Self.Q_BLOCK_SIZE), Int(Self.KV_BLOCK)
+                ),
+            )
+            if status != TileMaskStatus.NO_MASK:
+                apply_mask_to_att_block[
+                    Q_BLOCK_SIZE=Self.Q_BLOCK_SIZE,
+                    KV_BLOCK_SIZE=Self.KV_BLOCK,
+                ](
+                    mask_functor,
+                    att_block,
+                    Int32(q_tile_idx),
+                    Int32(k_tile_idx),
+                    Int32(start_pos),
+                    head_idx,
+                    batch_idx,
+                    Int32(l_id),
+                    status,
+                )
+
+    @staticmethod
+    @always_inline
     def _store_o_to_gmem[
-        epilogue_chunk_width: Int = 1
+        output_dtype: DType,
+        epilogue_chunk_width: Int = 1,
     ](
         o_reg_t: RegTile[DType.float32, Self._O_T_LAYOUT_T, MutExternalOrigin],
-        epilogue_writer: RegTileEpilogue[DType.float32, epilogue_chunk_width],
+        epilogue_writer: RegTileEpilogue[output_dtype, epilogue_chunk_width],
         l_id: Int,
     ):
         """Writes the FP32 row_l rt_32x32 accumulator to gmem via
-        `RegTileEpilogue`.
+        `RegTileEpilogue`, casting per-lane to `output_dtype`.
 
         The per-lane → (q_in_tile, output_col) mapping follows the
         rt_32x32 row_l fragment topology: lanes `[0, 32)` and `[32, 64)`
         own the two halves of the depth, offset by 4 to interleave.
         Since the col_l → row_l transpose is a zero-cost re-tag, the
-        stored values are bit-identical to the col_l accumulator."""
+        FP32-path stored values are bit-identical to the col_l
+        accumulator; the BF16-path cast is a per-lane `v_cvt_pkrtz`
+        (or scalar `v_cvt`) emitted just before the gmem store."""
         var q_in_tile = l_id & 31
         var d_extra = 4 if l_id >= 32 else 0
 
@@ -699,11 +880,19 @@ struct HKMhaPrefill[config: HKMhaConfig]:
             comptime k_in_base = k_local % 16
             comptime d_within_4 = (k_in_base // 4) * 8 + (k_in_base % 4)
             var output_col = i * 32 + d_within_4 + d_extra
-            epilogue_writer.store(
-                SIMD[DType.float32, 1](o_reg_t.ptr[k_local]),
-                m=q_in_tile,
-                n=output_col,
-            )
+            var v_fp32 = SIMD[DType.float32, 1](o_reg_t.ptr[k_local])
+            comptime if output_dtype == DType.float32:
+                epilogue_writer.store(
+                    rebind[SIMD[output_dtype, 1]](v_fp32),
+                    m=q_in_tile,
+                    n=output_col,
+                )
+            else:
+                epilogue_writer.store(
+                    v_fp32.cast[output_dtype](),
+                    m=q_in_tile,
+                    n=output_col,
+                )
 
     @staticmethod
     @always_inline
@@ -846,55 +1035,84 @@ struct HKMhaPrefill[config: HKMhaConfig]:
     )
     @staticmethod
     def run[
+        k_t: MHAOperand,
+        v_t: MHAOperand,
+        mask_t: MHAMask,
+        q_dtype: DType,
+        output_dtype: DType,
         q_layout: TensorLayout,
-        k_layout: TensorLayout,
-        v_layout: TensorLayout,
         o_layout: TensorLayout,
-        l_vec_layout: TensorLayout,
     ](
-        q: TileTensor[DType.bfloat16, q_layout, ImmutAnyOrigin],
-        k: TileTensor[DType.bfloat16, k_layout, ImmutAnyOrigin],
-        v: TileTensor[DType.bfloat16, v_layout, ImmutAnyOrigin],
-        o: TileTensor[DType.float32, o_layout, MutAnyOrigin],
-        l_vec: TileTensor[DType.float32, l_vec_layout, MutAnyOrigin],
+        q: TileTensor[q_dtype, q_layout, ImmutAnyOrigin],
+        k: k_t,
+        v: v_t,
+        o: TileTensor[output_dtype, o_layout, MutAnyOrigin],
+        mask_functor: mask_t,
         scale: Float32,
+        num_keys: Int,
+        start_pos: Int,
     ):
-        """Multi-block 8-warp MHA forward.
+        """Multi-block 8-warp MHA forward (inference-only).
 
         Grid: `(NUM_HEADS, ceildiv(seq_len, BM), batch)`. Each block
         owns one `(batch, head, BM-tile)` slice; the 8 warps within
         split the BM-tile's Q rows.
 
-        Expected layouts:
+        Expected layouts / shapes:
 
-        - `q`, `o`: `(batch, seq_len, NUM_HEADS, DEPTH)` row-major.
-        - `k`, `v`: `(batch, num_keys, NUM_KV_HEADS, DEPTH)` row-major.
-        - `l_vec`: `(batch, NUM_HEADS, seq_len)` row-major.
+        - `q`, `o`: `(batch, seq_len, NUM_HEADS, DEPTH)` row-major
+          TileTensor. `o`'s dtype matches `config.output_dtype` — BF16
+          for the production dispatcher (which holds a BF16 output
+          buffer) or FP32 if the caller wants the unnormalized
+          accumulator.
+        - `k`, `v`: any `MHAOperand` whose `block_paged_tile[KV_BLOCK]`
+          returns `(KV_BLOCK, DEPTH)` tiles per `(batch, t*KV_BLOCK,
+          kv_head, 0)`. `LayoutTensorMHAOperand` for contiguous test /
+          bench buffers; `KVCacheMHAOperand` for paged production
+          caches (`page_size >= KV_BLOCK = 64`).
 
-        `batch` and `seq_len` / `num_keys` may be dynamic
-        (`RuntimeInt`); `NUM_HEADS`, `NUM_KV_HEADS`, `DEPTH` must be
-        static (`Idx`). `NUM_KV_HEADS` must be `1` (GQA) or equal to
-        `NUM_HEADS` (MHA); other GQA ratios need a stride-aware DMA
-        loader (TODO).
+        `batch` and `seq_len` / `num_keys` may be dynamic;
+        `NUM_HEADS`, `NUM_KV_HEADS`, `DEPTH` must be static.
+        `NUM_HEADS` must be a multiple of `NUM_KV_HEADS`
+        (GROUP = `NUM_HEADS // NUM_KV_HEADS`).
 
         Args:
             q: Q tile tensor.
-            k: K tile tensor.
-            v: V tile tensor.
-            o: Output tile tensor (FP32, same shape as `q`).
-            l_vec: `log(norm) + ln(2) * max_vec` output for the
-                backward pass.
+            k: K operand (MHAOperand).
+            v: V operand (MHAOperand).
+            o: Output tile tensor (`config.output_dtype`, same shape
+                as `q`).
+            mask_functor: Per-tile mask predicate (causal, sliding-window,
+                etc.). Evaluated inside the QK→softmax cluster; identity
+                for unmasked attention.
             scale: Softmax scale (typically `1 / sqrt(DEPTH)`).
+            num_keys: Runtime length of the K/V sequence.
+            start_pos: Position of the first Q row in the global sequence
+                — non-zero for prefill chunks of a longer generation.
+                Used by the mask functor to compute the causal cutoff.
         """
-        var seq_len = Int(q.dim[1]())
-        var num_keys = Int(k.dim[1]())
-        var num_tiles = (num_keys + Self.KV_BLOCK - 1) // Self.KV_BLOCK
+        # `q_dtype` and `output_dtype` are independent comptime type
+        # parameters so callers can pass TileTensors with literal dtypes
+        # (e.g. `DType.float32` from `enqueue_create_buffer[DType.float32]`)
+        # without Mojo failing to unify a literal with a generic
+        # parameter (`Self.config.output_dtype`, `DType.bfloat16`) even
+        # when they evaluate equal. The asserts pin the contract: q is
+        # BF16, o matches `config.output_dtype`. The downstream rebind
+        # is a no-op identity given the assert.
         comptime assert (
-            Self.NUM_KV_HEADS == 1 or Self.NUM_KV_HEADS == Self.NUM_HEADS
-        ), (
-            "HKMhaPrefill: only NUM_KV_HEADS == 1 (GQA) or"
-            " == NUM_HEADS (MHA) supported by the cooperative DMA"
-            " loaders right now"
+            q_dtype == DType.bfloat16
+        ), "HKMhaPrefill.run: `q.dtype` must be `DType.bfloat16`"
+        comptime assert (
+            output_dtype == Self.config.output_dtype
+        ), "HKMhaPrefill.run: `o.dtype` must equal `config.output_dtype`"
+        var q_bf16 = rebind[
+            TileTensor[DType.bfloat16, q_layout, ImmutAnyOrigin]
+        ](q)
+        var seq_len = Int(q.dim[1]())
+        var num_tiles = (num_keys + Self.KV_BLOCK - 1) // Self.KV_BLOCK
+        comptime assert Self.NUM_HEADS % Self.NUM_KV_HEADS == 0, (
+            "HKMhaPrefill: NUM_HEADS must be a multiple of NUM_KV_HEADS"
+            " (GROUP = NUM_HEADS // NUM_KV_HEADS)"
         )
         # K/V SMEM byte layout: each slot is a 2D `(KV_BLOCK *
         # NUM_BLOCK_COLS, SUB_COLS)` row-major tile holding `SUB_ROWS x
@@ -950,14 +1168,23 @@ struct HKMhaPrefill[config: HKMhaConfig]:
         var w_id = Int(readfirstlane(warp_id()))
         var l_id = Int(lane_id())
 
-        # GQA-aware head index: `head_idx` interleaves Q-heads within
-        # each KV group so neighbouring blocks share KV-head data on
-        # adjacent CUs. Reduces to identity when `NUM_KV_HEADS ==
-        # NUM_HEADS`.
+        # GQA-aware head index: permutes block_idx.x ∈ [0, NUM_HEADS)
+        # into head_idx ∈ [0, NUM_HEADS) so blocks visiting the same
+        # KV head are spaced GROUP apart in launch order, spreading KV
+        # bandwidth across CUs/XCDs. View block_x as a row-major index
+        # into a (NUM_KV_HEADS, GROUP) rectangle (`bx_div ∈ [0,
+        # NUM_KV_HEADS)` indexes the KV head, `bx_mod ∈ [0, GROUP)`
+        # indexes the Q within that group); `head_idx = bx_mod *
+        # NUM_KV_HEADS + bx_div` transposes to column-major over the
+        # same rectangle. The map is a bijection iff NUM_HEADS ==
+        # GROUP * NUM_KV_HEADS, which the divisibility assert above
+        # enforces. Reduces to identity at MHA (GROUP=1) and at MQA
+        # (NUM_KV_HEADS=1), keeping `divmod(_, 1)` constant-foldable
+        # for byte-identical asm on those paths.
         var block_x = Int(readfirstlane(Int32(block_idx.x)))
         comptime _GROUP = Self.NUM_HEADS // Self.NUM_KV_HEADS
         var bx_div, bx_mod = divmod(block_x, _GROUP)
-        var head_idx = bx_mod * _GROUP + bx_div
+        var head_idx = bx_mod * Self.NUM_KV_HEADS + bx_div
         var block_tile_idx = Int(readfirstlane(Int32(block_idx.y)))
         var batch_idx = Int(readfirstlane(Int32(block_idx.z)))
         var kv_head_idx = head_idx // _GROUP
@@ -973,12 +1200,21 @@ struct HKMhaPrefill[config: HKMhaConfig]:
         var max_tile_idx_local = (
             block_tile_idx * Self.NUM_WARPS + Self.NUM_WARPS - 1
         )
-        var max_q_end_pos = (max_tile_idx_local + 1) * Self.Q_BLOCK_SIZE
+        var max_q_end_pos = (
+            max_tile_idx_local + 1
+        ) * Self.Q_BLOCK_SIZE + start_pos
         var max_num_tiles_calc = (
             max_q_end_pos + Self.KV_BLOCK - 1
         ) // Self.KV_BLOCK
         var max_num_tiles_local: Int
-        comptime if Self.CAUSAL:
+        # FULL_MASK skip at the loop boundary for `CausalMask` (the
+        # common case). For an arbitrary `MHAMask` we can't statically
+        # bound the K iteration count, so we iterate to `num_tiles` and
+        # rely on the per-tile `mask_functor.status(...)` check at each
+        # mask site to detect a fully-masked tile and zero `att_block`.
+        # `NullMask` keeps the full iteration count and `status` always
+        # returns `NO_MASK`, so per-tile mask work is comptime-elided.
+        comptime if _type_is_eq[mask_t, CausalMask]():
             max_num_tiles_local = (
                 max_num_tiles_calc if max_num_tiles_calc
                 < num_tiles else num_tiles
@@ -992,7 +1228,7 @@ struct HKMhaPrefill[config: HKMhaConfig]:
         # `(batch_idx, 0, head_idx, 0)`; `.reshape` retags it as a 2D
         # MixedLayout that the per-warp `.tile[Q_BLOCK_SIZE, DEPTH]()`
         # downstream and the DMA loaders expect.
-        var q_2d = q.tile(
+        var q_2d = q_bf16.tile(
             Coord(
                 Idx[1](),
                 RuntimeInt[DType.int32](Int32(seq_len)),
@@ -1034,46 +1270,16 @@ struct HKMhaPrefill[config: HKMhaConfig]:
             q_warp_block_idx, 0
         )
 
-        var k_2d = k.tile(
-            Coord(
-                Idx[1](),
-                RuntimeInt[DType.int32](Int32(num_keys)),
-                Idx[1](),
-                Idx[Self.DEPTH](),
-            ),
-            Coord(Idx(batch_idx), Idx[0](), Idx(kv_head_idx), Idx[0]()),
-        ).reshape(
-            Self._KVPerHeadLayoutT(
-                Coord(
-                    RuntimeInt[DType.int32](Int32(num_keys)),
-                    Idx[Self.DEPTH](),
-                ),
-                Coord(Idx[Self._KV_ROW_STRIDE](), Idx[1]()),
-            )
-        )
-        var v_2d = v.tile(
-            Coord(
-                Idx[1](),
-                RuntimeInt[DType.int32](Int32(num_keys)),
-                Idx[1](),
-                Idx[Self.DEPTH](),
-            ),
-            Coord(Idx(batch_idx), Idx[0](), Idx(kv_head_idx), Idx[0]()),
-        ).reshape(
-            Self._KVPerHeadLayoutT(
-                Coord(
-                    RuntimeInt[DType.int32](Int32(num_keys)),
-                    Idx[Self.DEPTH](),
-                ),
-                Coord(Idx[Self._KV_ROW_STRIDE](), Idx[1]()),
-            )
-        )
-
-        # DMA loaders. SRDs constructed once and reused across every
-        # `_dma_k` / `_dma_v` (one-descriptor pattern with per-call
-        # offset).
-        var k_loader_dma = Self.KTileLoader(k_2d)
-        var v_loader_dma = Self.VTileLoader(v_2d)
+        # Per-(batch, kv_head) is captured via the MHAOperand interface.
+        # `_dma_k` / `_dma_v` call `k.block_paged_tile[KV_BLOCK](...)` per
+        # tile, returning a TileTensor anchored at `(batch_idx,
+        # t*KV_BLOCK, kv_head_idx, 0)`. For LayoutTensorMHAOperand this
+        # resolves to a pointer-arithmetic offset (contiguous K/V);
+        # for KVCacheMHAOperand it resolves through the page table.
+        # Cast indices to UInt32 once so the trait calls don't repeat
+        # the conversion.
+        var _batch_idx_u32 = UInt32(batch_idx)
+        var _kv_head_idx_u32 = UInt32(kv_head_idx)
 
         # Q load + prescale by `scale * log2(e)`; multiply in FP32
         # per fragment to preserve ~1 ULP, cast back to BF16.
@@ -1116,8 +1322,9 @@ struct HKMhaPrefill[config: HKMhaConfig]:
         # K[0] DMA, full drain, barrier.
         Self._dma_k(
             k_smem[0],
-            k_loader_dma,
-            k_2d,
+            k,
+            _batch_idx_u32,
+            _kv_head_idx_u32,
             0,
             w_id,
             l_id,
@@ -1130,16 +1337,18 @@ struct HKMhaPrefill[config: HKMhaConfig]:
         if num_tiles > 1:
             Self._dma_k(
                 k_smem[1],
-                k_loader_dma,
-                k_2d,
+                k,
+                _batch_idx_u32,
+                _kv_head_idx_u32,
                 1,
                 w_id,
                 l_id,
             )
         Self._dma_v(
             v_smem[0],
-            v_loader_dma,
-            v_2d,
+            v,
+            _batch_idx_u32,
+            _kv_head_idx_u32,
             0,
             w_id,
             l_id,
@@ -1158,20 +1367,17 @@ struct HKMhaPrefill[config: HKMhaConfig]:
         Self._qk_with_kreg(att_block_0, k_reg, q_reg)
         _sched_barrier_zero()
 
-        comptime if Self.CAUSAL:
-            # `unlikely`: most blocks have q_start_pos >= KV (no mask).
-            var q_start_pos_p = tile_idx * Self.Q_BLOCK_SIZE
-            var kv_end_pos_p = 1 * Self.KV_BLOCK
-            if unlikely(q_start_pos_p < kv_end_pos_p):
-                mask_kv_tile[
-                    Q_BLOCK_SIZE=Self.Q_BLOCK_SIZE,
-                    KV_BLOCK_SIZE=Self.KV_BLOCK,
-                ](
-                    att_block_0,
-                    Int32(tile_idx),
-                    Int32(0),
-                    Int32(l_id),
-                )
+        # Prologue tile 0 mask.
+        Self._maybe_apply_mask(
+            mask_functor,
+            att_block_0,
+            tile_idx,
+            0,
+            start_pos,
+            UInt32(head_idx),
+            _batch_idx_u32,
+            l_id,
+        )
 
         # Tile-0 partial softmax (no rescale: first tile).
         col_max(max_vec, att_block_0)
@@ -1193,8 +1399,9 @@ struct HKMhaPrefill[config: HKMhaConfig]:
         if num_tiles > 2:
             Self._dma_k(
                 k_smem[0],
-                k_loader_dma,
-                k_2d,
+                k,
+                _batch_idx_u32,
+                _kv_head_idx_u32,
                 2,
                 w_id,
                 l_id,
@@ -1202,8 +1409,9 @@ struct HKMhaPrefill[config: HKMhaConfig]:
         if num_tiles > 1:
             Self._dma_v(
                 v_smem[1],
-                v_loader_dma,
-                v_2d,
+                v,
+                _batch_idx_u32,
+                _kv_head_idx_u32,
                 1,
                 w_id,
                 l_id,
@@ -1239,8 +1447,9 @@ struct HKMhaPrefill[config: HKMhaConfig]:
             _asm_label["; HKMHA_MAIN_C1_BEGIN"]()
             Self._dma_k(
                 k_smem[1],
-                k_loader_dma,
-                k_2d,
+                k,
+                _batch_idx_u32,
+                _kv_head_idx_u32,
                 j,
                 w_id,
                 l_id,
@@ -1269,8 +1478,9 @@ struct HKMhaPrefill[config: HKMhaConfig]:
             _asm_label["; HKMHA_MAIN_C3_BEGIN"]()
             Self._dma_v(
                 v_smem[0],
-                v_loader_dma,
-                v_2d,
+                v,
+                _batch_idx_u32,
+                _kv_head_idx_u32,
                 j - 1,
                 w_id,
                 l_id,
@@ -1301,27 +1511,25 @@ struct HKMhaPrefill[config: HKMhaConfig]:
             _asm_label["; HKMHA_MAIN_C5_BEGIN"]()
             Self._dma_k(
                 k_smem[0],
-                k_loader_dma,
-                k_2d,
+                k,
+                _batch_idx_u32,
+                _kv_head_idx_u32,
                 j + 1,
                 w_id,
                 l_id,
             )
             var v_reg_c5 = reg_alloc[DType.bfloat16](Self._MmaOp.V_LAYOUT)
             Self._load_v_reg(v_reg_c5, v_smem[1])
-            comptime if Self.CAUSAL:
-                var q_start_pos_c5 = tile_idx * Self.Q_BLOCK_SIZE
-                var kv_end_pos_c5 = j * Self.KV_BLOCK
-                if q_start_pos_c5 < kv_end_pos_c5:
-                    mask_kv_tile[
-                        Q_BLOCK_SIZE=Self.Q_BLOCK_SIZE,
-                        KV_BLOCK_SIZE=Self.KV_BLOCK,
-                    ](
-                        att_block_0,
-                        Int32(tile_idx),
-                        Int32(j - 1),
-                        Int32(l_id),
-                    )
+            Self._maybe_apply_mask(
+                mask_functor,
+                att_block_0,
+                tile_idx,
+                j - 1,
+                start_pos,
+                UInt32(head_idx),
+                _batch_idx_u32,
+                l_id,
+            )
             sched_dsread_valu_pairs[
                 32, valu_cnt=1, group=Self._SCHED_MAIN_C5_DSREAD
             ]()
@@ -1347,8 +1555,9 @@ struct HKMhaPrefill[config: HKMhaConfig]:
             _asm_label["; HKMHA_MAIN_C7_BEGIN"]()
             Self._dma_v(
                 v_smem[1],
-                v_loader_dma,
-                v_2d,
+                v,
+                _batch_idx_u32,
+                _kv_head_idx_u32,
                 j,
                 w_id,
                 l_id,
@@ -1382,27 +1591,25 @@ struct HKMhaPrefill[config: HKMhaConfig]:
         _asm_label["; HKMHA_EPI_C1_BEGIN"]()
         Self._dma_k(
             k_smem[1],
-            k_loader_dma,
-            k_2d,
+            k,
+            _batch_idx_u32,
+            _kv_head_idx_u32,
             N - 1,
             w_id,
             l_id,
         )
         var v_reg_e1 = reg_alloc[DType.bfloat16](Self._MmaOp.V_LAYOUT)
         Self._load_v_reg(v_reg_e1, v_smem[0])
-        comptime if Self.CAUSAL:
-            var q_start_pos_e1 = tile_idx * Self.Q_BLOCK_SIZE
-            var kv_end_pos_e1 = (N - 2) * Self.KV_BLOCK
-            if unlikely(q_start_pos_e1 < kv_end_pos_e1):
-                mask_kv_tile[
-                    Q_BLOCK_SIZE=Self.Q_BLOCK_SIZE,
-                    KV_BLOCK_SIZE=Self.KV_BLOCK,
-                ](
-                    att_block_1,
-                    Int32(tile_idx),
-                    Int32(N - 3),
-                    Int32(l_id),
-                )
+        Self._maybe_apply_mask(
+            mask_functor,
+            att_block_1,
+            tile_idx,
+            N - 3,
+            start_pos,
+            UInt32(head_idx),
+            _batch_idx_u32,
+            l_id,
+        )
         _cluster_barrier()
 
         # Epi-C2: PV[N-4] (whole) + partial softmax of tile (N-3),
@@ -1425,8 +1632,9 @@ struct HKMhaPrefill[config: HKMhaConfig]:
         _asm_label["; HKMHA_EPI_C3_BEGIN"]()
         Self._dma_v(
             v_smem[0],
-            v_loader_dma,
-            v_2d,
+            v,
+            _batch_idx_u32,
+            _kv_head_idx_u32,
             N - 2,
             w_id,
             l_id,
@@ -1450,19 +1658,16 @@ struct HKMhaPrefill[config: HKMhaConfig]:
         _asm_label["; HKMHA_EPI_C5_BEGIN"]()
         var v_reg_e5 = reg_alloc[DType.bfloat16](Self._MmaOp.V_LAYOUT)
         Self._load_v_reg(v_reg_e5, v_smem[1])
-        comptime if Self.CAUSAL:
-            var q_start_pos_e5 = tile_idx * Self.Q_BLOCK_SIZE
-            var kv_end_pos_e5 = (N - 1) * Self.KV_BLOCK
-            if likely(q_start_pos_e5 < kv_end_pos_e5):
-                mask_kv_tile[
-                    Q_BLOCK_SIZE=Self.Q_BLOCK_SIZE,
-                    KV_BLOCK_SIZE=Self.KV_BLOCK,
-                ](
-                    att_block_0,
-                    Int32(tile_idx),
-                    Int32(N - 2),
-                    Int32(l_id),
-                )
+        Self._maybe_apply_mask(
+            mask_functor,
+            att_block_0,
+            tile_idx,
+            N - 2,
+            start_pos,
+            UInt32(head_idx),
+            _batch_idx_u32,
+            l_id,
+        )
         sched_dsread_valu_pairs[
             32, valu_cnt=1, group=Self._SCHED_EPI_C5_DSREAD
         ]()
@@ -1488,8 +1693,9 @@ struct HKMhaPrefill[config: HKMhaConfig]:
         _asm_label["; HKMHA_EPI_C7_BEGIN"]()
         Self._dma_v(
             v_smem[1],
-            v_loader_dma,
-            v_2d,
+            v,
+            _batch_idx_u32,
+            _kv_head_idx_u32,
             N - 1,
             w_id,
             l_id,
@@ -1513,19 +1719,16 @@ struct HKMhaPrefill[config: HKMhaConfig]:
         _asm_label["; HKMHA_EPI_C9_BEGIN"]()
         var v_reg_e9 = reg_alloc[DType.bfloat16](Self._MmaOp.V_LAYOUT)
         Self._load_v_reg(v_reg_e9, v_smem[0])
-        comptime if Self.CAUSAL:
-            var q_start_pos_e9 = tile_idx * Self.Q_BLOCK_SIZE
-            var kv_end_pos_e9 = N * Self.KV_BLOCK
-            if likely(q_start_pos_e9 < kv_end_pos_e9):
-                mask_kv_tile[
-                    Q_BLOCK_SIZE=Self.Q_BLOCK_SIZE,
-                    KV_BLOCK_SIZE=Self.KV_BLOCK,
-                ](
-                    att_block_1,
-                    Int32(tile_idx),
-                    Int32(N - 1),
-                    Int32(l_id),
-                )
+        Self._maybe_apply_mask(
+            mask_functor,
+            att_block_1,
+            tile_idx,
+            N - 1,
+            start_pos,
+            UInt32(head_idx),
+            _batch_idx_u32,
+            l_id,
+        )
         sched_dsread_valu_pairs[
             32, valu_cnt=1, group=Self._SCHED_EPI_C9_DSREAD
         ]()
@@ -1579,87 +1782,78 @@ struct HKMhaPrefill[config: HKMhaConfig]:
             MutExternalOrigin,
             address_space=AddressSpace.LOCAL,
         ](o_normalized.ptr, _o_view_layout)
-        var epilogue_writer = RegTileEpilogue[DType.float32, 1](o_warp_2d)
-        Self._store_o_to_gmem(o_normalized_view, epilogue_writer, l_id)
-
-        # L_vec store. `L_vec[batch, head, q_row] = log(norm_vec) +
-        # ln(2) * max_vec`. Consumed by the attention backward pass.
-        # `max_vec` and `norm_vec` are dead after this point, so we
-        # mutate `norm_vec` in place to hold the result.
-        comptime _LN2 = Float32(0.69314718056)
-        norm_vec[0, 0] = math_log(norm_vec[0, 0]) + max_vec[0, 0] * _LN2
-
-        # L_vec per-(batch, head) view: slice the 3D `(batch, NUM_HEADS,
-        # seq_len)` to `(1, 1, seq_len)` at `(batch_idx, head_idx, 0)`,
-        # then reshape to 2D `(seq_len, 1)` so the per-warp
-        # `.tile[Q_BLOCK_SIZE, 1]()` and `RegTileEpilogue` use the same
-        # 2D contract as the rest of the kernel.
-        var lvec_2d = l_vec.tile(
-            Coord(
-                Idx[1](),
-                Idx[1](),
-                RuntimeInt[DType.int32](Int32(seq_len)),
-            ),
-            Coord(Idx(batch_idx), Idx(head_idx), Idx[0]()),
-        ).reshape(
-            Self._LVecPerHeadLayoutT(
-                Coord(RuntimeInt[DType.int32](Int32(seq_len)), Idx[1]()),
-                Coord(Idx[1](), Idx[1]()),
-            )
+        var epilogue_writer = RegTileEpilogue[output_dtype, 1](o_warp_2d)
+        Self._store_o_to_gmem[output_dtype](
+            o_normalized_view, epilogue_writer, l_id
         )
-        var lvec_warp_2d = lvec_2d.tile[Self.Q_BLOCK_SIZE, 1](
-            q_warp_block_idx, 0
-        )
-        var lvec_writer = RegTileEpilogue[DType.float32, 1](lvec_warp_2d)
-        # Lanes [0, 32) each write one row entry; [32, 64) hold
-        # redundant copies and are guarded out.
-        if l_id < Self.Q_BLOCK_SIZE:
-            lvec_writer.store(
-                SIMD[DType.float32, 1](norm_vec.ptr[0]),
-                m=l_id,
-                n=0,
-            )
 
 
 @always_inline
 def hk_mha_prefill[
+    k_t: MHAOperand,
+    v_t: MHAOperand,
+    mask_t: MHAMask,
+    //,
     config: HKMhaConfig,
     compile_options: StaticString = CompilationTarget[
         DeviceContext.default_device_info.target()
     ].default_compile_options(),
 ](
-    q: TileTensor[mut=False, DType.bfloat16, ...],
-    k: TileTensor[mut=False, DType.bfloat16, ...],
-    v: TileTensor[mut=False, DType.bfloat16, ...],
-    o: TileTensor[mut=True, DType.float32, ...],
-    l_vec: TileTensor[mut=True, DType.float32, ...],
+    q: TileTensor[mut=False, ...],
+    k: k_t,
+    v: v_t,
+    o: TileTensor[mut=True, ...],
+    mask_functor: mask_t,
     scale: Float32,
+    num_keys: Int,
+    start_pos: Int,
     ctx: DeviceContext,
 ) raises:
     """Host launcher for `HKMhaPrefill`.
 
-    Derives grid dimensions from the input layouts, compiles
+    Derives grid dimensions from the Q layout and `num_keys`, compiles
     `HKMhaPrefill[config].run` (with optional caller-supplied LLVM
     `compile_options` such as `amdgpu-igrouplp-exact-solver=true` for
-    benchmarks), and enqueues it. Expected layouts:
+    benchmarks), and enqueues it.
 
-    - `q`, `o`: `(batch, seq_len, num_heads, depth)`.
-    - `k`, `v`: `(batch, num_keys, num_kv_heads, depth)`.
-    - `l_vec`: `(batch, num_heads, seq_len)`.
+    - `q`, `o`: `(batch, seq_len, num_heads, depth)` TileTensor.
+      `o`'s dtype matches `config.output_dtype` — BF16 for production
+      inference (which the dispatcher uses) or FP32 if the caller wants
+      the unnormalized accumulator.
+    - `k`, `v`: any `MHAOperand` (`LayoutTensorMHAOperand` for tests/
+      bench, `KVCacheMHAOperand` for paged production caches at
+      `page_size >= KV_BLOCK = 64`).
 
     `batch` and `seq_len` / `num_keys` may be dynamic; the head and
     depth dims must be static.
     """
+    # Operand dtypes are taken dtype-generic at the launcher boundary
+    # because Mojo doesn't unify a caller-site literal (e.g.
+    # `DType.float32` from `enqueue_create_buffer[DType.float32]`) with
+    # a generic comptime parameter (`config.output_dtype`,
+    # `DType.bfloat16`) even when they evaluate equal. Asserting
+    # explicitly here gives the same safety without forcing
+    # `rebind[TileTensor[DType.bfloat16, ...]](q)` at every call site
+    # (tests, bench, and the production dispatcher).
+    comptime assert (
+        q.dtype == DType.bfloat16
+    ), "hk_mha_prefill: `q.dtype` must be `DType.bfloat16`"
+    comptime assert (
+        o.dtype == config.output_dtype
+    ), "hk_mha_prefill: `o.dtype` must equal `config.output_dtype`"
+
     var batch = Int(q.dim[0]())
     var seq_len = Int(q.dim[1]())
 
     comptime kernel = HKMhaPrefill[config]
     comptime kernel_run = kernel.run[
+        k_t,
+        v_t,
+        mask_t,
+        q.dtype,
+        o.dtype,
         q.LayoutType,
-        k.LayoutType,
-        v.LayoutType,
         o.LayoutType,
-        l_vec.LayoutType,
     ]
 
     var compiled = ctx.compile_function[
@@ -1671,8 +1865,10 @@ def hk_mha_prefill[
         k,
         v,
         o,
-        l_vec,
+        mask_functor,
         scale,
+        num_keys,
+        start_pos,
         grid_dim=(
             config.num_heads,
             ceildiv(seq_len, kernel.BM),

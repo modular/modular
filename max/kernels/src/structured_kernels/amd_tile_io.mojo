@@ -1457,6 +1457,11 @@ struct SubTileLoaderLDS_HK_st_8x32[
         var tile_byte_offset = Int(v_gmem_tile.ptr) - dram_base
         var thread_id = warp_id_uniform * Int(WARP_SIZE) + lane_id_local
 
+        # Row stride (in elements) taken from the gmem tile's layout so
+        # per-(batch, kv_head) slices of a (B, N, NUM_KV_HEADS, D) tensor
+        # advance by `NUM_KV_HEADS * depth` per row, not just `depth`.
+        comptime _v_row_stride = type_of(v_gmem_tile).static_stride[0]
+
         comptime aux = 0
 
         comptime for i in range(_num_iters):
@@ -1476,7 +1481,7 @@ struct SubTileLoaderLDS_HK_st_8x32[
             var global_row = subtile_row * _subtile_rows + row_in_subtile
             var global_col = subtile_col * _subtile_cols + col_in_subtile
             var global_byte_in_tile = (
-                global_row * Self.depth + global_col
+                global_row * _v_row_stride + global_col
             ) * size_of[Self.dtype]()
 
             var lds_warp_byte = (

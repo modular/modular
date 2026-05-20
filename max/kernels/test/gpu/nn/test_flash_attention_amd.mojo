@@ -516,6 +516,24 @@ def test_context_encoding[
             against_gpu_naive=True,
         ](256, 256, ctx, use_adversarial_softmax_input=True)
 
+    # Long-context AMD CDNA prefill gate. seq_len=4096 with BF16-output
+    # causal prefill on CDNA fires the gate in `flash_attention_dispatch`,
+    # routing through `hk_mha_prefill`. Validates that (a) the gate builds
+    # + launches the kernel correctly, (b) the `LayoutTensor → TileTensor`
+    # adapters in the gate preserve the data, and (c) the output matches
+    # the gpu_naive reference within BF16 attention tolerance. Guarded on
+    # depth in {64, 128} (the gate's depth eligibility); other depths fall
+    # through to FA2.
+    comptime if depth == 64 or depth == 128:
+        test[
+            4,
+            DType.bfloat16,
+            DType.bfloat16,
+            depth=depth,
+            num_heads=16,
+            against_gpu_naive=True,
+        ](4096, 4096, ctx)
+
 
 def test_decoding[
     batch_size: Int,

@@ -65,6 +65,7 @@ from layout import (
     TensorLayout,
     TileTensor,
     UNKNOWN_VALUE,
+    lt_to_tt,
     row_major,
 )
 from layout.layout import *
@@ -86,6 +87,7 @@ from .amd_rdna.attention import AttentionRDNA
 from .amd_rdna.mha_decode import AttentionRDNA
 from .amd_rdna.mha_prefill import AttentionRDNA
 from .amd_structured.attention import Attention
+from .amd_structured.hk_mha_prefill import HKMhaConfig, hk_mha_prefill
 from .amd_structured.mha_decode import Attention
 from .amd_structured.mha_decode_streaming import Attention
 from .amd_structured.mha_prefill import Attention
@@ -690,6 +692,67 @@ def flash_attention_dispatch[
                         )
 
             else:
+                # Long-context AMD CDNA prefill gate. Routes BF16 causal
+                # prefill to the 8-warp structured kernel in
+                # `amd_structured/hk_mha_prefill.mojo`; otherwise falls
+                # through to the FA2 launch below. Gate (all comptime
+                # except the seq-length / page-size run-time checks):
+                # - BF16 throughout;
+                # - depth in (64, 128) (MFMA shape `32x32x16_bf16`);
+                # - causal mask, no attention sink, no ragged batch;
+                # - AMD CDNA (not RDNA, not Nvidia);
+                # - K/V operand is either contiguous (`page_size == 0`)
+                #   or paged with `page_size >= KV_BLOCK = 64`;
+                # - max_prompt_len >= 4096 and a multiple of
+                #   BM = NUM_WARPS * Q_BLOCK_SIZE = 256 (no partial-Q
+                #   tile path in this kernel).
+                comptime _hk_eligible = (
+                    config.dtype == DType.bfloat16
+                    and output.dtype == DType.bfloat16
+                    and (config.depth == 64 or config.depth == 128)
+                    and _type_is_eq[mask_t, CausalMask]()
+                    and not sink
+                    and not ragged
+                    and has_amd_gpu_accelerator()
+                    and not _is_amd_rdna()
+                    and (k_t.page_size == 0 or k_t.page_size >= 64)
+                )
+
+                comptime if _hk_eligible:
+                    if max_prompt_len >= 4096 and max_prompt_len % 256 == 0:
+                        comptime hk_config = HKMhaConfig(
+                            q_block_size=32,
+                            kv_block=64,
+                            depth=config.depth,
+                            num_heads=config.num_heads,
+                            num_kv_heads=kv_num_heads,
+                            num_warps=8,
+                            output_dtype=DType.bfloat16,
+                        )
+                        var q_tt = lt_to_tt(q)
+                        var o_tt = lt_to_tt(output)
+                        # `mask_functor` is the dispatcher's
+                        # `mask_t` instance (the gate filtered to
+                        # `CausalMask` for now; future phases will
+                        # widen to sliding/chunked causal).
+                        # `start_pos = max_cache_valid_length -
+                        # max_prompt_len` is the number of pre-existing
+                        # KV entries before this prefill batch's tokens
+                        # — zero for fresh prefill, positive for cache
+                        # reuse.
+                        hk_mha_prefill[hk_config](
+                            q_tt,
+                            k,
+                            v,
+                            o_tt,
+                            mask_functor,
+                            scale,
+                            max_cache_valid_length,
+                            max_cache_valid_length - max_prompt_len,
+                            ctx,
+                        )
+                        return
+
                 comptime BM = config.block_m()
                 comptime smem_use = config.shared_mem_bytes[is_shared_kv]()
                 comptime kernel = mha[
