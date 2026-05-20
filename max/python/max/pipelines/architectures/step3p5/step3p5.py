@@ -49,7 +49,7 @@ from max.nn.embedding import VocabParallelEmbedding
 from max.nn.kv_cache import KVCacheParamInterface, PagedCacheValues
 from max.nn.layer import LayerList, Module
 from max.nn.linear import MLP, ColumnParallelLinear, Linear
-from max.nn.moe import MoE
+from max.nn.moe import MoE, make_concatenated_gated_activation_fn
 from max.nn.moe.expert_parallel import forward_moe_sharded_layers
 from max.nn.norm import RMSNorm
 from max.nn.rotary_embedding import (
@@ -511,7 +511,11 @@ class Step3p5MoEWithSharedExpert(Module):
                 norm_topk_prob=config.norm_expert_weight,
             ),
             dtype=config.dtype,
-            swiglu_limit=swiglu_limit,
+            gated_activation_fn=make_concatenated_gated_activation_fn(
+                ops.silu, swiglu_limit
+            )
+            if swiglu_limit > 0
+            else None,
             ep_size=ep_size,
             ep_batch_manager=ep_batch_manager,
         )

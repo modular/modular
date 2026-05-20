@@ -31,7 +31,48 @@ from ..kernels import grouped_matmul_ragged, moe_create_indices
 from ..layer import Layer, LayerList, Module, Shardable
 from ..linear import MLP, Linear
 from ..quant_config import QuantConfig
-from .quant_strategy import gated_activation
+
+
+def make_concatenated_gated_activation_fn(
+    activation_fn: Callable[[TensorValue], TensorValue],
+    limit: float | None = None,
+) -> Callable[[TensorValue, int], TensorValue]:
+    """Builds a gated activation for concatenated ``[gate | up]`` projections.
+
+    The returned callable splits ``gate_up`` at ``moe_dim``, applies
+    ``activation_fn`` to the gate half, and multiplies with the up half:
+    ``activation_fn(gate_up[:, :moe_dim]) * gate_up[:, moe_dim:]``.
+
+    When ``limit`` is provided, both halves are clamped to
+    ``[-limit, limit]`` before multiplying.
+    """
+    assert limit is None or limit > 0, (
+        f"limit must be None or positive, got {limit}"
+    )
+
+    if limit is not None:
+
+        def _clamped_concatenated_gated_activation_fn(
+            gate_up: TensorValue, moe_dim: int
+        ) -> TensorValue:
+            gate = activation_fn(gate_up[:, :moe_dim])
+            up = gate_up[:, moe_dim:]
+            lim = ops.constant(limit, gate.dtype, device=gate.device)
+            neg_lim = ops.constant(-limit, up.dtype, device=up.device)
+            gate = ops.min(gate, lim)
+            up = ops.min(ops.max(up, neg_lim), lim)
+            return gate * up
+
+        return _clamped_concatenated_gated_activation_fn
+
+    def _concatenated_gated_activation_fn(
+        gate_up: TensorValue, moe_dim: int
+    ) -> TensorValue:
+        gate = activation_fn(gate_up[:, :moe_dim])
+        up = gate_up[:, moe_dim:]
+        return gate * up
+
+    return _concatenated_gated_activation_fn
 
 
 class MoEGate(Module):
@@ -163,8 +204,11 @@ class MoE(Module, Shardable):
             ``None``.
         quant_config: The scaled quantization configuration. Defaults to
             ``None``.
-        gate_activation: The activation function name to use for the
-            gate projection. Defaults to ``"silu"``.
+        gated_activation_fn: Activation applied to the concatenated
+            ``[gate | up]`` projection. ``None`` (default) uses a fused
+            SiLU kernel; use
+            :func:`make_concatenated_gated_activation_fn` for custom
+            activations.
         pre_expert_norm_cls: A callable that returns a normalization
             module to apply before expert computation. Defaults to
             ``None``.
@@ -204,8 +248,8 @@ class MoE(Module, Shardable):
         ep_size: int = 1,
         dtype: DType = DType.bfloat16,
         apply_router_weight_first: bool = False,
-        swiglu_limit: float = 0.0,
-        gate_activation: str = "silu",
+        gated_activation_fn: Callable[[TensorValue, int], TensorValue]
+        | None = None,
         pre_expert_norm_cls: Callable[[], Module] | None = None,
         ep_batch_manager: EPBatchManager | None = None,
         quant_config: QuantConfig | None = None,
@@ -224,8 +268,7 @@ class MoE(Module, Shardable):
         self.ep_size = ep_size
         self.dtype = dtype
         self.apply_router_weight_first = apply_router_weight_first
-        self.swiglu_limit = swiglu_limit
-        self.gate_activation = gate_activation
+        self.gated_activation_fn = gated_activation_fn
         self.pre_expert_norm_cls = pre_expert_norm_cls
         self.pre_expert_norm = (
             pre_expert_norm_cls() if pre_expert_norm_cls else None
@@ -364,8 +407,7 @@ class MoE(Module, Shardable):
                 ep_size=self.ep_size,
                 dtype=self.dtype,
                 apply_router_weight_first=self.apply_router_weight_first,
-                swiglu_limit=self.swiglu_limit,
-                gate_activation=self.gate_activation,
+                gated_activation_fn=self.gated_activation_fn,
                 pre_expert_norm_cls=self.pre_expert_norm_cls,
                 quant_config=self.quant_config,
                 is_sharding=True,
@@ -518,24 +560,10 @@ class MoE(Module, Shardable):
             self.gate_up_proj,
             *expert_inputs[1:],
         )
-        if self.gate_activation == "silu" and self.swiglu_limit > 0:
-            gate = ops.silu(gate_up_projs[:, : self.moe_dim])
-            up = gate_up_projs[:, self.moe_dim :]
-            lim = ops.constant(
-                self.swiglu_limit, gate.dtype, device=gate.device
-            )
-            neg_lim = ops.constant(
-                -self.swiglu_limit, up.dtype, device=up.device
-            )
-            gate = ops.min(gate, lim)
-            up = ops.min(ops.max(up, neg_lim), lim)
-            activated = gate * up
-        elif self.gate_activation == "silu":
-            activated = fused_silu(gate_up_projs, expert_inputs[1])
+        if self.gated_activation_fn is not None:
+            activated = self.gated_activation_fn(gate_up_projs, self.moe_dim)
         else:
-            activated = gated_activation(
-                gate_up_projs, self.moe_dim, self.gate_activation
-            )
+            activated = fused_silu(gate_up_projs, expert_inputs[1])
         return grouped_matmul_ragged(
             activated,
             self.down_proj,
@@ -598,22 +626,12 @@ class MoE(Module, Shardable):
             expert_usage_stats.to(DeviceRef.CPU()),
         )
 
-        if self.gate_activation == "silu" and self.swiglu_limit > 0:
-            gate = ops.silu(gate_up_projs[:, : self.moe_dim])
-            up = gate_up_projs[:, self.moe_dim :]
-            lim = ops.constant(
-                self.swiglu_limit, gate.dtype, device=gate.device
+        if self.gated_activation_fn is not None:
+            gate_up_projs = self.gated_activation_fn(
+                gate_up_projs, self.moe_dim
             )
-            neg_lim = ops.constant(
-                -self.swiglu_limit, up.dtype, device=up.device
-            )
-            gate = ops.min(gate, lim)
-            up = ops.min(ops.max(up, neg_lim), lim)
-            gate_up_projs = gate * up
         else:
-            gate_up_projs = gated_activation(
-                gate_up_projs, self.moe_dim, self.gate_activation
-            )
+            gate_up_projs = fused_silu(gate_up_projs, expert_start_indices)
 
         down_projs = grouped_matmul_ragged(
             gate_up_projs,

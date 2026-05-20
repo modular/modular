@@ -19,6 +19,7 @@ from typing import TypeVar
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, ops
 
+from ..comm.ep.ep_kernels import fused_silu
 from ..kernels import moe_create_indices
 from .moe import MoE
 from .quant_strategy import (
@@ -27,7 +28,6 @@ from .quant_strategy import (
     Nvfp4Scales,
     Nvfp4Strategy,
     QuantStrategy,
-    gated_activation,
 )
 
 _T = TypeVar("_T")
@@ -205,9 +205,9 @@ class MoEQuantized(MoE):
         """Whether the fused SwiGLU+NVFP4 grouped matmul kernel should fire.
 
         Gated on the NVFP4 :class:`QuantConfig` flag and
-        ``swiglu_limit == 0`` (the kernel cannot clamp). The
-        ``MAX_DISABLE_FUSED_SWIGLU_NVFP4=1`` env-var kill-switch is read
-        at :class:`QuantConfig` setup time (see
+        ``gated_activation_fn is None`` (the kernel cannot run a custom
+        activation). The ``MAX_DISABLE_FUSED_SWIGLU_NVFP4=1`` env-var
+        kill-switch is read at :class:`QuantConfig` setup time (see
         ``max/python/max/pipelines/lib/quant.py``), which flips the flag
         so the model's ``gate_up_proj`` sigma-permutation stays consistent
         with the kernel choice.
@@ -219,7 +219,7 @@ class MoEQuantized(MoE):
         """
         return (
             self._is_nvfp4
-            and self.swiglu_limit == 0
+            and self.gated_activation_fn is None
             and self.quant_config is not None
             and self.quant_config.can_use_fused_swiglu_nvfp4
         )
@@ -237,16 +237,10 @@ class MoEQuantized(MoE):
         estimated_total_m: TensorValue,
     ) -> TensorValue:
         """Runs quantized local expert matmuls on dispatched tokens."""
-        # TODO: swiglu_limit is not supported here because
-        # fused_silu_quantize fuses silu + multiply + quantize into one
-        # kernel, leaving no place to insert the clamp.  For NVFP4 the
-        # kernel also produces expert-aware padded scales that cannot be
-        # replicated with unfused ops.
-        if self.swiglu_limit > 0:
+        if self.gated_activation_fn is not None:
             raise ValueError(
-                "swiglu_limit is not supported in the expert-parallel"
-                " quantized MoE path because fused_silu_quantize does not"
-                " support clamping."
+                "Custom gated_activation_fn is not supported in the EP"
+                " quantized path due to a specialized fused kernel."
             )
         strategy = self._strategy()
         nvfp4 = self._nvfp4_scales() if self._is_nvfp4 else None
@@ -377,22 +371,10 @@ class MoEQuantized(MoE):
             estimated_total_m=total_m,
         )
 
-        if self.gate_activation == "silu" and self.swiglu_limit > 0:
-            gate = ops.silu(gate_up[:, : self.moe_dim])
-            up = gate_up[:, self.moe_dim :]
-            lim = ops.constant(
-                self.swiglu_limit, gate.dtype, device=gate.device
-            )
-            neg_lim = ops.constant(
-                -self.swiglu_limit, up.dtype, device=up.device
-            )
-            gate = ops.min(gate, lim)
-            up = ops.min(ops.max(up, neg_lim), lim)
-            gate_up = gate * up
+        if self.gated_activation_fn is not None:
+            gate_up = self.gated_activation_fn(gate_up, self.moe_dim)
         else:
-            gate_up = gated_activation(
-                gate_up, self.moe_dim, self.gate_activation
-            )
+            gate_up = fused_silu(gate_up, expert_start)
 
         if nvfp4:
             assert scales_offset is not None

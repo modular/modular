@@ -20,7 +20,6 @@ from typing import Protocol
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, ops
 
-from ..activation import activation_function_from_name
 from ..comm.ep.ep_kernels import fused_silu_quantized
 from ..kernels import (
     _grouped_matmul_swiglu_nvfp4,
@@ -458,16 +457,6 @@ class Mxfp4Strategy:
             self.dtype,
             input_scales,
         )
-
-
-def gated_activation(
-    gate_up: TensorValue, moe_dim: int, activation: str
-) -> TensorValue:
-    """Applies gated activation: activation(gate) * up."""
-    activation_fn = activation_function_from_name(activation)
-    gate = activation_fn(gate_up[:, :moe_dim])
-    up = gate_up[:, moe_dim:]
-    return gate * up
 
 
 def _interleave_nvfp4_scales(

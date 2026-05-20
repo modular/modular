@@ -31,7 +31,7 @@ from max.graph import (
 )
 from max.nn import Signals
 from max.nn.comm.ep import EPBatchManager, EPCommInitializer, EPConfig
-from max.nn.moe import MoE, MoEGate
+from max.nn.moe import MoE, MoEGate, make_concatenated_gated_activation_fn
 from max.nn.moe.expert_parallel import forward_moe_sharded_layers
 
 """
@@ -507,7 +507,11 @@ def _build_compiled_ep_models(
         ep_size=n_devices,
         dtype=dtype,
         apply_router_weight_first=False,
-        swiglu_limit=swiglu_limit,
+        gated_activation_fn=make_concatenated_gated_activation_fn(
+            ops.silu, swiglu_limit
+        )
+        if swiglu_limit > 0
+        else None,
         ep_batch_manager=ep_batch_manager,
     )
     moe.sharding_strategy = ShardingStrategy.expert_parallel(n_devices)
