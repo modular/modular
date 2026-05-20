@@ -6657,6 +6657,58 @@ def launch_host_func(payload: BufferValue, device: DeviceRef) -> None:
     )
 
 
+def wait_host_value(payload: BufferValue, device: DeviceRef) -> None:
+    """Stalls the device stream until a host-visible flag reaches a value.
+
+    Wraps the ``mo.wait_host_value`` custom op, which lowers to CUDA's
+    ``cuStreamWaitValue64`` via ``DeviceStream.wait_for_host_value``.
+    Captures cleanly into a CUDA graph as a wait-value (batch-mem-op)
+    node, so it can sit inside a captured forward graph to gate a
+    downstream consumer kernel on CPU-produced data while the rest of
+    the forward body runs concurrently.
+
+    The payload buffer must be a CPU-resident ``int64[2]``:
+
+    - ``payload[0]``: raw address of an ``M::Driver::CompletionFlag``
+      (as ``u64``), typically obtained from
+      ``max.driver.CompletionFlag._unsafe_ptr``. The C++ object must
+      outlive any graph execution that references it.
+    - ``payload[1]``: the 64-bit value to wait for (the ``int64``
+      element is reinterpreted as a ``u64``).
+
+    The payload shape mirrors ``mo.launch_host_func``'s
+    ``[trampoline_ptr, user_data_ptr]`` pair; both ops carry their
+    runtime pointers through a single ``int64[2]`` buffer rather than
+    a typed graph operand.
+
+    Typically paired with ``launch_host_func`` (or
+    ``Device.__unsafe_enqueue_async_py_host_func``) placed earlier in
+    the graph: the host callback dispatches CPU work that eventually
+    signals the flag, and this op gates the consumer kernel on that
+    signal.
+
+    Only supported on CUDA devices.
+
+    Args:
+        payload: CPU buffer of shape ``[2]`` and dtype ``int64`` holding
+            ``[CompletionFlag._unsafe_ptr, expected_value]``.
+        device: GPU device on whose stream to insert the wait node.
+    """
+    if payload.dtype != DType.int64:
+        raise ValueError(f"Expected payload dtype int64, got {payload.dtype}")
+    if payload.shape != [2]:
+        raise ValueError(f"Expected payload shape [2], got {payload.shape}")
+    if not device.is_gpu():
+        raise ValueError("wait_host_value is only supported on GPU devices")
+
+    ops.inplace_custom(
+        "mo.wait_host_value",
+        device=device,
+        values=[payload],
+        out_types=[],
+    )
+
+
 def sleep(duration_sec: BufferValue, device_ref: DeviceRef) -> None:
     """Sleep for the given duration in seconds.
 

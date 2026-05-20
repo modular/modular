@@ -84,6 +84,16 @@ This version is still a work in progress.
   The `__unsafe_` prefix marks that the API has no safety net for
   callbacks that capture state outliving the compiled graph.
 
+- Added the `mo.wait_host_value` graph op and the
+  `max.nn.kernels.wait_host_value()` Python helper that wraps it. Stalls
+  the device stream until a 64-bit host-visible flag reaches a given
+  value; lowers to CUDA's `cuStreamWaitValue64` and captures cleanly into
+  a CUDA graph as a wait-value node. Lets a captured forward graph gate
+  a downstream consumer kernel on CPU-produced data while the rest of
+  the forward body runs concurrently. Pair with `mo.launch_host_func`
+  or `Device.__unsafe_enqueue_async_py_host_func` to issue the host
+  work whose completion the consumer waits on.
+
 - Increased the default allreduce signal buffer size from 513 MiB to 1025 MiB
   per GPU (`max.nn.comm.allreduce.Signals.NUM_BYTES` and the matching constant
   in `max.experimental.realization_context`). The previous 512 MiB scratch

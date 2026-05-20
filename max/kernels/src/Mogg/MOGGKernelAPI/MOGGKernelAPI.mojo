@@ -64,7 +64,12 @@ from comm.scatter import scatter
 from comm import MAX_GPUS, Signal
 import comm.vendor.ccl as vendor_ccl
 from compiler_internal import StaticTensorSpec
-from std.gpu.host import DeviceContext, DeviceContextList, get_gpu_target
+from std.gpu.host import (
+    CompletionFlag,
+    DeviceContext,
+    DeviceContextList,
+    get_gpu_target,
+)
 from std.gpu.host.info import is_cpu, is_gpu, is_valid_target
 from kv_cache.paged_sparse_kv_index_remap import paged_sparse_kv_index_remap
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
@@ -13757,3 +13762,42 @@ struct LaunchHostFunc:
         var tr_ptr = OpaquePointer[MutAnyOrigin](unsafe_from_address=tr_addr)
         var ud_ptr = OpaquePointer[MutAnyOrigin](unsafe_from_address=ud_addr)
         ctx.stream().enqueue_host_func(rebind[_HostFuncTy](tr_ptr), ud_ptr)
+
+
+@compiler.register("mo.wait_host_value")
+struct WaitHostValue:
+    """Stalls the stream until a host-visible flag reaches a given value.
+
+    Lowers to CUDA's `cuStreamWaitValue64` via
+    `DeviceStream.wait_for_host_value`. Accepts a 1-D int64 buffer of
+    shape `[2]`, mirroring `mo.launch_host_func`'s payload shape:
+
+    - `payload[0]`: raw address of a `M::Driver::CompletionFlag` (as
+      u64). Typically obtained from
+      `max.driver.CompletionFlag._unsafe_ptr` and packed into the
+      buffer by the Python caller; the C++ object must outlive any
+      graph execution that references it.
+    - `payload[1]`: the 64-bit value to wait for (the int64 element is
+      reinterpreted as a u64).
+
+    Captures cleanly into a CUDA graph as a wait-value / batch-mem-op
+    node, so this op can sit inside a captured forward graph just before
+    the sampling kernel to gate the sampler on the bitmask compute
+    finishing while the rest of the forward body runs concurrently.
+    Currently only CUDA streams support stream memory ops; non-CUDA
+    backends raise at runtime.
+    """
+
+    @staticmethod
+    def execute[
+        target: StaticString,
+    ](
+        # MutableInputTensor mirrors `mo.launch_host_func` so this op is
+        # not DCE'd. Both the CompletionFlag pointer and the expected
+        # value encode into 64-bit elements.
+        payload: MutableInputTensor[dtype=DType.int64, rank=1, ...],
+        ctx: DeviceContext,
+    ) raises:
+        var flag = CompletionFlag(unsafe_from_address=Int(payload[0]))
+        var value = UInt64(Int(payload[1]))
+        ctx.stream().wait_for_host_value(flag, value)
