@@ -127,11 +127,25 @@ For GPU profiling details, see
 
 The following variables configure caching and memory behavior.
 
-| Variable                    | Description                                                                                    | Values          | Default        |
-|-----------------------------|------------------------------------------------------------------------------------------------|-----------------|----------------|
-| `MODULAR_MAX_CACHE_DIR`     | Directory to save MAX model cache for reuse                                                    | Path            | See note below |
-| `MODULAR_CACHE_DIR`         | Configure cache directory for all Modular filesystems                                          | Path            | See note below |
-| `MODULAR_MAX_SHM_WATERMARK` | Percentage of `/dev/shm` to allocate for shared memory. Set to `0.0` to disable shared memory. | Float (0.0–1.0) | `0.9`          |
+| Variable                    | Description                                                                                    | Values          | Default                         |
+|-----------------------------|------------------------------------------------------------------------------------------------|-----------------|---------------------------------|
+| `MODULAR_MAX_CACHE_DIR`     | Directory to save MAX model cache for reuse                                                    | Path            | `$MODULAR_CACHE_DIR/.max_cache` |
+| `MODULAR_CACHE_DIR`         | Configure cache directory for all Modular filesystems                                          | Path            | See note below                  |
+| `MODULAR_MAX_SHM_WATERMARK` | Percentage of `/dev/shm` to allocate for shared memory. Set to `0.0` to disable shared memory. | Float (0.0–1.0) | `0.9`                           |
+
+:::note
+
+The default search paths take the following precedence:
+
+1. When the `MODULAR_HOME` environment variable is set `$MODULAR_HOME/cache` is
+   used.
+2. If `$HOME/.modular` exists then `$HOME/.modular` is used.
+3. Follow the [XDG Base Directory
+   Specification](https://specifications.freedesktop.org/basedir/latest/). When
+   `XDG_CACHE_HOME` is set, `$XDG_CACHE_HOME/modular` is used; otherwise the
+   default value `$HOME/.cache/modular` is used.
+
+:::
 
 ## Hugging Face
 
