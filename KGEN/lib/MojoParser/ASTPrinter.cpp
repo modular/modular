@@ -601,8 +601,7 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
 
   auto printGeneratorAttr = [&](GeneratorAttr genAttr) {
     TypedAttr reboundBody = printGeneratorInterface(
-        os, genAttr.getInputParamTypes(),
-        dyn_cast_or_null<PogListAttr>(genAttr.getMetadata()), diagShared,
+        os, genAttr.getInputParamTypes(), genAttr.getMetadata(), diagShared,
         genAttr.getBody());
     os << ' ';
     printParam(os, reboundBody, diagShared);
@@ -1810,10 +1809,9 @@ void ASTType::print(raw_ostream &os, SharedState *diagShared) const {
   } else if (auto paramRef = dyn_cast<ParamType>(type)) {
     printParam(os, paramRef.getParam(), diagShared);
   } else if (auto genType = dyn_cast<GeneratorType>(type)) {
-    Type reboundBody = printGeneratorInterface(
-        os, genType.getInputParamTypes(),
-        dyn_cast_or_null<PogListAttr>(genType.getMetadata()), diagShared,
-        genType.getBody());
+    Type reboundBody = printGeneratorInterface(os, genType.getInputParamTypes(),
+                                               genType.getMetadata(),
+                                               diagShared, genType.getBody());
     os << ' ';
     ASTType(reboundBody).print(os, diagShared);
   } else if (isa<TypeType>(type)) {

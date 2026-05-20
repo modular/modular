@@ -198,7 +198,7 @@ static GeneratorType getReducedGeneratorType(GeneratorType gen) {
     bodyType = getReducedFnType(fnType);
 
   ArrayRef<ConstraintAttr> bodyConstraints;
-  if (auto pogs = dyn_cast_or_null<PogListAttr>(gen.getMetadata()))
+  if (PogListAttr pogs = gen.getMetadata())
     bodyConstraints = pogs.getBodyConstraints();
   auto metadata = PogListAttr::get(
       gen.getContext(), gen.getInputParamTypes().size(), bodyConstraints);

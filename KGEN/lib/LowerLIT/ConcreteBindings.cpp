@@ -146,10 +146,9 @@ GeneratorType M::KGEN::getSpecializedWithConcreteBindings(
   SmallVector<Type> newParamTypes =
       replacer.getRemappedUnboundParamTypes(paramTypes);
   Type newBody = replacer.getReboundType(gen.getBody());
-  Attribute rawMetadata = gen.getMetadata();
-  PogListAttr genMetadata =
-      replacer.specializeMetadata(dyn_cast_or_null<PogListAttr>(rawMetadata),
-                                  paramBindings, paramTypes, emitErrorFn);
+  PogListAttr rawMetadata = gen.getMetadata();
+  PogListAttr genMetadata = replacer.specializeMetadata(
+      rawMetadata, paramBindings, paramTypes, emitErrorFn);
   if (rawMetadata && !genMetadata)
     return {};
 
@@ -175,10 +174,9 @@ GeneratorAttr M::KGEN::getSpecializedWithConcreteBindings(
   SmallVector<Type> newParamTypes =
       replacer.getRemappedUnboundParamTypes(paramTypes);
   TypedAttr newBody = replacer.getReboundAttribute(gen.getBody());
-  Attribute rawMetadata = gen.getMetadata();
-  PogListAttr genMetadata =
-      replacer.specializeMetadata(dyn_cast_or_null<PogListAttr>(rawMetadata),
-                                  paramBindings, paramTypes, emitErrorFn);
+  PogListAttr rawMetadata = gen.getMetadata();
+  PogListAttr genMetadata = replacer.specializeMetadata(
+      rawMetadata, paramBindings, paramTypes, emitErrorFn);
   if (rawMetadata && !genMetadata)
     return {};
 

@@ -1303,11 +1303,11 @@ getSymbolSignature(FuncInterface func, ArrayRef<Operation *> symbolOps) {
   for (Type type : baseSigGen.getInputParamTypes())
     inputParamTypes.push_back(remapper.replace(type));
 
-  Attribute genMetadata = baseSigGen.getMetadata();
-  if (auto poglist = dyn_cast_or_null<PogListAttr>(genMetadata)) {
+  PogListAttr genMetadata = baseSigGen.getMetadata();
+  if (genMetadata) {
     SmallVector<StringAttr> paramNames = llvm::map_to_vector(
         paramDecls, [](const ParamDeclAttr &param) { return param.getName(); });
-    genMetadata = remapper.replace(poglist.prependContextualParamsFromOps(
+    genMetadata = remapper.replace(genMetadata.prependContextualParamsFromOps(
         paramNames, symbolOps.drop_back()));
   }
 

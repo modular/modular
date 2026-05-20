@@ -3316,8 +3316,8 @@ bool ClosureEmitter::isTypeRebindableTo(FuncTypeGeneratorType from,
   // pog list and are not user-bindable, so their names are arbitrary
   // disambiguators that may legitimately differ between alpha-equivalent
   // generator types.
-  auto fromPogs = dyn_cast_or_null<PogListAttr>(from.getMetadata());
-  auto toPogs = dyn_cast_or_null<PogListAttr>(to.getMetadata());
+  PogListAttr fromPogs = from.getMetadata();
+  PogListAttr toPogs = to.getMetadata();
   if (!fromPogs || !toPogs)
     return false;
   if (fromPogs == toPogs)
