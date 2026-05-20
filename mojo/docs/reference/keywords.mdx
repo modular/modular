@@ -1,6 +1,6 @@
 ---
 title: Mojo identifiers, keywords, and conventions reference
-sidebar_label: Identifiers & keywords
+sidebar_label: Identifiers and keywords
 sidebar_position: 1
 description: >
   Complete reference for Mojo identifiers, keywords, and
@@ -11,6 +11,12 @@ description: >
 
 <!-- VERIFIED: TokenKinds.def, Lexer.cpp, Signatures.h, Signatures.cpp,
      ExprNode.h, ParserExprs.cpp, ParserStmts.cpp, ParserBase.h -->
+
+<!-- In TokenKinds.def, `_` is declared with TOK_KEYWORD rather than
+     TOK_PUNCTUATION. This is an internal classification used by the
+     lexer; for the language surface, `_` is a regular identifier
+     character (see the identifier grammar below). Do not document `_`
+     as a keyword. -->
 
 Every Mojo source file is built from tokens. This page covers the tokens
 you choose (identifiers), the tokens the language reserves (keywords), and
@@ -45,7 +51,14 @@ basic_value
 ```
 
 Identifiers are case-sensitive. `MyStruct` and `mystruct` are different
-names.
+names:
+
+```mojo
+var MyStruct = 1
+var mystruct = 2
+assert_equal(MyStruct, 1)  # passes
+assert_equal(mystruct, 2)  # passes
+```
 
 ### Escaped identifiers
 
@@ -88,13 +101,13 @@ These keywords control which code runs and in what order.
 
 These keywords structure error propagation and recovery.
 
-| Keyword   | Purpose                                 |
-|-----------|-----------------------------------------|
-| `try`     | Begins an error-handling block          |
-| `except`  | Error handler clause                    |
-| `finally` | Always-execute clause in a `try` block  |
-| `raise`   | Raises an error                         |
-| `assert`  | Raises an error if a condition is false |
+| Keyword   | Purpose                                               |
+|-----------|-------------------------------------------------------|
+| `try`     | Begins an error-handling block                        |
+| `except`  | Error handler clause                                  |
+| `finally` | Always-execute clause in a `try` block                |
+| `raise`   | Raises an error                                       |
+| `assert`  | Aborts if a condition is false (gated by `-D ASSERT`) |
 
 ### Declarations
 
@@ -155,26 +168,30 @@ All keywords are case-sensitive:
 ## Conventions
 
 *Conventions* tell the compiler how values are passed and how bindings are
-created. They are not reserved, so existing Python code that uses these names
-won't break, but in Mojo signatures they have fixed meaning.
+created.
 
-Argument conventions appear before argument names in function signatures.
+Convention names aren't reserved, so existing Python code that uses these
+names won't break, but in Mojo signatures they have fixed meaning.
+
+**Argument conventions** appear before argument names in function signatures.
 They control ownership and mutability:
 
 <!-- markdownlint-disable MD013 -->
 
-| Convention | Role                 | Meaning                                            |
-|------------|----------------------|----------------------------------------------------|
-| `mut`      | Argument             | Mutable reference to an existing value             |
-| `out`      | Argument             | Returns a value without a return arrow             |
-| `deinit`   | Argument             | Destructive transfer at end of a value's lifecycle |
-| `var`      | Argument or variable | Independent mutable owned copy of the value        |
-| `ref`      | Argument or variable | Reference that doesn't own the value               |
+| Convention | Role                 | Meaning                                                     |
+|------------|----------------------|-------------------------------------------------------------|
+| (`read`)   | Argument             | Immutable reference to an existing value (default behavior) |
+| `mut`      | Argument             | Mutable reference to an existing value                      |
+| `out`      | Argument             | Returns a value without a return arrow                      |
+| `deinit`   | Argument             | Destructive transfer; end of a value's lifecycle            |
+| `var`      | Argument or variable | Independent mutable owned copy of the value                 |
+| `ref`      | Argument or variable | Reference that doesn't own the value                        |
 
 <!-- markdownlint-enable MD013 -->
 
-`var` and `ref` also appear in variable declarations, where `var` creates a
-scoped mutable variable and `ref` creates a scoped reference binding:
+`var` and `ref` also appear in **variable declarations**, where `var`
+creates a scoped mutable variable and `ref` creates a scoped reference
+binding:
 
 ```mojo
 struct CountingTool:
@@ -187,18 +204,16 @@ struct CountingTool:
         self.value += 1
 
 var count = 0          # var creates a scoped mutable variable
-ref alias = some_list  # ref binds a reference, no copying
+var data = [1, 2, 3]
+ref view = data        # ref binds a reference, no copying
 ```
 
-A `self` argument without a convention is immutable. Modifying it requires
-`mut`:
+A `self` argument without a convention is an immutable reference. Modifying
+it requires `mut`:
 
 ```mojo
 struct CountingTool:
-    var value: Int
-
-    def increment(mut self):
-        self.value += 1      # OK: mut self allows modification
+    # continuing from above...
 
     def get(self) -> Int:
         self.value += 1      # Error: self is immutable
@@ -224,4 +239,7 @@ clause at the end of a declaration:
 def validate(value: Int) raises:
     if value < 0:
         raise Error("must be non-negative")
+
+def process[T: Copyable](value: T) where conforms_to(T, Sized):
+     # T must implement Sized to be used here
 ```
