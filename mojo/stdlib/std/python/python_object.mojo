@@ -225,8 +225,14 @@ struct PythonObject(
         Args:
             value: The boolean value.
         """
+        # Read the cached `Py_True` / `Py_False` singletons directly and pay
+        # one inline `Py_IncRef` here. Avoids `PyBool_FromLong`'s C-call
+        # dispatch and the redundant `Python().cpython()` lookup that
+        # `from_borrowed` would otherwise perform.
         ref cpy = Python().cpython()
-        self = Self(from_owned=cpy.PyBool_FromLong(c_long(Int(value))))
+        var ptr = cpy.Py_True() if value else cpy.Py_False()
+        cpy.Py_IncRef(ptr)
+        self = Self(from_owned=ptr)
 
     @implicit
     def __init__(out self, value: Int):
@@ -253,8 +259,9 @@ struct PythonObject(
         ref cpy = Python().cpython()
 
         comptime if dtype == DType.bool:
-            var val = c_long(Int(value))
-            self = Self(from_owned=cpy.PyBool_FromLong(val))
+            var ptr = cpy.Py_True() if Bool(value) else cpy.Py_False()
+            cpy.Py_IncRef(ptr)
+            self = Self(from_owned=ptr)
         elif dtype.is_unsigned():
             var val = c_size_t(value.cast[DType.uint]())
             self = Self(from_owned=cpy.PyLong_FromSize_t(val))
