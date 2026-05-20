@@ -73,7 +73,7 @@ def matmul[
 
         var c_tt = TileTensor(
             rebind[UnsafePointer[Scalar[c_type], MutAnyOrigin]](c.ptr),
-            row_major(Coord(Idx(Int(c.dim[0]())), Idx(Int(c.dim[1]())))),
+            row_major(Coord(Int(c.dim[0]()), Int(c.dim[1]()))),
         )
 
         @parameter

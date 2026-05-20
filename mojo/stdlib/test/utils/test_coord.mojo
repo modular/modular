@@ -30,7 +30,7 @@ from std.utils.coord import (
 
 def test_nested_layouts() raises:
     # Create nested layouts
-    var inner = Coord(Idx[2](), Idx(Int(3)))
+    var inner = Coord(Idx[2](), Int(3))
     var nested = Coord(inner, Idx[4]())
     assert_equal(inner[1].value(), 3)
     assert_equal(nested[0][0].value(), 2)
@@ -40,9 +40,9 @@ def test_nested_layouts() raises:
 
 
 def test_list_literal_construction() raises:
-    var t = Coord[ComptimeInt[2], RuntimeInt[DType.int]](
+    var t = Coord[ComptimeInt[2], Int](
         Idx[2](),
-        Idx(Int(3)),
+        Int(3),
     )
     assert_equal(t[0].value(), 2)
     assert_equal(t[1].value(), 3)
@@ -329,9 +329,7 @@ def test_idx2crd_mixed_static_dynamic_idx() raises:
     """Test idx2crd with static idx but one runtime stride dimension."""
     # shape=(3, 4), stride=(RuntimeInt, ComptimeInt[1])
     var shape = Coord(Idx[3](), Idx[4]())
-    var stride = Coord[RuntimeInt[DType.int], ComptimeInt[1]](
-        Idx(Int(4)), Idx[1]()
-    )
+    var stride = Coord[Int, ComptimeInt[1]](Int(4), Idx[1]())
 
     # Static idx=5, but first stride is runtime -> first dim is RuntimeInt.
     # Second stride is static, shape is static, idx is static -> ComptimeInt.
@@ -518,14 +516,14 @@ def test_crd2idx_default_int64_over_32_bits() raises:
     # i * 65536 crosses 2^32 at i >= 65536. Pick i = 131072 to force overflow.
     comptime OUTER = 200000
     comptime INNER = 65536
-    var shape = Coord(Idx(Int(OUTER)), Idx(Int(INNER)))
-    var stride = Coord(Idx(Int(INNER)), Idx(Int(1)))
+    var shape = Coord(Int(OUTER), Int(INNER))
+    var stride = Coord(Int(INNER), Int(1))
 
     # Pick a coord whose single term `i * INNER` exceeds 2^32:
     # 131072 * 65536 = 2^33 = 8_589_934_592.
     comptime I = 131072
     comptime J = 12345
-    var crd = Coord(Idx(Int(I)), Idx(Int(J)))
+    var crd = Coord(Int(I), Int(J))
 
     comptime expected: Int = I * INNER + J * 1
     # Sanity: confirm this really does cross 2^32.
@@ -547,12 +545,12 @@ def test_crd2idx_narrow_uint32_within_range() raises:
     # 1024x1024 row-major: max index 1024*1023 + 1023 = 1_048_575 — well
     # under 2^32.
     comptime DIM = 1024
-    var shape = Coord(Idx(Int(DIM)), Idx(Int(DIM)))
-    var stride = Coord(Idx(Int(DIM)), Idx(Int(1)))
+    var shape = Coord(Int(DIM), Int(DIM))
+    var stride = Coord(Int(DIM), Int(1))
 
     comptime I = 777
     comptime J = 543
-    var crd = Coord(Idx(Int(I)), Idx(Int(J)))
+    var crd = Coord(Int(I), Int(J))
 
     comptime expected: Int = I * DIM + J
 

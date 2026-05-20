@@ -127,9 +127,9 @@ def test_partial_n_tile_compute_epilogue[
     rand(b_host.ptr, b_host.num_elements())
     for i in range(M):
         for j in range(N):
-            comptime assert c_host.flat_rank >= 2
-            c_host[(Idx(i), Idx(j))] = Scalar[c_type](0)
-            c_host_copy[(Idx(i), Idx(j))] = c_host[(Idx(i), Idx(j))]
+            comptime assert c_host.flat_rank == 2
+            c_host[i, j] = Scalar[c_type](0)
+            c_host_copy[i, j] = c_host[i, j]
 
     ctx.enqueue_copy(a_device, a_host_ptr)
     ctx.enqueue_copy(b_device, b_host_ptr)
@@ -189,9 +189,9 @@ def test_partial_n_tile_compute_epilogue[
 
     for i in range(M):
         for j in range(N):
-            comptime assert c_host_ref.flat_rank >= 2
-            c_host_ref[(Idx(i), Idx(j))] = in_bounds_compute_lambda_local(
-                IndexList[2](i, j), c_host_ref[(Idx(i), Idx(j))]
+            comptime assert c_host_ref.flat_rank == 2
+            c_host_ref[i, j] = in_bounds_compute_lambda_local(
+                IndexList[2](i, j), c_host_ref[i, j]
             )
 
     comptime rtol = 1e-2
@@ -235,7 +235,7 @@ def main() raises:
             cluster_shape=StaticTuple[Int32, 3](2, 1, 1),
             cta_group=1,
             swapAB=False,
-        ](ctx, Idx(Int(64)), Idx[128](), Idx[128]())
+        ](ctx, Int(64), Idx[128](), Idx[128]())
 
         # transpose_c=True: `if top_row >= self.N or bot_row >= self.N: return` branch.
         test_partial_n_tile_compute_epilogue[
@@ -247,4 +247,4 @@ def main() raises:
             cluster_shape=StaticTuple[Int32, 3](2, 1, 1),
             cta_group=1,
             swapAB=True,
-        ](ctx, Idx(Int(64)), Idx[128](), Idx[128]())
+        ](ctx, Int(64), Idx[128](), Idx[128]())

@@ -69,10 +69,12 @@ def _argsort_cpu[
 
     @parameter
     def cmp_fn(a: Scalar[indices.dtype], b: Scalar[indices.dtype]) -> Bool:
+        comptime assert a.dtype.is_integral()
+        comptime assert b.dtype.is_integral()
         comptime if ascending:
-            return input[a] < input[b]
+            return input[Idx(a)] < input[Idx(b)]
         else:
-            return input[a] > input[b]
+            return input[Idx(a)] > input[Idx(b)]
 
     sort[cmp_fn](
         Span[

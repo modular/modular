@@ -318,10 +318,10 @@ struct BlockwiseFP8Accumulator[
         var a_scales_smem = a_scales_tiles[tma_load_stage_index]
 
         var upper_sfa0_smem = a_scales_smem[
-            0, staged_c_row + top_frag_upper_coord[0]
+            0, Idx(staged_c_row + top_frag_upper_coord[0])
         ].cast[Self.accum_type]()
         var upper_sfa1_smem = a_scales_smem[
-            0, staged_c_row + bottom_frag_upper_coord[0]
+            0, Idx(staged_c_row + bottom_frag_upper_coord[0])
         ].cast[Self.accum_type]()
 
         var lower_sfa0_smem = Scalar[Self.accum_type]()
@@ -329,13 +329,13 @@ struct BlockwiseFP8Accumulator[
 
         comptime if Self.is_lower_required:
             lower_sfa0_smem = rebind[Scalar[Self.accum_type]](
-                a_scales_smem[0, staged_c_row + top_frag_lower_coord[0]].cast[
-                    Self.accum_type
-                ]()
+                a_scales_smem[
+                    0, Idx(staged_c_row + top_frag_lower_coord[0])
+                ].cast[Self.accum_type]()
             )
             lower_sfa1_smem = rebind[Scalar[Self.accum_type]](
                 a_scales_smem[
-                    0, staged_c_row + bottom_frag_lower_coord[0]
+                    0, Idx(staged_c_row + bottom_frag_lower_coord[0])
                 ].cast[Self.accum_type]()
             )
 

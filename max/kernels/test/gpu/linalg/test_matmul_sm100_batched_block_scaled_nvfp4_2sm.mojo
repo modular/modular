@@ -114,7 +114,7 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
 
     var a_scales_shape = row_major(
         Coord(
-            Idx(Int(batch.value())),
+            Int(batch.value()),
             Idx(ceildiv(Int(m.value()), SF_MN_GROUP_SIZE)),
             Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)](),
             Idx[SF_ATOM_M[0]](),
@@ -124,7 +124,7 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     )
     var b_scales_shape = row_major(
         Coord(
-            Idx(Int(batch.value())),
+            Int(batch.value()),
             Idx(ceildiv(Int(n.value()), SF_MN_GROUP_SIZE)),
             Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)](),
             Idx[SF_ATOM_M[0]](),
@@ -159,13 +159,13 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         for b in range(Int(batch.value())):
             for m in range(Int(m.value())):
                 for k in range(Int(k.value()) // 2):
-                    comptime assert a_host.flat_rank >= 3
-                    a_host[(Idx(b), Idx(m), Idx(k))] = UInt8(m).cast[a_type]()
+                    comptime assert a_host.flat_rank == 3
+                    a_host[b, m, k] = UInt8(m).cast[a_type]()
         for b in range(Int(batch.value())):
             for n in range(Int(n.value())):
                 for k in range(Int(k.value()) // 2):
-                    comptime assert b_host.flat_rank >= 3
-                    b_host[(Idx(b), Idx(n), Idx(k))] = UInt8(n).cast[b_type]()
+                    comptime assert b_host.flat_rank == 3
+                    b_host[b, n, k] = UInt8(n).cast[b_type]()
     else:
         rand(a_host.ptr, a_host.num_elements(), min=0, max=255)
         rand(b_host.ptr, b_host.num_elements(), min=0, max=255)
@@ -350,8 +350,8 @@ def main() raises:
                     SF_VECTOR_SIZE=SF_VECTOR_SIZE,
                 ](
                     ctx,
-                    Idx(Int(2)),
-                    Idx(Int(1000)),
+                    Int(2),
+                    Int(1000),
                     Idx[1024](),
                     Idx[1024 + 32](),
                 )
@@ -371,8 +371,8 @@ def main() raises:
                     SF_VECTOR_SIZE=SF_VECTOR_SIZE,
                 ](
                     ctx,
-                    Idx(Int(2)),
-                    Idx(Int(512)),
+                    Int(2),
+                    Int(512),
                     Idx[4096](),
                     Idx[1024 + 32](),
                 )
@@ -393,8 +393,8 @@ def main() raises:
                     SF_VECTOR_SIZE=SF_VECTOR_SIZE,
                 ](
                     ctx,
-                    Idx(Int(3)),
-                    Idx(Int(500)),
+                    Int(3),
+                    Int(500),
                     Idx[2048](),
                     Idx[4096](),
                 )
@@ -414,8 +414,8 @@ def main() raises:
                     SF_VECTOR_SIZE=SF_VECTOR_SIZE,
                 ](
                     ctx,
-                    Idx(Int(16)),
-                    Idx(Int(999)),
+                    Int(16),
+                    Int(999),
                     Idx[256](),
                     Idx[128](),
                 )
@@ -435,8 +435,8 @@ def main() raises:
                     SF_VECTOR_SIZE=SF_VECTOR_SIZE,
                 ](
                     ctx,
-                    Idx(Int(17)),
-                    Idx(Int(777)),
+                    Int(17),
+                    Int(777),
                     Idx[2560](),
                     Idx[8192](),
                 )
@@ -456,8 +456,8 @@ def main() raises:
                     SF_VECTOR_SIZE=SF_VECTOR_SIZE,
                 ](
                     ctx,
-                    Idx(Int(23)),
-                    Idx(Int(1)),
+                    Int(23),
+                    Int(1),
                     Idx[576](),
                     Idx[7168](),
                 )
@@ -478,8 +478,8 @@ def main() raises:
                     SF_VECTOR_SIZE=SF_VECTOR_SIZE,
                 ](
                     ctx,
-                    Idx(Int(2)),
-                    Idx(Int(16)),
+                    Int(2),
+                    Int(16),
                     Idx[1024](),
                     Idx(1024 + 32),
                 )
@@ -499,8 +499,8 @@ def main() raises:
                     SF_VECTOR_SIZE=SF_VECTOR_SIZE,
                 ](
                     ctx,
-                    Idx(Int(3)),
-                    Idx(Int(100)),
+                    Int(3),
+                    Int(100),
                     Idx[2560](),
                     Idx[8192](),
                 )

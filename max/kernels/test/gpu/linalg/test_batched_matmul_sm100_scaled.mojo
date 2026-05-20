@@ -325,7 +325,7 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8_non_row_major_c[
 
     assert K % BLOCK_SCALE_K == 0, "K must be divisible by BLOCK_SCALE_K"
 
-    var a_shape = row_major(Coord(Idx[B](), Idx(Int(M)), Idx[K]()))
+    var a_shape = row_major(Coord(Idx[B](), Int(M), Idx[K]()))
     var b_shape = row_major(
         Coord(
             Idx[B](),
@@ -333,12 +333,12 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8_non_row_major_c[
             Idx[K if transpose_b else N](),
         )
     )
-    var c_shape = row_major(Coord(Idx[B](), Idx(Int(M)), Idx[N]()))
+    var c_shape = row_major(Coord(Idx[B](), Int(M), Idx[N]()))
     var a_scales_shape = row_major(
         Coord(
             Idx[B](),
             Idx[K // BLOCK_SCALE_K](),
-            Idx(Int(M_aligned_for_scales)),
+            Int(M_aligned_for_scales),
         )
     )
     var b_scales_shape = row_major(
@@ -481,10 +481,10 @@ def main() raises:
             transpose_b=True,
         ](
             ctx,
-            Idx(Int(208)),
+            Int(208),
             Idx[2048](),
             Idx[256](),
-            Idx(Int(3)),
+            Int(3),
         )
         test_batched_matmul_sm100_blockwise_scaled_fp8[
             DType.float8_e4m3fn,
@@ -495,10 +495,10 @@ def main() raises:
             transpose_b=True,
         ](
             ctx,
-            Idx(Int(400)),
+            Int(400),
             Idx[128](),
             Idx[128](),
-            Idx(Int(4)),
+            Int(4),
         )
 
         test_batched_matmul_sm100_blockwise_scaled_fp8[
@@ -510,10 +510,10 @@ def main() raises:
             transpose_b=True,
         ](
             ctx,
-            Idx(Int(1024)),
+            Int(1024),
             Idx[2048](),
             Idx[2048](),
-            Idx(Int(2)),
+            Int(2),
         )
 
         test_batched_matmul_sm100_blockwise_scaled_fp8[
@@ -525,10 +525,10 @@ def main() raises:
             transpose_b=True,
         ](
             ctx,
-            Idx(Int(1024)),
+            Int(1024),
             Idx[2048](),
             Idx[2048](),
-            Idx(Int(5)),
+            Int(5),
         )
 
         test_batched_matmul_sm100_blockwise_scaled_fp8[
@@ -540,10 +540,10 @@ def main() raises:
             transpose_b=True,
         ](
             ctx,
-            Idx(Int(100)),
+            Int(100),
             Idx[512](),
             Idx[256](),
-            Idx(Int(7)),
+            Int(7),
         )
 
         test_batched_matmul_sm100_blockwise_scaled_fp8[
@@ -555,10 +555,10 @@ def main() raises:
             transpose_b=True,
         ](
             ctx,
-            Idx(Int(96)),
+            Int(96),
             Idx[1024](),
             Idx[1024](),
-            Idx(Int(2)),
+            Int(2),
         )
 
         test_batched_matmul_sm100_blockwise_scaled_fp8[
@@ -570,10 +570,10 @@ def main() raises:
             transpose_b=True,
         ](
             ctx,
-            Idx(Int(120)),
+            Int(120),
             Idx[1280](),
             Idx[512](),
-            Idx(Int(5)),
+            Int(5),
         )
 
         test_batched_matmul_sm100_blockwise_scaled_fp8[
@@ -585,10 +585,10 @@ def main() raises:
             transpose_b=True,
         ](
             ctx,
-            Idx(Int(120)),
+            Int(120),
             Idx[512](),
             Idx[128](),
-            Idx(Int(128)),
+            Int(128),
         )
         test_batched_matmul_sm100_blockwise_scaled_fp8[
             DType.float8_e4m3fn,
@@ -600,10 +600,10 @@ def main() raises:
             use_epilogue=True,
         ](
             ctx,
-            Idx(Int(120)),
+            Int(120),
             Idx[128](),
             Idx[512](),
-            Idx(Int(128)),
+            Int(128),
         )
 
         # test non-row-major layout for C only

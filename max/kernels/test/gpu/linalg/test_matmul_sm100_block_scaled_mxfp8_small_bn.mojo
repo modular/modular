@@ -168,12 +168,12 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     if simple_init():
         for m in range(Int(m.value())):
             for k in range(Int(k.value())):
-                comptime assert a_host.flat_rank >= 2
-                a_host[(Idx(m), Idx(k))] = random_ui64(0, 1).cast[a_type]()
+                comptime assert a_host.flat_rank == 2
+                a_host[m, k] = random_ui64(0, 1).cast[a_type]()
         for n in range(Int(n.value())):
             for k in range(Int(k.value())):
-                comptime assert b_host.flat_rank >= 2
-                b_host[(Idx(n), Idx(k))] = random_ui64(0, 1).cast[b_type]()
+                comptime assert b_host.flat_rank == 2
+                b_host[n, k] = random_ui64(0, 1).cast[b_type]()
     else:
         rand(a_host.ptr, a_host.num_elements())
         rand(b_host.ptr, b_host.num_elements())
@@ -334,7 +334,7 @@ def main() raises:
                         k_group_size=2,
                     ](
                         ctx,
-                        Idx(Int(1)),
+                        Int(1),
                         Idx[7168](),
                         Idx[16384](),
                     )
@@ -354,7 +354,7 @@ def main() raises:
                         k_group_size=2,
                     ](
                         ctx,
-                        Idx(Int(500)),
+                        Int(500),
                         Idx[2048](),
                         Idx[4096](),
                     )
@@ -373,7 +373,7 @@ def main() raises:
                         block_swizzle_size=2,
                     ](
                         ctx,
-                        Idx(Int(999)),
+                        Int(999),
                         Idx[256](),
                         Idx[128](),
                     )
@@ -392,7 +392,7 @@ def main() raises:
                         block_swizzle_size=1,
                     ](
                         ctx,
-                        Idx(Int(777)),
+                        Int(777),
                         Idx[2560](),
                         Idx[8192](),
                     )
@@ -411,7 +411,7 @@ def main() raises:
                         block_swizzle_size=1,
                     ](
                         ctx,
-                        Idx(Int(1)),
+                        Int(1),
                         Idx[576](),
                         Idx[7168](),
                     )
@@ -433,7 +433,7 @@ def main() raises:
                         swapAB=True,
                     ](
                         ctx,
-                        Idx(Int(16)),
+                        Int(16),
                         Idx[1024](),
                         Idx(1024 + 16),
                     )
@@ -453,7 +453,7 @@ def main() raises:
                         k_group_size=2,
                     ](
                         ctx,
-                        Idx(Int(100)),
+                        Int(100),
                         Idx[2560](),
                         Idx[8192](),
                     )

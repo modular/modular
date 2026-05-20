@@ -156,7 +156,9 @@ def spatial_merge_kernel[
             channel_coords[1].value(),
             channel_coords[2].value(),
         )
-        output_tensor[t, ho, wo, c_out] = input_tensor[ho, dh, wo, dw, c]
+        output_tensor[
+            Coord(Idx(t), Idx(ho), Idx(wo), Idx(c_out))
+        ] = input_tensor[Coord(Idx(ho), Idx(dh), Idx(wo), Idx(dw), Idx(c))]
 
 
 def spatial_merge[

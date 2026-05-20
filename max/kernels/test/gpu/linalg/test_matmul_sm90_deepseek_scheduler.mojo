@@ -145,7 +145,7 @@ def main() raises:
             schedule=MatmulSchedule.DS_SCHEDULER,
             grid_shape=Index(128, 1),
             measure_threshold=0.001,
-        ](ctx, Idx(Int(64)), Idx[2560](), Idx[8192]())
+        ](ctx, Int(64), Idx[2560](), Idx[8192]())
         test_matmul_sm90[
             DType.bfloat16,
             DType.bfloat16,
@@ -159,7 +159,7 @@ def main() raises:
             schedule=MatmulSchedule.DS_SCHEDULER,
             grid_shape=Index(128, 1),
             measure_threshold=0.001,
-        ](ctx, Idx(Int(128)), Idx[2560](), Idx[8192]())
+        ](ctx, Int(128), Idx[2560](), Idx[8192]())
         test_matmul_sm90[
             DType.bfloat16,
             DType.bfloat16,
@@ -173,7 +173,7 @@ def main() raises:
             schedule=MatmulSchedule.DS_SCHEDULER,
             grid_shape=Index(128, 1),
             measure_threshold=0.001,
-        ](ctx, Idx(Int(256)), Idx[2560](), Idx[8192]())
+        ](ctx, Int(256), Idx[2560](), Idx[8192]())
         test_matmul_sm90[
             DType.bfloat16,
             DType.bfloat16,
@@ -187,7 +187,7 @@ def main() raises:
             schedule=MatmulSchedule.DS_SCHEDULER,
             grid_shape=Index(128, 1),
             measure_threshold=0.001,
-        ](ctx, Idx(Int(512)), Idx[2560](), Idx[8192]())
+        ](ctx, Int(512), Idx[2560](), Idx[8192]())
         test_matmul_sm90[
             DType.bfloat16,
             DType.bfloat16,
@@ -201,7 +201,7 @@ def main() raises:
             schedule=MatmulSchedule.DS_SCHEDULER,
             grid_shape=Index(128, 1),
             measure_threshold=0.001,
-        ](ctx, Idx(Int(1024)), Idx[2560](), Idx[8192]())
+        ](ctx, Int(1024), Idx[2560](), Idx[8192]())
         test_matmul_sm90[
             DType.bfloat16,
             DType.bfloat16,
@@ -215,7 +215,7 @@ def main() raises:
             schedule=MatmulSchedule.DS_SCHEDULER,
             grid_shape=Index(128, 1),
             measure_threshold=0.001,
-        ](ctx, Idx(Int(2048)), Idx[2560](), Idx[8192]())
+        ](ctx, Int(2048), Idx[2560](), Idx[8192]())
         test_matmul_sm90[
             DType.bfloat16,
             DType.bfloat16,
@@ -229,7 +229,7 @@ def main() raises:
             schedule=MatmulSchedule.DS_SCHEDULER,
             grid_shape=Index(128, 1),
             measure_threshold=0.001,
-        ](ctx, Idx(Int(4096)), Idx[2560](), Idx[8192]())
+        ](ctx, Int(4096), Idx[2560](), Idx[8192]())
         test_matmul_sm90[
             DType.bfloat16,
             DType.bfloat16,
@@ -243,4 +243,4 @@ def main() raises:
             schedule=MatmulSchedule.DS_SCHEDULER,
             grid_shape=Index(128, 1),
             measure_threshold=0.001,
-        ](ctx, Idx(Int(8192)), Idx[2560](), Idx[8192]())
+        ](ctx, Int(8192), Idx[2560](), Idx[8192]())

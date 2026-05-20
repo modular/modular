@@ -193,7 +193,7 @@ def test_matmul[
 
     comptime if do_benchmarking:
         var matmul_perf = bench_run[bench_fn_matmul]()
-        std.benchmark.keep(c[0, 0])
+        std.benchmark.keep(c[Coord(Idx[0](), Idx[0]())])
         print(
             "Apple Matmul GFLOP/s for (M, N, K) = (",
             m,
@@ -546,7 +546,7 @@ def test_batched_matmul[
 
     comptime if do_benchmarking:
         var batched_matmul_perf = bench_run[bench_fn_batched_matmul]()
-        std.benchmark.keep(c[0, 0, 0])
+        std.benchmark.keep(c[Coord(Idx[0](), Idx[0](), Idx[0]())])
         print(
             "Apple Batched Matmul GFLOP/s for (BATCHES, M, N, K) = (",
             batches,

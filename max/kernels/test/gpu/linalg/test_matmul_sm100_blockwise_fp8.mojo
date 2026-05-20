@@ -248,7 +248,7 @@ def main() raises:
             transpose_b=True,
         ](
             ctx,
-            Idx(Int(120)),
+            Int(120),
             Idx[1536](),
             Idx[7168](),
         )
@@ -261,7 +261,7 @@ def main() raises:
             transpose_b=True,
         ](
             ctx,
-            Idx(Int(120)),
+            Int(120),
             Idx[24576](),
             Idx[1536](),
         )
@@ -275,7 +275,7 @@ def main() raises:
             use_epilogue=True,
         ](
             ctx,
-            Idx(Int(128)),
+            Int(128),
             Idx[576](),
             Idx[7168](),
         )
@@ -289,7 +289,7 @@ def main() raises:
             transpose_b=True,
         ](
             ctx,
-            Idx(Int(400)),
+            Int(400),
             Idx[32768](),
             Idx[512](),
         )
@@ -303,7 +303,7 @@ def main() raises:
             transpose_b=True,
         ](
             ctx,
-            Idx(Int(1024)),
+            Int(1024),
             Idx[2048](),
             Idx[2048](),
         )
@@ -317,7 +317,7 @@ def main() raises:
             transpose_b=True,
         ](
             ctx,
-            Idx(Int(1024)),
+            Int(1024),
             Idx[2048](),
             Idx[2048](),
         )
@@ -331,7 +331,7 @@ def main() raises:
             transpose_b=True,
         ](
             ctx,
-            Idx(Int(100)),
+            Int(100),
             Idx[512](),
             Idx[256](),
         )
@@ -345,7 +345,7 @@ def main() raises:
             transpose_b=True,
         ](
             ctx,
-            Idx(Int(96)),
+            Int(96),
             Idx[1024](),
             Idx[1024](),
         )
@@ -359,7 +359,7 @@ def main() raises:
             transpose_b=True,
         ](
             ctx,
-            Idx(Int(208)),
+            Int(208),
             Idx[2048](),
             Idx[256](),
         )

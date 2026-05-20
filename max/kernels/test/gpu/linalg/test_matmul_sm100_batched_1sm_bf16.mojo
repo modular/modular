@@ -116,17 +116,15 @@ def test_blackwell_batched_matmul_tma_umma_warp_specialized[
         for b in range(B):
             for mi in range(M):
                 for ki in range(K):
-                    comptime assert a_host.flat_rank >= 3
-                    a_host[(Idx(b), Idx(mi), Idx(ki))] = Float32(ki).cast[
-                        a_type
-                    ]()
+                    comptime assert a_host.flat_rank == 3
+                    a_host[b, mi, ki] = Float32(ki).cast[a_type]()
         for b in range(B):
             for ni in range(N):
                 for ki in range(K):
-                    comptime assert b_host.flat_rank >= 3
-                    b_host[(Idx(b), Idx(ni), Idx(ki))] = Float32(
-                        1 if ni == ki else 0
-                    ).cast[b_type]()
+                    comptime assert b_host.flat_rank == 3
+                    b_host[b, ni, ki] = Float32(1 if ni == ki else 0).cast[
+                        b_type
+                    ]()
     else:
         rand(a_host.ptr, a_host.num_elements())
         rand(b_host.ptr, b_host.num_elements())
@@ -224,8 +222,8 @@ def main() raises:
                     cta_group=cta_group,
                 ](
                     ctx,
-                    Idx(Int(2)),
-                    Idx(Int(128)),
+                    Int(2),
+                    Int(128),
                     Idx[128](),
                     Idx[128](),
                 )
@@ -241,8 +239,8 @@ def main() raises:
                     cta_group=cta_group,
                 ](
                     ctx,
-                    Idx(Int(4)),
-                    Idx(Int(256)),
+                    Int(4),
+                    Int(256),
                     Idx[512](),
                     Idx[256](),
                 )
@@ -258,8 +256,8 @@ def main() raises:
                     cta_group=cta_group,
                 ](
                     ctx,
-                    Idx(Int(2)),
-                    Idx(Int(1000)),
+                    Int(2),
+                    Int(1000),
                     Idx[1024](),
                     Idx[1040](),
                 )
@@ -283,8 +281,8 @@ def main() raises:
                     swapAB=True,
                 ](
                     ctx,
-                    Idx(Int(2)),
-                    Idx(Int(128)),
+                    Int(2),
+                    Int(128),
                     Idx[128](),
                     Idx[128](),
                 )
@@ -300,8 +298,8 @@ def main() raises:
                     swapAB=True,
                 ](
                     ctx,
-                    Idx(Int(4)),
-                    Idx(Int(256)),
+                    Int(4),
+                    Int(256),
                     Idx[512](),
                     Idx[256](),
                 )

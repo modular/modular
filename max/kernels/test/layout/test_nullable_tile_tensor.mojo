@@ -85,9 +85,9 @@ def test_value_returns_working_tile_tensor() raises:
     var nullable = NullableTileTensor(tile)
 
     var unwrapped = nullable.value()
-    assert_equal(unwrapped[(Idx[0](), Idx[0]())], 0)
-    assert_equal(unwrapped[(Idx[0](), Idx[1]())], 10)
-    assert_equal(unwrapped[(Idx[1](), Idx[2]())], 50)
+    assert_equal(unwrapped[Coord(Idx[0](), Idx[0]())], 0)
+    assert_equal(unwrapped[Coord(Idx[0](), Idx[1]())], 10)
+    assert_equal(unwrapped[Coord(Idx[1](), Idx[2]())], 50)
 
 
 def test_value_shares_memory_with_original() raises:
@@ -96,8 +96,8 @@ def test_value_shares_memory_with_original() raises:
     var tile = TileTensor(data, row_major[2, 2]())
     var nullable = NullableTileTensor(tile)
 
-    nullable.value()[(Idx[0](), Idx[1]())] = 99
-    assert_equal(tile[(Idx[0](), Idx[1]())], 99)
+    nullable.value()[Coord(Idx[0](), Idx[1]())] = 99
+    assert_equal(tile[Coord(Idx[0](), Idx[1]())], 99)
 
 
 def test_layout_field_accessible() raises:

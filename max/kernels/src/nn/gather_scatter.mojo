@@ -251,7 +251,7 @@ def gather_reduce[
                     comptime for unroll_idx in range(0, unroll_factor):
                         var gather_chunk = input.load[
                             width=simd_width, alignment=1
-                        ]((Idx(Int(idxs[unroll_idx])), Idx(k)))
+                        ]((Int(idxs[unroll_idx]), Idx(k)))
                         out[unroll_idx] = reduce_fn[dtype, simd_width](
                             accums[unroll_idx], gather_chunk
                         )

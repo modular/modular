@@ -46,7 +46,7 @@ def main() raises:
             grid_shape=Index(32, 4),
             schedule=MatmulSchedule.TILE2D,
             default_epilogue=True,
-        ](ctx, Idx(Int(512)), Idx[2560](), Idx[8192]())
+        ](ctx, Int(512), Idx[2560](), Idx[8192]())
 
         test_matmul_sm90[
             DType.bfloat16,
@@ -57,7 +57,7 @@ def main() raises:
             wgmma_shape[144, DType.bfloat16],
             num_consumer=2,
             default_epilogue=True,
-        ](ctx, Idx(Int(277)), Idx[2560](), Idx[128]())
+        ](ctx, Int(277), Idx[2560](), Idx[128]())
 
         test_matmul_sm90[
             DType.bfloat16,
@@ -68,7 +68,7 @@ def main() raises:
             wgmma_shape[232, DType.bfloat16],
             num_consumer=2,
             default_epilogue=True,
-        ](ctx, Idx(Int(277)), Idx[2560](), Idx[128]())
+        ](ctx, Int(277), Idx[2560](), Idx[128]())
 
         test_matmul_sm90[
             DType.bfloat16,
@@ -79,7 +79,7 @@ def main() raises:
             wgmma_shape[256, DType.bfloat16],
             num_consumer=2,
             default_epilogue=True,
-        ](ctx, Idx(Int(277)), Idx[2560](), Idx[128]())
+        ](ctx, Int(277), Idx[2560](), Idx[128]())
 
         test_matmul_sm90[
             DType.bfloat16,
@@ -90,7 +90,7 @@ def main() raises:
             wgmma_shape[64, DType.bfloat16],
             num_consumer=2,
             default_epilogue=True,
-        ](ctx, Idx(Int(393)), Idx[8192](), Idx[2048]())
+        ](ctx, Int(393), Idx[8192](), Idx[2048]())
 
         test_matmul_sm90[
             DType.bfloat16,
@@ -101,7 +101,7 @@ def main() raises:
             wgmma_shape[256, DType.bfloat16],
             num_consumer=2,
             default_epilogue=True,
-        ](ctx, Idx(Int(532)), Idx[8192](), Idx[7168]())
+        ](ctx, Int(532), Idx[8192](), Idx[7168]())
 
         test_matmul_sm90[
             DType.bfloat16,
@@ -112,7 +112,7 @@ def main() raises:
             wgmma_shape[64, DType.bfloat16],
             num_consumer=2,
             default_epilogue=True,
-        ](ctx, Idx(Int(604)), Idx[14336](), Idx[8192]())
+        ](ctx, Int(604), Idx[14336](), Idx[8192]())
 
         test_matmul_sm90[
             DType.bfloat16,
@@ -122,7 +122,7 @@ def main() raises:
             block_tile_shape[256, DType.bfloat16],
             wgmma_shape[256, DType.bfloat16],
             default_epilogue=True,
-        ](ctx, Idx(Int(2021)), Idx[512](), Idx[128]())
+        ](ctx, Int(2021), Idx[512](), Idx[128]())
 
         test_matmul_sm90[
             DType.bfloat16,
@@ -152,7 +152,7 @@ def main() raises:
             wgmma_shape[256, DType.bfloat16],
             num_consumer=2,
             default_epilogue=True,
-        ](ctx, Idx(Int(100)), Idx[331](), Idx[1024]())
+        ](ctx, Int(100), Idx[331](), Idx[1024]())
 
         # Odd N dim and K not multiple of 16B
         test_matmul_sm90[
@@ -164,7 +164,7 @@ def main() raises:
             wgmma_shape[128, DType.bfloat16],
             num_consumer=2,
             default_epilogue=True,
-        ](ctx, Idx(Int(91)), Idx[111](), Idx[588]())
+        ](ctx, Int(91), Idx[111](), Idx[588]())
 
         @parameter
         @always_inline
@@ -190,7 +190,7 @@ def main() raises:
                 elementwise_compute_lambda_type
             ](test_lambda_fn_square),
             default_epilogue=True,
-        ](ctx, Idx(Int(277)), Idx[2560](), Idx[128]())
+        ](ctx, Int(277), Idx[2560](), Idx[128]())
 
         @parameter
         @always_inline
@@ -219,7 +219,7 @@ def main() raises:
                 elementwise_compute_lambda_type
             ](test_lambda_add_coords),
             default_epilogue=True,
-        ](ctx, Idx(Int(277)), Idx[2560](), Idx[128]())
+        ](ctx, Int(277), Idx[2560](), Idx[128]())
 
         test_matmul_sm90[
             DType.bfloat16,
@@ -249,7 +249,7 @@ def main() raises:
             wgmma_shape[128, DType.float32],
             num_consumer=2,
             default_epilogue=True,
-        ](ctx, Idx(Int(277)), Idx[2560](), Idx[128]())
+        ](ctx, Int(277), Idx[2560](), Idx[128]())
 
         test_matmul_sm90[
             DType.float32,
@@ -264,7 +264,7 @@ def main() raises:
             default_epilogue=True,
         ](
             ctx,
-            Idx(Int(1024)),
+            Int(1024),
             Idx[256 * 6](),
             Idx[128](),
         )

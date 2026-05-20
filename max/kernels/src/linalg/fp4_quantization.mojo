@@ -1228,7 +1228,7 @@ def grouped_quantize_dynamic_scaled_fp4_async_kernel[
     )
 
     var expert_id = expert_ids[expert_idx]
-    var input_sf = sf_tensor[expert_id]
+    var input_sf = sf_tensor[Idx(expert_id)]
 
     var token_start = (
         curr_expert_start

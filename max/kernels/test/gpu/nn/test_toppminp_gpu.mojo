@@ -248,7 +248,7 @@ def test_case_sampling[
         batch_size * 1
     )
     var token_ids = TileTensor(
-        token_ids_ptr, row_major(Coord(Idx(batch_size), Idx(Int(1))))
+        token_ids_ptr, row_major(Coord(Idx(batch_size), Int(1)))
     )
     var p_thresholds_ptr = ctx.enqueue_create_host_buffer[dtype](batch_size)
     var p_thresholds = TileTensor(

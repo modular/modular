@@ -336,14 +336,14 @@ def main() raises:
             out_dtype=DType.bfloat16,
             scales_dtype=DType.bfloat16,
             transpose_b=True,
-        ](ctx, Idx(Int(17)), Idx[256 + 256](), Idx[256]())
+        ](ctx, Int(17), Idx[256 + 256](), Idx[256]())
 
         test_matmul_dynamic_scaled_fp8[
             in_dtype=DType.float8_e4m3fn,
             out_dtype=DType.bfloat16,
             scales_dtype=DType.bfloat16,
             transpose_b=True,
-        ](ctx, Idx(Int(124)), Idx[512](), Idx[512]())
+        ](ctx, Int(124), Idx[512](), Idx[512]())
 
         # these tests are guaranteed to hit a mojo fp8 kernel in the dispatch table.
         # if the fp8 kernel is not registered, these tests will fail.
@@ -352,14 +352,14 @@ def main() raises:
             out_dtype=DType.bfloat16,
             scales_dtype=DType.bfloat16,
             transpose_b=True,
-        ](ctx, Idx(Int(3000)), Idx[5376](), Idx[4096]())
+        ](ctx, Int(3000), Idx[5376](), Idx[4096]())
 
         test_matmul_dynamic_scaled_fp8[
             in_dtype=DType.float8_e4m3fn,
             out_dtype=DType.bfloat16,
             scales_dtype=DType.bfloat16,
             transpose_b=True,
-        ](ctx, Idx(Int(224)), Idx[43008](), Idx[5376]())
+        ](ctx, Int(224), Idx[43008](), Idx[5376]())
 
         # Tensor-granularity (per-tensor) scaling tests
         test_matmul_dynamic_scaled_fp8_tensor[
@@ -367,11 +367,11 @@ def main() raises:
             out_dtype=DType.bfloat16,
             scales_dtype=DType.bfloat16,
             transpose_b=True,
-        ](ctx, Idx(Int(17)), Idx[512](), Idx[256]())
+        ](ctx, Int(17), Idx[512](), Idx[256]())
 
         test_matmul_dynamic_scaled_fp8_tensor[
             in_dtype=DType.float8_e4m3fn,
             out_dtype=DType.bfloat16,
             scales_dtype=DType.bfloat16,
             transpose_b=True,
-        ](ctx, Idx(Int(124)), Idx[512](), Idx[512]())
+        ](ctx, Int(124), Idx[512](), Idx[512]())

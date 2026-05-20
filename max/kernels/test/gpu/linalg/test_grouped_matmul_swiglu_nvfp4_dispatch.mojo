@@ -372,11 +372,11 @@ def _test_swiglu_dispatch[
     )
 
     # ---- Per-test A-side / output buffers (M-dependent) ----
-    var a_shape = row_major(Coord(Idx(Int(M)), Idx[packed_K]()))
+    var a_shape = row_major(Coord(Int(M), Idx[packed_K]()))
     var b_shape = row_major(
         Coord(Idx[num_experts](), Idx[N](), Idx[packed_K]())
     )
-    var c_shape = row_major(Coord(Idx(Int(M)), Idx[N]()))
+    var c_shape = row_major(Coord(Int(M), Idx[N]()))
 
     var a_size = M * packed_K
     var c_size = M * N
@@ -450,7 +450,7 @@ def _test_swiglu_dispatch[
 
     var a_scales_shape = row_major(
         Coord(
-            Idx(Int(a_scale_dim0)),
+            Int(a_scale_dim0),
             Idx[k_groups](),
             Idx[SF_ATOM_M[0]](),
             Idx[SF_ATOM_M[1]](),
@@ -469,11 +469,11 @@ def _test_swiglu_dispatch[
 
     # ---- SwiGLU output buffers (REF and TEST) ----
     comptime k_groups_swiglu = ceildiv(H, NVFP4_SF_VECTOR_SIZE * SF_ATOM_K)
-    var O_shape = row_major(Coord(Idx(Int(M)), Idx[packed_H]()))
+    var O_shape = row_major(Coord(Int(M), Idx[packed_H]()))
     var O_size = M * packed_H
     var swiglu_scales_shape = row_major(
         Coord(
-            Idx(Int(a_scale_dim0)),
+            Int(a_scale_dim0),
             Idx[k_groups_swiglu](),
             Idx[SF_ATOM_M[0]](),
             Idx[SF_ATOM_M[1]](),

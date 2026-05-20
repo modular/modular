@@ -102,10 +102,15 @@ def matmul_test_case[
     # support applying the epilogue on the final result.
     matmul(mat_c_ref_host, mat_a_host, mat_b_host)
 
+    comptime assert type_of(shape_c[0]).DTYPE.is_integral()
+    comptime assert type_of(shape_c[1]).DTYPE.is_integral()
+
     for m in range(shape_c[0].value()):
         for n in range(shape_c[1].value()):
             comptime assert mat_c_ref_host.flat_rank == 2
-            assert_almost_equal(mat_c_ref_host[m, n], mat_c_host[m, n])
+            assert_almost_equal(
+                mat_c_ref_host[Idx(m), Idx(n)], mat_c_host[Idx(m), Idx(n)]
+            )
 
 
 def create_matmul_test_case[
@@ -116,9 +121,7 @@ def create_matmul_test_case[
 
 def main() raises:
     with DeviceContext() as ctx:
+        create_matmul_test_case[DType.float32](ctx, Int(8), Idx[8](), Idx[4]())
         create_matmul_test_case[DType.float32](
-            ctx, Idx(Int(8)), Idx[8](), Idx[4]()
-        )
-        create_matmul_test_case[DType.float32](
-            ctx, Idx(Int(16)), Idx[16](), Idx[8]()
+            ctx, Int(16), Idx[16](), Idx[8]()
         )

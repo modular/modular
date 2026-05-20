@@ -56,7 +56,7 @@ def run_matmul_sm100_block_scaled_fp4_2sm_suite[
                     SF_VECTOR_SIZE=SF_VECTOR_SIZE,
                 ](
                     ctx,
-                    Idx(Int(1000)),
+                    Int(1000),
                     Idx[1024](),
                     Idx[1024 + 32](),
                     alpha=0.5,
@@ -77,7 +77,7 @@ def run_matmul_sm100_block_scaled_fp4_2sm_suite[
                     SF_VECTOR_SIZE=SF_VECTOR_SIZE,
                 ](
                     ctx,
-                    Idx(Int(512)),
+                    Int(512),
                     Idx[4096](),
                     Idx[1024 + 32](),
                     alpha=0.135,
@@ -99,7 +99,7 @@ def run_matmul_sm100_block_scaled_fp4_2sm_suite[
                     SF_VECTOR_SIZE=SF_VECTOR_SIZE,
                 ](
                     ctx,
-                    Idx(Int(500)),
+                    Int(500),
                     Idx[2048](),
                     Idx[4096](),
                 )
@@ -119,7 +119,7 @@ def run_matmul_sm100_block_scaled_fp4_2sm_suite[
                     SF_VECTOR_SIZE=SF_VECTOR_SIZE,
                 ](
                     ctx,
-                    Idx(Int(999)),
+                    Int(999),
                     Idx[256](),
                     Idx[128](),
                 )
@@ -139,7 +139,7 @@ def run_matmul_sm100_block_scaled_fp4_2sm_suite[
                     SF_VECTOR_SIZE=SF_VECTOR_SIZE,
                 ](
                     ctx,
-                    Idx(Int(777)),
+                    Int(777),
                     Idx[2560](),
                     Idx[8192](),
                 )
@@ -159,7 +159,7 @@ def run_matmul_sm100_block_scaled_fp4_2sm_suite[
                     SF_VECTOR_SIZE=SF_VECTOR_SIZE,
                 ](
                     ctx,
-                    Idx(Int(1)),
+                    Int(1),
                     Idx[576](),
                     Idx[7168](),
                 )
@@ -180,7 +180,7 @@ def run_matmul_sm100_block_scaled_fp4_2sm_suite[
                     SF_VECTOR_SIZE=SF_VECTOR_SIZE,
                 ](
                     ctx,
-                    Idx(Int(16)),
+                    Int(16),
                     Idx[1024](),
                     Idx(1024 + 32),
                 )
@@ -200,7 +200,7 @@ def run_matmul_sm100_block_scaled_fp4_2sm_suite[
                     SF_VECTOR_SIZE=SF_VECTOR_SIZE,
                 ](
                     ctx,
-                    Idx(Int(100)),
+                    Int(100),
                     Idx[2560](),
                     Idx[8192](),
                 )

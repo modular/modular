@@ -153,7 +153,7 @@ def _count_expert_tokens[
 
             # If this token matches, store its index in shared memory
             if state and offset < UInt64(expected_count):
-                smem[0, offset] = UInt32(idx + i)
+                smem[Coord(Idx[0](), Idx(offset))] = UInt32(idx + i)
 
     var expert_id = (
         topk_ids[
@@ -172,7 +172,9 @@ def _count_expert_tokens[
     total_writes += warp_writes
 
     if state and offset < UInt64(expected_count):
-        smem[0, offset] = UInt32(bg_params.remainder_start_idx)
+        smem[Coord(Idx[0](), Idx(offset))] = UInt32(
+            bg_params.remainder_start_idx
+        )
 
     return total_writes
 
@@ -253,7 +255,7 @@ def _copy_tokens_smem_to_gmem[
 
             comptime for i in range(width):
                 token_expert_order[
-                    g_offset_copy + UInt32(smem_idx) + UInt32(i)
+                    Coord(Idx(g_offset_copy + UInt32(smem_idx) + UInt32(i)))
                 ] = source_vector[i]
                 restore_token_order[Int(source_vector[i])] = (
                     g_offset_copy + UInt32(smem_idx) + UInt32(i)
@@ -264,9 +266,11 @@ def _copy_tokens_smem_to_gmem[
     g_offset_copy += UInt32(start_idx)
 
     if UInt64(thread_idx.x) < smem_writes - start_idx:
-        var smem_val = smem[0, start_idx + UInt64(thread_idx.x)]
+        var smem_val = smem[
+            Coord(Idx[0](), Idx(start_idx + UInt64(thread_idx.x)))
+        ]
         token_expert_order.store(
-            Coord(Idx(Int(g_offset_copy + UInt32(thread_idx.x)))),
+            Coord(Int(g_offset_copy + UInt32(thread_idx.x))),
             smem_val,
         )
 
@@ -333,7 +337,7 @@ def _copy_tokens_to_gmem[
             # so we only need to write the remaining tokens to global memory.
             if thr_tokens_seen >= UInt64(expected_count) and state:
                 token_expert_order[
-                    g_offset_copy + UInt32(preceding_thread_writes)
+                    Coord(Idx(g_offset_copy + UInt32(preceding_thread_writes)))
                 ] = UInt32(idx + i)
                 restore_token_order[idx + i] = g_offset_copy + UInt32(
                     preceding_thread_writes
@@ -360,7 +364,7 @@ def _copy_tokens_to_gmem[
 
     if temp_current_writes >= UInt64(expected_count) and state:
         token_expert_order[
-            g_offset_copy + UInt32(preceding_thread_writes)
+            Coord(Idx(g_offset_copy + UInt32(preceding_thread_writes)))
         ] = UInt32(bg_params.remainder_start_idx)
         restore_token_order[
             bg_params.remainder_start_idx
@@ -484,15 +488,17 @@ def moe_create_indices_bucket_group_kernel[
 
     # Record which expert is active at this index
     # this signals this expert is being used
-    expert_ids[expert_idx] = Int32(bucket_group_params.expert)
+    expert_ids[Coord(Idx(expert_idx))] = Int32(bucket_group_params.expert)
 
     # Store the ending index for this expert (start of next expert)
     # NOTE: expert_start_indices must be zero-initialized for this to work correctly
-    expert_start_indices[expert_idx + 1] = g_offset + UInt32(total_writes)
+    expert_start_indices[Coord(Idx(expert_idx + 1))] = g_offset + UInt32(
+        total_writes
+    )
 
     # First expert always starts at index 0
     if expert_idx == 0:
-        expert_start_indices[expert_idx] = 0
+        expert_start_indices[Coord(Idx(expert_idx))] = 0
 
     if total_writes > 0:
         # Copy all tokens in shared memory back to global memory
@@ -572,7 +578,7 @@ def moe_create_indices[
 
         var topk_2D = TileTensor(
             topk_ids.ptr,
-            row_major(Coord(Idx[1](), Idx(Int(topk_ids.dim(0))))),
+            row_major(Coord(Idx[1](), Int(topk_ids.dim(0)))),
         )
 
         var num_experts = expert_ids.dim(0)

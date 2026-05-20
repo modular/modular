@@ -45,7 +45,7 @@ def main() raises:
             grid_shape=Index(32, 4),
             schedule=MatmulSchedule.TILE2D,
             measure_threshold=0.001,
-        ](ctx, Idx(Int(512)), Idx[2560](), Idx[8192]())
+        ](ctx, Int(512), Idx[2560](), Idx[8192]())
 
         test_matmul_sm90[
             DType.bfloat16,
@@ -59,7 +59,7 @@ def main() raises:
             grid_shape=Index(10, 13),
             schedule=MatmulSchedule.TILE2D,
             measure_threshold=0.001,
-        ](ctx, Idx(Int(8192)), Idx[2560](), Idx[8192]())
+        ](ctx, Int(8192), Idx[2560](), Idx[8192]())
 
         test_matmul_sm90[
             DType.bfloat16,
@@ -72,7 +72,7 @@ def main() raises:
             partitioned_multicast=False,
             schedule=MatmulSchedule.TILE2D,
             measure_threshold=0.001,
-        ](ctx, Idx(Int(4096)), Idx[2560](), Idx[8192]())
+        ](ctx, Int(4096), Idx[2560](), Idx[8192]())
 
         test_matmul_sm90[
             DType.bfloat16,
@@ -86,7 +86,7 @@ def main() raises:
             grid_shape=Index(4, 33),
             schedule=MatmulSchedule.TILE2D,
             measure_threshold=0.001,
-        ](ctx, Idx(Int(8192)), Idx[8192](), Idx[2048]())
+        ](ctx, Int(8192), Idx[8192](), Idx[2048]())
 
         test_matmul_sm90[
             DType.bfloat16,
@@ -99,7 +99,7 @@ def main() raises:
             partitioned_multicast=False,
             schedule=MatmulSchedule.TILE2D,
             measure_threshold=0.001,
-        ](ctx, Idx(Int(4096)), Idx[8192](), Idx[2048]())
+        ](ctx, Int(4096), Idx[8192](), Idx[2048]())
 
         test_matmul_sm90[
             DType.bfloat16,
@@ -113,7 +113,7 @@ def main() raises:
             use_tma_store=True,
             schedule=MatmulSchedule.TILE2D,
             measure_threshold=0.001,
-        ](ctx, Idx(Int(4096)), Idx[8192](), Idx[2048]())
+        ](ctx, Int(4096), Idx[8192](), Idx[2048]())
 
         test_matmul_sm90[
             DType.bfloat16,
@@ -129,7 +129,7 @@ def main() raises:
             measure_threshold=0.001,
         ](
             ctx,
-            Idx(Int(8192)),
+            Int(8192),
             Idx[14336](),
             Idx[8192](),
         )
@@ -149,7 +149,7 @@ def main() raises:
             measure_threshold=0.001,
         ](
             ctx,
-            Idx(Int(8192)),
+            Int(8192),
             Idx[14336](),
             Idx[8192](),
         )
@@ -167,7 +167,7 @@ def main() raises:
             measure_threshold=0.001,
         ](
             ctx,
-            Idx(Int(4096)),
+            Int(4096),
             Idx[14336](),
             Idx[8192](),
         )
@@ -186,7 +186,7 @@ def main() raises:
             measure_threshold=0.001,
         ](
             ctx,
-            Idx(Int(4096)),
+            Int(4096),
             Idx[14336](),
             Idx[8192](),
         )
@@ -414,7 +414,7 @@ def main() raises:
             measure_threshold=0.001,
         ](
             ctx,
-            Idx(Int(1024)),
+            Int(1024),
             Idx[512](),
             Idx[128](),
         )
@@ -430,7 +430,7 @@ def main() raises:
             measure_threshold=0.001,
         ](
             ctx,
-            Idx(Int(199)),
+            Int(199),
             Idx[1024](),
             Idx[1024](),
         )
@@ -446,7 +446,7 @@ def main() raises:
             measure_threshold=0.001,
         ](
             ctx,
-            Idx(Int(200)),
+            Int(200),
             Idx[512](),
             Idx[256](),
         )
@@ -463,7 +463,7 @@ def main() raises:
             measure_threshold=0.001,
         ](
             ctx,
-            Idx(Int(201)),
+            Int(201),
             Idx[2048](),
             Idx[256](),
         )
@@ -498,7 +498,7 @@ def main() raises:
             measure_threshold=0.001,
         ](
             ctx,
-            Idx(Int(1024)),
+            Int(1024),
             Idx[512](),
             Idx[128](),
         )
@@ -515,7 +515,7 @@ def main() raises:
             measure_threshold=0.001,
         ](
             ctx,
-            Idx(Int(99)),
+            Int(99),
             Idx[1024](),
             Idx[1024](),
         )
@@ -531,7 +531,7 @@ def main() raises:
             measure_threshold=0.001,
         ](
             ctx,
-            Idx(Int(100)),
+            Int(100),
             Idx[512](),
             Idx[256](),
         )
@@ -548,7 +548,7 @@ def main() raises:
             measure_threshold=0.001,
         ](
             ctx,
-            Idx(Int(201)),
+            Int(201),
             Idx[2048](),
             Idx[256](),
         )
@@ -583,7 +583,7 @@ def main() raises:
             measure_threshold=0.001,
         ](
             ctx,
-            Idx(Int(1024)),
+            Int(1024),
             Idx[512](),
             Idx[128](),
         )
@@ -600,7 +600,7 @@ def main() raises:
             measure_threshold=0.001,
         ](
             ctx,
-            Idx(Int(199)),
+            Int(199),
             Idx[1024](),
             Idx[1024](),
         )
@@ -616,7 +616,7 @@ def main() raises:
             measure_threshold=0.001,
         ](
             ctx,
-            Idx(Int(200)),
+            Int(200),
             Idx[512](),
             Idx[256](),
         )
@@ -633,7 +633,7 @@ def main() raises:
             measure_threshold=0.001,
         ](
             ctx,
-            Idx(Int(201)),
+            Int(201),
             Idx[2048](),
             Idx[256](),
         )

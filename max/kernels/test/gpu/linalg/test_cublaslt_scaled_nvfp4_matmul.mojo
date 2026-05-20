@@ -82,7 +82,7 @@ def test_block_scaled_nvfp4_cublaslt[
     var c_shape = row_major(Coord(m, n))
     var a_scales_shape = row_major(
         Coord(
-            Idx(Int(ceildiv(M, SF_MN_GROUP_SIZE))),
+            Int(ceildiv(M, SF_MN_GROUP_SIZE)),
             Idx[
                 ceildiv(KType.static_value, NVFP4_SF_VECTOR_SIZE * SF_ATOM_K)
             ](),
@@ -215,46 +215,46 @@ def main() raises:
             DType.bfloat16,
             DType.float4_e2m1fn,
             True,
-        ](ctx, Idx(Int(128)), Idx[128](), Idx[64]())
+        ](ctx, Int(128), Idx[128](), Idx[64]())
 
         test_block_scaled_nvfp4_cublaslt[
             DType.bfloat16,
             DType.float4_e2m1fn,
             True,
-        ](ctx, Idx(Int(256)), Idx[256](), Idx[64 - 32]())
+        ](ctx, Int(256), Idx[256](), Idx[64 - 32]())
 
         test_block_scaled_nvfp4_cublaslt[
             DType.bfloat16,
             DType.float4_e2m1fn,
             True,
-        ](ctx, Idx(Int(128)), Idx[3 * 128](), Idx[256 + 32]())
+        ](ctx, Int(128), Idx[3 * 128](), Idx[256 + 32]())
 
         test_block_scaled_nvfp4_cublaslt[
             DType.bfloat16,
             DType.float4_e2m1fn,
             True,
-        ](ctx, Idx(Int(3 * 128)), Idx[128](), Idx[3 * 64]())
+        ](ctx, Int(3 * 128), Idx[128](), Idx[3 * 64]())
 
         test_block_scaled_nvfp4_cublaslt[
             DType.bfloat16,
             DType.float4_e2m1fn,
             True,
-        ](ctx, Idx(Int(2560)), Idx[4096](), Idx[1024]())
+        ](ctx, Int(2560), Idx[4096](), Idx[1024]())
 
         test_block_scaled_nvfp4_cublaslt[
             DType.bfloat16,
             DType.float4_e2m1fn,
             True,
-        ](ctx, Idx(Int(1000)), Idx[4096](), Idx[1024]())
+        ](ctx, Int(1000), Idx[4096](), Idx[1024]())
 
         test_block_scaled_nvfp4_cublaslt[
             DType.bfloat16,
             DType.float4_e2m1fn,
             True,
-        ](ctx, Idx(Int(1000)), Idx[4096 + 64](), Idx[1024]())
+        ](ctx, Int(1000), Idx[4096 + 64](), Idx[1024]())
 
         test_block_scaled_nvfp4_cublaslt[
             DType.bfloat16,
             DType.float4_e2m1fn,
             True,
-        ](ctx, Idx(Int(1000)), Idx[4096 + 64](), Idx[1024 + 64]())
+        ](ctx, Int(1000), Idx[4096 + 64](), Idx[1024 + 64]())

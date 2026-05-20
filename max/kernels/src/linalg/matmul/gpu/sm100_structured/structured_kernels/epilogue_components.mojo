@@ -581,7 +581,7 @@ struct TMAStoreExecutor[
             var c_reshaped = c_smem_tile.reshape(reshaped)
             var c_split = c_reshaped.tile[
                 Self.stageN, Self.stage_contiguous_size // 2
-            ](Coord(Idx(Int(warp_id // 2)), Idx[0]()))
+            ](Coord(Int(warp_id // 2), Idx[0]()))
 
             comptime for i in range(Self.num_c_smem_tiles):
                 var c_split_tile = c_split.tile[
@@ -1302,7 +1302,7 @@ struct TMEMToSMemWriter[
                 var new_smem = c_smem_tile.reshape(logical)
 
                 var tiled = new_smem.tile[Self.stageN, 1, tile_width](
-                    Coord(Idx[0](), Idx(Int(self.warp_id)), Idx[0]())
+                    Coord(Idx[0](), Int(self.warp_id), Idx[0]())
                 )
 
                 # Coalesce: (stageN, 1, 16) -> (stageN, 16)
@@ -1350,7 +1350,7 @@ struct TMEMToSMemWriter[
             else:
                 var c_smem_warp_tile_upper = c_smem_tile.tile[
                     tiles_per_frag, Self.stage_contiguous_size
-                ](Coord(Idx(Int(self.warp_id)), Idx[0]())).reshape(reshaped)
+                ](Coord(Int(self.warp_id), Idx[0]())).reshape(reshaped)
 
                 store_fragment_to_smem[
                     Self.swizzle,
@@ -1376,7 +1376,7 @@ struct TMEMToSMemWriter[
 
         comptime c_smem_tile_m = 32 if Self.cta_group == 2 else Self.BM // Self.num_output_warps
         var c_smem_warp_tile = c_smem_tile.tile[c_smem_tile_m, Self.stageN](
-            Coord(Idx(Int(self.warp_id)), Idx[0]())
+            Coord(Int(self.warp_id), Idx[0]())
         )
 
         var c_smem_warp_tile_upper = c_smem_warp_tile.tile[
@@ -1619,7 +1619,7 @@ struct SMemEpilogueWriter[
             var new_smem = c_smem_tile.reshape(logical)
 
             var tiled = new_smem.tile[Self.stageN, 1, tile_width](
-                Coord(Idx[0](), Idx(Int(self.warp_id)), Idx[0]())
+                Coord(Idx[0](), Int(self.warp_id), Idx[0]())
             )
 
             # Coalesce: (stageN, 1, 16) -> (stageN, 16)
@@ -1674,7 +1674,7 @@ struct SMemEpilogueWriter[
         """Non-transpose path: tile per warp and apply epilogue."""
         comptime c_smem_tile_m = 32 if Self.cta_group == 2 else Self.BM // Self.num_output_warps
         var c_smem_warp_tile = c_smem_tile.tile[c_smem_tile_m, Self.stageN](
-            Coord(Idx(Int(self.warp_id)), Idx[0]())
+            Coord(Int(self.warp_id), Idx[0]())
         )
 
         var c_smem_warp_tile_upper = c_smem_warp_tile.tile[

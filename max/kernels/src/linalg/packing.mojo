@@ -18,6 +18,7 @@ from std.sys.intrinsics import PrefetchOptions
 from std.algorithm import unswitch
 from linalg.utils import partial_simd_load
 from layout import Coord, Idx, TileTensor
+from layout.tile_layout import RowMajorLayout
 from layout.tile_tensor import stack_allocation as tt_stack_allocation
 from std.sys import prefetch
 from layout.tile_layout import TensorLayout, row_major
@@ -946,9 +947,7 @@ struct BTileGenerator[
             Self.b_packed,
         ](b, b_tile_stack_ptr, tile_n_k)
 
-    comptime PackedTileLayout = type_of(
-        row_major(Coord(Idx(Int(0)), Idx(Int(0)), Idx(Int(0))))
-    )
+    comptime PackedTileLayout = RowMajorLayout[Int, Int, Int]
 
     def get_tile[
         inner_size: Int
@@ -993,9 +992,9 @@ struct BTileGenerator[
             self.b_tile_stack_ptr,
             row_major(
                 Coord(
-                    Idx(tile_shape_nopack[0]),
-                    Idx(tile_shape_nopack[1]),
-                    Idx(tile_shape_nopack[2]),
+                    Int(tile_shape_nopack[0]),
+                    Int(tile_shape_nopack[1]),
+                    Int(tile_shape_nopack[2]),
                 )
             ),
         )
@@ -1068,9 +1067,9 @@ struct BTileGenerator[
                 + (tile_k_idx * tile_k * n_padded + global_offset.N * tile_k2),
                 row_major(
                     Coord(
-                        Idx(tile_shape_pack[0]),
-                        Idx(tile_shape_pack[1]),
-                        Idx(tile_shape_pack[2]),
+                        Int(tile_shape_pack[0]),
+                        Int(tile_shape_pack[1]),
+                        Int(tile_shape_pack[2]),
                     )
                 ),
             )

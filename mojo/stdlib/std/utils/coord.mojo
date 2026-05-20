@@ -816,11 +816,18 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
             else:
                 # Runtime value - use _get_flattened to get the value
                 var val = _get_flattened[i](self)
-                UnsafePointer(to=flat_tuple[i]).init_pointee_copy(
-                    rebind[FlatType](
-                        RuntimeInt[FlatType.DTYPE](Scalar[FlatType.DTYPE](val))
+                comptime if _type_is_eq[FlatType, Int]():
+                    UnsafePointer(to=flat_tuple[i]).init_pointee_copy(
+                        rebind[FlatType](val)
                     )
-                )
+                else:
+                    UnsafePointer(to=flat_tuple[i]).init_pointee_copy(
+                        rebind[FlatType](
+                            RuntimeInt[FlatType.DTYPE](
+                                Scalar[FlatType.DTYPE](val)
+                            )
+                        )
+                    )
 
         return Coord(flat_tuple)
 
@@ -1372,11 +1379,7 @@ Returns:
 
 comptime _FlattenOnceMapper[
     element_type: CoordLike,
-]: TypeList.of[Trait=CoordLike]()._mlir_type = (
-    element_type._ParamListType if element_type.is_tuple else TypeList.of[
-        Trait=CoordLike, element_type
-    ]().values
-)
+]: TypeList.of[Trait=CoordLike]()._mlir_type = element_type._ParamListType
 
 comptime _FlattenOnce[*element_types: CoordLike] = TypeList._concat[
     *element_types.map_to_values[_FlattenOnceMapper]()

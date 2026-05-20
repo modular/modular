@@ -155,7 +155,7 @@ def _test_grouped_1d1d_block_fp4_impl[
     # Construct TileTensors directly from pointers and layouts
     var a_tt = TileTensor(
         a_buf,
-        row_major(Coord(Idx(Int(total_tokens)), Idx[packed_K]())),
+        row_major(Coord(Int(total_tokens), Idx[packed_K]())),
     )
     var b_tt = TileTensor(
         b_buf,
@@ -163,7 +163,7 @@ def _test_grouped_1d1d_block_fp4_impl[
     )
     var c_tt = TileTensor(
         c_buf,
-        row_major(Coord(Idx(Int(total_tokens)), Idx[N]())),
+        row_major(Coord(Int(total_tokens), Idx[N]())),
     )
     var a_offsets_tt = TileTensor(
         a_off_buf,
@@ -386,7 +386,7 @@ def _test_grouped_1d1d_mixed_experts[
 
     var a_tt = TileTensor(
         a_buf.unsafe_ptr(),
-        row_major(Coord(Idx(Int(total_tokens)), Idx[packed_K]())),
+        row_major(Coord(Int(total_tokens), Idx[packed_K]())),
     )
     var b_tt = TileTensor(
         b_buf.unsafe_ptr(),
@@ -394,19 +394,19 @@ def _test_grouped_1d1d_mixed_experts[
     )
     var c_tt = TileTensor(
         c_buf.unsafe_ptr(),
-        row_major(Coord(Idx(Int(total_tokens)), Idx[N]())),
+        row_major(Coord(Int(total_tokens), Idx[N]())),
     )
     var a_offsets_tt = TileTensor(
         a_off_buf.unsafe_ptr(),
-        row_major(Idx(Int(num_active_experts + 1))),
+        row_major(Int(num_active_experts + 1)),
     )
     var a_scale_offsets_tt = TileTensor(
         a_soff_buf.unsafe_ptr(),
-        row_major(Idx(Int(num_active_experts))),
+        row_major(Int(num_active_experts)),
     )
     var expert_ids_tt = TileTensor(
         eid_buf.unsafe_ptr(),
-        row_major(Idx(Int(num_active_experts))),
+        row_major(Int(num_active_experts)),
     )
     var expert_scales_tt = TileTensor(
         es_buf.unsafe_ptr(),

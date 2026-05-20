@@ -35,6 +35,7 @@ from std.python import (
 
 from std.utils._select import _select_register_value as select
 from std.utils._visualizers import lldb_formatter_wrapping_type
+from std.utils.coord import Coord, CoordLike, RuntimeInt
 
 # ===----------------------------------------------------------------------=== #
 #  Indexer
@@ -187,6 +188,7 @@ struct Int(
     Ceilable,
     Comparable,
     ConvertibleFromPython,
+    CoordLike,
     Defaultable,
     DevicePassable,
     DivModable,
@@ -1159,3 +1161,65 @@ struct Int(
             return _calc_initial_buffer_size_int32(n)
 
         return _calc_initial_buffer_size_int64(UInt64(n))
+
+    # ===-------------------------------------------------------------------===#
+    # CoordLike
+    # ===-------------------------------------------------------------------===#
+
+    comptime ParamListType = Coord[RuntimeInt[DType.int]].element_types
+    """The element types (Self for scalar types)."""
+
+    comptime _ParamListType = Self.ParamListType.values
+    """The low-level parameter list of element types."""
+
+    comptime static_value: Int = -1
+    """Always -1 for runtime values (not statically known)."""
+
+    comptime DTYPE = DType.int
+    """The data type for the runtime integer value."""
+
+    @staticmethod
+    @always_inline("nodebug")
+    def __len__() -> Int:
+        """Get the length (always 1 for scalar types).
+
+        Returns:
+            Always returns 1.
+        """
+        return 1
+
+    @always_inline("nodebug")
+    def product(self) -> Scalar[Self.DTYPE]:
+        """Calculate the product (returns the value for scalar types).
+
+        Returns:
+            The integer value.
+        """
+        return self.value()
+
+    @always_inline("nodebug")
+    def sum(self) -> Scalar[Self.DTYPE]:
+        """Calculate the sum (returns the value for scalar types).
+
+        Returns:
+            The integer value.
+        """
+        return self.value()
+
+    @always_inline("nodebug")
+    def value(self) -> Scalar[Self.DTYPE]:
+        """Get the scalar value.
+
+        Returns:
+            The runtime integer value.
+        """
+        return Scalar[DType.int](self)
+
+    @always_inline("nodebug")
+    def tuple(var self) -> Coord[*Self.ParamListType]:
+        """Get as a tuple (not valid for `RuntimeInt`).
+
+        Returns:
+            Never returns; aborts at compile time.
+        """
+        comptime assert False, "RuntimeInt is not a tuple type"

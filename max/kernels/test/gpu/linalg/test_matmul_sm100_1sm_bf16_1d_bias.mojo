@@ -233,7 +233,7 @@ def main() raises:
                         block_swizzle_size=4,
                     ](
                         ctx,
-                        Idx(Int(233)),
+                        Int(233),
                         Idx[4096](),
                         Idx[1024 + 16](),
                     )
@@ -255,7 +255,7 @@ def main() raises:
                         swapAB=True,
                     ](
                         ctx,
-                        Idx(Int(500)),
+                        Int(500),
                         Idx[2048](),
                         Idx[4096](),
                     )
@@ -274,7 +274,7 @@ def main() raises:
                         k_group_size=1,
                     ](
                         ctx,
-                        Idx(Int(999)),
+                        Int(999),
                         Idx[256](),
                         Idx[128](),
                     )
@@ -293,7 +293,7 @@ def main() raises:
                         k_group_size=2,
                     ](
                         ctx,
-                        Idx(Int(777)),
+                        Int(777),
                         Idx[2560](),
                         Idx[8192](),
                     )
@@ -318,7 +318,7 @@ def main() raises:
                         swapAB=True,
                     ](
                         ctx,
-                        Idx(Int(1)),
+                        Int(1),
                         Idx[4096](),
                         Idx[1024 + 16](),
                     )
@@ -340,7 +340,7 @@ def main() raises:
                         swapAB=True,
                     ](
                         ctx,
-                        Idx(Int(500)),
+                        Int(500),
                         Idx[2048](),
                         Idx[4096](),
                     )
@@ -368,7 +368,7 @@ def main() raises:
                         swapAB=True,
                     ](
                         ctx,
-                        Idx(Int(3)),
+                        Int(3),
                         Idx[256](),
                         Idx[128](),
                     )
@@ -388,7 +388,7 @@ def main() raises:
                         swapAB=True,
                     ](
                         ctx,
-                        Idx(Int(17)),
+                        Int(17),
                         Idx[512](),
                         Idx[128](),
                     )
@@ -411,7 +411,7 @@ def main() raises:
                     block_swizzle_size=4,
                 ](
                     ctx,
-                    Idx(Int(1)),
+                    Int(1),
                     Idx[256](),
                     Idx[128](),
                 )

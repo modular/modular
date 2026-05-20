@@ -63,7 +63,7 @@ def main() raises:
                     schedule=MatmulSchedule.TILE2D,
                 ](
                     ctx,
-                    Idx(Int(99)),
+                    Int(99),
                     Idx[1024](),
                     Idx[1024](),
                 )
@@ -80,7 +80,7 @@ def main() raises:
                     schedule=MatmulSchedule.TILE2D,
                 ](
                     ctx,
-                    Idx(Int(100)),
+                    Int(100),
                     Idx[512](),
                     Idx[256](),
                 )
@@ -98,7 +98,7 @@ def main() raises:
                     schedule=MatmulSchedule.TILE2D,
                 ](
                     ctx,
-                    Idx(Int(201)),
+                    Int(201),
                     Idx[2048](),
                     Idx[200](),
                 )
@@ -113,7 +113,7 @@ def main() raises:
             wgmma_shape[128],
             num_consumer=2,
             num_pipeline_stages=4,
-        ](ctx, Idx(Int(150)), Idx[3200](), Idx[588]())
+        ](ctx, Int(150), Idx[3200](), Idx[588]())
 
         # K is aligned by 4B
         test_matmul_sm90[
@@ -125,7 +125,7 @@ def main() raises:
             wgmma_shape[256],
             num_consumer=2,
             num_pipeline_stages=4,
-        ](ctx, Idx(Int(90)), Idx[256](), Idx[270]())
+        ](ctx, Int(90), Idx[256](), Idx[270]())
 
         test_matmul_sm90[
             DType.bfloat16,
@@ -136,7 +136,7 @@ def main() raises:
             wgmma_shape[128],
             num_consumer=2,
             num_pipeline_stages=4,
-        ](ctx, Idx(Int(213)), Idx[1111](), Idx[128]())
+        ](ctx, Int(213), Idx[1111](), Idx[128]())
 
         test_matmul_sm90[
             DType.bfloat16,
@@ -147,7 +147,7 @@ def main() raises:
             Index(64, 64, 16),
             num_consumer=2,
             num_pipeline_stages=8,
-        ](ctx, Idx(Int(256)), Idx[4096](), Idx[1536]())
+        ](ctx, Int(256), Idx[4096](), Idx[1536]())
 
         test_matmul_sm90[
             DType.bfloat16,
@@ -159,7 +159,7 @@ def main() raises:
             num_consumer=1,
             num_pipeline_stages=8,
             k_group_size=2,
-        ](ctx, Idx(Int(256)), Idx[1536](), Idx[4096]())
+        ](ctx, Int(256), Idx[1536](), Idx[4096]())
 
         test_matmul_sm90[
             DType.bfloat16,
@@ -171,7 +171,7 @@ def main() raises:
             num_consumer=1,
             num_pipeline_stages=12,
             k_group_size=4,
-        ](ctx, Idx(Int(256)), Idx[1536](), Idx[4096]())
+        ](ctx, Int(256), Idx[1536](), Idx[4096]())
 
         test_matmul_sm90[
             DType.bfloat16,
@@ -182,7 +182,7 @@ def main() raises:
             Index(64, 32, 16),
             num_consumer=1,
             num_pipeline_stages=17,
-        ](ctx, Idx(Int(2)), Idx[4096](), Idx[1536]())
+        ](ctx, Int(2), Idx[4096](), Idx[1536]())
 
         test_matmul_sm90[
             DType.bfloat16,
@@ -193,7 +193,7 @@ def main() raises:
             Index(64, 8, 16),
             num_consumer=1,
             num_pipeline_stages=20,
-        ](ctx, Idx(Int(16)), Idx[64](), Idx[256]())
+        ](ctx, Int(16), Idx[64](), Idx[256]())
 
         test_matmul_sm90[
             DType.bfloat16,
@@ -204,7 +204,7 @@ def main() raises:
             Index(64, 256, 16),
             num_consumer=1,
             num_pipeline_stages=5,
-        ](ctx, Idx(Int(20)), Idx[84](), Idx[4096]())
+        ](ctx, Int(20), Idx[84](), Idx[4096]())
 
         test_matmul_sm90[
             DType.bfloat16,
@@ -215,7 +215,7 @@ def main() raises:
             Index(64, 256, 16),
             num_consumer=2,
             num_pipeline_stages=2,
-        ](ctx, Idx(Int(476)), Idx[1024](), Idx[128]())
+        ](ctx, Int(476), Idx[1024](), Idx[128]())
 
         test_matmul_sm90[
             DType.bfloat16,
@@ -226,7 +226,7 @@ def main() raises:
             Index(64, 48, 16),
             num_consumer=2,
             num_pipeline_stages=2,
-        ](ctx, Idx(Int(1536)), Idx[48](), Idx[4096]())
+        ](ctx, Int(1536), Idx[48](), Idx[4096]())
 
         test_matmul_sm90[
             DType.bfloat16,
@@ -237,4 +237,4 @@ def main() raises:
             Index(64, 8, 16),
             num_consumer=2,
             num_pipeline_stages=2,
-        ](ctx, Idx(Int(1536)), Idx[13](), Idx[4096]())
+        ](ctx, Int(1536), Idx[13](), Idx[4096]())

@@ -115,12 +115,12 @@ def gemm_kernel[
     comptime warp_layout = row_major[8, 4]()
 
     for k_i in range(ceildiv(K, Scalar[mat_a.linear_idx_type](BK))):
-        var a_tile_dram = mat_a.tile[BM, BK]((Idx(block_idx.y), Idx(Int(k_i))))
+        var a_tile_dram = mat_a.tile[BM, BK]((Idx(block_idx.y), Int(k_i)))
         copy_dram_to_sram_async[
             thread_layout=Layout.row_major(NUM_THREADS // BK, BK)
         ](a_tile_sram.to_layout_tensor(), a_tile_dram.to_layout_tensor())
 
-        var b_tile_dram = mat_b.tile[BK, BN]((Idx(Int(k_i)), Idx(block_idx.x)))
+        var b_tile_dram = mat_b.tile[BK, BN]((Int(k_i), Idx(block_idx.x)))
         copy_dram_to_sram_async[
             thread_layout=Layout.row_major(NUM_THREADS // BN, BN)
         ](b_tile_sram.to_layout_tensor(), b_tile_dram.to_layout_tensor())
@@ -522,7 +522,7 @@ def matmul_kernel_naive[
             ](b[i, y].cast[s_type]())
 
     comptime assert c.flat_rank >= 2
-    c[(Idx(x), Idx(y))] = accum.cast[c.dtype]()
+    c[x, y] = accum.cast[c.dtype]()
 
 
 @always_inline
@@ -562,5 +562,5 @@ def outer_product_acc(
     comptime for i in range(M):
         comptime for j in range(N):
             res[i, j] += rebind[res.ElementType](
-                (lhs[(Idx[i](),)]).cast[dtype]()
-            ) * rebind[res.ElementType](rhs[(Idx[j](),)].cast[dtype]())
+                (lhs[Idx[i]()]).cast[dtype]()
+            ) * rebind[res.ElementType](rhs[Idx[j]()].cast[dtype]())

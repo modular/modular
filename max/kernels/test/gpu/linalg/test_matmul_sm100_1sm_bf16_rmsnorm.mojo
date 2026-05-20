@@ -278,7 +278,7 @@ def main() raises:
                 swapAB=True,
             ](
                 ctx,
-                Idx(Int(m)),
+                Int(m),
                 Idx[4096](),
                 Idx[4096](),
             )
@@ -297,7 +297,7 @@ def main() raises:
                 swapAB=True,
             ](
                 ctx,
-                Idx(Int(m)),
+                Int(m),
                 Idx[8192](),
                 Idx[7168](),
             )
@@ -321,7 +321,7 @@ def main() raises:
                 prefetch_tiles_n=2,
             ](
                 ctx,
-                Idx(Int(m)),
+                Int(m),
                 Idx[4096](),
                 Idx[4096](),
             )
@@ -342,7 +342,7 @@ def main() raises:
                 prefetch_tiles_n=2,
             ](
                 ctx,
-                Idx(Int(m)),
+                Int(m),
                 Idx[8192](),
                 Idx[7168](),
             )

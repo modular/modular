@@ -47,7 +47,7 @@ def test_dispatch_dynamic_m[
 
     var a_shape = row_major(Coord(Idx(m), Idx[K]()))
     var b_shape = row_major(Coord(Idx[N](), Idx[K]()))
-    var c_shape = row_major(Coord(Idx(Int(m)), Idx[N]()))
+    var c_shape = row_major(Coord(Int(m), Idx[N]()))
 
     var a_size = m * K
     var b_size = N * K
@@ -604,15 +604,13 @@ def test_oob_epilogue_dynamic_m[
     ctx.enqueue_copy(c_ref_dev, c_ref_host_ptr)
 
     # Dynamic M: TileTensors with runtime M dimension
-    var a_tensor = TileTensor(a_dev, row_major(Coord(Idx(Int(m)), Idx[K]())))
+    var a_tensor = TileTensor(a_dev, row_major(Coord(Int(m), Idx[K]())))
     var b_tensor = TileTensor(b_dev, row_major(Coord(Idx[N](), Idx[K]())))
-    var c_tensor = TileTensor(c_dev, row_major(Coord(Idx(Int(m)), Idx[N]())))
-    var c_ref_tensor = TileTensor(
-        c_ref_dev, row_major(Coord(Idx(Int(m)), Idx[N]()))
-    )
+    var c_tensor = TileTensor(c_dev, row_major(Coord(Int(m), Idx[N]())))
+    var c_ref_tensor = TileTensor(c_ref_dev, row_major(Coord(Int(m), Idx[N]())))
 
     var out_tensor = TileTensor(
-        out_dev, row_major(Coord(Idx(Int(alloc_m)), Idx[N]()))
+        out_dev, row_major(Coord(Int(alloc_m), Idx[N]()))
     )
 
     @parameter

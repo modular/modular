@@ -105,7 +105,7 @@ def _test_kernel_impl[
     )
 
     var a_shape = row_major(
-        Coord(Idx(Int(total_num_tokens)), Idx[expert_shape[1]]())
+        Coord(Int(total_num_tokens), Idx[expert_shape[1]]())
     )
     var b_shape = row_major(
         Coord(
@@ -115,7 +115,7 @@ def _test_kernel_impl[
         )
     )
     var c_shape = row_major(
-        Coord(Idx(Int(total_num_tokens)), Idx[expert_shape[0]]())
+        Coord(Int(total_num_tokens), Idx[expert_shape[0]]())
     )
 
     var a_size = total_num_tokens * K
@@ -140,7 +140,7 @@ def _test_kernel_impl[
         a_offsets_device,
         row_major(
             Coord(
-                Idx(Int(num_active_experts + 1)),
+                Int(num_active_experts + 1),
             )
         ),
     )
@@ -153,7 +153,7 @@ def _test_kernel_impl[
         expert_ids_device,
         row_major(
             Coord(
-                Idx(Int(num_active_experts)),
+                Int(num_active_experts),
             )
         ),
     )
@@ -164,7 +164,7 @@ def _test_kernel_impl[
         a_scale_offsets_device,
         row_major(
             Coord(
-                Idx(Int(num_active_experts)),
+                Int(num_active_experts),
             )
         ),
     )
@@ -213,7 +213,7 @@ def _test_kernel_impl[
 
     var a_scales_shape = row_major(
         Coord(
-            Idx(Int(a_scale_dim0)),
+            Int(a_scale_dim0),
             Idx[ceildiv(expert_shape[1], SF_VECTOR_SIZE * SF_ATOM_K)](),
             Idx[SF_ATOM_M[0]](),
             Idx[SF_ATOM_M[1]](),
@@ -256,13 +256,11 @@ def _test_kernel_impl[
     if simple_init():
         for m in range(M):
             for k in range(K):
-                a_host[(Idx(m), Idx(k))] = random_ui64(0, 1).cast[a_type]()
+                a_host[m, k] = random_ui64(0, 1).cast[a_type]()
         for e in range(num_experts):
             for n in range(N):
                 for k in range(K):
-                    b_host[(Idx(e), Idx(n), Idx(k))] = random_ui64(0, 1).cast[
-                        b_type
-                    ]()
+                    b_host[e, n, k] = random_ui64(0, 1).cast[b_type]()
     else:
         rand(a_host.ptr, a_host.num_elements())
         rand(b_host.ptr, b_host.num_elements())

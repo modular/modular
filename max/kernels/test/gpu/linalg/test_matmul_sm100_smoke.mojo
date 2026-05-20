@@ -230,7 +230,7 @@ def main() raises:
             mma_shape=Index(64, 32, MMA_K),
             cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
             cta_group=1,
-        ](ctx, Idx(Int(256)), Idx[256](), Idx[256]())
+        ](ctx, Int(256), Idx[256](), Idx[256]())
 
         # ============================================================
         # Test 2: 1SM kernel with larger cluster (4x4x1)
@@ -245,7 +245,7 @@ def main() raises:
             cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
             cta_group=1,
             block_swizzle_size=4,
-        ](ctx, Idx(Int(512)), Idx[512](), Idx[512]())
+        ](ctx, Int(512), Idx[512](), Idx[512]())
 
         # ============================================================
         # Test 3: 2SM kernel (cta_group=2)
@@ -260,7 +260,7 @@ def main() raises:
             cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
             cta_group=2,
             block_swizzle_size=4,
-        ](ctx, Idx(Int(512)), Idx[512](), Idx[512]())
+        ](ctx, Int(512), Idx[512](), Idx[512]())
 
         # ============================================================
         # Test 4: swapAB=True (different memory access pattern)
@@ -275,7 +275,7 @@ def main() raises:
             cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
             cta_group=1,
             swapAB=True,
-        ](ctx, Idx(Int(256)), Idx[512](), Idx[512]())
+        ](ctx, Int(256), Idx[512](), Idx[512]())
 
         # ============================================================
         # Test 5: k_group_size=2 (K-dimension tiling)
@@ -290,7 +290,7 @@ def main() raises:
             cluster_shape=StaticTuple[Int32, 3](4, 2, 1),
             cta_group=1,
             k_group_size=2,
-        ](ctx, Idx(Int(256)), Idx[512](), Idx[1024]())
+        ](ctx, Int(256), Idx[512](), Idx[1024]())
 
         # ============================================================
         # Test 6: Split-K kernel
@@ -305,7 +305,7 @@ def main() raises:
             cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
             cta_group=2,
             num_split_k=2,
-        ](ctx, Idx(Int(256)), Idx[256](), Idx[512]())
+        ](ctx, Int(256), Idx[256](), Idx[512]())
 
         # ============================================================
         # Test 7: Large MMA shape (stress test)
@@ -319,7 +319,7 @@ def main() raises:
             mma_shape=Index(128, 128, MMA_K),
             cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
             cta_group=1,
-        ](ctx, Idx(Int(512)), Idx[512](), Idx[512]())
+        ](ctx, Int(512), Idx[512](), Idx[512]())
 
         # ============================================================
         # Test 8: Dynamic M with misaligned size (common inference)
@@ -333,7 +333,7 @@ def main() raises:
             mma_shape=Index(64, 64, MMA_K),
             cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
             cta_group=1,
-        ](ctx, Idx(Int(317)), Idx[512](), Idx[256]())
+        ](ctx, Int(317), Idx[512](), Idx[256]())
 
         # ============================================================
         # Test 9: Small block, large cluster (multicast stress)
@@ -348,7 +348,7 @@ def main() raises:
             cluster_shape=StaticTuple[Int32, 3](8, 2, 1),
             cta_group=1,
             block_swizzle_size=2,
-        ](ctx, Idx(Int(256)), Idx[256](), Idx[128]())
+        ](ctx, Int(256), Idx[256](), Idx[128]())
 
         # ============================================================
         # Test 10: 2SM with swapAB (combined features)
@@ -363,7 +363,7 @@ def main() raises:
             cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
             cta_group=2,
             swapAB=True,
-        ](ctx, Idx(Int(256)), Idx[512](), Idx[512]())
+        ](ctx, Int(256), Idx[512](), Idx[512]())
 
     print("=" * 60)
     print("ALL SMOKE TESTS PASSED!")

@@ -419,8 +419,8 @@ def _matmul_cpu_impl[
     var k = shape.K
     # Matrix by vector pattern -> use gemv
     if n == 1:
-        var out = TileTensor(c.ptr, row_major(Coord(Idx(Int(c.dim[0]())))))
-        var rhs = TileTensor(b.ptr, row_major(Coord(Idx(Int(b.dim[0]())))))
+        var out = TileTensor(c.ptr, row_major(Coord(Int(c.dim[0]()))))
+        var rhs = TileTensor(b.ptr, row_major(Coord(Int(b.dim[0]()))))
         gemv[parallelize=True, elementwise_lambda_fn=elementwise_lambda_fn](
             out, a, rhs
         )

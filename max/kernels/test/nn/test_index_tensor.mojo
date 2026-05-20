@@ -14,7 +14,7 @@
 from std.gpu.host import DeviceContext
 from std.random import random_ui64
 
-from layout import Coord, TileTensor, row_major
+from layout import Coord, TileTensor, Idx, row_major
 from nn.gather_scatter import gather, gather_nd, gather_nd_shape, gather_shape
 from nn.index_tensor import (
     _index_tensor_1d,
@@ -96,7 +96,7 @@ def test_index_tensor_DLRM() raises:
     var ref_output = TileTensor(ref_stack, ref_layout)
     for i in range(dim_0):
         for j in range(index_len):
-            ref_output[i, j] = input[i, index_a[j], index_b[j]]
+            ref_output[i, j] = input[i, Idx(index_a[j]), Idx(index_b[j])]
 
     # Convert index_a, index_b (each of 1D size index_len) to a
     # 2D index_len x 2 indices TileTensor.
@@ -199,7 +199,9 @@ def test_index_tensor_DLRM_batch() raises:
     for i in range(dim_0):
         for j in range(dim_1):
             for k in range(index_len):
-                ref_output[i, j, k] = input[i, j, index_a[k], index_b[k]]
+                ref_output[i, j, k] = input[
+                    i, j, Idx(index_a[k]), Idx(index_b[k])
+                ]
 
     # Convert index_a, index_b (each of 1D size index_len) to a 2D index_len x 2
     # indices TileTensor.

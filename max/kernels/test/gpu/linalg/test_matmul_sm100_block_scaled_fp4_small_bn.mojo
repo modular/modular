@@ -55,7 +55,7 @@ def run_matmul_sm100_block_scaled_fp4_small_bn_suite[
                 is_small_bn=True,
             ](
                 ctx,
-                Idx(Int(8)),
+                Int(8),
                 Idx[16](),
                 Idx[256](),
             )
@@ -76,7 +76,7 @@ def run_matmul_sm100_block_scaled_fp4_small_bn_suite[
                 is_small_bn=True,
             ](
                 ctx,
-                Idx(Int(1000)),
+                Int(1000),
                 Idx[1024](),
                 Idx[1024 + 32](),
             )
@@ -97,7 +97,7 @@ def run_matmul_sm100_block_scaled_fp4_small_bn_suite[
                 is_small_bn=True,
             ](
                 ctx,
-                Idx(Int(512)),
+                Int(512),
                 Idx[4096](),
                 Idx[1024 + 32](),
             )
@@ -119,7 +119,7 @@ def run_matmul_sm100_block_scaled_fp4_small_bn_suite[
                 is_small_bn=True,
             ](
                 ctx,
-                Idx(Int(500)),
+                Int(500),
                 Idx[2048](),
                 Idx[4096](),
             )
@@ -140,7 +140,7 @@ def run_matmul_sm100_block_scaled_fp4_small_bn_suite[
                 is_small_bn=True,
             ](
                 ctx,
-                Idx(Int(999)),
+                Int(999),
                 Idx[256](),
                 Idx[128](),
             )
@@ -161,7 +161,7 @@ def run_matmul_sm100_block_scaled_fp4_small_bn_suite[
                 is_small_bn=True,
             ](
                 ctx,
-                Idx(Int(777)),
+                Int(777),
                 Idx[2560](),
                 Idx[8192](),
                 alpha=0.225,
@@ -183,7 +183,7 @@ def run_matmul_sm100_block_scaled_fp4_small_bn_suite[
                 is_small_bn=True,
             ](
                 ctx,
-                Idx(Int(1)),
+                Int(1),
                 Idx[576](),
                 Idx[7168](),
                 alpha=0.5,
@@ -206,7 +206,7 @@ def run_matmul_sm100_block_scaled_fp4_small_bn_suite[
                 is_small_bn=True,
             ](
                 ctx,
-                Idx(Int(16)),
+                Int(16),
                 Idx[1024](),
                 Idx[1024 + 32](),
             )
@@ -227,7 +227,7 @@ def run_matmul_sm100_block_scaled_fp4_small_bn_suite[
                 is_small_bn=True,
             ](
                 ctx,
-                Idx(Int(100)),
+                Int(100),
                 Idx[2560](),
                 Idx[8192](),
             )
@@ -257,7 +257,7 @@ def run_matmul_sm100_block_scaled_fp4_small_bn_suite[
                 is_small_bn=True,
             ](
                 ctx,
-                Idx(Int(1)),
+                Int(1),
                 Idx[N](),
                 Idx[K](),
             )
@@ -291,7 +291,7 @@ def run_matmul_sm100_block_scaled_fp4_small_bn_suite[
                 normal_epilogue=True,
             ](
                 ctx,
-                Idx(Int(16)),
+                Int(16),
                 Idx[1024](),
                 Idx[1024 + 32](),
             )
@@ -316,7 +316,7 @@ def run_matmul_sm100_block_scaled_fp4_small_bn_suite[
             normal_epilogue=True,
         ](
             ctx,
-            Idx(Int(16)),
+            Int(16),
             Idx[1024](),
             Idx[1024 + 32](),
         )

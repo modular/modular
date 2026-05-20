@@ -845,18 +845,8 @@ def main() raises:
         test_quantized[DType.uint8](ctx, Idx[482](), Idx[28672](), Idx[4096]())
         test_quantized[DType.uint8](ctx, Idx[482](), Idx[4096](), Idx[14336]())
         test_quantized[DType.uint8](ctx, Idx[482](), Idx[128256](), Idx[4096]())
-        test_quantized[DType.uint8](
-            ctx, Idx(Int(482)), Idx[6144](), Idx[4096]()
-        )
-        test_quantized[DType.uint8](
-            ctx, Idx(Int(482)), Idx[4096](), Idx[4096]()
-        )
-        test_quantized[DType.uint8](
-            ctx, Idx(Int(482)), Idx[28672](), Idx[4096]()
-        )
-        test_quantized[DType.uint8](
-            ctx, Idx(Int(482)), Idx[4096](), Idx[14336]()
-        )
-        test_quantized[DType.uint8](
-            ctx, Idx(Int(482)), Idx[128256](), Idx[4096]()
-        )
+        test_quantized[DType.uint8](ctx, Int(482), Idx[6144](), Idx[4096]())
+        test_quantized[DType.uint8](ctx, Int(482), Idx[4096](), Idx[4096]())
+        test_quantized[DType.uint8](ctx, Int(482), Idx[28672](), Idx[4096]())
+        test_quantized[DType.uint8](ctx, Int(482), Idx[4096](), Idx[14336]())
+        test_quantized[DType.uint8](ctx, Int(482), Idx[128256](), Idx[4096]())

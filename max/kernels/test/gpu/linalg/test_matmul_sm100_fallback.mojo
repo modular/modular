@@ -216,7 +216,7 @@ def main() raises:
                     BK=BK,
                 ](
                     ctx,
-                    Idx(Int(200)),
+                    Int(200),
                     Idx[128](),
                     Idx[128](),
                 )
@@ -231,7 +231,7 @@ def main() raises:
                     use_epilogue=True,
                 ](
                     ctx,
-                    Idx(Int(128)),
+                    Int(128),
                     Idx[128](),
                     Idx[128](),
                 )
@@ -246,7 +246,7 @@ def main() raises:
                     BK=BK,
                 ](
                     ctx,
-                    Idx(Int(400)),
+                    Int(400),
                     Idx[128](),
                     Idx[128](),
                 )
@@ -261,7 +261,7 @@ def main() raises:
                     BK=BK,
                 ](
                     ctx,
-                    Idx(Int(1024)),
+                    Int(1024),
                     Idx[2048](),
                     Idx[2048](),
                 )
@@ -278,7 +278,7 @@ def main() raises:
                         BK=_BK,
                     ](
                         ctx,
-                        Idx(Int(1024)),
+                        Int(1024),
                         Idx[2048](),
                         Idx[2048](),
                     )
@@ -306,7 +306,7 @@ def main() raises:
                         BK=_BK,
                     ](
                         ctx,
-                        Idx(Int(100)),
+                        Int(100),
                         Idx[512](),
                         Idx[256](),
                     )
@@ -320,7 +320,7 @@ def main() raises:
                         BK=_BK,
                     ](
                         ctx,
-                        Idx(Int(99)),
+                        Int(99),
                         Idx[1024](),
                         Idx[1024](),
                     )
@@ -334,7 +334,7 @@ def main() raises:
                         BK=_BK,
                     ](
                         ctx,
-                        Idx(Int(201)),
+                        Int(201),
                         Idx[2048](),
                         Idx[256](),
                     )

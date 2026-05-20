@@ -269,13 +269,11 @@ def test_kv_cache_2m_iadd_gpu[
     var lora_end_idx_host_ptr = ctx.enqueue_create_host_buffer[DType.int64](1)
     var batch_seq_len_host_ptr = ctx.enqueue_create_host_buffer[DType.int64](1)
     ctx.synchronize()
-    var lora_end_idx_host = TileTensor(
-        lora_end_idx_host_ptr, row_major(Idx(Int(1)))
-    )
+    var lora_end_idx_host = TileTensor(lora_end_idx_host_ptr, row_major(Int(1)))
     lora_end_idx_host[0] = Int64(total_slice_length)
 
     var batch_seq_len_host = TileTensor(
-        batch_seq_len_host_ptr, row_major(Idx(Int(1)))
+        batch_seq_len_host_ptr, row_major(Int(1))
     )
     batch_seq_len_host[0] = Int64(total_length)
 

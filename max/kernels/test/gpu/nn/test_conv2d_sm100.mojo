@@ -141,20 +141,18 @@ def test_conv2d_implicit_im2col[
 
     # TileTensor shapes with dynamic dimensions
     var act_shape = row_major(
-        Coord(Idx(Int(batch)), Idx(Int(in_h)), Idx(Int(in_w)), Idx(Int(in_c)))
+        Coord(Int(batch), Int(in_h), Int(in_w), Int(in_c))
     )
     var filter_shape = row_major(
         Coord(
-            Idx(Int(out_c)),
-            Idx(Int(filter_h)),
-            Idx(Int(filter_w)),
-            Idx(Int(in_c)),
+            Int(out_c),
+            Int(filter_h),
+            Int(filter_w),
+            Int(in_c),
         )
     )
     var out_shape = row_major(
-        Coord(
-            Idx(Int(batch)), Idx(Int(out_h)), Idx(Int(out_w)), Idx(Int(out_c))
-        )
+        Coord(Int(batch), Int(out_h), Int(out_w), Int(out_c))
     )
 
     var act_host = TileTensor(act_host_ptr, act_shape)
@@ -195,7 +193,7 @@ def test_conv2d_implicit_im2col[
     # Perform im2col on host
     var im2col_host_ptr = ctx.enqueue_create_host_buffer[act_type](im2col_size)
     var im2col_host = TileTensor(
-        im2col_host_ptr, row_major(Coord(Idx(Int(M)), Idx(Int(K))))
+        im2col_host_ptr, row_major(Coord(Int(M), Int(K)))
     )
     im2col(im2col_host, act_host, problem)
     ctx.enqueue_copy(im2col_device, im2col_host_ptr)
@@ -339,20 +337,18 @@ def test_conv2d_1sm[
 
     # TileTensor shapes with dynamic dimensions
     var act_shape = row_major(
-        Coord(Idx(Int(batch)), Idx(Int(in_h)), Idx(Int(in_w)), Idx(Int(in_c)))
+        Coord(Int(batch), Int(in_h), Int(in_w), Int(in_c))
     )
     var filter_shape = row_major(
         Coord(
-            Idx(Int(out_c)),
-            Idx(Int(filter_h)),
-            Idx(Int(filter_w)),
-            Idx(Int(in_c)),
+            Int(out_c),
+            Int(filter_h),
+            Int(filter_w),
+            Int(in_c),
         )
     )
     var out_shape = row_major(
-        Coord(
-            Idx(Int(batch)), Idx(Int(out_h)), Idx(Int(out_w)), Idx(Int(out_c))
-        )
+        Coord(Int(batch), Int(out_h), Int(out_w), Int(out_c))
     )
 
     var act_host = TileTensor(act_host_ptr, act_shape)
@@ -391,7 +387,7 @@ def test_conv2d_1sm[
 
     var im2col_host_ptr = ctx.enqueue_create_host_buffer[act_type](im2col_size)
     var im2col_host = TileTensor(
-        im2col_host_ptr, row_major(Coord(Idx(Int(M)), Idx(Int(K))))
+        im2col_host_ptr, row_major(Coord(Int(M), Int(K)))
     )
     im2col(im2col_host, act_host, problem)
     ctx.enqueue_copy(im2col_device, im2col_host_ptr)
@@ -521,20 +517,18 @@ def test_conv2d_epilogue_lambda[
 
     # TileTensor shapes with dynamic dimensions
     var act_shape = row_major(
-        Coord(Idx(Int(batch)), Idx(Int(in_h)), Idx(Int(in_w)), Idx(Int(in_c)))
+        Coord(Int(batch), Int(in_h), Int(in_w), Int(in_c))
     )
     var filter_shape = row_major(
         Coord(
-            Idx(Int(out_c)),
-            Idx(Int(filter_h)),
-            Idx(Int(filter_w)),
-            Idx(Int(in_c)),
+            Int(out_c),
+            Int(filter_h),
+            Int(filter_w),
+            Int(in_c),
         )
     )
     var out_shape = row_major(
-        Coord(
-            Idx(Int(batch)), Idx(Int(out_h)), Idx(Int(out_w)), Idx(Int(out_c))
-        )
+        Coord(Int(batch), Int(out_h), Int(out_w), Int(out_c))
     )
 
     var act_host = TileTensor(act_host_ptr, act_shape)
@@ -610,7 +604,7 @@ def test_conv2d_epilogue_lambda[
 
     var im2col_host_ptr = ctx.enqueue_create_host_buffer[act_type](im2col_size)
     var im2col_host = TileTensor(
-        im2col_host_ptr, row_major(Coord(Idx(Int(M)), Idx(Int(K))))
+        im2col_host_ptr, row_major(Coord(Int(M), Int(K)))
     )
     im2col(im2col_host, act_host, problem)
     ctx.enqueue_copy(im2col_device, im2col_host_ptr)
@@ -750,20 +744,18 @@ def test_conv2d_bias_fusion[
 
     # Create TileTensors
     var act_shape = row_major(
-        Coord(Idx(Int(batch)), Idx(Int(in_h)), Idx(Int(in_w)), Idx(Int(in_c)))
+        Coord(Int(batch), Int(in_h), Int(in_w), Int(in_c))
     )
     var filter_shape = row_major(
         Coord(
-            Idx(Int(out_c)),
-            Idx(Int(filter_h)),
-            Idx(Int(filter_w)),
-            Idx(Int(in_c)),
+            Int(out_c),
+            Int(filter_h),
+            Int(filter_w),
+            Int(in_c),
         )
     )
     var out_shape = row_major(
-        Coord(
-            Idx(Int(batch)), Idx(Int(out_h)), Idx(Int(out_w)), Idx(Int(out_c))
-        )
+        Coord(Int(batch), Int(out_h), Int(out_w), Int(out_c))
     )
     var act_nd = TileTensor(act_dev, act_shape)
     var filter_nd = TileTensor(filter_dev, filter_shape)
@@ -818,7 +810,7 @@ def test_conv2d_bias_fusion[
     var act_host_nd = TileTensor(act_host, act_shape)
     var im2col_host = ctx.enqueue_create_host_buffer[dtype](M * K)
     var im2col_host_nd = TileTensor(
-        im2col_host, row_major(Coord(Idx(Int(M)), Idx(Int(K))))
+        im2col_host, row_major(Coord(Int(M), Int(K)))
     )
     im2col(im2col_host_nd, act_host_nd, problem)
     ctx.enqueue_copy(im2col_dev, im2col_host)
@@ -946,20 +938,18 @@ def test_conv2d_residual_api[
 
     # TileTensor shapes with dynamic dimensions
     var act_shape = row_major(
-        Coord(Idx(Int(batch)), Idx(Int(in_h)), Idx(Int(in_w)), Idx(Int(in_c)))
+        Coord(Int(batch), Int(in_h), Int(in_w), Int(in_c))
     )
     var filter_shape = row_major(
         Coord(
-            Idx(Int(out_c)),
-            Idx(Int(filter_h)),
-            Idx(Int(filter_w)),
-            Idx(Int(in_c)),
+            Int(out_c),
+            Int(filter_h),
+            Int(filter_w),
+            Int(in_c),
         )
     )
     var out_shape = row_major(
-        Coord(
-            Idx(Int(batch)), Idx(Int(out_h)), Idx(Int(out_w)), Idx(Int(out_c))
-        )
+        Coord(Int(batch), Int(out_h), Int(out_w), Int(out_c))
     )
 
     var act_host = TileTensor(act_host_ptr, act_shape)
@@ -1031,7 +1021,7 @@ def test_conv2d_residual_api[
 
     var im2col_host_ptr = ctx.enqueue_create_host_buffer[dtype](im2col_size)
     var im2col_host = TileTensor(
-        im2col_host_ptr, row_major(Coord(Idx(Int(M)), Idx(Int(K))))
+        im2col_host_ptr, row_major(Coord(Int(M), Int(K)))
     )
     im2col(im2col_host, act_host, problem)
     ctx.enqueue_copy(im2col_device, im2col_host_ptr)

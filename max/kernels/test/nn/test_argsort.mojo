@@ -39,8 +39,8 @@ def test_argsort[
 
     for i in range(n):
         if i < n - 1:
-            var lhs = input[indices[i]]
-            var rhs = input[indices[i + 1]]
+            var lhs = input[Idx(indices[i])]
+            var rhs = input[Idx(indices[i + 1])]
 
             comptime if ascending:
                 assert_true(
@@ -83,8 +83,8 @@ def test_argsort[
                     ),
                 )
         else:
-            var lhs = input[indices[i]]
-            var rhs = input[indices[0]]
+            var lhs = input[Idx(indices[i])]
+            var rhs = input[Idx(indices[0])]
 
             comptime if ascending:
                 assert_true(

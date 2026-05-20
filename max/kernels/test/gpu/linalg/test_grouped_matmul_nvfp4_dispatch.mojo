@@ -91,11 +91,11 @@ def _test_dispatch[
     )
 
     # --- Host allocations ---
-    var a_shape = row_major(Coord(Idx(Int(M)), Idx[packed_K]()))
+    var a_shape = row_major(Coord(Int(M), Idx[packed_K]()))
     var b_shape = row_major(
         Coord(Idx[num_experts](), Idx[N](), Idx[packed_K]())
     )
-    var c_shape = row_major(Coord(Idx(Int(M)), Idx[N]()))
+    var c_shape = row_major(Coord(Int(M), Idx[N]()))
 
     var a_size = M * packed_K
     var b_size = num_experts * N * packed_K
@@ -125,21 +125,21 @@ def _test_dispatch[
     )
     var a_offsets_tensor = TileTensor(
         a_offsets_device,
-        row_major(Coord(Idx(Int(num_active_experts + 1)))),
+        row_major(Coord(Int(num_active_experts + 1))),
     )
     var a_scale_offsets_device = ctx.enqueue_create_buffer[DType.uint32](
         num_active_experts
     )
     var a_scale_offsets_tensor = TileTensor(
         a_scale_offsets_device,
-        row_major(Coord(Idx(Int(num_active_experts)))),
+        row_major(Coord(Int(num_active_experts))),
     )
     var expert_ids_device = ctx.enqueue_create_buffer[DType.int32](
         num_active_experts
     )
     var expert_ids_tensor = TileTensor(
         expert_ids_device,
-        row_major(Coord(Idx(Int(num_active_experts)))),
+        row_major(Coord(Int(num_active_experts))),
     )
     var expert_scales_device = ctx.enqueue_create_buffer[DType.float32](
         num_experts
@@ -185,7 +185,7 @@ def _test_dispatch[
 
     var a_scales_shape = row_major(
         Coord(
-            Idx(Int(a_scale_dim0)),
+            Int(a_scale_dim0),
             Idx[k_groups](),
             Idx[SF_ATOM_M[0]](),
             Idx[SF_ATOM_M[1]](),

@@ -660,18 +660,18 @@ def shared_memory_epilogue[
         ):
             var reg_val = compute_lambda_fn[alignment=alignment](
                 (Int(global_upper_row), Int(global_upper_col)),
-                c_smem_upper_frag[(Idx(i), Idx[0]())],
+                c_smem_upper_frag[Coord(i, Idx[0]())],
             )
-            c_smem_upper_frag[(Idx(i), Idx[0]())] = reg_val
+            c_smem_upper_frag[Coord(i, Idx[0]())] = reg_val
 
         if global_lower_row < Int64(Int(M)) and global_lower_col < Int64(
             Int(N)
         ):
             var reg_val = compute_lambda_fn[alignment=alignment](
                 (Int(global_lower_row), Int(global_lower_col)),
-                c_smem_lower_frag[(Idx(i), Idx[0]())],
+                c_smem_lower_frag[i, Idx[0]()],
             )
-            c_smem_lower_frag[(Idx(i), Idx[0]())] = reg_val
+            c_smem_lower_frag[Coord(i, Idx[0]())] = reg_val
 
         # If more than one chunk is created (happens when 8x4 is used)
         # they will be spaced 8 rows away from each other

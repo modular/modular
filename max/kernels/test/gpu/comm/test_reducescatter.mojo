@@ -221,11 +221,11 @@ def reducescatter_test[
                     Idx(config.rank_units(i))
                 )
                 runtime_shape[1] = rebind[runtime_shape.element_types[1]](
-                    Idx(Int(shape[1].value()))
+                    Scalar[DType.int](shape[1].value())
                 )
             else:
                 runtime_shape[0] = rebind[runtime_shape.element_types[0]](
-                    Idx(Int(shape[0].value()))
+                    Scalar[DType.int](shape[0].value())
                 )
                 runtime_shape[1] = rebind[runtime_shape.element_types[1]](
                     Idx(config.rank_units(i) * simd_width)
@@ -458,7 +458,7 @@ def run_reducescatter_sweep[use_multimem: Bool]() raises:
                     axis=axis,
                     use_custom_epilogue=use_custom_epilogue,
                     use_multimem=use_multimem,
-                ](list_of_ctx, Coord((Idx(M), Idx(D))))
+                ](list_of_ctx, Coord(M, D))
             except e:
                 if (
                     use_multimem

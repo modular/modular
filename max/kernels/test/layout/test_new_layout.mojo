@@ -686,12 +686,12 @@ def test_tile_tensor_flat_indexing_blocked() raises:
                     tensor[block_row, block_col, tile_row, tile_col] = val
 
     # Read back and verify
-    assert_equal(tensor[0, 0, 0, 0], 0.0)
-    assert_equal(tensor[0, 1, 0, 0], 100.0)
-    assert_equal(tensor[1, 0, 0, 0], 1000.0)
-    assert_equal(tensor[1, 1, 0, 0], 1100.0)
-    assert_equal(tensor[0, 0, 1, 2], 12.0)
-    assert_equal(tensor[1, 1, 1, 2], 1112.0)
+    assert_equal(tensor[Idx[0](), Idx[0](), Idx[0](), Idx[0]()], 0.0)
+    assert_equal(tensor[Idx[0](), Idx[1](), Idx[0](), Idx[0]()], 100.0)
+    assert_equal(tensor[Idx[1](), Idx[0](), Idx[0](), Idx[0]()], 1000.0)
+    assert_equal(tensor[Idx[1](), Idx[1](), Idx[0](), Idx[0]()], 1100.0)
+    assert_equal(tensor[Idx[0](), Idx[0](), Idx[1](), Idx[2]()], 12.0)
+    assert_equal(tensor[Idx[1](), Idx[1](), Idx[1](), Idx[2]()], 1112.0)
 
 
 def test_layout_reverse() raises:
@@ -1170,7 +1170,7 @@ def test_upcast_factor1_identity() raises:
 
 def test_upcast_runtime_dims() raises:
     """Upcast with runtime dimensions produces RuntimeInt results."""
-    var layout = row_major(Idx(Int(4)), Idx[8]())
+    var layout = row_major(Int(4), Idx[8]())
     var up = upcast[factor=2](layout)
 
     assert_equal(up.shape[0]().value(), 4)
@@ -1396,7 +1396,7 @@ def test_write_to_static() raises:
 
 
 def test_write_to_dynamic() raises:
-    var layout = row_major(Idx(Int(3)), Idx[4]())
+    var layout = row_major(Int(3), Idx[4]())
     check_write_to(layout, expected="((3, 4):(4, 1))", is_repr=False)
 
 

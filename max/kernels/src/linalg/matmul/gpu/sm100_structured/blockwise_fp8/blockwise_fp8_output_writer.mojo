@@ -512,7 +512,7 @@ struct BlockwiseFP8TileWriter[
                 if global_i < m_end:
                     # Compute destination pointer via TileTensor layout
                     var dst_offset = c_tensor.layout(
-                        Coord(Idx(Int(global_i)), Idx(Int(global_j)))
+                        Coord(Int(global_i), Int(global_j))
                     )
                     var dst_ptr = c_tensor.ptr + Int(dst_offset)
 

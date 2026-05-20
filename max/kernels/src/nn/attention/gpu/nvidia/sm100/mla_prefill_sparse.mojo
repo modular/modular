@@ -542,7 +542,7 @@ struct MLAPrefillSparse[
         var warp_idx = warp_id()
         var lane_idx = thread_idx.x % WARP_SIZE
         var warpgroup_idx = warp.broadcast(thread_idx.x // WARPGROUP_SIZE)
-        var top_k_length = topk_lengths[seq_idx]
+        var top_k_length = topk_lengths[Idx(seq_idx)]
         var num_k_blocks = max(ceildiv(top_k_length, Self.config.B_TOPK), 1)
         var num_kv_rows = kv_lut.num_kv_rows()
         # Per-query base offset into the indices buffer; each query row owns

@@ -228,7 +228,7 @@ def main() raises:
                         num_clc_pipeline_stages=0,
                     ](
                         ctx,
-                        Idx(Int(1000)),
+                        Int(1000),
                         Idx[1024](),
                         Idx[1024 + 16](),
                     )
@@ -247,7 +247,7 @@ def main() raises:
                             swapAB=swapAB,
                         ](
                             ctx,
-                            Idx(Int(1)),
+                            Int(1),
                             Idx[4096](),
                             Idx[1024 + 16](),
                         )
@@ -268,7 +268,7 @@ def main() raises:
                             num_clc_pipeline_stages=0,
                         ](
                             ctx,
-                            Idx(Int(500)),
+                            Int(500),
                             Idx[2048](),
                             Idx[4096](),
                         )
@@ -285,7 +285,7 @@ def main() raises:
                         block_swizzle_size=2,
                     ](
                         ctx,
-                        Idx(Int(999)),
+                        Int(999),
                         Idx[256](),
                         Idx[128](),
                     )
@@ -302,7 +302,7 @@ def main() raises:
                         block_swizzle_size=1,
                     ](
                         ctx,
-                        Idx(Int(777)),
+                        Int(777),
                         Idx[2560](),
                         Idx[8192](),
                     )

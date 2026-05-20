@@ -1158,8 +1158,8 @@ struct TileWriter[
                         ]()
                         var dst_ptr = c_tensor.ptr + c_tensor.layout(
                             Coord(
-                                Idx(Int(global_i)),
-                                Idx(Int(global_j)),
+                                Int(global_i),
+                                Int(global_j),
                             )
                         )
                         dst_ptr.store[width=simd_size, alignment=alignment](src)
@@ -1170,8 +1170,8 @@ struct TileWriter[
                         ]()
                         var dst_ptr = c_tensor.ptr + c_tensor.layout(
                             Coord(
-                                Idx(Int(global_i)),
-                                Idx(Int(global_j)),
+                                Int(global_i),
+                                Int(global_j),
                             )
                         )
                         dst_ptr.store[width=simd_size, alignment=alignment](src)

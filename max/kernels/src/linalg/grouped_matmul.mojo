@@ -695,8 +695,8 @@ def grouped_matmul_amd_kernel_launcher[
     # Only perform matmul if expert_id is not -1
     # AMD matmul kernel performs the epilogue function
     if expert_id != -1:
-        var c_tile = TileTensor(c_ptr, row_major(Coord(Idx(Int(M)), Idx[N]())))
-        var a_tile = TileTensor(a_ptr, row_major(Coord(Idx(Int(M)), Idx[K]())))
+        var c_tile = TileTensor(c_ptr, row_major(Coord(Int(M), Idx[N]())))
+        var a_tile = TileTensor(a_ptr, row_major(Coord(Int(M), Idx[K]())))
         var b_tile = TileTensor(b_ptr, row_major[N, K]())
         AMDMatmul[
             a_type,
@@ -711,7 +711,7 @@ def grouped_matmul_amd_kernel_launcher[
 
     # Perform the epilogue function separately if expert_id is -1
     else:
-        var c_tile = TileTensor(c_ptr, row_major(Coord(Idx(Int(M)), Idx[N]())))
+        var c_tile = TileTensor(c_ptr, row_major(Coord(Int(M), Idx[N]())))
         _ = c_tile.fill(0.0)
 
         comptime if elementwise_lambda_fn:

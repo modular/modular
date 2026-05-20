@@ -278,7 +278,7 @@ def main() raises:
             cta_group=1,
         ](
             ctx,
-            Idx(Int(512)),
+            Int(512),
             Idx[576](),
             Idx[512](),
         )
@@ -309,7 +309,7 @@ def main() raises:
             cta_group=2,
         ](
             ctx,
-            Idx(Int(512)),
+            Int(512),
             Idx[576](),
             Idx[512](),
         )
@@ -327,7 +327,7 @@ def main() raises:
             cta_group=2,
         ](
             ctx,
-            Idx(Int(512)),
+            Int(512),
             Idx[4096](),
             Idx[1024](),
         )

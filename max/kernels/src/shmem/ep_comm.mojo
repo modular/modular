@@ -875,7 +875,7 @@ struct NVFP4TokenFormat[
             output_scales.ptr,
             row_major(
                 (
-                    Idx(Int(output_scales.dim(0))),
+                    Int(output_scales.dim(0)),
                     Idx[Self._hid_dim // NVFP4_SF_VECTOR_SIZE // SF_ATOM_K](),
                     Idx[SF_ATOM_M[0]](),
                     Idx[SF_ATOM_K * SF_ATOM_M[1]](),
@@ -2962,8 +2962,8 @@ struct EPCombineKernel[
                                     my_p2p_rank
                                 ] + Self.recv_buf_layout(
                                     (
-                                        Idx(Int(src_idx)),
-                                        Idx(Int(src_topk_idx)),
+                                        Int(src_idx),
+                                        Int(src_topk_idx),
                                         Idx[0](),
                                     )
                                 )

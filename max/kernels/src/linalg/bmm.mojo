@@ -367,11 +367,11 @@ def _batched_matmul_cpu[
             # Get a 2D view of the 3D Tensor.
             var c_view = TileTensor(
                 c.ptr + batch * c_stride_between_batches,
-                row_major(Coord(Idx(Int(c.dim[1]())), Idx(Int(c.dim[2]())))),
+                row_major(Coord(Int(c.dim[1]()), Int(c.dim[2]()))),
             )
             var a_view = TileTensor(
                 a.ptr + batch * a_stride_between_batches,
-                row_major(Coord(Idx(Int(a.dim[1]())), Idx(Int(a.dim[2]())))),
+                row_major(Coord(Int(a.dim[1]()), Int(a.dim[2]()))),
             )
 
             comptime config = get_kernel_config[a_type, b_type, c_type]()
@@ -383,7 +383,7 @@ def _batched_matmul_cpu[
 
             var b_view = TileTensor(
                 b.ptr + batch * b_stride_between_batches,
-                row_major(Coord(Idx(Int(b.dim[1]())), Idx(Int(b.dim[2]())))),
+                row_major(Coord(Int(b.dim[1]()), Int(b.dim[2]()))),
             )
 
             var batch_coords = _get_start_indices_of_nth_subvolume[2](
@@ -674,8 +674,8 @@ def _batched_matmul_gpu[
                 b_tensor_reshaped.ptr,
                 row_major(
                     Coord(
-                        Idx(Int(b_tensor_reshaped.dim(1))),
-                        Idx(Int(b_tensor_reshaped.dim(2))),
+                        Int(b_tensor_reshaped.dim(1)),
+                        Int(b_tensor_reshaped.dim(2)),
                     )
                 ),
             )

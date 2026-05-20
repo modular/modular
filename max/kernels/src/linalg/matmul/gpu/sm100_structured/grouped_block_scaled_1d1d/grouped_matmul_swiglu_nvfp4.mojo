@@ -125,7 +125,7 @@ def grouped_matmul_swiglu_nvfp4_dispatch[
     var dummy_c_buffer = ctx.enqueue_create_buffer[c_type](
         Int(estimated_total_m * N)
     )
-    var dummy_c_shape = row_major(Coord(Idx(Int(estimated_total_m)), Idx[N]()))
+    var dummy_c_shape = row_major(Coord(Int(estimated_total_m), Idx[N]()))
     var dummy_c_tensor = TileTensor(dummy_c_buffer, dummy_c_shape)
 
     # Wrap the three real destinations in a RealSwiGLUOutput carrier.

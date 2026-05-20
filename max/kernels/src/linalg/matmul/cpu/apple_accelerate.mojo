@@ -269,7 +269,7 @@ def apple_gemv[
     ]()
     var transposed_b = TileTensor(
         UnsafePointer[Scalar[b.dtype], MutExternalOrigin].unsafe_dangling(),
-        row_major(Coord(Idx(Int(0)), Idx(Int(0)))),
+        row_major(Coord(Int(0), Int(0))),
     )
 
     # If both b_packed and transpose_b are False, we need to transpose B at
@@ -281,7 +281,7 @@ def apple_gemv[
         transposed_b = TileTensor(
             allocated_ptr,
             row_major(
-                Coord(Idx(transposed_b_shape[0]), Idx(transposed_b_shape[1]))
+                Coord(Int(transposed_b_shape[0]), Int(transposed_b_shape[1]))
             ),
         )
 

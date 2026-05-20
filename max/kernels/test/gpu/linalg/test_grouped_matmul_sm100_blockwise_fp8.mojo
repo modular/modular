@@ -105,11 +105,11 @@ def test_grouped_matmul_sm100_blockwise_scaled_fp8[
     )
 
     # TileTensor shapes for device buffers
-    var a_tt_shape = row_major(Coord(Idx(Int(total_num_tokens)), Idx[K]()))
+    var a_tt_shape = row_major(Coord(Int(total_num_tokens), Idx[K]()))
     var b_tt_shape = row_major(Coord(Idx[num_experts](), Idx[N](), Idx[K]()))
-    var c_tt_shape = row_major(Coord(Idx(Int(total_num_tokens)), Idx[N]()))
+    var c_tt_shape = row_major(Coord(Int(total_num_tokens), Idx[N]()))
     var a_scales_tt_shape = row_major(
-        Coord(Idx[K // BLOCK_SCALE_K](), Idx(Int(total_num_tokens)))
+        Coord(Idx[K // BLOCK_SCALE_K](), Int(total_num_tokens))
     )
     var b_scales_tt_shape = row_major(
         Coord(
@@ -176,11 +176,11 @@ def test_grouped_matmul_sm100_blockwise_scaled_fp8[
     var c_device_ref_tt = TileTensor(c_device_ref_buffer, c_tt_shape)
     var a_offsets_device_tt = TileTensor(
         a_offsets_device_buffer,
-        row_major(Coord(Idx(Int(num_active_experts + 1)))),
+        row_major(Coord(Int(num_active_experts + 1))),
     )
     var expert_ids_device_tt = TileTensor(
         expert_ids_device_buffer,
-        row_major(Coord(Idx(Int(num_active_experts)))),
+        row_major(Coord(Int(num_active_experts))),
     )
     var a_scales_device_tt = TileTensor(
         a_scales_device_buffer, a_scales_tt_shape

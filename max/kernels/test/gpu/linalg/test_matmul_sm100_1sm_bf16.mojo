@@ -120,7 +120,7 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
         for m_idx in range(M):
             for k_idx in range(K):
                 comptime assert a_host.flat_rank >= 2
-                a_host[(Idx(m_idx), Idx(k_idx))] = Float32(m_idx + k_idx).cast[
+                a_host[Coord(m_idx, k_idx)] = Float32(m_idx + k_idx).cast[
                     a_type
                 ]()
         for n_idx in range(N):
@@ -239,7 +239,7 @@ def main() raises:
                         block_swizzle_size=8,
                     ](
                         ctx,
-                        Idx(Int(1000)),
+                        Int(1000),
                         Idx[1024](),
                         Idx[1024 + 16](),
                     )
@@ -258,7 +258,7 @@ def main() raises:
                         swapAB=True,
                     ](
                         ctx,
-                        Idx(Int(512)),
+                        Int(512),
                         Idx[4096](),
                         Idx[1024 + 16](),
                     )
@@ -278,7 +278,7 @@ def main() raises:
                         k_group_size=2,
                     ](
                         ctx,
-                        Idx(Int(500)),
+                        Int(500),
                         Idx[2048](),
                         Idx[4096](),
                     )
@@ -296,7 +296,7 @@ def main() raises:
                         block_swizzle_size=2,
                     ](
                         ctx,
-                        Idx(Int(999)),
+                        Int(999),
                         Idx[256](),
                         Idx[128](),
                     )
@@ -314,7 +314,7 @@ def main() raises:
                         block_swizzle_size=1,
                     ](
                         ctx,
-                        Idx(Int(777)),
+                        Int(777),
                         Idx[2560](),
                         Idx[8192](),
                     )

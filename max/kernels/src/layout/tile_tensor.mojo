@@ -422,65 +422,33 @@ struct TileTensor[
         self.layout = other.layout
 
     @always_inline("nodebug")
-    def __getitem__(
-        self, coord: Coord
-    ) -> Self.ElementType where not coord.contains_slices:
+    def __getitem__[
+        *CoordLikes: CoordLike
+    ](self, *coords: *CoordLikes) -> Self.ElementType:
         """Retrieve a single element from the tensor at the specified coordinates.
 
-        Accepts Coords of flat_rank (flattened).
-
-        Args:
-            coord: The coordinates specifying the element's position.
-
-        Returns:
-            The element at the specified position.
-        """
-        return self.load(coord)
-
-    @always_inline("nodebug")
-    def __getitem__[
-        *IndexTypes: Indexer & Copyable
-    ](self, *items: *IndexTypes) -> Self.ElementType where (
-        IndexTypes.size == Self.flat_rank
-    ):
-        """Retrieves a single element from the tensor at the specified indices.
-
-        Uses flat indexing based on flat_rank. For non-nested layouts,
-        flat_rank == rank, so tensor[i, j, k] works normally. For nested
-        layouts (e.g., from blocked_product), use all flat_rank indices:
-        tensor[i0, i1, i2, i3] for a tensor with flat_rank == 4.
+        Accepts either a single `Coord` argument or multiple scalar
+        `CoordLike` arguments packed into a `Coord`.
 
         Parameters:
-            IndexTypes: The types of the indices (must implement Indexer).
+            CoordLikes: The types of each index argument (`CoordLike`).
 
         Args:
-            items: The indices specifying the element's position.
+            coords: The coordinates specifying the element's position.
 
         Returns:
             The element at the specified position.
         """
-        comptime arg_count = IndexTypes.size
-        var linear_tuple = DynamicCoord[Self.linear_idx_type, arg_count]()
-
-        comptime for i in range(arg_count):
-            UnsafePointer(to=linear_tuple[i]).init_pointee_copy(
-                rebind[type_of(linear_tuple).element_types[i]](
-                    RuntimeInt[Self.linear_idx_type](
-                        Scalar[Self.linear_idx_type](index(items[i]))
-                    )
-                )
-            )
-
-        # Inline load logic to avoid constraint propagation issues
-        return self.raw_load[
-            width=Self.element_size,
-            alignment=align_of[
-                SIMD[Self.dtype, Self.element_size]
-            ]() if is_gpu() else 1,
-        ](self.layout[linear_idx_type=Self.linear_idx_type](linear_tuple))
+        comptime if CoordLikes.size == 1 and CoordLikes[0].is_tuple:
+            return self.load(coords[0].tuple())
+        else:
+            var coord = Coord[*CoordLikes]()
+            comptime for i in range(CoordLikes.size):
+                UnsafePointer(to=coord[i]).init_pointee_copy(coords[i])
+            return self.load(coord)
 
     @always_inline
-    def __getitem__[
+    def slice[
         *IndexTypes: CoordLike
     ](self, *indices: *IndexTypes) -> TileTensor[
         Self.dtype,
@@ -538,7 +506,7 @@ struct TileTensor[
         var t = TileTensor(storage, row_major[2, 8, 4, 16]())
 
         # Fix batch=1 and heads=2, keep N and head_dim → 2D (8, 16)
-        var selected = t[Idx[1](), All, Idx[2](), All]
+        var selected = t.slice(Idx[1](), All, Idx[2](), All)
         ```
         """
         # Compute pointer offset from fixed (non-All) dimensions.
@@ -670,6 +638,12 @@ struct TileTensor[
         Returns:
             A SIMD vector containing the loaded elements.
         """
+        comptime assert (
+            Self.is_compatible_with[coord.element_types]
+            or coord.rank == Self.flat_rank
+            or coord.rank == 1
+        )
+
         return self.raw_load[
             width=width,
             alignment=alignment,
