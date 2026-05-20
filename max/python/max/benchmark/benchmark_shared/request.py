@@ -515,14 +515,23 @@ class _CompletionChoice(BaseModel):
     text: str
 
 
+class _ErrorDetail(BaseModel):
+    message: str = ""
+    code: str = ""
+    param: str = ""
+    type: str = ""
+
+
 class _ChatCompletionChunk(BaseModel):
     usage: _UsageChunk | None = None
     choices: list[_ChatChoice] = []
+    error: _ErrorDetail | None = None
 
 
 class _CompletionChunk(BaseModel):
     usage: _UsageChunk | None = None
     choices: list[_CompletionChoice] = []
+    error: _ErrorDetail | None = None
 
 
 class _TRTLLMChunk(BaseModel):
@@ -565,6 +574,11 @@ async def _run_openai_stream_request(
                             continue
 
                         data = chunk_type.model_validate_json(event.data)
+
+                        if data.error:
+                            output.error = data.error.message or event.data
+                            output.success = False
+                            return output
 
                         # Parse usage from any chunk that reports it.
                         if data.usage:
