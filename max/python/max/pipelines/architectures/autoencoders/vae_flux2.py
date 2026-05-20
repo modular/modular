@@ -122,16 +122,24 @@ class ResnetBlock2D(Module):
 
         Returns True when running on a supported GPU with matching channel
         counts (so the shortcut is identity, not a projection conv). The
-        custom op `conv2d_residual_add` routes through `conv_gpu` which
-        dispatches to SM100 (CUDA) or AMD 4-wave (MI355X) in-kernel
-        residual paths.
+        custom op `conv2d_residual_add` routes through `conv_gpu`, which
+        on AMD MI355X dispatches to the 4-wave in-kernel residual path.
+
+        Gated to AMD only. The SM100 (CUDA / Blackwell) `Conv2dResidualAdd`
+        op exists upstream but had no production caller before this wiring
+        landed; enabling it on B200 surfaces a latent SM100-side accuracy
+        regression on FLUX (MODELS-1484). Keep the fused path for AMD —
+        where the MI355X kernel + verify_pipelines + Pipeline Logit
+        Verification all confirm recovery to main baseline — and route
+        CUDA through the existing un-fused (conv → +bias → +residual)
+        path until the SM100 op is fixed independently.
         """
         return (
             self.in_channels == self.out_channels
             and self.conv_shortcut is None
             and isinstance(self.conv2.device, DeviceRef)
             and self.conv2.device.is_gpu()
-            and accelerator_api() in ("cuda", "rocm", "hip")
+            and accelerator_api() in ("rocm", "hip")
         )
 
     def __call__(
