@@ -1099,6 +1099,15 @@ comptime PyUnicode_AsUTF8AndSize = ExternalFunction[
         _CPointer[Py_ssize_t, MutAnyOrigin],
     ) thin -> _CPointer[c_char, ImmutAnyOrigin],
 ]
+comptime PyUnicode_FromKindAndData = ExternalFunction[
+    "PyUnicode_FromKindAndData",
+    # PyObject *PyUnicode_FromKindAndData(int kind, const void *buffer, Py_ssize_t size)
+    def(
+        c_int,
+        _CPointer[c_char, ImmutAnyOrigin],
+        Py_ssize_t,
+    ) thin -> PyObjectPtr,
+]
 
 # Tuple Objects
 comptime PyTuple_New = ExternalFunction[
@@ -1441,6 +1450,7 @@ struct CPython(Defaultable, Movable):
     # Unicode Objects and Codecs
     var _PyUnicode_DecodeUTF8: PyUnicode_DecodeUTF8.type
     var _PyUnicode_AsUTF8AndSize: PyUnicode_AsUTF8AndSize.type
+    var _PyUnicode_FromKindAndData: PyUnicode_FromKindAndData.type
     # Tuple Objects
     var _PyTuple_New: PyTuple_New.type
     var _PyTuple_GetItem: PyTuple_GetItem.type
@@ -1647,6 +1657,9 @@ struct CPython(Defaultable, Movable):
             self.lib.borrow()
         )
         self._PyUnicode_AsUTF8AndSize = PyUnicode_AsUTF8AndSize.load(
+            self.lib.borrow()
+        )
+        self._PyUnicode_FromKindAndData = PyUnicode_FromKindAndData.load(
             self.lib.borrow()
         )
         # Tuple Objects
@@ -2636,6 +2649,25 @@ struct CPython(Defaultable, Movable):
     # Unicode Objects and Codecs
     # ref: https://docs.python.org/3/c-api/unicode.html
     # ===-------------------------------------------------------------------===#
+
+    def PyUnicode_FromKindAndData(
+        self, kind: c_int, buffer: Span[Byte, _]
+    ) -> PyObjectPtr:
+        """Create a Unicode object from `buffer` of pre-decoded `kind`-sized
+        code units. `kind` is 1, 2, or 4 (`PyUnicode_1BYTE_KIND` and friends).
+        Bypasses UTF-8 validation and is the fast path for known-ASCII input
+        with `kind=1`.
+
+        Return value: New reference.
+
+        References:
+        - https://docs.python.org/3/c-api/unicode.html#c.PyUnicode_FromKindAndData
+        """
+        return self._PyUnicode_FromKindAndData(
+            kind,
+            buffer.unsafe_ptr().bitcast[c_char](),
+            Py_ssize_t(len(buffer)),
+        )
 
     # TODO: fix the signature to take str, size, and errors as args
     def PyUnicode_DecodeUTF8(self, s: StringSlice) -> PyObjectPtr:
