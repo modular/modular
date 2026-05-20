@@ -34,8 +34,21 @@ def random_normal[
     seed_ptr: UnsafePointer[Scalar[DType.uint64], ImmutAnyOrigin],
     ctx: DeviceContext,
 ) raises:
-    """Call `output_fn` with values generated from a normal distribution with
-    the specified mean and standard deviation.
+    """Call `output_fn` with values from a normal distribution, matching
+    PyTorch CUDA's `torch.randn` element-to-counter mapping.
+
+    For element `i`, mirrors PyTorch's per-thread Philox state:
+
+        thread_id     = i mod GRID_BLOCK
+        within_thread = i div GRID_BLOCK   (0..3)
+
+    where `GRID_BLOCK = 256 * min(num_SMs * blocks_per_sm, ceil(numel/256))`.
+
+    A single Philox step at counter `(0, 0, thread_id, 0)` produces 4 normals
+    via :func:`std.random.NormalRandom.step_normal_4`; the within_thread
+    index selects which lane to write to `output[i]`.
+
+    Bit-exact for `numel <= 4 * GRID_BLOCK_max` (≈ 1.2M elements on B200).
 
     Parameters:
         dtype: The data type to generate.
@@ -55,24 +68,47 @@ def random_normal[
     if stddev <= 0:
         raise Error("stddev must be positive")
 
+    var numel = shape.flattened_length()
+    if numel == 0:
+        return
+
     var strides = shape.get_row_major_strides()
+
+    comptime BLOCK_SIZE: Int = 256
+
+    # GRID_BLOCK mirrors PyTorch CUDA's calc_execution_policy. On GPU it
+    # depends on the device's SM count (comptime via default_device_info).
+    # On CPU we treat the whole tensor as one "thread group", which collapses
+    # to within_thread = 0 for every element.
+    var grid_block: Int
+
+    comptime if target == "gpu":
+        comptime info = DeviceContext.default_device_info
+        comptime MAX_GRID = (
+            info.sm_count * (info.threads_per_multiprocessor // BLOCK_SIZE)
+        )
+        var nblocks = (numel + BLOCK_SIZE - 1) // BLOCK_SIZE
+        var grid_x = MAX_GRID if nblocks > MAX_GRID else nblocks
+        grid_block = grid_x * BLOCK_SIZE
+    else:
+        grid_block = numel
 
     @parameter
     @always_inline
-    @__copy_capture(strides, seed_ptr)
+    @__copy_capture(strides, seed_ptr, grid_block)
     def generate[
         width: Int, _rank: Int, alignment: Int = 1
-    ](idx: IndexList[_rank],):
-        comptime assert width <= 8  # NormalRandom generates 8 values at a time
+    ](idx: IndexList[_rank]):
+        comptime assert (
+            width == 1
+        ), "PyTorch-compat normal kernel uses scalar lanes"
+        var i = _dot_prod(rebind[type_of(strides)](idx), strides)
+        var thread_id = UInt64(i % grid_block)
+        var within_thread = i // grid_block
 
-        var offset = _dot_prod(rebind[type_of(strides)](idx), strides)
+        var rng = NormalRandom(seed=seed_ptr[0], subsequence=thread_id)
+        var four = rng.step_normal_4(mean=mean, stddev=stddev)
+        var value = four[within_thread].cast[dtype]()
+        output_fn[width=1](idx, SIMD[dtype, 1](value))
 
-        var seed_value = seed_ptr[0]
-
-        var generator = NormalRandom(seed=seed_value, offset=UInt64(offset))
-
-        var values = generator.step_normal(mean=mean, stddev=stddev)
-
-        output_fn[width=width](idx, values.cast[dtype]().slice[width]())
-
-    elementwise[generate, simd_width=8, target=target](shape, ctx)
+    elementwise[generate, simd_width=1, target=target](shape, ctx)

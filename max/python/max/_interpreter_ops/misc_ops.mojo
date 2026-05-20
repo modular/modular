@@ -312,6 +312,20 @@ def random_normal_op[
 ) raises:
     """Random normal operation: fill output with normally distributed values.
 
+    Mirrors PyTorch CUDA `torch.randn`'s element-to-counter mapping. For
+    element `i`:
+
+        thread_id     = i mod GRID_BLOCK
+        within_thread = i div GRID_BLOCK   (0..3)
+
+    where `GRID_BLOCK = 256 * min(num_SMs * blocks_per_sm, ceil(size/256))`.
+    The per-element Box-Muller math is in
+    :func:`std.random.NormalRandom.step_normal_4`. This op contributes the
+    PyTorch-specific layout: which thread the element belongs to and which
+    of the four normals from that thread's Philox step lands at `output[i]`.
+
+    On CPU, `GRID_BLOCK = size` collapses every element to within_thread=0.
+
     Parameters:
         dtype: The data type of the output array.
 
@@ -325,25 +339,24 @@ def random_normal_op[
     """
     if variance <= 0:
         raise Error("stddev must be positive")
+    if size == 0:
+        return
 
-    @always_inline
-    @parameter
-    @__copy_capture(out_ptr, mean, variance, seed_value)
-    def func[width: Int, rank: Int, alignment: Int = 1](idx: IndexList[rank]):
-        var i = rebind[IndexList[1]](idx)[0]
-        var generator = NormalRandom(seed=seed_value, offset=UInt64(i))
-        var values = generator.step_normal(mean=mean, stddev=variance)
-        out_ptr.store[width=width](i, values.cast[dtype]().slice[width]())
+    comptime BLOCK_SIZE: Int = 256
+    var grid_block: Int
 
     if not ctx:
-        elementwise[func, simd_width=8](IndexList[1](size))
+        grid_block = size
     else:
         comptime if has_accelerator():
             comptime if dtype != DType.float64:
-                var device_ctx = DeviceContext(ctx.unsafe_value())
-                elementwise[func, simd_width=8, target="gpu"](
-                    IndexList[1](size), device_ctx
+                comptime info = DeviceContext.default_device_info
+                comptime MAX_GRID = info.sm_count * (
+                    info.threads_per_multiprocessor // BLOCK_SIZE
                 )
+                var nblocks = (size + BLOCK_SIZE - 1) // BLOCK_SIZE
+                var grid_x = MAX_GRID if nblocks > MAX_GRID else nblocks
+                grid_block = grid_x * BLOCK_SIZE
             else:
                 raise Error(
                     "GPU execution not supported for random_normal"
@@ -351,6 +364,32 @@ def random_normal_op[
                 )
         else:
             raise Error("No GPU accelerator available")
+
+    @always_inline
+    @parameter
+    @__copy_capture(out_ptr, mean, variance, seed_value, grid_block)
+    def func[width: Int, rank: Int, alignment: Int = 1](idx: IndexList[rank]):
+        comptime assert (
+            width == 1
+        ), "PyTorch-compat normal kernel uses scalar lanes"
+        var i = rebind[IndexList[1]](idx)[0]
+        var thread_id = UInt64(i % grid_block)
+        var within_thread = i // grid_block
+
+        var rng = NormalRandom(seed=seed_value, subsequence=thread_id)
+        var four = rng.step_normal_4(mean=mean, stddev=variance)
+        var value = four[within_thread].cast[dtype]()
+        out_ptr.store[width=1](i, SIMD[dtype, 1](value))
+
+    if not ctx:
+        elementwise[func, simd_width=1](IndexList[1](size))
+    else:
+        comptime if has_accelerator():
+            comptime if dtype != DType.float64:
+                var device_ctx = DeviceContext(ctx.unsafe_value())
+                elementwise[func, simd_width=1, target="gpu"](
+                    IndexList[1](size), device_ctx
+                )
 
 
 def random_normal_dispatcher(
