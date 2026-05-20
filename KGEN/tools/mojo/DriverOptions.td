@@ -18,3 +18,7 @@ def version : Flag<["--", "-"], "version">, Group<DiagnosticOptionGroup>,
 
 def v : Flag<["-"], "v">, Group<DiagnosticOptionGroup>, Alias<version>,
   Index<0>;
+
+def print_cache_location : Flag<["--", "-"], "print-cache-location">,
+  Group<DiagnosticOptionGroup>, Index<0>,
+  HelpText<"Prints the Mojo compile cache (.mojo_cache) location and exits.">;

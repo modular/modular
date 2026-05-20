@@ -21,3 +21,14 @@
 # '0.4.0-release (eb70c661)':
 # RUN: mojo --version | FileCheck %s --check-prefix CHECK-VERSION
 # CHECK-VERSION: Mojo {{[0-9]+}}.{{[0-9]+}}.{{[0-9]+}}{{.*}}({{[a-f0-9]+}})
+
+# Invoking the driver with `--print-cache-location` prints the resolved
+# `.mojo_cache` directory. An explicit MODULAR_CACHE_DIR overrides
+# the path to `<override>/.mojo_cache`.
+# RUN: env MODULAR_CACHE_DIR=%t.cache mojo --print-cache-location \
+# RUN:   | FileCheck %s --check-prefix CHECK-CACHE-OVERRIDE -DTMP=%t.cache
+# CHECK-CACHE-OVERRIDE: [[TMP]]/.mojo_cache
+
+# Without any override, the resolved path still ends in `.mojo_cache`.
+# RUN: mojo --print-cache-location | FileCheck %s --check-prefix CHECK-CACHE
+# CHECK-CACHE: {{.*}}/.mojo_cache
