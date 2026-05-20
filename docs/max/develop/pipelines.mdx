@@ -40,7 +40,7 @@ production infrastructure—batching, caching, compilation, and serving.
 
 Before diving into pipeline components, it's helpful to understand the two
 foundational packages that pipelines build on: [`max.nn`](/max/api/python/nn)
-and [`max.kv_cache`](/max/api/python/kv_cache).
+and [`max.pipelines.kv_cache`](/max/api/python/pipelines.kv_cache).
 
 ### Neural network module
 
@@ -117,9 +117,9 @@ parameters to a different device with a single call.
 
 ### KV cache module
 
-The [`max.kv_cache`](/max/api/python/kv_cache) package provides cache management
-for transformer inference. The main component is
-[`PagedKVCacheManager`](/max/api/python/generated/max.kv_cache.PagedKVCacheManager),
+The [`max.pipelines.kv_cache`](/max/api/python/pipelines.kv_cache) package
+provides cache management for transformer inference. The main component is
+[`PagedKVCacheManager`](/max/api/python/generated/max.pipelines.kv_cache.PagedKVCacheManager),
 which handles memory allocation for key-value pairs across generation steps.
 
 For most use cases, you don't interact with the cache manager directly. The
