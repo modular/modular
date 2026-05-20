@@ -64,7 +64,10 @@ from std.gpu.host import DeviceContext
 
 from layout import TileTensor
 
-from linalg.utils import elementwise_epilogue_type
+from linalg.utils import (
+    elementwise_compute_lambda_type,
+    elementwise_epilogue_type,
+)
 from linalg.matmul.gpu.amd.amd_4wave_matmul import (
     AMD4WaveMatmul,
     Conv2DKernelConfig,
@@ -142,6 +145,23 @@ def amd_4wave_conv[
     block_k_override: Int = 0,
     dump_asm_path: StaticString = "",
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    # Pre-residual fused compute lambda. Fires on the post-cast
+    # `c_type` MMA output BEFORE the residual FMA. Use for bias /
+    # ReLU / SiLU / GELU fusion. Matches the SM100 reference
+    # `D = lambda(Conv(A,B)) + beta * C` semantics. Signature
+    # `(IndexList[2], SIMD) capturing -> SIMD`.
+    elementwise_compute_lambda_fn: Optional[
+        elementwise_compute_lambda_type
+    ] = None,
+    # Opt-in in-kernel residual: when True, the kernel bulk-prefetches
+    # `source_ptr[m, n]` into VGPRs at the start of the epilogue and
+    # applies `out = mma + beta * source` before the store. Replaces
+    # the slower lambda-fusion residual (~24% faster on memory-bound
+    # shapes — see `amd_4wave_conv_fprop_with_residual`). When False
+    # (default), the kernel is identical to the no-residual variant
+    # and the `source_ptr`/`source_row_stride`/`beta` args are unused
+    # at comptime.
+    has_residual: Bool = False,
     # Conv geometry (defaults reproduce the M1 1×1 case).
     H: Int = 1,
     W: Int = 1,
@@ -172,6 +192,16 @@ def amd_4wave_conv[
     b: TileTensor[mut=False, b_type, ...],
     c: TileTensor[mut=True, c_type, ...],
     ctx: DeviceContext,
+    # Residual args. Only used when `has_residual=True`. The defaults
+    # (null pointer, 0 stride, 0.0 beta) are picked up by the kernel
+    # only when has_residual=False — the args are then dead-code-
+    # eliminated by the compiler (still in the launch packet, 16 bytes
+    # overhead per launch).
+    source_ptr: UnsafePointer[Scalar[c_type], ImmutAnyOrigin] = UnsafePointer[
+        Scalar[c_type], ImmutAnyOrigin
+    ](unsafe_from_address=0),
+    source_row_stride: Int = 0,
+    beta: Float32 = 0.0,
 ) raises:
     """Launches the 4-wave implicit-GEMM convolution on the device.
 
@@ -201,6 +231,17 @@ def amd_4wave_conv[
             {32, 64, 128}. Default 0 → auto-pick.
         dump_asm_path: If non-empty, dump compiled GCN assembly to path.
         elementwise_lambda_fn: Optional fused epilogue lambda.
+        elementwise_compute_lambda_fn: Optional pre-residual fused
+            compute lambda. Fires on the post-cast `c_type` MMA output
+            BEFORE the residual FMA, matching the SM100
+            `D = lambda(Conv(A,B)) + beta * C` ordering. Use for
+            bias / ReLU / SiLU / GELU fusion.
+        has_residual: When True, the kernel bulk-prefetches
+            `source_ptr[m, n]` into VGPRs at the start of the epilogue
+            and applies `out = mma + beta * source` before the store.
+            When False (default), `source_ptr` / `source_row_stride` /
+            `beta` are unused and the epilogue is byte-identical to the
+            no-residual kernel.
         H: Input height.
         W: Input width.
         H_out: Output height (= `(H + 2*pad_h - dilation_h*(R-1) - 1) //
@@ -233,6 +274,14 @@ def amd_4wave_conv[
         c: 2D output tile-tensor of shape `(N*H_out*W_out, Cout)` —
             a view of the NHWC output buffer.
         ctx: Device context used to enqueue the kernel.
+        source_ptr: Pointer to the residual buffer (NHWC-contiguous,
+            same shape as output). Only read when `has_residual=True`;
+            callers leave the default (null) when `has_residual=False`.
+        source_row_stride: Element stride of the residual's row
+            dimension (`C_out` for NHWC contiguous). Unused when
+            `has_residual=False`.
+        beta: Residual scale factor (`D = Conv + beta * source`).
+            Unused when `has_residual=False`.
 
     Raises:
         An error if device enqueue fails.
@@ -283,6 +332,9 @@ def amd_4wave_conv[
     def run_kernel[config: MatmulKernelConfig]() raises:
         # Dispatch via `AMD4WaveMatmul.run_conv2d` — the unified entry
         # point that hosts the 4-wave conv2d body alongside the matmul.
+        # `has_residual` carries through to the kernel's epilogue;
+        # source/stride/beta become unused-but-present runtime args
+        # when has_residual=False (DCE'd, 16 bytes launch packet cost).
         comptime kernel = AMD4WaveMatmul[
             a_type,
             b_type,
@@ -295,6 +347,8 @@ def amd_4wave_conv[
             a.LayoutType,
             b.LayoutType,
             c.LayoutType,
+            has_residual=has_residual,
+            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
         ]
 
         # 1D launch grid for the HK chiplet/L2 swizzle. The kernel
@@ -306,6 +360,9 @@ def amd_4wave_conv[
                 a,
                 b,
                 c,
+                source_ptr,
+                source_row_stride,
+                beta,
                 grid_dim=(num_blocks_n * num_blocks_m,),
                 block_dim=config.num_threads(),
             )
@@ -314,6 +371,9 @@ def amd_4wave_conv[
                 a,
                 b,
                 c,
+                source_ptr,
+                source_row_stride,
+                beta,
                 grid_dim=(num_blocks_n * num_blocks_m,),
                 block_dim=config.num_threads(),
             )

@@ -13,6 +13,7 @@ _EXTRA_CONSTRAINTS = {
     # + chiplet/L2 swizzle; not compileable on other AMD parts.
     "test_amd_4wave_conv_dtypes.mojo": ["//:mi355_gpu"],
     "test_amd_4wave_conv_miopen.mojo": ["//:mi355_gpu"],
+    "test_amd_4wave_conv_residual.mojo": ["//:mi355_gpu"],
     "test_amd_4wave_conv_rt_hw.mojo": ["//:mi355_gpu"],
     "test_conv2d_sm100.mojo": select({
         "//:b200_gpu": [],
