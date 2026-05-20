@@ -37,7 +37,11 @@ from max.interfaces import (
     TextGenerationRequestTool,
     TokenBuffer,
 )
-from max.pipelines.core import TextAndVisionContext, TextContext
+from max.pipelines.core import (
+    GrammarEnforcementState,
+    TextAndVisionContext,
+    TextContext,
+)
 from max.support.image import find_contiguous_ranges, hash_image
 from PIL import Image
 from transformers import (
@@ -638,6 +642,24 @@ class TextTokenizer(
             else None
         )
 
+        grammar_enforced = bool(
+            request.response_format.get("grammar_enforced")
+            if request.response_format
+            else False
+        )
+
+        tools_forced = bool(
+            request.response_format.get("tools_forced")
+            if request.response_format
+            else False
+        )
+
+        # Create grammar enforcement state
+        grammar_state = GrammarEnforcementState(
+            grammar_enforced=grammar_enforced,
+            tools_forced=tools_forced,
+        )
+
         # Calculate Max Length
         max_new_tokens = None
         if request.sampling_params.max_new_tokens is not None:
@@ -662,6 +684,7 @@ class TextTokenizer(
             log_probabilities_echo=request.echo,
             json_schema=json_schema,
             grammar=grammar,
+            grammar_state=grammar_state,
             sampling_params=request.sampling_params,
             model_name=request.model_name,
             target_endpoint=request.target_endpoint,

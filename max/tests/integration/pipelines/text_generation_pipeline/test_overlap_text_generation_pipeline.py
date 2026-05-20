@@ -304,7 +304,9 @@ class TestSyncAndProcessOutputsStructuredOutput:
         batch_size = 2
         real_tokens = np.array([100, 200], dtype=np.int64)
 
-        # Create contexts with mock matchers
+        # Create contexts with mock matchers. ``advance_fsm`` only calls
+        # ``consume_token`` while ``grammar_enforced=True``, so flip it on
+        # for this test path.
         contexts = []
         for i in range(batch_size):
             ctx = TextContext(
@@ -312,6 +314,7 @@ class TestSyncAndProcessOutputsStructuredOutput:
                 max_length=1000,
                 tokens=TokenBuffer(np.array([42, 67, 21])),
             )
+            ctx.grammar_enforced = True
             mock_matcher = MagicMock()
             mock_matcher.consume_token = MagicMock(return_value=True)
             ctx._matcher = mock_matcher
@@ -477,6 +480,10 @@ class TestAdvanceFsmAndComputeBitmasks:
             max_length=1000,
             tokens=TokenBuffer(np.array([1, 2, 3])),
         )
+        # advance_fsm_and_compute_bitmasks only advances the matcher while
+        # ``grammar_enforced=True``. Default the test context to enforced so
+        # these tests exercise the matcher-advance path.
+        ctx.grammar_enforced = True
         mock_matcher = MagicMock()
         mock_matcher.try_consume_tokens = MagicMock(
             return_value=1 if always_accept else 0
@@ -525,11 +532,11 @@ class TestAdvanceFsmAndComputeBitmasks:
                 bitmask_out=bitmask_out,
             )
 
+        # Part 1 consumes one token at a time (accepted drafts then bonus) so
+        # the enforcement state machine can flip mid-sequence on special
+        # tokens. Followed by Part 2 speculatively consuming next_draft_tokens.
         all_calls = mock_matcher.try_consume_tokens.call_args_list
-        # First Part 1 call: accepted draft tokens [7, 8]
-        assert all_calls[0] == call([7, 8])
-        # Second Part 1 call: bonus token [9]
-        assert all_calls[1] == call([9])
+        assert all_calls[:3] == [call([7]), call([8]), call([9])]
 
     def test_part1_skips_accepted_drafts_when_zero_accepted(self) -> None:
         """When n_accepted=0, only the bonus token is consumed in Part 1."""
@@ -548,9 +555,10 @@ class TestAdvanceFsmAndComputeBitmasks:
             )
 
         all_calls = mock_matcher.try_consume_tokens.call_args_list
-        # No batch call for accepted drafts; bonus is the first call
-        assert call([7, 8]) not in all_calls
-        assert call([9]) in all_calls
+        # No call for either accepted draft token; bonus is consumed first.
+        assert call([7]) not in all_calls
+        assert call([8]) not in all_calls
+        assert all_calls[0] == call([9])
 
     def test_part2_fills_position_0_bitmask_after_part1(self) -> None:
         """Position 0 of bitmask is filled with current FSM state (after Part 1 advance)."""
@@ -941,23 +949,32 @@ class TestInitializeBitmaskWithGrammar:
         # Should NOT allocate a bitmask
         assert result is None
 
-    def test_returns_none_when_structured_output_disabled(self) -> None:
-        """initialize_bitmask should return None when structured output is disabled."""
+    def test_allocates_bitmask_for_grammar_even_when_response_format_schema_disabled(
+        self,
+    ) -> None:
+        """initialize_bitmask should allocate for grammar even when enable_response_format_schema=False.
+
+        Tool calling (grammar) should work regardless of the --enable-structured-output
+        flag. Only user-provided json_schema requires the flag.
+        """
+        # Create pipeline with enabled=True (constrained decoding available)
+        # but enable_response_format_schema=False (json_schema not allowed)
         pipeline = self._create_overlap_pipeline_with_structured_output(
-            enabled=False
+            enabled=True
         )
 
-        # Even with grammar set, should return None if structured output is disabled
+        # Grammar for tool calls should work even without --enable-structured-output
         ctx = TextContext(
-            request_id=RequestID("grammar_but_disabled"),
+            request_id=RequestID("grammar_for_tool_call"),
             max_length=1000,
             tokens=TokenBuffer(np.array([42, 67, 21])),
-            grammar="<some grammar>",
+            grammar="<tool call grammar>",
         )
 
         result = pipeline.initialize_bitmask([ctx])
 
-        assert result is None
+        # Should allocate bitmask for tool call grammar
+        assert result is not None
 
     def test_allocates_bitmask_for_heterogeneous_batch_with_grammar(
         self,

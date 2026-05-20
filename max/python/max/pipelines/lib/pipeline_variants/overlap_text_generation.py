@@ -727,6 +727,7 @@ class AsyncBatch(Generic[TextGenerationContextType]):
             for idx, ctx in enumerate(self.inputs.flat_batch):
                 if ctx.matcher is not None and not ctx.tokens.actively_chunked:
                     token = int(generated_tokens_np[idx])
+                    # advance_fsm handles enforcement state internally
                     ctx.advance_fsm(token)
 
         # Update bitmask for requests continuing from previous batch to current batch.
@@ -1520,6 +1521,7 @@ class OverlapTextGenerationPipeline(
         self._structured_output = StructuredOutputHelper.from_tokenizer(
             self.tokenizer,
             pipeline_config.sampling.enable_structured_output,
+            pipeline_config.runtime.tool_parser,
         )
         self.vocab_size = self._structured_output.vocab_size
 

@@ -105,6 +105,8 @@ def test_smollm_with_structured_output_gpu(
                 },
                 "required": ["name", "age"],
             },
+            grammar_enforced=True,
+            tools_forced=False,
         ),
     )
 
@@ -219,6 +221,8 @@ def test_multistep_structured_output_gpu(
                 },
                 "required": ["name", "age"],
             },
+            grammar_enforced=True,
+            tools_forced=False,
         ),
     )
 
@@ -311,6 +315,8 @@ def test_multi_step_guided_decoding_gpu(
                 },
                 "required": ["name", "age"],
             },
+            grammar_enforced=True,
+            tools_forced=False,
         ),
     )
 
@@ -395,6 +401,8 @@ def test_overlap_pipeline_structured_output_gpu(
                 },
                 "required": ["name", "age"],
             },
+            grammar_enforced=True,
+            tools_forced=False,
         ),
     )
 
@@ -515,6 +523,8 @@ def test_heterogeneous_batch_structured_output_gpu(
                 "additionalProperties": False,
                 "strict": True,
             },
+            grammar_enforced=True,
+            tools_forced=False,
         ),
     )
 

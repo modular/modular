@@ -33,7 +33,12 @@ from max.interfaces import (
     TextGenerationContextType,
     TextGenerationOutput,
 )
+from max.pipelines.core import StructuredOutputRegionDelimiters
 from max.pipelines.core.exceptions import InputError
+from max.pipelines.lib.tool_parsing import (
+    StructuralTagToolParser,
+    get_parser_cls,
+)
 from max.pipelines.lib.utils import upper_bounded_default
 from max.profiler import traced
 from transformers import (
@@ -392,34 +397,80 @@ class StructuredOutputHelper:
     Encapsulates grammar compilation and bitmask management, consolidating
     shared logic between TextGenerationPipeline and OverlapTextGenerationPipeline.
 
+    Constrained decoding is used when:
+    1. Feature enabled via feature flag (--enable-structured-output)
+    2. Tool calling enforced via grammar (works regardless of feature flag for tool_choice=required or named function)
+    3. Tool calling with tool_choice=auto (conditional enforcement)
+
     Attributes:
-        enabled: Whether structured output is enabled.
+        enabled: Whether constrained decoding is available (tokenizer info initialized).
+        enable_response_format_schema: Whether user-provided json_schema is allowed.
         vocab_size: Vocabulary size from the tokenizer, or None if disabled.
+        tool_call_region_delimiters: Token sequences for tool call boundaries (conditional enforcement).
     """
 
     enabled: bool = False
+    enable_response_format_schema: bool = False
     vocab_size: int | None = None
     _tokenizer_info: Any = field(default=None, repr=False)
+    tool_call_region_delimiters: StructuredOutputRegionDelimiters | None = None
+
+    @staticmethod
+    def _get_tool_structural_tags(
+        tool_parser_name: str | None,
+    ) -> tuple[str | None, str | None]:
+        """Extract tool call start/end tags from a registered parser.
+
+        Args:
+            tool_parser_name: Name of the registered tool parser, or None.
+
+        Returns:
+            A (start, end) pair of structural tags. Prefers
+            ``SECTION_BEGIN``/``SECTION_END`` so the grammar stays enforced
+            across the whole tool-call section (no ``<think>`` between calls).
+            Falls back to ``CALL_BEGIN``/``CALL_END`` for parsers that only
+            define the per-call boundary. Returns ``(None, None)`` if neither.
+        """
+        parser_cls = get_parser_cls(tool_parser_name)
+        if parser_cls is None:
+            return (None, None)
+
+        if not (
+            isinstance(parser_cls, type)
+            and issubclass(parser_cls, StructuralTagToolParser)
+        ):
+            return (None, None)
+
+        if parser_cls.SECTION_BEGIN and parser_cls.SECTION_END:
+            return (parser_cls.SECTION_BEGIN, parser_cls.SECTION_END)
+        if parser_cls.CALL_BEGIN and parser_cls.CALL_END:
+            return (parser_cls.CALL_BEGIN, parser_cls.CALL_END)
+
+        return (None, None)
 
     @classmethod
     def from_tokenizer(
         cls,
         tokenizer: PipelineTokenizer[Any, Any, Any],
         enable_structured_output: bool,
+        tool_parser_name: str | None = None,
     ) -> StructuredOutputHelper:
         """Create a helper from a tokenizer.
 
         Args:
             tokenizer: A pipeline tokenizer with a HuggingFace delegate attribute.
-            enable_structured_output: Whether structured output is enabled.
+            enable_structured_output: Whether structured output is enabled
+                (e.g. to constrain to response format json_schema).
+            tool_parser_name: Name of the registered tool parser. Used to extract
+                structural tags for tool call start/end markers.
 
         Returns:
             A configured StructuredOutputHelper instance.
-        """
-        if not enable_structured_output:
-            return cls(enabled=False)
 
-        assert hasattr(tokenizer, "delegate")
+            Note: Constrained decoding is used when tool calling grammar is forced or enable_structured_output=True.
+        """
+        if not hasattr(tokenizer, "delegate"):
+            return cls(enabled=False)
         tokenizer_delegate = tokenizer.delegate
         vocab_size = len(tokenizer_delegate)
 
@@ -435,10 +486,35 @@ class StructuredOutputHelper:
             wrapper = TokenizerWrapper(adapter)
             tokenizer_info = LLTokenizer(wrapper, n_vocab=vocab_size)
 
+        # Extract structural tags from tool parser if available
+        tool_start, tool_end = cls._get_tool_structural_tags(tool_parser_name)
+
+        # Tokenize start/end tags to get token ID sequences
+        tool_call_region_delimiters: StructuredOutputRegionDelimiters | None = (
+            None
+        )
+        if tool_start is not None or tool_end is not None:
+            start_token_ids: list[int] | None = None
+            end_token_ids: list[int] | None = None
+            if tool_start is not None:
+                start_token_ids = tokenizer_delegate.encode(
+                    tool_start, add_special_tokens=False
+                )
+            if tool_end is not None:
+                end_token_ids = tokenizer_delegate.encode(
+                    tool_end, add_special_tokens=False
+                )
+            tool_call_region_delimiters = StructuredOutputRegionDelimiters(
+                start_token_ids=start_token_ids,
+                end_token_ids=end_token_ids,
+            )
+
         return cls(
             enabled=True,
+            enable_response_format_schema=enable_structured_output,
             vocab_size=vocab_size,
             _tokenizer_info=tokenizer_info,
+            tool_call_region_delimiters=tool_call_region_delimiters,
         )
 
     def update_context(
@@ -454,25 +530,49 @@ class StructuredOutputHelper:
         grammar matcher and installs it on the context, then fills the
         per-request token bitmask.
 
+        Tool-call-only grammars (from tool_choice=required or specific function)
+        work regardless of enable_response_format_schema. For tool_choice=auto
+        without the flag, the matcher install is skipped (logged at WARNING)
+        and the request proceeds unconstrained. JSON-schema responses always
+        require enable_response_format_schema=True (--enable-structured-output).
+
         Args:
             context: Request context to update.
             bitmask: Preallocated bitmask buffer; updated in-place.
             index: Position in the bitmask for this request.
 
         Raises:
-            ValueError: If a JSON schema or grammar is provided but structured
-                output is not enabled.
+            ValueError: If a JSON schema is provided but structured output is
+                not enabled, or if constrained decoding is not available.
         """
-        # Check for grammar first (e.g., Kimi tool call regex)
+        # Check for grammar first (e.g., tool call grammars from tool_choice=required)
         if context.grammar and context.matcher is None:
             if not self.enabled:
                 raise ValueError(
-                    "grammar provided but structured output is not enabled."
+                    "grammar provided but constrained decoding is not available."
                 )
+
+            # Note: Tool grammars with tools_forced=True (tool_choice=required
+            # or specific function) work without --enable-structured-output.
+            # For tool_choice=auto (tools_forced=False), the flag is currently
+            # required; skip matcher installation and let the request proceed
+            # without constraints when it isn't set.
+            if (
+                not context.tools_forced
+                and not self.enable_response_format_schema
+            ):
+                logger.warning(
+                    "Tool-call grammar generated for tool_choice=auto but "
+                    "--enable-structured-output is not set; skipping "
+                    "constrained decoding for this request. Generation will "
+                    "proceed unconstrained.",
+                )
+                return
 
             try:
                 matcher = LLMatcher(self._tokenizer_info, context.grammar)
                 context.set_matcher(matcher)
+                self.set_context_tool_region(context)
             except Exception as e:
                 raise InputError(
                     f"Grammar provided in request cannot be compiled. "
@@ -480,10 +580,12 @@ class StructuredOutputHelper:
                 ) from e
 
         # Fall back to json_schema if no grammar
+        # json_schema requires enable_response_format_schema (--enable-structured-output flag)
         elif context.json_schema and context.matcher is None:
-            if not self.enabled:
+            if not self.enable_response_format_schema:
                 raise ValueError(
-                    "json_schema provided but structured output is not enabled."
+                    "json_schema provided but structured output is not enabled. "
+                    "Pass --enable-structured-output to enable this feature."
                 )
 
             try:
@@ -532,14 +634,37 @@ class StructuredOutputHelper:
     ) -> None:
         """Fill the bitmask for a context's matcher.
 
+        Only fills the bitmask when the context has a matcher AND
+        grammar_enforced is True. For conditional enforcement
+        (tool_choice=auto), the bitmask is left unconstrained until
+        the tool call start token is detected.
+
         Args:
             context: Request context with a matcher.
             bitmask: Bitmask buffer to update in-place.
             index: Position in the bitmask for this request.
         """
-        if context.matcher:
+        if context.matcher and context.grammar_enforced:
             llguidance.numpy.fill_next_token_bitmask(
                 context.matcher, bitmask, index=index
+            )
+
+    def set_context_tool_region(
+        self,
+        context: TextGenerationContextType,
+    ) -> None:
+        """Set the tool_region on context's grammar state if conditional enforcement.
+
+        Called after setting the matcher to configure conditional enforcement
+        for tool_choice=auto scenarios.
+
+        Args:
+            context: Request context with grammar state.
+        """
+        if self.tool_call_region_delimiters is not None:
+            context.set_tool_region(
+                start_token_ids=self.tool_call_region_delimiters.start_token_ids,
+                end_token_ids=self.tool_call_region_delimiters.end_token_ids,
             )
 
     @traced
@@ -581,17 +706,26 @@ class StructuredOutputHelper:
             if ctx.matcher is None:
                 continue
 
-            # Part 1: Advance FSM through committed tokens (no rollback).
+            # Part 1: Advance the enforcement state machine through committed
+            # tokens, one at a time so special tokens (e.g. tool-call
+            # structural tag) can flip grammar enforcement mid-sequence.
+            # Only advance the matcher while grammar is enforced — this keeps
+            # matcher/state-machine in sync.
             n_accepted = int(num_accepted[ctx_idx])
             bonus_token = int(bonus_tokens[ctx_idx])
-            if n_accepted > 0:
-                tokens_to_consume = [
-                    int(accepted_draft_tokens[ctx_idx, j])
-                    for j in range(n_accepted)
-                ]
-                ctx.matcher.try_consume_tokens(tokens_to_consume)
+            committed_tokens = [
+                int(accepted_draft_tokens[ctx_idx, j])
+                for j in range(n_accepted)
+            ]
+            committed_tokens.append(bonus_token)
+            for token in committed_tokens:
+                ctx.update_enforcement_state(token)
+                if ctx.grammar_enforced:
+                    ctx.matcher.try_consume_tokens([token])
 
-            ctx.matcher.try_consume_tokens([bonus_token])
+            # Bitmask stays unconstrained (-1) while grammar isn't enforced.
+            if not ctx.grammar_enforced:
+                continue
 
             # Part 2: Speculative advance through next draft tokens + rollback.
             llguidance.numpy.fill_next_token_bitmask(
@@ -691,7 +825,8 @@ class StructuredOutputHelper:
         # The packed_bitmask is initialized to -1 (all bits set = all tokens valid),
         # so we only need to call fill_next_token_bitmask for constrained contexts.
         for ctx_idx, ctx in enumerate(context_batch):
-            if not ctx.matcher:
+            # Skip if no matcher or grammar not enforced (e.g., inside thinking region)
+            if not ctx.matcher or not ctx.grammar_enforced:
                 continue  # Unconstrained: leave at initial -1 (all tokens valid)
 
             # Position 0: valid tokens at current FSM state

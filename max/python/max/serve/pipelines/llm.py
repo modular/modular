@@ -213,14 +213,18 @@ class TokenGeneratorPipeline(
                     cast(Sequence[int], context.tokens.prompt)
                 )
 
-            # When constrained decoding is active (grammar for tool-call
-            # grammars, or json_schema for structured output), the
-            # grammar forces the model to emit tool calls or JSON directly
-            # without closing </think>. Disable reasoning classification so
-            # those tokens are routed to the content field, not reasoning.
-            if is_still_reasoning and (
-                getattr(context, "grammar", None) or context.json_schema
-            ):
+            # Suppress reasoning classification only when constrained decoding
+            # will actually constrain the model from the first token with no
+            # way to suspend it for reasoning. For ``tool_choice=auto`` the
+            # grammar is compiled but the bitmask is gated until a tool-call
+            # start token is seen (``grammar_enforced=False`` initially), so
+            # the model can reason freely up to that point. Note that when
+            # reasoning classification is disabled reasoning tokens are
+            # routed to the content field, not reasoning.
+            grammar_will_constrain_from_start = (
+                context.grammar and context.grammar_enforced
+            ) or context.json_schema
+            if is_still_reasoning and grammar_will_constrain_from_start:
                 is_still_reasoning = False
 
             with record_ms(METRICS.output_time):

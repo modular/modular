@@ -12,8 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 
 from .context import (
+    GrammarEnforcementState,
     PixelContext,
     SpecDecodingState,
+    StructuredOutputRegionDelimiters,
     TextAndVisionContext,
     TextContext,
     TTSContext,
@@ -33,8 +35,10 @@ from .pixel_context_validators import (
 )
 
 __all__ = [
+    "GrammarEnforcementState",
     "PixelContext",
     "SpecDecodingState",
+    "StructuredOutputRegionDelimiters",
     "TTSContext",
     "TextAndVisionContext",
     "TextContext",

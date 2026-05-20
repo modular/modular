@@ -81,6 +81,23 @@ class TextGenerationResponseFormat(TypedDict):
     Used for model-specific constrained decoding formats like Kimi's tool call grammar.
     """
 
+    grammar_enforced: bool
+    """Whether to actively enforce grammar via bitmask.
+
+    When True from the start, enforce grammar from the first token.
+    When False initially (for tool_choice=auto without response_format), the
+    grammar is compiled but not enforced until a tool call start token is
+    detected.
+    """
+
+    tools_forced: bool
+    """Whether tool calling was forced (tool_choice=required or named function).
+
+    When True, the --enable-structured-output flag is NOT required - constrained
+    decoding works without it. When False (tool_choice=auto), the flag IS required
+    for grammar enforcement to work.
+    """
+
 
 class ContentPart(BaseModel):
     """A single part of a multi-modal message content."""
@@ -828,6 +845,55 @@ class TextGenerationContext(BaseContext, Protocol):
     block. Toggled host-side in the spec-decode commit step when a reasoning
     parser is configured. Consumed by thinking-mode temperature scaling and
     relaxed acceptance to gate per-row behavior."""
+
+    grammar_enforced: bool
+    """Whether grammar is currently being enforced via bitmask.
+
+    When True, the grammar matcher constrains token generation via bitmask.
+    When False with a matcher present, grammar is compiled but not enforced
+    (waiting for tool call start token to trigger enforcement).
+
+    For tool_choice=required or named function: True from start.
+    For tool_choice=auto: False initially, flipped to True when tool call
+    start token is detected.
+    """
+
+    tools_forced: bool
+    """Whether tool calling was forced (tool_choice=required or named function).
+
+    When True, the --enable-structured-output flag is NOT required.
+    When False (tool_choice=auto), the flag IS required for grammar enforcement.
+    """
+
+    def set_tool_region(
+        self,
+        start_token_ids: list[int] | None,
+        end_token_ids: list[int] | None,
+    ) -> None:
+        """Set token sequences for conditional tool call enforcement.
+
+        Args:
+            start_token_ids: Token IDs marking tool call start.
+            end_token_ids: Token IDs marking tool call end.
+        """
+        ...
+
+    def update_enforcement_state(self, token: int) -> bool:
+        """Advance the grammar-enforcement state machine by one token.
+
+        Unlike ``advance_fsm``, this only updates the enforcement-state
+        machine (e.g., detecting tool-call boundary tokens) without
+        advancing the underlying matcher. Used by the spec-decode async
+        callback path where the matcher is advanced separately via
+        ``try_consume_tokens`` for tolerance.
+
+        Args:
+            token: The newly committed token.
+
+        Returns:
+            True if enforcement state changed.
+        """
+        ...
 
 
 @dataclass

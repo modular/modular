@@ -95,6 +95,8 @@ class FakeContext:
         )
         self.cached_prefix_length: int | None = None
         self.in_reasoning_phase: bool = False
+        self.grammar_enforced: bool = False
+        self.tools_forced: bool = False
 
     @property
     def request_id(self) -> RequestID:
@@ -185,6 +187,16 @@ class FakeContext:
 
     def set_matcher(self, matcher: Any) -> None:
         pass
+
+    def set_tool_region(
+        self,
+        start_token_ids: list[int] | None,
+        end_token_ids: list[int] | None,
+    ) -> None:
+        pass
+
+    def update_enforcement_state(self, token: int) -> bool:
+        return False
 
     @property
     def sampling_params(self) -> SamplingParams:

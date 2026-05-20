@@ -1052,7 +1052,7 @@ def _resolve_grammar_constraints(
     tools: list[TextGenerationRequestTool] | None,
     tool_choice: str | dict[str, Any] | None,
     response_format: TextGenerationResponseFormat | None,
-) -> tuple[list[str] | None, dict[str, Any] | None]:
+) -> tuple[list[str] | None, dict[str, Any] | None, bool, bool]:
     """Determine grammar constraints for tool calling and response format.
 
     This function decides what constraints to apply for grammar-based decoding:
@@ -1061,10 +1061,14 @@ def _resolve_grammar_constraints(
 
     The behavior depends on the combination of inputs:
     - tools forced (required or named function): grammar constrains to tool
-      calls only, response_format is ignored
+      calls only, response_format is ignored, enforcement from start,
+      no --enable-structured-output flag required
     - auto mode + response_format: grammar allows either tool calls or JSON
-      content matching the schema
-    - auto mode + no response_format: no grammar generated (unconstrained)
+      content matching the schema, enforcement from start,
+      --enable-structured-output flag required
+    - auto mode + no response_format: grammar generated for tool calls,
+      conditional enforcement (only when tool call start token detected),
+      --enable-structured-output flag required
     - response_format only (no tools): no Kimi-specific grammar is
       generated; the caller falls through to the standard json_schema
       flow handled by StructuredOutputHelper
@@ -1075,13 +1079,20 @@ def _resolve_grammar_constraints(
         response_format: Response format dict from the request.
 
     Returns:
-        (grammar_tool_names, response_format_schema) tuple. Both None means
-        no grammar should be generated.
+        (grammar_tool_names, response_format_schema, tools_forced, enforce_from_start)
+        - grammar_tool_names: Tool names to include in grammar, or None.
+        - response_format_schema: JSON schema for response format, or None.
+        - tools_forced: True if tool_choice=required or named function. When
+          True, --enable-structured-output flag is not required.
+        - enforce_from_start: True if grammar should be enforced from the
+          first token. False for auto mode without response_format (conditional
+          enforcement - grammar activates when tool call start token detected).
     """
     grammar_tool_names: list[str] | None = None
     response_format_schema: dict[str, Any] | None = None
 
     tools_required = tool_choice == "required"
+    tools_auto = tool_choice is None or tool_choice == "auto"
 
     # Determine forced tool names from tool_choice
     forced_tool_names: list[str] | None = None
@@ -1100,27 +1111,47 @@ def _resolve_grammar_constraints(
         ):
             forced_tool_names = [tool_choice["function"]["name"]]
 
-    # Set grammar_tool_names
-    if tools_required or response_format is not None:
-        if forced_tool_names:
-            grammar_tool_names = forced_tool_names
-        else:
-            names = [
-                t["function"]["name"]
-                for t in (tools or [])
-                if "function" in t and "name" in t["function"]
-            ]
-            if names:
-                grammar_tool_names = names
+    # Set grammar_tool_names:
+    # - Forced tools (required or named): use the forced subset directly.
+    # - Otherwise extract all tool names when any tool-bearing path applies
+    #   (required, response_format present, or auto with tools available).
+    #   Auto with no tools falls through (no grammar to generate).
+    if forced_tool_names:
+        grammar_tool_names = forced_tool_names
+    elif (
+        tools_required
+        or response_format is not None
+        or (tools_auto and tools is not None)
+    ):
+        names = [
+            t["function"]["name"]
+            for t in (tools or [])
+            if "function" in t and "name" in t["function"]
+        ]
+        if names:
+            grammar_tool_names = names
+
+    # tools_forced: True only for required/named (bypasses --enable-structured-output flag)
+    tools_forced = forced_tool_names is not None
 
     # Only include response_format in grammar when tools aren't forced.
     # When tools are forced, constrain to tool calls only.
-    tools_forced = forced_tool_names is not None
     if response_format is not None and not tools_forced:
         if response_format.get("type") == "json_schema":
             response_format_schema = response_format.get("json_schema")
 
-    return grammar_tool_names, response_format_schema
+    # enforce_from_start: True for required/named OR auto+response_format
+    # False for auto without response_format (conditional enforcement)
+    enforce_from_start = tools_forced or (
+        grammar_tool_names is not None and response_format is not None
+    )
+
+    return (
+        grammar_tool_names,
+        response_format_schema,
+        tools_forced,
+        enforce_from_start,
+    )
 
 
 @router.post("/chat/completions", response_model=None)
@@ -1185,12 +1216,15 @@ async def openai_create_chat_completion(
             parser, "generate_tool_call_grammar"
         )
         if has_grammar_parser:
-            grammar_tool_names, response_format_schema = (
-                _resolve_grammar_constraints(
-                    tools=tools,
-                    tool_choice=completion_request.tool_choice,
-                    response_format=response_format,
-                )
+            (
+                grammar_tool_names,
+                response_format_schema,
+                tools_forced,
+                enforce_from_start,
+            ) = _resolve_grammar_constraints(
+                tools=tools,
+                tool_choice=completion_request.tool_choice,
+                response_format=response_format,
             )
             # Only invoke the architecture-specific grammar generator when
             # tools are actually involved. In the response_format-only case,
@@ -1199,10 +1233,13 @@ async def openai_create_chat_completion(
                 assert parser is not None
                 logger.debug(
                     "Generating tool call grammar for %s with tools: %s, "
-                    "response_format_schema: %s",
+                    "response_format_schema: %s, tools_forced: %s, "
+                    "enforce_from_start: %s",
                     type(parser).__name__,
                     grammar_tool_names,
                     response_format_schema,
+                    tools_forced,
+                    enforce_from_start,
                 )
                 # Create the grammar from the tools and response format schema.
                 grammar = parser.generate_tool_call_grammar(  # type: ignore[attr-defined]
@@ -1210,14 +1247,25 @@ async def openai_create_chat_completion(
                     response_format_schema=response_format_schema,
                 )
                 # Create the response format.
+                # Note:
+                # - tools_forced=True (tool_choice=required or named):
+                # - enforce_from_start=True: Grammar enforced from first token.
+                # - enforce_from_start=False (auto without response_format):
+                #   Conditional enforcement - grammar activates when tool call
+                #   start token is detected.
                 response_format = TextGenerationResponseFormat(
                     type="grammar",
                     grammar=grammar,
                     json_schema={},
+                    grammar_enforced=enforce_from_start,
+                    tools_forced=tools_forced,
                 )
-                logger.info(
-                    "Successfully generated tool call grammar (length=%d)",
+                logger.debug(
+                    "Successfully generated tool call grammar (length=%d, "
+                    "tools_forced=%s, enforce_from_start=%s)",
                     len(grammar),
+                    tools_forced,
+                    enforce_from_start,
                 )
         stream_options = None
         if completion_request.stream:
@@ -1467,7 +1515,11 @@ def _create_response_format(
     _validate_json_schema(json_schema)
 
     return TextGenerationResponseFormat(
-        type=response_type, json_schema=json_schema, grammar=None
+        type=response_type,
+        json_schema=json_schema,
+        grammar=None,
+        grammar_enforced=False,
+        tools_forced=False,
     )
 
 
