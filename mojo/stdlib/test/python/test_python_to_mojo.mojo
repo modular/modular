@@ -34,6 +34,28 @@ def test_string() raises:
     assert_true(String(os.environ).startswith("environ({"))
 
 
+def test_string_construction_ascii_fast_path() raises:
+    # All-ASCII input goes through PyUnicode_FromKindAndData(kind=1).
+    assert_equal(String(py=PythonObject("hello world")), "hello world")
+    # Empty string is the SIMD-tail-only edge.
+    assert_equal(String(py=PythonObject("")), "")
+    # Length exactly at the SIMD block width (uses the vectorized loop with
+    # zero tail).
+    assert_equal(
+        String(py=PythonObject("0123456789abcdef0123456789abcdef")),
+        "0123456789abcdef0123456789abcdef",
+    )
+
+
+def test_string_construction_non_ascii_fallback() raises:
+    # Non-ASCII input falls through to PyUnicode_DecodeUTF8 which handles
+    # multi-byte UTF-8 sequences. 2-byte (héllo), 4-byte (fire emoji), and
+    # embedded NUL all round-trip.
+    assert_equal(String(py=PythonObject("héllo")), "héllo")
+    assert_equal(String(py=PythonObject("\U0001F525 fire")), "\U0001F525 fire")
+    assert_equal(String(py=PythonObject("foo\0bar")).byte_length(), 7)
+
+
 def test_int() raises:
     assert_equal(Int(py=PythonObject(5)), 5)
     assert_equal(Int(py=PythonObject(-1)), -1)

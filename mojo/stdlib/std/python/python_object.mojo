@@ -19,9 +19,11 @@ from std.python import PythonObject
 ```
 """
 
+from std.math import align_down
+from std.memory import pack_bits
 from std.os import abort
-from std.sys import bit_width_of
-from std.ffi import _CPointer, c_double, c_long, c_size_t, c_ssize_t
+from std.sys import bit_width_of, simd_width_of
+from std.ffi import _CPointer, c_double, c_int, c_long, c_size_t, c_ssize_t
 import std.format._utils as fmt
 
 from std.reflection import reflect
@@ -29,6 +31,26 @@ from std.reflection import reflect
 from ._cpython import CPython, GILAcquired, PyObject, PyObjectPtr, PyTypeObject
 from .bindings import PyMojoObject, _get_type_name, lookup_py_type_object
 from .python import Python
+
+
+@always_inline
+def _all_ascii(s: StringSlice) -> Bool:
+    """Return True if every byte of `s` is in `[0, 128)`. SIMD-scans for
+    any byte with the high bit set."""
+    var ptr = s.unsafe_ptr()
+    var length = s.byte_length()
+    comptime bool_mask_width = simd_width_of[DType.bool]()
+    var vectorized_end = align_down(length, bool_mask_width)
+
+    for i in range(0, vectorized_end, bool_mask_width):
+        var block = ptr.load[width=bool_mask_width](i)
+        if pack_bits(block.ge(UInt8(128))):
+            return False
+
+    for i in range(vectorized_end, length):
+        if ptr[i] >= UInt8(128):
+            return False
+    return True
 
 
 struct _PyIter(ImplicitlyCopyable, Iterable, Iterator):
@@ -273,12 +295,20 @@ struct PythonObject(
             string: The string value.
 
         Raises:
-            If the string is not valid UTF-8.
+            If the conversion to a Python `str` fails.
         """
+        # Fast path: pure-ASCII input feeds each byte as a 1-byte code point
+        # via `PyUnicode_FromKindAndData`, skipping CPython's UTF-8 validation
+        # inside `PyUnicode_DecodeUTF8`. `StringSlice` is guaranteed valid
+        # UTF-8 so the fallback path will not raise on non-ASCII either.
         ref cpy = Python().cpython()
-        # TODO: This should not be necessary, as `StringSlice` is guaranteed to
-        # be valid UTF-8.
-        var unicode = cpy.PyUnicode_DecodeUTF8(string)
+        var unicode: PyObjectPtr
+        if _all_ascii(string):
+            unicode = cpy.PyUnicode_FromKindAndData(
+                c_int(1), string.as_bytes()
+            )
+        else:
+            unicode = cpy.PyUnicode_DecodeUTF8(string)
         if not unicode:
             raise cpy.unsafe_get_error()
         self = Self(from_owned=unicode)
