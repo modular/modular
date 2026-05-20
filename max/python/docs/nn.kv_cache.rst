@@ -23,6 +23,7 @@ Cache configuration
    KVCacheParamInterface
    KVCacheParams
    KVCacheQuantizationConfig
+   KVConnectorType
    MultiKVCacheParams
 
 Cache inputs

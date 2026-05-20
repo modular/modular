@@ -35,12 +35,35 @@ logger = logging.getLogger("max.pipelines")
 
 
 class KVConnectorType(str, Enum):
-    """Type of KV cache connector to use."""
+    """Identifies which off-device backing store the KV cache uses.
+
+    Set on :attr:`KVCacheParams.kv_connector` to control whether evicted
+    cache pages stay on device only, spill to host memory, tier across host
+    and disk, or route through a distributed block store.
+    """
 
     null = "null"
+    """No off-device backing store. Pages live on device only."""
+
     local = "local"
+    """Spills evicted pages to host memory.
+
+    Requires ``enable_prefix_caching`` and ``host_kvcache_swap_space_gb``
+    to be set on :class:`KVCacheParams`.
+    """
+
     tiered = "tiered"
+    """Tiers evicted pages across host memory and disk.
+
+    Requires ``enable_prefix_caching``, ``host_kvcache_swap_space_gb``,
+    and a ``disk_offload_dir`` on the connector config.
+    """
+
     dkv = "dkv"
+    """Routes pages through a distributed KV block store.
+
+    Requires a ``block_store_endpoint`` on the connector config.
+    """
 
 
 @dataclass
