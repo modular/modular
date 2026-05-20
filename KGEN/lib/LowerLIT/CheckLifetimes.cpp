@@ -60,7 +60,9 @@ struct RaiseSetEntry {
     return matchingSet;
   }
 };
+} // namespace
 
+namespace {
 /// FunctionLikeOp abstracts a function. It defines the interface necessary for
 /// an op to undergo a checklifetimes pass. It is either a ClosureInitOp or FnOp
 struct FunctionLikeOp {
@@ -76,16 +78,24 @@ struct FunctionLikeOp {
 };
 } // namespace
 
+namespace {
+struct StructInfo {
+  /// This is the decl for the struct type, and is always present.
+  LIT::StructDeclOp decl;
+  /// This is the conformance information for ImplicitlyDestructible if it
+  /// exists.
+  ConformanceOp implicitlyDestructible;
+};
+} // namespace
+
 /// Find all the functions and types in the module.
-static std::tuple<
-    std::vector<FunctionLikeOp>, DenseMap<SymbolRefAttr, FnOp>,
-    DenseMap<SymbolRefAttr, std::pair<LIT::StructDeclOp, ConformanceOp>>,
-    DenseMap<SymbolRefAttr, LIT::TraitDeclOp>>
+static std::tuple<std::vector<FunctionLikeOp>, DenseMap<SymbolRefAttr, FnOp>,
+                  DenseMap<SymbolRefAttr, StructInfo>,
+                  DenseMap<SymbolRefAttr, LIT::TraitDeclOp>>
 collectFunctionsAndTypes(Operation *module) {
   std::vector<FunctionLikeOp> funcList;
   DenseMap<SymbolRefAttr, FnOp> funcMap;
-  DenseMap<SymbolRefAttr, std::pair<LIT::StructDeclOp, ConformanceOp>>
-      structMap;
+  DenseMap<SymbolRefAttr, StructInfo> structMap;
   DenseMap<SymbolRefAttr, LIT::TraitDeclOp> traitMap;
 
   // We need to find conformances to ImplicitlyDestructible in all the types.
@@ -226,17 +236,14 @@ insertDebugVariableForArg(OpBuilder &builder, FunctionLikeOp func,
 /// pass. The declaration maps are immutable after construction; the counter
 /// uses atomic operations so no external lock is needed.
 struct WholeProgramState {
-  WholeProgramState(
-      DenseMap<SymbolRefAttr, std::pair<LIT::StructDeclOp, ConformanceOp>>
-          structMap,
-      DenseMap<SymbolRefAttr, FnOp> funcMap,
-      DenseMap<SymbolRefAttr, LIT::TraitDeclOp> traitMap)
+  WholeProgramState(DenseMap<SymbolRefAttr, StructInfo> structMap,
+                    DenseMap<SymbolRefAttr, FnOp> funcMap,
+                    DenseMap<SymbolRefAttr, LIT::TraitDeclOp> traitMap)
       : structMap(std::move(structMap)), funcMap(std::move(funcMap)),
         traitMap(std::move(traitMap)) {}
 
   /// Immutable declaration maps, populated once before threading begins.
-  DenseMap<SymbolRefAttr, std::pair<LIT::StructDeclOp, ConformanceOp>>
-      structMap;
+  DenseMap<SymbolRefAttr, StructInfo> structMap;
   DenseMap<SymbolRefAttr, FnOp> funcMap;
   DenseMap<SymbolRefAttr, LIT::TraitDeclOp> traitMap;
 };
@@ -266,11 +273,11 @@ struct TypeDeclInfo {
   getFieldContaining(LIT::StructType type, unsigned bitIndex) const;
 
   /// Return the struct decl for the specified StructType.
-  LIT::StructDeclOp getStructDeclForType(LIT::StructType type) const {
+  StructInfo getStructInfoForType(LIT::StructType type) const {
     auto it = shared->structMap.find(type.getSymbol());
     assert(it != shared->structMap.end() &&
            "reference to struct that wasn't declared");
-    return it->second.first;
+    return it->second;
   }
   /// Return the trait decls for the specified TraitType (which may be a
   /// composition).
@@ -293,7 +300,7 @@ struct TypeDeclInfo {
   /// Given the RValue type for a value that needs to be destroyed, return the
   /// destructor the invoke, or null if there is none.
   TypedAttr getDestructorForType(Type type, Location loc) const;
-  SymbolConstantAttr getMoveInitForType(Type type, Location loc) const;
+  TypedAttr getMoveInitForType(Type type, Location loc) const;
 
   /// If this is a non-destructible/linear type, get the error message to emit.
   std::optional<StringRef> getErrorMsgIfLinearType(Type type) const;
@@ -331,7 +338,7 @@ struct TypeDeclInfo {
 /// move, or destructor members.
 bool TypeDeclInfo::isRegisterPassableTrivial(Type type) const {
   if (auto valueType = sugarDynCast<LIT::StructType>(type))
-    return getStructDeclForType(valueType).isRegisterPassableTrivial();
+    return getStructInfoForType(valueType).decl.isRegisterPassableTrivial();
 
   // This is not trivial if it is a reference to a trait value.
   if (auto paramRef = sugarDynCast<ParamType>(type)) {
@@ -347,29 +354,23 @@ bool TypeDeclInfo::isRegisterPassableTrivial(Type type) const {
   return true;
 }
 
-static SymbolConstantAttr getSpecialMemberForType(
-    Type type, const TypeDeclInfo *typeDecls,
-    llvm::function_ref<SymbolConstantAttr(StructDeclOp)> getMember,
-    Location loc) {
+static TypedAttr
+getSpecialMemberForType(Type type, const TypeDeclInfo *typeDecls,
+                        llvm::function_ref<TypedAttr(StructInfo)> getMember,
+                        Location loc) {
   auto valueType = sugarDynCast<LIT::StructType>(type);
   if (!valueType) // Values of raw MLIR type don't have destructors.
     return {};
-  SymbolConstantAttr attr =
-      getMember(typeDecls->getStructDeclForType(valueType));
-  if (!attr)
+  TypedAttr fnAttr = getMember(typeDecls->getStructInfoForType(valueType));
+  if (!fnAttr)
     return {};
 
   // If there are parameters to the type, then the dtor will have those
   // parameters as well, substitute them in.
-  assert(attr.getParamValues().empty() && "dtor should be unparameterized");
   if (valueType.getParamValues().empty())
-    return attr;
-
-  ArrayRef<TypedAttr> paramValues = valueType.getParamValues();
-  auto newSig = attr.getType().getSpecializedGenerator(
-      paramValues, typeDecls->getEvaluationContext(), loc);
-  assert(newSig && "Failed to specialize generator.");
-  return SymbolConstantAttr::get(attr.getSymbol(), newSig, paramValues);
+    return fnAttr;
+  return BindParamsAttr::get(fnAttr, valueType.getParamValues(),
+                             typeDecls->getEvaluationContext());
 }
 
 /// Given the RValue type for a value that needs to be destroyed, return the
@@ -399,23 +400,23 @@ TypedAttr TypeDeclInfo::getDestructorForType(Type type, Location loc) const {
     }
   }
 
-  return getSpecialMemberForType(
-      type, this,
-      [](StructDeclOp structOp) -> SymbolConstantAttr {
-        // If the struct is linear, then ignore an explicitly declared
-        // destructor for the purposes of destructor insertion.
-        if (structOp.getLinearTypeErrorMsg().value_or("") != "")
-          return {};
-        return structOp.getDestructorAttr();
-      },
-      loc);
+  // TODO: Remove getDestructorAttr from StructDeclOp entirely.
+  auto getDestructor = [&](StructInfo info) -> TypedAttr {
+    // If the type is linear, then ignore an explicitly declared
+    // destructor for the purposes of destructor insertion.
+    if (info.decl.getLinearTypeErrorMsg().value_or("") != "")
+      return {};
+
+    return info.decl.getDestructorAttr();
+  };
+
+  return getSpecialMemberForType(type, this, getDestructor, loc);
 }
 
-SymbolConstantAttr TypeDeclInfo::getMoveInitForType(Type type,
-                                                    Location loc) const {
+TypedAttr TypeDeclInfo::getMoveInitForType(Type type, Location loc) const {
   return getSpecialMemberForType(
-      type, this,
-      [](StructDeclOp structOp) { return structOp.getMoveInitAttr(); }, loc);
+      type, this, [](StructInfo info) { return info.decl.getMoveInitAttr(); },
+      loc);
 }
 
 /// If this is a non-destructible/linear type, get the error message to emit.
@@ -424,7 +425,7 @@ TypeDeclInfo::getErrorMsgIfLinearType(Type type) const {
   // See if the type is a linear struct or trait.  If so, get the error message
   // to report out.
   if (auto valueType = sugarDynCast<LIT::StructType>(type))
-    return getStructDeclForType(valueType).getLinearTypeErrorMsg();
+    return getStructInfoForType(valueType).decl.getLinearTypeErrorMsg();
 
   if (auto generic = sugarDynCast<ParamType>(type)) {
     if (auto trait = sugarDynCast<TraitType>(generic.getParam().getType())) {
@@ -458,9 +459,9 @@ unsigned TypeDeclInfo::getNumFieldsInType(Type type) const {
   // If not, we compute it recursively.  Structs cannot be infinitely deep, so
   // we can just do this recursively.
   auto smIt = shared->structMap.find(structType.getSymbol());
-  assert(smIt != shared->structMap.end() && smIt->second.first &&
+  assert(smIt != shared->structMap.end() && smIt->second.decl &&
          "reference to struct that wasn't declared");
-  LIT::StructDeclOp decl = smIt->second.first;
+  LIT::StructDeclOp decl = smIt->second.decl;
 
   // Initialize a parameter evaluator. We need to compute the resolved field
   // types to recursively compute the number of fields.
@@ -509,7 +510,7 @@ unsigned TypeDeclInfo::getFieldIndex(LIT::StructType type,
 std::tuple<StructFieldOp, unsigned, unsigned>
 TypeDeclInfo::getFieldContaining(LIT::StructType declRef,
                                  unsigned bitIndex) const {
-  LIT::StructDeclOp decl = getStructDeclForType(declRef);
+  LIT::StructDeclOp decl = getStructInfoForType(declRef).decl;
 
   ParameterEvaluator evaluator(decl.getInputParams(), declRef.getParamValues());
   // Scan to find the field that contains this.
@@ -843,8 +844,8 @@ struct ValueSet {
     auto structType = sugarDynCast<LIT::StructType>(eltType);
     if (!structType)
       return false;
-    return !perThreadCache.typeDeclInfo.getStructDeclForType(structType)
-                .getDestructorAttr();
+    return !perThreadCache.typeDeclInfo.getStructInfoForType(structType)
+                .decl.getDestructorAttr();
   }
 
   raw_ostream &printBV(const BitVector &bits, raw_ostream &os) const;
@@ -2318,7 +2319,7 @@ void DestructorInserter::destroyValueIfNeeded(Value value, ValueRef valueRef,
   // that are missing.
   auto valueType = sugarCast<LIT::StructType>(valueRef.getValueType(value));
   LIT::StructDeclOp structDecl =
-      valueSet.getTypeDeclInfo().getStructDeclForType(valueType);
+      valueSet.getTypeDeclInfo().getStructInfoForType(valueType).decl;
 
   // Initialize an evaluator so that we can resolve the field types.
   ParameterEvaluator evaluator;
@@ -2883,7 +2884,7 @@ DestructorInserter::elideCopyInitMem(LIT::CallOp copyInitCall,
   Type destroyedType = srcRefType.getElementType();
 
   // Otherwise, try to promote to a __moveinit__ call if present.
-  SymbolConstantAttr moveCtor = valueSet.getTypeDeclInfo().getMoveInitForType(
+  TypedAttr moveCtor = valueSet.getTypeDeclInfo().getMoveInitForType(
       destroyedType, builder.getLoc());
   if (!moveCtor)
     return CopyInitSuccess::Failed;
@@ -3852,8 +3853,8 @@ static void clearTrivialFields(ValueRef valueRef, Type valueType,
   // valueRef is referring to a trivial subfield of the overall object.
   unsigned nextBit = 0;
   for (auto field : valueSet.getTypeDeclInfo()
-                        .getStructDeclForType(valueDRType)
-                        .getFieldDecls()) {
+                        .getStructInfoForType(valueDRType)
+                        .decl.getFieldDecls()) {
     // Rebound the field type first before we query the number of fields. This
     // resolves potential generic fields.
     // ```
