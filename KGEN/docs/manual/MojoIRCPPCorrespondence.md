@@ -226,7 +226,7 @@ module {
 There are a few helpers for generating a method call via C++:
 
 - If calling `__getitem__`, `__setitem__`, `__getattr__`, `__setattr__`, use
-   `emitGetterSetterAccess`.
+  `emitGetterSetterAccess`.
 - If calling a constructor, use `IREmitter::emitConstructorCall`
 - If calling a method, used `IREmitter::emitNamedMethodCall`
 
