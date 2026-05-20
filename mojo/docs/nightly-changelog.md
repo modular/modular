@@ -97,6 +97,9 @@ This version is still a work in progress.
   reflect that writing invalid UTF-8 to the resulting `Span[Byte]` can lead to
   later issues like out of bounds access.
 
+- A new `BinaryHeap` collection has been added to the `std.collections` module.
+  This is a list-backed binary max-heap.
+
 - `List[T]` no longer requires its type to be `Copyable`, but now works with
   `Movable`-only types. Iteration still requires `Copyable` and will emit
   a `comptime assert` if not satisfied.
