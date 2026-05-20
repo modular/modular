@@ -132,7 +132,6 @@ __all__ = [
     "MoEQuantized",
     "Module",
     "MultiheadAttention",
-    "PagedCacheValues",
     "QuantConfig",
     "QuantFormat",
     "RMSNorm",
