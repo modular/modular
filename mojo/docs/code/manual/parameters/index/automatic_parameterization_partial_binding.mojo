@@ -18,7 +18,7 @@ struct Fudge[sugar: Int, cream: Int, chocolate: Int = 7](Writable):
 
 
 def eat(f: Fudge[5, ...]):
-    print("Ate " + String(f))
+    print("Ate", f)
 
 
 def devour(f: Fudge[_, 6, _]):

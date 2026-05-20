@@ -23,7 +23,7 @@ struct ExampleStruct:
     ) -> String:
         var out = data.copy()
         for _ in range(count):
-            out = out + "{}".format(init_value)
+            out.write(init_value)
         return out
 
     def __init__(out self):

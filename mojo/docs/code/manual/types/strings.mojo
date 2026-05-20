@@ -51,6 +51,9 @@ def template_1() raises:
     var list = [1, 2, 3]
     assert_true(String(t"{list[0] + list[1]}") == "3")
 
+    # Literal braces use {{ and }}.
+    assert_true(String(t"Use {{braces}} like this") == "Use {braces} like this")
+
 
 def main() raises:
     construct_1()
