@@ -39,9 +39,7 @@ def test_kernel_library(
 
         with pytest.raises(ValueError) as err:
             kernels.add_path(Path("/path/to/invalid.mojoc"))
-        assert "No such file or directory" in str(
-            err.value
-        ) or "failed to load Mojo package" in str(err.value)
+        assert "failed to import kernels" in str(err.value)
 
         kernels.add_path(kernel_verification_ops_path)
         assert "make_counter" in kernels
@@ -65,10 +63,7 @@ def test_undefined_kernel(kernel_verification_ops_path: Path) -> None:
                 values=[graph.inputs[0]],
                 out_types=[tensor_type],
             )
-        assert (
-            "Could not find a mojo kernel registered for i_am_not_a_kernel"
-            in str(err.value)
-        )
+        assert "no kernel registered for 'i_am_not_a_kernel'" in str(err.value)
 
 
 def test_my_add_valid(

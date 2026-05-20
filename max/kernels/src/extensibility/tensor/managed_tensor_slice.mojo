@@ -26,7 +26,6 @@ from layout import CoordLike, IntTuple
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from compiler_internal.directives import (
     StaticTensorSpec,
-    __mogg_intrinsic_attr,
     StaticTensorSpecInternal,
     get_row_major_tensor_spec_static,
     InputFusion,
@@ -862,7 +861,6 @@ struct ManagedTensorSlice[
             simd_width=width, element_alignment=element_alignment
         ](self, ridx)
 
-    @__mogg_intrinsic_attr("mogg.tensor_fused_load")
     @always_inline
     def _fused_load[
         width: Int,
@@ -979,7 +977,6 @@ struct ManagedTensorSlice[
             element_alignment=element_alignment,
         ](self, ridx, val)
 
-    @__mogg_intrinsic_attr("mogg.tensor_fused_store")
     @always_inline
     def _fused_store[
         width: SIMDSize,
