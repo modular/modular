@@ -18,6 +18,7 @@
 #include "KGEN/Support/Configuration.h"
 #include "KGEN/Support/ForceLinkMLIRC.h"
 #include "KGEN/ToolCommon/OOMHandler.h"
+#include "Support/Configuration.h"
 #include "Support/CrashReporting/CrashReporting.h"
 #include "Support/Driver/DriverSupport.h"
 #include "Support/LogicalResult.h"
@@ -104,6 +105,24 @@ int main(int argc, char **argv) {
     const char *versionStr = getMojoVersionString();
     llvm::outs() << llvm::formatv("Mojo {0} ({1})\n", versionStr,
                                   version.revision);
+    return 0;
+  }
+  case options::OPT_print_cache_location: {
+    // Resolve the same cache root used by ObjectCompiler / KGENCompiler at
+    // runtime, and report where the `.mojo_cache` directory lives.
+    ErrorOr<Config> cfg = Config::open();
+    if (cfg.isError()) {
+      llvm::errs() << "error: failed to open Modular configuration: "
+                   << cfg.getError() << "\n";
+      return 1;
+    }
+    auto cacheFolder = cfg->getModularCacheFolderPath();
+    if (cacheFolder.isError()) {
+      llvm::errs() << "error: failed to resolve cache folder: "
+                   << cacheFolder.getError() << "\n";
+      return 1;
+    }
+    llvm::outs() << (*cacheFolder / ".mojo_cache").string() << "\n";
     return 0;
   }
   case options::OPT_help:
