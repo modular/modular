@@ -1433,6 +1433,8 @@ struct CPython(Defaultable, Movable):
     var _PyLong_AsSsize_t: PyLong_AsSsize_t.type
     # Boolean Objects
     var _PyBool_Type: PyTypeObjectPtr
+    var _Py_True: PyObjectPtr
+    var _Py_False: PyObjectPtr
     var _PyBool_FromLong: PyBool_FromLong.type
     # Floating-Point Objects
     var _PyFloat_Type: PyTypeObjectPtr
@@ -1634,6 +1636,26 @@ struct CPython(Defaultable, Movable):
         self._PyBool_Type = self.lib.get_symbol[PyTypeObject](
             "PyBool_Type"
         ).value()
+        if self.version.minor >= 13:
+            # Py_GetConstantBorrowed is part of the Stable ABI since version 3.13.
+            # Py_CONSTANT_FALSE = 1, Py_CONSTANT_TRUE = 2.
+            self._Py_False = self.lib.call[
+                "Py_GetConstantBorrowed", PyObjectPtr
+            ](1)
+            self._Py_True = self.lib.call[
+                "Py_GetConstantBorrowed", PyObjectPtr
+            ](2)
+        else:
+            self._Py_True = PyObjectPtr(
+                upcast_from=self.lib.get_symbol[PyObject](
+                    "_Py_TrueStruct"
+                ).value()
+            )
+            self._Py_False = PyObjectPtr(
+                upcast_from=self.lib.get_symbol[PyObject](
+                    "_Py_FalseStruct"
+                ).value()
+            )
         self._PyBool_FromLong = PyBool_FromLong.load(self.lib.borrow())
         # Floating-Point Objects
         # PyTypeObject PyFloat_Type
@@ -2570,6 +2592,22 @@ struct CPython(Defaultable, Movable):
         - https://docs.python.org/3/c-api/bool.html#c.PyBool_FromLong
         """
         return self._PyBool_FromLong(value)
+
+    def Py_True(self) -> PyObjectPtr:
+        """The Python `True` object. Borrowed reference.
+
+        References:
+        - https://docs.python.org/3.10/c-api/bool.html#c.Py_True
+        """
+        return self._Py_True
+
+    def Py_False(self) -> PyObjectPtr:
+        """The Python `False` object. Borrowed reference.
+
+        References:
+        - https://docs.python.org/3.10/c-api/bool.html#c.Py_False
+        """
+        return self._Py_False
 
     # ===-------------------------------------------------------------------===#
     # Floating-Point Objects
