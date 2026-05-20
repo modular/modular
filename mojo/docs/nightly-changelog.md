@@ -51,6 +51,17 @@ This version is still a work in progress.
 
 ## Library changes
 
+- Added `std.gpu.host.CompletionFlag`, a non-owning handle to an MLRT
+  `M::Driver::CompletionFlag` (an 8-byte slot in pinned host memory mapped
+  into a device's address space). Pairs with the new
+  `DeviceStream.wait_for_host_value(flag, value)` method, which stalls the
+  stream until the flag's 64-bit slot equals the given value. Corresponds to
+  CUDA's `cuStreamWaitValue64` and captures cleanly into a CUDA graph as a
+  wait-value node, letting a CPU thread (or an AsyncRT worker dispatched by
+  `enqueue_host_func`) gate a GPU stream on host-produced data without a
+  second stream or a blocking host-function callback. Currently CUDA-only;
+  other backends raise.
+
 - `Coord`, `coord()`, `Idx`, `ComptimeInt`, `RuntimeInt`, and related coordinate
   helpers now live in the standard library module
   [`std.utils.coord`](/docs/std/utils/coord/). The
