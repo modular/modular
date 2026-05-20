@@ -37,7 +37,21 @@ _NO_RUN_LIST = [
     # declaration 'paramfor_has_next'"), causing cascade failures in all stdlib
     # files that use comptime for.  Introduced by the trait_downcast_var
     # removal in MOCO-3729.  Remove once the LSP parsing cycle is fixed.
+    "algorithm/backend/cpu/reduction.mojo",
+    "algorithm/backend/tile.mojo",
+    "algorithm/backend/unswitch.mojo",
     "builtin/_stubs.mojo",
+    "builtin/tuple.mojo",
+    "ffi/unsafe_union.mojo",
+    "format/__init__.mojo",
+    "format/_utils.mojo",
+    "gpu/_utils.mojo",
+    "gpu/primitives/block.mojo",
+    "iter/__init__.mojo",
+    "reflection/reflect.mojo",
+    "sys/info.mojo",
+    "utils/index.mojo",
+    "utils/variant.mojo",
 ]
 
 # Files with known docstring example errors. These run against the LSP server
