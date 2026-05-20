@@ -16,6 +16,7 @@
 #include "Config/Version.h"
 #include "KGEN/Support/CLOptionUtils.h"
 #include "KGEN/Support/Configuration.h"
+#include "KGEN/Support/Constants.h"
 #include "KGEN/Support/ForceLinkMLIRC.h"
 #include "KGEN/ToolCommon/OOMHandler.h"
 #include "Support/Configuration.h"
@@ -128,7 +129,9 @@ int main(int argc, char **argv) {
                    << cacheFolder.getError() << "\n";
       return 1;
     }
-    llvm::outs() << (*cacheFolder / ".mojo_cache").string() << "\n";
+    llvm::outs()
+        << (*cacheFolder / (KGEN::kMojoCacheBaseDirName.str())).string()
+        << "\n";
     return 0;
   }
   case options::OPT_clear_cache: {
@@ -159,7 +162,8 @@ int main(int argc, char **argv) {
                    << cacheFolder.getError() << "\n";
       return 1;
     }
-    std::filesystem::path mojoCachePath = *cacheFolder / ".mojo_cache";
+    std::filesystem::path mojoCachePath =
+        *cacheFolder / KGEN::kMojoCacheBaseDirName.str();
 
     std::error_code ec;
     if (!std::filesystem::exists(mojoCachePath, ec)) {

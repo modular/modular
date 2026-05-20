@@ -22,6 +22,7 @@
 #include "KGEN/MojoTooling/ParserDriver.h"
 #include "KGEN/MojoTooling/PublicASTDecl.h"
 #include "KGEN/POPDialect/POPOps.h"
+#include "KGEN/Support/Constants.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
 #include "KGEN/TransformUtils/SlicingUtils.h"
 #include "lldb/Expression/DiagnosticManager.h"
@@ -122,8 +123,9 @@ MojoExpressionParser::Impl::Impl(ExecutionContextScope *exeScope,
   pmOptions.operationName = ModuleOp::getOperationName();
 
   // Create the compiler instance.
-  auto compilerOr = ObjectCompiler::create(
-      ".mojo_cache", hackCompilationOptions, /*isJIT=*/true, *ctx, pmOptions);
+  auto compilerOr =
+      ObjectCompiler::create(kMojoCacheBaseDirName, hackCompilationOptions,
+                             /*isJIT=*/true, *ctx, pmOptions);
 
   if (failed(compilerOr))
     return;

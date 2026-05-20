@@ -17,6 +17,7 @@
 #include "KGEN/MojoParser/EntryPoint.h"
 #include "KGEN/POPDialect/POPTypes.h"
 #include "KGEN/Support/CompilerProfiling.h"
+#include "KGEN/Support/Constants.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
 #include "KGEN/ToolCommon/InitAllDialects.h"
 #include "MLRT/AsyncRT/CompilerSupport/Context.h"
@@ -276,8 +277,8 @@ static int executeModule(const State &state, MLRT::CPUDevice &cpuDevice,
     return state.reportError("module does not define a `main` function");
 
   // Create the object compiler and compile the module to an archive.
-  auto objCompilerOr =
-      ObjectCompiler::create(".mojo_cache", options, /*isJIT=*/true, context);
+  auto objCompilerOr = ObjectCompiler::create(kMojoCacheBaseDirName, options,
+                                              /*isJIT=*/true, context);
   if (failed(objCompilerOr))
     return state.reportError(objCompilerOr.getError());
   ObjectCompiler &objCompiler = **objCompilerOr;

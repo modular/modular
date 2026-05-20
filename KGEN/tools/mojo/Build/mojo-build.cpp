@@ -15,6 +15,7 @@
 #include "KGEN/MojoParser/EntryPoint.h"
 #include "KGEN/POPDialect/POPTypes.h"
 #include "KGEN/Support/Configuration.h"
+#include "KGEN/Support/Constants.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
 #include "KGEN/ToolCommon/InitAllDialects.h"
 #include "MLRT/AsyncRT/CompilerSupport/Context.h"
@@ -534,8 +535,8 @@ compileModuleToArchive(const State &state, MLRT::CPUDevice &cpuDevice,
   // Compile the moduleOp down to the post-elaboration phase, because before
   // that phase we don't have flat symbols.
   ErrorOr<std::unique_ptr<ObjectCompiler>> objectCompilerOr =
-      ObjectCompiler::create(".mojo_cache", effectiveOptions, /*isJIT=*/false,
-                             context);
+      ObjectCompiler::create(kMojoCacheBaseDirName, effectiveOptions,
+                             /*isJIT=*/false, context);
 
   if (objectCompilerOr.isError())
     return state.reportError(objectCompilerOr.getError());
