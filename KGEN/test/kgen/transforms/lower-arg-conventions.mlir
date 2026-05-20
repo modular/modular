@@ -1,4 +1,4 @@
-// RUN: kgen-opt -allow-unregistered-dialect -lower-arg-conventions -verify-parameters %s | FileCheck %s
+// RUN: kgen-opt -allow-unregistered-dialect -lower-arg-conventions=mem-to-reg-size-limit=256 -verify-parameters %s | FileCheck %s
 
 // CHECK-LABEL: kgen.func @reg_passable(%arg0: si32 owned, %arg1: si32)
 kgen.func @reg_passable(%arg0: si32 owned, %arg1: si32) -> si32 {
@@ -25,6 +25,24 @@ kgen.func @lower_args(
   // CHECK: "some.use"(%[[P0]], %[[P1]])
   "some.use"(%arg0, %arg1) : (!kgen.pointer<index>, !kgen.pointer<struct<(index, index)>>) -> ()
   kgen.return
+}
+
+// COM: Ensure that for non GPU targets a register passable struct that exceeds the inline size
+// is not promoted.
+module attributes {M.target_info = #M.target<triple = "x86_64-unknown-linux-gnu", arch="">} {
+  // CHECK-LABEL: kgen.func @size_gated_large_targeted(%arg0: !kgen.pointer<simd<300, ui8>> read_mem)
+  // CHECK: "some.use"(%arg0) : (!kgen.pointer<simd<300, ui8>>) -> ()
+  kgen.func @size_gated_large_targeted(%arg0: !kgen.pointer<simd<300, ui8>> read_mem) {
+    "some.use"(%arg0) : (!kgen.pointer<simd<300, ui8>>) -> ()
+    kgen.return
+  }
+
+  // CHECK-LABEL: kgen.func @byref_res_large_targeted(%arg0: index owned, %arg1: !kgen.pointer<simd<300, ui8>> byref_result) -> !kgen.none
+  kgen.func @byref_res_large_targeted(%arg0: index owned, %__result__: !kgen.pointer<simd<300, ui8>> byref_result) -> !kgen.none {
+    "somehow.populate"(%__result__) : (!kgen.pointer<simd<300, ui8>>) -> ()
+    %none = kgen.param.constant: !kgen.none = <#kgen.none>
+    kgen.return %none : !kgen.none
+  }
 }
 
 !lower_args_sig = !kgen.generator<(

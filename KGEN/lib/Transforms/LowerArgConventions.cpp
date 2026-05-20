@@ -21,6 +21,8 @@
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
+#include "KGEN/ToolCommon/KGENPasses.h"
+#include "Support/MDialect/MTypeInterfaces.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
 #include "mlir/IR/Matchers.h"
 #include "mlir/IR/Threading.h"
@@ -42,6 +44,8 @@ static StructType getIfParamPack(Type type) {
   return {};
 }
 
+static Type lowerTypeForGPU(Type type);
+
 /// If the specified value has uses, replace them with a dummy value.
 static void replaceUsesWithDummy(Value v, ImplicitLocOpBuilder &b,
                                  TypedAttr value = {}) {
@@ -56,13 +60,15 @@ static void replaceUsesWithDummy(Value v, ImplicitLocOpBuilder &b,
 namespace {
 struct LowerArgConventionsPass
     : KGEN::impl::LowerArgConventionsBase<LowerArgConventionsPass> {
+  using LowerArgConventionsBase::LowerArgConventionsBase;
   void runOnOperation() override;
 };
 } // namespace
 
 /// Return the lowered type for an in-memory passed argument. If lowering is not
 /// needed, return null.
-static Type lowerPointerType(Type type) {
+static Type lowerPointerType(Type type, TargetInfoAttr target,
+                             unsigned maxInlineSize) {
   // Only pointer types should be lowered.
   auto argPtr = dyn_cast<PointerType>(type);
   if (!argPtr)
@@ -73,6 +79,32 @@ static Type lowerPointerType(Type type) {
   if (auto structType = dyn_cast<StructType>(elType))
     if (structType.isDefinitelyMemoryOnly())
       return {};
+
+  // For GPU lowering, avoid promoting pointers whose element will be forced
+  // back to memory form.
+  if (target && isGPUTriple(target.getTriple())) {
+    if (auto structType = dyn_cast<StructType>(elType);
+        structType && !structType.getIsParamPack() && lowerTypeForGPU(elType))
+      return {};
+  }
+
+  if (target) {
+    // Parameter packs represent a list of arguments. Unconditionally promote
+    // them. Promotion will be considered for each individual member of the
+    // pack.
+    if (auto structType = dyn_cast<StructType>(elType);
+        structType && structType.getIsParamPack())
+      return elType;
+
+    std::optional<int64_t> size =
+        DataLayoutInterface::getTypeStoreSize(target, elType);
+    // If layout can't provide a stable size, prefer keeping the promotion path
+    // so lowering can continue on the unpacked/value form.
+    if (!size || *size < 0)
+      return elType;
+    if (*size > static_cast<int64_t>(maxInlineSize))
+      return {};
+  }
 
   // We must be dealing with something register passable (e.g. index).
   return elType;
@@ -117,8 +149,9 @@ struct TransformResult {
 };
 class Transform {
 public:
-  Transform(TargetInfoAttr target, DebugInfo::DISubprogramAttr spAttr)
-      : target(target), spAttr(spAttr) {}
+  Transform(TargetInfoAttr target, DebugInfo::DISubprogramAttr spAttr,
+            unsigned maxInlineSize)
+      : target(target), spAttr(spAttr), maxInlineSize(maxInlineSize) {}
   virtual ~Transform() = default;
   virtual Type typeOfValueAt(unsigned operandIndex) = 0;
   virtual void performResultTransform(unsigned operandIndex, Type loweredType,
@@ -135,12 +168,14 @@ public:
   Location addDI(Location loc);
   TargetInfoAttr target;
   DebugInfo::DISubprogramAttr spAttr;
+  unsigned maxInlineSize;
 };
 class CallsiteTransform : public Transform {
 public:
   CallsiteTransform(ImplicitLocOpBuilder &b, Operation *callOp,
-                    TargetInfoAttr target, DebugInfo::DISubprogramAttr spAttr)
-      : Transform(target, spAttr), b(b), callOp(callOp) {}
+                    TargetInfoAttr target, DebugInfo::DISubprogramAttr spAttr,
+                    unsigned maxInlineSize)
+      : Transform(target, spAttr, maxInlineSize), b(b), callOp(callOp) {}
   Type typeOfValueAt(unsigned operandIndex) override;
   void performResultTransform(unsigned operandIndex, Type loweredType,
                               ArgConvention convention) override;
@@ -159,8 +194,8 @@ public:
 class SignatureTransform : public Transform {
 public:
   SignatureTransform(FuncType oldSig, TargetInfoAttr target,
-                     DebugInfo::DISubprogramAttr spAttr)
-      : Transform(target, spAttr), oldSig(oldSig) {
+                     DebugInfo::DISubprogramAttr spAttr, unsigned maxInlineSize)
+      : Transform(target, spAttr, maxInlineSize), oldSig(oldSig) {
     llvm::append_range(newInputs, oldSig.getValues().getInputs());
   }
   Type typeOfValueAt(unsigned operandIndex) override;
@@ -177,7 +212,8 @@ public:
 
 class FuncTransform : public Transform {
 public:
-  FuncTransform(ImplicitLocOpBuilder &b, FuncOp funcOp, TargetInfoAttr target);
+  FuncTransform(ImplicitLocOpBuilder &b, FuncOp funcOp, TargetInfoAttr target,
+                unsigned maxInlineSize);
   void performResultTransform(unsigned operandIndex, Type loweredType,
                               ArgConvention convention) override;
   void performThrowNeverElimination(unsigned operandIndex) override;
@@ -258,10 +294,8 @@ static void transformNonResultValue(Transform *transform, unsigned operandIndex,
                                   convention == ArgConvention::DeinitMem))
     return;
 
-  if (auto elType = lowerPointerType(type)) {
-    // Do not promote if we're going to demote next iteration.
-    if (needsGPUTransform && lowerTypeForGPU(elType))
-      return;
+  if (auto elType =
+          lowerPointerType(type, transform->target, transform->maxInlineSize)) {
     transform->applyPointerTransform(operandIndex, elType);
     conventions[argConventionIndex] =
         (conventions[argConventionIndex] == ArgConvention::OwnedMem ||
@@ -304,8 +338,8 @@ static void transformNonResultValue(Transform *transform, unsigned operandIndex,
 }
 
 FuncTransform::FuncTransform(ImplicitLocOpBuilder &b, FuncOp funcOp,
-                             TargetInfoAttr target)
-    : Transform(target, funcOp.getSubprogramScope()), b(b),
+                             TargetInfoAttr target, unsigned maxInlineSize)
+    : Transform(target, funcOp.getSubprogramScope(), maxInlineSize), b(b),
       block(funcOp.getBodyRegion().front()),
       LLVMArgMetadata(funcOp.getLLVMArgMetadata().getValue()) {}
 
@@ -533,23 +567,30 @@ static TransformResult lowerSignature(FuncType oldSig, size_t operandOffset,
     if (oldSig.isAsync()) // Async is broken.
       continue;
 
+    Type valueType = transform->typeOfValueAt(idx + operandOffset);
+
+    // Preserve throw-never elimination independent of size-capped register
+    // passing. `!kgen.pointer<!kgen.never>` may not produce a concrete size,
+    // but we should still remove the error slot entirely.
+    if (convention == ArgConvention::ByRefError) {
+      if (auto ptrTy = dyn_cast<PointerType>(valueType);
+          ptrTy && isa<NeverType>(ptrTy.getElementType())) {
+        argConventions.erase(argConventions.begin() + idx);
+        result.abiLowering |= ABI::RemoveError;
+        transform->performThrowNeverElimination(idx + operandOffset);
+        --idx;
+        continue;
+      }
+    }
+
     // This is either a byref_result or byref_error argument. See if it can be
     // lowered to being returned directly in a register.
-    Type loweredType =
-        lowerPointerType(transform->typeOfValueAt(idx + operandOffset));
+    Type loweredType = lowerPointerType(valueType, transform->target,
+                                        transform->maxInlineSize);
     if (!loweredType)
       continue;
 
     argConventions.erase(argConventions.begin() + idx);
-
-    // If this is a raise of Never, just remove the error slot entirely.
-    if (convention == ArgConvention::ByRefError &&
-        sugarIsa<NeverType>(loweredType)) {
-      result.abiLowering |= ABI::RemoveError;
-      transform->performThrowNeverElimination(idx + operandOffset);
-      --idx;
-      continue;
-    }
 
     // Otherwise note that we're returning an error slot or a result slot.
     if (convention == ArgConvention::ByRefError) {
@@ -597,8 +638,9 @@ static TransformResult lowerSignature(FuncType oldSig, size_t operandOffset,
 
 /// Lowers the given signature if needed
 static FuncType lowerSignature(FuncType sig, TargetInfoAttr target,
-                               DebugInfo::DISubprogramAttr spAttr) {
-  SignatureTransform transform(sig, target, spAttr);
+                               DebugInfo::DISubprogramAttr spAttr,
+                               unsigned maxInlineSize) {
+  SignatureTransform transform(sig, target, spAttr, maxInlineSize);
   TransformResult result = lowerSignature(sig, 0, &transform);
   FuncType newSig = FuncType::get(
       sig.getContext(),
@@ -611,11 +653,13 @@ static FuncType lowerSignature(FuncType sig, TargetInfoAttr target,
 /// Helper to perform the bulk of the lowering for `kgen.call` and
 /// `kgen.call_indirect` ops.
 static void lowerCallOpImpl(Operation *op, FuncType oldSig,
-                            DebugInfo::DISubprogramAttr spAttr) {
+                            DebugInfo::DISubprogramAttr spAttr,
+                            unsigned maxInlineSize) {
 
   ImplicitLocOpBuilder b(op->getLoc(), op);
   unsigned operandIndex = isa<CallIndirectOp>(op) ? 1 : 0;
-  CallsiteTransform transform(b, op, lookupTargetInfo(op), spAttr);
+  CallsiteTransform transform(b, op, lookupTargetInfo(op), spAttr,
+                              maxInlineSize);
   TransformResult result = lowerSignature(oldSig, operandIndex, &transform);
   unsigned abiLowering = result.abiLowering;
 
@@ -763,11 +807,11 @@ static Value repackFuncVariantResult(ReturnOp returnOp,
   return ifOp.getResult(0);
 }
 
-static LogicalResult lowerFuncOp(FuncOp funcOp) {
+static LogicalResult lowerFuncOp(FuncOp funcOp, unsigned maxInlineSize) {
   FuncType sig = funcOp.getFuncTypeGenerator().getBody();
   ImplicitLocOpBuilder b(funcOp.getLoc(), funcOp);
   b.setInsertionPoint(&funcOp.getBodyRegion().front().front());
-  FuncTransform transform(b, funcOp, lookupTargetInfo(funcOp));
+  FuncTransform transform(b, funcOp, lookupTargetInfo(funcOp), maxInlineSize);
   TransformResult result = lowerSignature(sig, 0, &transform);
   FuncType newSig = FuncType::get(
       funcOp.getContext(),
@@ -877,18 +921,19 @@ static void lowerExternalCallOpImpl(POP::ExternalCallOp op) {
 
 void LowerArgConventionsPass::runOnOperation() {
   FuncOp func = getOperation();
-  if (failed(lowerFuncOp(func)))
+  if (failed(lowerFuncOp(func, maxInlineSize)))
     return signalPassFailure();
 
   // Lower the ops in the function body.
   DebugInfo::DISubprogramAttr spAttr = func.getSubprogramScope();
   func.walk([&](Operation *op) {
     if (auto callOp = dyn_cast<CallOp>(op))
-      return lowerCallOpImpl(
-          callOp, callOp.getCalleeSignature().getInstantiatedBody(), spAttr);
+      return lowerCallOpImpl(callOp,
+                             callOp.getCalleeSignature().getInstantiatedBody(),
+                             spAttr, maxInlineSize);
     if (auto callOp = dyn_cast<CallIndirectOp>(op))
       return lowerCallOpImpl(callOp, callOp.getCallee().getType().getBody(),
-                             spAttr);
+                             spAttr, maxInlineSize);
     if (auto extCall = dyn_cast<POP::ExternalCallOp>(op))
       return lowerExternalCallOpImpl(extCall);
   });
@@ -898,8 +943,9 @@ void LowerArgConventionsPass::runOnOperation() {
   // would be lowered already).
   mlir::AttrTypeReplacer replacer;
   TargetInfoAttr target = lookupTargetInfo(func);
-  replacer.addReplacement(
-      [&](FuncType sig) { return lowerSignature(sig, target, spAttr); });
+  replacer.addReplacement([&](FuncType sig) {
+    return lowerSignature(sig, target, spAttr, maxInlineSize);
+  });
   auto metatype = TypeType::get(&getContext());
   replacer.addReplacement([&](TypeParamAttr type) {
     // Canonicalize metatypes.
