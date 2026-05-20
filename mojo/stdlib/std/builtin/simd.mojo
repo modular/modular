@@ -320,8 +320,7 @@ struct FastMathFlag(Equatable, ImplicitlyCopyable, RegisterPassable):
 
     Examples:
         ```mojo
-        from builtin.simd import FastMathFlag
-
+        from std.builtin.simd import FastMathFlag
         var value = Float32(2.0)
         var multiplier = Float32(3.0)
         var accumulator = Float32(1.0)

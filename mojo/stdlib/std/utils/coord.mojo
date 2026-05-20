@@ -1410,10 +1410,10 @@ All elements are converted to Scalar[dtype], regardless of their original type.
 Example:
 
     ```mojo
-    from std.utils.coord import _CoordToDynamic, ComptimeInt, Coord
-    # All elements become Int64
-    comptime types = _CoordToDynamic[DType.int64, ComptimeInt[3], Int32, ComptimeInt[5]]
-    # types is equivalent to TypeList.of[Trait=CoordLike, Int64, Int64, Int64]()
+    from std.utils.coord import _CoordToDynamic, ComptimeInt, CoordLike
+    # All elements become Scalar[DType.int64]
+    comptime types = _CoordToDynamic[DType.int64, TypeList.of[Trait=CoordLike, ComptimeInt[3], Scalar[DType.int32], ComptimeInt[5]]()]
+    # types is equivalent to TypeList.of[Trait=CoordLike, Scalar[DType.int64], Scalar[DType.int64], Scalar[DType.int64]]()
     ```
 """
 
@@ -1579,7 +1579,7 @@ For each dimension:
 
 Example:
     ```mojo
-    from std.utils.coord import _Idx2CrdResultTypes, ComptimeInt
+    from std.utils.coord import _Idx2CrdResultTypes, ComptimeInt, CoordLike
     comptime stride_t = TypeList.of[Trait=CoordLike, ComptimeInt[4], ComptimeInt[4], ComptimeInt[1]]()
     comptime shape_t = TypeList.of[Trait=CoordLike, ComptimeInt[3], ComptimeInt[1], ComptimeInt[4]]()
     comptime types = _Idx2CrdResultTypes[DType.int64, Int64, stride_t, shape_t]
@@ -1706,9 +1706,10 @@ struct _RegTuple[*element_types: CoordLike](
         Usage:
 
         ```mojo
-        image_coords = _RegTuple[Int, Int](100, 200) # row-major indexing
-        screen_coords = image_coords.reverse() # (col, row) for x,y display
-        print(screen_coords[0], screen_coords[1]) # output: 200, 100
+        from std.utils.coord import _RegTuple, ComptimeInt, Idx
+        var image_coords = _RegTuple[ComptimeInt[100], ComptimeInt[200]](Idx(100), Idx(200))
+        var screen_coords = image_coords.reverse()
+        print(screen_coords[0].value(), screen_coords[1].value())  # output: 200, 100
         ```
         """
         # Mark 'result' as being initialized so we can work on it.

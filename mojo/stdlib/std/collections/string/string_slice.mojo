@@ -1385,7 +1385,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         Example:
 
         ```mojo
-        from testing import assert_equal
+        from std.testing import assert_equal
         # "café" with combining accent: c, a, f, e + combining acute
         var s = StringSlice("cafe\\u{0301}")
         var count = 0
@@ -1523,7 +1523,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         Example:
 
         ```mojo
-        from testing import assert_equal
+        from std.testing import assert_equal
         var s = StringSlice("Hello")
         assert_equal(s.count_graphemes(), 5)
         ```

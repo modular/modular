@@ -25,6 +25,7 @@ struct BinaryHeap[T: Copyable & Comparable](
 
     Examples:
         ```mojo
+        from std.collections.binary_heap import BinaryHeap
         var heap = BinaryHeap[Int]()
         heap.push(5)
         heap.push(10)
@@ -156,6 +157,7 @@ struct BinaryHeap[T: Copyable & Comparable](
         Examples:
 
         ```mojo
+        from std.collections.binary_heap import BinaryHeap
         var heap = BinaryHeap[Int]()
         heap.push(1)
         heap.push(2)
