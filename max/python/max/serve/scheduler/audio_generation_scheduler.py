@@ -26,7 +26,6 @@ from max.interfaces import (
     AudioGenerationOutput,
     BatchType,
     RequestID,
-    SchedulerResult,
 )
 from max.pipelines.core import TTSContext
 from max.pipelines.kv_cache import PagedKVCacheManager
@@ -41,6 +40,7 @@ from max.serve.queue import (
     drain_queue,
 )
 from max.serve.scheduler.interface import Scheduler
+from max.serve.scheduler_result import SchedulerResult
 from max.serve.telemetry.common import flush_batch_logger, get_batch_logger
 from max.serve.telemetry.metrics import METRICS
 from max.support.human_readable_formatter import to_human_readable_latency

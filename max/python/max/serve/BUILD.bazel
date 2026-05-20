@@ -31,6 +31,15 @@ modular_py_library(
 )
 
 modular_py_library(
+    name = "scheduler_result",
+    srcs = ["scheduler_result.py"],
+    deps = [
+        "//max/python/max/interfaces",
+        requirement("msgspec"),
+    ],
+)
+
+modular_py_library(
     name = "serve",
     srcs = glob(
         ["*.py"],
@@ -40,6 +49,7 @@ modular_py_library(
             "debug.py",
             "exceptions.py",
             "queue.py",
+            "scheduler_result.py",
         ],
     ),
     deps = [

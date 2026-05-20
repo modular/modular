@@ -18,7 +18,6 @@ import numpy as np
 import pytest
 from max.interfaces import (
     RequestID,
-    SchedulerResult,
     TextGenerationInputs,
     TextGenerationOutput,
     TokenBuffer,
@@ -30,6 +29,7 @@ from max.serve.scheduler.config import TokenGenerationSchedulerConfig
 from max.serve.scheduler.text_generation_scheduler import (
     TokenGenerationScheduler,
 )
+from max.serve.scheduler_result import SchedulerResult
 from max.support.math import ceildiv
 
 ARBITRARY_TOKEN_ID = 999

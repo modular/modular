@@ -24,12 +24,12 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
-from max.interfaces import SchedulerResult
 from max.serve.scheduler.decode_scheduler import (
     DecodeScheduler,
     PendingPrefill,
     PendingTransfer,
 )
+from max.serve.scheduler_result import SchedulerResult
 
 
 def _make_self(

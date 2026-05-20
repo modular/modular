@@ -11,44 +11,41 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Defines the :class:`SchedulerResult` data structure."""
+"""Defines the :class:`SchedulerResult` data structure for MAX serve."""
 
 from __future__ import annotations
 
 from typing import Generic
 
 import msgspec
-
-from .pipeline import PipelineOutputType
+from max.interfaces.pipeline import PipelineOutputType
 
 __all__ = ["SchedulerResult"]
 
 
 class SchedulerResult(msgspec.Struct, Generic[PipelineOutputType]):
-    """Structure representing the result of a scheduler operation for a specific pipeline execution.
+    """Structure representing the result of a scheduler operation.
 
-    This class encapsulates the outcome of a pipeline operation as managed by the scheduler,
-    including both the execution status and any resulting data from the pipeline. The scheduler
-    uses this structure to communicate the state of pipeline operations back to clients,
-    whether the operation is still running, has completed successfully, or was cancelled.
-
-    The generic type parameter allows this result to work with different types of pipeline
-    outputs while maintaining type safety.
-
+    Encapsulates the outcome of a pipeline operation as managed by the
+    scheduler, including both the execution status and any resulting data.
+    The scheduler uses this structure to communicate the state of pipeline
+    operations back to clients, whether the operation is still running, has
+    completed successfully, or was cancelled.
     """
 
     is_done: bool
-    """The current status of the pipeline operation from the scheduler's perspective."""
+    """Whether the pipeline operation is complete."""
 
     result: PipelineOutputType | None
-    """The pipeline output data, if any. May be None for cancelled operations or during intermediate states of streaming operations."""
+    """The pipeline output data, if any. ``None`` for cancelled operations or
+    intermediate streaming states."""
 
     @classmethod
     def cancelled(cls) -> SchedulerResult[PipelineOutputType]:
-        """Create a SchedulerResult representing a cancelled pipeline operation.
+        """Creates a ``SchedulerResult`` representing a cancelled operation.
 
         Returns:
-            A :class:`SchedulerResult` that is done.
+            A :class:`SchedulerResult` with ``is_done=True`` and no result.
         """
         return SchedulerResult(is_done=True, result=None)
 
@@ -56,12 +53,12 @@ class SchedulerResult(msgspec.Struct, Generic[PipelineOutputType]):
     def create(
         cls, result: PipelineOutputType
     ) -> SchedulerResult[PipelineOutputType]:
-        """Create a SchedulerResult representing a pipeline operation with some result.
+        """Creates a ``SchedulerResult`` wrapping a pipeline output.
 
         Args:
             result: The pipeline output data.
 
         Returns:
-            A :class:`SchedulerResult` with a result.
+            A :class:`SchedulerResult` reflecting the output's completion state.
         """
         return SchedulerResult(is_done=result.is_done, result=result)

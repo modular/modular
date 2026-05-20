@@ -137,7 +137,6 @@ Requests
    OpenResponsesRequest
    Request
    RequestID
-   SchedulerResult
 
 Tokens
 ------
