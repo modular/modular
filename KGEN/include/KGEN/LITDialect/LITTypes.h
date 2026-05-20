@@ -60,9 +60,6 @@ public:
   /// Get the signature metadata.
   FnMetadataAttr getMetadata();
 
-  /// Get the argument list metadata.
-  PogListAttr getArgListAttrs();
-
   /// Return the name for the argument at the specified index.
   StringAttr getArgName(size_t idx);
 

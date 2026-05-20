@@ -489,17 +489,20 @@ bool FuncType::hasMemoryOnlyResult() {
 }
 
 FuncType FuncType::getWithFnEffects(FnEffects effects) {
-  return FuncType::get(getValues(), getArgConventions(), effects,
-                       getMetadata());
+  return FuncType::get(getValues(), getArgConventions(), effects, getMetadata(),
+                       getArgListAttrs());
 }
 FuncType FuncType::getWithValuesReplaced(FunctionType fnType) {
   return FuncType::get(fnType, getArgConventions(), getFnEffects(),
-                       getMetadata());
+                       getMetadata(), getArgListAttrs());
 }
 
-FuncType FuncType::getWithMetadata(FnMetadataAttrInterface metadata) {
+FuncType FuncType::getWithMetadata(FnMetadataAttrInterface metadata,
+                                   PogListAttr argListAttrs) {
+  if (!argListAttrs)
+    argListAttrs = getArgListAttrs();
   return FuncType::get(getValues(), getArgConventions(), getFnEffects(),
-                       metadata);
+                       metadata, argListAttrs);
 }
 
 size_t FuncType::getNumAsyncReturnSlots() {
@@ -570,7 +573,8 @@ FuncType FuncType::getChecked(function_ref<InFlightDiagnostic()> emitError,
                               TypeRange results) {
   auto result = get(context, inputs, results);
   if (failed(verify(emitError, result.getValues(), result.getArgConventions(),
-                    result.getFnEffects(), result.getMetadata())))
+                    result.getFnEffects(), result.getMetadata(),
+                    result.getArgListAttrs())))
     return {};
   return result;
 }
@@ -579,7 +583,8 @@ LogicalResult FuncType::verify(function_ref<InFlightDiagnostic()> emitError,
                                FunctionType values,
                                ArrayRef<ArgConvention> argConventions,
                                FnEffects effects,
-                               FnMetadataAttrInterface metadata) {
+                               FnMetadataAttrInterface metadata,
+                               PogListAttr argListAttrs) {
   // Check we have the right number of conventions.
   if (argConventions.size() != values.getInputs().size())
     return emitError() << "incorrect # of input conventions specified";
@@ -687,9 +692,11 @@ FuncTypeGeneratorType::FuncTypeGeneratorType(GeneratorType gen)
 FuncTypeGeneratorType
 FuncTypeGeneratorType::get(ArrayRef<Type> inputParamTypes, FunctionType values,
                            ArrayRef<ArgConvention> argConvs, FnEffects effects,
-                           Attribute fnMetadata, Attribute genMetadata) {
+                           Attribute fnMetadata, Attribute genMetadata,
+                           Attribute argListAttrs) {
   auto sig = FuncType::get(values, argConvs, effects,
-                           ::cast_or_null<FnMetadataAttrInterface>(fnMetadata));
+                           ::cast_or_null<FnMetadataAttrInterface>(fnMetadata),
+                           argListAttrs);
   return FuncTypeGeneratorType(GeneratorType::get(
       inputParamTypes, sig, ::cast_or_null<PogListAttr>(genMetadata)));
 }
@@ -722,7 +729,7 @@ FuncTypeGeneratorType FuncTypeGeneratorType::remapToFuncTypeGenerator(
     ArrayRef<ParamDeclAttr> inputParams, FunctionType functionType,
     ArrayRef<ArgConvention> argConventions, FnEffects effects,
     Attribute fnMetadata, Attribute genMetadata,
-    function_ref<InFlightDiagnostic()> emitError) {
+    function_ref<InFlightDiagnostic()> emitError, Attribute argListAttrs) {
   IndexRefRemapper remapper(inputParams, {});
   SmallVector<Type> inputParamTypes;
   for (ParamDeclAttr param : inputParams)
@@ -737,7 +744,8 @@ FuncTypeGeneratorType FuncTypeGeneratorType::remapToFuncTypeGenerator(
 
   auto newSig = FuncType::getChecked(
       emitError, remapper.replace(functionType), argConventions, effects,
-      fnMetadata ? remapper.replace(fnMetadata) : nullptr);
+      fnMetadata ? remapper.replace(fnMetadata) : nullptr,
+      argListAttrs ? remapper.replace(argListAttrs) : nullptr);
   if (!newSig)
     return nullptr;
   return GeneratorType::get(inputParamTypes, newSig,

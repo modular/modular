@@ -1352,15 +1352,16 @@ static OptionalParseResult parseOptionalLITFuncType(AsmParser &p,
   passingKindParser.populatePassingKinds(argPassingKinds);
 
   MLIRContext *ctx = p.getContext();
-  auto metadata = FnMetadataAttr::get(
+  auto pogList =
       PogListAttr::get(ctx, argNames, argPassingKinds, argVariadics,
                        defaultValues, origVariadicConvention,
-                       /*paramConstraints=*/{}, /*bodyConstraints=*/{}),
-      numOriginDecls, captureOrigins,
-      isNestedOriginExclusivityCheckingDisabled);
+                       /*paramConstraints=*/{}, /*bodyConstraints=*/{});
+  auto metadata =
+      FnMetadataAttr::get(pogList, numOriginDecls, captureOrigins,
+                          isNestedOriginExclusivityCheckingDisabled);
   signature =
       FuncType::getChecked([&] { return p.emitError(startLoc); }, functionType,
-                           argConventions, effects, metadata);
+                           argConventions, effects, metadata, pogList);
 
   return success(!!signature);
 }
@@ -1460,10 +1461,6 @@ FnMetadataAttr FnType::getMetadata() {
   return ::cast<FnMetadataAttr>(FuncType::getMetadata());
 }
 
-PogListAttr FnType::getArgListAttrs() {
-  return getMetadata().getArgListAttrs();
-}
-
 StringAttr FnType::getArgName(size_t idx) {
   return getArgListAttrs().getName(idx);
 }
@@ -1538,9 +1535,11 @@ FunctionType FnType::substituteImplicitOriginsIntoValues(
 }
 
 FnType FnType::getWithCaptureOrigins(TypedAttr origins) {
-  return getWithMetadata(FnMetadataAttr::get(
-      getArgListAttrs(), getNumImplicitOriginDecls(), origins,
-      getIsNestedOriginExclusivityCheckingDisabled()));
+  PogListAttr argListAttrs = getArgListAttrs();
+  return getWithMetadata(
+      FnMetadataAttr::get(argListAttrs, getNumImplicitOriginDecls(), origins,
+                          getIsNestedOriginExclusivityCheckingDisabled()),
+      argListAttrs);
 }
 
 bool FnType::isAnyVarArg(size_t index) {
@@ -1554,7 +1553,7 @@ bool FnType::isPosVarArg(size_t index) {
 /// For a PosVarArg, return the declared ArgConvention of the elements. For
 /// example: def x(mut *args: Int) is declared 'mut'.
 ArgConvention FnType::getVariadicConvention(size_t index) {
-  PogListAttr pogs = getMetadata().getArgListAttrs();
+  PogListAttr pogs = getArgListAttrs();
   if (pogs.getVariadicKind(index) == VariadicKind::PosVarArg ||
       pogs.getVariadicKind(index) == VariadicKind::PackVarArg)
     return pogs.getOrigVariadicConvention();
@@ -1607,10 +1606,10 @@ FnType FnType::get(MLIRContext *ctx, TypeRange inputs, TypeRange results,
   SmallVector<PogMetadataAttr> argPogs(
       numInputs,
       PogMetadataAttr::get(StringAttr::get(ctx), PassingKind::PosOnly));
-  auto metadata = FnMetadataAttr::get(PogListAttr::get(ctx, argPogs),
-                                      numImplicitOriginDecls);
+  auto pogList = PogListAttr::get(ctx, argPogs);
+  auto metadata = FnMetadataAttr::get(pogList, numImplicitOriginDecls);
   return FuncType::get(funcType,
-                       /*convs=*/{}, /*effects=*/{}, metadata);
+                       /*convs=*/{}, /*effects=*/{}, metadata, pogList);
 }
 
 //===----------------------------------------------------------------------===//

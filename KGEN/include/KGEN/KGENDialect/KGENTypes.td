@@ -274,21 +274,37 @@ def KGEN_FuncType : KGENType<"Func", "func", [
     "FunctionType":$values,
     ArrayRefParameter<"ArgConvention">:$argConventions,
     "FnEffects":$fnEffects,
-    "FnMetadataAttrInterface":$metadata
+    "FnMetadataAttrInterface":$metadata,
+    "PogListAttr":$argListAttrs
   );
   let hasCustomAssemblyFormat = 1;
 
   let builders = [
     /// This builder allows everything other than the function type to be null.
+    /// The argListAttrs field is dual-written from the metadata's
+    /// argListAttrs during the MOCO-4022 transition; callers may also pass it
+    /// explicitly when they construct a FuncType independent of an
+    /// FnMetadataAttr.
     TypeBuilderWithInferredContext<(ins
         "FunctionType":$values,
         CArg<"ArrayRef<ArgConvention>", "{}">:$argConvs,
         CArg<"FnEffects", "{}">:$effects,
-        CArg<"Attribute", "{}">:$metadata), [{
+        CArg<"Attribute", "{}">:$metadata,
+        CArg<"Attribute", "{}">:$argListAttrs), [{
       SmallVector<ArgConvention> convs = llvm::to_vector(argConvs);
       convs.resize(values.getNumInputs());
-      return $_get(values.getContext(), values, convs, effects,
-                   ::cast_or_null<FnMetadataAttrInterface>(metadata));
+      auto metadataAttr = ::cast_or_null<FnMetadataAttrInterface>(metadata);
+      // MOCO-4022: during the transition, argListAttrs are derived from the
+      // metadata's argListAttrs so that two FuncTypes with the same metadata
+      // also have the same argListAttrs (preserving structural identity).
+      auto argListAttrsAttr = ::cast_or_null<PogListAttr>(argListAttrs);
+      if (!argListAttrsAttr && metadataAttr)
+        argListAttrsAttr =
+            ::cast_or_null<PogListAttr>(metadataAttr.getPogListAttr());
+      if (!argListAttrsAttr)
+        argListAttrsAttr = PogListAttr::get(values.getContext());
+      return $_get(values.getContext(), values, convs, effects, metadataAttr,
+                   argListAttrsAttr);
     }]>,
     TypeBuilder<(ins "TypeRange":$inputs, "TypeRange":$results)>
   ];
@@ -318,8 +334,11 @@ def KGEN_FuncType : KGENType<"Func", "func", [
     FuncType getWithFnEffects(FnEffects effect);
     /// Return this signature type with the value signature replaced.
     FuncType getWithValuesReplaced(FunctionType fnType);
-    /// Return this signature with a new metadata attribute.
-    FuncType getWithMetadata(FnMetadataAttrInterface metadata);
+    /// Return this signature with a new metadata attribute and (optionally)
+    /// a new argListAttrs. If `argListAttrs` is null, the existing
+    /// argListAttrs are preserved.
+    FuncType getWithMetadata(FnMetadataAttrInterface metadata,
+                             PogListAttr argListAttrs);
 
     /// Return the number of arguments.
     size_t getNumArguments() { return getArguments().size(); }

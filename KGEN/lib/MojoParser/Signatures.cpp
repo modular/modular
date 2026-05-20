@@ -2794,10 +2794,10 @@ FnTypeGeneratorType TypeCheckedFnSignature::getFnTypeGeneratorType() const {
   assert(numVariadics <= 1 && "There can be at most one variadic argument");
 
   PogListAttr paramListAttr = paramList.getParamListAttr();
+  auto argListAttrs = PogListAttr::get(ctx, argPogs, /*bodyConstraints=*/{},
+                                       argVariadicOrigConvention);
   auto metadata = FnMetadataAttr::get(
-      PogListAttr::get(ctx, argPogs, /*bodyConstraints=*/{},
-                       argVariadicOrigConvention),
-      implicitOriginDecls.size(),
+      argListAttrs, implicitOriginDecls.size(),
       getOriginsAccessibleByParams(paramListAttr, paramList.paramDeclAttrs,
                                    paramList.shared, captureOrigins),
       isNestedOriginExclusivityCheckingDisabled);
@@ -2818,5 +2818,5 @@ FnTypeGeneratorType TypeCheckedFnSignature::getFnTypeGeneratorType() const {
   FunctionType functionType = getFunctionType();
   return FuncTypeGeneratorType::remapToFuncTypeGenerator(
       paramList.paramDeclAttrs, functionType, argConventions, argList.effects,
-      metadata, paramListAttr, emitError);
+      metadata, paramListAttr, emitError, argListAttrs);
 }

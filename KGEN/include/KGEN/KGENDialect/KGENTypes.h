@@ -54,7 +54,8 @@ public:
   static FuncTypeGeneratorType
   get(ArrayRef<Type> inputParamTypes, FunctionType values,
       ArrayRef<ArgConvention> argConvs = {}, FnEffects effects = {},
-      Attribute fnMetadata = {}, Attribute genMetadata = {});
+      Attribute fnMetadata = {}, Attribute genMetadata = {},
+      Attribute argListAttrs = {});
 
   static FuncTypeGeneratorType get(ArrayRef<Type> inputParamTypes, FuncType sig,
                                    Attribute genMetadata);
@@ -77,7 +78,8 @@ public:
       ArrayRef<ParamDeclAttr> inputParams, FunctionType functionType,
       ArrayRef<ArgConvention> argConventions = {}, FnEffects effects = {},
       Attribute fnMetadata = {}, Attribute genMetadata = {},
-      function_ref<InFlightDiagnostic()> emitError = {});
+      function_ref<InFlightDiagnostic()> emitError = {},
+      Attribute argListAttrs = {});
 
   FuncType getBody();
   FuncType getInstantiatedBody();
