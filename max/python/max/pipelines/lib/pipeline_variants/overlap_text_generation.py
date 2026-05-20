@@ -2476,9 +2476,6 @@ class OverlapTextGenerationPipeline(
             # ordering guarantees the data is valid when each DMA starts, no CPU sync.
             spec_state.has_precomputed_bitmask = False
 
-            old_rid_to_idx = {
-                rid: i for i, rid in enumerate(spec_state.callback_request_ids)
-            }
             row_size = num_positions * vocab_size_dim
             bool_flat = spec_state.persistent_bitmask_bool_pinned.view(
                 DType.bool,
@@ -2488,53 +2485,28 @@ class OverlapTextGenerationPipeline(
                 DType.bool, (bitmask_device.num_elements,)
             )
 
-            missing_indices: list[int] = []
-            missing_contexts: list[TextGenerationContextType] = []
-            with Tracer("inplace_copy_bitmask"):
-                for new_idx, ctx in enumerate(context_batch):
-                    old_idx = old_rid_to_idx.get(ctx.request_id)
-                    if old_idx is not None:
-                        src = bool_flat[
-                            old_idx * row_size : (old_idx + 1) * row_size
-                        ].view(DType.bool, (1, num_positions, vocab_size_dim))
-                        dst = bitmask_device_flat[
-                            new_idx * row_size : (new_idx + 1) * row_size
-                        ].view(DType.bool, (1, num_positions, vocab_size_dim))
-                        dst.inplace_copy_from(src)
-                    else:
-                        missing_indices.append(new_idx)
-                        missing_contexts.append(ctx)
+            missing_indices, missing_contexts = (
+                self._remap_precomputed_bitmask_rows(
+                    context_batch=context_batch,
+                    callback_request_ids=spec_state.callback_request_ids,
+                    src_flat=bool_flat,
+                    bitmask_device_flat=bitmask_device_flat,
+                    row_size=row_size,
+                    num_positions=num_positions,
+                    vocab_size_dim=vocab_size_dim,
+                )
+            )
 
             if missing_contexts:
-                # Contexts not in the callback batch: compute their rows on the
-                # main thread. Safe because the callback only touches matchers
-                # from its own context_batch — no concurrent Rust borrow.
-                missing_drafts = draft_tokens_np[missing_indices]
-                missing_np = (
-                    self._structured_output.compute_speculative_bitmasks(
-                        context_batch=missing_contexts,
-                        draft_tokens=missing_drafts,
-                        num_positions=num_positions,
-                    )
+                self._fill_missing_bitmask_rows_sync(
+                    missing_indices=missing_indices,
+                    missing_contexts=missing_contexts,
+                    draft_tokens_np=draft_tokens_np,
+                    bitmask_device_flat=bitmask_device_flat,
+                    row_size=row_size,
+                    num_positions=num_positions,
+                    vocab_size_dim=vocab_size_dim,
                 )
-                missing_host = DevicePinnedBuffer(
-                    dtype=DType.bool,
-                    shape=missing_np.shape,
-                    device=self._devices[0],
-                )
-                missing_host.to_numpy()[:] = missing_np
-                missing_host_flat = missing_host.view(
-                    DType.bool, (missing_host.num_elements,)
-                )
-                with Tracer("inplace_copy_bitmask"):
-                    for i, new_idx in enumerate(missing_indices):
-                        src = missing_host_flat[
-                            i * row_size : (i + 1) * row_size
-                        ].view(DType.bool, (1, num_positions, vocab_size_dim))
-                        dst = bitmask_device_flat[
-                            new_idx * row_size : (new_idx + 1) * row_size
-                        ].view(DType.bool, (1, num_positions, vocab_size_dim))
-                        dst.inplace_copy_from(src)
 
             return bitmask_device
 
@@ -2558,6 +2530,95 @@ class OverlapTextGenerationPipeline(
             with Tracer("inplace_copy_bitmask"):
                 bitmask_device.inplace_copy_from(bitmask_host)
                 return bitmask_device
+
+    def _remap_precomputed_bitmask_rows(
+        self,
+        context_batch: list[TextGenerationContextType],
+        callback_request_ids: list[RequestID],
+        src_flat: Buffer,
+        bitmask_device_flat: Buffer,
+        row_size: int,
+        num_positions: int,
+        vocab_size_dim: int,
+    ) -> tuple[list[int], list[TextGenerationContextType]]:
+        """Per-row H2D from the callback's pinned bitmask to the device.
+
+        Routes rows by request ID from `src_flat` into `bitmask_device_flat`.
+
+        `src_flat` is a flat (1D) view of the source pinned buffer (currently
+        `persistent_bitmask_bool_pinned`; the planned GPU-unpack follow-up PR
+        will swap this to `persistent_bitmask_pinned` packed int32 with a
+        smaller `vocab_size_dim`). The buffer parameter is intentionally
+        opaque so the same helper supports both layouts.
+
+        Returns (missing_indices, missing_contexts) for current-batch rows
+        whose request_ids were NOT in the callback batch — the caller fills
+        those synchronously via `_fill_missing_bitmask_rows_sync`.
+        """
+        old_rid_to_idx = {rid: i for i, rid in enumerate(callback_request_ids)}
+        missing_indices: list[int] = []
+        missing_contexts: list[TextGenerationContextType] = []
+        with Tracer("inplace_copy_bitmask"):
+            for new_idx, ctx in enumerate(context_batch):
+                old_idx = old_rid_to_idx.get(ctx.request_id)
+                if old_idx is not None:
+                    src = src_flat[
+                        old_idx * row_size : (old_idx + 1) * row_size
+                    ].view(DType.bool, (1, num_positions, vocab_size_dim))
+                    dst = bitmask_device_flat[
+                        new_idx * row_size : (new_idx + 1) * row_size
+                    ].view(DType.bool, (1, num_positions, vocab_size_dim))
+                    dst.inplace_copy_from(src)
+                else:
+                    missing_indices.append(new_idx)
+                    missing_contexts.append(ctx)
+        return missing_indices, missing_contexts
+
+    def _fill_missing_bitmask_rows_sync(
+        self,
+        missing_indices: list[int],
+        missing_contexts: list[TextGenerationContextType],
+        draft_tokens_np: npt.NDArray[np.int64],
+        bitmask_device_flat: Buffer,
+        row_size: int,
+        num_positions: int,
+        vocab_size_dim: int,
+    ) -> None:
+        """Compute and H2D bitmask rows for contexts missing from the callback.
+
+        Handles contexts not in the callback batch (e.g. a returning request)
+        by computing their bitmask rows synchronously and copying them to
+        their destination rows in `bitmask_device_flat`.
+
+        Safe to call concurrently with the async bitmask callback because
+        the callback only touches matchers from its own context_batch —
+        these missing contexts are by definition not in that set, so there
+        is no Rust RefCell borrow risk.
+        """
+        missing_drafts = draft_tokens_np[missing_indices]
+        missing_np = self._structured_output.compute_speculative_bitmasks(
+            context_batch=missing_contexts,
+            draft_tokens=missing_drafts,
+            num_positions=num_positions,
+        )
+        missing_host = DevicePinnedBuffer(
+            dtype=DType.bool,
+            shape=missing_np.shape,
+            device=self._devices[0],
+        )
+        missing_host.to_numpy()[:] = missing_np
+        missing_host_flat = missing_host.view(
+            DType.bool, (missing_host.num_elements,)
+        )
+        with Tracer("inplace_copy_bitmask"):
+            for i, new_idx in enumerate(missing_indices):
+                src = missing_host_flat[i * row_size : (i + 1) * row_size].view(
+                    DType.bool, (1, num_positions, vocab_size_dim)
+                )
+                dst = bitmask_device_flat[
+                    new_idx * row_size : (new_idx + 1) * row_size
+                ].view(DType.bool, (1, num_positions, vocab_size_dim))
+                dst.inplace_copy_from(src)
 
     def _capture_callback_inputs(
         self,
