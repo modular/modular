@@ -278,6 +278,26 @@ This version is still a work in progress.
   mojo precompile my_package -o my_package.mojoc
   ```
 
+- Added `mojo --print-cache-location` and `mojo --clear-cache` for inspecting
+  and clearing the on-disk Mojo compile cache (`.mojo_cache`). The resolved
+  path honors the existing precedence (`MODULAR_CACHE_DIR`, `MODULAR_HOME`,
+  `MODULAR_DERIVED_PATH`, `XDG_CACHE_HOME`, etc.). `--clear-cache` prompts for
+  confirmation by default; pass `-f` (or `--force`) to skip the prompt for
+  scripting use.
+
+  ```text
+  $ mojo --print-cache-location
+  /home/you/.cache/modular/.mojo_cache
+
+  $ mojo --clear-cache
+  This will remove the Mojo compile cache at:
+    /home/you/.cache/modular/.mojo_cache
+  Proceed? [y/N] y
+  Removed /home/you/.cache/modular/.mojo_cache
+
+  $ mojo --clear-cache -f   # no prompt
+  ```
+
 ## GPU programming
 
 - Added `DeviceContextList[size]` in `std.gpu.host`: a fixed-size,
@@ -428,3 +448,8 @@ This version is still a work in progress.
 - Attempting to import a source Mojo package from a broken symlink will no
   longer result in a compiler crash.
   ([Issue #6424](https://github.com/modular/modular/issues/6424))
+
+- `MODULAR_NVPTX_COMPILER_PATH` is now part of mojo cache location so that when
+  switching to a different `ptxas` CUBIN cache will not hit those were
+  generated before the switch.
+  ([Issue #6540](https://github.com/modular/modular/issues/6549))
