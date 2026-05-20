@@ -2594,18 +2594,18 @@ struct CPython(Defaultable, Movable):
         return self._PyBool_FromLong(value)
 
     def Py_True(self) -> PyObjectPtr:
-        """The Python `True` object. Borrowed reference.
+        """The Python `True` object.
 
         References:
-        - https://docs.python.org/3.10/c-api/bool.html#c.Py_True
+        - https://docs.python.org/3/c-api/bool.html#c.Py_True
         """
         return self._Py_True
 
     def Py_False(self) -> PyObjectPtr:
-        """The Python `False` object. Borrowed reference.
+        """The Python `False` object.
 
         References:
-        - https://docs.python.org/3.10/c-api/bool.html#c.Py_False
+        - https://docs.python.org/3/c-api/bool.html#c.Py_False
         """
         return self._Py_False
 

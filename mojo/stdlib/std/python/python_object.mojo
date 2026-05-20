@@ -225,10 +225,9 @@ struct PythonObject(
         Args:
             value: The boolean value.
         """
-        # Read the cached `Py_True` / `Py_False` singletons directly and pay
-        # one inline `Py_IncRef` here. Avoids `PyBool_FromLong`'s C-call
-        # dispatch and the redundant `Python().cpython()` lookup that
-        # `from_borrowed` would otherwise perform.
+        # Pick the cached singleton directly and INCREF. Skips the
+        # `c_long(Int(value))` cast chain that `PyBool_FromLong` requires
+        # and lets the branch + field reads inline at the call site.
         ref cpy = Python().cpython()
         var ptr = cpy.Py_True() if value else cpy.Py_False()
         cpy.Py_IncRef(ptr)
