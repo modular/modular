@@ -12,6 +12,7 @@
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/Support/BuildInfo.h"
 #include "KGEN/Support/CompilerProfiling.h"
+#include "KGEN/Support/Constants.h"
 #include "KGEN/ToolCommon/Debug.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
 #include "KGEN/TransformUtils/SlicingUtils.h"
@@ -273,9 +274,9 @@ static ErrorOr<CrossDeviceFunction> compileElaboratorAsm(
   // Initialize the object compiler.
   PassManagerConfigOptions pmOptions;
   pmOptions.applyPassManagerCLOptions = true; // enable print options
-  ErrorOr<std::unique_ptr<ObjectCompiler>> compilerOr =
-      ObjectCompiler::create(".mojo_cache", compilationOptions, /*isJIT=*/
-                             false, *target.getContext(), pmOptions);
+  ErrorOr<std::unique_ptr<ObjectCompiler>> compilerOr = ObjectCompiler::create(
+      kMojoCacheBaseDirName, compilationOptions, /*isJIT=*/
+      false, *target.getContext(), pmOptions);
 
   if (compilerOr.isError())
     return compilerOr.takeError();
@@ -575,7 +576,8 @@ static ElaboratorCompileOffloadRetType compileOffloads(
       PassManagerConfigOptions pmOptions;
       pmOptions.applyPassManagerCLOptions = true; // enable print options
       ErrorOr<std::unique_ptr<ObjectCompiler>> compilerOr =
-          ObjectCompiler::create(".mojo_cache", compilationOptions, /*isJIT=*/
+          ObjectCompiler::create(kMojoCacheBaseDirName,
+                                 compilationOptions, /*isJIT=*/
                                  false, *target.getContext(), pmOptions);
 
       if (compilerOr.isError())
@@ -808,7 +810,7 @@ static ElaboratorCompileOffloadRetType compileOffloads(
 /// created.
 static ErrorOr<RCRef<Cache::BlobCacheBackend>>
 getMojoCacheBackend(const std::string baseExtra) {
-  std::filesystem::path path(".mojo_cache");
+  std::filesystem::path path(kMojoCacheBaseDirName.str());
   if (!baseExtra.empty())
     path = path / baseExtra;
   path = path / "transform";

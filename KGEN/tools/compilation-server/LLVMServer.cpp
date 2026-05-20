@@ -7,6 +7,7 @@
 #include "LLVMServer.h"
 #include "Init/Init.h"
 #include "KGEN/Compiler/ObjectCompiler.h"
+#include "KGEN/Support/Constants.h"
 #include "KGEN/ToolCommon/InitAllDialects.h"
 #include "MLRT/AsyncRT/CompilerSupport/Context.h"
 #include "MLRT/AsyncRT/Runtime/CPUDevice.h"
@@ -87,8 +88,9 @@ std::string LLVMServer::emitArchive(const EmitArchiveParams &params) {
     return "Error: cannot parse MLIR module";
 
   // Create object compiler.
-  auto compilerOr = ObjectCompiler::create(
-      ".mojo_cache", params.compilationOptions, params.isJIT, impl->mlirCtx);
+  auto compilerOr =
+      ObjectCompiler::create(kMojoCacheBaseDirName, params.compilationOptions,
+                             params.isJIT, impl->mlirCtx);
   if (failed(compilerOr))
     return "Error: cannot create object compiler";
   ObjectCompiler &objCompiler = **compilerOr;

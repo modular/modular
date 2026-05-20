@@ -15,6 +15,7 @@
 #include "KGEN/Support/CLOptionUtils.h"
 #include "KGEN/Support/CompilerProfiling.h"
 #include "KGEN/Support/Configuration.h"
+#include "KGEN/Support/Constants.h"
 #include "KGEN/Support/ForceLinkMLIRC.h"
 #include "KGEN/ToolCommon/CLOptions.h"
 #include "KGEN/ToolCommon/Debug.h"
@@ -420,7 +421,7 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
     options.targetAccelerator = clOptions.targetAccelerator;
   }
 
-  auto compilerOr = ObjectCompiler::create(".mojo_cache", options,
+  auto compilerOr = ObjectCompiler::create(kMojoCacheBaseDirName, options,
                                            clOptions.cmd == Command::kExecute,
                                            *ctx, pmOptions);
   if (failed(compilerOr))
