@@ -1408,6 +1408,25 @@ class RealizeFutureTokenProcessor:
 
 
 @dataclass
+class _AsyncSpecDecodeHostBuffers:
+    """Fresh per-batch pinned buffers for spec-decode D2H outputs.
+
+    Populated by D2H from spec-decode model outputs and read by the sync
+    path on the next iteration.
+
+    These are separate from the persistent pinned buffers on `SpecDecodeState`:
+    the persistent buffers are reused across iterations (overwritten by each
+    new D2H) and read by the async callback before the next D2H runs, while
+    these per-batch buffers live as long as their owning AsyncSpecDecodeBatch
+    and are safe to read on a later iteration's sync path.
+    """
+
+    num_accepted_draft_tokens_host: DevicePinnedBuffer
+    next_tokens_host: DevicePinnedBuffer
+    next_draft_tokens_host: DevicePinnedBuffer
+
+
+@dataclass
 class _CallbackInputs:
     """Numpy views into the persistent pinned buffers for the bitmask callback.
 
@@ -2764,6 +2783,111 @@ class OverlapTextGenerationPipeline(
         spec_state.has_precomputed_bitmask = True
         return True
 
+    def _d2h_spec_decode_outputs(
+        self,
+        outputs: UnifiedEagleOutputs,
+        draft_tokens_device: Buffer,
+        batch_size: int,
+        num_draft_tokens_to_verify: int,
+        next_draft_k: int,
+    ) -> _AsyncSpecDecodeHostBuffers:
+        """D2H copy spec-decode model outputs to host.
+
+        Two D2H destinations are populated when structured output is active:
+
+        1. Persistent pinned buffers on SpecDecodeState (read by the async
+           bitmask callback). Views into persistent memory are safe to release
+           on the CUDA driver thread because the owning DevicePinnedBuffers
+           live for the pipeline's lifetime, so DLPack teardown never calls
+           `cuMemFreeHost` from a host callback.
+
+        2. Fresh per-batch DevicePinnedBuffers (read by the sync path on the
+           next iteration). The persistent buffers cannot be reused for the
+           sync path because `_execute_spec_decode(N+1)` queues N+1's D2H
+           into them BEFORE this iteration's sync path runs — by the time
+           the sync path reads, the persistent buffers contain N+1's data,
+           not N's.
+
+        Both D2H ops are enqueued on the same CUDA stream before `copy_event`
+        is recorded, so `copy_event.synchronize()` in the sync path
+        guarantees both copies are complete before any read.
+
+        When structured output is disabled, only the per-batch buffers are
+        populated (the persistent buffers may be None).
+
+        Returns the fresh per-batch buffers for use in AsyncSpecDecodeBatch.
+        """
+        device0 = self._devices[0]
+        num_accepted_draft_tokens_device = outputs.num_accepted_draft_tokens
+        next_tokens_device = outputs.next_tokens
+        next_draft_tokens_device = outputs.next_draft_tokens
+
+        spec_state = self._spec_decode_state
+        if (
+            spec_state is not None
+            and spec_state.persistent_bonus_tokens_pinned is not None
+            and spec_state.persistent_num_accepted_pinned is not None
+            and spec_state.persistent_next_draft_tokens_pinned is not None
+            and spec_state.persistent_accepted_draft_tokens_pinned is not None
+        ):
+            # D2H into persistent pinned buffers. The callback reads numpy
+            # views from these directly (via DevicePinnedBuffer.to_numpy()),
+            # which avoids the stream sync that Buffer.to_numpy() on a
+            # view/slice can trigger.
+            _contiguous_prefix_2d(
+                spec_state.persistent_num_accepted_pinned,
+                batch_size,
+                1,
+            ).view(DType.int64, (batch_size,)).inplace_copy_from(
+                num_accepted_draft_tokens_device
+            )
+            _contiguous_prefix_2d(
+                spec_state.persistent_bonus_tokens_pinned,
+                batch_size,
+                1,
+            ).view(DType.int64, (batch_size,)).inplace_copy_from(
+                next_tokens_device
+            )
+            _contiguous_prefix_2d(
+                spec_state.persistent_next_draft_tokens_pinned,
+                batch_size,
+                next_draft_k,
+            ).inplace_copy_from(next_draft_tokens_device)
+            _contiguous_prefix_2d(
+                spec_state.persistent_accepted_draft_tokens_pinned,
+                batch_size,
+                num_draft_tokens_to_verify,
+            ).inplace_copy_from(draft_tokens_device)
+
+        # Fresh per-batch allocations for the sync path — immune to the next
+        # batch's writes into the persistent buffers above.
+        num_accepted_draft_tokens_host = DevicePinnedBuffer(
+            shape=num_accepted_draft_tokens_device.shape,
+            dtype=num_accepted_draft_tokens_device.dtype,
+            device=device0,
+        )
+        num_accepted_draft_tokens_host.inplace_copy_from(
+            num_accepted_draft_tokens_device
+        )
+        next_tokens_host = DevicePinnedBuffer(
+            shape=next_tokens_device.shape,
+            dtype=next_tokens_device.dtype,
+            device=device0,
+        )
+        next_tokens_host.inplace_copy_from(next_tokens_device)
+        next_draft_tokens_host = DevicePinnedBuffer(
+            shape=next_draft_tokens_device.shape,
+            dtype=next_draft_tokens_device.dtype,
+            device=device0,
+        )
+        next_draft_tokens_host.inplace_copy_from(next_draft_tokens_device)
+
+        return _AsyncSpecDecodeHostBuffers(
+            num_accepted_draft_tokens_host=num_accepted_draft_tokens_host,
+            next_tokens_host=next_tokens_host,
+            next_draft_tokens_host=next_draft_tokens_host,
+        )
+
     @traced
     def _execute_spec_decode(
         self, inputs: TextGenerationInputs[TextGenerationContextType]
@@ -2846,113 +2970,20 @@ class OverlapTextGenerationPipeline(
             num_accepted_draft_tokens_device = outputs.num_accepted_draft_tokens
             next_tokens_device = outputs.next_tokens
             next_draft_tokens_device = outputs.next_draft_tokens
-
-            # Two separate D2H destinations are needed when structured output
-            # is active:
-            #
-            # 1. Persistent pinned buffers (p_*): the async bitmask callback
-            #    captures numpy views into these. Views into persistent memory
-            #    are safe to release on the CUDA driver thread because the
-            #    owning DevicePinnedBuffers live for the pipeline's lifetime,
-            #    so DLPack teardown never calls cuMemFreeHost from a host
-            #    callback.
-            #
-            # 2. Fresh per-batch DevicePinnedBuffers: the sync path
-            #    (sync_and_process_outputs) reads num_accepted, bonus tokens,
-            #    and next_draft tokens from AsyncSpecDecodeBatch. If those
-            #    fields were views into the persistent buffers, the next
-            #    batch's D2H into the same persistent buffers would overwrite
-            #    them before the sync path reads them.
-            #
-            # Both sets of D2H ops are enqueued on the same CUDA stream before
-            # copy_event is recorded, so copy_event.synchronize() in the sync
-            # path guarantees both copies are complete before any read.
             next_draft_k = next_draft_tokens_device.shape[1]
-            spec_state = self._spec_decode_state
-            if (
-                spec_state is not None
-                and spec_state.persistent_bonus_tokens_pinned is not None
-                and spec_state.persistent_num_accepted_pinned is not None
-                and spec_state.persistent_next_draft_tokens_pinned is not None
-                and spec_state.persistent_accepted_draft_tokens_pinned
-                is not None
-            ):
-                # D2H into persistent pinned buffers. The callback reads numpy
-                # views from these directly (via DevicePinnedBuffer.to_numpy()),
-                # which avoids the stream sync that Buffer.to_numpy() on a
-                # view/slice can trigger.
-                _contiguous_prefix_2d(
-                    spec_state.persistent_num_accepted_pinned,
-                    batch_size,
-                    1,
-                ).view(DType.int64, (batch_size,)).inplace_copy_from(
-                    num_accepted_draft_tokens_device
-                )
-                _contiguous_prefix_2d(
-                    spec_state.persistent_bonus_tokens_pinned,
-                    batch_size,
-                    1,
-                ).view(DType.int64, (batch_size,)).inplace_copy_from(
-                    next_tokens_device
-                )
-                _contiguous_prefix_2d(
-                    spec_state.persistent_next_draft_tokens_pinned,
-                    batch_size,
-                    next_draft_k,
-                ).inplace_copy_from(next_draft_tokens_device)
-                _contiguous_prefix_2d(
-                    spec_state.persistent_accepted_draft_tokens_pinned,
-                    batch_size,
-                    num_draft_tokens_to_verify,
-                ).inplace_copy_from(draft_tokens_device)
 
-                # Fresh per-batch allocations for the sync path — immune to
-                # the next batch's writes into the persistent buffers above.
-                num_accepted_draft_tokens_host = DevicePinnedBuffer(
-                    shape=num_accepted_draft_tokens_device.shape,
-                    dtype=num_accepted_draft_tokens_device.dtype,
-                    device=device0,
-                )
-                num_accepted_draft_tokens_host.inplace_copy_from(
-                    num_accepted_draft_tokens_device
-                )
-                next_tokens_host = DevicePinnedBuffer(
-                    shape=next_tokens_device.shape,
-                    dtype=next_tokens_device.dtype,
-                    device=device0,
-                )
-                next_tokens_host.inplace_copy_from(next_tokens_device)
-                next_draft_tokens_host = DevicePinnedBuffer(
-                    shape=next_draft_tokens_device.shape,
-                    dtype=next_draft_tokens_device.dtype,
-                    device=device0,
-                )
-                next_draft_tokens_host.inplace_copy_from(
-                    next_draft_tokens_device
-                )
-            else:
-                num_accepted_draft_tokens_host = DevicePinnedBuffer(
-                    shape=num_accepted_draft_tokens_device.shape,
-                    dtype=num_accepted_draft_tokens_device.dtype,
-                    device=device0,
-                )
-                num_accepted_draft_tokens_host.inplace_copy_from(
-                    num_accepted_draft_tokens_device
-                )
-                next_tokens_host = DevicePinnedBuffer(
-                    shape=next_tokens_device.shape,
-                    dtype=next_tokens_device.dtype,
-                    device=device0,
-                )
-                next_tokens_host.inplace_copy_from(next_tokens_device)
-                next_draft_tokens_host = DevicePinnedBuffer(
-                    shape=next_draft_tokens_device.shape,
-                    dtype=next_draft_tokens_device.dtype,
-                    device=device0,
-                )
-                next_draft_tokens_host.inplace_copy_from(
-                    next_draft_tokens_device
-                )
+            host_buffers = self._d2h_spec_decode_outputs(
+                outputs=outputs,
+                draft_tokens_device=draft_tokens_device,
+                batch_size=batch_size,
+                num_draft_tokens_to_verify=num_draft_tokens_to_verify,
+                next_draft_k=next_draft_k,
+            )
+            num_accepted_draft_tokens_host = (
+                host_buffers.num_accepted_draft_tokens_host
+            )
+            next_tokens_host = host_buffers.next_tokens_host
+            next_draft_tokens_host = host_buffers.next_draft_tokens_host
 
             # Record an event to track the completion of the d2h copies.
             # This will ensure that the subsequent synchronize() call will
