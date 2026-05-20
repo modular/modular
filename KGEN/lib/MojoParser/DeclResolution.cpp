@@ -10,7 +10,6 @@
 #include "DLValues.h"
 #include "ExprNodes.h"
 #include "IREmitter.h"
-#include "KGEN/MOGGPreElab/MOGGPreElabHelpers.h"
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/Constraints.h"
 #include "MojoUtils.h"
@@ -25,7 +24,6 @@
 #include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/LITDialect/LITOps.h"
-#include "KGEN/MOGGPreElab/MOGGPreElabDecorators.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
 #include "Support/Compiler/OperationUtils.h"
@@ -460,8 +458,8 @@ LogicalResult Decorators::validateCompilerDecorator(TypedAttr attr) {
       "doc_hidden",
       "lldb_formatter_wrapping_type",
 
-      MOGGPreElab::Decorators::REGISTER_MOGG_INTRINSIC,
-      MOGGPreElab::Decorators::REGISTER_INTERNAL_FUNCTION,
+      KGEN::MOGG_REGISTER_INTRINSIC,
+      KGEN::MOGG_REGISTER_INTERNAL_FUNCTION,
       "enforce_io_param",
 
       "register",
@@ -1280,8 +1278,7 @@ static void processFunctionConformances(FnOp func, SharedState &shared,
 
   bool allVanillaKernelArgs = llvm::all_of(argTypes, [](ASTType astType) {
     if (auto structTy = sugarDynCast<LIT::StructType>(astType.mlirType)) {
-      return MOGGPreElab::isDPSTensor(structTy) ||
-             MOGGPreElab::isMojoDeviceContext(structTy);
+      return KGEN::isDPSTensor(structTy) || KGEN::isMojoDeviceContext(structTy);
     }
     return false;
   });
@@ -1329,9 +1326,9 @@ static void processFunctionConformances(FnOp func, SharedState &shared,
   }
 
   NamedAttrList attrs = func->getAttrDictionary();
-  attrs.set(MOGGPreElab::MOGG_ARGUMENT_VALUE_WITNESSES,
+  attrs.set(KGEN::MOGG_ARGUMENT_VALUE_WITNESSES,
             ArrayAttr::get(shared.getContext(), argConformances));
-  attrs.set(MOGGPreElab::MOGG_RESULT_VALUE_WITNESSES, resConformances);
+  attrs.set(KGEN::MOGG_RESULT_VALUE_WITNESSES, resConformances);
   func->setAttrs(attrs.getDictionary(shared.getContext()));
 }
 
@@ -1347,7 +1344,7 @@ static void processExtensibilityDecorator(SharedState &shared, ASTDecl &decl,
   if (spelling.empty())
     return;
 
-  if (spelling != MOGGPreElab::Decorators::REGISTER_INTERNAL_FUNCTION)
+  if (spelling != KGEN::MOGG_REGISTER_INTERNAL_FUNCTION)
     return;
 
   auto func = cast_or_null<FnOp>(decl.getIfOperation());
@@ -2267,7 +2264,7 @@ ParseResult DeclResolver::resolveBody(FnOp funcOp, Lexer &lexer,
 
   for (auto decorator : declOp.getDecorators()) {
     if (extractDecoratorName(decorator) == "register" &&
-        MOGGPreElab::fnNeedsConformances(funcOp))
+        KGEN::fnNeedsConformances(funcOp))
       processFunctionConformances(funcOp, shared, decl);
   }
 

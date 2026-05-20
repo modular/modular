@@ -48,7 +48,6 @@ pkg_files(
         ":KGENDialect.doc",
         ":KGENPassesIncGen.doc",
         ":LITDialect.doc",
-        ":MOGGPreElabIncGen.doc",
         ":POPDialect.doc",
     ],
     prefix = "KGEN/docs",
@@ -492,28 +491,6 @@ gentbl_cc_library(
     deps = [
         ":InterpreterDialectIncGen",
         ":InterpreterTdFiles",
-    ],
-)
-
-gentbl_modular_passes(
-    name = "MOGGPreElabIncGen",
-    td_file = "include/KGEN/MOGGPreElab/MOGGPreElabPasses.td",
-    deps = [
-        ":KGENPassTdFile",
-        "@llvm-project//mlir:PassBaseTdFiles",
-    ],
-)
-
-modular_cc_library(
-    name = "MOGGPreElab",
-    hdrs = glob(["include/KGEN/MOGGPreElab/*.h"]),
-    deps = [
-        ":KGENDialect",
-        ":LITDialect",
-        ":MOGGPreElabIncGen",
-        ":POPAttrsIncGen",
-        ":TransformUtils",
-        "//Support:DebugInfoTransforms",
     ],
 )
 
@@ -1124,7 +1101,6 @@ modular_cc_library(
         ":Elaborator",
         ":KGENPassesIncGen",
         ":LowerLIT",
-        ":MOGGPreElab",
         ":Transforms",
         "//Support:DebugInfoToLLVM",
         "//Support:DebugInfoTransforms",
@@ -1285,7 +1261,6 @@ modular_cc_library(
         ":Interpreter",
         ":KGENPassesIncGen",
         ":LITDialect",
-        ":MOGGPreElab",
         ":POPDialect",
         ":ToolCommon.headers",
         "//Cache",
