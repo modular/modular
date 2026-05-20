@@ -12,6 +12,7 @@
 #include "KGEN/CODialect/COUtils.h"
 #include "KGEN/Interpreter/ParametricInterpreterState.h"
 #include "KGEN/KGENDialect/KGENOps.h"
+#include "KGEN/KGENDialect/KGENPogUtils.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/KGENDialect/ParameterReplacer.h"

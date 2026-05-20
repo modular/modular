@@ -8,6 +8,7 @@
 #include "KGEN/Interpreter/InterpreterAttrs.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
+#include "KGEN/KGENDialect/KGENPogUtils.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/LITDialect/LITDialect.h"
@@ -1390,8 +1391,8 @@ static ParseResult parseLITGenerator(AsmParser &p, Type &generator) {
     return success();
   };
 
-  if (LIT::parseOptionalParamSignature(p, inputParamTypes, paramListAttr,
-                                       parseBody))
+  if (KGEN::parseOptionalParamSignature(p, inputParamTypes, paramListAttr,
+                                        parseBody))
     return failure();
   generator = GeneratorType::get(inputParamTypes, body, paramListAttr);
   return success();

@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/LITDialect/LITAttrs.h"
+#include "KGEN/KGENDialect/KGENPogUtils.h"
 #include "KGEN/KGENDialect/KGENTypes.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
@@ -107,11 +108,11 @@ void PogListAttr::printGenerator(AsmPrinter &p, GeneratorType generator) const {
   if (auto sig = ::dyn_cast<FnType>(generator.getBody())) {
     // Special case for FnType Generators: Skip the empty angle brackets, and
     // print the FnType without any additional wrapper.
-    LIT::printOptionalParamSignature(p, paramTypes, *this,
-                                     /*omitEmptyAngleBrackets=*/true);
+    KGEN::printOptionalParamSignature(p, paramTypes, *this,
+                                      /*omitEmptyAngleBrackets=*/true);
     printFnType(p, sig);
   } else {
-    LIT::printOptionalParamSignature(p, paramTypes, *this);
+    KGEN::printOptionalParamSignature(p, paramTypes, *this);
     printKGENType(p, generator.getBody());
   }
   p << '>';
