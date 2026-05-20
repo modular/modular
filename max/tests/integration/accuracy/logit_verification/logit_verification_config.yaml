@@ -1078,11 +1078,11 @@ logit_verification_pipelines:
     pregenerated_torch_goldens:
       tar_file: "s3://modular-bazel-artifacts-public/artifacts/torch_black-forest-labs_FLUX.2-dev-t2i_golden/1/09e2330e3ea8016979b145072037df30ac8a7c6a425c00d64ae340cd52455295/torch_black-forest-labs_FLUX.2-dev-t2i_golden.tar.gz"
       json_file: "torch_black-forest-labs_FLUX.2-dev-t2i_bfloat16_golden.json"
-    # Per-prompt SSIM range: [0.809, 0.854, 0.835, 0.814, 0.776] on B200 (worst 0.776).
-    # Per-prompt LPIPS range: [0.126, 0.177, 0.173, 0.106, 0.132] on B200 (worst 0.177).
+    # Per-prompt SSIM range: [.994, .996, .985, .997, .997] on B200 (worst 0.985).
+    # Per-prompt LPIPS range: [.00259, .00226, .0142, .000969, .00106] on B200 (worst 0.0142).
     # Thresholds set with ~10% headroom from the worst-performing prompt.
-    ssim_threshold: 0.70
-    lpips_threshold: 0.20
+    ssim_threshold: 0.90
+    lpips_threshold: 0.016
     timeout: 3600
     config_params_override: {"prefer_module_v3": false}
 
@@ -1100,11 +1100,11 @@ logit_verification_pipelines:
     pregenerated_torch_goldens:
       tar_file: "s3://modular-bazel-artifacts-public/artifacts/torch_black-forest-labs_FLUX.2-dev-t2i_golden/1/09e2330e3ea8016979b145072037df30ac8a7c6a425c00d64ae340cd52455295/torch_black-forest-labs_FLUX.2-dev-t2i_golden.tar.gz"
       json_file: "torch_black-forest-labs_FLUX.2-dev-t2i_bfloat16_golden.json"
-    # Per-prompt SSIM on 2xB200: [0.807, 0.862, 0.830, 0.810, 0.763].
-    # Per-prompt LPIPS on 2xB200: [0.133, 0.164, 0.179, 0.114, 0.134].
+    # Per-prompt SSIM:  [.923, .960, .959, .950, .901]
+    # Per-prompt LPIPS: [.0388, .0409, .0395, .0296, .0557]
     # Thresholds set with ~10% headroom from the worst-performing prompt.
-    ssim_threshold: 0.65
-    lpips_threshold: 0.22
+    ssim_threshold: 0.8
+    lpips_threshold: 0.06
     timeout: 3600
     config_params_override:
       prefer_module_v3: false
@@ -1121,8 +1121,10 @@ logit_verification_pipelines:
     pregenerated_torch_goldens:
       tar_file: "s3://modular-bazel-artifacts-public/artifacts/black-forest-labs_FLUX.2-dev-i2i_golden/1/11acb0fdf1fa04b468454bf887affaf04868a324a6d327c926e1818afd1749bd/black-forest-labs_FLUX.2-dev-i2i_golden.tar.gz"
       json_file: "torch_black-forest-labs_FLUX.2-dev-i2i_bfloat16_golden.json"
-    ssim_threshold: 0.49
-    lpips_threshold: 0.49
+    # Per-prompt SSIM:  [.997, .984]
+    # Per-prompt LPIPS: [.002, .00798]
+    ssim_threshold: 0.9
+    lpips_threshold: 0.009
     timeout: 3600
     config_params_override: {"prefer_module_v3": false}
 
@@ -1136,8 +1138,10 @@ logit_verification_pipelines:
     pregenerated_torch_goldens:
       tar_file: "s3://modular-bazel-artifacts-public/artifacts/black-forest-labs_FLUX.2-klein-4B_golden/1/5b646894a0ed1765d717c8d37b44a4a7fda24fec68d50f45c837295eaad468d8/black-forest-labs_FLUX.2-klein-4B_golden.tar.gz"
       json_file: "torch_black-forest-labs_FLUX.2-klein-4B_bfloat16_golden.json"
-    ssim_threshold: 0.60
-    lpips_threshold: 0.35
+    # Per-prompt SSIM:  [.823, .924, .913, .865, .832]
+    # Per-prompt LPIPS: [.0952, .0675, .0377, .0773, .102]
+    ssim_threshold: 0.75
+    lpips_threshold: 0.11
     timeout: 3600
 
   # ========== Wan T2V Pipelines ==========
