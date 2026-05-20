@@ -5,6 +5,9 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/KGENDialect/KGENAttrs.h"
+#include "KGEN/KGENDialect/KGENPogUtils.h"
+#include "KGEN/KGENDialect/KGENTypes.h"
+#include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "Support/STLExtras.h"
 #include "llvm/ADT/BitVector.h"
@@ -318,4 +321,93 @@ PogListAttr
 PogListAttr::prependContextualParamsFromOps(ArrayRef<StringAttr> newParams,
                                             ArrayRef<Operation *> ops) const {
   return prependAsInferredParams(newParams, /*defaults=*/{});
+}
+
+//===----------------------------------------------------------------------===//
+// PogListAttr::verify
+//===----------------------------------------------------------------------===//
+
+LogicalResult PogListAttr::verify(function_ref<InFlightDiagnostic()> emitError,
+                                  ArrayRef<PogMetadataAttr> pogs,
+                                  ArrayRef<ConstraintAttr> bodyConstraints,
+                                  ArgConvention origVariadicConvention) {
+  size_t numEl = pogs.size();
+  for (PogMetadataAttr pogAttr : pogs)
+    if (!pogAttr.getName())
+      return emitError() << "argument/parameter name cannot be null";
+
+  SmallVector<PassingKind> passingKinds = llvm::map_to_vector(
+      pogs, [](PogMetadataAttr pogAttr) { return pogAttr.getPassingKind(); });
+  if (failed(verifyPassingKinds(emitError, pogs, "arguments/parameter")))
+    return failure();
+
+  // We verified the passing kinds' order and number, so we can use a handler.
+  bool sawVariadic = false;
+  auto verifyVariadicIdx = [&](size_t idx, VariadicKind kind) -> LogicalResult {
+    bool isPack = kind == VariadicKind::PackVarArg;
+    if (isPack || kind == VariadicKind::PosVarArg) {
+      sawVariadic = true;
+      if (origVariadicConvention == ArgConvention::ByRefError)
+        return emitError() << "variadic convention not specified";
+    }
+
+    if (idx >= numEl) {
+      return emitError() << "variadic " << (isPack ? "pack " : "")
+                         << "index must be less than the number of elements: "
+                         << idx << " vs. " << numEl;
+    }
+    if (TypedAttr varDefault = pogs[idx].getDefaultValue()) {
+      if (::isa<UnknownAttr>(varDefault))
+        return success();
+      return emitError() << "default value of variadic "
+                         << (isPack ? "pack " : "") << "must be UnknownAttr";
+    }
+    return success();
+  };
+
+  for (auto [idx, pogAttr] : llvm::enumerate(pogs)) {
+    if (pogAttr.getPassingKind() == PassingKind::Inferred && idx != 0 &&
+        pogs[idx - 1].getPassingKind() != PassingKind::Inferred) {
+      return emitError()
+             << "'inferred' parameter follows non-inferred parameter";
+    }
+    if (pogAttr.isAnyVarArg() &&
+        failed(verifyVariadicIdx(idx, pogAttr.getVariadic())))
+      return failure();
+  }
+
+  if (origVariadicConvention != ArgConvention::ByRefError && !sawVariadic)
+    return emitError() << "pack convention specified without pack";
+
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
+// PogListAttr::printGenerator
+//===----------------------------------------------------------------------===//
+
+void PogListAttr::printGenerator(AsmPrinter &p, GeneratorType generator) const {
+  ArrayRef<Type> paramTypes = generator.getInputParamTypes();
+
+  // TODO(MOCO-3957): Flip this literal to `!kgen.generator<` once the
+  // textual-mnemonic retirement lands. Keeping the LIT-flavored prefix for
+  // now preserves byte-identical IR with the pre-move state.
+  p << "!lit.generator<";
+  // FuncType bodies carrying `FnMetadataAttrInterface` metadata (i.e. LIT
+  // `FnType`) get a special-case: skip the empty angle brackets, then ask the
+  // metadata to emit the FuncType inline (no `!lit.fn` prefix and no extra
+  // wrapping). The interface-dispatched call keeps this file free of a
+  // libLITDialect.a link dependency.
+  if (auto sig = ::dyn_cast<FuncType>(generator.getBody())) {
+    if (auto metadata = sig.getMetadata()) {
+      KGEN::printOptionalParamSignature(p, paramTypes, *this,
+                                        /*omitEmptyAngleBrackets=*/true);
+      metadata.printFuncTypeInline(p, sig);
+      p << '>';
+      return;
+    }
+  }
+  KGEN::printOptionalParamSignature(p, paramTypes, *this);
+  printKGENType(p, generator.getBody());
+  p << '>';
 }

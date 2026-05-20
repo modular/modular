@@ -5,7 +5,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/LITDialect/LITAttrs.h"
-#include "KGEN/KGENDialect/KGENPogUtils.h"
 #include "KGEN/KGENDialect/KGENTypes.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
@@ -35,87 +34,6 @@ void LITDialect::registerAttributes() {
 #define GET_ATTRDEF_LIST
 #include "KGEN/LITDialect/LITAttrs.cpp.inc"
       >();
-}
-
-//===----------------------------------------------------------------------===//
-// PogListAttr
-//===----------------------------------------------------------------------===//
-//
-// Most `PogListAttr` methods live in `KGEN/lib/KGENDialect/KGENPogList.cpp`
-// next to the attribute's dialect home. The two pieces below stay in
-// `LITDialect` because they depend on LIT-internal helpers
-// (`verifyPassingKinds` and the LIT generator printer).
-
-LogicalResult PogListAttr::verify(function_ref<InFlightDiagnostic()> emitError,
-                                  ArrayRef<PogMetadataAttr> pogs,
-                                  ArrayRef<ConstraintAttr> bodyConstraints,
-                                  ArgConvention origVariadicConvention) {
-  size_t numEl = pogs.size();
-  for (PogMetadataAttr pogAttr : pogs)
-    if (!pogAttr.getName())
-      return emitError() << "argument/parameter name cannot be null";
-
-  SmallVector<PassingKind> passingKinds = llvm::map_to_vector(
-      pogs, [](PogMetadataAttr pogAttr) { return pogAttr.getPassingKind(); });
-  if (failed(verifyPassingKinds(emitError, pogs, "arguments/parameter")))
-    return failure();
-
-  // We verified the passing kinds' order and number, so we can use a handler.
-  bool sawVariadic = false;
-  auto verifyVariadicIdx = [&](size_t idx, VariadicKind kind) -> LogicalResult {
-    bool isPack = kind == VariadicKind::PackVarArg;
-    if (isPack || kind == VariadicKind::PosVarArg) {
-      sawVariadic = true;
-      if (origVariadicConvention == ArgConvention::ByRefError)
-        return emitError() << "variadic convention not specified";
-    }
-
-    if (idx >= numEl) {
-      return emitError() << "variadic " << (isPack ? "pack " : "")
-                         << "index must be less than the number of elements: "
-                         << idx << " vs. " << numEl;
-    }
-    if (TypedAttr varDefault = pogs[idx].getDefaultValue()) {
-      if (::isa<UnknownAttr>(varDefault))
-        return success();
-      return emitError() << "default value of variadic "
-                         << (isPack ? "pack " : "") << "must be UnknownAttr";
-    }
-    return success();
-  };
-
-  for (auto [idx, pogAttr] : llvm::enumerate(pogs)) {
-    if (pogAttr.getPassingKind() == PassingKind::Inferred && idx != 0 &&
-        pogs[idx - 1].getPassingKind() != PassingKind::Inferred) {
-      return emitError()
-             << "'inferred' parameter follows non-inferred parameter";
-    }
-    if (pogAttr.isAnyVarArg() &&
-        failed(verifyVariadicIdx(idx, pogAttr.getVariadic())))
-      return failure();
-  }
-
-  if (origVariadicConvention != ArgConvention::ByRefError && !sawVariadic)
-    return emitError() << "pack convention specified without pack";
-
-  return success();
-}
-
-void PogListAttr::printGenerator(AsmPrinter &p, GeneratorType generator) const {
-  ArrayRef<Type> paramTypes = generator.getInputParamTypes();
-
-  p << "!lit.generator<";
-  if (auto sig = ::dyn_cast<FnType>(generator.getBody())) {
-    // Special case for FnType Generators: Skip the empty angle brackets, and
-    // print the FnType without any additional wrapper.
-    KGEN::printOptionalParamSignature(p, paramTypes, *this,
-                                      /*omitEmptyAngleBrackets=*/true);
-    printFnType(p, sig);
-  } else {
-    KGEN::printOptionalParamSignature(p, paramTypes, *this);
-    printKGENType(p, generator.getBody());
-  }
-  p << '>';
 }
 
 //===----------------------------------------------------------------------===//
@@ -297,6 +215,10 @@ void FnMetadataAttr::printFuncTypeBody(AsmPrinter &p, FuncType sig) const {
 void FnMetadataAttr::printFuncType(AsmPrinter &p, FuncType sig) const {
   p << "!lit.fn";
   printFuncTypeBody(p, sig);
+}
+
+void FnMetadataAttr::printFuncTypeInline(AsmPrinter &p, FuncType sig) const {
+  printFnType(p, ::cast<FnType>(sig));
 }
 
 bool FnMetadataAttr::equals(FnMetadataAttrInterface otherMetadata) const {
