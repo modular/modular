@@ -215,16 +215,30 @@ class TokenGeneratorPipeline(
 
             # Suppress reasoning classification only when constrained decoding
             # will actually constrain the model from the first token with no
-            # way to suspend it for reasoning. For ``tool_choice=auto`` the
-            # grammar is compiled but the bitmask is gated until a tool-call
-            # start token is seen (``grammar_enforced=False`` initially), so
-            # the model can reason freely up to that point. Note that when
-            # reasoning classification is disabled reasoning tokens are
-            # routed to the content field, not reasoning.
+            # way to suspend it for reasoning. Two escape hatches keep
+            # reasoning live:
+            #
+            #   1. ``grammar_enforced=False`` on a context that has a grammar
+            #      (tool_choice=auto): the grammar is compiled but the bitmask
+            #      is gated until a tool-call start token is seen, so the model
+            #      can reason freely up to that point.
+            #   2. A configured thinking region (thinking_region_delimiters): GrammarEnforcementState
+            #      suspends grammar during ``<think>...</think>``.
+            #
+            # Note that when reasoning classification is disabled reasoning
+            # tokens are routed to the content field, not reasoning.
             grammar_will_constrain_from_start = (
                 context.grammar and context.grammar_enforced
             ) or context.json_schema
-            if is_still_reasoning and grammar_will_constrain_from_start:
+            has_thinking_region = (
+                hasattr(context, "grammar_state")
+                and context.grammar_state.thinking_region_delimiters is not None
+            )
+            if (
+                is_still_reasoning
+                and grammar_will_constrain_from_start
+                and not has_thinking_region
+            ):
                 is_still_reasoning = False
 
             with record_ms(METRICS.output_time):

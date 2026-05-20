@@ -194,3 +194,11 @@ class KimiK2_5ReasoningParser(ReasoningParser):
             think_end_token_id=think_end_id,
             tool_section_start_token_id=tool_section_start_id,
         )
+
+    @classmethod
+    async def reasoning_end_token_id(
+        cls,
+        tokenizer: PipelineTokenizer[Any, Any, Any],
+    ) -> int | None:
+        """Returns the ``</think>`` token id."""
+        return await convert_token_to_id(tokenizer, "</think>")

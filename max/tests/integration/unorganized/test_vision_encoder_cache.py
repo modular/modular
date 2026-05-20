@@ -195,6 +195,13 @@ class FakeContext:
     ) -> None:
         pass
 
+    def set_thinking_region(
+        self,
+        start_token_ids: list[int] | None,
+        end_token_ids: list[int] | None,
+    ) -> None:
+        pass
+
     def update_enforcement_state(self, token: int) -> bool:
         return False
 

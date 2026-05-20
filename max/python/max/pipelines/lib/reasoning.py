@@ -20,6 +20,8 @@ from typing import Any
 
 from max.interfaces import PipelineTokenizer, ReasoningParser
 
+__all__ = ["get_parser_cls"]
+
 _REASONING_PARSERS: dict[str, type[ReasoningParser]] = {}
 
 
@@ -47,3 +49,16 @@ async def create(
             f"Available: {sorted(_REASONING_PARSERS)}"
         )
     return await cls.from_tokenizer(tokenizer)
+
+
+def get_parser_cls(name: str | None) -> type[ReasoningParser] | None:
+    """Look up a registered reasoning parser *class* by name.
+
+    Returns ``None`` if no parser is registered under that name, or if
+    ``name`` is ``None``. Useful for callers that need to invoke
+    class-level hooks (e.g., :meth:`ReasoningParser.reasoning_end_token_id`)
+    without instantiating the parser.
+    """
+    if name is None:
+        return None
+    return _REASONING_PARSERS.get(name)

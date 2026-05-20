@@ -184,3 +184,27 @@ class ReasoningParser(ABC):
             A new :class:`ReasoningParser` instance.
         """
         ...
+
+    @classmethod
+    @abstractmethod
+    async def reasoning_end_token_id(
+        cls,
+        tokenizer: PipelineTokenizer[Any, Any, Any],
+    ) -> int | None:
+        """Returns the single-token ID that closes a reasoning span.
+
+        Used by callers that need to detect end-of-reasoning without
+        instantiating the full parser (e.g., grammar-region setup in the
+        tokenizer). Implementations should resolve their architecture's
+        end-marker string (``</think>``, ``<channel|>``, etc.) via
+        :func:`max.pipelines.lib.tokenizer.convert_token_to_id`.
+
+        Args:
+            tokenizer: The :class:`~max.interfaces.PipelineTokenizer` used
+                for token-id resolution.
+
+        Returns:
+            The token ID that marks end-of-reasoning, or ``None`` if the
+            architecture's end marker doesn't tokenize to a single ID.
+        """
+        ...

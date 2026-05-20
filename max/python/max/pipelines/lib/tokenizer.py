@@ -42,6 +42,7 @@ from max.pipelines.core import (
     TextAndVisionContext,
     TextContext,
 )
+from max.pipelines.lib.reasoning import get_parser_cls
 from max.support.image import find_contiguous_ranges, hash_image
 from PIL import Image
 from transformers import (
@@ -65,6 +66,41 @@ async def convert_token_to_id(
     if len(encoded) != 1:
         return None
     return int(encoded[0])
+
+
+async def _configure_thinking_region(
+    tokenizer: PipelineTokenizer[Any, Any, Any],
+    context: TextContext | TextAndVisionContext,
+    reasoning_parser_name: str | None,
+    has_constrained_decoding: bool,
+    prompt_token_ids: Sequence[int],
+) -> None:
+    """Configures the thinking region on the context when applicable.
+
+    Asks the registered reasoning parser whether the prompt ends inside a
+    reasoning span. When it does, installs the parser-specific
+    end-of-reasoning token id on the context's thinking region so
+    the state machine knows what to watch for, and marks the request as
+    starting inside reasoning so grammar enforcement is suspended until the end token fires.
+
+    No-op when there is no reasoning parser, no constrained decoding,
+    no registered parser class, the prompt isn't in reasoning, or the
+    end-of-reasoning marker doesn't tokenize to a single id.
+    """
+    if reasoning_parser_name is None or not has_constrained_decoding:
+        return
+    parser_cls = get_parser_cls(reasoning_parser_name)
+    if parser_cls is not None:
+        parser = await parser_cls.from_tokenizer(tokenizer)
+        if parser.is_prompt_in_reasoning(prompt_token_ids):
+            reasoning_end_id = await parser_cls.reasoning_end_token_id(
+                tokenizer
+            )
+            if reasoning_end_id is not None:
+                context.set_thinking_region(None, [reasoning_end_id])
+                # Start in thinking region: grammar OFF, reasoning active.
+                context.grammar_state._in_thinking_region = True
+                context.grammar_state.grammar_enforced = False
 
 
 logger = logging.getLogger("max.pipelines")
@@ -440,6 +476,7 @@ class TextTokenizer(
         # cache tokenizer eos token ids
         self._default_eos_token_ids = set([self.eos])
 
+        self._reasoning_parser_name: str | None = None
         if pipeline_config:
             target_eos = getattr(
                 pipeline_config.model.huggingface_config, "eos_token_id", None
@@ -453,6 +490,9 @@ class TextTokenizer(
                     self._default_eos_token_ids.add(eos)
                 elif isinstance(eos, list):
                     self._default_eos_token_ids.update(eos)
+            self._reasoning_parser_name = (
+                pipeline_config.runtime.reasoning_parser
+            )
 
     def apply_chat_template(
         self,
@@ -693,6 +733,20 @@ class TextTokenizer(
             ),
         )
 
+        # Configure thinking region when this is a reasoning architecture and
+        # constrained decoding is active. Drive this off reasoning-parser
+        # presence.
+        has_constrained_decoding = (
+            grammar is not None or json_schema is not None
+        )
+        await _configure_thinking_region(
+            self,
+            context,
+            self._reasoning_parser_name,
+            has_constrained_decoding,
+            token_ids.tolist(),
+        )
+
         return context
 
     @property
@@ -784,6 +838,10 @@ class TextAndVisionTokenizer(
 
         self.enable_prefix_caching = (
             pipeline_config.model.kv_cache.enable_prefix_caching
+        )
+
+        self._reasoning_parser_name: str | None = (
+            pipeline_config.runtime.reasoning_parser
         )
 
         # Qwen2.5VL uses image_token_id
@@ -1048,6 +1106,20 @@ class TextAndVisionTokenizer(
                 )
             ],
             vision_token_ids=self.vision_token_ids,
+        )
+
+        # Configure thinking region when this is a reasoning architecture and
+        # constrained decoding is active. Drive this off reasoning-parser
+        # presence.
+        has_constrained_decoding = (
+            grammar is not None or json_schema is not None
+        )
+        await _configure_thinking_region(
+            self,
+            context,
+            self._reasoning_parser_name,
+            has_constrained_decoding,
+            encoded_prompt.tolist(),
         )
 
         return context

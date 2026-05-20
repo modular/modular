@@ -878,6 +878,26 @@ class TextGenerationContext(BaseContext, Protocol):
         """
         ...
 
+    def set_thinking_region(
+        self,
+        start_token_ids: list[int] | None,
+        end_token_ids: list[int] | None,
+    ) -> None:
+        """Configure thinking region for conditional grammar enforcement.
+
+        When a thinking region is configured and grammar enforcement starts
+        inside the thinking region, grammar is suspended until the end token
+        sequence is detected. This enables reasoning output during constrained
+        decoding (e.g., ``tool_choice=required`` with thinking enabled).
+
+        Args:
+            start_token_ids: Token IDs marking thinking start (can be ``None`` if
+                we start inside thinking, which is the case when chat template
+                already emits ``<think>``).
+            end_token_ids: Token IDs marking thinking end (e.g., ``</think>``).
+        """
+        ...
+
     def update_enforcement_state(self, token: int) -> bool:
         """Advance the grammar-enforcement state machine by one token.
 

@@ -399,8 +399,7 @@ class StructuredOutputHelper:
 
     Constrained decoding is used when:
     1. Feature enabled via feature flag (--enable-structured-output)
-    2. Tool calling enforced via grammar (works regardless of feature flag for tool_choice=required or named function)
-    3. Tool calling with tool_choice=auto (conditional enforcement)
+    2. Tool calling enforced via grammar (tool_choice=required, named function, or auto (conditional enforcement))
 
     Attributes:
         enabled: Whether constrained decoding is available (tokenizer info initialized).

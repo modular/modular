@@ -67,14 +67,29 @@ class GrammarEnforcementState:
     Encapsulates the logic for:
     - Tracking whether grammar is currently being enforced
     - Detecting tool call start/end token sequences
+    - Detecting thinking region end sequences (for thinking + constrained decoding)
     - Managing the token buffer for multi-token sequence matching
 
     State machine scenarios:
 
-    1. ``tool_choice=auto`` (tool region set):
+    1. ``tool_choice=auto`` without thinking (tool region set):
        - Starts with ``grammar_enforced=False``
        - Detects tool_start -> ``grammar_enforced=True``
        - Detects tool_end -> ``grammar_enforced=False``
+
+    2. ``tool_choice=auto`` with thinking (thinking + tool region set):
+       - Starts with ``_in_thinking_region=True``, ``grammar_enforced=False``
+       - Detects ``</think>`` -> ``_in_thinking_region=False``, ``grammar_enforced=False``
+       - Detects tool_start -> ``grammar_enforced=True``
+       - Detects tool_end -> ``grammar_enforced=False``
+
+    3. ``tool_choice=required`` with thinking (thinking region set):
+       - Starts with ``_in_thinking_region=True``, ``grammar_enforced=False``
+       - Detects ``</think>`` -> ``_in_thinking_region=False``, ``grammar_enforced=True``
+
+    4. ``response_format: json_schema`` with thinking (thinking region set):
+       - Starts with ``_in_thinking_region=True``, ``grammar_enforced=False``
+       - Detects ``</think>`` -> ``_in_thinking_region=False``, ``grammar_enforced=True``
     """
 
     grammar_enforced: bool = False
@@ -94,14 +109,33 @@ class GrammarEnforcementState:
     tool_region: StructuredOutputRegionDelimiters | None = None
     """Token sequences defining tool call boundaries, if conditional enforcement."""
 
-    _match_buffer: list[int] = field(default_factory=list)
+    thinking_region_delimiters: StructuredOutputRegionDelimiters | None = None
+    """Token sequences defining thinking boundaries (e.g., ``</think>``).
+
+    When set, grammar enforcement is suspended inside thinking regions.
+    The key insight is that when thinking is enabled, the chat template
+    already emits ``<think>`` in the prompt, so we start in thinking region
+    and only need to detect ``</think>`` to exit.
+    """
+
+    _in_thinking_region: bool = False
+    """Whether currently inside a thinking region.
+    
+    TODO: Consider consolidating with ``in_thinking_phase`` in text generation pipeline.
+    """
+
+    _tool_calling_match_buffer: list[int] = field(default_factory=list)
     """Buffer for partial matching of multi-token start/end tags."""
+
+    _thinking_match_buffer: list[int] = field(default_factory=list)
+    """Buffer for partial matching of thinking end sequence."""
 
     def update_enforcement_state(self, token: int) -> bool:
         """Update enforcement state based on sampled token.
 
         Checks if the token completes a start/end sequence and
-        toggles grammar_enforced accordingly.
+        toggles grammar_enforced accordingly. Thinking region transitions
+        take priority over tool region transitions.
 
         Args:
             token: The newly sampled token.
@@ -109,43 +143,77 @@ class GrammarEnforcementState:
         Returns:
             True if enforcement state changed.
         """
-        if self.tool_region is None:
-            return False
+        changed = False
 
-        # Check for start sequence (only when not enforcing)
-        if not self.grammar_enforced:
+        # Check thinking region transitions FIRST (higher priority)
+        # When thinking is enabled, we START in thinking region (template already
+        # emits <think>). We only detect </think> to exit.
+        if (
+            self.thinking_region_delimiters is not None
+            and self._in_thinking_region
+        ):
             if (
-                self.tool_region.start_token_ids is not None
-                and self._check_sequence_match(
-                    token, self.tool_region.start_token_ids
+                self.thinking_region_delimiters.end_token_ids is not None
+                and self._check_sequence_match_with_buffer(
+                    token,
+                    self.thinking_region_delimiters.end_token_ids,
+                    self._thinking_match_buffer,
                 )
             ):
-                self.grammar_enforced = True
-                return True
-        # Check for end sequence (only when enforcing)
-        else:
-            if (
-                self.tool_region.end_token_ids is not None
-                and self._check_sequence_match(
-                    token, self.tool_region.end_token_ids
-                )
-            ):
-                self.grammar_enforced = False
-                self._match_buffer.clear()
-                return True
+                self._in_thinking_region = False
+                # After thinking ends:
+                # - For required tools (tools_forced=True): immediately enforce
+                # - For json_schema without tools (tool_region is None):
+                #   immediately enforce
+                # - For auto tools: stay free, tool region logic will handle it
+                if self.tools_forced or self.tool_region is None:
+                    self.grammar_enforced = True
+                changed = True
 
-        return False
+        # Tool region logic (for tool_choice=auto)
+        if not changed and self.tool_region is not None:
+            # Check for start sequence (only when not enforcing)
+            if not self.grammar_enforced:
+                if (
+                    self.tool_region.start_token_ids is not None
+                    and self._check_sequence_match(
+                        token, self.tool_region.start_token_ids
+                    )
+                ):
+                    self.grammar_enforced = True
+                    changed = True
+            # Check for end sequence (only when enforcing)
+            else:
+                if (
+                    self.tool_region.end_token_ids is not None
+                    and self._check_sequence_match(
+                        token, self.tool_region.end_token_ids
+                    )
+                ):
+                    self.grammar_enforced = False
+                    self._tool_calling_match_buffer.clear()
+                    changed = True
+
+        return changed
 
     def _check_sequence_match(self, token: int, target: list[int]) -> bool:
-        """Check if token completes a target sequence."""
-        self._match_buffer.append(token)
+        """Check if token completes a target sequence using the default buffer."""
+        return self._check_sequence_match_with_buffer(
+            token, target, self._tool_calling_match_buffer
+        )
+
+    def _check_sequence_match_with_buffer(
+        self, token: int, target: list[int], buffer: list[int]
+    ) -> bool:
+        """Check if token completes a target sequence using a specific buffer."""
+        buffer.append(token)
 
         max_len = len(target)
-        if len(self._match_buffer) > max_len:
-            self._match_buffer = self._match_buffer[-max_len:]
+        if len(buffer) > max_len:
+            del buffer[: len(buffer) - max_len]
 
-        if self._match_buffer[-len(target) :] == target:
-            self._match_buffer.clear()
+        if buffer[-len(target) :] == target:
+            buffer.clear()
             return True
         return False
 
@@ -355,6 +423,31 @@ class TextContext:
             self.grammar_state.tool_region = StructuredOutputRegionDelimiters(
                 start_token_ids=start_token_ids,
                 end_token_ids=end_token_ids,
+            )
+
+    def set_thinking_region(
+        self,
+        start_token_ids: list[int] | None,
+        end_token_ids: list[int] | None,
+    ) -> None:
+        """Configure thinking region for conditional grammar enforcement.
+
+        When a thinking region is configured and ``_in_thinking_region`` is True,
+        grammar enforcement is suspended until the end token sequence is detected.
+        This enables reasoning output during constrained decoding.
+
+        Args:
+            start_token_ids: Token IDs marking thinking start (can be None if we
+                start inside thinking, which is the case when chat template
+                already emits ``<think>``).
+            end_token_ids: Token IDs marking thinking end (e.g., ``</think>``).
+        """
+        if end_token_ids is not None:
+            self.grammar_state.thinking_region_delimiters = (
+                StructuredOutputRegionDelimiters(
+                    start_token_ids=start_token_ids,
+                    end_token_ids=end_token_ids,
+                )
             )
 
     def update_enforcement_state(self, token: int) -> bool:
