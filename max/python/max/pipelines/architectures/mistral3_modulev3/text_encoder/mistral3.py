@@ -99,7 +99,7 @@ class EncoderTransformerBlock(Module[..., Tensor]):
         return x
 
 
-class Mistral3TextEncoderTransformer(Module[..., tuple[Tensor, ...]]):
+class Mistral3TextEncoderTransformer(Module[[Tensor], Tensor]):
     """Mistral3 text encoder transformer without KV cache dependency.
 
     Encodes tokens and returns fused prompt embeddings by stacking hidden
@@ -152,7 +152,7 @@ class Mistral3TextEncoderTransformer(Module[..., tuple[Tensor, ...]]):
             ),
         )
 
-    def forward(self, tokens: Tensor) -> tuple[Tensor, ...]:
+    def forward(self, tokens: Tensor) -> Tensor:
         """Forward pass returning fused prompt embeddings.
 
         Runs the transformer up to the last configured layer, collects hidden
@@ -192,8 +192,6 @@ class Mistral3TextEncoderTransformer(Module[..., tuple[Tensor, ...]]):
         # Read L and D directly from the tensor dims to avoid any Python-side
         # constant that could force a device sync at eager execution time.
         seq_len = stacked.shape[1]
-        return (
-            F.reshape(
-                stacked, [1, seq_len, stacked.shape[2] * stacked.shape[3]]
-            ),
+        return F.reshape(
+            stacked, [1, seq_len, stacked.shape[2] * stacked.shape[3]]
         )

@@ -50,12 +50,7 @@ class UnaryTypingModule(Module[[Tensor], Tensor]):
 class MultiOutTypingModule(
     Module[[Tensor, Tensor], tuple[Tensor, Tensor, Tensor]]
 ):
-    """Two Tensors in, three-Tensor tuple out -- multi-output case.
-
-    Note: at the time MXF-442 lands as Layer 1, the runtime container is
-    still `list` (Layer 2 follow-up tightens this to `tuple`). The test
-    asserts the *declared* static type, which is what mypy verifies.
-    """
+    """Two Tensors in, three-Tensor tuple out -- multi-output case."""
 
     bias: Tensor
 

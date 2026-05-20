@@ -248,7 +248,7 @@ class TestReconstructOutputs:
         slot1 = _OutputSlot(start=0, count=1, mapping=None)
         slot2 = _OutputSlot(start=1, count=1, mapping=None)
         result = _reconstruct_outputs([buf1, buf2], [slot1, slot2], unary=False)
-        assert isinstance(result, list)
+        assert isinstance(result, tuple)
         assert len(result) == 2
         assert list(result[0].shape) == [4, 8]
         assert list(result[1].shape) == [3, 6]
@@ -279,7 +279,7 @@ class TestReconstructOutputs:
             [slot_plain, slot_dist],
             unary=False,
         )
-        assert isinstance(result, list)
+        assert isinstance(result, tuple)
         assert len(result) == 2
         assert not result[0].is_distributed
         assert result[1].is_distributed

@@ -84,7 +84,4 @@ class Mistral3TextEncoderModel(ComponentModel):
 
     def __call__(self, tokens: Tensor) -> Tensor:
         """Run the compiled text encoder."""
-        outputs = self.model(tokens)
-        if isinstance(outputs, (list, tuple)):
-            return outputs[0]
-        return outputs
+        return self.model(tokens)
