@@ -23,13 +23,13 @@ namespace M::KGEN {
 class ParameterEvaluationContext;
 class FnMetadataAttrInterface;
 class FuncInterface;
-class GeneratorMetadataAttrInterface;
 class ParamDeclAttr;
 class ParamDeclArrayAttr;
 struct PartiallySpecializedInputParams;
 class FuncSymbolAttr;
 class FuncTypeGeneratorType;
 class FuncLiteralTypeGeneratorType;
+class PogListAttr;
 class StructDefFieldAttr;
 class SymbolConstantAttr;
 class ParamListType;

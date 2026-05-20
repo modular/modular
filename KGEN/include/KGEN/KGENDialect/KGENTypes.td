@@ -203,7 +203,7 @@ def KGEN_GeneratorType : KGENType<"Generator", "generator", [
   let parameters = (ins
     ArrayRefParameter<"Type">:$inputParamTypes,
     "Type":$body,
-    "GeneratorMetadataAttrInterface":$metadata
+    "PogListAttr":$metadata
   );
   let hasCustomAssemblyFormat = 1;
 
@@ -212,7 +212,7 @@ def KGEN_GeneratorType : KGENType<"Generator", "generator", [
         "ArrayRef<Type>":$inputParamTypes, "Type":$body,
         CArg<"Attribute", "{}">:$metadata), [{
       return $_get(body.getContext(), inputParamTypes, body,
-                   ::cast_or_null<GeneratorMetadataAttrInterface>(metadata));
+                   ::cast_or_null<PogListAttr>(metadata));
     }]>
   ];
 

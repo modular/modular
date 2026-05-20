@@ -32,7 +32,7 @@ def StringType : DialectType<(type)>;
 def GeneratorType : DialectType<(type
   TypeArray:$inputParamTypes,
   Type:$body,
-  ConcreteOptionalAttribute<"GeneratorMetadataAttrInterface">:$metadata
+  ConcreteOptionalAttribute<"PogListAttr">:$metadata
 )> {
   let cBuilder = "get<$_resultType>(context, $_args)";
 }
@@ -283,7 +283,7 @@ def FuncSymbolAttr : DialectAttribute<(attr
 def GeneratorAttr : DialectAttribute<(attr
   TypeArray:$inputParamTypes,
   ConcreteAttribute<"TypedAttr">:$body,
-  ConcreteOptionalAttribute<"GeneratorMetadataAttrInterface">:$metadata
+  ConcreteOptionalAttribute<"PogListAttr">:$metadata
 )> {
   let cBuilder = "get<$_resultType>(context, $_args)";
 }

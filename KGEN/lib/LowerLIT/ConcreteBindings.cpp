@@ -89,10 +89,9 @@ Attribute ConcreteBindingReplacer::tryReplace(Attribute attr, size_t depth) {
   return nullptr;
 }
 
-GeneratorMetadataAttrInterface ConcreteBindingReplacer::specializeMetadata(
-    GeneratorMetadataAttrInterface genMetadata,
-    ArrayRef<TypedAttr> paramBindings, ArrayRef<Type> paramTypes,
-    function_ref<InFlightDiagnostic()> emitErrorFn) {
+PogListAttr ConcreteBindingReplacer::specializeMetadata(
+    PogListAttr genMetadata, ArrayRef<TypedAttr> paramBindings,
+    ArrayRef<Type> paramTypes, function_ref<InFlightDiagnostic()> emitErrorFn) {
   if (!genMetadata)
     return {};
 
@@ -147,9 +146,11 @@ GeneratorType M::KGEN::getSpecializedWithConcreteBindings(
   SmallVector<Type> newParamTypes =
       replacer.getRemappedUnboundParamTypes(paramTypes);
   Type newBody = replacer.getReboundType(gen.getBody());
-  GeneratorMetadataAttrInterface genMetadata = replacer.specializeMetadata(
-      gen.getMetadata(), paramBindings, paramTypes, emitErrorFn);
-  if (gen.getMetadata() && !genMetadata)
+  Attribute rawMetadata = gen.getMetadata();
+  PogListAttr genMetadata =
+      replacer.specializeMetadata(dyn_cast_or_null<PogListAttr>(rawMetadata),
+                                  paramBindings, paramTypes, emitErrorFn);
+  if (rawMetadata && !genMetadata)
     return {};
 
   return GeneratorType::get(newParamTypes, newBody, genMetadata);
@@ -174,9 +175,11 @@ GeneratorAttr M::KGEN::getSpecializedWithConcreteBindings(
   SmallVector<Type> newParamTypes =
       replacer.getRemappedUnboundParamTypes(paramTypes);
   TypedAttr newBody = replacer.getReboundAttribute(gen.getBody());
-  GeneratorMetadataAttrInterface genMetadata = replacer.specializeMetadata(
-      gen.getMetadata(), paramBindings, paramTypes, emitErrorFn);
-  if (gen.getMetadata() && !genMetadata)
+  Attribute rawMetadata = gen.getMetadata();
+  PogListAttr genMetadata =
+      replacer.specializeMetadata(dyn_cast_or_null<PogListAttr>(rawMetadata),
+                                  paramBindings, paramTypes, emitErrorFn);
+  if (rawMetadata && !genMetadata)
     return {};
 
   return GeneratorAttr::get(newBody.getContext(), newBody, newParamTypes,

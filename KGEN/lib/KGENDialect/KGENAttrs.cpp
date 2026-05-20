@@ -1303,11 +1303,11 @@ getSymbolSignature(FuncInterface func, ArrayRef<Operation *> symbolOps) {
   for (Type type : baseSigGen.getInputParamTypes())
     inputParamTypes.push_back(remapper.replace(type));
 
-  GeneratorMetadataAttrInterface genMetadata = baseSigGen.getMetadata();
-  if (genMetadata) {
+  Attribute genMetadata = baseSigGen.getMetadata();
+  if (auto poglist = dyn_cast_or_null<PogListAttr>(genMetadata)) {
     SmallVector<StringAttr> paramNames = llvm::map_to_vector(
         paramDecls, [](const ParamDeclAttr &param) { return param.getName(); });
-    genMetadata = remapper.replace(genMetadata.prependContextualParamsFromOps(
+    genMetadata = remapper.replace(poglist.prependContextualParamsFromOps(
         paramNames, symbolOps.drop_back()));
   }
 
@@ -1476,6 +1476,11 @@ void GeneratorAttr::print(::mlir::AsmPrinter &odsPrinter) const {
   odsPrinter << '>';
 }
 
+Type GeneratorAttr::getType() const {
+  return GeneratorType::get(getInputParamTypes(), getBody().getType(),
+                            getMetadata());
+}
+
 /// A generator value needs to be instantiated.
 bool GeneratorAttr::isConstant() const { return false; }
 
@@ -1511,7 +1516,7 @@ GeneratorAttr GeneratorAttr::getSpecializedGenerator(
     return {};
 
   // Create specialized metadata if needed
-  GeneratorMetadataAttrInterface genMetadata = getMetadata();
+  PogListAttr genMetadata = getMetadata();
   if (genMetadata) {
     genMetadata = genMetadata.getSpecializedMetadata(
         specialization.evaluator, specialization.boundParams, emitErrorFn);

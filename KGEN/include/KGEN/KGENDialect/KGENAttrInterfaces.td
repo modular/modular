@@ -249,49 +249,4 @@ def FnMetadataAttrInterface : AttrInterface<"FnMetadataAttrInterface"> {
   ];
 }
 
-//===----------------------------------------------------------------------===//
-// GeneratorMetadataAttrInterface
-//===----------------------------------------------------------------------===//
-
-def GeneratorMetadataAttrInterface
-    : AttrInterface<"GeneratorMetadataAttrInterface"> {
-  let description = [{
-    This interface describes attributes that are attached to a GeneratorType,
-    and carries additional metadata about the list. This interface defines the
-    required methods for this metadata attribute, including verification and
-    print hooks.
-  }];
-  let cppNamespace = "::M::KGEN";
-
-  let methods = [
-    InterfaceMethod<[{
-      Verify the generator using the current metadata.
-    }], "LogicalResult", "verifyGenerator", (ins
-      "function_ref<InFlightDiagnostic()>":$emitError,
-      "ArrayRef<Type>":$inputParamTypes, "Type":$body)>,
-    InterfaceMethod<[{
-      Request the custom metadata attribute print the provided generator.
-    }], "void", "printGenerator", (ins "AsmPrinter &":$p,
-                                       "GeneratorType":$generator)>,
-    InterfaceMethod<[{
-      Get a new metadata attribute for a generator where the parameters
-      indicated by set bits in `boundParams` been removed from the generator by
-      being explicitly bound to values. The `evaluator` can be used to
-      substitute the bound values into any attr/type of the metadata. A null
-      result indicates a failure, and the `emitError` function can be used to
-      report the error.
-    }], "GeneratorMetadataAttrInterface", "getSpecializedMetadata", (ins
-      "ParameterEvaluator &":$evaluator,
-      "const llvm::BitVector &":$boundParams,
-      "function_ref<InFlightDiagnostic()>":$emitError)>,
-    InterfaceMethod<[{
-      Get a new metadata attribute for a generator with a number of positional
-      input parameters prepended, determined from the number of declared by the
-      given ops. The given operations must implement `DeclInterface`.
-    }], "GeneratorMetadataAttrInterface", "prependContextualParamsFromOps", (ins
-      "ArrayRef<StringAttr>":$newParams,
-      "ArrayRef<Operation *>":$ops)>,
-  ];
-}
-
 #endif // KGEN_KGENDIALECT_KGENATTRINTERFACES_TD

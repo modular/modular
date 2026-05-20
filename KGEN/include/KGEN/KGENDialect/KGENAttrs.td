@@ -1597,24 +1597,25 @@ def KGEN_GeneratorAttr : KGEN_ExprAttr<"Generator", "gen", [
 
   let parameters = (ins "TypedAttr":$body,
                         ArrayRefParameter<"Type">:$inputParamTypes,
-                        "GeneratorMetadataAttrInterface":$metadata);
+                        "PogListAttr":$metadata);
 
   let builders = [
     AttrBuilderWithInferredContext<
         (ins "ArrayRef<Type>":$inputParamTypes,
              "TypedAttr":$body,
-             CArg<"GeneratorMetadataAttrInterface", "nullptr">:$metadata), [{
-      return get(body.getContext(), body, inputParamTypes, metadata);
+             CArg<"Attribute", "{}">:$metadata), [{
+      return get(body.getContext(), body, inputParamTypes,
+                 ::cast_or_null<PogListAttr>(metadata));
     }]>
   ];
   let hasCustomAssemblyFormat = 1;
 
   let extraClassDeclaration = [{
-    /// Get the type of this GeneratorAttr (computed on demand).
-    Type getType() const {
-      return GeneratorType::get(
-        getInputParamTypes(), getBody().getType(), getMetadata());
-    }
+    /// Get the type of this `GeneratorAttr` (computed on demand).
+    ///
+    /// Defined out-of-line in `KGENAttrs.cpp` because it constructs a
+    /// `GeneratorType`, which is generated in a separate header.
+    Type getType() const;
 
     /// Get this GeneratorAttr with some parameters bound.
     GeneratorAttr getSpecializedGenerator(
@@ -2574,8 +2575,7 @@ def KGEN_OptionalConventionParameter : OptionalParameter<"ArgConvention"> {
   let defaultValue = "ArgConvention::ByRefError";
 }
 
-def KGEN_PogListAttr : KGENAttr<"PogList", "pog_list",
-    [DeclareAttrInterfaceMethods<GeneratorMetadataAttrInterface>]> {
+def KGEN_PogListAttr : KGENAttr<"PogList", "pog_list"> {
   let summary = "Argument or parameter list metadata.";
   let description = [{
     The `#kgen.pog_list` attribute contains metadata about an argument or
@@ -2585,8 +2585,7 @@ def KGEN_PogListAttr : KGENAttr<"PogList", "pog_list",
     (i.e. pos-only or pos-or-kw) args/params, and the keyword-only default
     values similarly correspond to the trailing keyword-only args/params.
 
-    This attribute subscribes to GeneratorMetadataAttrInterface, which means it
-    gets attached to GeneratorTypes as metadata.
+    This attribute is the `metadata` field of `GeneratorType`.
 
     Example:
 
@@ -2692,6 +2691,36 @@ def KGEN_PogListAttr : KGENAttr<"PogList", "pog_list",
       ArrayRef<StringAttr> names, ArrayRef<TypedAttr> defaults,
       ArrayRef<SmallVector<ConstraintAttr>> paramConstraints = {},
       ArrayRef<ConstraintAttr> bodyConstraints = {}) const;
+
+    //===------------------------------------------------------------------===//
+    // GeneratorType metadata hooks
+    //===------------------------------------------------------------------===//
+    // `PogListAttr` is the metadata attached to `GeneratorType`. The hooks
+    // below are invoked by the type framework during verification, printing,
+    // and parameter specialization.
+
+    /// Verify the generator using the current metadata.
+    LogicalResult verifyGenerator(function_ref<InFlightDiagnostic()> emitError,
+                                  ArrayRef<Type> inputParamTypes,
+                                  Type body) const;
+
+    /// Print the provided generator. The metadata owns the textual format.
+    void printGenerator(AsmPrinter &p, GeneratorType generator) const;
+
+    /// Get a new metadata attribute for a generator where the parameters
+    /// indicated by set bits in `boundParams` have been removed by being
+    /// explicitly bound to values. The `evaluator` substitutes bound values
+    /// into any sub-attr/type of the metadata.
+    PogListAttr
+    getSpecializedMetadata(ParameterEvaluator &evaluator,
+                           const llvm::BitVector &boundParams,
+                           function_ref<InFlightDiagnostic()> emitError) const;
+
+    /// Get a new metadata attribute with positional input parameters
+    /// prepended, named by `newParams` and tagged as inferred.
+    PogListAttr
+    prependContextualParamsFromOps(ArrayRef<StringAttr> newParams,
+                                   ArrayRef<Operation *> ops) const;
   }];
 
   let genVerifyDecl = 1;
