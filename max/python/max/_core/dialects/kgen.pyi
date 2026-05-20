@@ -309,35 +309,6 @@ class FnMetadataAttrInterface(Protocol):
     ) -> FnMetadataAttrInterface: ...
     def equals(self, arg: FnMetadataAttrInterface, /) -> bool: ...
 
-class GeneratorMetadataAttrInterface(Protocol):
-    """
-    This interface describes attributes that are attached to a GeneratorType,
-    and carries additional metadata about the list. This interface defines the
-    required methods for this metadata attribute, including verification and
-    print hooks.
-    """
-
-    def verify_generator(
-        self,
-        arg0: DiagnosticHandler,
-        arg1: Sequence[max._core.Type],
-        arg2: max._core.Type,
-        /,
-    ) -> bool: ...
-    def get_specialized_metadata(
-        self,
-        arg0: ParameterEvaluator,
-        arg1: max._core._BitVector,
-        arg2: DiagnosticHandler,
-        /,
-    ) -> GeneratorMetadataAttrInterface: ...
-    def prepend_contextual_params_from_ops(
-        self,
-        arg0: Sequence[max._core.dialects.builtin.StringAttr],
-        arg1: Sequence[max._core.Operation],
-        /,
-    ) -> GeneratorMetadataAttrInterface: ...
-
 class IndexRefAttrInterface(Protocol):
     """
     Index-based parameter references are a relative parameter referencing scheme
@@ -911,21 +882,21 @@ class GeneratorAttr(max._core.Attribute):
         self,
         input_param_types: Sequence[max._core.Type],
         body: max._core.dialects.builtin.TypedAttr,
-        metadata: GeneratorMetadataAttrInterface = ...,
+        metadata: max._core.Attribute = ...,
     ) -> None: ...
     @overload
     def __init__(
         self,
         body: max._core.dialects.builtin.TypedAttr,
         input_param_types: Sequence[max._core.Type],
-        metadata: GeneratorMetadataAttrInterface,
+        metadata: PogListAttr,
     ) -> None: ...
     @property
     def body(self) -> max._core.dialects.builtin.TypedAttr: ...
     @property
     def input_param_types(self) -> Sequence[max._core.Type]: ...
     @property
-    def metadata(self) -> GeneratorMetadataAttrInterface: ...
+    def metadata(self) -> PogListAttr: ...
 
 class GetBaseTypeNameAttr(max._core.Attribute):
     """
@@ -1699,8 +1670,7 @@ class PogListAttr(max._core.Attribute):
     (i.e. pos-only or pos-or-kw) args/params, and the keyword-only default
     values similarly correspond to the trailing keyword-only args/params.
 
-    This attribute subscribes to GeneratorMetadataAttrInterface, which means it
-    gets attached to GeneratorTypes as metadata.
+    This attribute is the `metadata` field of `GeneratorType`.
 
     Example:
 
@@ -4729,14 +4699,14 @@ class GeneratorType(max._core.Type):
         self,
         input_param_types: Sequence[max._core.Type],
         body: max._core.Type,
-        metadata: GeneratorMetadataAttrInterface,
+        metadata: PogListAttr,
     ) -> None: ...
     @property
     def input_param_types(self) -> Sequence[max._core.Type]: ...
     @property
     def body(self) -> max._core.Type | None: ...
     @property
-    def metadata(self) -> GeneratorMetadataAttrInterface: ...
+    def metadata(self) -> PogListAttr: ...
 
 class MLIRDeferredType(max._core.Type):
     """
