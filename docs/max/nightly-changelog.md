@@ -71,10 +71,18 @@ This version is still a work in progress.
 - Added `max.driver.CompletionFlag`, an 8-byte completion flag in pinned host
   memory mapped into a device's address space. Lets host code signal a GPU
   stream (or peer host observer) by writing a 64-bit value to a single
-  location visible to both. The producer/consumer methods that gate GPU
-  work on the flag (`DeviceStream.wait_for_host_value`,
-  `mo.wait_host_value` graph op) ship in follow-on changes. Currently CUDA-
-  only; constructing against any other backend raises `RuntimeError`.
+  location visible to both. Currently CUDA-only; constructing against any
+  other backend raises `RuntimeError`.
+
+- Added `Device.__unsafe_enqueue_async_py_host_func(fn, flag, value, cpu)`
+  and `DeviceStream.wait_for_host_value(flag, value)` for dispatching a
+  Python callable onto an explicit AsyncRT worker pool from a host-function
+  node and gating the GPU stream on its completion (via the
+  `CompletionFlag`). The kickoff trampoline returns immediately, letting
+  the GPU stream proceed concurrently with the worker; a downstream
+  `wait_for_host_value` blocks the stream until the worker stores `value`.
+  The `__unsafe_` prefix marks that the API has no safety net for
+  callbacks that capture state outliving the compiled graph.
 
 - Increased the default allreduce signal buffer size from 513 MiB to 1025 MiB
   per GPU (`max.nn.comm.allreduce.Signals.NUM_BYTES` and the matching constant
