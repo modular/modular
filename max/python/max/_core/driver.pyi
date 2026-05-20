@@ -103,6 +103,10 @@ class Device:
         """
 
     @property
+    def max_single_alloc_size(self) -> int:
+        """Largest single contiguous allocation, in bytes."""
+
+    @property
     def label(self) -> str:
         """
         Returns device label.

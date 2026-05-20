@@ -8111,6 +8111,35 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
         return (free, total)
 
     @always_inline
+    def max_single_alloc_size(self) raises -> c_size_t:
+        """Returns the largest single contiguous allocation, in bytes.
+
+        On Metal this is `maxBufferLength`; on other backends it is the
+        device's total memory.
+
+        Returns:
+            The maximum size, in bytes, of a single contiguous allocation
+            supported by this device.
+
+        Raises:
+            If the underlying device query fails.
+        """
+        var result = c_size_t(0)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceContext_maxSingleAllocationSize",
+                _CString[],
+                _DeviceContextPtr[mut=True],
+                UnsafePointer[c_size_t, origin_of(result)],
+            ](
+                self._handle,
+                UnsafePointer(to=result),
+            ),
+            location=call_location(),
+        )
+        return result
+
+    @always_inline
     def can_access(self, peer: DeviceContext) raises -> Bool:
         """Returns True if this device can access the identified peer device.
 
