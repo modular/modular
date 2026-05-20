@@ -98,14 +98,6 @@ collectFunctionsAndTypes(Operation *module) {
   DenseMap<SymbolRefAttr, StructInfo> structMap;
   DenseMap<SymbolRefAttr, LIT::TraitDeclOp> traitMap;
 
-  // We need to find conformances to ImplicitlyDestructible in all the types.
-  // The parser will encode this symbol on the top level MLIR module for us.
-  SymbolRefAttr implicitlyDestructibleSymbol;
-  if (auto moduleOp = dyn_cast<ModuleOp>(module))
-    if (auto attr = moduleOp->getAttrOfType<SymbolRefAttr>(
-            implicitlyDestructibleSymbolAttrName))
-      implicitlyDestructibleSymbol = attr;
-
   module->walk([&](Operation *op) {
     // Collect functions and nested functions.
     if (auto funcOp = dyn_cast<FnOp>(op)) {
@@ -124,12 +116,10 @@ collectFunctionsAndTypes(Operation *module) {
     else if (auto structOp = dyn_cast<LIT::StructDeclOp>(op)) {
       // Find the conformance to ImplicitlyDestructible if it exists.
       ConformanceOp implicitlyDestructibleConformance;
-      if (implicitlyDestructibleSymbol) {
-        for (auto conformance : structOp.getFields().getOps<ConformanceOp>()) {
-          if (conformance.getTraitRef() == implicitlyDestructibleSymbol) {
-            implicitlyDestructibleConformance = conformance;
-            break;
-          }
+      for (auto conformance : structOp.getFields().getOps<ConformanceOp>()) {
+        if (conformance.getSymName().ends_with("::ImplicitlyDestructible")) {
+          implicitlyDestructibleConformance = conformance;
+          break;
         }
       }
       structMap[getFullyResolvedSymbolRef(structOp)] = {

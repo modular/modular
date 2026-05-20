@@ -44,9 +44,6 @@ enum class VariadicKind : uint32_t;
 namespace LIT {
 class FnType;
 
-static constexpr StringRef implicitlyDestructibleSymbolAttrName =
-    ".mojo.implicitly.destructible.symbol";
-
 /// Returns whether the given type is a LIT meta type.
 bool isMetaType(Type type);
 bool isVariadicOfMetaType(Type type);
