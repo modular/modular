@@ -51,7 +51,6 @@ def bench_int_from_pyint(mut b: Bencher) raises:
             abort(String(e))
 
     b.iter(call_fn)
-    _ = py_int^
 
 
 def main() raises:
