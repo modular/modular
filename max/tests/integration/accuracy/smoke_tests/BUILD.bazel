@@ -75,6 +75,19 @@ modular_py_binary(
 )
 
 modular_py_binary(
+    name = "prefetch_hf_repos",
+    testonly = True,
+    srcs = ["prefetch_hf_repos.py"],
+    imports = [".."],
+    tags = ["no-pydeps"],
+    deps = [
+        ":smoke_test",
+        requirement("click"),
+        requirement("huggingface-hub"),
+    ],
+)
+
+modular_py_binary(
     name = "bisect_smoke_test",
     testonly = True,
     srcs = ["bisect_smoke_test.py"],

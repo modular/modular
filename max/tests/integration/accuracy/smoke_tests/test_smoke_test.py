@@ -91,6 +91,39 @@ def test_all_model_recipes_load() -> None:
         assert recipe.model.model_path is not None, alias
 
 
+def test_hf_repos_for_model_includes_draft_model() -> None:
+    """Recipes with draft_model expose both base and draft repos."""
+    repos = smoke_test.hf_repos_for_model(
+        "meta-llama/Llama-3.1-8B-Instruct__eagle"
+    )
+    paths = [repo for repo, _ in repos]
+    assert "meta-llama/Llama-3.1-8B-Instruct" in paths
+    assert "atomicapple0/EAGLE-LLaMA3.1-Instruct-8B" in paths
+
+
+def test_hf_repos_for_model_prefers_recipe_casing() -> None:
+    """A lowercased alias still resolves to the recipe's canonical casing.
+
+    The cache is case-sensitive, so the prefetch script's offline probe
+    only hits if the repo name matches the cached snapshot exactly. The
+    helper adds the recipe-derived `model.model_path` before the alias
+    prefix so the casefold dedup keeps the canonical casing.
+    """
+    repos = smoke_test.hf_repos_for_model(
+        "meta-llama/llama-3.1-8b-instruct__eagle"
+    )
+    assert repos[0][0] == "meta-llama/Llama-3.1-8B-Instruct"
+
+
+def test_hf_repos_for_model_revisions_pinned() -> None:
+    """Every returned repo has a pinned revision from hf-repo-lock.tsv."""
+    for alias in MODEL_RECIPES:
+        for repo, revision in smoke_test.hf_repos_for_model(alias):
+            assert revision, (
+                f"alias={alias!r} repo={repo!r} has no locked revision"
+            )
+
+
 def test_model_aliases_lookup_is_case_insensitive() -> None:
     for key in MODEL_RECIPES:
         assert MODEL_RECIPES.get(key.lower()) is not None

@@ -239,6 +239,40 @@ def _load_recipe(recipe_path: str) -> RecipeConfig:
     return RecipeConfig.model_validate(data)
 
 
+def hf_repos_for_model(model: str) -> list[tuple[str, str | None]]:
+    """Return (repo, revision) pairs to pre-cache for the given model.
+
+    Always includes the base repo (alias prefix before __), plus the
+    draft_model.model_path when the alias maps to a recipe with one.
+    Revisions come from hf-repo-lock.tsv; None means unpinned.
+    """
+    lock = _load_hf_repo_lock()
+    repos: list[tuple[str, str | None]] = []
+    seen: set[str] = set()
+
+    def add(repo: str) -> None:
+        # Local filesystem paths can't be downloaded from HF.
+        if repo.startswith(("/", "./", "../")):
+            return
+        key = repo.casefold()
+        if key in seen:
+            return
+        seen.add(key)
+        repos.append((repo, lock.get(key)))
+
+    # Recipe-derived paths win the casefold dedup, so a lowercased alias
+    # input still resolves to the canonical casing the cache expects.
+    recipe_path = MODEL_RECIPES.get(model)
+    if recipe_path is not None:
+        recipe = _load_recipe(recipe_path)
+        if recipe.model.model_path:
+            add(recipe.model.model_path)
+        if recipe.draft_model and recipe.draft_model.model_path:
+            add(recipe.draft_model.model_path)
+    add(model.split("__", 1)[0])
+    return repos
+
+
 def _recipe_gpu_overrides(recipe: RecipeConfig, gpu_count: int) -> list[str]:
     """Builds smoke-test GPU overrides for a fixed-GPU recipe.
 
