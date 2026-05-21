@@ -210,7 +210,7 @@ def gpu_bicubic_kernel[
 
     comptime assert input.flat_rank == 4
     comptime assert output.flat_rank == 4
-    # Provide evidence that flat_rank >= 4 for the Coord(Idx(...), ...) loads/stores below.
+    # Provide evidence that flat_rank >= 4 for the Coord(..., ...) loads/stores below.
     comptime assert input.flat_rank >= 4
     comptime assert output.flat_rank >= 4
 
@@ -266,13 +266,13 @@ def gpu_bicubic_kernel[
 
             # now that i have the weight y and x of said pixel, i multiply it by its weight and add it to the sum
             var pixel_value = input.load[width=1](
-                Coord(Idx(b), Idx(c), Idx(y_pos), Idx(x_pos))
+                Coord(b, c, y_pos, x_pos)
             ).cast[DType.float32]()
             sum_value += pixel_value * weight
             sum_weights += weight
 
         output.store[width=1](
-            Coord(Idx(b), Idx(c), Idx(y_out), Idx(x_out)),
+            Coord(b, c, y_out, x_out),
             sum_value.cast[dtype](),
         )
 

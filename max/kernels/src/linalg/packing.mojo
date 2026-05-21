@@ -18,6 +18,7 @@ from std.sys.intrinsics import PrefetchOptions
 from std.algorithm import unswitch
 from linalg.utils import partial_simd_load
 from layout import Coord, Idx, TileTensor
+from layout.tile_layout import RowMajorLayout
 from layout.tile_tensor import stack_allocation as tt_stack_allocation
 from std.sys import prefetch
 from layout.tile_layout import TensorLayout, row_major
@@ -189,8 +190,8 @@ struct PackMatrixRows[
                         self.original_matrix.ptr
                         + self.original_matrix.layout(
                             Coord(
-                                Idx(row_global_index[0]),
-                                Idx(row_global_index[1]),
+                                row_global_index[0],
+                                row_global_index[1],
                             )
                         ),
                         0,  # no left bound.
@@ -399,7 +400,7 @@ struct PackMatrixCols[
                 data = partial_simd_load[Self.simd_size](
                     self.original_matrix.ptr
                     + self.original_matrix.layout(
-                        Coord(Idx(global_idx[0]), Idx(global_idx[1]))
+                        Coord(global_idx[0], global_idx[1])
                     ),
                     0,
                     self.valid_data_dim[1] - col_idx,
@@ -436,7 +437,7 @@ struct PackMatrixCols[
             ](
                 self.original_matrix.ptr
                 + self.original_matrix.layout(
-                    Coord(Idx(global_row_idx), Idx(global_col_idx))
+                    Coord(global_row_idx, global_col_idx)
                 )
             )
 
@@ -665,9 +666,9 @@ def pack_b[
                     dst_flat_ptr + dst_offset,
                     row_major(
                         Coord(
-                            Idx(tile_n // inner_size2),
-                            Idx(tile_k2 // factor),
-                            Idx(inner_size2 * factor),
+                            tile_n // inner_size2,
+                            tile_k2 // factor,
+                            inner_size2 * factor,
                         )
                     ),
                 )
@@ -709,9 +710,9 @@ def pack_b[
                     dst_flat_ptr + dst_offset,
                     row_major(
                         Coord(
-                            Idx(tile_n // inner_size),
-                            Idx(tile_k),
-                            Idx(inner_size),
+                            tile_n // inner_size,
+                            tile_k,
+                            inner_size,
                         )
                     ),
                 )
@@ -946,9 +947,7 @@ struct BTileGenerator[
             Self.b_packed,
         ](b, b_tile_stack_ptr, tile_n_k)
 
-    comptime PackedTileLayout = type_of(
-        row_major(Coord(Idx(Int(0)), Idx(Int(0)), Idx(Int(0))))
-    )
+    comptime PackedTileLayout = RowMajorLayout[Int, Int, Int]
 
     def get_tile[
         inner_size: Int
@@ -993,9 +992,9 @@ struct BTileGenerator[
             self.b_tile_stack_ptr,
             row_major(
                 Coord(
-                    Idx(tile_shape_nopack[0]),
-                    Idx(tile_shape_nopack[1]),
-                    Idx(tile_shape_nopack[2]),
+                    Int(tile_shape_nopack[0]),
+                    Int(tile_shape_nopack[1]),
+                    Int(tile_shape_nopack[2]),
                 )
             ),
         )
@@ -1068,9 +1067,9 @@ struct BTileGenerator[
                 + (tile_k_idx * tile_k * n_padded + global_offset.N * tile_k2),
                 row_major(
                     Coord(
-                        Idx(tile_shape_pack[0]),
-                        Idx(tile_shape_pack[1]),
-                        Idx(tile_shape_pack[2]),
+                        Int(tile_shape_pack[0]),
+                        Int(tile_shape_pack[1]),
+                        Int(tile_shape_pack[2]),
                     )
                 ),
             )

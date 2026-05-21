@@ -84,7 +84,6 @@ from layout import (
     Idx,
     Layout,
     RowMajorLayout,
-    RuntimeInt,
     TensorLayout,
     TileTensor,
     row_major,
@@ -2057,11 +2056,7 @@ struct Grouped1D1DMatmulKernel[
                                             sfb_atom_layout(
                                                 Coord(
                                                     Idx[k_atom](),
-                                                    RuntimeInt(
-                                                        Scalar[DType.int64](
-                                                            row_in_atom
-                                                        )
-                                                    ),
+                                                    Int64(row_in_atom),
                                                 )
                                             )
                                         )

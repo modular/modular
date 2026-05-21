@@ -532,19 +532,19 @@ def run_test[
     # Q: [total_q_tokens, num_heads, 640] float8_e4m3fn
     var q_tt = TileTensor(
         q_device,
-        row_major((Idx(total_q_tokens), Idx[num_heads](), Idx[PHYSICAL_DIM]())),
+        row_major((total_q_tokens, Idx[num_heads](), Idx[PHYSICAL_DIM]())),
     )
 
     # Output: [total_q_tokens, num_heads, V_DEPTH=512] bfloat16
     var out_tt = TileTensor(
         out_device,
-        row_major((Idx(total_q_tokens), Idx[num_heads](), Idx[V_DEPTH]())),
+        row_major((total_q_tokens, Idx[num_heads](), Idx[V_DEPTH]())),
     )
 
     # Row offsets for ragged layout
     var row_offsets_tt = TileTensor(
         row_offsets_device,
-        row_major(Idx(batch_size + 1)),
+        row_major(batch_size + 1),
     )
 
     # q_scale_ptr: reinterpret as UnsafePointer with MutAnyOrigin
@@ -658,7 +658,7 @@ def run_test[
             row_major(
                 (
                     Idx[1](),
-                    Idx(ref_num_keys),
+                    ref_num_keys,
                     Idx[KV_NUM_HEADS](),
                     Idx[LOGICAL_DEPTH](),
                 )
@@ -1209,19 +1209,19 @@ def run_test_with_scales[
     # Q: [total_q_tokens, num_heads, 640] float8_e4m3fn
     var q_tt = TileTensor(
         q_device,
-        row_major((Idx(total_q_tokens), Idx[num_heads](), Idx[PHYSICAL_DIM]())),
+        row_major((total_q_tokens, Idx[num_heads](), Idx[PHYSICAL_DIM]())),
     )
 
     # Output: [total_q_tokens, num_heads, V_DEPTH=512] bfloat16
     var out_tt = TileTensor(
         out_device,
-        row_major((Idx(total_q_tokens), Idx[num_heads](), Idx[V_DEPTH]())),
+        row_major((total_q_tokens, Idx[num_heads](), Idx[V_DEPTH]())),
     )
 
     # Row offsets for ragged layout
     var row_offsets_tt = TileTensor(
         row_offsets_device,
-        row_major(Idx(batch_size + 1)),
+        row_major(batch_size + 1),
     )
 
     # q_scale_ptr: reinterpret as UnsafePointer with MutAnyOrigin
@@ -1373,7 +1373,7 @@ def run_test_with_scales[
             row_major(
                 (
                     Idx[1](),
-                    Idx(ref_num_keys),
+                    ref_num_keys,
                     Idx[KV_NUM_HEADS](),
                     Idx[LOGICAL_DEPTH](),
                 )

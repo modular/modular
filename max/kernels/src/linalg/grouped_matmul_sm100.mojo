@@ -54,7 +54,6 @@ from layout import (
     IntTuple,
     Layout,
     LayoutTensor,
-    RuntimeInt,
     RuntimeLayout,
     UNKNOWN_VALUE,
 )
@@ -331,9 +330,7 @@ def load_AB_cuda_core[
     )
 
     comptime for v in range(a_rows_per_thread):
-        var m = a_tv[linear_idx_type=DType.int32](
-            Coord(RuntimeInt[DType.int32](tid), Idx[v]())
-        )
+        var m = a_tv[linear_idx_type=DType.int32](Coord(Int32(tid), Idx[v]()))
         var vec = a_gmem.load[K_actual, a_row_align](
             Int(a_row0 + m), Int(a_col0)
         )
@@ -353,9 +350,7 @@ def load_AB_cuda_core[
     )
 
     comptime for v in range(b_rows_per_thread):
-        var n = b_tv[linear_idx_type=DType.int32](
-            Coord(RuntimeInt[DType.int32](tid), Idx[v]())
-        )
+        var n = b_tv[linear_idx_type=DType.int32](Coord(Int32(tid), Idx[v]()))
         var vec = b_gmem.load[K_actual, b_row_align](
             Int(b_row0 + n), Int(b_col0)
         )

@@ -29,11 +29,11 @@ from max.interfaces import (
     PipelineInputsType,
     PipelineOutputType,
     RequestID,
-    SchedulerResult,
 )
 from max.profiler import traced
 from max.serve.queue import MAXPullQueue, MAXPushQueue
 from max.serve.scheduler.interface import Scheduler
+from max.serve.scheduler_result import SchedulerResult
 
 from .base import SchedulerProgress
 

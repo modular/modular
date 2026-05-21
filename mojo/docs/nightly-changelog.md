@@ -51,6 +51,17 @@ This version is still a work in progress.
 
 ## Library changes
 
+- Added `std.gpu.host.CompletionFlag`, a non-owning handle to an MLRT
+  `M::Driver::CompletionFlag` (an 8-byte slot in pinned host memory mapped
+  into a device's address space). Pairs with the new
+  `DeviceStream.wait_for_host_value(flag, value)` method, which stalls the
+  stream until the flag's 64-bit slot equals the given value. Corresponds to
+  CUDA's `cuStreamWaitValue64` and captures cleanly into a CUDA graph as a
+  wait-value node, letting a CPU thread (or an AsyncRT worker dispatched by
+  `enqueue_host_func`) gate a GPU stream on host-produced data without a
+  second stream or a blocking host-function callback. Currently CUDA-only;
+  other backends raise.
+
 - `Coord`, `coord()`, `Idx`, `ComptimeInt`, `RuntimeInt`, and related coordinate
   helpers now live in the standard library module
   [`std.utils.coord`](/docs/std/utils/coord/). The
@@ -90,6 +101,9 @@ This version is still a work in progress.
   reflect that writing invalid UTF-8 to the resulting `Span[Byte]` can lead to
   later issues like out of bounds access.
 
+- A new `BinaryHeap` collection has been added to the `std.collections` module.
+  This is a list-backed binary max-heap.
+
 - `List[T]` no longer requires its type to be `Copyable`, but now works with
   `Movable`-only types. Iteration still requires `Copyable` and will emit
   a `comptime assert` if not satisfied.
@@ -122,8 +136,6 @@ This version is still a work in progress.
   `struct_field_*` family (along with the `ReflectedType[T]` wrapper) have been
   removed; use the corresponding methods on `reflect[T]`:
 
-  <!-- markdownlint-disable MD013 -->
-
   | Removed                                 | Replacement                              |
   |-----------------------------------------|------------------------------------------|
   | `get_type_name[T]()`                    | `reflect[T].name()`                      |
@@ -138,8 +150,6 @@ This version is still a work in progress.
   | `offset_of[T, name=name]()`             | `reflect[T].field_offset[name=name]()`   |
   | `offset_of[T, index=index]()`           | `reflect[T].field_offset[index=index]()` |
   | `ReflectedType[T]`                      | `Reflected[T]`                           |
-
-  <!-- markdownlint-enable MD013 -->
 
 - Added `ReflectedFn[func]`, a function-side reflection handle accessed via
   the `reflect_fn[func]` `comptime` alias. Exposes function introspection
@@ -270,6 +280,26 @@ This version is still a work in progress.
 
   # After
   mojo precompile my_package -o my_package.mojoc
+  ```
+
+- Added `mojo --print-cache-location` and `mojo --clear-cache` for inspecting
+  and clearing the on-disk Mojo compile cache (`.mojo_cache`). The resolved
+  path honors the existing precedence (`MODULAR_CACHE_DIR`, `MODULAR_HOME`,
+  `MODULAR_DERIVED_PATH`, `XDG_CACHE_HOME`, etc.). `--clear-cache` prompts for
+  confirmation by default; pass `-f` (or `--force`) to skip the prompt for
+  scripting use.
+
+  ```text
+  $ mojo --print-cache-location
+  /home/you/.cache/modular/.mojo_cache
+
+  $ mojo --clear-cache
+  This will remove the Mojo compile cache at:
+    /home/you/.cache/modular/.mojo_cache
+  Proceed? [y/N] y
+  Removed /home/you/.cache/modular/.mojo_cache
+
+  $ mojo --clear-cache -f   # no prompt
   ```
 
 ## GPU programming
@@ -422,3 +452,8 @@ This version is still a work in progress.
 - Attempting to import a source Mojo package from a broken symlink will no
   longer result in a compiler crash.
   ([Issue #6424](https://github.com/modular/modular/issues/6424))
+
+- `MODULAR_NVPTX_COMPILER_PATH` is now part of mojo cache location so that when
+  switching to a different `ptxas` CUBIN cache will not hit those were
+  generated before the switch.
+  ([Issue #6540](https://github.com/modular/modular/issues/6549))

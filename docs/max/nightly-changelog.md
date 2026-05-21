@@ -62,6 +62,38 @@ This version is still a work in progress.
 
 ### Python API
 
+- Reduced default signal buffer size from 1025 to 257 MiB per GPU and fixed
+  miscalculation of required space in `MOGGKernelAPI.mojo`. Calculation was
+  wrong by a factor of `1/num_devices` since each device only needs scratch
+  for its own portion of the collective problem. Reduces footprint for current
+  heaviest workload (Kimi-K2.5 with `BlockCopyEngine`) from 16GB to 4GB.
+
+- Added `max.driver.CompletionFlag`, an 8-byte completion flag in pinned host
+  memory mapped into a device's address space. Lets host code signal a GPU
+  stream (or peer host observer) by writing a 64-bit value to a single
+  location visible to both. Currently CUDA-only; constructing against any
+  other backend raises `RuntimeError`.
+
+- Added `Device.__unsafe_enqueue_async_py_host_func(fn, flag, value, cpu)`
+  and `DeviceStream.wait_for_host_value(flag, value)` for dispatching a
+  Python callable onto an explicit AsyncRT worker pool from a host-function
+  node and gating the GPU stream on its completion (via the
+  `CompletionFlag`). The kickoff trampoline returns immediately, letting
+  the GPU stream proceed concurrently with the worker; a downstream
+  `wait_for_host_value` blocks the stream until the worker stores `value`.
+  The `__unsafe_` prefix marks that the API has no safety net for
+  callbacks that capture state outliving the compiled graph.
+
+- Added the `mo.wait_host_value` graph op and the
+  `max.nn.kernels.wait_host_value()` Python helper that wraps it. Stalls
+  the device stream until a 64-bit host-visible flag reaches a given
+  value; lowers to CUDA's `cuStreamWaitValue64` and captures cleanly into
+  a CUDA graph as a wait-value node. Lets a captured forward graph gate
+  a downstream consumer kernel on CPU-produced data while the rest of
+  the forward body runs concurrently. Pair with `mo.launch_host_func`
+  or `Device.__unsafe_enqueue_async_py_host_func` to issue the host
+  work whose completion the consumer waits on.
+
 - Increased the default allreduce signal buffer size from 513 MiB to 1025 MiB
   per GPU (`max.nn.comm.allreduce.Signals.NUM_BYTES` and the matching constant
   in `max.experimental.realization_context`). The previous 512 MiB scratch

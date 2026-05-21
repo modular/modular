@@ -26,7 +26,6 @@ from layout import (
     CoordLike,
     Idx,
     RowMajorLayout,
-    RuntimeInt,
     TensorLayout,
     TileTensor,
 )
@@ -210,7 +209,7 @@ def fused_qk_rope[
     layer_idx: UInt32,
     valid_lengths: TileTensor[DType.uint32, ...],
     output: TileTensor[mut=True, dtype, ...],
-    context: Optional[DeviceContext],
+    context: DeviceContext,
 ) raises:
     """Applies RoPE to query and key tensors.
 
@@ -273,7 +272,7 @@ def fused_qk_rope[
                 SIMD[dtype, width]
             ]()
             var f_c_temp = freqs_cis.load[width=width, alignment=_alignment](
-                (Idx(post_seq_idx), Idx(head_dim_idx))
+                (post_seq_idx, head_dim_idx)
             )
 
             if is_q_proj:
@@ -307,11 +306,11 @@ def fused_qk_rope[
 
     comptime if is_cpu[target]():
         elementwise[func=rope_fn, simd_width=kernel_simd_width, target=target](
-            launch_shape
+            launch_shape, context
         )
     else:
         elementwise[func=rope_fn, simd_width=kernel_simd_width, target=target](
-            launch_shape, context.value()
+            launch_shape, context
         )
 
 
@@ -330,7 +329,7 @@ def fused_qk_rope_ragged[
     ](),
     mrope_section: Optional[Coord[*mrope_types]] = None,
     PositionIdsLayoutType: TensorLayout = RowMajorLayout[
-        *Coord[RuntimeInt[DType.int64], RuntimeInt[DType.int64]].element_types
+        *Coord[Int64, Int64].element_types
     ],
 ](
     q_proj: TileTensor[dtype, ...],
@@ -342,7 +341,7 @@ def fused_qk_rope_ragged[
     ],
     layer_idx: UInt32,
     output: TileTensor[mut=True, dtype, ...],
-    context: Optional[DeviceContext],
+    context: DeviceContext,
 ) raises:
     """Applies RoPE (Rotary Position Embedding) to query and key tensors.
 
@@ -454,17 +453,17 @@ def fused_qk_rope_ragged[
                 else:
                     f_c_temp = freqs_cis.load[
                         width=width, alignment=_alignment
-                    ]((Idx(position_ids_idx), Idx(head_dim_idx)))
+                    ]((position_ids_idx, head_dim_idx))
             elif has_nope:
                 if head_dim_idx < unroped_dim:
                     f_c_temp = get_identity_rope_coeff[width, freq_dtype]()
                 else:
                     f_c_temp = freqs_cis.load[
                         width=width, alignment=_alignment
-                    ]((Idx(position_ids_idx), Idx(head_dim_idx - unroped_dim)))
+                    ]((position_ids_idx, head_dim_idx - unroped_dim))
             else:
                 f_c_temp = freqs_cis.load[width=width, alignment=_alignment](
-                    (Idx(position_ids_idx), Idx(head_dim_idx))
+                    (position_ids_idx, head_dim_idx)
                 )
 
             if is_q_proj:
@@ -520,9 +519,9 @@ def fused_qk_rope_ragged[
 
     comptime if is_cpu[target]():
         elementwise[func=rope_fn, simd_width=kernel_simd_width, target=target](
-            launch_shape
+            launch_shape, context
         )
     else:
         elementwise[func=rope_fn, simd_width=kernel_simd_width, target=target](
-            launch_shape, context.value()
+            launch_shape, context
         )

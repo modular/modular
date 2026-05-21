@@ -39,6 +39,13 @@ def deadline_remaining_s(end_time_ns: int | None) -> float | None:
     return max(0.0, (end_time_ns - time.perf_counter_ns()) / 1e9)
 
 
+def exceeds_deadline(seconds: float, deadline_ns: int | None) -> bool:
+    """Return True if sleeping ``seconds`` would land past ``deadline_ns``."""
+    if deadline_ns is None:
+        return False
+    return time.perf_counter_ns() + int(seconds * 1e9) > deadline_ns
+
+
 def wait_for_server_ready(
     host: str,
     port: int,

@@ -299,19 +299,19 @@ def run_mma_fp32_tf32(
     # requires exact type matches).
     var c_tt = TileTensor(
         c_device_ref,
-        row_major(Coord(Idx(M), Idx(N))),
+        row_major(Coord(M, N)),
     )
     var a_tt = TileTensor(
         UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin](
             unsafe_from_address=Int(a_device_ref.unsafe_ptr())
         ),
-        row_major(Coord(Idx(M), Idx(K))),
+        row_major(Coord(M, K)),
     )
     var b_tt = TileTensor(
         UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin](
             unsafe_from_address=Int(b_device_ref.unsafe_ptr())
         ),
-        row_major(Coord(Idx(K), Idx(N))),
+        row_major(Coord(K, N)),
     )
 
     @always_inline
@@ -467,19 +467,19 @@ def run_mma_fp32_bf16(
     # Create TileTensors for the naive kernel.
     var c_tt = TileTensor(
         c_device_ref,
-        row_major(Coord(Idx(M), Idx(N))),
+        row_major(Coord(M, N)),
     )
     var a_tt = TileTensor(
         UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin](
             unsafe_from_address=Int(a_device_ref.unsafe_ptr())
         ),
-        row_major(Coord(Idx(M), Idx(K))),
+        row_major(Coord(M, K)),
     )
     var b_tt = TileTensor(
         UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin](
             unsafe_from_address=Int(b_device_ref.unsafe_ptr())
         ),
-        row_major(Coord(Idx(K), Idx(N))),
+        row_major(Coord(K, N)),
     )
 
     @always_inline
@@ -633,19 +633,19 @@ def run_mma_fp32_bf16_2(
     # Create TileTensors for the naive kernel.
     var c_tt = TileTensor(
         c_device_ref,
-        row_major(Coord(Idx(M), Idx(N))),
+        row_major(Coord(M, N)),
     )
     var a_tt = TileTensor(
         UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin](
             unsafe_from_address=Int(a_device_ref.unsafe_ptr())
         ),
-        row_major(Coord(Idx(M), Idx(K))),
+        row_major(Coord(M, K)),
     )
     var b_tt = TileTensor(
         UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin](
             unsafe_from_address=Int(b_device_ref.unsafe_ptr())
         ),
-        row_major(Coord(Idx(K), Idx(N))),
+        row_major(Coord(K, N)),
     )
 
     @always_inline
@@ -799,19 +799,19 @@ def run_mma_fp32_fp16(
     # Create TileTensors for the naive kernel.
     var c_tt = TileTensor(
         c_device_ref,
-        row_major(Coord(Idx(M), Idx(N))),
+        row_major(Coord(M, N)),
     )
     var a_tt = TileTensor(
         UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin](
             unsafe_from_address=Int(a_device_ref.unsafe_ptr())
         ),
-        row_major(Coord(Idx(M), Idx(K))),
+        row_major(Coord(M, K)),
     )
     var b_tt = TileTensor(
         UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin](
             unsafe_from_address=Int(b_device_ref.unsafe_ptr())
         ),
-        row_major(Coord(Idx(K), Idx(N))),
+        row_major(Coord(K, N)),
     )
 
     @always_inline
@@ -965,19 +965,19 @@ def run_mma_fp16_fp16(
     # Create TileTensors for the naive kernel.
     var c_tt = TileTensor(
         c_device_ref,
-        row_major(Coord(Idx(M), Idx(N))),
+        row_major(Coord(M, N)),
     )
     var a_tt = TileTensor(
         UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin](
             unsafe_from_address=Int(a_device_ref.unsafe_ptr())
         ),
-        row_major(Coord(Idx(M), Idx(K))),
+        row_major(Coord(M, K)),
     )
     var b_tt = TileTensor(
         UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin](
             unsafe_from_address=Int(b_device_ref.unsafe_ptr())
         ),
-        row_major(Coord(Idx(K), Idx(N))),
+        row_major(Coord(K, N)),
     )
 
     @always_inline

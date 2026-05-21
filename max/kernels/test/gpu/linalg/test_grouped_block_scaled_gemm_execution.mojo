@@ -229,7 +229,7 @@ def test_existing_kernel_single_group[
     # Scale factor shapes (5D)
     var a_scales_shape = row_major(
         Coord(
-            Idx(ceildiv(Int(m.value()), SF_MN_GROUP_SIZE)),
+            ceildiv(Int(m.value()), SF_MN_GROUP_SIZE),
             Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)](),
             Idx[SF_ATOM_M[0]](),
             Idx[SF_ATOM_M[1]](),
@@ -238,7 +238,7 @@ def test_existing_kernel_single_group[
     )
     var b_scales_shape = row_major(
         Coord(
-            Idx(ceildiv(Int(n.value()), SF_MN_GROUP_SIZE)),
+            ceildiv(Int(n.value()), SF_MN_GROUP_SIZE),
             Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)](),
             Idx[SF_ATOM_M[0]](),
             Idx[SF_ATOM_M[1]](),
@@ -448,7 +448,7 @@ def test_grouped_kernel_single_group[
     # Scale factor shapes (5D)
     var a_scales_shape = row_major(
         Coord(
-            Idx(ceildiv(Int(m.value()), SF_MN_GROUP_SIZE)),
+            ceildiv(Int(m.value()), SF_MN_GROUP_SIZE),
             Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)](),
             Idx[SF_ATOM_M[0]](),
             Idx[SF_ATOM_M[1]](),
@@ -457,7 +457,7 @@ def test_grouped_kernel_single_group[
     )
     var b_scales_shape = row_major(
         Coord(
-            Idx(ceildiv(Int(n.value()), SF_MN_GROUP_SIZE)),
+            ceildiv(Int(n.value()), SF_MN_GROUP_SIZE),
             Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)](),
             Idx[SF_ATOM_M[0]](),
             Idx[SF_ATOM_M[1]](),
@@ -774,7 +774,7 @@ def test_grouped_kernel_multi_group_same_ptr[
     comptime SF_VECTOR_SIZE = MXFP8_SF_VECTOR_SIZE
     var a_scales_shape = row_major(
         Coord(
-            Idx(ceildiv(Int(m.value()), SF_MN_GROUP_SIZE)),
+            ceildiv(Int(m.value()), SF_MN_GROUP_SIZE),
             Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)](),
             Idx[SF_ATOM_M[0]](),
             Idx[SF_ATOM_M[1]](),
@@ -783,7 +783,7 @@ def test_grouped_kernel_multi_group_same_ptr[
     )
     var b_scales_shape = row_major(
         Coord(
-            Idx(ceildiv(Int(n.value()), SF_MN_GROUP_SIZE)),
+            ceildiv(Int(n.value()), SF_MN_GROUP_SIZE),
             Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)](),
             Idx[SF_ATOM_M[0]](),
             Idx[SF_ATOM_M[1]](),
@@ -1081,7 +1081,7 @@ def test_grouped_kernel_two_groups_different_ptrs[
     var c_shape = row_major(Coord(m, n))
     var a_scales_shape = row_major(
         Coord(
-            Idx(ceildiv(Int(m.value()), SF_MN_GROUP_SIZE)),
+            ceildiv(Int(m.value()), SF_MN_GROUP_SIZE),
             Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)](),
             Idx[SF_ATOM_M[0]](),
             Idx[SF_ATOM_M[1]](),
@@ -1090,7 +1090,7 @@ def test_grouped_kernel_two_groups_different_ptrs[
     )
     var b_scales_shape = row_major(
         Coord(
-            Idx(ceildiv(Int(n.value()), SF_MN_GROUP_SIZE)),
+            ceildiv(Int(n.value()), SF_MN_GROUP_SIZE),
             Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)](),
             Idx[SF_ATOM_M[0]](),
             Idx[SF_ATOM_M[1]](),

@@ -289,7 +289,7 @@ def main() raises:
         ](
             ctx,
             m,
-            Idx(M),
+            M,
             Idx[N](),
             Idx[K](),
             init_type,

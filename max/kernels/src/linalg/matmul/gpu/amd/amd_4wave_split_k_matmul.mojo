@@ -38,7 +38,7 @@ from std.utils import Index, IndexList
 from std.gpu import block_dim, global_idx, grid_dim
 from std.gpu.host import DeviceBuffer, DeviceContext
 
-from layout import Coord, Idx, RuntimeInt, TileTensor
+from layout import Coord, Idx, TileTensor
 from layout.tile_layout import row_major
 
 from linalg.utils import elementwise_epilogue_type
@@ -275,12 +275,7 @@ def amd_4wave_split_k_matmul[
         # the M-band inside the kernel via `pid_m + split_id*num_pid_m`.
         var ws_tile = TileTensor(
             workspace.scratch.unsafe_ptr(),
-            row_major(
-                Coord(
-                    RuntimeInt[DType.int64](Int64(num_splits * M)),
-                    Idx[N](),
-                )
-            ),
+            row_major(Coord(Int64(num_splits * M), Idx[N]())),
         )
 
         comptime kernel = AMD4WaveMatmul[

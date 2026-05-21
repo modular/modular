@@ -21,7 +21,6 @@ from std.sys.info import has_accelerator
 
 from std.algorithm.functional import IndexList
 from std.math import sqrt
-from std.memory import OpaquePointer
 
 from tensor import ManagedTensorSlice
 from tensor.io_spec import Input, Output
@@ -142,7 +141,7 @@ def _group_norm_gpu[
     shape: IndexList[rank],
     epsilon: Scalar[dtype],
     num_groups: Int32,
-    ctx: Optional[OpaquePointer[MutExternalOrigin]],
+    ctx: DeviceContext,
 ) raises where dtype.is_floating_point():
     """GPU group normalization via nn.normalization.group_norm.
 
@@ -184,8 +183,6 @@ def _group_norm_gpu[
                 io_spec=Output, static_spec=out_spec
             ](out_ptr, shape)
 
-            var device_ctx = DeviceContext(ctx.unsafe_value())
-
             nn_group_norm[
                 dtype,
                 rank,
@@ -198,7 +195,7 @@ def _group_norm_gpu[
                 epsilon,
                 num_groups,
                 output_tensor.to_tile_tensor[DType.int64](),
-                device_ctx,
+                ctx,
             )
 
         else:
@@ -226,7 +223,7 @@ def _call[
     num_groups: Int,
     in_shape_py: PythonObject,
     rank: Int,
-    ctx: Optional[OpaquePointer[MutExternalOrigin]],
+    ctx: DeviceContext,
 ) raises where dtype.is_floating_point():
     """Concrete-dtype dispatch helper for group_norm.
 
@@ -243,7 +240,7 @@ def _call[
 
     var epsilon = _get_buffer_ptr[dtype](epsilon_buffer)[0]
 
-    if not ctx:
+    if ctx.api() == "cpu":
         _group_norm_cpu[dtype](
             _get_buffer_ptr[dtype](out_buffer),
             _get_buffer_ptr[dtype](in_buffer),

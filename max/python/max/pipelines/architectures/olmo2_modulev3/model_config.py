@@ -25,14 +25,17 @@ from max.nn.kv_cache import KVCacheParams
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
 from max.pipelines.lib.config.config_enums import supported_encoding_dtype
-from max.pipelines.lib.interfaces.arch_config import ArchConfigWithKVCache
+from max.pipelines.lib.interfaces.arch_config import (
+    ArchConfigWithKVCache,
+    ArchConfigWithStoredKVParams,
+)
 from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
 from transformers import AutoConfig
 from typing_extensions import Self, override
 
 
 @dataclass(kw_only=True)
-class Olmo2Config(ArchConfigWithKVCache):
+class Olmo2Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
     """Configuration for Olmo2 models.
 
     Contains parameters specific to the Olmo2 architecture, typically
@@ -100,42 +103,34 @@ class Olmo2Config(ArchConfigWithKVCache):
     kv_params: KVCacheParams
     """KV cache parameters."""
 
-    def get_kv_params(self) -> KVCacheParams:
-        return self.kv_params
-
     def get_max_seq_len(self) -> int:
         return self.max_position_embeddings
 
-    @staticmethod
-    def get_head_dim(huggingface_config: AutoConfig) -> int:
-        if hasattr(huggingface_config, "head_dim"):
-            return huggingface_config.head_dim
-        else:
-            return (
-                huggingface_config.hidden_size
-                // huggingface_config.num_attention_heads
-            )
-
-    @staticmethod
-    def get_num_layers(huggingface_config: AutoConfig) -> int:
-        return huggingface_config.num_hidden_layers
-
-    @staticmethod
+    @classmethod
     def construct_kv_params(
+        cls,
         huggingface_config: AutoConfig,
         pipeline_config: PipelineConfig,
         devices: list[DeviceRef],
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> KVCacheParams:
-        return kv_cache_config.to_params(
-            dtype=cache_dtype,
-            num_layers=Olmo2Config.get_num_layers(huggingface_config),
-            n_kv_heads=huggingface_config.num_key_value_heads,
-            head_dim=Olmo2Config.get_head_dim(huggingface_config),
-            devices=devices,
-            data_parallel_degree=pipeline_config.model.data_parallel_degree,
+        """Olmo2 does not support data parallelism; use default grouped KV (no EAGLE)."""
+        if pipeline_config.model.data_parallel_degree > 1:
+            raise ValueError(
+                "Data parallelism is not supported for Olmo2 models"
+            )
+        return ArchConfigWithStoredKVParams.construct_kv_params(
+            huggingface_config,
+            pipeline_config,
+            devices,
+            kv_cache_config,
+            cache_dtype,
         )
+
+    @staticmethod
+    def get_num_layers(huggingface_config: AutoConfig) -> int:
+        return huggingface_config.num_hidden_layers
 
     @staticmethod
     def calculate_attention_multiplier(huggingface_config: AutoConfig) -> float:

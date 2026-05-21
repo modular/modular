@@ -40,6 +40,7 @@ from max.interfaces.request import RequestID
 from max.interfaces.status import GenerationStatus
 from max.interfaces.tokens import TokenBuffer
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+from typing_extensions import NotRequired
 
 
 class TextGenerationRequestFunction(TypedDict):
@@ -79,6 +80,35 @@ class TextGenerationResponseFormat(TypedDict):
 
     When set with ``type="grammar"``, this takes precedence over ``json_schema``.
     Used for model-specific constrained decoding formats like Kimi's tool call grammar.
+    """
+
+    grammar_enforced: bool
+    """Whether to actively enforce grammar via bitmask.
+
+    When True from the start, enforce grammar from the first token.
+    When False initially (for tool_choice=auto without response_format), the
+    grammar is compiled but not enforced until a tool call start token is
+    detected.
+    """
+
+    tools_forced: bool
+    """Whether tool calling was forced (tool_choice=required or named function).
+
+    Controls whether ``grammar_enforced`` is ``True`` from the first generated
+    token. Independent of the ``--enable-structured-output`` flag (which only
+    gates user-supplied schemas; see ``requires_structured_output_flag``).
+    """
+
+    requires_structured_output_flag: NotRequired[bool]
+    """Whether this request requires ``--enable-structured-output`` to be set.
+
+    True when the constraint includes a user-supplied JSON schema (from
+    ``response_format``). False (or absent) for pure tool-call grammars
+    derived from the model's tool parser, which work without the operator
+    flag because the grammar is server-controlled, not user-controlled.
+
+    Optional (defaults to False) so existing call sites that construct
+    ``TextGenerationResponseFormat`` directly don't need to be updated.
     """
 
 
@@ -828,6 +858,84 @@ class TextGenerationContext(BaseContext, Protocol):
     block. Toggled host-side in the spec-decode commit step when a reasoning
     parser is configured. Consumed by thinking-mode temperature scaling and
     relaxed acceptance to gate per-row behavior."""
+
+    grammar_enforced: bool
+    """Whether grammar is currently being enforced via bitmask.
+
+    When True, the grammar matcher constrains token generation via bitmask.
+    When False with a matcher present, grammar is compiled but not enforced
+    (waiting for tool call start token to trigger enforcement).
+
+    For tool_choice=required or named function: True from start.
+    For tool_choice=auto: False initially, flipped to True when tool call
+    start token is detected.
+    """
+
+    tools_forced: bool
+    """Whether tool calling was forced (tool_choice=required or named function).
+
+    Controls whether ``grammar_enforced`` is ``True`` from the first generated
+    token. Independent of the ``--enable-structured-output`` flag (which only
+    gates user-supplied schemas; see ``requires_structured_output_flag``).
+    """
+
+    requires_structured_output_flag: bool
+    """Whether this request requires ``--enable-structured-output`` to be set.
+
+    True when the constraint includes a user-supplied JSON schema (from
+    ``response_format``). False for pure tool-call grammars derived from the
+    model's tool parser, which work without the operator flag.
+    """
+
+    def set_tool_region(
+        self,
+        start_token_ids: list[int] | None,
+        end_token_ids: list[int] | None,
+    ) -> None:
+        """Set token sequences for conditional tool call enforcement.
+
+        Args:
+            start_token_ids: Token IDs marking tool call start.
+            end_token_ids: Token IDs marking tool call end.
+        """
+        ...
+
+    def set_thinking_region(
+        self,
+        start_token_ids: list[int] | None,
+        end_token_ids: list[int] | None,
+    ) -> None:
+        """Configure thinking region for conditional grammar enforcement.
+
+        When a thinking region is configured and grammar enforcement starts
+        inside the thinking region, grammar is suspended until the end token
+        sequence is detected. This enables reasoning output during constrained
+        decoding (e.g., ``tool_choice=required`` with thinking enabled).
+
+        Args:
+            start_token_ids: Token IDs marking thinking start (can be ``None`` if
+                we start inside thinking, which is the case when chat template
+                already emits ``<think>``).
+            end_token_ids: Token IDs marking thinking end (e.g., ``</think>``).
+        """
+        ...
+
+    def update_enforcement_state(self, token: int) -> bool:
+        """Advance the grammar-enforcement state machine by one token.
+
+        Unlike ``advance_fsm``, this only updates the enforcement-state
+        machine (e.g., detecting tool-call boundary tokens) without
+        advancing the underlying matcher. Used by the spec-decode async
+        callback path where the matcher is advanced separately via
+        ``try_consume_tokens`` for tolerance.
+
+        Args:
+            token: The newly committed token.
+
+        Returns:
+            True if enforcement state changed.
+        """
+        ...
 
 
 @dataclass

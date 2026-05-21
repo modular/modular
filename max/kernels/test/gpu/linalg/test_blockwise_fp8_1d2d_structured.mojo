@@ -26,7 +26,6 @@ from std.gpu.host import DeviceContext
 from layout import (
     Coord,
     Idx,
-    RuntimeInt,
     TileTensor,
     row_major,
 )
@@ -133,9 +132,7 @@ def test_blockwise_fp8_1d2d_structured[
 
     var a_host = TileTensor(
         a_host_ptr,
-        row_major(
-            Coord(RuntimeInt[DType.int64](Int64(total_num_tokens)), Idx[K]())
-        ),
+        row_major(Coord(Int64(total_num_tokens), Idx[K]())),
     )
     var b_host = TileTensor(
         b_host_ptr,
@@ -143,24 +140,15 @@ def test_blockwise_fp8_1d2d_structured[
     )
     var c_host = TileTensor(
         c_host_ptr,
-        row_major(
-            Coord(RuntimeInt[DType.int64](Int64(total_num_tokens)), Idx[N]())
-        ),
+        row_major(Coord(Int64(total_num_tokens), Idx[N]())),
     )
     var c_host_ref = TileTensor(
         c_host_ref_ptr,
-        row_major(
-            Coord(RuntimeInt[DType.int64](Int64(total_num_tokens)), Idx[N]())
-        ),
+        row_major(Coord(Int64(total_num_tokens), Idx[N]())),
     )
     var a_scales_host = TileTensor(
         a_scales_host_ptr,
-        row_major(
-            Coord(
-                Idx[K // BLOCK_SCALE_K](),
-                RuntimeInt[DType.int64](Int64(total_num_tokens)),
-            )
-        ),
+        row_major(Coord(Idx[K // BLOCK_SCALE_K](), Int64(total_num_tokens))),
     )
     var b_scales_host = TileTensor(
         b_scales_host_ptr,
@@ -222,9 +210,7 @@ def test_blockwise_fp8_1d2d_structured[
     # Create TileTensors for device data
     var a_tt = TileTensor(
         a_device_buffer,
-        row_major(
-            Coord(RuntimeInt[DType.int64](Int64(total_num_tokens)), Idx[K]())
-        ),
+        row_major(Coord(Int64(total_num_tokens), Idx[K]())),
     )
     var b_tt = TileTensor(
         b_device_buffer,
@@ -232,22 +218,18 @@ def test_blockwise_fp8_1d2d_structured[
     )
     var c_tt = TileTensor(
         c_device_buffer,
-        row_major(
-            Coord(RuntimeInt[DType.int64](Int64(total_num_tokens)), Idx[N]())
-        ),
+        row_major(Coord(Int64(total_num_tokens), Idx[N]())),
     )
     var c_ref_tt = TileTensor(
         c_device_ref_buffer,
-        row_major(
-            Coord(RuntimeInt[DType.int64](Int64(total_num_tokens)), Idx[N]())
-        ),
+        row_major(Coord(Int64(total_num_tokens), Idx[N]())),
     )
     var a_scales_tt = TileTensor(
         a_scales_device_buffer,
         row_major(
             Coord(
                 Idx[K // BLOCK_SCALE_K](),
-                RuntimeInt[DType.int64](Int64(total_num_tokens)),
+                Int64(total_num_tokens),
             )
         ),
     )
@@ -260,14 +242,14 @@ def test_blockwise_fp8_1d2d_structured[
     var a_offsets_tt = TileTensor[DType.uint32, GMEMLayout1D, MutAnyOrigin](
         a_offsets_device_buffer,
         layout=GMEMLayout1D(
-            Coord(RuntimeInt[DType.int64](Int64(num_active_experts + 1))),
+            Coord(Int64(num_active_experts + 1)),
             Coord(Idx[1]()),
         ),
     )
     var expert_ids_tt = TileTensor[DType.int32, GMEMLayout1D, MutAnyOrigin](
         expert_ids_device_buffer,
         layout=GMEMLayout1D(
-            Coord(RuntimeInt[DType.int64](Int64(num_active_experts))),
+            Coord(Int64(num_active_experts)),
             Coord(Idx[1]()),
         ),
     )
@@ -276,7 +258,7 @@ def test_blockwise_fp8_1d2d_structured[
     ](
         expert_scales_device_buffer,
         layout=GMEMLayout1D(
-            Coord(RuntimeInt[DType.int64](Int64(num_experts))),
+            Coord(Int64(num_experts)),
             Coord(Idx[1]()),
         ),
     )

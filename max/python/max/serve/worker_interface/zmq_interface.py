@@ -18,7 +18,7 @@ import contextlib
 import logging
 import queue
 from collections.abc import AsyncGenerator, AsyncIterator, Generator
-from typing import Generic
+from typing import Any, Generic
 
 import zmq
 from max.interfaces import (
@@ -27,10 +27,10 @@ from max.interfaces import (
     PipelineOutputType,
     PipelineTask,
     RequestID,
-    SchedulerResult,
     TextGenerationContext,
 )
 from max.serve.queue import MAXPullQueue, MAXPushQueue
+from max.serve.scheduler_result import SchedulerResult
 from max.serve.worker_interface import (
     ModelWorkerInterface,
     ModelWorkerProxy,
@@ -221,6 +221,34 @@ class ZmqModelWorkerProxy(
                 raise Exception("zmq detected a dead model worker") from None
 
 
+def _response_type_for_task(
+    pipeline_task: PipelineTask,
+) -> type[Any]:
+    """Maps a PipelineTask to the correct msgspec response type for ZMQ deserialization."""
+    from max.interfaces.generation import GenerationOutput
+    from max.interfaces.pipeline_variants import (
+        AudioGenerationOutput,
+        EmbeddingsGenerationOutput,
+        TextGenerationOutput,
+    )
+
+    if pipeline_task in (
+        PipelineTask.TEXT_GENERATION,
+        PipelineTask.SPEECH_TOKEN_GENERATION,
+    ):
+        return dict[RequestID, SchedulerResult[TextGenerationOutput]]
+    elif pipeline_task == PipelineTask.EMBEDDINGS_GENERATION:
+        return dict[RequestID, SchedulerResult[EmbeddingsGenerationOutput]]
+    elif pipeline_task == PipelineTask.AUDIO_GENERATION:
+        return dict[RequestID, SchedulerResult[AudioGenerationOutput]]
+    elif pipeline_task == PipelineTask.PIXEL_GENERATION:
+        return dict[RequestID, SchedulerResult[GenerationOutput]]
+    else:
+        raise ValueError(
+            f"PipelineTask ({pipeline_task}) does not have a response type defined."
+        )
+
+
 class ZmqModelWorkerInterface(
     Generic[BaseContextType, PipelineOutputType],
     ModelWorkerInterface[BaseContextType, PipelineOutputType],
@@ -230,7 +258,7 @@ class ZmqModelWorkerInterface(
         pipeline_task: PipelineTask,
         context_type: type[TextGenerationContext] | type[EmbeddingsContext],
     ) -> None:
-        response_type = pipeline_task.output_type
+        response_type = _response_type_for_task(pipeline_task)
 
         self.request_queue_config = ZmqConfig[BaseContextType](context_type)
         self.response_queue_config = ZmqConfig[

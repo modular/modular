@@ -383,7 +383,7 @@ struct RawDriver(Movable):
         self,
         queue: QueueHandle,
         dst: MemoryHandle,
-        src: UnsafePointer[UInt8, MutAnyOrigin],
+        src: UnsafePointer[UInt8, ImmutAnyOrigin],
         size: UInt64,
     ) raises HALError:
         var status = self._raw.queue_copy_to_device.f(queue, dst, src, size)
@@ -760,7 +760,7 @@ struct RawPlugin(Movable):
         def(
             queue: QueueHandle,
             dst: MemoryHandle,
-            src: UnsafePointer[UInt8, MutAnyOrigin],
+            src: UnsafePointer[UInt8, ImmutAnyOrigin],
             size: UInt64,
         ) thin -> PluginResultCode,
     ]

@@ -172,9 +172,9 @@ def _allreduce_rmsnorm_fp8_kernel_warp_tiling[
     """
     comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
     comptime assert scale_buffer.flat_rank == 1, "scale_buffer must have rank 1"
-    # Provide evidence that flat_rank >= 1 for the Coord(Idx(...)) loads below.
+    # Provide evidence that flat_rank >= 1 for the Coord(...) loads below.
     comptime assert gamma.flat_rank >= 1
-    # Provide evidence that flat_rank >= 2 for the Coord(Idx(...), Idx(...))
+    # Provide evidence that flat_rank >= 2 for the Coord(..., ...)
     # loads/stores on residual and residual_output below.
     comptime assert residual.T.flat_rank >= 2
     comptime assert residual_output.T.flat_rank >= 2
@@ -196,7 +196,7 @@ def _allreduce_rmsnorm_fp8_kernel_warp_tiling[
     var gamma_vec = SIMD[accum_type, simd_width](0)
     if is_valid:
         gamma_vec = (
-            gamma.load[width=simd_width, alignment=align](Coord(Idx(idx))).cast[
+            gamma.load[width=simd_width, alignment=align](Coord(idx)).cast[
                 accum_type
             ]()
             + weight_offset.cast[accum_type]()
@@ -237,12 +237,12 @@ def _allreduce_rmsnorm_fp8_kernel_warp_tiling[
             comptime if has_residual:
                 vec_data += (
                     residual[]
-                    .load[width=simd_width](Coord(Idx(row), Idx(idx)))
+                    .load[width=simd_width](Coord(row, idx))
                     .cast[accum_type]()
                 )
                 # Write bf16 pre-normalization sum for the residual stream.
                 residual_output[].store[width=simd_width](
-                    Coord(Idx(row), Idx(idx)), vec_data.cast[in_dtype]()
+                    Coord(row, idx), vec_data.cast[in_dtype]()
                 )
 
         # Phase 1: Compute mean-square.
@@ -382,9 +382,9 @@ def _allreduce_rmsnorm_fp8_kernel_2stage[
     """
     comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
     comptime assert scale_buffer.flat_rank == 1, "scale_buffer must have rank 1"
-    # Provide evidence that flat_rank >= 1 for the Coord(Idx(...)) loads below.
+    # Provide evidence that flat_rank >= 1 for the Coord(...) loads below.
     comptime assert gamma.flat_rank >= 1
-    # Provide evidence that flat_rank >= 2 for the Coord(Idx(...), Idx(...))
+    # Provide evidence that flat_rank >= 2 for the Coord(..., ...)
     # loads/stores on residual and residual_output below.
     comptime assert residual.T.flat_rank >= 2
     comptime assert residual_output.T.flat_rank >= 2
@@ -469,9 +469,9 @@ def _allreduce_rmsnorm_fp8_kernel_2stage[
     var gamma_vec = SIMD[accum_type, simd_width](0)
     if is_valid:
         gamma_vec = (
-            gamma.load[width=simd_width, alignment=align](
-                Coord(Idx(col_idx))
-            ).cast[accum_type]()
+            gamma.load[width=simd_width, alignment=align](Coord(col_idx)).cast[
+                accum_type
+            ]()
             + weight_offset.cast[accum_type]()
         )
 
@@ -507,7 +507,7 @@ def _allreduce_rmsnorm_fp8_kernel_2stage[
                 comptime if has_residual:
                     accum += (
                         residual[]
-                        .load[width=simd_width](Coord(Idx(row), Idx(col_idx)))
+                        .load[width=simd_width](Coord(row, col_idx))
                         .cast[accum_type]()
                     )
                     var local_elem = local_row * cols + col_idx
@@ -609,7 +609,7 @@ def _allreduce_rmsnorm_fp8_kernel_2stage[
                         ](local_elem)
                     )
                     residual_output[].store[width=simd_width](
-                        Coord(Idx(row), Idx(col_idx)), bf16_val
+                        Coord(row, col_idx), bf16_val
                     )
 
     # NOTE: No end barrier needed (same reasoning as 1-stage kernel).
@@ -678,7 +678,7 @@ def _allreduce_rmsnorm_fp8_launch[
     def output_fn[
         width: SIMDSize
     ](row: Int, col: Int, val: SIMD[out_dtype, width]):
-        output.store[width=width](Coord(Idx(row), Idx(col)), val)
+        output.store[width=width](Coord(row, col), val)
 
     comptime kernel = _allreduce_rmsnorm_fp8_kernel_warp_tiling[
         mut=gamma.mut,
@@ -831,7 +831,7 @@ def _allreduce_rmsnorm_fp8_launch_2stage[
     def output_fn[
         width: SIMDSize
     ](row: Int, col: Int, val: SIMD[out_dtype, width]):
-        output.store[width=width](Coord(Idx(row), Idx(col)), val)
+        output.store[width=width](Coord(row, col), val)
 
     comptime kernel = _allreduce_rmsnorm_fp8_kernel_2stage[
         mut=gamma.mut,
@@ -901,14 +901,12 @@ def _launch_split_allreduce_rmsnorm_fp8[
     it avoids carrying bf16 residual data through scratch buffers.
     """
     # Construct TileTensor inputs for allreduce.
-    var _tt0 = TileTensor(src_ptrs[0], row_major(Coord(Idx(rows), Idx(cols))))
+    var _tt0 = TileTensor(src_ptrs[0], row_major(Coord(rows, cols)))
     comptime _TT = type_of(_tt0)
     var input_buffers = InlineArray[_TT, ngpus](fill=_tt0)
 
     comptime for i in range(1, ngpus):
-        input_buffers[i] = TileTensor(
-            src_ptrs[i], row_major(Coord(Idx(rows), Idx(cols)))
-        )
+        input_buffers[i] = TileTensor(src_ptrs[i], row_major(Coord(rows, cols)))
 
     var res_ptr = residual.ptr
     var res_out_ptr = residual_output.ptr
@@ -926,7 +924,7 @@ def _launch_split_allreduce_rmsnorm_fp8[
 
     var shape = IndexList[2](rows, cols)
     var scale_output_2d = TileTensor(
-        scale_output_1d.ptr, row_major(Coord(Idx(rows), Idx[1]()))
+        scale_output_1d.ptr, row_major(Coord(rows, Idx[1]()))
     )
 
     # Pre-compile the RMSNorm+FP8 kernel before launching allreduce.
@@ -1337,7 +1335,7 @@ def allreduce_rmsnorm_fp8[
     # Create internal 2D/1D TileTensor views for _dispatch_fused_kernel.
     var output_2d = TileTensor(
         rebind[UnsafePointer[Scalar[out_dtype], MutAnyOrigin]](output.ptr),
-        row_major(Coord(Idx(rows), Idx(cols))),
+        row_major(Coord(rows, cols)),
     )
     var scale_output_1d = TileTensor(
         rebind[UnsafePointer[Scalar[scales_dtype], MutAnyOrigin]](
@@ -1345,7 +1343,7 @@ def allreduce_rmsnorm_fp8[
         ),
         row_major(
             Coord(
-                Idx(rows),
+                rows,
             )
         ),
     )
@@ -1440,17 +1438,17 @@ def allreduce_residual_rmsnorm_fp8[
     # Create internal 2D/1D TileTensor views for _dispatch_fused_kernel.
     var output_2d = TileTensor(
         rebind[UnsafePointer[Scalar[out_dtype], MutAnyOrigin]](output.ptr),
-        row_major(Coord(Idx(rows), Idx(cols))),
+        row_major(Coord(rows, cols)),
     )
     var residual_2d = TileTensor(
         rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](residual.ptr),
-        row_major(Coord(Idx(rows), Idx(cols))),
+        row_major(Coord(rows, cols)),
     )
     var residual_output_2d = TileTensor(
         rebind[UnsafePointer[Scalar[in_dtype], MutAnyOrigin]](
             residual_output.ptr
         ),
-        row_major(Coord(Idx(rows), Idx(cols))),
+        row_major(Coord(rows, cols)),
     )
     var scale_output_1d = TileTensor(
         rebind[UnsafePointer[Scalar[scales_dtype], MutAnyOrigin]](
@@ -1458,7 +1456,7 @@ def allreduce_residual_rmsnorm_fp8[
         ),
         row_major(
             Coord(
-                Idx(rows),
+                rows,
             )
         ),
     )

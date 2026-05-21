@@ -78,7 +78,7 @@ def _test_pull[
     var host_buf = ctxs[0].enqueue_create_host_buffer[dtype](max_chunk_size)
 
     comptime InputTileType = TileTensor[
-        dtype, type_of(row_major(Idx(Int(0)))), ImmutAnyOrigin
+        dtype, type_of(row_major(Int(0))), ImmutAnyOrigin
     ]
     var tt_input_bufs = InlineArray[InputTileType, dp_size](uninitialized=True)
 
@@ -89,13 +89,13 @@ def _test_pull[
             host_buf[j] = expected[dp][j]
         ctxs[0].enqueue_copy(dev_buf, host_buf)
         ctxs[0].synchronize()
-        tt_input_bufs[dp] = TileTensor(dev_buf, row_major(Idx(n))).as_immut()
+        tt_input_bufs[dp] = TileTensor(dev_buf, row_major(n)).as_immut()
         input_devbufs.append(dev_buf)
 
     # Output buffers on each GPU (sized to its replica's chunk).
     var output_devbufs = List[DeviceBuffer[dtype]]()
     comptime OutputTileType = TileTensor[
-        dtype, type_of(row_major(Idx(Int(0)))), MutAnyOrigin
+        dtype, type_of(row_major(Int(0))), MutAnyOrigin
     ]
     var out_tiles = InlineArray[OutputTileType, ngpus](uninitialized=True)
     for i in range(ngpus):
@@ -104,7 +104,7 @@ def _test_pull[
         var out_buf = ctxs[i].enqueue_create_buffer[dtype](n)
         ctxs[i].enqueue_memset(out_buf, 0)
         ctxs[i].synchronize()
-        out_tiles[i] = OutputTileType(out_buf.unsafe_ptr(), row_major(Idx(n)))
+        out_tiles[i] = OutputTileType(out_buf.unsafe_ptr(), row_major(n))
         output_devbufs.append(out_buf)
 
     # Signal buffers.

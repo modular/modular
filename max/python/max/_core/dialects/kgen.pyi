@@ -304,9 +304,6 @@ class FnMetadataAttrInterface(Protocol):
         arg3: FnEffects,
         /,
     ) -> bool: ...
-    def get_with_bound_pos_args(
-        self, arg: int, /
-    ) -> FnMetadataAttrInterface: ...
     def equals(self, arg: FnMetadataAttrInterface, /) -> bool: ...
 
 class IndexRefAttrInterface(Protocol):
@@ -4662,6 +4659,7 @@ class FuncType(max._core.Type):
         arg_convs: Sequence[ArgConvention] = [],
         effects: FnEffects = FnEffects.none,
         metadata: max._core.Attribute = ...,
+        arg_list_attrs: max._core.Attribute = ...,
     ) -> None: ...
     @overload
     def __init__(
@@ -4670,6 +4668,7 @@ class FuncType(max._core.Type):
         arg_conventions: Sequence[ArgConvention],
         fn_effects: FnEffects,
         metadata: FnMetadataAttrInterface,
+        arg_list_attrs: PogListAttr,
     ) -> None: ...
     @property
     def values(self) -> max._core.dialects.builtin.FunctionType: ...
@@ -4679,6 +4678,8 @@ class FuncType(max._core.Type):
     def fn_effects(self) -> FnEffects: ...
     @property
     def metadata(self) -> FnMetadataAttrInterface: ...
+    @property
+    def arg_list_attrs(self) -> PogListAttr: ...
 
 class GeneratorType(max._core.Type):
     """
@@ -5189,6 +5190,7 @@ class FuncTypeGeneratorType(GeneratorType):
         effects: FnEffects = FnEffects.none,
         fn_metadata: max._core.Attribute = ...,
         gen_metadata: max._core.Attribute = ...,
+        arg_list_attrs: max._core.Attribute = ...,
     ) -> None: ...
 
 class _KGENDType:

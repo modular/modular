@@ -49,7 +49,6 @@ from layout import (
     Idx,
     Coord,
     RowMajorLayout,
-    RuntimeInt,
     row_major,
 )
 from linalg.matmul.gpu import _matmul_gpu
@@ -202,8 +201,8 @@ def bench_matmul_1d_tma_epilogue[
     comptime simd_size = 4
     comptime transpose_b = True
 
-    var shape_c = Coord(Idx(M), Idx[N]())
-    var shape_a = Coord(Idx(M), Idx[K]())
+    var shape_c = Coord(M, Idx[N]())
+    var shape_a = Coord(M, Idx[K]())
     var shape_b = Coord(Idx[N](), Idx[K]())
 
     var c_size = M * N
@@ -257,9 +256,9 @@ def bench_matmul_1d_tma_epilogue[
                 _dtype, width
             ]:
                 # 1D bias: broadcast bias[j] across all M rows.
-                var epi_val = bias_tile.load[width=width](
-                    Coord(Idx(idx[1]))
-                ).cast[_dtype]()
+                var epi_val = bias_tile.load[width=width](Coord(idx[1])).cast[
+                    _dtype
+                ]()
                 return val + epi_val
 
             _matmul_gpu[
@@ -272,8 +271,8 @@ def bench_matmul_1d_tma_epilogue[
             # Wrap 1D bias as a (1, N) TileTensor to match the 2D
             # epilogue type _matmul_gpu expects. The kernel only
             # uses the raw pointer for 1D bias.
-            var epi_1 = RuntimeInt[DType.int64](Scalar[DType.int64](1))
-            var epi_n = RuntimeInt[DType.int64](Scalar[DType.int64](N))
+            var epi_1 = Int64(1)
+            var epi_n = Int64(N)
             var epilogue_for_gpu = TileTensor(
                 bias_tile.ptr, row_major(Coord(epi_1, epi_n))
             ).as_immut()
@@ -370,9 +369,9 @@ def bench_matmul_1d_tma_epilogue[
             ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> SIMD[
                 _dtype, width
             ]:
-                var epi_val = bias_ver_nd.load[width=width](
-                    Coord(Idx(idx[1]))
-                ).cast[_dtype]()
+                var epi_val = bias_ver_nd.load[width=width](Coord(idx[1])).cast[
+                    _dtype
+                ]()
                 return val + epi_val
 
             _matmul_gpu[
@@ -382,8 +381,8 @@ def bench_matmul_1d_tma_epilogue[
             ](c_kernel_nd, a_ver_nd, b_ver_nd, ctx)
 
         else:
-            var ver_epi_1 = RuntimeInt[DType.int64](Scalar[DType.int64](1))
-            var ver_epi_n = RuntimeInt[DType.int64](Scalar[DType.int64](N))
+            var ver_epi_1 = Int64(1)
+            var ver_epi_n = Int64(N)
             var ver_epilogue = TileTensor(
                 bias_ver_dev.unsafe_ptr(),
                 row_major(Coord(ver_epi_1, ver_epi_n)),

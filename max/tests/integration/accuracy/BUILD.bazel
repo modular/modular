@@ -421,16 +421,31 @@ modular_py_binary(
     ),
     imports = ["llm_fuzz"],
     main = "llm_fuzz/fuzz.py",
+    visibility = ["//max_private:__subpackages__"],
     deps = [
         requirement("openai"),
         requirement("jsonschema"),
     ],
 )
 
+modular_py_library(
+    name = "pipelines_llm_fuzz_lib",
+    testonly = True,
+    srcs = ["pipelines_llm_fuzz.py"],
+    imports = ["."],
+    visibility = ["//max_private:__subpackages__"],
+    deps = [
+        ":pipelines-lm-eval",
+        "@rules_python//python/runfiles",
+        requirement("click"),
+        requirement("requests"),
+    ],
+)
+
 modular_py_binary(
     name = "pipelines-llm-fuzz",
     testonly = True,
-    srcs = ["pipelines_llm_fuzz.py"],
+    srcs = ["pipelines_llm_fuzz_main.py"],
     data = [
         ":llm-fuzz",
         "//max/python/max/entrypoints:pipelines",
@@ -439,14 +454,8 @@ modular_py_binary(
         # required by models that use Expert Parallelism.
         "MODULAR_SHMEM_LIB_DIR": "../+http_archive+nvshmem_prebuilt",
     },
-    imports = ["."],
-    main = "pipelines_llm_fuzz.py",
-    deps = [
-        ":pipelines-lm-eval",
-        "@rules_python//python/runfiles",
-        requirement("click"),
-        requirement("requests"),
-    ],
+    main = "pipelines_llm_fuzz_main.py",
+    deps = [":pipelines_llm_fuzz_lib"],
 )
 
 modular_py_binary(

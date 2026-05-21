@@ -968,18 +968,18 @@ def mla_splitk_reduce[
 
     var qk_max_tt = TileTensor(
         qk_max_ptr,
-        row_major((Idx(num_partitions), Idx(batch_size), Idx[num_heads]())),
+        row_major((num_partitions, batch_size, Idx[num_heads]())),
     )
     var exp_sum_tt = TileTensor(
         exp_sum_ptr,
-        row_major((Idx(num_partitions), Idx(batch_size), Idx[num_heads]())),
+        row_major((num_partitions, batch_size, Idx[num_heads]())),
     )
     var intermediate_tt = TileTensor(
         intermediate_ptr,
         row_major(
             (
-                Idx(num_partitions),
-                Idx(batch_size),
+                num_partitions,
+                batch_size,
                 Idx[num_heads](),
                 Idx[depth](),
             )
@@ -987,7 +987,7 @@ def mla_splitk_reduce[
     )
     var output_tt = TileTensor(
         output_ptr,
-        row_major((Idx(batch_size), Idx[num_heads](), Idx[depth]())),
+        row_major((batch_size, Idx[num_heads](), Idx[depth]())),
     )
 
     var scales_tt = tt_stack_allocation[
@@ -1043,10 +1043,10 @@ def mla_splitk_reduce[
             var scale = scales_tt[p]
             var x = intermediate_tt.load[width=elems_per_lane](
                 Coord(
-                    Idx(p),
-                    Idx(batch_idx),
-                    Idx(head_idx),
-                    Idx(depth_global),
+                    p,
+                    batch_idx,
+                    head_idx,
+                    depth_global,
                 )
             ).cast[accum_type]()
             # Mask out empty partitions (scale == 0): the producer kernel
@@ -1058,21 +1058,21 @@ def mla_splitk_reduce[
     # Step 3: cross-warp reduction and output store.
     comptime if W_PARTS == 1:
         output_tt.store(
-            Coord(Idx(batch_idx), Idx(head_idx), Idx(depth_global)),
+            Coord(batch_idx, head_idx, depth_global),
             acc.cast[output_type](),
         )
     else:
-        warp_partial_tt.store(Coord(Idx(warp_idx), Idx(depth_in_tile)), acc)
+        warp_partial_tt.store(Coord(warp_idx, depth_in_tile), acc)
         barrier()
 
         if warp_idx == 0:
             var final_acc = SIMD[accum_type, elems_per_lane](0)
             comptime for w in range(W_PARTS):
                 final_acc += warp_partial_tt.load[width=elems_per_lane](
-                    Coord(Idx[w](), Idx(depth_in_tile))
+                    Coord(Idx[w](), depth_in_tile)
                 )
             output_tt.store(
-                Coord(Idx(batch_idx), Idx(head_idx), Idx(depth_global)),
+                Coord(batch_idx, head_idx, depth_global),
                 final_acc.cast[output_type](),
             )
 

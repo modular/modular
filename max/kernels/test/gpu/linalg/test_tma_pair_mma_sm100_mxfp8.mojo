@@ -793,7 +793,7 @@ def test_blockscaled_pair_cta_mxfp8[
 
     var ref_a_scales_shape = Coord(Idx[ceildiv(k, REF_BLOCK_SCALE)](), m)
     var ref_b_scales_shape = Coord(
-        Idx(ceildiv(N, REF_BLOCK_SCALE)),
+        ceildiv(N, REF_BLOCK_SCALE),
         Idx[ceildiv(k, REF_BLOCK_SCALE)](),
     )
 
@@ -837,9 +837,9 @@ def test_blockscaled_pair_cta_mxfp8[
 
     for i in range(ceildiv(N, REF_BLOCK_SCALE)):
         for j in range(ceildiv(K, REF_BLOCK_SCALE)):
-            b_scales_host_ref[Coord(Idx(i), Idx(j))] = (
-                1 << random_ui64(0, 3)
-            ).cast[ref_scales_type]()
+            b_scales_host_ref[Coord(i, j)] = (1 << random_ui64(0, 3)).cast[
+                ref_scales_type
+            ]()
 
     ctx.enqueue_copy(a_scales_device_ref, a_scales_host_ref_ptr)
     ctx.enqueue_copy(b_scales_device_ref, b_scales_host_ref_ptr)
@@ -876,14 +876,14 @@ def test_blockscaled_pair_cta_mxfp8[
     comptime sf_k = ceildiv(k, SF_VECTOR_SIZE)
 
     var a_scales_shape = Coord(
-        Idx(ceildiv(M, SF_ATOM_M[0] * SF_ATOM_M[1])),
+        ceildiv(M, SF_ATOM_M[0] * SF_ATOM_M[1]),
         Idx[ceildiv(sf_k, SF_ATOM_K)](),
         Idx[SF_ATOM_M[0]](),
         Idx[SF_ATOM_M[1]](),
         Idx[SF_ATOM_K](),
     )
     var b_scales_shape = Coord(
-        Idx(ceildiv(N, SF_ATOM_M[0] * SF_ATOM_M[1])),
+        ceildiv(N, SF_ATOM_M[0] * SF_ATOM_M[1]),
         Idx[ceildiv(sf_k, SF_ATOM_K)](),
         Idx[SF_ATOM_M[0]](),
         Idx[SF_ATOM_M[1]](),

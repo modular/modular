@@ -60,7 +60,6 @@ from std.builtin.simd import _convert_f32_to_float8_scalar
 from layout import (
     Coord,
     Idx,
-    RuntimeInt,
     TileTensor,
     row_major,
 )
@@ -372,11 +371,11 @@ def _test_swiglu_dispatch[
     )
 
     # ---- Per-test A-side / output buffers (M-dependent) ----
-    var a_shape = row_major(Coord(Idx(Int(M)), Idx[packed_K]()))
+    var a_shape = row_major(Coord(Int(M), Idx[packed_K]()))
     var b_shape = row_major(
         Coord(Idx[num_experts](), Idx[N](), Idx[packed_K]())
     )
-    var c_shape = row_major(Coord(Idx(Int(M)), Idx[N]()))
+    var c_shape = row_major(Coord(Int(M), Idx[N]()))
 
     var a_size = M * packed_K
     var c_size = M * N
@@ -450,7 +449,7 @@ def _test_swiglu_dispatch[
 
     var a_scales_shape = row_major(
         Coord(
-            Idx(Int(a_scale_dim0)),
+            Int(a_scale_dim0),
             Idx[k_groups](),
             Idx[SF_ATOM_M[0]](),
             Idx[SF_ATOM_M[1]](),
@@ -469,11 +468,11 @@ def _test_swiglu_dispatch[
 
     # ---- SwiGLU output buffers (REF and TEST) ----
     comptime k_groups_swiglu = ceildiv(H, NVFP4_SF_VECTOR_SIZE * SF_ATOM_K)
-    var O_shape = row_major(Coord(Idx(Int(M)), Idx[packed_H]()))
+    var O_shape = row_major(Coord(Int(M), Idx[packed_H]()))
     var O_size = M * packed_H
     var swiglu_scales_shape = row_major(
         Coord(
-            Idx(Int(a_scale_dim0)),
+            Int(a_scale_dim0),
             Idx[k_groups_swiglu](),
             Idx[SF_ATOM_M[0]](),
             Idx[SF_ATOM_M[1]](),
@@ -555,7 +554,7 @@ def _test_swiglu_dispatch[
         a_scales_device,
         row_major(
             Coord(
-                RuntimeInt[DType.int64](Scalar[DType.int64](a_scale_dim0)),
+                Int64(a_scale_dim0),
                 Idx[k_groups](),
                 Idx[SF_ATOM_M[0]](),
                 Idx[SF_ATOM_M[1]](),
@@ -579,11 +578,7 @@ def _test_swiglu_dispatch[
     ).as_any_origin()
     var expert_scales_tt = TileTensor(
         shared.expert_scales,
-        row_major(
-            Coord(
-                RuntimeInt[DType.int64](Scalar[DType.int64](num_experts)),
-            )
-        ),
+        row_major(Coord(Int64(num_experts))),
     ).as_any_origin()
 
     # ============================================================

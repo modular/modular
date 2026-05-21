@@ -201,8 +201,8 @@ def test_grouped_gemm_epilogue[
     for i in range(Int(m.value())):
         for j in range(Int(n.value())):
             comptime assert c_host.flat_rank >= 2
-            c_host[(Idx(i), Idx(j))] = Scalar[c_type](random_float64(-1, 1))
-            c_host_original[(Idx(i), Idx(j))] = c_host[(Idx(i), Idx(j))]
+            c_host[Coord(i, j)] = Scalar[c_type](random_float64(-1, 1))
+            c_host_original[Coord(i, j)] = c_host[i, j]
 
     # Copy to device
     ctx.enqueue_copy(a_device, a_host_ptr)
@@ -383,9 +383,9 @@ def test_grouped_gemm_epilogue[
     for i in range(Int(m.value())):
         for j in range(Int(n.value())):
             comptime assert c_host_ref.flat_rank >= 2
-            c_host_ref[(Idx(i), Idx(j))] = epilogue_add_c_host(
+            c_host_ref[Coord(i, j)] = epilogue_add_c_host(
                 IndexList[2](i, j),
-                c_host_ref[(Idx(i), Idx(j))],
+                c_host_ref[i, j],
             )
 
     # Compare results

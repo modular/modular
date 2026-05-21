@@ -103,6 +103,7 @@ MODEL_RECIPES = CaseInsensitiveDict({
     "nvidia/DeepSeek-V3.1-NVFP4__tptp": "max/pipelines/architectures/deepseekV3/recipes/nvfp4_tptp_8x_b200.yaml",
     "amd/Kimi-K2.5-MXFP4": "max/pipelines/architectures/kimik2_5/recipes/mxfp4_8x_mi355.yaml",
     "nvidia/Kimi-K2.5-NVFP4": "max/pipelines/architectures/kimik2_5/recipes/nvfp4_with_vision_8x_b200.yaml",
+    "nvidia/Kimi-K2.6-NVFP4": "max/pipelines/architectures/kimik2_5/recipes/nvfp4_kimi_k2_6_tpep_8x_b200.yaml",
     "Qwen/Qwen3-235B-A22B-Instruct-2507": "max/pipelines/architectures/qwen3/recipes/qwen3_235b_a22b_8x_b200.yaml",
     "unsloth/gpt-oss-20b-BF16__modulev3": "max/pipelines/architectures/gpt_oss_modulev3/recipes/gpt_oss_20b.yaml",
     "austinpowers/Kimi-K2.5-NVFP4-DeepseekV3__eagle": "max/pipelines/architectures/kimik2_5/recipes/nvfp4_eagle_8x_b200.yaml",
@@ -237,6 +238,40 @@ def _load_recipe(recipe_path: str) -> RecipeConfig:
     with open(_resolve_recipe_path(recipe_path), encoding="utf-8") as f:
         data = yaml.safe_load(f) or {}
     return RecipeConfig.model_validate(data)
+
+
+def hf_repos_for_model(model: str) -> list[tuple[str, str | None]]:
+    """Return (repo, revision) pairs to pre-cache for the given model.
+
+    Always includes the base repo (alias prefix before __), plus the
+    draft_model.model_path when the alias maps to a recipe with one.
+    Revisions come from hf-repo-lock.tsv; None means unpinned.
+    """
+    lock = _load_hf_repo_lock()
+    repos: list[tuple[str, str | None]] = []
+    seen: set[str] = set()
+
+    def add(repo: str) -> None:
+        # Local filesystem paths can't be downloaded from HF.
+        if repo.startswith(("/", "./", "../")):
+            return
+        key = repo.casefold()
+        if key in seen:
+            return
+        seen.add(key)
+        repos.append((repo, lock.get(key)))
+
+    # Recipe-derived paths win the casefold dedup, so a lowercased alias
+    # input still resolves to the canonical casing the cache expects.
+    recipe_path = MODEL_RECIPES.get(model)
+    if recipe_path is not None:
+        recipe = _load_recipe(recipe_path)
+        if recipe.model.model_path:
+            add(recipe.model.model_path)
+        if recipe.draft_model and recipe.draft_model.model_path:
+            add(recipe.draft_model.model_path)
+    add(model.split("__", 1)[0])
+    return repos
 
 
 def _recipe_gpu_overrides(recipe: RecipeConfig, gpu_count: int) -> list[str]:

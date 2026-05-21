@@ -50,7 +50,10 @@ from max.benchmark.benchmark_shared.request import (
     RequestDriver,
     RequestFuncInput,
 )
-from max.benchmark.benchmark_shared.utils import deadline_remaining_s
+from max.benchmark.benchmark_shared.utils import (
+    deadline_remaining_s,
+    exceeds_deadline,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -159,6 +162,7 @@ async def get_request(
     request_rate: float,
     timing_data: dict[str, list[float]],
     burstiness: float = 1.0,
+    benchmark_should_end_time: int | None = None,
 ) -> AsyncGenerator[SampledRequest, None]:
     """
     Asynchronously generates requests at a specified rate
@@ -214,7 +218,8 @@ async def get_request(
         # Sample the request interval from the gamma distribution.
         # If burstiness is 1, it follows exponential distribution.
         interval = np.random.gamma(shape=burstiness, scale=theta)
-        # The next request will be sent after the interval.
+        if exceeds_deadline(interval, benchmark_should_end_time):
+            return
         await asyncio.sleep(interval)
 
 
@@ -265,7 +270,11 @@ async def run_single_turn_benchmark(
     tasks: list[asyncio.Task[BaseRequestFuncOutput]] = []
     request_idx = 0
     async for request in get_request(
-        input_requests, request_rate, timing_data, burstiness
+        input_requests,
+        request_rate,
+        timing_data,
+        burstiness,
+        benchmark_should_end_time=benchmark_should_end_time,
     ):
         # If we've hit the time limit, then don't issue any more requests
         if benchmark_should_end_time is not None:

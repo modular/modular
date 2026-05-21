@@ -426,15 +426,15 @@ def matmul[
 ) raises:
     var c_tt = TileTensor(
         rebind[UnsafePointer[Scalar[c_type], MutAnyOrigin]](c_tensor.ptr),
-        row_major(Coord(Idx(c_tensor.dim(0)), Idx(c_tensor.dim(1)))),
+        row_major(Coord(c_tensor.dim(0), c_tensor.dim(1))),
     )
     var a_tt = TileTensor(
         rebind[UnsafePointer[Scalar[a_type], ImmutAnyOrigin]](a_tensor.ptr),
-        row_major(Coord(Idx(a_tensor.dim(0)), Idx(a_tensor.dim(1)))),
+        row_major(Coord(a_tensor.dim(0), a_tensor.dim(1))),
     )
     var b_tt = TileTensor(
         rebind[UnsafePointer[Scalar[b_type], ImmutAnyOrigin]](b_tensor.ptr),
-        row_major(Coord(Idx(b_tensor.dim(0)), Idx(b_tensor.dim(1)))),
+        row_major(Coord(b_tensor.dim(0), b_tensor.dim(1))),
     )
     with ctx.push_context() as cur_ctx:
         return matmul[use_tf32=use_tf32, scales_type=scales_type](

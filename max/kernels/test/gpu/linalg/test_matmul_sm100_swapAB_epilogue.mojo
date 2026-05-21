@@ -141,9 +141,9 @@ def test_matmul_sm100_epilogue[
     for i in range(M):
         for j in range(N):
             shuffle(scales)
-            comptime assert c_host.flat_rank >= 2
-            c_host[(Idx(i), Idx(j))] = Scalar[c_type](scales[0])
-            c_host_copy[(Idx(i), Idx(j))] = c_host[(Idx(i), Idx(j))]
+            comptime assert c_host.flat_rank == 2
+            c_host[i, j] = Scalar[c_type](scales[0])
+            c_host_copy[i, j] = c_host[i, j]
 
     # Move operands to the Device
     ctx.enqueue_copy(a_device, a_host_ptr)
@@ -234,12 +234,9 @@ def test_matmul_sm100_epilogue[
             # alias compute_lambda = elementwise_compute_lambda_fn.value()
             for i in range(M):
                 for j in range(N):
-                    comptime assert c_host_ref.flat_rank >= 2
-                    c_host_ref[
-                        (Idx(i), Idx(j))
-                    ] = test_lambda_add_coords_prod_local(
-                        IndexList[2](i, j),
-                        c_host_ref[(Idx(i), Idx(j))],
+                    comptime assert c_host_ref.flat_rank == 2
+                    c_host_ref[i, j] = test_lambda_add_coords_prod_local(
+                        IndexList[2](i, j), c_host_ref[i, j]
                     )
 
         comptime rtol = 1e-2
@@ -291,7 +288,7 @@ def main() raises:
                         k_group_size=2,
                     ](
                         ctx,
-                        Idx(Int(100)),
+                        Int(100),
                         Idx[2560](),
                         Idx[8192](),
                         is_benchmark=is_bench,
@@ -310,7 +307,7 @@ def main() raises:
                         swapAB=True,
                     ](
                         ctx,
-                        Idx(Int(17)),
+                        Int(17),
                         Idx[1024](),
                         Idx[1024](),
                         is_benchmark=is_bench,
@@ -337,7 +334,7 @@ def main() raises:
                         k_group_size=2,
                     ](
                         ctx,
-                        Idx(Int(1000)),
+                        Int(1000),
                         Idx[1024](),
                         Idx[1024](),
                         is_benchmark=is_bench,
@@ -356,7 +353,7 @@ def main() raises:
                         swapAB=True,
                     ](
                         ctx,
-                        Idx(Int(512)),
+                        Int(512),
                         Idx[4096](),
                         Idx[1024 + 16](),
                         is_benchmark=is_bench,

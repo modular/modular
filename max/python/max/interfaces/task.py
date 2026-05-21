@@ -39,10 +39,6 @@ See the `PipelineTask` enum for further details on each task type.
 """
 
 from enum import Enum
-from typing import Any
-
-from .request import RequestID
-from .scheduler_result import SchedulerResult
 
 
 class InputModality(str, Enum):
@@ -74,36 +70,3 @@ class PipelineTask(str, Enum):
     """Task for generating pixels."""
     UNDEFINED = "undefined"
     """Undefined task, used as default when task should be auto-detected."""
-
-    @property
-    def output_type(
-        self,
-    ) -> type[dict[RequestID, SchedulerResult[Any]]]:
-        """Get the output type for the pipeline task.
-
-        Returns:
-            The output type for the pipeline task.
-        """
-        from .generation import GenerationOutput
-        from .pipeline_variants import (
-            AudioGenerationOutput,
-            EmbeddingsGenerationOutput,
-            TextGenerationOutput,
-        )
-        from .scheduler_result import SchedulerResult
-
-        if self in [
-            PipelineTask.TEXT_GENERATION,
-            PipelineTask.SPEECH_TOKEN_GENERATION,
-        ]:
-            return dict[RequestID, SchedulerResult[TextGenerationOutput]]
-        elif self == PipelineTask.EMBEDDINGS_GENERATION:
-            return dict[RequestID, SchedulerResult[EmbeddingsGenerationOutput]]
-        elif self == PipelineTask.AUDIO_GENERATION:
-            return dict[RequestID, SchedulerResult[AudioGenerationOutput]]
-        elif self == PipelineTask.PIXEL_GENERATION:
-            return dict[RequestID, SchedulerResult[GenerationOutput]]
-        else:
-            raise ValueError(
-                f"PipelineTask ({self}) does not have an output_type defined."
-            )

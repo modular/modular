@@ -93,7 +93,7 @@ def bench_dispatch[
         (Idx[max_recv_tokens](), Idx[hidden_size]())
     )
     comptime output_scales_tt_layout = row_major(
-        (Idx(hidden_size // group_size), Idx[max_recv_tokens]())
+        (hidden_size // group_size, Idx[max_recv_tokens]())
     )
 
     var recv_count = shmem_malloc[DType.uint64](n_local_experts * n_ranks)
@@ -137,11 +137,11 @@ def bench_dispatch[
     )
 
     var topk_ids_tensor = TileTensor[origin=ImmutAnyOrigin](
-        device_topk_buf, row_major(Idx(n_tokens_per_rank), Idx[top_k]())
+        device_topk_buf, row_major(n_tokens_per_rank, Idx[top_k]())
     )
     var input_tokens_tensor = TileTensor[origin=ImmutAnyOrigin](
         device_input_buf,
-        row_major(Idx(n_tokens_per_rank), Idx[hidden_size]()),
+        row_major(n_tokens_per_rank, Idx[hidden_size]()),
     )
     var output_tensor = TileTensor[origin=MutAnyOrigin](
         device_output_buf,
@@ -149,7 +149,7 @@ def bench_dispatch[
     )
     var output_scales_tensor = TileTensor[origin=MutAnyOrigin](
         device_output_scales_buf,
-        row_major(Idx(hidden_size // group_size), Idx[max_recv_tokens]()),
+        row_major(hidden_size // group_size, Idx[max_recv_tokens]()),
     )
     var row_offsets_tensor = TileTensor[origin=MutAnyOrigin](
         device_row_offsets_buf, row_major[n_local_experts + 1]()
@@ -163,7 +163,7 @@ def bench_dispatch[
     )
     var output_2_tensor = TileTensor[origin=MutAnyOrigin](
         device_output_2_buf,
-        row_major(Idx(n_tokens_per_rank), Idx[top_k](), Idx[hidden_size]()),
+        row_major(n_tokens_per_rank, Idx[top_k](), Idx[hidden_size]()),
     )
 
     comptime hw_info = ctx.default_device_info

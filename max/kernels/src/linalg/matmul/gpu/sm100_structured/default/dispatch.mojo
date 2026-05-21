@@ -28,7 +28,6 @@ from layout import (
     Coord,
     Idx,
     RowMajorLayout,
-    RuntimeInt,
     TensorLayout,
     TileTensor,
 )
@@ -177,7 +176,7 @@ def dispatch_gemv[
     epilogue_tensor: OptionalReg[
         TileTensor[
             c.dtype,
-            RowMajorLayout[RuntimeInt[DType.int64], RuntimeInt[DType.int64]],
+            RowMajorLayout[Int64, Int64],
             ImmutAnyOrigin,
         ]
     ] = None,
@@ -247,7 +246,7 @@ def matmul_dispatch_sm100[
     epilogue_tensor: OptionalReg[
         TileTensor[
             c.dtype,
-            RowMajorLayout[RuntimeInt[DType.int64], RuntimeInt[DType.int64]],
+            RowMajorLayout[Int64, Int64],
             ImmutAnyOrigin,
         ]
     ] = None,
@@ -564,9 +563,7 @@ def select_and_launch_sm100_config[
         OptionalReg[
             TileTensor[
                 c_type,
-                RowMajorLayout[
-                    RuntimeInt[DType.int64], RuntimeInt[DType.int64]
-                ],
+                RowMajorLayout[Int64, Int64],
                 ImmutAnyOrigin,
             ]
         ],
@@ -589,7 +586,7 @@ def select_and_launch_sm100_config[
     epilogue_tensor: OptionalReg[
         TileTensor[
             c_type,
-            RowMajorLayout[RuntimeInt[DType.int64], RuntimeInt[DType.int64]],
+            RowMajorLayout[Int64, Int64],
             ImmutAnyOrigin,
         ]
     ] = None,
@@ -712,7 +709,7 @@ def heuristic_and_outliers_dispatch[
     epilogue_tensor: OptionalReg[
         TileTensor[
             c.dtype,
-            RowMajorLayout[RuntimeInt[DType.int64], RuntimeInt[DType.int64]],
+            RowMajorLayout[Int64, Int64],
             ImmutAnyOrigin,
         ]
     ] = None,
@@ -728,9 +725,7 @@ def heuristic_and_outliers_dispatch[
         dispatch_epilogue_tensor: OptionalReg[
             TileTensor[
                 c_type,
-                RowMajorLayout[
-                    RuntimeInt[DType.int64], RuntimeInt[DType.int64]
-                ],
+                RowMajorLayout[Int64, Int64],
                 ImmutAnyOrigin,
             ]
         ],
@@ -784,7 +779,7 @@ def matmul_dispatch_sm100_bf16[
     epilogue_tensor: OptionalReg[
         TileTensor[
             c.dtype,
-            RowMajorLayout[RuntimeInt[DType.int64], RuntimeInt[DType.int64]],
+            RowMajorLayout[Int64, Int64],
             ImmutAnyOrigin,
         ]
     ] = None,
@@ -947,7 +942,7 @@ def _matmul_dispatch_sm100[
     epilogue_tensor: OptionalReg[
         TileTensor[
             c_type,
-            RowMajorLayout[RuntimeInt[DType.int64], RuntimeInt[DType.int64]],
+            RowMajorLayout[Int64, Int64],
             ImmutAnyOrigin,
         ]
     ] = None,
@@ -987,7 +982,7 @@ def _matmul_dispatch_sm100[
     epilogue_tensor: OptionalReg[
         TileTensor[
             c_type,
-            RowMajorLayout[RuntimeInt[DType.int64], RuntimeInt[DType.int64]],
+            RowMajorLayout[Int64, Int64],
             ImmutAnyOrigin,
         ]
     ] = None,
@@ -1046,7 +1041,7 @@ def _matmul_dispatch_sm100[
             ](idx: IndexList[rank]):
                 comptime assert c_tt.flat_rank >= 2
                 comptime assert idx.element_type.is_integral()
-                var c_coord = Coord(Idx(idx[0]), Idx(idx[1]))
+                var c_coord = Coord(idx[0], idx[1])
                 var c_val = c_tt.load[
                     width=simd_width,
                     # load_alignment is in bytes, lambda alignment is in elements
@@ -1234,7 +1229,7 @@ def sm100_heuristic_and_outliers_dispatch[
     epilogue_tensor: OptionalReg[
         TileTensor[
             c.dtype,
-            RowMajorLayout[RuntimeInt[DType.int64], RuntimeInt[DType.int64]],
+            RowMajorLayout[Int64, Int64],
             ImmutAnyOrigin,
         ]
     ] = None,
@@ -1250,9 +1245,7 @@ def sm100_heuristic_and_outliers_dispatch[
         dispatch_epilogue_tensor: OptionalReg[
             TileTensor[
                 c_type,
-                RowMajorLayout[
-                    RuntimeInt[DType.int64], RuntimeInt[DType.int64]
-                ],
+                RowMajorLayout[Int64, Int64],
                 ImmutAnyOrigin,
             ]
         ],

@@ -19,7 +19,6 @@ import time
 from max.interfaces import (
     Pipeline,
     RequestID,
-    SchedulerResult,
     TextGenerationInputs,
     TextGenerationOutput,
 )
@@ -37,6 +36,7 @@ from max.serve.queue import (
     drain_queue,
 )
 from max.serve.scheduler.interface import Scheduler
+from max.serve.scheduler_result import SchedulerResult
 
 from .base import SchedulerProgress
 from .batch_constructor import TextBatchConstructor

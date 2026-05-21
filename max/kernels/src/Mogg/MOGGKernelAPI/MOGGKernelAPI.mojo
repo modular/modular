@@ -18,6 +18,7 @@
 from std.collections import OptionalReg
 from std.math import (
     acos,
+    align_up,
     atanh,
     ceil,
     ceildiv,
@@ -63,7 +64,12 @@ from comm.scatter import scatter
 from comm import MAX_GPUS, Signal
 import comm.vendor.ccl as vendor_ccl
 from compiler_internal import StaticTensorSpec
-from std.gpu.host import DeviceContext, DeviceContextList, get_gpu_target
+from std.gpu.host import (
+    CompletionFlag,
+    DeviceContext,
+    DeviceContextList,
+    get_gpu_target,
+)
 from std.gpu.host.info import is_cpu, is_gpu, is_valid_target
 from kv_cache.paged_sparse_kv_index_remap import paged_sparse_kv_index_remap
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
@@ -76,7 +82,6 @@ from layout import (
     Layout,
     LayoutTensor,
     RowMajorLayout,
-    RuntimeInt,
     RuntimeLayout,
     TileTensor,
     UNKNOWN_VALUE,
@@ -254,6 +259,7 @@ from nn.attention.gpu.mla_index_fp8 import mla_indexer_ragged_float8_paged
 from nn.attention.gpu.nvidia.sm100.mla_decode_dispatch import (
     compute_mla_dispatch_scalars,
 )
+from nn.attention.gpu.nvidia.sm100.mla_prefill import mla_sm100_prefill_sparse
 from nn.moe import moe_create_indices, router_group_limited, single_group_router
 from nn.nms import non_max_suppression, non_max_suppression_shape_func
 from nn.gemv_partial_norm import gemv_and_partial_norm
@@ -1485,6 +1491,7 @@ struct Scatter:
             updates,
             normalize_neg_index(Int(axis), output.rank),
             output,
+            ctx,
         )
 
     @staticmethod
@@ -1532,6 +1539,7 @@ struct ScatterAdd:
             updates,
             normalize_neg_index(Int(axis), output.rank),
             output,
+            ctx,
         )
 
     @staticmethod
@@ -1579,6 +1587,7 @@ struct ScatterMax:
             updates,
             normalize_neg_index(Int(axis), output.rank),
             output,
+            ctx,
         )
 
     @staticmethod
@@ -1626,6 +1635,7 @@ struct ScatterMin:
             updates,
             normalize_neg_index(Int(axis), output.rank),
             output,
+            ctx,
         )
 
     @staticmethod
@@ -1673,6 +1683,7 @@ struct ScatterMul:
             updates,
             normalize_neg_index(Int(axis), output.rank),
             output,
+            ctx,
         )
 
     @staticmethod
@@ -2002,7 +2013,7 @@ comptime _TransposeStrideTypesTabulator[
     permutations: IntTuple,
     input_stride_types: TypeList[Trait=CoordLike, ...],
     idx: Int,
-]: CoordLike = RuntimeInt[] if Int(
+]: CoordLike = Scalar[DType.int] if Int(
     permutations[idx]
 ) == UNKNOWN_VALUE else input_stride_types[
     Int(permutations[idx])
@@ -2135,7 +2146,9 @@ comptime _SliceStrideTypesTabulator[
     idx
 ].is_static_value and step_types[
     idx
-].is_static_value else RuntimeInt[]
+].is_static_value else Scalar[
+    DType.int
+]
 
 comptime _SliceStrideTypes[
     rank: Int,
@@ -4099,20 +4112,14 @@ struct FusedMatmulAdd:
             residual.rank == 1 or residual.rank == 2
         ), "residual must be rank 1 (bias) or rank 2"
         comptime epilogue_is_1d = residual.rank == 1
-        var epi_m: RuntimeInt[DType.int64]
-        var epi_n: RuntimeInt[DType.int64]
+        var epi_m: Int64
+        var epi_n: Int64
         comptime if epilogue_is_1d:
-            epi_m = RuntimeInt[DType.int64](Scalar[DType.int64](1))
-            epi_n = RuntimeInt[DType.int64](
-                Scalar[DType.int64](residual.dim_size(0))
-            )
+            epi_m = 1
+            epi_n = Int64(residual.dim_size(0))
         else:
-            epi_m = RuntimeInt[DType.int64](
-                Scalar[DType.int64](residual.dim_size(0))
-            )
-            epi_n = RuntimeInt[DType.int64](
-                Scalar[DType.int64](residual.dim_size(1))
-            )
+            epi_m = Int64(residual.dim_size(0))
+            epi_n = Int64(residual.dim_size(1))
         var epilogue = TileTensor(
             residual.unsafe_ptr(), row_major(Coord(epi_m, epi_n))
         ).as_immut()
@@ -4127,7 +4134,7 @@ struct FusedMatmulAdd:
             a.to_tile_tensor[DType.int64](),
             b.to_tile_tensor[DType.int64](),
             ctx,
-            epilogue_tensor=epilogue,
+            epilogue_tensor=OptionalReg(epilogue),
         )
 
 
@@ -4187,6 +4194,7 @@ struct ResizeNearest:
         output: OutputTensor[dtype=dtype, rank=rank, ...],
         input: InputTensor[dtype=dtype, rank=rank, ...],
         size: InputTensor[rank=1, ...],
+        ctx: DeviceContext,
     ) raises:
         resize_nearest_neighbor[
             CoordinateTransformationMode(coordinate_transform_mode),
@@ -4194,6 +4202,7 @@ struct ResizeNearest:
         ](
             input.to_tile_tensor[DType.int64](),
             output.to_tile_tensor[DType.int64](),
+            ctx,
         )
 
     @staticmethod
@@ -4378,6 +4387,7 @@ struct RepeatInterleave:
         input: InputTensor[dtype=output.dtype, rank=output.rank, ...],
         repeats: InputTensor[rank=1, ...],
         axis: Scalar,
+        ctx: DeviceContext,
     ) raises:
         comptime assert (
             axis.dtype.is_integral()
@@ -4388,6 +4398,7 @@ struct RepeatInterleave:
             repeats.to_tile_tensor[DType.int64](),
             Int(normalize_neg_index(axis, input.rank)),
             output.to_tile_tensor[DType.int64](),
+            ctx,
         )
 
     @staticmethod
@@ -5094,7 +5105,7 @@ struct Split:
         ctx: DeviceContext,
     ) raises:
         comptime shape_types = DynamicCoord[DType.int64, rank].element_types
-        # Use RuntimeInt for strides as well since make_dynamic produces all
+        # Use Scalar for strides as well since make_dynamic produces all
         # runtime strides.
         comptime stride_types = DynamicCoord[DType.int64, rank].element_types
 
@@ -7597,11 +7608,6 @@ struct Struct_rope_ragged_paged[interleaved: Bool]:
                 rebind[SIMD[dtype, width]](val),
             )
 
-        var device_ctx: Optional[DeviceContext] = None
-
-        comptime if is_gpu[target]():
-            device_ctx = ctx
-
         var x_tensor = x.to_tile_tensor[DType.int64]()
         var row_offsets_tensor = input_row_offsets.to_tile_tensor[DType.int64]()
         var start_tensor = start_pos.to_tile_tensor[DType.int64]()
@@ -7619,7 +7625,7 @@ struct Struct_rope_ragged_paged[interleaved: Bool]:
             row_offsets_tensor,
             start_tensor,
             freqs_cis_tensor,
-            device_ctx,
+            ctx,
         )
 
 
@@ -7671,11 +7677,6 @@ struct Struct_rope_ragged_paged_with_position_id[interleaved: Bool]:
                 rebind[SIMD[dtype, width]](val),
             )
 
-        var device_ctx: Optional[DeviceContext] = None
-
-        comptime if is_gpu[target]():
-            device_ctx = ctx
-
         var x_tensor = x.to_tile_tensor[DType.int64]()
         var row_offsets_tensor = input_row_offsets.to_tile_tensor[DType.int64]()
         var start_tensor = start_pos.to_tile_tensor[DType.int64]()
@@ -7695,7 +7696,7 @@ struct Struct_rope_ragged_paged_with_position_id[interleaved: Bool]:
             row_offsets_tensor,
             start_tensor,
             freqs_cis_tensor,
-            device_ctx,
+            ctx,
             position_ids=position_ids_tensor.as_any_origin().as_immut(),
         )
 
@@ -8994,6 +8995,132 @@ struct Struct_mla_prefill_graph_decode_paged_fp8_sparse:
             )
 
 
+# ===-----------------------------------------------------------------------===#
+# Sparse MLA prefill (DSv3.2 absorbed shape, BF16, SM100)
+#
+# Wraps `mla_prefill_sparse` (the SM100 sparse prefill attention kernel). The
+# kernel hardcodes the DSv3.2 absorbed/latent dims:
+#   qk_depth = kv_lora_rank(512) + qk_rope_head_dim(64) = 576
+#   v_depth  = kv_lora_rank(512)
+#   num_q_heads = 128, num_kv_heads = 1
+#
+# Inputs follow the existing sparse MLA MOGG convention: the indexer emits
+# logical token positions in `[0, cache_length)`; this entry point remaps them
+# to physical paged-cache rows via `paged_sparse_kv_index_remap` before
+# invoking the kernel.
+# ===-----------------------------------------------------------------------===#
+@compiler.register("mo.mla.prefill.sparse.paged")
+struct Struct_mla_prefill_sparse_paged:
+    @always_inline
+    @staticmethod
+    @parameter
+    def execute[
+        dtype: DType,
+        cache_dtype: DType,
+        //,
+        target: StaticString,
+        indices_stride: Int,
+    ](
+        output: OutputTensor[dtype=dtype, rank=3, ...],
+        q: InputTensor[dtype=dtype, rank=3, ...],
+        kv_blocks: MutableInputTensor[dtype=cache_dtype, rank=6, ...],
+        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
+        layer_idx: UInt32,
+        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        sparse_indices: InputTensor[dtype=DType.int32, rank=2, ...],
+        topk_lengths: InputTensor[dtype=DType.int32, rank=1, ...],
+        attn_sink: InputTensor[dtype=DType.float32, rank=1, ...],
+        scale: Float32,
+        context: DeviceContext,
+    ) raises:
+        comptime assert is_gpu[
+            target
+        ](), "mo.mla.prefill.sparse.paged is only supported on GPU"
+
+        var kv_collection = generic_get_paged_cache(
+            kv_blocks,
+            cache_lengths,
+            kv_lookup_table,
+            max_lengths,
+        )
+
+        # The underlying kernel asserts qk_depth == 576, num_q_heads == 128,
+        # num_kv_heads == 1; pull those from the input static shapes.
+        comptime num_q_heads = Int(q.static_spec.shape_tuple[1])
+        comptime qk_depth = Int(q.static_spec.shape_tuple[2])
+        comptime v_depth = Int(output.static_spec.shape_tuple[2])
+        comptime mla_page_size = Int(kv_blocks.static_spec.shape_tuple[3])
+
+        var dev_ctx = context
+        var num_indices_sparse = sparse_indices.size()
+
+        var attn_sink_ptr = UnsafePointer[
+            Scalar[DType.float32], origin=ImmutAnyOrigin
+        ](attn_sink.to_layout_tensor().ptr)
+
+        var k_cache = kv_collection.get_key_cache(Int(layer_idx))
+
+        with Trace[TraceLevel.OP, target=target](
+            "mo.mla.prefill.sparse.paged",
+            task_id=get_safe_task_id(context),
+        ):
+            # Logical → physical sparse index remap. The kernel expects
+            # each selected key as `Int32(physical_block_id * page_size +
+            # token_offset_within_page)`; the indexer emits logical
+            # `[0, cache_length)` positions, so we remap into a scratch
+            # buffer here.
+            var scratch_sparse_indices = dev_ctx.enqueue_create_buffer[
+                DType.int32
+            ](num_indices_sparse)
+            paged_sparse_kv_index_remap[
+                target, mla_page_size, indices_stride, cache_dtype
+            ](
+                scratch_sparse_indices.unsafe_ptr(),
+                sparse_indices,
+                input_row_offsets,
+                kv_lookup_table,
+                kv_blocks,
+                context,
+            )
+
+            # The kernel's `indices` / `topk_lengths` tile tensors are
+            # `DType.uint32`. Invalid sparse slots are encoded as `Int32(-1)`
+            # which has the same bit pattern as `UInt32(0xFFFFFFFF)`; the
+            # producer in the kernel reads them as int32 and rejects the
+            # negative ones (cf. the `idx >= 0` check in the gather4 path),
+            # so reinterpreting the bits via `bitcast` is sound.
+            var indices_tt = TileTensor(
+                scratch_sparse_indices.unsafe_ptr().bitcast[
+                    Scalar[DType.uint32]
+                ](),
+                row_major(num_indices_sparse),
+            )
+            var topk_lengths_tt = TileTensor(
+                topk_lengths.to_layout_tensor().ptr.bitcast[
+                    Scalar[DType.uint32]
+                ](),
+                row_major(Int(topk_lengths.dim_size(0))),
+            )
+
+            mla_sm100_prefill_sparse[
+                num_q_heads=num_q_heads,
+                qk_depth=qk_depth,
+                v_depth=v_depth,
+                indices_stride=indices_stride,
+            ](
+                output.to_tile_tensor[DType.int64](),
+                q.to_tile_tensor[DType.int64](),
+                k_cache,
+                indices_tt,
+                topk_lengths_tt,
+                attn_sink_ptr,
+                scale,
+                context,
+            )
+
+
 @compiler.register("mo.mla.graph.prefill.decode.paged")
 struct Struct_mla_prefill_graph_decode_bf16_paged:
     @always_inline
@@ -10089,11 +10216,6 @@ struct Struct_kv_cache_store_paged:
         else:
             cache = paged_kv_collection.get_value_cache(Int(layer_idx))
 
-        var cuda_ctx: Optional[DeviceContext] = None
-
-        comptime if is_gpu[target]():
-            cuda_ctx = context
-
         @parameter
         @always_inline
         def input_fn[
@@ -10109,7 +10231,7 @@ struct Struct_kv_cache_store_paged:
             cache,
             inputs.shape(),
             input_row_offsets.to_layout_tensor(),
-            cuda_ctx,
+            context,
         )
 
 
@@ -10182,11 +10304,6 @@ struct Struct_kv_cache_store_k_scales_paged:
 
         var k_cache = k_collection.get_key_cache(Int(layer_idx))
 
-        var cuda_ctx: Optional[DeviceContext] = None
-
-        comptime if is_gpu[target]():
-            cuda_ctx = context
-
         var input_row_offsets_tt = input_row_offsets.to_tile_tensor[
             DType.int64
         ]()
@@ -10219,26 +10336,16 @@ struct Struct_kv_cache_store_k_scales_paged:
                 loaded_val,
             )
 
-        comptime if is_gpu[target]():
-            if cuda_ctx is None:
-                raise Error("ctx is None")
-            comptime compile_target = get_gpu_target()
-            comptime simd_width = simd_width_of[
-                scale_dtype, target=compile_target
-            ]()
+        comptime compile_target = get_gpu_target() if is_gpu[
+            target
+        ]() else _current_target()
+        comptime simd_width = simd_width_of[
+            scale_dtype, target=compile_target
+        ]()
 
-            elementwise[write_scale_to_cache, simd_width, target=target](
-                input_k_scales.shape(), cuda_ctx.value()
-            )
-        else:
-            comptime compile_target = _current_target()
-            comptime simd_width = simd_width_of[
-                scale_dtype, target=compile_target
-            ]()
-
-            elementwise[write_scale_to_cache, simd_width, target=target](
-                input_k_scales.shape()
-            )
+        elementwise[write_scale_to_cache, simd_width, target=target](
+            input_k_scales.shape(), context
+        )
 
 
 @compiler.register("mo.kv_cache.store.paged.padded")
@@ -10271,11 +10378,6 @@ struct Struct_kv_cache_store_padded:
         else:
             cache = paged_kv_collection.get_value_cache(Int(layer_idx))
 
-        var cuda_ctx: Optional[DeviceContext] = None
-
-        comptime if is_gpu[target]():
-            cuda_ctx = context
-
         @parameter
         @always_inline
         def input_fn[
@@ -10291,7 +10393,7 @@ struct Struct_kv_cache_store_padded:
             cache,
             inputs.shape(),
             valid_lengths.to_layout_tensor(),
-            cuda_ctx,
+            context,
         )
 
 
@@ -11174,6 +11276,20 @@ def _check_signal_buffer_size(
         )
 
 
+def _partitioned_scratch_requirement[
+    num_devices: Int, dtype: DType
+](input_elems: Int) -> Int:
+    """Calculate a trivial scratch memory requirement for comm kernels.
+
+    This applies for comm kernels which simply partition the input tensor between devices.
+    """
+    comptime pessemistic_simd_width = 32
+    var num_vecs = ceildiv(input_elems, pessemistic_simd_width)
+    var vecs_per_device = ceildiv(num_vecs, num_devices)
+
+    return vecs_per_device * pessemistic_simd_width * size_of[dtype]()
+
+
 @always_inline
 def _launch_device_collective[
     num_devices: Int,
@@ -11270,8 +11386,13 @@ struct DistributedAllReduceSum:
             " the same number of elements"
         )
 
-        var input_size_bytes = inputs[0].size() * size_of[dtype]()
-        _check_signal_buffer_size(signal_buffers[0].size(), input_size_bytes)
+        # allreduce 2-stage uses size/ngpus scratch space
+        var scratch_buffer_size_bytes = _partitioned_scratch_requirement[
+            num_devices, dtype
+        ](inputs[0].size())
+        _check_signal_buffer_size(
+            signal_buffers[0].size(), scratch_buffer_size_bytes
+        )
 
         # output_lambda writes each device's reduced output into the fused
         # epilogue output tensor.  Defined at execute scope so that
@@ -11418,8 +11539,13 @@ struct BundledAllReduceSum:
             " the same number of elements"
         )
 
-        var input_size_bytes = inputs[0].size() * size_of[dtype]()
-        _check_signal_buffer_size(signal_buffers[0].size(), input_size_bytes)
+        # allreduce 2-stage uses size/ngpus scratch space
+        var scratch_buffer_size_bytes = _partitioned_scratch_requirement[
+            num_devices, dtype
+        ](inputs[0].size())
+        _check_signal_buffer_size(
+            signal_buffers[0].size(), scratch_buffer_size_bytes
+        )
 
         comptime InputTensorType = type_of(
             inputs[0].to_tile_tensor[DType.int64]().as_immut()
@@ -11499,7 +11625,10 @@ struct DistributedReduceScatterSum:
 
         # Reduce-scatter doesn't use scratch storage, so
         # only need enough signal_buffer space for Signal struct
-        _check_signal_buffer_size(signal_buffers[0].size(), 0)
+        var scratch_buffer_size_bytes = 0
+        _check_signal_buffer_size(
+            signal_buffers[0].size(), scratch_buffer_size_bytes
+        )
 
         # Marshal input tensors into TileTensors.
         comptime InputTensorType = type_of(
@@ -11599,18 +11728,20 @@ struct DistributedAllGather:
             " num_devices"
         )
 
-        var input_size_bytes = inputs[0].size() * size_of[dtype]()
-        _check_signal_buffer_size(signal_buffers[0].size(), input_size_bytes)
+        var scratch_buffer_size_bytes = 0  # no allgather impl uses scratch
+        _check_signal_buffer_size(
+            signal_buffers[0].size(), scratch_buffer_size_bytes
+        )
 
         # Build TileTensors directly using flattened 1D layouts. Inputs can
-        # have different sizes in uneven allgather; RuntimeInt dimensions give
+        # have different sizes in uneven allgather; Scalar dimensions give
         # a homogeneous TileTensor type for the InlineArray.
         comptime InputTensorType = type_of(
             TileTensor(
                 rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
                     inputs[0]._ptr
                 ),
-                row_major(Idx(inputs[0].size())),
+                row_major(inputs[0].size()),
             )
         )
         var in_tensors = InlineArray[InputTensorType, num_devices](
@@ -11621,7 +11752,7 @@ struct DistributedAllGather:
                 rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](
                     outputs[0]._ptr
                 ),
-                row_major(Idx(outputs[0].size())),
+                row_major(outputs[0].size()),
             )
         )
         var out_tensors = InlineArray[
@@ -11638,7 +11769,7 @@ struct DistributedAllGather:
                 rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
                     inputs[i]._ptr
                 ),
-                row_major(Idx(inputs[i].size())),
+                row_major(inputs[i].size()),
             )
             rank_sigs[i] = signal_buffers[i]._ptr.bitcast[Signal]()
 
@@ -11647,7 +11778,7 @@ struct DistributedAllGather:
                 rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](
                     outputs[i]._ptr
                 ),
-                row_major(Idx(outputs[i].size())),
+                row_major(outputs[i].size()),
             )
 
         @always_inline
@@ -11734,9 +11865,12 @@ struct DistributedBroadcast:
         # 2-stage broadcast stages 1/ngpus of input into each signal buffer payload.
         # 1-stage broadcast doesn't use payload at all (direct P2P from root).
         # Use 2-stage requirement as upper bound.
-        var input_size_bytes = input.size() * size_of[dtype]()
-        var payload_size = ceildiv(input_size_bytes, num_devices)
-        _check_signal_buffer_size(signal_buffers[0].size(), payload_size)
+        var scratch_buffer_size_bytes = _partitioned_scratch_requirement[
+            num_devices, dtype
+        ](input.size())
+        _check_signal_buffer_size(
+            signal_buffers[0].size(), scratch_buffer_size_bytes
+        )
 
         var in_buf = input.to_tile_tensor[DType.int64]()
 
@@ -11813,7 +11947,10 @@ struct DistributedScatter:
 
         # Scatter uses signal buffers for barriers only (no payload staging),
         # so payload_size=0. This still validates the buffer holds a Signal.
-        _check_signal_buffer_size(signal_buffers[0].size(), 0)
+        var scratch_buffer_size_bytes = 0
+        _check_signal_buffer_size(
+            signal_buffers[0].size(), scratch_buffer_size_bytes
+        )
 
         # Inputs can have different static shapes, so use make_dynamic to
         # produce a homogeneous fully-dynamic TileTensor type for InlineArray.
@@ -11890,8 +12027,28 @@ struct DistributedAllReduceAddRMSNormQuantFP8:
             " the same number of elements"
         )
 
-        var input_size_bytes = inputs[0].size() * size_of[dtype]()
-        _check_signal_buffer_size(signal_buffers[0].size(), input_size_bytes)
+        # Logic copied from kernel host code
+        # Note: this is a prime candidate for a method on a kernel
+        # struct which advertises kernel info to the GC!
+        var in_num_elems = inputs[0].size()
+        comptime last_dim_idx = type_of(inputs[0]).rank - 1
+        var cols = inputs[0].dim_size[last_dim_idx]()
+        var rows = in_num_elems // cols
+        var rows_per_rank = ceildiv(rows, num_devices)
+
+        var fp8_size_bytes = cols * rows_per_rank  # fp8 = 1byte
+        var pessimistic_simd_width = 32  # just to be safe...
+        var scales_size_bytes = align_up(
+            rows_per_rank * size_of[scales_type](), pessimistic_simd_width
+        )
+        var residual_size_bytes = cols * rows_per_rank * size_of[dtype]()
+
+        var scratch_buffer_size_bytes = (
+            fp8_size_bytes + scales_size_bytes + residual_size_bytes
+        )
+        _check_signal_buffer_size(
+            signal_buffers[0].size(), scratch_buffer_size_bytes
+        )
 
         # Filter the dev_ctxs_list to have only the GPU devices.
         # The kernel also takes CPU operands, so CPU devices must be removed.
@@ -12021,8 +12178,26 @@ struct BundledAllReduceAddRMSNormQuantFP8:
             " the same number of elements"
         )
 
-        var input_size_bytes = inputs[0].size() * size_of[dtype]()
-        _check_signal_buffer_size(signal_buffers[0].size(), input_size_bytes)
+        # Logic copied from kernel host code
+        var in_num_elems = inputs[0].size()
+        comptime last_dim_idx = type_of(inputs[0]).rank - 1
+        var cols = inputs[0].dim_size[last_dim_idx]()
+        var rows = in_num_elems // cols
+        var rows_per_rank = ceildiv(rows, num_devices)
+
+        var fp8_size_bytes = cols * rows_per_rank  # fp8 = 1byte
+        var pessimistic_simd_width = 32  # just to be safe...
+        var scales_size_bytes = align_up(
+            rows_per_rank * size_of[scales_type](), pessimistic_simd_width
+        )
+        var residual_size_bytes = cols * rows_per_rank * size_of[dtype]()
+
+        var scratch_buffer_size_bytes = (
+            fp8_size_bytes + scales_size_bytes + residual_size_bytes
+        )
+        _check_signal_buffer_size(
+            signal_buffers[0].size(), scratch_buffer_size_bytes
+        )
 
         comptime InputTensorType = type_of(
             inputs[0].to_tile_tensor[DType.int64]().as_immut()
@@ -12537,7 +12712,7 @@ struct MatmulStaticScaledFloat8:
         )
         var output_scratch = TileTensor(
             scratch_buffer.unsafe_ptr(),
-            row_major(Coord(RuntimeInt[DType.int64](Int64(M)), Idx[N]())),
+            row_major(Coord(Int64(M), Idx[N]())),
         )
 
         matmul[
@@ -12728,17 +12903,13 @@ struct Struct_kv_cache_ragged_paged_radd:
             max_lengths,
         )
 
-        cuda_ctx: Optional[DeviceContext] = None
-        if is_gpu[target]():
-            cuda_ctx = context
-
         generic_kv_cache_radd_dispatch[target=target,](
             a.to_layout_tensor(),
             kv_collection,
             input_row_offsets.to_layout_tensor(),
             batch_offset,
             layer_idx,
-            cuda_ctx,
+            context,
         )
 
 
@@ -12904,10 +13075,6 @@ struct Struct_kv_cache_ragged_paged_2m_iadd:
         if kv_layout_tensor.shape[0]() == 0:
             return
 
-        cuda_ctx: Optional[DeviceContext] = None
-        if is_gpu[target]():
-            cuda_ctx = context
-
         kv_cache_2m_iadd_dispatch[target=target,](
             kv_layout_tensor,
             kv_collection,
@@ -12915,7 +13082,7 @@ struct Struct_kv_cache_ragged_paged_2m_iadd:
             lora_end_idx.to_layout_tensor(),
             batch_seq_len.to_layout_tensor(),
             layer_idx,
-            cuda_ctx,
+            context,
         )
 
 
@@ -12943,23 +13110,13 @@ struct Struct_sliced_add_ragged:
         var a_tile_tensor = a.to_tile_tensor[DType.int64]()
         var b_tile_tensor = b.to_tile_tensor[DType.int64]()
 
-        comptime if is_gpu[target]():
-            ctx: Optional[DeviceContext] = context
-            sliced_add[target=target](
-                c_tile_tensor,
-                a_tile_tensor,
-                b_tile_tensor,
-                lora_end_idx.to_tile_tensor[DType.int64](),
-                ctx,
-            )
-        else:
-            sliced_add[target=target](
-                c_tile_tensor,
-                a_tile_tensor,
-                b_tile_tensor,
-                lora_end_idx.to_tile_tensor[DType.int64](),
-                None,
-            )
+        sliced_add[target=target](
+            c_tile_tensor,
+            a_tile_tensor,
+            b_tile_tensor,
+            lora_end_idx.to_tile_tensor[DType.int64](),
+            context,
+        )
 
 
 # ===-----------------------------------------------------------------------===#
@@ -13561,3 +13718,42 @@ struct LaunchHostFunc:
         var tr_ptr = OpaquePointer[MutAnyOrigin](unsafe_from_address=tr_addr)
         var ud_ptr = OpaquePointer[MutAnyOrigin](unsafe_from_address=ud_addr)
         ctx.stream().enqueue_host_func(rebind[_HostFuncTy](tr_ptr), ud_ptr)
+
+
+@compiler.register("mo.wait_host_value")
+struct WaitHostValue:
+    """Stalls the stream until a host-visible flag reaches a given value.
+
+    Lowers to CUDA's `cuStreamWaitValue64` via
+    `DeviceStream.wait_for_host_value`. Accepts a 1-D int64 buffer of
+    shape `[2]`, mirroring `mo.launch_host_func`'s payload shape:
+
+    - `payload[0]`: raw address of a `M::Driver::CompletionFlag` (as
+      u64). Typically obtained from
+      `max.driver.CompletionFlag._unsafe_ptr` and packed into the
+      buffer by the Python caller; the C++ object must outlive any
+      graph execution that references it.
+    - `payload[1]`: the 64-bit value to wait for (the int64 element is
+      reinterpreted as a u64).
+
+    Captures cleanly into a CUDA graph as a wait-value / batch-mem-op
+    node, so this op can sit inside a captured forward graph just before
+    the sampling kernel to gate the sampler on the bitmask compute
+    finishing while the rest of the forward body runs concurrently.
+    Currently only CUDA streams support stream memory ops; non-CUDA
+    backends raise at runtime.
+    """
+
+    @staticmethod
+    def execute[
+        target: StaticString,
+    ](
+        # MutableInputTensor mirrors `mo.launch_host_func` so this op is
+        # not DCE'd. Both the CompletionFlag pointer and the expected
+        # value encode into 64-bit elements.
+        payload: MutableInputTensor[dtype=DType.int64, rank=1, ...],
+        ctx: DeviceContext,
+    ) raises:
+        var flag = CompletionFlag(unsafe_from_address=Int(payload[0]))
+        var value = UInt64(Int(payload[1]))
+        ctx.stream().wait_for_host_value(flag, value)

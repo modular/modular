@@ -149,13 +149,11 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
     if simple_init():
         for m in range(Int(m.value())):
             for k in range(Int(k.value())):
-                comptime assert a_host.flat_rank >= 2
-                a_host[(Idx(m), Idx(k))] = Float32(k).cast[a_type]()
+                comptime assert a_host.flat_rank == 2
+                a_host[m, k] = Float32(k).cast[a_type]()
         for n in range(Int(n.value())):
             for k in range(Int(k.value())):
-                b_host[(Idx(n), Idx(k))] = Float32(1 if n == k else 0).cast[
-                    b_type
-                ]()
+                b_host[n, k] = Float32(1 if n == k else 0).cast[b_type]()
     else:
         rand(a_host.ptr, a_host.num_elements())
         rand(b_host.ptr, b_host.num_elements())
@@ -285,7 +283,7 @@ def main() raises:
                         normal_epilogue=True,
                     ](
                         ctx,
-                        Idx(Int(1000)),
+                        Int(1000),
                         Idx[1024](),
                         Idx[1024 + 16](),
                     )
@@ -305,7 +303,7 @@ def main() raises:
                             normal_epilogue=True,
                         ](
                             ctx,
-                            Idx(Int(512)),
+                            Int(512),
                             Idx[4096](),
                             Idx[1024 + 16](),
                         )
@@ -325,7 +323,7 @@ def main() raises:
                             normal_epilogue=True,
                         ](
                             ctx,
-                            Idx(Int(500)),
+                            Int(500),
                             Idx[2048](),
                             Idx[4096](),
                         )
@@ -343,7 +341,7 @@ def main() raises:
                         normal_epilogue=True,
                     ](
                         ctx,
-                        Idx(Int(999)),
+                        Int(999),
                         Idx[256](),
                         Idx[128](),
                     )
@@ -361,7 +359,7 @@ def main() raises:
                         normal_epilogue=True,
                     ](
                         ctx,
-                        Idx(Int(777)),
+                        Int(777),
                         Idx[2560](),
                         Idx[8192](),
                     )

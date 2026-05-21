@@ -340,19 +340,19 @@ There are two structural ways to solve this sort of problem:
   of code, e.g. use `for j in range(100): # nowarn`.
 
    - This has the advantage that it can become a general feature for silencing
-      an arbitrary warning, at the expense of having to parse comments.
+     an arbitrary warning, at the expense of having to parse comments.
    - Inline comments like this can hide multiple warnings on a single line,
-      which can unintentionally lead to hiding issues that should be fixed some
-      other way.
+     which can unintentionally lead to hiding issues that should be fixed some
+     other way.
 
 2. We can provide a per-warning idiom for disabling the code. In this case, for
   example, Mojo doesn’t warn about identifiers that start with underscore, so
   you can silence the warning with `for _j in range(100):`.
 
    - This does not require parsing comments, but it will require having a set
-      of different idioms for different errors (see example below on how
-      `(a = b)` warnings are silenced by clang). Any other tooling (e.g.
-      formatter) will need to understand when these are intentional or not.
+     of different idioms for different errors (see example below on how
+     `(a = b)` warnings are silenced by clang). Any other tooling (e.g.
+     formatter) will need to understand when these are intentional or not.
 
 Both approaches can be good because they make it clear to the reader of the code
 that this was done intentionally, not by an accident of omission. Either can be

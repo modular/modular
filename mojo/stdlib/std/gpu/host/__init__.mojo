@@ -16,6 +16,7 @@ from .compile import get_gpu_target
 from .constant_memory_mapping import ConstantMemoryMapping
 from .device_attribute import DeviceAttribute
 from .device_context import (
+    CompletionFlag,
     DeviceBuffer,
     DeviceContext,
     DeviceContextList,
