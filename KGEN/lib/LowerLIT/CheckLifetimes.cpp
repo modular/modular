@@ -433,7 +433,7 @@ TypedAttr TypeDeclInfo::getDestructorForType(Type type, Location loc) const {
 
     // The type of the trivial witness is Bool which wraps an i1.  If we can
     // prove that it is 1, then we can ignore this destructor.
-    if (auto structAttr = sugarDynCast<LITStructAttr>(isTrivialAttr)) {
+    if (auto structAttr = sugarDynCastIfPresent<LITStructAttr>(isTrivialAttr)) {
       if (structAttr.getValues().size() == 1) {
         if (auto boolAttr = sugarDynCast<BoolAttr>(
                 std::get<1>(structAttr.getValues().front()))) {
@@ -442,6 +442,11 @@ TypedAttr TypeDeclInfo::getDestructorForType(Type type, Location loc) const {
         }
       }
     }
+
+    // If there is no destructor witness (e.g. conformance body not yet fully
+    // resolved in LSP mode), treat this type as having no destructor.
+    if (!dtorAttr)
+      return {};
 
     // We will likely have a rebind to get rid of keyword argument and
     // convention differences; we don't care about this.
