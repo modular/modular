@@ -20,6 +20,7 @@ through `Layout` methods rather than hand-rolled integer arithmetic.
 """
 
 import std.gpu.primitives.warp as warp
+from std.math import fma
 from std.math.uutils import umod
 from std.bit import log2_floor
 from std.gpu import barrier, lane_id, warp_id as get_warp_id
@@ -370,6 +371,47 @@ struct Softmax[
                 var scale_vec = SIMD[Self.dtype, Self.frag_size](scale)
                 score_reg_tile[tile_id, 0] = Self.exp_function(
                     (score_reg_tile[tile_id, 0] + neg_max) * scale_vec
+                )
+
+    @always_inline
+    def exp_pkfma[
+        start: Int = 0, stride: Int = 1
+    ](
+        self,
+        score: TileTensor[mut=True, Self.dtype, ...],
+        scale: Scalar[Self.dtype],
+    ):
+        """Scaled exp using fused `score * scale + (-max * scale)` form
+        so the compiler emits `v_pk_fma_f32` instead of separate add+mul.
+
+        Mirrors `exp_scaled` but pre-multiplies `-max` by `scale` once per row
+        (1 packed mul per row) and uses `fma(score, scale, neg_scaled_max)`
+        for every score pair (matches aiter's softmax inner loop).
+
+        Precision: `score == max` produces `fma(max, scale, -scaled_max)`
+        where `scaled_max` is pre-rounded; the FMA's internal `max*scale` may
+        round to a slightly different value, yielding a tiny epsilon instead
+        of exactly 0. `exp2(epsilon) ≈ 1 + epsilon·ln(2)`, well within the
+        FP8 softmax tolerance budget (the row-sum normalization absorbs it).
+        """
+        comptime assert score.flat_rank == 2
+        comptime assert Self.frag_is_row_vector
+        var score_reg_tile = score.vectorize[1, Self.frag_size]()
+        comptime assert score_reg_tile.flat_rank == 2
+
+        var scale_vec = SIMD[Self.dtype, Self.frag_size](scale)
+
+        comptime for col_tile in range(Self.num_colwise_tiles):
+            var neg_scaled_max = SIMD[Self.dtype, Self.frag_size](
+                -self.score_frag_rowmax[col_tile, 0][0] * scale
+            )
+            comptime for row_tile in range(
+                start, Self.num_rowwise_tiles, stride
+            ):
+                comptime tile_id = col_tile + Self.num_colwise_tiles * row_tile
+
+                score_reg_tile[tile_id, 0] = Self.exp_function(
+                    fma(score_reg_tile[tile_id, 0], scale_vec, neg_scaled_max)
                 )
 
     @always_inline
