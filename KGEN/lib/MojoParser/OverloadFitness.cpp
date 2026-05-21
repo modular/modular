@@ -377,11 +377,10 @@ OverloadFitness OverloadFitness::evaluate(ASTDecl *candidate,
   ParamInf inference(callable.paramBindings, signature.getInputParamTypes(),
                      signature.getMetadata(),
                      /*allowImplicitConversions=*/true, candidate,
-                     /*discardError=*/false);
+                     /*discardError=*/true);
   // Don't yield constraint failure for a single overload failure: we want a
   // better error message diagnosed for the entire set.
-  ParameterExprArrayAttr bindings =
-      inference.inferForStruct(/*emitConstraintFailure=*/false);
+  ParameterExprArrayAttr bindings = inference.inferForStruct();
 
   if (!bindings) {
     // If no diagnostics were emitted, this must be an inconclusive fitness.
@@ -393,8 +392,12 @@ OverloadFitness OverloadFitness::evaluate(ASTDecl *candidate,
     return std::move(*inference.diag.takeMojoDiag());
   }
 
-  return OverloadFitness(bindings,
-                         /*noArgsNeedingOrigins*/ OperandsNeedingOriginsList());
+  OverloadFitness fitness(
+      bindings,
+      /*noArgsNeedingOrigins*/ OperandsNeedingOriginsList());
+  fitness.unprovableConstraints =
+      std::move(inference.bodyUnprovableConstraints);
+  return fitness;
 }
 
 /// Extract the closure name from a self operand. This handles two cases:
@@ -566,12 +569,17 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
       ++paramIdx;
     }
   }
+
   if (failed(inference.inferForCall())) {
     if (inference.diag.hasErrorEmitted())
       return std::move(*inference.diag.takeMojoDiag());
-    // Then there must be unprovable constraints.
+    // Then there must be unprovable per-parameter constraints. Report
+    // immediately, as we cannot fully evaluate the fitness of this candidate.
     assert(!inference.unprovableConstraints.empty());
     return std::move(inference.unprovableConstraints);
+    // If there were any unprovable body constraints, inferForCall would have
+    // succeeded and populated its bodyUnprovableConstraints. These are taken as
+    // part of the fitness result later.
   }
 
   ParameterExprArrayAttr newBindings = inference.getInferredValues();
@@ -581,12 +589,12 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
 
   // If anything was bound, apply it to the signature so the expected argument
   // types are updated.
-  FnTypeGeneratorType originalSignature = signature;
   std::tie(signature, newBindings) = getUnboundSpecializedSignature(
       signature, newBindings, &shared.getEvaluationContext());
 
   // This is the result we will return if we succeed.
   OverloadFitness result(newBindings, std::move(operandsNeedingOrigins));
+  result.unprovableConstraints = std::move(inference.bodyUnprovableConstraints);
 
   // Get the overload ranking metrics.
   result.payload.numImplicitConversions = inference.numImplicitConversions;
@@ -639,19 +647,6 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
     return emitDiagFor.badImplicitConversion(fromType,
                                              signature.getUserResultType());
   }
-
-  // Check that all def constraints are satisfied.
-  SmallVector<ConstraintAttr> fnUnprovableConstraints;
-  checkConstraints(callable.paramBindings.declScope,
-                   originalSignature.getMetadata(),
-                   signature.getMetadata().getBodyConstraints(),
-                   originalSignature.getMetadata().getBodyConstraints(),
-                   inference.diag.getDiag(), &fnUnprovableConstraints,
-                   /*evaluator=*/nullptr);
-  if (inference.diag.hasErrorEmitted())
-    return std::move(*inference.diag.takeMojoDiag());
-  if (!fnUnprovableConstraints.empty())
-    result.unprovableConstraints = std::move(fnUnprovableConstraints);
 
   // Otherwise we succeeded!
   return result;

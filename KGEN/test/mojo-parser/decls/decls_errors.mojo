@@ -450,6 +450,19 @@ def use_constraint_struct[x: Int, cs: ConstraintStruct[x]]():
 def violate_constraint_struct[cs: ConstraintStruct[0]]():
     pass
 
+# expected-note @below {{function declared here}}
+# expected-note @below {{constraint declared here evaluated to False, expected '(a > 0)'}}
+# expected-note @below {{cannot prove constraint}}
+# expected-note @below {{constraint declared here needs evidence for '(x > 0)'}}
+def constraint_fn[a: Int, b: Int]() where a > 0:
+    pass
+
+def use_constraint_fn[x: Int]():
+    # expected-error @below {{violated constraint}}
+    comptime f0 = constraint_fn[0, 1]
+    # expected-error @below {{invalid bindings for 'constraint_fn': lacking evidence to prove correctness}}
+    comptime fx = constraint_fn[x, 1]
+
 def violated_default_constraint[
   # expected-warning @below {{'where' clauses inside parameter lists are deprecated}}
   # expected-note @below {{use a trailing 'where' clause after the signature instead}}

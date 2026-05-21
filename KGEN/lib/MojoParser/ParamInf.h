@@ -34,7 +34,7 @@ public:
 
   // Infer the parameter binding for a struct given a (potentially incomplete)
   // parameter binding.
-  ParameterExprArrayAttr inferForStruct(bool emitConstraintFailure = true);
+  ParameterExprArrayAttr inferForStruct();
 
   /// After inferring parameter values, this allows access to the results.
   TypedAttr getInferredValue(size_t idx) const {
