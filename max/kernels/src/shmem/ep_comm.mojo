@@ -40,6 +40,7 @@ from std.gpu import (
     barrier,
     thread_idx,
     block_idx,
+    grid_dim,
     lane_id,
     warp_id,
 )
@@ -1825,10 +1826,13 @@ struct EPDispatchKernel[
             comptime input_scale_fn = input_scales_wrapper.value()
             input_scale = input_scale_fn[DType.float32](0)
 
+        # Use runtime grid_dim so reduced-grid launches don't skip tokens.
+        # When grid_dim == n_sms this is identical to the comptime stride.
+        var n_active_async_comm_sms = Int(grid_dim.x) - Self.n_signal_sms
         for token_idx in range(
             block_idx.x - Self.n_signal_sms,
             Int(num_tokens),
-            Self.n_dispatch_async_comm_sms,
+            n_active_async_comm_sms,
         ):
             # First, all threads in the block copy the input token to the send
             # buffer.
@@ -2087,9 +2091,12 @@ struct EPDispatchKernel[
 
         # Signal other SMs to copy the tokens to the output tensor.
         if tid == 0:
+            # Use the runtime active comm-SM count so the cleanup-counter
+            # countdown matches the actual launched grid (decode-fast-path
+            # launches grid_dim < n_sms).
             atomic_counter.store(
                 Self.cleanup_counter_offset,
-                Int32(Self.n_dispatch_wait_comm_sms),
+                Int32(Int(grid_dim.x) - Self.n_offset_sms),
             )
             _counter_atomic.store[ordering=Ordering.RELEASE](
                 atomic_counter + Self.ready_flag_offset,
@@ -2366,11 +2373,14 @@ struct EPDispatchKernel[
         comptime tile_size = Self.token_fmt_type.dispatch_wait_tile_shape[0]
         comptime sms_per_tile = Self.token_fmt_type.dispatch_wait_tile_shape[1]
 
-        var sm_id = Self.n_dispatch_wait_comm_sms - block_idx.x - 1
+        # Use the runtime active comm-SM count so the indexing matches the
+        # actual launched grid (decode-fast-path launches grid_dim < n_sms).
+        var n_active_comm_sms = Int(grid_dim.x) - Self.n_offset_sms
+        var sm_id = n_active_comm_sms - block_idx.x - 1
         var n_tiles = (
             ceildiv(shared_expert_token_count, tile_size) * sms_per_tile
         )
-        var n_sms_for_shared = min(n_tiles, Self.n_dispatch_wait_comm_sms)
+        var n_sms_for_shared = min(n_tiles, n_active_comm_sms)
 
         if sm_id >= n_sms_for_shared:
             return
@@ -2634,7 +2644,8 @@ def dispatch_wait_kernel[
     # The last SM is used for checking if any of a local expert has received
     # tokens from all the remote ranks. It will also calculate the offset where
     # the tokens start in the output tensor.
-    if block_idx.x >= dispatch_impl.n_dispatch_wait_comm_sms:
+    # Use runtime grid_dim so the host can launch a smaller grid for decode.
+    if block_idx.x >= Int(grid_dim.x) - dispatch_impl.n_offset_sms:
         dispatch_impl.wait_for_arrivals_and_compute_offsets(
             format_handler,
             row_offsets,
@@ -2841,8 +2852,9 @@ struct EPCombineKernel[
 
         # Each rank holds `n_local_experts` experts, and for each expert, it
         # needs to send back different tokens to `n_ranks` remote ranks. We use
-        # one block per-expert-per-rank to send back the tokens.
-        for _global_idx in range(sm_id, Self.n_experts, Self.n_sms):
+        # one block per-expert-per-rank to send back the tokens. Use runtime
+        # grid_dim so reduced-grid launches don't skip experts.
+        for _global_idx in range(sm_id, Self.n_experts, Int(grid_dim.x)):
             var global_idx = _global_idx
             comptime if Self.skip_a2a:
                 global_idx = _global_idx + Self.n_local_experts * Int(my_rank)
@@ -3037,8 +3049,10 @@ struct EPCombineKernel[
         barrier()
 
         # Once all the tokens have been received, set flags for other SMs to
-        # copy the tokens to the output tensor.
-        if thread_idx.x < Self.n_reduce_sms:
+        # copy the tokens to the output tensor. Seed only the active reduce
+        # SMs (decode-fast-path launches grid_dim < n_sms).
+        var n_active_reduce_sms = Int(grid_dim.x) - Self.n_wait_sms
+        if thread_idx.x < n_active_reduce_sms:
             _counter_atomic.store[ordering=Ordering.RELEASE](
                 atomic_counter + Self.n_wait_sms + thread_idx.x,
                 Int32(DATA_READY_FLAG),
@@ -3113,12 +3127,17 @@ struct EPCombineKernel[
 
         # This will allow a single token to be processed by multiple blocks.
         # Reduce the latency when there is only a small number of tokens.
-        var global_id = sm_id - Self.n_wait_sms + warp_id() * Self.n_reduce_sms
+        # Use runtime grid_dim so the host can launch a smaller grid for
+        # decode without leaving chunks unprocessed.
+        var n_active_reduce_sms = Int(grid_dim.x) - Self.n_wait_sms
+        var global_id = (
+            sm_id - Self.n_wait_sms + warp_id() * n_active_reduce_sms
+        )
 
         for chunk_idx in range(
             global_id,
             num_tokens * n_chunks_per_tok,
-            Self.n_warps * Self.n_reduce_sms,
+            Self.n_warps * n_active_reduce_sms,
         ):
             var token_idx, chunk_idx_in_token = udivmod(
                 chunk_idx, n_chunks_per_tok
@@ -3581,7 +3600,8 @@ def dispatch_kernel[
             )
 
         # ===== dispatch_wait =====
-        if block_idx.x >= dispatch_impl.n_dispatch_wait_comm_sms:
+        # Use runtime grid_dim so the host can launch a smaller grid for decode.
+        if block_idx.x >= Int(grid_dim.x) - dispatch_impl.n_offset_sms:
             dispatch_impl.wait_for_arrivals_and_compute_offsets(
                 format_handler,
                 row_offsets,

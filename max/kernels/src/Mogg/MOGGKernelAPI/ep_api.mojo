@@ -519,6 +519,7 @@ struct Struct_ep_dispatch_wait:
         n_nodes: Int,
         //,
         target: StaticString,
+        num_input_tokens: Int = -1,
     ](
         output_tokens: OutputTensor[dtype=DType.bfloat16, rank=2, ...],
         row_offsets: OutputTensor[dtype=DType.uint32, rank=1, ...],
@@ -557,6 +558,7 @@ struct Struct_ep_dispatch_wait:
             recv_count_ptrs.to_tile_tensor[DType.int64](),
             atomic_counters.to_tile_tensor[DType.int64](),
             context,
+            num_input_tokens,
         )
 
 
@@ -576,6 +578,7 @@ struct Struct_ep_dispatch_wait_fp8:
         dispatch_scale_granularity: StaticString,
         //,
         target: StaticString,
+        num_input_tokens: Int = -1,
     ](
         output_tokens: OutputTensor[dtype=dispatch_dtype, rank=2, ...],
         output_scales: OutputTensor[dtype=dispatch_scale_dtype, rank=2, ...],
@@ -618,6 +621,7 @@ struct Struct_ep_dispatch_wait_fp8:
             recv_count_ptrs.to_tile_tensor[DType.int64](),
             atomic_counters.to_tile_tensor[DType.int64](),
             context,
+            num_input_tokens,
         )
 
 
@@ -636,6 +640,7 @@ struct Struct_ep_dispatch_wait_nvfp4:
         n_nodes: Int,
         //,
         target: StaticString,
+        num_input_tokens: Int = -1,
     ](
         output_tokens: OutputTensor[dtype=dispatch_dtype, rank=2, ...],
         output_scales: OutputTensor[dtype=dispatch_scale_dtype, rank=5, ...],
@@ -681,6 +686,7 @@ struct Struct_ep_dispatch_wait_nvfp4:
             recv_count_ptrs.to_tile_tensor[DType.int64](),
             atomic_counters.to_tile_tensor[DType.int64](),
             context,
+            num_input_tokens,
         )
 
 
@@ -699,6 +705,7 @@ struct Struct_ep_dispatch_wait_mxfp4:
         n_nodes: Int,
         //,
         target: StaticString,
+        num_input_tokens: Int = -1,
     ](
         output_tokens: OutputTensor[dtype=dispatch_dtype, rank=2, ...],
         output_scales: OutputTensor[dtype=dispatch_scale_dtype, rank=2, ...],
@@ -741,6 +748,7 @@ struct Struct_ep_dispatch_wait_mxfp4:
             recv_count_ptrs.to_tile_tensor[DType.int64](),
             atomic_counters.to_tile_tensor[DType.int64](),
             context,
+            num_input_tokens,
         )
 
 
@@ -1543,6 +1551,11 @@ struct Struct_ep_combine_wait:
                 rebind[SIMD[combine_dtype, width]](val),
             )
 
+        var output_tokens_tensor = output_tokens.to_tile_tensor[DType.int64]()
+        # `output_tokens.dim(0)` is the per-token combine result count
+        # (= num_input_tokens). Pass it to enable the decode-fast-path
+        # grid sizing in `ep_combine_wait_kernel_api`.
+        var num_input_tokens = Int(output_tokens_tensor.dim(0))
         ep_combine_wait_kernel_api[
             hidden_size,
             top_k,
@@ -1556,11 +1569,12 @@ struct Struct_ep_combine_wait:
                 output_fn
             ) if lambdas_have_fusion else None,
         ](
-            output_tokens.to_tile_tensor[DType.int64](),
+            output_tokens_tensor,
             atomic_counters.to_tile_tensor[DType.int64](),
             recv_ptrs.to_tile_tensor[DType.int64](),
             recv_count_ptrs.to_tile_tensor[DType.int64](),
             context,
+            num_input_tokens,
         )
 
 

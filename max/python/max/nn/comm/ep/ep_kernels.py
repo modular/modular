@@ -317,6 +317,7 @@ def call_ep_dispatch_wait(
     recv_buf_ptrs: TensorValue,
     recv_count_ptrs: TensorValue,
     config: EPConfig,
+    num_tokens: Dim | None = None,
 ) -> tuple[TensorValue, ...]:
     """Wait for Expert Parallelism token dispatch and prepare for expert
     computation.
@@ -356,6 +357,11 @@ def call_ep_dispatch_wait(
     """
     parameters = _ep_common_parameters(config)
     device_ref = atomic_counter.device
+
+    # Enable the decode-fast-path grid sizing when num_tokens is known at
+    # graph build time. Falls back to the full sm_count grid otherwise.
+    if isinstance(num_tokens, StaticDim):
+        parameters["num_input_tokens"] = int(num_tokens)
 
     op_name = "ep.dispatch_wait"
     input_vals: list[Value[Any]] = [
