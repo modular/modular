@@ -1163,10 +1163,10 @@ logit_verification_pipelines:
     pregenerated_torch_goldens:
       tar_file: "s3://modular-bazel-artifacts-public/artifacts/black-forest-labs_FLUX.2-klein-4B_golden/1/5b646894a0ed1765d717c8d37b44a4a7fda24fec68d50f45c837295eaad468d8/black-forest-labs_FLUX.2-klein-4B_golden.tar.gz"
       json_file: "torch_black-forest-labs_FLUX.2-klein-4B_bfloat16_golden.json"
-    # Per-prompt SSIM:  [.823, .924, .913, .865, .832]
-    # Per-prompt LPIPS: [.0952, .0675, .0377, .0773, .102]
-    ssim_threshold: 0.75
-    lpips_threshold: 0.11
+    # Per-prompt SSIM:  [.933, .977, .957, .958, .954]
+    # Per-prompt LPIPS: [.0356, .0154, .0128, .0192, .0216]
+    ssim_threshold: 0.84
+    lpips_threshold: 0.04
     timeout: 3600
 
   # ========== Wan T2V Pipelines ==========
