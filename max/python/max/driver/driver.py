@@ -20,6 +20,7 @@ from typing import Literal
 
 from max._core.driver import (  # noqa: F401
     CPU,
+    NPU,
     Accelerator,
     Device,
     DeviceStream,

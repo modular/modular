@@ -28,7 +28,7 @@ from compiler_internal.directives import (
 from std.collections import InlineArray
 from std.gpu.host import DeviceBuffer, DeviceContext
 from std.gpu.host.device_context import _DeviceContextPtr
-from std.gpu.host.info import is_cpu, is_gpu
+from std.gpu.host.info import is_accelerator, is_cpu, is_gpu
 from layout import (
     Coord,
     Idx,
@@ -585,13 +585,16 @@ def mgp_buffer_device_to_host[
     host_buf: MutByteBuffer,
     dev_ctx: DeviceContext,
 ) raises:
-    comptime if is_cpu[dHostDevice]() and is_gpu[cOtherDevice]():
+    comptime if is_cpu[dHostDevice]() and is_accelerator[cOtherDevice]():
         dev_ctx.enqueue_copy[DType.int8](
             host_buf.unsafe_ptr(),
             dev_buf.to_device_buffer(dev_ctx),
         )
     else:
-        raise Error("mgp.buffer.device_to_host must be scheduled on gpu device")
+        raise Error(
+            "mgp.buffer.device_to_host must be scheduled on an accelerator"
+            " device"
+        )
 
 
 @register_internal("mgp.buffer.device_to_device")
@@ -633,13 +636,16 @@ def mgp_buffer_host_to_device[
     dev_buf: MutByteBuffer,
     dev_ctx: DeviceContext,
 ) raises:
-    comptime if is_gpu[dOtherDevice]() and is_cpu[cHostDevice]():
+    comptime if is_accelerator[dOtherDevice]() and is_cpu[cHostDevice]():
         dev_ctx.enqueue_copy[DType.int8](
             dev_buf.to_device_buffer(dev_ctx),
             host_buf.unsafe_ptr(),
         )
     else:
-        raise Error("mgp.buffer.host_to_device must be scheduled on gpu device")
+        raise Error(
+            "mgp.buffer.host_to_device must be scheduled on an accelerator"
+            " device"
+        )
 
 
 @register_internal("mgp.int.cache")
