@@ -327,10 +327,10 @@ M::KGEN::getMLIRBufferFromPrecompiledFile(
       !ignoreIncompatiblePrecompiledFileErrs) {
     if (auto err = KGEN::checkCompatiblePrecompiledFile(
             header, buffer.getBufferIdentifier())) {
-      return Error(std::string(err.getError()) +
-                   ". To proceed, recreate the precompiled file with `mojo "
-                   "package`, or use "
-                   "the version of the compiler it was created with.");
+      return Error(
+          std::string(err.getError()) +
+          ". To proceed, recreate the precompiled file with `mojo precompile`, "
+          "or use the version of the compiler it was created with.");
     }
   }
   return std::move(mlirResult);
