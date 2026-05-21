@@ -31,6 +31,7 @@
 #include "mlir/Dialect/UB/IR/UBOps.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
 #include "mlir/IR/Threading.h"
+#include "llvm/ADT/StringSet.h"
 #include "llvm/ADT/TypeSwitch.h"
 
 using namespace M;
@@ -184,6 +185,256 @@ static bool functionRequiresByVal(LLVM::LLVMFuncOp func,
   return false;
 }
 
+/// Map `llvm.` attribute passed via `@__llvm_metadata` decorator to either
+/// passthrough or use special LLVM Dialect's attribute.
+static ErrorOrSuccess
+mapToTypedLLVMFuncAttr(LLVM::LLVMFuncOp func, NamedAttrList &attrs,
+                       SmallVectorImpl<Attribute> &passthrough, Builder &b,
+                       StringRef suffix, Attribute value) {
+  MLIRContext *ctx = func.getContext();
+
+  // Attributes that user should not be allowed to override.
+  // `dso_local` is derived from linkage by LLVMFuncOp's builder; the
+  // `target_*` / `tune_*` knobs come from the codegen target.
+  static const llvm::StringSet<> kDisallowedAttrs = {
+      "dso_local",
+      "target_cpu",
+      "target_features",
+      "tune_cpu",
+  };
+  if (kDisallowedAttrs.contains(suffix)) {
+    return Error(Twine("'llvm.") + suffix +
+                 "' is not allowed to be set via @__llvm_metadata");
+  }
+
+  // Do not allow following attributes without concrete need.
+  static const llvm::StringSet<> kUnsupportedAttrs = {
+      "alloc_family",
+      "alloc_variant_zeroed",
+      "dontcall_error",
+      "dontcall_warn",
+      "indirect_tls_seg_refs",
+      "no_jump_tables",
+      "patchable_function",
+      "patchable_function_entry",
+      "patchable_function_entry_section",
+      "patchable_function_prefix",
+      "vector_function_abi_variant",
+  };
+  if (kUnsupportedAttrs.contains(suffix)) {
+    return Error(Twine("'llvm.") + suffix +
+                 "' is temporarily not supported via @__llvm_metadata");
+  }
+
+  static llvm::StringMap<llvm::StringLiteral> allowedAttrsMap = {
+      {"denormal_fp_math", "denormal-fp-math"},
+      {"denormal_fp_math_f32", "denormal-fp-math-f32"},
+      {"fp_contract", "fp-contract"},
+      {"unsafe_fp_math", "unsafe-fp-math"},
+      {"no_infs_fp_math", "no-infs-fp-math"},
+      {"no_nans_fp_math", "no-nans-fp-math"},
+      {"approx_func_fp_math", "approx-func-fp-math"},
+      {"no_signed_zeros_fp_math", "no-signed-zeros-fp-math"},
+      {"no_inline_line_tables", "no-inline-line-tables"},
+      {"probe_stack", "probe-stack"},
+      {"stack_probe_size", "stack-probe-size"},
+      {"no_stack_arg_probe", "no-stack-arg-probe"},
+      {"warn_stack_size", "warn-stack-size"},
+  };
+
+  if (allowedAttrsMap.contains(suffix)) {
+    auto addPassthroughAttr = [&](StringRef key, StringRef val) {
+      passthrough.push_back(
+          b.getArrayAttr({b.getStringAttr(key), b.getStringAttr(val)}));
+    };
+    llvm::StringLiteral llvmIRName = allowedAttrsMap.at(suffix);
+    if (auto str = dyn_cast<StringAttr>(value)) {
+      addPassthroughAttr(llvmIRName, str.getValue());
+      return success();
+    }
+    if (auto boolAttr = dyn_cast<BoolAttr>(value)) {
+      addPassthroughAttr(llvmIRName, boolAttr.getValue() ? "true" : "false");
+      return success();
+    }
+    if (auto intAttr = dyn_cast<IntegerAttr>(value)) {
+      // LLVM IR encodes integer-valued function attributes as decimal strings.
+      // Honor the IntegerType's explicit signedness; signless ints (the MLIR
+      // default) print as unsigned so e.g. `4096 : i64` becomes "4096" rather
+      // than potentially negative if interpreted as signed.
+      if (intAttr.getType().isInteger(1)) {
+        addPassthroughAttr(
+            llvmIRName, intAttr.getValue().getBoolValue() ? "true" : "false");
+      } else {
+        llvm::SmallString<32> buf;
+        intAttr.getValue().toString(
+            buf, /*Radix=*/10,
+            /*Signed=*/intAttr.getType().isSignedInteger());
+        addPassthroughAttr(llvmIRName, buf);
+      }
+      return success();
+    }
+    return Error(Twine("'llvm.") + suffix +
+                 "' expects a string, integer, or boolean value");
+  }
+
+  auto setOnFunc = [&](Attribute v) { attrs.set(suffix, v); };
+
+  auto requireUnit = [&]() -> ErrorOrSuccess {
+    if (!isa<UnitAttr>(value))
+      return Error(Twine("'llvm.") + suffix + "' expects no value (unit flag)");
+    setOnFunc(b.getUnitAttr());
+    return success();
+  };
+
+  auto requireString = [&]() -> ErrorOrSuccess {
+    auto str = dyn_cast<StringAttr>(value);
+    if (!str)
+      return Error(Twine("'llvm.") + suffix + "' expects a string value");
+    setOnFunc(b.getStringAttr(str.getValue()));
+    return success();
+  };
+
+  auto requireInt = [&](unsigned bitWidth) -> ErrorOrSuccess {
+    auto intAttr = dyn_cast<IntegerAttr>(value);
+    if (!intAttr)
+      return Error(Twine("'llvm.") + suffix + "' expects an integer value");
+    setOnFunc(IntegerAttr::get(IntegerType::get(ctx, bitWidth),
+                               intAttr.getValue().getSExtValue()));
+    return success();
+  };
+
+  auto requireDenseI32Array = [&]() -> ErrorOrSuccess {
+    if (auto denseArr = dyn_cast<mlir::DenseI32ArrayAttr>(value)) {
+      setOnFunc(denseArr);
+      return success();
+    }
+    if (auto array = dyn_cast<POP::ArrayAttr>(value)) {
+      Type elementType = array.getType().getElementType();
+      if (auto simd = dyn_cast<SIMDType>(elementType))
+        elementType = getEquivalentIntegerType(ctx, *simd.getResolvedDType());
+      if (auto intTy = dyn_cast<IntegerType>(elementType);
+          intTy && intTy.getWidth() == 32) {
+        setOnFunc(arrayAttrToDenseArrayAttr<int32_t>(b, array));
+        return success();
+      }
+    }
+    return Error(
+        Twine("'llvm.") + suffix +
+        "' expects a dense i32 array (e.g. StaticTuple[Int32, N](...))");
+  };
+
+  // Every UnitAttr / OptionalAttr<UnitAttr> declared on LLVMFuncOp in
+  // mlir/Dialect/LLVMIR/LLVMOps.td. Keep in sync if upstream MLIR grows new
+  // flag-style function attributes.
+  static const llvm::StringSet<> kUnitAttrs = {
+      "always_inline",
+      "arm_in_za",
+      "arm_inout_za",
+      "arm_locally_streaming",
+      "arm_new_za",
+      "arm_out_za",
+      "arm_preserves_za",
+      "arm_streaming",
+      "arm_streaming_compatible",
+      "cold",
+      "convergent",
+      "hot",
+      "inline_hint",
+      "minsize",
+      "no_caller_saved_registers",
+      "no_inline",
+      "no_unwind",
+      "nocallback",
+      "noduplicate",
+      "noreturn",
+      "optimize_none",
+      "optsize",
+      "returns_twice",
+      "save_reg_params",
+      "will_return",
+  };
+  if (kUnitAttrs.contains(suffix))
+    return requireUnit();
+
+  if (suffix == "section" || suffix == "garbageCollector")
+    return requireString();
+
+  if (suffix == "alignment" || suffix == "function_entry_count")
+    return requireInt(/*bitWidth=*/64);
+  if (suffix == "intel_reqd_sub_group_size")
+    return requireInt(/*bitWidth=*/32);
+
+  if (suffix == "work_group_size_hint" || suffix == "reqd_work_group_size")
+    return requireDenseI32Array();
+
+  if (suffix == "frame_pointer") {
+    auto str = dyn_cast<StringAttr>(value);
+    if (!str)
+      return Error("'llvm.frame_pointer' expects a string value: "
+                   "\"none\", \"non-leaf\", \"all\", or \"reserved\"");
+    std::optional<LLVM::framePointerKind::FramePointerKind> kind =
+        LLVM::framePointerKind::symbolizeFramePointerKind(str.getValue());
+    if (!kind)
+      return Error(
+          Twine("invalid 'llvm.frame_pointer' value '") + str.getValue() +
+          "'; expected \"none\", \"non-leaf\", \"all\", or \"reserved\"");
+    setOnFunc(LLVM::FramePointerKindAttr::get(ctx, *kind));
+    return success();
+  }
+
+  if (suffix == "vscale_range") {
+    auto setRange = [&](int64_t min, int64_t max) {
+      auto i32 = IntegerType::get(ctx, 32);
+      setOnFunc(LLVM::VScaleRangeAttr::get(ctx, IntegerAttr::get(i32, min),
+                                           IntegerAttr::get(i32, max)));
+    };
+    if (auto array = dyn_cast<POP::ArrayAttr>(value)) {
+      if (array.getValues().size() != 2)
+        return Error(
+            "'llvm.vscale_range' expects a 2-element array (min, max)");
+      auto getInt = [](Attribute a) -> int64_t {
+        if (auto i = dyn_cast<IntegerAttr>(a))
+          return i.getInt();
+        return cast<KGEN::SIMDAttr>(a)
+            .getValues()
+            .front()
+            .getIntVal()
+            .getSExtValue();
+      };
+      setRange(getInt(array.getValues()[0]), getInt(array.getValues()[1]));
+      return success();
+    }
+    if (auto intAttr = dyn_cast<IntegerAttr>(value)) {
+      setRange(intAttr.getInt(), 0);
+      return success();
+    }
+    return Error(
+        "'llvm.vscale_range' expects an Int or a 2-element array of Int32");
+  }
+
+  // Unknown `llvm.<suffix>`: forward as a generic LLVM passthrough attribute
+  // (flag for UnitAttr; key/value for IntegerAttr/StringAttr). LLVM itself
+  // promotes well-known parametric names like `alignstack`, `memory`, etc.
+  StringAttr name = b.getStringAttr(suffix);
+  if (isa<UnitAttr>(value)) {
+    passthrough.push_back(name);
+    return success();
+  }
+  if (auto intVal = dyn_cast<IntegerAttr>(value)) {
+    SmallVector<char> str;
+    intVal.getValue().toString(str, /*Radix=*/10, /*Signed=*/true);
+    passthrough.push_back(b.getArrayAttr(
+        {name, b.getStringAttr(StringRef(str.data(), str.size()))}));
+    return success();
+  }
+  if (auto str = dyn_cast<StringAttr>(value)) {
+    passthrough.push_back(
+        b.getArrayAttr({name, b.getStringAttr(str.getValue())}));
+    return success();
+  }
+  return Error("unsupported LLVM passthrough attribute kind");
+}
+
 /// Convert LLVM metadata expressed in KGEN attributes to an LLVM dialect
 /// compatible representation. Unsupported metadata values are rejected.
 static LogicalResult convertLLVMMetadata(LLVM::LLVMFuncOp func, FuncType sig,
@@ -206,27 +457,12 @@ static LogicalResult convertLLVMMetadata(LLVM::LLVMFuncOp func, FuncType sig,
              << attr.getName() << "' is not defined";
     }
     if (isa<LLVM::LLVMDialect>(nameDialect)) {
-      StringAttr name = b.getStringAttr(
-          attr.getName().strref().drop_front(StringRef("llvm.").size()));
-      if (isa<UnitAttr>(value)) {
-        // Add the metadata attribute name without the prefix.
-        passthrough.push_back(name);
-      } else if (auto intVal = dyn_cast<IntegerAttr>(value)) {
-        // The LLVM exporter apparently expects the integer to be encoded as a
-        // string. Push the pair as an array attribute.
-        SmallVector<char> str;
-        intVal.getValue().toString(str, /*Radix=*/10, /*Signed=*/true);
-        passthrough.push_back(b.getArrayAttr(
-            {name, b.getStringAttr(StringRef(str.data(), str.size()))}));
-      } else if (auto str = dyn_cast<StringAttr>(value)) {
-        // Strip the type from string attributes.
-        passthrough.push_back(
-            b.getArrayAttr({name, b.getStringAttr(str.getValue())}));
-      } else {
-        return mlir::emitError(func.getLoc(),
-                               "unsupported LLVM passthrough attribute kind: ")
-               << value;
-      }
+      StringRef suffix =
+          attr.getName().strref().drop_front(StringRef("llvm.").size());
+      if (ErrorOrSuccess err = mapToTypedLLVMFuncAttr(func, attrs, passthrough,
+                                                      b, suffix, value);
+          err.isError())
+        return mlir::emitError(func.getLoc()) << err.takeError();
       continue;
     } else if (isa<mlir::ROCDL::ROCDLDialect>(nameDialect)) {
       // FIXME: Remove when integer conversion to StringAttr is done by the
@@ -280,7 +516,7 @@ static LogicalResult convertLLVMMetadata(LLVM::LLVMFuncOp func, FuncType sig,
       attrs.append(attr.getName(), b.getStringAttr(str.getValue()));
     } else if (auto array = dyn_cast<POP::ArrayAttr>(value)) {
       Type elementType = array.getType().getElementType();
-      if (auto err =
+      if (ErrorOrSuccess err =
               addArrayAttrToDict(b, attrs, attr.getName(), array, elementType);
           err.isError())
         return mlir::emitError(func.getLoc(), "unsupported array type: ")
