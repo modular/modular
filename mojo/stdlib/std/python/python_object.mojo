@@ -225,13 +225,7 @@ struct PythonObject(
         Args:
             value: The boolean value.
         """
-        # Pick the cached singleton directly and INCREF. Skips the
-        # `c_long(Int(value))` cast chain that `PyBool_FromLong` requires
-        # and lets the branch + field reads inline at the call site.
-        ref cpy = Python().cpython()
-        var ptr = cpy.Py_True() if value else cpy.Py_False()
-        cpy.Py_IncRef(ptr)
-        self = Self(from_owned=ptr)
+        self = _bool_to_pyobject(value)
 
     @implicit
     def __init__(out self, value: Int):
@@ -258,9 +252,7 @@ struct PythonObject(
         ref cpy = Python().cpython()
 
         comptime if dtype == DType.bool:
-            var ptr = cpy.Py_True() if Bool(value) else cpy.Py_False()
-            cpy.Py_IncRef(ptr)
-            self = Self(from_owned=ptr)
+            self = _bool_to_pyobject(Bool(value))
         elif dtype.is_unsigned():
             var val = c_size_t(value.cast[DType.uint]())
             self = Self(from_owned=cpy.PyLong_FromSize_t(val))
@@ -1628,6 +1620,20 @@ def _unsafe_alloc_init[
 # ===-----------------------------------------------------------------------===#
 # Helper functions
 # ===-----------------------------------------------------------------------===#
+
+
+@always_inline
+def _bool_to_pyobject(value: Bool) -> PythonObject:
+    """Wrap a Mojo `Bool` as a Python object via the cached `Py_True` /
+    `Py_False` singletons. Skips the `PyBool_FromLong` `ExternalFunction`
+    dispatch (CPython's `PyBool_FromLong` internally just picks the
+    singleton and `Py_INCREF`s it). The `Py_IncRef` is inlined here rather
+    than going through `from_borrowed` to avoid a second
+    `Python().cpython()` lookup on the hot path."""
+    ref cpy = Python().cpython()
+    var ptr = cpy.Py_True() if value else cpy.Py_False()
+    cpy.Py_IncRef(ptr)
+    return PythonObject(from_owned=ptr)
 
 
 def _slice_to_py_object_ptr(slice: Slice) -> PyObjectPtr:
