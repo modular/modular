@@ -2670,6 +2670,52 @@ def _memchr_impl[
 
 
 @always_inline
+def _is_ascii(source: Span[mut=False, Byte, ...]) -> Bool:
+    """Return True if every byte of `source` is in `[0, 128)`.
+
+    Dispatches to a scalar loop in the comptime interpreter and for inputs
+    smaller than the bool-mask SIMD width; otherwise the SIMD body in
+    `_is_ascii_impl` runs. Mirrors the `_memchr` dispatch pattern.
+
+    Args:
+        source: The byte span to scan.
+
+    Returns:
+        `True` if all bytes are ASCII; `False` if any byte has the high bit set.
+    """
+    if (
+        __is_run_in_comptime_interpreter
+        or len(source) < simd_width_of[DType.bool]()
+    ):
+        var ptr = source.unsafe_ptr()
+        for i in range(len(source)):
+            if ptr[i] >= UInt8(128):
+                return False
+        return True
+    else:
+        return _is_ascii_impl(source)
+
+
+@always_inline
+def _is_ascii_impl(source: Span[mut=False, Byte, ...]) -> Bool:
+    """SIMD body for `_is_ascii`."""
+    var haystack = source.unsafe_ptr()
+    var length = len(source)
+    comptime bool_mask_width = simd_width_of[DType.bool]()
+    var vectorized_end = align_down(length, bool_mask_width)
+
+    for i in range(0, vectorized_end, bool_mask_width):
+        var block = haystack.load[width=bool_mask_width](i)
+        if pack_bits(block.ge(UInt8(128))):
+            return False
+
+    for i in range(vectorized_end, length):
+        if haystack[i] >= UInt8(128):
+            return False
+    return True
+
+
+@always_inline
 def _memmem[
     dtype: DType, //
 ](
