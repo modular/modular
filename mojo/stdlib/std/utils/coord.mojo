@@ -722,6 +722,44 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
                 w.write(", ")
         w.write(")")
 
+    @always_inline("nodebug")
+    def cast[
+        dtype: DType
+    ](self) -> Coord[*_CoordCast[dtype, Self.element_types]]:
+        """Cast runtime elements to `Scalar[dtype]`.
+
+        Compile-time elements are preserved as-is, so statically known
+        dimensions stay static after the cast.
+
+        Parameters:
+            dtype: The target data type for runtime elements.
+
+        Returns:
+            A new `Coord` where runtime elements use `dtype` and static
+            elements keep their original type.
+        """
+        comptime assert dtype.is_integral(), "the target type must be integral"
+        comptime assert Self.is_flat, "`Coord.cast` only supports flat `Coord`s"
+
+        comptime ResultTypes = _CoordCast[dtype, Self.element_types]
+        var result: Coord[*ResultTypes]
+        __mlir_op.`lit.ownership.mark_initialized`(
+            __get_mvalue_as_litref(result)
+        )
+
+        comptime for i in range(Self.__len__()):
+            comptime ResultType = ResultTypes[i]
+            comptime if ResultType.is_static_value:
+                UnsafePointer(to=result[i]).init_pointee_copy(
+                    rebind[ResultType](self[i])
+                )
+            else:
+                UnsafePointer(to=result[i]).init_pointee_copy(
+                    rebind[ResultType](Scalar[dtype](self[i].value()))
+                )
+
+        return result
+
 
 # Helper for flat indexing with nested shape/stride.
 def _crd2idx_flat[
@@ -1842,6 +1880,17 @@ comptime _CeilDiv[
     Lhs.size,
     _CeilDivTabulator[Lhs, Rhs, ...],
 ]()
+
+comptime _CoordCastMapper[
+    dtype: DType, type: CoordLike
+]: CoordLike = type if type.is_static_value else Scalar[dtype]
+"""Maps dynamic scalar elements to `Scalar[dtype]`, preserving static ones."""
+
+
+comptime _CoordCast[
+    dtype: DType, element_types: TypeList[Trait=CoordLike, ...]
+] = element_types.map[_CoordCastMapper[dtype, _]]()
+"""Computes the result element types for `Coord.cast[dtype]()`."""
 
 
 @always_inline

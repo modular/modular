@@ -43,6 +43,7 @@ from std.logger import Logger
 from std.memory import bitcast
 from std.runtime.tracing import Trace, TraceLevel, trace_arg
 from std.algorithm import elementwise
+from std.utils.coord import Coord, Idx, coord_to_index_list
 from std.utils.index import Index, IndexList, StaticTuple
 from std.utils.numerics import get_accum_type, max_finite
 
@@ -110,13 +111,13 @@ def quantize_static_scaled_fp8[
     ]()
 
     def scaled_fp8_quant_unified[
-        width: Int, rank: Int, alignment: Int = 1
-    ](idx: IndexList[rank]) register_passable {}:
-        scaled_fp8_quant[width, rank, alignment](idx)
+        width: Int, alignment: Int = 1
+    ](idx: Coord) register_passable {}:
+        scaled_fp8_quant[width, idx.rank, alignment](coord_to_index_list(idx))
 
     _elementwise_impl_gpu[simd_width=target_simd_width](
         scaled_fp8_quant_unified,
-        shape=IndexList[2](Int(in_tensor.dim[0]()), Int(in_tensor.dim[1]())),
+        shape=(Int(in_tensor.dim[0]()), Int(in_tensor.dim[1]())),
         ctx=context,
     )
 
@@ -1658,14 +1659,15 @@ def convert_e4m3fn_to_e4m3fnuz(
     ]()
 
     def convert_kernel_unified[
-        width: Int, rank: Int, alignment: Int = 1
-    ](idx: IndexList[rank]) register_passable {}:
-        convert_kernel[width, rank, alignment](idx)
+        width: Int, alignment: Int = 1
+    ](idx: Coord) register_passable {}:
+        convert_kernel[width, idx.rank, alignment](coord_to_index_list(idx))
 
     _elementwise_impl_gpu[simd_width=target_simd_width](
         convert_kernel_unified,
-        shape=IndexList[2](
-            Int(input_buffer.dim[0]()), Int(input_buffer.dim[1]())
+        shape=(
+            Int(input_buffer.dim[0]()),
+            Int(input_buffer.dim[1]()),
         ),
         ctx=context,
     )

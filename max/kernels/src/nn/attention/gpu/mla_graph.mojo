@@ -34,6 +34,7 @@ from std.gpu.primitives.grid_controls import (
     pdl_launch_attributes,
 )
 from std.gpu.host import DeviceContext, get_gpu_target
+from std.utils.coord import Coord, Idx, coord_to_index_list
 from layout import (
     Coord,
     Idx,
@@ -1477,14 +1478,14 @@ def convert_bf16_to_fp8_e4m3fn(
     ]()
 
     def convert_kernel_unified[
-        width: Int, rank: Int, alignment: Int = 1
-    ](idx: IndexList[rank]) register_passable {}:
-        convert_kernel[width, rank, alignment](idx)
+        width: Int, alignment: Int = 1
+    ](idx: Coord) register_passable {}:
+        convert_kernel[width, idx.rank, alignment](coord_to_index_list(idx))
 
     comptime if input_buffer.rank == 2:
         _elementwise_impl_gpu[simd_width=target_simd_width](
             convert_kernel_unified,
-            shape=IndexList[2](
+            shape=(
                 Int(input_buffer.dim[0]()),
                 Int(input_buffer.dim[1]()),
             ),
@@ -1493,7 +1494,7 @@ def convert_bf16_to_fp8_e4m3fn(
     else:
         _elementwise_impl_gpu[simd_width=target_simd_width](
             convert_kernel_unified,
-            shape=IndexList[3](
+            shape=(
                 Int(input_buffer.dim[0]()),
                 Int(input_buffer.dim[1]()),
                 Int(input_buffer.dim[2]()),

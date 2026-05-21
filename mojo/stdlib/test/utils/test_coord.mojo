@@ -548,5 +548,24 @@ def test_crd2idx_narrow_uint32_within_range() raises:
     assert_equal(Int(idx_u32), Int(idx_i64))
 
 
+def test_cast_preserves_static_dims() raises:
+    var c = Coord[
+        ComptimeInt[5],
+        Int32,
+        ComptimeInt[3],
+        Int64,
+    ](Idx[5], Int32(7), Idx[3], Int64(11))
+
+    var casted = c.cast[DType.uint32]()
+    assert_equal(casted[0].value(), 5)
+    assert_equal(casted[1].value(), 7)
+    assert_equal(casted[2].value(), 3)
+    assert_equal(casted[3].value(), 11)
+    assert_true(_type_is_eq[type_of(casted[0]), ComptimeInt[5]]())
+    assert_true(_type_is_eq[type_of(casted[1]), UInt32]())
+    assert_true(_type_is_eq[type_of(casted[2]), ComptimeInt[3]]())
+    assert_true(_type_is_eq[type_of(casted[3]), UInt32]())
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()
