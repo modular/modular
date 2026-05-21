@@ -279,15 +279,15 @@ constexpr StringLiteral kMoggExecuteFuncName = "execute";
 /// Mojo package and type leaf names used to recognise extensibility kernel
 /// types in MLIR symbol references.
 constexpr StringLiteral kPackageStd = "std";
-constexpr StringLiteral kPackageTensor = "tensor";
+constexpr StringLiteral kPackageExtensibility = "extensibility";
 constexpr StringLiteral kLeafManagedTensorSlice = "ManagedTensorSlice";
 constexpr StringLiteral kLeafDeviceContext = "DeviceContext";
 
-/// True iff `structTy` is a `tensor::ManagedTensorSlice` (the DPS tensor type
-/// used by extensibility kernels).
+/// True iff `structTy` is the DPS `ManagedTensorSlice` from the
+/// `extensibility` package (used by graph-compiler kernels).
 inline bool isDPSTensor(LIT::StructType structTy) {
   return structTy.getSymbol().getRootReference().strref().starts_with(
-             kPackageTensor) &&
+             kPackageExtensibility) &&
          structTy.getSymbol().getLeafReference() == kLeafManagedTensorSlice;
 }
 
