@@ -15,16 +15,16 @@ MOGGKernelAPI kernels with deliberately wrong behavior, so a passing test
 can only mean the user registration shadowed the built-in.
 """
 
-import compiler_internal as compiler
+import extensibility as compiler
 from std.gpu.host import DeviceContext
-from tensor import (
+from extensibility import (
     ElementwiseBinaryOp,
     InputTensor,
 )
-from tensor.managed_tensor_slice import (
+from extensibility import (
     _FusedInputTensor as FusedInputTensor,
 )
-from tensor.managed_tensor_slice import (
+from extensibility import (
     _FusedOutputTensor as FusedOutputTensor,
 )
 from std.utils.index import IndexList
