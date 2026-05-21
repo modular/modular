@@ -400,21 +400,21 @@ def flash_attention[
         ]._get_detail_str[description_fn](),
         task_id=Int(ctx.id()),
     ):
-        # TODO: This helps differentiate between CE/TG. Not batch-specific.
-        #       We'll just implement a flag on the cache object which is true
-        #       when the batch contains all cache_lens == 0. Remove this when
-        #       such flag (part of ContiguousKVCache) is implemented.
-        var is_token_generation = (
-            k.max_prompt_length() == 1 and not k.empty_cache()
-        )
-
         var max_prompt_len: Int
         var num_keys = Int(k.max_context_length())
 
         if q_max_seq_len:
             max_prompt_len = q_max_seq_len.value()
+        elif decode_dispatch_metadata:
+            max_prompt_len = decode_dispatch_metadata.value().q_max_seq_len
         else:
             max_prompt_len = Int(k.max_prompt_length())
+
+        # TODO: This helps differentiate between CE/TG. Not batch-specific.
+        #       We'll just implement a flag on the cache object which is true
+        #       when the batch contains all cache_lens == 0. Remove this when
+        #       such flag (part of ContiguousKVCache) is implemented.
+        var is_token_generation = max_prompt_len == 1 and not k.empty_cache()
 
         # Whether head and depth are static. With BSHD, B and S are dynamic.
         # H and D are always known for opaque KVCache types, we only check Q.
