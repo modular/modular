@@ -974,27 +974,35 @@ static std::optional<std::string> resolveModulePath(SharedState &shared,
   if (ec)
     return std::nullopt;
 
+  // A path to the module under its deprecated file extension. Cache this if we
+  // find it but only return if we don't find the module under its newer path,
+  // so that the newer one wins out.
+  std::optional<path> legacyPkgPath;
+
   // Gets the name of the file or directory in a case sensitive way. On non-case
   // sensitive systems we cannot just do `path / moduleName` since the
   // constructed path will not adhere to case sensitivity.
-  std::optional<path> nameOr;
   for (const auto &entry : iter) {
     if (entry.path().filename().stem().string() != moduleName)
       continue;
 
     // If we found a package path, we can return immediately.
-    if (Filesystem::isMojoSourcePackagePath(entry.path())) {
+    if (Filesystem::isMojoSourcePackagePath(entry.path()))
       return std::filesystem::absolute(entry.path());
-    }
 
     path ext = entry.path().filename().extension();
-    if (!ignorePrebuilt && (ext == ".mojoc" || ext == ".mojopkg")) {
+    if (!ignorePrebuilt && ext == ".mojoc")
       return std::filesystem::absolute(entry.path());
-    }
-    if (ext == ".mojo") {
+    // Deprecated file extension
+    if (!ignorePrebuilt && ext == ".mojopkg")
+      legacyPkgPath = entry;
+
+    if (ext == ".mojo")
       return std::filesystem::absolute(entry.path());
-    }
   }
+
+  if (legacyPkgPath)
+    return legacyPkgPath;
 
   // If we cannot find a file or directory with the case-sensitive name, then
   // return early.
