@@ -104,7 +104,7 @@ struct MLASparseConfig[qkv_dtype: DType]:
     var num_kv_heads: Int
     var qk_depth: Int
     var v_depth: Int
-    var top_k: Int
+    var indices_stride: Int
     var group: Int
 
     # the leftmost q_depth is store in smem,
@@ -131,14 +131,14 @@ struct MLASparseConfig[qkv_dtype: DType]:
         num_kv_heads: Int,
         qk_depth: Int,
         v_depth: Int,
-        top_k: Int,
+        indices_stride: Int,
         group: Int,
     ):
         self.num_q_heads = num_q_heads
         self.num_kv_heads = num_kv_heads
         self.qk_depth = qk_depth
         self.v_depth = v_depth
-        self.top_k = top_k
+        self.indices_stride = indices_stride
         self.group = group
 
 
@@ -1412,7 +1412,7 @@ struct MLAPrefillSparse[
                     Coord(Idx[Int(inner_row)](), Idx[0]())
                 )
                 var inner_warp_dist = inner_tma_tile.tile[4, 64](
-                    Coord(Idx(warp_idx), Idx[0]())
+                    Coord(warp_idx, Idx[0]())
                 )
                 var indices = local_indices[inner_row]
                 tma_op.async_copy_gather4[cta_group=Self.config.cta_group](
@@ -1471,12 +1471,10 @@ struct MLAPrefillSparse[
         comptime for local_row in range(row_start, row_end):
             var token_idx_v4 = indices.load[width=4](
                 Coord(
-                    Idx(
-                        indices_base
-                        + k * Self.config.B_TOPK
-                        + (UInt32(local_row) * UInt32(num_warps) + warp_idx)
-                        * UInt32(4)
-                    )
+                    indices_base
+                    + k * Self.config.B_TOPK
+                    + (UInt32(local_row) * UInt32(num_warps) + warp_idx)
+                    * UInt32(4)
                 )
             ).cast[DType.int32]()
             comptime for cg in range(num_col_groups):
@@ -1567,7 +1565,7 @@ struct MLAPrefillSparse[
             # `num_kv_rows` fits in signed int32 (~2B rows); far above any
             # realistic deployment.
             var idx_v8 = indices.load[width=INDICES_PER_LANE](
-                Coord(Idx(gidx_offset))
+                Coord(gidx_offset)
             ).cast[DType.int32]()
 
             var abs_pos_base = Int32(k_block) * Int32(
@@ -1653,7 +1651,7 @@ struct MLAPrefillSparse[
                 + (UInt32(local_row) * num_warps + warp_idx) * UInt32(4)
             )
             local_indices[local_row] = indices.load[width=4](
-                Coord(Idx(indices_offset))
+                Coord(indices_offset)
             ).cast[DType.int32]()
             max_idx = max(max_idx, local_indices[local_row].reduce_max())
             min_idx = min(min_idx, local_indices[local_row].reduce_min())
@@ -1903,6 +1901,8 @@ def mla_prefill_sparse[
     # v_depth`, which writes BM SEQ positions per call, but our cluster
     # produces 1 seq * BM heads, the wrong shape for that descriptor.
 
+    comptime assert type_of(topk_lengths).flat_rank == 1
+    comptime assert type_of(indices).flat_rank == 1
     comptime kernel = MLAPrefillSparse[
         KVLUTType=type_of(kv_operand),
         output_dtype=output_dtype,

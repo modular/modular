@@ -29,7 +29,6 @@ from max.interfaces import (
     PixelGenerationContext,
     PixelGenerationInputs,
     RequestID,
-    SchedulerResult,
     TextGenerationOutput,
 )
 from max.interfaces.generation import GenerationOutput
@@ -49,6 +48,7 @@ from max.pipelines.lib.pipeline_variants.pixel_generation import (
 from max.serve.config import Settings
 from max.serve.queue import MAXPullQueue, MAXPushQueue
 from max.serve.scheduler.interface import Scheduler
+from max.serve.scheduler_result import SchedulerResult
 from max.serve.worker_interface import WorkerQueues
 
 from .audio_generation_scheduler import (

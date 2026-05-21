@@ -118,7 +118,7 @@ def execute_test[
 
     var qkv_host_tt = TileTensor(
         qkv_host_ptr,
-        row_major((Idx(total_length), Idx[combined_dim]())),
+        row_major((total_length, Idx[combined_dim]())),
     )
     random(qkv_host_tt)
     ctx.enqueue_copy(qkv_device, qkv_host_ptr)
@@ -182,7 +182,7 @@ def execute_test[
     var freqs_host_ptr = alloc[Scalar[dtype]](freqs_size)
     var freqs_host_tt = TileTensor(
         freqs_host_ptr,
-        row_major((Idx(max_seq_len), Idx[head_dim]())),
+        row_major((max_seq_len, Idx[head_dim]())),
     )
     random(freqs_host_tt)
     ctx.enqueue_copy(freqs_device, freqs_host_ptr)
@@ -251,15 +251,15 @@ def execute_test[
 
     var qkv_tile = TileTensor(
         qkv_device,
-        row_major((Idx(total_length), Idx[combined_dim]())),
+        row_major((total_length, Idx[combined_dim]())),
     )
     var row_offsets_tile = TileTensor(
         row_offsets_device,
-        row_major(Idx(batch_size + 1)),
+        row_major(batch_size + 1),
     )
     var fused_out_tile = TileTensor(
         fused_output_device,
-        row_major((Idx(total_length), Idx[hidden_size]())),
+        row_major((total_length, Idx[hidden_size]())),
     )
 
     _rope_split_store_ragged[target="gpu", interleaved=interleaved](
@@ -339,12 +339,12 @@ def execute_test[
 
     var q_tile = TileTensor(
         q_contig_device,
-        row_major((Idx(total_length), Idx[num_q_heads](), Idx[head_dim]())),
+        row_major((total_length, Idx[num_q_heads](), Idx[head_dim]())),
     )
     var rope_q_out_device = ctx.enqueue_create_buffer[dtype](q_contig_size)
     var rope_q_out_tile = TileTensor(
         rope_q_out_device,
-        row_major((Idx(total_length), Idx[num_q_heads](), Idx[head_dim]())),
+        row_major((total_length, Idx[num_q_heads](), Idx[head_dim]())),
     )
 
     fused_qk_rope_ragged[
@@ -513,7 +513,7 @@ def execute_test_with_position_ids[
     var qkv_host_ptr = alloc[Scalar[dtype]](qkv_size)
     var qkv_host_tt = TileTensor(
         qkv_host_ptr,
-        row_major((Idx(total_length), Idx[combined_dim]())),
+        row_major((total_length, Idx[combined_dim]())),
     )
     random(qkv_host_tt)
     ctx.enqueue_copy(qkv_device, qkv_host_ptr)
@@ -576,7 +576,7 @@ def execute_test_with_position_ids[
     var freqs_host_ptr = alloc[Scalar[dtype]](freqs_size)
     var freqs_host_tt = TileTensor(
         freqs_host_ptr,
-        row_major((Idx(max_seq_len), Idx[head_dim]())),
+        row_major((max_seq_len, Idx[head_dim]())),
     )
     random(freqs_host_tt)
     ctx.enqueue_copy(freqs_device, freqs_host_ptr)
@@ -663,19 +663,19 @@ def execute_test_with_position_ids[
 
     var qkv_tile = TileTensor(
         qkv_device,
-        row_major((Idx(total_length), Idx[combined_dim]())),
+        row_major((total_length, Idx[combined_dim]())),
     )
     var row_offsets_tile = TileTensor(
         row_offsets_device,
-        row_major(Idx(batch_size + 1)),
+        row_major(batch_size + 1),
     )
     var fused_out_tile = TileTensor(
         fused_output_device,
-        row_major((Idx(total_length), Idx[hidden_size]())),
+        row_major((total_length, Idx[hidden_size]())),
     )
     var pos_ids_tile = TileTensor(
         pos_ids_device,
-        row_major((Idx(num_sections), Idx(total_length))),
+        row_major((num_sections, total_length)),
     )
 
     _rope_split_store_ragged_with_position_ids[
@@ -754,12 +754,12 @@ def execute_test_with_position_ids[
 
     var q_tile = TileTensor(
         q_contig_device,
-        row_major((Idx(total_length), Idx[num_q_heads](), Idx[head_dim]())),
+        row_major((total_length, Idx[num_q_heads](), Idx[head_dim]())),
     )
     var rope_q_out_device = ctx.enqueue_create_buffer[dtype](q_contig_size)
     var rope_q_out_tile = TileTensor(
         rope_q_out_device,
-        row_major((Idx(total_length), Idx[num_q_heads](), Idx[head_dim]())),
+        row_major((total_length, Idx[num_q_heads](), Idx[head_dim]())),
     )
 
     var pos_ids_immut = TileTensor(

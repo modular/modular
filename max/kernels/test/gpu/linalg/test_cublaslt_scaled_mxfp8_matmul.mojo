@@ -69,15 +69,15 @@ def test_scaled_mxfp8_cublaslt[
     var c_shape = Coord(m, n)
 
     var a_scales_shape = Coord(
-        Idx(ceildiv(M, SF_MN_GROUP_SIZE)),
-        Idx(ceildiv(K, MXFP8_SF_VECTOR_SIZE * SF_ATOM_K)),
+        ceildiv(M, SF_MN_GROUP_SIZE),
+        ceildiv(K, MXFP8_SF_VECTOR_SIZE * SF_ATOM_K),
         Idx[SF_ATOM_M[0]](),
         Idx[SF_ATOM_M[1]](),
         Idx[SF_ATOM_K](),
     )
     var b_scales_shape = Coord(
-        Idx(ceildiv(N, SF_MN_GROUP_SIZE)),
-        Idx(ceildiv(K, MXFP8_SF_VECTOR_SIZE * SF_ATOM_K)),
+        ceildiv(N, SF_MN_GROUP_SIZE),
+        ceildiv(K, MXFP8_SF_VECTOR_SIZE * SF_ATOM_K),
         Idx[SF_ATOM_M[0]](),
         Idx[SF_ATOM_M[1]](),
         Idx[SF_ATOM_K](),
@@ -247,7 +247,7 @@ def main() raises:
             DType.float8_e4m3fn,
             DType.bfloat16,
             True,
-        ](ctx, Idx(3 * 128), Idx[128](), Idx[3 * 128]())
+        ](ctx, 3 * 128, Idx[128](), Idx[3 * 128]())
 
         test_scaled_mxfp8_cublaslt[
             DType.float8_e4m3fn,

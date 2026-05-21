@@ -52,7 +52,6 @@ from layout import (
     LayoutTensor,
     LTToTTLayout,
     RowMajorLayout,
-    RuntimeInt,
     TensorLayout,
     TileTensor,
     UNKNOWN_VALUE,
@@ -631,7 +630,7 @@ def _softmax_cpu[
             var buffer_offset = i * inner_dim
             var output_buffer_view = TileTensor(
                 output.ptr + buffer_offset,
-                row_major(Coord(Idx(inner_dim))),
+                row_major(Coord(inner_dim)),
             )
             var indices = _get_nd_indices_from_flat_index(i, shape, rank - 1)
 
@@ -1113,7 +1112,7 @@ def _softmax_temperature_kernel[
 def softmax_with_temperature[
     dtype: DType,
     temp_dtype: DType = DType.float32,
-    TempLayoutType: TensorLayout = RowMajorLayout[RuntimeInt[DType.int64]],
+    TempLayoutType: TensorLayout = RowMajorLayout[Int64],
 ](
     ctx: DeviceContext,
     input: TileTensor[dtype, ...],

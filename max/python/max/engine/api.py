@@ -676,6 +676,15 @@ class InferenceSession:
                     for name, weight in model._weights.items()
                 }
 
+            # Seed the model module with kernel decls + the opaque-type
+            # mapping from the graph's KernelLibrary. The GC pipeline detects
+            # the mapping attribute and skips `mogg-import-packages`, so the
+            # expensive package-loading step (run once at KernelLibrary
+            # construction) doesn't repeat on every compile.
+            kernel_library = getattr(model, "_kernel_library", None)
+            if kernel_library is not None:
+                kernel_library._analysis.seed_kernel_decls(module.mlir_module)
+
             handle = self._compile_module(module, custom_extensions_final)
         elif isinstance(model, Module):
             module = model

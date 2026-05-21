@@ -168,7 +168,7 @@ def bench_concat[
             ):
                 abort(String("mismatch at coords ", out_coords))
 
-        elementwise[check, 1](input_shape)
+        elementwise[check, 1](input_shape, ctx)
         offset += input_shape[axis]
 
     _ = input0_device_buffer

@@ -24,9 +24,9 @@ from max.interfaces import (
     BaseContextType,
     PipelineOutputType,
     RequestID,
-    SchedulerResult,
 )
 from max.serve.queue import MAXPullQueue, MAXPushQueue
+from max.serve.scheduler_result import SchedulerResult
 
 logger = logging.getLogger("max.serve")
 

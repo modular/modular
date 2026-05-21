@@ -149,33 +149,23 @@ def test[
     # Construct device buffers.
     var q_device = TileTensor(
         q_device_ptr.unsafe_ptr(),
-        row_major(
-            (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth]())
-        ),
+        row_major((batch_size, seq_len, Idx[num_heads](), Idx[depth]())),
     )
     var k_device = TileTensor(
         k_device_ptr.unsafe_ptr(),
-        row_major(
-            (Idx(batch_size), Idx(num_keys), Idx[kv_num_heads](), Idx[depth]())
-        ),
+        row_major((batch_size, num_keys, Idx[kv_num_heads](), Idx[depth]())),
     )
     var v_device = TileTensor(
         v_device_ptr.unsafe_ptr(),
-        row_major(
-            (Idx(batch_size), Idx(num_keys), Idx[kv_num_heads](), Idx[depth]())
-        ),
+        row_major((batch_size, num_keys, Idx[kv_num_heads](), Idx[depth]())),
     )
     var mask4d = TileTensor(
         mask_device_ptr.unsafe_ptr(),
-        row_major(
-            (Idx(batch_size), Idx(num_heads), Idx(seq_len), Idx(num_keys))
-        ),
+        row_major((batch_size, num_heads, seq_len, num_keys)),
     )
     var output_device = TileTensor(
         output_device_ptr.unsafe_ptr(),
-        row_major(
-            (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth]())
-        ),
+        row_major((batch_size, seq_len, Idx[num_heads](), Idx[depth]())),
     )
 
     @parameter
@@ -222,29 +212,21 @@ def test[
 
     var q_ref_device = TileTensor(
         q_ref_device_ptr.unsafe_ptr(),
-        row_major(
-            (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth]())
-        ),
+        row_major((batch_size, seq_len, Idx[num_heads](), Idx[depth]())),
     )
     var k_ref_device = TileTensor(
         k_ref_device_ptr.unsafe_ptr(),
-        row_major(
-            (Idx(batch_size), Idx(num_keys), Idx[kv_num_heads](), Idx[depth]())
-        ),
+        row_major((batch_size, num_keys, Idx[kv_num_heads](), Idx[depth]())),
     )
     var v_ref_device = TileTensor(
         v_ref_device_ptr.unsafe_ptr(),
-        row_major(
-            (Idx(batch_size), Idx(num_keys), Idx[kv_num_heads](), Idx[depth]())
-        ),
+        row_major((batch_size, num_keys, Idx[kv_num_heads](), Idx[depth]())),
     )
     var output_ref_device_ptr = ctx.enqueue_create_buffer[output_type](o_size)
     ctx.enqueue_copy(output_ref_device_ptr, output_ptr)
     var output_device_ref = TileTensor(
         output_ref_device_ptr.unsafe_ptr(),
-        row_major(
-            (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth]())
-        ),
+        row_major((batch_size, seq_len, Idx[num_heads](), Idx[depth]())),
     )
 
     mha_gpu_naive(

@@ -40,7 +40,6 @@ from layout import (
     Idx,
     LayoutTensor,
     RowMajorLayout,
-    RuntimeInt,
     RuntimeLayout,
     TensorLayout,
     TileTensor,
@@ -426,7 +425,7 @@ def _matmul_gpu[
     epilogue_tensor: OptionalReg[
         TileTensor[
             c.dtype,
-            RowMajorLayout[RuntimeInt[DType.int64], RuntimeInt[DType.int64]],
+            RowMajorLayout[Int64, Int64],
             ImmutAnyOrigin,
         ]
     ] = None,
@@ -1645,9 +1644,9 @@ def multistage_gemm[
             work_space_data,
             row_major(
                 Coord(
-                    Idx(runtime_config.num_k_partitions),
-                    Idx(M),
-                    Idx(N),
+                    runtime_config.num_k_partitions,
+                    M,
+                    N,
                 )
             ),
         )

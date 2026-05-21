@@ -333,25 +333,23 @@ def bench_dense[
     ctx.synchronize()
 
     var a_tt = TileTensor[mut=False](
-        a_dev, row_major(Coord(Idx(total_routes), Idx[packed_K]()))
+        a_dev, row_major(Coord(total_routes, Idx[packed_K]()))
     )
     var b_tt = TileTensor[mut=False](
         b_dev, row_major[num_experts, N, packed_K]()
     )
     var sfa_tt = TileTensor[mut=False](
-        a_scales_dev, row_major(Coord(Idx(total_routes), Idx[scale_K]()))
+        a_scales_dev, row_major(Coord(total_routes, Idx[scale_K]()))
     )
     var sfb_tt = TileTensor[mut=False](
         b_scales_dev, row_major[num_experts, N, scale_K]()
     )
     var aoff_tt = TileTensor(
-        a_offsets_dev, row_major(Coord(Idx(num_active_experts + 1)))
+        a_offsets_dev, row_major(Coord(num_active_experts + 1))
     )
-    var ei_tt = TileTensor(
-        expert_ids_dev, row_major(Coord(Idx(num_active_experts)))
-    )
+    var ei_tt = TileTensor(expert_ids_dev, row_major(Coord(num_active_experts)))
     var c_tt = TileTensor[mut=True](
-        c_dev, row_major(Coord(Idx(total_routes), Idx[N]()))
+        c_dev, row_major(Coord(total_routes, Idx[N]()))
     )
 
     @parameter
@@ -491,7 +489,7 @@ def bench_routed[
 
     var a_tt = TileTensor[mut=False](
         a_dev.unsafe_ptr().as_immutable(),
-        row_major(Coord(Idx(M), Idx[packed_K]())),
+        row_major(Coord(M, Idx[packed_K]())),
     )
     var b_pre_tt = TileTensor[mut=False](
         b_pre_dev.unsafe_ptr().as_immutable(),
@@ -499,7 +497,7 @@ def bench_routed[
     )
     var sfa_pre_tt = TileTensor[mut=False](
         sfa_pre_dev.unsafe_ptr().as_immutable(),
-        row_major(Coord(Idx[1](), Idx(size_expert_ids * sfa_per_block_bytes))),
+        row_major(Coord(Idx[1](), size_expert_ids * sfa_per_block_bytes)),
     )
     var sfb_pre_tt = TileTensor[mut=False](
         sfb_pre_dev.unsafe_ptr().as_immutable(),
@@ -507,14 +505,14 @@ def bench_routed[
     )
     var sti_tt = TileTensor[mut=False](
         sti_dev.unsafe_ptr().as_immutable(),
-        row_major(Coord(Idx(size_expert_ids * sort_block_m))),
+        row_major(Coord(size_expert_ids * sort_block_m)),
     )
     var ei_tt = TileTensor[mut=False](
         ei_dev.unsafe_ptr().as_immutable(),
-        row_major(Coord(Idx(size_expert_ids))),
+        row_major(Coord(size_expert_ids)),
     )
     var c_tt = TileTensor[mut=True](
-        c_dev, row_major(Coord(Idx(total_routes), Idx[N]()))
+        c_dev, row_major(Coord(total_routes, Idx[N]()))
     )
 
     @parameter

@@ -37,10 +37,3 @@ def register_internal(name: StaticString):
       name: The name of the op to register.
     """
     return
-
-
-def __mogg_intrinsic_attr(intrin: StaticString):
-    """
-    Attaches the given intrinsic annotation onto the function.
-    """
-    return

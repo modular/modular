@@ -68,7 +68,7 @@ def tpool_patch_merger_kernel[
     comptime assert x_tile.flat_rank == 2, "x_tile must be rank 2"
     comptime assert out_tile.flat_rank == 2, "out_tile must be rank 2"
     comptime assert grid_thws.flat_rank == 2, "grid_thws must be rank 2"
-    # Provide evidence that flat_rank >= 2 for the Coord(Idx(...), Idx(...)) accesses below.
+    # Provide evidence that flat_rank >= 2 for the Coord(..., ...) accesses below.
     comptime assert grid_thws.flat_rank >= 2
     comptime assert x_tile.flat_rank >= 2
     comptime assert out_tile.flat_rank >= 2
@@ -81,9 +81,9 @@ def tpool_patch_merger_kernel[
     if vid >= n_vids:
         return
 
-    var t = Int(grid_thws[Coord(Idx(vid), Idx[0]())])
-    var h = Int(grid_thws[Coord(Idx(vid), Idx[1]())])
-    var w = Int(grid_thws[Coord(Idx(vid), Idx[2]())])
+    var t = Int(grid_thws[Coord(vid, Idx[0]())])
+    var h = Int(grid_thws[Coord(vid, Idx[1]())])
+    var w = Int(grid_thws[Coord(vid, Idx[2]())])
 
     var new_H = h // kH
     var new_W = w // kW
@@ -98,9 +98,9 @@ def tpool_patch_merger_kernel[
     var in_offset: Int = 0
     var out_offset: Int = 0
     for i in range(vid):
-        var ti = Int(grid_thws[Coord(Idx(i), Idx[0]())])
-        var hi = Int(grid_thws[Coord(Idx(i), Idx[1]())])
-        var wi = Int(grid_thws[Coord(Idx(i), Idx[2]())])
+        var ti = Int(grid_thws[Coord(i, Idx[0]())])
+        var hi = Int(grid_thws[Coord(i, Idx[1]())])
+        var wi = Int(grid_thws[Coord(i, Idx[2]())])
         in_offset += ti * hi * wi
         out_offset += hi * wi
 
@@ -118,9 +118,9 @@ def tpool_patch_merger_kernel[
         var acc = Scalar[dtype](0)
         for t_i in range(t):
             var row = in_offset + t_i * (h * w) + spatial_flat
-            acc += x_tile[Coord(Idx(row), Idx(d))]
+            acc += x_tile[Coord(row, d)]
         acc /= Scalar[dtype](t)
-        out_tile.store(Coord(Idx(out_offset + pat_idx), Idx(d)), acc)
+        out_tile.store(Coord(out_offset + pat_idx, d), acc)
     else:
         var d_start = (d_tile * num_threads + tid) * vec_width
         if d_start >= D:
@@ -128,10 +128,10 @@ def tpool_patch_merger_kernel[
         var acc = SIMD[dtype, vec_width](0)
         for t_i in range(t):
             var row = in_offset + t_i * (h * w) + spatial_flat
-            acc += x_tile.load[width=vec_width](Coord(Idx(row), Idx(d_start)))
+            acc += x_tile.load[width=vec_width](Coord(row, d_start))
         acc /= Scalar[dtype](t)
         out_tile.store[width=vec_width](
-            Coord(Idx(out_offset + pat_idx), Idx(d_start)), acc
+            Coord(out_offset + pat_idx, d_start), acc
         )
 
 

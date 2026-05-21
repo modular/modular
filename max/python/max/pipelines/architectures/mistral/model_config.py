@@ -21,16 +21,19 @@ from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn.kv_cache import KVCacheParams
 from max.nn.transformer import ReturnLogits
-from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
+from max.pipelines.lib import MAXModelConfig, PipelineConfig
 from max.pipelines.lib.config.config_enums import supported_encoding_dtype
-from max.pipelines.lib.interfaces.arch_config import ArchConfigWithKVCache
+from max.pipelines.lib.interfaces.arch_config import (
+    ArchConfigWithKVCache,
+    ArchConfigWithStoredKVParams,
+)
 from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
 from transformers import AutoConfig
 from typing_extensions import Self, override
 
 
 @dataclass(kw_only=True)
-class MistralConfig(ArchConfigWithKVCache):
+class MistralConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
     """Configuration for Mistral models."""
 
     # Required fields
@@ -54,39 +57,8 @@ class MistralConfig(ArchConfigWithKVCache):
     return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN
     """Whether to return the last token, all logits, or a variable number of logits."""
 
-    def get_kv_params(self) -> KVCacheParams:
-        return self.kv_params
-
     def get_max_seq_len(self) -> int:
         return self.max_seq_len
-
-    @staticmethod
-    def construct_kv_params(
-        huggingface_config: AutoConfig,
-        pipeline_config: PipelineConfig,
-        devices: list[DeviceRef],
-        kv_cache_config: KVCacheConfig,
-        cache_dtype: DType,
-    ) -> KVCacheParams:
-        return kv_cache_config.to_params(
-            dtype=cache_dtype,
-            n_kv_heads=huggingface_config.num_key_value_heads,
-            head_dim=MistralConfig.get_head_dim(huggingface_config),
-            num_layers=MistralConfig.get_num_layers(huggingface_config),
-            devices=devices,
-            data_parallel_degree=pipeline_config.model.data_parallel_degree,
-        )
-
-    @staticmethod
-    def get_head_dim(huggingface_config: AutoConfig) -> int:
-        return getattr(huggingface_config, "head_dim", None) or (
-            huggingface_config.hidden_size
-            // huggingface_config.num_attention_heads
-        )
-
-    @staticmethod
-    def get_num_layers(huggingface_config: AutoConfig) -> int:
-        return huggingface_config.num_hidden_layers
 
     @staticmethod
     def calculate_max_seq_len(

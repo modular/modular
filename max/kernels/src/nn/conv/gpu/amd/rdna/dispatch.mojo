@@ -253,12 +253,8 @@ def dispatch_rdna_conv2d[
             comptime BLOCK_M = 128
             comptime BLOCK_N = 128
 
-            var filter_nk_tt = TileTensor(
-                filter_nk_ptr, row_major(Coord(Idx(N), Idx(K)))
-            )
-            var out_tt = TileTensor(
-                output.ptr, row_major(Coord(Idx(M), Idx(N)))
-            )
+            var filter_nk_tt = TileTensor(filter_nk_ptr, row_major(Coord(N, K)))
+            var out_tt = TileTensor(output.ptr, row_major(Coord(M, N)))
 
             comptime conv_kernel = conv2d_kernel_rdna[
                 output_type,
@@ -319,11 +315,9 @@ def dispatch_rdna_conv2d[
                 block_dim=(im2col_block,),
             )
 
-            var a_tt = TileTensor(im2col_ptr, row_major(Coord(Idx(M), Idx(K))))
-            var b_tt = TileTensor(
-                filter_nk_ptr, row_major(Coord(Idx(N), Idx(K)))
-            )
-            var c_tt = TileTensor(output.ptr, row_major(Coord(Idx(M), Idx(N))))
+            var a_tt = TileTensor(im2col_ptr, row_major(Coord(M, K)))
+            var b_tt = TileTensor(filter_nk_ptr, row_major(Coord(N, K)))
+            var c_tt = TileTensor(output.ptr, row_major(Coord(M, N)))
 
             _matmul_gpu[
                 use_tensor_core=True,

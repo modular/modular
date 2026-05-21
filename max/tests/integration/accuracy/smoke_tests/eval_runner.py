@@ -167,7 +167,7 @@ def call_eval(
             "gpt-oss",
             "internvl3_5",
             "qwen3",
-            "kimi-k2.5",
+            "kimi-k2",
             "minimax-m2",
             "step-3.5",
         )

@@ -45,6 +45,7 @@ kimik2_5_arch = SupportedArchitecture(
     task=PipelineTask.TEXT_GENERATION,
     example_repo_ids=[
         "nvidia/Kimi-K2.5-NVFP4",
+        "nvidia/Kimi-K2.6-NVFP4",
     ],
     default_encoding="bfloat16",
     supported_encodings={

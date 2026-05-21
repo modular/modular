@@ -54,7 +54,6 @@ from std.utils.index import StaticTuple
 from layout import (
     Coord,
     Idx,
-    RuntimeInt,
     TensorLayout,
     TileTensor,
     row_major,
@@ -132,11 +131,11 @@ def _test_swiglu_interleave[
     )
 
     # ---- Matmul I/O buffers ----
-    var a_shape = row_major(Coord(Idx(Int(M)), Idx[packed_K]()))
+    var a_shape = row_major(Coord(Int(M), Idx[packed_K]()))
     var b_shape = row_major(
         Coord(Idx[num_experts](), Idx[N](), Idx[packed_K]())
     )
-    var c_shape = row_major(Coord(Idx(Int(M)), Idx[N]()))
+    var c_shape = row_major(Coord(Int(M), Idx[N]()))
 
     var a_size = M * packed_K
     var b_size = num_experts * N * packed_K
@@ -234,7 +233,7 @@ def _test_swiglu_interleave[
 
     var a_scales_shape = row_major(
         Coord(
-            Idx(Int(a_scale_dim0)),
+            Int(a_scale_dim0),
             Idx[k_groups](),
             Idx[SF_ATOM_M[0]](),
             Idx[SF_ATOM_M[1]](),
@@ -274,11 +273,11 @@ def _test_swiglu_interleave[
 
     # ---- SwiGLU output buffers (NVFP4 packed + 5D e4m3 SF tile) ----
     comptime k_groups_swiglu = ceildiv(H, NVFP4_SF_VECTOR_SIZE * SF_ATOM_K)
-    var O_shape = row_major(Coord(Idx(Int(M)), Idx[packed_H]()))
+    var O_shape = row_major(Coord(Int(M), Idx[packed_H]()))
     var O_size = M * packed_H
     var swiglu_scales_shape = row_major(
         Coord(
-            Idx(Int(a_scale_dim0)),
+            Int(a_scale_dim0),
             Idx[k_groups_swiglu](),
             Idx[SF_ATOM_M[0]](),
             Idx[SF_ATOM_M[1]](),
@@ -449,7 +448,7 @@ def _test_swiglu_interleave[
         a_scales_device,
         row_major(
             Coord(
-                RuntimeInt[DType.int64](Scalar[DType.int64](a_scale_dim0)),
+                Int64(a_scale_dim0),
                 Idx[k_groups](),
                 Idx[SF_ATOM_M[0]](),
                 Idx[SF_ATOM_M[1]](),
@@ -485,11 +484,7 @@ def _test_swiglu_interleave[
     ).as_any_origin()
     var expert_scales_tt = TileTensor(
         expert_scales_device,
-        row_major(
-            Coord(
-                RuntimeInt[DType.int64](Scalar[DType.int64](num_experts)),
-            )
-        ),
+        row_major(Coord(Int64(num_experts))),
     ).as_any_origin()
 
     # ---- Path REF: matmul on W ----

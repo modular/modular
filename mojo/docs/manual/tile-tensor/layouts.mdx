@@ -163,16 +163,16 @@ var comptime_coords = coord[4, 4]()
 var runtime_coords = coord[DType.int32]((a, b, c))
 ```
 
-When you need to mix compile-time and run-time values, you can use the
-[`Idx()`](/docs/std/utils/coord/Idx/)
-function to generate a compile-time or run-time integer.
+You can mix compile-time and run-time values:
+use a plain `Int` (or any `CoordLike`) for run-time values,
+and [`Idx[N]()`](/docs/std/utils/coord/Idx/) for compile-time integers.
 
 ```mojo
 comptime comptime_int = Idx[columns]()  # Compile-time int from parameter value
 comptime comptime_int2 = Idx[4]()  # Compile-time int from Int literal
-var runtime_int = Idx(rows)  # Run-time int from dynamic value
-var mixed_shape = Coord((Idx(rows), Idx[columns]()))
-var mixed_layout = row_major((Idx(rows), Idx[columns]()))
+var runtime_int = rows # Run-time int from dynamic value
+var mixed_shape = Coord((rows, Idx[columns]()))
+var mixed_layout = row_major((rows, Idx[columns]()))
 ```
 
 You can create nested `Coord` values by passing nested tuples to the
@@ -350,7 +350,7 @@ var a, b = 4, 8
 var row_major_runtime = row_major(coord[DType.int32]((a, b)))
 
 # Mixed layout with one run-time dimension and one compile-time dimension
-var row_major_mixed = row_major((Idx(rows), Idx[columns]()))
+var row_major_mixed = row_major((rows, Idx[columns]()))
 ```
 
 ### Tiled layouts

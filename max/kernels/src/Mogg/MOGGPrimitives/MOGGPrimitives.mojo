@@ -24,7 +24,6 @@ from compiler_internal.directives import (
     ElementwiseFusion,
     InputFusion,
     OutputFusion,
-    __mogg_intrinsic_attr,
 )
 from std.collections import InlineArray
 from std.gpu.host import DeviceBuffer, DeviceContext
@@ -556,19 +555,17 @@ def mgp_buffer_concat[
 ) raises:
     var output_lt = TileTensor(
         output.unsafe_ptr(),
-        row_major(Coord(Idx(output.size()))),
+        row_major(Coord(output.size())),
     )
     var input_tensors = StaticTuple[_, inputs.size](
-        TileTensor(
-            inputs[0].unsafe_ptr(), row_major(Coord(Idx(inputs[0].size())))
-        )
+        TileTensor(inputs[0].unsafe_ptr(), row_major(Coord(inputs[0].size())))
         .as_any_origin()
         .as_immut()
     )
     for i in range(1, len(inputs)):
         input_tensors[i] = (
             TileTensor(
-                inputs[i].unsafe_ptr(), row_major(Coord(Idx(inputs[i].size())))
+                inputs[i].unsafe_ptr(), row_major(Coord(inputs[i].size()))
             )
             .as_any_origin()
             .as_immut()
@@ -1136,7 +1133,7 @@ def mogg_async_ready(async_ptr: AnyAsyncValueRefPtr):
     external_call["MGP_RT_CreateAsync_chain", NoneType](async_ptr)
 
 
-@register_internal("mogg.async.check_task_error")
+@register_internal("mogg.async.join")
 @no_inline
 def mogg_async_check_task_error(mut error: Optional[Error]) raises:
     """Raises the captured error from an async task, if present.
@@ -1416,8 +1413,6 @@ def simd_select[
 
 
 @register_internal("mogg.elemwise_for_each")
-@__mogg_intrinsic_attr("mogg.for_each")
-@__mogg_intrinsic_attr("mogg.elemwise_for_each")
 @no_inline
 def foreach[
     dtype: DType,
@@ -1467,8 +1462,7 @@ def foreach[
     ](tensor.shape(), ctx)
 
 
-@register_internal("mogg.for_each")
-@__mogg_intrinsic_attr("mogg.for_each")
+@register_internal("mogg.call.foreach")
 @no_inline
 def foreach_fusion[
     dtype: DType,
@@ -1516,8 +1510,6 @@ def foreach_fusion[
 
 
 @register_internal("mogg.for_each.out_func")
-@__mogg_intrinsic_attr("mogg.for_each")
-@__mogg_intrinsic_attr("mogg.for_each.out_func")
 @no_inline
 def foreach_out_func[
     dtype: DType,
@@ -1567,8 +1559,7 @@ def foreach_out_func[
 
 # TensorCopy intrinsic used by view kernels.
 # z is a kernel output, and x a view of the input.
-@register_internal("mogg.view_materialize")
-@__mogg_intrinsic_attr("mogg.view_materialize")
+@register_internal("mogg.call.materialize")
 @doc_hidden
 @no_inline
 def view_copy_impl[

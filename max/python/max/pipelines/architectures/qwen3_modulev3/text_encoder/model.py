@@ -207,8 +207,6 @@ class Qwen3TextEncoderModel(ComponentModel):
         )
 
         outputs = self.model(tokens, attention_bias)
-        if isinstance(outputs, list):
-            outputs = tuple(outputs)
 
         if hidden_state_index is None:
             if isinstance(outputs, tuple) and len(outputs) == 1:

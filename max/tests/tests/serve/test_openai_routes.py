@@ -1268,7 +1268,11 @@ def _make_response_format(
 ) -> TextGenerationResponseFormat:
     """Helper to create response format for testing."""
     return TextGenerationResponseFormat(
-        type="json_schema", json_schema=json_schema, grammar=None
+        type="json_schema",
+        json_schema=json_schema,
+        grammar=None,
+        grammar_enforced=True,
+        tools_forced=False,
     )
 
 
@@ -1277,14 +1281,20 @@ def test_resolve_grammar_constraints_tools_required() -> None:
     tools = _make_tools(["get_weather", "search"])
     response_format = _make_response_format({"type": "object"})
 
-    tool_names, schema = _resolve_grammar_constraints(
-        tools=tools,
-        tool_choice="required",
-        response_format=response_format,
+    tool_names, schema, tools_forced, enforce_from_start = (
+        _resolve_grammar_constraints(
+            tools=tools,
+            tool_choice="required",
+            response_format=response_format,
+        )
     )
 
     assert tool_names == ["get_weather", "search"]
     assert schema is None  # response_format ignored when tools forced
+    assert tools_forced is True  # tool_choice=required forces tools
+    assert (
+        enforce_from_start is True
+    )  # forced tools enforce from the first token
 
 
 def test_resolve_grammar_constraints_named_function() -> None:
@@ -1292,14 +1302,21 @@ def test_resolve_grammar_constraints_named_function() -> None:
     tools = _make_tools(["get_weather", "search"])
     response_format = _make_response_format({"type": "object"})
 
-    tool_names, schema = _resolve_grammar_constraints(
-        tools=tools,
-        tool_choice={"type": "function", "function": {"name": "get_weather"}},
-        response_format=response_format,
+    tool_names, schema, tools_forced, enforce_from_start = (
+        _resolve_grammar_constraints(
+            tools=tools,
+            tool_choice={
+                "type": "function",
+                "function": {"name": "get_weather"},
+            },
+            response_format=response_format,
+        )
     )
 
     assert tool_names == ["get_weather"]
     assert schema is None  # response_format ignored when tools forced
+    assert tools_forced is True  # specific function forces tools
+    assert enforce_from_start is True
 
 
 def test_resolve_grammar_constraints_auto_with_response_format() -> None:
@@ -1307,54 +1324,73 @@ def test_resolve_grammar_constraints_auto_with_response_format() -> None:
     tools = _make_tools(["get_weather", "search"])
     response_format = _make_response_format({"type": "object"})
 
-    tool_names, schema = _resolve_grammar_constraints(
-        tools=tools,
-        tool_choice="auto",
-        response_format=response_format,
+    tool_names, schema, tools_forced, enforce_from_start = (
+        _resolve_grammar_constraints(
+            tools=tools,
+            tool_choice="auto",
+            response_format=response_format,
+        )
     )
 
     assert tool_names == ["get_weather", "search"]
     assert schema == {"type": "object"}
+    assert tools_forced is False  # auto mode doesn't force tools
+    # auto + response_format: enforce from start since schema is in play
+    assert enforce_from_start is True
 
 
 def test_resolve_grammar_constraints_auto_no_response_format() -> None:
-    """Auto mode + no response_format: no grammar generated."""
+    """Auto mode + no response_format: grammar generated for conditional enforcement."""
     tools = _make_tools(["get_weather", "search"])
 
-    tool_names, schema = _resolve_grammar_constraints(
-        tools=tools,
-        tool_choice="auto",
-        response_format=None,
+    tool_names, schema, tools_forced, enforce_from_start = (
+        _resolve_grammar_constraints(
+            tools=tools,
+            tool_choice="auto",
+            response_format=None,
+        )
     )
 
-    assert tool_names is None
+    # auto with tools now generates a grammar so the bitmask can engage
+    # conditionally once a tool-call start token is detected.
+    assert tool_names == ["get_weather", "search"]
     assert schema is None
+    assert tools_forced is False
+    assert enforce_from_start is False  # conditional enforcement
 
 
 def test_resolve_grammar_constraints_response_format_only() -> None:
     """Response format only (no tools): constrain to JSON schema."""
     response_format = _make_response_format({"type": "object"})
 
-    tool_names, schema = _resolve_grammar_constraints(
-        tools=None,
-        tool_choice=None,
-        response_format=response_format,
+    tool_names, schema, tools_forced, enforce_from_start = (
+        _resolve_grammar_constraints(
+            tools=None,
+            tool_choice=None,
+            response_format=response_format,
+        )
     )
 
     assert tool_names is None
     assert schema == {"type": "object"}
+    assert tools_forced is False
+    assert enforce_from_start is False  # no tools, no grammar to enforce
 
 
 def test_resolve_grammar_constraints_no_constraints() -> None:
     """No tools, no response_format: no grammar generated."""
-    tool_names, schema = _resolve_grammar_constraints(
-        tools=None,
-        tool_choice=None,
-        response_format=None,
+    tool_names, schema, tools_forced, enforce_from_start = (
+        _resolve_grammar_constraints(
+            tools=None,
+            tool_choice=None,
+            response_format=None,
+        )
     )
 
     assert tool_names is None
     assert schema is None
+    assert tools_forced is False
+    assert enforce_from_start is False
 
 
 # ============================================================================

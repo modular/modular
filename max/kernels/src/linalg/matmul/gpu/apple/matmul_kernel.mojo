@@ -50,14 +50,14 @@ def _pick_b_slab_layout[
     If=transpose_b,
     Then=type_of(
         Layout(
-            Coord(Idx(k), Idx[SG_N]()),
-            Coord(Idx[1](), Idx(k)),
+            Coord(k, Idx[SG_N]()),
+            Coord(Idx[1](), k),
         )
     ),
     Else=type_of(
         Layout(
-            Coord(Idx(k), Idx[SG_N]()),
-            Coord(Idx(n), Idx[1]()),
+            Coord(k, Idx[SG_N]()),
+            Coord(n, Idx[1]()),
         )
     ),
 ]:
@@ -71,29 +71,29 @@ def _pick_b_slab_layout[
         If=transpose_b,
         Then=type_of(
             Layout(
-                Coord(Idx(k), Idx[SG_N]()),
-                Coord(Idx[1](), Idx(k)),
+                Coord(k, Idx[SG_N]()),
+                Coord(Idx[1](), k),
             )
         ),
         Else=type_of(
             Layout(
-                Coord(Idx(k), Idx[SG_N]()),
-                Coord(Idx(n), Idx[1]()),
+                Coord(k, Idx[SG_N]()),
+                Coord(n, Idx[1]()),
             )
         ),
     ]
     comptime if transpose_b:
         return rebind[_Ret](
             Layout(
-                Coord(Idx(k), Idx[SG_N]()),
-                Coord(Idx[1](), Idx(k)),
+                Coord(k, Idx[SG_N]()),
+                Coord(Idx[1](), k),
             )
         )
     else:
         return rebind[_Ret](
             Layout(
-                Coord(Idx(k), Idx[SG_N]()),
-                Coord(Idx(n), Idx[1]()),
+                Coord(k, Idx[SG_N]()),
+                Coord(n, Idx[1]()),
             )
         )
 
@@ -190,7 +190,7 @@ def apple_matmul_kernel[
     if tile_m >= grid_m or tile_n >= grid_n:
         return
 
-    var d_mat = TileTensor(d_ptr, row_major(Idx(m), Idx(n)))
+    var d_mat = TileTensor(d_ptr, row_major(m, n))
 
     comptime Mma = MmaOpApple[
         DType.float32,
@@ -226,8 +226,8 @@ def apple_matmul_kernel[
     var a_slab = TileTensor(
         a_ptr + a_row_offset,
         Layout(
-            Coord(Idx[SG_M](), Idx(k)),
-            Coord(Idx(k), Idx[1]()),
+            Coord(Idx[SG_M](), k),
+            Coord(k, Idx[1]()),
         ),
     )
 

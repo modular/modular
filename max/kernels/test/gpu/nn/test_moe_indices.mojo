@@ -203,22 +203,22 @@ def test_moe_create_indices[
 
     var token_expert_order = TileTensor(
         token_expert_order_buffer_device,
-        row_major(Idx(token_expert_order_length)),
+        row_major(token_expert_order_length),
     )
 
     var expert_start_indices = TileTensor(
         expert_start_indices_buffer,
-        row_major(Idx(num_experts + 1)),
+        row_major(num_experts + 1),
     )
 
     var restore_token_order = TileTensor(
         restore_token_order_buffer,
-        row_major(Idx(token_expert_order_length)),
+        row_major(token_expert_order_length),
     )
 
     var expert_ids = TileTensor(
         expert_ids_buffer,
-        row_major(Idx(num_experts)),
+        row_major(num_experts),
     )
 
     var expert_usage_stats = TileTensor(
@@ -228,12 +228,12 @@ def test_moe_create_indices[
 
     var top_k = TileTensor(
         top_k_buffer_device,
-        row_major(Idx(token_expert_order_length)),
+        row_major(token_expert_order_length),
     )
 
     var top_k_host = TileTensor(
         top_k_buffer_host,
-        row_major(Idx(token_expert_order_length)),
+        row_major(token_expert_order_length),
     )
 
     ctx.synchronize()

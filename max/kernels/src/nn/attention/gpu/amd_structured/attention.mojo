@@ -36,7 +36,6 @@ from layout.swizzle import Swizzle
 from layout.tile_layout import (
     ComptimeInt,
     Idx,
-    RuntimeInt,
     Layout as TileLayout,
 )
 from layout.coord import Coord
@@ -197,7 +196,7 @@ struct Attention[
     ]
 
     # --- TileTensor layouts for Q, output, and KV tiles ---
-    # RuntimeInt row dim carries `valid_rows` for SRD OOB clamping.
+    # Scalar row dim carries `valid_rows` for SRD OOB clamping.
 
     comptime kv_num_heads = Self.num_heads // Self.group
 
@@ -205,7 +204,7 @@ struct Attention[
         Self.num_heads * Self.q_depth if not Self.token_gen else Self.q_depth
     )
     comptime QTileLayout = TileLayout[
-        Coord[RuntimeInt[DType.int64], ComptimeInt[Self.q_depth]].element_types,
+        Coord[Int64, ComptimeInt[Self.q_depth]].element_types,
         Coord[ComptimeInt[Self._q_stride0], ComptimeInt[1]].element_types,
     ]
 
@@ -214,15 +213,13 @@ struct Attention[
         * Self.output_depth if not Self.token_gen else Self.output_depth
     )
     comptime OutputTileLayout = TileLayout[
-        Coord[
-            RuntimeInt[DType.int64], ComptimeInt[Self.output_depth]
-        ].element_types,
+        Coord[Int64, ComptimeInt[Self.output_depth]].element_types,
         Coord[ComptimeInt[Self._output_stride0], ComptimeInt[1]].element_types,
     ]
 
     comptime _kv_stride0 = Self.kv_num_heads * Self.depth
     comptime KvTileLayout = TileLayout[
-        Coord[RuntimeInt[DType.int64], ComptimeInt[Self.depth]].element_types,
+        Coord[Int64, ComptimeInt[Self.depth]].element_types,
         Coord[ComptimeInt[Self._kv_stride0], ComptimeInt[1]].element_types,
     ]
 
@@ -377,7 +374,7 @@ struct Attention[
             head_idx,
             Self.KvTileLayout(
                 Coord(
-                    RuntimeInt[DType.int64](Int64(kv_tile_num_rows)),
+                    Int64(kv_tile_num_rows),
                     Idx[Self.depth](),
                 ),
                 Coord(Idx[Self._kv_stride0](), Idx[1]()),
@@ -444,7 +441,7 @@ struct Attention[
 
         # Pre-offset Q/output TileTensors. `valid_rows` clamps the final
         # prefill row tile; decode always sees exactly `group` rows. The
-        # RuntimeInt row dim is what `make_amd_buffer_resource` reads to
+        # Scalar row dim is what `make_amd_buffer_resource` reads to
         # compute the SRD OOB bound.
         var valid_rows: UInt32 = UInt32(Self.group) if Self.token_gen else min(
             UInt32(Self.BM),
@@ -459,7 +456,7 @@ struct Attention[
             ptr=q + Int(q_offset),
             layout=Self.QTileLayout(
                 Coord(
-                    RuntimeInt[DType.int64](Int64(valid_rows)),
+                    Int64(valid_rows),
                     Idx[Self.q_depth](),
                 ),
                 Coord(Idx[Self._q_stride0](), Idx[1]()),
@@ -473,7 +470,7 @@ struct Attention[
             ptr=output_ptr + Int(output_offset),
             layout=Self.OutputTileLayout(
                 Coord(
-                    RuntimeInt[DType.int64](Int64(valid_rows)),
+                    Int64(valid_rows),
                     Idx[Self.output_depth](),
                 ),
                 Coord(Idx[Self._output_stride0](), Idx[1]()),

@@ -163,10 +163,8 @@ def test_combine[
         device_output_2_bufs_list.append(ctx.enqueue_create_buffer[input_type](n_slots * n_tokens_per_rank * top_k * hidden_size))
     # fmt: on
 
-    var topk_ids_layout = row_major(Idx(n_tokens_per_rank), Idx[top_k]())
-    var input_tokens_layout = row_major(
-        (Idx(n_tokens_per_rank), Idx[hidden_size]())
-    )
+    var topk_ids_layout = row_major(n_tokens_per_rank, Idx[top_k]())
+    var input_tokens_layout = row_major((n_tokens_per_rank, Idx[hidden_size]()))
     var output_tt_layout = row_major(
         (Idx[max_recv_num_tokens](), Idx[hidden_size]())
     )
@@ -176,7 +174,7 @@ def test_combine[
         (Idx[max_recv_num_tokens](), Idx[2]())
     )
     var output_2_layout = row_major(
-        (Idx(n_tokens_per_rank), Idx[top_k](), Idx[hidden_size]())
+        (n_tokens_per_rank, Idx[top_k](), Idx[hidden_size]())
     )
 
     # Initialize the inputs

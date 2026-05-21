@@ -26,7 +26,6 @@ from max.driver import CPU, Device
 from max.interfaces import (
     GenerationStatus,
     RequestID,
-    SchedulerResult,
     TextGenerationInputs,
     TextGenerationOutput,
     TokenBuffer,
@@ -62,6 +61,7 @@ from max.serve.scheduler.prefill_scheduler import (
     PrefillScheduler,
     load_prefill_scheduler,
 )
+from max.serve.scheduler_result import SchedulerResult
 from max.serve.worker_interface.zmq_queue import (
     ClientIdentity,
     generate_zmq_ipc_path,

@@ -31,7 +31,6 @@ from layout import (
     CoordLike,
     Idx,
     RowMajorLayout,
-    RuntimeInt,
     TensorLayout,
     TileTensor,
 )
@@ -278,18 +277,19 @@ def _rope_split_store_ragged_impl[
         head_size % kernel_simd_width == 0
     ), "head_size must be divisible by simd_width"
 
+    var device_ctx = context.value() if context else DeviceContext(api="cpu")
     comptime if is_cpu[target]():
         elementwise[
             func=rope_split_store_fn,
             simd_width=kernel_simd_width,
             target=target,
-        ](launch_shape)
+        ](launch_shape, device_ctx)
     else:
         elementwise[
             func=rope_split_store_fn,
             simd_width=kernel_simd_width,
             target=target,
-        ](launch_shape, context.value())
+        ](launch_shape, device_ctx)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -399,7 +399,7 @@ def _rope_split_store_ragged_with_position_ids[
     ](),
     mrope_section: Optional[Coord[*mrope_types]] = None,
     PositionIdsLayoutType: TensorLayout = RowMajorLayout[
-        *Coord[RuntimeInt[DType.int64], RuntimeInt[DType.int64]].element_types
+        *Coord[Int64, Int64].element_types
     ],
 ](
     qkv: TileTensor[dtype, ...],
@@ -492,7 +492,7 @@ def rope_split_store_paged_ragged_with_position_ids[
     ](),
     mrope_section: Optional[Coord[*mrope_types]] = None,
     PositionIdsLayoutType: TensorLayout = RowMajorLayout[
-        *Coord[RuntimeInt[DType.int64], RuntimeInt[DType.int64]].element_types
+        *Coord[Int64, Int64].element_types
     ],
 ](
     qkv: TileTensor[dtype, ...],

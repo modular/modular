@@ -259,23 +259,21 @@ struct BlockwiseFP8Accumulator[
             b_scale_next_n = Int(begin_n) if begin_n < end_n else Self.MMA_N
 
             b_scale_0 = rebind[Scalar[Self.accum_type]](
-                b_scales.load(Coord(Idx(b_scale_idx0), Idx(k_iter))).cast[
+                b_scales.load(Coord(b_scale_idx0, k_iter)).cast[
                     Self.accum_type
                 ]()
             )
             if b_scale_next_n < Self.MMA_N:
                 b_scale_1 = rebind[Scalar[Self.accum_type]](
-                    b_scales.load(
-                        Coord(Idx(b_scale_idx0 + 1), Idx(k_iter))
-                    ).cast[Self.accum_type]()
+                    b_scales.load(Coord(b_scale_idx0 + 1, k_iter)).cast[
+                        Self.accum_type
+                    ]()
                 )
             else:
                 b_scale_1 = 0.0
         else:
             b_scale_0 = rebind[Scalar[Self.accum_type]](
-                b_scales.load(Coord(Idx(bn), Idx(k_iter))).cast[
-                    Self.accum_type
-                ]()
+                b_scales.load(Coord(bn, k_iter)).cast[Self.accum_type]()
             )
             b_scale_1 = 0.0
 

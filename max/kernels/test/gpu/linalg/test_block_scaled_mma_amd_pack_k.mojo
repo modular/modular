@@ -171,28 +171,28 @@ def _pack_k_kernel[
 
     # Store packed acc[i] at row (4*i + lane), broadcast acc[i] same row in second buffer.
     packed_out.store[width=4](
-        Coord(Idx(0 * WARP_SIZE + lane), Idx[0]()), packed_acc0
+        Coord(0 * WARP_SIZE + lane, Idx[0]()), packed_acc0
     )
     packed_out.store[width=4](
-        Coord(Idx(1 * WARP_SIZE + lane), Idx[0]()), packed_acc1
+        Coord(1 * WARP_SIZE + lane, Idx[0]()), packed_acc1
     )
     packed_out.store[width=4](
-        Coord(Idx(2 * WARP_SIZE + lane), Idx[0]()), packed_acc2
+        Coord(2 * WARP_SIZE + lane, Idx[0]()), packed_acc2
     )
     packed_out.store[width=4](
-        Coord(Idx(3 * WARP_SIZE + lane), Idx[0]()), packed_acc3
+        Coord(3 * WARP_SIZE + lane, Idx[0]()), packed_acc3
     )
     broadcast_out.store[width=4](
-        Coord(Idx(0 * WARP_SIZE + lane), Idx[0]()), bcast_acc0
+        Coord(0 * WARP_SIZE + lane, Idx[0]()), bcast_acc0
     )
     broadcast_out.store[width=4](
-        Coord(Idx(1 * WARP_SIZE + lane), Idx[0]()), bcast_acc1
+        Coord(1 * WARP_SIZE + lane, Idx[0]()), bcast_acc1
     )
     broadcast_out.store[width=4](
-        Coord(Idx(2 * WARP_SIZE + lane), Idx[0]()), bcast_acc2
+        Coord(2 * WARP_SIZE + lane, Idx[0]()), bcast_acc2
     )
     broadcast_out.store[width=4](
-        Coord(Idx(3 * WARP_SIZE + lane), Idx[0]()), bcast_acc3
+        Coord(3 * WARP_SIZE + lane, Idx[0]()), bcast_acc3
     )
 
 

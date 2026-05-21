@@ -78,7 +78,6 @@ from .request import (
     RequestID,
     RequestType,
 )
-from .scheduler_result import SchedulerResult
 from .status import GenerationStatus
 from .task import InputModality, PipelineTask
 from .tokenizer import PipelineTokenizer
@@ -168,7 +167,6 @@ __all__ = [
     "SamplingParams",
     "SamplingParamsGenerationConfigDefaults",
     "SamplingParamsInput",
-    "SchedulerResult",
     "SharedMemoryArray",
     "SpecDecodingState",
     "TextContentPart",

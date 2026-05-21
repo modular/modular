@@ -29,7 +29,6 @@ from max.interfaces import (
     BatchType,
     GenerationStatus,
     RequestID,
-    SchedulerResult,
     TokenBuffer,
 )
 from max.nn.kv_cache import KVCacheParams, KVConnectorType
@@ -44,6 +43,7 @@ from max.serve.scheduler.audio_generation_scheduler import (
     AudioGenerationSchedulerConfig,
     AudioGenerationSchedulerOutput,
 )
+from max.serve.scheduler_result import SchedulerResult
 
 
 def rand(length: int) -> np.ndarray:

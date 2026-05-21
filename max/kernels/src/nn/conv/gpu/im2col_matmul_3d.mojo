@@ -380,14 +380,12 @@ def dispatch_im2col_matmul_conv3d[
             block_dim=im2col_block,
         )
 
-        var a_tt = TileTensor(
-            im2col_buf, row_major(Coord(Idx(m_count), Idx(K)))
-        )
-        var b_tt = TileTensor(filter_nk_buf, row_major(Coord(Idx(N), Idx(K))))
+        var a_tt = TileTensor(im2col_buf, row_major(Coord(m_count, K)))
+        var b_tt = TileTensor(filter_nk_buf, row_major(Coord(N, K)))
         # Output is NDHWC = [batch, D_out, H_out, W_out, C_out]; rows in the
         # flattened [M, N] layout are contiguous, so we advance by m_offset * N.
         var c_ptr = output.ptr + m_offset * N
-        var c_tt = TileTensor(c_ptr, row_major(Coord(Idx(m_count), Idx(N))))
+        var c_tt = TileTensor(c_ptr, row_major(Coord(m_count, N)))
 
         comptime if maybe_epilogue_func:
             comptime epilogue_5d = maybe_epilogue_func.value()

@@ -93,7 +93,7 @@ def run_rms_norm_cpu[
     for r, c in product(range(rows), range(cols)):
         var vec = TileTensor(
             input_ptr.unsafe_ptr() + r * cols,
-            row_major(Idx(cols)),
+            row_major(cols),
         )
         var rms_ref = compute_rms(vec, cols, epsilon)
         var idx = r * cols + c

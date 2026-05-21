@@ -87,6 +87,7 @@ HF_MODELS: dict[str, set[str]] = {
     "modularai/Llama-3.1-405B-Instruct-autofp8": NON_XL | {"max"},
     "nvidia/DeepSeek-V3.1-NVFP4": NON_XL | {"8xMI355"},
     "nvidia/Kimi-K2.5-NVFP4": NON_XL | {"8xMI355"},
+    "nvidia/Kimi-K2.6-NVFP4": NON_XL | {"8xMI355", "max"},  # max: not in released version yet
     "OpenGVLab/InternVL3_5-8B-Instruct": MULTI | {"max", "sglang"},
     "Qwen/Qwen2.5-7B-Instruct": MULTI,
     "Qwen/Qwen2.5-VL-7B-Instruct": MULTI,

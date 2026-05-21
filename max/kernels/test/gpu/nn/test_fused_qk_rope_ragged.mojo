@@ -102,7 +102,7 @@ def execute_fused_qk_rope_ragged(
     comptime paged_lut_layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
 
     # Define TileTensor layouts (compile-time static where possible)
-    var row_offsets_tile_layout = row_major(Idx(batch_size + 1))
+    var row_offsets_tile_layout = row_major(batch_size + 1)
     comptime freqs_tile_layout = row_major[max_seq_len, kv_params.head_size]()
 
     # Create shapes
@@ -328,7 +328,7 @@ def execute_fused_qk_rope_ragged(
         true_ce_q_ragged_device,
         row_major(
             (
-                Idx(true_ce_total_length),
+                true_ce_total_length,
                 Idx[num_q_heads](),
                 Idx[kv_params.head_size](),
             )
@@ -338,7 +338,7 @@ def execute_fused_qk_rope_ragged(
         mixed_ce_q_ragged_device,
         row_major(
             (
-                Idx(mixed_ce_total_length),
+                mixed_ce_total_length,
                 Idx[num_q_heads](),
                 Idx[kv_params.head_size](),
             )
@@ -348,7 +348,7 @@ def execute_fused_qk_rope_ragged(
         true_ce_output_device,
         row_major(
             (
-                Idx(true_ce_total_length),
+                true_ce_total_length,
                 Idx[num_q_heads](),
                 Idx[kv_params.head_size](),
             )
@@ -358,7 +358,7 @@ def execute_fused_qk_rope_ragged(
         mixed_ce_output_device,
         row_major(
             (
-                Idx(mixed_ce_total_length),
+                mixed_ce_total_length,
                 Idx[num_q_heads](),
                 Idx[kv_params.head_size](),
             )

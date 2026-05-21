@@ -241,10 +241,10 @@ def bench_conv3d[
         input_dev,
         row_major(
             Coord(
-                Idx(batch),
-                Idx(in_depth),
-                Idx(in_height),
-                Idx(in_width),
+                batch,
+                in_depth,
+                in_height,
+                in_width,
                 Idx[in_channels](),
             )
         ),
@@ -265,10 +265,10 @@ def bench_conv3d[
         output_dev,
         row_major(
             Coord(
-                Idx(batch),
-                Idx(d_out),
-                Idx(h_out),
-                Idx(w_out),
+                batch,
+                d_out,
+                h_out,
+                w_out,
                 Idx[out_channels](),
             )
         ),

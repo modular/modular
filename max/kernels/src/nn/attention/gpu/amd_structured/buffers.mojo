@@ -654,7 +654,7 @@ struct PRegisterBuffer[
 
         var mma_tile_res = smem_warp_tile.tile_with_offset[
             Self.mma_shape[0], Self.mma_shape[1]
-        ](Coord(Idx(m_mma), Idx(n_mma)))
+        ](Coord(m_mma, n_mma))
         var mma_tile = mma_tile_res[0]
         # Element offset of mma_tile from smem_warp_tile.ptr
         # (== block_base), used below to build the swizzle argument
