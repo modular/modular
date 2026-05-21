@@ -99,3 +99,10 @@ struct TrivialFieldGen[T: Movable](Movable):
     var z: Self.T
     var y: Int
     var q: Self.T
+
+# CHECK-LABEL: lit.struct.decl @TestTrivialRegisterPassable
+# CHECK: lit.alias.decl __del__is_trivial: !Bool = <{:i1 1}>
+# CHECK: lit.alias.decl __move_ctor_is_trivial: !Bool = <{:i1 1}>
+# CHECK: lit.alias.decl __copy_ctor_is_trivial: !Bool = <{:i1 1}>
+struct TestTrivialRegisterPassable[T: TrivialRegisterPassable](Copyable):
+    var _value: Self.T

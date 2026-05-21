@@ -8,6 +8,8 @@
 # RUN: kgen-opt %t.mlir -lower-semantic-cf -check-lifetimes -verify-parameters -verify-diagnostics | FileCheck %s
 # RUN: %parse-mojo-isolated %s --mlir-print-debuginfo --debug-level full -o /dev/null
 
+def marker(): pass
+
 # CHECK-LABEL: lit.struct.decl @MemExample
 struct MemExample(ImplicitlyCopyable, Copyable):
   var x : Int
@@ -1478,3 +1480,30 @@ struct TestRaiseFromInit:
         # CHECK-NEXT: kgen.param.constant: !Int = <{42}>
         self.y = String()
         raise 42
+
+# This is a type whose members are sometimes trivial!
+struct OccasionallyTrivial[a: Int]:
+    # This is trivial when a == 0.
+    def __del__(deinit self):
+        pass
+
+    comptime __del__is_trivial: Bool = Self.a == 0
+
+    def use(ref self): pass
+
+# CHECK-LABEL: lit.fn @"test_is_trivial
+def test_is_trivial(var a0: OccasionallyTrivial[0],
+                    var a1: OccasionallyTrivial[1]):
+
+    a0.use()
+    # CHECK-NEXT: lit.call {{.*}}OccasionallyTrivial::@"use{{.*}}(%a0)
+    # CHECK-NOT: __del__
+
+    # CHECK-NEXT: lit.call {{.*}}marker
+    marker()
+
+    a1.use()
+    # CHECK-NEXT: lit.call {{.*}}OccasionallyTrivial::@"use{{.*}}(%a1)
+    # CHECK-NEXT: lit.call {{.*}}OccasionallyTrivial::@"__del__{{.*}}(%a1)
+
+    # CHECK-NEXT: kgen.param.constant: none

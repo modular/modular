@@ -74,10 +74,6 @@ public:
   /// itself is non-null.
   Type extractMetaType() const;
 
-  /// Whether this type represent a user defined type, this practically means
-  /// that you can find a ASTDecl for the type.
-  bool isUserDefined() const;
-
   /// If this is a user declared type, return the declaration that this came
   /// from.  If this is a raw MLIR type or a metatype, return null.
   ASTDecl *getDecl(SharedState &shared) const;
