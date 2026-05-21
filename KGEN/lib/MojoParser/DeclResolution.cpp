@@ -458,11 +458,10 @@ LogicalResult Decorators::validateCompilerDecorator(TypedAttr attr) {
       "doc_hidden",
       "lldb_formatter_wrapping_type",
 
-      KGEN::MOGG_REGISTER_INTRINSIC,
-      KGEN::MOGG_REGISTER_INTERNAL_FUNCTION,
+      KGEN::kFnRegisterInternal,
       "enforce_io_param",
 
-      "register",
+      KGEN::kFnRegister,
       "elementwise",
       "view_kernel",
       "mutable",
@@ -1326,9 +1325,9 @@ static void processFunctionConformances(FnOp func, SharedState &shared,
   }
 
   NamedAttrList attrs = func->getAttrDictionary();
-  attrs.set(KGEN::MOGG_ARGUMENT_VALUE_WITNESSES,
+  attrs.set(KGEN::kMoggArgumentValueWitnesses,
             ArrayAttr::get(shared.getContext(), argConformances));
-  attrs.set(KGEN::MOGG_RESULT_VALUE_WITNESSES, resConformances);
+  attrs.set(KGEN::kMoggResultValueWitnesses, resConformances);
   func->setAttrs(attrs.getDictionary(shared.getContext()));
 }
 
@@ -1344,7 +1343,7 @@ static void processExtensibilityDecorator(SharedState &shared, ASTDecl &decl,
   if (spelling.empty())
     return;
 
-  if (spelling != KGEN::MOGG_REGISTER_INTERNAL_FUNCTION)
+  if (spelling != KGEN::kFnRegisterInternal)
     return;
 
   auto func = cast_or_null<FnOp>(decl.getIfOperation());
@@ -2280,7 +2279,7 @@ ParseResult DeclResolver::resolveBody(FnOp funcOp, Lexer &lexer,
     return success();
 
   for (auto decorator : declOp.getDecorators()) {
-    if (extractDecoratorName(decorator) == "register" &&
+    if (extractDecoratorName(decorator) == KGEN::kFnRegister &&
         KGEN::fnNeedsConformances(funcOp))
       processFunctionConformances(funcOp, shared, decl);
   }
