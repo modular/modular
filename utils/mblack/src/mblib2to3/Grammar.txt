@@ -233,7 +233,7 @@ type_factor: ('+'|'-'|'~') type_factor | type_power
 type_power: [AWAIT] type_atom trailer* ['**' factor]
 type_atom: functype | atom
 
-classdef: ('class' | STRUCT | TRAIT | EXTENSION) NAME [metaparams] ['(' [arglist] ')'] ':' suite
+classdef: STRUCT NAME [metaparams] ['(' [arglist] ')'] (where_clause)* ':' suite | ('class' | TRAIT | EXTENSION) NAME [metaparams] ['(' [arglist] ')'] ':' suite
 
 typeconvexpr: atom trailer* | functype
 typeconv: (['*'|VAR|READ|MUT|OUT|DEINIT] ['*'|'**'] typeconvexpr [':' ['*'|'**'] test]) | '/' | '*' | '//'

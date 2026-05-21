@@ -1864,6 +1864,8 @@ std::string PublicStructDecl::getDeclarationSnippet(
   if (!parameters.empty())
     printArgOrParameterSignature(ctx, ArrayRef(parameters), parameterOffsets,
                                  os);
+  if (!structConstraints.empty())
+    os << structConstraints;
 
   SmallVector<StringRef> parentTraits;
   collectParentTraits(
@@ -1898,6 +1900,8 @@ std::string PublicStructDecl::getSignature(
   if (!parameters.empty())
     printArgOrParameterSignature(ctx, ArrayRef(parameters), parameterOffsets,
                                  os);
+  if (!structConstraints.empty())
+    os << structConstraints;
   return output;
 }
 
@@ -1956,9 +1960,13 @@ PublicStructDecl::PublicStructDecl(MojoASTDeclRef declRef)
   stableInfo = computeStableInfo(structOp);
 
   auto &shared = *declRef.getShared();
-  populatePublicParameterDecls(shared, signature.getInputParamTypes(),
-                               signature.getParamListAttrs(), parameters,
-                               &declRef);
+  PogListAttr paramListAttr = signature.getParamListAttrs();
+  ParameterEvaluator evaluator =
+      populatePublicParameterDecls(shared, signature.getInputParamTypes(),
+                                   paramListAttr, parameters, &declRef);
+  structConstraints =
+      mergeConformsToConstraints(paramListAttr.getBodyConstraints(), &evaluator,
+                                 shared, parameters, &declRef);
 
   if (auto docStr = decl->getParsedDocString()) {
     summary = docStr->getSummary();

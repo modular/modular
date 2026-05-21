@@ -92,6 +92,100 @@ def test_multiple_fn_where_clauses():
     )
     assert_mojo_format(source, expected)
 
+
+# ============================ #
+# Structs with where clauses
+# ============================ #
+
+
+def test_simple_struct_where_clause():
+    source = "struct WhereSimple[T: Bool] where T: pass"
+    expected = (
+        "struct WhereSimple[T: Bool] where T:\n"
+        "    pass\n"
+    )
+    assert_mojo_format(source, expected)
+
+
+def test_struct_where_clause_no_params():
+    """A bare `where` clause with no parameter list and no parent traits."""
+    source = "struct NoParams where some_predicate(): pass"
+    expected = (
+        "struct NoParams where some_predicate():\n"
+        "    pass\n"
+    )
+    assert_mojo_format(source, expected)
+
+
+def test_long_struct_where_clause():
+    source = (
+        "struct WhereLong[T: Bool, U: Int, V: Int]() "
+        "where T and U + V == W and a == b and c == d and (e == f or g): pass"
+    )
+    expected = (
+        "struct WhereLong[T: Bool, U: Int, V: Int]() where (\n"
+        "    T and U + V == W and a == b and c == d and (e == f or g)\n"
+        "):\n"
+        "    pass\n"
+    )
+    assert_mojo_format(source, expected)
+
+
+def test_very_long_struct_where_clause():
+    source = (
+        "struct WhereVeryLong[T: Bool] where (\n"
+        "    x and y + z and a == b and c == d and (e == f or g)"
+        " and xx == yy and zz == aa or (ds or dd)\n"
+        "):\n"
+        "    pass\n"
+    )
+    expected = (
+        "struct WhereVeryLong[T: Bool] where (\n"
+        "    x\n"
+        "    and y + z\n"
+        "    and a == b\n"
+        "    and c == d\n"
+        "    and (e == f or g)\n"
+        "    and xx == yy\n"
+        "    and zz == aa\n"
+        "    or (ds or dd)\n"
+        "):\n"
+        "    pass\n"
+    )
+    assert_mojo_format(source, expected)
+
+
+def test_multiple_struct_where_clauses_no_parent():
+    source = (
+        "struct WhereMultiple[T: Movable] "
+        "where conforms_to(T, Copyable) where conforms_to(T, Intable): pass"
+    )
+    expected = (
+        "struct WhereMultiple[T: Movable] where conforms_to(\n"
+        "    T, Copyable\n"
+        ") where conforms_to(T, Intable):\n"
+        "    pass\n"
+    )
+    assert_mojo_format(source, expected)
+
+
+def test_trailing_where_clause_on_struct_decl():
+    source = (
+        "struct Wrapper[\n"
+        "T: Movable, U: Movable\n"
+        "](\n"
+        "Movable\n"
+        ") where conforms_to(T, Copyable) and conforms_to(U, Intable): pass"
+    )
+    expected = (
+        "struct Wrapper[T: Movable, U: Movable](Movable) where conforms_to(\n"
+        "    T, Copyable\n"
+        ") and conforms_to(U, Intable):\n"
+        "    pass\n"
+    )
+    assert_mojo_format(source, expected)
+
+
 # ============================== #
 # Param decls with where clauses
 # ============================== #

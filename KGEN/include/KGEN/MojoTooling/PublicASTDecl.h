@@ -931,6 +931,7 @@ private:
   void augmentWithDocumentation(ArrayRef<StringRef> description);
 
   SmallVector<PublicParameterDecl, kTypicalParameterCount> parameters;
+  std::string structConstraints;
 
   KGEN::LIT::TypeConvention convention;
 
