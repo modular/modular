@@ -26,10 +26,14 @@
 #ifndef SUPPORT_LOG_H
 #define SUPPORT_LOG_H
 
+#include "llvm/ADT/SmallString.h"
+#include "llvm/ADT/StringRef.h"
+
 #define FMT_EXCEPTIONS 0
 #include <fmt/base.h>
 
 #include <array>
+#include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <cstdlib>
@@ -167,22 +171,56 @@ struct LogRecord {
         argCount(count), level(lvl) {}
 };
 
-class Logger;
+// Receives formatted log lines and writes to destinations (stdout, file &c).
+class Sink;
 
-Logger &getDefaultLog();
+class Logger {
+  struct LogFormatState {
+    bool useEnhancedFormat = true;
+    bool showTimeStamp = true;
+    bool showColors = true;
+    bool showLogLevel = true;
+    bool useIsoTimestamps = false;
+    bool showMicroseconds = false;
+    bool emitJSON = false;
+  } formatState;
+  std::atomic<LogLevel> level = LogLevel::WARN;
+  std::vector<std::unique_ptr<Sink>> sinks;
 
-void setLogLevel(LogLevel level);
+  llvm::SmallString<32> buildTimestampString(LogRecord::Timestamp);
+  llvm::SmallString<128> buildLogPrefix(LogLevel, LogRecord::Timestamp);
 
-LogLevel getLogLevel(const Logger &log = getDefaultLog());
+public:
+  Logger();
+  ~Logger();
+  void log(LogRecord record);
 
-void logWrite(Logger &log, LogRecord record);
+  LogLevel getLogLevel() const {
+    return level.load(std::memory_order::acquire);
+  }
+
+  void setLogLevel(LogLevel newLevel) {
+    level.store(newLevel, std::memory_order::release);
+  }
+};
+
+inline Logger &getDefaultLog() {
+  static Logger defaultLog;
+  return defaultLog;
+}
+
+inline void setLogLevel(LogLevel level) { getDefaultLog().setLogLevel(level); }
+
+inline void logWrite(Logger &log, LogRecord record) {
+  log.log(std::move(record));
+}
 
 // Checks the log level to see if it should emit a message, and, if so,
 // dispatches to the Logger object.
 template <typename... Args>
 inline void logWriteDispatch(Logger &log, LogLevel level,
                              fmt::format_string<Args...> fmt, Args &&...args) {
-  if (getLogLevel(log) > level)
+  if (log.getLogLevel() > level)
     return;
 
   LogRecord record(std::chrono::system_clock::now(), level,

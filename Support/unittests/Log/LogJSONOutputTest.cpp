@@ -218,7 +218,7 @@ TEST_F(LogJSONTest, NoANSIColorCodes) {
 }
 
 TEST_F(LogJSONTest, LevelFilteringSuppressesOutput) {
-  auto level = getLogLevel();
+  auto level = getDefaultLog().getLogLevel();
   setLogLevel(LogLevel::ERROR);
   MLOG(LogLevel::DEBUG, "should be suppressed");
   MLOG(LogLevel::INFO, "also suppressed");
