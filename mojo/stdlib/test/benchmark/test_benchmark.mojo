@@ -337,5 +337,43 @@ def test_bench_id_list_copy() raises:
     assert_equal(copied_bench_ids[1].input_id, bench_ids[1].input_id)
 
 
+def test_bench_id_hash() raises:
+    var bench_id1 = BenchId("foo()", "123")
+    var bench_id2 = BenchId("foo()", "123")
+    var bench_id3 = BenchId("foo()", "456")
+    var bench_id4 = BenchId("bar()")
+    var bench_id5 = BenchId("bar()")
+    var bench_id6 = BenchId("bar()", "123")
+
+    assert_equal(hash(bench_id1), hash(bench_id1))
+    assert_equal(hash(bench_id1), hash(bench_id2))
+    assert_not_equal(hash(bench_id1), hash(bench_id3))
+    assert_not_equal(hash(bench_id1), hash(bench_id4))
+    assert_not_equal(hash(bench_id1), hash(bench_id6))
+
+    assert_equal(hash(bench_id4), hash(bench_id4))
+    assert_equal(hash(bench_id4), hash(bench_id5))
+    assert_not_equal(hash(bench_id4), hash(bench_id6))
+
+
+def test_bench_id_eq() raises:
+    var bench_id1 = BenchId("foo()", "123")
+    var bench_id2 = BenchId("foo()", "123")
+    var bench_id3 = BenchId("foo()", "456")
+    var bench_id4 = BenchId("bar()")
+    var bench_id5 = BenchId("bar()")
+    var bench_id6 = BenchId("bar()", "123")
+
+    assert_equal(bench_id1, bench_id1)
+    assert_equal(bench_id1, bench_id2)
+    assert_not_equal(bench_id1, bench_id3)
+    assert_not_equal(bench_id1, bench_id4)
+    assert_not_equal(bench_id1, bench_id6)
+
+    assert_equal(bench_id4, bench_id4)
+    assert_equal(bench_id4, bench_id5)
+    assert_not_equal(bench_id4, bench_id6)
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()
