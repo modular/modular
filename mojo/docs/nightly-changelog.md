@@ -239,6 +239,19 @@ This version is still a work in progress.
   through this trait must now spell it out explicitly, for example
   `T: Intable & ImplicitlyDestructible`.
 
+- Added `take()` and `drop()` iterator adapters to `std.itertools`.
+  `take(iter, n)` yields the first `n` elements, and
+  `drop(iter, n)` drops the first `n` elements. They compose
+  naturally to select sub-ranges of any iterable:
+
+  ```mojo
+  from std.itertools import take, drop
+
+  var nums = [1, 2, 3, 4, 5]
+  for x in take(drop(nums, 1), 3):
+      print(x)  # 2, 3, 4
+  ```
+
 ## Tooling changes
 
 - The `mojo` compiler will now print the filename and line number in diagnostics

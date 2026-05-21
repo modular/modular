@@ -1,6 +1,31 @@
-load("//bazel:api.bzl", "mojo_test")
+load("//bazel:api.bzl", "mojo_filecheck_test", "mojo_test")
 
 package(default_visibility = ["//visibility:private"])
+
+# FileCheck tests that exercise assertion crashes (e.g. negative-count
+# arguments). Each one is expected to abort, so they all run under
+# `expect_crash = True`.
+_FILECHECK_TESTS = [
+    "test_take_negative_count.mojo",
+    "test_drop_negative_count.mojo",
+]
+
+[
+    mojo_filecheck_test(
+        name = src + ".test",
+        srcs = [src],
+        copts = [
+            "--debug-level",
+            "full",
+        ],
+        expect_crash = True,
+        deps = [
+            "@mojo//:std",
+            "@mojo//:test_utils",
+        ],
+    )
+    for src in _FILECHECK_TESTS
+]
 
 [
     mojo_test(
@@ -15,5 +40,8 @@ package(default_visibility = ["//visibility:private"])
             "@mojo//:test_utils",
         ],
     )
-    for src in glob(["*.mojo"])
+    for src in glob(
+        ["*.mojo"],
+        exclude = _FILECHECK_TESTS,
+    )
 ]
