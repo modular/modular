@@ -1903,6 +1903,8 @@ def mla_prefill_sparse[
     # v_depth`, which writes BM SEQ positions per call, but our cluster
     # produces 1 seq * BM heads, the wrong shape for that descriptor.
 
+    comptime assert type_of(topk_lengths).flat_rank == 1
+    comptime assert type_of(indices).flat_rank == 1
     comptime kernel = MLAPrefillSparse[
         KVLUTType=type_of(kv_operand),
         output_dtype=output_dtype,
