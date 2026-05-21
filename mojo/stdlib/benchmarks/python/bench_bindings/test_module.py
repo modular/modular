@@ -49,3 +49,14 @@ def test_noop_raw_fastcall_returns_argument() -> None:
 def test_add_raw_fastcall_sums_ints() -> None:
     assert mojo_module.add_raw_fastcall(1, 2) == 3
     assert mojo_module.add_raw_fastcall(-5, 10) == 5
+
+
+def test_str_byte_len_def_returns_utf8_byte_count() -> None:
+    assert mojo_module.str_byte_len_def("hello world") == 11
+    assert mojo_module.str_byte_len_def("") == 0
+    # 2-byte UTF-8 char counts as 2 bytes.
+    assert mojo_module.str_byte_len_def("héllo") == 6
+
+
+def test_str_byte_len_raw_fastcall_returns_utf8_byte_count() -> None:
+    assert mojo_module.str_byte_len_raw_fastcall("hello world") == 11
