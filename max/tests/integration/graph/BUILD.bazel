@@ -73,6 +73,7 @@ modular_py_test(
     data = [
         "//max/tests/integration/Inputs:inputs",
         "//max/tests/integration/Inputs:pytest_inputs",
+        "//max/tests/integration/Inputs/kernel_override_ops",
         "//max/tests/integration/Inputs/kernel_verification_ops",
         "//max/tests/integration/Inputs/test_user_op",
         "//max/tests/integration/graph/testdata/compile_config_ops",
@@ -81,6 +82,7 @@ modular_py_test(
     ],
     env = {
         "MODULAR_COUNTER_OPS_PATH": "$(rootpath //max/tests/integration/graph/testdata/counter_ops)",
+        "MODULAR_KERNEL_OVERRIDE_OPS_PATH": "$(rootpath //max/tests/integration/Inputs/kernel_override_ops)",
         "MODULAR_KERNEL_VERIFICATION_OPS_PATH": "$(rootpath //max/tests/integration/Inputs/kernel_verification_ops)",
         "MODULAR_COMPILE_CONFIG_OPS_PATH": "$(rootpath //max/tests/integration/graph/testdata/compile_config_ops)",
         "CUSTOM_OPS_PATH": "$(rootpath //max/tests/integration/Inputs/test_user_op)",

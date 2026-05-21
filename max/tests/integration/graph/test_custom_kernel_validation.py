@@ -37,6 +37,12 @@ def kernel_verification_ops_path() -> Path:
     return Path(os.environ["MODULAR_KERNEL_VERIFICATION_OPS_PATH"])
 
 
+@pytest.fixture
+def kernel_override_ops_path() -> Path:
+    """Get path to kernel override ops for testing built-in shadowing."""
+    return Path(os.environ["MODULAR_KERNEL_OVERRIDE_OPS_PATH"])
+
+
 class TestCustomKernelValidation:
     """Tests for ops.custom that require actual kernel validation."""
 
@@ -460,3 +466,90 @@ class TestCustomOperationExecution:
 
         # Verify execution completed successfully
         assert result is not None
+
+
+class TestKernelRegistrationOverride:
+    """Empirical verification that user @compiler.register shadows built-in
+    MOGG kernels when the same op-name is registered in a custom mojopkg
+    supplied via Graph(..., custom_extensions=[...]).
+    """
+
+    def _build_add_graph(self, custom_extensions: list[Path]) -> Graph:
+        input_type = TensorType(DType.float32, (4,), DeviceRef.CPU())
+        graph = Graph(
+            "test_mo_add_override",
+            input_types=[input_type, input_type],
+            output_types=[input_type],
+            custom_extensions=custom_extensions,
+        )
+        with graph:
+            a, b = graph.inputs
+            graph.output(a.tensor + b.tensor)
+        return graph
+
+    def test_mo_add_override_takes_effect(
+        self,
+        kernel_override_ops_path: Path,
+        session: InferenceSession,
+    ) -> None:
+        """User `mo.add` returning `lhs+rhs+1000` must shadow built-in `mo.add`."""
+        graph = self._build_add_graph([kernel_override_ops_path])
+        model = session.load(graph)
+
+        a = np.array([1.0, 2.0, 3.0, 4.0], dtype=np.float32)
+        b = np.array([10.0, 20.0, 30.0, 40.0], dtype=np.float32)
+        a_buf = Buffer.from_numpy(a).to(model.input_devices[0])
+        b_buf = Buffer.from_numpy(b).to(model.input_devices[1])
+        output = model.execute(a_buf, b_buf)
+
+        result = output[0].to_numpy()
+        expected_override = a + b + 1000.0
+        expected_builtin = a + b
+        assert np.allclose(result, expected_override), (
+            f"Override did not fire: got {result!r}, "
+            f"expected overridden {expected_override!r} "
+            f"(built-in would give {expected_builtin!r})"
+        )
+
+    def _build_layer_norm_graph(self, custom_extensions: list[Path]) -> Graph:
+        input_type = TensorType(DType.float32, (2, 4), DeviceRef.CPU())
+        gamma_type = TensorType(DType.float32, (4,), DeviceRef.CPU())
+        beta_type = TensorType(DType.float32, (4,), DeviceRef.CPU())
+        output_type = TensorType(DType.float32, (2, 4), DeviceRef.CPU())
+        graph = Graph(
+            "test_mo_layer_norm_override",
+            input_types=[input_type, gamma_type, beta_type],
+            output_types=[output_type],
+            custom_extensions=custom_extensions,
+        )
+        with graph:
+            x, gamma, beta = graph.inputs
+            y = ops.layer_norm(
+                x.tensor, gamma.tensor, beta.tensor, epsilon=1e-5
+            )
+            graph.output(y)
+        return graph
+
+    def test_mo_layer_norm_override_takes_effect(
+        self,
+        kernel_override_ops_path: Path,
+        session: InferenceSession,
+    ) -> None:
+        """User `mo.reduce.layer_norm` raises; built-in would normalize cleanly."""
+        graph = self._build_layer_norm_graph([kernel_override_ops_path])
+        model = session.load(graph)
+
+        x = np.array(
+            [[1.0, 2.0, 3.0, 4.0], [5.0, 6.0, 7.0, 8.0]], dtype=np.float32
+        )
+        gamma = np.ones(4, dtype=np.float32)
+        beta = np.zeros(4, dtype=np.float32)
+        x_buf = Buffer.from_numpy(x).to(model.input_devices[0])
+        gamma_buf = Buffer.from_numpy(gamma).to(model.input_devices[1])
+        beta_buf = Buffer.from_numpy(beta).to(model.input_devices[2])
+
+        with pytest.raises(Exception) as exc_info:
+            model.execute(x_buf, gamma_buf, beta_buf)
+        assert "LAYER_NORM_OVERRIDE_FIRED" in str(exc_info.value), (
+            f"Override did not fire; raised: {exc_info.value!r}"
+        )
