@@ -57,6 +57,12 @@ comptime Py_file_input: c_int = 257
 comptime Py_eval_input: c_int = 258
 comptime Py_func_type_input: c_int = 345
 
+# Constant IDs for `Py_GetConstantBorrowed` (Stable ABI since Python 3.13).
+# ref: https://docs.python.org/3/c-api/object.html#c.Py_GetConstantBorrowed
+comptime Py_CONSTANT_NONE: c_uint = c_uint(0)
+comptime Py_CONSTANT_FALSE: c_uint = c_uint(1)
+comptime Py_CONSTANT_TRUE: c_uint = c_uint(2)
+
 # 0 when Stackless Python is disabled
 # ref: https://github.com/python/cpython/blob/main/Include/object.h
 comptime Py_TPFLAGS_DEFAULT = 0
@@ -1606,8 +1612,11 @@ struct CPython(Defaultable, Movable):
             self._PyType_GetName = _PyType_GetName_dummy
         self._PyType_FromSpec = PyType_FromSpec.load(self.lib.borrow())
         # The None Object
-        if self.version.minor >= 13:
-            # Py_GetConstantBorrowed is part of the Stable ABI since version 3.13
+        var use_get_constant_borrowed = self.version.major > 3 or (
+            self.version.major == 3 and self.version.minor >= 13
+        )
+        if use_get_constant_borrowed:
+            # Py_GetConstantBorrowed is part of the Stable ABI since version 3.13.
             # References:
             # - https://docs.python.org/3/c-api/object.html#c.Py_GetConstantBorrowed
             # - https://docs.python.org/3/c-api/object.html#c.Py_CONSTANT_NONE
@@ -1615,7 +1624,7 @@ struct CPython(Defaultable, Movable):
             # PyObject *Py_GetConstantBorrowed(unsigned int constant_id)
             self._Py_None = self.lib.call[
                 "Py_GetConstantBorrowed", PyObjectPtr
-            ](0)
+            ](Py_CONSTANT_NONE)
         else:
             # PyObject *Py_None
             self._Py_None = PyObjectPtr(
@@ -1636,15 +1645,13 @@ struct CPython(Defaultable, Movable):
         self._PyBool_Type = self.lib.get_symbol[PyTypeObject](
             "PyBool_Type"
         ).value()
-        if self.version.minor >= 13:
-            # Py_GetConstantBorrowed is part of the Stable ABI since version 3.13.
-            # Py_CONSTANT_FALSE = 1, Py_CONSTANT_TRUE = 2.
+        if use_get_constant_borrowed:
             self._Py_False = self.lib.call[
                 "Py_GetConstantBorrowed", PyObjectPtr
-            ](1)
+            ](Py_CONSTANT_FALSE)
             self._Py_True = self.lib.call[
                 "Py_GetConstantBorrowed", PyObjectPtr
-            ](2)
+            ](Py_CONSTANT_TRUE)
         else:
             self._Py_True = PyObjectPtr(
                 upcast_from=self.lib.get_symbol[PyObject](
