@@ -47,7 +47,7 @@ def test_mosh(mlir_context) -> None:  # noqa: ANN001
 def test_mosh_shapeattr(mlir_context) -> None:  # noqa: ANN001
     shape_type = mosh.ShapeType()
     attr = mosh.ShapeAttr([1, 2, 3], shape_type)
-    dims = list(attr.values)
+    dims = list(kgen.CastToBuiltinAttr(d) for d in attr.values)
     index_type = builtin.IntegerType(64, builtin.SignednessSemantics.signed)
     uint8_type = builtin.IntegerType(8, builtin.SignednessSemantics.unsigned)
     Index = functools.partial(builtin.IntegerAttr, index_type)

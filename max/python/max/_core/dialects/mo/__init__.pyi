@@ -1426,7 +1426,7 @@ class AssertOp(max._core.Operation):
         location: Location,
         chain: ChainType,
         in_chain: max._core.Value[ChainType],
-        cond: max._core.Value[max._core.dialects.builtin.IntegerType],
+        cond: max._core.Value,
         message: max._core.dialects.builtin.TypedAttr,
     ) -> None: ...
     @overload
@@ -1440,9 +1440,7 @@ class AssertOp(max._core.Operation):
     @property
     def in_chain(self) -> max._core.Value[ChainType]: ...
     @property
-    def cond(
-        self,
-    ) -> max._core.Value[max._core.dialects.builtin.IntegerType]: ...
+    def cond(self) -> max._core.Value: ...
     @property
     def message(self) -> max._core.dialects.builtin.TypedAttr: ...
     @message.setter
@@ -4028,7 +4026,7 @@ class IndexToTensorOp(max._core.Operation):
     Example:
 
     ```mlir
-      %c: index
+      %c: scalar<si64>
       %scalarT = mo.index.to_tensor(%c) -> !mo.tensor<[], si64>
     ```
     """
@@ -4038,12 +4036,10 @@ class IndexToTensorOp(max._core.Operation):
         builder: max._core.OpBuilder,
         location: Location,
         result: TensorType,
-        input: max._core.Value[max._core.dialects.builtin.IntegerType],
+        input: max._core.Value,
     ) -> None: ...
     @property
-    def input(
-        self,
-    ) -> max._core.Value[max._core.dialects.builtin.IntegerType]: ...
+    def input(self) -> max._core.Value: ...
 
 class InvokeShapeFuncOp(max._core.Operation):
     """

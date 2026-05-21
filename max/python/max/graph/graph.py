@@ -372,7 +372,7 @@ def _set_output_param_decls(op: Operation, params: dict[str, None]) -> None:
     # Track any newly declared parameters.
     if new_params := dict.fromkeys(names - params.keys()):
         params.update(new_params)
-        si64 = builtin.IntegerType(64, builtin.SignednessSemantics.signed)
+        si64 = kgen.SIMDType(1, kgen._KGENDType.get_int(64, True))
         # We can't overload the setter yet, so the interface annotation is wrong
         # TODO(MAXPLAT-306): See https://github.com/wjakob/nanobind/discussions/1063
         op.output_param_decls = kgen.ParamDeclArrayAttr(
@@ -627,7 +627,7 @@ class Graph:
                 result_types=[],
             )
 
-            si64 = builtin.IntegerType(64, builtin.SignednessSemantics.signed)
+            si64 = kgen.SIMDType(1, kgen._KGENDType.get_int(64, True))
             # TODO(MAXPLAT-306): Type annotations are wrong here
             op.input_parameters = kgen.ParamDeclArrayAttr(
                 [kgen.ParamDeclAttr(p, si64) for p in self._params]
@@ -790,9 +790,7 @@ class Graph:
         # Union callee's existing params  with the caller's params.
         # This may over-declare but is deterministic and comprehensive.
         union_names = list(dict.fromkeys([*subgraph._params, *self._params]))
-        si64 = builtin.IntegerType(
-            width=64, signedness=builtin.SignednessSemantics.signed
-        )
+        si64 = kgen.SIMDType(1, kgen._KGENDType.get_int(64, True))
         op.input_parameters = kgen.ParamDeclArrayAttr(
             [kgen.ParamDeclAttr(name, si64) for name in union_names]
         )
