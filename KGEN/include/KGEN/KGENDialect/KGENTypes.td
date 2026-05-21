@@ -1052,13 +1052,13 @@ def KGEN_SIMDType : KGENType<"SIMD", "simd", [
   let builders = [
     TypeBuilderWithInferredContext<(ins "TypedAttr":$size, "TypedAttr":$dtype)>,
     TypeBuilderWithInferredContext<(ins "int64_t":$size, "TypedAttr":$dtype)>,
-    TypeBuilderWithInferredContext<(ins "TypedAttr":$size, "KGENDType":$dtype)>,
-    TypeBuilder<(ins "int64_t":$size, "KGENDType":$dtype)>
+    TypeBuilderWithInferredContext<(ins "TypedAttr":$size, "KGEN::KGENDType":$dtype)>,
+    TypeBuilder<(ins "int64_t":$size, "KGEN::KGENDType":$dtype)>
   ];
 
   let extraClassDeclaration = [{
     /// Try to narrow the dtype expression of the SIMD type to a value.
-    std::optional<KGENDType> getResolvedDType() const;
+    std::optional<KGEN::KGENDType> getResolvedDType() const;
     /// Try to narrow the size expression of the SIMD type to an integer.
     std::optional<int64_t> getResolvedSize() const;
     /// Returns true if this is known to be a scalar type.
@@ -1089,8 +1089,9 @@ def IntDType : DTypeConstraint<"$_self->isInt()">;
 def SIntDType : DTypeConstraint<"$_self->isSInt()">;
 def UIntDType : DTypeConstraint<"$_self->isUInt()">;
 def FloatDType : DTypeConstraint<"$_self->isFloat()">;
-def UI8DType : DTypeConstraint<"*$_self == KGENDType::ui8">;
-def SI8DType : DTypeConstraint<"*$_self == KGENDType::si8">;
+def UI8DType : DTypeConstraint<"*$_self == KGEN::KGENDType::ui8">;
+def SI8DType : DTypeConstraint<"*$_self == KGEN::KGENDType::si8">;
+def SI64DType : DTypeConstraint<"*$_self == KGEN::KGENDType::si64">;
 def AddressDType : DTypeConstraint<"$_self->isAddress()">;
 def ArithmeticDType : DTypeConstraint<"$_self->isArithmetic()">;
 
@@ -1140,25 +1141,29 @@ class ScalarOfDType<DTypeConstraint constraint, string desc> :
   AllOfType<[SIMDOfDType<constraint, desc>, ScalarType], desc>;
 
 def BoolScalar : ScalarOfDType<BoundAnd<BoolDType>, "!kgen.scalar<bool>">,
-    BuildableType<"KGEN::SIMDType::get(1, DTypeConstantAttr::get("
-                                  "$_builder.getContext(), KGENDType::bool))">;
+    BuildableType<"KGEN::SIMDType::get(1, KGEN::DTypeConstantAttr::get("
+                                  "$_builder.getContext(), KGEN::KGENDType::kBool))">;
 def UnboundOrArithmeticScalar : ScalarOfDType<UnboundOr<ArithmeticDType>,
     "whose type is an arithmetic dtype">;
 
 def UI8Scalar : ScalarOfDType<BoundAnd<UI8DType>, "!kgen.scalar<ui8>">,
-    BuildableType<"KGEN::SIMDType::get(1, DTypeConstantAttr::get("
-                                   "$_builder.getContext(), KGENDType::ui8))">;
+    BuildableType<"KGEN::SIMDType::get(1, KGEN::DTypeConstantAttr::get("
+                                   "$_builder.getContext(), KGEN::KGENDType::ui8))">;
 def SI8Scalar : ScalarOfDType<BoundAnd<SI8DType>, "!kgen.scalar<si8>">,
-    BuildableType<"KGEN::SIMDType::get(1, DTypeConstantAttr::get("
-                                   "$_builder.getContext(), KGENDType::si8))">;
+    BuildableType<"KGEN::SIMDType::get(1, KGEN::DTypeConstantAttr::get("
+                                   "$_builder.getContext(), KGEN::KGENDType::si8))">;
+
+def SI64Scalar : ScalarOfDType<BoundAnd<SI64DType>, "!kgen.scalar<si64>">,
+    BuildableType<"KGEN::SIMDType::get(1, KGEN::DTypeConstantAttr::get("
+                                   "$_builder.getContext(), KGEN::KGENDType::si64))">;
 
 def UIndexScalar : ScalarOfDType<BoundAnd<UIndexDType>, "!kgen.scalar<uindex>">,
-    BuildableType<"KGEN::SIMDType::get(1, DTypeConstantAttr::get("
-                                   "$_builder.getContext(), KGENDType::uindex))">;
+    BuildableType<"KGEN::SIMDType::get(1, KGEN::DTypeConstantAttr::get("
+                                   "$_builder.getContext(), KGEN::KGENDType::uindex))">;
 
 def IndexScalar : ScalarOfDType<BoundAnd<IndexDType>, "!kgen.scalar<index>">,
-    BuildableType<"KGEN::SIMDType::get(1, DTypeConstantAttr::get("
-                                   "$_builder.getContext(), KGENDType::index))">;
+    BuildableType<"KGEN::SIMDType::get(1, KGEN::DTypeConstantAttr::get("
+                                   "$_builder.getContext(), KGEN::KGENDType::index))">;
 
 def UnboundOrIndexOrInt : AnyTypeOf<[
     ScalarOfDType<UnboundOr<OrDType<[IndexDType, UIndexDType, IntDType]>>,
@@ -1182,11 +1187,11 @@ class SIMDOfSameSize<string lhs, string rhs> :
 class AddressSIMDOfSameSize<string operand, string value> : TypesMatchWith<
     value # " type matches simd type of the " # operand # " operand", operand,
     value, "KGEN::SIMDType::get(llvm::cast<SIMDType>($_self).getSize(), "
-    "DTypeConstantAttr::get($_self.getContext(), KGENDType::address))">;
+    "DTypeConstantAttr::get($_self.getContext(), KGEN::KGENDType::address))">;
 
 class BoolSIMDOfSameSize<string operand, string value> : TypesMatchWith<
     value # " type matches simd type of the " # operand # " operand", operand,
     value, "KGEN::SIMDType::get(llvm::cast<SIMDType>($_self).getSize(), "
-    "DTypeConstantAttr::get($_self.getContext(), KGENDType::kBool))">;
+    "DTypeConstantAttr::get($_self.getContext(), KGEN::KGENDType::kBool))">;
 
 #endif // KGEN_KGENDIALECT_KGENTYPES_TD
