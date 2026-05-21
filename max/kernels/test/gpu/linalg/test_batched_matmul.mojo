@@ -95,7 +95,7 @@ def run_bmm_and_check_result[
         var idx = rebind[IndexList[3]](idx0)
         comptime func = lambda_fn.value()
         var update_val = func(val)
-        var coord = Coord((Idx(idx[0]), Idx(idx[1]), Idx(idx[2])))
+        var coord = Coord((idx[0], idx[1], idx[2]))
         comptime assert c_device.flat_rank >= 3
         c_device.store(coord, update_val.cast[c_device.dtype]())
 
@@ -143,13 +143,11 @@ def run_bmm_and_check_result[
                 b_device.layout.stride[0]().value()
             )
 
-            var c_buffer = TileTensor(c_ptr, row_major(Idx(m), Idx(n)))
-            var a_buffer = TileTensor(a_ptr, row_major(Idx(m), Idx(k)))
+            var c_buffer = TileTensor(c_ptr, row_major(m, n))
+            var a_buffer = TileTensor(a_ptr, row_major(m, k))
             var b_buffer = TileTensor(
                 b_ptr,
-                row_major(
-                    (Idx(n if transpose_b else k), Idx(k if transpose_b else n))
-                ),
+                row_major((n if transpose_b else k, k if transpose_b else n)),
             )
 
             vendor_blas.matmul(
@@ -170,7 +168,7 @@ def run_bmm_and_check_result[
         simd_width: Int, rank: Int, alignment: Int = 1
     ](idx0: IndexList[rank]):
         var idx = rebind[IndexList[3]](idx0)
-        var coord = Coord((Idx(idx[0]), Idx(idx[1]), Idx(idx[2])))
+        var coord = Coord((idx[0], idx[1], idx[2]))
         comptime assert c_device_ref.flat_rank >= 3
         var val = c_device_ref.load[width=simd_width](coord)
         comptime element_lambda = lambda_fn.value()
@@ -230,17 +228,13 @@ def test_dynamic_shapes[
     var c_host_ptr = ctx.enqueue_create_host_buffer[dtype](c_size)
     var c_host_ref_ptr = ctx.enqueue_create_host_buffer[dtype](c_size)
 
-    var a_host = TileTensor(a_host_ptr, row_major(Idx(b), Idx(m), Idx(k)))
-    var c_host = TileTensor(c_host_ptr, row_major(Idx(b), Idx(m), Idx(n)))
-    var c_host_ref = TileTensor(
-        c_host_ref_ptr, row_major(Idx(b), Idx(m), Idx(n))
-    )
+    var a_host = TileTensor(a_host_ptr, row_major(b, m, k))
+    var c_host = TileTensor(c_host_ptr, row_major(b, m, n))
+    var c_host_ref = TileTensor(c_host_ref_ptr, row_major(b, m, n))
 
     var b_host = TileTensor(
-        b_host_ptr, row_major(Idx(b), Idx(n), Idx(k))
-    ) if transpose_b else TileTensor(
-        b_host_ptr, row_major(Idx(b), Idx(k), Idx(n))
-    )
+        b_host_ptr, row_major(b, n, k)
+    ) if transpose_b else TileTensor(b_host_ptr, row_major(b, k, n))
     run_bmm_and_check_result[transpose_b=transpose_b, lambda_fn=lambda_fn](
         a_host, b_host, c_host, c_host_ref, ctx, rtol
     )
@@ -274,24 +268,18 @@ def test_static_NK[
     var c_host_ptr = ctx.enqueue_create_host_buffer[dtype](c_size)
     var c_host_ref_ptr = ctx.enqueue_create_host_buffer[dtype](c_size)
 
-    var a_host = TileTensor(a_host_ptr, row_major(Idx(b), Idx(m), Idx[K]()))
-    var c_host = TileTensor(c_host_ptr, row_major(Idx(b), Idx(m), Idx[N]()))
-    var c_host_ref = TileTensor(
-        c_host_ref_ptr, row_major(Idx(b), Idx(m), Idx[N]())
-    )
+    var a_host = TileTensor(a_host_ptr, row_major(b, m, Idx[K]()))
+    var c_host = TileTensor(c_host_ptr, row_major(b, m, Idx[N]()))
+    var c_host_ref = TileTensor(c_host_ref_ptr, row_major(b, m, Idx[N]()))
 
     comptime if transpose_b:
-        var b_host = TileTensor(
-            b_host_ptr, row_major(Idx(b), Idx[N](), Idx[K]())
-        )
+        var b_host = TileTensor(b_host_ptr, row_major(b, Idx[N](), Idx[K]()))
         run_bmm_and_check_result[transpose_b=transpose_b, lambda_fn=lambda_fn](
             a_host, b_host, c_host, c_host_ref, ctx, rtol
         )
 
     else:
-        var b_host = TileTensor(
-            b_host_ptr, row_major(Idx(b), Idx[K](), Idx[N]())
-        )
+        var b_host = TileTensor(b_host_ptr, row_major(b, Idx[K](), Idx[N]()))
         run_bmm_and_check_result[transpose_b=transpose_b, lambda_fn=lambda_fn](
             a_host, b_host, c_host, c_host_ref, ctx, rtol
         )
@@ -327,10 +315,10 @@ def test_non_row_major_layout[
     var c_host_ref_ptr = ctx.enqueue_create_host_buffer[dtype](c_size)
 
     var a_layout = Layout(
-        (Idx[B](), Idx(m), Idx[K]()), (Idx[K](), Idx[B * K](), Idx[1]())
+        (Idx[B](), m, Idx[K]()), (Idx[K](), Idx[B * K](), Idx[1]())
     )
     var c_layout = Layout(
-        (Idx[B](), Idx(m), Idx[N]()), (Idx[N](), Idx[B * N](), Idx[1]())
+        (Idx[B](), m, Idx[N]()), (Idx[N](), Idx[B * N](), Idx[1]())
     )
 
     var a_host = TileTensor(a_host_ptr, a_layout)

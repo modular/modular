@@ -44,7 +44,7 @@ def test_pad_constant_gpu[
 
     # Initialize input with sequential values
     for i in range(input_shape.flattened_length()):
-        var idx = input.layout(Idx(i))
+        var idx = input.layout(i)
         input.raw_store(idx, Scalar[dtype](i))
 
     if verbose:
@@ -116,7 +116,7 @@ def test_pad_constant_gpu[
 
     # Compare GPU and CPU results
     for i in range(output.num_elements()):
-        var idx = output.layout(Idx(i))
+        var idx = output.layout(i)
         assert_equal(output.raw_load(idx), output_cpu.raw_load(idx))
 
     print("PASS: rank=" + String(rank))

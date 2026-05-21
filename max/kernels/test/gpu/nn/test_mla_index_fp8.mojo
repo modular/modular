@@ -240,24 +240,24 @@ def test_mla_index_fp8_paged_variable_lengths[
 
     var q_tile = TileTensor(
         q_device,
-        row_major(Idx(total_seq_len), Idx(num_heads), Idx(depth)),
+        row_major(total_seq_len, num_heads, depth),
     )
 
     var qs_tile = TileTensor(
         qs_device,
-        row_major(Idx(total_seq_len), Idx(num_heads)),
+        row_major(total_seq_len, num_heads),
     )
 
     var input_row_offsets_tile = TileTensor(
         input_row_offsets_device,
         row_major(
-            Idx(batch_size + 1),
+            batch_size + 1,
         ),
     )
 
     var o_tile = TileTensor(
         o_device,
-        row_major(Idx(total_seq_len), Idx(top_k)),
+        row_major(total_seq_len, top_k),
     )
 
     mla_indexer_ragged_float8_paged[

@@ -792,19 +792,19 @@ def test_dense_mma_ws_ts(ctx: DeviceContext) raises:
 
     var c_ref_tt = TileTensor(
         p_ref_device,
-        row_major(Coord(Idx(P_REF_ROWS), Idx(P_REF_COLS))),
+        row_major(Coord(P_REF_ROWS, P_REF_COLS)),
     )
     var a_tt = TileTensor(
         UnsafePointer[Scalar[OP_TYPE], ImmutAnyOrigin](
             unsafe_from_address=Int(q_device_ptr)
         ),
-        row_major(Coord(Idx(ROWS), Idx(COLS))),
+        row_major(Coord(ROWS, COLS)),
     )
     var b_tt = TileTensor(
         UnsafePointer[Scalar[OP_TYPE], ImmutAnyOrigin](
             unsafe_from_address=Int(k_device_ptr)
         ),
-        row_major(Coord(Idx(K_ROWS), Idx(K_COLS))),
+        row_major(Coord(K_ROWS, K_COLS)),
     )
 
     comptime gemm_naive = matmul_kernel_naive[
@@ -1039,19 +1039,19 @@ def test_sparse_mma_ws_ts[
 
     var c_ref_tt = TileTensor(
         p_ref_device,
-        row_major(Coord(Idx(p_ref_rows), Idx(p_ref_cols))),
+        row_major(Coord(p_ref_rows, p_ref_cols)),
     )
     var a_tt = TileTensor(
         UnsafePointer[Scalar[op_type], ImmutAnyOrigin](
             unsafe_from_address=Int(q_device_ptr)
         ),
-        row_major(Coord(Idx(rows), Idx(cols))),
+        row_major(Coord(rows, cols)),
     )
     var b_tt = TileTensor(
         UnsafePointer[Scalar[op_type], ImmutAnyOrigin](
             unsafe_from_address=Int(k_ref_device.unsafe_ptr())
         ),
-        row_major(Coord(Idx(rows), Idx(cols))),
+        row_major(Coord(rows, cols)),
     )
 
     comptime gemm_naive = matmul_kernel_naive[
@@ -1363,19 +1363,19 @@ def test_sparse_paged_mma_ws_ts[
 
     var c_ref_tt = TileTensor(
         p_ref_device,
-        row_major(Coord(Idx(p_ref_rows), Idx(p_ref_cols))),
+        row_major(Coord(p_ref_rows, p_ref_cols)),
     )
     var a_tt = TileTensor(
         UnsafePointer[Scalar[op_type], ImmutAnyOrigin](
             unsafe_from_address=Int(q_device_ptr)
         ),
-        row_major(Coord(Idx(rows), Idx(cols))),
+        row_major(Coord(rows, cols)),
     )
     var b_tt = TileTensor(
         UnsafePointer[Scalar[op_type], ImmutAnyOrigin](
             unsafe_from_address=Int(k_ref_device.unsafe_ptr())
         ),
-        row_major(Coord(Idx(topk), Idx(row_width))),
+        row_major(Coord(topk, row_width)),
     )
 
     comptime gemm_naive = matmul_kernel_naive[

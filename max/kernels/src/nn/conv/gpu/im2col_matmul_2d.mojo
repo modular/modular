@@ -314,13 +314,11 @@ def dispatch_im2col_matmul_conv2d[
             block_dim=im2col_block,
         )
 
-        var a_tt = TileTensor(
-            im2col_ptr, row_major(Coord(Idx(m_count), Idx(K)))
-        )
-        var b_tt = TileTensor(filter_nk_ptr, row_major(Coord(Idx(N), Idx(K))))
+        var a_tt = TileTensor(im2col_ptr, row_major(Coord(m_count, K)))
+        var b_tt = TileTensor(filter_nk_ptr, row_major(Coord(N, K)))
         # NHWC rows are contiguous in the flattened [M, N] layout.
         var c_ptr = output.ptr + m_offset * N
-        var c_tt = TileTensor(c_ptr, row_major(Coord(Idx(m_count), Idx(N))))
+        var c_tt = TileTensor(c_ptr, row_major(Coord(m_count, N)))
 
         comptime if maybe_epilogue_func:
             comptime epilogue_4d = maybe_epilogue_func.value()

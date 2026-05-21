@@ -311,16 +311,14 @@ def apple_gemv[
 
             @always_inline
             def compute_fn[width: Int](k: Int) {a, b, c, mut}:
-                var a_val = a.load[width=width](Coord(Idx[0](), Idx(k))).cast[
+                var a_val = a.load[width=width](Coord(Idx[0](), k)).cast[
                     c.dtype
                 ]()
                 var b_val = (
-                    b.load[width=width](Coord(Idx(n), Idx(k))).cast[
-                        c.dtype
-                    ]() if b_packed
+                    b.load[width=width](Coord(n, k)).cast[c.dtype]() if b_packed
                     or (not b_packed and transpose_b) else transposed_b.load[
                         width=width
-                    ](Coord(Idx(n), Idx(k))).cast[c.dtype]()
+                    ](Coord(n, k)).cast[c.dtype]()
                 )
 
                 comptime if width == 1:
@@ -344,7 +342,7 @@ def apple_gemv[
                 comptime func = elementwise_lambda_fn.value()
                 func[c.dtype, 1](Index(0, n), val)
             else:
-                c.store[width=1](Coord(Idx[0](), Idx(n)), val)
+                c.store[width=1](Coord(Idx[0](), n), val)
 
     # TODO: Experiment with this.
     comptime parallelism_grain_size = 16
@@ -417,9 +415,7 @@ def apple_matmul[
             simd_width: Int, rank: Int, alignment: Int = 1
         ](idx: IndexList[rank]):
             var c_coord = IndexList[2](idx[0], idx[1])
-            var c_val = c.load[width=simd_width](
-                Coord(Idx(idx[0]), Idx(idx[1]))
-            )
+            var c_val = c.load[width=simd_width](Coord(idx[0], idx[1]))
             epilogue[c.dtype, simd_width](c_coord, c_val)
 
         # TODO: thread a DeviceContext through the matmul stack so we can
@@ -490,15 +486,15 @@ def apple_batched_matmul[
     for batch in range(batch_size):
         var c2 = TileTensor(
             c.ptr + batch * c_stride,
-            row_major(Coord(Idx(c_rows), Idx(c_cols))),
+            row_major(Coord(c_rows, c_cols)),
         )
         var a2 = TileTensor(
             a.ptr + batch * a_stride,
-            row_major(Coord(Idx(a_rows), Idx(a_cols))),
+            row_major(Coord(a_rows, a_cols)),
         )
         var b2 = TileTensor(
             b.ptr + batch * b_stride,
-            row_major(Coord(Idx(b_rows), Idx(b_cols))),
+            row_major(Coord(b_rows, b_cols)),
         )
 
         var batch_coords = _get_start_indices_of_nth_subvolume[2](

@@ -108,9 +108,7 @@ def matmul_test_case[
     for m in range(shape_c[0].value()):
         for n in range(shape_c[1].value()):
             comptime assert mat_c_ref_host.flat_rank == 2
-            assert_almost_equal(
-                mat_c_ref_host[Idx(m), Idx(n)], mat_c_host[Idx(m), Idx(n)]
-            )
+            assert_almost_equal(mat_c_ref_host[m, n], mat_c_host[m, n])
 
 
 def create_matmul_test_case[

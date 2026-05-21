@@ -38,9 +38,9 @@ def accessing_tensor_elements_example() raises:
     assert_equal(element, 1)
 
     # start-access-example-3
-    var elements = tensor.load[4]((Idx(row), Idx(col)))
+    var elements = tensor.load[4]((row, col))
     elements = elements * 2
-    tensor.store((Idx(row), Idx(col)), elements)
+    tensor.store((row, col), elements)
     # end-access-example-3
 
     element = tensor[0, 2][0]

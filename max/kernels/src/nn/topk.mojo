@@ -2182,7 +2182,7 @@ def _topk_topp_sampling_fi[
     var out_shape = coord_to_index_list(out_idxs.layout.shape_coord())
     var out_1d = TileTensor(
         out_idxs.ptr,
-        row_major(Idx(out_shape[0])),
+        row_major(out_shape[0]),
     )
     topk_topp_sampling_from_prob[dtype, out_idx_type](
         ctx,

@@ -140,9 +140,9 @@ You can also access elements using the
 let you specify the vector size explicitly:
 
 ```mojo
-var elements = tensor.load[4]((Idx(row), Idx(col)))
+var elements = tensor.load[4]((row, col))
 elements = elements * 2
-tensor.store((Idx(row), Idx(col)), elements)
+tensor.store((row, col), elements)
 ```
 
 The `load()` and `store()` methods take the indices as a `Coord` object.

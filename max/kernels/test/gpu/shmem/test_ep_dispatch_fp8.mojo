@@ -174,11 +174,11 @@ def test_dispatch[
     )
 
     var topk_ids_tensor = TileTensor[origin=ImmutAnyOrigin](
-        device_topk_buf, row_major(Idx(n_tokens_per_rank), Idx[top_k]())
+        device_topk_buf, row_major(n_tokens_per_rank, Idx[top_k]())
     )
     var input_tokens_tensor = TileTensor[origin=ImmutAnyOrigin](
         device_input_buf,
-        row_major(Idx(n_tokens_per_rank), Idx[hidden_size]()),
+        row_major(n_tokens_per_rank, Idx[hidden_size]()),
     )
     var output_tensor = TileTensor[origin=MutAnyOrigin](
         device_output_buf,

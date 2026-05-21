@@ -131,14 +131,14 @@ def bench_cublas_per_group[
     var b_shape = Coord(n, Idx[K_ARRAY]())
     var c_shape = Coord(m, n)
     var a_scales_shape = Coord(
-        Idx(ceildiv(Int(m.value()), SF_MN_GROUP_SIZE)),
+        ceildiv(Int(m.value()), SF_MN_GROUP_SIZE),
         Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)](),
         Idx[SF_ATOM_M[0]](),
         Idx[SF_ATOM_M[1]](),
         Idx[SF_ATOM_K](),
     )
     var b_scales_shape = Coord(
-        Idx(ceildiv(Int(n.value()), SF_MN_GROUP_SIZE)),
+        ceildiv(Int(n.value()), SF_MN_GROUP_SIZE),
         Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)](),
         Idx[SF_ATOM_M[0]](),
         Idx[SF_ATOM_M[1]](),
@@ -295,7 +295,7 @@ def bench_structured_kernel[
         row_major(
             Coord(
                 Idx[1](),
-                Idx(ceildiv(Int(m.value()), SF_MN_GROUP_SIZE)),
+                ceildiv(Int(m.value()), SF_MN_GROUP_SIZE),
                 Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)](),
                 Idx[SF_ATOM_M[0]](),
                 Idx[SF_ATOM_M[1] * SF_ATOM_K](),
@@ -307,7 +307,7 @@ def bench_structured_kernel[
         row_major(
             Coord(
                 Idx[1](),
-                Idx(ceildiv(Int(n.value()), SF_MN_GROUP_SIZE)),
+                ceildiv(Int(n.value()), SF_MN_GROUP_SIZE),
                 Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)](),
                 Idx[SF_ATOM_M[0]](),
                 Idx[SF_ATOM_M[1] * SF_ATOM_K](),

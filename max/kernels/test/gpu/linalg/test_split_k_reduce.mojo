@@ -93,10 +93,10 @@ def test_split_k_reduce_rank3[
         _dtype: DType, _width: Int, *, alignment: Int = 1
     ](idx: IndexList[2], val: SIMD[_dtype, _width]) capturing -> None:
         var another_val = rebind[SIMD[_dtype, _width]](
-            epilogue_buffer.load[width=_width](Coord(Idx(idx[0]), Idx(idx[1])))
+            epilogue_buffer.load[width=_width](Coord(idx[0], idx[1]))
         )
         c.store(
-            Coord(Idx(idx[0]), Idx(idx[1])),
+            Coord(idx[0], idx[1]),
             rebind[SIMD[c_type, _width]](val + another_val),
         )
 

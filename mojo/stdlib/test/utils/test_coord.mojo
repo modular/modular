@@ -368,8 +368,7 @@ def test_idx2crd_nested_depth2() raises:
 
 
 def test_idx2crd_nested_depth3() raises:
-    """Test idx2crd with depth-3 nested shape: Coord(Coord(Coord(2, 3), Idx(4))).
-    """
+    """Test idx2crd with depth-3 nested shape: Coord(Coord(Coord(2, 3), 4))."""
     var shape = Coord(
         Coord(Coord(Idx[2](), Idx[3]()), Idx[4]()),
     )

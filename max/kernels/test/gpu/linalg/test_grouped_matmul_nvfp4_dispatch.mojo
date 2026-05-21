@@ -372,12 +372,12 @@ def _test_dispatch[
 
         var c_slice = TileTensor(
             c_ref_tensor.ptr + start * c_row_stride,
-            row_major((Idx(end - start), Idx[N]())),
+            row_major((end - start, Idx[N]())),
         )
 
         var new_a_tensor = TileTensor(
             a_tensor.ptr + start * a_row_stride,
-            row_major((Idx(end - start), Idx[packed_K]())),
+            row_major((end - start, Idx[packed_K]())),
         )
 
         var new_b_tensor = TileTensor(
@@ -405,7 +405,7 @@ def _test_dispatch[
             a_scales_tensor.ptr + a_scales_start * a_scales_row_stride,
             row_major(
                 Coord(
-                    Idx(ceildiv(end - start, SF_MN_GROUP_SIZE)),
+                    ceildiv(end - start, SF_MN_GROUP_SIZE),
                     Idx[k_groups](),
                     Idx[SF_ATOM_M[0]](),
                     Idx[SF_ATOM_M[1]](),

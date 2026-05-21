@@ -66,14 +66,14 @@ def test_naive_blockwise_fp8_matmul[
     var c_shape = Coord(m, n)
 
     var a_scale_shape = Coord(
-        Idx(ceildiv(K, BLOCK_SCALE_K)), Idx(ceildiv(M, BLOCK_SCALE_M))
+        ceildiv(K, BLOCK_SCALE_K), ceildiv(M, BLOCK_SCALE_M)
     )
     var b_scale_shape = Coord(
-        Idx(ceildiv(N, BLOCK_SCALE_N)),
-        Idx(ceildiv(K, BLOCK_SCALE_K)),
+        ceildiv(N, BLOCK_SCALE_N),
+        ceildiv(K, BLOCK_SCALE_K),
     ) if transpose_b else Coord(
-        Idx(ceildiv(K, BLOCK_SCALE_K)),
-        Idx(ceildiv(N, BLOCK_SCALE_N)),
+        ceildiv(K, BLOCK_SCALE_K),
+        ceildiv(N, BLOCK_SCALE_N),
     )
 
     var a_size = M * K
@@ -118,16 +118,16 @@ def test_naive_blockwise_fp8_matmul[
             var res: Float32 = 0.0
             for _k in range(K):
                 var a_scale = a_scale_host[
-                    Coord(Idx(_k // BLOCK_SCALE_K), Idx(_m // BLOCK_SCALE_M))
+                    Coord(_k // BLOCK_SCALE_K, _m // BLOCK_SCALE_M)
                 ]
                 var b_scale = b_scale_host[
-                    Coord(Idx(_n // BLOCK_SCALE_N), Idx(_k // BLOCK_SCALE_K))
+                    Coord(_n // BLOCK_SCALE_N, _k // BLOCK_SCALE_K)
                 ] if transpose_b else b_scale_host[
-                    Coord(Idx(_k // BLOCK_SCALE_K), Idx(_n // BLOCK_SCALE_N))
+                    Coord(_k // BLOCK_SCALE_K, _n // BLOCK_SCALE_N)
                 ]
-                var b_elem = b_host[
-                    Coord(Idx(_n), Idx(_k))
-                ] if transpose_b else b_host[Coord(Idx(_k), Idx(_n))]
+                var b_elem = b_host[Coord(_n, _k)] if transpose_b else b_host[
+                    Coord(_k, _n)
+                ]
                 res += (
                     a_host[_m, _k].cast[DType.float32]()
                     * b_elem.cast[DType.float32]()

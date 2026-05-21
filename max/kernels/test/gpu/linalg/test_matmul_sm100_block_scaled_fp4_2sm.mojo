@@ -182,7 +182,7 @@ def run_matmul_sm100_block_scaled_fp4_2sm_suite[
                     ctx,
                     Int(16),
                     Idx[1024](),
-                    Idx(1024 + 32),
+                    Idx[1024 + 32](),
                 )
 
                 test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[

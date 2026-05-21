@@ -169,7 +169,7 @@ def execute_kv_cache_ragged_flash_attention[
             q_host,
             row_major(
                 (
-                    Idx(total_seq_len),
+                    total_seq_len,
                     Idx[num_q_heads](),
                     Idx[head_dim](),
                 )
@@ -180,7 +180,7 @@ def execute_kv_cache_ragged_flash_attention[
     # Create Q tensor
     var q_tensor = TileTensor(
         q_device,
-        row_major((Idx(total_seq_len), Idx[num_q_heads](), Idx[head_dim]())),
+        row_major((total_seq_len, Idx[num_q_heads](), Idx[head_dim]())),
     )
 
     # Output tensor [total_seq_len, num_q_heads, head_dim]
@@ -189,7 +189,7 @@ def execute_kv_cache_ragged_flash_attention[
     )
     var output_device_tensor = TileTensor(
         output_device,
-        row_major((Idx(total_seq_len), Idx[num_q_heads](), Idx[head_dim]())),
+        row_major((total_seq_len, Idx[num_q_heads](), Idx[head_dim]())),
     )
 
     # KV block tensor [num_blocks, 2, num_layers, seq_len+cache_len, num_kv_heads, head_dim]
@@ -245,7 +245,7 @@ def execute_kv_cache_ragged_flash_attention[
 
     # Create tensors for row offsets, cache lengths, and lookup table
     var input_row_offsets_tensor = TileTensor(
-        input_row_offsets_device, row_major(Idx(batch_size + 1))
+        input_row_offsets_device, row_major(batch_size + 1)
     )
 
     comptime cache_lengths_lt_layout = Layout(UNKNOWN_VALUE)

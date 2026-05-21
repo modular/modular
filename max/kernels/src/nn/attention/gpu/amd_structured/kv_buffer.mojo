@@ -336,7 +336,7 @@ struct KVBuffer[
             tile_rows,
             Self.BK,
             stride_layout=Self._SmemTileStrides,
-        ](Coord(Idx(tile_row), Idx(block_col)))
+        ](Coord(tile_row, block_col))
 
     @always_inline
     def __init__(
@@ -741,7 +741,7 @@ struct DecodeStreamingKVBuffer[
             tile_rows,
             Self.BK,
             stride_layout=Self._KSmemTileStrides,
-        ](Coord(Idx(tile_row), Idx[0]()))
+        ](Coord(tile_row, Idx[0]()))
 
     @always_inline
     def load_from_dram[

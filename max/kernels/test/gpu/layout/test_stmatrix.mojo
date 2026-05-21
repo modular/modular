@@ -219,19 +219,19 @@ def check_stmatrix_gen[
 
     var c_ref_tt = TileTensor(
         c_device_ref,
-        row_major(Coord(Idx(M), Idx(N))),
+        row_major(Coord(M, N)),
     )
     var a_tt = TileTensor(
         UnsafePointer[Scalar[input_type], ImmutAnyOrigin](
             unsafe_from_address=Int(a_device.unsafe_ptr())
         ),
-        row_major(Coord(Idx(M), Idx(K))),
+        row_major(Coord(M, K)),
     )
     var b_tt = TileTensor(
         UnsafePointer[Scalar[input_type], ImmutAnyOrigin](
             unsafe_from_address=Int(b_device.unsafe_ptr())
         ),
-        row_major(Coord(Idx(K), Idx(N))),
+        row_major(Coord(K, N)),
     )
 
     comptime kernel_naive_type = matmul_kernel_naive[
@@ -335,19 +335,19 @@ def check_stmatrix(
 
     var c_ref_tt = TileTensor(
         c_device_ref,
-        row_major(Coord(Idx(M), Idx(N))),
+        row_major(Coord(M, N)),
     )
     var a_tt = TileTensor(
         UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin](
             unsafe_from_address=Int(a_device.unsafe_ptr())
         ),
-        row_major(Coord(Idx(M), Idx(K))),
+        row_major(Coord(M, K)),
     )
     var b_tt = TileTensor(
         UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin](
             unsafe_from_address=Int(b_device.unsafe_ptr())
         ),
-        row_major(Coord(Idx(K), Idx(N))),
+        row_major(Coord(K, N)),
     )
 
     comptime kernel = matmul_kernel_naive[

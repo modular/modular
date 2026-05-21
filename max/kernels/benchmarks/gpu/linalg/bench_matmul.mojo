@@ -453,9 +453,7 @@ def bench_matmul[
         def normal_elementwise_epilogue[
             dtype: DType, width: Int, *, alignment: Int = 1
         ](idx: IndexList[2], val: SIMD[dtype, width]) capturing -> None:
-            tensor_c.store[width=width](
-                (Idx(idx[0]), Idx(idx[1])), val.cast[c_type]()
-            )
+            tensor_c.store[width=width]((idx[0], idx[1]), val.cast[c_type]())
 
         comptime optional_normal_lambda_fn = Optional[
             elementwise_epilogue_type
@@ -603,7 +601,7 @@ def main() raises:
         ](
             ctx,
             m,
-            Idx(M),
+            M,
             Idx[N](),
             Idx[K](),
             init_type,

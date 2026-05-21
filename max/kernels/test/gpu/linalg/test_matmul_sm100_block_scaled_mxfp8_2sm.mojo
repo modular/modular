@@ -120,7 +120,7 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
 
     var a_scales_shape = row_major(
         Coord(
-            Idx(ceildiv(Int(m.value()), SF_MN_GROUP_SIZE)),
+            ceildiv(Int(m.value()), SF_MN_GROUP_SIZE),
             Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)](),
             Idx[SF_ATOM_M[0]](),
             Idx[SF_ATOM_M[1]](),
@@ -325,7 +325,7 @@ def main() raises:
                     ctx,
                     Int(1000),
                     Idx[1024](),
-                    Idx(1024 + 16),
+                    Idx[1024 + 16](),
                 )
 
                 test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
@@ -344,7 +344,7 @@ def main() raises:
                     ctx,
                     Int(512),
                     Idx[4096](),
-                    Idx(1024 + 16),
+                    Idx[1024 + 16](),
                 )
 
                 test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
@@ -441,7 +441,7 @@ def main() raises:
                     ctx,
                     Int(16),
                     Idx[1024](),
-                    Idx(1024 + 16),
+                    Idx[1024 + 16](),
                 )
 
                 test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[

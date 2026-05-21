@@ -167,27 +167,15 @@ def _test_grouped_1d1d_block_fp4_impl[
     )
     var a_offsets_tt = TileTensor(
         a_off_buf,
-        row_major(
-            Idx(
-                Int(num_active_experts + 1),
-            )
-        ),
+        row_major((Int(num_active_experts + 1),)),
     )
     var a_scale_offsets_tt = TileTensor(
         a_soff_buf,
-        row_major(
-            Idx(
-                Int(num_active_experts),
-            )
-        ),
+        row_major((Int(num_active_experts),)),
     )
     var expert_ids_tt = TileTensor(
         eid_buf,
-        row_major(
-            Idx(
-                Int(num_active_experts),
-            )
-        ),
+        row_major((Int(num_active_experts),)),
     )
     var expert_scales_tt = TileTensor(
         es_buf,

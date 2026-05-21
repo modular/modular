@@ -4912,9 +4912,9 @@ def mha_gpu_naive[
         p_device,
         row_major(
             (
-                Idx(batch_size * num_heads),
-                Idx(max_prompt_len),
-                Idx(num_keys),
+                batch_size * num_heads,
+                max_prompt_len,
+                num_keys,
             )
         ),
     )
@@ -5596,19 +5596,19 @@ def _naive_attention_with_transpose[
 
     var qt = TileTensor(
         qt_ptr,
-        row_major(Idx(batch_size), Idx(num_heads), Idx(seq_len), Idx(depth)),
+        row_major(batch_size, num_heads, seq_len, depth),
     )
     var kt = TileTensor(
         kt_ptr,
-        row_major(Idx(batch_size), Idx(num_heads), Idx(depth), Idx(num_keys)),
+        row_major(batch_size, num_heads, depth, num_keys),
     )
     var vt = TileTensor(
         vt_ptr,
-        row_major(Idx(batch_size), Idx(num_heads), Idx(num_keys), Idx(depth)),
+        row_major(batch_size, num_heads, num_keys, depth),
     )
     var ot = TileTensor(
         ot_ptr,
-        row_major(Idx(batch_size), Idx(num_heads), Idx(seq_len), Idx(depth)),
+        row_major(batch_size, num_heads, seq_len, depth),
     )
 
     comptime layout_4d = Layout.row_major[4]()
@@ -5665,10 +5665,10 @@ def _naive_attention_with_transpose[
         q.ptr,
         row_major(
             (
-                Idx(q.dim[0]()),
-                Idx(q.dim[1]()),
-                Idx(q.dim[2]()),
-                Idx(q.dim[3]()),
+                q.dim[0](),
+                q.dim[1](),
+                q.dim[2](),
+                q.dim[3](),
             )
         ),
     )
@@ -5676,10 +5676,10 @@ def _naive_attention_with_transpose[
         k.ptr,
         row_major(
             (
-                Idx(k.dim[0]()),
-                Idx(k.dim[1]()),
-                Idx(k.dim[2]()),
-                Idx(k.dim[3]()),
+                k.dim[0](),
+                k.dim[1](),
+                k.dim[2](),
+                k.dim[3](),
             )
         ),
     )
@@ -5687,10 +5687,10 @@ def _naive_attention_with_transpose[
         v.ptr,
         row_major(
             (
-                Idx(v.dim[0]()),
-                Idx(v.dim[1]()),
-                Idx(v.dim[2]()),
-                Idx(v.dim[3]()),
+                v.dim[0](),
+                v.dim[1](),
+                v.dim[2](),
+                v.dim[3](),
             )
         ),
     )
@@ -5698,10 +5698,10 @@ def _naive_attention_with_transpose[
         output.ptr,
         row_major(
             (
-                Idx(output.dim[0]()),
-                Idx(output.dim[1]()),
-                Idx(output.dim[2]()),
-                Idx(output.dim[3]()),
+                output.dim[0](),
+                output.dim[1](),
+                output.dim[2](),
+                output.dim[3](),
             )
         ),
     )
@@ -5754,19 +5754,17 @@ def _naive_attention[
     var score_ptr = alloc[Scalar[dtype]](score_size)
     var score = TileTensor(
         score_ptr,
-        row_major(
-            (Idx(batch_size), Idx(num_heads), Idx(seq_len), Idx(num_keys))
-        ),
+        row_major((batch_size, num_heads, seq_len, num_keys)),
     )
 
     var q_tt = TileTensor(
         q.ptr,
         row_major(
             (
-                Idx(q.dim[0]()),
-                Idx(q.dim[1]()),
-                Idx(q.dim[2]()),
-                Idx(q.dim[3]()),
+                q.dim[0](),
+                q.dim[1](),
+                q.dim[2](),
+                q.dim[3](),
             )
         ),
     )
@@ -5774,10 +5772,10 @@ def _naive_attention[
         k.ptr,
         row_major(
             (
-                Idx(k.dim[0]()),
-                Idx(k.dim[1]()),
-                Idx(k.dim[2]()),
-                Idx(k.dim[3]()),
+                k.dim[0](),
+                k.dim[1](),
+                k.dim[2](),
+                k.dim[3](),
             )
         ),
     )
@@ -5810,10 +5808,10 @@ def _naive_attention[
         output.ptr,
         row_major(
             (
-                Idx(output.dim[0]()),
-                Idx(output.dim[1]()),
-                Idx(output.dim[2]()),
-                Idx(output.dim[3]()),
+                output.dim[0](),
+                output.dim[1](),
+                output.dim[2](),
+                output.dim[3](),
             )
         ),
     )
@@ -5821,10 +5819,10 @@ def _naive_attention[
         v.ptr,
         row_major(
             (
-                Idx(v.dim[0]()),
-                Idx(v.dim[1]()),
-                Idx(v.dim[2]()),
-                Idx(v.dim[3]()),
+                v.dim[0](),
+                v.dim[1](),
+                v.dim[2](),
+                v.dim[3](),
             )
         ),
     )

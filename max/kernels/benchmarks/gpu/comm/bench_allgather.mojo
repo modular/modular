@@ -198,12 +198,12 @@ def bench_allgather[
 
     # Build TileTensor arrays for allgather.
     comptime InTileType = TileTensor[
-        dtype, type_of(row_major(Idx(lengths[0]))), ImmutAnyOrigin
+        dtype, type_of(row_major(lengths[0])), ImmutAnyOrigin
     ]
     var tt_in = InlineArray[InTileType, ngpus](uninitialized=True)
 
     comptime OutTileType = TileTensor[
-        dtype, type_of(row_major(Idx(lengths[0]))), MutAnyOrigin
+        dtype, type_of(row_major(lengths[0])), MutAnyOrigin
     ]
     var tt_out = InlineArray[OutTileType, ngpus * ngpus](uninitialized=True)
 
@@ -212,7 +212,7 @@ def bench_allgather[
             var flat_idx = gpu_idx * ngpus + src_idx
             tt_out[flat_idx] = TileTensor(
                 out_bufs_list[flat_idx],
-                row_major(Idx(lengths[src_idx])),
+                row_major(lengths[src_idx]),
             )
         list_of_ctx[gpu_idx].synchronize()
 
@@ -228,7 +228,7 @@ def bench_allgather[
             comptime for i in range(ngpus):
                 tt_in[i] = TileTensor(
                     cb_inputs[i].offset_ptr(cache_iter),
-                    row_major(Idx(lengths[i])),
+                    row_major(lengths[i]),
                 ).as_immut()
 
             var device_out = InlineArray[OutTileType, ngpus](uninitialized=True)

@@ -127,7 +127,7 @@ def run_rms_norm_rope_gpu[
 
     var data_buf = TileTensor(data_d, row_major(Coord(shape)))
     var output_buf = TileTensor(output_d, row_major(Coord(shape)))
-    var gamma = TileTensor(gamma_d, row_major(Idx(cols)))
+    var gamma = TileTensor(gamma_d, row_major(cols))
     var cos_vals = TileTensor(cos_d, row_major(Coord(shape)))
     var sin_vals = TileTensor(sin_d, row_major(Coord(shape)))
 

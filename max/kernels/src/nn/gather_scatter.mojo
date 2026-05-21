@@ -241,16 +241,14 @@ def gather_reduce[
                 ) -> StaticTuple[SIMD[dtype, simd_width], unroll_factor]:
                     var out = accums
                     var idxs = _unsafe_normalize_neg_index(
-                        indices.load[width=unroll_factor](
-                            Coord(Idx(i), Idx(j))
-                        ),
+                        indices.load[width=unroll_factor](Coord(i, j)),
                         gather_axis_size,
                     )
 
                     comptime for unroll_idx in range(0, unroll_factor):
                         var gather_chunk = input.load[
                             width=simd_width, alignment=1
-                        ]((Int(idxs[unroll_idx]), Idx(k)))
+                        ]((Int(idxs[unroll_idx]), k))
                         out[unroll_idx] = reduce_fn[dtype, simd_width](
                             accums[unroll_idx], gather_chunk
                         )
@@ -276,7 +274,7 @@ def gather_reduce[
                         StaticTuple[SIMD[dtype, simd_width], 1](accum), j
                     )[0]
 
-                var out_idx = Coord(Idx(i), Idx(k))
+                var out_idx = Coord(i, k)
                 output.store[width=simd_width, alignment=1](out_idx, accum)
 
             tile[
@@ -747,11 +745,9 @@ def scatter_nd_generator[
             )
 
         var output_flat = TileTensor(
-            output.ptr, row_major(Idx(output.num_elements()))
+            output.ptr, row_major(output.num_elements())
         )
-        var data_flat = TileTensor(
-            data.ptr, row_major(Idx(data.num_elements()))
-        )
+        var data_flat = TileTensor(data.ptr, row_major(data.num_elements()))
 
         # Always copy input to output first.
         comptime if is_gpu[target]():
@@ -784,7 +780,7 @@ def scatter_nd_generator[
             return
 
         var updates_flat = TileTensor(
-            updates.ptr, row_major(Idx(updates.num_elements()))
+            updates.ptr, row_major(updates.num_elements())
         )
 
         var data_shape = coord_to_index_list(data.layout.shape_coord())
@@ -887,12 +883,8 @@ def scatter_nd_generator[
                     output_flat[output_offset + i] = reduction_fn[
                         output_type, 1
                     ](
-                        output_flat.load[width=1](
-                            Coord(Idx(output_offset + i))
-                        ),
-                        updates_flat.load[width=1](
-                            Coord(Idx(updates_offset + i))
-                        ),
+                        output_flat.load[width=1](Coord(output_offset + i)),
+                        updates_flat.load[width=1](Coord(updates_offset + i)),
                     )
 
             else:

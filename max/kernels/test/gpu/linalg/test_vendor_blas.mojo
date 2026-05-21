@@ -48,17 +48,15 @@ def test_vendor_blas[
 
     var a = TileTensor(
         a_device,
-        row_major(Coord(Idx(M), Idx(K))),
+        row_major(Coord(M, K)),
     )
     var b = TileTensor(
         b_device,
-        row_major(Coord(Idx(N), Idx(K))) if transpose_b else row_major(
-            Coord(Idx(K), Idx(N))
-        ),
+        row_major(Coord(N, K)) if transpose_b else row_major(Coord(K, N)),
     )
     var c = TileTensor(
         c_device,
-        row_major(Coord(Idx(M), Idx(N))),
+        row_major(Coord(M, N)),
     )
 
     vendor_blas.matmul(ctx, c, a, b, c_row_major=True, transpose_b=transpose_b)
@@ -74,21 +72,19 @@ def test_vendor_blas[
 
     var c_ref_tt = TileTensor(
         c_device_ref,
-        row_major(Coord(Idx(M), Idx(N))),
+        row_major(Coord(M, N)),
     )
     var a_tt = TileTensor(
         UnsafePointer[Scalar[dtype], ImmutAnyOrigin](
             unsafe_from_address=Int(a_device.unsafe_ptr())
         ),
-        row_major(Coord(Idx(M), Idx(K))),
+        row_major(Coord(M, K)),
     )
     var b_tt = TileTensor(
         UnsafePointer[Scalar[dtype], ImmutAnyOrigin](
             unsafe_from_address=Int(b_device.unsafe_ptr())
         ),
-        row_major(Coord(Idx(N), Idx(K))) if transpose_b else row_major(
-            Coord(Idx(K), Idx(N))
-        ),
+        row_major(Coord(N, K)) if transpose_b else row_major(Coord(K, N)),
     )
 
     comptime kernel = matmul_kernel_naive[

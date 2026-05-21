@@ -483,12 +483,12 @@ def _test_kernel_impl[
 
         var c_slice = TileTensor(
             c_ref_tensor.ptr + start * c_row_stride,
-            row_major((Idx(end - start), Idx[expert_shape[0]]())),
+            row_major((end - start, Idx[expert_shape[0]]())),
         )
 
         var new_a_tensor = TileTensor(
             a_tensor.ptr + start * a_row_stride,
-            row_major((Idx(end - start), Idx[expert_shape[1]]())),
+            row_major((end - start, Idx[expert_shape[1]]())),
         )
 
         var new_b_tensor = TileTensor(
@@ -516,7 +516,7 @@ def _test_kernel_impl[
             a_scales_tensor.ptr + a_scales_start * a_scales_row_stride,
             row_major(
                 Coord(
-                    Idx(ceildiv(end - start, SF_MN_GROUP_SIZE)),
+                    ceildiv(end - start, SF_MN_GROUP_SIZE),
                     Idx[k_groups](),
                     Idx[SF_ATOM_M[0]](),
                     Idx[SF_ATOM_M[1]](),

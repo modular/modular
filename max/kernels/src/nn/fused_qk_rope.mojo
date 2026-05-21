@@ -272,7 +272,7 @@ def fused_qk_rope[
                 SIMD[dtype, width]
             ]()
             var f_c_temp = freqs_cis.load[width=width, alignment=_alignment](
-                (Idx(post_seq_idx), Idx(head_dim_idx))
+                (post_seq_idx, head_dim_idx)
             )
 
             if is_q_proj:
@@ -453,17 +453,17 @@ def fused_qk_rope_ragged[
                 else:
                     f_c_temp = freqs_cis.load[
                         width=width, alignment=_alignment
-                    ]((Idx(position_ids_idx), Idx(head_dim_idx)))
+                    ]((position_ids_idx, head_dim_idx))
             elif has_nope:
                 if head_dim_idx < unroped_dim:
                     f_c_temp = get_identity_rope_coeff[width, freq_dtype]()
                 else:
                     f_c_temp = freqs_cis.load[
                         width=width, alignment=_alignment
-                    ]((Idx(position_ids_idx), Idx(head_dim_idx - unroped_dim)))
+                    ]((position_ids_idx, head_dim_idx - unroped_dim))
             else:
                 f_c_temp = freqs_cis.load[width=width, alignment=_alignment](
-                    (Idx(position_ids_idx), Idx(head_dim_idx))
+                    (position_ids_idx, head_dim_idx)
                 )
 
             if is_q_proj:

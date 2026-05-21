@@ -9095,13 +9095,13 @@ struct Struct_mla_prefill_sparse_paged:
                 scratch_sparse_indices.unsafe_ptr().bitcast[
                     Scalar[DType.uint32]
                 ](),
-                row_major(Idx(num_indices_sparse)),
+                row_major(num_indices_sparse),
             )
             var topk_lengths_tt = TileTensor(
                 topk_lengths.to_layout_tensor().ptr.bitcast[
                     Scalar[DType.uint32]
                 ](),
-                row_major(Idx(Int(topk_lengths.dim_size(0)))),
+                row_major(Int(topk_lengths.dim_size(0))),
             )
 
             mla_sm100_prefill_sparse[
@@ -11741,7 +11741,7 @@ struct DistributedAllGather:
                 rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
                     inputs[0]._ptr
                 ),
-                row_major(Idx(inputs[0].size())),
+                row_major(inputs[0].size()),
             )
         )
         var in_tensors = InlineArray[InputTensorType, num_devices](
@@ -11752,7 +11752,7 @@ struct DistributedAllGather:
                 rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](
                     outputs[0]._ptr
                 ),
-                row_major(Idx(outputs[0].size())),
+                row_major(outputs[0].size()),
             )
         )
         var out_tensors = InlineArray[
@@ -11769,7 +11769,7 @@ struct DistributedAllGather:
                 rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
                     inputs[i]._ptr
                 ),
-                row_major(Idx(inputs[i].size())),
+                row_major(inputs[i].size()),
             )
             rank_sigs[i] = signal_buffers[i]._ptr.bitcast[Signal]()
 
@@ -11778,7 +11778,7 @@ struct DistributedAllGather:
                 rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](
                     outputs[i]._ptr
                 ),
-                row_major(Idx(outputs[i].size())),
+                row_major(outputs[i].size()),
             )
 
         @always_inline

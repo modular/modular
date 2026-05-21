@@ -1234,7 +1234,7 @@ struct HKMhaPrefill[config: HKMhaConfig]:
                 Idx[1](),
                 Idx[Self.DEPTH](),
             ),
-            Coord(Idx(batch_idx), Idx[0](), Idx(head_idx), Idx[0]()),
+            Coord(batch_idx, Idx[0](), head_idx, Idx[0]()),
         ).reshape(
             Self._QPerHeadLayoutT(
                 Coord(
@@ -1251,7 +1251,7 @@ struct HKMhaPrefill[config: HKMhaConfig]:
                 Idx[1](),
                 Idx[Self.DEPTH](),
             ),
-            Coord(Idx(batch_idx), Idx[0](), Idx(head_idx), Idx[0]()),
+            Coord(batch_idx, Idx[0](), head_idx, Idx[0]()),
         ).reshape(
             Self._QPerHeadLayoutT(
                 Coord(

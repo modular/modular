@@ -13,6 +13,7 @@
 
 from std.sys import size_of, simd_width_of
 from std.itertools import product
+from std.utils.coord import _coerce_dynamic
 
 from layout import Coord, Idx, TileTensor, row_major
 from layout.coord import DynamicCoord
@@ -212,24 +213,24 @@ def reducescatter_test[
     comptime for i in range(ngpus):
         var runtime_shape = shape_type()
         comptime if rank == 1:
-            runtime_shape[0] = rebind[runtime_shape.element_types[0]](
-                Idx(config.rank_num_elements(i))
+            runtime_shape[0] = _coerce_dynamic[runtime_shape.element_types[0]](
+                config.rank_num_elements(i)
             )
         elif rank == 2:
             comptime if axis == 0:
-                runtime_shape[0] = rebind[runtime_shape.element_types[0]](
-                    Idx(config.rank_units(i))
-                )
-                runtime_shape[1] = rebind[runtime_shape.element_types[1]](
-                    Scalar[DType.int](shape[1].value())
-                )
+                runtime_shape[0] = _coerce_dynamic[
+                    runtime_shape.element_types[0]
+                ](config.rank_units(i))
+                runtime_shape[1] = _coerce_dynamic[
+                    runtime_shape.element_types[1]
+                ](Int(shape[1].value()))
             else:
-                runtime_shape[0] = rebind[runtime_shape.element_types[0]](
-                    Scalar[DType.int](shape[0].value())
-                )
-                runtime_shape[1] = rebind[runtime_shape.element_types[1]](
-                    Idx(config.rank_units(i) * simd_width)
-                )
+                runtime_shape[0] = _coerce_dynamic[
+                    runtime_shape.element_types[0]
+                ](Int(shape[0].value()))
+                runtime_shape[1] = _coerce_dynamic[
+                    runtime_shape.element_types[1]
+                ](config.rank_units(i) * simd_width)
 
         out_bufs[i] = OutputTileType(
             out_bufs_list[i].unsafe_ptr(),
@@ -420,7 +421,7 @@ def run_reducescatter_sweep[use_multimem: Bool]() raises:
                 axis=0,
                 use_custom_epilogue=use_custom_epilogue,
                 use_multimem=use_multimem,
-            ](list_of_ctx, Coord(Idx(length)))
+            ](list_of_ctx, Coord(length))
         except e:
             if (
                 use_multimem

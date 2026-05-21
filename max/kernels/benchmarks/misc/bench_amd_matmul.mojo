@@ -383,8 +383,8 @@ def bench_shape[
     comptime assert K_static > 0, "K must be a comptime Int"
     comptime assert N_static > 0, "N must be a comptime Int"
 
-    var shape_c = Coord(Idx(M), n)
-    var shape_a = Coord(Idx(M), k)
+    var shape_c = Coord(M, n)
+    var shape_a = Coord(M, k)
     var shape_b = Coord(
         Idx[N_static if transpose_b else K_static](),
         Idx[K_static if transpose_b else N_static](),

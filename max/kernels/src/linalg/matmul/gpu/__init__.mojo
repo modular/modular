@@ -1644,9 +1644,9 @@ def multistage_gemm[
             work_space_data,
             row_major(
                 Coord(
-                    Idx(runtime_config.num_k_partitions),
-                    Idx(M),
-                    Idx(N),
+                    runtime_config.num_k_partitions,
+                    M,
+                    N,
                 )
             ),
         )

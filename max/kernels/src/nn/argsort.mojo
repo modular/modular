@@ -72,9 +72,9 @@ def _argsort_cpu[
         comptime assert a.dtype.is_integral()
         comptime assert b.dtype.is_integral()
         comptime if ascending:
-            return input[Idx(a)] < input[Idx(b)]
+            return input[a] < input[b]
         else:
-            return input[Idx(a)] > input[Idx(b)]
+            return input[a] > input[b]
 
     sort[cmp_fn](
         Span[
@@ -401,7 +401,7 @@ def _argsort_gpu[
 
     if n.is_power_of_two():
         var input_copy_buffer = ctx.enqueue_create_buffer[input.dtype](n)
-        var input_copy = TileTensor(input_copy_buffer, row_major(Idx(n)))
+        var input_copy = TileTensor(input_copy_buffer, row_major(n))
 
         # Initialize indices with iota.
         @parameter
@@ -440,16 +440,14 @@ def _argsort_gpu[
     var padded_input_buffer = ctx.enqueue_create_buffer[input.dtype](
         pow_2_length
     )
-    var padded_input = TileTensor(
-        padded_input_buffer, row_major(Idx(pow_2_length))
-    )
+    var padded_input = TileTensor(padded_input_buffer, row_major(pow_2_length))
 
     var padded_indices_buffer = ctx.enqueue_create_buffer[indices.dtype](
         pow_2_length
     )
     var padded_indices = TileTensor(
         padded_indices_buffer,
-        row_major(Idx(pow_2_length)),
+        row_major(pow_2_length),
     )
 
     # Initialize indices with sequential values and copy input data to device

@@ -898,7 +898,7 @@ def _matmul_dynamic_scaled_fp8_impl[
     comptime assert b.rank == 2
     comptime assert a_scales.rank == 2
     comptime assert b_scales.rank == 2
-    # Provide evidence that flat_rank >= 2 for Coord(Idx(...), Idx(...))
+    # Provide evidence that flat_rank >= 2 for Coord(..., ...)
     # loads/stores on a_scales, b_scales, and c below.
     comptime assert c.flat_rank >= 2
     comptime assert a_scales.flat_rank >= 2
@@ -964,17 +964,17 @@ def _matmul_dynamic_scaled_fp8_impl[
                 _dtype, width
             ]:
                 var a_scale = a_scales.load[width=1](
-                    Coord(Idx[0](), Idx(idx[0]))
+                    Coord(Idx[0](), idx[0])
                 ).cast[DType.float32]()
                 var b_scale: SIMD[DType.float32, width]
 
                 comptime if transpose_b:
                     b_scale = b_scales.load[width=width](
-                        Coord(Idx(idx[1]), Idx[0]())
+                        Coord(idx[1], Idx[0]())
                     ).cast[DType.float32]()
                 else:
                     b_scale = b_scales.load[width=width](
-                        Coord(Idx[0](), Idx(idx[1]))
+                        Coord(Idx[0](), idx[1])
                     ).cast[DType.float32]()
 
                 var scaled_val = val.cast[DType.float32]() * a_scale * b_scale
@@ -1026,23 +1026,23 @@ def _matmul_dynamic_scaled_fp8_impl[
                 dtype: DType, width: SIMDSize, *, alignment: Int = 1
             ](idx: IndexList[2], val: SIMD[dtype, width]):
                 var a_scale = a_scales.load[width=1](
-                    Coord(Idx[0](), Idx(idx[0]))
+                    Coord(Idx[0](), idx[0])
                 ).cast[dtype]()
                 var b_scale: SIMD[dtype, width]
 
                 comptime if transpose_b:
                     b_scale = b_scales.load[width=width](
-                        Coord(Idx(idx[1]), Idx[0]())
+                        Coord(idx[1], Idx[0]())
                     ).cast[dtype]()
                 else:
                     b_scale = b_scales.load[width=width](
-                        Coord(Idx[0](), Idx(idx[1]))
+                        Coord(Idx[0](), idx[1])
                     ).cast[dtype]()
 
                 var scaled_val = val * a_scale * b_scale
 
                 c.store[width=width, alignment=alignment](
-                    Coord(Idx(idx[0]), Idx(idx[1])),
+                    Coord(idx[0], idx[1]),
                     scaled_val.cast[c_type](),
                 )
 
@@ -1061,7 +1061,7 @@ def _matmul_dynamic_scaled_fp8_impl[
                 var scaled_val = val * a_scale * b_scale
 
                 c.store[width=width, alignment=alignment](
-                    Coord(Idx(idx[0]), Idx(idx[1])),
+                    Coord(idx[0], idx[1]),
                     scaled_val.cast[c_type](),
                 )
 
@@ -1077,7 +1077,7 @@ def _matmul_dynamic_scaled_fp8_impl[
                 )
                 var c_scratch = TileTensor(
                     scratch_buffer.unsafe_ptr(),
-                    row_major(Coord(Idx(M), Idx[b_N]())),
+                    row_major(Coord(M, Idx[b_N]())),
                 )
 
                 comptime if input_scale_granularity == "tensor":
@@ -1101,7 +1101,7 @@ def _matmul_dynamic_scaled_fp8_impl[
                 )
                 var c_scratch = TileTensor(
                     scratch_buffer.unsafe_ptr(),
-                    row_major(Coord(Idx(M), Idx(N_rt))),
+                    row_major(Coord(M, N_rt)),
                 )
 
                 comptime if input_scale_granularity == "tensor":

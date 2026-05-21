@@ -83,15 +83,15 @@ def test_mxfp4_matmul[
     ctx.synchronize()
 
     # Step 1: Dequant and cast ONCE to shared FP8 buffers
-    # Use Idx(M) (dynamic) to match mxfp4_dequant_matmul_amd's internal layout.
-    var a_tt = TileTensor(a_device, row_major((Idx(M), Idx[K]())))
+    # Use M (dynamic) to match mxfp4_dequant_matmul_amd's internal layout.
+    var a_tt = TileTensor(a_device, row_major((M, Idx[K]())))
     var b_packed_tt = TileTensor(b_packed_device, row_major[N, packed_K]())
     var b_scales_tt = TileTensor(b_scales_device, row_major[N, scale_K]())
 
     var b_fp8_device = ctx.enqueue_create_buffer[fp8_type](N * K)
     var a_fp8_device = ctx.enqueue_create_buffer[fp8_type](M * K)
     var b_fp8_tt = TileTensor(b_fp8_device, row_major((Idx[N](), Idx[K]())))
-    var a_fp8_tt = TileTensor(a_fp8_device, row_major((Idx(M), Idx[K]())))
+    var a_fp8_tt = TileTensor(a_fp8_device, row_major((M, Idx[K]())))
 
     dequant_mxfp4(
         ctx,
@@ -106,7 +106,7 @@ def test_mxfp4_matmul[
 
     # Step 2: Run our kernel on the shared FP8 data
     var c_device = ctx.enqueue_create_buffer[DType.bfloat16](M * N)
-    var c_tt = TileTensor(c_device, row_major((Idx(M), Idx[N]())))
+    var c_tt = TileTensor(c_device, row_major((M, Idx[N]())))
 
     from linalg.matmul.gpu import _matmul_gpu
 
@@ -217,8 +217,8 @@ def test_mxfp4_matmul_e2e[
     ctx.enqueue_copy(b_scales_device, bs_hbuf)
     ctx.synchronize()
 
-    # Use dynamic M (Idx(M)) matching mxfp4_dequant_matmul_amd's internal layout.
-    var a_tt = TileTensor(a_device, row_major((Idx(M), Idx[K]())))
+    # Use dynamic M (M) matching mxfp4_dequant_matmul_amd's internal layout.
+    var a_tt = TileTensor(a_device, row_major((M, Idx[K]())))
     var b_packed_tt = TileTensor(b_packed_device, row_major[N, packed_K]())
     var b_scales_tt = TileTensor(b_scales_device, row_major[N, scale_K]())
 
@@ -227,7 +227,7 @@ def test_mxfp4_matmul_e2e[
     var b_fp8_ref = ctx.enqueue_create_buffer[fp8_type](N * K)
     var a_fp8_ref = ctx.enqueue_create_buffer[fp8_type](M * K)
     var b_fp8_tt = TileTensor(b_fp8_ref, row_major((Idx[N](), Idx[K]())))
-    var a_fp8_tt = TileTensor(a_fp8_ref, row_major((Idx(M), Idx[K]())))
+    var a_fp8_tt = TileTensor(a_fp8_ref, row_major((M, Idx[K]())))
 
     dequant_mxfp4(
         ctx,
@@ -257,7 +257,7 @@ def test_mxfp4_matmul_e2e[
 
     # Kernel under test: mxfp4_dequant_matmul_amd (dequants internally)
     var c_device = ctx.enqueue_create_buffer[DType.bfloat16](M * N)
-    var c_tt = TileTensor(c_device, row_major((Idx(M), Idx[N]())))
+    var c_tt = TileTensor(c_device, row_major((M, Idx[N]())))
 
     comptime if "gfx" in _accelerator_arch():
         from linalg.matmul.gpu.amd.mxfp4_dequant_matmul_amd import (
@@ -418,8 +418,8 @@ def test_fp8_kernel_vs_blas[
             ha[i] = random_float64(-0.5, 0.5).cast[DType.bfloat16]()
 
     var a_fp8 = ctx.enqueue_create_buffer[fp8_type](M * K)
-    var a_bf16_tt = TileTensor(a_bf16, row_major((Idx(M), Idx[K]())))
-    var a_fp8_tt = TileTensor(a_fp8, row_major((Idx(M), Idx[K]())))
+    var a_bf16_tt = TileTensor(a_bf16, row_major((M, Idx[K]())))
+    var a_fp8_tt = TileTensor(a_fp8, row_major((M, Idx[K]())))
     _cast_bf16_to_fp8(ctx, a_fp8_tt, a_bf16_tt, M, K)
 
     # B: MXFP4 packed weights dequanted to FP8
@@ -454,7 +454,7 @@ def test_fp8_kernel_vs_blas[
 
     # Path 1: our kernel
     var c_kernel = ctx.enqueue_create_buffer[DType.bfloat16](M * N)
-    var c_kernel_tt = TileTensor(c_kernel, row_major((Idx(M), Idx[N]())))
+    var c_kernel_tt = TileTensor(c_kernel, row_major((M, Idx[N]())))
     from linalg.matmul.gpu import _matmul_gpu
 
     _matmul_gpu[transpose_b=True](c_kernel_tt, a_fp8_tt, b_fp8_tt, ctx)

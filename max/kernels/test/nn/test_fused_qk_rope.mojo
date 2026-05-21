@@ -168,7 +168,7 @@ def test_fused_qk_rope[dtype: DType](ctx: DeviceContext) raises -> None:
     )
     var valid_lengths = TileTensor(
         valid_lengths_buffer,
-        row_major(Idx(batch_size)),
+        row_major(batch_size),
     )
 
     fused_qk_rope[

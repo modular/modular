@@ -98,7 +98,7 @@ def shrink_qkv_permute_3mn_sm100(
     # exclusively via the epilogue function.
     var c = TileTensor(
         UnsafePointer[Scalar[c_type], MutExternalOrigin].unsafe_dangling(),
-        row_major(Coord(Idx(M), Idx(N_Total))),
+        row_major(Coord(M, N_Total)),
     )
 
     @always_inline

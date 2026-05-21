@@ -190,8 +190,8 @@ struct PackMatrixRows[
                         self.original_matrix.ptr
                         + self.original_matrix.layout(
                             Coord(
-                                Idx(row_global_index[0]),
-                                Idx(row_global_index[1]),
+                                row_global_index[0],
+                                row_global_index[1],
                             )
                         ),
                         0,  # no left bound.
@@ -400,7 +400,7 @@ struct PackMatrixCols[
                 data = partial_simd_load[Self.simd_size](
                     self.original_matrix.ptr
                     + self.original_matrix.layout(
-                        Coord(Idx(global_idx[0]), Idx(global_idx[1]))
+                        Coord(global_idx[0], global_idx[1])
                     ),
                     0,
                     self.valid_data_dim[1] - col_idx,
@@ -437,7 +437,7 @@ struct PackMatrixCols[
             ](
                 self.original_matrix.ptr
                 + self.original_matrix.layout(
-                    Coord(Idx(global_row_idx), Idx(global_col_idx))
+                    Coord(global_row_idx, global_col_idx)
                 )
             )
 
@@ -666,9 +666,9 @@ def pack_b[
                     dst_flat_ptr + dst_offset,
                     row_major(
                         Coord(
-                            Idx(tile_n // inner_size2),
-                            Idx(tile_k2 // factor),
-                            Idx(inner_size2 * factor),
+                            tile_n // inner_size2,
+                            tile_k2 // factor,
+                            inner_size2 * factor,
                         )
                     ),
                 )
@@ -710,9 +710,9 @@ def pack_b[
                     dst_flat_ptr + dst_offset,
                     row_major(
                         Coord(
-                            Idx(tile_n // inner_size),
-                            Idx(tile_k),
-                            Idx(inner_size),
+                            tile_n // inner_size,
+                            tile_k,
+                            inner_size,
                         )
                     ),
                 )

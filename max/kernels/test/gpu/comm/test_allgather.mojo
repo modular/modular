@@ -97,16 +97,16 @@ def all_gather_test[
 
     # Build TileTensor arrays directly.
     comptime InTileType = type_of(
-        TileTensor(in_bufs_list[0], row_major(Idx(lengths[0]))).as_immut()
+        TileTensor(in_bufs_list[0], row_major(lengths[0])).as_immut()
     )
     var tt_in_bufs = InlineArray[InTileType, ngpus](uninitialized=True)
     comptime for i in range(ngpus):
         tt_in_bufs[i] = TileTensor(
-            in_bufs_list[i], row_major(Idx(lengths[i]))
+            in_bufs_list[i], row_major(lengths[i])
         ).as_immut()
 
     comptime OutTileType = type_of(
-        TileTensor(out_bufs_list[0][0], row_major(Idx(lengths[0])))
+        TileTensor(out_bufs_list[0][0], row_major(lengths[0]))
     )
     var tt_out_bufs = InlineArray[OutTileType, ngpus * ngpus](
         uninitialized=True
@@ -116,7 +116,7 @@ def all_gather_test[
         comptime input_idx = i % ngpus
         tt_out_bufs[i] = TileTensor(
             out_bufs_list[device_idx][input_idx],
-            row_major(Idx(lengths[input_idx])),
+            row_major(lengths[input_idx]),
         )
 
     # Optional: vendor CCL (only if all lengths are equal; NCCL/RCCL requires uniform count).

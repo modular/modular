@@ -1228,7 +1228,7 @@ def grouped_quantize_dynamic_scaled_fp4_async_kernel[
     )
 
     var expert_id = expert_ids[expert_idx]
-    var input_sf = sf_tensor[Idx(expert_id)]
+    var input_sf = sf_tensor[expert_id]
 
     var token_start = (
         curr_expert_start
@@ -1283,7 +1283,7 @@ def grouped_quantize_dynamic_scaled_fp4_async_kernel[
             if is_valid:
                 var global_row = token_start + local_row
                 input_vector = input_tensor.load[width=ELEMENTS_PER_THREAD](
-                    (Idx(global_row), Idx(input_col))
+                    (global_row, input_col)
                 )
 
             var thread_max = abs(input_vector).reduce_max()
@@ -1322,9 +1322,7 @@ def grouped_quantize_dynamic_scaled_fp4_async_kernel[
                     output_vector = rebind[SIMD[output_dtype, OUTPUT_WIDTH]](
                         input_f32.cast[output_dtype]()
                     )
-                output_tensor.store(
-                    (Idx(global_row), Idx(output_col)), output_vector
-                )
+                output_tensor.store((global_row, output_col), output_vector)
 
             if col_thread_idx % NUM_THREADS_PER_SF == 0:
                 var sf_group = col_thread_idx // NUM_THREADS_PER_SF
@@ -2063,7 +2061,7 @@ def _quantize_mxfp4_amd_kernel[
 
             # 1. Load 8x BF16.
             var input_vector = input.load[ELEMENTS_PER_THREAD](
-                Coord(Idx(global_row_idx), Idx(global_col_idx))
+                Coord(global_row_idx, global_col_idx)
             )
 
             # 2. Find per-thread max absolute value.
@@ -2088,16 +2086,14 @@ def _quantize_mxfp4_amd_kernel[
             # 6. Store packed output.
             var packed_bytes = bitcast[DType.uint8, 4](packed)
             output.store[width=4](
-                Coord(Idx(global_row_idx), Idx(col_thread_idx * 4)),
+                Coord(global_row_idx, col_thread_idx * 4),
                 packed_bytes,
             )
 
             # 7. First thread in the 4-thread group stores the scale.
             if global_col_idx % SF_VECTOR_SIZE == 0:
                 var scale_col = global_col_idx // SF_VECTOR_SIZE
-                scales.store(
-                    Coord(Idx(global_row_idx), Idx(scale_col)), e8m0_scale
-                )
+                scales.store(Coord(global_row_idx, scale_col), e8m0_scale)
 
 
 @always_inline

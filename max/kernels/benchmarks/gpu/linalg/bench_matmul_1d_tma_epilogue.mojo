@@ -201,8 +201,8 @@ def bench_matmul_1d_tma_epilogue[
     comptime simd_size = 4
     comptime transpose_b = True
 
-    var shape_c = Coord(Idx(M), Idx[N]())
-    var shape_a = Coord(Idx(M), Idx[K]())
+    var shape_c = Coord(M, Idx[N]())
+    var shape_a = Coord(M, Idx[K]())
     var shape_b = Coord(Idx[N](), Idx[K]())
 
     var c_size = M * N
@@ -256,9 +256,9 @@ def bench_matmul_1d_tma_epilogue[
                 _dtype, width
             ]:
                 # 1D bias: broadcast bias[j] across all M rows.
-                var epi_val = bias_tile.load[width=width](
-                    Coord(Idx(idx[1]))
-                ).cast[_dtype]()
+                var epi_val = bias_tile.load[width=width](Coord(idx[1])).cast[
+                    _dtype
+                ]()
                 return val + epi_val
 
             _matmul_gpu[
@@ -369,9 +369,9 @@ def bench_matmul_1d_tma_epilogue[
             ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> SIMD[
                 _dtype, width
             ]:
-                var epi_val = bias_ver_nd.load[width=width](
-                    Coord(Idx(idx[1]))
-                ).cast[_dtype]()
+                var epi_val = bias_ver_nd.load[width=width](Coord(idx[1])).cast[
+                    _dtype
+                ]()
                 return val + epi_val
 
             _matmul_gpu[

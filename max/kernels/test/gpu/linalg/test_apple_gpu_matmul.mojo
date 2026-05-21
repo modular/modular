@@ -1037,9 +1037,9 @@ def test_enqueue_helper_fp16(ctx: DeviceContext) raises:
     ctx.enqueue_copy(a_dev, a_host)
     ctx.enqueue_copy(b_dev, b_host)
 
-    var a_tt = TileTensor(a_dev.unsafe_ptr(), row_major(Idx(M), Idx(K)))
-    var b_tt = TileTensor(b_dev.unsafe_ptr(), row_major(Idx(K), Idx(N)))
-    var d_tt = TileTensor(d_dev.unsafe_ptr(), row_major(Idx(M), Idx(N)))
+    var a_tt = TileTensor(a_dev.unsafe_ptr(), row_major(M, K))
+    var b_tt = TileTensor(b_dev.unsafe_ptr(), row_major(K, N))
+    var d_tt = TileTensor(d_dev.unsafe_ptr(), row_major(M, N))
 
     enqueue_apple_matmul[in_type=DType.float16, transpose_b=False](
         d_tt, a_tt, b_tt, ctx

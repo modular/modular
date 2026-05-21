@@ -296,15 +296,15 @@ def dispatch_qslice_conv3d_sm100[
         for q in range(Q):
             var act_tt = TileTensor(
                 input.ptr_at_offset(Coord(IndexList[5](n_batch, q, 0, 0, 0))),
-                row_major(Idx(D_out), Idx(H), Idx(W), Idx(C_in)),
+                row_major(D_out, H, W, C_in),
             )
             var filter_rscf_tt = TileTensor(
                 filter.ptr_at_offset(Coord(IndexList[5](q, 0, 0, 0, 0))),
-                row_major(Idx(R), Idx(S), Idx(C_in), Idx(C_out)),
+                row_major(R, S, C_in, C_out),
             )
             var temp_tt = TileTensor(
                 temp_bf16_buf,
-                row_major(Idx(D_out), Idx(H_out), Idx(W_out), Idx(C_out)),
+                row_major(D_out, H_out, W_out, C_out),
             )
 
             dispatch_sm100_conv2d(

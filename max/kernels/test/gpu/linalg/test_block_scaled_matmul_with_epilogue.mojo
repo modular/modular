@@ -37,9 +37,9 @@ def test_block_scaled_matmul_zero_rows(ctx: DeviceContext) raises:
     var b_device = ctx.enqueue_create_buffer[DType.uint8](n * k_packed)
     var c_device = ctx.enqueue_create_buffer[DType.bfloat16](max(m * n, 1))
 
-    var a_tensor = TileTensor(a_device, row_major(Idx(m), Idx(k_packed)))
-    var b_tensor = TileTensor(b_device, row_major(Idx(n), Idx(k_packed)))
-    var c_tensor = TileTensor(c_device, row_major(Idx(m), Idx(n)))
+    var a_tensor = TileTensor(a_device, row_major(m, k_packed))
+    var b_tensor = TileTensor(b_device, row_major(n, k_packed))
+    var c_tensor = TileTensor(c_device, row_major(m, n))
 
     var a_scales_dim0 = ceildiv(m, SF_MN_GROUP_SIZE)
     var a_scales_dim1 = ceildiv(k, NVFP4_SF_VECTOR_SIZE * SF_ATOM_K)
@@ -64,8 +64,8 @@ def test_block_scaled_matmul_zero_rows(ctx: DeviceContext) raises:
         a_scales_device,
         row_major(
             (
-                Idx(a_scales_dim0),
-                Idx(a_scales_dim1),
+                a_scales_dim0,
+                a_scales_dim1,
                 Idx[SF_ATOM_M[0]](),
                 Idx[SF_ATOM_M[1]](),
                 Idx[SF_ATOM_K](),
@@ -76,8 +76,8 @@ def test_block_scaled_matmul_zero_rows(ctx: DeviceContext) raises:
         b_scales_device,
         row_major(
             (
-                Idx(b_scales_dim0),
-                Idx(b_scales_dim1),
+                b_scales_dim0,
+                b_scales_dim1,
                 Idx[SF_ATOM_M[0]](),
                 Idx[SF_ATOM_M[1]](),
                 Idx[SF_ATOM_K](),

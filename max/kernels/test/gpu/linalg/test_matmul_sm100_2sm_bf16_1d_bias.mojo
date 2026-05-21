@@ -163,7 +163,7 @@ def test_blackwell_matmul_with_1d_bias[
     for i in range(M):
         for j in range(N):
             var bias_val = bias_host_ptr[j].cast[DType.float32]()
-            var idx = c_host_ref.layout(Coord(Idx(i), Idx(j)))
+            var idx = c_host_ref.layout(Coord(i, j))
             c_host_ref_ptr[idx] = (
                 c_host_ref_ptr[idx].cast[DType.float32]() + bias_val
             ).cast[c_type]()

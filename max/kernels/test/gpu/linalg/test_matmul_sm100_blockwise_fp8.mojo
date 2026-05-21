@@ -156,7 +156,7 @@ def test_matmul_sm100_blockwise_scaled_fp8[
     ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> None:
         comptime assert c_tensor.flat_rank >= 2
         c_tensor.store[alignment=alignment](
-            Coord(Idx(idx[0]), Idx(idx[1])),
+            Coord(idx[0], idx[1]),
             rebind[SIMD[c_type, width]](val),
         )
 

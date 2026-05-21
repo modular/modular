@@ -138,9 +138,9 @@ def run_matvec[
     # Create tensors for vendor_blas
     # For GEMV (N=1): A is MxK, B is Kx1, C is Mx1
     # For GEVM (M=1): A is 1xK, B is KxN, C is 1xN
-    var a_nd = TileTensor(a_device, row_major(Idx(M), Idx(K)))
-    var b_nd = TileTensor(b_device, row_major(Idx(K), Idx(N)))
-    var c_ref_nd = TileTensor(c_device_naive, row_major(Idx(M), Idx(N)))
+    var a_nd = TileTensor(a_device, row_major(M, K))
+    var b_nd = TileTensor(b_device, row_major(K, N))
+    var c_ref_nd = TileTensor(c_device_naive, row_major(M, N))
 
     vendor_blas.matmul(
         ctx,
@@ -207,7 +207,7 @@ def run_matvec_with_epilogue_fn(
     var c_device = ctx.enqueue_create_buffer[DType.float32](M * N * c_stride)
 
     var c_device_nd = TileTensor(
-        c_device, Layout((Idx(M), Idx(N)), (Idx(N * c_stride), Idx(c_stride)))
+        c_device, Layout((M, N), (N * c_stride, c_stride))
     )
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)

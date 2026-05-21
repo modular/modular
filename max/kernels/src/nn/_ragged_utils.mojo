@@ -231,12 +231,12 @@ def eagle_prefill_shift_tokens[
 
         if i < end - 1:
             # Not the last position: copy from next position
-            output.store(Coord(Idx(i)), tokens.load[width=1](Coord(Idx(i + 1))))
+            output.store(Coord(i), tokens.load[width=1](Coord(i + 1)))
         else:
             # Last position in batch: append shift_next_tokens
             output.store(
-                Coord(Idx(i)),
-                shift_next_tokens.load[width=1](Coord(Idx(batch_id))),
+                Coord(i),
+                shift_next_tokens.load[width=1](Coord(batch_id)),
             )
 
     var shape = IndexList[1](Int(output.dim[0]()))

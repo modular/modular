@@ -200,7 +200,7 @@ def test_tile() raises:
     comptime for tile_i in range(2):
         comptime for tile_j in range(2):
             var current_tile = layout_tensor.tile[2, 2](
-                (Idx(tile_i), Idx(tile_j)),
+                (tile_i, tile_j),
             )
 
             for i in range(2):
@@ -239,7 +239,7 @@ def test_tile_with_coord_shape() raises:
         comptime for tile_j in range(2):
             var current_tile = layout_tensor.tile(
                 tile_shape,
-                (Idx(tile_i), Idx(tile_j)),
+                (tile_i, tile_j),
             )
 
             for i in range(2):
@@ -676,8 +676,8 @@ def test_distribute_with_offset_runtime_dims() raises:
 def test_indexing() raises:
     var stack: InlineArray[UInt8, 4] = [1, 2, 3, 4]
     var tensor = TileTensor(stack, row_major[2, 2]())
-    assert_equal(tensor[Idx(Int32(0)), Idx(Int64(0))], 1)
-    assert_equal(tensor[Int(1), Idx(Int64(0))], 3)
+    assert_equal(tensor[Int32(0), Int64(0)], 1)
+    assert_equal(tensor[Int(1), Int64(0)], 3)
 
 
 def test_to_layout_tensor_square() raises:
@@ -786,7 +786,7 @@ def test_coalesce_1d() raises:
 
     # Verify elements
     for i in range(8):
-        assert_equal(coalesced[Idx(i)], Int32(i))
+        assert_equal(coalesced[i], Int32(i))
 
 
 def test_coalesce_element_size() raises:
@@ -814,7 +814,7 @@ def test_coalesce_element_size() raises:
 
     # Verify all elements accessible
     for i in range(16):
-        assert_equal(coalesced[Idx(i)], Int32(i))
+        assert_equal(coalesced[i], Int32(i))
 
 
 def test_load_store_linear_row_major() raises:
@@ -1044,7 +1044,7 @@ def test_transpose_1d() raises:
     assert_equal(trans.layout.stride[0]().value(), 1)
 
     for i in range(4):
-        assert_equal(trans[Idx(i)], Int32(i * 10))
+        assert_equal(trans[i], Int32(i * 10))
 
 
 def test_transpose_preserves_element_count() raises:
@@ -1127,7 +1127,7 @@ def test_select_3d_to_1d() raises:
 
     # tensor[1, 2, d] = 1*12 + 2*4 + d = 20 + d
     for d in range(4):
-        assert_equal(selected[Idx(d)], Int32(20 + d))
+        assert_equal(selected[d], Int32(20 + d))
 
 
 def test_select_keep_all() raises:
@@ -1251,14 +1251,14 @@ def test_copy_from_roundtrip_tile_by_tile() raises:
 
     comptime for tile_i in range(2):
         comptime for tile_j in range(2):
-            var s = src.tile[2, 2]((Idx(tile_i), Idx(tile_j)))
-            var m = mid.tile[2, 2]((Idx(tile_i), Idx(tile_j)))
+            var s = src.tile[2, 2]((tile_i, tile_j))
+            var m = mid.tile[2, 2]((tile_i, tile_j))
             m.copy_from(s)
 
     comptime for tile_i in range(2):
         comptime for tile_j in range(2):
-            var m = mid.tile[2, 2]((Idx(tile_i), Idx(tile_j)))
-            var d = dst.tile[2, 2]((Idx(tile_i), Idx(tile_j)))
+            var m = mid.tile[2, 2]((tile_i, tile_j))
+            var d = dst.tile[2, 2]((tile_i, tile_j))
             d.copy_from(m)
 
     for i in range(16):

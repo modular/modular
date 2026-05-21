@@ -1041,7 +1041,7 @@ def _matmul_dispatch_sm100[
             ](idx: IndexList[rank]):
                 comptime assert c_tt.flat_rank >= 2
                 comptime assert idx.element_type.is_integral()
-                var c_coord = Coord(Idx(idx[0]), Idx(idx[1]))
+                var c_coord = Coord(idx[0], idx[1])
                 var c_val = c_tt.load[
                     width=simd_width,
                     # load_alignment is in bytes, lambda alignment is in elements

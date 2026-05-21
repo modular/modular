@@ -268,9 +268,9 @@ def matmul_op[
         n: Number of columns in rhs and output.
         ctx: Device context.
     """
-    var c = TileTensor(out_ptr, row_major(Coord(Idx(m), Idx(n))))
-    var a = TileTensor(lhs_ptr, row_major(Coord(Idx(m), Idx(k))))
-    var b = TileTensor(rhs_ptr, row_major(Coord(Idx(k), Idx(n))))
+    var c = TileTensor(out_ptr, row_major(Coord(m, n)))
+    var a = TileTensor(lhs_ptr, row_major(Coord(m, k)))
+    var b = TileTensor(rhs_ptr, row_major(Coord(k, n)))
 
     if ctx.api() == "cpu":
         matmul[target="cpu"](c, a, b, ctx)

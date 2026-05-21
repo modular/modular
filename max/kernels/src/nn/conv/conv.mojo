@@ -2932,7 +2932,7 @@ def pack_filter_from_fcrs(
         # Reinterpret as int64 for pack_filter (matches existing convention).
         var rscf_tile = TileTensor(
             rscf_buf.bitcast[Scalar[DType.int64]](),
-            row_major((Idx(dim_R), Idx(dim_S), Idx(dim_C), Idx(dim_F))),
+            row_major((dim_R, dim_S, dim_C, dim_F)),
         )
         pack_filter(rscf_tile, packed_filter, num_groups)
     else:
@@ -2966,11 +2966,11 @@ def pack_filter_from_fcrs(
             rscf_buf.bitcast[Scalar[DType.int64]](),
             row_major(
                 (
-                    Idx(dim_Q),
-                    Idx(dim_R),
-                    Idx(dim_S),
-                    Idx(dim_C),
-                    Idx(dim_F),
+                    dim_Q,
+                    dim_R,
+                    dim_S,
+                    dim_C,
+                    dim_F,
                 )
             ),
         )
@@ -4905,10 +4905,10 @@ def conv_gpu[
                 input.ptr,
                 row_major(
                     (
-                        Idx(_in_s[0]),
-                        Idx(_in_s[1]),
-                        Idx(_in_s[2]),
-                        Idx(_in_s[3]),
+                        _in_s[0],
+                        _in_s[1],
+                        _in_s[2],
+                        _in_s[3],
                     )
                 ),
             )
@@ -4917,10 +4917,10 @@ def conv_gpu[
                 filter.ptr,
                 row_major(
                     (
-                        Idx(_filt_s[0]),
-                        Idx(_filt_s[1]),
-                        Idx(_filt_s[2]),
-                        Idx(_filt_s[3]),
+                        _filt_s[0],
+                        _filt_s[1],
+                        _filt_s[2],
+                        _filt_s[3],
                     )
                 ),
             )
@@ -4945,10 +4945,10 @@ def conv_gpu[
                     output_tmp_lt.ptr.unsafe_origin_cast[MutAnyOrigin](),
                     row_major(
                         (
-                            Idx(_out_tmp_s[0]),
-                            Idx(_out_tmp_s[1]),
-                            Idx(_out_tmp_s[2]),
-                            Idx(_out_tmp_s[3]),
+                            _out_tmp_s[0],
+                            _out_tmp_s[1],
+                            _out_tmp_s[2],
+                            _out_tmp_s[3],
                         )
                     ),
                 )
@@ -4988,10 +4988,10 @@ def conv_gpu[
                     output.ptr,
                     row_major(
                         (
-                            Idx(_out_s[0]),
-                            Idx(_out_s[1]),
-                            Idx(_out_s[2]),
-                            Idx(_out_s[3]),
+                            _out_s[0],
+                            _out_s[1],
+                            _out_s[2],
+                            _out_s[3],
                         )
                     ),
                 )

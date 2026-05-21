@@ -198,7 +198,7 @@ def _index_tensor_1d[
     comptime assert (
         data.flat_rank >= 2 and indices.flat_rank == 2
     ), "Constraint: data_rank >= 2 and indices_rank == 2"
-    # Provide evidence that flat_rank >= 2 for the Coord(Idx(...), Idx(...)) loads below.
+    # Provide evidence that flat_rank >= 2 for the Coord(..., ...) loads below.
     comptime assert indices.flat_rank >= 2
 
     var last_index_dim = Int(indices.dim(indices.rank - 1))
@@ -253,9 +253,7 @@ def _index_tensor_1d[
                 var data_coord = IndexList[reshaped_data_rank]()
                 data_coord[0] = i
                 for k in range(last_index_dim):
-                    data_coord[k + 1] = Int(
-                        indices.load[width=1](Coord(Idx(j), Idx(k)))
-                    )
+                    data_coord[k + 1] = Int(indices.load[width=1](Coord(j, k)))
 
                 var rd_coord = Coord(data_coord)
                 output.raw_store(

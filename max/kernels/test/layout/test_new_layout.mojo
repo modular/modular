@@ -217,7 +217,7 @@ def test_tile_tensor_reshape_with_coord() raises:
     # Reshape using Coord with runtime dimensions
     var rows = 4
     var cols = 3
-    var reshaped_runtime = tensor.reshape(Coord(Idx(rows), Idx(cols)))
+    var reshaped_runtime = tensor.reshape(Coord(rows, cols))
     assert_equal(reshaped_runtime.dim[0](), 4)
     assert_equal(reshaped_runtime.dim[1](), 3)
     assert_equal(reshaped_runtime.num_elements(), 12)
@@ -447,7 +447,7 @@ def test_col_major_with_runtime_dims() raises:
     """Test col_major with runtime dimensions."""
     var m = 3
     var n = 4
-    var shape = Coord(Idx(m), Idx(n))
+    var shape = Coord(m, n)
     var layout = col_major(shape)
 
     assert_equal(layout.shape[0]().value(), 3)

@@ -157,7 +157,7 @@ def softmax_op[
 
                 var output_tensor = TileTensor(
                     out_ptr,
-                    row_major(Idx(batch_dim), Idx(axis_dim)),
+                    row_major(batch_dim, axis_dim),
                 )
 
                 comptime if is_logsoftmax:

@@ -221,9 +221,9 @@ def TopKMaskLogitsKernel[
     var logits_ptr = logits.ptr + bx * d
     var masked_logits_ptr = masked_logits.ptr + bx * d
 
-    var logits_row = TileTensor(logits_ptr, row_major(Idx[1](), Idx(d)))
+    var logits_row = TileTensor(logits_ptr, row_major(Idx[1](), d))
     var masked_logits_row = TileTensor(
-        masked_logits_ptr, row_major(Idx[1](), Idx(d))
+        masked_logits_ptr, row_major(Idx[1](), d)
     )
 
     with PDL():
@@ -263,7 +263,7 @@ def TopKMaskLogitsKernel[
                         logits_vec = logits_row.load[width=vec_size](
                             (
                                 Idx[0](),
-                                Idx(i * block_size * vec_size + tx * vec_size),
+                                i * block_size * vec_size + tx * vec_size,
                             ),
                         ).cast[DType.float32]()
 
@@ -329,7 +329,7 @@ def TopKMaskLogitsKernel[
                 logits_vec = logits_row.load[width=vec_size](
                     (
                         Idx[0](),
-                        Idx(i * block_size * vec_size + tx * vec_size),
+                        i * block_size * vec_size + tx * vec_size,
                     )
                 ).cast[DType.float32]()
 
@@ -339,7 +339,7 @@ def TopKMaskLogitsKernel[
                 masked_logits_row.store[width=vec_size](
                     (
                         Idx[0](),
-                        Idx(i * block_size * vec_size + tx * vec_size),
+                        i * block_size * vec_size + tx * vec_size,
                     ),
                     logits_vec.cast[dtype](),
                 )
@@ -732,7 +732,7 @@ def TopKSamplingFromProbKernel[
             row_idx = Int(indices.unsafe_value().load(bx))
 
         var probs_ptr = probs.ptr + row_idx * d
-        var probs_row = TileTensor(probs_ptr, row_major(Idx[1](), Idx(d)))
+        var probs_row = TileTensor(probs_ptr, row_major(Idx[1](), d))
 
         var probs_vec: SIMD[DType.float32, vec_size]
         var aggregate: Float32
@@ -754,7 +754,7 @@ def TopKSamplingFromProbKernel[
                 probs_vec = 0
                 if (i * block_size + tx) * vec_size < d:
                     probs_vec = probs_row.load[width=vec_size](
-                        (Idx[0](), Idx((i * block_size + tx) * vec_size))
+                        (Idx[0](), ((i * block_size + tx) * vec_size))
                     ).cast[DType.float32]()
 
                 var result = device_sampling_from_prob[
@@ -792,7 +792,7 @@ def TopKSamplingFromProbKernel[
                 sampled_id = last_valid_id_sram[0]
 
             var pivot_0 = Float32(
-                probs_row.load[width=1]((Idx[0](), Idx(sampled_id)))
+                probs_row.load[width=1]((Idx[0](), sampled_id))
             )
             var pivot_1 = (pivot_0 + high) / 2.0
 
@@ -804,7 +804,7 @@ def TopKSamplingFromProbKernel[
                 probs_vec = 0
                 if (i * block_size + tx) * vec_size < d:
                     probs_vec = probs_row.load[width=vec_size](
-                        (Idx[0](), Idx((i * block_size + tx) * vec_size))
+                        (Idx[0](), ((i * block_size + tx) * vec_size))
                     ).cast[DType.float32]()
 
                 var probs_gt_pivot_0_values = SIMD[DType.float32, vec_size]()
@@ -1135,7 +1135,7 @@ def TopKTopPSamplingFromProbKernel[
             p = top_p_arr.unsafe_value()[row_idx]
 
         var probs_ptr = probs.ptr + row_idx * d
-        var probs_row = TileTensor(probs_ptr, row_major(Idx[1](), Idx(d)))
+        var probs_row = TileTensor(probs_ptr, row_major(Idx[1](), d))
 
         var probs_vec: SIMD[DType.float32, vec_size]
         var aggregate: Float32
@@ -1157,7 +1157,7 @@ def TopKTopPSamplingFromProbKernel[
                 probs_vec = 0
                 if (i * block_size + tx) * vec_size < d:
                     probs_vec = probs_row.load[width=vec_size](
-                        (Idx[0](), Idx((i * block_size + tx) * vec_size))
+                        (Idx[0](), ((i * block_size + tx) * vec_size))
                     ).cast[DType.float32]()
 
                 var result = device_sampling_from_prob[
@@ -1192,7 +1192,7 @@ def TopKTopPSamplingFromProbKernel[
                 sampled_id = last_valid_id_sram[0]
 
             var pivot_0 = Float32(
-                probs_row.load[width=1]((Idx[0](), Idx(sampled_id)))
+                probs_row.load[width=1]((Idx[0](), sampled_id))
             )
             var pivot_1 = (pivot_0 + high) / 2.0
 
@@ -1204,7 +1204,7 @@ def TopKTopPSamplingFromProbKernel[
                 probs_vec = 0
                 if (i * block_size + tx) * vec_size < d:
                     probs_vec = probs_row.load[width=vec_size](
-                        (Idx[0](), Idx((i * block_size + tx) * vec_size))
+                        (Idx[0](), ((i * block_size + tx) * vec_size))
                     ).cast[DType.float32]()
 
                 var probs_gt_pivot_0_values = SIMD[DType.float32, vec_size]()
@@ -1472,7 +1472,7 @@ def topk_softmax_sample_kernel[
 
     var logits_ptr = logits.ptr + bx * d
 
-    var logits_row = TileTensor(logits_ptr, row_major(Idx[1](), Idx(d)))
+    var logits_row = TileTensor(logits_ptr, row_major(Idx[1](), d))
 
     var k = top_k_val
     if top_k_arr:
@@ -1536,7 +1536,7 @@ def topk_softmax_sample_kernel[
                         logits_vec = logits_row.load[width=vec_size](
                             (
                                 Idx[0](),
-                                Idx(i * block_size * vec_size + tx * vec_size),
+                                i * block_size * vec_size + tx * vec_size,
                             )
                         ).cast[DType.float32]()
 
@@ -1611,7 +1611,7 @@ def topk_softmax_sample_kernel[
 
         # Each thread processes elements and atomically writes to shared memory.
         for i in range(tx, d, block_size):
-            var logit = logits_row.load[width=1]((Idx[0](), Idx(i))).cast[
+            var logit = logits_row.load[width=1]((Idx[0](), i)).cast[
                 DType.float32
             ]()
             if logit > pivot:

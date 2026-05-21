@@ -28,6 +28,7 @@ from layout._fillers import BATCH_SIZE
 from std.sys import prefetch
 from std.sys.intrinsics import PrefetchOptions, _type_is_eq_parse_time
 from std.utils import IndexList, StaticTuple
+from std.utils.coord import _coerce_dynamic
 
 from .swizzle import Swizzle
 
@@ -470,7 +471,7 @@ struct TileTensor[
         """Fix some dimensions at scalar indices and keep others, returning a
         lower-rank view.
 
-        Each argument is either a concrete index (`Idx(n)` / `Idx[n]()`) to
+        Each argument is either a concrete index (`n` / `Idx[n]()`) to
         collapse that dimension, or `All` to keep it. The output rank equals
         the number of `All` arguments.
 
@@ -1567,7 +1568,7 @@ struct TileTensor[
             var num_elements = self.num_elements()
 
             for i in range(num_elements):
-                var idx = self.layout(Idx(i))
+                var idx = self.layout(i)
                 self.ptr.mut_cast[True]()[idx] = val
         return self
 
@@ -2276,7 +2277,7 @@ struct TileTensor[
         # Reshape with runtime-determined dimensions
         var rows = 2
         var cols = 6
-        var reshaped = tensor.reshape(Coord(Idx(rows), Idx(cols)))
+        var reshaped = tensor.reshape(Coord(rows, cols))
         ```
 
         Performance:
@@ -3009,20 +3010,16 @@ def _distribute[
     comptime for i in range(NewShapeTypes.size):
         comptime if not NewShapeTypes[i].is_static_value:
             UnsafePointer(to=shape[i]).init_pointee_copy(
-                rebind[NewShapeTypes[i]](
-                    Idx(
-                        Int(data_layout_tensor.layout.shape_coord()[i].value())
-                        // thread_layout.shape_types[i].static_value
-                    )
+                _coerce_dynamic[NewShapeTypes[i]](
+                    Int(data_layout_tensor.layout.shape_coord()[i].value())
+                    // thread_layout.shape_types[i].static_value
                 )
             )
         comptime if not NewStrideTypes[i].is_static_value:
             UnsafePointer(to=stride[i]).init_pointee_copy(
-                rebind[NewStrideTypes[i]](
-                    Idx(
-                        Int(data_layout_tensor.layout.stride_coord()[i].value())
-                        * thread_layout.shape_types[i].static_value
-                    )
+                _coerce_dynamic[NewStrideTypes[i]](
+                    Int(data_layout_tensor.layout.stride_coord()[i].value())
+                    * thread_layout.shape_types[i].static_value
                 )
             )
 
@@ -3120,20 +3117,16 @@ def _distribute_with_offset[
     comptime for i in range(NewShapeTypes.size):
         comptime if not NewShapeTypes[i].is_static_value:
             UnsafePointer(to=shape[i]).init_pointee_copy(
-                rebind[NewShapeTypes[i]](
-                    Idx(
-                        Int(data_layout_tensor.layout.shape_coord()[i].value())
-                        // thread_layout.shape_types[i].static_value
-                    )
+                _coerce_dynamic[NewShapeTypes[i]](
+                    Int(data_layout_tensor.layout.shape_coord()[i].value())
+                    // thread_layout.shape_types[i].static_value
                 )
             )
         comptime if not NewStrideTypes[i].is_static_value:
             UnsafePointer(to=stride[i]).init_pointee_copy(
-                rebind[NewStrideTypes[i]](
-                    Idx(
-                        Int(data_layout_tensor.layout.stride_coord()[i].value())
-                        * thread_layout.shape_types[i].static_value
-                    )
+                _coerce_dynamic[NewStrideTypes[i]](
+                    Int(data_layout_tensor.layout.stride_coord()[i].value())
+                    * thread_layout.shape_types[i].static_value
                 )
             )
 

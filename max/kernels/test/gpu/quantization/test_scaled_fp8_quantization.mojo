@@ -30,7 +30,7 @@ def test_static_scaled_fp8_quant[
     out_dtype: DType,
     in_dtype: DType,
 ](ctx: DeviceContext, scale: Float32, m: Int, n: Int) raises:
-    var shape = row_major(Coord(Idx(Int64(m)), Idx(Int64(n))))
+    var shape = row_major(Coord(Int64(m), Int64(n)))
     var total_size = m * n
 
     var in_host_ptr = alloc[Scalar[in_dtype]](total_size)
@@ -124,9 +124,7 @@ def test_dynamic_scaled_fp8_quant[
     def input_fn[
         width: Int, alignment: Int
     ](row: Int, col: Int) -> SIMD[in_dtype, width]:
-        return in_tensor.load[width=width, alignment=alignment](
-            (Idx(row), Idx(col))
-        )
+        return in_tensor.load[width=width, alignment=alignment]((row, col))
 
     quantize_tensor_dynamic_scaled_fp8[input_fn, -1, in_tensor.static_shape[1]](
         out_tensor,
@@ -228,9 +226,7 @@ def test_dynamic_fp8_quant[
     def input_fn[
         width: Int, alignment: Int
     ](row: Int, col: Int) -> SIMD[in_dtype, width]:
-        return in_tensor.load[width=width, alignment=alignment](
-            (Idx(row), Idx(col))
-        )
+        return in_tensor.load[width=width, alignment=alignment]((row, col))
 
     quantize_dynamic_scaled_fp8[
         input_fn, group_size_or_per_token, in_tensor.static_shape[1]
@@ -345,7 +341,7 @@ def test_batched_dynamic_fp8_quant[
         width: Int, alignment: Int
     ](batch: Int, row: Int, col: Int) capturing -> SIMD[in_dtype, width]:
         return in_tensor.load[width=width, alignment=alignment](
-            (Idx(batch), Idx(row), Idx(col))
+            (batch, row, col)
         )
 
     batched_quantize_dynamic_scaled_fp8[

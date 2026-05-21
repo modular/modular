@@ -301,11 +301,11 @@ def set_scale_factor[
 
     scales_tensor.store[width=width](
         (
-            Idx(row_idx // SF_MN_GROUP_SIZE),
-            Idx(col_idx // (SF_VECTOR_SIZE * SF_ATOM_K)),
-            Idx(row_idx % SF_ATOM_M[0]),
-            Idx((row_idx % SF_MN_GROUP_SIZE) // SF_ATOM_M[0]),
-            Idx((col_idx // SF_VECTOR_SIZE) % SF_ATOM_K),
+            row_idx // SF_MN_GROUP_SIZE,
+            col_idx // (SF_VECTOR_SIZE * SF_ATOM_K),
+            row_idx % SF_ATOM_M[0],
+            (row_idx % SF_MN_GROUP_SIZE // SF_ATOM_M[0]),
+            (col_idx // SF_VECTOR_SIZE % SF_ATOM_K),
         ),
         scale_value,
     )
@@ -405,12 +405,12 @@ def set_batched_scale_factor[
 
     scales_tensor.store(
         (
-            Idx(batch_idx),
-            Idx(row_idx // SF_MN_GROUP_SIZE),
-            Idx(col_idx // (SF_VECTOR_SIZE * SF_ATOM_K)),
-            Idx(row_idx % SF_ATOM_M[0]),
-            Idx((row_idx % SF_MN_GROUP_SIZE) // SF_ATOM_M[0]),
-            Idx((col_idx // SF_VECTOR_SIZE) % SF_ATOM_K),
+            batch_idx,
+            row_idx // SF_MN_GROUP_SIZE,
+            col_idx // (SF_VECTOR_SIZE * SF_ATOM_K),
+            row_idx % SF_ATOM_M[0],
+            (row_idx % SF_MN_GROUP_SIZE // SF_ATOM_M[0]),
+            (col_idx // SF_VECTOR_SIZE % SF_ATOM_K),
         ),
         scale_value,
     )

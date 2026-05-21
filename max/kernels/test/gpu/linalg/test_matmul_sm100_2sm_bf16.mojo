@@ -117,7 +117,7 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
     if simple_init():
         for m in range(M):
             for k in range(K):
-                var idx = a_host.layout(Coord(Idx(m), Idx(k)))
+                var idx = a_host.layout(Coord(m, k))
                 a_host.ptr[idx] = Float32(k).cast[a_type]()
         for n in range(N):
             for k in range(K):

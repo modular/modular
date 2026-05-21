@@ -551,9 +551,7 @@ struct Layout[
         Returns:
             The size of the memory region required by the layout.
         """
-        return (
-            self[linear_idx_type=linear_idx_type](Idx(self.product() - 1)) + 1
-        )
+        return self[linear_idx_type=linear_idx_type](self.product() - 1) + 1
 
     @always_inline("nodebug")
     def to_layout(self) -> LegacyLayout:
@@ -2144,7 +2142,7 @@ def _format_layout[W: Writer](layout: Layout, mut writer: W):
 
         for n in range(cols):
             writer.write("| ")
-            Int(layout(Coord(Idx(m), Idx(n)))).write_padded(
+            Int(layout(Coord(m, n))).write_padded(
                 writer,
                 width=idx_width - 2,
             )

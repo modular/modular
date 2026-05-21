@@ -127,7 +127,7 @@ def _count_expert_tokens[
         var g_vector: SIMD[input_type, width]
 
         if idx + width <= bg_params.topk_ids_length:
-            g_vector = topk_ids.load[width=width](Coord(Idx[0](), Idx(idx)))
+            g_vector = topk_ids.load[width=width](Coord(Idx[0](), idx))
         else:
             g_vector = SIMD[input_type, width](bg_params.expert + 1)
 
@@ -153,7 +153,7 @@ def _count_expert_tokens[
 
             # If this token matches, store its index in shared memory
             if state and offset < UInt64(expected_count):
-                smem[Coord(Idx[0](), Idx(offset))] = UInt32(idx + i)
+                smem[Coord(Idx[0](), offset)] = UInt32(idx + i)
 
     var expert_id = (
         topk_ids[
@@ -172,9 +172,7 @@ def _count_expert_tokens[
     total_writes += warp_writes
 
     if state and offset < UInt64(expected_count):
-        smem[Coord(Idx[0](), Idx(offset))] = UInt32(
-            bg_params.remainder_start_idx
-        )
+        smem[Coord(Idx[0](), offset)] = UInt32(bg_params.remainder_start_idx)
 
     return total_writes
 
@@ -250,12 +248,12 @@ def _copy_tokens_smem_to_gmem[
     ):
         if smem_idx + width <= Int(smem_writes):
             var source_vector = smem.load[width=width](
-                Coord(Idx[0](), Idx(smem_idx))
+                Coord(Idx[0](), smem_idx)
             )
 
             comptime for i in range(width):
                 token_expert_order[
-                    Coord(Idx(g_offset_copy + UInt32(smem_idx) + UInt32(i)))
+                    Coord(g_offset_copy + UInt32(smem_idx) + UInt32(i))
                 ] = source_vector[i]
                 restore_token_order[Int(source_vector[i])] = (
                     g_offset_copy + UInt32(smem_idx) + UInt32(i)
@@ -266,9 +264,7 @@ def _copy_tokens_smem_to_gmem[
     g_offset_copy += UInt32(start_idx)
 
     if UInt64(thread_idx.x) < smem_writes - start_idx:
-        var smem_val = smem[
-            Coord(Idx[0](), Idx(start_idx + UInt64(thread_idx.x)))
-        ]
+        var smem_val = smem[Coord(Idx[0](), start_idx + UInt64(thread_idx.x))]
         token_expert_order.store(
             Coord(Int(g_offset_copy + UInt32(thread_idx.x))),
             smem_val,
@@ -316,7 +312,7 @@ def _copy_tokens_to_gmem[
         var g_vector: SIMD[input_type, width]
 
         if idx + width <= bg_params.topk_ids_length:
-            g_vector = topk_ids.load[width=width](Coord(Idx[0](), Idx(idx)))
+            g_vector = topk_ids.load[width=width](Coord(Idx[0](), idx))
         else:
             g_vector = SIMD[input_type, width](bg_params.expert + 1)
 
@@ -337,7 +333,7 @@ def _copy_tokens_to_gmem[
             # so we only need to write the remaining tokens to global memory.
             if thr_tokens_seen >= UInt64(expected_count) and state:
                 token_expert_order[
-                    Coord(Idx(g_offset_copy + UInt32(preceding_thread_writes)))
+                    Coord(g_offset_copy + UInt32(preceding_thread_writes))
                 ] = UInt32(idx + i)
                 restore_token_order[idx + i] = g_offset_copy + UInt32(
                     preceding_thread_writes
@@ -364,7 +360,7 @@ def _copy_tokens_to_gmem[
 
     if temp_current_writes >= UInt64(expected_count) and state:
         token_expert_order[
-            Coord(Idx(g_offset_copy + UInt32(preceding_thread_writes)))
+            Coord(g_offset_copy + UInt32(preceding_thread_writes))
         ] = UInt32(bg_params.remainder_start_idx)
         restore_token_order[
             bg_params.remainder_start_idx
@@ -488,17 +484,17 @@ def moe_create_indices_bucket_group_kernel[
 
     # Record which expert is active at this index
     # this signals this expert is being used
-    expert_ids[Coord(Idx(expert_idx))] = Int32(bucket_group_params.expert)
+    expert_ids[Coord(expert_idx)] = Int32(bucket_group_params.expert)
 
     # Store the ending index for this expert (start of next expert)
     # NOTE: expert_start_indices must be zero-initialized for this to work correctly
-    expert_start_indices[Coord(Idx(expert_idx + 1))] = g_offset + UInt32(
+    expert_start_indices[Coord(expert_idx + 1)] = g_offset + UInt32(
         total_writes
     )
 
     # First expert always starts at index 0
     if expert_idx == 0:
-        expert_start_indices[Coord(Idx(expert_idx))] = 0
+        expert_start_indices[Coord(expert_idx)] = 0
 
     if total_writes > 0:
         # Copy all tokens in shared memory back to global memory
@@ -762,7 +758,7 @@ def group_limited_router_kernel[
     ]()
     var thread_group_id, tid_in_group = divmod(tid, group_size)
 
-    var thread_expert_bias = expert_bias.load[width=1](Coord(Idx(tid))).cast[
+    var thread_expert_bias = expert_bias.load[width=1](Coord(tid)).cast[
         scores_type
     ]()
 
@@ -773,9 +769,7 @@ def group_limited_router_kernel[
             comptime scores_fn = scores_input_fn.value()
             thread_expert_score = scores_fn[width=1]((token_idx, tid))
         else:
-            thread_expert_score = expert_scores.load[width=1](
-                (Idx(token_idx), Idx(tid))
-            )
+            thread_expert_score = expert_scores.load[width=1]((token_idx, tid))
 
         thread_expert_score += thread_expert_bias
         var thd_topk2 = TopK_2(u=thread_expert_score, p=tid)
@@ -844,7 +838,7 @@ def group_limited_router_kernel[
                 original_weight = (
                     global_topk_result.u
                     - expert_bias.load[width=1](
-                        Coord(Idx(global_topk_result.p))
+                        Coord(global_topk_result.p)
                     ).cast[scores_type]()
                 )
 
@@ -859,7 +853,7 @@ def group_limited_router_kernel[
 
             if tid < n_experts_per_tok:
                 expert_indices.store(
-                    (Idx(token_idx), Idx(tid)), Int32(global_topk_result.p)
+                    (token_idx, tid), Int32(global_topk_result.p)
                 )
                 expert_weights[token_idx, tid] = original_weight
 
@@ -1072,18 +1066,16 @@ def single_group_router_kernel[
     var shared_mem_phase2 = shared_mem + phase1_candidates
 
     with PDL():
-        var thread_expert_bias = expert_bias.load[width=1](
-            Coord(Idx(tid))
-        ).cast[scores_type]()
+        var thread_expert_bias = expert_bias.load[width=1](Coord(tid)).cast[
+            scores_type
+        ]()
 
         var thread_expert_score: Scalar[scores_type]
         comptime if scores_input_fn:
             comptime scores_fn = scores_input_fn.value()
             thread_expert_score = scores_fn[width=1]((token_idx, tid))
         else:
-            thread_expert_score = expert_scores.load[width=1](
-                (Idx(token_idx), Idx(tid))
-            )
+            thread_expert_score = expert_scores.load[width=1]((token_idx, tid))
         var biased_score = thread_expert_score + thread_expert_bias
 
         var val = TopK_2(u=biased_score, p=tid)
@@ -1143,7 +1135,7 @@ def single_group_router_kernel[
                     original_weight = d_fn[width=1]((token_idx, sorted_val3.p))
                 else:
                     original_weight = expert_scores.load[width=1](
-                        (Idx(token_idx), Idx(sorted_val3.p))
+                        (token_idx, sorted_val3.p)
                     )
 
             var weights_sum = warp.lane_group_sum[num_lanes=n_experts_per_tok](
@@ -1157,9 +1149,7 @@ def single_group_router_kernel[
 
             # Write expert index and weight for this token.
             if lane_id < n_experts_per_tok:
-                expert_indices.store(
-                    (Idx(token_idx), Idx(lane_id)), Int32(sorted_val3.p)
-                )
+                expert_indices.store((token_idx, lane_id), Int32(sorted_val3.p))
                 expert_weights[token_idx, lane_id] = original_weight
 
 

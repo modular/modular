@@ -53,9 +53,9 @@ def run_rms_norm_fused_residual_add_gpu[
         residual_fused_output_heap, row_major(Coord(shape))
     )
     var gamma1_heap = List(length=cols, fill=Scalar[dtype](0))
-    var gamma1_h = TileTensor(gamma1_heap, row_major(Idx(cols)))
+    var gamma1_h = TileTensor(gamma1_heap, row_major(cols))
     var gamma2_heap = List(length=cols, fill=Scalar[dtype](0))
-    var gamma2_h = TileTensor(gamma2_heap, row_major(Idx(cols)))
+    var gamma2_h = TileTensor(gamma2_heap, row_major(cols))
 
     # Initialize input data
     random(data_h)

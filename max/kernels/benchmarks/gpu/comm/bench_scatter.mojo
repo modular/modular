@@ -153,21 +153,21 @@ def bench_scatter[
 
     # Build TileTensor arrays for the scatter API.
     comptime InputTileType = TileTensor[
-        dtype, type_of(row_major(Idx(num_elems))), ImmutAnyOrigin
+        dtype, type_of(row_major(num_elems)), ImmutAnyOrigin
     ]
     var tt_in_bufs = InlineArray[InputTileType, dp_size](uninitialized=True)
     for dp_idx in range(dp_size):
         tt_in_bufs[dp_idx] = TileTensor(
-            cb_inputs[dp_idx].device_buffer(), row_major(Idx(num_elems))
+            cb_inputs[dp_idx].device_buffer(), row_major(num_elems)
         ).as_immut()
 
     comptime OutputTileType = TileTensor[
-        dtype, type_of(row_major(Idx(num_elems))), MutAnyOrigin
+        dtype, type_of(row_major(num_elems)), MutAnyOrigin
     ]
     var out_tiles = InlineArray[OutputTileType, ngpus](uninitialized=True)
     for gpu_idx in range(ngpus):
         out_tiles[gpu_idx] = OutputTileType(
-            out_bufs_list[gpu_idx], row_major(Idx(num_elems))
+            out_bufs_list[gpu_idx], row_major(num_elems)
         )
         list_of_ctx[gpu_idx].synchronize()
 
@@ -183,7 +183,7 @@ def bench_scatter[
             comptime for dp_idx in range(dp_size):
                 tt_in_bufs[dp_idx] = TileTensor(
                     cb_inputs[dp_idx].offset_ptr(cache_iter),
-                    row_major(Idx(num_elems)),
+                    row_major(num_elems),
                 ).as_immut()
 
             scatter[ngpus=ngpus, dp_size=dp_size](

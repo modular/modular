@@ -22,6 +22,7 @@ from std.sys.info import (
     is_nvidia_gpu,
     simd_width_of,
 )
+from std.sys.intrinsics import _type_is_eq
 from linalg.fp8_quantization import naive_blockwise_scaled_fp8_matmul
 from std.algorithm import elementwise, sync_parallelize
 from std.algorithm.functional import _get_start_indices_of_nth_subvolume
@@ -200,9 +201,12 @@ def _reshape_tile_tensor_with_batch_to_3d(
                 comptime for batch_idx in range(rank - 3):
                     shape_val *= Int(tensor.layout.shape[batch_idx]().value())
 
-            shape_ptr.init_pointee_copy(
-                rebind[ShapeType](Scalar[ShapeType.DTYPE](shape_val))
-            )
+            comptime if _type_is_eq[ShapeType, Int]():
+                shape_ptr.init_pointee_copy(rebind[ShapeType](shape_val))
+            else:
+                shape_ptr.init_pointee_copy(
+                    rebind[ShapeType](Scalar[ShapeType.DTYPE](shape_val))
+                )
 
     return type_of(result)(
         tensor.ptr,
@@ -263,15 +267,15 @@ def _batched_matmul_cpu[
 
     var c = TileTensor(
         c_tile.ptr,
-        row_major(Coord(Idx(collapsed_batches), Idx(mat_rows), Idx(mat_cols))),
+        row_major(Coord(collapsed_batches, mat_rows, mat_cols)),
     )
     var a = TileTensor(
         a_tile.ptr,
         row_major(
             Coord(
-                Idx(collapsed_batches),
-                Idx(a_shape[rank - 2]),
-                Idx(a_shape[rank - 1]),
+                collapsed_batches,
+                a_shape[rank - 2],
+                a_shape[rank - 1],
             )
         ),
     )
@@ -279,9 +283,9 @@ def _batched_matmul_cpu[
         b_tile.ptr,
         row_major(
             Coord(
-                Idx(collapsed_batches),
-                Idx(b_shape_idx[rank - 2]),
-                Idx(b_shape_idx[rank - 1]),
+                collapsed_batches,
+                b_shape_idx[rank - 2],
+                b_shape_idx[rank - 1],
             )
         ),
     )
@@ -410,7 +414,7 @@ def _batched_matmul_cpu[
                 )
                 var a_packed = TileTensor(
                     a_packed_ptr,
-                    row_major(Coord(Idx(mh), Idx(kh))),
+                    row_major(Coord(mh, kh)),
                 )
                 packA_i8mm[a_type](0, m, k, a_view.ptr, a_packed_ptr)
 
@@ -552,7 +556,7 @@ def batched_matmul_kernel_gpu[
     var a = TileTensor(
         a_ptr,
         TileLayout(
-            (Idx(m), Idx[a_tensor.static_shape[2]]()),
+            (m, Idx[a_tensor.static_shape[2]]()),
             Coord[*_slice_types[ATensorType._stride_types, 2]()](),
         ),
     )
@@ -566,7 +570,7 @@ def batched_matmul_kernel_gpu[
     var c = TileTensor(
         c_ptr,
         TileLayout(
-            (Idx(m), Idx[c_tensor.static_shape[2]]()),
+            (m, Idx[c_tensor.static_shape[2]]()),
             Coord[*_slice_types[CTensorType._stride_types, 2]()](),
         ),
     )
@@ -654,11 +658,11 @@ def _batched_matmul_gpu[
             # by constructing rank-2 TileTensors directly.
             var c_2d = TileTensor(
                 c_tensor_reshaped.ptr,
-                row_major(Coord(Idx(m), Idx(n))),
+                row_major(Coord(m, n)),
             )
             var a_2d = TileTensor(
                 a_tensor_reshaped.ptr,
-                row_major(Coord(Idx(m), Idx(k))),
+                row_major(Coord(m, k)),
             )
             # Use b's actual dims since their order depends on transpose_b.
             var b_2d = TileTensor(

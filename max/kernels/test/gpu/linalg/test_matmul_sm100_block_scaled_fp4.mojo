@@ -129,7 +129,7 @@ def _test_blackwell_block_scaled_matmul_tma_umma_warp_specialized_impl[
 
     var a_scales_shape = row_major(
         Coord(
-            Idx(ceildiv(Int(m.value()), SF_MN_GROUP_SIZE)),
+            ceildiv(Int(m.value()), SF_MN_GROUP_SIZE),
             Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)](),
             Idx[SF_ATOM_M[0]](),
             Idx[SF_ATOM_M[1]](),
@@ -539,7 +539,7 @@ def run_matmul_sm100_block_scaled_fp4_suite[
                         ctx,
                         Int(16),
                         Idx[1024](),
-                        Idx(1024 + 32),
+                        Idx[1024 + 32](),
                     )
 
                     test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[

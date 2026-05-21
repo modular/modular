@@ -102,8 +102,8 @@ def run_mha[
                     cb_q.offset_ptr(iteration),
                     row_major(
                         (
-                            Idx(batch_size),
-                            Idx(seq_len),
+                            batch_size,
+                            seq_len,
                             Idx[num_heads](),
                             Idx[depth](),
                         )
@@ -113,8 +113,8 @@ def run_mha[
                     cb_k.offset_ptr(iteration),
                     row_major(
                         (
-                            Idx(batch_size),
-                            Idx(num_keys),
+                            batch_size,
+                            num_keys,
                             Idx[kv_num_heads](),
                             Idx[depth](),
                         )
@@ -124,8 +124,8 @@ def run_mha[
                     cb_v.offset_ptr(iteration),
                     row_major(
                         (
-                            Idx(batch_size),
-                            Idx(num_keys),
+                            batch_size,
+                            num_keys,
                             Idx[kv_num_heads](),
                             Idx[depth](),
                         )
@@ -135,8 +135,8 @@ def run_mha[
                     cb_o.offset_ptr(iteration),
                     row_major(
                         (
-                            Idx(batch_size),
-                            Idx(seq_len),
+                            batch_size,
+                            seq_len,
                             Idx[num_heads](),
                             Idx[depth](),
                         )
@@ -185,8 +185,8 @@ def run_mha[
         cb_q.unsafe_ptr(),
         row_major(
             (
-                Idx(batch_size),
-                Idx(seq_len),
+                batch_size,
+                seq_len,
                 Idx[num_heads](),
                 Idx[depth](),
             )
@@ -196,8 +196,8 @@ def run_mha[
         cb_k.unsafe_ptr(),
         row_major(
             (
-                Idx(batch_size),
-                Idx(num_keys),
+                batch_size,
+                num_keys,
                 Idx[kv_num_heads](),
                 Idx[depth](),
             )
@@ -207,8 +207,8 @@ def run_mha[
         cb_v.unsafe_ptr(),
         row_major(
             (
-                Idx(batch_size),
-                Idx(num_keys),
+                batch_size,
+                num_keys,
                 Idx[kv_num_heads](),
                 Idx[depth](),
             )
@@ -218,8 +218,8 @@ def run_mha[
         cb_o.unsafe_ptr(),
         row_major(
             (
-                Idx(batch_size),
-                Idx(seq_len),
+                batch_size,
+                seq_len,
                 Idx[num_heads](),
                 Idx[depth](),
             )
@@ -250,10 +250,10 @@ def run_mha[
             mask_ptr,
             row_major(
                 (
-                    Idx(batch_size),
-                    Idx(num_heads),
-                    Idx(seq_len),
-                    Idx(num_keys),
+                    batch_size,
+                    num_heads,
+                    seq_len,
+                    num_keys,
                 )
             ),
         )
@@ -273,10 +273,10 @@ def run_mha[
             mask_device_ptr,
             row_major(
                 (
-                    Idx(batch_size),
-                    Idx(num_heads),
-                    Idx(seq_len),
-                    Idx(num_keys),
+                    batch_size,
+                    num_heads,
+                    seq_len,
+                    num_keys,
                 )
             ),
         )
@@ -286,8 +286,8 @@ def run_mha[
             output_ref_device_ptr,
             row_major(
                 (
-                    Idx(batch_size),
-                    Idx(seq_len),
+                    batch_size,
+                    seq_len,
                     Idx[num_heads](),
                     Idx[depth](),
                 )

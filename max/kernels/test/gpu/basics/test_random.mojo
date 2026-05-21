@@ -36,7 +36,7 @@ def run_elementwise[
     var out_host = TileTensor(out_stack, row_major[length]())
 
     var out_device = ctx.enqueue_create_buffer[dtype](length)
-    var out_buffer = TileTensor(out_device, row_major(Idx(length)))
+    var out_buffer = TileTensor(out_device, row_major(length))
 
     @always_inline
     @__copy_capture(out_buffer)

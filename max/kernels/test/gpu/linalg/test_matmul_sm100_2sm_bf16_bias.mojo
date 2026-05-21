@@ -160,9 +160,7 @@ def test_blackwell_matmul_with_epilogue_tensor[
     # Add epilogue tensor to reference on host: C_ref[m, n] += epilogue[m, n]
     for i in range(M):
         for j in range(N):
-            c_host_ref[Coord(Idx(i), Idx(j))] += epilogue_host[
-                Coord(Idx(i), Idx(j))
-            ]
+            c_host_ref[Coord(i, j)] += epilogue_host[Coord(i, j)]
 
     comptime rtol = 1e-2
     assert_almost_equal(

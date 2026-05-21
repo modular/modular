@@ -161,21 +161,21 @@ def run_slot_indexed_gpu[
         ctx.enqueue_copy(input_row_offsets_device, input_row_offsets_h.ptr)
 
     var qkv_input_tt = TileTensor(
-        qkv_input_device, row_major(Idx(total_seq_len), Idx(conv_dim))
+        qkv_input_device, row_major(total_seq_len, conv_dim)
     )
     var conv_weight_tt = TileTensor(
-        conv_weight_device, row_major(Idx(conv_dim), Idx(KERNEL_SIZE))
+        conv_weight_device, row_major(conv_dim, KERNEL_SIZE)
     )
     var conv_state_tt = TileTensor(
         conv_state_device,
-        row_major(Idx(max_slots), Idx(conv_dim), Idx(state_len)),
+        row_major(max_slots, conv_dim, state_len),
     )
-    var slot_idx_tt = TileTensor(slot_idx_device, row_major(Idx(batch_size)))
+    var slot_idx_tt = TileTensor(slot_idx_device, row_major(batch_size))
     var input_row_offsets_tt = TileTensor(
-        input_row_offsets_device, row_major(Idx(batch_size + 1))
+        input_row_offsets_device, row_major(batch_size + 1)
     )
     var conv_output_tt = TileTensor(
-        conv_output_device, row_major(Idx(total_seq_len), Idx(conv_dim))
+        conv_output_device, row_major(total_seq_len, conv_dim)
     )
 
     var qkv_input_seqlen_stride: UInt32 = UInt32(conv_dim)

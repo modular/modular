@@ -265,7 +265,7 @@ struct _All(CoordLike, TrivialRegisterPassable):
     ```
     # From a 4D tensor (batch, N, heads, head_dim),
     # fix batch and heads, keep N and head_dim:
-    var result = tensor[Idx(batch_idx), All, Idx(head_idx), All]
+    var result = tensor.slice(batch_idx, All, head_idx, All)
     # result is a 2D tensor (N, head_dim)
     ```
     """
@@ -689,10 +689,10 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
             var nested = Coord(
                 Idx[5](),
                 Coord(Idx[3](), Idx[2]()),
-                Idx(7)
+                7
             )
             var flat = nested.flatten()
-            # flat is Coord(Idx[5](), Idx[3](), Idx[2](), Idx(7))
+            # flat is Coord(Idx[5](), Idx[3](), Idx[2](), 7)
             ```
         """
         comptime FlatTypes = _Flattened[*Self.element_types]
@@ -913,11 +913,11 @@ def crd2idx[
                     crd_int, Int(shape_t[i].product())
                 )
                 result += crd2idx[out_type=out_type](
-                    Idx(remainder), shape_t[i], stride_t[i]
+                    remainder, shape_t[i], stride_t[i]
                 )
                 crd_int = quotient
             return result + crd2idx[out_type=out_type](
-                Idx(crd_int), shape_t[last_elem_idx], stride_t[last_elem_idx]
+                crd_int, shape_t[last_elem_idx], stride_t[last_elem_idx]
             )
     else:
         comptime if crd_len > 1:
@@ -1343,7 +1343,7 @@ def _get_flattened[
         The value at the given flat index.
 
     Examples:
-        For `tuple = Coord(Idx[5](), Coord(Idx[3](), Idx[2]()), Idx(7))`:
+        For `tuple = Coord(Idx[5](), Coord(Idx[3](), Idx[2]()), 7)`:
         - `get_flattened[0](tuple)` returns 5  (first element)
         - `get_flattened[1](tuple)` returns 3  (first element of nested tuple)
         - `get_flattened[2](tuple)` returns 2  (second element of nested tuple)
@@ -1905,3 +1905,11 @@ comptime _CeilDiv[
 @always_inline
 def _linear_idx_to_coord(idx: Int, stride: Int, shape: Int) -> Int:
     return umod(ufloordiv(idx, stride), shape)
+
+
+@always_inline
+def _coerce_dynamic[T: CoordLike](value: Int) -> T:
+    comptime if _type_is_eq_parse_time[T, Int]():
+        return rebind[T](value)
+    else:
+        return rebind[T](Scalar[T.DTYPE](value))

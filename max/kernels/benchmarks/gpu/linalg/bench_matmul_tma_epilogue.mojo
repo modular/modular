@@ -284,7 +284,7 @@ def bench_matmul_tma_epilogue[
                 _dtype, width
             ]:
                 var epi_val = tensor_epilogue.load[width=width](
-                    Coord(Idx(idx[0]), Idx(idx[1]))
+                    Coord(idx[0], idx[1])
                 ).cast[_dtype]()
                 return val + epi_val
 
@@ -296,7 +296,7 @@ def bench_matmul_tma_epilogue[
 
         else:  # "tma_bias"
             # Build epilogue TileTensor with RowMajorLayout[Int64, Int64]
-            # to exactly match _matmul_gpu's epilogue_tensor parameter type. Idx(Int) returns
+            # to exactly match _matmul_gpu's epilogue_tensor parameter type. Int returns
             # Scalar[DType.int] which mismatches; use Int64 directly.
             var epi_m = Int64(epilogue_shape[0].value())
             var epi_n = Int64(epilogue_shape[1].value())
@@ -408,7 +408,7 @@ def bench_matmul_tma_epilogue[
                 _dtype, width
             ]:
                 var epi_val = epilogue_ver_nd.load[width=width](
-                    Coord(Idx(idx[0]), Idx(idx[1]))
+                    Coord(idx[0], idx[1])
                 ).cast[_dtype]()
                 return val + epi_val
 
@@ -569,7 +569,7 @@ def main() raises:
         ](
             ctx,
             m,
-            Idx(M),
+            M,
             Idx[N](),
             Idx[K](),
             init_type,

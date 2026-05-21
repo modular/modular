@@ -157,7 +157,7 @@ def repeat_interleave_shape[
     var total_repeats = 0
     comptime assert repeats_size.dtype.is_integral()
     for i in range(repeats_size):
-        total_repeats += Int(repeats[Idx(i)])
+        total_repeats += Int(repeats[i])
 
     var result = coord_to_index_list(input.layout.shape_coord())
 

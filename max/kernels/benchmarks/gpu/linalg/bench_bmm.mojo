@@ -390,8 +390,8 @@ def main() raises:
         ](
             ctx,
             bench,
-            Idx(b),
-            Idx(m),
+            b,
+            m,
             Idx[N](),
             Idx[K](),
             init_type,

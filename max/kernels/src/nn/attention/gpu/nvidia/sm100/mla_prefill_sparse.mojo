@@ -542,7 +542,7 @@ struct MLAPrefillSparse[
         var warp_idx = warp_id()
         var lane_idx = thread_idx.x % WARP_SIZE
         var warpgroup_idx = warp.broadcast(thread_idx.x // WARPGROUP_SIZE)
-        var top_k_length = topk_lengths[Idx(seq_idx)]
+        var top_k_length = topk_lengths[seq_idx]
         var num_k_blocks = max(ceildiv(top_k_length, Self.config.B_TOPK), 1)
         var num_kv_rows = kv_lut.num_kv_rows()
         # Per-query base offset into the indices buffer; each query row owns
@@ -1412,7 +1412,7 @@ struct MLAPrefillSparse[
                     Coord(Idx[Int(inner_row)](), Idx[0]())
                 )
                 var inner_warp_dist = inner_tma_tile.tile[4, 64](
-                    Coord(Idx(warp_idx), Idx[0]())
+                    Coord(warp_idx, Idx[0]())
                 )
                 var indices = local_indices[inner_row]
                 tma_op.async_copy_gather4[cta_group=Self.config.cta_group](
@@ -1471,12 +1471,10 @@ struct MLAPrefillSparse[
         comptime for local_row in range(row_start, row_end):
             var token_idx_v4 = indices.load[width=4](
                 Coord(
-                    Idx(
-                        indices_base
-                        + k * Self.config.B_TOPK
-                        + (UInt32(local_row) * UInt32(num_warps) + warp_idx)
-                        * UInt32(4)
-                    )
+                    indices_base
+                    + k * Self.config.B_TOPK
+                    + (UInt32(local_row) * UInt32(num_warps) + warp_idx)
+                    * UInt32(4)
                 )
             ).cast[DType.int32]()
             comptime for cg in range(num_col_groups):
@@ -1567,7 +1565,7 @@ struct MLAPrefillSparse[
             # `num_kv_rows` fits in signed int32 (~2B rows); far above any
             # realistic deployment.
             var idx_v8 = indices.load[width=INDICES_PER_LANE](
-                Coord(Idx(gidx_offset))
+                Coord(gidx_offset)
             ).cast[DType.int32]()
 
             var abs_pos_base = Int32(k_block) * Int32(
@@ -1653,7 +1651,7 @@ struct MLAPrefillSparse[
                 + (UInt32(local_row) * num_warps + warp_idx) * UInt32(4)
             )
             local_indices[local_row] = indices.load[width=4](
-                Coord(Idx(indices_offset))
+                Coord(indices_offset)
             ).cast[DType.int32]()
             max_idx = max(max_idx, local_indices[local_row].reduce_max())
             min_idx = min(min_idx, local_indices[local_row].reduce_min())

@@ -207,7 +207,7 @@ def bench_grouped_block_scaled_gemm[
     # Create TileTensors - 3D with batch=1
     var a_template = TileTensor(
         a_device,
-        row_major(Coord(Idx[1](), Idx(M), Idx[K_ARRAY]())),
+        row_major(Coord(Idx[1](), M, Idx[K_ARRAY]())),
     )
     var b_template = TileTensor(
         b_device,
@@ -221,7 +221,7 @@ def bench_grouped_block_scaled_gemm[
     )
     var c_template = TileTensor(
         c_device,
-        row_major(Coord(Idx[1](), Idx(M), n)),
+        row_major(Coord(Idx[1](), M, n)),
     )
 
     # Scale factor template tensors - 5D with batch=1 and merged last dims
@@ -230,7 +230,7 @@ def bench_grouped_block_scaled_gemm[
         row_major(
             Coord(
                 Idx[1](),
-                Idx(ceildiv(M, SF_MN_GROUP_SIZE)),
+                ceildiv(M, SF_MN_GROUP_SIZE),
                 Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)](),
                 Idx[SF_ATOM_M[0]](),
                 Idx[SF_ATOM_M[1] * SF_ATOM_K](),
@@ -242,7 +242,7 @@ def bench_grouped_block_scaled_gemm[
         row_major(
             Coord(
                 Idx[1](),
-                Idx(ceildiv(Int(n.value()), SF_MN_GROUP_SIZE)),
+                ceildiv(Int(n.value()), SF_MN_GROUP_SIZE),
                 Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)](),
                 Idx[SF_ATOM_M[0]](),
                 Idx[SF_ATOM_M[1] * SF_ATOM_K](),

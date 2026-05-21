@@ -2253,7 +2253,7 @@ struct BlackwellMatmulSM100FallbackKernel[
 
         var ctile, ctile_coords, _ = c.tile_with_offset[
             Self.BM, Self.BN, stride_layout=Self.CGmemStrideLayout
-        ](Coord(Idx(block_idx.y), Idx(block_idx.x)))
+        ](Coord(block_idx.y, block_idx.x))
 
         var M = c.dim[0]()
 
@@ -2265,8 +2265,8 @@ struct BlackwellMatmulSM100FallbackKernel[
                     stride_layout=Self.CGmemStrideLayout,
                 ](
                     Coord(
-                        Idx(4 * m_mma + warp_id),
-                        Idx(n_mma),
+                        4 * m_mma + warp_id,
+                        n_mma,
                     )
                 )
                 var warp_m = ctile_coords[0] + warp_coords[0]

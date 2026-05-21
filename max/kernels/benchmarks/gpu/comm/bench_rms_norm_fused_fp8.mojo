@@ -196,13 +196,13 @@ def bench_rms_norm_fused_fp8[
                 UnsafePointer[Scalar[out_dtype], MutAnyOrigin](
                     cb_fp8_output.offset_ptr(iteration)
                 ),
-                row_major(Coord(Idx(rows), Idx(cols))),
+                row_major(Coord(rows, cols)),
             )
             var scales_tt = TileTensor(
                 UnsafePointer[Scalar[DType.float32], MutAnyOrigin](
                     scales_base_ptr
                 ),
-                row_major(Coord(Idx[1](), Idx(rows))),
+                row_major(Coord(Idx[1](), rows)),
             )
 
             quantize_dynamic_scaled_fp8[
@@ -368,11 +368,11 @@ def bench_rms_norm_fused_fp8[
 
     var fp8_output_tt_verify = TileTensor(
         UnsafePointer[Scalar[out_dtype], MutAnyOrigin](fp8_verify_base_ptr),
-        row_major(Coord(Idx(rows), Idx(cols))),
+        row_major(Coord(rows, cols)),
     )
     var scales_tt_verify = TileTensor(
         UnsafePointer[Scalar[DType.float32], MutAnyOrigin](scales_base_ptr),
-        row_major(Coord(Idx[1](), Idx(rows))),
+        row_major(Coord(Idx[1](), rows)),
     )
 
     quantize_dynamic_scaled_fp8[

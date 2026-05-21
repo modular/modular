@@ -107,12 +107,12 @@ def test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
     var c_shape = row_major(Coord(m, Idx[NType.static_value]()))
 
     var a_scales_shape = row_major(
-        Coord(Idx(ceildiv(Int(k.value()), BLOCK_SCALE_K)), m)
+        Coord(ceildiv(Int(k.value()), BLOCK_SCALE_K), m)
     )
     var b_scales_shape = row_major(
         Coord(
-            Idx(ceildiv(Int(n.value()), BLOCK_SCALE_K)),
-            Idx(ceildiv(Int(k.value()), BLOCK_SCALE_K)),
+            ceildiv(Int(n.value()), BLOCK_SCALE_K),
+            ceildiv(Int(k.value()), BLOCK_SCALE_K),
         )
     )
 

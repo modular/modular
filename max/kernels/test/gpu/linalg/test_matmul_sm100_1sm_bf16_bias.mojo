@@ -161,26 +161,26 @@ def test_blackwell_matmul_with_epilogue_tensor[
     # print("epilogue_host  :", end=" ")
     # for i in range(M):
     #     for j in range(N):
-    #         var idx = epilogue_host.layout(Coord(Idx(i), Idx(j)))
+    #         var idx = epilogue_host.layout(Coord(i, j))
     #         print(epilogue_host.ptr[idx], end=" ")
     #     print()
     # print("c_host(ker):", end=" ")
     # for i in range(M):
     #     for j in range(N):
-    #         var idx = c_host.layout(Coord(Idx(i), Idx(j)))
+    #         var idx = c_host.layout(Coord(i, j))
     #         print(c_host.ptr[idx], end=" ")
     #     print()
     # print("c_ref(blas):", end=" ")
     # for i in range(M):
     #     for j in range(N):
-    #         var idx = c_host_ref.layout(Coord(Idx(i), Idx(j)))
+    #         var idx = c_host_ref.layout(Coord(i, j))
     #         print(c_host_ref.ptr[idx], end=" ")
     #     print()
 
     # print("diff(ker-ref):", end=" ")
     # for i in range(M):
     #     for j in range(N):
-    #         var idx = c_host.layout(Coord(Idx(i), Idx(j)))
+    #         var idx = c_host.layout(Coord(i, j))
     #         print(
     #             c_host.ptr[idx].cast[DType.float32]()
     #             - c_host_ref.ptr[idx].cast[DType.float32](),
@@ -191,21 +191,19 @@ def test_blackwell_matmul_with_epilogue_tensor[
     # Add epilogue tensor to reference on host: C_ref[m, n] += epilogue[m, n]
     for i in range(M):
         for j in range(N):
-            c_host_ref[Coord(Idx(i), Idx(j))] += epilogue_host[
-                Coord(Idx(i), Idx(j))
-            ]
+            c_host_ref[Coord(i, j)] += epilogue_host[Coord(i, j)]
 
     # print("c_ref(blas+epilogue):", end=" ")
     # for i in range(M):
     #     for j in range(N):
-    #         var idx = c_host_ref.layout(Coord(Idx(i), Idx(j)))
+    #         var idx = c_host_ref.layout(Coord(i, j))
     #         print(c_host_ref.ptr[idx], end=" ")
     #     print()
 
     # print("diff(ker-ref+epilogue):", end=" ")
     # for i in range(M):
     #     for j in range(N):
-    #         var idx = c_host.layout(Coord(Idx(i), Idx(j)))
+    #         var idx = c_host.layout(Coord(i, j))
     #         print(
     #             c_host.ptr[idx].cast[DType.float32]()
     #             - c_host_ref.ptr[idx].cast[DType.float32](),

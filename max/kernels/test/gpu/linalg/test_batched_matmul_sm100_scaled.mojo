@@ -206,7 +206,7 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8[
     ](idx: IndexList[rank], val: SIMD[dtype, width],) capturing -> None:
         comptime assert c_tensor.flat_rank >= 3
         c_tensor.store[alignment=alignment](
-            Coord(Idx(idx[0]), Idx(idx[1]), Idx(idx[2])),
+            Coord(idx[0], idx[1], idx[2]),
             rebind[SIMD[c_type, width]](val),
         )
 
@@ -416,7 +416,7 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8_non_row_major_c[
     # Construct non-row-major TileTensors for c: strides (N, B*N, 1) instead
     # of the row-major (M*N, N, 1).
     var c_non_rm_layout = TileLayout(
-        Coord(Idx[B](), Idx(M), Idx[N]()),
+        Coord(Idx[B](), M, Idx[N]()),
         Coord(Idx[N](), Idx[B * N](), Idx[1]()),
     )
     var c = TileTensor(c_device_nd.ptr, c_non_rm_layout)

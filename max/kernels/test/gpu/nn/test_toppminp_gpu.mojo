@@ -242,17 +242,17 @@ def test_case_sampling[
         batch_size * vocab_size
     )
     var in_logits = TileTensor(
-        in_logits_ptr, row_major(Coord(Idx(batch_size), Idx(vocab_size)))
+        in_logits_ptr, row_major(Coord(batch_size, vocab_size))
     )
     var token_ids_ptr = ctx.enqueue_create_host_buffer[out_idx_type](
         batch_size * 1
     )
     var token_ids = TileTensor(
-        token_ids_ptr, row_major(Coord(Idx(batch_size), Int(1)))
+        token_ids_ptr, row_major(Coord(batch_size, Int(1)))
     )
     var p_thresholds_ptr = ctx.enqueue_create_host_buffer[dtype](batch_size)
     var p_thresholds = TileTensor(
-        p_thresholds_ptr, row_major(Coord(Idx(batch_size)))
+        p_thresholds_ptr, row_major(Coord(batch_size))
     )
 
     # Fill tensors
@@ -282,11 +282,11 @@ def test_case_sampling[
     )
     var in_logits_cpu_test = TileTensor(
         in_logits_cpu_test_ptr,
-        row_major(Idx(batch_size), Idx(vocab_size)),
+        row_major(batch_size, vocab_size),
     )
     var probs_cpu_test = TileTensor(
         probs_cpu_test_ptr,
-        row_major(Idx(batch_size), Idx(vocab_size)),
+        row_major(batch_size, vocab_size),
     )
     for i in range(in_logits.num_elements()):
         in_logits_cpu_test.raw_store(i, in_logits.raw_load(i) / temperature)
@@ -300,16 +300,16 @@ def test_case_sampling[
 
     var device_in_tensor = TileTensor(
         device_in_buf,
-        row_major(Idx(batch_size), Idx(vocab_size)),
+        row_major(batch_size, vocab_size),
     )
     var device_token_ids_tensor = TileTensor(
         device_token_ids_buf,
-        row_major(Idx(batch_size), Idx[1]()),
+        row_major(batch_size, Idx[1]()),
     )
     var device_p_thresholds_tensor = TileTensor(
         device_p_thresholds_buf,
         row_major(
-            Idx(batch_size),
+            batch_size,
         ),
     )
 

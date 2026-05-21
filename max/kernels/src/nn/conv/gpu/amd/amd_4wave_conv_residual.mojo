@@ -202,9 +202,7 @@ def amd_4wave_conv_fprop_with_residual[
     # the alloc + zero-pad entirely.
     comptime K_padded = ((K_real + 255) // 256) * 256
     comptime _needs_kpad = K_padded != K_real
-    var output_2d = TileTensor(
-        output.ptr, row_major(Coord(Idx(M), Idx[_C_out]()))
-    )
+    var output_2d = TileTensor(output.ptr, row_major(Coord(M, Idx[_C_out]())))
 
     # The 2D residual view's row stride is `C_out` (NHWC contiguous).
     var _source_row_stride = _C_out
@@ -377,9 +375,7 @@ def _launch_plain_conv[
     comptime K_real = _R * _S * _C_in
     comptime K_padded = ((K_real + 255) // 256) * 256
     comptime _needs_kpad = K_padded != K_real
-    var output_2d = TileTensor(
-        output.ptr, row_major(Coord(Idx(M), Idx[_C_out]()))
-    )
+    var output_2d = TileTensor(output.ptr, row_major(Coord(M, Idx[_C_out]())))
 
     if problem.stride_h != problem.stride_w or problem.pad_h != problem.pad_w:
         raise Error(
@@ -414,9 +410,7 @@ def _launch_plain_conv[
             var rem = m - batch_idx * HW_out
             var h_idx = rem // W_out
             var w_idx = rem - h_idx * W_out
-            var coords_4d = Coord(
-                Idx(batch_idx), Idx(h_idx), Idx(w_idx), Idx(n)
-            )
+            var coords_4d = Coord(batch_idx, h_idx, w_idx, n)
             output.store[width=width, alignment=alignment](
                 coords_4d, rebind[SIMD[out_type, width]](val)
             )

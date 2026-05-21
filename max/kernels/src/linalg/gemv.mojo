@@ -432,17 +432,13 @@ def gemv_split_k[
                     continue
             comptime if is_amd_gpu():
                 var b_vec = weight_tile.load[simd_width, non_temporal=True](
-                    Coord(Idx(i), Idx(thread_idx.x * simd_width))
+                    Coord(i, thread_idx.x * simd_width)
                 )
-                tile_w.store(
-                    Coord(Idx(i), Idx[0]()), rebind[WeightVecType](b_vec)
-                )
+                tile_w.store(Coord(i, Idx[0]()), rebind[WeightVecType](b_vec))
             else:
                 var vec_weight_tile = weight_tile.vectorize[1, simd_width]()
                 var b_vec = vec_weight_tile[i, thread_idx.x]
-                tile_w.store(
-                    Coord(Idx(i), Idx[0]()), rebind[WeightVecType](b_vec)
-                )
+                tile_w.store(Coord(i, Idx[0]()), rebind[WeightVecType](b_vec))
 
         # Load activations and accumulate dot products.
         comptime for i in range(tile_m):
@@ -882,7 +878,7 @@ def gemv_gpu_dispatch[
                 )
             else:
                 # runtime transpose since TileTensor.transpose requires static shape
-                var b_n_major_layout = row_major(Coord(Idx(n), Idx(k)))
+                var b_n_major_layout = row_major(Coord(n, k))
                 var b_ptr = UnsafePointer[Scalar[b_type], b.origin](
                     unsafe_from_address=Int(b.ptr)
                 )

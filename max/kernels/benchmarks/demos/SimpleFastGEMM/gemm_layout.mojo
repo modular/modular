@@ -141,10 +141,10 @@ def gemm_export_dynamic(
 ):
     comptime N = 1024
     comptime K = 1024
-    var a = TileTensor(a_ptr, row_major(Idx(M), Idx[N]()))
+    var a = TileTensor(a_ptr, row_major(M, Idx[N]()))
     var b_packed = TensorBuilder[N // NR, K * NR, dtype].Wrap(b_packed_ptr)
     var c = TileTensor(
-        c_ptr.bitcast[Scalar[dtype], mut=True](), row_major(Idx(M), Idx[N]())
+        c_ptr.bitcast[Scalar[dtype], mut=True](), row_major(M, Idx[N]())
     )
     gemm[N, K](c, a, b_packed)
 

@@ -179,8 +179,8 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
             comptime assert type_of(j).dtype.is_integral()
             comptime assert c_host.flat_rank == 2
             assert_equal(
-                c_host[Idx(i), Idx(j)].cast[DType.float64](),
-                c_host_ref[Idx(i), Idx(j)].cast[c_type]().cast[DType.float64](),
+                c_host[i, j].cast[DType.float64](),
+                c_host_ref[i, j].cast[c_type]().cast[DType.float64](),
                 msg="At [" + String(i) + ", " + String(j) + "]",
             )
 

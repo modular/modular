@@ -27,10 +27,10 @@ def test_argsort[
     comptime n = 16384
 
     var input_ptr = List(length=n, fill=Float32(0))
-    var input = TileTensor(input_ptr, row_major(Idx(n)))
+    var input = TileTensor(input_ptr, row_major(n))
 
     var indices_ptr = List(length=n, fill=Int32(0))
-    var indices = TileTensor(indices_ptr, row_major(Idx(n)))
+    var indices = TileTensor(indices_ptr, row_major(n))
 
     for i in range(n):
         input[i] = filler(i, n)
@@ -39,8 +39,8 @@ def test_argsort[
 
     for i in range(n):
         if i < n - 1:
-            var lhs = input[Idx(indices[i])]
-            var rhs = input[Idx(indices[i + 1])]
+            var lhs = input[indices[i]]
+            var rhs = input[indices[i + 1]]
 
             comptime if ascending:
                 assert_true(
@@ -83,8 +83,8 @@ def test_argsort[
                     ),
                 )
         else:
-            var lhs = input[Idx(indices[i])]
-            var rhs = input[Idx(indices[0])]
+            var lhs = input[indices[i]]
+            var rhs = input[indices[0]]
 
             comptime if ascending:
                 assert_true(

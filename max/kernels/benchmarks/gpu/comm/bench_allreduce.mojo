@@ -157,10 +157,10 @@ def bench_reduce[
 
     # Create and initialize input and output buffers.
     comptime InTensorType = TileTensor[
-        dtype, type_of(row_major(Idx(length))), ImmutAnyOrigin
+        dtype, type_of(row_major(length)), ImmutAnyOrigin
     ]
     comptime OutTensorType = TileTensor[
-        dtype, type_of(row_major(Idx(length))), MutAnyOrigin
+        dtype, type_of(row_major(length)), MutAnyOrigin
     ]
     var in_tensors = InlineArray[InTensorType, num_buffers](uninitialized=True)
     var out_tensors = InlineArray[OutTensorType, ngpus](uninitialized=True)
@@ -184,7 +184,7 @@ def bench_reduce[
             rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
                 multi_ptr.unsafe_value()
             ),
-            row_major(Idx(length)),
+            row_major(length),
         )
     else:
         comptime for i in range(ngpus):
@@ -192,11 +192,11 @@ def bench_reduce[
                 rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
                     cb_inputs[i].unsafe_ptr()
                 ),
-                row_major(Idx(length)),
+                row_major(length),
             )
 
     for i in range(ngpus):
-        out_tensors[i] = TileTensor(out_dev[i], row_major(Idx(length)))
+        out_tensors[i] = TileTensor(out_dev[i], row_major(length))
         # Ensure setup has propagated.
         list_of_ctx[i].synchronize()
 
@@ -209,7 +209,7 @@ def bench_reduce[
     var out_tensors_capture = StaticTuple[OutTensorType, ngpus]()
 
     comptime for i in range(ngpus):
-        out_tensors_capture[i] = TileTensor(out_dev[i], row_major(Idx(length)))
+        out_tensors_capture[i] = TileTensor(out_dev[i], row_major(length))
 
     # Pre-initialize vendor CCL communicators from the main thread.
     # ncclCommInitAll is not thread-safe, so we must initialize before
@@ -231,7 +231,7 @@ def bench_reduce[
                         rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
                             cb_inputs[i].offset_ptr(cache_iter)
                         ),
-                        row_major(Idx(length)),
+                        row_major(length),
                     )
             else:
                 # multi_ptr is set when use_multimem == True
@@ -240,7 +240,7 @@ def bench_reduce[
                         multi_ptr.unsafe_value()
                         + cb_template.offset(cache_iter)
                     ),
-                    row_major(Idx(length)),
+                    row_major(length),
                 )
             # Run allreduce
             comptime if use_vendor_ccl:

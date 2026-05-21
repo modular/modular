@@ -83,7 +83,7 @@ def mxfp4_matmul_sm90(
 
     # Step 2: Cast BF16 activations to FP8
     var a_fp8_buf = ctx.enqueue_create_buffer[fp8_type](M * static_K)
-    var a_fp8_tt = TileTensor(a_fp8_buf, row_major(Idx(M), Idx[static_K]()))
+    var a_fp8_tt = TileTensor(a_fp8_buf, row_major(M, Idx[static_K]()))
 
     _cast_bf16_to_fp8(ctx, a_fp8_tt, a, M, static_K)
 

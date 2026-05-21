@@ -140,7 +140,7 @@ struct BF16DispatchTest[
     ) * Self.n_tokens_per_rank
 
     comptime output_layout = row_major(
-        (Idx(Self.max_recv_num_tokens), Idx[Self.hidden_size]())
+        (Self.max_recv_num_tokens, Idx[Self.hidden_size]())
     )
     comptime TokenFormatType = BF16TokenFormat[
         output_layout=type_of(Self.output_layout), Self.hidden_size, Self.top_k
@@ -252,11 +252,11 @@ struct BlockwiseFP8DispatchTest[
     ) * Self.n_tokens_per_rank
 
     comptime output_layout = row_major(
-        (Idx(Self.max_recv_num_tokens), Idx[Self.hidden_size]())
+        (Self.max_recv_num_tokens, Idx[Self.hidden_size]())
     )
     comptime output_scales_layout = row_major(
         (
-            Idx(Self.hidden_size // Self.group_size),
+            Self.hidden_size // Self.group_size,
             Idx[Self.max_recv_num_tokens](),
         )
     )
@@ -433,11 +433,11 @@ struct NVFP4DispatchTest[
     comptime uint8_last_dim = Self.hidden_size // 2
 
     comptime output_layout = row_major(
-        (Idx(Self.max_recv_num_tokens), Idx[Self.uint8_last_dim]())
+        (Self.max_recv_num_tokens, Idx[Self.uint8_last_dim]())
     )
     comptime output_scales_layout = row_major(
         (
-            Idx(Self.scales_padded_size // SF_MN_GROUP_SIZE),
+            Self.scales_padded_size // SF_MN_GROUP_SIZE,
             Idx[ceildiv(Self.hidden_size, SF_ATOM_K * NVFP4_SF_VECTOR_SIZE)](),
             Idx[SF_ATOM_M[0]](),
             Idx[SF_ATOM_M[1]](),
@@ -623,7 +623,7 @@ struct NVFP4DispatchTest[
         )
         var _scales_tensor = TileTensor[origin=MutAnyOrigin](
             ptr=host_scales_tensor.ptr_at_offset(
-                (Idx(scales_block_id), Idx[0](), Idx[0](), Idx[0](), Idx[0]())
+                (scales_block_id, Idx[0](), Idx[0](), Idx[0](), Idx[0]())
             ),
             layout=Self.output_scales_layout,
         )
@@ -690,12 +690,12 @@ struct MXFP4DispatchTest[
     comptime uint8_last_dim = Self.hidden_size // 2
 
     comptime output_layout = row_major(
-        (Idx(Self.max_recv_num_tokens), Idx[Self.uint8_last_dim]())
+        (Self.max_recv_num_tokens, Idx[Self.uint8_last_dim]())
     )
     comptime output_scales_layout = row_major(
         (
             Idx[Self.max_recv_num_tokens](),
-            Idx(Self.hidden_size // MXFP4_SF_VECTOR_SIZE),
+            Self.hidden_size // MXFP4_SF_VECTOR_SIZE,
         )
     )
     comptime TokenFormatType = MXFP4TokenFormat[
@@ -939,10 +939,8 @@ def test_dispatch_common[
         device_src_token_info_bufs_list.append(ctx.enqueue_create_buffer[DType.int32](n_slots * max_recv_num_tokens * 2))
     # fmt: on
 
-    var topk_ids_layout = row_major(Idx(n_tokens_per_rank), Idx[top_k]())
-    var input_tokens_layout = row_major(
-        (Idx(n_tokens_per_rank), Idx[hidden_size]())
-    )
+    var topk_ids_layout = row_major(n_tokens_per_rank, Idx[top_k]())
+    var input_tokens_layout = row_major((n_tokens_per_rank, Idx[hidden_size]()))
     var row_offsets_layout = row_major[n_local_experts + 1]()
     var expert_ids_layout = row_major[n_local_experts]()
     var src_token_info_layout = row_major(

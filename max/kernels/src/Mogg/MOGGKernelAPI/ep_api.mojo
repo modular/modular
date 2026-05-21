@@ -77,7 +77,7 @@ from shmem.ep_comm import (
     fused_silu_nvfp4_kernel,
 )
 
-comptime RT_LAYOUT_2D = type_of(row_major(Idx(Int64(1)), Idx(Int64(1))))
+comptime RT_LAYOUT_2D = type_of(row_major(Int64(1), Int64(1)))
 
 
 # ===-----------------------------------------------------------------------===#
@@ -1406,9 +1406,9 @@ struct DistributedEPCombine:
             def router_weights_fn[
                 width: Int
             ](token_idx: Int, topk_id: Int) -> SIMD[DType.float32, width]:
-                return rw_tensor.load[width=width](
-                    (Idx(token_idx), Idx(topk_id))
-                ).cast[DType.float32]()
+                return rw_tensor.load[width=width]((token_idx, topk_id)).cast[
+                    DType.float32
+                ]()
 
             @parameter
             @always_inline
@@ -1536,7 +1536,7 @@ struct Struct_ep_combine_wait:
             width: Int
         ](token_idx: Int, topk_id: Int) -> SIMD[DType.float32, width]:
             return router_weights_tensor.load[width=width](
-                (Idx(token_idx), Idx(topk_id))
+                (token_idx, topk_id)
             ).cast[DType.float32]()
 
         @parameter
@@ -1620,7 +1620,7 @@ struct Struct_ep_combine:
             width: Int
         ](token_idx: Int, topk_id: Int) -> SIMD[DType.float32, width]:
             return router_weights_tensor.load[width=width](
-                (Idx(token_idx), Idx(topk_id))
+                (token_idx, topk_id)
             ).cast[DType.float32]()
 
         @parameter
@@ -1705,7 +1705,7 @@ struct Struct_ep_combine_skip_a2a:
             width: Int
         ](token_idx: Int, topk_id: Int) -> SIMD[DType.float32, width]:
             return router_weights_tensor.load[width=width](
-                (Idx(token_idx), Idx(topk_id))
+                (token_idx, topk_id)
             ).cast[DType.float32]()
 
         @parameter

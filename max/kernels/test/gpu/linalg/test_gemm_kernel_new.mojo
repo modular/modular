@@ -115,12 +115,12 @@ def gemm_kernel[
     comptime warp_layout = row_major[8, 4]()
 
     for k_i in range(ceildiv(K, Scalar[mat_a.linear_idx_type](BK))):
-        var a_tile_dram = mat_a.tile[BM, BK]((Idx(block_idx.y), Int(k_i)))
+        var a_tile_dram = mat_a.tile[BM, BK]((block_idx.y, Int(k_i)))
         copy_dram_to_sram_async[
             thread_layout=Layout.row_major(NUM_THREADS // BK, BK)
         ](a_tile_sram.to_layout_tensor(), a_tile_dram.to_layout_tensor())
 
-        var b_tile_dram = mat_b.tile[BK, BN]((Int(k_i), Idx(block_idx.x)))
+        var b_tile_dram = mat_b.tile[BK, BN]((Int(k_i), block_idx.x))
         copy_dram_to_sram_async[
             thread_layout=Layout.row_major(NUM_THREADS // BN, BN)
         ](b_tile_sram.to_layout_tensor(), b_tile_dram.to_layout_tensor())
@@ -130,11 +130,11 @@ def gemm_kernel[
 
         comptime for k_j in range(BK):  # Renamed to avoid shadowing outer k_i
             var a_smem_warp_row = a_tile_sram.tile[WM, BK](
-                (Idx(warp_m), Idx[0]())
+                (warp_m, Idx[0]())
             ).slice[:, k_j : k_j + 1]()
 
             var b_smem_warp_row = b_tile_sram.tile[BK, WN](
-                (Idx[0](), Idx(warp_n))
+                (Idx[0](), warp_n)
             ).slice[k_j : k_j + 1, :]()
             copy_sram_to_local[src_warp_layout=warp_layout.to_layout(), axis=0](
                 a_reg.to_layout_tensor(), a_smem_warp_row.to_layout_tensor()
@@ -147,9 +147,9 @@ def gemm_kernel[
         # Otherwise a data race, faster threads will modify shared memory.
         barrier()
 
-    var c_warp_tile = mat_c.tile[BM, BN](
-        (Idx(block_idx.y), Idx(block_idx.x))
-    ).tile[WM, WN]((Idx(warp_m), Idx(warp_n)))
+    var c_warp_tile = mat_c.tile[BM, BN]((block_idx.y, block_idx.x)).tile[
+        WM, WN
+    ]((warp_m, warp_n))
 
     copy_local_to_dram[dst_thread_layout=warp_layout.to_layout()](
         c_warp_tile.to_layout_tensor(), c_reg.to_layout_tensor()

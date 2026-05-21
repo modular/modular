@@ -121,7 +121,7 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     var a_scales_shape = row_major(
         Coord(
             Int(batch.value()),
-            Idx(ceildiv(Int(m.value()), SF_MN_GROUP_SIZE)),
+            ceildiv(Int(m.value()), SF_MN_GROUP_SIZE),
             Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)](),
             Idx[SF_ATOM_M[0]](),
             Idx[SF_ATOM_M[1]](),
@@ -280,7 +280,7 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     var c_2d_shape = row_major(Coord(m, Idx[NType.static_value]()))
     var a_scales_5d_shape = row_major(
         Coord(
-            Idx(ceildiv(Int(m.value()), SF_MN_GROUP_SIZE)),
+            ceildiv(Int(m.value()), SF_MN_GROUP_SIZE),
             Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)](),
             Idx[SF_ATOM_M[0]](),
             Idx[SF_ATOM_M[1]](),

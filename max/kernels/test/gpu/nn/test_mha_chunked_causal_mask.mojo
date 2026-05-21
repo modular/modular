@@ -145,8 +145,8 @@ def test_attention[
         q_device_ptr,
         row_major(
             (
-                Idx(batch_size),
-                Idx(seq_len),
+                batch_size,
+                seq_len,
                 Idx[num_heads](),
                 Idx[depth](),
             )
@@ -156,8 +156,8 @@ def test_attention[
         k_device_ptr,
         row_major(
             (
-                Idx(batch_size),
-                Idx(num_keys),
+                batch_size,
+                num_keys,
                 Idx[kv_num_heads](),
                 Idx[depth](),
             )
@@ -167,8 +167,8 @@ def test_attention[
         v_device_ptr,
         row_major(
             (
-                Idx(batch_size),
-                Idx(num_keys),
+                batch_size,
+                num_keys,
                 Idx[kv_num_heads](),
                 Idx[depth](),
             )
@@ -178,10 +178,10 @@ def test_attention[
         mask_device_ptr,
         row_major(
             (
-                Idx(batch_size),
+                batch_size,
                 Idx[num_heads](),
-                Idx(seq_len),
-                Idx(num_keys),
+                seq_len,
+                num_keys,
             )
         ),
     )
@@ -189,8 +189,8 @@ def test_attention[
         output_device_ptr,
         row_major(
             (
-                Idx(batch_size),
-                Idx(seq_len),
+                batch_size,
+                seq_len,
                 Idx[num_heads](),
                 Idx[depth](),
             )
@@ -219,8 +219,8 @@ def test_attention[
         output_ref_device_ptr,
         row_major(
             (
-                Idx(batch_size),
-                Idx(seq_len),
+                batch_size,
+                seq_len,
                 Idx[num_heads](),
                 Idx[depth](),
             )

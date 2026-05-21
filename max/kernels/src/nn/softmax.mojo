@@ -630,7 +630,7 @@ def _softmax_cpu[
             var buffer_offset = i * inner_dim
             var output_buffer_view = TileTensor(
                 output.ptr + buffer_offset,
-                row_major(Coord(Idx(inner_dim))),
+                row_major(Coord(inner_dim)),
             )
             var indices = _get_nd_indices_from_flat_index(i, shape, rank - 1)
 

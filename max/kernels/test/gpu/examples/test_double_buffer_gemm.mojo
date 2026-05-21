@@ -408,19 +408,19 @@ def test(ctx: DeviceContext) raises:
     # requires exact type matches).
     var c_ref_tt = TileTensor(
         c_device_ref,
-        row_major(Coord(Idx(M), Idx(N))),
+        row_major(Coord(M, N)),
     )
     var a_tt = TileTensor(
         UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin](
             unsafe_from_address=Int(a_device.unsafe_ptr())
         ),
-        row_major(Coord(Idx(M), Idx(K))),
+        row_major(Coord(M, K)),
     )
     var b_tt = TileTensor(
         UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin](
             unsafe_from_address=Int(b_device.unsafe_ptr())
         ),
-        row_major(Coord(Idx(K), Idx(N))),
+        row_major(Coord(K, N)),
     )
 
     comptime gemm_naive = matmul_kernel_naive[
