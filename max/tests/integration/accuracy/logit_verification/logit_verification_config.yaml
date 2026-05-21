@@ -405,13 +405,15 @@ logit_verification_pipelines:
     cos_dist_threshold: 4.0e-03
     kl_div_threshold: 2.0e-02
 
+  # TODO(GEX-3701): Graph compilation fails on b200-multi:
+  # 'mo.static.reshape' op lowering inside mo.parallel is not yet supported.
   OpenGVLab/InternVL3-8B-Instruct-bfloat16:
     pre_submit_agents: []
     post_submit_agents: [*h100_4x, *b200_2x]
     pipeline: "OpenGVLab/InternVL3-8B-Instruct"
     compatible_with: [gpu]
     encoding: bfloat16
-    tags: [nvidia-multi]
+    tags: [nvidia-multi, manual]  # GEX-3701
     pregenerated_torch_goldens:
       tar_file: "s3://modular-bazel-artifacts-public/artifacts/torch_internvl3-8b_golden/1/18c65a6f996008b7bb44ccb5369e862df5868a1d13b15165fe80bd8f9edc7415/torch_internvl3-8b_golden.tar.gz"
       json_file: "torch_internvl3-8b_bfloat16_golden.json"
@@ -419,13 +421,15 @@ logit_verification_pipelines:
     cos_dist_threshold: 3.5e-1
     kl_div_threshold: 7.0e-01
 
+  # TODO(GEX-3701): Graph compilation fails on b200-multi:
+  # 'mo.static.reshape' op lowering inside mo.parallel is not yet supported.
   OpenGVLab/InternVL3-14B-Instruct-bfloat16:
     pre_submit_agents: []
     post_submit_agents: [*h100_4x, *b200_2x]
     pipeline: "OpenGVLab/InternVL3-14B-Instruct"
     compatible_with: [gpu]
     encoding: bfloat16
-    tags: [nvidia-multi]
+    tags: [nvidia-multi, manual]  # GEX-3701
     pregenerated_torch_goldens:
       tar_file: "s3://modular-bazel-artifacts-public/artifacts/torch_internvl3-14b_golden/1/b0b6be883a40a1f44d85abbf077edec5c768fee8302f0595147ce7197da8560f/torch_internvl3-14b_golden.tar.gz"
       json_file: "torch_internvl3-14b_bfloat16_golden.json"
@@ -434,13 +438,15 @@ logit_verification_pipelines:
     cos_dist_threshold: 1.0e-03
     kl_div_threshold: 5.0e-02
 
+  # TODO(GEX-3701): Graph compilation fails on b200-multi:
+  # 'mo.static.reshape' op lowering inside mo.parallel is not yet supported.
   OpenGVLab/InternVL3-38B-Instruct-bfloat16:
     pre_submit_agents: []
     post_submit_agents: [*h100_4x, *b200_2x]
     pipeline: "OpenGVLab/InternVL3-38B-Instruct"
     compatible_with: [gpu]
     encoding: bfloat16
-    tags: [nvidia-multi]
+    tags: [nvidia-multi, manual]  # GEX-3701
     pregenerated_torch_goldens:
       tar_file: "s3://modular-bazel-artifacts-public/artifacts/torch_internvl3-38b_golden/1/68ce8e1ca017a4b42b1a9f270345dd64e869c57c582d5ade12eb654a42893b21/torch_internvl3-38b_golden.tar.gz"
       json_file: "torch_internvl3-38b_bfloat16_golden.json"
@@ -448,13 +454,15 @@ logit_verification_pipelines:
     kl_div_threshold: 4.8e-02
     timeout: 900
 
+  # TODO(GEX-3701): Graph compilation fails on b200-multi:
+  # 'mo.static.reshape' op lowering inside mo.parallel is not yet supported.
   OpenGVLab/InternVL3_5-8B-Instruct-bfloat16:
     pre_submit_agents: []
     post_submit_agents: [*h100_4x, *b200_2x]
     pipeline: "OpenGVLab/InternVL3_5-8B-Instruct"
     compatible_with: [gpu]
     encoding: bfloat16
-    tags: [nvidia-multi]
+    tags: [nvidia-multi, manual]  # GEX-3701
     pregenerated_torch_goldens:
       tar_file: "s3://modular-bazel-artifacts-public/artifacts/torch_internvl3_5_8b_golden/1/c1e88d08b863bc4e5ad250bf91bbe9e6a371f1244f96dd37befb8c1a086afcea/torch_internvl3_5_8b_golden.tar.gz"
       json_file: "torch_InternVL3_5_8B_bfloat16_golden.json"
