@@ -58,6 +58,10 @@ def py_add(a, b):  # noqa: ANN001, ANN201
     return a + b
 
 
+def py_echo_str(s):  # noqa: ANN001, ANN201
+    return str(s)
+
+
 def _measure(label: str, stmt: str, globals_: dict[str, object]) -> None:
     times = timeit.repeat(
         stmt, number=ITERATIONS, repeat=REPEATS, globals=globals_
@@ -75,6 +79,10 @@ def _sanity_check() -> None:
     assert mojo_module.add_def(1, 2) == 3
     assert mojo_module.add_raw(1, 2) == 3
     assert mojo_module.add_raw_fastcall(1, 2) == 3
+    assert mojo_module.echo_str_def("hello world") == "hello world"
+    assert (
+        mojo_module.echo_str_raw_fastcall("hello world") == "hello world"
+    )
 
 
 def main() -> int:
@@ -87,8 +95,11 @@ def main() -> int:
         "add_def": mojo_module.add_def,
         "add_raw": mojo_module.add_raw,
         "add_raw_fastcall": mojo_module.add_raw_fastcall,
+        "echo_str_def": mojo_module.echo_str_def,
+        "echo_str_raw_fastcall": mojo_module.echo_str_raw_fastcall,
         "py_noop": py_noop,
         "py_add": py_add,
+        "py_echo_str": py_echo_str,
     }
 
     print(
@@ -133,9 +144,25 @@ def main() -> int:
         g,
     )
 
+    # String round-trip: covers `String(py=...)` (Python -> Mojo) and
+    # `PythonObject(string)` (Mojo -> Python).
+    _measure(
+        "Python -> Mojo  echo_str_def(s)         [def_function/FASTCALL]",
+        "echo_str_def('hello world')",
+        g,
+    )
+    _measure(
+        "Python -> Mojo  echo_str_raw_fastcall(s) [def_py_c_function/FASTCALL]",
+        "echo_str_raw_fastcall('hello world')",
+        g,
+    )
+
     # Pure-Python baselines.
     _measure("Python -> Python py_noop(x)", "py_noop(1)", g)
     _measure("Python -> Python py_add(1, 2)", "py_add(1, 2)", g)
+    _measure(
+        "Python -> Python py_echo_str(s)", "py_echo_str('hello world')", g
+    )
 
     # timeit floor: no call at all.
     _measure("Python builtin: 1 + 2  (no call)", "1 + 2", g)

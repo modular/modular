@@ -12,16 +12,17 @@
 # ===----------------------------------------------------------------------=== #
 """Microbenchmark surface for Python -> Mojo FFI overhead.
 
-This module exposes the same trivial calls (`noop`, `add`) through several
-binding paths so that `bench.py` can attribute per-call overhead to specific
-parts of the dispatch chain:
+This module exposes the same trivial calls (`noop`, `add`, `echo_str`)
+through several binding paths so that `bench.py` can attribute per-call
+overhead to specific parts of the dispatch chain:
 
-- `noop_def` / `add_def`: the high-level `def_function` path that most users
-  will hit. Regression target.
-- `noop_raw` / `add_raw`: hand-written wrappers registered via the lower-level
-  `def_py_c_function` path. Lower bound for the current `METH_VARARGS`-based
-  architecture; isolates the cost contributed by Mojo's generic dispatch
-  wrapper from the cost of CPython's tuple-packing call convention itself.
+- `noop_def` / `add_def` / `echo_str_def`: the high-level `def_function`
+  path that most users will hit. Regression target.
+- `noop_raw` / `add_raw`: hand-written wrappers registered via the
+  lower-level `def_py_c_function` path. Lower bound for the current
+  `METH_VARARGS`-based architecture; isolates the cost contributed by
+  Mojo's generic dispatch wrapper from the cost of CPython's
+  tuple-packing call convention itself.
 
 See https://github.com/modular/modular/issues/6521.
 """
@@ -29,7 +30,11 @@ See https://github.com/modular/modular/issues/6521.
 from std.os import abort
 
 from std.python import Python, PythonObject
-from std.python._cpython import PyObjectPtr, Py_ssize_t
+from std.python._cpython import (
+    PyObjectPtr,
+    Py_ssize_t,
+    PyUnicode_1BYTE_KIND,
+)
 from std.python.bindings import PythonModuleBuilder
 
 
@@ -41,6 +46,7 @@ def PyInit_mojo_module() -> PythonObject:
         # High-level `def_function` path (the regression target).
         b.def_function[noop_def]("noop_def")
         b.def_function[add_def]("add_def")
+        b.def_function[echo_str_def]("echo_str_def")
 
         # Low-level `def_py_c_function` path. Same observable behavior, but
         # bypasses the generic PyObjectFunction dispatch.
@@ -53,6 +59,7 @@ def PyInit_mojo_module() -> PythonObject:
         b.def_py_c_function(add_raw, "add_raw")
         b.def_py_c_function(noop_raw_fastcall, "noop_raw_fastcall")
         b.def_py_c_function(add_raw_fastcall, "add_raw_fastcall")
+        b.def_py_c_function(echo_str_raw_fastcall, "echo_str_raw_fastcall")
 
         return b.finalize()
     except e:
@@ -72,6 +79,13 @@ def add_def(a: PythonObject, b: PythonObject) raises -> PythonObject:
     var ai = Int(py=a)
     var bi = Int(py=b)
     return PythonObject(ai + bi)
+
+
+def echo_str_def(s: PythonObject) raises -> PythonObject:
+    # Round-trip a Python `str` through `String` and back. Exercises both
+    # `String.__init__(py=...)` (Python -> Mojo) and `PythonObject(string)`
+    # (Mojo -> Python), so an end-to-end win on either side shows up here.
+    return PythonObject(String(py=s))
 
 
 # ===-----------------------------------------------------------------------===#
@@ -123,3 +137,21 @@ def add_raw_fastcall(
     var ai = cpy.PyLong_AsSsize_t(args[0])
     var bi = cpy.PyLong_AsSsize_t(args[1])
     return cpy.PyLong_FromSsize_t(ai + bi)
+
+
+@export
+def echo_str_raw_fastcall(
+    py_self: PyObjectPtr,
+    args: UnsafePointer[PyObjectPtr, MutExternalOrigin],
+    nargs: Py_ssize_t,
+) -> PyObjectPtr:
+    # Lower bound for `echo_str_def`: read the UTF-8 buffer of the input
+    # PyUnicode and feed it back through `PyUnicode_FromKindAndData(kind=1)`
+    # without going through any `String` / `PythonObject` wrapping.
+    ref cpy = Python().cpython()
+    var maybe_slice = cpy.PyUnicode_AsUTF8AndSize(args[0])
+    if not maybe_slice:
+        return PyObjectPtr()
+    return cpy.PyUnicode_FromKindAndData(
+        PyUnicode_1BYTE_KIND, maybe_slice.value().as_bytes()
+    )

@@ -49,3 +49,12 @@ def test_noop_raw_fastcall_returns_argument() -> None:
 def test_add_raw_fastcall_sums_ints() -> None:
     assert mojo_module.add_raw_fastcall(1, 2) == 3
     assert mojo_module.add_raw_fastcall(-5, 10) == 5
+
+
+def test_echo_str_def_round_trips() -> None:
+    assert mojo_module.echo_str_def("hello world") == "hello world"
+    assert mojo_module.echo_str_def("héllo") == "héllo"
+
+
+def test_echo_str_raw_fastcall_round_trips() -> None:
+    assert mojo_module.echo_str_raw_fastcall("hello world") == "hello world"
