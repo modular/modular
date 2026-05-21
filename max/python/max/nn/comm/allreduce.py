@@ -31,13 +31,14 @@ from max.nn.layer import Module
 
 
 class Allreduce(Module):
-    """Layer to perform allreduce operation with automatic implementation selection.
+    """Layer to perform allreduce sum across devices using bundled dispatch.
 
-    Automatically chooses between peer-to-peer optimized allreduce and naive
-    device-to-device transfer based on accelerator connectivity.
+    Stages a ``mo.parallel`` region containing a per-device
+    ``mo.bundled.allreduce.sum`` op so the compiler can lower each device
+    launch independently with async dispatch.
 
     Args:
-        num_accelerators: Number of accelerators participating in the allreduce operation
+        num_accelerators: Number of accelerators participating in the allreduce operation.
     """
 
     devices: list[Accelerator]
@@ -63,17 +64,18 @@ class Allreduce(Module):
         inputs: Iterable[TensorValue],
         signal_buffers: Iterable[BufferValue],
     ) -> list[TensorValue]:
-        """Performs allreduce operation with automatic implementation selection.
+        """Performs allreduce sum using bundled per-device dispatch.
 
         Args:
-            inputs: Distributed tensor values to reduce
-            signal_buffers: Buffers for peer-to-peer communication when using
-                optimized allreduce.
+            inputs: Distributed tensor values to reduce.
+            signal_buffers: Buffers for peer-to-peer communication.
 
         Returns:
-            List of reduced tensors, one per device
+            List of reduced tensors, one per device.
         """
-        return ops.allreduce.sum(inputs, signal_buffers)
+        inputs_list = list(inputs)
+        signal_buffers_list = list(signal_buffers)
+        return ops.bundled_allreduce.sum(inputs_list, signal_buffers_list)
 
 
 class Signals:
