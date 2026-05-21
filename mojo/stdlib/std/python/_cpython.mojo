@@ -1109,6 +1109,11 @@ comptime PyUnicode_FromKindAndData = ExternalFunction[
     ) thin -> PyObjectPtr,
 ]
 
+# `kind` values for `PyUnicode_FromKindAndData`.
+comptime PyUnicode_1BYTE_KIND: c_int = c_int(1)
+comptime PyUnicode_2BYTE_KIND: c_int = c_int(2)
+comptime PyUnicode_4BYTE_KIND: c_int = c_int(4)
+
 # Tuple Objects
 comptime PyTuple_New = ExternalFunction[
     "PyTuple_New",
@@ -2654,9 +2659,13 @@ struct CPython(Defaultable, Movable):
         self, kind: c_int, buffer: Span[Byte, _]
     ) -> PyObjectPtr:
         """Create a Unicode object from `buffer` of pre-decoded `kind`-sized
-        code units. `kind` is 1, 2, or 4 (`PyUnicode_1BYTE_KIND` and friends).
-        Bypasses UTF-8 validation and is the fast path for known-ASCII input
-        with `kind=1`.
+        code units. `kind` is one of `PyUnicode_1BYTE_KIND`,
+        `PyUnicode_2BYTE_KIND`, or `PyUnicode_4BYTE_KIND`. Bypasses UTF-8
+        validation; the buffer is treated as raw code units, not encoded
+        bytes, so the caller is responsible for ensuring the byte values are
+        valid for the selected kind. `Span[Byte, _]` is used (rather than
+        `StringSlice`) because for `kind=2` and `kind=4` the buffer is a
+        sequence of 2- or 4-byte code units, not UTF-8 text.
 
         Return value: New reference.
 
