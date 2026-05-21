@@ -27,6 +27,7 @@ from .huggingface import HuggingFaceBenchmarkDataset
 from .instruct_coder import InstructCoderBenchmarkDataset
 from .interface import BenchmarkDataset
 from .local import LocalBenchmarkDataset
+from .nemotron_opencode import NemotronOpenCodeBenchmarkDataset
 from .obfuscated_conversations import ObfuscatedConversationsBenchmarkDataset
 from .pixel import PixelBenchmarkDataset
 from .pixel_image_edit import LocalImageBenchmarkDataset
@@ -69,6 +70,7 @@ __all__ = [
     "InstructCoderBenchmarkDataset",
     "LocalBenchmarkDataset",
     "LocalImageBenchmarkDataset",
+    "NemotronOpenCodeBenchmarkDataset",
     "ObfuscatedConversationsBenchmarkDataset",
     "OpenAIImage",
     "PixelBenchmarkDataset",

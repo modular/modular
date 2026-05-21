@@ -54,6 +54,16 @@ This version is still a work in progress.
   disable the parser, overriding any architecture-declared default. Leaving
   the field unset still applies the architecture default as before.
 
+- Added the `nemotron-opencode` benchmark dataset backed by
+  `nvidia/Nemotron-SFT-OpenCode-v1`. Each row is a full Qwen3-Coder OpenCode
+  trace (system prompt, multi-turn user/assistant/tool messages, and tool
+  schemas). Multi-GB per subset, so the loader streams via
+  `datasets.load_dataset(..., streaming=True)` and pulls only enough rows to
+  satisfy `--num-prompts`. Tool definitions per row are surfaced on
+  `NemotronOpenCodeBenchmarkDataset.last_loaded_tool_schemas` for follow-up
+  work that forwards `tools=[...]` on chat completions payloads (the
+  benchmark request pipeline does not send that field yet).
+
 ### `max` CLI
 
 - Added `--devices=gpu:all` to use every visible GPU (including MAX Serve).

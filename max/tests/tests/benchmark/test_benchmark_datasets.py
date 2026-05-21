@@ -29,6 +29,7 @@ from max.benchmark.benchmark_shared.datasets import (
     InstructCoderBenchmarkDataset,
     LocalBenchmarkDataset,
     LocalImageBenchmarkDataset,
+    NemotronOpenCodeBenchmarkDataset,
     ObfuscatedConversationsBenchmarkDataset,
     PixelGenerationSampledRequest,
     RandomBenchmarkDataset,
@@ -47,6 +48,9 @@ from max.benchmark.benchmark_shared.datasets._tokenizer_pool import (
 from max.benchmark.benchmark_shared.datasets.multiturn_distribution_fit import (
     build_chat_samples_from_user_text_pool,
     resolve_constant_delay_ms,
+)
+from max.benchmark.benchmark_shared.datasets.nemotron_opencode import (
+    NEMOTRON_OPENCODE_REPO_ID,
 )
 from PIL import Image
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
@@ -113,6 +117,7 @@ def test_dataset_registry_contents() -> None:
         "arxiv-summarization",
         "chat-judge",
         "instruct-coder",
+        "nemotron-opencode",
         "sharegpt",
         "code_debug",
         "random",
@@ -135,6 +140,7 @@ def test_dataset_registry_multiturn_support_mapping() -> None:
         "arxiv-summarization": False,
         "code_debug": True,
         "instruct-coder": True,
+        "nemotron-opencode": True,
         "random": True,
         "synthetic": True,
         "sharegpt": False,
@@ -886,8 +892,8 @@ def test_instruct_coder_multiturn_fit_distributions(
 
 
 def test_pool_wraps_with_pass_marker_when_exhausted() -> None:
-    """When planned turns exceed the pool, the cursor wraps and each new pass
-    prepends a ``[N] `` marker to the user body so cycled prompts stay
+    """When planned turns exceed the pool, the iterator wraps and each new
+    pass prepends a ``[N] `` marker to the user body so cycled prompts stay
     cache-distinct while still satisfying ``num_sessions``."""
     tok = _FakeTokenizer(model_max_length=50_000)
     pool_texts = ["alpha body text", "beta body text", "gamma body text"]
@@ -941,3 +947,158 @@ def test_pool_wraps_with_pass_marker_when_exhausted() -> None:
         for msg in session.messages[0::2]
     ):
         assert abs(user.num_tokens - target_in) <= 4
+
+
+def _mock_nemotron_rows() -> list[dict[str, object]]:
+    """Three synthetic rows mimicking the Nemotron-SFT-OpenCode-v1 shape."""
+    return [
+        {
+            "messages": [
+                {"role": "system", "content": "agent prompt"},
+                {"role": "user", "content": "edit file a.py"},
+                {
+                    "role": "assistant",
+                    "content": [{"type": "text", "text": "ok, calling bash"}],
+                },
+                {"role": "tool", "content": "stdout"},
+                {"role": "user", "content": "next step"},
+                {"role": "assistant", "content": "done, here is the diff"},
+            ],
+            "tools": [{"name": "bash", "description": "run a shell command"}],
+        },
+        {
+            # Trace with no usable assistant reply — should be skipped by
+            # both sample_requests() and gen_multiturn_sessions().
+            "messages": [
+                {"role": "system", "content": "agent prompt"},
+                {"role": "user", "content": "hello"},
+                {"role": "tool", "content": "result"},
+            ],
+            "tools": [],
+        },
+        {
+            "messages": [
+                {"role": "user", "content": "write hello world"},
+                {"role": "assistant", "content": "print('hello world')"},
+            ],
+            "tools": [{"name": "todoread"}],
+        },
+    ]
+
+
+@patch("max.benchmark.benchmark_shared.datasets.nemotron_opencode.load_dataset")
+def test_nemotron_opencode_sample_requests(mock_load: Mock) -> None:
+    """``sample_requests`` collapses each row to (history, last_assistant)."""
+    mock_load.return_value = iter(_mock_nemotron_rows())
+
+    tok = Mock(spec=PreTrainedTokenizerBase)
+    tok.encode = Mock(
+        side_effect=lambda text, add_special_tokens=False: [0]
+        * max(len(text), 1)
+    )
+
+    dataset = NemotronOpenCodeBenchmarkDataset()
+    samples = dataset.sample_requests(
+        num_requests=5,
+        tokenizer=tok,
+        shuffle=False,
+        min_prompt_len=1,
+        min_output_len=1,
+    )
+
+    # Row 1 (multi-turn ending on assistant) and row 3 (single user/assistant)
+    # both produce samples; row 2 (no usable assistant reply) is filtered out.
+    assert len(samples.requests) == 2
+    assert all(isinstance(r, SampledRequest) for r in samples.requests)
+    assert all(isinstance(r.prompt_formatted, list) for r in samples.requests)
+    # Tool schemas are surfaced for downstream protocol work.
+    assert dataset.last_loaded_tool_schemas == [
+        [{"name": "bash", "description": "run a shell command"}],
+        [{"name": "todoread"}],
+    ]
+    # ``ignore_eos=True`` always, matching sharegpt/arxiv (decode the full
+    # target length even when ``output_len`` came from the dataset).
+    assert all(r.ignore_eos is True for r in samples.requests)
+    # Mock load_dataset was called with the streaming + data_files config and
+    # the canonical HuggingFace repo id (NOT the registry key).
+    call_args = mock_load.call_args
+    assert call_args.args[0] == NEMOTRON_OPENCODE_REPO_ID
+    assert call_args.kwargs["streaming"] is True
+    assert call_args.kwargs["data_files"].endswith("/data.jsonl")
+    assert call_args.kwargs["split"] == "train"
+
+
+@patch("max.benchmark.benchmark_shared.datasets.nemotron_opencode.load_dataset")
+def test_nemotron_opencode_disable_tool_calls(mock_load: Mock) -> None:
+    """``enable_tool_calls=False`` drops rows containing tool messages."""
+    mock_load.return_value = iter(_mock_nemotron_rows())
+
+    tok = Mock(spec=PreTrainedTokenizerBase)
+    tok.encode = Mock(
+        side_effect=lambda text, add_special_tokens=False: [0]
+        * max(len(text), 1)
+    )
+
+    dataset = NemotronOpenCodeBenchmarkDataset()
+    samples = dataset.sample_requests(
+        num_requests=5,
+        tokenizer=tok,
+        shuffle=False,
+        enable_tool_calls=False,
+        min_prompt_len=1,
+        min_output_len=1,
+    )
+
+    # Only row 3 has zero tool/non-chat messages.
+    assert len(samples.requests) == 1
+
+
+@patch("max.benchmark.benchmark_shared.datasets.nemotron_opencode.load_dataset")
+def test_nemotron_opencode_gen_multiturn(mock_load: Mock) -> None:
+    """Multi-turn conversion alternates user/assistant and drops tools."""
+    mock_load.return_value = iter(_mock_nemotron_rows())
+
+    tok = Mock(spec=PreTrainedTokenizerBase)
+    tok.encode = Mock(
+        side_effect=lambda text, add_special_tokens=False: [0]
+        * max(len(text), 1)
+    )
+
+    dataset = NemotronOpenCodeBenchmarkDataset()
+    samples = dataset.gen_multiturn_sessions(
+        num_sessions=5,
+        tokenizer=tok,
+        shuffle=False,
+        min_input_len=1,
+        min_output_len=1,
+    )
+
+    # Row 1 yields 2 user/assistant turns, row 2 has no assistant pair and
+    # is dropped, and row 3 yields 1 turn.
+    assert len(samples.chat_sessions) == 2
+    for session in samples.chat_sessions:
+        # Alternation must hold.
+        for i, msg in enumerate(session.messages):
+            assert msg.source == ("user" if i % 2 == 0 else "assistant")
+        # Assistant content placeholders are empty (filled by the live model
+        # at run time, like agentic-code / instruct-coder).
+        for assistant in session.messages[1::2]:
+            assert assistant.content == ""
+
+
+def test_nemotron_opencode_rejects_unknown_subset() -> None:
+    dataset = NemotronOpenCodeBenchmarkDataset()
+    dataset.subset = "does-not-exist"
+    tok = Mock(spec=PreTrainedTokenizerBase)
+    with pytest.raises(ValueError, match="Unknown Nemotron-OpenCode subset"):
+        dataset.sample_requests(num_requests=1, tokenizer=tok)
+
+
+def test_nemotron_opencode_rejects_dataset_path() -> None:
+    """``--dataset-path`` is not supported; surface that explicitly."""
+    dataset = NemotronOpenCodeBenchmarkDataset()
+    dataset.dataset_path = "/tmp/some-local.jsonl"
+    with pytest.raises(
+        ValueError, match="nemotron-opencode does not support --dataset-path"
+    ):
+        dataset.fetch()

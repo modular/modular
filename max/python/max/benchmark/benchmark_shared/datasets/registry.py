@@ -128,4 +128,8 @@ DATASET_REGISTRY: Mapping[str, DatasetRegistryEntry] = {
         class_name="InstructCoderBenchmarkDataset",
         has_multiturn_chat_support=True,
     ),
+    "nemotron-opencode": DatasetRegistryEntry(
+        class_name="NemotronOpenCodeBenchmarkDataset",
+        has_multiturn_chat_support=True,
+    ),
 }
