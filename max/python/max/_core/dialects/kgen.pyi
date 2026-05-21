@@ -296,8 +296,6 @@ class FnMetadataAttrInterface(Protocol):
     including verification and print hooks.
     """
 
-    @property
-    def pog_list_attr(self) -> max._core.Attribute | None: ...
     def verify_func_type(
         self,
         arg0: DiagnosticHandler,
@@ -306,9 +304,6 @@ class FnMetadataAttrInterface(Protocol):
         arg3: FnEffects,
         /,
     ) -> bool: ...
-    def get_with_bound_pos_args(
-        self, arg: int, /
-    ) -> FnMetadataAttrInterface: ...
     def equals(self, arg: FnMetadataAttrInterface, /) -> bool: ...
 
 class IndexRefAttrInterface(Protocol):
