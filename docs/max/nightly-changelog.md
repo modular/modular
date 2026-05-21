@@ -17,6 +17,13 @@ This version is still a work in progress.
 
 ### Inference server
 
+- Fixed `CreateChatCompletionRequest` rejecting explicit `null` values for
+  optional fields such as `tool_choice`, `tools`, and `response_format`.
+  OpenAI-compatible clients (LangChain, JS SDKs, anything that serializes
+  a dataclass with a `None` field) that emit `"tool_choice": null` instead
+  of omitting the key are now accepted, matching the behavior of other
+  OpenAI-compatible inference servers.
+
 - Added two opt-in server flags for accepting OpenAI-compatible requests
   that the strict default behavior would reject:
 

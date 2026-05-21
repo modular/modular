@@ -354,6 +354,25 @@ async def test_openai_parse_coerces_empty_tool_call_arguments() -> None:
     assert messages[0].tool_calls[1]["function"]["arguments"] == {}
 
 
+def test_openai_chat_completion_accepts_explicit_null_tool_choice() -> None:
+    """Schema must accept ``"tool_choice": null`` from OpenAI-compatible clients.
+
+    OpenAI's ``ChatCompletionToolChoiceOptionParam`` is a non-Optional union
+    of ``Literal["none","auto","required"]`` and tool-choice objects;
+    omission is expressed via ``NotRequired`` on the TypedDict. Some clients
+    (LangChain, certain JS SDKs, anything that serializes a dataclass with
+    a ``None`` field) explicitly emit ``"tool_choice": null`` instead of
+    omitting the key, which must be treated as equivalent to omission.
+    """
+    body = {
+        "model": "test",
+        "messages": [{"role": "user", "content": "hi"}],
+        "tool_choice": None,
+    }
+    request = CreateChatCompletionRequest.model_validate(body)
+    assert request.tool_choice is None
+
+
 def test_openai_user_message_content_nullable_schema() -> None:
     """Test that the CreateChatCompletionRequest schema accepts null user content."""
     # Test with explicit null content in user message

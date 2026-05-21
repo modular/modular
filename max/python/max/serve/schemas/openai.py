@@ -30,7 +30,7 @@ unsupported fields surface as 4xx errors instead of being silently dropped.
 from __future__ import annotations
 
 import collections.abc
-from typing import Any, Literal, get_args, get_origin, get_type_hints
+from typing import Any, Literal, Optional, get_args, get_origin, get_type_hints
 
 from openai.types import (
     CompletionUsage as CompletionUsage,
@@ -185,6 +185,13 @@ def _model_from_typeddict(name: str, td: type) -> type[BaseModel]:
     (e.g. ``model``, ``messages``, ``input``) as ``Required[...]``; we
     re-declare the truly required ones in the subclass below with no
     default.
+
+    Field annotations are widened to ``Optional[T]`` so that clients which
+    explicitly serialize unset fields as ``null`` (e.g. ``"tool_choice":
+    null``) are accepted as equivalent to omission. OpenAI expresses this
+    via ``NotRequired`` on the TypedDict, but the underlying type aliases
+    (``ChatCompletionToolChoiceOptionParam`` and friends) are not
+    ``Optional`` themselves.
     """
     fields: dict[str, Any] = {}
     for field_name, annotation in get_type_hints(td).items():
@@ -198,7 +205,7 @@ def _model_from_typeddict(name: str, td: type) -> type[BaseModel]:
         if get_origin(annotation) is collections.abc.Iterable:
             (inner,) = get_args(annotation)
             annotation = list[inner]  # type: ignore[valid-type]
-        fields[field_name] = (annotation, None)
+        fields[field_name] = (Optional[annotation], None)
     return create_model(name, __config__=_FORBID_EXTRA, **fields)
 
 
