@@ -453,15 +453,38 @@ struct List[T: Movable](
         """Constructs a list from an iterable of values.
 
         Parameters:
-            IterableType: The type of the `iterable` argument.
+            IterableType: The type of the `Iterable` argument.
 
         Args:
             iterable: The iterable of values to populate the list with.
         """
-        var lower, _ = iter(iterable).bounds()
-        self = type_of(self)(capacity=lower)
-        for var value in iterable:
-            self.append(rebind_var[type_of(self).T](value^))
+        var iterator = iter(iterable)
+        var lower, _ = iterator.bounds()
+        self = {capacity = lower}
+        for var value in iterator^:
+            self.append(value^)
+
+    def __init__[
+        IterableType: IterableOwned,
+    ](
+        var iterable: IterableType,
+        out self: List[
+            downcast[IterableType.IteratorOwnedType.Element, Copyable]
+        ],
+    ) where conforms_to(IterableType.IteratorOwnedType.Element, Copyable):
+        """Constructs a list from an iterable of values.
+
+        Parameters:
+            IterableType: The type of the `IterableOwned` argument.
+
+        Args:
+            iterable: The iterable of values to populate the list with.
+        """
+        var iterator = iter(iterable^)
+        var lower, _ = iterator.bounds()
+        self = {capacity = lower}
+        for var value in iterator^:
+            self.append(value^)
 
     @always_inline
     def __init__(out self, *, unsafe_uninit_length: Int):
