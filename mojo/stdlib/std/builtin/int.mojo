@@ -1036,14 +1036,14 @@ struct Int(
         """
         return (self & (self - 1) == 0) & (self > 0)
 
+    @always_inline
     def write_to(self, mut writer: Some[Writer]):
         """Formats this integer to the provided Writer.
 
         Args:
             writer: The object to write to.
         """
-
-        writer.write(Int64(self))
+        writer.write(Scalar[DType.int](self))
 
     def write_repr_to(self, mut writer: Some[Writer]):
         """Write the string representation of the Int".

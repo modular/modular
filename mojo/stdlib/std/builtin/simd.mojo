@@ -72,8 +72,8 @@ from std.sys.intrinsics import _type_is_eq
 from std.bit import bit_width, byte_swap, pop_count
 from std.builtin._format_float import _write_float
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
-from std.builtin.format_int import _write_int
 from std.builtin.int import _FromInt
+from std.format._utils import _WriteBufferStack, _write_int_base_10
 from std.math import DivModable, Powable
 from std.memory import bitcast, memcpy, pack_bits
 from std.python import Python, PythonObject
@@ -2178,21 +2178,17 @@ struct SIMD[dtype: DType, size: Int](
         Args:
             writer: The object to write to.
         """
-
-        # Write an opening `[`.
-        comptime if Self.size > 1:
+        comptime if Self.size == 1:
+            _write_scalar(writer, self[0])
+        else:
             writer.write("[")
 
-        # Write each element.
-        for i in range(Self.size):
-            var element = self[i]
-            # Write separators between each element.
-            if i != 0:
-                writer.write(", ")
-            _write_scalar(writer, element)
+            for i in range(Self.size):
+                var element = self[i]
+                if i != 0:
+                    writer.write(", ")
+                _write_scalar(writer, element)
 
-        # Write a closing `]`.
-        comptime if Self.size > 1:
             writer.write("]")
 
     @no_inline
@@ -2205,56 +2201,42 @@ struct SIMD[dtype: DType, size: Int](
         writer.write_string("SIMD[")
         Self.dtype.write_repr_to(writer)
         writer.write(", ", Self.size, "](")
-        # Write each element.
+
         for i in range(Self.size):
             var element = self[i]
-            # Write separators between each element.
             if i != 0:
                 writer.write_string(", ")
             _write_scalar(writer, element)
+
         writer.write_string(")")
 
     def write_padded[
-        W: Writer
-    ](self, mut writer: W, width: Int) where self.dtype.is_integral():
+        pad_str: StaticString = " "
+    ](
+        self, mut writer: Some[Writer], width: Int
+    ) where self.dtype.is_integral():
         """Write the integral SIMD with each element right-aligned to a set
         padding. No additional space between elements is inserted.
 
         Parameters:
-            W: A type conforming to the Writable trait.
+            pad_str: The string to pad with.
 
         Args:
             writer: The object to write to.
             width: The amount to pad to the left.
         """
 
-        # Write an opening `[`.
-        comptime if Self.size > 1:
+        comptime if Self.size == 1:
+            _write_int_base_10[pad_str](writer, self[0], width)
+        else:
             writer.write("[")
 
-        # Write each element.
-        for i in range(Self.size):
-            var element = self[i]
-            # _calc_initial_buffer_size adds an extra 1 for the terminator,
-            # which we want to remove, but also doesn't include 1 for a
-            # negative sign.
-            var int_width = _calc_initial_buffer_size(abs(element)) - (
-                1 if element >= 0 else 0
-            )
+            for i in range(Self.size):
+                if i != 0:
+                    writer.write(",")
 
-            # Write separators between each element.
-            if i != 0:
-                writer.write(",")
+                _write_int_base_10[pad_str](writer, self[i], width)
 
-            # TODO: Assumes user wants right-aligned content.
-            if int_width < width:
-                for _ in range(width - int_width):
-                    writer.write(" ")
-
-            _write_scalar(writer, element)
-
-        # Write a closing `]`.
-        comptime if Self.size > 1:
             writer.write("]")
 
     @always_inline
@@ -4066,23 +4048,16 @@ def _floor(x: SIMD) -> type_of(x):
     return type_of(x)(from_bits=bits)
 
 
+@always_inline
 def _write_scalar[
-    dtype: DType,
-    W: Writer,
-    //,
+    dtype: DType, W: Writer, //
 ](mut writer: W, value: Scalar[dtype]):
     comptime if dtype == DType.bool:
-        if value:
-            writer.write("True")
-        else:
-            writer.write("False")
-
+        writer.write("True" if value else "False")
     elif dtype.is_floating_point():
         _write_float(writer, value)
-
-    # TODO(MSTDL-1039): bring in performant integer to string formatter
     elif dtype.is_integral():
-        _ = _write_int(writer, value)
+        _write_int_base_10(writer, value)
     else:
         comptime assert (
             False
