@@ -41,7 +41,10 @@ from max.pipelines.lib import (
     upper_bounded_default,
 )
 from max.pipelines.lib.config.config_enums import supported_encoding_dtype
-from max.pipelines.lib.interfaces.arch_config import ArchConfigWithKVCache
+from max.pipelines.lib.interfaces.arch_config import (
+    ArchConfigWithKVCache,
+    ArchConfigWithStoredKVParams,
+)
 from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
 from transformers import AutoConfig
 from typing_extensions import Self, override
@@ -93,7 +96,7 @@ def create_rope_embedding(
 
 
 @dataclass(kw_only=True)
-class Llama3Config(ArchConfigWithKVCache):
+class Llama3Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
     """Model configuration for Llama3 graph construction/execution."""
 
     hidden_size: int
@@ -132,9 +135,6 @@ class Llama3Config(ArchConfigWithKVCache):
     use_subgraphs: bool = True
     data_parallel_degree: int = 1
 
-    def get_kv_params(self) -> KVCacheParams:
-        return self.kv_params
-
     def get_max_seq_len(self) -> int:
         return self.max_seq_len
 
@@ -161,36 +161,27 @@ class Llama3Config(ArchConfigWithKVCache):
 
         return base_multiplier
 
-    # TODO(zheng): Figure out a scalable abstract method for all MAXModelConfigs.
-    @staticmethod
+    @classmethod
     def construct_kv_params(
+        cls,
         huggingface_config: AutoConfig,
         pipeline_config: PipelineConfig,
         devices: list[DeviceRef],
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> KVCacheParams:
+        """Grouped-attention KV with EAGLE draft-token count when speculative is on."""
         return kv_cache_config.to_params(
             dtype=cache_dtype,
             n_kv_heads=huggingface_config.num_key_value_heads,
-            head_dim=Llama3Config.get_head_dim(huggingface_config),
-            num_layers=Llama3Config.get_num_layers(huggingface_config),
+            head_dim=cls.get_head_dim(huggingface_config),
+            num_layers=cls.get_num_layers(huggingface_config),
             devices=devices,
             data_parallel_degree=pipeline_config.model.data_parallel_degree,
             num_eagle_speculative_tokens=pipeline_config.speculative.num_speculative_tokens
             if pipeline_config.speculative
             else 0,
         )
-
-    @staticmethod
-    def get_head_dim(huggingface_config: AutoConfig) -> int:
-        if hasattr(huggingface_config, "head_dim"):
-            return huggingface_config.head_dim
-        else:
-            return (
-                huggingface_config.hidden_size
-                // huggingface_config.num_attention_heads
-            )
 
     @staticmethod
     def get_num_layers(huggingface_config: AutoConfig) -> int:

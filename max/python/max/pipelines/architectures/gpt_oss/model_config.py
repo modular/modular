@@ -22,9 +22,12 @@ from max.nn.kv_cache import KVCacheParams
 from max.nn.quant_config import QuantConfig
 from max.nn.rotary_embedding import YarnScalingParams
 from max.nn.transformer import ReturnLogits
-from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
+from max.pipelines.lib import MAXModelConfig, PipelineConfig
 from max.pipelines.lib.config.config_enums import supported_encoding_dtype
-from max.pipelines.lib.interfaces.arch_config import ArchConfigWithKVCache
+from max.pipelines.lib.interfaces.arch_config import (
+    ArchConfigWithKVCache,
+    ArchConfigWithStoredKVParams,
+)
 from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
 from max.pipelines.lib.quant import parse_quant_config
 from transformers import AutoConfig
@@ -32,7 +35,7 @@ from typing_extensions import Self, override
 
 
 @dataclass(kw_only=True)
-class GptOssConfig(ArchConfigWithKVCache):
+class GptOssConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
     """Configuration for GPT OSS models.
 
     Contains parameters specific to the GPT OSS architecture, typically
@@ -138,38 +141,8 @@ class GptOssConfig(ArchConfigWithKVCache):
     return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN
     """Whether to return the last token, all logits, or a variable number of logits."""
 
-    def get_kv_params(self) -> KVCacheParams:
-        return self.kv_params
-
     def get_max_seq_len(self) -> int:
         return self.max_position_embeddings
-
-    @staticmethod
-    def construct_kv_params(
-        huggingface_config: AutoConfig,
-        pipeline_config: PipelineConfig,
-        devices: list[DeviceRef],
-        kv_cache_config: KVCacheConfig,
-        cache_dtype: DType,
-    ) -> KVCacheParams:
-        """Constructs the KV cache parameters from configuration objects.
-
-        Args:
-            huggingface_config: The HuggingFace model configuration object (:obj:`transformers.AutoConfig`).
-            devices: The list of devices the model will run on.
-            kv_cache_config: The MAX Engine KV cache configuration settings (:obj:`max.pipelines.max_config.KVCacheConfig`).
-            cache_dtype: The desired data type for the KV cache (:obj:`max.dtype.DType`).
-
-        Returns:
-            The configured :obj:`max.pipelines.kv_cache.KVCacheParams` object.
-        """
-        return kv_cache_config.to_params(
-            dtype=cache_dtype,
-            n_kv_heads=huggingface_config.num_key_value_heads,
-            head_dim=huggingface_config.head_dim,
-            num_layers=GptOssConfig.get_num_layers(huggingface_config),
-            devices=devices,
-        )
 
     @staticmethod
     def get_num_layers(huggingface_config: AutoConfig) -> int:
