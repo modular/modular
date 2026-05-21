@@ -104,8 +104,8 @@ modular_py_test(
     main = "parse-mojo-files-with-lsp.py",
     mojo_deps = [
         "//max:compiler",
+        "//max:extensibility",
         "//max:layout",
-        "//max:tensor",
         "@mojo//:std",
     ],
     shard_count = 50,
