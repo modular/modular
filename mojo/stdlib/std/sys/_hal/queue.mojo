@@ -109,7 +109,7 @@ struct Queue[device_spec: DeviceSpec](ImplicitlyDestructible, Movable):
     def copy_to_device(
         self,
         dst: Buffer,
-        src: UnsafePointer[UInt8, MutAnyOrigin],
+        src: UnsafePointer[UInt8, ImmutAnyOrigin],
         size: UInt64,
     ) raises HALError:
         """

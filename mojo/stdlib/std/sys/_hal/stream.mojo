@@ -108,7 +108,7 @@ struct Stream[device_spec: DeviceSpec](ImplicitlyDestructible, Movable):
     def copy_to_device(
         mut self,
         dst: Buffer,
-        src: UnsafePointer[UInt8, MutAnyOrigin],
+        src: UnsafePointer[UInt8, ImmutAnyOrigin],
         size: UInt64,
     ) raises HALError:
         """Host-to-device copy. Runs after all previous Stream ops."""
