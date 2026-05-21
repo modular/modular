@@ -17,7 +17,6 @@ from std.sys import align_of, simd_width_of, size_of
 from std.sys.info import CompilationTarget, _current_target
 
 from std.algorithm import elementwise, parallel_memcpy, sync_parallelize
-from std.gpu.host import DeviceContext
 from std.algorithm.functional import tile
 from std.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from std.gpu.host.info import is_cpu, is_gpu
@@ -1079,6 +1078,7 @@ def scatter_elements[
     updates: ManagedTensorSlice[dtype=input_type, rank=rank, ...],
     _axis: Int,
     output: ManagedTensorSlice[dtype=input_type, rank=rank, ...],
+    ctx: DeviceContext,
 ) raises:
     """
     Implements ONNX ScatterElements op which is equivalent to Pytorch scatter.
@@ -1128,7 +1128,7 @@ def scatter_elements[
         )
 
     # cannot use simd_width > 1 here because consecutive updates are not contiguous
-    elementwise[update_func, 1](indices.shape())
+    elementwise[update_func, 1](indices.shape(), ctx)
 
 
 @always_inline
@@ -1196,6 +1196,7 @@ def gather_elements[
     indices: TileTensor[indices_type, ...],
     _axis: Int,
     output: TileTensor[mut=True, input_type, ...],
+    ctx: DeviceContext,
 ) raises:
     """
     Implements ONNX GatherElements op which is equivalent to Pytorch gather.
@@ -1241,7 +1242,7 @@ def gather_elements[
 
     # cannot use simd_width > 1 here because consecutive updates are not contiguous
     elementwise[gather_func, 1](
-        coord_to_index_list(output.layout.shape_coord())
+        coord_to_index_list(output.layout.shape_coord()), ctx
     )
 
 
@@ -1452,18 +1453,19 @@ def _gather_nd_impl[
     )
 
     comptime if is_cpu[target]():
+        var cpu_ctx = DeviceContext(api="cpu")
         if use_simd:
             elementwise[
                 gather_nd_elementwise_fn,
                 target_simd_width,
                 target=target,
-            ](coord_to_index_list(output.layout.shape_coord()))
+            ](coord_to_index_list(output.layout.shape_coord()), cpu_ctx)
         else:
             elementwise[
                 gather_nd_elementwise_fn,
                 1,
                 target=target,
-            ](coord_to_index_list(output.layout.shape_coord()))
+            ](coord_to_index_list(output.layout.shape_coord()), cpu_ctx)
     else:
         assert Bool(ctx), "Must provide DeviceContext if executing on GPU."
         var cuda_ctx = ctx.value()

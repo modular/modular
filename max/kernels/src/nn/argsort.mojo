@@ -65,7 +65,7 @@ def _argsort_cpu[
 
     elementwise[
         fill_indices_iota, simd_width_of[indices.dtype](), target="cpu"
-    ](indices.num_elements())
+    ](indices.num_elements(), DeviceContext(api="cpu"))
 
     @parameter
     def cmp_fn(a: Scalar[indices.dtype], b: Scalar[indices.dtype]) -> Bool:

@@ -272,7 +272,7 @@ class Device:
     def __eq__(self, arg: object, /) -> bool: ...
     def __hash__(self) -> int: ...
     def _device_context_ptr(self) -> int:
-        """Gets the device context pointer. Returns 0 for host devices."""
+        """Gets the device context pointer."""
 
     @staticmethod
     def cpu(id: int = -1) -> CPU:

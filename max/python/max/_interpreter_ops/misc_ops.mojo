@@ -25,7 +25,6 @@ from std.sys.info import has_accelerator
 from std.math import iota
 from std.random import NormalRandom, Random
 from std.algorithm.functional import elementwise, IndexList
-from std.memory import OpaquePointer
 
 from tensor.managed_tensor_slice import (
     ManagedTensorSlice,
@@ -112,7 +111,7 @@ struct _RangeBody(Dispatchable):
     var stop_addr: Int
     var step_addr: Int
     var size: Int
-    var ctx: Optional[OpaquePointer[MutExternalOrigin]]
+    var ctx: DeviceContext
 
     def call[t: DType](self) raises -> None:
         comptime if t == DType.bool:
@@ -144,7 +143,7 @@ def range_dispatcher(
         start_buffer: Scalar buffer containing the start value.
         stop_buffer: Scalar buffer containing the stop value.
         step_buffer: Scalar buffer containing the step value.
-        device_context_ptr: Device context pointer (null for CPU).
+        device_context_ptr: Device context pointer.
     """
     var dtype = _get_dtype(out_buffer)
     var size = _get_size(out_buffer)
@@ -170,7 +169,7 @@ def range_op[
     stop_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
     step_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
     size: Int,
-    ctx: Optional[OpaquePointer[MutExternalOrigin]],
+    ctx: DeviceContext,
 ) raises:
     """Range operation using Range.execute from MOGGKernelAPI.
 
@@ -183,7 +182,7 @@ def range_op[
         stop_ptr: Pointer to the stop scalar value.
         step_ptr: Pointer to the step scalar value.
         size: Number of elements to produce.
-        ctx: Device context pointer (null for CPU).
+        ctx: Device context.
     """
     var start = start_ptr.load()
     var stop = stop_ptr.load()
@@ -194,12 +193,12 @@ def range_op[
         io_spec=FusedOutput, static_spec=out_spec
     ](out_ptr, IndexList[1](size))
 
-    if not ctx:
+    if ctx.api() == "cpu":
         Range.execute[
             dtype=dtype,
             target="cpu",
             _trace_name="interpreter.range",
-        ](output_tensor, start, stop, step, DeviceContext(api="cpu"))
+        ](output_tensor, start, stop, step, ctx)
     else:
         comptime if has_accelerator():
             comptime if dtype != DType.float64:
@@ -219,9 +218,8 @@ def range_op[
                     )
                     out_ptr.store[width=width](i, result)
 
-                var device_ctx = DeviceContext(ctx.unsafe_value())
                 elementwise[range_func, simd_width=1, target="gpu"](
-                    IndexList[1](size), device_ctx
+                    IndexList[1](size), ctx
                 )
             else:
                 raise Error(
@@ -308,7 +306,7 @@ def random_normal_op[
     mean: Float32,
     variance: Float32,
     seed_value: UInt64,
-    ctx: Optional[OpaquePointer[MutExternalOrigin]],
+    ctx: DeviceContext,
 ) raises:
     """Random normal operation: fill output with normally distributed values.
 
@@ -335,7 +333,7 @@ def random_normal_op[
         mean: Mean of the normal distribution.
         variance: Standard deviation of the normal distribution.
         seed_value: Seed for the random number generator.
-        ctx: Device context pointer (null for CPU).
+        ctx: Device context.
     """
     if variance <= 0:
         raise Error("stddev must be positive")
@@ -345,7 +343,7 @@ def random_normal_op[
     comptime BLOCK_SIZE: Int = 256
     var grid_block: Int
 
-    if not ctx:
+    if ctx.api() == "cpu":
         grid_block = size
     else:
         comptime if has_accelerator():
@@ -381,14 +379,13 @@ def random_normal_op[
         var value = four[within_thread].cast[dtype]()
         out_ptr.store[width=1](i, SIMD[dtype, 1](value))
 
-    if not ctx:
-        elementwise[func, simd_width=1](IndexList[1](size))
+    if ctx.api() == "cpu":
+        elementwise[func, simd_width=1](IndexList[1](size), ctx)
     else:
         comptime if has_accelerator():
             comptime if dtype != DType.float64:
-                var device_ctx = DeviceContext(ctx.unsafe_value())
                 elementwise[func, simd_width=1, target="gpu"](
-                    IndexList[1](size), device_ctx
+                    IndexList[1](size), ctx
                 )
 
 
@@ -406,7 +403,7 @@ def random_normal_dispatcher(
         mean_val: Python float for the mean.
         variance_val: Python float for the standard deviation.
         seed_val: Python int for the seed.
-        device_context_ptr: Device context pointer (null for CPU).
+        device_context_ptr: Device context pointer.
     """
     var dtype = _get_dtype(out_buffer)
     var size = _get_size(out_buffer)
@@ -468,7 +465,7 @@ def random_uniform_op[
     lower_bound: Float32,
     upper_bound: Float32,
     seed_value: UInt64,
-    ctx: Optional[OpaquePointer[MutExternalOrigin]],
+    ctx: DeviceContext,
 ) raises:
     """Random uniform operation: fill output with uniformly distributed values.
 
@@ -481,7 +478,7 @@ def random_uniform_op[
         lower_bound: Lower bound of the uniform distribution.
         upper_bound: Upper bound of the uniform distribution.
         seed_value: Seed for the random number generator.
-        ctx: Device context pointer (null for CPU).
+        ctx: Device context.
     """
     if lower_bound > upper_bound:
         raise Error("lower_bound must be less than or equal to upper_bound")
@@ -498,14 +495,13 @@ def random_uniform_op[
         values = values * delta + lower_bound
         out_ptr.store[width=width](i, values.cast[dtype]().slice[width]())
 
-    if not ctx:
-        elementwise[func, simd_width=4](IndexList[1](size))
+    if ctx.api() == "cpu":
+        elementwise[func, simd_width=4](IndexList[1](size), ctx)
     else:
         comptime if has_accelerator():
             comptime if dtype != DType.float64:
-                var device_ctx = DeviceContext(ctx.unsafe_value())
                 elementwise[func, simd_width=4, target="gpu"](
-                    IndexList[1](size), device_ctx
+                    IndexList[1](size), ctx
                 )
             else:
                 raise Error(
@@ -530,7 +526,7 @@ def random_uniform_dispatcher(
         lower_val: Python float for the lower bound.
         upper_val: Python float for the upper bound.
         seed_val: Python int for the seed.
-        device_context_ptr: Device context pointer (null for CPU).
+        device_context_ptr: Device context pointer.
     """
     var dtype = _get_dtype(out_buffer)
     var size = _get_size(out_buffer)

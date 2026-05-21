@@ -30,7 +30,6 @@ from std.python.bindings import PythonModuleBuilder
 from std.sys.info import has_accelerator
 
 from std.algorithm.functional import elementwise, IndexList
-from std.memory import OpaquePointer
 
 from std.sys.info import has_apple_gpu_accelerator
 
@@ -73,7 +72,7 @@ def band_part_op[
     num_lower: Int,
     num_upper: Int,
     exclude_flag: Int,
-    ctx: Optional[OpaquePointer[MutExternalOrigin]],
+    ctx: DeviceContext,
 ) raises:
     """Apply band_part masking over the last two dims of a tensor.
 
@@ -89,7 +88,7 @@ def band_part_op[
         num_lower: Lower band count (-1 means keep all).
         num_upper: Upper band count (-1 means keep all).
         exclude_flag: 1 to invert the mask, 0 for normal.
-        ctx: Device context pointer (null for CPU).
+        ctx: Device context.
     """
     var total = mn_stride  # caller passes batch * M * N
 
@@ -121,13 +120,12 @@ def band_part_op[
         else:
             out_ptr[i] = Scalar[dtype](0)
 
-    if not ctx:
-        elementwise[func, simd_width=1](IndexList[1](total))
+    if ctx.api() == "cpu":
+        elementwise[func, simd_width=1](IndexList[1](total), ctx)
     else:
         comptime if has_accelerator():
-            var device_ctx = DeviceContext(ctx.unsafe_value())
             elementwise[func, simd_width=1, target="gpu"](
-                IndexList[1](total), device_ctx
+                IndexList[1](total), ctx
             )
         else:
             raise Error("No GPU accelerator available")
@@ -150,7 +148,7 @@ struct _BandPartBody(Dispatchable):
     var num_lower: Int
     var num_upper: Int
     var exclude_flag: Int
-    var ctx: Optional[OpaquePointer[MutExternalOrigin]]
+    var ctx: DeviceContext
 
     def call[t: DType](self) raises -> None:
         band_part_op(

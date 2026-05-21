@@ -29,6 +29,7 @@ Runtime parameters passed through the Python ``params`` tuple::
     Bicubic: (in_shape, out_shape)
 """
 
+from std.gpu.host import DeviceContext
 from std.os import abort
 from std.python import PythonObject
 from std.python.bindings import PythonModuleBuilder
@@ -47,6 +48,7 @@ from nn.resize import (
 from op_utils import (
     MAX_RANK,
     Dispatchable,
+    _get_ctx,
     _get_dtype,
     _get_shape,
     _make_ptr,
@@ -318,6 +320,7 @@ def _resize_nearest_impl[
     in_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
     in_shape: InlineArray[Int, MAX_RANK],
     out_shape: InlineArray[Int, MAX_RANK],
+    ctx: DeviceContext,
 ) raises:
     """Resize input into output using nearest-neighbor interpolation.
 
@@ -332,6 +335,7 @@ def _resize_nearest_impl[
         in_ptr: Input buffer pointer.
         in_shape: Input shape; entries 0..rank-1 are valid.
         out_shape: Output shape; entries 0..rank-1 are valid.
+        ctx: Device context.
     """
     var in_idx = IndexList[rank](0)
     var out_idx = IndexList[rank](0)
@@ -344,7 +348,7 @@ def _resize_nearest_impl[
 
     resize_nearest_neighbor[
         CoordinateTransformationMode(coord_mode), RoundMode(round_mode)
-    ](in_tt, out_tt)
+    ](in_tt, out_tt, ctx)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -365,29 +369,30 @@ struct _ResizeNearestBody[coord_mode: Int, round_mode: Int](Dispatchable):
     var in_shape: InlineArray[Int, MAX_RANK]
     var out_shape: InlineArray[Int, MAX_RANK]
     var rank: Int
+    var ctx: DeviceContext
 
     def call[t: DType](self) raises -> None:
         var out_ptr = _make_ptr[t](self.out_addr)
         var in_ptr = _make_ptr[t](self.in_addr)
         if self.rank == 1:
             _resize_nearest_impl[Self.coord_mode, Self.round_mode, t, 1](
-                out_ptr, in_ptr, self.in_shape, self.out_shape
+                out_ptr, in_ptr, self.in_shape, self.out_shape, self.ctx
             )
         elif self.rank == 2:
             _resize_nearest_impl[Self.coord_mode, Self.round_mode, t, 2](
-                out_ptr, in_ptr, self.in_shape, self.out_shape
+                out_ptr, in_ptr, self.in_shape, self.out_shape, self.ctx
             )
         elif self.rank == 3:
             _resize_nearest_impl[Self.coord_mode, Self.round_mode, t, 3](
-                out_ptr, in_ptr, self.in_shape, self.out_shape
+                out_ptr, in_ptr, self.in_shape, self.out_shape, self.ctx
             )
         elif self.rank == 4:
             _resize_nearest_impl[Self.coord_mode, Self.round_mode, t, 4](
-                out_ptr, in_ptr, self.in_shape, self.out_shape
+                out_ptr, in_ptr, self.in_shape, self.out_shape, self.ctx
             )
         else:
             _resize_nearest_impl[Self.coord_mode, Self.round_mode, t, 5](
-                out_ptr, in_ptr, self.in_shape, self.out_shape
+                out_ptr, in_ptr, self.in_shape, self.out_shape, self.ctx
             )
 
 
@@ -401,6 +406,7 @@ def _dispatch_nearest_round_mode[
     in_shape: InlineArray[Int, MAX_RANK],
     out_shape: InlineArray[Int, MAX_RANK],
     rank: Int,
+    ctx: DeviceContext,
 ) raises:
     """Dispatch over the four rounding modes for nearest resize.
 
@@ -415,32 +421,33 @@ def _dispatch_nearest_round_mode[
         in_shape: Input shape (first ``rank`` entries valid).
         out_shape: Output shape (first ``rank`` entries valid).
         rank: Tensor rank.
+        ctx: Device context.
     """
     if round_mode == 0:
         _dispatch_float_dtype(
             _ResizeNearestBody[coord_mode, 0](
-                out_addr, in_addr, in_shape, out_shape, rank
+                out_addr, in_addr, in_shape, out_shape, rank, ctx
             ),
             dtype,
         )
     elif round_mode == 1:
         _dispatch_float_dtype(
             _ResizeNearestBody[coord_mode, 1](
-                out_addr, in_addr, in_shape, out_shape, rank
+                out_addr, in_addr, in_shape, out_shape, rank, ctx
             ),
             dtype,
         )
     elif round_mode == 2:
         _dispatch_float_dtype(
             _ResizeNearestBody[coord_mode, 2](
-                out_addr, in_addr, in_shape, out_shape, rank
+                out_addr, in_addr, in_shape, out_shape, rank, ctx
             ),
             dtype,
         )
     elif round_mode == 3:
         _dispatch_float_dtype(
             _ResizeNearestBody[coord_mode, 3](
-                out_addr, in_addr, in_shape, out_shape, rank
+                out_addr, in_addr, in_shape, out_shape, rank, ctx
             ),
             dtype,
         )
@@ -459,6 +466,7 @@ def _dispatch_nearest_coord_mode(
     in_shape: InlineArray[Int, MAX_RANK],
     out_shape: InlineArray[Int, MAX_RANK],
     rank: Int,
+    ctx: DeviceContext,
 ) raises:
     """Dispatch over coordinate modes, then delegate to round-mode dispatch.
 
@@ -471,22 +479,23 @@ def _dispatch_nearest_coord_mode(
         in_shape: Input shape (first ``rank`` entries valid).
         out_shape: Output shape (first ``rank`` entries valid).
         rank: Tensor rank.
+        ctx: Device context.
     """
     if coord_mode == 0:
         _dispatch_nearest_round_mode[0](
-            round_mode, dtype, out_addr, in_addr, in_shape, out_shape, rank
+            round_mode, dtype, out_addr, in_addr, in_shape, out_shape, rank, ctx
         )
     elif coord_mode == 1:
         _dispatch_nearest_round_mode[1](
-            round_mode, dtype, out_addr, in_addr, in_shape, out_shape, rank
+            round_mode, dtype, out_addr, in_addr, in_shape, out_shape, rank, ctx
         )
     elif coord_mode == 2:
         _dispatch_nearest_round_mode[2](
-            round_mode, dtype, out_addr, in_addr, in_shape, out_shape, rank
+            round_mode, dtype, out_addr, in_addr, in_shape, out_shape, rank, ctx
         )
     elif coord_mode == 3:
         _dispatch_nearest_round_mode[3](
-            round_mode, dtype, out_addr, in_addr, in_shape, out_shape, rank
+            round_mode, dtype, out_addr, in_addr, in_shape, out_shape, rank, ctx
         )
     else:
         raise Error(
@@ -518,6 +527,7 @@ def resize_nearest_dispatcher(
     var out_shape = _get_shape(params[4], rank)
     var out_addr = Int(py=out_buffer._data_ptr())
     var in_addr = Int(py=in_buffer._data_ptr())
+    var ctx = _get_ctx(device_context_ptr)
 
     _dispatch_nearest_coord_mode(
         coord_mode,
@@ -528,6 +538,7 @@ def resize_nearest_dispatcher(
         in_shape,
         out_shape,
         rank,
+        ctx,
     )
 
 

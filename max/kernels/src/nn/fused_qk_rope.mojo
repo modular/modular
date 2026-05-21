@@ -209,7 +209,7 @@ def fused_qk_rope[
     layer_idx: UInt32,
     valid_lengths: TileTensor[DType.uint32, ...],
     output: TileTensor[mut=True, dtype, ...],
-    context: Optional[DeviceContext],
+    context: DeviceContext,
 ) raises:
     """Applies RoPE to query and key tensors.
 
@@ -306,11 +306,11 @@ def fused_qk_rope[
 
     comptime if is_cpu[target]():
         elementwise[func=rope_fn, simd_width=kernel_simd_width, target=target](
-            launch_shape
+            launch_shape, context
         )
     else:
         elementwise[func=rope_fn, simd_width=kernel_simd_width, target=target](
-            launch_shape, context.value()
+            launch_shape, context
         )
 
 
@@ -341,7 +341,7 @@ def fused_qk_rope_ragged[
     ],
     layer_idx: UInt32,
     output: TileTensor[mut=True, dtype, ...],
-    context: Optional[DeviceContext],
+    context: DeviceContext,
 ) raises:
     """Applies RoPE (Rotary Position Embedding) to query and key tensors.
 
@@ -519,9 +519,9 @@ def fused_qk_rope_ragged[
 
     comptime if is_cpu[target]():
         elementwise[func=rope_fn, simd_width=kernel_simd_width, target=target](
-            launch_shape
+            launch_shape, context
         )
     else:
         elementwise[func=rope_fn, simd_width=kernel_simd_width, target=target](
-            launch_shape, context.value()
+            launch_shape, context
         )

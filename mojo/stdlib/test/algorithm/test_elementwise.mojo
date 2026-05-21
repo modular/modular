@@ -15,6 +15,7 @@ from std.algorithm.functional import (
     _get_start_indices_of_nth_subvolume,
     elementwise,
 )
+from std.gpu.host import DeviceContext
 from std.testing import assert_equal, assert_true
 from std.testing import TestSuite
 
@@ -35,11 +36,13 @@ def _linear_index[
 
 
 def test_elementwise() raises:
+    var ctx = DeviceContext(api="cpu")
+
     def run_elementwise[
         numelems: Int,
         outer_rank: Int,
         shape: IndexList[outer_rank],
-    ]() raises:
+    ](ctx: DeviceContext) raises:
         var memory1 = InlineArray[Float32, numelems](uninitialized=True)
         var buffer1 = Span[Float32](memory1)
 
@@ -72,6 +75,7 @@ def test_elementwise() raises:
 
         elementwise[func, simd_width=1](
             shape,
+            ctx,
         )
 
         for i2 in range(min(numelems, 64)):
@@ -79,15 +83,16 @@ def test_elementwise() raises:
                 (out_buffer.unsafe_ptr() + i2).load(), Float32(2 * (i2 + 1))
             )
 
-    run_elementwise[16, 1, Index(16)]()
-    run_elementwise[16, 2, Index(4, 4)]()
-    run_elementwise[16, 3, Index(4, 2, 2)]()
-    run_elementwise[32, 4, Index(4, 2, 2, 2)]()
-    run_elementwise[32, 5, Index(4, 2, 1, 2, 2)]()
-    run_elementwise[131072, 2, Index(1024, 128)]()
+    run_elementwise[16, 1, Index(16)](ctx)
+    run_elementwise[16, 2, Index(4, 4)](ctx)
+    run_elementwise[16, 3, Index(4, 2, 2)](ctx)
+    run_elementwise[32, 4, Index(4, 2, 2, 2)](ctx)
+    run_elementwise[32, 5, Index(4, 2, 1, 2, 2)](ctx)
+    run_elementwise[131072, 2, Index(1024, 128)](ctx)
 
 
 def test_elementwise_implicit_runtime() raises:
+    var ctx = DeviceContext(api="cpu")
     var vector_stack = InlineArray[Scalar[DType.int], 20](uninitialized=True)
     var vector = Span[Scalar[DType.int]](vector_stack)
 
@@ -102,7 +107,7 @@ def test_elementwise_implicit_runtime() raises:
     ](idx: IndexList[rank]):
         vector.unsafe_ptr()[idx[0]] = 42
 
-    elementwise[func, simd_width=1](20)
+    elementwise[func, simd_width=1](20, ctx)
 
     for i in range(len(vector)):
         assert_equal(vector.unsafe_ptr()[i], 42)

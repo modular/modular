@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from std.gpu.host import DeviceContext
 from nn.gather_scatter import scatter_elements
 from tensor import DynamicTensor
 from std.testing import assert_equal
@@ -19,7 +20,9 @@ from std.utils import IndexList
 
 
 def main() raises:
-    def test_scatter_ax0() raises:
+    var ctx = DeviceContext(api="cpu")
+
+    def test_scatter_ax0(ctx: DeviceContext) raises:
         print("== test_scatter_ax0")
 
         var data_ptr = List(length=9, fill=Float32(0))
@@ -73,7 +76,7 @@ def main() raises:
         ) -> SIMD[dtype, width]:
             return update_val
 
-        scatter_elements[use_update](data, indices, updates, 0, output)
+        scatter_elements[use_update](data, indices, updates, 0, output, ctx)
 
         for i in range(9):
             assert_equal(output_ptr[i], expected[i])
@@ -84,9 +87,9 @@ def main() raises:
 
     # CHECK-LABEL: test_scatter_ax0
     # CHECK-NOT: FAIL
-    test_scatter_ax0()
+    test_scatter_ax0(ctx)
 
-    def test_scatter_ax1() raises:
+    def test_scatter_ax1(ctx: DeviceContext) raises:
         print("== test_scatter_ax1")
 
         var data_ptr = List(length=5, fill=Float32(0))
@@ -132,7 +135,7 @@ def main() raises:
         ) -> SIMD[dtype, width]:
             return update_val
 
-        scatter_elements[use_update](data, indices, updates, 1, output)
+        scatter_elements[use_update](data, indices, updates, 1, output, ctx)
 
         for i in range(5):
             assert_equal(output_ptr[i], expected[i])
@@ -143,9 +146,9 @@ def main() raises:
 
     # CHECK-LABEL: test_scatter_ax1
     # CHECK-NOT: FAIL
-    test_scatter_ax1()
+    test_scatter_ax1(ctx)
 
-    def test_scatter_neg_indices() raises:
+    def test_scatter_neg_indices(ctx: DeviceContext) raises:
         print("== test_scatter_neg_indices")
 
         var data_ptr = List(length=5, fill=Float32(0))
@@ -191,7 +194,7 @@ def main() raises:
         ) -> SIMD[dtype, width]:
             return update_val
 
-        scatter_elements[use_update](data, indices, updates, 1, output)
+        scatter_elements[use_update](data, indices, updates, 1, output, ctx)
 
         for i in range(5):
             assert_equal(output_ptr[i], expected[i])
@@ -202,9 +205,9 @@ def main() raises:
 
     # CHECK-LABEL: test_scatter_neg_indices
     # CHECK-NOT: FAIL
-    test_scatter_neg_indices()
+    test_scatter_neg_indices(ctx)
 
-    def test_scatter_reduce_max() raises:
+    def test_scatter_reduce_max(ctx: DeviceContext) raises:
         print("== test_scatter_reduce_max")
 
         var data_ptr = List(length=5, fill=Float32(0))
@@ -248,7 +251,7 @@ def main() raises:
         ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
             return max(v1, v2)
 
-        scatter_elements[_max](data, indices, updates, 1, output)
+        scatter_elements[_max](data, indices, updates, 1, output, ctx)
 
         for i in range(5):
             assert_equal(output_ptr[i], expected[i])
@@ -259,4 +262,4 @@ def main() raises:
 
     # CHECK-LABEL: test_scatter_reduce_max
     # CHECK-NOT: FAIL
-    test_scatter_reduce_max()
+    test_scatter_reduce_max(ctx)

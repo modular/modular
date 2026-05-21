@@ -14,6 +14,7 @@
 from std.sys import simd_width_of
 
 from std.algorithm.functional import elementwise
+from std.gpu.host import DeviceContext
 from layout import Coord, Idx, TileTensor, coord_to_index_list, row_major
 
 from std.utils import IndexList
@@ -50,6 +51,7 @@ def repeat_interleave[
     repeats: TileTensor[type_repeats, ...],
     axis: Int,
     output: TileTensor[mut=True, dtype, ...],
+    ctx: DeviceContext,
 ) raises:
     """
     Fill `output` by repeating values from `input` along `axis` based on the
@@ -63,6 +65,7 @@ def repeat_interleave[
         repeats: The number of repetitions each element in input.
         axis: The axis along which to repeat values.
         output: The output buffer.
+        ctx: Device context.
     """
     # comptime assert (is_row_major[input.rank](input.layout)) and (
     #     is_row_major[output.rank](output.layout)
@@ -127,7 +130,7 @@ def repeat_interleave[
         collapsed_output.raw_store(output_idx, input_value)
 
     elementwise[func, simd_width_of[output.dtype]()](
-        coord_to_index_list(collapsed_output.layout.shape_coord())
+        coord_to_index_list(collapsed_output.layout.shape_coord()), ctx
     )
 
 

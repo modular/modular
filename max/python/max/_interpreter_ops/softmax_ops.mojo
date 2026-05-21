@@ -21,7 +21,6 @@ from std.sys.info import has_accelerator, simd_width_of
 
 from std.math import exp, log
 from std.algorithm.functional import IndexList
-from std.memory import OpaquePointer
 from layout import Idx, TileTensor, row_major
 from nn.softmax import softmax as nn_softmax, logsoftmax as nn_logsoftmax
 
@@ -117,7 +116,7 @@ def softmax_op[
     out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
     in_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
     shape: IndexList[2],
-    ctx: Optional[OpaquePointer[MutExternalOrigin]],
+    ctx: DeviceContext,
 ) raises where dtype.is_floating_point():
     """Softmax/LogSoftmax operation on a rank-2 normalized tensor.
 
@@ -137,7 +136,7 @@ def softmax_op[
     var batch_dim = shape[0]
     var axis_dim = shape[1]
 
-    if not ctx:
+    if ctx.api() == "cpu":
         # CPU path: use direct implementation to avoid runtime dependency
         # (nn.softmax requires AsyncRT parallelism_level which isn't
         # available in the interpreter context)
@@ -161,8 +160,6 @@ def softmax_op[
                     row_major(Idx(batch_dim), Idx(axis_dim)),
                 )
 
-                var device_ctx = DeviceContext(ctx.unsafe_value())
-
                 comptime if is_logsoftmax:
                     nn_logsoftmax[
                         dtype,
@@ -170,7 +167,7 @@ def softmax_op[
                         2,
                         input_fn,
                         target="gpu",
-                    ](shape, output_tensor, 1, device_ctx)
+                    ](shape, output_tensor, 1, ctx)
                 else:
                     nn_softmax[
                         dtype,
@@ -178,7 +175,7 @@ def softmax_op[
                         2,
                         input_fn,
                         target="gpu",
-                    ](shape, output_tensor, 1, device_ctx)
+                    ](shape, output_tensor, 1, ctx)
 
             else:
                 raise Error(

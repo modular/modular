@@ -16,6 +16,7 @@ from std.math import ceil, floor
 
 from std.algorithm.functional import elementwise
 from std.algorithm.reduction import _get_nd_indices_from_flat_index
+from std.gpu.host import DeviceContext
 from layout import (
     Coord,
     TensorLayout,
@@ -140,6 +141,7 @@ def resize_nearest_neighbor[
 ](
     input: TileTensor[dtype, ...],
     output: TileTensor[mut=True, dtype, ...],
+    ctx: DeviceContext,
 ) raises:
     comptime assert (
         input.rank == output.rank
@@ -193,7 +195,7 @@ def resize_nearest_neighbor[
 
     # TODO (#21439): can use memcpy when scale on inner dimension is 1
     elementwise[nn_interpolate, 1](
-        coord_to_index_list(output.layout.shape_coord())
+        coord_to_index_list(output.layout.shape_coord()), ctx
     )
 
 

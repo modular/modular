@@ -14,6 +14,7 @@
 from std.random import rand, randint
 
 from std.benchmark import *
+from std.gpu.host import DeviceContext
 from nn.gather_scatter import scatter_elements
 from tensor import DynamicTensor
 
@@ -34,7 +35,7 @@ def bench_scatter(mut m: Bench, spec: ScatterSpec) raises:
 
 
 @parameter
-def bench_scatter(mut bencher: Bencher, spec: ScatterSpec):
+def bench_scatter(mut bencher: Bencher, spec: ScatterSpec) raises:
     var index_rand_min = 0
     var index_rand_max = spec.m1 - 1
 
@@ -67,7 +68,7 @@ def bench_scatter(mut bencher: Bencher, spec: ScatterSpec):
 
     @always_inline
     @parameter
-    def bench_fn():
+    def bench_fn() raises:
         @always_inline
         @parameter
         def reduce_fn[
@@ -77,16 +78,14 @@ def bench_scatter(mut bencher: Bencher, spec: ScatterSpec):
         ) -> SIMD[_dtype, width]:
             return input_val + update_val
 
-        try:
-            scatter_elements[reduce_fn](
-                data_tensor,
-                indices_tensor,
-                updates_tensor,
-                spec.axis,
-                output_tensor,
-            )
-        except e:
-            print("Err => ", e)
+        scatter_elements[reduce_fn](
+            data_tensor,
+            indices_tensor,
+            updates_tensor,
+            spec.axis,
+            output_tensor,
+            DeviceContext(api="cpu"),
+        )
 
     bencher.iter[bench_fn]()
 

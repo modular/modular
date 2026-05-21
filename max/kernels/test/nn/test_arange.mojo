@@ -13,6 +13,7 @@
 
 
 from std.algorithm import elementwise
+from std.gpu.host import DeviceContext
 from layout import (
     TileTensor,
     Coord,
@@ -41,7 +42,8 @@ def print_elements(tensor: TileTensor) raises:
         print(tensor[coord])
 
     elementwise[print_elements_lambda, 1](
-        coord_to_index_list(tensor.layout.shape_coord())
+        coord_to_index_list(tensor.layout.shape_coord()),
+        DeviceContext(api="cpu"),
     )
 
 
@@ -85,6 +87,7 @@ def test_arange[
         rebind[IndexList[1]](
             coord_to_index_list(out_tensor.layout.shape_coord())
         ),
+        DeviceContext(api="cpu"),
     )
 
     print_elements(out_tensor)

@@ -422,7 +422,11 @@ def apple_matmul[
             )
             epilogue[c.dtype, simd_width](c_coord, c_val)
 
-        elementwise[epilogue_on_col_chunk, simd_size](IndexList[2](m, n))
+        # TODO: thread a DeviceContext through the matmul stack so we can
+        # drop this local construction.
+        elementwise[epilogue_on_col_chunk, simd_size](
+            IndexList[2](m, n), DeviceContext(api="cpu")
+        )
 
 
 # apple_matmul used by all matmuls except apple_batched_matmul

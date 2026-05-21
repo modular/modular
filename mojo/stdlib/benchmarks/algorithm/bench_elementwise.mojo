@@ -15,6 +15,7 @@ from std.sys import simd_width_of
 
 from std.algorithm import elementwise
 from std.benchmark import Bench, BenchConfig, Bencher, BenchId
+from std.gpu.host import DeviceContext
 
 from std.utils.index import Index, IndexList
 
@@ -36,7 +37,9 @@ def bench_elementwise[n: Int](mut b: Bencher) raises:
         ](idx: IndexList[rank]):
             vector[idx[0]] = 42
 
-        elementwise[func=func, simd_width=simd_width_of[DType.int]()](Index(n))
+        elementwise[func=func, simd_width=simd_width_of[DType.int]()](
+            Index(n), DeviceContext(api="cpu")
+        )
 
     b.iter[call_fn]()
     _ = vector

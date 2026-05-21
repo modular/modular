@@ -19,7 +19,6 @@ from std.python.bindings import PythonModuleBuilder
 from std.sys.info import has_accelerator
 
 from std.algorithm.functional import IndexList
-from std.memory import OpaquePointer
 from linalg.matmul import matmul
 from layout import Coord, Idx, TileTensor, row_major
 from std.gpu.host import DeviceContext
@@ -91,7 +90,7 @@ def matmul_dispatcher(
         out_buffer: The output buffer object.
         lhs_buffer: The left-hand side buffer object.
         rhs_buffer: The right-hand side buffer object.
-        device_context_ptr: Device context pointer (null for CPU).
+        device_context_ptr: Device context pointer.
     """
     var dtype = _get_dtype(lhs_buffer)
     var rhs_dtype = _get_dtype(rhs_buffer)
@@ -253,7 +252,7 @@ def matmul_op[
     m: Int,
     k: Int,
     n: Int,
-    ctx: Optional[OpaquePointer[MutExternalOrigin]],
+    ctx: DeviceContext,
 ) raises:
     """Matrix multiplication: out = lhs @ rhs.
 
@@ -267,27 +266,26 @@ def matmul_op[
         m: Number of rows in lhs and output.
         k: Number of columns in lhs / rows in rhs.
         n: Number of columns in rhs and output.
-        ctx: Device context pointer (null for CPU).
+        ctx: Device context.
     """
     var c = TileTensor(out_ptr, row_major(Coord(Idx(m), Idx(n))))
     var a = TileTensor(lhs_ptr, row_major(Coord(Idx(m), Idx(k))))
     var b = TileTensor(rhs_ptr, row_major(Coord(Idx(k), Idx(n))))
 
-    if not ctx:
-        matmul[target="cpu"](c, a, b, None)
+    if ctx.api() == "cpu":
+        matmul[target="cpu"](c, a, b, ctx)
     else:
         # GPU execution - check GPU availability and dtype support
         comptime if has_accelerator():
             comptime if _is_gpu_allowed_matmul_dtype[dtype]():
-                var device_ctx = DeviceContext(ctx.unsafe_value())
                 matmul[target="gpu"](
                     c,
                     a,
                     b,
-                    device_ctx,
+                    ctx,
                 )
                 # TODO(MXF-108): Remove device sync
-                device_ctx.synchronize()
+                ctx.synchronize()
             else:
                 raise Error(
                     "GPU execution not supported for matmul with dtype "
@@ -427,7 +425,7 @@ def batch_matmul_dispatcher(
         out_buffer: The output buffer object.
         lhs_buffer: The left-hand side buffer object.
         rhs_buffer: The right-hand side buffer object.
-        device_context_ptr: Device context pointer (null for CPU).
+        device_context_ptr: Device context pointer.
     """
     var dtype = _get_dtype(lhs_buffer)
     var rhs_dtype = _get_dtype(rhs_buffer)
@@ -612,7 +610,7 @@ def batch_matmul_op[
     m: Int,
     k: Int,
     n: Int,
-    ctx: Optional[OpaquePointer[MutExternalOrigin]],
+    ctx: DeviceContext,
 ) raises:
     """Batched matrix multiplication: out = lhs @ rhs with batch dims collapsed.
 
@@ -631,7 +629,7 @@ def batch_matmul_op[
         m: Number of rows in each matrix of lhs and output.
         k: Number of columns in lhs / rows in rhs (inner dim).
         n: Number of columns in each matrix of rhs and output.
-        ctx: Device context pointer (null for CPU).
+        ctx: Device context.
     """
     # Create rank-3 ManagedTensorSlice wrappers with collapsed batch dimension
     comptime in_spec = StaticTensorSpec[dtype, 3, ...].get_unknown()
@@ -647,23 +645,22 @@ def batch_matmul_op[
         io_spec=_FusedComputeOutput, static_spec=out_spec
     ](out_ptr, IndexList[3](batch_size, m, n))
 
-    if not ctx:
+    if ctx.api() == "cpu":
         BatchMatmulKernel.execute[
             rank=3,
             lambdas_have_fusion=False,
             transpose_b=False,
             target="cpu",
-        ](c, a, b, DeviceContext(api="cpu"))
+        ](c, a, b, ctx)
     else:
         comptime if has_accelerator():
             comptime if _is_gpu_allowed_matmul_dtype[dtype]():
-                var device_ctx = DeviceContext(ctx.unsafe_value())
                 BatchMatmulKernel.execute[
                     rank=3,
                     lambdas_have_fusion=False,
                     transpose_b=False,
                     target="gpu",
-                ](c, a, b, device_ctx)
+                ](c, a, b, ctx)
             else:
                 raise Error(
                     "GPU execution not supported for batch_matmul with dtype "

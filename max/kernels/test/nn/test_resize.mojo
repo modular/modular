@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from layout import TileTensor, row_major
+from std.gpu.host import DeviceContext
 from nn.resize import (
     CoordinateTransformationMode,
     RoundMode,
@@ -22,7 +23,9 @@ from std.testing import assert_almost_equal
 
 
 def main() raises:
-    def test_upsample_sizes_nearest_1() raises:
+    var ctx = DeviceContext(api="cpu")
+
+    def test_upsample_sizes_nearest_1(ctx: DeviceContext) raises:
         print("== test_upsample_sizes_nearest_1")
         var input_stack: InlineArray[Float32, 4] = [Float32(1), 2, 3, 4]
         var input = TileTensor(input_stack, row_major[1, 1, 2, 2]())
@@ -32,7 +35,7 @@ def main() raises:
 
         resize_nearest_neighbor[
             CoordinateTransformationMode.HalfPixel, RoundMode.HalfDown
-        ](input, output)
+        ](input, output, ctx)
 
         for i in range(24):
             print(output_stack[i], end=",")
@@ -40,9 +43,9 @@ def main() raises:
 
     # CHECK-LABEL: test_upsample_sizes_nearest_1
     # CHECK: 1.0,1.0,1.0,2.0,2.0,2.0,1.0,1.0,1.0,2.0,2.0,2.0,3.0,3.0,3.0,4.0,4.0,4.0,3.0,3.0,3.0,4.0,4.0,4.0,
-    test_upsample_sizes_nearest_1()
+    test_upsample_sizes_nearest_1(ctx)
 
-    def test_downsample_sizes_nearest() raises:
+    def test_downsample_sizes_nearest(ctx: DeviceContext) raises:
         print("== test_downsample_sizes_nearest")
         var input_stack: InlineArray[Float32, 8] = [
             Float32(1),
@@ -61,7 +64,7 @@ def main() raises:
 
         resize_nearest_neighbor[
             CoordinateTransformationMode.HalfPixel, RoundMode.HalfDown
-        ](input, output)
+        ](input, output, ctx)
 
         for i in range(2):
             print(output_stack[i], end=",")
@@ -69,9 +72,11 @@ def main() raises:
 
     # CHECK-LABEL: test_downsample_sizes_nearest
     # CHECK: 1.0,3.0,
-    test_downsample_sizes_nearest()
+    test_downsample_sizes_nearest(ctx)
 
-    def test_downsample_sizes_nearest_half_pixel_1D() raises:
+    def test_downsample_sizes_nearest_half_pixel_1D(
+        ctx: DeviceContext,
+    ) raises:
         print("== test_downsample_sizes_nearest_half_pixel_1D")
         var input_stack: InlineArray[Float32, 16] = [
             Float32(0),
@@ -98,7 +103,7 @@ def main() raises:
 
         resize_nearest_neighbor[
             CoordinateTransformationMode.HalfPixel1D, RoundMode.HalfDown
-        ](input, output)
+        ](input, output, ctx)
 
         for i in range(2):
             print(output_stack[i], end=",")
@@ -106,9 +111,9 @@ def main() raises:
 
     # CHECK-LABEL: test_downsample_sizes_nearest_half_pixel_1D
     # CHECK: 0.0,2.0,
-    test_downsample_sizes_nearest_half_pixel_1D()
+    test_downsample_sizes_nearest_half_pixel_1D(ctx)
 
-    def test_upsample_sizes_nearest_2() raises:
+    def test_upsample_sizes_nearest_2(ctx: DeviceContext) raises:
         print("== test_upsample_sizes_nearest_2")
         var input_stack: InlineArray[Float32, 4] = [Float32(1), 2, 3, 4]
         var input = TileTensor(input_stack, row_major[1, 1, 2, 2]())
@@ -118,7 +123,7 @@ def main() raises:
 
         resize_nearest_neighbor[
             CoordinateTransformationMode.HalfPixel, RoundMode.HalfDown
-        ](input, output)
+        ](input, output, ctx)
 
         for i in range(56):
             print(output_stack[i], end=",")
@@ -126,9 +131,11 @@ def main() raises:
 
     # CHECK-LABEL: test_upsample_sizes_nearest_2
     # CHECK: 1.0,1.0,1.0,1.0,2.0,2.0,2.0,2.0,1.0,1.0,1.0,1.0,2.0,2.0,2.0,2.0,1.0,1.0,1.0,1.0,2.0,2.0,2.0,2.0,1.0,1.0,1.0,1.0,2.0,2.0,2.0,2.0,3.0,3.0,3.0,3.0,4.0,4.0,4.0,4.0,3.0,3.0,3.0,3.0,4.0,4.0,4.0,4.0,3.0,3.0,3.0,3.0,4.0,4.0,4.0,4.0,
-    test_upsample_sizes_nearest_2()
+    test_upsample_sizes_nearest_2(ctx)
 
-    def test_upsample_sizes_nearest_floor_align_corners() raises:
+    def test_upsample_sizes_nearest_floor_align_corners(
+        ctx: DeviceContext,
+    ) raises:
         print("== test_upsample_sizes_nearest_floor_align_corners")
         var input_stack: InlineArray[Float32, 16] = [
             Float32(1),
@@ -155,7 +162,7 @@ def main() raises:
 
         resize_nearest_neighbor[
             CoordinateTransformationMode.AlignCorners, RoundMode.Floor
-        ](input, output)
+        ](input, output, ctx)
 
         for i in range(64):
             print(output_stack[i], end=",")
@@ -163,9 +170,11 @@ def main() raises:
 
     # CHECK-LABEL: test_upsample_sizes_nearest_floor_align_corners
     # CHECK: 1.0,1.0,1.0,2.0,2.0,3.0,3.0,4.0,1.0,1.0,1.0,2.0,2.0,3.0,3.0,4.0,1.0,1.0,1.0,2.0,2.0,3.0,3.0,4.0,5.0,5.0,5.0,6.0,6.0,7.0,7.0,8.0,5.0,5.0,5.0,6.0,6.0,7.0,7.0,8.0,9.0,9.0,9.0,10.0,10.0,11.0,11.0,12.0,9.0,9.0,9.0,10.0,10.0,11.0,11.0,12.0,13.0,13.0,13.0,14.0,14.0,15.0,15.0,16.0,
-    test_upsample_sizes_nearest_floor_align_corners()
+    test_upsample_sizes_nearest_floor_align_corners(ctx)
 
-    def test_upsample_sizes_nearest_round_half_up_asymmetric() raises:
+    def test_upsample_sizes_nearest_round_half_up_asymmetric(
+        ctx: DeviceContext,
+    ) raises:
         print("== test_upsample_sizes_nearest_round_half_up_asymmetric")
         var input_stack: InlineArray[Float32, 16] = [
             Float32(1),
@@ -192,7 +201,7 @@ def main() raises:
 
         resize_nearest_neighbor[
             CoordinateTransformationMode.Asymmetric, RoundMode.HalfUp
-        ](input, output)
+        ](input, output, ctx)
 
         for i in range(64):
             print(output_stack[i], end=",")
@@ -200,9 +209,9 @@ def main() raises:
 
     # CHECK-LABEL: test_upsample_sizes_nearest_round_half_up_asymmetric
     # CHECK: 1.0,2.0,2.0,3.0,3.0,4.0,4.0,4.0,5.0,6.0,6.0,7.0,7.0,8.0,8.0,8.0,5.0,6.0,6.0,7.0,7.0,8.0,8.0,8.0,9.0,10.0,10.0,11.0,11.0,12.0,12.0,12.0,9.0,10.0,10.0,11.0,11.0,12.0,12.0,12.0,13.0,14.0,14.0,15.0,15.0,16.0,16.0,16.0,13.0,14.0,14.0,15.0,15.0,16.0,16.0,16.0,13.0,14.0,14.0,15.0,15.0,16.0,16.0,16.0,
-    test_upsample_sizes_nearest_round_half_up_asymmetric()
+    test_upsample_sizes_nearest_round_half_up_asymmetric(ctx)
 
-    def test_upsample_sizes_nearest_ceil_half_pixel() raises:
+    def test_upsample_sizes_nearest_ceil_half_pixel(ctx: DeviceContext) raises:
         print("== test_upsample_sizes_nearest_ceil_half_pixel")
         var input_stack: InlineArray[Float32, 16] = [
             Float32(1),
@@ -229,7 +238,7 @@ def main() raises:
 
         resize_nearest_neighbor[
             CoordinateTransformationMode.HalfPixel, RoundMode.Ceil
-        ](input, output)
+        ](input, output, ctx)
 
         for i in range(64):
             print(output_stack[i], end=",")
@@ -237,9 +246,9 @@ def main() raises:
 
     # CHECK-LABEL: test_upsample_sizes_nearest_ceil_half_pixel
     # CHECK: 1.0,2.0,2.0,3.0,3.0,4.0,4.0,4.0,5.0,6.0,6.0,7.0,7.0,8.0,8.0,8.0,5.0,6.0,6.0,7.0,7.0,8.0,8.0,8.0,9.0,10.0,10.0,11.0,11.0,12.0,12.0,12.0,9.0,10.0,10.0,11.0,11.0,12.0,12.0,12.0,13.0,14.0,14.0,15.0,15.0,16.0,16.0,16.0,13.0,14.0,14.0,15.0,15.0,16.0,16.0,16.0,13.0,14.0,14.0,15.0,15.0,16.0,16.0,16.0,
-    test_upsample_sizes_nearest_ceil_half_pixel()
+    test_upsample_sizes_nearest_ceil_half_pixel(ctx)
 
-    def test_upsample_sizes_linear() raises:
+    def test_upsample_sizes_linear(ctx: DeviceContext) raises:
         print("== test_upsample_sizes_linear")
         var input_stack: InlineArray[Float32, 4] = [Float32(1), 2, 3, 4]
         var input = TileTensor(input_stack, row_major[1, 1, 2, 2]())
@@ -282,9 +291,9 @@ def main() raises:
 
     # CHECK-LABEL: test_upsample_sizes_linear
     # CHECK-NOT: ASSERT ERROR
-    test_upsample_sizes_linear()
+    test_upsample_sizes_linear(ctx)
 
-    def test_upsample_sizes_linear_align_corners() raises:
+    def test_upsample_sizes_linear_align_corners(ctx: DeviceContext) raises:
         print("== test_upsample_sizes_linear_align_corners")
         var input_stack: InlineArray[Float32, 4] = [Float32(1), 2, 3, 4]
         var input = TileTensor(input_stack, row_major[1, 1, 2, 2]())
@@ -327,9 +336,9 @@ def main() raises:
 
     # CHECK-LABEL: test_upsample_sizes_linear_align_corners
     # CHECK-NOT: ASSERT ERROR
-    test_upsample_sizes_linear_align_corners()
+    test_upsample_sizes_linear_align_corners(ctx)
 
-    def test_downsample_sizes_linear() raises:
+    def test_downsample_sizes_linear(ctx: DeviceContext) raises:
         print("== test_downsample_sizes_linear")
         var input_stack: InlineArray[Float32, 8] = [
             Float32(1),
@@ -365,9 +374,9 @@ def main() raises:
 
     # CHECK-LABEL: test_downsample_sizes_linear
     # CHECK-NOT: ASSERT ERROR
-    test_downsample_sizes_linear()
+    test_downsample_sizes_linear(ctx)
 
-    def test_downsample_sizes_linear_align_corners() raises:
+    def test_downsample_sizes_linear_align_corners(ctx: DeviceContext) raises:
         print("== test_downsample_sizes_linear_align_corners")
         var input_stack: InlineArray[Float32, 8] = [
             Float32(1),
@@ -402,9 +411,9 @@ def main() raises:
 
     # CHECK-LABEL: test_downsample_sizes_linear_align_corners
     # CHECK-NOT: ASSERT ERROR
-    test_downsample_sizes_linear_align_corners()
+    test_downsample_sizes_linear_align_corners(ctx)
 
-    def test_upsample_sizes_trilinear() raises:
+    def test_upsample_sizes_trilinear(ctx: DeviceContext) raises:
         print("== test_upsample_sizes_trilinear")
         var input_stack: InlineArray[Float32, 16] = [
             Float32(0),
@@ -465,9 +474,9 @@ def main() raises:
 
     # CHECK-LABEL: test_upsample_sizes_trilinear
     # CHECK-NOT: ASSERT ERROR
-    test_upsample_sizes_trilinear()
+    test_upsample_sizes_trilinear(ctx)
 
-    def test_downsample_sizes_linear_antialias() raises:
+    def test_downsample_sizes_linear_antialias(ctx: DeviceContext) raises:
         print("== test_downsample_sizes_linear_antialias")
         var input_stack: InlineArray[Float32, 16] = [
             Float32(0),
@@ -516,9 +525,9 @@ def main() raises:
 
     # CHECK-LABEL: test_downsample_sizes_linear_antialias
     # CHECK-NOT: ASSERT ERROR
-    test_downsample_sizes_linear_antialias()
+    test_downsample_sizes_linear_antialias(ctx)
 
-    def test_no_resize() raises:
+    def test_no_resize(ctx: DeviceContext) raises:
         print("== test_no_resize")
         var input_stack: InlineArray[Float32, 4] = [Float32(1), 1, 1, 1]
         var input = TileTensor(input_stack, row_major[1, 1, 2, 2]())
@@ -542,4 +551,4 @@ def main() raises:
                 output_stack[i], reference_stack[i], atol=1e-5, rtol=1e-4
             )
 
-    test_no_resize()
+    test_no_resize(ctx)

@@ -357,7 +357,7 @@ def test_kv_cache_2m_iadd_gpu[
         lora_end_idx_host.to_layout_tensor(),
         batch_seq_len_host.to_layout_tensor(),
         UInt32(layer_idx),
-        Optional(ctx),
+        ctx,
     )
     kv_block_paged_host = TileTensor(
         kv_block_paged.tensor().ptr, row_major(Coord(kv_block_paged_shape))
@@ -400,6 +400,7 @@ def test_kv_cache_2m_iadd_cpu[
     prompt_lens: IndexList[batch_size],
     cache_lens: IndexList[batch_size],
     num_active_loras: Int,
+    ctx: DeviceContext,
 ) raises:
     comptime num_layers = 2
     assert (
@@ -574,7 +575,7 @@ def test_kv_cache_2m_iadd_cpu[
             ),
         ),
         UInt32(layer_idx),
-        Optional[DeviceContext](),
+        ctx,
     )
 
     _verify_kv_cache[dtype, num_heads, head_dim, page_size, batch_size](
@@ -606,26 +607,31 @@ def test_kv_cache_2m_iadd_cpu[
 
 def main() raises:
     # CPU tests
-    test_kv_cache_2m_iadd_cpu[DType.float32, 8, 128, 128, 4](
-        IndexList[4](10, 20, 30, 40),
-        IndexList[4](40, 30, 20, 10),
-        2,
-    )
-    test_kv_cache_2m_iadd_cpu[DType.float32, 8, 128, 128, 4](
-        IndexList[4](10, 20, 30, 40),
-        IndexList[4](40, 30, 20, 10),
-        4,
-    )
-    test_kv_cache_2m_iadd_cpu[DType.float32, 8, 128, 128, 4](
-        IndexList[4](10, 20, 30, 40),
-        IndexList[4](40, 30, 20, 10),
-        0,
-    )
-    test_kv_cache_2m_iadd_cpu[DType.float32, 8, 128, 128, 1](
-        IndexList[1](10),
-        IndexList[1](40),
-        1,
-    )
+    with DeviceContext(api="cpu") as cpu_ctx:
+        test_kv_cache_2m_iadd_cpu[DType.float32, 8, 128, 128, 4](
+            IndexList[4](10, 20, 30, 40),
+            IndexList[4](40, 30, 20, 10),
+            2,
+            cpu_ctx,
+        )
+        test_kv_cache_2m_iadd_cpu[DType.float32, 8, 128, 128, 4](
+            IndexList[4](10, 20, 30, 40),
+            IndexList[4](40, 30, 20, 10),
+            4,
+            cpu_ctx,
+        )
+        test_kv_cache_2m_iadd_cpu[DType.float32, 8, 128, 128, 4](
+            IndexList[4](10, 20, 30, 40),
+            IndexList[4](40, 30, 20, 10),
+            0,
+            cpu_ctx,
+        )
+        test_kv_cache_2m_iadd_cpu[DType.float32, 8, 128, 128, 1](
+            IndexList[1](10),
+            IndexList[1](40),
+            1,
+            cpu_ctx,
+        )
 
     # GPU tests
     with DeviceContext() as ctx:

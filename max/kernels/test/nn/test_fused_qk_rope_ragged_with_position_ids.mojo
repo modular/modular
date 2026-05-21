@@ -43,7 +43,9 @@ from testdata.fused_qk_rope_goldens import (
 from std.utils import IndexList
 
 
-def test_fused_qk_rope[rope_dim: Int, dtype: DType]() raises -> None:
+def test_fused_qk_rope[
+    rope_dim: Int, dtype: DType
+](ctx: DeviceContext) raises -> None:
     """Verifies fused_qk_rope_ragged with explicit position_ids against golden values computed with PyTorch.
     """
     comptime assert (
@@ -218,7 +220,7 @@ def test_fused_qk_rope[rope_dim: Int, dtype: DType]() raises -> None:
         position_ids=position_ids,
         layer_idx=UInt32(0),
         output=q_out,
-        context=Optional[DeviceContext](),
+        context=ctx,
     )
 
     # Compare output and expected query tensors.
@@ -291,7 +293,8 @@ def test_fused_qk_rope[rope_dim: Int, dtype: DType]() raises -> None:
 
 
 def main() raises -> None:
-    # Full head RoPE
-    test_fused_qk_rope[8, DType.float32]()
-    # Partial RoPE (last 4 elements of each head)
-    test_fused_qk_rope[4, DType.float32]()
+    with DeviceContext(api="cpu") as ctx:
+        # Full head RoPE
+        test_fused_qk_rope[8, DType.float32](ctx)
+        # Partial RoPE (last 4 elements of each head)
+        test_fused_qk_rope[4, DType.float32](ctx)

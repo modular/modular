@@ -1491,6 +1491,7 @@ struct Scatter:
             updates,
             normalize_neg_index(Int(axis), output.rank),
             output,
+            ctx,
         )
 
     @staticmethod
@@ -1538,6 +1539,7 @@ struct ScatterAdd:
             updates,
             normalize_neg_index(Int(axis), output.rank),
             output,
+            ctx,
         )
 
     @staticmethod
@@ -1585,6 +1587,7 @@ struct ScatterMax:
             updates,
             normalize_neg_index(Int(axis), output.rank),
             output,
+            ctx,
         )
 
     @staticmethod
@@ -1632,6 +1635,7 @@ struct ScatterMin:
             updates,
             normalize_neg_index(Int(axis), output.rank),
             output,
+            ctx,
         )
 
     @staticmethod
@@ -1679,6 +1683,7 @@ struct ScatterMul:
             updates,
             normalize_neg_index(Int(axis), output.rank),
             output,
+            ctx,
         )
 
     @staticmethod
@@ -4189,6 +4194,7 @@ struct ResizeNearest:
         output: OutputTensor[dtype=dtype, rank=rank, ...],
         input: InputTensor[dtype=dtype, rank=rank, ...],
         size: InputTensor[rank=1, ...],
+        ctx: DeviceContext,
     ) raises:
         resize_nearest_neighbor[
             CoordinateTransformationMode(coordinate_transform_mode),
@@ -4196,6 +4202,7 @@ struct ResizeNearest:
         ](
             input.to_tile_tensor[DType.int64](),
             output.to_tile_tensor[DType.int64](),
+            ctx,
         )
 
     @staticmethod
@@ -4380,6 +4387,7 @@ struct RepeatInterleave:
         input: InputTensor[dtype=output.dtype, rank=output.rank, ...],
         repeats: InputTensor[rank=1, ...],
         axis: Scalar,
+        ctx: DeviceContext,
     ) raises:
         comptime assert (
             axis.dtype.is_integral()
@@ -4390,6 +4398,7 @@ struct RepeatInterleave:
             repeats.to_tile_tensor[DType.int64](),
             Int(normalize_neg_index(axis, input.rank)),
             output.to_tile_tensor[DType.int64](),
+            ctx,
         )
 
     @staticmethod
@@ -7599,11 +7608,6 @@ struct Struct_rope_ragged_paged[interleaved: Bool]:
                 rebind[SIMD[dtype, width]](val),
             )
 
-        var device_ctx: Optional[DeviceContext] = None
-
-        comptime if is_gpu[target]():
-            device_ctx = ctx
-
         var x_tensor = x.to_tile_tensor[DType.int64]()
         var row_offsets_tensor = input_row_offsets.to_tile_tensor[DType.int64]()
         var start_tensor = start_pos.to_tile_tensor[DType.int64]()
@@ -7621,7 +7625,7 @@ struct Struct_rope_ragged_paged[interleaved: Bool]:
             row_offsets_tensor,
             start_tensor,
             freqs_cis_tensor,
-            device_ctx,
+            ctx,
         )
 
 
@@ -7673,11 +7677,6 @@ struct Struct_rope_ragged_paged_with_position_id[interleaved: Bool]:
                 rebind[SIMD[dtype, width]](val),
             )
 
-        var device_ctx: Optional[DeviceContext] = None
-
-        comptime if is_gpu[target]():
-            device_ctx = ctx
-
         var x_tensor = x.to_tile_tensor[DType.int64]()
         var row_offsets_tensor = input_row_offsets.to_tile_tensor[DType.int64]()
         var start_tensor = start_pos.to_tile_tensor[DType.int64]()
@@ -7697,7 +7696,7 @@ struct Struct_rope_ragged_paged_with_position_id[interleaved: Bool]:
             row_offsets_tensor,
             start_tensor,
             freqs_cis_tensor,
-            device_ctx,
+            ctx,
             position_ids=position_ids_tensor.as_any_origin().as_immut(),
         )
 
@@ -10217,11 +10216,6 @@ struct Struct_kv_cache_store_paged:
         else:
             cache = paged_kv_collection.get_value_cache(Int(layer_idx))
 
-        var cuda_ctx: Optional[DeviceContext] = None
-
-        comptime if is_gpu[target]():
-            cuda_ctx = context
-
         @parameter
         @always_inline
         def input_fn[
@@ -10237,7 +10231,7 @@ struct Struct_kv_cache_store_paged:
             cache,
             inputs.shape(),
             input_row_offsets.to_layout_tensor(),
-            cuda_ctx,
+            context,
         )
 
 
@@ -10310,11 +10304,6 @@ struct Struct_kv_cache_store_k_scales_paged:
 
         var k_cache = k_collection.get_key_cache(Int(layer_idx))
 
-        var cuda_ctx: Optional[DeviceContext] = None
-
-        comptime if is_gpu[target]():
-            cuda_ctx = context
-
         var input_row_offsets_tt = input_row_offsets.to_tile_tensor[
             DType.int64
         ]()
@@ -10347,26 +10336,16 @@ struct Struct_kv_cache_store_k_scales_paged:
                 loaded_val,
             )
 
-        comptime if is_gpu[target]():
-            if cuda_ctx is None:
-                raise Error("ctx is None")
-            comptime compile_target = get_gpu_target()
-            comptime simd_width = simd_width_of[
-                scale_dtype, target=compile_target
-            ]()
+        comptime compile_target = get_gpu_target() if is_gpu[
+            target
+        ]() else _current_target()
+        comptime simd_width = simd_width_of[
+            scale_dtype, target=compile_target
+        ]()
 
-            elementwise[write_scale_to_cache, simd_width, target=target](
-                input_k_scales.shape(), cuda_ctx.value()
-            )
-        else:
-            comptime compile_target = _current_target()
-            comptime simd_width = simd_width_of[
-                scale_dtype, target=compile_target
-            ]()
-
-            elementwise[write_scale_to_cache, simd_width, target=target](
-                input_k_scales.shape()
-            )
+        elementwise[write_scale_to_cache, simd_width, target=target](
+            input_k_scales.shape(), context
+        )
 
 
 @compiler.register("mo.kv_cache.store.paged.padded")
@@ -10399,11 +10378,6 @@ struct Struct_kv_cache_store_padded:
         else:
             cache = paged_kv_collection.get_value_cache(Int(layer_idx))
 
-        var cuda_ctx: Optional[DeviceContext] = None
-
-        comptime if is_gpu[target]():
-            cuda_ctx = context
-
         @parameter
         @always_inline
         def input_fn[
@@ -10419,7 +10393,7 @@ struct Struct_kv_cache_store_padded:
             cache,
             inputs.shape(),
             valid_lengths.to_layout_tensor(),
-            cuda_ctx,
+            context,
         )
 
 
@@ -12929,17 +12903,13 @@ struct Struct_kv_cache_ragged_paged_radd:
             max_lengths,
         )
 
-        cuda_ctx: Optional[DeviceContext] = None
-        if is_gpu[target]():
-            cuda_ctx = context
-
         generic_kv_cache_radd_dispatch[target=target,](
             a.to_layout_tensor(),
             kv_collection,
             input_row_offsets.to_layout_tensor(),
             batch_offset,
             layer_idx,
-            cuda_ctx,
+            context,
         )
 
 
@@ -13105,10 +13075,6 @@ struct Struct_kv_cache_ragged_paged_2m_iadd:
         if kv_layout_tensor.shape[0]() == 0:
             return
 
-        cuda_ctx: Optional[DeviceContext] = None
-        if is_gpu[target]():
-            cuda_ctx = context
-
         kv_cache_2m_iadd_dispatch[target=target,](
             kv_layout_tensor,
             kv_collection,
@@ -13116,7 +13082,7 @@ struct Struct_kv_cache_ragged_paged_2m_iadd:
             lora_end_idx.to_layout_tensor(),
             batch_seq_len.to_layout_tensor(),
             layer_idx,
-            cuda_ctx,
+            context,
         )
 
 
@@ -13144,23 +13110,13 @@ struct Struct_sliced_add_ragged:
         var a_tile_tensor = a.to_tile_tensor[DType.int64]()
         var b_tile_tensor = b.to_tile_tensor[DType.int64]()
 
-        comptime if is_gpu[target]():
-            ctx: Optional[DeviceContext] = context
-            sliced_add[target=target](
-                c_tile_tensor,
-                a_tile_tensor,
-                b_tile_tensor,
-                lora_end_idx.to_tile_tensor[DType.int64](),
-                ctx,
-            )
-        else:
-            sliced_add[target=target](
-                c_tile_tensor,
-                a_tile_tensor,
-                b_tile_tensor,
-                lora_end_idx.to_tile_tensor[DType.int64](),
-                None,
-            )
+        sliced_add[target=target](
+            c_tile_tensor,
+            a_tile_tensor,
+            b_tile_tensor,
+            lora_end_idx.to_tile_tensor[DType.int64](),
+            context,
+        )
 
 
 # ===-----------------------------------------------------------------------===#

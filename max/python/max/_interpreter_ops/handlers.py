@@ -3625,7 +3625,7 @@ def _handle_pad_reflect(
             len(in_shape),
             total,
         ),
-        None,
+        target_device._device_context_ptr(),
     )
 
     return [output]
@@ -3681,7 +3681,7 @@ def _handle_pad_repeat(
             len(in_shape),
             total,
         ),
-        None,
+        target_device._device_context_ptr(),
     )
 
     return [output]

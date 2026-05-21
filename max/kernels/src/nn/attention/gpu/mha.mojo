@@ -5564,6 +5564,7 @@ def _naive_attention_with_transpose[
         mut=False, dtype, address_space=AddressSpace.GENERIC, ...
     ],
     scale: Float32,
+    ctx: DeviceContext,
 ) raises:
     """This kernel provides reference values for flash attention in llama 2.
     It can't be used in any model.
@@ -5710,7 +5711,7 @@ def _naive_attention_with_transpose[
     transpose(vt, v_tt, q_perm.ptr)
 
     _naive_attention[dtype, transpose_k](
-        ot_lt, qt_lt, kt_lt, vt_lt, mask, scale
+        ot_lt, qt_lt, kt_lt, vt_lt, mask, scale, ctx
     )
 
     transpose(output_tt, ot, o_perm.ptr)
@@ -5736,6 +5737,7 @@ def _naive_attention[
         mut=False, dtype, address_space=AddressSpace.GENERIC, ...
     ],
     scale: Float32,
+    ctx: DeviceContext,
 ) raises:
     """This kernel provides reference values for flash attention in llama 2.
     It can't be used in any model.
@@ -5799,7 +5801,7 @@ def _naive_attention[
         )
 
     elementwise[scale_and_mask, simd_size](
-        Index(batch_size, num_heads, seq_len, num_keys)
+        Index(batch_size, num_heads, seq_len, num_keys), ctx
     )
 
     softmax[dtype, simd_size, 4](score, score, axis=3)

@@ -2616,11 +2616,6 @@ def generic_fused_qk_rope_bshd_paged_ragged[
             )
         )
 
-    # Pass device context only on GPU.
-    var dev_ctx = Optional[DeviceContext]() if is_cpu[target]() else Optional[
-        DeviceContext
-    ](context)
-
     comptime name = "mo.fused_qk_rope.ragged.paged.nhead_" + String(
         kv_collection.kv_params.num_heads
     ) + ".hdim_" + String(kv_collection.kv_params.head_size)
@@ -2648,7 +2643,7 @@ def generic_fused_qk_rope_bshd_paged_ragged[
                 ).as_immut(),
                 layer_idx,
                 output,
-                dev_ctx,
+                context,
             )
         else:
             fused_qk_rope_ragged[
@@ -2661,7 +2656,7 @@ def generic_fused_qk_rope_bshd_paged_ragged[
                 None,
                 layer_idx,
                 output,
-                dev_ctx,
+                context,
             )
 
 
@@ -3615,7 +3610,7 @@ def generic_kv_cache_radd_dispatch[
     ],
     batch_offset: UInt32,
     layer_idx: UInt32,
-    ctx: Optional[DeviceContext],
+    ctx: DeviceContext,
 ) raises:
     comptime hidden_size = collection_t.kv_params.head_size * collection_t.kv_params.num_heads
 
@@ -3683,20 +3678,18 @@ def generic_kv_cache_radd_dispatch[
         )
 
     comptime if is_gpu[target]():
-        if ctx is None:
-            raise Error("ctx is None")
         comptime compile_target = get_gpu_target()
         comptime simd_width = simd_width_of[dtype, target=compile_target]()
 
         elementwise[do_radd, simd_width, target=target](
-            a.runtime_layout.shape.value.canonicalize(), ctx.value()
+            a.runtime_layout.shape.value.canonicalize(), ctx
         )
     else:
         comptime compile_target = _current_target()
         comptime simd_width = simd_width_of[dtype, target=compile_target]()
 
         elementwise[do_radd, simd_width, target=target](
-            a.runtime_layout.shape.value.canonicalize()
+            a.runtime_layout.shape.value.canonicalize(), ctx
         )
 
 
@@ -3713,7 +3706,7 @@ def kv_cache_store_ragged[
     input_row_offsets: LayoutTensor[
         DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
-    context: Optional[DeviceContext],
+    context: DeviceContext,
 ) raises:
     comptime assert input_row_offsets.layout.rank() == 1, (
         "Expected input_row_offsets to be a 1D tensor of shape `(batch_size"
@@ -3745,15 +3738,13 @@ def kv_cache_store_ragged[
         )
 
     comptime if is_gpu[target]():
-        if context is None:
-            raise Error("ctx is None")
         comptime compile_target = get_gpu_target()
         comptime simd_width = simd_width_of[
             cache_t.dtype, target=compile_target
         ]()
 
         elementwise[write_to_cache, simd_width, target=target](
-            input_shape, context.value()
+            input_shape, context
         )
     else:
         comptime compile_target = _current_target()
@@ -3779,7 +3770,7 @@ def kv_cache_store_padded[
     valid_lengths: LayoutTensor[
         DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
-    context: Optional[DeviceContext],
+    context: DeviceContext,
 ) raises:
     comptime assert (
         valid_lengths.layout.rank() == 1
@@ -3812,15 +3803,13 @@ def kv_cache_store_padded[
         )
 
     comptime if is_gpu[target]():
-        if context is None:
-            raise Error("ctx is None")
         comptime compile_target = get_gpu_target()
         comptime simd_width = simd_width_of[
             cache_t.dtype, target=compile_target
         ]()
 
         elementwise[write_to_cache, simd_width, target=target](
-            input_shape, context.value()
+            input_shape, context
         )
     else:
         comptime compile_target = _current_target()
@@ -3856,7 +3845,7 @@ def kv_cache_2m_iadd_dispatch[
         DType.int64, address_space=AddressSpace.GENERIC, ...
     ],
     layer_idx: UInt32,
-    ctx: Optional[DeviceContext],
+    ctx: DeviceContext,
 ) raises:
     """
     In-place add to paged KV cache with concatenated K/V layout. This kernel is
@@ -3934,18 +3923,14 @@ def kv_cache_2m_iadd_dispatch[
         )
 
     comptime if is_gpu[target]():
-        if ctx is None:
-            raise Error("ctx is None")
         with Trace[TraceLevel.OP, target=target](
             "kv-cache-2m-iadd",
-            task_id=Int(ctx.value().id()),
+            task_id=Int(ctx.id()),
         ):
             comptime compile_target = get_gpu_target()
             comptime simd_width = simd_width_of[dtype, target=compile_target]()
 
-            elementwise[iadd, simd_width, target=target](
-                elementwise_shape, ctx.value()
-            )
+            elementwise[iadd, simd_width, target=target](elementwise_shape, ctx)
     else:
         comptime compile_target = _current_target()
         comptime simd_width = simd_width_of[dtype, target=compile_target]()

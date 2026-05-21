@@ -213,6 +213,7 @@ def test[
             v,
             mask.bitcast[qkv_type](),
             scale,
+            ctx,
         )
 
     # Device pointers
