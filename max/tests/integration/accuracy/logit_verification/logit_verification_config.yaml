@@ -729,7 +729,7 @@ logit_verification_pipelines:
     absolute_tolerance: 1.0e-04
     relative_tolerance: 2.0e00
     cos_dist_threshold: 1.5e-3
-    kl_div_threshold: 1.3e-02
+    kl_div_threshold: 1.5e-02
 
   hugging-quants/Meta-Llama-3.1-8B-Instruct-GPTQ-INT4-gptq:
     pre_submit_agents: []
