@@ -54,10 +54,6 @@ agent_anchors:
     queue: ephemeral
     pool: mi355
     resource_class: "4x"
-  mi355_8x: &mi355_8x
-    queue: ephemeral
-    pool: mi355
-    resource_class: "8x"
 
 logit_verification_pipelines:
   # Each pipeline is defined by a name and the following fields:
@@ -910,11 +906,11 @@ logit_verification_pipelines:
 
   amd/MiniMax-M2.7-MXFP4:
     pre_submit_agents: []
-    post_submit_agents: [*mi355_8x]
+    post_submit_agents: [*mi355_4x]
     pipeline: "amd/MiniMax-M2.7-MXFP4"
     compatible_with: [gpu]
     encoding: float4_e2m1fnx2
-    tags: [amd-only, 8xmi355]
+    tags: [amd-only, 4xmi355]
     pregenerated_torch_goldens:
       tar_file: "s3://modular-bazel-artifacts-public/artifacts/amd_MiniMax-M2.7-MXFP4_golden/1/1ba298cb/vllm_amd_MiniMax-M2.7-MXFP4_float4_e2m1fnx2_golden.json.tar.gz"
       json_file: "vllm_amd_MiniMax-M2.7-MXFP4_float4_e2m1fnx2_golden.json"
