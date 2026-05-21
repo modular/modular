@@ -122,6 +122,24 @@ class StateInteractionAttacks(BaseScenario):
                 ],
                 "max_tokens": 10,
             },
+            "image_base64_valid_1x1": {
+                "model": model,
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwADhQGAWjR9awAAAABJRU5ErkJggg=="
+                                },
+                            },
+                            {"type": "text", "text": "What is in this image?"},
+                        ],
+                    }
+                ],
+                "max_tokens": 50,
+            },
             "content_mixed_types": {
                 "model": model,
                 "messages": [
