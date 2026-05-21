@@ -306,20 +306,24 @@ def elementwise[
 @always_inline
 def elementwise[
     rank: Int,
-    //,
-    FuncType: def[width: Int, rank: Int, alignment: Int = 1](
+    FuncType: ImplicitlyCopyable
+    & def[width: Int, rank: Int, alignment: Int = 1](
         IndexList[rank]
     ) register_passable -> None,
+    //,
     simd_width: Int,
     *,
     target: StaticString = "cpu",
     _trace_description: StaticString = "elementwise",
 ](func: FuncType, shape: IndexList[rank, ...], context: DeviceContext,) raises:
-    """Unified-closure entry point for `elementwise`.
+    """Unified-closure entry point for `elementwise` (DeviceContext).
 
     Accepts a parametric `register_passable` body (already in
     unified-closure form, with explicit captures) and dispatches to
-    `_elementwise_impl`.
+    `_elementwise_impl`. `rank` and `FuncType` are inferred from the
+    runtime `shape` and `func` arguments, so `simd_width` is the only
+    explicit positional parameter — callers can write
+    `elementwise[N](func, shape, ctx)`.
 
     Parameters:
         rank: The rank of the buffer.
@@ -350,7 +354,8 @@ def _elementwise_impl[
     rank: Int,
     //,
     simd_width: Int,
-    FuncType: def[width: Int, rank: Int, alignment: Int = 1](
+    FuncType: ImplicitlyCopyable
+    & def[width: Int, rank: Int, alignment: Int = 1](
         IndexList[rank]
     ) register_passable -> None,
     /,
@@ -462,10 +467,12 @@ def _dual_elementwise_impl[
     rank: Int,
     //,
     simd_width: Int,
-    Func0Type: def[width: Int, rank: Int, alignment: Int = 1](
+    Func0Type: ImplicitlyCopyable
+    & def[width: Int, rank: Int, alignment: Int = 1](
         IndexList[rank]
     ) register_passable -> None,
-    Func1Type: def[width: Int, rank: Int, alignment: Int = 1](
+    Func1Type: ImplicitlyCopyable
+    & def[width: Int, rank: Int, alignment: Int = 1](
         IndexList[rank]
     ) register_passable -> None,
     /,
