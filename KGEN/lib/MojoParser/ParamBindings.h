@@ -21,7 +21,6 @@ class DeclResolver;
 class ExprNode;
 class FnOp;
 class FnTypeGeneratorType;
-class LITGeneratorType;
 class PValue;
 class StructDeclOp;
 class TypeSignatureType;

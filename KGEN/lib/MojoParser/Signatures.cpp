@@ -930,7 +930,7 @@ static ASTType addImplicitTypeParams(StringAttr argName, ASTType type,
     return sig.getWithCaptureOrigins(paramValues.back());
   }
 
-  if (auto gen = sugarDynCast<LITGeneratorType>(type)) {
+  if (auto gen = sugarDynCast<GeneratorType>(type)) {
     if (bindUnboundGeneratorTypes) {
       PogListAttr paramList = gen.getParamListAttrs();
       ArrayRef<PogMetadataAttr> pogs = paramList.getPogs();
@@ -949,7 +949,7 @@ static ASTType addImplicitTypeParams(StringAttr argName, ASTType type,
   // Auto-parameterize generator typed values.
   if (auto paramType = sugarDynCast<ParamType>(type)) {
     if (auto genType =
-            dyn_cast<LITGeneratorType>(paramType.getParam().getType())) {
+            dyn_cast<GeneratorType>(paramType.getParam().getType())) {
       PogListAttr paramList = genType.getParamListAttrs();
       ArrayRef<PogMetadataAttr> pogs = paramList.getPogs();
       for (auto [idx, type] : llvm::enumerate(genType.getInputParamTypes()))

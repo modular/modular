@@ -31,7 +31,7 @@ using namespace LIT;
 
 bool LIT::isMetaType(Type type) {
   type = SugarAttr::strip(type);
-  if (auto genType = dyn_cast<LITGeneratorType>(type))
+  if (auto genType = dyn_cast<GeneratorType>(type))
     return isMetaType(genType.getBody());
   if (auto param = dyn_cast<ParamType>(type))
     return sugarIsa<StructMetaType, AnyTraitType>(param.getParam().getType());

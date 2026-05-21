@@ -880,8 +880,8 @@ std::pair<PValue, ASTDecl *> OverloadSet::filterOverloadSetForValueType(
   //
   // TODO: We could also support generating a lambda for fancy implicit
   // conversions and subtyping some day.
-  auto getBindingsAndBoundCandidateType = [&](LITGeneratorType candidateType)
-      -> std::pair<ParameterExprArrayAttr, LITGeneratorType> {
+  auto getBindingsAndBoundCandidateType = [&](GeneratorType candidateType)
+      -> std::pair<ParameterExprArrayAttr, GeneratorType> {
     // Apply any bound parameters to the candidate's type since they will be
     // applied when a reference is made.  We only do this if there are some
     // bindings present, because (unlike normal function calls) the result type
@@ -903,7 +903,7 @@ std::pair<PValue, ASTDecl *> OverloadSet::filterOverloadSetForValueType(
     return {newBindings, candidateType};
   };
   auto getBindingsIfValidCandidate =
-      [&](LITGeneratorType candidateType) -> ParameterExprArrayAttr {
+      [&](GeneratorType candidateType) -> ParameterExprArrayAttr {
     auto [newBindings, boundCandidateType] =
         getBindingsAndBoundCandidateType(candidateType);
     if (!boundCandidateType)
@@ -930,7 +930,7 @@ std::pair<PValue, ASTDecl *> OverloadSet::filterOverloadSetForValueType(
             .getFuncLiteralGenerator(getShared().getEvaluationContext())
             .getType();
     if (ParameterExprArrayAttr bindings = getBindingsIfValidCandidate(
-            sugarCast<LITGeneratorType>(candidateType))) {
+            sugarCast<GeneratorType>(candidateType))) {
       validCandidates.push_back(candidate);
       candidateBindings.push_back(bindings);
     }

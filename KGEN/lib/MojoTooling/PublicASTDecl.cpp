@@ -1165,8 +1165,7 @@ PublicAliasDecl::PublicAliasDecl(MojoASTDeclRef declRef)
     // If the value is a GeneratorAttr, we need to split it into a parameter
     // list and a body value for the alias representation.
     if (auto generator = dyn_cast<GeneratorAttr>(*maybeValue)) {
-      if (auto generatorType =
-              dyn_cast<LITGeneratorType>(generator.getType())) {
+      if (auto generatorType = dyn_cast<GeneratorType>(generator.getType())) {
         ParameterEvaluator evaluator = populatePublicParameterDecls(
             shared, generatorType.getInputParamTypes(),
             generatorType.getParamListAttrs(), parameters, nullptr);

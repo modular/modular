@@ -23,14 +23,6 @@ class LITType<string name, string typeMnemonic, list<Trait> traits = []>
 }
 
 //===----------------------------------------------------------------------===//
-// LITGeneratorType
-//===----------------------------------------------------------------------===//
-
-def LIT_GeneratorType : DialectType<LITDialect,
-    CPred<"llvm::isa<LITGeneratorType>($_self)">, "LIT generator type",
-    "LITGeneratorType">;
-
-//===----------------------------------------------------------------------===//
 // FnType
 //===----------------------------------------------------------------------===//
 

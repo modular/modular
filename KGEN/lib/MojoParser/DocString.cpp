@@ -379,7 +379,7 @@ static bool doesFunctionHaveResults(FnOp funcOp) {
 }
 
 /// Return the names of the parameters to the given alias. Parametric aliases
-/// store their parameters in the GeneratorAttr value's LITGeneratorType.
+/// store their parameters in the GeneratorAttr value's GeneratorType.
 static SmallVector<StringAttr> getAliasParameterNames(AliasDeclOp aliasOp) {
   SmallVector<StringAttr> result;
   auto maybeValue = aliasOp.getValue();
@@ -390,7 +390,7 @@ static SmallVector<StringAttr> getAliasParameterNames(AliasDeclOp aliasOp) {
   if (!generator)
     return result;
 
-  auto generatorType = dyn_cast<LITGeneratorType>(generator.getType());
+  auto generatorType = dyn_cast<GeneratorType>(generator.getType());
   if (!generatorType)
     return result;
 
@@ -889,8 +889,8 @@ private:
     auto generator =
         maybeValue ? dyn_cast<GeneratorAttr>(*maybeValue) : GeneratorAttr();
     auto generatorType = generator
-                             ? dyn_cast<LITGeneratorType>(generator.getType())
-                             : LITGeneratorType();
+                             ? dyn_cast<GeneratorType>(generator.getType())
+                             : GeneratorType();
     if (generatorType)
       collectPogParameters(generatorType.getParamListAttrs(), seenParameters,
                            inferredParamNames);
