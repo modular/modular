@@ -400,26 +400,47 @@ TypedAttr TypeDeclInfo::getDestructorForType(Type type, Location loc) const {
 
     // If the type is linear, then ignore an explicitly declared
     // destructor for the purposes of destructor insertion.
+    // FIXME: This is wrong, we should check the 'where' clause on the
+    // conformance.
     if (info.decl.getLinearTypeErrorMsg().value_or("") != "")
-      return {};
-
-    // If the destructor is trivial, return that.
-    // TODO: Switch to "isTrivial" bit.
-    if (!info.decl.getDestructorAttr())
       return {};
 
     // Ok, the type has a destructor.  Check to see if there is any
     // conditional conformance involved.
     TypedAttr dtorAttr;
+    TypedAttr isTrivialAttr;
     for (WitnessOp witness : conformance.getOps<WitnessOp>()) {
       // ImplicitlyDestructable has two witnesses: Ignore del_is_trivial.
-      if (witness.getName() == "__del__is_trivial")
-        continue;
-      assert(witness.getName().starts_with("__del__(") &&
-             "Unknown witness in ImplicitlyDestructible");
-      // Found it.
-      assert(!dtorAttr && "Multiple dtors found in ImplicitlyDestructible");
-      dtorAttr = witness.getValue();
+      if (witness.getName() == "__del__is_trivial") {
+        assert(!isTrivialAttr && "Multiple __del__is_trivial witnesses found");
+        isTrivialAttr = witness.getValue();
+      } else {
+        assert(witness.getName().starts_with("__del__(") &&
+               "Unknown witness in ImplicitlyDestructible");
+        assert(!dtorAttr && "Multiple dtors found in ImplicitlyDestructible");
+        dtorAttr = witness.getValue();
+      }
+    }
+
+    // Now that we found the conformance information, check to see if the
+    // destructor is trivial. We have to substitute any "actual" parameters into
+    // the __del__is_trivial witness to determine this.
+    auto actualStructType = sugarCast<LIT::StructType>(type);
+
+    ParameterEvaluator evaluator(info.decl.getParams(),
+                                 actualStructType.getParamValues());
+    isTrivialAttr = evaluator.getReboundAttribute(isTrivialAttr);
+
+    // The type of the trivial witness is Bool which wraps an i1.  If we can
+    // prove that it is 1, then we can ignore this destructor.
+    if (auto structAttr = sugarDynCast<LITStructAttr>(isTrivialAttr)) {
+      if (structAttr.getValues().size() == 1) {
+        if (auto boolAttr = sugarDynCast<BoolAttr>(
+                std::get<1>(structAttr.getValues().front()))) {
+          if (boolAttr.getValue())
+            return {};
+        }
+      }
     }
 
     // We will likely have a rebind to get rid of keyword argument and

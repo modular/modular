@@ -342,10 +342,6 @@ static bool isMetaTypeForUserDefinedType(Type type) {
       type);
 }
 
-bool ASTType::isUserDefined() const {
-  return isMetaTypeForUserDefinedType(extractMetaType());
-}
-
 /// If this is a user declared type, return the declaration that this came
 /// from.  If this is a raw MLIR type or a metatype, return null.
 ASTDecl *ASTType::getDecl(SharedState &shared) const {

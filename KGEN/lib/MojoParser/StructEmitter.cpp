@@ -1154,8 +1154,9 @@ TypedAttr StructEmitter::populateSpecialFnIsTrivial(SpecialFunctionKind kind) {
                                                   fieldASTDecl.getLoc())))
       return nullptr;
 
-    if (!ASTType(fieldOp.getType()).isUserDefined())
-      continue; // skip simple mlir type
+    if (ASTType(fieldOp.getType())
+            .isTrivialRegisterType(fieldASTDecl.getLoc(), shared))
+      continue; // skip MLIR types and TrivialRegisterPassable types.
 
     TypedAttr fieldIsTrivial =
         shared.getEvaluationContext().getAndFold<GetWitnessAttr>(
