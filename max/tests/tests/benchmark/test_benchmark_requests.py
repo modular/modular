@@ -573,6 +573,95 @@ class TestRequestDriver:
         assert result.error == error_msg
 
     @pytest.mark.asyncio
+    async def test_openai_chat_completions_forwards_tools(
+        self,
+        mock_aiohttp_session: Any,
+        mock_openai_env: None,
+        mocker: MockerFixture,
+    ) -> None:
+        """``tools`` on RequestFuncInput is forwarded as the chat ``tools`` field."""
+        tool_schemas = [
+            {
+                "type": "function",
+                "function": {
+                    "name": "bash",
+                    "description": "Run a shell command",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {"cmd": {"type": "string"}},
+                        "required": ["cmd"],
+                    },
+                },
+            },
+        ]
+        request_input = RequestFuncInput(
+            model="test-model",
+            session_id=None,
+            sampling=SamplingConfig(),
+            prompt="Run ls",
+            images=[],
+            api_url="http://localhost:8000/v1/chat/completions",
+            prompt_len=5,
+            max_tokens=50,
+            ignore_eos=False,
+            tools=tool_schemas,
+        )
+
+        async def async_iter() -> AsyncIterator[bytes]:
+            yield b'data: {"choices": [{"delta": {"content": "ok"}}]}\n\n'
+            yield b"data: [DONE]\n\n"
+
+        mock_response = mocker.AsyncMock()
+        mock_response.status = 200
+        mock_response.content = async_iter()
+        mock_aiohttp_session.setup_post_response(mock_response)
+
+        driver = OpenAIChatCompletionsRequestDriver()
+        result = await driver.request(request_input)
+
+        assert result.success is True
+        # Inspect the POST payload to confirm the tools made it through.
+        _, post_kwargs = mock_aiohttp_session.post.call_args
+        assert post_kwargs["json"]["tools"] == tool_schemas
+
+    @pytest.mark.asyncio
+    async def test_openai_chat_completions_omits_tools_when_none(
+        self,
+        mock_aiohttp_session: Any,
+        mock_openai_env: None,
+        mocker: MockerFixture,
+    ) -> None:
+        """No ``tools`` field is sent when SampledRequest.tools is None/empty."""
+        request_input = RequestFuncInput(
+            model="test-model",
+            session_id=None,
+            sampling=SamplingConfig(),
+            prompt="hi",
+            images=[],
+            api_url="http://localhost:8000/v1/chat/completions",
+            prompt_len=1,
+            max_tokens=8,
+            ignore_eos=False,
+            tools=None,
+        )
+
+        async def async_iter() -> AsyncIterator[bytes]:
+            yield b'data: {"choices": [{"delta": {"content": "x"}}]}\n\n'
+            yield b"data: [DONE]\n\n"
+
+        mock_response = mocker.AsyncMock()
+        mock_response.status = 200
+        mock_response.content = async_iter()
+        mock_aiohttp_session.setup_post_response(mock_response)
+
+        driver = OpenAIChatCompletionsRequestDriver()
+        result = await driver.request(request_input)
+
+        assert result.success is True
+        _, post_kwargs = mock_aiohttp_session.post.call_args
+        assert "tools" not in post_kwargs["json"]
+
+    @pytest.mark.asyncio
     async def test_openai_completions_request_driver_no_content(
         self,
         mock_aiohttp_session: Any,

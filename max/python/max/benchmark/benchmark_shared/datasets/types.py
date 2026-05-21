@@ -18,7 +18,7 @@ import os
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from io import BytesIO
-from typing import Literal
+from typing import Any, Literal
 
 from openai.types.chat.completion_create_params import ResponseFormat
 from PIL import Image
@@ -91,6 +91,11 @@ class SampledRequest:
     encoded_images: list[OpenAIImage]
     ignore_eos: bool
     response_format: ResponseFormat | None = None
+    # OpenAI-style tool definitions forwarded as the chat-completions ``tools``
+    # field. Typed as ``list[dict]`` (not ``ChatCompletionToolUnionParam``) so
+    # datasets can pass through whatever shape the server expects; the driver
+    # serialises this as-is.
+    tools: list[dict[str, Any]] | None = None
 
 
 @dataclass

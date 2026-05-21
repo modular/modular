@@ -1011,8 +1011,14 @@ def test_nemotron_opencode_sample_requests(mock_load: Mock) -> None:
     assert len(samples.requests) == 2
     assert all(isinstance(r, SampledRequest) for r in samples.requests)
     assert all(isinstance(r.prompt_formatted, list) for r in samples.requests)
-    # Tool schemas are surfaced for downstream protocol work.
+    # Tool schemas are surfaced both on the inspection attribute and on each
+    # SampledRequest so the chat-completions driver can forward them as
+    # ``tools=[...]``.
     assert dataset.last_loaded_tool_schemas == [
+        [{"name": "bash", "description": "run a shell command"}],
+        [{"name": "todoread"}],
+    ]
+    assert [r.tools for r in samples.requests] == [
         [{"name": "bash", "description": "run a shell command"}],
         [{"name": "todoread"}],
     ]
@@ -1051,6 +1057,9 @@ def test_nemotron_opencode_disable_tool_calls(mock_load: Mock) -> None:
 
     # Only row 3 has zero tool/non-chat messages.
     assert len(samples.requests) == 1
+    # With tool calls disabled, ``tools`` is cleared even when the row has
+    # schemas attached.
+    assert samples.requests[0].tools is None
 
 
 @patch("max.benchmark.benchmark_shared.datasets.nemotron_opencode.load_dataset")

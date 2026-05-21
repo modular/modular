@@ -60,9 +60,17 @@ This version is still a work in progress.
   schemas). Multi-GB per subset, so the loader streams via
   `datasets.load_dataset(..., streaming=True)` and pulls only enough rows to
   satisfy `--num-prompts`. Tool definitions per row are surfaced on
-  `NemotronOpenCodeBenchmarkDataset.last_loaded_tool_schemas` for follow-up
-  work that forwards `tools=[...]` on chat completions payloads (the
-  benchmark request pipeline does not send that field yet).
+  `NemotronOpenCodeBenchmarkDataset.last_loaded_tool_schemas` and (for
+  single-turn) attached to `SampledRequest.tools`.
+
+- Benchmark request payloads now forward an OpenAI-style `tools=[...]` field
+  on chat-completions requests. `SampledRequest` and `RequestFuncInput` gained
+  a `tools: list[dict] | None = None` field;
+  `OpenAIChatCompletionsRequestDriver` serialises it into the POST body when
+  set. Datasets that supply per-row tool schemas (currently
+  `nemotron-opencode`) now exercise the server's tool-call grammar /
+  structured-output path end-to-end. Pass `enable_tool_calls=False` on
+  Nemotron-OpenCode to suppress forwarding.
 
 ### `max` CLI
 

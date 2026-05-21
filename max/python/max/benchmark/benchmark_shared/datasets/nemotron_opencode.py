@@ -91,14 +91,15 @@ class NemotronOpenCodeBenchmarkDataset(HuggingFaceBenchmarkDataset):
       tool/assistant messages but ships only a few dozen distinct prompts.
 
     This dataset is ~3 orders of magnitude larger and exposes a much wider
-    spread of agentic-coding prompt shapes. The tool definitions on each row
-    are preserved in :attr:`last_loaded_tool_schemas` for inspection, but
-    they are *not* forwarded to the server: the benchmark request pipeline
-    does not currently send a ``tools=[...]`` field on chat completions
-    payloads. Wiring that through (``SampledRequest.tools`` →
-    ``RequestFuncInput.tools`` → ``OpenAIChatCompletionsRequestDriver``) is
-    tracked separately. Until then, this dataset behaves as a richer agentic
-    prompt corpus, not a true tool-call protocol exerciser.
+    spread of agentic-coding prompt shapes. Single-turn requests
+    (``sample_requests``) carry the row's tool definitions on
+    :attr:`SampledRequest.tools`, which the chat-completions driver forwards
+    as the OpenAI ``tools=[...]`` field — pass ``enable_tool_calls=False``
+    to suppress this. The same schemas are also kept on
+    :attr:`last_loaded_tool_schemas` for inspection.
+
+    Multi-turn sessions still drop tool definitions because
+    :class:`SessionMessage` does not yet carry a per-turn tools field.
     """
 
     #: Subset name (one of :data:`NEMOTRON_OPENCODE_SUBSETS`). Override before
@@ -341,6 +342,9 @@ class NemotronOpenCodeBenchmarkDataset(HuggingFaceBenchmarkDataset):
                     # full target length instead of letting an early EOS skew
                     # throughput vs. instruct-coder baselines.
                     ignore_eos=True,
+                    tools=tools_raw
+                    if (enable_tool_calls and tools_raw)
+                    else None,
                 )
             )
             sampled_tool_schemas.append(tools_raw)
