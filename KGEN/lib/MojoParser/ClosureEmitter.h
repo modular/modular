@@ -262,8 +262,7 @@ private:
   /// error.
   std::pair<MemSymbolTripleAttr, TypeConvention>
   buildStructCaptureInfo(StructType structType, const Capture &capture,
-                         CaptureConvention convention,
-                         TypeConvention requestedConvention, UnitAttr &isMove,
+                         CaptureConvention convention, UnitAttr &isMove,
                          ASTDecl &nestedFnDecl);
 
   /// Build a MemSymbolTripleAttr for capturing a generic ParamType value.
@@ -271,8 +270,7 @@ private:
   /// Returns {nullptr, Unspecified} on error.
   std::pair<MemSymbolTripleAttr, TypeConvention>
   buildParamCaptureInfo(ParamType paramType, const Capture &capture,
-                        CaptureConvention convention,
-                        TypeConvention requestedConvention, UnitAttr &isMove,
+                        CaptureConvention convention, UnitAttr &isMove,
                         ASTDecl &nestedFnDecl, ASTDecl &moduleDecl);
 
   /// AnyType is the base metatype for all types.

@@ -84,7 +84,7 @@ def main() raises:
     def myclosure(x: Int) {var y} -> Int:
         return y + x
 
-    var s = AStruct(myclosure^)
+    var s = AStruct(myclosure)
     # CHECK: 6
     takeIt(s)
     # CHECK: 5
