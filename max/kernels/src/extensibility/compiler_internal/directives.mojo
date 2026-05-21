@@ -91,18 +91,12 @@ comptime _IntTupleShapeIndexListStridesToTileLayout[
 """Convert an IntTuple shape and IndexList strides to a TileLayout."""
 
 
-def __mogg_intrinsic_attr(intrin: StaticString):
-    return
-
-
 # Register a DPS Kernel
-@__mogg_intrinsic_attr("mogg.intrinsic_register")
 def register(name: StaticString):
     pass
 
 
 # Indicates that a DPS Kernel is a view operation
-@__mogg_intrinsic_attr("mogg.view_kernel")
 def view_kernel():
     return
 
