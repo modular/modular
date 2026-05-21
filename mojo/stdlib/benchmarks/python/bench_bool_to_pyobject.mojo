@@ -48,8 +48,31 @@ def bench_bool_to_pyobject(mut b: Bencher) raises:
     b.iter(call_fn)
 
 
+@parameter
+def bench_scalar_bool_to_pyobject(mut b: Bencher) raises:
+    """`PythonObject(value: Scalar[DType.bool])` overload via the same
+    singleton fast path (it goes through the shared `_bool_to_pyobject`
+    helper after a `Bool(value)` cast)."""
+    _ = Python()
+    var v = Scalar[DType.bool](True)
+
+    @always_inline
+    def call_fn() {read}:
+        try:
+            for _ in range(1000):
+                var x = PythonObject(black_box(v))
+                keep(x)
+        except e:
+            abort(String(e))
+
+    b.iter(call_fn)
+
+
 def main() raises:
     _ = Python()
-    var m = Bench(BenchConfig(num_repetitions=5, max_runtime_secs=2.0))
+    var m = Bench(BenchConfig(num_repetitions=20, max_runtime_secs=2.0))
     m.bench_function[bench_bool_to_pyobject](BenchId("bool_to_pyobject"))
+    m.bench_function[bench_scalar_bool_to_pyobject](
+        BenchId("scalar_bool_to_pyobject")
+    )
     print(m)
