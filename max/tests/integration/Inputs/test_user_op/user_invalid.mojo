@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 import compiler
-from tensor import OutputTensor
+from extensibility import OutputTensor
 
 
 @compiler.register("fails_to_elaborate")

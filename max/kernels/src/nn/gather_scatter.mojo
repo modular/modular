@@ -31,7 +31,7 @@ from layout import (
 from std.memory import memcpy
 from std.runtime.asyncrt import parallelism_level
 from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id
-from tensor import ManagedTensorSlice
+from extensibility import ManagedTensorSlice
 
 from std.utils import IndexList, StaticTuple
 from std.collections import OptionalReg

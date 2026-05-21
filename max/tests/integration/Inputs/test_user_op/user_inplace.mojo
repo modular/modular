@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 import compiler
-from tensor.managed_tensor_slice import (
+from extensibility import (
     _MutableInputTensor as MutableInputTensor,
 )
 

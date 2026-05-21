@@ -14,7 +14,7 @@
 from std.algorithm.functional import elementwise
 from std.gpu.host import DeviceContext
 from std.random import NormalRandom
-from tensor._indexing import _dot_prod
+from extensibility import _dot_prod
 
 from std.utils import IndexList
 

@@ -13,7 +13,7 @@
 
 from std.math import ceil, iota
 
-from register import *
+from extensibility import *
 
 from std.utils.index import IndexList
 

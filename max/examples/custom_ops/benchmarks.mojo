@@ -34,7 +34,7 @@ from kernels.matrix_multiplication import MatrixMultiplication
 from kernels.tensor_core_mma import TensorCoreMMA
 from kernels.top_k import TopK
 from layout.int_tuple import product, to_index_list
-from tensor import (
+from extensibility import (
     Input,
     IOSpec,
     ManagedTensorSlice,

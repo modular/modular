@@ -25,11 +25,11 @@ from std.sys.info import has_accelerator, simd_width_of
 
 from std.algorithm.functional import elementwise, IndexList
 
-from tensor import ManagedTensorSlice
-from tensor.io_spec import Input, MutableInput, Output
-from compiler_internal import StaticTensorSpec
+from extensibility import ManagedTensorSlice
+from extensibility import Input, MutableInput, Output
+from extensibility import StaticTensorSpec
 from layout import IntTuple, create_unknown_int_tuple
-from MOGGKernelAPI.MOGGKernelAPI import (
+from builtin_kernels import (
     MutableStoreSlice,
     Slice,
     StaticBroadcastTo,

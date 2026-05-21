@@ -44,8 +44,8 @@ from std.gpu.host import DeviceContext
 from std.gpu.host.info import is_cpu
 from std.memory import UnsafePointer
 
-from tensor import InputTensor
-from tensor.managed_tensor_slice import (
+from extensibility import InputTensor
+from extensibility import (
     _MutableInputTensor as MutableInputTensor,
 )
 

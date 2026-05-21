@@ -10,48 +10,657 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""ManagedTensorSlice and the types kernel authors compose against.
+
+A custom kernel's entry-point signature uses these:
+
+- `ManagedTensorSlice` — view of a tensor argument.
+- `IOSpec` (and `IO`) — input/output/mutability annotations.
+- `RuntimeTensorSpec` / `StaticTensorSpec` — runtime + compile-time tensor
+  metadata.
+- Fusion traits (`InputFusion`, `OutputFusion`, ...) and their `_NoFusion*`
+  sentinels.
+
+The decorators that register a kernel (`register`, `register_internal`,
+`view_kernel`) live next to this file in `register.mojo`.
 """
-Implements the `ManagedTensorSlice` type - a view of a tensor that doesn't own
-the underlying data. This type is used to build custom graph operations.
-"""
+import std.algorithm
+
+from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.collections import Optional
-from std.gpu.host import DeviceBuffer, DeviceContext
+from std.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
+from std.gpu.host.info import is_cpu
+from std.gpu.host.info import is_gpu as _is_gpu
 from std.math import ceil, fma
+from std.memory import AddressSpace
+from std.runtime.tracing import trace_arg
 from std.sys import align_of, simd_width_of, size_of
 from std.sys.info import CompilationTarget, is_gpu
 from std.sys.intrinsics import _type_is_eq, strided_load, strided_store
-
-import std.algorithm
-from layout import CoordLike, IntTuple
-from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
-from compiler_internal.directives import (
-    StaticTensorSpec,
-    StaticTensorSpecInternal,
-    get_row_major_tensor_spec_static,
-    InputFusion,
-    OutputFusion,
-    ComputeOutputFusion,
-    ElementwiseFusion,
-    _NoFusionIn,
-    _NoFusionOut,
-    _NoComputeFusion,
-    _IndexListToTileLayout,
-)
-from std.gpu.host import get_gpu_target
-from std.gpu.host.info import is_cpu
-from std.gpu.host.info import is_gpu as _is_gpu
-from layout import Coord, LayoutTensor, TileTensor
-from layout.tile_layout import Layout as TileLayout, TensorLayout
-from register import register_internal
-
-from std.runtime.tracing import trace_arg
-from tensor import RuntimeTensorSpec
-
-from std.utils import IndexList, StaticTuple
+from std.utils import IndexList, StaticTuple, product
 from std.utils._serialize import _serialize
 
-from ._indexing import _dot_prod, _slice_to_tuple
-from .io_spec import IO, IOSpec
+from layout import (
+    Coord,
+    CoordLike,
+    IntTuple,
+    Layout,
+    LayoutTensor,
+    TileTensor,
+)
+from layout.coord import (
+    ComptimeInt,
+    _IntToComptimeInt,
+)
+from layout.int_tuple import _IntTupleToCoordLike, coord_to_int_tuple
+from layout.tile_layout import Layout as TileLayout, TensorLayout, _RowMajor
+
+from .decorators import register_internal
+
+
+# ===----------------------------------------------------------------------=== #
+# IO direction tag + IOSpec marker
+# ===----------------------------------------------------------------------=== #
+
+
+struct IO(TrivialRegisterPassable):
+    var value: SIMDSize
+
+    # TODO: either rename or get rid of this
+    comptime Unknown = IO(-1)
+
+    comptime Output = IO(0)
+    comptime Input = IO(1)
+
+    # Represents the standard kind of fusion where we only make accesses
+    # through the fusion lambda (e.g. any of the elementwise ops).
+    comptime FusedInput = IO(2)
+    comptime FusedOutput = IO(3)
+
+    # Output fusion using a compute lambda.
+    comptime _FusedComputeOutput = IO(31)
+
+    @always_inline("builtin")
+    def __init__(out self, value: Int):
+        self.value = value
+
+    def __eq__(self, other: IO) -> Bool:
+        return self.value == other.value
+
+    def __ne__(self, other: IO) -> Bool:
+        return self.value != other.value
+
+    @always_inline("nodebug")
+    def is_fused(self) -> Bool:
+        """True when this IO represents any fused variant (input, output, or
+        compute-output)."""
+        return (
+            self == IO.FusedInput
+            or self == IO.FusedOutput
+            or self == IO._FusedComputeOutput
+        )
+
+
+@fieldwise_init
+struct IOSpec[mut: Bool, input: IO](TrivialRegisterPassable):
+    """
+    Parameter used to encode whether a particular tensor argument to a DPS kernel
+    is an output, input, or mutable input.
+
+    ```mojo
+    Input == IOSpec[False, IO.Input]()
+    Output == IOSpec[True, IO.Output]()
+    MutableInput == IOSpec[True, IO.Input]()
+    FusedInput == IOSpec[False, IO.FusedInput]()
+    FusedOutput == IOSpec[True, IO.FusedOutput]()
+    ```
+    """
+
+    ...
+
+
+comptime IOUnknown = IOSpec[True, IO.Unknown]()
+
+comptime Input = IOSpec[False, IO.Input]()
+comptime Output = IOSpec[True, IO.Output]()
+comptime MutableInput = IOSpec[True, IO.Input]()
+
+comptime FusedInput = IOSpec[False, IO.FusedInput]()
+comptime FusedOutput = IOSpec[True, IO.FusedOutput]()
+
+comptime _FusedComputeOutput = IOSpec[True, IO._FusedComputeOutput]()
+
+
+# ===----------------------------------------------------------------------=== #
+# RuntimeTensorSpec
+# ===----------------------------------------------------------------------=== #
+
+
+@fieldwise_init
+struct RuntimeTensorSpec[dtype: DType, rank: Int](TrivialRegisterPassable):
+    var shape: IndexList[Self.rank]
+
+    def __getitem__(self, idx: Int) -> Int:
+        return self.shape[idx]
+
+    def bytecount(self) -> Int:
+        """
+        Gets the total byte count.
+
+        Returns:
+          The total byte count.
+        """
+        return product(self.shape) * size_of[Self.dtype]()
+
+
+# ===----------------------------------------------------------------------=== #
+# Indexing helpers
+# ===----------------------------------------------------------------------=== #
+
+
+@always_inline
+def _dot_prod[rank: Int](x: IndexList[rank], y: IndexList[rank]) -> Int:
+    var offset = 0
+
+    comptime for i in range(rank):
+        offset += x[i] * y[i]
+    return offset
+
+
+@always_inline
+def _slice_to_tuple[
+    func: def(Slice) capturing[_] -> Int, rank: Int
+](slices: InlineArray[Slice, rank]) -> IndexList[rank]:
+    """Takes a tuple of `Slice`s and returns a tuple of Ints.
+    `func` is used to extract the appropriate field (i.e. start, stop or end)
+    of the Slice.
+    """
+    var tuple = IndexList[rank]()
+
+    comptime for i in range(rank):
+        tuple[i] = func(slices[i])
+    return tuple
+
+
+# ===----------------------------------------------------------------------=== #
+# TileLayout helper aliases
+# ===----------------------------------------------------------------------=== #
+
+comptime _AllScalar[rank: Int] = TypeList.splat[
+    Trait=CoordLike, count=rank, type=Scalar[DType.int]
+]()
+"""A variadic of `rank` Scalar types."""
+
+comptime _UnknownTileLayout[rank: Int] = TileLayout[
+    shape_types=_AllScalar[rank],
+    stride_types=_AllScalar[rank],
+]
+"""A fully-dynamic TileLayout where all shape and stride dims are Scalar."""
+
+
+comptime _RowMajorTileLayout[
+    shape_types: TypeList[Trait=CoordLike, ...]
+] = TileLayout[
+    shape_types=shape_types,
+    stride_types=_RowMajor[*shape_types],
+]
+"""A TileLayout with row-major strides derived from the given shape types."""
+
+comptime _IndexListToCoordLikeTabulator[
+    list: IndexList,
+    idx: SIMDSize,
+]: CoordLike = ComptimeInt[list[idx]] if list[idx] >= 0 else Scalar[DType.int]
+
+"""Maps a single IndexList element to a CoordLike type.
+Negative values (-1 = dynamic) become Scalar, others become ComptimeInt."""
+
+
+comptime _IndexListToCoordLike[list: IndexList] = TypeList.tabulate[
+    list.size, _IndexListToCoordLikeTabulator[list, _]
+]()
+"""Converts a compile-time IndexList to a variadic of CoordLike types.
+Negative values become Scalar, non-negative become ComptimeInt."""
+
+
+comptime _IndexListToTileLayout[
+    shape: IndexList, strides: IndexList
+] = TileLayout[
+    shape_types=_IndexListToCoordLike[shape],
+    stride_types=_IndexListToCoordLike[strides],
+]
+"""Convert a pair of compile-time IndexLists to a TileLayout.
+Negative values (-1) become Scalar, non-negative become ComptimeInt."""
+
+
+comptime _RowMajorIntTupleTileLayout[
+    shape: IntTuple,
+] = _RowMajorTileLayout[_IntTupleToCoordLike[DType.int, shape]]
+"""A TileLayout with row-major strides derived from an IntTuple shape."""
+
+
+comptime _IntTupleShapeIndexListStridesToTileLayout[
+    shape: IntTuple, strides: IndexList
+] = TileLayout[
+    shape_types=_IntTupleToCoordLike[DType.int, shape],
+    stride_types=_IndexListToCoordLike[strides],
+]
+"""Convert an IntTuple shape and IndexList strides to a TileLayout."""
+
+
+def get_row_major_tensor_spec_static[
+    dtype: DType, rank: Int, *shape_dims: Int
+]() -> StaticTensorSpec[
+    dtype,
+    rank,
+    static_layout=_RowMajorTileLayout[_IntToComptimeInt[*shape_dims]],
+]:
+    """Returns a row-major StaticTensorSpec from compile-time Int dimensions.
+
+    All dimensions must be static (known at compile time).
+
+    Parameters:
+        dtype: The element data type.
+        rank: The tensor rank (must match `len(shape_dims)`).
+        shape_dims: Compile-time integer dimensions of the tensor shape.
+    """
+    return {align_of[dtype](), AddressSpace.GENERIC, False}
+
+
+def _get_unknown_tensor_spec[
+    dtype: DType, rank: Int
+]() -> StaticTensorSpec[dtype, rank, static_layout=_UnknownTileLayout[rank]]:
+    """
+    Returns a StaticTensorSpec with the specified type and rank with all
+    fields dynamic or defaulted.
+    """
+    return {
+        1,
+        AddressSpace.GENERIC,
+        True,
+    }
+
+
+# ===----------------------------------------------------------------------=== #
+# Fusion traits and sentinel types
+# ===----------------------------------------------------------------------=== #
+
+
+trait InputFusion(TrivialRegisterPassable):
+    """Trait for input fusion structs that provide custom load behavior."""
+
+    def load[
+        dtype: DType,
+        rank: Int,
+        simd_width: Int,
+        element_alignment: Int = 1,
+    ](self, idx: IndexList[rank]) -> SIMD[dtype, simd_width]:
+        ...
+
+
+trait OutputFusion(TrivialRegisterPassable):
+    """Trait for output fusion structs that provide custom store behavior."""
+
+    def store[
+        dtype: DType,
+        rank: Int,
+        simd_width: SIMDSize,
+        element_alignment: Int = 1,
+    ](self, idx: IndexList[rank], val: SIMD[dtype, simd_width]):
+        ...
+
+
+trait ComputeOutputFusion(TrivialRegisterPassable):
+    """Trait for compute-output fusion structs that transform values before
+    storing."""
+
+    def compute[
+        dtype: DType,
+        rank: Int,
+        simd_width: SIMDSize,
+        element_alignment: Int = 1,
+    ](self, idx: IndexList[rank], val: SIMD[dtype, simd_width]) -> SIMD[
+        dtype, simd_width
+    ]:
+        ...
+
+
+trait ElementwiseFusion(TrivialRegisterPassable):
+    """Trait for pure elementwise fusion structs emitted by the graph
+    compiler."""
+
+    def compute[
+        dtype: DType,
+        rank: Int,
+        simd_width: Int,
+        element_alignment: Int = 1,
+    ](self, idx: IndexList[rank]) -> SIMD[dtype, simd_width]:
+        ...
+
+
+struct _NoFusionIn(InputFusion):
+    """Sentinel type indicating no input fusion is active."""
+
+    def __init__(out self):
+        pass
+
+    def load[
+        dtype: DType,
+        rank: Int,
+        simd_width: Int,
+        element_alignment: Int = 1,
+    ](self, idx: IndexList[rank]) -> SIMD[dtype, simd_width]:
+        comptime assert False, "load() not implemented for this InputFusion"
+
+
+struct _NoFusionOut(OutputFusion):
+    """Sentinel type indicating no output fusion is active."""
+
+    def __init__(out self):
+        pass
+
+    def store[
+        dtype: DType,
+        rank: Int,
+        simd_width: SIMDSize,
+        element_alignment: Int = 1,
+    ](self, idx: IndexList[rank], val: SIMD[dtype, simd_width]):
+        comptime assert False, "store() not implemented for this OutputFusion"
+
+
+struct _NoComputeFusion(ComputeOutputFusion):
+    """Sentinel type indicating no compute-output fusion is active."""
+
+    def __init__(out self):
+        pass
+
+    def compute[
+        dtype: DType,
+        rank: Int,
+        simd_width: SIMDSize,
+        element_alignment: Int = 1,
+    ](self, idx: IndexList[rank], val: SIMD[dtype, simd_width]) -> SIMD[
+        dtype, simd_width
+    ]:
+        comptime assert (
+            False
+        ), "compute() not implemented for this ComputeOutputFusion"
+
+
+# Compile time Tensor information
+struct StaticTensorSpec[
+    dtype: DType,
+    rank: Int,
+    static_layout: TensorLayout,
+    InFusion: InputFusion = _NoFusionIn,
+    OutFusion: OutputFusion = _NoFusionOut,
+    ComputeFusion: ComputeOutputFusion = _NoComputeFusion,
+](ImplicitlyCopyable):
+    # IntTuple aliases for static shape/strides.
+    comptime shape_tuple = coord_to_int_tuple[
+        *Self.static_layout._shape_types
+    ]()
+    comptime strides_tuple = coord_to_int_tuple[
+        *Self.static_layout._stride_types
+    ]()
+
+    var alignment: Int
+    var address_space: AddressSpace
+    var exclusive: Bool
+
+    def __init__(
+        out self,
+        alignment: Int,
+        address_space: AddressSpace,
+        exclusive: Bool,
+    ):
+        comptime assert Self.rank == Self.static_layout.rank, "rank mismatch"
+        comptime _has_in = not _type_is_eq[Self.InFusion, _NoFusionIn]()
+        comptime _has_out = not _type_is_eq[Self.OutFusion, _NoFusionOut]()
+        comptime _has_compute = not _type_is_eq[
+            Self.ComputeFusion, _NoComputeFusion
+        ]()
+        comptime assert (
+            Int(_has_in) + Int(_has_out) + Int(_has_compute) <= 1
+        ), "StaticTensorSpec can have at most one fusion type"
+        self.alignment = alignment
+        self.address_space = address_space
+        self.exclusive = exclusive
+
+    def __init__(
+        out self, internals: StaticTensorSpecInternal[Self.dtype, Self.rank]
+    ):
+        """
+        Returns a StaticTensorSpec from a StaticTensorSpecInternal.
+        """
+        comptime _has_in = not _type_is_eq[Self.InFusion, _NoFusionIn]()
+        comptime _has_out = not _type_is_eq[Self.OutFusion, _NoFusionOut]()
+        comptime _has_compute = not _type_is_eq[
+            Self.ComputeFusion, _NoComputeFusion
+        ]()
+        comptime assert (
+            Int(_has_in) + Int(_has_out) + Int(_has_compute) <= 1
+        ), "StaticTensorSpec can have at most one fusion type"
+        self.alignment = internals.alignment
+        self.address_space = internals.address_space
+        self.exclusive = internals.exclusive
+
+    @always_inline
+    def to_unfused(
+        self,
+    ) -> StaticTensorSpec[
+        Self.dtype, Self.rank, static_layout=Self.static_layout
+    ]:
+        """Returns a copy with sentinel (no-op) fusion types.
+
+        The runtime fields (alignment, etc.) are identical;
+        only the compile-time fusion type parameters change.
+        """
+        return {
+            self.alignment,
+            self.address_space,
+            self.exclusive,
+        }
+
+    # This indirect approach to providing get_unknown is necessary because the
+    # we don't want clients to have to bind rank and shapes to use this. Aliases
+    # only require the parameters they USE to be bound, whereas static methods
+    # require all parameters to be bound.
+    comptime get_unknown = _get_unknown_tensor_spec[Self.dtype, Self.rank]
+
+    @always_inline
+    def with_tile_layout[
+        new_layout: TensorLayout,
+    ](
+        self,
+    ) -> StaticTensorSpec[
+        Self.dtype,
+        new_layout.rank,
+        static_layout=new_layout,
+    ]:
+        return {
+            self.alignment,
+            self.address_space,
+            self.exclusive,
+        }
+
+    @always_inline
+    def with_tile_layout[
+        new_rank: Int,
+        new_layout: TensorLayout,
+    ](
+        self,
+    ) -> StaticTensorSpec[
+        Self.dtype,
+        new_rank,
+        static_layout=new_layout,
+    ]:
+        comptime assert new_rank == new_layout.rank, "rank mismatch"
+        return {
+            self.alignment,
+            self.address_space,
+            self.exclusive,
+        }
+
+    @always_inline
+    def with_tile_layout_and_alignment[
+        new_layout: TensorLayout,
+    ](self, new_alignment: Int) -> StaticTensorSpec[
+        Self.dtype,
+        new_layout.rank,
+        static_layout=new_layout,
+    ]:
+        return {
+            new_alignment,
+            self.address_space,
+            self.exclusive,
+        }
+
+    @always_inline
+    def with_tile_layout_and_alignment[
+        new_rank: Int,
+        new_layout: TensorLayout,
+    ](self, new_alignment: Int) -> StaticTensorSpec[
+        Self.dtype,
+        new_rank,
+        static_layout=new_layout,
+    ]:
+        comptime assert new_rank == new_layout.rank, "rank mismatch"
+        return {
+            new_alignment,
+            self.address_space,
+            self.exclusive,
+        }
+
+    @always_inline
+    def with_int_tuple_layout[
+        new_rank: Int, new_shape: IntTuple, new_strides: IndexList
+    ](
+        self,
+    ) -> StaticTensorSpec[
+        Self.dtype,
+        new_rank,
+        static_layout=_IntTupleShapeIndexListStridesToTileLayout[
+            new_shape, new_strides
+        ],
+    ]:
+        return {
+            self.alignment,
+            self.address_space,
+            self.exclusive,
+        }
+
+    @always_inline
+    def with_int_tuple_layout_and_alignment[
+        new_rank: Int, new_shape: IntTuple, new_strides: IndexList
+    ](self, new_alignment: Int) -> StaticTensorSpec[
+        Self.dtype,
+        new_rank,
+        static_layout=_IntTupleShapeIndexListStridesToTileLayout[
+            new_shape, new_strides
+        ],
+    ]:
+        return {
+            new_alignment,
+            self.address_space,
+            self.exclusive,
+        }
+
+    @always_inline
+    def with_row_major_int_tuple_layout[
+        new_rank: Int, new_shape: IntTuple
+    ](
+        self,
+    ) -> StaticTensorSpec[
+        Self.dtype,
+        new_rank,
+        static_layout=_RowMajorIntTupleTileLayout[new_shape],
+    ]:
+        return {
+            self.alignment,
+            self.address_space,
+            self.exclusive,
+        }
+
+    @always_inline
+    def with_input_fusion[
+        F: InputFusion
+    ](self) -> StaticTensorSpec[
+        Self.dtype,
+        Self.rank,
+        Self.static_layout,
+        F,
+        Self.OutFusion,
+        Self.ComputeFusion,
+    ]:
+        return {
+            self.alignment,
+            self.address_space,
+            self.exclusive,
+        }
+
+    @always_inline
+    def with_output_fusion[
+        F: OutputFusion
+    ](self) -> StaticTensorSpec[
+        Self.dtype,
+        Self.rank,
+        Self.static_layout,
+        Self.InFusion,
+        F,
+        Self.ComputeFusion,
+    ]:
+        return {
+            self.alignment,
+            self.address_space,
+            self.exclusive,
+        }
+
+    @always_inline
+    def with_compute_fusion[
+        F: ComputeOutputFusion
+    ](self) -> StaticTensorSpec[
+        Self.dtype,
+        Self.rank,
+        Self.static_layout,
+        Self.InFusion,
+        Self.OutFusion,
+        F,
+    ]:
+        return {
+            self.alignment,
+            self.address_space,
+            self.exclusive,
+        }
+
+    @always_inline
+    def to_layout(self) -> Layout:
+        return Layout(
+            coord_to_int_tuple[*Self.static_layout._shape_types](),
+            coord_to_int_tuple[*Self.static_layout._stride_types](),
+        )
+
+    comptime static_size: Int = Layout(
+        coord_to_int_tuple[*Self.static_layout._shape_types](),
+        coord_to_int_tuple[*Self.static_layout._stride_types](),
+    ).size()
+
+    def get_internals(self) -> StaticTensorSpecInternal[Self.dtype, Self.rank]:
+        """
+        Returns a StaticTensorSpecInternal from a StaticTensorSpec.
+        """
+        return {
+            self.alignment,
+            self.address_space,
+            self.exclusive,
+        }
+
+
+@fieldwise_init
+struct StaticTensorSpecInternal[dtype: DType, rank: Int](ImplicitlyCopyable):
+    var alignment: Int
+    var address_space: AddressSpace
+    var exclusive: Bool
+
 
 # ===----------------------------------------------------------------------=== #
 # Load / Store Helper primitives

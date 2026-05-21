@@ -18,8 +18,8 @@ from std.sys import size_of, align_of
 
 import std.algorithm
 
-from compiler_internal import StaticTensorSpec
-from compiler_internal.directives import (
+from extensibility import StaticTensorSpec
+from extensibility import (
     ComputeOutputFusion,
     ElementwiseFusion,
     InputFusion,
@@ -41,13 +41,13 @@ from std.memory import memcpy
 from std.memory.unsafe_pointer import unsafe_cast
 
 from nn.concat import concat
-from register import register_internal
-from tensor import (
+from extensibility import register_internal
+from extensibility import (
     IOSpec,
     ManagedTensorSlice,
 )
-from tensor.io_spec import IO
-from tensor.managed_tensor_slice import (
+from extensibility import IO
+from extensibility import (
     DynamicTensor,
     _shape_types_compatible,
     get_kernel_simd_width,

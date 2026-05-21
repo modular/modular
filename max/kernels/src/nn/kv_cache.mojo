@@ -48,8 +48,8 @@ from nn.normalization import _rms_norm_impl
 from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
 
 from std.utils import Index, IndexList
-from tensor import InputTensor
-from tensor.managed_tensor_slice import (
+from extensibility import InputTensor
+from extensibility import (
     _MutableInputTensor as MutableInputTensor,
 )
 

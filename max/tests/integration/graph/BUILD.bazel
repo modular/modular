@@ -98,7 +98,7 @@ modular_py_test(
         requirement("gguf"),
     ],
     mojo_deps = [
-        "//max:MOGGKernelAPI",
+        "//max:builtin_kernels",
         "//max/tests/integration/Inputs/test_user_op",
         "//max/tests/integration/graph/testdata/compile_config_ops",
     ],

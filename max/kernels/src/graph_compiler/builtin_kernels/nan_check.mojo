@@ -12,8 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 """NaN/Inf detection kernels for the max-debug.nan-check feature.
 
-These kernels are registered as custom ops in MOGGKernelAPI and inserted
-by the NanCheckPass compiler pass. The architecture is:
+These kernels are registered as custom ops in the `kernels` package and
+inserted by the NanCheckPass compiler pass. The architecture is:
 
 1. nan_check_count: read-only reduction that counts NaN/Inf values in a
    floating-point tensor. Outputs two single-element int32 tensors with
@@ -36,7 +36,7 @@ from std.utils.numerics import isinf, isnan
 from std.math import ceildiv
 
 from std.utils.index import IndexList
-from tensor import InputTensor, OutputTensor
+from extensibility import InputTensor, OutputTensor
 
 
 @__name(t"nan_check_gpu_{dtype}")

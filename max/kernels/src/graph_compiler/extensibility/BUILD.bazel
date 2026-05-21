@@ -5,28 +5,26 @@ package(default_visibility = ["//max:consumers"])
 exports_files(["__init__.mojo"])
 
 mojo_library(
-    name = "tensor",
+    name = "extensibility",
     srcs = glob(["**/*.mojo"]),
     validate_missing_docs = False,
     deps = [
-        "//max:compiler_internal",
         "//max:layout",
-        "//max:register",
         "@mojo//:std",
     ],
 )
 
 filegroup(
-    name = "extensibility/tensor.doc_group",
+    name = "extensibility.doc_group",
     srcs = [
-        ":tensor.docs",
+        ":extensibility.docs",
     ],
-    tags = ["manual"],  # TODO: Make this build and remove this tag
+    tags = ["manual"],
 )
 
 pkg_files(
     name = "docs",
-    srcs = [":extensibility/tensor.doc_group"],
-    prefix = "tensor",
-    strip_prefix = strip_prefix.from_pkg("tensor.docs"),
+    srcs = [":extensibility.doc_group"],
+    prefix = "extensibility",
+    strip_prefix = strip_prefix.from_pkg("extensibility.docs"),
 )

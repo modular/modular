@@ -14,13 +14,13 @@
 from std.math import ceildiv, exp, inf, log
 
 from std.algorithm.functional import parallelize
-from compiler_internal import register
+from extensibility import register
 from std.gpu import global_idx
 from std.gpu.host import DeviceContext
 from std.gpu.host.info import is_cpu, is_gpu
 from nn._ragged_utils import get_batch_from_row_offsets
 
-from tensor import InputTensor, OutputTensor
+from extensibility import InputTensor, OutputTensor
 
 from std.utils.index import IndexList
 

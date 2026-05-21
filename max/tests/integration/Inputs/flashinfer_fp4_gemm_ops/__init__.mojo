@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """FlashInfer FP4 GEMM custom op for loading TVM FFI modules."""
 
-import compiler_internal as compiler
+import extensibility as compiler
 import std.format
 from std.gpu.host import DeviceContext
 from std.gpu.host._nvidia_cuda import CUstream
@@ -20,7 +20,7 @@ from std.memory import Span, stack_allocation
 from std.os import abort
 
 from std.ffi import OwnedDLHandle
-from tensor import InputTensor, OutputTensor, ManagedTensorSlice
+from extensibility import InputTensor, OutputTensor, ManagedTensorSlice
 from std.utils import IndexList
 
 from .dlpack import DLTensor

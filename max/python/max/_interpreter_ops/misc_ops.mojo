@@ -26,12 +26,12 @@ from std.math import iota
 from std.random import NormalRandom, Random
 from std.algorithm.functional import elementwise, IndexList
 
-from tensor.managed_tensor_slice import (
+from extensibility import (
     ManagedTensorSlice,
 )
-from tensor.io_spec import FusedOutput
-from compiler_internal import StaticTensorSpec
-from MOGGKernelAPI.MOGGKernelAPI import Range
+from extensibility import FusedOutput
+from extensibility import StaticTensorSpec
+from builtin_kernels import Range
 
 from std.utils.numerics import get_accum_type
 
@@ -171,7 +171,7 @@ def range_op[
     size: Int,
     ctx: DeviceContext,
 ) raises:
-    """Range operation using Range.execute from MOGGKernelAPI.
+    """Range operation using Range.execute from the `kernels` package.
 
     Parameters:
         dtype: The data type of the arrays.
@@ -241,7 +241,7 @@ def range_shape_op[
     stop_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
     step_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
 ) raises -> Int:
-    """Compute range output size using Range.shape from MOGGKernelAPI.
+    """Compute range output size using Range.shape from the `kernels` package.
 
     Parameters:
         dtype: The data type of the scalars.

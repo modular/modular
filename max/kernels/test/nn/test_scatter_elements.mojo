@@ -13,7 +13,7 @@
 
 from std.gpu.host import DeviceContext
 from nn.gather_scatter import scatter_elements
-from tensor import DynamicTensor
+from extensibility import DynamicTensor
 from std.testing import assert_equal
 
 from std.utils import IndexList

@@ -63,7 +63,7 @@ from layout import Layout, LayoutTensor
 from layout.math import max, sum
 from layout.tensor_core import TensorCore
 
-from tensor import InputTensor, OutputTensor
+from extensibility import InputTensor, OutputTensor
 
 from std.utils import Index
 

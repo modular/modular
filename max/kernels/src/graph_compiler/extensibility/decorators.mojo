@@ -10,13 +10,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Provides APIs for registering MAX Graph operations."""
+"""Decorators for registering MAX Graph kernels.
+
+`@register` is the public decorator for DPS-style custom kernels.
+`@register_internal` is used by built-in MAX Graph operations.
+"""
 
 
 def register_internal(name: StaticString):
     """
-    This decorator registers a given mojo function as being an implementation
-    of a mo op or a `mo.custom` op. This decorator is used for built-in
+    Registers the given mojo function as an implementation of an `mo` op or a
+    `mo.custom` op. Used by built-in
     [MAX Graph operations](/max/api/python/graph.ops).
 
     For registering [custom operations](/max/develop/custom-ops/), use the
@@ -36,4 +40,14 @@ def register_internal(name: StaticString):
     Args:
       name: The name of the op to register.
     """
+    return
+
+
+# Register a DPS Kernel.
+def register(name: StaticString):
+    pass
+
+
+# Indicates that a DPS Kernel is a view operation.
+def view_kernel():
     return

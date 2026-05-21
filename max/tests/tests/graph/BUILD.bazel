@@ -148,7 +148,7 @@ modular_py_test(
         requirement("numpy"),
     ],
     mojo_deps = [
-        "//max:MOGGKernelAPI",
+        "//max:builtin_kernels",
         "//max/tests/tests/graph/uninit_check/read_uninit_op",
         "@mojo//:std",
     ],

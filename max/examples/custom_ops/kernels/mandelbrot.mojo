@@ -18,7 +18,7 @@ import compiler
 from std.gpu.host import DeviceContext
 from std.complex import ComplexSIMD
 
-from tensor import OutputTensor, foreach
+from extensibility import OutputTensor, foreach
 
 from std.utils.index import IndexList
 

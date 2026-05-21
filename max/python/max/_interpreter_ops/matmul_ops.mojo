@@ -22,12 +22,12 @@ from std.algorithm.functional import IndexList
 from linalg.matmul import matmul
 from layout import Coord, Idx, TileTensor, row_major
 from std.gpu.host import DeviceContext
-from tensor.managed_tensor_slice import (
+from extensibility import (
     ManagedTensorSlice,
 )
-from tensor.io_spec import Input, _FusedComputeOutput
-from compiler_internal import StaticTensorSpec
-from MOGGKernelAPI.MOGGKernelAPI import BatchMatmul as BatchMatmulKernel
+from extensibility import Input, _FusedComputeOutput
+from extensibility import StaticTensorSpec
+from builtin_kernels import BatchMatmul as BatchMatmulKernel
 
 from op_utils import _get_dtype, _get_buffer_ptr, _get_ctx, _get_shape, MAX_RANK
 
@@ -306,7 +306,7 @@ def batch_matmul_shape_dispatcher(
 ) raises -> PythonObject:
     """Compute batch matmul output shape using BatchMatmul.shape.
 
-    Delegates to BatchMatmul.shape from MOGGKernelAPI for validation
+    Delegates to BatchMatmul.shape from the `kernels` package for validation
     and shape computation.
 
     Args:
@@ -616,7 +616,7 @@ def batch_matmul_op[
 
     All batch dimensions are collapsed into a single batch_size dimension,
     so we always operate on rank-3 tensors: (batch_size, M, K) @ (batch_size, K, N).
-    Uses BatchMatmul.execute from MOGGKernelAPI.
+    Uses BatchMatmul.execute from the `kernels` package.
 
     Parameters:
         dtype: The data type of the arrays.

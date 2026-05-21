@@ -16,7 +16,7 @@ Expert Parallelism (EP) Communication Kernel.
 """
 
 
-import compiler_internal as compiler
+import extensibility as compiler
 from comm.sync import is_p2p_enabled
 from std.gpu.primitives.grid_controls import PDLLevel, pdl_launch_attributes
 from std.gpu.host import DeviceBuffer, DeviceContext, DeviceContextList
@@ -29,26 +29,26 @@ from std.utils.index import IndexList
 from std.collections import InlineArray
 from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id
 from std.sys.info import size_of, has_amd_gpu_accelerator
-from tensor import (
+from extensibility import (
     InputTensor,
     InputVariadicTensors,
     OutputTensor,
     OutputVariadicTensors,
 )
-from tensor.managed_tensor_slice import (
+from extensibility import (
     _MutableInputTensor as MutableInputTensor,
 )
-from tensor.managed_tensor_slice import (
+from extensibility import (
     _MutableInputVariadicTensors as MutableInputVariadicTensors,
 )
-from tensor.managed_tensor_slice import (
+from extensibility import (
     _FusedOutputTensor as FusedOutputTensor,
 )
-from tensor.managed_tensor_slice import (
+from extensibility import (
     _FusedOutputVariadicTensors as FusedOutputVariadicTensors,
 )
 
-from .MOGGKernelAPI import _launch_device_collective
+from .kernels import _launch_device_collective
 
 from shmem import (
     shmem_init_thread_mpi,
@@ -78,11 +78,6 @@ from shmem.ep_comm import (
 )
 
 comptime RT_LAYOUT_2D = type_of(row_major(Int64(1), Int64(1)))
-
-
-# ===-----------------------------------------------------------------------===#
-# Expert Parallelism Initialization Kernel
-# ===-----------------------------------------------------------------------===#
 
 
 @compiler.register("ep.init")
@@ -294,11 +289,6 @@ struct Struct_ep_init:
         my_rank_tensor[0] = my_rank
 
 
-# ===-----------------------------------------------------------------------===#
-# Expert Parallelism Async Dispatch Kernel
-# ===-----------------------------------------------------------------------===#
-
-
 @compiler.register("ep.dispatch_async")
 struct Struct_ep_dispatch_async:
     @always_inline
@@ -499,11 +489,6 @@ struct Struct_ep_dispatch_async_mxfp4:
             recv_count_ptrs.to_tile_tensor[DType.int64](),
             context,
         )
-
-
-# ===-----------------------------------------------------------------------===#
-# Expert Parallelism Dispatch Wait Kernel
-# ===-----------------------------------------------------------------------===#
 
 
 @compiler.register("ep.dispatch_wait")
@@ -750,11 +735,6 @@ struct Struct_ep_dispatch_wait_mxfp4:
             context,
             num_input_tokens,
         )
-
-
-# ===-----------------------------------------------------------------------===#
-# Expert Parallelism Fused Dispatch Kernel
-# ===-----------------------------------------------------------------------===#
 
 
 @compiler.register("ep.dispatch")
@@ -1449,11 +1429,6 @@ struct DistributedEPCombine:
         _launch_device_collective[num_devices](launch_combine, gpu_ctxs)
 
 
-# ===-----------------------------------------------------------------------===#
-# Expert Parallelism Combine Kernel
-# ===-----------------------------------------------------------------------===#
-
-
 @compiler.register("ep.combine_async")
 struct Struct_ep_combine_async:
     @always_inline
@@ -1748,11 +1723,6 @@ struct Struct_ep_combine_skip_a2a:
                 ImmutExternalOrigin
             ](),
         )
-
-
-# ===-----------------------------------------------------------------------===#
-# Expert Parallelism Utils
-# ===-----------------------------------------------------------------------===#
 
 
 @compiler.register("ep.fused_silu")
