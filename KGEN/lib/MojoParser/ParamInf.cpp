@@ -832,7 +832,7 @@ LogicalResult ParamInf::inferFromParamList() {
   return success();
 }
 
-ParameterExprArrayAttr ParamInf::inferForStruct(bool emitConstraintFailure) {
+ParameterExprArrayAttr ParamInf::inferForStruct() {
   CrashReporter handler(paramBindings.getExprLoc(), "ParamInf::inferForStruct",
                         getShared());
 
@@ -847,10 +847,22 @@ ParameterExprArrayAttr ParamInf::inferForStruct(bool emitConstraintFailure) {
       }
     }
 
-    if (emitConstraintFailure && !unprovableConstraints.empty()) {
-      emitUnprovableConstraintsFromFitness(
-          unprovableConstraints, paramBindings.shared,
-          paramBindings.getExprLoc(), declIfKnown);
+    // Skip the unprovable-constraint diagnostic when the caller has asked
+    // the inference state to discard errors (i.e. it's filtering candidates,
+    // not committing to this binding).
+    if (!diag.isDiscarding()) {
+      // Only one of these lists will ever be non-empty, because any unprovable
+      // per-parameter constraints would immediately fail inference, and we
+      // would not have had a chance to check the body constraints yet.
+      if (!unprovableConstraints.empty()) {
+        emitUnprovableConstraintsFromFitness(
+            unprovableConstraints, paramBindings.shared,
+            paramBindings.getExprLoc(), declIfKnown);
+      } else if (!bodyUnprovableConstraints.empty()) {
+        emitUnprovableConstraintsFromFitness(
+            bodyUnprovableConstraints, paramBindings.shared,
+            paramBindings.getExprLoc(), declIfKnown);
+      }
     }
   });
 
@@ -865,6 +877,9 @@ ParameterExprArrayAttr ParamInf::inferForStruct(bool emitConstraintFailure) {
   }
 
   if (failed(finalizeWithUnbound()))
+    return nullptr;
+
+  if (failed(checkBodyConstraints()))
     return nullptr;
 
   return getInferredValues();
@@ -2183,6 +2198,9 @@ LogicalResult CallParamInf::inferForCall() {
   // See if we still have any unbound attr, if so, report error. (This must be a
   // full binding context).
   if (failed(finalizeWithUnbound()))
+    return failure();
+
+  if (failed(checkBodyConstraints()))
     return failure();
 
   // We succeed iff we inferred a value for this parameter.

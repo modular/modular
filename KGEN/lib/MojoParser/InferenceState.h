@@ -45,6 +45,12 @@ public:
 
   void release() { discardError = false; }
 
+  /// Whether the holder of this diagnostic intends to silently discard any
+  /// emitted error (e.g. overload filtering paths set this to suppress
+  /// noise). Code that *opts to* emit additional diagnostics outside the
+  /// `getDiag` channel should consult this so the noise is not bypassed.
+  bool isDiscarding() const { return discardError; }
+
   /// Callback that returns a MojoInflightDiag for the given location (or
   /// default). Invoking the callback records that an error was emitted.
   llvm::function_ref<MojoInflightDiag &(std::optional<SMLoc>)> getDiag();
@@ -84,7 +90,17 @@ public:
                                  bool isDefaulted = false);
   virtual bool isExplicitlyUnbound(size_t paramIdx) const = 0;
 
+  /// Verify the body constraints declared on the signature against the
+  /// current parameter bindings.
+  LogicalResult checkBodyConstraints();
+
+  /// Unprovable constraints from per-parameter constraints. These are
+  /// considered "hard" errors that by default will make inference fail.
   SmallVector<ConstraintAttr> unprovableConstraints;
+  /// Unprovable constraints from body constraints. These are considered "soft"
+  /// errors that won't fail inference by default. Users of InferenceState can
+  /// choose to surface these errors at the appropriate time.
+  SmallVector<ConstraintAttr> bodyUnprovableConstraints;
 
   // Debug util.
   void dump() const;

@@ -100,6 +100,96 @@ LogicalResult InferenceState::setInferredValue(size_t paramIdx,
   return success(result == ConstraintResult::Satisfied);
 }
 
+namespace {
+/// Walks an attribute/type tree and reports whether it still contains values
+/// that are not yet bound. A `ParamIndexRefAttr` is "not yet bound" if the
+/// evaluator does not have a binding for it, or the binding for it is
+/// `UnboundAttr`.
+///
+/// The walker mirrors the depth bookkeeping in `ParamIndexRefAttrFinder`
+/// (incrementing depth on entering nested parameter scopes) so index refs into
+/// inner scopes are correctly ignored. Results are memoized on (depth,
+/// opaque-pointer) so deeply shared sub-trees in parameter expressions are not
+/// re-walked.
+class ConcretenessChecker {
+public:
+  ConcretenessChecker(ArrayRef<TypedAttr> bindings) : bindings(bindings) {}
+  bool isConcrete(Attribute attr) { return !hasUnresolvedImpl(attr, 0); }
+
+private:
+  ArrayRef<TypedAttr> bindings;
+  DenseMap<std::pair<size_t, const void *>, bool> cache;
+
+  template <typename T>
+  bool hasUnresolvedImpl(T value, size_t depth) {
+    if (!value)
+      return false;
+
+    std::pair<size_t, const void *> cacheKey(depth, value.getAsOpaquePointer());
+    if (auto it = cache.find(cacheKey); it != cache.end())
+      return it->second;
+
+    // Entering a nested parameter scope reframes "our" depth-0 refs as
+    // depth-1 from the inner perspective, so bump depth before checking.
+    if constexpr (std::is_base_of_v<Type, T>)
+      if (isa<ParameterScopeTypeInterface>(value))
+        ++depth;
+    if constexpr (std::is_base_of_v<Attribute, T>)
+      if (isa<ParameterScopeAttrInterface>(value))
+        ++depth;
+
+    bool unresolved = false;
+    if constexpr (std::is_base_of_v<Attribute, T>) {
+      if (auto indexRef = dyn_cast<ParamIndexRefAttr>(value))
+        unresolved = indexRef.getDepth() == depth &&
+                     (indexRef.getIndex() >= bindings.size() ||
+                      isa<UnboundAttr>(bindings[indexRef.getIndex()]));
+    }
+
+    if (!unresolved) {
+      value.walkImmediateSubElements(
+          [&](Attribute subAttr) {
+            unresolved = unresolved || hasUnresolvedImpl(subAttr, depth);
+          },
+          [&](Type subType) {
+            unresolved = unresolved || hasUnresolvedImpl(subType, depth);
+          });
+    }
+
+    cache[cacheKey] = unresolved;
+    return unresolved;
+  }
+};
+} // namespace
+
+LogicalResult InferenceState::checkBodyConstraints() {
+  ArrayRef<ConstraintAttr> bodyConstraints =
+      declaredParamPogs.getBodyConstraints();
+  if (bodyConstraints.empty())
+    return success();
+
+  // Filter to only the body constraints that are fully concrete under the
+  // current bindings. Remaining constraints are expected to be checked later.
+  ConcretenessChecker concreteness(evaluator.getIndexBindings());
+  SmallVector<ConstraintAttr> concreteConstraints;
+  concreteConstraints.reserve(bodyConstraints.size());
+  for (ConstraintAttr constraint : bodyConstraints)
+    if (concreteness.isConcrete(constraint.getProposition()))
+      concreteConstraints.push_back(constraint);
+
+  if (concreteConstraints.empty())
+    return success();
+
+  // Verify that no concrete constraints are violated. Any unprovable concrete
+  // constraints are recorded in `bodyUnprovableConstraints`. The caller is
+  // responsible for surfacing any errors if appropriate.
+  ConstraintResult result =
+      LIT::checkConstraints(declScope, declaredParamPogs, concreteConstraints,
+                            /*origConstraints=*/{}, diag.getDiag(),
+                            &bodyUnprovableConstraints, &evaluator);
+  return success(result != ConstraintResult::Violated);
+}
+
 void InferenceState::dump() const {
   auto &os = llvm::errs() << "ParamInf:\n";
   for (auto [idx, value] : llvm::enumerate(evaluator.getIndexBindings())) {
