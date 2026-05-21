@@ -15,8 +15,13 @@ def emitLoad(x: SIMD[DType.int, 1]):
     ptr.store(x)
     var count = Scalar[DType.int](0)
 
+    # TODO: MOCO-4037
+    var memory: String = "memoryOnly"
+
     @no_inline
-    def foo[width: Int](idx: Int) {mut count, read ptr} -> Scalar[DType.int]:
+    def foo[
+        width: Int
+    ](idx: Int) {mut count, read ptr, var memory} -> Scalar[DType.int]:
         var vec = ptr.load[width=width](idx).cast[DType.int]()
         count = count + rebind[type_of(count)](vec)
         return count
