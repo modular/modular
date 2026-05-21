@@ -125,8 +125,8 @@ def test_gqa[
             Coord(
                 Int32(BATCH),
                 Int32(SEQ_LEN),
-                Idx[num_heads](),
-                Idx[depth](),
+                Idx[num_heads],
+                Idx[depth],
             )
         ),
     )
@@ -136,8 +136,8 @@ def test_gqa[
             Coord(
                 Int32(BATCH),
                 Int32(NUM_KEYS),
-                Idx[num_kv_heads](),
-                Idx[depth](),
+                Idx[num_kv_heads],
+                Idx[depth],
             )
         ),
     )
@@ -147,8 +147,8 @@ def test_gqa[
             Coord(
                 Int32(BATCH),
                 Int32(NUM_KEYS),
-                Idx[num_kv_heads](),
-                Idx[depth](),
+                Idx[num_kv_heads],
+                Idx[depth],
             )
         ),
     )
@@ -158,8 +158,8 @@ def test_gqa[
             Coord(
                 Int32(BATCH),
                 Int32(SEQ_LEN),
-                Idx[num_heads](),
-                Idx[depth](),
+                Idx[num_heads],
+                Idx[depth],
             )
         ),
     )

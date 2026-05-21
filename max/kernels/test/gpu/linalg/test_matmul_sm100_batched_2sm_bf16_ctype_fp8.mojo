@@ -81,16 +81,16 @@ def test_blackwell_batched_matmul_tma_umma_warp_specialized[
         t" swapAB={swapAB} k_group_size={k_group_size}"
     )
 
-    var a_shape = row_major(Coord(batch, m, Idx[KType.static_value]()))
+    var a_shape = row_major(Coord(batch, m, Idx[KType.static_value]))
     var b_shape = row_major(
         Coord(
             batch,
-            Idx[NType.static_value if transpose_b else KType.static_value](),
-            Idx[KType.static_value if transpose_b else NType.static_value](),
+            Idx[NType.static_value if transpose_b else KType.static_value],
+            Idx[KType.static_value if transpose_b else NType.static_value],
         )
     )
-    var c_shape = row_major(Coord(batch, m, Idx[NType.static_value]()))
-    var c_ref_shape = row_major(Coord(batch, m, Idx[NType.static_value]()))
+    var c_shape = row_major(Coord(batch, m, Idx[NType.static_value]))
+    var c_ref_shape = row_major(Coord(batch, m, Idx[NType.static_value]))
 
     var a_size = Int(batch.value()) * Int(m.value()) * Int(k.value())
     var b_size = Int(batch.value()) * Int(n.value()) * Int(k.value())
@@ -230,8 +230,8 @@ def main() raises:
                     ctx,
                     Int(2),
                     Int(128),
-                    Idx[128](),
-                    Idx[128](),
+                    Idx[128],
+                    Idx[128],
                 )
 
                 # Medium
@@ -247,8 +247,8 @@ def main() raises:
                     ctx,
                     Int(4),
                     Int(256),
-                    Idx[512](),
-                    Idx[256](),
+                    Idx[512],
+                    Idx[256],
                 )
 
                 # Large, non-aligned M
@@ -265,8 +265,8 @@ def main() raises:
                     ctx,
                     Int(2),
                     Int(1000),
-                    Idx[1024](),
-                    Idx[1040](),
+                    Idx[1024],
+                    Idx[1040],
                 )
 
                 # Large batch
@@ -283,8 +283,8 @@ def main() raises:
                     ctx,
                     Int(16),
                     Int(256),
-                    Idx[128](),
-                    Idx[512](),
+                    Idx[128],
+                    Idx[512],
                 )
 
                 # Multi-cluster
@@ -301,8 +301,8 @@ def main() raises:
                     ctx,
                     Int(3),
                     Int(500),
-                    Idx[2048](),
-                    Idx[4096](),
+                    Idx[2048],
+                    Idx[4096],
                 )
 
         # swapAB tests (2SM)
@@ -323,8 +323,8 @@ def main() raises:
                 ctx,
                 Int(2),
                 Int(128),
-                Idx[128](),
-                Idx[128](),
+                Idx[128],
+                Idx[128],
             )
 
             test_blackwell_batched_matmul_tma_umma_warp_specialized[
@@ -341,6 +341,6 @@ def main() raises:
                 ctx,
                 Int(4),
                 Int(256),
-                Idx[512](),
-                Idx[256](),
+                Idx[512],
+                Idx[256],
             )

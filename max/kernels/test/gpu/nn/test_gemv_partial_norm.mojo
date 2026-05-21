@@ -82,16 +82,16 @@ def test_gemv_partial_norm[
         t" shape=(M=1, N={N}, K={K}, N_normed={N_NORMED})"
     )
 
-    comptime ak_shape = row_major(Coord(Idx[1](), Idx[KType.static_value]()))
+    comptime ak_shape = row_major(Coord(Idx[1], Idx[KType.static_value]))
     comptime b_shape = row_major(
-        Coord(Idx[NType.static_value](), Idx[KType.static_value]())
+        Coord(Idx[NType.static_value], Idx[KType.static_value])
     )
-    comptime c_shape = row_major(Coord(Idx[1](), Idx[NType.static_value]()))
+    comptime c_shape = row_major(Coord(Idx[1], Idx[NType.static_value]))
     comptime normed_shape = row_major(
-        Coord(Idx[1](), Idx[NNormedType.static_value]())
+        Coord(Idx[1], Idx[NNormedType.static_value])
     )
-    var unnormed_shape = row_major(Coord(Idx[1](), N_UNNORMED))
-    comptime gamma_shape = row_major(Idx[NNormedType.static_value]())
+    var unnormed_shape = row_major(Coord(Idx[1], N_UNNORMED))
+    comptime gamma_shape = row_major(Idx[NNormedType.static_value])
 
     var a_host_ptr = ctx.enqueue_create_host_buffer[a_type](M * K)
     var b_host_ptr = ctx.enqueue_create_host_buffer[a_type](N * K)
@@ -203,16 +203,16 @@ def main() raises:
     with DeviceContext() as ctx:
         # Primary shape: N=2112, K=7168, N_normed=1536.
         test_gemv_partial_norm[DType.bfloat16, DType.bfloat16, fused=False](
-            ctx, Idx[2112](), Idx[7168](), Idx[1536]()
+            ctx, Idx[2112], Idx[7168], Idx[1536]
         )
         test_gemv_partial_norm[DType.bfloat16, DType.bfloat16, fused=True](
-            ctx, Idx[2112](), Idx[7168](), Idx[1536]()
+            ctx, Idx[2112], Idx[7168], Idx[1536]
         )
 
         # Smaller shape exercising the same path.
         test_gemv_partial_norm[DType.bfloat16, DType.bfloat16, fused=False](
-            ctx, Idx[512](), Idx[1024](), Idx[256]()
+            ctx, Idx[512], Idx[1024], Idx[256]
         )
         test_gemv_partial_norm[DType.bfloat16, DType.bfloat16, fused=True](
-            ctx, Idx[512](), Idx[1024](), Idx[256]()
+            ctx, Idx[512], Idx[1024], Idx[256]
         )

@@ -173,17 +173,17 @@ def verify_matmul[
     # Calculate scale buffer shapes - 5D tensors for MXFP8 format
     var a_scales_shape = Coord(
         ceildiv(Int(shape_a[0].value()), SF_MN_GROUP_SIZE),
-        Idx[ceildiv(K, SF_VECTOR_SIZE * SF_ATOM_K)](),
-        Idx[SF_ATOM_M[0]](),
-        Idx[SF_ATOM_M[1]](),
-        Idx[SF_ATOM_K](),
+        Idx[ceildiv(K, SF_VECTOR_SIZE * SF_ATOM_K)],
+        Idx[SF_ATOM_M[0]],
+        Idx[SF_ATOM_M[1]],
+        Idx[SF_ATOM_K],
     )
     var b_scales_shape = Coord(
-        Idx[ceildiv(shape_b.element_types[0].static_value, SF_MN_GROUP_SIZE)](),
-        Idx[ceildiv(K, SF_VECTOR_SIZE * SF_ATOM_K)](),
-        Idx[SF_ATOM_M[0]](),
-        Idx[SF_ATOM_M[1]](),
-        Idx[SF_ATOM_K](),
+        Idx[ceildiv(shape_b.element_types[0].static_value, SF_MN_GROUP_SIZE)],
+        Idx[ceildiv(K, SF_VECTOR_SIZE * SF_ATOM_K)],
+        Idx[SF_ATOM_M[0]],
+        Idx[SF_ATOM_M[1]],
+        Idx[SF_ATOM_K],
     )
 
     var a_scales_size = (
@@ -426,17 +426,17 @@ def bench_matmul[
     # Calculate scale buffer shapes - 5D tensors for MXFP8 format
     var a_scales_shape = Coord(
         ceildiv(Int(shape_a[0].value()), SF_MN_GROUP_SIZE),
-        Idx[ceildiv(K, SF_VECTOR_SIZE * SF_ATOM_K)](),
-        Idx[SF_ATOM_M[0]](),
-        Idx[SF_ATOM_M[1]](),
-        Idx[SF_ATOM_K](),
+        Idx[ceildiv(K, SF_VECTOR_SIZE * SF_ATOM_K)],
+        Idx[SF_ATOM_M[0]],
+        Idx[SF_ATOM_M[1]],
+        Idx[SF_ATOM_K],
     )
     var b_scales_shape = Coord(
-        Idx[ceildiv(shape_b.element_types[0].static_value, SF_MN_GROUP_SIZE)](),
-        Idx[ceildiv(K, SF_VECTOR_SIZE * SF_ATOM_K)](),
-        Idx[SF_ATOM_M[0]](),
-        Idx[SF_ATOM_M[1]](),
-        Idx[SF_ATOM_K](),
+        Idx[ceildiv(shape_b.element_types[0].static_value, SF_MN_GROUP_SIZE)],
+        Idx[ceildiv(K, SF_VECTOR_SIZE * SF_ATOM_K)],
+        Idx[SF_ATOM_M[0]],
+        Idx[SF_ATOM_M[1]],
+        Idx[SF_ATOM_K],
     )
 
     var a_scales_size = (
@@ -613,8 +613,8 @@ def create_matmul_bench[
     run_benchmark: Bool,
 ) raises:
     var b_shape = Coord(
-        Idx[NType.static_value if transpose_b else KType.static_value](),
-        Idx[KType.static_value if transpose_b else NType.static_value](),
+        Idx[NType.static_value if transpose_b else KType.static_value],
+        Idx[KType.static_value if transpose_b else NType.static_value],
     )
 
     bench_matmul[
@@ -692,11 +692,11 @@ def bench_mxfp4_amd[
     var a_scales_size = M * K_SCALES
     var b_scales_size = N_VAL * K_SCALES
 
-    var a_shape = row_major(Coord(M, Idx[K_PACKED]()))
-    comptime b_shape = row_major(Coord(Idx[N_VAL](), Idx[K_PACKED]()))
-    var c_shape = row_major(Coord(M, Idx[N_VAL]()))
-    var sfa_shape = row_major(Coord(M, Idx[K_SCALES]()))
-    comptime sfb_shape = row_major(Coord(Idx[N_VAL](), Idx[K_SCALES]()))
+    var a_shape = row_major(Coord(M, Idx[K_PACKED]))
+    comptime b_shape = row_major(Coord(Idx[N_VAL], Idx[K_PACKED]))
+    var c_shape = row_major(Coord(M, Idx[N_VAL]))
+    var sfa_shape = row_major(Coord(M, Idx[K_SCALES]))
+    comptime sfb_shape = row_major(Coord(Idx[N_VAL], Idx[K_SCALES]))
 
     comptime simd_size = 4
     var cb_a = CacheBustingBuffer[DType.uint8](a_size, simd_size, ctx)
@@ -800,9 +800,9 @@ def bench_mxfp4_amd[
         M,
         N_VAL,
         K_ELEMS,
-        Coord(M, Idx[N_VAL]()),
-        Coord(M, Idx[K_PACKED]()),
-        Coord(Idx[N_VAL](), Idx[K_PACKED]()),
+        Coord(M, Idx[N_VAL]),
+        Coord(M, Idx[K_PACKED]),
+        Coord(Idx[N_VAL], Idx[K_PACKED]),
     )
 
     if run_benchmark:
@@ -932,8 +932,8 @@ def main() raises:
                 ctx,
                 m,
                 M,
-                Idx[N](),
-                Idx[get_defined_int["K", 2048]()](),
+                Idx[N],
+                Idx[get_defined_int["K", 2048]()],
                 init_type,
                 verify,
                 run_benchmark,
@@ -957,8 +957,8 @@ def main() raises:
                 ctx,
                 m,
                 M,
-                Idx[N](),
-                Idx[K](),
+                Idx[N],
+                Idx[K],
                 init_type,
                 verify,
                 run_benchmark,

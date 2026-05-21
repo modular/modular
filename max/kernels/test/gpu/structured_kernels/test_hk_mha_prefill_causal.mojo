@@ -104,8 +104,8 @@ def test_v2_causal[depth: Int](ctx: DeviceContext) raises:
             Coord(
                 Int32(BATCH),
                 Int32(SEQ_LEN),
-                Idx[NUM_HEADS](),
-                Idx[depth](),
+                Idx[NUM_HEADS],
+                Idx[depth],
             )
         ),
     )
@@ -115,8 +115,8 @@ def test_v2_causal[depth: Int](ctx: DeviceContext) raises:
             Coord(
                 Int32(BATCH),
                 Int32(NUM_KEYS),
-                Idx[NUM_KV_HEADS](),
-                Idx[depth](),
+                Idx[NUM_KV_HEADS],
+                Idx[depth],
             )
         ),
     )
@@ -126,8 +126,8 @@ def test_v2_causal[depth: Int](ctx: DeviceContext) raises:
             Coord(
                 Int32(BATCH),
                 Int32(NUM_KEYS),
-                Idx[NUM_KV_HEADS](),
-                Idx[depth](),
+                Idx[NUM_KV_HEADS],
+                Idx[depth],
             )
         ),
     )
@@ -137,8 +137,8 @@ def test_v2_causal[depth: Int](ctx: DeviceContext) raises:
             Coord(
                 Int32(BATCH),
                 Int32(SEQ_LEN),
-                Idx[NUM_HEADS](),
-                Idx[depth](),
+                Idx[NUM_HEADS],
+                Idx[depth],
             )
         ),
     )

@@ -90,7 +90,7 @@ def test_grouped_matmul_dynamic_scaled_fp8_zero_edge_case[
 
     var a_host = TileTensor(
         a_host_ptr,
-        row_major(Coord(total_tokens, Idx[K]())),
+        row_major(Coord(total_tokens, Idx[K])),
     )
     var b_host = TileTensor(
         b_host_ptr,
@@ -129,7 +129,7 @@ def test_grouped_matmul_dynamic_scaled_fp8_zero_edge_case[
 
     var a_scales_host = TileTensor(
         a_scales_host_ptr,
-        row_major(Coord(Idx[K // BLOCK_SCALE_K](), total_tokens)),
+        row_major(Coord(Idx[K // BLOCK_SCALE_K], total_tokens)),
     )
     var b_scales_host = TileTensor(
         b_scales_host_ptr,
@@ -161,15 +161,15 @@ def test_grouped_matmul_dynamic_scaled_fp8_zero_edge_case[
 
     var a_device = TileTensor(
         a_device_buffer,
-        row_major(Coord(total_tokens, Idx[K]())),
+        row_major(Coord(total_tokens, Idx[K])),
     )
     var b_device = TileTensor(
         b_device_buffer,
-        row_major(Coord(Idx[num_experts](), Idx[N](), Idx[K]())),
+        row_major(Coord(Idx[num_experts], Idx[N], Idx[K])),
     )
     var c_device = TileTensor(
         c_device_buffer,
-        row_major(Coord(total_tokens, Idx[N]())),
+        row_major(Coord(total_tokens, Idx[N])),
     )
     var a_offsets_device = TileTensor(
         a_offsets_device_buffer,
@@ -181,15 +181,15 @@ def test_grouped_matmul_dynamic_scaled_fp8_zero_edge_case[
     )
     var a_scales_device = TileTensor(
         a_scales_device_buffer,
-        row_major(Coord(Idx[K // BLOCK_SCALE_K](), total_tokens)),
+        row_major(Coord(Idx[K // BLOCK_SCALE_K], total_tokens)),
     )
     var b_scales_device = TileTensor(
         b_scales_device_buffer,
         row_major(
             Coord(
-                Idx[num_experts](),
-                Idx[N // BLOCK_SCALE_K](),
-                Idx[K // BLOCK_SCALE_K](),
+                Idx[num_experts],
+                Idx[N // BLOCK_SCALE_K],
+                Idx[K // BLOCK_SCALE_K],
             )
         ),
     )

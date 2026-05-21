@@ -88,11 +88,11 @@ def _block_scaled_mma_smoke_kernel[
             one,
         )
         baseline_out.store[width=4](
-            Coord(lane, Idx[0]()),
+            Coord(lane, Idx[0]),
             baseline_acc,
         )
         scaled_out.store[width=4](
-            Coord(lane, Idx[0]()),
+            Coord(lane, Idx[0]),
             scaled_acc,
         )
     else:
@@ -113,11 +113,11 @@ def _block_scaled_mma_smoke_kernel[
             one,
         )
         baseline_out.store[width=16](
-            Coord(lane, Idx[0]()),
+            Coord(lane, Idx[0]),
             baseline_acc,
         )
         scaled_out.store[width=16](
-            Coord(lane, Idx[0]()),
+            Coord(lane, Idx[0]),
             scaled_acc,
         )
 
@@ -133,11 +133,11 @@ def _run_block_scaled_mma_amd_smoke[
 
     var baseline_tt = TileTensor(
         baseline_device,
-        row_major(Coord(Idx[WARP_SIZE](), Idx[accum_width]())),
+        row_major(Coord(Idx[WARP_SIZE], Idx[accum_width])),
     )
     var scaled_tt = TileTensor(
         scaled_device,
-        row_major(Coord(Idx[WARP_SIZE](), Idx[accum_width]())),
+        row_major(Coord(Idx[WARP_SIZE], Idx[accum_width])),
     )
 
     comptime kernel = _block_scaled_mma_smoke_kernel[

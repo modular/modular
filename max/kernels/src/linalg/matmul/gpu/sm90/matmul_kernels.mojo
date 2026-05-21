@@ -123,23 +123,23 @@ struct HopperMatmulSM90Kernel_SMem[
     # The atom (8 x atom_k) is the inner dimension, M-tiles are outer.
     comptime _k_major[dtype: DType, BM_: Int, BK_: Int, sb: Int] = _Layout(
         Coord(
-            Coord(Idx[8](), Idx[BM_ // 8]()),
+            Coord(Idx[8], Idx[BM_ // 8]),
             Coord(
-                Idx[sb // size_of[dtype]()](),
-                Idx[BK_ * size_of[dtype]() // sb](),
+                Idx[sb // size_of[dtype]()],
+                Idx[BK_ * size_of[dtype]() // sb],
             ),
         ),
         Coord(
             Coord(
-                Idx[sb // size_of[dtype]()](),
-                Idx[8 * (sb // size_of[dtype]())](),
+                Idx[sb // size_of[dtype]()],
+                Idx[8 * (sb // size_of[dtype]())],
             ),
             Coord(
-                Idx[1](),
+                Idx[1],
                 Idx[
                     0 if BK_ * size_of[dtype]() // sb
                     == 1 else BM_ * (sb // size_of[dtype]())
-                ](),
+                ],
             ),
         ),
     )

@@ -66,13 +66,9 @@ def test_quantize_roundtrip[M: Int, K: Int](ctx: DeviceContext) raises:
         M * scale_K
     )
 
-    var input_tt = TileTensor(input_dev, row_major((Idx[M](), Idx[K]())))
-    var output_tt = TileTensor(
-        output_dev, row_major((Idx[M](), Idx[packed_K]()))
-    )
-    var scales_tt = TileTensor(
-        scales_dev, row_major((Idx[M](), Idx[scale_K]()))
-    )
+    var input_tt = TileTensor(input_dev, row_major((Idx[M], Idx[K])))
+    var output_tt = TileTensor(output_dev, row_major((Idx[M], Idx[packed_K])))
+    var scales_tt = TileTensor(scales_dev, row_major((Idx[M], Idx[scale_K])))
     quantize_mxfp4_amd(ctx, output_tt, scales_tt, input_tt)
 
     var input_host = ctx.enqueue_create_host_buffer[DType.bfloat16](M * K)
@@ -135,17 +131,13 @@ def test_quantize_dequant_gpu_roundtrip[
     var scales_dev = ctx.enqueue_create_buffer[DType.float8_e8m0fnu](
         M * scale_K
     )
-    var input_tt = TileTensor(input_dev, row_major((Idx[M](), Idx[K]())))
-    var packed_tt = TileTensor(
-        packed_dev, row_major((Idx[M](), Idx[packed_K]()))
-    )
-    var scales_tt = TileTensor(
-        scales_dev, row_major((Idx[M](), Idx[scale_K]()))
-    )
+    var input_tt = TileTensor(input_dev, row_major((Idx[M], Idx[K])))
+    var packed_tt = TileTensor(packed_dev, row_major((Idx[M], Idx[packed_K])))
+    var scales_tt = TileTensor(scales_dev, row_major((Idx[M], Idx[scale_K])))
     quantize_mxfp4_amd(ctx, packed_tt, scales_tt, input_tt)
 
     var output_dev = ctx.enqueue_create_buffer[DType.bfloat16](M * K)
-    var output_tt = TileTensor(output_dev, row_major((Idx[M](), Idx[K]())))
+    var output_tt = TileTensor(output_dev, row_major((Idx[M], Idx[K])))
     dequant_mxfp4(ctx, output_tt, packed_tt, scales_tt, num_rows=M, num_cols=K)
 
     var input_host = ctx.enqueue_create_host_buffer[DType.bfloat16](M * K)
@@ -185,13 +177,9 @@ def test_quantize_all_zeros[M: Int, K: Int](ctx: DeviceContext) raises:
     var scales_dev = ctx.enqueue_create_buffer[DType.float8_e8m0fnu](
         M * scale_K
     )
-    var input_tt = TileTensor(input_dev, row_major((Idx[M](), Idx[K]())))
-    var output_tt = TileTensor(
-        output_dev, row_major((Idx[M](), Idx[packed_K]()))
-    )
-    var scales_tt = TileTensor(
-        scales_dev, row_major((Idx[M](), Idx[scale_K]()))
-    )
+    var input_tt = TileTensor(input_dev, row_major((Idx[M], Idx[K])))
+    var output_tt = TileTensor(output_dev, row_major((Idx[M], Idx[packed_K])))
+    var scales_tt = TileTensor(scales_dev, row_major((Idx[M], Idx[scale_K])))
     quantize_mxfp4_amd(ctx, output_tt, scales_tt, input_tt)
 
     var output_host = ctx.enqueue_create_host_buffer[DType.uint8](M * packed_K)
@@ -243,13 +231,9 @@ def test_quantize_known_scales(ctx: DeviceContext) raises:
 
     var output_dev = ctx.enqueue_create_buffer[DType.uint8](packed_K)
     var scales_dev = ctx.enqueue_create_buffer[DType.float8_e8m0fnu](scale_K)
-    var input_tt = TileTensor(input_dev, row_major((Idx[M](), Idx[K]())))
-    var output_tt = TileTensor(
-        output_dev, row_major((Idx[M](), Idx[packed_K]()))
-    )
-    var scales_tt = TileTensor(
-        scales_dev, row_major((Idx[M](), Idx[scale_K]()))
-    )
+    var input_tt = TileTensor(input_dev, row_major((Idx[M], Idx[K])))
+    var output_tt = TileTensor(output_dev, row_major((Idx[M], Idx[packed_K])))
+    var scales_tt = TileTensor(scales_dev, row_major((Idx[M], Idx[scale_K])))
     quantize_mxfp4_amd(ctx, output_tt, scales_tt, input_tt)
 
     var output_host = ctx.enqueue_create_host_buffer[DType.uint8](packed_K)
@@ -318,11 +302,9 @@ def test_quantize_saturation(ctx: DeviceContext) raises:
 
     var output_dev = ctx.enqueue_create_buffer[DType.uint8](packed_K)
     var scales_dev = ctx.enqueue_create_buffer[DType.float8_e8m0fnu](1)
-    var input_tt = TileTensor(input_dev, row_major((Idx[M](), Idx[K]())))
-    var output_tt = TileTensor(
-        output_dev, row_major((Idx[M](), Idx[packed_K]()))
-    )
-    var scales_tt = TileTensor(scales_dev, row_major((Idx[M](), Idx[1]())))
+    var input_tt = TileTensor(input_dev, row_major((Idx[M], Idx[K])))
+    var output_tt = TileTensor(output_dev, row_major((Idx[M], Idx[packed_K])))
+    var scales_tt = TileTensor(scales_dev, row_major((Idx[M], Idx[1])))
     quantize_mxfp4_amd(ctx, output_tt, scales_tt, input_tt)
 
     var input_host = ctx.enqueue_create_host_buffer[DType.bfloat16](K)
@@ -374,11 +356,9 @@ def test_quantize_negative(ctx: DeviceContext) raises:
 
     var output_dev = ctx.enqueue_create_buffer[DType.uint8](packed_K)
     var scales_dev = ctx.enqueue_create_buffer[DType.float8_e8m0fnu](1)
-    var input_tt = TileTensor(input_dev, row_major((Idx[M](), Idx[K]())))
-    var output_tt = TileTensor(
-        output_dev, row_major((Idx[M](), Idx[packed_K]()))
-    )
-    var scales_tt = TileTensor(scales_dev, row_major((Idx[M](), Idx[1]())))
+    var input_tt = TileTensor(input_dev, row_major((Idx[M], Idx[K])))
+    var output_tt = TileTensor(output_dev, row_major((Idx[M], Idx[packed_K])))
+    var scales_tt = TileTensor(scales_dev, row_major((Idx[M], Idx[1])))
     quantize_mxfp4_amd(ctx, output_tt, scales_tt, input_tt)
 
     var output_host = ctx.enqueue_create_host_buffer[DType.uint8](packed_K)
@@ -426,11 +406,9 @@ def test_quantize_even_mode_boundary(ctx: DeviceContext) raises:
 
     var output_dev = ctx.enqueue_create_buffer[DType.uint8](packed_K)
     var scales_dev = ctx.enqueue_create_buffer[DType.float8_e8m0fnu](1)
-    var input_tt = TileTensor(input_dev, row_major((Idx[M](), Idx[K]())))
-    var output_tt = TileTensor(
-        output_dev, row_major((Idx[M](), Idx[packed_K]()))
-    )
-    var scales_tt = TileTensor(scales_dev, row_major((Idx[M](), Idx[1]())))
+    var input_tt = TileTensor(input_dev, row_major((Idx[M], Idx[K])))
+    var output_tt = TileTensor(output_dev, row_major((Idx[M], Idx[packed_K])))
+    var scales_tt = TileTensor(scales_dev, row_major((Idx[M], Idx[1])))
     quantize_mxfp4_amd(ctx, output_tt, scales_tt, input_tt)
 
     var output_host = ctx.enqueue_create_host_buffer[DType.uint8](packed_K)

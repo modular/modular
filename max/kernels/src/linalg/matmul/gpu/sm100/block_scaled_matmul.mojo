@@ -1264,7 +1264,7 @@ def _create_tma_and_launch[
         Int64(sfa_5d_tensor.dim[0]()),
         Int64(sfa_5d_tensor.dim[1]()),
         Int64(sfa_5d_tensor.dim[2]()),
-        Idx[sf_atom_u16](),
+        Idx[sf_atom_u16],
     )
     var sfa_4d_layout = tt_row_major(sfa_4d_shape)
     var sfa_4d_tensor = TileTensor[
@@ -1279,7 +1279,7 @@ def _create_tma_and_launch[
         Int64(sfb_5d_tensor.dim[0]()),
         Int64(sfb_5d_tensor.dim[1]()),
         Int64(sfb_5d_tensor.dim[2]()),
-        Idx[sf_atom_u16](),
+        Idx[sf_atom_u16],
     )
     var sfb_4d_layout = tt_row_major(sfb_4d_shape)
     var sfb_4d_tensor = TileTensor[
@@ -1562,16 +1562,16 @@ def _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
                 Int64(scales.dim[0]()),
                 Int64(scales.dim[1]()),
                 Int64(scales.dim[2]()),
-                Idx[SF_ATOM_M[0]](),
-                Idx[SF_ATOM_M[1] * SF_ATOM_K](),
+                Idx[SF_ATOM_M[0]],
+                Idx[SF_ATOM_M[1] * SF_ATOM_K],
             )
         else:
             return Coord(
                 Int64(1),
                 Int64(scales.dim[0]()),
                 Int64(scales.dim[1]()),
-                Idx[SF_ATOM_M[0]](),
-                Idx[SF_ATOM_M[1] * SF_ATOM_K](),
+                Idx[SF_ATOM_M[0]],
+                Idx[SF_ATOM_M[1] * SF_ATOM_K],
             )
 
     var sfa_5d_shape = _scales_5d_shape(a_scales_tensor)

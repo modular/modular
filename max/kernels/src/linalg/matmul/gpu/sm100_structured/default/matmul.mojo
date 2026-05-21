@@ -634,8 +634,8 @@ def _blackwell_matmul_tma_umma_warp_specialized_split_k[
         tt_row_major(
             (
                 Int64(num_output_tiles),
-                Idx[BM](),
-                Idx[MMA_N](),
+                Idx[BM],
+                Idx[MMA_N],
             )
         ),
     )

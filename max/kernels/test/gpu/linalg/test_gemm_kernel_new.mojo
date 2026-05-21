@@ -130,11 +130,11 @@ def gemm_kernel[
 
         comptime for k_j in range(BK):  # Renamed to avoid shadowing outer k_i
             var a_smem_warp_row = a_tile_sram.tile[WM, BK](
-                (warp_m, Idx[0]())
+                (warp_m, Idx[0])
             ).slice[:, k_j : k_j + 1]()
 
             var b_smem_warp_row = b_tile_sram.tile[BK, WN](
-                (Idx[0](), warp_n)
+                (Idx[0], warp_n)
             ).slice[k_j : k_j + 1, :]()
             copy_sram_to_local[src_warp_layout=warp_layout.to_layout(), axis=0](
                 a_reg.to_layout_tensor(), a_smem_warp_row.to_layout_tensor()
@@ -562,5 +562,5 @@ def outer_product_acc(
     comptime for i in range(M):
         comptime for j in range(N):
             res[i, j] += rebind[res.ElementType](
-                (lhs[Idx[i]()]).cast[dtype]()
-            ) * rebind[res.ElementType](rhs[Idx[j]()].cast[dtype]())
+                (lhs[Idx[i]]).cast[dtype]()
+            ) * rebind[res.ElementType](rhs[Idx[j]].cast[dtype]())

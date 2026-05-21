@@ -93,7 +93,7 @@ def test_dynamic_scaled_fp8_quant[
 
     var shape = row_major(Coord(m, n))
     var scales_shape = row_major(
-        Coord(Idx[NType.static_value // group_size](), m)
+        Coord(Idx[NType.static_value // group_size], m)
     )
     var total_size = Int(m.value()) * Int(n.value())
     var scales_size = (Int(n.value()) // group_size) * Int(m.value())
@@ -195,7 +195,7 @@ def test_dynamic_fp8_quant[
 
     var shape = row_major(Coord(m, n))
     var scales_shape = row_major(
-        Coord(Idx[NType.static_value // group_size](), m)
+        Coord(Idx[NType.static_value // group_size], m)
     )
     var total_size = Int(m.value()) * Int(n.value())
     var scales_size = (Int(n.value()) // group_size) * Int(m.value())
@@ -307,7 +307,7 @@ def test_batched_dynamic_fp8_quant[
 
     var shape = row_major(Coord(bs, m, k))
     var scales_shape = row_major(
-        Coord(bs, Idx[KType.static_value // group_size](), m)
+        Coord(bs, Idx[KType.static_value // group_size], m)
     )
     var total_size = Int(bs.value()) * Int(m.value()) * Int(k.value())
     var scales_size = (
@@ -428,80 +428,80 @@ def main() raises:
             DType.float8_e4m3fn,
             DType.bfloat16,
             DType.bfloat16,
-        ](ctx, Idx[800](), Idx[8192]())
+        ](ctx, Idx[800], Idx[8192])
         test_dynamic_scaled_fp8_quant[
             DType.float8_e4m3fn,
             DType.bfloat16,
             DType.bfloat16,
-        ](ctx, Idx[1000](), Idx[128]())
+        ](ctx, Idx[1000], Idx[128])
         test_dynamic_scaled_fp8_quant[
             DType.float8_e4m3fn,
             DType.bfloat16,
             DType.bfloat16,
-        ](ctx, Int(1), Idx[256]())
+        ](ctx, Int(1), Idx[256])
         test_dynamic_scaled_fp8_quant[
             DType.float8_e4m3fn,
             DType.bfloat16,
             DType.bfloat16,
-        ](ctx, Int(1), Idx[1024]())
+        ](ctx, Int(1), Idx[1024])
         test_dynamic_scaled_fp8_quant[
             DType.float8_e4m3fn,
             DType.bfloat16,
             DType.bfloat16,
-        ](ctx, Int(1), Idx[16384]())
+        ](ctx, Int(1), Idx[16384])
         test_dynamic_scaled_fp8_quant[
             DType.float8_e4m3fn,
             DType.bfloat16,
             DType.bfloat16,
-        ](ctx, Int(4), Idx[16384]())
+        ](ctx, Int(4), Idx[16384])
         test_dynamic_scaled_fp8_quant[
             DType.float8_e4m3fn,
             DType.float32,
             DType.float32,
-        ](ctx, Int(4), Idx[576]())
+        ](ctx, Int(4), Idx[576])
 
         # Test different alignments of the group_size to exercise the computation of simd_width.
         test_dynamic_scaled_fp8_quant[
             DType.float8_e4m3fn,
             DType.bfloat16,
             DType.bfloat16,
-        ](ctx, Int(2), Idx[260]())
+        ](ctx, Int(2), Idx[260])
         test_dynamic_scaled_fp8_quant[
             DType.float8_e4m3fn,
             DType.bfloat16,
             DType.bfloat16,
-        ](ctx, Int(2), Idx[264]())
+        ](ctx, Int(2), Idx[264])
 
         test_dynamic_fp8_quant[
             DType.float8_e4m3fn,
             DType.bfloat16,
             DType.bfloat16,
             -1,
-        ](ctx, Int(1), Idx[256]())
+        ](ctx, Int(1), Idx[256])
         test_dynamic_fp8_quant[
             DType.float8_e4m3fn,
             DType.bfloat16,
             DType.bfloat16,
             -1,
-        ](ctx, Int(1), Idx[1024]())
+        ](ctx, Int(1), Idx[1024])
         test_dynamic_fp8_quant[
             DType.float8_e4m3fn,
             DType.bfloat16,
             DType.bfloat16,
             -1,
-        ](ctx, Int(1), Idx[16384]())
+        ](ctx, Int(1), Idx[16384])
         test_dynamic_fp8_quant[
             DType.float8_e4m3fn,
             DType.bfloat16,
             DType.bfloat16,
             128,
-        ](ctx, Int(4), Idx[16384]())
+        ](ctx, Int(4), Idx[16384])
         test_dynamic_fp8_quant[
             DType.float8_e4m3fn,
             DType.float32,
             DType.float32,
             128,
-        ](ctx, Int(4), Idx[576]())
+        ](ctx, Int(4), Idx[576])
 
         # Test different alignments of the group_size to exercise the computation of simd_width.
         test_dynamic_fp8_quant[
@@ -509,44 +509,44 @@ def main() raises:
             DType.bfloat16,
             DType.bfloat16,
             -1,
-        ](ctx, Int(2), Idx[260]())
+        ](ctx, Int(2), Idx[260])
         test_dynamic_fp8_quant[
             DType.float8_e4m3fn,
             DType.bfloat16,
             DType.bfloat16,
             -1,
-        ](ctx, Int(2), Idx[264]())
+        ](ctx, Int(2), Idx[264])
 
         test_batched_dynamic_fp8_quant[
             DType.float8_e4m3fn,
             DType.bfloat16,
             DType.bfloat16,
             -1,
-        ](ctx, Int(2), Int(1), Idx[256]())
+        ](ctx, Int(2), Int(1), Idx[256])
         test_batched_dynamic_fp8_quant[
             DType.float8_e4m3fn,
             DType.bfloat16,
             DType.bfloat16,
             -1,
-        ](ctx, Int(3), Int(1), Idx[1024]())
+        ](ctx, Int(3), Int(1), Idx[1024])
         test_batched_dynamic_fp8_quant[
             DType.float8_e4m3fn,
             DType.bfloat16,
             DType.bfloat16,
             -1,
-        ](ctx, Int(4), Int(1), Idx[16384]())
+        ](ctx, Int(4), Int(1), Idx[16384])
         test_batched_dynamic_fp8_quant[
             DType.float8_e4m3fn,
             DType.bfloat16,
             DType.bfloat16,
             128,
-        ](ctx, Int(128), Int(400), Idx[512]())
+        ](ctx, Int(128), Int(400), Idx[512])
         test_batched_dynamic_fp8_quant[
             DType.float8_e4m3fn,
             DType.float32,
             DType.float32,
             128,
-        ](ctx, Int(128), Int(1024), Idx[128]())
+        ](ctx, Int(128), Int(1024), Idx[128])
 
         # Test different alignments of the group_size to exercise the computation of simd_width.
         test_batched_dynamic_fp8_quant[
@@ -554,13 +554,13 @@ def main() raises:
             DType.bfloat16,
             DType.bfloat16,
             132,
-        ](ctx, Int(128), Int(400), Idx[528]())
+        ](ctx, Int(128), Int(400), Idx[528])
         test_batched_dynamic_fp8_quant[
             DType.float8_e4m3fn,
             DType.float32,
             DType.float32,
             136,
-        ](ctx, Int(128), Int(1024), Idx[544]())
+        ](ctx, Int(128), Int(1024), Idx[544])
 
         # DType.float8_e8m0fnu is only supported on NVIDIA GPUs
         comptime if has_nvidia_gpu_accelerator():
@@ -569,16 +569,16 @@ def main() raises:
                 DType.bfloat16,
                 DType.float8_e8m0fnu,
                 128,
-            ](ctx, Int(43), Idx[1024]())
+            ](ctx, Int(43), Idx[1024])
             test_dynamic_fp8_quant[
                 DType.float8_e4m3fn,
                 DType.bfloat16,
                 DType.float8_e8m0fnu,
                 128,
-            ](ctx, Int(3), Idx[16384]())
+            ](ctx, Int(3), Idx[16384])
             test_dynamic_fp8_quant[
                 DType.float8_e4m3fn,
                 DType.float32,
                 DType.float8_e8m0fnu,
                 128,
-            ](ctx, Int(1), Idx[576]())
+            ](ctx, Int(1), Idx[576])

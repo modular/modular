@@ -26,7 +26,7 @@ def kernel(v: Int, ptr: UnsafePointer[Int32, MutAnyOrigin]):
         v: Runtime value for dynamic indexing.
         ptr: Output pointer to store results.
     """
-    var l = Coord(Idx[1](), Coord(v, Idx[3]()))
+    var l = Coord(Idx[1], Coord(v, Idx[3]))
     ptr[0] = Int32(l[0].value())
     ptr[1] = Int32(l[1][0].value())
 

@@ -105,17 +105,17 @@ def test_grouped_matmul_sm100_blockwise_scaled_fp8[
     )
 
     # TileTensor shapes for device buffers
-    var a_tt_shape = row_major(Coord(Int(total_num_tokens), Idx[K]()))
-    var b_tt_shape = row_major(Coord(Idx[num_experts](), Idx[N](), Idx[K]()))
-    var c_tt_shape = row_major(Coord(Int(total_num_tokens), Idx[N]()))
+    var a_tt_shape = row_major(Coord(Int(total_num_tokens), Idx[K]))
+    var b_tt_shape = row_major(Coord(Idx[num_experts], Idx[N], Idx[K]))
+    var c_tt_shape = row_major(Coord(Int(total_num_tokens), Idx[N]))
     var a_scales_tt_shape = row_major(
-        Coord(Idx[K // BLOCK_SCALE_K](), Int(total_num_tokens))
+        Coord(Idx[K // BLOCK_SCALE_K], Int(total_num_tokens))
     )
     var b_scales_tt_shape = row_major(
         Coord(
-            Idx[num_experts](),
-            Idx[N // BLOCK_SCALE_K](),
-            Idx[K // BLOCK_SCALE_K](),
+            Idx[num_experts],
+            Idx[N // BLOCK_SCALE_K],
+            Idx[K // BLOCK_SCALE_K],
         )
     )
 

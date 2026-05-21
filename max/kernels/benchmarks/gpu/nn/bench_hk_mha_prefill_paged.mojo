@@ -276,8 +276,8 @@ def run_hk_mha_prefill_paged[
                         Coord(
                             Int32(batch_size),
                             Int32(seq_len),
-                            Idx[num_heads](),
-                            Idx[depth](),
+                            Idx[num_heads],
+                            Idx[depth],
                         )
                     ),
                 )
@@ -287,8 +287,8 @@ def run_hk_mha_prefill_paged[
                         Coord(
                             Int32(batch_size),
                             Int32(seq_len),
-                            Idx[num_heads](),
-                            Idx[depth](),
+                            Idx[num_heads],
+                            Idx[depth],
                         )
                     ),
                 )

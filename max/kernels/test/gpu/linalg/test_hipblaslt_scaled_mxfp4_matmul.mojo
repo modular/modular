@@ -116,13 +116,13 @@ def test_block_scaled_mxfp4_hipblaslt[
     )
     var k_scales_dim = ceildiv(K, MXFP4_SF_VECTOR_SIZE)
 
-    var a_shape = row_major(Coord(m, Idx[KType.static_value // 2]()))
+    var a_shape = row_major(Coord(m, Idx[KType.static_value // 2]))
     var b_shape = row_major(
-        Coord(Idx[NType.static_value](), Idx[KType.static_value // 2]())
+        Coord(Idx[NType.static_value], Idx[KType.static_value // 2])
     )
     var c_shape = row_major(Coord(m, n))
-    var a_scales_shape = row_major(Coord(m, Idx[static_k_scales_dim]()))
-    var b_scales_shape = row_major(Coord(n, Idx[static_k_scales_dim]()))
+    var a_scales_shape = row_major(Coord(m, Idx[static_k_scales_dim]))
+    var b_scales_shape = row_major(Coord(n, Idx[static_k_scales_dim]))
 
     var a_scales_size = M * k_scales_dim
     var b_scales_size = N * k_scales_dim
@@ -251,8 +251,8 @@ def test_block_scaled_mxfp4_hipblaslt[
 def main() raises:
     with DeviceContext() as ctx:
         test_block_scaled_mxfp4_hipblaslt[DType.bfloat16](
-            ctx, Idx[128](), Idx[128](), Idx[256]()
+            ctx, Idx[128], Idx[128], Idx[256]
         )
         test_block_scaled_mxfp4_hipblaslt[DType.bfloat16](
-            ctx, Idx[64](), Idx[224](), Idx[512]()
+            ctx, Idx[64], Idx[224], Idx[512]
         )

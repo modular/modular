@@ -86,18 +86,18 @@ def test_matmul_sm100_blockwise_scaled_fp8[
     var a_shape = row_major(Coord(m, k))
     var b_shape = row_major(
         Coord(
-            Idx[NType.static_value if transpose_b else KType.static_value](),
-            Idx[KType.static_value if transpose_b else NType.static_value](),
+            Idx[NType.static_value if transpose_b else KType.static_value],
+            Idx[KType.static_value if transpose_b else NType.static_value],
         )
     )
     var c_shape = row_major(Coord(m, n))
     var a_scales_shape = row_major(
-        Coord(Idx[ceildiv(KType.static_value, BLOCK_SCALE_K)](), m)
+        Coord(Idx[ceildiv(KType.static_value, BLOCK_SCALE_K)], m)
     )
     var b_scales_shape = row_major(
         Coord(
-            Idx[ceildiv(NType.static_value, BLOCK_SCALE_K)](),
-            Idx[ceildiv(KType.static_value, BLOCK_SCALE_K)](),
+            Idx[ceildiv(NType.static_value, BLOCK_SCALE_K)],
+            Idx[ceildiv(KType.static_value, BLOCK_SCALE_K)],
         )
     )
 
@@ -249,8 +249,8 @@ def main() raises:
         ](
             ctx,
             Int(120),
-            Idx[1536](),
-            Idx[7168](),
+            Idx[1536],
+            Idx[7168],
         )
         test_matmul_sm100_blockwise_scaled_fp8[
             DType.float8_e4m3fn,
@@ -262,8 +262,8 @@ def main() raises:
         ](
             ctx,
             Int(120),
-            Idx[24576](),
-            Idx[1536](),
+            Idx[24576],
+            Idx[1536],
         )
         test_matmul_sm100_blockwise_scaled_fp8[
             DType.float8_e4m3fn,
@@ -276,8 +276,8 @@ def main() raises:
         ](
             ctx,
             Int(128),
-            Idx[576](),
-            Idx[7168](),
+            Idx[576],
+            Idx[7168],
         )
 
         test_matmul_sm100_blockwise_scaled_fp8[
@@ -290,8 +290,8 @@ def main() raises:
         ](
             ctx,
             Int(400),
-            Idx[32768](),
-            Idx[512](),
+            Idx[32768],
+            Idx[512],
         )
 
         test_matmul_sm100_blockwise_scaled_fp8[
@@ -304,8 +304,8 @@ def main() raises:
         ](
             ctx,
             Int(1024),
-            Idx[2048](),
-            Idx[2048](),
+            Idx[2048],
+            Idx[2048],
         )
 
         test_matmul_sm100_blockwise_scaled_fp8[
@@ -318,8 +318,8 @@ def main() raises:
         ](
             ctx,
             Int(1024),
-            Idx[2048](),
-            Idx[2048](),
+            Idx[2048],
+            Idx[2048],
         )
 
         test_matmul_sm100_blockwise_scaled_fp8[
@@ -332,8 +332,8 @@ def main() raises:
         ](
             ctx,
             Int(100),
-            Idx[512](),
-            Idx[256](),
+            Idx[512],
+            Idx[256],
         )
 
         test_matmul_sm100_blockwise_scaled_fp8[
@@ -346,8 +346,8 @@ def main() raises:
         ](
             ctx,
             Int(96),
-            Idx[1024](),
-            Idx[1024](),
+            Idx[1024],
+            Idx[1024],
         )
 
         test_matmul_sm100_blockwise_scaled_fp8[
@@ -360,6 +360,6 @@ def main() raises:
         ](
             ctx,
             Int(208),
-            Idx[2048](),
-            Idx[256](),
+            Idx[2048],
+            Idx[256],
         )

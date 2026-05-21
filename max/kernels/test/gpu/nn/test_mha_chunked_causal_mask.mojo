@@ -147,8 +147,8 @@ def test_attention[
             (
                 batch_size,
                 seq_len,
-                Idx[num_heads](),
-                Idx[depth](),
+                Idx[num_heads],
+                Idx[depth],
             )
         ),
     )
@@ -158,8 +158,8 @@ def test_attention[
             (
                 batch_size,
                 num_keys,
-                Idx[kv_num_heads](),
-                Idx[depth](),
+                Idx[kv_num_heads],
+                Idx[depth],
             )
         ),
     )
@@ -169,8 +169,8 @@ def test_attention[
             (
                 batch_size,
                 num_keys,
-                Idx[kv_num_heads](),
-                Idx[depth](),
+                Idx[kv_num_heads],
+                Idx[depth],
             )
         ),
     )
@@ -179,7 +179,7 @@ def test_attention[
         row_major(
             (
                 batch_size,
-                Idx[num_heads](),
+                Idx[num_heads],
                 seq_len,
                 num_keys,
             )
@@ -191,8 +191,8 @@ def test_attention[
             (
                 batch_size,
                 seq_len,
-                Idx[num_heads](),
-                Idx[depth](),
+                Idx[num_heads],
+                Idx[depth],
             )
         ),
     )
@@ -221,8 +221,8 @@ def test_attention[
             (
                 batch_size,
                 seq_len,
-                Idx[num_heads](),
-                Idx[depth](),
+                Idx[num_heads],
+                Idx[depth],
             )
         ),
     )

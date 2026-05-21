@@ -52,9 +52,9 @@ def main() raises:
             measure_threshold=0.001,
         ](
             ctx,
-            Idx[512](),
-            Idx[2560](),
-            Idx[8192](),
+            Idx[512],
+            Idx[2560],
+            Idx[8192],
         )
 
         test_matmul_sm90[
@@ -72,9 +72,9 @@ def main() raises:
             measure_threshold=0.001,
         ](
             ctx,
-            Idx[8192](),
-            Idx[2560](),
-            Idx[8192](),
+            Idx[8192],
+            Idx[2560],
+            Idx[8192],
         )
 
         test_matmul_sm90[
@@ -91,9 +91,9 @@ def main() raises:
             measure_threshold=0.001,
         ](
             ctx,
-            Idx[4096](),
-            Idx[2560](),
-            Idx[8192](),
+            Idx[4096],
+            Idx[2560],
+            Idx[8192],
         )
 
         test_matmul_sm90[
@@ -110,9 +110,9 @@ def main() raises:
             measure_threshold=0.001,
         ](
             ctx,
-            Idx[512](),
-            Idx[8192](),
-            Idx[2048](),
+            Idx[512],
+            Idx[8192],
+            Idx[2048],
         )
 
         test_matmul_sm90[
@@ -129,9 +129,9 @@ def main() raises:
             measure_threshold=0.001,
         ](
             ctx,
-            Idx[512](),
-            Idx[14336](),
-            Idx[8192](),
+            Idx[512],
+            Idx[14336],
+            Idx[8192],
         )
 
         test_matmul_sm90[
@@ -148,9 +148,9 @@ def main() raises:
             measure_threshold=0.001,
         ](
             ctx,
-            Idx[4096](),
-            Idx[8192](),
-            Idx[7168](),
+            Idx[4096],
+            Idx[8192],
+            Idx[7168],
         )
 
         test_matmul_sm90[
@@ -167,9 +167,9 @@ def main() raises:
             measure_threshold=0.001,
         ](
             ctx,
-            Idx[512](),
-            Idx[8192](),
-            Idx[7168](),
+            Idx[512],
+            Idx[8192],
+            Idx[7168],
         )
 
         test_matmul_sm90[
@@ -184,8 +184,8 @@ def main() raises:
         ](
             ctx,
             Int(199),
-            Idx[512](),
-            Idx[1024](),
+            Idx[512],
+            Idx[1024],
         )
 
         test_matmul_sm90[
@@ -200,8 +200,8 @@ def main() raises:
         ](
             ctx,
             Int(200),
-            Idx[256](),
-            Idx[256](),
+            Idx[256],
+            Idx[256],
         )
 
         test_matmul_sm90[
@@ -217,6 +217,6 @@ def main() raises:
         ](
             ctx,
             Int(201),
-            Idx[384](),
-            Idx[256](),
+            Idx[384],
+            Idx[256],
         )

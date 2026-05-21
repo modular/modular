@@ -268,18 +268,18 @@ def test_static_NK[
     var c_host_ptr = ctx.enqueue_create_host_buffer[dtype](c_size)
     var c_host_ref_ptr = ctx.enqueue_create_host_buffer[dtype](c_size)
 
-    var a_host = TileTensor(a_host_ptr, row_major(b, m, Idx[K]()))
-    var c_host = TileTensor(c_host_ptr, row_major(b, m, Idx[N]()))
-    var c_host_ref = TileTensor(c_host_ref_ptr, row_major(b, m, Idx[N]()))
+    var a_host = TileTensor(a_host_ptr, row_major(b, m, Idx[K]))
+    var c_host = TileTensor(c_host_ptr, row_major(b, m, Idx[N]))
+    var c_host_ref = TileTensor(c_host_ref_ptr, row_major(b, m, Idx[N]))
 
     comptime if transpose_b:
-        var b_host = TileTensor(b_host_ptr, row_major(b, Idx[N](), Idx[K]()))
+        var b_host = TileTensor(b_host_ptr, row_major(b, Idx[N], Idx[K]))
         run_bmm_and_check_result[transpose_b=transpose_b, lambda_fn=lambda_fn](
             a_host, b_host, c_host, c_host_ref, ctx, rtol
         )
 
     else:
-        var b_host = TileTensor(b_host_ptr, row_major(b, Idx[K](), Idx[N]()))
+        var b_host = TileTensor(b_host_ptr, row_major(b, Idx[K], Idx[N]))
         run_bmm_and_check_result[transpose_b=transpose_b, lambda_fn=lambda_fn](
             a_host, b_host, c_host, c_host_ref, ctx, rtol
         )
@@ -314,18 +314,14 @@ def test_non_row_major_layout[
     var c_host_ptr = ctx.enqueue_create_host_buffer[dtype](c_size)
     var c_host_ref_ptr = ctx.enqueue_create_host_buffer[dtype](c_size)
 
-    var a_layout = Layout(
-        (Idx[B](), m, Idx[K]()), (Idx[K](), Idx[B * K](), Idx[1]())
-    )
-    var c_layout = Layout(
-        (Idx[B](), m, Idx[N]()), (Idx[N](), Idx[B * N](), Idx[1]())
-    )
+    var a_layout = Layout((Idx[B], m, Idx[K]), (Idx[K], Idx[B * K], Idx[1]))
+    var c_layout = Layout((Idx[B], m, Idx[N]), (Idx[N], Idx[B * N], Idx[1]))
 
     var a_host = TileTensor(a_host_ptr, a_layout)
     var c_host = TileTensor(c_host_ptr, c_layout)
     var c_host_ref = TileTensor(c_host_ref_ptr, c_layout)
 
-    var b_host = TileTensor(b_host_ptr, row_major(Idx[B](), Idx[N](), Idx[K]()))
+    var b_host = TileTensor(b_host_ptr, row_major(Idx[B], Idx[N], Idx[K]))
     run_bmm_and_check_result[
         transpose_b=True, lambda_fn=lambda_fn, check_against_naive_kernel=True
     ](a_host, b_host, c_host, c_host_ref, ctx, rtol)

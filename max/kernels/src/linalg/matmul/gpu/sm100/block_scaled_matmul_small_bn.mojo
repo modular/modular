@@ -650,21 +650,21 @@ def _sfb_cpasync_produce_tile[
     # row by ROW_STRIDE (16), sub_column by SF_ATOM_K (4).
     comptime sfb_global_atom_layout = TileLayout(
         Coord(
-            Idx[num_sf_k_tiles](),
-            Idx[SF_ATOM_M[0]](),
-            Idx[SF_ATOM_M[1]](),
+            Idx[num_sf_k_tiles],
+            Idx[SF_ATOM_M[0]],
+            Idx[SF_ATOM_M[1]],
         ),
         Coord(
-            Idx[K_TILE_ELEMS](),
-            Idx[ROW_STRIDE](),
-            Idx[SF_ATOM_K](),
+            Idx[K_TILE_ELEMS],
+            Idx[ROW_STRIDE],
+            Idx[SF_ATOM_K],
         ),
     )
 
     # SMEM stage layout: pipeline stage offset → flat SMEM element offset.
     comptime sfb_smem_stage_layout = TileLayout(
-        Coord(Idx[num_sfb_pipeline_stages * k_group_size]()),
-        Coord(Idx[sfb_smem_tile_elems]()),
+        Coord(Idx[num_sfb_pipeline_stages * k_group_size]),
+        Coord(Idx[sfb_smem_tile_elems]),
     )
 
     var batch = Int(work_info.k_start)
@@ -797,21 +797,21 @@ def _sfb_cpasync_produce_tile_warpwide[
     # offset within one n_group.
     comptime sfb_global_atom_layout = TileLayout(
         Coord(
-            Idx[num_sf_k_tiles](),
-            Idx[SF_ATOM_M[0]](),
-            Idx[SF_ATOM_M[1]](),
+            Idx[num_sf_k_tiles],
+            Idx[SF_ATOM_M[0]],
+            Idx[SF_ATOM_M[1]],
         ),
         Coord(
-            Idx[K_TILE_ELEMS](),
-            Idx[ROW_STRIDE](),
-            Idx[SF_ATOM_K](),
+            Idx[K_TILE_ELEMS],
+            Idx[ROW_STRIDE],
+            Idx[SF_ATOM_K],
         ),
     )
 
     # SMEM stage layout: pipeline stage offset → flat SMEM element offset.
     comptime sfb_smem_stage_layout = TileLayout(
-        Coord(Idx[num_sfb_pipeline_stages * k_group_size]()),
-        Coord(Idx[sfb_smem_tile_elems]()),
+        Coord(Idx[num_sfb_pipeline_stages * k_group_size]),
+        Coord(Idx[sfb_smem_tile_elems]),
     )
 
     # Map lane_id to (k_atom, position) across the full warp.
@@ -1850,7 +1850,7 @@ def _create_tma_and_launch[
         Int64(sfa_5d_tensor.dim[0]()),
         Int64(sfa_5d_tensor.dim[1]()),
         Int64(sfa_5d_tensor.dim[2]()),
-        Idx[sf_atom_u16](),
+        Idx[sf_atom_u16],
     )
     var sfa_4d_layout = tt_row_major(sfa_4d_shape)
     var sfa_4d_tensor = TileTensor[
@@ -2155,16 +2155,16 @@ def _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
                 Int64(scales.dim[0]()),
                 Int64(scales.dim[1]()),
                 Int64(scales.dim[2]()),
-                Idx[SF_ATOM_M[0]](),
-                Idx[SF_ATOM_M[1] * SF_ATOM_K](),
+                Idx[SF_ATOM_M[0]],
+                Idx[SF_ATOM_M[1] * SF_ATOM_K],
             )
         else:
             return Coord(
                 Int64(1),
                 Int64(scales.dim[0]()),
                 Int64(scales.dim[1]()),
-                Idx[SF_ATOM_M[0]](),
-                Idx[SF_ATOM_M[1] * SF_ATOM_K](),
+                Idx[SF_ATOM_M[0]],
+                Idx[SF_ATOM_M[1] * SF_ATOM_K],
             )
 
     var sfa_5d_shape = _scales_5d_shape(a_scales_tensor)

@@ -102,20 +102,20 @@ def test[
     comptime static_b_dim1 = K if transpose_b else N
     var a_tensor = TileTensor(
         a_dev,
-        row_major(Coord(m, Idx[K.value()]())),
+        row_major(Coord(m, Idx[K.value()])),
     )
     var b_tensor = TileTensor(
         b_dev,
         row_major(
             Coord(
-                Idx[static_b_dim0.value()](),
-                Idx[static_b_dim1.value()](),
+                Idx[static_b_dim0.value()],
+                Idx[static_b_dim1.value()],
             )
         ),
     )
     var c_tensor = TileTensor(
         c_dev,
-        row_major(Coord(m, Idx[N.value()]())),
+        row_major(Coord(m, Idx[N.value()])),
     )
 
     _matmul_gpu[use_tensor_core=True, transpose_b=transpose_b](

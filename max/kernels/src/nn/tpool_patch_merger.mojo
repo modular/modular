@@ -81,9 +81,9 @@ def tpool_patch_merger_kernel[
     if vid >= n_vids:
         return
 
-    var t = Int(grid_thws[Coord(vid, Idx[0]())])
-    var h = Int(grid_thws[Coord(vid, Idx[1]())])
-    var w = Int(grid_thws[Coord(vid, Idx[2]())])
+    var t = Int(grid_thws[Coord(vid, Idx[0])])
+    var h = Int(grid_thws[Coord(vid, Idx[1])])
+    var w = Int(grid_thws[Coord(vid, Idx[2])])
 
     var new_H = h // kH
     var new_W = w // kW
@@ -98,9 +98,9 @@ def tpool_patch_merger_kernel[
     var in_offset: Int = 0
     var out_offset: Int = 0
     for i in range(vid):
-        var ti = Int(grid_thws[Coord(i, Idx[0]())])
-        var hi = Int(grid_thws[Coord(i, Idx[1]())])
-        var wi = Int(grid_thws[Coord(i, Idx[2]())])
+        var ti = Int(grid_thws[Coord(i, Idx[0])])
+        var hi = Int(grid_thws[Coord(i, Idx[1])])
+        var wi = Int(grid_thws[Coord(i, Idx[2])])
         in_offset += ti * hi * wi
         out_offset += hi * wi
 

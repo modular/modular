@@ -16,7 +16,7 @@ Uses TileLayout / `Coord` Layout Algebra (not hand-rolled integer formulas)
 to map lanes and registers into the MMA fragment space:
 
 - `WarpLayoutT.idx2crd(lane)` decomposes the lane into (lane_row, lane_col).
-- `FragmentLayoutT(Idx[j]())` maps register `j` to its column offset within
+- `FragmentLayoutT(Idx[j])` maps register `j` to its column offset within
   the MMA fragment.
 - `FragmentLayoutT.static_product` / `static_shape[i]` expose the fragment
   size and the per-lane column-group stride.
@@ -170,11 +170,11 @@ struct MaskTileOp[
                             # Fragment column offset for register j/j+1 from
                             # the fragment Layout itself (Layout.__call__).
                             comptime y_0 = (
-                                Int32(Self.FragmentLayoutT()(Idx[j]())) - 1
+                                Int32(Self.FragmentLayoutT()(Idx[j])) - 1
                             )
                             var val_0 = frag[j]
                             comptime y_1 = (
-                                Int32(Self.FragmentLayoutT()(Idx[j + 1]())) - 1
+                                Int32(Self.FragmentLayoutT()(Idx[j + 1])) - 1
                             )
                             var val_1 = frag[j + 1]
                             comptime asm = """
@@ -208,7 +208,7 @@ struct MaskTileOp[
                             )
                         comptime for j in range(0, output_frag_size, 1):
                             comptime fragment_col = Int(
-                                Self.FragmentLayoutT()(Idx[j]())
+                                Self.FragmentLayoutT()(Idx[j])
                             )
                             frag[j] = mask.mask(
                                 IndexList[4, element_type=DType.uint32](
@@ -236,7 +236,7 @@ struct MaskTileOp[
 
                     comptime for j in range(output_frag_size):
                         comptime fragment_col = Int(
-                            Self.FragmentLayoutT()(Idx[j]())
+                            Self.FragmentLayoutT()(Idx[j])
                         )
 
                         var bound_x = num_keys if Self.token_gen else seq_len

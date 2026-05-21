@@ -182,70 +182,12 @@ struct ComptimeInt[val: Int](CoordLike, TrivialRegisterPassable):
         comptime assert False, "ComptimeInt is not a tuple type"
 
 
-def Idx(value: Int) -> Scalar[DType.int]:
-    """Helper to create runtime indices.
+comptime Idx[value: Int] = ComptimeInt[value]()
+"""A compile-time coordinate index value.
 
-    Args:
-        value: The integer value for the runtime index.
-
-    Returns:
-        A `Scalar` instance with the specified value.
-
-    Usage: `Idx(5)` creates a `Scalar` with value 5.
-    """
-    return Scalar[DType.int](value)
-
-
-def Idx[value: Int]() -> ComptimeInt[value]:
-    """Helper to create compile-time indices.
-
-    Parameters:
-        value: The compile-time integer value.
-
-    Returns:
-        A `ComptimeInt` instance with the specified compile-time value.
-
-    Usage: `Idx[5]()` creates a `ComptimeInt` with value 5.
-    """
-    return ComptimeInt[value]()
-
-
-def Idx(
-    value: IntLiteral,
-) -> ComptimeInt[
-    Int(
-        mlir_value=__mlir_attr[
-            `#kgen.cast_to_builtin<#pop.int_literal_convert<`,
-            value.value,
-            `> : !kgen.scalar<index>> : index`,
-        ]
-    )
-]:
-    """Helper to create compile-time indices.
-
-    Args:
-        value: The compile-time integer value.
-
-    Returns:
-        A `ComptimeInt` instance with the specified compile-time value.
-
-    Usage: `Idx[5]()` creates a `ComptimeInt` with value 5.
-    """
-    return {}
-
-
-def Idx(
-    value: Scalar,
-) -> Scalar[value.dtype] where value.dtype.is_integral():
-    """Create a runtime index from a scalar value.
-
-    Args:
-        value: The integer value for the runtime index.
-
-    Returns:
-        A `Scalar` instance with the specified value.
-    """
-    return Scalar[value.dtype](value)
+Parameters:
+    value: The compile-time integer value.
+"""
 
 
 # ===-----------------------------------------------------------------------===#
@@ -687,12 +629,12 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
             ```mojo
             from layout import Coord, Idx
             var nested = Coord(
-                Idx[5](),
-                Coord(Idx[3](), Idx[2]()),
+                Idx[5],
+                Coord(Idx[3], Idx[2]),
                 7
             )
             var flat = nested.flatten()
-            # flat is Coord(Idx[5](), Idx[3](), Idx[2](), 7)
+            # flat is Coord(Idx[5], Idx[3], Idx[2], 7)
             ```
         """
         comptime FlatTypes = _Flattened[*Self.element_types]
@@ -1343,7 +1285,7 @@ def _get_flattened[
         The value at the given flat index.
 
     Examples:
-        For `tuple = Coord(Idx[5](), Coord(Idx[3](), Idx[2]()), 7)`:
+        For `tuple = Coord(Idx[5], Coord(Idx[3], Idx[2]), 7)`:
         - `get_flattened[0](tuple)` returns 5  (first element)
         - `get_flattened[1](tuple)` returns 3  (first element of nested tuple)
         - `get_flattened[2](tuple)` returns 2  (second element of nested tuple)
@@ -1707,7 +1649,7 @@ struct _RegTuple[*element_types: CoordLike](
 
         ```mojo
         from std.utils.coord import _RegTuple, ComptimeInt, Idx
-        var image_coords = _RegTuple[ComptimeInt[100], ComptimeInt[200]](Idx(100), Idx(200))
+        var image_coords = _RegTuple[ComptimeInt[100], ComptimeInt[200]](Idx[100], Idx[200])
         var screen_coords = image_coords.reverse()
         print(screen_coords[0].value(), screen_coords[1].value())  # output: 200, 100
         ```

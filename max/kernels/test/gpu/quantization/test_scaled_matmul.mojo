@@ -59,16 +59,16 @@ def test_matmul_dynamic_scaled_fp8[
     var a_layout = row_major(Coord(m, k))
     var b_layout = row_major(
         Coord(
-            Idx[NType.static_value if transpose_b else KType.static_value](),
-            Idx[KType.static_value if transpose_b else NType.static_value](),
+            Idx[NType.static_value if transpose_b else KType.static_value],
+            Idx[KType.static_value if transpose_b else NType.static_value],
         )
     )
     var c_layout = row_major(Coord(m, n))
-    var a_scales_layout = row_major(Coord(Idx[1](), m))
+    var a_scales_layout = row_major(Coord(Idx[1], m))
     var b_scales_layout = row_major(
         Coord(
-            Idx[NType.static_value if transpose_b else 1](),
-            Idx[1 if transpose_b else NType.static_value](),
+            Idx[NType.static_value if transpose_b else 1],
+            Idx[1 if transpose_b else NType.static_value],
         )
     )
 
@@ -193,13 +193,13 @@ def test_matmul_dynamic_scaled_fp8_tensor[
     var a_layout = row_major(Coord(m, k))
     var b_layout = row_major(
         Coord(
-            Idx[NType.static_value if transpose_b else KType.static_value](),
-            Idx[KType.static_value if transpose_b else NType.static_value](),
+            Idx[NType.static_value if transpose_b else KType.static_value],
+            Idx[KType.static_value if transpose_b else NType.static_value],
         )
     )
     var c_layout = row_major(Coord(m, n))
-    var a_scales_layout = row_major(Coord(Idx[1](), Idx[1]()))
-    var b_scales_layout = row_major(Coord(Idx[1](), Idx[1]()))
+    var a_scales_layout = row_major(Coord(Idx[1], Idx[1]))
+    var b_scales_layout = row_major(Coord(Idx[1], Idx[1]))
 
     var a_host = TileTensor(a_host_ptr, a_layout)
     var b_host = TileTensor(b_host_ptr, b_layout)
@@ -270,11 +270,11 @@ def test_matmul_dynamic_scaled_fp8_tensor[
     for i in range(b_ref_scales_size):
         b_ref_scales_host_ptr[i] = b_scalar
 
-    var a_ref_scales_layout = row_major(Coord(Idx[1](), m))
+    var a_ref_scales_layout = row_major(Coord(Idx[1], m))
     var b_ref_scales_layout = row_major(
         Coord(
-            Idx[NType.static_value if transpose_b else 1](),
-            Idx[1 if transpose_b else NType.static_value](),
+            Idx[NType.static_value if transpose_b else 1],
+            Idx[1 if transpose_b else NType.static_value],
         )
     )
 
@@ -336,14 +336,14 @@ def main() raises:
             out_dtype=DType.bfloat16,
             scales_dtype=DType.bfloat16,
             transpose_b=True,
-        ](ctx, Int(17), Idx[256 + 256](), Idx[256]())
+        ](ctx, Int(17), Idx[256 + 256], Idx[256])
 
         test_matmul_dynamic_scaled_fp8[
             in_dtype=DType.float8_e4m3fn,
             out_dtype=DType.bfloat16,
             scales_dtype=DType.bfloat16,
             transpose_b=True,
-        ](ctx, Int(124), Idx[512](), Idx[512]())
+        ](ctx, Int(124), Idx[512], Idx[512])
 
         # these tests are guaranteed to hit a mojo fp8 kernel in the dispatch table.
         # if the fp8 kernel is not registered, these tests will fail.
@@ -352,14 +352,14 @@ def main() raises:
             out_dtype=DType.bfloat16,
             scales_dtype=DType.bfloat16,
             transpose_b=True,
-        ](ctx, Int(3000), Idx[5376](), Idx[4096]())
+        ](ctx, Int(3000), Idx[5376], Idx[4096])
 
         test_matmul_dynamic_scaled_fp8[
             in_dtype=DType.float8_e4m3fn,
             out_dtype=DType.bfloat16,
             scales_dtype=DType.bfloat16,
             transpose_b=True,
-        ](ctx, Int(224), Idx[43008](), Idx[5376]())
+        ](ctx, Int(224), Idx[43008], Idx[5376])
 
         # Tensor-granularity (per-tensor) scaling tests
         test_matmul_dynamic_scaled_fp8_tensor[
@@ -367,11 +367,11 @@ def main() raises:
             out_dtype=DType.bfloat16,
             scales_dtype=DType.bfloat16,
             transpose_b=True,
-        ](ctx, Int(17), Idx[512](), Idx[256]())
+        ](ctx, Int(17), Idx[512], Idx[256])
 
         test_matmul_dynamic_scaled_fp8_tensor[
             in_dtype=DType.float8_e4m3fn,
             out_dtype=DType.bfloat16,
             scales_dtype=DType.bfloat16,
             transpose_b=True,
-        ](ctx, Int(124), Idx[512](), Idx[512]())
+        ](ctx, Int(124), Idx[512], Idx[512])

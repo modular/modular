@@ -63,16 +63,16 @@ def test_blackwell_matmul_with_1d_bias[
         t" mma_shape={mma_shape} block_tile_shape={block_tile_shape}"
     )
 
-    var a_shape = row_major(Coord(m, Idx[KType.static_value]()))
+    var a_shape = row_major(Coord(m, Idx[KType.static_value]))
     var b_shape = row_major(
         Coord(
-            Idx[NType.static_value if transpose_b else KType.static_value](),
-            Idx[KType.static_value if transpose_b else NType.static_value](),
+            Idx[NType.static_value if transpose_b else KType.static_value],
+            Idx[KType.static_value if transpose_b else NType.static_value],
         )
     )
-    var c_shape = row_major(Coord(m, Idx[NType.static_value]()))
+    var c_shape = row_major(Coord(m, Idx[NType.static_value]))
     # 1D bias: shape [N] — broadcast across all M rows.
-    var bias_shape = row_major(Coord(Idx[NType.static_value]()))
+    var bias_shape = row_major(Coord(Idx[NType.static_value]))
 
     var a_size = M * K
     var b_size = N * K if transpose_b else K * N
@@ -229,8 +229,8 @@ def main() raises:
                     ](
                         ctx,
                         Int(233),
-                        Idx[4096](),
-                        Idx[1024 + 16](),
+                        Idx[4096],
+                        Idx[1024 + 16],
                     )
 
                     test_blackwell_matmul_with_1d_bias[
@@ -250,8 +250,8 @@ def main() raises:
                     ](
                         ctx,
                         Int(500),
-                        Idx[2048](),
-                        Idx[4096](),
+                        Idx[2048],
+                        Idx[4096],
                     )
 
                     test_blackwell_matmul_with_1d_bias[
@@ -267,8 +267,8 @@ def main() raises:
                     ](
                         ctx,
                         Int(999),
-                        Idx[256](),
-                        Idx[128](),
+                        Idx[256],
+                        Idx[128],
                     )
 
                     test_blackwell_matmul_with_1d_bias[
@@ -284,8 +284,8 @@ def main() raises:
                     ](
                         ctx,
                         Int(777),
-                        Idx[2560](),
-                        Idx[8192](),
+                        Idx[2560],
+                        Idx[8192],
                     )
 
             # AB_swapped + 1D bias (2SM)
@@ -308,8 +308,8 @@ def main() raises:
                     ](
                         ctx,
                         Int(1),
-                        Idx[4096](),
-                        Idx[1024 + 16](),
+                        Idx[4096],
+                        Idx[1024 + 16],
                     )
 
                     test_blackwell_matmul_with_1d_bias[
@@ -329,8 +329,8 @@ def main() raises:
                     ](
                         ctx,
                         Int(500),
-                        Idx[2048](),
-                        Idx[4096](),
+                        Idx[2048],
+                        Idx[4096],
                     )
 
             # Edge cases: small/odd M with swapAB (transpose bias path, 2SM)
@@ -354,8 +354,8 @@ def main() raises:
                     ](
                         ctx,
                         Int(3),
-                        Idx[256](),
-                        Idx[128](),
+                        Idx[256],
+                        Idx[128],
                     )
 
                     # M=17: prime, not power-of-2
@@ -373,8 +373,8 @@ def main() raises:
                     ](
                         ctx,
                         Int(17),
-                        Idx[512](),
-                        Idx[128](),
+                        Idx[512],
+                        Idx[128],
                     )
 
             # Non-swapAB with M=1 (single-row, non-transpose bias path, 2SM)
@@ -395,6 +395,6 @@ def main() raises:
                 ](
                     ctx,
                     Int(1),
-                    Idx[256](),
-                    Idx[128](),
+                    Idx[256],
+                    Idx[128],
                 )

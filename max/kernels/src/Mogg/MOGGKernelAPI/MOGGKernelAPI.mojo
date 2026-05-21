@@ -12712,7 +12712,7 @@ struct MatmulStaticScaledFloat8:
         )
         var output_scratch = TileTensor(
             scratch_buffer.unsafe_ptr(),
-            row_major(Coord(Int64(M), Idx[N]())),
+            row_major(Coord(Int64(M), Idx[N])),
         )
 
         matmul[

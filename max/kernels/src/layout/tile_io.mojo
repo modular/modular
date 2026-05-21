@@ -314,8 +314,8 @@ struct SharedToGenericTileCopier[
             )
 
             comptime for i in range(num_stores_per_thread):
-                var src_idx = src_fragments.layout(Idx[i * simd_size]())
-                var dst_idx = dst_fragments.layout(Idx[i * simd_size]())
+                var src_idx = src_fragments.layout(Idx[i * simd_size])
+                var dst_idx = dst_fragments.layout(Idx[i * simd_size])
                 var src_idx_base = src_idx % Int64(swizzle_fn.size())
                 var src_idx_diff = src_idx - src_idx_base
                 var swizzled_idx = swizzle_fn(
@@ -598,8 +598,8 @@ struct LocalToSharedTileCopier[
             comptime num_vecs = src.LayoutType.static_product // simd_size
 
             comptime for i in range(num_vecs):
-                var src_idx = src.layout(Idx[i * simd_size]())
-                var dst_idx = dst_fragments.layout(Idx[i * simd_size]())
+                var src_idx = src.layout(Idx[i * simd_size])
+                var dst_idx = dst_fragments.layout(Idx[i * simd_size])
                 var dst_idx_base = dst_idx % Int64(swizzle_fn.size())
                 var dst_idx_diff = dst_idx - dst_idx_base
                 var swizzled_idx = swizzle_fn(
@@ -781,8 +781,8 @@ struct GenericToSharedAsyncTileCopier[
                 dst_frag_offset
             )
             comptime for i in range(num_issues):
-                var src_idx = Int(src_fragments.layout(Idx[i]()))
-                var dst_idx_raw = dst_fragments.layout(Idx[i]())
+                var src_idx = Int(src_fragments.layout(Idx[i]))
+                var dst_idx_raw = dst_fragments.layout(Idx[i])
                 var dst_idx_base = dst_idx_raw % Int64(swizzle_fn.size())
                 var dst_idx_diff = dst_idx_raw - dst_idx_base
                 var swizzled_idx = (
@@ -817,8 +817,8 @@ struct GenericToSharedAsyncTileCopier[
                     )
         else:
             comptime for i in range(num_issues):
-                var src_idx = Int(src_fragments.layout(Idx[i]()))
-                var dst_idx = Int(dst_fragments.layout(Idx[i]()))
+                var src_idx = Int(src_fragments.layout(Idx[i]))
+                var dst_idx = Int(dst_fragments.layout(Idx[i]))
 
                 comptime if Self.masked:
                     var src_copy_size = Int32(element_size_bytes) if (

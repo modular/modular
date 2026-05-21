@@ -87,12 +87,8 @@ def test_matmul_sm90[
         b_dev_buffer,
         row_major(
             Coord(
-                Idx[
-                    NType.static_value if transpose_b else KType.static_value
-                ](),
-                Idx[
-                    KType.static_value if transpose_b else NType.static_value
-                ](),
+                Idx[NType.static_value if transpose_b else KType.static_value],
+                Idx[KType.static_value if transpose_b else NType.static_value],
             ),
         ),
     ).as_immut()

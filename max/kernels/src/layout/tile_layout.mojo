@@ -838,7 +838,7 @@ def row_major(var shape: Coord) -> RowMajorLayout[*shape.element_types]:
         comptime if i == 0:
             # Rightmost dimension always has stride 1
             comptime StrideType = RowMajorTypes[idx]
-            stride_ptr.init_pointee_copy(rebind[StrideType](Idx[1]()))
+            stride_ptr.init_pointee_copy(rebind[StrideType](Idx[1]))
         else:
             # Calculate stride as product of shape[idx+1] * stride[idx+1]
             comptime StrideType = RowMajorTypes[idx]
@@ -846,7 +846,7 @@ def row_major(var shape: Coord) -> RowMajorLayout[*shape.element_types]:
             comptime if StrideType.is_static_value:
                 comptime stride_val = StrideType.static_value
                 stride_ptr.init_pointee_copy(
-                    rebind[StrideType](Idx[stride_val]())
+                    rebind[StrideType](Idx[stride_val])
                 )
             else:
                 var stride_val = Int(shape[idx + 1].value()) * Int(
@@ -897,7 +897,7 @@ def row_major[
         comptime if i == 0:
             # Rightmost dimension always has stride 1
             comptime StrideType = RowMajorTypes[idx]
-            stride_ptr.init_pointee_copy(rebind[StrideType](Idx[1]()))
+            stride_ptr.init_pointee_copy(rebind[StrideType](Idx[1]))
         else:
             # Calculate stride as product of shape[idx+1] * stride[idx+1]
             comptime StrideType = RowMajorTypes[idx]
@@ -906,7 +906,7 @@ def row_major[
                 # Stride is compile-time known (both shape and prev stride are compile-time)
                 comptime stride_val = StrideType.static_value
                 stride_ptr.init_pointee_copy(
-                    rebind[StrideType](Idx[stride_val]())
+                    rebind[StrideType](Idx[stride_val])
                 )
             else:
                 # At least one is runtime, compute at runtime
@@ -1047,7 +1047,7 @@ def col_major(var shape: Coord) -> ColMajorLayout[shape.element_types]:
         comptime if i == 0:
             # Leftmost dimension always has stride 1
             comptime StrideType = ColMajorTypes[i]
-            stride_ptr.init_pointee_copy(rebind[StrideType](Idx[1]()))
+            stride_ptr.init_pointee_copy(rebind[StrideType](Idx[1]))
         else:
             # Calculate stride as product of shape[i-1] * stride[i-1]
             comptime StrideType = ColMajorTypes[i]
@@ -1056,7 +1056,7 @@ def col_major(var shape: Coord) -> ColMajorLayout[shape.element_types]:
                 # Stride is compile-time known
                 comptime stride_val = StrideType.static_value
                 stride_ptr.init_pointee_copy(
-                    rebind[StrideType](Idx[stride_val]())
+                    rebind[StrideType](Idx[stride_val])
                 )
             else:
                 # At least one is runtime, compute at runtime
@@ -1112,7 +1112,7 @@ def col_major(
     Returns:
         A 1D Layout with stride 1.
     """
-    return Layout(Coord(idx), Coord(Idx[1]()))
+    return Layout(Coord(idx), Coord(Idx[1]))
 
 
 @always_inline("nodebug")
@@ -1130,7 +1130,7 @@ def col_major(
     Returns:
         A 1D Layout with stride 1.
     """
-    return Layout(Coord(idx), Coord(Idx[1]()))
+    return Layout(Coord(idx), Coord(Idx[1]))
 
 
 def zipped_divide[

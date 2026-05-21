@@ -936,8 +936,8 @@ def test_blackwell_kernel_7[
 
     var a_shape = Coord(m, k)
     var b_shape = Coord(
-        Idx[NType.static_value if transpose_b else KType.static_value](),
-        Idx[KType.static_value if transpose_b else NType.static_value](),
+        Idx[NType.static_value if transpose_b else KType.static_value],
+        Idx[KType.static_value if transpose_b else NType.static_value],
     )
     var c_shape = Coord(m, n)
 
@@ -1100,7 +1100,7 @@ def benchmark_blackwell_matmul(ctx: DeviceContext) raises:
                 a_swizzle=TensorMapSwizzle.SWIZZLE_128B,
                 b_swizzle=TensorMapSwizzle.SWIZZLE_128B,
                 benchmark=True,
-            ](ctx, shape[0], Idx[shape[1]](), Idx[shape[2]]())
+            ](ctx, shape[0], Idx[shape[1]], Idx[shape[2]])
         except error:
             print("error")
 
@@ -1124,4 +1124,4 @@ def main() raises:
             cluster_shape=StaticTuple[Int32, 3](2, 1, 1),
             a_swizzle=TensorMapSwizzle.SWIZZLE_128B,
             b_swizzle=TensorMapSwizzle.SWIZZLE_128B,
-        ](ctx, Idx[4096](), Idx[4096](), Idx[4096]())
+        ](ctx, Idx[4096], Idx[4096], Idx[4096])

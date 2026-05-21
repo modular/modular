@@ -173,9 +173,7 @@ struct Inner_matmul_i8mm(InnerMatmulKernel, Movable):
         var n_outer_idx = tile_n_k_idx[0] // (kernel_cols // 2)
         var kl = tile_n_k_idx[1]
 
-        var b_ptr = b_packed.ptr_at_offset(
-            Coord(n_outer_idx, kl // 8, Idx[0]())
-        )
+        var b_ptr = b_packed.ptr_at_offset(Coord(n_outer_idx, kl // 8, Idx[0]))
 
         # This inner kernels works with non-transposed A.
         var K = Int(a.dim[1]())

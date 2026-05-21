@@ -455,26 +455,26 @@ def test_winograd_conv_gpu[
     # Define TileTensor layouts
     comptime input_tt_layout = row_major(
         (
-            Idx[Int(input_dim[0])](),
-            Idx[Int(input_dim[1])](),
-            Idx[Int(input_dim[2])](),
-            Idx[Int(input_dim[3])](),
+            Idx[Int(input_dim[0])],
+            Idx[Int(input_dim[1])],
+            Idx[Int(input_dim[2])],
+            Idx[Int(input_dim[3])],
         )
     )
     comptime filter_tt_layout = row_major(
         (
-            Idx[Int(filter_dim[0])](),
-            Idx[Int(filter_dim[1])](),
-            Idx[Int(filter_dim[2])](),
-            Idx[Int(filter_dim[3])](),
+            Idx[Int(filter_dim[0])],
+            Idx[Int(filter_dim[1])],
+            Idx[Int(filter_dim[2])],
+            Idx[Int(filter_dim[3])],
         )
     )
     comptime output_tt_layout = row_major(
         (
-            Idx[Int(output_dim[0])](),
-            Idx[Int(output_dim[1])](),
-            Idx[Int(output_dim[2])](),
-            Idx[Int(output_dim[3])](),
+            Idx[Int(output_dim[0])],
+            Idx[Int(output_dim[1])],
+            Idx[Int(output_dim[2])],
+            Idx[Int(output_dim[3])],
         )
     )
 

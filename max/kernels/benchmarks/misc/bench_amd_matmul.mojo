@@ -386,8 +386,8 @@ def bench_shape[
     var shape_c = Coord(M, n)
     var shape_a = Coord(M, k)
     var shape_b = Coord(
-        Idx[N_static if transpose_b else K_static](),
-        Idx[K_static if transpose_b else N_static](),
+        Idx[N_static if transpose_b else K_static],
+        Idx[K_static if transpose_b else N_static],
     )
 
     @always_inline
@@ -585,9 +585,9 @@ def main() raises:
         var warm_c = CacheBustingBuffer[dtype](N * N, 4, ctx)
         warm_a.init_on_device(init_type, ctx)
         warm_b.init_on_device(init_type, ctx)
-        var warm_shape_a = Coord(Idx[N](), Idx[K]())
-        var warm_shape_b = Coord(Idx[N](), Idx[K]())
-        var warm_shape_c = Coord(Idx[N](), Idx[N]())
+        var warm_shape_a = Coord(Idx[N], Idx[K])
+        var warm_shape_b = Coord(Idx[N], Idx[K])
+        var warm_shape_c = Coord(Idx[N], Idx[N])
         var ta = TileTensor(warm_a.offset_ptr(0), row_major(warm_shape_a))
         var tb = TileTensor(warm_b.offset_ptr(0), row_major(warm_shape_b))
         var tc = TileTensor(warm_c.offset_ptr(0), row_major(warm_shape_c))
@@ -615,8 +615,8 @@ def main() raises:
                 ctx,
                 m,
                 ms[i],
-                Idx[N](),
-                Idx[K](),
+                Idx[N],
+                Idx[K],
                 init_type,
             )
 

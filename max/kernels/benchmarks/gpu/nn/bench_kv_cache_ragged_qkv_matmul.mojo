@@ -118,13 +118,13 @@ def execute_kv_cache_ragged_matmul[
     )
     var hidden_state_device = TileTensor(
         hidden_state_buffer,
-        row_major((total_seq_len, Idx[hidden_size]())),
+        row_major((total_seq_len, Idx[hidden_size])),
     )
 
     with hidden_state_buffer.map_to_host() as hidden_state_host:
         var hidden_state_host_tensor = TileTensor(
             hidden_state_host,
-            row_major((total_seq_len, Idx[hidden_size]())),
+            row_major((total_seq_len, Idx[hidden_size])),
         )
         random(hidden_state_host_tensor)
 
@@ -134,13 +134,13 @@ def execute_kv_cache_ragged_matmul[
     )
     var weight_device = TileTensor(
         weight_buffer,
-        row_major((Idx[hidden_size](), Idx[combined_hidden_size]())),
+        row_major((Idx[hidden_size], Idx[combined_hidden_size])),
     )
 
     with weight_buffer.map_to_host() as weight_host:
         var weight_host_tensor = TileTensor(
             weight_host,
-            row_major((Idx[hidden_size](), Idx[combined_hidden_size]())),
+            row_major((Idx[hidden_size], Idx[combined_hidden_size])),
         )
         random(weight_host_tensor)
 
@@ -150,7 +150,7 @@ def execute_kv_cache_ragged_matmul[
     )
     var output_device = TileTensor(
         output_buffer,
-        row_major((total_seq_len, Idx[combined_hidden_size]())),
+        row_major((total_seq_len, Idx[combined_hidden_size])),
     )
 
     # KV block tensor layout and buffer

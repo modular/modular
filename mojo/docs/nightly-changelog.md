@@ -51,6 +51,9 @@ This version is still a work in progress.
 
 ## Library changes
 
+- Changed `Idx` to a `comptime` alias for `ComptimeInt`. Use `Idx[value]`
+  instead of `Idx[value]()` for compile-time coordinates.
+
 - Added `std.gpu.host.CompletionFlag`, a non-owning handle to an MLRT
   `M::Driver::CompletionFlag` (an 8-byte slot in pinned host memory mapped
   into a device's address space). Pairs with the new

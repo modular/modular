@@ -57,7 +57,7 @@ def main() raises:
             c_type=bf16,
             config=config_1,
             config_swapAB=config_1_swapAB,
-        ](ctx, Int(16), Idx[64](), Idx[256]())
+        ](ctx, Int(16), Idx[64], Idx[256])
 
         # =====================================================================
         # Test 2: 16x80x1024 (M=16, N=80, K=1024)
@@ -80,7 +80,7 @@ def main() raises:
             c_type=bf16,
             config=config_2,
             config_swapAB=config_2_swapAB,
-        ](ctx, Int(16), Idx[80](), Idx[1024]())
+        ](ctx, Int(16), Idx[80], Idx[1024])
 
         # =====================================================================
         # Test 3: 32x128x1024 (M=32, N=128, K=1024)
@@ -102,7 +102,7 @@ def main() raises:
             c_type=bf16,
             config=config_3,
             config_swapAB=config_3_swapAB,
-        ](ctx, Int(32), Idx[128](), Idx[1024]())
+        ](ctx, Int(32), Idx[128], Idx[1024])
 
         # =====================================================================
         # Test 4: 32x128x1024 (M=32, N=128, K=1024)
@@ -137,7 +137,7 @@ def main() raises:
             num_pipeline_stages_swapAB=2,
             num_consumer_swapAB=2,
             use_vendor_reference=True,
-        ](ctx, Int(476), Idx[1024](), Idx[128]())
+        ](ctx, Int(476), Idx[1024], Idx[128])
 
         print("\n" + "=" * 60)
         print("TEST: 48x1536x4096 (M=48, N=1536, K=4096)")
@@ -169,7 +169,7 @@ def main() raises:
             num_pipeline_stages_swapAB=2,
             num_consumer_swapAB=2,
             use_vendor_reference=True,
-        ](ctx, Int(48), Idx[4096](), Idx[1536]())
+        ](ctx, Int(48), Idx[4096], Idx[1536])
 
         print("\n" + "=" * 60)
         print("TEST: 48x1536x4096 (M=48, N=1536, K=4096)")
@@ -196,7 +196,7 @@ def main() raises:
             num_pipeline_stages_swapAB=2,
             num_consumer_swapAB=2,
             use_vendor_reference=True,
-        ](ctx, Int(48), Idx[4096](), Idx[1536]())
+        ](ctx, Int(48), Idx[4096], Idx[1536])
 
         print("\n" + "=" * 60)
         print("TEST: 100x1536x4096 (M=100, N=1536, K=4096)")
@@ -223,7 +223,7 @@ def main() raises:
             num_pipeline_stages_swapAB=2,
             num_consumer_swapAB=2,
             use_vendor_reference=True,
-        ](ctx, Int(100), Idx[1536](), Idx[4096]())
+        ](ctx, Int(100), Idx[1536], Idx[4096])
 
         print("\n" + "=" * 60)
         print("TEST: 249x4096x1536 (M=249, N=4096, K=1536)")
@@ -250,7 +250,7 @@ def main() raises:
             num_pipeline_stages_swapAB=2,
             num_consumer_swapAB=2,
             use_vendor_reference=True,
-        ](ctx, Int(249), Idx[4096](), Idx[1536]())
+        ](ctx, Int(249), Idx[4096], Idx[1536])
 
         test_matmul_sm90_swapAB_comparison_v2[
             a_type=bf16,
@@ -273,7 +273,7 @@ def main() raises:
             num_pipeline_stages_swapAB=2,
             num_consumer_swapAB=1,
             use_vendor_reference=True,
-        ](ctx, Int(249), Idx[4096](), Idx[1536]())
+        ](ctx, Int(249), Idx[4096], Idx[1536])
 
         test_matmul_sm90_swapAB_comparison_v2[
             a_type=bf16,
@@ -296,7 +296,7 @@ def main() raises:
             num_pipeline_stages_swapAB=2,
             num_consumer_swapAB=1,
             use_vendor_reference=True,
-        ](ctx, Int(15), Idx[17](), Idx[1536]())
+        ](ctx, Int(15), Idx[17], Idx[1536])
 
         test_matmul_sm90_swapAB_comparison_v2[
             a_type=bf16,
@@ -319,7 +319,7 @@ def main() raises:
             num_pipeline_stages_swapAB=2,
             num_consumer_swapAB=2,
             use_vendor_reference=True,
-        ](ctx, Int(800), Idx[999](), Idx[1536]())
+        ](ctx, Int(800), Idx[999], Idx[1536])
 
         # =================================================================
         # EPILOGUE TESTS
@@ -351,7 +351,7 @@ def main() raises:
             num_consumer_swapAB=2,
             default_epilogue=True,
             use_vendor_reference=True,
-        ](ctx, Int(500), Idx[2232](), Idx[64]())
+        ](ctx, Int(500), Idx[2232], Idx[64])
 
         # Test with coordinate-based lambda to verify indexing pattern
         # Each position gets val + row + col * 0.5, creating unique values
@@ -401,7 +401,7 @@ def main() raises:
                 elementwise_compute_lambda_type
             ](coord_lambda),
             use_vendor_reference=True,
-        ](ctx, Int(1000), Idx[1024](), Idx[256]())
+        ](ctx, Int(1000), Idx[1024], Idx[256])
 
         test_matmul_sm90_swapAB_comparison_v2[
             a_type=bf16,
@@ -427,7 +427,7 @@ def main() raises:
                 elementwise_compute_lambda_type
             ](coord_lambda),
             use_vendor_reference=True,
-        ](ctx, Int(900), Idx[1532](), Idx[256]())
+        ](ctx, Int(900), Idx[1532], Idx[256])
 
         test_matmul_sm90_swapAB_comparison_v2[
             a_type=bf16,
@@ -451,7 +451,7 @@ def main() raises:
             num_consumer_swapAB=1,
             k_group_size_swapAB=2,
             use_vendor_reference=True,
-        ](ctx, Int(130), Idx[1536](), Idx[4096]())
+        ](ctx, Int(130), Idx[1536], Idx[4096])
 
     print("\n" + "=" * 60)
     print("ALL SWAPAB TESTS COMPLETED SUCCESSFULLY")

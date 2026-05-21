@@ -86,15 +86,15 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         t" swapAB={swapAB} k_group_size={k_group_size} SF_VECTOR_SIZE={SF_VECTOR_SIZE}"
     )
 
-    var a_shape = row_major(Coord(batch, m, Idx[KType.static_value]()))
+    var a_shape = row_major(Coord(batch, m, Idx[KType.static_value]))
     var b_shape = row_major(
         Coord(
             batch,
-            Idx[NType.static_value if transpose_b else KType.static_value](),
-            Idx[KType.static_value if transpose_b else NType.static_value](),
+            Idx[NType.static_value if transpose_b else KType.static_value],
+            Idx[KType.static_value if transpose_b else NType.static_value],
         )
     )
-    var c_shape = row_major(Coord(batch, m, Idx[NType.static_value]()))
+    var c_shape = row_major(Coord(batch, m, Idx[NType.static_value]))
 
     var a_size = Int(batch.value()) * Int(m.value()) * Int(k.value())
     var b_size = Int(batch.value()) * Int(n.value()) * Int(k.value())
@@ -122,20 +122,20 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         Coord(
             Int(batch.value()),
             ceildiv(Int(m.value()), SF_MN_GROUP_SIZE),
-            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)](),
-            Idx[SF_ATOM_M[0]](),
-            Idx[SF_ATOM_M[1]](),
-            Idx[SF_ATOM_K](),
+            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
+            Idx[SF_ATOM_M[0]],
+            Idx[SF_ATOM_M[1]],
+            Idx[SF_ATOM_K],
         )
     )
     var b_scales_shape = row_major(
         Coord(
             Int(batch.value()),
-            Idx[ceildiv(NType.static_value, SF_MN_GROUP_SIZE)](),
-            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)](),
-            Idx[SF_ATOM_M[0]](),
-            Idx[SF_ATOM_M[1]](),
-            Idx[SF_ATOM_K](),
+            Idx[ceildiv(NType.static_value, SF_MN_GROUP_SIZE)],
+            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
+            Idx[SF_ATOM_M[0]],
+            Idx[SF_ATOM_M[1]],
+            Idx[SF_ATOM_K],
         )
     )
 
@@ -270,30 +270,30 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         " a_type==float8_e4m3fn. Add the non-transposed case if needed."
     )
 
-    var a_2d_shape = row_major(Coord(m, Idx[KType.static_value]()))
+    var a_2d_shape = row_major(Coord(m, Idx[KType.static_value]))
     var b_2d_shape = row_major(
         Coord(
-            Idx[NType.static_value if transpose_b else KType.static_value](),
-            Idx[KType.static_value if transpose_b else NType.static_value](),
+            Idx[NType.static_value if transpose_b else KType.static_value],
+            Idx[KType.static_value if transpose_b else NType.static_value],
         )
     )
-    var c_2d_shape = row_major(Coord(m, Idx[NType.static_value]()))
+    var c_2d_shape = row_major(Coord(m, Idx[NType.static_value]))
     var a_scales_5d_shape = row_major(
         Coord(
             ceildiv(Int(m.value()), SF_MN_GROUP_SIZE),
-            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)](),
-            Idx[SF_ATOM_M[0]](),
-            Idx[SF_ATOM_M[1]](),
-            Idx[SF_ATOM_K](),
+            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
+            Idx[SF_ATOM_M[0]],
+            Idx[SF_ATOM_M[1]],
+            Idx[SF_ATOM_K],
         )
     )
     var b_scales_5d_shape = row_major(
         Coord(
-            Idx[ceildiv(NType.static_value, SF_MN_GROUP_SIZE)](),
-            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)](),
-            Idx[SF_ATOM_M[0]](),
-            Idx[SF_ATOM_M[1]](),
-            Idx[SF_ATOM_K](),
+            Idx[ceildiv(NType.static_value, SF_MN_GROUP_SIZE)],
+            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
+            Idx[SF_ATOM_M[0]],
+            Idx[SF_ATOM_M[1]],
+            Idx[SF_ATOM_K],
         )
     )
 
@@ -387,8 +387,8 @@ def main() raises:
                     ctx,
                     Int(2),
                     Int(1000),
-                    Idx[1024](),
-                    Idx[1024 + 16](),
+                    Idx[1024],
+                    Idx[1024 + 16],
                 )
 
                 test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
@@ -407,8 +407,8 @@ def main() raises:
                     ctx,
                     Int(2),
                     Int(512),
-                    Idx[4096](),
-                    Idx[1024 + 16](),
+                    Idx[4096],
+                    Idx[1024 + 16],
                 )
 
                 test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
@@ -428,8 +428,8 @@ def main() raises:
                     ctx,
                     Int(3),
                     Int(500),
-                    Idx[2048](),
-                    Idx[4096](),
+                    Idx[2048],
+                    Idx[4096],
                 )
 
                 test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
@@ -448,8 +448,8 @@ def main() raises:
                     ctx,
                     Int(16),
                     Int(999),
-                    Idx[256](),
-                    Idx[128](),
+                    Idx[256],
+                    Idx[128],
                 )
 
                 test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
@@ -468,8 +468,8 @@ def main() raises:
                     ctx,
                     Int(17),
                     Int(777),
-                    Idx[2560](),
-                    Idx[8192](),
+                    Idx[2560],
+                    Idx[8192],
                 )
 
                 test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
@@ -488,8 +488,8 @@ def main() raises:
                     ctx,
                     Int(23),
                     Int(1),
-                    Idx[576](),
-                    Idx[7168](),
+                    Idx[576],
+                    Idx[7168],
                 )
 
                 # swapAB tests
@@ -509,8 +509,8 @@ def main() raises:
                     ctx,
                     Int(2),
                     Int(16),
-                    Idx[1024](),
-                    Idx[1024 + 16](),
+                    Idx[1024],
+                    Idx[1024 + 16],
                 )
 
                 test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
@@ -529,6 +529,6 @@ def main() raises:
                     ctx,
                     Int(3),
                     Int(100),
-                    Idx[2560](),
-                    Idx[8192](),
+                    Idx[2560],
+                    Idx[8192],
                 )

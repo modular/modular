@@ -178,7 +178,7 @@ def _reshape_tile_tensor_with_batch_to_3d(
 
         comptime if StrideType.is_static_value:
             stride_ptr.init_pointee_copy(
-                rebind[StrideType](Idx[StrideType.static_value]())
+                rebind[StrideType](Idx[StrideType.static_value])
             )
         else:
             var stride_val = tensor.layout.stride[idx]().value()
@@ -192,7 +192,7 @@ def _reshape_tile_tensor_with_batch_to_3d(
 
         comptime if ShapeType.is_static_value:
             shape_ptr.init_pointee_copy(
-                rebind[ShapeType](Idx[ShapeType.static_value]())
+                rebind[ShapeType](Idx[ShapeType.static_value])
             )
         else:
             var shape_val = Int(tensor.layout.shape[idx]().value())
@@ -556,7 +556,7 @@ def batched_matmul_kernel_gpu[
     var a = TileTensor(
         a_ptr,
         TileLayout(
-            (m, Idx[a_tensor.static_shape[2]]()),
+            (m, Idx[a_tensor.static_shape[2]]),
             Coord[*_slice_types[ATensorType._stride_types, 2]()](),
         ),
     )
@@ -570,7 +570,7 @@ def batched_matmul_kernel_gpu[
     var c = TileTensor(
         c_ptr,
         TileLayout(
-            (m, Idx[c_tensor.static_shape[2]]()),
+            (m, Idx[c_tensor.static_shape[2]]),
             Coord[*_slice_types[CTensorType._stride_types, 2]()](),
         ),
     )

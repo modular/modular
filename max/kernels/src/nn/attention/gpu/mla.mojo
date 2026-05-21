@@ -394,7 +394,7 @@ def flare_mla_decoding[
         UnsafePointer[
             Scalar[DType.uint32], MutExternalOrigin
         ].unsafe_dangling(),
-        row_major(Coord(Idx[0]())),
+        row_major(Coord(Idx[0])),
     )
 
     flare_mla_decoding_dispatch[
@@ -968,11 +968,11 @@ def mla_splitk_reduce[
 
     var qk_max_tt = TileTensor(
         qk_max_ptr,
-        row_major((num_partitions, batch_size, Idx[num_heads]())),
+        row_major((num_partitions, batch_size, Idx[num_heads])),
     )
     var exp_sum_tt = TileTensor(
         exp_sum_ptr,
-        row_major((num_partitions, batch_size, Idx[num_heads]())),
+        row_major((num_partitions, batch_size, Idx[num_heads])),
     )
     var intermediate_tt = TileTensor(
         intermediate_ptr,
@@ -980,14 +980,14 @@ def mla_splitk_reduce[
             (
                 num_partitions,
                 batch_size,
-                Idx[num_heads](),
-                Idx[depth](),
+                Idx[num_heads],
+                Idx[depth],
             )
         ),
     )
     var output_tt = TileTensor(
         output_ptr,
-        row_major((batch_size, Idx[num_heads](), Idx[depth]())),
+        row_major((batch_size, Idx[num_heads], Idx[depth])),
     )
 
     var scales_tt = tt_stack_allocation[
@@ -1069,7 +1069,7 @@ def mla_splitk_reduce[
             var final_acc = SIMD[accum_type, elems_per_lane](0)
             comptime for w in range(W_PARTS):
                 final_acc += warp_partial_tt.load[width=elems_per_lane](
-                    Coord(Idx[w](), depth_in_tile)
+                    Coord(Idx[w], depth_in_tile)
                 )
             output_tt.store(
                 Coord(batch_idx, head_idx, depth_global),

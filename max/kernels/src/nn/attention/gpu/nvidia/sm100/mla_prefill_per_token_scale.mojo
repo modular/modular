@@ -1432,7 +1432,7 @@ def q_scale_tma[
     var num_elements = q_scale_tensor.size()
     debug_assert(num_elements % 4 == 0, "num_elements must be divisible by 4")
     var tensor = TileTensor(
-        q_scale_tensor.ptr, tt_row_major(Coord(Idx[1](), num_elements))
+        q_scale_tensor.ptr, tt_row_major(Coord(Idx[1], num_elements))
     )
 
     return create_tensor_tile[

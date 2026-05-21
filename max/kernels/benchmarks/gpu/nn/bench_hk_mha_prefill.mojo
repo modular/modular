@@ -151,8 +151,8 @@ def run_hk_mha_prefill[
                         Coord(
                             Int32(batch_size),
                             Int32(seq_len),
-                            Idx[num_heads](),
-                            Idx[depth](),
+                            Idx[num_heads],
+                            Idx[depth],
                         )
                     ),
                 )
@@ -162,8 +162,8 @@ def run_hk_mha_prefill[
                         Coord(
                             Int32(batch_size),
                             Int32(num_keys),
-                            Idx[kv_num_heads](),
-                            Idx[depth](),
+                            Idx[kv_num_heads],
+                            Idx[depth],
                         )
                     ),
                 )
@@ -173,8 +173,8 @@ def run_hk_mha_prefill[
                         Coord(
                             Int32(batch_size),
                             Int32(num_keys),
-                            Idx[kv_num_heads](),
-                            Idx[depth](),
+                            Idx[kv_num_heads],
+                            Idx[depth],
                         )
                     ),
                 )
@@ -184,8 +184,8 @@ def run_hk_mha_prefill[
                         Coord(
                             Int32(batch_size),
                             Int32(seq_len),
-                            Idx[num_heads](),
-                            Idx[depth](),
+                            Idx[num_heads],
+                            Idx[depth],
                         )
                     ),
                 )

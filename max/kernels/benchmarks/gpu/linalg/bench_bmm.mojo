@@ -143,12 +143,8 @@ def bench_bmm[
         row_major(
             Coord(
                 b,
-                Idx[
-                    NType.static_value if transpose_b else KType.static_value
-                ](),
-                Idx[
-                    KType.static_value if transpose_b else NType.static_value
-                ](),
+                Idx[NType.static_value if transpose_b else KType.static_value],
+                Idx[KType.static_value if transpose_b else NType.static_value],
             )
         ),
     ).as_any_origin()
@@ -214,10 +210,10 @@ def bench_bmm[
                             Coord(
                                 Idx[
                                     NType.static_value if transpose_b else KType.static_value
-                                ](),
+                                ],
                                 Idx[
                                     KType.static_value if transpose_b else NType.static_value
-                                ](),
+                                ],
                             )
                         ),
                     )
@@ -252,10 +248,10 @@ def bench_bmm[
                                 Coord(
                                     Idx[
                                         NType.static_value if transpose_b else KType.static_value
-                                    ](),
+                                    ],
                                     Idx[
                                         KType.static_value if transpose_b else NType.static_value
-                                    ](),
+                                    ],
                                 )
                             ),
                         )
@@ -392,8 +388,8 @@ def main() raises:
             bench,
             b,
             m,
-            Idx[N](),
-            Idx[K](),
+            Idx[N],
+            Idx[K],
             init_type,
         )
 

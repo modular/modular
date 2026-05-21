@@ -104,7 +104,7 @@ def mxfp4_dequant_grouped_matmul_amd(
         )
         var b_fp8_expert = TileTensor(
             b_fp8_buf.unsafe_ptr() + e * static_N * static_K,
-            row_major((Idx[static_N](), Idx[static_K]())),
+            row_major((Idx[static_N], Idx[static_K])),
         )
         dequant_mxfp4(
             ctx,
@@ -120,7 +120,7 @@ def mxfp4_dequant_grouped_matmul_amd(
         total_num_tokens * static_K
     )
     var a_fp8_tt = TileTensor(
-        a_fp8_buf, row_major((total_num_tokens, Idx[static_K]()))
+        a_fp8_buf, row_major((total_num_tokens, Idx[static_K]))
     )
     _cast_bf16_to_fp8(ctx, a_fp8_tt, a, total_num_tokens, static_K)
 

@@ -693,12 +693,12 @@ def run_test_sparse_kv_fp8[
     var total_q_tokens = batch_size * q_max_seq_len
     var q_tt = TileTensor(
         q_device.unsafe_ptr(),
-        row_major((total_q_tokens, Idx[num_heads](), Idx[Q_DEPTH]())),
+        row_major((total_q_tokens, Idx[num_heads], Idx[Q_DEPTH])),
     )
 
     var out_tt = TileTensor(
         out_device.unsafe_ptr(),
-        row_major((total_q_tokens, Idx[num_heads](), Idx[V_DEPTH]())),
+        row_major((total_q_tokens, Idx[num_heads], Idx[V_DEPTH])),
     )
 
     var row_offsets_host = ctx.enqueue_create_host_buffer[DType.uint32](
@@ -1188,11 +1188,11 @@ def run_test_sparse_kv_fp8_variable_topk[
 
     var q_tt = TileTensor(
         q_device.unsafe_ptr(),
-        row_major((batch_size, Idx[num_heads](), Idx[Q_DEPTH]())),
+        row_major((batch_size, Idx[num_heads], Idx[Q_DEPTH])),
     )
     var out_tt = TileTensor(
         out_device.unsafe_ptr(),
-        row_major((batch_size, Idx[num_heads](), Idx[V_DEPTH]())),
+        row_major((batch_size, Idx[num_heads], Idx[V_DEPTH])),
     )
 
     var row_offsets_host = ctx.enqueue_create_host_buffer[DType.uint32](
@@ -1557,11 +1557,11 @@ def run_test_sparse_kv_fp8_attn_sink[
 
     var q_tt = TileTensor(
         q_device.unsafe_ptr(),
-        row_major((batch_size, Idx[num_heads](), Idx[Q_DEPTH]())),
+        row_major((batch_size, Idx[num_heads], Idx[Q_DEPTH])),
     )
     var out_tt = TileTensor(
         out_device.unsafe_ptr(),
-        row_major((batch_size, Idx[num_heads](), Idx[V_DEPTH]())),
+        row_major((batch_size, Idx[num_heads], Idx[V_DEPTH])),
     )
 
     var row_offsets_host = ctx.enqueue_create_host_buffer[DType.uint32](
@@ -2150,11 +2150,11 @@ def run_test_sparse_kv_fp8_extra_kv[
 
     var q_tt = TileTensor(
         q_device.unsafe_ptr(),
-        row_major((batch_size, Idx[num_heads](), Idx[Q_DEPTH]())),
+        row_major((batch_size, Idx[num_heads], Idx[Q_DEPTH])),
     )
     var out_tt = TileTensor(
         out_device.unsafe_ptr(),
-        row_major((batch_size, Idx[num_heads](), Idx[V_DEPTH]())),
+        row_major((batch_size, Idx[num_heads], Idx[V_DEPTH])),
     )
 
     var row_offsets_host = ctx.enqueue_create_host_buffer[DType.uint32](
@@ -2563,11 +2563,11 @@ def run_test_sparse_kv_fp8_topk_clamping[
 
     var q_tt = TileTensor(
         q_device.unsafe_ptr(),
-        row_major((batch_size, Idx[num_heads](), Idx[Q_DEPTH]())),
+        row_major((batch_size, Idx[num_heads], Idx[Q_DEPTH])),
     )
     var out_tt = TileTensor(
         out_device.unsafe_ptr(),
-        row_major((batch_size, Idx[num_heads](), Idx[V_DEPTH]())),
+        row_major((batch_size, Idx[num_heads], Idx[V_DEPTH])),
     )
 
     var row_offsets_host = ctx.enqueue_create_host_buffer[DType.uint32](

@@ -964,17 +964,17 @@ def _matmul_dynamic_scaled_fp8_impl[
                 _dtype, width
             ]:
                 var a_scale = a_scales.load[width=1](
-                    Coord(Idx[0](), idx[0])
+                    Coord(Idx[0], idx[0])
                 ).cast[DType.float32]()
                 var b_scale: SIMD[DType.float32, width]
 
                 comptime if transpose_b:
                     b_scale = b_scales.load[width=width](
-                        Coord(idx[1], Idx[0]())
+                        Coord(idx[1], Idx[0])
                     ).cast[DType.float32]()
                 else:
                     b_scale = b_scales.load[width=width](
-                        Coord(Idx[0](), idx[1])
+                        Coord(Idx[0], idx[1])
                     ).cast[DType.float32]()
 
                 var scaled_val = val.cast[DType.float32]() * a_scale * b_scale
@@ -992,10 +992,10 @@ def _matmul_dynamic_scaled_fp8_impl[
                 _dtype, width
             ]:
                 var a_scale = a_scales.load[width=1](
-                    Coord(Idx[0](), Idx[0]())
+                    Coord(Idx[0], Idx[0])
                 ).cast[DType.float32]()
                 var b_scale = b_scales.load[width=1](
-                    Coord(Idx[0](), Idx[0]())
+                    Coord(Idx[0], Idx[0])
                 ).cast[DType.float32]()
                 var scaled_val = val.cast[DType.float32]() * a_scale * b_scale
                 return scaled_val.cast[_dtype]()
@@ -1026,17 +1026,17 @@ def _matmul_dynamic_scaled_fp8_impl[
                 dtype: DType, width: SIMDSize, *, alignment: Int = 1
             ](idx: IndexList[2], val: SIMD[dtype, width]):
                 var a_scale = a_scales.load[width=1](
-                    Coord(Idx[0](), idx[0])
+                    Coord(Idx[0], idx[0])
                 ).cast[dtype]()
                 var b_scale: SIMD[dtype, width]
 
                 comptime if transpose_b:
                     b_scale = b_scales.load[width=width](
-                        Coord(idx[1], Idx[0]())
+                        Coord(idx[1], Idx[0])
                     ).cast[dtype]()
                 else:
                     b_scale = b_scales.load[width=width](
-                        Coord(Idx[0](), idx[1])
+                        Coord(Idx[0], idx[1])
                     ).cast[dtype]()
 
                 var scaled_val = val * a_scale * b_scale
@@ -1053,10 +1053,10 @@ def _matmul_dynamic_scaled_fp8_impl[
                 dtype: DType, width: SIMDSize, *, alignment: Int = 1
             ](idx: IndexList[2], val: SIMD[dtype, width]):
                 var a_scale = a_scales.load[width=1](
-                    Coord(Idx[0](), Idx[0]())
+                    Coord(Idx[0], Idx[0])
                 ).cast[dtype]()
                 var b_scale = b_scales.load[width=1](
-                    Coord(Idx[0](), Idx[0]())
+                    Coord(Idx[0], Idx[0])
                 ).cast[dtype]()
                 var scaled_val = val * a_scale * b_scale
 
@@ -1077,7 +1077,7 @@ def _matmul_dynamic_scaled_fp8_impl[
                 )
                 var c_scratch = TileTensor(
                     scratch_buffer.unsafe_ptr(),
-                    row_major(Coord(M, Idx[b_N]())),
+                    row_major(Coord(M, Idx[b_N])),
                 )
 
                 comptime if input_scale_granularity == "tensor":

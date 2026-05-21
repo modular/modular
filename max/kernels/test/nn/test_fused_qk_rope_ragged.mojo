@@ -165,8 +165,8 @@ def test_fused_qk_rope[
     # Note: This tensor has non-row-major strides (head_dim, 1) to select every
     # rope_dim-th element from the original head_dim-strided buffer.
     comptime freqs_cis_layout = TileLayout(
-        Coord(Idx[max_seq_len](), Idx[rope_dim]()),
-        Coord(Idx[head_dim](), Idx[1]()),
+        Coord(Idx[max_seq_len], Idx[rope_dim]),
+        Coord(Idx[head_dim], Idx[1]),
     )
     var freqs_cis_table = TileTensor(
         freqs_cis_table_buffer.unsafe_ptr() + (head_dim - rope_dim),

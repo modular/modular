@@ -341,7 +341,7 @@ def test_kv_cache_2m_iadd_gpu[
     )
     var a_host = TileTensor(
         a.tensor[update=False]().ptr,
-        row_major(2 * total_slice_length, Idx[num_heads * head_dim]()),
+        row_major(2 * total_slice_length, Idx[num_heads * head_dim]),
     )
     for i in range(a_host.num_elements()):
         a_host.raw_store(i, Scalar[dtype](i))
@@ -451,14 +451,12 @@ def test_kv_cache_2m_iadd_cpu[
     )
 
     var lora_end_idx_host_ptr = List(length=1, fill=Scalar[DType.int64](0))
-    var lora_end_idx_host = TileTensor(
-        lora_end_idx_host_ptr, row_major(Idx[1]())
-    )
+    var lora_end_idx_host = TileTensor(lora_end_idx_host_ptr, row_major(Idx[1]))
     lora_end_idx_host[0] = Int64(total_slice_length)
 
     var batch_seq_len_host_ptr = List(length=1, fill=Scalar[DType.int64](0))
     var batch_seq_len_host = TileTensor(
-        batch_seq_len_host_ptr, row_major(Idx[1]())
+        batch_seq_len_host_ptr, row_major(Idx[1])
     )
     batch_seq_len_host[0] = Int64(total_length)
 
@@ -532,7 +530,7 @@ def test_kv_cache_2m_iadd_cpu[
     var a_host_ptr = List(length=a_size, fill=Scalar[dtype](0))
     var a_host = TileTensor(
         a_host_ptr,
-        row_major(2 * total_slice_length, Idx[num_heads * head_dim]()),
+        row_major(2 * total_slice_length, Idx[num_heads * head_dim]),
     )
     for i in range(a_host.num_elements()):
         a_host.raw_store(i, Scalar[dtype](i))
