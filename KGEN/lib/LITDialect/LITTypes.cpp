@@ -1767,11 +1767,10 @@ FnTypeGeneratorType FnTypeGeneratorType::replaceImplicitOriginsWithIndexes(
       replaceImplicitOriginsWithIndexes(*this, originDecls, 1));
 }
 
-/// Reconstruct the signature using a list of named input parameters and
-/// indices indicating which one of them are variadic. These parameters are
-/// prepended to the current signature and references are remapped to index
-/// references. An additional array of indices corresponding to variadic
-/// parameters of the prepended parameters is also required.
+/// Reconstruct the signature using a list of named input parameters. These
+/// parameters are prepended to the current signature and references are
+/// remapped to index references. An additional array of indices corresponding
+/// to variadic parameters of the prepended parameters is also required.
 FnTypeGeneratorType FnTypeGeneratorType::prependParams(
     FnTypeGeneratorType sigGen, ArrayRef<ParamDeclAttr> parentParams,
     ArrayRef<StringAttr> paramNames, ArrayRef<TypedAttr> paramDefaults,

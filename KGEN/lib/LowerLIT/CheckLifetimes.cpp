@@ -13,6 +13,7 @@
 
 #include "KGEN/HLCFDialect/HLCFOps.h"
 #include "KGEN/KGENDialect/KGENOps.h"
+#include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LITDialect/LITUtils.h"
@@ -392,12 +393,61 @@ TypedAttr TypeDeclInfo::getDestructorForType(Type type, Location loc) const {
 
   // TODO: Remove getDestructorAttr from StructDeclOp entirely.
   auto getDestructor = [&](StructInfo info) -> TypedAttr {
+    // The type has to conform to implicitly destructible to have a destructor.
+    auto conformance = info.implicitlyDestructible;
+    if (!conformance)
+      return {};
+
     // If the type is linear, then ignore an explicitly declared
     // destructor for the purposes of destructor insertion.
     if (info.decl.getLinearTypeErrorMsg().value_or("") != "")
       return {};
 
-    return info.decl.getDestructorAttr();
+    // If the destructor is trivial, return that.
+    // TODO: Switch to "isTrivial" bit.
+    if (!info.decl.getDestructorAttr())
+      return {};
+
+    // Ok, the type has a destructor.  Check to see if there is any
+    // conditional conformance involved.
+    TypedAttr dtorAttr;
+    for (WitnessOp witness : conformance.getOps<WitnessOp>()) {
+      // ImplicitlyDestructable has two witnesses: Ignore del_is_trivial.
+      if (witness.getName() == "__del__is_trivial")
+        continue;
+      assert(witness.getName().starts_with("__del__(") &&
+             "Unknown witness in ImplicitlyDestructible");
+      // Found it.
+      assert(!dtorAttr && "Multiple dtors found in ImplicitlyDestructible");
+      dtorAttr = witness.getValue();
+    }
+
+    // We will likely have a rebind to get rid of keyword argument and
+    // convention differences; we don't care about this.
+    dtorAttr = ParamOperatorAttr::stripRebind(dtorAttr);
+
+    // The witness will refer to any struct parameters by name, we need to
+    // rewrite them to indexes.  For example:
+    //    struct Simple[a: Int]: def __del__(deinit self):
+    // will have a __del__ witness of type
+    //    !lit.generator<[1]("self": !lit.ref<!lit.struct<#Simple <:!Int a>>,
+    //                      mut *[0,0]> deinit_mem, |) -> !kgen.none>
+    // we want to rewrite this to:
+    //    :!lit.generator<<"a": !Int, +>[1]("self":
+    //    !lit.ref<!lit.struct<#Simple <:!Int *(0,0)>>, mut *[0,0]>
+    //    deinit_mem) -> !kgen.none>
+    //
+    IndexRefRemapper remapper(info.decl.getInputParams(), 0);
+
+    // Replace all the "a" type names with *(0, 0) within the generator body,
+    // but move the type parameters+pogs onto the generator itself.
+    auto fnType =
+        remapper.replace(cast<GeneratorType>(dtorAttr.getType()).getBody());
+    auto newType =
+        GeneratorType::get(info.decl.getSignature().getParamTypes(), fnType,
+                           info.decl.getSignature().getParamListAttrs());
+    return SymbolConstantAttr::get(
+        cast<SymbolConstantAttr>(dtorAttr).getSymbol(), newType, {});
   };
 
   return getSpecialMemberForType(type, this, getDestructor, loc);
