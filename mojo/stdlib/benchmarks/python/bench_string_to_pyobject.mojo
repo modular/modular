@@ -14,8 +14,9 @@
 
 Measures the per-call cost of converting a Mojo `String` to a
 `PythonObject`. The fast path SIMD-scans for ASCII and calls
-`PyUnicode_FromKindAndData(kind=1, ...)` directly, skipping the UTF-8
-validation pass that `PyUnicode_DecodeUTF8` performs internally.
+`PyUnicode_FromKindAndData(kind=1, ...)` directly, skipping CPython's
+UTF-8 decoder (validation, error callback setup) that
+`PyUnicode_DecodeUTF8` runs.
 """
 
 from std.benchmark import (
@@ -31,10 +32,33 @@ from std.python import Python, PythonObject
 
 
 @parameter
-def bench_string_to_pyobject_ascii(mut b: Bencher) raises:
-    """`PythonObject(string)` on a pure-ASCII input (fast path)."""
+def bench_string_to_pyobject_ascii_short(mut b: Bencher) raises:
+    """`PythonObject(string)` on a short pure-ASCII input (fast path)."""
     _ = Python()
     var s = String("hello world")
+
+    @always_inline
+    def call_fn() {read}:
+        try:
+            for _ in range(1000):
+                var x = PythonObject(black_box(s.as_string_slice()))
+                keep(x)
+        except e:
+            abort(String(e))
+
+    b.iter(call_fn)
+
+
+@parameter
+def bench_string_to_pyobject_ascii_large(mut b: Bencher) raises:
+    """`PythonObject(string)` on a ~1 KiB pure-ASCII input (fast path).
+
+    Exercises the vectorized SIMD loop in `_is_ascii` and the
+    `PyUnicode_FromKindAndData` memcpy at a length where the scan is
+    no longer dominated by entry/exit overhead.
+    """
+    _ = Python()
+    var s = String("0123456789abcdef" * 64)  # 1024 bytes
 
     @always_inline
     def call_fn() {read}:
@@ -68,9 +92,12 @@ def bench_string_to_pyobject_non_ascii(mut b: Bencher) raises:
 
 def main() raises:
     _ = Python()
-    var m = Bench(BenchConfig(num_repetitions=5, max_runtime_secs=2.0))
-    m.bench_function[bench_string_to_pyobject_ascii](
-        BenchId("string_to_pyobject_ascii")
+    var m = Bench(BenchConfig(num_repetitions=20, max_runtime_secs=2.0))
+    m.bench_function[bench_string_to_pyobject_ascii_short](
+        BenchId("string_to_pyobject_ascii_short")
+    )
+    m.bench_function[bench_string_to_pyobject_ascii_large](
+        BenchId("string_to_pyobject_ascii_large")
     )
     m.bench_function[bench_string_to_pyobject_non_ascii](
         BenchId("string_to_pyobject_non_ascii")

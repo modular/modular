@@ -80,8 +80,9 @@ This version is still a work in progress.
 
   - `PythonObject(string)` SIMD-scans for ASCII and uses
     `PyUnicode_FromKindAndData(kind=1, ...)` directly for the
-    all-ASCII case, skipping CPython's UTF-8 validation pass. Non-ASCII
-    input continues to go through `PyUnicode_DecodeUTF8`.
+    all-ASCII case, skipping CPython's UTF-8 decoder (validation,
+    error callback setup). Non-ASCII input continues to go through
+    `PyUnicode_DecodeUTF8`.
 
 - Added `TileTensor.copy_from()` and `TileTensor.split()` for copying between
   compatible tile views and splitting tiles into static or runtime-sized

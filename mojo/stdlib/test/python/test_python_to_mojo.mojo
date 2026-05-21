@@ -37,23 +37,40 @@ def test_string() raises:
 def test_string_construction_ascii_fast_path() raises:
     # All-ASCII input goes through PyUnicode_FromKindAndData(kind=1).
     assert_equal(String(py=PythonObject("hello world")), "hello world")
-    # Empty string is the SIMD-tail-only edge.
+    # Empty string is the scalar-only edge (length < SIMD block width).
     assert_equal(String(py=PythonObject("")), "")
-    # Length exactly at the SIMD block width (uses the vectorized loop with
-    # zero tail).
+    # Length exceeding typical SIMD block width exercises the vectorized loop.
     assert_equal(
         String(py=PythonObject("0123456789abcdef0123456789abcdef")),
         "0123456789abcdef0123456789abcdef",
     )
+    # 0x7F is the highest ASCII byte and must take the fast path.
+    assert_equal(String(py=PythonObject("\x7F")), "\x7F")
+    # Embedded NUL bytes are within `[0, 128)` so they also take the fast
+    # path; verify the explicit length is honored rather than C-string-style
+    # truncation.
+    assert_equal(String(py=PythonObject("foo\0bar")).byte_length(), 7)
 
 
 def test_string_construction_non_ascii_fallback() raises:
-    # Non-ASCII input falls through to PyUnicode_DecodeUTF8 which handles
-    # multi-byte UTF-8 sequences. 2-byte (héllo), 4-byte (fire emoji), and
-    # embedded NUL all round-trip.
+    # Inputs with any byte >= 128 fall through to PyUnicode_DecodeUTF8 so
+    # multi-byte UTF-8 sequences decode to their proper code points.
+    # 2-byte sequence (`é` = U+00E9 = 0xC3 0xA9).
     assert_equal(String(py=PythonObject("héllo")), "héllo")
+    # 4-byte sequence (fire emoji).
     assert_equal(String(py=PythonObject("\U0001F525 fire")), "\U0001F525 fire")
-    assert_equal(String(py=PythonObject("foo\0bar")).byte_length(), 7)
+    # U+0080 = 0xC2 0x80, the smallest non-ASCII code point. 0x80 alone is
+    # not valid UTF-8, so the 2-byte sequence is the boundary case.
+    assert_equal(String(py=PythonObject("\u0080")), "\u0080")
+    # Long ASCII prefix followed by a high byte. Exercises the
+    # non-first-iteration miss case in whichever loop the SIMD-mask width
+    # makes active on the host (vectorized body or scalar tail).
+    var long_then_nonascii = (
+        "0123456789abcdef0123456789abcdef01234567" + "é"
+    )
+    assert_equal(
+        String(py=PythonObject(long_then_nonascii)), long_then_nonascii
+    )
 
 
 def test_int() raises:
