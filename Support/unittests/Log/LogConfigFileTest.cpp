@@ -112,7 +112,7 @@ private:
 };
 
 TEST_F(LogOutputTest, CheckLogLevel) {
-  EXPECT_EQ(M::Log::getLogLevel(), M::Log::LogLevel::ERROR);
+  EXPECT_EQ(M::Log::getDefaultLog().getLogLevel(), M::Log::LogLevel::ERROR);
 }
 
 TEST_F(LogOutputTest, TimestampIsISOWithMicroseconds) {

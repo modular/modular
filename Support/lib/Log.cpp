@@ -4,6 +4,9 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "Support/Log.h"
+#include "Support/Configuration.h"
+
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/ErrorOr.h"
@@ -12,20 +15,16 @@
 #include "llvm/Support/Process.h"
 #include "llvm/Support/raw_ostream.h"
 
-#include "Support/Configuration.h"
-#include "Support/Log.h"
+#include <fmt/args.h>
+#include <fmt/chrono.h>
+#include <fmt/format.h>
 
-#include <atomic>
 #include <chrono>
 #include <cstdlib>
 #include <cstring>
 #include <memory>
 #include <mutex>
 #include <span>
-
-#include <fmt/args.h>
-#include <fmt/chrono.h>
-#include <fmt/format.h>
 
 namespace M::Log {
 
@@ -146,6 +145,42 @@ buildJSONLogLine(LogLevel level, llvm::StringRef msg, LogRecord::Timestamp ts) {
   return jsonLogLine;
 }
 
+static std::string renderRecord(const LogRecord &record) {
+  fmt::dynamic_format_arg_store<fmt::format_context> store;
+  store.reserve(record.argCount, /*new_cap_named=*/0);
+  for (const auto &arg : std::span(record.args.data(), record.argCount)) {
+    switch (arg.tag) {
+    case LogArg::Type::Bool:
+      store.push_back(arg.data.b);
+      break;
+    case LogArg::Type::Int64:
+      store.push_back(arg.data.i64);
+      break;
+    case LogArg::Type::UInt64:
+      store.push_back(arg.data.ui64);
+      break;
+    case LogArg::Type::Fp32:
+      store.push_back(arg.data.fp32);
+      break;
+    case LogArg::Type::Fp64:
+      store.push_back(arg.data.fp64);
+      break;
+    case LogArg::Type::SmallString:
+      store.push_back(fmt::string_view(
+          arg.data.ssoStr.data(),
+          strnlen(arg.data.ssoStr.data(), arg.data.ssoStr.size())));
+      break;
+    case LogArg::Type::String:
+      store.push_back(fmt::string_view(arg.data.str.ptr, arg.data.str.len));
+      break;
+    case LogArg::Type::Pointer:
+      store.push_back(fmt::ptr(arg.data.ptr));
+      break;
+    }
+  }
+  return fmt::vformat(record.fmtString, store);
+}
+
 class Sink {
 public:
   virtual ~Sink() = default;
@@ -187,193 +222,124 @@ class StdoutSink : public Sink {
   }
 };
 
-class Logger {
-  struct LogFormatState {
-    bool useEnhancedFormat = true;
-    bool showTimeStamp = true;
-    bool showColors = true;
-    bool showLogLevel = true;
-    bool useIsoTimestamps = false;
-    bool showMicroseconds = false;
-    bool emitJSON = false;
-  } formatState;
-  std::atomic<LogLevel> level = LogLevel::WARN;
-  std::vector<std::unique_ptr<Sink>> sinks;
+Logger::Logger() {
+  // Respect the standard NO_COLOR env var, any value (even empty) disables
+  // color - does not depend on config object.
+  formatState.showColors = !llvm::sys::Process::GetEnv("NO_COLOR").has_value();
 
-public:
-  Logger() {
-    // Respect the standard NO_COLOR env var, any value (even empty) disables
-    // color - does not depend on config object.
-    formatState.showColors =
-        !llvm::sys::Process::GetEnv("NO_COLOR").has_value();
-
-    // Check if the terminal does not support colors.
-    if (formatState.showColors) {
-      auto term = llvm::sys::Process::GetEnv("TERM");
-      if ((term && *term == "dumb") ||
-          !llvm::sys::Process::StandardOutIsDisplayed())
-        formatState.showColors = false;
-    }
-
-    auto cfgOr = Config::open();
-    if (cfgOr.isError()) {
-      // If we can't read the config, the default is to log to stdout.
-      sinks.push_back(std::make_unique<StdoutSink>());
-      return;
-    }
-    auto cfg = cfgOr.takeValue();
-    using namespace ConfigEntry;
-    formatState.useEnhancedFormat = !cfg.getValueAsBool(LOG_NO_ENHANCED, false);
-    formatState.showTimeStamp = !cfg.getValueAsBool(LOG_NO_TIMESTAMP, false);
-    formatState.useIsoTimestamps = cfg.getValueAsBool(LOG_ISO_TIME, false);
-    formatState.showMicroseconds = cfg.getValueAsBool(LOG_MICROSECONDS, false);
-    formatState.emitJSON = cfg.getValueAsBool(LOG_JSON, false);
-    auto logToStdout = cfg.getValueAsBool(LOG_STDOUT, true);
-
-    this->setLogLevel(parseLogLevelFromString(
-        cfg.getValueOr(ConfigEntry::LOG_LEVEL, "WARN")));
-
-    // If stdout logging is requested or if no log file present, log to stdout.
-    // The stdout variable is default-true, but can be overridden.
-    auto logFilePath = cfg.getValueOr(ConfigEntry::LOG_FILE, "");
-    if (logToStdout)
-      sinks.push_back(std::make_unique<StdoutSink>());
-    if (!logFilePath.empty()) {
-      auto fileSinkOrErr = FileSink::create(logFilePath);
-      if (fileSinkOrErr)
-        sinks.push_back(std::move(*fileSinkOrErr));
-      else
-        llvm::errs() << "Failed to open log file '" << logFilePath
-                     << "': " << fileSinkOrErr.getError().message()
-                     << (logToStdout ? "\nLog messages only going to stdout.\n"
-                                     : "\nNo log messages will be emitted.\n");
-    }
+  // Check if the terminal does not support colors.
+  if (formatState.showColors) {
+    auto term = llvm::sys::Process::GetEnv("TERM");
+    if ((term && *term == "dumb") ||
+        !llvm::sys::Process::StandardOutIsDisplayed())
+      formatState.showColors = false;
   }
 
-  void log(LogRecord record) {
-    auto msg = renderRecord(record);
-    auto level = record.level;
-    llvm::SmallString<512> enhancedOrJSONMsg;
-    if (formatState.emitJSON)
-      enhancedOrJSONMsg = buildJSONLogLine(level, msg, record.timestamp);
-    else if (formatState.useEnhancedFormat) {
-      auto enhanced = buildLogPrefix(level, record.timestamp);
-      enhancedOrJSONMsg = std::move(enhanced);
-      enhancedOrJSONMsg += msg;
-    } else
-      enhancedOrJSONMsg = msg;
-
-    for (const auto &sink : sinks) {
-      sink->write(enhancedOrJSONMsg);
-    }
+  auto cfgOr = Config::open();
+  if (cfgOr.isError()) {
+    // If we can't read the config, the default is to log to stdout.
+    sinks.push_back(std::make_unique<StdoutSink>());
+    return;
   }
+  auto cfg = cfgOr.takeValue();
+  using namespace ConfigEntry;
+  formatState.useEnhancedFormat = !cfg.getValueAsBool(LOG_NO_ENHANCED, false);
+  formatState.showTimeStamp = !cfg.getValueAsBool(LOG_NO_TIMESTAMP, false);
+  formatState.useIsoTimestamps = cfg.getValueAsBool(LOG_ISO_TIME, false);
+  formatState.showMicroseconds = cfg.getValueAsBool(LOG_MICROSECONDS, false);
+  formatState.emitJSON = cfg.getValueAsBool(LOG_JSON, false);
+  auto logToStdout = cfg.getValueAsBool(LOG_STDOUT, true);
 
-  LogLevel getLogLevel() const {
-    return level.load(std::memory_order::acquire);
+  this->setLogLevel(
+      parseLogLevelFromString(cfg.getValueOr(ConfigEntry::LOG_LEVEL, "WARN")));
+
+  // If stdout logging is requested or if no log file present, log to stdout.
+  // The stdout variable is default-true, but can be overridden.
+  auto logFilePath = cfg.getValueOr(ConfigEntry::LOG_FILE, "");
+  if (logToStdout)
+    sinks.push_back(std::make_unique<StdoutSink>());
+  if (!logFilePath.empty()) {
+    auto fileSinkOrErr = FileSink::create(logFilePath);
+    if (fileSinkOrErr)
+      sinks.push_back(std::move(*fileSinkOrErr));
+    else
+      llvm::errs() << "Failed to open log file '" << logFilePath
+                   << "': " << fileSinkOrErr.getError().message()
+                   << (logToStdout ? "\nLog messages only going to stdout.\n"
+                                   : "\nNo log messages will be emitted.\n");
   }
-
-  void setLogLevel(LogLevel newLevel) {
-    level.store(newLevel, std::memory_order::release);
-  }
-
-private:
-  static std::string renderRecord(const LogRecord &record) {
-    fmt::dynamic_format_arg_store<fmt::format_context> store;
-    store.reserve(record.argCount, /*new_cap_named=*/0);
-    for (const auto &arg : std::span(record.args.data(), record.argCount)) {
-      switch (arg.tag) {
-      case LogArg::Type::Bool:
-        store.push_back(arg.data.b);
-        break;
-      case LogArg::Type::Int64:
-        store.push_back(arg.data.i64);
-        break;
-      case LogArg::Type::UInt64:
-        store.push_back(arg.data.ui64);
-        break;
-      case LogArg::Type::Fp32:
-        store.push_back(arg.data.fp32);
-        break;
-      case LogArg::Type::Fp64:
-        store.push_back(arg.data.fp64);
-        break;
-      case LogArg::Type::SmallString:
-        store.push_back(fmt::string_view(
-            arg.data.ssoStr.data(),
-            strnlen(arg.data.ssoStr.data(), arg.data.ssoStr.size())));
-        break;
-      case LogArg::Type::String:
-        store.push_back(fmt::string_view(arg.data.str.ptr, arg.data.str.len));
-        break;
-      case LogArg::Type::Pointer:
-        store.push_back(fmt::ptr(arg.data.ptr));
-        break;
-      }
-    }
-    return fmt::vformat(record.fmtString, store);
-  }
-
-  // Depends on logger state to access formatting options
-  llvm::SmallString<32> buildTimestampString(LogRecord::Timestamp ts) {
-    llvm::SmallString<32> result;
-    if (!formatState.showTimeStamp)
-      return result;
-
-    if (formatState.useIsoTimestamps)
-      return buildISOFormatString(ts, formatState.showMicroseconds);
-
-    // Simple format: 16:21:14
-    std::tm utc = fmt::gmtime(std::chrono::system_clock::to_time_t(ts));
-    constexpr size_t nChars = 32;
-    llvm::SmallString<nChars> time;
-    // Pre-size the buffer before format_to_n. Sizing after would call append()
-    // from size 0, which overwrites the just-formatted data with zeros.
-    time.resize(nChars, '\0');
-    auto formatResult =
-        fmt::format_to_n(time.data(), nChars, "{:%H:%M:%S}", utc);
-    time.resize(formatResult.size);
-    result += time;
-    if (formatState.showMicroseconds)
-      result += formatMicroseconds(ts);
-    return result;
-  }
-
-  llvm::SmallString<128> buildLogPrefix(LogLevel level,
-                                        LogRecord::Timestamp ts) {
-    using enum llvm::raw_ostream::Colors;
-    llvm::SmallString<128> prefix;
-
-    if (formatState.showTimeStamp) {
-      prefix += "[";
-      prefix += buildTimestampString(ts);
-      prefix += "] ";
-    }
-
-    if (formatState.showLogLevel) {
-      if (formatState.showColors)
-        prefix += llvm::sys::Process::OutputColor(
-            static_cast<char>(getLogLevelColor(level)), /*bold=*/false,
-            /*bg=*/false);
-      prefix += "[";
-      prefix += getLogLevelPrefix(level);
-      prefix += "] ";
-      if (formatState.showColors)
-        prefix += llvm::sys::Process::ResetColor();
-    }
-
-    return prefix;
-  }
-};
-
-void setLogLevel(LogLevel level) { getDefaultLog().setLogLevel(level); }
-
-LogLevel getLogLevel(const Logger &log) { return log.getLogLevel(); }
-
-Logger &getDefaultLog() {
-  static Logger defaultLog;
-  return defaultLog;
 }
 
-void logWrite(Logger &log, LogRecord record) { log.log(std::move(record)); }
+Logger::~Logger() = default;
+
+void Logger::log(LogRecord record) {
+  auto msg = renderRecord(record);
+  auto level = record.level;
+  llvm::SmallString<512> enhancedOrJSONMsg;
+  if (formatState.emitJSON) {
+    enhancedOrJSONMsg = buildJSONLogLine(level, msg, record.timestamp);
+  } else if (formatState.useEnhancedFormat) {
+    enhancedOrJSONMsg = buildLogPrefix(level, record.timestamp);
+    enhancedOrJSONMsg += msg;
+  } else {
+    enhancedOrJSONMsg = msg;
+  }
+
+  for (const auto &sink : sinks) {
+    sink->write(enhancedOrJSONMsg);
+  }
+}
+
+// Depends on logger state to access formatting options
+// TODO(dmcbain): change how format options are used to move this out-of-line
+llvm::SmallString<32> Logger::buildTimestampString(LogRecord::Timestamp ts) {
+  llvm::SmallString<32> result;
+  if (!formatState.showTimeStamp)
+    return result;
+
+  if (formatState.useIsoTimestamps)
+    return buildISOFormatString(ts, formatState.showMicroseconds);
+
+  // Simple format: 16:21:14
+  std::tm utc = fmt::gmtime(std::chrono::system_clock::to_time_t(ts));
+  constexpr size_t nChars = 32;
+  llvm::SmallString<nChars> time;
+  // Pre-size the buffer before format_to_n. Sizing after would call append()
+  // from size 0, which overwrites the just-formatted data with zeros.
+  time.resize(nChars, '\0');
+  auto formatResult = fmt::format_to_n(time.data(), nChars, "{:%H:%M:%S}", utc);
+  time.resize(formatResult.size);
+  result += time;
+  if (formatState.showMicroseconds)
+    result += formatMicroseconds(ts);
+  return result;
+}
+
+// TODO(dmcbain): change how format options are used to move this out-of-line
+llvm::SmallString<128> Logger::buildLogPrefix(LogLevel level,
+                                              LogRecord::Timestamp ts) {
+  using enum llvm::raw_ostream::Colors;
+  llvm::SmallString<128> prefix;
+
+  if (formatState.showTimeStamp) {
+    prefix += "[";
+    prefix += buildTimestampString(ts);
+    prefix += "] ";
+  }
+
+  if (formatState.showLogLevel) {
+    if (formatState.showColors)
+      prefix += llvm::sys::Process::OutputColor(
+          static_cast<char>(getLogLevelColor(level)), /*bold=*/false,
+          /*bg=*/false);
+    prefix += "[";
+    prefix += getLogLevelPrefix(level);
+    prefix += "] ";
+    if (formatState.showColors)
+      prefix += llvm::sys::Process::ResetColor();
+  }
+
+  return prefix;
+}
 
 } // namespace M::Log

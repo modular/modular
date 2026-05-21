@@ -20,18 +20,18 @@ MODULAR_EXPORT int64_t MLog_now(void) {
 }
 
 MODULAR_EXPORT uint8_t MLog_get_level(void) {
-  return static_cast<uint8_t>(getLogLevel());
+  return static_cast<uint8_t>(getDefaultLog().getLogLevel());
 }
 
 MODULAR_EXPORT void MLog_set_level(uint8_t level) {
-  setLogLevel(static_cast<LogLevel>(level));
+  getDefaultLog().setLogLevel(static_cast<LogLevel>(level));
 }
 
 MODULAR_EXPORT void MLog_write(uint8_t level, int64_t timestamp,
                                const char *fmt, size_t fmtLen, const void *args,
                                uint8_t argCount) {
   auto &log = getDefaultLog();
-  if (getLogLevel(log) > static_cast<LogLevel>(level))
+  if (log.getLogLevel() > static_cast<LogLevel>(level))
     return;
 
   std::array<LogArg, LogRecord::maxArgs> argArr{};

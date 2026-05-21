@@ -50,9 +50,10 @@ public:
 #else
 #error "Test requires modification for Windows"
 #endif
-    // Runs after writing the config file, as getLogLevel() initializes
+    // Runs after writing the config file, as getDefaultLog() initializes
     // the Logger class.
-    [[maybe_unused]] auto level = getLogLevel();
+    auto &log = getDefaultLog();
+    (void)log;
   }
 
   void TearDown() override { llvm::sys::fs::remove(gLogFilePath); }
@@ -98,7 +99,7 @@ TEST_F(LogLevelTest, SetGetRoundTrip) {
   for (auto level : {LogLevel::DEBUG, LogLevel::INFO, LogLevel::WARN,
                      LogLevel::ERROR, LogLevel::FATAL}) {
     setLogLevel(level);
-    EXPECT_EQ(getLogLevel(), level);
+    EXPECT_EQ(M::Log::getDefaultLog().getLogLevel(), level);
   }
 }
 
