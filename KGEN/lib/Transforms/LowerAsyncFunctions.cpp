@@ -397,7 +397,6 @@ void LowerAsyncBuildContext::takeSlicedFirstStateFrom(FuncOp hotRamp,
       conventions,
       fromFuncOp.getFuncTypeGenerator().getBody().getArgConventions());
   FuncType signature = FuncType::get(
-      hotRamp.getContext(),
       FunctionType::get(builder.getContext(), inputs,
                         fromFuncOp.getResultTypes()),
       conventions, fromFuncOp.getFuncTypeGenerator().getBody().getFnEffects(),
@@ -577,7 +576,6 @@ FrameData LowerAsyncBuildContext::cloneFrameAndFirstStateTo(
   }
 
   FuncType signature = FuncType::get(
-      hotRamp.getContext(),
       FunctionType::get(builder.getContext(), inputs,
                         PointerType::get(opaqueCoTypes.getHeaderType())),
       conventions, fromFuncOp.getFuncTypeGenerator().getBody().getFnEffects(),

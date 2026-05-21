@@ -486,7 +486,7 @@ def invalid_params[f: def (ParamType) thin -> None]():
     # expected-error @below {{value passed to 'x' cannot be converted from 'IntLiteral[1]' to 'MemParamType[p]', it depends on an unresolved parameter 'p'}}
     autoparams_variadic(1)
 
-    # expected-error @below {{value passed to '' cannot be converted from 'IntLiteral[1]' to 'ParamType[f]', it depends on an unresolved parameter 'f'}}
+    # expected-error @below {{value cannot be converted from 'IntLiteral[1]' to 'ParamType[f]', it depends on an unresolved parameter 'f'}}
     f(1)
 
 

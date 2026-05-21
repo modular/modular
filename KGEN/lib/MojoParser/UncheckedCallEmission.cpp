@@ -1127,9 +1127,9 @@ struct DanglingImplicitOriginRefEraser
   /// Get this signature with all the implicit origins bound to the empty union.
   FnTypeGeneratorType replaceSignature(FnTypeGeneratorType sig) {
     FunctionType newFnType = replace(sig.getValues());
-    return sig.getWithBody(FuncType::get(newFnType, sig.getArgConventions(),
-                                         sig.getFnEffects(),
-                                         sig.getFnMetadata()));
+    return sig.getWithBody(
+        FuncType::get(newFnType, sig.getArgConventions(), sig.getFnEffects(),
+                      sig.getFnMetadata(), sig.getArgListAttrs()));
   }
 };
 } // namespace

@@ -1315,10 +1315,14 @@ getSymbolSignature(FuncInterface func, ArrayRef<Operation *> symbolOps) {
   if (fnMetadata)
     fnMetadata = remapper.replace(fnMetadata);
 
+  PogListAttr argListAttrs = baseSig.getArgListAttrs();
+  if (argListAttrs)
+    argListAttrs = cast<PogListAttr>(remapper.replace(argListAttrs));
+
   return FuncTypeGeneratorType::get(
       inputParamTypes, remapper.replace(baseSig.getValues()),
       baseSig.getArgConventions(), baseSig.getFnEffects(), fnMetadata,
-      genMetadata);
+      genMetadata, argListAttrs);
 }
 
 /// This symbol is a constant its bindings are constants.

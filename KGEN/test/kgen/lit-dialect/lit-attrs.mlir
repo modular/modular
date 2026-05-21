@@ -6,38 +6,24 @@
 // `kgen-pog-attrs-errors.mlir`.
 
 // CHECK-LABEL: "empty.metadata"
-// CHECK-SAME: #lit.fn_metadata<<[]>, 0>
-"empty.metadata"() {metadata = #lit.fn_metadata<<[]>, 0>} : () -> ()
+// CHECK-SAME: #lit.fn_metadata<0>
+"empty.metadata"() {metadata = #lit.fn_metadata<0>} : () -> ()
 
 // CHECK-LABEL: "some.metadata1"
-// CHECK-SAME: #lit.fn_metadata
-// CHECK-SAME: <[<"someRef", pos, not_vararg, default 13>, <"v", kw, not_vararg, default :i64 17>]>,
-// CHECK-SAME: 2, {mut lt}>
-"some.metadata1"() {metadata = #lit.fn_metadata<
-  <[<"someRef", pos, not_vararg, default 13>, <"v", kw, not_vararg, default :i64 17>]>,
-  2, {mut lt}
->} : () -> ()
+// CHECK-SAME: #lit.fn_metadata<2, {mut lt}>
+"some.metadata1"() {metadata = #lit.fn_metadata<2, {mut lt}>} : () -> ()
 
 // CHECK-LABEL: "some.metadata2"
-// CHECK-SAME: 2, {mut lt}, true>
-"some.metadata2"() {metadata = #lit.fn_metadata<
-  <[<"someRef", pos, not_vararg, default :index 13>, <"v", kw, not_vararg, default :i64 17>]>,
-  2, {mut lt}, true
->} : () -> ()
+// CHECK-SAME: #lit.fn_metadata<2, {mut lt}, true>
+"some.metadata2"() {metadata = #lit.fn_metadata<2, {mut lt}, true>} : () -> ()
 
 // CHECK-LABEL: "some.metadata3"
-// CHECK-SAME: 2, true>
-"some.metadata3"() {metadata = #lit.fn_metadata<
-  <[<"someRef", pos, not_vararg, default :index 13>, <"v", kw, not_vararg, default :i64 17>]>,
-  2, true
->} : () -> ()
+// CHECK-SAME: #lit.fn_metadata<2, true>
+"some.metadata3"() {metadata = #lit.fn_metadata<2, true>} : () -> ()
 
 // CHECK-LABEL: "some.metadata4"
-// CHECK-SAME: 2, false>
-"some.metadata4"() {metadata = #lit.fn_metadata<
-  <[<"someRef", pos, not_vararg, default :index 13>, <"v", kw, not_vararg, default :i64 17>]>,
-  2, false
->} : () -> ()
+// CHECK-SAME: #lit.fn_metadata<2, false>
+"some.metadata4"() {metadata = #lit.fn_metadata<2, false>} : () -> ()
 
 // CHECK-LABEL: "none.type"
 // CHECK-SAME: #kgen.none : !kgen.none

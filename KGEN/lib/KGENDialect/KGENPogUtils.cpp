@@ -648,6 +648,11 @@ PassingKindPrinter::PassingKindPrinter(AsmPrinter &printer,
                          /*suppressSlashAfterSelf=*/false, slash, plus) {}
 
 void PassingKindPrinter::printOptionalStarSlash(size_t idx) {
+  // When the pog list is empty (a `FuncType` constructed outside the Mojo
+  // parser with no source-level metadata), there are no passing-kind
+  // transitions to print.
+  if (numPogs == 0)
+    return;
   PassingKind passingKind = getPassingKind(idx);
   if (prevPassingKind == passingKind)
     return;

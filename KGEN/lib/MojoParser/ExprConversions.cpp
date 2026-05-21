@@ -183,7 +183,7 @@ static FnType getReducedFnType(FnType sig) {
                        origPogListAttr.getBodyConstraints());
 
   auto metadata = FnMetadataAttr::get(
-      newPogListAttr, sig.getNumImplicitOriginDecls(),
+      ctx, sig.getNumImplicitOriginDecls(),
       // Don't keep the capture origins, thunks don't care about those. Only the
       // parameter-value passed in at the callsite cares about those.
       {}, sig.getIsNestedOriginExclusivityCheckingDisabled());
@@ -609,8 +609,7 @@ static CValue convertFunctionGeneratorValue(CValue value, const ExprNode *expr,
   // except for the thunk param types (which also includes clarifying
   // parameters, see TAPCPTTT).
   auto thunkMetadata = FnMetadataAttr::get(
-      reducedExpected.getArgListAttrs(),
-      reducedExpected.getNumImplicitOriginDecls(),
+      ctx, reducedExpected.getNumImplicitOriginDecls(),
       reducedExpected.getCaptureOrigins(),
       reducedExpected.getIsNestedOriginExclusivityCheckingDisabled());
   auto thunkFuncType = sugarCast<FunctionType>(

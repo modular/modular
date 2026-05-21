@@ -643,8 +643,7 @@ static FuncType lowerSignature(FuncType sig, TargetInfoAttr target,
   SignatureTransform transform(sig, target, spAttr, maxInlineSize);
   TransformResult result = lowerSignature(sig, 0, &transform);
   FuncType newSig =
-      FuncType::get(sig.getContext(),
-                    FunctionType::get(sig.getContext(), transform.newInputs,
+      FuncType::get(FunctionType::get(sig.getContext(), transform.newInputs,
                                       result.newResultTypes),
                     result.newArgConventions, sig.getFnEffects(),
                     sig.getMetadata(), sig.getArgListAttrs());
@@ -753,8 +752,7 @@ static void lowerCallOpImpl(Operation *op, FuncType oldSig,
 
   if (auto callOp = dyn_cast<CallOp>(op)) {
     FuncType newSig =
-        FuncType::get(op->getContext(),
-                      FunctionType::get(op->getContext(), op->getOperandTypes(),
+        FuncType::get(FunctionType::get(op->getContext(), op->getOperandTypes(),
                                         result.newResultTypes),
                       result.newArgConventions, oldSig.getFnEffects(),
                       oldSig.getMetadata(), oldSig.getArgListAttrs());
@@ -816,7 +814,6 @@ static LogicalResult lowerFuncOp(FuncOp funcOp, unsigned maxInlineSize) {
   FuncTransform transform(b, funcOp, lookupTargetInfo(funcOp), maxInlineSize);
   TransformResult result = lowerSignature(sig, 0, &transform);
   FuncType newSig = FuncType::get(
-      funcOp.getContext(),
       FunctionType::get(funcOp->getContext(),
                         funcOp.getBodyRegion().front().getArgumentTypes(),
                         result.newResultTypes),

@@ -1609,14 +1609,13 @@ void DeclResolver::exportMain(ASTDecl &funcDecl) {
   FnType mainWrapperSig = mainWrapperSigGen.getBody();
   FnMetadataAttr mainWrapperFnMeta = mainWrapperSig.getMetadata();
   auto strippedMainWrapperFnMeta = FnMetadataAttr::get(
-      mainWrapperFnMeta.getArgListAttrs(),
-      mainWrapperFnMeta.getNumImplicitOriginDecls(),
+      getContext(), mainWrapperFnMeta.getNumImplicitOriginDecls(),
       mainWrapperFnMeta.getCaptureOrigins(),
       mainWrapperFnMeta.getIsNestedOriginExclusivityCheckingDisabled());
   auto strippedMainWrapperSig = FuncType::get(
-      getContext(), mainWrapperSig.getValues(),
-      mainWrapperSig.getArgConventions(), mainWrapperSig.getFnEffects(),
-      strippedMainWrapperFnMeta, mainWrapperFnMeta.getArgListAttrs());
+      mainWrapperSig.getValues(), mainWrapperSig.getArgConventions(),
+      mainWrapperSig.getFnEffects(), strippedMainWrapperFnMeta,
+      mainWrapperSig.getArgListAttrs());
   SymbolConstantAttr wrapperFnRef = SymbolConstantAttr::get(
       getFullyResolvedSymbolRef(mainWrapperFn),
       GeneratorType::get(/*inputParamTypes=*/{}, strippedMainWrapperSig,

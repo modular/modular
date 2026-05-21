@@ -589,6 +589,15 @@ LogicalResult FuncType::verify(function_ref<InFlightDiagnostic()> emitError,
   if (argConventions.size() != values.getInputs().size())
     return emitError() << "incorrect # of input conventions specified";
 
+  // If `argListAttrs` is populated, its size must match the number of inputs.
+  // An empty list is the "no source-level metadata" case and is allowed.
+  if (size_t numPogs = argListAttrs.getPogs().size();
+      numPogs != 0 && numPogs != values.getNumInputs()) {
+    return emitError()
+           << "number of arguments does not match number of argument names: "
+           << values.getNumInputs() << " != " << numPogs;
+  }
+
   // If the FuncType has metadata, defer to it for further verification.
   // Otherwise, run the standard KGEN FuncType verification.
   if (metadata)

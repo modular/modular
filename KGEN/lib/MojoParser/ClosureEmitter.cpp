@@ -344,16 +344,24 @@ addClosureSelfArgToFunctionSignature(Type closureType, ArgConvention convention,
       PogMetadataAttr::get(StringAttr::get(ctx), PassingKind::PosOnly));
   // Add the rest of the arguments.
   FnMetadataAttr oldFnMetadata = sig.getFnMetadata();
-  PogListAttr argListAttr = oldFnMetadata.getArgListAttrs();
+  PogListAttr argListAttr = sig.getArgListAttrs();
   llvm::append_range(signatureInputs, sig.getArguments());
   llvm::append_range(argConventions, sig.getArgConventions());
+  // For a fully-populated source `argListAttr`, append its pogs to keep
+  // `argPogs.size() == argConventions.size()`. For an empty source (a 0-arg
+  // closure with no source-level metadata), the prepended `self` pog is the
+  // only pog the closure trait method has — fill the rest with anonymous
+  // positional-only pogs so the synthetic trait method is fully shaped.
   llvm::append_range(argPogs, argListAttr.getPogs());
+  while (argPogs.size() < argConventions.size())
+    argPogs.emplace_back(
+        PogMetadataAttr::get(StringAttr::get(ctx), PassingKind::PosOnly));
   assert(argPogs.size() == argConventions.size());
 
   // Closure storage is carried by the inserted self argument, not by FnEffects.
   auto newArgListAttr = argListAttr.cloneWith(argPogs);
   auto metadata = FnMetadataAttr::get(
-      newArgListAttr, oldFnMetadata.getNumImplicitOriginDecls(),
+      ctx, oldFnMetadata.getNumImplicitOriginDecls(),
       oldFnMetadata.getCaptureOrigins(),
       oldFnMetadata.getIsNestedOriginExclusivityCheckingDisabled());
   return FuncTypeGeneratorType::get(
@@ -1481,7 +1489,8 @@ ClosureEmitter::getClosureTraitKey(FnTypeGeneratorType rawSignature) {
       canonicalSig.getInputParamTypes(), canonicalSig.getValues(),
       canonicalSig.getArgConventions(),
       canonicalSig.getFnEffects().setCapturing(false),
-      canonicalSig.getFnMetadata(), canonicalSig.getMetadata());
+      canonicalSig.getFnMetadata(), canonicalSig.getMetadata(),
+      canonicalSig.getArgListAttrs());
   return {key, capturedRefs.size()};
 }
 
@@ -1638,7 +1647,8 @@ ASTDecl *ClosureEmitter::promoteStatelessClosure(
       nestedSignature.getArgConventions(),
       nestedSignature.getFnEffects().setRegisterPassable(false).setCapturing(
           shouldBeCapturing),
-      nestedSignature.getFnMetadata(), nestedSignature.getMetadata());
+      nestedSignature.getFnMetadata(), nestedSignature.getMetadata(),
+      nestedSignature.getArgListAttrs());
 
   OpBuilder builder = moduleDecl->getDeclEndBuilder();
   nestedFn->moveBefore(builder.getInsertionBlock(),
@@ -2306,7 +2316,8 @@ Value ClosureEmitter::emitClosureOp(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
       original.getInputParamTypes(), original.getValues(),
       original.getArgConventions(),
       original.getFnEffects().setRegisterPassable(false).setCapturing(true),
-      original.getFnMetadata(), original.getMetadata());
+      original.getFnMetadata(), original.getMetadata(),
+      original.getArgListAttrs());
   auto [capturedRefs, _] =
       DeclResolver::createSelfContainedSignature(closureBodySignature);
   llvm::MapVector<StringRef, Type> aliases;

@@ -1357,7 +1357,7 @@ static OptionalParseResult parseOptionalLITFuncType(AsmParser &p,
                        defaultValues, origVariadicConvention,
                        /*paramConstraints=*/{}, /*bodyConstraints=*/{});
   auto metadata =
-      FnMetadataAttr::get(pogList, numOriginDecls, captureOrigins,
+      FnMetadataAttr::get(ctx, numOriginDecls, captureOrigins,
                           isNestedOriginExclusivityCheckingDisabled);
   signature =
       FuncType::getChecked([&] { return p.emitError(startLoc); }, functionType,
@@ -1535,19 +1535,18 @@ FunctionType FnType::substituteImplicitOriginsIntoValues(
 }
 
 FnType FnType::getWithCaptureOrigins(TypedAttr origins) {
-  PogListAttr argListAttrs = getArgListAttrs();
   return getWithMetadata(
-      FnMetadataAttr::get(argListAttrs, getNumImplicitOriginDecls(), origins,
+      FnMetadataAttr::get(getContext(), getNumImplicitOriginDecls(), origins,
                           getIsNestedOriginExclusivityCheckingDisabled()),
-      argListAttrs);
+      getArgListAttrs());
 }
 
 bool FnType::isAnyVarArg(size_t index) {
-  return getMetadata().isAnyVarArg(index);
+  return getArgListAttrs().isAnyVarArg(index);
 }
 
 bool FnType::isPosVarArg(size_t index) {
-  return getMetadata().isPosVarArg(index);
+  return getArgListAttrs().isPosVarArg(index);
 }
 
 /// For a PosVarArg, return the declared ArgConvention of the elements. For
@@ -1561,10 +1560,10 @@ ArgConvention FnType::getVariadicConvention(size_t index) {
 }
 
 bool FnType::isKwVarArg(size_t index) {
-  return getMetadata().isKwVarArg(index);
+  return getArgListAttrs().isKwVarArg(index);
 }
 
-bool FnType::isPack(size_t index) { return getMetadata().isPack(index); }
+bool FnType::isPack(size_t index) { return getArgListAttrs().isPack(index); }
 
 /// If the specified argument is a variadic pack, return the VariadicPack.
 Type FnType::getIfVariadicListOrPack(size_t index) {
@@ -1586,7 +1585,7 @@ std::optional<size_t> FnType::findPackVarArgIndex() {
   return std::nullopt;
 }
 
-bool FnType::hasKwVarArgs() { return getMetadata().hasKwVarArgs(); }
+bool FnType::hasKwVarArgs() { return getArgListAttrs().hasKwVarArg(); }
 
 bool FnType::classof(FuncType type) {
   return ::isa_and_nonnull<FnMetadataAttr>(type.getMetadata());
@@ -1607,7 +1606,9 @@ FnType FnType::get(MLIRContext *ctx, TypeRange inputs, TypeRange results,
       numInputs,
       PogMetadataAttr::get(StringAttr::get(ctx), PassingKind::PosOnly));
   auto pogList = PogListAttr::get(ctx, argPogs);
-  auto metadata = FnMetadataAttr::get(pogList, numImplicitOriginDecls);
+  auto metadata = FnMetadataAttr::get(ctx, numImplicitOriginDecls,
+                                      OriginSetAttr::get(ctx, {}),
+                                      /*nestedOriginFlag=*/false);
   return FuncType::get(funcType,
                        /*convs=*/{}, /*effects=*/{}, metadata, pogList);
 }
@@ -1829,9 +1830,13 @@ FnTypeGeneratorType FnTypeGeneratorType::prependParams(
       names, remappedParamDefaults, remappedParamConstraints,
       remappedBodyConstraints);
 
+  PogListAttr remappedArgListAttrs;
+  if (PogListAttr argListAttrs = sig.getArgListAttrs())
+    remappedArgListAttrs = cast<PogListAttr>(remapper.replace(argListAttrs));
   return FuncTypeGeneratorType::get(
       inputParamTypes, remapper.replace(sig.getValues()),
-      sig.getArgConventions(), sig.getFnEffects(), fnMetadata, genMetadata);
+      sig.getArgConventions(), sig.getFnEffects(), fnMetadata, genMetadata,
+      remappedArgListAttrs);
 }
 
 bool FnTypeGeneratorType::classof(FuncTypeGeneratorType type) {
