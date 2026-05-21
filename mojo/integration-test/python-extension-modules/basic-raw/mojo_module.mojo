@@ -69,7 +69,9 @@ def PyInit_mojo_module() -> PythonObject:
 
 
 @export
-def mojo_count_args(py_self: PyObjectPtr, args: PyObjectPtr) -> PyObjectPtr:
+def mojo_count_args(
+    py_self: PyObjectPtr, args: PyObjectPtr
+) abi("C") -> PyObjectPtr:
     """Count the provided arguments.
 
     Return value: New reference.
@@ -80,7 +82,7 @@ def mojo_count_args(py_self: PyObjectPtr, args: PyObjectPtr) -> PyObjectPtr:
 @export
 def mojo_count_args_with_kwargs(
     py_self: PyObjectPtr, args: PyObjectPtr, kwargs: PyObjectPtr
-) -> PyObjectPtr:
+) abi("C") -> PyObjectPtr:
     """Count the provided arguments and keyword arguments.
 
     Return value: New reference.
@@ -100,7 +102,9 @@ struct TestCounter(Defaultable, ImplicitlyCopyable, Writable):
 
 
 @export
-def counter_count_args(py_self: PyObjectPtr, args: PyObjectPtr) -> PyObjectPtr:
+def counter_count_args(
+    py_self: PyObjectPtr, args: PyObjectPtr
+) abi("C") -> PyObjectPtr:
     """PyCFunction method to count arguments."""
     return mojo_count_args(py_self, args)
 
@@ -108,19 +112,19 @@ def counter_count_args(py_self: PyObjectPtr, args: PyObjectPtr) -> PyObjectPtr:
 @export
 def counter_count_args_with_kwargs(
     py_self: PyObjectPtr, args: PyObjectPtr, kwargs: PyObjectPtr
-) -> PyObjectPtr:
+) abi("C") -> PyObjectPtr:
     return mojo_count_args_with_kwargs(py_self, args, kwargs)
 
 
 @export
 def counter_static_count_args(
     py_self: PyObjectPtr, args: PyObjectPtr
-) -> PyObjectPtr:
+) abi("C") -> PyObjectPtr:
     return mojo_count_args(py_self, args)
 
 
 @export
 def counter_static_count_args_with_kwargs(
     py_self: PyObjectPtr, args: PyObjectPtr, kwargs: PyObjectPtr
-) -> PyObjectPtr:
+) abi("C") -> PyObjectPtr:
     return mojo_count_args_with_kwargs(py_self, args, kwargs)

@@ -354,7 +354,7 @@ def _test_capsule_api(cpy: CPython) raises:
     var capsule_impl_layout = Layout[UInt64].single()
     var capsule_impl = alloc(capsule_impl_layout)
 
-    def empty_dtor(capsule: PyObjectPtr):
+    def empty_dtor(capsule: PyObjectPtr) abi("C"):
         pass
 
     var capsule = cpy.PyCapsule_New(

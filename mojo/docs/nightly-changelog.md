@@ -239,6 +239,13 @@ This version is still a work in progress.
   through this trait must now spell it out explicitly, for example
   `T: Intable & ImplicitlyDestructible`.
 
+- The CPython FFI bindings now carry the `abi("C")` effect. User-written Python
+  extension callbacks passed to `def_py_c_function`, `def_py_c_method`, or
+  `PyCapsule_New` must add `abi("C")` to their signatures, e.g.
+  `def my_func(self: PyObjectPtr, args: PyObjectPtr) abi("C") -> PyObjectPtr:`.
+  Functions registered through the higher-level `def_function`, `def_method`,
+  and `def_staticmethod` paths are unaffected.
+
 - Added `take()` and `drop()` iterator adapters to `std.itertools`.
   `take(iter, n)` yields the first `n` elements, and
   `drop(iter, n)` drops the first `n` elements. They compose
