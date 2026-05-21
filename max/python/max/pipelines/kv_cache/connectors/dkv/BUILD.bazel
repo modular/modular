@@ -25,6 +25,6 @@ modular_py_library(
         "no-pydeps",
     ],
     deps = [
-        "//dkv/dkv-pyo3:client",
+        "//dkv/clients/python:client",
     ],
 )

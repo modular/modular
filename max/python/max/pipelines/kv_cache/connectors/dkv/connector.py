@@ -34,14 +34,11 @@ from dataclasses import dataclass, field
 import msgspec
 from dkv import (
     BlockDescriptor,
-    BlockRef,
     DKVClient,
     DKVNotReadyError,
     DKVTransportError,
-    G1Location,
-    G2Location,
+    ReadBlocksResult,
     RequestState,
-    Tier,
 )
 from max._core import nixl
 from max.driver import Buffer, Device
@@ -216,7 +213,7 @@ class DKVConnector:
         # Per-request inflight NIXL reads
         self._inflight_reads: dict[str, _InflightRead] = {}
         # Per-request read result (need decrement after the read transfer completes)
-        self._held_blocks: dict[str, list[BlockRef]] = {}
+        self._held_blocks: dict[str, ReadBlocksResult] = {}
 
         # Write pipeline: each entry is one save() call's
         # (parent_seq_hash, block_ids, hashes).
@@ -504,7 +501,7 @@ class DKVConnector:
 
         # Release dKV read pins (decrement read_ref_count).
         for held in self._held_blocks.values():
-            if held:
+            if held.dram_seq_hashes or held.disk_locations:
                 try:
                     self._client.decrement_blocks(held)
                 except Exception:
@@ -748,12 +745,10 @@ class DKVConnector:
         self._nixl_read_blocks_remote += remote_count
 
         # Pin blocks in dKV for reading (increment read_ref_count).
-        # The returned locations are tier-tagged (G1Location / G2Location);
-        # we build the BlockRef list eagerly for later decrement.
+        # The result carries the tier-split seq hashes needed for decrement.
         try:
             t0 = time.monotonic()
-            seq_hashes = [d.seq_hash for d in descriptors]
-            locations = self._client.read_blocks(seq_hashes)
+            read_result = self._client.read_blocks(descriptors)
             self._rpc_read_latency_total_ms += (time.monotonic() - t0) * 1000
             self._rpc_read_latency_count += 1
         except (ConnectionError, TimeoutError) as exc:
@@ -772,34 +767,24 @@ class DKVConnector:
             )
             return []
 
-        held_refs: list[BlockRef] = [
-            BlockRef(
-                loc.seq_hash,
-                Tier.G1 if isinstance(loc, G1Location) else Tier.G2,
-            )
-            for loc in locations
-        ]
-
         # NIXL transfers read from the DRAM slab, so bail if any block
         # landed on G2 (disk). This can happen if the server offloaded
         # the block between lookup() and read_blocks().
         # TODO(CLIN-1097): implement the G2 read path — dKV exposes
-        # G2Location with file_id + file_offset that can be mmap'd from
+        # DiskLocation with file_id + offset that can be mmap'd from
         # the shared host volume. Today we skip these blocks, which
         # means any cached prefix that got spilled to disk is invisible
         # to MAX. Blocks on disk surface as soon as DRAM pressure
         # triggers offloading.
-        g2_count = sum(1 for loc in locations if isinstance(loc, G2Location))
-        if g2_count:
+        if read_result.disk_locations:
             logger.warning(
                 "dKV returned %d disk-tier blocks which cannot be read over"
                 " NIXL; skipping load. Consider disabling G2 offload or"
                 " implementing a G2 read path.",
-                g2_count,
+                len(read_result.disk_locations),
             )
             try:
-                if held_refs:
-                    self._client.decrement_blocks(held_refs)
+                self._client.decrement_blocks(read_result)
             except Exception:
                 logger.warning(
                     "Failed to release dKV pins after G2 skip",
@@ -834,8 +819,7 @@ class DKVConnector:
                 exc_info=True,
             )
             try:
-                if held_refs:
-                    self._client.decrement_blocks(held_refs)
+                self._client.decrement_blocks(read_result)
             except Exception:
                 logger.warning(
                     (
@@ -852,8 +836,7 @@ class DKVConnector:
                 exc_info=True,
             )
             try:
-                if held_refs:
-                    self._client.decrement_blocks(held_refs)
+                self._client.decrement_blocks(read_result)
             except Exception:
                 logger.warning(
                     (
@@ -864,7 +847,7 @@ class DKVConnector:
                 )
             return []
 
-        self._held_blocks[request_id] = held_refs
+        self._held_blocks[request_id] = read_result
         self._inflight_reads[request_id] = _InflightRead(
             transfers=transfers,
             descriptors=descriptors,
@@ -1252,7 +1235,7 @@ class DKVConnector:
         # Decrement held blocks only if transfer handles are released.
         if handles_released:
             for held in self._held_blocks.values():
-                if held:
+                if held.dram_seq_hashes or held.disk_locations:
                     try:
                         self._client.decrement_blocks(held)
                     except Exception:
@@ -1434,7 +1417,9 @@ class DKVConnector:
     def _decrement_held_blocks(self, request_id: str) -> None:
         """Release dKV read pins once transfers have completed."""
         held = self._held_blocks.pop(request_id, None)
-        if not held:
+        if held is None or (
+            not held.dram_seq_hashes and not held.disk_locations
+        ):
             return
 
         try:
