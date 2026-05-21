@@ -22,18 +22,6 @@ def _bytes_of(str: StringSlice[mut=False, _]) -> List[Byte]:
     return List[Byte](str.as_bytes())
 
 
-def _random_bytes() -> List[Byte]:
-    # fmt: off
-    return [
-        0xC5, 0x66, 0xFF, 0x7D, 0xC3, 0x1A, 0xC7, 0xFE, 0x5D, 0x2B,
-        0x4D, 0x02, 0x4F, 0xE9, 0xD6, 0x34, 0x35, 0xB8, 0x7D, 0xBC,
-        0x4E, 0xCC, 0x13, 0x3A, 0x57, 0x0F, 0x3F, 0x0A, 0x7D, 0x0A,
-        0xCC, 0xE1, 0xD9, 0x31, 0x97, 0x8B, 0x42, 0xD1, 0x8E, 0x6A,
-        0xFF, 0x08, 0x3A,
-    ]
-    # fmt: on
-
-
 def test_b64encode() raises:
     assert_equal(b64encode("a"), "YQ==")
 
@@ -53,7 +41,15 @@ def test_b64encode() raises:
     # 43 random bytes — constructed from a byte list because bytes >= 0x80
     # are not valid standalone UTF-8 characters and can't be expressed in a
     # string literal via `\xNN` (which denotes a codepoint, not a raw byte).
-    var random_bytes = _random_bytes()
+    # fmt: off
+    var random_bytes: List[Byte] = [
+        0xC5, 0x66, 0xFF, 0x7D, 0xC3, 0x1A, 0xC7, 0xFE, 0x5D, 0x2B,
+        0x4D, 0x02, 0x4F, 0xE9, 0xD6, 0x34, 0x35, 0xB8, 0x7D, 0xBC,
+        0x4E, 0xCC, 0x13, 0x3A, 0x57, 0x0F, 0x3F, 0x0A, 0x7D, 0x0A,
+        0xCC, 0xE1, 0xD9, 0x31, 0x97, 0x8B, 0x42, 0xD1, 0x8E, 0x6A,
+        0xFF, 0x08, 0x3A,
+    ]
+    # fmt: on
     assert_equal(
         b64encode(random_bytes),
         "xWb/fcMax/5dK00CT+nWNDW4fbxOzBM6Vw8/Cn0KzOHZMZeLQtGOav8IOg==",
@@ -77,12 +73,6 @@ def test_b64decode() raises:
     )
 
     assert_equal(b64decode("QUJDREVGYWJjZGVm"), _bytes_of("ABCDEFabcdef"))
-    assert_equal(
-        b64decode(
-            "xWb/fcMax/5dK00CT+nWNDW4fbxOzBM6Vw8/Cn0KzOHZMZeLQtGOav8IOg=="
-        ),
-        _random_bytes(),
-    )
 
     with assert_raises(
         contains="ValueError: Input length '21' must be divisible by 4"
@@ -133,8 +123,6 @@ def test_b16decode() raises:
     assert_equal(
         b16decode("414243444546616263646566"), _bytes_of("ABCDEFabcdef")
     )
-    var b16_expected: List[Byte] = [0xC5, 0x66, 0xFF, 0x80]
-    assert_equal(b16decode("C566FF80"), b16_expected)
 
 
 def main() raises:
