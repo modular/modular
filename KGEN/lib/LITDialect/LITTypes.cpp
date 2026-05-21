@@ -1377,6 +1377,7 @@ static ParseResult parseLITFuncType(AsmParser &p, Type &signature) {
 // GeneratorType Parsing
 //===----------------------------------------------------------------------===//
 
+/// Parses the LIT textual form (`!lit.generator<...>`) of a `GeneratorType`.
 static ParseResult parseLITGenerator(AsmParser &p, Type &generator) {
   SmallVector<Type> inputParamTypes;
   PogListAttr paramListAttr = PogListAttr::get(p.getContext());
@@ -1427,25 +1428,6 @@ Type LITDialect::parseType(DialectAsmParser &p) const {
 void LITDialect::printType(Type type, DialectAsmPrinter &p) const {
   if (succeeded(generatedTypePrinter(type, p)))
     return;
-}
-
-//===----------------------------------------------------------------------===//
-// LITGeneratorType
-//===----------------------------------------------------------------------===//
-
-LITGeneratorType::LITGeneratorType(GeneratorType gen) : GeneratorType(gen) {
-  assert((!gen || ::isa_and_nonnull<PogListAttr>(gen.getMetadata())) &&
-         "expected LIT generator metadata");
-}
-
-PogListAttr LITGeneratorType::getMetadata() {
-  return ::cast<PogListAttr>(GeneratorType::getMetadata());
-}
-
-PogListAttr LITGeneratorType::getParamListAttrs() { return getMetadata(); }
-
-StringAttr LITGeneratorType::getParamName(size_t idx) {
-  return getMetadata().getName(idx);
 }
 
 //===----------------------------------------------------------------------===//
@@ -1642,7 +1624,7 @@ bool FnLiteralType::classof(Type type) {
 // FnLiteralTypeGeneratorType
 //===----------------------------------------------------------------------===//
 
-FnLiteralTypeGeneratorType::FnLiteralTypeGeneratorType(LITGeneratorType gen)
+FnLiteralTypeGeneratorType::FnLiteralTypeGeneratorType(GeneratorType gen)
     : FnTypeWrapperGeneratorType(gen) {
   assert((!gen || ::isa<FnLiteralType>(gen.getBody())) &&
          "expected LIT generator wrapping FnLiteralType");
@@ -1651,8 +1633,7 @@ FnLiteralTypeGeneratorType::FnLiteralTypeGeneratorType(LITGeneratorType gen)
 FnLiteralTypeGeneratorType::FnLiteralTypeGeneratorType(
     FuncLiteralTypeGeneratorType gen)
     : FnTypeWrapperGeneratorType(gen) {
-  assert((!gen || (::isa<LITGeneratorType>(gen) &&
-                   ::isa<FnLiteralType>(gen.getBody()))) &&
+  assert((!gen || ::isa<FnLiteralType>(gen.getBody())) &&
          "expected LIT generator wrapping FnLiteralType");
 }
 
@@ -1665,7 +1646,7 @@ FnLiteralType FnLiteralTypeGeneratorType::getBody() {
 }
 
 bool FnLiteralTypeGeneratorType::classof(FuncLiteralTypeGeneratorType type) {
-  return ::isa<LITGeneratorType>(type) && ::isa<FnLiteralType>(type.getBody());
+  return ::isa<FnLiteralType>(type.getBody());
 }
 
 bool FnLiteralTypeGeneratorType::classof(Type type) {
@@ -1678,16 +1659,15 @@ bool FnLiteralTypeGeneratorType::classof(Type type) {
 // FnTypeGeneratorType
 //===----------------------------------------------------------------------===//
 
-FnTypeGeneratorType::FnTypeGeneratorType(LITGeneratorType gen)
+FnTypeGeneratorType::FnTypeGeneratorType(GeneratorType gen)
     : FnTypeWrapperGeneratorType(gen) {
-  assert((!gen || (::isa<FnType>(gen.getBody()))) &&
+  assert((!gen || ::isa<FnType>(gen.getBody())) &&
          "expected LIT generator wrapping LIT FnType");
 }
 
 FnTypeGeneratorType::FnTypeGeneratorType(FuncTypeGeneratorType gen)
     : FnTypeWrapperGeneratorType(gen) {
-  assert((!gen ||
-          (::isa<LITGeneratorType>(gen) && ::isa<FnType>(gen.getBody()))) &&
+  assert((!gen || ::isa<FnType>(gen.getBody())) &&
          "expected LIT generator wrapping LIT FnType");
 }
 
@@ -1839,7 +1819,7 @@ FnTypeGeneratorType FnTypeGeneratorType::prependParams(
 }
 
 bool FnTypeGeneratorType::classof(FuncTypeGeneratorType type) {
-  return ::isa<LITGeneratorType>(type) && ::isa<FnType>(type.getBody());
+  return ::isa<FnType>(type.getBody());
 }
 
 bool FnTypeGeneratorType::classof(Type type) {

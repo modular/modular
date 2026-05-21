@@ -1722,9 +1722,9 @@ static PValue substituteParametersIntoUserDefinedType(
 
 /// Bind parameter operands to a callable parameter.
 static PValue
-bindToGeneratorValue(PValue callable, LITGeneratorType sig,
-                     const ExprNode *expr, ArrayRef<Operand> operands,
-                     IREmitter &emitter, const SourceRange &range,
+bindToGeneratorValue(PValue callable, GeneratorType sig, const ExprNode *expr,
+                     ArrayRef<Operand> operands, IREmitter &emitter,
+                     const SourceRange &range,
                      ParamBindings::BindingKind initialBindingKind) {
   // Build up a ParamBindings set to validate and check the bindings.
   ParamBindings paramBindings(emitter.getDeclScope(), expr);
@@ -2982,7 +2982,7 @@ auto SubscriptNode::emitLCVIR(ExprDest &dest, IREmitter &emitter,
     // If this is a parametric PValue, this is binding parameter values to the
     // generator value. Or if the sub-value is an unbound Type, try binding
     // parameters to it! Handle user-defined types and custom MLIR types.
-    if (sugarIsa<LITGeneratorType>(baseType) ||
+    if (sugarIsa<GeneratorType>(baseType) ||
         (baseValue.getIfTypeValue() && sugarIsa<StructMetaType>(baseType))) {
       ParamBindings::BindingKind bindingKind = ParamBindings::kStandard;
       // In the form of S[xxx]() or S[xxx].field, we make it more admissible.
@@ -2991,7 +2991,7 @@ auto SubscriptNode::emitLCVIR(ExprDest &dest, IREmitter &emitter,
         bindingKind = ParamBindings::kContextual;
 
       PValue result = [&]() -> PValue {
-        if (auto sig = sugarDynCast<LITGeneratorType>(baseType)) {
+        if (auto sig = sugarDynCast<GeneratorType>(baseType)) {
           return bindToGeneratorValue(value, sig, this, operands, emitter,
                                       getIndexRange(), bindingKind);
         }

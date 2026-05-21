@@ -316,6 +316,12 @@ GeneratorType GeneratorType::getWithBody(Type newBody) {
   return GeneratorType::get(getInputParamTypes(), newBody, getMetadata());
 }
 
+PogListAttr GeneratorType::getParamListAttrs() { return getMetadata(); }
+
+StringAttr GeneratorType::getParamName(size_t idx) {
+  return getMetadata().getName(idx);
+}
+
 Type GeneratorType::parse(AsmParser &p) {
   GeneratorType generator;
   if (p.parseLess() || parseGenerator(p, generator) || p.parseGreater())

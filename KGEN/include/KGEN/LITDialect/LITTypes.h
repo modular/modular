@@ -32,23 +32,6 @@ class RefPackType;
 namespace M::KGEN::LIT {
 
 //===----------------------------------------------------------------------===//
-// LITGeneratorType
-//===----------------------------------------------------------------------===//
-
-class LITGeneratorType : public GeneratorType {
-public:
-  using GeneratorType::GeneratorType;
-  LITGeneratorType(GeneratorType gen);
-
-  /// Get the generator metadata.
-  PogListAttr getMetadata();
-  PogListAttr getParamListAttrs();
-
-  /// Return the name for the parameter at the specified index.
-  StringAttr getParamName(size_t idx);
-};
-
-//===----------------------------------------------------------------------===//
 // FnType
 //===----------------------------------------------------------------------===//
 
@@ -145,7 +128,7 @@ public:
   }
 
   //===--------------------------------------------------------------------===//
-  // Acting as a LITGeneratorType
+  // Acting as a GeneratorType
   //===--------------------------------------------------------------------===//
 
   PogListAttr getParamListAttrs() { return getMetadata(); }
@@ -259,7 +242,7 @@ class FnTypeGeneratorType
                                         FuncTypeGeneratorType> {
 public:
   using FnTypeWrapperGeneratorType::FnTypeWrapperGeneratorType;
-  FnTypeGeneratorType(LITGeneratorType gen);
+  FnTypeGeneratorType(GeneratorType gen);
   FnTypeGeneratorType(FuncTypeGeneratorType gen);
 
   // CRTP for FnTypeWrapperGeneratorType
@@ -335,7 +318,7 @@ class FnLiteralTypeGeneratorType
                                         FuncLiteralTypeGeneratorType> {
 public:
   using FnTypeWrapperGeneratorType::FnTypeWrapperGeneratorType;
-  FnLiteralTypeGeneratorType(LITGeneratorType gen);
+  FnLiteralTypeGeneratorType(GeneratorType gen);
   FnLiteralTypeGeneratorType(FuncLiteralTypeGeneratorType gen);
 
   // CRTP for FnTypeWrapperGeneratorType

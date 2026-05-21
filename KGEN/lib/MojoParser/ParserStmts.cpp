@@ -3362,7 +3362,7 @@ ParseResult StmtParser::parseDefFnStmt(LexerCursor startCursor,
   // invariants (that functions always have a single result).
   MLIRContext *ctx = builder.getContext();
   auto errorType = builder.getType<TypeCheckErrorType>();
-  FnTypeGeneratorType signatureType = LITGeneratorType::get(
+  FnTypeGeneratorType signatureType = GeneratorType::get(
       /*inputParamTypes=*/{},
       FnType::get(ctx, ArrayRef<Type>(), {errorType},
                   /*numImplicitOriginDecls=*/0),

@@ -241,6 +241,12 @@ def KGEN_GeneratorType : KGENType<"Generator", "generator", [
       assert(isFullyBound() && "cannot instantiate parameterized body");
       return getBody();
     }
+
+    /// Alias for `getMetadata()`; the parameter list lives in the metadata.
+    PogListAttr getParamListAttrs();
+
+    /// Return the name for the parameter at the specified index.
+    StringAttr getParamName(size_t idx);
   }];
 }
 

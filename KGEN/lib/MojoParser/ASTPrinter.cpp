@@ -1702,7 +1702,7 @@ void ASTType::print(raw_ostream &os, SharedState *diagShared) const {
     }
 
     FnType sig = sigGen.getBodyFnType();
-    auto paramTypes = sugarCast<LITGeneratorType>(type).getInputParamTypes();
+    auto paramTypes = sugarCast<GeneratorType>(type).getInputParamTypes();
     if (!paramTypes.empty()) {
       sig = printGeneratorInterface(os, paramTypes, sigGen.getParamListAttrs(),
                                     diagShared, sig);
