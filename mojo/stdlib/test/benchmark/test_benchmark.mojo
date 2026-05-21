@@ -23,7 +23,13 @@ from std.benchmark.bencher import (
     Format,
     ThroughputMeasure,
 )
-from std.testing import TestSuite, assert_equal, assert_true
+from std.testing import (
+    TestSuite,
+    assert_equal,
+    assert_not_equal,
+    assert_true,
+    assert_false,
+)
 from test_utils import check_write_to
 
 
@@ -364,15 +370,15 @@ def test_bench_id_eq() raises:
     var bench_id5 = BenchId("bar()")
     var bench_id6 = BenchId("bar()", "123")
 
-    assert_equal(bench_id1, bench_id1)
-    assert_equal(bench_id1, bench_id2)
-    assert_not_equal(bench_id1, bench_id3)
-    assert_not_equal(bench_id1, bench_id4)
-    assert_not_equal(bench_id1, bench_id6)
+    assert_true(bench_id1 == bench_id1)
+    assert_true(bench_id1 == bench_id2)
+    assert_false(bench_id1 == bench_id3)
+    assert_false(bench_id1 == bench_id4)
+    assert_false(bench_id1 == bench_id6)
 
-    assert_equal(bench_id4, bench_id4)
-    assert_equal(bench_id4, bench_id5)
-    assert_not_equal(bench_id4, bench_id6)
+    assert_true(bench_id4 == bench_id4)
+    assert_true(bench_id4 == bench_id5)
+    assert_false(bench_id4 == bench_id6)
 
 
 def main() raises:
