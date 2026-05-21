@@ -516,6 +516,38 @@ struct StructWithMultiParamPredConstraint[
     pass
 
 
+# CHECK: "name": "StructWithTrailingWhere",
+# CHECK: "signature": "struct StructWithTrailingWhere[N: Int] where is_positive(N)"
+@fieldwise_init
+struct StructWithTrailingWhere[N: Int] where is_positive(N):
+    """A struct with a trailing constraint."""
+
+    pass
+
+
+# CHECK: "name": "StructWithParentAndTrailingWhere",
+# CHECK: "signature": "struct StructWithParentAndTrailingWhere[N: Int] where is_even(N)"
+@fieldwise_init
+struct StructWithParentAndTrailingWhere[N: Int](
+    ImplicitlyCopyable
+) where is_even(N):
+    """A struct with a parent trait and trailing constraint."""
+
+    pass
+
+
+# CHECK: "name": "StructWithTrailingTraitConformance",
+# CHECK: "signature": "struct StructWithTrailingTraitConformance[T: Serializable & Printable]"
+@fieldwise_init
+struct StructWithTrailingTraitConformance[T: Serializable] where conforms_to(
+    T, Printable
+):
+    """A struct whose trailing trait-conformance constraint merges into the parameter bound.
+    """
+
+    pass
+
+
 ##===----------------------------------------------------------------------===##
 # Struct with method-level constraints
 # Note: In JSON output, struct fields are alphabetical, so 'functions' comes

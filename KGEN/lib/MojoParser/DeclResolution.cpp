@@ -3155,7 +3155,8 @@ static auto silenceErrors(MLIRContext *ctx) {
 }
 
 /// structdef ::=
-///   [decorators] "struct" identifier [param_signature] ":" suite
+///   [decorators] "struct" identifier [param_signature]
+///                ["(" conformance_list ")"] ("where" expression)* ":" suite
 ///
 LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
                                              Lexer &lexer, ASTDecl &decl) {
@@ -3173,36 +3174,37 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
 
   ParsedParamList parsedParams;
   SMLoc identifierLoc;
+  SmallVector<ParsedConformanceEntry> parsedConformances;
+  SmallVector<ParsedTraitConstraint> parsedConstraints;
+  DenseSet<SymbolRefAttr> explicitTraits;
   if (p.parseToken(Token::kw_struct,
                    "internal error: checked by stmt parser") ||
       p.parseIdentifier("internal error: checked by stmt parser",
                         &identifierLoc) ||
-      parsedParams.parseParametersIfPresent(p, ArgListKind::kParamList))
+      parsedParams.parseParametersIfPresent(p, ArgListKind::kParamList) ||
+      parseOptionalConformanceListSyntax(
+          p, parsedConformances, sigDecl.getIndentation(),
+          /*allowConformanceConstraints=*/true) ||
+      parsedParams.parseTrailingConstraintsIfPresent(p) ||
+      p.parseToken(Token::colon, "expected ':' in struct definition") ||
+      decl.isErroneous())
     return failure();
 
-  // Type-check parameters first so they're in scope for constraint emission
-  // in the conformance list.
+  // Type-check parameters before resolving the conformance list so parameter
+  // declarations are in scope for conformance-list constraint emission.
   std::optional<TypeCheckedParamList> paramSignatureOrError =
       TypeCheckedParamList::create(parsedParams, sigDecl);
   if (!paramSignatureOrError.has_value())
     return failure();
   TypeCheckedParamList &paramSignature = *paramSignatureOrError;
 
-  // Now parse the conformance list. Parameters are in scope in sigDecl,
-  // so where clause constraints can be emitted immediately.
   DenseSet<SymbolRefAttr> immediateParents; // unused.
-  SmallVector<ParsedConformanceEntry> parsedConformances;
-  SmallVector<ParsedTraitConstraint> parsedConstraints;
-  DenseSet<SymbolRefAttr> explicitTraits;
-  if (parseOptionalConformanceListSyntax(
-          p, parsedConformances, sigDecl.getIndentation(),
-          /*allowConformanceConstraints=*/true) ||
-      resolveConformanceList(parsedConformances, sigDecl, decl, shared,
+  if (resolveConformanceList(parsedConformances, sigDecl, decl, shared,
                              immediateParents, &parsedConstraints,
-                             &explicitTraits) ||
-      p.parseToken(Token::colon, "expected ':' in struct definition") ||
-      decl.isErroneous())
+                             &explicitTraits))
     return failure();
+
+  paramSignature.emitBodyConstraints();
 
   // Look up traits the compiler unconditionally injects into every struct.
   // These lookups are reused below both for constraint building (to skip
