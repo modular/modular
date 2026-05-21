@@ -58,6 +58,10 @@ def py_add(a, b):  # noqa: ANN001, ANN201
     return a + b
 
 
+def py_bool_pass(b):  # noqa: ANN001, ANN201
+    return bool(b)
+
+
 def _measure(label: str, stmt: str, globals_: dict[str, object]) -> None:
     times = timeit.repeat(
         stmt, number=ITERATIONS, repeat=REPEATS, globals=globals_
@@ -75,6 +79,10 @@ def _sanity_check() -> None:
     assert mojo_module.add_def(1, 2) == 3
     assert mojo_module.add_raw(1, 2) == 3
     assert mojo_module.add_raw_fastcall(1, 2) == 3
+    assert mojo_module.bool_pass_def(True) is True
+    assert mojo_module.bool_pass_def(0) is False
+    assert mojo_module.bool_pass_raw_fastcall(True) is True
+    assert mojo_module.bool_pass_raw_fastcall(0) is False
 
 
 def main() -> int:
@@ -87,8 +95,11 @@ def main() -> int:
         "add_def": mojo_module.add_def,
         "add_raw": mojo_module.add_raw,
         "add_raw_fastcall": mojo_module.add_raw_fastcall,
+        "bool_pass_def": mojo_module.bool_pass_def,
+        "bool_pass_raw_fastcall": mojo_module.bool_pass_raw_fastcall,
         "py_noop": py_noop,
         "py_add": py_add,
+        "py_bool_pass": py_bool_pass,
     }
 
     print(
@@ -133,9 +144,23 @@ def main() -> int:
         g,
     )
 
+    # Bool round-trip: covers `Bool(py=...)` (Python -> Mojo) and the
+    # `PythonObject(value: Bool)` singleton fast path (Mojo -> Python).
+    _measure(
+        "Python -> Mojo  bool_pass_def(b)        [def_function/FASTCALL]",
+        "bool_pass_def(True)",
+        g,
+    )
+    _measure(
+        "Python -> Mojo  bool_pass_raw_fastcall(b) [def_py_c_function/FASTCALL]",
+        "bool_pass_raw_fastcall(True)",
+        g,
+    )
+
     # Pure-Python baselines.
     _measure("Python -> Python py_noop(x)", "py_noop(1)", g)
     _measure("Python -> Python py_add(1, 2)", "py_add(1, 2)", g)
+    _measure("Python -> Python py_bool_pass(b)", "py_bool_pass(True)", g)
 
     # timeit floor: no call at all.
     _measure("Python builtin: 1 + 2  (no call)", "1 + 2", g)
