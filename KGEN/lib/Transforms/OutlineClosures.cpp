@@ -58,9 +58,13 @@ prependParams(FuncTypeGeneratorType sigGen,
     inputParamTypes.push_back(remapper.replace(type));
 
   FuncType sig = sigGen.getBody();
+  PogListAttr argListAttrs;
+  if (PogListAttr origArgListAttrs = sig.getArgListAttrs())
+    argListAttrs = cast<PogListAttr>(remapper.replace(origArgListAttrs));
   return FuncTypeGeneratorType::get(
       inputParamTypes, remapper.replace(sig.getValues()),
-      sig.getArgConventions(), sig.getFnEffects());
+      sig.getArgConventions(), sig.getFnEffects(),
+      /*fnMetadata=*/{}, /*genMetadata=*/{}, argListAttrs);
 }
 
 void OutlineClosuresPass::runOnOperation() {

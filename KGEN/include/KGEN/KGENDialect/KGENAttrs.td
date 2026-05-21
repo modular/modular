@@ -2666,9 +2666,13 @@ def KGEN_PogListAttr : KGENAttr<"PogList", "pog_list"> {
     /// Return the passing kind for the argument/parameter at the given index.
     PassingKind getPassingKind(size_t idx) const;
     /// Return the default value for the argument/parameter at the given index
-    /// or null if none.
+    /// or null if none. Returns null on an empty pog list (a `FuncType`
+    /// constructed outside the Mojo parser with no source-level metadata).
     TypedAttr getDefault(size_t idx) const {
-      return getPogs()[idx].getDefaultValue();
+      ::llvm::ArrayRef<PogMetadataAttr> pogs = getPogs();
+      if (pogs.empty())
+        return {};
+      return pogs[idx].getDefaultValue();
     }
 
     /// Return the number of leading "implicit" parameters by PassingKinds.

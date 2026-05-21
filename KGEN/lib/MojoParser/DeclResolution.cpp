@@ -1685,7 +1685,8 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
     funcOp.setFuncTypeGenerator(FnTypeGeneratorType::get(
         provisionalSig.getInputParamTypes(), provisionalSig.getValues(),
         provisionalSig.getArgConventions(), fnSignature.effects,
-        provisionalSig.getFnMetadata(), provisionalSig.getMetadata()));
+        provisionalSig.getFnMetadata(), provisionalSig.getMetadata(),
+        provisionalSig.getArgListAttrs()));
   }
 
   // TODO: effects parsing must be moved after captures parsing.
@@ -3440,7 +3441,7 @@ static FnOp findFieldwiseInit(ASTDecl &structDecl) {
     if (inputTypes.size() != numFields)
       continue;
     // Skip any kind of var-args.
-    if (signature.getBody().getMetadata().hasAnyVarArg())
+    if (signature.getBody().getArgListAttrs().hasAnyVarArg())
       continue;
 
     bool isMatch = true;

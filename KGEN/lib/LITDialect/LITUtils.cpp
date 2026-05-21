@@ -210,6 +210,8 @@ void LIT::printOriginSet(AsmPrinter &p, ArrayRef<TypedAttr> lifetimes) {
 }
 
 bool LIT::isEmptyOriginSet(TypedAttr attr) {
+  if (!attr)
+    return true;
   if (auto set = dyn_cast<OriginSetAttr>(attr))
     return set.getOperands().empty();
   return false;

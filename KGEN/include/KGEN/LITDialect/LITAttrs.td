@@ -69,29 +69,24 @@ def LIT_SymbolAttr : LITAttr<"Symbol", "symbol"> {
 
 def LIT_FnMetadataAttr : LITAttr<"FnMetadata", "fn_metadata",
     [DeclareAttrInterfaceMethods<FnMetadataAttrInterface>]> {
-  let summary = "Function metadata.";
+  let summary = "Function origin/lifetime metadata.";
   let description = [{
-    The `#lit.fn_metadata` attribute contains additional information about a
-    function, such as the argument list metadata and the number of implicit
-    origin declarations.
+    The `#lit.fn_metadata` attribute carries LIT-specific origin and lifetime
+    information for a function: the number of implicit origin declarations,
+    the captured origin set, and whether nested-origin exclusivity checking
+    is disabled. The parameter (POG) list lives on
+    [[kgen.func]]'s `argListAttrs` field, not here.
 
     Example:
 
     ```mlir
-    // Metadata specifying that: argument #0 is called "someRef" is
-    // positional-only and a default value of `13`; argument #1 and #2 are keyword-only
-    // and are called "v" and "kwargs", the former has a default value of `17`,
-    // and the latter is variadic (i.e. `**kwargs`).
-    // The signature has two implicit origin declarations.
-    #lit.fn_metadata<
-      <["someRef", "v", "kwargs"], [pos, kw], [13 : index], [17 : i64]>,
-      2
-    >
+    // Metadata for a function with two implicit origin declarations and
+    // no captured origins.
+    #lit.fn_metadata<2>
     ```
   }];
 
   let parameters = (ins
-    KGEN_PogListAttr:$argListAttrs,
     "size_t":$numImplicitOriginDecls,
     "TypedAttr":$captureOrigins,
     // TODO: Generalize this to a set of origin parameters that are guaranteed
@@ -99,45 +94,23 @@ def LIT_FnMetadataAttr : LITAttr<"FnMetadata", "fn_metadata",
     OptionalParameter<"bool">:$isNestedOriginExclusivityCheckingDisabled
   );
   let assemblyFormat = [{
-    `<` $argListAttrs `,` $numImplicitOriginDecls
+    `<` $numImplicitOriginDecls
     `` custom<FnMetadataOrigins>($captureOrigins)
     (`,` $isNestedOriginExclusivityCheckingDisabled^)? `>`
   }];
 
+  let skipDefaultBuilders = 1;
   let builders = [
     AttrBuilder<(ins)>,
-    AttrBuilder<(ins "size_t":$numArgs,
-                     CArg<"size_t", "0">:$numImplicitOriginDecls)>,
-    AttrBuilderWithInferredContext<(ins
-      "PogListAttr":$argListAttrs,
-      CArg<"size_t", "0">:$numImplicitOriginDecls)>,
-    AttrBuilderWithInferredContext<(ins
-      "PogListAttr":$argListAttrs, "size_t":$numImplicitOriginDecls,
-      "TypedAttr":$captureOrigins, "bool":$nestedOriginFlag)>,
+    AttrBuilder<(ins "size_t":$numImplicitOriginDecls,
+                     "TypedAttr":$captureOrigins,
+                     "bool":$nestedOriginFlag)>,
   ];
 
   let extraClassDeclaration = [{
-    size_t getNumArgs() const;
     /// Reconstruct the metadata with the union of the current capture origins
     /// with the new capture origins.
     FnMetadataAttr addCaptureOrigins(TypedAttr origins);
-
-    /// Return true if the signature has any variadic argument.
-    bool hasAnyVarArg() const;
-    /// Return true if the signature has a keyword variadic argument.
-    bool hasKwVarArgs() const;
-    /// Return true if the argument at `idx` is a any variadic or pack argument.
-    bool isAnyVarArg(size_t idx) const;
-    /// Return true if the argument at `idx` is a positional variadic argument.
-    bool isPosVarArg(size_t idx) const;
-    /// Return true if the argument at `idx` is a keyword variadic argument.
-    bool isKwVarArg(size_t idx) const;
-    /// Return true if the argument at `idx` is a variadic pack argument.
-    bool isPack(size_t idx) const;
-
-    TypedAttr getDefault(size_t idx) const {
-      return getArgListAttrs().getDefault(idx);
-    }
   }];
 }
 

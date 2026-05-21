@@ -131,7 +131,6 @@ def SymbolAttr : DialectAttribute<(attr
 }
 
 def FnMetadataAttr : DialectAttribute<(attr
-  ConcreteAttribute<"::M::KGEN::PogListAttr">:$argListAttrs,
   VarInt:$numImplicitOriginDecls,
   TypedAttr:$captureOrigins,
   Bool:$isNestedOriginExclusivityCheckingDisabled

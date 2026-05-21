@@ -244,22 +244,9 @@ def FnMetadataAttrInterface : AttrInterface<"FnMetadataAttrInterface"> {
     }], "void", "printFuncTypeInline", (ins "AsmPrinter &":$p,
                                             "FuncType":$sig)>,
     InterfaceMethod<[{
-      Get a new metadata attribute for a FuncType where the first `numBound`
-      positional arguments have been removed from the FuncType by being
-      explicitly bound to values, such as in closure formation.
-    }], "FnMetadataAttrInterface", "getWithBoundPosArgs", (ins
-      "size_t":$numBound)>,
-    InterfaceMethod<[{
       Check if this metadata attribute is equal to another metadata attribute.
       Returns true if they are equal.
     }], "bool", "equals", (ins "FnMetadataAttrInterface":$other)>,
-    InterfaceMethod<[{
-      Return the parameter (POG) list this metadata describes, as a generic
-      ``Attribute`` that callers cast to ``PogListAttr``. Transitional
-      accessor for MOCO-4022: it lets KGEN read parameter shape without
-      depending on the concrete LIT-side attribute. Will be removed once
-      the params field moves onto KGEN::FuncType.
-    }], "::mlir::Attribute", "getPogListAttr">,
   ];
 }
 

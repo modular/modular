@@ -66,16 +66,17 @@ TEST_F(FuncTypeGeneratorTypeTest, TestSpecialization) {
     PogListAttr pogs =
         PogListAttr::get(&ctx, SmallVector<PogMetadataAttr>{posOnly});
     FnMetadataAttr fnMetadata = FnMetadataAttr::get(
-        pogs,
+        &ctx,
         /*numImplicitOriginDecls=*/0, /*captureOrigins=*/nullptr,
         /*isNestedOriginExclusivityCheckingDisabled=*/false);
     FnMetadataAttr fnMetadataNoParams = FnMetadataAttr::get(
-        pogs,
+        &ctx,
         /*numImplicitOriginDecls=*/0, /*captureOrigins=*/nullptr,
         /*isNestedOriginExclusivityCheckingDisabled=*/false);
     FuncTypeGeneratorType sigGen =
         FuncTypeGeneratorType::get(inputParamTypes, funcType, /*argConvs=*/{},
-                                   /*effects=*/{}, fnMetadata, pogs);
+                                   /*effects=*/{}, fnMetadata,
+                                   /*genMetadata=*/pogs, /*argListAttrs=*/pogs);
     FuncTypeGeneratorType concreteSigGen = sigGen.getSpecializedGenerator(
         {indexTypeAttr}, /*evaluationContext=*/nullptr);
 
@@ -84,7 +85,9 @@ TEST_F(FuncTypeGeneratorTypeTest, TestSpecialization) {
                   /*inputParamTypes=*/{},
                   FunctionType::get(&ctx, {indexType}, {indexType}),
                   /*argConvs=*/{},
-                  /*effects=*/{}, fnMetadataNoParams, PogListAttr::get(&ctx)));
+                  /*effects=*/{}, fnMetadataNoParams,
+                  /*genMetadata=*/PogListAttr::get(&ctx),
+                  /*argListAttrs=*/pogs));
   }
 }
 

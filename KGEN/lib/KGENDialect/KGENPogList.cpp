@@ -151,22 +151,44 @@ PogListAttr PogListAttr::cloneWith(ArrayRef<PogMetadataAttr> pogs) const {
 // PogListAttr accessors
 //===----------------------------------------------------------------------===//
 
+// MOCO-4022: tolerate an empty pog list as the "no source-level metadata"
+// case (a `FuncType` constructed outside the Mojo parser). If the list is
+// non-empty, indexing must be in bounds — partial population is a bug at
+// the construction site, not a tolerated state.
+
 VariadicKind PogListAttr::getVariadicKind(size_t idx) const {
-  return getPogs()[idx].getVariadic();
+  ArrayRef<PogMetadataAttr> pogs = getPogs();
+  if (pogs.empty())
+    return VariadicKind::None;
+  return pogs[idx].getVariadic();
 }
 
 bool PogListAttr::isAnyVarArg(size_t idx) const {
-  return getPogs()[idx].isAnyVarArg();
+  ArrayRef<PogMetadataAttr> pogs = getPogs();
+  if (pogs.empty())
+    return false;
+  return pogs[idx].isAnyVarArg();
 }
 
-bool PogListAttr::isPack(size_t idx) const { return getPogs()[idx].isPack(); }
+bool PogListAttr::isPack(size_t idx) const {
+  ArrayRef<PogMetadataAttr> pogs = getPogs();
+  if (pogs.empty())
+    return false;
+  return pogs[idx].isPack();
+}
 
 bool PogListAttr::isPosVarArg(size_t idx) const {
-  return getPogs()[idx].isPosVarArg();
+  ArrayRef<PogMetadataAttr> pogs = getPogs();
+  if (pogs.empty())
+    return false;
+  return pogs[idx].isPosVarArg();
 }
 
 bool PogListAttr::isKwVarArg(size_t idx) const {
-  return getPogs()[idx].isKwVarArg();
+  ArrayRef<PogMetadataAttr> pogs = getPogs();
+  if (pogs.empty())
+    return false;
+  return pogs[idx].isKwVarArg();
 }
 
 bool PogListAttr::hasAnyVarArg() const {
@@ -193,11 +215,17 @@ bool PogListAttr::hasInferredParams() const {
 }
 
 StringAttr PogListAttr::getName(size_t idx) const {
-  return getPogs()[idx].getName();
+  ArrayRef<PogMetadataAttr> pogs = getPogs();
+  if (pogs.empty())
+    return StringAttr::get(getContext());
+  return pogs[idx].getName();
 }
 
 PassingKind PogListAttr::getPassingKind(size_t idx) const {
-  return getPogs()[idx].getPassingKind();
+  ArrayRef<PogMetadataAttr> pogs = getPogs();
+  if (pogs.empty())
+    return PassingKind::PosOnly;
+  return pogs[idx].getPassingKind();
 }
 
 size_t PogListAttr::getNumImplicit() const {

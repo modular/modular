@@ -692,7 +692,7 @@ static ParseResult parseLITFunctionSignature(
                        defaults, origVariadicConvention,
                        /*paramConstraints=*/{}, /*bodyConstraints=*/{});
   auto metadata =
-      FnMetadataAttr::get(pogList, originDecls.size(), captureOrigins,
+      FnMetadataAttr::get(p.getContext(), originDecls.size(), captureOrigins,
                           isNestedOriginExclusivityCheckingDisabled);
   signature = FuncTypeGeneratorType::remapToFuncTypeGenerator(
       params, functionType, argConventions, effects, metadata, paramListAttr,
@@ -917,7 +917,7 @@ LogicalResult FnOp::verify() {
 
   // Check that the number of argument labels matches the number of argument
   // types.
-  if (getFuncTypeGenerator().getBody().getMetadata().getNumArgs() !=
+  if (getFuncTypeGenerator().getBody().getArgListAttrs().getPogs().size() !=
       getFunctionType().getNumInputs())
     return emitOpError("incorrect number of value parameter labels");
 

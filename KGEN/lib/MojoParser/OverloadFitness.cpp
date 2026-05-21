@@ -252,8 +252,15 @@ void emitWrongTypeDiag(MojoInflightDiag &diag, ASTExprAnd<AnyValue> operand,
     return;
   }
 
-  diag << "value passed to " << argListAttr.getPogs()[argIdx].getName()
-       << " cannot be converted from " << operand.expr->getRange();
+  // When the function has no source-level pog metadata (an empty PogList,
+  // e.g. a `FuncType` constructed outside the Mojo parser), fall back to a
+  // generic diagnostic without the argument name.
+  if (StringAttr name = argListAttr.getName(argIdx); !name.empty()) {
+    diag << "value passed to " << name << " cannot be converted from "
+         << operand.expr->getRange();
+  } else {
+    diag << "value cannot be converted from " << operand.expr->getRange();
+  }
   ASTType rValueType = operand.ir.getRValueTypeIfResolvable();
   bool isConvertingTypeValue = expectedType.extractMetaType() == rValueType;
   if (rValueType) {

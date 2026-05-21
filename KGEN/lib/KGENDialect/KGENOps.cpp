@@ -1079,13 +1079,21 @@ CreateClosureOp::inferReturnTypes(MLIRContext *ctx, std::optional<Location> loc,
   FnEffects effects = sig.getFnEffects();
   if (!captures.empty())
     effects.setCapturing();
+
+  // Drop the first `numCaptures` positional pogs from `argListAttrs` (they're
+  // now bound by the closure).
+  PogListAttr argListAttrs = sig.getArgListAttrs();
+  if (argListAttrs && !argListAttrs.getPogs().empty()) {
+    ArrayRef<PogMetadataAttr> newPogs =
+        argListAttrs.getPogs().drop_front(numCaptures);
+    argListAttrs =
+        PogListAttr::get(ctx, newPogs, argListAttrs.getBodyConstraints(),
+                         argListAttrs.getOrigVariadicConvention());
+  }
   results.push_back(FuncTypeGeneratorType::get(
       sigGen.getInputParamTypes(),
       Builder(ctx).getFunctionType(newArgTypes, sig.getResults()), newArgConvs,
-      effects,
-      sig.getMetadata() ? sig.getMetadata().getWithBoundPosArgs(numCaptures)
-                        : nullptr,
-      sigGen.getMetadata()));
+      effects, sig.getMetadata(), sigGen.getMetadata(), argListAttrs));
   return mlir::success();
 }
 

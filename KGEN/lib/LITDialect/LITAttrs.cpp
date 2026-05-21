@@ -57,55 +57,20 @@ static void printFnMetadataOrigins(AsmPrinter &p, TypedAttr origins) {
 }
 
 FnMetadataAttr FnMetadataAttr::get(MLIRContext *context) {
-  auto list = PogListAttr::get(context);
   return FnMetadataAttr::get(
-      list, /*numImplicitOriginDecls=*/0, /*captureOrigins=*/nullptr,
+      context, /*numImplicitOriginDecls=*/0,
+      /*captureOrigins=*/OriginSetAttr::get(context, {}),
       /*isNestedOriginExclusivityCheckingDisabled=*/false);
 }
 
-FnMetadataAttr FnMetadataAttr::get(MLIRContext *ctx, size_t numArgs,
-                                   size_t numImplicitOriginDecls) {
-  SmallVector<PogMetadataAttr> args;
-  auto normal = PogMetadataAttr::get(StringAttr::get(ctx), PassingKind::PosOnly,
-                                     VariadicKind::None);
-  args.resize(numArgs, normal);
-  return get(PogListAttr::get(ctx, args), numImplicitOriginDecls,
-             /*captureOrigins=*/nullptr,
-             /*isNestedOriginExclusivityCheckingDisabled=*/false);
-}
-
-FnMetadataAttr FnMetadataAttr::get(PogListAttr argListAttrs,
+FnMetadataAttr FnMetadataAttr::get(MLIRContext *ctx,
                                    size_t numImplicitOriginDecls,
                                    TypedAttr captureOrigins,
                                    bool nestedOriginFlag) {
-  MLIRContext *ctx = argListAttrs.getContext();
   if (!captureOrigins)
     captureOrigins = OriginSetAttr::get(ctx, {});
-  return get(ctx, argListAttrs, numImplicitOriginDecls, captureOrigins,
-             nestedOriginFlag);
-}
-
-FnMetadataAttr FnMetadataAttr::get(PogListAttr argListAttrs,
-                                   size_t numImplicitOriginDecls) {
-  return get(argListAttrs, numImplicitOriginDecls, /*captureOrigins=*/nullptr,
-             /*isNestedOriginExclusivityCheckingDisabled=*/false);
-}
-
-FnMetadataAttrInterface
-FnMetadataAttr::getWithBoundPosArgs(size_t numBound) const {
-  PogListAttr argListAttrs = getArgListAttrs();
-
-  size_t numPositional = countNumPositional(argListAttrs);
-  assert(numBound <= numPositional && "only positional arguments can be bound");
-
-  ArrayRef<PogMetadataAttr> newPogs =
-      argListAttrs.getPogs().drop_front(numBound);
-
-  auto newArgListAttrs =
-      PogListAttr::get(getContext(), newPogs, argListAttrs.getBodyConstraints(),
-                       argListAttrs.getOrigVariadicConvention());
-  return get(newArgListAttrs, getNumImplicitOriginDecls(), getCaptureOrigins(),
-             getIsNestedOriginExclusivityCheckingDisabled());
+  return Base::get(ctx, numImplicitOriginDecls, captureOrigins,
+                   nestedOriginFlag);
 }
 
 SmallVector<VariadicKind>
@@ -143,11 +108,6 @@ LogicalResult FnMetadataAttr::verifyFuncType(
            << "number of arguments does not match number of input conventions: "
            << numInputs << " != " << numArgConv;
   }
-  if (size_t numArgs = getNumArgs(); numArgs != numInputs) {
-    return emitError()
-           << "number of arguments does not match number of argument names: "
-           << numInputs << " != " << numArgs;
-  }
 
   for (auto [i, argType, conv] :
        llvm::enumerate(values.getInputs(), argConventions)) {
@@ -171,37 +131,9 @@ FnMetadataAttr FnMetadataAttr::addCaptureOrigins(TypedAttr origins) {
   SmallVector<TypedAttr> originUnion{
       OriginSetUnionAttr::get(getCaptureOrigins(), type),
       OriginSetUnionAttr::get(origins, type)};
-  return get(getArgListAttrs(), getNumImplicitOriginDecls(),
+  return get(getContext(), getNumImplicitOriginDecls(),
              OriginSetAttr::get(getContext(), originUnion),
              getIsNestedOriginExclusivityCheckingDisabled());
-}
-
-size_t FnMetadataAttr::getNumArgs() const {
-  return getArgListAttrs().getPogs().size();
-}
-
-bool FnMetadataAttr::hasAnyVarArg() const {
-  return getArgListAttrs().hasAnyVarArg();
-}
-
-bool FnMetadataAttr::hasKwVarArgs() const {
-  return getArgListAttrs().hasKwVarArg();
-}
-
-bool FnMetadataAttr::isAnyVarArg(size_t idx) const {
-  return getArgListAttrs().isAnyVarArg(idx);
-}
-
-bool FnMetadataAttr::isPosVarArg(size_t idx) const {
-  return getArgListAttrs().isPosVarArg(idx);
-}
-
-bool FnMetadataAttr::isKwVarArg(size_t idx) const {
-  return getArgListAttrs().isKwVarArg(idx);
-}
-
-bool FnMetadataAttr::isPack(size_t idx) const {
-  return getArgListAttrs().isPack(idx);
 }
 
 void FnMetadataAttr::printFuncTypeBody(AsmPrinter &p, FuncType sig) const {
@@ -226,14 +158,11 @@ bool FnMetadataAttr::equals(FnMetadataAttrInterface otherMetadata) const {
   if (!other)
     return false;
 
-  return getArgListAttrs() == other.getArgListAttrs() &&
-         getNumImplicitOriginDecls() == other.getNumImplicitOriginDecls() &&
+  return getNumImplicitOriginDecls() == other.getNumImplicitOriginDecls() &&
          getCaptureOrigins() == other.getCaptureOrigins() &&
          getIsNestedOriginExclusivityCheckingDisabled() ==
              other.getIsNestedOriginExclusivityCheckingDisabled();
 }
-
-Attribute FnMetadataAttr::getPogListAttr() const { return getArgListAttrs(); }
 
 //===----------------------------------------------------------------------===//
 // UnboundMLIROperationAttr
