@@ -94,7 +94,7 @@ class LocalConnector:
     @property
     def num_used_host_blocks(self) -> int:
         """Get the number of host blocks currently in use."""
-        return len(self._host_block_pool.hash_to_committed_block)
+        return len(self._host_block_pool.prefix_cache)
 
     @property
     def num_disk_blocks(self) -> int:
@@ -118,7 +118,7 @@ class LocalConnector:
             Number of blocks loaded from host cache.
         """
         hit = 0
-        host_cache = self._host_block_pool.hash_to_committed_block
+        host_cache = self._host_block_pool.prefix_cache
         for block_hash, device_block_id in zip(
             block_hashes, device_block_ids, strict=True
         ):
@@ -174,12 +174,12 @@ class LocalConnector:
     ) -> None:
         """Offload a device block to host memory if not already cached."""
         # Skip if already in host cache
-        if block_hash in self._host_block_pool.hash_to_committed_block:
+        if block_hash in self._host_block_pool.prefix_cache:
             return
 
         # Allocate host block. This should never fail!
         assert (
-            len(self._host_block_pool.free_block_queue)
+            self._host_block_pool.num_free_blocks
             == self._host_block_pool.total_num_blocks
         )
         assert self._host_block_pool.total_num_blocks > 0

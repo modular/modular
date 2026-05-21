@@ -298,7 +298,7 @@ class BlockManager:
     ) -> int:
         """Returns the count of device and host blocks with the desired hashes."""
         # Count the number of device block hashes that are in the device prefix cache.
-        device_prefix_cache = self.device_block_pool.hash_to_committed_block
+        device_prefix_cache = self.device_block_pool.prefix_cache
 
         device_prefix_cache_hits = []
         desired_host_hashes = []
@@ -325,7 +325,7 @@ class BlockManager:
         if self._only_use_kv_connector_last_level_cache:
             return []
 
-        device_prefix_cache = self.device_block_pool.hash_to_committed_block
+        device_prefix_cache = self.device_block_pool.prefix_cache
 
         blocks = []
         for block_hash in desired_hashes:
@@ -352,7 +352,7 @@ class BlockManager:
 
         # Limit by available device blocks.
         num_hashes_to_load = min(
-            len(desired_hashes), len(self.device_block_pool.free_block_queue)
+            len(desired_hashes), self.device_block_pool.num_free_blocks
         )
         desired_hashes = desired_hashes[:num_hashes_to_load]
         blocks = [
@@ -371,7 +371,7 @@ class BlockManager:
 
         # Commit the device blocks into the device prefix cache.
         for block, block_hash in zip(loaded_blocks, loaded_hashes, strict=True):
-            if block_hash in self.device_block_pool.hash_to_committed_block:
+            if block_hash in self.device_block_pool.prefix_cache:
                 # When this env var is set, we may perform host/disk -> device
                 # transfers of blocks already resident in the device prefix cache.
                 # If the block is already in the device prefix cache, we skip the
@@ -486,7 +486,7 @@ class BlockManager:
         """Offload the blocks to the connector."""
         block_ids = []
         block_hashes = []
-        prefix_cache = self.device_block_pool.hash_to_committed_block
+        prefix_cache = self.device_block_pool.prefix_cache
         for block_hash in self._hashes_to_offload:
             # It is possible that the hash is no longer available in the prefix
             # cache since the corresponding block has been evicted.
@@ -581,8 +581,8 @@ class BlockManager:
         )
 
         # Check that we have enough free blocks to allocate the new blocks.
-        if num_new_blocks > len(self.device_block_pool.free_block_queue):
-            free = len(self.device_block_pool.free_block_queue)
+        if num_new_blocks > self.device_block_pool.num_free_blocks:
+            free = self.device_block_pool.num_free_blocks
             in_use = self.total_num_blocks - free
             raise InsufficientBlocksError(
                 f"Cannot get {num_new_blocks} free blocks from the free block queue"

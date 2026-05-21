@@ -120,7 +120,7 @@ class DebugTieredConnector:
             Number of blocks loaded from host cache.
         """
 
-        host_cache = self._host_block_pool.hash_to_committed_block
+        host_cache = self._host_block_pool.prefix_cache
         num_loaded = 0
 
         for device_block_id, block_hash in zip(
@@ -142,7 +142,7 @@ class DebugTieredConnector:
 
             elif (
                 self._disk_tier.contains(block_hash)
-                and len(self._host_block_pool.free_block_queue) > 0
+                and self._host_block_pool.num_free_blocks > 0
             ):
                 # Disk hit -> async promote to CPU
                 host_block, _ = self._host_block_pool.alloc_block()
@@ -154,10 +154,7 @@ class DebugTieredConnector:
                 self._disk_tier.read_block(block_hash, dest)
                 self._disk_blocks_read += 1
 
-                if (
-                    block_hash
-                    not in self._host_block_pool.hash_to_committed_block
-                ):
+                if block_hash not in self._host_block_pool.prefix_cache:
                     self._host_block_pool.commit_into_prefix_cache(
                         block_hash, host_block
                     )
@@ -196,10 +193,10 @@ class DebugTieredConnector:
         self, device_block_id: int, block_hash: int
     ) -> KVCacheBlock | None:
         # Skip if already in host cache
-        if block_hash in self._host_block_pool.hash_to_committed_block:
+        if block_hash in self._host_block_pool.prefix_cache:
             return None
 
-        assert len(self._host_block_pool.free_block_queue) > 0
+        assert self._host_block_pool.num_free_blocks > 0
 
         host_block, _ = self._host_block_pool.alloc_block()  # ref_cnt=1
 
@@ -240,7 +237,7 @@ class DebugTieredConnector:
     @property
     def num_used_host_blocks(self) -> int:
         """Get the number of host blocks currently in use."""
-        return len(self._host_block_pool.hash_to_committed_block)
+        return len(self._host_block_pool.prefix_cache)
 
     @property
     def num_disk_blocks(self) -> int:
