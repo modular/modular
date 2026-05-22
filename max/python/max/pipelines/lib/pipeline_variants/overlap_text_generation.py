@@ -81,6 +81,7 @@ from max.driver import (
     Buffer,
     DeviceEvent,
     DevicePinnedBuffer,
+    is_virtual_device_mode,
     load_devices,
 )
 from max.dtype import DType
@@ -1643,11 +1644,13 @@ class OverlapTextGenerationPipeline(
         # Pre-allocate pinned buffer for D2H token copies only when the
         # bitmask path is wired in. This buffer is used for async token
         # transfers in the guided decoding path. Allocated once and reused
-        # across batches.
+        # across batches. Skip in virtual device mode (compile-only) since
+        # VirtualDevice does not support memory allocation.
         self._pinned_new_tokens: Buffer | None = None
         if (
             pipeline_config.needs_bitmask_constraints
             and not self._devices[0].is_host
+            and not is_virtual_device_mode()
         ):
             max_batch_size = pipeline_config.runtime.max_batch_size
             assert max_batch_size is not None, "max_batch_size must be set"
