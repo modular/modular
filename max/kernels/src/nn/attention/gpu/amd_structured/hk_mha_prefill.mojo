@@ -26,13 +26,17 @@ so each iter processes two K/V tiles. Each cluster ends in a bare
   | Cluster | Work                                                |
   |---------|-----------------------------------------------------|
   | C0      | QK[j-2] + tail softmax of tile (j-3)                |
-  | C1      | DMA K[j] + LDS→register V[j-3]                      |
+  | C1      | DMA K[j] + LDS→register V[j-3] + mask (j-2)¹        |
   | C2      | PV[j-3] strip-interleaved with partial softmax(j-2) |
   | C3      | DMA V[j-1] + LDS→register K[j-1]                    |
   | C4      | QK[j-1] + tail softmax of tile (j-2)                |
-  | C5      | DMA K[j+1] + LDS→register V[j-2] + causal mask      |
+  | C5      | DMA K[j+1] + LDS→register V[j-2] + mask (j-1)       |
   | C6      | PV[j-2] strip-interleaved with partial softmax(j-1) |
   | C7      | DMA V[j] + LDS→register K[j]                        |
+
+  ¹ Non-Causal masks only. CausalMask comptime-elides the C1 mask
+  call because the `max_num_tiles` cap leaves tile (j-2) naturally
+  fully unmasked.
 
 Whole-tile K is pre-loaded one iteration ahead into the persistent
 `k_reg`, so the QK clusters (C0/C4) contain MFMAs + VALU only — no
@@ -60,15 +64,21 @@ unconditional normalizer rescale before the `o / norm_vec` divide.
   contribute at the old scale into an already-rescaled accumulator.
   The 8 log2 cap bounds the inconsistency. When `rv_all_below`
   reports no lane exceeded the threshold, the rescale is skipped
-  entirely. The epilogue rescales unconditionally with
-  `scale_vec` initialized to ones, so the multiply is identity when
-  no rescale ever fired.
+  and `scale_vec` is reset to 1 (so the epilogue's unconditional
+  multiply stays identity — see below). The epilogue's tail softmax
+  applies `norm_vec *= scale_vec` *unconditionally*; the
+  initialized-to-1 + reset-to-1-on-skip invariant guarantees this
+  is identity unless a rescale fired in the last C2/C6.
 
-- **Causal mask placement.** Tiles `0` (prologue), `(j - 1)` for
-  each main-loop iter (C5), and `N - 3, N - 2, N - 1` (epilogue).
-  Tiles `1, 3, …` in the main-loop range are unmasked by design;
-  the `max_num_tiles` cap guarantees those positions are naturally
-  fully unmasked.
+- **Mask placement.** Tiles `0` (prologue), `(j - 2)` for each
+  main-loop iter (C1, non-Causal masks only — see below), `(j - 1)`
+  (C5, all masks), and `N - 3, N - 2, N - 1` (epilogue). For
+  `CausalMask` the `max_num_tiles` cap guarantees odd-numbered K
+  tiles in the main-loop range are naturally fully unmasked, so the
+  C0/C2 path skips the mask call. Non-causal masks
+  (SlidingWindow/Chunked) cannot rely on that cap, so the C1 site
+  applies the mask to `att_block_1` (= QK[j-2]) before C2's partial
+  softmax reads it.
 
 - **Output transpose.** `col_l → row_l` is a zero-cost re-tag of the
   same register storage — no cross-lane permute, no data motion.
@@ -689,7 +699,17 @@ struct HKMhaPrefill[config: HKMhaConfig]:
         APPROXIMATION: when the lazy rescale fires, `o_reg` is rescaled
         BETWEEN PV strip 0 and strips 1..3; strips 1..3 then add to
         already-rescaled `o_reg` at the OLD scale. Bounded by
-        `RESCALE_THRESHOLD` and skipped on the `rv_all_below` path."""
+        `RESCALE_THRESHOLD` and skipped on the `rv_all_below` path.
+
+        SCALE_VEC INVARIANT: on the if-branch (rescale fires)
+        `scale_vec` is set to `exp2(prev - new)`. On the else-branch
+        it is reset to 1. This makes the epilogue's unconditional
+        `_tail_softmax_unconditional` `norm_vec *= scale_vec` safe —
+        identity when no recent rescale fired. Without the else-branch
+        reset, a stale `scale_vec ≈ 1e-38` from a non-Causal mask's
+        huge initial growth gets re-applied in the epilogue and
+        flushes `norm_vec` to zero.
+        """
         s_waitcnt[lgkmcnt=UInt32(0)]()
         _s_setprio[Int16(1)]()
 
@@ -712,6 +732,17 @@ struct HKMhaPrefill[config: HKMhaConfig]:
             pending_scale = True
         else:
             max_vec.copy_from(max_vec_prev)
+            # No-rescale path: leave `scale_vec` at the identity so the
+            # epilogue's unconditional `norm_vec *= scale_vec` is a
+            # no-op. Without this reset, `scale_vec` would be sticky at
+            # whatever the most recent if-branch set it to — and a
+            # non-Causal mask sentinel (`MASK_VALUE = -10_000`) can
+            # produce a huge initial growth, giving `scale_vec ≈
+            # exp2(-10_000) = 1.18e-38` (smallest float32 normal; AMD
+            # `math_exp2` does NOT flush to 0). Sticky for the rest of
+            # the run, then re-applied 3× in the epilogue tail clusters
+            # → `norm_vec` flushes to 0 → final divide produces `Inf`.
+            scale_vec[0, 0] = SIMD[DType.float32, 1](1.0)
 
         # PV strips 1..3.
         comptime for i in range(1, Self._NUM_PV_SUBTILES):
@@ -802,11 +833,14 @@ struct HKMhaPrefill[config: HKMhaConfig]:
           `start_pos` shift is folded into the q position.
         - `NullMask`: comptime no-op (the status would always be
           `NO_MASK` and the branch is unconditionally elided).
-        - Any other `MHAMask`: generic path via
-          `mask_functor.status(...)` + `apply_mask_to_att_block`. The
-          runtime `status()` call + enum branching adds a few SGPR
-          ops per tile; acceptable for the less-common masks where
-          there is no comptime-specialized fast path.
+        - Any other `MHAMask` (`SlidingWindowCausalMask`,
+          `ChunkedCausalMask`, `MaterializedMask`, fused
+          combinations): generic path via `mask_functor.status(...)`
+          + `apply_mask_to_att_block`. The runtime `status()` call +
+          enum branching adds a few SGPR ops per tile; the per-tile
+          cost is acceptable for masks without a comptime-specialized
+          fast path. Production callers: Gemma-3 (sliding window),
+          Gemma-4 (chunked).
         """
         comptime if _type_is_eq[mask_t, NullMask]():
             return
@@ -859,6 +893,7 @@ struct HKMhaPrefill[config: HKMhaConfig]:
         o_reg_t: RegTile[DType.float32, Self._O_T_LAYOUT_T, MutExternalOrigin],
         epilogue_writer: RegTileEpilogue[output_dtype, epilogue_chunk_width],
         l_id: Int,
+        valid_q_rows_in_warp: Int,
     ):
         """Writes the FP32 row_l rt_32x32 accumulator to gmem via
         `RegTileEpilogue`, casting per-lane to `output_dtype`.
@@ -869,9 +904,20 @@ struct HKMhaPrefill[config: HKMhaConfig]:
         Since the col_l → row_l transpose is a zero-cost re-tag, the
         FP32-path stored values are bit-identical to the col_l
         accumulator; the BF16-path cast is a per-lane `v_cvt_pkrtz`
-        (or scalar `v_cvt`) emitted just before the gmem store."""
+        (or scalar `v_cvt`) emitted just before the gmem store.
+
+        `valid_q_rows_in_warp` is the M-bound for this warp's slice of
+        the BM tile. For a full tile pass `Q_BLOCK_SIZE`; for a partial
+        last tile of a sequence whose length isn't a multiple of `BM`,
+        callers pass `clamp(seq_len - block_tile_idx * BM - warp_id *
+        Q_BLOCK_SIZE, 0, Q_BLOCK_SIZE)`. Stores at
+        `q_in_tile >= valid_q_rows_in_warp` are skipped — RegTileEpilogue
+        leaves the M check to the caller (line 1832-1835), and the
+        per-row store gate here is what makes the writer correct for
+        partial-Q tiles."""
         var q_in_tile = l_id & 31
         var d_extra = 4 if l_id >= 32 else 0
+        var q_in_bounds = q_in_tile < valid_q_rows_in_warp
 
         comptime _D_FRAG = (Self.DEPTH * Self.Q_BLOCK_SIZE) // 64
         comptime for k_local in range(_D_FRAG):
@@ -880,18 +926,19 @@ struct HKMhaPrefill[config: HKMhaConfig]:
             comptime d_within_4 = (k_in_base // 4) * 8 + (k_in_base % 4)
             var output_col = i * 32 + d_within_4 + d_extra
             var v_fp32 = SIMD[DType.float32, 1](o_reg_t.ptr[k_local])
-            comptime if output_dtype == DType.float32:
-                epilogue_writer.store(
-                    rebind[SIMD[output_dtype, 1]](v_fp32),
-                    m=q_in_tile,
-                    n=output_col,
-                )
-            else:
-                epilogue_writer.store(
-                    v_fp32.cast[output_dtype](),
-                    m=q_in_tile,
-                    n=output_col,
-                )
+            if q_in_bounds:
+                comptime if output_dtype == DType.float32:
+                    epilogue_writer.store(
+                        rebind[SIMD[output_dtype, 1]](v_fp32),
+                        m=q_in_tile,
+                        n=output_col,
+                    )
+                else:
+                    epilogue_writer.store(
+                        v_fp32.cast[output_dtype](),
+                        m=q_in_tile,
+                        n=output_col,
+                    )
 
     @staticmethod
     @always_inline
@@ -910,7 +957,16 @@ struct HKMhaPrefill[config: HKMhaConfig]:
     ):
         """Epilogue tail softmax: second-half `exp2` + UNCONDITIONAL
         `norm_vec *= scale_vec` + `col_sum_acc`. No BF16 cast — the
-        consumer PV JIT-casts `att_block` per subtile inline."""
+        consumer PV JIT-casts `att_block` per subtile inline.
+
+        The unconditional `norm_vec *= scale_vec` relies on the
+        invariant that `scale_vec` is 1 whenever no rescale fired in
+        the most recent C2/C6: maintained by the explicit reset in
+        `_pv_strip_with_partial_softmax`'s else-branch. Without that
+        reset, a stale tiny `scale_vec` from a much-earlier huge
+        growth (non-Causal mask sentinel) flushes `norm_vec` to 0
+        across the 3 epilogue tail clusters.
+        """
         Self._MmaOp.exp2_inplace_range[Self._ATT_HALF, Self._ATT_PER_LANE](
             att_block
         )
@@ -1041,6 +1097,7 @@ struct HKMhaPrefill[config: HKMhaConfig]:
         output_dtype: DType,
         q_layout: TensorLayout,
         o_layout: TensorLayout,
+        ragged: Bool = False,
     ](
         q: TileTensor[q_dtype, q_layout, ImmutAnyOrigin],
         k: k_t,
@@ -1107,8 +1164,19 @@ struct HKMhaPrefill[config: HKMhaConfig]:
         var q_bf16 = rebind[
             TileTensor[DType.bfloat16, q_layout, ImmutAnyOrigin]
         ](q)
-        var seq_len = Int(q.dim[1]())
-        var num_tiles = (num_keys + Self.KV_BLOCK - 1) // Self.KV_BLOCK
+        # `seq_len` from the layout's runtime dim and `num_tiles` from
+        # the runtime `num_keys` arg are wave-uniform by construction.
+        # Wrapping in `readfirstlane` here — at the actual use site
+        # inside the kernel — is what materializes the uniformity into
+        # SGPR-resident operands across the main loop. Upstream
+        # `readfirstlane` at the layout-construction site (as the
+        # ragged kernel does) doesn't survive the TileTensor abstraction.
+        var seq_len = Int(readfirstlane(Int32(q.dim[1]())))
+        var num_tiles = Int(
+            readfirstlane(
+                Int32((num_keys + Self.KV_BLOCK - 1) // Self.KV_BLOCK)
+            )
+        )
         comptime assert Self.NUM_HEADS % Self.NUM_KV_HEADS == 0, (
             "HKMhaPrefill: NUM_HEADS must be a multiple of NUM_KV_HEADS"
             " (GROUP = NUM_HEADS // NUM_KV_HEADS)"
@@ -1227,6 +1295,18 @@ struct HKMhaPrefill[config: HKMhaConfig]:
         # `(batch_idx, 0, head_idx, 0)`; `.reshape` retags it as a 2D
         # MixedLayout that the per-warp `.tile[Q_BLOCK_SIZE, DEPTH]()`
         # downstream and the DMA loaders expect.
+        # Q/O batch indexing: non-ragged callers pass a multi-batch Q
+        # tensor of shape `(batch_size, seq_len, num_heads, depth)`
+        # and HK picks the per-batch slice via `batch_idx`. Ragged
+        # callers pass a *per-sequence* Q tensor of shape `(1, seq_len,
+        # num_heads, depth)` whose pointer is already pre-offset to
+        # this sequence's slice in the packed buffer — for those,
+        # indexing the batch dim by `batch_idx > 0` would OOB-read
+        # into the next sequence's data. Force the batch coord to 0
+        # for ragged so the per-sequence Q view is selected regardless
+        # of `block_idx.z`. (FA2 sidesteps this by passing a raw
+        # pointer instead of a TileTensor view.)
+        var q_batch_coord = 0 if ragged else batch_idx
         var q_2d = q_bf16.tile(
             Coord(
                 Idx[1],
@@ -1234,7 +1314,7 @@ struct HKMhaPrefill[config: HKMhaConfig]:
                 Idx[1],
                 Idx[Self.DEPTH],
             ),
-            Coord(batch_idx, Idx[0], head_idx, Idx[0]),
+            Coord(q_batch_coord, Idx[0], head_idx, Idx[0]),
         ).reshape(
             Self._QPerHeadLayoutT(
                 Coord(
@@ -1251,7 +1331,7 @@ struct HKMhaPrefill[config: HKMhaConfig]:
                 Idx[1],
                 Idx[Self.DEPTH],
             ),
-            Coord(batch_idx, Idx[0], head_idx, Idx[0]),
+            Coord(q_batch_coord, Idx[0], head_idx, Idx[0]),
         ).reshape(
             Self._QPerHeadLayoutT(
                 Coord(
@@ -1442,7 +1522,15 @@ struct HKMhaPrefill[config: HKMhaConfig]:
             )
             _cluster_barrier()
 
-            # C1: DMA K[j], load v_reg = V[j-3].
+            # C1: DMA K[j], load v_reg = V[j-3]. For non-Causal masks
+            # also apply the mask to `att_block_1` (= QK[j-2] written
+            # in C0) before C2's partial softmax reads it. The C0/C2
+            # mask is comptime-elided for `CausalMask`: the
+            # `max_num_tiles` cap already guarantees tile (j-2) is
+            # naturally fully unmasked. Non-causal masks
+            # (SlidingWindow / Chunked) need the explicit call —
+            # otherwise unmasked Q@K values bleed into tile (j-2)'s
+            # softmax.
             _asm_label["; HKMHA_MAIN_C1_BEGIN"]()
             Self._dma_k(
                 k_smem[1],
@@ -1455,6 +1543,17 @@ struct HKMhaPrefill[config: HKMhaConfig]:
             )
             var v_reg_c1 = reg_alloc[DType.bfloat16](Self._MmaOp.V_LAYOUT)
             Self._load_v_reg(v_reg_c1, v_smem[0])
+            comptime if not _type_is_eq[mask_t, CausalMask]():
+                Self._maybe_apply_mask(
+                    mask_functor,
+                    att_block_1,
+                    tile_idx,
+                    j - 2,
+                    start_pos,
+                    UInt32(head_idx),
+                    _batch_idx_u32,
+                    l_id,
+                )
             _cluster_barrier()
 
             # C2: PV[j-3] strip-interleaved with partial softmax of
@@ -1504,9 +1603,11 @@ struct HKMhaPrefill[config: HKMhaConfig]:
             )
             _cluster_barrier()
 
-            # C5: DMA K[j+1], load v_reg = V[j-2], causal-mask
-            # att_block_0. No MFMAs — IGLP interleaves the 32 V `ds_read`s
-            # with the causal-mask `v_cmp` / `v_cndmask` VALU pairs.
+            # C5: DMA K[j+1], load v_reg = V[j-2], apply mask to
+            # att_block_0 for tile (j-1). No MFMAs — IGLP interleaves
+            # the 32 V `ds_read`s with the mask's VALU pairs
+            # (`v_cmp` / `v_cndmask` for the CausalMask fast path;
+            # per-element loop for the generic path).
             _asm_label["; HKMHA_MAIN_C5_BEGIN"]()
             Self._dma_k(
                 k_smem[0],
@@ -1585,7 +1686,7 @@ struct HKMhaPrefill[config: HKMhaConfig]:
         Self._att_bf16_full(att_block_bf16, att_block_0)
         _cluster_barrier()
 
-        # Epi-C1: DMA K[N-1], load v_reg = V[N-4], causal-mask
+        # Epi-C1: DMA K[N-1], load v_reg = V[N-4], apply mask to
         # att_block_1 for tile (N-3).
         _asm_label["; HKMHA_EPI_C1_BEGIN"]()
         Self._dma_k(
@@ -1653,7 +1754,8 @@ struct HKMhaPrefill[config: HKMhaConfig]:
         Self._att_bf16_full(att_block_bf16, att_block_1)
         _cluster_barrier()
 
-        # Epi-C5: load v_reg = V[N-3], causal-mask att_block_0.
+        # Epi-C5: load v_reg = V[N-3], apply mask to att_block_0
+        # for tile (N-2).
         _asm_label["; HKMHA_EPI_C5_BEGIN"]()
         var v_reg_e5 = reg_alloc[DType.bfloat16](Self._MmaOp.V_LAYOUT)
         Self._load_v_reg(v_reg_e5, v_smem[1])
@@ -1714,7 +1816,8 @@ struct HKMhaPrefill[config: HKMhaConfig]:
         Self._att_bf16_full(att_block_bf16, att_block_0)
         _cluster_barrier()
 
-        # Epi-C9: load v_reg = V[N-2], causal-mask att_block_1.
+        # Epi-C9: load v_reg = V[N-2], apply mask to att_block_1
+        # for tile (N-1).
         _asm_label["; HKMHA_EPI_C9_BEGIN"]()
         var v_reg_e9 = reg_alloc[DType.bfloat16](Self._MmaOp.V_LAYOUT)
         Self._load_v_reg(v_reg_e9, v_smem[0])
@@ -1782,9 +1885,172 @@ struct HKMhaPrefill[config: HKMhaConfig]:
             address_space=AddressSpace.LOCAL,
         ](o_normalized.ptr, _o_view_layout)
         var epilogue_writer = RegTileEpilogue[output_dtype, 1](o_warp_2d)
-        Self._store_o_to_gmem[output_dtype](
-            o_normalized_view, epilogue_writer, l_id
+        # Partial-Q-tile bound: for sequences whose length is not a
+        # multiple of BM, the last tile owns fewer than BM valid Q rows
+        # (OOB Q rows read 0 from buffer_load via RegTileLoader and
+        # compute a finite-but-meaningless output). The writeback is
+        # the only place that has to gate — RegTileEpilogue leaves the
+        # M check to the caller.
+        var valid_q_rows = max(
+            0, min(Self.BM, seq_len - block_tile_idx * Self.BM)
         )
+        var valid_q_rows_in_warp = min(
+            Self.Q_BLOCK_SIZE,
+            max(0, valid_q_rows - w_id * Self.Q_BLOCK_SIZE),
+        )
+        Self._store_o_to_gmem[output_dtype](
+            o_normalized_view, epilogue_writer, l_id, valid_q_rows_in_warp
+        )
+
+    # ===-------------------------------------------------------------=== #
+    # Ragged-batch GPU entry point. Wraps `run` with per-sequence setup
+    # (start_of_seq / q_batch_offset / seq_len / num_keys / start_pos)
+    # so the dispatcher can launch one grid for a packed multi-sequence
+    # batch. Grid: `(NUM_HEADS, ceildiv(max_prompt_len, BM), batch_size)`.
+    # ===-------------------------------------------------------------=== #
+    @__llvm_metadata(`llvm.amdgpu-waves-per-eu`=__mlir_attr.`"2,2"`)
+    @__llvm_metadata(
+        MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
+            Int32(Self.NUM_THREADS)
+        )
+    )
+    @staticmethod
+    def ragged_kernel[
+        k_t: MHAOperand,
+        v_t: MHAOperand,
+        mask_t: MHAMask,
+        qkv_dtype: DType,
+        output_dtype: DType,
+    ](
+        q_ptr: UnsafePointer[Scalar[qkv_dtype], ImmutAnyOrigin],
+        k: k_t,
+        v: v_t,
+        output_ptr: UnsafePointer[Scalar[output_dtype], MutAnyOrigin],
+        mask_functor: mask_t,
+        scale: Float32,
+        input_row_offsets_ptr: UnsafePointer[
+            Scalar[DType.uint32], ImmutAnyOrigin
+        ],
+    ):
+        """Ragged-batch GPU kernel entry: per-sequence setup + `run`.
+
+        The non-ragged equivalent is `run` itself (which takes
+        already-sliced per-batch TileTensors). For ragged, this
+        wrapper does the per-block ragged setup so the launcher can
+        pass a single packed Q pointer + `input_row_offsets`.
+        """
+        # Wave-uniform prologue. Values are uniform by construction
+        # (one read per block, broadcast). The uniformity hint that
+        # actually matters is the `readfirstlane` inside `run` on
+        # `seq_len` / `num_tiles` — at the use site inside HK's main
+        # loop. Wraps here at the construction site don't survive the
+        # TileTensor layout abstraction; ISA + bench confirmed no
+        # effect.
+        var batch_idx = block_idx.z
+        var start_of_seq = Int(input_row_offsets_ptr[batch_idx])
+        var end_of_seq = Int(input_row_offsets_ptr[batch_idx + 1])
+        var seq_len = end_of_seq - start_of_seq
+
+        # Out-of-range block guard: grid is sized by max_prompt_len;
+        # if this sequence is shorter, the trailing q-blocks have
+        # nothing to do.
+        if Int(block_idx.y) * Self.BM >= seq_len:
+            return
+
+        var start_pos = Int(k.cache_length(batch_idx))
+        var num_keys = start_pos + seq_len
+        var q_batch_offset = (
+            start_of_seq * Self.config.num_heads * Self.config.depth
+        )
+
+        # E_B: share the rank-4 BSHD layout between q_tt and o_tt so
+        # the runtime seq_len field lives once. Halves the per-block
+        # live state introduced by the layout construction.
+        var ragged_layout = row_major(
+            Coord(
+                1,
+                seq_len,
+                Self.config.num_heads,
+                Self.config.depth,
+            )
+        )
+        var q_tt = TileTensor(q_ptr + q_batch_offset, ragged_layout)
+        var o_tt = TileTensor(output_ptr + q_batch_offset, ragged_layout)
+
+        Self.run[
+            k_t,
+            v_t,
+            mask_t,
+            qkv_dtype,
+            output_dtype,
+            type_of(q_tt).LayoutType,
+            type_of(o_tt).LayoutType,
+            ragged=True,
+        ](q_tt, k, v, o_tt, mask_functor, scale, num_keys, start_pos)
+
+
+@always_inline
+def hk_mha_prefill_ragged[
+    k_t: MHAOperand,
+    v_t: MHAOperand,
+    mask_t: MHAMask,
+    qkv_dtype: DType,
+    output_dtype: DType,
+    //,
+    config: HKMhaConfig,
+    compile_options: StaticString = CompilationTarget[
+        DeviceContext.default_device_info.target()
+    ].default_compile_options(),
+](
+    q_ptr: UnsafePointer[Scalar[qkv_dtype], ImmutAnyOrigin],
+    k: k_t,
+    v: v_t,
+    output_ptr: UnsafePointer[Scalar[output_dtype], MutAnyOrigin],
+    mask_functor: mask_t,
+    scale: Float32,
+    input_row_offsets_ptr: UnsafePointer[Scalar[DType.uint32], ImmutAnyOrigin],
+    max_prompt_len: Int,
+    batch_size: Int,
+    ctx: DeviceContext,
+) raises:
+    """Host launcher for ragged HK MHA prefill.
+
+    Mirrors `hk_mha_prefill` for non-ragged, but each block does the
+    per-sequence ragged setup (start_of_seq / q_batch_offset / seq_len /
+    num_keys / start_pos) and constructs its rank-4 BSHD Q/O view
+    internally — so the caller doesn't have to pre-slice per sequence.
+
+    Grid: `(NUM_HEADS, ceildiv(max_prompt_len, BM), batch_size)`. Blocks
+    where `block_idx.y * BM >= seq_len` for this sequence early-return.
+    Caller is responsible for ensuring each sequence's length is a
+    multiple of `BM` if HK's no-partial-Q-tile invariant is to hold.
+    """
+    comptime assert (
+        qkv_dtype == DType.bfloat16
+    ), "hk_mha_prefill_ragged: qkv_dtype must be bfloat16"
+    comptime kernel = HKMhaPrefill[config].ragged_kernel[
+        k_t, v_t, mask_t, qkv_dtype, output_dtype
+    ]
+    var compiled = ctx.compile_function[
+        kernel, compile_options=compile_options
+    ]()
+    comptime BM = HKMhaPrefill[config].BM
+    ctx.enqueue_function(
+        compiled,
+        q_ptr,
+        k,
+        v,
+        output_ptr,
+        mask_functor,
+        scale,
+        input_row_offsets_ptr,
+        grid_dim=(
+            config.num_heads,
+            ceildiv(max_prompt_len, BM),
+            batch_size,
+        ),
+        block_dim=HKMhaPrefill[config].NUM_THREADS,
+    )
 
 
 @always_inline

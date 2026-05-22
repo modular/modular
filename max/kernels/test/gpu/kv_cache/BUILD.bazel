@@ -22,6 +22,7 @@ _EXTRA_CONSTRAINTS = {
     "test_kv_cache_store_ragged.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: MOCO-3187
     "test_kv_cache_2m_iadd.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: MOCO-3187
     "test_mha_gemma4_sink_repro.mojo": ["//:amd_gpu"],  # gfx950 AGPR-Copy-MFMA regression check
+    "test_hk_mha_prefill_ragged_gate.mojo": ["//:mi355_gpu"],  # HK is tuned for gfx950 (MI355X)
     # test_mha_gemma4_shapes.mojo is split into per-(page_size, mask_kind) targets below; the AMD-only crash repro is one of them.
 }
 
