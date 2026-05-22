@@ -12,6 +12,7 @@
 #ifndef KGEN_MOJOPARSER_SIGNATURES_H
 #define KGEN_MOJOPARSER_SIGNATURES_H
 
+#include "DeferredTypingContext.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/LITDialect/LITAttrs.h"
 #include "KGEN/LITDialect/SpecialFunctions.h"
@@ -214,6 +215,9 @@ public:
 
   /// Default values for params.
   SmallVector<TypedAttr> defaults;
+
+  /// Deferred typing context from emitting parameter declaration types.
+  DeferredTypingContext deferredTypingContext;
 
   /// Constraints specified with 'where' clauses at each parameter position.
   SmallVector<SmallVector<ConstraintAttr>> allParamConstraints;

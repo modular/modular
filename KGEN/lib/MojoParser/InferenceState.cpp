@@ -33,9 +33,10 @@ OptionalDiag::getDiag() {
 InferenceState::InferenceState(ASTDecl &declScope,
                                ArrayRef<Type> declaredParamTypes,
                                PogListAttr declaredParamPogs, SMLoc defaultLoc,
-                               bool discardError)
-    : declScope(declScope), shared(declScope.getShared()),
-      evaluator(shared.getParameterEvaluator()),
+                               bool discardError,
+                               DeferredTypingContext *deferredTypingContext)
+    : deferredTypingContext(deferredTypingContext), declScope(declScope),
+      shared(declScope.getShared()), evaluator(shared.getParameterEvaluator()),
       declaredParamTypes(declaredParamTypes),
       declaredParamPogs(declaredParamPogs),
       diag(shared, defaultLoc, discardError) {

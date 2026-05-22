@@ -131,9 +131,11 @@ IREmitter::IREmitter(ASTDecl &declScope, OpBuilder builder,
       varDeclCursor(varDeclCursor) {}
 
 /// Create an IREmitter for a parameter context.
-IREmitter::IREmitter(ASTDecl &declScope, ExprContext paramContext)
+IREmitter::IREmitter(ASTDecl &declScope, ExprContext paramContext,
+                     DeferredTypingContext *deferredTypingContext)
     : SharedStateUser(declScope.getShared()), builder({}),
-      paramContext(paramContext), declScope(declScope) {}
+      paramContext(paramContext), declScope(declScope),
+      deferredTypingContext(deferredTypingContext) {}
 
 /// Emit an error about use of a dynamic value (the expression) in a context
 /// that only allows parameter expressions.  This always returns a null
@@ -1465,7 +1467,8 @@ ASTType IREmitter::getBuiltinTupleInstantiation(llvm::SMLoc loc,
   TypeSignatureType sig = metaType.getSignature();
   ParamInf inference(bindings, sig.getParamTypes(), sig.getParamListAttrs(),
                      /*allowImplicitConversions=*/true, typeDecl,
-                     /*discardError=*/false);
+                     /*discardError=*/false,
+                     /*deferredTypingContext=*/deferredTypingContext);
   ParameterExprArrayAttr bindingValuesAttr = inference.inferForStruct();
   if (!bindingValuesAttr)
     return {};

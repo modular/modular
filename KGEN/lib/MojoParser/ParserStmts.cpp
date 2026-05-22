@@ -1903,7 +1903,8 @@ ParseResult StmtParser::parseParamFor(size_t curIndent, SMLoc forLoc,
     // have a strong enough memory model to handle "mut" arguments to next.
     OverloadSet call(name, paramForImpl, std::move(bindings),
                      CallSyntax::kDirectCall);
-    PValue literal = call.getDirectSymbol(/*expectedType=*/{}, getDeclScope());
+    PValue literal = call.getDirectSymbol(/*expectedType=*/{}, getDeclScope(),
+                                          emitter.deferredTypingContext);
     // Must resolved to a function literal. Extract the literal target.
     return sugarCast<FnLiteralTypeGeneratorType>(literal.getType())
         .getSymbolConstantAttr();

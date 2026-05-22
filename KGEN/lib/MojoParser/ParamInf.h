@@ -30,10 +30,17 @@ public:
 
   ParamInf(const ParamBindings &paramBinding, ArrayRef<Type> declaredParamTypes,
            PogListAttr declaredParamPogs, bool allowImplicitConversions,
-           ASTDecl *declIfDirect, bool discardError);
+           ASTDecl *declIfDirect, bool discardError,
+           DeferredTypingContext *deferredTypingContext = nullptr);
 
   // Infer the parameter binding for a struct given a (potentially incomplete)
   // parameter binding.
+  //
+  // Body-constraint inconclusiveness is routed according to the
+  // `deferredTypingContext` passed at construction time: when non-null,
+  // unprovable body constraints are appended to the context and the inference
+  // succeeds; otherwise they are raised as a hard error. Per-parameter
+  // constraint inconclusiveness is always a hard error.
   ParameterExprArrayAttr inferForStruct();
 
   /// After inferring parameter values, this allows access to the results.

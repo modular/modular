@@ -234,10 +234,15 @@ static const char *getCalleeKind(CallSyntax syntax) {
 /// emitted as a "reference".
 /// `isParamConstraint` indicates whether the inconclusiveness is due to
 /// parameter constraints (true) or function constraints (false).
+/// `deferralAttempted` indicates the caller had installed a deferred
+/// body-constraint deferral context, but deferral was rejected (e.g. because
+/// more than one candidate is body-constraint-inconclusive). When true, an
+/// extra note is attached to explain why deferral did not apply.
 static void emitInconclusiveCandidatesError(
     SharedState &shared, const ExprNode *expr, StringRef baseName, bool isCall,
     bool isParamConstraint,
-    MutableArrayRef<std::pair<ASTDecl *, OverloadFitness>> candidates) {
+    MutableArrayRef<std::pair<ASTDecl *, OverloadFitness>> candidates,
+    bool deferralAttempted = false) {
   // Figure out how many possibly valid candidates there are to make the error
   // message more precise.
   size_t numRemainingCandidates = 0;
@@ -333,13 +338,24 @@ static void emitInconclusiveCandidatesError(
     diag << "or against ";
   diag << "the constraint" << plural(candidates.size())
        << " here to aid in candidate selection";
+
+  // If deferral was attempted but rejected, attach a note explaining why.
+  // Deferral only applies for body-constraint inconclusiveness with exactly
+  // one inconclusive candidate; multi-candidate inconclusiveness must still
+  // be diagnosed because we cannot pick a candidate to defer for.
+  if (deferralAttempted && !isParamConstraint && numRemainingCandidates > 1) {
+    diag.attachNote(expr->getLoc())
+        << "body constraints cannot be deferred because more than one "
+           "candidate is inconclusive";
+  }
 }
 
 /// Evaluate the fnDecls candidates and see if there is an unambiguous
 /// candidate that works with the specified parameter bindings on the overload
 /// set. If so, return the single entry that works.  If not, generate a
 /// diagnostic and return null.
-PValue OverloadSet::filterOverloadSetForParamBindings() const {
+PValue OverloadSet::filterOverloadSetForParamBindings(
+    DeferredTypingContext *deferredTypingContext) const {
   SmallVector<std::pair<ASTDecl *, OverloadFitness>> evaluations;
   bool allInvalid = true;
   bool anyParamConstraintInconclusive = false;
@@ -355,7 +371,8 @@ PValue OverloadSet::filterOverloadSetForParamBindings() const {
   }
 
   // Check for param constraint inconclusiveness - if ANY candidate has this,
-  // fail the entire overload resolution immediately.
+  // fail the entire overload resolution immediately. Param-constraint
+  // inconclusiveness is never deferrable.
   if (anyParamConstraintInconclusive) {
     emitInconclusiveCandidatesError(getShared(), getExpr(), baseName,
                                     /*isCall=*/false,
@@ -387,12 +404,24 @@ PValue OverloadSet::filterOverloadSetForParamBindings() const {
   // Ok, we have at least one valid candidate, so filter for the best matches.
   bool hasInconclusiveCandidates = filterForBestCandidates(evaluations);
   // If any of the top candidates are inconclusive (function constraints),
-  // report the result specially.
+  // report the result specially. Allow body-constraint deferral when there
+  // is exactly one inconclusive candidate and a deferred typing context is
+  // installed.
   if (hasInconclusiveCandidates) {
-    emitInconclusiveCandidatesError(getShared(), getExpr(), baseName,
-                                    /*isCall=*/true,
-                                    /*isParamConstraint=*/false, evaluations);
-    return {};
+    bool canDefer =
+        deferredTypingContext && evaluations.size() == 1 &&
+        evaluations[0].second.getValidity() ==
+            OverloadFitness::Validity::kFunctionConstraintInconclusive;
+    if (canDefer) {
+      hasInconclusiveCandidates = false;
+    } else {
+      emitInconclusiveCandidatesError(
+          getShared(), getExpr(), baseName,
+          /*isCall=*/true,
+          /*isParamConstraint=*/false, evaluations,
+          /*deferralAttempted=*/deferredTypingContext != nullptr);
+      return {};
+    }
   }
 
   OverloadFitness &bestFitness = evaluations[0].second;
@@ -401,6 +430,15 @@ PValue OverloadSet::filterOverloadSetForParamBindings() const {
     // We don't have arguments, so can't need re-emission.
     assert(bestFitness.getOperandsNeedingOrigins().empty() &&
            "No arguments to require re-emission");
+
+    // If body-constraint deferral applies to this candidate, record the
+    // unprovable constraints onto the context now that we are committed.
+    if (deferredTypingContext &&
+        bestFitness.getValidity() ==
+            OverloadFitness::Validity::kFunctionConstraintInconclusive) {
+      for (ConstraintAttr c : bestFitness.getUnprovableConstraints())
+        deferredTypingContext->deferredConstraints.push_back({c, getExprLoc()});
+    }
 
     // On success, wrap things up into one callee, we know that the best fitness
     // has a verified bindings coming out of parameter inference.
@@ -756,14 +794,32 @@ PValue OverloadSet::filterOverloadSet(CallOperands &operands,
   }
 
   // If any of the top candidates are inconclusive (function constraints),
-  // report the result specially.
+  // report the result specially. However, if the caller installed a deferred
+  // deferred typing context and there is exactly one inconclusive candidate, we
+  // can treat the candidate as viable and emission proceeds through the
+  // normal single-candidate success path below; the unprovable body
+  // constraints will be appended to the context at the leaf return below (after
+  // any re-emission recursion has settled, to avoid duplicate appends).
+  // Multi-candidate inconclusiveness cannot be deferred because we cannot
+  // pick which candidate to commit to.
   if (hasInconclusiveCandidates) {
-    if (emitDiagnosticOnFailure && !isErroneous()) {
-      emitInconclusiveCandidatesError(getShared(), getExpr(), baseName,
-                                      /*isCall=*/true,
-                                      /*isParamConstraint=*/false, evaluations);
+    auto *context = emitter.deferredTypingContext;
+    bool canDefer =
+        context && evaluations.size() == 1 &&
+        evaluations[0].second.getValidity() ==
+            OverloadFitness::Validity::kFunctionConstraintInconclusive;
+    if (canDefer) {
+      hasInconclusiveCandidates = false;
+    } else {
+      if (emitDiagnosticOnFailure && !isErroneous()) {
+        emitInconclusiveCandidatesError(
+            getShared(), getExpr(), baseName,
+            /*isCall=*/true,
+            /*isParamConstraint=*/false, evaluations,
+            /*deferralAttempted=*/context != nullptr);
+      }
+      return {};
     }
-    return {};
   }
 
   // If we found exactly one viable candidate then we succeed.
@@ -820,7 +876,20 @@ PValue OverloadSet::filterOverloadSet(CallOperands &operands,
       // Now that we mutated the operand list by introducing some new memory
       // types to provide origins, try again.  This will re-evaluate parameter
       // bindings and either succeed or fail based on the new information.
+      // The recursive call will push deferred body constraints (if any) onto
+      // the context itself, so do not push them here.
       return filterOverloadSet(operands, emitDiagnosticOnFailure, emitter);
+    }
+
+    // If body-constraint deferral applies to this candidate, record the
+    // unprovable constraints onto the context now that we are committed to the
+    // candidate (and not about to recurse).
+    if (auto *context = emitter.deferredTypingContext) {
+      if (bestFitness.getValidity() ==
+          OverloadFitness::Validity::kFunctionConstraintInconclusive) {
+        for (ConstraintAttr c : bestFitness.getUnprovableConstraints())
+          context->deferredConstraints.push_back({c, getExprLoc()});
+      }
     }
 
     // Otherwise, we're done!
@@ -1179,8 +1248,9 @@ PValue OverloadSet::lookupAndResolve(
 /// expected type if provided or using current bindings if an emitter is
 /// provided.  This emits errors if 'emitter' is non-null, but does not if it
 /// is null.
-PValue OverloadSet::getDirectSymbol(ASTType expectedType,
-                                    ASTDecl &declScope) const {
+PValue OverloadSet::getDirectSymbol(
+    ASTType expectedType, ASTDecl &declScope,
+    DeferredTypingContext *deferredTypingContext) const {
   // Handle the case of a single candidate.
   if (fnDecls.size() == 1) {
     // Bind the parameters if there is any.
@@ -1202,7 +1272,7 @@ PValue OverloadSet::getDirectSymbol(ASTType expectedType,
   // If the overload set has parameter bindings, try to resolve the candidates
   // using them.
   if (!paramBindings.empty())
-    return filterOverloadSetForParamBindings();
+    return filterOverloadSetForParamBindings(deferredTypingContext);
 
   // Otherwise, emit the "cannot form a reference to overloaded decl" error.
   return getBoundConstantAttr();
@@ -1232,8 +1302,8 @@ CValue OverloadSet::emitAsCValue(IREmitter &emitter, ExprDest &dest) {
   // We allow unbound symbols here which can be emitted as an PValue.  In the
   // case where we are partially applying, that will force the unbound symbol
   // into a SRValue which will catch symbols that are not fully bound.
-  PValue directSymbolAttr =
-      getDirectSymbol(expectedType, emitter.getDeclScope());
+  PValue directSymbolAttr = getDirectSymbol(
+      expectedType, emitter.getDeclScope(), emitter.deferredTypingContext);
   if (!directSymbolAttr)
     return {};
 

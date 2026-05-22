@@ -11,6 +11,7 @@
 #ifndef KGEN_MOJOPARSER_CALLEMISSION_H
 #define KGEN_MOJOPARSER_CALLEMISSION_H
 
+#include "DeferredTypingContext.h"
 #include "ParamBindings.h"
 
 namespace M::KGEN::LIT {
@@ -143,13 +144,23 @@ public:
   /// candidate that works with the specified parameter bindings on the overload
   /// set. If so, return the single entry that works.  If not, generate a
   /// diagnostic and return null.
-  PValue filterOverloadSetForParamBindings() const;
+  ///
+  /// If `deferredTypingContext` is non-null, body-constraint inconclusiveness
+  /// at the single-candidate site is silently accepted and recorded onto the
+  /// context instead of raising a hard error.
+  PValue filterOverloadSetForParamBindings(
+      DeferredTypingContext *deferredTypingContext = nullptr) const;
 
   /// Try to resolve the overload set to a single function candidate, using the
   /// expected type if provided or using current bindings if an emitter is
   /// provided.  This emits errors if 'emitter' is non-null, but does not if it
   /// is null.
-  PValue getDirectSymbol(ASTType expectedType, ASTDecl &declScope) const;
+  ///
+  /// If `deferredTypingContext` is non-null, body-constraint inconclusiveness
+  /// is handled via the context instead of being raised as a hard error.
+  PValue
+  getDirectSymbol(ASTType expectedType, ASTDecl &declScope,
+                  DeferredTypingContext *deferredTypingContext = nullptr) const;
 
   /// Try to emit the overload set as a PValue.
   PValue getIfPValue() const;

@@ -81,10 +81,11 @@ static Type tryInferInitializerType(ASTDecl &declScope, InitializerUValue &init,
 ParamInf::ParamInf(const ParamBindings &paramBinding,
                    ArrayRef<Type> declaredParamTypes,
                    PogListAttr declaredParamPogs, bool allowImplicitConversions,
-                   ASTDecl *declIfDirect, bool discardError)
+                   ASTDecl *declIfDirect, bool discardError,
+                   DeferredTypingContext *deferredTypingContext)
     : InferenceState(paramBinding.declScope, declaredParamTypes,
-                     declaredParamPogs, paramBinding.getExprLoc(),
-                     discardError),
+                     declaredParamPogs, paramBinding.getExprLoc(), discardError,
+                     deferredTypingContext),
       paramBindings(paramBinding), declIfKnown(declIfDirect),
       explicitlyUnboundParams(declaredParamTypes.size(), false),
       allowImplicitConversions(allowImplicitConversions) {}
@@ -855,13 +856,25 @@ ParameterExprArrayAttr ParamInf::inferForStruct() {
       // per-parameter constraints would immediately fail inference, and we
       // would not have had a chance to check the body constraints yet.
       if (!unprovableConstraints.empty()) {
+        // Per-parameter constraint inconclusiveness is never deferrable: it
+        // would change which candidates are even viable.
         emitUnprovableConstraintsFromFitness(
             unprovableConstraints, paramBindings.shared,
             paramBindings.getExprLoc(), declIfKnown);
       } else if (!bodyUnprovableConstraints.empty()) {
-        emitUnprovableConstraintsFromFitness(
-            bodyUnprovableConstraints, paramBindings.shared,
-            paramBindings.getExprLoc(), declIfKnown);
+        // If the caller installed a deferred typing context, record
+        // the body-unprovable constraints there and suppress the error.
+        // Otherwise, fall back to the existing hard-error path.
+        if (deferredTypingContext) {
+          SMLoc deferralLoc = paramBindings.getExprLoc();
+          for (ConstraintAttr c : bodyUnprovableConstraints)
+            deferredTypingContext->deferredConstraints.push_back(
+                {c, deferralLoc});
+        } else {
+          emitUnprovableConstraintsFromFitness(
+              bodyUnprovableConstraints, paramBindings.shared,
+              paramBindings.getExprLoc(), declIfKnown);
+        }
       }
     }
   });
