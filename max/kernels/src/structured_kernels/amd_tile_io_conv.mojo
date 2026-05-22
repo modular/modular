@@ -72,6 +72,7 @@ zeros; the address math naturally handles the padded K reads via
 SRD-OOB or filter-zero multiplies in the MMA.
 """
 
+from std.math import ceildiv, min
 from std.sys import size_of, simd_width_of
 from std.gpu import WARP_SIZE
 from std.gpu.intrinsics import AMDBufferResource
@@ -290,7 +291,16 @@ struct TileLoaderLDSIm2col[
     comptime rows_per_iteration = Self.loading_threads // (
         Self.tile_cols // Self.load_width
     )
-    comptime num_iterations = Self.tile_rows // Self.rows_per_iteration
+    # `ceildiv` (not floor-div) so that under-supplied sub-tiles —
+    # `tile_rows < rows_per_iteration` (e.g. half_BM=32 + BK=32 + bf16
+    # where 256 loading threads can transfer the whole 32x32 sub-tile in
+    # ~half a wave) — get `num_iterations == 1`. Floor-div rounded this
+    # to 0, the `comptime for i in range(0)` unrolled 0 times, and the
+    # loader silently emitted zero `buffer_load_lds` — LDS uninit, MMA
+    # garbage. Matches `TileLoaderLDS`. The `load_tile` body gates
+    # over-supplied warps via `warp_id < active_warps_this_iter`.
+    comptime num_iterations = ceildiv(Self.tile_rows, Self.rows_per_iteration)
+    comptime total_warp_rows = ceildiv(Self.tile_rows, Self.rows_per_warp)
 
     comptime warp_subtile_bytes = Self.rows_per_warp * Self.tile_cols * size_of[
         Self.dtype
@@ -336,6 +346,54 @@ struct TileLoaderLDSIm2col[
     var rt_d_out: Int
     var rt_spatial_dhw: Int  # d_out * h_out * w_out
 
+    @staticmethod
+    def _validate_geometry():
+        """Tier 2/3 sanity asserts on the loader's derived counts.
+
+        The class body computes a chain of integer divisions
+        (`subtile_cols // load_width`, `tile_cols // subtile_cols`,
+        ..., `tile_rows // rows_per_iteration`). When any link floors
+        to 0, downstream `comptime for` loops unroll 0 times — loader
+        emits no `buffer_load_lds` at all, LDS stays uninitialized,
+        MMA reads garbage. These asserts make every link's invariant
+        explicit. Mirrors `TileLoaderLDS.__init__`'s checks.
+        """
+        comptime assert Self.threads_per_row >= 1, (
+            "threads_per_row = subtile_cols // load_width must be >= 1"
+            " (subtile_cols >= load_width)."
+        )
+        comptime assert (
+            Self.subtile_cols % Self.load_width == 0
+        ), "subtile_cols must be a multiple of load_width."
+        comptime assert Self.num_warp_cols >= 1, (
+            "num_warp_cols = tile_cols // subtile_cols must be >= 1"
+            " (tile_cols >= subtile_cols)."
+        )
+        comptime assert (
+            Self.tile_cols % Self.subtile_cols == 0
+        ), "tile_cols must be a multiple of subtile_cols."
+        comptime assert Self.num_loading_warps % Self.num_warp_cols == 0, (
+            "num_loading_warps must be a multiple of num_warp_cols"
+            " (otherwise num_warp_rows loses warps)."
+        )
+        comptime assert Self.rows_per_warp >= 1, (
+            "rows_per_warp = WARP_SIZE * load_width // tile_cols must be"
+            " >= 1 (each warp must cover at least one row)."
+        )
+        comptime assert Self.rows_per_iteration >= 1, (
+            "rows_per_iteration must be >= 1 (loading_threads /"
+            " (tile_cols / load_width)). Sub-tile too narrow for"
+            " 4-wave coverage."
+        )
+        comptime assert Self.num_iterations >= 1, (
+            "num_iterations = ceildiv(tile_rows, rows_per_iteration) == 0"
+            " — tile_rows must be >= 1."
+        )
+        comptime assert Self.total_warp_rows >= 1, (
+            "total_warp_rows = ceildiv(tile_rows, rows_per_warp) == 0"
+            " — tile_rows must be >= 1."
+        )
+
     @always_inline
     def __init__[
         InLayout: TensorLayout,
@@ -371,6 +429,7 @@ struct TileLoaderLDSIm2col[
                 Defaults to 0 — conv split-K is not yet supported, so
                 callers typically leave this at the default.
         """
+        Self._validate_geometry()
         comptime assert not Self.use_runtime_hw, (
             "use_runtime_hw=True requires the (h, w, h_out, w_out)"
             " constructor overload."
@@ -559,6 +618,7 @@ struct TileLoaderLDSIm2col[
             k_anchor: K-coordinate of the block origin. Added to
                 `k_offset` at load time. Defaults to 0.
         """
+        Self._validate_geometry()
         comptime assert (
             Self.use_runtime_hw
         ), "this constructor requires use_runtime_hw=True"
@@ -679,6 +739,7 @@ struct TileLoaderLDSIm2col[
                 (`= flat Q*R*S*C index`). Added to `k_offset` at load
                 time. Defaults to 0.
         """
+        Self._validate_geometry()
         comptime assert (
             Self.use_runtime_hw
         ), "this constructor requires use_runtime_hw=True"
@@ -806,6 +867,12 @@ struct TileLoaderLDSIm2col[
                 var lane_byte = self.lane_id * Self.lane_load_bytes
 
                 comptime for i in range(Self.num_iterations):
+                    # See `total_warp_rows` doc — gate over-supplied
+                    # warps when the sub-tile doesn't fill the grid.
+                    comptime active_warps_this_iter = min(
+                        Self.num_loading_warps,
+                        Self.total_warp_rows - i * Self.num_loading_warps,
+                    )
                     var tile_idx = i * Self.num_loading_warps + self.warp_id
                     var warp_tile = dst.tile[
                         Self.rows_per_warp, Self.tile_cols
@@ -825,15 +892,27 @@ struct TileLoaderLDSIm2col[
                     var lane_offset = swizzled_col + swizzled_row * Self.C
                     var uniform_offset = k_eff + m_eff * Self.C
 
-                    self.buffer.load_to_lds[width=Self.load_width](
-                        Int32(lane_offset),
-                        smem_ptr,
-                        scalar_offset=Int32(uniform_offset),
-                    )
+                    comptime if active_warps_this_iter == Self.num_loading_warps:
+                        self.buffer.load_to_lds[width=Self.load_width](
+                            Int32(lane_offset),
+                            smem_ptr,
+                            scalar_offset=Int32(uniform_offset),
+                        )
+                    else:
+                        if Int(self.warp_id) < active_warps_this_iter:
+                            self.buffer.load_to_lds[width=Self.load_width](
+                                Int32(lane_offset),
+                                smem_ptr,
+                                scalar_offset=Int32(uniform_offset),
+                            )
             else:
                 var lane_offset = self.thread_col + self.thread_row * Self.C
 
                 comptime for i in range(Self.num_iterations):
+                    comptime active_warps_this_iter = min(
+                        Self.num_loading_warps,
+                        Self.total_warp_rows - i * Self.num_loading_warps,
+                    )
                     var tile_idx = i * Self.num_loading_warps + self.warp_id
                     var warp_tile = dst.tile[
                         Self.rows_per_warp, Self.tile_cols
@@ -843,11 +922,19 @@ struct TileLoaderLDSIm2col[
                     var tile_row = m_eff + i * Self.rows_per_iteration
                     var uniform_offset = k_eff + tile_row * Self.C
 
-                    self.buffer.load_to_lds[width=Self.load_width](
-                        Int32(lane_offset),
-                        smem_ptr,
-                        scalar_offset=Int32(uniform_offset),
-                    )
+                    comptime if active_warps_this_iter == Self.num_loading_warps:
+                        self.buffer.load_to_lds[width=Self.load_width](
+                            Int32(lane_offset),
+                            smem_ptr,
+                            scalar_offset=Int32(uniform_offset),
+                        )
+                    else:
+                        if Int(self.warp_id) < active_warps_this_iter:
+                            self.buffer.load_to_lds[width=Self.load_width](
+                                Int32(lane_offset),
+                                smem_ptr,
+                                scalar_offset=Int32(uniform_offset),
+                            )
         else:
             # -- General R×S path (M2+) --
             # Two comptime-selected sub-paths for the K-decomposition:
@@ -918,6 +1005,10 @@ struct TileLoaderLDSIm2col[
                     c_base_uniform = k_eff % Self.C
 
                 comptime for i in range(Self.num_iterations):
+                    comptime active_warps_this_iter = min(
+                        Self.num_loading_warps,
+                        Self.total_warp_rows - i * Self.num_loading_warps,
+                    )
                     var tile_idx = i * Self.num_loading_warps + self.warp_id
                     var warp_tile = dst.tile[
                         Self.rows_per_warp, Self.tile_cols
@@ -1029,11 +1120,19 @@ struct TileLoaderLDSIm2col[
                             )
                         addr = addr_safe if in_bounds else self.num_records
 
-                    self.buffer.load_to_lds[width=Self.load_width](
-                        Int32(addr),
-                        smem_ptr,
-                        scalar_offset=Int32(0),
-                    )
+                    comptime if active_warps_this_iter == Self.num_loading_warps:
+                        self.buffer.load_to_lds[width=Self.load_width](
+                            Int32(addr),
+                            smem_ptr,
+                            scalar_offset=Int32(0),
+                        )
+                    else:
+                        if Int(self.warp_id) < active_warps_this_iter:
+                            self.buffer.load_to_lds[width=Self.load_width](
+                                Int32(addr),
+                                smem_ptr,
+                                scalar_offset=Int32(0),
+                            )
             else:
                 # Non-swizzle path: m_lane is linear in `i`
                 # (m_lane = m_offset + thread_row + i*rows_per_iteration).
@@ -1154,6 +1253,10 @@ struct TileLoaderLDSIm2col[
                     c_lane = k_lane % Self.C
 
                 comptime for i in range(Self.num_iterations):
+                    comptime active_warps_this_iter = min(
+                        Self.num_loading_warps,
+                        Self.total_warp_rows - i * Self.num_loading_warps,
+                    )
                     var tile_idx = i * Self.num_loading_warps + self.warp_id
                     var warp_tile = dst.tile[
                         Self.rows_per_warp, Self.tile_cols
@@ -1199,11 +1302,19 @@ struct TileLoaderLDSIm2col[
                             )
                         addr = addr_safe if in_bounds else self.num_records
 
-                    self.buffer.load_to_lds[width=Self.load_width](
-                        Int32(addr),
-                        smem_ptr,
-                        scalar_offset=Int32(0),
-                    )
+                    comptime if active_warps_this_iter == Self.num_loading_warps:
+                        self.buffer.load_to_lds[width=Self.load_width](
+                            Int32(addr),
+                            smem_ptr,
+                            scalar_offset=Int32(0),
+                        )
+                    else:
+                        if Int(self.warp_id) < active_warps_this_iter:
+                            self.buffer.load_to_lds[width=Self.load_width](
+                                Int32(addr),
+                                smem_ptr,
+                                scalar_offset=Int32(0),
+                            )
 
                     # Carry-increment (n, [d_out,] h_out, w_out) for
                     # the next iter. 2D path: w → h → n. 3D path:
