@@ -94,6 +94,47 @@ modular_py_binary(
     imports = [".."],
 )
 
+modular_py_binary(
+    name = "upload_smoke_test_results",
+    srcs = ["upload_smoke_test_results.py"],
+    imports = [".."],
+    tags = ["no-pydeps"],
+    deps = [
+        requirement("google-cloud-bigquery"),
+    ],
+)
+
+modular_py_library(
+    name = "compute_accuracy_status",
+    srcs = [
+        "accuracy_windows_config.py",
+        "compute_accuracy_status.py",
+    ],
+    imports = [".."],
+    tags = ["no-pydeps"],
+    deps = [
+        ":smoke_test_github_matrix",
+        requirement("click"),
+        requirement("google-cloud-bigquery"),
+    ],
+)
+
+modular_py_test(
+    name = "test_compute_accuracy_status",
+    size = "small",
+    srcs = [
+        "conftest.py",
+        "test_compute_accuracy_status.py",
+    ],
+    imports = [".."],
+    tags = ["no-pydeps"],
+    deps = [
+        ":compute_accuracy_status",
+        ":smoke_test_github_matrix",
+        requirement("click"),
+    ],
+)
+
 modular_py_test(
     name = "test_smoke_test",
     size = "small",
