@@ -720,7 +720,6 @@ def flash_attention_dispatch[
                     config.dtype == DType.bfloat16
                     and output.dtype == DType.bfloat16
                     and (config.depth == 64 or config.depth == 128)
-                    and not sink
                     and has_amd_gpu_accelerator()
                     and not _is_amd_rdna()
                     and (k_t.page_size == 0 or k_t.page_size >= 64)
@@ -762,18 +761,100 @@ def flash_attention_dispatch[
                             # partial-Q-tile writeback skip in
                             # `_store_o_to_gmem` covers non-BM-aligned
                             # sequence lengths.
-                            hk_mha_prefill_ragged[config=hk_config](
-                                q.as_any_origin().ptr,
-                                k,
-                                v,
-                                output.as_any_origin().ptr,
-                                mask_functor,
-                                scale,
-                                valid_length.value().as_any_origin().ptr,
-                                max_prompt_len,
-                                batch_size,
-                                ctx,
+                            #
+                            # Cross-attention path (`cross_attention`
+                            # comptime flag on the launcher) fires when
+                            # the caller passed `kv_input_row_offsets`
+                            # — encoder/decoder workloads with K/V
+                            # length independent of Q. Self-attention
+                            # path is bit-identical to the pre-Phase-10
+                            # codegen at the comptime monomorphization
+                            # level.
+                            var q_off_ptr = (
+                                valid_length.value().as_any_origin().ptr
                             )
+                            # Sink-weights pointer: when `sink=True` the
+                            # caller MUST pass non-None `sink_weights`
+                            # (mirrors the existing FA2 contract). The
+                            # gate-time `comptime if sink:` selects the
+                            # launcher instantiation; the runtime
+                            # `if kv_input_row_offsets:` selects the
+                            # cross-attention vs self-attention variant.
+                            comptime if sink:
+                                var sw_ptr = (
+                                    sink_weights.value().as_any_origin().ptr
+                                )
+                                if kv_input_row_offsets:
+                                    hk_mha_prefill_ragged[
+                                        config=hk_config,
+                                        cross_attention=True,
+                                        sink=True,
+                                    ](
+                                        q.as_any_origin().ptr,
+                                        k,
+                                        v,
+                                        output.as_any_origin().ptr,
+                                        mask_functor,
+                                        scale,
+                                        q_off_ptr,
+                                        kv_input_row_offsets.value()
+                                        .as_any_origin()
+                                        .ptr,
+                                        max_prompt_len,
+                                        batch_size,
+                                        ctx,
+                                        sw_ptr,
+                                    )
+                                else:
+                                    hk_mha_prefill_ragged[
+                                        config=hk_config, sink=True
+                                    ](
+                                        q.as_any_origin().ptr,
+                                        k,
+                                        v,
+                                        output.as_any_origin().ptr,
+                                        mask_functor,
+                                        scale,
+                                        q_off_ptr,
+                                        q_off_ptr,
+                                        max_prompt_len,
+                                        batch_size,
+                                        ctx,
+                                        sw_ptr,
+                                    )
+                            else:
+                                if kv_input_row_offsets:
+                                    hk_mha_prefill_ragged[
+                                        config=hk_config, cross_attention=True
+                                    ](
+                                        q.as_any_origin().ptr,
+                                        k,
+                                        v,
+                                        output.as_any_origin().ptr,
+                                        mask_functor,
+                                        scale,
+                                        q_off_ptr,
+                                        kv_input_row_offsets.value()
+                                        .as_any_origin()
+                                        .ptr,
+                                        max_prompt_len,
+                                        batch_size,
+                                        ctx,
+                                    )
+                                else:
+                                    hk_mha_prefill_ragged[config=hk_config](
+                                        q.as_any_origin().ptr,
+                                        k,
+                                        v,
+                                        output.as_any_origin().ptr,
+                                        mask_functor,
+                                        scale,
+                                        q_off_ptr,
+                                        q_off_ptr,
+                                        max_prompt_len,
+                                        batch_size,
+                                        ctx,
+                                    )
                             return
                         else:
                             var q_tt = lt_to_tt(q)
@@ -787,17 +868,31 @@ def flash_attention_dispatch[
                             # KV entries before this prefill batch's tokens
                             # — zero for fresh prefill, positive for cache
                             # reuse.
-                            hk_mha_prefill[hk_config](
-                                q_tt,
-                                k,
-                                v,
-                                o_tt,
-                                mask_functor,
-                                scale,
-                                max_cache_valid_length,
-                                max_cache_valid_length - max_prompt_len,
-                                ctx,
-                            )
+                            comptime if sink:
+                                hk_mha_prefill[hk_config, sink=True](
+                                    q_tt,
+                                    k,
+                                    v,
+                                    o_tt,
+                                    mask_functor,
+                                    scale,
+                                    max_cache_valid_length,
+                                    max_cache_valid_length - max_prompt_len,
+                                    ctx,
+                                    sink_weights.value().as_any_origin().ptr,
+                                )
+                            else:
+                                hk_mha_prefill[hk_config](
+                                    q_tt,
+                                    k,
+                                    v,
+                                    o_tt,
+                                    mask_functor,
+                                    scale,
+                                    max_cache_valid_length,
+                                    max_cache_valid_length - max_prompt_len,
+                                    ctx,
+                                )
                             return
 
                 comptime BM = config.block_m()

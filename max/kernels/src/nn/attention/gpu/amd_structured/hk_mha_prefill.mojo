@@ -1098,6 +1098,7 @@ struct HKMhaPrefill[config: HKMhaConfig]:
         q_layout: TensorLayout,
         o_layout: TensorLayout,
         ragged: Bool = False,
+        sink: Bool = False,
     ](
         q: TileTensor[q_dtype, q_layout, ImmutAnyOrigin],
         k: k_t,
@@ -1107,6 +1108,7 @@ struct HKMhaPrefill[config: HKMhaConfig]:
         scale: Float32,
         num_keys: Int,
         start_pos: Int,
+        sink_weights_ptr: UnsafePointer[Scalar[q_dtype], ImmutAnyOrigin],
     ):
         """Multi-block 8-warp MHA forward (inference-only).
 
@@ -1146,6 +1148,16 @@ struct HKMhaPrefill[config: HKMhaConfig]:
             start_pos: Position of the first Q row in the global sequence
                 — non-zero for prefill chunks of a longer generation.
                 Used by the mask functor to compute the causal cutoff.
+            sink_weights_ptr: Per-q-head attention-sink scalar weights.
+                Read only when the comptime `sink` parameter is True
+                (see `patterns/amd-attention-sink-as-init-state`); the
+                non-sink path comptime-elides the load, so callers may
+                pass `UnsafePointer[...].unsafe_dangling()` when
+                `sink=False`. Indexed by `head_idx` once per block at
+                init time, cast to FP32, multiplied by `log2e` to land
+                in the kernel's log2-units rowmax, and seeded into
+                `max_vec` / `max_vec_prev` / `norm_vec` so the hot loop
+                stays sink-agnostic.
         """
         # `q_dtype` and `output_dtype` are independent comptime type
         # parameters so callers can pass TileTensors with literal dtypes
@@ -1368,16 +1380,41 @@ struct HKMhaPrefill[config: HKMhaConfig]:
         # Persistent kernel-scope state. `scale_vec` initialized to ones
         # so the epilogue's unconditional `norm_vec *= scale_vec` is a
         # safe no-op when no rescale ever fired.
+        #
+        # Sink path (Phase 5b): pre-seed the online-softmax recurrence
+        # so the hot loop stays sink-agnostic. Per
+        # `patterns/amd-attention-sink-as-init-state` — the AMD
+        # convention is to encode the virtual sink token as the initial
+        # `(max_vec, norm_vec)` state. `max_vec_init = log2e *
+        # sink_weight[head_idx]` keeps the rowmax in log2 units (HK
+        # already prescales Q by `scale * log2e`, so att values are in
+        # log2 units). `norm_vec_init = 1` reflects the virtual sink's
+        # `exp2(score - max) = exp2(0) = 1` contribution. Subsequent
+        # tiles update through the normal recurrence; the sink is
+        # rescaled implicitly as the running max grows.
         var o_reg = reg_alloc[DType.float32](Self._MmaOp.O_LAYOUT)
         var max_vec = reg_alloc[DType.float32](row_major[1, 1]())
         var max_vec_prev = reg_alloc[DType.float32](row_major[1, 1]())
         var norm_vec = reg_alloc[DType.float32](row_major[1, 1]())
         var scale_vec = reg_alloc[DType.float32](row_major[1, 1]())
         _ = o_reg.fill(0)
-        _ = norm_vec.fill(0)
         _ = scale_vec.fill(1)
-        _ = max_vec.fill(0)
-        _ = max_vec_prev.fill(0)
+        comptime if sink:
+            # `log2e` baked in at init so the recurrence sees a rowmax
+            # already in log2 units. `sink_weights_ptr[head_idx]` is
+            # per-q-head (gpt-oss style); read once per block, broadcast
+            # to the single-element row tile. `1.4426950408889634` is
+            # `log2(e)` (same constant used for Q prescale at line
+            # `scale_log2e = scale * 1.4426950408889634`).
+            var sw_raw = sink_weights_ptr[head_idx]
+            var sw_log2 = sw_raw.cast[DType.float32]() * 1.4426950408889634
+            _ = max_vec.fill(sw_log2)
+            _ = max_vec_prev.fill(sw_log2)
+            _ = norm_vec.fill(1)
+        else:
+            _ = norm_vec.fill(0)
+            _ = max_vec.fill(0)
+            _ = max_vec_prev.fill(0)
 
         # Two FP32 `att_block` slots; the loop ping-pongs which one is
         # the QK destination and which the softmax source.
@@ -1921,6 +1958,8 @@ struct HKMhaPrefill[config: HKMhaConfig]:
         mask_t: MHAMask,
         qkv_dtype: DType,
         output_dtype: DType,
+        cross_attention: Bool = False,
+        sink: Bool = False,
     ](
         q_ptr: UnsafePointer[Scalar[qkv_dtype], ImmutAnyOrigin],
         k: k_t,
@@ -1931,6 +1970,10 @@ struct HKMhaPrefill[config: HKMhaConfig]:
         input_row_offsets_ptr: UnsafePointer[
             Scalar[DType.uint32], ImmutAnyOrigin
         ],
+        kv_input_row_offsets_ptr: UnsafePointer[
+            Scalar[DType.uint32], ImmutAnyOrigin
+        ],
+        sink_weights_ptr: UnsafePointer[Scalar[qkv_dtype], ImmutAnyOrigin],
     ):
         """Ragged-batch GPU kernel entry: per-sequence setup + `run`.
 
@@ -1938,6 +1981,15 @@ struct HKMhaPrefill[config: HKMhaConfig]:
         already-sliced per-batch TileTensors). For ragged, this
         wrapper does the per-block ragged setup so the launcher can
         pass a single packed Q pointer + `input_row_offsets`.
+
+        `cross_attention=False` (default): self-attention, where K/V
+        length equals Q length plus any cached prefix. `num_keys`
+        derives from `start_pos + seq_len`. `kv_input_row_offsets_ptr`
+        is unused (caller may pass any well-typed stub).
+
+        `cross_attention=True`: encoder-decoder style. K/V lengths come
+        from `kv_input_row_offsets_ptr`, independent of the Q-side
+        offsets. Mirrors the FA2 contract at `mha.mojo:1755-1762`.
         """
         # Wave-uniform prologue. Values are uniform by construction
         # (one read per block, broadcast). The uniformity hint that
@@ -1958,7 +2010,17 @@ struct HKMhaPrefill[config: HKMhaConfig]:
             return
 
         var start_pos = Int(k.cache_length(batch_idx))
-        var num_keys = start_pos + seq_len
+        var num_keys: Int
+        comptime if cross_attention:
+            # Encoder/decoder cross-attention: K/V length is independent
+            # of the Q-side seq_len and comes from a separate
+            # kv-side input_row_offsets table.
+            var kv_start = Int(kv_input_row_offsets_ptr[batch_idx])
+            var kv_end = Int(kv_input_row_offsets_ptr[batch_idx + 1])
+            num_keys = (kv_end - kv_start) + start_pos
+        else:
+            num_keys = start_pos + seq_len
+
         var q_batch_offset = (
             start_of_seq * Self.config.num_heads * Self.config.depth
         )
@@ -1986,7 +2048,18 @@ struct HKMhaPrefill[config: HKMhaConfig]:
             type_of(q_tt).LayoutType,
             type_of(o_tt).LayoutType,
             ragged=True,
-        ](q_tt, k, v, o_tt, mask_functor, scale, num_keys, start_pos)
+            sink=sink,
+        ](
+            q_tt,
+            k,
+            v,
+            o_tt,
+            mask_functor,
+            scale,
+            num_keys,
+            start_pos,
+            sink_weights_ptr,
+        )
 
 
 @always_inline
@@ -1998,6 +2071,8 @@ def hk_mha_prefill_ragged[
     output_dtype: DType,
     //,
     config: HKMhaConfig,
+    cross_attention: Bool = False,
+    sink: Bool = False,
     compile_options: StaticString = CompilationTarget[
         DeviceContext.default_device_info.target()
     ].default_compile_options(),
@@ -2009,9 +2084,15 @@ def hk_mha_prefill_ragged[
     mask_functor: mask_t,
     scale: Float32,
     input_row_offsets_ptr: UnsafePointer[Scalar[DType.uint32], ImmutAnyOrigin],
+    kv_input_row_offsets_ptr: UnsafePointer[
+        Scalar[DType.uint32], ImmutAnyOrigin
+    ],
     max_prompt_len: Int,
     batch_size: Int,
     ctx: DeviceContext,
+    sink_weights_ptr: UnsafePointer[
+        Scalar[qkv_dtype], ImmutAnyOrigin
+    ] = UnsafePointer[Scalar[qkv_dtype], ImmutAnyOrigin].unsafe_dangling(),
 ) raises:
     """Host launcher for ragged HK MHA prefill.
 
@@ -2020,16 +2101,25 @@ def hk_mha_prefill_ragged[
     num_keys / start_pos) and constructs its rank-4 BSHD Q/O view
     internally — so the caller doesn't have to pre-slice per sequence.
 
+    `cross_attention=False` (default): self-attention. K/V length per
+    batch derives from `start_pos + (end_of_seq - start_of_seq)`.
+    `kv_input_row_offsets_ptr` is unused inside the kernel and the
+    caller may pass any well-typed stub (the dispatcher passes
+    `input_row_offsets_ptr` itself).
+
+    `cross_attention=True`: encoder-decoder. Pass the kv-side
+    `input_row_offsets` (uint32 cumulative sum, length `batch_size + 1`).
+
     Grid: `(NUM_HEADS, ceildiv(max_prompt_len, BM), batch_size)`. Blocks
     where `block_idx.y * BM >= seq_len` for this sequence early-return.
-    Caller is responsible for ensuring each sequence's length is a
-    multiple of `BM` if HK's no-partial-Q-tile invariant is to hold.
+    Partial-Q-tile (`seq_len % BM != 0`) is handled internally via
+    lane-gated `_store_o_to_gmem`.
     """
     comptime assert (
         qkv_dtype == DType.bfloat16
     ), "hk_mha_prefill_ragged: qkv_dtype must be bfloat16"
     comptime kernel = HKMhaPrefill[config].ragged_kernel[
-        k_t, v_t, mask_t, qkv_dtype, output_dtype
+        k_t, v_t, mask_t, qkv_dtype, output_dtype, cross_attention, sink
     ]
     var compiled = ctx.compile_function[
         kernel, compile_options=compile_options
@@ -2044,6 +2134,8 @@ def hk_mha_prefill_ragged[
         mask_functor,
         scale,
         input_row_offsets_ptr,
+        kv_input_row_offsets_ptr,
+        sink_weights_ptr,
         grid_dim=(
             config.num_heads,
             ceildiv(max_prompt_len, BM),
@@ -2060,6 +2152,7 @@ def hk_mha_prefill[
     mask_t: MHAMask,
     //,
     config: HKMhaConfig,
+    sink: Bool = False,
     compile_options: StaticString = CompilationTarget[
         DeviceContext.default_device_info.target()
     ].default_compile_options(),
@@ -2073,6 +2166,9 @@ def hk_mha_prefill[
     num_keys: Int,
     start_pos: Int,
     ctx: DeviceContext,
+    sink_weights_ptr: UnsafePointer[
+        Scalar[q.dtype], ImmutAnyOrigin
+    ] = UnsafePointer[Scalar[q.dtype], ImmutAnyOrigin].unsafe_dangling(),
 ) raises:
     """Host launcher for `HKMhaPrefill`.
 
@@ -2119,6 +2215,8 @@ def hk_mha_prefill[
         o.dtype,
         q.LayoutType,
         o.LayoutType,
+        ragged=False,
+        sink=sink,
     ]
 
     var compiled = ctx.compile_function[
@@ -2134,6 +2232,7 @@ def hk_mha_prefill[
         scale,
         num_keys,
         start_pos,
+        sink_weights_ptr,
         grid_dim=(
             config.num_heads,
             ceildiv(seq_len, kernel.BM),

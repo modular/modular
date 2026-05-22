@@ -67,6 +67,8 @@ def _run_ragged_at[
     dtype: DType,
     kv_params: KVCacheStaticParams,
     mask_t: MHAMask,
+    pass_kv_input_row_offsets: Bool = False,
+    pass_sink: Bool = False,
 ](
     valid_lengths: List[Int],
     cache_lengths: List[Int],
@@ -75,6 +77,24 @@ def _run_ragged_at[
     mask: mask_t,
     ctx: DeviceContext,
 ) raises:
+    """Run the ragged HK gate at the given shape.
+
+    `pass_kv_input_row_offsets=True` forces the dispatcher's
+    cross-attention branch (`hk_mha_prefill_ragged[cross_attention=True]`).
+    The kv-side offsets are set equal to the Q-side `input_row_offsets`,
+    so this is a self-consistency check — `num_keys` derives to the
+    same value as in the self-attention branch, and the two paths
+    must produce identical output. Catches regressions in the new
+    Phase-10 cross_attention plumbing without needing a separate
+    encoder/decoder fixture.
+
+    `pass_sink=True` forces the Phase-5b sink branch
+    (`hk_mha_prefill_ragged[sink=True]`). Allocates a per-q-head
+    `sink_weights` tensor with small random values and passes it
+    through. Self-consistency check between paged and continuous
+    paths catches regressions in the seeded `(max_vec, norm_vec)`
+    init state.
+    """
     # Trimmed clone of `execute_ragged_flash_attention` from
     # `test_batch_kv_cache_flash_attention_causal_mask_ragged_paged.mojo`:
     # paged + continuous at one shape with no NaN/Inf + paged-vs-continuous
@@ -337,28 +357,127 @@ def _run_ragged_at[
     # + any MHAMask + not-sink + seq_len>=4096 this routes through the
     # HK ragged gate in `flash_attention_dispatch`
     # (k_t.page_size == 0 branch).
-    flash_attention[ragged=True](
-        ref_output_lt,
-        q_ragged_lt,
-        kv_collection_continuous_device.get_key_cache(layer_idx),
-        kv_collection_continuous_device.get_value_cache(layer_idx),
-        mask,
-        input_row_offsets.device_tensor(),
-        rsqrt(Float32(kv_params.head_size)),
-        ctx,
+    #
+    # `pass_kv_input_row_offsets=True` routes through the Phase-10
+    # cross_attention branch of the dispatcher; the offsets are
+    # equal to `input_row_offsets`, so the kernel arrives at the
+    # same `num_keys` as the self-attention path. Output must
+    # match the paged-vs-continuous reference under the same
+    # tolerance.
+    #
+    # `kv_input_row_offsets` dispatcher contract is
+    # `OptionalReg[LayoutTensor[uint32, Layout.row_major(UNKNOWN_VALUE),
+    # ImmutAnyOrigin]]`. The test-side managed tensor has a different
+    # layout/origin, so we rebuild a typed view (mirrors
+    # `kv_cache_ragged.mojo:3492-3501`).
+    var input_row_offsets_dt = input_row_offsets.device_tensor()
+    var kv_input_row_offsets_view = LayoutTensor[
+        DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
+    ](
+        input_row_offsets_dt.ptr,
+        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
+            input_row_offsets_dt.runtime_layout.shape.value.canonicalize()
+        ),
     )
 
-    # Paged-KV ragged path. Same gate, page_size>=64 branch.
-    flash_attention[ragged=True](
-        test_output_lt,
-        q_ragged_lt,
-        kv_collection_paged_device.get_key_cache(layer_idx),
-        kv_collection_paged_device.get_value_cache(layer_idx),
-        mask,
-        input_row_offsets.device_tensor(),
-        rsqrt(Float32(kv_params.head_size)),
-        ctx,
+    # Sink-path setup (Phase 5b). Allocated only when `pass_sink=True`
+    # so non-sink cases pay zero overhead. Per-q-head weights with small
+    # random values keep the seeded `(max_vec, norm_vec)` invariant
+    # exercised without dominating the rowmax across all tiles.
+    comptime sink_layout = Layout.row_major(UNKNOWN_VALUE)
+    var sink_runtime_layout = RuntimeLayout[sink_layout].row_major(
+        IndexList[1](num_q_heads)
     )
+    var sink_managed = ManagedLayoutTensor[dtype, sink_layout](
+        sink_runtime_layout, ctx
+    )
+    comptime if pass_sink:
+        var sink_host = sink_managed.tensor[update=False]()
+        # Small fixed sink weights, one per q-head. Range matches the
+        # `test_mha_sink_weights.mojo` adversarial seed (within ~[-1, 1]).
+        for h in range(num_q_heads):
+            sink_host[h] = Scalar[dtype](0.1) * Scalar[dtype](h % 7 - 3)
+    var sink_device_t = sink_managed.device_tensor()
+    var sink_device_view = LayoutTensor[
+        dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
+    ](
+        sink_device_t.ptr,
+        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
+            sink_device_t.runtime_layout.shape.value.canonicalize()
+        ),
+    )
+    comptime if pass_sink:
+        flash_attention[ragged=True, sink=True](
+            ref_output_lt,
+            q_ragged_lt,
+            kv_collection_continuous_device.get_key_cache(layer_idx),
+            kv_collection_continuous_device.get_value_cache(layer_idx),
+            mask,
+            input_row_offsets_dt,
+            rsqrt(Float32(kv_params.head_size)),
+            ctx,
+            sink_weights=sink_device_view,
+        )
+    elif pass_kv_input_row_offsets:
+        flash_attention[ragged=True](
+            ref_output_lt,
+            q_ragged_lt,
+            kv_collection_continuous_device.get_key_cache(layer_idx),
+            kv_collection_continuous_device.get_value_cache(layer_idx),
+            mask,
+            input_row_offsets_dt,
+            rsqrt(Float32(kv_params.head_size)),
+            ctx,
+            kv_input_row_offsets=kv_input_row_offsets_view,
+        )
+    else:
+        flash_attention[ragged=True](
+            ref_output_lt,
+            q_ragged_lt,
+            kv_collection_continuous_device.get_key_cache(layer_idx),
+            kv_collection_continuous_device.get_value_cache(layer_idx),
+            mask,
+            input_row_offsets_dt,
+            rsqrt(Float32(kv_params.head_size)),
+            ctx,
+        )
+
+    # Paged-KV ragged path. Same gate, page_size>=64 branch.
+    comptime if pass_sink:
+        flash_attention[ragged=True, sink=True](
+            test_output_lt,
+            q_ragged_lt,
+            kv_collection_paged_device.get_key_cache(layer_idx),
+            kv_collection_paged_device.get_value_cache(layer_idx),
+            mask,
+            input_row_offsets_dt,
+            rsqrt(Float32(kv_params.head_size)),
+            ctx,
+            sink_weights=sink_device_view,
+        )
+    elif pass_kv_input_row_offsets:
+        flash_attention[ragged=True](
+            test_output_lt,
+            q_ragged_lt,
+            kv_collection_paged_device.get_key_cache(layer_idx),
+            kv_collection_paged_device.get_value_cache(layer_idx),
+            mask,
+            input_row_offsets_dt,
+            rsqrt(Float32(kv_params.head_size)),
+            ctx,
+            kv_input_row_offsets=kv_input_row_offsets_view,
+        )
+    else:
+        flash_attention[ragged=True](
+            test_output_lt,
+            q_ragged_lt,
+            kv_collection_paged_device.get_key_cache(layer_idx),
+            kv_collection_paged_device.get_value_cache(layer_idx),
+            mask,
+            input_row_offsets_dt,
+            rsqrt(Float32(kv_params.head_size)),
+            ctx,
+        )
 
     assert_no_nan_inf(ref_output, "ref_output_continuous")
     assert_no_nan_inf(test_output, "test_output_paged")
@@ -404,7 +523,7 @@ def main() raises:
         # baseline — HK gate fires, block 15 is the last and fully
         # valid. Llama-3.1 8B GQA shape (32 Q heads / 8 KV heads, d=128).
         print(
-            "[1/7] HK ragged Causal seq_len=4096 (aligned, full last tile):",
+            "[1/9] HK ragged Causal seq_len=4096 (aligned, full last tile):",
         )
         _run_ragged_at[
             32,
@@ -426,7 +545,7 @@ def main() raises:
         # output buffer (or get garbage from buffer_load returning 0).
         print(
             (
-                "[2/7] HK ragged Causal seq_len=4097 (unaligned, partial last"
+                "[2/9] HK ragged Causal seq_len=4097 (unaligned, partial last"
                 " tile):"
             ),
         )
@@ -448,7 +567,7 @@ def main() raises:
         # `ragged=True` forcing HK's Q/O batch coord to 0 so the
         # per-sequence pre-offset pointer is selected.
         print(
-            "[3/7] HK ragged Causal multi-seq, ALIGNED lengths:",
+            "[3/9] HK ragged Causal multi-seq, ALIGNED lengths:",
         )
         _run_ragged_at[
             32,
@@ -467,7 +586,7 @@ def main() raises:
         # none aligned to BM=256. Combines multi-seq dispatch + per-
         # sequence partial-Q writeback skip.
         print(
-            "[4/7] HK ragged Causal multi-seq, mixed unaligned lengths:",
+            "[4/9] HK ragged Causal multi-seq, mixed unaligned lengths:",
         )
         _run_ragged_at[
             32,
@@ -486,7 +605,7 @@ def main() raises:
         # mask path comptime-elides for NullMask (status is always
         # NO_MASK), so this is effectively a "no mask" HK run.
         print(
-            "[5/7] HK ragged NullMask seq_len=8192:",
+            "[5/9] HK ragged NullMask seq_len=8192:",
         )
         _run_ragged_at[
             32,
@@ -509,7 +628,7 @@ def main() raises:
         # else-branch (no-rescale path), so the epilogue's
         # unconditional multiply is identity when no rescale fired.
         print(
-            "[6/7] HK ragged SlidingWindowCausalMask[4096] seq_len=8192:",
+            "[6/9] HK ragged SlidingWindowCausalMask[4096] seq_len=8192:",
         )
         _run_ragged_at[
             32,
@@ -528,7 +647,7 @@ def main() raises:
         # Chunked == causal within chunks; same generic-mask path
         # through HK as SlidingWindow.
         print(
-            "[7/7] HK ragged ChunkedCausalMask[2048] seq_len=8192:",
+            "[7/9] HK ragged ChunkedCausalMask[2048] seq_len=8192:",
         )
         _run_ragged_at[
             32,
@@ -540,6 +659,69 @@ def main() raises:
             2,
             1,
             ChunkedCausalMask[2048](),
+            ctx,
+        )
+
+        # Case 8: Phase-10 cross-attention plumbing smoke. Calls
+        # `flash_attention[ragged=True]` with `kv_input_row_offsets`
+        # set equal to `input_row_offsets`, exercising the
+        # dispatcher's `if kv_input_row_offsets:` branch and the
+        # `hk_mha_prefill_ragged[cross_attention=True]` launcher.
+        # Because the kv-side offsets match the Q-side, `num_keys`
+        # derives identically to the self-attention path and the
+        # output must match the paged-vs-continuous reference at
+        # the same tolerance (2e-2) used by the other cases.
+        print(
+            (
+                "[8/9] HK ragged Causal seq_len=4096 + Phase-10"
+                " kv_input_row_offsets (self-consistency):"
+            ),
+        )
+        _run_ragged_at[
+            32,
+            DType.bfloat16,
+            KVCacheStaticParams(num_heads=8, head_size=128),
+            CausalMask,
+            pass_kv_input_row_offsets=True,
+        ](
+            [4096],
+            [0],
+            2,
+            1,
+            CausalMask(),
+            ctx,
+        )
+
+        # Case 9: Phase-5b sink plumbing smoke. Calls
+        # `flash_attention[ragged=True, sink=True]` with per-q-head
+        # `sink_weights`. Exercises the dispatcher's
+        # `comptime if sink:` branch and the
+        # `hk_mha_prefill_ragged[sink=True]` launcher. The kernel's
+        # `comptime if sink:` init seeds `max_vec / max_vec_prev` to
+        # `log2e * sink_weight[head_idx]` and `norm_vec = 1` —
+        # equivalent to a virtual sink token contributing to the
+        # softmax denominator (per
+        # `patterns/amd-attention-sink-as-init-state`). Paged-vs-
+        # continuous self-consistency catches regressions in the
+        # seeded init.
+        print(
+            (
+                "[9/9] HK ragged Causal seq_len=4096 + Phase-5b"
+                " sink_weights (self-consistency):"
+            ),
+        )
+        _run_ragged_at[
+            32,
+            DType.bfloat16,
+            KVCacheStaticParams(num_heads=8, head_size=128),
+            CausalMask,
+            pass_sink=True,
+        ](
+            [4096],
+            [0],
+            2,
+            1,
+            CausalMask(),
             ctx,
         )
 

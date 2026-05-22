@@ -66,6 +66,7 @@ def run_hk_mha_prefill[
     kv_block: Int,
     group: Int = 1,
     cache_busting: Bool = True,
+    sink: Bool = False,
 ](
     mut m: Bench,
     seq_len: Int,
@@ -99,6 +100,13 @@ def run_hk_mha_prefill[
     var cb_o = CacheBustingBuffer[DType.float32](
         o_size, simd_size, ctx, cache_busting
     )
+
+    # Phase-5b sink path: per-q-head scalar weight buffer. Read only
+    # when `sink=True` is comptime; otherwise the kernel receives a
+    # dangling pointer and the comptime branch elides the load.
+    var sw_buf = ctx.enqueue_create_buffer[qkv_type](num_heads)
+    comptime if sink:
+        ctx.enqueue_memset(sw_buf, 0.05)
 
     comptime random_distribution = InitializationType.uniform_distribution
     cb_q.init_on_device(random_distribution, ctx)
@@ -207,17 +215,42 @@ def run_hk_mha_prefill[
                         ),
                     )
                 )
-                hk_mha_prefill[_config, compile_options=_PREFILL_IGLP_OPTS](
-                    q_tt,
-                    k_op,
-                    v_op,
-                    o_tt,
-                    CausalMask(),
-                    scale,
-                    num_keys,
-                    0,  # start_pos
-                    ctx,
-                )
+                comptime if sink:
+                    # Launcher infers `sink_weights_ptr`'s dtype from
+                    # `q.dtype` (literal BF16 here), so the cast must
+                    # land on `Scalar[DType.bfloat16]` — generic
+                    # `Scalar[qkv_type]` won't unify even when equal.
+                    var sw_ptr: UnsafePointer[
+                        Scalar[DType.bfloat16], ImmutAnyOrigin
+                    ] = sw_buf.unsafe_ptr().bitcast[Scalar[DType.bfloat16]]()
+                    hk_mha_prefill[
+                        _config,
+                        sink=True,
+                        compile_options=_PREFILL_IGLP_OPTS,
+                    ](
+                        q_tt,
+                        k_op,
+                        v_op,
+                        o_tt,
+                        CausalMask(),
+                        scale,
+                        num_keys,
+                        0,  # start_pos
+                        ctx,
+                        sw_ptr,
+                    )
+                else:
+                    hk_mha_prefill[_config, compile_options=_PREFILL_IGLP_OPTS](
+                        q_tt,
+                        k_op,
+                        v_op,
+                        o_tt,
+                        CausalMask(),
+                        scale,
+                        num_keys,
+                        0,  # start_pos
+                        ctx,
+                    )
 
             b.iter_custom[_kernel_launch](ctx)
 
@@ -280,6 +313,7 @@ def main() raises:
     comptime kv_block = get_defined_int["kv_block", 64]()
     comptime group = get_defined_int["group", 1]()
     comptime cache_busting = get_defined_bool["cache_busting", True]()
+    comptime sink = get_defined_bool["sink", False]()
 
     var seq_len = Int(arg_parse("seq_len", 8192))
     var num_keys = Int(arg_parse("num_keys", 8192))
@@ -317,6 +351,7 @@ def main() raises:
             cfg.kv_block,
             cfg.group,
             cfg.cache_busting,
+            sink=sink,
         ](
             m,
             seq_len,
