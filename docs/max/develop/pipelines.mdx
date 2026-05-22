@@ -175,7 +175,7 @@ and a ready-to-use pipeline instance.
 
 ```python
 import asyncio
-from max.interfaces import RequestID, TextGenerationInputs, TextGenerationRequest
+from max.pipelines.modeling.types import RequestID, TextGenerationInputs, TextGenerationRequest
 from max.pipelines import PIPELINE_REGISTRY, PipelineConfig
 from max.pipelines.core import TextContext
 
@@ -253,25 +253,26 @@ the specific components that make up the pipeline system.
 
 ### Top-level interfaces
 
-The [`max.interfaces`](/max/api/python/interfaces) package defines the contracts
-that all pipeline components must implement. These abstractions enable MAX to
-work uniformly across different model architectures and tasks.
+The [`max.pipelines.modeling.types`](/max/api/python/pipelines.modeling.types)
+package defines the contracts that all pipeline components must implement. These
+abstractions enable MAX to work uniformly across different model architectures
+and tasks.
 
 The key interfaces are:
 
-- [`Pipeline`](/max/api/python/generated/max.interfaces.Pipeline): Abstract
-  base class for all pipelines. Defines `execute()` and `release()` methods that
-  all pipeline implementations must provide.
+- [`Pipeline`](/max/api/python/generated/max.pipelines.modeling.types.Pipeline):
+  Abstract base class for all pipelines. Defines `execute()` and `release()`
+  methods that all pipeline implementations must provide.
 
-- [`PipelineInputs`](/max/api/python/generated/max.interfaces.PipelineInputs):
+- [`PipelineInputs`](/max/api/python/generated/max.pipelines.modeling.types.PipelineInputs):
   Base class for inputs to a pipeline, such as text generation requests or
   embeddings requests.
 
-- [`PipelineOutput`](/max/api/python/generated/max.interfaces.PipelineOutput):
+- [`PipelineOutput`](/max/api/python/generated/max.pipelines.modeling.types.PipelineOutput):
   Protocol for pipeline outputs. Must implement `is_done` to signal when
   generation is complete.
 
-- [`PipelineTokenizer`](/max/api/python/generated/max.interfaces.PipelineTokenizer):
+- [`PipelineTokenizer`](/max/api/python/generated/max.pipelines.modeling.types.PipelineTokenizer):
   Interface for tokenizers that convert between text and token IDs, and create
   context objects for requests.
 
@@ -281,9 +282,9 @@ The key interfaces are:
   architectures must implement.
 
 These interfaces are task-agnostic. Specialized variants like
-[`TextGenerationInputs`](/max/api/python/generated/max.interfaces.TextGenerationInputs)
+[`TextGenerationInputs`](/max/api/python/generated/max.pipelines.modeling.types.TextGenerationInputs)
 and
-[`TextGenerationOutput`](/max/api/python/generated/max.interfaces.TextGenerationOutput)
+[`TextGenerationOutput`](/max/api/python/generated/max.pipelines.modeling.types.TextGenerationOutput)
 extend them for specific use cases.
 
 ### Pipeline registry
@@ -340,7 +341,7 @@ Here's how you define an architecture:
 
 ```python
 from max.graph.weights import WeightsFormat
-from max.interfaces import PipelineTask
+from max.pipelines.modeling.types import PipelineTask
 from max.pipelines.lib import (
     SupportedArchitecture,
     TextTokenizer,

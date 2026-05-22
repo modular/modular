@@ -21,14 +21,6 @@ from typing import Any, cast
 
 import numpy as np
 import numpy.typing as npt
-from max.interfaces import (
-    EOSTracker,
-    ImageMetadata,
-    TextGenerationRequest,
-    TextGenerationRequestMessage,
-    TextGenerationRequestTool,
-    TokenBuffer,
-)
 from max.pipelines.architectures.qwen2_5vl.nn.data_processing import (
     get_rope_index,
     get_seqlens,
@@ -45,6 +37,14 @@ from max.pipelines.lib import (
     max_tokens_to_generate,
 )
 from max.pipelines.lib.config import PipelineConfig
+from max.pipelines.modeling.types import (
+    EOSTracker,
+    ImageMetadata,
+    TextGenerationRequest,
+    TextGenerationRequestMessage,
+    TextGenerationRequestTool,
+    TokenBuffer,
+)
 from max.support.image import find_contiguous_ranges, hash_image
 from PIL import Image
 from transformers import AutoTokenizer, Qwen2_5_VLConfig

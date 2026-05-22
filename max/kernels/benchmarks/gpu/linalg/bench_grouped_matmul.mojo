@@ -244,15 +244,15 @@ def bench_grouped_matmul[
 
     var a_dev = TileTensor(
         a_dev_buffer,
-        row_major(Coord(_ri(total_num_tokens), Idx[packed_K]())),
+        row_major(Coord(_ri(total_num_tokens), Idx[packed_K])),
     ).as_any_origin()
     var b_dev = TileTensor(
         b_dev_buffer,
-        row_major(Coord(Idx[num_experts](), Idx[N](), Idx[packed_K]())),
+        row_major(Coord(Idx[num_experts], Idx[N], Idx[packed_K])),
     ).as_any_origin()
     var c_dev = TileTensor(
         c_dev_buffer,
-        row_major(Coord(_ri(total_num_tokens), Idx[N]())),
+        row_major(Coord(_ri(total_num_tokens), Idx[N])),
     ).as_any_origin()
     var a_offsets_dev = TileTensor(
         a_offsets_dev_buffer,
@@ -348,10 +348,10 @@ def bench_grouped_matmul[
             row_major(
                 Coord(
                     Int64(a_scale_dim0),
-                    Idx[k_groups](),
-                    Idx[SF_ATOM_M[0]](),
-                    Idx[SF_ATOM_M[1]](),
-                    Idx[SF_ATOM_K](),
+                    Idx[k_groups],
+                    Idx[SF_ATOM_M[0]],
+                    Idx[SF_ATOM_M[1]],
+                    Idx[SF_ATOM_K],
                 )
             ),
         ).as_any_origin()
@@ -359,12 +359,12 @@ def bench_grouped_matmul[
             b_scales_dev_buffer,
             row_major(
                 Coord(
-                    Idx[num_experts](),
-                    Idx[n_groups](),
-                    Idx[k_groups](),
-                    Idx[SF_ATOM_M[0]](),
-                    Idx[SF_ATOM_M[1]](),
-                    Idx[SF_ATOM_K](),
+                    Idx[num_experts],
+                    Idx[n_groups],
+                    Idx[k_groups],
+                    Idx[SF_ATOM_M[0]],
+                    Idx[SF_ATOM_M[1]],
+                    Idx[SF_ATOM_K],
                 )
             ),
         ).as_any_origin()
@@ -482,15 +482,15 @@ def bench_grouped_matmul[
 
         var a_scales_dev = TileTensor(
             a_scales_dev_buffer,
-            row_major(Coord(Idx[K // BLOCK_SCALE_K](), _ri(total_num_tokens))),
+            row_major(Coord(Idx[K // BLOCK_SCALE_K], _ri(total_num_tokens))),
         ).as_any_origin()
         var b_scales_dev = TileTensor(
             b_scales_dev_buffer,
             row_major(
                 Coord(
-                    Idx[num_experts](),
-                    Idx[N // BLOCK_SCALE_K](),
-                    Idx[K // BLOCK_SCALE_K](),
+                    Idx[num_experts],
+                    Idx[N // BLOCK_SCALE_K],
+                    Idx[K // BLOCK_SCALE_K],
                 )
             ),
         ).as_any_origin()

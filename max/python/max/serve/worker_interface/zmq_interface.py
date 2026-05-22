@@ -21,7 +21,7 @@ from collections.abc import AsyncGenerator, AsyncIterator, Generator
 from typing import Any, Generic
 
 import zmq
-from max.interfaces import (
+from max.pipelines.modeling.types import (
     BaseContextType,
     EmbeddingsContext,
     PipelineOutputType,
@@ -225,8 +225,8 @@ def _response_type_for_task(
     pipeline_task: PipelineTask,
 ) -> type[Any]:
     """Maps a PipelineTask to the correct msgspec response type for ZMQ deserialization."""
-    from max.interfaces.generation import GenerationOutput
-    from max.interfaces.pipeline_variants import (
+    from max.pipelines.modeling.types.generation import GenerationOutput
+    from max.pipelines.modeling.types.pipeline_variants import (
         AudioGenerationOutput,
         EmbeddingsGenerationOutput,
         TextGenerationOutput,

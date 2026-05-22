@@ -26,8 +26,8 @@ from std.sys.info import has_accelerator, simd_width_of
 from std.algorithm.functional import elementwise, IndexList
 from std.reflection import reflect
 
-from tensor import ElementwiseBinaryOp
-from MOGGKernelAPI.MOGGKernelAPI import (
+from extensibility import ElementwiseBinaryOp
+from builtin_kernels import (
     Add,
     Sub,
     Mul,

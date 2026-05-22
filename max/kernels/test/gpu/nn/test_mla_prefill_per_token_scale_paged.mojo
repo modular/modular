@@ -445,8 +445,8 @@ def run_test_paged_prefill_per_token_scale[
         row_major(
             (
                 batch_size * seq_len_padded,
-                Idx[num_heads](),
-                Idx[kv_depth](),
+                Idx[num_heads],
+                Idx[kv_depth],
             )
         ),
     )
@@ -455,36 +455,36 @@ def run_test_paged_prefill_per_token_scale[
         row_major(
             (
                 batch_size * seq_len_padded,
-                Idx[num_heads](),
-                Idx[(depth - kv_depth)](),
+                Idx[num_heads],
+                Idx[(depth - kv_depth)],
             )
         ),
     )
     var q_scale_device = TileTensor(
         q_scale_device_buf,
-        row_major((batch_size * seq_len_padded, Idx[1]())),
+        row_major((batch_size * seq_len_padded, Idx[1])),
     )
     var k_device = TileTensor(
         k_device_buf,
         row_major(
             (
                 batch_size * num_keys_padded,
-                Idx[num_heads](),
-                Idx[kv_depth](),
+                Idx[num_heads],
+                Idx[kv_depth],
             )
         ),
     )
     var k_scale_device = TileTensor(
         k_scale_device_buf,
-        row_major((batch_size * num_keys_padded, Idx[1]())),
+        row_major((batch_size * num_keys_padded, Idx[1])),
     )
     var v_device = TileTensor(
         v_device_buf,
         row_major(
             (
                 batch_size * num_keys_padded,
-                Idx[num_heads](),
-                Idx[kv_depth](),
+                Idx[num_heads],
+                Idx[kv_depth],
             )
         ),
     )
@@ -493,8 +493,8 @@ def run_test_paged_prefill_per_token_scale[
         row_major(
             (
                 batch_size * seq_len_padded,
-                Idx[num_heads](),
-                Idx[kv_depth](),
+                Idx[num_heads],
+                Idx[kv_depth],
             )
         ),
     )
@@ -715,8 +715,8 @@ def run_test_paged_prefill_per_token_scale[
             (
                 batch_size,
                 seq_len_padded,
-                Idx[num_heads](),
-                Idx[depth](),
+                Idx[num_heads],
+                Idx[depth],
             )
         ),
     )
@@ -726,8 +726,8 @@ def run_test_paged_prefill_per_token_scale[
             (
                 batch_size,
                 num_keys_padded,
-                Idx[num_heads](),
-                Idx[depth](),
+                Idx[num_heads],
+                Idx[depth],
             )
         ),
     )
@@ -737,8 +737,8 @@ def run_test_paged_prefill_per_token_scale[
             (
                 batch_size,
                 num_keys_padded,
-                Idx[num_heads](),
-                Idx[depth](),
+                Idx[num_heads],
+                Idx[depth],
             )
         ),
     )
@@ -748,8 +748,8 @@ def run_test_paged_prefill_per_token_scale[
             (
                 batch_size,
                 seq_len_padded,
-                Idx[num_heads](),
-                Idx[depth](),
+                Idx[num_heads],
+                Idx[depth],
             )
         ),
     )

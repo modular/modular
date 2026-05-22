@@ -404,7 +404,7 @@ def test_gemv_tma[
         )
     else:
         # Compare with vendor BLAS for correctness.
-        var b_2d_shape = Coord(K, Idx[1]())
+        var b_2d_shape = Coord(K, Idx[1])
         var b_2d = TileTensor(b_device, row_major(b_2d_shape))
         var c_ref_tt = TileTensor(c_device_ref, row_major(c_shape))
         vendor_blas.matmul(
@@ -436,15 +436,15 @@ def main() raises:
     with DeviceContext() as ctx:
         var benchmark = is_benchmark()
         test_gemv_tma[DType.bfloat16](
-            ctx, Idx[256](), Idx[1](), Idx[256](), benchmark=benchmark
+            ctx, Idx[256], Idx[1], Idx[256], benchmark=benchmark
         )
         test_gemv_tma[DType.bfloat16](
-            ctx, Idx[4096](), Idx[1](), Idx[4096](), benchmark=benchmark
+            ctx, Idx[4096], Idx[1], Idx[4096], benchmark=benchmark
         )
 
         test_gemv_tma[DType.float32](
-            ctx, Idx[256](), Idx[1](), Idx[256](), benchmark=benchmark
+            ctx, Idx[256], Idx[1], Idx[256], benchmark=benchmark
         )
         test_gemv_tma[DType.float32](
-            ctx, Idx[4096](), Idx[1](), Idx[4096](), benchmark=benchmark
+            ctx, Idx[4096], Idx[1], Idx[4096], benchmark=benchmark
         )

@@ -140,7 +140,7 @@ def test_mxfp4_grouped_matmul[
         var b_fp8_dev = ctx.enqueue_create_buffer[fp8_type](N * K)
         var bp_tt = TileTensor(bp_dev, row_major[N, packed_K]())
         var bs_tt = TileTensor(bs_dev, row_major[N, scale_K]())
-        var b_fp8_tt = TileTensor(b_fp8_dev, row_major((Idx[N](), Idx[K]())))
+        var b_fp8_tt = TileTensor(b_fp8_dev, row_major((Idx[N], Idx[K])))
 
         dequant_mxfp4(ctx, b_fp8_tt, bp_tt, bs_tt, num_rows=N, num_cols=K)
 
@@ -154,14 +154,14 @@ def test_mxfp4_grouped_matmul[
         ctx.enqueue_copy(a_dev, a_hbuf)
 
         var a_fp8_dev = ctx.enqueue_create_buffer[fp8_type](num_tokens * K)
-        var a_tt = TileTensor(a_dev, row_major((num_tokens, Idx[K]())))
-        var a_fp8_tt = TileTensor(a_fp8_dev, row_major((num_tokens, Idx[K]())))
+        var a_tt = TileTensor(a_dev, row_major((num_tokens, Idx[K])))
+        var a_fp8_tt = TileTensor(a_fp8_dev, row_major((num_tokens, Idx[K])))
         _cast_bf16_to_fp8(ctx, a_fp8_tt, a_tt, num_tokens, K)
         ctx.synchronize()
 
         # Run vendor BLAS on FP8 data
         var c_dev = ctx.enqueue_create_buffer[DType.bfloat16](num_tokens * N)
-        var c_tt = TileTensor(c_dev, row_major((num_tokens, Idx[N]())))
+        var c_tt = TileTensor(c_dev, row_major((num_tokens, Idx[N])))
         vendor_blas.matmul(
             ctx,
             c_tt,
@@ -226,7 +226,7 @@ def test_mxfp4_grouped_matmul[
     ctx.synchronize()
 
     # Build TileTensors
-    var a_tt = TileTensor(a_dev, row_major((total_tokens, Idx[K]())))
+    var a_tt = TileTensor(a_dev, row_major((total_tokens, Idx[K])))
     var b_packed_tt = TileTensor(
         b_packed_dev, row_major[num_experts, N, packed_K]()
     )
@@ -241,7 +241,7 @@ def test_mxfp4_grouped_matmul[
         expert_ids_dev,
         row_major(Coord(num_active_experts)),
     )
-    var c_tt = TileTensor(c_dev, row_major((total_tokens, Idx[N]())))
+    var c_tt = TileTensor(c_dev, row_major((total_tokens, Idx[N])))
 
     mxfp4_dequant_grouped_matmul_amd(
         c_tt,
@@ -371,7 +371,7 @@ def test_dequant_all_experts[
         )
         var fp8_expert = TileTensor(
             all_fp8_dev.unsafe_ptr() + e * N * K,
-            row_major((Idx[N](), Idx[K]())),
+            row_major((Idx[N], Idx[K])),
         )
         dequant_mxfp4(
             ctx, fp8_expert, bp_expert, bs_expert, num_rows=N, num_cols=K
@@ -381,9 +381,7 @@ def test_dequant_all_experts[
     var single_fp8_dev = ctx.enqueue_create_buffer[fp8_type](N * K)
     var bp_expert0 = TileTensor(bp_dev, row_major[N, packed_K]())
     var bs_expert0 = TileTensor(bs_dev, row_major[N, scale_K]())
-    var fp8_expert0 = TileTensor(
-        single_fp8_dev, row_major((Idx[N](), Idx[K]()))
-    )
+    var fp8_expert0 = TileTensor(single_fp8_dev, row_major((Idx[N], Idx[K])))
     dequant_mxfp4(
         ctx, fp8_expert0, bp_expert0, bs_expert0, num_rows=N, num_cols=K
     )

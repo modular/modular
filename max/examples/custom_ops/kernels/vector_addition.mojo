@@ -18,7 +18,7 @@ from std.math import ceildiv
 
 from std.gpu import block_dim, block_idx, thread_idx
 
-from tensor import InputTensor, ManagedTensorSlice, OutputTensor
+from extensibility import InputTensor, ManagedTensorSlice, OutputTensor
 
 from std.utils.index import IndexList
 

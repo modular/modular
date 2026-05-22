@@ -16,7 +16,6 @@ from unittest.mock import MagicMock
 import pytest
 from max.driver import Buffer
 from max.dtype import DType
-from max.interfaces import PipelineTask, TextGenerationInputs
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     KVCacheConfig,
@@ -28,6 +27,7 @@ from max.pipelines.lib.interfaces import ModelOutputs
 from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
 from max.pipelines.lib.registry import PIPELINE_REGISTRY
+from max.pipelines.modeling.types import PipelineTask, TextGenerationInputs
 
 
 @pytest.fixture(scope="module")

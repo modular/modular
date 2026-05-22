@@ -16,7 +16,7 @@
 from __future__ import annotations
 
 import pytest
-from max.interfaces import TextGenerationContext
+from max.pipelines.modeling.types import TextGenerationContext
 from testbed.harnesses.gpt_oss_attention import (
     GptOssAttentionHarness,
     GptOssAttentionStaticParams,

@@ -19,8 +19,8 @@ from types import FrameType
 from typing import Optional
 
 import uvloop
-from max.interfaces import PipelineTask
 from max.pipelines import PIPELINE_REGISTRY, PipelineConfig
+from max.pipelines.modeling.types import PipelineTask
 from max.serve.config import Settings
 from max.serve.pipelines.model_worker import start_model_worker
 from max.serve.pipelines.telemetry_worker import start_telemetry_consumer

@@ -166,7 +166,7 @@ def test[
 
     var q_fp8_tt = TileTensor(
         q_fp8_device_ptr,
-        row_major((batch_size, seq_len, Idx[num_heads](), Idx[depth]())),
+        row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
     )
     var k_fp8_tt = TileTensor(
         k_fp8_device_ptr,
@@ -174,14 +174,14 @@ def test[
             (
                 batch_size,
                 num_keys,
-                Idx[kv_num_heads](),
-                Idx[depth](),
+                Idx[kv_num_heads],
+                Idx[depth],
             )
         ),
     )
     var out_tt = TileTensor(
         output_device_ptr,
-        row_major((batch_size, seq_len, Idx[num_heads](), Idx[v_depth]())),
+        row_major((batch_size, seq_len, Idx[num_heads], Idx[v_depth])),
     )
 
     comptime k_layout = Layout.row_major(

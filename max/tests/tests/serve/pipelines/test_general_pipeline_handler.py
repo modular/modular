@@ -17,13 +17,13 @@ from collections.abc import AsyncGenerator
 from unittest.mock import Mock
 
 import numpy as np
-from max.interfaces import GenerationStatus, RequestID
-from max.interfaces.generation import GenerationOutput
-from max.interfaces.request import (
+from max.pipelines.modeling.types import GenerationStatus, RequestID
+from max.pipelines.modeling.types.generation import GenerationOutput
+from max.pipelines.request import (
     OpenResponsesRequest,
     OpenResponsesRequestBody,
 )
-from max.interfaces.request.open_responses import OutputImageContent
+from max.pipelines.request.open_responses import OutputImageContent
 from max.serve.pipelines.general_handler import GeneralPipelineHandler
 
 

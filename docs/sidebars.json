@@ -360,13 +360,90 @@
         },
         {
           "type": "category",
-          "label": "max.interfaces",
+          "label": "max.pipelines.modeling.base",
           "link": {
             "type": "doc",
-            "id": "max/api/python/interfaces"
+            "id": "max/api/python/pipelines.modeling.base"
           },
           "items": [
-            "__AUTOGEN:max.interfaces__"
+            "__AUTOGEN:max.pipelines.modeling.base__"
+          ]
+        },
+        {
+          "type": "category",
+          "label": "max.pipelines.modeling.dataprocessing",
+          "link": {
+            "type": "doc",
+            "id": "max/api/python/pipelines.modeling.dataprocessing"
+          },
+          "items": [
+            "__AUTOGEN:max.pipelines.modeling.dataprocessing__"
+          ]
+        },
+        {
+          "type": "category",
+          "label": "max.pipelines.modeling.kv_cache_config",
+          "link": {
+            "type": "doc",
+            "id": "max/api/python/pipelines.modeling.kv_cache_config"
+          },
+          "items": [
+            "__AUTOGEN:max.pipelines.modeling.kv_cache_config__"
+          ]
+        },
+        {
+          "type": "category",
+          "label": "max.pipelines.modeling.types",
+          "link": {
+            "type": "doc",
+            "id": "max/api/python/pipelines.modeling.types"
+          },
+          "items": [
+            "__AUTOGEN:max.pipelines.modeling.types__"
+          ]
+        },
+        {
+          "type": "category",
+          "label": "max.pipelines.modeling.weights",
+          "link": {
+            "type": "doc",
+            "id": "max/api/python/pipelines.modeling.weights"
+          },
+          "items": [
+            "__AUTOGEN:max.pipelines.modeling.weights__"
+          ]
+        },
+        {
+          "type": "category",
+          "label": "max.pipelines.modeling.types.pipeline_variants",
+          "link": {
+            "type": "doc",
+            "id": "max/api/python/pipelines.modeling.types.pipeline_variants"
+          },
+          "items": [
+            "__AUTOGEN:max.pipelines.modeling.types.pipeline_variants__"
+          ]
+        },
+        {
+          "type": "category",
+          "label": "max.pipelines.request",
+          "link": {
+            "type": "doc",
+            "id": "max/api/python/pipelines.request"
+          },
+          "items": [
+            "__AUTOGEN:max.pipelines.request__"
+          ]
+        },
+        {
+          "type": "category",
+          "label": "max.pipelines.request.provider_options",
+          "link": {
+            "type": "doc",
+            "id": "max/api/python/pipelines.request.provider_options"
+          },
+          "items": [
+            "__AUTOGEN:max.pipelines.request.provider_options__"
           ]
         },
         {

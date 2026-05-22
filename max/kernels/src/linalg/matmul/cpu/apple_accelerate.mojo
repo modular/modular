@@ -311,7 +311,7 @@ def apple_gemv[
 
             @always_inline
             def compute_fn[width: Int](k: Int) {a, b, c, mut}:
-                var a_val = a.load[width=width](Coord(Idx[0](), k)).cast[
+                var a_val = a.load[width=width](Coord(Idx[0], k)).cast[
                     c.dtype
                 ]()
                 var b_val = (
@@ -342,7 +342,7 @@ def apple_gemv[
                 comptime func = elementwise_lambda_fn.value()
                 func[c.dtype, 1](Index(0, n), val)
             else:
-                c.store[width=1](Coord(Idx[0](), n), val)
+                c.store[width=1](Coord(Idx[0], n), val)
 
     # TODO: Experiment with this.
     comptime parallelism_grain_size = 16

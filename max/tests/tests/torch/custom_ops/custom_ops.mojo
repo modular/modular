@@ -24,9 +24,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from compiler_internal import register
+from extensibility import register
 from std.gpu.host import DeviceContext
-from tensor import (
+from extensibility import (
     InputTensor,
     OutputTensor,
     foreach,

@@ -462,7 +462,7 @@ struct TiledMmaLoader[
         # `Self.in_type` scalar elements, so no ptr-to-int byte math is
         # needed.
         var sub_tile_res = src.tile_with_offset[MMA_M, MMA_K](
-            Coord(Idx[0](), k_tile_idx)
+            Coord(Idx[0], k_tile_idx)
         )
         var sub_tile = sub_tile_res[0]
         comptime idx_type = src.linear_idx_type

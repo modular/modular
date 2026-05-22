@@ -235,9 +235,7 @@ Most neural network layers follow this structure:
 
 When writing model code that uses `max.experimental.tensor.Tensor` (modulev3
 architectures and `max.experimental.nn` layers), prefer Python operator syntax
-and instance methods over `F.*` functional calls. Before writing or modifying
-MAX model code, load the `/max-best-practices` skill for the full reference
-table.
+and instance methods over `F.*` functional calls.
 
 - Use `x @ w` not `F.matmul(x, w)`
 - Use `w.T` not `F.transpose(w)` (transposes last two dims)

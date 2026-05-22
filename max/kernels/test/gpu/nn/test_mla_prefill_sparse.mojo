@@ -514,12 +514,12 @@ def run_test_prefill_sparse[
     # -----------------------------------------------------------------------
     var q_tt = TileTensor(
         q_device.unsafe_ptr(),
-        row_major((total_q_tokens, Idx[num_heads](), Idx[QK_DEPTH]())),
+        row_major((total_q_tokens, Idx[num_heads], Idx[QK_DEPTH])),
     )
 
     var out_tt = TileTensor(
         out_device.unsafe_ptr(),
-        row_major((total_q_tokens, Idx[num_heads](), Idx[V_DEPTH]())),
+        row_major((total_q_tokens, Idx[num_heads], Idx[V_DEPTH])),
     )
 
     var indices_tt = TileTensor(

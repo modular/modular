@@ -23,7 +23,7 @@ from typing import cast
 from unittest.mock import Mock
 
 import pytest
-from max.interfaces import (
+from max.pipelines.modeling.types import (
     BaseContext,
     PipelineOutput,
     RequestID,

@@ -24,8 +24,8 @@ from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, ops
-from max.interfaces import LogProbabilities
 from max.nn.transformer import ReturnLogits
+from max.pipelines.modeling.types import LogProbabilities
 
 if TYPE_CHECKING:
     from .interfaces.pipeline_model import (

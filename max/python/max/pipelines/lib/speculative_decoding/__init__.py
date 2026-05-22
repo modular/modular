@@ -19,14 +19,14 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 import numpy.typing as npt
 from max.graph.weights import WeightsAdapter, WeightsFormat
-from max.interfaces import (
+from max.pipelines.core import TextContext
+from max.pipelines.modeling.types import (
     Pipeline,
     PipelineTokenizer,
     TextGenerationInputs,
     TextGenerationOutput,
     TextGenerationRequest,
 )
-from max.pipelines.core import TextContext
 
 from ..config.speculative_config import SpeculativeMethod
 from .base import SpeculativeDecodingPipelineBase

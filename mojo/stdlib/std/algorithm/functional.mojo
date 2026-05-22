@@ -27,6 +27,7 @@ from std.gpu.host.info import is_cpu, is_gpu
 from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
 from std.sys.info import CompilationTarget
 
+from std.utils.coord import Coord, coord_to_index_list
 from std.utils.index import Index, IndexList
 
 # Re-export backend-independent implementations.
@@ -307,10 +308,20 @@ def _elementwise_impl[
                 trace_description=trace_description,
             ](func, shape=shape, ctx=Optional(context))
         elif is_gpu[target]():
+            var shape_coord = Coord(shape)
+
+            @always_inline
+            def func_wrap[
+                width: Int, alignment: Int = 1
+            ](coords: Coord) register_passable {read}:
+                func[width, rank, alignment](
+                    rebind[IndexList[rank]](coord_to_index_list(coords))
+                )
+
             _elementwise_impl_gpu[
                 simd_width=simd_width,
                 trace_description=trace_description,
-            ](func, shape=shape, ctx=context)
+            ](func_wrap, shape=shape_coord, ctx=context)
         else:
             CompilationTarget.unsupported_target_error[
                 operation=__get_current_function_name()

@@ -51,7 +51,7 @@ source utils/start-modular.sh
 # Run a mojo test in this directory
 mojo /path/to/file.mojo
 
-# Alternaitve ways include
+# Alternative ways include
 ./bazelw run //KGEN/tools/mojo -- /path/to/file.mojo
 
 # Or use the bmojo alias (after sourcing start-modular.sh)

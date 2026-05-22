@@ -24,19 +24,19 @@ import numpy as np
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from max.interfaces import (
+from max.pipelines.lib import PIPELINE_REGISTRY, PipelineConfig
+from max.pipelines.modeling.types import (
     BaseContext,
     GenerationStatus,
     PipelineTokenizer,
     RequestID,
 )
-from max.interfaces.generation import GenerationOutput
-from max.interfaces.request import OpenResponsesRequest
-from max.interfaces.request.open_responses import (
+from max.pipelines.modeling.types.generation import GenerationOutput
+from max.pipelines.request import OpenResponsesRequest
+from max.pipelines.request.open_responses import (
     OutputImageContent,
     OutputVideoContent,
 )
-from max.pipelines.lib import PIPELINE_REGISTRY, PipelineConfig
 from max.serve.media import GeneratedMediaStore
 from max.serve.pipelines.general_handler import GeneralPipelineHandler
 from max.serve.request import register_request

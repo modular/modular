@@ -35,7 +35,6 @@ from max.graph.weights import Weights, WeightsAdapter
 from max.nn.kv_cache import KVCacheInputs
 from max.nn.transformer import ReturnLogits
 from max.pipelines.core import TextContext
-from max.pipelines.dataprocessing import collate_batch
 from max.pipelines.lib import (
     KVCacheConfig,
     ModelInputs,
@@ -44,6 +43,7 @@ from max.pipelines.lib import (
     PipelineModel,
     upper_bounded_default,
 )
+from max.pipelines.modeling.dataprocessing import collate_batch
 from transformers import AutoConfig
 
 from .graph import MPNetModel

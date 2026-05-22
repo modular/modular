@@ -129,11 +129,11 @@ struct KVCacheIterator[
             Self.GmemTileLayout(
                 Coord(
                     Int64(valid_rows),
-                    Idx[Self.depth](),
+                    Idx[Self.depth],
                 ),
                 Coord(
-                    Idx[Self.kv_num_heads * Self.cache_depth](),
-                    Idx[1](),
+                    Idx[Self.kv_num_heads * Self.cache_depth],
+                    Idx[1],
                 ),
             ),
             UInt32(Self.head_dim_offset),
@@ -741,7 +741,7 @@ struct DecodeStreamingKVBuffer[
             tile_rows,
             Self.BK,
             stride_layout=Self._KSmemTileStrides,
-        ](Coord(tile_row, Idx[0]()))
+        ](Coord(tile_row, Idx[0]))
 
     @always_inline
     def load_from_dram[

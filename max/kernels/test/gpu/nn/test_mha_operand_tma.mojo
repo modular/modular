@@ -605,8 +605,8 @@ def test_layout_tensor[
                 (
                     batch_size,
                     max_seq_len,
-                    Idx[num_heads](),
-                    Idx[head_size](),
+                    Idx[num_heads],
+                    Idx[head_size],
                 )
             ),
         )
@@ -619,8 +619,8 @@ def test_layout_tensor[
             (
                 batch_size,
                 max_seq_len,
-                Idx[num_heads](),
-                Idx[head_size](),
+                Idx[num_heads],
+                Idx[head_size],
             )
         ),
     )
@@ -643,8 +643,8 @@ def test_layout_tensor[
                 (
                     batch_size,
                     max_seq_len,
-                    Idx[num_heads](),
-                    Idx[head_size](),
+                    Idx[num_heads],
+                    Idx[head_size],
                 )
             ),
         )
@@ -669,8 +669,8 @@ def test_layout_tensor[
                         (
                             batch_size,
                             max_seq_len,
-                            Idx[num_heads](),
-                            Idx[head_size](),
+                            Idx[num_heads],
+                            Idx[head_size],
                         )
                     ),
                 )
@@ -680,8 +680,8 @@ def test_layout_tensor[
                         (
                             batch_size,
                             max_seq_len,
-                            Idx[num_heads](),
-                            Idx[head_size](),
+                            Idx[num_heads],
+                            Idx[head_size],
                         )
                     ),
                 )
@@ -752,8 +752,8 @@ def test_ragged[
             row_major(
                 (
                     total_tokens,
-                    Idx[num_heads](),
-                    Idx[head_size](),
+                    Idx[num_heads],
+                    Idx[head_size],
                 )
             ),
         )
@@ -765,8 +765,8 @@ def test_ragged[
         row_major(
             (
                 total_tokens,
-                Idx[num_heads](),
-                Idx[head_size](),
+                Idx[num_heads],
+                Idx[head_size],
             )
         ),
     )
@@ -795,8 +795,8 @@ def test_ragged[
         row_major(
             (
                 total_tokens,
-                Idx[num_heads](),
-                Idx[head_size](),
+                Idx[num_heads],
+                Idx[head_size],
             )
         ),
     )
@@ -824,8 +824,8 @@ def test_ragged[
                     row_major(
                         (
                             total_tokens,
-                            Idx[num_heads](),
-                            Idx[head_size](),
+                            Idx[num_heads],
+                            Idx[head_size],
                         )
                     ),
                 )
@@ -834,8 +834,8 @@ def test_ragged[
                     row_major(
                         (
                             total_tokens,
-                            Idx[num_heads](),
-                            Idx[head_size](),
+                            Idx[num_heads],
+                            Idx[head_size],
                         )
                     ),
                 )

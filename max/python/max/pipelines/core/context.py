@@ -23,7 +23,7 @@ from typing import TYPE_CHECKING, Any
 import llguidance
 import numpy as np
 import numpy.typing as npt
-from max.interfaces import (
+from max.pipelines.modeling.types import (
     EOSTracker,
     GenerationStatus,
     ImageMetadata,
@@ -37,8 +37,8 @@ from max.interfaces import (
     TokenBuffer,
     VLMTextGenerationContext,
 )
-from max.interfaces.generation import GenerationOutput
-from max.interfaces.request.open_responses import OutputImageContent
+from max.pipelines.modeling.types.generation import GenerationOutput
+from max.pipelines.request.open_responses import OutputImageContent
 
 CHUNK_SIZE = 128
 FUTURE_TOKEN = -999

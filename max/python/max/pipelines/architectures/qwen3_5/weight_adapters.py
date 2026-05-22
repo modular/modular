@@ -19,7 +19,7 @@ from max.dtype import DType
 from max.graph.weights import WeightData, Weights
 from max.graph.weights.weights import Shape
 from max.pipelines.lib import PipelineConfig
-from max.pipelines.lib.config.config_enums import supported_encoding_dtype
+from max.pipelines.modeling.config_enums import supported_encoding_dtype
 from transformers import AutoConfig
 
 # -----------------------------------------------------------------------

@@ -92,7 +92,7 @@ def str_byte_len_def(s: PythonObject) raises -> PythonObject:
 
 
 @export
-def noop_raw(py_self: PyObjectPtr, args: PyObjectPtr) -> PyObjectPtr:
+def noop_raw(py_self: PyObjectPtr, args: PyObjectPtr) abi("C") -> PyObjectPtr:
     ref cpy = Python().cpython()
     # PyTuple_GetItem returns a borrowed reference; we must IncRef before
     # returning, since the caller expects a new (owned) reference.
@@ -101,7 +101,7 @@ def noop_raw(py_self: PyObjectPtr, args: PyObjectPtr) -> PyObjectPtr:
 
 
 @export
-def add_raw(py_self: PyObjectPtr, args: PyObjectPtr) -> PyObjectPtr:
+def add_raw(py_self: PyObjectPtr, args: PyObjectPtr) abi("C") -> PyObjectPtr:
     ref cpy = Python().cpython()
     var a = cpy.PyTuple_GetItem(args, 0)
     var b = cpy.PyTuple_GetItem(args, 1)
@@ -120,7 +120,7 @@ def noop_raw_fastcall(
     py_self: PyObjectPtr,
     args: UnsafePointer[PyObjectPtr, MutExternalOrigin],
     nargs: Py_ssize_t,
-) -> PyObjectPtr:
+) abi("C") -> PyObjectPtr:
     ref cpy = Python().cpython()
     return cpy.Py_NewRef(args[0])
 
@@ -130,7 +130,7 @@ def add_raw_fastcall(
     py_self: PyObjectPtr,
     args: UnsafePointer[PyObjectPtr, MutExternalOrigin],
     nargs: Py_ssize_t,
-) -> PyObjectPtr:
+) abi("C") -> PyObjectPtr:
     ref cpy = Python().cpython()
     var ai = cpy.PyLong_AsSsize_t(args[0])
     var bi = cpy.PyLong_AsSsize_t(args[1])

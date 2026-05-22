@@ -50,6 +50,6 @@ def main() raises:
             Index(1, 1, 1),
             block_tile_shape[64],
             wgmma_shape[64],
-        ](ctx, Int(M), Idx[N](), Idx[K]())
+        ](ctx, Int(M), Idx[N], Idx[K])
 
         print("Test completed successfully")

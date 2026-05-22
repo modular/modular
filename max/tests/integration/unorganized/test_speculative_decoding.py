@@ -20,12 +20,6 @@ from unittest.mock import Mock, patch
 import numpy as np
 import pytest
 from max.driver import Buffer, DeviceSpec, accelerator_count
-from max.interfaces import (
-    PipelineTokenizer,
-    RequestID,
-    SamplingParams,
-    TokenBuffer,
-)
 from max.nn.kv_cache import KVCacheInputs
 from max.pipelines import PIPELINE_REGISTRY, PipelineConfig
 from max.pipelines.core import TextContext
@@ -35,6 +29,12 @@ from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
 from max.pipelines.lib.speculative_decoding import (
     StandaloneSpeculativeDecodingPipeline,
+)
+from max.pipelines.modeling.types import (
+    PipelineTokenizer,
+    RequestID,
+    SamplingParams,
+    TokenBuffer,
 )
 from test_common.pipeline_model_dummy import DUMMY_GEMMA_ARCH, DUMMY_LLAMA_ARCH
 from test_common.registry import prepare_registry

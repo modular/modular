@@ -127,22 +127,22 @@ def bench_cublas_per_group[
     ctx.enqueue_copy(sfb_device, sfb_host)
     ctx.synchronize()
 
-    var a_shape = Coord(m, Idx[K_ARRAY]())
-    var b_shape = Coord(n, Idx[K_ARRAY]())
+    var a_shape = Coord(m, Idx[K_ARRAY])
+    var b_shape = Coord(n, Idx[K_ARRAY])
     var c_shape = Coord(m, n)
     var a_scales_shape = Coord(
         ceildiv(Int(m.value()), SF_MN_GROUP_SIZE),
-        Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)](),
-        Idx[SF_ATOM_M[0]](),
-        Idx[SF_ATOM_M[1]](),
-        Idx[SF_ATOM_K](),
+        Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
+        Idx[SF_ATOM_M[0]],
+        Idx[SF_ATOM_M[1]],
+        Idx[SF_ATOM_K],
     )
     var b_scales_shape = Coord(
         ceildiv(Int(n.value()), SF_MN_GROUP_SIZE),
-        Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)](),
-        Idx[SF_ATOM_M[0]](),
-        Idx[SF_ATOM_M[1]](),
-        Idx[SF_ATOM_K](),
+        Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
+        Idx[SF_ATOM_M[0]],
+        Idx[SF_ATOM_M[1]],
+        Idx[SF_ATOM_K],
     )
 
     var a_tensor = TileTensor(a_device, row_major(a_shape))
@@ -278,15 +278,15 @@ def bench_structured_kernel[
     # Template tensors - 3D with batch=1
     var a_template = TileTensor(
         a_device,
-        row_major(Coord(Idx[1](), m, Idx[K_ARRAY]())),
+        row_major(Coord(Idx[1], m, Idx[K_ARRAY])),
     )
     var b_template = TileTensor(
         b_device,
-        row_major(Coord(Idx[1](), n, Idx[K_ARRAY]())),
+        row_major(Coord(Idx[1], n, Idx[K_ARRAY])),
     )
     var c_template = TileTensor(
         c_device,
-        row_major(Coord(Idx[1](), m, n)),
+        row_major(Coord(Idx[1], m, n)),
     )
 
     # Scale factor template tensors - 5D with batch=1 and merged last dims
@@ -294,11 +294,11 @@ def bench_structured_kernel[
         sfa_device,
         row_major(
             Coord(
-                Idx[1](),
+                Idx[1],
                 ceildiv(Int(m.value()), SF_MN_GROUP_SIZE),
-                Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)](),
-                Idx[SF_ATOM_M[0]](),
-                Idx[SF_ATOM_M[1] * SF_ATOM_K](),
+                Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
+                Idx[SF_ATOM_M[0]],
+                Idx[SF_ATOM_M[1] * SF_ATOM_K],
             )
         ),
     )
@@ -306,11 +306,11 @@ def bench_structured_kernel[
         sfb_device,
         row_major(
             Coord(
-                Idx[1](),
+                Idx[1],
                 ceildiv(Int(n.value()), SF_MN_GROUP_SIZE),
-                Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)](),
-                Idx[SF_ATOM_M[0]](),
-                Idx[SF_ATOM_M[1] * SF_ATOM_K](),
+                Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
+                Idx[SF_ATOM_M[0]],
+                Idx[SF_ATOM_M[1] * SF_ATOM_K],
             )
         ),
     )
@@ -353,28 +353,28 @@ def bench_structured_kernel[
 
     var problem_sizes_tensor = TileTensor(
         problem_sizes_host,
-        row_major(Coord(Idx[max_groups](), Idx[4]())),
+        row_major(Coord(Idx[max_groups], Idx[4])),
     )
 
     var a_ptrs_tensor = TileTensor(
         a_ptrs_device,
-        row_major(Coord(Idx[max_groups](), Idx[1]())),
+        row_major(Coord(Idx[max_groups], Idx[1])),
     )
     var b_ptrs_tensor = TileTensor(
         b_ptrs_device,
-        row_major(Coord(Idx[max_groups](), Idx[1]())),
+        row_major(Coord(Idx[max_groups], Idx[1])),
     )
     var c_ptrs_tensor = TileTensor(
         c_ptrs_device,
-        row_major(Coord(Idx[max_groups](), Idx[1]())),
+        row_major(Coord(Idx[max_groups], Idx[1])),
     )
     var sfa_ptrs_tensor = TileTensor(
         sfa_ptrs_device,
-        row_major(Coord(Idx[max_groups](), Idx[1]())),
+        row_major(Coord(Idx[max_groups], Idx[1])),
     )
     var sfb_ptrs_tensor = TileTensor(
         sfb_ptrs_device,
-        row_major(Coord(Idx[max_groups](), Idx[1]())),
+        row_major(Coord(Idx[max_groups], Idx[1])),
     )
 
     comptime BM = mma_shape[0]
@@ -516,7 +516,7 @@ def main() raises:
             c_type,
             scales_dtype,
             num_groups=32,
-        ](ctx, b, Idx[4096](), Idx[4096](), Idx[7168]())
+        ](ctx, b, Idx[4096], Idx[4096], Idx[7168])
 
         bench_structured_kernel[
             a_type,
@@ -527,7 +527,7 @@ def main() raises:
             mma_m=128,
             mma_n=128,
             k_grp_size=1,
-        ](ctx, b, Idx[4096](), Idx[4096](), Idx[7168]())
+        ](ctx, b, Idx[4096], Idx[4096], Idx[7168])
 
         # =====================================================================
         # MXFP8: DeepSeek-V2 Decode: 32 groups x 128 x 4096 x 7168
@@ -540,7 +540,7 @@ def main() raises:
             c_type,
             scales_dtype,
             num_groups=32,
-        ](ctx, b, Idx[128](), Idx[4096](), Idx[7168]())
+        ](ctx, b, Idx[128], Idx[4096], Idx[7168])
 
         bench_structured_kernel[
             a_type,
@@ -551,7 +551,7 @@ def main() raises:
             mma_m=128,
             mma_n=128,
             k_grp_size=1,
-        ](ctx, b, Idx[128](), Idx[4096](), Idx[7168]())
+        ](ctx, b, Idx[128], Idx[4096], Idx[7168])
 
         # =====================================================================
         # NVFP4: DeepSeek-V2 Prefill: 32 groups x 4096 x 4096 x 7168
@@ -565,7 +565,7 @@ def main() raises:
             fp4_scales_dtype,
             num_groups=32,
             sf_vector_size=NVFP4_SF_VECTOR_SIZE,
-        ](ctx, b, Idx[4096](), Idx[4096](), Idx[7168]())
+        ](ctx, b, Idx[4096], Idx[4096], Idx[7168])
 
         bench_structured_kernel[
             fp4_a_type,
@@ -578,7 +578,7 @@ def main() raises:
             k_grp_size=1,
             scaling_kind=UMMAKind.KIND_MXF4NVF4,
             sf_vector_size=NVFP4_SF_VECTOR_SIZE,
-        ](ctx, b, Idx[4096](), Idx[4096](), Idx[7168]())
+        ](ctx, b, Idx[4096], Idx[4096], Idx[7168])
 
         # =====================================================================
         # NVFP4: DeepSeek-V2 Decode: 32 groups x 128 x 4096 x 7168
@@ -592,7 +592,7 @@ def main() raises:
             fp4_scales_dtype,
             num_groups=32,
             sf_vector_size=NVFP4_SF_VECTOR_SIZE,
-        ](ctx, b, Idx[128](), Idx[4096](), Idx[7168]())
+        ](ctx, b, Idx[128], Idx[4096], Idx[7168])
 
         bench_structured_kernel[
             fp4_a_type,
@@ -605,7 +605,7 @@ def main() raises:
             k_grp_size=1,
             scaling_kind=UMMAKind.KIND_MXF4NVF4,
             sf_vector_size=NVFP4_SF_VECTOR_SIZE,
-        ](ctx, b, Idx[128](), Idx[4096](), Idx[7168]())
+        ](ctx, b, Idx[128], Idx[4096], Idx[7168])
 
     b.dump_report()
     print()

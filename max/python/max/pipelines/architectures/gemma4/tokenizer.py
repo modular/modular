@@ -23,16 +23,16 @@ from typing import Any
 
 import numpy as np
 import numpy.typing as npt
-from max.interfaces import (
+from max.pipelines.architectures.qwen2_5vl.nn.qwen_vl_utils import to_rgb
+from max.pipelines.lib import TextAndVisionTokenizer, max_tokens_to_generate
+from max.pipelines.lib.config import PipelineConfig
+from max.pipelines.modeling.types import (
     ImageMetadata,
     TextGenerationRequest,
     TextGenerationRequestMessage,
     TextGenerationRequestTool,
     TokenBuffer,
 )
-from max.pipelines.architectures.qwen2_5vl.nn.qwen_vl_utils import to_rgb
-from max.pipelines.lib import TextAndVisionTokenizer, max_tokens_to_generate
-from max.pipelines.lib.config import PipelineConfig
 from max.support.image import find_contiguous_ranges, hash_image
 from PIL import Image
 from transformers import AutoTokenizer, GenerationConfig

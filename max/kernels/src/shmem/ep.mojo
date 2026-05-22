@@ -112,7 +112,7 @@ def pack_ptrs_array[
     comptime for i in range(n_gpus_per_node):
         comptime if local_rank_only:
             ptr_arr[i] = UnsafePointer[Scalar[ptr_type], MutExternalOrigin](
-                unsafe_from_address=Int(_ptrs[Idx(my_rank)])
+                unsafe_from_address=Int(_ptrs[my_rank])
             )
         else:
             ptr_arr[i] = UnsafePointer[Scalar[ptr_type], MutExternalOrigin](

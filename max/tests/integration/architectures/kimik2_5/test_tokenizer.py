@@ -16,11 +16,11 @@
 from unittest.mock import MagicMock, patch
 
 import pytest
-from max.interfaces import (
+from max.pipelines.architectures.kimik2_5.tokenizer import KimiK2_5VLTokenizer
+from max.pipelines.modeling.types import (
     TextGenerationRequestMessage,
     TextGenerationRequestTool,
 )
-from max.pipelines.architectures.kimik2_5.tokenizer import KimiK2_5VLTokenizer
 
 
 class TestApplyChatTemplateWithTools:
