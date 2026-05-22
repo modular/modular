@@ -90,20 +90,20 @@ def use_dischargeable_struct[K: Int]() where K > 0:
 
 
 ##===----------------------------------------------------------------------===##
-# Body constraint enforced eagerly at function-signature type formation
+# Body constraint enforced at function-signature type formation
 ##===----------------------------------------------------------------------===##
 # A function signature that mentions a parameterized struct re-enters
-# `inferForStruct` to type-check the parameter type itself. The struct's
-# body constraint is checked at that site, *not* deferred to the eventual
-# call site. Because Mojo's trailing function `where` clause is parsed
-# after the parameter list, it isn't yet visible as an assumption while
-# parameter types are being formed — so a parametric binding that needs
-# the trailing `where` to be provable will surface as a hard error here.
-# (The dischargeable analog inside a function *body* is covered above by
-# `use_dischargeable_struct`, where the trailing `where` is in scope.)
+# `inferForStruct` to type-check the parameter type itself. Unprovable body
+# constraints from that site are collected by the deferral feature and
+# discharged later in `TypeCheckedParamList::emitBodyConstraints` using the
+# trailing `where` clauses as additional assumptions (see
+# `body_constraint_deferral.mojo` for positive-discharge coverage). When no
+# trailing `where` clause can discharge the deferred constraint, the
+# discharge step surfaces a hard error here. (The function-body analog is
+# covered above by `use_dischargeable_struct`, where the trailing `where`
+# is already in scope at the binding site.)
 
 
-# expected-note @below {{cannot prove constraint}}
 struct PositiveOnly[N: Int]
     # expected-note @below {{constraint declared here needs evidence for}}
     where N > 0:
@@ -111,6 +111,7 @@ struct PositiveOnly[N: Int]
 
 
 # expected-error @below {{lacking evidence to prove correctness}}
+# expected-note @below {{add a trailing 'where' clause that requires '(K > 0)'}}
 def bad_signature_use[K: Int](x: PositiveOnly[K]):
     pass
 

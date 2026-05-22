@@ -1708,7 +1708,8 @@ static PValue substituteParametersIntoUserDefinedType(
   ParamInf inference(paramBindings, sig.getParamTypes(),
                      sig.getParamListAttrs(),
                      /*allowImplicitConversions=*/true, typeDecl,
-                     /*discardError=*/false);
+                     /*discardError=*/false,
+                     /*deferredTypingContext=*/emitter.deferredTypingContext);
 
   ParameterExprArrayAttr bindingValuesAttr = inference.inferForStruct();
   if (!bindingValuesAttr)
@@ -1737,7 +1738,8 @@ bindToGeneratorValue(PValue callable, GeneratorType sig, const ExprNode *expr,
   // diagnostic emitter points to the original struct definition.
   ParamInf inference(paramBindings, sig.getInputParamTypes(), sig.getMetadata(),
                      /*allowImplicitConversions=*/true, nullptr,
-                     /*discardError=*/false);
+                     /*discardError=*/false,
+                     /*deferredTypingContext=*/emitter.deferredTypingContext);
   ParameterExprArrayAttr newBindings = inference.inferForStruct();
   if (!newBindings)
     return {};

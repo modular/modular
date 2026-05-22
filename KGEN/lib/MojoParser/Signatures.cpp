@@ -1067,7 +1067,7 @@ TypeCheckedParamList::create(ParsedParamList &parsedParams,
   result.stagedBodyConstraints = std::move(parsedParams.bodyConstraints);
 
   // Resolve each of the parameter declarations.
-  IREmitter emitter(declScope, EC_Type);
+  IREmitter emitter(declScope, EC_Type, &result.deferredTypingContext);
   bool hasErrors = false;
 
   IndexRefRemapper remapper({});
@@ -1077,6 +1077,7 @@ TypeCheckedParamList::create(ParsedParamList &parsedParams,
     ASTType type;
     if (arg.typeExpr) {
       type = emitter.emitExprType(arg.typeExpr, /*allowUnbound=*/true);
+
       auto fnType = dyn_cast<FnTypeGeneratorType>(type);
       auto *fnTypeExpr = dyn_cast<FunctionTypeNode>(arg.typeExpr);
       if (fnType && fnTypeExpr && !fnTypeExpr->isThin &&
@@ -1245,6 +1246,45 @@ void TypeCheckedParamList::emitBodyConstraints() {
     // Insert the constraint into the param-list's declScope immediately
     // so that subsequent constraint expressions can reference it.
     declScope.insertKnownAssumptions({bodyConstraint});
+  }
+
+  // Now that all body constraints have been emitted and added as known
+  // assumptions on `declScope`, try to discharge each body constraint that
+  // was deferred while emitting parameter declaration types and the function
+  // signature. A deferred constraint is "discharged" if the body constraints
+  // (together with the rest of the scope's known assumptions) now imply it;
+  // otherwise we surface a hard error pointing at the original binding site.
+  for (const DeferredConstraint &deferral :
+       deferredTypingContext.deferredConstraints) {
+    SmallVector<ConstraintAttr> stillUnprovable;
+    std::optional<MojoInflightDiag> violationDiag;
+    auto getDiag = [&](std::optional<SMLoc> loc) -> MojoInflightDiag & {
+      violationDiag = shared.emitError(loc ? *loc : deferral.deferralLoc);
+      return *violationDiag;
+    };
+    ConstraintResult result = LIT::checkConstraints(
+        declScope, /*paramListAttr=*/PogListAttr(), {deferral.constraint},
+        /*origConstraints=*/{}, getDiag, &stillUnprovable,
+        /*evaluator=*/nullptr);
+    if (result == ConstraintResult::Satisfied)
+      continue;
+
+    if (result == ConstraintResult::Unprovable) {
+      MojoInflightDiag diag = shared.emitError(deferral.deferralLoc)
+                              << "invalid bindings in signature: lacking "
+                                 "evidence to prove correctness";
+      for (ConstraintAttr unprovable : stillUnprovable) {
+        LIT::emitConstraintInconclusive(shared.getDeclResolver(), diag,
+                                        unprovable);
+        // Point the user at the signature they're defining.
+        diag.attachNote(declScope.getLoc())
+            << "add a trailing 'where' clause that requires "
+            << unprovable.getProposition();
+      }
+    }
+    // For `Violated`, `getDiag` was invoked and `checkConstraints` populated
+    // `violationDiag` with a "violated constraint" message plus per-constraint
+    // notes. It will commit when `violationDiag` goes out of scope.
   }
 }
 
@@ -1788,7 +1828,8 @@ static void typeCheckOneArgument(size_t idx, ASTDecl *fnDecl,
 
   ASTDecl &declScope = tcSignature.paramList.declScope;
   SharedState &shared = declScope.getShared();
-  IREmitter typeEmitter(declScope, EC_Type);
+  IREmitter typeEmitter(declScope, EC_Type,
+                        &tcSignature.paramList.deferredTypingContext);
 
   FnOp fnOp; // Null if type checking a function type.
   if (fnDecl)
@@ -2103,7 +2144,8 @@ static void typeCheckResult(ParsedArgument resultArg, ASTDecl *fnDecl,
     // If the result type is a `None` literal, then convert it to NoneType.
     resultType = shared.getNoneType();
   } else if (resultArg.typeExpr) {
-    IREmitter typeEmitter(declScope, EC_Type);
+    IREmitter typeEmitter(declScope, EC_Type,
+                          &tcSignature.paramList.deferredTypingContext);
     resultType = typeEmitter.emitExprType(resultArg.typeExpr);
 
     // On error, a diagnostic will be emitted, but we don't want to kill the
@@ -2220,7 +2262,8 @@ static void typeCheckResult(ParsedArgument resultArg, ASTDecl *fnDecl,
   if (tcSignature.argList.effects.isThrows()) {
     ASTType errorType;
     if (tcSignature.argList.thrownTypeExpr) {
-      IREmitter typeEmitter(declScope, EC_Type);
+      IREmitter typeEmitter(declScope, EC_Type,
+                            &tcSignature.paramList.deferredTypingContext);
       errorType = typeEmitter.emitExprType(tcSignature.argList.thrownTypeExpr);
     }
     if (!errorType)
@@ -2342,7 +2385,8 @@ TypeCheckedFnSignature::TypeCheckedFnSignature(TypeCheckedParamList &paramList,
     }
   }
   SharedState &shared = paramList.shared;
-  IREmitter typeEmitter(paramList.declScope, EC_Type);
+  IREmitter typeEmitter(paramList.declScope, EC_Type,
+                        &paramList.deferredTypingContext);
 
   // If this definition is a struct/class member, compute the self type.
   if (fnDecl) {

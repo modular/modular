@@ -11,6 +11,7 @@
 #ifndef KGEN_MOJOPARSER_EXPREMITTER_H
 #define KGEN_MOJOPARSER_EXPREMITTER_H
 
+#include "DeferredTypingContext.h"
 #include "KGEN/MojoParser/ExprDest.h"
 
 #include "KGEN/LITDialect/LITAttrs.h"
@@ -40,12 +41,13 @@ public:
   IREmitter(ASTDecl &declScope, OpBuilder builder,
             std::optional<OpBuilder> varDeclCursor = {});
   /// Create an IREmitter for a parameter context.
-  IREmitter(ASTDecl &declScope, ExprContext paramContext);
+  IREmitter(ASTDecl &declScope, ExprContext paramContext,
+            DeferredTypingContext *deferredTypingContext = nullptr);
 
   /// Get an emitter set up for parameter expressions only with the specified
   /// context.
   IREmitter getParamEmitter(ExprContext context) {
-    return IREmitter(declScope, context);
+    return IREmitter(declScope, context, deferredTypingContext);
   }
 
   //===--------------------------------------------------------------------===//
@@ -66,6 +68,13 @@ public:
 
   /// If specified, implicitly declared variables are added after this iterator.
   std::optional<OpBuilder> varDeclCursor;
+
+  /// When non-null, body-constraint inconclusiveness during emission is
+  /// silently accepted at single-candidate emission sites, and the unprovable
+  /// body constraints are inserted into this context for the caller to
+  /// discharge later. Per-parameter-constraint inconclusiveness is *not*
+  /// affected by this context: those remain hard errors.
+  DeferredTypingContext *deferredTypingContext = nullptr;
 
   /// Return information about the scope we're looking into.
   ASTDecl &getDeclScope() const { return declScope; }

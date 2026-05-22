@@ -11,6 +11,7 @@
 #ifndef KGEN_MOJOPARSER_INFERENCESTATE_H
 #define KGEN_MOJOPARSER_INFERENCESTATE_H
 
+#include "DeferredTypingContext.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/MojoParser/Constraints.h"
 #include "KGEN/MojoParser/MojoDiags.h"
@@ -75,7 +76,8 @@ class InferenceState {
 public:
   InferenceState(ASTDecl &declScope, ArrayRef<Type> declaredParamTypes,
                  PogListAttr declaredParamPogs, SMLoc defaultLoc,
-                 bool discardError);
+                 bool discardError,
+                 DeferredTypingContext *deferredTypingContext = nullptr);
   virtual ~InferenceState() = default;
 
   ASTDecl &getDeclScope() const { return declScope; }
@@ -101,6 +103,14 @@ public:
   /// errors that won't fail inference by default. Users of InferenceState can
   /// choose to surface these errors at the appropriate time.
   SmallVector<ConstraintAttr> bodyUnprovableConstraints;
+
+  /// When non-null, body-constraint inconclusiveness at single-candidate
+  /// binding sites is silently accepted and the unprovable body constraints
+  /// are appended here for the caller to discharge later. This is a routing
+  /// policy, similar to `discardError`, set once for the lifetime of an
+  /// inference operation. Per-parameter constraint inconclusiveness is *not*
+  /// affected by this context: those remain hard errors.
+  DeferredTypingContext *deferredTypingContext;
 
   // Debug util.
   void dump() const;
