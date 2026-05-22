@@ -239,6 +239,45 @@ struct WholeProgramState {
   DenseMap<SymbolRefAttr, LIT::TraitDeclOp> traitMap;
 };
 
+/// This is a wrapper to provide safer access to special members that are looked
+/// up from traits.  Members can be in one of three states:
+///   1) It may be unavailable, e.g. a destructor in a Linear type.
+///   2) It may be available and meaningful.
+///   3) It may be available but trivial, e.g. dtor for Int.
+struct SpecialMemberInfo {
+  bool isUnavailable() { return isa_and_nonnull<StringAttr>(storage); }
+
+  /// If the special member is unavailable, return the message to emit if
+  /// something tries to use it.
+  StringAttr getMessageIfUnavailable() {
+    if (auto stringAttr = dyn_cast<StringAttr>(storage))
+      return stringAttr;
+    return {};
+  }
+
+  /// This method can only be called when the member is available.  It returns
+  /// the member function to call, or null if it is trivial.
+  TypedAttr getMember() {
+    assert(!isUnavailable() && "member is unavailable");
+    return cast<TypedAttr>(storage);
+  }
+
+  static SpecialMemberInfo unavailable(StringAttr message) {
+    return SpecialMemberInfo(message);
+  }
+
+  static SpecialMemberInfo available(TypedAttr member) {
+    return SpecialMemberInfo(member);
+  }
+
+private:
+  SpecialMemberInfo(TypedAttr storage) : storage(storage) {}
+  /// This is the function to call if the special member is non-trivial or the
+  /// message to print (a Stringattr). If the special member is trivial
+  /// this is null.
+  TypedAttr storage;
+};
+
 /// Per-thread information about struct declarations, used for field sensitive
 /// analysis. Value tracking is completely field sensitive, tracking values at
 /// the level of individual fields in their flattened representation. To do
@@ -288,13 +327,8 @@ struct TypeDeclInfo {
   /// move, or destructor members.
   bool isRegisterPassableTrivial(Type type) const;
 
-  /// Given the RValue type for a value that needs to be destroyed, return the
-  /// destructor the invoke, or null if there is none.
-  TypedAttr getDestructorForType(Type type, Location loc) const;
+  SpecialMemberInfo getDestructorForType(Type type, Location loc) const;
   TypedAttr getMoveInitForType(Type type, Location loc) const;
-
-  /// If this is a non-destructible/linear type, get the error message to emit.
-  std::optional<StringRef> getErrorMsgIfLinearType(Type type) const;
 
   /// Return the function for a given symbol name if known.
   FnOp getFuncForSymbol(SymbolRefAttr symbolRef) const {
@@ -345,30 +379,58 @@ bool TypeDeclInfo::isRegisterPassableTrivial(Type type) const {
   return true;
 }
 
-static TypedAttr
-getSpecialMemberForType(Type type, const TypeDeclInfo *typeDecls,
-                        llvm::function_ref<TypedAttr(StructInfo)> getMember,
-                        Location loc) {
+static SpecialMemberInfo getSpecialMemberForType(
+    Type type, const TypeDeclInfo *typeDecls,
+    llvm::function_ref<SpecialMemberInfo(StructInfo)> getMember, Location loc) {
   auto valueType = sugarDynCast<LIT::StructType>(type);
-  if (!valueType) // Values of raw MLIR type don't have destructors.
-    return {};
-  TypedAttr fnAttr = getMember(typeDecls->getStructInfoForType(valueType));
-  if (!fnAttr)
-    return {};
+  if (!valueType) // Values of raw MLIR type are trivial.
+    return SpecialMemberInfo::available({});
+
+  SpecialMemberInfo fnInfo =
+      getMember(typeDecls->getStructInfoForType(valueType));
+  if (fnInfo.isUnavailable())
+    return fnInfo;
 
   // If there are parameters to the type, then the dtor will have those
   // parameters as well, substitute them in.
-  if (valueType.getParamValues().empty())
-    return fnAttr;
-  return BindParamsAttr::get(fnAttr, valueType.getParamValues(),
-                             typeDecls->getEvaluationContext());
+  if (valueType.getParamValues().empty() || !fnInfo.getMember())
+    return fnInfo;
+  TypedAttr result =
+      BindParamsAttr::get(fnInfo.getMember(), valueType.getParamValues(),
+                          typeDecls->getEvaluationContext());
+  return SpecialMemberInfo::available(result);
 }
 
 /// Given the RValue type for a value that needs to be destroyed, return the
 /// destructor the invoke, or null if there is none.
-TypedAttr TypeDeclInfo::getDestructorForType(Type type, Location loc) const {
+SpecialMemberInfo TypeDeclInfo::getDestructorForType(Type type,
+                                                     Location loc) const {
+
   if (auto generic = sugarDynCast<ParamType>(type)) {
     if (auto trait = sugarDynCast<TraitType>(generic.getParam().getType())) {
+      // If all the types in the trait composition are linear, then the trait
+      // itself is linear.  If any of them is ImplicitlyDestructible, then the
+      // whole thing is.
+      if (trait.getSymbols().empty())
+        return SpecialMemberInfo::unavailable(
+            StringAttr::get(trait.getContext(), "type conforms to no traits"));
+
+      StringAttr message;
+      for (SymbolRefAttr symbol : llvm::reverse(trait.getSymbols())) {
+        TraitDeclOp traitDecl = shared->traitMap.at(symbol);
+
+        // If the trait has a linear type error message set, it means it does
+        // not conform to ImplicitlyDestructible and is a linear type.
+        if (auto errorMsg = traitDecl.getLinearTypeErrorMsgAttr()) {
+          message = errorMsg;
+          continue;
+        }
+        message = {};
+        break;
+      }
+      if (message)
+        return SpecialMemberInfo::unavailable(message);
+
       auto traitDecls = getTraitDeclsForType(trait);
       for (TraitDeclOp traitDecl : traitDecls) {
         if (auto dtorWitness = traitDecl.getDtorWitness()) {
@@ -384,26 +446,31 @@ TypedAttr TypeDeclInfo::getDestructorForType(Type type, Location loc) const {
           auto specSig = cast<FuncTypeGeneratorType>(dtorWitness->getType())
                              .getSpecializedGenerator({selfParam},
                                                       &evaluationContext, loc);
-          return GetWitnessAttr::get(selfParam, dtorWitness->getTraitName(),
-                                     dtorWitness->getWitnessName(), specSig);
+          auto result =
+              GetWitnessAttr::get(selfParam, dtorWitness->getTraitName(),
+                                  dtorWitness->getWitnessName(), specSig);
+          return SpecialMemberInfo::available(result);
         }
       }
     }
   }
 
   // TODO: Remove getDestructorAttr from StructDeclOp entirely.
-  auto getDestructor = [&](StructInfo info) -> TypedAttr {
-    // The type has to conform to implicitly destructible to have a destructor.
-    auto conformance = info.implicitlyDestructible;
-    if (!conformance)
-      return {};
-
+  auto getDestructor = [&](StructInfo info) -> SpecialMemberInfo {
     // If the type is linear, then ignore an explicitly declared
     // destructor for the purposes of destructor insertion.
     // FIXME: This is wrong, we should check the 'where' clause on the
     // conformance.
     if (info.decl.getLinearTypeErrorMsg().value_or("") != "")
-      return {};
+      return SpecialMemberInfo::unavailable(
+          info.decl.getLinearTypeErrorMsgAttr());
+
+    // The type has to conform to implicitly destructible to have a destructor.
+    auto conformance = info.implicitlyDestructible;
+    if (!conformance)
+      return SpecialMemberInfo::unavailable(
+          StringAttr::get(info.decl.getContext(),
+                          "type does not conform to ImplicitlyDestructible"));
 
     // Ok, the type has a destructor.  Check to see if there is any
     // conditional conformance involved.
@@ -422,6 +489,12 @@ TypedAttr TypeDeclInfo::getDestructorForType(Type type, Location loc) const {
       }
     }
 
+    // If there is no destructor witness (e.g. conformance body not yet fully
+    // resolved in LSP mode), treat this type as a trivial destructor.
+    if (!dtorAttr)
+      return SpecialMemberInfo::available({});
+    assert(isTrivialAttr && "should have both witnesses");
+
     // Now that we found the conformance information, check to see if the
     // destructor is trivial. We have to substitute any "actual" parameters into
     // the __del__is_trivial witness to determine this.
@@ -433,20 +506,15 @@ TypedAttr TypeDeclInfo::getDestructorForType(Type type, Location loc) const {
 
     // The type of the trivial witness is Bool which wraps an i1.  If we can
     // prove that it is 1, then we can ignore this destructor.
-    if (auto structAttr = sugarDynCastIfPresent<LITStructAttr>(isTrivialAttr)) {
+    if (auto structAttr = sugarDynCast<LITStructAttr>(isTrivialAttr)) {
       if (structAttr.getValues().size() == 1) {
         if (auto boolAttr = sugarDynCast<BoolAttr>(
                 std::get<1>(structAttr.getValues().front()))) {
           if (boolAttr.getValue())
-            return {};
+            return SpecialMemberInfo::available({}); // trivial!
         }
       }
     }
-
-    // If there is no destructor witness (e.g. conformance body not yet fully
-    // resolved in LSP mode), treat this type as having no destructor.
-    if (!dtorAttr)
-      return {};
 
     // We will likely have a rebind to get rid of keyword argument and
     // convention differences; we don't care about this.
@@ -472,40 +540,27 @@ TypedAttr TypeDeclInfo::getDestructorForType(Type type, Location loc) const {
     auto newType =
         GeneratorType::get(info.decl.getSignature().getParamTypes(), fnType,
                            info.decl.getSignature().getParamListAttrs());
-    return SymbolConstantAttr::get(
-        cast<SymbolConstantAttr>(dtorAttr).getSymbol(), newType, {});
+    auto sym = cast<SymbolConstantAttr>(dtorAttr).getSymbol();
+    return SpecialMemberInfo::available(
+        SymbolConstantAttr::get(sym, newType, {}));
   };
 
   return getSpecialMemberForType(type, this, getDestructor, loc);
 }
 
 TypedAttr TypeDeclInfo::getMoveInitForType(Type type, Location loc) const {
-  return getSpecialMemberForType(
-      type, this, [](StructInfo info) { return info.decl.getMoveInitAttr(); },
+  auto result = getSpecialMemberForType(
+      type, this,
+      [](StructInfo info) -> SpecialMemberInfo {
+        if (auto moveInit = info.decl.getMoveInitAttr())
+          return SpecialMemberInfo::available(moveInit);
+        return SpecialMemberInfo::unavailable(StringAttr::get(
+            info.decl.getContext(), "type does not conform to Movable"));
+      },
       loc);
-}
 
-/// If this is a non-destructible/linear type, get the error message to emit.
-std::optional<StringRef>
-TypeDeclInfo::getErrorMsgIfLinearType(Type type) const {
-  // See if the type is a linear struct or trait.  If so, get the error message
-  // to report out.
-  if (auto valueType = sugarDynCast<LIT::StructType>(type))
-    return getStructInfoForType(valueType).decl.getLinearTypeErrorMsg();
-
-  if (auto generic = sugarDynCast<ParamType>(type)) {
-    if (auto trait = sugarDynCast<TraitType>(generic.getParam().getType())) {
-      for (SymbolRefAttr symbol : trait.getSymbols()) {
-        TraitDeclOp traitDecl(shared->traitMap.at(symbol));
-
-        // If the trait has a linear type error message set, it means it does
-        // not conform to ImplicitlyDestructible and is a linear type.
-        if (auto errorMsg = traitDecl.getLinearTypeErrorMsg())
-          return errorMsg;
-      }
-    }
-  }
-
+  if (!result.isUnavailable())
+    return result.getMember();
   return {};
 }
 
@@ -2438,53 +2493,55 @@ void DestructorInserter::emitDestructorCall(Value value, ValueRef valueRef,
                                             ImplicitLocOpBuilder &builder) {
   Type destroyedType =
       ValueRef::getDereferencedType(value.getType(), valueRef.isIndirect);
-  TypedAttr dtor = valueSet.getTypeDeclInfo().getDestructorForType(
+
+  SpecialMemberInfo dtorInfo = valueSet.getTypeDeclInfo().getDestructorForType(
       destroyedType, builder.getLoc());
-  if (!dtor) {
-    // If there is no destructor, then this is either a trivial type or a
-    // linear type.  If linear, emit the error message.
-    if (std::optional<StringRef> errorMsg =
-            valueSet.getTypeDeclInfo().getErrorMsgIfLinearType(destroyedType)) {
-      ValueInfo &valueInfo = valueSet.getValueInfo(valueRef.valueId);
-      auto diagOr = valueInfo.emitErrorIfNotDiagnosed(builder.getLoc(), "'");
-      if (!diagOr)
-        return;
-      auto &diag = *diagOr;
 
-      // FIXME(MOCO-3017): Provide a better name for the LHS in indirect
-      //   mutable assignments like `ptr[] = linear^`.
-      auto name = valueRef.valueId ? valueInfo.getName().str() : "<unknown>";
+  // If there is no destructor, then this is either a trivial type or a
+  // linear type.  If linear, emit the error message.
+  if (dtorInfo.isUnavailable()) {
+    ValueInfo &valueInfo = valueSet.getValueInfo(valueRef.valueId);
+    auto diagOr = valueInfo.emitErrorIfNotDiagnosed(builder.getLoc(), "'");
+    if (!diagOr)
+      return;
+    auto &diag = *diagOr;
 
-      diag << name
-           << "' abandoned without being explicitly destroyed: " << *errorMsg;
+    // FIXME(MOCO-3017): Provide a better name for the LHS in indirect
+    //   mutable assignments like `ptr[] = linear^`.
+    auto name = valueRef.valueId ? valueInfo.getName().str() : "<unknown>";
 
-      // If the insertion point is on a mark_consumed op inserted as part of an
-      // exception throw, then add a note explaining this is due to a thrown
-      // error.
-      Block &block = *builder.getInsertionBlock();
-      if (builder.getInsertionPoint() != block.end() &&
-          isa<LIT::OwnershipMarkConsumedOp>(*builder.getInsertionPoint()) &&
-          isa<ErrorReturnOp, TryRaiseOp>(block.getTerminator())) {
-        diag.attachNote(builder.getLoc())
-            << "value was not consumed when an error is thrown";
-      }
+    diag << name << "' abandoned without being explicitly destroyed: "
+         << dtorInfo.getMessageIfUnavailable().strref();
 
-      // If the value is a parameter of trait type, then that parameter needs to
-      // add an ImplicitlyDestructible trait conformance.
-      if (auto generic = sugarDynCast<ParamType>(destroyedType)) {
-        if (auto trait =
-                sugarDynCast<TraitType>(generic.getParam().getType())) {
-          // TODO: We should really be able to use ASTPrinter.cpp here, need to
-          // sink it to LIT dialect support though.
-          diag.attachNote(builder.getLoc())
-              << "consider adding trait conformance to ImplicitlyDestructible";
-        }
-      }
+    // If the insertion point is on a mark_consumed op inserted as part of an
+    // exception throw, then add a note explaining this is due to a thrown
+    // error.
+    Block &block = *builder.getInsertionBlock();
+    if (builder.getInsertionPoint() != block.end() &&
+        isa<LIT::OwnershipMarkConsumedOp>(*builder.getInsertionPoint()) &&
+        isa<ErrorReturnOp, TryRaiseOp>(block.getTerminator())) {
+      diag.attachNote(builder.getLoc())
+          << "value was not consumed when an error is thrown";
     }
 
-    // Emit the marker to denote the end of lifetime.
-    return emitLifetimeEnd(value, builder);
+    // If the value is a parameter of trait type, then that parameter needs to
+    // add an ImplicitlyDestructible trait conformance.
+    if (auto generic = sugarDynCast<ParamType>(destroyedType)) {
+      if (auto trait = sugarDynCast<TraitType>(generic.getParam().getType())) {
+        // TODO: We should really be able to use ASTPrinter.cpp here, need to
+        // sink it to LIT dialect support though.
+        diag.attachNote(builder.getLoc())
+            << "consider adding trait conformance to ImplicitlyDestructible";
+      }
+    }
+    return;
   }
+
+  TypedAttr dtor = dtorInfo.getMember();
+
+  // Emit the marker to denote the end of lifetime for types with trivial dtors.
+  if (!dtor)
+    return emitLifetimeEnd(value, builder);
 
   FuncType signature = cast<FuncTypeGeneratorType>(dtor.getType()).getBody();
   assert(signature.getNumResults() == 1 &&
@@ -2604,9 +2661,10 @@ DestructorInserter::optimizeCopyDestroys(Operation *opWithUse) {
   // Linear types shouldn't "optimize things into working", they should
   // predictably generate an error message when an implicit destructor (such as
   // what we're processing in this code) is needed.
-  if (!valueSet.getTypeDeclInfo().getDestructorForType(
-          cast<RefType>(copySrcMem.getType()).getElementType(),
-          opWithUse->getLoc()))
+  auto dtorInfo = valueSet.getTypeDeclInfo().getDestructorForType(
+      cast<RefType>(copySrcMem.getType()).getElementType(),
+      opWithUse->getLoc());
+  if (dtorInfo.isUnavailable())
     return DtorEmissionResult::KeepOp;
 
   // Check to see if the copy is immediately destroyed.  If so, we can elide
