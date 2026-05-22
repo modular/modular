@@ -17,6 +17,7 @@ from max.pipelines.modeling.weights.hf_utils import download_weight_files
 
 from .architectures import register_all_models
 from .core import PixelContext, TextAndVisionContext, TextContext, TTSContext
+from .diffusion.pipeline import PixelGenerationPipeline
 from .lib.config import (
     AudioGenerationConfig,
     KVCacheConfig,
@@ -47,7 +48,6 @@ from .lib.interfaces import (
 )
 from .lib.lora import ADAPTER_CONFIG_FILE
 from .lib.memory_estimation import MemoryEstimator
-from .lib.pipeline_variants.pixel_generation import PixelGenerationPipeline
 from .lib.pipeline_variants.text_generation import (
     TextGenerationPipeline,
     TextGenerationPipelineInterface,

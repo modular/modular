@@ -48,6 +48,7 @@ if TYPE_CHECKING:
     from .config import PipelineConfig
     from .pipeline_executor import PipelineExecutor
 
+from max.pipelines.diffusion.pipeline import PixelGenerationPipeline
 from max.pipelines.modeling.config_enums import RopeType, SupportedEncoding
 from max.pipelines.modeling.weights.hf_utils import HuggingFaceRepo
 
@@ -57,7 +58,6 @@ from .interfaces import ArchConfig, ArchConfigWithKVCache, PipelineModel
 from .pipeline_variants.overlap_text_generation import (
     OverlapTextGenerationPipeline,
 )
-from .pipeline_variants.pixel_generation import PixelGenerationPipeline
 from .pipeline_variants.text_generation import TextGenerationPipeline
 from .speculative_decoding import StandaloneSpeculativeDecodingPipeline
 from .speech_token_pipeline import SpeechTokenGenerationPipeline

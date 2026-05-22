@@ -50,7 +50,7 @@ class FirstBlockCache:
 
     Provides state allocation for FBCache.  The conditional execution
     helpers (``can_use_fbcache``, ``fbcache_conditional_execution``)
-    remain in ``cache_mixin.py`` since they are used directly inside
+    remain in ``cache.py`` since they are used directly inside
     transformer ``_forward_fbcache`` methods.
     """
 

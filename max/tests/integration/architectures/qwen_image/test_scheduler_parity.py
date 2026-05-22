@@ -18,7 +18,7 @@ Computes the reference sigma schedule using the same math as diffusers
 """
 
 import numpy as np
-from max.pipelines.lib.diffusion_schedulers.scheduling_flow_match_euler_discrete import (
+from max.pipelines.diffusion.schedulers.scheduling_flow_match_euler_discrete import (
     FlowMatchEulerDiscreteScheduler,
 )
 

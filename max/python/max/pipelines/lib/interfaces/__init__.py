@@ -12,6 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 """Interfaces for MAX pipelines."""
 
+from max.pipelines.diffusion.interface import (
+    DiffusionPipeline,
+    DiffusionPipelineOutput,
+)
+
 from .arch_config import (
     ArchConfig,
     ArchConfigWithAttentionKVCache,
@@ -19,7 +24,6 @@ from .arch_config import (
     ArchConfigWithKVCache,
     ArchConfigWithStoredKVParams,
 )
-from .diffusion_pipeline import DiffusionPipeline, DiffusionPipelineOutput
 from .generate import GenerateMixin
 from .pipeline_model import (
     AlwaysSignalBuffersMixin,

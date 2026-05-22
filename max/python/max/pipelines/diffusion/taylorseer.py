@@ -36,7 +36,7 @@ from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
 from max.nn.layer import Module
 
 if TYPE_CHECKING:
-    from .cache_mixin import DenoisingCacheConfig, DenoisingCacheState
+    from .cache import DenoisingCacheConfig, DenoisingCacheState
 
 
 @dataclass

@@ -44,16 +44,16 @@ from max.pipelines.architectures.qwen3.text_encoder import (
     Qwen3TextEncoderKleinModel,
 )
 from max.pipelines.core import PixelContext
-from max.pipelines.lib import float32_array_to_buffer
-from max.pipelines.lib.denoising_cache import (
+from max.pipelines.diffusion.cache import (
+    DenoisingCacheConfig,
     TaylorSeerBufferState,
     TaylorSeerCache,
 )
+from max.pipelines.lib import float32_array_to_buffer
 from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.lib.pipeline_executor import PipelineExecutor
 from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
 from max.pipelines.modeling.base import TensorStruct
-from max.pipelines.modeling.base.cache_mixin import DenoisingCacheConfig
 from max.pipelines.modeling.config_enums import supported_encoding_dtype
 from max.profiler import traced
 from typing_extensions import Self

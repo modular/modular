@@ -28,6 +28,7 @@ from max.driver import DeviceSpec, accelerator_api, load_devices
 from max.engine import InferenceSession
 from max.graph.quantization import QuantizationEncoding
 from max.nn.kv_cache.cache_params import KVConnectorType
+from max.pipelines.diffusion.cache import DenoisingCacheConfig
 from max.pipelines.lib.interfaces import PipelineModel
 from max.pipelines.lib.memory_estimation import (
     MemoryEstimator,
@@ -44,7 +45,6 @@ from max.pipelines.lib.registry import (
     get_pipeline_for_task,
 )
 from max.pipelines.lib.sampling import SamplingConfig
-from max.pipelines.modeling.base.cache_mixin import DenoisingCacheConfig
 from max.pipelines.modeling.kv_cache_config import (
     KVCacheConfig,
     KVConnectorConfig,

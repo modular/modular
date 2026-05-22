@@ -23,7 +23,7 @@ from max.driver import Device
 from max.graph.weights import Weights
 
 if TYPE_CHECKING:
-    from max.pipelines.modeling.base.cache_mixin import DenoisingCacheConfig
+    from max.pipelines.diffusion.cache import DenoisingCacheConfig
     from max.pipelines.modeling.config_enums import SupportedEncoding
 
 

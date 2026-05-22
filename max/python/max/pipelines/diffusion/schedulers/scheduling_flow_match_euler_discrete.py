@@ -28,7 +28,7 @@ def _time_shift_exponential(
 
 
 @dataclass
-class SchedulerConfig:
+class _SchedulerConfig:
     """Configuration for the scheduler."""
 
     use_flow_sigmas: bool = False

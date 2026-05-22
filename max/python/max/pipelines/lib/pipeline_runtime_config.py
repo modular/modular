@@ -18,7 +18,7 @@ from __future__ import annotations
 import os
 
 from max.config import ConfigFileModel
-from max.pipelines.modeling.base.cache_mixin import DenoisingCacheConfig
+from max.pipelines.diffusion.cache import DenoisingCacheConfig
 from max.pipelines.modeling.config_enums import PipelineRole
 from max.serve.worker_interface.zmq_queue import generate_zmq_ipc_path
 from pydantic import Field, PrivateAttr

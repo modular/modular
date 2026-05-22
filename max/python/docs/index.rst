@@ -36,6 +36,8 @@ Modules
    graph.ops
    graph.quantization
    graph.weights
+   pipelines.diffusion
+   pipelines.diffusion.schedulers
    pipelines.modeling.base
    pipelines.modeling.dataprocessing
    pipelines.modeling.kv_cache_config

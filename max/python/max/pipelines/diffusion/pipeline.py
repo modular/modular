@@ -19,7 +19,6 @@ from typing import TYPE_CHECKING, Any, Generic
 
 import numpy as np
 from max.driver import load_devices
-from max.pipelines.modeling.base.cache_mixin import DenoisingCacheConfig
 from max.pipelines.modeling.types import (
     GenerationStatus,
     Pipeline,
@@ -34,13 +33,14 @@ from max.pipelines.request.open_responses import (
     OutputVideoContent,
 )
 
-from ..interfaces.diffusion_pipeline import DiffusionPipeline
+from .cache import DenoisingCacheConfig
+from .interface import DiffusionPipeline
 
 if TYPE_CHECKING:
-    from ..config import PipelineConfig
-    from ..pipeline_executor import PipelineExecutor
+    from max.pipelines.lib.config import PipelineConfig
+    from max.pipelines.lib.pipeline_executor import PipelineExecutor
 
-logger = logging.getLogger("max.pipelines")
+_logger = logging.getLogger("max.pipelines")
 
 
 class PixelGenerationPipeline(
@@ -124,7 +124,7 @@ class PixelGenerationPipeline(
             try:
                 executor_outputs = self._executor.execute(model_inputs)
             except Exception:
-                logger.error(
+                _logger.error(
                     "Encountered an exception while executing pixel "
                     "batch (executor path): batch_size=%d",
                     len(flat_batch),
@@ -142,7 +142,7 @@ class PixelGenerationPipeline(
                     model_inputs=model_inputs
                 )
             except Exception:
-                logger.error(
+                _logger.error(
                     "Encountered an exception while executing pixel "
                     "batch: batch_size=%d, num_images_per_prompt=%s, "
                     "height=%s, width=%s, num_inference_steps=%s",

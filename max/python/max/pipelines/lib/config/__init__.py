@@ -14,10 +14,10 @@
 """Configuration classes for MAX pipelines."""
 
 from max.nn.kv_cache.cache_params import KVConnectorType
+from max.pipelines.diffusion.cache import DenoisingCacheConfig
 from max.pipelines.lib.pipeline_runtime_config import (
     DEFAULT_MAX_BATCH_INPUT_TOKENS,
 )
-from max.pipelines.modeling.base.cache_mixin import DenoisingCacheConfig
 from max.pipelines.modeling.config_enums import (
     PipelineRole,
     RepoType,
