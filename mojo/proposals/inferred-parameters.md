@@ -128,11 +128,11 @@ in the declaration: `scalar_param[Int32()]()`
 This alternative was rejected because:
 
 1. Non-lexical parameters are potentially confusing to users, who normally
-    expect named declarations to be lexical. Relatedly, we are moving towards
-    removing non-lexical parameters in general from the language.
+   expect named declarations to be lexical. Relatedly, we are moving towards
+   removing non-lexical parameters in general from the language.
 
 2. This would incur a huge implementation burden on the compiler, because the
-    type system needs to track the topological order of the parameters.
+   type system needs to track the topological order of the parameters.
 
 ### New Special Separator Parameter
 
@@ -152,7 +152,7 @@ guarantees that all infer-only parameters appear at the beginning of the list.
 This alternative was rejected because:
 
 1. There was no agreement over the syntax, and any selected sigil would
-    introduce additional noise into the language.
+   introduce additional noise into the language.
 
 2. `inferred` clearly indicates the intent of the syntax, and can be found via
    internet search, and is overall easier to explain syntax than introducing a

@@ -244,7 +244,7 @@ def make_amd_buffer_resource(
 def _get_bounds(tensor: TileTensor) -> Int:
     """Computes buffer bounds from a rank-2 TileTensor.
 
-    Works with MixedLayout (RuntimeInt + ComptimeInt dimensions).
+    Works with MixedLayout (Scalar + ComptimeInt dimensions).
     Only dim[0] may be runtime; strides and dim[1] are typically comptime,
     so the compiler constant-folds everything except the valid_rows multiply.
     """
@@ -264,7 +264,7 @@ def make_amd_buffer_resource(
     """Creates an AMD buffer resource descriptor from a TileTensor.
 
     Uses _get_bounds to compute the valid range. For TileTensors with
-    ComptimeInt strides, only the RuntimeInt dimension contributes
+    ComptimeInt strides, only the Scalar dimension contributes
     runtime register cost.
     """
     var size = _get_bounds(tensor)

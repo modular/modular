@@ -498,7 +498,7 @@ def test_value_nested_tuple() raises:
 
 def test_coord_to_int_tuple_conversion() raises:
     """`Coord` round-trips to `IntTuple` preserving nested structure."""
-    var t = Coord(Coord(Idx[2](), Idx[3]()), Idx[4]())
+    var t = Coord(Coord(Idx[2], Idx[3]), Idx[4])
     var t2 = coord_to_int_tuple(t)
     assert_equal(t2[0][0], 2)
     assert_equal(t2[0][1], 3)

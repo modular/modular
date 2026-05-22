@@ -217,26 +217,22 @@ def test[
     # ---- Construct TileTensors for kernel inputs ----
     var q_fp8_tt = TileTensor(
         q_fp8_device_ptr,
-        row_major(
-            (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth]())
-        ),
+        row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
     )
     var k_fp8_tt = TileTensor(
         k_fp8_device_ptr,
         row_major(
             (
-                Idx(batch_size),
-                Idx(num_keys),
-                Idx[kv_num_heads](),
-                Idx[depth](),
+                batch_size,
+                num_keys,
+                Idx[kv_num_heads],
+                Idx[depth],
             )
         ),
     )
     var out_tt = TileTensor(
         output_device_ptr,
-        row_major(
-            (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[v_depth]())
-        ),
+        row_major((batch_size, seq_len, Idx[num_heads], Idx[v_depth])),
     )
 
     # LayoutTensors for FP8 K (needed by LayoutTensorMHAOperand)
@@ -507,26 +503,22 @@ def bench[
     # TileTensors for kernel inputs
     var q_fp8_tt = TileTensor(
         q_fp8_device_ptr,
-        row_major(
-            (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth]())
-        ),
+        row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
     )
     var k_fp8_tt = TileTensor(
         k_fp8_device_ptr,
         row_major(
             (
-                Idx(batch_size),
-                Idx(num_keys),
-                Idx[kv_num_heads](),
-                Idx[depth](),
+                batch_size,
+                num_keys,
+                Idx[kv_num_heads],
+                Idx[depth],
             )
         ),
     )
     var out_tt = TileTensor(
         output_device_ptr,
-        row_major(
-            (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[v_depth]())
-        ),
+        row_major((batch_size, seq_len, Idx[num_heads], Idx[v_depth])),
     )
 
     var mla_args = MLADispatchScalarArgs[
@@ -727,26 +719,22 @@ def test_sw[
 
     var q_fp8_tt = TileTensor(
         q_fp8_device_ptr,
-        row_major(
-            (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth]())
-        ),
+        row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
     )
     var k_fp8_tt = TileTensor(
         k_fp8_device_ptr,
         row_major(
             (
-                Idx(batch_size),
-                Idx(num_keys),
-                Idx[kv_num_heads](),
-                Idx[depth](),
+                batch_size,
+                num_keys,
+                Idx[kv_num_heads],
+                Idx[depth],
             )
         ),
     )
     var out_tt = TileTensor(
         output_device_ptr,
-        row_major(
-            (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[v_depth]())
-        ),
+        row_major((batch_size, seq_len, Idx[num_heads], Idx[v_depth])),
     )
 
     comptime k_layout = Layout.row_major(

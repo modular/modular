@@ -14,12 +14,14 @@
 from __future__ import annotations
 
 import resource
+import time
 from unittest.mock import MagicMock
 
 import numpy as np
 import pytest
 from max.benchmark.benchmark_shared.utils import (
     argmedian,
+    exceeds_deadline,
     get_tokenizer,
     int_or_none,
     is_castable_to_int,
@@ -207,6 +209,28 @@ def test_argmedian_single_element() -> None:
 def test_argmedian_even_length_picks_nearest() -> None:
     idx = argmedian(np.array([1, 3, 5, 7]))
     assert idx in (1, 2)
+
+
+# ---- exceeds_deadline ----
+
+
+def test_exceeds_deadline_none_is_unbounded() -> None:
+    assert exceeds_deadline(3600.0, None) is False
+
+
+def test_exceeds_deadline_false_when_sleep_fits() -> None:
+    deadline = time.perf_counter_ns() + int(10 * 1e9)
+    assert exceeds_deadline(0.1, deadline) is False
+
+
+def test_exceeds_deadline_true_when_sleep_overshoots() -> None:
+    deadline = time.perf_counter_ns() + int(0.05 * 1e9)
+    assert exceeds_deadline(5.0, deadline) is True
+
+
+def test_exceeds_deadline_zero_seconds_does_not_overshoot() -> None:
+    deadline = time.perf_counter_ns() + int(0.001 * 1e9)
+    assert exceeds_deadline(0.0, deadline) is False
 
 
 # ---- wait_for_server_ready ----

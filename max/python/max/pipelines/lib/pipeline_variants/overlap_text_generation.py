@@ -101,19 +101,6 @@ from max.graph.weights import (
     load_weights,
     weights_format,
 )
-from max.interfaces import (
-    BatchType,
-    EOSTracker,
-    PipelineOutputsDict,
-    PipelineTokenizer,
-    RequestID,
-    SpecDecodingState,
-    TextGenerationContextType,
-    TextGenerationInputs,
-    TextGenerationOutput,
-    TextGenerationRequest,
-)
-from max.interfaces.tokens import TokenBuffer
 from max.nn import kernels
 from max.nn.kv_cache import KVCacheInputs, KVCacheParams, MultiKVCacheParams
 from max.nn.transformer import ReturnLogits
@@ -125,6 +112,19 @@ from max.pipelines.kv_cache.paged_kv_cache.cache_manager import (
 from max.pipelines.lib.speculative_decoding.ragged_token_merger import (
     shape_to_scalar,
 )
+from max.pipelines.modeling.types import (
+    BatchType,
+    EOSTracker,
+    PipelineOutputsDict,
+    PipelineTokenizer,
+    RequestID,
+    SpecDecodingState,
+    TextGenerationContextType,
+    TextGenerationInputs,
+    TextGenerationOutput,
+    TextGenerationRequest,
+)
+from max.pipelines.modeling.types.tokens import TokenBuffer
 from max.profiler import Tracer, traced
 from max.support.math import ceildiv
 
@@ -155,6 +155,7 @@ from ..sampling import (
     apply_logits_processors,
     token_sampler,
 )
+from ..utils import CompilationTimer
 
 logger = logging.getLogger("max.pipelines")
 
@@ -727,6 +728,7 @@ class AsyncBatch(Generic[TextGenerationContextType]):
             for idx, ctx in enumerate(self.inputs.flat_batch):
                 if ctx.matcher is not None and not ctx.tokens.actively_chunked:
                     token = int(generated_tokens_np[idx])
+                    # advance_fsm handles enforcement state internally
                     ctx.advance_fsm(token)
 
         # Update bitmask for requests continuing from previous batch to current batch.
@@ -1213,13 +1215,14 @@ class RealizeFutureTokenProcessor:
         num_speculative_tokens: int = 0,
         enable_dp: bool = False,
     ) -> None:
-        self._graph = session.load(
-            build_realize_future_token_graph(
+        with CompilationTimer("realize_future_token") as timer:
+            graph = build_realize_future_token_graph(
                 devices=devices,
                 num_speculative_tokens=num_speculative_tokens,
                 enable_dp=enable_dp,
             )
-        )
+            timer.mark_build_complete()
+            self._graph = session.load(graph)
         self._enable_dp = enable_dp
         self._num_speculative_tokens = num_speculative_tokens
 
@@ -1408,6 +1411,25 @@ class RealizeFutureTokenProcessor:
 
 
 @dataclass
+class _AsyncSpecDecodeHostBuffers:
+    """Fresh per-batch pinned buffers for spec-decode D2H outputs.
+
+    Populated by D2H from spec-decode model outputs and read by the sync
+    path on the next iteration.
+
+    These are separate from the persistent pinned buffers on `SpecDecodeState`:
+    the persistent buffers are reused across iterations (overwritten by each
+    new D2H) and read by the async callback before the next D2H runs, while
+    these per-batch buffers live as long as their owning AsyncSpecDecodeBatch
+    and are safe to read on a later iteration's sync path.
+    """
+
+    num_accepted_draft_tokens_host: DevicePinnedBuffer
+    next_tokens_host: DevicePinnedBuffer
+    next_draft_tokens_host: DevicePinnedBuffer
+
+
+@dataclass
 class _CallbackInputs:
     """Numpy views into the persistent pinned buffers for the bitmask callback.
 
@@ -1501,6 +1523,7 @@ class OverlapTextGenerationPipeline(
         self._structured_output = StructuredOutputHelper.from_tokenizer(
             self.tokenizer,
             pipeline_config.sampling.enable_structured_output,
+            pipeline_config.runtime.tool_parser,
         )
         self.vocab_size = self._structured_output.vocab_size
 
@@ -1583,28 +1606,34 @@ class OverlapTextGenerationPipeline(
         self._sampler_with_bitmask: Model | None = None
         self._sampler_without_bitmask: Model | None = None
         if not is_spec_decode:
-            if pipeline_config.sampling.enable_structured_output:
-                self._sampler_with_bitmask = session.load(
-                    token_sampler(
+            with CompilationTimer("sampler") as sampler_timer:
+                if pipeline_config.sampling.enable_structured_output:
+                    with_bitmask_graph = token_sampler(
                         pipeline_config.sampling,
                         device=DeviceRef.from_device(self._devices[0]),
                     )
-                )
-                cfg_without_bitmask = copy.deepcopy(pipeline_config.sampling)
-                cfg_without_bitmask.enable_structured_output = False
-                self._sampler_without_bitmask = session.load(
-                    token_sampler(
+                    cfg_without_bitmask = copy.deepcopy(
+                        pipeline_config.sampling
+                    )
+                    cfg_without_bitmask.enable_structured_output = False
+                    without_bitmask_graph = token_sampler(
                         cfg_without_bitmask,
                         device=DeviceRef.from_device(self._devices[0]),
                     )
-                )
-            else:
-                self._sampler_without_bitmask = session.load(
-                    token_sampler(
+                    sampler_timer.mark_build_complete()
+                    self._sampler_with_bitmask = session.load(
+                        with_bitmask_graph
+                    )
+                    self._sampler_without_bitmask = session.load(
+                        without_bitmask_graph
+                    )
+                else:
+                    sampler_graph = token_sampler(
                         pipeline_config.sampling,
                         device=DeviceRef.from_device(self._devices[0]),
                     )
-                )
+                    sampler_timer.mark_build_complete()
+                    self._sampler_without_bitmask = session.load(sampler_graph)
 
         # Pre-allocate pinned buffer for D2H token copies only when structured
         # output is enabled. This buffer is used for async token transfers in
@@ -2457,9 +2486,6 @@ class OverlapTextGenerationPipeline(
             # ordering guarantees the data is valid when each DMA starts, no CPU sync.
             spec_state.has_precomputed_bitmask = False
 
-            old_rid_to_idx = {
-                rid: i for i, rid in enumerate(spec_state.callback_request_ids)
-            }
             row_size = num_positions * vocab_size_dim
             bool_flat = spec_state.persistent_bitmask_bool_pinned.view(
                 DType.bool,
@@ -2469,53 +2495,28 @@ class OverlapTextGenerationPipeline(
                 DType.bool, (bitmask_device.num_elements,)
             )
 
-            missing_indices: list[int] = []
-            missing_contexts: list[TextGenerationContextType] = []
-            with Tracer("inplace_copy_bitmask"):
-                for new_idx, ctx in enumerate(context_batch):
-                    old_idx = old_rid_to_idx.get(ctx.request_id)
-                    if old_idx is not None:
-                        src = bool_flat[
-                            old_idx * row_size : (old_idx + 1) * row_size
-                        ].view(DType.bool, (1, num_positions, vocab_size_dim))
-                        dst = bitmask_device_flat[
-                            new_idx * row_size : (new_idx + 1) * row_size
-                        ].view(DType.bool, (1, num_positions, vocab_size_dim))
-                        dst.inplace_copy_from(src)
-                    else:
-                        missing_indices.append(new_idx)
-                        missing_contexts.append(ctx)
+            missing_indices, missing_contexts = (
+                self._remap_precomputed_bitmask_rows(
+                    context_batch=context_batch,
+                    callback_request_ids=spec_state.callback_request_ids,
+                    src_flat=bool_flat,
+                    bitmask_device_flat=bitmask_device_flat,
+                    row_size=row_size,
+                    num_positions=num_positions,
+                    vocab_size_dim=vocab_size_dim,
+                )
+            )
 
             if missing_contexts:
-                # Contexts not in the callback batch: compute their rows on the
-                # main thread. Safe because the callback only touches matchers
-                # from its own context_batch — no concurrent Rust borrow.
-                missing_drafts = draft_tokens_np[missing_indices]
-                missing_np = (
-                    self._structured_output.compute_speculative_bitmasks(
-                        context_batch=missing_contexts,
-                        draft_tokens=missing_drafts,
-                        num_positions=num_positions,
-                    )
+                self._fill_missing_bitmask_rows_sync(
+                    missing_indices=missing_indices,
+                    missing_contexts=missing_contexts,
+                    draft_tokens_np=draft_tokens_np,
+                    bitmask_device_flat=bitmask_device_flat,
+                    row_size=row_size,
+                    num_positions=num_positions,
+                    vocab_size_dim=vocab_size_dim,
                 )
-                missing_host = DevicePinnedBuffer(
-                    dtype=DType.bool,
-                    shape=missing_np.shape,
-                    device=self._devices[0],
-                )
-                missing_host.to_numpy()[:] = missing_np
-                missing_host_flat = missing_host.view(
-                    DType.bool, (missing_host.num_elements,)
-                )
-                with Tracer("inplace_copy_bitmask"):
-                    for i, new_idx in enumerate(missing_indices):
-                        src = missing_host_flat[
-                            i * row_size : (i + 1) * row_size
-                        ].view(DType.bool, (1, num_positions, vocab_size_dim))
-                        dst = bitmask_device_flat[
-                            new_idx * row_size : (new_idx + 1) * row_size
-                        ].view(DType.bool, (1, num_positions, vocab_size_dim))
-                        dst.inplace_copy_from(src)
 
             return bitmask_device
 
@@ -2539,6 +2540,95 @@ class OverlapTextGenerationPipeline(
             with Tracer("inplace_copy_bitmask"):
                 bitmask_device.inplace_copy_from(bitmask_host)
                 return bitmask_device
+
+    def _remap_precomputed_bitmask_rows(
+        self,
+        context_batch: list[TextGenerationContextType],
+        callback_request_ids: list[RequestID],
+        src_flat: Buffer,
+        bitmask_device_flat: Buffer,
+        row_size: int,
+        num_positions: int,
+        vocab_size_dim: int,
+    ) -> tuple[list[int], list[TextGenerationContextType]]:
+        """Per-row H2D from the callback's pinned bitmask to the device.
+
+        Routes rows by request ID from `src_flat` into `bitmask_device_flat`.
+
+        `src_flat` is a flat (1D) view of the source pinned buffer (currently
+        `persistent_bitmask_bool_pinned`; the planned GPU-unpack follow-up PR
+        will swap this to `persistent_bitmask_pinned` packed int32 with a
+        smaller `vocab_size_dim`). The buffer parameter is intentionally
+        opaque so the same helper supports both layouts.
+
+        Returns (missing_indices, missing_contexts) for current-batch rows
+        whose request_ids were NOT in the callback batch — the caller fills
+        those synchronously via `_fill_missing_bitmask_rows_sync`.
+        """
+        old_rid_to_idx = {rid: i for i, rid in enumerate(callback_request_ids)}
+        missing_indices: list[int] = []
+        missing_contexts: list[TextGenerationContextType] = []
+        with Tracer("inplace_copy_bitmask"):
+            for new_idx, ctx in enumerate(context_batch):
+                old_idx = old_rid_to_idx.get(ctx.request_id)
+                if old_idx is not None:
+                    src = src_flat[
+                        old_idx * row_size : (old_idx + 1) * row_size
+                    ].view(DType.bool, (1, num_positions, vocab_size_dim))
+                    dst = bitmask_device_flat[
+                        new_idx * row_size : (new_idx + 1) * row_size
+                    ].view(DType.bool, (1, num_positions, vocab_size_dim))
+                    dst.inplace_copy_from(src)
+                else:
+                    missing_indices.append(new_idx)
+                    missing_contexts.append(ctx)
+        return missing_indices, missing_contexts
+
+    def _fill_missing_bitmask_rows_sync(
+        self,
+        missing_indices: list[int],
+        missing_contexts: list[TextGenerationContextType],
+        draft_tokens_np: npt.NDArray[np.int64],
+        bitmask_device_flat: Buffer,
+        row_size: int,
+        num_positions: int,
+        vocab_size_dim: int,
+    ) -> None:
+        """Compute and H2D bitmask rows for contexts missing from the callback.
+
+        Handles contexts not in the callback batch (e.g. a returning request)
+        by computing their bitmask rows synchronously and copying them to
+        their destination rows in `bitmask_device_flat`.
+
+        Safe to call concurrently with the async bitmask callback because
+        the callback only touches matchers from its own context_batch —
+        these missing contexts are by definition not in that set, so there
+        is no Rust RefCell borrow risk.
+        """
+        missing_drafts = draft_tokens_np[missing_indices]
+        missing_np = self._structured_output.compute_speculative_bitmasks(
+            context_batch=missing_contexts,
+            draft_tokens=missing_drafts,
+            num_positions=num_positions,
+        )
+        missing_host = DevicePinnedBuffer(
+            dtype=DType.bool,
+            shape=missing_np.shape,
+            device=self._devices[0],
+        )
+        missing_host.to_numpy()[:] = missing_np
+        missing_host_flat = missing_host.view(
+            DType.bool, (missing_host.num_elements,)
+        )
+        with Tracer("inplace_copy_bitmask"):
+            for i, new_idx in enumerate(missing_indices):
+                src = missing_host_flat[i * row_size : (i + 1) * row_size].view(
+                    DType.bool, (1, num_positions, vocab_size_dim)
+                )
+                dst = bitmask_device_flat[
+                    new_idx * row_size : (new_idx + 1) * row_size
+                ].view(DType.bool, (1, num_positions, vocab_size_dim))
+                dst.inplace_copy_from(src)
 
     def _capture_callback_inputs(
         self,
@@ -2764,6 +2854,111 @@ class OverlapTextGenerationPipeline(
         spec_state.has_precomputed_bitmask = True
         return True
 
+    def _d2h_spec_decode_outputs(
+        self,
+        outputs: UnifiedEagleOutputs,
+        draft_tokens_device: Buffer,
+        batch_size: int,
+        num_draft_tokens_to_verify: int,
+        next_draft_k: int,
+    ) -> _AsyncSpecDecodeHostBuffers:
+        """D2H copy spec-decode model outputs to host.
+
+        Two D2H destinations are populated when structured output is active:
+
+        1. Persistent pinned buffers on SpecDecodeState (read by the async
+           bitmask callback). Views into persistent memory are safe to release
+           on the CUDA driver thread because the owning DevicePinnedBuffers
+           live for the pipeline's lifetime, so DLPack teardown never calls
+           `cuMemFreeHost` from a host callback.
+
+        2. Fresh per-batch DevicePinnedBuffers (read by the sync path on the
+           next iteration). The persistent buffers cannot be reused for the
+           sync path because `_execute_spec_decode(N+1)` queues N+1's D2H
+           into them BEFORE this iteration's sync path runs — by the time
+           the sync path reads, the persistent buffers contain N+1's data,
+           not N's.
+
+        Both D2H ops are enqueued on the same CUDA stream before `copy_event`
+        is recorded, so `copy_event.synchronize()` in the sync path
+        guarantees both copies are complete before any read.
+
+        When structured output is disabled, only the per-batch buffers are
+        populated (the persistent buffers may be None).
+
+        Returns the fresh per-batch buffers for use in AsyncSpecDecodeBatch.
+        """
+        device0 = self._devices[0]
+        num_accepted_draft_tokens_device = outputs.num_accepted_draft_tokens
+        next_tokens_device = outputs.next_tokens
+        next_draft_tokens_device = outputs.next_draft_tokens
+
+        spec_state = self._spec_decode_state
+        if (
+            spec_state is not None
+            and spec_state.persistent_bonus_tokens_pinned is not None
+            and spec_state.persistent_num_accepted_pinned is not None
+            and spec_state.persistent_next_draft_tokens_pinned is not None
+            and spec_state.persistent_accepted_draft_tokens_pinned is not None
+        ):
+            # D2H into persistent pinned buffers. The callback reads numpy
+            # views from these directly (via DevicePinnedBuffer.to_numpy()),
+            # which avoids the stream sync that Buffer.to_numpy() on a
+            # view/slice can trigger.
+            _contiguous_prefix_2d(
+                spec_state.persistent_num_accepted_pinned,
+                batch_size,
+                1,
+            ).view(DType.int64, (batch_size,)).inplace_copy_from(
+                num_accepted_draft_tokens_device
+            )
+            _contiguous_prefix_2d(
+                spec_state.persistent_bonus_tokens_pinned,
+                batch_size,
+                1,
+            ).view(DType.int64, (batch_size,)).inplace_copy_from(
+                next_tokens_device
+            )
+            _contiguous_prefix_2d(
+                spec_state.persistent_next_draft_tokens_pinned,
+                batch_size,
+                next_draft_k,
+            ).inplace_copy_from(next_draft_tokens_device)
+            _contiguous_prefix_2d(
+                spec_state.persistent_accepted_draft_tokens_pinned,
+                batch_size,
+                num_draft_tokens_to_verify,
+            ).inplace_copy_from(draft_tokens_device)
+
+        # Fresh per-batch allocations for the sync path — immune to the next
+        # batch's writes into the persistent buffers above.
+        num_accepted_draft_tokens_host = DevicePinnedBuffer(
+            shape=num_accepted_draft_tokens_device.shape,
+            dtype=num_accepted_draft_tokens_device.dtype,
+            device=device0,
+        )
+        num_accepted_draft_tokens_host.inplace_copy_from(
+            num_accepted_draft_tokens_device
+        )
+        next_tokens_host = DevicePinnedBuffer(
+            shape=next_tokens_device.shape,
+            dtype=next_tokens_device.dtype,
+            device=device0,
+        )
+        next_tokens_host.inplace_copy_from(next_tokens_device)
+        next_draft_tokens_host = DevicePinnedBuffer(
+            shape=next_draft_tokens_device.shape,
+            dtype=next_draft_tokens_device.dtype,
+            device=device0,
+        )
+        next_draft_tokens_host.inplace_copy_from(next_draft_tokens_device)
+
+        return _AsyncSpecDecodeHostBuffers(
+            num_accepted_draft_tokens_host=num_accepted_draft_tokens_host,
+            next_tokens_host=next_tokens_host,
+            next_draft_tokens_host=next_draft_tokens_host,
+        )
+
     @traced
     def _execute_spec_decode(
         self, inputs: TextGenerationInputs[TextGenerationContextType]
@@ -2846,113 +3041,20 @@ class OverlapTextGenerationPipeline(
             num_accepted_draft_tokens_device = outputs.num_accepted_draft_tokens
             next_tokens_device = outputs.next_tokens
             next_draft_tokens_device = outputs.next_draft_tokens
-
-            # Two separate D2H destinations are needed when structured output
-            # is active:
-            #
-            # 1. Persistent pinned buffers (p_*): the async bitmask callback
-            #    captures numpy views into these. Views into persistent memory
-            #    are safe to release on the CUDA driver thread because the
-            #    owning DevicePinnedBuffers live for the pipeline's lifetime,
-            #    so DLPack teardown never calls cuMemFreeHost from a host
-            #    callback.
-            #
-            # 2. Fresh per-batch DevicePinnedBuffers: the sync path
-            #    (sync_and_process_outputs) reads num_accepted, bonus tokens,
-            #    and next_draft tokens from AsyncSpecDecodeBatch. If those
-            #    fields were views into the persistent buffers, the next
-            #    batch's D2H into the same persistent buffers would overwrite
-            #    them before the sync path reads them.
-            #
-            # Both sets of D2H ops are enqueued on the same CUDA stream before
-            # copy_event is recorded, so copy_event.synchronize() in the sync
-            # path guarantees both copies are complete before any read.
             next_draft_k = next_draft_tokens_device.shape[1]
-            spec_state = self._spec_decode_state
-            if (
-                spec_state is not None
-                and spec_state.persistent_bonus_tokens_pinned is not None
-                and spec_state.persistent_num_accepted_pinned is not None
-                and spec_state.persistent_next_draft_tokens_pinned is not None
-                and spec_state.persistent_accepted_draft_tokens_pinned
-                is not None
-            ):
-                # D2H into persistent pinned buffers. The callback reads numpy
-                # views from these directly (via DevicePinnedBuffer.to_numpy()),
-                # which avoids the stream sync that Buffer.to_numpy() on a
-                # view/slice can trigger.
-                _contiguous_prefix_2d(
-                    spec_state.persistent_num_accepted_pinned,
-                    batch_size,
-                    1,
-                ).view(DType.int64, (batch_size,)).inplace_copy_from(
-                    num_accepted_draft_tokens_device
-                )
-                _contiguous_prefix_2d(
-                    spec_state.persistent_bonus_tokens_pinned,
-                    batch_size,
-                    1,
-                ).view(DType.int64, (batch_size,)).inplace_copy_from(
-                    next_tokens_device
-                )
-                _contiguous_prefix_2d(
-                    spec_state.persistent_next_draft_tokens_pinned,
-                    batch_size,
-                    next_draft_k,
-                ).inplace_copy_from(next_draft_tokens_device)
-                _contiguous_prefix_2d(
-                    spec_state.persistent_accepted_draft_tokens_pinned,
-                    batch_size,
-                    num_draft_tokens_to_verify,
-                ).inplace_copy_from(draft_tokens_device)
 
-                # Fresh per-batch allocations for the sync path — immune to
-                # the next batch's writes into the persistent buffers above.
-                num_accepted_draft_tokens_host = DevicePinnedBuffer(
-                    shape=num_accepted_draft_tokens_device.shape,
-                    dtype=num_accepted_draft_tokens_device.dtype,
-                    device=device0,
-                )
-                num_accepted_draft_tokens_host.inplace_copy_from(
-                    num_accepted_draft_tokens_device
-                )
-                next_tokens_host = DevicePinnedBuffer(
-                    shape=next_tokens_device.shape,
-                    dtype=next_tokens_device.dtype,
-                    device=device0,
-                )
-                next_tokens_host.inplace_copy_from(next_tokens_device)
-                next_draft_tokens_host = DevicePinnedBuffer(
-                    shape=next_draft_tokens_device.shape,
-                    dtype=next_draft_tokens_device.dtype,
-                    device=device0,
-                )
-                next_draft_tokens_host.inplace_copy_from(
-                    next_draft_tokens_device
-                )
-            else:
-                num_accepted_draft_tokens_host = DevicePinnedBuffer(
-                    shape=num_accepted_draft_tokens_device.shape,
-                    dtype=num_accepted_draft_tokens_device.dtype,
-                    device=device0,
-                )
-                num_accepted_draft_tokens_host.inplace_copy_from(
-                    num_accepted_draft_tokens_device
-                )
-                next_tokens_host = DevicePinnedBuffer(
-                    shape=next_tokens_device.shape,
-                    dtype=next_tokens_device.dtype,
-                    device=device0,
-                )
-                next_tokens_host.inplace_copy_from(next_tokens_device)
-                next_draft_tokens_host = DevicePinnedBuffer(
-                    shape=next_draft_tokens_device.shape,
-                    dtype=next_draft_tokens_device.dtype,
-                    device=device0,
-                )
-                next_draft_tokens_host.inplace_copy_from(
-                    next_draft_tokens_device
-                )
+            host_buffers = self._d2h_spec_decode_outputs(
+                outputs=outputs,
+                draft_tokens_device=draft_tokens_device,
+                batch_size=batch_size,
+                num_draft_tokens_to_verify=num_draft_tokens_to_verify,
+                next_draft_k=next_draft_k,
+            )
+            num_accepted_draft_tokens_host = (
+                host_buffers.num_accepted_draft_tokens_host
+            )
+            next_tokens_host = host_buffers.next_tokens_host
+            next_draft_tokens_host = host_buffers.next_draft_tokens_host
 
             # Record an event to track the completion of the d2h copies.
             # This will ensure that the subsequent synchronize() call will

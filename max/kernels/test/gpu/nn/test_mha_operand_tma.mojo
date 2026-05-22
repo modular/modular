@@ -603,10 +603,10 @@ def test_layout_tensor[
             src_host,
             row_major(
                 (
-                    Idx(batch_size),
-                    Idx(max_seq_len),
-                    Idx[num_heads](),
-                    Idx[head_size](),
+                    batch_size,
+                    max_seq_len,
+                    Idx[num_heads],
+                    Idx[head_size],
                 )
             ),
         )
@@ -617,10 +617,10 @@ def test_layout_tensor[
         src_device,
         row_major(
             (
-                Idx(batch_size),
-                Idx(max_seq_len),
-                Idx[num_heads](),
-                Idx[head_size](),
+                batch_size,
+                max_seq_len,
+                Idx[num_heads],
+                Idx[head_size],
             )
         ),
     )
@@ -641,10 +641,10 @@ def test_layout_tensor[
             dst_device,
             row_major(
                 (
-                    Idx(batch_size),
-                    Idx(max_seq_len),
-                    Idx[num_heads](),
-                    Idx[head_size](),
+                    batch_size,
+                    max_seq_len,
+                    Idx[num_heads],
+                    Idx[head_size],
                 )
             ),
         )
@@ -667,10 +667,10 @@ def test_layout_tensor[
                     src_host,
                     row_major(
                         (
-                            Idx(batch_size),
-                            Idx(max_seq_len),
-                            Idx[num_heads](),
-                            Idx[head_size](),
+                            batch_size,
+                            max_seq_len,
+                            Idx[num_heads],
+                            Idx[head_size],
                         )
                     ),
                 )
@@ -678,10 +678,10 @@ def test_layout_tensor[
                     dst_host,
                     row_major(
                         (
-                            Idx(batch_size),
-                            Idx(max_seq_len),
-                            Idx[num_heads](),
-                            Idx[head_size](),
+                            batch_size,
+                            max_seq_len,
+                            Idx[num_heads],
+                            Idx[head_size],
                         )
                     ),
                 )
@@ -751,9 +751,9 @@ def test_ragged[
             src_host,
             row_major(
                 (
-                    Idx(total_tokens),
-                    Idx[num_heads](),
-                    Idx[head_size](),
+                    total_tokens,
+                    Idx[num_heads],
+                    Idx[head_size],
                 )
             ),
         )
@@ -764,9 +764,9 @@ def test_ragged[
         src_device,
         row_major(
             (
-                Idx(total_tokens),
-                Idx[num_heads](),
-                Idx[head_size](),
+                total_tokens,
+                Idx[num_heads],
+                Idx[head_size],
             )
         ),
     )
@@ -794,9 +794,9 @@ def test_ragged[
         dst_device,
         row_major(
             (
-                Idx(total_tokens),
-                Idx[num_heads](),
-                Idx[head_size](),
+                total_tokens,
+                Idx[num_heads],
+                Idx[head_size],
             )
         ),
     )
@@ -823,9 +823,9 @@ def test_ragged[
                     src_host,
                     row_major(
                         (
-                            Idx(total_tokens),
-                            Idx[num_heads](),
-                            Idx[head_size](),
+                            total_tokens,
+                            Idx[num_heads],
+                            Idx[head_size],
                         )
                     ),
                 )
@@ -833,9 +833,9 @@ def test_ragged[
                     dst_host,
                     row_major(
                         (
-                            Idx(total_tokens),
-                            Idx[num_heads](),
-                            Idx[head_size](),
+                            total_tokens,
+                            Idx[num_heads],
+                            Idx[head_size],
                         )
                     ),
                 )

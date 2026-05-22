@@ -19,7 +19,7 @@ from typing import Annotated, Any
 
 from max.config import ConfigFileModel
 from max.dtype import DType
-from max.interfaces import SamplingParamsGenerationConfigDefaults
+from max.pipelines.modeling.types import SamplingParamsGenerationConfigDefaults
 from pydantic import BeforeValidator, Field, PrivateAttr
 
 logger = logging.getLogger("max.pipelines")

@@ -27,7 +27,7 @@ from smoke_tests.eval_runner import (
 
 def test_eval_metrics_roundtrip() -> None:
     """Verify smoke_test.py output can be parsed by bisect_smoke_test.py."""
-    model = "test/model"
+    model = "Nvidia/Test-Model-Mixed-Case"
 
     # Mock LmEvalResults structure (what lm_eval produces)
     lm_eval_results = [
@@ -55,7 +55,7 @@ def test_eval_metrics_roundtrip() -> None:
 
     with tempfile.TemporaryDirectory() as tmpdir:
         output_path = Path(tmpdir)
-        model_dir = output_path / model.lower().replace("/", "__")
+        model_dir = output_path / model.replace("/", "__")
         model_dir.mkdir(parents=True)
 
         # Mock GPU detection to avoid calling nvidia-smi

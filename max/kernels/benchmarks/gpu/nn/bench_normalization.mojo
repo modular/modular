@@ -72,7 +72,7 @@ def bench_layer_norm_gpu[
     def gamma_fn[
         width: Int, rank: Int, alignment: Int
     ](coords: IndexList[rank]) -> SIMD[dtype, width]:
-        var idx = gamma.layout(Idx(coords[0]))
+        var idx = gamma.layout(coords[0])
 
         return gamma.raw_load[width=width, alignment=alignment](idx)
 

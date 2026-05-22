@@ -18,14 +18,14 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any
 
-from max.interfaces import (
+from max.pipelines.lib.reasoning import register
+from max.pipelines.lib.tokenizer import convert_token_to_id
+from max.pipelines.modeling.types import (
     ParsedReasoningDelta,
     PipelineTokenizer,
     ReasoningParser,
     ReasoningSpan,
 )
-from max.pipelines.lib.reasoning import register
-from max.pipelines.lib.tokenizer import convert_token_to_id
 
 EMPTY_THINKING_BLOCK = "<|channel>thought\n<channel|>"
 
@@ -238,3 +238,11 @@ class Gemma4ReasoningParser(ReasoningParser):
             tool_call_start_token_id=tool_call_start_id,
             think_token_id=think_id,
         )
+
+    @classmethod
+    async def reasoning_end_token_id(
+        cls,
+        tokenizer: PipelineTokenizer[Any, Any, Any],
+    ) -> int | None:
+        """Returns the ``<channel|>`` token id."""
+        return await convert_token_to_id(tokenizer, "<channel|>")

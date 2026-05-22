@@ -341,7 +341,7 @@ def sram_blocked_matmul_dynamic_nd_buffer[
     ].stack_allocation()
 
     # Block the dst matrix with [BM, BN] tile size.
-    var dst_tile = dst.tile[BM, BN]((Idx(block_idx.y), Idx(block_idx.x)))
+    var dst_tile = dst.tile[BM, BN]((block_idx.y, block_idx.x))
 
     # Distribute thread layout into a block of size [BM, BN]. It repeats the
     # layout across the BMxBN block, e.g. row major layout will repeat as the
@@ -373,12 +373,8 @@ def sram_blocked_matmul_dynamic_nd_buffer[
     # Loop over tiles in K dim.
     for k in range(Int(lhs.dim(1)) // BK):
         # Block both l.h.s and r.h.s DRAM tensors.
-        var lhs_tile = lhs.tile[BM, BK](
-            (Idx(block_idx.y), Idx(k))
-        ).to_layout_tensor()
-        var rhs_tile = rhs.tile[BK, BN](
-            (Idx(k), Idx(block_idx.x))
-        ).to_layout_tensor()
+        var lhs_tile = lhs.tile[BM, BK]((block_idx.y, k)).to_layout_tensor()
+        var rhs_tile = rhs.tile[BK, BN]((k, block_idx.x)).to_layout_tensor()
 
         # Copy DRAM tiles to SRAM, distributing work across threads.
         copy_dram_to_sram[thread_layout=thread_layout](lhs_sram_tile, lhs_tile)
@@ -397,10 +393,16 @@ def sram_blocked_matmul_dynamic_nd_buffer[
             )
             outer_product_acc(dst_register_tile, lhs_frags, rhs_frags)
 
-    # Move data from register tile to DRAM
-    copy_local_to_dram[dst_thread_layout=thread_layout](
-        dst_tile.to_layout_tensor(), dst_register_tile
-    )
+    # Move data from register tile to DRAM.
+    comptime thread_shape_m = thread_layout.shape[0].value()
+    comptime thread_shape_n = thread_layout.shape[1].value()
+    var thread_m = Int(thread_idx.x) // thread_shape_n
+    var thread_n = Int(thread_idx.x) % thread_shape_n
+    for m in range(dst_register_tile.shape[0]()):
+        for n in range(dst_register_tile.shape[1]()):
+            dst_tile[
+                thread_m + m * thread_shape_m, thread_n + n * thread_shape_n
+            ] = dst_register_tile.load[width=1](m, n)[0]
 
 
 def test_sram_blocked_matmul_dynamic_nd_buffer(ctx: DeviceContext) raises:
@@ -436,7 +438,7 @@ def test_sram_blocked_matmul_dynamic_nd_buffer(ctx: DeviceContext) raises:
     ctx.enqueue_copy(mat_a_dev, mat_a_ptr)
     ctx.enqueue_copy(mat_b_dev, mat_b_ptr)
 
-    var mat_c = TileTensor(mat_c_dev, row_major(Idx(M), Idx(N)))
+    var mat_c = TileTensor(mat_c_dev, row_major(M, N))
     var mat_a = TileTensor(mat_a_dev, row_major[M, K]())
     var mat_b = TileTensor(mat_b_dev, row_major[K, N]())
 

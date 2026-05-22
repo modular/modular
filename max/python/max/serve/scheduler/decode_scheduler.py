@@ -19,13 +19,6 @@ import uuid
 from collections import OrderedDict
 from dataclasses import dataclass, field
 
-from max.interfaces import (
-    Pipeline,
-    RequestID,
-    SchedulerResult,
-    TextGenerationInputs,
-    TextGenerationOutput,
-)
 from max.pipelines.core import TextAndVisionContext, TextContext
 from max.pipelines.kv_cache import (
     InsufficientBlocksError,
@@ -35,6 +28,12 @@ from max.pipelines.kv_cache import (
     TransferReqData,
 )
 from max.pipelines.lib import PipelineConfig, TextGenerationPipeline
+from max.pipelines.modeling.types import (
+    Pipeline,
+    RequestID,
+    TextGenerationInputs,
+    TextGenerationOutput,
+)
 from max.profiler import Tracer, traced
 from max.serve.config import Settings
 from max.serve.queue import (
@@ -49,6 +48,7 @@ from max.serve.scheduler.base import (
 )
 from max.serve.scheduler.di_dispatchers import DecodeDispatcherClient
 from max.serve.scheduler.interface import Scheduler
+from max.serve.scheduler_result import SchedulerResult
 
 from .base import SchedulerProgress
 from .batch_constructor import TextBatchConstructor

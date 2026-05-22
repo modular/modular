@@ -27,7 +27,7 @@ from std.sys import has_accelerator, simd_width_of
 
 from layout import TileTensor
 from layout.tile_layout import Layout, row_major
-from tensor import InputTensor, OutputTensor
+from extensibility import InputTensor, OutputTensor
 
 
 comptime float_dtype = DType.float32

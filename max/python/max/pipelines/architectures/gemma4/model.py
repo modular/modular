@@ -25,7 +25,6 @@ from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import BufferType, DeviceRef, Graph, Module, TensorType
 from max.graph.weights import WeightData, Weights, WeightsAdapter
-from max.interfaces import RequestID
 from max.nn.comm import Signals
 from max.nn.kv_cache import KVCacheInputs, MultiKVCacheParams
 from max.nn.transformer import ReturnLogits
@@ -42,6 +41,7 @@ from max.pipelines.lib import (
     PipelineModelWithKVCache,
 )
 from max.pipelines.lib.vision_encoder_cache import VisionEncoderCache
+from max.pipelines.modeling.types import RequestID
 from max.profiler import traced
 from transformers import AutoConfig
 
@@ -442,12 +442,40 @@ class Gemma3_MultiModalModel(
             weight_alignment=1,
             strict=self._strict_state_dict_loading,
         )
-        vision_graph = Graph(
+        with Graph(
             "gemma4_vision",
-            vision_model,
-            vision_model.input_types(),
+            input_types=vision_model.input_types(),
             module=module,
-        )
+        ) as vision_graph:
+            # Extract inputs
+            all_inputs = vision_graph.inputs
+            n_devices = len(self.devices)
+
+            patches_flat_list = [inp.tensor for inp in all_inputs[:n_devices]]
+            all_inputs = all_inputs[n_devices:]
+
+            pixel_position_ids_list = [
+                inp.tensor for inp in all_inputs[:n_devices]
+            ]
+            all_inputs = all_inputs[n_devices:]
+
+            cu_seqlens_list = [inp.tensor for inp in all_inputs[:n_devices]]
+            all_inputs = all_inputs[n_devices:]
+
+            pool_weights_list = [inp.tensor for inp in all_inputs[:n_devices]]
+            all_inputs = all_inputs[n_devices:]
+
+            max_seq_len = all_inputs[0].tensor
+
+            outputs = vision_model(
+                patches_flat_list,
+                pixel_position_ids_list,
+                cu_seqlens_list,
+                pool_weights_list,
+                max_seq_len,
+            )
+            vision_graph.output(*outputs)
+
         return vision_graph, vision_model.state_dict()
 
     def _run_vision_encoder(self, raw: VisionRawInputs) -> list[Buffer]:

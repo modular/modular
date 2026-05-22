@@ -51,6 +51,9 @@ from max.benchmark.benchmark_shared.datasets.interface import BenchmarkDataset
 from max.benchmark.benchmark_shared.datasets.multiturn_distribution_fit import (
     resolve_constant_delay_ms,
 )
+from max.benchmark.benchmark_shared.datasets.nemotron_opencode import (
+    NemotronOpenCodeBenchmarkDataset,
+)
 from max.benchmark.benchmark_shared.datasets.obfuscated_conversations import (
     ObfuscatedConversationsBenchmarkDataset,
 )
@@ -406,6 +409,46 @@ def sample_requests(
                 else:
                     return benchmark_dataset.gen_multiturn_sessions(
                         num_sessions=inflated_n,
+                        shuffle=(not args.record_output_lengths),
+                        enable_tool_calls=args.tool_calls,
+                    )
+            else:
+                assert args.num_prompts is not None
+                return benchmark_dataset.sample_requests(
+                    num_requests=args.num_prompts,
+                    tokenizer=tokenizer,
+                    output_lengths=output_lengths,
+                    shuffle=(
+                        output_lengths is None
+                        and not args.record_output_lengths
+                    ),
+                    enable_tool_calls=args.tool_calls,
+                )
+        elif isinstance(benchmark_dataset, NemotronOpenCodeBenchmarkDataset):
+            if args.num_chat_sessions:
+                inflated_n = _inflated_chat_session_count(
+                    args, args.num_chat_sessions
+                )
+                if args.fit_distributions:
+                    with TokenizerPool(tokenizer) as pool:
+                        return benchmark_dataset.gen_multiturn_sessions(
+                            num_sessions=inflated_n,
+                            tokenizer=tokenizer,
+                            pool=pool,
+                            shuffle=(not args.record_output_lengths),
+                            fit_length_distributions=True,
+                            num_turns=args.random_num_turns,
+                            input_len=args.random_input_len,
+                            output_len=args.random_output_len,
+                            delay_between_turns_dist=args.delay_between_chat_turns,
+                            sys_prompt_ratio=args.random_sys_prompt_ratio,
+                            max_num_unique_sys_prompt=args.random_max_num_unique_sys_prompt,
+                            enable_tool_calls=args.tool_calls,
+                        )
+                else:
+                    return benchmark_dataset.gen_multiturn_sessions(
+                        num_sessions=inflated_n,
+                        tokenizer=tokenizer,
                         shuffle=(not args.record_output_lengths),
                         enable_tool_calls=args.tool_calls,
                     )

@@ -49,7 +49,7 @@ from max.pipelines.lib import (
     SamplingConfig,
     SpeculativeConfig,
 )
-from max.pipelines.lib.interfaces.cache_mixin import DenoisingCacheConfig
+from max.pipelines.modeling.base.cache_mixin import DenoisingCacheConfig
 from pydantic import BaseModel
 from typing_extensions import ParamSpec
 

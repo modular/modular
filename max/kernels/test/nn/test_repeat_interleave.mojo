@@ -13,6 +13,7 @@
 
 
 from layout import TileTensor, row_major
+from std.gpu.host import DeviceContext
 from nn.repeat_interleave import _collapse_dims_around_axis, repeat_interleave
 
 from std.utils.index import IndexList
@@ -41,7 +42,7 @@ def test_collapse_dims_around_axis() raises:
     print(_collapse_dims_around_axis(IndexList[5](2, 2, 2, 2, 2), 4))
 
 
-def test_repeat_interleave_1d() raises:
+def test_repeat_interleave_1d(ctx: DeviceContext) raises:
     # CHECK-LABEL: test_repeat_interleave_1d
     print("test_repeat_interleave_1d")
 
@@ -72,7 +73,7 @@ def test_repeat_interleave_1d() raises:
     var output_stack = InlineArray[Scalar[type], 10](uninitialized=True)
     var output = TileTensor(output_stack, row_major[10]())
 
-    repeat_interleave(input, repeats, 0, output)
+    repeat_interleave(input, repeats, 0, output, ctx)
 
     # CHECK: 0.0, 1.0, 1.0, 2.0, 2.0, 2.0, 3.0, 3.0, 3.0, 3.0
     print()
@@ -81,7 +82,7 @@ def test_repeat_interleave_1d() raises:
     print()
 
 
-def test_repeat_interleave_1d_broadcast_repeats() raises:
+def test_repeat_interleave_1d_broadcast_repeats(ctx: DeviceContext) raises:
     # CHECK-LABEL: test_repeat_interleave_1d_broadcast_repeats
     print("test_repeat_interleave_1d_broadcast_repeats")
 
@@ -109,7 +110,7 @@ def test_repeat_interleave_1d_broadcast_repeats() raises:
     var output_stack = InlineArray[Scalar[type], 8](uninitialized=True)
     var output = TileTensor(output_stack, row_major[8]())
 
-    repeat_interleave(input, repeats, 0, output)
+    repeat_interleave(input, repeats, 0, output, ctx)
 
     # CHECK: 0.0, 0.0, 1.0, 1.0, 2.0, 2.0, 3.0, 3.0,
     print()
@@ -118,7 +119,7 @@ def test_repeat_interleave_1d_broadcast_repeats() raises:
     print()
 
 
-def test_repeat_interleave_2d_axis_0() raises:
+def test_repeat_interleave_2d_axis_0(ctx: DeviceContext) raises:
     # CHECK-LABEL: test_repeat_interleave_2d_axis_0
     print("test_repeat_interleave_2d_axis_0")
 
@@ -148,7 +149,7 @@ def test_repeat_interleave_2d_axis_0() raises:
     var output_stack = InlineArray[Scalar[type], 10](uninitialized=True)
     var output = TileTensor(output_stack, row_major[5, 2]())
 
-    repeat_interleave(input, repeats, 0, output)
+    repeat_interleave(input, repeats, 0, output, ctx)
 
     # CHECK: 0.0, 1.0,
     # CHECK: 0.0, 1.0,
@@ -163,7 +164,7 @@ def test_repeat_interleave_2d_axis_0() raises:
     print()
 
 
-def test_repeat_interleave_2d_axis_1() raises:
+def test_repeat_interleave_2d_axis_1(ctx: DeviceContext) raises:
     # CHECK-LABEL: test_repeat_interleave_2d_axis_1
     print("test_repeat_interleave_2d_axis_1")
 
@@ -193,7 +194,7 @@ def test_repeat_interleave_2d_axis_1() raises:
     var output_stack = InlineArray[Scalar[type], 10](uninitialized=True)
     var output = TileTensor(output_stack, row_major[2, 5]())
 
-    repeat_interleave(input, repeats, 1, output)
+    repeat_interleave(input, repeats, 1, output, ctx)
 
     # CHECK: 0.0, 0.0, 1.0, 1.0, 1.0
     # CHECK: 2.0, 2.0, 3.0, 3.0, 3.0
@@ -205,7 +206,7 @@ def test_repeat_interleave_2d_axis_1() raises:
     print()
 
 
-def test_repeat_interleave_3d() raises:
+def test_repeat_interleave_3d(ctx: DeviceContext) raises:
     # CHECK-LABEL: test_repeat_interleave_3d
     print("test_repeat_interleave_3d")
 
@@ -240,7 +241,7 @@ def test_repeat_interleave_3d() raises:
     var output_stack = InlineArray[Scalar[type], 20](uninitialized=True)
     var output = TileTensor(output_stack, row_major[2, 5, 2]())
 
-    repeat_interleave(input, repeats, 1, output)
+    repeat_interleave(input, repeats, 1, output, ctx)
 
     # CHECK: 0.0, 1.0,
     # CHECK: 0.0, 1.0,
@@ -266,9 +267,10 @@ def test_repeat_interleave_3d() raises:
 
 
 def main() raises:
-    test_collapse_dims_around_axis()
-    test_repeat_interleave_1d()
-    test_repeat_interleave_1d_broadcast_repeats()
-    test_repeat_interleave_2d_axis_0()
-    test_repeat_interleave_2d_axis_1()
-    test_repeat_interleave_3d()
+    with DeviceContext(api="cpu") as ctx:
+        test_collapse_dims_around_axis()
+        test_repeat_interleave_1d(ctx)
+        test_repeat_interleave_1d_broadcast_repeats(ctx)
+        test_repeat_interleave_2d_axis_0(ctx)
+        test_repeat_interleave_2d_axis_1(ctx)
+        test_repeat_interleave_3d(ctx)

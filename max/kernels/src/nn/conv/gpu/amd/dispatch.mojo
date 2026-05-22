@@ -49,6 +49,8 @@ from std.utils import IndexList
 
 from layout import Coord, TileTensor, row_major
 
+from linalg.utils import elementwise_epilogue_type
+
 from nn.conv.gpu.amd.amd_4wave_conv import amd_4wave_conv
 
 
@@ -144,6 +146,8 @@ def _launch_amd_4wave_conv2d_runtime[
     R: Int,
     S: Int,
     K_padded: Int,
+    has_residual: Bool = False,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     input: TileTensor[input_type, ...],
     filter_frsc_tt: TileTensor[filter_type, ...],
@@ -151,6 +155,12 @@ def _launch_amd_4wave_conv2d_runtime[
     stride: Int,
     pad: Int,
     ctx: DeviceContext,
+    source_ptr: UnsafePointer[
+        Scalar[output_type], ImmutAnyOrigin
+    ] = UnsafePointer[Scalar[output_type], ImmutAnyOrigin](
+        unsafe_from_address=0
+    ),
+    beta: Float32 = 0.0,
 ) raises -> Bool:
     """Runtime-HW launch for the 4-wave conv dispatcher.
 
@@ -158,6 +168,11 @@ def _launch_amd_4wave_conv2d_runtime[
     runtime-HW path of `amd_4wave_conv`. Returns False only for
     unreachable (defensive) (stride, pad) combinations; the outer
     dispatcher's runtime gate handles validity.
+
+    When `has_residual=True`, plumbs `source_ptr` (NHWC-contiguous,
+    same shape as output) + `beta` through to `amd_4wave_conv` for
+    fused in-kernel `D = Conv + beta * source`. The 2D NHWC view's
+    row stride is `C_out` (NHWC contiguous).
     """
 
     @parameter
@@ -176,6 +191,7 @@ def _launch_amd_4wave_conv2d_runtime[
         var _dyn_out_layout = row_major(Coord(_output_dims))
         var output_2d_tt = TileTensor(output.ptr, _dyn_out_layout)
         amd_4wave_conv[
+            elementwise_lambda_fn=elementwise_lambda_fn,
             R=R,
             S=S,
             stride_h=stride_v,
@@ -184,7 +200,16 @@ def _launch_amd_4wave_conv2d_runtime[
             pad_w=pad_v,
             C_in=C_in,
             use_runtime_hw=True,
-        ](input, filter_frsc_tt, output_2d_tt, ctx)
+            has_residual=has_residual,
+        ](
+            input,
+            filter_frsc_tt,
+            output_2d_tt,
+            ctx,
+            source_ptr=source_ptr,
+            source_row_stride=C_out,
+            beta=beta,
+        )
 
     if stride == 1 and pad == 0:
         _launch[1, 0]()
@@ -213,6 +238,13 @@ def dispatch_amd_4wave_conv2d[
     filter_type: DType,
     output_type: DType,
     filter_is_fcrs: Bool,
+    has_residual: Bool = False,
+    # Optional fused 2D-coord epilogue lambda. The caller is expected
+    # to have wrapped any 4D NHWC `elementwise_simd_epilogue_type` into
+    # this 2D-coord form (m=b*H_out*W_out+h*W_out+w, n=channel). See
+    # the SM100 dispatch site in `nn/conv/conv.mojo` for the wrapper
+    # template. When None, no epilogue fuses; pure conv (+ residual).
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     input: TileTensor[input_type, ...],
     filter: TileTensor[filter_type, ...],
@@ -222,12 +254,24 @@ def dispatch_amd_4wave_conv2d[
     symmetric_padding: IndexList[2],
     num_groups: Int,
     ctx: DeviceContext,
+    source_ptr: Optional[
+        UnsafePointer[Scalar[output_type], MutAnyOrigin]
+    ] = None,
+    beta: Float32 = 0.0,
 ) raises -> Bool:
     """Try to dispatch a Conv2D to `amd_4wave_conv` on MI355X.
 
     Returns True if the convolution was handled; False if the caller
     should fall back (typically to MIOpen). See module docstring for the
     full acceptance criteria.
+
+    When `has_residual=True` and `source_ptr` is set, computes
+    `D = Conv(A, B) + beta * source` via the in-kernel fused residual
+    path (`amd_4wave_conv[has_residual=True]`). The source pointer is
+    expected to point to an NHWC-contiguous buffer with the same shape
+    as `output`. When `has_residual=False` (default), the call is
+    identical to the no-residual variant — no extra ABI overhead beyond
+    the launch packet's 16 bytes (DCE'd source_ptr / stride / beta).
     """
     comptime assert input.flat_rank == 4, "input must be rank 4 (NHWC)"
     comptime assert filter.flat_rank == 4, "filter must be rank 4"
@@ -349,12 +393,34 @@ def dispatch_amd_4wave_conv2d[
         comptime _filter_frsc_layout = row_major[_C_out, _K_padded]()
         var filter_frsc_tt = TileTensor(filter_frsc_ptr, _filter_frsc_layout)
 
+        # Residual sentinel: when has_residual=False, source_ptr may be
+        # None or unused. We materialize a null pointer for the kernel
+        # arg (which only reads it when has_residual=True at comptime).
+        var _src_ptr_immut = UnsafePointer[Scalar[output_type], ImmutAnyOrigin](
+            unsafe_from_address=0
+        )
+
+        @parameter
+        @always_inline
+        def _src_immut() -> UnsafePointer[Scalar[output_type], ImmutAnyOrigin]:
+            comptime if has_residual:
+                # When called with has_residual=True, the caller must
+                # supply source_ptr. Materialize an immutable view of it
+                # (the kernel only reads).
+                if source_ptr:
+                    return UnsafePointer[Scalar[output_type], ImmutAnyOrigin](
+                        unsafe_from_address=Int(source_ptr.value())
+                    )
+            return _src_ptr_immut
+
+        var _src_ptr_for_kernel = _src_immut()
+
         # -------- Static vs runtime-HW dispatch --------------------
         comptime if _all_hw_static:
 
             @parameter
             @always_inline
-            def _launch_static[stride_v: Int, pad_v: Int]() raises:
+            def _launch_static[stride_v: Int, pad_v: Int]() raises -> Bool:
                 comptime _eff_R = _R
                 comptime _eff_S = _S
                 comptime _H_out_v = (
@@ -364,13 +430,20 @@ def dispatch_amd_4wave_conv2d[
                     _W_static + 2 * pad_v - _eff_S
                 ) // stride_v + 1
                 comptime _M_total_v = (_N_static * _H_out_v * _W_out_v)
+                # Comptime gate: M must be a positive multiple of 64
+                # (block size) for the 4-wave tiling to launch. When the
+                # gate fails, return False so the outer dispatcher
+                # surfaces the rejection — the caller then falls back to
+                # MIOpen. (Previous behavior was a silent `return` while
+                # the outer kept saying True, leaving `output`
+                # uninitialized.)
                 comptime if (
                     _H_out_v < 1
                     or _W_out_v < 1
                     or _M_total_v < 64
                     or (_M_total_v % 64) != 0
                 ):
-                    return
+                    return False
                 comptime _nhwc_in_layout = row_major[
                     _N_static, _H_static, _W_static, _C_in
                 ]()
@@ -378,6 +451,7 @@ def dispatch_amd_4wave_conv2d[
                 var input_nhwc_tt = TileTensor(input.ptr, _nhwc_in_layout)
                 var output_2d_tt = TileTensor(output.ptr, _output_2d_layout)
                 amd_4wave_conv[
+                    elementwise_lambda_fn=elementwise_lambda_fn,
                     H=_H_static,
                     W=_W_static,
                     H_out=_H_out_v,
@@ -389,20 +463,36 @@ def dispatch_amd_4wave_conv2d[
                     pad_h=pad_v,
                     pad_w=pad_v,
                     C_in=_C_in,
-                ](input_nhwc_tt, filter_frsc_tt, output_2d_tt, ctx)
+                    has_residual=has_residual,
+                ](
+                    input_nhwc_tt,
+                    filter_frsc_tt,
+                    output_2d_tt,
+                    ctx,
+                    source_ptr=_src_ptr_for_kernel,
+                    source_row_stride=_C_out,
+                    beta=beta,
+                )
+                return True
 
             if stride[0] == 1 and pad == 0:
-                _launch_static[1, 0]()
+                if not _launch_static[1, 0]():
+                    return False
             elif stride[0] == 1 and pad == 1:
-                _launch_static[1, 1]()
+                if not _launch_static[1, 1]():
+                    return False
             elif stride[0] == 1 and pad == 2:
-                _launch_static[1, 2]()
+                if not _launch_static[1, 2]():
+                    return False
             elif stride[0] == 2 and pad == 0:
-                _launch_static[2, 0]()
+                if not _launch_static[2, 0]():
+                    return False
             elif stride[0] == 2 and pad == 1:
-                _launch_static[2, 1]()
+                if not _launch_static[2, 1]():
+                    return False
             elif stride[0] == 2 and pad == 2:
-                _launch_static[2, 2]()
+                if not _launch_static[2, 2]():
+                    return False
             else:
                 return False
         else:
@@ -412,7 +502,18 @@ def dispatch_amd_4wave_conv2d[
                 R=_R,
                 S=_S,
                 K_padded=_K_padded,
-            ](input, filter_frsc_tt, output, stride[0], pad, ctx):
+                has_residual=has_residual,
+                elementwise_lambda_fn=elementwise_lambda_fn,
+            ](
+                input,
+                filter_frsc_tt,
+                output,
+                stride[0],
+                pad,
+                ctx,
+                source_ptr=_src_ptr_for_kernel,
+                beta=beta,
+            ):
                 return False
         return True
     else:

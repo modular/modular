@@ -169,7 +169,7 @@ def test_mxfp4_grouped_matmul[
 
         var a_expert_tt = TileTensor(
             a_dev.unsafe_ptr() + token_start * packed_K,
-            row_major(Coord(Idx(num_tokens), Idx[packed_K]())),
+            row_major(Coord(num_tokens, Idx[packed_K])),
         )
         var b_expert_tt = TileTensor[mut=False](
             b_dev.unsafe_ptr() + expert_id * N * packed_K,
@@ -177,7 +177,7 @@ def test_mxfp4_grouped_matmul[
         )
         var sfa_expert_tt = TileTensor[mut=False](
             a_scales_dev.unsafe_ptr() + token_start * scale_K,
-            row_major(Coord(Idx(num_tokens), Idx[scale_K]())),
+            row_major(Coord(num_tokens, Idx[scale_K])),
         )
         var sfb_expert_tt = TileTensor[mut=False](
             b_scales_dev.unsafe_ptr() + expert_id * N * scale_K,
@@ -185,7 +185,7 @@ def test_mxfp4_grouped_matmul[
         )
         var c_expert_tt = TileTensor[mut=True](
             c_ref_dev.unsafe_ptr() + token_start * N,
-            row_major(Coord(Idx(num_tokens), Idx[N]())),
+            row_major(Coord(num_tokens, Idx[N])),
         )
 
         mxfp4_block_scaled_matmul_amd(
@@ -201,25 +201,25 @@ def test_mxfp4_grouped_matmul[
 
     # --- Run grouped kernel under test ---
     var a_tt = TileTensor[mut=False](
-        a_dev, row_major(Coord(Idx(total_tokens), Idx[packed_K]()))
+        a_dev, row_major(Coord(total_tokens, Idx[packed_K]))
     )
     var b_tt = TileTensor[mut=False](
         b_dev, row_major[num_experts, N, packed_K]()
     )
     var a_scales_tt = TileTensor[mut=False](
-        a_scales_dev, row_major(Coord(Idx(total_tokens), Idx[scale_K]()))
+        a_scales_dev, row_major(Coord(total_tokens, Idx[scale_K]))
     )
     var b_scales_tt = TileTensor[mut=False](
         b_scales_dev, row_major[num_experts, N, scale_K]()
     )
     var a_offsets_tt = TileTensor(
-        a_offsets_dev, row_major(Coord(Idx(num_active_experts + 1)))
+        a_offsets_dev, row_major(Coord(num_active_experts + 1))
     )
     var expert_ids_tt = TileTensor(
-        expert_ids_dev, row_major(Coord(Idx(num_active_experts)))
+        expert_ids_dev, row_major(Coord(num_active_experts))
     )
     var c_tt = TileTensor[mut=True](
-        c_dev, row_major(Coord(Idx(total_tokens), Idx[N]()))
+        c_dev, row_major(Coord(total_tokens, Idx[N]))
     )
 
     mxfp4_grouped_matmul_amd(

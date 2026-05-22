@@ -29,7 +29,6 @@ from max.graph.weights import (
     load_weights,
     weights_format,
 )
-from max.interfaces import PipelineTokenizer, RequestID, TextGenerationRequest
 from max.nn.kv_cache import KVCacheParams, MultiKVCacheParams
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.core import TextContext
@@ -44,6 +43,11 @@ from max.pipelines.lib.sampling import (
     rejection_runner_registry,
 )
 from max.pipelines.lib.sampling.sampling import TokenSampler
+from max.pipelines.modeling.types import (
+    PipelineTokenizer,
+    RequestID,
+    TextGenerationRequest,
+)
 from max.profiler import traced
 from transformers import AutoConfig
 

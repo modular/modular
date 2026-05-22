@@ -66,7 +66,7 @@ class BlockPool:
         # between requests for prefix caching. The cached block may be used by
         # running requests or in the free_block_queue that could potentially
         # be evicted.
-        self.hash_to_committed_block: dict[int, KVCacheBlock] = {}
+        self.prefix_cache: dict[int, KVCacheBlock] = {}
 
     @traced
     def commit_into_prefix_cache(
@@ -79,8 +79,8 @@ class BlockPool:
         block.block_hash = block_hash
 
         # Commit the block into the prefix cache.
-        assert block_hash not in self.hash_to_committed_block
-        self.hash_to_committed_block[block_hash] = block
+        assert block_hash not in self.prefix_cache
+        self.prefix_cache[block_hash] = block
 
     def get_or_commit_into_prefix_cache(
         self,
@@ -94,10 +94,10 @@ class BlockPool:
         into the prefix cache and return None.
         """
         hash_value = block_hash
-        if hash_value in self.hash_to_committed_block:
+        if hash_value in self.prefix_cache:
             # Check if a block with the same hash is already committed.
             # If so, we reuse the already committed block.
-            prefix_cache_block = self.hash_to_committed_block[hash_value]
+            prefix_cache_block = self.prefix_cache[hash_value]
             if block.bid == prefix_cache_block.bid:
                 return None
 
@@ -119,10 +119,10 @@ class BlockPool:
         hash_value = block.block_hash
 
         # Nothing to do if it is not committed.
-        if hash_value not in self.hash_to_committed_block:
+        if hash_value not in self.prefix_cache:
             return
 
-        del self.hash_to_committed_block[hash_value]
+        del self.prefix_cache[hash_value]
         block.block_hash = None
 
     @traced
@@ -169,13 +169,18 @@ class BlockPool:
 
     @property
     def free_blocks(self) -> set[int]:
-        """Get the number of free blocks."""
+        """Get the set of free blocks."""
         return self.free_block_queue.free_blocks
+
+    @property
+    def num_free_blocks(self) -> int:
+        """Get the number of free blocks."""
+        return self.free_block_queue.num_free_blocks
 
     def reset_prefix_cache(self) -> None:
         """Reset the prefix cache."""
         blocks_to_purge = []
-        for hash, block in self.hash_to_committed_block.items():
+        for hash, block in self.prefix_cache.items():
             assert block.block_hash is not None
             if block.ref_cnt > 0:
                 continue
@@ -183,7 +188,7 @@ class BlockPool:
             blocks_to_purge.append(hash)
         # Delete separately to avoid modifying the dictionary size while iterating
         for hash in blocks_to_purge:
-            del self.hash_to_committed_block[hash]
+            del self.prefix_cache[hash]
         logger.info(f"Purged {len(blocks_to_purge)} blocks from prefix cache")
 
     @traced
@@ -193,13 +198,10 @@ class BlockPool:
             return
 
         # Check that all blocks in the prefix cache are committed.
-        for (
-            block_hash,
-            block,
-        ) in self.hash_to_committed_block.items():
+        for block_hash, block in self.prefix_cache.items():
             assert block.block_hash is not None
             assert block.block_hash == block_hash
 
         # Check that the total number of blocks is correct.
-        free_blocks = len(self.free_block_queue)
+        free_blocks = self.num_free_blocks
         assert free_blocks + len(set(active_bids)) == self.total_num_blocks

@@ -21,8 +21,8 @@ minimal Graphs around each op and verify:
 * untouched slots elsewhere in the pool (the new invariant the
   slot-indexed design introduces over the old gather/scatter path).
 
-GDN ops are registered in MOGGKernelAPI and are part of the built-in engine
-kernel library — no ``custom_extensions`` are needed.
+GDN ops are registered in the built-in ``kernels`` package — no
+``custom_extensions`` are needed.
 """
 
 from __future__ import annotations
@@ -36,7 +36,7 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import BufferType, DeviceRef, Graph, TensorType, ops
 
-# Single supported kernel size for K (compiled in MOGGKernelAPI).
+# Single supported kernel size for K (compiled in the `kernels` package).
 _KERNEL_SIZE = 4
 
 # Single supported (KD, VD) for the recurrence kernel.

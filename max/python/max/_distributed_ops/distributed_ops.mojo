@@ -98,7 +98,7 @@ def _do_broadcast[
     var in_ptr = UnsafePointer[Scalar[DType.uint8], MutAnyOrigin](
         unsafe_from_address=in_addr
     )
-    var in_tile = TileTensor(in_ptr, row_major(Idx(n))).as_immut()
+    var in_tile = TileTensor(in_ptr, row_major(n)).as_immut()
 
     for i in range(ngpus):
         var out_addr = Int(py=output_data_ptrs[i])
@@ -109,7 +109,7 @@ def _do_broadcast[
         var out_ptr = UnsafePointer[Scalar[DType.uint8], MutAnyOrigin](
             unsafe_from_address=out_addr
         )
-        var out_tile = TileTensor(out_ptr, row_major(Idx(n)))
+        var out_tile = TileTensor(out_ptr, row_major(n))
 
         # Matches the graph-side ``mo.distributed.broadcast`` which also runs
         # without multimem. Enabling the multimem (multicast-store) path needs

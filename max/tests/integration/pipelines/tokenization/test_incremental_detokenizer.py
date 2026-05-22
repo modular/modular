@@ -10,25 +10,37 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Tests for incremental detokenization with proper UTF-8 handling.
+"""Tests for buffered detokenization with proper UTF-8 handling.
 
 These tests verify that multi-byte UTF-8 characters (like emojis) that span
 multiple tokens are correctly decoded without producing replacement characters.
-This is a regression test for SERVSYS-1032.
+This is a regression test for SERVSYS-1032 and MXSERV-61.
 """
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Generator
+from typing import Any
 
+import numpy as np
+import numpy.typing as npt
 import pytest
 from max.serve.pipelines.incremental_detokenizer import (
-    IncrementalDetokenizer,
+    AsyncDecodeFunc,
+    DecodeStreamDetokenizer,
+    Utf8BufferingDetokenizer,
+    create_buffered_detokenizer,
+    create_fallback_utf8_buffer,
     create_incremental_detokenizer,
     get_hf_tokenizer,
     is_fast_tokenizer,
 )
 from transformers import AutoTokenizer, PreTrainedTokenizerFast
+
+# Legacy aliases for backward compatibility tests
+IncrementalDetokenizer = DecodeStreamDetokenizer
+FallbackUtf8Buffer = Utf8BufferingDetokenizer
 
 
 @pytest.fixture
@@ -65,8 +77,8 @@ class TestIsFastTokenizer:
         assert not is_fast_tokenizer(42)
 
 
-class TestIncrementalDetokenizer:
-    """Tests for the IncrementalDetokenizer class."""
+class TestDecodeStreamDetokenizer:
+    """Tests for the DecodeStreamDetokenizer class."""
 
     def test_basic_decoding(
         self, smol_tokenizer: PreTrainedTokenizerFast
@@ -75,7 +87,7 @@ class TestIncrementalDetokenizer:
         prompt = "Hello"
         prompt_ids = smol_tokenizer.encode(prompt, add_special_tokens=False)
 
-        detokenizer = IncrementalDetokenizer(
+        detokenizer = DecodeStreamDetokenizer(
             tokenizer=smol_tokenizer,
             prompt_token_ids=prompt_ids,
             skip_special_tokens=True,
@@ -83,7 +95,7 @@ class TestIncrementalDetokenizer:
 
         # Encode and decode "world"
         world_ids = smol_tokenizer.encode(" world", add_special_tokens=False)
-        result = detokenizer.decode(world_ids)
+        result = asyncio.run(detokenizer.decode(world_ids))
 
         # The result should contain "world" (with possible whitespace)
         assert "world" in result
@@ -104,14 +116,14 @@ class TestIncrementalDetokenizer:
         prompt = f"This is the fingerprint emoji: {fingerprint_emoji}. "
         prompt_ids = smol_tokenizer.encode(prompt, add_special_tokens=False)
 
-        detokenizer = IncrementalDetokenizer(
+        detokenizer = DecodeStreamDetokenizer(
             tokenizer=smol_tokenizer,
             prompt_token_ids=[],  # No prompt context needed for this test
             skip_special_tokens=True,
         )
 
         # Decode the prompt tokens
-        result = detokenizer.decode(prompt_ids)
+        result = asyncio.run(detokenizer.decode(prompt_ids))
 
         # The result should NOT contain replacement characters
         assert "�" not in result, (
@@ -127,26 +139,29 @@ class TestIncrementalDetokenizer:
         self, smol_tokenizer: PreTrainedTokenizerFast
     ) -> None:
         """Incremental decoding should preserve UTF-8 across chunks."""
-        # Encode text containing an emoji
-        text_with_emoji = "Hello 😊 World"
-        token_ids = smol_tokenizer.encode(
-            text_with_emoji, add_special_tokens=False
-        )
 
-        detokenizer = IncrementalDetokenizer(
-            tokenizer=smol_tokenizer,
-            prompt_token_ids=[],
-            skip_special_tokens=True,
-        )
+        async def decode_incrementally() -> str:
+            # Encode text containing an emoji
+            text_with_emoji = "Hello 😊 World"
+            token_ids = smol_tokenizer.encode(
+                text_with_emoji, add_special_tokens=False
+            )
 
-        # Decode tokens one at a time (simulating streaming)
-        result_parts = []
-        for token_id in token_ids:
-            part = detokenizer.decode([token_id])
-            result_parts.append(part)
+            detokenizer = DecodeStreamDetokenizer(
+                tokenizer=smol_tokenizer,
+                prompt_token_ids=[],
+                skip_special_tokens=True,
+            )
 
-        # Join all parts
-        result = "".join(result_parts)
+            # Decode tokens one at a time (simulating streaming)
+            result_parts = []
+            for token_id in token_ids:
+                part = await detokenizer.decode([token_id])
+                result_parts.append(part)
+
+            return "".join(result_parts)
+
+        result = asyncio.run(decode_incrementally())
 
         # The result should NOT contain replacement characters
         assert "�" not in result, (
@@ -160,6 +175,23 @@ class TestIncrementalDetokenizer:
         self, smol_tokenizer: PreTrainedTokenizerFast
     ) -> None:
         """Various emojis should decode correctly."""
+
+        async def test_emoji(emoji: str) -> str:
+            text = f"Test {emoji} text"
+            token_ids = smol_tokenizer.encode(text, add_special_tokens=False)
+
+            detokenizer = DecodeStreamDetokenizer(
+                tokenizer=smol_tokenizer,
+                prompt_token_ids=[],
+                skip_special_tokens=True,
+            )
+
+            # Decode incrementally
+            result = ""
+            for token_id in token_ids:
+                result += await detokenizer.decode([token_id])
+            return result
+
         emojis = [
             "🫆",  # Fingerprint (U+1FAC6) - 4 bytes
             "😊",  # Smiling face (U+1F60A) - 4 bytes
@@ -170,20 +202,7 @@ class TestIncrementalDetokenizer:
         ]
 
         for emoji in emojis:
-            text = f"Test {emoji} text"
-            token_ids = smol_tokenizer.encode(text, add_special_tokens=False)
-
-            detokenizer = IncrementalDetokenizer(
-                tokenizer=smol_tokenizer,
-                prompt_token_ids=[],
-                skip_special_tokens=True,
-            )
-
-            # Decode incrementally
-            result = ""
-            for token_id in token_ids:
-                result += detokenizer.decode([token_id])
-
+            result = asyncio.run(test_emoji(emoji))
             # Should not have replacement characters
             assert "�" not in result, (
                 f"Replacement character in result for emoji {emoji!r}: {result!r}"
@@ -193,20 +212,24 @@ class TestIncrementalDetokenizer:
         self, smol_tokenizer: PreTrainedTokenizerFast
     ) -> None:
         """Chinese characters (3-byte UTF-8) should decode correctly."""
-        chinese = "你好世界"  # Hello World in Chinese
 
-        token_ids = smol_tokenizer.encode(chinese, add_special_tokens=False)
+        async def decode_chinese() -> str:
+            chinese = "你好世界"  # Hello World in Chinese
+            token_ids = smol_tokenizer.encode(chinese, add_special_tokens=False)
 
-        detokenizer = IncrementalDetokenizer(
-            tokenizer=smol_tokenizer,
-            prompt_token_ids=[],
-            skip_special_tokens=True,
-        )
+            detokenizer = DecodeStreamDetokenizer(
+                tokenizer=smol_tokenizer,
+                prompt_token_ids=[],
+                skip_special_tokens=True,
+            )
 
-        # Decode incrementally
-        result = ""
-        for token_id in token_ids:
-            result += detokenizer.decode([token_id])
+            # Decode incrementally
+            result = ""
+            for token_id in token_ids:
+                result += await detokenizer.decode([token_id])
+            return result
+
+        result = asyncio.run(decode_chinese())
 
         # Should not have replacement characters
         assert "�" not in result, (
@@ -221,24 +244,31 @@ class TestIncrementalDetokenizer:
         This simulates a model response containing multiple multi-byte emojis
         that may each be split across multiple tokens.
         """
-        response = (
-            "Here is the revised sentence: To take your 🫆, press your thumb "
-            "against the ink pad and then the paper.\n\n"
-            "Let me know if you have any questions! 😊"
-        )
 
-        token_ids = smol_tokenizer.encode(response, add_special_tokens=False)
+        async def decode_response() -> str:
+            response = (
+                "Here is the revised sentence: To take your 🫆, press your thumb "
+                "against the ink pad and then the paper.\n\n"
+                "Let me know if you have any questions! 😊"
+            )
 
-        detokenizer = IncrementalDetokenizer(
-            tokenizer=smol_tokenizer,
-            prompt_token_ids=[],
-            skip_special_tokens=True,
-        )
+            token_ids = smol_tokenizer.encode(
+                response, add_special_tokens=False
+            )
 
-        # Decode incrementally
-        result = ""
-        for token_id in token_ids:
-            result += detokenizer.decode([token_id])
+            detokenizer = DecodeStreamDetokenizer(
+                tokenizer=smol_tokenizer,
+                prompt_token_ids=[],
+                skip_special_tokens=True,
+            )
+
+            # Decode incrementally
+            result = ""
+            for token_id in token_ids:
+                result += await detokenizer.decode([token_id])
+            return result
+
+        result = asyncio.run(decode_response())
 
         # Should NOT produce replacement characters
         assert "�" not in result, (
@@ -249,15 +279,95 @@ class TestIncrementalDetokenizer:
         assert "😊" in result, f"Smiling emoji missing: {result!r}"
 
 
+class TestCreateBufferedDetokenizer:
+    """Tests for the create_buffered_detokenizer factory function."""
+
+    def test_creates_decode_stream_for_fast_tokenizer(
+        self, smol_tokenizer: PreTrainedTokenizerFast
+    ) -> None:
+        """Should create a DecodeStreamDetokenizer for fast tokenizers."""
+
+        # Create a mock tokenizer wrapper that has a delegate attribute
+        class MockTokenizerWrapper:
+            def __init__(self, delegate: PreTrainedTokenizerFast) -> None:
+                self.delegate = delegate
+
+        wrapper = MockTokenizerWrapper(smol_tokenizer)
+
+        detokenizer = create_buffered_detokenizer(
+            tokenizer=wrapper,
+            prompt_token_ids=[],
+            skip_special_tokens=True,
+        )
+
+        assert detokenizer is not None
+        assert isinstance(detokenizer, DecodeStreamDetokenizer)
+
+    def test_creates_utf8_buffering_for_non_fast_tokenizer(
+        self, smol_tokenizer: PreTrainedTokenizerFast
+    ) -> None:
+        """Should create Utf8BufferingDetokenizer when no fast tokenizer."""
+
+        # Create a wrapper without a fast tokenizer delegate
+        class MockTokenizerWrapper:
+            def __init__(self) -> None:
+                # No delegate, but has decode method
+                pass
+
+            async def decode(
+                self, token_ids: Any, skip_special_tokens: bool = True
+            ) -> str:
+                return "decoded"
+
+        wrapper = MockTokenizerWrapper()
+
+        detokenizer = create_buffered_detokenizer(
+            tokenizer=wrapper,
+            prompt_token_ids=[],
+            skip_special_tokens=True,
+        )
+
+        assert detokenizer is not None
+        assert isinstance(detokenizer, Utf8BufferingDetokenizer)
+
+    def test_forwards_skipped_special_token_ids(
+        self, llama_tokenizer: PreTrainedTokenizerFast
+    ) -> None:
+        """Pipeline tokenizers exposing ``skipped_special_token_ids`` should
+        have that set forwarded to the detokenizer so streaming can preserve
+        a subset of specials while still stripping others.
+        """
+        eos_id = llama_tokenizer.eos_token_id
+        assert eos_id is not None
+
+        class WrapperWithExcluded:
+            def __init__(
+                self, delegate: PreTrainedTokenizerFast, excluded: set[int]
+            ) -> None:
+                self.delegate = delegate
+                self.skipped_special_token_ids = excluded
+
+        wrapper = WrapperWithExcluded(llama_tokenizer, {eos_id})
+
+        detokenizer = create_buffered_detokenizer(
+            tokenizer=wrapper,
+            prompt_token_ids=[],
+            skip_special_tokens=True,
+        )
+
+        assert detokenizer is not None
+        assert isinstance(detokenizer, DecodeStreamDetokenizer)
+        assert detokenizer._skipped_special_token_ids == {eos_id}
+
+
 class TestCreateIncrementalDetokenizer:
-    """Tests for the create_incremental_detokenizer factory function."""
+    """Tests for the legacy create_incremental_detokenizer factory function."""
 
     def test_creates_detokenizer_for_fast_tokenizer(
         self, smol_tokenizer: PreTrainedTokenizerFast
     ) -> None:
         """Should create a detokenizer for fast tokenizers."""
 
-        # Create a mock tokenizer wrapper that has a delegate attribute
         class MockTokenizerWrapper:
             def __init__(self, delegate: PreTrainedTokenizerFast) -> None:
                 self.delegate = delegate
@@ -271,7 +381,7 @@ class TestCreateIncrementalDetokenizer:
         )
 
         assert detokenizer is not None
-        assert isinstance(detokenizer, IncrementalDetokenizer)
+        assert isinstance(detokenizer, DecodeStreamDetokenizer)
 
     def test_returns_none_when_no_delegate(self) -> None:
         """Should return None when tokenizer has no delegate."""
@@ -287,41 +397,8 @@ class TestCreateIncrementalDetokenizer:
 
         assert detokenizer is None
 
-    def test_forwards_skipped_special_token_ids(
-        self, llama_tokenizer: PreTrainedTokenizerFast
-    ) -> None:
-        """Pipeline tokenizers exposing ``skipped_special_token_ids`` should
-        have that set forwarded to the detokenizer so streaming can preserve
-        a subset of specials while still stripping others.
 
-        Regression coverage for the Gemma 4 streaming tool-call leak: the
-        detokenizer used to call ``DecodeStream(skip_special_tokens=True)``
-        which stripped every special uniformly, including the
-        ``<|tool_call>`` / ``<tool_call|>`` wrappers the parser needs.
-        """
-        eos_id = llama_tokenizer.eos_token_id
-        assert eos_id is not None
-
-        class WrapperWithExcluded:
-            def __init__(
-                self, delegate: PreTrainedTokenizerFast, excluded: set[int]
-            ) -> None:
-                self.delegate = delegate
-                self.skipped_special_token_ids = excluded
-
-        wrapper = WrapperWithExcluded(llama_tokenizer, {eos_id})
-
-        detokenizer = create_incremental_detokenizer(
-            tokenizer=wrapper,
-            prompt_token_ids=[],
-            skip_special_tokens=True,
-        )
-
-        assert detokenizer is not None
-        assert detokenizer.skipped_special_token_ids == {eos_id}
-
-
-class TestIncrementalDetokenizerExcludedSpecials:
+class TestDecodeStreamDetokenizerExcludedSpecials:
     """Tests for ``skipped_special_token_ids`` filtering behavior."""
 
     def test_excluded_ids_are_filtered_other_specials_preserved(
@@ -342,14 +419,14 @@ class TestIncrementalDetokenizerExcludedSpecials:
         hello_ids = llama_tokenizer.encode("Hello", add_special_tokens=False)
 
         # Exclude EOS, preserve everything else (including BOS).
-        detokenizer = IncrementalDetokenizer(
+        detokenizer = DecodeStreamDetokenizer(
             tokenizer=llama_tokenizer,
             prompt_token_ids=[],
             skip_special_tokens=True,
             skipped_special_token_ids={eos_id},
         )
 
-        result = detokenizer.decode([bos_id, *hello_ids, eos_id])
+        result = asyncio.run(detokenizer.decode([bos_id, *hello_ids, eos_id]))
 
         assert "Hello" in result
         # BOS text survives because it's not in the excluded set and the
@@ -370,13 +447,13 @@ class TestIncrementalDetokenizerExcludedSpecials:
         assert eos_id is not None
         hello_ids = llama_tokenizer.encode("Hello", add_special_tokens=False)
 
-        detokenizer = IncrementalDetokenizer(
+        detokenizer = DecodeStreamDetokenizer(
             tokenizer=llama_tokenizer,
             prompt_token_ids=[],
             skip_special_tokens=True,
         )
 
-        result = detokenizer.decode([*hello_ids, eos_id])
+        result = asyncio.run(detokenizer.decode([*hello_ids, eos_id]))
         assert "Hello" in result
         assert llama_tokenizer.eos_token not in result
 
@@ -406,3 +483,181 @@ class TestGetHfTokenizer:
 
         with pytest.raises(ValueError, match="does not have a delegate"):
             get_hf_tokenizer(NoDelegate())
+
+
+class TestUtf8BufferingDetokenizer:
+    """Tests for the Utf8BufferingDetokenizer class."""
+
+    def _create_mock_decode_func(
+        self, tokenizer: PreTrainedTokenizerFast
+    ) -> AsyncDecodeFunc:
+        """Creates a mock async decode function using the tokenizer."""
+
+        async def decode_func(
+            token_ids: npt.NDArray[np.integer[Any]],
+            *,
+            skip_special_tokens: bool = True,
+        ) -> str:
+            return tokenizer.decode(
+                token_ids.tolist(), skip_special_tokens=skip_special_tokens
+            )
+
+        return decode_func
+
+    def test_basic_decoding(
+        self,
+        smol_tokenizer: PreTrainedTokenizerFast,
+    ) -> None:
+        """Basic tokens should decode correctly."""
+        mock_decode_func = self._create_mock_decode_func(smol_tokenizer)
+        buffer = Utf8BufferingDetokenizer(
+            decode_func=mock_decode_func,
+            skip_special_tokens=True,
+        )
+
+        text = "Hello world"
+        token_ids = smol_tokenizer.encode(text, add_special_tokens=False)
+
+        result = asyncio.run(buffer.decode(token_ids))
+
+        assert "Hello" in result or "world" in result
+
+    def test_emoji_decoding_single_chunk(
+        self,
+        smol_tokenizer: PreTrainedTokenizerFast,
+    ) -> None:
+        """Emojis decoded in a single chunk should work correctly."""
+        mock_decode_func = self._create_mock_decode_func(smol_tokenizer)
+        buffer = Utf8BufferingDetokenizer(
+            decode_func=mock_decode_func,
+            skip_special_tokens=True,
+        )
+
+        text_with_emoji = "Hello 😊 World"
+        token_ids = smol_tokenizer.encode(
+            text_with_emoji, add_special_tokens=False
+        )
+
+        result = asyncio.run(buffer.decode(token_ids))
+
+        # Should contain the emoji
+        assert "😊" in result or "\ufffd" not in result
+
+    def test_emoji_decoding_across_chunks(
+        self,
+        smol_tokenizer: PreTrainedTokenizerFast,
+    ) -> None:
+        """Emojis split across multiple decode calls should be buffered
+        and later emitted as the correct character.
+
+        This tests the core buffering behavior: when tokens that would produce
+        replacement characters are received, they should be buffered until
+        subsequent tokens complete the UTF-8 sequence.
+        """
+
+        async def test_incremental_emoji_decode() -> str:
+            mock_decode_func = self._create_mock_decode_func(smol_tokenizer)
+            buffer = Utf8BufferingDetokenizer(
+                decode_func=mock_decode_func,
+                skip_special_tokens=True,
+            )
+
+            # Encode text containing an emoji
+            text_with_emoji = "Test 😊 emoji"
+            token_ids = smol_tokenizer.encode(
+                text_with_emoji, add_special_tokens=False
+            )
+
+            # Decode tokens one at a time (simulating streaming)
+            result_parts = []
+            for token_id in token_ids:
+                part = await buffer.decode([token_id])
+                result_parts.append(part)
+
+            return "".join(result_parts)
+
+        result = asyncio.run(test_incremental_emoji_decode())
+
+        # The emoji should appear in the result without replacement chars
+        assert "😊" in result, (
+            f"Expected emoji in incremental decode result: {result!r}"
+        )
+        assert "\ufffd" not in result, (
+            f"Replacement char found in incremental decode: {result!r}"
+        )
+
+    def test_empty_input(
+        self,
+        smol_tokenizer: PreTrainedTokenizerFast,
+    ) -> None:
+        """Empty input should return empty string."""
+        mock_decode_func = self._create_mock_decode_func(smol_tokenizer)
+        buffer = Utf8BufferingDetokenizer(
+            decode_func=mock_decode_func,
+            skip_special_tokens=True,
+        )
+
+        result = asyncio.run(buffer.decode([]))
+
+        assert result == ""
+
+    def test_create_fallback_utf8_buffer_factory(
+        self,
+        smol_tokenizer: PreTrainedTokenizerFast,
+    ) -> None:
+        """Legacy factory function should create a Utf8BufferingDetokenizer."""
+        mock_decode_func = self._create_mock_decode_func(smol_tokenizer)
+        buffer = create_fallback_utf8_buffer(
+            decode_func=mock_decode_func,
+            skip_special_tokens=True,
+        )
+
+        assert isinstance(buffer, Utf8BufferingDetokenizer)
+
+    def test_various_emojis_single_chunk(
+        self,
+        smol_tokenizer: PreTrainedTokenizerFast,
+    ) -> None:
+        """Various emojis decoded in a single chunk should work."""
+        mock_decode_func = self._create_mock_decode_func(smol_tokenizer)
+
+        emojis = ["😊", "🤖", "💻", "🔥"]
+
+        for emoji in emojis:
+            buffer = Utf8BufferingDetokenizer(
+                decode_func=mock_decode_func,
+                skip_special_tokens=True,
+            )
+            text = f"Test {emoji} text"
+            token_ids = smol_tokenizer.encode(text, add_special_tokens=False)
+
+            result = asyncio.run(buffer.decode(token_ids))
+
+            # The result should either contain the emoji or not have
+            # replacement characters (both acceptable outcomes)
+            has_emoji = emoji in result
+            no_replacements = "\ufffd" not in result
+            assert has_emoji or no_replacements, (
+                f"Failed for emoji {emoji!r}: result={result!r}"
+            )
+
+    def test_chinese_characters(
+        self,
+        smol_tokenizer: PreTrainedTokenizerFast,
+    ) -> None:
+        """Chinese characters (3-byte UTF-8) should decode correctly."""
+        mock_decode_func = self._create_mock_decode_func(smol_tokenizer)
+        buffer = Utf8BufferingDetokenizer(
+            decode_func=mock_decode_func,
+            skip_special_tokens=True,
+        )
+
+        chinese = "你好世界"
+        token_ids = smol_tokenizer.encode(chinese, add_special_tokens=False)
+
+        result = asyncio.run(buffer.decode(token_ids))
+
+        # Should not have replacement characters
+        assert "\ufffd" not in result, (
+            f"Replacement character in result for Chinese text: {result!r}"
+        )

@@ -43,7 +43,9 @@ from testdata.fused_qk_rope_3d_goldens import (
 from std.utils import IndexList
 
 
-def test_fused_qk_rope[rope_dim: Int, dtype: DType]() raises -> None:
+def test_fused_qk_rope[
+    rope_dim: Int, dtype: DType
+](ctx: DeviceContext) raises -> None:
     """Verifies fused_qk_rope_ragged with 3D position_ids and mrope sections
     against golden values computed with PyTorch.
     """
@@ -85,7 +87,7 @@ def test_fused_qk_rope[rope_dim: Int, dtype: DType]() raises -> None:
     # The testdata is generated with mrope_section = (16, 8, 8),
     # but the expected input for the kernel is the original mrope_section
     # multiplied by 2, and prefix-summed.
-    comptime mrope_section = Coord(Idx[32](), Idx[48](), Idx[64]())
+    comptime mrope_section = Coord(Idx[32], Idx[48], Idx[64])
 
     # Construct backing buffer and the KV cache itself (uses LayoutTensor).
     kv_cache_block_buffer = List[Scalar[dtype]](
@@ -162,7 +164,7 @@ def test_fused_qk_rope[rope_dim: Int, dtype: DType]() raises -> None:
     )
 
     # Create position_ids tensor for testing explicit position encoding using TileTensor.
-    # The function expects TileTensor with RuntimeInt layout and ImmutAnyOrigin.
+    # The function expects TileTensor with Scalar layout and ImmutAnyOrigin.
     position_ids_input_buffer = position_ids_input[DType.uint32]()
     var position_ids_static = TileTensor(
         position_ids_input_buffer, position_ids_layout
@@ -197,8 +199,8 @@ def test_fused_qk_rope[rope_dim: Int, dtype: DType]() raises -> None:
     # Note: This tensor has non-row-major strides (head_dim, 1) to select every
     # rope_dim-th element from the original head_dim-strided buffer.
     comptime freqs_cis_layout = TileLayout(
-        Coord(Idx[max_seq_len](), Idx[rope_dim]()),
-        Coord(Idx[head_dim](), Idx[1]()),
+        Coord(Idx[max_seq_len], Idx[rope_dim]),
+        Coord(Idx[head_dim], Idx[1]),
     )
     var freqs_cis_table = TileTensor(
         freqs_cis_table_buffer.unsafe_ptr() + (head_dim - rope_dim),
@@ -235,7 +237,7 @@ def test_fused_qk_rope[rope_dim: Int, dtype: DType]() raises -> None:
         position_ids=position_ids,
         layer_idx=UInt32(0),
         output=q_out,
-        context=Optional[DeviceContext](),
+        context=ctx,
     )
 
     print("Created freqs_cis_table_buffer", flush=True)
@@ -309,5 +311,6 @@ def test_fused_qk_rope[rope_dim: Int, dtype: DType]() raises -> None:
 
 
 def main() raises -> None:
-    # Full head RoPE
-    test_fused_qk_rope[64, DType.float32]()
+    with DeviceContext(api="cpu") as ctx:
+        # Full head RoPE
+        test_fused_qk_rope[64, DType.float32](ctx)

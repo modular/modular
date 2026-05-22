@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import compiler_internal as compiler
+import extensibility as compiler
 from std.gpu.host import DeviceContext
 from std.gpu.host.device_context import DeviceExternalFunction
 from std.os import abort, getenv
-from tensor import (
+from extensibility import (
     foreach,
     DynamicTensor,
     VariadicTensors,
@@ -23,8 +23,8 @@ from tensor import (
     OutputTensor,
     InputVariadicTensors,
 )
-from tensor import OutputVariadicTensors
-from tensor.managed_tensor_slice import (
+from extensibility import OutputVariadicTensors
+from extensibility import (
     _MutableInputTensor as MutableInputTensor,
 )
 from std.utils.index import IndexList

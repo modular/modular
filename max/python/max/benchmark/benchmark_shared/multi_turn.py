@@ -43,7 +43,10 @@ from max.benchmark.benchmark_shared.request import (
     RequestFuncInput,
     RequestFuncOutput,
 )
-from max.benchmark.benchmark_shared.utils import deadline_remaining_s
+from max.benchmark.benchmark_shared.utils import (
+    deadline_remaining_s,
+    exceeds_deadline,
+)
 from tqdm.asyncio import tqdm
 from transformers import PreTrainedTokenizerBase
 
@@ -157,7 +160,10 @@ async def chat_session_driver(
             if randomize_session_start:
                 delay_ms = messages[content_idx + 1].delay_until_next_message
                 if delay_ms and delay_ms > 0:
-                    await asyncio.sleep(random.uniform(0, delay_ms) / 1000)
+                    sleep_s = random.uniform(0, delay_ms) / 1000
+                    if exceeds_deadline(sleep_s, benchmark_should_end_time):
+                        return session_outputs
+                    await asyncio.sleep(sleep_s)
 
         if (
             benchmark_should_end_time is not None
@@ -203,7 +209,10 @@ async def chat_session_driver(
         chat_len += output_len
 
         if delay_ms := messages[content_idx + 1].delay_until_next_message:
-            await asyncio.sleep(delay_ms / 1000)
+            sleep_s = delay_ms / 1000
+            if exceeds_deadline(sleep_s, benchmark_should_end_time):
+                break
+            await asyncio.sleep(sleep_s)
 
         content_idx += 2
 
@@ -382,7 +391,10 @@ async def run_multiturn_benchmark(
     tasks: list[asyncio.Task[tuple[str, list[RequestFuncOutput]]]] = []
     for idx, chat_session in enumerate(chat_sessions):
         if warmup_delay_ms > 0 and max_concurrency and idx < max_concurrency:
-            await asyncio.sleep(warmup_delay_ms / 1000)
+            sleep_s = warmup_delay_ms / 1000
+            if exceeds_deadline(sleep_s, benchmark_should_end_time):
+                break
+            await asyncio.sleep(sleep_s)
         tasks.append(
             asyncio.create_task(limited_chat_session_driver(chat_session, idx))
         )
@@ -509,7 +521,10 @@ async def run_kv_cache_stress_benchmark(
     async def _conversation_worker(worker_idx: int) -> None:
         # Stagger workers to avoid thundering-herd at startup.
         if warmup_delay_ms > 0:
-            await asyncio.sleep(worker_idx * warmup_delay_ms / 1000)
+            sleep_s = worker_idx * warmup_delay_ms / 1000
+            if exceeds_deadline(sleep_s, benchmark_should_end_time):
+                return
+            await asyncio.sleep(sleep_s)
 
         local_count = 0
         while True:
@@ -706,7 +721,10 @@ async def run_chat_judge_benchmark(
                 and max_concurrency
                 and idx < max_concurrency
             ):
-                await asyncio.sleep(warmup_delay_ms / 1000)
+                sleep_s = warmup_delay_ms / 1000
+                if exceeds_deadline(sleep_s, benchmark_should_end_time):
+                    break
+                await asyncio.sleep(sleep_s)
             tg.create_task(limited_session_driver(chat_session, idx))
 
     if (

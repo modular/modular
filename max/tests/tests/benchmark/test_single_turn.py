@@ -14,6 +14,8 @@
 
 from __future__ import annotations
 
+import time
+
 import numpy as np
 import pytest
 from max.benchmark.benchmark_shared.datasets import SampledRequest
@@ -165,6 +167,40 @@ async def test_request_intervals_infinite_rate() -> None:
 
     assert len(intervals) == num_samples - 1
     assert all(interval < 0.01 for interval in intervals)
+
+
+@pytest.mark.asyncio
+async def test_get_request_stops_when_sleep_would_exceed_deadline() -> None:
+    np.random.seed(0)
+    requests = [
+        SampledRequest(
+            prompt_formatted=f"p{i}",
+            prompt_len=1,
+            output_len=1,
+            encoded_images=[],
+            ignore_eos=True,
+        )
+        for i in range(50)
+    ]
+    timing_data: dict[str, list[float]] = {}
+    deadline_ns = time.perf_counter_ns() + int(0.1 * 1e9)
+
+    start = time.perf_counter()
+    yielded = 0
+    async for _ in get_request(
+        requests,
+        request_rate=0.2,  # ~5s mean interval
+        timing_data=timing_data,
+        burstiness=1.0,
+        benchmark_should_end_time=deadline_ns,
+    ):
+        yielded += 1
+    elapsed = time.perf_counter() - start
+
+    assert yielded >= 1
+    assert yielded < len(requests)
+    assert elapsed < 1.0
+    assert all(i < 1.0 for i in timing_data.get("intervals", []))
 
 
 @pytest.mark.asyncio

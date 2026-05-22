@@ -14,8 +14,8 @@
 import json
 
 import pytest
-from max.interfaces import ParsedToolCall, ParsedToolResponse
 from max.pipelines.architectures.gemma4.tool_parser import Gemma4ToolParser
+from max.pipelines.modeling.types import ParsedToolCall, ParsedToolResponse
 
 
 def test_single_tool_call_parsing() -> None:

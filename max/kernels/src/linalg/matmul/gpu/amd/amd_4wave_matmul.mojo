@@ -35,9 +35,10 @@ through a single body — MMA shape and BK select on dtype.
 
 from std.bit import log2_floor
 from std.math import ceildiv
-from std.sys import size_of, llvm_intrinsic
+from std.sys import align_of, size_of, llvm_intrinsic
 from std.sys.intrinsics import readfirstlane
 from std.utils import Index, IndexList, StaticTuple
+from std.collections import InlineArray
 from std.utils.numerics import get_accum_type
 
 from std.gpu import (
@@ -49,6 +50,7 @@ from std.gpu import (
 )
 from std.gpu.host import DeviceContext
 from std.gpu.host.info import MI355X
+from std.gpu.intrinsics import AMDBufferResource
 from std.gpu.sync import schedule_barrier, s_waitcnt
 
 from layout import TensorLayout, TileTensor
@@ -65,7 +67,7 @@ from pipeline.types import _Ops
 from structured_kernels.amd_tile_io import RegTileEpilogue, TileLoaderLDS
 from structured_kernels.amd_tile_io_conv import TileLoaderLDSIm2col
 
-from ....utils import elementwise_epilogue_type
+from ....utils import elementwise_compute_lambda_type, elementwise_epilogue_type
 from .amd_target import mi355x_target
 from .amd_4wave_schedule import (
     LOAD_A,
@@ -1143,10 +1145,25 @@ struct AMD4WaveMatmul[
         a_layout: TensorLayout,
         b_layout: TensorLayout,
         c_layout: TensorLayout,
+        has_residual: Bool = False,
+        # Pre-residual fused compute lambda (SM100 reference:
+        # `D = lambda(Conv(A,B)) + beta * C`). Fires on the post-cast
+        # `c_type` MMA output, BEFORE the residual FMA. Signature
+        # `(IndexList[2], SIMD) capturing -> SIMD`. Use for bias / ReLU /
+        # SiLU / GELU fusion. The post-residual store-site lambda is
+        # the existing struct-level `Self.elementwise_lambda_fn` and
+        # fires after the residual FMA (or directly on the MMA output
+        # when `has_residual=False`).
+        elementwise_compute_lambda_fn: Optional[
+            elementwise_compute_lambda_type
+        ] = None,
     ](
         a: TileTensor[Self.a_type, a_layout, ImmutAnyOrigin],
         b: TileTensor[Self.b_type, b_layout, ImmutAnyOrigin],
         c: TileTensor[Self.c_type, c_layout, MutAnyOrigin],
+        source_ptr: UnsafePointer[Scalar[Self.c_type], ImmutAnyOrigin],
+        source_row_stride: Int,
+        beta: Float32,
     ):
         """Runs the 4-wave kernel as a 2D convolution via implicit-GEMM.
 
@@ -1157,17 +1174,47 @@ struct AMD4WaveMatmul[
         uses `TileLoaderLDSIm2col`, which materializes the A operand
         from a 4D NHWC input via in-line im2col addressing.
 
+        Optional in-kernel residual prefetch via `has_residual`. When
+        True, the kernel bulk-prefetches `source` (a 2D
+        `[M, C_out]`-aliased view of an NHWC residual buffer) into VGPRs
+        at the start of the epilogue. By the time the FMA-and-store
+        loop runs, all 32 per-lane residual loads are in flight in
+        parallel — replacing the per-store
+        `global_load → wait → store` staircase that costs ~24% on
+        memory-bound shapes. The launcher passes the residual pointer,
+        row stride, and `beta` scale; the kernel applies
+        `out = mma + beta * residual` in Float32 and casts back to
+        `c_type` for the store.
+
         Parameters:
             conv_config: Conv geometry (filter shape, stride, dilation,
                 pad, input H/W, runtime-HW flag).
             a_layout: Logical layout of `a` (4D NHWC).
             b_layout: Logical layout of `b` (2D `[C_out, K]` filter).
             c_layout: Logical layout of `c` (2D `[M, C_out]` output).
+            has_residual: When True, prefetch + FMA in `source * beta`
+                during the epilogue. When False, the residual args are
+                unused and the epilogue is identical to the no-residual
+                kernel (dead-code-eliminated by the compiler).
+            elementwise_compute_lambda_fn: Optional pre-residual fused
+                compute lambda. Fires on the post-cast `c_type` MMA
+                output BEFORE the residual FMA, matching the SM100
+                `D = lambda(Conv(A,B)) + beta * C` ordering. Use for
+                bias / ReLU / SiLU / GELU fusion. Signature
+                `(IndexList[2], SIMD) capturing -> SIMD`. When unset,
+                the comptime branch dead-code-eliminates.
 
         Args:
             a: Input tile-tensor for A (NHWC activations).
             b: Input tile-tensor for B (filter, RSCF / FCRS shape).
             c: Output tile-tensor for C (flattened M x C_out view).
+            source_ptr: Pointer to the residual buffer (2D
+                `[M, C_out]`-aliased view of NHWC). Unused when
+                `has_residual=False`; the launcher passes a null sentinel
+                in that case.
+            source_row_stride: Element stride of the residual's row
+                dimension. Unused when `has_residual=False`.
+            beta: Residual scale. Unused when `has_residual=False`.
         """
         Self.validate_config()
 
@@ -1569,8 +1616,6 @@ struct AMD4WaveMatmul[
             comptime for i in range(len(schedule.epilogue)):
                 _bind[schedule.epilogue[i]](K_per_split)
 
-        _emit_framework_body()
-
         # === Output Store (shared) ===
         # 4-wave's warp output is interleaved: each warp covers 2
         # disjoint M-row ranges (one per M-half) × 2 disjoint N-col
@@ -1602,16 +1647,88 @@ struct AMD4WaveMatmul[
                 " (would fire on each partial, not the reduced output)"
             )
 
+        # Residual prefetch: when `has_residual`, bulk-issue per-lane
+        # `buffer_load_*` for source[m_logical, n_global] into a VGPR
+        # array BEFORE `_emit_framework_body()` runs. The HBM loads then
+        # overlap with the entire main loop's MFMAs instead of being
+        # exposed in the epilogue (~7-15 pp recovery for memory-bound
+        # 1×1 / small-K shapes, where the epilogue is a larger fraction
+        # of total kernel time). A single `s_waitcnt vmcnt(0)` drains
+        # the cluster before the first `v_pk_fma_f32` in the epilogue.
+        #
+        # Storage: per-lane `InlineArray` of
+        # `SIMD[c_type, c_frag_size]` × num_m_mmas × num_n_mmas. For
+        # BM=BN=128 / MMA=16x16 / c_frag_size=4 that's 16 slots × 4 bf16
+        # = 16 dwords per lane (well under the 196-Dword VGPR headroom
+        # at 316 baseline). OOB blocks waste a few HBM reads — SRD
+        # bounds clamping returns 0, so it's harmless.
+        comptime n_slots = num_m_mmas * num_n_mmas
+        var prefetched = InlineArray[SIMD[Self.c_type, c_frag_size], n_slots](
+            uninitialized=True
+        )
+        var lane_group, thread_m = divmod(Int(_lane_id), MMA_M)
+
+        comptime if has_residual:
+            # SRD covers the full source buffer in *elements* (the
+            # constructor multiplies by `size_of[dtype]()` internally).
+            # The `load` API likewise takes its `vector_offset` argument
+            # in elements and multiplies by `size_of[dtype]()` to derive
+            # the buffer byte offset — see `AMDBufferResource.load` in
+            # `std.gpu.intrinsics`. Both sides must agree: passing a
+            # byte-scaled `num_records` paired with a byte-scaled
+            # `vector_offset` doubles the effective stride (the bug
+            # this fix replaces), making workgroups with
+            # `pid_m >= num_pid_m/2` read OOB → SRD-clamped to 0.
+            # Keep both expressed in elements.
+            var src_size_elem = M * source_row_stride
+            var src_bc = AMDBufferResource(
+                readfirstlane(source_ptr), readfirstlane(src_size_elem)
+            )
+
+            comptime for m_mma in range(num_m_mmas):
+                comptime m_quad, m_within = divmod(m_mma, quad_m_mmas)
+                var m_global_base = (
+                    m_quad * half_BM
+                    + Int(warp_id_m) * mma_tile_m
+                    + m_within * MMA_M
+                    + thread_m
+                )
+                var m_logical = m + m_global_base
+                comptime for n_mma in range(num_n_mmas):
+                    comptime n_quad, n_within = divmod(n_mma, quad_n_mmas)
+                    var n_global = (
+                        n
+                        + n_quad * half_BN
+                        + Int(warp_id_n) * mma_tile_n
+                        + n_within * MMA_N
+                        + lane_group * c_frag_size
+                    )
+                    var elem_off = Int32(
+                        m_logical * source_row_stride + n_global
+                    )
+                    prefetched[m_mma * num_n_mmas + n_mma] = src_bc.load[
+                        Self.c_type, c_frag_size
+                    ](elem_off)
+
+        _emit_framework_body()
+
         var c_writer = RegTileEpilogue[
             Self.c_type,
             c_frag_size,
             elementwise_lambda_fn=Self.elementwise_lambda_fn,
         ](c)
 
+        # Drain prefetched loads before the first `v_pk_fma_f32` reads
+        # the prefetched array. By now the main loop's MMAs have given
+        # the HBM pipeline ample time to complete the prefetches; the
+        # wait should be near-zero on memory-bound shapes.
+        comptime if has_residual:
+            s_waitcnt[vmcnt=UInt32(0)]()
+
         if m < M and n < N:
             var c_reg = mma_op.accum_tile()
-            var lane_group, thread_m = divmod(Int(_lane_id), MMA_M)
 
+            # FMA (when has_residual) + store.
             comptime for m_mma in range(num_m_mmas):
                 comptime m_quad, m_within = divmod(m_mma, quad_m_mmas)
                 var m_global_base = (
@@ -1637,6 +1754,28 @@ struct AMD4WaveMatmul[
                             .raw_load[width=c_frag_size](0)
                             .cast[Self.c_type]()
                         )
+                        # Pre-residual fused compute lambda — matches
+                        # SM100 `D = lambda(Conv(A,B)) + beta * C`
+                        # semantics. Fires on the post-cast `c_type`
+                        # MMA output (use cases: bias / ReLU / SiLU /
+                        # GELU before the skip add).
+                        comptime if elementwise_compute_lambda_fn:
+                            comptime _compute_fn = (
+                                elementwise_compute_lambda_fn.value()
+                            )
+                            v = _compute_fn[
+                                alignment=align_of[
+                                    SIMD[Self.c_type, c_frag_size]
+                                ]()
+                            ](IndexList[2](m_logical, n_global), v)
+                        comptime if has_residual:
+                            var skip = prefetched[
+                                m_mma * num_n_mmas + n_mma
+                            ].cast[DType.float32]()
+                            var fused_f32 = (
+                                v.cast[DType.float32]() + beta * skip
+                            )
+                            v = fused_f32.cast[Self.c_type]()
                         c_writer.store(v, m=m_dram, n=n_global)
 
 

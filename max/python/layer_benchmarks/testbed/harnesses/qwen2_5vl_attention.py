@@ -42,7 +42,6 @@ import torch
 from max.driver import Accelerator, Buffer, DLPackArray
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType, ops
-from max.interfaces import RequestID, TextGenerationContext, TokenBuffer
 from max.nn.kv_cache import KVCacheParams
 from max.nn.rotary_embedding import Llama3RotaryEmbedding
 from max.pipelines.architectures.qwen2_5vl.nn.decoder import (
@@ -50,6 +49,11 @@ from max.pipelines.architectures.qwen2_5vl.nn.decoder import (
 )
 from max.pipelines.core import TextContext
 from max.pipelines.kv_cache import PagedKVCacheManager
+from max.pipelines.modeling.types import (
+    RequestID,
+    TextGenerationContext,
+    TokenBuffer,
+)
 
 from testbed.harness import CompiledLayerBundle, LayerTestHarness
 from testbed.harnesses.ragged_attention_harness import (

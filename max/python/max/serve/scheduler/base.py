@@ -13,9 +13,9 @@
 from enum import Enum
 
 import msgspec
-from max.interfaces import RequestID
 from max.pipelines.core import TextContext
 from max.pipelines.kv_cache import TransferReqData
+from max.pipelines.modeling.types import RequestID
 
 
 class SchedulerProgress(Enum):

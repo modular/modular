@@ -12,12 +12,12 @@
 # ===----------------------------------------------------------------------=== #
 
 from max.graph.weights import WeightsFormat
-from max.interfaces import PipelineTask
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     SupportedArchitecture,
     TextTokenizer,
 )
+from max.pipelines.modeling.types import PipelineTask
 from transformers import AutoConfig, PretrainedConfig
 
 from .model import Step3p5Model
@@ -53,7 +53,17 @@ class Step3p5PretrainedConfig(PretrainedConfig):
         if not hasattr(self, "hidden_act"):
             self.hidden_act = "silu"
         # rope_theta may be a per-layer list; preserve it and set scalar.
-        rope_theta = getattr(self, "rope_theta", 10000.0)
+        # transformers v5 nests rope config inside `rope_parameters`; fall
+        # back to that before the 10000 default to avoid silently using a
+        # wrong base frequency under v5.
+        rope_theta = getattr(self, "rope_theta", None)
+        if rope_theta is None:
+            rope_params = getattr(self, "rope_parameters", None)
+            if isinstance(rope_params, dict):
+                rope_theta = rope_params.get("rope_theta")
+        if rope_theta is None:
+            rope_theta = 10000.0
+        self.rope_theta = rope_theta
         if isinstance(rope_theta, list):
             self.per_layer_rope_theta = rope_theta
             self.rope_theta = rope_theta[0] if rope_theta else 10000.0

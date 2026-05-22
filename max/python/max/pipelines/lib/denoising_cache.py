@@ -30,9 +30,8 @@ from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph
-
-from .interfaces.cache_mixin import DenoisingCacheConfig
-from .interfaces.taylorseer import (
+from max.pipelines.modeling.base.cache_mixin import DenoisingCacheConfig
+from max.pipelines.modeling.base.taylorseer import (
     TaylorSeer,
     _TaylorPredictModule,
     _TaylorUpdateModule,

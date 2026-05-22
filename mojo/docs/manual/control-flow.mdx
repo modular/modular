@@ -292,7 +292,7 @@ var capitals: Dict[String, String] = {
 }
 
 for var state in capitals:
-    print(capitals[state] + ", " + state)
+    print(t"{capitals[state]}, {state}")
 ```
 
 ```output
@@ -309,7 +309,7 @@ entry.
 
 ```mojo
 for item in capitals.items():
-    print(item.value + ", " + item.key)
+    print(t"{item.value}, {item.key}")
 ```
 
 ```output

@@ -48,8 +48,8 @@ from nn.normalization import _rms_norm_impl
 from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
 
 from std.utils import Index, IndexList
-from tensor import InputTensor
-from tensor.managed_tensor_slice import (
+from extensibility import InputTensor
+from extensibility import (
     _MutableInputTensor as MutableInputTensor,
 )
 
@@ -512,10 +512,6 @@ def generic_fused_qk_rope_bshd_continuous_batch[
             )
         )
 
-    # Pass device context only on GPU.
-    var dev_ctx = Optional[DeviceContext]() if is_cpu[target]() else Optional[
-        DeviceContext
-    ](context)
     with Trace[TraceLevel.OP, target=target](
         "mo.fused_qk_rope.padded.continuous_batching.nhead_"
         + String(kv_collection.kv_params.num_heads)
@@ -533,7 +529,7 @@ def generic_fused_qk_rope_bshd_continuous_batch[
             layer_idx,
             valid_lengths,
             output,
-            dev_ctx,
+            context,
         )
 
 
@@ -600,10 +596,6 @@ def generic_fused_qk_rope_bshd_paged[
             )
         )
 
-    # Pass device context only on GPU.
-    var dev_ctx = Optional[DeviceContext]() if is_cpu[target]() else Optional[
-        DeviceContext
-    ](context)
     with Trace[TraceLevel.OP, target=target](
         "mo.fused_qk_rope.padded.paged.nhead_"
         + String(kv_collection.kv_params.num_heads)
@@ -621,7 +613,7 @@ def generic_fused_qk_rope_bshd_paged[
             layer_idx,
             valid_lengths,
             output,
-            dev_ctx,
+            context,
         )
 
 

@@ -19,7 +19,8 @@ from typing import TYPE_CHECKING, Any, Generic
 
 import numpy as np
 from max.driver import load_devices
-from max.interfaces import (
+from max.pipelines.modeling.base.cache_mixin import DenoisingCacheConfig
+from max.pipelines.modeling.types import (
     GenerationStatus,
     Pipeline,
     PipelineOutputsDict,
@@ -27,13 +28,12 @@ from max.interfaces import (
     PixelGenerationInputs,
     RequestID,
 )
-from max.interfaces.generation import GenerationOutput
-from max.interfaces.request.open_responses import (
+from max.pipelines.modeling.types.generation import GenerationOutput
+from max.pipelines.request.open_responses import (
     OutputImageContent,
     OutputVideoContent,
 )
 
-from ..interfaces.cache_mixin import DenoisingCacheConfig
 from ..interfaces.diffusion_pipeline import DiffusionPipeline
 
 if TYPE_CHECKING:

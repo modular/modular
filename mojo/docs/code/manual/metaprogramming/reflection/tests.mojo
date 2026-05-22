@@ -263,7 +263,7 @@ struct MultiType(MakeCopyable, Writable):
     var z: Float64
 
     def write_to[W: Writer](self, mut writer: W):
-        writer.write("[{}, {}, {}, {}]".format(self.w, self.x, self.y, self.z))
+        writer.write(t"[{self.w}, {self.x}, {self.y}, {self.z}]")
 
 
 def test_copy_to_transfers_values() raises:

@@ -15,7 +15,7 @@ from std.algorithm import parallelize, sync_parallelize
 from std.collections import InlineArray
 from std.gpu.host import DeviceBuffer, DeviceContext, DeviceContextList
 from std.memory import memcpy
-from tensor import InputVariadicTensors, OutputVariadicTensors
+from extensibility import InputVariadicTensors, OutputVariadicTensors
 from std.utils import product
 
 

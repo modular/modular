@@ -31,5 +31,4 @@ Diffusion
    :toctree: generated
    :template: autosummary/class.rst
 
-   ComponentModel
    DiffusionPipeline
