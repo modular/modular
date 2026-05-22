@@ -523,12 +523,38 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
   }
 
   auto [posDiagRes, posDiagNames] = operands.diagnosePosOperands(argListAttr);
+  // If any operand is a `*pack` splat and the count didn't match, attach
+  // a note explaining the gap and pointing at the working pattern.
+  // `CallNode::emitIR` eagerly expands splats whose `VariadicPack`
+  // element list is statically resolved; this note primarily helps the
+  // case where the element list is still symbolic (e.g. `Ts.values` in
+  // a generic body), but it's also useful when a resolved splat happens
+  // to have the wrong element count.
+  auto attachPackSplatNote = [&](MojoInflightDiag &diag) {
+    for (const OperandValue &op : operands.values) {
+      if (!op.isUnpackedPositional())
+        continue;
+      diag.attachNote(op.expr->getLoc())
+          << "'*' splat is only supported when the callee accepts a "
+             "variadic pack argument at this position; to forward a "
+             "runtime pack to a fixed-arity callee, route the call through "
+             "a dispatcher whose argument is itself a variadic pack (e.g. "
+             "`def shim[Ts: TypeList[Trait=AnyType, ...], //, callee: "
+             "def(*args: *Ts) thin](...): callee(*pack)`)";
+      return;
+    }
+  };
   switch (posDiagRes) {
-  case CallOperands::PosDiagResult::kMissingPos:
-    return emitDiagFor.missingArgs(posDiagNames, "positional");
+  case CallOperands::PosDiagResult::kMissingPos: {
+    auto diag = emitDiagFor.missingArgs(posDiagNames, "positional");
+    attachPackSplatNote(diag);
+    return diag;
+  }
   case CallOperands::PosDiagResult::kTooManyPos: {
     size_t numPosMaximum = countNumPositional(argListAttr);
-    return emitDiagFor.tooManyPosArgs(numPosMaximum, numPosOperands);
+    auto diag = emitDiagFor.tooManyPosArgs(numPosMaximum, numPosOperands);
+    attachPackSplatNote(diag);
+    return diag;
   }
   case CallOperands::PosDiagResult::kByPosAndKw:
     return emitDiagFor.byPosAndKw(posDiagNames);
