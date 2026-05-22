@@ -112,6 +112,19 @@ ErrorOr<TargetInfo> M::getHostTargetInfo() {
       getFeatures(hostTriple, hostCpu);
   if (featuresOr)
     return featuresOr.takeError();
+
+  // A Docker container may only enable a subset of CPU features (e.g. no
+  // AVX-512). Use LLVM's runtime CPUID detection to remove features marked
+  // absent.
+  llvm::StringMap<bool> runtimeFeatures = llvm::sys::getHostCPUFeatures();
+  if (!runtimeFeatures.empty()) {
+    auto featureIsAbsent = [&](const std::string &f) {
+      auto it = runtimeFeatures.find(f);
+      return it != runtimeFeatures.end() && !it->second;
+    };
+    llvm::erase_if(*featuresOr, featureIsAbsent);
+  }
+
   return TargetInfo(llvm::Triple(hostTriple), hostCpu, *featuresOr);
 }
 
