@@ -23,13 +23,13 @@ from max.nn.quant_config import QuantConfig
 from max.nn.rotary_embedding import YarnScalingParams
 from max.nn.transformer import ReturnLogits
 from max.pipelines.lib import MAXModelConfig, PipelineConfig
-from max.pipelines.lib.config.config_enums import supported_encoding_dtype
 from max.pipelines.lib.interfaces.arch_config import (
     ArchConfigWithKVCache,
     ArchConfigWithStoredKVParams,
 )
 from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
 from max.pipelines.lib.quant import parse_quant_config
+from max.pipelines.modeling.config_enums import supported_encoding_dtype
 from transformers import AutoConfig
 from typing_extensions import Self, override
 

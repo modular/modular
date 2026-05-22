@@ -16,7 +16,9 @@ import re
 from unittest.mock import MagicMock, NonCallableMock
 
 import pytest
-from max.interfaces import (
+from max.pipelines import TextTokenizer
+from max.pipelines.lib import KVCacheConfig
+from max.pipelines.modeling.types import (
     RequestID,
     SamplingParams,
     TextGenerationRequest,
@@ -24,8 +26,6 @@ from max.interfaces import (
     TextGenerationRequestMessage,
     TextGenerationRequestTool,
 )
-from max.pipelines import TextTokenizer
-from max.pipelines.lib import KVCacheConfig
 from transformers import AutoConfig
 
 

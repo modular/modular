@@ -16,7 +16,7 @@
 from __future__ import annotations
 
 import pytest
-from max.interfaces import TextGenerationContext
+from max.pipelines.modeling.types import TextGenerationContext
 from testbed.harnesses.olmo2_attention import (
     Olmo2AttentionHarness,
     Olmo2AttentionStaticParams,

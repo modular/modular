@@ -13,6 +13,8 @@
 
 """Types to interface with ML pipelines such as text/token/pixel generation."""
 
+from max.pipelines.modeling.weights.hf_utils import download_weight_files
+
 from .architectures import register_all_models
 from .core import PixelContext, TextAndVisionContext, TextContext, TTSContext
 from .lib.config import (
@@ -37,7 +39,6 @@ from .lib.config import (
     supported_encoding_supported_on,
 )
 from .lib.embeddings_pipeline import EmbeddingsPipeline, EmbeddingsPipelineType
-from .lib.hf_utils import download_weight_files
 from .lib.interfaces import (
     GenerateMixin,
     ModelInputs,

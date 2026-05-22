@@ -35,13 +35,13 @@ from max.pipelines.lib import (
     CompilationTimer,
     PipelineConfig,
 )
-from max.pipelines.lib.config.config_enums import supported_encoding_dtype
 from max.pipelines.lib.interfaces import AlwaysSignalBuffersMixin
 from max.pipelines.lib.interfaces.pipeline_model import ModelInputs
 from max.pipelines.lib.utils import (
     compute_data_parallel_splits,
     parse_state_dict_from_weights,
 )
+from max.pipelines.modeling.config_enums import supported_encoding_dtype
 from max.support.algorithm import flatten2d
 from max.support.human_readable_formatter import to_human_readable_bytes
 from transformers import AutoConfig

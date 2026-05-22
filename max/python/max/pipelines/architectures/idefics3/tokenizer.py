@@ -22,7 +22,9 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import numpy.typing as npt
-from max.interfaces import (
+from max.pipelines.core import TextAndVisionContext
+from max.pipelines.lib import TextAndVisionTokenizer
+from max.pipelines.modeling.types import (
     ImageContentPart,
     ImageMetadata,
     TextContentPart,
@@ -31,8 +33,6 @@ from max.interfaces import (
     TextGenerationRequestTool,
     TokenBuffer,
 )
-from max.pipelines.core import TextAndVisionContext
-from max.pipelines.lib import TextAndVisionTokenizer
 from max.support.image import find_contiguous_ranges, hash_image
 from PIL import Image
 from PIL.Image import Image as ImageType

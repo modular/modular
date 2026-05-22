@@ -20,7 +20,7 @@ from unittest.mock import Mock
 
 import numpy as np
 import torch
-from max.interfaces import (
+from max.pipelines.modeling.types import (
     AudioGenerationMetadata,
     AudioGenerationOutput,
     AudioGenerationRequest,

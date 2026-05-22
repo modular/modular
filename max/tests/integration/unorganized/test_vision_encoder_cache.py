@@ -21,18 +21,21 @@ import numpy as np
 import numpy.typing as npt
 import pytest
 from max.driver import Buffer
-from max.interfaces.context import GenerationStatus, SamplingParams
-from max.interfaces.eos_tracking import EOSTracker
-from max.interfaces.pipeline_variants.text_generation import (
+from max.pipelines.core.context import TokenBuffer
+from max.pipelines.lib.vision_encoder_cache import VisionEncoderCache
+from max.pipelines.lib.vlm_utils import compute_multimodal_merge_indices
+from max.pipelines.modeling.types.context import (
+    GenerationStatus,
+    SamplingParams,
+)
+from max.pipelines.modeling.types.eos_tracking import EOSTracker
+from max.pipelines.modeling.types.pipeline_variants.text_generation import (
     ImageMetadata,
     LogProbabilities,
     SpecDecodingState,
     TextGenerationOutput,
 )
-from max.interfaces.request import RequestID
-from max.pipelines.core.context import TokenBuffer
-from max.pipelines.lib.vision_encoder_cache import VisionEncoderCache
-from max.pipelines.lib.vlm_utils import compute_multimodal_merge_indices
+from max.pipelines.request import RequestID
 
 
 def _make_buffer(rows: int, cols: int = 4) -> Buffer:

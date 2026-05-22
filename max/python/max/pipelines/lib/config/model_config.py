@@ -27,21 +27,30 @@ from max.driver import DeviceSpec, devices_exist, scan_available_devices
 from max.dtype import DType
 from max.graph.quantization import QuantizationConfig, QuantizationEncoding
 from max.graph.weights import WeightsFormat, weights_format
-from max.interfaces import SamplingParamsGenerationConfigDefaults
 from max.nn.kv_cache.cache_params import KVConnectorType
 from max.pipelines.lib.device_specs import (
     _default_device_specs,
     coerce_device_specs_input,
 )
-from max.pipelines.lib.hf_utils import (
+from max.pipelines.lib.memory_estimation import to_human_readable_bytes
+from max.pipelines.lib.registry import PIPELINE_REGISTRY
+from max.pipelines.modeling.config_enums import (
+    RopeType,
+    SupportedEncoding,
+    parse_supported_encoding_from_file_name,
+    supported_encoding_quantization,
+    supported_encoding_supported_devices,
+    supported_encoding_supported_on,
+)
+from max.pipelines.modeling.kv_cache_config import KVCacheConfig
+from max.pipelines.modeling.types import SamplingParamsGenerationConfigDefaults
+from max.pipelines.modeling.weights.hf_utils import (
     HuggingFaceRepo,
     download_weight_files,
     try_to_load_from_cache,
     validate_hf_repo_access,
 )
-from max.pipelines.lib.memory_estimation import to_human_readable_bytes
-from max.pipelines.lib.registry import PIPELINE_REGISTRY
-from max.pipelines.lib.weight_path_parser import WeightPathParser
+from max.pipelines.modeling.weights.weight_path_parser import WeightPathParser
 from pydantic import (
     ConfigDict,
     Field,
@@ -51,16 +60,6 @@ from pydantic import (
 )
 from transformers import PretrainedConfig
 from transformers.generation import GenerationConfig
-
-from .config_enums import (
-    RopeType,
-    SupportedEncoding,
-    parse_supported_encoding_from_file_name,
-    supported_encoding_quantization,
-    supported_encoding_supported_devices,
-    supported_encoding_supported_on,
-)
-from .kv_cache_config import KVCacheConfig
 
 logger = logging.getLogger("max.pipelines")
 

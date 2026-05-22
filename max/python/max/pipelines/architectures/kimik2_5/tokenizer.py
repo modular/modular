@@ -27,15 +27,15 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import numpy.typing as npt
-from max.interfaces import (
+from max.pipelines.lib import TextAndVisionTokenizer, max_tokens_to_generate
+from max.pipelines.lib.tokenizer import run_with_default_executor
+from max.pipelines.modeling.types import (
     ImageMetadata,
     TextGenerationRequest,
     TextGenerationRequestMessage,
     TextGenerationRequestTool,
     TokenBuffer,
 )
-from max.pipelines.lib import TextAndVisionTokenizer, max_tokens_to_generate
-from max.pipelines.lib.tokenizer import run_with_default_executor
 from max.support.image import find_contiguous_ranges, hash_image
 from transformers import AutoTokenizer
 

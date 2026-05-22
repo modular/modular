@@ -24,7 +24,7 @@ import logging
 
 from max.driver import Buffer, Device
 from max.dtype import DType
-from max.interfaces import RequestID
+from max.pipelines.modeling.types import RequestID
 from max.support.human_readable_formatter import to_human_readable_bytes
 
 logger = logging.getLogger("max.pipelines")

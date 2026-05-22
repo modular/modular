@@ -29,7 +29,7 @@ from max.pipelines.architectures.llama3.weight_adapters import (
     LLAMA_SAFETENSOR_MAPPING as QWEN_SAFETENSOR_MAP,
 )
 from max.pipelines.lib import SupportedEncoding
-from max.pipelines.lib.interfaces.component_model import ComponentModel
+from max.pipelines.modeling.base.component_model import ComponentModel
 
 from .model_config import Qwen25VLTextEncoderConfig
 from .qwen25vl import Qwen25VLTextEncoderTransformer

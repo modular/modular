@@ -15,7 +15,6 @@ from unittest.mock import Mock
 
 import numpy as np
 import pytest
-from max.interfaces.reasoning import ReasoningSpan
 from max.pipelines.architectures.kimik2_5.reasoning import (
     KimiK2_5ReasoningParser,
 )
@@ -23,6 +22,7 @@ from max.pipelines.architectures.minimax_m2.reasoning import (
     MiniMaxM2ReasoningParser,
 )
 from max.pipelines.lib.reasoning import create
+from max.pipelines.modeling.types.reasoning import ReasoningSpan
 
 
 def test_reasoning_span_extract_content_removes_delimited_span() -> None:

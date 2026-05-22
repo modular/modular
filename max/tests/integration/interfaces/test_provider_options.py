@@ -15,7 +15,7 @@
 import json
 
 import pytest
-from max.interfaces.provider_options import (
+from max.pipelines.request.provider_options import (
     ImageProviderOptions,
     MaxProviderOptions,
     ProviderOptions,

@@ -25,7 +25,8 @@ from typing import TYPE_CHECKING, Any, TypeAlias, cast
 import numpy as np
 import numpy.typing as npt
 from max.graph.weights import WeightsAdapter, WeightsFormat
-from max.interfaces import (
+from max.pipelines.core import PixelContext, TextAndVisionContext, TextContext
+from max.pipelines.modeling.types import (
     EmbeddingsContext,
     InputModality,
     Pipeline,
@@ -34,7 +35,6 @@ from max.interfaces import (
     TextGenerationContext,
     TextGenerationRequest,
 )
-from max.pipelines.core import PixelContext, TextAndVisionContext, TextContext
 from transformers import (
     AutoConfig,
     AutoTokenizer,
@@ -48,10 +48,11 @@ if TYPE_CHECKING:
     from .config import PipelineConfig
     from .pipeline_executor import PipelineExecutor
 
+from max.pipelines.modeling.config_enums import RopeType, SupportedEncoding
+from max.pipelines.modeling.weights.hf_utils import HuggingFaceRepo
+
 from .audio_generator_pipeline import AudioGeneratorPipeline
-from .config.config_enums import RopeType, SupportedEncoding
 from .embeddings_pipeline import EmbeddingsPipeline
-from .hf_utils import HuggingFaceRepo
 from .interfaces import ArchConfig, ArchConfigWithKVCache, PipelineModel
 from .pipeline_variants.overlap_text_generation import (
     OverlapTextGenerationPipeline,

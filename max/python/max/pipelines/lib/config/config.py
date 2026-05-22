@@ -27,11 +27,8 @@ from max.config import ConfigFileModel
 from max.driver import DeviceSpec, accelerator_api, load_devices
 from max.engine import InferenceSession
 from max.graph.quantization import QuantizationEncoding
-from max.interfaces.task import PipelineTask
 from max.nn.kv_cache.cache_params import KVConnectorType
-from max.pipelines.lib.hf_utils import is_diffusion_pipeline
 from max.pipelines.lib.interfaces import PipelineModel
-from max.pipelines.lib.interfaces.cache_mixin import DenoisingCacheConfig
 from max.pipelines.lib.memory_estimation import (
     MemoryEstimator,
     to_human_readable_bytes,
@@ -47,6 +44,13 @@ from max.pipelines.lib.registry import (
     get_pipeline_for_task,
 )
 from max.pipelines.lib.sampling import SamplingConfig
+from max.pipelines.modeling.base.cache_mixin import DenoisingCacheConfig
+from max.pipelines.modeling.kv_cache_config import (
+    KVCacheConfig,
+    KVConnectorConfig,
+)
+from max.pipelines.modeling.types.task import PipelineTask
+from max.pipelines.modeling.weights.hf_utils import is_diffusion_pipeline
 from pydantic import (
     ConfigDict,
     Field,
@@ -58,7 +62,6 @@ from pydantic import (
 )
 from typing_extensions import Self, override
 
-from .kv_cache_config import KVCacheConfig, KVConnectorConfig
 from .lora_config import LoRAConfig
 from .model_config import MAXModelConfig, _format_config_entries
 from .profiling_config import ProfilingConfig

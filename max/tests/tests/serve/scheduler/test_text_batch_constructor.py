@@ -15,7 +15,9 @@ from unittest.mock import Mock
 
 import numpy as np
 import pytest
-from max.interfaces import (
+from max.pipelines.core import TextContext
+from max.pipelines.kv_cache import InsufficientBlocksError
+from max.pipelines.modeling.types import (
     GenerationStatus,
     Pipeline,
     RequestID,
@@ -23,8 +25,6 @@ from max.interfaces import (
     TextGenerationOutput,
     TokenBuffer,
 )
-from max.pipelines.core import TextContext
-from max.pipelines.kv_cache import InsufficientBlocksError
 from max.serve.scheduler.batch_constructor.text_batch_constructor import (
     TextBatchConstructor,
 )

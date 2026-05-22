@@ -17,15 +17,15 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from max.driver import load_devices
-from max.interfaces import (
+from max.nn.transformer import ReturnLogits
+from max.pipelines.core import TTSContext
+from max.pipelines.kv_cache import PagedKVCacheManager
+from max.pipelines.modeling.types import (
     AudioGenerationInputs,
     AudioGenerationOutput,
     Pipeline,
     RequestID,
 )
-from max.nn.transformer import ReturnLogits
-from max.pipelines.core import TTSContext
-from max.pipelines.kv_cache import PagedKVCacheManager
 
 if TYPE_CHECKING:
     from .config import PipelineConfig

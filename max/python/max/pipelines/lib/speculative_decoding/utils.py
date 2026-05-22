@@ -22,10 +22,10 @@ from typing import Any, Protocol, runtime_checkable
 import numpy as np
 import numpy.typing as npt
 from max.driver import Buffer
-from max.interfaces import (
+from max.pipelines.core import TextContext
+from max.pipelines.modeling.types import (
     TextGenerationContextType,
 )
-from max.pipelines.core import TextContext
 
 from ..pipeline_variants.text_generation import calculate_num_steps
 

@@ -19,7 +19,7 @@ from max.experimental import functional as F
 from max.experimental.tensor import Tensor
 from max.graph.weights import Weights
 from max.pipelines.lib import SupportedEncoding
-from max.pipelines.lib.interfaces.component_model import ComponentModel
+from max.pipelines.modeling.base.component_model import ComponentModel
 
 from .model_config import AutoencoderKLConfigBase
 from .vae import DiagonalGaussianDistribution

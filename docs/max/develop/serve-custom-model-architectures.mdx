@@ -40,6 +40,28 @@ from .arch import my_arch
 ARCHITECTURES = [my_arch]
 ```
 
+A typical `arch.py` defines a [`SupportedArchitecture`](/max/api/python/generated/max.pipelines.lib.registry.SupportedArchitecture/)<!-- rumdl-disable-line MD013 -->
+using types from [`max.pipelines.modeling.types`](/max/api/python/pipelines.modeling.types):
+
+```python title="arch.py"
+from max.graph.weights import WeightsFormat
+from max.pipelines.lib import SupportedArchitecture, TextTokenizer
+from max.pipelines.modeling.types import PipelineTask
+
+from .model import MyModel
+from .model_config import MyModelConfig
+
+my_arch = SupportedArchitecture(
+    name="MyModelForCausalLM",
+    task=PipelineTask.TEXT_GENERATION,
+    example_repo_ids=["my-org/my-model"],
+    default_weights_format=WeightsFormat.safetensors,
+    pipeline_model=MyModel,
+    tokenizer=TextTokenizer,
+    config=MyModelConfig,
+)
+```
+
 When you pass your package to `max serve` with `--custom-architectures`, MAX
 imports it, reads the `ARCHITECTURES` list, and registers every entry. On each
 request, MAX matches the checkpoint's `architectures[0]` field against the

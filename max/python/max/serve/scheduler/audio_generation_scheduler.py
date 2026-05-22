@@ -21,17 +21,17 @@ from collections import deque
 from collections.abc import Generator
 from typing import Any
 
-from max.interfaces import (
-    AudioGenerationInputs,
-    AudioGenerationOutput,
-    BatchType,
-    RequestID,
-)
 from max.pipelines.core import TTSContext
 from max.pipelines.kv_cache import PagedKVCacheManager
 from max.pipelines.lib import LoRAManager
 from max.pipelines.lib.audio_generator_pipeline import (
     AudioGeneratorPipelineType,
+)
+from max.pipelines.modeling.types import (
+    AudioGenerationInputs,
+    AudioGenerationOutput,
+    BatchType,
+    RequestID,
 )
 from max.profiler import Tracer
 from max.serve.queue import (

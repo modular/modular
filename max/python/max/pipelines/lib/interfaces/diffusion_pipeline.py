@@ -33,16 +33,21 @@ from max.experimental.nn import Module
 from max.experimental.tensor import Tensor
 from max.graph import Graph, TensorType
 from max.graph.weights import load_weights
-from max.interfaces import PixelGenerationContext
-from max.pipelines.lib.interfaces.component_model import ComponentModel
+from max.pipelines.modeling.base.component_model import ComponentModel
+from max.pipelines.modeling.base.first_block_cache import FirstBlockCache
+from max.pipelines.modeling.base.taylorseer import (
+    TaylorSeer,
+    run_denoising_step,
+)
+from max.pipelines.modeling.types import PixelGenerationContext
 from tqdm import tqdm
 
-from .first_block_cache import FirstBlockCache
-from .taylorseer import TaylorSeer, run_denoising_step
-
 if TYPE_CHECKING:
-    from ..config import PipelineConfig
-    from .cache_mixin import DenoisingCacheConfig, DenoisingCacheState
+    from max.pipelines.lib.config import PipelineConfig
+    from max.pipelines.modeling.base.cache_mixin import (
+        DenoisingCacheConfig,
+        DenoisingCacheState,
+    )
 
 logger = logging.getLogger("max.pipelines")
 
@@ -119,7 +124,7 @@ class DiffusionPipeline(ABC):
         cache_config: DenoisingCacheConfig | None = None,
         **kwargs: Any,
     ) -> None:
-        from .cache_mixin import DenoisingCacheConfig
+        from max.pipelines.modeling.base.cache_mixin import DenoisingCacheConfig
 
         self.cache_config: DenoisingCacheConfig = (
             cache_config or DenoisingCacheConfig()
@@ -288,7 +293,7 @@ class DiffusionPipeline(ABC):
             text_seq_len: Text sequence length. Reserved for cache modes that
                 require text-aware allocations.
         """
-        from .cache_mixin import DenoisingCacheState
+        from max.pipelines.modeling.base.cache_mixin import DenoisingCacheState
 
         for attr in (
             "num_attention_heads",

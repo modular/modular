@@ -12,9 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 
 from max.graph.weights import WeightsFormat
-from max.interfaces import InputModality, PipelineTask
 from max.pipelines.core import PixelContext
 from max.pipelines.lib import SupportedArchitecture
+from max.pipelines.modeling.types import InputModality, PipelineTask
 
 from ..qwen_image.arch import QwenImageArchConfig
 from .pipeline_qwen_image_edit import QwenImageEditPipeline

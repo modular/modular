@@ -12,9 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 
 from max.graph.weights import WeightsFormat
-from max.interfaces import InputModality, PipelineTask
 from max.pipelines.core import TextAndVisionContext
 from max.pipelines.lib import SupportedArchitecture, TextAndVisionTokenizer
+from max.pipelines.modeling.types import InputModality, PipelineTask
 
 from .model import Gemma3_MultiModalModel
 from .model_config import Gemma3ForConditionalGenerationConfig

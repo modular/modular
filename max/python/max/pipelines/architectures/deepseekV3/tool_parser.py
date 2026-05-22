@@ -51,14 +51,14 @@ import re
 
 import huggingface_hub
 from huggingface_hub.errors import EntryNotFoundError
-from max.interfaces import ParsedToolCall
-from max.pipelines.lib.hf_utils import HuggingFaceRepo
 from max.pipelines.lib.tool_parsing import (
     StructuralTagToolParser,
     generate_call_id,
     partial_tag_overlap,
     register,
 )
+from max.pipelines.modeling.types import ParsedToolCall
+from max.pipelines.modeling.weights.hf_utils import HuggingFaceRepo
 
 logger = logging.getLogger(__name__)
 

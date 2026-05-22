@@ -16,11 +16,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from max.interfaces import (
+from max.pipelines.architectures.qwen3vl_moe.tokenizer import Qwen3VLTokenizer
+from max.pipelines.modeling.types import (
     TextGenerationRequestMessage,
     TextGenerationRequestTool,
 )
-from max.pipelines.architectures.qwen3vl_moe.tokenizer import Qwen3VLTokenizer
 
 
 class Qwen3_5Tokenizer(Qwen3VLTokenizer):

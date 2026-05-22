@@ -29,14 +29,14 @@ import os
 from collections import defaultdict
 from collections.abc import Iterable
 
-from max.interfaces import (
+from max.nn.kv_cache.metrics import KVCacheMetrics
+from max.pipelines.kv_cache.kv_connector import KVConnector
+from max.pipelines.kv_cache.memory_tier import MemoryTier
+from max.pipelines.modeling.types import (
     RequestID,
     TextGenerationContext,
     VLMTextGenerationContext,
 )
-from max.nn.kv_cache.metrics import KVCacheMetrics
-from max.pipelines.kv_cache.kv_connector import KVConnector
-from max.pipelines.kv_cache.memory_tier import MemoryTier
 from max.profiler import traced
 from max.support.math import ceildiv
 

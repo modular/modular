@@ -20,9 +20,13 @@ from typing import final
 import numpy as np
 from max.driver import Buffer
 from max.dtype import DType
-from max.interfaces import RequestID, TextGenerationInputs, TextGenerationOutput
 from max.pipelines.core import TextContext
 from max.pipelines.lib.interfaces import ModelInputs, PipelineModel
+from max.pipelines.modeling.types import (
+    RequestID,
+    TextGenerationInputs,
+    TextGenerationOutput,
+)
 from max.profiler import traced
 
 from ..pipeline_variants.utils import build_response

@@ -20,7 +20,14 @@ from unittest.mock import Mock
 
 import pytest
 from fastapi import FastAPI
-from max.interfaces import (
+from max.pipelines.core import TextContext
+from max.pipelines.lib import (
+    PIPELINE_REGISTRY,
+    MAXModelConfig,
+    PipelineConfig,
+    PipelineRuntimeConfig,
+)
+from max.pipelines.modeling.types import (
     GenerationStatus,
     Pipeline,
     PipelineTask,
@@ -28,13 +35,6 @@ from max.interfaces import (
     RequestID,
     TextGenerationInputs,
     TextGenerationOutput,
-)
-from max.pipelines.core import TextContext
-from max.pipelines.lib import (
-    PIPELINE_REGISTRY,
-    MAXModelConfig,
-    PipelineConfig,
-    PipelineRuntimeConfig,
 )
 from max.serve import api_server
 from max.serve.config import Settings

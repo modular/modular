@@ -16,9 +16,9 @@ from __future__ import annotations
 import numpy as np
 import pytest
 from max.driver import CPU
-from max.interfaces import BatchType
 from max.nn.kv_cache import KVConnectorType
 from max.pipelines.kv_cache import InsufficientBlocksError
+from max.pipelines.modeling.types import BatchType
 from max.support.math import ceildiv
 from tests.serve.scheduler.common import (
     CE,

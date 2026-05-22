@@ -18,13 +18,13 @@ from unittest.mock import patch
 import pytest
 from llguidance import LLMatcher, LLTokenizer
 from llguidance._tokenizer import TokenizerWrapper
-from max.interfaces import (
+from max.pipelines.architectures.kimik2_5.tool_parser import KimiToolParser
+from max.pipelines.lib.tool_parsing import StreamingToolCallState
+from max.pipelines.modeling.types import (
     ParsedToolCall,
     ParsedToolCallDelta,
     ParsedToolResponse,
 )
-from max.pipelines.architectures.kimik2_5.tool_parser import KimiToolParser
-from max.pipelines.lib.tool_parsing import StreamingToolCallState
 
 
 class _MinimalTokenizer:

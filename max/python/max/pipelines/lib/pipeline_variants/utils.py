@@ -26,13 +26,6 @@ import numpy as np
 import numpy.typing as npt
 from llguidance import LLMatcher, LLTokenizer
 from llguidance._tokenizer import TokenizerWrapper
-from max.interfaces import (
-    GenerationStatus,
-    LogProbabilities,
-    RequestID,
-    TextGenerationContextType,
-    TextGenerationOutput,
-)
 from max.pipelines.core import StructuredOutputRegionDelimiters
 from max.pipelines.core.exceptions import InputError
 from max.pipelines.lib.tool_parsing import (
@@ -40,6 +33,13 @@ from max.pipelines.lib.tool_parsing import (
     get_parser_cls,
 )
 from max.pipelines.lib.utils import upper_bounded_default
+from max.pipelines.modeling.types import (
+    GenerationStatus,
+    LogProbabilities,
+    RequestID,
+    TextGenerationContextType,
+    TextGenerationOutput,
+)
 from max.profiler import traced
 from transformers import (
     AutoConfig,
@@ -48,7 +48,7 @@ from transformers import (
 )
 
 if TYPE_CHECKING:
-    from max.interfaces import PipelineTokenizer
+    from max.pipelines.modeling.types import PipelineTokenizer
 
 logger = logging.getLogger("max.pipelines")
 

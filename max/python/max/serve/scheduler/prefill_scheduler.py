@@ -18,12 +18,6 @@ import time
 import uuid
 from dataclasses import dataclass
 
-from max.interfaces import (
-    Pipeline,
-    RequestID,
-    TextGenerationInputs,
-    TextGenerationOutput,
-)
 from max.pipelines.core import TextContext
 from max.pipelines.kv_cache import (
     KVTransferEngine,
@@ -34,6 +28,12 @@ from max.pipelines.kv_cache import (
 from max.pipelines.lib import (
     PipelineConfig,
     TextGenerationPipeline,
+)
+from max.pipelines.modeling.types import (
+    Pipeline,
+    RequestID,
+    TextGenerationInputs,
+    TextGenerationOutput,
 )
 from max.profiler import Tracer, traced
 from max.serve.config import Settings

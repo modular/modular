@@ -22,7 +22,10 @@ from unittest.mock import MagicMock, NonCallableMock
 
 import numpy as np
 import pytest
-from max.interfaces import (
+from max.pipelines.architectures.gemma4.tokenizer import Gemma4Tokenizer
+from max.pipelines.architectures.gemma4.video_processor import VideoMetadata
+from max.pipelines.lib import KVCacheConfig
+from max.pipelines.modeling.types import (
     ImageContentPart,
     RequestID,
     TextContentPart,
@@ -31,9 +34,6 @@ from max.interfaces import (
     TextGenerationResponseFormat,
     VideoContentPart,
 )
-from max.pipelines.architectures.gemma4.tokenizer import Gemma4Tokenizer
-from max.pipelines.architectures.gemma4.video_processor import VideoMetadata
-from max.pipelines.lib import KVCacheConfig
 from PIL import Image
 from pytest_mock import MockerFixture
 

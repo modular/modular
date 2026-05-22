@@ -101,19 +101,6 @@ from max.graph.weights import (
     load_weights,
     weights_format,
 )
-from max.interfaces import (
-    BatchType,
-    EOSTracker,
-    PipelineOutputsDict,
-    PipelineTokenizer,
-    RequestID,
-    SpecDecodingState,
-    TextGenerationContextType,
-    TextGenerationInputs,
-    TextGenerationOutput,
-    TextGenerationRequest,
-)
-from max.interfaces.tokens import TokenBuffer
 from max.nn import kernels
 from max.nn.kv_cache import KVCacheInputs, KVCacheParams, MultiKVCacheParams
 from max.nn.transformer import ReturnLogits
@@ -125,6 +112,19 @@ from max.pipelines.kv_cache.paged_kv_cache.cache_manager import (
 from max.pipelines.lib.speculative_decoding.ragged_token_merger import (
     shape_to_scalar,
 )
+from max.pipelines.modeling.types import (
+    BatchType,
+    EOSTracker,
+    PipelineOutputsDict,
+    PipelineTokenizer,
+    RequestID,
+    SpecDecodingState,
+    TextGenerationContextType,
+    TextGenerationInputs,
+    TextGenerationOutput,
+    TextGenerationRequest,
+)
+from max.pipelines.modeling.types.tokens import TokenBuffer
 from max.profiler import Tracer, traced
 from max.support.math import ceildiv
 

@@ -16,13 +16,13 @@ from __future__ import annotations
 import pytest
 from max.driver import DeviceSpec, accelerator_count
 from max.graph.weights import WeightsFormat
-from max.interfaces import PipelineTask
 from max.pipelines import PIPELINE_REGISTRY, PipelineConfig, TextContext
 from max.pipelines.lib import MAXModelConfig
 from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
 from max.pipelines.lib.registry import SupportedArchitecture
 from max.pipelines.lib.tokenizer import TextTokenizer
+from max.pipelines.modeling.types import PipelineTask
 from test_common.pipeline_model_dummy import (
     DummyLlamaArchConfig,
     DummyLlamaPipelineModel,

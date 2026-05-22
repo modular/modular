@@ -32,7 +32,6 @@ from max.graph import (
 )
 from max.graph.buffer_utils import cast_tensors_to
 from max.graph.weights import Weights, WeightsAdapter
-from max.interfaces import RequestID
 from max.nn.comm import Signals
 from max.nn.kv_cache import KVCacheInputs
 from max.pipelines.architectures.qwen3vl_moe.context import (
@@ -50,6 +49,7 @@ from max.pipelines.lib import (
 from max.pipelines.lib.interfaces import AlwaysSignalBuffersMixin
 from max.pipelines.lib.utils import parse_state_dict_from_weights
 from max.pipelines.lib.vlm_utils import compute_multimodal_merge_indices
+from max.pipelines.modeling.types import RequestID
 from max.profiler import traced
 from transformers import AutoConfig
 

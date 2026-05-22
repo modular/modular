@@ -16,7 +16,7 @@ import numpy as np
 import pytest
 from hypothesis import assume, given
 from hypothesis import strategies as st
-from max.pipelines.dataprocessing import (
+from max.pipelines.modeling.dataprocessing import (
     PaddingDirection,
     batch_padded_tokens_and_mask,
     collate_batch,

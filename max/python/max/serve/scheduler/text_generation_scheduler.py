@@ -16,18 +16,18 @@ import logging
 import os
 import time
 
-from max.interfaces import (
-    Pipeline,
-    RequestID,
-    TextGenerationInputs,
-    TextGenerationOutput,
-)
 from max.pipelines.core import TextAndVisionContext, TextContext
 from max.pipelines.kv_cache import PagedKVCacheManager
 from max.pipelines.lib import (
     OverlapTextGenerationPipeline,
     PipelineConfig,
     TextGenerationPipeline,
+)
+from max.pipelines.modeling.types import (
+    Pipeline,
+    RequestID,
+    TextGenerationInputs,
+    TextGenerationOutput,
 )
 from max.profiler import Tracer, traced
 from max.serve.queue import (

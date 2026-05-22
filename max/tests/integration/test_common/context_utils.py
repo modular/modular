@@ -13,8 +13,8 @@
 """Context utility functions for use in testing infrastructure."""
 
 import numpy as np
-from max.interfaces import RequestID, TokenBuffer
 from max.pipelines.core import TextContext
+from max.pipelines.modeling.types import RequestID, TokenBuffer
 
 
 def create_text_context(

@@ -40,7 +40,8 @@ modular_py_library(
     srcs = ["test_data.py"],
     imports = [".."],
     deps = [
-        "//max/python/max/interfaces",
+        "//max/python/max/pipelines/modeling",
+        "//max/python/max/pipelines/request",
         "//max/python/max/support",
     ],
 )
@@ -83,9 +84,9 @@ modular_py_library(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/interfaces",
         "//max/python/max/pipelines",
         "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
         "//max/python/max/support",
     ],
 )
@@ -96,8 +97,8 @@ modular_py_library(
     srcs = ["evaluate_embeddings.py"],
     imports = [".."],
     deps = [
-        "//max/python/max/interfaces",
         "//max/python/max/pipelines",
+        "//max/python/max/pipelines/modeling",
     ],
 )
 
@@ -127,8 +128,8 @@ modular_py_library(
     imports = [".."],
     deps = [
         requirement("numpy"),
-        "//max/python/max/interfaces",
         "//max/python/max/pipelines/core",
+        "//max/python/max/pipelines/modeling",
     ],
 )
 
@@ -155,10 +156,10 @@ modular_py_library(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/interfaces",
         "//max/python/max/nn",
         "//max/python/max/pipelines",
         "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
         requirement("numpy"),
         requirement("transformers"),
     ],
@@ -245,10 +246,10 @@ modular_py_library(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/interfaces",
         "//max/python/max/nn",
         "//max/python/max/pipelines/core",
         "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
         "//max/tests/integration:hf_repo_lock",
         requirement("numpy"),
         requirement("typing-extensions"),

@@ -40,7 +40,7 @@ from max.nn.conv import Conv2d
 from max.nn.layer import LayerList, Module
 from max.pipelines.lib import SupportedEncoding
 from max.pipelines.lib.bfloat16_utils import float32_to_bfloat16_as_uint16
-from max.pipelines.lib.interfaces.component_model import ComponentModel
+from max.pipelines.modeling.base.component_model import ComponentModel
 
 from .model_config import (
     AutoencoderKLQwenImageConfig,

@@ -16,13 +16,13 @@ import asyncio
 from collections.abc import Iterable
 from typing import Any
 
-from max.interfaces import (
+from max.pipelines import EmbeddingsPipeline
+from max.pipelines.modeling.types import (
     EmbeddingsGenerationInputs,
     PipelineTokenizer,
     RequestID,
     TextGenerationRequest,
 )
-from max.pipelines import EmbeddingsPipeline
 
 
 def encode(  # noqa: ANN201

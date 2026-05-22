@@ -13,9 +13,9 @@
 
 import pytest
 from fastapi.testclient import TestClient
-from max.interfaces import PipelineTask
 from max.pipelines.core import TextContext
 from max.pipelines.lib import PIPELINE_REGISTRY, PipelineConfig
+from max.pipelines.modeling.types import PipelineTask
 from max.serve.api_server import ServingTokenGeneratorSettings, fastapi_app
 from max.serve.config import APIType, Settings
 from max.serve.pipelines.echo_gen import (

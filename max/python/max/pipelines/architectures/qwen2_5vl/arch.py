@@ -12,10 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 
 from max.graph.weights import WeightsFormat
-from max.interfaces import InputModality, PipelineTask
 from max.pipelines.core import PixelContext, TextAndVisionContext, TextContext
 from max.pipelines.core.exceptions import InputError
 from max.pipelines.lib import SupportedArchitecture
+from max.pipelines.modeling.types import InputModality, PipelineTask
 
 from .context import Qwen2_5VLTextAndVisionContext
 from .model import Qwen2_5VLModel

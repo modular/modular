@@ -16,11 +16,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from max.graph.weights import WeightsFormat
-from max.interfaces import InputModality, PipelineTask
 from max.pipelines.core import PixelContext
 from max.pipelines.lib import SupportedArchitecture
 from max.pipelines.lib.config import MAXModelConfig, PipelineConfig
 from max.pipelines.lib.interfaces import ArchConfig
+from max.pipelines.modeling.types import InputModality, PipelineTask
 from typing_extensions import Self
 
 # Text sequence length for FLUX.2 pipelines.

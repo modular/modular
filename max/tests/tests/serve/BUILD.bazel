@@ -33,10 +33,11 @@ modular_py_test(
     }),
     deps = [
         "//max/python/max/dtype",
-        "//max/python/max/interfaces",
         "//max/python/max/pipelines/architectures",
         "//max/python/max/pipelines/core",
         "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
+        "//max/python/max/pipelines/request",
         "//max/python/max/serve",
         "//max/python/max/serve:config",
         "//max/python/max/serve:process_control",
@@ -79,7 +80,7 @@ modular_py_test(
         "MAX_SERVE_TESTDATA": "max/tests/tests/serve/testdata",
     },
     deps = [
-        "//max/python/max/interfaces",
+        "//max/python/max/pipelines/modeling",
         "//max/python/max/serve/parser",
         "//max/python/max/serve/router",
         "//max/python/max/serve/schemas",

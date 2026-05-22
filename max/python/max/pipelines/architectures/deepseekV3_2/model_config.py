@@ -26,8 +26,8 @@ from max.nn.kv_cache.cache_params import (
 )
 from max.pipelines.architectures.deepseekV3.model_config import DeepseekV3Config
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
-from max.pipelines.lib.config.config_enums import supported_encoding_dtype
 from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
+from max.pipelines.modeling.config_enums import supported_encoding_dtype
 from transformers import AutoConfig
 from typing_extensions import Self, override
 

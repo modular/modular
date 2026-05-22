@@ -32,11 +32,11 @@ import uuid
 from typing import Any
 
 from llguidance import LLMatcher
-from max.interfaces import ParsedToolCall
 from max.pipelines.lib.tool_parsing import (
     StructuralTagToolParser,
     register,
 )
+from max.pipelines.modeling.types import ParsedToolCall
 
 # Structural tags used by Kimi K2.5
 TOOL_CALLS_SECTION_BEGIN = "<|tool_calls_section_begin|>"

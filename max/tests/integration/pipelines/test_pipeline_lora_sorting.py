@@ -24,12 +24,6 @@ import pytest
 from max.driver import CPU, Buffer, Device
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.interfaces import (
-    RequestID,
-    TextGenerationInputs,
-    TextGenerationOutput,
-    TokenBuffer,
-)
 from max.nn.kv_cache import KVCacheInputs, KVCacheParams
 from max.pipelines.core import TextContext, TTSContext
 from max.pipelines.lib import (
@@ -50,6 +44,12 @@ from max.pipelines.lib.pipeline_variants.text_generation import (
 from max.pipelines.lib.pipeline_variants.utils import StructuredOutputHelper
 from max.pipelines.lib.speech_token_pipeline import (
     SpeechTokenGenerationPipeline,
+)
+from max.pipelines.modeling.types import (
+    RequestID,
+    TextGenerationInputs,
+    TextGenerationOutput,
+    TokenBuffer,
 )
 from transformers import AutoConfig
 

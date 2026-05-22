@@ -16,8 +16,8 @@
 from __future__ import annotations
 
 from max.driver import CPU, Buffer
-from max.interfaces import TextGenerationContextType
-from max.interfaces.logit_processors_type import (
+from max.pipelines.modeling.types import TextGenerationContextType
+from max.pipelines.modeling.types.logit_processors_type import (
     BatchLogitsProcessor,
     BatchProcessorInputs,
     ProcessorInputs,

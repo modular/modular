@@ -27,12 +27,12 @@ from typing import Generic
 import numpy as np
 import numpy.typing as npt
 from max.driver import Buffer
-from max.interfaces.pipeline_variants.text_generation import (
+from max.pipelines.lib.vlm_utils import compute_multimodal_merge_indices
+from max.pipelines.modeling.types.pipeline_variants.text_generation import (
     VLMContextType,
     VLMTextGenerationContext,
 )
-from max.interfaces.request import RequestID
-from max.pipelines.lib.vlm_utils import compute_multimodal_merge_indices
+from max.pipelines.request import RequestID
 from max.profiler import traced
 
 

@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from max.graph.weights import WeightsFormat
-from max.interfaces import InputModality, PipelineTask
 from max.pipelines.core import TextAndVisionContext
 from max.pipelines.core.context_validators import (
     validate_requires_vision_context,
@@ -21,6 +20,7 @@ from max.pipelines.lib import (
     SupportedArchitecture,
     TextAndVisionTokenizer,
 )
+from max.pipelines.modeling.types import InputModality, PipelineTask
 
 from . import weight_adapters
 from .model import PixtralModel

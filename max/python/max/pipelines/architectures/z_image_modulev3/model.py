@@ -21,11 +21,11 @@ from max.experimental import functional as F
 from max.experimental.tensor import Tensor
 from max.graph.weights import Weights
 from max.pipelines.lib import SupportedEncoding
-from max.pipelines.lib.interfaces.component_model import ComponentModel
+from max.pipelines.modeling.base.component_model import ComponentModel
 from max.profiler import traced
 
 if TYPE_CHECKING:
-    from max.pipelines.lib.interfaces.cache_mixin import DenoisingCacheConfig
+    from max.pipelines.modeling.base.cache_mixin import DenoisingCacheConfig
 
 from .model_config import ZImageConfig
 from .weight_adapters import convert_z_image_transformer_state_dict

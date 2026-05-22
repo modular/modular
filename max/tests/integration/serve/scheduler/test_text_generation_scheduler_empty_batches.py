@@ -13,13 +13,13 @@
 import queue
 from unittest.mock import Mock
 
-from max.interfaces import (
+from max.pipelines.core import TextContext
+from max.pipelines.kv_cache import DummyKVCache
+from max.pipelines.modeling.types import (
     RequestID,
     TextGenerationInputs,
     TextGenerationOutput,
 )
-from max.pipelines.core import TextContext
-from max.pipelines.kv_cache import DummyKVCache
 from max.serve.scheduler.base import SchedulerProgress
 from max.serve.scheduler.text_generation_scheduler import (
     TokenGenerationScheduler,

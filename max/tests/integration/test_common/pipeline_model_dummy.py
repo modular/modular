@@ -23,13 +23,6 @@ from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType
 from max.graph.weights import WeightsFormat
-from max.interfaces import (
-    PipelineTask,
-    PipelineTokenizer,
-    TextGenerationContext,
-    TextGenerationRequest,
-    TokenBuffer,
-)
 from max.nn.kv_cache import (
     KVCacheInputs,
     KVCacheParams,
@@ -50,6 +43,13 @@ from max.pipelines.lib import PipelineModelWithKVCache
 from max.pipelines.lib.interfaces import (
     ArchConfig,
     ArchConfigWithAttentionKVCache,
+)
+from max.pipelines.modeling.types import (
+    PipelineTask,
+    PipelineTokenizer,
+    TextGenerationContext,
+    TextGenerationRequest,
+    TokenBuffer,
 )
 from transformers import AutoConfig
 

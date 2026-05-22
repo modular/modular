@@ -16,11 +16,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from max.graph.weights import WeightsFormat
-from max.interfaces import PipelineTask
 from max.pipelines.core import validate_wan_max_pixel_area
 from max.pipelines.lib import SupportedArchitecture
 from max.pipelines.lib.config import MAXModelConfig, PipelineConfig
 from max.pipelines.lib.interfaces import ArchConfig
+from max.pipelines.modeling.types import PipelineTask
 from typing_extensions import Self
 
 from .context import WanContext

@@ -18,6 +18,7 @@ modular_py_test(
         "//max/python/max/graph",
         "//max/python/max/pipelines",
         "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
         "//max/tests/integration/test_common:mocks",
     ],
 )
@@ -29,6 +30,7 @@ modular_py_test(
     deps = [
         "//max/python/max/driver",
         "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
     ],
 )
 
@@ -40,9 +42,9 @@ modular_py_test(
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/graph",
-        "//max/python/max/interfaces",
         "//max/python/max/pipelines",
         "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
         "//max/tests/integration/test_common:pipeline_model_dummy",
         "//max/tests/integration/test_common:registry",
     ],
@@ -58,7 +60,7 @@ modular_py_test(
     }),
     deps = [
         "//max/python/max/pipelines",
-        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
     ],
 )
 
@@ -97,6 +99,7 @@ modular_py_test(
     ],
     deps = [
         "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
         requirement("huggingface-hub"),
         requirement("transformers"),
     ],
@@ -132,10 +135,10 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/interfaces",
         "//max/python/max/nn",
         "//max/python/max/pipelines/core",
         "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
         "//max/python/max/support",
         "//max/tests/integration:hf_repo_lock",
         "//max/tests/integration/test_common:mocks",
@@ -226,8 +229,8 @@ modular_py_test(
         "//max/python/max/driver",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/interfaces",
         "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
         "//max/tests/integration/test_common:numerics",
         requirement("numpy"),
     ],
@@ -261,10 +264,10 @@ modular_py_test(
     ],
     deps = [
         "//max/python/max/driver",
-        "//max/python/max/interfaces",
         "//max/python/max/pipelines",
         "//max/python/max/pipelines/core",
         "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
         "//max/tests/integration:hf_repo_lock",
         "//max/tests/integration/test_common:graph_utils",
         "//max/tests/integration/test_common:lora_utils",
@@ -295,10 +298,10 @@ modular_py_test(
     ],
     deps = [
         "//max/python/max/driver",
-        "//max/python/max/interfaces",
         "//max/python/max/pipelines",
         "//max/python/max/pipelines/core",
         "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
         "//max/tests/integration:hf_repo_lock",
         "//max/tests/integration/test_common:registry",
         requirement("numpy"),

@@ -19,7 +19,6 @@ from typing import Any, cast
 
 import numpy as np
 from max.driver import DeviceSpec
-from max.interfaces import RequestID, TokenBuffer
 from max.pipelines import PipelineConfig
 from max.pipelines.architectures.wan.arch import WanArchConfig
 from max.pipelines.architectures.wan.components import (
@@ -30,6 +29,7 @@ from max.pipelines.core import PixelContext
 from max.pipelines.lib.config.model_config import MAXModelConfig
 from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.lib.pixel_tokenizer import PixelGenerationTokenizer
+from max.pipelines.modeling.types import RequestID, TokenBuffer
 
 
 def test_wan_arch_config_initialize_uses_transformer_component() -> None:

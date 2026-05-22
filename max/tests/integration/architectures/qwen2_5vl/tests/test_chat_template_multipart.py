@@ -19,13 +19,13 @@ from typing import Any
 from unittest.mock import MagicMock, NonCallableMock
 
 import numpy as np
-from max.interfaces.pipeline_variants.text_generation import (
+from max.pipelines.architectures.qwen2_5vl.tokenizer import Qwen2_5VLTokenizer
+from max.pipelines.lib import KVCacheConfig
+from max.pipelines.modeling.types.pipeline_variants.text_generation import (
     ImageContentPart,
     TextContentPart,
     TextGenerationRequestMessage,
 )
-from max.pipelines.architectures.qwen2_5vl.tokenizer import Qwen2_5VLTokenizer
-from max.pipelines.lib import KVCacheConfig
 from PIL import Image
 from transformers import AutoConfig
 

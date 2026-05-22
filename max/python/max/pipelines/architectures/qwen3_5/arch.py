@@ -12,11 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 
 from max.graph.weights import WeightsFormat
-from max.interfaces import PipelineTask
 from max.pipelines.architectures.qwen3vl_moe.context import (
     Qwen3VLTextAndVisionContext,
 )
 from max.pipelines.lib import SupportedArchitecture
+from max.pipelines.modeling.types import PipelineTask
 
 from .model import Qwen3_5Model
 from .model_config import Qwen3_5Config

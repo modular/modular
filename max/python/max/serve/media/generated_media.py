@@ -27,7 +27,7 @@ from uuid import uuid4
 
 import aiofiles
 import numpy as np
-from max.interfaces.request.open_responses import (
+from max.pipelines.request.open_responses import (
     OutputImageContent,
     OutputVideoContent,
 )

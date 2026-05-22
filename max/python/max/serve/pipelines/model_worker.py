@@ -31,15 +31,15 @@ from max.driver import Device, DevicePinnedBuffer
 from max.driver.driver import load_device
 from max.dtype import DType
 from max.experimental.nn._compilation_timer import collect_compilation_stats
-from max.interfaces import (
+from max.pipelines.kv_cache import DummyKVCache, PagedKVCacheManager
+from max.pipelines.lib import PipelineConfig, PipelineModel
+from max.pipelines.modeling.types import (
     BaseContextType,
     Pipeline,
     PipelineInputsType,
     PipelineOutputType,
     PipelinesFactory,
 )
-from max.pipelines.kv_cache import DummyKVCache, PagedKVCacheManager
-from max.pipelines.lib import PipelineConfig, PipelineModel
 from max.profiler import Tracer, traced
 from max.serve.config import MetricRecordingMethod, Settings
 from max.serve.exceptions import detect_and_wrap_oom

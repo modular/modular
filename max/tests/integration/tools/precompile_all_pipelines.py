@@ -30,7 +30,7 @@ from multiprocessing.sharedctypes import Synchronized
 
 import click
 from create_pipelines import PIPELINE_ORACLES
-from max.pipelines.lib.config.config_enums import SupportedEncoding
+from max.pipelines.modeling.config_enums import SupportedEncoding
 from max.tests.integration.accuracy.logit_verification.logit_verification_config import (
     LOGIT_VERIFICATION_CONFIG,
     DeviceKind,

@@ -18,8 +18,8 @@ from max.driver import Buffer
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef
-from max.interfaces import SamplingParams
 from max.pipelines.lib import SamplingConfig, token_sampler
+from max.pipelines.modeling.types import SamplingParams
 
 
 @pytest.fixture(scope="module")

@@ -6,7 +6,8 @@ modular_py_library(
     name = "core",
     srcs = glob(["**/*.py"]),
     deps = [
-        "//max/python/max/interfaces",
+        "//max/python/max/pipelines/modeling",
+        "//max/python/max/pipelines/request",
         requirement("numpy"),
         requirement("llguidance"),
     ],

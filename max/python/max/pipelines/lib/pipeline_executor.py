@@ -18,8 +18,8 @@ from abc import ABC, abstractmethod
 from typing import Generic, TypeVar
 
 from max.engine import InferenceSession
+from max.pipelines.modeling.base.tensor_struct import TensorStruct
 
-from .interfaces.tensor_struct import TensorStruct
 from .model_manifest import ModelManifest
 from .pipeline_runtime_config import PipelineRuntimeConfig
 

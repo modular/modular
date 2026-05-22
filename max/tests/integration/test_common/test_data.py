@@ -20,7 +20,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, cast
 
-from max.interfaces import (
+from max.pipelines.modeling.types import (
     ImageContentPart,
     RequestID,
     SamplingParams,
@@ -28,13 +28,13 @@ from max.interfaces import (
     TextGenerationRequest,
     TextGenerationRequestMessage,
 )
-from max.interfaces.provider_options import (
-    ImageProviderOptions,
-    ProviderOptions,
-)
-from max.interfaces.request import (
+from max.pipelines.request import (
     OpenResponsesRequest,
     OpenResponsesRequestBody,
+)
+from max.pipelines.request.provider_options import (
+    ImageProviderOptions,
+    ProviderOptions,
 )
 from max.support import fetch_bytes_from_s3
 

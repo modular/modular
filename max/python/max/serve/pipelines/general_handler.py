@@ -16,8 +16,8 @@ from __future__ import annotations
 
 from collections.abc import AsyncGenerator
 
-from max.interfaces import BaseContext, PipelineOutput
-from max.interfaces.request import OpenResponsesRequest
+from max.pipelines.modeling.types import BaseContext, PipelineOutput
+from max.pipelines.request import OpenResponsesRequest
 from max.serve.pipelines.llm import BasePipeline
 from max.serve.telemetry.stopwatch import StopWatch
 

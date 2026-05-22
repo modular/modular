@@ -18,16 +18,16 @@ from typing import Any
 import msgspec
 import numpy as np
 import numpy.typing as npt
-from max.interfaces import RequestID
-from max.interfaces.generation import GenerationOutput
-from max.interfaces.request.open_responses import (
-    OutputImageContent,
-    OutputVideoContent,
-)
-from max.interfaces.status import GenerationStatus
-from max.interfaces.utils.serialization import (
+from max.pipelines.modeling.types import RequestID
+from max.pipelines.modeling.types.generation import GenerationOutput
+from max.pipelines.modeling.types.status import GenerationStatus
+from max.pipelines.modeling.types.utils.serialization import (
     msgpack_numpy_decoder,
     msgpack_numpy_encoder,
+)
+from max.pipelines.request.open_responses import (
+    OutputImageContent,
+    OutputVideoContent,
 )
 
 

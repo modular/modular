@@ -25,16 +25,6 @@ from typing import Any
 import numpy as np
 import numpy.typing as npt
 import requests
-from max.interfaces import (
-    ImageContentPart,
-    ImageMetadata,
-    MessageContent,
-    TextContentPart,
-    TextGenerationRequest,
-    TextGenerationRequestMessage,
-    TextGenerationRequestTool,
-    TokenBuffer,
-)
 from max.pipelines.architectures.qwen2_5vl.nn.data_processing import (
     mrope_pos_ids_3d,
 )
@@ -49,6 +39,16 @@ from max.pipelines.lib import (
     max_tokens_to_generate,
 )
 from max.pipelines.lib.config import PipelineConfig
+from max.pipelines.modeling.types import (
+    ImageContentPart,
+    ImageMetadata,
+    MessageContent,
+    TextContentPart,
+    TextGenerationRequest,
+    TextGenerationRequestMessage,
+    TextGenerationRequestTool,
+    TokenBuffer,
+)
 from max.support.image import find_contiguous_ranges, hash_image
 from PIL import Image
 from transformers import AutoTokenizer

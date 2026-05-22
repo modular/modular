@@ -31,10 +31,10 @@ from create_pipelines import (
     VLLMPipeline,
 )
 from max import driver, pipelines
-from max.interfaces import PipelineTask
 from max.pipelines.lib.pipeline_variants.pixel_generation import (
     PixelGenerationPipeline,
 )
+from max.pipelines.modeling.types import PipelineTask
 from test_common import evaluate, evaluate_embeddings, torch_utils, vllm_utils
 from test_common.evaluate import ModelOutput
 from typing_extensions import ParamSpec

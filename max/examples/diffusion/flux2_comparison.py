@@ -50,32 +50,32 @@ from typing import Any, cast
 import diffusers
 import torch
 from max.driver import DeviceSpec
-from max.interfaces import (
+from max.pipelines import PIPELINE_REGISTRY, MAXModelConfig, PipelineConfig
+from max.pipelines.core import PixelContext
+from max.pipelines.lib import PixelGenerationTokenizer
+from max.pipelines.lib.interfaces import DiffusionPipeline
+from max.pipelines.lib.model_manifest import ModelManifest
+from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
+from max.pipelines.lib.pipeline_variants.pixel_generation import (
+    PixelGenerationPipeline,
+)
+from max.pipelines.modeling.base.cache_mixin import DenoisingCacheConfig
+from max.pipelines.modeling.types import (
     PipelineTask,
     PixelGenerationInputs,
     RequestID,
 )
-from max.interfaces.provider_options import (
-    ImageProviderOptions,
-    ProviderOptions,
-)
-from max.interfaces.request import OpenResponsesRequest
-from max.interfaces.request.open_responses import (
+from max.pipelines.request import OpenResponsesRequest
+from max.pipelines.request.open_responses import (
     InputImageContent,
     InputTextContent,
     OpenResponsesRequestBody,
     OutputImageContent,
     UserMessage,
 )
-from max.pipelines import PIPELINE_REGISTRY, MAXModelConfig, PipelineConfig
-from max.pipelines.core import PixelContext
-from max.pipelines.lib import PixelGenerationTokenizer
-from max.pipelines.lib.interfaces import DiffusionPipeline
-from max.pipelines.lib.interfaces.cache_mixin import DenoisingCacheConfig
-from max.pipelines.lib.model_manifest import ModelManifest
-from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
-from max.pipelines.lib.pipeline_variants.pixel_generation import (
-    PixelGenerationPipeline,
+from max.pipelines.request.provider_options import (
+    ImageProviderOptions,
+    ProviderOptions,
 )
 from PIL import Image
 

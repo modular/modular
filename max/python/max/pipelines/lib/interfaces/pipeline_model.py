@@ -31,21 +31,20 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Value
 from max.graph.weights import Weights, WeightsAdapter
-from max.interfaces import BaseContextType, LogProbabilities
 from max.nn.kv_cache import (
     KVCacheInputs,
     KVCacheParamInterface,
     PagedCacheValues,
 )
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
+from max.pipelines.lib.lora import LoRAManager
+from max.pipelines.modeling.config_enums import supported_encoding_dtype
+from max.pipelines.modeling.kv_cache_config import KVCacheConfig
+from max.pipelines.modeling.types import BaseContextType, LogProbabilities
 from transformers import AutoConfig
 
-from ..config.config_enums import supported_encoding_dtype
-from ..config.kv_cache_config import KVCacheConfig
-from ..lora import LoRAManager
-
 if TYPE_CHECKING:
-    from ..config import PipelineConfig
+    from max.pipelines.lib.config import PipelineConfig
 
 logger = logging.getLogger("max.pipelines")
 

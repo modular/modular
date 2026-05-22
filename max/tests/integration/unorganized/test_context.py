@@ -17,7 +17,15 @@ from typing import Any
 
 import numpy as np
 import pytest
-from max.interfaces import (
+from max.pipelines.core import (
+    PixelContext,
+    SpecDecodingState,
+    TextAndVisionContext,
+    TextContext,
+    TTSContext,
+)
+from max.pipelines.core.context import FUTURE_TOKEN
+from max.pipelines.modeling.types import (
     EOSTracker,
     GenerationStatus,
     ImageMetadata,
@@ -30,14 +38,6 @@ from max.interfaces import (
     msgpack_numpy_decoder,
     msgpack_numpy_encoder,
 )
-from max.pipelines.core import (
-    PixelContext,
-    SpecDecodingState,
-    TextAndVisionContext,
-    TextContext,
-    TTSContext,
-)
-from max.pipelines.core.context import FUTURE_TOKEN
 
 
 def dataclass_equal(left: Any, right: Any) -> bool:

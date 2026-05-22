@@ -34,16 +34,6 @@ from unittest.mock import MagicMock, Mock, NonCallableMock
 
 import numpy as np
 import pytest
-from max.interfaces import (
-    EOSTracker,
-    ImageContentPart,
-    RequestID,
-    SamplingParams,
-    TextContentPart,
-    TextGenerationRequest,
-    TextGenerationRequestMessage,
-    TokenBuffer,
-)
 from max.nn.kv_cache import KVCacheInputs
 from max.nn.parallel import ParallelArrayOps
 from max.pipelines.architectures.qwen2_5vl.context import (
@@ -53,6 +43,16 @@ from max.pipelines.architectures.qwen2_5vl.model import Qwen2_5VLModel
 from max.pipelines.architectures.qwen2_5vl.tokenizer import Qwen2_5VLTokenizer
 from max.pipelines.core import TextAndVisionContext
 from max.pipelines.lib import KVCacheConfig
+from max.pipelines.modeling.types import (
+    EOSTracker,
+    ImageContentPart,
+    RequestID,
+    SamplingParams,
+    TextContentPart,
+    TextGenerationRequest,
+    TextGenerationRequestMessage,
+    TokenBuffer,
+)
 from pytest_mock import MockerFixture
 from transformers import Qwen2_5_VLConfig
 

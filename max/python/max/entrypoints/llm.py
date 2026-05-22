@@ -25,15 +25,15 @@ from threading import Event, Thread
 from typing import TypeVar, cast
 
 import tqdm
-from max.interfaces import (
+from max.pipelines.core import TextAndVisionContext, TextContext
+from max.pipelines.lib import PIPELINE_REGISTRY, PipelineConfig
+from max.pipelines.modeling.types import (
     RequestID,
     SamplingParams,
     SamplingParamsInput,
     TextGenerationOutput,
     TextGenerationRequest,
 )
-from max.pipelines.core import TextAndVisionContext, TextContext
-from max.pipelines.lib import PIPELINE_REGISTRY, PipelineConfig
 from max.serve.config import Settings
 from max.serve.pipelines.llm import TokenGeneratorPipeline
 from max.serve.pipelines.model_worker import start_model_worker

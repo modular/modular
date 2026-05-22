@@ -18,12 +18,12 @@ import logging
 import os
 
 import uvloop
-from max.interfaces import PipelineTask
 from max.pipelines import (
     PIPELINE_REGISTRY,
     AudioGenerationConfig,
     PipelineConfig,
 )
+from max.pipelines.modeling.types import PipelineTask
 from max.profiler import Tracer
 from max.serve.api_server import (
     ServingTokenGeneratorSettings,

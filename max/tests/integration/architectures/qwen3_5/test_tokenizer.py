@@ -32,14 +32,14 @@ from typing import Any
 from unittest.mock import MagicMock, NonCallableMock
 
 import pytest
-from max.interfaces import (
+from max.pipelines.architectures.qwen3_5.tokenizer import Qwen3_5Tokenizer
+from max.pipelines.lib import KVCacheConfig
+from max.pipelines.modeling.types import (
     RequestID,
     TextContentPart,
     TextGenerationRequest,
     TextGenerationRequestMessage,
 )
-from max.pipelines.architectures.qwen3_5.tokenizer import Qwen3_5Tokenizer
-from max.pipelines.lib import KVCacheConfig
 from transformers import AutoConfig
 
 # Text-only tokenizer downloads — config + tokenizer files only, no weights.

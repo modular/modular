@@ -26,7 +26,6 @@ from max.engine import InferenceSession
 from max.experimental.torch import torch_dtype_to_max
 from max.graph import DeviceRef, Graph, Shape, TensorType, ops
 from max.graph.weights import WeightData
-from max.interfaces import TextGenerationContext
 from max.nn import AttentionWithRope, Linear, RotaryEmbedding
 from max.nn.kv_cache import KVCacheParams, PagedCacheValues
 from max.nn.quant_config import QuantConfig
@@ -35,6 +34,7 @@ from max.pipelines.architectures.llama3.model_config import (
 )
 from max.pipelines.kv_cache import PagedKVCacheManager
 from max.pipelines.lib.quant import parse_quant_config
+from max.pipelines.modeling.types import TextGenerationContext
 from test_common.context_utils import create_text_context
 from test_common.graph_utils import is_h100_h200
 from torch.utils.dlpack import from_dlpack

@@ -45,7 +45,9 @@ from max.pipelines.lib import (
     PipelineConfig,
     PipelineModelWithKVCache,
 )
-from max.pipelines.lib.weight_loading import auto_cast_weights_from_env
+from max.pipelines.modeling.weights.weight_loading import (
+    auto_cast_weights_from_env,
+)
 from transformers.models.auto.configuration_auto import AutoConfig
 
 from .model_config import Idefics3Config

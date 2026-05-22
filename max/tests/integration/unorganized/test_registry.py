@@ -17,13 +17,13 @@ from typing import Any
 
 import pytest
 from max.graph.weights import WeightsFormat
-from max.interfaces import PipelineTask
 from max.pipelines import PIPELINE_REGISTRY, PipelineConfig, TextContext
 from max.pipelines.lib.config.model_config import MAXModelConfig
 from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
 from max.pipelines.lib.registry import SupportedArchitecture
 from max.pipelines.lib.tokenizer import TextTokenizer
+from max.pipelines.modeling.types import PipelineTask
 from test_common.mocks import (
     DummyPipelineConfig,
     mock_pipeline_config_hf_dependencies,

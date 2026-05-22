@@ -17,7 +17,7 @@ import logging
 from typing import Any
 from unittest.mock import patch
 
-from max.interfaces import BatchType
+from max.pipelines.modeling.types import BatchType
 from max.serve.scheduler.utils import BatchMetrics
 from pythonjsonlogger import jsonlogger
 

@@ -16,7 +16,7 @@ from typing import TypeVar
 import numpy as np
 from hypothesis import given, settings
 from hypothesis import strategies as st
-from max.pipelines.dataprocessing import (
+from max.pipelines.modeling.dataprocessing import (
     causal_attention_mask,
     causal_attention_mask_with_token_mask,
 )

@@ -23,7 +23,6 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import Graph
 from max.graph.weights import Weights, WeightsAdapter
-from max.interfaces import RequestID
 from max.nn.kv_cache import KVCacheInputs
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.core import TextContext
@@ -34,6 +33,7 @@ from max.pipelines.lib import (
     PipelineConfig,
 )
 from max.pipelines.lib.utils import parse_state_dict_from_weights
+from max.pipelines.modeling.types import RequestID
 from max.support.algorithm import flatten2d
 from transformers import AutoConfig
 

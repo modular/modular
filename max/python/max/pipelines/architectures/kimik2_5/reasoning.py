@@ -18,14 +18,14 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any
 
-from max.interfaces import (
+from max.pipelines.lib.reasoning import register
+from max.pipelines.lib.tokenizer import convert_token_to_id
+from max.pipelines.modeling.types import (
     ParsedReasoningDelta,
     PipelineTokenizer,
     ReasoningParser,
     ReasoningSpan,
 )
-from max.pipelines.lib.reasoning import register
-from max.pipelines.lib.tokenizer import convert_token_to_id
 
 
 @register("kimik2_5")

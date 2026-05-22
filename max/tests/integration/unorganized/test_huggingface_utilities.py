@@ -19,7 +19,7 @@ from huggingface_hub import constants as hf_hub_constants
 from huggingface_hub import errors as hf_hub_errors
 from max.graph.weights import WeightsFormat
 from max.pipelines.lib import HuggingFaceRepo
-from max.pipelines.lib.hf_utils import (
+from max.pipelines.modeling.weights.hf_utils import (
     generate_local_model_path,
     validate_hf_repo_access,
 )
@@ -88,7 +88,9 @@ def test_huggingface_repo__encodings_supported(
 
 
 def test_huggingface_repo__encodings_supported_online_fp8_fallback() -> None:
-    with patch("max.pipelines.lib.hf_utils.validate_hf_repo_access"):
+    with patch(
+        "max.pipelines.modeling.weights.hf_utils.validate_hf_repo_access"
+    ):
         hf_repo = HuggingFaceRepo(
             repo_id="RedHatAI/Llama-3.3-70B-Instruct-FP8-dynamic",
             repo_type="online",
@@ -206,7 +208,7 @@ class TestValidateHfRepoAccess:
     def test_valid_repo_access_success(self) -> None:
         """Test that valid repository access doesn't raise any exception."""
         with patch(
-            "max.pipelines.lib.hf_utils._repo_exists_with_retry"
+            "max.pipelines.modeling.weights.hf_utils._repo_exists_with_retry"
         ) as mock_exists:
             mock_exists.return_value = True
 
@@ -220,7 +222,7 @@ class TestValidateHfRepoAccess:
     def test_repo_not_exists_raises_value_error(self) -> None:
         """Test that non-existent repository raises ValueError with appropriate message."""
         with patch(
-            "max.pipelines.lib.hf_utils._repo_exists_with_retry"
+            "max.pipelines.modeling.weights.hf_utils._repo_exists_with_retry"
         ) as mock_exists:
             mock_exists.return_value = False
 
@@ -238,7 +240,7 @@ class TestValidateHfRepoAccess:
     ) -> None:
         """Test that GatedRepoError raises ValueError with authentication guidance."""
         with patch(
-            "max.pipelines.lib.hf_utils._repo_exists_with_retry"
+            "max.pipelines.modeling.weights.hf_utils._repo_exists_with_retry"
         ) as mock_exists:
             original_error = hf_hub_errors.GatedRepoError(
                 "Repository is gated", response=MagicMock()
@@ -271,7 +273,7 @@ class TestValidateHfRepoAccess:
     def test_repository_not_found_error_raises_value_error(self) -> None:
         """Test that RepositoryNotFoundError raises ValueError with helpful message."""
         with patch(
-            "max.pipelines.lib.hf_utils._repo_exists_with_retry"
+            "max.pipelines.modeling.weights.hf_utils._repo_exists_with_retry"
         ) as mock_exists:
             original_error = hf_hub_errors.RepositoryNotFoundError(
                 "Repository not found", response=MagicMock()
@@ -294,7 +296,7 @@ class TestValidateHfRepoAccess:
     def test_revision_not_found_error_raises_value_error(self) -> None:
         """Test that RevisionNotFoundError raises ValueError with helpful message."""
         with patch(
-            "max.pipelines.lib.hf_utils._repo_exists_with_retry"
+            "max.pipelines.modeling.weights.hf_utils._repo_exists_with_retry"
         ) as mock_exists:
             original_error = hf_hub_errors.RevisionNotFoundError(
                 "Revision not found", response=MagicMock()
@@ -319,7 +321,7 @@ class TestValidateHfRepoAccess:
     ) -> None:
         """Test that unexpected exceptions raise ValueError with fallback message."""
         with patch(
-            "max.pipelines.lib.hf_utils._repo_exists_with_retry"
+            "max.pipelines.modeling.weights.hf_utils._repo_exists_with_retry"
         ) as mock_exists:
             original_error = ConnectionError("Network timeout")
             mock_exists.side_effect = original_error
@@ -341,7 +343,7 @@ class TestValidateHfRepoAccess:
     def test_entry_not_found_error_raises_value_error(self) -> None:
         """Test that EntryNotFoundError raises ValueError with helpful message."""
         with patch(
-            "max.pipelines.lib.hf_utils._repo_exists_with_retry"
+            "max.pipelines.modeling.weights.hf_utils._repo_exists_with_retry"
         ) as mock_exists:
             original_error = hf_hub_errors.EntryNotFoundError("Entry not found")
             mock_exists.side_effect = original_error
@@ -359,7 +361,7 @@ class TestValidateHfRepoAccess:
     def test_function_calls_repo_exists_with_correct_parameters(self) -> None:
         """Test that the function calls _repo_exists_with_retry with correct parameters."""
         with patch(
-            "max.pipelines.lib.hf_utils._repo_exists_with_retry"
+            "max.pipelines.modeling.weights.hf_utils._repo_exists_with_retry"
         ) as mock_exists:
             mock_exists.return_value = True
 
@@ -379,7 +381,7 @@ class TestValidateHfRepoAccess:
 
         for repo_id, revision in test_cases:
             with patch(
-                "max.pipelines.lib.hf_utils._repo_exists_with_retry"
+                "max.pipelines.modeling.weights.hf_utils._repo_exists_with_retry"
             ) as mock_exists:
                 mock_exists.return_value = False
 
@@ -394,7 +396,7 @@ class TestValidateHfRepoAccess:
 class TestGenerateLocalModelPath:
     def test_uses_cached_snapshot_when_available(self) -> None:
         with patch(
-            "max.pipelines.lib.hf_utils.huggingface_hub.snapshot_download",
+            "max.pipelines.modeling.weights.hf_utils.huggingface_hub.snapshot_download",
             return_value="/tmp/cached-model",
         ) as mock_snapshot_download:
             model_path = generate_local_model_path("org/model", "abc123")
@@ -410,7 +412,7 @@ class TestGenerateLocalModelPath:
         with (
             patch.object(hf_hub_constants, "HF_HUB_OFFLINE", False),
             patch(
-                "max.pipelines.lib.hf_utils.huggingface_hub.snapshot_download",
+                "max.pipelines.modeling.weights.hf_utils.huggingface_hub.snapshot_download",
                 side_effect=hf_hub_errors.LocalEntryNotFoundError("cache miss"),
             ) as mock_snapshot_download,
         ):
@@ -431,7 +433,7 @@ class TestGenerateLocalModelPath:
         with (
             patch.object(hf_hub_constants, "HF_HUB_OFFLINE", True),
             patch(
-                "max.pipelines.lib.hf_utils.huggingface_hub.snapshot_download",
+                "max.pipelines.modeling.weights.hf_utils.huggingface_hub.snapshot_download",
                 side_effect=hf_hub_errors.LocalEntryNotFoundError("cache miss"),
             ) as mock_snapshot_download,
         ):

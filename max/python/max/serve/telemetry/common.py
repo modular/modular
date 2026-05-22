@@ -215,7 +215,6 @@ def configure_logging(
     # Set up log filtering
     components_to_log = [
         "root",
-        "max.interfaces",
         "max.entrypoints",
         "max.pipelines",
         "max.serve",

@@ -18,18 +18,18 @@ import uuid
 from unittest.mock import patch
 
 import pytest
-from max.interfaces import (
-    ParsedToolCall,
-    ParsedToolCallDelta,
-    ParsedToolResponse,
-)
 from max.pipelines.architectures.deepseekV3.tool_parser import (
     DeepseekV3_1ToolParser,
     DeepseekV3ToolParser,
     resolve_deepseekv3_tool_parser,
 )
-from max.pipelines.lib.hf_utils import HuggingFaceRepo
 from max.pipelines.lib.tool_parsing import StreamingToolCallState
+from max.pipelines.modeling.types import (
+    ParsedToolCall,
+    ParsedToolCallDelta,
+    ParsedToolResponse,
+)
+from max.pipelines.modeling.weights.hf_utils import HuggingFaceRepo
 
 
 def test_single_tool_call_parsing() -> None:

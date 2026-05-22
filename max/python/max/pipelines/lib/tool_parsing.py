@@ -16,7 +16,7 @@
 Two pieces live here:
 
 * :func:`register` / :func:`create` — the registry mapping names to
-  :class:`max.interfaces.ToolParser` implementations.
+  :class:`max.pipelines.modeling.types.ToolParser` implementations.
 * :class:`StructuralTagToolParser` — a base class that captures the
   shared structure of "section-marker" tool-call grammars.
 """
@@ -30,7 +30,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import ClassVar
 
-from max.interfaces import (
+from max.pipelines.modeling.types import (
     ParsedToolCall,
     ParsedToolCallDelta,
     ParsedToolResponse,

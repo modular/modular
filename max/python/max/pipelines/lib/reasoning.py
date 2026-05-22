@@ -18,7 +18,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-from max.interfaces import PipelineTokenizer, ReasoningParser
+from max.pipelines.modeling.types import PipelineTokenizer, ReasoningParser
 
 __all__ = ["get_parser_cls"]
 

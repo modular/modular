@@ -25,8 +25,8 @@ from max.pipelines.lib import (
     MAXModelConfig,
     PipelineConfig,
 )
-from max.pipelines.lib.hf_utils import HuggingFaceRepo
 from max.pipelines.lib.model_manifest import ModelManifest
+from max.pipelines.modeling.weights.hf_utils import HuggingFaceRepo
 from test_common.mocks import (
     mock_pipeline_config_resolve,
 )
@@ -96,7 +96,7 @@ class TestMAXModelConfigSubfolder:
                 return_value=mock_auto_config,
             ) as mock_get_config,
             patch(
-                "max.pipelines.lib.hf_utils.validate_hf_repo_access",
+                "max.pipelines.lib.config.model_config.validate_hf_repo_access",
             ),
         ):
             _ = model_config.huggingface_config
@@ -117,7 +117,7 @@ class TestMAXModelConfigSubfolder:
                 return_value=mock_auto_config,
             ) as mock_get_config,
             patch(
-                "max.pipelines.lib.hf_utils.validate_hf_repo_access",
+                "max.pipelines.lib.config.model_config.validate_hf_repo_access",
             ),
         ):
             _ = model_config.huggingface_config
@@ -221,7 +221,7 @@ class TestMAXModelConfigSubfolderWeightPathPrefixing:
                 return_value=True,
             ),
             patch(
-                "max.pipelines.lib.hf_utils.validate_hf_repo_access",
+                "max.pipelines.lib.config.model_config.validate_hf_repo_access",
             ),
         ):
             config.resolve()
@@ -245,7 +245,7 @@ class TestMAXModelConfigSubfolderWeightPathPrefixing:
                 return_value=True,
             ),
             patch(
-                "max.pipelines.lib.hf_utils.validate_hf_repo_access",
+                "max.pipelines.lib.config.model_config.validate_hf_repo_access",
             ),
         ):
             config.resolve()
@@ -291,7 +291,7 @@ class TestMAXModelConfigSubfolderWeightPathPrefixing:
                 return_value=True,
             ),
             patch(
-                "max.pipelines.lib.hf_utils.validate_hf_repo_access",
+                "max.pipelines.lib.config.model_config.validate_hf_repo_access",
             ),
         ):
             config.resolve()

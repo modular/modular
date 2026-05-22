@@ -17,14 +17,14 @@ import io
 
 import hf_repo_lock
 import pytest
-from max.interfaces import (
+from max.pipelines.architectures.idefics3.tokenizer import Idefics3Tokenizer
+from max.pipelines.modeling.types import (
     ImageContentPart,
     RequestID,
     TextContentPart,
     TextGenerationRequest,
     TextGenerationRequestMessage,
 )
-from max.pipelines.architectures.idefics3.tokenizer import Idefics3Tokenizer
 from PIL import Image
 from test_common.mocks import DummyPipelineConfig
 

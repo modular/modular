@@ -12,9 +12,10 @@ modular_py_test(
     srcs = ["test_vision_encoder_cache.py"],
     deps = [
         "//max/python/max/driver",
-        "//max/python/max/interfaces",
         "//max/python/max/pipelines/core",
         "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
+        "//max/python/max/pipelines/request",
         requirement("numpy"),
     ],
 )
@@ -23,7 +24,7 @@ modular_py_test(
     name = "test_sampling_params",
     srcs = ["test_sampling_params.py"],
     deps = [
-        "//max/python/max/interfaces",
+        "//max/python/max/pipelines/modeling",
     ],
 )
 
@@ -59,11 +60,11 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/interfaces",
         "//max/python/max/nn",
         "//max/python/max/pipelines",
         "//max/python/max/pipelines/core",
         "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
         "//max/tests/integration:hf_repo_lock",
         "//max/tests/integration/test_common:mocks",
         "//max/tests/integration/test_common:pipeline_model_dummy",
@@ -98,9 +99,9 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/interfaces",
         "//max/python/max/pipelines",
         "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
         "//max/tests/integration:hf_repo_lock",
         "//max/tests/integration/test_common:mocks",
         "//max/tests/integration/test_common:pipeline_model_dummy",
@@ -153,9 +154,9 @@ modular_py_test(
         "//max/python/max/engine",
         "//max/python/max/entrypoints",
         "//max/python/max/graph",
-        "//max/python/max/interfaces",
         "//max/python/max/pipelines",
         "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
         "//max/tests/integration:hf_repo_lock",
         "//max/tests/integration/test_common:mocks",
         "//max/tests/integration/test_common:pipeline_model_dummy",
@@ -194,11 +195,11 @@ modular_py_test(
     deps = [
         "//max/python/max/driver",
         "//max/python/max/engine",
-        "//max/python/max/interfaces",
         "//max/python/max/nn",
         "//max/python/max/pipelines",
         "//max/python/max/pipelines/core",
         "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
         "//max/tests/integration:hf_repo_lock",
         "//max/tests/integration/test_common:pipeline_model_dummy",
         "//max/tests/integration/test_common:registry",
@@ -236,10 +237,10 @@ modular_py_test(
     deps = [
         "//max/python/max/driver",
         "//max/python/max/engine",
-        "//max/python/max/interfaces",
         "//max/python/max/pipelines",
         "//max/python/max/pipelines/core",
         "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
         "//max/tests/integration:hf_repo_lock",
         requirement("numpy"),
     ],
@@ -270,7 +271,7 @@ modular_py_test(
         "MODULAR_PATH": ".",
     },
     deps = [
-        "//max/python/max/interfaces",
+        "//max/python/max/pipelines/modeling",
     ],
 )
 
@@ -295,8 +296,8 @@ modular_py_test(
         "requires-network",
     ],
     deps = _SAMPLING_BASE_DEPS + [
-        "//max/python/max/interfaces",
         "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
         "//max/tests/integration:hf_repo_lock",
         requirement("llguidance"),
         requirement("transformers"),
@@ -323,8 +324,8 @@ modular_py_test(
         "no-sandbox",
     ],
     deps = _SAMPLING_BASE_DEPS + [
-        "//max/python/max/interfaces",
         "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
         "//max/tests/integration:hf_repo_lock",
     ],
 )
@@ -427,9 +428,9 @@ modular_py_test(
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
-        "//max/python/max/interfaces",
         "//max/python/max/pipelines/core",
         "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
         "//max/tests/integration:hf_repo_lock",
         requirement("numpy"),
     ],

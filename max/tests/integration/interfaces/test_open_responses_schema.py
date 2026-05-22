@@ -15,12 +15,7 @@
 import json
 
 import pytest
-from max.interfaces.provider_options import (
-    ImageProviderOptions,
-    MaxProviderOptions,
-    ProviderOptions,
-)
-from max.interfaces.request.open_responses import (
+from max.pipelines.request.open_responses import (
     AssistantMessage,
     FunctionCall,
     FunctionToolParam,
@@ -31,6 +26,11 @@ from max.interfaces.request.open_responses import (
     SystemMessage,
     ToolChoiceValueEnum,
     UserMessage,
+)
+from max.pipelines.request.provider_options import (
+    ImageProviderOptions,
+    MaxProviderOptions,
+    ProviderOptions,
 )
 from pydantic import ValidationError
 

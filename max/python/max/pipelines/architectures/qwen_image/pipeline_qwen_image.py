@@ -30,11 +30,11 @@ from max.driver import CPU, Buffer, Device
 from max.dtype import DType
 from max.graph import TensorType, TensorValue, ops
 from max.graph.ops import shape_to_tensor
-from max.interfaces import TokenBuffer
 from max.pipelines.core import PixelContext
 from max.pipelines.lib.bfloat16_utils import float32_to_bfloat16_as_uint16
 from max.pipelines.lib.interfaces import DiffusionPipeline
 from max.pipelines.lib.interfaces.diffusion_pipeline import max_compile
+from max.pipelines.modeling.types import TokenBuffer
 from max.profiler import Tracer, traced
 
 from ..autoencoders.autoencoder_kl_qwen_image import AutoencoderKLQwenImageModel

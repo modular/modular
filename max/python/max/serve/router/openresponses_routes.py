@@ -26,14 +26,16 @@ from http import HTTPStatus
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
-from max.interfaces import OpenResponsesRequest
-from max.interfaces.generation import GenerationOutput
-from max.interfaces.provider_options import GeneratedMediaResponseFormat
-from max.interfaces.request.open_responses import (
+from max.pipelines.modeling.types import OpenResponsesRequest
+from max.pipelines.modeling.types.generation import GenerationOutput
+from max.pipelines.request.open_responses import (
     OutputContent,
     OutputImageContent,
     OutputVideoContent,
     ResponseResource,
+)
+from max.pipelines.request.provider_options import (
+    GeneratedMediaResponseFormat,
 )
 from max.serve.dependencies import create_request_parser
 from max.serve.media import (

@@ -40,7 +40,14 @@ from max.graph.weights import (
     load_weights,
     weights_format,
 )
-from max.interfaces import (
+from max.nn import ReturnLogits
+from max.nn.kv_cache import KVCacheParams, MultiKVCacheParams
+from max.pipelines.kv_cache import (
+    IncrementCacheLengthsProcessor,
+    PagedKVCacheManager,
+    load_kv_manager,
+)
+from max.pipelines.modeling.types import (
     BatchLogitsProcessor,
     LogProbabilities,
     Pipeline,
@@ -51,13 +58,6 @@ from max.interfaces import (
     TextGenerationInputs,
     TextGenerationOutput,
     TextGenerationRequest,
-)
-from max.nn import ReturnLogits
-from max.nn.kv_cache import KVCacheParams, MultiKVCacheParams
-from max.pipelines.kv_cache import (
-    IncrementCacheLengthsProcessor,
-    PagedKVCacheManager,
-    load_kv_manager,
 )
 from max.profiler import Tracer, traced
 from max.support.algorithm import flatten2d

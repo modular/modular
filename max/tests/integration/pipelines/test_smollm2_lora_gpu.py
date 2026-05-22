@@ -13,14 +13,14 @@
 """Test Suite for SmolLM2 with LoRA adapters."""
 
 import pytest
-from max.interfaces import (
+from max.pipelines import TextGenerationPipeline
+from max.pipelines.core.context import TextContext
+from max.pipelines.modeling.types import (
     RequestID,
     SamplingParams,
     TextGenerationInputs,
     TextGenerationRequest,
 )
-from max.pipelines import TextGenerationPipeline
-from max.pipelines.core.context import TextContext
 from test_common.graph_utils import is_h100_h200
 from test_common.lora_utils import (
     create_multiple_test_lora_adapters,

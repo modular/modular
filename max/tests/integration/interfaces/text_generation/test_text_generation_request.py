@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 import pytest
-from max.interfaces import (
+from max.pipelines.modeling.types import (
     ImageContentPart,
     RequestID,
     TextContentPart,
