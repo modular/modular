@@ -796,7 +796,7 @@ struct DeviceEvent(ImplicitlyCopyable, Movable):
 
     # `_event` is an `ArcPointer[Optional[...]]` so that all copies of a
     # DeviceEvent  share the same backing event, which matches the behavior
-    # of the existing reference-counted DeviceEvent implemenetation.
+    # of the existing reference-counted DeviceEvent implementation.
     var _ctx: DeviceContext
     var _event: ArcPointer[Optional[Event[EVENT_FLAG_CPU_VISIBLE]]]
 

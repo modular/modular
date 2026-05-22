@@ -10,7 +10,7 @@ _EXTRA_CONSTRAINTS = {
     "test_cudnn_conv.mojo": ["//:nvidia_gpu"],
     "test_miopen_conv.mojo": ["//:amd_gpu"],
     # 4-wave implicit-GEMM conv inherits the matmul's MI355X-only MFMA
-    # + chiplet/L2 swizzle; not compileable on other AMD parts.
+    # + chiplet/L2 swizzle; not compilable on other AMD parts.
     "test_amd_4wave_conv_dtypes.mojo": ["//:mi355_gpu"],
     "test_amd_4wave_conv_miopen.mojo": ["//:mi355_gpu"],
     "test_amd_4wave_conv_residual.mojo": ["//:mi355_gpu"],
