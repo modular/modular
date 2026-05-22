@@ -4978,10 +4978,13 @@ ParseResult DeclResolver::resolveBody(TraitType traitType, ASTDecl &traitDecl) {
     // Inherit members from the parent.
     for (auto &[name, decls] : parentDecl.getDeclsInScope()) {
       for (ASTDecl *decl : decls) {
-        if (failed(resolveBody(*decl, traitDecl.getLoc())))
+        // Trait composition only needs member signatures for lookup. Do not
+        // body-resolve inherited default methods here: their bodies must remain
+        // typechecked in the declaring trait or concrete conformance context.
+        if (failed(resolveSignature(*decl, traitDecl.getLoc())))
           return failure();
 
-        // resolveBody may have disabled this decl (e.g. when the child trait
+        // Signature resolution may disable this decl (e.g. when the child trait
         // overrides a parent method with the same signature). Skip it.
         if (decl->isDisabled())
           continue;
