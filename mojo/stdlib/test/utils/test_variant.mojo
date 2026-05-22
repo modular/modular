@@ -12,7 +12,12 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.ffi import _Global
-from std.memory import UnsafeMaybeUninit
+from std.memory import (
+    UnsafeMaybeUninit,
+    is_trivially_copyable,
+    is_trivially_destructible,
+    is_trivially_movable,
+)
 from std.os import abort
 from std.sys import size_of
 
@@ -248,24 +253,27 @@ def test_variant_trivial_del() raises:
     comptime yes = ConfigureTrivial[del_is_trivial=True]
     comptime no = ConfigureTrivial[del_is_trivial=False]
 
-    assert_true(Variant[yes].__del__is_trivial)
-    assert_false(Variant[no].__del__is_trivial)
-    assert_false(Variant[yes, no].__del__is_trivial)
+    assert_true(is_trivially_destructible[Variant[yes]]())
+    assert_false(is_trivially_destructible[Variant[no]]())
+    assert_false(is_trivially_destructible[Variant[yes, no]]())
 
     # TODO (MOCO-3016):
     # check variant of linear type
-    # assert_false(Variant[LinearType].__del__is_trivial)
+    # assert_false(is_trivially_destructible[Variant[LinearType]]())
 
 
 def test_variant_trivial_copyinit() raises:
     comptime yes = ConfigureTrivial[copyinit_is_trivial=True]
     comptime no = ConfigureTrivial[copyinit_is_trivial=False]
 
-    assert_true(Variant[yes].__copy_ctor_is_trivial)
-    assert_false(Variant[no].__copy_ctor_is_trivial)
-    assert_false(Variant[yes, no].__copy_ctor_is_trivial)
+    assert_true(is_trivially_copyable[Variant[yes]]())
+    assert_false(is_trivially_copyable[Variant[no]]())
+    assert_false(is_trivially_copyable[Variant[yes, no]]())
 
-    # check variant of move-only type
+    # check variant of move-only type. `Variant[MoveOnly[Int]]` does not
+    # conform to `Copyable`, so we read the trivial-flag field directly
+    # rather than calling `is_trivially_copyable`, which constrains its
+    # type parameter to `Copyable`.
     assert_false(Variant[MoveOnly[Int]].__copy_ctor_is_trivial)
 
 
@@ -273,13 +281,13 @@ def test_variant_trivial_moveinit() raises:
     comptime yes = ConfigureTrivial[moveinit_is_trivial=True]
     comptime no = ConfigureTrivial[moveinit_is_trivial=False]
 
-    assert_true(Variant[yes].__move_ctor_is_trivial)
-    assert_false(Variant[no].__move_ctor_is_trivial)
-    assert_false(Variant[yes, no].__move_ctor_is_trivial)
+    assert_true(is_trivially_movable[Variant[yes]]())
+    assert_false(is_trivially_movable[Variant[no]]())
+    assert_false(is_trivially_movable[Variant[yes, no]]())
 
     # check variant of non-movable type
     # # TODO(MOCO-3383): Compiler issue with folding non-struct types
-    # assert_false(Variant[NonMovable].__move_ctor_is_trivial)
+    # assert_false(is_trivially_movable[Variant[NonMovable]]())
 
 
 def test_variant_write_to() raises:

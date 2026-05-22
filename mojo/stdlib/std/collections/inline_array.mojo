@@ -40,7 +40,13 @@ from std.collections import check_bounds
 import std.format._utils as fmt
 from std.reflection import reflect
 from std.hashlib.hasher import Hasher
-from std.memory import UnsafeMaybeUninit, uninit_move_n
+from std.memory import (
+    UnsafeMaybeUninit,
+    is_trivially_copyable,
+    is_trivially_destructible,
+    is_trivially_movable,
+    uninit_move_n,
+)
 
 # ===-----------------------------------------------------------------------===#
 # Array
@@ -178,7 +184,7 @@ struct _InlineArrayIterOwned[T: Copyable, size: Int](
 
         # Destroy the remaining elements that have not yet been
         # iterated over.
-        comptime if not TDestructible.__del__is_trivial:
+        comptime if not is_trivially_destructible[TDestructible]():
             for i in range(idx, Self.size):
                 (array.unsafe_ptr() + i).bitcast[
                     TDestructible
@@ -244,11 +250,15 @@ struct InlineArray[ElementType: Copyable, size: Int](
     ```
     """
 
-    comptime __del__is_trivial: Bool = downcast[
-        Self.ElementType, ImplicitlyDestructible
-    ].__del__is_trivial
-    comptime __copy_ctor_is_trivial: Bool = Self.ElementType.__copy_ctor_is_trivial
-    comptime __move_ctor_is_trivial: Bool = Self.ElementType.__move_ctor_is_trivial
+    comptime __del__is_trivial: Bool = is_trivially_destructible[
+        downcast[Self.ElementType, ImplicitlyDestructible]
+    ]()
+    comptime __copy_ctor_is_trivial: Bool = is_trivially_copyable[
+        Self.ElementType
+    ]()
+    comptime __move_ctor_is_trivial: Bool = is_trivially_movable[
+        Self.ElementType
+    ]()
 
     # Fields
     comptime type = __mlir_type[
@@ -487,7 +497,7 @@ struct InlineArray[ElementType: Copyable, size: Int](
         ```
         """
 
-        comptime if Self.ElementType.__copy_ctor_is_trivial:
+        comptime if is_trivially_copyable[Self.ElementType]():
             self._array = copy._array
         else:
             self = Self(uninitialized=True)
@@ -505,7 +515,7 @@ struct InlineArray[ElementType: Copyable, size: Int](
             Moves the elements from the source array into this array.
         """
 
-        comptime if Self.ElementType.__move_ctor_is_trivial:
+        comptime if is_trivially_movable[Self.ElementType]():
             self._array = take._array
         else:
             self = Self(uninitialized=True)
@@ -526,7 +536,7 @@ struct InlineArray[ElementType: Copyable, size: Int](
             Self.ElementType, ImplicitlyDestructible
         ]
 
-        comptime if not TDestructible.__del__is_trivial:
+        comptime if not is_trivially_destructible[TDestructible]():
             comptime for idx in range(Self.size):
                 var ptr = self.unsafe_ptr() + idx
                 ptr.bitcast[TDestructible]().destroy_pointee()

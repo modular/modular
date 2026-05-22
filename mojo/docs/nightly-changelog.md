@@ -54,6 +54,11 @@ This version is still a work in progress.
 - Changed `Idx` to a `comptime` alias for `ComptimeInt`. Use `Idx[value]`
   instead of `Idx[value]()` for compile-time coordinates.
 
+- Added `is_trivially_movable`, `is_trivially_copyable`, and
+  `is_trivially_destructible` to `std.memory`. These helper functions
+  return whether a type's move constructor, copy constructor, or destructor is
+  trivial (i.e., a bit-copy or a no-op).
+
 - Added `std.gpu.host.CompletionFlag`, a non-owning handle to an MLRT
   `M::Driver::CompletionFlag` (an 8-byte slot in pinned host memory mapped
   into a device's address space). Pairs with the new

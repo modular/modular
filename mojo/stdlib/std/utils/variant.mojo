@@ -17,7 +17,12 @@ from std.format._utils import (
     FormatStruct,
     TypeNames,
 )
-from std.memory import UnsafeMaybeUninit
+from std.memory import (
+    UnsafeMaybeUninit,
+    is_trivially_copyable,
+    is_trivially_destructible,
+    is_trivially_movable,
+)
 from std.hashlib.hasher import Hasher
 from std.reflection import call_location
 from std.reflection.traits import (
@@ -523,9 +528,9 @@ struct Variant[*Ts: Movable](
 
     comptime _Storage: _VariantStorage = _VariantStorageFor[*Self.Ts]
 
-    comptime __del__is_trivial = Self._Storage.__del__is_trivial
-    comptime __copy_ctor_is_trivial = Self._Storage.__copy_ctor_is_trivial
-    comptime __move_ctor_is_trivial = Self._Storage.__move_ctor_is_trivial
+    comptime __del__is_trivial = is_trivially_destructible[Self._Storage]()
+    comptime __copy_ctor_is_trivial = is_trivially_copyable[Self._Storage]()
+    comptime __move_ctor_is_trivial = is_trivially_movable[Self._Storage]()
 
     # Fields
     var _storage: Self._Storage
@@ -945,7 +950,9 @@ def _all_movable[*Ts: AnyType]() -> Bool:
 def _all_trivial_del[*Ts: AnyType]() -> Bool:
     comptime for i in range(Ts.size):
         comptime if conforms_to(Ts[i], ImplicitlyDestructible):
-            if not downcast[Ts[i], ImplicitlyDestructible].__del__is_trivial:
+            if not is_trivially_destructible[
+                downcast[Ts[i], ImplicitlyDestructible]
+            ]():
                 return False
         else:
             return False
@@ -955,7 +962,7 @@ def _all_trivial_del[*Ts: AnyType]() -> Bool:
 def _all_trivial_copyinit[*Ts: AnyType]() -> Bool:
     comptime for i in range(Ts.size):
         comptime if conforms_to(Ts[i], Copyable):
-            if not downcast[Ts[i], Copyable].__copy_ctor_is_trivial:
+            if not is_trivially_copyable[downcast[Ts[i], Copyable]]():
                 return False
         else:
             return False
@@ -966,7 +973,7 @@ def _all_trivial_copyinit[*Ts: AnyType]() -> Bool:
 def _all_trivial_moveinit[*Ts: AnyType]() -> Bool:
     comptime for i in range(Ts.size):
         comptime if conforms_to(Ts[i], Movable):
-            if not downcast[Ts[i], Movable].__move_ctor_is_trivial:
+            if not is_trivially_movable[downcast[Ts[i], Movable]]():
                 return False
         else:
             return False

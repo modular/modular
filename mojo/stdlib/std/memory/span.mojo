@@ -23,7 +23,12 @@ from std.builtin.builtin_slice import ContiguousSlice
 from std.reflection import call_location, reflect
 from std.bit.mask import splat
 from std.bit import pop_count
-from std.memory import pack_bits, uninit_copy_n
+from std.memory import (
+    is_trivially_copyable,
+    is_trivially_destructible,
+    pack_bits,
+    uninit_copy_n,
+)
 from std.collections import check_bounds
 from std.builtin.rebind import downcast
 from std.sys import align_of
@@ -570,7 +575,9 @@ struct Span[
         # needed). For non-trivial types, we keep the single-pass assignment
         # loop rather than destroy_n + uninit_copy_n, which would be two
         # passes over memory with worse cache locality.
-        comptime if _T.__copy_ctor_is_trivial and _T.__del__is_trivial:
+        comptime if is_trivially_copyable[_T]() and is_trivially_destructible[
+            _T
+        ]():
             uninit_copy_n[overlapping=False](
                 dest=self.unsafe_ptr(),
                 src=other.unsafe_ptr(),

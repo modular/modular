@@ -455,6 +455,64 @@ def _free(ptr: OptionalUnsafePointer[mut=True, ...]):
 
 
 # ===-----------------------------------------------------------------------===#
+# is_trivial_* functions
+# ===-----------------------------------------------------------------------===#
+
+
+@always_inline("nodebug")
+def is_trivially_movable[T: Movable]() -> Bool:
+    """Returns whether `T` has a trivial move constructor.
+
+    A move constructor is trivial when the compiler generates it and all of
+    `T`'s fields are themselves trivially movable. In practice this means the
+    value can be moved by copying its bits to a new location without any
+    additional side effects.
+
+    Parameters:
+        T: The type to check.
+
+    Returns:
+        `True` if `T` has a trivial move constructor.
+    """
+    return T.__move_ctor_is_trivial
+
+
+@always_inline("nodebug")
+def is_trivially_copyable[T: Copyable]() -> Bool:
+    """Returns whether `T` has a trivial copy constructor.
+
+    A copy constructor is trivial when the compiler generates it and all of
+    `T`'s fields are themselves trivially copyable. In practice this means the
+    value can be copied by duplicating its bits to a new location without any
+    additional side effects.
+
+    Parameters:
+        T: The type to check.
+
+    Returns:
+        `True` if `T` has a trivial copy constructor.
+    """
+    return T.__copy_ctor_is_trivial
+
+
+@always_inline("nodebug")
+def is_trivially_destructible[T: ImplicitlyDestructible]() -> Bool:
+    """Returns whether `T` has a trivial destructor.
+
+    A destructor is trivial when the compiler generates it and all of `T`'s
+    fields are themselves trivially destructible. In practice this means
+    `__del__` is a no-op.
+
+    Parameters:
+        T: The type to check.
+
+    Returns:
+        `True` if `T` has a trivial destructor.
+    """
+    return T.__del__is_trivial
+
+
+# ===-----------------------------------------------------------------------===#
 # Uninitialized Memory Ops
 # ===-----------------------------------------------------------------------===#
 
@@ -512,7 +570,7 @@ def uninit_move_n[
         behavior.
     """
 
-    comptime if T.__move_ctor_is_trivial:
+    comptime if is_trivially_movable[T]():
         comptime if overlapping:
             memmove(dest=dest, src=src, count=count)
         else:
@@ -574,7 +632,7 @@ def uninit_copy_n[
         behavior.
     """
 
-    comptime if T.__copy_ctor_is_trivial:
+    comptime if is_trivially_copyable[T]():
         comptime if overlapping:
             memmove(dest=dest, src=src, count=count)
         else:
@@ -611,7 +669,7 @@ def destroy_n[
         must not be read or destroyed again until re-initialized.
     """
 
-    comptime if T.__del__is_trivial:
+    comptime if is_trivially_destructible[T]():
         # Trivial destructors don't need to be called!
         pass
     else:
