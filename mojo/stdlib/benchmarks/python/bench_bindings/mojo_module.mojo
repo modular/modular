@@ -30,11 +30,7 @@ See https://github.com/modular/modular/issues/6521.
 from std.os import abort
 
 from std.python import Python, PythonObject
-from std.python._cpython import (
-    PyObjectPtr,
-    Py_ssize_t,
-    PyUnicode_1BYTE_KIND,
-)
+from std.python._cpython import PyObjectPtr, Py_ssize_t
 from std.python.bindings import PythonModuleBuilder
 
 
@@ -145,13 +141,14 @@ def echo_str_raw_fastcall(
     args: UnsafePointer[PyObjectPtr, MutExternalOrigin],
     nargs: Py_ssize_t,
 ) -> PyObjectPtr:
-    # Lower bound for `echo_str_def`: read the UTF-8 buffer of the input
-    # PyUnicode and feed it back through `PyUnicode_FromKindAndData(kind=1)`
-    # without going through any `String` / `PythonObject` wrapping.
+    # Lower bound for `echo_str_def`: round-trip a Python `str` through
+    # CPython's UTF-8 codec without any `String` / `PythonObject` wrapping.
+    # Uses `PyUnicode_DecodeUTF8` rather than
+    # `PyUnicode_FromKindAndData(kind=1, ...)` so multi-byte UTF-8 inputs
+    # are decoded correctly (kind=1 would treat each UTF-8 byte as a
+    # Latin-1 code point and corrupt non-ASCII strings).
     ref cpy = Python().cpython()
     var maybe_slice = cpy.PyUnicode_AsUTF8AndSize(args[0])
     if not maybe_slice:
         return PyObjectPtr()
-    return cpy.PyUnicode_FromKindAndData(
-        PyUnicode_1BYTE_KIND, maybe_slice.value().as_bytes()
-    )
+    return cpy.PyUnicode_DecodeUTF8(maybe_slice.value())

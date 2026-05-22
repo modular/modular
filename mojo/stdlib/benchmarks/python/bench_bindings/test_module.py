@@ -58,3 +58,6 @@ def test_echo_str_def_round_trips() -> None:
 
 def test_echo_str_raw_fastcall_round_trips() -> None:
     assert mojo_module.echo_str_raw_fastcall("hello world") == "hello world"
+    # Non-ASCII must decode correctly through PyUnicode_DecodeUTF8 - the
+    # previous kind=1 path would corrupt multi-byte UTF-8.
+    assert mojo_module.echo_str_raw_fastcall("héllo") == "héllo"
