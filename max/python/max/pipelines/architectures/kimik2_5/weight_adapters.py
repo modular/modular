@@ -33,11 +33,22 @@ vision and language keys in a single loop over the raw checkpoint.
 from __future__ import annotations
 
 import dataclasses
+import logging
+import os
 import re
+import time
+from concurrent.futures import ThreadPoolExecutor
 
+import numpy as np
+from max.driver import Accelerator, Buffer, accelerator_count
 from max.dtype import DType
+from max.engine import InferenceSession, Model
+from max.graph import DeviceRef, Graph, TensorType
 from max.graph.weights import WeightData, Weights
+from max.nn.kernels import mxfp4_preshuffle_b_5d
 from transformers.configuration_utils import PretrainedConfig
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Language model rename map
@@ -115,6 +126,207 @@ def _cast_vision_weight(checkpoint_name: str, weight: Weights) -> WeightData:
     return weight_data
 
 
+_EXPERT_WEIGHT_RE = re.compile(
+    r"^(?P<prefix>.+\.layers\.\d+\.mlp\.experts)"
+    r"\.(?P<idx>\d+)"
+    r"\.(?P<proj>gate_proj|up_proj|down_proj)\.weight$"
+)
+
+
+def _stack_experts(arrays: list[np.ndarray]) -> np.ndarray:
+    """Build [E, N, K_BYTES] from per-expert uint8 views via a
+    multi-threaded memcpy stack
+    """
+    E = len(arrays)
+    N, K_BYTES = arrays[0].shape
+    dest = np.empty((E, N, K_BYTES), dtype=np.uint8)
+
+    def _copy(j: int) -> None:
+        dest[j] = arrays[j]
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        for _ in pool.map(_copy, range(E)):
+            pass
+    return dest
+
+
+def _warm_expert_safetensor_caches(expert_weights: list[Weights]) -> None:
+    """Pre-fault safetensor file pages into the OS page cache.
+
+    The default mmap demand-fault-in pattern touches ~4 KB pages on first
+    access with poor kernel readahead, which on cold-cache loads can cost
+    far more than the actual shuffle work. Hint sequential access and
+    issue a chunked sequential read up front so all subsequent reads hit
+    RAM. Linux-only hints; silently no-op on other platforms.
+    """
+    paths: set[str] = set()
+    for w in expert_weights:
+        filepaths = getattr(w, "_filepaths", None)
+        idx_map = getattr(w, "_tensors_to_file_idx", None)
+        if filepaths is None or idx_map is None:
+            continue
+        idx = idx_map.get(w.name)
+        if idx is None:
+            continue
+        paths.add(os.fspath(filepaths[idx]))
+
+    if not paths:
+        return
+
+    def _warm(path: str) -> None:
+        with open(path, "rb") as f:
+            fd = f.fileno()
+            try:
+                os.posix_fadvise(fd, 0, 0, os.POSIX_FADV_SEQUENTIAL)
+                os.posix_fadvise(fd, 0, 0, os.POSIX_FADV_WILLNEED)
+            except (AttributeError, OSError):
+                pass
+            while f.read(64 * 1024 * 1024):
+                pass
+
+    t0 = time.perf_counter()
+    with ThreadPoolExecutor(max_workers=min(8, len(paths))) as pool:
+        for _ in pool.map(_warm, paths):
+            pass
+    print(
+        f"[MXFP4 preshuffle] warmed page cache for {len(paths)} "
+        f"safetensor file(s) in {time.perf_counter() - t0:.1f}s",
+        flush=True,
+    )
+
+
+def _batch_preshuffle_experts(
+    state_dict: dict[str, Weights],
+) -> dict[str, np.ndarray]:
+    """Group expert weights by ``(layer prefix, proj)`` and shuffle each
+    group on-GPU via ``mxfp4_preshuffle_b_5d`` (one ``[E, N, K_BYTES]``
+    op per group).
+
+    Returns a dict mapping original checkpoint name to that expert's
+    slice of the shuffled stack.
+    """
+    # Group: (prefix, proj) -> {expert_idx: (checkpoint_name, weight)}
+    groups: dict[tuple[str, str], dict[int, tuple[str, Weights]]] = {}
+    for name, weight in state_dict.items():
+        m = _EXPERT_WEIGHT_RE.match(name)
+        if m:
+            key = (m.group("prefix"), m.group("proj"))
+            groups.setdefault(key, {})[int(m.group("idx"))] = (name, weight)
+
+    if not groups:
+        return {}
+
+    _warm_expert_safetensor_caches(
+        [w for group in groups.values() for _, w in group.values()]
+    )
+
+    if accelerator_count() == 0:
+        raise RuntimeError(
+            "MXFP4 expert preshuffle requires a GPU device; none found."
+        )
+    device = Accelerator()
+    device_ref = DeviceRef.from_device(device)
+    session = InferenceSession(devices=[device])
+
+    # Cache the compiled one-op graph per `(E, N, K_BYTES)` shape — Kimi
+    # has only a handful of unique shapes (gate/up share one, down has
+    # another) so total compile cost stays negligible.
+    model_cache: dict[tuple[int, int, int], Model] = {}
+
+    def _get_model(E: int, N: int, K_BYTES: int) -> Model:
+        key = (E, N, K_BYTES)
+        if key in model_cache:
+            return model_cache[key]
+        in_type = TensorType(
+            dtype=DType.uint8,
+            shape=(E, N, K_BYTES),
+            device=device_ref,
+        )
+        with Graph("mxfp4_preshuffle_b_5d_eager", input_types=(in_type,)) as g:
+            raw = g.inputs[0].tensor
+            g.output(mxfp4_preshuffle_b_5d(raw))
+        model = session.load(g)
+        model_cache[key] = model
+        return model
+
+    result: dict[str, np.ndarray] = {}
+    totals = {
+        "materialize": 0.0,
+        "stack": 0.0,
+        "upload": 0.0,
+        "gpu": 0.0,
+        "download": 0.0,
+    }
+    for (prefix, proj), experts in groups.items():
+        idxs = sorted(experts.keys())
+
+        t0 = time.perf_counter()
+        arrays: list[np.ndarray] = []
+        skip = False
+        for i in idxs:
+            data = experts[i][1].data()
+            if data.dtype != DType.uint8:
+                skip = True
+                break
+            arrays.append(np.from_dlpack(data.data))
+        if skip or not arrays or arrays[0].ndim != 2:
+            continue
+        N, K_BYTES = arrays[0].shape
+        if N % 16 != 0 or K_BYTES % 64 != 0:
+            continue
+        t1 = time.perf_counter()
+
+        # Multi-threaded stack: each expert is in its own safetensor,
+        # so they aren't contiguous in any single mmap region and we
+        # have to copy. Threads parallelize the per-expert memcpy.
+        stacked = _stack_experts(arrays)
+        E = stacked.shape[0]
+        t2 = time.perf_counter()
+
+        model = _get_model(E, N, K_BYTES)
+        raw_buf = Buffer.from_dlpack(stacked).to(device)
+        t3 = time.perf_counter()
+
+        outputs = model.execute(raw_buf)
+        out = outputs[0] if isinstance(outputs, (list, tuple)) else outputs
+        assert isinstance(out, Buffer)
+        t4 = time.perf_counter()
+
+        # to_numpy() blocks on any pending GPU work, so it captures both
+        # the GPU→host transfer and any GPU work the execute() above
+        # may have only enqueued.
+        shuffled = out.to_numpy()
+        t5 = time.perf_counter()
+
+        totals["materialize"] += t1 - t0
+        totals["stack"] += t2 - t1
+        totals["upload"] += t3 - t2
+        totals["gpu"] += t4 - t3
+        totals["download"] += t5 - t4
+
+        print(
+            f"[MXFP4 preshuffle] {prefix}.*.{proj}.weight "
+            f"shape=({E},{N},{K_BYTES}) "
+            f"materialize={t1 - t0:.2f}s stack={t2 - t1:.2f}s "
+            f"upload={t3 - t2:.2f}s gpu={t4 - t3:.2f}s "
+            f"download={t5 - t4:.2f}s",
+            flush=True,
+        )
+        for j, i in enumerate(idxs):
+            result[experts[i][0]] = np.ascontiguousarray(shuffled[j])
+
+    print(
+        f"[MXFP4 preshuffle] totals: "
+        f"materialize={totals['materialize']:.1f}s "
+        f"stack={totals['stack']:.1f}s "
+        f"upload={totals['upload']:.1f}s "
+        f"gpu={totals['gpu']:.1f}s "
+        f"download={totals['download']:.1f}s",
+        flush=True,
+    )
+    return result
+
+
 def _convert_merged_state_dict(
     state_dict: dict[str, Weights],
     huggingface_config: PretrainedConfig,
@@ -142,6 +354,22 @@ def _convert_merged_state_dict(
         Single merged state dict whose keys match the ``KimiK2_5`` module:
         ``vision_encoder.*`` and ``language_model.*``.
     """
+    print(
+        f"[MXFP4 preshuffle] _convert_merged_state_dict ENTRY "
+        f"n_keys={len(state_dict)}",
+        flush=True,
+    )
+    # Batched preshuffle: group all per-expert MXFP4 weights by
+    # (layer, proj) and shuffle each group in a single numpy call. ~385x
+    # less Python overhead per shuffle and lets numpy SIMD-vectorize over
+    # the new E dim.
+    shuffled_experts = _batch_preshuffle_experts(state_dict)
+    print(
+        f"[MXFP4 preshuffle] batched shuffle: {len(shuffled_experts)} "
+        f"expert weights ready",
+        flush=True,
+    )
+
     llm_config = getattr(huggingface_config, "text_config", huggingface_config)
     mtp_layer_idx = llm_config.num_hidden_layers
 
@@ -177,6 +405,15 @@ def _convert_merged_state_dict(
         # Safetensors stores E8M0 scales as uint8; reinterpret.
         if name.endswith(".weight_scale") and data.dtype == DType.uint8:
             data = dataclasses.replace(data, dtype=DType.float8_e8m0fnu)
+        # AMD MXFP4 expert weight preshuffle: if this key was batch-shuffled
+        # in the pre-pass, swap the raw bytes for the shuffled bytes. The
+        # batched math is byte-equivalent to per-expert shuffle because the
+        # n0 stride depends only on K_BYTES; stacking pre-shuffled per-expert
+        # bytes is the same as shuffling the stacked tensor.
+        if checkpoint_name in shuffled_experts:
+            data = WeightData.from_numpy(
+                shuffled_experts[checkpoint_name], name=data.name
+            )
         result[name] = data
 
     return result

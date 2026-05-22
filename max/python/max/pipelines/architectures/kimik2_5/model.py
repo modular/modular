@@ -286,6 +286,14 @@ class KimiK2_5Model(
 
         dtype = self.dtype
         quant_config = parse_quant_config(config, state_dict, dtype)
+
+        # Kimi K2.5's MXFP4 weight adapter (`weight_adapters.py:_shuffle_group`)
+        # unconditionally preshuffles B into the 5D layout expected by the AMD
+        # `mxfp4_grouped_matmul_amd_preb` kernel. Flip the QuantConfig flag so
+        # `MoEQuantized` dispatches the grouped matmul to the preb path. Must
+        # stay in lockstep with the weight adapter.
+        if quant_config is not None and quant_config.is_mxfp4:
+            quant_config = replace(quant_config, mxfp4_preshuffled_b=True)
         shared_experts_weight_dtype, dense_mlp_layers_without_quant = (
             infer_kimi_nvfp4_weight_flags(
                 state_dict,

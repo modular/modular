@@ -143,6 +143,7 @@ from linalg.fp4_quantization import (
     quantize_dynamic_block_scaled_mxfp4,
 )
 from linalg.matmul.gpu.amd import (
+    Shuffler,
     mxfp4_block_scaled_matmul_amd,
     mxfp4_grouped_matmul_amd,
 )
@@ -1169,6 +1170,38 @@ struct Struct_interleave_block_scales:
             output_scales.to_tile_tensor[DType.int64](),
             input_scales.to_tile_tensor[DType.int64](),
             cuda_ctx,
+        )
+
+
+@compiler.register("mo.mxfp4.preshuffle.b.5d")
+struct Struct_mxfp4_preshuffle_b_5d:
+    """Run the AMD CDNA4 MXFP4 B 5D preshuffle as a custom op.
+
+    Used to pre-bake weights into `Shuffler[E].b_5d_grouped_layout` (the
+    layout the `mxfp4_grouped_matmul_amd_preb` reader expects) without
+    paying the >1 h CPU-side numpy shuffle on every model load.
+    """
+
+    @always_inline
+    @staticmethod
+    def execute[
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=DType.uint8, rank=3, ...],
+        input: InputTensor[dtype=DType.uint8, rank=3, ...],
+        context: DeviceContext,
+    ) raises:
+        comptime assert is_gpu[
+            target
+        ](), "mo.mxfp4.preshuffle.b.5d is GPU-only (AMD CDNA4 consumer)"
+
+        var raw_tt = input.to_tile_tensor[DType.int64]()
+        var dst_tt = output.to_tile_tensor[DType.int64]()
+        comptime E = type_of(raw_tt).static_shape[0]
+        comptime N = type_of(raw_tt).static_shape[1]
+        comptime K_BYTES = type_of(raw_tt).static_shape[2]
+        Shuffler[E].preshuffle_b_5d[N=N, K_BYTES=K_BYTES](
+            raw_tt, dst_tt, context
         )
 
 
