@@ -322,8 +322,6 @@ PogListAttr PogListAttr::prependAsInferredParams(
     SmallVector<ConstraintAttr> newConstraints;
     if (!paramConstraints.empty())
       llvm::append_range(newConstraints, paramConstraints[i]);
-    if (i + 1 == names.size())
-      llvm::append_range(newConstraints, bodyConstraints);
     // Strip off variadic kinds and turn the parameter into infer-only too.
     newPogs.push_back(PogMetadataAttr::get(name, PassingKind::Inferred,
                                            VariadicKind::None, newDefault,
@@ -332,16 +330,11 @@ PogListAttr PogListAttr::prependAsInferredParams(
 
   llvm::append_range(newPogs, getPogs());
 
-  // If there are no new parameters to prepend, concat the body constraints onto
-  // the existing body constraints.
-  if (newPogs.empty()) {
-    SmallVector<ConstraintAttr> newBodyConstraints(bodyConstraints);
-    llvm::append_range(newBodyConstraints, getBodyConstraints());
-    return PogListAttr::get(getContext(), newPogs, newBodyConstraints,
-                            getOrigVariadicConvention());
-  }
+  // Prepend the new body constraints in front of the existing body constraints.
+  SmallVector<ConstraintAttr> newBodyConstraints(bodyConstraints);
+  llvm::append_range(newBodyConstraints, getBodyConstraints());
 
-  return PogListAttr::get(getContext(), newPogs, getBodyConstraints(),
+  return PogListAttr::get(getContext(), newPogs, newBodyConstraints,
                           getOrigVariadicConvention());
 }
 

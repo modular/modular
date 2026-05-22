@@ -1274,10 +1274,10 @@ def test_contextual_default_fn_ref():
     # CHECK: lit.alias.decl *"contextual_default_fn`": !lit.generator<
     # CHECK-SAME: "a": !Int = {7}
     # CHECK-SAME: "b": !Int = *(0,0)
-    # CHECK-SAME: ge(#lit.struct.extract<:!Int *(0,0), "_mlir_value">, 1)
-    # CHECK-SAME: le(#lit.struct.extract<:!Int *(0,0), "_mlir_value">, #lit.struct.extract<:!Int *(0,1), "_mlir_value">)
     # CHECK-SAME: "c": !Int = *(0,1)
     # CHECK-SAME: "d": !Int = *(0,2)
+    # CHECK-SAME: ge(#lit.struct.extract<:!Int *(0,0), "_mlir_value">, 1)
+    # CHECK-SAME: le(#lit.struct.extract<:!Int *(0,0), "_mlir_value">, #lit.struct.extract<:!Int *(0,1), "_mlir_value">)
     # CHECK-SAME: ge(#lit.struct.extract<:!Int *(0,1), "_mlir_value">, 1)
     # CHECK-SAME: le(#lit.struct.extract<:!Int *(0,1), "_mlir_value">, #lit.struct.extract<:!Int *(0,2), "_mlir_value">)
     comptime contextual_default_fn = ContextDefault.inner
