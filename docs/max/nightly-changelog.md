@@ -119,6 +119,20 @@ This version is still a work in progress.
   or `Device.__unsafe_enqueue_async_py_host_func` to issue the host
   work whose completion the consumer waits on.
 
+- Added two new nanobind types to `max._core.engine` that split the
+  compile-and-load pipeline at the type level:
+
+  - `CompiledModels` represents the compile artifact returned by
+    `InferenceSession.compile_from_path` / `compile_from_object`. It holds
+    the MEF bytes and one or more sub-models; it is not directly executable.
+  - `ModelMetadata` exposes per-sub-model metadata (`name`,
+    `input_metadata`, `output_metadata`) and is yielded by iterating a
+    `CompiledModels` or indexing it with `[i]`.
+
+  `Model` continues to represent the runnable, post-init handle (still
+  produced by `InferenceSession._load_all`). The high-level
+  `max.engine.CompiledModel` wrapper now holds a `CompiledModels` instance
+  internally.
 - Increased the default allreduce signal buffer size from 513 MiB to 1025 MiB
   per GPU (`max.nn.comm.allreduce.Signals.NUM_BYTES` and the matching constant
   in `max.experimental.realization_context`). The previous 512 MiB scratch
