@@ -388,14 +388,19 @@ def dispatch_amd_4wave_conv3d[
                 comptime _loader_3d_ok = (
                     (_BM_static // 2) // (_H_out_v * _W_out_v) < _D_out_v
                 )
-                # The kernel's partial-N-tile path produces wrong
-                # output when C_out isn't a multiple of 64 AND M is
-                # small (BM=64 picked, so the partial-tile is also
-                # the only/last tile). Production WAN VAE shapes
-                # with C_out=96 (level3_res) have M > 1.6M and pick
-                # BM=128, which works; the small-M test_conv_gpu
-                # shape (C_out=96, M=256) triggers the bug. Decline
-                # so callers route to im2col.
+                # The kernel's load-side `num_iterations` and the
+                # schedule's `vm_per_load_*` are both `ceildiv`-based,
+                # so BM=64+BK=32 (was: silent corruption from floor-div
+                # to 0) is now mathematically correct on the kernel
+                # side. The 4-wave path's MFMA-quadrant accumulation
+                # order still differs from im2col's row-major K
+                # reduction enough to drift on shapes the
+                # `test_conv_gpu` CPU-naive reference comparisons
+                # were calibrated against, so this routing gate stays
+                # as a *perf/test-stability* choice (not a
+                # correctness workaround). Drop it once the test set
+                # uses an MFMA-equivalent reference (e.g. MIOpen) or
+                # the bf16 tolerance is loosened.
                 comptime _cout_partial_ok = (
                     (_C_out % 64) == 0 or _BM_static >= 128
                 )
