@@ -702,7 +702,8 @@ void FnSigDecorators::applyImplicitDecorator(SMLoc decoratorLoc,
   size_t numOperands = callNode ? callNode->operands.size() : 0;
   if (numOperands > 1) {
     emitError(callNode->getLoc())
-        << "'@implicit' may not have more than 1 operand, got " << numOperands;
+        << "'@implicit' decorator takes 0 or 1 arguments, found "
+        << numOperands;
     return;
   }
 
@@ -1040,7 +1041,7 @@ void FnSigDecorators::applyAlwaysInline(const CallNode *callNode) {
 
   if (numOperands > 1) {
     emitError(callNode->getLoc())
-        << "'@always_inline' may not have more than 1 operand, got "
+        << "'@always_inline' decorator takes 0 or 1 arguments, found "
         << numOperands;
     return;
   }
@@ -1647,7 +1648,8 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
     if (funcOp.isDefaultedTraitFn()) {
       // TODO(MOCO-2287): Support async defaulted trait methods
       shared.emitError(funcOp.getLoc())
-          << "async defaulted trait methods are not supported yet";
+          << "async defaulted trait methods are not supported; remove the "
+             "method or remove 'async'";
       return failure();
     }
   }
@@ -2130,8 +2132,9 @@ ParseResult DeclResolver::resolveBody(FnOp funcOp, Lexer &lexer,
         funcOp.isDefaultedTraitFn() && tok.is(Token::kw_pass)) {
       if (!ASTType(funcOp.getUserResultType()).isNoneType()) {
         InflightDiag diag = shared.emitError(
-            tok.getLoc(), "trait method has results but default implementation "
-                          "returns no value; did you mean '...'?");
+            tok.getLoc(),
+            "trait method with a return type must not use 'pass'; use '...' "
+            "to declare the method as required");
         diag.attachNote(funcOp.getLoc())
             << "in '" << funcOp.getDeclName().getValue() << "', declared here";
         diag.addFixIt(FixIt::replaceToken(tok.getLoc(), "..."));
@@ -2905,6 +2908,7 @@ static ParseResult resolveConformanceList(
   DenseMap<SymbolRefAttr, std::pair<SymbolRefAttr, SMLoc>> *inheritedFrom =
       decl.getTraitConformanceLineage(/*createIfMissing=*/true);
 
+  bool isTrait = isa_and_nonnull<TraitDeclOp>(decl.getIfOperation());
   for (const ParsedConformanceEntry &conformance : parsedConformances) {
     IREmitter typeEmitter(declScope, EC_Type);
     ASTType type = typeEmitter.emitExprType(conformance.typeExpr,
@@ -2912,18 +2916,31 @@ static ParseResult resolveConformanceList(
     if (!type)
       return failure();
 
-    // Reject inheriting from types we don't support yet.
+    // Reject non-trait types in refinement and conformance lists.
     auto traitType = sugarDynCast<TraitType>(type);
     if (!traitType) {
       if (sugarIsa<LIT::StructType>(type)) {
-        shared.emitError(conformance.loc)
-            << "inheriting from structs is not allowed";
+        if (isTrait) {
+          shared.emitError(conformance.loc)
+              << "traits only refine other traits; remove the struct type "
+                 "from the refinement list";
+        } else {
+          shared.emitError(conformance.loc)
+              << "structs only conform to traits or trait compositions; "
+                 "remove the struct type from the conformance list";
+        }
       } else if (sugarIsa<ParamType>(type)) {
-        shared.emitError(conformance.loc)
-            << "inheriting from a parameter expression is not allowed";
+        if (isTrait)
+          shared.emitError(conformance.loc)
+              << "traits only refine other traits; remove the type parameter "
+                 "from the refinement list";
+        else
+          shared.emitError(conformance.loc)
+              << "structs only conform to traits or trait compositions; "
+                 "remove the type parameter from the conformance list";
       } else {
         shared.emitError(conformance.loc)
-            << "don't know how to inherit from this type";
+            << "refinement and conformance lists may only contain traits";
       }
       if (!traitType) {
         declScope.setErroneous();
@@ -3987,9 +4004,10 @@ LogicalResult DeclResolver::resolveSignature(StructFieldOp fieldOp,
     return failure();
 
   if (sugarIsa<TraitType>(type)) {
-    emitError(decl.getLoc()) << "dynamic traits not supported yet, please "
-                                "use a compile time generic instead of "
-                             << type;
+    emitError(decl.getLoc())
+        << "struct fields do not support trait types; " << type
+        << " is a trait, use a concrete type or "
+           "compile-time generic";
     return failure();
   }
 
@@ -4096,8 +4114,8 @@ LogicalResult DeclResolver::resolveSignature(TraitDeclOp traitOp, Lexer &lexer,
     // the previous line, this is probably where the punctuation was omitted.
     auto diagLoc = p.getTokenLocOrEndOfPreviousLineIfOnNewLine();
     // Report the error.
-    emitError(diagLoc,
-              "TODO: trait declarations do not support parameters yet");
+    emitError(diagLoc, "trait declarations do not support parameters; remove "
+                       "the parameter list");
     return failure();
   }
 

@@ -999,7 +999,7 @@ trait EverythingIsWrongTrait:
     struct NestedStruct: # expected-error {{nested struct in a trait not supported here}}
         pass
 
-trait TraitWithParams[T: TrivialRegisterPassable]: # expected-error {{TODO: trait declarations do not support parameters yet}}
+trait TraitWithParams[T: TrivialRegisterPassable]: # expected-error {{trait declarations do not support parameters; remove the parameter list}}
     ...
 
 def bad_trait_params[T: EverythingIsWrongTrait](x: T):
@@ -1012,7 +1012,7 @@ trait Shape(ImplicitlyCopyable):
 
 @fieldwise_init
 struct ShapeContainer:
-    var shape: Shape # expected-error {{dynamic traits not supported yet, please use a compile time generic instead of 'Shape'}}
+    var shape: Shape # expected-error {{struct fields do not support trait types; 'Shape' is a trait, use a concrete type or compile-time generic}}
 
 ##===----------------------------------------------------------------------===##
 # Struct/Trait conformance check failure
