@@ -131,12 +131,14 @@ type. For a full list, see
 [MLIR's Builtin Types
 documentation](https://mlir.llvm.org/docs/Dialects/Builtin/#types).
 
-Dialect-defined MLIR types use the `!` prefix. For example:
+Dialect-defined MLIR types use the `!` prefix. Without it, the
+compiler rejects the type with an error like:
 
 ```text
-dialect types must include a `!` prefix. '__mlir_type.`kgen.dtype`' is
-invalid; use '__mlir_type.`!kgen.dtype`' instead
+invalid MLIR type: kgen.dtype
 ```
+
+Use `__mlir_type.`!kgen.dtype`` instead.
 
 Here's a runnable example that declares MLIR-typed variables,
 assigns values with `__mlir_attr`, and converts them back to
@@ -196,13 +198,13 @@ and `!kgen.dtype` appear here alongside builtin types.
 ```mojo
 # Parameter is a compile-time MLIR string (for example, "hello")
 struct StringLiteral[value: __mlir_type.`!kgen.string`]:
-    ...
+    # ...
 
 # Parameter is a compile-time dtype (for example, f32 or si64)
 def example[dtype: __mlir_type.`!kgen.dtype`]():
     # For dtype=f32, produces: !kgen.scalar<f32>
     var a: __mlir_type[`!kgen.scalar<`, dtype, `>`]
-    ...
+    # ...
 ```
 
 ### Properties of raw MLIR types
@@ -396,14 +398,13 @@ def main():
 
 ### Special attributes
 
-Four attributes have special meaning to the compiler:
+Three attributes have special meaning to the compiler:
 
-| Attribute     | Purpose                                                         |
-|---------------|-----------------------------------------------------------------|
-| `_type`       | Sets the result type when the compiler can't infer it           |
-| `_properties` | Passes MLIR operation properties as a `DictionaryAttr`          |
-| `_region`     | References a named `__mlir_region` as a region argument         |
-| `_type=None`  | Marks an operation that produces no result                      |
+| Attribute     | Purpose                                                              |
+|---------------|----------------------------------------------------------------------|
+| `_type`       | Sets the result type; pass `None` for an operation with no result    |
+| `_properties` | Passes MLIR operation properties as a `DictionaryAttr`               |
+| `_region`     | References a named `__mlir_region` as a region argument              |
 
 ### `_type`
 
@@ -448,7 +449,7 @@ provide `_type`, you'll receive an error:
 
 Some MLIR operations store configuration in properties instead
 of attributes. Attributes are compile-time constants in Mojo.
-Properties store typed, mutable data on the operation. Pass
+Properties store compile-time metadata on the operation. Pass
 them as a `DictionaryAttr`:
 
 ```mojo
@@ -522,7 +523,7 @@ __mlir_region name(arg: type, ...):
 
 ### Basic usage
 
-Some MLIR operations accept a region argument — a block of code that
+Some MLIR operations accept a region argument, a block of code that
 the operation controls. You define the region with `__mlir_region` and
 connect it to the operation with the `_region` attribute.
 
@@ -555,10 +556,9 @@ operation that uses the region. Here, `hlcf.loop` passes the
 current loop value as `i`. The `_region` attribute takes the
 region name as a string.
 
-This loop runs indefinitely. The `hlcf` dialect's conditional
-exit (`hlcf.break`) requires nested regions that can't be
-expressed with `__mlir_region`. In practice, it's simpler to
-use Mojo's `for` and `while` loops for control flow.
+This loop runs indefinitely. To exit conditionally, wrap `hlcf.break` in
+`hlcf.if`. In practice, it's simpler to use Mojo's `for` and `while` loops
+for control flow.
 
 The following example uses a Mojo `while` loop for control
 flow and MLIR operations for the computation inside. The
@@ -633,7 +633,7 @@ __mlir_region my_region(
     # x and y are raw MLIR values, not Mojo types.
     # Wrap them (for example, Int(mlir_value=x)) to use
     # Mojo operations on them.
-    ...
+    # ...
 ```
 
 ## Common dialects
