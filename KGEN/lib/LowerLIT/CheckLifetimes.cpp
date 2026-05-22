@@ -468,9 +468,12 @@ SpecialMemberInfo TypeDeclInfo::getDestructorForType(Type type,
     // The type has to conform to implicitly destructible to have a destructor.
     auto conformance = info.implicitlyDestructible;
     if (!conformance)
-      return SpecialMemberInfo::unavailable(
-          StringAttr::get(info.decl.getContext(),
-                          "type does not conform to ImplicitlyDestructible"));
+      // resolveBody always synthesizes an ImplicitlyDestructible ConformanceOp
+      // for non-linear structs.  So if we get here with no conformance, the
+      // struct body was not yet resolved — which happens when LSP skips
+      // resolveBody for source-parsed imports.  Treat as trivial, matching the
+      // !dtorAttr guard below for the analogous empty-body (bytecode) case.
+      return SpecialMemberInfo::available({});
 
     // Ok, the type has a destructor.  Check to see if there is any
     // conditional conformance involved.
