@@ -152,8 +152,7 @@ class KimiK2_5ReasoningParser(ReasoningParser):
         * ``<think>`` → reasoning is currently open → ``True``.
         * ``</think>`` (or ``<|tool_calls_section_begin|>``) → reasoning
           is currently closed → ``False``.
-        * No delimiters at all → assume reasoning, matching the implicit
-          pre-fill seeding used elsewhere in the pipeline.
+        * No delimiters at all → reasoning is not in use → ``False``.
         """
         end_token_ids: tuple[int, ...]
         if self.tool_section_start_token_id is not None:
@@ -169,7 +168,7 @@ class KimiK2_5ReasoningParser(ReasoningParser):
                 return True
             if token_id in end_token_ids:
                 return False
-        return True
+        return False
 
     @classmethod
     async def from_tokenizer(

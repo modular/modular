@@ -17,6 +17,7 @@ from __future__ import annotations
 
 __all__ = [
     "BatchType",
+    "GrammarEnforcementSnapshot",
     "ImageContentPart",
     "ImageMetadata",
     "MessageContent",
@@ -580,6 +581,27 @@ class TextGenerationOutput:
         )
 
 
+@dataclass
+class GrammarEnforcementSnapshot:
+    """Captured grammar-enforcement state for rollback.
+
+    The speculative bitmask path walks the enforcement state through
+    draft tokens to compute downstream slot constraints and then
+    restores this snapshot so committed-token processing on the next
+    batch replays the same transitions from a clean state. Lives next
+    to :class:`TextGenerationContext` because the protocol exposes it
+    via :meth:`TextGenerationContext.snapshot_grammar_state` /
+    :meth:`TextGenerationContext.restore_grammar_state`; the concrete
+    implementation in ``max.pipelines.core.context`` constructs and
+    consumes instances.
+    """
+
+    in_thinking_region: bool
+    grammar_enforced: bool
+    tool_calling_match_buffer: list[int]
+    thinking_match_buffer: list[int]
+
+
 @runtime_checkable
 class TextGenerationContext(BaseContext, Protocol):
     """Protocol defining the interface for text generation contexts in token generation.
@@ -956,6 +978,24 @@ class TextGenerationContext(BaseContext, Protocol):
         Returns:
             True if enforcement state changed.
         """
+        ...
+
+    def snapshot_grammar_state(self) -> GrammarEnforcementSnapshot:
+        """Capture enforcement state for a speculative rollback.
+
+        The speculative bitmask path walks the enforcement state through
+        draft tokens to compute downstream slot constraints, then
+        unwinds so that committed-token processing on the next batch
+        replays the same transitions from a clean state. The returned
+        snapshot is opaque to callers; pass it to
+        ``restore_grammar_state``.
+        """
+        ...
+
+    def restore_grammar_state(
+        self, snapshot: GrammarEnforcementSnapshot
+    ) -> None:
+        """Restore state captured by ``snapshot_grammar_state``."""
         ...
 
 

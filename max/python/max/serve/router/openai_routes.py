@@ -1521,11 +1521,16 @@ def _create_response_format(
     # Validate the schema early to return 400 instead of crashing the model worker.
     _validate_json_schema(json_schema)
 
+    # Enforce grammar from the first token only when there is an actual
+    # schema to enforce. The json_schema can also be used to create a grammar,
+    # hence we need to specify that the grammar should constrain from the
+    # start if there's a json_schema present here.
+    # TODO: improve the field naming here; grammar_enforced should be constrain_with_bitmask.
     return TextGenerationResponseFormat(
         type=response_type,
         json_schema=json_schema,
         grammar=None,
-        grammar_enforced=False,
+        grammar_enforced=bool(json_schema),
         tools_forced=False,
         requires_structured_output_flag=True,
     )

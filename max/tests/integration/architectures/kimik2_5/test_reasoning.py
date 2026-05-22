@@ -154,11 +154,21 @@ def test_is_prompt_in_reasoning_think_end_disables_reasoning() -> None:
     assert parser.is_prompt_in_reasoning(prompt) is False
 
 
-def test_is_prompt_in_reasoning_empty_prompt_stays_active() -> None:
+def test_is_prompt_in_reasoning_no_delimiters_is_inactive() -> None:
+    """A prompt with no ``<think>`` / ``</think>`` is not in reasoning.
+
+    Covers the ``chat_template_kwargs={"thinking": False}`` case: the
+    chat template suppresses the trailing ``<think>``, so a first-turn
+    prompt contains no delimiter at all.
+    """
     parser = KimiK2_5ReasoningParser(
         THINK_START_TOKEN_ID, THINK_END_TOKEN_ID, TOOL_SECTION_START_TOKEN_ID
     )
-    assert parser.is_prompt_in_reasoning([]) is True
+    assert parser.is_prompt_in_reasoning([]) is False
+    # Same contract for a non-empty prompt without any delimiters.
+    assert (
+        parser.is_prompt_in_reasoning([1234, 5678, 9012, 3456, 7890]) is False
+    )
 
 
 @pytest.mark.asyncio

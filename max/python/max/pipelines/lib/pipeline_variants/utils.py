@@ -666,6 +666,78 @@ class StructuredOutputHelper:
                 end_token_ids=self.tool_call_region_delimiters.end_token_ids,
             )
 
+    def _speculatively_fill_bitmask_window(
+        self,
+        ctx: TextGenerationContextType,
+        drafts: npt.NDArray[np.int64],
+        bitmask_window: npt.NDArray[np.int32],
+    ) -> None:
+        """Advance enforcement state through drafts, filling per-slot bitmasks.
+
+        A draft that flips enforcement on mid-window causes downstream
+        slots to be constrained: e.g. a ``</think>`` draft exits the
+        thinking region, so the slot immediately after it gets a filled
+        bitmask instead of staying unconstrained. Matcher and
+        enforcement state are rolled back at the end so committed-token
+        processing on the next batch replays the same transitions from
+        a clean state.
+
+        Out-of-vocab drafts stop the speculative advance and leave any
+        remaining slots unconstrained; they are not treated as errors.
+
+        Args:
+            ctx: The request context.
+            drafts: ``[K]`` candidate draft tokens for the next batch.
+            bitmask_window: ``[K+1, packed_vocab]``, pre-initialized to
+                ``-1`` (unconstrained). Slot 0 is the position
+                immediately after the committed tokens; slot ``i+1`` is
+                the position after consuming ``drafts[i]``. Slots stay
+                ``-1`` wherever grammar enforcement is off.
+        """
+        assert ctx.matcher is not None
+        fsm_snap = ctx.snapshot_grammar_state()
+
+        # Slot 0: state immediately after committed tokens.
+        if ctx.grammar_enforced:
+            llguidance.numpy.fill_next_token_bitmask(
+                ctx.matcher,
+                bitmask_window[0, :].reshape(1, -1),
+                index=0,
+            )
+
+        vocab_size = self.vocab_size or 0
+        tokens_consumed = 0
+        for i in range(drafts.shape[0]):
+            draft_token = int(drafts[i])
+            if draft_token < 0 or draft_token >= vocab_size:
+                break
+
+            enforced_before = ctx.grammar_enforced
+
+            # Advance the enforcement state first, then conditionally
+            # feed the matcher. A draft like ``</think>`` flips
+            # enforcement on but is not in the regex — matcher rejects,
+            # which is fine because slot ``i`` was unconstrained anyway.
+            ctx.update_enforcement_state(draft_token)
+
+            if ctx.grammar_enforced:
+                if ctx.matcher.try_consume_tokens([draft_token]) == 1:
+                    tokens_consumed += 1
+                elif enforced_before:
+                    # Slot ``i`` was constrained, so the target should
+                    # not have sampled a token the matcher rejects.
+                    # Verification stops here.
+                    break
+                llguidance.numpy.fill_next_token_bitmask(
+                    ctx.matcher,
+                    bitmask_window[i + 1, :].reshape(1, -1),
+                    index=0,
+                )
+
+        if tokens_consumed > 0:
+            ctx.matcher.rollback(tokens_consumed)
+        ctx.restore_grammar_state(fsm_snap)
+
     @traced
     def advance_fsm_and_compute_bitmasks(
         self,
@@ -698,7 +770,6 @@ class StructuredOutputHelper:
             bitmask_out: Packed int32 bitmask output, shape [batch, K+1, packed_vocab].
                 Initialized to -1 (unconstrained) per context before filling.
         """
-        num_draft = next_draft_tokens.shape[1] if next_draft_tokens.size else 0
         for ctx_idx, ctx in enumerate(context_batch):
             bitmask_out[ctx_idx, :, :] = -1
 
@@ -722,34 +793,14 @@ class StructuredOutputHelper:
                 if ctx.grammar_enforced:
                     ctx.matcher.try_consume_tokens([token])
 
-            # Bitmask stays unconstrained (-1) while grammar isn't enforced.
-            if not ctx.grammar_enforced:
-                continue
-
-            # Part 2: Speculative advance through next draft tokens + rollback.
-            llguidance.numpy.fill_next_token_bitmask(
-                ctx.matcher,
-                bitmask_out[ctx_idx, 0, :].reshape(1, -1),
-                index=0,
+            # Part 2: speculative window for the next batch's bitmasks.
+            # A draft that flips enforcement on mid-window causes
+            # downstream slots to be constrained.
+            self._speculatively_fill_bitmask_window(
+                ctx,
+                drafts=next_draft_tokens[ctx_idx],
+                bitmask_window=bitmask_out[ctx_idx],
             )
-
-            tokens_consumed = 0
-            for i in range(num_draft):
-                draft_token = int(next_draft_tokens[ctx_idx, i])
-                if draft_token < 0 or draft_token >= (self.vocab_size or 0):
-                    break
-                if ctx.matcher.try_consume_tokens([draft_token]) == 1:
-                    tokens_consumed += 1
-                    llguidance.numpy.fill_next_token_bitmask(
-                        ctx.matcher,
-                        bitmask_out[ctx_idx, i + 1, :].reshape(1, -1),
-                        index=0,
-                    )
-                else:
-                    break
-
-            if tokens_consumed > 0:
-                ctx.matcher.rollback(tokens_consumed)
 
     @traced
     def compute_speculative_bitmasks(
@@ -779,9 +830,6 @@ class StructuredOutputHelper:
             raise ValueError("vocab_size must be set for speculative bitmasks")
 
         batch_size = len(context_batch)
-        num_draft_tokens_to_verify = (
-            draft_tokens.shape[1] if draft_tokens.size else 0
-        )
 
         # Check if any context has structured output
         has_structured_output = any(
@@ -820,50 +868,17 @@ class StructuredOutputHelper:
                     index=0,
                 )
 
-        # Fill bitmasks for each context and each draft position.
-        # The packed_bitmask is initialized to -1 (all bits set = all tokens valid),
-        # so we only need to call fill_next_token_bitmask for constrained contexts.
+        # Fill bitmasks for each context. ``packed_bitmask`` is
+        # initialized to -1 (all bits set = all tokens valid), so the
+        # helper only needs to write slots where the FSM is enforced.
         for ctx_idx, ctx in enumerate(context_batch):
-            # Skip if no matcher or grammar not enforced (e.g., inside thinking region)
-            if not ctx.matcher or not ctx.grammar_enforced:
-                continue  # Unconstrained: leave at initial -1 (all tokens valid)
-
-            # Position 0: valid tokens at current FSM state
-            llguidance.numpy.fill_next_token_bitmask(
-                ctx.matcher,
-                packed_bitmask[ctx_idx, 0, :].reshape(1, -1),
-                index=0,
+            if not ctx.matcher:
+                continue
+            self._speculatively_fill_bitmask_window(
+                ctx,
+                drafts=draft_tokens[ctx_idx],
+                bitmask_window=packed_bitmask[ctx_idx],
             )
-
-            # Positions 1..num_positions-1: advance FSM through draft tokens
-            # Position num_positions-1 is for the bonus token (after all drafts)
-            tokens_consumed = 0
-            for i in range(num_draft_tokens_to_verify):
-                draft_token = int(draft_tokens[ctx_idx, i])
-                # Skip invalid/placeholder tokens (negative or out of vocab range)
-                # These positions stay at -1 (unconstrained)
-                if draft_token < 0 or draft_token >= self.vocab_size:
-                    raise ValueError(
-                        f"Invalid draft token not in vocabulary: {draft_token}."
-                    )
-                # Check if the FSM accepts this token. If not, don't advance
-                # and leave position at -1 (unconstrained).
-                if ctx.matcher.try_consume_tokens([draft_token]) == 1:
-                    tokens_consumed += 1
-                    llguidance.numpy.fill_next_token_bitmask(
-                        ctx.matcher,
-                        packed_bitmask[ctx_idx, i + 1, :].reshape(1, -1),
-                        index=0,
-                    )
-                else:
-                    # FSM rejected this token. Don't try consuming any of
-                    # the remaining draft tokens. Leave remaining
-                    # positions at -1 (unconstrained).
-                    break
-
-            # Rollback FSM to original state
-            if tokens_consumed > 0:
-                ctx.matcher.rollback(tokens_consumed)
         # Unpack packed int32 bitmask to bool using vectorized bitwise ops.
         bits = 2 ** np.arange(32, dtype=np.int32)
         # Shape: [batch, num_positions, packed_vocab, 32]

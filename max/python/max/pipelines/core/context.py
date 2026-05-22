@@ -26,6 +26,7 @@ import numpy.typing as npt
 from max.pipelines.modeling.types import (
     EOSTracker,
     GenerationStatus,
+    GrammarEnforcementSnapshot,
     ImageMetadata,
     LogProbabilities,
     PixelGenerationContext,
@@ -179,8 +180,18 @@ class GrammarEnforcementState:
                     self.grammar_enforced = True
                 changed = True
 
-        # Tool region logic (for tool_choice=auto)
-        if not changed and self.tool_region is not None:
+        # Tool region logic (for tool_choice=auto). Skipped when tools_forced
+        # is set: forced grammars enforce from start to finish via the regex
+        # itself, so the auto-mode start/end toggles must not flip
+        # ``grammar_enforced`` mid-sequence. Without this guard, the
+        # <|tool_calls_section_end|> token would trigger the auto-mode exit
+        # and re-enable free decoding, allowing the model to emit prose
+        # after the tool call section.
+        if (
+            not changed
+            and self.tool_region is not None
+            and not self.tools_forced
+        ):
             # Check for start sequence (only when not enforcing)
             if not self.grammar_enforced:
                 if (
@@ -204,6 +215,29 @@ class GrammarEnforcementState:
                     changed = True
 
         return changed
+
+    def snapshot(self) -> GrammarEnforcementSnapshot:
+        """Capture state needed to roll back a speculative advance.
+
+        The speculative bitmask path walks the enforcement state through
+        draft tokens to compute downstream slot constraints, then
+        unwinds so that committed-token processing on the next batch
+        replays the same transitions from a clean state. The returned
+        snapshot is opaque to callers; pass it to `restore`.
+        """
+        return GrammarEnforcementSnapshot(
+            in_thinking_region=self._in_thinking_region,
+            grammar_enforced=self.grammar_enforced,
+            tool_calling_match_buffer=list(self._tool_calling_match_buffer),
+            thinking_match_buffer=list(self._thinking_match_buffer),
+        )
+
+    def restore(self, snapshot: GrammarEnforcementSnapshot) -> None:
+        """Restore state captured by :meth:`snapshot`."""
+        self._in_thinking_region = snapshot.in_thinking_region
+        self.grammar_enforced = snapshot.grammar_enforced
+        self._tool_calling_match_buffer[:] = snapshot.tool_calling_match_buffer
+        self._thinking_match_buffer[:] = snapshot.thinking_match_buffer
 
     def _check_sequence_match(self, token: int, target: list[int]) -> bool:
         """Check if token completes a target sequence using the default buffer."""
@@ -484,6 +518,16 @@ class TextContext:
             True if enforcement state changed.
         """
         return self.grammar_state.update_enforcement_state(token)
+
+    def snapshot_grammar_state(self) -> GrammarEnforcementSnapshot:
+        """Forwards to `GrammarEnforcementState.snapshot`."""
+        return self.grammar_state.snapshot()
+
+    def restore_grammar_state(
+        self, snapshot: GrammarEnforcementSnapshot
+    ) -> None:
+        """Forwards to `GrammarEnforcementState.restore`."""
+        self.grammar_state.restore(snapshot)
 
     def to_generation_output(self) -> TextGenerationOutput:
         """Get completion tokens that are ready to be returned to the user.
