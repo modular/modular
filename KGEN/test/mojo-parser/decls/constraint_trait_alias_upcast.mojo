@@ -18,14 +18,18 @@ trait WithA:
 
 
 @fieldwise_init
-struct Concat[a: WithA, b: WithA where _type_is_eq_parse_time[a.A, b.A]()]:
+struct Concat[a: WithA, b: WithA] where _type_is_eq_parse_time[a.A, b.A]():
     pass
 
 
 # CHECK-LABEL: lit.trait.decl @WithASum
 trait WithASum(WithA):
-    def __add__[
-        o: WithA where _type_is_eq_parse_time[Self.A, o.A]()
-    ](self, other: o) -> Concat[Self, o]:
-        # CHECK: #kgen.get_witness<:!WithASum *"_Self`", "constraint_trait_alias_upcast::WithA", "A">
-        return {}
+    pass
+
+
+# CHECK-LABEL: lit.fn @"concat_add
+# CHECK-SAME: #kgen.get_witness<:!WithASum p, "constraint_trait_alias_upcast::WithA", "A">
+def concat_add[
+    p: WithASum, o: WithA
+](lhs: p, rhs: o) -> Concat[p, o] where _type_is_eq_parse_time[p.A, o.A]():
+    return {}
