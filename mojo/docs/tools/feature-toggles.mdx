@@ -412,9 +412,12 @@ the following table:
 If `-g` is omitted, `__DEBUG_LEVEL` is not injected; `DebugLevel.level`
 returns `"none"` as a library fallback.
 
+`--sanitize` also accepts `thread` (ThreadSanitizer), but only
+`--sanitize=address` injects a compile-time define.
+
 Read these values through `sys.compile`, which exposes them as the
-compile-time values: `OptimizationLevel`, `DebugLevel`, and
-`SanitizeAddress`.
+compile-time values `OptimizationLevel.level` (an `Int`), `DebugLevel.level`
+(a `String`), and `SanitizeAddress` (a `Bool`).
 
 For example:
 
