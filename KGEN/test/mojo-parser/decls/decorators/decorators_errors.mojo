@@ -72,7 +72,7 @@ def bad_decorator_expression_3():
 # @always_inline
 # ===----------------------------------------------------------------------=== #
 
-@always_inline("builtin", "nodebug")  # expected-error {{'@always_inline' may not have more than 1 operand, got 2}}
+@always_inline("builtin", "nodebug")  # expected-error {{'@always_inline' decorator takes 0 or 1 arguments, found 2}}
 def bad_always_inline_1():
     pass
 
@@ -137,7 +137,7 @@ struct CheckImplicit:
     @implicit
     def __init__(out self, *, copy: Self): pass
 
-    # expected-error @+1 {{'@implicit' may not have more than 1 operand, got 2}}
+    # expected-error @+1 {{'@implicit' decorator takes 0 or 1 arguments, found 2}}
     @implicit(123, "abc")
     def __init__(out self, a: Int): pass
 

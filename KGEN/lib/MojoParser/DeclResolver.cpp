@@ -1512,7 +1512,8 @@ void DeclResolver::exportMain(ASTDecl &funcDecl) {
 
   // Validate that main has the expected signature.
   if (!userMainSignature.getInputParamTypes().empty()) {
-    shared.emitError(loc, "expected 'main' function to have no parameters");
+    shared.emitError(loc, "'main()' does not accept parameters; "
+                          "remove the square brackets");
     return;
   }
   ASTType userResultType(userMainFn.getUserResultType());
@@ -1528,19 +1529,19 @@ void DeclResolver::exportMain(ASTDecl &funcDecl) {
 
     // Process a main returning object.
   } else {
-    shared.emitError(loc, "expected 'main' function to return 'None'");
+    shared.emitError(
+        loc, "'main()' does not return a value; remove the return type");
     return;
   }
   if (!argTypes.empty()) {
-    shared.emitError(loc, "expected 'main' function to have no arguments");
+    shared.emitError(loc, "'main()' does not accept arguments; remove them");
     return;
   }
 
   // Validate that we aren't in a package, defining a `main` within a package
   // is not fully supported.
   if (userMainFn->getParentOfType<PackageOp>()) {
-    shared.emitError(loc,
-                     "defining 'main' within a package is not yet supported");
+    shared.emitError(loc, "'main()' is not supported within packages");
     return;
   }
 

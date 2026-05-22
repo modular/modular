@@ -7,7 +7,7 @@
 # RUN: %parse-mojo-isolated -verify-diagnostics -split-input-file %s
 
 
-# expected-error @below {{expected 'main' function to have no arguments}}
+# expected-error @below {{'main()' does not accept arguments; remove them}}
 def main(arg: Int):
     return
 
@@ -15,7 +15,7 @@ def main(arg: Int):
 # // -----
 
 
-# expected-error @below {{expected 'main' function to have no arguments}}
+# expected-error @below {{'main()' does not accept arguments; remove them}}
 def main(arg: Int) raises:
     return
 
@@ -23,7 +23,7 @@ def main(arg: Int) raises:
 # // -----
 
 
-# expected-error @below {{expected 'main' function to return 'None'}}
+# expected-error @below {{'main()' does not return a value; remove the return type}}
 def main() -> Int:
     return 10
 
@@ -31,7 +31,7 @@ def main() -> Int:
 # // -----
 
 
-# expected-error @below {{expected 'main' function to have no parameters}}
+# expected-error @below {{'main()' does not accept parameters; remove the square brackets}}
 def main[input: Int]():
     return
 

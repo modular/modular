@@ -167,7 +167,7 @@ def call_take_two_inferred_params[T: SomeTrait](x: T):
 # Check that a trait method with a default implementation returning a non-None
 # type may not use 'pass'.
 trait TBar:
-    # expected-error @+4 {{trait method has results but default implementation returns no value; did you mean '...'?}}
+    # expected-error @+4 {{trait method with a return type must not use 'pass'; use '...' to declare the method as required}}
     # expected-note @below {{in 'bar', declared here}}
     # expected-note @below {{original default implementation from trait 'TBar' here}}
     def bar(self) -> Int:
