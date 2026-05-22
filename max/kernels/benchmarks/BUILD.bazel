@@ -226,7 +226,12 @@ mojo_test(
         "gpu",
         "manual",
     ],
-    target_compatible_with = ["//:b200_gpu"],
+    # Any GPU — B200 routes through dispatch_qslice_conv3d_sm100 /
+    # dispatch_im2col_matmul_conv3d, MI355X routes through
+    # dispatch_amd_4wave_conv3d / dispatch_im2col_matmul_conv3d.
+    # The bench's `impl` runtime arg picks which dispatcher to time
+    # per shape.
+    target_compatible_with = ["//:has_gpu"],
     deps = [
         "//max:internal_utils",
         "//max:layout",

@@ -15,6 +15,7 @@ _EXTRA_CONSTRAINTS = {
     "test_amd_4wave_conv_miopen.mojo": ["//:mi355_gpu"],
     "test_amd_4wave_conv_residual.mojo": ["//:mi355_gpu"],
     "test_amd_4wave_conv_rt_hw.mojo": ["//:mi355_gpu"],
+    "test_amd_4wave_conv3d.mojo": ["//:mi355_gpu"],
     "test_conv2d_sm100.mojo": select({
         "//:b200_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],

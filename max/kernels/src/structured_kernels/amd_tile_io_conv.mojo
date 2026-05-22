@@ -114,6 +114,17 @@ struct TileLoaderLDSIm2col[
     dilation_w: Int = 1,
     pad_h: Int = 0,
     pad_w: Int = 0,
+    # Optional 3D (NDHWC + Q×R×S filter) mode. Defaults reproduce the
+    # 2D loader exactly so existing 2D callers compile unchanged. When
+    # Q > 1, the loader expects a 5D NDHWC input and decomposes
+    # M = N*D_out*H_out*W_out, K = Q*R*S*C (vs 2D: M = N*H_out*W_out,
+    # K = R*S*C). Halo bounds extend to D when pad_d > 0.
+    Q: Int = 1,
+    D: Int = 1,
+    D_out: Int = 1,
+    stride_d: Int = 1,
+    dilation_d: Int = 1,
+    pad_d: Int = 0,
     swizzle: Optional[Swizzle] = Optional[Swizzle](),
     load_width: Int = simd_width_of[dtype_](),
     use_full_tile_width: Bool = False,
@@ -171,15 +182,25 @@ struct TileLoaderLDSIm2col[
         pad_h: Vertical pad (>= 0). Halo lanes route to the SRD-OOB
             sentinel when pad > 0.
         pad_w: Horizontal pad (>= 0).
+        Q: Filter temporal extent (3D-only). `Q == 1` (default) keeps
+            the loader in 2D mode (4D NHWC input). `Q > 1` activates
+            3D mode (5D NDHWC input, K = Q*R*S*C).
+        D: Input temporal depth (3D-only; unused when Q == 1).
+        D_out: Output temporal depth (3D-only).
+        stride_d: Temporal conv stride (3D-only, >= 1).
+        dilation_d: Temporal conv dilation (3D-only, >= 1).
+        pad_d: Temporal pad (3D-only, >= 0). Halo lanes route to the
+            SRD-OOB sentinel when pad_d > 0.
         swizzle: Optional byte-space swizzle for LDS bank conflicts.
         load_width: Elements per load (SIMD width).
         use_full_tile_width: FP8 row-major mode (matches
             `TileLoaderLDS.use_full_tile_width`).
-        use_runtime_hw: When True, H/W/H_out/W_out come from runtime
-            constructor args instead of the comptime template params
-            above. Used for graph-compiled callers with dynamic image
-            resolution (e.g. FLUX VAE). The K-decomposition and conv
-            params (R, S, stride, dilation, pad) stay comptime.
+        use_runtime_hw: When True, H/W/H_out/W_out (and D/D_out in 3D
+            mode) come from runtime constructor args instead of the
+            comptime template params above. Used for graph-compiled
+            callers with dynamic image resolution (e.g. FLUX VAE). The
+            K-decomposition and conv params (Q, R, S, stride, dilation,
+            pad) stay comptime.
     """
 
     # Body-level aliases re-bind the parametric `dtype_`/`tile_rows_`/
@@ -206,11 +227,24 @@ struct TileLoaderLDSIm2col[
         and Self.dilation_w >= 1
         and Self.pad_h >= 0
         and Self.pad_w >= 0
+        and Self.Q >= 1
+        and Self.D >= 1
+        and Self.D_out >= 1
+        and Self.stride_d >= 1
+        and Self.dilation_d >= 1
+        and Self.pad_d >= 0
     )
+    # 3D-conv mode: present (5D NDHWC input + Q×R×S filter) when Q > 1.
+    # Q == 1 is the 2D default (4D NHWC input). Other 3D-only params
+    # (D, D_out, stride_d, dilation_d, pad_d) are ignored when Q == 1
+    # so 2D callers don't have to set them.
+    comptime _is_3d = Self.Q > 1
     # Pure-pointwise specialization (M1 fast path): uses the linear
     # `m*C + k` address math without M-decomposition. Requires no pad
     # because pad > 0 would create OOB conditions the fast path can't
-    # mask cheaply.
+    # mask cheaply. 3D mode is never pure-pointwise (the Q axis adds
+    # the d_in computation even if Q=1=R=S, but we already gate _is_3d
+    # on Q>1).
     comptime _is_pure_pointwise = (
         Self.R == 1
         and Self.S == 1
@@ -220,10 +254,13 @@ struct TileLoaderLDSIm2col[
         and Self.dilation_w == 1
         and Self.pad_h == 0
         and Self.pad_w == 0
+        and not Self._is_3d
     )
     # When pad>0, halo lanes need to route to the SRD-OOB sentinel.
     # Gated so M2 (interior-only) keeps its exact instruction stream.
-    comptime _needs_halo_mask = Self.pad_h > 0 or Self.pad_w > 0
+    comptime _needs_halo_mask = (
+        Self.pad_h > 0 or Self.pad_w > 0 or Self.pad_d > 0
+    )
 
     # When `tile_cols <= C and C % tile_cols == 0`, each load_tile call
     # stays inside one (kh, kw) substrip → fast path with uniform substrip
@@ -292,6 +329,12 @@ struct TileLoaderLDSIm2col[
     var rt_h_out: Int
     var rt_w_out: Int
     var rt_spatial: Int  # h_out * w_out
+    # 3D-only runtime conv geometry. Unused (zeroed) when `_is_3d=False`
+    # or on the static 3D path; same per-block-constant SGPR cost as
+    # the 2D rt_* fields.
+    var rt_d: Int
+    var rt_d_out: Int
+    var rt_spatial_dhw: Int  # d_out * h_out * w_out
 
     @always_inline
     def __init__[
@@ -333,16 +376,25 @@ struct TileLoaderLDSIm2col[
             " constructor overload."
         )
         comptime assert Self._geom_ok, (
-            "TileLoaderLDSIm2col requires R>=1, S>=1, stride>=1,"
+            "TileLoaderLDSIm2col requires R>=1, S>=1, Q>=1, stride>=1,"
             " dilation>=1, pad>=0."
         )
-        comptime assert (
-            InLayout.rank == 4
-        ), "TileLoaderLDSIm2col expects a rank-4 NHWC TileTensor."
-        comptime assert InLayout.static_shape[3] == Self.C, (
-            "TileLoaderLDSIm2col.C parameter must match the input's static"
-            " C dim (NHWC.shape[3])."
-        )
+        comptime if Self._is_3d:
+            comptime assert (
+                InLayout.rank == 5
+            ), "TileLoaderLDSIm2col (Q>1) expects a rank-5 NDHWC TileTensor."
+            comptime assert InLayout.static_shape[4] == Self.C, (
+                "TileLoaderLDSIm2col.C parameter must match the input's"
+                " static C dim (NDHWC.shape[4])."
+            )
+        else:
+            comptime assert (
+                InLayout.rank == 4
+            ), "TileLoaderLDSIm2col (Q==1) expects a rank-4 NHWC TileTensor."
+            comptime assert InLayout.static_shape[3] == Self.C, (
+                "TileLoaderLDSIm2col.C parameter must match the input's"
+                " static C dim (NHWC.shape[3])."
+            )
         # When `tile_cols <= C and C % tile_cols == 0`, each load_tile call
         # stays within a single (kh, kw) substrip — `load_tile`'s general
         # path takes the uniform-substrip fast path (kh, kw, c_base
@@ -378,21 +430,55 @@ struct TileLoaderLDSIm2col[
                 "W_out must equal (W + 2*pad_w - dilation_w*(S-1) - 1)"
                 " // stride_w + 1"
             )
-            comptime assert (
-                InLayout.static_shape[1] == Self.H
-            ), "Loader H param must match input.shape[1]"
-            comptime assert (
-                InLayout.static_shape[2] == Self.W
-            ), "Loader W param must match input.shape[2]"
+            comptime if Self._is_3d:
+                # NDHWC: dim[1]=D, dim[2]=H, dim[3]=W.
+                comptime _eff_Q = Self.dilation_d * (Self.Q - 1) + 1
+                comptime assert (
+                    Self.D + 2 * Self.pad_d >= _eff_Q
+                ), "D + 2*pad_d must be >= dilation_d*(Q-1) + 1"
+                comptime assert (
+                    Self.D_out
+                    == (Self.D + 2 * Self.pad_d - _eff_Q) // Self.stride_d + 1
+                ), (
+                    "D_out must equal (D + 2*pad_d - dilation_d*(Q-1) - 1)"
+                    " // stride_d + 1"
+                )
+                comptime assert (
+                    InLayout.static_shape[1] == Self.D
+                ), "Loader D param must match input.shape[1] (NDHWC)"
+                comptime assert (
+                    InLayout.static_shape[2] == Self.H
+                ), "Loader H param must match input.shape[2] (NDHWC)"
+                comptime assert (
+                    InLayout.static_shape[3] == Self.W
+                ), "Loader W param must match input.shape[3] (NDHWC)"
+            else:
+                comptime assert (
+                    InLayout.static_shape[1] == Self.H
+                ), "Loader H param must match input.shape[1]"
+                comptime assert (
+                    InLayout.static_shape[2] == Self.W
+                ), "Loader W param must match input.shape[2]"
 
-        # SRD over the whole NHWC buffer. `num_records` is in elements;
+        # SRD over the whole input buffer. `num_records` is in elements;
         # the descriptor multiplies by `size_of[dtype]` internally.
-        var n = Int(src_nhwc.dim[0]())
-        var h = Int(src_nhwc.dim[1]())
-        var w = Int(src_nhwc.dim[2]())
-        var c = Int(src_nhwc.dim[3]())
         comptime assert Self.C > 0, "TileLoaderLDSIm2col.C must be > 0"
-        var nr = n * h * w * c
+        var nr: Int
+        comptime if Self._is_3d:
+            # NDHWC: 5D.
+            var n_5d = Int(src_nhwc.dim[0]())
+            var d_5d = Int(src_nhwc.dim[1]())
+            var h_5d = Int(src_nhwc.dim[2]())
+            var w_5d = Int(src_nhwc.dim[3]())
+            var c_5d = Int(src_nhwc.dim[4]())
+            nr = n_5d * d_5d * h_5d * w_5d * c_5d
+        else:
+            # NHWC: 4D.
+            var n = Int(src_nhwc.dim[0]())
+            var h = Int(src_nhwc.dim[1]())
+            var w = Int(src_nhwc.dim[2]())
+            var c = Int(src_nhwc.dim[3]())
+            nr = n * h * w * c
         self.buffer = AMDBufferResource(
             readfirstlane(src_nhwc.ptr), readfirstlane(nr)
         )
@@ -432,6 +518,9 @@ struct TileLoaderLDSIm2col[
         self.rt_h_out = 0
         self.rt_w_out = 0
         self.rt_spatial = 0
+        self.rt_d = 0
+        self.rt_d_out = 0
+        self.rt_spatial_dhw = 0
 
     @always_inline
     def __init__[
@@ -474,8 +563,12 @@ struct TileLoaderLDSIm2col[
             Self.use_runtime_hw
         ), "this constructor requires use_runtime_hw=True"
         comptime assert Self._geom_ok, (
-            "TileLoaderLDSIm2col requires R>=1, S>=1, stride>=1,"
+            "TileLoaderLDSIm2col requires R>=1, S>=1, Q>=1, stride>=1,"
             " dilation>=1, pad>=0."
+        )
+        comptime assert not Self._is_3d, (
+            "TileLoaderLDSIm2col (Q>1) runtime-HW requires the 5D"
+            " (runtime_d/d_out + ...) constructor overload."
         )
         comptime assert (
             InLayout.rank == 4
@@ -536,6 +629,125 @@ struct TileLoaderLDSIm2col[
         self.rt_h_out = runtime_h_out
         self.rt_w_out = runtime_w_out
         self.rt_spatial = runtime_h_out * runtime_w_out
+        # 3D-only fields unused on the 2D runtime-HW path.
+        self.rt_d = 0
+        self.rt_d_out = 0
+        self.rt_spatial_dhw = 0
+
+    @always_inline
+    def __init__[
+        InLayout: TensorLayout,
+    ](
+        out self,
+        src_ndhwc: TileTensor[Self.dtype, InLayout, _],
+        warp_id: Int,
+        lane_id: Int,
+        *,
+        runtime_d: Int,
+        runtime_h: Int,
+        runtime_w: Int,
+        runtime_d_out: Int,
+        runtime_h_out: Int,
+        runtime_w_out: Int,
+        m_anchor: Int = 0,
+        k_anchor: Int = 0,
+    ):
+        """3D runtime-HW overload: D/H/W/D_out/H_out/W_out from runtime args.
+
+        Equivalent to the 2D runtime-HW overload but for `Q > 1` mode:
+        accepts a rank-5 NDHWC `TileTensor` and runtime D / D_out args
+        in addition to the spatial H/W ones. The K-decomposition and
+        conv params (Q, R, S, stride_d, stride_h, stride_w, dilation_*,
+        pad_*, C) stay comptime.
+
+        Args:
+            src_ndhwc: 5D NDHWC input tensor of shape `(N, D, H, W, C)`.
+            warp_id: Warp identifier within the loading warp group.
+            lane_id: Lane identifier within the warp.
+            runtime_d: Runtime input depth.
+            runtime_h: Runtime input height.
+            runtime_w: Runtime input width.
+            runtime_d_out: Runtime output depth (must equal
+                `(runtime_d + 2*pad_d - dilation_d*(Q-1) - 1) //
+                stride_d + 1`).
+            runtime_h_out: Runtime output height.
+            runtime_w_out: Runtime output width.
+            m_anchor: M-coordinate of the block origin in GEMM space
+                (`= flat N*D_out*H_out*W_out index`). Added to
+                `m_offset` at load time. Defaults to 0.
+            k_anchor: K-coordinate of the block origin in GEMM space
+                (`= flat Q*R*S*C index`). Added to `k_offset` at load
+                time. Defaults to 0.
+        """
+        comptime assert (
+            Self.use_runtime_hw
+        ), "this constructor requires use_runtime_hw=True"
+        comptime assert Self._geom_ok, (
+            "TileLoaderLDSIm2col requires R>=1, S>=1, Q>=1, stride>=1,"
+            " dilation>=1, pad>=0."
+        )
+        comptime assert (
+            Self._is_3d
+        ), "5D runtime-HW constructor requires Q>1 (3D mode)."
+        comptime assert (
+            InLayout.rank == 5
+        ), "TileLoaderLDSIm2col (Q>1) expects a rank-5 NDHWC TileTensor."
+        # Allow dynamic C (-1); enforce match if the layout has a
+        # static C dim.
+        comptime assert (
+            InLayout.static_shape[4] == Self.C or InLayout.static_shape[4] == -1
+        ), (
+            "TileLoaderLDSIm2col.C parameter must match the input's"
+            " static C dim (NDHWC.shape[4]) when that dim is static."
+        )
+
+        # SRD over the whole NDHWC buffer. `nr` is in elements.
+        var n = Int(src_ndhwc.dim[0]())
+        var c = Int(src_ndhwc.dim[4]())
+        comptime assert Self.C > 0, "TileLoaderLDSIm2col.C must be > 0"
+        var nr = n * runtime_d * runtime_h * runtime_w * c
+        self.buffer = AMDBufferResource(
+            readfirstlane(src_ndhwc.ptr), readfirstlane(nr)
+        )
+        self.num_records = nr
+
+        self.warp_id = warp_id
+        self.lane_id = lane_id
+
+        var effective_lane = lane_id
+
+        comptime if Self.swizzle and not Self._needs_per_iter_swizzle:
+            var lds_write_bytes = (
+                lane_id * Self.load_width * size_of[Self.dtype]()
+            )
+            var swizzled_bytes = Self.swizzle.value()(lds_write_bytes)
+            effective_lane = swizzled_bytes // (
+                Self.load_width * size_of[Self.dtype]()
+            )
+
+        var warp_row, warp_col = divmod(warp_id, Self.num_warp_cols)
+        var subtile_row, subtile_col_idx = divmod(
+            effective_lane, Self.threads_per_row
+        )
+        var subtile_col = subtile_col_idx * Self.load_width
+
+        self.thread_row = warp_row * Self.thread_rows + subtile_row
+        self.thread_col = warp_col * Self.subtile_cols + subtile_col
+
+        self.m_anchor = m_anchor
+        self.k_anchor = k_anchor
+
+        # 2D runtime fields still get the H/W values (the 3D body uses
+        # rt_h/rt_w as the corresponding axes). Cache the 2D and 3D
+        # spatial products to avoid per-call multiplies.
+        self.rt_h = runtime_h
+        self.rt_w = runtime_w
+        self.rt_h_out = runtime_h_out
+        self.rt_w_out = runtime_w_out
+        self.rt_spatial = runtime_h_out * runtime_w_out
+        self.rt_d = runtime_d
+        self.rt_d_out = runtime_d_out
+        self.rt_spatial_dhw = runtime_d_out * runtime_h_out * runtime_w_out
 
     @always_inline
     def load_tile(
@@ -656,33 +868,53 @@ struct TileLoaderLDSIm2col[
             var W_eff: Int
             var H_out_eff: Int
             var W_out_eff: Int
-            var spatial: Int
+            var spatial: Int  # 2D mode: H_out*W_out; 3D mode: H_out*W_out
+            # 3D-only effective geometry. Zero in 2D mode (unused, the
+            # comptime branches below skip the 3D code path entirely).
+            var D_eff: Int
+            var D_out_eff: Int
+            var spatial_dhw: Int  # 3D only: D_out*H_out*W_out
             comptime if Self.use_runtime_hw:
                 H_eff = self.rt_h
                 W_eff = self.rt_w
                 H_out_eff = self.rt_h_out
                 W_out_eff = self.rt_w_out
                 spatial = self.rt_spatial
+                D_eff = self.rt_d
+                D_out_eff = self.rt_d_out
+                spatial_dhw = self.rt_spatial_dhw
             else:
                 H_eff = Self.H
                 W_eff = Self.W
                 H_out_eff = Self.H_out
                 W_out_eff = Self.W_out
                 spatial = Self.H_out * Self.W_out
+                D_eff = Self.D
+                D_out_eff = Self.D_out
+                spatial_dhw = Self.D_out * Self.H_out * Self.W_out
 
             comptime if Self._needs_per_iter_swizzle:
                 var lane_byte = self.lane_id * Self.lane_load_bytes
 
                 # Uniform-substrip values hoisted (used only on the
                 # fast path; harmless extra comptime work otherwise).
+                # 3D adds kq (filter depth slot). Decomposition is
+                # k = kq*R*S*C + kh*S*C + kw*C + c.
                 var substrip_uniform = 0
+                var kq_uniform = 0
                 var kh_uniform = 0
                 var kw_uniform = 0
                 var c_base_uniform = 0
                 comptime if Self._is_uniform_substrip:
                     substrip_uniform = k_eff // Self.C
-                    kh_uniform = substrip_uniform // Self.S
-                    kw_uniform = substrip_uniform % Self.S
+                    comptime if Self._is_3d:
+                        var rs_uniform = substrip_uniform % (Self.R * Self.S)
+                        kq_uniform = substrip_uniform // (Self.R * Self.S)
+                        kh_uniform = rs_uniform // Self.S
+                        kw_uniform = rs_uniform % Self.S
+                    else:
+                        kh_uniform = substrip_uniform // Self.S
+                        kw_uniform = substrip_uniform % Self.S
                     c_base_uniform = k_eff % Self.C
 
                 comptime for i in range(Self.num_iterations):
@@ -704,27 +936,54 @@ struct TileLoaderLDSIm2col[
 
                     var m_lane = m_eff + swizzled_row
 
-                    # Pick (kh, kw, c_lane) per the comptime fast/slow choice.
+                    # Pick (kq, kh, kw, c_lane) per the comptime
+                    # fast/slow choice. kq is only used in 3D mode.
+                    var kq: Int = 0
                     var kh: Int
                     var kw: Int
                     var c_lane: Int
                     comptime if Self._is_uniform_substrip:
+                        kq = kq_uniform
                         kh = kh_uniform
                         kw = kw_uniform
                         c_lane = c_base_uniform + swizzled_col
                     else:
                         var k_lane = k_eff + swizzled_col
                         var substrip_lane = k_lane // Self.C
-                        kh = substrip_lane // Self.S
-                        kw = substrip_lane % Self.S
+                        comptime if Self._is_3d:
+                            var rs_lane = substrip_lane % (Self.R * Self.S)
+                            kq = substrip_lane // (Self.R * Self.S)
+                            kh = rs_lane // Self.S
+                            kw = rs_lane % Self.S
+                        else:
+                            kh = substrip_lane // Self.S
+                            kw = substrip_lane % Self.S
                         c_lane = k_lane % Self.C
 
-                    var n_m_within = divmod(m_lane, spatial)
-                    var n = n_m_within[0]
-                    var m_within = n_m_within[1]
-                    var h_w = divmod(m_within, W_out_eff)
-                    var h_out = h_w[0]
-                    var w_out = h_w[1]
+                    # M decomposition.
+                    #   2D: m_lane → (n, h_out, w_out)
+                    #   3D: m_lane → (n, d_out, h_out, w_out)
+                    var n: Int
+                    var d_out: Int = 0  # 2D: unused
+                    var h_out: Int
+                    var w_out: Int
+                    comptime if Self._is_3d:
+                        var n_within_dhw = divmod(m_lane, spatial_dhw)
+                        n = n_within_dhw[0]
+                        var m_within_dhw = n_within_dhw[1]
+                        var d_within_hw = divmod(m_within_dhw, spatial)
+                        d_out = d_within_hw[0]
+                        var m_within_hw = d_within_hw[1]
+                        var h_w = divmod(m_within_hw, W_out_eff)
+                        h_out = h_w[0]
+                        w_out = h_w[1]
+                    else:
+                        var n_m_within = divmod(m_lane, spatial)
+                        n = n_m_within[0]
+                        var m_within = n_m_within[1]
+                        var h_w = divmod(m_within, W_out_eff)
+                        h_out = h_w[0]
+                        w_out = h_w[1]
 
                     var h_in = (
                         h_out * Self.stride_h
@@ -736,20 +995,38 @@ struct TileLoaderLDSIm2col[
                         + kw * Self.dilation_w
                         - Self.pad_w
                     )
-                    var addr_safe = (
-                        (n * H_eff + h_in) * W_eff + w_in
-                    ) * Self.C + c_lane
+                    # Address. 2D: ((n*H + h_in)*W + w_in)*C + c.
+                    # 3D: (((n*D + d_in)*H + h_in)*W + w_in)*C + c.
+                    var addr_safe: Int
+                    var d_in: Int = 0  # 2D: unused
+                    comptime if Self._is_3d:
+                        d_in = (
+                            d_out * Self.stride_d
+                            + kq * Self.dilation_d
+                            - Self.pad_d
+                        )
+                        addr_safe = (
+                            ((n * D_eff + d_in) * H_eff + h_in) * W_eff + w_in
+                        ) * Self.C + c_lane
+                    else:
+                        addr_safe = (
+                            (n * H_eff + h_in) * W_eff + w_in
+                        ) * Self.C + c_lane
                     var addr = addr_safe
                     comptime if Self._needs_halo_mask:
-                        # Halo lanes (h_in or w_in outside [0, H)/[0, W))
-                        # route to `num_records`; the SRD's hardware
-                        # bound check clamps the read to 0.
+                        # Halo lanes (any of d_in / h_in / w_in outside
+                        # bounds) route to `num_records`; the SRD's
+                        # hardware bound check clamps the read to 0.
                         var in_bounds = (
                             (h_in >= 0)
                             and (h_in < H_eff)
                             and (w_in >= 0)
                             and (w_in < W_eff)
                         )
+                        comptime if Self._is_3d:
+                            in_bounds = (
+                                in_bounds and (d_in >= 0) and (d_in < D_eff)
+                            )
                         addr = addr_safe if in_bounds else self.num_records
 
                     self.buffer.load_to_lds[width=Self.load_width](
@@ -774,43 +1051,106 @@ struct TileLoaderLDSIm2col[
                 # comptime assert on the static path and as a runtime
                 # precondition (set by the dispatcher) on the
                 # use_runtime_hw path.
+                # step_w / step_h / step_d: how (w_out, h_out, d_out)
+                # advance per iter when m_lane bumps by
+                # rows_per_iteration. step_d is 0 for typical shapes
+                # (rows_per_iteration < H_out*W_out). The carry chain
+                # below propagates overflow w → h → d → n.
                 var step_w: Int
                 var step_h: Int
+                var step_d: Int = 0
                 comptime if Self.use_runtime_hw:
                     step_w = Self.rows_per_iteration % W_out_eff
-                    step_h = Self.rows_per_iteration // W_out_eff
+                    var rest = Self.rows_per_iteration // W_out_eff
+                    comptime if Self._is_3d:
+                        step_h = rest % H_out_eff
+                        step_d = rest // H_out_eff
+                    else:
+                        step_h = rest
                 else:
                     step_w = Self.rows_per_iteration % Self.W_out
-                    step_h = Self.rows_per_iteration // Self.W_out
-                    comptime assert (
-                        Self.rows_per_iteration // Self.W_out
-                    ) + 1 < Self.H_out, (
-                        "Incremental m-decomposition needs"
-                        " rows_per_iteration//W_out + 1 < H_out"
-                    )
+                    comptime if Self._is_3d:
+                        comptime _rest = (Self.rows_per_iteration // Self.W_out)
+                        step_h = _rest % Self.H_out
+                        step_d = _rest // Self.H_out
+                        # Single-carry invariant: with d_out starting up to
+                        # D_out-1 and the h_out→d_out carry contributing +1
+                        # in the worst case, the post-add d_out is at most
+                        # D_out + step_d. One subtract leaves at most step_d;
+                        # we need that in [0, D_out-1], i.e. `step_d <
+                        # D_out`. Tight bound — small D_out shapes (e.g.
+                        # D_out=2 in test_conv_gpu) require this not be over-
+                        # conservative. If a future shape trips even this,
+                        # replace the `if` carry with a `while` loop.
+                        comptime assert (
+                            Self.rows_per_iteration // (Self.W_out * Self.H_out)
+                        ) < Self.D_out, (
+                            "Incremental m-decomposition (3D) needs"
+                            " rows_per_iteration//(W_out*H_out) < D_out"
+                        )
+                    else:
+                        step_h = Self.rows_per_iteration // Self.W_out
+                        comptime assert (
+                            Self.rows_per_iteration // Self.W_out
+                        ) + 1 < Self.H_out, (
+                            "Incremental m-decomposition needs"
+                            " rows_per_iteration//W_out + 1 < H_out"
+                        )
 
                 var m_lane0 = m_eff + self.thread_row
-                var n_m_within = divmod(m_lane0, spatial)
-                var n = n_m_within[0]
-                var m_within = n_m_within[1]
-                var h_w = divmod(m_within, W_out_eff)
-                var h_out = h_w[0]
-                var w_out = h_w[1]
+                # Initial M decomposition.
+                #   2D: m_lane0 → (n, h_out, w_out)
+                #   3D: m_lane0 → (n, d_out, h_out, w_out)
+                var n: Int
+                var d_out: Int = 0  # 2D: unused
+                var h_out: Int
+                var w_out: Int
+                comptime if Self._is_3d:
+                    var n_within_dhw = divmod(m_lane0, spatial_dhw)
+                    n = n_within_dhw[0]
+                    var m_within_dhw = n_within_dhw[1]
+                    var d_within_hw = divmod(m_within_dhw, spatial)
+                    d_out = d_within_hw[0]
+                    var m_within_hw = d_within_hw[1]
+                    var h_w = divmod(m_within_hw, W_out_eff)
+                    h_out = h_w[0]
+                    w_out = h_w[1]
+                else:
+                    var n_m_within = divmod(m_lane0, spatial)
+                    n = n_m_within[0]
+                    var m_within = n_m_within[1]
+                    var h_w = divmod(m_within, W_out_eff)
+                    h_out = h_w[0]
+                    w_out = h_w[1]
 
-                # Pick (kh, kw, c_lane) per the comptime fast/slow choice.
+                # Pick (kq, kh, kw, c_lane) per the comptime fast/slow choice.
+                # kq is only used in 3D mode.
+                var kq: Int = 0
                 var kh: Int
                 var kw: Int
                 var c_lane: Int
                 comptime if Self._is_uniform_substrip:
                     var substrip_uniform = k_eff // Self.C
-                    kh = substrip_uniform // Self.S
-                    kw = substrip_uniform % Self.S
+                    comptime if Self._is_3d:
+                        var rs_uniform = substrip_uniform % (Self.R * Self.S)
+                        kq = substrip_uniform // (Self.R * Self.S)
+                        kh = rs_uniform // Self.S
+                        kw = rs_uniform % Self.S
+                    else:
+                        kh = substrip_uniform // Self.S
+                        kw = substrip_uniform % Self.S
                     c_lane = (k_eff % Self.C) + self.thread_col
                 else:
                     var k_lane = k_eff + self.thread_col
                     var substrip_lane = k_lane // Self.C
-                    kh = substrip_lane // Self.S
-                    kw = substrip_lane % Self.S
+                    comptime if Self._is_3d:
+                        var rs_lane = substrip_lane % (Self.R * Self.S)
+                        kq = substrip_lane // (Self.R * Self.S)
+                        kh = rs_lane // Self.S
+                        kw = rs_lane % Self.S
+                    else:
+                        kh = substrip_lane // Self.S
+                        kw = substrip_lane % Self.S
                     c_lane = k_lane % Self.C
 
                 comptime for i in range(Self.num_iterations):
@@ -830,9 +1170,21 @@ struct TileLoaderLDSIm2col[
                         + kw * Self.dilation_w
                         - Self.pad_w
                     )
-                    var addr_safe = (
-                        (n * H_eff + h_in) * W_eff + w_in
-                    ) * Self.C + c_lane
+                    var addr_safe: Int
+                    var d_in: Int = 0  # 2D: unused
+                    comptime if Self._is_3d:
+                        d_in = (
+                            d_out * Self.stride_d
+                            + kq * Self.dilation_d
+                            - Self.pad_d
+                        )
+                        addr_safe = (
+                            ((n * D_eff + d_in) * H_eff + h_in) * W_eff + w_in
+                        ) * Self.C + c_lane
+                    else:
+                        addr_safe = (
+                            (n * H_eff + h_in) * W_eff + w_in
+                        ) * Self.C + c_lane
                     var addr = addr_safe
                     comptime if Self._needs_halo_mask:
                         var in_bounds = (
@@ -841,6 +1193,10 @@ struct TileLoaderLDSIm2col[
                             and (w_in >= 0)
                             and (w_in < W_eff)
                         )
+                        comptime if Self._is_3d:
+                            in_bounds = (
+                                in_bounds and (d_in >= 0) and (d_in < D_eff)
+                            )
                         addr = addr_safe if in_bounds else self.num_records
 
                     self.buffer.load_to_lds[width=Self.load_width](
@@ -849,13 +1205,24 @@ struct TileLoaderLDSIm2col[
                         scalar_offset=Int32(0),
                     )
 
-                    # Increment (n, h_out, w_out) for the next iter.
+                    # Carry-increment (n, [d_out,] h_out, w_out) for
+                    # the next iter. 2D path: w → h → n. 3D path:
+                    # w → h → d → n.
                     comptime if i + 1 < Self.num_iterations:
                         w_out += step_w
                         h_out += step_h
+                        comptime if Self._is_3d:
+                            d_out += step_d
                         if w_out >= W_out_eff:
                             w_out -= W_out_eff
                             h_out += 1
                         if h_out >= H_out_eff:
                             h_out -= H_out_eff
-                            n += 1
+                            comptime if Self._is_3d:
+                                d_out += 1
+                            else:
+                                n += 1
+                        comptime if Self._is_3d:
+                            if d_out >= D_out_eff:
+                                d_out -= D_out_eff
+                                n += 1

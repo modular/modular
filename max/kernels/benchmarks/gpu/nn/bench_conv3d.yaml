@@ -22,7 +22,7 @@ commons: &commons
   $stride_d: 1
   $stride_h: 1
   $stride_w: 1
-  impl: [naive, im2col, 1x1x1, qslice, cudnn]  # 5 instances per shape
+  impl: [naive, im2col, 1x1x1, qslice, native_3d, cudnn]  # 6 instances per shape
 
 params:
 

@@ -134,6 +134,7 @@ from .conv_utils import (
     get_partition,
     reorder_padding,
 )
+from .gpu.amd.dispatch_3d import dispatch_amd_4wave_conv3d
 from .gpu.im2col_matmul_3d import dispatch_im2col_matmul_conv3d
 from .gpu.matmul_1x1x1_conv3d import dispatch_1x1x1_matmul_conv3d
 from .gpu.nvidia.sm100.qslice_conv3d import dispatch_qslice_conv3d_sm100
@@ -5080,6 +5081,92 @@ def conv_gpu[
                     ctx,
                 ):
                     return
+
+            # AMD MI355X (CDNA4) native 3D implicit-GEMM: extends the
+            # 4-wave conv2d loader to NDHWC inputs and Q×R×S filters.
+            # Beats the im2col path by ~1.3–2.4× on WAN VAE shapes.
+            # Returns False on shapes it can't cover (Q==1, C_in below
+            # simd_width, C_out<64, non-square stride, FCQRS filter,
+            # grouped, dilated); caller then falls through to the
+            # im2col path below.
+            comptime if has_amd_gpu_accelerator():
+                from linalg.utils import (
+                    elementwise_epilogue_type as _ew_3d_t,
+                )
+
+                # Wrap the 5D NDHWC epilogue into a 2D GEMM-space
+                # void epilogue for the 4-wave kernel. The kernel
+                # calls this with (m, n) coords where m flattens
+                # batch*d*h*w and n is the channel.
+                comptime if maybe_epilogue_func:
+                    comptime _amd_3d_epi_5d = maybe_epilogue_func.value()
+                    var _amd_3d_D_out = output_lt.dim[1]()
+                    var _amd_3d_H_out = output_lt.dim[2]()
+                    var _amd_3d_W_out = output_lt.dim[3]()
+                    var _amd_3d_HW = _amd_3d_H_out * _amd_3d_W_out
+                    var _amd_3d_DHW = _amd_3d_D_out * _amd_3d_HW
+
+                    @parameter
+                    @always_inline
+                    @__copy_capture(_amd_3d_DHW, _amd_3d_HW, _amd_3d_W_out)
+                    def amd_3d_void_epilogue[
+                        _dtype: DType,
+                        _width: SIMDSize,
+                        *,
+                        alignment: Int = 1,
+                    ](coords_2d: IndexList[2], val: SIMD[_dtype, _width],):
+                        var m = coords_2d[0]
+                        var n = coords_2d[1]
+                        var batch_idx: Int
+                        var rem: Int
+                        var d_idx: Int
+                        var rem2: Int
+                        var h_idx: Int
+                        var w_idx: Int
+                        batch_idx, rem = divmod(m, _amd_3d_DHW)
+                        d_idx, rem2 = divmod(rem, _amd_3d_HW)
+                        h_idx, w_idx = divmod(rem2, _amd_3d_W_out)
+                        _amd_3d_epi_5d(
+                            IndexList[5](batch_idx, d_idx, h_idx, w_idx, n),
+                            rebind[SIMD[output_type, _width]](val),
+                        )
+
+                    if dispatch_amd_4wave_conv3d[
+                        input_type,
+                        filter_type,
+                        output_type,
+                        filter_is_fcqrs=filter_is_fcrs,
+                        elementwise_lambda_fn=Optional[_ew_3d_t](
+                            amd_3d_void_epilogue
+                        ),
+                    ](
+                        input,
+                        filter,
+                        output,
+                        rebind[IndexList[3]](stride),
+                        rebind[IndexList[3]](dilation),
+                        rebind[IndexList[3]](symmetric_padding),
+                        num_groups,
+                        ctx,
+                    ):
+                        return
+                else:
+                    if dispatch_amd_4wave_conv3d[
+                        input_type,
+                        filter_type,
+                        output_type,
+                        filter_is_fcqrs=filter_is_fcrs,
+                    ](
+                        input,
+                        filter,
+                        output,
+                        rebind[IndexList[3]](stride),
+                        rebind[IndexList[3]](dilation),
+                        rebind[IndexList[3]](symmetric_padding),
+                        num_groups,
+                        ctx,
+                    ):
+                        return
 
             # Phase 2 path: explicit im2col + _matmul_gpu for bf16 3D convs.
             # Covers 3x3x3, 3x1x1, etc. and falls back to the naive kernel on

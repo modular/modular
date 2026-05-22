@@ -266,11 +266,26 @@ struct Conv2DKernelConfig(ImplicitlyCopyable, Movable, Writable):
     filter (allocate filter as `[Cout, K_padded]` where K_padded =
     round_up(R*S*C_in, 2*BK) and zero-fill the trailing K rows). When
     0, the kernel derives `C_in = K_filter // (R*S)` and asserts
-    exact divisibility."""
+    exact divisibility. In 3D mode the divisor is `Q*R*S`."""
     var use_runtime_hw: Bool
-    """When True, H/W/H_out/W_out are runtime values read from the
-    input tensor (typically via graph-compiler symbolic resolution).
-    When False, all conv geometry is comptime."""
+    """When True, H/W/H_out/W_out (and D/D_out in 3D mode) are runtime
+    values read from the input tensor (typically via graph-compiler
+    symbolic resolution). When False, all conv geometry is comptime."""
+    var Q: Int
+    """Filter temporal extent (3D only). `Q == 1` keeps the kernel in
+    2D mode (4D NHWC input, K = R*S*C). `Q > 1` activates 3D mode (5D
+    NDHWC input, K = Q*R*S*C)."""
+    var D: Int
+    """Input temporal depth (NDHWC dim 1). 2D mode: unused."""
+    var D_out: Int
+    """Output temporal depth. 2D mode: unused."""
+    var stride_d: Int
+    """Conv temporal stride (>= 1). 2D mode: unused."""
+    var dilation_d: Int
+    """Conv temporal dilation (>= 1). 2D mode: unused."""
+    var pad_d: Int
+    """Temporal pad (>= 0). 2D mode: unused. When > 0, halo lanes route
+    to the SRD-OOB sentinel for zero-clamp behavior."""
 
     def __init__(
         out self,
@@ -289,6 +304,14 @@ struct Conv2DKernelConfig(ImplicitlyCopyable, Movable, Writable):
         pad_w: Int = 0,
         C_in: Int = 0,
         use_runtime_hw: Bool = False,
+        # 3D-only (default to 2D-equivalent so 2D callers don't have to
+        # set them). Q > 1 activates 3D mode.
+        Q: Int = 1,
+        D: Int = 1,
+        D_out: Int = 1,
+        stride_d: Int = 1,
+        dilation_d: Int = 1,
+        pad_d: Int = 0,
     ):
         """Constructs a `Conv2DKernelConfig` from the conv geometry.
 
@@ -306,9 +329,17 @@ struct Conv2DKernelConfig(ImplicitlyCopyable, Movable, Writable):
             pad_h: Vertical pad.
             pad_w: Horizontal pad.
             C_in: Real input channel count.
-            use_runtime_hw: When True, treat H/W/H_out/W_out as
-                placeholders to be replaced at kernel-launch time
-                with values read from the input tensor.
+            use_runtime_hw: When True, treat H/W/H_out/W_out (and
+                D/D_out in 3D mode) as placeholders to be replaced
+                at kernel-launch time with values read from the input
+                tensor.
+            Q: Filter temporal extent. `Q == 1` (default) keeps the
+                kernel in 2D mode; `Q > 1` activates 3D mode.
+            D: Input temporal depth (3D mode).
+            D_out: Output temporal depth (3D mode).
+            stride_d: Conv temporal stride (3D mode).
+            dilation_d: Conv temporal dilation (3D mode).
+            pad_d: Temporal pad (3D mode).
         """
         self.H = H
         self.W = W
@@ -324,6 +355,12 @@ struct Conv2DKernelConfig(ImplicitlyCopyable, Movable, Writable):
         self.pad_w = pad_w
         self.C_in = C_in
         self.use_runtime_hw = use_runtime_hw
+        self.Q = Q
+        self.D = D
+        self.D_out = D_out
+        self.stride_d = stride_d
+        self.dilation_d = dilation_d
+        self.pad_d = pad_d
 
     def write_to(self, mut writer: Some[Writer]):
         """Writes a compact conv geometry tag to `writer`.
@@ -1234,7 +1271,13 @@ struct AMD4WaveMatmul[
         comptime half_BN = Self.half_BN
         comptime mma_tile_m = Self.mma_tile_m
         comptime mma_tile_n = Self.mma_tile_n
+        # Filter spatial volume: R*S in 2D, Q*R*S in 3D. Used as the
+        # divisor that maps the filter buffer's K dim back to C_in.
+        comptime _is_3d_conv = conv_config.Q > 1
         comptime conv_RS = conv_config.R * conv_config.S
+        comptime conv_RS_filter = (
+            conv_config.Q * conv_RS if _is_3d_conv else conv_RS
+        )
         comptime num_splits = 1  # conv2d does not support split-K
 
         # Conv adaptation: A is 4D NHWC, C is the 2D NHW×Cout output view.
@@ -1252,7 +1295,7 @@ struct AMD4WaveMatmul[
         # clamp (returning 0) or read "wrong but valid" input data (also
         # multiplied by 0 in the MMA).
         comptime C_in_used = (
-            conv_config.C_in if conv_config.C_in > 0 else K // conv_RS
+            conv_config.C_in if conv_config.C_in > 0 else K // conv_RS_filter
         )
         comptime K_per_split = K // num_splits
         comptime assert (
@@ -1262,9 +1305,9 @@ struct AMD4WaveMatmul[
             K_per_split % (2 * Self.BK) == 0
         ), "K_per_split must be a multiple of 2*BK"
         comptime assert num_splits == 1, "amd_4wave_conv requires num_splits=1"
-        comptime assert conv_RS * C_in_used <= K, (
-            "Filter K dim must be >= R*S*C_in (caller K-pads to a multiple"
-            " of 2*BK = 256 when R*S*C_in is not aligned; trailing K must"
+        comptime assert conv_RS_filter * C_in_used <= K, (
+            "Filter K dim must be >= Q*R*S*C_in (caller K-pads to a multiple"
+            " of 2*BK = 256 when Q*R*S*C_in is not aligned; trailing K must"
             " be zero-filled by the caller)"
         )
 
@@ -1372,6 +1415,15 @@ struct AMD4WaveMatmul[
             dilation_w=conv_config.dilation_w,
             pad_h=conv_config.pad_h,
             pad_w=conv_config.pad_w,
+            # 3D mode (Q>1) activates the NDHWC im2col path inside the
+            # loader. 2D callers leave these at the Q=1 defaults so the
+            # loader compiles identically to before.
+            Q=conv_config.Q,
+            D=conv_config.D,
+            D_out=conv_config.D_out,
+            stride_d=conv_config.stride_d,
+            dilation_d=conv_config.dilation_d,
+            pad_d=conv_config.pad_d,
             swizzle=byte_swizzle,
             load_width=simd_width,
             use_full_tile_width=use_fp8_row_major,
@@ -1379,35 +1431,59 @@ struct AMD4WaveMatmul[
         ]
         var a_loader: _LoaderTy
         comptime if conv_config.use_runtime_hw:
-            # Read runtime conv geometry from the input and output
-            # tile-tensors. The output 2D view is [M_total, C_out]; we
-            # back out H_out / W_out by dividing M_total by N * W_out
-            # ourselves. Simpler: the launcher computes h_out / w_out
-            # and we read them from the output's static_shape via the
-            # 4D NHWC output the launcher constructed. But the kernel
-            # signature only sees the 2D matmul-shaped output. So we
-            # rebuild h_out / w_out from input H, W and the conv
-            # geometry. h_out = (H + 2*pad - eff_R) / stride + 1.
-            var _rt_h = Int(a.dim[1]())
-            var _rt_w = Int(a.dim[2]())
+            # Read runtime conv geometry from the input tile-tensor.
+            # 2D: dim[1]=H, dim[2]=W. 3D: dim[1]=D, dim[2]=H, dim[3]=W.
+            # h_out / w_out (and d_out in 3D) are derived from input
+            # spatial dims + conv params.
             comptime _eff_R = conv_config.dilation_h * (conv_config.R - 1) + 1
             comptime _eff_S = conv_config.dilation_w * (conv_config.S - 1) + 1
-            var _rt_h_out = (
-                _rt_h + 2 * conv_config.pad_h - _eff_R
-            ) // conv_config.stride_h + 1
-            var _rt_w_out = (
-                _rt_w + 2 * conv_config.pad_w - _eff_S
-            ) // conv_config.stride_w + 1
-            a_loader = _LoaderTy(
-                a,
-                _warp_id,
-                Int(_lane_id),
-                runtime_h=_rt_h,
-                runtime_w=_rt_w,
-                runtime_h_out=_rt_h_out,
-                runtime_w_out=_rt_w_out,
-                m_anchor=pid_m * BM,
-            )
+            comptime if _is_3d_conv:
+                var _rt_d = Int(a.dim[1]())
+                var _rt_h = Int(a.dim[2]())
+                var _rt_w = Int(a.dim[3]())
+                comptime _eff_Q = (
+                    conv_config.dilation_d * (conv_config.Q - 1) + 1
+                )
+                var _rt_d_out = (
+                    _rt_d + 2 * conv_config.pad_d - _eff_Q
+                ) // conv_config.stride_d + 1
+                var _rt_h_out = (
+                    _rt_h + 2 * conv_config.pad_h - _eff_R
+                ) // conv_config.stride_h + 1
+                var _rt_w_out = (
+                    _rt_w + 2 * conv_config.pad_w - _eff_S
+                ) // conv_config.stride_w + 1
+                a_loader = _LoaderTy(
+                    a,
+                    _warp_id,
+                    Int(_lane_id),
+                    runtime_d=_rt_d,
+                    runtime_h=_rt_h,
+                    runtime_w=_rt_w,
+                    runtime_d_out=_rt_d_out,
+                    runtime_h_out=_rt_h_out,
+                    runtime_w_out=_rt_w_out,
+                    m_anchor=pid_m * BM,
+                )
+            else:
+                var _rt_h = Int(a.dim[1]())
+                var _rt_w = Int(a.dim[2]())
+                var _rt_h_out = (
+                    _rt_h + 2 * conv_config.pad_h - _eff_R
+                ) // conv_config.stride_h + 1
+                var _rt_w_out = (
+                    _rt_w + 2 * conv_config.pad_w - _eff_S
+                ) // conv_config.stride_w + 1
+                a_loader = _LoaderTy(
+                    a,
+                    _warp_id,
+                    Int(_lane_id),
+                    runtime_h=_rt_h,
+                    runtime_w=_rt_w,
+                    runtime_h_out=_rt_h_out,
+                    runtime_w_out=_rt_w_out,
+                    m_anchor=pid_m * BM,
+                )
         else:
             a_loader = _LoaderTy(
                 a, _warp_id, Int(_lane_id), m_anchor=pid_m * BM
