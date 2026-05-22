@@ -265,6 +265,8 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         """
         return self
 
+    comptime ConversionToPythonErrorType = Error
+
     def to_python_object(var self) raises -> PythonObject:
         """Convert this value to a `PythonObject`.
 

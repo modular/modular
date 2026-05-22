@@ -11,8 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from std.python import PythonObject
 from std.sys import bit_width_of
-from std.python import ConvertibleToPython, PythonObject
 from std.testing import (
     assert_equal,
     assert_false,
@@ -269,6 +269,12 @@ def test_convertible_to_python() raises:
 
     # test implicit conversion
     check_python_object(42, "42")
+
+    # non raising conversion to PythonObject
+    def non_raising_to_python(var value: Int) -> PythonObject:
+        return PythonObject(value)
+
+    assert_equal(String(non_raising_to_python(42)), "42")
 
 
 def main() raises:

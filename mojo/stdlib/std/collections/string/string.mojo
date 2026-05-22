@@ -1075,6 +1075,8 @@ struct String(
         # keep python object alive so the copy can occur
         _ = str_obj
 
+    comptime ConversionToPythonErrorType = Error
+
     def to_python_object(var self) raises -> PythonObject:
         """Convert this value to a Python `str` object.
 

@@ -176,6 +176,13 @@ def test_convertible_to_python() raises:
     check_python_object(True, "True")
     check_python_object(False, "False")
 
+    # non raising conversion to PythonObject
+    def non_raising_to_python(var value: Bool) -> PythonObject:
+        return PythonObject(value)
+
+    assert_equal(String(non_raising_to_python(True)), "True")
+    assert_equal(String(non_raising_to_python(False)), "False")
+
 
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

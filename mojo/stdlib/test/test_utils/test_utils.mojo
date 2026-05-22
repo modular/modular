@@ -122,7 +122,13 @@ def check_convertible_to_python(
     Raises:
         Error: if the converted Python object does not equal `expected`.
     """
-    assert_equal(String(value^.to_python_object()), expected)
+    var py_obj: PythonObject
+    try:
+        py_obj = value^.to_python_object()
+    except:
+        raise Error("Failed to convert value to PythonObject")
+
+    assert_equal(String(py_obj), expected)
 
 
 def check_python_object(var value: PythonObject, expected: String) raises:

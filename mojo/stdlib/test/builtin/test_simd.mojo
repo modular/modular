@@ -19,6 +19,7 @@ from std.memory import alloc, free, Layout
 from std.memory.unsafe import bitcast
 from std.builtin.simd import _modf
 from std.itertools import product
+from std.python import PythonObject
 from std.random import randn, seed
 from std.testing import (
     assert_almost_equal,
@@ -2713,6 +2714,18 @@ def test_convertible_to_python() raises:
     check_python_object(Float32(1.5), "1.5")
     check_python_object(Int32(42), "42")
     check_python_object(UInt64(12345678901234567890), "12345678901234567890")
+
+    # non raising conversion to PythonObject
+    def non_raising_to_python[
+        dtype: DType
+    ](var value: Scalar[dtype]) -> PythonObject:
+        return PythonObject(value)
+
+    assert_equal(String(non_raising_to_python(Int32(42))), "42")
+    assert_equal(
+        String(non_raising_to_python(UInt64(12345678901234567890))),
+        "12345678901234567890",
+    )
 
 
 def main() raises:

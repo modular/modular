@@ -151,9 +151,14 @@ struct PythonObject(
         self._obj_ptr = from_borrowed
 
     @implicit
-    def __init__(out self, var source: Some[ConvertibleToPython]) raises:
+    def __init__[
+        T: ConvertibleToPython, //
+    ](out self, var source: T) raises T.ConversionToPythonErrorType:
         """Initialize this object from a value of some type that can be
         custom converted to a PythonObject.
+
+        Parameters:
+            T: The type of the value to convert to a PythonObject.
 
         Args:
             source: The value to convert to a PythonObject.

@@ -2021,16 +2021,13 @@ struct SIMD[dtype: DType, size: Int](
             return -(self // -denominator)
         return (self + denominator - 1) // denominator
 
-    def to_python_object(var self) raises -> PythonObject:
+    def to_python_object(var self) -> PythonObject:
         """Converts this value to a `PythonObject`. If the scalar
         value type is bool, it is converted to a boolean. Otherwise, it is
         converted to the appropriate integer or floating point type.
 
         Returns:
             A Python object representing this SIMD vector.
-
-        Raises:
-            If the Python runtime is not initialized or conversion fails.
         """
         comptime assert Self.size == 1, "only work with scalar values"
         var scalar = self._refine[new_size=1]()

@@ -1116,14 +1116,11 @@ struct Int(
             return
         self = Python.py_long_as_ssize_t(py.__int__())
 
-    def to_python_object(var self) raises -> PythonObject:
+    def to_python_object(var self) -> PythonObject:
         """Convert this value to a `PythonObject`.
 
         Returns:
             A `PythonObject` representing this value.
-
-        Raises:
-            If the Python runtime is not initialized or conversion fails.
         """
         ref cpy = Python().cpython()
         return PythonObject(from_owned=cpy.PyLong_FromSsize_t(c_ssize_t(self)))

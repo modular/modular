@@ -643,6 +643,8 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         except:
             raise cpython.get_error()
 
+    comptime ConversionToPythonErrorType = Error
+
     def to_python_object(var self) raises -> PythonObject:
         """Convert this value to a `PythonObject`.
 

@@ -459,14 +459,11 @@ struct Bool(
         """
         hasher._update_with_simd(Scalar[DType.bool](self))
 
-    def to_python_object(var self) raises -> PythonObject:
+    def to_python_object(var self) -> PythonObject:
         """Convert this value to a `PythonObject`.
 
         Returns:
             A `PythonObject` representing the value.
-
-        Raises:
-            If the Python runtime is not initialized or conversion fails.
         """
         ref cpy = Python().cpython()
         return PythonObject(from_owned=cpy.PyBool_FromLong(c_long(Int(self))))
