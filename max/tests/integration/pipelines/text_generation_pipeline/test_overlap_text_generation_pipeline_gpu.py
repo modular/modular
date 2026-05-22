@@ -34,7 +34,6 @@ from max.graph import (
     TensorType,
     ops,
 )
-from max.interfaces import RequestID, TextGenerationInputs, TokenBuffer
 from max.nn import KVCacheInputs, kernels
 from max.nn.kv_cache import KVCacheParams
 from max.pipelines.core import TextContext
@@ -49,6 +48,11 @@ from max.pipelines.lib import (
     SupportedEncoding,
 )
 from max.pipelines.lib.pipeline_variants import overlap_text_generation
+from max.pipelines.modeling.types import (
+    RequestID,
+    TextGenerationInputs,
+    TokenBuffer,
+)
 
 GPU_SECONDS = 0.5
 CPU_SECONDS = 0.2

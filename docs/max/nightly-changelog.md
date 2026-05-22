@@ -17,6 +17,13 @@ This version is still a work in progress.
 
 ### Inference server
 
+- Fixed `CreateChatCompletionRequest` rejecting explicit `null` values for
+  optional fields such as `tool_choice`, `tools`, and `response_format`.
+  OpenAI-compatible clients (LangChain, JS SDKs, anything that serializes
+  a dataclass with a `None` field) that emit `"tool_choice": null` instead
+  of omitting the key are now accepted, matching the behavior of other
+  OpenAI-compatible inference servers.
+
 - Added two opt-in server flags for accepting OpenAI-compatible requests
   that the strict default behavior would reject:
 
@@ -53,6 +60,24 @@ This version is still a work in progress.
   and `--reasoning-parser`). Pass `none` (case-insensitive) to explicitly
   disable the parser, overriding any architecture-declared default. Leaving
   the field unset still applies the architecture default as before.
+
+- Added the `nemotron-opencode` benchmark dataset backed by
+  `nvidia/Nemotron-SFT-OpenCode-v1`. Each row is a full Qwen3-Coder OpenCode
+  trace (system prompt, multi-turn user/assistant/tool messages, and tool
+  schemas). Multi-GB per subset, so the loader streams via
+  `datasets.load_dataset(..., streaming=True)` and pulls only enough rows to
+  satisfy `--num-prompts`. Tool definitions per row are surfaced on
+  `NemotronOpenCodeBenchmarkDataset.last_loaded_tool_schemas` and (for
+  single-turn) attached to `SampledRequest.tools`.
+
+- Benchmark request payloads now forward an OpenAI-style `tools=[...]` field
+  on chat-completions requests. `SampledRequest` and `RequestFuncInput` gained
+  a `tools: list[dict] | None = None` field;
+  `OpenAIChatCompletionsRequestDriver` serialises it into the POST body when
+  set. Datasets that supply per-row tool schemas (currently
+  `nemotron-opencode`) now exercise the server's tool-call grammar /
+  structured-output path end-to-end. Pass `enable_tool_calls=False` on
+  Nemotron-OpenCode to suppress forwarding.
 
 ### `max` CLI
 

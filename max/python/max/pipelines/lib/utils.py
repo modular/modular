@@ -34,7 +34,7 @@ from transformers import AutoConfig
 
 # Break circular import by importing PipelineConfig under TYPE_CHECKING.
 if TYPE_CHECKING:
-    from .config import PipelineConfig
+    from max.pipelines.lib.config import PipelineConfig
 
 logger = logging.getLogger("max.pipelines")
 

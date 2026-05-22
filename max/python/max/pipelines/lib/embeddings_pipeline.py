@@ -28,7 +28,8 @@ from max.graph.weights import (
     load_weights,
     weights_format,
 )
-from max.interfaces import (
+from max.nn.transformer import ReturnLogits
+from max.pipelines.modeling.types import (
     BaseContextType,
     EmbeddingsContext,
     EmbeddingsGenerationInputs,
@@ -38,7 +39,6 @@ from max.interfaces import (
     RequestID,
     TextGenerationRequest,
 )
-from max.nn.transformer import ReturnLogits
 from max.profiler import Tracer, traced
 
 if TYPE_CHECKING:

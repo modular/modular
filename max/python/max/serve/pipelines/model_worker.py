@@ -31,15 +31,15 @@ from max.driver import Device, DevicePinnedBuffer
 from max.driver.driver import load_device
 from max.dtype import DType
 from max.experimental.nn._compilation_timer import collect_compilation_stats
-from max.interfaces import (
+from max.pipelines.kv_cache import DummyKVCache, PagedKVCacheManager
+from max.pipelines.lib import PipelineConfig, PipelineModel
+from max.pipelines.modeling.types import (
     BaseContextType,
     Pipeline,
     PipelineInputsType,
     PipelineOutputType,
     PipelinesFactory,
 )
-from max.pipelines.kv_cache import DummyKVCache, PagedKVCacheManager
-from max.pipelines.lib import PipelineConfig, PipelineModel
 from max.profiler import Tracer, traced
 from max.serve.config import MetricRecordingMethod, Settings
 from max.serve.exceptions import detect_and_wrap_oom
@@ -238,19 +238,34 @@ class ModelWorker:
             ):
                 pipeline = model_factory()
             factory_duration_s = time.monotonic() - factory_start_s
-            other_init_s = max(
+            other_s = max(
                 0.0,
                 factory_duration_s
                 - compile_stats.build_seconds
-                - compile_stats.compile_seconds,
+                - compile_stats.compile_seconds
+                - compile_stats.init_seconds,
+            )
+            unaccounted_compile_s = max(
+                0.0,
+                compile_stats.compile_seconds
+                - compile_stats.labeled_compile_seconds,
+            )
+            unaccounted_init_s = max(
+                0.0,
+                compile_stats.init_seconds - compile_stats.labeled_init_seconds,
             )
             logger.info(
                 "Model pipeline initialized in %.1fs "
-                "(graph build: %.1fs, graph compile: %.1fs, other init: %.1fs)",
+                "(graph build: %.1fs, graph compile: %.1fs "
+                "[unaccounted: %.1fs], init: %.1fs [unaccounted: %.1fs], "
+                "other: %.1fs)",
                 factory_duration_s,
                 compile_stats.build_seconds,
                 compile_stats.compile_seconds,
-                other_init_s,
+                unaccounted_compile_s,
+                compile_stats.init_seconds,
+                unaccounted_init_s,
+                other_s,
             )
 
             warmup_duration_s = 0.0
@@ -284,13 +299,17 @@ class ModelWorker:
                 else ""
             )
             logger.info(
-                "Model worker startup total: %.1fs — %sdriver: %.1fs, compile: %.1fs, "
-                "weights+init: %.1fs, warmup: %.1fs",
+                "Model worker startup total: %.1fs — %sdriver: %.1fs, "
+                "compile: %.1fs [unaccounted: %.1fs], init: %.1fs "
+                "[unaccounted: %.1fs], other: %.1fs, warmup: %.1fs",
                 (spawn_duration_s or 0.0) + total_in_run_s,
                 spawn_str,
                 prime_duration_s,
                 compile_stats.build_seconds + compile_stats.compile_seconds,
-                other_init_s,
+                unaccounted_compile_s,
+                compile_stats.init_seconds,
+                unaccounted_init_s,
+                other_s,
                 warmup_duration_s,
             )
 

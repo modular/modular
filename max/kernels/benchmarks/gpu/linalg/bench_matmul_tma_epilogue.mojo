@@ -497,8 +497,8 @@ def create_tma_epilogue_benches[
     var shape_a = Coord(m, k)
     # transpose_b=True → B is stored as N×K
     var shape_b = Coord(
-        Idx[NType.static_value if transpose_b else KType.static_value](),
-        Idx[KType.static_value if transpose_b else NType.static_value](),
+        Idx[NType.static_value if transpose_b else KType.static_value],
+        Idx[KType.static_value if transpose_b else NType.static_value],
     )
     var epilogue_shape = Coord(m, n)
 
@@ -570,8 +570,8 @@ def main() raises:
             ctx,
             m,
             M,
-            Idx[N](),
-            Idx[K](),
+            Idx[N],
+            Idx[K],
             init_type,
             verify,
             run_benchmark=run_benchmark,

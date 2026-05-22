@@ -19,7 +19,7 @@ from std.sys.info import (
     simd_width_of,
 )
 
-from compiler_internal import register
+from extensibility import register
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
@@ -61,7 +61,7 @@ from layout.math import outer_product_acc
 from layout.swizzle import Swizzle
 from layout.tensor_core import TensorCore
 
-from tensor import InputTensor, ManagedTensorSlice, OutputTensor
+from extensibility import InputTensor, ManagedTensorSlice, OutputTensor
 
 from std.utils import StaticTuple
 from std.utils.index import Index, IndexList

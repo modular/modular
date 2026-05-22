@@ -353,7 +353,7 @@ def run_im2col_test[
         BK,
     ]
 
-    ctx.enqueue_function_unchecked[kernel, dump_asm=False](
+    ctx.enqueue_function[kernel, dump_asm=False](
         act_tma,
         output_device,
         0,  # k_coord

@@ -22,7 +22,14 @@ from collections.abc import Iterable
 from typing import Any
 
 import requests
-from max.interfaces import (
+from max.pipelines import (
+    PIPELINE_REGISTRY,
+    GenerateMixin,
+    PipelineConfig,
+    TextAndVisionTokenizer,
+    TextTokenizer,
+)
+from max.pipelines.modeling.types import (
     ImageContentPart,
     LogitsProcessor,
     Pipeline,
@@ -34,13 +41,6 @@ from max.interfaces import (
     TextGenerationContext,
     TextGenerationRequest,
     TextGenerationRequestMessage,
-)
-from max.pipelines import (
-    PIPELINE_REGISTRY,
-    GenerateMixin,
-    PipelineConfig,
-    TextAndVisionTokenizer,
-    TextTokenizer,
 )
 
 from .metrics import TextGenerationMetrics

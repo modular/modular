@@ -34,7 +34,7 @@ modular_py_library(
     name = "scheduler_result",
     srcs = ["scheduler_result.py"],
     deps = [
-        "//max/python/max/interfaces",
+        "//max/python/max/pipelines/modeling",
         requirement("msgspec"),
     ],
 )
@@ -54,9 +54,9 @@ modular_py_library(
     ),
     deps = [
         ":config",
-        "//max/python/max/interfaces",
         "//max/python/max/pipelines/core",
         "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
         "//max/python/max/serve/media",
         "//max/python/max/serve/pipelines",
         "//max/python/max/serve/recordreplay",

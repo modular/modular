@@ -24,7 +24,9 @@ from unittest.mock import patch
 
 from max.pipelines import PipelineConfig
 
-GENERATE_LOCAL_PATH = "max.pipelines.lib.hf_utils.generate_local_model_path"
+GENERATE_LOCAL_PATH = (
+    "max.pipelines.modeling.weights.hf_utils.generate_local_model_path"
+)
 HF_OFFLINE = "huggingface_hub.constants.HF_HUB_OFFLINE"
 
 PINNED_SHA = "abcdef123"

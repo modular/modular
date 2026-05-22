@@ -120,12 +120,12 @@ def main() raises:
             N_NORMED,
         )
 
-    comptime a_shape = row_major(Coord(Idx[1](), Idx[7168]()))
-    comptime b_shape = row_major(Coord(Idx[2112](), Idx[7168]()))
-    comptime c_shape = row_major(Coord(Idx[1](), Idx[2112]()))
-    comptime normed_shape = row_major(Coord(Idx[1](), Idx[1536]()))
-    var unnormed_shape = row_major(Coord(Idx[1](), N_UNNORMED))
-    comptime gamma_shape = row_major(Idx[1536]())
+    comptime a_shape = row_major(Coord(Idx[1], Idx[7168]))
+    comptime b_shape = row_major(Coord(Idx[2112], Idx[7168]))
+    comptime c_shape = row_major(Coord(Idx[1], Idx[2112]))
+    comptime normed_shape = row_major(Coord(Idx[1], Idx[1536]))
+    var unnormed_shape = row_major(Coord(Idx[1], N_UNNORMED))
+    comptime gamma_shape = row_major(Idx[1536])
 
     comptime variant: String = "fused" if fused else "unfused"
     comptime run_name: String = "gemv_partial_norm/" + variant

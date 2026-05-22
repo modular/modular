@@ -20,15 +20,15 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
 
-from max.interfaces import (
+from max.pipelines.core.context import TextContext
+from max.pipelines.kv_cache import InsufficientBlocksError, PagedKVCacheManager
+from max.pipelines.lib import LoRAManager
+from max.pipelines.modeling.types import (
     Pipeline,
     RequestID,
     TextGenerationInputs,
     TextGenerationOutput,
 )
-from max.pipelines.core.context import TextContext
-from max.pipelines.kv_cache import InsufficientBlocksError, PagedKVCacheManager
-from max.pipelines.lib import LoRAManager
 from max.profiler import traced
 from max.serve.telemetry.metrics import METRICS
 

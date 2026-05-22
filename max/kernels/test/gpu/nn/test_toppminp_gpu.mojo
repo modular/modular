@@ -304,7 +304,7 @@ def test_case_sampling[
     )
     var device_token_ids_tensor = TileTensor(
         device_token_ids_buf,
-        row_major(batch_size, Idx[1]()),
+        row_major(batch_size, Idx[1]),
     )
     var device_p_thresholds_tensor = TileTensor(
         device_p_thresholds_buf,

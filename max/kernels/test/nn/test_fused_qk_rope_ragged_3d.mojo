@@ -87,7 +87,7 @@ def test_fused_qk_rope[
     # The testdata is generated with mrope_section = (16, 8, 8),
     # but the expected input for the kernel is the original mrope_section
     # multiplied by 2, and prefix-summed.
-    comptime mrope_section = Coord(Idx[32](), Idx[48](), Idx[64]())
+    comptime mrope_section = Coord(Idx[32], Idx[48], Idx[64])
 
     # Construct backing buffer and the KV cache itself (uses LayoutTensor).
     kv_cache_block_buffer = List[Scalar[dtype]](
@@ -199,8 +199,8 @@ def test_fused_qk_rope[
     # Note: This tensor has non-row-major strides (head_dim, 1) to select every
     # rope_dim-th element from the original head_dim-strided buffer.
     comptime freqs_cis_layout = TileLayout(
-        Coord(Idx[max_seq_len](), Idx[rope_dim]()),
-        Coord(Idx[head_dim](), Idx[1]()),
+        Coord(Idx[max_seq_len], Idx[rope_dim]),
+        Coord(Idx[head_dim], Idx[1]),
     )
     var freqs_cis_table = TileTensor(
         freqs_cis_table_buffer.unsafe_ptr() + (head_dim - rope_dim),

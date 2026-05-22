@@ -112,18 +112,16 @@ def _test_kernel_impl_base[
     )
 
     var a_shape = row_major(
-        Coord(Int(total_num_tokens), Idx[expert_shape[1] // 2]())
+        Coord(Int(total_num_tokens), Idx[expert_shape[1] // 2])
     )
     var b_shape = row_major(
         Coord(
-            Idx[num_experts](),
-            Idx[expert_shape[0]](),
-            Idx[expert_shape[1] // 2](),
+            Idx[num_experts],
+            Idx[expert_shape[0]],
+            Idx[expert_shape[1] // 2],
         )
     )
-    var c_shape = row_major(
-        Coord(Int(total_num_tokens), Idx[expert_shape[0]]())
-    )
+    var c_shape = row_major(Coord(Int(total_num_tokens), Idx[expert_shape[0]]))
 
     var a_size = total_num_tokens * K // 2
     var b_size = num_experts * expert_shape[0] * expert_shape[1] // 2
@@ -168,7 +166,7 @@ def _test_kernel_impl_base[
     )
     var expert_scales_tensor = TileTensor(
         expert_scales_device,
-        row_major(Coord(Idx[num_experts]())),
+        row_major(Coord(Idx[num_experts])),
     )
     var c_device = ctx.enqueue_create_buffer[c_type](c_size)
     var c_tensor = TileTensor(c_device, c_shape)
@@ -206,20 +204,20 @@ def _test_kernel_impl_base[
     var a_scales_shape = row_major(
         Coord(
             Int(a_scale_dim0),
-            Idx[ceildiv(expert_shape[1], SF_VECTOR_SIZE * SF_ATOM_K)](),
-            Idx[SF_ATOM_M[0]](),
-            Idx[SF_ATOM_M[1]](),
-            Idx[SF_ATOM_K](),
+            Idx[ceildiv(expert_shape[1], SF_VECTOR_SIZE * SF_ATOM_K)],
+            Idx[SF_ATOM_M[0]],
+            Idx[SF_ATOM_M[1]],
+            Idx[SF_ATOM_K],
         )
     )
     var b_scales_shape = row_major(
         Coord(
-            Idx[num_experts](),
-            Idx[ceildiv(expert_shape[0], SF_MN_GROUP_SIZE)](),
-            Idx[ceildiv(expert_shape[1], SF_VECTOR_SIZE * SF_ATOM_K)](),
-            Idx[SF_ATOM_M[0]](),
-            Idx[SF_ATOM_M[1]](),
-            Idx[SF_ATOM_K](),
+            Idx[num_experts],
+            Idx[ceildiv(expert_shape[0], SF_MN_GROUP_SIZE)],
+            Idx[ceildiv(expert_shape[1], SF_VECTOR_SIZE * SF_ATOM_K)],
+            Idx[SF_ATOM_M[0]],
+            Idx[SF_ATOM_M[1]],
+            Idx[SF_ATOM_K],
         )
     )
 
@@ -314,11 +312,11 @@ def _test_kernel_impl_base[
             b_scales_host_ptr.unsafe_ptr() + e * expert_slice_size,
             row_major(
                 Coord(
-                    Idx[n_groups](),
-                    Idx[k_groups_local](),
-                    Idx[SF_ATOM_M[0]](),
-                    Idx[SF_ATOM_M[1]](),
-                    Idx[SF_ATOM_K](),
+                    Idx[n_groups],
+                    Idx[k_groups_local],
+                    Idx[SF_ATOM_M[0]],
+                    Idx[SF_ATOM_M[1]],
+                    Idx[SF_ATOM_K],
                 )
             ),
         )
@@ -431,10 +429,10 @@ def _test_kernel_impl_base[
             row_major(
                 Coord(
                     Int64(a_scale_dim0),
-                    Idx[k_groups](),
-                    Idx[SF_ATOM_M[0]](),
-                    Idx[SF_ATOM_M[1]](),
-                    Idx[SF_ATOM_K](),
+                    Idx[k_groups],
+                    Idx[SF_ATOM_M[0]],
+                    Idx[SF_ATOM_M[1]],
+                    Idx[SF_ATOM_K],
                 )
             ),
         ).as_any_origin()
@@ -442,12 +440,12 @@ def _test_kernel_impl_base[
             b_scales_device,
             row_major(
                 Coord(
-                    Idx[num_experts](),
-                    Idx[n_groups](),
-                    Idx[k_groups](),
-                    Idx[SF_ATOM_M[0]](),
-                    Idx[SF_ATOM_M[1]](),
-                    Idx[SF_ATOM_K](),
+                    Idx[num_experts],
+                    Idx[n_groups],
+                    Idx[k_groups],
+                    Idx[SF_ATOM_M[0]],
+                    Idx[SF_ATOM_M[1]],
+                    Idx[SF_ATOM_K],
                 )
             ),
         ).as_any_origin()

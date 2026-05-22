@@ -117,18 +117,18 @@ comptime internal_k_major[
     swizzle_bytes: Int,
 ] = Layout(
     Coord(
-        Coord(Idx[BM // _CM_NUM_ROWS](), Idx[_CM_NUM_ROWS]()),
+        Coord(Idx[BM // _CM_NUM_ROWS], Idx[_CM_NUM_ROWS]),
         Coord(
-            Idx[swizzle_bytes // size_of[dtype]()](),
-            Idx[BK * size_of[dtype]() // swizzle_bytes](),
+            Idx[swizzle_bytes // size_of[dtype]()],
+            Idx[BK * size_of[dtype]() // swizzle_bytes],
         ),
     ),
     Coord(
         Coord(
-            Idx[swizzle_bytes // size_of[dtype]()](),
-            Idx[(BM // _CM_NUM_ROWS) * (swizzle_bytes // size_of[dtype]())](),
+            Idx[swizzle_bytes // size_of[dtype]()],
+            Idx[(BM // _CM_NUM_ROWS) * (swizzle_bytes // size_of[dtype]())],
         ),
-        Coord(Idx[1](), Idx[0]()),
+        Coord(Idx[1], Idx[0]),
     ),
 )
 
@@ -186,10 +186,10 @@ comptime internal_sf_k_major[
     # Shape: ((32, tiles_m), ((4, 4), tiles_k))
     # When tiles_m = 1 or tiles_k = 1, structure is preserved but factor is 1
     Coord(
-        Coord(Idx[_SF_ATOM_M_0](), Idx[dim0 // _SF_ATOM_M_0]()),
+        Coord(Idx[_SF_ATOM_M_0], Idx[dim0 // _SF_ATOM_M_0]),
         Coord(
-            Coord(Idx[_SF_ATOM_M_1](), Idx[_SF_ATOM_K]()),
-            Idx[dim1 // _SF_ATOM_SIZE](),
+            Coord(Idx[_SF_ATOM_M_1], Idx[_SF_ATOM_K]),
+            Idx[dim1 // _SF_ATOM_SIZE],
         ),
     ),
     # Stride: ((16, dim1*32), ((1, 4), 512))
@@ -199,12 +199,12 @@ comptime internal_sf_k_major[
     # K-major: K-tiles are placed with stride = atom M size (32*16=512)
     Coord(
         Coord(
-            Idx[_SF_ATOM_SIZE](),
-            Idx[dim1 * _SF_ATOM_M_0](),
+            Idx[_SF_ATOM_SIZE],
+            Idx[dim1 * _SF_ATOM_M_0],
         ),
         Coord(
-            Coord(Idx[1](), Idx[_SF_ATOM_M_1]()),
-            Idx[_SF_ATOM_M_0 * _SF_ATOM_SIZE](),
+            Coord(Idx[1], Idx[_SF_ATOM_M_1]),
+            Idx[_SF_ATOM_M_0 * _SF_ATOM_SIZE],
         ),
     ),
 )

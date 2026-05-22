@@ -16,7 +16,7 @@
 from __future__ import annotations
 
 import pytest
-from max.interfaces import TextGenerationContext
+from max.pipelines.modeling.types import TextGenerationContext
 from testbed.harnesses.gemma3_attention import (
     Gemma3AttentionHarness,
     Gemma3AttentionStaticParams,

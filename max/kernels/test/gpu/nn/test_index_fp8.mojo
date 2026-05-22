@@ -89,17 +89,17 @@ def test_index_fp8[
     # Ragged Q tensor: [total_seq_len, num_heads, depth]
     var q_device = TileTensor(
         q_device_ptr,
-        row_major((batch_size * seq_len, Idx[num_heads](), Idx[depth]())),
+        row_major((batch_size * seq_len, Idx[num_heads], Idx[depth])),
     )
 
     var qs_device = TileTensor(
         qs_device_ptr,
-        row_major((batch_size * seq_len, Idx[num_heads]())),
+        row_major((batch_size * seq_len, Idx[num_heads])),
     )
 
     var k_device = TileTensor(
         k_device_ptr,
-        row_major((batch_size * num_keys, Idx[1](), Idx[depth]())),
+        row_major((batch_size * num_keys, Idx[1], Idx[depth])),
     )
 
     var ks_device = TileTensor(

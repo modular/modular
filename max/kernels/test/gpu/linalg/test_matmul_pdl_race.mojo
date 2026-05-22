@@ -114,15 +114,15 @@ def run_pdl_race_test[
     # Create TileTensors for matmul
     var a_tensor = TileTensor(
         a_device,
-        row_major(Coord(Idx[M](), Idx[K]())),
+        row_major(Coord(Idx[M], Idx[K])),
     )
     var b_tensor = TileTensor(
         b_device,
-        row_major(Coord(Idx[N](), Idx[K]())),
+        row_major(Coord(Idx[N], Idx[K])),
     )
     var c_tensor = TileTensor(
         c_device,
-        row_major(Coord(Idx[M](), Idx[N]())),
+        row_major(Coord(Idx[M], Idx[N])),
     )
 
     # Run multiple iterations to increase chance of catching race

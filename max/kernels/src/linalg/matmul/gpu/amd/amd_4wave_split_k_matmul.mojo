@@ -275,7 +275,7 @@ def amd_4wave_split_k_matmul[
         # the M-band inside the kernel via `pid_m + split_id*num_pid_m`.
         var ws_tile = TileTensor(
             workspace.scratch.unsafe_ptr(),
-            row_major(Coord(Int64(num_splits * M), Idx[N]())),
+            row_major(Coord(Int64(num_splits * M), Idx[N])),
         )
 
         comptime kernel = AMD4WaveMatmul[

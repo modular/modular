@@ -434,12 +434,12 @@ def run_test_blockwise_fp8[
 
     var q_tt = TileTensor(
         q_device,
-        row_major((total_q_tokens, Idx[num_heads](), Idx[DEPTH]())),
+        row_major((total_q_tokens, Idx[num_heads], Idx[DEPTH])),
     )
 
     var out_tt = TileTensor(
         out_device,
-        row_major((total_q_tokens, Idx[num_heads](), Idx[V_DEPTH]())),
+        row_major((total_q_tokens, Idx[num_heads], Idx[V_DEPTH])),
     )
 
     var row_offsets_tt = TileTensor(
@@ -906,12 +906,12 @@ def run_bench_blockwise_fp8[
 
     var q_tt = TileTensor(
         q_device,
-        row_major((total_q_tokens, Idx[num_heads](), Idx[DEPTH]())),
+        row_major((total_q_tokens, Idx[num_heads], Idx[DEPTH])),
     )
 
     var out_tt = TileTensor(
         out_device,
-        row_major((total_q_tokens, Idx[num_heads](), Idx[V_DEPTH]())),
+        row_major((total_q_tokens, Idx[num_heads], Idx[V_DEPTH])),
     )
 
     var row_offsets_tt = TileTensor(

@@ -90,39 +90,37 @@ def launch_grouped_gemm_with_templates[
 ) raises:
     """Create template TileTensors and launch grouped block-scaled GEMM."""
     # 3D template tensors with batch=1
-    var a_3d_shape = row_major(Coord(Idx[1](), Idx[M](), Idx[k_array_size]()))
+    var a_3d_shape = row_major(Coord(Idx[1], Idx[M], Idx[k_array_size]))
     var a_template = TileTensor(a_ptr, a_3d_shape)
 
-    var c_3d_shape = row_major(Coord(Idx[1](), Idx[M](), Idx[N]()))
+    var c_3d_shape = row_major(Coord(Idx[1], Idx[M], Idx[N]))
     var c_template = TileTensor(c_ptr, c_3d_shape)
 
     # 5D scale factor templates with batch=1 and merged last dims
     var sfa_5d_shape = row_major(
         Coord(
-            Idx[1](),
-            Idx[ceildiv(M, SF_MN_GROUP_SIZE)](),
-            Idx[ceildiv(k_sf_size, sf_vector_size * SF_ATOM_K)](),
-            Idx[SF_ATOM_M[0]](),
-            Idx[SF_ATOM_M[1] * SF_ATOM_K](),
+            Idx[1],
+            Idx[ceildiv(M, SF_MN_GROUP_SIZE)],
+            Idx[ceildiv(k_sf_size, sf_vector_size * SF_ATOM_K)],
+            Idx[SF_ATOM_M[0]],
+            Idx[SF_ATOM_M[1] * SF_ATOM_K],
         )
     )
     var sfa_template = TileTensor(sfa_ptr, sfa_5d_shape)
 
     var sfb_5d_shape = row_major(
         Coord(
-            Idx[1](),
-            Idx[ceildiv(N, SF_MN_GROUP_SIZE)](),
-            Idx[ceildiv(k_sf_size, sf_vector_size * SF_ATOM_K)](),
-            Idx[SF_ATOM_M[0]](),
-            Idx[SF_ATOM_M[1] * SF_ATOM_K](),
+            Idx[1],
+            Idx[ceildiv(N, SF_MN_GROUP_SIZE)],
+            Idx[ceildiv(k_sf_size, sf_vector_size * SF_ATOM_K)],
+            Idx[SF_ATOM_M[0]],
+            Idx[SF_ATOM_M[1] * SF_ATOM_K],
         )
     )
     var sfb_template = TileTensor(sfb_ptr, sfb_5d_shape)
 
     comptime if transpose_b:
-        var b_3d_shape = row_major(
-            Coord(Idx[1](), Idx[N](), Idx[k_array_size]())
-        )
+        var b_3d_shape = row_major(Coord(Idx[1], Idx[N], Idx[k_array_size]))
         var b_template = TileTensor(b_ptr, b_3d_shape)
         grouped_block_scaled_matmul[
             transpose_b=transpose_b,
@@ -145,9 +143,7 @@ def launch_grouped_gemm_with_templates[
             ctx,
         )
     else:
-        var b_3d_shape = row_major(
-            Coord(Idx[1](), Idx[k_array_size](), Idx[N]())
-        )
+        var b_3d_shape = row_major(Coord(Idx[1], Idx[k_array_size], Idx[N]))
         var b_template = TileTensor(b_ptr, b_3d_shape)
         grouped_block_scaled_matmul[
             transpose_b=transpose_b,
@@ -230,19 +226,19 @@ def test_existing_kernel_single_group[
     var a_scales_shape = row_major(
         Coord(
             ceildiv(Int(m.value()), SF_MN_GROUP_SIZE),
-            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)](),
-            Idx[SF_ATOM_M[0]](),
-            Idx[SF_ATOM_M[1]](),
-            Idx[SF_ATOM_K](),
+            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
+            Idx[SF_ATOM_M[0]],
+            Idx[SF_ATOM_M[1]],
+            Idx[SF_ATOM_K],
         )
     )
     var b_scales_shape = row_major(
         Coord(
             ceildiv(Int(n.value()), SF_MN_GROUP_SIZE),
-            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)](),
-            Idx[SF_ATOM_M[0]](),
-            Idx[SF_ATOM_M[1]](),
-            Idx[SF_ATOM_K](),
+            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
+            Idx[SF_ATOM_M[0]],
+            Idx[SF_ATOM_M[1]],
+            Idx[SF_ATOM_K],
         )
     )
 
@@ -449,19 +445,19 @@ def test_grouped_kernel_single_group[
     var a_scales_shape = row_major(
         Coord(
             ceildiv(Int(m.value()), SF_MN_GROUP_SIZE),
-            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)](),
-            Idx[SF_ATOM_M[0]](),
-            Idx[SF_ATOM_M[1]](),
-            Idx[SF_ATOM_K](),
+            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
+            Idx[SF_ATOM_M[0]],
+            Idx[SF_ATOM_M[1]],
+            Idx[SF_ATOM_K],
         )
     )
     var b_scales_shape = row_major(
         Coord(
             ceildiv(Int(n.value()), SF_MN_GROUP_SIZE),
-            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)](),
-            Idx[SF_ATOM_M[0]](),
-            Idx[SF_ATOM_M[1]](),
-            Idx[SF_ATOM_K](),
+            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
+            Idx[SF_ATOM_M[0]],
+            Idx[SF_ATOM_M[1]],
+            Idx[SF_ATOM_K],
         )
     )
 
@@ -775,19 +771,19 @@ def test_grouped_kernel_multi_group_same_ptr[
     var a_scales_shape = row_major(
         Coord(
             ceildiv(Int(m.value()), SF_MN_GROUP_SIZE),
-            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)](),
-            Idx[SF_ATOM_M[0]](),
-            Idx[SF_ATOM_M[1]](),
-            Idx[SF_ATOM_K](),
+            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
+            Idx[SF_ATOM_M[0]],
+            Idx[SF_ATOM_M[1]],
+            Idx[SF_ATOM_K],
         )
     )
     var b_scales_shape = row_major(
         Coord(
             ceildiv(Int(n.value()), SF_MN_GROUP_SIZE),
-            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)](),
-            Idx[SF_ATOM_M[0]](),
-            Idx[SF_ATOM_M[1]](),
-            Idx[SF_ATOM_K](),
+            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
+            Idx[SF_ATOM_M[0]],
+            Idx[SF_ATOM_M[1]],
+            Idx[SF_ATOM_K],
         )
     )
 
@@ -1082,19 +1078,19 @@ def test_grouped_kernel_two_groups_different_ptrs[
     var a_scales_shape = row_major(
         Coord(
             ceildiv(Int(m.value()), SF_MN_GROUP_SIZE),
-            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)](),
-            Idx[SF_ATOM_M[0]](),
-            Idx[SF_ATOM_M[1]](),
-            Idx[SF_ATOM_K](),
+            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
+            Idx[SF_ATOM_M[0]],
+            Idx[SF_ATOM_M[1]],
+            Idx[SF_ATOM_K],
         )
     )
     var b_scales_shape = row_major(
         Coord(
             ceildiv(Int(n.value()), SF_MN_GROUP_SIZE),
-            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)](),
-            Idx[SF_ATOM_M[0]](),
-            Idx[SF_ATOM_M[1]](),
-            Idx[SF_ATOM_K](),
+            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
+            Idx[SF_ATOM_M[0]],
+            Idx[SF_ATOM_M[1]],
+            Idx[SF_ATOM_K],
         )
     )
 
@@ -1425,7 +1421,7 @@ def main() raises:
         cta_group=1,
         mma_shape=Index(128, 128, 32),
         cluster_shape=Index(1, 1, 1),
-    ](ctx, Idx[256](), Idx[256](), Idx[128]())
+    ](ctx, Idx[256], Idx[256], Idx[128])
 
     print("\n--- Baseline test passed ---")
 
@@ -1441,9 +1437,9 @@ def main() raises:
         cluster_shape=Index(1, 1, 1),
     ](
         ctx,
-        Idx[256](),  # Same as baseline
-        Idx[256](),  # Same as baseline
-        Idx[128](),
+        Idx[256],  # Same as baseline
+        Idx[256],  # Same as baseline
+        Idx[128],
     )
 
     print("\n--- Additional test cases ---")
@@ -1458,7 +1454,7 @@ def main() raises:
         cta_group=1,
         mma_shape=Index(128, 128, 32),
         cluster_shape=Index(1, 1, 1),
-    ](ctx, Idx[512](), Idx[256](), Idx[128]())
+    ](ctx, Idx[512], Idx[256], Idx[128])
 
     # Test 4: Larger N dimension (more N tiles)
     test_grouped_kernel_single_group[
@@ -1470,7 +1466,7 @@ def main() raises:
         cta_group=1,
         mma_shape=Index(128, 128, 32),
         cluster_shape=Index(1, 1, 1),
-    ](ctx, Idx[256](), Idx[512](), Idx[128]())
+    ](ctx, Idx[256], Idx[512], Idx[128])
 
     # Test 5: Larger K dimension (more K iterations)
     test_grouped_kernel_single_group[
@@ -1482,7 +1478,7 @@ def main() raises:
         cta_group=1,
         mma_shape=Index(128, 128, 32),
         cluster_shape=Index(1, 1, 1),
-    ](ctx, Idx[256](), Idx[256](), Idx[256]())
+    ](ctx, Idx[256], Idx[256], Idx[256])
 
     # Test 6: All dimensions larger
     test_grouped_kernel_single_group[
@@ -1494,7 +1490,7 @@ def main() raises:
         cta_group=1,
         mma_shape=Index(128, 128, 32),
         cluster_shape=Index(1, 1, 1),
-    ](ctx, Idx[512](), Idx[512](), Idx[256]())
+    ](ctx, Idx[512], Idx[512], Idx[256])
 
     # Test 7: Minimum tile size (single tile per dimension)
     test_grouped_kernel_single_group[
@@ -1506,7 +1502,7 @@ def main() raises:
         cta_group=1,
         mma_shape=Index(128, 128, 32),
         cluster_shape=Index(1, 1, 1),
-    ](ctx, Idx[128](), Idx[128](), Idx[128]())
+    ](ctx, Idx[128], Idx[128], Idx[128])
 
     # Test 8: Many K iterations
     test_grouped_kernel_single_group[
@@ -1518,7 +1514,7 @@ def main() raises:
         cta_group=1,
         mma_shape=Index(128, 128, 32),
         cluster_shape=Index(1, 1, 1),
-    ](ctx, Idx[256](), Idx[256](), Idx[512]())
+    ](ctx, Idx[256], Idx[256], Idx[512])
 
     print("\n--- Multi-group test (same pointers) ---")
 
@@ -1534,7 +1530,7 @@ def main() raises:
         cta_group=1,
         mma_shape=Index(128, 128, 32),
         cluster_shape=Index(1, 1, 1),
-    ](ctx, Idx[256](), Idx[256](), Idx[128]())
+    ](ctx, Idx[256], Idx[256], Idx[128])
 
     # Test 10: Four groups with same size and same pointers
     test_grouped_kernel_multi_group_same_ptr[
@@ -1547,7 +1543,7 @@ def main() raises:
         cta_group=1,
         mma_shape=Index(128, 128, 32),
         cluster_shape=Index(1, 1, 1),
-    ](ctx, Idx[256](), Idx[256](), Idx[128]())
+    ](ctx, Idx[256], Idx[256], Idx[128])
 
     print("\n--- Multi-group test (different pointers) ---")
 
@@ -1562,7 +1558,7 @@ def main() raises:
         cta_group=1,
         mma_shape=Index(128, 128, 32),
         cluster_shape=Index(1, 1, 1),
-    ](ctx, Idx[256](), Idx[256](), Idx[128]())
+    ](ctx, Idx[256], Idx[256], Idx[128])
 
     # 2SM tests - using run_2sm() production kernel
     print("\n--- 2SM (cta_group=2) tests ---")
@@ -1582,7 +1578,7 @@ def main() raises:
             256, 128, 32
         ),  # mma[0]=256 for BM=128, mma[1]=128 for BN=128
         cluster_shape=Index(2, 1, 1),  # 2 CTAs per cluster
-    ](ctx, Idx[256](), Idx[256](), Idx[128]())
+    ](ctx, Idx[256], Idx[256], Idx[128])
 
     # Test 13: 2SM with multiple tiles (512x512)
     test_grouped_kernel_single_group[
@@ -1594,7 +1590,7 @@ def main() raises:
         cta_group=2,
         mma_shape=Index(256, 128, 32),
         cluster_shape=Index(2, 1, 1),
-    ](ctx, Idx[512](), Idx[512](), Idx[256]())
+    ](ctx, Idx[512], Idx[512], Idx[256])
 
     # Test 14: 2SM multi-group (same pointers)
     test_grouped_kernel_multi_group_same_ptr[
@@ -1607,7 +1603,7 @@ def main() raises:
         cta_group=2,
         mma_shape=Index(256, 128, 32),
         cluster_shape=Index(2, 1, 1),
-    ](ctx, Idx[256](), Idx[256](), Idx[128]())
+    ](ctx, Idx[256], Idx[256], Idx[128])
 
     # Test 15: 2SM multi-group (different pointers)
     test_grouped_kernel_two_groups_different_ptrs[
@@ -1619,7 +1615,7 @@ def main() raises:
         cta_group=2,
         mma_shape=Index(256, 128, 32),
         cluster_shape=Index(2, 1, 1),
-    ](ctx, Idx[256](), Idx[256](), Idx[128]())
+    ](ctx, Idx[256], Idx[256], Idx[128])
 
     print("\n" + "=" * 60)
     print("All tests passed!")

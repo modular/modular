@@ -35,7 +35,10 @@ from fastapi import APIRouter, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
 from httpx import AsyncClient, HTTPStatusError
 from llguidance import LLMatcher
-from max.interfaces import (
+from max.pipelines.core.exceptions import InputError
+from max.pipelines.lib import PipelineConfig
+from max.pipelines.lib.tool_parsing import create as create_tool_parser
+from max.pipelines.modeling.types import (
     AudioGenerationRequest,
     GenerationStatus,
     ImageContentPart,
@@ -56,9 +59,6 @@ from max.interfaces import (
     TextGenerationResponseFormat,
     VideoContentPart,
 )
-from max.pipelines.core.exceptions import InputError
-from max.pipelines.lib import PipelineConfig
-from max.pipelines.lib.tool_parsing import create as create_tool_parser
 from max.profiler import traced
 from max.serve.config import Settings
 from max.serve.parser import (

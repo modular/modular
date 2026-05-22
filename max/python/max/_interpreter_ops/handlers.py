@@ -27,7 +27,7 @@ from typing import Any
 import max._interpreter_ops as ops
 import numpy as np
 from max import _core, graph
-from max._core.dialects import builtin, mo, mosh
+from max._core.dialects import builtin, kgen, mo, mosh
 from max.driver import CPU, Buffer, Device
 from max.dtype import DType
 
@@ -1328,6 +1328,10 @@ def _handle_param_to_value(
         if isinstance(value_attr, mosh.ShapeAttr):
             shape_values = []
             for dim_attr in value_attr.values:
+                # Cast simd literal to integer.
+                if isinstance(dim_attr, kgen.SIMDAttr):
+                    dim_attr = kgen.CastToBuiltinAttr(dim_attr)
+
                 if hasattr(dim_attr, "value"):
                     val = dim_attr.value
                     if isinstance(val, int):

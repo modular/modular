@@ -18,7 +18,8 @@ modular_py_test(
         ],
     ),
     deps = [
-        "//max/python/max/interfaces",
+        "//max/python/max/pipelines/modeling",
+        "//max/python/max/pipelines/request",
         "//max/python/max/serve:queue",
         "//max/python/max/support",
         requirement("msgspec"),

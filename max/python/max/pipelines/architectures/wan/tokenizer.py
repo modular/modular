@@ -20,8 +20,8 @@ import logging
 import numpy as np
 import numpy.typing as npt
 import PIL.Image
-from max.interfaces.request import OpenResponsesRequest
 from max.pipelines.lib.pixel_tokenizer import PixelGenerationTokenizer
+from max.pipelines.request import OpenResponsesRequest
 
 from .context import WanContext
 

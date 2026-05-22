@@ -137,6 +137,7 @@ def build_single_turn_request_input(
             max_tokens=max_tokens,
             ignore_eos=request.ignore_eos,
             response_format=request.response_format,
+            tools=request.tools,
         )
     if benchmark_task in PIXEL_GENERATION_TASKS:
         if not isinstance(request, PixelGenerationSampledRequest):

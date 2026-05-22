@@ -34,12 +34,12 @@ from max.pipelines.lib import (
     MAXModelConfig,
     PipelineConfig,
 )
-from max.pipelines.lib.config.config_enums import SupportedEncoding
 from max.pipelines.lib.interfaces.arch_config import (
     ArchConfig,
     ArchConfigWithAttentionKVCache,
     ArchConfigWithKVCache,
 )
+from max.pipelines.modeling.config_enums import SupportedEncoding
 
 
 @dataclass

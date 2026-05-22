@@ -108,37 +108,37 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8[
     var b_shape = row_major(
         Coord(
             batch_size,
-            Idx[NType.static_value if transpose_b else KType.static_value](),
-            Idx[KType.static_value if transpose_b else NType.static_value](),
+            Idx[NType.static_value if transpose_b else KType.static_value],
+            Idx[KType.static_value if transpose_b else NType.static_value],
         )
     )
     var c_shape = row_major(Coord(batch_size, m, n))
     var a_scales_shape = row_major(
-        Coord(batch_size, Idx[KType.static_value // BLOCK_SCALE_K](), m)
+        Coord(batch_size, Idx[KType.static_value // BLOCK_SCALE_K], m)
     )
     var b_scales_shape = row_major(
         Coord(
             batch_size,
-            Idx[NType.static_value // BLOCK_SCALE_K](),
-            Idx[KType.static_value // BLOCK_SCALE_K](),
+            Idx[NType.static_value // BLOCK_SCALE_K],
+            Idx[KType.static_value // BLOCK_SCALE_K],
         )
     )
 
     var a_shape_2D = row_major(Coord(m, k))
     var b_shape_2D = row_major(
         Coord(
-            Idx[NType.static_value if transpose_b else KType.static_value](),
-            Idx[KType.static_value if transpose_b else NType.static_value](),
+            Idx[NType.static_value if transpose_b else KType.static_value],
+            Idx[KType.static_value if transpose_b else NType.static_value],
         )
     )
     var c_shape_2D = row_major(Coord(m, n))
     var a_scales_shape_2D = row_major(
-        Coord(Idx[KType.static_value // BLOCK_SCALE_K](), m)
+        Coord(Idx[KType.static_value // BLOCK_SCALE_K], m)
     )
     var b_scales_shape_2d = row_major(
         Coord(
-            Idx[NType.static_value // BLOCK_SCALE_K](),
-            Idx[KType.static_value // BLOCK_SCALE_K](),
+            Idx[NType.static_value // BLOCK_SCALE_K],
+            Idx[KType.static_value // BLOCK_SCALE_K],
         )
     )
 
@@ -325,27 +325,27 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8_non_row_major_c[
 
     assert K % BLOCK_SCALE_K == 0, "K must be divisible by BLOCK_SCALE_K"
 
-    var a_shape = row_major(Coord(Idx[B](), Int(M), Idx[K]()))
+    var a_shape = row_major(Coord(Idx[B], Int(M), Idx[K]))
     var b_shape = row_major(
         Coord(
-            Idx[B](),
-            Idx[N if transpose_b else K](),
-            Idx[K if transpose_b else N](),
+            Idx[B],
+            Idx[N if transpose_b else K],
+            Idx[K if transpose_b else N],
         )
     )
-    var c_shape = row_major(Coord(Idx[B](), Int(M), Idx[N]()))
+    var c_shape = row_major(Coord(Idx[B], Int(M), Idx[N]))
     var a_scales_shape = row_major(
         Coord(
-            Idx[B](),
-            Idx[K // BLOCK_SCALE_K](),
+            Idx[B],
+            Idx[K // BLOCK_SCALE_K],
             Int(M_aligned_for_scales),
         )
     )
     var b_scales_shape = row_major(
         Coord(
-            Idx[B](),
-            Idx[N // BLOCK_SCALE_K](),
-            Idx[K // BLOCK_SCALE_K](),
+            Idx[B],
+            Idx[N // BLOCK_SCALE_K],
+            Idx[K // BLOCK_SCALE_K],
         )
     )
 
@@ -416,8 +416,8 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8_non_row_major_c[
     # Construct non-row-major TileTensors for c: strides (N, B*N, 1) instead
     # of the row-major (M*N, N, 1).
     var c_non_rm_layout = TileLayout(
-        Coord(Idx[B](), M, Idx[N]()),
-        Coord(Idx[N](), Idx[B * N](), Idx[1]()),
+        Coord(Idx[B], M, Idx[N]),
+        Coord(Idx[N], Idx[B * N], Idx[1]),
     )
     var c = TileTensor(c_device_nd.ptr, c_non_rm_layout)
     var c_ref = TileTensor(c_device_ref_nd.ptr, c_non_rm_layout)
@@ -482,8 +482,8 @@ def main() raises:
         ](
             ctx,
             Int(208),
-            Idx[2048](),
-            Idx[256](),
+            Idx[2048],
+            Idx[256],
             Int(3),
         )
         test_batched_matmul_sm100_blockwise_scaled_fp8[
@@ -496,8 +496,8 @@ def main() raises:
         ](
             ctx,
             Int(400),
-            Idx[128](),
-            Idx[128](),
+            Idx[128],
+            Idx[128],
             Int(4),
         )
 
@@ -511,8 +511,8 @@ def main() raises:
         ](
             ctx,
             Int(1024),
-            Idx[2048](),
-            Idx[2048](),
+            Idx[2048],
+            Idx[2048],
             Int(2),
         )
 
@@ -526,8 +526,8 @@ def main() raises:
         ](
             ctx,
             Int(1024),
-            Idx[2048](),
-            Idx[2048](),
+            Idx[2048],
+            Idx[2048],
             Int(5),
         )
 
@@ -541,8 +541,8 @@ def main() raises:
         ](
             ctx,
             Int(100),
-            Idx[512](),
-            Idx[256](),
+            Idx[512],
+            Idx[256],
             Int(7),
         )
 
@@ -556,8 +556,8 @@ def main() raises:
         ](
             ctx,
             Int(96),
-            Idx[1024](),
-            Idx[1024](),
+            Idx[1024],
+            Idx[1024],
             Int(2),
         )
 
@@ -571,8 +571,8 @@ def main() raises:
         ](
             ctx,
             Int(120),
-            Idx[1280](),
-            Idx[512](),
+            Idx[1280],
+            Idx[512],
             Int(5),
         )
 
@@ -586,8 +586,8 @@ def main() raises:
         ](
             ctx,
             Int(120),
-            Idx[512](),
-            Idx[128](),
+            Idx[512],
+            Idx[128],
             Int(128),
         )
         test_batched_matmul_sm100_blockwise_scaled_fp8[
@@ -601,8 +601,8 @@ def main() raises:
         ](
             ctx,
             Int(120),
-            Idx[128](),
-            Idx[512](),
+            Idx[128],
+            Idx[512],
             Int(128),
         )
 

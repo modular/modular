@@ -47,7 +47,7 @@ class DebugDiskTier:
         )
 
     def contains(self, block_hash: int) -> bool:
-        return block_hash in self._block_pool.hash_to_committed_block
+        return block_hash in self._block_pool.prefix_cache
 
     def read_block(
         self,
@@ -57,7 +57,7 @@ class DebugDiskTier:
         if not self.contains(block_hash):
             raise ValueError("Block not on disk")
 
-        block = self._block_pool.hash_to_committed_block[block_hash]
+        block = self._block_pool.prefix_cache[block_hash]
         self._block_pool.touch(block)
 
         path = self._hash_to_path(block_hash)
@@ -74,11 +74,11 @@ class DebugDiskTier:
         block_hash: int,
         src: npt.NDArray[np.uint8],
     ) -> None:
-        if block_hash in self._block_pool.hash_to_committed_block:
+        if block_hash in self._block_pool.prefix_cache:
             raise ValueError("Block already on disk")
 
         # Check if fits
-        if len(self._block_pool.free_block_queue) == 0:
+        if self._block_pool.num_free_blocks == 0:
             raise ValueError("Too many blocks")
 
         block, evicted_hash = self._block_pool.alloc_block()
@@ -111,4 +111,4 @@ class DebugDiskTier:
 
     @property
     def num_used_blocks(self) -> int:
-        return len(self._block_pool.hash_to_committed_block)
+        return len(self._block_pool.prefix_cache)

@@ -107,11 +107,11 @@ def test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
     )
 
     # Shapes
-    var a_shape = row_major(Coord(m, Idx[KType.static_value]()))
+    var a_shape = row_major(Coord(m, Idx[KType.static_value]))
     var b_shape = row_major(
-        Coord(Idx[NType.static_value](), Idx[KType.static_value]())
+        Coord(Idx[NType.static_value], Idx[KType.static_value])
     )
-    var c_shape = row_major(Coord(m, Idx[NType.static_value]()))
+    var c_shape = row_major(Coord(m, Idx[NType.static_value]))
 
     # Calculate scales dimensions
     var a_scales_shape_k = ceildiv(K, BLOCK_SCALE_K)
@@ -277,8 +277,8 @@ def main() raises:
         ](
             ctx,
             Int(512),
-            Idx[576](),
-            Idx[512](),
+            Idx[576],
+            Idx[512],
         )
 
         # ============================================================
@@ -308,8 +308,8 @@ def main() raises:
         ](
             ctx,
             Int(512),
-            Idx[576](),
-            Idx[512](),
+            Idx[576],
+            Idx[512],
         )
 
         # Additional 2SM test with larger cluster (4,4,1) from original tests
@@ -326,8 +326,8 @@ def main() raises:
         ](
             ctx,
             Int(512),
-            Idx[4096](),
-            Idx[1024](),
+            Idx[4096],
+            Idx[1024],
         )
 
         print("\n=== ALL SMOKE TESTS PASSED ===")

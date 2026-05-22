@@ -29,7 +29,7 @@ from std.gpu.primitives import warp
 from std.gpu.memory import AddressSpace, external_memory
 from std.memory import Span
 
-from tensor import InputTensor, OutputTensor
+from extensibility import InputTensor, OutputTensor
 
 from std.utils.numerics import min_or_neg_inf
 

@@ -155,6 +155,23 @@ _EXTRA_CONSTRAINTS = {
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
+    # FP8 quantize+store path is SM100-only (uses float8_e4m3fn).
+    "test_rope_split_store_fp8.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    # SM100 MHA with fp8 KV via dequant-staging + existing bf16 FA4 path.
+    # SM100-only.
+    "attention/test_mha_sm100_fp8_kv_d256.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    # Same dequant-staging path at head_dim=512 (Gemma4-global shape).
+    # SM100-only.
+    "attention/test_mha_sm100_fp8_kv_d512.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     # TODO(KERN-2410): Investigate and enable on macOS
     "test_bicubic.mojo": select({
         "@platforms//os:macos": ["@platforms//:incompatible"],

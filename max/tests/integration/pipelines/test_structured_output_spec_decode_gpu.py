@@ -26,14 +26,6 @@ import hf_repo_lock
 import numpy as np
 import pytest
 from max.driver import DeviceSpec
-from max.interfaces import (
-    RequestID,
-    SamplingParams,
-    TextGenerationInputs,
-    TextGenerationRequest,
-    TextGenerationRequestMessage,
-    TextGenerationResponseFormat,
-)
 from max.pipelines import PipelineConfig
 from max.pipelines.core import TextContext
 from max.pipelines.lib import MAXModelConfig, SamplingConfig, TextTokenizer
@@ -44,6 +36,14 @@ from max.pipelines.lib.pipeline_variants.overlap_text_generation import (
     OverlapTextGenerationPipeline,
 )
 from max.pipelines.lib.registry import PipelineRegistry
+from max.pipelines.modeling.types import (
+    RequestID,
+    SamplingParams,
+    TextGenerationInputs,
+    TextGenerationRequest,
+    TextGenerationRequestMessage,
+    TextGenerationResponseFormat,
+)
 
 pytest_plugins = "test_common.registry"
 

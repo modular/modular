@@ -84,7 +84,7 @@ def test_vendor[
 
     var a_host = TileTensor(
         a_host_ptr,
-        row_major(Coord(total_num_tokens, Idx[K]())),
+        row_major(Coord(total_num_tokens, Idx[K])),
     )
     var b_host = TileTensor(
         b_host_ptr,
@@ -92,11 +92,11 @@ def test_vendor[
     )
     var c_host = TileTensor(
         c_host_ptr,
-        row_major(Coord(total_num_tokens, Idx[N]())),
+        row_major(Coord(total_num_tokens, Idx[N])),
     )
     var c_ref_host = TileTensor(
         c_ref_host_ptr,
-        row_major(Coord(total_num_tokens, Idx[N]())),
+        row_major(Coord(total_num_tokens, Idx[N])),
     )
 
     # Create host TileTensors for offsets and expert_ids
@@ -277,7 +277,7 @@ def test_negative_lora_id_vendor[
 
     var a_host = TileTensor(
         a_host_ptr,
-        row_major(Coord(total_num_tokens, Idx[K]())),
+        row_major(Coord(total_num_tokens, Idx[K])),
     )
     var b_host = TileTensor(
         b_host_ptr,
@@ -285,7 +285,7 @@ def test_negative_lora_id_vendor[
     )
     var c_host = TileTensor(
         c_host_ptr,
-        row_major(Coord(total_num_tokens, Idx[N]())),
+        row_major(Coord(total_num_tokens, Idx[N])),
     )
 
     # Create host TileTensors for offsets and expert_ids

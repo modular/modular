@@ -90,11 +90,9 @@ def _test_dispatch[
     )
 
     # --- Host allocations ---
-    var a_shape = row_major(Coord(Int(M), Idx[packed_K]()))
-    var b_shape = row_major(
-        Coord(Idx[num_experts](), Idx[N](), Idx[packed_K]())
-    )
-    var c_shape = row_major(Coord(Int(M), Idx[N]()))
+    var a_shape = row_major(Coord(Int(M), Idx[packed_K]))
+    var b_shape = row_major(Coord(Idx[num_experts], Idx[N], Idx[packed_K]))
+    var c_shape = row_major(Coord(Int(M), Idx[N]))
 
     var a_size = M * packed_K
     var b_size = num_experts * N * packed_K
@@ -145,7 +143,7 @@ def _test_dispatch[
     )
     var expert_scales_tensor = TileTensor(
         expert_scales_device,
-        row_major(Coord(Idx[num_experts]())),
+        row_major(Coord(Idx[num_experts])),
     )
 
     # --- Offsets & expert IDs ---
@@ -185,20 +183,20 @@ def _test_dispatch[
     var a_scales_shape = row_major(
         Coord(
             Int(a_scale_dim0),
-            Idx[k_groups](),
-            Idx[SF_ATOM_M[0]](),
-            Idx[SF_ATOM_M[1]](),
-            Idx[SF_ATOM_K](),
+            Idx[k_groups],
+            Idx[SF_ATOM_M[0]],
+            Idx[SF_ATOM_M[1]],
+            Idx[SF_ATOM_K],
         )
     )
     var b_scales_shape = row_major(
         Coord(
-            Idx[num_experts](),
-            Idx[n_groups](),
-            Idx[k_groups](),
-            Idx[SF_ATOM_M[0]](),
-            Idx[SF_ATOM_M[1]](),
-            Idx[SF_ATOM_K](),
+            Idx[num_experts],
+            Idx[n_groups],
+            Idx[k_groups],
+            Idx[SF_ATOM_M[0]],
+            Idx[SF_ATOM_M[1]],
+            Idx[SF_ATOM_K],
         )
     )
 
@@ -271,11 +269,11 @@ def _test_dispatch[
             b_scales_host_ptr.unsafe_ptr() + e * expert_slice_size,
             row_major(
                 Coord(
-                    Idx[n_groups](),
-                    Idx[k_groups](),
-                    Idx[SF_ATOM_M[0]](),
-                    Idx[SF_ATOM_M[1]](),
-                    Idx[SF_ATOM_K](),
+                    Idx[n_groups],
+                    Idx[k_groups],
+                    Idx[SF_ATOM_M[0]],
+                    Idx[SF_ATOM_M[1]],
+                    Idx[SF_ATOM_K],
                 )
             ),
         )
@@ -309,10 +307,10 @@ def _test_dispatch[
         row_major(
             Coord(
                 Int64(a_scale_dim0),
-                Idx[k_groups](),
-                Idx[SF_ATOM_M[0]](),
-                Idx[SF_ATOM_M[1]](),
-                Idx[SF_ATOM_K](),
+                Idx[k_groups],
+                Idx[SF_ATOM_M[0]],
+                Idx[SF_ATOM_M[1]],
+                Idx[SF_ATOM_K],
             )
         ),
     ).as_any_origin()
@@ -320,12 +318,12 @@ def _test_dispatch[
         b_scales_device,
         row_major(
             Coord(
-                Idx[num_experts](),
-                Idx[n_groups](),
-                Idx[k_groups](),
-                Idx[SF_ATOM_M[0]](),
-                Idx[SF_ATOM_M[1]](),
-                Idx[SF_ATOM_K](),
+                Idx[num_experts],
+                Idx[n_groups],
+                Idx[k_groups],
+                Idx[SF_ATOM_M[0]],
+                Idx[SF_ATOM_M[1]],
+                Idx[SF_ATOM_K],
             )
         ),
     ).as_any_origin()
@@ -372,28 +370,28 @@ def _test_dispatch[
 
         var c_slice = TileTensor(
             c_ref_tensor.ptr + start * c_row_stride,
-            row_major((end - start, Idx[N]())),
+            row_major((end - start, Idx[N])),
         )
 
         var new_a_tensor = TileTensor(
             a_tensor.ptr + start * a_row_stride,
-            row_major((end - start, Idx[packed_K]())),
+            row_major((end - start, Idx[packed_K])),
         )
 
         var new_b_tensor = TileTensor(
             b_tensor.ptr + Int(expert_id) * b_expert_stride,
-            row_major((Idx[N](), Idx[packed_K]())),
+            row_major((Idx[N], Idx[packed_K])),
         )
 
         var new_b_scales_tensor = TileTensor(
             b_scales_tensor.ptr + Int(expert_id) * b_scales_expert_stride,
             row_major(
                 Coord(
-                    Idx[n_groups](),
-                    Idx[k_groups](),
-                    Idx[SF_ATOM_M[0]](),
-                    Idx[SF_ATOM_M[1]](),
-                    Idx[SF_ATOM_K](),
+                    Idx[n_groups],
+                    Idx[k_groups],
+                    Idx[SF_ATOM_M[0]],
+                    Idx[SF_ATOM_M[1]],
+                    Idx[SF_ATOM_K],
                 )
             ),
         )
@@ -406,10 +404,10 @@ def _test_dispatch[
             row_major(
                 Coord(
                     ceildiv(end - start, SF_MN_GROUP_SIZE),
-                    Idx[k_groups](),
-                    Idx[SF_ATOM_M[0]](),
-                    Idx[SF_ATOM_M[1]](),
-                    Idx[SF_ATOM_K](),
+                    Idx[k_groups],
+                    Idx[SF_ATOM_M[0]],
+                    Idx[SF_ATOM_M[1]],
+                    Idx[SF_ATOM_K],
                 )
             ),
         )

@@ -27,21 +27,21 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 import numpy.typing as npt
 import PIL.Image
-from max.interfaces import (
+from max.pipelines.core import PixelContext
+from max.pipelines.modeling.types import (
     PipelineTokenizer,
     TokenBuffer,
 )
-from max.interfaces.generation import GenerationOutput
-from max.interfaces.provider_options import (
-    ImageProviderOptions,
-    PixelProviderOptionsBase,
-)
-from max.interfaces.request import OpenResponsesRequest
-from max.interfaces.request.open_responses import (
+from max.pipelines.modeling.types.generation import GenerationOutput
+from max.pipelines.request import OpenResponsesRequest
+from max.pipelines.request.open_responses import (
     InputImageContent,
     InputTextContent,
 )
-from max.pipelines.core import PixelContext
+from max.pipelines.request.provider_options import (
+    ImageProviderOptions,
+    PixelProviderOptionsBase,
+)
 from transformers import AutoTokenizer, PreTrainedTokenizerFast
 
 from .diffusion_schedulers import SchedulerFactory

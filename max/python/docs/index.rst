@@ -36,7 +36,14 @@ Modules
    graph.ops
    graph.quantization
    graph.weights
-   interfaces
+   pipelines.modeling.base
+   pipelines.modeling.dataprocessing
+   pipelines.modeling.kv_cache_config
+   pipelines.modeling.types
+   pipelines.modeling.weights
+   pipelines.modeling.types.pipeline_variants
+   pipelines.request
+   pipelines.request.provider_options
    serve.queue
    serve.scheduler.interface
    serve.scheduler_result
