@@ -1309,8 +1309,10 @@ struct Dict[
         ```
 
         Notes:
-            These can't yet be unpacked like Python dict items, but you can
-            access the key and value as attributes.
+            Entries support tuple-style indexing with ``entry[0]`` (key) and
+            ``entry[1]`` (value). Attribute access via ``entry.key`` and
+            ``entry.value`` remains supported. Whether ``for key, value in
+            dict.items()`` unpacking works depends on compiler support.
         """
         return _DictEntryIter(0, 0, self)
 

@@ -249,6 +249,48 @@ struct SwissTableEntry[
         """
         return self.value^
 
+    comptime _pair_element_types = TypeList[Self.K, Self.V]
+
+    @always_inline
+    def __getitem_param__[
+        idx: Int
+    ](ref self) -> ref[origin_of(self)] Self._pair_element_types[idx]:
+        """Get a reference to the key or value using tuple-style indices.
+
+        Index ``0`` returns the key and index ``1`` returns the value. The
+        stored hash is not exposed through indexing (unlike struct field order).
+
+        Parameters:
+            idx: ``0`` for the key or ``1`` for the value.
+
+        Returns:
+            A reference to the key or value.
+        """
+        comptime if idx == 0:
+            return UnsafePointer(to=self.key).unsafe_origin_cast[origin_of(self)]()[]
+        else:
+            comptime assert idx == 1, "index must be 0 (key) or 1 (value)"
+            return UnsafePointer(to=self.value).unsafe_origin_cast[
+                origin_of(self)
+            ]()[]
+
+    @always_inline
+    def __getitem__(
+        ref self, idx: Int
+    ) -> ref[origin_of(self)] Self._pair_element_types.element_type:
+        """Get a reference to the key or value using tuple-style indices.
+
+        Args:
+            idx: ``0`` for the key or ``1`` for the value.
+
+        Returns:
+            A reference to the key or value.
+        """
+        debug_assert(0 <= idx <= 1, "index must be 0 (key) or 1 (value)")
+        if idx == 0:
+            return UnsafePointer(to=self.key).unsafe_origin_cast[origin_of(self)]()[]
+        return UnsafePointer(to=self.value).unsafe_origin_cast[origin_of(self)]()[]
+
 
 # ===-----------------------------------------------------------------------===#
 # SwissTable

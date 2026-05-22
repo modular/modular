@@ -364,6 +364,37 @@ def test_iter_items() raises:
     # _test_iter_bounds(dict.values(), len(dict))
 
 
+def test_dict_entry_tuple_indexing() raises:
+    """Phase-2 prototype: tuple-style [0]/[1] on items() entries without storage changes."""
+    var dict: Dict[String, Int] = {"a": 1, "b": 2}
+
+    var keys = String()
+    var sum = 0
+    for entry in dict.items():
+        assert_equal(entry[0], entry.key)
+        assert_equal(entry[1], entry.value)
+        keys += entry[0]
+        sum += entry[1]
+
+    assert_equal(keys, "ab")
+    assert_equal(sum, 3)
+
+
+def test_dict_items_unpacking() raises:
+    """Whether ``for k, v in dict.items()`` works depends on compiler support."""
+    var dict: Dict[String, Int] = {"x": 10, "y": 20}
+
+    var keys = String()
+    var sum = 0
+    # If this fails to compile, keep entry[0]/entry[1] until loop unpacking lands.
+    for key, value in dict.items():
+        keys += key
+        sum += value
+
+    assert_equal(len(keys), 2)
+    assert_equal(sum, 30)
+
+
 def test_iter_take_items() raises:
     var dict: Dict[Int, String] = {0: "a", 1: "b", 2: "c"}
 
