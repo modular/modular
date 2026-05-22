@@ -239,6 +239,73 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         # existing DeviceContext semantics we create a buffer immediately.
         return DeviceBuffer[dtype](self, size)
 
+    def create_buffer_sync[
+        dtype: DType
+    ](self, size: Int) raises -> DeviceBuffer[dtype]:
+        """Creates a buffer synchronously using the `DeviceBuffer` constructor.
+
+        Parameters:
+            dtype: The data type to be stored in the allocated memory.
+
+        Args:
+            size: The number of elements of `type` to allocate memory for.
+
+        Returns:
+            The allocated buffer.
+
+        Raises:
+            If the operation fails.
+        """
+        return DeviceBuffer[dtype](self, size)
+
+    def enqueue_create_host_buffer[
+        dtype: DType
+    ](self, size: Int) raises -> HostBuffer[dtype]:
+        """Enqueues the creation of a HostBuffer.
+
+        This function allocates memory on the host that is accessible by the device.
+        The memory is page-locked (pinned) for efficient data transfer between host and device.
+
+        Pinned memory is guaranteed to remain resident in the host's RAM, not be
+        paged/swapped out to disk. Memory allocated normally (for example, using
+        [`alloc()`](/docs/std/memory/unsafe_pointer/alloc/))
+        is pageable—individual pages of memory can be moved to secondary storage
+        (disk/SSD) when main memory fills up.
+
+        Using pinned memory allows devices to make fast transfers
+        between host memory and device memory, because they can use direct
+        memory access (DMA) to transfer data without relying on the CPU.
+
+        Allocating too much pinned memory can cause performance issues, since it
+        reduces the amount of memory available for other processes.
+
+        Parameters:
+            dtype: The data type to be stored in the allocated memory.
+
+        Args:
+            size: The number of elements of `type` to allocate memory for.
+
+        Returns:
+            A `HostBuffer` object that wraps the allocated host memory.
+
+        Raises:
+            If memory allocation fails or if the device context is invalid.
+
+        Example:
+
+        ```mojo
+        from std.gpu.host import DeviceContext
+
+        with DeviceContext() as ctx:
+            # Allocate host memory accessible by the device
+            var host_buffer = ctx.enqueue_create_host_buffer[DType.float32](1024)
+
+            # Use the host buffer for device operations
+            # ...
+        ```
+        """
+        return HostBuffer[dtype](self, size)
+
     def enqueue_copy[
         dtype: DType
     ](
@@ -314,6 +381,238 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
             src_buf._inner[]._buffer,
             dst_buf._inner[]._buffer.byte_size,
         )
+
+    def enqueue_copy[
+        dtype: DType
+    ](self, dst_buf: DeviceBuffer[dtype], src_buf: HostBuffer[dtype],) raises:
+        """Enqueues an async copy from one device buffer to another. The amount
+        of data transferred is determined by the size of the destination buffer.
+
+        Parameters:
+            dtype: Type of the data being copied.
+
+        Args:
+            dst_buf: Device buffer to copy to.
+            src_buf: Device buffer to copy from. Must be at least as large as
+                `dst`.
+
+        Raises:
+            If the operation fails.
+        """
+        self._stream[].copy_to_device(
+            dst_buf._inner[]._buffer,
+            src_buf.unsafe_ptr().bitcast[UInt8](),
+            dst_buf._inner[]._buffer.byte_size,
+        )
+
+    def enqueue_copy[
+        dtype: DType
+    ](self, dst_buf: HostBuffer[dtype], src_buf: DeviceBuffer[dtype],) raises:
+        """Enqueues an async copy from one device buffer to another. The amount
+        of data transferred is determined by the size of the destination buffer.
+
+        Parameters:
+            dtype: Type of the data being copied.
+
+        Args:
+            dst_buf: Device buffer to copy to.
+            src_buf: Device buffer to copy from. Must be at least as large as
+                `dst`.
+
+        Raises:
+            If the operation fails.
+        """
+        self._stream[].copy_from_device(
+            dst_buf.unsafe_ptr().bitcast[UInt8](),
+            src_buf._inner[]._buffer,
+            src_buf._inner[]._buffer.byte_size,
+        )
+
+    def enqueue_copy[
+        dtype: DType
+    ](
+        self,
+        dst_buf: HostBuffer[dtype],
+        src_ptr: UnsafePointer[Scalar[dtype], _],
+    ) raises:
+        """Enqueues an async copy from the host to the provided device
+        buffer. The number of bytes copied is determined by the size of the
+        device buffer.
+
+        Parameters:
+            dtype: Type of the data being copied.
+
+        Args:
+            dst_buf: Device buffer to copy to.
+            src_ptr: Host pointer to copy from.
+
+        Raises:
+            If the operation fails.
+        """
+        self._stream[].copy_to_device(
+            dst_buf._inner[]._buffer,
+            src_ptr.bitcast[UInt8](),
+            dst_buf._inner[]._buffer.byte_size,
+        )
+
+    def enqueue_copy[
+        dtype: DType
+    ](
+        self,
+        dst_ptr: UnsafePointer[mut=True, Scalar[dtype], _],
+        src_buf: HostBuffer[dtype],
+    ) raises:
+        """Enqueues an async copy from the device to the host. The
+        number of bytes copied is determined by the size of the device buffer.
+
+        Parameters:
+            dtype: Type of the data being copied.
+
+        Args:
+            dst_ptr: Host pointer to copy to.
+            src_buf: Device buffer to copy from.
+
+        Raises:
+            If the operation fails.
+        """
+        self._stream[].copy_from_device(
+            dst_ptr.bitcast[UInt8](),
+            src_buf._inner[]._buffer,
+            src_buf._inner[]._buffer.byte_size,
+        )
+
+    def enqueue_copy[
+        dtype: DType
+    ](self, dst_buf: HostBuffer[dtype], src_buf: HostBuffer[dtype],) raises:
+        """Enqueues an async copy from one device buffer to another. The amount
+        of data transferred is determined by the size of the destination buffer.
+
+        Parameters:
+            dtype: Type of the data being copied.
+
+        Args:
+            dst_buf: Device buffer to copy to.
+            src_buf: Device buffer to copy from. Must be at least as large as
+                `dst`.
+
+        Raises:
+            If the operation fails.
+        """
+        self._stream[].copy_intra_device(
+            dst_buf._inner[]._buffer,
+            src_buf._inner[]._buffer,
+            dst_buf._inner[]._buffer.byte_size,
+        )
+
+    def enqueue_copy[
+        dtype: DType
+    ](self, dst_buf: DeviceBuffer[dtype], src: Span[Scalar[dtype], _],) raises:
+        """Enqueues an async copy from a host `Span` to a device buffer.
+
+        The number of bytes copied is determined by the size of the device
+        buffer. The span must contain at least as many elements as the
+        destination buffer; this invariant is checked via `debug_assert`.
+
+        Parameters:
+            dtype: Type of the data being copied.
+
+        Args:
+            dst_buf: Device buffer to copy to.
+            src: Host span to copy from.
+
+        Raises:
+            If the operation fails.
+        """
+        debug_assert(
+            len(src) >= len(dst_buf),
+            "source span length must be >= destination buffer length",
+        )
+        self.enqueue_copy(dst_buf, src.unsafe_ptr())
+
+    def enqueue_copy[
+        dtype: DType
+    ](
+        self,
+        dst: Span[mut=True, Scalar[dtype], _],
+        src_buf: DeviceBuffer[dtype],
+    ) raises:
+        """Enqueues an async copy from a device buffer to a host `Span`.
+
+        The number of bytes copied is determined by the size of the device
+        buffer. The span must contain at least as many elements as the source
+        buffer; this invariant is checked via `debug_assert` (debug builds
+        only).
+
+        Parameters:
+            dtype: Type of the data being copied.
+
+        Args:
+            dst: Host span to copy to.
+            src_buf: Device buffer to copy from.
+
+        Raises:
+            If the operation fails.
+        """
+        debug_assert(
+            len(dst) >= len(src_buf),
+            "destination span length must be >= source buffer length",
+        )
+        self.enqueue_copy(dst.unsafe_ptr(), src_buf)
+
+    def enqueue_copy[
+        dtype: DType
+    ](self, dst_buf: HostBuffer[dtype], src: Span[Scalar[dtype], _],) raises:
+        """Enqueues an async copy from a host `Span` to a pinned host buffer.
+
+        The number of bytes copied is determined by the size of the device
+        buffer. The span must contain at least as many elements as the
+        destination buffer; this invariant is checked via `debug_assert`.
+
+        Parameters:
+            dtype: Type of the data being copied.
+
+        Args:
+            dst_buf: Device buffer to copy to.
+            src: Host span to copy from.
+
+        Raises:
+            If the operation fails.
+        """
+        debug_assert(
+            len(src) >= len(dst_buf),
+            "source span length must be >= destination buffer length",
+        )
+        self.enqueue_copy(dst_buf, src.unsafe_ptr())
+
+    def enqueue_copy[
+        dtype: DType
+    ](
+        self,
+        dst: Span[mut=True, Scalar[dtype], _],
+        src_buf: HostBuffer[dtype],
+    ) raises:
+        """Enqueues an async copy from a host buffer to a host `Span`.
+
+        The number of bytes copied is determined by the size of the source
+        buffer. The span must contain at least as many elements as the source
+        buffer; this invariant is checked via `debug_assert` (debug builds
+        only).
+
+        Parameters:
+            dtype: Type of the data being copied.
+
+        Args:
+            dst: Host span to copy to.
+            src_buf: Host buffer to copy from.
+
+        Raises:
+            If the operation fails.
+        """
+        debug_assert(
+            len(dst) >= len(src_buf),
+            "destination span length must be >= source buffer length",
+        )
+        self.enqueue_copy(dst.unsafe_ptr(), src_buf)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -606,6 +905,22 @@ struct DeviceBuffer[dtype: DType](ImplicitlyCopyable, Movable, Sized):
         self._ctx = ctx
         self._inner = ArcPointer(_HALBufferInner(buffer^, ctx._context, addr))
 
+    @staticmethod
+    @doc_hidden
+    def empty(context: DeviceContext) raises -> Self:
+        return Self(context, 0)
+
+    def context(self) -> DeviceContext:
+        """Returns the device context associated with this buffer.
+
+        This method retrieves the device context that owns this buffer and is
+        responsible for managing its lifecycle and operations.
+
+        Returns:
+            The device context associated with this buffer.
+        """
+        return self._ctx
+
     def __len__(self) -> Int:
         """Returns the number of elements in this buffer.
 
@@ -631,3 +946,324 @@ struct DeviceBuffer[dtype: DType](ImplicitlyCopyable, Movable, Sized):
         return UnsafePointer[Scalar[Self.dtype], MutAnyOrigin](
             unsafe_from_address=Int(self._inner[]._device_addr)
         )
+
+    def enqueue_copy_to(self, dst: HostBuffer[Self.dtype]) raises:
+        """Enqueues an asynchronous copy from this buffer to a host buffer.
+
+        This method schedules a memory copy operation from this buffer to the destination
+        host buffer. The operation is asynchronous and will be executed in the stream
+        associated with this buffer's context.
+
+        Args:
+            dst: The destination host buffer to copy data to.
+
+        Raises:
+            If the operation fails.
+        """
+        self._ctx.enqueue_copy(dst, self)
+
+    def enqueue_copy_from(self, src: HostBuffer[Self.dtype]) raises:
+        """Enqueues an asynchronous copy from a host buffer to this buffer.
+
+        This method schedules a memory copy operation from the source host buffer
+        to this buffer. The operation is asynchronous and will be executed in the stream
+        associated with this buffer's context.
+
+        Args:
+            src: The source host buffer to copy data from.
+
+        Raises:
+            If the operation fails.
+        """
+        self._ctx.enqueue_copy(self, src)
+
+    def enqueue_copy_to(
+        self, dst: Span[mut=True, Scalar[Self.dtype], _]
+    ) raises:
+        """Enqueues an asynchronous copy from this buffer to a host `Span`.
+
+        Args:
+            dst: The destination host span to copy data to.
+
+        Raises:
+            If the operation fails.
+        """
+        self._ctx.enqueue_copy(dst, self)
+
+    def enqueue_copy_from(self, src: Span[Scalar[Self.dtype], _]) raises:
+        """Enqueues an asynchronous copy from a host `Span` to this buffer.
+
+        Args:
+            src: The source host span to copy data from.
+
+        Raises:
+            If the operation fails.
+        """
+        self._ctx.enqueue_copy(self, src)
+
+    def map_to_host(
+        self,
+        out mapped_buffer: _HostMappedBuffer[Self.dtype],
+    ) raises:
+        """Maps this device buffer to host memory for CPU access.
+
+        This method creates a host-accessible view of the device buffer's contents.
+        The mapping operation may involve copying data from device to host memory.
+
+        Returns:
+            A host-mapped buffer that provides CPU access to the device buffer's
+            contents inside a with-statement.
+
+        Raises:
+            If there's an error during buffer creation or data transfer.
+
+        Notes:
+
+        Values modified inside the `with` statement are updated on the
+        device when the `with` statement exits.
+
+        Example:
+
+        ```mojo
+        from std.gpu.host import DeviceContext
+
+        var ctx = DeviceContext()
+        var length = 1024
+        var in_dev = ctx.enqueue_create_buffer[DType.float32](length)
+        var out_dev = ctx.enqueue_create_buffer[DType.float32](length)
+
+        # Initialize the input and output with known values.
+        with in_dev.map_to_host() as in_host, out_dev.map_to_host() as out_host:
+            for i in range(length):
+                in_host[i] = i
+                out_host[i] = 255
+        ```
+        """
+        mapped_buffer = _HostMappedBuffer[Self.dtype](self.context(), self)
+
+
+# ===-----------------------------------------------------------------------===#
+# HostBuffer
+# ===-----------------------------------------------------------------------===#
+
+
+@fieldwise_init
+struct _HostBufferInner(Movable):
+    """Refcountable wrapper around a pinned-host HAL `Buffer`.
+
+    Owns the pinned `Buffer` and the parent `Context` so destruction can
+    call `Context.free_host_pinned`. Caches the host pointer up front so
+    `unsafe_ptr` / `__getitem__` / `__setitem__` are non-raising.
+    """
+
+    var _buffer: Buffer
+    var _context: ArcPointer[Context[get_device_spec[0]()]]
+    var _host_ptr: UnsafePointer[UInt8, MutAnyOrigin]
+
+    def __del__(deinit self):
+        try:
+            self._context[].free_host_pinned(self._buffer^)
+        except e:
+            print("warning: free_host_pinned failed:", e)
+
+
+struct HostBuffer[dtype: DType](ImplicitlyCopyable, Movable, Sized):
+    """Represents a block of host-resident storage. For GPU devices, a host
+    buffer is allocated in the host's global memory.
+
+    To allocate a `HostBuffer`, use one of the methods provided by
+    `DeviceContext`, such as
+    [`enqueue_create_host_buffer()`](/docs/std/gpu/host/device_context/DeviceContext/#enqueue_create_host_buffer).
+
+    Parameters:
+        dtype: Data type to be stored in the buffer.
+    """
+
+    var _ctx: DeviceContext
+    var _inner: ArcPointer[_HostBufferInner]
+
+    @doc_hidden
+    def __init__(out self, ctx: DeviceContext, size: Int) raises:
+        """This init takes in a constructed `DeviceContext` and schedules an
+        owned buffer allocation using the stream in the device context.
+        """
+        var byte_size = UInt64(size * size_of[Self.dtype]())
+        var buffer = ctx._context[].alloc_host_pinned(byte_size)
+        var addr = UInt64(0)
+        if byte_size > 0:
+            addr = ctx._context[].memory_get_address(buffer)
+        var host_ptr = UnsafePointer[UInt8, MutAnyOrigin](
+            unsafe_from_address=Int(addr)
+        )
+        self._ctx = ctx
+        self._inner = ArcPointer(
+            _HostBufferInner(buffer^, ctx._context, host_ptr)
+        )
+
+    def __len__(self) -> Int:
+        """Returns the number of elements in this buffer.
+
+        This method calculates the number of elements by dividing the total byte size
+        of the buffer by the size of each element.
+
+        Returns:
+            The number of elements in the buffer.
+        """
+        return Int(self._inner[]._buffer.byte_size) // size_of[Self.dtype]()
+
+    def context(self) -> DeviceContext:
+        """Returns the device context associated with this buffer.
+
+        This method retrieves the device context that owns this buffer and is
+        responsible for managing its lifecycle and operations.
+
+        Returns:
+            The device context associated with this buffer.
+        """
+        return self._ctx
+
+    def unsafe_ptr(
+        self,
+    ) -> UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]:
+        """Returns the raw device pointer without transferring ownership.
+
+        This method provides direct access to the underlying device pointer
+        for advanced use cases. The buffer retains ownership of the pointer.
+
+        Returns:
+            The raw device pointer owned by this buffer.
+        """
+        return self._inner[]._host_ptr.bitcast[Scalar[Self.dtype]]()
+
+    def __getitem__(self, idx: Int) -> Scalar[Self.dtype]:
+        """Retrieves the element at the specified index from the host buffer.
+
+        This operator allows direct access to individual elements in the host buffer
+        using array indexing syntax.
+
+        Args:
+            idx: The index of the element to retrieve.
+
+        Returns:
+            The scalar value at the specified index.
+        """
+        return self.unsafe_ptr()[idx]
+
+    def __setitem__(self, idx: Int, val: Scalar[Self.dtype]):
+        """Sets the element at the specified index in the host buffer.
+
+        This operator allows direct modification of individual elements in the host buffer
+        using array indexing syntax.
+
+        Args:
+            idx: The index of the element to modify.
+            val: The new value to store at the specified index.
+        """
+        self.unsafe_ptr()[idx] = val
+
+    def as_span[
+        mut: Bool, origin: Origin[mut=mut], //
+    ](ref[origin] self) -> Span[Scalar[Self.dtype], origin]:
+        """Returns a `Span` pointing to the underlying memory of the `HostBuffer`.
+
+        Parameters:
+            mut: Whether the span should be mutable.
+            origin: The origin of the buffer reference.
+
+        Returns:
+            A `Span` pointing to the underlying memory of the `HostBuffer`.
+        """
+        # Safety: We are casting the pointer to the mutability and origin of
+        # self and the pointer is already mutable.
+        return {
+            ptr = self.unsafe_ptr()
+            .unsafe_mut_cast[mut]()
+            .unsafe_origin_cast[origin](),
+            length = len(self),
+        }
+
+    def enqueue_copy_to(self, dst: DeviceBuffer[Self.dtype]) raises:
+        """Enqueues an asynchronous copy from this buffer to a device buffer.
+
+        This method schedules a memory copy operation from this buffer to the destination
+        device buffer. The operation is asynchronous and will be executed in the stream
+        associated with this buffer's context.
+
+        Args:
+            dst: The destination device buffer to copy data to.
+
+        Raises:
+            If the operation fails.
+        """
+        self._ctx.enqueue_copy(dst, self)
+
+    def enqueue_copy_from(self, src: DeviceBuffer[Self.dtype]) raises:
+        """Enqueues an asynchronous copy from a device buffer to this buffer.
+
+        This method schedules a memory copy operation from the source device buffer
+        to this buffer. The operation is asynchronous and will be executed in the stream
+        associated with this buffer's context.
+
+        Args:
+            src: The source device buffer to copy data from.
+
+        Raises:
+            If the operation fails.
+        """
+        self._ctx.enqueue_copy(self, src)
+
+    def enqueue_copy_to(
+        self, dst: Span[mut=True, Scalar[Self.dtype], _]
+    ) raises:
+        """Enqueues an asynchronous copy from this buffer to a host `Span`.
+
+        Args:
+            dst: The destination host span to copy data to.
+
+        Raises:
+            If the operation fails.
+        """
+        self._ctx.enqueue_copy(dst, self)
+
+    def enqueue_copy_from(self, src: Span[Scalar[Self.dtype], _]) raises:
+        """Enqueues an asynchronous copy from a host `Span` to this buffer.
+
+        Args:
+            src: The source host span to copy data from.
+
+        Raises:
+            If the operation fails.
+        """
+        self._ctx.enqueue_copy(self, src)
+
+
+# ===-----------------------------------------------------------------------===#
+# _HostMappedBuffer
+# ===-----------------------------------------------------------------------===#
+
+
+struct _HostMappedBuffer[dtype: DType]:
+    var _ctx: DeviceContext
+    var _dev_buf: DeviceBuffer[Self.dtype]
+    var _cpu_buf: HostBuffer[Self.dtype]
+
+    def __init__(
+        out self, ctx: DeviceContext, buf: DeviceBuffer[Self.dtype]
+    ) raises:
+        var cpu_buf = ctx.enqueue_create_host_buffer[Self.dtype](len(buf))
+        self._ctx = ctx
+        self._dev_buf = buf
+        self._cpu_buf = cpu_buf
+
+    def __del__(deinit self):
+        pass
+
+    def __enter__(mut self) raises -> HostBuffer[Self.dtype]:
+        self._dev_buf.enqueue_copy_to(self._cpu_buf)
+        self._ctx.synchronize()
+        return self._cpu_buf
+
+    def __exit__(mut self) raises:
+        self._ctx.synchronize()
+        self._cpu_buf.enqueue_copy_to(self._dev_buf)
+        self._ctx.synchronize()

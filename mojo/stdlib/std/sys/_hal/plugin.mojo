@@ -355,6 +355,34 @@ struct RawDriver(Movable):
                 message=String(t"failed to free_sync: {err.message}"),
             )
 
+    def alloc_pinned(
+        self, context: ContextHandle, byte_size: UInt64
+    ) raises HALError -> MemoryHandle:
+        var mem = UnsafeMaybeUninit[MemoryHandle]()
+        var status = self._raw.memory_alloc_pinned.f(
+            context, byte_size, OutParam[MemoryHandle](to=mem)
+        )
+        if status != STATUS_SUCCESS:
+            var err = self.get_status_message(status)
+            raise HALError(
+                err.status,
+                message=String(t"failed to alloc_pinned: {err.message}"),
+            )
+        return mem.unsafe_assume_init_ref()
+
+    def free_pinned(
+        self,
+        context: ContextHandle,
+        mem: MemoryHandle,
+    ) raises HALError:
+        var status = self._raw.memory_free_pinned.f(context, mem)
+        if status != STATUS_SUCCESS:
+            var err = self.get_status_message(status)
+            raise HALError(
+                err.status,
+                message=String(t"failed to free_pinned: {err.message}"),
+            )
+
     def get_memory_property[
         name: StringLiteral, T: TrivialRegisterPassable
     ](self, mem: MemoryHandle) raises HALError -> T:
