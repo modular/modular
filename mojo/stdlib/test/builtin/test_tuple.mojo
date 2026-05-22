@@ -374,5 +374,21 @@ def test_tuple_conditional_register_passable() raises:
     assert_false(conforms_to(Tuple[Bool, List[Int], Int], RegisterPassable))
 
 
+def test_tuple_homogeneous_iter() raises:
+    for i, elem in enumerate((0, 1, 2, 3)):
+        assert_equal(i, elem)
+
+    for i, elem in enumerate(("0", "1", "2", "3")):
+        assert_equal(String(i), String(elem))
+
+
+# FIXME(#6486): test once we have `comptime for` for IteratorOwned types
+# def test_tuple_homogeneous_iter_comptime() raises:
+#     comptime for i, elem in enumerate((0, 1, 2, 3)):
+#         assert_equal(i, elem)
+#     comptime for i, elem in enumerate(("0", "1", "2", "3")):
+#         assert_equal(String(i), String(elem))
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

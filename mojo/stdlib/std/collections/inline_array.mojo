@@ -35,6 +35,7 @@ var filled = InlineArray[Int, 5](fill=42)
 import std.math
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.builtin.rebind import downcast
+from std.builtin.tuple import _all_same_type
 from std.builtin.constrained import _constrained_conforms_to
 from std.collections import check_bounds
 import std.format._utils as fmt
@@ -472,6 +473,26 @@ struct InlineArray[ElementType: Copyable, size: Int](
         # Do not destroy the elements when their backing storage goes away.
         # FIXME: Why doesn't consume_elements work here?
         elems^._annihilate()
+
+    def __init__(
+        var elems: Tuple,
+        out self: InlineArray[elems.element_types[0], elems.element_types.size],
+    ) where _all_same_type[*elems.element_types]:
+        """Constructs an array from a homogeneous tuple.
+
+        Args:
+            elems: The elements to initialize the array with.
+        """
+        _inline_array_construction_checks[Self.size]()
+        self = {uninitialized = True}
+        var ptr = self.unsafe_ptr()
+
+        comptime for i in range(Self.size):
+            (ptr + i).init_pointee_move_from(
+                UnsafePointer(to=elems[i]).bitcast[self.ElementType]()
+            )
+
+        __mlir_op.`lit.ownership.mark_destroyed`(__get_mvalue_as_litref(elems))
 
     def __init__(out self, *, copy: Self):
         """Copy constructs the array from another array.

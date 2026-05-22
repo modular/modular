@@ -21,6 +21,7 @@ from std.format._utils import (
     TypeNames,
     FormatStruct,
 )
+from std.collections.inline_array import _InlineArrayIterOwned
 from std.hashlib.hasher import Hasher
 from std.reflection.traits import (
     AllComparable,
@@ -32,7 +33,7 @@ from std.reflection.traits import (
     AllRegisterPassable,
     AllWritable,
 )
-from std.sys.intrinsics import _type_is_eq
+from std.sys.intrinsics import _type_is_eq, _type_is_eq_parse_time
 
 from std.reflection.type_info import _unqualified_type_name
 
@@ -41,6 +42,14 @@ from std.utils._visualizers import lldb_formatter_wrapping_type
 # ===-----------------------------------------------------------------------===#
 # Tuple
 # ===-----------------------------------------------------------------------===#
+
+comptime _all_same_type_condition[
+    T0: Movable, T: Movable
+] = _type_is_eq_parse_time[T, T0]()
+
+comptime _all_same_type[*Ts: Movable]: Bool = Ts.all_satisfies[
+    _all_same_type_condition[Ts[0], _]
+]()
 
 
 @lldb_formatter_wrapping_type
@@ -59,6 +68,9 @@ struct Tuple[*element_types: Movable](
     # ImplicitlyDestructible and Movable are listed explicitly because
     # conditional conformances require all conformances to be stated.
     ImplicitlyDestructible,
+    IterableOwned where _all_same_type[*element_types] and conforms_to(
+        element_types[0], Copyable
+    ),
     Movable,
     RegisterPassable where AllRegisterPassable[*element_types],
     Sized,
@@ -71,6 +83,11 @@ struct Tuple[*element_types: Movable](
     Parameters:
         element_types: The elements type.
     """
+
+    comptime IteratorOwnedType: Iterator = _InlineArrayIterOwned[
+        Self.element_types[0], Self.element_types.size
+    ]
+    """The owned iterator type for this tuple."""
 
     comptime _mlir_type = __mlir_type[
         `!kgen.struct<:`,
@@ -522,3 +539,15 @@ struct Tuple[*element_types: Movable](
                     ]
                 ](UnsafePointer(to=other[i]))
             )
+
+    def __iter__(
+        var self,
+    ) -> Self.IteratorOwnedType where _all_same_type[
+        *Self.element_types
+    ] and conforms_to(Self.element_types[0], Copyable):
+        """Iterate over the homogeneous tuple.
+
+        Returns:
+            The homogeneous iterator over the tuple elements.
+        """
+        return {InlineArray(self^)}
