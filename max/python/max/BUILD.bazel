@@ -22,6 +22,7 @@ modular_nanobind_extension(
     module_name = "_core",
     new_link_root = "../modular/lib",
     deps = [
+        "//MLRT:AsyncRT/Nanobind",
         "//Support:NanobindUtils",
         "//max/python/max/_core/internal/modules",
         "@llvm-project//llvm:Support",

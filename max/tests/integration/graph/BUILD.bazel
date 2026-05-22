@@ -96,7 +96,14 @@ modular_py_test(
     ignore_extra_deps = [
         # Optional dep of max.graph, used to test loading weights
         requirement("gguf"),
+        # Loaded automatically by pytest; not imported by any test source.
+        requirement("pytest-asyncio"),
     ],
+    # ``AsyncValue.__await__`` (monkeypatched by max.engine.mlrt) declares
+    # ``AsyncValue[T]`` in its signature; mypy resolves that to
+    # ``max._core.mlrt.AsyncValue`` but the dep graph already covers it
+    # transitively via //max/python/max/engine.
+    ignore_unresolved_imports = ["max._core.mlrt.AsyncValue"],
     mojo_deps = [
         "//max:builtin_kernels",
         "//max/tests/integration/Inputs/test_user_op",
@@ -117,6 +124,7 @@ modular_py_test(
         requirement("gguf"),
         requirement("hypothesis"),
         requirement("numpy"),
+        requirement("pytest-asyncio"),
         requirement("torch"),
         requirement("torchvision"),
     ],
