@@ -2656,15 +2656,20 @@ struct CPython(Defaultable, Movable):
     # ===-------------------------------------------------------------------===#
 
     def PyUnicode_FromKindAndData(
-        self, kind: c_int, buffer: Span[Byte, _]
+        self,
+        kind: c_int,
+        buffer: Span[Byte, _],
+        size: Py_ssize_t,
     ) -> PyObjectPtr:
         """Create a Unicode object from `buffer` of pre-decoded `kind`-sized
         code units. `kind` is one of `PyUnicode_1BYTE_KIND`,
-        `PyUnicode_2BYTE_KIND`, or `PyUnicode_4BYTE_KIND`. Bypasses UTF-8
-        validation; the buffer is treated as raw code units, not encoded
-        bytes, so the caller is responsible for ensuring the byte values are
-        valid for the selected kind. `Span[Byte, _]` is used (rather than
-        `StringSlice`) because for `kind=2` and `kind=4` the buffer is a
+        `PyUnicode_2BYTE_KIND`, or `PyUnicode_4BYTE_KIND`. `size` is the
+        number of *code units* (NOT bytes); for `kind=2`/`kind=4` callers
+        must pass `len(buffer) // 2` / `// 4`. Bypasses UTF-8 validation;
+        the buffer is treated as raw code units, not encoded bytes, so the
+        caller is responsible for ensuring the byte values are valid for
+        the selected kind. `Span[Byte, _]` is used (rather than
+        `StringSlice`) because for `kind=2`/`kind=4` the buffer is a
         sequence of 2- or 4-byte code units, not UTF-8 text.
 
         Return value: New reference.
@@ -2675,7 +2680,7 @@ struct CPython(Defaultable, Movable):
         return self._PyUnicode_FromKindAndData(
             kind,
             buffer.unsafe_ptr().bitcast[c_char](),
-            Py_ssize_t(len(buffer)),
+            size,
         )
 
     # TODO: fix the signature to take str, size, and errors as args

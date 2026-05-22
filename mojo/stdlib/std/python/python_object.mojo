@@ -34,6 +34,7 @@ from ._cpython import (
     PyObjectPtr,
     PyTypeObject,
     PyUnicode_1BYTE_KIND,
+    Py_ssize_t,
 )
 from .bindings import PyMojoObject, _get_type_name, lookup_py_type_object
 from .python import Python
@@ -286,13 +287,16 @@ struct PythonObject(
         # Fast path: pure-ASCII input feeds each byte as a 1-byte code point
         # via `PyUnicode_FromKindAndData`, skipping CPython's UTF-8 decoder
         # (validation, error callback setup) that `PyUnicode_DecodeUTF8` runs.
-        # `StringSlice` is guaranteed valid UTF-8 so the fallback path will
-        # not raise on non-ASCII either.
+        # The fallback handles non-ASCII (`StringSlice` is guaranteed valid
+        # UTF-8 so `PyUnicode_DecodeUTF8` cannot fail on encoding; it can
+        # still raise on out-of-memory or similar runtime failures, which
+        # the `if not unicode:` check propagates).
         ref cpy = Python().cpython()
         var unicode: PyObjectPtr
-        if _is_ascii(string.as_bytes()):
+        var bytes = string.as_bytes()
+        if _is_ascii(bytes):
             unicode = cpy.PyUnicode_FromKindAndData(
-                PyUnicode_1BYTE_KIND, string.as_bytes()
+                PyUnicode_1BYTE_KIND, bytes, Py_ssize_t(len(bytes))
             )
         else:
             unicode = cpy.PyUnicode_DecodeUTF8(string)
