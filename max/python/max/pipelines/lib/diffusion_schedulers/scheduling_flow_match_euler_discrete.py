@@ -53,7 +53,6 @@ class FlowMatchEulerDiscreteScheduler:
         use_dynamic_shifting: bool = False,
         use_empirical_mu: bool = False,
         shift_terminal: float | None = None,
-        num_train_timesteps: int = 1000,
         order: int = 1,
         **unused_kwargs,
     ) -> None:
@@ -69,8 +68,6 @@ class FlowMatchEulerDiscreteScheduler:
             use_empirical_mu: Whether to use empirical mu.
             shift_terminal: If set, stretch shifted sigmas so the last
                 sigma equals this value instead of 1/num_steps.
-            num_train_timesteps: Number of training timesteps used to
-                determine the base sigma schedule minimum (1/num_train_timesteps).
             order: Order of the scheduler.
             **unused_kwargs: Unused keyword arguments.
         """
@@ -82,7 +79,6 @@ class FlowMatchEulerDiscreteScheduler:
         self.use_dynamic_shifting = use_dynamic_shifting
         self.use_empirical_mu = use_empirical_mu
         self.shift_terminal = shift_terminal
-        self.num_train_timesteps = num_train_timesteps
         self.order = order
 
         self._use_flow_sigmas = use_flow_sigmas
@@ -160,7 +156,7 @@ class FlowMatchEulerDiscreteScheduler:
             num_inference_steps: Number of inference steps.
             reverse: Whether to reverse the timesteps and sigmas.
             sigma_min: Optional terminal sigma for the base schedule before
-                shifting. If None, defaults to 1 / num_train_timesteps.
+                shifting. If None, defaults to 1 / num_inference_steps
 
         Returns:
             Tuple of timesteps and sigmas.
@@ -169,7 +165,7 @@ class FlowMatchEulerDiscreteScheduler:
             min_sigma = (
                 float(sigma_min)
                 if sigma_min is not None
-                else 1.0 / self.num_train_timesteps
+                else 1.0 / num_inference_steps
             )
             sigmas = np.linspace(
                 1.0,

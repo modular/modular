@@ -201,16 +201,16 @@ def bench_matmul_1d_tma_epilogue[
     comptime simd_size = 4
     comptime transpose_b = True
 
-    var shape_c = Coord(M, Idx[N]())
-    var shape_a = Coord(M, Idx[K]())
-    var shape_b = Coord(Idx[N](), Idx[K]())
+    var shape_c = Coord(M, Idx[N])
+    var shape_a = Coord(M, Idx[K])
+    var shape_b = Coord(Idx[N], Idx[K])
 
     var c_size = M * N
     var a_size = M * K
     var b_size = N * K
 
     # 1D bias layout: shape [N]
-    comptime bias_layout = row_major(Coord(Idx[N]()))
+    comptime bias_layout = row_major(Coord(Idx[N]))
 
     var cb_a = CacheBustingBuffer[dtype](a_size, simd_size, ctx)
     var cb_b = CacheBustingBuffer[dtype](b_size, simd_size, ctx)

@@ -70,8 +70,13 @@ class KVConnectorType(str, Enum):
 class KVCacheBuffer:
     """This is a collection of the KVCache buffers.
 
-    There are two types of supported buffers today: values and scales.
+    There are three types of supported buffers: values, scales, and staging.
     The scales are optional and used for FP8 quantization.
+    The staging buffer is optional and used for the fp8-KV dequant-staging
+    path (``mo.mha.ragged.paged.fp8_kv``): a pre-allocated bf16 scratch
+    buffer of shape ``[num_blocks, 2, 1, page_size, num_heads, head_dim]``
+    (one layer only) so that the MOGG op does not need to call
+    ``enqueue_create_buffer`` inside a CUDA graph capture region.
 
     The length of the list of buffers correspond to the tensor parallel degree
     where each buffer in the list corresponds to a single TP shard.
@@ -82,6 +87,7 @@ class KVCacheBuffer:
     total_num_pages: int
     values: list[Buffer]
     scales: list[Buffer] | None = None
+    staging: list[Buffer] | None = None
 
     def __post_init__(self) -> None:
         if self.total_num_pages <= 0:
@@ -90,33 +96,46 @@ class KVCacheBuffer:
         if len(self.values) == 0:
             raise ValueError("List of values must be non-empty")
 
-        if self.scales is None:
-            return
+        if self.scales is not None:
+            if len(self.scales) != len(self.values):
+                raise ValueError("Scales must be the same length as values")
 
-        if len(self.scales) != len(self.values):
-            raise ValueError("Scales must be the same length as values")
+            for value, scale in zip(self.values, self.scales, strict=True):
+                if value.device != scale.device:
+                    raise ValueError(
+                        "Corresponding values and scales must be on the same device"
+                    )
+                if isinstance(value, DevicePinnedBuffer) != isinstance(
+                    scale, DevicePinnedBuffer
+                ):
+                    raise ValueError(
+                        "Corresponding values and scales must be either both pinned or both non-pinned"
+                    )
 
-        for value, scale in zip(self.values, self.scales, strict=True):
-            if value.device != scale.device:
-                raise ValueError(
-                    "Corresponding values and scales must be on the same device"
-                )
-            if isinstance(value, DevicePinnedBuffer) != isinstance(
-                scale, DevicePinnedBuffer
-            ):
-                raise ValueError(
-                    "Corresponding values and scales must be either both pinned or both non-pinned"
-                )
+        if self.staging is not None:
+            if len(self.staging) != len(self.values):
+                raise ValueError("Staging must be the same length as values")
+
+            for value, stg in zip(self.values, self.staging, strict=True):
+                if value.device != stg.device:
+                    raise ValueError(
+                        "Corresponding values and staging must be on the same device"
+                    )
 
     @property
     def all_buffers(self) -> list[Buffer]:
-        """Returns all value and scale buffers in a single flat list.
+        """Returns all value, scale, and staging buffers in a single flat list.
 
         Returns:
             A list containing every value buffer followed by every scale
-            buffer (if scales are present).
+            buffer (if scales are present) and every staging buffer (if
+            staging is present).
         """
-        return [*self.values, *(self.scales if self.scales is not None else [])]
+        return [
+            *self.values,
+            *(self.scales if self.scales is not None else []),
+            *(self.staging if self.staging is not None else []),
+        ]
 
 
 @dataclass
@@ -427,6 +446,28 @@ class KVCacheParams(KVCacheParamInterface):
         return shape_per_block
 
     @property
+    def shape_per_staging_block(self) -> list[int]:
+        """Returns the shape of the bf16 staging block for fp8-KV dequant.
+
+        The staging buffer holds exactly ONE layer's worth of bf16 KV data
+        (``num_layers=1``) so that the MOGG op does not allocate 50x more
+        memory than needed for Gemma4-31B (50 layers).  The MOGG op always
+        writes to layer slot 0 regardless of the real layer being processed.
+
+        Returns:
+            ``[kv_dim, 1, page_size, n_kv_heads_per_device, head_dim]`` —
+            note ``num_layers=1`` in position 1.
+        """
+        kv_dim = 2 if not self.is_mla else 1
+        return [
+            kv_dim,
+            1,  # num_layers == 1: single-layer scratch
+            self.page_size,
+            self.n_kv_heads_per_device,
+            self.head_dim,
+        ]
+
+    @property
     def bytes_per_block(self) -> int:
         """Returns the number of bytes per cache block.
 
@@ -564,6 +605,13 @@ class KVCacheParams(KVCacheParamInterface):
                 )
                 if self.quantized_kv_cache
                 else None,
+                kv_staging=BufferType(
+                    DType.bfloat16,
+                    shape=["total_num_pages", *self.shape_per_staging_block],
+                    device=device,
+                )
+                if self.quantized_kv_cache
+                else None,
                 attention_dispatch_metadata=TensorType(
                     DType.int64,
                     shape=[3] if self.is_mla else [4],
@@ -632,8 +680,10 @@ class KVCacheParams(KVCacheParamInterface):
                 values.append(value)
 
             scales: list[Buffer] | None = None
+            staging: list[Buffer] | None = None
             if self.quantized_kv_cache:
                 scales = []
+                staging = []
                 assert self.kvcache_quant_config is not None
                 scale_dtype = self.kvcache_quant_config.scale_dtype
                 for device in devices:
@@ -643,9 +693,21 @@ class KVCacheParams(KVCacheParamInterface):
                         device=device,
                     )
                     scales.append(scale)
+                    stg = Buffer.zeros(
+                        shape=[
+                            total_num_pages,
+                            *self.shape_per_staging_block,
+                        ],
+                        dtype=DType.bfloat16,
+                        device=device,
+                    )
+                    staging.append(stg)
 
             kv_cache_buffer = KVCacheBuffer(
-                values=values, scales=scales, total_num_pages=total_num_pages
+                values=values,
+                scales=scales,
+                staging=staging,
+                total_num_pages=total_num_pages,
             )
             kv_cache_buffers.append(kv_cache_buffer)
         return kv_cache_buffers

@@ -33,6 +33,7 @@ from max._core.engine import PrintStyle
 from max._core.engine import TensorSpec as TensorSpec
 from max._core.profiler import set_gpu_profiling_state
 from max.driver import CPU, Buffer, Device, DLPackArray
+from max.engine._compilation_stats import _record_phase
 from max.graph import Graph, Module
 from max.profiler import traced
 from mojo.paths import _build_mojo_source_package, is_mojo_source_package_path
@@ -658,39 +659,45 @@ class InferenceSession:
         module: Module | None = None
         expected_weights: dict[str, Any] | None = None
 
-        if isinstance(model, Path | str):
-            handle = self._impl.compile_from_path(
-                model, custom_extensions_final
-            )
-        elif isinstance(model, Graph):
-            module = model.module
-            custom_extensions_final.extend(
-                _process_custom_extensions_objects(model.kernel_libraries_paths)
-            )
+        with _record_phase("compile_seconds"):
+            if isinstance(model, Path | str):
+                handle = self._impl.compile_from_path(
+                    model, custom_extensions_final
+                )
+            elif isinstance(model, Graph):
+                module = model.module
+                custom_extensions_final.extend(
+                    _process_custom_extensions_objects(
+                        model.kernel_libraries_paths
+                    )
+                )
 
-            # TODO: if the model has been loaded from a serialized MLIR file,
-            # we don't have the _weights attribute available to us
-            if hasattr(model, "_weights"):
-                expected_weights = {
-                    name: weight.value.device
-                    for name, weight in model._weights.items()
-                }
+                # TODO: if the model has been loaded from a serialized MLIR
+                # file, we don't have the _weights attribute available to us
+                if hasattr(model, "_weights"):
+                    expected_weights = {
+                        name: weight.value.device
+                        for name, weight in model._weights.items()
+                    }
 
-            # Seed the model module with kernel decls + the opaque-type
-            # mapping from the graph's KernelLibrary. The GC pipeline detects
-            # the mapping attribute and skips `mogg-import-packages`, so the
-            # expensive package-loading step (run once at KernelLibrary
-            # construction) doesn't repeat on every compile.
-            kernel_library = getattr(model, "_kernel_library", None)
-            if kernel_library is not None:
-                kernel_library._analysis.seed_kernel_decls(module.mlir_module)
+                # Seed the model module with kernel decls + the opaque-type
+                # mapping from the graph's KernelLibrary. The GC pipeline
+                # detects the mapping attribute and skips
+                # `mogg-import-packages`, so the expensive package-loading
+                # step (run once at KernelLibrary construction) doesn't
+                # repeat on every compile.
+                kernel_library = getattr(model, "_kernel_library", None)
+                if kernel_library is not None:
+                    kernel_library._analysis.seed_kernel_decls(
+                        module.mlir_module
+                    )
 
-            handle = self._compile_module(module, custom_extensions_final)
-        elif isinstance(model, Module):
-            module = model
-            handle = self._compile_module(module, custom_extensions_final)
-        else:
-            raise RuntimeError("The model is not a valid path or module.")
+                handle = self._compile_module(module, custom_extensions_final)
+            elif isinstance(model, Module):
+                module = model
+                handle = self._compile_module(module, custom_extensions_final)
+            else:
+                raise RuntimeError("The model is not a valid path or module.")
 
         compiled = CompiledModel(
             handle=handle, expected_weights=expected_weights
@@ -811,7 +818,10 @@ class InferenceSession:
                 )
             return {name: compiled._handle for name in compiled._graph_names}
 
-        models = self._impl._load_all(compiled._handle, weights_registry_real)
+        with _record_phase("init_seconds"):
+            models = self._impl._load_all(
+                compiled._handle, weights_registry_real
+            )
         result = {m.name: m for m in models}
         if len(result) != len(models):
             raise RuntimeError(

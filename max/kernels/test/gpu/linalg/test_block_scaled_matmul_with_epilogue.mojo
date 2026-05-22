@@ -66,9 +66,9 @@ def test_block_scaled_matmul_zero_rows(ctx: DeviceContext) raises:
             (
                 a_scales_dim0,
                 a_scales_dim1,
-                Idx[SF_ATOM_M[0]](),
-                Idx[SF_ATOM_M[1]](),
-                Idx[SF_ATOM_K](),
+                Idx[SF_ATOM_M[0]],
+                Idx[SF_ATOM_M[1]],
+                Idx[SF_ATOM_K],
             )
         ),
     )
@@ -78,9 +78,9 @@ def test_block_scaled_matmul_zero_rows(ctx: DeviceContext) raises:
             (
                 b_scales_dim0,
                 b_scales_dim1,
-                Idx[SF_ATOM_M[0]](),
-                Idx[SF_ATOM_M[1]](),
-                Idx[SF_ATOM_K](),
+                Idx[SF_ATOM_M[0]],
+                Idx[SF_ATOM_M[1]],
+                Idx[SF_ATOM_K],
             )
         ),
     )

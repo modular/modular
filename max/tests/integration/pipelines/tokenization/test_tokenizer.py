@@ -21,19 +21,6 @@ import numpy as np
 import pytest
 import requests
 from max.driver import DeviceSpec, accelerator_count
-from max.interfaces import (
-    ImageContentPart,
-    MessageContent,
-    RequestID,
-    SamplingParams,
-    TextContentPart,
-    TextGenerationRequest,
-    TextGenerationRequestFunction,
-    TextGenerationRequestMessage,
-    TextGenerationRequestTool,
-    TextGenerationResponseFormat,
-    TokenBuffer,
-)
 from max.pipelines import (
     PIPELINE_REGISTRY,
     PipelineConfig,
@@ -48,6 +35,19 @@ from max.pipelines.core import (
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, SamplingConfig
 from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
+from max.pipelines.modeling.types import (
+    ImageContentPart,
+    MessageContent,
+    RequestID,
+    SamplingParams,
+    TextContentPart,
+    TextGenerationRequest,
+    TextGenerationRequestFunction,
+    TextGenerationRequestMessage,
+    TextGenerationRequestTool,
+    TextGenerationResponseFormat,
+    TokenBuffer,
+)
 from test_common.mocks import mock_estimate_memory_footprint
 from transformers import AutoConfig
 

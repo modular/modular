@@ -16,7 +16,7 @@ from std.gpu.host import DeviceContext
 from std.builtin.simd import SIMD
 from compiler import register
 
-from tensor import InputTensor, OutputTensor, foreach
+from extensibility import InputTensor, OutputTensor, foreach
 
 from std.utils.index import IndexList
 

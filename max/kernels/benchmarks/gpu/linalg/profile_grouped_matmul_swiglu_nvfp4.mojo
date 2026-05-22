@@ -391,16 +391,16 @@ def main() raises:
             return Int64(v)
 
         comptime b_shape = row_major(
-            Coord(Idx[num_experts](), Idx[N](), Idx[packed_K]())
+            Coord(Idx[num_experts], Idx[N], Idx[packed_K])
         )
         comptime b_scales_shape = row_major(
             Coord(
-                Idx[num_experts](),
-                Idx[n_groups_b](),
-                Idx[k_groups](),
-                Idx[SF_ATOM_M[0]](),
-                Idx[SF_ATOM_M[1]](),
-                Idx[SF_ATOM_K](),
+                Idx[num_experts],
+                Idx[n_groups_b],
+                Idx[k_groups],
+                Idx[SF_ATOM_M[0]],
+                Idx[SF_ATOM_M[1]],
+                Idx[SF_ATOM_K],
             )
         )
 
@@ -418,7 +418,7 @@ def main() raises:
         ).as_any_origin()
         var expert_scales_tt = TileTensor(
             expert_scales_dev,
-            row_major(Coord(Idx[num_experts]())),
+            row_major(Coord(Idx[num_experts])),
         ).as_any_origin()
         var input_scales_tt = TileTensor(
             input_scales_dev,
@@ -426,20 +426,20 @@ def main() raises:
         ).as_any_origin()
 
         var c_bf16_tt = TileTensor(
-            c_bf16_buf, row_major(Coord(_ri(M), Idx[N]()))
+            c_bf16_buf, row_major(Coord(_ri(M), Idx[N]))
         ).as_any_origin()
         var o_tt = TileTensor(
-            o_buf, row_major(Coord(_ri(M), Idx[packed_H]()))
+            o_buf, row_major(Coord(_ri(M), Idx[packed_H]))
         ).as_any_origin()
         var s_tt = TileTensor(
             s_buf,
             row_major(
                 Coord(
                     _ri(a_scale_dim0),
-                    Idx[k_groups_swiglu](),
-                    Idx[SF_ATOM_M[0]](),
-                    Idx[SF_ATOM_M[1]](),
-                    Idx[SF_ATOM_K](),
+                    Idx[k_groups_swiglu],
+                    Idx[SF_ATOM_M[0]],
+                    Idx[SF_ATOM_M[1]],
+                    Idx[SF_ATOM_K],
                 )
             ),
         ).as_any_origin()
@@ -502,7 +502,7 @@ def main() raises:
         def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
             var a_tt = TileTensor(
                 cb_a.offset_ptr(iteration),
-                row_major(Coord(_ri(M), Idx[packed_K]())),
+                row_major(Coord(_ri(M), Idx[packed_K])),
             ).as_any_origin()
             var b_tt = TileTensor(
                 cb_b.offset_ptr(iteration), b_shape
@@ -512,10 +512,10 @@ def main() raises:
                 row_major(
                     Coord(
                         _ri(a_scale_dim0),
-                        Idx[k_groups](),
-                        Idx[SF_ATOM_M[0]](),
-                        Idx[SF_ATOM_M[1]](),
-                        Idx[SF_ATOM_K](),
+                        Idx[k_groups],
+                        Idx[SF_ATOM_M[0]],
+                        Idx[SF_ATOM_M[1]],
+                        Idx[SF_ATOM_K],
                     )
                 ),
             ).as_any_origin()

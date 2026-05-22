@@ -28,8 +28,8 @@ modular_py_test(
         "requires-network",
     ],
     deps = [
-        "//max/python/max/interfaces",
         "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/modeling",
         requirement("pillow"),
         requirement("pytest-asyncio"),
         requirement("pytest-mock"),

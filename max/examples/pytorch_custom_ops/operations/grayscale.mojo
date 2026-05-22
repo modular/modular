@@ -16,7 +16,7 @@
 import compiler
 
 from std.gpu.host import DeviceContext
-from tensor import InputTensor, OutputTensor, foreach
+from extensibility import InputTensor, OutputTensor, foreach
 
 from std.utils.index import IndexList
 

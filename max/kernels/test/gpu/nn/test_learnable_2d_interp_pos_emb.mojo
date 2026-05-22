@@ -88,7 +88,7 @@ def test_no_interp_no_temporal[dtype: DType](ctx: DeviceContext) raises:
 
     var x_d = TileTensor(x_dev, row_major(L, dim))
     var w_d = TileTensor(w_dev, row_major(H, W, dim))
-    var g_d = TileTensor(g_dev, row_major(N, Idx[3]()))
+    var g_d = TileTensor(g_dev, row_major(N, Idx[3]))
     var tw_d = TileTensor(tw_dev, row_major(num_frames, dim))
     var out_d = TileTensor(out_dev, row_major(L, dim))
 
@@ -171,7 +171,7 @@ def test_no_interp_with_temporal[dtype: DType](ctx: DeviceContext) raises:
 
     var x_d = TileTensor(x_dev, row_major(L, dim))
     var w_d = TileTensor(w_dev, row_major(H, W, dim))
-    var g_d = TileTensor(g_dev, row_major(N, Idx[3]()))
+    var g_d = TileTensor(g_dev, row_major(N, Idx[3]))
     var tw_d = TileTensor(tw_dev, row_major(num_frames, dim))
     var out_d = TileTensor(out_dev, row_major(L, dim))
 
@@ -261,7 +261,7 @@ def test_bicubic_constant_field[dtype: DType](ctx: DeviceContext) raises:
 
     var x_d = TileTensor(x_dev, row_major(L, dim))
     var w_d = TileTensor(w_dev, row_major(H, W, dim))
-    var g_d = TileTensor(g_dev, row_major(N, Idx[3]()))
+    var g_d = TileTensor(g_dev, row_major(N, Idx[3]))
     var tw_d = TileTensor(tw_dev, row_major(num_frames, dim))
     var out_d = TileTensor(out_dev, row_major(L, dim))
 
@@ -415,7 +415,7 @@ def test_multi_video[dtype: DType](ctx: DeviceContext) raises:
 
     var x_d = TileTensor(x_dev, row_major(L, dim))
     var w_d = TileTensor(w_dev, row_major(H, W, dim))
-    var g_d = TileTensor(g_dev, row_major(N, Idx[3]()))
+    var g_d = TileTensor(g_dev, row_major(N, Idx[3]))
     var tw_d = TileTensor(tw_dev, row_major(num_frames, dim))
     var out_d = TileTensor(out_dev, row_major(L, dim))
 

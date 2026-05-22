@@ -39,11 +39,10 @@ from max.nn.kv_cache.cache_params import (
     KVCacheParamInterface,
 )
 from max.pipelines.lib.utils import upper_bounded_default
+from max.pipelines.modeling.config_enums import supported_encoding_dtype
+from max.pipelines.modeling.kv_cache_config import KVCacheConfig
 from transformers import AutoConfig
 from typing_extensions import Self, override
-
-from ..config.config_enums import supported_encoding_dtype
-from ..config.kv_cache_config import KVCacheConfig
 
 if TYPE_CHECKING:
     from max.pipelines.lib.config import PipelineConfig

@@ -325,12 +325,10 @@ def load_AB_cuda_core[
     comptime a_sw = make_swizzle[a_type, a_swizzle]()
     var a_smem_ptr = a_smem_tiles[stage].ptr
     comptime a_rows_per_thread = BM // WARP_SIZE
-    comptime a_tv = tl_col_major(
-        Coord(Idx[WARP_SIZE](), Idx[a_rows_per_thread]())
-    )
+    comptime a_tv = tl_col_major(Coord(Idx[WARP_SIZE], Idx[a_rows_per_thread]))
 
     comptime for v in range(a_rows_per_thread):
-        var m = a_tv[linear_idx_type=DType.int32](Coord(Int32(tid), Idx[v]()))
+        var m = a_tv[linear_idx_type=DType.int32](Coord(Int32(tid), Idx[v]))
         var vec = a_gmem.load[K_actual, a_row_align](
             Int(a_row0 + m), Int(a_col0)
         )
@@ -345,12 +343,10 @@ def load_AB_cuda_core[
     comptime b_sw = make_swizzle[b_type, b_swizzle]()
     var b_smem_ptr = b_smem_tiles[stage].ptr
     comptime b_rows_per_thread = BN // WARP_SIZE
-    comptime b_tv = tl_col_major(
-        Coord(Idx[WARP_SIZE](), Idx[b_rows_per_thread]())
-    )
+    comptime b_tv = tl_col_major(Coord(Idx[WARP_SIZE], Idx[b_rows_per_thread]))
 
     comptime for v in range(b_rows_per_thread):
-        var n = b_tv[linear_idx_type=DType.int32](Coord(Int32(tid), Idx[v]()))
+        var n = b_tv[linear_idx_type=DType.int32](Coord(Int32(tid), Idx[v]))
         var vec = b_gmem.load[K_actual, b_row_align](
             Int(b_row0 + n), Int(b_col0)
         )

@@ -13,9 +13,9 @@
 """Architecture registration for Bert sentence transformer."""
 
 from max.graph.weights import WeightsFormat
-from max.interfaces import PipelineTask
 from max.pipelines.core import TextContext
 from max.pipelines.lib import SupportedArchitecture
+from max.pipelines.modeling.types import PipelineTask
 
 from . import weight_adapters
 from .model import BertPipelineModel

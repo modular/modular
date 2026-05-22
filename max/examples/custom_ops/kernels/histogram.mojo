@@ -21,7 +21,7 @@ from std.gpu.host import DeviceBuffer
 from std.gpu.memory import AddressSpace
 from std.memory import stack_allocation
 
-from tensor import InputTensor, ManagedTensorSlice, OutputTensor
+from extensibility import InputTensor, ManagedTensorSlice, OutputTensor
 
 from std.utils import StaticTuple
 

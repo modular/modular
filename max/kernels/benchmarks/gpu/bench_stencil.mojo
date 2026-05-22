@@ -76,10 +76,10 @@ def bench_stencil_avg_pool[
         h_input_ptr,
         row_major(
             Coord(
-                Idx[1](),
-                Idx[input_height](),
-                Idx[input_width](),
-                Idx[num_channels](),
+                Idx[1],
+                Idx[input_height],
+                Idx[input_width],
+                Idx[num_channels],
             )
         ),
     )
@@ -88,10 +88,10 @@ def bench_stencil_avg_pool[
         h_output_ptr,
         row_major(
             Coord(
-                Idx[1](),
+                Idx[1],
                 Int64(output_height),
                 Int64(output_width),
-                Idx[num_channels](),
+                Idx[num_channels],
             )
         ),
     )
@@ -100,10 +100,10 @@ def bench_stencil_avg_pool[
         h_output_ref_ptr,
         row_major(
             Coord(
-                Idx[1](),
+                Idx[1],
                 Int64(output_height),
                 Int64(output_width),
-                Idx[num_channels](),
+                Idx[num_channels],
             )
         ),
     )
@@ -118,10 +118,10 @@ def bench_stencil_avg_pool[
         d_input_buf,
         row_major(
             Coord(
-                Idx[1](),
-                Idx[input_height](),
-                Idx[input_width](),
-                Idx[num_channels](),
+                Idx[1],
+                Idx[input_height],
+                Idx[input_width],
+                Idx[num_channels],
             )
         ),
     )
@@ -130,10 +130,10 @@ def bench_stencil_avg_pool[
         d_output_buf,
         row_major(
             Coord(
-                Idx[1](),
+                Idx[1],
                 Int64(output_height),
                 Int64(output_width),
-                Idx[num_channels](),
+                Idx[num_channels],
             )
         ),
     )
@@ -367,10 +367,10 @@ def bench_stencil_max_pool[
         h_input_ptr,
         row_major(
             Coord(
-                Idx[1](),
-                Idx[input_height](),
-                Idx[input_width](),
-                Idx[num_channels](),
+                Idx[1],
+                Idx[input_height],
+                Idx[input_width],
+                Idx[num_channels],
             )
         ),
     )
@@ -379,10 +379,10 @@ def bench_stencil_max_pool[
         h_output_ptr,
         row_major(
             Coord(
-                Idx[1](),
+                Idx[1],
                 Int64(output_height),
                 Int64(output_width),
-                Idx[num_channels](),
+                Idx[num_channels],
             )
         ),
     )
@@ -391,10 +391,10 @@ def bench_stencil_max_pool[
         h_output_ref_ptr,
         row_major(
             Coord(
-                Idx[1](),
+                Idx[1],
                 Int64(output_height),
                 Int64(output_width),
-                Idx[num_channels](),
+                Idx[num_channels],
             )
         ),
     )
@@ -409,10 +409,10 @@ def bench_stencil_max_pool[
         d_input_buf,
         row_major(
             Coord(
-                Idx[1](),
-                Idx[input_height](),
-                Idx[input_width](),
-                Idx[num_channels](),
+                Idx[1],
+                Idx[input_height],
+                Idx[input_width],
+                Idx[num_channels],
             )
         ),
     )
@@ -421,10 +421,10 @@ def bench_stencil_max_pool[
         d_output_buf,
         row_major(
             Coord(
-                Idx[1](),
+                Idx[1],
                 Int64(output_height),
                 Int64(output_width),
-                Idx[num_channels](),
+                Idx[num_channels],
             )
         ),
     )
@@ -650,19 +650,17 @@ def bench_stencil_avg_pool_padded[
     var h_input_ptr = List(length=input_size, fill=Scalar[dtype](0))
     var h_input = TileTensor(
         h_input_ptr,
-        row_major(
-            Coord(Idx[1](), Idx[input_height](), Idx[input_width](), Idx[1]())
-        ),
+        row_major(Coord(Idx[1], Idx[input_height], Idx[input_width], Idx[1])),
     )
     var h_output_ptr = List(length=output_size, fill=Scalar[dtype](0))
     var h_output = TileTensor(
         h_output_ptr,
         row_major(
             Coord(
-                Idx[1](),
+                Idx[1],
                 Int64(output_height),
                 Int64(output_width),
-                Idx[1](),
+                Idx[1],
             )
         ),
     )
@@ -671,10 +669,10 @@ def bench_stencil_avg_pool_padded[
         h_output_ref_ptr,
         row_major(
             Coord(
-                Idx[1](),
+                Idx[1],
                 Int64(output_height),
                 Int64(output_width),
-                Idx[1](),
+                Idx[1],
             )
         ),
     )
@@ -689,10 +687,10 @@ def bench_stencil_avg_pool_padded[
         d_input_buf,
         row_major(
             Coord(
-                Idx[1](),
-                Idx[input_height](),
-                Idx[input_width](),
-                Idx[1](),
+                Idx[1],
+                Idx[input_height],
+                Idx[input_width],
+                Idx[1],
             )
         ),
     )
@@ -701,10 +699,10 @@ def bench_stencil_avg_pool_padded[
         d_output_buf,
         row_major(
             Coord(
-                Idx[1](),
+                Idx[1],
                 Int64(output_height),
                 Int64(output_width),
-                Idx[1](),
+                Idx[1],
             )
         ),
     )

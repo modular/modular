@@ -106,15 +106,15 @@ def test_gemma4_global_decode(ctx: DeviceContext) raises:
 
     var q_device = TileTensor(
         q_device_ptr,
-        row_major((batch_size, seq_len, Idx[num_heads](), Idx[depth]())),
+        row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
     )
     var k_device = TileTensor(
         k_device_ptr,
-        row_major((batch_size, num_keys, Idx[kv_num_heads](), Idx[depth]())),
+        row_major((batch_size, num_keys, Idx[kv_num_heads], Idx[depth])),
     )
     var v_device = TileTensor(
         v_device_ptr,
-        row_major((batch_size, num_keys, Idx[kv_num_heads](), Idx[depth]())),
+        row_major((batch_size, num_keys, Idx[kv_num_heads], Idx[depth])),
     )
     var mask_device = TileTensor(
         mask_device_ptr,
@@ -122,11 +122,11 @@ def test_gemma4_global_decode(ctx: DeviceContext) raises:
     )
     var actual_device = TileTensor(
         actual_device_ptr,
-        row_major((batch_size, seq_len, Idx[num_heads](), Idx[depth]())),
+        row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
     )
     var expect_device = TileTensor(
         expect_device_ptr,
-        row_major((batch_size, seq_len, Idx[num_heads](), Idx[depth]())),
+        row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
     )
 
     flash_attention(

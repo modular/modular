@@ -23,5 +23,15 @@
     "source": "/nightly/community/",
     "dest": "/community/",
     "status": 301
+  },
+  {
+    "source": "https://www\\.mojolang\\.org/(.*)",
+    "dest": "https://mojolang.org/{0}",
+    "status": 301
+  },
+  {
+    "source": "https://mojolang\\.com/(.*)",
+    "dest": "https://mojolang.org/{0}",
+    "status": 301
   }
 ]

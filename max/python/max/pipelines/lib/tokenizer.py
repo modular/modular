@@ -28,7 +28,13 @@ from urllib.parse import urlsplit
 
 import numpy as np
 import numpy.typing as npt
-from max.interfaces import (
+from max.pipelines.core import (
+    GrammarEnforcementState,
+    TextAndVisionContext,
+    TextContext,
+)
+from max.pipelines.lib.reasoning import get_parser_cls
+from max.pipelines.modeling.types import (
     EOSTracker,
     ImageMetadata,
     PipelineTokenizer,
@@ -37,12 +43,6 @@ from max.interfaces import (
     TextGenerationRequestTool,
     TokenBuffer,
 )
-from max.pipelines.core import (
-    GrammarEnforcementState,
-    TextAndVisionContext,
-    TextContext,
-)
-from max.pipelines.lib.reasoning import get_parser_cls
 from max.support.image import find_contiguous_ranges, hash_image
 from PIL import Image
 from transformers import (
@@ -371,7 +371,7 @@ async def build_eos_tracker_for_request(
     request: TextGenerationRequest,
     encode_fn: Callable[[str, bool], Awaitable[npt.NDArray[np.integer[Any]]]],
 ) -> EOSTracker:
-    """Builds an :class:`~max.interfaces.EOSTracker` from request sampling params.
+    """Builds an :class:`~max.pipelines.modeling.types.EOSTracker` from request sampling params.
 
     Args:
         default_eos_token_ids: Default EOS token IDs from tokenizer/model config.
@@ -379,7 +379,7 @@ async def build_eos_tracker_for_request(
         encode_fn: Async encode callable ``(text, add_special_tokens) -> token ids``.
 
     Returns:
-        Configured :class:`~max.interfaces.EOSTracker` for this request.
+        Configured :class:`~max.pipelines.modeling.types.EOSTracker` for this request.
     """
     params = request.sampling_params
     eos_token_ids = set(default_eos_token_ids)

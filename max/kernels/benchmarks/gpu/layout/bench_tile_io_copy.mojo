@@ -118,7 +118,7 @@ def _tile_io_copy[
     src_ptr: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
     dst_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
 ):
-    comptime thread_layout = row_major(Idx[thread_rows](), Idx[thread_cols]())
+    comptime thread_layout = row_major(Idx[thread_rows], Idx[thread_cols])
 
     var smem = stack_allocation[dtype=dtype, address_space=AddressSpace.SHARED](
         row_major[M, N]()

@@ -104,8 +104,8 @@ def run_mha[
                         (
                             batch_size,
                             seq_len,
-                            Idx[num_heads](),
-                            Idx[depth](),
+                            Idx[num_heads],
+                            Idx[depth],
                         )
                     ),
                 )
@@ -115,8 +115,8 @@ def run_mha[
                         (
                             batch_size,
                             num_keys,
-                            Idx[kv_num_heads](),
-                            Idx[depth](),
+                            Idx[kv_num_heads],
+                            Idx[depth],
                         )
                     ),
                 )
@@ -126,8 +126,8 @@ def run_mha[
                         (
                             batch_size,
                             num_keys,
-                            Idx[kv_num_heads](),
-                            Idx[depth](),
+                            Idx[kv_num_heads],
+                            Idx[depth],
                         )
                     ),
                 )
@@ -137,8 +137,8 @@ def run_mha[
                         (
                             batch_size,
                             seq_len,
-                            Idx[num_heads](),
-                            Idx[depth](),
+                            Idx[num_heads],
+                            Idx[depth],
                         )
                     ),
                 )
@@ -187,8 +187,8 @@ def run_mha[
             (
                 batch_size,
                 seq_len,
-                Idx[num_heads](),
-                Idx[depth](),
+                Idx[num_heads],
+                Idx[depth],
             )
         ),
     )
@@ -198,8 +198,8 @@ def run_mha[
             (
                 batch_size,
                 num_keys,
-                Idx[kv_num_heads](),
-                Idx[depth](),
+                Idx[kv_num_heads],
+                Idx[depth],
             )
         ),
     )
@@ -209,8 +209,8 @@ def run_mha[
             (
                 batch_size,
                 num_keys,
-                Idx[kv_num_heads](),
-                Idx[depth](),
+                Idx[kv_num_heads],
+                Idx[depth],
             )
         ),
     )
@@ -220,8 +220,8 @@ def run_mha[
             (
                 batch_size,
                 seq_len,
-                Idx[num_heads](),
-                Idx[depth](),
+                Idx[num_heads],
+                Idx[depth],
             )
         ),
     )
@@ -288,8 +288,8 @@ def run_mha[
                 (
                     batch_size,
                     seq_len,
-                    Idx[num_heads](),
-                    Idx[depth](),
+                    Idx[num_heads],
+                    Idx[depth],
                 )
             ),
         )

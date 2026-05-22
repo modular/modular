@@ -43,6 +43,7 @@ from std.logger import Logger
 from std.memory import bitcast
 from std.runtime.tracing import Trace, TraceLevel, trace_arg
 from std.algorithm import elementwise
+from std.utils.coord import Coord, Idx, coord_to_index_list
 from std.utils.index import Index, IndexList, StaticTuple
 from std.utils.numerics import get_accum_type, max_finite
 
@@ -110,13 +111,13 @@ def quantize_static_scaled_fp8[
     ]()
 
     def scaled_fp8_quant_unified[
-        width: Int, rank: Int, alignment: Int = 1
-    ](idx: IndexList[rank]) register_passable {}:
-        scaled_fp8_quant[width, rank, alignment](idx)
+        width: Int, alignment: Int = 1
+    ](idx: Coord) register_passable {}:
+        scaled_fp8_quant[width, idx.rank, alignment](coord_to_index_list(idx))
 
     _elementwise_impl_gpu[simd_width=target_simd_width](
         scaled_fp8_quant_unified,
-        shape=IndexList[2](Int(in_tensor.dim[0]()), Int(in_tensor.dim[1]())),
+        shape=(Int(in_tensor.dim[0]()), Int(in_tensor.dim[1]())),
         ctx=context,
     )
 
@@ -964,17 +965,17 @@ def _matmul_dynamic_scaled_fp8_impl[
                 _dtype, width
             ]:
                 var a_scale = a_scales.load[width=1](
-                    Coord(Idx[0](), idx[0])
+                    Coord(Idx[0], idx[0])
                 ).cast[DType.float32]()
                 var b_scale: SIMD[DType.float32, width]
 
                 comptime if transpose_b:
                     b_scale = b_scales.load[width=width](
-                        Coord(idx[1], Idx[0]())
+                        Coord(idx[1], Idx[0])
                     ).cast[DType.float32]()
                 else:
                     b_scale = b_scales.load[width=width](
-                        Coord(Idx[0](), idx[1])
+                        Coord(Idx[0], idx[1])
                     ).cast[DType.float32]()
 
                 var scaled_val = val.cast[DType.float32]() * a_scale * b_scale
@@ -992,10 +993,10 @@ def _matmul_dynamic_scaled_fp8_impl[
                 _dtype, width
             ]:
                 var a_scale = a_scales.load[width=1](
-                    Coord(Idx[0](), Idx[0]())
+                    Coord(Idx[0], Idx[0])
                 ).cast[DType.float32]()
                 var b_scale = b_scales.load[width=1](
-                    Coord(Idx[0](), Idx[0]())
+                    Coord(Idx[0], Idx[0])
                 ).cast[DType.float32]()
                 var scaled_val = val.cast[DType.float32]() * a_scale * b_scale
                 return scaled_val.cast[_dtype]()
@@ -1026,17 +1027,17 @@ def _matmul_dynamic_scaled_fp8_impl[
                 dtype: DType, width: SIMDSize, *, alignment: Int = 1
             ](idx: IndexList[2], val: SIMD[dtype, width]):
                 var a_scale = a_scales.load[width=1](
-                    Coord(Idx[0](), idx[0])
+                    Coord(Idx[0], idx[0])
                 ).cast[dtype]()
                 var b_scale: SIMD[dtype, width]
 
                 comptime if transpose_b:
                     b_scale = b_scales.load[width=width](
-                        Coord(idx[1], Idx[0]())
+                        Coord(idx[1], Idx[0])
                     ).cast[dtype]()
                 else:
                     b_scale = b_scales.load[width=width](
-                        Coord(Idx[0](), idx[1])
+                        Coord(Idx[0], idx[1])
                     ).cast[dtype]()
 
                 var scaled_val = val * a_scale * b_scale
@@ -1053,10 +1054,10 @@ def _matmul_dynamic_scaled_fp8_impl[
                 dtype: DType, width: SIMDSize, *, alignment: Int = 1
             ](idx: IndexList[2], val: SIMD[dtype, width]):
                 var a_scale = a_scales.load[width=1](
-                    Coord(Idx[0](), Idx[0]())
+                    Coord(Idx[0], Idx[0])
                 ).cast[dtype]()
                 var b_scale = b_scales.load[width=1](
-                    Coord(Idx[0](), Idx[0]())
+                    Coord(Idx[0], Idx[0])
                 ).cast[dtype]()
                 var scaled_val = val * a_scale * b_scale
 
@@ -1077,7 +1078,7 @@ def _matmul_dynamic_scaled_fp8_impl[
                 )
                 var c_scratch = TileTensor(
                     scratch_buffer.unsafe_ptr(),
-                    row_major(Coord(M, Idx[b_N]())),
+                    row_major(Coord(M, Idx[b_N])),
                 )
 
                 comptime if input_scale_granularity == "tensor":
@@ -1658,14 +1659,15 @@ def convert_e4m3fn_to_e4m3fnuz(
     ]()
 
     def convert_kernel_unified[
-        width: Int, rank: Int, alignment: Int = 1
-    ](idx: IndexList[rank]) register_passable {}:
-        convert_kernel[width, rank, alignment](idx)
+        width: Int, alignment: Int = 1
+    ](idx: Coord) register_passable {}:
+        convert_kernel[width, idx.rank, alignment](coord_to_index_list(idx))
 
     _elementwise_impl_gpu[simd_width=target_simd_width](
         convert_kernel_unified,
-        shape=IndexList[2](
-            Int(input_buffer.dim[0]()), Int(input_buffer.dim[1]())
+        shape=(
+            Int(input_buffer.dim[0]()),
+            Int(input_buffer.dim[1]()),
         ),
         ctx=context,
     )

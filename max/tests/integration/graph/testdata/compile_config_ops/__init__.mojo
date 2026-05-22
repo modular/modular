@@ -16,7 +16,7 @@ from std.sys import get_defined_int
 import compiler
 from std.gpu.host import DeviceContext
 from std.logger import Logger
-from tensor import foreach, OutputTensor, InputTensor
+from extensibility import foreach, OutputTensor, InputTensor
 
 
 from std.utils.index import IndexList

@@ -17,12 +17,6 @@ from unittest.mock import MagicMock, call, patch
 import numpy as np
 import numpy.typing as npt
 import pytest
-from max.interfaces import (
-    PipelineTask,
-    RequestID,
-    TextGenerationInputs,
-    TokenBuffer,
-)
 from max.pipelines.core import TextContext
 from max.pipelines.core.context import FUTURE_TOKEN
 from max.pipelines.lib import (
@@ -35,6 +29,12 @@ from max.pipelines.lib.pipeline_variants.overlap_text_generation import (
 )
 from max.pipelines.lib.pipeline_variants.utils import StructuredOutputHelper
 from max.pipelines.lib.registry import get_pipeline_for_task
+from max.pipelines.modeling.types import (
+    PipelineTask,
+    RequestID,
+    TextGenerationInputs,
+    TokenBuffer,
+)
 
 
 def test_throws_if_num_steps_gt_1() -> None:

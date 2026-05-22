@@ -1,0 +1,35 @@
+load("//bazel:api.bzl", "modular_py_library", "mojo_shared_library")
+
+package(default_visibility = ["//max:consumers"])
+
+mojo_shared_library(
+    name = "mojo_module",
+    srcs = ["mojo_module.mojo"],
+    shared_lib_name = "mojo_module.so",
+    deps = [
+        "@mojo//:std",
+    ],
+)
+
+modular_py_library(
+    name = "_hal",
+    srcs = [
+        "__init__.py",
+        "context.py",
+        "device.py",
+        "driver.py",
+        "event.py",
+        "queue.py",
+        "stream.py",
+    ],
+    data = [
+        ":mojo_module",
+    ],
+    visibility = [
+        "//MLRT/test/Driver/HAL:__pkg__",
+        "//max:consumers",
+    ],
+    deps = [
+        "@mojo//:python",
+    ],
+)

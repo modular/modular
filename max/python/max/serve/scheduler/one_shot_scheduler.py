@@ -23,7 +23,7 @@ import queue
 from collections.abc import Callable
 from typing import Generic
 
-from max.interfaces import (
+from max.pipelines.modeling.types import (
     BaseContextType,
     Pipeline,
     PipelineInputsType,

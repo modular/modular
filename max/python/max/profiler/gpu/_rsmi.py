@@ -31,8 +31,6 @@ _RSMI_STATUS_SUCCESS = 0
 _RSMI_STATUS_NOT_SUPPORTED = 2
 
 _RSMI_MEM_TYPE_VRAM = 0
-_RSMI_MEM_TYPE_VIS_VRAM = 1
-_RSMI_MEM_TYPE_GTT = 2
 
 _RSMI_CLK_TYPE_SYS = 0
 _RSMI_CLK_TYPE_MEM = 4
@@ -46,6 +44,22 @@ _RSMI_CLK_TYPE_MEM = 4
 # stats path returns None rather than a bogus number, but environments still
 # on rocm-smi <6.0 should treat clock reporting as unsupported.
 _RSMI_MAX_NUM_FREQUENCIES = 33
+
+
+class _rsmi_process_info_t(ctypes.Structure):
+    _fields_ = [
+        ("process_id", ctypes.c_uint32),
+        ("pasid", ctypes.c_uint32),
+        ("vram_usage", ctypes.c_uint64),  # bytes
+        ("sdma_usage", ctypes.c_uint64),  # microseconds
+        ("cu_occupancy", ctypes.c_uint32),
+    ]
+
+    process_id: int
+    pasid: int
+    vram_usage: int
+    sdma_usage: int
+    cu_occupancy: int
 
 
 class _rsmi_frequencies_t(ctypes.Structure):
@@ -107,6 +121,15 @@ class _RSMILibrary(Protocol):
     ) -> _rsmi_status_t: ...
 
 
+@runtime_checkable
+class _RSMIProcessExtensions(Protocol):
+    def rsmi_compute_process_info_by_pid_get(
+        self,
+        pid: Annotated[int, ctypes.c_uint32],
+        proc: ctypes._Pointer[_rsmi_process_info_t],
+    ) -> _rsmi_status_t: ...
+
+
 class RSMIError(Exception):
     def __init__(self, code: _rsmi_status_t, message: str, /) -> None:
         super().__init__(message)
@@ -132,6 +155,7 @@ class RSMIContext:
 
     def __init__(self) -> None:
         self._library: _RSMILibrary | None = None
+        self._process_library: _RSMIProcessExtensions | None = None
 
     def __enter__(self) -> RSMIContext:
         if self._library is not None:
@@ -140,6 +164,12 @@ class RSMIContext:
         lib = _bindtools.bind_protocol(cdll, _RSMILibrary)
         _check_rsmi_status(lib, lib.rsmi_init(0))
         self._library = lib
+        try:
+            self._process_library = _bindtools.bind_protocol(
+                cdll, _RSMIProcessExtensions
+            )
+        except AttributeError:
+            self._process_library = None
         return self
 
     def __exit__(
@@ -151,6 +181,7 @@ class RSMIContext:
         if self._library is not None:
             self._library.rsmi_shut_down()
         self._library = None
+        self._process_library = None
 
     def _get_count(self) -> int:
         if self._library is None:
@@ -290,6 +321,32 @@ class RSMIContext:
             ),
             clocks=self._get_clock_stats(index),
         )
+
+    def get_process_memory_bytes(self, pid: int) -> int | None:
+        """Return VRAM in bytes used by pid, or None if not found or unsupported.
+
+        Calls ``rsmi_compute_process_info_by_pid_get`` which returns the total
+        VRAM allocated by the process across all GPU devices it is using.
+
+        Args:
+            pid: OS process ID to look up.
+
+        Returns:
+            VRAM usage in bytes, or ``None`` if the process is not running on
+            any GPU or if the per-process API is unavailable on this ROCm version.
+        """
+        if self._library is None or self._process_library is None:
+            return None
+        proc = _rsmi_process_info_t()
+        try:
+            status = self._process_library.rsmi_compute_process_info_by_pid_get(
+                pid, _bindtools.byref(proc)
+            )
+        except Exception:
+            return None
+        if status != _RSMI_STATUS_SUCCESS:
+            return None
+        return proc.vram_usage
 
     def get_stats(self) -> dict[int, GPUStats]:
         """Get GPU statistics for all GPUs."""

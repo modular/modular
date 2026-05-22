@@ -176,7 +176,7 @@ def grouped_matmul_block_scaled[
 
     # Reshape B from (num_experts, N, K) to (num_experts * N, K)
     var b_device = _b_device.reshape(
-        row_major(Coord(Idx[num_experts * N](), Idx[K]()))
+        row_major(Coord(Idx[num_experts * N], Idx[K]))
     )
 
     comptime if config.cta_group == 2:
@@ -291,10 +291,10 @@ def grouped_matmul_block_scaled[
     from std.memory import UnsafePointer as Ptr
 
     var sfa_4d_shape = Coord(
-        Idx[1](),
+        Idx[1],
         a_scales.layout.shape[0](),
         a_scales.layout.shape[1](),
-        Idx[sf_atom_u16](),
+        Idx[sf_atom_u16],
     )
     var sfa_4d_layout = row_major(sfa_4d_shape)
     var sfa_4d = TileTensor[DType.uint16, type_of(sfa_4d_layout), MutAnyOrigin](
@@ -308,10 +308,10 @@ def grouped_matmul_block_scaled[
         _b_scales.layout.shape[1]().value()
     )
     var sfb_4d_shape = Coord(
-        Idx[1](),
+        Idx[1],
         Int64(sfb_dim0),
         _b_scales.layout.shape[2](),
-        Idx[sf_atom_u16](),
+        Idx[sf_atom_u16],
     )
     var sfb_4d_layout = row_major(sfb_4d_shape)
     var sfb_4d = TileTensor[DType.uint16, type_of(sfb_4d_layout), MutAnyOrigin](
@@ -349,7 +349,7 @@ def grouped_matmul_block_scaled[
         target_type: DType,
     ](t: TileTensor) -> TileTensor[target_type, GMEMLayout1D, MutAnyOrigin]:
         var shape = Coord(Int64(t.layout.shape[0]().value()))
-        var stride = Coord(Idx[1]())
+        var stride = Coord(Idx[1])
         return TileTensor[target_type, GMEMLayout1D, MutAnyOrigin](
             ptr=Ptr[Scalar[target_type], MutAnyOrigin](
                 unsafe_from_address=Int(t.ptr)

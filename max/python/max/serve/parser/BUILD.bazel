@@ -6,8 +6,8 @@ modular_py_library(
     name = "parser",
     srcs = glob(["*.py"]),
     deps = [
-        "//max/python/max/interfaces",
         "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
         requirement("regex"),
     ],
 )

@@ -243,7 +243,7 @@ struct MXFP4MoERoutedMatmul[
             .as_immutable()
             .unsafe_origin_cast[ImmutAnyOrigin]()
             .address_space_cast[AddressSpace.GENERIC](),
-            row_major(Coord(Idx[1](), Idx[b_per_expert_bytes]())),
+            row_major(Coord(Idx[1], Idx[b_per_expert_bytes])),
         )
         var sfb_pre_expert = TileTensor[
             mut=False, dtype=DType.uint8, origin=ImmutAnyOrigin
@@ -252,7 +252,7 @@ struct MXFP4MoERoutedMatmul[
             .as_immutable()
             .unsafe_origin_cast[ImmutAnyOrigin]()
             .address_space_cast[AddressSpace.GENERIC](),
-            row_major(Coord(Idx[1](), Idx[sfb_per_expert_bytes]())),
+            row_major(Coord(Idx[1], Idx[sfb_per_expert_bytes])),
         )
         var sfa_pre_block = TileTensor[
             mut=False, dtype=DType.uint8, origin=ImmutAnyOrigin
@@ -261,7 +261,7 @@ struct MXFP4MoERoutedMatmul[
             .as_immutable()
             .unsafe_origin_cast[ImmutAnyOrigin]()
             .address_space_cast[AddressSpace.GENERIC](),
-            row_major(Coord(Idx[1](), Idx[sfa_per_block_bytes]())),
+            row_major(Coord(Idx[1], Idx[sfa_per_block_bytes])),
         )
 
         # ---- Loaders ----
