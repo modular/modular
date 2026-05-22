@@ -19,12 +19,10 @@ modular_py_library(
         "max.interfaces",
         "max.profiler",
         "msgspec",
+        "dkv",
     ],
     tags = [
         "no-mypy",
         "no-pydeps",
-    ],
-    deps = [
-        "//dkv/dkv-pyo3:client",
     ],
 )
