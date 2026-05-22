@@ -40,7 +40,7 @@ from max.pipelines.modeling.types import (
     TextGenerationContextType,
     TextGenerationOutput,
 )
-from max.profiler import traced
+from max.profiler import Tracer, traced
 from transformers import (
     AutoConfig,
     PreTrainedTokenizerBase,
@@ -568,7 +568,8 @@ class StructuredOutputHelper:
                 )
 
             try:
-                matcher = LLMatcher(self._tokenizer_info, context.grammar)
+                with Tracer("tool_grammar_compile"):
+                    matcher = LLMatcher(self._tokenizer_info, context.grammar)
                 context.set_matcher(matcher)
                 self.set_context_tool_region(context)
             except Exception as e:

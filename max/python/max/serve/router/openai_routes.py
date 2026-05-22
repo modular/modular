@@ -59,7 +59,7 @@ from max.pipelines.modeling.types import (
     TextGenerationResponseFormat,
     VideoContentPart,
 )
-from max.profiler import traced
+from max.profiler import Tracer, traced
 from max.serve.config import Settings
 from max.serve.parser import (
     LlamaToolParser,
@@ -1243,11 +1243,11 @@ async def openai_create_chat_completion(
                     tools_forced,
                     enforce_from_start,
                 )
-                # Create the grammar from the tools and response format schema.
-                grammar = parser.generate_tool_call_grammar(  # type: ignore[attr-defined]
-                    tool_names=grammar_tool_names,
-                    response_format_schema=response_format_schema,
-                )
+                with Tracer("tool_grammar_build"):
+                    grammar = parser.generate_tool_call_grammar(  # type: ignore[attr-defined]
+                        tool_names=grammar_tool_names,
+                        response_format_schema=response_format_schema,
+                    )
                 # Create the response format.
                 # Note:
                 # - tools_forced=True (tool_choice=required or named):
