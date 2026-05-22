@@ -164,6 +164,7 @@ class FakeRuntimeConfig(ConfigFileModel):
     max_batch_size: int = 999
     pipeline_role: str = "prefill_and_decode"
     reasoning_parser: str | None = None
+    tool_parser: str | None = None
 
 
 class FakeSpeculativeConfig(ConfigFileModel):
@@ -180,6 +181,13 @@ class FakePipelineConfig(ConfigFileModel):
 
     def configure_session(self, *args: Any, **kwargs: Any) -> None:
         pass
+
+    @property
+    def needs_bitmask_constraints(self) -> bool:
+        return (
+            self.sampling.enable_structured_output
+            or self.runtime.tool_parser is not None
+        )
 
 
 @dataclass

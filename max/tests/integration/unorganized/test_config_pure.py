@@ -454,6 +454,44 @@ class TestPipelineConfigUtilityMethods:
         assert config.runtime.denoising_cache.first_block_caching is True
 
 
+class TestNeedsBitmaskConstraints:
+    """Tests for the ``PipelineConfig.needs_bitmask_constraints`` property.
+
+    The property drives whether the bitmask path is compiled into the
+    sampler graph, the unified Eagle graph, and the D2H pinned buffer.
+    Tool-call grammars are server-generated when a tool parser is
+    configured, so the bitmask path must wire in for that case even
+    without ``--enable-structured-output``.
+    """
+
+    @mock_pipeline_config_resolve
+    @pytest.mark.parametrize(
+        "enable_structured_output,tool_parser,expected",
+        [
+            (False, None, False),
+            (True, None, True),
+            (False, "kimik2_5", True),
+            (True, "kimik2_5", True),
+        ],
+    )
+    def test_truth_table(
+        self,
+        enable_structured_output: bool,
+        tool_parser: str | None,
+        expected: bool,
+    ) -> None:
+        config = PipelineConfig(
+            models=ModelManifest(
+                {"main": MAXModelConfig(model_path="test/model")}
+            ),
+            sampling=SamplingConfig(
+                enable_structured_output=enable_structured_output
+            ),
+            runtime=PipelineRuntimeConfig(tool_parser=tool_parser),
+        )
+        assert config.needs_bitmask_constraints is expected
+
+
 class TestDraftModelDefaultsInheritance:
     """Tests that draft model inherits certain defaults from the target model."""
 

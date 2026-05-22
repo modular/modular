@@ -275,6 +275,23 @@ modular_py_test(
     ],
 )
 
+# Graph-construction tests for token_sampler (no GPU required).
+modular_py_test(
+    name = "test-token-sampler-construction",
+    size = "small",
+    srcs = [
+        "sampling/test_token_sampler_construction.py",
+    ],
+    env = {
+        "MODULAR_PATH": ".",
+    },
+    deps = [
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/lib",
+    ],
+)
+
 # Test for llguidance-based structured output sampling
 modular_py_test(
     name = "test-llguidance-sampling",

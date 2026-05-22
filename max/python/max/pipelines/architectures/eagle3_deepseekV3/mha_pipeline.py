@@ -270,7 +270,7 @@ class Eagle3MHADeepseekV3Model(DeepseekV3Model):
             config,
             draft_config,
             speculative_config=self.pipeline_config.speculative,
-            enable_structured_output=self.pipeline_config.sampling.enable_structured_output,
+            enable_structured_output=self.pipeline_config.needs_bitmask_constraints,
         )
 
         assert nn_model.draft is not None

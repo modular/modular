@@ -1520,6 +1520,10 @@ class OverlapTextGenerationPipeline(
             )
 
         # Initialize structured output helper for constrained decoding.
+        # The helper's ``enable_response_format_schema`` mirrors the user
+        # flag and gates user-supplied JSON schemas; the bitmask-in-the-graph
+        # decisions below are gated separately on
+        # ``pipeline_config.needs_bitmask_constraints``.
         self._structured_output = StructuredOutputHelper.from_tokenizer(
             self.tokenizer,
             pipeline_config.sampling.enable_structured_output,
@@ -1581,11 +1585,16 @@ class OverlapTextGenerationPipeline(
                 available_cache_memory=available_cache_memory,
             )
         else:
+            # Note: vocab_size gates bitmask buffer allocation.
             self._spec_decode_state = SpecDecodeState.load(
                 session=session,
                 model=self._pipeline_model,
                 pipeline_config=self._pipeline_config,
-                vocab_size=self.vocab_size,
+                vocab_size=(
+                    self.vocab_size
+                    if pipeline_config.needs_bitmask_constraints
+                    else None
+                ),
             )
             self._kv_manager = self._spec_decode_state.target_kv_manager
             if (
@@ -1600,47 +1609,44 @@ class OverlapTextGenerationPipeline(
                     self._pipeline_config.speculative.synthetic_acceptance_rate,
                 )
 
-        # Load sampler(s). When structured output is enabled, we need two
-        # samplers: one with bitmask support and one without. This allows
-        # batches without structured output requests to use the faster path.
+        # Load sampler(s) for the non-spec-decode path. The bitmask-aware
+        # sampler is loaded when constrained decoding could fire (see
+        # ``needs_bitmask_constraints``). The bitmask-free sampler is
+        # always loaded so requests that don't engage structured output
+        # (even with ``--enable-structured-output`` set server-wide) can
+        # still be sampled.
         self._sampler_with_bitmask: Model | None = None
         self._sampler_without_bitmask: Model | None = None
         if not is_spec_decode:
+            with_bitmask_graph = None
             with CompilationTimer("sampler") as sampler_timer:
-                if pipeline_config.sampling.enable_structured_output:
+                if pipeline_config.needs_bitmask_constraints:
                     with_bitmask_graph = token_sampler(
                         pipeline_config.sampling,
                         device=DeviceRef.from_device(self._devices[0]),
+                        needs_bitmask_input=True,
                     )
-                    cfg_without_bitmask = copy.deepcopy(
-                        pipeline_config.sampling
-                    )
-                    cfg_without_bitmask.enable_structured_output = False
-                    without_bitmask_graph = token_sampler(
-                        cfg_without_bitmask,
-                        device=DeviceRef.from_device(self._devices[0]),
-                    )
-                    sampler_timer.mark_build_complete()
+                without_bitmask_graph = token_sampler(
+                    pipeline_config.sampling,
+                    device=DeviceRef.from_device(self._devices[0]),
+                    needs_bitmask_input=False,
+                )
+                sampler_timer.mark_build_complete()
+                if with_bitmask_graph is not None:
                     self._sampler_with_bitmask = session.load(
                         with_bitmask_graph
                     )
-                    self._sampler_without_bitmask = session.load(
-                        without_bitmask_graph
-                    )
-                else:
-                    sampler_graph = token_sampler(
-                        pipeline_config.sampling,
-                        device=DeviceRef.from_device(self._devices[0]),
-                    )
-                    sampler_timer.mark_build_complete()
-                    self._sampler_without_bitmask = session.load(sampler_graph)
+                self._sampler_without_bitmask = session.load(
+                    without_bitmask_graph
+                )
 
-        # Pre-allocate pinned buffer for D2H token copies only when structured
-        # output is enabled. This buffer is used for async token transfers in
-        # the guided decoding path. Allocated once and reused across batches.
+        # Pre-allocate pinned buffer for D2H token copies only when the
+        # bitmask path is wired in. This buffer is used for async token
+        # transfers in the guided decoding path. Allocated once and reused
+        # across batches.
         self._pinned_new_tokens: Buffer | None = None
         if (
-            pipeline_config.sampling.enable_structured_output
+            pipeline_config.needs_bitmask_constraints
             and not self._devices[0].is_host
         ):
             max_batch_size = pipeline_config.runtime.max_batch_size

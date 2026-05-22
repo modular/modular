@@ -301,6 +301,26 @@ class PipelineConfig(ConfigFileModel):
     )
     """The model-agnostic runtime settings for pipeline execution."""
 
+    @property
+    def needs_bitmask_constraints(self) -> bool:
+        """Whether constrained decoding can fire and requires the bitmask path.
+
+        True if the user enabled ``--enable-structured-output`` (for
+        user-supplied ``response_format=json_schema``) or a tool parser is
+        configured (tool-call grammars work without the flag — they are
+        server-generated and gated on having a parser that can both produce
+        the grammar and parse the resulting output).
+
+        Drives whether model / sampler graphs are compiled with a bitmask
+        input and whether the D2H pinned buffer is allocated. Distinct from
+        ``sampling.enable_structured_output``, which is the user-facing
+        flag and only gates honoring user-supplied JSON schemas.
+        """
+        return (
+            self.sampling.enable_structured_output
+            or self.runtime.tool_parser is not None
+        )
+
     _config_file_section_name: str = PrivateAttr(default="pipeline_config")
     """The section name to use when loading this config from a MAXConfig file.
     This is used to differentiate between different config sections in a single

@@ -272,7 +272,7 @@ class Eagle3MHAKimiK25Model(KimiK2_5Model):
             config,
             draft_config,
             speculative_config=self.pipeline_config.speculative,
-            enable_structured_output=self.pipeline_config.sampling.enable_structured_output,
+            enable_structured_output=self.pipeline_config.needs_bitmask_constraints,
             enable_vision=True,
         )
 

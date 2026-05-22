@@ -250,7 +250,7 @@ class Eagle3DeepseekV3Model(DeepseekV3Model):
             config,
             draft_config,
             speculative_config=self.pipeline_config.speculative,
-            enable_structured_output=self.pipeline_config.sampling.enable_structured_output,
+            enable_structured_output=self.pipeline_config.needs_bitmask_constraints,
         )
 
         # Share embed_tokens before loading so the graph sees a single

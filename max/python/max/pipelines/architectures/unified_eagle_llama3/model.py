@@ -237,7 +237,7 @@ class UnifiedEagleLlama3Model(PipelineModelWithKVCache[TextContext]):
                 target=target_config,
                 draft=draft_config,
                 speculative_config=self.pipeline_config.speculative,
-                enable_structured_output=self.pipeline_config.sampling.enable_structured_output,
+                enable_structured_output=self.pipeline_config.needs_bitmask_constraints,
             )
 
             nn_model = UnifiedEagleLlama3Module(unified_config)
