@@ -19,6 +19,7 @@ exclude = [
     ".claude",
     "third-party",
     "oss/mojo-gpu-puzzles/book",
+    "Faux/mojo_llm_from_scratch",
 ]
 
 [ul-style]
